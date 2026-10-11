@@ -1,24 +1,29 @@
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { AccountsError } from './accounts-errors.data';
 import { Result } from './result.data';
 
-/** Status tags — the ONLY source of these strings (`users.accountStatus.kind`). */
-export const AccountState = {
+/**
+ * Account status tags — the ONLY source of these strings, the discriminator
+ * `accountStatus` of {@link AccountLifecycle} (flatten-spec §3.7).
+ */
+export const AccountStatus = {
   /** Normal; the only status that may use the app. */
-  Active: 'active',
-  /** Denied — temporarily when `untilMs` is set, permanently when it is `null`. */
-  Blocked: 'blocked',
+  Active: 'ACTIVE',
+  /** Denied — temporarily when `blockedUntilUtcMs` is set, permanently when it is `null`. */
+  Blocked: 'BLOCKED',
 } as const;
-export type AccountState = (typeof AccountState)[keyof typeof AccountState];
+export type AccountStatus = (typeof AccountStatus)[keyof typeof AccountStatus];
 
 /**
  * Why an account was blocked — a closed vocabulary, v2's `BlockReason`
- * verbatim; a new reason is a deliberate code change.
+ * upper-snaked; a new reason is a deliberate code change. The field is
+ * `blockReason`.
  */
 export const BlockReason = {
-  ExcessiveFailedAttempts: 'excessive_failed_attempts',
-  TermsViolation: 'terms_violation',
-  FraudSuspect: 'fraud_suspect',
-  Manual: 'manual',
+  ExcessiveFailedAttempts: 'EXCESSIVE_FAILED_ATTEMPTS',
+  TermsViolation: 'TERMS_VIOLATION',
+  FraudSuspect: 'FRAUD_SUSPECT',
+  Manual: 'MANUAL',
 } as const;
 export type BlockReason = (typeof BlockReason)[keyof typeof BlockReason];
 
@@ -26,42 +31,52 @@ export type BlockReason = (typeof BlockReason)[keyof typeof BlockReason];
 export const BLOCK_REASONS: readonly BlockReason[] = Object.values(BlockReason);
 
 /**
- * The live, REVOCABLE authorization status of an account — a discriminated
- * union, not an `isBlocked` boolean, so "blocked but no reason" is
- * unrepresentable. Stored as `users.accountStatus` (today's `status`,
- * blueprint §3.1): `{ kind: 'active' }` or `{ kind: 'blocked', reason,
- * untilMs }`, where `untilMs` is the temporary block's expiry in epoch ms and
- * `null` means permanent (today's omitted `until`).
+ * The live, REVOCABLE authorization status of an account — a union of flat
+ * variant slices (Law 6), not an `isBlocked` boolean, so "blocked but no
+ * reason" is unrepresentable. Intersected into `User` at the root: the
+ * blocked variant's `blockReason` and `blockedUntilUtcMs` are root fields
+ * of the account. `blockedUntilUtcMs` is the temporary block's expiry
+ * (exclusive); `null` means permanent.
  */
-export type AccountStatus = AccountStatus.Active | AccountStatus.Blocked;
+export type AccountLifecycle =
+  AccountLifecycle.Active | AccountLifecycle.Blocked;
 
-/** The one active status — every active account shares this struct. */
-const ACTIVE: AccountStatus.Active = { kind: AccountState.Active };
+/** The one active slice — every active account shares this struct. */
+const ACTIVE: AccountLifecycle.Active = { accountStatus: AccountStatus.Active };
 
-export const AccountStatus = {
-  active(): AccountStatus.Active {
+export const AccountLifecycle = {
+  active(): AccountLifecycle.Active {
     return ACTIVE;
   },
 
-  /** Block for `reason`, until `untilMs` (exclusive), or for good when `null`. */
-  block(reason: BlockReason, untilMs: number | null): AccountStatus.Blocked {
-    return { kind: AccountState.Blocked, reason, untilMs };
+  /** Block for `blockReason`, until `blockedUntilUtcMs` (exclusive), or for good when `null`. */
+  block(
+    blockReason: BlockReason,
+    blockedUntilUtcMs: UtcEpochMs | null,
+  ): AccountLifecycle.Blocked {
+    return {
+      accountStatus: AccountStatus.Blocked,
+      blockReason,
+      blockedUntilUtcMs,
+    };
   },
 
   /** Lift any block. */
-  unblock(): AccountStatus.Active {
+  unblock(): AccountLifecycle.Active {
     return ACTIVE;
   },
 
   /**
-   * Whether the status denies app access AS OF `nowMs`. A temporary block
-   * whose `untilMs` has come is treated as active — it auto-clears, nothing
-   * has to rewrite it. The caller passes the instant, so the check is pure.
+   * Whether the lifecycle denies app access AS OF `nowUtcMs` (a T2 row:
+   * an expiry compared in elapsed real time). A temporary block whose
+   * `blockedUntilUtcMs` has come is treated as active — it auto-clears,
+   * nothing has to rewrite it. The caller passes the instant, so the check
+   * is pure.
    */
-  isBlockedAt(status: AccountStatus, nowMs: number): boolean {
-    if (status.kind === AccountState.Active) return false;
-    if (status.untilMs === null) return true;
-    return status.untilMs > nowMs;
+  isBlockedAt(lifecycle: AccountLifecycle, nowUtcMs: UtcEpochMs): boolean {
+    if (lifecycle.accountStatus === AccountStatus.Active) return false;
+    if (lifecycle.blockedUntilUtcMs === null) return true;
+    return UtcEpochMs.compare(lifecycle.blockedUntilUtcMs, nowUtcMs) > 0;
   },
 
   /** The edge guard for an untrusted reason (an admin's dropdown pick, a stored string). */
@@ -72,22 +87,22 @@ export const AccountStatus = {
     return false;
   },
 
-  /** The edge guard with a refusal: a known reason, or `accounts.block_reason.invalid`. */
+  /** The edge guard with a refusal: a known reason, or `ACCOUNTS_BLOCK_REASON_INVALID`. */
   parseBlockReason(raw: string): Result<BlockReason, AccountsError> {
-    return AccountStatus.isBlockReason(raw)
+    return AccountLifecycle.isBlockReason(raw)
       ? Result.ok(raw)
       : Result.err(AccountsError.blockReasonInvalid(raw));
   },
 } as const;
 
-export namespace AccountStatus {
+export namespace AccountLifecycle {
   export type Active = {
-    readonly kind: typeof AccountState.Active;
+    readonly accountStatus: typeof AccountStatus.Active;
   };
   export type Blocked = {
-    readonly kind: typeof AccountState.Blocked;
-    readonly reason: BlockReason;
-    /** Temporary block expiry (epoch ms, exclusive); `null` = permanent. */
-    readonly untilMs: number | null;
+    readonly accountStatus: typeof AccountStatus.Blocked;
+    readonly blockReason: BlockReason;
+    /** Temporary block expiry (exclusive); `null` = permanent. */
+    readonly blockedUntilUtcMs: UtcEpochMs | null;
   };
 }

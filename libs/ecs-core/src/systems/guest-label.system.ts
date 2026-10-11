@@ -1,39 +1,47 @@
 import { Party } from '../components/party.data';
 import { SeatLabel } from '../components/seat-label.data';
-
-/** Who a requested seat is for — the ONLY source of these strings. */
-export const RequestedSubjectKind = {
-  /** The booker, bound to the verified token — never to the payload. */
-  Self: 'self',
-  /** A person with an account of their own, carried by a staff edit or a move. */
-  Companion: 'companion',
-  /** Somebody with no account: their label is their identity on the wire. */
-  Guest: 'guest',
-} as const;
-export type RequestedSubjectKind =
-  (typeof RequestedSubjectKind)[keyof typeof RequestedSubjectKind];
+import { SeatKeyText } from '../primitives/ids.primitive';
 
 /**
- * A requested seat's subject as the payload names it (`RequestedSeat.subject`,
- * `decide-booking.ts:76-99`). `guestKey` is the client's own name for a guest
- * (the cart's seat key, `guest-3`) so two DIFFERENT guests under one label
- * can be told apart; `null` (an older client, a staff path, a carried seat)
- * reads one label as one person. It is never stored.
+ * Who a requested seat is for — the ONLY source of these strings, named after
+ * the field they type (`requestedSubjectRole`; was `RequestedSubjectKind`).
+ * The one dictionary of the role: `audit.system.ts` reads it too
+ * (flatten-spec §3.9).
  */
-export type RequestedSubject =
-  | { readonly kind: typeof RequestedSubjectKind.Self }
+export const RequestedSubjectRole = {
+  /** The booker, bound to the verified token — never to the payload. */
+  Self: 'SELF',
+  /** A person with an account of their own, carried by a staff edit or a move. */
+  Companion: 'COMPANION',
+  /** Somebody with no account: their label is their identity on the wire. */
+  Guest: 'GUEST',
+} as const;
+export type RequestedSubjectRole =
+  (typeof RequestedSubjectRole)[keyof typeof RequestedSubjectRole];
+
+/**
+ * A requested seat's subject as the payload names it
+ * (`RequestedSeatInput.subject`, `decide-booking.ts:76-99`) — foreign input,
+ * the raw account id before `decide` parses it (the L3 `…Input` escape).
+ * `guestKey` is the client's own name for a guest (the cart's seat key,
+ * `guest-3`) so two DIFFERENT guests under one label can be told apart;
+ * `null` (an older client, a staff path, a carried seat) reads one label as
+ * one person. It is never stored.
+ */
+export type RequestedSubjectInput =
+  | { readonly requestedSubjectRole: typeof RequestedSubjectRole.Self }
   | {
-      readonly kind: typeof RequestedSubjectKind.Companion;
-      readonly userId: string;
+      readonly requestedSubjectRole: typeof RequestedSubjectRole.Companion;
+      readonly companionUserId: string;
     }
   | {
-      readonly kind: typeof RequestedSubjectKind.Guest;
+      readonly requestedSubjectRole: typeof RequestedSubjectRole.Guest;
       readonly label: string;
       readonly guestKey: string | null;
     };
 
 /** The person key of the booker's own seat. */
-const SELF_KEY = 'self';
+const SELF_KEY = SeatKeyText.of('self');
 const ACCOUNT_PREFIX = 'account:';
 const GUEST_PREFIX = 'guest:';
 
@@ -47,19 +55,20 @@ const GUEST_PREFIX = 'guest:';
  */
 export const GuestLabelSystem = {
   /**
-   * One key per person: `self`, `account:<uid>`, `guest:<label>` — a guest
+   * One key per person: `self`, `account:<uid>`, `guest:<label>` (a
+   * `SeatKeyText`, the type `StandingSeatPair.personKey` carries) — a guest
    * by the label as it is STORED (trimmed, the way `SeatLabel` keeps it), so
    * « Иван» and «Иван» are the one person they will be on the appointment.
    * Only ever compared for equality.
    */
-  personKeyOf(subject: RequestedSubject): string {
-    switch (subject.kind) {
-      case RequestedSubjectKind.Self:
+  personKeyOf(subject: RequestedSubjectInput): SeatKeyText {
+    switch (subject.requestedSubjectRole) {
+      case RequestedSubjectRole.Self:
         return SELF_KEY;
-      case RequestedSubjectKind.Companion:
-        return `${ACCOUNT_PREFIX}${subject.userId}`;
-      case RequestedSubjectKind.Guest:
-        return `${GUEST_PREFIX}${subject.label.trim()}`;
+      case RequestedSubjectRole.Companion:
+        return SeatKeyText.of(`${ACCOUNT_PREFIX}${subject.companionUserId}`);
+      case RequestedSubjectRole.Guest:
+        return SeatKeyText.of(`${GUEST_PREFIX}${subject.label.trim()}`);
     }
   },
 
@@ -71,12 +80,14 @@ export const GuestLabelSystem = {
    * nothing to share.
    */
   namedGuests(
-    subjects: readonly RequestedSubject[],
+    subjects: readonly RequestedSubjectInput[],
   ): readonly Party.LabelledGuest[] {
     const guests: Party.LabelledGuest[] = [];
     for (let i = 0; i < subjects.length; i++) {
-      const subject = subjects[i] as RequestedSubject;
-      if (subject.kind !== RequestedSubjectKind.Guest) continue;
+      const subject = subjects[i] as RequestedSubjectInput;
+      if (subject.requestedSubjectRole !== RequestedSubjectRole.Guest) {
+        continue;
+      }
       if (subject.guestKey === null) continue;
       const label = SeatLabel.parse(subject.label);
       if (!label.ok) continue;
@@ -90,7 +101,7 @@ export const GuestLabelSystem = {
    * `null` — the party's own rule (`Party.labelSharedByTwoGuests`), never a
    * copy of it.
    */
-  sharedLabel(subjects: readonly RequestedSubject[]): SeatLabel | null {
+  sharedLabel(subjects: readonly RequestedSubjectInput[]): SeatLabel | null {
     return Party.labelSharedByTwoGuests(GuestLabelSystem.namedGuests(subjects));
   },
 

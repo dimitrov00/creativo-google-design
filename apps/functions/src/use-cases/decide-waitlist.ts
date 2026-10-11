@@ -10,16 +10,22 @@ import {
 import {
   BarberId as BarberKey,
   type BookingCart as CartData,
+  CartLineId as LineKey,
   DayHours,
-  DayKey,
-  type FlexibleWhen as WhenData,
-  MinuteRange,
+  LocalDate,
+  SchedulingErrorCode,
+  SeatKeyText,
   ServiceId as ServiceKey,
   ServiceVariantId as VariantKey,
-  type WaitlistAsk,
+  UserId as UserKey,
+  UtcEpochMs,
+  type WaitlistAskInput,
   type WaitlistError,
   WaitlistErrorCode,
   WaitlistSystem,
+  type FlexibleWhen as WhenData,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import {
   type AdmissibleShop,
@@ -85,30 +91,34 @@ function faceOf(minutes: number): string {
 
 function toCartData(cart: WaitlistRequestProps['cart']): CartData {
   return {
-    seats: cart.seats.map((seat) => ({
-      seatKey: seat.seatKey,
-      lines: seat.lines.map((line) => ({
-        lineId: line.id,
-        seatKey: seat.seatKey,
-        serviceId: ServiceKey.of(line.serviceId),
-        variantId:
-          line.variantId === null ? null : VariantKey.of(line.variantId),
-        barberId: line.barberId === null ? null : BarberKey.of(line.barberId),
-        locationId: null,
-      })),
-    })),
-    nextSequence: cart.nextSequence,
+    cartSeats: cart.seats.map((seat) => {
+      const seatKey = SeatKeyText.of(seat.seatKey);
+      return {
+        seatKey,
+        lines: seat.lines.map((line) => ({
+          lineId: LineKey.of(line.id),
+          seatKey,
+          serviceId: ServiceKey.of(line.serviceId),
+          variantId:
+            line.variantId === null ? null : VariantKey.of(line.variantId),
+          barberId: line.barberId === null ? null : BarberKey.of(line.barberId),
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: cart.nextSequence,
   };
 }
 
-function toAsk(request: DecideWaitlistRequest): WaitlistAsk {
+function toAsk(request: DecideWaitlistRequest): WaitlistAskInput {
   return {
     locationId: request.locationId,
     days: request.days.map((day) => ({
-      dayKey: day.dayKey,
-      windows: day.windows.map((window) =>
-        MinuteRange.of(minutesOf(window.from), minutesOf(window.to)),
-      ),
+      localDate: day.dayKey,
+      windows: day.windows.map((window) => ({
+        startMinutes: minutesOf(window.from),
+        endMinutes: minutesOf(window.to),
+      })),
     })),
     cart: toCartData(request.cart),
   };
@@ -116,8 +126,8 @@ function toAsk(request: DecideWaitlistRequest): WaitlistAsk {
 
 function toWhenProps(when: WhenData): WaitlistRequestProps['when'] {
   return {
-    days: when.days.map((day) => ({
-      dayKey: day.dayKey,
+    days: when.flexibleDays.map((day) => ({
+      dayKey: day.localDate,
       windows: day.windows.map((window) => ({
         from: faceOf(window.startMinutes),
         to: faceOf(window.endMinutes),
@@ -130,7 +140,7 @@ function toWhenProps(when: WhenData): WaitlistRequestProps['when'] {
 function admissionOf(
   request: DecideWaitlistRequest,
   deps: DecideWaitlistDeps,
-): { readonly code: string } | null {
+): { readonly errorCode: string } | null {
   const cart = BookingCart.reconstitute(request.cart);
   if (cart.isFailure()) return null;
   let locationId: LocationId | null = null;
@@ -145,15 +155,31 @@ function admissionOf(
     deps.policy,
     locationId,
   );
-  return admitted.isFailure() ? { code: admitted.error.code } : null;
+  // The legacy commit code rides through as the refusal's `field`, byte for
+  // byte what the wire carried before.
+  return admitted.isFailure() ? { errorCode: admitted.error.code } : null;
 }
 
+/**
+ * A refusal's `field` as the wire has always spelt it: the payload field
+ * (`dayKey` — the wire's name for the ask's `localDate`) or the legacy
+ * dotted code of the scheduling refusal underneath. Anything else (a
+ * payload field, the commit's legacy code) passes as it is.
+ */
+const LEGACY_FIELD: { readonly [field: string]: string } = {
+  localDate: 'dayKey',
+  [SchedulingErrorCode.WaitlistNoDays]: 'scheduling.waitlist.no_days',
+  [SchedulingErrorCode.WaitlistEmptyCart]: 'scheduling.waitlist.empty_cart',
+};
+
 function toLegacyError(error: WaitlistError): RequestWaitlistError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case WaitlistErrorCode.Unauthenticated:
       return new RequestWaitlistUnauthenticatedError();
     case WaitlistErrorCode.InvalidRequest:
-      return new RequestWaitlistInvalidError(error.field);
+      return new RequestWaitlistInvalidError(
+        LEGACY_FIELD[error.field] ?? error.field,
+      );
     case WaitlistErrorCode.TooManyDays:
       return new RequestWaitlistTooManyDaysError(error.max);
     case WaitlistErrorCode.AlreadyWatching:
@@ -172,12 +198,18 @@ export function decideWaitlist(
   request: DecideWaitlistRequest,
   deps: DecideWaitlistDeps,
 ): Result<WaitlistRequest, RequestWaitlistError> {
+  // The shop's "now", derived once at this boundary from the legacy zone.
+  const zone = ZonedTimeSystem.checkZone(deps.zone);
+  const nowUtcMs = UtcEpochMs.of(deps.now.toMillis());
+  const horizonEnd = LocalDate.parse(deps.horizonEnd.key());
+  if (!zone.ok || !nowUtcMs.ok || !horizonEnd.ok) {
+    defect('unreachable: the tenant zone, the clock and the horizon');
+  }
   const decided = WaitlistSystem.decide(toAsk(request), {
-    ownerUserId: deps.ownerUserId,
-    zone: deps.zone,
-    nowMs: deps.now.toMillis(),
-    todayDayKey: DayKey.of(CalendarDay.fromZonedDateTime(deps.now).key()),
-    horizonEndDayKey: DayKey.of(deps.horizonEnd.key()),
+    ownerUserId:
+      deps.ownerUserId === null ? null : UserKey.of(deps.ownerUserId),
+    now: ZonedTimeSystem.shopNow(nowUtcMs.value, zone.value),
+    horizonEndLocalDate: horizonEnd.value,
     maxFlexibleDays: deps.maxFlexibleDays,
     shopListed: shopListed(deps.shop),
     admission: admissionOf(request, deps),
@@ -189,7 +221,7 @@ export function decideWaitlist(
     id: deps.nextId(),
     ownerId: decided.value.ownerUserId,
     locationId: decided.value.locationId,
-    when: toWhenProps(decided.value.when),
+    when: toWhenProps(decided.value),
     cart: request.cart,
     status: 'open',
     createdAtIso: deps.now.toISO(),

@@ -18,7 +18,7 @@ describe('Points.parse', () => {
     (raw) => {
       expect(Points.parse(raw)).toEqual({
         ok: false,
-        error: { code: 'engagement.points.invalid', attempted: raw },
+        error: { errorCode: 'ENGAGEMENT_POINTS_INVALID', attempted: raw },
       });
     },
   );
@@ -52,7 +52,7 @@ describe('Points arithmetic', () => {
     expect(Points.sub(Points.of(5), Points.of(10))).toEqual({
       ok: false,
       error: {
-        code: 'engagement.points.insufficient',
+        errorCode: 'ENGAGEMENT_POINTS_INSUFFICIENT',
         requested: 10,
         balance: 5,
       },
@@ -79,7 +79,7 @@ describe('Points arithmetic', () => {
         if (result.ok) expect(result.value).toBe(balance - taken);
         else
           expect(result.error).toEqual({
-            code: 'engagement.points.insufficient',
+            errorCode: 'ENGAGEMENT_POINTS_INSUFFICIENT',
             requested: taken,
             balance,
           });

@@ -19,16 +19,20 @@ import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
 import {
   BarberId as BarberKey,
   type BookingCart as CartData,
-  DayKey,
+  CartLineId as LineKey,
   DayWindows as DayWindowsData,
-  FlexibleWhen as WhenData,
+  EndMinute,
+  LocalDate,
   LocationId as LocationKey,
+  MinuteOfDay,
   MinuteRange,
+  SeatKeyText,
   ServiceId as ServiceKey,
   ServiceVariantId as VariantKey,
   UserId as UserKey,
-  WaitlistStatus as StatusData,
   WaitlistSystem,
+  FlexibleWhen as WhenData,
+  defect,
 } from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
@@ -192,20 +196,34 @@ export const MAX_SERVICES_PER_PERSON = WaitlistSystem.MAX_SERVICES_PER_PERSON;
 
 function toCartData(cart: ReconstituteBookingCartProps): CartData {
   return {
-    seats: cart.seats.map((seat) => ({
-      seatKey: seat.seatKey,
-      lines: seat.lines.map((line) => ({
-        lineId: line.id,
-        seatKey: seat.seatKey,
-        serviceId: ServiceKey.of(line.serviceId),
-        variantId:
-          line.variantId === null ? null : VariantKey.of(line.variantId),
-        barberId: line.barberId === null ? null : BarberKey.of(line.barberId),
-        locationId: null,
-      })),
-    })),
-    nextSequence: cart.nextSequence,
+    cartSeats: cart.seats.map((seat) => {
+      const seatKey = SeatKeyText.of(seat.seatKey);
+      return {
+        seatKey,
+        lines: seat.lines.map((line) => ({
+          lineId: LineKey.of(line.id),
+          seatKey,
+          serviceId: ServiceKey.of(line.serviceId),
+          variantId:
+            line.variantId === null ? null : VariantKey.of(line.variantId),
+          barberId: line.barberId === null ? null : BarberKey.of(line.barberId),
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: cart.nextSequence,
   };
+}
+
+/** Unreachable refusals of values the decided request already checked. */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
 }
 
 /** `'HH:mm'` → minutes of the day (the decided request's faces are always real). */
@@ -327,9 +345,12 @@ function deterministicRequestId(request: WaitlistRequest): string {
   const when = WhenData.of(
     props.when.days.map((day) =>
       DayWindowsData.of(
-        DayKey.of(day.dayKey),
+        sure(LocalDate.parse(day.dayKey), 'a decided day'),
         day.windows.map((window) =>
-          MinuteRange.of(minutesOf(window.from), minutesOf(window.to)),
+          MinuteRange.of(
+            sure(MinuteOfDay.of(minutesOf(window.from)), 'a decided start'),
+            sure(EndMinute.of(minutesOf(window.to)), 'a decided end'),
+          ),
         ),
       ),
     ),
@@ -338,12 +359,8 @@ function deterministicRequestId(request: WaitlistRequest): string {
     ownerUserId: UserKey.of(props.ownerId),
     locationId:
       props.locationId === null ? null : LocationKey.of(props.locationId),
-    zone: props.zone,
-    cart: toCartData(props.cart),
-    when,
-    dayKeys: WhenData.dayKeys(when),
-    status: StatusData.open(request.createdAt.toMillis()),
-    createdAtMs: request.createdAt.toMillis(),
+    ...toCartData(props.cart),
+    flexibleDays: when.flexibleDays,
   });
   return `wl_${createHash('sha256').update(basis).digest('hex').slice(0, 40)}`;
 }

@@ -1,10 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { endMinute, minute } from '../testing';
+import { SeatKeyText } from '../primitives/ids.primitive';
 import { StandingSeatPair } from './standing-seat.data';
 
-const MIN = 60_000;
 const at = (personKey: string, start: number, minutes: number) =>
-  StandingSeatPair.of(personKey, start * MIN, (start + minutes) * MIN);
+  StandingSeatPair.of(
+    SeatKeyText.of(personKey),
+    minute(start),
+    endMinute(start + minutes),
+  );
 
 describe('StandingSeatPair — one person, one chair at a time', () => {
   it('refuses the same person in an overlapping span', () => {
@@ -40,8 +45,8 @@ describe('StandingSeatPair — one person, one chair at a time', () => {
         const b = at(y.personKey, y.start, y.minutes);
         const expected =
           a.personKey === b.personKey &&
-          a.startMs < b.endMs &&
-          b.startMs < a.endMs;
+          a.startMinutes < b.endMinutes &&
+          b.startMinutes < a.endMinutes;
         return (
           StandingSeatPair.sitsTwice(a, b) === expected &&
           StandingSeatPair.sitsTwice(b, a) === expected

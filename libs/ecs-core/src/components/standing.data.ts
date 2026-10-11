@@ -1,20 +1,23 @@
-import type { BadgeCategoryId } from '../entities/badge-category.entity';
-import type { SeriesId } from '../entities/badge-series.entity';
-import type { SeasonId } from '../entities/season.entity';
-import type { DayKey } from './day-key.data';
+import type {
+  BadgeCategoryId,
+  BadgeSeriesId,
+  SeasonId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * STANDING — what the card derives from one client's progress against the
  * catalogue (client-card-redesign §4.2, `standing.ts:25-43`). The shapes
  * StandingSystem answers in; the math (`earnedLevelCount`, `familiesIn`,
  * `closestLevels`, `recentLevelsByDay`) is the system's. Numbers, ids and
- * day keys only — the Roman numeral a level is drawn with is a template
+ * shop days only — the Roman numeral a level is drawn with is a template
  * pipe, never a field.
  */
 
 /** A family's next level, and how far the client is from it. */
 export type ClosestLevel = {
-  readonly seriesId: SeriesId;
+  readonly badgeSeriesId: BadgeSeriesId;
   readonly level: number;
   readonly value: number;
   readonly target: number;
@@ -22,79 +25,78 @@ export type ClosestLevel = {
 
 /** The levels earned on one shop-calendar day — one rail item, however many. */
 export type EarnedDay = {
-  readonly day: DayKey;
+  readonly localDate: LocalDate;
   readonly levels: readonly EarnedDay.Level[];
 };
 
 export const EarnedDay = {
-  of(day: DayKey, levels: readonly EarnedDay.Level[]): EarnedDay {
-    return { day, levels };
+  of(localDate: LocalDate, levels: readonly EarnedDay.Level[]): EarnedDay {
+    return { localDate, levels };
   },
   level(
-    seriesId: SeriesId,
+    badgeSeriesId: BadgeSeriesId,
     level: number,
-    earnedAtMs: number,
+    earnedAtUtcMs: UtcEpochMs,
   ): EarnedDay.Level {
-    return { seriesId, level, earnedAtMs };
+    return { badgeSeriesId, level, earnedAtUtcMs };
   },
 } as const;
 
-/** Which families one scope page draws, by kind. */
-export const FamilyScopeKind = {
+/** Which families one scope page draws — the discriminator `familyScope`. */
+export const FamilyScope = {
   /** A shelf of «Постижения». */
-  Category: 'category',
+  Category: 'CATEGORY',
   /** A season's own families (its track is the gauge above the grid). */
-  Season: 'season',
+  Season: 'SEASON',
   /** Every family of the windows that have ended. */
-  Archive: 'archive',
+  Archive: 'ARCHIVE',
   /** The families with a level earned on one day. */
-  Day: 'day',
+  Day: 'DAY',
 } as const;
-export type FamilyScopeKind =
-  (typeof FamilyScopeKind)[keyof typeof FamilyScopeKind];
+export type FamilyScope = (typeof FamilyScope)[keyof typeof FamilyScope];
 
 /** What one scope page draws: a shelf, a season, the archive of ended windows, or one day's levels. */
-export type FamilyScope =
-  | FamilyScope.Category
-  | FamilyScope.Season
-  | FamilyScope.Archive
-  | FamilyScope.Day;
+export type FamilyScopeFilter =
+  | FamilyScopeFilter.Category
+  | FamilyScopeFilter.Season
+  | FamilyScopeFilter.Archive
+  | FamilyScopeFilter.Day;
 
-export const FamilyScope = {
-  category(categoryId: BadgeCategoryId): FamilyScope.Category {
-    return { kind: FamilyScopeKind.Category, categoryId };
+export const FamilyScopeFilter = {
+  category(categoryId: BadgeCategoryId): FamilyScopeFilter.Category {
+    return { familyScope: FamilyScope.Category, categoryId };
   },
-  season(seasonId: SeasonId): FamilyScope.Season {
-    return { kind: FamilyScopeKind.Season, seasonId };
+  season(seasonId: SeasonId): FamilyScopeFilter.Season {
+    return { familyScope: FamilyScope.Season, seasonId };
   },
-  archive(): FamilyScope.Archive {
-    return { kind: FamilyScopeKind.Archive };
+  archive(): FamilyScopeFilter.Archive {
+    return { familyScope: FamilyScope.Archive };
   },
-  day(day: DayKey): FamilyScope.Day {
-    return { kind: FamilyScopeKind.Day, day };
+  day(localDate: LocalDate): FamilyScopeFilter.Day {
+    return { familyScope: FamilyScope.Day, localDate };
   },
 } as const;
 
 export namespace EarnedDay {
   export type Level = {
-    readonly seriesId: SeriesId;
+    readonly badgeSeriesId: BadgeSeriesId;
     readonly level: number;
-    readonly earnedAtMs: number;
+    readonly earnedAtUtcMs: UtcEpochMs;
   };
 }
 
-export namespace FamilyScope {
+export namespace FamilyScopeFilter {
   export type Category = {
-    readonly kind: typeof FamilyScopeKind.Category;
+    readonly familyScope: typeof FamilyScope.Category;
     readonly categoryId: BadgeCategoryId;
   };
   export type Season = {
-    readonly kind: typeof FamilyScopeKind.Season;
+    readonly familyScope: typeof FamilyScope.Season;
     readonly seasonId: SeasonId;
   };
-  export type Archive = { readonly kind: typeof FamilyScopeKind.Archive };
+  export type Archive = { readonly familyScope: typeof FamilyScope.Archive };
   export type Day = {
-    readonly kind: typeof FamilyScopeKind.Day;
-    readonly day: DayKey;
+    readonly familyScope: typeof FamilyScope.Day;
+    readonly localDate: LocalDate;
   };
 }

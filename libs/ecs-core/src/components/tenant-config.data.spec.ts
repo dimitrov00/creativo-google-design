@@ -1,22 +1,26 @@
 import { describe, expect, it } from 'vitest';
+import { LocationId } from '../primitives/ids.primitive';
 import { PhoneSystem } from '../systems/phone.system';
-import { ZonedTimeSystem } from '../systems/zoned-time.system';
 import { CountryIso2 } from './country-iso2.data';
 import { TenantConfig } from './tenant-config.data';
 
 describe('TenantConfig.DEFAULT', () => {
-  it('is the Sofia deployment', () => {
+  it('is the centre-shop deployment', () => {
     expect(TenantConfig.DEFAULT).toEqual({
-      zone: 'Europe/Sofia',
+      defaultLocationId: 'loc-center',
       countryCallingCode: '359',
     });
   });
 
-  it('names a zone the platform knows', () => {
-    // The governance TenantConfig's timezone invariant, kept as a spec: the
-    // constant is never stored, so there is no edge to guard at run time.
-    // Zone math is `ZonedTimeSystem`'s alone (D5), specs included.
-    expect(ZonedTimeSystem.isValidZone(TenantConfig.DEFAULT.zone)).toBe(true);
+  it('names a location, never a zone — the zone lives on the ShopLocation alone (Law 7.2, F-4)', () => {
+    // The governance TenantConfig's timezone invariant moved with the zone:
+    // the constant names the shop a location-less boundary reads its
+    // `timeZone` from, and the id is one `LocationId.parse` accepts.
+    expect(TenantConfig.DEFAULT).not.toHaveProperty('zone');
+    expect(LocationId.parse(TenantConfig.DEFAULT.defaultLocationId)).toEqual({
+      ok: true,
+      value: 'loc-center',
+    });
   });
 
   it("dials Bulgaria's calling code, digits only", () => {

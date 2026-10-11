@@ -2,8 +2,12 @@ import {
   BarberId,
   type CatalogPriced,
   CatalogPricingSystem,
+  Currency,
+  DurationMinutes,
+  PriceCents,
   ServiceTerms,
   ServiceVariantId,
+  defect,
 } from '@creativo/ecs-core';
 
 /**
@@ -122,7 +126,11 @@ export function formatDurationRange(
 
 /** Cheapest base offering — the "from" price on a marketing tile. */
 export function servicePriceFrom(service: ServiceVm): number {
-  return toMajor(CatalogPricingSystem.priceFrom(pricedOf(service)));
+  const priced = pricedOf(service);
+  // A view model nobody performs carries no price: never the cheapest.
+  return priced === null
+    ? Number.POSITIVE_INFINITY
+    : toMajor(CatalogPricingSystem.priceFrom(priced));
 }
 
 /**
@@ -166,12 +174,14 @@ export function servicesByBarber(
   services: readonly ServiceVm[],
   barberId: string,
 ): readonly { readonly service: ServiceVm; readonly terms: ServiceTermsVm }[] {
-  const priced = services.map(pricedOf);
+  // A service nobody performs is nobody's: it cannot be in the answer.
+  const performed = services.filter((service) => service.offerings.length > 0);
+  const priced = performed.map((service) => pricedOf(service) as CatalogPriced);
   return CatalogPricingSystem.servicesByBarber(
     priced,
     BarberId.of(barberId),
   ).map((entry) => ({
-    service: services.at(priced.indexOf(entry.service)) as ServiceVm,
+    service: performed.at(priced.indexOf(entry.service)) as ServiceVm,
     terms: termsVmOf(entry.terms),
   }));
 }
@@ -181,7 +191,9 @@ export function serviceDurationRange(service: ServiceVm): {
   from: number;
   to: number;
 } {
-  const range = CatalogPricingSystem.durationRange(pricedOf(service));
+  const priced = pricedOf(service);
+  if (priced === null) return { from: 0, to: 0 };
+  const range = CatalogPricingSystem.durationRange(priced);
   return { from: range.min, to: range.max };
 }
 
@@ -196,13 +208,30 @@ function toMajor(minor: number): number {
   return minor / 100;
 }
 
+/** A brand the view model's figure already satisfies (catalogue terms, mapped). */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: `catalog-to-vm` maps the catalogue's own terms — a
+  // non-negative price and a positive duration.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
 function termsOf(terms: ServiceTermsVm): ServiceTerms {
-  return ServiceTerms.unpadded(toMinor(terms.price), 'EUR', terms.minutes);
+  return ServiceTerms.unpadded(
+    sure(PriceCents.of(toMinor(terms.price)), 'a price'),
+    Currency.EUR,
+    sure(DurationMinutes.of(terms.minutes), 'a duration'),
+  );
 }
 
 function termsVmOf(terms: ServiceTerms): ServiceTermsVm {
   return {
-    price: toMajor(terms.priceMinorUnits),
+    price: toMajor(terms.priceCents),
     minutes: terms.durationMinutes,
   };
 }
@@ -211,29 +240,29 @@ function termsVmOf(terms: ServiceTerms): ServiceTermsVm {
  * The view model's offerings → the terms matrix the pricing system reads:
  * each `byVariant` entry an override, every variant it names declared. The
  * view model always carries an offering (a service nobody performs stands
- * in as one anonymous offering), whose base doubles as the base terms.
+ * in as one anonymous offering), whose base doubles as the service's own
+ * terms; `null` for one that carries none — it has no terms to read.
  */
-function pricedOf(service: ServiceVm): CatalogPriced {
+function pricedOf(service: ServiceVm): CatalogPriced | null {
+  const first = service.offerings[0];
+  if (first === undefined) return null;
   const variantIds = new Set(service.variants.map((variant) => variant.id));
   for (const offering of service.offerings) {
     for (const id of Object.keys(offering.byVariant ?? {})) variantIds.add(id);
   }
-  const first = service.offerings[0];
   return {
-    baseTerms: first
-      ? termsOf(first.base)
-      : ServiceTerms.unpadded(Number.POSITIVE_INFINITY, 'EUR', 0),
+    ...termsOf(first.base),
     variants: [...variantIds].map((id) => ({
-      id: ServiceVariantId.of(id),
+      variantId: ServiceVariantId.of(id),
       name: { bg: id, en: id },
     })),
     offerings: service.offerings.map((offering) => ({
       barberId: BarberId.of(offering.barberId),
-      base: termsOf(offering.base),
+      ...termsOf(offering.base),
       overrides: Object.entries(offering.byVariant ?? {}).map(
         ([variantId, terms]) => ({
           variantId: ServiceVariantId.of(variantId),
-          terms: termsOf(terms),
+          ...termsOf(terms),
         }),
       ),
     })),

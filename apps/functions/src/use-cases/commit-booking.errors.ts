@@ -1,4 +1,5 @@
 import { DomainError } from '@creativo/domain/kernel';
+import type { TimeError } from '@creativo/ecs-core';
 
 /**
  * Every way a commit can be refused, as codes the client maps to copy.
@@ -148,6 +149,31 @@ export class CommitBookingInvariantError extends DomainError {
   }
 }
 
+/**
+ * A seat's wall-clock start inside the shop's spring-forward gap — a time
+ * that is never on the shop's clock (Law 7.3, locked 2026-10-10: refused,
+ * never shifted forward as the legacy Luxon reader did). Only a start sent
+ * WITHOUT an offset can name one; it is read with the location's zone at
+ * the ingestion boundary (`ZonedTimeSystem.parseIsoIn`). It leaves as the
+ * edge's `TimeErrorCode` rule spells `DST_GAP_INVALID_TIME` —
+ * `time.nonexistent_local_time`, `invalid-argument` — with the params the
+ * client's copy of that code words it by: the refused wall clock
+ * (`rawValue`, `2026-03-29T03:30`) and the zone.
+ */
+export class CommitBookingDstGapError extends DomainError {
+  readonly code = 'time.nonexistent_local_time' as const;
+
+  constructor(readonly timeError: TimeError.DstGap) {
+    const rawValue = `${timeError.localDate}T${pad2(Math.floor(timeError.minute / 60))}:${pad2(timeError.minute % 60)}`;
+    super(`${rawValue} does not exist in ${timeError.timeZone}`, {
+      rawValue,
+      zone: timeError.timeZone,
+    });
+  }
+}
+
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
 export class CommitBookingStoreError extends DomainError {
   readonly code = 'booking.commit.store_failed' as const;
 
@@ -168,4 +194,5 @@ export type CommitBookingError =
   | CommitBookingBeyondHorizonError
   | CommitBookingPartyTooLargeError
   | CommitBookingInvariantError
+  | CommitBookingDstGapError
   | CommitBookingStoreError;

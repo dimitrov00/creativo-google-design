@@ -1,5 +1,9 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { CancellationPolicySystem } from '@creativo/ecs-core';
+import {
+  CancellationPolicySystem,
+  UtcEpochMs,
+  defect,
+} from '@creativo/ecs-core';
 import { InvalidCancellationWindowError } from './cancellation-window.errors';
 
 /*
@@ -9,7 +13,21 @@ import { InvalidCancellationWindowError } from './cancellation-window.errors';
  * `CancellationPolicySystem`. This class keeps the legacy nominal value its
  * callers hold (`BookingPolicy.cancellationWindow`, the seat stamp) and only
  * converts.
+ *
+ * The legacy deadline takes any number of milliseconds — the property specs
+ * draw starts across `Date`'s whole range, far past the years `UtcEpochMs`
+ * holds — so the system's formula is read as an OFFSET from the epoch (an
+ * instant every window reaches) and laid onto the legacy start. The
+ * arithmetic is the system's, the value bit-for-bit the legacy one.
  */
+
+/** The epoch as the brand — the anchor the window's offset is drawn from. */
+function epoch(): UtcEpochMs {
+  const zero = UtcEpochMs.of(0);
+  // Unreachable: the epoch is inside every instant range.
+  if (!zero.ok) defect('unreachable: the epoch');
+  return zero.value;
+}
 
 /**
  * The longest window the type holds: 2,400,000,000 hours, exactly the time
@@ -50,16 +68,18 @@ export class CancellationWindow {
 
   /** The last instant a cancellation is still free — the start minus the window. */
   deadlineMs(appointmentStartMs: number): number {
-    return CancellationPolicySystem.deadlineMs(this._hours, appointmentStartMs);
+    // `start − hours × 1 h`: the system's deadline for a visit AT the epoch
+    // is exactly that offset.
+    const offsetMs = CancellationPolicySystem.deadlineUtcMs(
+      this._hours,
+      epoch(),
+    );
+    return appointmentStartMs + offsetMs;
   }
 
   /** Free at `atMs`: at the deadline itself still is, a millisecond past is not. */
   allowsFreeCancelAt(appointmentStartMs: number, atMs: number): boolean {
-    return CancellationPolicySystem.allowsFreeCancelAt(
-      this._hours,
-      appointmentStartMs,
-      atMs,
-    );
+    return atMs <= this.deadlineMs(appointmentStartMs);
   }
 
   equals(other: CancellationWindow): boolean {

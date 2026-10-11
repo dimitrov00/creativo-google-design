@@ -1,34 +1,45 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
-import { BadgeSubject, type MetricRef } from '../components/gamification.data';
-import type { FamilyScope } from '../components/standing.data';
+import { EarnedVia } from '../components/badge-level.data';
 import {
+  BadgeCategoryKind,
+  BadgeEmblem,
+  BadgeSubjectSlot,
+  Metric,
+  MetricRef,
+  SeasonKind,
+} from '../components/gamification.data';
+import {
+  FamilyScopeFilter,
+  type FamilyScopeFilter as Scope,
+} from '../components/standing.data';
+import type { BadgeCategory } from '../entities/badge-category.entity';
+import type { BadgeProgress } from '../entities/badge-progress.entity';
+import type { BadgeSeries } from '../entities/badge-series.entity';
+import type { Season } from '../entities/season.entity';
+import type { TierDefinition } from '../entities/tier-definition.entity';
+import {
+  AchievementRuleId,
   BadgeCategoryId,
-  type BadgeCategoryEntity,
-} from '../entities/badge-category.entity';
-import type { BadgeProgressEntity } from '../entities/badge-progress.entity';
-import {
-  SeriesId,
-  type BadgeSeriesEntity,
-} from '../entities/badge-series.entity';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { SeasonId, type SeasonEntity } from '../entities/season.entity';
-import { ServiceId } from '../entities/service.entity';
-import {
+  BadgeSeriesId,
+  BarberId,
+  LocationId,
+  SeasonId,
+  ServiceId,
   TierId,
-  type TierDefinitionEntity,
-} from '../entities/tier-definition.entity';
-import { deepFreeze } from '../testing';
+} from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '../testing';
+import { ZonedTimeSystem } from './zoned-time.system';
 import { LoyaltyCatalogSystem } from './loyalty-catalog.system';
 import { StandingSystem } from './standing.system';
 
 /*
  * The cases of libs/domain/engagement/src/lib/loyalty/standing.spec.ts,
  * COPIED (the legacy spec keeps running against `standing.ts`'s shim) and
- * re-targeted: the catalogue is the plain `ValidLoyaltyCatalog` of entities,
- * a client's progress the array of `BadgeProgressEntity` (id = the family),
- * instants epoch ms, and a scope or a day's grouping names the shop's zone.
+ * re-targeted: the catalogue is the flat `ValidLoyaltyCatalog` of entities,
+ * a client's progress the array of `BadgeProgress` (id = the family), each
+ * earned level stamped with its instant AND its Sofia day (T5, derived once
+ * by the boundary here), so a scope or a day's grouping reads no zone.
  * Not here: `levelNumeral` (a template pipe now, §2.8 — the legacy cases
  * stay with it), `redeemProblem`/`bestAffordable`/`nextAffordable`
  * (reward.system.spec.ts) and `tierSteps` (tier.system.spec.ts).
@@ -36,8 +47,7 @@ import { StandingSystem } from './standing.system';
 
 // ── A small catalogue in the seed's image (§4.6), on its today ──────────
 
-const TODAY = DayKey.of('2026-09-28');
-const ZONE = 'Europe/Sofia';
+const TODAY = localDate('2026-09-28');
 
 const text = (bg: string) => ({ bg, en: bg });
 
@@ -59,37 +69,23 @@ interface Family {
   id: string;
   home: keyof typeof CATEGORY_ORDER | { season: string };
   order: number;
-  metric: MetricRef | null;
+  metric: MetricRef;
   targets: readonly (number | null)[];
-  subject?: BadgeSubject;
+  subject?: BadgeSubjectSlot;
   retired?: boolean;
 }
 
-const visits = (where?: Where): MetricRef => ({
-  metric: 'client.visits.completed',
-  window: null,
-  where:
-    where === undefined
-      ? null
-      : {
-          serviceId:
-            where.serviceId === undefined
-              ? null
-              : ServiceId.of(where.serviceId),
-          barberId:
-            where.barberId === undefined ? null : BarberId.of(where.barberId),
-          locationId:
-            where.locationId === undefined
-              ? null
-              : LocationId.of(where.locationId),
-        },
+const visits = (where: Where = {}): MetricRef => ({
+  ...MetricRef.of(Metric.VisitsCompleted),
+  metricScopeServiceId:
+    where.serviceId === undefined ? null : ServiceId.of(where.serviceId),
+  metricScopeBarberId:
+    where.barberId === undefined ? null : BarberId.of(where.barberId),
+  metricScopeLocationId:
+    where.locationId === undefined ? null : LocationId.of(where.locationId),
 });
 
-const metricOf = (metric: MetricRef['metric']): MetricRef => ({
-  metric,
-  window: null,
-  where: null,
-});
+const metricOf = (metric: Metric): MetricRef => MetricRef.of(metric);
 
 const FAMILIES: readonly Family[] = [
   {
@@ -103,14 +99,14 @@ const FAMILIES: readonly Family[] = [
     id: 'series-tenure',
     home: 'cat-milestones',
     order: 2,
-    metric: metricOf('client.tenure.days'),
+    metric: metricOf(Metric.TenureDays),
     targets: [365, 730, 1095],
   },
   {
     id: 'series-self-service',
     home: 'cat-milestones',
     order: 3,
-    metric: metricOf('client.bookings.selfService'),
+    metric: metricOf(Metric.BookingsSelfService),
     targets: [1, 5, 10, 25],
   },
   {
@@ -127,7 +123,7 @@ const FAMILIES: readonly Family[] = [
     order: 7,
     metric: visits({ serviceId: 'svc-fade' }),
     targets: [3, 10, 25, 50],
-    subject: BadgeSubject.service(ServiceId.of('svc-fade')),
+    subject: BadgeSubjectSlot.service(ServiceId.of('svc-fade')),
   },
   {
     id: 'series-svc-beard',
@@ -135,7 +131,7 @@ const FAMILIES: readonly Family[] = [
     order: 8,
     metric: visits({ serviceId: 'svc-beard' }),
     targets: [3, 10, 25],
-    subject: BadgeSubject.service(ServiceId.of('svc-beard')),
+    subject: BadgeSubjectSlot.service(ServiceId.of('svc-beard')),
   },
   {
     id: 'series-barber-ivan',
@@ -143,7 +139,7 @@ const FAMILIES: readonly Family[] = [
     order: 15,
     metric: visits({ barberId: 'ivan' }),
     targets: [1, 5, 10, 25],
-    subject: BadgeSubject.barber(BarberId.of('ivan')),
+    subject: BadgeSubjectSlot.barber(BarberId.of('ivan')),
   },
   {
     id: 'series-shop-center',
@@ -151,27 +147,27 @@ const FAMILIES: readonly Family[] = [
     order: 18,
     metric: visits({ locationId: 'loc-center' }),
     targets: [1, 5, 10, 25],
-    subject: BadgeSubject.location(LocationId.of('loc-center')),
+    subject: BadgeSubjectSlot.location(LocationId.of('loc-center')),
   },
   {
     id: 'series-rhythm',
     home: 'cat-rhythm',
     order: 22,
-    metric: null,
+    metric: MetricRef.none(),
     targets: [3, 6, 12, 18, 24],
   },
   {
     id: 'series-early-bird',
     home: 'cat-special',
     order: 27,
-    metric: metricOf('client.visits.earlyBird'),
+    metric: metricOf(Metric.VisitsEarlyBird),
     targets: [1, 5, 10, 25],
   },
   {
     id: 'series-welcome',
     home: 'cat-special',
     order: 25,
-    metric: null,
+    metric: MetricRef.none(),
     targets: [null],
   },
   {
@@ -204,27 +200,28 @@ const FAMILIES: readonly Family[] = [
   },
 ];
 
-function family(f: Family): BadgeSeriesEntity {
+function family(f: Family): BadgeSeries {
   return {
-    id: SeriesId.of(f.id),
+    id: BadgeSeriesId.of(f.id),
     categoryId: typeof f.home === 'string' ? BadgeCategoryId.of(f.home) : null,
     seasonId: typeof f.home === 'string' ? null : SeasonId.of(f.home.season),
     title: text(f.id),
     requirement: text(f.id),
-    emblem: 'visits',
-    subject: f.subject ?? null,
-    metric: f.metric,
-    art: null,
+    emblem: BadgeEmblem.Visits,
+    ...(f.subject ?? BadgeSubjectSlot.none()),
+    ...f.metric,
+    artPath: null,
     levels: f.targets.map((target, i) => ({
       level: i + 1,
-      ruleId: `${f.id}-${i + 1}`,
+      ruleId: AchievementRuleId.of(`${f.id}-${i + 1}`),
       target,
       requirement: text(String(target)),
       awards: [],
     })),
     repeatable: false,
     order: f.order,
-    retiredAtMs: f.retired ? Date.parse('2026-01-01T00:00:00.000Z') : null,
+    retiredAtUtcMs: f.retired ? utcMs('2026-01-01T00:00:00.000Z') : null,
+    retiredLocalDate: f.retired ? localDate('2026-01-01') : null,
     version: 1,
   };
 }
@@ -236,42 +233,37 @@ const season = (
   announcedAt: string,
   track: string,
   rest: readonly string[],
-): SeasonEntity => ({
+): Season => ({
   id: SeasonId.of(id),
-  kind: 'season',
+  seasonKind: SeasonKind.Season,
   title: text(id),
-  emblem: 'autumn',
-  window: { from: DayKey.of(from), until: DayKey.of(until) },
-  trackSeriesId: SeriesId.of(track),
-  seriesIds: rest.map(SeriesId.of),
-  announcedAtMs: Date.parse(announcedAt),
+  emblem: BadgeEmblem.Autumn,
+  windowFrom: localDate(from),
+  windowUntil: localDate(until),
+  trackSeriesId: BadgeSeriesId.of(track),
+  seriesIds: rest.map(BadgeSeriesId.of),
+  ...stamp(announcedAt),
   version: 1,
 });
 
-const tier = (
-  id: string,
-  rank: number,
-  atLeast: number,
-): TierDefinitionEntity => ({
+const tier = (id: string, rank: number, atLeast: number): TierDefinition => ({
   id: TierId.of(id),
   name: text(id),
   rank,
   benefits: [],
   version: 1,
-  effectiveFromDayKey: DayKey.of('2025-03-01'),
-  qualify: {
-    metric: 'client.visits.completed',
-    atLeast,
-    window: { lastDays: 365 },
-  },
+  effectiveFromLocalDate: localDate('2025-03-01'),
+  qualifyMetric: Metric.VisitsCompleted,
+  qualifyAtLeast: atLeast,
+  qualifyWindowDays: 365,
 });
 
 const catalog = (() => {
   const result = LoyaltyCatalogSystem.validate({
     categories: Object.entries(CATEGORY_ORDER).map(
-      ([id, order]): BadgeCategoryEntity => ({
+      ([id, order]): BadgeCategory => ({
         id: BadgeCategoryId.of(id),
-        kind: 'milestones',
+        badgeCategoryKind: BadgeCategoryKind.Milestones,
         title: text(id),
         order,
       }),
@@ -316,20 +308,44 @@ const catalog = (() => {
   return result.value;
 })();
 
-const at = (iso: string) => Date.parse(iso);
+function at(iso: string): UtcEpochMs {
+  return utcMs(iso);
+}
+
+/** A stamp as the boundary writes it: the instant, and its Sofia day (T5). */
+function stamp(iso: string): {
+  readonly announcedAtUtcMs: UtcEpochMs;
+  readonly announcedLocalDate: ReturnType<typeof localDate>;
+} {
+  const announcedAtUtcMs = at(iso);
+  return {
+    announcedAtUtcMs,
+    announcedLocalDate: ZonedTimeSystem.toLocal(
+      announcedAtUtcMs,
+      FIXTURE_TIME_ZONE,
+    ).localDate,
+  };
+}
 
 function progressOf(
   entries: Record<string, { value: number; earned?: Record<number, string> }>,
-): readonly BadgeProgressEntity[] {
+): readonly BadgeProgress[] {
   return Object.entries(entries).map(([seriesId, p]) => ({
-    id: SeriesId.of(seriesId),
+    id: BadgeSeriesId.of(seriesId),
     value: p.value,
-    earned: Object.entries(p.earned ?? {}).map(([level, earnedAt]) => ({
-      level: Number(level),
-      earnedAtMs: at(earnedAt),
-      via: 'rule' as const,
-      count: 1,
-    })),
+    earned: Object.entries(p.earned ?? {}).map(([level, earnedAt]) => {
+      const earnedAtUtcMs = at(earnedAt);
+      return {
+        level: Number(level),
+        earnedAtUtcMs,
+        earnedLocalDate: ZonedTimeSystem.toLocal(
+          earnedAtUtcMs,
+          FIXTURE_TIME_ZONE,
+        ).localDate,
+        earnedVia: EarnedVia.Rule,
+        count: 1,
+      };
+    }),
   }));
 }
 
@@ -369,62 +385,55 @@ describe('earnedLevelCount', () => {
 });
 
 describe('familiesIn and familyCounts, per scope', () => {
-  const ids = (scope: FamilyScope, progress = georgi) =>
-    StandingSystem.familiesIn(catalog, progress, scope, TODAY, ZONE).map(
-      (s) => s.id,
-    );
-  const familyCounts = (
-    progress: readonly BadgeProgressEntity[],
-    scope: FamilyScope,
-  ) => StandingSystem.familyCounts(catalog, progress, scope, TODAY, ZONE);
+  const ids = (scope: Scope, progress = georgi) =>
+    StandingSystem.familiesIn(catalog, progress, scope, TODAY).map((s) => s.id);
+  const familyCounts = (progress: readonly BadgeProgress[], scope: Scope) =>
+    StandingSystem.familyCounts(catalog, progress, scope, TODAY);
 
   it('a shelf: its families by order, a retired one only where started', () => {
     expect(
-      ids({
-        kind: 'category',
-        categoryId: BadgeCategoryId.of('cat-milestones'),
-      }),
+      ids(FamilyScopeFilter.category(BadgeCategoryId.of('cat-milestones'))),
     ).toEqual(['series-visits', 'series-tenure', 'series-self-service']);
     const started = progressOf({ 'series-old-promo': { value: 1 } });
     expect(
       ids(
-        { kind: 'category', categoryId: BadgeCategoryId.of('cat-milestones') },
+        FamilyScopeFilter.category(BadgeCategoryId.of('cat-milestones')),
         started,
       ),
     ).toContain('series-old-promo');
     expect(
-      familyCounts(georgi, {
-        kind: 'category',
-        categoryId: BadgeCategoryId.of('cat-mastery'),
-      }),
+      familyCounts(
+        georgi,
+        FamilyScopeFilter.category(BadgeCategoryId.of('cat-mastery')),
+      ),
     ).toEqual({ started: 1, earned: 1, total: 2 });
     // Started is not earned: the retired family holds progress, no level.
     expect(
-      familyCounts(started, {
-        kind: 'category',
-        categoryId: BadgeCategoryId.of('cat-milestones'),
-      }),
+      familyCounts(
+        started,
+        FamilyScopeFilter.category(BadgeCategoryId.of('cat-milestones')),
+      ),
     ).toMatchObject({ started: 1, earned: 0 });
   });
 
   it('a season: its own families, never the track', () => {
+    expect(ids(FamilyScopeFilter.season(SeasonId.of('season-autumn')))).toEqual(
+      ['series-autumn-beard'],
+    );
     expect(
-      ids({ kind: 'season', seasonId: SeasonId.of('season-autumn') }),
-    ).toEqual(['series-autumn-beard']);
-    expect(
-      familyCounts(georgi, {
-        kind: 'season',
-        seasonId: SeasonId.of('season-autumn'),
-      }),
+      familyCounts(
+        georgi,
+        FamilyScopeFilter.season(SeasonId.of('season-autumn')),
+      ),
     ).toEqual({ started: 0, earned: 0, total: 1 });
-    expect(
-      ids({ kind: 'season', seasonId: SeasonId.of('season-nope') }),
-    ).toEqual([]);
+    expect(ids(FamilyScopeFilter.season(SeasonId.of('season-nope')))).toEqual(
+      [],
+    );
   });
 
   it('the archive: every family of the windows that ended', () => {
-    expect(ids({ kind: 'archive' })).toEqual(['series-summer-track']);
-    expect(familyCounts(georgi, { kind: 'archive' })).toEqual({
+    expect(ids(FamilyScopeFilter.archive())).toEqual(['series-summer-track']);
+    expect(familyCounts(georgi, FamilyScopeFilter.archive())).toEqual({
       started: 1,
       earned: 1,
       total: 1,
@@ -445,10 +454,10 @@ describe('familiesIn and familyCounts, per scope', () => {
       },
     });
     expect(
-      ids({ kind: 'day', day: DayKey.of('2026-09-04') }, progress),
+      ids(FamilyScopeFilter.day(localDate('2026-09-04')), progress),
     ).toEqual(['series-visits', 'series-svc-fade']);
     expect(
-      familyCounts(progress, { kind: 'day', day: DayKey.of('2026-09-04') }),
+      familyCounts(progress, FamilyScopeFilter.day(localDate('2026-09-04'))),
     ).toEqual({ started: 2, earned: 2, total: 2 });
   });
 });
@@ -456,9 +465,9 @@ describe('familiesIn and familyCounts, per scope', () => {
 // ── «Скоро» ─────────────────────────────────────────────────────────────
 
 describe('closestLevels — the diversity rule', () => {
-  const rail = (progress: readonly BadgeProgressEntity[], limit = 5) =>
+  const rail = (progress: readonly BadgeProgress[], limit = 5) =>
     StandingSystem.closestLevels(catalog, progress, TODAY, limit).map(
-      (c) => `${c.seriesId} ${c.level} ${c.value}/${c.target}`,
+      (c) => `${c.badgeSeriesId} ${c.level} ${c.value}/${c.target}`,
     );
 
   it('keeps the service when one visit would complete five families, and one family per shelf', () => {
@@ -476,7 +485,7 @@ describe('closestLevels — the diversity rule', () => {
 
   it('never proposes tenure, a complete family, a retired one or a window that is not open', () => {
     const seen = StandingSystem.closestLevels(catalog, georgi, TODAY, 50).map(
-      (c) => c.seriesId,
+      (c) => c.badgeSeriesId,
     );
     expect(seen).not.toContain('series-tenure');
     expect(seen).not.toContain('series-rhythm');
@@ -549,25 +558,41 @@ describe('recentLevelsByDay', () => {
   });
 
   it('groups by the Sofia day, newest day first, newest level first', () => {
-    const days = StandingSystem.recentLevelsByDay(progress, 5, ZONE);
-    expect(days.map((d) => d.day)).toEqual(['2026-09-04', '2026-08-10']);
-    expect(days[0]?.levels.map((l) => `${l.seriesId} ${l.level}`)).toEqual([
-      'series-svc-fade 2',
-      'series-visits 3',
-    ]);
+    const days = StandingSystem.recentLevelsByDay(progress, 5);
+    expect(days.map((d) => d.localDate)).toEqual(['2026-09-04', '2026-08-10']);
+    expect(days[0]?.levels.map((l) => `${l.badgeSeriesId} ${l.level}`)).toEqual(
+      ['series-svc-fade 2', 'series-visits 3'],
+    );
   });
 
   it('stops at the limit, counting days', () => {
     expect(
-      StandingSystem.recentLevelsByDay(progress, 1, ZONE).map((d) => d.day),
+      StandingSystem.recentLevelsByDay(progress, 1).map((d) => d.localDate),
     ).toEqual(['2026-09-04']);
-    expect(StandingSystem.recentLevelsByDay([], 3, ZONE)).toEqual([]);
+    expect(StandingSystem.recentLevelsByDay([], 3)).toEqual([]);
   });
 
-  it('places no level in a zone nobody knows', () => {
-    expect(StandingSystem.recentLevelsByDay(progress, 3, 'Not/AZone')).toEqual(
-      [],
-    );
+  it('reads no zone: a level is filed under its stored shop day, whatever its instant', () => {
+    // Today's "a zone nobody knows places nothing": the day is the
+    // boundary's, written beside the instant (T5).
+    const filed: readonly BadgeProgress[] = [
+      {
+        id: BadgeSeriesId.of('series-visits'),
+        value: 24,
+        earned: [
+          {
+            level: 3,
+            earnedAtUtcMs: at('2026-09-03T21:30:00.000Z'),
+            earnedLocalDate: localDate('2026-09-04'),
+            earnedVia: EarnedVia.Rule,
+            count: 1,
+          },
+        ],
+      },
+    ];
+    expect(
+      StandingSystem.recentLevelsByDay(filed, 3).map((d) => d.localDate),
+    ).toEqual(['2026-09-04']);
   });
 });
 
@@ -600,11 +625,10 @@ describe('StandingSystem purity', () => {
       StandingSystem.familiesIn(
         frozenCatalog,
         progress,
-        { kind: 'archive' },
+        FamilyScopeFilter.archive(),
         TODAY,
-        ZONE,
       ),
-      StandingSystem.recentLevelsByDay(progress, 5, ZONE),
+      StandingSystem.recentLevelsByDay(progress, 5),
       StandingSystem.earnedLevelCount(progress),
     ];
     expect(run()).toEqual(run());

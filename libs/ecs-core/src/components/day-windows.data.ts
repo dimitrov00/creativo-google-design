@@ -1,35 +1,36 @@
-import { DayKey } from './day-key.data';
+import { LocalDate } from '../primitives/local-date.primitive';
 import { MinuteRange } from './minute-range.data';
 
 /**
  * One day a client says they are free, and WHEN within it
- * (`day-windows.ts:41`) — persisted verbatim on the waitlist request.
+ * (`day-windows.ts:41`) — persisted verbatim on the waitlist request
+ * (an element of its `flexibleDays`).
  *
  * EMPTY `windows` is "any time that day", never "no time": the common answer
  * is "the 26th works" with nothing further, and the simple case must not pay
  * for the flexible one. "No time on this day" is expressed by not selecting
  * the day at all.
  *
- * Windows are wall-clock minutes of the day (a claim about clock faces that
- * survives a DST change) and always NORMALIZED — sorted, overlapping and
- * abutting spans merged, empties dropped — so a summary can never show two
- * spans that are really one. They become instants only against the zone
- * table's row for `dayKey`, where a span the transition erased is dropped.
+ * Windows are wall-clock minutes of the shop day `localDate` (a claim about
+ * clock faces that survives a DST change — Law 7.3: placement math is
+ * local) and always NORMALIZED — sorted, overlapping and abutting spans
+ * merged, empties dropped — so a summary can never show two spans that are
+ * really one.
  */
 export type DayWindows = {
-  readonly dayKey: DayKey;
+  readonly localDate: LocalDate;
   readonly windows: readonly MinuteRange[];
 };
 
 export const DayWindows = {
   /** A day with its windows, normalized. No windows ⇒ the whole day. */
-  of(dayKey: DayKey, windows: readonly MinuteRange[]): DayWindows {
-    return { dayKey, windows: MinuteRange.normalize(windows) };
+  of(localDate: LocalDate, windows: readonly MinuteRange[]): DayWindows {
+    return { localDate, windows: MinuteRange.normalize(windows) };
   },
 
   /** A day offered whole — what selecting a day means before any narrowing. */
-  wholeDay(dayKey: DayKey): DayWindows {
-    return { dayKey, windows: [] };
+  wholeDay(localDate: LocalDate): DayWindows {
+    return { localDate, windows: [] };
   },
 
   /** No windows ⇒ the person is offering the entire day. */
@@ -39,7 +40,7 @@ export const DayWindows = {
 
   /** Add a span, re-normalizing — the window sheet's only write. */
   withWindow(day: DayWindows, range: MinuteRange): DayWindows {
-    return DayWindows.of(day.dayKey, [...day.windows, range]);
+    return DayWindows.of(day.localDate, [...day.windows, range]);
   },
 
   /** Drop the span at `index`; out of range is a no-op, not a throw. */
@@ -49,16 +50,16 @@ export const DayWindows = {
     for (let i = 0; i < day.windows.length; i++) {
       if (i !== index) kept.push(day.windows[i] as MinuteRange);
     }
-    return { dayKey: day.dayKey, windows: kept };
+    return { localDate: day.localDate, windows: kept };
   },
 
   /** Back to "any time" — the way out of over-specifying. */
   clearWindows(day: DayWindows): DayWindows {
-    return DayWindows.wholeDay(day.dayKey);
+    return DayWindows.wholeDay(day.localDate);
   },
 
   /**
-   * The edge guard for a stored or persisted value: a real day key and an
+   * The edge guard for a stored or persisted value: a real shop day and an
    * array of integer spans inside the day with `start < end`. Normalization
    * is checked by {@link of}, not here — a guard only says "this is the
    * shape", and a caller rebuilding a value runs it through {@link of}.
@@ -66,7 +67,10 @@ export const DayWindows = {
   is(raw: unknown): raw is DayWindows {
     if (raw === null || typeof raw !== 'object') return false;
     const day = raw as Readonly<Record<string, unknown>>;
-    if (!DayKey.isValid(day['dayKey'])) return false;
+    const localDate = day['localDate'];
+    if (typeof localDate !== 'string' || !LocalDate.parse(localDate).ok) {
+      return false;
+    }
     const windows = day['windows'];
     if (!Array.isArray(windows)) return false;
     for (let i = 0; i < windows.length; i++) {

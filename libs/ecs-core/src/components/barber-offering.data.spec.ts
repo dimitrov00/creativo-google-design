@@ -1,49 +1,58 @@
 import { describe, expect, it } from 'vitest';
-import { BarberId } from '../entities/barber.entity';
+import { termsFixture } from '../testing/booking-core.fixtures';
+import { Currency } from '../primitives/currency.primitive';
+import { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
 import {
   BarberOffering,
   type BarberOfferingInput,
 } from './barber-offering.data';
-import {
-  ServiceTerms,
-  ServiceVariantId,
-  type ServiceVariant,
-} from './service-terms.data';
+import type { ServiceTermsInput, ServiceVariant } from './service-terms.data';
 
 const SHORT = ServiceVariantId.of('short');
 const LONG = ServiceVariantId.of('long');
 const VARIANTS: readonly ServiceVariant[] = [
-  { id: SHORT, name: { bg: 'Къса', en: 'Short' } },
-  { id: LONG, name: { bg: 'Дълга', en: 'Long' } },
+  { variantId: SHORT, name: { bg: 'Къса', en: 'Short' } },
+  { variantId: LONG, name: { bg: 'Дълга', en: 'Long' } },
 ];
 
 // The seed's classic cut (tools/seed/catalog.mjs): Ivan prices both lengths,
 // Niko prices only short differently, Stefan has a base only.
 const IVAN: BarberOffering = {
   barberId: BarberId.of('ivan'),
-  base: ServiceTerms.unpadded(1450, 'EUR', 35),
+  ...termsFixture(1450, 35),
   overrides: [
-    { variantId: SHORT, terms: ServiceTerms.unpadded(1450, 'EUR', 35) },
-    { variantId: LONG, terms: ServiceTerms.unpadded(1850, 'EUR', 50) },
+    { variantId: SHORT, ...termsFixture(1450, 35) },
+    { variantId: LONG, ...termsFixture(1850, 50) },
   ],
 };
 const NIKO: BarberOffering = {
   barberId: BarberId.of('niko'),
-  base: ServiceTerms.unpadded(1300, 'EUR', 30),
-  overrides: [
-    { variantId: SHORT, terms: ServiceTerms.unpadded(1300, 'EUR', 30) },
-  ],
+  ...termsFixture(1300, 30),
+  overrides: [{ variantId: SHORT, ...termsFixture(1300, 30) }],
 };
+
+/** Raw authored terms — `{ priceCents, currency, durationMinutes, … }`. */
+function rawTerms(
+  priceCents: number,
+  durationMinutes: number,
+  currency = 'EUR',
+): ServiceTermsInput {
+  return {
+    priceCents,
+    currency,
+    durationMinutes,
+    setupMinutes: 0,
+    cleanupMinutes: 0,
+  };
+}
 
 function input(
   overrides: Partial<BarberOfferingInput> = {},
 ): BarberOfferingInput {
   return {
     barberId: 'ivan',
-    base: ServiceTerms.unpadded(1450, 'EUR', 35),
-    overrides: [
-      { variantId: 'long', terms: ServiceTerms.unpadded(1850, 'EUR', 50) },
-    ],
+    ...rawTerms(1450, 35),
+    overrides: [{ variantId: 'long', ...rawTerms(1850, 50) }],
     ...overrides,
   };
 }
@@ -52,44 +61,38 @@ function input(
 describe('BarberOffering.termsFor', () => {
   it('resolves a variant to that barber’s override', () => {
     const resolved = BarberOffering.termsFor(IVAN, LONG);
-    expect(resolved.priceMinorUnits).toBe(1850);
+    expect(resolved.priceCents).toBe(1850);
     expect(resolved.durationMinutes).toBe(50);
   });
 
   it('falls back to the barber’s base when they don’t price that variant', () => {
-    expect(BarberOffering.termsFor(NIKO, LONG).priceMinorUnits).toBe(1300);
+    expect(BarberOffering.termsFor(NIKO, LONG).priceCents).toBe(1300);
   });
 
-  it('falls back to the base when no variant was chosen', () => {
-    expect(BarberOffering.termsFor(IVAN, null)).toBe(IVAN.base);
+  it('falls back to the base — the offering itself — when no variant was chosen', () => {
+    expect(BarberOffering.termsFor(IVAN, null)).toBe(IVAN);
   });
 });
 
 describe('BarberOffering.allTerms', () => {
   it('lists base first, then every override in order', () => {
-    expect(BarberOffering.allTerms(IVAN).map((t) => t.priceMinorUnits)).toEqual(
-      [1450, 1450, 1850],
-    );
-    expect(BarberOffering.allTerms({ ...NIKO, overrides: [] })).toEqual([
-      NIKO.base,
+    expect(BarberOffering.allTerms(IVAN).map((t) => t.priceCents)).toEqual([
+      1450, 1450, 1850,
     ]);
+    const bare = { ...NIKO, overrides: [] };
+    expect(BarberOffering.allTerms(bare)).toEqual([bare]);
   });
 });
 
 describe('BarberOffering.parse', () => {
   it('accepts a valid offering, brands the ids and normalises the terms', () => {
-    const result = BarberOffering.parse(
-      input({ base: { ...ServiceTerms.unpadded(1450, 'eur', 35) } }),
-      VARIANTS,
-    );
+    const result = BarberOffering.parse(input({ currency: 'eur' }), VARIANTS);
     expect(result).toEqual({
       ok: true,
       value: {
         barberId: 'ivan',
-        base: ServiceTerms.unpadded(1450, 'EUR', 35),
-        overrides: [
-          { variantId: 'long', terms: ServiceTerms.unpadded(1850, 'EUR', 50) },
-        ],
+        ...termsFixture(1450, 35),
+        overrides: [{ variantId: 'long', ...termsFixture(1850, 50) }],
       },
     });
   });
@@ -97,18 +100,14 @@ describe('BarberOffering.parse', () => {
   it('rejects an override naming a variant the service does not offer', () => {
     expect(
       BarberOffering.parse(
-        input({
-          overrides: [
-            { variantId: 'xl', terms: ServiceTerms.unpadded(2000, 'EUR', 60) },
-          ],
-        }),
+        input({ overrides: [{ variantId: 'xl', ...rawTerms(2000, 60) }] }),
         VARIANTS,
       ),
     ).toEqual({
       ok: false,
       error: [
         {
-          code: 'catalog.service.unknown_variant_terms',
+          errorCode: 'CATALOG_SERVICE_UNKNOWN_VARIANT_TERMS',
           barberId: 'ivan',
           variantId: 'xl',
         },
@@ -117,17 +116,14 @@ describe('BarberOffering.parse', () => {
   });
 
   it('rejects a variant priced twice', () => {
-    const long = {
-      variantId: 'long',
-      terms: ServiceTerms.unpadded(1850, 'EUR', 50),
-    };
+    const long = { variantId: 'long', ...rawTerms(1850, 50) };
     expect(
       BarberOffering.parse(input({ overrides: [long, long] }), VARIANTS),
     ).toEqual({
       ok: false,
       error: [
         {
-          code: 'catalog.service.duplicate_variant_terms',
+          errorCode: 'CATALOG_SERVICE_DUPLICATE_VARIANT_TERMS',
           barberId: 'ivan',
           variantId: 'long',
         },
@@ -139,18 +135,22 @@ describe('BarberOffering.parse', () => {
     const result = BarberOffering.parse(
       {
         barberId: ' ',
-        base: ServiceTerms.unpadded(1450, 'EUR', 0),
-        overrides: [
-          { variantId: 'short', terms: ServiceTerms.unpadded(-1, 'EUR', 30) },
-        ],
+        ...rawTerms(1450, 0),
+        overrides: [{ variantId: 'short', ...rawTerms(-1, 30) }],
       },
       VARIANTS,
     );
-    expect(result.ok === false && result.error).toEqual([
-      { code: 'catalog.id.empty', idType: 'BarberId' },
-      { code: 'catalog.service.invalid_duration', rawValue: 0 },
-      { code: 'money.invalid_amount', rawAmount: -1 },
-    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.slice(0, 2)).toEqual([
+        { errorCode: 'CATALOG_ID_EMPTY', idType: 'BarberId' },
+        { errorCode: 'CATALOG_SERVICE_INVALID_DURATION', rawValue: 0 },
+      ]);
+      expect(result.error[2]).toEqual(
+        expect.objectContaining({ rawAmount: -1 }),
+      );
+      expect(result.error).toHaveLength(3);
+    }
   });
 
   it('accepts an offering with no overrides — sparse by construction', () => {
@@ -174,23 +174,26 @@ describe('BarberOffering.parseAll', () => {
   it('rejects the same barber offering twice', () => {
     expect(BarberOffering.parseAll([input(), input()], VARIANTS)).toEqual({
       ok: false,
-      error: [{ code: 'catalog.service.duplicate_offering', barberId: 'ivan' }],
+      error: [
+        { errorCode: 'CATALOG_SERVICE_DUPLICATE_OFFERING', barberId: 'ivan' },
+      ],
     });
   });
 
   it('reports each offering’s own violations', () => {
     const result = BarberOffering.parseAll(
-      [input({ base: ServiceTerms.unpadded(1450, 'EUR', -5) })],
+      [input({ durationMinutes: -5 })],
       VARIANTS,
     );
-    expect(result.ok === false && result.error.map((e) => e.code)).toEqual([
-      'catalog.service.invalid_duration',
-    ]);
+    expect(
+      result.ok === false &&
+        result.error.map((e) => ('errorCode' in e ? e.errorCode : null)),
+    ).toEqual(['CATALOG_SERVICE_INVALID_DURATION']);
   });
 });
 
 describe('BarberOffering.mixedCurrency', () => {
-  const base = ServiceTerms.unpadded(1500, 'EUR', 30);
+  const base = termsFixture(1500, 30);
 
   it('is null when the whole matrix shares the base currency', () => {
     expect(BarberOffering.mixedCurrency(base, [IVAN, NIKO])).toBeNull();
@@ -198,9 +201,9 @@ describe('BarberOffering.mixedCurrency', () => {
   });
 
   it('reports a foreign currency on an offering’s base', () => {
-    const leva = { ...NIKO, base: ServiceTerms.unpadded(2500, 'BGN', 30) };
+    const leva = { ...NIKO, ...termsFixture(2500, 30, 0, 0, Currency.BGN) };
     expect(BarberOffering.mixedCurrency(base, [IVAN, leva])).toEqual({
-      code: 'catalog.service.mixed_currency_terms',
+      errorCode: 'CATALOG_SERVICE_MIXED_CURRENCY_TERMS',
       expected: 'EUR',
       found: 'BGN',
     });
@@ -210,11 +213,11 @@ describe('BarberOffering.mixedCurrency', () => {
     const leva: BarberOffering = {
       ...IVAN,
       overrides: [
-        { variantId: LONG, terms: ServiceTerms.unpadded(3600, 'BGN', 50) },
+        { variantId: LONG, ...termsFixture(3600, 50, 0, 0, Currency.BGN) },
       ],
     };
     expect(BarberOffering.mixedCurrency(base, [leva])).toEqual({
-      code: 'catalog.service.mixed_currency_terms',
+      errorCode: 'CATALOG_SERVICE_MIXED_CURRENCY_TERMS',
       expected: 'EUR',
       found: 'BGN',
     });

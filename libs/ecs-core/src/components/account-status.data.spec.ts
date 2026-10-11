@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { utcMs } from '../testing';
 import { AccountsErrorCode } from './accounts-errors.data';
 import {
-  AccountState,
+  AccountLifecycle,
   AccountStatus,
   BLOCK_REASONS,
   BlockReason,
@@ -10,104 +12,112 @@ import {
 /*
  * The cases of libs/domain/accounts/src/lib/account-status.spec.ts and
  * block-reason.spec.ts, copied (not moved — the class path keeps its own
- * specs until Phase 4) and run against the plain union: instants are epoch
- * ms, and a permanent block carries `untilMs: null` instead of omitting it.
+ * specs until Phase 4) and run against the flat lifecycle slice: instants
+ * are `UtcEpochMs`, and a permanent block carries `blockedUntilUtcMs: null`
+ * instead of omitting it.
  */
 
 /** 2026-07-22T12:00:00 Europe/Sofia (UTC+3) as a literal instant. */
-const NOW = Date.UTC(2026, 6, 22, 9, 0, 0);
-const minutes = (n: number) => n * 60_000;
+const NOW = utcMs('2026-07-22T12:00:00+03:00');
+const minutesFrom = (at: UtcEpochMs, n: number): UtcEpochMs =>
+  UtcEpochMs.plusMs(at, n * 60_000);
 
-describe('AccountStatus', () => {
+describe('AccountLifecycle', () => {
   it('active() is a shared singleton (no reason field)', () => {
-    expect(AccountStatus.active()).toEqual({ kind: 'active' });
-    expect(AccountStatus.active()).toBe(AccountStatus.active());
-    expect(AccountStatus.unblock()).toBe(AccountStatus.active());
+    expect(AccountLifecycle.active()).toEqual({ accountStatus: 'ACTIVE' });
+    expect(AccountLifecycle.active()).toBe(AccountLifecycle.active());
+    expect(AccountLifecycle.unblock()).toBe(AccountLifecycle.active());
   });
 
   it('block() carries the reason and a null until when permanent', () => {
-    const status = AccountStatus.block(BlockReason.TermsViolation, null);
-    expect(status).toEqual({
-      kind: 'blocked',
-      reason: 'terms_violation',
-      untilMs: null,
+    const lifecycle = AccountLifecycle.block(BlockReason.TermsViolation, null);
+    expect(lifecycle).toEqual({
+      accountStatus: 'BLOCKED',
+      blockReason: 'TERMS_VIOLATION',
+      blockedUntilUtcMs: null,
     });
   });
 
   it('block() with an until keeps the expiry', () => {
-    const untilMs = NOW + minutes(60);
-    const status = AccountStatus.block(
+    const untilUtcMs = minutesFrom(NOW, 60);
+    const lifecycle = AccountLifecycle.block(
       BlockReason.ExcessiveFailedAttempts,
-      untilMs,
+      untilUtcMs,
     );
-    expect(status.kind).toBe(AccountState.Blocked);
-    expect(status.untilMs).toBe(untilMs);
+    expect(lifecycle.accountStatus).toBe(AccountStatus.Blocked);
+    expect(lifecycle.blockedUntilUtcMs).toBe(untilUtcMs);
   });
 
   it('isBlockedAt() — active is never blocked', () => {
-    expect(AccountStatus.isBlockedAt(AccountStatus.active(), NOW)).toBe(false);
+    expect(AccountLifecycle.isBlockedAt(AccountLifecycle.active(), NOW)).toBe(
+      false,
+    );
   });
 
   it('isBlockedAt() — a permanent block is always blocked', () => {
     expect(
-      AccountStatus.isBlockedAt(
-        AccountStatus.block(BlockReason.Manual, null),
+      AccountLifecycle.isBlockedAt(
+        AccountLifecycle.block(BlockReason.Manual, null),
         NOW,
       ),
     ).toBe(true);
   });
 
   it('isBlockedAt() — a temporary block auto-clears once until has passed', () => {
-    const future = AccountStatus.block(
+    const future = AccountLifecycle.block(
       BlockReason.FraudSuspect,
-      NOW + minutes(5),
+      minutesFrom(NOW, 5),
     );
-    const past = AccountStatus.block(
+    const past = AccountLifecycle.block(
       BlockReason.FraudSuspect,
-      NOW - minutes(5),
+      minutesFrom(NOW, -5),
     );
-    expect(AccountStatus.isBlockedAt(future, NOW)).toBe(true);
-    expect(AccountStatus.isBlockedAt(past, NOW)).toBe(false);
+    expect(AccountLifecycle.isBlockedAt(future, NOW)).toBe(true);
+    expect(AccountLifecycle.isBlockedAt(past, NOW)).toBe(false);
   });
 
   it('isBlockedAt() — the expiry instant itself is already clear', () => {
-    const status = AccountStatus.block(BlockReason.Manual, NOW);
-    expect(AccountStatus.isBlockedAt(status, NOW - 1)).toBe(true);
-    expect(AccountStatus.isBlockedAt(status, NOW)).toBe(false);
+    const lifecycle = AccountLifecycle.block(BlockReason.Manual, NOW);
+    expect(
+      AccountLifecycle.isBlockedAt(lifecycle, UtcEpochMs.plusMs(NOW, -1)),
+    ).toBe(true);
+    expect(AccountLifecycle.isBlockedAt(lifecycle, NOW)).toBe(false);
   });
 });
 
 describe('BlockReason', () => {
-  it('is v2’s vocabulary, each once', () => {
+  it('is v2’s vocabulary, upper-snaked, each once', () => {
     expect([...BLOCK_REASONS].sort()).toEqual(
       [
-        'excessive_failed_attempts',
-        'fraud_suspect',
-        'manual',
-        'terms_violation',
+        'EXCESSIVE_FAILED_ATTEMPTS',
+        'FRAUD_SUSPECT',
+        'MANUAL',
+        'TERMS_VIOLATION',
       ].sort(),
     );
     expect(new Set(BLOCK_REASONS).size).toBe(BLOCK_REASONS.length);
   });
 
   it('isBlockReason narrows known reasons and rejects strangers', () => {
-    expect(AccountStatus.isBlockReason('manual')).toBe(true);
-    expect(AccountStatus.isBlockReason('fraud_suspect')).toBe(true);
-    expect(AccountStatus.isBlockReason('bogus_reason')).toBe(false);
-    expect(AccountStatus.isBlockReason(7)).toBe(false);
+    expect(AccountLifecycle.isBlockReason('MANUAL')).toBe(true);
+    expect(AccountLifecycle.isBlockReason('FRAUD_SUSPECT')).toBe(true);
+    expect(AccountLifecycle.isBlockReason('BOGUS_REASON')).toBe(false);
+    // The pre-flatten lowercase spelling is a stranger now — shims convert.
+    expect(AccountLifecycle.isBlockReason('manual')).toBe(false);
+    expect(AccountLifecycle.isBlockReason(7)).toBe(false);
   });
 
   it('parseBlockReason accepts a known reason', () => {
-    const result = AccountStatus.parseBlockReason('terms_violation');
-    expect(result).toEqual({ ok: true, value: 'terms_violation' });
+    const result = AccountLifecycle.parseBlockReason('TERMS_VIOLATION');
+    expect(result).toEqual({ ok: true, value: 'TERMS_VIOLATION' });
   });
 
   it('parseBlockReason rejects an unknown reason with the accounts code', () => {
-    const result = AccountStatus.parseBlockReason('made_up');
+    const result = AccountLifecycle.parseBlockReason('made_up');
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toEqual({
-        code: AccountsErrorCode.BlockReasonInvalid,
+        errorCode: AccountsErrorCode.BlockReasonInvalid,
         attempted: 'made_up',
       });
     }

@@ -1,9 +1,16 @@
 import { ShopReach } from '../components/booking-flow.data';
 import type { GeoPoint } from '../components/geo-point.data';
-import type { LocationEntity, LocationId } from '../entities/location.entity';
+import type { ShopLocation } from '../entities/shop-location.entity';
+import type { LocationId } from '../primitives/ids.primitive';
 
-/** What reaching a shop reads of it — a whole `LocationEntity` passes in. */
-export type ReachableShop = Pick<LocationEntity, 'id' | 'phone' | 'geo'>;
+/**
+ * What reaching a shop reads of it — a whole `ShopLocation` passes in (zero
+ * inbound mapping: the phone and the coordinates are flat root fields).
+ */
+export type ReachableShop = Pick<
+  ShopLocation,
+  'id' | 'phoneE164' | 'latitude' | 'longitude'
+>;
 
 /**
  * How a client reaches one shop from a refusal or a visit sheet: the number
@@ -30,13 +37,13 @@ const DIRECTIONS_BASE = 'https://www.google.com/maps/dir/?api=1&destination=';
  */
 export const ShopReachSystem = {
   /** `tel:` for the shop's canonical number. */
-  callHref(shop: ReachableShop): string {
-    return `tel:${shop.phone.e164}`;
+  callHref(shop: Pick<ShopLocation, 'phoneE164'>): string {
+    return `tel:${shop.phoneE164}`;
   },
 
   /** The universal Maps URL — iOS offers Apple Maps, everything else Google Maps. */
   directionsHref(geo: GeoPoint): string {
-    return `${DIRECTIONS_BASE}${geo.lat},${geo.lng}`;
+    return `${DIRECTIONS_BASE}${geo.latitude},${geo.longitude}`;
   },
 
   /**
@@ -62,7 +69,7 @@ export const ShopReachSystem = {
     return {
       callHref,
       directionsHref:
-        shop === null ? null : ShopReachSystem.directionsHref(shop.geo),
+        shop === null ? null : ShopReachSystem.directionsHref(shop),
       reach: ShopReach.forCallHref(callHref),
     };
   },

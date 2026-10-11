@@ -1,12 +1,15 @@
-/** Which part of a typed query leads the lookup — the ONLY source of these strings. */
-export const ClientQueryKind = {
-  Empty: 'empty',
-  Name: 'name',
-  Phone: 'phone',
-  Email: 'email',
+/**
+ * Which part of a typed query leads the lookup — the field
+ * `clientQueryShape` (N15), the ONLY source of these strings.
+ */
+export const ClientQueryShape = {
+  Empty: 'EMPTY',
+  Name: 'NAME',
+  Phone: 'PHONE',
+  Email: 'EMAIL',
 } as const;
-export type ClientQueryKind =
-  (typeof ClientQueryKind)[keyof typeof ClientQueryKind];
+export type ClientQueryShape =
+  (typeof ClientQueryShape)[keyof typeof ClientQueryShape];
 
 /**
  * One omnibox entry, read apart (`visit-editor/client-query.ts:17-50`): the
@@ -16,7 +19,7 @@ export type ClientQueryKind =
 export type ParsedClientQuery = {
   readonly raw: string;
   /** Which part leads: the most selective one present. */
-  readonly kind: ClientQueryKind;
+  readonly clientQueryShape: ClientQueryShape;
   /** The words that are neither a number nor a mail, as typed. */
   readonly name: string;
   /** The same words, lowercased, one per token — what a name is matched by. */
@@ -214,17 +217,17 @@ export const ClientQuerySystem = {
     for (let i = 0; i < words.length; i++) {
       nameTokens.push((words[i] as string).toLocaleLowerCase(NAME_LOCALE));
     }
-    const kind: ClientQueryKind =
+    const clientQueryShape: ClientQueryShape =
       email.length > 0
-        ? ClientQueryKind.Email
+        ? ClientQueryShape.Email
         : digits.length > 0
-          ? ClientQueryKind.Phone
+          ? ClientQueryShape.Phone
           : name.length > 0
-            ? ClientQueryKind.Name
-            : ClientQueryKind.Empty;
+            ? ClientQueryShape.Name
+            : ClientQueryShape.Empty;
     return {
       raw,
-      kind,
+      clientQueryShape,
       name,
       nameTokens,
       phoneTyped,
@@ -327,7 +330,7 @@ export const ClientQuerySystem = {
     parsed: ParsedClientQuery,
     callingCode: string,
   ): readonly RankedClientIndex[] {
-    if (parsed.kind === ClientQueryKind.Empty) {
+    if (parsed.clientQueryShape === ClientQueryShape.Empty) {
       const all: RankedClientIndex[] = [];
       for (let i = 0; i < clients.length; i++) {
         all.push({ index: i, exact: false });
@@ -342,9 +345,9 @@ export const ClientQuerySystem = {
       const email = emailScore(client, parsed);
       const name = nameScore(client, parsed);
       const lead =
-        parsed.kind === ClientQueryKind.Email
+        parsed.clientQueryShape === ClientQueryShape.Email
           ? email
-          : parsed.kind === ClientQueryKind.Phone
+          : parsed.clientQueryShape === ClientQueryShape.Phone
             ? phone
             : name;
       if (lead === 0) continue;

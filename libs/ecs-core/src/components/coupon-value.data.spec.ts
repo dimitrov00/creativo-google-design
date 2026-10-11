@@ -1,24 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { CouponValue, CouponValueKind } from './coupon-value.data';
-import type { Money } from './money.data';
+import { Currency } from '../primitives/currency.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { unwrapOk } from '../testing';
+import { CouponValue, DiscountMethod } from './coupon-value.data';
 
-// The cases of `coupon-value.spec.ts`, on the plain union.
+// The cases of `coupon-value.spec.ts`, on the flat variant slice.
 
-const eur = (minor: number): Money => ({
-  amountMinorUnits: minor,
-  currencyCode: 'EUR',
-});
-
-function must<T>(r: { ok: true; value: T } | { ok: false; error: unknown }): T {
-  if (!r.ok) throw new Error(JSON.stringify(r.error));
-  return r.value;
-}
+const cents = (minor: number): PriceCents => unwrapOk(PriceCents.signed(minor));
 
 describe('CouponValue.percentOff', () => {
   it.each([0, 15, 50, 100])('accepts %s %', (percent) => {
     expect(CouponValue.percentOff(percent)).toEqual({
       ok: true,
-      value: { kind: 'percent_off', percent },
+      value: { discountMethod: 'PERCENT_OFF', discountPercent: percent },
     });
   });
 
@@ -28,7 +22,7 @@ describe('CouponValue.percentOff', () => {
       expect(CouponValue.percentOff(percent)).toEqual({
         ok: false,
         error: {
-          code: 'engagement.coupon_value.invalid_percentage',
+          errorCode: 'ENGAGEMENT_COUPON_VALUE_INVALID_PERCENTAGE',
           attempted: percent,
         },
       });
@@ -37,24 +31,25 @@ describe('CouponValue.percentOff', () => {
 });
 
 describe('CouponValue.fixedAmount', () => {
-  it('accepts a positive amount, nested as Money', () => {
-    expect(CouponValue.fixedAmount(eur(1000))).toEqual({
+  it('accepts a positive amount, flat beside its own currency', () => {
+    expect(CouponValue.fixedAmount(cents(1000), Currency.EUR)).toEqual({
       ok: true,
       value: {
-        kind: 'fixed_amount',
-        amount: { amountMinorUnits: 1000, currencyCode: 'EUR' },
+        discountMethod: 'FIXED_AMOUNT',
+        discountAmountCents: 1000,
+        discountCurrency: 'EUR',
       },
     });
   });
 
   it.each([0, -500])(
-    'rejects %s minor units: a zero-value coupon is no discount',
+    'rejects %s cents: a zero-value coupon is no discount',
     (minor) => {
-      expect(CouponValue.fixedAmount(eur(minor))).toEqual({
+      expect(CouponValue.fixedAmount(cents(minor), Currency.EUR)).toEqual({
         ok: false,
         error: {
-          code: 'engagement.coupon_value.negative_amount',
-          attemptedMinorUnits: minor,
+          errorCode: 'ENGAGEMENT_COUPON_VALUE_NEGATIVE_AMOUNT',
+          attemptedCents: minor,
         },
       });
     },
@@ -62,32 +57,59 @@ describe('CouponValue.fixedAmount', () => {
 });
 
 describe('CouponValue.freeService', () => {
-  it('is the bare stored marker', () => {
-    expect(CouponValue.freeService()).toEqual({ kind: 'free_service' });
-    expect(Object.values(CouponValueKind)).toEqual([
-      'percent_off',
-      'fixed_amount',
-      'free_service',
+  it('is the bare marker', () => {
+    expect(CouponValue.freeService()).toEqual({
+      discountMethod: 'FREE_SERVICE',
+    });
+    expect(Object.values(DiscountMethod)).toEqual([
+      'PERCENT_OFF',
+      'FIXED_AMOUNT',
+      'FREE_SERVICE',
     ]);
   });
 });
 
-describe('CouponValue.kindRank / magnitude', () => {
-  const fixed = must(CouponValue.fixedAmount(eur(2000)));
-  const percent = must(CouponValue.percentOff(15));
+describe('CouponValue.of', () => {
+  it('copies exactly the variant fields of a value-carrying struct', () => {
+    const carrier = {
+      grantStatus: 'ACTIVE',
+      discountMethod: DiscountMethod.FixedAmount,
+      discountAmountCents: cents(500),
+      discountCurrency: Currency.EUR,
+    } as const;
+    expect(CouponValue.of(carrier)).toEqual({
+      discountMethod: 'FIXED_AMOUNT',
+      discountAmountCents: 500,
+      discountCurrency: 'EUR',
+    });
+    expect(CouponValue.of(unwrapOk(CouponValue.percentOff(15)))).toEqual({
+      discountMethod: 'PERCENT_OFF',
+      discountPercent: 15,
+    });
+    expect(CouponValue.of(CouponValue.freeService())).toBe(
+      CouponValue.freeService(),
+    );
+  });
+});
+
+describe('CouponValue.methodRank / magnitude', () => {
+  const fixed = unwrapOk(CouponValue.fixedAmount(cents(2000), Currency.EUR));
+  const percent = unwrapOk(CouponValue.percentOff(15));
   const free = CouponValue.freeService();
 
   it('ranks fixed before percent before free_service', () => {
-    expect(CouponValue.kindRank(fixed)).toBeLessThan(
-      CouponValue.kindRank(percent),
+    expect(CouponValue.methodRank(fixed)).toBeLessThan(
+      CouponValue.methodRank(percent),
     );
-    expect(CouponValue.kindRank(percent)).toBeLessThan(
-      CouponValue.kindRank(free),
+    expect(CouponValue.methodRank(percent)).toBeLessThan(
+      CouponValue.methodRank(free),
     );
-    expect([fixed, percent, free].map(CouponValue.kindRank)).toEqual([0, 1, 2]);
+    expect([fixed, percent, free].map(CouponValue.methodRank)).toEqual([
+      0, 1, 2,
+    ]);
   });
 
-  it('reads the magnitude as percent or minor units', () => {
+  it('reads the magnitude as percent or cents', () => {
     expect(CouponValue.magnitude(percent)).toBe(15);
     expect(CouponValue.magnitude(fixed)).toBe(2000);
     expect(CouponValue.magnitude(free)).toBe(0);

@@ -1,13 +1,15 @@
+import type { OperationId } from '../primitives/ids.primitive';
+
 /**
- * One staff edit the visit has already applied — the stored
- * `appointments.appliedOperations[]` triple (`applied-operations-document.ts`;
- * the field's single-field indexes are off, `firestore.indexes.json`). A
- * replayed operation id finds its own entry and is a no-op when its digest
- * matches; the ledger keeps only the most recent {@link AppliedOperation.CAP}.
+ * One staff edit the visit has already applied — an element of the stored
+ * `appointments.appliedOperations[]` array (a true 1-to-N list; its
+ * single-field indexes are off, `firestore.indexes.json`). A replayed
+ * operation id finds its own entry and is a no-op when its digest matches;
+ * the ledger keeps only the most recent {@link AppliedOperation.CAP}.
  */
 export type AppliedOperation = {
-  /** The client-minted operation id. */
-  readonly id: string;
+  /** The client-minted operation id (was `id`, N10). */
+  readonly operationId: OperationId;
   /** The revision the operation stamped. */
   readonly revision: number;
   /** The canonical digest of its command batch (`hash(digestBasis)`). */
@@ -18,14 +20,14 @@ export const AppliedOperation = {
   /** The ledger's length cap — the oldest entries fall off first. */
   CAP: 20,
 
-  /** The entry for `id`, or `null`. */
+  /** The entry for `operationId`, or `null`. */
   find(
     ledger: readonly AppliedOperation[],
-    id: string,
+    operationId: OperationId,
   ): AppliedOperation | null {
     for (let i = 0; i < ledger.length; i++) {
       const entry = ledger[i] as AppliedOperation;
-      if (entry.id === id) return entry;
+      if (entry.operationId === operationId) return entry;
     }
     return null;
   },
@@ -42,7 +44,7 @@ export const AppliedOperation = {
     const kept: AppliedOperation[] = [];
     for (let i = 0; i < ledger.length; i++) {
       const known = ledger[i] as AppliedOperation;
-      if (known.id !== entry.id) kept.push(known);
+      if (known.operationId !== entry.operationId) kept.push(known);
     }
     kept.push(entry);
     return kept.length > AppliedOperation.CAP

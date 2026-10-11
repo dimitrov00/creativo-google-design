@@ -7,11 +7,22 @@ import {
   ServiceId,
 } from '@creativo/domain/catalog';
 import {
+  AchievementRuleId,
+  AwardKind,
+  AwardSummary as SystemAward,
+  BadgeCategoryId as SystemCategoryId,
   type BadgeLevel as SystemLevel,
   type BadgeSeriesError as SystemSeriesError,
   type BadgeSeriesShape,
   BadgeSystem,
+  EarnedVia,
   EngagementErrorCode,
+  LocalDate,
+  MedalState as SystemMedalState,
+  SeasonId as SystemSeasonId,
+  UtcEpochMs,
+  defect,
+  type EarnedLevel,
   type Metric as SystemMetric,
 } from '@creativo/ecs-core';
 import { BadgeCategoryId, BadgeSeriesId, SeasonId } from '../ids';
@@ -34,6 +45,7 @@ import {
   BadgeSeriesRepeatableWithSeveralLevelsError,
   BadgeSeriesTargetsNotRisingError,
 } from './badge-series.errors';
+import { sofiaDayOf } from './loyalty-calendar';
 import type { BadgeProgress } from './projections';
 
 /**
@@ -210,28 +222,30 @@ export class BadgeSeries {
    * family has no `next`; a yearly one is complete once earned.
    */
   standing(progress: BadgeProgress | null): SeriesStanding {
+    const series = levelsOf(this);
     const standing = BadgeSystem.standing(
-      levelsOf(this),
+      series,
       progress === null
         ? null
         : {
             value: progress.value,
-            earned: progress.earned.map((earned) => ({
-              level: earned.level,
-              earnedAtMs: earned.earnedAt.getTime(),
-              via: earned.via,
-              count: earned.count,
-            })),
+            earned: progress.earned.map(earnedOf),
           },
     );
-    // The system hands back one of this family's own levels, by reference.
-    return { ...standing, next: standing.next as BadgeLevel | null };
+    return {
+      state: LEGACY_MEDAL_STATE[standing.medalState],
+      highestLevel: standing.highestLevel,
+      // The system hands back one of the levels it was handed, by reference.
+      next: legacyLevelOf(this, series, standing.next),
+      value: standing.value,
+      target: standing.target,
+    };
   }
 
   /** Withdrawn from the catalogue: shown only where a client already started it. */
   isRetired(): boolean {
     return BadgeSystem.isRetired({
-      retiredAtMs: this.retiredAt === null ? null : this.retiredAt.getTime(),
+      retiredAtUtcMs: this.retiredAt === null ? null : utcOf(this.retiredAt),
     });
   }
 
@@ -239,18 +253,13 @@ export class BadgeSeries {
   isCalendarDriven(): boolean {
     return BadgeSystem.isCalendarDriven({
       metric:
-        this.metric === null
-          ? null
-          : {
-              metric: this.metric.metric as SystemMetric,
-              window: null,
-              where: null,
-            },
+        this.metric === null ? null : (this.metric.metric as SystemMetric),
     });
   }
 
   levelAt(level: number): BadgeLevel | null {
-    return BadgeSystem.levelAt(levelsOf(this), level) as BadgeLevel | null;
+    const series = levelsOf(this);
+    return legacyLevelOf(this, series, BadgeSystem.levelAt(series, level));
   }
 }
 
@@ -385,22 +394,57 @@ function metricRefOf(
 
 // ── The bridge: legacy props/class ↔ ecs-core struct (Phase 4 deletes it) ──
 
-/** A level's props as the system reads them: the same plain figures. */
-function levelOfProps(props: BadgeLevelProps): SystemLevel {
-  return props as unknown as SystemLevel;
+/** A legacy award as the system reads it: flat, by `awardKind`. */
+function systemAwardOf(award: AwardSummaryProps | AwardSummary): SystemAward {
+  switch (award.kind) {
+    case 'points':
+      return SystemAward.points(award.points);
+    case 'freeze':
+      return SystemAward.freeze(award.count);
+    case 'perk':
+      return SystemAward.perk(award.perkId, award.forDays);
+    case 'coupon':
+      return SystemAward.coupon({ bg: award.title.bg, en: award.title.en });
+  }
 }
 
-/** The family's levels as the system reads them: the same objects, by reference. */
+/** A level's props as the system reads them: the same figures, the awards flat. */
+function levelOfProps(props: BadgeLevelProps | BadgeLevel): SystemLevel {
+  return {
+    level: props.level,
+    ruleId: AchievementRuleId.of(props.ruleId),
+    target: props.target,
+    requirement: {
+      bg: props.requirement.bg,
+      en: props.requirement.en,
+    },
+    awards: props.awards.map(systemAwardOf),
+  };
+}
+
+/** The family's levels as the system reads them, in the class's order. */
 function levelsOf(series: BadgeSeries): {
   readonly levels: readonly SystemLevel[];
 } {
-  return { levels: series.levels as unknown as readonly SystemLevel[] };
+  return { levels: series.levels.map(levelOfProps) };
+}
+
+/** The class's own level for the one the system handed back (by its place in what it was handed). */
+function legacyLevelOf(
+  series: BadgeSeries,
+  handed: { readonly levels: readonly SystemLevel[] },
+  level: SystemLevel | null,
+): BadgeLevel | null {
+  if (level === null) return null;
+  return series.levels[handed.levels.indexOf(level)] ?? null;
 }
 
 function shapeOf(props: BadgeSeriesProps): BadgeSeriesShape {
   return {
-    categoryId: props.categoryId as BadgeSeriesShape['categoryId'],
-    seasonId: props.seasonId as BadgeSeriesShape['seasonId'],
+    categoryId:
+      props.categoryId === null ? null : SystemCategoryId.of(props.categoryId),
+    seasonId:
+      props.seasonId === null ? null : SystemSeasonId.of(props.seasonId),
     levels: props.levels.map(levelOfProps),
     repeatable: props.repeatable,
   };
@@ -412,7 +456,7 @@ function legacyErrorOf(
   props: BadgeSeriesProps | null,
 ): BadgeSeriesError {
   const levels = props?.levels ?? [];
-  switch (error.code) {
+  switch (error.errorCode) {
     case EngagementErrorCode.BadgeSeriesNoLevels:
       return new BadgeSeriesNoLevelsError();
     case EngagementErrorCode.BadgeSeriesLevelGap:
@@ -430,6 +474,49 @@ function legacyErrorOf(
     case EngagementErrorCode.BadgeSeriesLevelWithoutRule:
       return new BadgeSeriesLevelWithoutRuleError(error.level);
     default:
-      return new BadgeSeriesAwardNotPositiveError(error.level, error.kind);
+      return new BadgeSeriesAwardNotPositiveError(
+        error.level,
+        LEGACY_AWARD_KIND[error.awardKind],
+      );
   }
+}
+
+/** The award kinds as the legacy error names them. */
+const LEGACY_AWARD_KIND: Readonly<Record<AwardKind, AwardSummary['kind']>> = {
+  [AwardKind.Points]: 'points',
+  [AwardKind.Coupon]: 'coupon',
+  [AwardKind.Freeze]: 'freeze',
+  [AwardKind.Perk]: 'perk',
+};
+
+/** A family's standing for one client, in the legacy words. */
+const LEGACY_MEDAL_STATE: Readonly<Record<SystemMedalState, MedalState>> = {
+  [SystemMedalState.NotStarted]: 'notStarted',
+  [SystemMedalState.InProgress]: 'inProgress',
+  [SystemMedalState.Earned]: 'earned',
+};
+
+/** How a level was earned, in the system's words. */
+const EARNED_VIA = {
+  rule: EarnedVia.Rule,
+  manual: EarnedVia.Manual,
+} as const satisfies Record<BadgeProgress['earned'][number]['via'], EarnedVia>;
+
+/** A class instant's epoch ms as the brand — every `Date` the catalogue holds is inside its window. */
+function utcOf(at: Date): UtcEpochMs {
+  const epochMs = at.getTime();
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
+}
+
+/** One earned level as the system reads it: the instant, and its Sofia day beside it (T5). */
+function earnedOf(earned: BadgeProgress['earned'][number]): EarnedLevel {
+  const day = LocalDate.parse(sofiaDayOf(earned.earnedAt));
+  return {
+    level: earned.level,
+    earnedAtUtcMs: utcOf(earned.earnedAt),
+    earnedLocalDate: day.ok ? day.value : defect('a Sofia day is a day'),
+    earnedVia: EARNED_VIA[earned.via],
+    count: earned.count,
+  };
 }

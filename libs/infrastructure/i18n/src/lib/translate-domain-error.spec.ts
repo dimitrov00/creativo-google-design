@@ -65,6 +65,73 @@ describe('translateDomainError', () => {
     ).toBe('„nope“ не е валиден имейл адрес.');
   });
 
+  it('reads an ecs-core struct: errors.<errorCode>, the struct as its params (en)', async () => {
+    await transloco.load('en').toPromise();
+    transloco.setActiveLang('en');
+
+    expect(
+      translateDomainError(transloco, {
+        errorCode: 'DST_GAP_INVALID_TIME',
+        localDate: '2026-03-29',
+        minute: 210,
+        timeZone: 'Europe/Sofia',
+      }),
+    ).toBe(
+      "2026-03-29T03:30 doesn't exist in Europe/Sofia — the clocks jump past it. Pick another time.",
+    );
+    expect(
+      translateDomainError(transloco, {
+        errorCode: 'TIME_INVALID_TIME_ZONE',
+        rawZone: 'Mars/Base',
+      }),
+    ).toBe('"Mars/Base" is not a valid time zone.');
+    expect(
+      translateDomainError(transloco, {
+        errorCode: 'PRIMITIVE_ID_EMPTY',
+        raw: '',
+        brand: 'AppointmentId',
+      }),
+    ).toBe('Invalid value.');
+  });
+
+  it('reads an ecs-core struct in bg, and the dotted key still answers for the legacy class', async () => {
+    await transloco.load('bg').toPromise();
+    transloco.setActiveLang('bg');
+
+    expect(
+      translateDomainError(transloco, {
+        errorCode: 'TIME_INVALID_DATE_TIME',
+        rawValue: 'x',
+        dateTimeInvalidReason: 'UNPARSABLE',
+      }),
+    ).toBe('„x“ не е валидна дата и час.');
+    expect(
+      translateDomainError(transloco, {
+        errorCode: 'DST_GAP_INVALID_TIME',
+        localDate: '2026-03-29',
+        minute: 210,
+        timeZone: 'Europe/Sofia',
+      }),
+    ).toBe(
+      '2026-03-29T03:30 не съществува в Europe/Sofia — часовникът го прескача. Избери друг час.',
+    );
+    expect(
+      translateDomainError(transloco, {
+        code: 'time.invalid_date_time',
+        params: { rawValue: 'x' },
+      }),
+    ).toBe('„x“ не е валидна дата и час.');
+  });
+
+  it('falls back to the raw errorCode for an unknown struct', async () => {
+    await transloco.load('en').toPromise();
+    transloco.setActiveLang('en');
+
+    expect(
+      translateDomainError(transloco, { errorCode: 'NOT_A_REAL_CODE' }),
+    ).toBe('NOT_A_REAL_CODE');
+  });
+
   it('falls back to the raw code for an unknown code', async () => {
     await transloco.load('en').toPromise();
     transloco.setActiveLang('en');

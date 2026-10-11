@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
 import { Points } from '../components/points.data';
-import { CouponId } from '../entities/coupon.entity';
-import {
-  RewardId,
-  type RewardCatalogItemEntity,
-} from '../entities/reward-catalog-item.entity';
-import { deepFreeze } from '../testing';
+import { RewardGrantRule } from '../components/reward-grant.data';
+import { RedeemProblem } from '../components/reward-redemption.data';
+import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
+import { CouponGrantId, CouponId, RewardId } from '../primitives/ids.primitive';
+import { deepFreeze, localDate } from '../testing';
 import {
   RewardSystem,
   type GrantTicketRef,
@@ -26,33 +24,41 @@ import {
  *   of `walletHoldings`' «on the bill» case (→ `RewardSystem.groupGrants`).
  */
 
-const TODAY = DayKey.of('2026-09-28');
+const TODAY = localDate('2026-09-28');
 const text = (bg: string) => ({ bg, en: bg });
 
 const reward = (
   id: string,
   cost: number,
   order: number,
-  over: Partial<RewardCatalogItemEntity> = {},
-): RewardCatalogItemEntity => ({
-  id: RewardId.of(id),
-  name: text(id),
-  cost: Points.of(cost),
-  enabled: true,
-  order,
-  grants: { kind: 'coupon', couponId: CouponId.of(`coupon-${id}`) },
-  available: { from: null, until: null },
-  limits: { perClient: null, total: null },
-  redeemedCount: 0,
-  ...over,
+  over: Partial<RewardCatalogItem> = {},
+): RewardCatalogItem =>
+  ({
+    id: RewardId.of(id),
+    name: text(id),
+    cost: Points.of(cost),
+    enabled: true,
+    order,
+    ...RewardGrantRule.coupon(CouponId.of(`coupon-${id}`)),
+    availableFrom: null,
+    availableUntil: null,
+    perClientLimitCount: null,
+    perClientLimitWindowDays: null,
+    totalLimit: null,
+    redeemedCount: 0,
+    ...over,
+  }) as RewardCatalogItem;
+
+const day = (raw: string) => localDate(raw);
+
+/** At most `count` per client in `windowDays` (today's `limits.perClient`). */
+const perClient = (count: number, windowDays: number) => ({
+  perClientLimitCount: count,
+  perClientLimitWindowDays: windowDays,
 });
 
-const day = (raw: string) => DayKey.of(raw);
-
 describe('RewardSystem.problem (standing.spec.ts `redeemProblem`)', () => {
-  const beard = reward('reward-beard', 120, 1, {
-    limits: { perClient: { count: 1, windowDays: 30 }, total: null },
-  });
+  const beard = reward('reward-beard', 120, 1, perClient(1, 30));
   const ctx: RedeemContext = {
     balance: 358,
     today: TODAY,
@@ -64,29 +70,45 @@ describe('RewardSystem.problem (standing.spec.ts `redeemProblem`)', () => {
     expect(RewardSystem.problem(beard, ctx)).toBeNull();
   });
 
-  it.each<[string, RewardCatalogItemEntity, Partial<RedeemContext>, string]>([
-    ['switched off', { ...beard, enabled: false }, {}, 'disabled'],
+  it.each<[string, RewardCatalogItem, Partial<RedeemContext>, string]>([
+    ['switched off', { ...beard, enabled: false }, {}, RedeemProblem.Disabled],
     [
       'not open yet',
-      { ...beard, available: { from: day('2026-10-01'), until: null } },
+      { ...beard, availableFrom: day('2026-10-01'), availableUntil: null },
       {},
-      'notYetAvailable',
+      RedeemProblem.NotYetAvailable,
     ],
     [
       'over',
-      { ...beard, available: { from: null, until: day('2026-09-27') } },
+      { ...beard, availableFrom: null, availableUntil: day('2026-09-27') },
       {},
-      'ended',
+      RedeemProblem.Ended,
     ],
     [
       'sold out',
-      { ...beard, limits: { perClient: null, total: 5 }, redeemedCount: 5 },
+      {
+        ...beard,
+        perClientLimitCount: null,
+        perClientLimitWindowDays: null,
+        totalLimit: 5,
+        redeemedCount: 5,
+      },
       {},
-      'soldOut',
+      RedeemProblem.SoldOut,
     ],
-    ['held by a pause', beard, { paused: true }, 'paused'],
-    ['beyond the balance', beard, { balance: 119 }, 'insufficientPoints'],
-    ['beyond an owed balance', beard, { balance: -40 }, 'insufficientPoints'],
+    ['held by a pause', beard, { paused: true }, RedeemProblem.Paused],
+    [
+      'beyond the balance',
+      beard,
+      { balance: 119 },
+      RedeemProblem.InsufficientPoints,
+    ],
+    [
+      'beyond an owed balance',
+      beard,
+      { balance: -40 },
+      RedeemProblem.InsufficientPoints,
+    ],
   ])('refuses a reward %s', (_case, item, over, problem) => {
     expect(RewardSystem.problem(item, { ...ctx, ...over })).toBe(problem);
   });
@@ -97,7 +119,7 @@ describe('RewardSystem.problem (standing.spec.ts `redeemProblem`)', () => {
     ];
     expect(
       RewardSystem.problem(beard, { ...ctx, recent: recent('2026-09-01') }),
-    ).toBe('perClientLimit');
+    ).toBe(RedeemProblem.PerClientLimit);
     expect(
       RewardSystem.problem(beard, { ...ctx, recent: recent('2026-08-29') }),
     ).toBeNull();
@@ -152,16 +174,10 @@ describe('RewardSystem.offered (loyalty.presenter.ts `offered`)', () => {
     const rewards = [
       reward('reward-cut', 250, 2),
       reward('reward-off', 100, 4, { enabled: false }),
-      reward('reward-over', 100, 5, {
-        available: { from: null, until: day('2026-09-27') },
-      }),
-      reward('reward-today', 100, 6, {
-        available: { from: null, until: TODAY },
-      }),
+      reward('reward-over', 100, 5, { availableUntil: day('2026-09-27') }),
+      reward('reward-today', 100, 6, { availableUntil: TODAY }),
       // Not open yet is still offered: the tile says when.
-      reward('reward-soon', 100, 7, {
-        available: { from: day('2026-11-01'), until: null },
-      }),
+      reward('reward-soon', 100, 7, { availableFrom: day('2026-11-01') }),
     ];
     expect(RewardSystem.offered(rewards, TODAY).map((r) => r.id)).toEqual([
       'reward-cut',
@@ -217,9 +233,7 @@ describe('RewardSystem.affordable (wallet.presenter.spec.ts `rewardTiles`)', () 
     ).toBeNull();
     expect(
       RewardSystem.affordable(
-        reward('reward-cut', 250, 2, {
-          available: { from: day('2026-11-01'), until: null },
-        }),
+        reward('reward-cut', 250, 2, { availableFrom: day('2026-11-01') }),
         358,
         TODAY,
       ),
@@ -227,7 +241,7 @@ describe('RewardSystem.affordable (wallet.presenter.spec.ts `rewardTiles`)', () 
     expect(
       RewardSystem.affordable(
         reward('reward-product', 400, 3, {
-          available: { from: null, until: day('2026-09-27') },
+          availableUntil: day('2026-09-27'),
         }),
         358,
         TODAY,
@@ -242,7 +256,7 @@ describe('RewardSystem.groupGrants (loyalty.presenter.ts `groupedGrants`)', () =
     groupKey: string,
     expiresOn: string | null,
   ): GrantTicketRef => ({
-    grantId,
+    grantId: CouponGrantId.of(grantId),
     groupKey,
     expiresOn: expiresOn === null ? null : day(expiresOn),
   });
@@ -294,23 +308,25 @@ describe('RewardSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const rewards = deepFreeze([
       reward('reward-product', 400, 3),
-      reward('reward-beard', 120, 1, {
-        limits: { perClient: { count: 1, windowDays: 30 }, total: null },
-      }),
+      reward('reward-beard', 120, 1, perClient(1, 30)),
     ]);
     const grants = deepFreeze([
-      { grantId: 'g2', groupKey: 'k', expiresOn: day('2026-12-01') },
-      { grantId: 'g1', groupKey: 'k', expiresOn: day('2026-11-01') },
+      {
+        grantId: CouponGrantId.of('g2'),
+        groupKey: 'k',
+        expiresOn: day('2026-12-01'),
+      },
+      {
+        grantId: CouponGrantId.of('g1'),
+        groupKey: 'k',
+        expiresOn: day('2026-11-01'),
+      },
     ]);
     const run = () => [
       RewardSystem.bestAffordable(rewards, 358, TODAY),
       RewardSystem.nextAffordable(rewards, 358, TODAY),
       RewardSystem.offered(rewards, TODAY),
-      RewardSystem.affordable(
-        rewards[0] as RewardCatalogItemEntity,
-        358,
-        TODAY,
-      ),
+      RewardSystem.affordable(rewards[0] as RewardCatalogItem, 358, TODAY),
       RewardSystem.groupGrants(grants, []),
     ];
     expect(run()).toEqual(run());

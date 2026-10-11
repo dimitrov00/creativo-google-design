@@ -1,8 +1,16 @@
-import { AuditSystem } from '@creativo/ecs-core';
+import { AuditSystem, SeatId, UtcEpochMs, defect } from '@creativo/ecs-core';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { adminFirestore } from '../firebase-admin';
 import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';
 import { callerActor, callerWorksTheBook } from './caller-roles';
+
+/** The recording's stamp as the ecs-core instant its change key names. */
+function stampOf(recordedAtMs: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(recordedAtMs);
+  // Unreachable: the stamp is the transaction's own `Date.now()`.
+  if (!instant.ok) defect(`unreachable: instant ${recordedAtMs}`);
+  return instant.value;
+}
 
 /**
  * `recordSeatTip` — what the client left, against ONE seat.
@@ -153,7 +161,10 @@ export const recordSeatTip = onCall(async (request) => {
       context: { seatId },
       // The seat AND the instant: two seats of one guest tipped in the same
       // millisecond are still two acts.
-      changeKey: AuditSystem.changeKey.tip(seatId, recordedAtMs),
+      changeKey: AuditSystem.changeKey.tip(
+        SeatId.of(seatId),
+        stampOf(recordedAtMs),
+      ),
     });
   }
 

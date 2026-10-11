@@ -1,9 +1,13 @@
 import {
+  EndMinute,
+  MinuteOfDay,
   SeatId as EcsSeatId,
   type SeatIdPair as EcsSeatIdPair,
+  SeatKeyText,
   type SeatedSpan,
   SeatingRuleSystem,
   StandingSeatPair,
+  defect,
 } from '@creativo/ecs-core';
 import { Interval } from './interval';
 
@@ -38,9 +42,10 @@ export function sitsTwiceAt(
   seated: readonly PersonSlot[],
   candidate: PersonSlot,
 ): boolean {
+  const frame = frameOf([...seated, candidate]);
   return SeatingRuleSystem.sitsTwiceAt(
-    seated.map(toStandingPair),
-    toStandingPair(candidate),
+    seated.map((slot) => toStandingPair(slot, frame)),
+    toStandingPair(candidate, frame),
   );
 }
 
@@ -69,8 +74,11 @@ export class StandingDoubleSeatings {
 
   /** Every pair of `visit`'s seats whose one person sits in both at once. */
   static of(visit: readonly SeatSlot[]): StandingDoubleSeatings {
+    const frame = frameOf(visit);
     return new StandingDoubleSeatings(
-      SeatingRuleSystem.standingOf(visit.map(toSeatedSpan)),
+      SeatingRuleSystem.standingOf(
+        visit.map((slot) => toSeatedSpan(slot, frame)),
+      ),
     );
   }
 
@@ -116,10 +124,11 @@ export class StandingDoubleSeatings {
 
   /** Would `candidate` put its person in a second chair in a way the visit did not ALREADY? */
   seatsTwiceAnew(seated: readonly SeatSlot[], candidate: SeatSlot): boolean {
+    const frame = frameOf([...seated, candidate]);
     return SeatingRuleSystem.seatsTwiceAnew(
       this.pairs,
-      seated.map(toSeatedSpan),
-      toSeatedSpan(candidate),
+      seated.map((slot) => toSeatedSpan(slot, frame)),
+      toSeatedSpan(candidate, frame),
     );
   }
 }
@@ -129,16 +138,54 @@ export type SeatIdPair = readonly [seatId: string, otherSeatId: string];
 
 /* ── Converters between the legacy shapes and the ecs-core structs ──────── */
 
-function toStandingPair(slot: PersonSlot): StandingSeatPair {
+/**
+ * The legacy slots are instants, the rule's spans are wall-clock minutes of
+ * one shop day — and the rule only ever ORDERS their ends (`a.start <
+ * b.end && b.start < a.end`). So the instants one call compares are ranked
+ * (1-based, distinct values in order) and each rank is the minute: any
+ * strictly increasing map answers every comparison exactly as the instants
+ * would, and a call compares a handful of seats, far inside one day's 1440
+ * minutes.
+ */
+type Frame = ReadonlyMap<number, number>;
+
+function frameOf(slots: readonly PersonSlot[]): Frame {
+  const instants = new Set<number>();
+  for (const { slot } of slots) {
+    instants.add(slot.startMs);
+    instants.add(slot.endMs);
+  }
+  const frame = new Map<number, number>();
+  [...instants]
+    .sort((a, b) => a - b)
+    .forEach((instant, index) => frame.set(instant, index + 1));
+  return frame;
+}
+
+function rankOf(frame: Frame, instant: number): number {
+  const rank = frame.get(instant);
+  // Unreachable: the frame is built from these very slots.
+  if (rank === undefined) defect('unreachable: an unranked instant');
+  return rank;
+}
+
+function toStandingPair(slot: PersonSlot, frame: Frame): StandingSeatPair {
+  const start = MinuteOfDay.of(rankOf(frame, slot.slot.startMs));
+  const end = EndMinute.of(rankOf(frame, slot.slot.endMs));
+  // Unreachable below 720 seats in one call: a rank is a minute of the day.
+  if (!start.ok || !end.ok) defect('unreachable: a frame past 24:00');
   return StandingSeatPair.of(
-    slot.personKey,
-    slot.slot.startMs,
-    slot.slot.endMs,
+    SeatKeyText.of(slot.personKey),
+    start.value,
+    end.value,
   );
 }
 
-function toSeatedSpan(slot: SeatSlot): SeatedSpan {
-  return { seatId: EcsSeatId.of(slot.seatId), ...toStandingPair(slot) };
+function toSeatedSpan(slot: SeatSlot, frame: Frame): SeatedSpan {
+  return {
+    seatId: EcsSeatId.of(slot.seatId),
+    ...toStandingPair(slot, frame),
+  };
 }
 
 function fromTuple([seatId, otherSeatId]: SeatIdPair): EcsSeatIdPair {

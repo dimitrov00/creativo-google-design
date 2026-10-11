@@ -1,9 +1,10 @@
 import type { MediaError } from '../components/media-errors.data';
-import type { MediaRef } from '../components/media-ref.data';
 import type { Result } from '../components/result.data';
-import type { AppointmentPhotoId } from '../entities/appointment-photo.entity';
-import type { AppointmentId } from '../entities/appointment.entity';
-import type { UserId } from '../entities/user.entity';
+import type {
+  AppointmentId,
+  AppointmentPhotoId,
+  UserId,
+} from '../primitives/ids.primitive';
 
 /**
  * The web's Cloud Storage ports (blueprint §4.2): avatars, catalogue media
@@ -43,9 +44,13 @@ export type RemoveAvatar = (
   userId: UserId,
 ) => Promise<Result<void, MediaError>>;
 
-/** Every rendition of a catalogue image, narrowest first. */
+/**
+ * Every rendition of a catalogue image, narrowest first. Resolution reads
+ * only the Storage path (flatten-spec §3.8), so a flattened `cover*` /
+ * `avatar*` field set and a `photos[]` element both call it without mapping.
+ */
 export type ResolveMedia = (
-  ref: MediaRef,
+  mediaPath: string,
 ) => Promise<Result<readonly MediaVariant[], MediaError>>;
 
 /**

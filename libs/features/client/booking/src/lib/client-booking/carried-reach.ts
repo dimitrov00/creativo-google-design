@@ -2,12 +2,16 @@ import type { BookingDraftRider } from '@creativo/application/booking';
 import type { Barber, Location, Service } from '@creativo/application/catalog';
 import {
   BarberId,
+  DurationMinutes,
   LocationId,
+  MinuteCount,
+  MinuteDelta,
   type MoveCatalogService,
   type MoveRider,
   MoveSystem,
   ServiceId,
-  type ServiceVariantId,
+  ServiceVariantId,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
@@ -20,15 +24,30 @@ import {
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
+/** A brand built from a stored value its own record already validated. */
+function sure<T>(
+  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
+  what: string,
+): T {
+  return result.ok ? result.value : defect(`unreachable: ${what}`);
+}
+
 function toRiderData(rider: BookingDraftRider): MoveRider {
   return {
     serviceId: ServiceId.of(rider.serviceId),
-    variantId: rider.variantId as ServiceVariantId | null,
+    variantId:
+      rider.variantId === null ? null : ServiceVariantId.of(rider.variantId),
     barberId: BarberId.of(rider.barberId),
-    offsetMinutes: rider.offsetMinutes,
-    durationMinutes: rider.durationMinutes,
-    setupMinutes: rider.setupMinutes,
-    cleanupMinutes: rider.cleanupMinutes,
+    offsetMinutes: sure(
+      MinuteDelta.of(rider.offsetMinutes),
+      'a stored rider distance',
+    ),
+    durationMinutes: sure(
+      DurationMinutes.of(rider.durationMinutes),
+      'a stored rider duration',
+    ),
+    setupMinutes: sure(MinuteCount.of(rider.setupMinutes), 'a setup pad'),
+    cleanupMinutes: sure(MinuteCount.of(rider.cleanupMinutes), 'a cleanup pad'),
   };
 }
 
@@ -36,7 +55,7 @@ function toServiceData(service: Service): MoveCatalogService {
   return {
     id: ServiceId.of(service.id.value),
     variants: service.variants.map((variant) => ({
-      id: variant.id.value as ServiceVariantId,
+      variantId: ServiceVariantId.of(variant.id.value),
     })),
     locationIds: service.locationIds.map((id) => LocationId.of(id.value)),
   };

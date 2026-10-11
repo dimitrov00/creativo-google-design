@@ -9,10 +9,13 @@ import {
   BookingCart as CartData,
   BookingCartSystem,
   type CartLine as LineData,
+  CartLineId as LineKey,
   SchedulingErrorCode,
   type SchedulingError,
+  SeatKeyText,
   ServiceId as ServiceKey,
   ServiceVariantId as VariantKey,
+  defect,
 } from '@creativo/ecs-core';
 import { BarberPref } from './barber-pref';
 import {
@@ -108,7 +111,7 @@ const LEGACY_LINES = new WeakMap<LineData, CartLine>();
 
 function must<T, E>(result: Result<T, E>): T {
   if (result.isFailure()) {
-    throw new Error('unreachable: a cart line id the cart itself checked');
+    defect('unreachable: a cart line id the cart itself checked');
   }
   return result.value;
 }
@@ -147,24 +150,33 @@ function toNewLine(line: NewCartLine): CartData.NewLine {
 
 function toData(props: ReconstituteBookingCartProps): CartData {
   return {
-    seats: props.seats.map((seat) => ({
-      seatKey: seat.seatKey,
-      lines: seat.lines.map((raw): LineData => ({
-        lineId: raw.id,
-        seatKey: seat.seatKey,
-        serviceId: ServiceKey.of(raw.serviceId),
-        variantId: raw.variantId === null ? null : VariantKey.of(raw.variantId),
-        barberId: raw.barberId === null ? null : BarberKey.of(raw.barberId),
-        locationId: null,
-      })),
-    })),
-    nextSequence: props.nextSequence,
+    cartSeats: props.seats.map((seat) => {
+      const seatKey = SeatKeyText.of(seat.seatKey);
+      return {
+        seatKey,
+        lines: seat.lines.map((raw): LineData => ({
+          lineId: LineKey.of(raw.id),
+          seatKey,
+          serviceId: ServiceKey.of(raw.serviceId),
+          variantId:
+            raw.variantId === null ? null : VariantKey.of(raw.variantId),
+          barberId: raw.barberId === null ? null : BarberKey.of(raw.barberId),
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: props.nextSequence,
   };
+}
+
+/** The cart's text key for a legacy seat key. */
+function seatTextOf(key: SeatKey): SeatKeyText {
+  return SeatKeyText.of(seatKeyValue(key));
 }
 
 function lineIn(
   data: CartData,
-  seatKey: string,
+  seatKey: SeatKeyText,
   lineId: string,
 ): LineData | null {
   return (
@@ -174,7 +186,7 @@ function lineIn(
 }
 
 function toLegacyNotFound(error: SchedulingError): CartLineNotFoundError {
-  return error.code === SchedulingErrorCode.CartLineNotFound
+  return error.errorCode === SchedulingErrorCode.CartLineNotFound
     ? new CartLineNotFoundError(error.seatKey, error.lineId)
     : new CartLineNotFoundError('', '');
 }
@@ -207,7 +219,7 @@ export class BookingCart {
   private seats(): ReadonlyMap<string, readonly CartLine[]> {
     if (this.legacy === null) {
       this.legacy = new Map(
-        this.data.seats.map((seat) => [
+        this.data.cartSeats.map((seat) => [
           seat.seatKey,
           seat.lines.map(toLegacyLine),
         ]),
@@ -218,7 +230,7 @@ export class BookingCart {
 
   /** The counter's next value — persisted so a reload cannot reuse an id. */
   get nextLineSequence(): number {
-    return this.data.nextSequence;
+    return this.data.cartNextSequence;
   }
 
   linesFor(key: SeatKey): readonly CartLine[] {
@@ -250,7 +262,7 @@ export class BookingCart {
   }
 
   lineCountFor(key: SeatKey): number {
-    return CartData.linesFor(this.data, seatKeyValue(key)).length;
+    return CartData.linesFor(this.data, seatTextOf(key)).length;
   }
 
   /** Add a line to one seat; REFUSES a service that seat already has. */
@@ -258,7 +270,7 @@ export class BookingCart {
     key: SeatKey,
     line: NewCartLine,
   ): Result<BookingCart, DuplicateServiceForSeatError> {
-    const seatKey = seatKeyValue(key);
+    const seatKey = seatTextOf(key);
     const added = CartData.addLine(this.data, seatKey, toNewLine(line));
     if (!added.ok) {
       return fail(
@@ -269,7 +281,7 @@ export class BookingCart {
     if (fresh !== undefined) {
       LEGACY_LINES.set(fresh, {
         ...line,
-        id: CartLineId.fromSequence(this.data.nextSequence),
+        id: CartLineId.fromSequence(this.data.cartNextSequence),
       });
     }
     return ok(new BookingCart(added.value));
@@ -279,7 +291,7 @@ export class BookingCart {
   hasService(key: SeatKey, serviceId: ServiceId): boolean {
     return CartData.hasService(
       this.data,
-      seatKeyValue(key),
+      seatTextOf(key),
       ServiceKey.of(serviceId.value),
     );
   }
@@ -290,8 +302,8 @@ export class BookingCart {
   ): Result<BookingCart, CartLineNotFoundError> {
     const removed = CartData.removeLine(
       this.data,
-      seatKeyValue(key),
-      lineId.value,
+      seatTextOf(key),
+      LineKey.of(lineId.value),
     );
     return removed.ok
       ? ok(new BookingCart(removed.value))
@@ -310,7 +322,7 @@ export class BookingCart {
         CartData.setVariant(
           data,
           seatKey,
-          lineId.value,
+          LineKey.of(lineId.value),
           variantId === null ? null : VariantKey.of(variantId.value),
         ),
       (line) => ({ ...line, variantId }),
@@ -329,7 +341,7 @@ export class BookingCart {
         CartData.setBarber(
           data,
           seatKey,
-          lineId.value,
+          LineKey.of(lineId.value),
           barberPref.kind === 'specific'
             ? BarberKey.of(barberPref.barberId.value)
             : null,
@@ -340,7 +352,7 @@ export class BookingCart {
 
   /** Forget everything a seat holds — the counter is never touched. */
   dropSeat(key: SeatKey): BookingCart {
-    const dropped = CartData.dropSeat(this.data, seatKeyValue(key));
+    const dropped = CartData.dropSeat(this.data, seatTextOf(key));
     return dropped === this.data ? this : new BookingCart(dropped);
   }
 
@@ -350,11 +362,11 @@ export class BookingCart {
     lineId: CartLineId,
     run: (
       data: CartData,
-      seatKey: string,
+      seatKey: SeatKeyText,
     ) => ReturnType<typeof CartData.setVariant>,
     patch: (line: CartLine) => CartLine,
   ): Result<BookingCart, CartLineNotFoundError> {
-    const seatKey = seatKeyValue(key);
+    const seatKey = seatTextOf(key);
     const before = lineIn(this.data, seatKey, lineId.value);
     const result = run(this.data, seatKey);
     if (!result.ok) return fail(toLegacyNotFound(result.error));

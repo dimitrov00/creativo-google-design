@@ -4,12 +4,20 @@ import {
   COMPLETED,
   NO_SHOW,
   cancelled as cancelledStatus,
+  toEcsBookingStatus,
+  toEcsLifecycle,
 } from './appointment-status';
 import type { CancellationWindow } from './cancellation-window';
 import {
-  BookingStatus as BookingStatusData,
+  AttendanceState,
+  BookingStatus,
+  CancellationReason as CancellationReasonData,
+  CancellationReasonSet,
+  CancelledBy as CancelledByData,
   type SeatOutcome as SeatOutcomeData,
   SeatOutcome as SeatOutcomes,
+  UtcEpochMs,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
@@ -18,33 +26,71 @@ import {
  * party's seats into the root status — are the ECS `SeatOutcome` companion
  * (`reasonOf`, `isResolved`, `outcomeForStatus`, `summarize`). These keep the
  * legacy shapes their callers hold (an `other` reason's note, a
- * `CancellationWindow` stamp, a status without an instant) and only convert.
+ * `CancellationWindow` stamp, a status without an instant, the lower-case
+ * stored tags) and only convert (flatten-spec §8.9).
  */
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
-function toOutcomeData(outcome: SeatOutcome): SeatOutcomeData {
+/** The stored lower-case reason code → the ecs-core SCREAMING code. */
+const LEGACY_CANCELLATION_REASON = {
+  client_changed_plans: CancellationReasonData.ClientChangedPlans,
+  client_unwell: CancellationReasonData.ClientUnwell,
+  staff_barber_absence: CancellationReasonData.StaffBarberAbsence,
+  staff_shop_closure: CancellationReasonData.StaffShopClosure,
+  no_show_converted: CancellationReasonData.NoShowConverted,
+  unspecified: CancellationReasonData.Unspecified,
+  other: CancellationReasonData.Other,
+} as const satisfies Record<CancellationReasonKind, CancellationReasonData>;
+
+/** The inverse: the ecs-core code → the stored lower-case code. */
+function legacyReasonOf(code: CancellationReasonData): CancellationReasonKind {
+  const kinds = Object.keys(
+    LEGACY_CANCELLATION_REASON,
+  ) as CancellationReasonKind[];
+  for (const kind of kinds) {
+    if (LEGACY_CANCELLATION_REASON[kind] === code) return kind;
+  }
+  // Unreachable: the table covers the closed vocabulary.
+  defect(`unreachable: reason ${code}`);
+}
+
+/** The stored side tag → the ecs-core `CancelledBy`. */
+const LEGACY_CANCELLED_BY = {
+  client: CancelledByData.Client,
+  staff: CancelledByData.Staff,
+} as const satisfies Record<'client' | 'staff', CancelledByData>;
+
+/** A stored epoch-ms instant as the ecs-core brand. */
+function instantOf(ms: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(ms);
+  // Unreachable: every instant here is a stored or stamped safe integer.
+  if (!instant.ok) defect(`unreachable: instant ${ms}`);
+  return instant.value;
+}
+
+/** A legacy outcome as the flat ecs-core slice (Phase 4 deletes it). */
+export function toEcsSeatOutcome(outcome: SeatOutcome): SeatOutcomeData {
   switch (outcome.kind) {
     case 'scheduled':
       return SeatOutcomes.scheduled();
     case 'worked':
-      return SeatOutcomes.worked(outcome.atMs);
+      return SeatOutcomes.worked(instantOf(outcome.atMs));
     case 'no_show':
-      return SeatOutcomes.noShow(outcome.atMs);
+      return SeatOutcomes.noShow(instantOf(outcome.atMs));
     case 'cancelled':
       return SeatOutcomes.cancelled(
-        outcome.atMs,
-        outcome.by,
-        outcome.reason.kind,
+        instantOf(outcome.atMs),
+        LEGACY_CANCELLED_BY[outcome.by],
+        LEGACY_CANCELLATION_REASON[outcome.reason.kind],
         outcome.window === null ? null : outcome.window.hours,
       );
   }
 }
 
-function toStatusData(status: AppointmentStatus) {
-  return status.kind === 'cancelled'
-    ? BookingStatusData.cancel(0, status.reason)
-    : { kind: status.kind, atMs: 0 };
+/** A party's reason set as the root string the legacy status stores — lower-case codes, `+`-joined. */
+function legacyReasonSetOf(set: CancellationReasonSet): string {
+  return CancellationReasonSet.codes(set).map(legacyReasonOf).join('+');
 }
 
 /**
@@ -112,13 +158,23 @@ export function cancellationReasonOf(
   code: string,
   note: string,
 ): CancellationReason | null {
-  const parsed = SeatOutcomes.reasonOf(code);
-  if (parsed === null) return null;
+  // The legacy vocabulary is the stored lower-case one: a SCREAMING code is
+  // not a code this API ever accepted.
+  const trimmed = code.trim();
+  if (
+    trimmed.length > 0 &&
+    !Object.hasOwn(LEGACY_CANCELLATION_REASON, trimmed)
+  ) {
+    return null;
+  }
+  const parsedData = SeatOutcomes.reasonOf(code);
+  if (parsedData === null) return null;
+  const parsed = legacyReasonOf(parsedData);
   if (parsed !== 'other') return { kind: parsed };
   // The legacy shape keeps an `other`'s sentence beside the code, and an
   // `other` with nothing written says less than not asking.
-  const trimmed = note.trim();
-  return trimmed.length === 0 ? null : { kind: 'other', note: trimmed };
+  const written = note.trim();
+  return written.length === 0 ? null : { kind: 'other', note: written };
 }
 
 /**
@@ -227,7 +283,7 @@ export function seatCancelled(
 
 /** Anything but `scheduled` — a seat whose story is over. */
 export function isSeatResolved(outcome: SeatOutcome): boolean {
-  return SeatOutcomes.isResolved(toOutcomeData(outcome));
+  return SeatOutcomes.isResolved(toEcsSeatOutcome(outcome));
 }
 
 /**
@@ -268,19 +324,19 @@ export function summarizeSeatOutcomes(
   outcomes: readonly SeatOutcome[],
   current: AppointmentStatus,
 ): AppointmentStatus {
-  const currentData = toStatusData(current);
+  const currentData = toEcsLifecycle(current);
   const summary = SeatOutcomes.summarize(
-    outcomes.map(toOutcomeData),
+    outcomes.map(toEcsSeatOutcome),
     currentData,
-    0,
+    instantOf(0),
   );
   // The root unchanged — still a seat open, or already in the derived state —
   // is the caller's own status, as given.
   if (summary === currentData) return current;
-  switch (summary.kind) {
-    case 'cancelled':
-      return cancelledStatus(summary.reason);
-    case 'completed':
+  switch (summary.bookingStatus) {
+    case BookingStatus.Cancelled:
+      return cancelledStatus(legacyReasonSetOf(summary.cancellationReason));
+    case BookingStatus.Completed:
       return COMPLETED;
     default:
       return NO_SHOW;
@@ -299,21 +355,21 @@ export function outcomeForStatus(
   window: CancellationWindow | null,
 ): SeatOutcome | null {
   const stamp = SeatOutcomes.outcomeForStatus(
-    to,
-    atMs,
-    reason.kind,
+    toEcsBookingStatus(to),
+    instantOf(atMs),
+    LEGACY_CANCELLATION_REASON[reason.kind],
     window === null ? null : window.hours,
   );
   if (stamp === null) return null;
-  switch (stamp.kind) {
-    case 'worked':
-      return seatWorked(stamp.atMs);
-    case 'no_show':
-      return seatNoShow(stamp.atMs);
-    case 'cancelled':
+  switch (stamp.attendanceState) {
+    case AttendanceState.Worked:
+      return seatWorked(stamp.workedAtUtcMs);
+    case AttendanceState.NoShow:
+      return seatNoShow(stamp.noShowAtUtcMs);
+    case AttendanceState.Cancelled:
       // The legacy stamp keeps the reason as given (an `other`'s note) and
       // the window as the value the policy holds.
-      return seatCancelled(stamp.atMs, 'staff', reason, window);
+      return seatCancelled(stamp.cancelledAtUtcMs, 'staff', reason, window);
     default:
       return null;
   }

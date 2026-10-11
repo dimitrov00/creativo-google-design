@@ -1,18 +1,20 @@
-import type { DayKey } from '../components/day-key.data';
 import type { EarnedLevel } from '../components/badge-level.data';
 import {
-  BadgeSubjectKind,
+  BadgeSubject,
   Gamification,
   SeasonPhase,
 } from '../components/gamification.data';
 import {
-  FamilyScopeKind,
+  FamilyScope,
   type ClosestLevel,
   type EarnedDay,
-  type FamilyScope,
+  type FamilyScopeFilter,
 } from '../components/standing.data';
-import type { BadgeProgressEntity } from '../entities/badge-progress.entity';
-import type { BadgeSeriesEntity } from '../entities/badge-series.entity';
+import type { BadgeProgress } from '../entities/badge-progress.entity';
+import type { BadgeSeries } from '../entities/badge-series.entity';
+import type { BadgeSeriesId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { BadgeSystem } from './badge.system';
 import {
   LoyaltyCatalogSystem,
@@ -20,42 +22,39 @@ import {
   type CatalogSeasonRef,
 } from './loyalty-catalog.system';
 import { SeasonSystem } from './season.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * STANDING (client-card-redesign §4.2, `standing.ts:69-426`) — what the card
  * derives from one client's progress against the catalogue: the summary's
  * count, the families a scope page draws, «Скоро» (the diversity rule),
- * «Последни» and «Ново». Numbers, ids and day keys only: the Roman numeral
- * a level is drawn with is a template pipe.
+ * «Последни» and «Ново». Numbers, ids and shop days only: the Roman numeral
+ * a level is drawn with is a template pipe. Zone-blind: an earned level is
+ * filed under its own stored shop day (`earnedLocalDate`, T5).
  *
  * `progress` is the client's progress documents, one per started family
- * (`BadgeProgressEntity`, id = the family's `SeriesId`); a family missing
+ * (`BadgeProgress`, id = the family's `BadgeSeriesId`); a family missing
  * from it is not started. Generic over the catalogue's family rows, which
  * come back as the very rows they were.
  */
 
 /** What a standing reads of a family. */
 export type StandingSeriesRef = Pick<
-  BadgeSeriesEntity,
+  BadgeSeries,
   | 'id'
   | 'categoryId'
   | 'seasonId'
   | 'order'
   | 'levels'
   | 'metric'
-  | 'subject'
-  | 'retiredAtMs'
+  | 'badgeSubject'
+  | 'retiredAtUtcMs'
 >;
 
 /** What a standing reads of a client's progress on one family. */
-export type StandingProgress = Pick<
-  BadgeProgressEntity,
-  'id' | 'value' | 'earned'
->;
+export type StandingProgress = Pick<BadgeProgress, 'id' | 'value' | 'earned'>;
 
 /** The catalogue as a standing reads it: shelves, families, seasons, in display order. */
-export type StandingCatalog<S extends StandingSeriesRef = BadgeSeriesEntity> = {
+export type StandingCatalog<S extends StandingSeriesRef = BadgeSeries> = {
   readonly categories: readonly CatalogCategoryRef[];
   readonly families: readonly S[];
   readonly seasons: readonly CatalogSeasonRef[];
@@ -70,9 +69,9 @@ export type FamilyCounts = {
 
 /** How specific a family's subject is, for the diversity rule's step 3: service › barber › location › none. */
 const SPECIFICITY = {
-  [BadgeSubjectKind.Service]: 3,
-  [BadgeSubjectKind.Barber]: 2,
-  [BadgeSubjectKind.Location]: 1,
+  [BadgeSubject.Service]: 3,
+  [BadgeSubject.Barber]: 2,
+  [BadgeSubject.Location]: 1,
 } as const;
 
 type Candidate<S> = {
@@ -93,14 +92,8 @@ function progressById(
   return byId;
 }
 
-/** The shop day an instant falls on, or `null` where the zone cannot place it. */
-function dayOf(epochMs: number, zone: string): DayKey | null {
-  const clock = ZonedTimeSystem.wallClockOf(epochMs, zone);
-  return clock.ok ? clock.value.dayKey : null;
-}
-
 function specificityOf(series: StandingSeriesRef): number {
-  return series.subject === null ? 0 : SPECIFICITY[series.subject.kind];
+  return series.badgeSubject === null ? 0 : SPECIFICITY[series.badgeSubject];
 }
 
 export const StandingSystem = {
@@ -118,21 +111,20 @@ export const StandingSystem = {
    * stays only where the client started it. A season's grid is its own
    * families (its track is the gauge above the grid); the archive is every
    * family of the windows that have ended; a day, the families with a
-   * level earned on it (on the shop's calendar in `zone`).
+   * level earned on it (its stored shop day).
    */
   familiesIn<S extends StandingSeriesRef>(
     catalog: StandingCatalog<S>,
     progress: readonly StandingProgress[],
-    scope: FamilyScope,
-    today: DayKey,
-    zone: string,
+    scope: FamilyScopeFilter,
+    today: LocalDate,
   ): readonly S[] {
     const byId = progressById(progress);
     const shown = (s: S): boolean =>
       !BadgeSystem.isRetired(s) || byId.has(s.id);
     const out: S[] = [];
-    switch (scope.kind) {
-      case FamilyScopeKind.Category: {
+    switch (scope.familyScope) {
+      case FamilyScope.Category: {
         const shelf = LoyaltyCatalogSystem.seriesIn(catalog, scope.categoryId);
         for (let i = 0; i < shelf.length; i++) {
           const s = shelf[i] as S;
@@ -140,19 +132,19 @@ export const StandingSystem = {
         }
         return out;
       }
-      case FamilyScopeKind.Season: {
+      case FamilyScope.Season: {
         const season = LoyaltyCatalogSystem.season(catalog, scope.seasonId);
         if (season === null) return out;
         for (let i = 0; i < season.seriesIds.length; i++) {
           const s = LoyaltyCatalogSystem.series(
             catalog,
-            season.seriesIds[i] as string,
+            season.seriesIds[i] as BadgeSeriesId,
           );
           if (s !== null && shown(s)) out.push(s);
         }
         return out;
       }
-      case FamilyScopeKind.Archive: {
+      case FamilyScope.Archive: {
         const ended = new Set<string>();
         const seasons = LoyaltyCatalogSystem.seasonsIn(
           catalog,
@@ -177,7 +169,7 @@ export const StandingSystem = {
           if (p === undefined) continue;
           for (let k = 0; k < p.earned.length; k++) {
             const earned = p.earned[k] as EarnedLevel;
-            if (dayOf(earned.earnedAtMs, zone) === scope.day) {
+            if (earned.earnedLocalDate === scope.localDate) {
               out.push(s);
               break;
             }
@@ -196,17 +188,10 @@ export const StandingSystem = {
   familyCounts<S extends StandingSeriesRef>(
     catalog: StandingCatalog<S>,
     progress: readonly StandingProgress[],
-    scope: FamilyScope,
-    today: DayKey,
-    zone: string,
+    scope: FamilyScopeFilter,
+    today: LocalDate,
   ): FamilyCounts {
-    const families = StandingSystem.familiesIn(
-      catalog,
-      progress,
-      scope,
-      today,
-      zone,
-    );
+    const families = StandingSystem.familiesIn(catalog, progress, scope, today);
     const byId = progressById(progress);
     let started = 0;
     let earned = 0;
@@ -240,7 +225,7 @@ export const StandingSystem = {
   closestLevels<S extends StandingSeriesRef>(
     catalog: StandingCatalog<S>,
     progress: readonly StandingProgress[],
-    today: DayKey,
+    today: LocalDate,
     limit: number,
   ): readonly ClosestLevel[] {
     const byId = progressById(progress);
@@ -264,7 +249,7 @@ export const StandingSystem = {
         BadgeSystem.isCalendarDriven(series) ||
         (series.seasonId !== null &&
           (season === null ||
-            SeasonSystem.phaseOn(season.window, today) !== SeasonPhase.Open))
+            SeasonSystem.phaseOn(season, today) !== SeasonPhase.Open))
       ) {
         continue;
       }
@@ -293,7 +278,7 @@ export const StandingSystem = {
         c.value === 0 ||
         c.series.categoryId === null ||
         metric === null ||
-        !Gamification.isPerVisitMetric(metric.metric)
+        !Gamification.isPerVisitMetric(metric)
       ) {
         continue;
       }
@@ -333,7 +318,7 @@ export const StandingSystem = {
       if (shelves.has(shelf)) continue;
       shelves.add(shelf);
       out.push({
-        seriesId: c.series.id,
+        badgeSeriesId: c.series.id,
         level: c.level,
         value: c.value,
         target: c.target,
@@ -343,26 +328,24 @@ export const StandingSystem = {
   },
 
   /**
-   * «Последни»: earned levels grouped by their shop day (in `zone`), newest
-   * day first, the newest level first within a day. A day with several
-   * levels is ONE rail item; `limit` counts days.
+   * «Последни»: earned levels grouped by their stored shop day, newest day
+   * first, the newest level first within a day. A day with several levels
+   * is ONE rail item; `limit` counts days.
    */
   recentLevelsByDay(
     progress: readonly StandingProgress[],
     limit: number,
-    zone: string,
   ): readonly EarnedDay[] {
-    const days = new Map<DayKey, EarnedDay.Level[]>();
+    const days = new Map<LocalDate, EarnedDay.Level[]>();
     for (let i = 0; i < progress.length; i++) {
       const p = progress[i] as StandingProgress;
       for (let k = 0; k < p.earned.length; k++) {
         const earned = p.earned[k] as EarnedLevel;
-        const day = dayOf(earned.earnedAtMs, zone);
-        if (day === null) continue;
+        const day = earned.earnedLocalDate;
         const level = {
-          seriesId: p.id,
+          badgeSeriesId: p.id,
           level: earned.level,
-          earnedAtMs: earned.earnedAtMs,
+          earnedAtUtcMs: earned.earnedAtUtcMs,
         };
         const held = days.get(day);
         if (held === undefined) days.set(day, [level]);
@@ -375,19 +358,27 @@ export const StandingSystem = {
     const out: EarnedDay[] = [];
     const count = Math.min(ordered.length, Math.max(0, limit));
     for (let i = 0; i < count; i++) {
-      const [day, levels] = ordered[i] as [DayKey, EarnedDay.Level[]];
+      const [localDate, levels] = ordered[i] as [LocalDate, EarnedDay.Level[]];
       out.push({
-        day,
+        localDate,
         levels: levels.sort(
-          (a, b) => b.earnedAtMs - a.earnedAtMs || b.level - a.level,
+          (a, b) =>
+            UtcEpochMs.compare(b.earnedAtUtcMs, a.earnedAtUtcMs) ||
+            b.level - a.level,
         ),
       });
     }
     return out;
   },
 
-  /** «Ново»: earned after the previous visit began; before a first visit, everything is new. */
-  isNewSince(earnedAtMs: number, previousVisitAtMs: number | null): boolean {
-    return previousVisitAtMs === null || earnedAtMs > previousVisitAtMs;
+  /** «Ново»: earned after the previous visit began (two stamps ordered, T2); before a first visit, everything is new. */
+  isNewSince(
+    earnedAtUtcMs: UtcEpochMs,
+    previousVisitAtUtcMs: UtcEpochMs | null,
+  ): boolean {
+    return (
+      previousVisitAtUtcMs === null ||
+      UtcEpochMs.compare(earnedAtUtcMs, previousVisitAtUtcMs) > 0
+    );
   },
 } as const;

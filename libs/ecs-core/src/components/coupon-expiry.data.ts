@@ -1,73 +1,87 @@
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { EngagementError } from './engagement-errors.data';
 import { Result } from './result.data';
 
-/** When a grant from a coupon stops being usable, by kind — the stored tags, unchanged. */
-export const CouponExpiryKind = {
-  Never: 'never',
+/**
+ * When a grant from a coupon stops being usable — the field `couponExpiry`,
+ * the ONLY source of these strings. The stored legacy tags are the
+ * lower-case `expiry.kind` values (`never`, `days`, `fixed_date`).
+ */
+export const CouponExpiry = {
+  Never: 'NEVER',
   /** A RELATIVE policy: N days after granting. */
-  Days: 'days',
+  Days: 'DAYS',
   /** An absolute moment. */
-  FixedDate: 'fixed_date',
+  FixedDate: 'FIXED_DATE',
 } as const;
-export type CouponExpiryKind =
-  (typeof CouponExpiryKind)[keyof typeof CouponExpiryKind];
-
-const MS_PER_DAY = 86_400_000;
+export type CouponExpiry = (typeof CouponExpiry)[keyof typeof CouponExpiry];
 
 /**
- * When does a grant from this coupon stop being usable? `days` is relative
- * (N days after granting), `fixed_date` an absolute instant — `coupon.ts:
- * 23-54`, with the declared `atIso` → `atMs` change (§2.6 CouponEntity).
+ * When does a grant from this coupon stop being usable? A flat variant
+ * slice of the `Coupon` archetype (`coupon.ts:23-54`): `DAYS` is relative
+ * (`expiryDays` after granting), `FIXED_DATE` an absolute instant
+ * (`expiresAtUtcMs`).
  */
-export type CouponExpiry =
-  CouponExpiry.Never | CouponExpiry.Days | CouponExpiry.FixedDate;
+export type CouponExpiryRule =
+  CouponExpiryRule.Never | CouponExpiryRule.Days | CouponExpiryRule.FixedDate;
 
-export const CouponExpiry = {
-  never(): CouponExpiry.Never {
-    return { kind: CouponExpiryKind.Never };
+const NEVER: CouponExpiryRule.Never = { couponExpiry: CouponExpiry.Never };
+
+export const CouponExpiryRule = {
+  never(): CouponExpiryRule.Never {
+    return NEVER;
   },
 
   /** The edge guard: a positive whole number of days. */
   days(
     days: number,
-  ): Result<CouponExpiry.Days, EngagementError.CouponExpiryDaysInvalid> {
+  ): Result<CouponExpiryRule.Days, EngagementError.CouponExpiryDaysInvalid> {
     if (!Number.isInteger(days) || days <= 0) {
       return Result.err(EngagementError.couponExpiryDaysInvalid(days));
     }
-    return Result.ok({ kind: CouponExpiryKind.Days, days });
+    return Result.ok({ couponExpiry: CouponExpiry.Days, expiryDays: days });
   },
 
-  fixedDate(atMs: number): CouponExpiry.FixedDate {
-    return { kind: CouponExpiryKind.FixedDate, atMs };
+  fixedDate(atUtcMs: UtcEpochMs): CouponExpiryRule.FixedDate {
+    return { couponExpiry: CouponExpiry.FixedDate, expiresAtUtcMs: atUtcMs };
   },
 
   /**
-   * Whether a grant granted at `grantedAtMs` is still within this expiry at
-   * `nowMs` — both ends inclusive (`isSameOrBefore`). `days` counts whole
-   * 24-hour days of elapsed time from the grant (`plusMinutes(days·24·60)`),
-   * never calendar days, so no zone is involved.
+   * Whether a grant granted at `grantedAtUtcMs` is still within this expiry
+   * at `nowUtcMs` — both ends inclusive. `DAYS` counts whole 24-hour days of
+   * ELAPSED time from the grant, never calendar days, so no zone is involved
+   * (a T2 lifecycle comparison, G-1).
    */
-  isWithin(expiry: CouponExpiry, grantedAtMs: number, nowMs: number): boolean {
-    switch (expiry.kind) {
-      case CouponExpiryKind.Days:
-        return nowMs <= grantedAtMs + expiry.days * MS_PER_DAY;
-      case CouponExpiryKind.FixedDate:
-        return nowMs <= expiry.atMs;
+  isWithin(
+    rule: CouponExpiryRule,
+    grantedAtUtcMs: UtcEpochMs,
+    nowUtcMs: UtcEpochMs,
+  ): boolean {
+    switch (rule.couponExpiry) {
+      case CouponExpiry.Days:
+        return (
+          UtcEpochMs.compare(
+            nowUtcMs,
+            UtcEpochMs.plusDays(grantedAtUtcMs, rule.expiryDays),
+          ) <= 0
+        );
+      case CouponExpiry.FixedDate:
+        return UtcEpochMs.compare(nowUtcMs, rule.expiresAtUtcMs) <= 0;
       default:
         return true;
     }
   },
 } as const;
 
-export namespace CouponExpiry {
-  export type Never = { readonly kind: typeof CouponExpiryKind.Never };
+export namespace CouponExpiryRule {
+  export type Never = { readonly couponExpiry: typeof CouponExpiry.Never };
   export type Days = {
-    readonly kind: typeof CouponExpiryKind.Days;
-    /** A positive whole number — built only through `CouponExpiry.days`. */
-    readonly days: number;
+    readonly couponExpiry: typeof CouponExpiry.Days;
+    /** A positive whole number — built only through `CouponExpiryRule.days`. */
+    readonly expiryDays: number;
   };
   export type FixedDate = {
-    readonly kind: typeof CouponExpiryKind.FixedDate;
-    readonly atMs: number;
+    readonly couponExpiry: typeof CouponExpiry.FixedDate;
+    readonly expiresAtUtcMs: UtcEpochMs;
   };
 }

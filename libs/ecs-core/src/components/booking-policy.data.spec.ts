@@ -1,10 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BookingPolicy } from './booking-policy.data';
-import { DayKey } from './day-key.data';
-import type { SchedulingError } from './scheduling-errors.data';
+import { localDate, utcMs } from '../testing';
+import { duration, minuteCount } from '../testing/booking-core.fixtures';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { BookingPolicy, type BookingPolicyInput } from './booking-policy.data';
+import {
+  type SchedulingError,
+  SchedulingErrorCode,
+} from './scheduling-errors.data';
 
-const VALID: BookingPolicy = {
+const VALID_INPUT: BookingPolicyInput = {
   maxPartySize: 5,
   slotStepMinutes: 15,
   minLeadMinutes: 120,
@@ -14,9 +19,15 @@ const VALID: BookingPolicy = {
   autoConfirm: true,
 };
 
+const VALID: BookingPolicy = {
+  ...VALID_INPUT,
+  slotStepMinutes: duration(15),
+  minLeadMinutes: minuteCount(120),
+};
+
 function fieldsOf(errors: readonly SchedulingError[]): readonly string[] {
   return errors
-    .map((error) => ('field' in error ? error.field : error.code))
+    .map((error) => ('field' in error ? error.field : error.errorCode))
     .sort();
 }
 
@@ -30,7 +41,7 @@ describe('BookingPolicy.DEFAULT', () => {
 describe('BookingPolicy.create', () => {
   it('allows zero lead time and a zero cancellation window', () => {
     const result = BookingPolicy.create({
-      ...VALID,
+      ...VALID_INPUT,
       minLeadMinutes: 0,
       cancellationWindowHours: 0,
     });
@@ -39,7 +50,7 @@ describe('BookingPolicy.create', () => {
 
   it('stores a negative zero as the zero every reader compares against', () => {
     const result = BookingPolicy.create({
-      ...VALID,
+      ...VALID_INPUT,
       minLeadMinutes: -0,
       cancellationWindowHours: -0,
     });
@@ -50,28 +61,32 @@ describe('BookingPolicy.create', () => {
 
   it('rejects a step that does not divide the hour', () => {
     for (const slotStepMinutes of [7, 25, 45]) {
-      expect(BookingPolicy.create({ ...VALID, slotStepMinutes }).ok).toBe(
+      expect(BookingPolicy.create({ ...VALID_INPUT, slotStepMinutes }).ok).toBe(
         false,
       );
     }
     for (const slotStepMinutes of [5, 10, 15, 20, 30, 60]) {
-      expect(BookingPolicy.create({ ...VALID, slotStepMinutes }).ok).toBe(true);
+      expect(BookingPolicy.create({ ...VALID_INPUT, slotStepMinutes }).ok).toBe(
+        true,
+      );
     }
   });
 
   it('rejects non-positive and non-integer values', () => {
-    expect(BookingPolicy.create({ ...VALID, maxPartySize: 0 }).ok).toBe(false);
-    expect(BookingPolicy.create({ ...VALID, horizonMonths: -1 }).ok).toBe(
+    expect(BookingPolicy.create({ ...VALID_INPUT, maxPartySize: 0 }).ok).toBe(
       false,
     );
-    expect(BookingPolicy.create({ ...VALID, slotStepMinutes: 7.5 }).ok).toBe(
-      false,
-    );
-    expect(BookingPolicy.create({ ...VALID, minLeadMinutes: -30 }).ok).toBe(
+    expect(BookingPolicy.create({ ...VALID_INPUT, horizonMonths: -1 }).ok).toBe(
       false,
     );
     expect(
-      BookingPolicy.create({ ...VALID, cancellationWindowHours: 1.5 }).ok,
+      BookingPolicy.create({ ...VALID_INPUT, slotStepMinutes: 7.5 }).ok,
+    ).toBe(false);
+    expect(
+      BookingPolicy.create({ ...VALID_INPUT, minLeadMinutes: -30 }).ok,
+    ).toBe(false);
+    expect(
+      BookingPolicy.create({ ...VALID_INPUT, cancellationWindowHours: 1.5 }).ok,
     ).toBe(false);
   });
 
@@ -96,7 +111,7 @@ describe('BookingPolicy.create', () => {
       'slotStepMinutes',
     ]);
     for (const error of result.error) {
-      expect(error.code).toBe('scheduling.booking_policy.invalid');
+      expect(error.errorCode).toBe(SchedulingErrorCode.BookingPolicyInvalid);
     }
   });
 });
@@ -104,9 +119,9 @@ describe('BookingPolicy.create', () => {
 describe('BookingPolicy.equals — autoConfirm counts (the legacy defect)', () => {
   it('is field-wise over all seven fields', () => {
     expect(BookingPolicy.equals(VALID, { ...VALID })).toBe(true);
-    expect(BookingPolicy.equals(VALID, { ...VALID, slotStepMinutes: 30 })).toBe(
-      false,
-    );
+    expect(
+      BookingPolicy.equals(VALID, { ...VALID, slotStepMinutes: duration(30) }),
+    ).toBe(false);
   });
 
   it('a flipped autoConfirm alone IS a policy change', () => {
@@ -118,8 +133,8 @@ describe('BookingPolicy.equals — autoConfirm counts (the legacy defect)', () =
   it('differs on any single field (property)', () => {
     const changes: readonly BookingPolicy[] = [
       { ...VALID, maxPartySize: VALID.maxPartySize + 1 },
-      { ...VALID, slotStepMinutes: VALID.slotStepMinutes + 1 },
-      { ...VALID, minLeadMinutes: VALID.minLeadMinutes + 1 },
+      { ...VALID, slotStepMinutes: duration(VALID.slotStepMinutes + 1) },
+      { ...VALID, minLeadMinutes: minuteCount(VALID.minLeadMinutes + 1) },
       { ...VALID, horizonMonths: VALID.horizonMonths + 1 },
       { ...VALID, cancellationWindowHours: VALID.cancellationWindowHours + 1 },
       { ...VALID, maxFlexibleDays: VALID.maxFlexibleDays + 1 },
@@ -179,7 +194,7 @@ describe('BookingPolicy — horizon', () => {
     horizonMonths,
   });
   const end = (months: number, today: string): string =>
-    BookingPolicy.horizonEndFrom(withMonths(months), DayKey.of(today));
+    BookingPolicy.horizonEndFrom(withMonths(months), localDate(today));
 
   it('ends on the LAST day of the final month, not a day count later', () => {
     expect(end(2, '2026-08-03')).toBe('2026-10-31');
@@ -204,21 +219,27 @@ describe('BookingPolicy — horizon', () => {
   });
 });
 
-describe('cancellation window', () => {
-  const start = Date.UTC(2026, 7, 10, 10, 0);
+describe('cancellation window (elapsed time on instants — flatten-spec §2.3 T2)', () => {
+  const start = utcMs('2026-08-10T10:00:00.000+00:00');
+  const plusMs = (t: UtcEpochMs, ms: number): UtcEpochMs =>
+    UtcEpochMs.plusMs(t, ms);
 
   it('draws the deadline exactly windowHours before the start', () => {
-    expect(BookingPolicy.cancellationDeadlineMs(24, start)).toBe(
+    expect(BookingPolicy.cancellationDeadlineUtcMs(24, start)).toBe(
       start - 24 * 3_600_000,
     );
   });
 
   it('permits AT the deadline and refuses one millisecond past it', () => {
-    const deadline = BookingPolicy.cancellationDeadlineMs(24, start);
+    const deadline = BookingPolicy.cancellationDeadlineUtcMs(24, start);
     expect(BookingPolicy.mayCancelAt(VALID, start, deadline)).toBe(true);
-    expect(BookingPolicy.mayCancelAt(VALID, start, deadline + 1)).toBe(false);
+    expect(BookingPolicy.mayCancelAt(VALID, start, plusMs(deadline, 1))).toBe(
+      false,
+    );
     expect(BookingPolicy.allowsFreeCancelAt(0, start, start)).toBe(true);
-    expect(BookingPolicy.allowsFreeCancelAt(0, start, start + 1)).toBe(false);
+    expect(BookingPolicy.allowsFreeCancelAt(0, start, plusMs(start, 1))).toBe(
+      false,
+    );
   });
 
   it('accepts exactly the windows the policy could set', () => {
@@ -239,8 +260,8 @@ describe('cancellation window', () => {
     }
   });
 
-  it('keeps the deadline of the longest window an exact Date-representable instant', () => {
-    const deadline = BookingPolicy.cancellationDeadlineMs(
+  it('keeps the deadline of the longest window an exact, in-range instant', () => {
+    const deadline = BookingPolicy.cancellationDeadlineUtcMs(
       BookingPolicy.CANCELLATION_WINDOW_MAX_HOURS,
       start,
     );

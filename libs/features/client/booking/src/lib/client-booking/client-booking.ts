@@ -15,9 +15,12 @@ import {
 import type { Location } from '@creativo/application/catalog';
 import {
   E164,
+  Latitude,
   LocationId as LocationKey,
+  Longitude,
   type ReachableShop,
   ShopReachSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -459,14 +462,21 @@ export class ClientBooking {
   }
 }
 
+/** A brand built from a catalogue value its own class already validated. */
+function sure<T>(
+  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
+  what: string,
+): T {
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
 /** A catalogue shop as `ShopReachSystem` reads it: its id, number and pin. */
 function reachableShopOf(location: Location): ReachableShop {
   return {
     id: LocationKey.of(location.id.value),
-    phone: {
-      e164: E164.of(location.phone.e164),
-      display: location.phone.display,
-    },
-    geo: { lat: location.geo.lat, lng: location.geo.lng },
+    phoneE164: E164.of(location.phone.e164),
+    latitude: sure(Latitude.of(location.geo.lat), 'a catalogue latitude'),
+    longitude: sure(Longitude.of(location.geo.lng), 'a catalogue longitude'),
   };
 }

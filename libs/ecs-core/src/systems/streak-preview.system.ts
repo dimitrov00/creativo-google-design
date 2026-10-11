@@ -1,7 +1,7 @@
-import { DayKey } from '../components/day-key.data';
-import { StreakQualifierKind } from '../components/streak-qualifier.data';
+import { StreakQualifier } from '../components/streak-qualifier.data';
 import type { StreakRule } from '../components/streak-rule.data';
-import { StreakPhaseKind } from '../components/streak-state.data';
+import { StreakPhase } from '../components/streak-state.data';
+import { LocalDate } from '../primitives/local-date.primitive';
 import {
   StreakSystem,
   type StreakFacts,
@@ -25,27 +25,27 @@ import {
 /** Where a person stands under one rule, as the preview counts them. */
 export const StreakStanding = {
   /** The period is open and its due date ahead: on time, close to it, or held by a protection or a pause. */
-  InRhythm: 'inRhythm',
+  InRhythm: 'IN_RHYTHM',
   /** Past the due date, inside the grace: a visit still keeps the run. */
-  InGrace: 'inGrace',
+  InGrace: 'IN_GRACE',
   /** A period was missed and none is open. */
-  Broken: 'broken',
+  Broken: 'BROKEN',
 } as const;
 export type StreakStanding =
   (typeof StreakStanding)[keyof typeof StreakStanding];
 
-/** What the preview answers, by kind. */
-export const StreakPreviewKind = {
-  Estimate: 'estimate',
+/** What the preview answers — the discriminator `streakPreviewOutcome`. */
+export const StreakPreviewOutcome = {
+  Estimate: 'ESTIMATE',
   /** One of the two rules counts by a list, and the facts cannot say what a visit held. */
-  Unavailable: 'unavailable',
+  Unavailable: 'UNAVAILABLE',
 } as const;
-export type StreakPreviewKind =
-  (typeof StreakPreviewKind)[keyof typeof StreakPreviewKind];
+export type StreakPreviewOutcome =
+  (typeof StreakPreviewOutcome)[keyof typeof StreakPreviewOutcome];
 
 /** Why a preview cannot be made. */
 export const StreakPreviewUnavailable = {
-  Qualifier: 'qualifier',
+  Qualifier: 'QUALIFIER',
 } as const;
 export type StreakPreviewUnavailable =
   (typeof StreakPreviewUnavailable)[keyof typeof StreakPreviewUnavailable];
@@ -67,7 +67,7 @@ export type StreakStandingCounts = {
  */
 export type StreakPreview =
   | {
-      readonly kind: typeof StreakPreviewKind.Estimate;
+      readonly streakPreviewOutcome: typeof StreakPreviewOutcome.Estimate;
       /** The people with a visit to judge: each is in exactly one count of a rule that is on. */
       readonly clients: number;
       readonly before: StreakStandingCounts | null;
@@ -76,58 +76,79 @@ export type StreakPreview =
       readonly out: number;
     }
   | {
-      readonly kind: typeof StreakPreviewKind.Unavailable;
+      readonly streakPreviewOutcome: typeof StreakPreviewOutcome.Unavailable;
       readonly reason: StreakPreviewUnavailable;
     };
 
 /** Where a state stands; `null` for no state (the rule is off). */
-function standingOf(kind: StreakPhaseKind | null): StreakStanding | null {
-  if (kind === null) return null;
-  switch (kind) {
-    case StreakPhaseKind.InGrace:
+function standingOf(phase: StreakPhase | null): StreakStanding | null {
+  if (phase === null) return null;
+  switch (phase) {
+    case StreakPhase.InGrace:
       return StreakStanding.InGrace;
-    case StreakPhaseKind.Broken:
+    case StreakPhase.Broken:
       return StreakStanding.Broken;
     default:
       return StreakStanding.InRhythm;
   }
 }
 
+/** A real shop day — a fact may carry a corrupt stored day, which no rule judges. */
+function isDay(raw: string): boolean {
+  return LocalDate.parse(raw).ok;
+}
+
 /** A counted visit on a real day, today or before it: what opens a run under any rule that is on. */
-function hasVisit(facts: StreakFacts, today: DayKey): boolean {
+function hasVisit(facts: StreakFacts, today: LocalDate): boolean {
   for (let i = 0; i < facts.visits.length; i++) {
     const visit = facts.visits[i] as StreakVisitFact;
-    if (visit.counted && DayKey.isValid(visit.day) && visit.day <= today) {
+    if (visit.counted && isDay(visit.localDate) && visit.localDate <= today) {
       return true;
     }
   }
   return false;
 }
 
-function emptyCounts(): { inRhythm: number; inGrace: number; broken: number } {
+type Counts = { inRhythm: number; inGrace: number; broken: number };
+
+function emptyCounts(): Counts {
   return { inRhythm: 0, inGrace: 0, broken: 0 };
+}
+
+/** One more person in a standing's count. */
+function tally(counts: Counts, standing: StreakStanding): void {
+  switch (standing) {
+    case StreakStanding.InGrace:
+      counts.inGrace += 1;
+      return;
+    case StreakStanding.Broken:
+      counts.broken += 1;
+      return;
+    default:
+      counts.inRhythm += 1;
+  }
 }
 
 export const StreakPreviewSystem = {
   /**
    * The estimate of moving from `inForce` to `draft`, over one person's
    * facts each (their visits judged by NO LIST: every worked visit
-   * counts). Unavailable while either rule counts by a list. On a `today`
-   * that is no day nobody is judged. No zone: a phase is read off day
-   * numbers alone.
+   * counts). Unavailable while either rule counts by a list. On no `today`
+   * (`null`: the boundary was handed a day that is no day) nobody is
+   * judged. No zone: a phase is read off day numbers alone.
    */
   estimate(
     inForce: StreakRule,
     draft: StreakRule,
     clients: readonly StreakFacts[],
-    today: DayKey,
+    today: LocalDate | null,
   ): StreakPreview {
     if (
-      inForce.qualifier.kind !== StreakQualifierKind.AnyVisit ||
-      draft.qualifier.kind !== StreakQualifierKind.AnyVisit
+      inForce.streakQualifier !== StreakQualifier.AnyVisit ||
+      draft.streakQualifier !== StreakQualifier.AnyVisit
     ) {
       return {
-        kind: StreakPreviewKind.Unavailable,
+        streakPreviewOutcome: StreakPreviewOutcome.Unavailable,
         reason: StreakPreviewUnavailable.Qualifier,
       };
     }
@@ -136,17 +157,16 @@ export const StreakPreviewSystem = {
     let judged = 0;
     let back = 0;
     let out = 0;
-    const valid = DayKey.isValid(today);
     for (let i = 0; i < clients.length; i++) {
       const facts = clients[i] as StreakFacts;
-      if (!valid || !hasVisit(facts, today)) continue;
+      if (today === null || !hasVisit(facts, today)) continue;
       judged += 1;
       // The phase alone (`StreakSystem.phaseKind`): the same fold as the
       // state, without assembling one per client per rule.
       const was = standingOf(StreakSystem.phaseKind(inForce, facts, today));
       const is = standingOf(StreakSystem.phaseKind(draft, facts, today));
-      if (was !== null) before[was] += 1;
-      if (is !== null) after[is] += 1;
+      if (was !== null) tally(before, was);
+      if (is !== null) tally(after, is);
       // An off rule hands every person a `null`: nobody moved, the rule did.
       if (was === null || is === null) continue;
       if (was !== StreakStanding.InRhythm && is === StreakStanding.InRhythm) {
@@ -157,7 +177,7 @@ export const StreakPreviewSystem = {
       }
     }
     return {
-      kind: StreakPreviewKind.Estimate,
+      streakPreviewOutcome: StreakPreviewOutcome.Estimate,
       clients: judged,
       before: inForce.enabled ? before : null,
       after: draft.enabled ? after : null,

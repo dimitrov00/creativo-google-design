@@ -36,7 +36,8 @@ before the 3b document flips. Until that pass, existing ecs-core shapes
 (nested component maps, `kind` tags, `*Ms` instants, per-entity `zone`
 fields, `ZonedInstant`, raw-number coordinates, `{ code }` errors) stay as
 they are — never convert a file piecemeal; new files follow Laws 6 and 7 from
-the start.
+the start. Every name, shape and staging step of that pass is fixed in
+`docs/architecture/flatten-spec.md`.
 
 ### Law 1 — Components are plain data (`*.data.ts`)
 
@@ -262,7 +263,7 @@ string> = T & { readonly [BrandSymbol]: B };` — nominal per tag, zero
   `eslint.config.mjs` (`scope:*` + `type:*` tags, documented in
   `docs/architecture/module-boundaries.md`). The layering arrows stay: ui
   never sees application/infrastructure; only `libs/infrastructure/**` and
-  `apps/functions/**` may import `firebase/*`; `libphonenumber-js` only inside `libs/ecs-core/src/systems/phone.system.ts` (and the kernel until Phase 4 deletes it). **No Luxon and no dinero.js** — time is native `Intl` inside `zoned-time.system.ts`, money is the plain `{ amountMinorUnits, currencyCode }` struct; both packages leave `package.json` when the kernel is deleted.
+  `apps/functions/**` may import `firebase/*`; `libphonenumber-js` only inside `libs/ecs-core/src/systems/phone.system.ts` (and the kernel until Phase 4 deletes it). **No Luxon and no dinero.js** — time is native `Intl` inside `zoned-time.system.ts`, money is integer `…Cents: PriceCents` beside a `currency: Currency`, with the plain `Money { amountCents: PriceCents; currency: Currency }` struct for arithmetic; both packages leave `package.json` when the kernel is deleted.
 
 ## 4. Decisions and the migration record
 

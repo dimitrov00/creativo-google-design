@@ -1,36 +1,40 @@
 import { describe, expect, it } from 'vitest';
+import { Currency } from '../primitives/currency.primitive';
 import { MoneyError, MoneyErrorCode } from './money-errors.data';
 
 describe('MoneyError', () => {
-  it('builds each struct with its dotted code and i18n params', () => {
+  it('builds each struct with its SCREAMING errorCode and i18n params', () => {
     expect(MoneyError.invalidAmount(-1)).toEqual({
-      code: 'money.invalid_amount',
+      errorCode: 'MONEY_INVALID_AMOUNT',
       rawAmount: -1,
     });
-    expect(MoneyError.currencyMismatch('EUR', 'BGN')).toEqual({
-      code: 'money.currency_mismatch',
+    expect(MoneyError.currencyMismatch(Currency.EUR, Currency.BGN)).toEqual({
+      errorCode: 'MONEY_CURRENCY_MISMATCH',
       leftCurrency: 'EUR',
       rightCurrency: 'BGN',
     });
     expect(MoneyError.unknownCurrency('XXX')).toEqual({
-      code: 'money.unknown_currency',
+      errorCode: 'MONEY_UNKNOWN_CURRENCY',
       rawCode: 'XXX',
     });
     expect(MoneyError.invalidRatio(1, 0)).toEqual({
-      code: 'money.invalid_ratio',
+      errorCode: 'MONEY_INVALID_RATIO',
       numerator: 1,
       denominator: 0,
     });
   });
 
-  it('keeps every code in the money namespace, each once', () => {
+  it('keeps every code under the MONEY_ prefix, each once', () => {
     const codes = Object.values(MoneyErrorCode);
     expect(new Set(codes).size).toBe(codes.length);
-    for (const code of codes) expect(code).toMatch(/^money\.[a-z_]+$/);
+    for (const code of codes) expect(code).toMatch(/^MONEY_[A-Z_]+$/);
   });
 
   it('is() narrows by code', () => {
-    const error: MoneyError = MoneyError.currencyMismatch('EUR', 'BGN');
+    const error: MoneyError = MoneyError.currencyMismatch(
+      Currency.EUR,
+      Currency.BGN,
+    );
     expect(MoneyError.is(error, MoneyErrorCode.CurrencyMismatch)).toBe(true);
     expect(MoneyError.is(error, MoneyErrorCode.InvalidAmount)).toBe(false);
     if (MoneyError.is(error, MoneyErrorCode.CurrencyMismatch)) {

@@ -3,8 +3,8 @@ import { Appointment } from '@creativo/application/booking';
 import {
   CalendarGridSystem,
   type CalendarWeek,
-  DayKey,
-  ZonedTimeSystem,
+  LocalDate,
+  defect,
 } from '@creativo/ecs-core';
 
 export interface CalendarDayCell {
@@ -28,8 +28,9 @@ export interface CalendarMonth {
  * port — never a raw `Date`.
  *
  * Phase 2 shim: the grid is `CalendarGridSystem.monthGrid` in
- * `@creativo/ecs-core` over the anchor zone's day table; this keeps the
- * legacy cells (each with its `ZonedDateTime`) for its callers.
+ * `@creativo/ecs-core`, on the shop's civil days (`LocalDate`, no zone, no
+ * day table — flatten pass, Law 7); this keeps the legacy cells (each with
+ * its `ZonedDateTime`, dated in the anchor's own zone) for its callers.
  */
 export function buildCalendarMonth(
   anchor: ZonedDateTime,
@@ -37,19 +38,17 @@ export function buildCalendarMonth(
   appointments: readonly Appointment[],
 ): CalendarMonth {
   const monthStart = anchor.startOfMonth();
-  const monthKey = dayKeyOf(monthStart);
-  const range = CalendarGridSystem.gridRange(monthKey);
+  const monthKey = localDateOf(monthStart);
   const weeks = CalendarGridSystem.monthGrid(
     monthKey,
-    ZonedTimeSystem.dayTable(anchor.zoneName, range.fromDayKey, range.toDayKey),
     appointments.map((appointment) =>
-      DayKey.of(appointment.timeSlot.calendarDayKey()),
+      parseDay(appointment.timeSlot.calendarDayKey()),
     ),
   );
   return {
     year: monthStart.year,
     month: monthStart.month,
-    weeks: toLegacyWeeks(weeks, monthStart, monthKey, dayKeyOf(today)),
+    weeks: toLegacyWeeks(weeks, monthStart, monthKey, localDateOf(today)),
   };
 }
 
@@ -59,26 +58,33 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
+/** A `YYYY-MM-DD` the legacy calendar produced — a civil date by construction. */
+function parseDay(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  if (!day.ok) defect(`unreachable: not a civil date: ${raw}`);
+  return day.value;
+}
+
 /** Same `YYYY-MM-DD` shape as `TimeSlot.calendarDayKey()`, on the instant's own calendar. */
-function dayKeyOf(date: ZonedDateTime): DayKey {
-  return DayKey.of(`${date.year}-${pad2(date.month)}-${pad2(date.day)}`);
+function localDateOf(date: ZonedDateTime): LocalDate {
+  return parseDay(`${date.year}-${pad2(date.month)}-${pad2(date.day)}`);
 }
 
 /** The system's weeks → the legacy cells, each dated off the month's start. */
 function toLegacyWeeks(
   weeks: readonly CalendarWeek[],
   monthStart: ZonedDateTime,
-  monthKey: DayKey,
-  todayKey: DayKey,
+  monthKey: LocalDate,
+  todayKey: LocalDate,
 ): readonly (readonly CalendarDayCell[])[] {
   return weeks.map((week) =>
     week.map((cell) => ({
       date: monthStart.plusDays(
-        ZonedTimeSystem.daysBetween(monthKey, cell.dayKey),
+        LocalDate.daysBetween(monthKey, cell.localDate),
       ),
-      dayKey: cell.dayKey,
+      dayKey: cell.localDate,
       inCurrentMonth: cell.inMonth,
-      isToday: cell.dayKey === todayKey,
+      isToday: cell.localDate === todayKey,
       appointmentCount: cell.marks,
     })),
   );

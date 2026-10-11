@@ -1,10 +1,10 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import type { Hash, NextId, NowMs, TxPorts } from '@creativo/ecs-core';
+import type { Hash, NextId, NowUtcMs, TxPorts } from '@creativo/ecs-core';
 import { firestoreCommitPlan } from './firestore-tx.adapter';
 
 /**
  * The Firestore port assembler (blueprint §4.3): `main.ts` calls
- * `firestorePorts(db, { nowMs, nextId, hash })` ONCE per cold start, on the
+ * `firestorePorts(db, { nowUtcMs, nextId, hash })` ONCE per cold start, on the
  * first request that needs Firestore, and hands the bundles to the pipeline
  * factories. The only place a Firestore-backed port is constructed.
  *
@@ -23,7 +23,7 @@ import { firestoreCommitPlan } from './firestore-tx.adapter';
 
 /** The impure primitives the root draws once per cold start — `TxPorts` minus `commit`. */
 export type Primitives = {
-  readonly nowMs: NowMs;
+  readonly nowUtcMs: NowUtcMs;
   readonly nextId: NextId;
   readonly hash: Hash;
 };
@@ -36,7 +36,7 @@ export const firestorePorts = (
   primitives: Primitives,
 ): FirestorePorts => ({
   commit: firestoreCommitPlan(db),
-  nowMs: primitives.nowMs,
+  nowUtcMs: primitives.nowUtcMs,
   nextId: primitives.nextId,
   hash: primitives.hash,
 });

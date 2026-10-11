@@ -17,7 +17,9 @@ import {
 } from 'dinero.js';
 import * as fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { Currency, Money, RoundingMode } from './money.data';
+import { Currency } from '../primitives/currency.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { Money, RoundingMode } from './money.data';
 import { MoneyErrorCode } from './money-errors.data';
 import type { Result } from './result.data';
 
@@ -29,8 +31,8 @@ function value<T, E>(result: Result<T, E>): T {
   return result.value;
 }
 
-function eur(amountMinorUnits: number): Money {
-  return value(Money.of(amountMinorUnits, Currency.EUR));
+function eur(amountCents: number): Money {
+  return value(Money.of(amountCents, Currency.EUR));
 }
 
 /**
@@ -38,8 +40,8 @@ function eur(amountMinorUnits: number): Money {
  * recognised currency (§2.7 `Currency = { EUR }`), so `Money.of` refuses it.
  * The arithmetic compares currency strings, so it is the mismatch fixture.
  */
-function bgn(amountMinorUnits: number): Money {
-  return { amountMinorUnits, currencyCode: 'BGN' };
+function bgn(amountCents: number): Money {
+  return Money.fromCents(value(PriceCents.signed(amountCents)), Currency.BGN);
 }
 
 // The kernel's money.spec.ts cases, on the plain struct. Its USD fixtures
@@ -49,28 +51,26 @@ describe('Money.of — the edge guard (kernel fromMinorUnits / fromMinorUnitsAnd
   it('accepts a non-negative integer amount', () => {
     expect(Money.of(3000, 'EUR')).toEqual({
       ok: true,
-      value: { amountMinorUnits: 3000, currencyCode: 'EUR' },
+      value: { amountCents: 3000, currency: 'EUR' },
     });
   });
 
   it('accepts zero, and folds a negative zero into it', () => {
     expect(Money.of(0, 'EUR').ok).toBe(true);
-    expect(Object.is(value(Money.of(-0, 'EUR')).amountMinorUnits, 0)).toBe(
-      true,
-    );
+    expect(Object.is(value(Money.of(-0, 'EUR')).amountCents, 0)).toBe(true);
   });
 
   it('rejects a negative amount', () => {
     expect(Money.of(-100, 'EUR')).toEqual({
       ok: false,
-      error: { code: MoneyErrorCode.InvalidAmount, rawAmount: -100 },
+      error: { errorCode: MoneyErrorCode.InvalidAmount, rawAmount: -100 },
     });
   });
 
   it('rejects a non-integer amount', () => {
     const result = Money.of(30.5, 'EUR');
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('money.invalid_amount');
+    if (!result.ok) expect(result.error.errorCode).toBe('MONEY_INVALID_AMOUNT');
   });
 
   it('rejects an amount beyond the safe-integer range, and NaN', () => {
@@ -81,21 +81,21 @@ describe('Money.of — the edge guard (kernel fromMinorUnits / fromMinorUnitsAnd
   it('accepts a known currency code case-insensitively and stores it upper-cased', () => {
     const result = Money.of(1000, 'eur');
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.currencyCode).toBe('EUR');
-    expect(value(Money.of(1000, ' eur ')).currencyCode).toBe('EUR');
+    if (result.ok) expect(result.value.currency).toBe('EUR');
+    expect(value(Money.of(1000, ' eur ')).currency).toBe('EUR');
   });
 
   it('refuses retired leva at the edge — BGN is not a recognised currency', () => {
     expect(Money.of(1000, 'BGN')).toEqual({
       ok: false,
-      error: { code: MoneyErrorCode.UnknownCurrency, rawCode: 'BGN' },
+      error: { errorCode: MoneyErrorCode.UnknownCurrency, rawCode: 'BGN' },
     });
   });
 
   it('rejects an unknown currency code', () => {
     expect(Money.of(1000, 'XXX')).toEqual({
       ok: false,
-      error: { code: MoneyErrorCode.UnknownCurrency, rawCode: 'XXX' },
+      error: { errorCode: MoneyErrorCode.UnknownCurrency, rawCode: 'XXX' },
     });
     expect(Money.of(1000, 'USD').ok).toBe(false);
   });
@@ -103,18 +103,28 @@ describe('Money.of — the edge guard (kernel fromMinorUnits / fromMinorUnitsAnd
   it('still rejects an invalid amount for a known currency code', () => {
     const result = Money.of(-100, 'EUR');
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('money.invalid_amount');
+    if (!result.ok) expect(result.error.errorCode).toBe('MONEY_INVALID_AMOUNT');
   });
 
   it('reports the unknown currency before the amount', () => {
     const result = Money.of(-1, 'XXX');
-    expect(!result.ok && result.error.code).toBe('money.unknown_currency');
+    expect(!result.ok && result.error.errorCode).toBe('MONEY_UNKNOWN_CURRENCY');
   });
 });
 
 describe('Currency', () => {
-  it('recognises EUR, the shop currency, and nothing else (§2.7)', () => {
-    expect(Object.values(Currency)).toEqual(['EUR']);
+  it('trades in EUR, the shop currency, and nothing else (§2.7, flatten-spec §1.4)', () => {
+    expect(Currency.EUR).toBe('EUR');
+    expect(Money.of(100, 'BGN').ok).toBe(false);
+    expect(Object.values(RoundingMode)).toEqual([
+      'FLOOR',
+      'CEIL',
+      'HALF_UP',
+      'HALF_DOWN',
+      'HALF_EVEN',
+      'HALF_TOWARDS_ZERO',
+      'HALF_AWAY_FROM_ZERO',
+    ]);
   });
 
   it('currencyFrom trims and upper-cases, or answers null', () => {
@@ -131,18 +141,18 @@ describe('Money arithmetic', () => {
   });
 
   it('subtracts two amounts in the same currency', () => {
-    expect(value(Money.sub(eur(1000), eur(300))).amountMinorUnits).toBe(700);
+    expect(value(Money.sub(eur(1000), eur(300))).amountCents).toBe(700);
   });
 
   it('subtracts below zero — a difference, not a price', () => {
-    expect(value(Money.sub(eur(300), eur(1000))).amountMinorUnits).toBe(-700);
+    expect(value(Money.sub(eur(300), eur(1000))).amountCents).toBe(-700);
   });
 
   it('rejects adding mismatched currencies instead of throwing', () => {
     expect(Money.add(eur(1000), bgn(1000))).toEqual({
       ok: false,
       error: {
-        code: MoneyErrorCode.CurrencyMismatch,
+        errorCode: MoneyErrorCode.CurrencyMismatch,
         leftCurrency: 'EUR',
         rightCurrency: 'BGN',
       },
@@ -151,15 +161,19 @@ describe('Money arithmetic', () => {
 
   it('rejects subtracting mismatched currencies', () => {
     const result = Money.sub(bgn(1000), eur(1));
-    expect(!result.ok && result.error.code).toBe('money.currency_mismatch');
+    expect(!result.ok && result.error.errorCode).toBe(
+      'MONEY_CURRENCY_MISMATCH',
+    );
   });
 
   it('zero is the identity of add', () => {
-    expect(Money.zero('EUR')).toEqual({
-      amountMinorUnits: 0,
-      currencyCode: 'EUR',
+    expect(Money.zero(Currency.EUR)).toEqual({
+      amountCents: 0,
+      currency: 'EUR',
     });
-    expect(value(Money.add(eur(42), Money.zero('EUR')))).toEqual(eur(42));
+    expect(value(Money.add(eur(42), Money.zero(Currency.EUR)))).toEqual(
+      eur(42),
+    );
   });
 
   it('equals() compares amount and currency', () => {
@@ -178,38 +192,48 @@ describe('Money arithmetic', () => {
     expect(value(Money.compare(eur(2), eur(2)))).toBe(0);
     expect(value(Money.compare(eur(3), eur(2)))).toBe(1);
     const mixed = Money.compare(eur(1), bgn(1));
-    expect(!mixed.ok && mixed.error.code).toBe('money.currency_mismatch');
+    expect(!mixed.ok && mixed.error.errorCode).toBe('MONEY_CURRENCY_MISMATCH');
   });
 
   it('never mutates its arguments', () => {
     const a = Object.freeze(eur(1000));
     const b = Object.freeze(eur(250));
-    expect(value(Money.add(a, b)).amountMinorUnits).toBe(1250);
-    expect(value(Money.sub(a, b)).amountMinorUnits).toBe(750);
-    expect(
-      value(Money.scale(a, 1, 3, RoundingMode.HalfEven)).amountMinorUnits,
-    ).toBe(333);
+    expect(value(Money.add(a, b)).amountCents).toBe(1250);
+    expect(value(Money.sub(a, b)).amountCents).toBe(750);
+    expect(value(Money.scale(a, 1, 3, RoundingMode.HalfEven)).amountCents).toBe(
+      333,
+    );
     expect(a).toEqual(eur(1000));
     expect(b).toEqual(eur(250));
   });
 });
 
+describe('Money.fromCents — two brands already checked', () => {
+  it('pairs them unchecked, the same struct Money.of builds', () => {
+    expect(Money.fromCents(value(PriceCents.of(2800)), Currency.EUR)).toEqual(
+      value(Money.of(2800, 'EUR')),
+    );
+  });
+});
+
 describe('Money.sum', () => {
   it('totals a list in one currency', () => {
-    expect(value(Money.sum([eur(100), eur(250), eur(5)], 'EUR'))).toEqual(
-      eur(355),
-    );
+    expect(
+      value(Money.sum([eur(100), eur(250), eur(5)], Currency.EUR)),
+    ).toEqual(eur(355));
   });
 
   it('sums an empty list to zero in the given currency', () => {
-    expect(value(Money.sum([], 'BGN'))).toEqual(Money.zero('BGN'));
+    expect(value(Money.sum([], Currency.BGN))).toEqual(
+      Money.zero(Currency.BGN),
+    );
   });
 
   it('refuses the whole sum on the first figure in another currency', () => {
-    expect(Money.sum([eur(100), bgn(1), eur(5)], 'EUR')).toEqual({
+    expect(Money.sum([eur(100), bgn(1), eur(5)], Currency.EUR)).toEqual({
       ok: false,
       error: {
-        code: MoneyErrorCode.CurrencyMismatch,
+        errorCode: MoneyErrorCode.CurrencyMismatch,
         leftCurrency: 'EUR',
         rightCurrency: 'BGN',
       },
@@ -221,12 +245,10 @@ describe('Money.scale', () => {
   it('takes a percentage with an explicit rounding mode', () => {
     // 15 % of 28,45 € = 4,2675 € → 4,27 € half-up, 4,26 € floor.
     expect(
-      value(Money.scale(eur(2845), 15, 100, RoundingMode.HalfUp))
-        .amountMinorUnits,
+      value(Money.scale(eur(2845), 15, 100, RoundingMode.HalfUp)).amountCents,
     ).toBe(427);
     expect(
-      value(Money.scale(eur(2845), 15, 100, RoundingMode.Floor))
-        .amountMinorUnits,
+      value(Money.scale(eur(2845), 15, 100, RoundingMode.Floor)).amountCents,
     ).toBe(426);
   });
 
@@ -236,8 +258,8 @@ describe('Money.scale', () => {
     const euro = value(
       Money.scale(leva, 100_000, 195_583, RoundingMode.HalfUp),
     );
-    expect(euro.amountMinorUnits).toBe(Math.round(5000 / 1.95583));
-    expect(euro.currencyCode).toBe('BGN');
+    expect(euro.amountCents).toBe(Math.round(5000 / 1.95583));
+    expect(euro.currency).toBe('BGN');
   });
 
   it.each([
@@ -268,8 +290,7 @@ describe('Money.scale', () => {
     'scales 25 by %i/%i with %s → %i',
     (numerator, denominator, mode, expected) => {
       expect(
-        value(Money.scale(eur(25), numerator, denominator, mode))
-          .amountMinorUnits,
+        value(Money.scale(eur(25), numerator, denominator, mode)).amountCents,
       ).toBe(expected);
     },
   );
@@ -286,7 +307,11 @@ describe('Money.scale', () => {
         Money.scale(eur(25), numerator, denominator, RoundingMode.HalfUp),
       ).toEqual({
         ok: false,
-        error: { code: MoneyErrorCode.InvalidRatio, numerator, denominator },
+        error: {
+          errorCode: MoneyErrorCode.InvalidRatio,
+          numerator,
+          denominator,
+        },
       });
     }
   });
@@ -294,13 +319,10 @@ describe('Money.scale', () => {
   it('never yields a negative zero', () => {
     for (const mode of Object.values(RoundingMode)) {
       expect(
-        Object.is(value(Money.scale(eur(0), -1, 1, mode)).amountMinorUnits, 0),
+        Object.is(value(Money.scale(eur(0), -1, 1, mode)).amountCents, 0),
       ).toBe(true);
       expect(
-        Object.is(
-          value(Money.scale(eur(3), -1, 10, mode)).amountMinorUnits,
-          -0,
-        ),
+        Object.is(value(Money.scale(eur(3), -1, 10, mode)).amountCents, -0),
       ).toBe(false);
     }
   });
@@ -312,7 +334,7 @@ describe('Money.scale', () => {
       1,
       RoundingMode.HalfUp,
     );
-    expect(!result.ok && result.error.code).toBe('money.invalid_amount');
+    expect(!result.ok && result.error.errorCode).toBe('MONEY_INVALID_AMOUNT');
   });
 });
 
@@ -346,7 +368,7 @@ describe('Money agrees with dinero.js (property)', () => {
   it('add', () => {
     fc.assert(
       fc.property(amount, amount, (a, b) => {
-        expect(value(Money.add(eur(a), eur(b))).amountMinorUnits).toBe(
+        expect(value(Money.add(eur(a), eur(b))).amountCents).toBe(
           snapshotAmount(dineroAdd(toDinero(a), toDinero(b))),
         );
       }),
@@ -356,7 +378,7 @@ describe('Money agrees with dinero.js (property)', () => {
   it('sub', () => {
     fc.assert(
       fc.property(amount, amount, (a, b) => {
-        expect(value(Money.sub(eur(a), eur(b))).amountMinorUnits).toBe(
+        expect(value(Money.sub(eur(a), eur(b))).amountCents).toBe(
           snapshotAmount(dineroSubtract(toDinero(a), toDinero(b))),
         );
       }),
@@ -369,7 +391,7 @@ describe('Money agrees with dinero.js (property)', () => {
         let expected = toDinero(0);
         for (const a of amounts) expected = dineroAdd(expected, toDinero(a));
         const items = amounts.map(eur);
-        expect(value(Money.sum(items, 'EUR')).amountMinorUnits).toBe(
+        expect(value(Money.sum(items, Currency.EUR)).amountCents).toBe(
           snapshotAmount(expected),
         );
       }),
@@ -392,7 +414,7 @@ describe('Money agrees with dinero.js (property)', () => {
           // `+ 0` folds dinero's negative zero (0 × −1); Money never makes one.
           expect(
             value(Money.scale(eur(a), factor, 10 ** decimals, mode))
-              .amountMinorUnits,
+              .amountCents,
           ).toBe(snapshotAmount(scaled) + 0);
         },
       ),
@@ -441,7 +463,7 @@ describe('Money agrees with dinero.js (property)', () => {
         (a, numerator, denominator, mode) => {
           expect(
             value(Money.scale(eur(a), numerator, denominator, mode))
-              .amountMinorUnits,
+              .amountCents,
           ).toBe(
             reference(BigInt(a) * BigInt(numerator), BigInt(denominator), mode),
           );

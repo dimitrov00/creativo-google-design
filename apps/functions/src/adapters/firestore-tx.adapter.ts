@@ -2,6 +2,7 @@ import {
   type DocumentData,
   type DocumentReference,
   FieldPath,
+  FieldValue,
   type Firestore,
   type Query,
   type Transaction,
@@ -16,7 +17,7 @@ import {
   RepositoryError,
   Result,
   TriggerAttemptSystem,
-  WriteKind,
+  WriteAction,
   type WriteOp,
 } from '@creativo/ecs-core';
 
@@ -38,16 +39,25 @@ import {
  *   the `CommitPlan` port says, so a pipeline can read a lost create race
  *   as "already written" (the audit row's replay, the users stub, a
  *   deterministic notification id). Nothing of the plan was applied.
+ * - A plan whose `Update` both sets and deletes one key comes back as a
+ *   VALUE too — `RepositoryError.writeFailed(path, 'field-set-and-deleted')`
+ *   — and nothing of it is applied (the doubles answer the same).
  * - Every other failure (retries exhausted, the store unreachable, an
  *   `Update` of an absent document) rejects: infrastructure, mapped once by
  *   the edge.
  *
- * An `Update` key is ONE root field (Law 5: writes target root fields,
- * never dot paths). Each key goes to the SDK as a single-segment
- * `FieldPath`, so the SDK's field-path grammar never parses it: a `.` (or a
- * `/`, `~`, `*`) in a key is just a character of the field's name, never a
- * way into a nested map. An `Update` with no fields writes nothing.
+ * An `Update` key is ONE root field (Laws 5 and 6: writes target root
+ * fields, never dot paths). Each `fields` key goes to the SDK as a
+ * single-segment `FieldPath`, so the SDK's field-path grammar never parses
+ * it: a `.` (or a `/`, `~`, `*`) in a key is just a character of the
+ * field's name, never a way into a nested map. Each `deleteFields` key goes
+ * the same way with `FieldValue.delete()` — how a variant transition removes
+ * the old variant's fields (`WriteOp.transition`). An `Update` with no
+ * fields and no deletes writes nothing.
  */
+
+/** The reason a plan that sets and deletes one key is refused with (the doubles use the same). */
+export const FIELD_SET_AND_DELETED = 'field-set-and-deleted';
 
 /** Firestore's canonical name for gRPC 6, as `TriggerAttemptSystem.failureCode` reads it. */
 const ALREADY_EXISTS = 'already-exists';
@@ -97,17 +107,38 @@ export const firestoreReadTx = (db: Firestore, tx: Transaction): ReadTx => ({
 /** A root field by its literal name — one segment, never re-parsed (Law 5). */
 const fieldPathOf = (field: string): FieldPath => new FieldPath(field);
 
-/** `fields` as the SDK's `update(ref, path, value, ...pathsAndValues)`. */
+/**
+ * `fields` and `deleteFields` as the SDK's
+ * `update(ref, path, value, ...pathsAndValues)` — each deleted key paired
+ * with `FieldValue.delete()`.
+ */
 function applyUpdate(
   tx: Transaction,
   ref: DocumentReference,
   fields: DocBody,
+  deleteFields: readonly string[],
 ): void {
-  const [first, ...others] = Object.entries(fields);
+  const pairs: unknown[] = [];
+  for (const [field, value] of Object.entries(fields)) {
+    pairs.push(fieldPathOf(field), value);
+  }
+  for (const field of deleteFields) {
+    pairs.push(fieldPathOf(field), FieldValue.delete());
+  }
+  const [first, value, ...rest] = pairs;
   if (first === undefined) return;
-  const rest: unknown[] = [];
-  for (const [field, value] of others) rest.push(fieldPathOf(field), value);
-  tx.update(ref, fieldPathOf(first[0]), first[1], ...rest);
+  tx.update(ref, first as FieldPath, value, ...rest);
+}
+
+/** The first `Update` that names one key in both lists — the whole plan is refused. */
+function setAndDeleted(writes: readonly WriteOp[]): DocPath | null {
+  for (const op of writes) {
+    if (op.writeAction !== WriteAction.Update) continue;
+    for (const field of op.deleteFields) {
+      if (Object.hasOwn(op.fields, field)) return op.path;
+    }
+  }
+  return null;
 }
 
 /** The plan, applied in order inside the transaction. */
@@ -118,17 +149,17 @@ function applyPlan(
 ): void {
   for (const op of writes) {
     const ref = docRef(db, op.path);
-    switch (op.kind) {
-      case WriteKind.Set:
+    switch (op.writeAction) {
+      case WriteAction.Set:
         tx.set(ref, op.body as DocumentData);
         break;
-      case WriteKind.Create:
+      case WriteAction.Create:
         tx.create(ref, op.body as DocumentData);
         break;
-      case WriteKind.Update:
-        applyUpdate(tx, ref, op.fields);
+      case WriteAction.Update:
+        applyUpdate(tx, ref, op.fields, op.deleteFields);
         break;
-      case WriteKind.Delete:
+      case WriteAction.Delete:
         tx.delete(ref);
         break;
     }
@@ -177,8 +208,17 @@ export const firestoreCommitPlan =
           const decision = decide(await read(firestoreReadTx(db, tx)));
           if (!decision.ok) return decision;
           const { writes, ...answer } = decision.value;
+          const refused = setAndDeleted(writes);
+          if (refused !== null) {
+            return Result.err(
+              RepositoryError.writeFailed(
+                slashed(refused),
+                FIELD_SET_AND_DELETED,
+              ),
+            );
+          }
           creates = writes
-            .filter((op) => op.kind === WriteKind.Create)
+            .filter((op) => op.writeAction === WriteAction.Create)
             .map((op) => op.path);
           applyPlan(db, tx, writes);
           // `answer` is the decision minus its plan — `D` exactly, which the

@@ -1,44 +1,52 @@
-import { BookingState } from '../components/booking-status.data';
-import { DayKey } from '../components/day-key.data';
+import { BookingStatus } from '../components/booking-lifecycle.data';
 import { Result } from '../components/result.data';
 import type { SchedulingError } from '../components/scheduling-errors.data';
 import {
-  SeatOutcomeKind,
+  AttendanceState,
   type SeatOutcome,
 } from '../components/seat-outcome.data';
-import { Seat, SeatSubjectKind } from '../components/seat.data';
-import { TimeInterval } from '../components/time-interval.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import type { BarberId } from '../entities/barber.entity';
-import type { ServiceId } from '../entities/service.entity';
-import type { UserId } from '../entities/user.entity';
+import { Seat, SeatSubject } from '../components/seat.data';
+import { ShopNow } from '../components/shop-now.data';
+import { WallTime } from '../components/wall-time.data';
+import type { Appointment } from '../entities/appointment.entity';
+import type { Currency } from '../primitives/currency.primitive';
+import type { BarberId, ServiceId, UserId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type {
+  EndMinute,
+  MinuteOfDay,
+} from '../primitives/minute-of-day.primitive';
+import type { PriceCents } from '../primitives/price-cents.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { BillingSystem } from './billing.system';
-import {
-  ClientStatsSystem,
-  SubjectVisitOutcomeKind,
-} from './client-stats.system';
+import { ClientStatsSystem, SubjectVisitOutcome } from './client-stats.system';
 import { VisitRowOutcome } from './visit-list.system';
 
 const DAYS_PER_WEEK = 7;
 
 /** Who called a visit off, as the row says it — the ONLY source of these strings. */
 export const CancelledSide = {
-  Client: 'client',
-  Shop: 'shop',
+  Client: 'CLIENT',
+  Shop: 'SHOP',
 } as const;
 export type CancelledSide = (typeof CancelledSide)[keyof typeof CancelledSide];
 
 /**
  * The computed facts of one appointment — never words, and never a mirror
- * of an entity field a template can read itself (`bookingStatus.kind`, the
- * seats, the day key via `ZonedTimeSystem.dayKeyOf`).
+ * of an entity field a template can read itself (`bookingStatus`, the seats,
+ * the visit's `localDate`). The span is the seats' own, first start to last
+ * end, on the visit's shop day (Law 7.3: wall-clock coordinates, never an
+ * instant); the money is the bill's, in cents of its one currency.
  */
 export type VisitStory = {
-  /** First seat start to last seat end. */
-  readonly envelope: TimeInterval;
+  readonly localDate: LocalDate;
+  /** The first seat's start. */
+  readonly startMinutes: MinuteOfDay;
+  /** The last seat's end (exclusive). */
+  readonly endMinutes: EndMinute;
   /** What the party owes after its discounts (`BillingSystem`). */
-  readonly totalMinorUnits: number;
-  readonly currencyCode: string;
+  readonly totalCents: PriceCents;
+  readonly currency: Currency;
   /** The barbers, each once, in first-seat order. */
   readonly barberIds: readonly BarberId[];
   /** The services, each once, in first-seat order. */
@@ -48,7 +56,7 @@ export type VisitStory = {
 /**
  * One person's own story of an appointment, as a row tells it: the seats
  * it is about (indexes into `appointment.seats`), their outcome, and who
- * called it off — set exactly when the outcome is `cancelled`.
+ * called it off — set exactly when the outcome is `CANCELLED`.
  */
 export type SubjectStory = {
   readonly seatIndexes: readonly number[];
@@ -56,10 +64,16 @@ export type SubjectStory = {
   readonly cancelledBy: CancelledSide | null;
 };
 
-/** Who a seat is for, as people are told apart on a visit. */
+/** Who a seat is for, as people are told apart on a visit — discriminated by `seatSubject`. */
 export type PersonSubject =
-  | { readonly kind: typeof SeatSubjectKind.Account; readonly userId: string }
-  | { readonly kind: typeof SeatSubjectKind.Anonymous; readonly label: string };
+  | {
+      readonly seatSubject: typeof SeatSubject.Account;
+      readonly userId: UserId;
+    }
+  | {
+      readonly seatSubject: typeof SeatSubject.Anonymous;
+      readonly label: string;
+    };
 
 /** A run of consecutive calendar days: indexes of its first and last day. */
 export type DayRun = {
@@ -68,7 +82,10 @@ export type DayRun = {
 };
 
 /** A cancellation as the side rule reads it. */
-type SideBasis = Pick<SeatOutcome.Cancelled, 'by' | 'reason'>;
+type SideBasis = Pick<
+  SeatOutcome.Cancelled,
+  'cancelledBy' | 'cancellationReason'
+>;
 
 function allIndexes(count: number): readonly number[] {
   const out: number[] = [];
@@ -82,11 +99,17 @@ function allIndexes(count: number): readonly number[] {
  * seats, what became of them, who called it off, how many others came, the
  * runs of days a waiting request watches. Numbers, ids, indexes and tags —
  * `formatMoney`, `Intl.ListFormat` and every word stay in the presenter.
+ * Time is the shop's wall clock (Law 7.3): a visit is upcoming by its
+ * `WallTime` against the shop's `ShopNow`, a day by its `LocalDate`; only the
+ * order of two cancellations reads their `*UtcMs` stamps (T2).
  */
 export const VisitStorySystem = {
   /** The computed facts of an appointment; refused only for a bill it cannot have. */
   story(
-    appointment: AppointmentEntity,
+    appointment: Pick<
+      Appointment,
+      'localDate' | 'seats' | 'discounts' | 'voucherRedemptions'
+    >,
   ): Result<
     VisitStory,
     | SchedulingError.AppointmentEmptySeats
@@ -94,25 +117,29 @@ export const VisitStorySystem = {
   > {
     const bill = BillingSystem.evaluate(appointment);
     if (!bill.ok) return bill;
+    // The bill refuses a visit with no seat, so there is a first one.
     const seats = appointment.seats;
-    let startMs = Infinity;
-    let endMs = -Infinity;
-    const barbers: string[] = [];
-    const services: string[] = [];
+    const first = seats[0] as Seat;
+    let startMinutes = first.startMinutes;
+    let endMinutes = Seat.endMinutes(first);
+    const barbers: BarberId[] = [];
+    const services: ServiceId[] = [];
     for (let i = 0; i < seats.length; i++) {
       const seat = seats[i] as Seat;
-      if (seat.startMs < startMs) startMs = seat.startMs;
-      const end = Seat.endMs(seat);
-      if (end > endMs) endMs = end;
+      if (seat.startMinutes < startMinutes) startMinutes = seat.startMinutes;
+      const end = Seat.endMinutes(seat);
+      if (end > endMinutes) endMinutes = end;
       barbers.push(seat.barberId);
       services.push(seat.serviceId);
     }
     return Result.ok({
-      envelope: TimeInterval.of(startMs, endMs),
-      totalMinorUnits: bill.value.total.amountMinorUnits,
-      currencyCode: bill.value.total.currencyCode,
-      barberIds: VisitStorySystem.distinct(barbers) as readonly BarberId[],
-      serviceIds: VisitStorySystem.distinct(services) as readonly ServiceId[],
+      localDate: appointment.localDate,
+      startMinutes,
+      endMinutes,
+      totalCents: bill.value.totalCents,
+      currency: bill.value.currency,
+      barberIds: VisitStorySystem.distinct(barbers),
+      serviceIds: VisitStorySystem.distinct(services),
     });
   },
 
@@ -124,7 +151,7 @@ export const VisitStorySystem = {
    * tell the appointment's.
    */
   subjectStory(
-    appointment: AppointmentEntity,
+    appointment: Appointment,
     subjectUserId: UserId | null,
     staff: boolean,
   ): SubjectStory {
@@ -142,47 +169,49 @@ export const VisitStorySystem = {
         const outcome = visit.outcome;
         return {
           seatIndexes: indexes,
-          outcome: outcome.kind,
+          outcome: rowOutcomeOf(outcome.subjectVisitOutcome),
           cancelledBy:
-            outcome.kind === SubjectVisitOutcomeKind.Cancelled
+            outcome.subjectVisitOutcome === SubjectVisitOutcome.Cancelled
               ? VisitStorySystem.cancelledSide(outcome.decisive)
               : null,
         };
       }
     }
-    const outcomes: SeatOutcome[] = [];
-    for (let i = 0; i < appointment.seats.length; i++) {
-      outcomes.push((appointment.seats[i] as Seat).outcome);
-    }
     return {
       seatIndexes: allIndexes(appointment.seats.length),
-      ...VisitStorySystem.rootStory(appointment.bookingStatus.kind, outcomes),
+      ...VisitStorySystem.rootStory(
+        appointment.bookingStatus,
+        appointment.seats,
+      ),
     };
   },
 
   /**
-   * The appointment's own story from its root status: completed → worked,
+   * The appointment's own story from its root state: completed → worked,
    * no-show → no-show, cancelled → cancelled by the side of the seat called
-   * off LAST, pending/confirmed → open.
+   * off LAST, pending/confirmed → open. `outcomes` are the seats' outcome
+   * slices — the seats themselves pass as they are.
    */
   rootStory(
-    status: BookingState,
+    bookingStatus: BookingStatus,
     outcomes: readonly SeatOutcome[],
   ): Pick<SubjectStory, 'outcome' | 'cancelledBy'> {
-    switch (status) {
-      case BookingState.Completed:
+    switch (bookingStatus) {
+      case BookingStatus.Completed:
         return { outcome: VisitRowOutcome.Worked, cancelledBy: null };
-      case BookingState.NoShow:
+      case BookingStatus.NoShow:
         return { outcome: VisitRowOutcome.NoShow, cancelledBy: null };
-      case BookingState.Cancelled: {
-        const atMs: (number | null)[] = [];
+      case BookingStatus.Cancelled: {
+        const atUtcMs: (UtcEpochMs | null)[] = [];
         for (let i = 0; i < outcomes.length; i++) {
           const outcome = outcomes[i] as SeatOutcome;
-          atMs.push(
-            outcome.kind === SeatOutcomeKind.Cancelled ? outcome.atMs : null,
+          atUtcMs.push(
+            outcome.attendanceState === AttendanceState.Cancelled
+              ? outcome.cancelledAtUtcMs
+              : null,
           );
         }
-        const last = VisitStorySystem.decisiveCancellationIndex(atMs);
+        const last = VisitStorySystem.decisiveCancellationIndex(atUtcMs);
         return {
           outcome: VisitRowOutcome.Cancelled,
           cancelledBy: VisitStorySystem.cancelledSide(
@@ -190,26 +219,30 @@ export const VisitStorySystem = {
           ),
         };
       }
-      case BookingState.Pending:
-      case BookingState.Confirmed:
+      case BookingStatus.Pending:
+      case BookingStatus.Confirmed:
         return { outcome: VisitRowOutcome.Open, cancelledBy: null };
     }
   },
 
   /**
    * The seat called off LAST — the cancellation that ended the visit — as
-   * an index into `cancelledAtMs` (`null` for a seat not cancelled); the
-   * first of equal instants wins; `−1` when none was.
+   * an index into `cancelledAtUtcMs` (`null` for a seat not cancelled); the
+   * first of equal instants wins; `−1` when none was. Stamp ORDER, not
+   * placement (flatten-spec T2): the lifecycle instants are compared as they
+   * were stamped.
    */
-  decisiveCancellationIndex(cancelledAtMs: readonly (number | null)[]): number {
+  decisiveCancellationIndex(
+    cancelledAtUtcMs: readonly (UtcEpochMs | null)[],
+  ): number {
     let best = -1;
-    let bestAtMs = -Infinity;
-    for (let i = 0; i < cancelledAtMs.length; i++) {
-      const atMs = cancelledAtMs[i] as number | null;
-      if (atMs === null) continue;
-      if (best < 0 || atMs > bestAtMs) {
+    let bestAt: UtcEpochMs | null = null;
+    for (let i = 0; i < cancelledAtUtcMs.length; i++) {
+      const at = cancelledAtUtcMs[i] as UtcEpochMs | null;
+      if (at === null) continue;
+      if (bestAt === null || at > bestAt) {
         best = i;
-        bestAtMs = atMs;
+        bestAt = at;
       }
     }
     return best;
@@ -226,18 +259,21 @@ export const VisitStorySystem = {
       : CancelledSide.Shop;
   },
 
-  /** An hour still to come: open, and not yet started. */
-  isUpcoming(
-    outcome: VisitRowOutcome,
-    startMs: number,
-    nowMs: number,
-  ): boolean {
-    return outcome === VisitRowOutcome.Open && startMs >= nowMs;
+  /**
+   * An hour still to come: open, and not yet started — its start on the
+   * shop's wall clock at or after the shop's "now" (T1: `now.localDate` +
+   * `now.currentMinute`, never an instant).
+   */
+  isUpcoming(outcome: VisitRowOutcome, start: WallTime, now: ShopNow): boolean {
+    return (
+      outcome === VisitRowOutcome.Open &&
+      WallTime.compare(start, ShopNow.wallTime(now)) >= 0
+    );
   },
 
   /** One person, one key: an account by its id, a guest by the seat's name. */
   personKeyOf(subject: PersonSubject): string {
-    return subject.kind === SeatSubjectKind.Account
+    return subject.seatSubject === SeatSubject.Account
       ? `account:${subject.userId}`
       : `guest:${subject.label}`;
   },
@@ -258,12 +294,12 @@ export const VisitStorySystem = {
     return people.size;
   },
 
-  /** Present values, each once, in first-seen order. */
-  distinct(values: readonly (string | null)[]): readonly string[] {
-    const seen = new Set<string>();
-    const out: string[] = [];
+  /** Present values, each once, in first-seen order (a brand stays its brand). */
+  distinct<T extends string>(values: readonly (T | null)[]): readonly T[] {
+    const seen = new Set<T>();
+    const out: T[] = [];
     for (let i = 0; i < values.length; i++) {
-      const value = values[i] as string | null;
+      const value = values[i] as T | null;
       if (value === null || seen.has(value)) continue;
       seen.add(value);
       out.push(value);
@@ -275,11 +311,11 @@ export const VisitStorySystem = {
    * Runs of consecutive calendar days, in order — «чт, пт» reads «чт – пт»:
    * a day starts a new run unless it is the day after the previous one.
    */
-  dayRuns(dayKeys: readonly DayKey[]): readonly DayRun[] {
+  dayRuns(localDates: readonly LocalDate[]): readonly DayRun[] {
     const runs: DayRun[] = [];
     let previous = Number.NaN;
-    for (let i = 0; i < dayKeys.length; i++) {
-      const epochDay = DayKey.toEpochDay(dayKeys[i] as DayKey);
+    for (let i = 0; i < localDates.length; i++) {
+      const epochDay = LocalDate.toEpochDay(localDates[i] as LocalDate);
       const run = runs[runs.length - 1];
       if (run !== undefined && epochDay === previous + 1) {
         runs[runs.length - 1] = { first: run.first, last: i };
@@ -292,9 +328,26 @@ export const VisitStorySystem = {
   },
 
   /** Inside the coming week — today and the six days after it. Never without a today. */
-  withinWeek(dayKey: DayKey, todayKey: DayKey | null): boolean {
-    if (todayKey === null) return false;
-    const offset = DayKey.toEpochDay(dayKey) - DayKey.toEpochDay(todayKey);
+  withinWeek(localDate: LocalDate, today: LocalDate | null): boolean {
+    if (today === null) return false;
+    const offset = LocalDate.daysBetween(today, localDate);
     return offset >= 0 && offset < DAYS_PER_WEEK;
   },
 } as const;
+
+/**
+ * One person's outcome as the row's — the same four states under the list's
+ * own dictionary (`SubjectVisitOutcome` → `VisitRowOutcome`).
+ */
+function rowOutcomeOf(outcome: SubjectVisitOutcome): VisitRowOutcome {
+  switch (outcome) {
+    case SubjectVisitOutcome.Worked:
+      return VisitRowOutcome.Worked;
+    case SubjectVisitOutcome.NoShow:
+      return VisitRowOutcome.NoShow;
+    case SubjectVisitOutcome.Cancelled:
+      return VisitRowOutcome.Cancelled;
+    case SubjectVisitOutcome.Open:
+      return VisitRowOutcome.Open;
+  }
+}

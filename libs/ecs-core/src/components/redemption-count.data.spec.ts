@@ -19,7 +19,7 @@ describe('RedemptionCount', () => {
     expect(RedemptionCount.parse(raw)).toEqual({
       ok: false,
       error: {
-        code: 'engagement.invitation.invalid_redemption_count',
+        errorCode: 'ENGAGEMENT_INVITATION_INVALID_REDEMPTION_COUNT',
         attempted: raw,
       },
     });

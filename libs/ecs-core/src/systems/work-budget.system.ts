@@ -1,3 +1,5 @@
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+
 /**
  * How long a piece of operational work may keep TAKING work — the
  * arithmetic of `apps/functions/src/lib/ops/work-budget.ts:16-97`, shared by
@@ -11,9 +13,11 @@
  * hand. The budget never interrupts a unit: every unit is state-based, so
  * stopping BETWEEN them is always safe to resume.
  *
- * Pure: the clock is the caller's (`nowMs`, `startedMs`), and the one
- * question that reads it — "is the budget spent?" — is a `spent` thunk the
- * caller supplies, asked only when the answer can matter.
+ * Pure: the clock is the caller's (`nowUtcMs`, `startedAtUtcMs`), and the
+ * one question that reads it — "is the budget spent?" — is a `spent` thunk
+ * the caller supplies, asked only when the answer can matter. Budgets are
+ * elapsed real time (flatten-spec T2): `limitMs` is a duration (N5), the
+ * two instants are compared through `UtcEpochMs` only.
  */
 
 /** The share of the timeout spent taking new work; the rest is the unit in hand plus the bookkeeping. */
@@ -56,9 +60,21 @@ export const WorkBudgetSystem = {
     );
   },
 
-  /** A budget of `limitMs` started at `startedMs` is used up at `nowMs` — take no new unit. */
-  isSpent(startedMs: number, nowMs: number, limitMs: number): boolean {
-    return nowMs - startedMs >= limitMs;
+  /**
+   * A budget of `limitMs` started at `startedAtUtcMs` is used up at
+   * `nowUtcMs` — take no new unit.
+   */
+  isSpent(
+    startedAtUtcMs: UtcEpochMs,
+    nowUtcMs: UtcEpochMs,
+    limitMs: number,
+  ): boolean {
+    return (
+      UtcEpochMs.compare(
+        nowUtcMs,
+        UtcEpochMs.plusMs(startedAtUtcMs, limitMs),
+      ) >= 0
+    );
   },
 
   /** The width a walk takes its chunks at: whole, and at least one. */

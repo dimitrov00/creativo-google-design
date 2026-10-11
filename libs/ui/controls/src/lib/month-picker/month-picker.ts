@@ -7,7 +7,7 @@ import {
   linkedSignal,
   output,
 } from '@angular/core';
-import { CalendarGridSystem, DayKey } from '@creativo/ecs-core';
+import { CalendarGridSystem, LocalDate } from '@creativo/ecs-core';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
   UiFontDirective,
@@ -201,19 +201,17 @@ export class UiMonthPicker {
   });
 
   /** The month as weeks of cells, `null` padding either end. */
-  protected readonly weeks = computed(() =>
+  protected readonly weeks = computed(() => {
     // Monday-first, padded to whole weeks (`CalendarGridSystem.monthGrid`);
-    // a weekday is civil arithmetic, so no day table is needed.
-    CalendarGridSystem.monthGrid(
-      DayKey.of(`${this.shownMonth()}-01`),
-      [],
-      [],
-    ).map((week) =>
+    // a weekday is civil arithmetic on the `LocalDate`, so no zone is read.
+    const first = LocalDate.parse(`${this.shownMonth()}-01`);
+    if (!first.ok) return [];
+    return CalendarGridSystem.monthGrid(first.value, []).map((week) =>
       week.map((cell): { day: number; dayKey: UiDayKey } | null =>
-        cell.inMonth ? { day: cell.dayOfMonth, dayKey: cell.dayKey } : null,
+        cell.inMonth ? { day: cell.dayOfMonth, dayKey: cell.localDate } : null,
       ),
-    ),
-  );
+    );
+  });
 
   /** A set, read once per month drawn rather than scanned per cell. */
   protected readonly marked = computed(() => new Set(this.uiMarked()));

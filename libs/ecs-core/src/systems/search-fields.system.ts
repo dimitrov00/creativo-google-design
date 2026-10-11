@@ -32,6 +32,12 @@ const INTERNATIONAL_PREFIX = /^00/;
 /** The digits a phone-shaped query needs before it is searched as one. */
 const MIN_PHONE_QUERY_DIGITS = 5;
 
+/**
+ * The keys as computed — a name always present (a computed full name is a
+ * string, `''` at worst); the slice's `null` belongs to a stub only.
+ */
+type ComputedSearchFields = SearchFields & { readonly searchName: string };
+
 /** Every prefix of `token` of at least `from` characters, into `out` (first seen wins). */
 function addPrefixes(out: Set<string>, token: string, from: number): void {
   for (let i = from; i <= token.length; i++) out.add(token.slice(0, i));
@@ -46,7 +52,7 @@ export const SearchFieldsSystem = {
     fullName: string,
     phoneForms: readonly string[],
     email: string | null,
-  ): SearchFields {
+  ): ComputedSearchFields {
     const searchName = fullName.trim().toLowerCase();
     const prefixes = new Set<string>();
     const tokens = searchName.split(WHITESPACE);
@@ -76,7 +82,7 @@ export const SearchFieldsSystem = {
     lastName: string | null,
     phone: E164 | null,
     email: string | null,
-  ): SearchFields {
+  ): ComputedSearchFields {
     return SearchFieldsSystem.fromForms(
       Profile.fullName({ firstName, lastName }),
       phone === null ? [] : [phone, PhoneSystem.formatNational(phone)],

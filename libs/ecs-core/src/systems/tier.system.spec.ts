@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
-import type { TierState } from '../components/tier-state.data';
-import {
-  TierId,
-  type TierDefinitionEntity,
-} from '../entities/tier-definition.entity';
-import { deepFreeze } from '../testing';
+import { Metric } from '../components/gamification.data';
+import { TierOverride, type TierState } from '../components/tier-state.data';
+import type { TierDefinition } from '../entities/tier-definition.entity';
+import { AdjustmentId, TierId } from '../primitives/ids.primitive';
+import { deepFreeze, localDate, utcMs } from '../testing';
 import { TierSystem } from './tier.system';
 
 /*
@@ -21,22 +19,16 @@ import { TierSystem } from './tier.system';
 
 const text = (bg: string) => ({ bg, en: bg });
 
-const tier = (
-  id: string,
-  rank: number,
-  atLeast: number,
-): TierDefinitionEntity => ({
+const tier = (id: string, rank: number, atLeast: number): TierDefinition => ({
   id: TierId.of(id),
   name: text(id),
   rank,
   benefits: [],
   version: 1,
-  effectiveFromDayKey: DayKey.of('2025-03-01'),
-  qualify: {
-    metric: 'client.visits.completed',
-    atLeast,
-    window: { lastDays: 365 },
-  },
+  effectiveFromLocalDate: localDate('2025-03-01'),
+  qualifyMetric: Metric.VisitsCompleted,
+  qualifyAtLeast: atLeast,
+  qualifyWindowDays: 365,
 });
 
 /** By rank: bronze 0, silver 6, gold 12, platinum 20 — the seed's tiers. */
@@ -49,13 +41,13 @@ const TIERS = [
 
 /** Георги: gold on 14 visits, six to platinum. */
 const state: TierState = {
-  current: TierId.of('gold'),
-  definitionVersion: 1,
-  sinceMs: Date.parse('2026-05-10T07:00:00.000Z'),
-  qualifying: 14,
-  next: TierId.of('platinum'),
-  remaining: 6,
-  override: null,
+  tierId: TierId.of('gold'),
+  tierDefinitionVersion: 1,
+  tierSinceUtcMs: utcMs('2026-05-10T07:00:00.000Z'),
+  tierQualifying: 14,
+  nextTierId: TierId.of('platinum'),
+  tierRemaining: 6,
+  ...TierOverride.none(),
 };
 
 describe('TierSystem.steps (standing.spec.ts `tierSteps`)', () => {
@@ -85,11 +77,11 @@ describe('TierSystem.steps (standing.spec.ts `tierSteps`)', () => {
     const granted = TierSystem.steps(
       {
         ...state,
-        override: {
-          tierId: TierId.of('platinum'),
-          until: DayKey.of('2026-12-31'),
-          source: { kind: 'adjustment', adjustmentId: 'adj-1' },
-        },
+        ...TierOverride.adjustment(
+          TierId.of('platinum'),
+          localDate('2026-12-31'),
+          AdjustmentId.of('adj-1'),
+        ),
       },
       TIERS,
     );
@@ -120,10 +112,10 @@ describe('TierSystem.progress (wallet.presenter.spec.ts `walletTierVm`)', () => 
     const top = TierSystem.progress(
       {
         ...state,
-        current: TierId.of('platinum'),
-        qualifying: 24,
-        next: null,
-        remaining: null,
+        tierId: TierId.of('platinum'),
+        tierQualifying: 24,
+        nextTierId: null,
+        tierRemaining: null,
       },
       TIERS,
     );
@@ -145,10 +137,10 @@ describe('TierSystem.progress (wallet.presenter.spec.ts `walletTierVm`)', () => 
       TierSystem.progress(
         {
           ...state,
-          current: TierId.of('bronze'),
-          qualifying: 1,
-          next: TierId.of('silver'),
-          remaining: 5,
+          tierId: TierId.of('bronze'),
+          tierQualifying: 1,
+          nextTierId: TierId.of('silver'),
+          tierRemaining: 5,
         },
         TIERS,
       ),
@@ -159,15 +151,15 @@ describe('TierSystem.progress (wallet.presenter.spec.ts `walletTierVm`)', () => 
     const progress = TierSystem.progress(
       {
         ...state,
-        current: TierId.of('silver'),
-        qualifying: 7,
-        next: TierId.of('platinum'),
-        remaining: 13,
-        override: {
-          tierId: TierId.of('gold'),
-          until: null,
-          source: { kind: 'adjustment', adjustmentId: 'adj-1' },
-        },
+        tierId: TierId.of('silver'),
+        tierQualifying: 7,
+        nextTierId: TierId.of('platinum'),
+        tierRemaining: 13,
+        ...TierOverride.adjustment(
+          TierId.of('gold'),
+          null,
+          AdjustmentId.of('adj-1'),
+        ),
       },
       TIERS,
     );
@@ -181,10 +173,13 @@ describe('TierSystem.progress (wallet.presenter.spec.ts `walletTierVm`)', () => 
 
   it('works out what remains where the account does not say, never below nothing', () => {
     expect(
-      TierSystem.progress({ ...state, remaining: null }, TIERS),
+      TierSystem.progress({ ...state, tierRemaining: null }, TIERS),
     ).toMatchObject({ remaining: 6, ringValue: 2 });
     expect(
-      TierSystem.progress({ ...state, qualifying: 25, remaining: null }, TIERS),
+      TierSystem.progress(
+        { ...state, tierQualifying: 25, tierRemaining: null },
+        TIERS,
+      ),
     ).toMatchObject({ remaining: 0, ringValue: 8, gaugeValue: 20 });
   });
 

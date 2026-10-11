@@ -1,13 +1,28 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberPref, BarberPrefKind } from '../components/barber-pref.data';
+import { BarberPref, BarberPreference } from '../components/barber-pref.data';
 import { BookingPolicy } from '../components/booking-policy.data';
-import { DayKey } from '../components/day-key.data';
 import { DayWindows } from '../components/day-windows.data';
 import { MinuteRange } from '../components/minute-range.data';
-import { TimeInterval } from '../components/time-interval.data';
-import { BarberId } from '../entities/barber.entity';
+import { ShopNow } from '../components/shop-now.data';
 import {
+  BarberId,
+  CartLineId,
+  LocationId,
+  SeatKeyText,
+} from '../primitives/ids.primitive';
+import {
+  type DurationMinutes,
+  MinuteCount,
+} from '../primitives/duration-minutes.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import {
+  duration,
+  minuteCount,
+  minuteDelta,
+} from '../testing/booking-core.fixtures';
+import {
+  type AvailabilityAssignment,
   type AvailabilityLine,
   type AvailabilityOption,
   type AvailabilityQuery,
@@ -22,32 +37,33 @@ import {
 import { IntervalSetSystem } from './interval-set.system';
 import { type DayException, RosterSystem } from './roster.system';
 import { ScheduleExceptionSystem } from './schedule-exception.system';
-import { ZonedTimeSystem } from './zoned-time.system';
-import { deepFreeze } from '../testing';
-import { DayOffset } from '../components/day-offset.data';
+import { deepFreeze, endMinute, localDate, minute, utcMs } from '../testing';
 import { ExceptionDetail } from '../components/exception-detail.data';
-import { ExceptionEffect } from '../components/exception-effect.data';
+import { ExceptionEffectRule } from '../components/exception-effect.data';
 import { ShopDayHours } from '../components/roster-window.data';
 import {
   ScheduleVersion,
   ShiftSegment,
 } from '../components/schedule-version.data';
 import { Weekday } from '../components/weekday.data';
-import { LocationId } from '../entities/location.entity';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/availability.spec.ts, copied
- * over plain arrays and the index-addressed query (the class spec stays in
- * place until its Phase 2 shim), the `toIntervals` cases of day-windows.spec.ts
- * as `withinMsOf`, plus: one case per side of `withinMs` null-vs-[], the
- * budget as a pure output, the seed catalogue against the legacy engine's
- * recorded node counts and answers, a fast-check equivalence against a
- * naive reference search, determinism and purity.
+ * over plain arrays and the index-addressed query of ONE shop day on its
+ * wall clock (the class spec stays in place and runs against its shim), the
+ * `toIntervals` cases of day-windows.spec.ts as `withinOf`, plus: one case
+ * per side of `within` null-vs-[], the budget as a pure output, the seed
+ * catalogue against the legacy engine's recorded node counts and answers, a
+ * fast-check equivalence against a naive reference search, determinism and
+ * purity.
  */
 
-/** Minutes from an arbitrary day origin — reads like a clock in the tests. */
-const H = (hours: number, minutes = 0) => (hours * 60 + minutes) * 60_000;
-const iv = (fromH: number, toH: number) => TimeInterval.of(H(fromH), H(toH));
+/** Minutes from the shop's midnight — reads like a clock in the tests. */
+const H = (hours: number, minutes = 0) => hours * 60 + minutes;
+/** A span of the shop day, its two ends under their brands. */
+const span = (from: number, to: number): MinuteRange =>
+  MinuteRange.of(minute(from), endMinute(to));
+const iv = (fromH: number, toH: number) => span(H(fromH), H(toH));
 
 const IVAN = BarberId.of('ivan');
 const NIKO = BarberId.of('niko');
@@ -75,8 +91,8 @@ const BUDGET = AvailabilitySystem.DEFAULT_BUDGET;
 function barber(
   id: BarberId,
   options: {
-    windows?: readonly TimeInterval[];
-    busy?: readonly TimeInterval[];
+    windows?: readonly MinuteRange[];
+    busy?: readonly MinuteRange[];
   } = {},
 ): BarberDayAvailability {
   return {
@@ -99,9 +115,9 @@ type LineDraft = {
 
 function terms(durationMinutes: number, before = 0, after = 0): LineTerms {
   return {
-    durationMinutes,
-    padBeforeMinutes: before,
-    padAfterMinutes: after,
+    durationMinutes: duration(durationMinutes),
+    padBeforeMinutes: minuteCount(before),
+    padAfterMinutes: minuteCount(after),
   };
 }
 
@@ -115,13 +131,11 @@ function line(
 ): LineDraft {
   return {
     line: {
-      lineId,
-      barberPref: pref,
-      durationMinutes,
-      padBeforeMinutes: pads.before ?? 0,
-      padAfterMinutes: pads.after ?? 0,
+      lineId: CartLineId.of(lineId),
+      ...pref,
+      ...terms(durationMinutes, pads.before ?? 0, pads.after ?? 0),
       termsByBarber: [],
-      personKey,
+      personKey: personKey === null ? null : SeatKeyText.of(personKey),
     },
     overrides,
   };
@@ -131,8 +145,8 @@ function query(
   drafts: readonly LineDraft[],
   barbers: readonly BarberDayAvailability[],
   overrides: {
-    notBeforeMs?: number;
-    withinMs?: readonly TimeInterval[] | null;
+    notBefore?: MinuteOfDay | null;
+    within?: readonly MinuteRange[] | null;
     riders?: readonly AvailabilityRider[];
   } = {},
 ): AvailabilityQuery {
@@ -151,9 +165,10 @@ function query(
     })),
     barbers,
     policy: POLICY,
-    notBeforeMs: overrides.notBeforeMs ?? 0,
+    notBefore:
+      overrides.notBefore === undefined ? minute(0) : overrides.notBefore,
     riders: overrides.riders ?? [],
-    withinMs: overrides.withinMs === undefined ? null : overrides.withinMs,
+    within: overrides.within === undefined ? null : overrides.within,
   };
 }
 
@@ -165,9 +180,9 @@ function solve(
   drafts: readonly LineDraft[],
   barbers: readonly BarberDayAvailability[],
   overrides: {
-    notBeforeMs?: number;
+    notBefore?: MinuteOfDay | null;
     maxOptions?: number;
-    withinMs?: readonly TimeInterval[] | null;
+    within?: readonly MinuteRange[] | null;
   } = {},
 ): readonly AvailabilityOption[] {
   return AvailabilitySystem.availableOptions(
@@ -188,7 +203,7 @@ const distinctStarts = AvailabilitySystem.distinctStarts;
 /** An option as `HH:mm barber` strings, for readable assertions. */
 function describeOption(option: AvailabilityOption): readonly string[] {
   return option.assignments.map((assignment) => {
-    const totalMinutes = assignment.slot.startMs / 60_000;
+    const totalMinutes = assignment.startMinutes;
     const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
     const mm = String(totalMinutes % 60).padStart(2, '0');
     return `${assignment.lineId}@${hh}:${mm}/${assignment.barberId}`;
@@ -199,24 +214,34 @@ describe('candidateStarts', () => {
   it('steps through a gap, stopping where the duration no longer fits', () => {
     // 09:00–10:30 with a 45-minute service on a 15-minute grid: the last
     // start that still fits is 09:45.
-    const found = AvailabilitySystem.candidateStarts([iv(9, 10.5)], 45, 15, 0);
-    expect(found.map((ms) => ms / 60_000 / 60)).toEqual([9, 9.25, 9.5, 9.75]);
+    const found = AvailabilitySystem.candidateStarts(
+      [iv(9, 10.5)],
+      duration(45),
+      duration(15),
+      minute(0),
+    );
+    expect(found.map((ms) => ms / 60)).toEqual([9, 9.25, 9.5, 9.75]);
   });
 
   it('offers nothing when the gap is shorter than the service', () => {
-    expect(AvailabilitySystem.candidateStarts([iv(9, 9.5)], 45, 15, 0)).toEqual(
-      [],
-    );
+    expect(
+      AvailabilitySystem.candidateStarts(
+        [iv(9, 9.5)],
+        duration(45),
+        duration(15),
+        minute(0),
+      ),
+    ).toEqual([]);
   });
 
   it('keeps the WINDOW’s phase rather than snapping to midnight', () => {
     // A shift starting 09:30 must offer 09:30, not 09:45. A midnight-anchored
     // grid would silently discard the first half-step of every odd shift.
     const found = AvailabilitySystem.candidateStarts(
-      [TimeInterval.of(H(9, 30), H(11))],
-      30,
-      15,
-      0,
+      [span(H(9, 30), H(11))],
+      duration(30),
+      duration(15),
+      minute(0),
     );
     expect(found[0]).toBe(H(9, 30));
   });
@@ -224,17 +249,25 @@ describe('candidateStarts', () => {
   it('respects the lead-time floor, staying on the grid', () => {
     const found = AvailabilitySystem.candidateStarts(
       [iv(9, 12)],
-      30,
-      15,
-      H(10, 5),
+      duration(30),
+      duration(15),
+      minute(H(10, 5)),
     );
     expect(found[0]).toBe(H(10, 15));
   });
 
   it('offers nothing on a grid that never advances, rather than hanging', () => {
-    expect(AvailabilitySystem.candidateStarts([iv(9, 12)], 30, 0, 0)).toEqual(
-      [],
-    );
+    // A step of 0 no `DurationMinutes` admits — a corrupt stored policy
+    // reaching the system unparsed.
+    const frozenStep = 0 as DurationMinutes;
+    expect(
+      AvailabilitySystem.candidateStarts(
+        [iv(9, 12)],
+        duration(30),
+        frozenStep,
+        minute(0),
+      ),
+    ).toEqual([]);
   });
 });
 
@@ -244,7 +277,7 @@ describe('availableOptions — a single seat', () => {
       [line('l1', 60)],
       [barber(IVAN, { windows: [iv(9, 11)] })],
     );
-    expect(distinctStarts(options).map((ms) => ms / 60_000 / 60)).toEqual([
+    expect(distinctStarts(options).map((ms) => ms / 60)).toEqual([
       9, 9.25, 9.5, 9.75, 10,
     ]);
   });
@@ -254,7 +287,7 @@ describe('availableOptions — a single seat', () => {
       [line('l1', 60)],
       [barber(IVAN, { windows: [iv(9, 13)], busy: [iv(10, 11)] })],
     );
-    const found = distinctStarts(options).map((ms) => ms / 60_000 / 60);
+    const found = distinctStarts(options).map((ms) => ms / 60);
     expect(found).toContain(9);
     expect(found).toContain(11);
     // Anything from 09:15 to 10:45 would collide with the 10:00–11:00 booking.
@@ -312,14 +345,14 @@ describe('availableOptions — PARALLEL arrangements', () => {
       ],
     );
     const sameStart = options.filter((option) => {
-      const found = new Set(option.assignments.map((a) => a.slot.startMs));
+      const found = new Set(option.assignments.map((a) => a.startMinutes));
       return found.size === 1;
     });
     expect(sameStart.length).toBeGreaterThan(0);
 
     const first = sameStart[0] as AvailabilityOption;
     // The envelope is the LONGER seat, not the sum — they were served at once.
-    expect(TimeInterval.durationMinutes(first.envelope)).toBe(45);
+    expect(MinuteRange.durationMinutes(first)).toBe(45);
     expect(new Set(first.assignments.map((a) => a.barberId)).size).toBe(2);
   });
 
@@ -329,7 +362,7 @@ describe('availableOptions — PARALLEL arrangements', () => {
       [barber(IVAN, { windows: [iv(9, 11)] })],
     );
     for (const option of options) {
-      const found = option.assignments.map((a) => a.slot.startMs);
+      const found = option.assignments.map((a) => a.startMinutes);
       expect(new Set(found).size).toBe(2);
     }
   });
@@ -346,7 +379,7 @@ describe('availableOptions — SEQUENTIAL arrangements', () => {
 
     const backToBack = options.find(
       (option) =>
-        TimeInterval.durationMinutes(option.envelope) === 75 &&
+        MinuteRange.durationMinutes(option) === 75 &&
         option.assignments.every((a) => a.barberId === IVAN),
     );
     expect(backToBack).toBeDefined();
@@ -363,7 +396,11 @@ describe('availableOptions — SEQUENTIAL arrangements', () => {
     // must NOT leak between a father and his son: they are one booking, and a
     // barber does not reset between family members (ruling R3). The engine
     // has no `turnaroundMinutes` input at all.
-    const padded = TimeInterval.pad(iv(12, 13), 15, 15);
+    const padded = MinuteRange.pad(
+      iv(12, 13),
+      minuteCount(15),
+      minuteCount(15),
+    );
     const options = solve(
       [line('a', 45), line('b', 30)],
       [barber(IVAN, { windows: [iv(9, 15)], busy: [padded] })],
@@ -373,9 +410,9 @@ describe('availableOptions — SEQUENTIAL arrangements', () => {
     const abutting = options.find((option) => {
       const sorted = option.assignments
         .slice()
-        .sort((x, y) => x.slot.startMs - y.slot.startMs);
+        .sort((x, y) => x.startMinutes - y.startMinutes);
       return (
-        sorted.length === 2 && sorted[0]?.slot.endMs === sorted[1]?.slot.startMs
+        sorted.length === 2 && sorted[0]?.endMinutes === sorted[1]?.startMinutes
       );
     });
     expect(abutting).toBeDefined();
@@ -383,7 +420,7 @@ describe('availableOptions — SEQUENTIAL arrangements', () => {
     // …and the padded neighbour is still respected: nothing sits inside it.
     for (const option of options) {
       for (const assignment of option.assignments) {
-        expect(TimeInterval.overlaps(assignment.slot, padded)).toBe(false);
+        expect(MinuteRange.overlaps(assignment, padded)).toBe(false);
       }
     }
   });
@@ -397,9 +434,7 @@ describe('availableOptions — SEQUENTIAL arrangements', () => {
       option.assignments.every((a) => a.barberId === IVAN),
     );
     expect(allIvan).toBeDefined();
-    expect(
-      TimeInterval.durationMinutes((allIvan as AvailabilityOption).envelope),
-    ).toBe(90);
+    expect(MinuteRange.durationMinutes(allIvan as AvailabilityOption)).toBe(90);
   });
 });
 
@@ -419,7 +454,7 @@ describe('availableOptions — the collision invariant', () => {
           const a = option.assignments.at(i);
           const b = option.assignments.at(j);
           if (a && b && a.barberId === b.barberId) {
-            expect(TimeInterval.overlaps(a.slot, b.slot)).toBe(false);
+            expect(MinuteRange.overlaps(a, b)).toBe(false);
           }
         }
       }
@@ -439,9 +474,9 @@ describe('availableOptions — the collision invariant', () => {
         const owner = barbers[assignment.barberIndex] as BarberDayAvailability;
         expect(owner.barberId).toBe(assignment.barberId);
         const free = IntervalSetSystem.subtract(owner.windows, owner.busy);
-        expect(
-          free.some((gap) => TimeInterval.contains(gap, assignment.slot)),
-        ).toBe(true);
+        expect(free.some((gap) => MinuteRange.contains(gap, assignment))).toBe(
+          true,
+        );
       }
     }
   });
@@ -490,7 +525,7 @@ describe('availableOptions — one person, one chair at a time', () => {
           j > i &&
           (keyOf.get(a.lineId) ?? null) !== null &&
           keyOf.get(a.lineId) === keyOf.get(b.lineId) &&
-          TimeInterval.overlaps(a.slot, b.slot),
+          MinuteRange.overlaps(a, b),
       ),
     );
   }
@@ -520,8 +555,8 @@ describe('availableOptions — one person, one chair at a time', () => {
     const options = solve(
       lines,
       [
-        barber(IVAN, { windows: [TimeInterval.of(H(9), H(9, 45))] }),
-        barber(NIKO, { windows: [TimeInterval.of(H(9, 45), H(11))] }),
+        barber(IVAN, { windows: [span(H(9), H(9, 45))] }),
+        barber(NIKO, { windows: [span(H(9, 45), H(11))] }),
       ],
       { maxOptions: 200 },
     );
@@ -573,7 +608,10 @@ describe('availableOptions — one person, one chair at a time', () => {
       ),
     );
     // 09:00–10:15, never the side-by-side 09:00–09:45.
-    expect(options[0]?.envelope).toEqual(TimeInterval.of(H(9), H(10, 15)));
+    const first = options[0] as AvailabilityOption;
+    expect(span(first.startMinutes, first.endMinutes)).toEqual(
+      span(H(9), H(10, 15)),
+    );
   });
 
   it('removes exactly the arrangements that seat somebody twice, and nothing else (property)', () => {
@@ -603,7 +641,7 @@ describe('availableOptions — one person, one chair at a time', () => {
           const barbers = [
             barber(IVAN, {
               windows: [iv(9, 12)],
-              busy: [TimeInterval.of(H(busyHour), H(busyHour, 30))],
+              busy: [span(H(busyHour), H(busyHour, 30))],
             }),
             ...(nikoWorks ? [barber(NIKO, { windows: [iv(9, 12)] })] : []),
           ];
@@ -638,7 +676,7 @@ describe('availableOptions — buffers', () => {
       [
         barber(IVAN, {
           windows: [iv(9, 12)],
-          busy: [TimeInterval.pad(iv(10, 11), 15, 15)],
+          busy: [MinuteRange.pad(iv(10, 11), minuteCount(15), minuteCount(15))],
         }),
       ],
     );
@@ -665,7 +703,7 @@ describe('availableOptions — buffers', () => {
       [barber(IVAN, { windows: [iv(9, 10)] })],
     );
     // The barber is occupied from 09:00, but the client's slot begins 09:15.
-    expect(options[0]?.assignments[0]?.slot.startMs).toBe(H(9, 15));
+    expect(options[0]?.assignments[0]?.startMinutes).toBe(H(9, 15));
   });
 
   it('a service’s cleanup DOES separate two seats of one party', () => {
@@ -685,24 +723,21 @@ describe('availableOptions — buffers', () => {
       if (!a || !b) throw new Error('every line must be assigned');
       // 'a' occupies its slot PLUS 20 minutes of cleanup, and nothing may sit
       // inside that — not even another seat of the same party.
-      const aOccupied = TimeInterval.of(
-        a.slot.startMs,
-        a.slot.endMs + 20 * 60_000,
-      );
-      expect(TimeInterval.overlaps(aOccupied, b.slot)).toBe(false);
+      const aOccupied = span(a.startMinutes, a.endMinutes + 20);
+      expect(MinuteRange.overlaps(aOccupied, b)).toBe(false);
     }
 
     // And when 'a' does come first, the 20-minute gap is really there.
     const aFirst = options.find((option) => {
       const a = option.assignments.find((x) => x.lineId === 'a');
       const b = option.assignments.find((x) => x.lineId === 'b');
-      return a && b && a.slot.startMs < b.slot.startMs;
+      return a && b && a.startMinutes < b.startMinutes;
     });
     expect(aFirst).toBeDefined();
     const a = aFirst?.assignments.find((x) => x.lineId === 'a');
     const b = aFirst?.assignments.find((x) => x.lineId === 'b');
     expect(
-      ((b?.slot.startMs ?? 0) - (a?.slot.endMs ?? 0)) / 60_000,
+      (b?.startMinutes ?? 0) - (a?.endMinutes ?? 0),
     ).toBeGreaterThanOrEqual(20);
   });
 });
@@ -759,9 +794,9 @@ describe('availableOptions — determinism', () => {
       const previous = options[i - 1] as AvailabilityOption;
       const current = options.at(i) as AvailabilityOption;
       const ordered =
-        previous.envelope.startMs < current.envelope.startMs ||
-        (previous.envelope.startMs === current.envelope.startMs &&
-          previous.envelope.endMs <= current.envelope.endMs);
+        previous.startMinutes < current.startMinutes ||
+        (previous.startMinutes === current.startMinutes &&
+          previous.endMinutes <= current.endMinutes);
       expect(ordered).toBe(true);
     }
   });
@@ -790,7 +825,7 @@ describe('availableOptions — edges', () => {
     const options = solve(
       [line('a', 30)],
       [barber(IVAN, { windows: [iv(9, 12)] })],
-      { notBeforeMs: H(10, 30) },
+      { notBefore: minute(H(10, 30)) },
     );
     expect(distinctStarts(options)[0]).toBe(H(10, 30));
   });
@@ -831,7 +866,7 @@ describe('availableOptions — edges', () => {
     ).toEqual({ options: [], exhausted: false, nodesVisited: 0 });
     const frozenGrid: AvailabilityQuery = {
       ...query([line('a', 30)], [barber(IVAN)]),
-      policy: { ...POLICY, slotStepMinutes: 0 },
+      policy: { ...POLICY, slotStepMinutes: 0 as DurationMinutes },
     };
     expect(
       AvailabilitySystem.availableStarts(frozenGrid, BUDGET).options,
@@ -878,7 +913,7 @@ describe('availableOptions — per-barber terms', () => {
     expect(options).not.toHaveLength(0);
     for (const option of options) {
       expect(option.assignments[0]?.barberId).toBe('ivan');
-      expect(TimeInterval.durationMinutes(option.envelope)).toBe(30);
+      expect(MinuteRange.durationMinutes(option)).toBe(30);
     }
   });
 
@@ -898,8 +933,8 @@ describe('availableOptions — per-barber terms', () => {
     expect(options).not.toHaveLength(0);
     for (const option of options) {
       expect(
-        TimeInterval.durationMinutes(
-          option.assignments[0]?.slot as TimeInterval,
+        MinuteRange.durationMinutes(
+          option.assignments[0] as AvailabilityAssignment,
         ),
       ).toBe(45);
     }
@@ -912,8 +947,8 @@ describe('availableOptions — per-barber terms', () => {
     );
     expect(options).toHaveLength(1);
     expect(
-      TimeInterval.durationMinutes(
-        options[0]?.assignments[0]?.slot as TimeInterval,
+      MinuteRange.durationMinutes(
+        options[0]?.assignments[0] as AvailabilityAssignment,
       ),
     ).toBe(60);
   });
@@ -944,11 +979,9 @@ describe('availableStarts — one arrangement per time, and the best one', () =>
         [barber(IVAN, { windows: [iv(9, 13)] })],
       ),
     );
-    const first = options.find((option) => option.envelope.startMs === H(9));
+    const first = options.find((option) => option.startMinutes === H(9));
     expect(first).toBeDefined();
-    expect(TimeInterval.durationMinutes(first?.envelope as TimeInterval)).toBe(
-      60,
-    );
+    expect(MinuteRange.durationMinutes(first as AvailabilityOption)).toBe(60);
   });
 
   it('returns exactly one option per distinct start', () => {
@@ -961,7 +994,7 @@ describe('availableStarts — one arrangement per time, and the best one', () =>
         ],
       ),
     );
-    const found = new Set(options.map((option) => option.envelope.startMs));
+    const found = new Set(options.map((option) => option.startMinutes));
     expect(found.size).toBe(options.length);
   });
 
@@ -978,9 +1011,7 @@ describe('availableStarts — one arrangement per time, and the best one', () =>
         ],
       ),
     );
-    const lastStart = Math.max(
-      ...options.map((option) => option.envelope.startMs),
-    );
+    const lastStart = Math.max(...options.map((option) => option.startMinutes));
     expect(lastStart).toBeGreaterThanOrEqual(H(19));
   });
 
@@ -1001,12 +1032,12 @@ describe('availableStarts — one arrangement per time, and the best one', () =>
 // the search. Applied to FREE TIME rather than to the returned options, for
 // two reasons the tests below pin: the enumeration is capped, and a mask has
 // to constrain a party's later seats too.
-describe('availableOptions — withinMs', () => {
+describe('availableOptions — within', () => {
   it('offers only starts inside the declared window', () => {
     const options = solve([line('a', 60)], [barber(IVAN)], {
-      withinMs: [iv(9, 11)],
+      within: [iv(9, 11)],
     });
-    const found = options.map((option) => option.envelope.startMs / H(1));
+    const found = options.map((option) => option.startMinutes / H(1));
     expect(Math.min(...found)).toBe(9);
     // A 60-minute service inside 09:00–11:00 last starts at 10:00.
     expect(Math.max(...found)).toBe(10);
@@ -1014,9 +1045,9 @@ describe('availableOptions — withinMs', () => {
 
   it('honours several disjoint windows in one day', () => {
     const options = solve([line('a', 60)], [barber(IVAN)], {
-      withinMs: [iv(8, 10), iv(15, 16.5)],
+      within: [iv(8, 10), iv(15, 16.5)],
     });
-    const hours = options.map((option) => option.envelope.startMs / H(1));
+    const hours = options.map((option) => option.startMinutes / H(1));
     // The shift is 09:00–18:00, so the morning window contributes only its
     // overlap with the roster (09:00), and the afternoon window runs to the
     // last 60-minute start that still ends by 16:30.
@@ -1034,20 +1065,20 @@ describe('availableOptions — withinMs', () => {
         line('b', 60, BarberPref.specific(IVAN)),
       ],
       [barber(IVAN)],
-      { withinMs: [iv(9, 11)] },
+      { within: [iv(9, 11)] },
     );
     expect(options.length).toBeGreaterThan(0);
     for (const option of options) {
       for (const assignment of option.assignments) {
-        expect(assignment.slot.startMs).toBeGreaterThanOrEqual(H(9));
-        expect(assignment.slot.endMs).toBeLessThanOrEqual(H(11));
+        expect(assignment.startMinutes).toBeGreaterThanOrEqual(H(9));
+        expect(assignment.endMinutes).toBeLessThanOrEqual(H(11));
       }
     }
     // Two interchangeable seats can be ordered either way; the window admits
     // exactly the one back-to-back placement, in some order.
     const placements = options.map((option) =>
       option.assignments
-        .map((assignment) => assignment.slot.startMs / H(1))
+        .map((assignment) => assignment.startMinutes / H(1))
         .sort((x, y) => x - y),
     );
     expect(placements).toEqual(placements.map(() => [9, 10]));
@@ -1058,146 +1089,129 @@ describe('availableOptions — withinMs', () => {
       [line('a', 60)],
       [barber(IVAN, { busy: [iv(9, 10)] })],
       {
-        withinMs: [iv(9, 11)],
+        within: [iv(9, 11)],
       },
     );
-    expect(options.map((option) => option.envelope.startMs / H(1))).toEqual([
-      10,
-    ]);
+    expect(options.map((option) => option.startMinutes / H(1))).toEqual([10]);
   });
 });
 
 /*
- * Risk 9: `withinMs` is ALWAYS present. `null` is unconstrained, `[]` is
+ * Risk 9: `within` is ALWAYS present. `null` is unconstrained, `[]` is
  * "nothing qualifies" — one case per side per entry point, so a porter who
  * maps the old optional to `[]` fails here instead of zeroing every ordinary
  * booking.
  */
-describe('withinMs — null is unconstrained, [] is nothing', () => {
+describe('within — null is unconstrained, [] is nothing', () => {
   const pool = [barber(IVAN)];
 
-  it('availableOptions: withinMs null searches the whole rostered day', () => {
-    const options = solve([line('a', 60)], pool, { withinMs: null });
+  it('availableOptions: within null searches the whole rostered day', () => {
+    const options = solve([line('a', 60)], pool, { within: null });
     expect(distinctStarts(options)[0]).toBe(H(9));
     expect(distinctStarts(options).at(-1)).toBe(H(17));
   });
 
-  it('availableOptions: withinMs [] yields no option at all', () => {
-    expect(solve([line('a', 60)], pool, { withinMs: [] })).toEqual([]);
+  it('availableOptions: within [] yields no option at all', () => {
+    expect(solve([line('a', 60)], pool, { within: [] })).toEqual([]);
   });
 
-  it('availableStarts: withinMs null searches the whole rostered day', () => {
-    expect(
-      starts(query([line('a', 60)], pool, { withinMs: null })),
-    ).toHaveLength(33);
+  it('availableStarts: within null searches the whole rostered day', () => {
+    expect(starts(query([line('a', 60)], pool, { within: null }))).toHaveLength(
+      33,
+    );
   });
 
-  it('availableStarts: withinMs [] yields no start at all', () => {
-    expect(starts(query([line('a', 60)], pool, { withinMs: [] }))).toEqual([]);
+  it('availableStarts: within [] yields no start at all', () => {
+    expect(starts(query([line('a', 60)], pool, { within: [] }))).toEqual([]);
   });
 
   it('hasAnyOption: null finds the day, [] finds nothing', () => {
     expect(
       AvailabilitySystem.hasAnyOption(
-        query([line('a', 60)], pool, { withinMs: null }),
+        query([line('a', 60)], pool, { within: null }),
         BUDGET,
       ),
     ).toBe(true);
     expect(
       AvailabilitySystem.hasAnyOption(
-        query([line('a', 60)], pool, { withinMs: [] }),
+        query([line('a', 60)], pool, { within: [] }),
         BUDGET,
       ),
     ).toBe(false);
   });
 
-  it('withinMsOf never turns an unnarrowed day into [] — it is the whole day', () => {
-    const days = ZonedTimeSystem.dayTable(
-      'Europe/Sofia',
-      DayKey.of('2026-08-26'),
-      DayKey.of('2026-08-26'),
-    );
-    const mask = AvailabilitySystem.withinMsOf(
-      DayWindows.wholeDay(DayKey.of('2026-08-26')),
-      days,
+  it('withinOf never turns an unnarrowed day into [] — it is the whole day', () => {
+    const mask = AvailabilitySystem.withinOf(
+      DayWindows.wholeDay(localDate('2026-08-26')),
     );
     expect(mask).toHaveLength(1);
   });
 });
 
-describe('withinMsOf — a declared day, as the mask (DayWindows.toIntervals)', () => {
-  const ZONE = 'Europe/Sofia';
-  const days = ZonedTimeSystem.dayTable(
-    ZONE,
-    DayKey.of('2026-03-01'),
-    DayKey.of('2026-10-31'),
-  );
-  const range = (from: number, to: number) =>
-    MinuteRange.of(from * 60, to * 60);
-  const hours = (interval: TimeInterval) =>
-    (interval.endMs - interval.startMs) / 3_600_000;
+describe('withinOf — a declared day, as the mask (DayWindows.toIntervals)', () => {
+  /*
+   * The mask is the shop day's wall clock (Law 7.3): a window is a claim
+   * about clock faces, and it stays one on the two transition days — the
+   * zone never reaches it. Whether a wall-clock minute exists as an instant
+   * is the ingestion boundary's question (`ZonedTimeSystem.toUtc` →
+   * `DST_GAP_INVALID_TIME`). The legacy instant mask measured transition days
+   * in real hours and dropped erased spans; each case keeps its day and pins
+   * the wall-clock answer.
+   */
+  const range = (from: number, to: number) => span(from * 60, to * 60);
+  const hours = (window: MinuteRange) =>
+    MinuteRange.durationMinutes(window) / 60;
 
   it('offers the WHOLE day when no window was declared', () => {
     // Empty means "any time", never "no time" — the common answer is "the
     // 26th works" with nothing further, and that must not mask to nothing.
-    const mask = AvailabilitySystem.withinMsOf(
-      DayWindows.wholeDay(DayKey.of('2026-08-26')),
-      days,
+    const mask = AvailabilitySystem.withinOf(
+      DayWindows.wholeDay(localDate('2026-08-26')),
     );
     expect(mask).toHaveLength(1);
-    expect(hours(mask[0] as TimeInterval)).toBe(24);
+    expect(hours(mask[0] as MinuteRange)).toBe(24);
   });
 
-  it('resolves declared spans to instants on ITS day', () => {
-    const mask = AvailabilitySystem.withinMsOf(
-      DayWindows.of(DayKey.of('2026-08-26'), [range(8, 12), range(15, 16.5)]),
-      days,
+  it('keeps the declared spans of ITS day', () => {
+    const mask = AvailabilitySystem.withinOf(
+      DayWindows.of(localDate('2026-08-26'), [range(8, 12), range(15, 16.5)]),
     );
     expect(mask.map(hours)).toEqual([4, 1.5]);
   });
 
-  // A window is a claim about clock faces, so it survives the clocks changing
-  // under it — and a spring-forward morning really is an hour shorter.
-  it('honours DST: 02:00–05:00 on a spring-forward day is two real hours', () => {
-    const mask = AvailabilitySystem.withinMsOf(
-      DayWindows.of(DayKey.of('2026-03-29'), [range(2, 5)]),
-      days,
+  it('keeps a spring-forward window on the wall clock: 02:00–05:00 reads three clock hours', () => {
+    const mask = AvailabilitySystem.withinOf(
+      DayWindows.of(localDate('2026-03-29'), [range(2, 5)]),
     );
-    expect(mask.map(hours)).toEqual([2]);
+    expect(mask.map(hours)).toEqual([3]);
   });
 
-  it('measures a whole transition day as 23 hours (25 in autumn), never 24', () => {
+  it('measures a whole transition day as the 24 clock hours of the shop day', () => {
     expect(
-      AvailabilitySystem.withinMsOf(
-        DayWindows.wholeDay(DayKey.of('2026-03-29')),
-        days,
+      AvailabilitySystem.withinOf(
+        DayWindows.wholeDay(localDate('2026-03-29')),
       ).map(hours),
-    ).toEqual([23]);
+    ).toEqual([24]);
     expect(
-      AvailabilitySystem.withinMsOf(
-        DayWindows.wholeDay(DayKey.of('2026-10-25')),
-        days,
+      AvailabilitySystem.withinOf(
+        DayWindows.wholeDay(localDate('2026-10-25')),
       ).map(hours),
-    ).toEqual([25]);
+    ).toEqual([24]);
   });
 
-  it('drops a span the day erased rather than failing the request', () => {
-    // 03:00–03:30 does not happen in Sofia on 2026-03-29. Losing one span
-    // beats refusing a search over the other days in the same request.
-    const declared = DayWindows.of(DayKey.of('2026-03-29'), [
-      MinuteRange.of(180, 210),
-    ]);
+  it('keeps a span the transition erased — the boundary refuses a booking inside it', () => {
+    // 03:00–03:30 does not happen in Sofia on 2026-03-29: no slot inside it
+    // becomes an instant (toUtc answers DST_GAP_INVALID_TIME), so the mask
+    // need not drop it — and the request's other days are never failed.
+    const declared = DayWindows.of(localDate('2026-03-29'), [span(180, 210)]);
     expect(declared.windows).toHaveLength(1);
-    expect(AvailabilitySystem.withinMsOf(declared, days)).toEqual([]);
+    expect(AvailabilitySystem.withinOf(declared)).toEqual([span(180, 210)]);
   });
 
-  it('fails closed — nothing qualifies — for a day the table does not cover', () => {
+  it('answers any day — there is no zone table to fall outside', () => {
     expect(
-      AvailabilitySystem.withinMsOf(
-        DayWindows.wholeDay(DayKey.of('2027-01-05')),
-        days,
-      ),
-    ).toEqual([]);
+      AvailabilitySystem.withinOf(DayWindows.wholeDay(localDate('2027-01-05'))),
+    ).toEqual([span(0, 1440)]);
   });
 });
 
@@ -1210,7 +1224,7 @@ describe('availableStarts — riders pinned to the party (a client move’s carr
   ): AvailabilityRider {
     return {
       barberId,
-      offsetMinutes,
+      offsetMinutes: minuteDelta(offsetMinutes),
       terms: terms(durationMinutes, pads.before ?? 0, pads.after ?? 0),
     };
   }
@@ -1220,12 +1234,12 @@ describe('availableStarts — riders pinned to the party (a client move’s carr
     barbers: readonly BarberDayAvailability[],
     riders: readonly AvailabilityRider[],
     overrides: {
-      notBeforeMs?: number;
-      withinMs?: readonly TimeInterval[] | null;
+      notBefore?: MinuteOfDay | null;
+      within?: readonly MinuteRange[] | null;
     } = {},
   ): readonly number[] {
     return starts(query(lines, barbers, { ...overrides, riders })).map(
-      (option) => option.envelope.startMs / H(1),
+      (option) => option.startMinutes / H(1),
     );
   }
 
@@ -1280,7 +1294,7 @@ describe('availableStarts — riders pinned to the party (a client move’s carr
       [line('me', 30, BarberPref.specific(IVAN))],
       [barber(IVAN), barber(PETAR)],
       [rider(PETAR, -60, 30)],
-      { notBeforeMs: H(10), withinMs: [iv(10, 12)] },
+      { notBefore: minute(H(10)), within: [iv(10, 12)] },
     );
     expect(found[0]).toBe(11);
     expect(found.every((start) => start >= 11)).toBe(true);
@@ -1317,7 +1331,7 @@ describe('availableStarts — riders pinned to the party (a client move’s carr
       [line('me', 30, BarberPref.specific(IVAN))],
       [barber(IVAN)],
       [rider(IVAN, 30, 30)],
-      { withinMs: [iv(10, 10.5)] },
+      { within: [iv(10, 10.5)] },
     );
     expect(found).toEqual([10]);
   });
@@ -1355,7 +1369,11 @@ describe('availableStarts — riders pinned to the party (a client move’s carr
         },
       ),
     );
-    expect(withRider?.envelope).toEqual(iv(9.25, 9.75));
+    expect(
+      withRider === undefined
+        ? null
+        : span(withRider.startMinutes, withRider.endMinutes),
+    ).toEqual(iv(9.25, 9.75));
     expect(withRider?.assignments.map((a) => a.lineId)).toEqual(['me']);
   });
 
@@ -1379,27 +1397,24 @@ describe('availableStarts — riders pinned to the party (a client move’s carr
           const pinned = starts(query(lines, barbers, { riders: [only] }));
           for (const option of pinned) {
             // Removes, never adds…
-            expect(plain).toContain(option.envelope.startMs / H(1));
+            expect(plain).toContain(option.startMinutes / H(1));
             // …and every offered start leaves the rider in its barber's free
             // time, clear of the client's own chair.
-            const riderStart =
-              option.envelope.startMs + only.offsetMinutes * 60_000;
-            const riderSlot = TimeInterval.of(
+            const riderStart = option.startMinutes + only.offsetMinutes;
+            const riderSlot = span(
               riderStart,
-              riderStart + only.terms.durationMinutes * 60_000,
+              riderStart + only.terms.durationMinutes,
             );
             const owner = barbers.find(
               (candidate) => candidate.barberId === only.barberId,
             ) as BarberDayAvailability;
             const free = IntervalSetSystem.subtract(owner.windows, owner.busy);
             expect(
-              free.some((gap) => TimeInterval.contains(gap, riderSlot)),
+              free.some((gap) => MinuteRange.contains(gap, riderSlot)),
             ).toBe(true);
             for (const assignment of option.assignments) {
               if (assignment.barberId === only.barberId) {
-                expect(TimeInterval.overlaps(assignment.slot, riderSlot)).toBe(
-                  false,
-                );
+                expect(MinuteRange.overlaps(assignment, riderSlot)).toBe(false);
               }
             }
           }
@@ -1410,17 +1425,22 @@ describe('availableStarts — riders pinned to the party (a client move’s carr
 });
 
 describe('paddedBusy — the busy a placement is checked against', () => {
-  const M = (minutes: number) => minutes * 60_000;
+  const M = (minutes: number) => minutes;
+  const chair = (barberId: BarberId, range: MinuteRange) => ({
+    barberId,
+    startMinutes: minute(range.startMinutes),
+    endMinutes: endMinute(range.endMinutes),
+  });
 
   it('pads every stored span by the barber’s turnaround, merging what then touches', () => {
     expect(
       AvailabilitySystem.paddedBusy({
         barberId: IVAN,
-        spans: [iv(10, 11), TimeInterval.of(H(11, 30), H(12))],
-        turnaroundMinutes: 15,
+        spans: [iv(10, 11), span(H(11, 30), H(12))],
+        turnaroundMinutes: minuteCount(15),
         release: [],
       }),
-    ).toEqual([TimeInterval.of(H(9, 45), H(12, 15))]);
+    ).toEqual([span(H(9, 45), H(12, 15))]);
   });
 
   it('hands a moved visit’s own chair back BEFORE padding, so a neighbour keeps its turnaround', () => {
@@ -1429,13 +1449,13 @@ describe('paddedBusy — the busy a placement is checked against', () => {
     const released = AvailabilitySystem.paddedBusy({
       barberId: IVAN,
       spans: [iv(10, 12)],
-      turnaroundMinutes: 15,
-      release: [{ barberId: IVAN, occupied: iv(10, 11) }],
+      turnaroundMinutes: minuteCount(15),
+      release: [chair(IVAN, iv(10, 11))],
     });
     // The neighbour's own turnaround survives: 10:45, not 11:15. Subtracting
     // the PADDED own span instead would free 10:45–11:15, and the grid would
     // offer a 10:30 half-hour the server refuses.
-    expect(released).toEqual([TimeInterval.of(H(10, 45), H(12, 15))]);
+    expect(released).toEqual([span(H(10, 45), H(12, 15))]);
   });
 
   it('ignores chair time on other barbers — a whole visit can be released for everyone', () => {
@@ -1443,18 +1463,22 @@ describe('paddedBusy — the busy a placement is checked against', () => {
       AvailabilitySystem.paddedBusy({
         barberId: IVAN,
         spans: [iv(10, 11)],
-        turnaroundMinutes: 0,
-        release: [{ barberId: NIKO, occupied: iv(10, 11) }],
+        turnaroundMinutes: MinuteCount.ZERO,
+        release: [chair(NIKO, iv(10, 11))],
       }),
     ).toEqual([iv(10, 11)]);
   });
 
-  it('treats a negative turnaround as none', () => {
+  it('never meets a negative turnaround — the MinuteCount brand refuses it at its edge, and none pads nothing', () => {
+    // The legacy rule clamped a negative turnaround to none; a turnaround is
+    // now a `MinuteCount`, so a negative one is refused where it is read
+    // (`MinuteCount.of`) and the rule only ever sees zero or more.
+    expect(MinuteCount.of(-15).ok).toBe(false);
     expect(
       AvailabilitySystem.paddedBusy({
         barberId: IVAN,
         spans: [iv(10, 11)],
-        turnaroundMinutes: -15,
+        turnaroundMinutes: MinuteCount.ZERO,
         release: [],
       }),
     ).toEqual([iv(10, 11)]);
@@ -1470,19 +1494,20 @@ describe('paddedBusy — the busy a placement is checked against', () => {
     });
     fc.assert(
       fc.property(
-        fc.array(seat, { minLength: 1, maxLength: 8 }),
+        // At most six seats of ≤ 4 h each from midnight — one shop day.
+        fc.array(seat, { minLength: 1, maxLength: 6 }),
         fc.integer({ min: 0, max: 30 }),
         (seats, turnaround) => {
-          const own: TimeInterval[] = [];
-          const others: TimeInterval[] = [];
-          let cursor = H(9);
+          const own: MinuteRange[] = [];
+          const others: MinuteRange[] = [];
+          let cursor = H(0);
           for (const entry of seats) {
-            const span = TimeInterval.of(
+            const seatSpan = span(
               cursor + M(entry.gap),
               cursor + M(entry.gap + entry.length),
             );
-            (entry.own ? own : others).push(span);
-            cursor = span.endMs;
+            (entry.own ? own : others).push(seatSpan);
+            cursor = seatSpan.endMinutes;
           }
           // The projection stores the merged union — who is who is gone.
           const stored = IntervalSetSystem.normalize([...own, ...others]);
@@ -1490,14 +1515,14 @@ describe('paddedBusy — the busy a placement is checked against', () => {
             AvailabilitySystem.paddedBusy({
               barberId: IVAN,
               spans: stored,
-              turnaroundMinutes: turnaround,
-              release: own.map((occupied) => ({ barberId: IVAN, occupied })),
+              turnaroundMinutes: minuteCount(turnaround),
+              release: own.map((occupied) => chair(IVAN, occupied)),
             }),
           ).toEqual(
             AvailabilitySystem.paddedBusy({
               barberId: IVAN,
               spans: others,
-              turnaroundMinutes: turnaround,
+              turnaroundMinutes: minuteCount(turnaround),
               release: [],
             }),
           );
@@ -1507,11 +1532,34 @@ describe('paddedBusy — the busy a placement is checked against', () => {
   });
 });
 
-describe('leadFloorMs and distinctStarts', () => {
-  it('puts the floor minLeadMinutes after now', () => {
+describe('leadFloor and distinctStarts', () => {
+  it('puts the floor minLeadMinutes after now, on the shop’s wall clock', () => {
+    const today = localDate('2026-07-29');
+    const nine = ShopNow.of(
+      today,
+      minute(H(9)),
+      utcMs('2026-07-29T09:00:00+03:00'),
+    );
+    const lead = { ...POLICY, minLeadMinutes: minuteCount(120) };
+    expect(AvailabilitySystem.leadFloor(nine, lead, today)).toBe(H(11));
+    // Carried across midnight: 23:00 + 2 h is 01:00 tomorrow; tomorrow's
+    // floor is 01:00, and today is too soon from 22:00 on.
+    const eleven = ShopNow.of(
+      today,
+      minute(H(23)),
+      utcMs('2026-07-29T23:00:00+03:00'),
+    );
     expect(
-      AvailabilitySystem.leadFloorMs(H(9), { ...POLICY, minLeadMinutes: 120 }),
-    ).toBe(H(11));
+      AvailabilitySystem.leadFloor(eleven, lead, localDate('2026-07-30')),
+    ).toBe(H(1));
+    expect(AvailabilitySystem.leadFloor(eleven, lead, today)).toBeNull();
+    // A day further out opens from its midnight; a past day is too soon.
+    expect(
+      AvailabilitySystem.leadFloor(nine, lead, localDate('2026-07-31')),
+    ).toBe(0);
+    expect(
+      AvailabilitySystem.leadFloor(nine, lead, localDate('2026-07-28')),
+    ).toBeNull();
   });
 
   it('lists each party start once, in order', () => {
@@ -1629,22 +1677,19 @@ function seedCatalogue(lineCount: number): AvailabilityQuery {
       id: IVAN,
       turnaround: 10,
       windows: [iv(9, 13), iv(14, 18)],
-      busy: [TimeInterval.of(H(10), H(10, 45)), iv(15, 16)],
+      busy: [span(H(10), H(10, 45)), iv(15, 16)],
     },
     {
       id: NIKO,
       turnaround: 0,
       windows: [iv(12, 20)],
-      busy: [
-        TimeInterval.of(H(13), H(13, 45)),
-        TimeInterval.of(H(17, 30), H(18, 15)),
-      ],
+      busy: [span(H(13), H(13, 45)), span(H(17, 30), H(18, 15))],
     },
     {
       id: STEFAN,
       turnaround: 15,
       windows: [iv(9, 13), iv(14, 18)],
-      busy: [TimeInterval.of(H(11), H(11, 45))],
+      busy: [span(H(11), H(11, 45))],
     },
   ].map((seed): BarberDayAvailability => ({
     barberId: seed.id,
@@ -1652,7 +1697,7 @@ function seedCatalogue(lineCount: number): AvailabilityQuery {
     busy: AvailabilitySystem.paddedBusy({
       barberId: seed.id,
       spans: seed.busy,
-      turnaroundMinutes: seed.turnaround,
+      turnaroundMinutes: minuteCount(seed.turnaround),
       release: [],
     }),
     blocks: [],
@@ -1706,7 +1751,7 @@ function legacyRender(options: readonly AvailabilityOption[]): string {
   return options
     .map((option) =>
       option.assignments
-        .map((a) => `${a.lineId}@${a.slot.startMs / 60_000}/${a.barberId}`)
+        .map((a) => `${a.lineId}@${a.startMinutes}/${a.barberId}`)
         .join(' '),
     )
     .join('|');
@@ -1779,19 +1824,20 @@ function referenceSearch(
   dedupe: boolean,
 ): AvailabilityResult {
   const { lines, barbers } = q;
-  if (lines.length === 0 || limits.maxOptions <= 0)
+  if (lines.length === 0 || limits.maxOptions <= 0 || q.notBefore === null)
     return { options: [], exhausted: false, nodesVisited: 0 };
+  const notBefore = q.notBefore;
   const open = barbers.map((b) =>
     IntervalSetSystem.subtract(b.windows, b.busy),
   );
   const free = open.map((o) =>
-    q.withinMs === null ? o : IntervalSetSystem.intersect(o, q.withinMs),
+    q.within === null ? o : IntervalSetSystem.intersect(o, q.within),
   );
   const ordered = lines
     .map((l, index) => ({ l, index }))
     .sort((a, b) => {
-      const sa = a.l.barberPref.kind === BarberPrefKind.Specific ? 0 : 1;
-      const sb = b.l.barberPref.kind === BarberPrefKind.Specific ? 0 : 1;
+      const sa = a.l.barberPreference === BarberPreference.Specific ? 0 : 1;
+      const sb = b.l.barberPreference === BarberPreference.Specific ? 0 : 1;
       return (
         sa - sb ||
         b.l.durationMinutes - a.l.durationMinutes ||
@@ -1799,10 +1845,10 @@ function referenceSearch(
       );
     });
   type Pick = {
-    lineId: string;
+    lineId: CartLineId;
     barberIndex: number;
-    slot: TimeInterval;
-    occupied: TimeInterval;
+    slot: MinuteRange;
+    occupied: MinuteRange;
     personKey: string | null;
   };
   const chosen: Pick[] = [];
@@ -1823,20 +1869,21 @@ function referenceSearch(
       occupied: p.occupied,
     }));
     for (const rider of q.riders) {
-      const sold = partyStart + rider.offsetMinutes * 60_000;
-      const occupied = TimeInterval.of(
-        sold - rider.terms.padBeforeMinutes * 60_000,
-        sold +
-          (rider.terms.durationMinutes + rider.terms.padAfterMinutes) * 60_000,
-      );
-      if (occupied.startMs < q.notBeforeMs) return false;
+      const sold = partyStart + rider.offsetMinutes;
+      const from = sold - rider.terms.padBeforeMinutes;
+      const to =
+        sold + rider.terms.durationMinutes + rider.terms.padAfterMinutes;
+      if (from < notBefore) return false;
+      // Off the shop day's clock is outside every gap.
+      if (from < 0 || to > 1440) return false;
+      const occupied = span(from, to);
       const b = barbers.findIndex((x) => x.barberId === rider.barberId);
       if (b < 0) return false;
       const remaining = IntervalSetSystem.subtract(
-        open.at(b) as readonly TimeInterval[],
+        open.at(b) as readonly MinuteRange[],
         placed.filter((p) => p.barberIndex === b).map((p) => p.occupied),
       );
-      if (!remaining.some((gap) => TimeInterval.contains(gap, occupied)))
+      if (!remaining.some((gap) => MinuteRange.contains(gap, occupied)))
         return false;
       placed.push({ barberIndex: b, occupied });
     }
@@ -1845,24 +1892,26 @@ function referenceSearch(
   const walk = (index: number): void => {
     if (options.length >= limits.maxOptions) return;
     if (index === ordered.length) {
-      const envelope = TimeInterval.of(
-        Math.min(...chosen.map((p) => p.slot.startMs)),
-        Math.max(...chosen.map((p) => p.slot.endMs)),
+      const envelope = span(
+        Math.min(...chosen.map((p) => p.slot.startMinutes)),
+        Math.max(...chosen.map((p) => p.slot.endMinutes)),
       );
-      if (q.riders.length > 0 && !ridersFit(envelope.startMs)) return;
+      if (q.riders.length > 0 && !ridersFit(envelope.startMinutes)) return;
       const option: AvailabilityOption = {
-        envelope,
+        startMinutes: minute(envelope.startMinutes),
+        endMinutes: endMinute(envelope.endMinutes),
         assignments: chosen
           .map((p) => ({
             lineId: p.lineId,
             barberId: (barbers[p.barberIndex] as BarberDayAvailability)
               .barberId,
             barberIndex: p.barberIndex,
-            slot: p.slot,
+            startMinutes: minute(p.slot.startMinutes),
+            endMinutes: endMinute(p.slot.endMinutes),
           }))
           .sort(
             (a, b) =>
-              a.slot.startMs - b.slot.startMs ||
+              a.startMinutes - b.startMinutes ||
               (a.lineId < b.lineId ? -1 : a.lineId > b.lineId ? 1 : 0),
           ),
       };
@@ -1870,15 +1919,15 @@ function referenceSearch(
         options.push(option);
         return;
       }
-      const existing = byStart.get(envelope.startMs);
+      const existing = byStart.get(envelope.startMinutes);
       if (existing === undefined) {
-        byStart.set(envelope.startMs, options.length);
+        byStart.set(envelope.startMinutes, options.length);
         options.push(option);
       } else {
         const incumbent = options.at(existing) as AvailabilityOption;
         const tighter =
-          option.envelope.endMs !== incumbent.envelope.endMs
-            ? option.envelope.endMs < incumbent.envelope.endMs
+          option.endMinutes !== incumbent.endMinutes
+            ? option.endMinutes < incumbent.endMinutes
             : cmpSeq(seq(option), seq(incumbent)) < 0;
         if (tighter) options.splice(existing, 1, option);
       }
@@ -1888,13 +1937,13 @@ function referenceSearch(
     for (let b = 0; b < barbers.length; b++) {
       if (
         !BarberPref.matches(
-          l.barberPref,
+          l,
           (barbers.at(b) as BarberDayAvailability).barberId,
         )
       )
         continue;
       const remaining = IntervalSetSystem.subtract(
-        free.at(b) as readonly TimeInterval[],
+        free.at(b) as readonly MinuteRange[],
         chosen.filter((p) => p.barberIndex === b).map((p) => p.occupied),
       );
       const t = AvailabilitySystem.termsAt(l, b);
@@ -1902,29 +1951,22 @@ function referenceSearch(
         t.padBeforeMinutes + t.durationMinutes + t.padAfterMinutes;
       for (const start of AvailabilitySystem.candidateStarts(
         remaining,
-        occupiedMinutes,
+        duration(occupiedMinutes),
         q.policy.slotStepMinutes,
-        q.notBeforeMs,
+        notBefore,
       )) {
         if (nodes >= limits.nodeBudget) {
           exhausted = true;
           return;
         }
         nodes++;
-        const occupied = TimeInterval.of(
-          start,
-          start + occupiedMinutes * 60_000,
-        );
-        const serviceStart = start + t.padBeforeMinutes * 60_000;
-        const slot = TimeInterval.of(
-          serviceStart,
-          serviceStart + t.durationMinutes * 60_000,
-        );
+        const occupied = span(start, start + occupiedMinutes);
+        const serviceStart = start + t.padBeforeMinutes;
+        const slot = span(serviceStart, serviceStart + t.durationMinutes);
         if (
           chosen.some(
             (p) =>
-              p.barberIndex === b &&
-              TimeInterval.overlaps(p.occupied, occupied),
+              p.barberIndex === b && MinuteRange.overlaps(p.occupied, occupied),
           )
         )
           continue;
@@ -1932,8 +1974,7 @@ function referenceSearch(
           l.personKey !== null &&
           chosen.some(
             (p) =>
-              p.personKey === l.personKey &&
-              TimeInterval.overlaps(p.slot, slot),
+              p.personKey === l.personKey && MinuteRange.overlaps(p.slot, slot),
           )
         )
           continue;
@@ -1953,8 +1994,8 @@ function referenceSearch(
   walk(0);
   options.sort(
     (a, b) =>
-      a.envelope.startMs - b.envelope.startMs ||
-      a.envelope.endMs - b.envelope.endMs ||
+      a.startMinutes - b.startMinutes ||
+      a.endMinutes - b.endMinutes ||
       cmpSeq(seq(a), seq(b)),
   );
   return { options, exhausted, nodesVisited: nodes };
@@ -2021,18 +2062,16 @@ const anyQuery = fc
     reversed: fc.boolean(),
   })
   .map((draft) => {
-    const Q = (quarters: number) => quarters * 15 * 60_000;
+    const Q = (quarters: number) => quarters * 15;
     const pool = draft.barbers.map((n) => {
       const id = NAMES.at(n) as BarberId;
       return barber(id, {
         windows: draft.windows.map(([from, length]) =>
-          TimeInterval.of(Q(from), Q(from + length)),
+          span(Q(from), Q(from + length)),
         ),
         busy: draft.busy
           .filter(([who]) => who === n)
-          .map(([, from, length]) =>
-            TimeInterval.of(Q(from), Q(from + length)),
-          ),
+          .map(([, from, length]) => span(Q(from), Q(from + length))),
       });
     });
     const drafts = draft.lines.map((l, i) =>
@@ -2055,20 +2094,20 @@ const anyQuery = fc
       ),
     );
     const q = query(draft.reversed ? [...drafts].reverse() : drafts, pool, {
-      notBeforeMs: Q(draft.notBeforeQuarters),
-      withinMs:
+      notBefore: minute(Q(draft.notBeforeQuarters)),
+      within:
         draft.within === 'none'
           ? null
           : draft.within === 'empty'
             ? []
-            : [TimeInterval.of(Q(36), Q(46))],
+            : [span(Q(36), Q(46))],
       riders:
         draft.rider === null
           ? []
           : [
               {
                 barberId: NAMES[draft.rider[0]] as BarberId,
-                offsetMinutes: draft.rider[1] * 15,
+                offsetMinutes: minuteDelta(draft.rider[1] * 15),
                 terms: terms(draft.rider[2] * 15),
               },
             ],
@@ -2147,8 +2186,14 @@ describe('AvailabilitySystem — purity', () => {
         [line('me', 30, BarberPref.specific(IVAN))],
         [barber(IVAN), barber(PETAR)],
         {
-          riders: [{ barberId: PETAR, offsetMinutes: 30, terms: terms(30) }],
-          withinMs: [iv(10, 12)],
+          riders: [
+            {
+              barberId: PETAR,
+              offsetMinutes: minuteDelta(30),
+              terms: terms(30),
+            },
+          ],
+          within: [iv(10, 12)],
         },
       ),
     );
@@ -2158,8 +2203,14 @@ describe('AvailabilitySystem — purity', () => {
     const busyInput = deepFreeze({
       barberId: IVAN,
       spans: [iv(10, 12)],
-      turnaroundMinutes: 15,
-      release: [{ barberId: IVAN, occupied: iv(10, 11) }],
+      turnaroundMinutes: minuteCount(15),
+      release: [
+        {
+          barberId: IVAN,
+          startMinutes: minute(H(10)),
+          endMinutes: endMinute(H(11)),
+        },
+      ],
     });
     expect(AvailabilitySystem.paddedBusy(busyInput)).toEqual(
       AvailabilitySystem.paddedBusy(busyInput),
@@ -2178,25 +2229,17 @@ describe('AvailabilitySystem — purity', () => {
  * Shop opens 09:00–20:00 Mon–Fri. 2026-07-29 is a Wednesday.
  */
 describe('RosterSystem → AvailabilitySystem composed', () => {
-  const ZONE = 'Europe/Sofia';
   const CENTER = LocationId.of('loc-center');
   const STEFAN = BarberId.of('stefan');
-  const DAYS = ZonedTimeSystem.dayTable(
-    ZONE,
-    DayKey.of('2026-07-27'),
-    DayKey.of('2026-07-31'),
-  );
-  const DAY = DayOffset.find(DayKey.of('2026-07-29'), DAYS) as DayOffset;
+  const DAY = localDate('2026-07-29');
 
   /** `'HH:mm'` → minutes of the day. */
   const minutes = (hhmm: string): number =>
     Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
-  /** A local wall-clock time on the test day, as epoch millis. */
-  const at = (hhmm: string): number =>
-    ZonedTimeSystem.instantOf(DAY, minutes(hhmm));
-  /** Epoch millis on the test day → `'HH:mm'`. */
-  const clock = (ms: number): string => {
-    const total = ZonedTimeSystem.minuteOfDay(ms, DAY);
+  /** A local wall-clock time on the test day, in minutes. */
+  const at = (hhmm: string): number => minutes(hhmm);
+  /** Minutes of the test day → `'HH:mm'`. */
+  const clock = (total: number): string => {
     const pad = (value: number) => String(value).padStart(2, '0');
     return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
   };
@@ -2216,38 +2259,46 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
     ]) {
       for (const [start, end] of ranges) {
         segments.push(
-          ShiftSegment.of(weekday, CENTER, minutes(start), minutes(end)),
+          ShiftSegment.of(
+            weekday,
+            CENTER,
+            minute(minutes(start)),
+            endMinute(minutes(end)),
+          ),
         );
       }
     }
-    return ScheduleVersion.startingWith(segments, DayKey.of('2026-01-01'));
+    return ScheduleVersion.startingWith(segments, localDate('2026-01-01'));
   }
 
   /** Materialise one barber's day through the real roster pipeline. */
   function barberDay(options: {
     readonly id: BarberId;
     readonly roster: readonly (readonly [string, string])[];
-    readonly busy?: readonly TimeInterval[];
+    readonly busy?: readonly MinuteRange[];
     readonly exceptions?: readonly DayException[];
   }): BarberDayAvailability {
-    const windows = RosterSystem.buildDayWindows(
-      {
-        barberId: options.id,
-        dayKey: DAY.dayKey,
-        versions: weekdayRoster(options.roster),
-        exceptions: options.exceptions ?? [],
-        shopHours: [
-          {
-            locationId: CENTER,
-            hours: [ShopDayHours.of(minutes('09:00'), minutes('20:00'))],
-          },
-        ],
-      },
-      DAYS,
-    );
-    return {
+    const windows = RosterSystem.buildDayWindows({
       barberId: options.id,
-      windows: RosterSystem.intervalsOf(windows, DAY),
+      localDate: DAY,
+      versions: weekdayRoster(options.roster),
+      exceptions: options.exceptions ?? [],
+      shopHours: [
+        {
+          locationId: CENTER,
+          hours: [
+            ShopDayHours.of(
+              minute(minutes('09:00')),
+              endMinute(minutes('20:00')),
+            ),
+          ],
+        },
+      ],
+    });
+    return {
+      // Roster windows ARE minute ranges of the day — no conversion.
+      barberId: options.id,
+      windows,
       busy: options.busy ?? [],
       blocks: [],
     };
@@ -2259,7 +2310,8 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
     barbers: readonly BarberDayAvailability[],
   ) =>
     solve(drafts, barbers, {
-      notBeforeMs: at('09:00') - 7 * 24 * 60 * 60_000,
+      // A week before the day: the floor is the day's midnight.
+      notBefore: minute(0),
       maxOptions: 400,
     });
 
@@ -2274,20 +2326,17 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
   it('respects a lunch break carved out of the roster', () => {
     // The staff editor's reasoned break, sanitised to its public effect.
     const lunch = ScheduleExceptionSystem.publicEffect(
-      ExceptionDetail.break(
-        [MinuteRange.of(minutes('13:00'), minutes('14:00'))],
-        false,
-      ),
+      ExceptionDetail.break([span(minutes('13:00'), minutes('14:00'))], false),
     );
     if (!lunch.ok) throw new Error('bad fixture');
     const ivan = barberDay({
       id: IVAN,
       roster: [['09:00', '18:00']],
-      exceptions: [{ dayKey: DAY.dayKey, effect: lunch.value }],
+      exceptions: [{ localDate: DAY, ...lunch.value }],
     });
 
     const starts = composed([line('l1', 35)], [ivan]).map((option) =>
-      clock(option.envelope.startMs),
+      clock(option.startMinutes),
     );
     // 12:45 + 35m would run into the break.
     expect(starts).toContain('12:15');
@@ -2304,7 +2353,7 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
 
     const parallel = options.filter(
       (option) =>
-        new Set(option.assignments.map((a) => a.slot.startMs)).size === 1,
+        new Set(option.assignments.map((a) => a.startMinutes)).size === 1,
     );
     const sequential = options.filter(
       (option) => new Set(option.assignments.map((a) => a.barberId)).size === 1,
@@ -2314,8 +2363,8 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
 
     // Parallel is the shorter visit and therefore ranks first at a given start.
     const earliest = options[0] as AvailabilityOption;
-    expect(clock(earliest.envelope.startMs)).toBe('09:00');
-    expect(TimeInterval.durationMinutes(earliest.envelope)).toBe(35);
+    expect(clock(earliest.startMinutes)).toBe('09:00');
+    expect(MinuteRange.durationMinutes(earliest)).toBe(35);
   });
 
   it('a party who both want IVAN can only go sequentially', () => {
@@ -2331,22 +2380,22 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
     for (const option of options) {
       // Only Ivan, and never at the same moment.
       expect(option.assignments.every((a) => a.barberId === IVAN)).toBe(true);
-      expect(new Set(option.assignments.map((a) => a.slot.startMs)).size).toBe(
+      expect(new Set(option.assignments.map((a) => a.startMinutes)).size).toBe(
         2,
       );
     }
     // 09:00 + 09:35, back to back with no gap.
     const sorted = [...(options[0] as AvailabilityOption).assignments].sort(
-      (a, b) => a.slot.startMs - b.slot.startMs,
+      (a, b) => a.startMinutes - b.startMinutes,
     );
-    expect(sorted[0]?.slot.endMs).toBe(sorted[1]?.slot.startMs);
+    expect(sorted[0]?.endMinutes).toBe(sorted[1]?.startMinutes);
   });
 
   it('a fully-booked day yields nothing rather than a wrong slot', () => {
     const ivan = barberDay({
       id: IVAN,
       roster: [['09:00', '18:00']],
-      busy: [TimeInterval.of(at('09:00'), at('18:00'))],
+      busy: [span(at('09:00'), at('18:00'))],
     });
     expect(composed([line('l1', 35)], [ivan])).toEqual([]);
   });
@@ -2356,7 +2405,7 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
     const ivan = barberDay({
       id: IVAN,
       roster: [['09:00', '18:00']],
-      exceptions: [{ dayKey: DAY.dayKey, effect: ExceptionEffect.closed() }],
+      exceptions: [{ localDate: DAY, ...ExceptionEffectRule.closed() }],
     });
     expect(ivan.windows).toEqual([]);
     expect(composed([line('l1', 35)], [ivan])).toEqual([]);
@@ -2368,13 +2417,11 @@ describe('RosterSystem → AvailabilitySystem composed', () => {
     const stefan = barberDay({
       id: STEFAN,
       roster: [['09:00', '12:00']],
-      busy: [
-        TimeInterval.of(at('10:00') - 15 * 60_000, at('10:45') + 15 * 60_000),
-      ],
+      busy: [span(at('10:00') - 15, at('10:45') + 15)],
     });
 
     const starts = composed([line('l1', 45)], [stefan]).map((option) =>
-      clock(option.envelope.startMs),
+      clock(option.startMinutes),
     );
     // The padded block runs 09:45–11:00, so free time is 09:00–09:45 and
     // 11:00–12:00. A 45-minute service fits each exactly once — the

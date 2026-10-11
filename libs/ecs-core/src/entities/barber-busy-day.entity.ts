@@ -1,32 +1,32 @@
-import type { DayKey } from '../components/day-key.data';
 import type { MinuteBlock } from '../components/minute-block.data';
-import type { BarberId } from './barber.entity';
+import { type BarberId, BarberBusyDayId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
- * The barber's day: the raw string is a `BusyKey` (`${barberId}__${dayKey}`,
- * DOUBLE underscore — `appointment-document.ts:1145`), built only by
- * `BusyKey.of`. Every `appointments.busyKeys[i]` is this document's id and the
- * `scheduleExceptions` id the commit transaction reads by the same key, so a
- * mis-spelt id is an empty read set and a reopened double-booking race.
- */
-export type BarberBusyDayId = string & { readonly __brand: unique symbol };
-export const BarberBusyDayId = {
-  /** The only cast site. The raw string is a `BusyKey`. */
-  of: (raw: string): BarberBusyDayId => raw as BarberBusyDayId,
-} as const;
-
-/**
- * The PUBLIC busy projection of one barber's day — `barberBusy/{id}`:
+ * The PUBLIC busy projection of one barber's shop day — `barberBusy/{id}`,
+ * the id a `BusyKey` (`${barberId}__${localDate}`, DOUBLE underscore):
  * geometry and nothing else (no client, no service, no price), so the
  * anonymous booking grid may read it. A projection rebuilt by triggers from
  * `appointments` (`BusySystem`), a cache with a TTL (`purgeAt` is stamped by
  * the adapter at the document root, not an entity field), never the truth.
+ *
+ * No zone (Law 7.2 — the zone is the location's). `blocks` are the shop
+ * day's wall-clock minutes; `utcEpochMs` is the day's FIRST instant
+ * (`ZonedTimeSystem.startOfLocalDay`, flatten-spec §2.5, F-28), computed once
+ * at ingestion — for range indexes and TTL math only, never placement.
  */
-export type BarberBusyDayEntity = {
+export type BarberBusyDay = {
   readonly id: BarberBusyDayId;
   readonly barberId: BarberId;
-  readonly dayKey: DayKey;
-  readonly zone: string;
-  /** Occupied spans in wall-clock minutes of the day, sorted. */
+  readonly localDate: LocalDate;
+  readonly utcEpochMs: UtcEpochMs;
+  /** Occupied spans on the day's wall clock, sorted. */
   readonly blocks: readonly MinuteBlock[];
 };
+
+/**
+ * Flatten-pass staging: the barrel's id block still names this module for
+ * `BarberBusyDayId` until the integrator drops that line — the id lives in
+ * `primitives/ids.primitive.ts` (§1.5).
+ */

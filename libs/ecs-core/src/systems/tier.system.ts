@@ -1,9 +1,7 @@
 import type { LocalizedText } from '../components/localized-text.data';
 import type { TierState } from '../components/tier-state.data';
-import type {
-  TierDefinitionEntity,
-  TierId,
-} from '../entities/tier-definition.entity';
+import type { TierDefinition } from '../entities/tier-definition.entity';
+import type { TierId } from '../primitives/ids.primitive';
 
 /*
  * THE TIER TRACK (client-card-redesign §4.2, `standing.ts:405-426`
@@ -17,8 +15,8 @@ import type {
 
 /** What the track reads of a tier. */
 export type TierStepRef = Pick<
-  TierDefinitionEntity,
-  'id' | 'rank' | 'name' | 'qualify'
+  TierDefinition,
+  'id' | 'rank' | 'name' | 'qualifyAtLeast'
 >;
 
 /** One step of the track. */
@@ -85,16 +83,19 @@ export const TierSystem = {
       const tier = sorted[i] as TierStepRef;
       steps.push({
         tierId: tier.id,
-        atLeast: tier.qualify.atLeast,
+        atLeast: tier.qualifyAtLeast,
         name: tier.name,
       });
     }
     return {
       steps,
-      value: state.qualifying,
-      currentTierId: state.override?.tierId ?? state.current,
-      nextTierId: state.next,
-      remaining: state.remaining,
+      value: state.tierQualifying,
+      currentTierId:
+        state.tierOverrideSource === null
+          ? state.tierId
+          : state.tierOverrideTierId,
+      nextTierId: state.nextTierId,
+      remaining: state.tierRemaining,
     };
   },
 

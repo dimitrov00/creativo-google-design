@@ -1,5 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { BarberId } from '../primitives/ids.primitive';
 import { deepFreeze } from '../testing';
 import { BarberToneSystem } from './barber-tone.system';
 
@@ -8,15 +9,20 @@ import { BarberToneSystem } from './barber-tone.system';
  * (libs/features/staff/dashboard/src/lib/barber-tone.spec.ts), COPIED and
  * re-targeted: the legacy map keyed by id becomes the array parallel to the
  * roster, so `tones.get(id)` reads `tones[ids.indexOf(id)]`. Plus the purity
- * case and properties over the probe.
+ * case and properties over the probe. Ids are `BarberId` brands (Law 7);
+ * the text the hash reads is unchanged.
  */
 
 const S = BarberToneSystem;
 const BARBER_TONE_COUNT = S.TONE_COUNT;
 
+/** Raw roster ids as the brand the system takes. */
+const barbers = (ids: readonly string[]): readonly BarberId[] =>
+  ids.map((id) => BarberId.of(id));
+
 /** The legacy map, read off the parallel answer. */
 function tonesById(ids: readonly string[]): ReadonlyMap<string, number> {
-  const tones = S.assignBarberTones(ids);
+  const tones = S.assignBarberTones(barbers(ids));
   const map = new Map<string, number>();
   ids.forEach((id, index) => map.set(id, tones.at(index) as number));
   return map;
@@ -76,17 +82,19 @@ describe('BarberToneSystem — the hash and the parallel answer', () => {
   });
 
   it('answers a lone barber with the slot their hash prefers', () => {
-    expect(S.assignBarberTones(['solo'])).toEqual([S.toneOf('solo')]);
+    expect(S.assignBarberTones(barbers(['solo']))).toEqual([
+      S.toneOf(BarberId.of('solo')),
+    ]);
   });
 
   it('answers in roster order, one tone per id, and nothing for nobody', () => {
     expect(S.assignBarberTones([])).toEqual([]);
-    const ids = ['stefan', 'ivan', 'niko'];
+    const ids = barbers(['stefan', 'ivan', 'niko']);
     expect(S.assignBarberTones(ids)).toHaveLength(3);
   });
 
   it('reads one slot for an id listed twice — the one its last visit took', () => {
-    const tones = S.assignBarberTones(['ivan', 'ivan']);
+    const tones = S.assignBarberTones(barbers(['ivan', 'ivan']));
     expect(tones[0]).toBe(tones[1]);
   });
 
@@ -97,7 +105,7 @@ describe('BarberToneSystem — the hash and the parallel answer', () => {
           maxLength: 9,
         }),
         (ids) => {
-          const tones = S.assignBarberTones(ids);
+          const tones = S.assignBarberTones(barbers(ids));
           expect(tones).toHaveLength(ids.length);
           for (const tone of tones) {
             expect(tone).toBeGreaterThanOrEqual(0);
@@ -127,7 +135,9 @@ describe('BarberToneSystem — the hash and the parallel answer', () => {
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
-    const ids = deepFreeze(['stefan', 'ivan', 'niko', 'aaa', 'zzz', 'b1']);
+    const ids = deepFreeze(
+      barbers(['stefan', 'ivan', 'niko', 'aaa', 'zzz', 'b1']),
+    );
     const once = S.assignBarberTones(ids);
     const twice = S.assignBarberTones(ids);
     expect(twice).toEqual(once);

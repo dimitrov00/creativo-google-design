@@ -6,11 +6,17 @@ import {
   ok,
 } from '@creativo/domain/kernel';
 import {
+  AppliedDiscountId,
   type CouponValue as CouponValueData,
+  Currency,
   type DiscountBreakdown as DiscountBreakdownData,
   type DiscountInput as DiscountInputData,
+  DiscountMethod,
   DiscountSystem,
   type Money as MoneyData,
+  PriceCents,
+  UtcEpochMs,
+  defect,
 } from '@creativo/ecs-core';
 import { CouponValue } from './coupon-value';
 import { DiscountCapOutOfRangeError } from './discount-application.errors';
@@ -59,36 +65,85 @@ export interface ApplyDiscountsOptions {
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
-function toMoneyData(money: Money): MoneyData {
-  return {
-    amountMinorUnits: money.toMinorUnits(),
-    currencyCode: money.currencyCode(),
-  };
-}
+/** The legacy lower-case value tag → the ecs-core `DiscountMethod` (flatten-spec §8.9). */
+const LEGACY_DISCOUNT_METHOD = {
+  percent_off: DiscountMethod.PercentOff,
+  fixed_amount: DiscountMethod.FixedAmount,
+  free_service: DiscountMethod.FreeService,
+} as const satisfies Record<CouponValue['kind'], DiscountMethod>;
 
-function fromMoneyData(money: MoneyData): Money {
-  const result = Money.fromMinorUnitsAndCode(
-    money.amountMinorUnits,
-    money.currencyCode,
-  );
-  // Unreachable: every figure is drawn from the subtotal's own valid code.
-  if (result.isFailure()) throw new Error('unreachable: discount currency');
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a legacy `Money` / `ZonedDateTime` already holds the rule.
+  if (!result.ok) defect(`unreachable: ${what}`);
   return result.value;
 }
 
-function toValueData(value: CouponValue): CouponValueData {
-  return value.kind === 'fixed_amount'
-    ? { kind: 'fixed_amount', amount: toMoneyData(value.amount) }
-    : value;
+function centsOf(money: Money): PriceCents {
+  return sure(PriceCents.of(money.toMinorUnits()), 'an amount');
 }
 
-function toInputData(input: DiscountInput): DiscountInputData {
+function currencyOf(money: Money): Currency {
+  return sure(Currency.parse(money.currencyCode()), 'a currency');
+}
+
+function toMoneyData(money: Money): MoneyData {
+  return { amountCents: centsOf(money), currency: currencyOf(money) };
+}
+
+function fromCents(amountCents: PriceCents, currency: Currency): Money {
+  const result = Money.fromMinorUnitsAndCode(amountCents, currency);
+  // Unreachable: every figure is drawn from the subtotal's own valid code.
+  if (result.isFailure()) defect('unreachable: discount currency');
+  return result.value;
+}
+
+/** The legacy value as the flat slice — converted as it stands, never re-validated. */
+function toValueData(value: CouponValue): CouponValueData {
+  switch (value.kind) {
+    case 'percent_off':
+      return {
+        discountMethod: LEGACY_DISCOUNT_METHOD.percent_off,
+        discountPercent: value.percent,
+      };
+    case 'fixed_amount':
+      return {
+        discountMethod: LEGACY_DISCOUNT_METHOD.fixed_amount,
+        discountAmountCents: centsOf(value.amount),
+        discountCurrency: currencyOf(value.amount),
+      };
+    case 'free_service':
+      return { discountMethod: LEGACY_DISCOUNT_METHOD.free_service };
+  }
+}
+
+/**
+ * The input as the evaluator reads it. A minimum spend is a figure in the
+ * SUBTOTAL's currency now (`minSpendCents`): a gate in another currency can
+ * never be met, so the input it gates is dropped here — as the evaluator
+ * always dropped it.
+ */
+function toInputData(
+  input: DiscountInput,
+  subtotalCurrency: Currency,
+): DiscountInputData | null {
+  const minSpend = input.minSpend;
+  if (minSpend !== undefined && currencyOf(minSpend) !== subtotalCurrency) {
+    return null;
+  }
   return {
-    id: input.id,
+    id: AppliedDiscountId.of(input.id),
     label: input.label,
-    value: toValueData(input.value),
-    grantedAtMs: input.grantedAt.toMillis(),
-    minSpend: input.minSpend === undefined ? null : toMoneyData(input.minSpend),
+    grantedAtUtcMs: sure(
+      UtcEpochMs.of(input.grantedAt.toMillis()),
+      'an instant',
+    ),
+    minSpendCents: minSpend === undefined ? null : centsOf(minSpend),
+    ...toValueData(input.value),
   };
 }
 
@@ -96,14 +151,14 @@ function fromBreakdownData(
   breakdown: DiscountBreakdownData,
 ): DiscountBreakdown {
   return {
-    subtotal: fromMoneyData(breakdown.subtotal),
+    subtotal: fromCents(breakdown.subtotalCents, breakdown.currency),
     lines: breakdown.lines.map((line) => ({
       id: line.id,
       label: line.label,
-      amount: fromMoneyData(line.amount),
+      amount: fromCents(line.amountCents, breakdown.currency),
     })),
-    discountTotal: fromMoneyData(breakdown.discountTotal),
-    total: fromMoneyData(breakdown.total),
+    discountTotal: fromCents(breakdown.discountTotalCents, breakdown.currency),
+    total: fromCents(breakdown.totalCents, breakdown.currency),
   };
 }
 
@@ -124,12 +179,14 @@ export const DiscountApplication = {
     discounts: readonly DiscountInput[],
     options: ApplyDiscountsOptions = {},
   ): DiscountBreakdown {
+    const subtotalData = toMoneyData(subtotal);
+    const inputs: DiscountInputData[] = [];
+    for (const discount of discounts) {
+      const input = toInputData(discount, subtotalData.currency);
+      if (input !== null) inputs.push(input);
+    }
     return fromBreakdownData(
-      DiscountSystem.apply(
-        toMoneyData(subtotal),
-        discounts.map(toInputData),
-        options.capPercent ?? null,
-      ),
+      DiscountSystem.apply(subtotalData, inputs, options.capPercent ?? null),
     );
   },
 };

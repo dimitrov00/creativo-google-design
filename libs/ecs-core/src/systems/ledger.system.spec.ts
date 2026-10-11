@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { deepFreeze } from '../testing';
-import { LedgerSystem, type LedgerEntryRef } from './ledger.system';
+import { JournalEffect, RedemptionOp } from '../components/journal-effect.data';
+import {
+  BadgeSeriesId,
+  CorrelationId,
+  JournalEntryId,
+} from '../primitives/ids.primitive';
+import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '../testing';
+import {
+  LedgerSystem,
+  type LedgerEffectKind,
+  type LedgerEntryRef,
+} from './ledger.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The `foldByEvent`, `wholeMonthsOf` and «the months» cases of
@@ -10,23 +21,39 @@ import { LedgerSystem, type LedgerEntryRef } from './ledger.system';
  * left, the months held whole, each month's events and net. The rows'
  * words stay with the presenter's spec. An entry is the flat
  * `LedgerEntryRef` the feed folds (a label's `seriesId`/`level` and an
- * effect's figures lifted onto it); instants are epoch ms.
+ * effect's figures lifted onto it); each entry carries its instant AND its
+ * shop day (T5), so the month is read off the day and no zone reaches the
+ * system.
  */
-
-const ZONE = 'Europe/Sofia';
 
 type Effect =
   | {
-      readonly kind: 'points';
+      readonly effect: typeof JournalEffect.Points;
       readonly delta: number;
       readonly balanceAfter: number;
     }
-  | { readonly kind: 'achievement' | 'reward' | 'tier' }
   | {
-      readonly kind: 'redemption';
-      readonly op: 'redeemed' | 'reversed' | 'expired';
+      readonly effect: Exclude<
+        LedgerEffectKind,
+        typeof JournalEffect.Points | typeof JournalEffect.Redemption
+      >;
+    }
+  | {
+      readonly effect: typeof JournalEffect.Redemption;
+      readonly op: RedemptionOp;
       readonly cost: number;
     };
+
+/** An entry's stamp: its instant and the shop day the boundary filed it under (Sofia). */
+function stamped(
+  iso: string,
+): Pick<LedgerEntryRef, 'utcEpochMs' | 'localDate'> {
+  const utcEpochMs = utcMs(iso);
+  return {
+    utcEpochMs,
+    localDate: ZonedTimeSystem.toLocal(utcEpochMs, FIXTURE_TIME_ZONE).localDate,
+  };
+}
 
 /** A journal entry as the feed folds one. */
 function entry(
@@ -38,24 +65,25 @@ function entry(
   reverses: string | null = null,
 ): LedgerEntryRef {
   return {
-    id: `e-${seq}`,
+    id: JournalEntryId.of(`e-${seq}`),
     seq,
     // 10:45 in Sofia: the day is the same on the shop's calendar.
-    atMs: Date.parse(`${day}T07:45:00.000Z`),
-    correlationId,
-    reverses,
-    seriesId: family?.seriesId ?? null,
+    ...stamped(`${day}T07:45:00.000Z`),
+    correlationId: CorrelationId.of(correlationId),
+    reverses: reverses === null ? null : JournalEntryId.of(reverses),
+    badgeSeriesId: family === null ? null : BadgeSeriesId.of(family.seriesId),
     level: family?.level ?? null,
-    kind: effect.kind,
-    pointsDelta: effect.kind === 'points' ? effect.delta : null,
-    balanceAfter: effect.kind === 'points' ? effect.balanceAfter : null,
-    redemptionOp: effect.kind === 'redemption' ? effect.op : null,
-    cost: effect.kind === 'redemption' ? effect.cost : null,
+    journalEffect: effect.effect,
+    pointsDelta: effect.effect === JournalEffect.Points ? effect.delta : null,
+    balanceAfter:
+      effect.effect === JournalEffect.Points ? effect.balanceAfter : null,
+    redemptionOp: effect.effect === JournalEffect.Redemption ? effect.op : null,
+    cost: effect.effect === JournalEffect.Redemption ? effect.cost : null,
   };
 }
 
 const points = (delta: number, balanceAfter: number): Effect => ({
-  kind: 'points',
+  effect: JournalEffect.Points,
   delta,
   balanceAfter,
 });
@@ -64,19 +92,19 @@ const points = (delta: number, balanceAfter: number): Effect => ({
 const VISIT_FADE = entry(50, '2026-09-05', 'appt:appt-a', points(17, 361));
 const VISIT_BEARD = entry(51, '2026-09-05', 'appt:appt-a', points(10, 371));
 const TIER = entry(49, '2026-09-02', 'tier:dev-client-1:gold:2026-09-02', {
-  kind: 'tier',
+  effect: JournalEffect.Tier,
 });
 const REDEEMED_POINTS = entry(45, '2026-06-20', 'rdm-1', points(-250, 94));
 const REDEEMED = entry(46, '2026-06-20', 'rdm-1', {
-  kind: 'redemption',
-  op: 'redeemed',
+  effect: JournalEffect.Redemption,
+  op: RedemptionOp.Redeemed,
   cost: 250,
 });
 const GRANTED = entry(
   44,
   '2026-05-16',
   'award:rule-every-10th-visit:dev-client-1:10',
-  { kind: 'reward' },
+  { effect: JournalEffect.Reward },
 );
 const GOODWILL = entry(43, '2026-04-18', 'adj-1', points(30, 344));
 const REVERSAL = entry(
@@ -92,7 +120,7 @@ const LEVEL = entry(
   39,
   '2026-03-06',
   'award:rule-tenure-1',
-  { kind: 'achievement' },
+  { effect: JournalEffect.Achievement },
   { seriesId: 'series-tenure', level: 1 },
 );
 const LEVEL_POINTS = entry(
@@ -107,7 +135,7 @@ const LEVEL_BARE = entry(
   30,
   '2025-09-24',
   'award:rule-fade-2',
-  { kind: 'achievement' },
+  { effect: JournalEffect.Achievement },
   { seriesId: 'series-svc-fade', level: 2 },
 );
 
@@ -129,7 +157,7 @@ const JOURNAL: readonly LedgerEntryRef[] = [
 
 const foldByEvent = LedgerSystem.fold;
 const wholeMonthsOf = (entries: readonly LedgerEntryRef[], whole: boolean) =>
-  LedgerSystem.wholeMonths(entries, whole, ZONE);
+  LedgerSystem.wholeMonths(entries, whole);
 
 describe('LedgerSystem.fold (`foldByEvent`)', () => {
   it('folds the entries of one event into one, newest first, whatever order they arrive in', () => {
@@ -147,7 +175,8 @@ describe('LedgerSystem.fold (`foldByEvent`)', () => {
       'e-30',
     ]);
     expect(events[0]?.entries.map((row) => row.id)).toEqual(['e-51', 'e-50']);
-    expect(events[0]?.atMs).toEqual(VISIT_BEARD.atMs);
+    expect(events[0]?.utcEpochMs).toEqual(VISIT_BEARD.utcEpochMs);
+    expect(events[0]?.localDate).toEqual(VISIT_BEARD.localDate);
   });
 
   it('sums what an event moved and keeps the balance its newest point row left', () => {
@@ -166,7 +195,8 @@ describe('LedgerSystem.fold (`foldByEvent`)', () => {
     expect(foldByEvent(seats, true)).toEqual([
       {
         id: 'e-2',
-        atMs: seats[0]?.atMs,
+        utcEpochMs: seats[0]?.utcEpochMs,
+        localDate: seats[0]?.localDate,
         entries: seats,
         delta: 27,
         balanceAfter: 307,
@@ -196,21 +226,22 @@ describe('LedgerSystem.fold (`foldByEvent`)', () => {
     expect(foldByEvent([REDEEMED], true)).toEqual([
       {
         id: 'e-46',
-        atMs: REDEEMED.atMs,
+        utcEpochMs: REDEEMED.utcEpochMs,
+        localDate: REDEEMED.localDate,
         entries: [REDEEMED],
         delta: -250,
         balanceAfter: null,
       },
     ]);
     const back = entry(47, '2026-06-21', 'rdm-1-back', {
-      kind: 'redemption',
-      op: 'reversed',
+      effect: JournalEffect.Redemption,
+      op: RedemptionOp.Reversed,
       cost: 250,
     });
     expect(foldByEvent([back], true)[0]?.delta).toBe(250);
     const lapsed = entry(48, '2026-09-20', 'rdm-1-lapsed', {
-      kind: 'redemption',
-      op: 'expired',
+      effect: JournalEffect.Redemption,
+      op: RedemptionOp.Expired,
       cost: 250,
     });
     // The points were spent when it was taken: nothing moves a second time.
@@ -267,7 +298,6 @@ describe('LedgerSystem.months (`activityGroups`: the months)', () => {
       foldByEvent(entries, whole),
       limit,
       wholeMonthsOf(entries, whole),
-      ZONE,
     );
 
   it('groups by the shop’s month, newest first, with each month’s net', () => {
@@ -295,13 +325,12 @@ describe('LedgerSystem.months (`activityGroups`: the months)', () => {
   });
 
   it('files an instant under the month it falls in on the shop’s calendar', () => {
-    // 22:30 UTC on 31 August is 1:30 on 1 September in Sofia.
-    const late = {
-      ...VISIT_FADE,
-      atMs: Date.parse('2026-08-31T22:30:00.000Z'),
-    };
+    // 22:30 UTC on 31 August is 1:30 on 1 September in Sofia: the boundary
+    // files the entry under that day, and the month is read off the day.
+    const late = { ...VISIT_FADE, ...stamped('2026-08-31T22:30:00.000Z') };
+    expect(late.localDate).toBe('2026-09-01');
     expect(months([late], true)[0]?.key).toBe('2026-09');
-    expect(LedgerSystem.monthOf(late.atMs, 'Not/AZone')).toBeNull();
+    expect(LedgerSystem.monthOf(localDate('2026-09-01'))).toBe('2026-09');
   });
 
   it('prints no net for a month the page boundary may have cut', () => {
@@ -338,8 +367,8 @@ describe('LedgerSystem.leading', () => {
     expect(level && LedgerSystem.leading(level)?.id).toBe('e-39');
     expect(
       LedgerSystem.leading({
-        id: 'x',
-        atMs: 0,
+        id: JournalEntryId.of('x'),
+        ...stamped('1970-01-01T00:00:00.000Z'),
         entries: [],
         delta: null,
         balanceAfter: null,
@@ -355,8 +384,8 @@ describe('LedgerSystem purity', () => {
       const events = LedgerSystem.fold(journal, true);
       return [
         events,
-        LedgerSystem.wholeMonths(journal, true, ZONE),
-        LedgerSystem.months(events, 5, ['2026-09'], ZONE),
+        LedgerSystem.wholeMonths(journal, true),
+        LedgerSystem.months(events, 5, ['2026-09']),
       ];
     };
     expect(run()).toEqual(run());

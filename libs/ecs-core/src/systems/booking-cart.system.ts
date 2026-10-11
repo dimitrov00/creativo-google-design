@@ -1,7 +1,6 @@
-import { BarberOffering } from '../components/barber-offering.data';
 import {
   BarberPref,
-  type BarberPrefKind,
+  type BarberPreference,
 } from '../components/barber-pref.data';
 import type { BookingPolicy } from '../components/booking-policy.data';
 import {
@@ -9,30 +8,41 @@ import {
   BookingFlowState,
   type SeatAssignment,
 } from '../components/booking-flow.data';
-import { BookingCart, CartLine, SeatKey } from '../components/cart-line.data';
-import type { DayKey } from '../components/day-key.data';
-import type { DayOffset } from '../components/day-offset.data';
-import { DayWindows } from '../components/day-windows.data';
+import {
+  BookingCart,
+  type CartLine,
+  type CartSeatLines,
+  SeatKey,
+} from '../components/cart-line.data';
+import type { DayWindows } from '../components/day-windows.data';
 import { FlexibleWhen } from '../components/flexible-when.data';
-import { Party, PartyMember, PartyMemberKind } from '../components/party.data';
+import type { MinuteRange } from '../components/minute-range.data';
+import { Party, PartyMember, PartyRole } from '../components/party.data';
 import { Result } from '../components/result.data';
 import type { RosterWindow } from '../components/roster-window.data';
 import { SchedulingError } from '../components/scheduling-errors.data';
 import { SeatLabel } from '../components/seat-label.data';
 import {
   Seat,
-  SeatRelationship,
-  SeatSubjectKind,
+  type SeatCore,
+  type SeatOccupant,
+  SeatSubject,
+  SubjectRelationship,
 } from '../components/seat.data';
-import type {
-  ServiceTerms,
-  ServiceVariantId,
-} from '../components/service-terms.data';
-import type { TimeInterval } from '../components/time-interval.data';
-import type { BarberId } from '../entities/barber.entity';
-import type { LocationId } from '../entities/location.entity';
-import type { ServiceEntity, ServiceId } from '../entities/service.entity';
-import type { UserId } from '../entities/user.entity';
+import type { ServiceTerms } from '../components/service-terms.data';
+import type { Service } from '../entities/service.entity';
+import {
+  type BarberId,
+  CartLineId,
+  GuestId,
+  type LocationId,
+  SeatKeyText,
+  type ServiceId,
+  type ServiceVariantId,
+  type UserId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
 import {
   type AvailabilityLine,
   type AvailabilityOption,
@@ -44,19 +54,27 @@ import {
 } from './availability.system';
 import { GuestLabelSystem } from './guest-label.system';
 import { LocationScopeSystem } from './location-scope.system';
-import { RosterSystem } from './roster.system';
+import { OfferingPriceSystem } from './offering-price.system';
 
 /**
- * What the cart math reads off a catalogue service — the terms matrix and the
- * shop scope. A whole `ServiceEntity` passes straight in.
+ * What the cart math reads off a catalogue service — the terms matrix (the
+ * five `ServiceTerms` fields at the root, and the offerings) and the shop
+ * scope. A whole `Service` passes straight in.
  */
 export type CartService = Pick<
-  ServiceEntity,
-  'id' | 'baseTerms' | 'offerings' | 'locationIds'
+  Service,
+  | 'id'
+  | 'priceCents'
+  | 'currency'
+  | 'durationMinutes'
+  | 'setupMinutes'
+  | 'cleanupMinutes'
+  | 'offerings'
+  | 'locationIds'
 >;
 
 /** What the shop rule reads off a catalogue service — its id and its shop scope. */
-export type CartServiceScope = Pick<ServiceEntity, 'id' | 'locationIds'>;
+export type CartServiceScope = Pick<Service, 'id' | 'locationIds'>;
 
 /**
  * A seat a MOVE carries without the cart naming it (`party-shops.ts:24`): the
@@ -76,34 +94,35 @@ export type CartPartyServices = {
 };
 
 /**
- * One barber's day as the booking grid reads it before it is split per shop:
- * the rostered windows at EVERY shop (`RosterSystem.buildDayWindows`, each
- * window naming its shop) and the busy time already padded by the barber's
- * turnaround (`AvailabilitySystem.paddedBusy`).
+ * One barber's shop day as the booking grid reads it before it is split per
+ * shop: the rostered windows at EVERY shop (`RosterSystem.buildDayWindows`,
+ * each window naming its shop) and the busy minutes already padded by the
+ * barber's turnaround (`AvailabilitySystem.paddedBusy`) — local coordinates
+ * of the query's `localDate` (Law 7.3).
  */
 export type CartBarberDay = {
   readonly barberId: BarberId;
   readonly windows: readonly RosterWindow[];
-  readonly busy: readonly TimeInterval[];
+  readonly busy: readonly MinuteRange[];
 };
 
 /**
- * One day's question (`observe-availability.use-case.ts:255-306`): the bag,
- * the catalogue it resolves against, a move's riders (`[]` on every ordinary
- * booking), every barber's day, the day's row of the zone table, the policy,
- * the lead-time floor (`AvailabilitySystem.leadFloorMs`), the client's
- * declared windows (`null` unconstrained, `[]` nothing qualifies) and the
- * search budget.
+ * One shop day's question (`observe-availability.use-case.ts:255-306`): the
+ * bag, the catalogue it resolves against, a move's riders (`[]` on every
+ * ordinary booking), every barber's day, the day itself, the policy, the
+ * lead-time floor (`AvailabilitySystem.leadFloor`; `null` = the whole day is
+ * too soon), the client's declared windows (`null` unconstrained, `[]`
+ * nothing qualifies) and the search budget.
  */
 export type CartDayQuery = {
   readonly cart: BookingCart;
   readonly services: readonly CartService[];
   readonly riders: readonly CartRider[];
   readonly barbers: readonly CartBarberDay[];
-  readonly day: DayOffset;
+  readonly localDate: LocalDate;
   readonly policy: BookingPolicy;
-  readonly notBeforeMs: number;
-  readonly withinMs: readonly TimeInterval[] | null;
+  readonly notBefore: MinuteOfDay | null;
+  readonly within: readonly MinuteRange[] | null;
   readonly budget: SearchBudget;
 };
 
@@ -116,61 +135,71 @@ export type CartLocatedOption = {
   readonly option: AvailabilityOption;
 };
 
-/** Who a committed seat is for, as the commit request names them — the ONLY source of these strings. */
-export const CommitSubjectKind = {
+/**
+ * Who a committed seat is for, as the commit request names them — the ONLY
+ * source of these strings, named after the field it types
+ * (`commitSubjectRole`, N15).
+ */
+export const CommitSubjectRole = {
   /** The booker's own seat. */
-  Self: 'self',
+  Self: 'SELF',
   /** A guest, known by the label the party gave them. */
-  Guest: 'guest',
+  Guest: 'GUEST',
 } as const;
-export type CommitSubjectKind =
-  (typeof CommitSubjectKind)[keyof typeof CommitSubjectKind];
+export type CommitSubjectRole =
+  (typeof CommitSubjectRole)[keyof typeof CommitSubjectRole];
 
 /**
- * A seat's subject on the wire (`booking-flow.store.ts:833-844`): the booker,
- * or a guest by LABEL — all a party member is until they have an account —
- * plus `guestKey`, the seat key that tells two guests sharing a label apart
- * from one guest with two services.
+ * A seat's subject as the commit request names it
+ * (`booking-flow.store.ts:833-844`): the booker, or a guest by LABEL — all a
+ * party member is until they have an account — plus `guestKey`, the seat key
+ * that tells two guests sharing a label apart from one guest with two
+ * services.
  */
 export type CommitSubject =
-  | { readonly kind: typeof CommitSubjectKind.Self }
+  | { readonly commitSubjectRole: typeof CommitSubjectRole.Self }
   | {
-      readonly kind: typeof CommitSubjectKind.Guest;
+      readonly commitSubjectRole: typeof CommitSubjectRole.Guest;
       readonly label: SeatLabel;
-      readonly guestKey: string;
+      readonly guestKey: SeatKeyText;
     };
 
 /**
  * One seat of a commit request: WHAT and from WHOM, never a price or a
- * duration — the server resolves both. The line's barber PREFERENCE rides
- * along: «Ivan, by name» and «whoever is free» are different bookings the
- * morning Ivan calls in sick.
+ * duration — the server resolves both — and its start on the selection's
+ * shop day (the request carries the one `localDate`). The line's barber
+ * PREFERENCE rides along: «Ivan, by name» and «whoever is free» are
+ * different bookings the morning Ivan calls in sick.
  */
 export type CommitSeatRequest = {
-  readonly lineId: string;
+  readonly lineId: CartLineId;
   readonly serviceId: ServiceId;
   readonly variantId: ServiceVariantId | null;
   readonly barberId: BarberId;
-  readonly barberPref: BarberPrefKind;
-  readonly startMs: number;
+  readonly barberPreference: BarberPreference;
+  readonly startMinutes: MinuteOfDay;
   readonly subject: CommitSubject;
 };
 
 /** What becomes of a seat the booker cannot name — the ONLY source of these strings. */
 export const PrefillCompanions = {
   /** A new booking: a companion account comes back as a guest seat. */
-  AsGuests: 'as_guests',
+  AsGuests: 'AS_GUESTS',
   /** A move: the server carries them, so they stay out of the cart. */
-  CarriedByServer: 'carried_by_server',
+  CarriedByServer: 'CARRIED_BY_SERVER',
 } as const;
 export type PrefillCompanions =
   (typeof PrefillCompanions)[keyof typeof PrefillCompanions];
 
-/** What a prefill reads off a stored seat. A whole `Seat` passes straight in. */
+/**
+ * What a prefill reads off a stored seat — its service, variant and barber
+ * and who sits in it. A whole `Seat` passes straight in.
+ */
 export type PrefillSeat = Pick<
-  Seat,
-  'serviceId' | 'variantId' | 'barberId' | 'subject'
->;
+  SeatCore,
+  'serviceId' | 'variantId' | 'barberId'
+> &
+  SeatOccupant;
 
 /** A bag rebuilt from a visit: the party and the cart. */
 export type CartPrefill = {
@@ -180,16 +209,16 @@ export type CartPrefill = {
 
 /**
  * A persisted booking draft, as {@link BookingCartSystem.restore} reads it:
- * the flow state and the day the schedule step had picked (`null` when none).
+ * the flow state and the shop day the schedule step had picked (`null` when
+ * none).
  */
 export type CartDraft = {
   readonly state: BookingFlowState;
-  readonly selectedDayKey: DayKey | null;
+  readonly selectedLocalDate: LocalDate | null;
 };
 
-const SELF_KEY = 'self';
+const SELF_KEY = SeatKeyText.of('self');
 const GUEST_PREFIX = 'guest-';
-const LINE_PREFIX = 'line-';
 
 function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -215,11 +244,11 @@ function readable(line: CartLine): boolean {
  * keeps its first position and its last non-empty lines (the legacy `Map`).
  */
 function readableSeats(
-  stored: readonly BookingCart.SeatLines[],
-): readonly BookingCart.SeatLines[] {
-  const seats: BookingCart.SeatLines[] = [];
+  stored: readonly CartSeatLines[],
+): readonly CartSeatLines[] {
+  const seats: CartSeatLines[] = [];
   for (let i = 0; i < stored.length; i++) {
-    const seat = stored[i] as BookingCart.SeatLines;
+    const seat = stored[i] as CartSeatLines;
     const lines: CartLine[] = [];
     for (let k = 0; k < seat.lines.length; k++) {
       const line = seat.lines[k] as CartLine;
@@ -233,7 +262,7 @@ function readableSeats(
     if (lines.length === 0) continue;
     let at = -1;
     for (let s = 0; s < seats.length; s++) {
-      if ((seats[s] as BookingCart.SeatLines).seatKey === seat.seatKey) {
+      if ((seats[s] as CartSeatLines).seatKey === seat.seatKey) {
         at = s;
         break;
       }
@@ -253,26 +282,6 @@ function findService<S extends CartServiceScope>(
     if (service.id === serviceId) return service;
   }
   return null;
-}
-
-/**
- * `Service.termsFor(barber, variant)` (`service.ts:375-381`): the catalogue
- * terms before anyone picks a barber, else the barber's offering for the
- * variant (falling back to its base), else the catalogue terms.
- */
-function termsOf(
-  service: CartService,
-  barberId: BarberId | null,
-  variantId: ServiceVariantId | null,
-): ServiceTerms {
-  if (barberId === null) return service.baseTerms;
-  for (let i = 0; i < service.offerings.length; i++) {
-    const offering = service.offerings[i] as BarberOffering;
-    if (offering.barberId === barberId) {
-      return BarberOffering.termsFor(offering, variantId);
-    }
-  }
-  return service.baseTerms;
 }
 
 function lineTermsOf(terms: ServiceTerms): LineTerms {
@@ -295,11 +304,14 @@ function offers(
     : LocationScopeSystem.serves(service.locationIds, locationId);
 }
 
-/** The guest member answering to `guestId`, or `null`. */
-function guestOf(party: Party, guestId: string): PartyMember.Guest | null {
+/** The guest member whose seat key is `seatKey`, or `null`. */
+function guestOf(party: Party, seatKey: SeatKeyText): PartyMember.Guest | null {
   for (let i = 0; i < party.members.length; i++) {
     const member = party.members[i] as PartyMember;
-    if (member.kind === PartyMemberKind.Guest && member.guestId === guestId) {
+    if (
+      member.partyRole === PartyRole.Guest &&
+      SeatKey.text(SeatKey.guest(member.guestId)) === seatKey
+    ) {
       return member;
     }
   }
@@ -331,7 +343,7 @@ function mergeByStartThenShop(
       const run = runs[r] as readonly CartLocatedOption[];
       const head = heads[r] as number;
       if (head >= run.length) continue;
-      const start = (run[head] as CartLocatedOption).option.envelope.startMs;
+      const start = (run[head] as CartLocatedOption).option.startMinutes;
       if (start < pickStart) {
         pick = r;
         pickStart = start;
@@ -348,8 +360,9 @@ function mergeByStartThenShop(
  * The cart's math beyond the component's own operations
  * (`booking-cart.ts`, `application/booking/src/lib/use-cases/{observe-availability.use-case,party-shops}.ts`,
  * `booking-flow.store.ts` helpers): the cart as engine lines, the shops a
- * party can be served at, one day's options split per shop, the commit
+ * party can be served at, one shop day's options split per shop, the commit
  * request, a bag rebuilt from a visit and a draft brought back to today.
+ * Placement runs on one shop day's local minutes (Law 7.3).
  *
  * The cart's own operations (add, remove, re-point a line, drop a seat, the
  * accepted barbers) are the {@link BookingCart} component.
@@ -358,7 +371,7 @@ export const BookingCartSystem = {
   /**
    * A persisted cart read back the forgiving way
    * (`BookingCart.reconstitute`, `booking-cart.ts:144-197`): a corrupt line
-   * counter is REFUSED (`scheduling.booking_cart.invalid_line_sequence` —
+   * counter is REFUSED (`SCHEDULING_BOOKING_CART_INVALID_LINE_SEQUENCE` —
    * coercing it would reopen the §7.7 id-resurrection hazard), while a line
    * with a blank id is DROPPED and the rest kept — a draft is a convenience,
    * and losing one line beats discarding a party. A seat left with no line is
@@ -366,14 +379,14 @@ export const BookingCartSystem = {
    * last lines. Every surviving line names its own seat.
    */
   salvage(cart: BookingCart): Result<BookingCart, SchedulingError> {
-    if (!Number.isInteger(cart.nextSequence) || cart.nextSequence < 0) {
+    if (!Number.isInteger(cart.cartNextSequence) || cart.cartNextSequence < 0) {
       return Result.err(
-        SchedulingError.cartInvalidLineSequence(cart.nextSequence),
+        SchedulingError.cartInvalidLineSequence(cart.cartNextSequence),
       );
     }
     return Result.ok({
-      seats: readableSeats(cart.seats),
-      nextSequence: cart.nextSequence,
+      cartSeats: readableSeats(cart.cartSeats),
+      cartNextSequence: cart.cartNextSequence,
     });
   },
 
@@ -383,9 +396,9 @@ export const BookingCartSystem = {
    * cart order; `personKey` is the seat key (one person never sits in two
    * chairs at once); the flat terms are the catalogue's before anyone picks
    * a barber; `termsByBarber` is DENSE and parallel to `barberIds` — each
-   * barber measured on their own terms. A line whose service the catalogue
-   * does not hold is DROPPED: offering a time for a service that no longer
-   * exists would only fail at the write.
+   * barber measured on their own terms (`OfferingPriceSystem.termsFor`). A
+   * line whose service the catalogue does not hold is DROPPED: offering a
+   * time for a service that no longer exists would only fail at the write.
    */
   toAvailabilityLines(
     cart: BookingCart,
@@ -393,24 +406,30 @@ export const BookingCartSystem = {
     barberIds: readonly BarberId[],
   ): readonly AvailabilityLine[] {
     const lines: AvailabilityLine[] = [];
-    for (let s = 0; s < cart.seats.length; s++) {
-      const seat = cart.seats[s] as BookingCart.SeatLines;
+    for (let s = 0; s < cart.cartSeats.length; s++) {
+      const seat = cart.cartSeats[s] as CartSeatLines;
       for (let k = 0; k < seat.lines.length; k++) {
         const line = seat.lines[k] as CartLine;
         const service = findService(services, line.serviceId);
         if (service === null) continue;
-        const defaults = lineTermsOf(termsOf(service, null, line.variantId));
+        const defaults = lineTermsOf(
+          OfferingPriceSystem.termsFor(service, null, line.variantId),
+        );
         const termsByBarber: LineTerms[] = [];
         for (let b = 0; b < barberIds.length; b++) {
           termsByBarber.push(
             lineTermsOf(
-              termsOf(service, barberIds[b] as BarberId, line.variantId),
+              OfferingPriceSystem.termsFor(
+                service,
+                barberIds[b] as BarberId,
+                line.variantId,
+              ),
             ),
           );
         }
         lines.push({
           lineId: line.lineId,
-          barberPref: BarberPref.fromBarberId(line.barberId),
+          ...BarberPref.fromBarberId(line.barberId),
           durationMinutes: defaults.durationMinutes,
           padBeforeMinutes: defaults.padBeforeMinutes,
           padAfterMinutes: defaults.padAfterMinutes,
@@ -428,8 +447,8 @@ export const BookingCartSystem = {
     riders: readonly CartRider[],
   ): CartPartyServices {
     const lineServiceIds: ServiceId[] = [];
-    for (let s = 0; s < cart.seats.length; s++) {
-      const lines = (cart.seats[s] as BookingCart.SeatLines).lines;
+    for (let s = 0; s < cart.cartSeats.length; s++) {
+      const lines = (cart.cartSeats[s] as CartSeatLines).lines;
       for (let k = 0; k < lines.length; k++) {
         lineServiceIds.push((lines[k] as CartLine).serviceId);
       }
@@ -478,7 +497,7 @@ export const BookingCartSystem = {
   },
 
   /**
-   * A day's arrangements, each at ONE shop (`optionsForDay`,
+   * A shop day's arrangements, each at ONE shop (`optionsForDay`,
    * `observe-availability.use-case.ts:224-306`). The engine is shop-blind, so
    * the pool is partitioned by the shop on each roster window and the engine
    * runs once per shop, in shop-id order (code units, runtime-locale
@@ -487,6 +506,8 @@ export const BookingCartSystem = {
    * ({@link shopsServingParty}). Each run gets the grid's ONE arrangement per
    * start (`AvailabilitySystem.availableStarts`), its lines measured against
    * that run's barbers; the options come back sorted by start, then shop.
+   * A roster window IS a minute range of the day, so it is handed to the
+   * engine as it is.
    */
   optionsForDay(query: CartDayQuery): readonly CartLocatedOption[] {
     // Partition: shop → the barbers rostered there, each with only their
@@ -495,7 +516,7 @@ export const BookingCartSystem = {
     // barber's struct built once after the walk.
     const shops: LocationId[] = [];
     const poolIds: BarberId[][] = [];
-    const poolBusy: (readonly TimeInterval[])[][] = [];
+    const poolBusy: (readonly MinuteRange[])[][] = [];
     const poolWindows: RosterWindow[][][] = [];
     for (let b = 0; b < query.barbers.length; b++) {
       const barber = query.barbers[b] as CartBarberDay;
@@ -513,7 +534,7 @@ export const BookingCartSystem = {
         const mine = ids.indexOf(barber.barberId);
         if (mine === -1) {
           ids.push(barber.barberId);
-          (poolBusy[at] as (readonly TimeInterval[])[]).push(barber.busy);
+          (poolBusy[at] as (readonly MinuteRange[])[]).push(barber.busy);
           (poolWindows[at] as RosterWindow[][]).push([window]);
         } else {
           ((poolWindows[at] as RosterWindow[][])[mine] as RosterWindow[]).push(
@@ -521,21 +542,6 @@ export const BookingCartSystem = {
           );
         }
       }
-    }
-    const pools: CartBarberDay[][] = [];
-    for (let at = 0; at < shops.length; at++) {
-      const ids = poolIds[at] as BarberId[];
-      const pool: CartBarberDay[] = [];
-      for (let p = 0; p < ids.length; p++) {
-        pool.push({
-          barberId: ids[p] as BarberId,
-          windows: (poolWindows[at] as RosterWindow[][])[p] as RosterWindow[],
-          busy: (poolBusy[at] as (readonly TimeInterval[])[])[
-            p
-          ] as readonly TimeInterval[],
-        });
-      }
-      pools.push(pool);
     }
 
     const serving = BookingCartSystem.shopsServingParty(
@@ -550,16 +556,6 @@ export const BookingCartSystem = {
       compareIds(shops[a] as LocationId, shops[b] as LocationId),
     );
 
-    const riders: AvailabilityRider[] = [];
-    for (let r = 0; r < query.riders.length; r++) {
-      const rider = query.riders[r] as CartRider;
-      riders.push({
-        barberId: rider.barberId,
-        offsetMinutes: rider.offsetMinutes,
-        terms: rider.terms,
-      });
-    }
-
     // One run per serving shop, visited in shop-id order; each run is
     // already sorted by start (`compareOptions`).
     const runs: CartLocatedOption[][] = [];
@@ -567,32 +563,33 @@ export const BookingCartSystem = {
       const index = order[i] as number;
       const locationId = shops[index] as LocationId;
       if (!serving.includes(locationId)) continue;
-      const pool = pools[index] as CartBarberDay[];
+      const ids = poolIds[index] as BarberId[];
       const barbers: BarberDayAvailability[] = [];
-      const barberIds: BarberId[] = [];
-      for (let b = 0; b < pool.length; b++) {
-        const barber = pool[b] as CartBarberDay;
-        barberIds.push(barber.barberId);
+      for (let p = 0; p < ids.length; p++) {
         barbers.push({
-          barberId: barber.barberId,
-          windows: RosterSystem.intervalsOf(barber.windows, query.day),
-          busy: barber.busy,
+          barberId: ids[p] as BarberId,
+          windows: (poolWindows[index] as RosterWindow[][])[
+            p
+          ] as RosterWindow[],
+          busy: (poolBusy[index] as (readonly MinuteRange[])[])[
+            p
+          ] as readonly MinuteRange[],
           blocks: [],
         });
       }
       const lines = BookingCartSystem.toAvailabilityLines(
         query.cart,
         query.services,
-        barberIds,
+        ids,
       );
       const result = AvailabilitySystem.availableStarts(
         {
           lines,
           barbers,
           policy: query.policy,
-          notBeforeMs: query.notBeforeMs,
-          riders,
-          withinMs: query.withinMs,
+          notBefore: query.notBefore,
+          riders: query.riders,
+          within: query.within,
         },
         query.budget,
       );
@@ -612,13 +609,13 @@ export const BookingCartSystem = {
    * Every seat in the party, the booker first, then companions and guests in
    * member order (`partySeats`, `booking-flow.ts:333`) — as cart seat keys.
    */
-  partySeats(party: Party): readonly string[] {
+  partySeats(party: Party): readonly SeatKeyText[] {
     const keys = Party.seatKeys(party);
-    const values: string[] = [];
+    const texts: SeatKeyText[] = [];
     for (let i = 0; i < keys.length; i++) {
-      values.push(CartLine.seatKeyValue(keys[i] as SeatKey));
+      texts.push(SeatKey.text(keys[i] as SeatKey));
     }
-    return values;
+    return texts;
   },
 
   /**
@@ -626,10 +623,10 @@ export const BookingCartSystem = {
    * everyone holds something (`firstSeatWithoutService`,
    * `booking-flow.ts:347`) — ordered because the caller NAMES them.
    */
-  firstSeatWithoutService(party: Party, cart: BookingCart): string | null {
+  firstSeatWithoutService(party: Party, cart: BookingCart): SeatKeyText | null {
     const seats = BookingCartSystem.partySeats(party);
     for (let i = 0; i < seats.length; i++) {
-      const seatKey = seats[i] as string;
+      const seatKey = seats[i] as SeatKeyText;
       if (BookingCart.linesFor(cart, seatKey).length === 0) return seatKey;
     }
     return null;
@@ -638,11 +635,12 @@ export const BookingCartSystem = {
   /**
    * The selection as the commit request wants it (`toCommitSeats`,
    * `booking-flow.store.ts:777-847`): one entry per assignment, in order,
-   * carrying no price and no duration. A guest travels as their LABEL plus
-   * their seat key. `null` when an assignment names a line the cart no longer
-   * holds, or a seat that is neither the booker's nor a guest's — the bag
-   * changed after the schedule step, and the server would refuse for a
-   * reason the user cannot act on.
+   * carrying no price and no duration — its start in minutes of the
+   * selection's shop day. A guest travels as their LABEL plus their seat
+   * key. `null` when an assignment names a line the cart no longer holds, or
+   * a seat that is neither the booker's nor a guest's — the bag changed
+   * after the schedule step, and the server would refuse for a reason the
+   * user cannot act on.
    */
   toCommitSeats(
     cart: BookingCart,
@@ -653,8 +651,8 @@ export const BookingCartSystem = {
     for (let a = 0; a < assignments.length; a++) {
       const assignment = assignments[a] as SeatAssignment;
       let found: CartLine | null = null;
-      for (let s = 0; s < cart.seats.length && found === null; s++) {
-        const lines = (cart.seats[s] as BookingCart.SeatLines).lines;
+      for (let s = 0; s < cart.cartSeats.length && found === null; s++) {
+        const lines = (cart.cartSeats[s] as CartSeatLines).lines;
         for (let k = 0; k < lines.length; k++) {
           if ((lines[k] as CartLine).lineId === assignment.lineId) {
             found = lines[k] as CartLine;
@@ -665,13 +663,13 @@ export const BookingCartSystem = {
       if (found === null) return null;
       let subject: CommitSubject;
       if (found.seatKey === SELF_KEY) {
-        subject = { kind: CommitSubjectKind.Self };
+        subject = { commitSubjectRole: CommitSubjectRole.Self };
       } else {
         const guest = guestOf(party, found.seatKey);
         if (guest === null) return null;
         subject = {
-          kind: CommitSubjectKind.Guest,
-          label: guest.label,
+          commitSubjectRole: CommitSubjectRole.Guest,
+          label: guest.guestLabel,
           guestKey: found.seatKey,
         };
       }
@@ -680,8 +678,9 @@ export const BookingCartSystem = {
         serviceId: found.serviceId,
         variantId: found.variantId,
         barberId: assignment.barberId,
-        barberPref: BarberPref.fromBarberId(found.barberId).kind,
-        startMs: assignment.timeInterval.startMs,
+        barberPreference: BarberPref.fromBarberId(found.barberId)
+          .barberPreference,
+        startMinutes: assignment.startMinutes,
         subject,
       });
     }
@@ -708,7 +707,7 @@ export const BookingCartSystem = {
   /**
    * The account a visit was read FOR (`readerOf`,
    * `booking-flow.store.ts:1026-1034`): the party's claimed owner, or —
-   * before any claim — the visit's own `self` account seat, which an
+   * before any claim — the visit's own `SELF` account seat, which an
    * owner-scoped read can only have been. `null` when neither names anyone.
    */
   readerOf(
@@ -717,12 +716,12 @@ export const BookingCartSystem = {
   ): UserId | null {
     if (partyOwner !== null) return partyOwner;
     for (let i = 0; i < seats.length; i++) {
-      const subject = (seats[i] as PrefillSeat).subject;
+      const seat = seats[i] as PrefillSeat;
       if (
-        subject.kind === SeatSubjectKind.Account &&
-        subject.relationship === SeatRelationship.Self
+        seat.seatSubject === SeatSubject.Account &&
+        seat.subjectRelationship === SubjectRelationship.Self
       ) {
-        return subject.userId;
+        return seat.subjectUserId;
       }
     }
     return null;
@@ -735,7 +734,7 @@ export const BookingCartSystem = {
    * anonymous guest is known by their stored LABEL (the identity the server
    * counts people by) and keeps it; an account the booker cannot name
    * (`Seat.isMovableByBooker`) is a guest seat on a new booking
-   * (`as_guests`) and is left to the server on a move (`carried_by_server`).
+   * (`AS_GUESTS`) and is left to the server on a move (`CARRIED_BY_SERVER`).
    * Guest seat keys are minted `guest-0…` in visit order; lines are `line-1…`
    * with the visit's barber as a SPECIFIC preference. A guest the visit has no
    * name for gets a placeholder no other guest holds ({@link firstUnusedLabel}
@@ -750,41 +749,44 @@ export const BookingCartSystem = {
     guestLabel: (ordinal: number) => string,
   ): CartPrefill | null {
     const persons: string[] = [];
-    const seatKeys: string[] = [];
+    const seatKeys: SeatKeyText[] = [];
     const buckets: CartLine[][] = [];
     const storedLabels: (string | null)[] = [];
     let sequence = 1;
     let guestOrdinal = 0;
     for (let i = 0; i < seats.length; i++) {
       const seat = seats[i] as PrefillSeat;
-      const subject = seat.subject;
-      // `isMovableByBooker` reads the seat's subject only — the one rule the
-      // server decides a move by.
+      // `isMovableByBooker` reads the seat's occupant only — the one rule
+      // the server decides a move by.
       const theBookers = Seat.isMovableByBooker(seat as Seat, reader);
       if (!theBookers && companions === PrefillCompanions.CarriedByServer) {
         continue;
       }
-      const isSelf = theBookers && subject.kind === SeatSubjectKind.Account;
+      const isSelf = theBookers && seat.seatSubject === SeatSubject.Account;
       const person = isSelf
         ? SELF_KEY
-        : subject.kind === SeatSubjectKind.Anonymous
-          ? `label:${subject.label}`
-          : `account:${subject.userId}`;
+        : seat.seatSubject === SeatSubject.Anonymous
+          ? `label:${seat.guestLabel}`
+          : `account:${seat.subjectUserId}`;
       let at = persons.indexOf(person);
       if (at === -1) {
         at = persons.length;
         persons.push(person);
-        seatKeys.push(isSelf ? SELF_KEY : `${GUEST_PREFIX}${guestOrdinal++}`);
+        seatKeys.push(
+          isSelf
+            ? SELF_KEY
+            : SeatKeyText.of(`${GUEST_PREFIX}${guestOrdinal++}`),
+        );
         buckets.push([]);
         storedLabels.push(
-          !isSelf && subject.kind === SeatSubjectKind.Anonymous
-            ? subject.label
+          !isSelf && seat.seatSubject === SeatSubject.Anonymous
+            ? seat.guestLabel
             : null,
         );
       }
       (buckets[at] as CartLine[]).push({
-        lineId: `${LINE_PREFIX}${sequence++}`,
-        seatKey: seatKeys[at] as string,
+        lineId: CartLineId.forSequence(sequence++),
+        seatKey: seatKeys[at] as SeatKeyText,
         serviceId: seat.serviceId,
         variantId: seat.variantId,
         barberId: seat.barberId,
@@ -793,26 +795,28 @@ export const BookingCartSystem = {
     }
     if (buckets.length === 0) return null;
 
+    const stored: CartSeatLines[] = [];
+    for (let i = 0; i < buckets.length; i++) {
+      stored.push({
+        seatKey: seatKeys[i] as SeatKeyText,
+        lines: buckets[i] as CartLine[],
+      });
+    }
     const cart: BookingCart = {
-      seats: readableSeats(
-        buckets.map((lines, index) => ({
-          seatKey: seatKeys[index] as string,
-          lines,
-        })),
-      ),
-      nextSequence: sequence,
+      cartSeats: readableSeats(stored),
+      cartNextSequence: sequence,
     };
 
     // Stored names first, so a placeholder can step around every one of them.
     const taken: string[] = [];
     for (let i = 0; i < storedLabels.length; i++) {
-      const stored = storedLabels[i] as string | null;
-      if (stored !== null && !taken.includes(stored)) taken.push(stored);
+      const label = storedLabels[i] as string | null;
+      if (label !== null && !taken.includes(label)) taken.push(label);
     }
     const members: PartyMember[] = [PartyMember.owner()];
     let guestCount = 0;
     for (let i = 0; i < seatKeys.length; i++) {
-      const seatKey = seatKeys[i] as string;
+      const seatKey = seatKeys[i] as SeatKeyText;
       if (seatKey === SELF_KEY) continue;
       guestCount++;
       let raw = storedLabels[i] as string | null;
@@ -822,7 +826,7 @@ export const BookingCartSystem = {
       }
       const label = SeatLabel.parse(raw);
       if (!label.ok) return null;
-      members.push(PartyMember.guest(seatKey, label.value));
+      members.push(PartyMember.guest(GuestId.of(seatKey), label.value));
     }
     return {
       party: {
@@ -850,14 +854,14 @@ export const BookingCartSystem = {
   ): Party | null {
     const members: PartyMember[] = [PartyMember.owner()];
     const taken: string[] = [];
-    for (let i = 0; i < cart.seats.length; i++) {
-      const seatKey = (cart.seats[i] as BookingCart.SeatLines).seatKey;
+    for (let i = 0; i < cart.cartSeats.length; i++) {
+      const seatKey = (cart.cartSeats[i] as CartSeatLines).seatKey;
       if (seatKey === SELF_KEY) continue;
       const raw = BookingCartSystem.firstUnusedLabel(taken, guestLabel, 1);
       taken.push(raw);
       const label = SeatLabel.parse(raw);
       if (!label.ok) return null;
-      members.push(PartyMember.guest(seatKey, label.value));
+      members.push(PartyMember.guest(GuestId.of(seatKey), label.value));
     }
     return {
       ownerUserId,
@@ -877,44 +881,49 @@ export const BookingCartSystem = {
    *   something and no two guests share a label; otherwise on SERVICES,
    *   where `next` says what is wrong (the one door a state machine cannot
    *   guard on its own);
-   * - the flexible declaration loses the days before `todayDayKey` (a review
+   * - the flexible declaration loses the days before `today` (a review
    *   carries none), and the picked day is dropped once it has gone by;
    * - anything else resumes on SERVICES. A terminal state is never persisted
    *   and resumes on services too.
    */
-  restore(draft: CartDraft, todayDayKey: DayKey): CartDraft {
+  restore(draft: CartDraft, today: LocalDate): CartDraft {
     const state = draft.state;
-    if (state.kind === BookingFlowStep.Location) {
-      return { state, selectedDayKey: draft.selectedDayKey };
+    if (state.bookingFlowStep === BookingFlowStep.Location) {
+      return { state, selectedLocalDate: draft.selectedLocalDate };
     }
     if (
-      state.kind === BookingFlowStep.Confirmed ||
-      state.kind === BookingFlowStep.Waitlisted
+      state.bookingFlowStep === BookingFlowStep.Confirmed ||
+      state.bookingFlowStep === BookingFlowStep.Waitlisted
     ) {
       const party =
-        state.kind === BookingFlowStep.Confirmed
+        state.bookingFlowStep === BookingFlowStep.Confirmed
           ? state.confirmation.party
           : state.summary.party;
       const cart =
-        state.kind === BookingFlowStep.Confirmed
+        state.bookingFlowStep === BookingFlowStep.Confirmed
           ? state.confirmation.cart
           : state.summary.cart;
       const locationId =
-        state.kind === BookingFlowStep.Confirmed
+        state.bookingFlowStep === BookingFlowStep.Confirmed
           ? state.confirmation.selection.locationId
           : state.summary.locationId;
       return {
-        state: { kind: BookingFlowStep.Services, party, cart, locationId },
-        selectedDayKey: draft.selectedDayKey,
+        state: {
+          bookingFlowStep: BookingFlowStep.Services,
+          party,
+          cart,
+          locationId,
+        },
+        selectedLocalDate: draft.selectedLocalDate,
       };
     }
     const locationId =
-      state.kind === BookingFlowStep.Review
+      state.bookingFlowStep === BookingFlowStep.Review
         ? state.selection.locationId
         : state.locationId;
     const resumable =
-      (state.kind === BookingFlowStep.Schedule ||
-        state.kind === BookingFlowStep.Review) &&
+      (state.bookingFlowStep === BookingFlowStep.Schedule ||
+        state.bookingFlowStep === BookingFlowStep.Review) &&
       !BookingCart.isEmpty(state.cart) &&
       BookingCartSystem.firstSeatWithoutService(state.party, state.cart) ===
         null &&
@@ -922,35 +931,38 @@ export const BookingCartSystem = {
     if (!resumable) {
       return {
         state: {
-          kind: BookingFlowStep.Services,
+          bookingFlowStep: BookingFlowStep.Services,
           party: state.party,
           cart: state.cart,
           locationId,
         },
-        selectedDayKey: draft.selectedDayKey,
+        selectedLocalDate: draft.selectedLocalDate,
       };
     }
     const declared =
-      state.kind === BookingFlowStep.Schedule
+      state.bookingFlowStep === BookingFlowStep.Schedule
         ? state.when
         : FlexibleWhen.empty();
     const kept: DayWindows[] = [];
-    for (let i = 0; i < declared.days.length; i++) {
-      const day = declared.days[i] as DayWindows;
-      if (day.dayKey >= todayDayKey) kept.push(day);
+    for (let i = 0; i < declared.flexibleDays.length; i++) {
+      const day = declared.flexibleDays[i] as DayWindows;
+      if (day.localDate >= today) kept.push(day);
     }
     return {
       state: {
-        kind: BookingFlowStep.Schedule,
+        bookingFlowStep: BookingFlowStep.Schedule,
         party: state.party,
         cart: state.cart,
         locationId,
-        when: kept.length === declared.days.length ? declared : { days: kept },
+        when:
+          kept.length === declared.flexibleDays.length
+            ? declared
+            : { flexibleDays: kept },
       },
-      selectedDayKey:
-        draft.selectedDayKey !== null && draft.selectedDayKey < todayDayKey
+      selectedLocalDate:
+        draft.selectedLocalDate !== null && draft.selectedLocalDate < today
           ? null
-          : draft.selectedDayKey,
+          : draft.selectedLocalDate,
     };
   },
 } as const;

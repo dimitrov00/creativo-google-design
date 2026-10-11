@@ -1,66 +1,44 @@
-/** How a coupon may combine with other discounts, by kind — the stored tags, unchanged. */
-export const CouponCombinabilityKind = {
+/** The tags — the dictionary named after the field `combinability`. */
+const COMBINABILITY = {
   /** Must be the ONLY discount on the order. */
-  Exclusive: 'exclusive',
+  Exclusive: 'EXCLUSIVE',
   /** Combines freely with other stackable coupons. */
-  Stackable: 'stackable',
+  Stackable: 'STACKABLE',
 } as const;
-export type CouponCombinabilityKind =
-  (typeof CouponCombinabilityKind)[keyof typeof CouponCombinabilityKind];
 
 /**
- * How a coupon may combine with other discounts on one order — a union, not
- * a `stackable: boolean`, so the stacking vocabulary can grow
- * (`coupon-combinability.ts:9`).
+ * How a coupon may combine with other discounts on one order — a plain tag
+ * field `combinability` (flatten-spec §3.2: today's union of two tag-only
+ * objects carried no variant field, so it is the tag alone). A tag rather
+ * than a `stackable: boolean`, so the stacking vocabulary can grow
+ * (`coupon-combinability.ts:9`). The stored legacy values are the
+ * lower-case `{ kind }` objects; the legacy shims map them.
  */
-export type CouponCombinability =
-  CouponCombinability.Exclusive | CouponCombinability.Stackable;
+export type Combinability = (typeof COMBINABILITY)[keyof typeof COMBINABILITY];
 
-export const CouponCombinability = {
-  exclusive(): CouponCombinability.Exclusive {
-    return { kind: CouponCombinabilityKind.Exclusive };
-  },
-
-  stackable(): CouponCombinability.Stackable {
-    return { kind: CouponCombinabilityKind.Stackable };
-  },
-
-  isExclusive(c: CouponCombinability): c is CouponCombinability.Exclusive {
-    return c.kind === CouponCombinabilityKind.Exclusive;
-  },
-
-  /** Can `candidate` join an already-chosen `current` set? */
-  canAdd(
-    current: readonly CouponCombinability[],
-    candidate: CouponCombinability,
-  ): boolean {
-    if (current.length === 0) return true;
-    if (candidate.kind === CouponCombinabilityKind.Exclusive) return false;
-    return !hasExclusive(current);
-  },
-
-  /** Is a chosen set legal? An exclusive coupon must be the only one. */
-  isLegalSelection(selection: readonly CouponCombinability[]): boolean {
-    return !hasExclusive(selection) || selection.length === 1;
-  },
-} as const;
-
-function hasExclusive(set: readonly CouponCombinability[]): boolean {
+function hasExclusive(set: readonly Combinability[]): boolean {
   for (let i = 0; i < set.length; i++) {
-    if (
-      (set[i] as CouponCombinability).kind === CouponCombinabilityKind.Exclusive
-    ) {
-      return true;
-    }
+    if (set[i] === COMBINABILITY.Exclusive) return true;
   }
   return false;
 }
 
-export namespace CouponCombinability {
-  export type Exclusive = {
-    readonly kind: typeof CouponCombinabilityKind.Exclusive;
-  };
-  export type Stackable = {
-    readonly kind: typeof CouponCombinabilityKind.Stackable;
-  };
-}
+export const Combinability = {
+  ...COMBINABILITY,
+
+  isExclusive(combinability: Combinability): boolean {
+    return combinability === COMBINABILITY.Exclusive;
+  },
+
+  /** Can `candidate` join an already-chosen `current` set? */
+  canAdd(current: readonly Combinability[], candidate: Combinability): boolean {
+    if (current.length === 0) return true;
+    if (candidate === COMBINABILITY.Exclusive) return false;
+    return !hasExclusive(current);
+  },
+
+  /** Is a chosen set legal? An exclusive coupon must be the only one. */
+  isLegalSelection(selection: readonly Combinability[]): boolean {
+    return !hasExclusive(selection) || selection.length === 1;
+  },
+} as const;

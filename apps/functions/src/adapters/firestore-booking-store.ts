@@ -4,7 +4,8 @@ import type {
   Firestore,
   Transaction,
 } from 'firebase-admin/firestore';
-import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
+import { Result, fail, ok } from '@creativo/domain/kernel';
+import { ZonedTimeSystem } from '@creativo/ecs-core';
 import { type LocationDayHours, Service } from '@creativo/domain/catalog';
 import {
   CalendarDay,
@@ -29,12 +30,13 @@ import {
   persistedChairTimesOf,
   placementFromDocument,
 } from '@creativo/application/booking';
-import type {
-  BookingDecision,
-  BookingSnapshot,
-  CommitOutcome,
-  DecideBookingRequest,
-  LoadedSchedule,
+import {
+  type BookingDecision,
+  type BookingSnapshot,
+  type CommitOutcome,
+  type DecideBookingRequest,
+  type LoadedSchedule,
+  readStartIso,
 } from '../use-cases/decide-booking';
 import {
   type CommitBookingError,
@@ -468,14 +470,18 @@ export class FirestoreBookingStore {
 
     // Busy is keyed by barber AND day, and a seat's day comes from its own
     // start — a party that straddles midnight touches two documents.
+    // Each start is read as the decision reads it (`readStartIso`, the
+    // shop's zone); one that does not read touches no document — the
+    // decision refuses it.
     const busyKeys = new Set<string>();
+    const timeZone = ZonedTimeSystem.checkZone(zone);
     for (const seat of request.seats) {
-      const start = ZonedDateTime.fromISO(seat.startIso, zone);
-      if (start.isFailure()) continue;
+      const start = readStartIso(seat.startIso, zone);
+      if (!start.ok || !timeZone.ok) continue;
       busyKeys.add(
         busyDocumentId(
           seat.barberId,
-          CalendarDay.fromZonedDateTime(start.value).key(),
+          ZonedTimeSystem.toLocal(start.value, timeZone.value).localDate,
         ),
       );
     }

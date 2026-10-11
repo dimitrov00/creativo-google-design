@@ -20,8 +20,14 @@ import {
 import { type VisitSides, adoptSides } from './visit-sides';
 import {
   BillingSystem,
-  TipPresetKind,
+  type DraftLegMinutes,
+  DurationMinutes,
+  EndMinute,
+  MinuteOfDay,
+  PriceCents,
+  TipPreset,
   VisitDraftSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
@@ -1046,7 +1052,55 @@ function snap(minute: number): number {
 
 /** The minutes a draft describes — its override, or the legs it holds (`VisitDraftSystem.span`). */
 function spanOf(draft: VisitDraft): number {
-  return VisitDraftSystem.span(draft.durationOverride, draft.legs);
+  return VisitDraftSystem.span(
+    draft.durationOverride === null ? null : durationOf(draft.durationOverride),
+    legMinutesOf(draft.legs),
+  );
+}
+
+/*
+ * Flatten-pass converters (Law 7): `VisitDraftSystem` takes branded minute
+ * figures — a leg's `DurationMinutes`, the frame's `MinuteOfDay` start and
+ * `EndMinute` end on its shop day, the bill's `PriceCents`. The editor's
+ * figures are those by construction (a service lasts a positive whole
+ * number of minutes, a frame sits inside its one shop day, F-6), so one
+ * that is not is a broken invariant, never an input.
+ */
+
+/** A whole positive number of minutes as the brand. */
+function durationOf(minutes: number): DurationMinutes {
+  const duration = DurationMinutes.of(minutes);
+  return duration.ok
+    ? duration.value
+    : defect(`not a positive whole duration: ${minutes}`);
+}
+
+/** The legs as the span reads them — their minutes. */
+function legMinutesOf(
+  legs: readonly { readonly minutes: number }[],
+): readonly DraftLegMinutes[] {
+  return legs.map((leg) => ({ durationMinutes: durationOf(leg.minutes) }));
+}
+
+/** A frame's start on its shop day's clock. */
+function startMinuteOf(minute: number): MinuteOfDay {
+  const start = MinuteOfDay.of(minute);
+  return start.ok
+    ? start.value
+    : defect(`a start off the shop's clock: ${minute}`);
+}
+
+/** A frame's exclusive end on its shop day's clock. */
+function endMinuteOf(minute: number): EndMinute {
+  const end = EndMinute.of(minute);
+  return end.ok ? end.value : defect(`an end off the shop's clock: ${minute}`);
+}
+
+/** The bill in minor units as the system's cents (`null`: no bill to round). */
+function billCentsOf(minorUnits: number | null): PriceCents | null {
+  if (minorUnits === null) return null;
+  const cents = PriceCents.of(minorUnits);
+  return cents.ok ? cents.value : null;
 }
 
 /**
@@ -1126,9 +1180,9 @@ function seedDraft(vm: VisitEditorVm): VisitDraft {
     startMinute: vm.startMinute,
     // Only pin a number when the booked span never was the catalogue's.
     durationOverride: VisitDraftSystem.durationOverrideOf(
-      vm.startMinute,
-      vm.endMinute,
-      legs,
+      startMinuteOf(vm.startMinute),
+      endMinuteOf(vm.endMinute),
+      legMinutesOf(legs),
     ),
     chairId: vm.chairId,
     locationId: vm.locationId ?? null,
@@ -2149,7 +2203,10 @@ export class StaffVisitEditor {
   protected readonly durationMinutes = computed(
     () =>
       this.draft().durationOverride ??
-      Math.max(VisitDraftSystem.legMinutes(this.draft().legs), GRAIN_MINUTES),
+      Math.max(
+        VisitDraftSystem.legMinutes(legMinutesOf(this.draft().legs)),
+        GRAIN_MINUTES,
+      ),
   );
 
   /** THE DERIVED END. It is a computation and it is persisted nowhere. */
@@ -4245,19 +4302,21 @@ export class StaffVisitEditor {
     // общо 15,00 €» (owner, 2026-09-16: «до 15,00 €» as the headline read
     // as "anything up to 15"). No share beneath a coin: the barber counts
     // money, not percentages, and a coin says all it means by itself.
-    BillingSystem.tipPresets(this.vm().priceMinorUnits).map((preset) => ({
-      id: `amt:${preset.amountMinorUnits}`,
-      amount: preset.amountMinorUnits,
-      label: this.moneyLabel(preset.amountMinorUnits),
-      detail:
-        preset.targetMinorUnits === null
-          ? ''
-          : this.rawCopy('staff.visit.tipRoundUp').replace(
-              '{{total}}',
-              this.moneyLabel(preset.targetMinorUnits),
-            ),
-      size: preset.kind === TipPresetKind.RoundUp ? 'large' : 'regular',
-    })),
+    BillingSystem.tipPresets(billCentsOf(this.vm().priceMinorUnits)).map(
+      (preset) => ({
+        id: `amt:${preset.amountCents}`,
+        amount: preset.amountCents,
+        label: this.moneyLabel(preset.amountCents),
+        detail:
+          preset.targetCents === null
+            ? ''
+            : this.rawCopy('staff.visit.tipRoundUp').replace(
+                '{{total}}',
+                this.moneyLabel(preset.targetCents),
+              ),
+        size: preset.tipPreset === TipPreset.RoundUp ? 'large' : 'regular',
+      }),
+    ),
   );
 
   /* ── THE TIP, A DISCLOSURE ON THE LADDER (owner, 2026-09-17: "adding a
@@ -6944,7 +7003,7 @@ const MONEY_CODE = 'EUR';
  */
 function instantAt(index: number): ZonedDateTime {
   const instant = ZonedDateTime.fromMillis(index, 'UTC');
-  if (instant.isFailure()) throw new Error('unreachable: the UTC epoch');
+  if (instant.isFailure()) defect('unreachable: the UTC epoch');
   return instant.value;
 }
 

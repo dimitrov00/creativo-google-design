@@ -1,34 +1,46 @@
 import type { LocalizedText } from '@creativo/domain/catalog';
 import {
-  type BadgeCategoryId as CategoryRefId,
+  AchievementRuleId,
+  AdjustmentId,
+  AwardSummary as SystemAward,
+  BadgeCategoryId as CategoryRefId,
+  BadgeSeriesId as SeriesRefId,
+  BadgeSubject as SystemSubject,
   type BadgeLevel as SystemLevel,
   type CatalogCategoryRef,
   type CatalogSeasonRef,
-  DayKey,
-  type FamilyScope as SystemScope,
+  EarnedVia,
+  type EarnedLevel,
+  FamilyScopeFilter,
+  LocalDate,
   type Metric as SystemMetric,
-  type Points,
+  Points,
+  RedeemProblem as SystemRedeemProblem,
   type RedeemableRewardRef,
   RewardSystem,
-  type RewardId,
-  type SeasonId as SeasonRefId,
-  type SeriesId,
+  RewardId,
+  SeasonId as SeasonRefId,
   type StandingCatalog,
   type StandingProgress,
   type StandingSeriesRef,
   StandingSystem,
-  type TierId,
+  TierId,
+  TierOverride,
+  type TierState as SystemTierState,
   type TierStepRef,
   TierSystem,
+  UtcEpochMs,
+  defect,
 } from '@creativo/ecs-core';
-import type { BadgeSeries } from './badge-series';
+import type { BadgeLevel, BadgeSeries } from './badge-series';
+import type { AwardSummary } from './badge-vocabulary';
 import type {
   RedeemProblem,
   RedemptionRecord,
   RewardCatalogItem,
   TierDefinition,
 } from './catalog-entries';
-import { type IsoDate, LOYALTY_ZONE } from './loyalty-calendar';
+import { type IsoDate, sofiaDayOf } from './loyalty-calendar';
 import type { LoyaltyCatalog } from './loyalty-catalog';
 import type { BadgeProgress, TierState } from './projections';
 
@@ -127,8 +139,7 @@ export function familiesIn(
     catalogOf(catalog),
     progressOf(progress),
     scopeOf(scope),
-    DayKey.of(today),
-    LOYALTY_ZONE,
+    dayOf(today),
   ).map((ref) => ref.source);
 }
 
@@ -153,8 +164,7 @@ export function familyCounts(
     catalogOf(catalog),
     progressOf(progress),
     scopeOf(scope),
-    DayKey.of(today),
-    LOYALTY_ZONE,
+    dayOf(today),
   );
 }
 
@@ -172,9 +182,14 @@ export function closestLevels(
   return StandingSystem.closestLevels(
     catalogOf(catalog),
     progressOf(progress),
-    DayKey.of(today),
+    dayOf(today),
     limit,
-  );
+  ).map((closest) => ({
+    seriesId: closest.badgeSeriesId,
+    level: closest.level,
+    value: closest.value,
+    target: closest.target,
+  }));
 }
 
 /**
@@ -186,18 +201,16 @@ export function recentLevelsByDay(
   progress: ReadonlyMap<string, BadgeProgress>,
   limit: number,
 ): readonly EarnedDay[] {
-  return StandingSystem.recentLevelsByDay(
-    progressOf(progress),
-    limit,
-    LOYALTY_ZONE,
-  ).map((day) => ({
-    day: day.day,
-    levels: day.levels.map((level) => ({
-      seriesId: level.seriesId,
-      level: level.level,
-      earnedAt: new Date(level.earnedAtMs),
-    })),
-  }));
+  return StandingSystem.recentLevelsByDay(progressOf(progress), limit).map(
+    (day) => ({
+      day: day.localDate,
+      levels: day.levels.map((level) => ({
+        seriesId: level.badgeSeriesId,
+        level: level.level,
+        earnedAt: new Date(level.earnedAtUtcMs),
+      })),
+    }),
+  );
 }
 
 /** «Ново»: earned after the previous visit began; before a first visit, everything is new. */
@@ -205,7 +218,10 @@ export function isNewSince(
   earnedAt: Date,
   previousVisitAtMs: number | null,
 ): boolean {
-  return StandingSystem.isNewSince(earnedAt.getTime(), previousVisitAtMs);
+  return StandingSystem.isNewSince(
+    utcOf(earnedAt),
+    previousVisitAtMs === null ? null : utcOfMs(previousVisitAtMs),
+  );
 }
 
 /**
@@ -223,15 +239,16 @@ export function redeemProblem(
     readonly recent: readonly RedemptionRecord[];
   },
 ): RedeemProblem | null {
-  return RewardSystem.problem(rewardRef(item), {
+  const problem = RewardSystem.problem(rewardRef(item), {
     balance: ctx.balance,
-    today: DayKey.of(ctx.today),
+    today: dayOf(ctx.today),
     paused: ctx.paused,
     recent: ctx.recent.map((record) => ({
-      rewardId: record.rewardId as RewardId,
-      on: DayKey.of(record.on),
+      rewardId: RewardId.of(record.rewardId),
+      on: dayOf(record.on),
     })),
   });
+  return problem === null ? null : LEGACY_REDEEM_PROBLEM[problem];
 }
 
 /** The costliest reward the balance buys today (enabled, in its window, in stock); ties by catalogue order. */
@@ -241,11 +258,8 @@ export function bestAffordable(
   today: IsoDate,
 ): RewardCatalogItem | null {
   return (
-    RewardSystem.bestAffordable(
-      rewards.map(rewardRef),
-      balance,
-      DayKey.of(today),
-    )?.source ?? null
+    RewardSystem.bestAffordable(rewards.map(rewardRef), balance, dayOf(today))
+      ?.source ?? null
   );
 }
 
@@ -256,11 +270,8 @@ export function nextAffordable(
   today: IsoDate,
 ): RewardCatalogItem | null {
   return (
-    RewardSystem.nextAffordable(
-      rewards.map(rewardRef),
-      balance,
-      DayKey.of(today),
-    )?.source ?? null
+    RewardSystem.nextAffordable(rewards.map(rewardRef), balance, dayOf(today))
+      ?.source ?? null
   );
 }
 
@@ -283,25 +294,7 @@ export function tierSteps(
   readonly nextTierId: string | null;
   readonly remaining: number | null;
 } {
-  const track = TierSystem.steps(
-    {
-      current: state.current as TierId,
-      definitionVersion: state.definitionVersion,
-      sinceMs: state.since.getTime(),
-      qualifying: state.qualifying,
-      next: state.next as TierId | null,
-      remaining: state.remaining,
-      override:
-        state.override === null
-          ? null
-          : {
-              tierId: state.override.tierId as TierId,
-              until: state.override.until as DayKey | null,
-              source: state.override.source,
-            },
-    },
-    tiers.map(tierRef),
-  );
+  const track = TierSystem.steps(tierStateOf(state), tiers.map(tierRef));
   return {
     ...track,
     // The tier's own name, by reference: the catalogue's `LocalizedText`.
@@ -318,20 +311,127 @@ export function tierSteps(
 /** A row as the system reads it, carrying the legacy object it stands for. */
 type Ref<R, S> = R & { readonly source: S };
 
+/** A class instant's epoch ms as the brand — every `Date` the documents hold is inside its window. */
+function utcOf(at: Date): UtcEpochMs {
+  return utcOfMs(at.getTime());
+}
+
+function utcOfMs(epochMs: number): UtcEpochMs {
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
+}
+
+/** A Sofia day the card holds: a guarded document day, a clock's «today». */
+function dayOf(raw: IsoDate): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/** How a level was earned, in the system's words. */
+const EARNED_VIA = {
+  rule: EarnedVia.Rule,
+  manual: EarnedVia.Manual,
+} as const satisfies Record<BadgeProgress['earned'][number]['via'], EarnedVia>;
+
+/** Why a reward cannot be redeemed, in the legacy words. */
+const LEGACY_REDEEM_PROBLEM: Readonly<
+  Record<SystemRedeemProblem, RedeemProblem>
+> = {
+  [SystemRedeemProblem.Disabled]: 'disabled',
+  [SystemRedeemProblem.NotYetAvailable]: 'notYetAvailable',
+  [SystemRedeemProblem.Ended]: 'ended',
+  [SystemRedeemProblem.SoldOut]: 'soldOut',
+  [SystemRedeemProblem.Paused]: 'paused',
+  [SystemRedeemProblem.InsufficientPoints]: 'insufficientPoints',
+  [SystemRedeemProblem.PerClientLimit]: 'perClientLimit',
+};
+
+/** A family's subject, in the system's words: the kind alone is read. */
+const BADGE_SUBJECT = {
+  service: SystemSubject.Service,
+  barber: SystemSubject.Barber,
+  location: SystemSubject.Location,
+} as const satisfies Record<
+  NonNullable<BadgeSeries['subject']>['kind'],
+  SystemSubject
+>;
+
+/** One earned level as the system reads it: the instant, and its Sofia day beside it (T5). */
+function earnedOf(earned: BadgeProgress['earned'][number]): EarnedLevel {
+  return {
+    level: earned.level,
+    earnedAtUtcMs: utcOf(earned.earnedAt),
+    earnedLocalDate: dayOf(sofiaDayOf(earned.earnedAt)),
+    earnedVia: EARNED_VIA[earned.via],
+    count: earned.count,
+  };
+}
+
+/** A legacy award as the system reads it: flat, by `awardKind`. */
+function systemAwardOf(award: AwardSummary): SystemAward {
+  switch (award.kind) {
+    case 'points':
+      return SystemAward.points(award.points);
+    case 'freeze':
+      return SystemAward.freeze(award.count);
+    case 'perk':
+      return SystemAward.perk(award.perkId, award.forDays);
+    case 'coupon':
+      return SystemAward.coupon({ bg: award.title.bg, en: award.title.en });
+  }
+}
+
+/** A family's level as the system reads it: the same figures, the awards flat. */
+function levelOf(level: BadgeLevel): SystemLevel {
+  return {
+    level: level.level,
+    ruleId: AchievementRuleId.of(level.ruleId),
+    target: level.target,
+    requirement: { bg: level.requirement.bg, en: level.requirement.en },
+    awards: level.awards.map(systemAwardOf),
+  };
+}
+
+/** The account's tier as the system reads it: the standing and the override, flat. */
+function tierStateOf(state: TierState): SystemTierState {
+  const until =
+    state.override === null || state.override.until === null
+      ? null
+      : dayOf(state.override.until);
+  const override =
+    state.override === null
+      ? TierOverride.none()
+      : state.override.source.kind === 'award'
+        ? TierOverride.award(
+            TierId.of(state.override.tierId),
+            until,
+            state.override.source.awardKey,
+          )
+        : TierOverride.adjustment(
+            TierId.of(state.override.tierId),
+            until,
+            AdjustmentId.of(state.override.source.adjustmentId),
+          );
+  return {
+    tierId: TierId.of(state.current),
+    tierDefinitionVersion: state.definitionVersion,
+    tierSinceUtcMs: utcOf(state.since),
+    tierQualifying: state.qualifying,
+    nextTierId: state.next === null ? null : TierId.of(state.next),
+    tierRemaining: state.remaining,
+    ...override,
+  };
+}
+
 function progressOf(
   progress: ReadonlyMap<string, BadgeProgress>,
 ): readonly StandingProgress[] {
   const out: StandingProgress[] = [];
   for (const [seriesId, p] of progress) {
     out.push({
-      id: seriesId as SeriesId,
+      id: SeriesRefId.of(seriesId),
       value: p.value,
-      earned: p.earned.map((earned) => ({
-        level: earned.level,
-        earnedAtMs: earned.earnedAt.getTime(),
-        via: earned.via,
-        count: earned.count,
-      })),
+      earned: p.earned.map(earnedOf),
     });
   }
   return out;
@@ -339,26 +439,21 @@ function progressOf(
 
 function seriesRef(series: BadgeSeries): Ref<StandingSeriesRef, BadgeSeries> {
   return {
-    id: series.id.value as SeriesId,
+    id: SeriesRefId.of(series.id.value),
     categoryId:
       series.categoryId === null
         ? null
-        : (series.categoryId.value as CategoryRefId),
+        : CategoryRefId.of(series.categoryId.value),
     seasonId:
-      series.seasonId === null ? null : (series.seasonId.value as SeasonRefId),
+      series.seasonId === null ? null : SeasonRefId.of(series.seasonId.value),
     order: series.order,
-    levels: series.levels as unknown as readonly SystemLevel[],
+    levels: series.levels.map(levelOf),
     metric:
-      series.metric === null
-        ? null
-        : {
-            metric: series.metric.metric as SystemMetric,
-            window: null,
-            where: null,
-          },
-    // The system reads the subject's kind alone: the same tags.
-    subject: series.subject as unknown as StandingSeriesRef['subject'],
-    retiredAtMs: series.retiredAt === null ? null : series.retiredAt.getTime(),
+      series.metric === null ? null : (series.metric.metric as SystemMetric),
+    // The system reads the subject's kind alone.
+    badgeSubject:
+      series.subject === null ? null : BADGE_SUBJECT[series.subject.kind],
+    retiredAtUtcMs: series.retiredAt === null ? null : utcOf(series.retiredAt),
     source: series,
   };
 }
@@ -368,38 +463,33 @@ function catalogOf(
 ): StandingCatalog<Ref<StandingSeriesRef, BadgeSeries>> {
   return {
     categories: catalog.categories.map((category): CatalogCategoryRef => ({
-      id: category.id.value as CategoryRefId,
+      id: CategoryRefId.of(category.id.value),
       order: category.order,
     })),
     families: catalog.families.map(seriesRef),
     seasons: catalog.seasons.map((season): CatalogSeasonRef => ({
-      id: season.id.value as SeasonRefId,
-      window: {
-        from: DayKey.of(season.window.from),
-        until: DayKey.of(season.window.until),
-      },
+      id: SeasonRefId.of(season.id.value),
+      windowFrom: dayOf(season.window.from),
+      windowUntil: dayOf(season.window.until),
       trackSeriesId:
         season.trackSeriesId === null
           ? null
-          : (season.trackSeriesId.value as SeriesId),
-      seriesIds: season.seriesIds.map((id) => id.value as SeriesId),
+          : SeriesRefId.of(season.trackSeriesId.value),
+      seriesIds: season.seriesIds.map((id) => SeriesRefId.of(id.value)),
     })),
   };
 }
 
-function scopeOf(scope: FamilyScope): SystemScope {
+function scopeOf(scope: FamilyScope): FamilyScopeFilter {
   switch (scope.kind) {
     case 'category':
-      return {
-        kind: 'category',
-        categoryId: scope.categoryId as CategoryRefId,
-      };
+      return FamilyScopeFilter.category(CategoryRefId.of(scope.categoryId));
     case 'season':
-      return { kind: 'season', seasonId: scope.seasonId as SeasonRefId };
+      return FamilyScopeFilter.season(SeasonRefId.of(scope.seasonId));
     case 'archive':
-      return { kind: 'archive' };
+      return FamilyScopeFilter.archive();
     case 'day':
-      return { kind: 'day', day: DayKey.of(scope.day) };
+      return FamilyScopeFilter.day(dayOf(scope.day));
   }
 }
 
@@ -407,21 +497,17 @@ function rewardRef(
   reward: RewardCatalogItem,
 ): Ref<RedeemableRewardRef, RewardCatalogItem> {
   return {
-    id: reward.id as RewardId,
-    cost: reward.cost as Points,
+    id: RewardId.of(reward.id),
+    cost: Points.of(reward.cost),
     enabled: reward.enabled,
     order: reward.order,
-    available: {
-      from:
-        reward.available.from === null
-          ? null
-          : DayKey.of(reward.available.from),
-      until:
-        reward.available.until === null
-          ? null
-          : DayKey.of(reward.available.until),
-    },
-    limits: reward.limits,
+    availableFrom:
+      reward.available.from === null ? null : dayOf(reward.available.from),
+    availableUntil:
+      reward.available.until === null ? null : dayOf(reward.available.until),
+    perClientLimitCount: reward.limits.perClient?.count ?? null,
+    perClientLimitWindowDays: reward.limits.perClient?.windowDays ?? null,
+    totalLimit: reward.limits.total,
     redeemedCount: reward.redeemedCount,
     source: reward,
   };
@@ -429,14 +515,10 @@ function rewardRef(
 
 function tierRef(tier: TierDefinition): TierStepRef {
   return {
-    id: tier.id as TierId,
+    id: TierId.of(tier.id),
     rank: tier.rank,
     // The catalogue's class, by reference: it reads as `{ bg, en }`.
     name: tier.name,
-    qualify: {
-      metric: tier.qualify.metric as SystemMetric,
-      atLeast: tier.qualify.atLeast,
-      window: tier.qualify.window,
-    },
+    qualifyAtLeast: tier.qualify.atLeast,
   };
 }

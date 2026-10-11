@@ -1,32 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import type { CouponId } from '../entities/coupon.entity';
-import { RewardGrant, RewardGrantKind } from './reward-grant.data';
+import { Currency } from '../primitives/currency.primitive';
+import { CouponId } from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { unwrapOk } from '../testing';
+import { PerkId } from './gamification.data';
+import { RewardGrant, RewardGrantRule } from './reward-grant.data';
 
-describe('RewardGrant', () => {
-  it('keeps the stored tags', () => {
-    expect(Object.values(RewardGrantKind)).toEqual([
-      'coupon',
-      'voucher',
-      'perk',
-    ]);
+describe('RewardGrantRule', () => {
+  it('declares what a reward mints SCREAMING (the discriminator `rewardGrant`)', () => {
+    expect(Object.values(RewardGrant)).toEqual(['COUPON', 'VOUCHER', 'PERK']);
   });
 
-  it('builds what a redeemed reward mints, a voucher valued in Money', () => {
-    expect(RewardGrant.coupon('coupon-free-beard' as CouponId)).toEqual({
-      kind: 'coupon',
-      couponId: 'coupon-free-beard',
+  it('builds what a redeemed reward mints as flat variants, a voucher valued in cents beside its currency', () => {
+    expect(RewardGrantRule.coupon(CouponId.of('coupon-free-beard'))).toEqual({
+      rewardGrant: 'COUPON',
+      grantCouponId: 'coupon-free-beard',
     });
     expect(
-      RewardGrant.voucher({ amountMinorUnits: 1000, currencyCode: 'EUR' }, 90),
+      RewardGrantRule.voucher(unwrapOk(PriceCents.of(1000)), Currency.EUR, 90),
     ).toEqual({
-      kind: 'voucher',
-      amount: { amountMinorUnits: 1000, currencyCode: 'EUR' },
-      expiresInDays: 90,
+      rewardGrant: 'VOUCHER',
+      grantVoucherCents: 1000,
+      grantVoucherCurrency: 'EUR',
+      grantVoucherExpiresInDays: 90,
     });
-    expect(RewardGrant.perk('perk.priorityWaitlist', null)).toEqual({
-      kind: 'perk',
-      perkId: 'perk.priorityWaitlist',
-      forDays: null,
+    expect(RewardGrantRule.perk(PerkId.PriorityWaitlist, null)).toEqual({
+      rewardGrant: 'PERK',
+      grantPerkId: 'perk.priorityWaitlist',
+      grantPerkForDays: null,
     });
   });
 });

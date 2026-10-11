@@ -1,3 +1,4 @@
+import type { Brand } from '../primitives/brand';
 import { Result } from './result.data';
 import { SchedulingError } from './scheduling-errors.data';
 
@@ -5,10 +6,10 @@ import { SchedulingError } from './scheduling-errors.data';
  * A short, NON-PII display label for a seat whose subject has no account —
  * `'Walk-in 14:30'`, `'Friend 1'`. Trimmed, never blank, at most
  * {@link SeatLabel.MAX_LENGTH} characters (`seat-label.ts:8-16`). A brand over
- * the plain stored string (`seats[].subject.label`), so a guest's label is
+ * the plain stored string (`seats[].guestLabel`), so a guest's label is
  * both their identity on the wire and what the receipt prints.
  */
-export type SeatLabel = string & { readonly __brand: unique symbol };
+export type SeatLabel = Brand<string, 'SeatLabel'>;
 
 export const SeatLabel = {
   MAX_LENGTH: 60,

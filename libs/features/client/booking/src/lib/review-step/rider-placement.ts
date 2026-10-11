@@ -2,33 +2,18 @@ import type {
   BookingDraftRider,
   ScheduleSelection,
 } from '@creativo/application/booking';
-import {
-  BarberId,
-  type MoveRider,
-  MoveSystem,
-  ServiceId,
-  type ServiceVariantId,
-} from '@creativo/ecs-core';
+import { carriedStartMs } from '@creativo/domain/scheduling';
 
 /*
- * THIN SHIM (ECS migration Phase 2). Where each rider lands is
- * `MoveSystem.placeRiders` — the server's one shift, restated for the
- * review card. This keeps the legacy signature and only converts.
+ * THIN SHIM (ECS migration Phase 2). Where each rider lands on the review
+ * card is the SERVER's shift, restated: until the booking-flow flip moves
+ * the server's carried seat onto the shop's wall clock, the server writes it
+ * with the domain's instant shift (`carriedStartMs`, `move-shift.ts`, as
+ * `RescheduleBookingUseCase` writes it), so the card shifts by the same
+ * instants — never by a wall-clock placement the server does not make, which
+ * would name a different minute whenever a DST transition lies between the
+ * anchor and the rider. Both sides move together, in the flip's commit.
  */
-
-/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
-
-function toRiderData(rider: BookingDraftRider): MoveRider {
-  return {
-    serviceId: ServiceId.of(rider.serviceId),
-    variantId: rider.variantId as ServiceVariantId | null,
-    barberId: BarberId.of(rider.barberId),
-    offsetMinutes: rider.offsetMinutes,
-    durationMinutes: rider.durationMinutes,
-    setupMinutes: rider.setupMinutes,
-    cleanupMinutes: rider.cleanupMinutes,
-  };
-}
 
 /** A rider, and the instant the server will seat them at. */
 export interface PlacedRider {
@@ -53,11 +38,15 @@ export function placeRiders(
   selection: ScheduleSelection,
   riders: readonly BookingDraftRider[],
 ): readonly PlacedRider[] {
-  return MoveSystem.placeRiders(
-    selection.assignments.map((assignment) => assignment.slot.start.toMillis()),
-    riders.map(toRiderData),
-  ).map((placed, index) => ({
-    rider: riders.at(index) as BookingDraftRider,
-    startMs: placed.startMs,
+  const first = selection.assignments.at(0);
+  if (first === undefined) return [];
+  let earliestMs = first.slot.start.toMillis();
+  for (const assignment of selection.assignments) {
+    const startMs = assignment.slot.start.toMillis();
+    if (startMs < earliestMs) earliestMs = startMs;
+  }
+  return riders.map((rider) => ({
+    rider,
+    startMs: carriedStartMs(earliestMs, rider.offsetMinutes),
   }));
 }

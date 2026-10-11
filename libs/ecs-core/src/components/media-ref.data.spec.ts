@@ -1,47 +1,58 @@
 import { describe, expect, it } from 'vitest';
-import { FocalPoint, MediaRef, MediaRefId } from './media-ref.data';
+import { MediaRefId } from '../primitives/ids.primitive';
+import { MediaRef, type MediaRefInput } from './media-ref.data';
 
-function validInput() {
+function validInput(): MediaRefInput {
   return {
-    id: 'media_1',
-    path: 'barbers/ivan/avatar.jpg',
-    width: 800,
-    height: 800,
-    blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4',
-    focalPoint: { x: 0.5, y: 0.4 },
+    mediaId: 'media_1',
+    mediaPath: 'barbers/ivan/avatar.jpg',
+    mediaWidth: 800,
+    mediaHeight: 800,
+    mediaBlurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4',
+    mediaFocalX: 0.5,
+    mediaFocalY: 0.4,
   };
 }
 
-// catalog media-ref.spec.ts, on the stored struct.
-describe('FocalPoint.parse', () => {
+// catalog media-ref.spec.ts, on the flat struct (the focal point folded in).
+describe('MediaRef.parseFocus', () => {
   it('accepts coordinates within 0..1', () => {
-    expect(FocalPoint.parse(0, 1)).toEqual({ ok: true, value: { x: 0, y: 1 } });
+    expect(MediaRef.parseFocus(0, 1)).toEqual({
+      ok: true,
+      value: { mediaFocalX: 0, mediaFocalY: 1 },
+    });
   });
 
   it('rejects an out-of-range or non-finite coordinate', () => {
-    expect(FocalPoint.parse(-0.1, 0.5)).toEqual({
+    expect(MediaRef.parseFocus(-0.1, 0.5)).toEqual({
       ok: false,
       error: {
-        code: 'catalog.media_ref.focal_point_out_of_range',
+        errorCode: 'CATALOG_MEDIA_REF_FOCAL_POINT_OUT_OF_RANGE',
         x: -0.1,
         y: 0.5,
       },
     });
-    expect(FocalPoint.parse(0.5, 1.1).ok).toBe(false);
-    expect(FocalPoint.parse(Number.NaN, 0.5).ok).toBe(false);
+    expect(MediaRef.parseFocus(0.5, 1.1).ok).toBe(false);
+    expect(MediaRef.parseFocus(Number.NaN, 0.5).ok).toBe(false);
   });
 
-  it('center() returns the normalised midpoint', () => {
-    expect(FocalPoint.center()).toEqual({ x: 0.5, y: 0.5 });
+  it('centerFocus() returns the normalised midpoint', () => {
+    expect(MediaRef.centerFocus()).toEqual({
+      mediaFocalX: 0.5,
+      mediaFocalY: 0.5,
+    });
   });
 
-  it('equals() compares both axes', () => {
-    expect(FocalPoint.equals(FocalPoint.center(), FocalPoint.center())).toBe(
-      true,
-    );
-    expect(FocalPoint.equals(FocalPoint.center(), { x: 0.5, y: 0.4 })).toBe(
-      false,
-    );
+  it('sameFocus() compares both axes', () => {
+    expect(
+      MediaRef.sameFocus(MediaRef.centerFocus(), MediaRef.centerFocus()),
+    ).toBe(true);
+    expect(
+      MediaRef.sameFocus(MediaRef.centerFocus(), {
+        mediaFocalX: 0.5,
+        mediaFocalY: 0.4,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -50,12 +61,13 @@ describe('MediaRef.parse', () => {
     expect(MediaRef.parse(validInput())).toEqual({
       ok: true,
       value: {
-        id: MediaRefId.of('media_1'),
-        path: 'barbers/ivan/avatar.jpg',
-        width: 800,
-        height: 800,
-        blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4',
-        focalPoint: { x: 0.5, y: 0.4 },
+        mediaId: MediaRefId.of('media_1'),
+        mediaPath: 'barbers/ivan/avatar.jpg',
+        mediaWidth: 800,
+        mediaHeight: 800,
+        mediaBlurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4',
+        mediaFocalX: 0.5,
+        mediaFocalY: 0.4,
       },
     });
   });
@@ -63,20 +75,23 @@ describe('MediaRef.parse', () => {
   it('accepts an absent blurhash/focal point as null — every key present', () => {
     const result = MediaRef.parse({
       ...validInput(),
-      blurhash: null,
-      focalPoint: null,
+      mediaBlurhash: null,
+      mediaFocalX: null,
+      mediaFocalY: null,
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.blurhash).toBeNull();
-      expect(result.value.focalPoint).toBeNull();
+      expect(result.value.mediaBlurhash).toBeNull();
+      expect(result.value.mediaFocalX).toBeNull();
+      expect(result.value.mediaFocalY).toBeNull();
       expect(Object.keys(result.value)).toEqual([
-        'id',
-        'path',
-        'width',
-        'height',
-        'blurhash',
-        'focalPoint',
+        'mediaId',
+        'mediaPath',
+        'mediaWidth',
+        'mediaHeight',
+        'mediaBlurhash',
+        'mediaFocalX',
+        'mediaFocalY',
       ]);
     }
   });
@@ -84,47 +99,47 @@ describe('MediaRef.parse', () => {
   it('trims the path and turns a blank blurhash into null', () => {
     const result = MediaRef.parse({
       ...validInput(),
-      path: '  a/b.jpg ',
-      blurhash: '   ',
+      mediaPath: '  a/b.jpg ',
+      mediaBlurhash: '   ',
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.path).toBe('a/b.jpg');
-      expect(result.value.blurhash).toBeNull();
+      expect(result.value.mediaPath).toBe('a/b.jpg');
+      expect(result.value.mediaBlurhash).toBeNull();
     }
   });
 
   it('rejects an empty id', () => {
-    expect(MediaRef.parse({ ...validInput(), id: '' })).toEqual({
+    expect(MediaRef.parse({ ...validInput(), mediaId: '' })).toEqual({
       ok: false,
-      error: [{ code: 'catalog.id.empty', idType: 'MediaRefId' }],
+      error: [{ errorCode: 'CATALOG_ID_EMPTY', idType: 'MediaRefId' }],
     });
   });
 
   it('rejects an empty path', () => {
-    expect(MediaRef.parse({ ...validInput(), path: '  ' })).toEqual({
+    expect(MediaRef.parse({ ...validInput(), mediaPath: '  ' })).toEqual({
       ok: false,
-      error: [{ code: 'catalog.media_ref.empty_path' }],
+      error: [{ errorCode: 'CATALOG_MEDIA_REF_EMPTY_PATH' }],
     });
   });
 
   it('rejects a non-positive width or height', () => {
-    expect(MediaRef.parse({ ...validInput(), width: 0 })).toEqual({
+    expect(MediaRef.parse({ ...validInput(), mediaWidth: 0 })).toEqual({
       ok: false,
       error: [
         {
-          code: 'catalog.media_ref.invalid_dimension',
-          dimension: 'width',
+          errorCode: 'CATALOG_MEDIA_REF_INVALID_DIMENSION',
+          mediaDimension: 'WIDTH',
           rawValue: 0,
         },
       ],
     });
-    expect(MediaRef.parse({ ...validInput(), height: -5 })).toEqual({
+    expect(MediaRef.parse({ ...validInput(), mediaHeight: -5 })).toEqual({
       ok: false,
       error: [
         {
-          code: 'catalog.media_ref.invalid_dimension',
-          dimension: 'height',
+          errorCode: 'CATALOG_MEDIA_REF_INVALID_DIMENSION',
+          mediaDimension: 'HEIGHT',
           rawValue: -5,
         },
       ],
@@ -132,35 +147,43 @@ describe('MediaRef.parse', () => {
   });
 
   it('rejects a non-integer dimension', () => {
-    expect(MediaRef.parse({ ...validInput(), width: 10.5 }).ok).toBe(false);
+    expect(MediaRef.parse({ ...validInput(), mediaWidth: 10.5 }).ok).toBe(
+      false,
+    );
   });
 
-  it('rejects an out-of-range focal point', () => {
-    expect(
-      MediaRef.parse({ ...validInput(), focalPoint: { x: 2, y: 0.5 } }),
-    ).toEqual({
+  it('rejects an out-of-range focal point — and half of one', () => {
+    expect(MediaRef.parse({ ...validInput(), mediaFocalX: 2 })).toEqual({
       ok: false,
       error: [
-        { code: 'catalog.media_ref.focal_point_out_of_range', x: 2, y: 0.5 },
+        {
+          errorCode: 'CATALOG_MEDIA_REF_FOCAL_POINT_OUT_OF_RANGE',
+          x: 2,
+          y: 0.4,
+        },
       ],
     });
+    expect(MediaRef.parse({ ...validInput(), mediaFocalY: null }).ok).toBe(
+      false,
+    );
   });
 
   it('collects every invalid field at once', () => {
     const result = MediaRef.parse({
       ...validInput(),
-      id: '',
-      width: 0,
-      height: 0,
-      focalPoint: { x: -1, y: 0 },
+      mediaId: '',
+      mediaWidth: 0,
+      mediaHeight: 0,
+      mediaFocalX: -1,
+      mediaFocalY: 0,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.map((e) => e.code)).toEqual([
-        'catalog.id.empty',
-        'catalog.media_ref.invalid_dimension',
-        'catalog.media_ref.invalid_dimension',
-        'catalog.media_ref.focal_point_out_of_range',
+      expect(result.error.map((e) => e.errorCode)).toEqual([
+        'CATALOG_ID_EMPTY',
+        'CATALOG_MEDIA_REF_INVALID_DIMENSION',
+        'CATALOG_MEDIA_REF_INVALID_DIMENSION',
+        'CATALOG_MEDIA_REF_FOCAL_POINT_OUT_OF_RANGE',
       ]);
     }
   });
@@ -168,7 +191,7 @@ describe('MediaRef.parse', () => {
 
 describe('MediaRefId', () => {
   it('is nominal: a raw string is not a MediaRefId', () => {
-    // @ts-expect-error — only MediaRefId.of (after MediaRef.parse) makes one
+    // @ts-expect-error — only MediaRefId.of / parse (after MediaRef.parse) makes one
     const raw: MediaRefId = 'media_1';
     expect(raw).toBe(MediaRefId.of('media_1'));
   });

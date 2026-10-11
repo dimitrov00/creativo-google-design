@@ -34,11 +34,17 @@ import {
   BarberId as BarberKey,
   type BookingCart as CartData,
   BookingCartSystem,
+  CartLineId as LineKey,
   type CartRider,
   type CartServiceScope,
+  DurationMinutes,
   LocationId as LocationKey,
+  MinuteCount,
+  MinuteDelta,
+  SeatKeyText,
   ServiceId as ServiceKey,
   ServiceVariantId as VariantKey,
+  defect,
 } from '@creativo/ecs-core';
 import {
   BarberId,
@@ -945,32 +951,59 @@ function toServiceScope(service: Service): CartServiceScope {
   };
 }
 
+/** A brand built from a stored value its own record already validated. */
+function sure<T>(
+  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
+  what: string,
+): T {
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
 function toCartRider(rider: MoveRider): CartRider {
   return {
     serviceId: ServiceKey.of(rider.serviceId.value),
     barberId: BarberKey.of(rider.barberId.value),
-    offsetMinutes: rider.offsetMinutes,
-    terms: rider.terms,
+    offsetMinutes: sure(MinuteDelta.of(rider.offsetMinutes), 'an offset'),
+    terms: {
+      durationMinutes: sure(
+        DurationMinutes.of(rider.terms.durationMinutes),
+        'a sold duration',
+      ),
+      padBeforeMinutes: sure(
+        MinuteCount.of(rider.terms.padBeforeMinutes),
+        'a pad',
+      ),
+      padAfterMinutes: sure(
+        MinuteCount.of(rider.terms.padAfterMinutes),
+        'a pad',
+      ),
+    },
   };
 }
 
 function toCartData(cart: BookingCart): CartData {
   return {
-    seats: cart.entries().map(([seatKey, lines]) => ({
-      seatKey,
-      lines: lines.map((line) => ({
-        lineId: line.id.value,
+    cartSeats: cart.entries().map(([text, lines]) => {
+      const seatKey = SeatKeyText.of(text);
+      return {
         seatKey,
-        serviceId: ServiceKey.of(line.serviceId.value),
-        variantId:
-          line.variantId === null ? null : VariantKey.of(line.variantId.value),
-        barberId:
-          line.barberPref.kind === 'specific'
-            ? BarberKey.of(line.barberPref.barberId.value)
-            : null,
-        locationId: null,
-      })),
-    })),
-    nextSequence: cart.nextLineSequence,
+        lines: lines.map((line) => ({
+          lineId: LineKey.of(line.id.value),
+          seatKey,
+          serviceId: ServiceKey.of(line.serviceId.value),
+          variantId:
+            line.variantId === null
+              ? null
+              : VariantKey.of(line.variantId.value),
+          barberId:
+            line.barberPref.kind === 'specific'
+              ? BarberKey.of(line.barberPref.barberId.value)
+              : null,
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: cart.nextLineSequence,
   };
 }

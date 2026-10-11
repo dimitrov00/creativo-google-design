@@ -1,4 +1,3 @@
-import type { DayKey } from '../components/day-key.data';
 import type { EngagementError } from '../components/engagement-errors.data';
 import type { LocalizedText } from '../components/localized-text.data';
 import { Result } from '../components/result.data';
@@ -6,10 +5,12 @@ import { StreakPublishError } from '../components/streak-publish-errors.data';
 import {
   StreakRule,
   StreakRuleDirection,
+  type StreakRuleInput,
   StreakTransition,
-  type ScheduledStreakRule,
+  type StreakHeadRule,
 } from '../components/streak-rule.data';
-import type { StreakDefinitionId } from '../entities/streak-definition.entity';
+import type { StreakDefinitionId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
 import {
   StreakRuleSystem,
   type StreakNoticePolicy,
@@ -37,30 +38,30 @@ import {
  * version document is never written twice.
  */
 
-/** The assessment's tags — the ONLY source of these strings. */
-export const StreakDraftAssessmentKind = {
-  Valid: 'valid',
-  Invalid: 'invalid',
+/** What a draft comes to — the assessment's discriminator `draftAssessment`, the ONLY source of these strings. */
+export const DraftAssessment = {
+  Valid: 'VALID',
+  Invalid: 'INVALID',
 } as const;
-export type StreakDraftAssessmentKind =
-  (typeof StreakDraftAssessmentKind)[keyof typeof StreakDraftAssessmentKind];
+export type DraftAssessment =
+  (typeof DraftAssessment)[keyof typeof DraftAssessment];
 
 /** What a draft comes to, before anything is sent. */
 export type StreakDraftAssessment =
   | {
-      readonly kind: typeof StreakDraftAssessmentKind.Valid;
+      readonly draftAssessment: typeof DraftAssessment.Valid;
       /** The next version, ready to publish. */
       readonly rule: StreakRule;
       /** Against the rule in force today. */
       readonly change: StreakRuleChange;
       /** The first day this change may take effect. */
-      readonly earliest: DayKey;
+      readonly earliest: LocalDate;
       /** The newest version the head holds: what the publish is based on. */
       readonly baseVersion: number;
     }
   | {
-      readonly kind: typeof StreakDraftAssessmentKind.Invalid;
-      /** The fields at fault, each once, in the rule's order. */
+      readonly draftAssessment: typeof DraftAssessment.Invalid;
+      /** The flat fields at fault (`StreakRuleField`), each once, in the rule's order. */
       readonly fields: readonly string[];
       readonly errors: readonly EngagementError.StreakRuleError[];
     };
@@ -77,7 +78,7 @@ export type StreakPublishSnapshot = {
 export type StreakPublishRequest = {
   /** The newest version the head held when the draft was made; 0 when the shop has published none. */
   readonly baseVersion: number;
-  readonly transition: StreakTransition;
+  readonly streakTransition: StreakTransition;
   /** The preview this was confirmed on; `null` until the server has one. */
   readonly previewHash: string | null;
 };
@@ -100,8 +101,8 @@ export type StreakPublishDecision = {
 export type StreakWithdrawal = {
   /** The rule in force alone. */
   readonly head: StreakSchedule;
-  /** What waited, as it waited. */
-  readonly waiting: ScheduledStreakRule;
+  /** What waited, as it waited — the head's `SCHEDULED` element. */
+  readonly waiting: StreakHeadRule;
   readonly calledOff: readonly number[];
 };
 
@@ -126,7 +127,10 @@ export const StreakPublishSystem = {
   /** The newest version a head holds: the one that waits, else the one in force; 0 with no head. */
   newestOf(head: StreakSchedule | null): number {
     if (head === null) return 0;
-    return head.scheduled?.version ?? head.current.version;
+    return (
+      StreakRuleSystem.scheduled(head)?.version ??
+      StreakRuleSystem.current(head).version
+    );
   },
 
   /**
@@ -155,9 +159,10 @@ export const StreakPublishSystem = {
   assess(
     head: StreakSchedule,
     published: boolean,
-    draft: StreakRule,
-    effectiveFromDayKey: DayKey,
-    today: DayKey,
+    draft: StreakRuleInput,
+    /** The day asked, AS WRITTEN — `StreakRule.parse` refuses one that is no day, as a fault of the draft. */
+    effectiveFromLocalDate: string,
+    today: LocalDate,
     policy: StreakNoticePolicy,
   ): StreakDraftAssessment {
     const inForce = StreakRuleSystem.inForceOn(head, today);
@@ -165,7 +170,7 @@ export const StreakPublishSystem = {
     const built = StreakRule.parse({
       ...draft,
       version: baseVersion + 1,
-      effectiveFromDayKey,
+      effectiveFromLocalDate,
     });
     if (!built.ok) {
       const fields: string[] = [];
@@ -173,14 +178,14 @@ export const StreakPublishSystem = {
         fields.push((built.error[i] as EngagementError.StreakRuleError).field);
       }
       return {
-        kind: StreakDraftAssessmentKind.Invalid,
+        draftAssessment: DraftAssessment.Invalid,
         fields: unique(fields),
         errors: built.error,
       };
     }
     const change = StreakRuleSystem.changeFrom(built.value, inForce, false);
     return {
-      kind: StreakDraftAssessmentKind.Valid,
+      draftAssessment: DraftAssessment.Valid,
       rule: built.value,
       change,
       earliest: StreakRuleSystem.earliestEffectiveDay(
@@ -202,7 +207,7 @@ export const StreakPublishSystem = {
     request: StreakPublishRequest,
     snapshot: StreakPublishSnapshot,
   ): Result<number, StreakPublishError> {
-    if (request.transition === StreakTransition.Recompute) {
+    if (request.streakTransition === StreakTransition.Recompute) {
       return Result.err(StreakPublishError.recomputeNeedsEngine());
     }
     if (request.previewHash !== null) {
@@ -224,9 +229,9 @@ export const StreakPublishSystem = {
    */
   decide(
     rule: StreakRule,
-    transition: StreakTransition,
+    streakTransition: StreakTransition,
     head: StreakSchedule | null,
-    today: DayKey,
+    today: LocalDate,
     policy: StreakNoticePolicy,
   ): Result<StreakPublishDecision, StreakPublishError> {
     const inForce =
@@ -241,16 +246,16 @@ export const StreakPublishSystem = {
         today,
         policy,
       );
-      if (rule.effectiveFromDayKey < earliest) {
+      if (rule.effectiveFromLocalDate < earliest) {
         return Result.err(
-          StreakPublishError.tooEarly(rule.effectiveFromDayKey, earliest),
+          StreakPublishError.tooEarly(rule.effectiveFromLocalDate, earliest),
         );
       }
     }
     const next =
-      inForce === null || rule.effectiveFromDayKey <= today
+      inForce === null || rule.effectiveFromLocalDate <= today
         ? StreakRuleSystem.schedule(rule, null)
-        : StreakRuleSystem.schedule(inForce, { ...rule, transition });
+        : StreakRuleSystem.schedule(inForce, { ...rule, streakTransition });
     if (!next.ok) {
       const fields: string[] = [];
       for (let i = 0; i < next.error.length; i++) {
@@ -265,7 +270,7 @@ export const StreakPublishSystem = {
       change,
       inForceVersion: inForce?.version ?? 0,
       calledOff: replaced === null ? [] : [replaced.version],
-      waits: rule.effectiveFromDayKey > today,
+      waits: rule.effectiveFromLocalDate > today,
     });
   },
 
@@ -279,7 +284,7 @@ export const StreakPublishSystem = {
   withdraw(
     version: number,
     head: StreakSchedule | null,
-    today: DayKey,
+    today: LocalDate,
   ): Result<StreakWithdrawal, StreakPublishError> {
     const waiting =
       head === null ? null : StreakRuleSystem.upcomingOn(head, today);
@@ -289,7 +294,7 @@ export const StreakPublishSystem = {
       );
     }
     return Result.ok({
-      head: { current: head.current, scheduled: null },
+      head: { rules: [StreakRuleSystem.current(head)] },
       waiting,
       calledOff: [version],
     });

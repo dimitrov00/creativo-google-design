@@ -4,10 +4,11 @@ import {
   PreciseInstant,
 } from '../components/client-stats.data';
 import {
-  PolicyRecomputeJobId,
-  PolicyRecomputeJobKind,
-  type PolicyRecomputeJobEntity,
+  RecomputeJobName,
+  type PolicyRecomputeJob,
 } from '../entities/policy-recompute-job.entity';
+import { PolicyRecomputeJobId, type UserId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * The policy-change recompute's job, as decisions (`apps/functions/src/lib/
@@ -26,7 +27,9 @@ import {
  * Instants that order two changes are `PreciseInstant`s (§9 D17): integer
  * compare, to the nanosecond. One that is not a valid instant (what an
  * unreadable stored stamp reads as) never proves an order — the
- * conservative answer is always to write, never to skip.
+ * conservative answer is always to write, never to skip. Every other
+ * instant is a lifecycle stamp (`*UtcMs`): staleness is elapsed real time,
+ * compared through `UtcEpochMs` only (flatten-spec T2).
  */
 
 /** How long a pass may go without moving before the sweep nudges it. */
@@ -49,8 +52,8 @@ export type PolicyChange = {
 
 /** What one step of the walk got through. */
 export type PolicyStep = {
-  /** The last client finished; the cursor the next step starts after. */
-  readonly cursor: string | null;
+  /** The last client finished; the cursor the next step starts after — `UserId` until flip (1). */
+  readonly cursor: UserId | null;
   /** The walk ran off the end of the stored clients. */
   readonly exhausted: boolean;
   readonly visited: number;
@@ -66,27 +69,27 @@ export type LivePolicyLine = {
   readonly windowHours: number;
 };
 
-/** The pass-guard verdict tags — the ONLY source of these strings. */
-export const PolicyPassVerdictKind = {
+/** The pass-guard verdict tags — the ONLY source of these strings, the field `policyPassVerdict`. */
+export const PolicyPassVerdict = {
   /** A newer pass has judged this client: write nothing. */
-  Superseded: 'superseded',
+  Superseded: 'SUPERSEDED',
   /** Judge the client. */
-  Judge: 'judge',
+  Judge: 'JUDGE',
 } as const;
-export type PolicyPassVerdictKind =
-  (typeof PolicyPassVerdictKind)[keyof typeof PolicyPassVerdictKind];
+export type PolicyPassVerdict =
+  (typeof PolicyPassVerdict)[keyof typeof PolicyPassVerdict];
 
 /**
  * What a client's recompute may do, given its own pass and the stamp it
- * found. On `judge`, `stamp` is what the written document carries (one of
+ * found. On `JUDGE`, `stamp` is what the written document carries (one of
  * the two inputs, by reference), and `restamp` says the stored one must
  * move to it even when the answer itself is unchanged — a newer pass must
  * leave its mark on every client it reaches.
  */
-export type PolicyPassVerdict =
-  | { readonly kind: typeof PolicyPassVerdictKind.Superseded }
+export type PolicyPassJudgement =
+  | { readonly policyPassVerdict: typeof PolicyPassVerdict.Superseded }
   | {
-      readonly kind: typeof PolicyPassVerdictKind.Judge;
+      readonly policyPassVerdict: typeof PolicyPassVerdict.Judge;
       readonly stamp: PolicyPass | null;
       readonly restamp: boolean;
     };
@@ -101,15 +104,20 @@ function isInstant(instant: PreciseInstant): boolean {
 }
 
 /** The job with its step key re-derived from the fields the key covers. */
-function keyed(job: PolicyRecomputeJobEntity): PolicyRecomputeJobEntity {
+function keyed(job: PolicyRecomputeJob): PolicyRecomputeJob {
   return {
     ...job,
     stepKey: PolicyRecomputeJobSystem.stepKeyOf(
       job.generation,
       job.cursor,
-      job.finishedAtMs,
+      job.finishedAtUtcMs,
     ),
   };
+}
+
+/** The job's change instant, as the D17 value its two flat halves store. */
+function changedAtOf(job: PolicyRecomputeJob): PreciseInstant {
+  return { seconds: job.changedAtSeconds, nanos: job.changedAtNanos };
 }
 
 export const PolicyRecomputeJobSystem = {
@@ -133,10 +141,15 @@ export const PolicyRecomputeJobSystem = {
    */
   stepKeyOf(
     generation: string,
-    cursor: string | null,
-    finishedAtMs: number | null,
+    cursor: UserId | null,
+    finishedAtUtcMs: UtcEpochMs | null,
   ): string {
-    return JSON.stringify(['policy-step/v1', generation, cursor, finishedAtMs]);
+    return JSON.stringify([
+      'policy-step/v1',
+      generation,
+      cursor,
+      finishedAtUtcMs,
+    ]);
   },
 
   /**
@@ -151,36 +164,37 @@ export const PolicyRecomputeJobSystem = {
    *   step fails `sameStep` and stops, and the last change has the last word.
    */
   nextStep(
-    current: PolicyRecomputeJobEntity | null,
+    current: PolicyRecomputeJob | null,
     change: PolicyChange,
-    nowMs: number,
-  ): PolicyRecomputeJobEntity | null {
+    nowUtcMs: UtcEpochMs,
+  ): PolicyRecomputeJob | null {
     if (current !== null) {
       if (current.generation === change.generation) return null;
       const order = PolicyRecomputeJobSystem.compareInstants(
         change.changedAt,
-        current.changedAt,
+        changedAtOf(current),
       );
       if (order !== null && order < 0) return null;
     }
     return {
-      id: PolicyRecomputeJobId.of(PolicyRecomputeJobId.FIXED),
-      job: PolicyRecomputeJobKind.ClientStatsPolicy,
+      id: PolicyRecomputeJobId.FIXED,
+      recomputeJobName: RecomputeJobName.ClientStatsPolicy,
       generation: change.generation,
-      changedAt: change.changedAt,
+      changedAtSeconds: change.changedAt.seconds,
+      changedAtNanos: change.changedAt.nanos,
       cursor: null,
       storedClients: 0,
       recomputed: 0,
       failed: 0,
-      startedAtMs: nowMs,
-      updatedAtMs: nowMs,
-      finishedAtMs: null,
+      startedAtUtcMs: nowUtcMs,
+      updatedAtUtcMs: nowUtcMs,
+      finishedAtUtcMs: null,
       stepKey: PolicyRecomputeJobSystem.stepKeyOf(
         change.generation,
         null,
         null,
       ),
-      stalledAtMs: null,
+      stalledAtUtcMs: null,
       lastFailureCode: null,
       windowHours: change.windowHours,
     };
@@ -192,11 +206,11 @@ export const PolicyRecomputeJobSystem = {
    * newer change all fail it and write nothing — so the chain has exactly
    * one continuation.
    */
-  sameStep(a: PolicyRecomputeJobEntity, b: PolicyRecomputeJobEntity): boolean {
+  sameStep(a: PolicyRecomputeJob, b: PolicyRecomputeJob): boolean {
     return (
       a.generation === b.generation &&
       a.cursor === b.cursor &&
-      Object.is(a.finishedAtMs, b.finishedAtMs)
+      Object.is(a.finishedAtUtcMs, b.finishedAtUtcMs)
     );
   },
 
@@ -207,55 +221,57 @@ export const PolicyRecomputeJobSystem = {
    * pass ends any stall before it.
    */
   advance(
-    job: PolicyRecomputeJobEntity,
+    job: PolicyRecomputeJob,
     step: PolicyStep,
-    nowMs: number,
-  ): PolicyRecomputeJobEntity {
+    nowUtcMs: UtcEpochMs,
+  ): PolicyRecomputeJob {
     return keyed({
       ...job,
       cursor: step.cursor,
       storedClients: job.storedClients + step.visited,
       recomputed: job.recomputed + step.recomputed,
       failed: job.failed + step.failed,
-      updatedAtMs: nowMs,
-      finishedAtMs: step.exhausted ? nowMs : null,
-      stalledAtMs: null,
+      updatedAtUtcMs: nowUtcMs,
+      finishedAtUtcMs: step.exhausted ? nowUtcMs : null,
+      stalledAtUtcMs: null,
       lastFailureCode: null,
     });
   },
 
   /**
    * The job with the record of a permanent stall. The cursor and counts
-   * stay, and so does `updatedAtMs`, which keeps saying when the pass last
-   * MOVED: that is what the sweep measures staleness by. Still the same
-   * step — a stall is no step of its own.
+   * stay, and so does `updatedAtUtcMs`, which keeps saying when the pass
+   * last MOVED: that is what the sweep measures staleness by. Still the
+   * same step — a stall is no step of its own.
    */
   stall(
-    job: PolicyRecomputeJobEntity,
-    code: string,
-    nowMs: number,
-  ): PolicyRecomputeJobEntity {
-    return { ...job, stalledAtMs: nowMs, lastFailureCode: code };
+    job: PolicyRecomputeJob,
+    failureCode: string,
+    nowUtcMs: UtcEpochMs,
+  ): PolicyRecomputeJob {
+    return { ...job, stalledAtUtcMs: nowUtcMs, lastFailureCode: failureCode };
   },
 
   /**
    * The daily sweep's verdict: the job rewritten to fire its step once
    * more, or `null` to leave it. An unfinished pass that has not moved for
    * `staleAfterMs` stalled, and nothing else will fire its next step; the
-   * nudge moves `updatedAtMs` and clears the stall, keeping the step — so it
-   * meets the same compare-and-set as any delivery, and a second sweep finds
-   * a fresh `updatedAtMs` and writes nothing. An unreadable time cannot
-   * prove the pass is moving: it is nudged.
+   * nudge moves `updatedAtUtcMs` and clears the stall, keeping the step —
+   * so it meets the same compare-and-set as any delivery, and a second
+   * sweep finds a fresh `updatedAtUtcMs` and writes nothing. An unreadable
+   * time cannot prove the pass is moving: it is nudged.
    */
   nudge(
-    job: PolicyRecomputeJobEntity | null,
-    nowMs: number,
+    job: PolicyRecomputeJob | null,
+    nowUtcMs: UtcEpochMs,
     staleAfterMs: number = STALE_AFTER_MS,
-  ): PolicyRecomputeJobEntity | null {
-    if (job === null || job.finishedAtMs !== null) return null;
-    const quietMs = nowMs - job.updatedAtMs;
-    if (!Number.isNaN(quietMs) && quietMs < staleAfterMs) return null;
-    return { ...job, updatedAtMs: nowMs, stalledAtMs: null };
+  ): PolicyRecomputeJob | null {
+    if (job === null || job.finishedAtUtcMs !== null) return null;
+    // Still moving: now is before the instant the pass turns stale. An
+    // unreadable stored time compares as neither before nor after.
+    const staleFrom = UtcEpochMs.plusMs(job.updatedAtUtcMs, staleAfterMs);
+    if (UtcEpochMs.compare(nowUtcMs, staleFrom) < 0) return null;
+    return { ...job, updatedAtUtcMs: nowUtcMs, stalledAtUtcMs: null };
   },
 
   /**
@@ -268,7 +284,7 @@ export const PolicyRecomputeJobSystem = {
    * default one the appointments were written under.
    */
   owesCatchUp(
-    job: PolicyRecomputeJobEntity | null,
+    job: PolicyRecomputeJob | null,
     live: LivePolicyLine,
     defaultWindowHours: number = BookingPolicy.DEFAULT.cancellationWindowHours,
   ): boolean {
@@ -278,7 +294,7 @@ export const PolicyRecomputeJobSystem = {
         ? null
         : PolicyRecomputeJobSystem.compareInstants(
             live.updatedAt,
-            job.changedAt,
+            changedAtOf(job),
           );
     if (order !== null && order <= 0) return false;
     return !(job.windowHours !== null && job.windowHours === live.windowHours);
@@ -289,15 +305,15 @@ export const PolicyRecomputeJobSystem = {
    * book (`owesCatchUp`), started from the top under
    * `SWEEP_GENERATION_PREFIX` + `label` — the change instant as the caller
    * renders it — or `null` when none is owed. Its instant is the policy
-   * document's, or `nowMs` when there is no document.
+   * document's, or `nowUtcMs` when there is no document.
    */
   catchUp(
-    job: PolicyRecomputeJobEntity | null,
+    job: PolicyRecomputeJob | null,
     live: LivePolicyLine,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
     label: string,
     defaultWindowHours: number = BookingPolicy.DEFAULT.cancellationWindowHours,
-  ): PolicyRecomputeJobEntity | null {
+  ): PolicyRecomputeJob | null {
     if (!PolicyRecomputeJobSystem.owesCatchUp(job, live, defaultWindowHours)) {
       return null;
     }
@@ -305,10 +321,10 @@ export const PolicyRecomputeJobSystem = {
       job,
       {
         generation: `${SWEEP_GENERATION_PREFIX}${label}`,
-        changedAt: live.updatedAt ?? PreciseInstant.fromEpochMs(nowMs),
+        changedAt: live.updatedAt ?? PreciseInstant.fromEpochMs(nowUtcMs),
         windowHours: live.windowHours,
       },
-      nowMs,
+      nowUtcMs,
     );
   },
 
@@ -323,20 +339,24 @@ export const PolicyRecomputeJobSystem = {
   judgePolicyPass(
     mine: PolicyPass | null,
     stored: PolicyPass | null,
-  ): PolicyPassVerdict {
+  ): PolicyPassJudgement {
     if (mine === null) {
       return {
-        kind: PolicyPassVerdictKind.Judge,
+        policyPassVerdict: PolicyPassVerdict.Judge,
         stamp: stored,
         restamp: false,
       };
     }
     if (stored === null) {
-      return { kind: PolicyPassVerdictKind.Judge, stamp: mine, restamp: true };
+      return {
+        policyPassVerdict: PolicyPassVerdict.Judge,
+        stamp: mine,
+        restamp: true,
+      };
     }
     if (stored.generation === mine.generation) {
       return {
-        kind: PolicyPassVerdictKind.Judge,
+        policyPassVerdict: PolicyPassVerdict.Judge,
         stamp: stored,
         restamp: false,
       };
@@ -346,8 +366,12 @@ export const PolicyRecomputeJobSystem = {
       stored.changedAt,
     );
     if (order !== null && order < 0) {
-      return { kind: PolicyPassVerdictKind.Superseded };
+      return { policyPassVerdict: PolicyPassVerdict.Superseded };
     }
-    return { kind: PolicyPassVerdictKind.Judge, stamp: mine, restamp: true };
+    return {
+      policyPassVerdict: PolicyPassVerdict.Judge,
+      stamp: mine,
+      restamp: true,
+    };
   },
 } as const;

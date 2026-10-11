@@ -1,67 +1,59 @@
 import { describe, expect, it } from 'vitest';
 import { NotificationPayload } from '../components/notification-payload.data';
-import { AppointmentId } from '../entities/appointment.entity';
-import {
-  NotificationId,
-  type NotificationEntity,
-} from '../entities/notification.entity';
-import { deepFreeze } from '../testing';
+import type { InboxNotification } from '../entities/notification.entity';
+import { AppointmentId, NotificationId } from '../primitives/ids.primitive';
+import { deepFreeze, localDate, minute, utcMs } from '../testing';
 import { NotificationSystem } from './notification.system';
 
 /*
  * The cases of libs/domain/notifications/src/lib/notification.spec.ts,
  * COPIED (the legacy spec keeps running against `Notification`'s shim) and
- * re-targeted to the plain `NotificationEntity`: instants are epoch ms, a
- * receipt is `readAtMs`. Not copied: the blank id and blank title cases
- * (the id is guarded at the edge before `NotificationId.of`; a
- * notification carries facts, not a title — §9 D20), the body trim (no
- * body any more) and `NotificationId` equality (a brand is a string).
+ * re-targeted to the flat `InboxNotification`: instants are `UtcEpochMs`, a
+ * receipt is `readAtUtcMs`, the payload sits at the root. Not copied: the
+ * blank id and blank title cases (the id is guarded at the edge before
+ * `NotificationId.of`; a notification carries facts, not a title — §9 D20),
+ * the body trim (no body any more) and `NotificationId` equality (a brand
+ * is a string).
  */
 
-const at = (iso: string) => Date.parse(iso);
+const SENT = utcMs('2026-07-29T09:00:00Z');
+const LATER = utcMs('2026-07-29T11:00:00Z');
+const EARLIER = utcMs('2026-07-29T08:00:00Z');
 
-const SENT = at('2026-07-29T09:00:00Z');
-const LATER = at('2026-07-29T11:00:00Z');
-const EARLIER = at('2026-07-29T08:00:00Z');
-
-function valid(
-  overrides: Partial<NotificationEntity> = {},
-): NotificationEntity {
+function valid(overrides: Partial<InboxNotification> = {}): InboxNotification {
   return {
     id: NotificationId.of('ntf_1'),
-    kind: 'appointment_reminder',
-    requestId: null,
-    dayKey: null,
-    payload: NotificationPayload.appointmentReminder(
+    ...NotificationPayload.appointmentReminder(
       AppointmentId.of('appt-1'),
-      at('2026-07-30T11:30:00Z'),
-      'Europe/Sofia',
+      // 2026-07-30T11:30:00Z — 14:30 on the shop's clock.
+      localDate('2026-07-30'),
+      minute(14 * 60 + 30),
     ),
-    sentAtMs: SENT,
-    readAtMs: null,
+    sentAtUtcMs: SENT,
+    readAtUtcMs: null,
     ...overrides,
-  };
+  } as InboxNotification;
 }
 
 describe('NotificationSystem — a delivered notification', () => {
   it('accepts a delivered, unread notification', () => {
     const notification = valid();
     expect(NotificationSystem.isUnread(notification)).toBe(true);
-    expect(notification.readAtMs).toBeNull();
+    expect(notification.readAtUtcMs).toBeNull();
     expect(NotificationSystem.readBeforeSent(notification)).toBeNull();
   });
 
   it('rejects a receipt that predates the message', () => {
     expect(
-      NotificationSystem.readBeforeSent(valid({ readAtMs: EARLIER })),
+      NotificationSystem.readBeforeSent(valid({ readAtUtcMs: EARLIER })),
     ).toEqual({
-      code: 'engagement.notification.read_before_sent',
-      sentAtMs: SENT,
-      readAtMs: EARLIER,
+      errorCode: 'ENGAGEMENT_NOTIFICATION_READ_BEFORE_SENT',
+      sentAtUtcMs: SENT,
+      readAtUtcMs: EARLIER,
     });
     // A receipt at the very instant of sending holds.
     expect(
-      NotificationSystem.readBeforeSent(valid({ readAtMs: SENT })),
+      NotificationSystem.readBeforeSent(valid({ readAtUtcMs: SENT })),
     ).toBeNull();
   });
 });
@@ -72,16 +64,19 @@ describe('NotificationSystem.markRead', () => {
     const read = NotificationSystem.markRead(unread, LATER);
     expect(read).not.toBe(unread);
     expect(NotificationSystem.isUnread(read)).toBe(false);
-    expect(read.readAtMs).toBe(LATER);
+    expect(read.readAtUtcMs).toBe(LATER);
     // Immutability is the point — a signal holding the old one is unmoved.
     expect(NotificationSystem.isUnread(unread)).toBe(true);
   });
 
   it('does not move an existing receipt when marked twice', () => {
     const read = NotificationSystem.markRead(valid(), LATER);
-    const again = NotificationSystem.markRead(read, at('2026-07-29T23:00:00Z'));
+    const again = NotificationSystem.markRead(
+      read,
+      utcMs('2026-07-29T23:00:00Z'),
+    );
     expect(again).toBe(read);
-    expect(again.readAtMs).toBe(LATER);
+    expect(again.readAtUtcMs).toBe(LATER);
   });
 });
 
@@ -107,13 +102,13 @@ describe('NotificationSystem.unreadCount', () => {
 
 describe('NotificationSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
-    const inbox = deepFreeze([valid(), valid({ readAtMs: LATER })]);
+    const inbox = deepFreeze([valid(), valid({ readAtUtcMs: LATER })]);
     const run = () => [
       NotificationSystem.unreadCount(inbox),
-      NotificationSystem.markRead(inbox[0] as NotificationEntity, LATER),
-      NotificationSystem.readBeforeSent(inbox[1] as NotificationEntity),
+      NotificationSystem.markRead(inbox[0] as InboxNotification, LATER),
+      NotificationSystem.readBeforeSent(inbox[1] as InboxNotification),
     ];
     expect(run()).toEqual(run());
-    expect(inbox[0]?.readAtMs).toBeNull();
+    expect(inbox[0]?.readAtUtcMs).toBeNull();
   });
 });

@@ -136,3 +136,18 @@ export class AppointmentNotArrivableError extends DomainError {
     super(`An appointment that is ${status} cannot be marked arrived`);
   }
 }
+
+/**
+ * One shop day per appointment (F-6, flatten-spec T7): a seat that starts
+ * off the visit's day, or whose sold end runs past its midnight. None is
+ * stored (the shops close before midnight); a commit that meets one answers
+ * it as `BOOKING_INVARIANT_VIOLATED`, never as a crash.
+ */
+export class AppointmentSeatOffTheDayError extends DomainError {
+  override readonly code = 'scheduling.appointment.seat_off_the_day' as const;
+  constructor(public readonly seatId: string) {
+    super(`Seat "${seatId}" does not fit the appointment's shop day`, {
+      seatId,
+    });
+  }
+}

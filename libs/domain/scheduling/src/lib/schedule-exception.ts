@@ -5,10 +5,13 @@ import { LocalTimeRange } from './local-time-of-day';
 import { EmptyExceptionRangesError } from './schedule-exception.errors';
 import {
   BarberId as EcsBarberId,
+  EndMinute,
   ExceptionDetail,
   LocationId as EcsLocationId,
+  MinuteOfDay,
   MinuteRange,
   ScheduleExceptionSystem,
+  defect,
 } from '@creativo/ecs-core';
 
 export class ScheduleExceptionId extends Id<'ScheduleException'> {
@@ -138,13 +141,16 @@ function scopeOf(barberId: BarberId | null): EcsBarberId | null {
   return barberId === null ? null : EcsBarberId.of(barberId.value);
 }
 
+/** Wall-clock spans as the shop day's minutes — valid by construction (`LocalTimeRange`). */
 function rangesOf(ranges: readonly LocalTimeRange[]): readonly MinuteRange[] {
-  return ranges.map((range) =>
-    MinuteRange.of(
-      range.start.minutesFromMidnight(),
-      range.end.minutesFromMidnight(),
-    ),
-  );
+  return ranges.map((range) => {
+    const start = MinuteOfDay.of(range.start.minutesFromMidnight());
+    const end = EndMinute.of(range.end.minutesFromMidnight());
+    if (!start.ok || !end.ok) {
+      defect(`unreachable: a LocalTimeRange ${String(range)}`);
+    }
+    return MinuteRange.of(start.value, end.value);
+  });
 }
 
 /**

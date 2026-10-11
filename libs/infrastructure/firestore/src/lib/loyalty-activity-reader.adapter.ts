@@ -23,7 +23,7 @@ import {
   activityEntryFromDocument,
 } from '@creativo/application/engagement';
 import { RepositoryError } from '@creativo/application/shared';
-import { PageStepKind, PagingSystem } from '@creativo/ecs-core';
+import { PageStep, PagingSystem } from '@creativo/ecs-core';
 import { clientJournalCollection } from './firestore-paths';
 
 const NOTHING: LoyaltyActivityPage = { entries: [], next: null };
@@ -86,13 +86,13 @@ export class FirestoreLoyaltyActivityReader implements LoyaltyActivityReader {
       // oldest `seq`. `seq` is unique, so a page never ends inside a tie.
       const step = PagingSystem.nextCursor(snapshot.docs, size, seqOf);
       const read =
-        step.kind === PageStepKind.Page
+        step.pageStep === PageStep.Page
           ? step.rows
           : snapshot.docs.slice(0, size);
       return ok({
         entries: parsed(read),
         next:
-          step.kind === PageStepKind.Page
+          step.pageStep === PageStep.Page
             ? step.cursor === null
               ? null
               : oldestSeqOf(read)

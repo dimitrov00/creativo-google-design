@@ -1,37 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import {
-  AppliedDiscount,
-  AppliedDiscountSource,
-} from './applied-discount.data';
-import { CouponCombinability } from './coupon-combinability.data';
+import { AppliedDiscountId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { unwrapOk } from '../testing';
+import { AppliedDiscount } from './applied-discount.data';
+import { Combinability } from './coupon-combinability.data';
 import { CouponValue } from './coupon-value.data';
+import { DiscountSource } from './discount-provenance.data';
 
-function discount(
-  id: string,
-  combinability: CouponCombinability,
-): AppliedDiscount {
+function discount(id: string, combinability: Combinability): AppliedDiscount {
   return {
-    id,
-    source: AppliedDiscountSource.Manual,
-    value: CouponValue.freeService(),
+    discountId: AppliedDiscountId.of(id),
+    discountSource: DiscountSource.Manual,
     label: 'На заведението',
-    grantId: null,
-    code: null,
-    appliedAtMs: 1,
+    appliedAtUtcMs: unwrapOk(UtcEpochMs.of(1)),
     combinability,
+    ...CouponValue.freeService(),
   };
 }
 
-const STACK_A = discount('a', CouponCombinability.stackable());
-const STACK_B = discount('b', CouponCombinability.stackable());
-const ALONE = discount('x', CouponCombinability.exclusive());
+const STACK_A = discount('a', Combinability.Stackable);
+const STACK_B = discount('b', Combinability.Stackable);
+const ALONE = discount('x', Combinability.Exclusive);
 
-describe('AppliedDiscountSource', () => {
-  it('keeps the stored source strings unchanged', () => {
-    expect(Object.values(AppliedDiscountSource).sort()).toEqual([
-      'code',
-      'grant',
-      'manual',
+describe('DiscountSource', () => {
+  it('keeps one SCREAMING tag per source', () => {
+    expect(Object.values(DiscountSource).sort()).toEqual([
+      'CODE',
+      'GRANT',
+      'MANUAL',
     ]);
   });
 });

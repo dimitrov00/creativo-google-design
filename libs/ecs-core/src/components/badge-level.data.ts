@@ -1,22 +1,26 @@
+import type { AchievementRuleId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import type { AwardSummary } from './gamification.data';
 import type { LocalizedText } from './localized-text.data';
 
 /**
- * One level of a medal family, drawn «I»…«V» (`badge-series.ts:30-48`). Each
- * level is its own once-rule under its own award key, so a summary counts
- * LEVELS and a level never pays twice. The family checks its levels
- * together (contiguous from 1, rising targets — LoyaltyCatalogSystem).
+ * One level of a medal family, drawn «I»…«V» (`badge-series.ts:30-48`) — an
+ * element of the family's `levels` array. Each level is its own once-rule
+ * under its own award key, so a summary counts LEVELS and a level never
+ * pays twice. The family checks its levels together (contiguous from 1,
+ * rising targets — LoyaltyCatalogSystem).
  */
 export type BadgeLevel = {
   /** 1-based, drawn as a numeral by the template. */
   readonly level: number;
   /** The once-rule that awards this level. */
-  readonly ruleId: string;
+  readonly ruleId: AchievementRuleId;
   /** On the family's metric; `null` = a one-off act, then the family's only level. */
   readonly target: number | null;
   /** «25 посещения с фейд» */
   readonly requirement: LocalizedText;
-  /** `[]` = recognition only. */
+  /** `[]` = recognition only — each element a flat award (`awardKind`). */
   readonly awards: readonly AwardSummary[];
 };
 
@@ -27,31 +31,34 @@ export const BadgeLevel = {
   },
 } as const;
 
-/** How a level was earned — the stored `earned[].via` tags, unchanged. */
+/** How a level was earned — the field `earnedVia`. */
 export const EarnedVia = {
-  Rule: 'rule',
-  Manual: 'manual',
+  Rule: 'RULE',
+  Manual: 'MANUAL',
 } as const;
 export type EarnedVia = (typeof EarnedVia)[keyof typeof EarnedVia];
 
 /**
- * One earned level of a family's progress (`badgeProgress.earned[]`,
- * `loyalty-document.ts:597-604`, `earnedAt` → `earnedAtMs`): when — the
- * latest time, for a yearly one —, how, and how often.
+ * One earned level of a family's progress (`badgeProgress.earned[]`, an
+ * array element): when — the latest time, for a yearly one —, on which shop
+ * day (T5: the stamp a system buckets by day carries its day, both written
+ * from the same `ShopNow`), how, and how often.
  */
 export type EarnedLevel = {
   readonly level: number;
-  readonly earnedAtMs: number;
-  readonly via: EarnedVia;
+  readonly earnedAtUtcMs: UtcEpochMs;
+  /** The shop day of `earnedAtUtcMs` — what «Последни» and a day's scope group by. */
+  readonly earnedLocalDate: LocalDate;
+  readonly earnedVia: EarnedVia;
   /** How many times a repeatable level was earned; 1 otherwise. */
   readonly count: number;
 };
 
-/** A family for one client (§4.2). `earned` = at least one level. */
+/** A family for one client (§4.2) — the field `medalState`. `EARNED` = at least one level. */
 export const MedalState = {
-  NotStarted: 'notStarted',
-  InProgress: 'inProgress',
-  Earned: 'earned',
+  NotStarted: 'NOT_STARTED',
+  InProgress: 'IN_PROGRESS',
+  Earned: 'EARNED',
 } as const;
 export type MedalState = (typeof MedalState)[keyof typeof MedalState];
 
@@ -61,7 +68,7 @@ export type MedalState = (typeof MedalState)[keyof typeof MedalState];
  * `highestLevel` (0 = none, no numeral), the caption `value` / `target`.
  */
 export type SeriesStanding = {
-  readonly state: MedalState;
+  readonly medalState: MedalState;
   readonly highestLevel: number;
   /** `null` = complete — a yearly family once earned, too. */
   readonly next: BadgeLevel | null;

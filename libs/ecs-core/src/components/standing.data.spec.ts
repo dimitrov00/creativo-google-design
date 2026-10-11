@@ -1,47 +1,55 @@
 import { describe, expect, it } from 'vitest';
-import type { BadgeCategoryId } from '../entities/badge-category.entity';
-import type { SeasonId } from '../entities/season.entity';
-import { DayKey } from './day-key.data';
-import { SeriesId } from '../entities/badge-series.entity';
-import { EarnedDay, FamilyScope, FamilyScopeKind } from './standing.data';
+import {
+  BadgeCategoryId,
+  BadgeSeriesId,
+  SeasonId,
+} from '../primitives/ids.primitive';
+import { localDate, utcMs } from '../testing';
+import { EarnedDay, FamilyScope, FamilyScopeFilter } from './standing.data';
 
-describe('FamilyScope', () => {
-  it('keeps the four scopes a page draws', () => {
-    expect(Object.values(FamilyScopeKind)).toEqual([
-      'category',
-      'season',
-      'archive',
-      'day',
+describe('FamilyScopeFilter', () => {
+  it('declares the four scopes a page draws, SCREAMING (the discriminator `familyScope`)', () => {
+    expect(Object.values(FamilyScope)).toEqual([
+      'CATEGORY',
+      'SEASON',
+      'ARCHIVE',
+      'DAY',
     ]);
   });
 
   it('builds each scope with its key', () => {
-    expect(FamilyScope.category('cat-mastery' as BadgeCategoryId)).toEqual({
-      kind: 'category',
+    expect(
+      FamilyScopeFilter.category(BadgeCategoryId.of('cat-mastery')),
+    ).toEqual({
+      familyScope: 'CATEGORY',
       categoryId: 'cat-mastery',
     });
-    expect(FamilyScope.season('season-2026-autumn' as SeasonId)).toEqual({
-      kind: 'season',
-      seasonId: 'season-2026-autumn',
-    });
-    expect(FamilyScope.archive()).toEqual({ kind: 'archive' });
-    expect(FamilyScope.day(DayKey.of('2026-09-04'))).toEqual({
-      kind: 'day',
-      day: '2026-09-04',
+    expect(FamilyScopeFilter.season(SeasonId.of('season-2026-autumn'))).toEqual(
+      {
+        familyScope: 'SEASON',
+        seasonId: 'season-2026-autumn',
+      },
+    );
+    expect(FamilyScopeFilter.archive()).toEqual({ familyScope: 'ARCHIVE' });
+    expect(FamilyScopeFilter.day(localDate('2026-09-04'))).toEqual({
+      familyScope: 'DAY',
+      localDate: '2026-09-04',
     });
   });
 });
 
 describe('EarnedDay', () => {
   it('holds one day and the levels earned on it', () => {
-    const level = EarnedDay.level(SeriesId.of('s-cuts'), 3, 1_785_306_600_000);
+    const earnedAt = utcMs('2026-07-29T09:30:00.000+03:00');
+    expect(earnedAt).toBe(1_785_306_600_000);
+    const level = EarnedDay.level(BadgeSeriesId.of('s-cuts'), 3, earnedAt);
     expect(level).toEqual({
-      seriesId: 's-cuts',
+      badgeSeriesId: 's-cuts',
       level: 3,
-      earnedAtMs: 1_785_306_600_000,
+      earnedAtUtcMs: 1_785_306_600_000,
     });
-    expect(EarnedDay.of(DayKey.of('2026-07-29'), [level])).toEqual({
-      day: '2026-07-29',
+    expect(EarnedDay.of(localDate('2026-07-29'), [level])).toEqual({
+      localDate: '2026-07-29',
       levels: [level],
     });
   });

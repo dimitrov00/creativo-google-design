@@ -1,19 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import type { BadgeLevel } from '../components/badge-level.data';
-import { BadgeCategoryId } from '../entities/badge-category.entity';
-import type { BadgeProgressEntity } from '../entities/badge-progress.entity';
 import {
-  SeriesId,
-  type BadgeSeriesEntity,
-} from '../entities/badge-series.entity';
-import { ServiceId } from '../entities/service.entity';
-import { deepFreeze } from '../testing';
+  EarnedVia,
+  MedalState,
+  type BadgeLevel,
+} from '../components/badge-level.data';
+import {
+  AwardSummary,
+  BadgeEmblem,
+  BadgeSubjectSlot,
+  Metric,
+  MetricRef,
+} from '../components/gamification.data';
+import type { BadgeProgress } from '../entities/badge-progress.entity';
+import type { BadgeSeries } from '../entities/badge-series.entity';
+import {
+  AchievementRuleId,
+  BadgeCategoryId,
+  BadgeSeriesId,
+  SeasonId,
+  ServiceId,
+} from '../primitives/ids.primitive';
+import { deepFreeze, localDate, utcMs } from '../testing';
 import { BadgeSystem } from './badge.system';
 
 /*
  * The cases of libs/domain/engagement/src/lib/loyalty/badge-series.spec.ts,
  * COPIED (the legacy spec keeps running against `BadgeSeries`' shim) and
- * re-targeted to the plain `BadgeSeriesEntity`: `standing`, the family's
+ * re-targeted to the flat `BadgeSeries` (the `MetricRef` and
+ * `BadgeSubjectSlot` slices at its root): `standing`, the family's
  * own questions, and the rows of `BadgeSeries.create`'s refusal table that
  * are the family's rules (`BadgeSystem.validate`). Not copied: the rows of
  * an empty subject, narrowing or category id and a one-locale title, and
@@ -29,7 +43,7 @@ function levels(
 ): BadgeLevel[] {
   return targets.map((target, i) => ({
     level: i + 1,
-    ruleId: `${ruleStem}-${i + 1}`,
+    ruleId: AchievementRuleId.of(`${ruleStem}-${i + 1}`),
     target,
     requirement: text(`${target ?? 'веднъж'} посещения с фейд`),
     awards: [],
@@ -37,54 +51,58 @@ function levels(
 }
 
 /** «Фейд» I…V, the mastery shelf's service family. */
-const fade: BadgeSeriesEntity = {
-  id: SeriesId.of('series-svc-fade'),
+const fade: BadgeSeries = {
+  id: BadgeSeriesId.of('series-svc-fade'),
   categoryId: BadgeCategoryId.of('cat-mastery'),
   seasonId: null,
   title: text('Фейд', 'Fade'),
   requirement: text('Посещения с фейд', 'Visits with a fade'),
-  emblem: 'service',
-  subject: { kind: 'service', serviceId: ServiceId.of('svc-fade') },
-  metric: {
-    metric: 'client.visits.completed',
-    window: null,
-    where: {
-      serviceId: ServiceId.of('svc-fade'),
-      barberId: null,
-      locationId: null,
-    },
-  },
-  art: null,
+  emblem: BadgeEmblem.Service,
+  ...BadgeSubjectSlot.service(ServiceId.of('svc-fade')),
+  ...MetricRef.of(Metric.VisitsCompleted),
+  metricScopeServiceId: ServiceId.of('svc-fade'),
+  artPath: null,
   levels: levels([3, 10, 25, 50, 100]),
   repeatable: false,
   order: 7,
-  retiredAtMs: null,
+  retiredAtUtcMs: null,
+  retiredLocalDate: null,
   version: 1,
 };
 
-function build(series: BadgeSeriesEntity): BadgeSeriesEntity {
+/** A family that counts nothing and is about nothing (today's `subject: null`, `metric: null`). */
+const UNCOUNTED = { ...BadgeSubjectSlot.none(), ...MetricRef.none() };
+
+/** A family about nothing that counts `metric`, everywhere. */
+const counting = (metric: Metric) => ({
+  ...BadgeSubjectSlot.none(),
+  ...MetricRef.of(metric),
+});
+
+function build(series: BadgeSeries): BadgeSeries {
   const result = BadgeSystem.validate(series);
   if (!result.ok) {
-    throw new Error(result.error.map((e) => e.code).join(', '));
+    throw new Error(result.error.map((e) => e.errorCode).join(', '));
   }
   return result.value;
 }
 
-function codes(series: BadgeSeriesEntity): string[] {
+function codes(series: BadgeSeries): string[] {
   const result = BadgeSystem.validate(series);
-  return result.ok ? [] : result.error.map((e) => e.code).sort();
+  return result.ok ? [] : result.error.map((e) => e.errorCode).sort();
 }
 
 const progress = (
   value: number,
   earned: readonly number[] = [],
-): BadgeProgressEntity => ({
-  id: SeriesId.of('series-svc-fade'),
+): BadgeProgress => ({
+  id: BadgeSeriesId.of('series-svc-fade'),
   value,
   earned: earned.map((level) => ({
     level,
-    earnedAtMs: Date.parse('2026-06-01T07:00:00.000Z'),
-    via: 'rule' as const,
+    earnedAtUtcMs: utcMs('2026-06-01T07:00:00.000Z'),
+    earnedLocalDate: localDate('2026-06-01'),
+    earnedVia: EarnedVia.Rule,
     count: 1,
   })),
 });
@@ -94,22 +112,21 @@ describe('BadgeSystem.validate', () => {
     expect(
       codes({
         ...fade,
-        id: SeriesId.of('series-rhythm'),
-        subject: null,
-        metric: null,
+        id: BadgeSeriesId.of('series-rhythm'),
+        ...UNCOUNTED,
         levels: levels([3, 6, 12, 24]),
       }),
     ).toEqual([]);
   });
 
   it('takes a one-off act and a yearly family, each with one level', () => {
-    expect(codes({ ...fade, metric: null, levels: levels([null]) })).toEqual(
+    expect(codes({ ...fade, ...UNCOUNTED, levels: levels([null]) })).toEqual(
       [],
     );
     expect(
       codes({
         ...fade,
-        metric: null,
+        ...UNCOUNTED,
         repeatable: true,
         levels: levels([null]),
       }),
@@ -121,13 +138,13 @@ describe('BadgeSystem.validate', () => {
       codes({
         ...fade,
         categoryId: null,
-        seasonId: 'season-2026-autumn' as BadgeSeriesEntity['seasonId'],
+        seasonId: SeasonId.of('season-2026-autumn'),
       }),
     ).toEqual([]);
   });
 
-  it.each<[string, Partial<BadgeSeriesEntity>, string[]]>([
-    ['no levels', { levels: [] }, ['engagement.badge_series.no_levels']],
+  it.each<[string, Partial<BadgeSeries>, string[]]>([
+    ['no levels', { levels: [] }, ['ENGAGEMENT_BADGE_SERIES_NO_LEVELS']],
     [
       'a gap in the levels',
       {
@@ -135,61 +152,66 @@ describe('BadgeSystem.validate', () => {
           i === 2 ? { ...l, level: 4 } : l,
         ),
       },
-      ['engagement.badge_series.level_gap'],
+      ['ENGAGEMENT_BADGE_SERIES_LEVEL_GAP'],
     ],
     [
       'targets that fall',
       { levels: levels([3, 10, 10]) },
-      ['engagement.badge_series.targets_not_rising'],
+      ['ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING'],
     ],
     [
       'a zero target',
       { levels: levels([0, 10]) },
-      ['engagement.badge_series.targets_not_rising'],
+      ['ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING'],
     ],
     [
       'a fractional target',
       { levels: levels([2.5, 10]) },
-      ['engagement.badge_series.targets_not_rising'],
+      ['ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING'],
     ],
     [
       'no home',
       { categoryId: null, seasonId: null },
-      ['engagement.badge_series.homeless'],
+      ['ENGAGEMENT_BADGE_SERIES_HOMELESS'],
     ],
     [
       'a one-off act among several levels',
       { levels: levels([null, 5]) },
-      ['engagement.badge_series.one_off_with_several_levels'],
+      ['ENGAGEMENT_BADGE_SERIES_ONE_OFF_WITH_SEVERAL_LEVELS'],
     ],
     [
       'a yearly family with several levels',
       { repeatable: true },
-      ['engagement.badge_series.repeatable_with_several_levels'],
+      ['ENGAGEMENT_BADGE_SERIES_REPEATABLE_WITH_SEVERAL_LEVELS'],
     ],
     [
       'a level without its rule',
-      { levels: levels([3]).map((l) => ({ ...l, ruleId: ' ' })) },
-      ['engagement.badge_series.level_without_rule'],
+      {
+        levels: levels([3]).map((l) => ({
+          ...l,
+          ruleId: AchievementRuleId.of(' '),
+        })),
+      },
+      ['ENGAGEMENT_BADGE_SERIES_LEVEL_WITHOUT_RULE'],
     ],
     [
       'a level paying nothing',
       {
         levels: levels([3]).map((l) => ({
           ...l,
-          awards: [{ kind: 'points' as const, points: 0 }],
+          awards: [AwardSummary.points(0)],
         })),
       },
-      ['engagement.badge_series.award_not_positive'],
+      ['ENGAGEMENT_BADGE_SERIES_AWARD_NOT_POSITIVE'],
     ],
   ])('refuses %s', (_case, override, expected) => {
-    expect(codes({ ...fade, ...override })).toEqual(expected);
+    expect(codes({ ...fade, ...override } as BadgeSeries)).toEqual(expected);
   });
 
   it('reports every problem at once', () => {
     expect(codes({ ...fade, categoryId: null, levels: [] })).toEqual([
-      'engagement.badge_series.homeless',
-      'engagement.badge_series.no_levels',
+      'ENGAGEMENT_BADGE_SERIES_HOMELESS',
+      'ENGAGEMENT_BADGE_SERIES_NO_LEVELS',
     ]);
   });
 
@@ -199,19 +221,22 @@ describe('BadgeSystem.validate', () => {
       levels: [
         {
           ...(levels([3])[0] as BadgeLevel),
-          awards: [{ kind: 'freeze', count: 0 }],
+          awards: [AwardSummary.freeze(0)],
         },
         { ...(levels([3, 2])[1] as BadgeLevel), level: 3 },
       ],
     });
     expect(!result.ok && result.error).toEqual([
       {
-        code: 'engagement.badge_series.award_not_positive',
+        errorCode: 'ENGAGEMENT_BADGE_SERIES_AWARD_NOT_POSITIVE',
         level: 1,
-        kind: 'freeze',
+        awardKind: 'FREEZE',
       },
-      { code: 'engagement.badge_series.level_gap', levels: '1, 3' },
-      { code: 'engagement.badge_series.targets_not_rising', targets: '3, 2' },
+      { errorCode: 'ENGAGEMENT_BADGE_SERIES_LEVEL_GAP', levels: '1, 3' },
+      {
+        errorCode: 'ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING',
+        targets: '3, 2',
+      },
     ]);
   });
 });
@@ -221,7 +246,7 @@ describe('BadgeSystem.standing', () => {
 
   it('is not started without a progress document', () => {
     expect(BadgeSystem.standing(series, null)).toEqual({
-      state: 'notStarted',
+      medalState: MedalState.NotStarted,
       highestLevel: 0,
       next: BadgeSystem.levelAt(series, 1),
       value: 0,
@@ -231,7 +256,7 @@ describe('BadgeSystem.standing', () => {
 
   it('is in progress with a value and no level yet', () => {
     expect(BadgeSystem.standing(series, progress(2))).toMatchObject({
-      state: 'inProgress',
+      medalState: MedalState.InProgress,
       highestLevel: 0,
       value: 2,
       target: 3,
@@ -240,7 +265,7 @@ describe('BadgeSystem.standing', () => {
 
   it('is earned from the first level, aiming at the next', () => {
     const standing = BadgeSystem.standing(series, progress(24, [1, 2]));
-    expect(standing.state).toBe('earned');
+    expect(standing.medalState).toBe(MedalState.Earned);
     expect(standing.highestLevel).toBe(2);
     expect(standing.next?.level).toBe(3);
     expect(standing.target).toBe(25);
@@ -260,8 +285,8 @@ describe('BadgeSystem.standing', () => {
   it('completes a yearly family once earned', () => {
     const birthday = build({
       ...fade,
-      id: SeriesId.of('series-birthday'),
-      metric: null,
+      id: BadgeSeriesId.of('series-birthday'),
+      ...UNCOUNTED,
       repeatable: true,
       levels: levels([null]),
     });
@@ -277,7 +302,8 @@ describe('BadgeSystem — the family’s own questions', () => {
       BadgeSystem.isRetired(
         build({
           ...fade,
-          retiredAtMs: Date.parse('2026-01-01T00:00:00.000Z'),
+          retiredAtUtcMs: utcMs('2026-01-01T00:00:00.000Z'),
+          retiredLocalDate: localDate('2026-01-01'),
         }),
       ),
     ).toBe(true);
@@ -289,9 +315,8 @@ describe('BadgeSystem — the family’s own questions', () => {
       BadgeSystem.isCalendarDriven(
         build({
           ...fade,
-          id: SeriesId.of('series-tenure'),
-          subject: null,
-          metric: { metric: 'client.tenure.days', window: null, where: null },
+          id: BadgeSeriesId.of('series-tenure'),
+          ...counting(Metric.TenureDays),
           levels: levels([365, 730]),
         }),
       ),

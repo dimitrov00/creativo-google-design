@@ -1,9 +1,11 @@
 import {
   type DrawnSides as EcsDrawnSides,
   type LiveSides,
+  PriceCents,
   type SideWrites as EcsSideWrites,
   type VisitSides as EcsVisitSides,
   VisitSidesSystem,
+  defect,
 } from '@creativo/ecs-core';
 
 /**
@@ -33,11 +35,18 @@ import {
  *
  * Phase 2 shim: the rules are `VisitSidesSystem` in `@creativo/ecs-core`.
  * This file keeps the legacy names and the legacy live reading (`undefined`
- * for a field this device does not hear) for its callers.
+ * for a field this device does not hear) for its callers. Flatten pass: the
+ * system holds the tip as `tipCents: PriceCents` (N6); the legacy
+ * `tipMinorUnits` is converted at this boundary, both ways.
  */
 
 /** The note and the tip, as one visit holds them. */
-export type VisitSides = EcsVisitSides;
+export interface VisitSides {
+  /** The team note, `null` for none. */
+  readonly note: string | null;
+  /** What the chair was tipped, in minor units; `null` when unrecorded. */
+  readonly tipMinorUnits: number | null;
+}
 
 /** Which of the side fields a write carries. */
 export type SideWrites = EcsSideWrites;
@@ -46,7 +55,9 @@ export type SideWrites = EcsSideWrites;
  * A side-field holder that remembers what it was drawn from — the sheet's
  * draft is one.
  */
-export type DrawnSides = EcsDrawnSides;
+export type DrawnSides = VisitSides & {
+  readonly drawn: VisitSides;
+};
 
 /** A note as it is stored: trimmed, and `null` for none. */
 export function storedNote(note: string | null | undefined): string | null {
@@ -70,7 +81,15 @@ export function adoptSides<T extends DrawnSides>(
   holder: T,
   incoming: VisitSides,
 ): T {
-  return VisitSidesSystem.adopt(holder, incoming);
+  const before = toEcsDrawn(holder);
+  const after = VisitSidesSystem.adopt(before, toEcsSides(incoming));
+  if (after === before) return holder;
+  return {
+    ...holder,
+    note: after.note,
+    tipMinorUnits: after.tipCents,
+    drawn: { note: after.drawn.note, tipMinorUnits: after.drawn.tipCents },
+  };
 }
 
 /**
@@ -81,7 +100,7 @@ export function sideWritesOf(
   target: VisitSides,
   drawn: VisitSides,
 ): SideWrites {
-  return VisitSidesSystem.writesOf(target, drawn);
+  return VisitSidesSystem.writesOf(toEcsSides(target), toEcsSides(drawn));
 }
 
 /**
@@ -98,7 +117,30 @@ export function sidesMovedUnder(
     readonly tipMinorUnits: number | null | undefined;
   },
 ): boolean {
-  return VisitSidesSystem.movedUnder(writes, drawn, target, toLive(live));
+  return VisitSidesSystem.movedUnder(
+    writes,
+    toEcsSides(drawn),
+    toEcsSides(target),
+    toLive(live),
+  );
+}
+
+/** Legacy minor units → the system's cents (`null` is "not recorded"). */
+function toCents(minorUnits: number | null): PriceCents | null {
+  if (minorUnits === null) return null;
+  const cents = PriceCents.signed(minorUnits);
+  if (!cents.ok) defect('a tip that is not whole minor units');
+  return cents.value;
+}
+
+/** The legacy side fields → the system's. */
+function toEcsSides(sides: VisitSides): EcsVisitSides {
+  return { note: sides.note, tipCents: toCents(sides.tipMinorUnits) };
+}
+
+/** The legacy holder → the system's, `drawn` included. */
+function toEcsDrawn(holder: DrawnSides): EcsDrawnSides {
+  return { ...toEcsSides(holder), drawn: toEcsSides(holder.drawn) };
 }
 
 /** The legacy live reading → the system's (`undefined` is "not heard"). */
@@ -109,7 +151,7 @@ function toLive(live: {
   return {
     note: live.note ?? null,
     noteHeard: live.note !== undefined,
-    tipMinorUnits: live.tipMinorUnits ?? null,
+    tipCents: toCents(live.tipMinorUnits ?? null),
     tipHeard: live.tipMinorUnits !== undefined,
   };
 }

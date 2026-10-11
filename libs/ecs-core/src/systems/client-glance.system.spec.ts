@@ -1,19 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { AccountStatus } from '../components/account-status.data';
-import { DayKey } from '../components/day-key.data';
-import { StreakPhase, type StreakState } from '../components/streak-state.data';
-import { VoucherState } from '../components/voucher-state.data';
-import { StreakDefinitionId } from '../entities/streak-definition.entity';
-import { deepFreeze } from '../testing';
+import {
+  AccountLifecycle,
+  BlockReason,
+} from '../components/account-status.data';
+import type { PunchCard } from '../components/punch-card.data';
 import { VoucherCode } from '../components/voucher-code.data';
 import {
+  VoucherLifecycle,
+  VoucherStatus,
+} from '../components/voucher-state.data';
+import { WallTime } from '../components/wall-time.data';
+import type { GiftVoucher } from '../entities/gift-voucher.entity';
+import { Currency } from '../primitives/currency.primitive';
+import {
+  AchievementRuleId,
   GiftVoucherId,
-  type GiftVoucherEntity,
-} from '../entities/gift-voucher.entity';
+  ServiceId,
+  ServiceVariantId,
+} from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import {
+  FIXTURE_NOW,
+  FIXTURE_NOW_UTC_MS,
+  FIXTURE_TIME_ZONE,
+  deepFreeze,
+  localDate,
+  minute,
+  unwrapOk,
+  utcMs,
+} from '../testing';
 import {
   ClientGlanceSystem,
   type GlanceHoldingsInput,
+  type GlanceLeg,
 } from './client-glance.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * COPIED, never moved, and re-targeted to the numbers and verdicts the
@@ -25,45 +46,62 @@ import {
  *   holdings: the vouchers that still pay as one sum, the facts the flags
  *   and the data allow, no rhythm for a lost run or a paused client.
  * `isBirthdayToday` is AgeSystem's (identity), not here.
+ *
+ * Zone-blind (Law 7): "now" is the fixture shop's `ShopNow` (2026-09-28
+ * 09:00 in Sofia), a leg's start a `WallTime` and a voucher's last day its
+ * `expiresLocalDate` — the conversions the presenters make at their
+ * boundary are made here with `ZonedTimeSystem.toLocal` where a case names
+ * an instant.
  */
 
-const ZONE = 'Europe/Sofia';
-const TODAY = DayKey.of('2026-09-28');
+const TODAY = localDate('2026-09-28');
 /** 09:00 in Sofia on the fixtures' day. */
-const NOW_MS = Date.parse('2026-09-28T06:00:00.000Z');
+const NOW = FIXTURE_NOW;
+const NOW_UTC_MS = FIXTURE_NOW_UTC_MS;
+
+const cents = (raw: number): PriceCents => unwrapOk(PriceCents.of(raw));
 
 describe('ClientGlanceSystem.pauseOf', () => {
   it('reads a pause, and when it ends', () => {
-    const untilMs = Date.parse('2026-10-12T21:00:00.000Z');
+    const untilUtcMs = utcMs('2026-10-12T21:00:00.000Z');
     expect(
       ClientGlanceSystem.pauseOf(
-        AccountStatus.block('manual', untilMs),
-        NOW_MS,
+        AccountLifecycle.block(BlockReason.Manual, untilUtcMs),
+        NOW_UTC_MS,
       ),
-    ).toEqual({ untilMs });
+    ).toEqual({ untilUtcMs });
     expect(
-      ClientGlanceSystem.pauseOf(AccountStatus.block('manual', null), NOW_MS),
-    ).toEqual({ untilMs: null });
+      ClientGlanceSystem.pauseOf(
+        AccountLifecycle.block(BlockReason.Manual, null),
+        NOW_UTC_MS,
+      ),
+    ).toEqual({ untilUtcMs: null });
     expect(
-      ClientGlanceSystem.pauseOf(AccountStatus.active(), NOW_MS),
+      ClientGlanceSystem.pauseOf(AccountLifecycle.active(), NOW_UTC_MS),
     ).toBeNull();
-    expect(ClientGlanceSystem.pauseOf(null, NOW_MS)).toBeNull();
+    expect(ClientGlanceSystem.pauseOf(null, NOW_UTC_MS)).toBeNull();
   });
 
   it('treats a pause that has run out as none', () => {
     expect(
       ClientGlanceSystem.pauseOf(
-        AccountStatus.block('manual', Date.parse('2026-08-31T21:00:00.000Z')),
-        NOW_MS,
+        AccountLifecycle.block(
+          BlockReason.Manual,
+          utcMs('2026-08-31T21:00:00.000Z'),
+        ),
+        NOW_UTC_MS,
       ),
     ).toBeNull();
   });
 });
 
 describe('ClientGlanceSystem.sameLegs', () => {
-  const leg = (serviceId: string, variantId: string | null = null) => ({
-    serviceId,
-    variantId,
+  const leg = (
+    serviceId: string,
+    variantId: string | null = null,
+  ): GlanceLeg => ({
+    serviceId: ServiceId.of(serviceId),
+    variantId: variantId === null ? null : ServiceVariantId.of(variantId),
   });
 
   it('holds the last visit when the draft holds its services, whatever the order', () => {
@@ -92,74 +130,52 @@ describe('ClientGlanceSystem.sameLegs', () => {
 
 describe('ClientGlanceSystem.isInChairToday', () => {
   it('puts the client in the chair only on an open visit today', () => {
-    const today = Date.parse('2026-09-28T07:00:00.000Z');
-    const yesterday = Date.parse('2026-09-27T07:00:00.000Z');
-    expect(ClientGlanceSystem.isInChairToday(true, [today], NOW_MS, ZONE)).toBe(
-      true,
-    );
+    // 10:00 in Sofia, today and yesterday.
+    const today = WallTime.of(TODAY, minute(600));
+    const yesterday = WallTime.of(localDate('2026-09-27'), minute(600));
+    expect(ClientGlanceSystem.isInChairToday(true, [today], NOW)).toBe(true);
     // A visit settled, or one on another day, is no visit in the chair.
+    expect(ClientGlanceSystem.isInChairToday(false, [today], NOW)).toBe(false);
+    expect(ClientGlanceSystem.isInChairToday(true, [yesterday], NOW)).toBe(
+      false,
+    );
+    // A leg the boundary could not place reaches the system as no leg.
+    expect(ClientGlanceSystem.isInChairToday(true, [], NOW)).toBe(false);
+    // Any one leg of the visit on today will do.
     expect(
-      ClientGlanceSystem.isInChairToday(false, [today], NOW_MS, ZONE),
-    ).toBe(false);
-    expect(
-      ClientGlanceSystem.isInChairToday(true, [yesterday], NOW_MS, ZONE),
-    ).toBe(false);
-    expect(
-      ClientGlanceSystem.isInChairToday(true, [Number.NaN], NOW_MS, ZONE),
-    ).toBe(false);
-    expect(
-      ClientGlanceSystem.isInChairToday(true, [today], NOW_MS, 'Not/AZone'),
-    ).toBe(false);
+      ClientGlanceSystem.isInChairToday(true, [yesterday, today], NOW),
+    ).toBe(true);
   });
 
   it('reads today on the shop’s calendar: 00:30 in Sofia is already tomorrow in Sofia', () => {
-    const halfPastMidnight = Date.parse('2026-09-28T21:30:00.000Z');
-    expect(
-      ClientGlanceSystem.isInChairToday(
-        true,
-        [halfPastMidnight],
-        halfPastMidnight,
-        ZONE,
-      ),
-    ).toBe(true);
+    const halfPastMidnight = utcMs('2026-09-28T21:30:00.000Z');
+    const leg = ZonedTimeSystem.toLocal(halfPastMidnight, FIXTURE_TIME_ZONE);
+    const now = ZonedTimeSystem.shopNow(halfPastMidnight, FIXTURE_TIME_ZONE);
+    expect(leg).toEqual({ localDate: '2026-09-29', minute: 30 });
+    expect(ClientGlanceSystem.isInChairToday(true, [leg], now)).toBe(true);
   });
 });
 
 describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
-  const eur = (amountMinorUnits: number) => ({
-    amountMinorUnits,
-    currencyCode: 'EUR',
-  });
   const voucher = (
     amount: number,
-    overrides: Partial<GiftVoucherEntity> = {},
-  ): GiftVoucherEntity => ({
-    id: GiftVoucherId.of(`voucher-${amount}`),
-    code: VoucherCode.of('GIFT-0001'),
-    initialValue: eur(5000),
-    balance: eur(amount),
-    issuedAtMs: Date.parse('2026-01-01T10:00:00Z'),
-    expiresAtMs: null,
-    issuedToUserId: null,
-    state: VoucherState.active(),
-    ...overrides,
-  });
-  const run = (current: number): StreakState => ({
-    streakId: StreakDefinitionId.of('cadence'),
-    definitionVersion: 1,
-    phase: StreakPhase.active(),
-    current,
-    best: 24,
-    lastQualifiedAtMs: null,
-    dueBy: null,
-    freezesBanked: 2,
-    period: null,
-    periods: [],
-    heldBy: null,
-    runStartedOn: null,
-  });
-  const STAMPS = {
-    ruleId: 'rule-every-10th-visit',
+    overrides: Partial<GiftVoucher> = {},
+  ): GiftVoucher =>
+    ({
+      id: GiftVoucherId.of(`voucher-${amount}`),
+      code: VoucherCode.of('GIFT-0001'),
+      initialValueCents: cents(5000),
+      balanceCents: cents(amount),
+      currency: Currency.EUR,
+      issuedAtUtcMs: utcMs('2026-01-01T10:00:00Z'),
+      expiresAtUtcMs: null,
+      expiresLocalDate: null,
+      issuedToUserId: null,
+      ...VoucherLifecycle.active(),
+      ...overrides,
+    }) as GiftVoucher;
+  const STAMPS: PunchCard = {
+    ruleId: AchievementRuleId.of('rule-every-10th-visit'),
     filled: 4,
     size: 10,
     title: { bg: 'Подстригване', en: 'Cut' },
@@ -171,16 +187,26 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
     punchCards: [STAMPS],
     achievements: true,
     rhythmOn: true,
-    rhythm: run(24),
+    rhythm: { current: 24 },
     paused: false,
     today: TODAY,
-    zone: ZONE,
     ...overrides,
+  });
+  const eur = (amount: number) => ({
+    voucherCents: amount,
+    voucherCurrency: 'EUR',
   });
 
   it('counts only the vouchers that still pay: active, not empty, not past their last day, as one sum', () => {
-    const fact = (vouchers: readonly GiftVoucherEntity[] | null) =>
-      ClientGlanceSystem.holdings(input({ vouchers })).voucher;
+    const fact = (vouchers: readonly GiftVoucher[] | null) => {
+      const held = ClientGlanceSystem.holdings(input({ vouchers }));
+      return held.voucherCents === null
+        ? null
+        : {
+            voucherCents: held.voucherCents,
+            voucherCurrency: held.voucherCurrency,
+          };
+    };
     expect(fact([voucher(2500)])).toEqual(eur(2500));
     expect(fact([voucher(2500), voucher(2500), voucher(500)])).toEqual(
       eur(5500),
@@ -189,15 +215,21 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
       fact([
         voucher(0),
         voucher(2500, {
-          state: VoucherState.voided(
-            Date.parse('2026-09-01T00:00:00Z'),
-            'refund',
-          ),
+          ...VoucherLifecycle.voided(utcMs('2026-09-01T00:00:00Z'), 'refund'),
         }),
       ]),
     ).toBeNull();
-    const lastDay = (iso: string) =>
-      voucher(2500, { expiresAtMs: Date.parse(iso) });
+    // The last day is the expiry's day on the shop calendar (T5).
+    const lastDay = (iso: string) => {
+      const expiresAtUtcMs = utcMs(iso);
+      return voucher(2500, {
+        expiresAtUtcMs,
+        expiresLocalDate: ZonedTimeSystem.toLocal(
+          expiresAtUtcMs,
+          FIXTURE_TIME_ZONE,
+        ).localDate,
+      });
+    };
     expect(fact([lastDay('2026-09-27T23:59:59.999+03:00')])).toBeNull();
     expect(fact([lastDay('2026-09-28T23:59:59.999+03:00')])).toEqual(eur(2500));
     expect(fact([])).toBeNull();
@@ -205,23 +237,20 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
   });
 
   it('sums in the first voucher’s currency alone', () => {
-    expect(
-      ClientGlanceSystem.holdings(
-        input({
-          vouchers: [
-            voucher(2500),
-            voucher(1000, {
-              balance: { amountMinorUnits: 1000, currencyCode: 'BGN' },
-            }),
-          ],
-        }),
-      ).voucher,
-    ).toEqual(eur(2500));
+    const held = ClientGlanceSystem.holdings(
+      input({
+        vouchers: [voucher(2500), voucher(1000, { currency: Currency.BGN })],
+      }),
+    );
+    expect({
+      voucherCents: held.voucherCents,
+      voucherCurrency: held.voucherCurrency,
+    }).toEqual(eur(2500));
   });
 
   it('draws only the facts its flags and its data allow', () => {
     expect(ClientGlanceSystem.holdings(input())).toEqual({
-      voucher: eur(2500),
+      ...eur(2500),
       stamps: STAMPS,
       rhythm: 24,
     });
@@ -237,20 +266,25 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
     expect(
       ClientGlanceSystem.holdings(input({ rhythm: null })).rhythm,
     ).toBeNull();
+    // No voucher left: both halves of the sum are absent together.
+    expect(ClientGlanceSystem.holdings(input({ vouchers: [] }))).toMatchObject({
+      voucherCents: null,
+      voucherCurrency: null,
+    });
   });
 
   it('says no rhythm for a run that was lost, and agrees a run of one', () => {
     expect(
-      ClientGlanceSystem.holdings(input({ rhythm: run(0) })).rhythm,
+      ClientGlanceSystem.holdings(input({ rhythm: { current: 0 } })).rhythm,
     ).toBeNull();
-    expect(ClientGlanceSystem.holdings(input({ rhythm: run(1) })).rhythm).toBe(
-      1,
-    );
+    expect(
+      ClientGlanceSystem.holdings(input({ rhythm: { current: 1 } })).rhythm,
+    ).toBe(1);
   });
 
   it('never zeroes a paused client’s values; the rhythm, frozen, is the wallet’s to say', () => {
     expect(ClientGlanceSystem.holdings(input({ paused: true }))).toEqual({
-      voucher: eur(2500),
+      ...eur(2500),
       stamps: STAMPS,
       rhythm: null,
     });
@@ -264,13 +298,15 @@ describe('ClientGlanceSystem purity', () => {
         {
           id: GiftVoucherId.of('voucher-1'),
           code: VoucherCode.of('GIFT-0001'),
-          initialValue: { amountMinorUnits: 5000, currencyCode: 'EUR' },
-          balance: { amountMinorUnits: 2500, currencyCode: 'EUR' },
-          issuedAtMs: Date.parse('2026-01-01T10:00:00Z'),
-          expiresAtMs: Date.parse('2026-10-01T00:00:00Z'),
+          initialValueCents: cents(5000),
+          balanceCents: cents(2500),
+          currency: Currency.EUR,
+          issuedAtUtcMs: utcMs('2026-01-01T10:00:00Z'),
+          expiresAtUtcMs: utcMs('2026-10-01T00:00:00Z'),
+          expiresLocalDate: localDate('2026-10-01'),
           issuedToUserId: null,
-          state: VoucherState.active(),
-        },
+          voucherStatus: VoucherStatus.Active,
+        } as GiftVoucher,
       ],
       punchCards: [],
       achievements: true,
@@ -278,17 +314,18 @@ describe('ClientGlanceSystem purity', () => {
       rhythm: null,
       paused: false,
       today: TODAY,
-      zone: ZONE,
     });
     const legs = deepFreeze([
-      { serviceId: 'b', variantId: null },
-      { serviceId: 'a', variantId: 'x' },
+      { serviceId: ServiceId.of('b'), variantId: null },
+      { serviceId: ServiceId.of('a'), variantId: ServiceVariantId.of('x') },
     ]);
+    const chair = deepFreeze([WallTime.of(TODAY, minute(540))]);
     const run = () => [
       ClientGlanceSystem.holdings(held),
       ClientGlanceSystem.sameLegs(legs, legs),
-      ClientGlanceSystem.isInChairToday(true, [NOW_MS], NOW_MS, ZONE),
+      ClientGlanceSystem.isInChairToday(true, chair, NOW),
     ];
     expect(run()).toEqual(run());
+    expect(run()[0]).toMatchObject({ voucherCents: 2500 });
   });
 });

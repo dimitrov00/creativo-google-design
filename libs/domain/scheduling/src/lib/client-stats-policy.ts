@@ -2,8 +2,12 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   type BookingPolicy as EcsBookingPolicy,
   ClientStatsPolicy as EcsClientStatsPolicy,
+  DurationMinutes,
+  MinuteCount,
   type SchedulingError,
   SchedulingErrorCode,
+  UtcEpochMs,
+  defect,
 } from '@creativo/ecs-core';
 import { BookingPolicy } from './booking-policy';
 import type { CancellationWindow } from './cancellation-window';
@@ -13,7 +17,8 @@ import { InvalidClientStatsPolicyError } from './client-stats.errors';
  * Phase 2 shim: the policy and its rules are `ClientStatsPolicy` in
  * `@creativo/ecs-core` (a component: the validation, the late line). This
  * class keeps the legacy shape for its callers — its `booking` is the
- * `BookingPolicy` class — and converts at the edge (`toStruct`).
+ * `BookingPolicy` class — and converts at the edge (`toStruct`): minutes to
+ * their brands, epoch ms to `UtcEpochMs`.
  */
 
 /**
@@ -81,7 +86,7 @@ export class ClientStatsPolicy {
       suggestPauseNoShows: 3,
       suggestPauseWindowDays: 60,
     });
-    if (result.isFailure()) throw new Error('unreachable: defaults are valid');
+    if (result.isFailure()) defect('unreachable: defaults are valid');
     return result.value;
   }
 
@@ -113,10 +118,15 @@ export class ClientStatsPolicy {
     cancelledAtMs: number,
     stamped: CancellationWindow | null,
   ): boolean {
+    const start = UtcEpochMs.of(startMs);
+    const cancelledAt = UtcEpochMs.of(cancelledAtMs);
+    // Not an instant: no free cancellation can be proven, as the legacy
+    // arithmetic over a `NaN` answered.
+    if (!start.ok || !cancelledAt.ok) return true;
     return EcsClientStatsPolicy.isLateCancellation(
       this.toStruct(),
-      startMs,
-      cancelledAtMs,
+      start.value,
+      cancelledAt.value,
       stamped === null ? null : stamped.hours,
     );
   }
@@ -134,12 +144,21 @@ export class ClientStatsPolicy {
   }
 }
 
-/** The booking policy class as the plain struct. */
+/**
+ * The booking policy class as the plain struct. The class's own guard
+ * already holds the slot step positive and the lead non-negative, so their
+ * brands cannot refuse.
+ */
 function bookingStruct(booking: BookingPolicy): EcsBookingPolicy {
+  const slotStep = DurationMinutes.of(booking.slotStepMinutes);
+  const minLead = MinuteCount.of(booking.minLeadMinutes);
+  if (!slotStep.ok || !minLead.ok) {
+    defect('unreachable: a BookingPolicy its own guard let through');
+  }
   return {
     maxPartySize: booking.maxPartySize,
-    slotStepMinutes: booking.slotStepMinutes,
-    minLeadMinutes: booking.minLeadMinutes,
+    slotStepMinutes: slotStep.value,
+    minLeadMinutes: minLead.value,
     horizonMonths: booking.horizonMonths,
     cancellationWindowHours: booking.cancellationWindowHours,
     maxFlexibleDays: booking.maxFlexibleDays,
@@ -150,7 +169,7 @@ function bookingStruct(booking: BookingPolicy): EcsBookingPolicy {
 /** A refused field as the legacy error class (`scheduling.client_stats_policy.invalid`). */
 function toLegacyError(error: SchedulingError): InvalidClientStatsPolicyError {
   // `create` refuses with this one code only; the guard narrows the union.
-  return error.code === SchedulingErrorCode.ClientStatsPolicyInvalid
+  return error.errorCode === SchedulingErrorCode.ClientStatsPolicyInvalid
     ? new InvalidClientStatsPolicyError(error.field, error.rawValue)
-    : new InvalidClientStatsPolicyError(error.code, Number.NaN);
+    : new InvalidClientStatsPolicyError(error.errorCode, Number.NaN);
 }

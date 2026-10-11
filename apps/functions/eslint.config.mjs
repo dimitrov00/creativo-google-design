@@ -12,12 +12,12 @@ const IMPORT_RESTRICTIONS = {
     {
       name: 'dinero.js',
       message:
-        'dinero.js is retired (D4): money is the plain { amountMinorUnits, currencyCode } struct — use Money from libs/ecs-core/src/components/money.data.ts (only the legacy libs/domain/kernel/** keeps dinero, until Phase 4).',
+        'dinero.js is retired (D4): money is integer `…Cents: PriceCents` beside a `currency: Currency`, and arithmetic the plain Money { amountCents: PriceCents; currency: Currency } struct of libs/ecs-core/src/components/money.data.ts (only the legacy libs/domain/kernel/** keeps dinero, until Phase 4).',
     },
     {
       name: 'luxon',
       message:
-        'luxon is retired (D5): zone math is native Intl inside libs/ecs-core/src/systems/zoned-time.system.ts — use ZonedTimeSystem and ZonedInstant (only the legacy libs/domain/kernel/** keeps luxon, until Phase 4).',
+        'luxon is retired (D5, Law 7.1): zone math is native Intl inside libs/ecs-core/src/systems/zoned-time.system.ts — instants are UtcEpochMs, converted once at ingestion with ZonedTimeSystem.toUtc/toLocal and the location timeZone (only the legacy libs/domain/kernel/** keeps luxon, until Phase 4).',
     },
     {
       name: 'libphonenumber-js',
@@ -69,7 +69,7 @@ export default [
     },
   },
   // The InjectionToken guard on every file here (the backend composes
-  // ports as closure parameters, never through a container), and the six
+  // ports as closure parameters, never through a container), and the seven
   // ECS suffix blocks restated with it — `*.port.ts` and `*.adapter.ts`
   // included, which the root config cannot carry until Phase 4 deletes
   // libs/application's legacy ports and class adapters (blueprint §6

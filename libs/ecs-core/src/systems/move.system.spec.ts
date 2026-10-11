@@ -1,64 +1,83 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberPrefKind } from '../components/barber-pref.data';
+import { BarberPreference } from '../components/barber-pref.data';
+import { BookingLifecycle } from '../components/booking-lifecycle.data';
+import { BookingError } from '../components/booking-errors.data';
 import { BookingPolicy } from '../components/booking-policy.data';
-import { BookingStatus } from '../components/booking-status.data';
-import { DayKey } from '../components/day-key.data';
-import { PlacementPolicy } from '../components/placement-policy.data';
+import {
+  PlacementPolicy,
+  StaffTermsOverride,
+} from '../components/placement-policy.data';
 import {
   ScheduleVersion,
   ShiftSegment,
 } from '../components/schedule-version.data';
 import { Weekday } from '../components/weekday.data';
 import { SchedulingError } from '../components/scheduling-errors.data';
-import { SeatOutcome } from '../components/seat-outcome.data';
 import { SeatLabel } from '../components/seat-label.data';
+import { SeatOutcome } from '../components/seat-outcome.data';
 import {
-  type Seat,
-  SeatId,
-  SeatRelationship,
-  SeatSubject,
-  type SeatSubject as SeatSubjectType,
+  Seat,
+  SeatOccupant,
+  SubjectRelationship,
 } from '../components/seat.data';
+import { ServiceTerms } from '../components/service-terms.data';
+import type { Appointment } from '../entities/appointment.entity';
+import type { Service } from '../entities/service.entity';
+import { Currency } from '../primitives/currency.primitive';
 import {
-  ServiceTerms,
-  type ServiceVariantId,
-} from '../components/service-terms.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { type ServiceEntity, ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
+  DurationMinutes,
+  MinuteCount,
+  MinuteDelta,
+} from '../primitives/duration-minutes.primitive';
 import {
-  FIXTURE_NOW_MS,
-  FIXTURE_ZONE,
-  appointmentFixture,
-  dayTableFixture,
+  BarberId,
+  LocationId,
+  OperationId,
+  SeatId,
+  SeatKeyText,
+  ServiceId,
+  ServiceVariantId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import {
+  FIXTURE_NOW,
+  FIXTURE_TODAY,
   deepFreeze,
-  fixtureTodayAt,
-  seatFixture,
-  serviceFixture,
+  endMinute,
+  localDate,
+  minute,
   unwrapErr,
   unwrapOk,
+  utcMs,
 } from '../testing';
+import { serviceFixture } from '../testing/booking-core.fixtures';
+import {
+  type SeatFixtureOverrides,
+  appointmentFixture,
+  seatFixture,
+} from '../testing/appointment.fixtures';
 import {
   AppointmentEditSystem,
-  LedgerVerdictKind,
+  LedgerVerdict,
 } from './appointment-edit.system';
 import {
   BookingDecisionSystem,
-  type RequestedSeat,
+  type RequestedSeatInput,
 } from './booking-decision.system';
+import { RequestedSubjectRole } from './guest-label.system';
 import {
   CarriedSeatRefusal,
-  type MoveCartSeat,
-  MoveCartSubjectKind,
+  type MoveCartSeatInput,
   MoveErrorCode,
   type MovePlan,
   type MoveRider,
+  MoveSubjectRole,
   MoveSystem,
 } from './move.system';
-import { BookingCommitError } from '../components/booking-commit-errors.data';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/move-shift.spec.ts,
@@ -66,54 +85,50 @@ import { BookingCommitError } from '../components/booking-commit-errors.data';
  * .../carried-reach.spec.ts, the booker's-seats and chair-time cases of
  * appointment.spec.ts, and the plan's math of
  * apps/functions/src/use-cases/reschedule-booking.use-case.spec.ts — copied
- * (the originals keep running against their shims). The decision itself
- * (is the chair free?) is BookingDecisionSystem's; here the plan it is
- * decided with, and the refusal a carried seat's failure becomes.
+ * (the originals keep running against their shims), on the ONE shop day a
+ * move lands on (wall-clock minutes, F-6). The decision itself (is the
+ * chair free?) is BookingDecisionSystem's and its own spec's; here the plan
+ * it is decided with, and the refusal a carried seat's failure becomes.
  */
 
-const MINUTE = 60_000;
+const at = (hour: number, min = 0): MinuteOfDay => minute(hour * 60 + min);
+const delta = (minutes: number): MinuteDelta =>
+  unwrapOk(MinuteDelta.of(minutes));
 
-/** An instant on a whole minute, anywhere in a few years around 2026. */
-const minuteInstant = fc
-  .integer({ min: 29_000_000, max: 30_500_000 })
-  .map((minutes) => minutes * MINUTE);
+/** A minute of a shop day where every shift below stays on that day. */
+const midday = fc.integer({ min: 600, max: 800 }).map(minute);
 
 describe('the move shift — where a carried seat lands', () => {
   it('moves a carried seat by exactly as far as the cart’s earliest seat moved (property)', () => {
     fc.assert(
-      fc.property(
-        minuteInstant,
-        minuteInstant,
-        minuteInstant,
-        (anchorMs, seatStartMs, cartEarliestMs) => {
-          const offset = MoveSystem.carriedOffsetMinutes(seatStartMs, anchorMs);
-          expect(MoveSystem.carriedStartMs(cartEarliestMs, offset)).toBe(
-            seatStartMs + (cartEarliestMs - anchorMs),
-          );
-        },
-      ),
+      fc.property(midday, midday, midday, (anchor, seatStart, cartEarliest) => {
+        const offset = MoveSystem.carriedOffsetMinutes(seatStart, anchor);
+        expect(MoveSystem.carriedStartMinutes(cartEarliest, offset)).toBe(
+          seatStart + (cartEarliest - anchor),
+        );
+      }),
     );
   });
 
   it('keeps every carried seat’s distance from every other — the party moves rigidly (property)', () => {
     fc.assert(
       fc.property(
-        minuteInstant,
+        midday,
         fc.array(fc.integer({ min: -600, max: 600 }), {
           minLength: 2,
           maxLength: 5,
         }),
-        minuteInstant,
-        (anchorMs, offsets, cartEarliestMs) => {
-          const before = offsets.map((minutes) => anchorMs + minutes * MINUTE);
-          const after = before.map((startMs) =>
-            MoveSystem.carriedStartMs(
-              cartEarliestMs,
-              MoveSystem.carriedOffsetMinutes(startMs, anchorMs),
+        midday,
+        (anchor, offsets, cartEarliest) => {
+          const before = offsets.map((minutes) => minute(anchor + minutes));
+          const after = before.map((start) =>
+            MoveSystem.carriedStartMinutes(
+              cartEarliest,
+              MoveSystem.carriedOffsetMinutes(start, anchor),
             ),
           );
-          for (const [index, startMs] of after.entries()) {
-            expect(startMs - (after[0] as number)).toBe(
+          for (const [index, start] of after.entries()) {
+            expect((start as number) - (after[0] as number)).toBe(
               (before.at(index) as number) - (before[0] as number),
             );
           }
@@ -124,33 +139,31 @@ describe('the move shift — where a carried seat lands', () => {
 
   it('changes nothing when the cart lands where it already was (property)', () => {
     fc.assert(
-      fc.property(minuteInstant, minuteInstant, (anchorMs, seatStartMs) => {
+      fc.property(midday, midday, (anchor, seatStart) => {
         expect(
-          MoveSystem.carriedStartMs(
-            anchorMs,
-            MoveSystem.carriedOffsetMinutes(seatStartMs, anchorMs),
+          MoveSystem.carriedStartMinutes(
+            anchor,
+            MoveSystem.carriedOffsetMinutes(seatStart, anchor),
           ),
-        ).toBe(seatStartMs);
+        ).toBe(seatStart);
       }),
     );
   });
 
   it('keeps the offset in whole minutes, negative when the carried seat goes first', () => {
-    const anchorMs = 1_780_000_000_000 - (1_780_000_000_000 % MINUTE);
+    const anchor = at(10);
+    expect(MoveSystem.carriedOffsetMinutes(at(10, 45), anchor)).toBe(45);
+    expect(MoveSystem.carriedOffsetMinutes(at(9, 30), anchor)).toBe(-30);
+    // Minutes of the wall clock are whole by construction: a stray second
+    // never becomes a fractional offset the draft or the engine would carry.
     expect(
-      MoveSystem.carriedOffsetMinutes(anchorMs + 45 * MINUTE, anchorMs),
-    ).toBe(45);
-    expect(
-      MoveSystem.carriedOffsetMinutes(anchorMs - 30 * MINUTE, anchorMs),
-    ).toBe(-30);
-    expect(
-      Number.isInteger(
-        MoveSystem.carriedOffsetMinutes(
-          anchorMs + 45 * MINUTE + 1_000,
-          anchorMs,
-        ),
-      ),
+      Number.isInteger(MoveSystem.carriedOffsetMinutes(at(10, 45), anchor)),
     ).toBe(true);
+  });
+
+  it('never lands a carried seat off the shop day — the plan refuses it instead', () => {
+    expect(MoveSystem.carriedStartMinutes(at(0, 10), delta(-30))).toBeNull();
+    expect(MoveSystem.carriedStartMinutes(at(23, 50), delta(15))).toBeNull();
   });
 });
 
@@ -164,31 +177,28 @@ function rider(
     serviceId: ServiceId.of('svc-beard'),
     variantId: null,
     barberId: BarberId.of('petar'),
-    offsetMinutes,
-    durationMinutes: 30,
-    setupMinutes: 0,
-    cleanupMinutes: 0,
+    offsetMinutes: delta(offsetMinutes),
+    durationMinutes: unwrapOk(DurationMinutes.of(30)),
+    setupMinutes: MinuteCount.ZERO,
+    cleanupMinutes: MinuteCount.ZERO,
     ...overrides,
   };
 }
 
 describe('MoveSystem.placeRiders — the server’s shift, restated for the review card', () => {
   it('seats a side-by-side companion at the booker’s new start', () => {
-    const [placed] = MoveSystem.placeRiders([fixtureTodayAt(14)], [rider(0)]);
-    expect(placed?.startMs).toBe(fixtureTodayAt(14));
+    const [placed] = MoveSystem.placeRiders([at(14)], [rider(0)]);
+    expect(placed?.startMinutes).toBe(at(14));
   });
 
   it('keeps a companion straight after the booker straight after them', () => {
-    const [placed] = MoveSystem.placeRiders([fixtureTodayAt(14)], [rider(45)]);
-    expect(placed?.startMs).toBe(fixtureTodayAt(14, 45));
+    const [placed] = MoveSystem.placeRiders([at(14)], [rider(45)]);
+    expect(placed?.startMinutes).toBe(at(14, 45));
   });
 
   it('anchors on the EARLIEST seat the cart holds, whatever order it lists them in', () => {
-    const [placed] = MoveSystem.placeRiders(
-      [fixtureTodayAt(15), fixtureTodayAt(14, 30)],
-      [rider(-30)],
-    );
-    expect(placed?.startMs).toBe(fixtureTodayAt(14));
+    const [placed] = MoveSystem.placeRiders([at(15), at(14, 30)], [rider(-30)]);
+    expect(placed?.startMinutes).toBe(at(14));
   });
 
   it('places nobody when there is no seat to anchor to', () => {
@@ -206,14 +216,14 @@ describe('MoveSystem.placeRiders — the server’s shift, restated for the revi
           { maxLength: 4 },
         ),
         (startMinutes, offsets) => {
-          const start = fixtureTodayAt(0) + startMinutes * MINUTE;
+          const start = minute(startMinutes);
           const placed = MoveSystem.placeRiders(
             [start],
             offsets.map((o) => rider(o)),
           );
-          expect(placed.map((entry) => entry.startMs - start)).toEqual(
-            offsets.map((offset) => offset * MINUTE),
-          );
+          expect(
+            placed.map((entry) => (entry.startMinutes as number) - start),
+          ).toEqual(offsets);
         },
       ),
     );
@@ -226,12 +236,12 @@ function offered(
   id: string,
   locationIds: readonly string[] = [],
   variants: readonly string[] = [],
-): ServiceEntity {
+): Service {
   return serviceFixture({
     id: ServiceId.of(id),
     locationIds: locationIds.map(LocationId.of),
     variants: variants.map((variant) => ({
-      id: variant as ServiceVariantId,
+      variantId: ServiceVariantId.of(variant),
       name: { bg: variant, en: variant },
     })),
   });
@@ -240,7 +250,7 @@ function offered(
 function beard(
   variants: readonly string[] = [],
   locationIds: readonly string[] = [],
-): ServiceEntity {
+): Service {
   return offered('svc-beard', locationIds, variants);
 }
 
@@ -249,7 +259,6 @@ const petar = [BarberId.of('petar')];
 function son(overrides: Partial<MoveRider> = {}): MoveRider {
   return rider(0, overrides);
 }
-
 describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move carries?', () => {
   const inReach = MoveSystem.carriedSeatsInReach;
   const shops = (...ids: string[]) => ids.map(LocationId.of);
@@ -258,7 +267,7 @@ describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move
     expect(inReach([son()], petar, [beard()], null)).toBe(true);
     expect(
       inReach(
-        [son({ variantId: 'v-long' as ServiceVariantId })],
+        [son({ variantId: ServiceVariantId.of('v-long') })],
         petar,
         [beard(['v-short', 'v-long'])],
         null,
@@ -283,7 +292,7 @@ describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move
   it('is false when only the VARIANT the seat was sold as is retired — the server refuses that too', () => {
     expect(
       inReach(
-        [son({ variantId: 'v-long' as ServiceVariantId })],
+        [son({ variantId: ServiceVariantId.of('v-long') })],
         petar,
         [beard(['v-short'])],
         null,
@@ -425,20 +434,20 @@ describe('MoveSystem.carriedSeatsInReach — can the shop still serve who a move
 const OWNER = UserId.of('user-owner');
 const SON = UserId.of('user-son');
 
-function guest(label: string): SeatSubjectType {
-  return SeatSubject.anonymous(unwrapOk(SeatLabel.parse(label)));
+function guest(label: string): SeatOccupant {
+  return SeatOccupant.anonymous(unwrapOk(SeatLabel.parse(label)));
 }
 
 /** Seats an hour apart from 10:00, so the party is valid whoever sits where. */
-function visitOf(...subjects: SeatSubjectType[]): AppointmentEntity {
+function visitOf(...occupants: SeatOccupant[]): Appointment {
   return appointmentFixture({
     ownerUserId: OWNER,
-    seats: subjects.map((subject, index) =>
+    seats: occupants.map((occupant, index) =>
       seatFixture({
-        id: SeatId.of(`seat-${index}`),
-        subject,
+        seatId: SeatId.of(`seat-${index}`),
+        occupant,
         barberId: BarberId.of(`barber-${index}`),
-        startMs: fixtureTodayAt(10 + index),
+        startMinutes: at(10 + index),
       }),
     ),
   });
@@ -447,46 +456,50 @@ function visitOf(...subjects: SeatSubjectType[]): AppointmentEntity {
 describe('MoveSystem — which seats the booker can move', () => {
   it('names the booker’s own seat and every anonymous guest, in seat order — never the companion', () => {
     const visit = visitOf(
-      SeatSubject.account(OWNER, SeatRelationship.Self),
-      SeatSubject.account(SON, SeatRelationship.Companion),
+      SeatOccupant.account(OWNER, SubjectRelationship.Self),
+      SeatOccupant.account(SON, SubjectRelationship.Companion),
       guest('Мария'),
     );
     expect(
-      MoveSystem.seatsTheBookerCanMove(visit, OWNER).map((s) => s.subject.kind),
-    ).toEqual(['account', 'anonymous']);
+      MoveSystem.seatsTheBookerCanMove(visit, OWNER).map((s) => s.seatSubject),
+    ).toEqual(['ACCOUNT', 'ANONYMOUS']);
     expect(MoveSystem.hasSeatTheBookerCanMove(visit, OWNER)).toBe(true);
   });
 
   it('has nothing for the booker once only a companion is left — the shop moves that visit', () => {
-    const visit = visitOf(SeatSubject.account(SON, SeatRelationship.Companion));
+    const visit = visitOf(
+      SeatOccupant.account(SON, SubjectRelationship.Companion),
+    );
     expect(MoveSystem.seatsTheBookerCanMove(visit, OWNER)).toEqual([]);
     expect(MoveSystem.hasSeatTheBookerCanMove(visit, OWNER)).toBe(false);
   });
 
-  it('does not hand the booker a `self` seat that belongs to another account', () => {
-    const visit = visitOf(SeatSubject.account(SON, SeatRelationship.Self));
+  it('does not hand the booker a `SELF` seat that belongs to another account', () => {
+    const visit = visitOf(SeatOccupant.account(SON, SubjectRelationship.Self));
     expect(MoveSystem.hasSeatTheBookerCanMove(visit, OWNER)).toBe(false);
   });
 
   it('measures a move from the booker’s EARLIEST seat — a companion going first does not move the anchor', () => {
     const visit = visitOf(
-      SeatSubject.account(SON, SeatRelationship.Companion),
-      SeatSubject.account(OWNER, SeatRelationship.Self),
+      SeatOccupant.account(SON, SubjectRelationship.Companion),
+      SeatOccupant.account(OWNER, SubjectRelationship.Self),
       guest('Мария'),
     );
-    expect(MoveSystem.moveAnchor(visit, OWNER)).toBe(fixtureTodayAt(11));
+    expect(MoveSystem.moveAnchor(visit, OWNER)).toBe(at(11));
   });
 
   it('has no anchor when nothing is the booker’s', () => {
-    const visit = visitOf(SeatSubject.account(SON, SeatRelationship.Companion));
+    const visit = visitOf(
+      SeatOccupant.account(SON, SubjectRelationship.Companion),
+    );
     expect(MoveSystem.moveAnchor(visit, OWNER)).toBeNull();
   });
 
   it('agrees with the per-seat rule, seat for seat', () => {
     const visit = visitOf(
-      SeatSubject.account(OWNER, SeatRelationship.Self),
-      SeatSubject.account(SON, SeatRelationship.Self),
-      SeatSubject.account(SON, SeatRelationship.Companion),
+      SeatOccupant.account(OWNER, SubjectRelationship.Self),
+      SeatOccupant.account(SON, SubjectRelationship.Self),
+      SeatOccupant.account(SON, SubjectRelationship.Companion),
       guest('Гост 1'),
     );
     expect(MoveSystem.seatsTheBookerCanMove(visit, OWNER)).toEqual([
@@ -496,6 +509,21 @@ describe('MoveSystem — which seats the booker can move', () => {
   });
 });
 
+function terms(
+  price: number,
+  duration: number,
+  setup = 0,
+  cleanup = 0,
+): ServiceTerms {
+  return ServiceTerms.of(
+    unwrapOk(PriceCents.of(price)),
+    Currency.EUR,
+    unwrapOk(DurationMinutes.of(duration)),
+    unwrapOk(MinuteCount.of(setup)),
+    unwrapOk(MinuteCount.of(cleanup)),
+  );
+}
+
 describe('MoveSystem.release — what a move hands back before it re-places the visit', () => {
   it('holds each seat’s barber for setup, the service and cleanup — the span the busy projection records', () => {
     const ivan = BarberId.of('ivan');
@@ -503,31 +531,27 @@ describe('MoveSystem.release — what a move hands back before it re-places the 
     const visit = appointmentFixture({
       seats: [
         seatFixture({
-          id: SeatId.of('a'),
+          seatId: SeatId.of('a'),
           barberId: ivan,
-          terms: {
-            ...ServiceTerms.of(2500, 'EUR', 45, 5, 10),
-            catalogPriceMinorUnits: null,
-            catalogDurationMinutes: null,
-          },
-          startMs: fixtureTodayAt(10),
+          terms: Seat.termsOf(terms(2500, 45, 5, 10), null),
+          startMinutes: at(10),
         }),
         seatFixture({
-          id: SeatId.of('b'),
+          seatId: SeatId.of('b'),
           barberId: niko,
-          startMs: fixtureTodayAt(10, 30),
+          startMinutes: at(10, 30),
         }),
       ],
     });
     const chairs = MoveSystem.release(visit);
     expect(chairs.map((chair) => chair.barberId)).toEqual([ivan, niko]);
-    expect(chairs[0]?.occupied).toEqual({
-      startMs: fixtureTodayAt(9, 55),
-      endMs: fixtureTodayAt(10, 55),
+    expect(chairs[0]).toMatchObject({
+      startMinutes: at(9, 55),
+      endMinutes: 655,
     });
-    expect(chairs[1]?.occupied).toEqual({
-      startMs: fixtureTodayAt(10, 30),
-      endMs: fixtureTodayAt(11),
+    expect(chairs[1]).toMatchObject({
+      startMinutes: at(10, 30),
+      endMinutes: 660,
     });
   });
 });
@@ -535,8 +559,8 @@ describe('MoveSystem.release — what a move hands back before it re-places the 
 describe('MoveSystem.facts — what the booking flow decides a move with', () => {
   it('carries the shop’s seats by their distance from the anchor, on their sold terms, and every chair', () => {
     const visit = visitOf(
-      SeatSubject.account(OWNER, SeatRelationship.Self),
-      SeatSubject.account(SON, SeatRelationship.Companion),
+      SeatOccupant.account(OWNER, SubjectRelationship.Self),
+      SeatOccupant.account(SON, SubjectRelationship.Companion),
     );
     const facts = MoveSystem.facts(visit, OWNER);
     expect(facts?.riders).toEqual([
@@ -553,7 +577,7 @@ describe('MoveSystem.facts — what the booking flow decides a move with', () =>
     expect(facts?.release).toEqual(MoveSystem.release(visit));
     expect(
       MoveSystem.facts(
-        visitOf(SeatSubject.account(SON, SeatRelationship.Companion)),
+        visitOf(SeatOccupant.account(SON, SubjectRelationship.Companion)),
         OWNER,
       ),
     ).toBeNull();
@@ -568,89 +592,84 @@ const CUT = ServiceId.of('svc-cut');
 const BEARD = ServiceId.of('svc-beard');
 const CENTER = LocationId.of('loc-center');
 
-function seat(overrides: Omit<Partial<Seat>, 'id'> & { id: string }): Seat {
-  return seatFixture({
-    ...overrides,
-    id: SeatId.of(overrides.id),
-  });
+function seat(id: string, overrides: SeatFixtureOverrides = {}): Seat {
+  return seatFixture({ ...overrides, seatId: SeatId.of(id) });
 }
 
 /** The father at 10:00 with Ivan and his son beside him with Petar. */
 function party(
   sonOffsetMinutes = 0,
-  sonSubject?: SeatSubjectType,
-): AppointmentEntity {
+  sonOccupant?: SeatOccupant,
+  lifecycle?: BookingLifecycle,
+): Appointment {
   return appointmentFixture({
     locationId: CENTER,
     ownerUserId: OWNER,
+    ...(lifecycle === undefined ? {} : { lifecycle }),
     seats: [
-      seat({
-        id: 'seat-father',
+      seat('seat-father', {
         serviceId: CUT,
         barberId: IVAN,
-        barberPref: BarberPrefKind.Specific,
-        startMs: fixtureTodayAt(10),
-        subject: SeatSubject.account(OWNER, SeatRelationship.Self),
+        barberPreference: BarberPreference.Specific,
+        startMinutes: at(10),
+        occupant: SeatOccupant.account(OWNER, SubjectRelationship.Self),
       }),
-      seat({
-        id: 'seat-son',
+      seat('seat-son', {
         serviceId: BEARD,
         barberId: PETAR,
-        barberPref: BarberPrefKind.Any,
-        startMs: fixtureTodayAt(10) + sonOffsetMinutes * MINUTE,
-        terms: {
-          ...ServiceTerms.unpadded(1500, 'EUR', 30),
-          catalogPriceMinorUnits: null,
-          catalogDurationMinutes: null,
-        },
-        subject:
-          sonSubject ?? SeatSubject.account(SON, SeatRelationship.Companion),
+        barberPreference: BarberPreference.Any,
+        startMinutes: minute(600 + sonOffsetMinutes),
+        terms: Seat.termsOf(terms(1500, 30), null),
+        occupant:
+          sonOccupant ??
+          SeatOccupant.account(SON, SubjectRelationship.Companion),
       }),
     ],
   });
 }
 
 function cartSeat(
-  startMs: number,
-  overrides: Partial<MoveCartSeat> = {},
-): MoveCartSeat {
+  startMinutes: MinuteOfDay,
+  overrides: Partial<MoveCartSeatInput> = {},
+): MoveCartSeatInput {
   return {
-    subjectKind: MoveCartSubjectKind.Self,
+    moveSubjectRole: MoveSubjectRole.Self,
     label: null,
     serviceId: CUT,
     variantId: null,
     barberId: IVAN,
-    barberPref: BarberPrefKind.Specific,
-    startMs,
+    barberPreference: BarberPreference.Specific,
+    startMinutes,
     ...overrides,
   };
 }
 
 function plan(
-  appointment: AppointmentEntity,
-  seats: readonly MoveCartSeat[],
+  appointment: Appointment,
+  seats: readonly MoveCartSeatInput[],
   locationId: LocationId = CENTER,
+  localDate: LocalDate = FIXTURE_TODAY,
 ) {
-  return MoveSystem.plan(appointment, OWNER, { locationId, seats });
+  return MoveSystem.plan(appointment, OWNER, { locationId, localDate, seats });
 }
 
 describe('MoveSystem.plan — a companion the cart cannot express', () => {
   it('carries the companion forward with their identity and facts, beside the client at the new time', () => {
-    const planned = unwrapOk(plan(party(), [cartSeat(fixtureTodayAt(14))]));
+    const planned = unwrapOk(plan(party(), [cartSeat(at(14))]));
     expect(planned.carried).toHaveLength(1);
-    const son = planned.carried[0];
-    expect(son?.seatId).toBe('seat-son');
-    expect(son?.userId).toBe(SON);
-    expect(son?.seat.serviceId).toBe(BEARD);
-    expect(son?.seat.barberId).toBe(PETAR);
-    expect(son?.seat.barberPref).toBe('any');
+    const carriedSon = planned.carried[0];
+    expect(carriedSon?.seatId).toBe('seat-son');
+    expect(carriedSon?.userId).toBe(SON);
+    expect(carriedSon?.seat.serviceId).toBe(BEARD);
+    expect(carriedSon?.seat.barberId).toBe(PETAR);
+    expect(carriedSon?.seat.barberPreference).toBe('ANY');
     // The terms he was SOLD at — a move is not a re-sale.
-    expect(son?.terms).toMatchObject({
-      priceMinorUnits: 1500,
+    expect(carriedSon?.terms).toMatchObject({
+      priceCents: 1500,
       durationMinutes: 30,
     });
     // Parallel stays parallel.
-    expect(son?.startMs).toBe(fixtureTodayAt(14));
+    expect(carriedSon?.startMinutes).toBe(at(14));
     expect(planned.unchanged).toBe(false);
   });
 
@@ -665,21 +684,19 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
         { ...(party(55).seats[1] as Seat), barberId: IVAN },
       ],
     };
-    const planned = unwrapOk(plan(sequential, [cartSeat(fixtureTodayAt(14))]));
-    expect(planned.carried[0]?.startMs).toBe(fixtureTodayAt(14, 55));
+    const planned = unwrapOk(plan(sequential, [cartSeat(at(14))]));
+    expect(planned.carried[0]?.startMinutes).toBe(at(14, 55));
     expect(planned.carried[0]?.seat.barberId).toBe('ivan');
   });
 
-  it('carries a `self` seat bound to ANOTHER account — `self` alone is not the owner’s', () => {
-    const foreignSelf = SeatSubject.account(SON, SeatRelationship.Self);
-    const planned = unwrapOk(
-      plan(party(55, foreignSelf), [cartSeat(fixtureTodayAt(14))]),
-    );
-    expect(planned.replaced.map((s) => s.id)).toEqual(['seat-father']);
-    expect(planned.carried.map((line) => line.seat.subject)).toEqual([
+  it('carries a `SELF` seat bound to ANOTHER account — `SELF` alone is not the owner’s', () => {
+    const foreignSelf = SeatOccupant.account(SON, SubjectRelationship.Self);
+    const planned = unwrapOk(plan(party(55, foreignSelf), [cartSeat(at(14))]));
+    expect(planned.replaced.map((s) => s.seatId)).toEqual(['seat-father']);
+    expect(planned.carried.map((line) => SeatOccupant.of(line.seat))).toEqual([
       foreignSelf,
     ]);
-    expect(planned.carried[0]?.startMs).toBe(fixtureTodayAt(14, 55));
+    expect(planned.carried[0]?.startMinutes).toBe(at(14, 55));
   });
 
   it('preserves any relative offset, early or late, parallel or sequential (property)', () => {
@@ -690,12 +707,12 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
           .map((quarters) => quarters * 15),
         fc.integer({ min: -12, max: 12 }).map((steps) => steps * 5),
         (targetMinutes, offsetMinutes) => {
-          const target = fixtureTodayAt(0) + targetMinutes * MINUTE;
+          const target = minute(targetMinutes);
           const planned = unwrapOk(
             plan(party(offsetMinutes), [cartSeat(target)]),
           );
-          expect((planned.carried[0]?.startMs ?? 0) - target).toBe(
-            offsetMinutes * MINUTE,
+          expect((planned.carried[0]?.startMinutes ?? 0) - target).toBe(
+            offsetMinutes,
           );
         },
       ),
@@ -705,9 +722,19 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
 
   it('refuses a visit that holds nobody but a companion — the shop moves it', () => {
     const onlySon = { ...party(), seats: [party().seats[1] as Seat] };
-    expect(unwrapErr(plan(onlySon, [cartSeat(fixtureTodayAt(14))]))).toEqual({
-      code: MoveErrorCode.CarriedSeatUnplaceable,
+    expect(unwrapErr(plan(onlySon, [cartSeat(at(14))]))).toEqual({
+      errorCode: MoveErrorCode.CarriedSeatUnplaceable,
       refusal: CarriedSeatRefusal.ShopOnly,
+      seatIds: ['seat-son'],
+    });
+  });
+
+  it('refuses a carried seat its kept distance would take off the shop day', () => {
+    // The son sits half an hour before his father; the father moves to
+    // 00:10, so the son would start at 23:40 the day before.
+    expect(unwrapErr(plan(party(-30), [cartSeat(at(0, 10))]))).toEqual({
+      errorCode: MoveErrorCode.CarriedSeatUnplaceable,
+      refusal: CarriedSeatRefusal.BarberUnavailable,
       seatIds: ['seat-son'],
     });
   });
@@ -716,20 +743,15 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
     expect(
       unwrapErr(
         plan(party(), [
-          cartSeat(fixtureTodayAt(14), {
-            subjectKind: MoveCartSubjectKind.Companion,
-          }),
+          cartSeat(at(14), { moveSubjectRole: MoveSubjectRole.Companion }),
         ]),
       ),
-    ).toEqual(BookingCommitError.invalidInput('subject'));
+    ).toEqual(BookingError.invalidInput('subject'));
   });
 
   it('never lets a cart line borrow a carried seat’s terms by naming its line — the server re-keys both', () => {
     const planned = unwrapOk(
-      plan(party(), [
-        cartSeat(fixtureTodayAt(14)),
-        cartSeat(fixtureTodayAt(15)),
-      ]),
+      plan(party(), [cartSeat(at(14)), cartSeat(at(15))]),
     );
     expect(planned.cart.map((line) => line.lineId)).toEqual([
       'cart-0',
@@ -741,9 +763,16 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
 
 describe('MoveSystem.plan — the self and guest seats behave as before', () => {
   it('answers a retried move as the move it already was — nothing changes', () => {
-    const planned = unwrapOk(plan(party(), [cartSeat(fixtureTodayAt(10))]));
+    const planned = unwrapOk(plan(party(), [cartSeat(at(10))]));
     expect(planned.unchanged).toBe(true);
-    expect(planned.carried[0]?.startMs).toBe(fixtureTodayAt(10));
+    expect(planned.carried[0]?.startMinutes).toBe(at(10));
+  });
+
+  it('is not the move it already was on ANOTHER day at the same minute', () => {
+    const tomorrow = LocalDate.addDays(FIXTURE_TODAY, 1);
+    expect(
+      unwrapOk(plan(party(), [cartSeat(at(10))], CENTER, tomorrow)).unchanged,
+    ).toBe(false);
   });
 
   it('answers a retried move with a NAMED guest as a replay — the guest travels under the label the visit stored', () => {
@@ -751,24 +780,23 @@ describe('MoveSystem.plan — the self and guest seats behave as before', () => 
       ...party(),
       seats: [
         party().seats[0] as Seat,
-        seat({
-          id: 'seat-guest',
+        seat('seat-guest', {
           serviceId: BEARD,
           barberId: PETAR,
-          barberPref: null,
-          startMs: fixtureTodayAt(10),
-          subject: guest('Синът'),
+          barberPreference: null,
+          startMinutes: at(10),
+          occupant: guest('Синът'),
         }),
       ],
     };
     const cart = [
-      cartSeat(fixtureTodayAt(10)),
-      cartSeat(fixtureTodayAt(10), {
-        subjectKind: MoveCartSubjectKind.Guest,
+      cartSeat(at(10)),
+      cartSeat(at(10), {
+        moveSubjectRole: MoveSubjectRole.Guest,
         label: ' Синът ',
         serviceId: BEARD,
         barberId: PETAR,
-        barberPref: null,
+        barberPreference: null,
       }),
     ];
     expect(unwrapOk(plan(withGuest, cart)).unchanged).toBe(true);
@@ -782,95 +810,74 @@ describe('MoveSystem.plan — the self and guest seats behave as before', () => 
       ...party(),
       seats: [
         party().seats[0] as Seat,
-        {
-          ...(party().seats[1] as Seat),
-          outcome: SeatOutcome.worked(fixtureTodayAt(10, 30)),
-        },
+        Seat.withOutcome(
+          party().seats[1] as Seat,
+          SeatOutcome.worked(utcMs('2026-09-28T10:30:00+03:00')),
+        ),
       ],
     };
-    expect(unwrapErr(plan(served, [cartSeat(fixtureTodayAt(14))]))).toEqual(
-      BookingCommitError.invalidInput('seat_resolved'),
+    expect(unwrapErr(plan(served, [cartSeat(at(14))]))).toEqual(
+      BookingError.invalidInput('seat_resolved'),
     );
-    expect(plan(served, [cartSeat(fixtureTodayAt(10))]).ok).toBe(true);
+    expect(plan(served, [cartSeat(at(10))]).ok).toBe(true);
   });
 
   it('refuses a visit the graph will not let go, and an empty cart', () => {
-    const done = {
-      ...party(),
-      bookingStatus: BookingStatus.complete(fixtureTodayAt(11)),
-    };
-    expect(unwrapErr(plan(done, [cartSeat(fixtureTodayAt(14))]))).toEqual(
-      BookingCommitError.invalidInput('status'),
+    const done = party(
+      0,
+      undefined,
+      BookingLifecycle.complete(utcMs('2026-09-28T11:00:00+03:00')),
+    );
+    expect(unwrapErr(plan(done, [cartSeat(at(14))]))).toEqual(
+      BookingError.invalidInput('status'),
     );
     expect(unwrapErr(plan(party(), []))).toEqual(
-      BookingCommitError.invalidInput('seats'),
+      BookingError.invalidInput('seats'),
     );
   });
 
   it('hands back every chair the visit holds before it is placed again', () => {
-    const planned = unwrapOk(plan(party(), [cartSeat(fixtureTodayAt(14))]));
+    const planned = unwrapOk(plan(party(), [cartSeat(at(14))]));
     expect(planned.release).toEqual(MoveSystem.release(party()));
   });
 });
 
 describe('MoveSystem.carriedRefusalOf — what the client is told to phone about', () => {
   it('names the barber, the service, the window or the party, from the commit refusal', () => {
-    const cases: readonly [
-      Parameters<typeof MoveSystem.carriedRefusalOf>[0],
-      string,
-    ][] = [
+    const cases: readonly [BookingError, string][] = [
       [
-        BookingCommitError.slotUnavailable(PETAR, fixtureTodayAt(14), 1),
+        BookingError.slotUnavailable(PETAR, FIXTURE_TODAY, at(14), 1),
         'barber_unavailable',
       ],
       [
-        {
-          code: 'booking.commit.barber_not_rostered',
-          barberId: 'petar',
-          dayKey: '2026-09-28',
-        },
+        BookingError.barberNotRostered(PETAR, FIXTURE_TODAY),
         'barber_unavailable',
       ],
+      [BookingError.unknownService('svc-beard'), 'service_unavailable'],
       [
-        { code: 'booking.commit.unknown_service', serviceId: 'svc-beard' },
+        BookingError.serviceNotAtLocation('svc-beard', 'loc-center'),
         'service_unavailable',
       ],
       [
-        {
-          code: 'booking.commit.service_not_at_location',
-          serviceId: 'svc-beard',
-          locationId: 'loc-center',
-        },
-        'service_unavailable',
+        BookingError.tooSoon(unwrapOk(MinuteCount.of(120))),
+        'outside_booking_window',
       ],
+      [BookingError.beyondHorizon(2), 'outside_booking_window'],
+      [BookingError.invalidInput('variantId'), 'service_unavailable'],
+      [BookingError.invalidInput('person_overlap'), 'party_conflict'],
       [
-        { code: 'booking.commit.too_soon', minLeadMinutes: 120 },
+        BookingError.invariantViolated([
+          SchedulingError.appointmentPastStartTime(),
+        ]),
         'outside_booking_window',
       ],
       [
-        { code: 'booking.commit.beyond_horizon', horizonMonths: 2 },
-        'outside_booking_window',
-      ],
-      [BookingCommitError.invalidInput('variantId'), 'service_unavailable'],
-      [BookingCommitError.invalidInput('person_overlap'), 'party_conflict'],
-      [
-        {
-          code: 'booking.commit.invariant_violated',
-          violations: [SchedulingError.appointmentPastStartTime()],
-        },
-        'outside_booking_window',
-      ],
-      [
-        {
-          code: 'booking.commit.invariant_violated',
-          violations: [SchedulingError.appointmentBarberDoubleBooked('petar')],
-        },
+        BookingError.invariantViolated([
+          SchedulingError.appointmentBarberDoubleBooked(PETAR),
+        ]),
         'party_conflict',
       ],
-      [
-        { code: 'booking.commit.party_too_large', maxPartySize: 5 },
-        'party_conflict',
-      ],
+      [BookingError.partyTooLarge(5), 'party_conflict'],
     ];
     for (const [error, refusal] of cases) {
       expect(MoveSystem.carriedRefusalOf(error)).toBe(refusal);
@@ -881,23 +888,22 @@ describe('MoveSystem.carriedRefusalOf — what the client is told to phone about
 /* ── The plan, decided (reschedule-booking.use-case.spec.ts L421, L699) ── */
 
 describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
-  const DAYS = dayTableFixture('2026-09-27', '2026-11-30');
   const MONDAY_09_18 = (barberId: BarberId) => ({
     barberId,
     versions: ScheduleVersion.startingWith(
-      [ShiftSegment.of(Weekday.Mon, CENTER, 9 * 60, 18 * 60)],
-      DayKey.of('2026-01-01'),
+      [ShiftSegment.of(Weekday.Mon, CENTER, at(9), endMinute(18 * 60))],
+      localDate('2026-01-01'),
     ),
-    turnaroundMinutes: 0,
+    turnaroundMinutes: MinuteCount.ZERO,
   });
-  const offered = (id: ServiceId, minutes: number): ServiceEntity => {
-    const terms = ServiceTerms.unpadded(2500, 'EUR', minutes);
+  const servedBoth = (id: ServiceId, minutes: number): Service => {
+    const sold = terms(2500, minutes);
     return serviceFixture({
       id,
-      baseTerms: terms,
+      ...sold,
       offerings: [
-        { barberId: IVAN, base: terms, overrides: [] },
-        { barberId: PETAR, base: terms, overrides: [] },
+        { barberId: IVAN, overrides: [], ...sold },
+        { barberId: PETAR, overrides: [], ...sold },
       ],
       locationIds: [CENTER],
     });
@@ -909,34 +915,46 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
    * stored people at their shifted starts, at the terms they were sold at.
    */
   function decide(planned: MovePlan) {
-    const cart: RequestedSeat[] = planned.cart.map((line) => ({
+    const cart: RequestedSeatInput[] = planned.cart.map((line) => ({
       lineId: line.lineId,
       serviceId: line.seat.serviceId,
       variantId: line.seat.variantId,
       barberId: line.seat.barberId,
-      barberPref: line.seat.barberPref,
-      startMs: line.seat.startMs,
+      barberPreference: line.seat.barberPreference,
+      startMinutes: line.seat.startMinutes,
       subject:
-        line.seat.subjectKind === MoveCartSubjectKind.Guest
-          ? { kind: 'guest', label: line.seat.label ?? '', guestKey: null }
-          : { kind: 'self' },
+        line.seat.moveSubjectRole === MoveSubjectRole.Guest
+          ? {
+              requestedSubjectRole: RequestedSubjectRole.Guest,
+              label: line.seat.label ?? '',
+              guestKey: null,
+            }
+          : { requestedSubjectRole: RequestedSubjectRole.Self },
     }));
-    const carried: RequestedSeat[] = planned.carried.map((line) => ({
+    const carried: RequestedSeatInput[] = planned.carried.map((line) => ({
       lineId: line.lineId,
       serviceId: line.seat.serviceId,
       variantId: line.seat.variantId,
       barberId: line.seat.barberId,
-      barberPref: line.seat.barberPref,
-      startMs: line.startMs,
+      barberPreference: line.seat.barberPreference,
+      startMinutes: line.startMinutes,
       subject:
         line.userId === null
-          ? { kind: 'guest', label: 'Гост', guestKey: null }
-          : { kind: 'companion', userId: line.userId },
+          ? {
+              requestedSubjectRole: RequestedSubjectRole.Guest,
+              label: 'Гост',
+              guestKey: null,
+            }
+          : {
+              requestedSubjectRole: RequestedSubjectRole.Companion,
+              companionUserId: line.userId,
+            },
     }));
     let counter = 0;
     return BookingDecisionSystem.decide(
       {
         locationId: CENTER,
+        localDate: FIXTURE_TODAY,
         seats: [...cart, ...carried],
         attemptId: null,
         bookedFromAppointmentId: null,
@@ -944,9 +962,8 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
         placement: null,
       },
       {
-        zone: FIXTURE_ZONE,
         shopHours: [],
-        services: [offered(CUT, 45), offered(BEARD, 30)],
+        services: [servedBoth(CUT, 45), servedBoth(BEARD, 30)],
         schedules: [MONDAY_09_18(IVAN), MONDAY_09_18(PETAR)],
         busy: [],
         exceptions: [],
@@ -955,18 +972,13 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
       PlacementPolicy.clientDefault(),
       planned.release,
       {
-        nowMs: FIXTURE_NOW_MS,
+        now: FIXTURE_NOW,
+        startUtcMs: utcMs('2026-09-28T14:00:00+03:00'),
         nextId: () => `seat-${counter++}`,
-        days: DAYS,
         ownerUserId: OWNER,
-        termsOverrides: planned.carried.map((line) => ({
-          seatKey: line.lineId,
-          priceMinorUnits: line.terms.priceMinorUnits,
-          currencyCode: line.terms.currencyCode,
-          durationMinutes: line.terms.durationMinutes,
-          setupMinutes: line.terms.setupMinutes,
-          cleanupMinutes: line.terms.cleanupMinutes,
-        })),
+        termsOverrides: planned.carried.map((line) =>
+          StaffTermsOverride.of(SeatKeyText.of(line.lineId), line.terms),
+        ),
         standing: [],
         stood: [],
         parsePhone: () => null,
@@ -974,26 +986,26 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
     );
   }
 
-  it('seats that foreign `self` BESIDE the owner at the new time — two accounts, two chairs, not one person twice', () => {
+  it('seats that foreign `SELF` BESIDE the owner at the new time — two accounts, two chairs, not one person twice', () => {
     // Side by side with Petar. The rebuilt owner seat and the carried one
-    // both said `self`; the person is the ACCOUNT, so they are two people.
-    const foreignSelf = SeatSubject.account(SON, SeatRelationship.Self);
-    const planned = unwrapOk(
-      plan(party(0, foreignSelf), [cartSeat(fixtureTodayAt(14))]),
-    );
-    const son = planned.carried[0];
-    expect(son?.seat.subject).toEqual(foreignSelf);
-    expect(son?.seat.barberId).toBe('petar');
-    expect(son?.startMs).toBe(fixtureTodayAt(14));
+    // both said `SELF`; the person is the ACCOUNT, so they are two people.
+    const foreignSelf = SeatOccupant.account(SON, SubjectRelationship.Self);
+    const planned = unwrapOk(plan(party(0, foreignSelf), [cartSeat(at(14))]));
+    const carriedSon = planned.carried[0];
+    expect(
+      carriedSon === undefined ? null : SeatOccupant.of(carriedSon.seat),
+    ).toEqual(foreignSelf);
+    expect(carriedSon?.seat.barberId).toBe('petar');
+    expect(carriedSon?.startMinutes).toBe(at(14));
 
     const decided = unwrapOk(decide(planned));
     const seated = decided.appointment.seats.map((seat) => [
       seat.barberId,
-      seat.startMs,
+      seat.startMinutes,
     ]);
     expect(seated).toEqual([
-      ['ivan', fixtureTodayAt(14)],
-      ['petar', fixtureTodayAt(14)],
+      ['ivan', at(14)],
+      ['petar', at(14)],
     ]);
   });
 
@@ -1009,9 +1021,9 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
       ],
     };
     const planned = unwrapOk(
-      plan(swapped, [cartSeat(fixtureTodayAt(14), { barberId: IVAN })]),
+      plan(swapped, [cartSeat(at(14), { barberId: IVAN })]),
     );
-    expect(planned.carried[0]?.startMs).toBe(fixtureTodayAt(14));
+    expect(planned.carried[0]?.startMinutes).toBe(at(14));
     const refused = unwrapErr(decide(planned));
     expect(MoveSystem.carriedRefusalOf(refused)).toBe(
       CarriedSeatRefusal.PartyConflict,
@@ -1025,21 +1037,23 @@ describe('MoveSystem — a named move remembers its name', () => {
   it('answers a replay from the ledger, and refuses the same name on a DIFFERENT move', () => {
     const request = {
       locationId: CENTER,
-      seats: [cartSeat(fixtureTodayAt(14))],
+      localDate: FIXTURE_TODAY,
+      seats: [cartSeat(at(14))],
     };
+    const name = OperationId.of('move:a1');
     const digest = MoveSystem.digestBasis(request);
     expect(digest).toBe(MoveSystem.digestBasis({ ...request }));
-    const ledger = AppointmentEditSystem.record([], 'move:a1', 4, digest);
+    const ledger = AppointmentEditSystem.record([], name, 4, digest);
     expect(
-      AppointmentEditSystem.ledgerVerdict(ledger, 'move:a1', digest).kind,
-    ).toBe(LedgerVerdictKind.Replay);
+      AppointmentEditSystem.ledgerVerdict(ledger, name, digest).ledgerVerdict,
+    ).toBe(LedgerVerdict.Replay);
     const other = MoveSystem.digestBasis({
       ...request,
-      seats: [cartSeat(fixtureTodayAt(15))],
+      seats: [cartSeat(at(15))],
     });
     expect(
-      AppointmentEditSystem.ledgerVerdict(ledger, 'move:a1', other).kind,
-    ).toBe(LedgerVerdictKind.Mismatch);
+      AppointmentEditSystem.ledgerVerdict(ledger, name, other).ledgerVerdict,
+    ).toBe(LedgerVerdict.Mismatch);
   });
 
   it('keeps a first-time no-op unproven — a new name for where the visit already is wrote nothing', () => {
@@ -1047,16 +1061,26 @@ describe('MoveSystem — a named move remembers its name', () => {
     // where the cart asks (`unchanged`), and the ledger has never heard the
     // new name — the pipeline answers "nothing to do" and stamps nothing,
     // so a later DIFFERENT move under that name is not taken for a replay.
-    const planned = unwrapOk(plan(party(), [cartSeat(fixtureTodayAt(10))]));
+    const planned = unwrapOk(plan(party(), [cartSeat(at(10))]));
     expect(planned.unchanged).toBe(true);
     const digest = MoveSystem.digestBasis({
       locationId: CENTER,
-      seats: [cartSeat(fixtureTodayAt(10))],
+      localDate: FIXTURE_TODAY,
+      seats: [cartSeat(at(10))],
     });
-    const ledger = AppointmentEditSystem.record([], 'move:a1', 4, digest);
+    const ledger = AppointmentEditSystem.record(
+      [],
+      OperationId.of('move:a1'),
+      4,
+      digest,
+    );
     expect(
-      AppointmentEditSystem.ledgerVerdict(ledger, 'move:another', digest).kind,
-    ).toBe(LedgerVerdictKind.New);
+      AppointmentEditSystem.ledgerVerdict(
+        ledger,
+        OperationId.of('move:another'),
+        digest,
+      ).ledgerVerdict,
+    ).toBe(LedgerVerdict.New);
   });
 
   // reschedule-booking.use-case.spec.ts L1332 ('treats a name that is not an
@@ -1068,16 +1092,15 @@ describe('MoveSystem — a named move remembers its name', () => {
 describe('MoveSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const appointment = deepFreeze(party(55));
-    const cart = deepFreeze([cartSeat(fixtureTodayAt(14))]);
-    const once = MoveSystem.plan(appointment, OWNER, {
+    const cart = deepFreeze([cartSeat(at(14))]);
+    const request = {
       locationId: CENTER,
+      localDate: FIXTURE_TODAY,
       seats: cart,
-    });
-    const twice = MoveSystem.plan(appointment, OWNER, {
-      locationId: CENTER,
-      seats: cart,
-    });
+    };
+    const once = MoveSystem.plan(appointment, OWNER, request);
+    const twice = MoveSystem.plan(appointment, OWNER, request);
     expect(twice).toEqual(once);
-    expect(appointment.seats[1]?.startMs).toBe(fixtureTodayAt(10, 55));
+    expect(appointment.seats[1]?.startMinutes).toBe(at(10, 55));
   });
 });

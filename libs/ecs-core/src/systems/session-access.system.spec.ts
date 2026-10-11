@@ -3,17 +3,16 @@ import { describe, expect, it } from 'vitest';
 import { AuthClaims } from '../components/auth-claims.data';
 import { type Principal, Principal as P } from '../components/principal.data';
 import { Role } from '../components/role.data';
-import { TenantId } from '../components/tenant-id.data';
-import { UserId } from '../entities/user.entity';
+import { TenantId, UserId } from '../primitives/ids.primitive';
 import { deepFreeze, unwrapOk } from '../testing';
 import {
   AccessTarget,
   AccessVerdict,
   REFRESH_BACKOFF_MS,
-  RouteGateKind,
+  RouteGate,
   SessionAccessSystem,
-  type SessionReadiness,
-  SessionReadinessKind,
+  SessionReadiness,
+  type SessionReadinessState,
 } from './session-access.system';
 
 /*
@@ -21,7 +20,7 @@ import {
  * ensure-session-ready.use-case.spec.ts, COPIED and re-targeted: the
  * use case's loop (observe → refresh on the backoff → observe) is driven
  * here by `SessionAccessSystem.readiness` over the same principal
- * sequences, and the refresh count is the number of `refresh` steps taken.
+ * sequences, and the refresh count is the number of `REFRESH` steps taken.
  * Then the four route guards of apps/web/src/app/guards/* as decisions
  * (`home.guard.spec.ts`'s three cases copied).
  */
@@ -31,15 +30,15 @@ const TENANT = TenantId.of('creativo');
 
 const anonymous = P.anonymous();
 const onboarding = P.fromClaims({
-  uid: UID,
+  userId: UID,
   claims: AuthClaims.onboarding(TENANT),
 });
 const client = P.fromClaims({
-  uid: UID,
+  userId: UID,
   claims: unwrapOk(AuthClaims.active(TENANT, [Role.Client])),
 });
 const staff = P.fromClaims({
-  uid: UID,
+  userId: UID,
   claims: unwrapOk(AuthClaims.active(TENANT, [Role.Barber, Role.Admin])),
 });
 
@@ -58,11 +57,11 @@ function runLoop(principals: readonly Principal[]): {
   const delays: number[] = [];
   let principal = observe(0);
   for (;;) {
-    const step: SessionReadiness = SessionAccessSystem.readiness(
+    const step: SessionReadinessState = SessionAccessSystem.readiness(
       principal,
       refreshCount,
     );
-    if (step.kind !== SessionReadinessKind.Refresh) break;
+    if (step.sessionReadiness !== SessionReadiness.Refresh) break;
     delays.push(step.delayMs);
     refreshCount++;
     principal = observe(refreshCount);
@@ -73,7 +72,7 @@ function runLoop(principals: readonly Principal[]): {
 describe('SessionAccessSystem.readiness (ensure-session-ready.use-case.spec.ts)', () => {
   it('returns immediately when already active — no refresh needed', () => {
     const run = runLoop([client]);
-    expect(run.principal.kind).toBe(client.kind);
+    expect(run.principal.principalKind).toBe(client.principalKind);
     expect(run.refreshCount).toBe(0);
   });
 
@@ -89,46 +88,46 @@ describe('SessionAccessSystem.readiness (ensure-session-ready.use-case.spec.ts)'
     expect(run.refreshCount).toBe(REFRESH_BACKOFF_MS.length);
     expect(run.delays).toEqual(REFRESH_BACKOFF_MS);
     expect(SessionAccessSystem.readiness(onboarding, 6)).toEqual({
-      kind: SessionReadinessKind.Exhausted,
+      sessionReadiness: SessionReadiness.Exhausted,
     });
   });
 
   it('settles at once on an anonymous first observation, but keeps refreshing one that went anonymous mid-loop', () => {
-    expect(SessionAccessSystem.readiness(anonymous, 0).kind).toBe(
-      SessionReadinessKind.Ready,
+    expect(SessionAccessSystem.readiness(anonymous, 0).sessionReadiness).toBe(
+      SessionReadiness.Ready,
     );
     expect(SessionAccessSystem.readiness(anonymous, 1)).toEqual({
-      kind: SessionReadinessKind.Refresh,
+      sessionReadiness: SessionReadiness.Refresh,
       delayMs: 200,
     });
-    expect(SessionAccessSystem.readiness(staff, 3).kind).toBe(
-      SessionReadinessKind.Ready,
+    expect(SessionAccessSystem.readiness(staff, 3).sessionReadiness).toBe(
+      SessionReadiness.Ready,
     );
   });
 });
 
 describe('SessionAccessSystem.decide (apps/web/src/app/guards/*)', () => {
-  const active = { kind: RouteGateKind.Active } as const;
-  const signedIn = { kind: RouteGateKind.SignedIn } as const;
+  const active = { routeGate: RouteGate.Active } as const;
+  const signedIn = { routeGate: RouteGate.SignedIn } as const;
   const home = (standalone: boolean) =>
-    ({ kind: RouteGateKind.Home, standalone }) as const;
+    ({ routeGate: RouteGate.Home, standalone }) as const;
   const roles = (...required: Role[]) =>
-    ({ kind: RouteGateKind.Roles, roles: required }) as const;
+    ({ routeGate: RouteGate.Roles, roles: required }) as const;
 
   it('active gate: lets an active principal in, sends onboarding to /onboarding and anonymous to /auth with the return URL', () => {
     expect(SessionAccessSystem.decide(client, active)).toEqual({
-      kind: AccessVerdict.Allow,
+      accessVerdict: AccessVerdict.Allow,
     });
-    expect(SessionAccessSystem.decide(staff, active).kind).toBe(
+    expect(SessionAccessSystem.decide(staff, active).accessVerdict).toBe(
       AccessVerdict.Allow,
     );
     expect(SessionAccessSystem.decide(onboarding, active)).toEqual({
-      kind: AccessVerdict.Redirect,
+      accessVerdict: AccessVerdict.Redirect,
       to: AccessTarget.Onboarding,
       keepReturnUrl: false,
     });
     expect(SessionAccessSystem.decide(anonymous, active)).toEqual({
-      kind: AccessVerdict.Redirect,
+      accessVerdict: AccessVerdict.Redirect,
       to: AccessTarget.Auth,
       keepReturnUrl: true,
     });
@@ -136,33 +135,33 @@ describe('SessionAccessSystem.decide (apps/web/src/app/guards/*)', () => {
 
   it('signed-in gate (anonGuard): only bars anonymous visitors', () => {
     expect(SessionAccessSystem.decide(anonymous, signedIn)).toEqual({
-      kind: AccessVerdict.Redirect,
+      accessVerdict: AccessVerdict.Redirect,
       to: AccessTarget.Auth,
       keepReturnUrl: false,
     });
-    expect(SessionAccessSystem.decide(onboarding, signedIn).kind).toBe(
+    expect(SessionAccessSystem.decide(onboarding, signedIn).accessVerdict).toBe(
       AccessVerdict.Allow,
     );
-    expect(SessionAccessSystem.decide(client, signedIn).kind).toBe(
+    expect(SessionAccessSystem.decide(client, signedIn).accessVerdict).toBe(
       AccessVerdict.Allow,
     );
   });
 
   it('allows a non-standalone visitor through regardless of principal', () => {
-    expect(SessionAccessSystem.decide(client, home(false)).kind).toBe(
+    expect(SessionAccessSystem.decide(client, home(false)).accessVerdict).toBe(
       AccessVerdict.Allow,
     );
   });
 
   it('allows a standalone-launch anonymous visitor through', () => {
-    expect(SessionAccessSystem.decide(anonymous, home(true)).kind).toBe(
-      AccessVerdict.Allow,
-    );
+    expect(
+      SessionAccessSystem.decide(anonymous, home(true)).accessVerdict,
+    ).toBe(AccessVerdict.Allow);
   });
 
   it('redirects a standalone-launch active visitor to /account', () => {
     expect(SessionAccessSystem.decide(client, home(true))).toEqual({
-      kind: AccessVerdict.Redirect,
+      accessVerdict: AccessVerdict.Redirect,
       to: AccessTarget.Account,
       keepReturnUrl: false,
     });
@@ -170,15 +169,16 @@ describe('SessionAccessSystem.decide (apps/web/src/app/guards/*)', () => {
 
   it('roles gate: any listed role lets in, anything else is /forbidden — never a bounce through /auth', () => {
     expect(
-      SessionAccessSystem.decide(staff, roles(Role.Admin, Role.Sysadmin)).kind,
+      SessionAccessSystem.decide(staff, roles(Role.Admin, Role.Sysadmin))
+        .accessVerdict,
     ).toBe(AccessVerdict.Allow);
     expect(SessionAccessSystem.decide(client, roles(Role.Admin))).toEqual({
-      kind: AccessVerdict.Redirect,
+      accessVerdict: AccessVerdict.Redirect,
       to: AccessTarget.Forbidden,
       keepReturnUrl: false,
     });
     expect(
-      SessionAccessSystem.decide(onboarding, roles(Role.Client)).kind,
+      SessionAccessSystem.decide(onboarding, roles(Role.Client)).accessVerdict,
     ).toBe(AccessVerdict.Redirect);
   });
 });
@@ -212,7 +212,7 @@ describe('SessionAccessSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const principal = deepFreeze({ ...staff });
     const gate = deepFreeze({
-      kind: RouteGateKind.Roles,
+      routeGate: RouteGate.Roles,
       roles: [Role.Admin],
     } as const);
     const run = () => ({

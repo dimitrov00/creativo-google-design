@@ -1,4 +1,3 @@
-import type { DayKey } from '../components/day-key.data';
 import {
   EngagementError,
   StreakRuleField,
@@ -6,24 +5,27 @@ import {
 import { Result } from '../components/result.data';
 import {
   StreakInterval,
-  StreakIntervalKind,
+  StreakIntervalRule,
 } from '../components/streak-interval.data';
 import {
   QualifierComparison,
-  StreakQualifier,
-  StreakQualifierKind,
+  StreakQualifierRule,
 } from '../components/streak-qualifier.data';
 import {
+  HeadRole,
   STREAK_SHOP_EXCUSES,
   StreakOnBreak,
+  StreakRule,
   StreakRuleDirection,
   StreakRuleParameter,
   StreakTransition,
   type ScheduledStreakRule,
   type StreakExcuse,
-  type StreakRule,
+  type StreakHeadRule,
 } from '../components/streak-rule.data';
-import { ZonedTimeSystem } from './zoned-time.system';
+import type { StreakDefinition } from '../entities/streak-definition.entity';
+import { defect } from '../primitives/defect';
+import { LocalDate } from '../primitives/local-date.primitive';
 
 /*
  * THE RHYTHM'S RULE, OVER TIME (client-card revision 3 §4.1, §4.4) — the
@@ -31,18 +33,21 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * what waits, the earliest day a change may start) and of the rule's own
  * comparisons in `streak-definition.ts` (`changeFrom`, `summary`,
  * `equals`). The edge guard of one version is the component's
- * (`StreakRule.parse`); everything here takes rules already parsed.
+ * (`StreakRule.parse`); everything here takes rules already parsed — flat
+ * (Law 6), the qualifier and the interval variant slices of the rule.
  *
- * The head's id is not checked against its versions: the bodies carry no
- * id, and the business has one constant rhythm (`StreakRule.DEFAULT_
- * DEFINITION_ID`) — engagement Q8 retired `streak_schedule.id_mismatch`.
+ * The head is the 1-to-N `rules` list (F-9): one `CURRENT` element, at most
+ * one `SCHEDULED`, sorted by `effectiveFromLocalDate`. The head's id is not
+ * checked against its versions: the bodies carry no id, and the business
+ * has one constant rhythm (`StreakRule.DEFAULT_DEFINITION_ID`) —
+ * engagement Q8 retired `streak_schedule.id_mismatch`.
  */
 
-/** The rule in force and at most ONE that waits for its day — the head's two halves (`StreakDefinitionEntity`). */
-export type StreakSchedule = {
-  readonly current: StreakRule;
-  readonly scheduled: ScheduledStreakRule | null;
-};
+/**
+ * The rule in force and at most ONE that waits for its day — the head's
+ * `rules` list, so the head entity is handed in as it is (Law 3).
+ */
+export type StreakSchedule = Pick<StreakDefinition, 'rules'>;
 
 /** When a change may take effect: whether clients see the rhythm yet, and the notice they are owed (R29). */
 export type StreakNoticePolicy = {
@@ -53,18 +58,19 @@ export type StreakNoticePolicy = {
 /** A change, by whom it favours, and the parameters that moved, in the rule's own order. */
 export type StreakRuleChange = {
   readonly direction: StreakRuleDirection;
-  /** Never a version's identity (`version`, `effectiveFromDayKey`): every revision changes that. */
+  /** Never a version's identity (`version`, `effectiveFromLocalDate`): every revision changes that. */
   readonly changed: readonly StreakRuleParameter[];
 };
 
 /**
- * The rule as the card and the editor word it: structure, never copy. A
- * part is `null` when the rule has nothing to say about it, so a sentence
- * is printed only for what holds.
+ * The rule as the card and the editor word it: structure, never copy — a
+ * system value (F-8): the interval and the qualifier are slices of their
+ * own. A part is `null` when the rule has nothing to say about it, so a
+ * sentence is printed only for what holds.
  */
 export type StreakRuleSummary = {
   readonly enabled: boolean;
-  readonly interval: StreakInterval;
+  readonly interval: StreakIntervalRule;
   readonly graceDays: number;
   /** `null`: protections are off, or the reserve holds none. */
   readonly protections: {
@@ -79,7 +85,7 @@ export type StreakRuleSummary = {
   readonly repair: { readonly windowDays: number } | null;
   /** A miss does not reset the count. */
   readonly holdsCount: boolean;
-  readonly qualifier: StreakQualifier;
+  readonly qualifier: StreakQualifierRule;
 };
 
 /** What a schedule refuses: a waiting version that does not follow, or a transition nobody knows. */
@@ -128,7 +134,7 @@ function blend(parts: readonly PartDirection[]): PartDirection {
 }
 
 function qualifierFrom(after: StreakRule, before: StreakRule): PartDirection {
-  switch (StreakQualifier.compare(after.qualifier, before.qualifier)) {
+  switch (StreakQualifierRule.compare(after, before)) {
     case QualifierComparison.Same:
       return StreakRuleDirection.Neutral;
     case QualifierComparison.Wider:
@@ -147,29 +153,49 @@ function qualifierFrom(after: StreakRule, before: StreakRule): PartDirection {
  * shortest period is the fixed one's length favours everyone.
  */
 function intervalFrom(after: StreakRule, before: StreakRule): PartDirection {
-  const a = after.interval;
-  const b = before.interval;
   if (
-    a.kind === StreakIntervalKind.Fixed &&
-    b.kind === StreakIntervalKind.Fixed
+    after.streakInterval === StreakInterval.Fixed &&
+    before.streakInterval === StreakInterval.Fixed
   ) {
-    return moved(b.days, a.days, StreakRuleDirection.Looser);
+    return moved(
+      before.intervalDays,
+      after.intervalDays,
+      StreakRuleDirection.Looser,
+    );
   }
   if (
-    a.kind === StreakIntervalKind.Personal &&
-    b.kind === StreakIntervalKind.Personal
+    after.streakInterval === StreakInterval.Personal &&
+    before.streakInterval === StreakInterval.Personal
   ) {
     return blend([
-      moved(b.tolerancePct, a.tolerancePct, StreakRuleDirection.Looser),
-      moved(b.minDays, a.minDays, StreakRuleDirection.Looser),
-      moved(b.maxDays, a.maxDays, StreakRuleDirection.Looser),
-      moved(b.fallbackDays, a.fallbackDays, StreakRuleDirection.Looser),
+      moved(
+        before.intervalTolerancePct,
+        after.intervalTolerancePct,
+        StreakRuleDirection.Looser,
+      ),
+      moved(
+        before.intervalMinDays,
+        after.intervalMinDays,
+        StreakRuleDirection.Looser,
+      ),
+      moved(
+        before.intervalMaxDays,
+        after.intervalMaxDays,
+        StreakRuleDirection.Looser,
+      ),
+      moved(
+        before.intervalFallbackDays,
+        after.intervalFallbackDays,
+        StreakRuleDirection.Looser,
+      ),
     ]);
   }
   const longer =
-    StreakInterval.shortestDays(a) >= StreakInterval.longestDays(b);
+    StreakIntervalRule.shortestDays(after) >=
+    StreakIntervalRule.longestDays(before);
   const shorter =
-    StreakInterval.longestDays(a) <= StreakInterval.shortestDays(b);
+    StreakIntervalRule.longestDays(after) <=
+    StreakIntervalRule.shortestDays(before);
   if (longer && shorter) return StreakRuleDirection.Neutral;
   if (longer) return StreakRuleDirection.Looser;
   return shorter ? StreakRuleDirection.Stricter : StreakRuleDirection.Mixed;
@@ -177,15 +203,15 @@ function intervalFrom(after: StreakRule, before: StreakRule): PartDirection {
 
 /** What the reserve can hold: nothing when protections are off. */
 const reserveOf = (rule: StreakRule): number =>
-  rule.protections.enabled ? rule.protections.maxBanked : 0;
+  rule.protectionsEnabled ? rule.protectionsMaxBanked : 0;
 
 /** The days past the due date a booking holds: none when the hold is off. */
 const heldDays = (rule: StreakRule): number =>
-  rule.bookingHold.enabled ? rule.bookingHold.maxDaysPastDue : 0;
+  rule.bookingHoldEnabled ? rule.bookingHoldMaxDaysPastDue : 0;
 
 /** The days a year a client may pause: none when the pause is off. */
 const pauseDays = (rule: StreakRule): number =>
-  rule.clientPause.enabled ? rule.clientPause.maxDaysPerYear : 0;
+  rule.clientPauseEnabled ? rule.clientPauseMaxDaysPerYear : 0;
 
 function protectionsFrom(after: StreakRule, before: StreakRule): PartDirection {
   const a = reserveOf(after);
@@ -194,19 +220,19 @@ function protectionsFrom(after: StreakRule, before: StreakRule): PartDirection {
   return blend([
     moved(b, a, StreakRuleDirection.Looser),
     moved(
-      before.protections.earnEvery,
-      after.protections.earnEvery,
+      before.protectionsEarnEvery,
+      after.protectionsEarnEvery,
       StreakRuleDirection.Stricter,
     ),
     moved(
-      before.protections.startWith,
-      after.protections.startWith,
+      before.protectionsStartWith,
+      after.protectionsStartWith,
       StreakRuleDirection.Looser,
     ),
   ]);
 }
 
-/** The way back matters only where a miss breaks the run: under `hold` nothing is broken, before or after. */
+/** The way back matters only where a miss breaks the run: under `HOLD` nothing is broken, before or after. */
 function repairFrom(after: StreakRule, before: StreakRule): PartDirection {
   if (
     after.onBreak === StreakOnBreak.Hold ||
@@ -214,18 +240,24 @@ function repairFrom(after: StreakRule, before: StreakRule): PartDirection {
   ) {
     return StreakRuleDirection.Neutral;
   }
-  const a = after.repair;
-  const b = before.repair;
-  if (!a.enabled || !b.enabled) {
+  if (!after.repairEnabled || !before.repairEnabled) {
     return moved(
-      Number(b.enabled),
-      Number(a.enabled),
+      Number(before.repairEnabled),
+      Number(after.repairEnabled),
       StreakRuleDirection.Looser,
     );
   }
   return blend([
-    moved(b.windowDays, a.windowDays, StreakRuleDirection.Looser),
-    moved(b.perYear, a.perYear, StreakRuleDirection.Looser),
+    moved(
+      before.repairWindowDays,
+      after.repairWindowDays,
+      StreakRuleDirection.Looser,
+    ),
+    moved(
+      before.repairPerYear,
+      after.repairPerYear,
+      StreakRuleDirection.Looser,
+    ),
   ]);
 }
 
@@ -259,26 +291,21 @@ function sameList(
   return true;
 }
 
-function copyInterval(interval: StreakInterval): StreakInterval {
-  return interval.kind === StreakIntervalKind.Fixed
-    ? StreakInterval.fixed(interval.days)
-    : StreakInterval.personal(
-        interval.tolerancePct,
-        interval.minDays,
-        interval.maxDays,
-        interval.fallbackDays,
-      );
+/** The head's element in one role, or `null` — a linear scan of a list of at most two. */
+function inRole(head: StreakSchedule, role: HeadRole): StreakHeadRule | null {
+  for (let i = 0; i < head.rules.length; i++) {
+    const rule = head.rules[i] as StreakHeadRule;
+    if (rule.headRole === role) return rule;
+  }
+  return null;
 }
 
-function copyQualifier(qualifier: StreakQualifier): StreakQualifier {
-  switch (qualifier.kind) {
-    case StreakQualifierKind.Services:
-      return StreakQualifier.services([...qualifier.serviceIds]);
-    case StreakQualifierKind.Categories:
-      return StreakQualifier.categories([...qualifier.categoryIds]);
-    default:
-      return StreakQualifier.anyVisit();
-  }
+/** The rule in force since its day — a head always holds one (F-9). */
+function currentOf(head: StreakSchedule): StreakHeadRule {
+  return (
+    inRole(head, HeadRole.Current) ??
+    defect('a streak head holds no CURRENT rule')
+  );
 }
 
 export const StreakRuleSystem = {
@@ -286,12 +313,20 @@ export const StreakRuleSystem = {
    * A head as a model: the rule in force and at most ONE that waits — a
    * later version (a withdrawn number may be skipped), from a later day, by
    * a transition the vocabulary knows. Every fault at once, in that order.
+   * The answer is the head's `rules` list (F-9), sorted by day: the rule in
+   * force first, then what waits — each element the rule alone (whatever
+   * else the struct handed in carried is not copied) and its role.
    */
   schedule(
     current: StreakRule,
     scheduled: ScheduledStreakRule | null,
   ): Result<StreakSchedule, readonly StreakScheduleError[]> {
-    if (scheduled === null) return Result.ok({ current, scheduled: null });
+    const inForce: StreakHeadRule = {
+      ...StreakRule.of(current),
+      headRole: HeadRole.Current,
+      streakTransition: null,
+    };
+    if (scheduled === null) return Result.ok({ rules: [inForce] });
     const errors: StreakScheduleError[] = [];
     if (scheduled.version <= current.version) {
       errors.push(
@@ -301,44 +336,63 @@ export const StreakRuleSystem = {
         ),
       );
     }
-    if (scheduled.effectiveFromDayKey <= current.effectiveFromDayKey) {
+    if (scheduled.effectiveFromLocalDate <= current.effectiveFromLocalDate) {
       errors.push(
         EngagementError.streakScheduleNotAfterCurrent(
-          current.effectiveFromDayKey,
-          scheduled.effectiveFromDayKey,
+          current.effectiveFromLocalDate,
+          scheduled.effectiveFromLocalDate,
         ),
       );
     }
     let known = false;
     for (let i = 0; i < STREAK_TRANSITIONS.length; i++) {
-      if (STREAK_TRANSITIONS[i] === scheduled.transition) known = true;
+      if (STREAK_TRANSITIONS[i] === scheduled.streakTransition) known = true;
     }
     if (!known) {
       errors.push(
         EngagementError.streakUnknownOption(
           StreakRuleField.ScheduledTransition,
-          scheduled.transition,
+          scheduled.streakTransition,
           STREAK_TRANSITIONS,
         ),
       );
     }
     return errors.length > 0
       ? Result.err(errors)
-      : Result.ok({ current, scheduled });
+      : Result.ok({
+          rules: [
+            inForce,
+            {
+              ...StreakRule.of(scheduled),
+              headRole: HeadRole.Scheduled,
+              streakTransition: scheduled.streakTransition,
+            },
+          ],
+        });
+  },
+
+  /** The head's element in force today's role holds — the `CURRENT` one (a head always has it). */
+  current(head: StreakSchedule): StreakHeadRule {
+    return currentOf(head);
+  },
+
+  /** The head's waiting element, its day come or not, or `null` when nothing waits. */
+  scheduled(head: StreakSchedule): StreakHeadRule | null {
+    return inRole(head, HeadRole.Scheduled);
   },
 
   /** The rule a shop day is judged by: what waits, from its own day on. A reader resolves BY DATE, so nothing flips at midnight. */
-  inForceOn(head: StreakSchedule, today: DayKey): StreakRule {
-    const { scheduled } = head;
-    return scheduled !== null && today >= scheduled.effectiveFromDayKey
+  inForceOn(head: StreakSchedule, today: LocalDate): StreakHeadRule {
+    const scheduled = inRole(head, HeadRole.Scheduled);
+    return scheduled !== null && today >= scheduled.effectiveFromLocalDate
       ? scheduled
-      : head.current;
+      : currentOf(head);
   },
 
   /** What still waits on a shop day, or `null` once its day has come. */
-  upcomingOn(head: StreakSchedule, today: DayKey): ScheduledStreakRule | null {
-    const { scheduled } = head;
-    return scheduled !== null && today < scheduled.effectiveFromDayKey
+  upcomingOn(head: StreakSchedule, today: LocalDate): StreakHeadRule | null {
+    const scheduled = inRole(head, HeadRole.Scheduled);
+    return scheduled !== null && today < scheduled.effectiveFromLocalDate
       ? scheduled
       : null;
   },
@@ -348,21 +402,21 @@ export const StreakRuleSystem = {
    * cue may start today. What favours the client, and the rule going on or
    * off, starts tomorrow: a day is judged by ONE rule. What takes something
    * away starts tomorrow while no client can see the rhythm, and a notice
-   * period ahead once one can.
+   * period ahead once one can. Shop-day arithmetic (T8).
    */
   earliestEffectiveDay(
     direction: StreakRuleDirection,
-    today: DayKey,
+    today: LocalDate,
     policy: StreakNoticePolicy,
-  ): DayKey {
+  ): LocalDate {
     switch (direction) {
       case StreakRuleDirection.Neutral:
         return today;
       case StreakRuleDirection.Looser:
       case StreakRuleDirection.Switch:
-        return ZonedTimeSystem.addDays(today, 1);
+        return LocalDate.addDays(today, 1);
       default:
-        return ZonedTimeSystem.addDays(
+        return LocalDate.addDays(
           today,
           policy.clientsSeeRhythm ? Math.max(1, policy.noticeDays) : 1,
         );
@@ -372,7 +426,7 @@ export const StreakRuleSystem = {
   /**
    * What moved from `before` to `after`, and whom it favours. A part is
    * judged by what it DOES: a figure of a part that is off, before and
-   * after, is listed as changed and moves nothing (`neutral`). The name is
+   * after, is listed as changed and moves nothing (`NEUTRAL`). The name is
    * the head's, not a version's: `nameChanged` says whether it moved.
    */
   changeFrom(
@@ -401,7 +455,7 @@ export const StreakRuleSystem = {
     );
     part(
       StreakRuleParameter.Qualifier,
-      !StreakQualifier.equals(after.qualifier, before.qualifier),
+      !StreakQualifierRule.equals(after, before),
       () => qualifierFrom(after, before),
     );
     part(
@@ -416,14 +470,14 @@ export const StreakRuleSystem = {
     );
     part(
       StreakRuleParameter.BookingHold,
-      after.bookingHold.enabled !== before.bookingHold.enabled ||
-        after.bookingHold.maxDaysPastDue !== before.bookingHold.maxDaysPastDue,
+      after.bookingHoldEnabled !== before.bookingHoldEnabled ||
+        after.bookingHoldMaxDaysPastDue !== before.bookingHoldMaxDaysPastDue,
       () =>
         moved(heldDays(before), heldDays(after), StreakRuleDirection.Looser),
     );
     part(
       StreakRuleParameter.Interval,
-      !StreakInterval.equals(after.interval, before.interval),
+      !StreakIntervalRule.equals(after, before),
       () => intervalFrom(after, before),
     );
     part(
@@ -439,10 +493,10 @@ export const StreakRuleSystem = {
     );
     part(
       StreakRuleParameter.Protections,
-      after.protections.enabled !== before.protections.enabled ||
-        after.protections.maxBanked !== before.protections.maxBanked ||
-        after.protections.earnEvery !== before.protections.earnEvery ||
-        after.protections.startWith !== before.protections.startWith,
+      after.protectionsEnabled !== before.protectionsEnabled ||
+        after.protectionsMaxBanked !== before.protectionsMaxBanked ||
+        after.protectionsEarnEvery !== before.protectionsEarnEvery ||
+        after.protectionsStartWith !== before.protectionsStartWith,
       () => protectionsFrom(after, before),
     );
     part(
@@ -460,16 +514,16 @@ export const StreakRuleSystem = {
     );
     part(
       StreakRuleParameter.ClientPause,
-      after.clientPause.enabled !== before.clientPause.enabled ||
-        after.clientPause.maxDaysPerYear !== before.clientPause.maxDaysPerYear,
+      after.clientPauseEnabled !== before.clientPauseEnabled ||
+        after.clientPauseMaxDaysPerYear !== before.clientPauseMaxDaysPerYear,
       () =>
         moved(pauseDays(before), pauseDays(after), StreakRuleDirection.Looser),
     );
     part(
       StreakRuleParameter.Repair,
-      after.repair.enabled !== before.repair.enabled ||
-        after.repair.windowDays !== before.repair.windowDays ||
-        after.repair.perYear !== before.repair.perYear,
+      after.repairEnabled !== before.repairEnabled ||
+        after.repairWindowDays !== before.repairWindowDays ||
+        after.repairPerYear !== before.repairPerYear,
       () => repairFrom(after, before),
     );
     part(StreakRuleParameter.OnBreak, after.onBreak !== before.onBreak, () =>
@@ -487,9 +541,8 @@ export const StreakRuleSystem = {
     };
   },
 
-  /** The rule as structure for its sentences; the interval and the qualifier are fresh copies. */
+  /** The rule as structure for its sentences; the interval and the qualifier are fresh slices of their own. */
   summary(rule: StreakRule): StreakRuleSummary {
-    const { protections, bookingHold, repair } = rule;
     let shopExcuses = true;
     for (let i = 0; i < STREAK_SHOP_EXCUSES.length; i++) {
       if (!includes(rule.excuses, STREAK_SHOP_EXCUSES[i] as StreakExcuse)) {
@@ -498,26 +551,26 @@ export const StreakRuleSystem = {
     }
     return {
       enabled: rule.enabled,
-      interval: copyInterval(rule.interval),
+      interval: StreakIntervalRule.of(rule),
       graceDays: rule.graceDays,
       protections:
-        protections.enabled && protections.maxBanked > 0
+        rule.protectionsEnabled && rule.protectionsMaxBanked > 0
           ? {
-              maxBanked: protections.maxBanked,
-              earnEvery: protections.earnEvery,
+              maxBanked: rule.protectionsMaxBanked,
+              earnEvery: rule.protectionsEarnEvery,
             }
           : null,
       shopExcuses,
       hold:
-        bookingHold.enabled && bookingHold.maxDaysPastDue > 0
-          ? { maxDaysPastDue: bookingHold.maxDaysPastDue }
+        rule.bookingHoldEnabled && rule.bookingHoldMaxDaysPastDue > 0
+          ? { maxDaysPastDue: rule.bookingHoldMaxDaysPastDue }
           : null,
       repair:
-        repair.enabled && rule.onBreak === StreakOnBreak.Restart
-          ? { windowDays: repair.windowDays }
+        rule.repairEnabled && rule.onBreak === StreakOnBreak.Restart
+          ? { windowDays: rule.repairWindowDays }
           : null,
       holdsCount: rule.onBreak === StreakOnBreak.Hold,
-      qualifier: copyQualifier(rule.qualifier),
+      qualifier: StreakQualifierRule.of(rule),
     };
   },
 
@@ -525,7 +578,7 @@ export const StreakRuleSystem = {
   equals(a: StreakRule, b: StreakRule): boolean {
     return (
       a.version === b.version &&
-      a.effectiveFromDayKey === b.effectiveFromDayKey &&
+      a.effectiveFromLocalDate === b.effectiveFromLocalDate &&
       StreakRuleSystem.changeFrom(a, b, false).changed.length === 0
     );
   },

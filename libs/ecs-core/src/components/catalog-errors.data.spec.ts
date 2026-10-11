@@ -5,110 +5,119 @@ import {
   GeoAxis,
   MediaDimension,
 } from './catalog-errors.data';
+import { Currency } from '../primitives/currency.primitive';
 import { Locale } from './locale.data';
 
 describe('CatalogErrorCode', () => {
-  it('keeps the 25 legacy catalog codes, unchanged (blueprint §2.2)', () => {
+  it('keeps the 25 catalog codes, SCREAMING with the CATALOG_ prefix (flatten-spec §4.2)', () => {
     expect(Object.values(CatalogErrorCode).sort()).toEqual(
       [
-        'catalog.id.empty',
-        'catalog.localized_text.field_empty',
-        'catalog.media_ref.empty_path',
-        'catalog.media_ref.invalid_dimension',
-        'catalog.media_ref.focal_point_out_of_range',
-        'catalog.venue_phone.blank_display',
-        'catalog.barber.empty_handle',
-        'catalog.barber.invalid_years_experience',
-        'catalog.barber.invalid_sort_order',
-        'catalog.service_category.invalid_sort_order',
-        'catalog.service.invalid_duration',
-        'catalog.service.invalid_sort_order',
-        'catalog.service.empty_bundle_includes',
-        'catalog.service.unknown_variant_terms',
-        'catalog.service.duplicate_variant_terms',
-        'catalog.service.duplicate_variant',
-        'catalog.service.duplicate_offering',
-        'catalog.service.mixed_currency_terms',
-        'catalog.location.invalid_geo_coordinate',
-        'catalog.location.invalid_timezone',
-        'catalog.location.invalid_sort_order',
-        'catalog.location.invalid_map_url',
-        'catalog.location.invalid_hours_length',
-        'catalog.location.invalid_time_of_day',
-        'catalog.location.invalid_hours_range',
+        'CATALOG_ID_EMPTY',
+        'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY',
+        'CATALOG_MEDIA_REF_EMPTY_PATH',
+        'CATALOG_MEDIA_REF_INVALID_DIMENSION',
+        'CATALOG_MEDIA_REF_FOCAL_POINT_OUT_OF_RANGE',
+        'CATALOG_VENUE_PHONE_BLANK_DISPLAY',
+        'CATALOG_BARBER_EMPTY_HANDLE',
+        'CATALOG_BARBER_INVALID_YEARS_EXPERIENCE',
+        'CATALOG_BARBER_INVALID_SORT_ORDER',
+        'CATALOG_SERVICE_CATEGORY_INVALID_SORT_ORDER',
+        'CATALOG_SERVICE_INVALID_DURATION',
+        'CATALOG_SERVICE_INVALID_SORT_ORDER',
+        'CATALOG_SERVICE_EMPTY_BUNDLE_INCLUDES',
+        'CATALOG_SERVICE_UNKNOWN_VARIANT_TERMS',
+        'CATALOG_SERVICE_DUPLICATE_VARIANT_TERMS',
+        'CATALOG_SERVICE_DUPLICATE_VARIANT',
+        'CATALOG_SERVICE_DUPLICATE_OFFERING',
+        'CATALOG_SERVICE_MIXED_CURRENCY_TERMS',
+        'CATALOG_LOCATION_INVALID_GEO_COORDINATE',
+        'CATALOG_LOCATION_INVALID_TIMEZONE',
+        'CATALOG_LOCATION_INVALID_SORT_ORDER',
+        'CATALOG_LOCATION_INVALID_MAP_URL',
+        'CATALOG_LOCATION_INVALID_HOURS_LENGTH',
+        'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
+        'CATALOG_LOCATION_INVALID_HOURS_RANGE',
       ].sort(),
     );
   });
 
   it('pins the parameter vocabularies', () => {
-    expect(MediaDimension).toEqual({ Width: 'width', Height: 'height' });
-    expect(GeoAxis).toEqual({ Lat: 'lat', Lng: 'lng' });
+    expect(MediaDimension).toEqual({ Width: 'WIDTH', Height: 'HEIGHT' });
+    expect(GeoAxis).toEqual({ Lat: 'LAT', Lng: 'LNG' });
   });
 });
 
 describe('CatalogError factories', () => {
-  it('build plain structs whose only non-code fields are i18n scalars', () => {
-    const cases: readonly [CatalogError, CatalogError][] = [
+  it('build plain structs whose only non-errorCode fields are i18n scalars', () => {
+    // The expected side is the plain serialised struct — brands erase to text.
+    const cases: readonly [CatalogError, object][] = [
       [
         CatalogError.idEmpty('ServiceId'),
-        { code: 'catalog.id.empty', idType: 'ServiceId' },
+        { errorCode: 'CATALOG_ID_EMPTY', idType: 'ServiceId' },
       ],
       [
         CatalogError.localizedTextFieldEmpty(Locale.Bg),
-        { code: 'catalog.localized_text.field_empty', locale: 'bg' },
+        { errorCode: 'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY', locale: 'bg' },
       ],
       [
         CatalogError.mediaRefEmptyPath(),
-        { code: 'catalog.media_ref.empty_path' },
+        { errorCode: 'CATALOG_MEDIA_REF_EMPTY_PATH' },
       ],
       [
         CatalogError.mediaRefInvalidDimension(MediaDimension.Height, 0),
         {
-          code: 'catalog.media_ref.invalid_dimension',
-          dimension: 'height',
+          errorCode: 'CATALOG_MEDIA_REF_INVALID_DIMENSION',
+          mediaDimension: 'HEIGHT',
           rawValue: 0,
         },
       ],
       [
         CatalogError.mediaRefFocalPointOutOfRange(1.5, -1),
-        { code: 'catalog.media_ref.focal_point_out_of_range', x: 1.5, y: -1 },
+        {
+          errorCode: 'CATALOG_MEDIA_REF_FOCAL_POINT_OUT_OF_RANGE',
+          x: 1.5,
+          y: -1,
+        },
       ],
       [
         CatalogError.venuePhoneBlankDisplay(),
-        { code: 'catalog.venue_phone.blank_display' },
+        { errorCode: 'CATALOG_VENUE_PHONE_BLANK_DISPLAY' },
       ],
       [
         CatalogError.barberEmptyHandle(),
-        { code: 'catalog.barber.empty_handle' },
+        { errorCode: 'CATALOG_BARBER_EMPTY_HANDLE' },
       ],
       [
         CatalogError.barberInvalidYearsExperience(-1),
-        { code: 'catalog.barber.invalid_years_experience', rawValue: -1 },
+        { errorCode: 'CATALOG_BARBER_INVALID_YEARS_EXPERIENCE', rawValue: -1 },
       ],
       [
         CatalogError.barberInvalidSortOrder(-2),
-        { code: 'catalog.barber.invalid_sort_order', rawValue: -2 },
+        { errorCode: 'CATALOG_BARBER_INVALID_SORT_ORDER', rawValue: -2 },
       ],
       [
         CatalogError.serviceCategoryInvalidSortOrder(1.5),
-        { code: 'catalog.service_category.invalid_sort_order', rawValue: 1.5 },
+        {
+          errorCode: 'CATALOG_SERVICE_CATEGORY_INVALID_SORT_ORDER',
+          rawValue: 1.5,
+        },
       ],
       [
         CatalogError.serviceInvalidDuration(0),
-        { code: 'catalog.service.invalid_duration', rawValue: 0 },
+        { errorCode: 'CATALOG_SERVICE_INVALID_DURATION', rawValue: 0 },
       ],
       [
         CatalogError.serviceInvalidSortOrder(-1),
-        { code: 'catalog.service.invalid_sort_order', rawValue: -1 },
+        { errorCode: 'CATALOG_SERVICE_INVALID_SORT_ORDER', rawValue: -1 },
       ],
       [
         CatalogError.serviceEmptyBundleIncludes(),
-        { code: 'catalog.service.empty_bundle_includes' },
+        { errorCode: 'CATALOG_SERVICE_EMPTY_BUNDLE_INCLUDES' },
       ],
       [
         CatalogError.serviceUnknownVariantTerms('ivan', 'xl'),
         {
-          code: 'catalog.service.unknown_variant_terms',
+          errorCode: 'CATALOG_SERVICE_UNKNOWN_VARIANT_TERMS',
           barberId: 'ivan',
           variantId: 'xl',
         },
@@ -116,23 +125,23 @@ describe('CatalogError factories', () => {
       [
         CatalogError.serviceDuplicateVariantTerms('ivan', 'long'),
         {
-          code: 'catalog.service.duplicate_variant_terms',
+          errorCode: 'CATALOG_SERVICE_DUPLICATE_VARIANT_TERMS',
           barberId: 'ivan',
           variantId: 'long',
         },
       ],
       [
         CatalogError.serviceDuplicateVariant('short'),
-        { code: 'catalog.service.duplicate_variant', variantId: 'short' },
+        { errorCode: 'CATALOG_SERVICE_DUPLICATE_VARIANT', variantId: 'short' },
       ],
       [
         CatalogError.serviceDuplicateOffering('niko'),
-        { code: 'catalog.service.duplicate_offering', barberId: 'niko' },
+        { errorCode: 'CATALOG_SERVICE_DUPLICATE_OFFERING', barberId: 'niko' },
       ],
       [
-        CatalogError.serviceMixedCurrencyTerms('EUR', 'BGN'),
+        CatalogError.serviceMixedCurrencyTerms(Currency.EUR, Currency.BGN),
         {
-          code: 'catalog.service.mixed_currency_terms',
+          errorCode: 'CATALOG_SERVICE_MIXED_CURRENCY_TERMS',
           expected: 'EUR',
           found: 'BGN',
         },
@@ -140,34 +149,43 @@ describe('CatalogError factories', () => {
       [
         CatalogError.locationInvalidGeoCoordinate(GeoAxis.Lng, 181),
         {
-          code: 'catalog.location.invalid_geo_coordinate',
-          axis: 'lng',
+          errorCode: 'CATALOG_LOCATION_INVALID_GEO_COORDINATE',
+          geoAxis: 'LNG',
           rawValue: 181,
         },
       ],
       [
         CatalogError.locationInvalidTimezone('Mars/Base'),
-        { code: 'catalog.location.invalid_timezone', rawValue: 'Mars/Base' },
+        {
+          errorCode: 'CATALOG_LOCATION_INVALID_TIMEZONE',
+          rawValue: 'Mars/Base',
+        },
       ],
       [
         CatalogError.locationInvalidSortOrder(-3),
-        { code: 'catalog.location.invalid_sort_order', rawValue: -3 },
+        { errorCode: 'CATALOG_LOCATION_INVALID_SORT_ORDER', rawValue: -3 },
       ],
       [
         CatalogError.locationInvalidMapUrl('not a url'),
-        { code: 'catalog.location.invalid_map_url', rawValue: 'not a url' },
+        {
+          errorCode: 'CATALOG_LOCATION_INVALID_MAP_URL',
+          rawValue: 'not a url',
+        },
       ],
       [
         CatalogError.locationInvalidHoursLength(6),
-        { code: 'catalog.location.invalid_hours_length', rawLength: 6 },
+        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_LENGTH', rawLength: 6 },
       ],
       [
         CatalogError.locationInvalidTimeOfDay('25:00'),
-        { code: 'catalog.location.invalid_time_of_day', rawValue: '25:00' },
+        {
+          errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
+          rawValue: '25:00',
+        },
       ],
       [
         CatalogError.locationInvalidHoursRange(4),
-        { code: 'catalog.location.invalid_hours_range', dayIndex: 4 },
+        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 4 },
       ],
     ];
     expect(cases).toHaveLength(Object.keys(CatalogErrorCode).length);
@@ -176,7 +194,7 @@ describe('CatalogError factories', () => {
     }
   });
 
-  it('is() narrows by code', () => {
+  it('is() narrows by errorCode', () => {
     const error: CatalogError = CatalogError.serviceUnknownVariantTerms(
       'ivan',
       'xl',

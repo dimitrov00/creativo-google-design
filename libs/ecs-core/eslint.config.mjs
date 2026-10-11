@@ -1,6 +1,9 @@
 // Everything comes through the root config: importing tools/lint-rules
 // directly would give this project a graph edge to `lint-rules`.
 import baseConfig, {
+  ECS_DATE_RESTRICTIONS,
+  ECS_ID_CAST_RESTRICTIONS,
+  ECS_PRIMITIVE_RESTRICTIONS,
   ECS_TOKEN_RESTRICTIONS,
   ECS_ZONED_TIME_RESTRICTIONS,
   ICON_SYNTAX_RESTRICTIONS,
@@ -32,11 +35,29 @@ function layerImportsWithout(packageName, { production }) {
 export default [
   ...baseConfig,
   // The InjectionToken guard on every file, and the `*.port.ts` /
-  // `*.adapter.ts` blocks beside the root's four suffix blocks (restated
-  // with the token guard). Project-scoped in Phase 1 because at the root
-  // they would hit libs/application's legacy port files and class adapters;
-  // Phase 4 moves them to the root config (blueprint §6 Phase 1).
-  ...ecsProjectBlocks(),
+  // `*.adapter.ts` blocks beside the root's suffix blocks (restated with the
+  // token guard). Project-scoped in Phase 1 because at the root they would
+  // hit libs/application's legacy port files and class adapters; Phase 4
+  // moves them to the root config (blueprint §6 Phase 1). L4 — no `Date` —
+  // reaches every file of the core, specs and test support included
+  // (flatten-spec §7).
+  ...ecsProjectBlocks({ everyFile: ECS_DATE_RESTRICTIONS }),
+  {
+    // L7's one exemption: the id family's own file mints `UserId` and
+    // `CustomerId` (`CustomerId.forUser`), so it restates the primitive list
+    // without the cast guard.
+    files: ['src/primitives/ids.primitive.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...ICON_SYNTAX_RESTRICTIONS,
+        ...ECS_PRIMITIVE_RESTRICTIONS.filter(
+          (restriction) => !ECS_ID_CAST_RESTRICTIONS.includes(restriction),
+        ),
+        ...ECS_TOKEN_RESTRICTIONS,
+      ],
+    },
+  },
   {
     // D5 (2026-10-10): zone math is native Intl, in ONE file. Its block
     // restates the full system list without the Intl selector — options

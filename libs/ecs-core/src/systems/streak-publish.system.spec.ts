@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
 import {
+  HeadRole,
   StreakRule,
-  type ScheduledStreakRule,
+  StreakTransition,
+  type StreakHeadRule,
 } from '../components/streak-rule.data';
-import { StreakDefinitionId } from '../entities/streak-definition.entity';
-import { deepFreeze } from '../testing';
+import { StreakDefinitionId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import { deepFreeze, localDate } from '../testing';
 import {
+  DraftAssessment,
   StreakPublishSystem,
   type StreakPublishRequest,
 } from './streak-publish.system';
-import type { StreakSchedule } from './streak-rule.system';
+import { StreakRuleSystem, type StreakSchedule } from './streak-rule.system';
 
 /*
  * COPIED, never moved (the legacy specs keep running against their shims):
@@ -28,12 +31,18 @@ import type { StreakSchedule } from './streak-rule.system';
  *   behaviour (who may ask, the audit row, the store, the clock, a retry's
  *   replay, the port's answer in the page's terms) stays in their specs:
  *   it is the pipeline's, not the decision's.
+ *
+ * Re-targeted: the rule is FLAT (`intervalDays`, `protectionsMaxBanked`,
+ * `effectiveFromLocalDate`), the head is its `rules` list (F-9) — read
+ * through `StreakRuleSystem.current`/`scheduled` — every tag is SCREAMING,
+ * a field at fault is the flat field's name and an error is
+ * `{ errorCode, … }`.
  */
 
-const TODAY = DayKey.of('2026-09-28');
-const TOMORROW = DayKey.of('2026-09-29');
-const NEXT_WEEK = DayKey.of('2026-10-05');
-const NEXT_MONTH = DayKey.of('2026-10-28');
+const TODAY = localDate('2026-09-28');
+const TOMORROW = localDate('2026-09-29');
+const NEXT_WEEK = localDate('2026-10-05');
+const NEXT_MONTH = localDate('2026-10-28');
 const CADENCE = StreakDefinitionId.of('cadence');
 
 /** Nobody sees the rhythm yet: a stricter rule may start tomorrow. */
@@ -43,32 +52,58 @@ const SEEN = { clientsSeeRhythm: true, noticeDays: 30 };
 
 /** The recommended rule with `patch` over it: a version of its own. */
 function rule(patch: Partial<StreakRule> = {}): StreakRule {
-  const result = StreakRule.parse({ ...StreakRule.DEFAULT, ...patch });
+  const result = StreakRule.parse({
+    ...StreakRule.DEFAULT,
+    ...patch,
+  } as StreakRule);
   if (!result.ok) throw new Error(JSON.stringify(result.error));
   return result.value;
 }
 
-const waiting = (r: StreakRule): ScheduledStreakRule => ({
-  ...r,
-  transition: 'grandfather',
+/** A rule as the head holds it in force. */
+const asCurrent = (r: StreakRule): StreakHeadRule => ({
+  ...StreakRule.of(r),
+  headRole: HeadRole.Current,
+  streakTransition: null,
 });
 
+/** A rule as the head holds it waiting, grandfathering the runs that exist. */
+const asScheduled = (r: StreakRule): StreakHeadRule => ({
+  ...StreakRule.of(r),
+  headRole: HeadRole.Scheduled,
+  streakTransition: StreakTransition.Grandfather,
+});
+
+/** A head: the rule in force and, if any, the one that waits. */
+const headOf = (
+  current: StreakRule,
+  scheduled: StreakRule | null = null,
+): StreakSchedule => ({
+  rules:
+    scheduled === null
+      ? [asCurrent(current)]
+      : [asCurrent(current), asScheduled(scheduled)],
+});
+
+const currentOf = (head: StreakSchedule): StreakHeadRule =>
+  StreakRuleSystem.current(head);
+const scheduledOf = (head: StreakSchedule): StreakHeadRule | null =>
+  StreakRuleSystem.scheduled(head);
+
 /** The head every case starts on unless it says otherwise: the recommended rule, nothing waiting. */
-const RECOMMENDED: StreakSchedule = { current: rule(), scheduled: null };
+const RECOMMENDED: StreakSchedule = headOf(rule());
 
 /** The recommended rule in force and version 2 (ten days of grace) waiting for next week. */
-const WAITING: StreakSchedule = {
-  current: rule(),
-  scheduled: waiting(
-    rule({ version: 2, effectiveFromDayKey: NEXT_WEEK, graceDays: 10 }),
-  ),
-};
+const WAITING: StreakSchedule = headOf(
+  rule(),
+  rule({ version: 2, effectiveFromLocalDate: NEXT_WEEK, graceDays: 10 }),
+);
 
 const request = (
   patch: Partial<StreakPublishRequest> = {},
 ): StreakPublishRequest => ({
   baseVersion: 1,
-  transition: 'grandfather',
+  streakTransition: StreakTransition.Grandfather,
   previewHash: null,
   ...patch,
 });
@@ -79,66 +114,70 @@ describe('StreakPublishSystem.assess — what a draft comes to, sending nothing'
   const assess = (
     head: StreakSchedule,
     patch: Partial<StreakRule>,
-    effectiveFrom: DayKey,
-    more: { today?: DayKey; policy?: typeof QUIET; published?: boolean } = {},
+    effectiveFrom: string,
+    more: {
+      today?: LocalDate;
+      policy?: typeof QUIET;
+      published?: boolean;
+    } = {},
   ) =>
     StreakPublishSystem.assess(
       head,
       more.published ?? true,
-      { ...inForceOf(head, more.today ?? TODAY), ...patch },
+      { ...inForceOf(head, more.today ?? TODAY), ...patch } as StreakRule,
       effectiveFrom,
       more.today ?? TODAY,
       more.policy ?? QUIET,
     );
 
   it('makes the draft the next version of the rule, on the day asked', () => {
-    const assessed = assess(
-      RECOMMENDED,
-      { interval: { kind: 'fixed', days: 56 } },
-      NEXT_MONTH,
-    );
-    if (assessed.kind !== 'valid') throw new Error('expected a valid draft');
+    const assessed = assess(RECOMMENDED, { intervalDays: 56 }, NEXT_MONTH);
+    if (assessed.draftAssessment !== DraftAssessment.Valid) {
+      throw new Error('expected a valid draft');
+    }
     expect(assessed.baseVersion).toBe(1);
     expect(assessed.rule).toEqual({
       ...StreakRule.DEFAULT,
-      interval: { kind: 'fixed', days: 56 },
+      intervalDays: 56,
       version: 2,
-      effectiveFromDayKey: NEXT_MONTH,
+      effectiveFromLocalDate: NEXT_MONTH,
     });
     expect(assessed.change).toEqual({
-      direction: 'looser',
-      changed: ['interval'],
+      direction: 'LOOSER',
+      changed: ['INTERVAL'],
     });
   });
 
   it('sets the identity of the version itself: the draft cannot number or date it', () => {
     const assessed = assess(
       RECOMMENDED,
-      { version: 40, effectiveFromDayKey: DayKey.of('2031-01-01') },
+      { version: 40, effectiveFromLocalDate: localDate('2031-01-01') },
       TOMORROW,
     );
-    expect(assessed.kind === 'valid' && assessed.rule).toMatchObject({
+    expect(
+      assessed.draftAssessment === DraftAssessment.Valid && assessed.rule,
+    ).toMatchObject({
       version: 2,
-      effectiveFromDayKey: TOMORROW,
+      effectiveFromLocalDate: TOMORROW,
     });
   });
 
   it.each([
-    ['what only moves the staff’s cue', { riskLeadDays: 3 }, 'neutral', TODAY],
-    ['what favours the client', { graceDays: 10 }, 'looser', TOMORROW],
-    ['the rule going off', { enabled: false }, 'switch', TOMORROW],
-    ['what takes something away', { graceDays: 3 }, 'stricter', TOMORROW],
+    ['what only moves the staff’s cue', { riskLeadDays: 3 }, 'NEUTRAL', TODAY],
+    ['what favours the client', { graceDays: 10 }, 'LOOSER', TOMORROW],
+    ['the rule going off', { enabled: false }, 'SWITCH', TOMORROW],
+    ['what takes something away', { graceDays: 3 }, 'STRICTER', TOMORROW],
     [
       'what gives and takes',
       { graceDays: 10, minGapDays: 10 },
-      'mixed',
+      'MIXED',
       TOMORROW,
     ],
   ] as const)(
     'lets %s start as early as the domain does, while nobody sees the rhythm',
     (_what, patch, direction, earliest) => {
       expect(assess(RECOMMENDED, patch, NEXT_MONTH)).toMatchObject({
-        kind: 'valid',
+        draftAssessment: 'VALID',
         change: { direction },
         earliest,
       });
@@ -152,49 +191,57 @@ describe('StreakPublishSystem.assess — what a draft comes to, sending nothing'
     const looser = assess(RECOMMENDED, { graceDays: 10 }, NEXT_MONTH, {
       policy: SEEN,
     });
-    expect(stricter).toMatchObject({ kind: 'valid', earliest: NEXT_MONTH });
-    expect(looser).toMatchObject({ kind: 'valid', earliest: TOMORROW });
+    expect(stricter).toMatchObject({
+      draftAssessment: 'VALID',
+      earliest: NEXT_MONTH,
+    });
+    expect(looser).toMatchObject({
+      draftAssessment: 'VALID',
+      earliest: TOMORROW,
+    });
   });
 
   it('names every fault of a draft that is no rule, at once', () => {
     const assessed = assess(
       RECOMMENDED,
       {
-        interval: { kind: 'fixed', days: 7 },
-        protections: {
-          enabled: true,
-          maxBanked: 9,
-          earnEvery: 0,
-          startWith: 0,
-        },
+        intervalDays: 7,
+        protectionsEnabled: true,
+        protectionsMaxBanked: 9,
+        protectionsEarnEvery: 0,
+        protectionsStartWith: 0,
       },
       TOMORROW,
     );
-    if (assessed.kind !== 'invalid') throw new Error('expected a refusal');
+    if (assessed.draftAssessment !== DraftAssessment.Invalid) {
+      throw new Error('expected a refusal');
+    }
     expect(assessed.fields).toEqual([
-      'interval.days',
-      'protections.maxBanked',
-      'protections.earnEvery',
+      'intervalDays',
+      'protectionsMaxBanked',
+      'protectionsEarnEvery',
     ]);
     expect(assessed.errors.map((error) => error.field)).toEqual(
       assessed.fields,
     );
-    expect(assessed.errors.map((error) => error.code)).toEqual([
-      'engagement.streak_definition.interval_out_of_range',
-      'engagement.streak_definition.protections_out_of_range',
-      'engagement.streak_definition.protections_out_of_range',
+    expect(assessed.errors.map((error) => error.errorCode)).toEqual([
+      'ENGAGEMENT_STREAK_DEFINITION_INTERVAL_OUT_OF_RANGE',
+      'ENGAGEMENT_STREAK_DEFINITION_PROTECTIONS_OUT_OF_RANGE',
+      'ENGAGEMENT_STREAK_DEFINITION_PROTECTIONS_OUT_OF_RANGE',
     ]);
   });
 
   it('names a field once, however many faults it has', () => {
     const assessed = assess(
       RECOMMENDED,
-      { interval: { kind: 'fixed', days: 14 }, graceDays: 14 },
+      { intervalDays: 14, graceDays: 14 },
       TOMORROW,
     );
-    if (assessed.kind !== 'invalid') throw new Error('expected a refusal');
-    expect(assessed.errors[0]?.code).toBe(
-      'engagement.streak_definition.grace_not_shorter_than_interval',
+    if (assessed.draftAssessment !== DraftAssessment.Invalid) {
+      throw new Error('expected a refusal');
+    }
+    expect(assessed.errors[0]?.errorCode).toBe(
+      'ENGAGEMENT_STREAK_DEFINITION_GRACE_NOT_SHORTER_THAN_INTERVAL',
     );
     expect(assessed.fields.filter((field) => field === 'graceDays')).toEqual([
       'graceDays',
@@ -203,46 +250,47 @@ describe('StreakPublishSystem.assess — what a draft comes to, sending nothing'
 
   it('refuses a day that is no day as a fault of the draft', () => {
     expect(
-      assess(RECOMMENDED, { graceDays: 10 }, DayKey.of('2026-02-30')),
-    ).toMatchObject({ kind: 'invalid', fields: ['effectiveFromDayKey'] });
+      // A corrupt day, as an editor or a hand-made value could carry one —
+      // handed across as written: the parse is the only door to the brand.
+      assess(RECOMMENDED, { graceDays: 10 }, '2026-02-30'),
+    ).toMatchObject({
+      draftAssessment: 'INVALID',
+      fields: ['effectiveFromLocalDate'],
+    });
   });
 
   it('bases the draft on what WAITS, and compares it with what is IN FORCE', () => {
     // Version 2 waits with 14 days of grace; clients live under 7.
-    const head: StreakSchedule = {
-      current: rule(),
-      scheduled: waiting(
-        rule({ version: 2, effectiveFromDayKey: NEXT_MONTH, graceDays: 14 }),
-      ),
-    };
+    const head: StreakSchedule = headOf(
+      rule(),
+      rule({ version: 2, effectiveFromLocalDate: NEXT_MONTH, graceDays: 14 }),
+    );
     expect(assess(head, { graceDays: 10 }, TOMORROW)).toMatchObject({
-      kind: 'valid',
+      draftAssessment: 'VALID',
       baseVersion: 2,
       rule: { version: 3, graceDays: 10 },
-      change: { direction: 'looser', changed: ['graceDays'] },
+      change: { direction: 'LOOSER', changed: ['GRACE_DAYS'] },
     });
   });
 
   it('takes what waited for the rule in force once its day has come', () => {
-    const head: StreakSchedule = {
-      current: rule(),
-      scheduled: waiting(
-        rule({ version: 2, effectiveFromDayKey: TOMORROW, graceDays: 14 }),
-      ),
-    };
+    const head: StreakSchedule = headOf(
+      rule(),
+      rule({ version: 2, effectiveFromLocalDate: TOMORROW, graceDays: 14 }),
+    );
     const assessed = StreakPublishSystem.assess(
       head,
       true,
-      { ...head.current, graceDays: 10 },
-      DayKey.of('2026-11-15'),
+      { ...StreakRule.of(currentOf(head)), graceDays: 10 },
+      localDate('2026-11-15'),
       NEXT_MONTH,
       QUIET,
     );
     // Against 14 days, 10 takes something away.
     expect(assessed).toMatchObject({
-      kind: 'valid',
+      draftAssessment: 'VALID',
       baseVersion: 2,
-      change: { direction: 'stricter', changed: ['graceDays'] },
+      change: { direction: 'STRICTER', changed: ['GRACE_DAYS'] },
       earliest: '2026-10-29',
     });
   });
@@ -251,7 +299,7 @@ describe('StreakPublishSystem.assess — what a draft comes to, sending nothing'
     expect(
       assess(RECOMMENDED, { graceDays: 10 }, TOMORROW, { published: false }),
     ).toMatchObject({
-      kind: 'valid',
+      draftAssessment: 'VALID',
       baseVersion: 0,
       rule: { version: 1, graceDays: 10 },
     });
@@ -259,10 +307,13 @@ describe('StreakPublishSystem.assess — what a draft comes to, sending nothing'
 });
 
 /** The rule in force on `today` — what the page's draft is made on. */
-function inForceOf(head: StreakSchedule, today: DayKey): StreakRule {
-  return head.scheduled !== null && today >= head.scheduled.effectiveFromDayKey
-    ? head.scheduled
-    : head.current;
+function inForceOf(head: StreakSchedule, today: LocalDate): StreakRule {
+  const scheduled = scheduledOf(head);
+  return StreakRule.of(
+    scheduled !== null && today >= scheduled.effectiveFromLocalDate
+      ? scheduled
+      : currentOf(head),
+  );
 }
 
 // ── admit, decide, withdraw (the callable) ───────────────────────────────
@@ -270,12 +321,12 @@ function inForceOf(head: StreakSchedule, today: DayKey): StreakRule {
 /** The server's whole publish, admit → the numbered draft → decide. */
 function publish(
   patch: Partial<StreakRule>,
-  effectiveFromDayKey: DayKey,
+  effectiveFromLocalDate: LocalDate,
   head: StreakSchedule | null = RECOMMENDED,
   more: {
     highestVersion?: number;
     request?: Partial<StreakPublishRequest>;
-    today?: DayKey;
+    today?: LocalDate;
     policy?: typeof QUIET;
   } = {},
 ) {
@@ -288,11 +339,11 @@ function publish(
   const numbered = rule({
     ...patch,
     version: admitted.value,
-    effectiveFromDayKey,
+    effectiveFromLocalDate,
   });
   const decided = StreakPublishSystem.decide(
     numbered,
-    more.request?.transition ?? 'grandfather',
+    more.request?.streakTransition ?? StreakTransition.Grandfather,
     head,
     more.today ?? TODAY,
     more.policy ?? QUIET,
@@ -307,12 +358,13 @@ describe('StreakPublishSystem — publish', () => {
     const result = publish({ graceDays: 10 }, NEXT_WEEK);
     if (!result.ok) throw new Error(JSON.stringify(result.error));
     expect(result.value.rule.version).toBe(2);
-    expect(result.value.change.direction).toBe('looser');
-    expect(result.value.head.current).toEqual(rule());
-    expect(result.value.head.scheduled).toEqual({
-      ...rule({ version: 2, effectiveFromDayKey: NEXT_WEEK, graceDays: 10 }),
-      transition: 'grandfather',
-    });
+    expect(result.value.change.direction).toBe('LOOSER');
+    expect(currentOf(result.value.head)).toEqual(asCurrent(rule()));
+    expect(scheduledOf(result.value.head)).toEqual(
+      asScheduled(
+        rule({ version: 2, effectiveFromLocalDate: NEXT_WEEK, graceDays: 10 }),
+      ),
+    );
     expect(result.value.calledOff).toEqual([]);
     expect(result.value.waits).toBe(true);
   });
@@ -320,8 +372,8 @@ describe('StreakPublishSystem — publish', () => {
   it('classes the change against the rule in force', () => {
     const result = publish({ graceDays: 10, riskLeadDays: 3 }, NEXT_WEEK);
     expect(result.ok && result.value.change).toEqual({
-      direction: 'looser',
-      changed: ['graceDays', 'riskLeadDays'],
+      direction: 'LOOSER',
+      changed: ['GRACE_DAYS', 'RISK_LEAD_DAYS'],
     });
     expect(result.ok && result.value.inForceVersion).toBe(1);
   });
@@ -330,10 +382,10 @@ describe('StreakPublishSystem — publish', () => {
     // The staff's cue alone moves nothing for a client: it may start today.
     const result = publish({ riskLeadDays: 3 }, TODAY);
     if (!result.ok) throw new Error(JSON.stringify(result.error));
-    expect(result.value.change.direction).toBe('neutral');
-    expect(result.value.head.scheduled).toBeNull();
-    expect(result.value.head.current.version).toBe(2);
-    expect(result.value.head.current.riskLeadDays).toBe(3);
+    expect(result.value.change.direction).toBe('NEUTRAL');
+    expect(scheduledOf(result.value.head)).toBeNull();
+    expect(currentOf(result.value.head).version).toBe(2);
+    expect(currentOf(result.value.head).riskLeadDays).toBe(3);
     expect(result.value.waits).toBe(false);
   });
 
@@ -344,10 +396,10 @@ describe('StreakPublishSystem — publish', () => {
     });
     if (!result.ok) throw new Error(JSON.stringify(result.error));
     expect(result.value.rule.version).toBe(3);
-    expect(result.value.change.direction).toBe('looser');
+    expect(result.value.change.direction).toBe('LOOSER');
     expect(result.value.calledOff).toEqual([2]);
-    expect(result.value.head.current.version).toBe(1);
-    expect(result.value.head.scheduled?.version).toBe(3);
+    expect(currentOf(result.value.head).version).toBe(1);
+    expect(scheduledOf(result.value.head)?.version).toBe(3);
     // Compared with the rule IN FORCE, never with the one that waited.
     expect(result.value.inForceVersion).toBe(1);
   });
@@ -357,12 +409,12 @@ describe('StreakPublishSystem — publish', () => {
     const result = publish({ graceDays: 14 }, NEXT_MONTH, WAITING, {
       highestVersion: 2,
       request: { baseVersion: 2 },
-      today: DayKey.of('2026-10-06'),
+      today: localDate('2026-10-06'),
     });
     if (!result.ok) throw new Error(JSON.stringify(result.error));
-    expect(result.value.head.current.version).toBe(2);
-    expect(result.value.head.current.graceDays).toBe(10);
-    expect(result.value.head.scheduled?.graceDays).toBe(14);
+    expect(currentOf(result.value.head).version).toBe(2);
+    expect(currentOf(result.value.head).graceDays).toBe(10);
+    expect(scheduledOf(result.value.head)?.graceDays).toBe(14);
     // It is in force: nothing waited, nothing is called off.
     expect(result.value.calledOff).toEqual([]);
     expect(result.value.inForceVersion).toBe(2);
@@ -374,9 +426,11 @@ describe('StreakPublishSystem — publish', () => {
     });
     if (!result.ok) throw new Error(JSON.stringify(result.error));
     expect(result.value.rule.version).toBe(1);
-    expect(result.value.change).toEqual({ direction: 'neutral', changed: [] });
-    expect(result.value.head.scheduled).toBeNull();
-    expect(result.value.head.current.effectiveFromDayKey).toBe(NEXT_MONTH);
+    expect(result.value.change).toEqual({ direction: 'NEUTRAL', changed: [] });
+    expect(scheduledOf(result.value.head)).toBeNull();
+    expect(currentOf(result.value.head).effectiveFromLocalDate).toBe(
+      NEXT_MONTH,
+    );
     expect(result.value.inForceVersion).toBe(0);
   });
 
@@ -410,7 +464,7 @@ describe('StreakPublishSystem — the version’s number', () => {
       highestVersion: 2,
     });
     expect(result.ok && result.value.rule.version).toBe(3);
-    expect(result.ok && result.value.head.scheduled?.version).toBe(3);
+    expect(result.ok && scheduledOf(result.value.head)?.version).toBe(3);
   });
 });
 
@@ -424,14 +478,18 @@ describe('StreakPublishSystem — what it refuses', () => {
       }),
     ).toEqual({
       ok: false,
-      error: { code: 'loyalty.streak_publish.stale', expected: 1, actual: 2 },
+      error: {
+        errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
+        expected: 1,
+        actual: 2,
+      },
     });
   });
 
   it('refuses a base the shop never had', () => {
     const result = publish({}, TOMORROW, null);
-    expect(!result.ok && result.error.code).toBe(
-      'loyalty.streak_publish.stale',
+    expect(!result.ok && result.error.errorCode).toBe(
+      'LOYALTY_STREAK_PUBLISH_STALE',
     );
   });
 
@@ -440,19 +498,19 @@ describe('StreakPublishSystem — what it refuses', () => {
       highestVersion: 2,
       request: { baseVersion: 2 },
     });
-    expect(!result.ok && result.error.code).toBe(
-      'loyalty.streak_publish.stale',
+    expect(!result.ok && result.error.errorCode).toBe(
+      'LOYALTY_STREAK_PUBLISH_STALE',
     );
   });
 
   it('refuses to recompute the runs before the engine exists', () => {
     expect(
       publish({ graceDays: 10 }, TOMORROW, RECOMMENDED, {
-        request: { transition: 'recompute' },
+        request: { streakTransition: StreakTransition.Recompute },
       }),
     ).toEqual({
       ok: false,
-      error: { code: 'loyalty.streak_publish.recompute_needs_engine' },
+      error: { errorCode: 'LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE' },
     });
   });
 
@@ -463,7 +521,7 @@ describe('StreakPublishSystem — what it refuses', () => {
       }),
     ).toEqual({
       ok: false,
-      error: { code: 'loyalty.streak_publish.preview_stale' },
+      error: { errorCode: 'LOYALTY_STREAK_PUBLISH_PREVIEW_STALE' },
     });
   });
 
@@ -472,25 +530,25 @@ describe('StreakPublishSystem — what it refuses', () => {
     expect(publish({ graceDays: 10 }, TODAY)).toEqual({
       ok: false,
       error: {
-        code: 'loyalty.streak_publish.too_early',
-        effectiveFromDayKey: TODAY,
+        errorCode: 'LOYALTY_STREAK_PUBLISH_TOO_EARLY',
+        effectiveFromLocalDate: TODAY,
         earliest: TOMORROW,
       },
     });
   });
 
   it('refuses a day that has passed', () => {
-    const result = publish({ riskLeadDays: 3 }, DayKey.of('2026-09-27'));
-    expect(!result.ok && result.error.code).toBe(
-      'loyalty.streak_publish.too_early',
+    const result = publish({ riskLeadDays: 3 }, localDate('2026-09-27'));
+    expect(!result.ok && result.error.errorCode).toBe(
+      'LOYALTY_STREAK_PUBLISH_TOO_EARLY',
     );
   });
 
   it.each([
-    ['looser', { graceDays: 10 }],
-    ['stricter', { graceDays: 3 }],
-    ['switch', { enabled: false }],
-    ['mixed', { graceDays: 10, minGapDays: 10 }],
+    ['LOOSER', { graceDays: 10 }],
+    ['STRICTER', { graceDays: 3 }],
+    ['SWITCH', { enabled: false }],
+    ['MIXED', { graceDays: 10, minGapDays: 10 }],
   ] as const)(
     'lets a %s rule start tomorrow while no client sees the rhythm',
     (direction, patch) => {
@@ -504,13 +562,13 @@ describe('StreakPublishSystem — what it refuses', () => {
       policy: SEEN,
     });
     expect(!soon.ok && soon.error).toMatchObject({
-      code: 'loyalty.streak_publish.too_early',
+      errorCode: 'LOYALTY_STREAK_PUBLISH_TOO_EARLY',
       earliest: NEXT_MONTH,
     });
     const noticed = publish({ graceDays: 3 }, NEXT_MONTH, RECOMMENDED, {
       policy: SEEN,
     });
-    expect(noticed.ok && noticed.value.change.direction).toBe('stricter');
+    expect(noticed.ok && noticed.value.change.direction).toBe('STRICTER');
     // What favours them owes no notice.
     expect(
       publish({ graceDays: 10 }, TOMORROW, RECOMMENDED, { policy: SEEN }).ok,
@@ -519,15 +577,14 @@ describe('StreakPublishSystem — what it refuses', () => {
 
   it('refuses a scheduled version that would not start after the rule in force', () => {
     // A first rule is in force whatever its day: this one starts next month.
-    const ahead: StreakSchedule = {
-      current: rule({ effectiveFromDayKey: NEXT_MONTH }),
-      scheduled: null,
-    };
+    const ahead: StreakSchedule = headOf(
+      rule({ effectiveFromLocalDate: NEXT_MONTH }),
+    );
     expect(publish({ graceDays: 10 }, NEXT_WEEK, ahead)).toEqual({
       ok: false,
       error: {
-        code: 'loyalty.streak_publish.invalid',
-        fields: ['scheduled.effectiveFromDayKey'],
+        errorCode: 'LOYALTY_STREAK_PUBLISH_INVALID',
+        fields: ['scheduledEffectiveFromLocalDate'],
       },
     });
   });
@@ -537,27 +594,36 @@ describe('StreakPublishSystem.withdraw', () => {
   it('calls off the version that waits: the head holds the rule in force alone', () => {
     const result = StreakPublishSystem.withdraw(2, WAITING, TODAY);
     if (!result.ok) throw new Error(JSON.stringify(result.error));
-    expect(result.value.head).toEqual({ current: rule(), scheduled: null });
+    expect(result.value.head).toEqual({ rules: [asCurrent(rule())] });
     expect(result.value.calledOff).toEqual([2]);
     expect(result.value.waiting).toMatchObject({
       version: 2,
-      effectiveFromDayKey: NEXT_WEEK,
-      transition: 'grandfather',
+      effectiveFromLocalDate: NEXT_WEEK,
+      headRole: 'SCHEDULED',
+      streakTransition: 'GRANDFATHER',
     });
   });
 
   it('refuses what no longer waits: another version, nothing, a day that came, no rule', () => {
     expect(StreakPublishSystem.withdraw(3, WAITING, TODAY)).toEqual({
       ok: false,
-      error: { code: 'loyalty.streak_publish.stale', expected: 3, actual: 2 },
+      error: {
+        errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
+        expected: 3,
+        actual: 2,
+      },
     });
     expect(StreakPublishSystem.withdraw(2, RECOMMENDED, TODAY).ok).toBe(false);
     expect(
-      StreakPublishSystem.withdraw(2, WAITING, DayKey.of('2026-10-05')).ok,
+      StreakPublishSystem.withdraw(2, WAITING, localDate('2026-10-05')).ok,
     ).toBe(false);
     expect(StreakPublishSystem.withdraw(1, null, TODAY)).toEqual({
       ok: false,
-      error: { code: 'loyalty.streak_publish.stale', expected: 1, actual: 0 },
+      error: {
+        errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
+        expected: 1,
+        actual: 0,
+      },
     });
   });
 
@@ -577,8 +643,8 @@ describe('StreakPublishSystem purity', () => {
         highestVersion: 2,
       }),
       StreakPublishSystem.decide(
-        { ...draft, effectiveFromDayKey: NEXT_MONTH },
-        'grandfather',
+        { ...draft, effectiveFromLocalDate: NEXT_MONTH },
+        StreakTransition.Grandfather,
         head,
         TODAY,
         QUIET,

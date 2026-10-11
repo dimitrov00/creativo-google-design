@@ -24,6 +24,7 @@ export type Brand<T, B extends string> = T & { readonly [BrandSymbol]: B };
 
 ```ts
 import type { Brand } from './brand';
+import type { MinuteCount } from './duration-minutes.primitive';
 import { Result } from '../components/result.data';
 import {
   PrimitiveErrorCode,
@@ -45,7 +46,7 @@ export const MinuteOfDay = {
       : Result.err({ errorCode: PrimitiveErrorCode.MinuteOutOfRange, raw });
   },
   /** Invariant-preserving math returns the brand; it never re-validates. */
-  addClamped(m: MinuteOfDay, d: DurationMinutes): MinuteOfDay {
+  addClamped(m: MinuteOfDay, d: MinuteCount): MinuteOfDay {
     return Math.min(m + d, 1439) as MinuteOfDay;
   },
 } as const;

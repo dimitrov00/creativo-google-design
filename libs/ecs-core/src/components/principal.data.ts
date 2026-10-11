@@ -1,24 +1,23 @@
-import type { UserId } from '../entities/user.entity';
+import type { TenantId, UserId } from '../primitives/ids.primitive';
 import { type AuthClaims, AuthStage } from './auth-claims.data';
 import { type Role, isStaff } from './role.data';
-import type { TenantId } from './tenant-id.data';
 
 /**
- * Principal tags — the ONLY source of these strings, replacing the
- * `principal.kind` literals of the route guards and feature guards.
- * `onboarding` is kept beside the blueprint's three because the guards
- * branch on it (`active.guard.ts` sends an onboarding principal to
- * `/onboarding`, never to `/auth`).
+ * Principal tags — the ONLY source of these strings, the discriminator
+ * `principalKind`, replacing the `principal.kind` literals of the route
+ * guards and feature guards. `ONBOARDING` is kept beside the blueprint's
+ * three because the guards branch on it (`active.guard.ts` sends an
+ * onboarding principal to `/onboarding`, never to `/auth`).
  */
 export const PrincipalKind = {
   /** No Firebase Auth session. */
-  Anonymous: 'anonymous',
+  Anonymous: 'ANONYMOUS',
   /** Signed in; the claims have not flipped to active yet. */
-  Onboarding: 'onboarding',
+  Onboarding: 'ONBOARDING',
   /** Active, holding no staff role. */
-  Client: 'client',
+  Client: 'CLIENT',
   /** Active, holding at least one staff role (`isStaff`). */
-  Staff: 'staff',
+  Staff: 'STAFF',
 } as const;
 export type PrincipalKind = (typeof PrincipalKind)[keyof typeof PrincipalKind];
 
@@ -27,7 +26,8 @@ export type PrincipalKind = (typeof PrincipalKind)[keyof typeof PrincipalKind];
  * Derived from the token (signed in or not) and its claims, never from a
  * live `users/{uid}` read, so the verdict is reliable the instant the token
  * is restored. Live, revocable facts (a block) are deliberately not here:
- * that is `AccountStatus`, read live.
+ * that is the account's `AccountLifecycle`, read live. The signed-in
+ * account is `userId` — always a `UserId`, never a customer (D29).
  */
 export type Principal =
   | Principal.Anonymous
@@ -35,7 +35,9 @@ export type Principal =
   | Principal.Client
   | Principal.Staff;
 
-const ANONYMOUS: Principal.Anonymous = { kind: PrincipalKind.Anonymous };
+const ANONYMOUS: Principal.Anonymous = {
+  principalKind: PrincipalKind.Anonymous,
+};
 
 /** Linear scan of a short list — no allocation. */
 function hasEntry(values: readonly Role[], value: Role): boolean {
@@ -51,31 +53,35 @@ export const Principal = {
   },
 
   /**
-   * Signed-in uid + its token claims → the principal; `null` (no session) →
-   * anonymous. Active claims with a tenant become `staff` when any role is a
-   * staff role, `client` otherwise; anything less (onboarding claims, or
-   * claims with no tenant) is `onboarding` — the safe degrade.
+   * Signed-in account + its token claims → the principal; `null` (no
+   * session) → anonymous. Active claims with a tenant become `STAFF` when any
+   * role is a staff role, `CLIENT` otherwise; anything less (onboarding
+   * claims, or claims with no tenant) is `ONBOARDING` — the safe degrade.
    */
   fromClaims(
-    session: { readonly uid: UserId; readonly claims: AuthClaims } | null,
+    session: { readonly userId: UserId; readonly claims: AuthClaims } | null,
   ): Principal {
     if (session === null) return ANONYMOUS;
-    const { uid, claims } = session;
+    const { userId, claims } = session;
     if (
-      claims.stage === AuthStage.Active &&
+      claims.authStage === AuthStage.Active &&
       claims.roles.length > 0 &&
       claims.tenantId !== null
     ) {
       return {
-        kind: isStaff(claims.roles)
+        principalKind: isStaff(claims.roles)
           ? PrincipalKind.Staff
           : PrincipalKind.Client,
-        uid,
+        userId,
         roles: claims.roles,
         tenantId: claims.tenantId,
       };
     }
-    return { kind: PrincipalKind.Onboarding, uid, tenantId: claims.tenantId };
+    return {
+      principalKind: PrincipalKind.Onboarding,
+      userId,
+      tenantId: claims.tenantId,
+    };
   },
 
   /** Onboarded — the only principals with roles. */
@@ -83,8 +89,8 @@ export const Principal = {
     principal: Principal,
   ): principal is Principal.Client | Principal.Staff {
     return (
-      principal.kind === PrincipalKind.Client ||
-      principal.kind === PrincipalKind.Staff
+      principal.principalKind === PrincipalKind.Client ||
+      principal.principalKind === PrincipalKind.Staff
     );
   },
 
@@ -105,23 +111,23 @@ export const Principal = {
 
 export namespace Principal {
   export type Anonymous = {
-    readonly kind: typeof PrincipalKind.Anonymous;
+    readonly principalKind: typeof PrincipalKind.Anonymous;
   };
   export type Onboarding = {
-    readonly kind: typeof PrincipalKind.Onboarding;
-    readonly uid: UserId;
+    readonly principalKind: typeof PrincipalKind.Onboarding;
+    readonly userId: UserId;
     /** `null` only on a token this app did not mint. */
     readonly tenantId: TenantId | null;
   };
   export type Client = {
-    readonly kind: typeof PrincipalKind.Client;
-    readonly uid: UserId;
+    readonly principalKind: typeof PrincipalKind.Client;
+    readonly userId: UserId;
     readonly roles: readonly Role[];
     readonly tenantId: TenantId;
   };
   export type Staff = {
-    readonly kind: typeof PrincipalKind.Staff;
-    readonly uid: UserId;
+    readonly principalKind: typeof PrincipalKind.Staff;
+    readonly userId: UserId;
     readonly roles: readonly Role[];
     readonly tenantId: TenantId;
   };

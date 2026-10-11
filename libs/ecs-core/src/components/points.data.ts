@@ -1,3 +1,4 @@
+import type { Brand } from '../primitives/brand';
 import { EngagementError } from './engagement-errors.data';
 import { Result } from './result.data';
 
@@ -7,9 +8,9 @@ import { Result } from './result.data';
  * (T2, R27): a clamp makes the shortfall vanish, and a ledger whose entries
  * no longer sum to its balance cannot be audited or reversed. A cascade
  * that genuinely leaves a client in debt shows as the account's signed
- * `balance` (`LoyaltyAccountEntity`), never as a `Points` value.
+ * `balance` (`LoyaltyAccount`), never as a `Points` value.
  */
-export type Points = number & { readonly __brand: unique symbol };
+export type Points = Brand<number, 'Points'>;
 
 export const Points = {
   /** The only cast site, for a figure already validated (a stored document). Untrusted input goes through `parse`. */

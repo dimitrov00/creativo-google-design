@@ -1,57 +1,65 @@
 import { describe, expect, it } from 'vitest';
+import { localDate, minute, unwrapOk } from '../testing';
+import { ZonedTimeSystem } from '../systems/zoned-time.system';
 import {
   DateTimeInvalidReason,
   TimeError,
   TimeErrorCode,
 } from './time-errors.data';
 
+const SOFIA = unwrapOk(ZonedTimeSystem.checkZone('Europe/Sofia'));
+
 describe('TimeError', () => {
-  it('uses the dotted time.* codes the UI translates', () => {
+  it('uses the SCREAMING codes the UI translates as errors.<errorCode> (§2.1)', () => {
     expect(Object.values(TimeErrorCode)).toEqual([
-      'time.invalid_date_time',
-      'time.invalid_time_zone',
-      'time.nonexistent_local_time',
-      'time.ambiguous_local_time',
+      'DST_GAP_INVALID_TIME',
+      'TIME_INVALID_DATE_TIME',
+      'TIME_INVALID_TIME_ZONE',
+    ]);
+    expect(Object.values(DateTimeInvalidReason)).toEqual([
+      'UNPARSABLE',
+      'OUT_OF_RANGE',
     ]);
   });
 
-  it('builds plain structs whose fields are i18n parameters', () => {
+  it('builds flat structs whose fields are i18n parameters', () => {
     expect(
       TimeError.invalidDateTime('not-a-date', DateTimeInvalidReason.Unparsable),
     ).toEqual({
-      code: 'time.invalid_date_time',
+      errorCode: 'TIME_INVALID_DATE_TIME',
       rawValue: 'not-a-date',
-      reason: 'unparsable',
+      dateTimeInvalidReason: 'UNPARSABLE',
     });
     expect(TimeError.invalidTimeZone('Not/AZone')).toEqual({
-      code: 'time.invalid_time_zone',
+      errorCode: 'TIME_INVALID_TIME_ZONE',
       rawZone: 'Not/AZone',
     });
     expect(
-      TimeError.nonexistentLocalTime('2026-03-29T03:30', 'Europe/Sofia'),
+      TimeError.dstGap(localDate('2026-03-29'), minute(210), SOFIA),
     ).toEqual({
-      code: 'time.nonexistent_local_time',
-      rawValue: '2026-03-29T03:30',
-      zone: 'Europe/Sofia',
-    });
-    expect(
-      TimeError.ambiguousLocalTime('2026-10-25T03:30', 'Europe/Sofia'),
-    ).toEqual({
-      code: 'time.ambiguous_local_time',
-      rawValue: '2026-10-25T03:30',
-      zone: 'Europe/Sofia',
+      errorCode: 'DST_GAP_INVALID_TIME',
+      localDate: '2026-03-29',
+      minute: 210,
+      timeZone: 'Europe/Sofia',
     });
   });
 
-  it('is() narrows on the code', () => {
-    const error: TimeError = TimeError.nonexistentLocalTime(
-      '2026-03-29T03:30',
-      'Europe/Sofia',
+  it('is() narrows on the errorCode', () => {
+    const error: TimeError = TimeError.dstGap(
+      localDate('2026-03-29'),
+      minute(210),
+      SOFIA,
     );
-    expect(TimeError.is(error, TimeErrorCode.NonexistentLocalTime)).toBe(true);
-    expect(TimeError.is(error, TimeErrorCode.AmbiguousLocalTime)).toBe(false);
-    if (TimeError.is(error, TimeErrorCode.NonexistentLocalTime)) {
-      expect(error.zone).toBe('Europe/Sofia');
+    expect(TimeError.is(error, TimeErrorCode.DstGap)).toBe(true);
+    expect(TimeError.is(error, TimeErrorCode.InvalidDateTime)).toBe(false);
+    if (TimeError.is(error, TimeErrorCode.DstGap)) {
+      expect(error.timeZone).toBe('Europe/Sofia');
     }
+  });
+
+  it('is serialisable and prototype-free (Law 7.5)', () => {
+    const error = TimeError.invalidTimeZone('X');
+    expect(Object.getPrototypeOf(error)).toBe(Object.prototype);
+    expect(JSON.parse(JSON.stringify(error))).toEqual(error);
   });
 });

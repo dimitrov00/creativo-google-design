@@ -4,6 +4,7 @@ import {
   InvalidCalendarDayError,
   InvalidDateRangeError,
 } from './calendar-day.errors';
+import { defect } from '@creativo/ecs-core';
 
 const DAY_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -91,7 +92,7 @@ export class CalendarDay {
       this.zone,
       'shiftForward',
     );
-    if (noon.isFailure()) throw new Error('unreachable: validated day');
+    if (noon.isFailure()) defect('unreachable: validated day');
     return noon.value.startOfDay();
   }
 
@@ -131,7 +132,7 @@ export class CalendarDay {
   /** The 1st of this day's month, same zone. */
   startOfMonth(): CalendarDay {
     const first = CalendarDay.create(`${this.key().slice(0, 8)}01`, this.zone);
-    if (first.isFailure()) throw new Error('unreachable: validated day');
+    if (first.isFailure()) defect('unreachable: validated day');
     return first.value;
   }
 

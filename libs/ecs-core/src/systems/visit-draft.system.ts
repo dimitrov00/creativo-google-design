@@ -1,12 +1,22 @@
-import type { DayKey } from '../components/day-key.data';
 import {
-  Frequency,
-  RecurrenceEndKind,
+  RecurrenceEnd,
+  RecurrenceEndRule,
+  RecurrenceFrequency,
+  RecurrencePattern,
   RecurrenceRule,
 } from '../components/recurrence-rule.data';
 import { Weekday } from '../components/weekday.data';
+import { defect } from '../primitives/defect';
+import {
+  DurationMinutes,
+  MinuteDelta,
+} from '../primitives/duration-minutes.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type {
+  EndMinute,
+  MinuteOfDay,
+} from '../primitives/minute-of-day.primitive';
 import { RecurrenceSystem } from './recurrence.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /**
  * The repeat page's shortcuts — Apple's Repeat list with Google's and
@@ -15,12 +25,12 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * wears the check is read back off it ({@link VisitDraftSystem.presetOf}).
  */
 export const RepeatPreset = {
-  Never: 'never',
-  Daily: 'daily',
-  Weekdays: 'weekdays',
-  Weekly: 'weekly',
-  Monthly: 'monthly',
-  Yearly: 'yearly',
+  Never: 'NEVER',
+  Daily: 'DAILY',
+  Weekdays: 'WEEKDAYS',
+  Weekly: 'WEEKLY',
+  Monthly: 'MONTHLY',
+  Yearly: 'YEARLY',
 } as const;
 export type RepeatPreset = (typeof RepeatPreset)[keyof typeof RepeatPreset];
 
@@ -55,13 +65,26 @@ const DEFAULT_COUNT = 10;
 /** The id a service picked before anyone was named sits on. */
 const PLACEHOLDER_CLIENT_ID = 'primary';
 /** A visit with no service yet still needs a shape to draw: half an hour. */
-const DEFAULT_SPAN_MINUTES = 30;
+const DEFAULT_SPAN_MINUTES = durationOf(30);
+
+/** A positive whole number of minutes this file knows is one (a constant, a sum, a span). */
+function durationOf(raw: number): DurationMinutes {
+  const minutes = DurationMinutes.of(raw);
+  return minutes.ok ? minutes.value : defect('visit-draft: a duration ≤ 0');
+}
 
 /** A leg as the span reads it — its minutes. */
-export type DraftLegMinutes = { readonly minutes: number };
+export type DraftLegMinutes = { readonly durationMinutes: DurationMinutes };
 
-/** A leg as the placeholder rule reads it — whose it is. */
-export type DraftLegClient = { readonly clientId: string };
+/**
+ * A leg as the placeholder rule reads it — whose it is. The person key is
+ * OPAQUE to the system (the editor's own key: an account's uid, a guest's
+ * key or {@link PLACEHOLDER_CLIENT_ID}), so it stays the caller's type `K`;
+ * the rule only compares it with the placeholder and hands a new one over.
+ */
+export type DraftLegClient<K extends string = string> = {
+  readonly clientId: K;
+};
 
 /**
  * A seat as the catalogue tag reads it: the catalogue's minutes for it, or
@@ -69,13 +92,13 @@ export type DraftLegClient = { readonly clientId: string };
  * was booked (sold) for.
  */
 export type CatalogLegMinutes = {
-  readonly catalogMinutes: number | null;
-  readonly bookedMinutes: number;
+  readonly catalogMinutes: DurationMinutes | null;
+  readonly bookedMinutes: DurationMinutes;
 };
 
-/** One stranger's name on a visit. */
-export type WalkInLabel = {
-  readonly personId: string;
+/** One stranger's name on a visit — the person by the caller's own opaque key `K`. */
+export type WalkInLabel<K extends string = string> = {
+  readonly personId: K;
   readonly label: string;
 };
 
@@ -84,19 +107,31 @@ type RulePreset = Exclude<RepeatPreset, typeof RepeatPreset.Never>;
 
 function patternOf(
   preset: RulePreset,
-  startDayKey: DayKey,
-): RecurrenceRule.Pattern {
+  startLocalDate: LocalDate,
+): RecurrencePattern {
   switch (preset) {
     case RepeatPreset.Weekdays:
-      return { kind: Frequency.Weekly, weekdays: MONDAY_TO_FRIDAY };
+      return RecurrencePattern.weekly(MONDAY_TO_FRIDAY);
     case RepeatPreset.Daily:
-      return RecurrenceSystem.patternFor(Frequency.Daily, startDayKey);
+      return RecurrenceSystem.patternFor(
+        RecurrenceFrequency.Daily,
+        startLocalDate,
+      );
     case RepeatPreset.Weekly:
-      return RecurrenceSystem.patternFor(Frequency.Weekly, startDayKey);
+      return RecurrenceSystem.patternFor(
+        RecurrenceFrequency.Weekly,
+        startLocalDate,
+      );
     case RepeatPreset.Monthly:
-      return RecurrenceSystem.patternFor(Frequency.Monthly, startDayKey);
+      return RecurrenceSystem.patternFor(
+        RecurrenceFrequency.Monthly,
+        startLocalDate,
+      );
     case RepeatPreset.Yearly:
-      return RecurrenceSystem.patternFor(Frequency.Yearly, startDayKey);
+      return RecurrenceSystem.patternFor(
+        RecurrenceFrequency.Yearly,
+        startLocalDate,
+      );
   }
 }
 
@@ -107,28 +142,29 @@ function patternOf(
  * makes on someone's behalf; an end a person set stands as set.
  */
 function fitted(
-  pattern: RecurrenceRule.Pattern,
+  pattern: RecurrencePattern,
   interval: number,
-  end: RecurrenceRule.End | null,
-  startDayKey: DayKey,
+  end: RecurrenceEndRule | null,
+  startLocalDate: LocalDate,
 ): RecurrenceRule | null {
   if (end !== null) {
     const kept = RecurrenceRule.create(pattern, interval, end);
-    if (kept.ok && RecurrenceSystem.series(startDayKey, kept.value).ok) {
+    if (kept.ok && RecurrenceSystem.series(startLocalDate, kept.value).ok) {
       return kept.value;
     }
   }
   const fresh = RecurrenceRule.create(
     pattern,
     interval,
-    VisitDraftSystem.defaultEnd(pattern.kind, startDayKey),
+    VisitDraftSystem.defaultEnd(pattern.recurrenceFrequency, startLocalDate),
   );
   return fresh.ok ? fresh.value : null;
 }
 
 /**
  * VisitDraftSystem — the moves a staff sheet makes on a DRAFT on someone's
- * behalf, as numbers, ids and rules (never words):
+ * behalf, as minutes, keys and rules (never words), on the shop's calendar
+ * alone (`LocalDate`, Law 7 — no zone, no instant):
  *
  * - the visit's span and the placeholder seats
  *   (`visit-editor/staff-visit-editor.ts` `spanOf`/`seedDraft`/
@@ -148,35 +184,40 @@ export const VisitDraftSystem = {
   /* ── The span and the placeholder seats ─────────────────────────────── */
 
   /** The legs' minutes summed — or half an hour for a visit with none yet. */
-  legMinutes(legs: readonly DraftLegMinutes[]): number {
+  legMinutes(legs: readonly DraftLegMinutes[]): DurationMinutes {
     if (legs.length === 0) return DEFAULT_SPAN_MINUTES;
-    let total = 0;
-    for (let i = 0; i < legs.length; i++) {
-      total += (legs[i] as DraftLegMinutes).minutes;
+    let total = (legs[0] as DraftLegMinutes).durationMinutes;
+    for (let i = 1; i < legs.length; i++) {
+      total = DurationMinutes.sum(
+        total,
+        (legs[i] as DraftLegMinutes).durationMinutes,
+      );
     }
     return total;
   },
 
   /** The minutes a draft describes — its override, or the legs it holds. */
   span(
-    durationOverride: number | null,
+    durationOverride: DurationMinutes | null,
     legs: readonly DraftLegMinutes[],
-  ): number {
+  ): DurationMinutes {
     return durationOverride ?? VisitDraftSystem.legMinutes(legs);
   },
 
   /**
-   * The override a seeded draft pins: none when the booked span IS the
-   * legs' own minutes, else the booked span — only a number that never was
-   * the catalogue's is pinned.
+   * The override a seeded draft pins: none when the booked span — from its
+   * start to its exclusive end on the shop's clock — IS the legs' own
+   * minutes, else the booked span: only a number that never was the
+   * catalogue's is pinned. A span with no length pins nothing.
    */
   durationOverrideOf(
-    startMinute: number,
-    endMinute: number,
+    start: MinuteOfDay,
+    end: EndMinute,
     legs: readonly DraftLegMinutes[],
-  ): number | null {
-    const span = endMinute - startMinute;
-    return span === VisitDraftSystem.legMinutes(legs) ? null : span;
+  ): DurationMinutes | null {
+    const span = DurationMinutes.between(start, end);
+    if (!span.ok) return null;
+    return span.value === VisitDraftSystem.legMinutes(legs) ? null : span.value;
   },
 
   /**
@@ -188,7 +229,7 @@ export const VisitDraftSystem = {
   adoptPlaceholderLegs<L extends DraftLegClient>(
     clientCount: number,
     legs: readonly L[],
-    personId: string,
+    personId: L['clientId'],
   ): readonly L[] {
     if (clientCount > 0) return legs;
     const out: L[] = [];
@@ -213,24 +254,24 @@ export const VisitDraftSystem = {
    * the plain label, `word(n)` the numbered one; the search is bounded, so a
    * catalogue that words every number alike still ends.
    */
-  walkInLabels(
-    unlabelled: readonly string[],
+  walkInLabels<K extends string>(
+    unlabelled: readonly K[],
     taken: readonly string[],
     word: (number: number | null) => string,
-  ): readonly WalkInLabel[] {
+  ): readonly WalkInLabel<K>[] {
     const used = new Set<string>(taken);
-    const seen = new Set<string>();
-    const people: string[] = [];
+    const seen = new Set<K>();
+    const people: K[] = [];
     for (let i = 0; i < unlabelled.length; i++) {
-      const id = unlabelled[i] as string;
+      const id = unlabelled[i] as K;
       if (seen.has(id)) continue;
       seen.add(id);
       people.push(id);
     }
     const limit = used.size + people.length + 2;
-    const out: WalkInLabel[] = [];
+    const out: WalkInLabel<K>[] = [];
     for (let i = 0; i < people.length; i++) {
-      const personId = people[i] as string;
+      const personId = people[i] as K;
       let label = word(null);
       for (let number = 2; used.has(label) && number <= limit; number += 1) {
         label = word(number);
@@ -248,12 +289,12 @@ export const VisitDraftSystem = {
    * longer knows stands at its own booked length — a retired service reads
    * as running exactly as sold. `null` for no seats at all.
    */
-  catalogMinutesOf(legs: readonly CatalogLegMinutes[]): number | null {
-    if (legs.length === 0) return null;
-    let total = 0;
+  catalogMinutesOf(legs: readonly CatalogLegMinutes[]): DurationMinutes | null {
+    let total: DurationMinutes | null = null;
     for (let i = 0; i < legs.length; i++) {
       const leg = legs[i] as CatalogLegMinutes;
-      total += leg.catalogMinutes ?? leg.bookedMinutes;
+      const minutes = leg.catalogMinutes ?? leg.bookedMinutes;
+      total = total === null ? minutes : DurationMinutes.sum(total, minutes);
     }
     return total;
   },
@@ -263,12 +304,13 @@ export const VisitDraftSystem = {
    * it runs exactly as the catalogue says, and when the catalogue cannot say.
    */
   minutesDelta(
-    spanMinutes: number,
-    catalogMinutes: number | null,
-  ): number | null {
+    spanMinutes: DurationMinutes,
+    catalogMinutes: DurationMinutes | null,
+  ): MinuteDelta | null {
     if (catalogMinutes === null) return null;
-    const delta = spanMinutes - catalogMinutes;
-    return delta === 0 ? null : delta;
+    const delta = MinuteDelta.of(spanMinutes - catalogMinutes);
+    if (!delta.ok) return defect('visit-draft: a delta off the integers');
+    return delta.value === 0 ? null : delta.value;
   },
 
   /* ── The repeat page's policy ────────────────────────────────────────── */
@@ -278,33 +320,37 @@ export const VisitDraftSystem = {
    * for a daily or weekly series, six months for a monthly one, four years
    * for a yearly one — the month's last day where it has no such date.
    */
-  defaultEnd(frequency: Frequency, startDayKey: DayKey): RecurrenceRule.End {
-    const dayKey =
-      frequency === Frequency.Daily || frequency === Frequency.Weekly
-        ? ZonedTimeSystem.addDays(startDayKey, DEFAULT_DAYS)
-        : ZonedTimeSystem.addMonths(
-            startDayKey,
-            frequency === Frequency.Monthly
+  defaultEnd(
+    frequency: RecurrenceFrequency,
+    startLocalDate: LocalDate,
+  ): RecurrenceEndRule {
+    return RecurrenceEndRule.until(
+      frequency === RecurrenceFrequency.Daily ||
+        frequency === RecurrenceFrequency.Weekly
+        ? LocalDate.addDays(startLocalDate, DEFAULT_DAYS)
+        : LocalDate.addMonths(
+            startLocalDate,
+            frequency === RecurrenceFrequency.Monthly
               ? DEFAULT_MONTHS_MONTHLY
               : DEFAULT_MONTHS_YEARLY,
-          );
-    return { kind: RecurrenceEndKind.Until, dayKey };
+          ),
+    );
   },
 
   /** Which shortcut a rule is from `start` — `null` for none of them («Персонализирано»). */
   presetOf(
     rule: RecurrenceRule | null,
-    startDayKey: DayKey,
+    startLocalDate: LocalDate,
   ): RepeatPreset | null {
     if (rule === null) return RepeatPreset.Never;
-    if (rule.interval !== 1) return null;
+    if (rule.recurrenceInterval !== 1) return null;
     for (let i = 0; i < REPEAT_PRESETS.length; i++) {
       const preset = REPEAT_PRESETS[i] as RepeatPreset;
       if (preset === RepeatPreset.Never) continue;
       const candidate = RecurrenceRule.create(
-        patternOf(preset, startDayKey),
+        patternOf(preset, startLocalDate),
         1,
-        rule.end,
+        RecurrenceRule.endOf(rule),
       );
       if (candidate.ok && RecurrenceRule.equals(candidate.value, rule)) {
         return preset;
@@ -316,15 +362,15 @@ export const VisitDraftSystem = {
   /** A shortcut, tapped: what it means from `start`, keeping the end the series had. */
   ruleForPreset(
     preset: RepeatPreset,
-    startDayKey: DayKey,
+    startLocalDate: LocalDate,
     current: RecurrenceRule | null,
   ): RecurrenceRule | null {
     if (preset === RepeatPreset.Never) return null;
     return fitted(
-      patternOf(preset, startDayKey),
+      patternOf(preset, startLocalDate),
       1,
-      current === null ? null : current.end,
-      startDayKey,
+      current === null ? null : RecurrenceRule.endOf(current),
+      startLocalDate,
     );
   },
 
@@ -334,12 +380,12 @@ export const VisitDraftSystem = {
    * weekday.
    */
   ruleForCustom(
-    startDayKey: DayKey,
+    startLocalDate: LocalDate,
     current: RecurrenceRule | null,
   ): RecurrenceRule | null {
     return (
       current ??
-      VisitDraftSystem.ruleForPreset(RepeatPreset.Weekly, startDayKey, null)
+      VisitDraftSystem.ruleForPreset(RepeatPreset.Weekly, startLocalDate, null)
     );
   },
 
@@ -350,16 +396,16 @@ export const VisitDraftSystem = {
    */
   ruleForFrequency(
     rule: RecurrenceRule,
-    frequency: Frequency,
-    startDayKey: DayKey,
+    frequency: RecurrenceFrequency,
+    startLocalDate: LocalDate,
   ): RecurrenceRule {
     if (RecurrenceRule.frequency(rule) === frequency) return rule;
     return (
       fitted(
-        RecurrenceSystem.patternFor(frequency, startDayKey),
-        rule.interval,
-        rule.end,
-        startDayKey,
+        RecurrenceSystem.patternFor(frequency, startLocalDate),
+        rule.recurrenceInterval,
+        RecurrenceRule.endOf(rule),
+        startLocalDate,
       ) ?? rule
     );
   },
@@ -372,30 +418,30 @@ export const VisitDraftSystem = {
    */
   ruleForEndKind(
     rule: RecurrenceRule,
-    kind: RecurrenceEndKind,
-    startDayKey: DayKey,
+    recurrenceEnd: RecurrenceEnd,
+    startLocalDate: LocalDate,
   ): RecurrenceRule {
-    if (rule.end.kind === kind) return rule;
-    const series = RecurrenceSystem.series(startDayKey, rule);
-    let end: RecurrenceRule.End;
-    if (kind === RecurrenceEndKind.Count) {
-      end = {
-        kind: RecurrenceEndKind.Count,
-        count: series.ok ? series.value.dayKeys.length : DEFAULT_COUNT,
-      };
+    if (rule.recurrenceEnd === recurrenceEnd) return rule;
+    const series = RecurrenceSystem.series(startLocalDate, rule);
+    let end: RecurrenceEndRule;
+    if (recurrenceEnd === RecurrenceEnd.Count) {
+      end = RecurrenceEndRule.count(
+        series.ok ? series.value.localDates.length : DEFAULT_COUNT,
+      );
     } else if (series.ok) {
-      const days = series.value.dayKeys;
-      end = {
-        kind: RecurrenceEndKind.Until,
-        dayKey: days[days.length - 1] as DayKey,
-      };
+      const days = series.value.localDates;
+      end = RecurrenceEndRule.until(days[days.length - 1] as LocalDate);
     } else {
       end = VisitDraftSystem.defaultEnd(
         RecurrenceRule.frequency(rule),
-        startDayKey,
+        startLocalDate,
       );
     }
-    const next = RecurrenceRule.create(rule.pattern, rule.interval, end);
+    const next = RecurrenceRule.create(
+      RecurrenceRule.patternOf(rule),
+      rule.recurrenceInterval,
+      end,
+    );
     return next.ok ? next.value : rule;
   },
 
@@ -407,17 +453,21 @@ export const VisitDraftSystem = {
    */
   ruleForStart(
     rule: RecurrenceRule,
-    fromDayKey: DayKey,
-    toDayKey: DayKey,
+    fromLocalDate: LocalDate,
+    toLocalDate: LocalDate,
   ): RecurrenceRule {
     const followed = RecurrenceSystem.followingStart(
       rule,
-      fromDayKey,
-      toDayKey,
+      fromLocalDate,
+      toLocalDate,
     );
     return (
-      fitted(followed.pattern, followed.interval, followed.end, toDayKey) ??
-      followed
+      fitted(
+        RecurrenceRule.patternOf(followed),
+        followed.recurrenceInterval,
+        RecurrenceRule.endOf(followed),
+        toLocalDate,
+      ) ?? followed
     );
   },
 } as const;

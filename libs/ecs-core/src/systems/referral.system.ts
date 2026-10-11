@@ -1,9 +1,10 @@
 import { EngagementError } from '../components/engagement-errors.data';
 import { RedemptionCount } from '../components/redemption-count.data';
 import { Result } from '../components/result.data';
-import type { InvitationEntity } from '../entities/invitation.entity';
-import type { InvitationRedemptionEntity } from '../entities/invitation-redemption.entity';
-import type { UserId } from '../entities/user.entity';
+import type { InvitationRedemption } from '../entities/invitation-redemption.entity';
+import type { Invitation } from '../entities/invitation.entity';
+import type { UserId } from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /*
  * AN INVITATION REDEEMED (`invitation.ts:105-115`,
@@ -11,27 +12,27 @@ import type { UserId } from '../entities/user.entity';
  * `redeemInvitation` pipeline: the self-redemption guard, the redemption
  * record (its id is the referee's uid, so a second redemption is a no-op
  * at the store), and the invitation with its count bumped — never a raw
- * `+1` in an adapter.
+ * `+1` in an adapter. Referral is an ACCOUNT act (D29): both sides are
+ * `UserId`s.
  */
 
 /** What one redemption writes: the record and the invitation, counted once more. */
-export type ReferralRedemption<I extends InvitationEntity = InvitationEntity> =
-  {
-    readonly invitation: I;
-    readonly redemption: InvitationRedemptionEntity;
-  };
+export type ReferralRedemption<I extends Invitation = Invitation> = {
+  readonly invitation: I;
+  readonly redemption: InvitationRedemption;
+};
 
 export const ReferralSystem = {
   /** Whether the given user is the original inviter — guards self-invitation. */
   isSelfInvitation(
-    invitation: Pick<InvitationEntity, 'inviterUserId'>,
+    invitation: Pick<Invitation, 'inviterUserId'>,
     candidate: UserId,
   ): boolean {
     return invitation.inviterUserId === candidate;
   },
 
   /** The per-redemption counter bump, as a new struct. */
-  recordRedemption<I extends InvitationEntity>(invitation: I): I {
+  recordRedemption<I extends Invitation>(invitation: I): I {
     return {
       ...invitation,
       redemptionCount: RedemptionCount.next(invitation.redemptionCount),
@@ -39,21 +40,21 @@ export const ReferralSystem = {
   },
 
   /**
-   * `referee` redeems `invitation` at `redeemedAtMs`: refused when the
+   * `referee` redeems `invitation` at `redeemedAtUtcMs`: refused when the
    * referee is the inviter; else the redemption record and the invitation
    * counted once more.
    */
-  redeem<I extends InvitationEntity>(
+  redeem<I extends Invitation>(
     invitation: I,
     referee: UserId,
-    redeemedAtMs: number,
+    redeemedAtUtcMs: UtcEpochMs,
   ): Result<ReferralRedemption<I>, EngagementError.InvitationSelfRedemption> {
     if (ReferralSystem.isSelfInvitation(invitation, referee)) {
       return Result.err(EngagementError.invitationSelfRedemption());
     }
     return Result.ok({
       invitation: ReferralSystem.recordRedemption(invitation),
-      redemption: { id: referee, redeemedAtMs },
+      redemption: { id: referee, redeemedAtUtcMs },
     });
   },
 } as const;

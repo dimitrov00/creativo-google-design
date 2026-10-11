@@ -1,15 +1,17 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  DayKey,
-  Frequency,
-  MonthlyDayKind,
-  RecurrenceEndKind,
+  LocalDate,
+  MonthlyAnchor,
+  RecurrenceEndRule,
+  RecurrenceFrequency as FrequencyTag,
+  RecurrencePattern as PatternData,
   RecurrenceRule as RuleData,
   RecurrenceSystem,
   SchedulingErrorCode,
   type SchedulingError,
   type Weekday as IsoWeekday,
   WeekOfMonth as WeekOfMonthTag,
+  defect,
 } from '@creativo/ecs-core';
 import { CalendarDay } from './calendar-day';
 import { type Weekday, isoOf, weekdayFromIso } from './weekday';
@@ -72,17 +74,16 @@ export interface RecurrenceRuleProps {
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
-function toFrequency(frequency: RecurrenceFrequency): Frequency {
-  switch (frequency) {
-    case 'daily':
-      return Frequency.Daily;
-    case 'weekly':
-      return Frequency.Weekly;
-    case 'monthly':
-      return Frequency.Monthly;
-    case 'yearly':
-      return Frequency.Yearly;
-  }
+/** The legacy lowercase frequency ↔ the SCREAMING tag — the ONE table each way. */
+const LEGACY_FREQUENCY = {
+  daily: FrequencyTag.Daily,
+  weekly: FrequencyTag.Weekly,
+  monthly: FrequencyTag.Monthly,
+  yearly: FrequencyTag.Yearly,
+} as const satisfies Record<RecurrenceFrequency, FrequencyTag>;
+
+function toFrequency(frequency: RecurrenceFrequency): FrequencyTag {
+  return LEGACY_FREQUENCY[frequency];
 }
 
 /** A legacy weekday name → ISO; an unknown name maps to 0, which no rule accepts. */
@@ -90,82 +91,81 @@ function toIso(weekday: Weekday): IsoWeekday {
   return isoOf(weekday) as IsoWeekday;
 }
 
-function toEcsMonthlyDay(day: MonthlyDay): RuleData.MonthlyDay {
+function toEcsMonthlyDay(day: MonthlyDay): PatternData.Monthly {
   return day.by === 'date'
-    ? { kind: MonthlyDayKind.Date, date: day.date }
-    : {
-        kind: MonthlyDayKind.Weekday,
-        week: day.week as WeekOfMonthTag,
-        weekday: toIso(day.weekday),
-      };
+    ? PatternData.monthlyByDate(day.date)
+    : PatternData.monthlyByWeekday(
+        day.week as WeekOfMonthTag,
+        toIso(day.weekday),
+      );
 }
 
-function fromEcsMonthlyDay(day: RuleData.MonthlyDay): MonthlyDay {
-  return day.kind === MonthlyDayKind.Date
-    ? { by: 'date', date: day.date }
+function fromEcsMonthlyDay(day: PatternData.Monthly): MonthlyDay {
+  return day.monthlyAnchor === MonthlyAnchor.Date
+    ? { by: 'date', date: day.monthlyDate }
     : {
         by: 'weekday',
-        week: day.week as WeekOfMonth,
-        weekday: weekdayFromIso(day.weekday),
+        week: day.monthlyWeek as WeekOfMonth,
+        weekday: weekdayFromIso(day.monthlyWeekday),
       };
 }
 
-function toEcsPattern(pattern: RecurrencePattern): RuleData.Pattern {
+function toEcsPattern(pattern: RecurrencePattern): PatternData {
   switch (pattern.frequency) {
     case 'daily':
-      return { kind: Frequency.Daily };
+      return PatternData.daily();
     case 'weekly':
-      return {
-        kind: Frequency.Weekly,
-        weekdays: pattern.weekdays.map(toIso),
-      };
+      return PatternData.weekly(pattern.weekdays.map(toIso));
     case 'monthly':
-      return { kind: Frequency.Monthly, day: toEcsMonthlyDay(pattern.day) };
+      return toEcsMonthlyDay(pattern.day);
     case 'yearly':
-      return {
-        kind: Frequency.Yearly,
-        month: pattern.month,
-        date: pattern.date,
-      };
+      return PatternData.yearly(pattern.month, pattern.date);
   }
 }
 
-function fromEcsPattern(pattern: RuleData.Pattern): RecurrencePattern {
-  switch (pattern.kind) {
-    case Frequency.Daily:
+function fromEcsPattern(pattern: PatternData): RecurrencePattern {
+  switch (pattern.recurrenceFrequency) {
+    case FrequencyTag.Daily:
       return { frequency: 'daily' };
-    case Frequency.Weekly:
+    case FrequencyTag.Weekly:
       return {
         frequency: 'weekly',
-        weekdays: pattern.weekdays.map(weekdayFromIso),
+        weekdays: pattern.recurrenceWeekdays.map(weekdayFromIso),
       };
-    case Frequency.Monthly:
-      return { frequency: 'monthly', day: fromEcsMonthlyDay(pattern.day) };
-    case Frequency.Yearly:
-      return { frequency: 'yearly', month: pattern.month, date: pattern.date };
+    case FrequencyTag.Monthly:
+      return { frequency: 'monthly', day: fromEcsMonthlyDay(pattern) };
+    case FrequencyTag.Yearly:
+      return {
+        frequency: 'yearly',
+        month: pattern.yearlyMonth,
+        date: pattern.yearlyDate,
+      };
   }
 }
 
-function toEcsEnd(end: RecurrenceEnd): RuleData.End {
+/** A calendar day's key — a real day by construction (`CalendarDay`). */
+function localDateOf(day: CalendarDay): LocalDate {
+  const parsed = LocalDate.parse(day.key());
+  if (!parsed.ok) defect(`unreachable: a CalendarDay ${day.key()}`);
+  return parsed.value;
+}
+
+function toEcsEnd(end: RecurrenceEnd): RecurrenceEndRule {
   return end.kind === 'until'
-    ? { kind: RecurrenceEndKind.Until, dayKey: DayKey.of(end.day.key()) }
-    : { kind: RecurrenceEndKind.Count, count: end.count };
+    ? RecurrenceEndRule.until(localDateOf(end.day))
+    : RecurrenceEndRule.count(end.count);
 }
 
 function toEcsRule(rule: RecurrenceRule): RuleData {
-  return {
-    pattern: toEcsPattern(rule.pattern),
-    interval: rule.interval,
-    end: toEcsEnd(rule.end),
-  };
-}
-
-function dayKeyOf(day: CalendarDay): DayKey {
-  return DayKey.of(day.key());
+  return RuleData.of(
+    toEcsPattern(rule.pattern),
+    rule.interval,
+    toEcsEnd(rule.end),
+  );
 }
 
 function toLegacyRuleError(error: SchedulingError): RecurrenceRuleError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case SchedulingErrorCode.RecurrenceInvalidInterval:
       return new InvalidRecurrenceIntervalError(error.interval, error.max);
     case SchedulingErrorCode.RecurrenceInvalidCount:
@@ -178,24 +178,23 @@ function toLegacyRuleError(error: SchedulingError): RecurrenceRuleError {
 }
 
 function toLegacySeriesError(error: SchedulingError): RecurrenceSeriesError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case SchedulingErrorCode.RecurrenceEndsBeforeStart:
       return new RecurrenceEndsBeforeStartError(error.start, error.until);
     case SchedulingErrorCode.RecurrenceTooLong:
       return new RecurrenceTooLongError(error.max);
     default:
       return new RecurrenceNeverOccursError(
-        error.code === SchedulingErrorCode.RecurrenceNeverOccurs
+        error.errorCode === SchedulingErrorCode.RecurrenceNeverOccurs
           ? error.start
           : '',
       );
   }
 }
 
-function dayAt(key: DayKey, zone: string): CalendarDay {
+function dayAt(key: LocalDate, zone: string): CalendarDay {
   const day = CalendarDay.create(key, zone);
-  if (day.isFailure())
-    throw new Error('unreachable: a civil date by arithmetic');
+  if (day.isFailure()) defect('unreachable: a civil date by arithmetic');
   return day.value;
 }
 
@@ -227,8 +226,8 @@ export class RecurrenceRule {
     if (!created.ok) return fail(toLegacyRuleError(created.error));
     return ok(
       new RecurrenceRule(
-        fromEcsPattern(created.value.pattern),
-        created.value.interval,
+        fromEcsPattern(RuleData.patternOf(created.value)),
+        created.value.recurrenceInterval,
         props.end,
       ),
     );
@@ -240,13 +239,13 @@ export class RecurrenceRule {
     start: CalendarDay,
   ): RecurrencePattern {
     return fromEcsPattern(
-      RecurrenceSystem.patternFor(toFrequency(frequency), dayKeyOf(start)),
+      RecurrenceSystem.patternFor(toFrequency(frequency), localDateOf(start)),
     );
   }
 
   /** The monthly readings a start offers — `RecurrenceSystem.monthlyDaysFor`. */
   static monthlyDaysFor(start: CalendarDay): readonly MonthlyDay[] {
-    return RecurrenceSystem.monthlyDaysFor(dayKeyOf(start)).map(
+    return RecurrenceSystem.monthlyDaysFor(localDateOf(start)).map(
       fromEcsMonthlyDay,
     );
   }
@@ -271,13 +270,13 @@ export class RecurrenceRule {
     const own = toEcsRule(this);
     const moved = RecurrenceSystem.followingStart(
       own,
-      dayKeyOf(from),
-      dayKeyOf(to),
+      localDateOf(from),
+      localDateOf(to),
     );
     return moved === own
       ? this
       : new RecurrenceRule(
-          fromEcsPattern(moved.pattern),
+          fromEcsPattern(RuleData.patternOf(moved)),
           this.interval,
           this.end,
         );
@@ -311,13 +310,13 @@ export class RecurrenceSeries {
     start: CalendarDay,
     rule: RecurrenceRule,
   ): Result<RecurrenceSeries, RecurrenceSeriesError> {
-    const series = RecurrenceSystem.series(dayKeyOf(start), toEcsRule(rule));
+    const series = RecurrenceSystem.series(localDateOf(start), toEcsRule(rule));
     if (!series.ok) return fail(toLegacySeriesError(series.error));
     return ok(
       new RecurrenceSeries(
         start,
         rule,
-        series.value.dayKeys.map((key) => dayAt(key, start.zone)),
+        series.value.localDates.map((day) => dayAt(day, start.zone)),
       ),
     );
   }

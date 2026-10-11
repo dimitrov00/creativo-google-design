@@ -16,18 +16,18 @@ impure write. Nothing else lives in it.
 ## Ports are function types (`storage.port.ts`, `telemetry.port.ts`)
 
 ```ts
-import type {
-  AppointmentEntity,
-  AppointmentId,
-} from '../entities/appointment.entity';
+import type { Appointment } from '../entities/appointment.entity';
+import type { MinuteRange } from '../components/minute-range.data';
+import type { AppointmentId, BarberId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
 
 export type LoadAppointment = (
   id: AppointmentId,
-) => Promise<AppointmentEntity | null>;
+) => Promise<Appointment | null>;
 export type LoadBusyForDay = (
   barberId: BarberId,
-  dayStartMs: number,
-) => Promise<readonly TimeInterval[]>;
+  localDate: LocalDate,
+) => Promise<readonly MinuteRange[]>;
 
 /** The transactional sandwich: reads → pure decide → writes, atomically. */
 export type CommitBooking = <D>(
@@ -52,7 +52,10 @@ export type TrackError = (
 
 No interfaces with methods, no abstract classes, no `InjectionToken`s here.
 A port bundle is a plain object type: `export type BookingPorts = { load: …;
-commit: …; log: Log; nowMs: () => number; nextId: () => string }`.
+commit: …; log: Log; nowUtcMs: () => UtcEpochMs; nextId: () => string }`.
+The sandwich derives the shop's `ShopNow` ONCE from `ports.nowUtcMs()` and
+the location's `timeZone` (`ZonedTimeSystem.shopNow`) and hands that to the
+systems.
 
 ## A pipeline (`book-appointment.pipeline.ts`)
 
@@ -69,7 +72,7 @@ export const bookAppointment =
       (tx) => loadBookingSnapshot(tx, cmd), // 1
       (snapshot) =>
         BookingSystem.decide(snapshot, cmd, {
-          nowMs: ports.nowMs(),
+          now: ZonedTimeSystem.shopNow(ports.nowUtcMs(), snapshot.timeZone),
           nextId: ports.nextId,
         }), // 2
     ); // 3
@@ -90,7 +93,8 @@ export const bookAppointment =
 - No business math inside the pipeline; if you are comparing intervals or
   summing money here, move it to a system.
 - No SDK import (`firebase-admin`, `pino`, `@sentry/*`) inside a pipeline.
-- `nowMs`/`nextId` are ports so specs can pin them.
+- `nowUtcMs`/`nextId` are ports so specs can pin them; `ShopNow` is derived
+  from `nowUtcMs` once per request, never read inside a system.
 
 ## The ingestion boundary owns time (Law 7)
 
@@ -112,7 +116,7 @@ export const firestoreLoadAppointment =
   async (id) => {
     const snap = await db.collection('appointments').doc(id).get();
     return snap.exists
-      ? { id, ...(snap.data() as Omit<AppointmentEntity, 'id'>) }
+      ? { id, ...(snap.data() as Omit<Appointment, 'id'>) }
       : null;
   };
 ```
@@ -135,6 +139,7 @@ change.
 ## Spec contract (`*.pipeline.spec.ts`)
 
 Pipelines are tested with in-memory port implementations (plain functions
-over arrays/maps) and a pinned `nowMs`/`nextId`. Assert the write plan that
+over arrays/maps) and a pinned `nowUtcMs`/`nextId` (`pinnedNowUtcMs`,
+`FIXTURE_NOW` from `@creativo/ecs-core/testing`). Assert the write plan that
 reached `commit` and the tasks that reached `enqueue`; never assert on
 Firestore mocks' internals.

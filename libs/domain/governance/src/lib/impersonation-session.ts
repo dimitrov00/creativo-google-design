@@ -1,13 +1,16 @@
 import {
+  EndReasonFields,
   type GovernanceError,
   GovernanceErrorCode,
-  ImpersonationEndReason as EndReason,
+  ImpersonationLifecycle,
+  ImpersonationScope as EcsScope,
   ImpersonationSessionId as SessionId,
-  ImpersonationState,
   ImpersonationStatus,
   ImpersonationSystem,
   type Role,
   UserId as UserKey,
+  UtcEpochMs,
+  defect,
   knownRoles,
 } from '@creativo/ecs-core';
 import {
@@ -64,13 +67,26 @@ type ParsedShape = {
   readonly expiresAt: ZonedDateTime;
 };
 
+/** A parsed instant's epoch ms as the brand — every `ZonedDateTime` is inside its window. */
+function utcOf(instant: ZonedDateTime): UtcEpochMs {
+  const epochMs = instant.toMillis();
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
+}
+
+/** The legacy lowercase scope → the SCREAMING tag (flatten-spec §8.9). */
+const ECS_IMPERSONATION_SCOPE = {
+  read: EcsScope.Read,
+  write: EcsScope.Write,
+} as const satisfies { readonly [S in ImpersonationScope]: EcsScope };
+
 function toShape(fields: ParsedShape) {
   return {
     adminUserId: UserKey.of(fields.adminUserId.value),
     targetUserId: UserKey.of(fields.targetUserId.value),
     reason: fields.reason,
-    startedAtMs: fields.startedAt.toMillis(),
-    expiresAtMs: fields.expiresAt.toMillis(),
+    startedAtUtcMs: utcOf(fields.startedAt),
+    expiresAtUtcMs: utcOf(fields.expiresAt),
   };
 }
 
@@ -83,7 +99,7 @@ function toRoles(roles: readonly UserRole[]): readonly Role[] {
 function toLegacyFault(
   error: GovernanceError,
 ): ImpersonationSessionValidationError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case GovernanceErrorCode.ImpersonationSelf:
       return new SelfImpersonationError();
     case GovernanceErrorCode.ImpersonationReasonRequired:
@@ -97,34 +113,36 @@ function toLegacyFault(
 function toLegacyStartError(
   error: GovernanceError,
 ): StartImpersonationSessionError {
-  return error.code === GovernanceErrorCode.ImpersonationAdminNotStaff
+  return error.errorCode === GovernanceErrorCode.ImpersonationAdminNotStaff
     ? new ImpersonatorNotStaffError(error.adminUserId)
     : toLegacyFault(error);
 }
 
-/** An end reason as the system's struct. */
-function toEndReason(reason: ImpersonationEndReason): EndReason {
+/** An end reason as the system's flat slice. */
+function toEndReason(reason: ImpersonationEndReason): EndReasonFields {
   switch (reason.kind) {
     case 'admin_ended':
-      return EndReason.adminEnded(UserKey.of(reason.endedBy.value));
+      return EndReasonFields.adminEnded(UserKey.of(reason.endedBy.value));
     case 'revoked_by_security':
-      return EndReason.revokedBySecurity(
+      return EndReasonFields.revokedBySecurity(
         UserKey.of(reason.revokedBy.value),
         reason.notes,
       );
     default:
-      return EndReason.expired();
+      return EndReasonFields.expired();
   }
 }
 
-/** The stored status as the system's struct. */
-function toStatus(status: ImpersonationSessionStatus): ImpersonationStatus {
+/** The stored status as the system's flat lifecycle slice. */
+function toLifecycle(
+  status: ImpersonationSessionStatus,
+): ImpersonationLifecycle {
   return status.kind === 'active'
-    ? ImpersonationStatus.active()
+    ? ImpersonationLifecycle.active()
     : {
-        kind: ImpersonationState.Ended,
-        endedAtMs: status.endedAt.toMillis(),
-        reason: toEndReason(status.reason),
+        impersonationStatus: ImpersonationStatus.Ended,
+        endedAtUtcMs: utcOf(status.endedAt),
+        ...toEndReason(status.reason),
       };
 }
 
@@ -214,7 +232,7 @@ export class ImpersonationSession {
       ...toShape(session),
       id: SessionId.of(session.id.value),
       adminRoles: toRoles(props.adminRoles),
-      scope: session.scope,
+      impersonationScope: ECS_IMPERSONATION_SCOPE[session.scope],
     });
     if (!started.ok) {
       return fail(started.error.map(toLegacyStartError));
@@ -296,10 +314,10 @@ export class ImpersonationSession {
       {
         ...toShape(this),
         id: SessionId.of(this.id.value),
-        scope: this.scope,
-        status: toStatus(this.status),
+        impersonationScope: ECS_IMPERSONATION_SCOPE[this.scope],
+        ...toLifecycle(this.status),
       },
-      endedAt.toMillis(),
+      utcOf(endedAt),
       toEndReason(reason),
     );
     if (!ended.ok) {
@@ -333,8 +351,8 @@ export class ImpersonationSession {
    */
   isExpired(clock: Clock): boolean {
     return ImpersonationSystem.isExpired(
-      { expiresAtMs: this.expiresAt.toMillis() },
-      clock.now().toMillis(),
+      { expiresAtUtcMs: utcOf(this.expiresAt) },
+      utcOf(clock.now()),
     );
   }
 }

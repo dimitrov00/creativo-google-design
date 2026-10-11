@@ -1,5 +1,4 @@
-import type { ServiceCategoryId } from '../entities/service-category.entity';
-import type { ServiceId } from '../entities/service.entity';
+import type { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
 import {
   EngagementError,
   EngagementErrorCode,
@@ -7,111 +6,145 @@ import {
 } from './engagement-errors.data';
 import { Result } from './result.data';
 
-/** Which visit keeps the rhythm, by kind — the stored tags, unchanged. */
-export const StreakQualifierKind = {
-  AnyVisit: 'anyVisit',
-  Services: 'services',
-  Categories: 'categories',
+/** Which visit keeps the rhythm — the rule's discriminator `streakQualifier`. */
+export const StreakQualifier = {
+  AnyVisit: 'ANY_VISIT',
+  Services: 'SERVICES',
+  Categories: 'CATEGORIES',
 } as const;
-export type StreakQualifierKind =
-  (typeof StreakQualifierKind)[keyof typeof StreakQualifierKind];
+export type StreakQualifier =
+  (typeof StreakQualifier)[keyof typeof StreakQualifier];
 
 /**
- * How a qualifier stands to the one before it: `wider` counts every visit
- * the other counted and more, `narrower` the reverse, `other` neither (two
+ * How a qualifier stands to the one before it: `WIDER` counts every visit
+ * the other counted and more, `NARROWER` the reverse, `OTHER` neither (two
  * lists that only overlap, services against categories).
  */
 export const QualifierComparison = {
-  Same: 'same',
-  Wider: 'wider',
-  Narrower: 'narrower',
-  Other: 'other',
+  Same: 'SAME',
+  Wider: 'WIDER',
+  Narrower: 'NARROWER',
+  Other: 'OTHER',
 } as const;
 export type QualifierComparison =
   (typeof QualifierComparison)[keyof typeof QualifierComparison];
 
-const STREAK_QUALIFIER_KINDS: readonly StreakQualifierKind[] =
-  Object.values(StreakQualifierKind);
+const STREAK_QUALIFIERS: readonly StreakQualifier[] =
+  Object.values(StreakQualifier);
 
 /**
  * Which visit keeps the rhythm (client-card revision 3 §4.1, P2): any
  * worked visit, or one that holds a chosen service, or a service of a
- * chosen category (`streak-qualifier.ts`). A list names at least one id and
- * no blank one; the order the admin chose is kept for the page, the
- * comparison is a set's.
+ * chosen category (`streak-qualifier.ts`) — a variant SLICE of the flat
+ * `StreakRule`, discriminated by `streakQualifier`, its lists prefixed
+ * `qualifier`. A list names at least one id and no blank one; the order the
+ * admin chose is kept for the page, the comparison is a set's.
  */
-export type StreakQualifier =
-  | StreakQualifier.AnyVisit
-  | StreakQualifier.Services
-  | StreakQualifier.Categories;
+export type StreakQualifierRule =
+  | StreakQualifierRule.AnyVisit
+  | StreakQualifierRule.Services
+  | StreakQualifierRule.Categories;
 
-export const StreakQualifier = {
-  anyVisit(): StreakQualifier.AnyVisit {
-    return { kind: StreakQualifierKind.AnyVisit };
+export const StreakQualifierRule = {
+  anyVisit(): StreakQualifierRule.AnyVisit {
+    return { streakQualifier: StreakQualifier.AnyVisit };
   },
 
-  services(serviceIds: readonly ServiceId[]): StreakQualifier.Services {
-    return { kind: StreakQualifierKind.Services, serviceIds };
+  services(
+    qualifierServiceIds: readonly ServiceId[],
+  ): StreakQualifierRule.Services {
+    return { streakQualifier: StreakQualifier.Services, qualifierServiceIds };
   },
 
   categories(
-    categoryIds: readonly ServiceCategoryId[],
-  ): StreakQualifier.Categories {
-    return { kind: StreakQualifierKind.Categories, categoryIds };
+    qualifierCategoryIds: readonly ServiceCategoryId[],
+  ): StreakQualifierRule.Categories {
+    return {
+      streakQualifier: StreakQualifier.Categories,
+      qualifierCategoryIds,
+    };
   },
 
   /**
-   * The edge guard: a known kind, and a list of at least one non-blank id —
-   * a name said twice is said once (the choice is a set; first position
-   * kept). Returns a fresh struct.
+   * The qualifier fields of a rule (or of any struct carrying the slice),
+   * as a fresh slice of their own — the lists copied, never shared.
+   */
+  of(qualifier: StreakQualifierRule): StreakQualifierRule {
+    switch (qualifier.streakQualifier) {
+      case StreakQualifier.Services:
+        return StreakQualifierRule.services([...qualifier.qualifierServiceIds]);
+      case StreakQualifier.Categories:
+        return StreakQualifierRule.categories([
+          ...qualifier.qualifierCategoryIds,
+        ]);
+      default:
+        return StreakQualifierRule.anyVisit();
+    }
+  },
+
+  /**
+   * The edge guard: a known qualifier, and a list of at least one non-blank
+   * id — a name said twice is said once (the choice is a set; first position
+   * kept). Returns a fresh slice.
    */
   parse(
-    raw: StreakQualifier,
-  ): Result<StreakQualifier, readonly EngagementError.StreakRuleError[]> {
-    switch (raw.kind) {
-      case StreakQualifierKind.AnyVisit:
-        return Result.ok(StreakQualifier.anyVisit());
-      case StreakQualifierKind.Services: {
-        const ids = chosen(raw.serviceIds);
+    raw: StreakQualifierRule,
+  ): Result<StreakQualifierRule, readonly EngagementError.StreakRuleError[]> {
+    switch (raw.streakQualifier) {
+      case StreakQualifier.AnyVisit:
+        return Result.ok(StreakQualifierRule.anyVisit());
+      case StreakQualifier.Services: {
+        const ids = chosen(raw.qualifierServiceIds);
         return ids === null
           ? Result.err([
-              emptyList(StreakRuleField.QualifierServiceIds, raw.serviceIds),
+              emptyList(
+                StreakRuleField.QualifierServiceIds,
+                raw.qualifierServiceIds,
+              ),
             ])
-          : Result.ok(StreakQualifier.services(ids as readonly ServiceId[]));
+          : Result.ok(StreakQualifierRule.services(ids));
       }
-      case StreakQualifierKind.Categories: {
-        const ids = chosen(raw.categoryIds);
+      case StreakQualifier.Categories: {
+        const ids = chosen(raw.qualifierCategoryIds);
         return ids === null
           ? Result.err([
-              emptyList(StreakRuleField.QualifierCategoryIds, raw.categoryIds),
+              emptyList(
+                StreakRuleField.QualifierCategoryIds,
+                raw.qualifierCategoryIds,
+              ),
             ])
-          : Result.ok(
-              StreakQualifier.categories(ids as readonly ServiceCategoryId[]),
-            );
+          : Result.ok(StreakQualifierRule.categories(ids));
       }
       default:
         return Result.err([
           EngagementError.streakUnknownOption(
             StreakRuleField.QualifierKind,
-            (raw as { readonly kind: unknown }).kind,
-            STREAK_QUALIFIER_KINDS,
+            (raw as { readonly streakQualifier: unknown }).streakQualifier,
+            STREAK_QUALIFIERS,
           ),
         ]);
     }
   },
 
   /** How `now` stands to `before` — what a rule change's direction reads. */
-  compare(now: StreakQualifier, before: StreakQualifier): QualifierComparison {
+  compare(
+    now: StreakQualifierRule,
+    before: StreakQualifierRule,
+  ): QualifierComparison {
     if (
-      now.kind === StreakQualifierKind.AnyVisit ||
-      before.kind === StreakQualifierKind.AnyVisit
+      now.streakQualifier === StreakQualifier.AnyVisit ||
+      before.streakQualifier === StreakQualifier.AnyVisit
     ) {
-      if (now.kind === before.kind) return QualifierComparison.Same;
-      return now.kind === StreakQualifierKind.AnyVisit
+      if (now.streakQualifier === before.streakQualifier) {
+        return QualifierComparison.Same;
+      }
+      return now.streakQualifier === StreakQualifier.AnyVisit
         ? QualifierComparison.Wider
         : QualifierComparison.Narrower;
     }
-    if (now.kind !== before.kind) return QualifierComparison.Other;
+    if (now.streakQualifier !== before.streakQualifier) {
+      return QualifierComparison.Other;
+    }
     const nowIds = idsOf(now);
     const beforeIds = idsOf(before);
     const keepsAll = containsAll(nowIds, beforeIds);
@@ -121,20 +154,20 @@ export const StreakQualifier = {
     return addsNone ? QualifierComparison.Narrower : QualifierComparison.Other;
   },
 
-  /** The same set of the same kind, whatever the order. */
-  equals(a: StreakQualifier, b: StreakQualifier): boolean {
-    return StreakQualifier.compare(a, b) === QualifierComparison.Same;
+  /** The same set of the same qualifier, whatever the order. */
+  equals(a: StreakQualifierRule, b: StreakQualifierRule): boolean {
+    return StreakQualifierRule.compare(a, b) === QualifierComparison.Same;
   },
 } as const;
 
 /** A list's ids, each once, or `null` when it is empty or holds a blank one. */
-function chosen(raw: readonly string[]): readonly string[] | null {
+function chosen<T extends string>(raw: readonly T[]): readonly T[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
-  const ids: string[] = [];
+  const ids: T[] = [];
   for (let i = 0; i < raw.length; i++) {
     const id: unknown = raw[i];
     if (typeof id !== 'string' || id.trim().length === 0) return null;
-    if (!includes(ids, id)) ids.push(id);
+    if (!includes(ids, id)) ids.push(raw[i] as T);
   }
   return ids;
 }
@@ -151,9 +184,11 @@ function emptyList(
 }
 
 function idsOf(
-  q: StreakQualifier.Services | StreakQualifier.Categories,
+  q: StreakQualifierRule.Services | StreakQualifierRule.Categories,
 ): readonly string[] {
-  return q.kind === StreakQualifierKind.Services ? q.serviceIds : q.categoryIds;
+  return q.streakQualifier === StreakQualifier.Services
+    ? q.qualifierServiceIds
+    : q.qualifierCategoryIds;
 }
 
 function includes(ids: readonly string[], id: string): boolean {
@@ -172,14 +207,16 @@ function containsAll(
   return true;
 }
 
-export namespace StreakQualifier {
-  export type AnyVisit = { readonly kind: typeof StreakQualifierKind.AnyVisit };
+export namespace StreakQualifierRule {
+  export type AnyVisit = {
+    readonly streakQualifier: typeof StreakQualifier.AnyVisit;
+  };
   export type Services = {
-    readonly kind: typeof StreakQualifierKind.Services;
-    readonly serviceIds: readonly ServiceId[];
+    readonly streakQualifier: typeof StreakQualifier.Services;
+    readonly qualifierServiceIds: readonly ServiceId[];
   };
   export type Categories = {
-    readonly kind: typeof StreakQualifierKind.Categories;
-    readonly categoryIds: readonly ServiceCategoryId[];
+    readonly streakQualifier: typeof StreakQualifier.Categories;
+    readonly qualifierCategoryIds: readonly ServiceCategoryId[];
   };
 }

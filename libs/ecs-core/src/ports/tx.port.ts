@@ -1,6 +1,7 @@
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
 import type { DocPath, WriteOp } from '../components/write-op.data';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import type { QueryOp } from './collections';
 
 /**
@@ -35,7 +36,11 @@ export type CollectionPath = readonly string[];
  */
 export type QueryOperator = (typeof QueryOp)[keyof typeof QueryOp];
 
-/** One `where` clause. `field` is a dotted component path (`bookingStatus.kind`). */
+/**
+ * One `where` clause. `field` is a ROOT field of the flat document
+ * (`bookingStatus`, `utcEpochMs` — Law 5); a dotted component path survives
+ * only on a collection its 3b flip has not reached yet.
+ */
 export type QueryFilter = {
   readonly field: string;
   readonly op: QueryOperator;
@@ -100,11 +105,18 @@ export type ReadTx = {
  * The adapter retries the whole read → decide on contention, so `decide`
  * must be pure — it may run more than once.
  *
+ * Writes touch ROOT fields only (Laws 5 and 6): an `Update` merges its
+ * root `fields` and removes its root `deleteFields` (`FieldValue.delete()`),
+ * so a variant transition leaves the document exactly one variant. A plan
+ * naming one key in both lists is refused whole as
+ * `RepositoryError.writeFailed(path, 'field-set-and-deleted')`; nothing of
+ * it is applied.
+ *
  * A `Create` over a document already there (Firestore's ALREADY_EXISTS) is
  * an EXPECTED outcome — a deterministic id met its replay (the audit row,
  * the users stub, a waitlist notification) or lost a create race — so it
  * answers as a value, `RepositoryError.alreadyExists(path)`
- * (`repo.already_exists`), and nothing of the plan is applied; the
+ * (`RepositoryErrorCode.AlreadyExists`), and nothing of the plan is applied; the
  * pipeline decides whether that is the replay or a refusal. Only an
  * infrastructure failure (contention retries exhausted, the store
  * unreachable, an `Update` of an absent document) rejects the promise: it
@@ -120,8 +132,13 @@ export type CommitPlan = <S, D, E>(
 /** A digest — sha256 hex in production — for deterministic ids (`hash(rowBasis)`). */
 export type Hash = (input: string) => string;
 
-/** The wall clock, in epoch ms — a port so specs can pin it. */
-export type NowMs = () => number;
+/**
+ * The clock, as an absolute instant — a port so specs can pin it. The
+ * boundary turns it into the shop's `ShopNow` once per request
+ * (`ZonedTimeSystem.shopNow(ports.nowUtcMs(), location.timeZone)`); a
+ * system receives that, or the bare instant only to stamp a lifecycle field.
+ */
+export type NowUtcMs = () => UtcEpochMs;
 
 /** A fresh document id — a port so specs can pin it. */
 export type NextId = () => string;
@@ -134,6 +151,6 @@ export type NextId = () => string;
 export type TxPorts = {
   readonly commit: CommitPlan;
   readonly hash: Hash;
-  readonly nowMs: NowMs;
+  readonly nowUtcMs: NowUtcMs;
   readonly nextId: NextId;
 };

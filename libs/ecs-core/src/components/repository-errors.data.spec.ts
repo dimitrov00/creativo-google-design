@@ -4,11 +4,11 @@ import { RepositoryError, RepositoryErrorCode } from './repository-errors.data';
 describe('RepositoryError', () => {
   it('uses the codes the ports and the lazy loader raise', () => {
     expect(Object.values(RepositoryErrorCode)).toEqual([
-      'repo.read_failed',
-      'repo.write_failed',
-      'repo.already_exists',
-      'repo.malformed',
-      'repository.unavailable',
+      'REPOSITORY_READ_FAILED',
+      'REPOSITORY_WRITE_FAILED',
+      'REPOSITORY_ALREADY_EXISTS',
+      'REPOSITORY_MALFORMED',
+      'REPOSITORY_UNAVAILABLE',
     ]);
   });
 
@@ -16,29 +16,29 @@ describe('RepositoryError', () => {
     expect(
       RepositoryError.readFailed('appointments/a1', 'permission-denied'),
     ).toEqual({
-      code: 'repo.read_failed',
+      errorCode: 'REPOSITORY_READ_FAILED',
       path: 'appointments/a1',
       reason: 'permission-denied',
     });
     expect(
       RepositoryError.writeFailed('barberBusy/b_ivan__2026-10-07', null),
     ).toEqual({
-      code: 'repo.write_failed',
+      errorCode: 'REPOSITORY_WRITE_FAILED',
       path: 'barberBusy/b_ivan__2026-10-07',
       reason: null,
     });
     expect(RepositoryError.alreadyExists('auditLog/a1')).toEqual({
-      code: 'repo.already_exists',
+      errorCode: 'REPOSITORY_ALREADY_EXISTS',
       path: 'auditLog/a1',
       reason: null,
     });
     expect(RepositoryError.malformed('users/u1', 'timeInterval')).toEqual({
-      code: 'repo.malformed',
+      errorCode: 'REPOSITORY_MALFORMED',
       path: 'users/u1',
       reason: 'timeInterval',
     });
     expect(RepositoryError.unavailable()).toEqual({
-      code: 'repository.unavailable',
+      errorCode: 'REPOSITORY_UNAVAILABLE',
       path: null,
       reason: null,
     });
@@ -52,5 +52,16 @@ describe('RepositoryError', () => {
     expect(RepositoryError.is(error, RepositoryErrorCode.ReadFailed)).toBe(
       false,
     );
+  });
+
+  it('isAlreadyExists reads a replay — and nothing else', () => {
+    expect(
+      RepositoryError.isAlreadyExists(RepositoryError.alreadyExists('a/1')),
+    ).toBe(true);
+    expect(
+      RepositoryError.isAlreadyExists(
+        RepositoryError.writeFailed('a/1', 'already-exists'),
+      ),
+    ).toBe(false);
   });
 });

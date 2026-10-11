@@ -1,5 +1,10 @@
 import { Id, Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
-import { NotificationSystem } from '@creativo/ecs-core';
+import {
+  NotificationSystem,
+  UtcEpochMs,
+  defect,
+  type NotificationReceipt,
+} from '@creativo/ecs-core';
 import {
   EmptyNotificationIdError,
   EmptyNotificationTitleError,
@@ -103,8 +108,8 @@ export class Notification {
     if (
       readAt !== null &&
       NotificationSystem.readBeforeSent({
-        sentAtMs: props.sentAt.toMillis(),
-        readAtMs: readAt.toMillis(),
+        sentAtUtcMs: utcOf(props.sentAt),
+        readAtUtcMs: utcOf(readAt),
       }) !== null
     ) {
       // Clock skew between writer and reader is real; a receipt that
@@ -138,7 +143,7 @@ export class Notification {
   /** Already-read notifications return THIS — marking twice must not move the receipt. */
   markRead(at: ZonedDateTime): Notification {
     const receipt = receiptOf(this);
-    if (NotificationSystem.markRead(receipt, at.toMillis()) === receipt) {
+    if (NotificationSystem.markRead(receipt, utcOf(at)) === receipt) {
       return this;
     }
     return new Notification(
@@ -160,13 +165,18 @@ export function unreadCount(notifications: readonly Notification[]): number {
 
 // ── The bridge: legacy class → ecs-core struct (Phase 4 deletes it) ──────
 
-/** The receipt as the system reads it: the instant in ms, `null` = unread. */
-function receiptOf(notification: Notification): {
-  readonly readAtMs: number | null;
-} {
+/** A class instant's epoch ms as the brand — every `ZonedDateTime` is inside its window. */
+function utcOf(instant: ZonedDateTime): UtcEpochMs {
+  const epochMs = instant.toMillis();
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
+}
+
+/** The receipt as the system reads it: the instant, `null` = unread. */
+function receiptOf(notification: Notification): NotificationReceipt {
   return {
-    readAtMs:
-      notification.readAt === null ? null : notification.readAt.toMillis(),
+    readAtUtcMs:
+      notification.readAt === null ? null : utcOf(notification.readAt),
   };
 }
 
@@ -175,8 +185,8 @@ function receiptOf(notification: Notification): {
  * legacy count ever asked of a notification, so the bridge asks nothing
  * more of an unread one (a reader double may answer only that).
  */
-function badgeReceiptOf(notification: Notification): {
-  readonly readAtMs: number | null;
-} {
-  return notification.isUnread() ? { readAtMs: null } : receiptOf(notification);
+function badgeReceiptOf(notification: Notification): NotificationReceipt {
+  return notification.isUnread()
+    ? { readAtUtcMs: null }
+    : receiptOf(notification);
 }

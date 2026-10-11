@@ -1,57 +1,49 @@
 import {
+  CompositionKind,
   type ServiceComposition,
-  ServiceCompositionKind,
 } from '../components/service-composition.data';
-import type { ServiceEntity, ServiceId } from '../entities/service.entity';
+import type { Service } from '../entities/service.entity';
+import type { ServiceId } from '../primitives/ids.primitive';
 
 /**
  * What the conflict rule reads of a service — its id, the conflicts its
- * author wrote, and what it is made of. A whole `ServiceEntity` passes
- * straight in.
+ * author wrote, and what it is made of (the flat `compositionKind` slice). A
+ * whole `Service` passes straight in.
  */
-export type ConflictService = Pick<
-  ServiceEntity,
-  'id' | 'conflictsWith' | 'composition'
->;
+export type ConflictService = Pick<Service, 'id' | 'conflictsWith'> &
+  ServiceComposition;
 
-/** The selectability tags — the ONLY source of these strings. */
-export const ServiceSelectabilityKind = {
-  Selectable: 'selectable',
-  Blocked: 'blocked',
+/**
+ * The selectability tags — the ONLY source of these strings, named after the
+ * field they type (`selectability`; was `ServiceSelectabilityKind`).
+ */
+export const Selectability = {
+  Selectable: 'SELECTABLE',
+  Blocked: 'BLOCKED',
 } as const;
-export type ServiceSelectabilityKind =
-  (typeof ServiceSelectabilityKind)[keyof typeof ServiceSelectabilityKind];
+export type Selectability = (typeof Selectability)[keyof typeof Selectability];
 
 /**
  * Whether a candidate service can join one seat's selection, and if not, what
- * stands in the way (`service-conflicts.ts:9-11`). `blocked` always names the
+ * stands in the way (`service-conflicts.ts:9-11`). `BLOCKED` always names the
  * blockers — an unexplained lock is the failure mode this rule exists to
  * prevent.
  */
 export type ServiceSelectability =
-  | { readonly kind: typeof ServiceSelectabilityKind.Selectable }
+  | { readonly selectability: typeof Selectability.Selectable }
   | {
-      readonly kind: typeof ServiceSelectabilityKind.Blocked;
+      readonly selectability: typeof Selectability.Blocked;
       readonly by: readonly ServiceId[];
     };
 
 const SELECTABLE: ServiceSelectability = {
-  kind: ServiceSelectabilityKind.Selectable,
+  selectability: Selectability.Selectable,
 };
-
-function isBundle(
-  composition: ServiceComposition | null,
-): composition is ServiceComposition.Bundle {
-  return (
-    composition !== null && composition.kind === ServiceCompositionKind.Bundle
-  );
-}
 
 /** The ids a service occupies — itself plus, for a bundle, its members. */
 function occupiedIds(service: ConflictService): readonly ServiceId[] {
-  const composition = service.composition;
-  return isBundle(composition)
-    ? [service.id, ...composition.includes]
+  return service.compositionKind === CompositionKind.Bundle
+    ? [service.id, ...service.bundleServiceIds]
     : [service.id];
 }
 
@@ -64,11 +56,10 @@ function effectiveServices(
   service: ConflictService,
   catalog: readonly ConflictService[],
 ): readonly ConflictService[] {
-  const composition = service.composition;
-  if (!isBundle(composition)) return [service];
+  if (service.compositionKind !== CompositionKind.Bundle) return [service];
   const members: ConflictService[] = [service];
-  for (let i = 0; i < composition.includes.length; i++) {
-    const memberId = composition.includes[i] as ServiceId;
+  for (let i = 0; i < service.bundleServiceIds.length; i++) {
+    const memberId = service.bundleServiceIds[i] as ServiceId;
     for (let k = 0; k < catalog.length; k++) {
       const candidate = catalog[k] as ConflictService;
       if (candidate.id === memberId) {
@@ -154,7 +145,7 @@ export const ServiceConflictSystem = {
     return by;
   },
 
-  /** `selectable`, or `blocked` naming every blocker. */
+  /** `SELECTABLE`, or `BLOCKED` naming every blocker. */
   selectabilityFor(
     selection: readonly ConflictService[],
     candidate: ConflictService,
@@ -167,6 +158,6 @@ export const ServiceConflictSystem = {
     );
     return by.length === 0
       ? SELECTABLE
-      : { kind: ServiceSelectabilityKind.Blocked, by };
+      : { selectability: Selectability.Blocked, by };
   },
 } as const;

@@ -1,7 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { deepFreeze } from '../testing';
-import { type Page, PageStepKind, PagingSystem } from './paging.system';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { deepFreeze, utcMs } from '../testing';
+import { type Page, PageStep, PagingSystem } from './paging.system';
 
 /*
  * COPIED and re-targeted: the three paging cases of libs/infrastructure/
@@ -15,38 +16,41 @@ import { type Page, PageStepKind, PagingSystem } from './paging.system';
  * are the adapter's and the rules', not paging, and stay there. Plus a
  * property (paging to the end reads every row exactly once, newest first)
  * and purity.
+ *
+ * Flatten pass (Law 7): the page key is the visit's start INSTANT — the
+ * typed cursor `beforeUtcMs: UtcEpochMs` of the `PageClientHistory` port
+ * (flatten-spec §3.8) — while `PageKey` stays generic and opaque to the
+ * system; the legacy adapter's shim keeps its stored ISO string as the key.
  */
 
 const S = PagingSystem;
 
-type Row = { readonly id: string; readonly startIso: string };
+type Row = { readonly id: string; readonly startUtcMs: UtcEpochMs };
 
 const visit = (id: string, local: string): Row => ({
   id,
-  startIso: `${local}.000+03:00`,
+  startUtcMs: utcMs(`${local}.000+03:00`),
 });
-const keyOf = (row: Row): string => row.startIso;
+const keyOf = (row: Row): UtcEpochMs => row.startUtcMs;
 const idOf = (row: Row): string => row.id;
 
 /** The store's order: newest first by the stored start (ties in no promised order). */
 function newestFirst(rows: readonly Row[]): Row[] {
-  return [...rows].sort((a, b) =>
-    a.startIso < b.startIso ? 1 : a.startIso > b.startIso ? -1 : 0,
-  );
+  return [...rows].sort((a, b) => b.startUtcMs - a.startUtcMs);
 }
 
 /** The adapter's reads, the system's decisions — `pageForSubject` without the SDK. */
 function pageFor(
   book: readonly Row[],
-  page: { readonly beforeIso: string | null; readonly limit: number },
-): Page<Row, string> {
+  page: { readonly beforeUtcMs: UtcEpochMs | null; readonly limit: number },
+): Page<Row, UtcEpochMs> {
   const size = S.pageSize(page.limit);
-  const below = (bound: string | null) =>
-    newestFirst(book).filter((row) => bound === null || row.startIso < bound);
-  const read = below(page.beforeIso).slice(0, size + 1);
+  const below = (bound: UtcEpochMs | null) =>
+    newestFirst(book).filter((row) => bound === null || row.startUtcMs < bound);
+  const read = below(page.beforeUtcMs).slice(0, size + 1);
   const step = S.nextCursor(read, size, keyOf);
-  if (step.kind === PageStepKind.Page) return step;
-  const tied = book.filter((row) => row.startIso === step.boundary);
+  if (step.pageStep === PageStep.Page) return step;
+  const tied = book.filter((row) => row.startUtcMs === step.boundary);
   const older = below(step.boundary).slice(0, 1);
   return S.sameInstantBoundary(
     step.newer,
@@ -57,7 +61,7 @@ function pageFor(
   );
 }
 
-const ids = (page: Page<Row, string>) => page.rows.map((row) => row.id);
+const ids = (page: Page<Row, UtcEpochMs>) => page.rows.map((row) => row.id);
 
 describe('the client history pages (client-history-reader)', () => {
   // Georgi's visits: as company on a-02, his own on the rest.
@@ -69,32 +73,32 @@ describe('the client history pages (client-history-reader)', () => {
   ];
 
   it('reads every visit with a seat for the person — as company too — newest first', () => {
-    const page = pageFor(book, { beforeIso: null, limit: 10 });
+    const page = pageFor(book, { beforeUtcMs: null, limit: 10 });
     expect(ids(page)).toEqual(['a-05', 'a-03', 'a-02', 'a-01']);
     expect(page.cursor).toBeNull();
   });
 
   it('pages on the stored start until nothing older is left', () => {
-    const first = pageFor(book, { beforeIso: null, limit: 3 });
+    const first = pageFor(book, { beforeUtcMs: null, limit: 3 });
     expect(ids(first)).toEqual(['a-05', 'a-03', 'a-02']);
-    expect(first.cursor).toBe(visit('x', '2026-07-01T10:00:00').startIso);
-    const next = pageFor(book, { beforeIso: first.cursor, limit: 3 });
+    expect(first.cursor).toBe(visit('x', '2026-07-01T10:00:00').startUtcMs);
+    const next = pageFor(book, { beforeUtcMs: first.cursor, limit: 3 });
     expect(ids(next)).toEqual(['a-01']);
     expect(next.cursor).toBeNull();
   });
 
   it('keeps visits starting at the same instant on one page, and says when nothing is older', () => {
     const tiedBook = [...book, visit('a-05b', '2026-09-28T10:00:00')];
-    const page = pageFor(tiedBook, { beforeIso: null, limit: 1 });
+    const page = pageFor(tiedBook, { beforeUtcMs: null, limit: 1 });
     expect([...ids(page)].sort()).toEqual(['a-05', 'a-05b']);
-    const rest = pageFor(tiedBook, { beforeIso: page.cursor, limit: 5 });
+    const rest = pageFor(tiedBook, { beforeUtcMs: page.cursor, limit: 5 });
     expect(ids(rest)).toEqual(['a-03', 'a-02', 'a-01']);
 
     const only = [
       visit('b-01', '2026-09-28T10:00:00'),
       visit('b-02', '2026-09-28T10:00:00'),
     ];
-    const whole = pageFor(only, { beforeIso: null, limit: 1 });
+    const whole = pageFor(only, { beforeUtcMs: null, limit: 1 });
     expect(whole.cursor).toBeNull();
     expect(whole.rows).toHaveLength(2);
   });
@@ -114,9 +118,9 @@ describe('PagingSystem — the steps', () => {
       visit('a', '2026-09-01T10:00:00'),
     ];
     expect(S.nextCursor(read, 2, keyOf)).toEqual({
-      kind: 'page',
+      pageStep: 'PAGE',
       rows: read.slice(0, 2),
-      cursor: read[1]?.startIso,
+      cursor: read[1]?.startUtcMs,
     });
     const tied = [
       visit('c', '2026-09-03T10:00:00'),
@@ -124,8 +128,8 @@ describe('PagingSystem — the steps', () => {
       visit('a', '2026-09-02T10:00:00'),
     ];
     expect(S.nextCursor(tied, 2, keyOf)).toEqual({
-      kind: 'tied',
-      boundary: tied[1]?.startIso,
+      pageStep: 'TIED',
+      boundary: tied[1]?.startUtcMs,
       newer: [tied[0]],
     });
   });
@@ -137,7 +141,7 @@ describe('PagingSystem — the steps', () => {
       visit('c', '2026-09-02T10:00:00'),
       visit('b', '2026-09-02T10:00:00'),
     ];
-    const boundary = '2026-09-02T10:00:00.000+03:00';
+    const boundary = utcMs('2026-09-02T10:00:00.000+03:00');
     expect(S.sameInstantBoundary(newer, tied, idOf, true, boundary)).toEqual({
       rows: [newer[0], tied[1], tied[2], tied[0]],
       cursor: boundary,
@@ -162,9 +166,9 @@ describe('PagingSystem — the steps', () => {
             ),
           );
           const seen: Row[] = [];
-          let cursor: string | null = null;
+          let cursor: UtcEpochMs | null = null;
           for (let guard = 0; guard <= book.length + 1; guard++) {
-            const page = pageFor(book, { beforeIso: cursor, limit });
+            const page = pageFor(book, { beforeUtcMs: cursor, limit });
             seen.push(...page.rows);
             cursor = page.cursor;
             if (cursor === null) break;
@@ -175,7 +179,8 @@ describe('PagingSystem — the steps', () => {
           );
           for (let i = 1; i < seen.length; i++) {
             expect(
-              (seen.at(i - 1) as Row).startIso >= (seen.at(i) as Row).startIso,
+              (seen.at(i - 1) as Row).startUtcMs >=
+                (seen.at(i) as Row).startUtcMs,
             ).toBe(true);
           }
         },
@@ -191,8 +196,9 @@ describe('PagingSystem — the steps', () => {
     ]);
     expect(S.nextCursor(read, 2, keyOf)).toEqual(S.nextCursor(read, 2, keyOf));
     const tied = deepFreeze([read[2] as Row, read[1] as Row]);
-    const once = S.sameInstantBoundary([], tied, idOf, true, 'k');
-    expect(S.sameInstantBoundary([], tied, idOf, true, 'k')).toEqual(once);
+    const k = utcMs('2026-09-02T10:00:00.000+03:00');
+    const once = S.sameInstantBoundary([], tied, idOf, true, k);
+    expect(S.sameInstantBoundary([], tied, idOf, true, k)).toEqual(once);
     expect(tied.map((row) => row.id)).toEqual(['a', 'b']);
   });
 });

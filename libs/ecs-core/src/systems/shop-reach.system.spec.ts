@@ -1,19 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { ShopReach } from '../components/booking-flow.data';
 import { E164 } from '../components/phone-number.data';
-import { LocationId } from '../entities/location.entity';
-import { deepFreeze, locationFixture } from '../testing';
+import { Latitude, Longitude } from '../primitives/geo.primitive';
+import { LocationId } from '../primitives/ids.primitive';
+import { deepFreeze, unwrapOk } from '../testing';
+import { locationFixture } from '../testing/booking-core.fixtures';
 import { ShopReachSystem } from './shop-reach.system';
 
 /*
  * The reach rule of `shopReachKey` (booking-gateway.port.ts:232) and the
  * `tel:`/directions hrefs the booking, the review and the visit sheet build
  * from a shop: «call» only with a number to press, «get in touch» otherwise.
+ * A whole `ShopLocation` passes in — its phone and coordinates are flat
+ * root fields.
  */
 
 const centre = locationFixture({
-  phone: { e164: E164.of('+35921234567'), display: '02 123 4567' },
-  geo: { lat: 42.6977, lng: 23.3219 },
+  phoneE164: E164.of('+35921234567'),
+  phoneDisplay: '02 123 4567',
+  latitude: unwrapOk(Latitude.of(42.6977)),
+  longitude: unwrapOk(Longitude.of(23.3219)),
 });
 const shops = [centre];
 
@@ -45,6 +51,6 @@ describe('ShopReachSystem', () => {
     expect(ShopReachSystem.reach(frozen, centre.id)).toEqual(
       ShopReachSystem.reach(frozen, centre.id),
     );
-    expect(frozen[0]?.phone.display).toBe('02 123 4567');
+    expect(frozen[0]?.phoneDisplay).toBe('02 123 4567');
   });
 });

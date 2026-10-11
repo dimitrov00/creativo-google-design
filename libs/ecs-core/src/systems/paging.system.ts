@@ -1,18 +1,27 @@
-/** What one read of a newest-first page decided — the ONLY source of these strings. */
-export const PageStepKind = {
+/**
+ * What one read of a newest-first page decided — the field `pageStep`, the
+ * ONLY source of these strings.
+ */
+export const PageStep = {
   /** The page is cut: its rows and the cursor the next page resumes from. */
-  Page: 'page',
+  Page: 'PAGE',
   /**
    * The read's last row and the extra one share one instant: the page must
    * take that whole instant, so the caller reads every row AT it (and
    * whether anything is older) and finishes with
    * {@link PagingSystem.sameInstantBoundary}.
    */
-  Tied: 'tied',
+  Tied: 'TIED',
 } as const;
-export type PageStepKind = (typeof PageStepKind)[keyof typeof PageStepKind];
+export type PageStep = (typeof PageStep)[keyof typeof PageStep];
 
-/** A page key: the stored instant a page is ordered and resumed by. */
+/**
+ * A page key: the stored value a page is ordered and resumed by. GENERIC and
+ * OPAQUE on purpose (flatten-spec §3.9): the system only compares keys, so
+ * the typed cursor — `beforeUtcMs: UtcEpochMs` on `PageClientHistory`, a
+ * journal sequence on `PageClientJournal` — belongs to the caller's port, and
+ * its shim converts it.
+ */
 export type PageKey = string | number;
 
 /** A finished page: its rows, newest first, and where the next one resumes (`null`: nothing older). */
@@ -21,10 +30,11 @@ export type Page<R, K extends PageKey> = {
   readonly cursor: K | null;
 };
 
-export type PageStep<R, K extends PageKey> =
-  | ({ readonly kind: typeof PageStepKind.Page } & Page<R, K>)
+/** What {@link PagingSystem.nextCursor} decided, discriminated by `pageStep`. */
+export type PageStepResult<R, K extends PageKey> =
+  | ({ readonly pageStep: typeof PageStep.Page } & Page<R, K>)
   | {
-      readonly kind: typeof PageStepKind.Tied;
+      readonly pageStep: typeof PageStep.Tied;
       /** The instant the page must take whole. */
       readonly boundary: K;
       /** The read's rows strictly newer than the boundary, in read order. */
@@ -54,20 +64,20 @@ export const PagingSystem = {
    * The page a newest-first read of `pageSize + 1` rows makes. Fewer rows
    * than the extra one: the last page, no cursor. The extra row at another
    * instant: the first `pageSize` rows, resuming below the last one's key.
-   * The extra row at the same instant: {@link PageStepKind.Tied}.
+   * The extra row at the same instant: {@link PageStep.Tied}.
    */
   nextCursor<R, K extends PageKey>(
     read: readonly R[],
     pageSize: number,
     keyOf: (row: R) => K,
-  ): PageStep<R, K> {
+  ): PageStepResult<R, K> {
     if (read.length <= pageSize) {
-      return { kind: PageStepKind.Page, rows: read, cursor: null };
+      return { pageStep: PageStep.Page, rows: read, cursor: null };
     }
     const boundary = keyOf(read[pageSize - 1] as R);
     if (keyOf(read[pageSize] as R) !== boundary) {
       return {
-        kind: PageStepKind.Page,
+        pageStep: PageStep.Page,
         rows: read.slice(0, pageSize),
         cursor: boundary,
       };
@@ -77,7 +87,7 @@ export const PagingSystem = {
       const row = read[i] as R;
       if (keyOf(row) > boundary) newer.push(row);
     }
-    return { kind: PageStepKind.Tied, boundary, newer };
+    return { pageStep: PageStep.Tied, boundary, newer };
   },
 
   /**

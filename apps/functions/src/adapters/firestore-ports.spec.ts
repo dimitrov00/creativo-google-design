@@ -1,13 +1,17 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { expectTypeOf } from 'vitest';
-import { Result, type TxPorts, WriteOp } from '@creativo/ecs-core';
+import { Result, type TxPorts, UtcEpochMs, WriteOp } from '@creativo/ecs-core';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { type FirestorePorts, firestorePorts } from './firestore-ports';
 import { firestoreCommitPlan } from './firestore-tx.adapter';
 
 describe('firestorePorts — the assembler', () => {
   const primitives = {
-    nowMs: () => 1_760_000_000_000,
+    nowUtcMs: () => {
+      const at = UtcEpochMs.of(1_760_000_000_000);
+      if (!at.ok) throw new Error('a broken fixture');
+      return at.value;
+    },
     nextId: () => 'id-1',
     hash: (input: string) => `h(${input})`,
   };
@@ -19,9 +23,10 @@ describe('firestorePorts — the assembler', () => {
       'commit',
       'hash',
       'nextId',
-      'nowMs',
+      'nowUtcMs',
     ]);
-    expect(ports.nowMs).toBe(primitives.nowMs);
+    expect(ports.nowUtcMs).toBe(primitives.nowUtcMs);
+    expect(ports.nowUtcMs()).toBe(1_760_000_000_000);
     expect(ports.nextId).toBe(primitives.nextId);
     expect(ports.hash).toBe(primitives.hash);
   });
@@ -54,7 +59,7 @@ describe('firestorePorts — the assembler', () => {
     const fake = createProjectionFirestore();
     const withoutHash = {
       commit: firestoreCommitPlan(fake.db as unknown as Firestore),
-      nowMs: primitives.nowMs,
+      nowUtcMs: primitives.nowUtcMs,
       nextId: primitives.nextId,
     };
     // @ts-expect-error — `hash` is declared on FirestorePorts and not built

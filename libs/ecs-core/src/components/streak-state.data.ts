@@ -1,49 +1,52 @@
-import type { AppointmentId } from '../entities/appointment.entity';
-import type { StreakDefinitionId } from '../entities/streak-definition.entity';
-import type { DayKey } from './day-key.data';
+import type {
+  AppointmentId,
+  StreakDefinitionId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import type { StreakIntervalSource } from './streak-interval.data';
 import type { StreakExcuse } from './streak-rule.data';
 
-/** Where the rhythm stands, by kind — the stored `phase.kind` tags, unchanged. */
-export const StreakPhaseKind = {
-  Active: 'active',
+/** Where the rhythm stands — the state's discriminator `streakPhase`. */
+export const StreakPhase = {
+  Active: 'ACTIVE',
   /** Coaching for staff, never a warning to the client. */
-  AtRisk: 'atRisk',
-  InGrace: 'inGrace',
-  Frozen: 'frozen',
-  Broken: 'broken',
+  AtRisk: 'AT_RISK',
+  InGrace: 'IN_GRACE',
+  Frozen: 'FROZEN',
+  Broken: 'BROKEN',
 } as const;
-export type StreakPhaseKind =
-  (typeof StreakPhaseKind)[keyof typeof StreakPhaseKind];
+export type StreakPhase = (typeof StreakPhase)[keyof typeof StreakPhase];
 
 /**
  * What carries a period that runs on something other than a visit: a used
- * protection (`freeze`), the account's `pause`, the client's own
- * `clientPause`, or a miss that was the shop's (`excuse`).
+ * protection (`FREEZE`), the account's `PAUSE`, the client's own
+ * `CLIENT_PAUSE`, or a miss that was the shop's (`EXCUSE`).
  */
 export const FreezeReason = {
-  Freeze: 'freeze',
-  Pause: 'pause',
-  ClientPause: 'clientPause',
-  Excuse: 'excuse',
+  Freeze: 'FREEZE',
+  Pause: 'PAUSE',
+  ClientPause: 'CLIENT_PAUSE',
+  Excuse: 'EXCUSE',
 } as const;
 export type FreezeReason = (typeof FreezeReason)[keyof typeof FreezeReason];
 
 /**
- * One closed period, as the track draws it: `kept` and `repaired` are a
- * counted visit, dated by its day; `protected` and `missed` a due date
- * nobody met, dated by that due date — covered, or not.
+ * One closed period, as the track draws it — the field `streakPeriodMark`:
+ * `KEPT` and `REPAIRED` are a counted visit, dated by its day; `PROTECTED`
+ * and `MISSED` a due date nobody met, dated by that due date — covered, or
+ * not.
  */
 export const StreakPeriodMark = {
-  Kept: 'kept',
-  Protected: 'protected',
-  Repaired: 'repaired',
-  Missed: 'missed',
+  Kept: 'KEPT',
+  Protected: 'PROTECTED',
+  Repaired: 'REPAIRED',
+  Missed: 'MISSED',
 } as const;
 export type StreakPeriodMark =
   (typeof StreakPeriodMark)[keyof typeof StreakPeriodMark];
 
-/** What covered a `protected` period: a protection, an excuse by name, or a pause — read from the two dictionaries, never a third. */
+/** What covered a `PROTECTED` period: a protection, an excuse by name, or a pause — read from the two dictionaries, never a third. */
 export type StreakPeriodReason =
   | typeof FreezeReason.Freeze
   | StreakExcuse
@@ -51,56 +54,73 @@ export type StreakPeriodReason =
   | typeof FreezeReason.ClientPause;
 
 /**
- * Where the rhythm stands. Every date is a shop-calendar day.
+ * Where the rhythm stands — a variant SLICE of the state, every day a
+ * shop-calendar day and every variant-only field prefixed `phase`.
  *
- * - `inGrace`: past the due date and still safe until `graceUntil` — the
- *   last day of grace, or the day of the visit on the book that holds the
- *   period open (`StreakState.heldBy`).
- * - `frozen`: the open period runs on something other than a visit; a
- *   pause stops the clock `until` its last day, a protection or an excuse
- *   carries the period `until` its moved due date.
- * - `broken`: a period was missed on `brokenAt` (the day it was judged) and
- *   none is open. A visit until `repairableUntil` restores the run; when the
- *   rule restores nothing, `repairableUntil` is the day BEFORE `brokenAt`.
+ * - `IN_GRACE`: past the due date and still safe until `phaseGraceUntil` —
+ *   the last day of grace, or the day of the visit on the book that holds
+ *   the period open (`StreakState.heldByAppointmentId`).
+ * - `FROZEN`: the open period runs on something other than a visit; a pause
+ *   stops the clock until `phaseFrozenUntil`, its last day, a protection or
+ *   an excuse carries the period until its moved due date.
+ * - `BROKEN`: a period was missed on `phaseBrokenOn` (the day it was judged)
+ *   and none is open. A visit until `phaseRepairableUntil` restores the
+ *   run; when the rule restores nothing, it is the day BEFORE
+ *   `phaseBrokenOn`.
  */
-export type StreakPhase =
-  | StreakPhase.Active
-  | StreakPhase.AtRisk
-  | StreakPhase.InGrace
-  | StreakPhase.Frozen
-  | StreakPhase.Broken;
+export type StreakPhaseState =
+  | StreakPhaseState.Active
+  | StreakPhaseState.AtRisk
+  | StreakPhaseState.InGrace
+  | StreakPhaseState.Frozen
+  | StreakPhaseState.Broken;
 
-export const StreakPhase = {
-  active(): StreakPhase.Active {
-    return { kind: StreakPhaseKind.Active };
+export const StreakPhaseState = {
+  active(): StreakPhaseState.Active {
+    return { streakPhase: StreakPhase.Active };
   },
-  atRisk(dueBy: DayKey): StreakPhase.AtRisk {
-    return { kind: StreakPhaseKind.AtRisk, dueBy };
+  atRisk(phaseDueBy: LocalDate): StreakPhaseState.AtRisk {
+    return { streakPhase: StreakPhase.AtRisk, phaseDueBy };
   },
-  inGrace(graceUntil: DayKey): StreakPhase.InGrace {
-    return { kind: StreakPhaseKind.InGrace, graceUntil };
+  inGrace(phaseGraceUntil: LocalDate): StreakPhaseState.InGrace {
+    return { streakPhase: StreakPhase.InGrace, phaseGraceUntil };
   },
-  frozen(until: DayKey, reason: FreezeReason): StreakPhase.Frozen {
-    return { kind: StreakPhaseKind.Frozen, until, reason };
+  frozen(
+    phaseFrozenUntil: LocalDate,
+    phaseFreezeReason: FreezeReason,
+  ): StreakPhaseState.Frozen {
+    return {
+      streakPhase: StreakPhase.Frozen,
+      phaseFrozenUntil,
+      phaseFreezeReason,
+    };
   },
-  broken(brokenAt: DayKey, repairableUntil: DayKey): StreakPhase.Broken {
-    return { kind: StreakPhaseKind.Broken, brokenAt, repairableUntil };
+  broken(
+    phaseBrokenOn: LocalDate,
+    phaseRepairableUntil: LocalDate,
+  ): StreakPhaseState.Broken {
+    return {
+      streakPhase: StreakPhase.Broken,
+      phaseBrokenOn,
+      phaseRepairableUntil,
+    };
   },
 } as const;
 
-/** One closed period of the rhythm (client-card revision 3 §4.2). */
+/** One closed period of the rhythm (client-card revision 3 §4.2) — an element of `periods`. */
 export type StreakPeriodFact = {
-  readonly mark: StreakPeriodMark;
-  readonly on: DayKey;
-  /** What covered a `protected` period; `null` on every other mark. */
-  readonly reason: StreakPeriodReason | null;
+  readonly streakPeriodMark: StreakPeriodMark;
+  readonly on: LocalDate;
+  /** What covered a `PROTECTED` period; `null` on every other mark. */
+  readonly periodReason: StreakPeriodReason | null;
 };
 
 /**
- * The open period's terms, pinned when it opened: a later visit, or a
- * habit that moved since, never changes a due date already promised.
+ * The open period's terms, pinned when it opened — a system value (the
+ * projector's own); the state stores them flat as `period*`. A later visit,
+ * or a habit that moved since, never changes a due date already promised.
  * `habitDays` is the person's own interval to one decimal (the only figure
- * that is not whole), known only where `source` is `personal`.
+ * that is not whole), known only where `source` is `PERSONAL`.
  */
 export type StreakPeriodTerms = {
   readonly intervalDays: number;
@@ -109,43 +129,38 @@ export type StreakPeriodTerms = {
   readonly habitDays: number | null;
 };
 
-/** A visit on the book that holds the open period past its due date. */
-export type StreakHold = {
-  readonly appointmentId: AppointmentId;
-  readonly on: DayKey;
-};
-
 /**
- * One rhythm's projection, recomputed from visit facts — an entry of
- * `loyaltyAccounts/{uid}.streaks[]` (`loyalty-document.ts:520-543`). The
- * stored map keyed by streak id becomes an ARRAY of these, each naming its
- * `streakId` (§2.6, §3.2: the one shape change of the account), and
- * `lastQualifiedAt` an instant in ms. Every field is present: a state
- * written before revision 3 read its four newest fields as absent; they
- * are `null`/`[]` now (absent is `null`).
+ * One rhythm's projection, recomputed from visit facts — an element of
+ * `loyaltyAccounts/{uid}.streaks[]`, each naming its `streakId`, FLAT (Law
+ * 6): the phase is a variant slice intersected in; the open period's terms
+ * are `period*` (all four `null` together while no period is open —
+ * `BROKEN`); the visit on the book that holds the period is
+ * `heldByAppointmentId` + `heldOn` (`null` together when nothing holds it).
+ * `lastQualifiedAtUtcMs` is the last counted visit's start instant.
  */
 export type StreakState = {
   readonly streakId: StreakDefinitionId;
   readonly definitionVersion: number;
-  readonly phase: StreakPhase;
   readonly current: number;
   /** Never decreases. */
   readonly best: number;
-  readonly lastQualifiedAtMs: number | null;
-  readonly dueBy: DayKey | null;
+  readonly lastQualifiedAtUtcMs: UtcEpochMs | null;
+  readonly dueBy: LocalDate | null;
   readonly freezesBanked: number;
-  /** `null` while no period is open (`broken`). */
-  readonly period: StreakPeriodTerms | null;
+  readonly periodIntervalDays: number | null;
+  readonly periodGraceDays: number | null;
+  readonly periodSource: StreakIntervalSource | null;
+  readonly periodHabitDays: number | null;
   /** The newest {@link StreakState.PERIODS_KEPT} closed periods, oldest first. */
   readonly periods: readonly StreakPeriodFact[];
-  /** `null` when nothing on the book holds the period. */
-  readonly heldBy: StreakHold | null;
+  readonly heldByAppointmentId: AppointmentId | null;
+  readonly heldOn: LocalDate | null;
   /**
    * The shop-calendar day the run in progress began — the day of the first
    * visit `current` counts, however long ago. `null` while `current` is 0.
    */
-  readonly runStartedOn: DayKey | null;
-};
+  readonly runStartedOn: LocalDate | null;
+} & StreakPhaseState;
 
 export const StreakState = {
   /** How many closed periods a state carries: what the longest track draws. */
@@ -155,36 +170,58 @@ export const StreakState = {
    * The state of one rhythm on an account, or `null` — the linear scan that
    * replaces today's `account.streaks[streakId]` map read (§3.1).
    */
-  find(
-    states: readonly StreakState[],
+  find<S extends Pick<StreakState, 'streakId'>>(
+    states: readonly S[],
     streakId: StreakDefinitionId,
-  ): StreakState | null {
+  ): S | null {
     for (let i = 0; i < states.length; i++) {
-      const state = states[i] as StreakState;
+      const state = states[i] as S;
       if (state.streakId === streakId) return state;
     }
     return null;
   },
+
+  /** The open period's terms as the projector pinned them, or `null` while no period is open. */
+  periodTerms(
+    state: Pick<
+      StreakState,
+      | 'periodIntervalDays'
+      | 'periodGraceDays'
+      | 'periodSource'
+      | 'periodHabitDays'
+    >,
+  ): StreakPeriodTerms | null {
+    return state.periodIntervalDays === null ||
+      state.periodGraceDays === null ||
+      state.periodSource === null
+      ? null
+      : {
+          intervalDays: state.periodIntervalDays,
+          graceDays: state.periodGraceDays,
+          source: state.periodSource,
+          habitDays: state.periodHabitDays,
+        };
+  },
 } as const;
 
-export namespace StreakPhase {
-  export type Active = { readonly kind: typeof StreakPhaseKind.Active };
+export namespace StreakPhaseState {
+  export type Active = { readonly streakPhase: typeof StreakPhase.Active };
   export type AtRisk = {
-    readonly kind: typeof StreakPhaseKind.AtRisk;
-    readonly dueBy: DayKey;
+    readonly streakPhase: typeof StreakPhase.AtRisk;
+    readonly phaseDueBy: LocalDate;
   };
   export type InGrace = {
-    readonly kind: typeof StreakPhaseKind.InGrace;
-    readonly graceUntil: DayKey;
+    readonly streakPhase: typeof StreakPhase.InGrace;
+    readonly phaseGraceUntil: LocalDate;
   };
   export type Frozen = {
-    readonly kind: typeof StreakPhaseKind.Frozen;
-    readonly until: DayKey;
-    readonly reason: FreezeReason;
+    readonly streakPhase: typeof StreakPhase.Frozen;
+    readonly phaseFrozenUntil: LocalDate;
+    readonly phaseFreezeReason: FreezeReason;
   };
   export type Broken = {
-    readonly kind: typeof StreakPhaseKind.Broken;
-    readonly brokenAt: DayKey;
-    readonly repairableUntil: DayKey;
+    readonly streakPhase: typeof StreakPhase.Broken;
+    readonly phaseBrokenOn: LocalDate;
+    readonly phaseRepairableUntil: LocalDate;
   };
 }

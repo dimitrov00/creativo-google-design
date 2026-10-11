@@ -1,11 +1,18 @@
-import { AccountState, AccountStatus } from '../components/account-status.data';
-import type { DayKey } from '../components/day-key.data';
-import type { Money } from '../components/money.data';
+import {
+  AccountLifecycle,
+  AccountStatus,
+} from '../components/account-status.data';
 import type { PunchCard } from '../components/punch-card.data';
+import type { ShopNow } from '../components/shop-now.data';
 import type { StreakState } from '../components/streak-state.data';
-import type { GiftVoucherEntity } from '../entities/gift-voucher.entity';
+import type { WallTime } from '../components/wall-time.data';
+import type { GiftVoucher } from '../entities/gift-voucher.entity';
+import type { Currency } from '../primitives/currency.primitive';
+import type { ServiceId, ServiceVariantId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { PriceCents } from '../primitives/price-cents.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { VoucherSystem } from './voucher.system';
-import { DstResolution, ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * THE CLIENT CARD'S GLANCE, IN NUMBERS (client-card revision 3 §2.1, §5.1;
@@ -16,18 +23,23 @@ import { DstResolution, ZonedTimeSystem } from './zoned-time.system';
  * holdings the glance folds: what is left on the vouchers that still pay,
  * the first stamp card, the run in progress. Numbers, tags and verdicts —
  * the words, the capsules and the rows stay in the presenters.
+ *
+ * Zone-blind (Law 7): "today" arrives as the shop's `LocalDate` / `ShopNow`,
+ * a leg's start as the shop wall clock (`WallTime`, converted at the
+ * boundary — T6), a voucher's last day as its stored `expiresLocalDate`
+ * (T5). The pause is a lifecycle comparison of two instants (T2).
  */
 
 /** One service of a visit: what «Пак същото» compares. */
 export type GlanceLeg = {
-  readonly serviceId: string;
-  readonly variantId: string | null;
+  readonly serviceId: ServiceId;
+  readonly variantId: ServiceVariantId | null;
 };
 
 /** The glance's inputs beside the account. */
 export type GlanceHoldingsInput = {
   /** The vouchers issued to the person, any state; `null` = not read. */
-  readonly vouchers: readonly GiftVoucherEntity[] | null;
+  readonly vouchers: readonly GiftVoucher[] | null;
   readonly punchCards: readonly PunchCard[];
   /** `loyalty.achievements`: the stamp card follows it. */
   readonly achievements: boolean;
@@ -37,15 +49,16 @@ export type GlanceHoldingsInput = {
   readonly rhythm: Pick<StreakState, 'current'> | null;
   /** A paused client's rhythm is frozen: the glance says nothing of it. */
   readonly paused: boolean;
-  readonly today: DayKey;
-  /** The shop's zone: a voucher's last day is read on its calendar. */
-  readonly zone: string;
+  /** The shop's today: a voucher's last day is read on its calendar. */
+  readonly today: LocalDate;
 };
 
 /** The holdings line, each `null` where it is absent. */
 export type GlanceHoldings = {
   /** What is left on every voucher that still pays, as ONE sum in the first one's currency. */
-  readonly voucher: Money | null;
+  readonly voucherCents: PriceCents | null;
+  /** The currency of {@link voucherCents}; `null` together with it. */
+  readonly voucherCurrency: Currency | null;
   /** The first stamp card. */
   readonly stamps: PunchCard | null;
   /** The run in progress; a count of nought is nothing held. */
@@ -64,26 +77,26 @@ function keysOf(legs: readonly GlanceLeg[]): string {
   return keys.sort().join(KEY_JOINT);
 }
 
-/** The shop day an instant falls on, or `null` where the zone cannot place it. */
-function dayOf(epochMs: number, zone: string): DayKey | null {
-  const clock = ZonedTimeSystem.wallClockOf(epochMs, zone);
-  return clock.ok ? clock.value.dayKey : null;
-}
-
 export const ClientGlanceSystem = {
   /**
-   * Online booking paused AS OF `nowMs`: `{ untilMs }` (`null` = for good),
-   * or `null` — a temporary pause that has run out is no pause.
+   * Online booking paused AS OF `nowUtcMs`: `{ untilUtcMs }` (`null` = for
+   * good), or `null` — a temporary pause that has run out is no pause.
    */
   pauseOf(
-    status: AccountStatus | null,
-    nowMs: number,
-  ): { readonly untilMs: number | null } | null {
-    if (status === null || !AccountStatus.isBlockedAt(status, nowMs)) {
+    lifecycle: AccountLifecycle | null,
+    nowUtcMs: UtcEpochMs,
+  ): { readonly untilUtcMs: UtcEpochMs | null } | null {
+    if (
+      lifecycle === null ||
+      !AccountLifecycle.isBlockedAt(lifecycle, nowUtcMs)
+    ) {
       return null;
     }
     return {
-      untilMs: status.kind === AccountState.Blocked ? status.untilMs : null,
+      untilUtcMs:
+        lifecycle.accountStatus === AccountStatus.Blocked
+          ? lifecycle.blockedUntilUtcMs
+          : null,
     };
   },
 
@@ -98,16 +111,12 @@ export const ClientGlanceSystem = {
    */
   isInChairToday(
     open: boolean,
-    legStartsMs: readonly number[],
-    nowMs: number,
-    zone: string,
+    legs: readonly WallTime[],
+    now: ShopNow,
   ): boolean {
     if (!open) return false;
-    const today = dayOf(nowMs, zone);
-    if (today === null) return false;
-    for (let i = 0; i < legStartsMs.length; i++) {
-      const start = legStartsMs[i] as number;
-      if (Number.isFinite(start) && dayOf(start, zone) === today) return true;
+    for (let i = 0; i < legs.length; i++) {
+      if ((legs[i] as WallTime).localDate === now.localDate) return true;
     }
     return false;
   },
@@ -120,33 +129,24 @@ export const ClientGlanceSystem = {
    * and the run above nought.
    */
   holdings(input: GlanceHoldingsInput): GlanceHoldings {
-    let voucher: Money | null = null;
+    let voucherCents: PriceCents | null = null;
+    let voucherCurrency: Currency | null = null;
     const vouchers = input.vouchers;
     if (vouchers !== null) {
       // What can be spent is the voucher's own rule (`VoucherSystem.
-      // spendable`), judged from the first instant of the shop's today.
-      const start = ZonedTimeSystem.resolve(
-        input.today,
-        0,
-        input.zone,
-        DstResolution.ShiftForward,
-      );
-      if (start.ok) {
-        const todayStartMs = start.value.epochMs;
-        let currency: string | null = null;
-        for (let i = 0; i < vouchers.length && currency === null; i++) {
-          const held = vouchers[i] as GiftVoucherEntity;
-          if (VoucherSystem.spendable(held, todayStartMs)) {
-            currency = held.balance.currencyCode;
-          }
+      // spendable`), judged on the shop's today.
+      for (let i = 0; i < vouchers.length && voucherCurrency === null; i++) {
+        const held = vouchers[i] as GiftVoucher;
+        if (VoucherSystem.spendable(held, input.today)) {
+          voucherCurrency = held.currency;
         }
-        if (currency !== null) {
-          voucher = VoucherSystem.spendableSum(
-            vouchers,
-            todayStartMs,
-            currency,
-          );
-        }
+      }
+      if (voucherCurrency !== null) {
+        voucherCents = VoucherSystem.spendableSum(
+          vouchers,
+          input.today,
+          voucherCurrency,
+        ).amountCents;
       }
     }
     const stamps = input.achievements ? (input.punchCards[0] ?? null) : null;
@@ -157,6 +157,6 @@ export const ClientGlanceSystem = {
       input.rhythm.current > 0
         ? input.rhythm.current
         : null;
-    return { voucher, stamps, rhythm };
+    return { voucherCents, voucherCurrency, stamps, rhythm };
   },
 } as const;

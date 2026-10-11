@@ -1,34 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import { GiftVoucherId } from '../entities/gift-voucher.entity';
+import { Currency } from '../primitives/currency.primitive';
+import { GiftVoucherId } from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { unwrapOk } from '../testing';
+import { VoucherCode } from './voucher-code.data';
 import { VoucherRedemption } from './voucher-redemption.data';
+
+const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 const LIVE: VoucherRedemption = {
   voucherId: GiftVoucherId.of('gv-1'),
-  code: 'GIFT-50',
-  amount: { amountMinorUnits: 2000, currencyCode: 'EUR' },
-  balanceAfter: { amountMinorUnits: 3000, currencyCode: 'EUR' },
-  appliedAtMs: 10,
-  reversedAtMs: null,
+  code: VoucherCode.of('GIFT-50'),
+  amountCents: unwrapOk(PriceCents.of(2000)),
+  balanceAfterCents: unwrapOk(PriceCents.of(3000)),
+  currency: Currency.EUR,
+  appliedAtUtcMs: at(10),
+  reversedAtUtcMs: null,
 };
 
 describe('VoucherRedemption', () => {
   it('pays the bill while live', () => {
     expect(VoucherRedemption.isLive(LIVE)).toBe(true);
-    expect(VoucherRedemption.restoreDelta(LIVE)).toEqual({
-      amountMinorUnits: 2000,
-      currencyCode: 'EUR',
-    });
+    expect(VoucherRedemption.restoreDelta(LIVE)).toBe(2000);
   });
 
   it('keeps a reversed line as history that counts for nothing', () => {
-    const reversed = VoucherRedemption.reversed(LIVE, 20);
-    expect(reversed).toEqual({ ...LIVE, reversedAtMs: 20 });
+    const reversed = VoucherRedemption.reversed(LIVE, at(20));
+    expect(reversed).toEqual({ ...LIVE, reversedAtUtcMs: 20 });
     expect(VoucherRedemption.isLive(reversed)).toBe(false);
     // A second reversal restores nothing: the money already went back.
-    expect(VoucherRedemption.restoreDelta(reversed)).toEqual({
-      amountMinorUnits: 0,
-      currencyCode: 'EUR',
-    });
-    expect(LIVE.reversedAtMs).toBeNull();
+    expect(VoucherRedemption.restoreDelta(reversed)).toBe(0);
+    expect(LIVE.reversedAtUtcMs).toBeNull();
   });
 });

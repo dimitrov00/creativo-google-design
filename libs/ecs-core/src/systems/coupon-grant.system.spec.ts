@@ -4,119 +4,126 @@ import { CouponOccasion } from '../components/coupon-occasion.data';
 import { CouponValue } from '../components/coupon-value.data';
 import { EngagementErrorCode } from '../components/engagement-errors.data';
 import {
-  CouponGrantCapacity,
-  CouponGrantExpiration,
-  GrantCapacityKind,
-  GrantState,
+  GrantCapacity,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
   GrantStatus,
+  type GrantTerms,
 } from '../components/grant-status.data';
-import {
-  type CouponGrantEntity,
-  CouponGrantId,
-} from '../entities/coupon-grant.entity';
-import { CouponId } from '../entities/coupon.entity';
-import { UserId } from '../entities/user.entity';
-import { deepFreeze, unwrapErr, unwrapOk } from '../testing';
-import { type GrantTerms, CouponGrantSystem } from './coupon-grant.system';
+import type { CouponGrant } from '../entities/coupon-grant.entity';
+import { CouponGrantId, CouponId, UserId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { deepFreeze, unwrapErr, unwrapOk, utcMs } from '../testing';
+import { CouponGrantSystem } from './coupon-grant.system';
 
 /*
  * The cases of libs/domain/engagement/src/lib/coupon-grant.spec.ts, copied
- * over plain entities (the class spec keeps running against its shim):
- * `markUsed` is `burn`, instants are ms. Plus the inverse the visit editor's
- * undo needs (`restore`), as an exact-inverse property.
+ * over plain flat entities (the class spec keeps running against its shim):
+ * `markUsed` is `burn`, instants are `UtcEpochMs`. Plus the inverse the visit
+ * editor's undo needs (`restore`), as an exact-inverse property.
  */
 
-const JAN_1 = Date.UTC(2025, 11, 31, 22, 0);
+const JAN_1 = utcMs('2026-01-01T00:00:00+02:00');
 const DAY = 86_400_000;
-const at = (days: number): number => JAN_1 + days * DAY;
+const at = (days: number): UtcEpochMs => UtcEpochMs.plusMs(JAN_1, days * DAY);
 
 function makeActiveGrant(
-  capacity: CouponGrantCapacity,
-  expiration: CouponGrantExpiration = CouponGrantExpiration.none(),
-): CouponGrantEntity {
+  capacity: GrantCapacityTerms,
+  expiry: GrantExpiryTerms = GrantExpiryTerms.none(),
+): CouponGrant {
   return {
     id: CouponGrantId.of('grant-1'),
     userId: UserId.of('user-1'),
     couponId: CouponId.of('coupon-1'),
-    value: unwrapOk(CouponValue.percentOff(10)),
-    grantedAtMs: JAN_1,
-    state: GrantStatus.active(capacity, expiration),
+    grantedAtUtcMs: JAN_1,
+    ...unwrapOk(CouponValue.percentOff(10)),
+    ...GrantLifecycle.active(capacity, expiry),
   };
 }
 
-function multiUse(total: number): CouponGrantCapacity {
-  return unwrapOk(CouponGrantCapacity.multiUse(total));
+function multiUse(total: number): GrantCapacityTerms {
+  return unwrapOk(GrantCapacityTerms.multiUse(total));
+}
+
+function terms(
+  capacity: GrantCapacityTerms,
+  expiry: GrantExpiryTerms,
+): GrantTerms {
+  return { ...capacity, ...expiry };
 }
 
 describe('CouponGrantSystem — a fresh grant', () => {
   it('creates an active grant', () => {
     expect(
       CouponGrantSystem.isActive(
-        makeActiveGrant(CouponGrantCapacity.singleUse()),
+        makeActiveGrant(GrantCapacityTerms.singleUse()),
       ),
     ).toBe(true);
   });
 
-  it('CouponGrantCapacity.multiUse rejects a non-positive total', () => {
-    expect(CouponGrantCapacity.multiUse(0).ok).toBe(false);
+  it('GrantCapacityTerms.multiUse rejects a non-positive total', () => {
+    expect(GrantCapacityTerms.multiUse(0).ok).toBe(false);
   });
 });
 
 describe('CouponGrantSystem.burn', () => {
-  it('single-use transitions straight to used', () => {
-    const grant = makeActiveGrant(CouponGrantCapacity.singleUse());
+  it('single-use transitions straight to used, leaving no active field behind', () => {
+    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
     const used = unwrapOk(CouponGrantSystem.burn(grant, at(1), ''));
-    expect(used.state).toEqual({
-      kind: GrantState.Used,
-      usedAtMs: at(1),
-      note: '',
+    expect(GrantLifecycle.of(used)).toEqual({
+      grantStatus: GrantStatus.Used,
+      usedAtUtcMs: at(1),
+      usedNote: '',
     });
+    expect('grantCapacity' in used).toBe(false);
+    expect(CouponValue.of(used)).toEqual(unwrapOk(CouponValue.percentOff(10)));
   });
 
   it('multi-use decrements remaining and stays active until exhausted', () => {
     const grant = makeActiveGrant(multiUse(2));
     const first = unwrapOk(CouponGrantSystem.burn(grant, at(1), ''));
-    expect(first.state.kind).toBe('active');
+    expect(first.grantStatus).toBe('ACTIVE');
     const second = unwrapOk(CouponGrantSystem.burn(first, at(2), 'appt-1'));
-    expect(second.state).toEqual({
-      kind: GrantState.Used,
-      usedAtMs: at(2),
-      note: 'appt-1',
+    expect(GrantLifecycle.of(second)).toEqual({
+      grantStatus: GrantStatus.Used,
+      usedAtUtcMs: at(2),
+      usedNote: 'appt-1',
     });
   });
 
   it('rejects marking an already-used grant as used again', () => {
     const used = unwrapOk(
       CouponGrantSystem.burn(
-        makeActiveGrant(CouponGrantCapacity.singleUse()),
+        makeActiveGrant(GrantCapacityTerms.singleUse()),
         at(1),
         '',
       ),
     );
     expect(unwrapErr(CouponGrantSystem.burn(used, at(2), ''))).toEqual({
-      code: EngagementErrorCode.CouponGrantNotActive,
-      currentState: GrantState.Used,
+      errorCode: EngagementErrorCode.CouponGrantNotActive,
+      currentState: GrantStatus.Used,
     });
   });
 });
 
 describe('CouponGrantSystem.expire', () => {
-  it('expires a grant with a scheduled expiration', () => {
+  it('expires a grant with a scheduled expiry', () => {
     const grant = makeActiveGrant(
-      CouponGrantCapacity.singleUse(),
-      CouponGrantExpiration.at(at(31)),
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(31)),
     );
     const expired = unwrapOk(CouponGrantSystem.expire(grant, at(32)));
-    expect(expired.state).toEqual({
-      kind: GrantState.Expired,
-      expiredAtMs: at(32),
-      scheduledForMs: at(31),
+    expect(GrantLifecycle.of(expired)).toEqual({
+      grantStatus: GrantStatus.Expired,
+      expiredAtUtcMs: at(32),
+      expiryScheduledAtUtcMs: at(31),
     });
   });
 
-  it('rejects expiring a grant with no scheduled expiration', () => {
-    const grant = makeActiveGrant(CouponGrantCapacity.singleUse());
-    expect(unwrapErr(CouponGrantSystem.expire(grant, at(32))).code).toBe(
+  it('rejects expiring a grant with no scheduled expiry', () => {
+    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
+    expect(unwrapErr(CouponGrantSystem.expire(grant, at(32))).errorCode).toBe(
       EngagementErrorCode.CouponGrantNotExpiring,
     );
   });
@@ -124,30 +131,30 @@ describe('CouponGrantSystem.expire', () => {
 
 describe('CouponGrantSystem.revoke', () => {
   it('revokes an active grant with a reason', () => {
-    const grant = makeActiveGrant(CouponGrantCapacity.singleUse());
+    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
     const revoked = unwrapOk(
       CouponGrantSystem.revoke(grant, at(4), UserId.of('admin'), '  fraud '),
     );
-    expect(revoked.state).toEqual({
-      kind: GrantState.Revoked,
-      revokedAtMs: at(4),
-      revokedBy: 'admin',
-      reason: 'fraud',
+    expect(GrantLifecycle.of(revoked)).toEqual({
+      grantStatus: GrantStatus.Revoked,
+      revokedAtUtcMs: at(4),
+      revokedByUserId: 'admin',
+      revocationReason: 'fraud',
     });
   });
 
   it('rejects an empty revocation reason', () => {
-    const grant = makeActiveGrant(CouponGrantCapacity.singleUse());
+    const grant = makeActiveGrant(GrantCapacityTerms.singleUse());
     expect(
       unwrapErr(CouponGrantSystem.revoke(grant, at(4), UserId.of('a'), '  '))
-        .code,
+        .errorCode,
     ).toBe(EngagementErrorCode.CouponGrantReasonEmpty);
   });
 
   it('rejects revoking a non-active grant', () => {
     const used = unwrapOk(
       CouponGrantSystem.burn(
-        makeActiveGrant(CouponGrantCapacity.singleUse()),
+        makeActiveGrant(GrantCapacityTerms.singleUse()),
         at(1),
         '',
       ),
@@ -161,8 +168,8 @@ describe('CouponGrantSystem.revoke', () => {
 describe('CouponGrantSystem.isUsable', () => {
   it('is usable while active and not past expiry', () => {
     const grant = makeActiveGrant(
-      CouponGrantCapacity.singleUse(),
-      CouponGrantExpiration.at(at(31)),
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(31)),
     );
     expect(CouponGrantSystem.isUsable(grant, at(14))).toBe(true);
     expect(CouponGrantSystem.isUsable(grant, at(31))).toBe(true);
@@ -172,7 +179,7 @@ describe('CouponGrantSystem.isUsable', () => {
   it('is never usable once used', () => {
     const used = unwrapOk(
       CouponGrantSystem.burn(
-        makeActiveGrant(CouponGrantCapacity.singleUse()),
+        makeActiveGrant(GrantCapacityTerms.singleUse()),
         at(1),
         '',
       ),
@@ -183,49 +190,45 @@ describe('CouponGrantSystem.isUsable', () => {
 
 describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
   it('brings a spent grant back as it was issued, one use on it', () => {
-    const issued: GrantTerms = {
-      capacity: CouponGrantCapacity.singleUse(),
-      expiration: CouponGrantExpiration.at(at(31)),
-    };
-    const grant = makeActiveGrant(issued.capacity, issued.expiration);
+    const issued = terms(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(31)),
+    );
+    const grant = makeActiveGrant(issued, issued);
     const used = unwrapOk(CouponGrantSystem.burn(grant, at(1), ''));
     expect(unwrapOk(CouponGrantSystem.restore(used, issued))).toEqual(grant);
+    if (grant.grantStatus !== GrantStatus.Active) throw new Error('fixture');
+    expect(CouponGrantSystem.termsOf(grant)).toEqual(issued);
   });
 
   it('gives a multi-use grant its use back, up to what was granted', () => {
-    const issued: GrantTerms = {
-      capacity: multiUse(3),
-      expiration: CouponGrantExpiration.none(),
-    };
-    const grant = makeActiveGrant(issued.capacity);
+    const issued = terms(multiUse(3), GrantExpiryTerms.none());
+    const grant = makeActiveGrant(issued);
     expect(unwrapErr(CouponGrantSystem.restore(grant, issued))).toEqual({
-      code: EngagementErrorCode.CouponGrantCapacityInvalid,
+      errorCode: EngagementErrorCode.CouponGrantCapacityInvalid,
       attempted: 4,
     });
     expect(
       unwrapErr(
         CouponGrantSystem.restore(
-          makeActiveGrant(CouponGrantCapacity.singleUse()),
+          makeActiveGrant(GrantCapacityTerms.singleUse()),
           issued,
         ),
-      ).code,
+      ).errorCode,
     ).toBe(EngagementErrorCode.CouponGrantCapacityInvalid);
   });
 
   it('refuses an expired or revoked grant', () => {
-    const issued: GrantTerms = {
-      capacity: CouponGrantCapacity.singleUse(),
-      expiration: CouponGrantExpiration.at(at(31)),
-    };
+    const issued = terms(
+      GrantCapacityTerms.singleUse(),
+      GrantExpiryTerms.at(at(31)),
+    );
     const expired = unwrapOk(
-      CouponGrantSystem.expire(
-        makeActiveGrant(issued.capacity, issued.expiration),
-        at(32),
-      ),
+      CouponGrantSystem.expire(makeActiveGrant(issued, issued), at(32)),
     );
     expect(unwrapErr(CouponGrantSystem.restore(expired, issued))).toEqual({
-      code: EngagementErrorCode.CouponGrantNotActive,
-      currentState: GrantState.Expired,
+      errorCode: EngagementErrorCode.CouponGrantNotActive,
+      currentState: GrantStatus.Expired,
     });
   });
 
@@ -236,11 +239,8 @@ describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
         fc.integer({ min: 0, max: 5 }),
         (total, spent) => {
           fc.pre(spent < total);
-          const issued: GrantTerms = {
-            capacity: multiUse(total),
-            expiration: CouponGrantExpiration.none(),
-          };
-          let grant = makeActiveGrant(issued.capacity);
+          const issued = terms(multiUse(total), GrantExpiryTerms.none());
+          let grant = makeActiveGrant(issued);
           for (let i = 0; i < spent; i++) {
             grant = unwrapOk(CouponGrantSystem.burn(grant, at(i), ''));
           }
@@ -248,14 +248,14 @@ describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
           const back = unwrapOk(CouponGrantSystem.restore(burnt, issued));
           if (spent + 1 === total) {
             // A spent multi-use comes back with exactly one use.
-            expect(back.state).toEqual(
-              GrantStatus.active(
+            expect(GrantLifecycle.of(back)).toEqual(
+              GrantLifecycle.active(
                 {
-                  kind: GrantCapacityKind.MultiUse,
-                  remaining: 1,
-                  totalGranted: total,
+                  grantCapacity: GrantCapacity.MultiUse,
+                  usesRemaining: 1,
+                  usesGranted: total,
                 },
-                CouponGrantExpiration.none(),
+                GrantExpiryTerms.none(),
               ),
             );
           } else {
@@ -264,6 +264,29 @@ describe('CouponGrantSystem.restore — the exact inverse of a burn', () => {
         },
       ),
     );
+  });
+});
+
+describe('CouponGrantSystem.transitionWrite — one variant on the stored document', () => {
+  it('sets the used variant and deletes the active terms', () => {
+    const grant = makeActiveGrant(multiUse(1), GrantExpiryTerms.at(at(31)));
+    const used = unwrapOk(CouponGrantSystem.burn(grant, at(1), 'appt-1'));
+    expect(CouponGrantSystem.transitionWrite(grant, used)).toMatchObject({
+      writeAction: 'UPDATE',
+      path: ['couponGrants', 'grant-1'],
+      fields: {
+        grantStatus: 'USED',
+        usedAtUtcMs: at(1),
+        usedNote: 'appt-1',
+      },
+      deleteFields: [
+        'grantCapacity',
+        'usesRemaining',
+        'usesGranted',
+        'grantExpiry',
+        'grantExpiresAtUtcMs',
+      ],
+    });
   });
 });
 
@@ -287,8 +310,8 @@ describe('CouponGrantSystem — purity', () => {
     const once = CouponGrantSystem.burn(grant, at(1), 'x');
     const twice = CouponGrantSystem.burn(grant, at(1), 'x');
     expect(twice).toEqual(once);
-    expect(grant.state).toEqual(
-      GrantStatus.active(multiUse(2), CouponGrantExpiration.none()),
+    expect(GrantLifecycle.of(grant)).toEqual(
+      GrantLifecycle.active(multiUse(2), GrantExpiryTerms.none()),
     );
   });
 });

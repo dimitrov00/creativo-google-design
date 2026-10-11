@@ -1,22 +1,33 @@
-import { BarberPref, BarberPrefKind } from '../components/barber-pref.data';
+import { BarberPref, BarberPreference } from '../components/barber-pref.data';
 import type { BookingPolicy } from '../components/booking-policy.data';
-import { DayOffset } from '../components/day-offset.data';
 import { DayWindows } from '../components/day-windows.data';
-import { TimeInterval } from '../components/time-interval.data';
-import type { BarberId } from '../entities/barber.entity';
+import { MinuteRange } from '../components/minute-range.data';
+import type { ShopNow } from '../components/shop-now.data';
+import type {
+  DurationMinutes,
+  MinuteCount,
+  MinuteDelta,
+} from '../primitives/duration-minutes.primitive';
+import type {
+  BarberId,
+  CartLineId,
+  SeatKeyText,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
 import {
   IntervalSetSystem,
-  type NormalizedIntervals,
+  type NormalizedRanges,
 } from './interval-set.system';
-import { RosterSystem } from './roster.system';
 
-const MS_PER_MINUTE = 60_000;
+/** Minutes in one shop day on its wall clock. */
+const MINUTES_PER_DAY = 1440;
 
 /** How long a line takes with one barber, and the setup/cleanup around it. */
 export type LineTerms = {
-  readonly durationMinutes: number;
-  readonly padBeforeMinutes: number;
-  readonly padAfterMinutes: number;
+  readonly durationMinutes: DurationMinutes;
+  readonly padBeforeMinutes: MinuteCount;
+  readonly padAfterMinutes: MinuteCount;
 };
 
 /** A catalogue override: this barber's terms for the line (sparse input of `denseTerms`). */
@@ -27,39 +38,40 @@ export type BarberTerms = {
 
 /**
  * One line the party wants served, already resolved to durations
- * (`availability.ts:34-53`). The flat fields are the DEFAULT terms — the
- * catalogue duration before anyone picks a barber, which also orders the
- * search (longer first).
+ * (`availability.ts:34-53`). The flat `LineTerms` fields are the DEFAULT
+ * terms — the catalogue duration before anyone picks a barber, which also
+ * orders the search (longer first) — and the line's `BarberPref` slice
+ * (`barberPreference`, `preferredBarberId`) sits at its root (flatten-spec
+ * §3.9).
  *
  * `termsByBarber` is DENSE and parallel to `AvailabilityQuery.barbers`: entry
  * `b` is this line's terms with barber `b`, the defaults repeated where the
  * catalogue has no override ({@link AvailabilitySystem.denseTerms} builds it).
  * The catalogue prices a service per barber — a fade can be 30 minutes with
- * one and 45 with another — so an `any` line is resolved per candidate barber,
- * never collapsed to one number (the max would hide the faster barber's gaps,
- * the min would book the slower one into a slot they cannot finish in).
+ * one and 45 with another — so an `ANY` line is resolved per candidate
+ * barber, never collapsed to one number (the max would hide the faster
+ * barber's gaps, the min would book the slower one into a slot they cannot
+ * finish in).
  *
  * `personKey` is WHO the line is for — lines sharing a key are one person, who
  * never sits in two chairs at once (owner decision 2026-09-25); `null` is a
  * person of their own.
  */
 export type AvailabilityLine = {
-  readonly lineId: string;
-  readonly barberPref: BarberPref;
-  readonly durationMinutes: number;
-  readonly padBeforeMinutes: number;
-  readonly padAfterMinutes: number;
+  readonly lineId: CartLineId;
   readonly termsByBarber: readonly LineTerms[];
-  readonly personKey: string | null;
-};
+  readonly personKey: SeatKeyText | null;
+} & LineTerms &
+  BarberPref;
 
 /**
- * One barber's day at ONE shop, as the engine consumes it — the loader
+ * One barber's shop day at ONE shop, as the engine consumes it — the loader
  * partitions per shop before asking (a father at Center and his son at
- * Mladost at once is geometrically valid and physically absurd).
+ * Mladost at once is geometrically valid and physically absurd). Every span
+ * is a minute range of the query's ONE `localDate` (Law 7.3).
  *
- * - `windows` — the rostered windows as instants
- *   (`RosterSystem.intervalsOf(RosterSystem.windowsAt(…), day)`);
+ * - `windows` — the rostered windows (`RosterSystem.windowsAt(…)`, which ARE
+ *   minute ranges);
  * - `busy` — what is taken, ALREADY padded by this barber's turnaround
  *   ({@link AvailabilitySystem.paddedBusy}). That is the single place the
  *   separation between unrelated clients is applied; the engine has no
@@ -70,52 +82,58 @@ export type AvailabilityLine = {
  */
 export type BarberDayAvailability = {
   readonly barberId: BarberId;
-  readonly windows: readonly TimeInterval[];
-  readonly busy: readonly TimeInterval[];
-  readonly blocks: readonly TimeInterval[];
+  readonly windows: readonly MinuteRange[];
+  readonly busy: readonly MinuteRange[];
+  readonly blocks: readonly MinuteRange[];
 };
 
 /**
  * The chair time one barber is held for — a seat's setup, service and
- * cleanup, as instants: what a seat puts into the busy projection and what a
- * move hands back before it places the same visit again.
+ * cleanup on the shop day's wall clock: what a seat puts into the busy
+ * projection and what a move hands back before it places the same visit
+ * again.
  */
 export type ChairTime = {
   readonly barberId: BarberId;
-  readonly occupied: TimeInterval;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
 };
 
 /** {@link AvailabilitySystem.paddedBusy}'s input; `release` is `[]` unless a visit is being moved. */
 export type PaddedBusyInput = {
   readonly barberId: BarberId;
   /** The spans as the projection stores them: UNPADDED. */
-  readonly spans: readonly TimeInterval[];
-  readonly turnaroundMinutes: number;
+  readonly spans: readonly MinuteRange[];
+  readonly turnaroundMinutes: MinuteCount;
   readonly release: readonly ChairTime[];
 };
 
 /**
  * One line placed: which line (`lineId`), with which barber (`barberId`, and
  * its index in `query.barbers` — what ties and ranking compare), and the SOLD
- * slot — the service itself, without the setup and cleanup around it. No
- * line index: an option must not depend on cart order, byte for byte.
+ * slot (`startMinutes`/`endMinutes`) — the service itself, without the setup
+ * and cleanup around it. No line index: an option must not depend on cart
+ * order, byte for byte.
  */
 export type AvailabilityAssignment = {
-  readonly lineId: string;
+  readonly lineId: CartLineId;
   readonly barberId: BarberId;
   readonly barberIndex: number;
-  readonly slot: TimeInterval;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
 };
 
 /**
- * One way the whole party can be served. `envelope` spans the earliest sold
- * start to the latest sold end — the longest seat for a PARALLEL arrangement,
- * the chain for a SEQUENTIAL one; the engine returns both kinds and the user
- * never picks a "mode" (owner ruling 2026-07-29). Assignments are in slot
- * order, ties by `lineId`.
+ * One way the whole party can be served. Its envelope
+ * (`startMinutes`/`endMinutes`) spans the earliest sold start to the latest
+ * sold end — the longest seat for a PARALLEL arrangement, the chain for a
+ * SEQUENTIAL one; the engine returns both kinds and the user never picks a
+ * "mode" (owner ruling 2026-07-29). Assignments are in slot order, ties by
+ * `lineId`.
  */
 export type AvailabilityOption = {
-  readonly envelope: TimeInterval;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
   readonly assignments: readonly AvailabilityAssignment[];
 };
 
@@ -129,30 +147,31 @@ export type AvailabilityOption = {
  */
 export type AvailabilityRider = {
   readonly barberId: BarberId;
-  readonly offsetMinutes: number;
+  readonly offsetMinutes: MinuteDelta;
   readonly terms: LineTerms;
 };
 
 /**
  * Everything one search reads, every field present (Risk 9: no shape-toggling
- * optionals in the hot path).
+ * optionals in the hot path) — for ONE shop day, on its wall clock.
  *
- * - `notBeforeMs` — nothing may start (chair time included) before this:
- *   `now + minLeadMinutes`, already applied ({@link AvailabilitySystem.leadFloorMs});
+ * - `notBefore` — nothing may start (chair time included) before this minute:
+ *   `now + minLeadMinutes`, already applied ({@link AvailabilitySystem.leadFloor});
+ *   `null` is "the whole day is too soon" (no options at all);
  * - `riders` — `[]` on every ordinary booking; only a client MOVE carries any;
- * - `withinMs` — the client's declared windows. `null` is UNCONSTRAINED and
+ * - `within` — the client's declared windows. `null` is UNCONSTRAINED and
  *   `[]` is "nothing qualifies" (no options at all) — never blur the two:
  *   mapping an absent mask to `[]` zeroes every ordinary booking
- *   ({@link AvailabilitySystem.withinMsOf} returns the whole day for an
+ *   ({@link AvailabilitySystem.withinOf} returns the whole day for an
  *   unnarrowed day precisely so they never meet).
  */
 export type AvailabilityQuery = {
   readonly lines: readonly AvailabilityLine[];
   readonly barbers: readonly BarberDayAvailability[];
   readonly policy: BookingPolicy;
-  readonly notBeforeMs: number;
+  readonly notBefore: MinuteOfDay | null;
   readonly riders: readonly AvailabilityRider[];
-  readonly withinMs: readonly TimeInterval[] | null;
+  readonly within: readonly MinuteRange[] | null;
 };
 
 /**
@@ -186,6 +205,21 @@ const NO_RESULT: AvailabilityResult = {
   nodesVisited: 0,
 };
 
+/** The whole shop day, `[00:00, 24:00)`. */
+const WHOLE_DAY: readonly MinuteRange[] = [
+  MinuteRange.of(startOf(0), endOf(MINUTES_PER_DAY)),
+];
+
+/** A searched start back under its brand — the walk never leaves `[0, 1440)`. */
+function startOf(minutes: number): MinuteOfDay {
+  return MinuteOfDay.ofProven(minutes);
+}
+
+/** A searched end back under its brand — the walk never leaves `(0, 1440]`. */
+function endOf(minutes: number): EndMinute {
+  return EndMinute.ofProven(minutes);
+}
+
 /** Code-unit order — runtime-locale independent, so browser and server agree. */
 function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -196,17 +230,13 @@ function compareIds(a: string, b: string): number {
  * is measured from the GAP start, not midnight: a shift beginning 09:30
  * offers 09:30, not 09:45.
  */
-function firstStartMs(
-  gapStartMs: number,
-  notBeforeMs: number,
-  stepMs: number,
-): number {
-  if (gapStartMs >= notBeforeMs) return gapStartMs;
-  return gapStartMs + Math.ceil((notBeforeMs - gapStartMs) / stepMs) * stepMs;
+function firstStart(gapStart: number, notBefore: number, step: number): number {
+  if (gapStart >= notBefore) return gapStart;
+  return gapStart + Math.ceil((notBefore - gapStart) / step) * step;
 }
 
 /** A barber's rostered windows minus their (already padded) busy time. */
-function openFor(barber: BarberDayAvailability): NormalizedIntervals {
+function openFor(barber: BarberDayAvailability): NormalizedRanges {
   return IntervalSetSystem.subtract(barber.windows, barber.busy);
 }
 
@@ -219,10 +249,10 @@ function openFor(barber: BarberDayAvailability): NormalizedIntervals {
  */
 function freeFor(
   barber: BarberDayAvailability,
-  withinMs: readonly TimeInterval[] | null,
-): readonly TimeInterval[] {
+  within: readonly MinuteRange[] | null,
+): readonly MinuteRange[] {
   const open = openFor(barber);
-  return withinMs === null ? open : IntervalSetSystem.intersect(open, withinMs);
+  return within === null ? open : IntervalSetSystem.intersect(open, within);
 }
 
 /** A line's dense terms entry for barber `b`, or its defaults when the array is short. */
@@ -230,16 +260,16 @@ function termsAt(line: AvailabilityLine, barberIndex: number): LineTerms {
   return line.termsByBarber[barberIndex] ?? line;
 }
 
-/** Is `[startMs, endMs)` inside one gap of a sorted, disjoint gap list? */
+/** Is `[start, end)` inside one gap of a sorted, disjoint gap list? */
 function insideOneGap(
-  gaps: readonly TimeInterval[],
-  startMs: number,
-  endMs: number,
+  gaps: readonly MinuteRange[],
+  start: number,
+  end: number,
 ): boolean {
   for (let g = 0; g < gaps.length; g++) {
-    const gap = gaps[g] as TimeInterval;
-    if (gap.startMs > startMs) return false;
-    if (endMs <= gap.endMs) return true;
+    const gap = gaps[g] as MinuteRange;
+    if (gap.startMinutes > start) return false;
+    if (end <= gap.endMinutes) return true;
   }
   return false;
 }
@@ -250,8 +280,8 @@ function insideOneGap(
  * cart order.
  */
 function compareLines(a: AvailabilityLine, b: AvailabilityLine): number {
-  const aSpecific = a.barberPref.kind === BarberPrefKind.Specific ? 0 : 1;
-  const bSpecific = b.barberPref.kind === BarberPrefKind.Specific ? 0 : 1;
+  const aSpecific = a.barberPreference === BarberPreference.Specific ? 0 : 1;
+  const bSpecific = b.barberPreference === BarberPreference.Specific ? 0 : 1;
   return (
     aSpecific - bSpecific ||
     b.durationMinutes - a.durationMinutes ||
@@ -277,8 +307,8 @@ function compareBarberSequences(
 /** The total order of the result: envelope start, envelope end, barber indexes. */
 function compareOptions(a: AvailabilityOption, b: AvailabilityOption): number {
   return (
-    a.envelope.startMs - b.envelope.startMs ||
-    a.envelope.endMs - b.envelope.endMs ||
+    a.startMinutes - b.startMinutes ||
+    a.endMinutes - b.endMinutes ||
     compareBarberSequences(a.assignments, b.assignments)
   );
 }
@@ -286,7 +316,8 @@ function compareOptions(a: AvailabilityOption, b: AvailabilityOption): number {
 /**
  * The backtracking search behind {@link AvailabilitySystem.availableOptions}
  * and {@link AvailabilitySystem.availableStarts} (`availability.ts:422-612`),
- * in the index-addressed layout hot path #1 is committed to (§2.8, Risk 9):
+ * in the index-addressed layout hot path #1 is committed to (§2.8, Risk 9),
+ * on the shop day's wall-clock minutes (Law 7.3 — integers, no instant):
  *
  * - lines and barbers are addressed by INDEX; ids are compared once, before
  *   the walk (eligibility, person keys, rider barbers, line ranks);
@@ -313,19 +344,27 @@ function search(
   const barbers = query.barbers;
   const lineCount = lines.length;
   const barberCount = barbers.length;
-  const stepMs = query.policy.slotStepMinutes * MS_PER_MINUTE;
-  const notBeforeMs = query.notBeforeMs;
+  const step: number = query.policy.slotStepMinutes;
   const maxOptions = budget.maxOptions;
   const nodeBudget = budget.nodeBudget;
-  // No lines, no cap, or a grid that never advances: nothing to search (the
-  // last would loop forever — fail closed instead).
-  if (lineCount === 0 || maxOptions <= 0 || !(stepMs > 0)) return NO_RESULT;
+  // No lines, no cap, a grid that never advances, or a day that is too soon
+  // as a whole: nothing to search (the grid case would loop forever — fail
+  // closed instead).
+  if (
+    lineCount === 0 ||
+    maxOptions <= 0 ||
+    !(step > 0) ||
+    query.notBefore === null
+  ) {
+    return NO_RESULT;
+  }
+  const notBefore: number = query.notBefore;
 
   /* ── Once per call: the index-addressed layout ───────────────────────── */
 
-  const free: (readonly TimeInterval[])[] = [];
+  const free: (readonly MinuteRange[])[] = [];
   for (let b = 0; b < barberCount; b++) {
-    free.push(freeFor(barbers[b] as BarberDayAvailability, query.withinMs));
+    free.push(freeFor(barbers[b] as BarberDayAvailability, query.within));
   }
 
   // Line positions in search order (Rule 1), and each position's line index.
@@ -366,28 +405,25 @@ function search(
   // Eligible barbers per position (CSR) and the (position, barber) terms.
   const eligibleFrom = new Int32Array(lineCount + 1);
   const eligible = new Int32Array(lineCount * barberCount);
-  const occupiedMs = new Float64Array(lineCount * barberCount);
-  const padBeforeMs = new Float64Array(lineCount * barberCount);
-  const serviceMs = new Float64Array(lineCount * barberCount);
+  const occupiedOf = new Int32Array(lineCount * barberCount);
+  const padBeforeOf = new Int32Array(lineCount * barberCount);
+  const serviceOf = new Int32Array(lineCount * barberCount);
   let eligibleCount = 0;
   for (let p = 0; p < lineCount; p++) {
     eligibleFrom[p] = eligibleCount;
     const line = lines[order[p] as number] as AvailabilityLine;
     for (let b = 0; b < barberCount; b++) {
       const barber = barbers[b] as BarberDayAvailability;
-      if (!BarberPref.matches(line.barberPref, barber.barberId)) continue;
+      if (!BarberPref.matches(line, barber.barberId)) continue;
       eligible[eligibleCount++] = b;
       const terms = termsAt(line, b);
       const k = p * barberCount + b;
       // The line's own footprint WITH THIS BARBER: setup, service, cleanup.
       // The barber's turnaround is NOT added — it is already inside `busy`.
-      occupiedMs[k] =
-        (terms.padBeforeMinutes +
-          terms.durationMinutes +
-          terms.padAfterMinutes) *
-        MS_PER_MINUTE;
-      padBeforeMs[k] = terms.padBeforeMinutes * MS_PER_MINUTE;
-      serviceMs[k] = terms.durationMinutes * MS_PER_MINUTE;
+      occupiedOf[k] =
+        terms.padBeforeMinutes + terms.durationMinutes + terms.padAfterMinutes;
+      padBeforeOf[k] = terms.padBeforeMinutes;
+      serviceOf[k] = terms.durationMinutes;
     }
   }
   eligibleFrom[lineCount] = eligibleCount;
@@ -398,9 +434,9 @@ function search(
   const riders = query.riders;
   const riderCount = riders.length;
   const riderBarber = new Int32Array(riderCount);
-  const riderStartMs = new Float64Array(riderCount);
-  const riderEndMs = new Float64Array(riderCount);
-  const open: (readonly TimeInterval[])[] = [];
+  const riderStart = new Int32Array(riderCount);
+  const riderEnd = new Int32Array(riderCount);
+  const open: (readonly MinuteRange[])[] = [];
   if (riderCount > 0) {
     for (let b = 0; b < barberCount; b++) {
       open.push(openFor(barbers[b] as BarberDayAvailability));
@@ -420,12 +456,12 @@ function search(
 
   // The branch: per position, the pick; per barber, its sorted taken list.
   const chosenBarber = new Int32Array(lineCount);
-  const chosenOccStartMs = new Float64Array(lineCount);
-  const chosenOccEndMs = new Float64Array(lineCount);
-  const chosenSlotStartMs = new Float64Array(lineCount);
-  const chosenSlotEndMs = new Float64Array(lineCount);
-  const takenStartMs = new Float64Array(barberCount * lineCount);
-  const takenEndMs = new Float64Array(barberCount * lineCount);
+  const chosenOccStart = new Int32Array(lineCount);
+  const chosenOccEnd = new Int32Array(lineCount);
+  const chosenSlotStart = new Int32Array(lineCount);
+  const chosenSlotEnd = new Int32Array(lineCount);
+  const takenStart = new Int32Array(barberCount * lineCount);
+  const takenEnd = new Int32Array(barberCount * lineCount);
   const takenCount = new Int32Array(barberCount);
   const leafOrder = new Int32Array(lineCount);
 
@@ -437,30 +473,30 @@ function search(
 
   /* ── The taken list: sorted insert on descent, removal on return ─────── */
 
-  const take = (b: number, startMs: number, endMs: number): void => {
+  const take = (b: number, start: number, end: number): void => {
     // An empty chair time takes nothing (the legacy subtraction dropped it).
-    if (!(startMs < endMs)) return;
+    if (!(start < end)) return;
     const base = b * lineCount;
     let i = takenCount[b] as number;
-    while (i > 0 && (takenStartMs[base + i - 1] as number) > startMs) {
-      takenStartMs[base + i] = takenStartMs[base + i - 1] as number;
-      takenEndMs[base + i] = takenEndMs[base + i - 1] as number;
+    while (i > 0 && (takenStart[base + i - 1] as number) > start) {
+      takenStart[base + i] = takenStart[base + i - 1] as number;
+      takenEnd[base + i] = takenEnd[base + i - 1] as number;
       i--;
     }
-    takenStartMs[base + i] = startMs;
-    takenEndMs[base + i] = endMs;
+    takenStart[base + i] = start;
+    takenEnd[base + i] = end;
     takenCount[b] = (takenCount[b] as number) + 1;
   };
 
-  const release = (b: number, startMs: number, endMs: number): void => {
-    if (!(startMs < endMs)) return;
+  const release = (b: number, start: number, end: number): void => {
+    if (!(start < end)) return;
     const base = b * lineCount;
     const count = takenCount[b] as number;
     let i = 0;
-    while (i < count && takenStartMs[base + i] !== startMs) i++;
+    while (i < count && takenStart[base + i] !== start) i++;
     for (; i < count - 1; i++) {
-      takenStartMs[base + i] = takenStartMs[base + i + 1] as number;
-      takenEndMs[base + i] = takenEndMs[base + i + 1] as number;
+      takenStart[base + i] = takenStart[base + i + 1] as number;
+      takenEnd[base + i] = takenEnd[base + i + 1] as number;
     }
     takenCount[b] = count - 1;
   };
@@ -468,31 +504,29 @@ function search(
   /* ── A leaf: riders, then (maybe) one option ─────────────────────────── */
 
   /**
-   * Does every rider still fit once the party starts at `partyStartMs`? The
+   * Does every rider still fit once the party starts at `partyStart`? The
    * server's questions of a carried seat: after the lead floor (measured from
    * its chair time's start), inside one open gap of its barber, clear of this
    * arrangement's picks and of the riders already placed on that barber.
    */
-  const ridersFit = (partyStartMs: number): boolean => {
+  const ridersFit = (partyStart: number): boolean => {
     for (let r = 0; r < riderCount; r++) {
       const rider = riders[r] as AvailabilityRider;
-      const soldStartMs = partyStartMs + rider.offsetMinutes * MS_PER_MINUTE;
-      const startMs =
-        soldStartMs - rider.terms.padBeforeMinutes * MS_PER_MINUTE;
-      const endMs =
-        soldStartMs +
-        (rider.terms.durationMinutes + rider.terms.padAfterMinutes) *
-          MS_PER_MINUTE;
-      if (startMs < notBeforeMs) return false;
+      const soldStart = partyStart + rider.offsetMinutes;
+      const start = soldStart - rider.terms.padBeforeMinutes;
+      const end =
+        soldStart + rider.terms.durationMinutes + rider.terms.padAfterMinutes;
+      if (start < notBefore) return false;
       const b = riderBarber[r] as number;
       if (b < 0) return false;
-      if (!insideOneGap(open[b] as readonly TimeInterval[], startMs, endMs))
+      if (!insideOneGap(open[b] as readonly MinuteRange[], start, end)) {
         return false;
+      }
       for (let p = 0; p < lineCount; p++) {
         if (
           chosenBarber[p] === b &&
-          (chosenOccStartMs[p] as number) < endMs &&
-          startMs < (chosenOccEndMs[p] as number)
+          (chosenOccStart[p] as number) < end &&
+          start < (chosenOccEnd[p] as number)
         ) {
           return false;
         }
@@ -500,14 +534,14 @@ function search(
       for (let s = 0; s < r; s++) {
         if (
           riderBarber[s] === b &&
-          (riderStartMs[s] as number) < endMs &&
-          startMs < (riderEndMs[s] as number)
+          (riderStart[s] as number) < end &&
+          start < (riderEnd[s] as number)
         ) {
           return false;
         }
       }
-      riderStartMs[r] = startMs;
-      riderEndMs[r] = endMs;
+      riderStart[r] = start;
+      riderEnd[r] = end;
     }
     return true;
   };
@@ -519,8 +553,7 @@ function search(
       while (j > 0) {
         const prev = leafOrder[j - 1] as number;
         const delta =
-          (chosenSlotStartMs[prev] as number) -
-            (chosenSlotStartMs[i] as number) ||
+          (chosenSlotStart[prev] as number) - (chosenSlotStart[i] as number) ||
           (lineRank[prev] as number) - (lineRank[i] as number);
         if (delta <= 0) break;
         leafOrder[j] = prev;
@@ -531,8 +564,8 @@ function search(
   };
 
   const buildOption = (
-    envelopeStartMs: number,
-    envelopeEndMs: number,
+    envelopeStart: number,
+    envelopeEnd: number,
   ): AvailabilityOption => {
     const assignments: AvailabilityAssignment[] = [];
     for (let i = 0; i < lineCount; i++) {
@@ -542,14 +575,13 @@ function search(
         lineId: (lines[order[p] as number] as AvailabilityLine).lineId,
         barberId: (barbers[barberIndex] as BarberDayAvailability).barberId,
         barberIndex,
-        slot: TimeInterval.of(
-          chosenSlotStartMs[p] as number,
-          chosenSlotEndMs[p] as number,
-        ),
+        startMinutes: startOf(chosenSlotStart[p] as number),
+        endMinutes: endOf(chosenSlotEnd[p] as number),
       });
     }
     return {
-      envelope: TimeInterval.of(envelopeStartMs, envelopeEndMs),
+      startMinutes: startOf(envelopeStart),
+      endMinutes: endOf(envelopeEnd),
       assignments,
     };
   };
@@ -560,11 +592,11 @@ function search(
    * total order, so the winner never depends on which branch came first.
    */
   const isTighter = (
-    envelopeEndMs: number,
+    envelopeEnd: number,
     incumbent: AvailabilityOption,
   ): boolean => {
-    if (envelopeEndMs !== incumbent.envelope.endMs) {
-      return envelopeEndMs < incumbent.envelope.endMs;
+    if (envelopeEnd !== incumbent.endMinutes) {
+      return envelopeEnd < incumbent.endMinutes;
     }
     for (let i = 0; i < lineCount; i++) {
       const mine = chosenBarber[leafOrder[i] as number] as number;
@@ -577,30 +609,30 @@ function search(
 
   const leaf = (): void => {
     // The envelope spans what the CLIENT experiences — sold slots.
-    let envelopeStartMs = chosenSlotStartMs[0] as number;
-    let envelopeEndMs = chosenSlotEndMs[0] as number;
+    let envelopeStart = chosenSlotStart[0] as number;
+    let envelopeEnd = chosenSlotEnd[0] as number;
     for (let p = 1; p < lineCount; p++) {
-      if ((chosenSlotStartMs[p] as number) < envelopeStartMs)
-        envelopeStartMs = chosenSlotStartMs[p] as number;
-      if ((chosenSlotEndMs[p] as number) > envelopeEndMs)
-        envelopeEndMs = chosenSlotEndMs[p] as number;
+      if ((chosenSlotStart[p] as number) < envelopeStart)
+        envelopeStart = chosenSlotStart[p] as number;
+      if ((chosenSlotEnd[p] as number) > envelopeEnd)
+        envelopeEnd = chosenSlotEnd[p] as number;
     }
     // A start that strands a rider is no answer for THIS arrangement — but
     // another at the same start may leave them room, so the walk goes on.
-    if (riderCount > 0 && !ridersFit(envelopeStartMs)) return;
+    if (riderCount > 0 && !ridersFit(envelopeStart)) return;
     orderLeaf();
     if (!dedupeByStart) {
-      options.push(buildOption(envelopeStartMs, envelopeEndMs));
+      options.push(buildOption(envelopeStart, envelopeEnd));
       return;
     }
-    const existing = byStart.get(envelopeStartMs);
+    const existing = byStart.get(envelopeStart);
     if (existing === undefined) {
-      byStart.set(envelopeStartMs, options.length);
-      options.push(buildOption(envelopeStartMs, envelopeEndMs));
+      byStart.set(envelopeStart, options.length);
+      options.push(buildOption(envelopeStart, envelopeEnd));
     } else if (
-      isTighter(envelopeEndMs, options[existing] as AvailabilityOption)
+      isTighter(envelopeEnd, options[existing] as AvailabilityOption)
     ) {
-      options[existing] = buildOption(envelopeStartMs, envelopeEndMs);
+      options[existing] = buildOption(envelopeStart, envelopeEnd);
     }
   };
 
@@ -617,30 +649,31 @@ function search(
     for (let e = eligibleFrom[p] as number; e < eligibleTo; e++) {
       const b = eligible[e] as number;
       const k = p * barberCount + b;
-      const occMs = occupiedMs[k] as number;
-      const beforeMs = padBeforeMs[k] as number;
-      const durMs = serviceMs[k] as number;
-      const gaps = free[b] as readonly TimeInterval[];
+      const occupied = occupiedOf[k] as number;
+      const before = padBeforeOf[k] as number;
+      const duration = serviceOf[k] as number;
+      const gaps = free[b] as readonly MinuteRange[];
       const base = b * lineCount;
       const count = takenCount[b] as number;
       let t = 0;
       for (let g = 0; g < gaps.length; g++) {
-        const gap = gaps[g] as TimeInterval;
+        const gap = gaps[g] as MinuteRange;
         // The gap minus what this branch already gave barber `b`, walked as
         // sub-gaps: the sequential case is found naturally — the second seat
         // simply sees the first one's chair time as taken.
-        let cursor = gap.startMs;
-        while (cursor < gap.endMs) {
-          while (t < count && (takenEndMs[base + t] as number) <= cursor) t++;
+        let cursor: number = gap.startMinutes;
+        const gapEnd: number = gap.endMinutes;
+        while (cursor < gapEnd) {
+          while (t < count && (takenEnd[base + t] as number) <= cursor) t++;
           const takenInside =
-            t < count && (takenStartMs[base + t] as number) < gap.endMs;
-          const subEndMs = takenInside
-            ? (takenStartMs[base + t] as number)
-            : gap.endMs;
+            t < count && (takenStart[base + t] as number) < gapEnd;
+          const subEnd = takenInside
+            ? (takenStart[base + t] as number)
+            : gapEnd;
           for (
-            let startMs = firstStartMs(cursor, notBeforeMs, stepMs);
-            startMs + occMs <= subEndMs;
-            startMs += stepMs
+            let start = firstStart(cursor, notBefore, step);
+            start + occupied <= subEnd;
+            start += step
           ) {
             if (nodesVisited >= nodeBudget) {
               exhausted = true;
@@ -648,16 +681,16 @@ function search(
             }
             nodesVisited++;
             // The SOLD slot is the service; the pads surround it.
-            const slotStartMs = startMs + beforeMs;
-            const slotEndMs = slotStartMs + durMs;
+            const slotStart = start + before;
+            const slotEnd = slotStart + duration;
             // …and the PERSON cannot be in another chair then (sold slots).
             if (person >= 0) {
               let twice = false;
               for (let q = 0; q < p; q++) {
                 if (
                   personOf[q] === person &&
-                  (chosenSlotStartMs[q] as number) < slotEndMs &&
-                  slotStartMs < (chosenSlotEndMs[q] as number)
+                  (chosenSlotStart[q] as number) < slotEnd &&
+                  slotStart < (chosenSlotEnd[q] as number)
                 ) {
                   twice = true;
                   break;
@@ -666,17 +699,17 @@ function search(
               if (twice) continue;
             }
             chosenBarber[p] = b;
-            chosenOccStartMs[p] = startMs;
-            chosenOccEndMs[p] = startMs + occMs;
-            chosenSlotStartMs[p] = slotStartMs;
-            chosenSlotEndMs[p] = slotEndMs;
-            take(b, startMs, startMs + occMs);
+            chosenOccStart[p] = start;
+            chosenOccEnd[p] = start + occupied;
+            chosenSlotStart[p] = slotStart;
+            chosenSlotEnd[p] = slotEnd;
+            take(b, start, start + occupied);
             descend(p + 1);
-            release(b, startMs, startMs + occMs);
+            release(b, start, start + occupied);
             if (exhausted || options.length >= maxOptions) return;
           }
           if (!takenInside) break;
-          cursor = takenEndMs[base + t] as number;
+          cursor = takenEnd[base + t] as number;
           t++;
         }
       }
@@ -692,27 +725,40 @@ function search(
 
 /**
  * AvailabilitySystem — every way a party can be served on one barber-day pool
- * (`availability.ts:56-635`), plus the busy rule both sides of a booking check
- * placements by, and the client's declared-window mask (`day-windows.ts:92`).
+ * of ONE shop day (`availability.ts:56-635`), plus the busy rule both sides of
+ * a booking check placements by, and the client's declared-window mask
+ * (`day-windows.ts:92`).
  *
- * Pure: the query, the budget and the day table are parameters; no `Date`, no
- * `Intl`. Two assignments naming the SAME barber never overlap (chair time),
- * which is what makes "father and son, same barber, back to back" a
- * first-class result; two lines of the SAME person never overlap either
- * (sold slots).
+ * Pure and time-zone-blind (Law 7.3): the query is the shop day's wall-clock
+ * minutes; "now" arrives as `ShopNow`. Two assignments naming the SAME barber
+ * never overlap (chair time), which is what makes "father and son, same
+ * barber, back to back" a first-class result; two lines of the SAME person
+ * never overlap either (sold slots).
  */
 export const AvailabilitySystem = {
   /** The legacy brakes: 200 000 placements, 200 options. */
   DEFAULT_BUDGET,
 
   /**
-   * The lead-time floor every caller applies once, as an instant (the grid,
-   * the waitlist matcher and the commit re-check each restated it):
-   * `nowMs + minLeadMinutes`. Applied to starts rather than by trimming
+   * The lead-time floor every caller applies once, on `localDate`'s wall
+   * clock (the grid, the waitlist matcher and the commit re-check each
+   * restated it): `now.currentMinute + minLeadMinutes` on `now.localDate`,
+   * carried into the following day(s) by subtracting 1440 per day — civil
+   * arithmetic (flatten-spec T1). `null` when the whole of `localDate` is too
+   * soon (a past day, or a floor at or past its midnight); minute `0` when
+   * the floor lies before the day. Applied to starts rather than by trimming
    * windows, which would shrink the capacity denominator too.
    */
-  leadFloorMs(nowMs: number, policy: BookingPolicy): number {
-    return nowMs + policy.minLeadMinutes * MS_PER_MINUTE;
+  leadFloor(
+    now: ShopNow,
+    policy: BookingPolicy,
+    localDate: LocalDate,
+  ): MinuteOfDay | null {
+    const daysAhead = LocalDate.daysBetween(now.localDate, localDate);
+    const floor =
+      now.currentMinute + policy.minLeadMinutes - daysAhead * MINUTES_PER_DAY;
+    if (floor >= MINUTES_PER_DAY) return null;
+    return startOf(floor > 0 ? floor : 0);
   },
 
   /**
@@ -753,7 +799,8 @@ export const AvailabilitySystem = {
   /**
    * A barber's stored busy spans → the `busy` a placement is checked against
    * (`availability.ts:112-146`): what is taken, padded by this barber's
-   * turnaround. ONE rule for the grid's read and the server's commit check.
+   * turnaround (clamped to the shop day). ONE rule for the grid's read and
+   * the server's commit check.
    *
    * `release` is chair time handed back FIRST — the visit being MOVED never
    * blocks its own move — and before the padding, never after: the
@@ -761,18 +808,21 @@ export const AvailabilitySystem = {
    * survive. Entries naming other barbers are ignored, so a whole visit's
    * chair times can be passed for every barber.
    */
-  paddedBusy(input: PaddedBusyInput): NormalizedIntervals {
-    const released: TimeInterval[] = [];
+  paddedBusy(input: PaddedBusyInput): NormalizedRanges {
+    const released: ChairTime[] = [];
     for (let i = 0; i < input.release.length; i++) {
       const chair = input.release[i] as ChairTime;
-      if (chair.barberId === input.barberId) released.push(chair.occupied);
+      if (chair.barberId === input.barberId) released.push(chair);
     }
     const taken = IntervalSetSystem.subtract(input.spans, released);
-    const turnaround = Math.max(0, input.turnaroundMinutes);
-    const padded: TimeInterval[] = [];
+    const padded: MinuteRange[] = [];
     for (let i = 0; i < taken.length; i++) {
       padded.push(
-        TimeInterval.pad(taken[i] as TimeInterval, turnaround, turnaround),
+        MinuteRange.pad(
+          taken[i] as MinuteRange,
+          input.turnaroundMinutes,
+          input.turnaroundMinutes,
+        ),
       );
     }
     return IntervalSetSystem.normalize(padded);
@@ -783,27 +833,26 @@ export const AvailabilitySystem = {
    * 218-249`): every step of the grid measured from each GAP's start (not
    * midnight), from the lead-time floor on, while the footprint still fits.
    * The search walks the same grid inline; this materialised form is for
-   * callers that want the list.
+   * callers that want the list. A `null` floor (the day is too soon) offers
+   * nothing.
    */
   candidateStarts(
-    free: readonly TimeInterval[],
-    durationMinutes: number,
-    stepMinutes: number,
-    notBeforeMs: number,
-  ): readonly number[] {
-    const durationMs = durationMinutes * MS_PER_MINUTE;
-    const stepMs = stepMinutes * MS_PER_MINUTE;
-    const starts: number[] = [];
-    if (!(stepMs > 0)) return starts;
+    free: readonly MinuteRange[],
+    duration: DurationMinutes,
+    step: DurationMinutes,
+    notBefore: MinuteOfDay | null,
+  ): readonly MinuteOfDay[] {
+    const starts: MinuteOfDay[] = [];
+    if (notBefore === null || !(step > 0)) return starts;
     const gaps = IntervalSetSystem.normalize(free);
     for (let g = 0; g < gaps.length; g++) {
-      const gap = gaps[g] as TimeInterval;
+      const gap = gaps[g] as MinuteRange;
       for (
-        let startMs = firstStartMs(gap.startMs, notBeforeMs, stepMs);
-        startMs + durationMs <= gap.endMs;
-        startMs += stepMs
+        let start = firstStart(gap.startMinutes, notBefore, step);
+        start + duration <= gap.endMinutes;
+        start += step
       ) {
-        starts.push(startMs);
+        starts.push(startOf(start));
       }
     }
     return starts;
@@ -846,37 +895,29 @@ export const AvailabilitySystem = {
   },
 
   /** Distinct party starts, in the options' order — the grid's times. */
-  distinctStarts(options: readonly AvailabilityOption[]): readonly number[] {
+  distinctStarts(
+    options: readonly Pick<AvailabilityOption, 'startMinutes'>[],
+  ): readonly MinuteOfDay[] {
     const seen = new Set<number>();
-    const starts: number[] = [];
+    const starts: MinuteOfDay[] = [];
     for (let i = 0; i < options.length; i++) {
-      const startMs = (options[i] as AvailabilityOption).envelope.startMs;
-      if (seen.has(startMs)) continue;
-      seen.add(startMs);
-      starts.push(startMs);
+      const start = (options[i] as Pick<AvailabilityOption, 'startMinutes'>)
+        .startMinutes;
+      if (seen.has(start)) continue;
+      seen.add(start);
+      starts.push(start);
     }
     return starts;
   },
 
   /**
-   * A client's declared day → the `withinMs` mask for it
-   * (`DayWindows.toIntervals`, `day-windows.ts:80-100`), over the zone table.
-   *
-   * A whole-day declaration is the day's own bounds — 23 or 25 hours on a
-   * transition day — never `[]`, which would read as "nothing qualifies". A
-   * span whose ends the day's DST transition erased or repeated is DROPPED
-   * rather than failing the request. A day the table does not cover yields
-   * `[]`: nothing qualifies (fail closed).
+   * A client's declared day → the `within` mask for it
+   * (`DayWindows.toIntervals`, `day-windows.ts:80-100`), on that day's wall
+   * clock. A whole-day declaration is the whole day, `[00:00, 24:00)` —
+   * never `[]`, which would read as "nothing qualifies"; a narrowed day is
+   * its declared windows as they are.
    */
-  withinMsOf(
-    dayWindows: DayWindows,
-    days: readonly DayOffset[],
-  ): readonly TimeInterval[] {
-    const day = DayOffset.find(dayWindows.dayKey, days);
-    if (day === null) return [];
-    if (DayWindows.isWholeDay(dayWindows)) {
-      return [TimeInterval.of(day.dayStartMs, DayOffset.endMs(day))];
-    }
-    return RosterSystem.resolvedIntervalsOf(dayWindows.windows, day);
+  withinOf(dayWindows: DayWindows): readonly MinuteRange[] {
+    return DayWindows.isWholeDay(dayWindows) ? WHOLE_DAY : dayWindows.windows;
   },
 } as const;

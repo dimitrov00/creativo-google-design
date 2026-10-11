@@ -1,5 +1,14 @@
-import type { LocationId } from '../entities/location.entity';
-import { DayKey } from './day-key.data';
+import { defect } from '../primitives/defect';
+import {
+  MinuteCount,
+  MinuteDelta,
+} from '../primitives/duration-minutes.primitive';
+import type { LocationId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import {
+  type EndMinute,
+  MinuteOfDay,
+} from '../primitives/minute-of-day.primitive';
 import { Result } from './result.data';
 import { SchedulingError } from './scheduling-errors.data';
 import type { Weekday } from './weekday.data';
@@ -7,20 +16,22 @@ import type { Weekday } from './weekday.data';
 const MINUTES_PER_DAY = 1440;
 
 /**
- * One rostered stretch of a weekday at one shop, in wall-clock minutes —
+ * One rostered stretch of a weekday at one shop, on the shop's wall clock —
  * `{ weekday, locationId, startMinutes, endMinutes }` (the barber is the
- * document id). A weekday may hold SEVERAL segments (the lunch break the old
- * one-range model could not express), sorted, never overlapping, and two
- * consecutive segments at different shops leave room to travel between them
- * (`weekly-pattern.ts`, `shift-segment.ts`).
+ * document id), an element of `ScheduleVersion.segments`. A weekday may hold
+ * SEVERAL segments (the lunch break the old one-range model could not
+ * express), sorted, never overlapping, and two consecutive segments at
+ * different shops leave room to travel between them (`weekly-pattern.ts`,
+ * `shift-segment.ts`). `endMinutes` may be the closing midnight, 1440.
  */
 export type ShiftSegment = {
   readonly weekday: Weekday;
   readonly locationId: LocationId;
-  readonly startMinutes: number;
-  readonly endMinutes: number;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
 };
 
+/** A real, non-empty `[start, end)` inside one day. */
 function isMinuteRange(startMinutes: number, endMinutes: number): boolean {
   return (
     Number.isInteger(startMinutes) &&
@@ -31,18 +42,30 @@ function isMinuteRange(startMinutes: number, endMinutes: number): boolean {
   );
 }
 
+/** The minutes between one segment's end and the next one's start (the two do not overlap). */
+function gapBetween(
+  previous: ShiftSegment,
+  current: ShiftSegment,
+): MinuteDelta {
+  const from = MinuteOfDay.fromEnd(previous.endMinutes);
+  // A segment ending at midnight has no later, non-overlapping neighbour.
+  return from.ok
+    ? MinuteDelta.between(from.value, current.startMinutes)
+    : defect('ShiftSegment: a segment follows one that ends at midnight');
+}
+
 export const ShiftSegment = {
   of(
     weekday: Weekday,
     locationId: LocationId,
-    startMinutes: number,
-    endMinutes: number,
+    startMinutes: MinuteOfDay,
+    endMinutes: EndMinute,
   ): ShiftSegment {
     return { weekday, locationId, startMinutes, endMinutes };
   },
 
-  durationMinutes(segment: ShiftSegment): number {
-    return segment.endMinutes - segment.startMinutes;
+  durationMinutes(segment: ShiftSegment): MinuteCount {
+    return MinuteCount.span(segment.startMinutes, segment.endMinutes);
   },
 
   /** Same weekday and overlapping minutes — half-open, so touching is not overlapping. */
@@ -61,17 +84,18 @@ export const ShiftSegment = {
 
   /**
    * The edge guard for a week of segments, every refusal at once: each span
-   * a real `[start, end)` within the day (`scheduling.time_range.invalid`),
-   * each shop named (`scheduling.shift_segment.invalid_location`); then, per
-   * weekday in time order, no overlap (`scheduling.time_range.invalid`, on
-   * the later segment) and at least `minTransferMinutes` between segments at
-   * different shops (`scheduling.shift_segment.impossible_transfer`). A
-   * weekday with a malformed segment is not judged for overlap. Returns the
-   * segments sorted in week order.
+   * a real, non-empty `[start, end)` within the day
+   * (`SCHEDULING_TIME_RANGE_INVALID`), each shop named
+   * (`SCHEDULING_SHIFT_SEGMENT_INVALID_LOCATION`); then, per weekday in time
+   * order, no overlap (`SCHEDULING_TIME_RANGE_INVALID`, on the later segment)
+   * and at least `minTransferMinutes` between segments at different shops
+   * (`SCHEDULING_SHIFT_SEGMENT_IMPOSSIBLE_TRANSFER`). A weekday with a
+   * malformed segment is not judged for overlap. Returns the segments sorted
+   * in week order.
    */
   validate(
     segments: readonly ShiftSegment[],
-    minTransferMinutes: number,
+    minTransferMinutes: MinuteCount,
   ): Result<readonly ShiftSegment[], readonly SchedulingError[]> {
     const errors: SchedulingError[] = [];
     const malformedDays: number[] = [];
@@ -113,7 +137,7 @@ export const ShiftSegment = {
         continue;
       }
       if (previous.locationId === current.locationId) continue;
-      const gap = current.startMinutes - previous.endMinutes;
+      const gap = gapBetween(previous, current);
       if (gap < minTransferMinutes) {
         errors.push(
           SchedulingError.shiftSegmentImpossibleTransfer(
@@ -130,10 +154,13 @@ export const ShiftSegment = {
   },
 
   /** A nominal week's rostered minutes. */
-  weeklyMinutes(segments: readonly ShiftSegment[]): number {
-    let total = 0;
+  weeklyMinutes(segments: readonly ShiftSegment[]): MinuteCount {
+    let total = MinuteCount.ZERO;
     for (let i = 0; i < segments.length; i++) {
-      total += ShiftSegment.durationMinutes(segments[i] as ShiftSegment);
+      total = MinuteCount.add(
+        total,
+        ShiftSegment.durationMinutes(segments[i] as ShiftSegment),
+      );
     }
     return total;
   },
@@ -151,55 +178,62 @@ export const ShiftSegment = {
 
 /**
  * One version of a barber's weekly roster, in force from
- * `effectiveFromDayKey` through `effectiveToDayKey` (inclusive; `null` is
- * open-ended) — the stored `barberSchedules/{barberId}.versions[]` with the
- * `'HH:mm'` weekday map flattened to `segments` (`staff-schedule.ts:78-144`).
+ * `effectiveFromLocalDate` through `effectiveToLocalDate` (inclusive; `null`
+ * is open-ended) — an element of the stored `barberSchedules/{barberId}
+ * .versions[]` with the `'HH:mm'` weekday map flattened to `segments`
+ * (`staff-schedule.ts:78-144`).
  *
  * The HISTORY is the point: amending from a future day must leave the old
  * pattern answering for old days, so booking, availability and capacity pick
- * the version in force on a date (`RosterSystem.versionFor`). Exactly one
- * version covers any day.
+ * the version in force on a shop day (`RosterSystem.versionFor`). Exactly
+ * one version covers any day.
  */
 export type ScheduleVersion = {
   readonly seq: number;
-  readonly effectiveFromDayKey: DayKey;
-  readonly effectiveToDayKey: DayKey | null;
+  readonly effectiveFromLocalDate: LocalDate;
+  readonly effectiveToLocalDate: LocalDate | null;
   readonly segments: readonly ShiftSegment[];
 };
 
-/** The day before `dayKey`. */
-function previousDay(dayKey: DayKey): DayKey {
-  return DayKey.fromEpochDay(DayKey.toEpochDay(dayKey) - 1);
-}
-
 function byEffectiveFrom(a: ScheduleVersion, b: ScheduleVersion): number {
-  return DayKey.compare(a.effectiveFromDayKey, b.effectiveFromDayKey);
+  return LocalDate.compare(a.effectiveFromLocalDate, b.effectiveFromLocalDate);
 }
 
 export const ScheduleVersion = {
-  /** Is `dayKey` within this version's span? Day keys compare as strings. */
-  coversDay(version: ScheduleVersion, dayKey: DayKey): boolean {
-    if (dayKey < version.effectiveFromDayKey) return false;
+  /** Is `localDate` within this version's span? Days compare as strings. */
+  coversDay(version: ScheduleVersion, localDate: LocalDate): boolean {
+    if (localDate < version.effectiveFromLocalDate) return false;
     return (
-      version.effectiveToDayKey === null || dayKey <= version.effectiveToDayKey
+      version.effectiveToLocalDate === null ||
+      localDate <= version.effectiveToLocalDate
     );
   },
 
   isOpenEnded(version: ScheduleVersion): boolean {
-    return version.effectiveToDayKey === null;
+    return version.effectiveToLocalDate === null;
   },
 
-  /** The same version, ending on `lastDayKey`. */
-  closedAt(version: ScheduleVersion, lastDayKey: DayKey): ScheduleVersion {
-    return { ...version, effectiveToDayKey: lastDayKey };
+  /** The same version, ending on `lastLocalDate`. */
+  closedAt(
+    version: ScheduleVersion,
+    lastLocalDate: LocalDate,
+  ): ScheduleVersion {
+    return { ...version, effectiveToLocalDate: lastLocalDate };
   },
 
-  /** A roster's first and only version, open-ended from `effectiveFromDayKey`. */
+  /** A roster's first and only version, open-ended from `effectiveFromLocalDate`. */
   startingWith(
     segments: readonly ShiftSegment[],
-    effectiveFromDayKey: DayKey,
+    effectiveFromLocalDate: LocalDate,
   ): readonly ScheduleVersion[] {
-    return [{ seq: 0, effectiveFromDayKey, effectiveToDayKey: null, segments }];
+    return [
+      {
+        seq: 0,
+        effectiveFromLocalDate,
+        effectiveToLocalDate: null,
+        segments,
+      },
+    ];
   },
 
   /**
@@ -215,13 +249,13 @@ export const ScheduleVersion = {
       const previous = sorted[i - 1] as ScheduleVersion;
       const current = sorted[i] as ScheduleVersion;
       if (
-        previous.effectiveToDayKey === null ||
-        previous.effectiveToDayKey >= current.effectiveFromDayKey
+        previous.effectiveToLocalDate === null ||
+        previous.effectiveToLocalDate >= current.effectiveFromLocalDate
       ) {
         return Result.err(
           SchedulingError.staffScheduleOverlappingVersions(
-            previous.effectiveFromDayKey,
-            current.effectiveFromDayKey,
+            previous.effectiveFromLocalDate,
+            current.effectiveFromLocalDate,
           ),
         );
       }
@@ -230,7 +264,7 @@ export const ScheduleVersion = {
   },
 
   /**
-   * A new pattern from `effectiveFromDayKey` on: the version in force is
+   * A new pattern from `effectiveFromLocalDate` on: the version in force is
    * closed the day before and the new one appended open-ended with the next
    * `seq`. Refused when the new start is at or before the current version's
    * start — the past is changed by a schedule exception, never by rewriting
@@ -239,30 +273,33 @@ export const ScheduleVersion = {
   amend(
     history: readonly ScheduleVersion[],
     segments: readonly ShiftSegment[],
-    effectiveFromDayKey: DayKey,
+    effectiveFromLocalDate: LocalDate,
   ): Result<readonly ScheduleVersion[], SchedulingError> {
     const last = history[history.length - 1];
     if (last === undefined) {
       return Result.ok(
-        ScheduleVersion.startingWith(segments, effectiveFromDayKey),
+        ScheduleVersion.startingWith(segments, effectiveFromLocalDate),
       );
     }
-    if (last.effectiveFromDayKey >= effectiveFromDayKey) {
+    if (last.effectiveFromLocalDate >= effectiveFromLocalDate) {
       return Result.err(
         SchedulingError.staffScheduleRetroactiveAmendment(
-          effectiveFromDayKey,
-          last.effectiveFromDayKey,
+          effectiveFromLocalDate,
+          last.effectiveFromLocalDate,
         ),
       );
     }
     const amended: ScheduleVersion[] = history.slice(0, history.length - 1);
     amended.push(
-      ScheduleVersion.closedAt(last, previousDay(effectiveFromDayKey)),
+      ScheduleVersion.closedAt(
+        last,
+        LocalDate.addDays(effectiveFromLocalDate, -1),
+      ),
     );
     amended.push({
       seq: last.seq + 1,
-      effectiveFromDayKey,
-      effectiveToDayKey: null,
+      effectiveFromLocalDate,
+      effectiveToLocalDate: null,
       segments,
     });
     return Result.ok(amended);

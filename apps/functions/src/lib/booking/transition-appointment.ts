@@ -1,4 +1,10 @@
-import { AuditSystem, ZonedTimeSystem } from '@creativo/ecs-core';
+import {
+  AuditSystem,
+  SeatId,
+  UtcEpochMs,
+  ZonedTimeSystem,
+  defect,
+} from '@creativo/ecs-core';
 import type { Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
@@ -86,15 +92,23 @@ const STAFF_TRANSITIONS: readonly AppointmentStatusKind[] = [
  * look ancient and resolve them wrongly, so it is parsed rather than faked.
  */
 /**
- * The shop's calendar day of an instant — `YYYY-MM-DD` in the slot's zone
- * (`ZonedTimeSystem`, over the one-day table around it); `null` for a zone
- * or instant it cannot resolve, which is never "the same day".
+ * The shop's calendar day of an instant — `YYYY-MM-DD` on the slot zone's
+ * wall clock (`ZonedTimeSystem.toLocal`); `null` for a zone or instant it
+ * cannot resolve, which is never "the same day".
  */
 function shopDayKey(ms: number, zone: string): string | null {
-  return ZonedTimeSystem.dayKeyOf(
-    ms,
-    ZonedTimeSystem.dayTableAround(zone, ms, ms, 0),
-  );
+  const timeZone = ZonedTimeSystem.checkZone(zone);
+  const instant = UtcEpochMs.of(ms);
+  if (!timeZone.ok || !instant.ok) return null;
+  return ZonedTimeSystem.toLocal(instant.value, timeZone.value).localDate;
+}
+
+/** The committed verb's stamp as the ecs-core instant its change key names. */
+function stampOf(decidedAtMs: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(decidedAtMs);
+  // Unreachable: the stamp is the transaction's own `Date.now()`.
+  if (!instant.ok) defect(`unreachable: instant ${decidedAtMs}`);
+  return instant.value;
 }
 
 function seatStartMs(seat: Record<string, unknown>): number {
@@ -516,7 +530,10 @@ export const transitionAppointment = onCall(async (request) => {
     // A retry of the same verb is refused by the graph (or the resolved-seat
     // guard) before it gets here; a later reopen-and-redo is a new instant.
     // The seat is in the key because one person can hold two seats.
-    changeKey: AuditSystem.changeKey.transition(seatId, decidedAtMs),
+    changeKey: AuditSystem.changeKey.transition(
+      SeatId.of(seatId),
+      stampOf(decidedAtMs),
+    ),
   });
 
   return { appointmentId, to };

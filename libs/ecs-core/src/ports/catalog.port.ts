@@ -1,13 +1,15 @@
 import type { Observable } from 'rxjs';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
-import type { BarberEntity } from '../entities/barber.entity';
-import type { LocationEntity, LocationId } from '../entities/location.entity';
+import type { Barber } from '../entities/barber.entity';
+import type { ServiceCategory } from '../entities/service-category.entity';
+import type { Service } from '../entities/service.entity';
+import type { ShopLocation } from '../entities/shop-location.entity';
 import type {
-  ServiceCategoryEntity,
+  LocationId,
   ServiceCategoryId,
-} from '../entities/service-category.entity';
-import type { ServiceEntity, ServiceId } from '../entities/service.entity';
+  ServiceId,
+} from '../primitives/ids.primitive';
 
 /**
  * The catalogue's read ports (blueprint §4.2) — one function per query
@@ -19,30 +21,30 @@ import type { ServiceEntity, ServiceId } from '../entities/service.entity';
  */
 
 /**
- * Live ACTIVE services, `orderBy sortOrder` — `status == active`, plus
+ * Live ACTIVE services, `orderBy sortOrder` — the active status, plus
  * `categoryId ==` when a category is given. `null` lists every category.
  */
 export type ObserveServices = (
   categoryId: ServiceCategoryId | null,
-) => Observable<Result<readonly ServiceEntity[], RepositoryError>>;
+) => Observable<Result<readonly Service[], RepositoryError>>;
 
 /**
- * Live ACTIVE barbers, `orderBy sortOrder` — `status == active`, plus
+ * Live ACTIVE barbers, `orderBy sortOrder` — the active status, plus
  * `locationIds array-contains` when a shop is given. `null` lists every
  * shop's barbers.
  */
 export type ObserveBarbers = (
   locationId: LocationId | null,
-) => Observable<Result<readonly BarberEntity[], RepositoryError>>;
+) => Observable<Result<readonly Barber[], RepositoryError>>;
 
 /** Live service categories, `orderBy sortOrder` (no status is stored). */
 export type ObserveCategories = () => Observable<
-  Result<readonly ServiceCategoryEntity[], RepositoryError>
+  Result<readonly ServiceCategory[], RepositoryError>
 >;
 
-/** Live ACTIVE shops, `status == active`, `orderBy sortOrder`. */
+/** Live ACTIVE shops, the active status, `orderBy sortOrder`. */
 export type ObserveLocations = () => Observable<
-  Result<readonly LocationEntity[], RepositoryError>
+  Result<readonly ShopLocation[], RepositoryError>
 >;
 
 /**
@@ -53,8 +55,8 @@ export type ObserveLocations = () => Observable<
  * is gone).
  */
 export type CatalogSnapshot = {
-  readonly services: readonly (ServiceEntity | null)[];
-  readonly location: LocationEntity | null;
+  readonly services: readonly (Service | null)[];
+  readonly location: ShopLocation | null;
 };
 
 /**

@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { MinuteRange } from './minute-range.data';
+import { MinuteCount } from '../primitives/duration-minutes.primitive';
+import { endMinute, minute, unwrapOk as okOf } from '../testing';
 
-const r = (start: number, end: number) => MinuteRange.of(start, end);
+const count = (n: number): MinuteCount => okOf(MinuteCount.of(n));
+
+const r = (start: number, end: number) =>
+  MinuteRange.of(minute(start), endMinute(end));
 
 describe('MinuteRange', () => {
   it('of() is a plain { startMinutes, endMinutes } struct', () => {
@@ -58,5 +63,30 @@ describe('MinuteRange.normalize', () => {
     const input = [r(720, 900), r(480, 720)];
     MinuteRange.normalize(input);
     expect(input).toEqual([r(720, 900), r(480, 720)]);
+  });
+});
+
+describe('MinuteRange.contains / pad (folded in from time-interval.data.spec.ts)', () => {
+  it('contains: inner wholly inside outer, touching edges included', () => {
+    expect(MinuteRange.contains(r(540, 720), r(540, 720))).toBe(true);
+    expect(MinuteRange.contains(r(540, 720), r(600, 660))).toBe(true);
+    expect(MinuteRange.contains(r(540, 720), r(530, 600))).toBe(false);
+    expect(MinuteRange.contains(r(540, 720), r(700, 730))).toBe(false);
+  });
+
+  it('pad grows outward by the given minutes', () => {
+    expect(MinuteRange.pad(r(600, 645), count(10), count(15))).toEqual(
+      r(590, 660),
+    );
+  });
+
+  it('pad is clamped to the shop day, [0, 1440] (T7)', () => {
+    expect(MinuteRange.pad(r(5, 1435), count(10), count(10))).toEqual(
+      r(0, 1440),
+    );
+  });
+
+  it('durationMinutes is end − start', () => {
+    expect(MinuteRange.durationMinutes(r(600, 645))).toBe(45);
   });
 });

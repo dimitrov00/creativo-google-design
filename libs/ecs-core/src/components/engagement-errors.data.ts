@@ -1,5 +1,16 @@
+import type { Currency } from '../primitives/currency.primitive';
+import type {
+  BadgeCategoryId,
+  BadgeSeriesId,
+  RewardId,
+  SeasonId,
+  TierId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { PriceCents } from '../primitives/price-cents.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import type { AwardKind } from './gamification.data';
-import type { GrantState } from './grant-status.data';
+import type { GrantStatus } from './grant-status.data';
 import { Locale } from './locale.data';
 import type { VoucherRefusal } from './voucher-state.data';
 
@@ -9,11 +20,11 @@ import type { VoucherRefusal } from './voucher-state.data';
  * notifications and the programs pages (blueprint §2.3). The legacy
  * `DomainError` subclasses of `libs/domain/engagement`, `libs/domain/
  * notifications` and `libs/domain/programs`, collapsed into ONE dictionary
- * under the `engagement.` namespace: the engagement codes keep their
- * strings; the notification and programs codes move under the namespace
- * (`notifications.notification.read_before_sent` →
- * `engagement.notification.read_before_sent`, `programs.course.*` →
- * `engagement.course.*`) — no i18n table holds any of them yet.
+ * of flat `{ errorCode, … }` structs (Law 7.5): SCREAMING_SNAKE codes under
+ * the `ENGAGEMENT_` prefix (flatten-spec §4.2), the UI's lookup key
+ * `errors.<errorCode>` — no i18n table holds any of them yet. The legacy
+ * classes and the wire keep the dotted codes until Phase 4; the shims and
+ * the edge map them.
  *
  * Retired with their classes, never ported: the `Achievement`, `Milestone`,
  * `RewardProgram` and `RewardProgress` codes (§2.3: deleted),
@@ -21,167 +32,170 @@ import type { VoucherRefusal } from './voucher-state.data';
  * cannot mismatch), and `notifications.notification.empty_title` (§9 D20:
  * a notification carries facts, not a title).
  *
- * Every non-`code` field is an i18n parameter, so each is an i18n-safe
+ * Every non-`errorCode` field is an i18n parameter, so each is an i18n-safe
  * scalar (`string | number | boolean | null`) — a list the legacy error
  * carried (`levels`, `targets`, `options`, `tierIds`) is joined into one
  * comma-separated string.
  */
 /**
- * The field of the rhythm's rule an error names: a path into `StreakRule`
- * (and, for the head, into its name and its waiting version), spelled as
- * the admin page keys its controls (client-card revision 3 §2.6.2). A
+ * The field of the rhythm's rule an error names: the FLAT field of
+ * `StreakRule` at fault (and, for the head, its name's two locales and the
+ * waiting version's three identity fields, prefixed `scheduled`), spelled
+ * as the admin page keys its controls (client-card revision 3 §2.6.2). A
  * closed set, so a page that words a refusal by its field cannot miss one.
- * The legacy `StreakDefinitionField` (`streak-definition.errors.ts:9-39`),
- * with `effectiveFrom` renamed `effectiveFromDayKey` as the stored field is.
+ * Field locators on the wire, not codes (flatten-spec §3.5): the legacy
+ * dotted paths of `StreakDefinitionField` (`'interval.days'`,
+ * `'scheduled.version'`) are what the publish callable still answers with
+ * until the loyalty flip (3) — its edge maps them back.
  */
 export const StreakRuleField = {
   Id: 'id',
-  NameBg: 'name.bg',
-  NameEn: 'name.en',
+  NameBg: 'nameBg',
+  NameEn: 'nameEn',
   Version: 'version',
-  EffectiveFromDayKey: 'effectiveFromDayKey',
-  QualifierKind: 'qualifier.kind',
-  QualifierServiceIds: 'qualifier.serviceIds',
-  QualifierCategoryIds: 'qualifier.categoryIds',
+  EffectiveFromLocalDate: 'effectiveFromLocalDate',
+  QualifierKind: 'streakQualifier',
+  QualifierServiceIds: 'qualifierServiceIds',
+  QualifierCategoryIds: 'qualifierCategoryIds',
   MinGapDays: 'minGapDays',
-  BookingHoldMaxDaysPastDue: 'bookingHold.maxDaysPastDue',
-  IntervalKind: 'interval.kind',
-  IntervalDays: 'interval.days',
-  IntervalTolerancePct: 'interval.tolerancePct',
-  IntervalMinDays: 'interval.minDays',
-  IntervalMaxDays: 'interval.maxDays',
-  IntervalFallbackDays: 'interval.fallbackDays',
+  BookingHoldMaxDaysPastDue: 'bookingHoldMaxDaysPastDue',
+  IntervalKind: 'streakInterval',
+  IntervalDays: 'intervalDays',
+  IntervalTolerancePct: 'intervalTolerancePct',
+  IntervalMinDays: 'intervalMinDays',
+  IntervalMaxDays: 'intervalMaxDays',
+  IntervalFallbackDays: 'intervalFallbackDays',
   GraceDays: 'graceDays',
   RiskLeadDays: 'riskLeadDays',
-  ProtectionsMaxBanked: 'protections.maxBanked',
-  ProtectionsEarnEvery: 'protections.earnEvery',
-  ProtectionsStartWith: 'protections.startWith',
+  ProtectionsMaxBanked: 'protectionsMaxBanked',
+  ProtectionsEarnEvery: 'protectionsEarnEvery',
+  ProtectionsStartWith: 'protectionsStartWith',
   Excuses: 'excuses',
-  ClientPauseMaxDaysPerYear: 'clientPause.maxDaysPerYear',
-  RepairWindowDays: 'repair.windowDays',
-  RepairPerYear: 'repair.perYear',
+  ClientPauseMaxDaysPerYear: 'clientPauseMaxDaysPerYear',
+  RepairWindowDays: 'repairWindowDays',
+  RepairPerYear: 'repairPerYear',
   OnBreak: 'onBreak',
-  ScheduledVersion: 'scheduled.version',
-  ScheduledEffectiveFromDayKey: 'scheduled.effectiveFromDayKey',
-  ScheduledTransition: 'scheduled.transition',
+  ScheduledVersion: 'scheduledVersion',
+  ScheduledEffectiveFromLocalDate: 'scheduledEffectiveFromLocalDate',
+  ScheduledTransition: 'scheduledStreakTransition',
 } as const;
 export type StreakRuleField =
   (typeof StreakRuleField)[keyof typeof StreakRuleField];
 
 export const EngagementErrorCode = {
   /** A blank id at the edge (`idType` names which). */
-  IdEmpty: 'engagement.id.empty',
+  IdEmpty: 'ENGAGEMENT_ID_EMPTY',
 
   // ── Coupons ───────────────────────────────────────────────────────────
-  CouponNameEmpty: 'engagement.coupon.empty_name',
+  CouponNameEmpty: 'ENGAGEMENT_COUPON_EMPTY_NAME',
   /** `CouponExpiry.days`: not a positive whole number of days. */
-  CouponExpiryDaysInvalid: 'engagement.coupon.invalid_expiry_days',
-  CouponUsageLimitInvalid: 'engagement.coupon.invalid_usage_limit',
+  CouponExpiryDaysInvalid: 'ENGAGEMENT_COUPON_INVALID_EXPIRY_DAYS',
+  CouponUsageLimitInvalid: 'ENGAGEMENT_COUPON_INVALID_USAGE_LIMIT',
   /** A stored occasion outside the `CouponOccasion` dictionary. */
-  CouponOccasionUnknown: 'engagement.coupon.occasion_unknown',
+  CouponOccasionUnknown: 'ENGAGEMENT_COUPON_OCCASION_UNKNOWN',
   /** `percent_off` outside 0–100. */
-  CouponValuePercentageInvalid: 'engagement.coupon_value.invalid_percentage',
+  CouponValuePercentageInvalid: 'ENGAGEMENT_COUPON_VALUE_INVALID_PERCENTAGE',
   /** `fixed_amount` of zero or less — the legacy string is kept. */
-  CouponValueAmountNotPositive: 'engagement.coupon_value.negative_amount',
-  CouponGrantCapacityInvalid: 'engagement.coupon_grant.invalid_capacity',
-  CouponGrantNotActive: 'engagement.coupon_grant.not_active',
-  CouponGrantNotExpiring: 'engagement.coupon_grant.not_expiring',
-  CouponGrantReasonEmpty: 'engagement.coupon_grant.empty_reason',
+  CouponValueAmountNotPositive: 'ENGAGEMENT_COUPON_VALUE_NEGATIVE_AMOUNT',
+  CouponGrantCapacityInvalid: 'ENGAGEMENT_COUPON_GRANT_INVALID_CAPACITY',
+  CouponGrantNotActive: 'ENGAGEMENT_COUPON_GRANT_NOT_ACTIVE',
+  CouponGrantNotExpiring: 'ENGAGEMENT_COUPON_GRANT_NOT_EXPIRING',
+  CouponGrantReasonEmpty: 'ENGAGEMENT_COUPON_GRANT_EMPTY_REASON',
   /** A discount cap outside 0–100 percent. */
-  DiscountCapInvalid: 'engagement.discount_application.invalid_cap',
+  DiscountCapInvalid: 'ENGAGEMENT_DISCOUNT_APPLICATION_INVALID_CAP',
 
   // ── Gift vouchers ─────────────────────────────────────────────────────
-  VoucherCodeInvalid: 'engagement.voucher_code.invalid',
-  GiftVoucherValueInvalid: 'engagement.gift_voucher.invalid_value',
-  GiftVoucherNotRedeemable: 'engagement.gift_voucher.not_redeemable',
+  VoucherCodeInvalid: 'ENGAGEMENT_VOUCHER_CODE_INVALID',
+  GiftVoucherValueInvalid: 'ENGAGEMENT_GIFT_VOUCHER_INVALID_VALUE',
+  GiftVoucherNotRedeemable: 'ENGAGEMENT_GIFT_VOUCHER_NOT_REDEEMABLE',
   GiftVoucherInsufficientBalance:
-    'engagement.gift_voucher.insufficient_balance',
-  GiftVoucherOverRestore: 'engagement.gift_voucher.over_restore',
-  GiftVoucherCurrencyMismatch: 'engagement.gift_voucher.currency_mismatch',
+    'ENGAGEMENT_GIFT_VOUCHER_INSUFFICIENT_BALANCE',
+  GiftVoucherOverRestore: 'ENGAGEMENT_GIFT_VOUCHER_OVER_RESTORE',
+  GiftVoucherCurrencyMismatch: 'ENGAGEMENT_GIFT_VOUCHER_CURRENCY_MISMATCH',
 
   // ── Points ────────────────────────────────────────────────────────────
-  PointsInvalid: 'engagement.points.invalid',
+  PointsInvalid: 'ENGAGEMENT_POINTS_INVALID',
   /** A deduction larger than the balance — refused, never clamped. */
-  PointsInsufficient: 'engagement.points.insufficient',
+  PointsInsufficient: 'ENGAGEMENT_POINTS_INSUFFICIENT',
 
   // ── Invitations ───────────────────────────────────────────────────────
-  InvitationInviterNameEmpty: 'engagement.invitation.empty_inviter_name',
+  InvitationInviterNameEmpty: 'ENGAGEMENT_INVITATION_EMPTY_INVITER_NAME',
   InvitationRedemptionCountInvalid:
-    'engagement.invitation.invalid_redemption_count',
-  InvitationSelfRedemption: 'engagement.invitation.self_redemption',
+    'ENGAGEMENT_INVITATION_INVALID_REDEMPTION_COUNT',
+  InvitationSelfRedemption: 'ENGAGEMENT_INVITATION_SELF_REDEMPTION',
 
   // ── The loyalty catalogue ─────────────────────────────────────────────
-  BadgeCategoryOrderNegative: 'engagement.badge_category.order_negative',
-  BadgeSeriesNoLevels: 'engagement.badge_series.no_levels',
-  BadgeSeriesLevelGap: 'engagement.badge_series.level_gap',
-  BadgeSeriesTargetsNotRising: 'engagement.badge_series.targets_not_rising',
-  BadgeSeriesHomeless: 'engagement.badge_series.homeless',
+  BadgeCategoryOrderNegative: 'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
+  BadgeSeriesNoLevels: 'ENGAGEMENT_BADGE_SERIES_NO_LEVELS',
+  BadgeSeriesLevelGap: 'ENGAGEMENT_BADGE_SERIES_LEVEL_GAP',
+  BadgeSeriesTargetsNotRising: 'ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING',
+  BadgeSeriesHomeless: 'ENGAGEMENT_BADGE_SERIES_HOMELESS',
   BadgeSeriesOneOffWithSeveralLevels:
-    'engagement.badge_series.one_off_with_several_levels',
+    'ENGAGEMENT_BADGE_SERIES_ONE_OFF_WITH_SEVERAL_LEVELS',
   BadgeSeriesRepeatableWithSeveralLevels:
-    'engagement.badge_series.repeatable_with_several_levels',
-  BadgeSeriesLevelWithoutRule: 'engagement.badge_series.level_without_rule',
-  BadgeSeriesAwardNotPositive: 'engagement.badge_series.award_not_positive',
-  SeasonWindowMalformed: 'engagement.season.window_malformed',
-  SeasonWindowInverted: 'engagement.season.window_inverted',
-  SeasonEventWithTrack: 'engagement.season.event_with_track',
-  SeasonWithoutTrack: 'engagement.season.without_track',
-  SeasonAnnouncedLate: 'engagement.season.announced_late',
+    'ENGAGEMENT_BADGE_SERIES_REPEATABLE_WITH_SEVERAL_LEVELS',
+  BadgeSeriesLevelWithoutRule: 'ENGAGEMENT_BADGE_SERIES_LEVEL_WITHOUT_RULE',
+  BadgeSeriesAwardNotPositive: 'ENGAGEMENT_BADGE_SERIES_AWARD_NOT_POSITIVE',
+  SeasonWindowMalformed: 'ENGAGEMENT_SEASON_WINDOW_MALFORMED',
+  SeasonWindowInverted: 'ENGAGEMENT_SEASON_WINDOW_INVERTED',
+  SeasonEventWithTrack: 'ENGAGEMENT_SEASON_EVENT_WITH_TRACK',
+  SeasonWithoutTrack: 'ENGAGEMENT_SEASON_WITHOUT_TRACK',
+  SeasonAnnouncedLate: 'ENGAGEMENT_SEASON_ANNOUNCED_LATE',
   LoyaltyCatalogDanglingCategory:
-    'engagement.loyalty_catalog.dangling_category',
-  LoyaltyCatalogDanglingSeason: 'engagement.loyalty_catalog.dangling_season',
-  LoyaltyCatalogDuplicateId: 'engagement.loyalty_catalog.duplicate_id',
-  LoyaltyCatalogTiersNotRising: 'engagement.loyalty_catalog.tiers_not_rising',
-  LoyaltyCatalogCostNotPositive: 'engagement.loyalty_catalog.cost_not_positive',
+    'ENGAGEMENT_LOYALTY_CATALOG_DANGLING_CATEGORY',
+  LoyaltyCatalogDanglingSeason: 'ENGAGEMENT_LOYALTY_CATALOG_DANGLING_SEASON',
+  LoyaltyCatalogDuplicateId: 'ENGAGEMENT_LOYALTY_CATALOG_DUPLICATE_ID',
+  LoyaltyCatalogTiersNotRising: 'ENGAGEMENT_LOYALTY_CATALOG_TIERS_NOT_RISING',
+  LoyaltyCatalogCostNotPositive: 'ENGAGEMENT_LOYALTY_CATALOG_COST_NOT_POSITIVE',
 
   // ── The rhythm's rule (StreakRule) and its head ───────────────────────
-  StreakIdEmpty: 'engagement.streak_definition.id_empty',
-  StreakNameEmpty: 'engagement.streak_definition.name_empty',
-  StreakVersionNotPositive: 'engagement.streak_definition.version_not_positive',
+  StreakIdEmpty: 'ENGAGEMENT_STREAK_DEFINITION_ID_EMPTY',
+  StreakNameEmpty: 'ENGAGEMENT_STREAK_DEFINITION_NAME_EMPTY',
+  StreakVersionNotPositive: 'ENGAGEMENT_STREAK_DEFINITION_VERSION_NOT_POSITIVE',
   StreakEffectiveDayInvalid:
-    'engagement.streak_definition.effective_day_invalid',
-  StreakUnknownOption: 'engagement.streak_definition.unknown_option',
-  StreakQualifierEmpty: 'engagement.streak_definition.qualifier_empty',
-  StreakMinGapOutOfRange: 'engagement.streak_definition.min_gap_out_of_range',
+    'ENGAGEMENT_STREAK_DEFINITION_EFFECTIVE_DAY_INVALID',
+  StreakUnknownOption: 'ENGAGEMENT_STREAK_DEFINITION_UNKNOWN_OPTION',
+  StreakQualifierEmpty: 'ENGAGEMENT_STREAK_DEFINITION_QUALIFIER_EMPTY',
+  StreakMinGapOutOfRange: 'ENGAGEMENT_STREAK_DEFINITION_MIN_GAP_OUT_OF_RANGE',
   StreakBookingHoldOutOfRange:
-    'engagement.streak_definition.booking_hold_out_of_range',
+    'ENGAGEMENT_STREAK_DEFINITION_BOOKING_HOLD_OUT_OF_RANGE',
   StreakIntervalOutOfRange:
-    'engagement.streak_definition.interval_out_of_range',
+    'ENGAGEMENT_STREAK_DEFINITION_INTERVAL_OUT_OF_RANGE',
   StreakToleranceOutOfRange:
-    'engagement.streak_definition.tolerance_out_of_range',
-  StreakClampInverted: 'engagement.streak_definition.clamp_inverted',
+    'ENGAGEMENT_STREAK_DEFINITION_TOLERANCE_OUT_OF_RANGE',
+  StreakClampInverted: 'ENGAGEMENT_STREAK_DEFINITION_CLAMP_INVERTED',
   StreakFallbackOutsideClamp:
-    'engagement.streak_definition.fallback_outside_clamp',
-  StreakGraceOutOfRange: 'engagement.streak_definition.grace_out_of_range',
+    'ENGAGEMENT_STREAK_DEFINITION_FALLBACK_OUTSIDE_CLAMP',
+  StreakGraceOutOfRange: 'ENGAGEMENT_STREAK_DEFINITION_GRACE_OUT_OF_RANGE',
   StreakGraceNotShorterThanInterval:
-    'engagement.streak_definition.grace_not_shorter_than_interval',
+    'ENGAGEMENT_STREAK_DEFINITION_GRACE_NOT_SHORTER_THAN_INTERVAL',
   StreakRiskLeadOutOfRange:
-    'engagement.streak_definition.risk_lead_out_of_range',
+    'ENGAGEMENT_STREAK_DEFINITION_RISK_LEAD_OUT_OF_RANGE',
   StreakProtectionsOutOfRange:
-    'engagement.streak_definition.protections_out_of_range',
-  StreakStartWithAboveCap: 'engagement.streak_definition.start_with_above_cap',
-  StreakUnknownExcuse: 'engagement.streak_definition.unknown_excuse',
+    'ENGAGEMENT_STREAK_DEFINITION_PROTECTIONS_OUT_OF_RANGE',
+  StreakStartWithAboveCap: 'ENGAGEMENT_STREAK_DEFINITION_START_WITH_ABOVE_CAP',
+  StreakUnknownExcuse: 'ENGAGEMENT_STREAK_DEFINITION_UNKNOWN_EXCUSE',
   StreakClientPauseOutOfRange:
-    'engagement.streak_definition.client_pause_out_of_range',
-  StreakRepairOutOfRange: 'engagement.streak_definition.repair_out_of_range',
+    'ENGAGEMENT_STREAK_DEFINITION_CLIENT_PAUSE_OUT_OF_RANGE',
+  StreakRepairOutOfRange: 'ENGAGEMENT_STREAK_DEFINITION_REPAIR_OUT_OF_RANGE',
   /** The waiting version does not follow the one in force. */
   StreakScheduleVersionNotRising:
-    'engagement.streak_schedule.version_not_rising',
+    'ENGAGEMENT_STREAK_SCHEDULE_VERSION_NOT_RISING',
   /** The waiting version does not take effect after the one in force did. */
   StreakScheduleNotAfterCurrent:
-    'engagement.streak_schedule.scheduled_not_after_current',
+    'ENGAGEMENT_STREAK_SCHEDULE_SCHEDULED_NOT_AFTER_CURRENT',
 
   // ── Notifications ─────────────────────────────────────────────────────
   /** A receipt that predates its own message — surfaced, never rounded. */
-  NotificationReadBeforeSent: 'engagement.notification.read_before_sent',
+  NotificationReadBeforeSent: 'ENGAGEMENT_NOTIFICATION_READ_BEFORE_SENT',
 
   // ── Programs (positions, courses, shop events) ────────────────────────
-  PositionSortOrderInvalid: 'engagement.position.invalid_sort_order',
-  PositionApplyUrlInvalid: 'engagement.position.invalid_apply_url',
-  CourseSortOrderInvalid: 'engagement.course.invalid_sort_order',
-  CourseApplyUrlInvalid: 'engagement.course.invalid_apply_url',
-  ShopEventSortOrderInvalid: 'engagement.shop_event.invalid_sort_order',
-  ShopEventApplyUrlInvalid: 'engagement.shop_event.invalid_apply_url',
+  PositionSortOrderInvalid: 'ENGAGEMENT_POSITION_INVALID_SORT_ORDER',
+  PositionApplyUrlInvalid: 'ENGAGEMENT_POSITION_INVALID_APPLY_URL',
+  CourseSortOrderInvalid: 'ENGAGEMENT_COURSE_INVALID_SORT_ORDER',
+  CourseApplyUrlInvalid: 'ENGAGEMENT_COURSE_INVALID_APPLY_URL',
+  ShopEventSortOrderInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_SORT_ORDER',
+  ShopEventApplyUrlInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_APPLY_URL',
 } as const;
 export type EngagementErrorCode =
   (typeof EngagementErrorCode)[keyof typeof EngagementErrorCode];
@@ -267,28 +281,34 @@ function listOf(values: readonly unknown[]): string {
 
 export const EngagementError = {
   idEmpty(idType: string): EngagementError.IdEmpty {
-    return { code: EngagementErrorCode.IdEmpty, idType };
+    return { errorCode: EngagementErrorCode.IdEmpty, idType };
   },
 
   // ── Coupons ───────────────────────────────────────────────────────────
   couponNameEmpty(): EngagementError.CouponNameEmpty {
-    return { code: EngagementErrorCode.CouponNameEmpty };
+    return { errorCode: EngagementErrorCode.CouponNameEmpty };
   },
   couponExpiryDaysInvalid(
     attempted: number,
   ): EngagementError.CouponExpiryDaysInvalid {
-    return { code: EngagementErrorCode.CouponExpiryDaysInvalid, attempted };
+    return {
+      errorCode: EngagementErrorCode.CouponExpiryDaysInvalid,
+      attempted,
+    };
   },
   couponUsageLimitInvalid(
     attempted: number,
   ): EngagementError.CouponUsageLimitInvalid {
-    return { code: EngagementErrorCode.CouponUsageLimitInvalid, attempted };
+    return {
+      errorCode: EngagementErrorCode.CouponUsageLimitInvalid,
+      attempted,
+    };
   },
   couponOccasionUnknown(
     attempted: unknown,
   ): EngagementError.CouponOccasionUnknown {
     return {
-      code: EngagementErrorCode.CouponOccasionUnknown,
+      errorCode: EngagementErrorCode.CouponOccasionUnknown,
       attempted: scalarOf(attempted),
     };
   },
@@ -296,69 +316,75 @@ export const EngagementError = {
     attempted: number,
   ): EngagementError.CouponValuePercentageInvalid {
     return {
-      code: EngagementErrorCode.CouponValuePercentageInvalid,
+      errorCode: EngagementErrorCode.CouponValuePercentageInvalid,
       attempted,
     };
   },
   couponValueAmountNotPositive(
-    attemptedMinorUnits: number,
+    attemptedCents: PriceCents,
   ): EngagementError.CouponValueAmountNotPositive {
     return {
-      code: EngagementErrorCode.CouponValueAmountNotPositive,
-      attemptedMinorUnits,
+      errorCode: EngagementErrorCode.CouponValueAmountNotPositive,
+      attemptedCents,
     };
   },
   couponGrantCapacityInvalid(
     attempted: number,
   ): EngagementError.CouponGrantCapacityInvalid {
-    return { code: EngagementErrorCode.CouponGrantCapacityInvalid, attempted };
+    return {
+      errorCode: EngagementErrorCode.CouponGrantCapacityInvalid,
+      attempted,
+    };
   },
   couponGrantNotActive(
-    currentState: GrantState,
+    currentState: GrantStatus,
   ): EngagementError.CouponGrantNotActive {
-    return { code: EngagementErrorCode.CouponGrantNotActive, currentState };
+    return {
+      errorCode: EngagementErrorCode.CouponGrantNotActive,
+      currentState,
+    };
   },
   couponGrantNotExpiring(): EngagementError.CouponGrantNotExpiring {
-    return { code: EngagementErrorCode.CouponGrantNotExpiring };
+    return { errorCode: EngagementErrorCode.CouponGrantNotExpiring };
   },
   couponGrantReasonEmpty(): EngagementError.CouponGrantReasonEmpty {
-    return { code: EngagementErrorCode.CouponGrantReasonEmpty };
+    return { errorCode: EngagementErrorCode.CouponGrantReasonEmpty };
   },
   discountCapInvalid(attempted: number): EngagementError.DiscountCapInvalid {
-    return { code: EngagementErrorCode.DiscountCapInvalid, attempted };
+    return { errorCode: EngagementErrorCode.DiscountCapInvalid, attempted };
   },
 
   // ── Gift vouchers ─────────────────────────────────────────────────────
   voucherCodeInvalid(attempted: string): EngagementError.VoucherCodeInvalid {
-    return { code: EngagementErrorCode.VoucherCodeInvalid, attempted };
+    return { errorCode: EngagementErrorCode.VoucherCodeInvalid, attempted };
   },
   giftVoucherValueInvalid(): EngagementError.GiftVoucherValueInvalid {
-    return { code: EngagementErrorCode.GiftVoucherValueInvalid };
+    return { errorCode: EngagementErrorCode.GiftVoucherValueInvalid };
   },
   giftVoucherNotRedeemable(
     reason: VoucherRefusal,
   ): EngagementError.GiftVoucherNotRedeemable {
-    return { code: EngagementErrorCode.GiftVoucherNotRedeemable, reason };
+    return { errorCode: EngagementErrorCode.GiftVoucherNotRedeemable, reason };
   },
   giftVoucherInsufficientBalance(
-    requestedMinorUnits: number,
-    balanceMinorUnits: number,
+    requestedCents: PriceCents,
+    balanceCents: PriceCents,
   ): EngagementError.GiftVoucherInsufficientBalance {
     return {
-      code: EngagementErrorCode.GiftVoucherInsufficientBalance,
-      requestedMinorUnits,
-      balanceMinorUnits,
+      errorCode: EngagementErrorCode.GiftVoucherInsufficientBalance,
+      requestedCents,
+      balanceCents,
     };
   },
   giftVoucherOverRestore(): EngagementError.GiftVoucherOverRestore {
-    return { code: EngagementErrorCode.GiftVoucherOverRestore };
+    return { errorCode: EngagementErrorCode.GiftVoucherOverRestore };
   },
   giftVoucherCurrencyMismatch(
-    expected: string,
-    found: string,
+    expected: Currency,
+    found: Currency,
   ): EngagementError.GiftVoucherCurrencyMismatch {
     return {
-      code: EngagementErrorCode.GiftVoucherCurrencyMismatch,
+      errorCode: EngagementErrorCode.GiftVoucherCurrencyMismatch,
       expected,
       found,
     };
@@ -366,45 +392,52 @@ export const EngagementError = {
 
   // ── Points ────────────────────────────────────────────────────────────
   pointsInvalid(attempted: number): EngagementError.PointsInvalid {
-    return { code: EngagementErrorCode.PointsInvalid, attempted };
+    return { errorCode: EngagementErrorCode.PointsInvalid, attempted };
   },
   pointsInsufficient(
     requested: number,
     balance: number,
   ): EngagementError.PointsInsufficient {
-    return { code: EngagementErrorCode.PointsInsufficient, requested, balance };
+    return {
+      errorCode: EngagementErrorCode.PointsInsufficient,
+      requested,
+      balance,
+    };
   },
 
   // ── Invitations ───────────────────────────────────────────────────────
   invitationInviterNameEmpty(): EngagementError.InvitationInviterNameEmpty {
-    return { code: EngagementErrorCode.InvitationInviterNameEmpty };
+    return { errorCode: EngagementErrorCode.InvitationInviterNameEmpty };
   },
   invitationRedemptionCountInvalid(
     attempted: number,
   ): EngagementError.InvitationRedemptionCountInvalid {
     return {
-      code: EngagementErrorCode.InvitationRedemptionCountInvalid,
+      errorCode: EngagementErrorCode.InvitationRedemptionCountInvalid,
       attempted,
     };
   },
   invitationSelfRedemption(): EngagementError.InvitationSelfRedemption {
-    return { code: EngagementErrorCode.InvitationSelfRedemption };
+    return { errorCode: EngagementErrorCode.InvitationSelfRedemption };
   },
 
   // ── The loyalty catalogue ─────────────────────────────────────────────
   badgeCategoryOrderNegative(
     rawValue: number,
   ): EngagementError.BadgeCategoryOrderNegative {
-    return { code: EngagementErrorCode.BadgeCategoryOrderNegative, rawValue };
+    return {
+      errorCode: EngagementErrorCode.BadgeCategoryOrderNegative,
+      rawValue,
+    };
   },
   badgeSeriesNoLevels(): EngagementError.BadgeSeriesNoLevels {
-    return { code: EngagementErrorCode.BadgeSeriesNoLevels };
+    return { errorCode: EngagementErrorCode.BadgeSeriesNoLevels };
   },
   badgeSeriesLevelGap(
     levels: readonly number[],
   ): EngagementError.BadgeSeriesLevelGap {
     return {
-      code: EngagementErrorCode.BadgeSeriesLevelGap,
+      errorCode: EngagementErrorCode.BadgeSeriesLevelGap,
       levels: listOf(levels),
     };
   },
@@ -412,80 +445,91 @@ export const EngagementError = {
     targets: readonly number[],
   ): EngagementError.BadgeSeriesTargetsNotRising {
     return {
-      code: EngagementErrorCode.BadgeSeriesTargetsNotRising,
+      errorCode: EngagementErrorCode.BadgeSeriesTargetsNotRising,
       targets: listOf(targets),
     };
   },
   badgeSeriesHomeless(): EngagementError.BadgeSeriesHomeless {
-    return { code: EngagementErrorCode.BadgeSeriesHomeless };
+    return { errorCode: EngagementErrorCode.BadgeSeriesHomeless };
   },
   badgeSeriesOneOffWithSeveralLevels(): EngagementError.BadgeSeriesOneOffWithSeveralLevels {
-    return { code: EngagementErrorCode.BadgeSeriesOneOffWithSeveralLevels };
+    return {
+      errorCode: EngagementErrorCode.BadgeSeriesOneOffWithSeveralLevels,
+    };
   },
   badgeSeriesRepeatableWithSeveralLevels(): EngagementError.BadgeSeriesRepeatableWithSeveralLevels {
-    return { code: EngagementErrorCode.BadgeSeriesRepeatableWithSeveralLevels };
+    return {
+      errorCode: EngagementErrorCode.BadgeSeriesRepeatableWithSeveralLevels,
+    };
   },
   badgeSeriesLevelWithoutRule(
     level: number,
   ): EngagementError.BadgeSeriesLevelWithoutRule {
-    return { code: EngagementErrorCode.BadgeSeriesLevelWithoutRule, level };
+    return {
+      errorCode: EngagementErrorCode.BadgeSeriesLevelWithoutRule,
+      level,
+    };
   },
   badgeSeriesAwardNotPositive(
     level: number,
-    kind: AwardKind,
+    awardKind: AwardKind,
   ): EngagementError.BadgeSeriesAwardNotPositive {
     return {
-      code: EngagementErrorCode.BadgeSeriesAwardNotPositive,
+      errorCode: EngagementErrorCode.BadgeSeriesAwardNotPositive,
       level,
-      kind,
+      awardKind,
     };
   },
   seasonWindowMalformed(
     from: string,
     until: string,
   ): EngagementError.SeasonWindowMalformed {
-    return { code: EngagementErrorCode.SeasonWindowMalformed, from, until };
+    return {
+      errorCode: EngagementErrorCode.SeasonWindowMalformed,
+      from,
+      until,
+    };
   },
   seasonWindowInverted(
-    from: string,
-    until: string,
+    from: LocalDate,
+    until: LocalDate,
   ): EngagementError.SeasonWindowInverted {
-    return { code: EngagementErrorCode.SeasonWindowInverted, from, until };
+    return { errorCode: EngagementErrorCode.SeasonWindowInverted, from, until };
   },
   seasonEventWithTrack(): EngagementError.SeasonEventWithTrack {
-    return { code: EngagementErrorCode.SeasonEventWithTrack };
+    return { errorCode: EngagementErrorCode.SeasonEventWithTrack };
   },
   seasonWithoutTrack(): EngagementError.SeasonWithoutTrack {
-    return { code: EngagementErrorCode.SeasonWithoutTrack };
+    return { errorCode: EngagementErrorCode.SeasonWithoutTrack };
   },
   seasonAnnouncedLate(
-    announcedOn: string,
-    from: string,
+    announcedOn: LocalDate,
+    from: LocalDate,
     noticeDays: number,
   ): EngagementError.SeasonAnnouncedLate {
     return {
-      code: EngagementErrorCode.SeasonAnnouncedLate,
+      errorCode: EngagementErrorCode.SeasonAnnouncedLate,
       announcedOn,
       from,
       noticeDays,
     };
   },
   loyaltyCatalogDanglingCategory(
-    seriesId: string,
-    categoryId: string,
+    seriesId: BadgeSeriesId,
+    categoryId: BadgeCategoryId,
   ): EngagementError.LoyaltyCatalogDanglingCategory {
     return {
-      code: EngagementErrorCode.LoyaltyCatalogDanglingCategory,
+      errorCode: EngagementErrorCode.LoyaltyCatalogDanglingCategory,
       seriesId,
       categoryId,
     };
   },
   loyaltyCatalogDanglingSeason(
-    seasonId: string,
-    seriesId: string,
+    seasonId: SeasonId,
+    seriesId: BadgeSeriesId,
   ): EngagementError.LoyaltyCatalogDanglingSeason {
     return {
-      code: EngagementErrorCode.LoyaltyCatalogDanglingSeason,
+      errorCode: EngagementErrorCode.LoyaltyCatalogDanglingSeason,
       seasonId,
       seriesId,
     };
@@ -495,25 +539,25 @@ export const EngagementError = {
     id: string,
   ): EngagementError.LoyaltyCatalogDuplicateId {
     return {
-      code: EngagementErrorCode.LoyaltyCatalogDuplicateId,
+      errorCode: EngagementErrorCode.LoyaltyCatalogDuplicateId,
       collection,
       id,
     };
   },
   loyaltyCatalogTiersNotRising(
-    tierIds: readonly string[],
+    tierIds: readonly TierId[],
   ): EngagementError.LoyaltyCatalogTiersNotRising {
     return {
-      code: EngagementErrorCode.LoyaltyCatalogTiersNotRising,
-      tierIds: listOf(tierIds),
+      errorCode: EngagementErrorCode.LoyaltyCatalogTiersNotRising,
+      tierIds: [...tierIds],
     };
   },
   loyaltyCatalogCostNotPositive(
-    rewardId: string,
+    rewardId: RewardId,
     cost: number,
   ): EngagementError.LoyaltyCatalogCostNotPositive {
     return {
-      code: EngagementErrorCode.LoyaltyCatalogCostNotPositive,
+      errorCode: EngagementErrorCode.LoyaltyCatalogCostNotPositive,
       rewardId,
       cost,
     };
@@ -522,28 +566,28 @@ export const EngagementError = {
   // ── The rhythm's rule ─────────────────────────────────────────────────
   /** A rule fault with no bounds: the field at fault and the value handed in. */
   streakRule(
-    code: EngagementError.StreakBareCode,
+    errorCode: EngagementError.StreakBareCode,
     field: StreakRuleField,
     value: unknown,
   ): EngagementError.StreakBare {
-    return { code, field, value: scalarOf(value) };
+    return { errorCode, field, value: scalarOf(value) };
   },
   /** A figure outside its inclusive range `min`–`max`. */
   streakRuleRange(
-    code: EngagementError.StreakRangeCode,
+    errorCode: EngagementError.StreakRangeCode,
     field: StreakRuleField,
     value: unknown,
     min: number,
     max: number,
   ): EngagementError.StreakRange {
-    return { code, field, value: scalarOf(value), min, max };
+    return { errorCode, field, value: scalarOf(value), min, max };
   },
   streakNameEmpty(
     locale: Locale,
     value: unknown,
   ): EngagementError.StreakNameEmpty {
     return {
-      code: EngagementErrorCode.StreakNameEmpty,
+      errorCode: EngagementErrorCode.StreakNameEmpty,
       field:
         locale === Locale.Bg ? StreakRuleField.NameBg : StreakRuleField.NameEn,
       value: scalarOf(value),
@@ -556,7 +600,7 @@ export const EngagementError = {
     options: readonly string[],
   ): EngagementError.StreakUnknownOption {
     return {
-      code: EngagementErrorCode.StreakUnknownOption,
+      errorCode: EngagementErrorCode.StreakUnknownOption,
       field,
       value: scalarOf(value),
       options: listOf(options),
@@ -568,7 +612,7 @@ export const EngagementError = {
     maxDays: number,
   ): EngagementError.StreakClampInverted {
     return {
-      code: EngagementErrorCode.StreakClampInverted,
+      errorCode: EngagementErrorCode.StreakClampInverted,
       field: StreakRuleField.IntervalMinDays,
       value: minDays,
       minDays,
@@ -582,7 +626,7 @@ export const EngagementError = {
     maxDays: number,
   ): EngagementError.StreakFallbackOutsideClamp {
     return {
-      code: EngagementErrorCode.StreakFallbackOutsideClamp,
+      errorCode: EngagementErrorCode.StreakFallbackOutsideClamp,
       field: StreakRuleField.IntervalFallbackDays,
       value,
       minDays,
@@ -595,7 +639,7 @@ export const EngagementError = {
     shortestIntervalDays: number,
   ): EngagementError.StreakGraceNotShorterThanInterval {
     return {
-      code: EngagementErrorCode.StreakGraceNotShorterThanInterval,
+      errorCode: EngagementErrorCode.StreakGraceNotShorterThanInterval,
       field: StreakRuleField.GraceDays,
       value,
       shortestIntervalDays,
@@ -607,7 +651,7 @@ export const EngagementError = {
     maxBanked: number,
   ): EngagementError.StreakStartWithAboveCap {
     return {
-      code: EngagementErrorCode.StreakStartWithAboveCap,
+      errorCode: EngagementErrorCode.StreakStartWithAboveCap,
       field: StreakRuleField.ProtectionsStartWith,
       value,
       maxBanked,
@@ -618,51 +662,51 @@ export const EngagementError = {
     scheduledVersion: number,
   ): EngagementError.StreakScheduleVersionNotRising {
     return {
-      code: EngagementErrorCode.StreakScheduleVersionNotRising,
+      errorCode: EngagementErrorCode.StreakScheduleVersionNotRising,
       field: StreakRuleField.ScheduledVersion,
       value: scheduledVersion,
       currentVersion,
     };
   },
   streakScheduleNotAfterCurrent(
-    currentEffectiveFromDayKey: string,
-    scheduledEffectiveFromDayKey: string,
+    currentEffectiveFromLocalDate: LocalDate,
+    scheduledEffectiveFromLocalDate: LocalDate,
   ): EngagementError.StreakScheduleNotAfterCurrent {
     return {
-      code: EngagementErrorCode.StreakScheduleNotAfterCurrent,
-      field: StreakRuleField.ScheduledEffectiveFromDayKey,
-      value: scheduledEffectiveFromDayKey,
-      currentEffectiveFromDayKey,
+      errorCode: EngagementErrorCode.StreakScheduleNotAfterCurrent,
+      field: StreakRuleField.ScheduledEffectiveFromLocalDate,
+      value: scheduledEffectiveFromLocalDate,
+      currentEffectiveFromLocalDate,
     };
   },
 
   // ── Notifications ─────────────────────────────────────────────────────
   notificationReadBeforeSent(
-    sentAtMs: number,
-    readAtMs: number,
+    sentAtUtcMs: UtcEpochMs,
+    readAtUtcMs: UtcEpochMs,
   ): EngagementError.NotificationReadBeforeSent {
     return {
-      code: EngagementErrorCode.NotificationReadBeforeSent,
-      sentAtMs,
-      readAtMs,
+      errorCode: EngagementErrorCode.NotificationReadBeforeSent,
+      sentAtUtcMs,
+      readAtUtcMs,
     };
   },
 
   // ── Programs ──────────────────────────────────────────────────────────
   /** A sort order that is not a non-negative integer, or an apply URL that does not parse. */
   program(
-    code: EngagementError.ProgramCode,
+    errorCode: EngagementError.ProgramCode,
     rawValue: unknown,
   ): EngagementError.ProgramError {
-    return { code, rawValue: scalarOf(rawValue) };
+    return { errorCode, rawValue: scalarOf(rawValue) };
   },
 
   /** Narrows an error to one code — `EngagementError.is(e, EngagementErrorCode.PointsInsufficient)`. */
   is<C extends EngagementErrorCode>(
     error: EngagementError,
-    code: C,
-  ): error is Extract<EngagementError, { readonly code: C }> {
-    return error.code === code;
+    errorCode: C,
+  ): error is Extract<EngagementError, { readonly errorCode: C }> {
+    return error.errorCode === errorCode;
   },
 } as const;
 
@@ -670,10 +714,10 @@ export namespace EngagementError {
   /** An i18n-safe parameter value. */
   export type Scalar = string | number | boolean | null;
 
-  type Bare<C extends EngagementErrorCode> = { readonly code: C };
+  type Bare<C extends EngagementErrorCode> = { readonly errorCode: C };
 
   export type IdEmpty = {
-    readonly code: typeof EngagementErrorCode.IdEmpty;
+    readonly errorCode: typeof EngagementErrorCode.IdEmpty;
     /** Which id was blank — `'CouponId'`, `'InvitationId'`, … */
     readonly idType: string;
   };
@@ -682,32 +726,32 @@ export namespace EngagementError {
     typeof EngagementErrorCode.CouponNameEmpty
   >;
   export type CouponExpiryDaysInvalid = {
-    readonly code: typeof EngagementErrorCode.CouponExpiryDaysInvalid;
+    readonly errorCode: typeof EngagementErrorCode.CouponExpiryDaysInvalid;
     readonly attempted: number;
   };
   export type CouponUsageLimitInvalid = {
-    readonly code: typeof EngagementErrorCode.CouponUsageLimitInvalid;
+    readonly errorCode: typeof EngagementErrorCode.CouponUsageLimitInvalid;
     readonly attempted: number;
   };
   export type CouponOccasionUnknown = {
-    readonly code: typeof EngagementErrorCode.CouponOccasionUnknown;
+    readonly errorCode: typeof EngagementErrorCode.CouponOccasionUnknown;
     readonly attempted: Scalar;
   };
   export type CouponValuePercentageInvalid = {
-    readonly code: typeof EngagementErrorCode.CouponValuePercentageInvalid;
+    readonly errorCode: typeof EngagementErrorCode.CouponValuePercentageInvalid;
     readonly attempted: number;
   };
   export type CouponValueAmountNotPositive = {
-    readonly code: typeof EngagementErrorCode.CouponValueAmountNotPositive;
-    readonly attemptedMinorUnits: number;
+    readonly errorCode: typeof EngagementErrorCode.CouponValueAmountNotPositive;
+    readonly attemptedCents: PriceCents;
   };
   export type CouponGrantCapacityInvalid = {
-    readonly code: typeof EngagementErrorCode.CouponGrantCapacityInvalid;
+    readonly errorCode: typeof EngagementErrorCode.CouponGrantCapacityInvalid;
     readonly attempted: number;
   };
   export type CouponGrantNotActive = {
-    readonly code: typeof EngagementErrorCode.CouponGrantNotActive;
-    readonly currentState: GrantState;
+    readonly errorCode: typeof EngagementErrorCode.CouponGrantNotActive;
+    readonly currentState: GrantStatus;
   };
   export type CouponGrantNotExpiring = Bare<
     typeof EngagementErrorCode.CouponGrantNotExpiring
@@ -716,41 +760,41 @@ export namespace EngagementError {
     typeof EngagementErrorCode.CouponGrantReasonEmpty
   >;
   export type DiscountCapInvalid = {
-    readonly code: typeof EngagementErrorCode.DiscountCapInvalid;
+    readonly errorCode: typeof EngagementErrorCode.DiscountCapInvalid;
     readonly attempted: number;
   };
 
   export type VoucherCodeInvalid = {
-    readonly code: typeof EngagementErrorCode.VoucherCodeInvalid;
+    readonly errorCode: typeof EngagementErrorCode.VoucherCodeInvalid;
     readonly attempted: string;
   };
   export type GiftVoucherValueInvalid = Bare<
     typeof EngagementErrorCode.GiftVoucherValueInvalid
   >;
   export type GiftVoucherNotRedeemable = {
-    readonly code: typeof EngagementErrorCode.GiftVoucherNotRedeemable;
+    readonly errorCode: typeof EngagementErrorCode.GiftVoucherNotRedeemable;
     readonly reason: VoucherRefusal;
   };
   export type GiftVoucherInsufficientBalance = {
-    readonly code: typeof EngagementErrorCode.GiftVoucherInsufficientBalance;
-    readonly requestedMinorUnits: number;
-    readonly balanceMinorUnits: number;
+    readonly errorCode: typeof EngagementErrorCode.GiftVoucherInsufficientBalance;
+    readonly requestedCents: PriceCents;
+    readonly balanceCents: PriceCents;
   };
   export type GiftVoucherOverRestore = Bare<
     typeof EngagementErrorCode.GiftVoucherOverRestore
   >;
   export type GiftVoucherCurrencyMismatch = {
-    readonly code: typeof EngagementErrorCode.GiftVoucherCurrencyMismatch;
-    readonly expected: string;
-    readonly found: string;
+    readonly errorCode: typeof EngagementErrorCode.GiftVoucherCurrencyMismatch;
+    readonly expected: Currency;
+    readonly found: Currency;
   };
 
   export type PointsInvalid = {
-    readonly code: typeof EngagementErrorCode.PointsInvalid;
+    readonly errorCode: typeof EngagementErrorCode.PointsInvalid;
     readonly attempted: number;
   };
   export type PointsInsufficient = {
-    readonly code: typeof EngagementErrorCode.PointsInsufficient;
+    readonly errorCode: typeof EngagementErrorCode.PointsInsufficient;
     readonly requested: number;
     /** The most that may be taken («може да се отнемат до 280 т.»). */
     readonly balance: number;
@@ -760,7 +804,7 @@ export namespace EngagementError {
     typeof EngagementErrorCode.InvitationInviterNameEmpty
   >;
   export type InvitationRedemptionCountInvalid = {
-    readonly code: typeof EngagementErrorCode.InvitationRedemptionCountInvalid;
+    readonly errorCode: typeof EngagementErrorCode.InvitationRedemptionCountInvalid;
     readonly attempted: number;
   };
   export type InvitationSelfRedemption = Bare<
@@ -768,19 +812,19 @@ export namespace EngagementError {
   >;
 
   export type BadgeCategoryOrderNegative = {
-    readonly code: typeof EngagementErrorCode.BadgeCategoryOrderNegative;
+    readonly errorCode: typeof EngagementErrorCode.BadgeCategoryOrderNegative;
     readonly rawValue: number;
   };
   export type BadgeSeriesNoLevels = Bare<
     typeof EngagementErrorCode.BadgeSeriesNoLevels
   >;
   export type BadgeSeriesLevelGap = {
-    readonly code: typeof EngagementErrorCode.BadgeSeriesLevelGap;
+    readonly errorCode: typeof EngagementErrorCode.BadgeSeriesLevelGap;
     /** The levels as written, comma-separated. */
     readonly levels: string;
   };
   export type BadgeSeriesTargetsNotRising = {
-    readonly code: typeof EngagementErrorCode.BadgeSeriesTargetsNotRising;
+    readonly errorCode: typeof EngagementErrorCode.BadgeSeriesTargetsNotRising;
     /** The targets as written, comma-separated. */
     readonly targets: string;
   };
@@ -794,23 +838,23 @@ export namespace EngagementError {
     typeof EngagementErrorCode.BadgeSeriesRepeatableWithSeveralLevels
   >;
   export type BadgeSeriesLevelWithoutRule = {
-    readonly code: typeof EngagementErrorCode.BadgeSeriesLevelWithoutRule;
+    readonly errorCode: typeof EngagementErrorCode.BadgeSeriesLevelWithoutRule;
     readonly level: number;
   };
   export type BadgeSeriesAwardNotPositive = {
-    readonly code: typeof EngagementErrorCode.BadgeSeriesAwardNotPositive;
+    readonly errorCode: typeof EngagementErrorCode.BadgeSeriesAwardNotPositive;
     readonly level: number;
-    readonly kind: AwardKind;
+    readonly awardKind: AwardKind;
   };
   export type SeasonWindowMalformed = {
-    readonly code: typeof EngagementErrorCode.SeasonWindowMalformed;
+    readonly errorCode: typeof EngagementErrorCode.SeasonWindowMalformed;
     readonly from: string;
     readonly until: string;
   };
   export type SeasonWindowInverted = {
-    readonly code: typeof EngagementErrorCode.SeasonWindowInverted;
-    readonly from: string;
-    readonly until: string;
+    readonly errorCode: typeof EngagementErrorCode.SeasonWindowInverted;
+    readonly from: LocalDate;
+    readonly until: LocalDate;
   };
   export type SeasonEventWithTrack = Bare<
     typeof EngagementErrorCode.SeasonEventWithTrack
@@ -819,34 +863,34 @@ export namespace EngagementError {
     typeof EngagementErrorCode.SeasonWithoutTrack
   >;
   export type SeasonAnnouncedLate = {
-    readonly code: typeof EngagementErrorCode.SeasonAnnouncedLate;
-    readonly announcedOn: string;
-    readonly from: string;
+    readonly errorCode: typeof EngagementErrorCode.SeasonAnnouncedLate;
+    readonly announcedOn: LocalDate;
+    readonly from: LocalDate;
     readonly noticeDays: number;
   };
   export type LoyaltyCatalogDanglingCategory = {
-    readonly code: typeof EngagementErrorCode.LoyaltyCatalogDanglingCategory;
-    readonly seriesId: string;
-    readonly categoryId: string;
+    readonly errorCode: typeof EngagementErrorCode.LoyaltyCatalogDanglingCategory;
+    readonly seriesId: BadgeSeriesId;
+    readonly categoryId: BadgeCategoryId;
   };
   export type LoyaltyCatalogDanglingSeason = {
-    readonly code: typeof EngagementErrorCode.LoyaltyCatalogDanglingSeason;
-    readonly seasonId: string;
-    readonly seriesId: string;
+    readonly errorCode: typeof EngagementErrorCode.LoyaltyCatalogDanglingSeason;
+    readonly seasonId: SeasonId;
+    readonly seriesId: BadgeSeriesId;
   };
   export type LoyaltyCatalogDuplicateId = {
-    readonly code: typeof EngagementErrorCode.LoyaltyCatalogDuplicateId;
+    readonly errorCode: typeof EngagementErrorCode.LoyaltyCatalogDuplicateId;
     readonly collection: string;
     readonly id: string;
   };
   export type LoyaltyCatalogTiersNotRising = {
-    readonly code: typeof EngagementErrorCode.LoyaltyCatalogTiersNotRising;
-    /** The tier ids in rank order, comma-separated. */
-    readonly tierIds: string;
+    readonly errorCode: typeof EngagementErrorCode.LoyaltyCatalogTiersNotRising;
+    /** The tier ids in rank order — a 1-to-N list of brands (L3), not a joined string. */
+    readonly tierIds: readonly TierId[];
   };
   export type LoyaltyCatalogCostNotPositive = {
-    readonly code: typeof EngagementErrorCode.LoyaltyCatalogCostNotPositive;
-    readonly rewardId: string;
+    readonly errorCode: typeof EngagementErrorCode.LoyaltyCatalogCostNotPositive;
+    readonly rewardId: RewardId;
     readonly cost: number;
   };
 
@@ -871,52 +915,52 @@ export namespace EngagementError {
 
   /** Every rule fault names the field at fault and the value handed in — all a page needs to name the control. */
   export type StreakBare = {
-    readonly code: StreakBareCode;
+    readonly errorCode: StreakBareCode;
     readonly field: StreakRuleField;
     readonly value: Scalar;
   };
   export type StreakRange = {
-    readonly code: StreakRangeCode;
+    readonly errorCode: StreakRangeCode;
     readonly field: StreakRuleField;
     readonly value: Scalar;
     readonly min: number;
     readonly max: number;
   };
   export type StreakNameEmpty = {
-    readonly code: typeof EngagementErrorCode.StreakNameEmpty;
+    readonly errorCode: typeof EngagementErrorCode.StreakNameEmpty;
     readonly field: StreakRuleField;
     readonly value: Scalar;
     readonly locale: Locale;
   };
   export type StreakUnknownOption = {
-    readonly code: typeof EngagementErrorCode.StreakUnknownOption;
+    readonly errorCode: typeof EngagementErrorCode.StreakUnknownOption;
     readonly field: StreakRuleField;
     readonly value: Scalar;
     /** The closed set, comma-separated. */
     readonly options: string;
   };
   export type StreakClampInverted = {
-    readonly code: typeof EngagementErrorCode.StreakClampInverted;
+    readonly errorCode: typeof EngagementErrorCode.StreakClampInverted;
     readonly field: StreakRuleField;
     readonly value: number;
     readonly minDays: number;
     readonly maxDays: number;
   };
   export type StreakFallbackOutsideClamp = {
-    readonly code: typeof EngagementErrorCode.StreakFallbackOutsideClamp;
+    readonly errorCode: typeof EngagementErrorCode.StreakFallbackOutsideClamp;
     readonly field: StreakRuleField;
     readonly value: number;
     readonly minDays: number;
     readonly maxDays: number;
   };
   export type StreakGraceNotShorterThanInterval = {
-    readonly code: typeof EngagementErrorCode.StreakGraceNotShorterThanInterval;
+    readonly errorCode: typeof EngagementErrorCode.StreakGraceNotShorterThanInterval;
     readonly field: StreakRuleField;
     readonly value: number;
     readonly shortestIntervalDays: number;
   };
   export type StreakStartWithAboveCap = {
-    readonly code: typeof EngagementErrorCode.StreakStartWithAboveCap;
+    readonly errorCode: typeof EngagementErrorCode.StreakStartWithAboveCap;
     readonly field: StreakRuleField;
     readonly value: number;
     readonly maxBanked: number;
@@ -932,22 +976,22 @@ export namespace EngagementError {
     | StreakGraceNotShorterThanInterval
     | StreakStartWithAboveCap;
   export type StreakScheduleVersionNotRising = {
-    readonly code: typeof EngagementErrorCode.StreakScheduleVersionNotRising;
+    readonly errorCode: typeof EngagementErrorCode.StreakScheduleVersionNotRising;
     readonly field: StreakRuleField;
     readonly value: number;
     readonly currentVersion: number;
   };
   export type StreakScheduleNotAfterCurrent = {
-    readonly code: typeof EngagementErrorCode.StreakScheduleNotAfterCurrent;
+    readonly errorCode: typeof EngagementErrorCode.StreakScheduleNotAfterCurrent;
     readonly field: StreakRuleField;
-    readonly value: string;
-    readonly currentEffectiveFromDayKey: string;
+    readonly value: LocalDate;
+    readonly currentEffectiveFromLocalDate: LocalDate;
   };
 
   export type NotificationReadBeforeSent = {
-    readonly code: typeof EngagementErrorCode.NotificationReadBeforeSent;
-    readonly sentAtMs: number;
-    readonly readAtMs: number;
+    readonly errorCode: typeof EngagementErrorCode.NotificationReadBeforeSent;
+    readonly sentAtUtcMs: UtcEpochMs;
+    readonly readAtUtcMs: UtcEpochMs;
   };
 
   export type ProgramCode =
@@ -958,7 +1002,7 @@ export namespace EngagementError {
     | typeof EngagementErrorCode.ShopEventSortOrderInvalid
     | typeof EngagementErrorCode.ShopEventApplyUrlInvalid;
   export type ProgramError = {
-    readonly code: ProgramCode;
+    readonly errorCode: ProgramCode;
     readonly rawValue: Scalar;
   };
 }

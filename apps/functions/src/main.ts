@@ -7,8 +7,9 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import {
   Callables,
   Collections,
+  type NowUtcMs,
   POLICY_RECOMPUTE_DOC,
-  TenantConfig,
+  UtcEpochMs,
 } from '@creativo/ecs-core';
 import { authClaimsPorts } from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
@@ -21,6 +22,9 @@ import {
 } from './adapters/otp-crypto.adapter';
 import { legacyCallable } from './edge';
 import { adminAuth, adminFirestore } from './lib/firebase-admin';
+// Every schedule runs on the tenant's wall clock (flatten-spec F-4: the zone
+// left TenantConfig; the functions say it in one place).
+import { TENANT_ZONE } from './lib/booking/tenant-zone';
 // Today's handlers. Phase 3a: every export below still runs one of these;
 // each 3b flip replaces its rows with an edge over its pipelines and
 // deletes the handler (blueprint §6 Phase 3, deletion rule).
@@ -76,8 +80,21 @@ function once<T>(build: () => T): () => T {
 /** Logging and error tracking: `firebase-functions/logger` (§9 D11(a)). */
 const telemetry = consoleTelemetry();
 
+/**
+ * The clock, as an absolute instant (`NowUtcMs`, flatten-spec §2.3 T4): the
+ * boundary turns it into the shop's `ShopNow` with the location's zone. The
+ * runtime clock is always inside `UtcEpochMs`'s window, so a refusal here is
+ * a broken host, not an expected outcome.
+ */
+const nowUtcMs: NowUtcMs = () => {
+  const now = UtcEpochMs.of(Date.now());
+  if (!now.ok)
+    throw new Error(`the host clock is unreadable: ${now.error.raw}`);
+  return now.value;
+};
+
 /** The clock and the two digests every pipeline hands its systems. */
-const primitives = { nowMs: () => Date.now(), ...cryptoPorts() };
+const primitives = { nowUtcMs, ...cryptoPorts() };
 
 /**
  * The port bundles. Body-free ones need no SDK client and are built now;
@@ -116,9 +133,6 @@ const LOCATION_DOC = `${Collections.Locations}/{locationId}` as const;
 const SETTINGS_DOC = `${Collections.Settings}/{docId}` as const;
 const POLICY_RECOMPUTE_JOB_DOC =
   `${Collections.BackfillJobs}/${POLICY_RECOMPUTE_DOC}` as const;
-
-/** Every schedule runs on the tenant's wall clock. */
-const TENANT_ZONE = TenantConfig.DEFAULT.zone;
 
 /**
  * The two handlers whose input is the size of the book take a long timeout

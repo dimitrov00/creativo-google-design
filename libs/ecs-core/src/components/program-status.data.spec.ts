@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { PositionState } from './program-status.data';
+import { PositionStatus } from './program-status.data';
 
-describe('PositionState', () => {
-  it('keeps the stored position status strings (index #12 filters on them)', () => {
-    expect(PositionState).toEqual({ Open: 'open', Closed: 'closed' });
+describe('PositionStatus', () => {
+  it('declares the position statuses SCREAMING (the field `positionStatus`, index #12)', () => {
+    expect(PositionStatus).toEqual({ Open: 'OPEN', Closed: 'CLOSED' });
   });
 });

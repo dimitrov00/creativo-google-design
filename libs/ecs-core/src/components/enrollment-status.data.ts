@@ -1,13 +1,14 @@
 /**
- * A course's enrollment, set by the admin — the single source of truth for
- * the Open/Upcoming split on the public page (a course's timing "runs
- * hot/cold"), not a date derived from a start field. The stored strings of
- * `CourseEnrollmentStatus` (`course.ts:13`), unchanged.
+ * A course's enrollment, set by the admin — the course's field
+ * `enrollmentStatus`, the single source of truth for the Open/Upcoming
+ * split on the public page (a course's timing "runs hot/cold"), not a date
+ * derived from a start field. (Stored bytes stay today's lowercase
+ * `CourseEnrollmentStatus` until the programs flip; the shims map.)
  */
 export const EnrollmentStatus = {
-  Open: 'open',
-  Upcoming: 'upcoming',
-  Closed: 'closed',
+  Open: 'OPEN',
+  Upcoming: 'UPCOMING',
+  Closed: 'CLOSED',
 } as const;
 export type EnrollmentStatus =
   (typeof EnrollmentStatus)[keyof typeof EnrollmentStatus];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from './day-key.data';
+import { localDate } from '../testing';
 import {
   PERSONAL_RECORD_KINDS,
   PersonalRecord,
@@ -7,26 +7,26 @@ import {
 } from './personal-record.data';
 
 describe('PersonalRecord', () => {
-  it('keeps the stored kinds', () => {
+  it('declares the kinds SCREAMING, in the rail order', () => {
     expect(PERSONAL_RECORD_KINDS).toEqual([
-      'longestRhythm',
-      'mostVisitsInYear',
-      'favouriteService',
-      'firstVisit',
+      'LONGEST_RHYTHM',
+      'MOST_VISITS_IN_YEAR',
+      'FAVOURITE_SERVICE',
+      'FIRST_VISIT',
     ]);
   });
 
   it('finds the record of one kind, or none', () => {
     const records: readonly PersonalRecord[] = [
       {
-        kind: 'firstVisit',
+        personalRecordKind: PersonalRecordKind.FirstVisit,
         value: 1,
-        on: DayKey.of('2024-03-02'),
+        on: localDate('2024-03-02'),
         year: null,
         serviceId: null,
       },
       {
-        kind: 'mostVisitsInYear',
+        personalRecordKind: PersonalRecordKind.MostVisitsInYear,
         value: 11,
         on: null,
         year: 2025,

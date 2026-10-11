@@ -5,7 +5,19 @@ import {
   levelNumeral,
   sofiaDayOf,
 } from '@creativo/application/engagement';
-import { type LedgerEntryRef, LedgerSystem } from '@creativo/ecs-core';
+import {
+  BadgeSeriesId,
+  CorrelationId,
+  JournalEffect,
+  JournalEntryId,
+  type LedgerEffectKind,
+  type LedgerEntryRef,
+  LedgerSystem,
+  LocalDate,
+  RedemptionOp,
+  UtcEpochMs,
+  defect,
+} from '@creativo/ecs-core';
 import { visitSectionLabel } from '@creativo/features/shared/visits';
 import type { UiIconName } from '@creativo/ui/controls';
 import {
@@ -138,9 +150,7 @@ export function wholeMonthsOf(
   entries: readonly ActivityEntry[],
   whole: boolean,
 ): ReadonlySet<string> {
-  return new Set(
-    LedgerSystem.wholeMonths(entries.map(ledgerRefOf), whole, SHOP_ZONE),
-  );
+  return new Set(LedgerSystem.wholeMonths(entries.map(ledgerRefOf), whole));
 }
 
 // ── 2 · Rows ────────────────────────────────────────────────────────────
@@ -572,8 +582,10 @@ export function activityGroups(
   // `LedgerSystem.months`; the rows and the words are this file's.
   const months = LedgerSystem.months(
     events.map((event) => ({
-      id: event.id,
-      atMs: event.at.getTime(),
+      id: JournalEntryId.of(event.id),
+      utcEpochMs: utcOf(event.at),
+      // The event's shop day, read on the shop's calendar here (T5).
+      localDate: dayOf(sofiaDayOf(event.at)),
       entries: event.entries.map(ledgerRefOf),
       delta: event.delta,
       balanceAfter: event.balanceAfter,
@@ -581,7 +593,6 @@ export function activityGroups(
     })),
     input.limit ?? null,
     [...input.wholeMonths],
-    SHOP_ZONE,
   );
   return months.flatMap((month): readonly ActivityGroupVm[] => {
     const rows = month.events.flatMap(({ source }) => {
@@ -663,26 +674,59 @@ export function ledgerPageVm(input: LedgerPageInput): LedgerPageVm {
 
 // ── The bridge: the reader's row → ecs-core struct (Phase 4 deletes it) ──
 
-/** The shop's zone: a row's month is read on its calendar. */
-const SHOP_ZONE = 'Europe/Sofia';
+/** A row's instant as the brand — every `Date` the reader hands over is inside its window. */
+function utcOf(at: Date): UtcEpochMs {
+  const epochMs = at.getTime();
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
+}
 
-/** A journal row as `LedgerSystem` folds it, the row riding along. */
+/** A Sofia day `sofiaDayOf` read: always a day. */
+function dayOf(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/** A row's effect, in the journal's words. */
+const JOURNAL_EFFECT = {
+  points: JournalEffect.Points,
+  achievement: JournalEffect.Achievement,
+  tier: JournalEffect.Tier,
+  reward: JournalEffect.Reward,
+  redemption: JournalEffect.Redemption,
+} as const satisfies Record<ActivityEntry['effect']['kind'], LedgerEffectKind>;
+
+/** A redemption row's op, in the journal's words. */
+const REDEMPTION_OP = {
+  redeemed: RedemptionOp.Redeemed,
+  reversed: RedemptionOp.Reversed,
+  expired: RedemptionOp.Expired,
+} as const satisfies Record<
+  Extract<ActivityEntry['effect'], { kind: 'redemption' }>['op'],
+  RedemptionOp
+>;
+
+/** A journal row as `LedgerSystem` folds it, the row riding along; its shop day read here (T5). */
 function ledgerRefOf(
   entry: ActivityEntry,
 ): LedgerEntryRef & { readonly source: ActivityEntry } {
   const { effect } = entry;
+  const seriesId = textOf(entry, 'seriesId');
   return {
-    id: entry.id,
+    id: JournalEntryId.of(entry.id),
     seq: entry.seq,
-    atMs: entry.at.getTime(),
-    correlationId: entry.correlationId,
-    reverses: entry.reverses,
-    seriesId: textOf(entry, 'seriesId'),
+    utcEpochMs: utcOf(entry.at),
+    localDate: dayOf(sofiaDayOf(entry.at)),
+    correlationId: CorrelationId.of(entry.correlationId),
+    reverses:
+      entry.reverses === null ? null : JournalEntryId.of(entry.reverses),
+    badgeSeriesId: seriesId === null ? null : BadgeSeriesId.of(seriesId),
     level: countOf(entry, 'level'),
-    kind: effect.kind,
+    journalEffect: JOURNAL_EFFECT[effect.kind],
     pointsDelta: effect.kind === 'points' ? effect.delta : null,
     balanceAfter: effect.kind === 'points' ? effect.balanceAfter : null,
-    redemptionOp: effect.kind === 'redemption' ? effect.op : null,
+    redemptionOp:
+      effect.kind === 'redemption' ? REDEMPTION_OP[effect.op] : null,
     cost: effect.kind === 'redemption' ? effect.cost : null,
     source: entry,
   };

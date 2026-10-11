@@ -15,8 +15,9 @@ import {
 import type { RequestedSeat } from '../../use-cases/decide-booking';
 import {
   type AuditSubject as AuditSubjectData,
-  AuditRequestedSubjectKind,
   AuditSystem,
+  RequestedSubjectRole,
+  SeatSubject,
   UserId as UserIdData,
 } from '@creativo/ecs-core';
 
@@ -29,14 +30,33 @@ import {
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
+/** The legacy lower-case subject tag → the ecs-core `SeatSubject` (flatten-spec §8.9). */
+const LEGACY_SEAT_SUBJECT = {
+  account: SeatSubject.Account,
+  anonymous: SeatSubject.Anonymous,
+} as const satisfies Record<AuditSubject['kind'], SeatSubject>;
+
+/** The requested cart's lower-case role → the ecs-core `RequestedSubjectRole`. */
+const LEGACY_REQUESTED_SUBJECT_ROLE = {
+  self: RequestedSubjectRole.Self,
+  companion: RequestedSubjectRole.Companion,
+  guest: RequestedSubjectRole.Guest,
+} as const satisfies Record<
+  RequestedSeat['subject']['kind'],
+  RequestedSubjectRole
+>;
+
 function toSubjectData(subject: AuditSubject): AuditSubjectData {
   return subject.kind === 'account'
-    ? { kind: 'account', userId: UserIdData.of(subject.userId) }
-    : { kind: 'anonymous' };
+    ? {
+        seatSubject: LEGACY_SEAT_SUBJECT.account,
+        userId: UserIdData.of(subject.userId),
+      }
+    : { seatSubject: LEGACY_SEAT_SUBJECT.anonymous };
 }
 
 function fromSubjectData(subject: AuditSubjectData): AuditSubject {
-  return subject.kind === 'account'
+  return subject.seatSubject === SeatSubject.Account
     ? { kind: 'account', userId: subject.userId }
     : { kind: 'anonymous' };
 }
@@ -209,16 +229,13 @@ export function requestedSeatSubjects(
   ownerUserId: string | null,
 ): readonly AuditSubject[] {
   return AuditSystem.requestedSubjects(
-    seats.map((seat) =>
-      seat.subject.kind === 'companion'
-        ? {
-            kind: AuditRequestedSubjectKind.Companion,
-            userId: UserIdData.of(seat.subject.userId),
-          }
-        : seat.subject.kind === 'self'
-          ? { kind: AuditRequestedSubjectKind.Self, userId: null }
-          : { kind: AuditRequestedSubjectKind.Guest, userId: null },
-    ),
+    seats.map((seat) => ({
+      requestedSubjectRole: LEGACY_REQUESTED_SUBJECT_ROLE[seat.subject.kind],
+      userId:
+        seat.subject.kind === 'companion'
+          ? UserIdData.of(seat.subject.userId)
+          : null,
+    })),
     ownerUserId === null ? null : UserIdData.of(ownerUserId),
   ).map(fromSubjectData);
 }

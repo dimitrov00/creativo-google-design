@@ -1,31 +1,56 @@
 import { Money, ZonedDateTime } from '@creativo/domain/kernel';
 import {
+  Currency,
   GiftVoucherId,
+  PriceCents,
+  UtcEpochMs,
+  VoucherCode,
   VoucherRedemption as VoucherRedemptionData,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
  * THIN SHIM (ECS migration Phase 2). Whether a line still pays the bill is
  * the ECS `VoucherRedemption` component's (`isLive`); the bill's sums are
- * `BillingSystem`'s. This class keeps the legacy API and only converts.
+ * `BillingSystem`'s. This class keeps the legacy API and only converts:
+ * `Money` → `*Cents` beside one `currency`, a `ZonedDateTime` → its instant
+ * (flatten-spec §8.9).
  */
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
-function toData(line: VoucherRedemption): VoucherRedemptionData {
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a legacy `Money` / `ZonedDateTime` already holds the rule.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+function centsOf(money: Money): PriceCents {
+  return sure(PriceCents.signed(money.toMinorUnits()), 'an amount');
+}
+
+function instantOf(at: ZonedDateTime): UtcEpochMs {
+  return sure(UtcEpochMs.of(at.toMillis()), 'an instant');
+}
+
+/** A line as the ECS struct (`appointments.voucherRedemptions[]`, flat). */
+export function toEcsRedemption(
+  line: VoucherRedemption,
+): VoucherRedemptionData {
   return {
     voucherId: GiftVoucherId.of(line.voucherId),
-    code: line.code,
-    amount: {
-      amountMinorUnits: line.amount.toMinorUnits(),
-      currencyCode: line.amount.currencyCode(),
-    },
-    balanceAfter: {
-      amountMinorUnits: line.balanceAfter.toMinorUnits(),
-      currencyCode: line.balanceAfter.currencyCode(),
-    },
-    appliedAtMs: line.appliedAt.toMillis(),
-    reversedAtMs: line.reversedAt === null ? null : line.reversedAt.toMillis(),
+    code: VoucherCode.of(line.code),
+    amountCents: centsOf(line.amount),
+    balanceAfterCents: centsOf(line.balanceAfter),
+    currency: sure(Currency.parse(line.amount.currencyCode()), 'a currency'),
+    appliedAtUtcMs: instantOf(line.appliedAt),
+    reversedAtUtcMs:
+      line.reversedAt === null ? null : instantOf(line.reversedAt),
   };
 }
 
@@ -74,7 +99,7 @@ export class VoucherRedemption {
 
   /** Still counting against the bill. */
   get live(): boolean {
-    return VoucherRedemptionData.isLive(toData(this));
+    return VoucherRedemptionData.isLive(toEcsRedemption(this));
   }
 
   reversed(at: ZonedDateTime): VoucherRedemption {

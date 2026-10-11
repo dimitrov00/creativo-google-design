@@ -1,32 +1,33 @@
-import type { DayKey } from '../components/day-key.data';
-import type { BarberId } from './barber.entity';
-
-/** `${barberId}__${dayKey}` — one sample per barber per sampling day. */
-export type BarberLeadTimeSampleId = string & {
-  readonly __brand: unique symbol;
-};
-export const BarberLeadTimeSampleId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): BarberLeadTimeSampleId => raw as BarberLeadTimeSampleId,
-} as const;
+import type { MinuteCount } from '../primitives/duration-minutes.primitive';
+import {
+  type BarberId,
+  BarberLeadTimeSampleId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * One day's measurement of how far ahead a barber is booked —
- * `barberLeadTimeSamples/{id}` (`sample-lead-time.ts:119-129`, `sampledAtIso`
- * → `sampledAtMs`). The x-axis of the lead-time trend; a missing row is
- * honest, a retried batch would double-count. TTL-purged (`purgeAt` is
- * adapter-stamped at the root, not an entity field).
+ * `barberLeadTimeSamples/{id}`, id `${barberId}__${localDate}`
+ * (`sample-lead-time.ts:119-129`). The x-axis of the lead-time trend; a
+ * missing row is honest, a retried batch would double-count. TTL-purged
+ * (`purgeAt` is adapter-stamped at the root, not an entity field). No zone
+ * (Law 7.2); the sampling instant is `sampledAtUtcMs`.
  */
-export type BarberLeadTimeSampleEntity = {
+export type BarberLeadTimeSample = {
   readonly id: BarberLeadTimeSampleId;
   readonly barberId: BarberId;
-  /** The day the sample was TAKEN. */
-  readonly dayKey: DayKey;
-  readonly zone: string;
+  /** The shop day the sample was TAKEN. */
+  readonly localDate: LocalDate;
   /** The first day with a slot step of free time — `null` is fully booked to the horizon, not zero. */
-  readonly firstAvailableDayKey: DayKey | null;
+  readonly firstAvailableLocalDate: LocalDate | null;
   readonly leadTimeDays: number | null;
-  readonly freeMinutesOnFirstDay: number;
+  readonly freeMinutesOnFirstDay: MinuteCount;
   readonly horizonDayCount: number;
-  readonly sampledAtMs: number;
+  readonly sampledAtUtcMs: UtcEpochMs;
 };
+
+/**
+ * Flatten-pass staging: the barrel's id block still names this module for
+ * `BarberLeadTimeSampleId` until the integrator drops that line.
+ */

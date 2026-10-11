@@ -8,7 +8,7 @@ import {
   OnboardingFlowStep,
 } from '../components/onboarding-flow.data';
 import { Registration } from '../components/registration.data';
-import { ServiceId } from '../entities/service.entity';
+import { ServiceId } from '../primitives/ids.primitive';
 import { deepFreeze, unwrapErr, unwrapOk } from '../testing';
 import {
   OnboardingFlowSystem,
@@ -21,7 +21,7 @@ import {
  * COPIED and re-targeted: `advanceOnboardingFlow` → `OnboardingFlowSystem.next`,
  * the `{ type }` events → the `OnboardingFlowEvent` companion, `isSuccess(r)`
  * → `r.ok`, the transition error class → the
- * `identity.onboarding_flow.invalid_transition` struct. The class spec keeps
+ * `IDENTITY_ONBOARDING_FLOW_INVALID_TRANSITION` struct. The class spec keeps
  * running against its shim. Then the resume plan the OnboardingFlowStore
  * walked by hand (libs/features/client/onboarding/src/lib/
  * onboarding-flow.store.spec.ts: steps outside the plan are stepped over
@@ -43,37 +43,37 @@ const registered = (): OnboardingFlowState =>
 describe('OnboardingFlowSystem.next', () => {
   it('walks about -> reward -> services -> birthday -> avatar -> entering, personalizing along the way', () => {
     let state = registered();
-    expect(state.kind).toBe(OnboardingFlowStep.Reward);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Reward);
 
     state = advance(state, OnboardingFlowEvent.personalize());
-    expect(state.kind).toBe(OnboardingFlowStep.Services);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Services);
 
     state = advance(state, OnboardingFlowEvent.submitServices([SERVICE]));
-    expect(state.kind).toBe(OnboardingFlowStep.Birthday);
-    if (state.kind === OnboardingFlowStep.Birthday) {
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
       expect(state.selected).toEqual([SERVICE]);
     }
 
     state = advance(state, OnboardingFlowEvent.submitBirthday());
-    expect(state.kind).toBe(OnboardingFlowStep.Avatar);
-    if (state.kind === OnboardingFlowStep.Avatar) {
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Avatar);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Avatar) {
       expect(state.selected).toEqual([SERVICE]);
     }
 
     state = advance(state, OnboardingFlowEvent.skipAvatar());
-    expect(state.kind).toBe(OnboardingFlowStep.Entering);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Entering);
   });
 
   it('lets a returning-enough user skip straight from reward to entering', () => {
     const state = advance(registered(), OnboardingFlowEvent.enterApp());
-    expect(state.kind).toBe(OnboardingFlowStep.Entering);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Entering);
   });
 
   it('skipping services still reaches the birthday step with nothing selected', () => {
     let state = advance(registered(), OnboardingFlowEvent.personalize());
     state = advance(state, OnboardingFlowEvent.skipServices());
-    expect(state.kind).toBe(OnboardingFlowStep.Birthday);
-    if (state.kind === OnboardingFlowStep.Birthday) {
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
       expect(state.selected).toEqual([]);
     }
   });
@@ -82,8 +82,8 @@ describe('OnboardingFlowSystem.next', () => {
     let state = advance(registered(), OnboardingFlowEvent.personalize());
     state = advance(state, OnboardingFlowEvent.submitServices([SERVICE]));
     state = advance(state, OnboardingFlowEvent.skipBirthday());
-    expect(state.kind).toBe(OnboardingFlowStep.Avatar);
-    if (state.kind === OnboardingFlowStep.Avatar) {
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Avatar);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Avatar) {
       expect(state.selected).toEqual([SERVICE]);
     }
   });
@@ -94,12 +94,12 @@ describe('OnboardingFlowSystem.next', () => {
     state = advance(
       state,
       OnboardingFlowEvent.birthdayFailed(
-        'accounts.update_profile.repository_failure',
+        'ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE',
       ),
     );
-    expect(state.kind).toBe(OnboardingFlowStep.Birthday);
-    if (state.kind === OnboardingFlowStep.Birthday) {
-      expect(state.error).toBe('accounts.update_profile.repository_failure');
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
+      expect(state.error).toBe('ACCOUNTS_UPDATE_PROFILE_REPOSITORY_FAILURE');
     }
   });
 
@@ -108,8 +108,8 @@ describe('OnboardingFlowSystem.next', () => {
       OnboardingFlowSystem.initial(),
       OnboardingFlowEvent.registrationFailed('destination already registered'),
     );
-    expect(state.kind).toBe(OnboardingFlowStep.About);
-    if (state.kind === OnboardingFlowStep.About) {
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.About);
+    if (state.onboardingFlowStep === OnboardingFlowStep.About) {
       expect(state.error).toBe('destination already registered');
     }
   });
@@ -118,22 +118,22 @@ describe('OnboardingFlowSystem.next', () => {
     let state = advance(registered(), OnboardingFlowEvent.personalize());
     state = advance(state, OnboardingFlowEvent.submitServices([SERVICE]));
     state = advance(state, OnboardingFlowEvent.skipBirthday());
-    expect(state.kind).toBe(OnboardingFlowStep.Avatar);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Avatar);
 
     state = advance(state, OnboardingFlowEvent.back());
-    expect(state.kind).toBe(OnboardingFlowStep.Birthday);
-    if (state.kind === OnboardingFlowStep.Birthday) {
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Birthday) {
       expect(state.selected).toEqual([SERVICE]);
     }
 
     state = advance(state, OnboardingFlowEvent.back());
-    expect(state.kind).toBe(OnboardingFlowStep.Services);
-    if (state.kind === OnboardingFlowStep.Services) {
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Services);
+    if (state.onboardingFlowStep === OnboardingFlowStep.Services) {
       expect(state.selected).toEqual([SERVICE]);
     }
 
     state = advance(state, OnboardingFlowEvent.back());
-    expect(state.kind).toBe(OnboardingFlowStep.Reward);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Reward);
   });
 
   it('rejects an illegal transition from a terminal state', () => {
@@ -144,7 +144,7 @@ describe('OnboardingFlowSystem.next', () => {
       ),
     );
     expect(error).toEqual({
-      code: IdentityErrorCode.OnboardingFlowInvalidTransition,
+      errorCode: IdentityErrorCode.OnboardingFlowInvalidTransition,
       from: OnboardingFlowStep.Entering,
       event: OnboardingFlowEventKind.Personalize,
     });
@@ -196,7 +196,9 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
     unwrapOk(OnboardingFlowSystem.nextWithinPlan(state, event, plan));
 
   it('beginPersonalization enters the services step directly — the returning-active-account path (no About form, no network)', () => {
-    expect(begin(PERSONALIZE_STEPS).kind).toBe(OnboardingFlowStep.Services);
+    expect(begin(PERSONALIZE_STEPS).onboardingFlowStep).toBe(
+      OnboardingFlowStep.Services,
+    );
   });
 
   it('a plan opens on its first step, with the earlier plan step still reachable via back', () => {
@@ -205,12 +207,12 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
       OnboardingFlowStep.Birthday,
     ];
     let state = begin(plan);
-    expect(state.kind).toBe(OnboardingFlowStep.Services);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Services);
     state = within(state, OnboardingFlowEvent.skipServices(), plan);
-    expect(state.kind).toBe(OnboardingFlowStep.Birthday);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
 
     state = unwrapOk(OnboardingFlowSystem.backWithinPlan(state, plan));
-    expect(state.kind).toBe(OnboardingFlowStep.Services);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Services);
   });
 
   it('steps OVER anything the profile already satisfies, forwards and backwards', () => {
@@ -220,35 +222,35 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
       OnboardingFlowStep.Avatar,
     ];
     let state = begin(plan);
-    expect(state.kind).toBe(OnboardingFlowStep.Services);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Services);
 
     state = within(state, OnboardingFlowEvent.skipServices(), plan);
     // The machine's next state is `birthday`; the plan skips it.
-    expect(state.kind).toBe(OnboardingFlowStep.Avatar);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Avatar);
 
     state = unwrapOk(OnboardingFlowSystem.backWithinPlan(state, plan));
     // …and back doesn't land on it either, which would freeze the screen.
-    expect(state.kind).toBe(OnboardingFlowStep.Services);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Services);
   });
 
   it('a single remaining step opens directly on it and reports itself as one screen', () => {
     const plan: readonly PersonalizeStep[] = [OnboardingFlowStep.Avatar];
     const state = begin(plan);
 
-    expect(state.kind).toBe(OnboardingFlowStep.Avatar);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Avatar);
     expect(OnboardingFlowSystem.planPosition(state, plan)).toBe(1);
   });
 
   it('finishing the last planned step goes straight to entering, not to a redundant one', () => {
     const plan: readonly PersonalizeStep[] = [OnboardingFlowStep.Birthday];
     let state = begin(plan);
-    expect(state.kind).toBe(OnboardingFlowStep.Birthday);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Birthday);
 
     state = within(state, OnboardingFlowEvent.skipBirthday(), plan);
 
     // Avatar is NOT in the plan (the photo is already there), so the flow
     // is done rather than asking for it again.
-    expect(state.kind).toBe(OnboardingFlowStep.Entering);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Entering);
   });
 
   it('back from the only planned step steps over the unplanned ones, all the way to reward', () => {
@@ -256,7 +258,7 @@ describe('OnboardingFlowSystem resume plan (onboarding-flow.store.spec.ts)', () 
     const state = unwrapOk(
       OnboardingFlowSystem.backWithinPlan(begin(plan), plan),
     );
-    expect(state.kind).toBe(OnboardingFlowStep.Reward);
+    expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Reward);
   });
 
   it('an event the step refuses is the answer — nothing is skipped', () => {
@@ -322,9 +324,9 @@ describe('OnboardingFlowSystem properties', () => {
           expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error).toEqual({
-            code: IdentityErrorCode.OnboardingFlowInvalidTransition,
-            from: state.kind,
-            event: event.kind,
+            errorCode: IdentityErrorCode.OnboardingFlowInvalidTransition,
+            from: state.onboardingFlowStep,
+            event: event.onboardingFlowEventKind,
           });
         }
       }
@@ -347,11 +349,11 @@ describe('OnboardingFlowSystem properties', () => {
             plan,
           ),
         );
-        if (OnboardingFlowSystem.isPersonalizeStep(state.kind)) {
-          expect(plan).toContain(state.kind);
+        if (OnboardingFlowSystem.isPersonalizeStep(state.onboardingFlowStep)) {
+          expect(plan).toContain(state.onboardingFlowStep);
         } else {
           expect(plan).toEqual([]);
-          expect(state.kind).toBe(OnboardingFlowStep.Entering);
+          expect(state.onboardingFlowStep).toBe(OnboardingFlowStep.Entering);
         }
       }),
     );

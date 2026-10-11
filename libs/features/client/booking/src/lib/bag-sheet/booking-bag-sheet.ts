@@ -24,12 +24,17 @@ import {
 } from '@creativo/application/catalog';
 import {
   BarberId as BarberKey,
+  Currency,
+  DurationMinutes,
+  MinuteCount,
   type Money as MoneyData,
+  PriceCents,
   type PricedService,
-  type ServiceTerms as TermsData,
+  ServiceTerms as TermsData,
   type TermsSpan,
   TermsSpanSystem,
   ServiceVariantId as VariantKey,
+  defect,
 } from '@creativo/ecs-core';
 import {
   CatalogContentService,
@@ -370,8 +375,8 @@ export class BookingBagSheet {
   /** A struct amount in the locale's words — the one money formatter. */
   private money(amount: MoneyData): string {
     const money = Money.fromMinorUnitsAndCode(
-      amount.amountMinorUnits,
-      amount.currencyCode,
+      amount.amountCents,
+      amount.currency,
     );
     return money.isSuccess()
       ? formatMoney(money.value, this.content.locale())
@@ -523,7 +528,7 @@ export class BookingBagSheet {
           },
         ];
       })
-      .sort((a, b) => a.span.minPriceMinorUnits - b.span.minPriceMinorUnits)
+      .sort((a, b) => a.span.minPriceCents - b.span.minPriceCents)
       .map((entry): BagOptionVm => ({
         key: entry.barber.id,
         id: entry.barber.id,
@@ -549,26 +554,35 @@ export class BookingBagSheet {
 
 /* ── The bridge: the catalogue class → the terms matrix struct ─────────── */
 
+/** A brand built from a catalogue value its own class already validated. */
+function sure<T>(
+  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
+  what: string,
+): T {
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
 function termsDataOf(terms: Service['baseTerms']): TermsData {
-  return {
-    priceMinorUnits: terms.price.toMinorUnits(),
-    currencyCode: terms.price.currencyCode(),
-    durationMinutes: terms.durationMinutes,
-    setupMinutes: terms.setupMinutes,
-    cleanupMinutes: terms.cleanupMinutes,
-  };
+  return TermsData.of(
+    sure(PriceCents.of(terms.price.toMinorUnits()), 'a catalogue price'),
+    sure(Currency.parse(terms.price.currencyCode()), 'a catalogue currency'),
+    sure(DurationMinutes.of(terms.durationMinutes), 'a catalogue duration'),
+    sure(MinuteCount.of(terms.setupMinutes), 'a setup pad'),
+    sure(MinuteCount.of(terms.cleanupMinutes), 'a cleanup pad'),
+  );
 }
 
 /** A service's terms matrix as `TermsSpanSystem` reads it. */
 function pricedServiceOf(service: Service): PricedService {
   return {
-    baseTerms: termsDataOf(service.baseTerms),
+    ...termsDataOf(service.baseTerms),
     offerings: service.offerings.map((offering) => ({
       barberId: BarberKey.of(offering.barberId.value),
-      base: termsDataOf(offering.base),
+      ...termsDataOf(offering.base),
       overrides: offering.overrideEntries().map(([variantId, terms]) => ({
         variantId: VariantKey.of(variantId),
-        terms: termsDataOf(terms),
+        ...termsDataOf(terms),
       })),
     })),
   };

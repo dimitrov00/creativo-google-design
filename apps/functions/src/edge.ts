@@ -6,7 +6,7 @@ import {
 import {
   AccountsErrorCode,
   AttemptOutcome,
-  BookingCommitErrorCode,
+  BookingErrorCode,
   BookingFlowErrorCode,
   type CallableName,
   CancellationRefusalCode,
@@ -14,25 +14,33 @@ import {
   EngagementErrorCode,
   GovernanceErrorCode,
   IdentityErrorCode,
+  LocalDate,
   MediaErrorCode,
+  MinuteOfDay,
   MoneyErrorCode,
   MoveErrorCode,
-  type NowMs,
+  type NowUtcMs,
   PhoneErrorCode,
   PipelineErrorCode,
+  PrimitiveErrorCode,
   RepositoryErrorCode,
   type Result,
   SchedulingErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
   type TelemetryPorts,
-  TenantConfig,
   TimeErrorCode,
+  type TimeZone,
+  type AttemptLine,
   TriggerAttemptSystem,
+  TriggerEventId,
+  UtcEpochMs,
   WaitlistErrorCode,
   WorkBudgetSystem,
   ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
+import { TENANT_ZONE } from './lib/booking/tenant-zone';
 
 /**
  * THE EDGE (blueprint §4.3, D1(a)) — the one place a `Result.err` becomes an
@@ -53,6 +61,17 @@ import {
  * Phase 3a: every export still delegates to its `lib/**` handler, which
  * throws its own `HttpsError`s; {@link legacyCallable} passes those through
  * untouched and gives an unexpected throw the platform's own answer.
+ *
+ * **The flatten pass (flatten-spec §4.3, F-10): the wire is frozen.** The
+ * table is keyed by the ecs-core `errorCode` (an ecs-core struct carries it
+ * as `errorCode`; a legacy class and the {@link LegacyWireCode}s as `code` —
+ * both are read), and every rule carries its `wireCode`: the LEGACY dotted
+ * code that leaves in `details.code` and the message, so a SCREAMING
+ * `errorCode` never reaches a client before Phase 4 flips the wire with the
+ * client ({@link LEGACY_WIRE_CODE}). Instant params render on the shop's
+ * clock with `ZonedTimeSystem.toIso`, local-coordinate params through
+ * `toUtc` first, and a renamed struct field leaves under its legacy wire
+ * name ({@link WIRE_FIELD_NAME}).
  */
 
 // ── The vocabulary ─────────────────────────────────────────────────────────
@@ -157,7 +176,8 @@ export type LegacyWireCode =
  */
 export const EDGE_DICTIONARIES = {
   AccountsErrorCode,
-  BookingCommitErrorCode,
+  PrimitiveErrorCode,
+  BookingErrorCode,
   BookingFlowErrorCode,
   CancellationRefusalCode,
   CatalogErrorCode,
@@ -181,7 +201,8 @@ export const EDGE_DICTIONARIES = {
 /** Every code the edge can put on the wire. */
 export type EdgeCode =
   | AccountsErrorCode
-  | BookingCommitErrorCode
+  | PrimitiveErrorCode
+  | BookingErrorCode
   | BookingFlowErrorCode
   | CancellationRefusalCode
   | CatalogErrorCode
@@ -202,13 +223,24 @@ export type EdgeCode =
   | LegacyWireCode;
 
 /**
- * A refusal as a pipeline returns it: the dotted `code` and the struct's
- * own fields (i18n parameters, ids, figures). Every ecs-core error struct
- * is one; an aggregate carries its nested refusals as `errors`.
+ * A refusal as a pipeline returns it: its code and the struct's own fields
+ * (i18n parameters, ids, figures). Every ecs-core error struct is one, its
+ * code named `errorCode` (Law 7.5); a legacy class (and a
+ * {@link LegacyWireCode} the edge raises itself) names it `code`; an
+ * aggregate carries its nested refusals as `errors`.
  */
-export type EdgeError = { readonly code: EdgeCode } & {
+export type EdgeError = (
+  { readonly code: EdgeCode } | { readonly errorCode: EdgeCode }
+) & {
   readonly [field: string]: unknown;
 };
+
+/** The code a refusal names — an ecs-core struct's `errorCode`, else a legacy `code`. */
+export function errorCodeOf(error: EdgeError): string {
+  const coded = new Map<string, unknown>(Object.entries(error));
+  const errorCode = coded.get('errorCode');
+  return typeof errorCode === 'string' ? errorCode : String(coded.get('code'));
+}
 
 // ── The wire rules ─────────────────────────────────────────────────────────
 
@@ -234,14 +266,26 @@ export const ParamFormat = {
   /** `String(value)` — today's explicitly stringified figures (`minLeadMinutes: '30'`). */
   Text: 'TEXT',
   /**
-   * An epoch-ms field as an ISO-8601 instant on the SHOP's clock with its
-   * offset (`2026-10-10T14:00:00.000+03:00`) — today's `*Iso` params, which
-   * the handlers spell with `ZonedDateTime.toISO()` in the shop zone (or echo
-   * the caller's own shop-offset `startIso`). See {@link WIRE_ZONE}.
+   * A shop wall clock — a `LocalDate` field plus a minute field
+   * (`minuteField`: a `MinuteOfDay`, or an exclusive `EndMinute` whose
+   * `1440` is the next day's start) — as ISO-8601 on the SHOP's clock with
+   * its offset (`2026-10-10T14:00:00.000+03:00`), through
+   * `ZonedTimeSystem.toUtc` then `toIso`: today's `*Iso` params, which the
+   * handlers spell with `ZonedDateTime.toISO()` in the shop zone (or echo
+   * the caller's own shop-offset `startIso`). See {@link WIRE_ZONE}. A wall
+   * clock the zone never shows (a DST gap) is left out.
    */
-  IsoInstant: 'ISO_INSTANT',
+  ZonedWallIso: 'ZONED_WALL_ISO',
   /** An array joined by commas — today's `seatIds: 'a,b'`. */
   Csv: 'CSV',
+  /**
+   * A value that NAMES a payload field or a refusal — today's `field`
+   * param: a renamed struct field leaves under its legacy wire name
+   * ({@link WIRE_FIELD_NAME}: `localDate` → `dayKey`) and a SCREAMING
+   * `errorCode` as its legacy wire code ({@link LEGACY_WIRE_CODE}); any
+   * other value as it is.
+   */
+  WireField: 'WIRE_FIELD',
 } as const;
 export type ParamFormat = (typeof ParamFormat)[keyof typeof ParamFormat];
 
@@ -254,6 +298,8 @@ export type WireParam = {
   readonly wireName: string;
   readonly field: string;
   readonly paramFormat: ParamFormat;
+  /** The minute field (a `MinuteOfDay` or an `EndMinute`) beside `field`'s `LocalDate` — `ZONED_WALL_ISO` only, else `null`. */
+  readonly minuteField: string | null;
 };
 
 export type ThrownWireRule = {
@@ -265,9 +311,20 @@ export type ThrownWireRule = {
 export type AnsweredWireRule = {
   readonly wireShape: typeof WireShape.Answered;
 };
-export type WireRule = ThrownWireRule | AnsweredWireRule;
 
-type WireTable<C extends string> = { readonly [K in C]: WireRule };
+/**
+ * A code's whole rule: how it leaves, and the `wireCode` it leaves AS — the
+ * legacy dotted code (F-10), so the wire stays byte-identical while the
+ * ecs-core `errorCode`s go SCREAMING.
+ */
+export type WireRule = (ThrownWireRule | AnsweredWireRule) & {
+  readonly wireCode: string;
+};
+
+/** A rule before its wire code is stamped on ({@link EDGE_WIRE}). */
+type RuleBody = ThrownWireRule | AnsweredWireRule;
+
+type WireTable<C extends string> = { readonly [K in C]: RuleBody };
 
 const S = HttpsStatus;
 
@@ -275,21 +332,48 @@ const raw = (field: string): WireParam => ({
   wireName: field,
   field,
   paramFormat: ParamFormat.Raw,
+  minuteField: null,
+});
+/** A struct field the flatten pass renamed, leaving under today's wire name. */
+const rawAs = (wireName: string, field: string): WireParam => ({
+  wireName,
+  field,
+  paramFormat: ParamFormat.Raw,
+  minuteField: null,
+});
+/** A `field` param naming a payload field or a refusal ({@link ParamFormat.WireField}). */
+const wireField = (field: string): WireParam => ({
+  wireName: field,
+  field,
+  paramFormat: ParamFormat.WireField,
+  minuteField: null,
 });
 const text = (field: string): WireParam => ({
   wireName: field,
   field,
   paramFormat: ParamFormat.Text,
+  minuteField: null,
 });
-const iso = (wireName: string, msField: string): WireParam => ({
+/**
+ * A local-coordinate pair as today's `*Iso` param — the flattened refusals'
+ * `localDate` + `startMinutes` (or an exclusive `EndMinute`, where `1440` is
+ * the next day's start), flatten-spec §4.1.
+ */
+export const wallIso = (
+  wireName: string,
+  localDateField: string,
+  minuteField: string,
+): WireParam => ({
   wireName,
-  field: msField,
-  paramFormat: ParamFormat.IsoInstant,
+  field: localDateField,
+  paramFormat: ParamFormat.ZonedWallIso,
+  minuteField,
 });
 const csv = (field: string): WireParam => ({
   wireName: field,
   field,
   paramFormat: ParamFormat.Csv,
+  minuteField: null,
 });
 
 /** `{ code, params }` with the listed params (none: `params: {}`). */
@@ -326,11 +410,11 @@ const ANSWERED: AnsweredWireRule = { wireShape: WireShape.Answered };
  */
 function uniform<C extends string>(
   dictionary: { readonly [name: string]: C },
-  rule: WireRule,
-  exceptions: Partial<Record<C, WireRule>>,
+  rule: RuleBody,
+  exceptions: Partial<Record<C, RuleBody>>,
 ): WireTable<C> {
-  const overrides = new Map<string, WireRule>(Object.entries(exceptions));
-  const table = new Map<string, WireRule>();
+  const overrides = new Map<string, RuleBody>(Object.entries(exceptions));
+  const table = new Map<string, RuleBody>();
   for (const code of Object.values(dictionary)) {
     table.set(code, overrides.get(code) ?? rule);
   }
@@ -342,49 +426,50 @@ function uniform<C extends string>(
 // `failed-precondition`, a stored or configured value the server cannot
 // stand by `internal` (today's `repository_failure`), a lost race `aborted`.
 
-const BOOKING_COMMIT_WIRE: WireTable<BookingCommitErrorCode> = {
-  [BookingCommitErrorCode.Unauthenticated]: params(S.Unauthenticated),
+const BOOKING_WIRE: WireTable<BookingErrorCode> = {
+  [BookingErrorCode.Unauthenticated]: params(S.Unauthenticated),
   // `detail` (a person key, a location) and `reason` stay OFF the wire.
-  [BookingCommitErrorCode.InvalidInput]: params(
+  [BookingErrorCode.InvalidInput]: params(
     S.InvalidArgument,
-    raw('field'),
+    wireField('field'),
   ),
-  [BookingCommitErrorCode.UnknownService]: params(S.NotFound, raw('serviceId')),
-  [BookingCommitErrorCode.ServiceNotAtLocation]: params(
+  [BookingErrorCode.UnknownService]: params(S.NotFound, raw('serviceId')),
+  [BookingErrorCode.ServiceNotAtLocation]: params(
     S.FailedPrecondition,
     raw('serviceId'),
     raw('locationId'),
   ),
-  [BookingCommitErrorCode.ConflictingServices]: params(
+  [BookingErrorCode.ConflictingServices]: params(
     S.FailedPrecondition,
     raw('first'),
     raw('second'),
   ),
-  [BookingCommitErrorCode.BarberNotRostered]: params(
+  // The struct's `localDate` leaves as today's `dayKey`.
+  [BookingErrorCode.BarberNotRostered]: params(
     S.FailedPrecondition,
     raw('barberId'),
-    raw('dayKey'),
+    rawAs('dayKey', 'localDate'),
   ),
   // `aborted`: the honest status of a lost race, retryable as no other is.
-  [BookingCommitErrorCode.SlotUnavailable]: params(
+  [BookingErrorCode.SlotUnavailable]: params(
     S.Aborted,
     raw('barberId'),
-    iso('startIso', 'startMs'),
+    wallIso('startIso', 'localDate', 'startMinutes'),
   ),
-  [BookingCommitErrorCode.TooSoon]: params(
+  [BookingErrorCode.TooSoon]: params(
     S.FailedPrecondition,
     text('minLeadMinutes'),
   ),
-  [BookingCommitErrorCode.BeyondHorizon]: params(
+  [BookingErrorCode.BeyondHorizon]: params(
     S.FailedPrecondition,
     text('horizonMonths'),
   ),
-  [BookingCommitErrorCode.PartyTooLarge]: params(
+  [BookingErrorCode.PartyTooLarge]: params(
     S.FailedPrecondition,
     text('maxPartySize'),
   ),
   // The violations stay on the server, as today.
-  [BookingCommitErrorCode.InvariantViolated]: params(S.InvalidArgument),
+  [BookingErrorCode.InvariantViolated]: params(S.InvalidArgument),
 };
 
 const MOVE_WIRE: WireTable<MoveErrorCode> = {
@@ -404,13 +489,15 @@ const STAFF_EDIT_WIRE: WireTable<StaffEditErrorCode> = {
   [StaffEditErrorCode.Overlaps]: params(
     S.FailedPrecondition,
     raw('barberId'),
-    iso('startIso', 'startMs'),
+    wallIso('startIso', 'localDate', 'startMinutes'),
     raw('edge'),
   ),
+  // The visit's end and the arrival, each a shop wall clock (an end may be
+  // the closing midnight, `1440` — the next day's start).
   [StaffEditErrorCode.BeforeArrival]: params(
     S.FailedPrecondition,
-    iso('endIso', 'finishMs'),
-    iso('arrivedAtIso', 'arrivedAtMs'),
+    wallIso('endIso', 'localDate', 'finishMinutes'),
+    wallIso('arrivedAtIso', 'arrivalLocalDate', 'arrivalMinutes'),
   ),
   [StaffEditErrorCode.Stale]: params(
     S.FailedPrecondition,
@@ -439,7 +526,10 @@ const CANCELLATION_WIRE: WireTable<CancellationRefusalCode> = {
  */
 const WAITLIST_WIRE: WireTable<WaitlistErrorCode> = {
   [WaitlistErrorCode.Unauthenticated]: params(S.Unauthenticated),
-  [WaitlistErrorCode.InvalidRequest]: params(S.InvalidArgument, raw('field')),
+  [WaitlistErrorCode.InvalidRequest]: params(
+    S.InvalidArgument,
+    wireField('field'),
+  ),
   [WaitlistErrorCode.TooManyDays]: params(S.FailedPrecondition, text('max')),
   [WaitlistErrorCode.AlreadyWatching]: params(S.AlreadyExists),
 };
@@ -637,6 +727,12 @@ const TIME_WIRE = uniform(TimeErrorCode, params(S.InvalidArgument), {
   // Today's `invalid_time_zone` — a server zone, never the caller's.
   [TimeErrorCode.InvalidTimeZone]: params(S.Internal),
 });
+/** A refused primitive: what was sent is not one (no legacy code — it leaves as itself). */
+const PRIMITIVE_WIRE = uniform(
+  PrimitiveErrorCode,
+  params(S.InvalidArgument),
+  {},
+);
 
 const L = LegacyWireCode;
 const LEGACY_WIRE: WireTable<LegacyWireCode> = {
@@ -732,38 +828,489 @@ const LEGACY_WIRE: WireTable<LegacyWireCode> = {
   ),
 };
 
-/** The whole table — total over {@link EdgeCode} by its type. */
-export const EDGE_WIRE: WireTable<EdgeCode> = {
-  ...ACCOUNTS_WIRE,
-  ...BOOKING_COMMIT_WIRE,
-  ...BOOKING_FLOW_WIRE,
-  ...CANCELLATION_WIRE,
-  ...CATALOG_WIRE,
-  ...ENGAGEMENT_WIRE,
-  ...GOVERNANCE_WIRE,
-  ...IDENTITY_WIRE,
-  ...MEDIA_WIRE,
-  ...MONEY_WIRE,
-  ...MOVE_WIRE,
-  ...PHONE_WIRE,
-  ...PIPELINE_WIRE,
-  ...REPOSITORY_WIRE,
-  ...SCHEDULING_WIRE,
-  ...STAFF_EDIT_WIRE,
-  ...STREAK_PUBLISH_WIRE,
-  ...TIME_WIRE,
-  ...WAITLIST_WIRE,
-  ...LEGACY_WIRE,
+/**
+ * The legacy dotted code each flattened `errorCode` leaves as on the wire
+ * (flatten-spec §4.2, §4.3, F-10) — one row for every SCREAMING value of
+ * every ecs-core error dictionary, its old dotted code verbatim, so
+ * `details.code` and the message stay byte-identical. A `PRIMITIVE_*` code
+ * has no legacy code and leaves as itself; a {@link LegacyWireCode} IS its
+ * own wire code. Phase 4 deletes the map with the client's switch to
+ * SCREAMING codes.
+ */
+export const LEGACY_WIRE_CODE: { readonly [errorCode: string]: string } = {
+  // time — the owner-locked DST code and the two TIME_ codes (flatten-spec §2.1)
+  [TimeErrorCode.DstGap]: 'time.nonexistent_local_time',
+  [TimeErrorCode.InvalidDateTime]: 'time.invalid_date_time',
+  [TimeErrorCode.InvalidTimeZone]: 'time.invalid_time_zone',
+  // BookingErrorCode
+  [BookingErrorCode.Unauthenticated]: 'booking.commit.unauthenticated',
+  [BookingErrorCode.InvalidInput]: 'booking.commit.invalid_input',
+  [BookingErrorCode.UnknownService]: 'booking.commit.unknown_service',
+  [BookingErrorCode.ServiceNotAtLocation]:
+    'booking.commit.service_not_at_location',
+  [BookingErrorCode.ConflictingServices]: 'booking.commit.conflicting_services',
+  [BookingErrorCode.BarberNotRostered]: 'booking.commit.barber_not_rostered',
+  [BookingErrorCode.SlotUnavailable]: 'booking.commit.slot_unavailable',
+  [BookingErrorCode.TooSoon]: 'booking.commit.too_soon',
+  [BookingErrorCode.BeyondHorizon]: 'booking.commit.beyond_horizon',
+  [BookingErrorCode.PartyTooLarge]: 'booking.commit.party_too_large',
+  [BookingErrorCode.InvariantViolated]: 'booking.commit.invariant_violated',
+  // StaffEditErrorCode
+  [StaffEditErrorCode.Unauthenticated]: 'booking.staffEdit.unauthenticated',
+  [StaffEditErrorCode.Forbidden]: 'booking.staffEdit.forbidden',
+  [StaffEditErrorCode.InvalidCommand]: 'booking.staffEdit.invalid_command',
+  [StaffEditErrorCode.BeforeArrival]: 'booking.staffEdit.before_arrival',
+  [StaffEditErrorCode.Overlaps]: 'booking.staffEdit.overlaps',
+  [StaffEditErrorCode.Stale]: 'booking.staffEdit.stale',
+  [StaffEditErrorCode.InvariantViolated]:
+    'booking.staffEdit.invariant_violated',
+  // MoveErrorCode
+  [MoveErrorCode.CarriedSeatUnplaceable]:
+    'booking.reschedule.carried_seat_unplaceable',
+  // CancellationRefusalCode
+  [CancellationRefusalCode.PolicyUnavailable]:
+    'booking.cancel.policy_unavailable',
+  [CancellationRefusalCode.NotCancellable]: 'booking.cancel.not_cancellable',
+  [CancellationRefusalCode.WindowClosed]: 'booking.cancel.window_closed',
+  // WaitlistErrorCode
+  [WaitlistErrorCode.Unauthenticated]: 'booking.waitlist.unauthenticated',
+  [WaitlistErrorCode.InvalidRequest]: 'booking.waitlist.invalid_request',
+  [WaitlistErrorCode.TooManyDays]: 'booking.waitlist.too_many_days',
+  [WaitlistErrorCode.AlreadyWatching]: 'booking.waitlist.already_watching',
+  // BookingFlowErrorCode
+  [BookingFlowErrorCode.InvalidTransition]: 'booking.flow.invalid_transition',
+  [BookingFlowErrorCode.InvalidGuest]: 'booking.flow.invalid_guest',
+  [BookingFlowErrorCode.GuestNotFound]: 'booking.flow.guest_not_found',
+  [BookingFlowErrorCode.PartyFull]: 'booking.flow.party_full',
+  [BookingFlowErrorCode.EmptyCart]: 'booking.flow.empty_cart',
+  [BookingFlowErrorCode.SeatWithoutService]:
+    'booking.flow.seat_without_service',
+  [BookingFlowErrorCode.FlexibleDaysFull]: 'booking.flow.flexible_days_full',
+  [BookingFlowErrorCode.NoFlexibleDays]: 'booking.flow.no_flexible_days',
+  [BookingFlowErrorCode.InvalidCartOperation]:
+    'booking.flow.invalid_cart_operation',
+  // SchedulingErrorCode
+  [SchedulingErrorCode.AppointmentEmptySeats]:
+    'scheduling.appointment.empty_seats',
+  [SchedulingErrorCode.AppointmentMultipleSelfSeats]:
+    'scheduling.appointment.multiple_self_seats',
+  [SchedulingErrorCode.AppointmentPastStartTime]:
+    'scheduling.appointment.past_start_time',
+  [SchedulingErrorCode.AppointmentBarberDoubleBooked]:
+    'scheduling.appointment.barber_double_booked',
+  [SchedulingErrorCode.AppointmentMixedCurrency]:
+    'scheduling.appointment.mixed_currency',
+  [SchedulingErrorCode.AppointmentInvalidTransition]:
+    'scheduling.appointment.invalid_transition',
+  [SchedulingErrorCode.AppointmentReopenWindowClosed]:
+    'scheduling.appointment.reopen_window_closed',
+  [SchedulingErrorCode.AppointmentEmptyCancellationReason]:
+    'scheduling.appointment.empty_cancellation_reason',
+  [SchedulingErrorCode.AppointmentUnknownSeat]:
+    'scheduling.appointment.unknown_seat',
+  [SchedulingErrorCode.AppointmentSeatAlreadyResolved]:
+    'scheduling.appointment.seat_already_resolved',
+  [SchedulingErrorCode.AppointmentNotArrivable]: 'appointment.not_arrivable',
+  [SchedulingErrorCode.ContactEmptyName]:
+    'scheduling.booking_contact.empty_name',
+  [SchedulingErrorCode.ContactInvalidPhone]:
+    'scheduling.booking_contact.invalid_phone',
+  [SchedulingErrorCode.ContactInvalidEmail]:
+    'scheduling.booking_contact.invalid_email',
+  [SchedulingErrorCode.ContactNoteTooLong]:
+    'scheduling.booking_contact.note_too_long',
+  [SchedulingErrorCode.SeatLabelEmpty]: 'scheduling.seat_label.empty',
+  [SchedulingErrorCode.SeatLabelTooLong]: 'scheduling.seat_label.too_long',
+  [SchedulingErrorCode.CartLineNotFound]:
+    'scheduling.booking_cart.line_not_found',
+  [SchedulingErrorCode.CartDuplicateService]:
+    'scheduling.booking_cart.duplicate_service',
+  [SchedulingErrorCode.CartInvalidLineSequence]:
+    'scheduling.booking_cart.invalid_line_sequence',
+  [SchedulingErrorCode.PartyGuestNotFound]:
+    'scheduling.booking_party.guest_not_found',
+  [SchedulingErrorCode.PartyInvalidGuestSequence]:
+    'scheduling.booking_party.invalid_guest_sequence',
+  [SchedulingErrorCode.PartyUnclaimed]: 'scheduling.booking_party.unclaimed',
+  [SchedulingErrorCode.PartyDuplicateLabel]:
+    'scheduling.booking_party.duplicate_label',
+  [SchedulingErrorCode.BookingPolicyInvalid]:
+    'scheduling.booking_policy.invalid',
+  [SchedulingErrorCode.CancellationWindowInvalid]:
+    'scheduling.cancellation_window.invalid',
+  [SchedulingErrorCode.ClientStatsPolicyInvalid]:
+    'scheduling.client_stats_policy.invalid',
+  [SchedulingErrorCode.CalendarDayInvalid]: 'scheduling.calendar_day.invalid',
+  [SchedulingErrorCode.DateRangeInvalid]: 'scheduling.date_range.invalid',
+  [SchedulingErrorCode.TimeRangeInvalid]: 'scheduling.time_range.invalid',
+  [SchedulingErrorCode.IdEmpty]: 'scheduling.id.empty',
+  [SchedulingErrorCode.FlexibleWhenFull]: 'scheduling.flexible_when.full',
+  [SchedulingErrorCode.RecurrenceInvalidInterval]:
+    'scheduling.recurrence.invalid_interval',
+  [SchedulingErrorCode.RecurrenceNoWeekdays]:
+    'scheduling.recurrence.no_weekdays',
+  [SchedulingErrorCode.RecurrenceInvalidDay]:
+    'scheduling.recurrence.invalid_day',
+  [SchedulingErrorCode.RecurrenceInvalidCount]:
+    'scheduling.recurrence.invalid_count',
+  [SchedulingErrorCode.RecurrenceEndsBeforeStart]:
+    'scheduling.recurrence.ends_before_start',
+  [SchedulingErrorCode.RecurrenceNeverOccurs]:
+    'scheduling.recurrence.never_occurs',
+  [SchedulingErrorCode.RecurrenceTooLong]: 'scheduling.recurrence.too_long',
+  [SchedulingErrorCode.ShiftSegmentInvalidLocation]:
+    'scheduling.shift_segment.invalid_location',
+  [SchedulingErrorCode.ShiftSegmentImpossibleTransfer]:
+    'scheduling.shift_segment.impossible_transfer',
+  [SchedulingErrorCode.StaffScheduleOverlappingVersions]:
+    'scheduling.staff_schedule.overlapping_versions',
+  [SchedulingErrorCode.StaffScheduleRetroactiveAmendment]:
+    'scheduling.staff_schedule.retroactive_amendment',
+  [SchedulingErrorCode.WaitlistInvalid]: 'scheduling.waitlist.invalid',
+  [SchedulingErrorCode.WaitlistNoDays]: 'scheduling.waitlist.no_days',
+  [SchedulingErrorCode.WaitlistEmptyCart]: 'scheduling.waitlist.empty_cart',
+  [SchedulingErrorCode.WaitlistInvalidTransition]:
+    'scheduling.waitlist.invalid_transition',
+  [SchedulingErrorCode.ScheduleExceptionEmptyRanges]:
+    'scheduling.schedule_exception.empty_ranges',
+  // CatalogErrorCode
+  [CatalogErrorCode.IdEmpty]: 'catalog.id.empty',
+  [CatalogErrorCode.LocalizedTextFieldEmpty]:
+    'catalog.localized_text.field_empty',
+  [CatalogErrorCode.MediaRefEmptyPath]: 'catalog.media_ref.empty_path',
+  [CatalogErrorCode.MediaRefInvalidDimension]:
+    'catalog.media_ref.invalid_dimension',
+  [CatalogErrorCode.MediaRefFocalPointOutOfRange]:
+    'catalog.media_ref.focal_point_out_of_range',
+  [CatalogErrorCode.VenuePhoneBlankDisplay]:
+    'catalog.venue_phone.blank_display',
+  [CatalogErrorCode.BarberEmptyHandle]: 'catalog.barber.empty_handle',
+  [CatalogErrorCode.BarberInvalidYearsExperience]:
+    'catalog.barber.invalid_years_experience',
+  [CatalogErrorCode.BarberInvalidSortOrder]:
+    'catalog.barber.invalid_sort_order',
+  [CatalogErrorCode.ServiceCategoryInvalidSortOrder]:
+    'catalog.service_category.invalid_sort_order',
+  [CatalogErrorCode.ServiceInvalidDuration]: 'catalog.service.invalid_duration',
+  [CatalogErrorCode.ServiceInvalidSortOrder]:
+    'catalog.service.invalid_sort_order',
+  [CatalogErrorCode.ServiceEmptyBundleIncludes]:
+    'catalog.service.empty_bundle_includes',
+  [CatalogErrorCode.ServiceUnknownVariantTerms]:
+    'catalog.service.unknown_variant_terms',
+  [CatalogErrorCode.ServiceDuplicateVariantTerms]:
+    'catalog.service.duplicate_variant_terms',
+  [CatalogErrorCode.ServiceDuplicateVariant]:
+    'catalog.service.duplicate_variant',
+  [CatalogErrorCode.ServiceDuplicateOffering]:
+    'catalog.service.duplicate_offering',
+  [CatalogErrorCode.ServiceMixedCurrencyTerms]:
+    'catalog.service.mixed_currency_terms',
+  [CatalogErrorCode.LocationInvalidGeoCoordinate]:
+    'catalog.location.invalid_geo_coordinate',
+  [CatalogErrorCode.LocationInvalidTimezone]:
+    'catalog.location.invalid_timezone',
+  [CatalogErrorCode.LocationInvalidSortOrder]:
+    'catalog.location.invalid_sort_order',
+  [CatalogErrorCode.LocationInvalidMapUrl]: 'catalog.location.invalid_map_url',
+  [CatalogErrorCode.LocationInvalidHoursLength]:
+    'catalog.location.invalid_hours_length',
+  [CatalogErrorCode.LocationInvalidTimeOfDay]:
+    'catalog.location.invalid_time_of_day',
+  [CatalogErrorCode.LocationInvalidHoursRange]:
+    'catalog.location.invalid_hours_range',
+  // EngagementErrorCode
+  [EngagementErrorCode.IdEmpty]: 'engagement.id.empty',
+  [EngagementErrorCode.CouponNameEmpty]: 'engagement.coupon.empty_name',
+  [EngagementErrorCode.CouponExpiryDaysInvalid]:
+    'engagement.coupon.invalid_expiry_days',
+  [EngagementErrorCode.CouponUsageLimitInvalid]:
+    'engagement.coupon.invalid_usage_limit',
+  [EngagementErrorCode.CouponOccasionUnknown]:
+    'engagement.coupon.occasion_unknown',
+  [EngagementErrorCode.CouponValuePercentageInvalid]:
+    'engagement.coupon_value.invalid_percentage',
+  [EngagementErrorCode.CouponValueAmountNotPositive]:
+    'engagement.coupon_value.negative_amount',
+  [EngagementErrorCode.CouponGrantCapacityInvalid]:
+    'engagement.coupon_grant.invalid_capacity',
+  [EngagementErrorCode.CouponGrantNotActive]:
+    'engagement.coupon_grant.not_active',
+  [EngagementErrorCode.CouponGrantNotExpiring]:
+    'engagement.coupon_grant.not_expiring',
+  [EngagementErrorCode.CouponGrantReasonEmpty]:
+    'engagement.coupon_grant.empty_reason',
+  [EngagementErrorCode.DiscountCapInvalid]:
+    'engagement.discount_application.invalid_cap',
+  [EngagementErrorCode.VoucherCodeInvalid]: 'engagement.voucher_code.invalid',
+  [EngagementErrorCode.GiftVoucherValueInvalid]:
+    'engagement.gift_voucher.invalid_value',
+  [EngagementErrorCode.GiftVoucherNotRedeemable]:
+    'engagement.gift_voucher.not_redeemable',
+  [EngagementErrorCode.GiftVoucherInsufficientBalance]:
+    'engagement.gift_voucher.insufficient_balance',
+  [EngagementErrorCode.GiftVoucherOverRestore]:
+    'engagement.gift_voucher.over_restore',
+  [EngagementErrorCode.GiftVoucherCurrencyMismatch]:
+    'engagement.gift_voucher.currency_mismatch',
+  [EngagementErrorCode.PointsInvalid]: 'engagement.points.invalid',
+  [EngagementErrorCode.PointsInsufficient]: 'engagement.points.insufficient',
+  [EngagementErrorCode.InvitationInviterNameEmpty]:
+    'engagement.invitation.empty_inviter_name',
+  [EngagementErrorCode.InvitationRedemptionCountInvalid]:
+    'engagement.invitation.invalid_redemption_count',
+  [EngagementErrorCode.InvitationSelfRedemption]:
+    'engagement.invitation.self_redemption',
+  [EngagementErrorCode.BadgeCategoryOrderNegative]:
+    'engagement.badge_category.order_negative',
+  [EngagementErrorCode.BadgeSeriesNoLevels]:
+    'engagement.badge_series.no_levels',
+  [EngagementErrorCode.BadgeSeriesLevelGap]:
+    'engagement.badge_series.level_gap',
+  [EngagementErrorCode.BadgeSeriesTargetsNotRising]:
+    'engagement.badge_series.targets_not_rising',
+  [EngagementErrorCode.BadgeSeriesHomeless]: 'engagement.badge_series.homeless',
+  [EngagementErrorCode.BadgeSeriesOneOffWithSeveralLevels]:
+    'engagement.badge_series.one_off_with_several_levels',
+  [EngagementErrorCode.BadgeSeriesRepeatableWithSeveralLevels]:
+    'engagement.badge_series.repeatable_with_several_levels',
+  [EngagementErrorCode.BadgeSeriesLevelWithoutRule]:
+    'engagement.badge_series.level_without_rule',
+  [EngagementErrorCode.BadgeSeriesAwardNotPositive]:
+    'engagement.badge_series.award_not_positive',
+  [EngagementErrorCode.SeasonWindowMalformed]:
+    'engagement.season.window_malformed',
+  [EngagementErrorCode.SeasonWindowInverted]:
+    'engagement.season.window_inverted',
+  [EngagementErrorCode.SeasonEventWithTrack]:
+    'engagement.season.event_with_track',
+  [EngagementErrorCode.SeasonWithoutTrack]: 'engagement.season.without_track',
+  [EngagementErrorCode.SeasonAnnouncedLate]: 'engagement.season.announced_late',
+  [EngagementErrorCode.LoyaltyCatalogDanglingCategory]:
+    'engagement.loyalty_catalog.dangling_category',
+  [EngagementErrorCode.LoyaltyCatalogDanglingSeason]:
+    'engagement.loyalty_catalog.dangling_season',
+  [EngagementErrorCode.LoyaltyCatalogDuplicateId]:
+    'engagement.loyalty_catalog.duplicate_id',
+  [EngagementErrorCode.LoyaltyCatalogTiersNotRising]:
+    'engagement.loyalty_catalog.tiers_not_rising',
+  [EngagementErrorCode.LoyaltyCatalogCostNotPositive]:
+    'engagement.loyalty_catalog.cost_not_positive',
+  [EngagementErrorCode.StreakIdEmpty]: 'engagement.streak_definition.id_empty',
+  [EngagementErrorCode.StreakNameEmpty]:
+    'engagement.streak_definition.name_empty',
+  [EngagementErrorCode.StreakVersionNotPositive]:
+    'engagement.streak_definition.version_not_positive',
+  [EngagementErrorCode.StreakEffectiveDayInvalid]:
+    'engagement.streak_definition.effective_day_invalid',
+  [EngagementErrorCode.StreakUnknownOption]:
+    'engagement.streak_definition.unknown_option',
+  [EngagementErrorCode.StreakQualifierEmpty]:
+    'engagement.streak_definition.qualifier_empty',
+  [EngagementErrorCode.StreakMinGapOutOfRange]:
+    'engagement.streak_definition.min_gap_out_of_range',
+  [EngagementErrorCode.StreakBookingHoldOutOfRange]:
+    'engagement.streak_definition.booking_hold_out_of_range',
+  [EngagementErrorCode.StreakIntervalOutOfRange]:
+    'engagement.streak_definition.interval_out_of_range',
+  [EngagementErrorCode.StreakToleranceOutOfRange]:
+    'engagement.streak_definition.tolerance_out_of_range',
+  [EngagementErrorCode.StreakClampInverted]:
+    'engagement.streak_definition.clamp_inverted',
+  [EngagementErrorCode.StreakFallbackOutsideClamp]:
+    'engagement.streak_definition.fallback_outside_clamp',
+  [EngagementErrorCode.StreakGraceOutOfRange]:
+    'engagement.streak_definition.grace_out_of_range',
+  [EngagementErrorCode.StreakGraceNotShorterThanInterval]:
+    'engagement.streak_definition.grace_not_shorter_than_interval',
+  [EngagementErrorCode.StreakRiskLeadOutOfRange]:
+    'engagement.streak_definition.risk_lead_out_of_range',
+  [EngagementErrorCode.StreakProtectionsOutOfRange]:
+    'engagement.streak_definition.protections_out_of_range',
+  [EngagementErrorCode.StreakStartWithAboveCap]:
+    'engagement.streak_definition.start_with_above_cap',
+  [EngagementErrorCode.StreakUnknownExcuse]:
+    'engagement.streak_definition.unknown_excuse',
+  [EngagementErrorCode.StreakClientPauseOutOfRange]:
+    'engagement.streak_definition.client_pause_out_of_range',
+  [EngagementErrorCode.StreakRepairOutOfRange]:
+    'engagement.streak_definition.repair_out_of_range',
+  [EngagementErrorCode.StreakScheduleVersionNotRising]:
+    'engagement.streak_schedule.version_not_rising',
+  [EngagementErrorCode.StreakScheduleNotAfterCurrent]:
+    'engagement.streak_schedule.scheduled_not_after_current',
+  [EngagementErrorCode.NotificationReadBeforeSent]:
+    'engagement.notification.read_before_sent',
+  [EngagementErrorCode.PositionSortOrderInvalid]:
+    'engagement.position.invalid_sort_order',
+  [EngagementErrorCode.PositionApplyUrlInvalid]:
+    'engagement.position.invalid_apply_url',
+  [EngagementErrorCode.CourseSortOrderInvalid]:
+    'engagement.course.invalid_sort_order',
+  [EngagementErrorCode.CourseApplyUrlInvalid]:
+    'engagement.course.invalid_apply_url',
+  [EngagementErrorCode.ShopEventSortOrderInvalid]:
+    'engagement.shop_event.invalid_sort_order',
+  [EngagementErrorCode.ShopEventApplyUrlInvalid]:
+    'engagement.shop_event.invalid_apply_url',
+  // StreakPublishErrorCode
+  [StreakPublishErrorCode.Stale]: 'loyalty.streak_publish.stale',
+  [StreakPublishErrorCode.Invalid]: 'loyalty.streak_publish.invalid',
+  [StreakPublishErrorCode.TooEarly]: 'loyalty.streak_publish.too_early',
+  [StreakPublishErrorCode.RecomputeNeedsEngine]:
+    'loyalty.streak_publish.recompute_needs_engine',
+  [StreakPublishErrorCode.PreviewStale]: 'loyalty.streak_publish.preview_stale',
+  // GovernanceErrorCode
+  [GovernanceErrorCode.AuditEntryEmptyAction]:
+    'governance.audit_entry.empty_action',
+  [GovernanceErrorCode.FeatureFlagsUnknownKey]:
+    'governance.feature_flags.unknown_key',
+  [GovernanceErrorCode.FeatureFlagsInvalidValue]:
+    'governance.feature_flags.invalid_value',
+  [GovernanceErrorCode.ImpersonationScopeInvalid]:
+    'governance.impersonation_scope.invalid',
+  [GovernanceErrorCode.ImpersonationSelf]:
+    'governance.impersonation_session.self_impersonation',
+  [GovernanceErrorCode.ImpersonationReasonRequired]:
+    'governance.impersonation_session.reason_required',
+  [GovernanceErrorCode.ImpersonationInvalidExpiry]:
+    'governance.impersonation_session.invalid_expiry',
+  [GovernanceErrorCode.ImpersonationAdminNotStaff]:
+    'governance.impersonation_session.admin_not_staff',
+  [GovernanceErrorCode.ImpersonationAlreadyEnded]:
+    'governance.impersonation_session.already_ended',
+  [GovernanceErrorCode.EndImpersonationNotFound]:
+    'governance.end_impersonation.not_found',
+  [GovernanceErrorCode.SearchUsersQueryTooShort]:
+    'governance.search_users.query_too_short',
+  // IdentityErrorCode
+  [IdentityErrorCode.OtpAlreadyConsumed]: 'identity.otp.already_consumed',
+  [IdentityErrorCode.OtpExpired]: 'identity.otp.expired',
+  [IdentityErrorCode.OtpLockedOut]: 'identity.otp.locked_out',
+  [IdentityErrorCode.OtpWrongCode]: 'identity.otp.wrong_code',
+  [IdentityErrorCode.IdentifierInvalid]: 'identity.identifier.invalid',
+  [IdentityErrorCode.OtpCodeInvalid]: 'identity.otp_code.invalid',
+  [IdentityErrorCode.BirthDateInvalid]: 'identity.birth_date.invalid',
+  [IdentityErrorCode.BirthDateInFuture]: 'identity.birth_date.in_future',
+  [IdentityErrorCode.BirthDateTooYoung]: 'identity.birth_date.too_young',
+  [IdentityErrorCode.BirthDateTooOld]: 'identity.birth_date.too_old',
+  [IdentityErrorCode.AuthClaimsEmptyRoles]: 'identity.auth_claims.empty_roles',
+  [IdentityErrorCode.AuthStrategyUnknownKind]:
+    'identity.auth_strategy.unknown_kind',
+  [IdentityErrorCode.AuthStrategyUnknownField]:
+    'identity.auth_strategy.unknown_field',
+  [IdentityErrorCode.AuthStrategyRequiredEmpty]:
+    'identity.auth_strategy.required_empty',
+  [IdentityErrorCode.AuthStrategyPhoneMissing]:
+    'identity.auth_strategy.phone_missing',
+  [IdentityErrorCode.AuthStrategyInvalidPolicy]:
+    'identity.auth_strategy.invalid_policy',
+  [IdentityErrorCode.AuthFlowInvalidTransition]:
+    'identity.auth_flow.invalid_transition',
+  [IdentityErrorCode.OnboardingFlowInvalidTransition]:
+    'identity.onboarding_flow.invalid_transition',
+  // AccountsErrorCode
+  [AccountsErrorCode.BlockReasonInvalid]: 'accounts.block_reason.invalid',
+  [AccountsErrorCode.UserRoleInvalid]: 'accounts.user_role.invalid',
+  [AccountsErrorCode.UserRolesEmpty]: 'accounts.user.roles_empty',
+  [AccountsErrorCode.FirstNameTooShort]: 'accounts.first_name.too_short',
+  [AccountsErrorCode.LastNameTooShort]: 'accounts.last_name.too_short',
+  [AccountsErrorCode.EmailInvalid]: 'accounts.email.invalid',
+  [AccountsErrorCode.UpdateProfileNotFound]:
+    'accounts.update_profile.not_found',
+  [AccountsErrorCode.UpdateProfileValidationFailed]:
+    'accounts.update_profile.validation_failed',
+  [AccountsErrorCode.UploadAvatarNotAnImage]:
+    'accounts.upload_avatar.not_an_image',
+  [AccountsErrorCode.UploadAvatarTooLarge]: 'accounts.upload_avatar.too_large',
+  // MediaErrorCode
+  [MediaErrorCode.NotFound]: 'media.not_found',
+  [MediaErrorCode.Forbidden]: 'media.forbidden',
+  [MediaErrorCode.Transient]: 'media.transient',
+  // MoneyErrorCode
+  [MoneyErrorCode.InvalidAmount]: 'money.invalid_amount',
+  [MoneyErrorCode.CurrencyMismatch]: 'money.currency_mismatch',
+  [MoneyErrorCode.UnknownCurrency]: 'money.unknown_currency',
+  [MoneyErrorCode.InvalidRatio]: 'money.invalid_ratio',
+  // PhoneErrorCode
+  [PhoneErrorCode.Invalid]: 'phone.invalid',
+  [PhoneErrorCode.CountryUnsupported]: 'phone.country_unsupported',
+  // PipelineErrorCode
+  [PipelineErrorCode.Unauthenticated]: 'pipeline.unauthenticated',
+  [PipelineErrorCode.SlotUnavailable]: 'pipeline.slot_unavailable',
+  [PipelineErrorCode.CatalogChanged]: 'pipeline.catalog_changed',
+  [PipelineErrorCode.InvalidRequest]: 'pipeline.invalid_request',
+  [PipelineErrorCode.Unavailable]: 'pipeline.unavailable',
+  [PipelineErrorCode.Unknown]: 'pipeline.unknown',
+  // RepositoryErrorCode
+  [RepositoryErrorCode.ReadFailed]: 'repo.read_failed',
+  [RepositoryErrorCode.WriteFailed]: 'repo.write_failed',
+  [RepositoryErrorCode.AlreadyExists]: 'repo.already_exists',
+  [RepositoryErrorCode.Malformed]: 'repo.malformed',
+  [RepositoryErrorCode.Unavailable]: 'repository.unavailable',
 };
+
+/**
+ * A struct field the flatten pass renamed, by the name today's wire gives
+ * it where a `field` param names it (flatten-spec N2: `dayKey` →
+ * `localDate`). Read by {@link ParamFormat.WireField}.
+ */
+export const WIRE_FIELD_NAME: { readonly [field: string]: string } = {
+  localDate: 'dayKey',
+};
+
+const LEGACY_WIRE_CODE_BY_CODE = new Map<string, string>(
+  Object.entries(LEGACY_WIRE_CODE),
+);
+
+/** Each rule stamped with the code it leaves as. */
+function withWireCodes<C extends string>(
+  table: WireTable<C>,
+): { readonly [K in C]: WireRule } {
+  const stamped = new Map<string, WireRule>();
+  for (const [code, rule] of Object.entries<RuleBody>(table)) {
+    stamped.set(code, {
+      ...rule,
+      wireCode: LEGACY_WIRE_CODE_BY_CODE.get(code) ?? code,
+    });
+  }
+  return Object.fromEntries(stamped) as { readonly [K in C]: WireRule };
+}
+
+/** The whole table — total over {@link EdgeCode} by its type. */
+export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
+  withWireCodes<EdgeCode>({
+    ...ACCOUNTS_WIRE,
+    ...PRIMITIVE_WIRE,
+    ...BOOKING_WIRE,
+    ...BOOKING_FLOW_WIRE,
+    ...CANCELLATION_WIRE,
+    ...CATALOG_WIRE,
+    ...ENGAGEMENT_WIRE,
+    ...GOVERNANCE_WIRE,
+    ...IDENTITY_WIRE,
+    ...MEDIA_WIRE,
+    ...MONEY_WIRE,
+    ...MOVE_WIRE,
+    ...PHONE_WIRE,
+    ...PIPELINE_WIRE,
+    ...REPOSITORY_WIRE,
+    ...SCHEDULING_WIRE,
+    ...STAFF_EDIT_WIRE,
+    ...STREAK_PUBLISH_WIRE,
+    ...TIME_WIRE,
+    ...WAITLIST_WIRE,
+    ...LEGACY_WIRE,
+  });
 
 const WIRE_BY_CODE = new Map<string, WireRule>(Object.entries(EDGE_WIRE));
 
 /** A code the table does not know (a struct typed loosely at runtime): `internal`, code and empty params. */
 const UNMAPPED: ThrownWireRule = params(S.Internal);
 
-/** The rule a code leaves by. */
+/** The rule a code leaves by — an unknown code leaves `internal`, as itself. */
 export function wireRuleOf(code: string): WireRule {
-  return WIRE_BY_CODE.get(code) ?? UNMAPPED;
+  return WIRE_BY_CODE.get(code) ?? { ...UNMAPPED, wireCode: code };
 }
 
 /** True when the callable answers this refusal instead of throwing it. */
@@ -777,32 +1324,87 @@ export function isAnswered(code: string): boolean {
  * The zone an `*Iso` param is spelled in: the shop's. This deployment is one
  * tenant whose every location keeps the tenant's clock — the same zone the
  * schedules in `main.ts` run on — so the shop zone today's handlers format
- * with (`snapshot.zone`, `shop.timezone`) is this one.
+ * with (`snapshot.zone`, `shop.timezone`) is this one. It stays the legacy
+ * tenant zone until every pipeline hands the edge its location's
+ * `timeZone` (flatten-spec F-4, F-10).
  */
-export const WIRE_ZONE = TenantConfig.DEFAULT.zone;
+export const WIRE_ZONE: TimeZone = wireZone(TENANT_ZONE);
 
-/** An epoch-ms figure as the shop-clock ISO instant, or left out when it is not one. */
-function isoParam(value: unknown): string | undefined {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  const iso = ZonedTimeSystem.isoOf(value, WIRE_ZONE);
-  return iso.ok ? iso.value : undefined;
+function wireZone(raw: string): TimeZone {
+  const zone = ZonedTimeSystem.checkZone(raw);
+  return zone.ok
+    ? zone.value
+    : defect(`the tenant zone ${raw} is not an IANA zone`);
 }
+
+/** Minutes in a shop day — an exclusive end of `1440` is the next day's start. */
+const MINUTES_PER_DAY = 1440;
+
+/**
+ * A shop wall clock as the shop-clock ISO instant, or left out (not a day or
+ * a minute, or a DST gap). The minute may be an exclusive end: `1440` is the
+ * next day's first instant.
+ */
+function wallIsoParam(day: unknown, minute: unknown): string | undefined {
+  if (typeof day !== 'string' || typeof minute !== 'number') return undefined;
+  const localDate = LocalDate.parse(day);
+  if (!localDate.ok) return undefined;
+  if (minute === MINUTES_PER_DAY) {
+    return ZonedTimeSystem.toIso(
+      ZonedTimeSystem.startOfLocalDay(
+        LocalDate.addDays(localDate.value, 1),
+        WIRE_ZONE,
+      ),
+      WIRE_ZONE,
+    );
+  }
+  const minuteOfDay = MinuteOfDay.of(minute);
+  if (!minuteOfDay.ok) return undefined;
+  const instant = ZonedTimeSystem.toUtc(
+    localDate.value,
+    minuteOfDay.value,
+    WIRE_ZONE,
+  );
+  return instant.ok
+    ? ZonedTimeSystem.toIso(instant.value, WIRE_ZONE)
+    : undefined;
+}
+
+/** A `field` value as the wire has always spelt it ({@link ParamFormat.WireField}). */
+function wireFieldParam(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  return (
+    WIRE_FIELD_NAME_BY_NAME.get(value) ??
+    LEGACY_WIRE_CODE_BY_CODE.get(value) ??
+    value
+  );
+}
+
+const WIRE_FIELD_NAME_BY_NAME = new Map<string, string>(
+  Object.entries(WIRE_FIELD_NAME),
+);
 
 function fieldOf(error: EdgeError, field: string): unknown {
   return new Map<string, unknown>(Object.entries(error)).get(field);
 }
 
-function paramValue(value: unknown, format: ParamFormat): unknown {
+function paramValue(error: EdgeError, param: WireParam): unknown {
+  const value = fieldOf(error, param.field);
   if (value === null || value === undefined) return undefined;
-  switch (format) {
+  switch (param.paramFormat) {
     case ParamFormat.Raw:
       return value;
     case ParamFormat.Text:
       return String(value);
-    case ParamFormat.IsoInstant:
-      return isoParam(value);
+    case ParamFormat.ZonedWallIso:
+      return wallIsoParam(
+        value,
+        param.minuteField === null ? null : fieldOf(error, param.minuteField),
+      );
     case ParamFormat.Csv:
       return Array.isArray(value) ? value.join(',') : String(value);
+    case ParamFormat.WireField:
+      return wireFieldParam(value);
   }
 }
 
@@ -810,15 +1412,15 @@ function paramValue(value: unknown, format: ParamFormat): unknown {
  * The listed fields, formatted; an absent (`null`) field is left out, as
  * today's optional params are. (Legacy `before_arrival` could spell a
  * missing arrival as `arrivedAtIso: ''`; the ecs-core refusal always carries
- * `arrivedAtMs`, so that branch never reaches the wire.)
+ * the arrival's wall clock, so that branch never reaches the wire.)
  */
-function wireParamsOf(
+export function wireParamsOf(
   error: EdgeError,
   wireParams: readonly WireParam[],
 ): Record<string, unknown> {
   const entries: [string, unknown][] = [];
   for (const param of wireParams) {
-    const value = paramValue(fieldOf(error, param.field), param.paramFormat);
+    const value = paramValue(error, param);
     if (value !== undefined) entries.push([param.wireName, value]);
   }
   return Object.fromEntries(entries);
@@ -828,8 +1430,8 @@ function isEdgeError(value: unknown): value is EdgeError {
   return (
     value !== null &&
     typeof value === 'object' &&
-    'code' in value &&
-    typeof value.code === 'string'
+    (('errorCode' in value && typeof value.errorCode === 'string') ||
+      ('code' in value && typeof value.code === 'string'))
   );
 }
 
@@ -841,9 +1443,9 @@ function nestedOf(error: EdgeError): readonly {
   const nested = fieldOf(error, 'errors');
   if (!Array.isArray(nested)) return [];
   return nested.filter(isEdgeError).map((inner) => {
-    const rule = wireRuleOf(inner.code);
+    const rule = wireRuleOf(errorCodeOf(inner));
     return {
-      code: inner.code,
+      code: rule.wireCode,
       params:
         rule.wireShape === WireShape.Answered
           ? {}
@@ -854,17 +1456,20 @@ function nestedOf(error: EdgeError): readonly {
 
 /** The `details` a refusal leaves with — exactly one of today's shapes. */
 export function wireDetails(error: EdgeError): Record<string, unknown> {
-  const rule = wireRuleOf(error.code);
+  const rule = wireRuleOf(errorCodeOf(error));
   switch (rule.wireShape) {
     case WireShape.CodeOnly:
     case WireShape.Answered:
-      return { code: error.code };
+      return { code: rule.wireCode };
     case WireShape.CodeAndParams:
-      return { code: error.code, params: wireParamsOf(error, rule.wireParams) };
+      return {
+        code: rule.wireCode,
+        params: wireParamsOf(error, rule.wireParams),
+      };
     case WireShape.Errors:
       return { errors: nestedOf(error) };
     case WireShape.CodeAndErrors:
-      return { code: error.code, errors: nestedOf(error) };
+      return { code: rule.wireCode, errors: nestedOf(error) };
   }
 }
 
@@ -875,10 +1480,10 @@ export function wireDetails(error: EdgeError): Record<string, unknown> {
  * `internal`, never a status that would invite the client to act on it.
  */
 export function toHttpsError(error: EdgeError): HttpsError {
-  const rule = wireRuleOf(error.code);
+  const rule = wireRuleOf(errorCodeOf(error));
   const status =
     rule.wireShape === WireShape.Answered ? S.Internal : rule.httpsStatus;
-  return new HttpsError(status, error.code, wireDetails(error));
+  return new HttpsError(status, rule.wireCode, wireDetails(error));
 }
 
 // ── Work budget ────────────────────────────────────────────────────────────
@@ -897,19 +1502,19 @@ export type WorkBudget = {
   readonly spent: () => boolean;
 };
 
-export const workBudget = (nowMs: NowMs, limitMs: number): WorkBudget => {
-  const startedMs = nowMs();
+export const workBudget = (nowUtcMs: NowUtcMs, limitMs: number): WorkBudget => {
+  const startedMs = nowUtcMs();
   return {
     startedMs,
     limitMs,
-    spent: () => WorkBudgetSystem.isSpent(startedMs, nowMs(), limitMs),
+    spent: () => WorkBudgetSystem.isSpent(startedMs, nowUtcMs(), limitMs),
   };
 };
 
 // ── The wrappers ───────────────────────────────────────────────────────────
 
-/** What the edge itself reads: telemetry and the clock. */
-export type EdgePorts = TelemetryPorts & { readonly nowMs: NowMs };
+/** What the edge itself reads: telemetry and the clock (`NowUtcMs`, flatten-spec T4). */
+export type EdgePorts = TelemetryPorts & { readonly nowUtcMs: NowUtcMs };
 
 /** The platform's own answer to an uncaught throw: `internal`, `INTERNAL`, no details. */
 const PLATFORM_INTERNAL_MESSAGE = 'INTERNAL';
@@ -967,7 +1572,7 @@ export const callableEdge =
   ) =>
   async (request: CallableRequest<In>): Promise<Out> => {
     const budget = workBudget(
-      ports.nowMs,
+      ports.nowUtcMs,
       WorkBudgetSystem.callableBudgetMs(
         spec.timeoutSeconds ?? PLATFORM_TIMEOUT_SECONDS,
       ),
@@ -979,7 +1584,7 @@ export const callableEdge =
       throw unexpected(spec.callable, spec.failureCode, ports, thrown);
     }
     if (result.ok) return result.value;
-    if (spec.answer !== null && isAnswered(result.error.code)) {
+    if (spec.answer !== null && isAnswered(errorCodeOf(result.error))) {
       return spec.answer(result.error);
     }
     throw toHttpsError(result.error);
@@ -1031,7 +1636,7 @@ export const retryingTrigger =
   ) =>
   async (event: E): Promise<void> => {
     const budget = workBudget(
-      ports.nowMs,
+      ports.nowUtcMs,
       WorkBudgetSystem.budgetMsFor(
         spec.timeoutSeconds ?? PLATFORM_TIMEOUT_SECONDS,
       ),
@@ -1040,15 +1645,38 @@ export const retryingTrigger =
       await handle(event, budget);
     } catch (thrown) {
       const failure = TriggerAttemptSystem.attemptFailure(thrown);
-      const atMs = Date.parse(event.time);
-      ports.log('error', 'trigger attempt failed', {
-        ...TriggerAttemptSystem.attemptLine(
-          spec.fn,
-          { id: event.id, atMs: Number.isNaN(atMs) ? null : atMs },
-          failure,
-          ports.nowMs(),
-        ),
-      });
-      if (failure.outcome === AttemptOutcome.Transient) throw thrown;
+      const eventAt = UtcEpochMs.of(Date.parse(event.time));
+      const line = TriggerAttemptSystem.attemptLine(
+        spec.fn,
+        {
+          id: TriggerEventId.of(event.id),
+          eventAtUtcMs: eventAt.ok ? eventAt.value : null,
+        },
+        failure,
+        ports.nowUtcMs(),
+      );
+      ports.log('error', 'trigger attempt failed', legacyAttemptLine(line));
+      if (failure.attemptOutcome === AttemptOutcome.Transient) throw thrown;
     }
   };
+
+/** The attempt outcome as today's log line spells it (`lib/trigger-attempts.ts`). */
+const LEGACY_ATTEMPT_OUTCOME: { readonly [K in AttemptOutcome]: string } = {
+  [AttemptOutcome.Transient]: 'transient',
+  [AttemptOutcome.Permanent]: 'permanent',
+};
+
+/**
+ * The ONE attempt line in today's keys and values — `{ fn, eventId,
+ * outcome, code, ageMs }`, what the log queries read — until Phase 4 moves
+ * the logs with the rest of the wire.
+ */
+function legacyAttemptLine(line: AttemptLine): Record<string, unknown> {
+  return {
+    fn: line.fn,
+    eventId: line.eventId,
+    outcome: LEGACY_ATTEMPT_OUTCOME[line.attemptOutcome],
+    code: line.failureCode,
+    ageMs: line.ageMs,
+  };
+}

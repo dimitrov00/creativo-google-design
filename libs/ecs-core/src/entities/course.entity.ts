@@ -1,11 +1,12 @@
 import type { EnrollmentStatus } from '../components/enrollment-status.data';
 import type { LocalizedText } from '../components/localized-text.data';
+import type { CourseId } from '../primitives/ids.primitive';
 
-export type CourseId = string & { readonly __brand: unique symbol };
-export const CourseId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): CourseId => raw as CourseId,
-} as const;
+/*
+ * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
+ * re-exported here only while the barrel's staging block still names this
+ * file (`index.ts`), and leaves with that line.
+ */
 
 /**
  * A barbering course listing — `courses/{id}` (the stored body of
@@ -16,7 +17,7 @@ export const CourseId = {
  * course without a fixed date (`null` when none); `applyUrl` `null` falls
  * back to the shop's shared contact link.
  */
-export type CourseEntity = {
+export type Course = {
   readonly id: CourseId;
   readonly title: LocalizedText;
   readonly description: LocalizedText;

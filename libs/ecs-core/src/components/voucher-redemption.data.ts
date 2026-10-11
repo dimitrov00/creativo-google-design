@@ -1,55 +1,59 @@
-import type { GiftVoucherId } from '../entities/gift-voucher.entity';
-import type { Money } from './money.data';
+import type { Currency } from '../primitives/currency.primitive';
+import type { GiftVoucherId } from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import type { VoucherCode } from './voucher-code.data';
 
 /**
  * A gift voucher drawn down BY THIS VISIT — a payment, not a discount
- * (`voucher-redemption.ts`, stored as `appointments.voucherRedemptions[]`,
- * `appointment-document.ts:212-270`). Snapshotted: the amount and the
- * balance it left are what the counter saw and what the receipt said, and
- * neither changes because the voucher is used elsewhere later. The voucher
- * keeps the running balance; the two are reconciled only inside the server
- * transaction that writes both.
+ * (`voucher-redemption.ts`) — an element of the 1-to-N
+ * `appointments.voucherRedemptions[]` array, flat (Law 6, N6: the two nested
+ * `Money` figures become `amountCents` / `balanceAfterCents` beside ONE
+ * `currency`). Snapshotted: the amount and the balance it left are what the
+ * counter saw and what the receipt said, and neither changes because the
+ * voucher is used elsewhere later. The voucher keeps the running balance;
+ * the two are reconciled only inside the server transaction that writes
+ * both.
  *
- * Both figures are nested `Money` (the §2.5 money rule). A reversed line
- * (`reversedAtMs` set — a cancelled visit) stays as history and counts for
- * nothing.
+ * A reversed line (`reversedAtUtcMs` set — a cancelled visit) stays as
+ * history and counts for nothing.
  */
 export type VoucherRedemption = {
   readonly voucherId: GiftVoucherId;
   /** The code presented, upper-case — what the receipt prints. */
-  readonly code: string;
+  readonly code: VoucherCode;
   /** What THIS visit took off the voucher's balance. */
-  readonly amount: Money;
+  readonly amountCents: PriceCents;
   /** The balance the voucher had left after this — the receipt's «остават». */
-  readonly balanceAfter: Money;
-  readonly appliedAtMs: number;
+  readonly balanceAfterCents: PriceCents;
+  readonly currency: Currency;
+  readonly appliedAtUtcMs: UtcEpochMs;
   /** When the money went back; `null` while it still pays the bill. */
-  readonly reversedAtMs: number | null;
+  readonly reversedAtUtcMs: UtcEpochMs | null;
 };
 
 export const VoucherRedemption = {
   /** Still counting against the bill. */
   isLive(redemption: VoucherRedemption): boolean {
-    return redemption.reversedAtMs === null;
+    return redemption.reversedAtUtcMs === null;
   },
 
-  /** The same line, reversed at `atMs` — kept as history. */
-  reversed(redemption: VoucherRedemption, atMs: number): VoucherRedemption {
-    return { ...redemption, reversedAtMs: atMs };
+  /** The same line, reversed at `atUtcMs` — kept as history. */
+  reversed(
+    redemption: VoucherRedemption,
+    atUtcMs: UtcEpochMs,
+  ): VoucherRedemption {
+    return { ...redemption, reversedAtUtcMs: atUtcMs };
   },
 
   /**
    * What reversing this line puts back on the voucher: its amount while it
    * is live, nothing once already reversed (a second reversal restores
-   * nothing). In the redemption's own currency.
+   * nothing). In the redemption's own `currency`.
    */
-  restoreDelta(redemption: VoucherRedemption): Money {
-    return {
-      amountMinorUnits:
-        redemption.reversedAtMs === null
-          ? redemption.amount.amountMinorUnits
-          : 0,
-      currencyCode: redemption.amount.currencyCode,
-    };
+  restoreDelta(redemption: VoucherRedemption): PriceCents {
+    return redemption.reversedAtUtcMs === null
+      ? redemption.amountCents
+      : PriceCents.ZERO;
   },
 } as const;

@@ -4,11 +4,13 @@ import { Result } from './result.data';
 
 /**
  * A shop's contact phone as TENANT CONTENT (`venue-phone.ts:13`): the
- * canonical `E164` (the `tel:` href) beside the admin-authored `display`
- * string the UI renders verbatim. Denormalised rather than formatted at
- * render time — a venue phone renders on the public landing, and
- * pre-formatting it once at authoring time keeps every render path free of
- * the libphonenumber closure.
+ * canonical `E164` (the `tel:` href) beside the admin-authored display string
+ * the UI renders verbatim — a flat SLICE (Law 6) that `ShopLocation`
+ * intersects, so `phoneE164` and `phoneDisplay` sit at its root (was the
+ * nested `phone: { e164, display }`; the stored document keeps it until the
+ * booking-core flip). Denormalised rather than formatted at render time — a
+ * venue phone renders on the public landing, and pre-formatting it once at
+ * authoring time keeps every render path free of the libphonenumber closure.
  *
  * Parsing happens at the edge: the catalogue handler and the seed call
  * `PhoneSystem.parse(raw)` and hand the result's `e164` to
@@ -17,27 +19,27 @@ import { Result } from './result.data';
  * factories.
  */
 export type VenuePhone = {
-  readonly e164: E164;
-  readonly display: string;
+  readonly phoneE164: E164;
+  readonly phoneDisplay: string;
 };
 
 export const VenuePhone = {
   /**
    * The venue phone from an already-parsed number: the display text is
-   * trimmed and must not be blank (`catalog.venue_phone.blank_display`).
+   * trimmed and must not be blank (`CATALOG_VENUE_PHONE_BLANK_DISPLAY`).
    */
   of(
-    e164: E164,
-    display: string,
+    phoneE164: E164,
+    phoneDisplay: string,
   ): Result<VenuePhone, CatalogError.VenuePhoneBlankDisplay> {
-    const trimmed = display.trim();
+    const trimmed = phoneDisplay.trim();
     return trimmed.length > 0
-      ? Result.ok({ e164, display: trimmed })
+      ? Result.ok({ phoneE164, phoneDisplay: trimmed })
       : Result.err(CatalogError.venuePhoneBlankDisplay());
   },
 
   /** Same number and same display text. */
   equals(a: VenuePhone, b: VenuePhone): boolean {
-    return a.e164 === b.e164 && a.display === b.display;
+    return a.phoneE164 === b.phoneE164 && a.phoneDisplay === b.phoneDisplay;
   },
 } as const;

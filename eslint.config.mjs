@@ -4,8 +4,7 @@ import noUnsanitized from 'eslint-plugin-no-unsanitized';
 import templateParser from '@angular-eslint/template-parser';
 import creativo, {
   ECS_ROOT_SUFFIXES,
-  ICON_SPEC_SYNTAX_RESTRICTIONS,
-  ICON_SYNTAX_RESTRICTIONS,
+  ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,
 } from './tools/lint-rules/index.mjs';
 
@@ -36,12 +35,12 @@ export const LAYER_IMPORT_RESTRICTIONS = {
     {
       name: 'dinero.js',
       message:
-        'dinero.js is retired (D4): money is the plain { amountMinorUnits, currencyCode } struct — use Money from libs/ecs-core/src/components/money.data.ts (only the legacy libs/domain/kernel/** keeps dinero, until Phase 4).',
+        'dinero.js is retired (D4): money is integer `…Cents: PriceCents` beside a `currency: Currency`, and arithmetic the plain Money { amountCents, currency } struct of libs/ecs-core/src/components/money.data.ts (only the legacy libs/domain/kernel/** keeps dinero, until Phase 4).',
     },
     {
       name: 'luxon',
       message:
-        'luxon is retired (D5): zone math is native Intl inside libs/ecs-core/src/systems/zoned-time.system.ts — use ZonedTimeSystem and ZonedInstant (only the legacy libs/domain/kernel/** keeps luxon, until Phase 4).',
+        'luxon is retired (D5, Law 7.1): zone math is native Intl inside libs/ecs-core/src/systems/zoned-time.system.ts — instants are UtcEpochMs, converted once at ingestion with ZonedTimeSystem.toUtc/toLocal and the location timeZone (only the legacy libs/domain/kernel/** keeps luxon, until Phase 4).',
     },
   ],
 };
@@ -70,8 +69,12 @@ export const TESTING_ENTRY_POINT_RESTRICTION = {
  * its generated package.json (caught by tools/verify/p0/functions-deps.mjs).
  */
 export {
+  ECS_DATE_RESTRICTIONS,
+  ECS_ID_CAST_RESTRICTIONS,
+  ECS_PRIMITIVE_RESTRICTIONS,
   ECS_TOKEN_RESTRICTIONS,
   ECS_ZONED_TIME_RESTRICTIONS,
+  ICON_SPEC_SYNTAX_RESTRICTIONS,
   ICON_SYNTAX_RESTRICTIONS,
   ecsProjectBlocks,
 } from './tools/lint-rules/index.mjs';
@@ -345,20 +348,12 @@ export default [
   //  3. `pnpm icons:check` in CI: the repo-wide sweep behind both.
   // The allow-list is the registry's own project — libs/ui/icons turns the
   // relevant halves off in its eslint.config.mjs. Selectors live in
-  // tools/lint-rules/icon-syntax.mjs and are tested there.
-  {
-    files: ['**/*.ts'],
-    rules: {
-      'no-restricted-syntax': ['error', ...ICON_SYNTAX_RESTRICTIONS],
-    },
-  },
-  {
-    // Specs may cast to UiIconName to exercise the runtime fallback.
-    files: ['**/*.spec.ts'],
-    rules: {
-      'no-restricted-syntax': ['error', ...ICON_SPEC_SYNTAX_RESTRICTIONS],
-    },
-  },
+  // tools/lint-rules/icon-syntax.mjs and are tested there. The same two
+  // every-file blocks carry the flatten pass's L7 (flatten-spec §7, D29): no
+  // cast to `UserId` or `CustomerId` anywhere in the workspace — an id of
+  // either brand comes only from its companion. Specs may still cast to
+  // UiIconName to exercise the runtime fallback.
+  ...ecsRootEveryFileBlocks(),
   // ── ECS file kinds (CLAUDE.md §1–2, blueprint §6 Phase 1) ─────────────
   // One `files:` block per suffix — AST selectors cannot see file names, so
   // spreading the ECS selectors into the `**/*.ts` block above would fire
@@ -368,7 +363,11 @@ export default [
   // systems also get `no-restricted-globals`, data and entities turn
   // `@typescript-eslint/no-namespace` off for their one type-only
   // namespace, systems and data turn `security/detect-object-injection`
-  // off. Only the four suffixes no legacy file carries live here: the
+  // off. Every suffix array carries the flatten-pass guards (Laws 6 and 7,
+  // flatten-spec §7): no `kind`/`type`/`status`, no nested 1-to-1 type (data,
+  // entities, primitives), no raw coordinate/money/id, no `Date`, no
+  // `throw`, no `UserId`/`CustomerId` cast. Only the five suffixes no legacy
+  // file carries live here: the
   // `*.port.ts`/`*.adapter.ts` blocks and the `InjectionToken` guard would
   // hit libs/application's 44 port files and the 40 class adapters, so in
   // Phase 1 they sit in libs/ecs-core's and apps/functions' own configs and

@@ -1,16 +1,22 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { deepFreeze } from '../testing';
+import { TriggerEventId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { deepFreeze, unwrapOk, utcMs } from '../testing';
 import { AttemptOutcome, TriggerAttemptSystem } from './trigger-attempt.system';
 
 /*
  * The cases of apps/functions/src/lib/trigger-attempts.spec.ts, copied (the
- * legacy spec keeps running against its shim). The event's time is epoch
- * ms here (`null` when unreadable — the shim parses the wire string), and
- * the logging/rethrowing cases are re-targeted to the one structured line
- * (`attemptLine`) and the verdict that decides the rethrow: writing the
- * line and throwing stay with the caller.
+ * legacy spec keeps running against its shim). The event's time is a
+ * `UtcEpochMs` here (`null` when unreadable — the shim parses the wire
+ * string), the outcome is the SCREAMING `AttemptOutcome` on the field
+ * `attemptOutcome`, and the logging/rethrowing cases are re-targeted to the
+ * one structured line (`attemptLine`) and the verdict that decides the
+ * rethrow: writing the line and throwing stay with the caller.
  */
+
+/** An instant literal in epoch ms. */
+const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 const {
   attemptFailure,
@@ -47,7 +53,7 @@ describe('failed attempts — transient codes retry, the rest are dropped', () =
       'deadline-exceeded',
       'resource-exhausted',
     ]) {
-      expect(attemptOutcome(code)).toBe('transient');
+      expect(attemptOutcome(code)).toBe('TRANSIENT');
     }
     for (const code of [
       'invalid-argument',
@@ -55,14 +61,16 @@ describe('failed attempts — transient codes retry, the rest are dropped', () =
       'governance.id.empty',
       'unknown',
     ]) {
-      expect(attemptOutcome(code)).toBe('permanent');
+      expect(attemptOutcome(code)).toBe('PERMANENT');
     }
   });
 
   it('measures how far into the retry window a delivery is', () => {
-    const at = Date.parse('2026-09-25T08:00:00.000Z');
-    expect(eventAgeMs(at, at + 1500)).toBe(1500);
-    expect(eventAgeMs(null, at)).toBeNull();
+    const sent = utcMs('2026-09-25T08:00:00.000Z');
+    expect(eventAgeMs(sent, at(sent + 1500))).toBe(1500);
+    expect(eventAgeMs(null, sent)).toBeNull();
+    // A clock behind the event's own time never reads a negative age.
+    expect(eventAgeMs(sent, at(sent - 1))).toBe(0);
   });
 });
 
@@ -71,8 +79,8 @@ describe('decisiveFailure — one verdict over independent failures', () => {
     const transient = { code: 10 };
     expect(decisiveFailure([{ code: 13 }, transient])).toEqual({
       error: transient,
-      code: 'aborted',
-      outcome: 'transient',
+      failureCode: 'aborted',
+      attemptOutcome: 'TRANSIENT',
     });
   });
 
@@ -80,28 +88,31 @@ describe('decisiveFailure — one verdict over independent failures', () => {
     const first = { code: 13 };
     expect(decisiveFailure([first, new Error('boom')])).toEqual({
       error: first,
-      code: 'internal',
-      outcome: 'permanent',
+      failureCode: 'internal',
+      attemptOutcome: 'PERMANENT',
     });
     expect(decisiveFailure([])).toBeNull();
   });
 });
 
 describe('the attempt line — what every retrying handler logs', () => {
-  const NOW = Date.parse('2026-09-25T08:00:00.000Z');
-  const event = { id: 'evt-1', atMs: NOW - 2_500 };
+  const NOW = utcMs('2026-09-25T08:00:00.000Z');
+  const event = {
+    id: TriggerEventId.of('evt-1'),
+    eventAtUtcMs: at(NOW - 2_500),
+  };
 
   it('judges one failure by its code, or by a code it is given', () => {
     const error = { code: 14 };
     expect(attemptFailure(error)).toEqual({
       error,
-      code: 'unavailable',
-      outcome: 'transient',
+      failureCode: 'unavailable',
+      attemptOutcome: 'TRANSIENT',
     });
     expect(attemptFailure(error, 'governance.id.empty')).toEqual({
       error,
-      code: 'governance.id.empty',
-      outcome: 'permanent',
+      failureCode: 'governance.id.empty',
+      attemptOutcome: 'PERMANENT',
     });
   });
 
@@ -110,12 +121,12 @@ describe('the attempt line — what every retrying handler logs', () => {
     const failure = attemptFailure(error);
     // The failure itself rides the verdict, for the caller to rethrow — not a wrapper.
     expect(failure.error).toBe(error);
-    expect(failure.outcome).toBe(AttemptOutcome.Transient);
+    expect(failure.attemptOutcome).toBe(AttemptOutcome.Transient);
     expect(attemptLine('someTrigger', event, failure, NOW)).toEqual({
       fn: 'someTrigger',
       eventId: 'evt-1',
-      outcome: 'transient',
-      code: 'aborted',
+      attemptOutcome: 'TRANSIENT',
+      failureCode: 'aborted',
       ageMs: 2_500,
     });
   });
@@ -123,22 +134,22 @@ describe('the attempt line — what every retrying handler logs', () => {
   it('marks a permanent one, which the caller logs and returns on', () => {
     expect(
       attemptLine('someTrigger', event, attemptFailure({ code: 13 }), NOW),
-    ).toMatchObject({ outcome: 'permanent', code: 'internal' });
+    ).toMatchObject({ attemptOutcome: 'PERMANENT', failureCode: 'internal' });
   });
 
   it('is the same line whatever the outcome, with no age for an unreadable time', () => {
     expect(
       attemptLine(
         'someTrigger',
-        { id: 'evt-2', atMs: null },
+        { id: TriggerEventId.of('evt-2'), eventAtUtcMs: null },
         attemptFailure({ code: 10 }),
         NOW,
       ),
     ).toEqual({
       fn: 'someTrigger',
       eventId: 'evt-2',
-      outcome: 'transient',
-      code: 'aborted',
+      attemptOutcome: 'TRANSIENT',
+      failureCode: 'aborted',
       ageMs: null,
     });
   });
@@ -151,11 +162,11 @@ describe('properties', () => {
         fc.integer({ min: -5, max: 40 }),
         fc.integer({ min: 0, max: 1e9 }),
         fc.integer({ min: 0, max: 1e9 }),
-        (status, at, now) => {
+        (status, sent, now) => {
           const code = failureCode({ code: status });
           if (status < 1 || status > 16) expect(code).toBe('unknown');
           else expect(code).not.toBe('');
-          expect(eventAgeMs(at, now)).toBeGreaterThanOrEqual(0);
+          expect(eventAgeMs(at(sent), at(now))).toBeGreaterThanOrEqual(0);
         },
       ),
     );
@@ -168,12 +179,17 @@ describe('properties', () => {
     expect(twice).toEqual(once);
     expect(once).toEqual({
       error: errors[1],
-      code: 'aborted',
-      outcome: 'transient',
+      failureCode: 'aborted',
+      attemptOutcome: 'TRANSIENT',
     });
-    const event = deepFreeze({ id: 'evt-3', atMs: 1_000 });
+    const event = deepFreeze({
+      id: TriggerEventId.of('evt-3'),
+      eventAtUtcMs: at(1_000),
+    });
     expect(
-      attemptLine('fn', event, attemptFailure({ code: 14 }), 4_000),
-    ).toEqual(attemptLine('fn', event, attemptFailure({ code: 14 }), 4_000));
+      attemptLine('fn', event, attemptFailure({ code: 14 }), at(4_000)),
+    ).toEqual(
+      attemptLine('fn', event, attemptFailure({ code: 14 }), at(4_000)),
+    );
   });
 });

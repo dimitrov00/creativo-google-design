@@ -1,51 +1,71 @@
-/** A gift voucher's state — the stored `giftVouchers.state.kind` tags, unchanged. */
-export const VoucherStateKind = {
-  Active: 'active',
-  Void: 'void',
-} as const;
-export type VoucherStateKind =
-  (typeof VoucherStateKind)[keyof typeof VoucherStateKind];
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
- * Why a voucher cannot be drawn on now (`GiftVoucher.refusal`): voided,
- * past its expiry, or nothing left. VoucherSystem decides it; the error
- * `engagement.gift_voucher.not_redeemable` carries it as its `reason`.
+ * A gift voucher's state — the field `voucherStatus`, the ONLY source of
+ * these strings. The stored legacy values are the lower-case
+ * `giftVouchers.state.kind` tags (`active`, `void`).
+ */
+export const VoucherStatus = {
+  Active: 'ACTIVE',
+  Void: 'VOID',
+} as const;
+export type VoucherStatus = (typeof VoucherStatus)[keyof typeof VoucherStatus];
+
+/**
+ * Why a voucher cannot be drawn on now (`VoucherSystem.refusal`): voided,
+ * past its expiry, or nothing left. The error
+ * `ENGAGEMENT_GIFT_VOUCHER_NOT_REDEEMABLE` carries it as its reason.
  */
 export const VoucherRefusal = {
-  Void: 'void',
-  Expired: 'expired',
-  Empty: 'empty',
+  Void: 'VOID',
+  Expired: 'EXPIRED',
+  Empty: 'EMPTY',
 } as const;
 export type VoucherRefusal =
   (typeof VoucherRefusal)[keyof typeof VoucherRefusal];
 
 /**
- * `active` until voided (`gift-voucher-document.ts:49-55`). An EMPTY voucher
- * stays `active`: a restore after a cancelled visit can fill it again, and
- * a report wants "spent" and "cancelled by the shop" to be different facts.
- * The transitions (redeem, restore, settle, void) live in VoucherSystem.
+ * `ACTIVE` until voided (`gift-voucher-document.ts:49-55`) — a flat variant
+ * slice of the `GiftVoucher` archetype (was the nested `state`). An EMPTY
+ * voucher stays `ACTIVE`: a restore after a cancelled visit can fill it
+ * again, and a report wants "spent" and "cancelled by the shop" to be
+ * different facts. The transitions (redeem, restore, settle, void) live in
+ * VoucherSystem.
  */
-export type VoucherState = VoucherState.Active | VoucherState.Void;
+export type VoucherLifecycle = VoucherLifecycle.Active | VoucherLifecycle.Void;
 
-export const VoucherState = {
-  active(): VoucherState.Active {
-    return { kind: VoucherStateKind.Active };
+const ACTIVE: VoucherLifecycle.Active = { voucherStatus: VoucherStatus.Active };
+
+export const VoucherLifecycle = {
+  active(): VoucherLifecycle.Active {
+    return ACTIVE;
   },
 
-  voided(voidedAtMs: number, reason: string): VoucherState.Void {
-    return { kind: VoucherStateKind.Void, voidedAtMs, reason };
+  voided(voidedAtUtcMs: UtcEpochMs, reason: string): VoucherLifecycle.Void {
+    return {
+      voucherStatus: VoucherStatus.Void,
+      voidedAtUtcMs,
+      voidReason: reason,
+    };
   },
 
-  isVoid(state: VoucherState): state is VoucherState.Void {
-    return state.kind === VoucherStateKind.Void;
+  isVoid(lifecycle: VoucherLifecycle): lifecycle is VoucherLifecycle.Void {
+    return lifecycle.voucherStatus === VoucherStatus.Void;
+  },
+
+  /** The lifecycle slice of a value that carries one (a whole voucher), copied. */
+  of(lifecycle: VoucherLifecycle): VoucherLifecycle {
+    return lifecycle.voucherStatus === VoucherStatus.Void
+      ? VoucherLifecycle.voided(lifecycle.voidedAtUtcMs, lifecycle.voidReason)
+      : ACTIVE;
   },
 } as const;
 
-export namespace VoucherState {
-  export type Active = { readonly kind: typeof VoucherStateKind.Active };
+export namespace VoucherLifecycle {
+  export type Active = { readonly voucherStatus: typeof VoucherStatus.Active };
   export type Void = {
-    readonly kind: typeof VoucherStateKind.Void;
-    readonly voidedAtMs: number;
-    readonly reason: string;
+    readonly voucherStatus: typeof VoucherStatus.Void;
+    readonly voidedAtUtcMs: UtcEpochMs;
+    readonly voidReason: string;
   };
 }

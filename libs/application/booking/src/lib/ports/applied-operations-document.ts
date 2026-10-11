@@ -1,8 +1,33 @@
 import {
   AppliedOperation as EcsAppliedOperation,
   AppointmentEditSystem,
+  OperationId,
 } from '@creativo/ecs-core';
 import type { PersistedDocument } from './appointment-document';
+
+/*
+ * The ledger's rules — find by name, record newest-last, the oldest falling
+ * off past `CAP` — are `AppliedOperation` / `AppointmentEditSystem.record`
+ * over the flat ECS entry (`operationId` — was `id`, N10). This class keeps
+ * the legacy entry (`id`) its callers and the stored document hold, and only
+ * converts (flatten-spec §8.9).
+ */
+
+function toEcsEntry(entry: AppliedOperation): EcsAppliedOperation {
+  return {
+    operationId: OperationId.of(entry.id),
+    revision: entry.revision,
+    digest: entry.digest,
+  };
+}
+
+function fromEcsEntry(entry: EcsAppliedOperation): AppliedOperation {
+  return {
+    id: entry.operationId,
+    revision: entry.revision,
+    digest: entry.digest,
+  };
+}
 
 /**
  * THE APPLIED-OPERATIONS LEDGER'S PERSISTED SHAPE — the named writes a visit
@@ -113,7 +138,11 @@ export class AppliedOperations {
 
   /** The applied intent with this name, or `null` when it is not remembered. */
   find(id: string): AppliedOperation | null {
-    return EcsAppliedOperation.find(this.entries, id);
+    const found = EcsAppliedOperation.find(
+      this.entries.map(toEcsEntry),
+      OperationId.of(id),
+    );
+    return found === null ? null : fromEcsEntry(found);
   }
 
   /**
@@ -125,11 +154,11 @@ export class AppliedOperations {
   record(entry: AppliedOperation): AppliedOperations {
     return new AppliedOperations(
       AppointmentEditSystem.record(
-        this.entries,
-        entry.id,
+        this.entries.map(toEcsEntry),
+        OperationId.of(entry.id),
         entry.revision,
         entry.digest,
-      ),
+      ).map(fromEcsEntry),
     );
   }
 

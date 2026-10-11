@@ -1,9 +1,9 @@
-import { DayKey } from '../components/day-key.data';
 import {
   PersonalRecordKind,
   type PersonalRecord,
 } from '../components/personal-record.data';
-import { ZonedTimeSystem } from './zoned-time.system';
+import type { AppointmentId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
 
 /*
  * «РЕКОРДИ» (client-card-revision-3 §2.3.4, §4.8; `records.presenter.ts`
@@ -11,14 +11,14 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * `isNewRecord`) — the account's personal bests in the cards' order, the
  * day each was set, which is new, which leads the page, and the worked
  * visits by the shop's year. Numbers, kinds and day keys: the words, the
- * figures and the covers are the template's.
+ * figures and the covers are the template's. Shop-day arithmetic only (T8).
  */
 
 /** One worked visit of the person's, by the shop day it began on. */
 export type RecordVisit = {
   /** A visit listed twice is counted once. */
-  readonly appointmentId: string;
-  readonly day: DayKey;
+  readonly appointmentId: AppointmentId;
+  readonly localDate: LocalDate;
 };
 
 /** One bar of «По години». */
@@ -61,7 +61,7 @@ export const RecordsSystem = {
       if (kind === PersonalRecordKind.LongestRhythm && !rhythm) continue;
       for (let k = 0; k < records.length; k++) {
         const record = records[k] as R;
-        if (record.kind === kind) {
+        if (record.personalRecordKind === kind) {
           out.push(record);
           break;
         }
@@ -75,14 +75,16 @@ export const RecordsSystem = {
    * its day, a year by its last day (today while it is still running); a
    * favourite has none.
    */
-  setOn(record: PersonalRecord, today: DayKey): DayKey | null {
-    switch (record.kind) {
+  setOn(record: PersonalRecord, today: LocalDate): LocalDate | null {
+    switch (record.personalRecordKind) {
       case PersonalRecordKind.LongestRhythm:
       case PersonalRecordKind.FirstVisit:
         return record.on;
       case PersonalRecordKind.MostVisitsInYear: {
         if (record.year === null) return null;
-        const end = DayKey.of(`${String(record.year).padStart(4, '0')}-12-31`);
+        const end = LocalDate.fromEpochDay(
+          LocalDate.epochDayOf(record.year, 12, 31),
+        );
         return end > today ? today : end;
       }
       default:
@@ -95,15 +97,15 @@ export const RecordsSystem = {
    * today — a best that was beaten, so never the first visit nor a
    * favourite, and never the year still running.
    */
-  isNew(record: PersonalRecord, today: DayKey): boolean {
+  isNew(record: PersonalRecord, today: LocalDate): boolean {
     if (
-      record.kind === PersonalRecordKind.FirstVisit ||
-      record.kind === PersonalRecordKind.FavouriteService
+      record.personalRecordKind === PersonalRecordKind.FirstVisit ||
+      record.personalRecordKind === PersonalRecordKind.FavouriteService
     ) {
       return false;
     }
     if (
-      record.kind === PersonalRecordKind.MostVisitsInYear &&
+      record.personalRecordKind === PersonalRecordKind.MostVisitsInYear &&
       record.year !== null &&
       String(record.year) === today.slice(0, 4)
     ) {
@@ -111,7 +113,7 @@ export const RecordsSystem = {
     }
     const on = RecordsSystem.setOn(record, today);
     if (on === null) return false;
-    const age = ZonedTimeSystem.daysBetween(on, today);
+    const age = LocalDate.daysBetween(on, today);
     return age >= 0 && age <= NEW_RECORD_DAYS;
   },
 
@@ -121,7 +123,7 @@ export const RecordsSystem = {
    * one, and the cards' order (the order given) breaks a tie. `null` for
    * no record.
    */
-  newest(records: readonly PersonalRecord[], today: DayKey): number | null {
+  newest(records: readonly PersonalRecord[], today: LocalDate): number | null {
     let best: number | null = null;
     let bestOn = '';
     for (let i = 0; i < records.length; i++) {
@@ -153,7 +155,7 @@ export const RecordsSystem = {
       const visit = visits[i] as RecordVisit;
       if (seen.has(visit.appointmentId)) continue;
       seen.add(visit.appointmentId);
-      const year = Number(visit.day.slice(0, 4));
+      const year = LocalDate.parts(visit.localDate).year;
       counts.set(year, (counts.get(year) ?? 0) + 1);
       if (year < first) first = year;
       if (year > last) last = year;

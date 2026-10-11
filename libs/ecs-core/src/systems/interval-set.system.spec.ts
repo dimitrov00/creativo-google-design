@@ -1,31 +1,44 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { TimeInterval } from '../components/time-interval.data';
+import { MinuteRange } from '../components/minute-range.data';
 import { IntervalSetSystem } from './interval-set.system';
+import { MinuteCount } from '../primitives/duration-minutes.primitive';
+import { unwrapOk as okOf } from '../testing';
+
+const count = (n: number): MinuteCount => okOf(MinuteCount.of(n));
 import { deepFreeze } from '../testing';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/interval.spec.ts, copied over
- * plain arrays (the class spec stays in place until its Phase 2 shim), plus
- * property tests against a brute-force minute-set model.
+ * plain arrays of `MinuteRange`s on one shop day (flatten-spec §2.2 — the
+ * successor of the epoch-ms `TimeInterval` sets), plus property tests
+ * against a brute-force minute-set model.
  */
 
-/** Minutes-from-an-arbitrary-origin, so the fixtures read like a clock. */
-const m = (minutes: number) => minutes * 60_000;
-const iv = (startMin: number, endMin: number) =>
-  TimeInterval.of(m(startMin), m(endMin));
+/**
+ * Wall-clock minutes, so the fixtures read like a clock. A labelled cast,
+ * test-only: the property domain deliberately includes empty and inverted
+ * ranges no smart constructor would build, to prove every operation drops
+ * them.
+ */
+const iv = (startMin: number, endMin: number): MinuteRange =>
+  ({ startMinutes: startMin, endMinutes: endMin }) as MinuteRange;
 
-/** Arbitrary non-empty interval, in whole minutes within a plausible day. */
+/**
+ * Arbitrary non-empty range of ONE shop day: a start in `[0, 1440)`, an end
+ * in `(start, 1440]` — the only ranges the branded `MinuteRange` can hold
+ * (a span past midnight is two ranges on two days, T7).
+ */
 const anyInterval = fc
-  .tuple(fc.integer({ min: 0, max: 1440 }), fc.integer({ min: 1, max: 240 }))
-  .map(([start, length]) => iv(start, start + length));
+  .tuple(fc.integer({ min: 0, max: 1439 }), fc.integer({ min: 1, max: 240 }))
+  .map(([start, length]) => iv(start, Math.min(start + length, 1440)));
 
 const anyIntervals = fc.array(anyInterval, { maxLength: 12 });
 
-/** Also empty and inverted intervals, which every operation must drop. */
+/** Also empty and inverted ranges, which every operation must drop. */
 const anyRawInterval = fc
-  .tuple(fc.integer({ min: 0, max: 1440 }), fc.integer({ min: -30, max: 240 }))
-  .map(([start, length]) => iv(start, start + length));
+  .tuple(fc.integer({ min: 0, max: 1439 }), fc.integer({ min: -30, max: 240 }))
+  .map(([start, length]) => iv(start, Math.min(start + length, 1440)));
 
 const anyRawIntervals = fc.array(anyRawInterval, { maxLength: 12 });
 
@@ -33,12 +46,12 @@ const anyRawIntervals = fc.array(anyRawInterval, { maxLength: 12 });
 
 const HORIZON = 1440 + 241;
 
-function minutesOf(xs: readonly TimeInterval[]): boolean[] {
+function minutesOf(xs: readonly MinuteRange[]): boolean[] {
   const covered = new Array<boolean>(HORIZON).fill(false);
   for (const x of xs) {
-    // `fill` reads a negative end from the back, so an inverted interval must skip it.
-    if (x.startMs < x.endMs)
-      covered.fill(true, x.startMs / 60_000, x.endMs / 60_000);
+    // `fill` reads a negative end from the back, so an inverted range must skip it.
+    if (x.startMinutes < x.endMinutes)
+      covered.fill(true, x.startMinutes, x.endMinutes);
   }
   return covered;
 }
@@ -52,11 +65,13 @@ function combine(
 }
 
 /** Canonical: sorted, non-empty, disjoint and not even touching. */
-function expectCanonical(xs: readonly TimeInterval[]): void {
+function expectCanonical(xs: readonly MinuteRange[]): void {
   xs.forEach((x, i) => {
-    expect(x.startMs).toBeLessThan(x.endMs);
+    expect(x.startMinutes).toBeLessThan(x.endMinutes);
     if (i > 0)
-      expect(x.startMs).toBeGreaterThan((xs.at(i - 1) as TimeInterval).endMs);
+      expect(x.startMinutes).toBeGreaterThan(
+        (xs.at(i - 1) as MinuteRange).endMinutes,
+      );
   });
 }
 
@@ -72,7 +87,7 @@ describe('IntervalSetSystem.normalize', () => {
     ).toEqual([iv(0, 40), iv(60, 90)]);
   });
 
-  it('MERGES touching intervals — as instants they are one run', () => {
+  it('MERGES touching ranges — as minutes they are one run', () => {
     // Leaving these split would reject a 60-minute service that fits the
     // union because it fits neither half.
     expect(IntervalSetSystem.normalize([iv(0, 30), iv(30, 60)])).toEqual([
@@ -93,8 +108,8 @@ describe('IntervalSetSystem.normalize', () => {
         expect(IntervalSetSystem.normalize(once)).toEqual(once);
         once.slice(1).forEach((next, i) => {
           // Strictly after, and not merely touching (those merged).
-          expect(next.startMs).toBeGreaterThan(
-            (once.at(i) as TimeInterval).endMs,
+          expect(next.startMinutes).toBeGreaterThan(
+            (once.at(i) as MinuteRange).endMinutes,
           );
         });
       }),
@@ -163,7 +178,7 @@ describe('IntervalSetSystem.subtract — the operation availability is built fro
         );
         for (const gap of free) {
           for (const taken of cut) {
-            expect(TimeInterval.overlaps(gap, taken)).toBe(false);
+            expect(MinuteRange.overlaps(gap, taken)).toBe(false);
           }
         }
       }),
@@ -235,16 +250,18 @@ describe('IntervalSetSystem.intersect / union', () => {
   });
 });
 
-describe('TimeInterval.pad (the busy-buffer cases)', () => {
+describe('MinuteRange.pad (the busy-buffer cases)', () => {
   it('grows outward by the given minutes', () => {
-    expect(TimeInterval.pad(iv(60, 90), 10, 15)).toEqual(iv(50, 105));
+    expect(MinuteRange.pad(iv(60, 90), count(10), count(15))).toEqual(
+      iv(50, 105),
+    );
   });
 
   it('padding the BUSY side is what produces a single gap, not a double one', () => {
     // A 10-minute turnaround around a 10:00–10:45 booking leaves free time
     // ending 09:50 and resuming 10:55 — one gap of 10 minutes on each side.
     // Padding the candidate as well would silently double it.
-    const busy = TimeInterval.pad(iv(600, 645), 10, 10);
+    const busy = MinuteRange.pad(iv(600, 645), count(10), count(10));
     expect(IntervalSetSystem.subtract([iv(540, 720)], [busy])).toEqual([
       iv(540, 590),
       iv(655, 720),

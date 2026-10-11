@@ -1,67 +1,91 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
-import { Gamification } from '../components/gamification.data';
-import { SeriesId } from '../entities/badge-series.entity';
-import { SeasonId, type SeasonEntity } from '../entities/season.entity';
-import { deepFreeze } from '../testing';
-import { SeasonSystem } from './season.system';
+import {
+  BadgeEmblem,
+  Gamification,
+  SeasonKind,
+  SeasonPhase,
+} from '../components/gamification.data';
+import type { Season } from '../entities/season.entity';
+import { BadgeSeriesId, SeasonId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '../testing';
+import { type SeasonShapeInput, SeasonSystem } from './season.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The cases of libs/domain/engagement/src/lib/loyalty/season.spec.ts,
  * COPIED (the legacy spec keeps running against `Season`'s shim) and
- * re-targeted to the plain `SeasonEntity`: `announcedAt` is
- * `announcedAtMs`, ids are brands, and `Season.create`'s window, notice
- * and track rules are `SeasonSystem.validate`. Not copied: `an empty family
- * id` — a blank id is refused by the edge guard before `SeriesId.of`, not
- * by the season's rules.
+ * re-targeted to the flat `Season`: the announcement is `announcedAtUtcMs`
+ * beside its shop day `announcedLocalDate` (T5 — the boundary derives the
+ * day once, in the shop's zone), the window is `windowFrom`/`windowUntil`,
+ * ids are brands, and `Season.create`'s window, notice and track rules are
+ * `SeasonSystem.validate`. Not copied: `an empty family id` — a blank id is
+ * refused by the edge guard before `BadgeSeriesId.of`, not by the season's
+ * rules.
  */
 
 const SEASON_NOTICE_DAYS = Gamification.SEASON_NOTICE_DAYS;
-const ZONE = 'Europe/Sofia';
 
-const autumn: SeasonEntity = {
+/** The announcement as the boundary stores it: the instant and its Sofia day. */
+function announced(
+  iso: string,
+): Pick<Season, 'announcedAtUtcMs' | 'announcedLocalDate'> {
+  const announcedAtUtcMs = utcMs(iso);
+  return {
+    announcedAtUtcMs,
+    announcedLocalDate: ZonedTimeSystem.toLocal(
+      announcedAtUtcMs,
+      FIXTURE_TIME_ZONE,
+    ).localDate,
+  };
+}
+
+const autumn: Season = {
   id: SeasonId.of('season-2026-autumn'),
-  kind: 'season',
+  seasonKind: SeasonKind.Season,
   title: { bg: 'Есен 2026', en: 'Autumn 2026' },
-  emblem: 'autumn',
-  window: { from: DayKey.of('2026-09-01'), until: DayKey.of('2026-11-30') },
-  trackSeriesId: SeriesId.of('series-2026-autumn-track'),
+  emblem: BadgeEmblem.Autumn,
+  windowFrom: localDate('2026-09-01'),
+  windowUntil: localDate('2026-11-30'),
+  trackSeriesId: BadgeSeriesId.of('series-2026-autumn-track'),
   seriesIds: [
-    SeriesId.of('series-2026-autumn-each-month'),
-    SeriesId.of('series-2026-autumn-beard'),
+    BadgeSeriesId.of('series-2026-autumn-each-month'),
+    BadgeSeriesId.of('series-2026-autumn-beard'),
   ],
-  announcedAtMs: Date.parse('2026-08-01T06:00:00.000Z'),
+  ...announced('2026-08-01T06:00:00.000Z'),
   version: 1,
 };
 
-const beardWeek: SeasonEntity = {
+const beardWeek: Season = {
   ...autumn,
   id: SeasonId.of('event-2026-beard-week'),
-  kind: 'event',
+  seasonKind: SeasonKind.Event,
   title: { bg: 'Седмица на брадата', en: 'Beard week' },
-  emblem: 'event',
-  window: { from: DayKey.of('2026-09-22'), until: DayKey.of('2026-10-05') },
+  emblem: BadgeEmblem.Event,
+  windowFrom: localDate('2026-09-22'),
+  windowUntil: localDate('2026-10-05'),
   trackSeriesId: null,
-  seriesIds: [SeriesId.of('series-2026-beard-week-beard')],
-  announcedAtMs: Date.parse('2026-08-22T06:00:00.000Z'),
+  seriesIds: [BadgeSeriesId.of('series-2026-beard-week-beard')],
+  ...announced('2026-08-22T06:00:00.000Z'),
 };
 
-function build(season: SeasonEntity): SeasonEntity {
-  const result = SeasonSystem.validate(season, ZONE);
+function build<S extends SeasonShapeInput>(season: S): S {
+  const result = SeasonSystem.validate(season);
   if (!result.ok) {
-    throw new Error(result.error.map((e) => e.code).join(', '));
+    throw new Error(result.error.map((e) => e.errorCode).join(', '));
   }
   return result.value;
 }
 
-function codes(season: SeasonEntity): string[] {
-  const result = SeasonSystem.validate(season, ZONE);
-  return result.ok ? [] : result.error.map((e) => e.code).sort();
+function codes(season: SeasonShapeInput): string[] {
+  const result = SeasonSystem.validate(season);
+  return result.ok ? [] : result.error.map((e) => e.errorCode).sort();
 }
 
+/** A window as an author typed it — foreign input the rule proves real. */
 const window = (from: string, until: string) => ({
-  from: DayKey.of(from),
-  until: DayKey.of(until),
+  windowFrom: from,
+  windowUntil: until,
 });
 
 describe('SeasonSystem.validate', () => {
@@ -73,13 +97,16 @@ describe('SeasonSystem.validate', () => {
       'series-2026-autumn-each-month',
       'series-2026-autumn-beard',
     ]);
-    expect(season.window).toEqual({ from: '2026-09-01', until: '2026-11-30' });
+    expect({
+      windowFrom: season.windowFrom,
+      windowUntil: season.windowUntil,
+    }).toEqual({ windowFrom: '2026-09-01', windowUntil: '2026-11-30' });
     expect(season.title.bg).toBe('Есен 2026');
   });
 
   it('makes an event without a track', () => {
     const event = build(beardWeek);
-    expect(event.kind).toBe('event');
+    expect(event.seasonKind).toBe('EVENT');
     expect(event.trackSeriesId).toBeNull();
   });
 
@@ -87,26 +114,26 @@ describe('SeasonSystem.validate', () => {
     expect(
       build({
         ...beardWeek,
-        window: window('2026-09-22', '2026-09-22'),
-      }).window.until,
+        ...window('2026-09-22', '2026-09-22'),
+      }).windowUntil,
     ).toBe('2026-09-22');
   });
 
-  it.each<[string, Partial<SeasonEntity>, string[]]>([
+  it.each<[string, Partial<SeasonShapeInput>, string[]]>([
     [
       'a window that ends before it starts',
-      { window: window('2026-11-30', '2026-09-01') },
-      ['engagement.season.window_inverted'],
+      window('2026-11-30', '2026-09-01'),
+      ['ENGAGEMENT_SEASON_WINDOW_INVERTED'],
     ],
     [
       'a window that is not two days',
-      { window: window('2026-09-31', '2026-11-30') },
-      ['engagement.season.window_malformed'],
+      window('2026-09-31', '2026-11-30'),
+      ['ENGAGEMENT_SEASON_WINDOW_MALFORMED'],
     ],
     [
       'a season without a track',
       { trackSeriesId: null },
-      ['engagement.season.without_track'],
+      ['ENGAGEMENT_SEASON_WITHOUT_TRACK'],
     ],
   ])('refuses %s', (_case, override, expected) => {
     expect(codes({ ...autumn, ...override })).toEqual(expected);
@@ -116,45 +143,38 @@ describe('SeasonSystem.validate', () => {
     expect(
       codes({
         ...beardWeek,
-        trackSeriesId: SeriesId.of('series-2026-autumn-track'),
+        trackSeriesId: BadgeSeriesId.of('series-2026-autumn-track'),
       }),
-    ).toEqual(['engagement.season.event_with_track']);
+    ).toEqual(['ENGAGEMENT_SEASON_EVENT_WITH_TRACK']);
   });
 
   describe('the notice period (R29)', () => {
     it(`asks for ${SEASON_NOTICE_DAYS} days between the announcement and the first day`, () => {
       expect(
-        codes({
-          ...autumn,
-          announcedAtMs: Date.parse('2026-08-02T06:00:00.000Z'),
-        }),
+        codes({ ...autumn, ...announced('2026-08-02T06:00:00.000Z') }),
       ).toEqual([]);
       expect(
-        codes({
-          ...autumn,
-          announcedAtMs: Date.parse('2026-08-03T06:00:00.000Z'),
-        }),
-      ).toEqual(['engagement.season.announced_late']);
+        codes({ ...autumn, ...announced('2026-08-03T06:00:00.000Z') }),
+      ).toEqual(['ENGAGEMENT_SEASON_ANNOUNCED_LATE']);
     });
 
     // 21:30 UTC on 2 August is already 3 August in Sofia: one day too late.
     it('counts the announcement on the Sofia calendar', () => {
-      expect(
-        codes({
-          ...autumn,
-          announcedAtMs: Date.parse('2026-08-02T21:30:00.000Z'),
-        }),
-      ).toEqual(['engagement.season.announced_late']);
+      const late = announced('2026-08-02T21:30:00.000Z');
+      expect(late.announcedLocalDate).toBe('2026-08-03');
+      expect(codes({ ...autumn, ...late })).toEqual([
+        'ENGAGEMENT_SEASON_ANNOUNCED_LATE',
+      ]);
     });
 
     it('names the day it was announced, the first day and the notice', () => {
-      const result = SeasonSystem.validate(
-        { ...autumn, announcedAtMs: Date.parse('2026-08-02T21:30:00.000Z') },
-        ZONE,
-      );
+      const result = SeasonSystem.validate({
+        ...autumn,
+        ...announced('2026-08-02T21:30:00.000Z'),
+      });
       expect(!result.ok && result.error).toEqual([
         {
-          code: 'engagement.season.announced_late',
+          errorCode: 'ENGAGEMENT_SEASON_ANNOUNCED_LATE',
           announcedOn: '2026-08-03',
           from: '2026-09-01',
           noticeDays: 30,
@@ -162,8 +182,16 @@ describe('SeasonSystem.validate', () => {
       ]);
     });
 
-    it('cannot read the notice in a zone nobody knows, and refuses nothing for it', () => {
-      expect(SeasonSystem.validate(autumn, 'Not/AZone').ok).toBe(true);
+    it('reads no zone: the notice is judged on the stored shop day alone', () => {
+      // Today's "a zone nobody knows refuses nothing": no zone reaches the
+      // system any more — the boundary hands the day (T5).
+      expect(SeasonSystem.validate(autumn).ok).toBe(true);
+      expect(
+        SeasonSystem.validate({
+          ...autumn,
+          announcedLocalDate: localDate('2026-08-03'),
+        }).ok,
+      ).toBe(false);
     });
   });
 });
@@ -172,13 +200,13 @@ describe('SeasonSystem.phaseOn', () => {
   const season = build(autumn);
 
   it.each([
-    ['2026-08-31', 'announced'],
-    ['2026-09-01', 'open'],
-    ['2026-10-15', 'open'],
-    ['2026-11-30', 'open'],
-    ['2026-12-01', 'ended'],
+    ['2026-08-31', SeasonPhase.Announced],
+    ['2026-09-01', SeasonPhase.Open],
+    ['2026-10-15', SeasonPhase.Open],
+    ['2026-11-30', SeasonPhase.Open],
+    ['2026-12-01', SeasonPhase.Ended],
   ] as const)('on %s is %s (both ends inclusive)', (today, phase) => {
-    expect(SeasonSystem.phaseOn(season.window, DayKey.of(today))).toBe(phase);
+    expect(SeasonSystem.phaseOn(season, localDate(today))).toBe(phase);
   });
 });
 
@@ -202,18 +230,18 @@ describe('SeasonSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const season = deepFreeze({
       ...autumn,
-      announcedAtMs: Date.parse('2026-08-02T21:30:00.000Z'),
+      ...announced('2026-08-02T21:30:00.000Z'),
       trackSeriesId: null,
     });
-    const today = DayKey.of('2026-10-15');
+    const today: LocalDate = localDate('2026-10-15');
     const once = [
-      SeasonSystem.validate(season, ZONE),
-      SeasonSystem.phaseOn(season.window, today),
+      SeasonSystem.validate(season),
+      SeasonSystem.phaseOn(season, today),
       SeasonSystem.familyIds(season),
     ];
     const twice = [
-      SeasonSystem.validate(season, ZONE),
-      SeasonSystem.phaseOn(season.window, today),
+      SeasonSystem.validate(season),
+      SeasonSystem.phaseOn(season, today),
       SeasonSystem.familyIds(season),
     ];
     expect(twice).toEqual(once);

@@ -1,9 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { SeatIdPair } from '../components/seat-id-pair.data';
-import { SeatId } from '../components/seat.data';
 import { StandingSeatPair } from '../components/standing-seat.data';
-import { deepFreeze } from '../testing';
+import { SeatId, SeatKeyText } from '../primitives/ids.primitive';
+import { deepFreeze, endMinute, minute } from '../testing';
 import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
 
 /*
@@ -14,9 +14,18 @@ import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
  * becomes the stored `{ seatId, otherSeatId }` struct.
  */
 
-const M = (minutes: number) => minutes * 60_000;
+/**
+ * The rule is translation-invariant, so every case reads its minutes as an
+ * offset from 09:00 on the shop's wall clock — a quarter-hour drag earlier
+ * than the first seat stays inside the day.
+ */
+const BASE = 540;
 const at = (personKey: string, from: number, to: number): StandingSeatPair =>
-  StandingSeatPair.of(personKey, M(from), M(to));
+  StandingSeatPair.of(
+    SeatKeyText.of(personKey),
+    minute(BASE + from),
+    endMinute(BASE + to),
+  );
 const seatAt = (
   seatId: string,
   personKey: string,
@@ -62,8 +71,8 @@ describe('sitsTwiceAt — one person, one chair at a time', () => {
           const expected = taken.some(
             (entry) =>
               entry.personKey === candidateKey &&
-              entry.startMs < candidate.endMs &&
-              candidate.startMs < entry.endMs,
+              entry.startMinutes < candidate.endMinutes &&
+              candidate.startMinutes < entry.endMinutes,
           );
           expect(S.sitsTwiceAt(taken, candidate)).toBe(expected);
           expect(S.sitsTwiceAt([...taken].reverse(), candidate)).toBe(expected);
@@ -235,8 +244,8 @@ describe('standing double seatings — a visit is never made worse, and never fr
             a !== undefined &&
             b !== undefined &&
             a.personKey === b.personKey &&
-            a.startMs < b.endMs &&
-            b.startMs < a.endMs;
+            a.startMinutes < b.endMinutes &&
+            b.startMinutes < a.endMinutes;
           const anew = after.some((a, i) =>
             after.some(
               (b, j) =>
@@ -371,8 +380,8 @@ describe('standing double seatings — the pairs an edit broke', () => {
                 : seatAt(
                     seat.seatId,
                     seat.personKey,
-                    seat.startMs / 60_000 + (shifts.at(index) ?? 0) * 15,
-                    seat.endMs / 60_000 + (shifts.at(index) ?? 0) * 15,
+                    seat.startMinutes - BASE + (shifts.at(index) ?? 0) * 15,
+                    seat.endMinutes - BASE + (shifts.at(index) ?? 0) * 15,
                   ),
             )
             .filter((seat): seat is SeatedSpan => seat !== null);

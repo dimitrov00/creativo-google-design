@@ -1,14 +1,22 @@
-import { FieldPath, type Firestore } from 'firebase-admin/firestore';
+import {
+  FieldPath,
+  FieldValue,
+  type Firestore,
+} from 'firebase-admin/firestore';
 import {
   type DocPath,
   QueryOp,
   type ReadTx,
   RepositoryError,
+  RepositoryErrorCode,
   Result,
   WriteOp,
 } from '@creativo/ecs-core';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
-import { firestoreCommitPlan } from './firestore-tx.adapter';
+import {
+  FIELD_SET_AND_DELETED,
+  firestoreCommitPlan,
+} from './firestore-tx.adapter';
 
 type Doc = Record<string, unknown>;
 
@@ -233,11 +241,105 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
       expect(second.isEqual(new FieldPath('c'))).toBe(true);
     });
 
+    it('removes each deleteFields key at the root — a variant transition leaves one variant (Law 6)', async () => {
+      const { fake, commit } = store({
+        'appointments/a1': {
+          bookingStatus: 'CONFIRMED',
+          confirmedAtUtcMs: 1,
+          localDate: '2026-10-07',
+        },
+      });
+      const before = {
+        bookingStatus: 'CONFIRMED',
+        confirmedAtUtcMs: 1,
+        localDate: '2026-10-07',
+      };
+      const after = {
+        bookingStatus: 'CANCELLED',
+        cancelledAtUtcMs: 2,
+        cancellationReason: 'ILLNESS',
+        localDate: '2026-10-07',
+      };
+      const result = await commit(
+        async () => null,
+        () =>
+          Result.ok({
+            writes: [
+              WriteOp.transition(
+                APPT,
+                {
+                  bookingStatus: 'CANCELLED',
+                  cancelledAtUtcMs: 2,
+                  cancellationReason: 'ILLNESS',
+                },
+                WriteOp.variantFieldsToDelete(before, after),
+              ),
+            ],
+          }),
+      );
+      expect(result.ok).toBe(true);
+      expect(fake.docs.get('appointments/a1')).toEqual(after);
+    });
+
+    it('hands the SDK each deleted key as a single-segment FieldPath with FieldValue.delete()', async () => {
+      const calls: unknown[][] = [];
+      const db = {
+        doc: (path: string) => ({ path }),
+        runTransaction: async (
+          fn: (tx: {
+            update: (...args: unknown[]) => void;
+          }) => Promise<unknown>,
+        ) => fn({ update: (...args: unknown[]) => void calls.push(args) }),
+      } as unknown as Firestore;
+      await firestoreCommitPlan(db)(
+        async () => null,
+        () =>
+          Result.ok({
+            writes: [WriteOp.transition(['settings', 'x'], {}, ['a.b'])],
+          }),
+      );
+      const [[, path, value]] = calls as [[unknown, FieldPath, unknown]];
+      expect(path.isEqual(new FieldPath('a.b'))).toBe(true);
+      expect(
+        value instanceof FieldValue && value.isEqual(FieldValue.delete()),
+      ).toBe(true);
+    });
+
+    it('refuses a key both set and deleted as a value, applying nothing of the plan', async () => {
+      const { fake, commit } = store({ 'appointments/a1': { n: 1 } });
+      const result = await commit(
+        async () => null,
+        () =>
+          Result.ok({
+            writes: [
+              WriteOp.set(BUSY, { blocks: [] }),
+              WriteOp.transition(APPT, { n: 2 }, ['n']),
+            ],
+          }),
+      );
+      expect(result).toEqual({
+        ok: false,
+        error: {
+          errorCode: RepositoryErrorCode.WriteFailed,
+          path: 'appointments/a1',
+          reason: FIELD_SET_AND_DELETED,
+        },
+      });
+      expect(fake.writes).toEqual([]);
+      expect(fake.docs.get('appointments/a1')).toEqual({ n: 1 });
+    });
+
     it('an Update with no fields writes nothing', async () => {
       const { fake, commit } = store();
       const result = await commit(
         async () => null,
-        () => Result.ok({ writes: [WriteOp.update(['settings', 'none'], {})] }),
+        () =>
+          Result.ok({
+            writes: [
+              WriteOp.update(['settings', 'none'], {}),
+              WriteOp.transition(['settings', 'none'], {}, []),
+            ],
+          }),
       );
       expect(result.ok).toBe(true);
       expect(fake.writes).toEqual([]);

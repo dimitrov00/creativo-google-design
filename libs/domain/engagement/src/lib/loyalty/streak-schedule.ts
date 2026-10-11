@@ -1,21 +1,33 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  DayKey,
   EngagementErrorCode,
+  HeadRole,
+  LocalDate,
   type ScheduledStreakRule,
-  type ServiceCategoryId,
-  type ServiceId,
-  StreakIntervalKind,
-  StreakQualifierKind,
+  ServiceCategoryId,
+  ServiceId,
+  StreakExcuse as SystemExcuse,
+  StreakIntervalRule,
+  StreakOnBreak as SystemOnBreak,
+  StreakQualifierRule,
   type StreakRule,
-  type StreakRuleDirection as SystemDirection,
+  StreakRuleDirection as SystemDirection,
   StreakRuleSystem,
   type StreakScheduleError,
   type StreakSchedule as SystemSchedule,
-  ZonedTimeSystem,
+  StreakTransition as SystemTransition,
+  defect,
 } from '@creativo/ecs-core';
 import { IsoDate } from './loyalty-calendar';
-import type { StreakDefinition, StreakRuleChange } from './streak-definition';
+import type {
+  StreakDefinition,
+  StreakExcuse,
+  StreakOnBreak,
+  StreakRuleChange,
+  StreakRuleDirection,
+} from './streak-definition';
+import type { StreakIntervalProps } from './streak-interval';
+import type { StreakQualifierProps } from './streak-qualifier';
 import {
   StreakDefinitionError,
   StreakScheduleIdMismatchError,
@@ -28,7 +40,7 @@ import {
  * The rhythm's head over time — a thin shim since the ECS migration's
  * Phase 2: which version a day is judged by, what waits, and the earliest
  * day a change may start are `StreakRuleSystem` (`@creativo/ecs-core`,
- * `streak-rule.system.ts`); the day count is `ZonedTimeSystem.addDays`.
+ * `streak-rule.system.ts`); the day count is `LocalDate`'s epoch-day math.
  * The class keeps its API and the instances it was handed; the bridge to
  * the plain structs is the private helpers at the end. The one check the
  * system does not make — both halves name the same rule — stays here with
@@ -58,20 +70,26 @@ export interface StreakNoticePolicy {
 /**
  * The shape the legacy reader (`Date.parse` of `${day}T00:00:00.000Z`)
  * accepted: four-digit year, month 01–12, day 01–31 — a day past the
- * month's end rolls over, exactly as `ZonedTimeSystem.addDays` rolls it.
+ * month's end rolls over, exactly as `LocalDate.epochDayOf` rolls it.
  */
 const ISO_DAY_SHAPE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 /**
  * The calendar day `days` after `day` (before it, when negative). Two
  * dates and a count, no instant between them, so no zone and no DST:
- * `ZonedTimeSystem.addDays`, civil integer arithmetic — the ONE calendar.
+ * `LocalDate`'s epoch days, civil integer arithmetic — the ONE calendar.
  * Text that is no calendar day is refused at this edge the way it always
  * was (a `RangeError`), never computed on.
  */
 export function addDays(day: IsoDate, days: number): IsoDate {
   if (!ISO_DAY_SHAPE.test(day)) throw new RangeError('Invalid time value');
-  return ZonedTimeSystem.addDays(DayKey.of(day), days);
+  return LocalDate.fromEpochDay(
+    LocalDate.epochDayOf(
+      Number(day.slice(0, 4)),
+      Number(day.slice(5, 7)),
+      Number(day.slice(8, 10)),
+    ) + days,
+  );
 }
 
 /**
@@ -126,15 +144,15 @@ export class StreakDefinitionSchedule {
 
   /** The rule a Sofia day is judged by: what waits, from its own day on. */
   inForceOn(today: IsoDate): StreakDefinition {
-    const head = headOf(this);
-    return StreakRuleSystem.inForceOn(head, DayKey.of(today)) === head.current
+    return StreakRuleSystem.inForceOn(headOf(this), dayOf(today)).headRole ===
+      HeadRole.Current
       ? this.current
       : (this.scheduled?.definition ?? this.current);
   }
 
   /** What still waits on a Sofia day, or `null` once its day has come. */
   upcomingOn(today: IsoDate): ScheduledStreakDefinition | null {
-    return StreakRuleSystem.upcomingOn(headOf(this), DayKey.of(today)) === null
+    return StreakRuleSystem.upcomingOn(headOf(this), dayOf(today)) === null
       ? null
       : this.scheduled;
   }
@@ -152,8 +170,8 @@ export class StreakDefinitionSchedule {
     policy: StreakNoticePolicy,
   ): IsoDate {
     return StreakRuleSystem.earliestEffectiveDay(
-      change.direction as SystemDirection,
-      DayKey.of(today),
+      SYSTEM_DIRECTION[change.direction],
+      dayOf(today),
       policy,
     );
   }
@@ -161,65 +179,133 @@ export class StreakDefinitionSchedule {
 
 // ── The bridge: legacy class ↔ ecs-core struct (Phase 4 deletes it) ──────
 
-/** A version as the system reads it: the class's figures, with the day as a day key. */
+const SYSTEM_EXCUSE = {
+  shopClosure: SystemExcuse.ShopClosure,
+  barberAbsence: SystemExcuse.BarberAbsence,
+  staffCancelled: SystemExcuse.StaffCancelled,
+  closedDays: SystemExcuse.ClosedDays,
+} as const satisfies Record<StreakExcuse, SystemExcuse>;
+
+const SYSTEM_ON_BREAK = {
+  restart: SystemOnBreak.Restart,
+  hold: SystemOnBreak.Hold,
+} as const satisfies Record<StreakOnBreak, SystemOnBreak>;
+
+const SYSTEM_TRANSITION = {
+  grandfather: SystemTransition.Grandfather,
+  recompute: SystemTransition.Recompute,
+} as const satisfies Record<StreakTransition, SystemTransition>;
+
+const SYSTEM_DIRECTION = {
+  looser: SystemDirection.Looser,
+  stricter: SystemDirection.Stricter,
+  mixed: SystemDirection.Mixed,
+  neutral: SystemDirection.Neutral,
+  switch: SystemDirection.Switch,
+} as const satisfies Record<StreakRuleDirection, SystemDirection>;
+
+/** A Sofia day the head is asked about: a clock's «today», a checked version day. */
+function dayOf(raw: IsoDate): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/**
+ * A transition in the system's words. One the vocabulary does not know
+ * (an untyped caller's) is handed across as written: the system's own
+ * guard refuses it, and the legacy error names it.
+ */
+function transitionOf(transition: StreakTransition): SystemTransition {
+  const known: SystemTransition | undefined = (
+    SYSTEM_TRANSITION as Readonly<Record<string, SystemTransition>>
+  )[transition];
+  return known ?? (transition as string as SystemTransition);
+}
+
+/**
+ * A version as the system reads it: the class's figures, flat (every
+ * part's figures prefixed by the part), its day a `LocalDate`, every tag
+ * the dictionary's.
+ */
 function ruleOf(definition: StreakDefinition): StreakRule {
   const props = definition.toProps();
-  const qualifier = props.qualifier;
-  const interval = props.interval;
   return {
     version: props.version,
-    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    effectiveFromLocalDate: dayOf(props.effectiveFrom),
     enabled: props.enabled,
-    qualifier:
-      qualifier.kind === 'services'
-        ? {
-            kind: StreakQualifierKind.Services,
-            serviceIds: qualifier.serviceIds as readonly ServiceId[],
-          }
-        : qualifier.kind === 'categories'
-          ? {
-              kind: StreakQualifierKind.Categories,
-              categoryIds:
-                qualifier.categoryIds as readonly ServiceCategoryId[],
-            }
-          : { kind: StreakQualifierKind.AnyVisit },
+    ...qualifierOf(props.qualifier),
     minGapDays: props.minGapDays,
-    bookingHold: props.bookingHold,
-    interval:
-      interval.kind === 'fixed'
-        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
-        : {
-            kind: StreakIntervalKind.Personal,
-            tolerancePct: interval.tolerancePct,
-            minDays: interval.minDays,
-            maxDays: interval.maxDays,
-            fallbackDays: interval.fallbackDays,
-          },
+    bookingHoldEnabled: props.bookingHold.enabled,
+    bookingHoldMaxDaysPastDue: props.bookingHold.maxDaysPastDue,
+    ...intervalOf(props.interval),
     graceDays: props.graceDays,
     riskLeadDays: props.riskLeadDays,
-    protections: props.protections,
-    excuses: props.excuses,
-    clientPause: props.clientPause,
-    repair: props.repair,
-    onBreak: props.onBreak,
+    protectionsEnabled: props.protections.enabled,
+    protectionsMaxBanked: props.protections.maxBanked,
+    protectionsEarnEvery: props.protections.earnEvery,
+    protectionsStartWith: props.protections.startWith,
+    excuses: props.excuses.map((excuse) => SYSTEM_EXCUSE[excuse]),
+    clientPauseEnabled: props.clientPause.enabled,
+    clientPauseMaxDaysPerYear: props.clientPause.maxDaysPerYear,
+    repairEnabled: props.repair.enabled,
+    repairWindowDays: props.repair.windowDays,
+    repairPerYear: props.repair.perYear,
+    onBreak: SYSTEM_ON_BREAK[props.onBreak],
   };
+}
+
+function qualifierOf(qualifier: StreakQualifierProps): StreakQualifierRule {
+  switch (qualifier.kind) {
+    case 'services':
+      return StreakQualifierRule.services(
+        qualifier.serviceIds.map((id) => ServiceId.of(id)),
+      );
+    case 'categories':
+      return StreakQualifierRule.categories(
+        qualifier.categoryIds.map((id) => ServiceCategoryId.of(id)),
+      );
+    default:
+      return StreakQualifierRule.anyVisit();
+  }
+}
+
+function intervalOf(interval: StreakIntervalProps): StreakIntervalRule {
+  return interval.kind === 'fixed'
+    ? StreakIntervalRule.fixed(interval.days)
+    : StreakIntervalRule.personal(
+        interval.tolerancePct,
+        interval.minDays,
+        interval.maxDays,
+        interval.fallbackDays,
+      );
 }
 
 function waitingOf(
   definition: StreakDefinition,
   transition: StreakTransition,
 ): ScheduledStreakRule {
-  return { ...ruleOf(definition), transition };
+  return { ...ruleOf(definition), streakTransition: transitionOf(transition) };
 }
 
+/** The head as the system reads it: its `rules` list, the rule in force first. */
 function headOf(schedule: StreakDefinitionSchedule): SystemSchedule {
   const { scheduled } = schedule;
+  const current = {
+    ...ruleOf(schedule.current),
+    headRole: HeadRole.Current,
+    streakTransition: null,
+  };
   return {
-    current: ruleOf(schedule.current),
-    scheduled:
+    rules:
       scheduled === null
-        ? null
-        : waitingOf(scheduled.definition, scheduled.transition),
+        ? [current]
+        : [
+            current,
+            {
+              ...waitingOf(scheduled.definition, scheduled.transition),
+              headRole: HeadRole.Scheduled,
+            },
+          ],
   };
 }
 
@@ -230,7 +316,7 @@ function legacyErrorOf(
   definition: StreakDefinition,
   transition: StreakTransition,
 ): StreakDefinitionError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case EngagementErrorCode.StreakScheduleVersionNotRising:
       return new StreakVersionNotRisingError(
         current.version,

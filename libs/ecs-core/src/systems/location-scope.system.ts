@@ -1,9 +1,9 @@
-import type { LocationId } from '../entities/location.entity';
+import type { LocationId } from '../primitives/ids.primitive';
 
 /**
  * Anything scoped to shops — a service, a barber: its `locationIds`, where an
  * EMPTY list means "available everywhere" (the seed default). A whole
- * `ServiceEntity` or `BarberEntity` passes straight in.
+ * `Service` or `Barber` passes straight in.
  */
 export type LocationScoped = {
   readonly locationIds: readonly LocationId[];

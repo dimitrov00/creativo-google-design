@@ -9,14 +9,18 @@ import {
   type Weekday,
 } from '@creativo/application/booking';
 import {
-  DayKey,
-  Frequency,
-  MonthlyDayKind,
-  RecurrenceEndKind,
-  type RecurrenceRule as RuleData,
+  LocalDate,
+  MonthlyAnchor,
+  RecurrenceEnd as EcsRecurrenceEnd,
+  RecurrenceEndRule,
+  RecurrenceFrequency as EcsFrequency,
+  RecurrencePattern as EcsPattern,
+  RecurrenceRule as RuleData,
+  RepeatPreset as EcsRepeatPreset,
   VisitDraftSystem,
   type Weekday as IsoWeekday,
   type WeekOfMonth as IsoWeekOfMonth,
+  defect,
 } from '@creativo/ecs-core';
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -28,7 +32,12 @@ import {
  * Phase 2 shim: the policy is `VisitDraftSystem` in `@creativo/ecs-core`
  * (over the `RecurrenceRule` struct and `RecurrenceSystem`). This file keeps
  * the legacy names and the legacy rule class / `CalendarDay` for its
- * callers, and converts between them and the ECS structs.
+ * callers, and converts between them and the ECS structs. Flatten pass: the
+ * ECS rule is FLAT (`recurrenceFrequency`, `recurrenceInterval`,
+ * `recurrenceEnd` at its root, `LocalDate` days, no zone) and the presets
+ * SCREAMING; the legacy lowercase words are mapped through one table each
+ * way, and a `CalendarDay` is rebuilt in the zone the caller's own day
+ * carries.
  * ──────────────────────────────────────────────────────────────────────── */
 
 /**
@@ -40,8 +49,27 @@ import {
 export type RepeatPreset =
   'never' | 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly';
 
+/** The legacy word of each SCREAMING preset — the ONE table, and its inverse. */
+const LEGACY_REPEAT_PRESET = {
+  [EcsRepeatPreset.Never]: 'never',
+  [EcsRepeatPreset.Daily]: 'daily',
+  [EcsRepeatPreset.Weekdays]: 'weekdays',
+  [EcsRepeatPreset.Weekly]: 'weekly',
+  [EcsRepeatPreset.Monthly]: 'monthly',
+  [EcsRepeatPreset.Yearly]: 'yearly',
+} as const satisfies Record<EcsRepeatPreset, RepeatPreset>;
+
+const REPEAT_PRESET_OF = {
+  never: EcsRepeatPreset.Never,
+  daily: EcsRepeatPreset.Daily,
+  weekdays: EcsRepeatPreset.Weekdays,
+  weekly: EcsRepeatPreset.Weekly,
+  monthly: EcsRepeatPreset.Monthly,
+  yearly: EcsRepeatPreset.Yearly,
+} as const satisfies Record<RepeatPreset, EcsRepeatPreset>;
+
 export const REPEAT_PRESETS: readonly RepeatPreset[] =
-  VisitDraftSystem.REPEAT_PRESETS;
+  VisitDraftSystem.REPEAT_PRESETS.map((preset) => LEGACY_REPEAT_PRESET[preset]);
 
 /** Monday to Friday — the working week a calendar's «weekdays» means. */
 export const MONDAY_TO_FRIDAY: readonly Weekday[] = WEEKDAYS.slice(0, 5);
@@ -56,7 +84,7 @@ export function defaultEnd(
   start: CalendarDay,
 ): RecurrenceEnd {
   return fromEcsEnd(
-    VisitDraftSystem.defaultEnd(toFrequency(frequency), dayKeyOf(start)),
+    VisitDraftSystem.defaultEnd(toFrequency(frequency), localDateOf(start)),
     start.zone,
   );
 }
@@ -66,10 +94,11 @@ export function presetOf(
   rule: RecurrenceRule | null,
   start: CalendarDay,
 ): RepeatPreset | null {
-  return VisitDraftSystem.presetOf(
+  const preset = VisitDraftSystem.presetOf(
     rule === null ? null : toEcsRule(rule),
-    dayKeyOf(start),
+    localDateOf(start),
   );
+  return preset === null ? null : LEGACY_REPEAT_PRESET[preset];
 }
 
 /** A shortcut, tapped: what it means from `start`, keeping the end the series had. */
@@ -79,8 +108,8 @@ export function ruleForPreset(
   current: RecurrenceRule | null,
 ): RecurrenceRule | null {
   const rule = VisitDraftSystem.ruleForPreset(
-    preset,
-    dayKeyOf(start),
+    REPEAT_PRESET_OF[preset],
+    localDateOf(start),
     current === null ? null : toEcsRule(current),
   );
   return rule === null ? null : fromEcsRule(rule, start.zone);
@@ -95,7 +124,7 @@ export function ruleForCustom(
   current: RecurrenceRule | null,
 ): RecurrenceRule | null {
   const kept = current === null ? null : toEcsRule(current);
-  const rule = VisitDraftSystem.ruleForCustom(dayKeyOf(start), kept);
+  const rule = VisitDraftSystem.ruleForCustom(localDateOf(start), kept);
   return rule === null ? null : backOrSame(rule, kept, current, start.zone);
 }
 
@@ -110,7 +139,7 @@ export function ruleForFrequency(
     VisitDraftSystem.ruleForFrequency(
       given,
       toFrequency(frequency),
-      dayKeyOf(start),
+      localDateOf(start),
     ),
     given,
     rule,
@@ -131,8 +160,8 @@ export function ruleForEndKind(
   return backOrSame(
     VisitDraftSystem.ruleForEndKind(
       given,
-      kind === 'count' ? RecurrenceEndKind.Count : RecurrenceEndKind.Until,
-      dayKeyOf(start),
+      kind === 'count' ? EcsRecurrenceEnd.Count : EcsRecurrenceEnd.Until,
+      localDateOf(start),
     ),
     given,
     rule,
@@ -152,7 +181,7 @@ export function ruleForStart(
 ): RecurrenceRule {
   const given = toEcsRule(rule);
   return backOrSame(
-    VisitDraftSystem.ruleForStart(given, dayKeyOf(from), dayKeyOf(to)),
+    VisitDraftSystem.ruleForStart(given, localDateOf(from), localDateOf(to)),
     given,
     rule,
     to.zone,
@@ -161,20 +190,23 @@ export function ruleForStart(
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
-function dayKeyOf(day: CalendarDay): DayKey {
-  return DayKey.of(day.key());
+/** A calendar day's civil date — a real day by construction. */
+function localDateOf(day: CalendarDay): LocalDate {
+  const parsed = LocalDate.parse(day.key());
+  if (!parsed.ok) defect('unreachable: a calendar day is a civil date');
+  return parsed.value;
 }
 
-function toFrequency(frequency: RecurrenceFrequency): Frequency {
+function toFrequency(frequency: RecurrenceFrequency): EcsFrequency {
   switch (frequency) {
     case 'daily':
-      return Frequency.Daily;
+      return EcsFrequency.Daily;
     case 'weekly':
-      return Frequency.Weekly;
+      return EcsFrequency.Weekly;
     case 'monthly':
-      return Frequency.Monthly;
+      return EcsFrequency.Monthly;
     case 'yearly':
-      return Frequency.Yearly;
+      return EcsFrequency.Yearly;
   }
 }
 
@@ -186,84 +218,88 @@ function fromIso(weekday: IsoWeekday): Weekday {
   return WEEKDAYS[weekday - 1] as Weekday;
 }
 
-function toEcsMonthlyDay(day: MonthlyDay): RuleData.MonthlyDay {
+function toEcsMonthly(day: MonthlyDay): EcsPattern.Monthly {
   return day.by === 'date'
-    ? { kind: MonthlyDayKind.Date, date: day.date }
+    ? EcsPattern.monthlyByDate(day.date)
+    : EcsPattern.monthlyByWeekday(
+        day.week as IsoWeekOfMonth,
+        toIso(day.weekday),
+      );
+}
+
+function fromEcsMonthly(day: EcsPattern.Monthly): MonthlyDay {
+  return day.monthlyAnchor === MonthlyAnchor.Date
+    ? { by: 'date', date: day.monthlyDate }
     : {
-        kind: MonthlyDayKind.Weekday,
-        week: day.week as IsoWeekOfMonth,
-        weekday: toIso(day.weekday),
+        by: 'weekday',
+        week: day.monthlyWeek,
+        weekday: fromIso(day.monthlyWeekday),
       };
 }
 
-function fromEcsMonthlyDay(day: RuleData.MonthlyDay): MonthlyDay {
-  return day.kind === MonthlyDayKind.Date
-    ? { by: 'date', date: day.date }
-    : { by: 'weekday', week: day.week, weekday: fromIso(day.weekday) };
-}
-
-function toEcsPattern(pattern: RecurrencePattern): RuleData.Pattern {
+function toEcsPattern(pattern: RecurrencePattern): EcsPattern {
   switch (pattern.frequency) {
     case 'daily':
-      return { kind: Frequency.Daily };
+      return EcsPattern.daily();
     case 'weekly':
-      return { kind: Frequency.Weekly, weekdays: pattern.weekdays.map(toIso) };
+      return EcsPattern.weekly(pattern.weekdays.map(toIso));
     case 'monthly':
-      return { kind: Frequency.Monthly, day: toEcsMonthlyDay(pattern.day) };
+      return toEcsMonthly(pattern.day);
     case 'yearly':
+      return EcsPattern.yearly(pattern.month, pattern.date);
+  }
+}
+
+function fromEcsPattern(pattern: EcsPattern): RecurrencePattern {
+  switch (pattern.recurrenceFrequency) {
+    case EcsFrequency.Daily:
+      return { frequency: 'daily' };
+    case EcsFrequency.Weekly:
       return {
-        kind: Frequency.Yearly,
-        month: pattern.month,
-        date: pattern.date,
+        frequency: 'weekly',
+        weekdays: pattern.recurrenceWeekdays.map(fromIso),
+      };
+    case EcsFrequency.Monthly:
+      return { frequency: 'monthly', day: fromEcsMonthly(pattern) };
+    case EcsFrequency.Yearly:
+      return {
+        frequency: 'yearly',
+        month: pattern.yearlyMonth,
+        date: pattern.yearlyDate,
       };
   }
 }
 
-function fromEcsPattern(pattern: RuleData.Pattern): RecurrencePattern {
-  switch (pattern.kind) {
-    case Frequency.Daily:
-      return { frequency: 'daily' };
-    case Frequency.Weekly:
-      return { frequency: 'weekly', weekdays: pattern.weekdays.map(fromIso) };
-    case Frequency.Monthly:
-      return { frequency: 'monthly', day: fromEcsMonthlyDay(pattern.day) };
-    case Frequency.Yearly:
-      return { frequency: 'yearly', month: pattern.month, date: pattern.date };
-  }
-}
-
-function toEcsEnd(end: RecurrenceEnd): RuleData.End {
+function toEcsEnd(end: RecurrenceEnd): RecurrenceEndRule {
   return end.kind === 'until'
-    ? { kind: RecurrenceEndKind.Until, dayKey: dayKeyOf(end.day) }
-    : { kind: RecurrenceEndKind.Count, count: end.count };
+    ? RecurrenceEndRule.until(localDateOf(end.day))
+    : RecurrenceEndRule.count(end.count);
 }
 
-function fromEcsEnd(end: RuleData.End, zone: string): RecurrenceEnd {
-  if (end.kind === RecurrenceEndKind.Count) {
-    return { kind: 'count', count: end.count };
+function fromEcsEnd(end: RecurrenceEndRule, zone: string): RecurrenceEnd {
+  if (end.recurrenceEnd === EcsRecurrenceEnd.Count) {
+    return { kind: 'count', count: end.occurrenceCount };
   }
-  const day = CalendarDay.create(end.dayKey, zone);
-  if (day.isFailure())
-    throw new Error('unreachable: a civil date by arithmetic');
+  const day = CalendarDay.create(end.untilLocalDate, zone);
+  if (day.isFailure()) defect('unreachable: a civil date by arithmetic');
   return { kind: 'until', day: day.value };
 }
 
 function toEcsRule(rule: RecurrenceRule): RuleData {
-  return {
-    pattern: toEcsPattern(rule.pattern),
-    interval: rule.interval,
-    end: toEcsEnd(rule.end),
-  };
+  return RuleData.of(
+    toEcsPattern(rule.pattern),
+    rule.interval,
+    toEcsEnd(rule.end),
+  );
 }
 
 function fromEcsRule(rule: RuleData, zone: string): RecurrenceRule {
   const created = RecurrenceRule.create({
-    pattern: fromEcsPattern(rule.pattern),
-    interval: rule.interval,
-    end: fromEcsEnd(rule.end, zone),
+    pattern: fromEcsPattern(RuleData.patternOf(rule)),
+    interval: rule.recurrenceInterval,
+    end: fromEcsEnd(RuleData.endOf(rule), zone),
   });
-  if (created.isFailure())
-    throw new Error('unreachable: a rule the system made');
+  if (created.isFailure()) defect('unreachable: a rule the system made');
   return created.value;
 }
 

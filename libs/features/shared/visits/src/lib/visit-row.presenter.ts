@@ -13,13 +13,27 @@ import {
   formatMoney,
   ownerUserIdOf,
   subjectVisitOf,
+  toEcsBookingStatus,
+  toEcsSeatOutcome,
 } from '@creativo/application/booking';
 import {
-  DayKey,
+  AttendanceState,
+  LocalDate,
   type PersonSubject,
-  SeatOutcome as EcsSeatOutcome,
+  type SeatOutcome as EcsSeatOutcome,
+  SeatSubject,
+  UserId as EcsUserId,
   VisitStorySystem,
+  defect,
 } from '@creativo/ecs-core';
+import {
+  LEGACY_CANCELLED_SIDE,
+  LEGACY_VISIT_ROW_OUTCOME,
+  VISIT_ROW_OUTCOME_OF,
+  shopNowOf,
+  wallTimeOf,
+  zoneOf,
+} from './visit-ecs.shim';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { dayRange } from './day-range';
 import type { StaffEventLine } from './event-head/staff-event-line';
@@ -56,7 +70,10 @@ import type {
  * cancellation and its side, the people counted, the upcoming rule, the
  * runs of watched days — is `VisitStorySystem` in `@creativo/ecs-core`;
  * the words, the clock's formatting and the money's stay here. The legacy
- * shapes reach it through the converters at the end of this file.
+ * shapes reach it through the converters at the end of this file. Flatten
+ * pass: the system's tags are SCREAMING and its clock is the shop's wall
+ * clock — an hour is upcoming by its start `WallTime` against the shop's
+ * `ShopNow`, both read in the visit's own zone at this boundary.
  */
 
 /**
@@ -244,10 +261,12 @@ export function visitRowOf(
   const story = storyOf(appointment, options);
   const id = appointment.id.value;
   const current = id === options.currentAppointmentId;
+  const zone = zoneOf(start.zoneName);
   const upcoming = VisitStorySystem.isUpcoming(
-    story.outcome,
-    startMs,
-    options.nowMs,
+    VISIT_ROW_OUTCOME_OF[story.outcome],
+    wallTimeOf(startMs, zone),
+    // One reading per list: every row shares the list's `nowMs`.
+    shopNowOf(options.nowMs, zone),
   );
   const hollow = story.outcome === 'cancelled' || story.outcome === 'no_show';
 
@@ -650,13 +669,16 @@ export function storyOf(
 
 function rootStoryOf(appointment: Appointment): VisitStory {
   const root = VisitStorySystem.rootStory(
-    appointment.status.kind,
-    appointment.seats.map((seat) => toEcsOutcome(seat.outcome)),
+    toEcsBookingStatus(appointment.status.kind),
+    appointment.seats.map((seat) => toEcsSeatOutcome(seat.outcome)),
   );
   return {
     seats: appointment.seats,
-    outcome: root.outcome,
-    cancelledBy: root.cancelledBy,
+    outcome: LEGACY_VISIT_ROW_OUTCOME[root.outcome],
+    cancelledBy:
+      root.cancelledBy === null
+        ? null
+        : LEGACY_CANCELLED_SIDE[root.cancelledBy],
   };
 }
 
@@ -666,9 +688,11 @@ function rootStoryOf(appointment: Appointment): VisitStory {
  * seats, so only a hand-edited document — holds nothing against the client.
  */
 function sideOf(cancellation: Cancellation | null): 'client' | 'shop' {
-  return VisitStorySystem.cancelledSide(
-    cancellation === null ? null : toEcsCancellation(cancellation),
-  );
+  return LEGACY_CANCELLED_SIDE[
+    VisitStorySystem.cancelledSide(
+      cancellation === null ? null : toEcsCancellation(cancellation),
+    )
+  ];
 }
 
 /**
@@ -684,7 +708,7 @@ function priceOf(appointment: Appointment, seats: readonly Seat[]): Money {
       const sum = total.add(price);
       // Unreachable: `validateSeats` rejects a mixed-currency appointment
       // at build, so `add` cannot mismatch here.
-      if (sum.isFailure()) throw new Error('unreachable: mixed currency');
+      if (sum.isFailure()) defect('unreachable: mixed currency');
       return sum.value;
     });
 }
@@ -811,7 +835,7 @@ interface DayRun {
 /** Runs of consecutive calendar days, in order — «чт, пт» reads «чт – пт». */
 function runsOf(days: readonly DayWindows[]): readonly DayRun[] {
   return VisitStorySystem.dayRuns(
-    days.map((day) => DayKey.of(day.day.key())),
+    days.map((day) => localDateOf(day.day.key())),
   ).map((run) => ({
     first: days[run.first] as DayWindows,
     last: days[run.last] as DayWindows,
@@ -821,8 +845,8 @@ function runsOf(days: readonly DayWindows[]): readonly DayRun[] {
 /** Inside the coming week: the weekday says it («чт»). */
 function withinWeek(day: DayWindows, today: CalendarDay | null): boolean {
   return VisitStorySystem.withinWeek(
-    DayKey.of(day.day.key()),
-    today === null ? null : DayKey.of(today.key()),
+    localDateOf(day.day.key()),
+    today === null ? null : localDateOf(today.key()),
   );
 }
 
@@ -868,36 +892,35 @@ function dayLong(
 
 // ── Legacy ↔ ECS converters (Phase 2 shim) ──────────────────────────────
 
-/** A legacy seat outcome → the `SeatOutcome` struct. */
-function toEcsOutcome(outcome: SeatOutcome): EcsSeatOutcome {
-  switch (outcome.kind) {
-    case 'scheduled':
-      return EcsSeatOutcome.scheduled();
-    case 'worked':
-      return EcsSeatOutcome.worked(outcome.atMs);
-    case 'no_show':
-      return EcsSeatOutcome.noShow(outcome.atMs);
-    case 'cancelled':
-      return toEcsCancellation(outcome);
-  }
-}
-
-/** A legacy cancellation → the struct (its stamped window as whole hours). */
+/**
+ * A legacy cancellation → the flat struct — the domain shim's own converter
+ * (`toEcsSeatOutcome`, its window stamp as whole hours), narrowed back to
+ * the variant it is.
+ */
 function toEcsCancellation(
   cancellation: Cancellation,
 ): EcsSeatOutcome.Cancelled {
-  return {
-    kind: 'cancelled',
-    atMs: cancellation.atMs,
-    by: cancellation.by,
-    reason: { kind: cancellation.reason.kind },
-    windowHours: cancellation.window?.hours ?? null,
-  };
+  const outcome = toEcsSeatOutcome(cancellation);
+  // Unreachable: a legacy cancellation converts to the cancelled variant.
+  if (outcome.attendanceState !== AttendanceState.Cancelled) {
+    defect('unreachable: a cancellation that is not one');
+  }
+  return outcome;
 }
 
 /** Who a legacy seat is for, as people are counted. */
 function toPersonSubject(seat: Seat): PersonSubject {
   return seat.subject.kind === 'account'
-    ? { kind: 'account', userId: seat.subject.userId.value }
-    : { kind: 'anonymous', label: seat.subject.label.value };
+    ? {
+        seatSubject: SeatSubject.Account,
+        userId: EcsUserId.of(seat.subject.userId.value),
+      }
+    : { seatSubject: SeatSubject.Anonymous, label: seat.subject.label.value };
+}
+
+/** A legacy calendar day's key — a civil date by construction. */
+function localDateOf(key: string): LocalDate {
+  const day = LocalDate.parse(key);
+  if (!day.ok) defect(`unreachable: not a civil date ${key}`);
+  return day.value;
 }

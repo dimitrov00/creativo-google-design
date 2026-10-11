@@ -1,10 +1,11 @@
 import {
+  PERSONALIZE_STEPS as FLOW_PERSONALIZE_STEPS,
   type IdentityError,
   OnboardingFlowEvent as FlowEvent,
   OnboardingFlowState as FlowState,
   OnboardingFlowStep,
   OnboardingFlowSystem,
-  type PersonalizeStep,
+  type PersonalizeStep as FlowPersonalizeStep,
   type Result as FlowResult,
   ServiceId as ServiceKey,
 } from '@creativo/ecs-core';
@@ -62,6 +63,48 @@ export type OnboardingFlowEvent =
 export const ONBOARDING_FLOW_INITIAL_STATE: OnboardingFlowState = {
   kind: 'about',
 };
+
+/**
+ * The system's SCREAMING step tag → this file's lowercase state `kind` — the
+ * one table of the dictionary (flatten-spec §8.9); the plan steps cross
+ * through it too.
+ */
+const LEGACY_ONBOARDING_FLOW_STEP = {
+  [OnboardingFlowStep.About]: 'about',
+  [OnboardingFlowStep.Reward]: 'reward',
+  [OnboardingFlowStep.Services]: 'services',
+  [OnboardingFlowStep.Birthday]: 'birthday',
+  [OnboardingFlowStep.Avatar]: 'avatar',
+  [OnboardingFlowStep.Entering]: 'entering',
+} as const satisfies {
+  readonly [S in OnboardingFlowStep]: OnboardingFlowState['kind'];
+};
+
+/** A personalization step in this file's lowercase spelling — the store's plan vocabulary. */
+export type PersonalizeStep =
+  (typeof LEGACY_ONBOARDING_FLOW_STEP)[FlowPersonalizeStep];
+
+/**
+ * The optional phase's steps, in the order the flow machine walks them —
+ * the system's `PERSONALIZE_STEPS` (the one list), spelled as this file's
+ * states are.
+ */
+export const PERSONALIZE_STEPS: readonly PersonalizeStep[] =
+  FLOW_PERSONALIZE_STEPS.map((step) => LEGACY_ONBOARDING_FLOW_STEP[step]);
+
+/** A lowercase plan step → the system's tag. */
+const ECS_PERSONALIZE_STEP = {
+  services: OnboardingFlowStep.Services,
+  birthday: OnboardingFlowStep.Birthday,
+  avatar: OnboardingFlowStep.Avatar,
+} as const satisfies { readonly [S in PersonalizeStep]: FlowPersonalizeStep };
+
+/** A resume plan as the system reads it. */
+function toFlowPlan(
+  plan: readonly PersonalizeStep[],
+): readonly FlowPersonalizeStep[] {
+  return plan.map((step) => ECS_PERSONALIZE_STEP[step]);
+}
 
 /*
  * Phase 2 shim (ECS migration): the transition function and the resume
@@ -173,7 +216,7 @@ function toLegacyState(
   next: FlowState,
   selections: readonly Selection[],
 ): OnboardingFlowState {
-  switch (next.kind) {
+  switch (next.onboardingFlowStep) {
     case OnboardingFlowStep.About:
       return next.error === null
         ? { kind: 'about' }
@@ -246,7 +289,7 @@ export function advanceOnboardingFlowWithinPlan(
   const next = OnboardingFlowSystem.nextWithinPlan(
     ecsState,
     toFlowEvent(event, selections),
-    plan,
+    toFlowPlan(plan),
   );
   return toLegacyResult(next, ecsState, state, event, selections);
 }
@@ -258,7 +301,7 @@ export function backOnboardingFlowWithinPlan(
 ): Result<OnboardingFlowState, InvalidOnboardingFlowTransitionError> {
   const selections: Selection[] = [];
   const ecsState = toFlowState(state, selections);
-  const next = OnboardingFlowSystem.backWithinPlan(ecsState, plan);
+  const next = OnboardingFlowSystem.backWithinPlan(ecsState, toFlowPlan(plan));
   return toLegacyResult(next, ecsState, state, { type: 'back' }, selections);
 }
 
@@ -267,5 +310,8 @@ export function onboardingPlanPosition(
   state: OnboardingFlowState,
   plan: readonly PersonalizeStep[],
 ): number {
-  return OnboardingFlowSystem.planPosition(toFlowState(state, []), plan);
+  return OnboardingFlowSystem.planPosition(
+    toFlowState(state, []),
+    toFlowPlan(plan),
+  );
 }

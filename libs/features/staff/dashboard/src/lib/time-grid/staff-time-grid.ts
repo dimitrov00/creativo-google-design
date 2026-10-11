@@ -40,9 +40,14 @@ import {
   timeLabel,
 } from './grid-gesture';
 import {
+  EndMinute,
   type EventRuns,
+  GridEvent as GridEventTag,
   GridLayoutSystem,
   type LaneSlot,
+  MinuteOfDay,
+  type MinuteRun,
+  type RunEvent,
 } from '@creativo/ecs-core';
 
 /** One block drawn in a column — a visit, an absence, or a sellable hole. */
@@ -905,7 +910,10 @@ export class StaffTimeGrid {
       // ONE sweep per column (`GridLayoutSystem.columnRuns`): the blocks
       // sorted once by start, the windows once, every block's outside and
       // overlap runs emitted together — never a block against every sibling.
-      const runs = GridLayoutSystem.columnRuns(laid, column.open);
+      // The open windows are read as runs ONCE per column, for the sweep
+      // and the closed bands alike.
+      const open = column.open.map(toMinuteRun);
+      const runs = GridLayoutSystem.columnRuns(laid.map(toRunEvent), open);
       const placed = laid.map((event, index) =>
         maskEvent(
           event,
@@ -916,7 +924,7 @@ export class StaffTimeGrid {
       return {
         ...column,
         placed,
-        closed: empty ? [] : closedRuns(column.open, start, end),
+        closed: empty ? [] : closedRuns(open, start, end),
         // Only ever non-empty on the opened chair, because the cap collapses
         // to a single drawn column the moment anything is ghosted.
         ghosts: empty ? [] : ghostBlocks(ghosted, start, minutes),
@@ -2235,7 +2243,7 @@ export class StaffTimeGrid {
  * through the middle of an open day.
  */
 function closedRuns(
-  open: readonly OpenWindow[],
+  open: readonly MinuteRun[],
   start: number,
   end: number,
 ): readonly ClosedRun[] {
@@ -2244,9 +2252,11 @@ function closedRuns(
   // the extent's own track, so a shift reaching outside it — a lunch break
   // at 13:00 while the frame draws 09:00–12:00 — must not ask for rows the
   // column does not have.
-  return GridLayoutSystem.closedRuns(open, start, end).map((closed) =>
-    run(closed.startMinute, closed.endMinute, start),
-  );
+  return GridLayoutSystem.closedRuns(
+    open,
+    trackStart(start),
+    trackEnd(end),
+  ).map((closed) => run(closed.startMinutes, closed.endMinutes, start));
 }
 
 function run(from: number, to: number, origin: number): ClosedRun {
@@ -2349,10 +2359,10 @@ function maskEvent(
   // ABSENCE of a booking — never the other side of a collision.
   const closed = runs.outside;
   for (const shut of closed) {
-    masks.push(run('closed', [shut.startMinute, shut.endMinute]));
+    masks.push(run('closed', [shut.startMinutes, shut.endMinutes]));
   }
   for (const hit of runs.overlap) {
-    masks.push(run('overlap', [hit.startMinute, hit.endMinute]));
+    masks.push(run('overlap', [hit.startMinutes, hit.endMinutes]));
   }
   return { ...event, masks, outside: closed.length > 0 };
 }
@@ -2380,7 +2390,7 @@ function place(
   // A cluster is a run of events that transitively overlap; lanes are only
   // ever shared within one, so a busy morning cannot narrow a quiet afternoon
   // (`GridLayoutSystem.lanes`, parallel to `sorted`).
-  const slots = GridLayoutSystem.lanes(sorted);
+  const slots = GridLayoutSystem.lanes(sorted.map(toMinuteRun));
   const placed: LaidEvent[] = sorted.map((event, index) => {
     const slot = slots.at(index) as LaneSlot;
     return {
@@ -2464,4 +2474,54 @@ function proportionalBox(
  */
 function fraction(value: number): number {
   return Number(value.toFixed(6));
+}
+
+/* ── The geometry system's boundary (flatten pass) ────────────────────── */
+
+/*
+ * `GridLayoutSystem` reads ONE shop day's track as branded minutes
+ * (`MinuteOfDay` starts in `[0, 1440)`, `EndMinute` ends in `(0, 1440]`) and
+ * tags a block by `gridEvent` (SCREAMING). This component's public types keep
+ * their plain `startMinute` / `endMinute` and the lower-case `kind`; the
+ * figures it draws are whole minutes of the column's day by construction (a
+ * visit never crosses midnight, F-6), so the conversion clamps onto the day
+ * rather than inventing a figure the track does not have.
+ */
+
+/** The system's tag of each block kind — the ONE table. */
+const GRID_EVENT_OF = {
+  visit: GridEventTag.Visit,
+  gap: GridEventTag.Gap,
+  block: GridEventTag.Block,
+} as const satisfies Record<GridEvent['kind'], GridEventTag>;
+
+/** A minute of the track as a start, clamped onto the day — proven, so no `Result` per drag tick. */
+function trackStart(minute: number): MinuteOfDay {
+  return MinuteOfDay.ofProven(Math.min(1439, Math.max(0, Math.round(minute))));
+}
+
+/** A minute of the track as an exclusive end, clamped onto the day — proven, so no `Result` per drag tick. */
+function trackEnd(minute: number): EndMinute {
+  return EndMinute.ofProven(Math.min(1440, Math.max(1, Math.round(minute))));
+}
+
+/** A stretch of the track — an open window, a laid block — as the system's run. */
+function toMinuteRun(stretch: {
+  readonly startMinute: number;
+  readonly endMinute: number;
+}): MinuteRun {
+  return {
+    startMinutes: trackStart(stretch.startMinute),
+    endMinutes: trackEnd(stretch.endMinute),
+  };
+}
+
+/** A laid block as the sweep reads it: its id, its tag and its stretch — one literal, one allocation. */
+function toRunEvent(event: LaidEvent): RunEvent {
+  return {
+    id: event.id,
+    gridEvent: GRID_EVENT_OF[event.kind],
+    startMinutes: trackStart(event.startMinute),
+    endMinutes: trackEnd(event.endMinute),
+  };
 }

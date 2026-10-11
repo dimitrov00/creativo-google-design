@@ -1,11 +1,18 @@
 import { type User } from '@creativo/application/accounts';
 import {
-  AccountStatus as GlanceStatus,
+  AccountLifecycle,
   AgeSystem,
   BirthDate,
-  type BlockReason,
+  BlockReason,
   ClientGlanceSystem,
-  DayKey,
+  LocalDate,
+  ServiceId,
+  ServiceVariantId,
+  type TimeZone,
+  UtcEpochMs,
+  type WallTime,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import {
   type Appointment,
@@ -65,7 +72,11 @@ import type { ClientCardWords } from './client-card.words';
  */
 
 /** The shop's zone: pauses, birthdays and «днес» are read on its calendar. */
-const SHOP_ZONE = 'Europe/Sofia';
+const SHOP_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
+  if (!zone.ok) defect('unreachable: the shop zone is a zone');
+  return zone.value;
+})();
 
 /** How many capsules show before «+N» stands for the rest. */
 const CAPSULE_LIMIT = 4;
@@ -84,16 +95,22 @@ export function pauseOf(
   user: User | null,
   nowMs: number,
 ): { readonly until: string | null } | null {
-  const pause = ClientGlanceSystem.pauseOf(statusOf(user), nowMs);
+  const now = UtcEpochMs.of(nowMs);
+  // No instant to judge by: nothing can be shown paused at it.
+  if (!now.ok) return null;
+  const pause = ClientGlanceSystem.pauseOf(statusOf(user), now.value);
   if (pause === null) return null;
-  return { until: pause.untilMs === null ? null : shopDayOf(pause.untilMs) };
+  return {
+    until: pause.untilUtcMs === null ? null : shopDayOf(pause.untilUtcMs),
+  };
 }
 
 /** Today is the person's birthday (a 29 February one is kept on the 28th in other years). */
 export function isBirthdayToday(user: User | null, today: string): boolean {
   const birth = user?.birthDate?.toISODate();
   if (birth === undefined) return false;
-  return AgeSystem.isBirthdayOn(BirthDate.of(birth), DayKey.of(today));
+  const day = LocalDate.parse(today);
+  return day.ok && AgeSystem.isBirthdayOn(BirthDate.of(birth), day.value);
 }
 
 /** The name the card shows: `users/{uid}`'s once read, the seat's until then (and for good, for a guest). */
@@ -223,12 +240,16 @@ export function sameLegs(
 ): boolean {
   return ClientGlanceSystem.sameLegs(
     last.map((leg) => ({
-      serviceId: leg.serviceId.value,
-      variantId: leg.variantId?.value ?? null,
+      serviceId: ServiceId.of(leg.serviceId.value),
+      variantId:
+        leg.variantId === null
+          ? null
+          : ServiceVariantId.of(leg.variantId.value),
     })),
     draft.map((leg) => ({
-      serviceId: leg.serviceId,
-      variantId: leg.variantId,
+      serviceId: ServiceId.of(leg.serviceId),
+      variantId:
+        leg.variantId === null ? null : ServiceVariantId.of(leg.variantId),
     })),
   );
 }
@@ -543,24 +564,48 @@ export function isInChairToday(
   context: ClientCardContext,
   nowMs: number,
 ): boolean {
+  const now = UtcEpochMs.of(nowMs);
+  // No "today" without a now to read it from.
+  if (!now.ok) return false;
+  const legs: WallTime[] = [];
+  for (const leg of context.legs) {
+    // A leg whose start is no instant starts on no day.
+    const start = UtcEpochMs.of(Date.parse(leg.startsAtIso));
+    if (start.ok) legs.push(ZonedTimeSystem.toLocal(start.value, SHOP_ZONE));
+  }
   return ClientGlanceSystem.isInChairToday(
     context.appointmentId !== null && !context.settled,
-    context.legs.map((leg) => Date.parse(leg.startsAtIso)),
-    nowMs,
-    SHOP_ZONE,
+    legs,
+    ZonedTimeSystem.shopNow(now.value, SHOP_ZONE),
   );
 }
 
 // ── The bridge: legacy class → ecs-core struct (Phase 4 deletes it) ──────
 
-/** The account's status as `ClientGlanceSystem` reads it: the pause's end in ms. */
-function statusOf(user: User | null): GlanceStatus | null {
+/** The legacy block reasons ↔ `BlockReason` — the ONE table. */
+const BLOCK_REASON_OF = {
+  excessive_failed_attempts: BlockReason.ExcessiveFailedAttempts,
+  terms_violation: BlockReason.TermsViolation,
+  fraud_suspect: BlockReason.FraudSuspect,
+  manual: BlockReason.Manual,
+} as const satisfies Record<
+  Extract<User['status'], { kind: 'blocked' }>['reason'],
+  BlockReason
+>;
+
+/**
+ * The account's status as `ClientGlanceSystem` reads it: the pause's end as
+ * an instant. An end that is no instant cannot be shown, so the pause reads
+ * as one for good — the legacy reading of an end that never comes.
+ */
+function statusOf(user: User | null): AccountLifecycle | null {
   if (user === null) return null;
   const { status } = user;
-  return status.kind === 'blocked'
-    ? GlanceStatus.block(
-        status.reason as BlockReason,
-        status.until === undefined ? null : status.until.toMillis(),
-      )
-    : GlanceStatus.active();
+  if (status.kind !== 'blocked') return AccountLifecycle.active();
+  const until =
+    status.until === undefined ? null : UtcEpochMs.of(status.until.toMillis());
+  return AccountLifecycle.block(
+    BLOCK_REASON_OF[status.reason],
+    until === null || !until.ok ? null : until.value,
+  );
 }

@@ -6,18 +6,16 @@ import {
   parseImpersonationScope,
 } from '../components/impersonation-scope.data';
 import {
+  EndReasonFields,
   ImpersonationEndReason,
-  ImpersonationEndReasonKind,
-  ImpersonationState,
+  ImpersonationLifecycle,
   ImpersonationStatus,
 } from '../components/impersonation-status.data';
 import { Role } from '../components/role.data';
-import {
-  type ImpersonationSessionEntity,
-  ImpersonationSessionId,
-} from '../entities/impersonation-session.entity';
-import { UserId } from '../entities/user.entity';
-import { deepFreeze, unwrapErr, unwrapOk } from '../testing';
+import type { ImpersonationSession } from '../entities/impersonation-session.entity';
+import { ImpersonationSessionId, UserId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { deepFreeze, unwrapErr, unwrapOk, utcMs } from '../testing';
 import {
   ImpersonationSystem,
   type StartImpersonation,
@@ -27,21 +25,24 @@ import {
  * The cases of libs/domain/governance/src/lib/impersonation-session.spec.ts,
  * COPIED and re-targeted: `ImpersonationSession.start/.reconstitute/.end/
  * .isExpired` → `ImpersonationSystem.start/.faults/.end/.isExpired`, ISO
- * instants → epoch ms, the `Clock` → `nowMs`, `isSuccess(r)` → `r.ok`. The
- * class spec keeps running against its shim. A raw scope string is now
- * refused at its own edge (`parseImpersonationScope`) before start.
+ * instants → `UtcEpochMs`, the `Clock` → `nowUtcMs`, `isSuccess(r)` →
+ * `r.ok`, the nested status → the flat lifecycle slice at the session's
+ * root. The class spec keeps running against its shim. A raw scope string
+ * is now refused at its own edge (`parseImpersonationScope`) before start.
  *
  * Also copied: the session math of libs/application/governance/src/lib/
  * use-cases/start-impersonation.use-case.spec.ts and
- * end-impersonation.use-case.spec.ts (the staff gate; `expired` vs
- * `admin_ended` by the one expiry rule).
+ * end-impersonation.use-case.spec.ts (the staff gate; `EXPIRED` vs
+ * `ADMIN_ENDED` by the one expiry rule).
  */
 
 const MINUTE = 60_000;
-/** 2026-06-01T10:00:00Z */
-const STARTED = 1_780_308_000_000;
+const STARTED = utcMs('2026-06-01T10:00:00Z');
+/** `STARTED` plus `minutes` (negative: before it). */
+const at = (minutes: number): UtcEpochMs =>
+  UtcEpochMs.plusMs(STARTED, minutes * MINUTE);
 /** 2026-06-01T10:15:00Z */
-const EXPIRES = STARTED + 15 * MINUTE;
+const EXPIRES = at(15);
 
 const adminId = UserId.of('admin-1');
 const targetId = UserId.of('user-1');
@@ -56,23 +57,23 @@ function startProps(
     adminUserId: adminId,
     adminRoles: STAFF_ROLES,
     targetUserId: targetId,
-    scope: ImpersonationScope.Read,
+    impersonationScope: ImpersonationScope.Read,
     reason: 'Investigating issue #1234',
-    startedAtMs: STARTED,
-    expiresAtMs: EXPIRES,
+    startedAtUtcMs: STARTED,
+    expiresAtUtcMs: EXPIRES,
     ...overrides,
   };
 }
 
 const codesOf = (
   result: ReturnType<typeof ImpersonationSystem.start>,
-): readonly string[] => unwrapErr(result).map((e) => e.code);
+): readonly string[] => unwrapErr(result).map((e) => e.errorCode);
 
 describe('ImpersonationSystem.start', () => {
   it('builds an active session with the validated payload', () => {
     const session = unwrapOk(ImpersonationSystem.start(startProps()));
-    expect(ImpersonationStatus.isActive(session.status)).toBe(true);
-    expect(session.scope).toBe(ImpersonationScope.Read);
+    expect(ImpersonationLifecycle.isActive(session)).toBe(true);
+    expect(session.impersonationScope).toBe(ImpersonationScope.Read);
     expect(session.adminUserId).toBe(adminId);
     expect(session.targetUserId).toBe(targetId);
   });
@@ -94,18 +95,18 @@ describe('ImpersonationSystem.start', () => {
 
   it('rejects expiresAt at-or-before startedAt', () => {
     expect(
-      codesOf(ImpersonationSystem.start(startProps({ expiresAtMs: STARTED }))),
+      codesOf(
+        ImpersonationSystem.start(startProps({ expiresAtUtcMs: STARTED })),
+      ),
     ).toContain(GovernanceErrorCode.ImpersonationInvalidExpiry);
     expect(
-      ImpersonationSystem.start(
-        startProps({ expiresAtMs: STARTED - 60 * MINUTE }),
-      ).ok,
+      ImpersonationSystem.start(startProps({ expiresAtUtcMs: at(-60) })).ok,
     ).toBe(false);
   });
 
   it('rejects an invalid scope — at its edge, before start', () => {
     expect(unwrapErr(parseImpersonationScope('full'))).toEqual({
-      code: GovernanceErrorCode.ImpersonationScopeInvalid,
+      errorCode: GovernanceErrorCode.ImpersonationScopeInvalid,
       attempted: 'full',
     });
   });
@@ -117,7 +118,7 @@ describe('ImpersonationSystem.start', () => {
       ),
     ).toEqual([
       {
-        code: GovernanceErrorCode.ImpersonationAdminNotStaff,
+        errorCode: GovernanceErrorCode.ImpersonationAdminNotStaff,
         adminUserId: 'admin-1',
       },
     ]);
@@ -142,7 +143,7 @@ describe('ImpersonationSystem.start', () => {
           startProps({
             targetUserId: adminId,
             reason: ' ',
-            expiresAtMs: STARTED,
+            expiresAtUtcMs: STARTED,
           }),
         ),
       ),
@@ -158,11 +159,11 @@ describe('ImpersonationSystem.start', () => {
   });
 });
 
-function activeSession(): ImpersonationSessionEntity {
+function activeSession(): ImpersonationSession {
   return unwrapOk(
     ImpersonationSystem.start(
       startProps({
-        scope: ImpersonationScope.Write,
+        impersonationScope: ImpersonationScope.Write,
         reason: 'fixing broken booking',
       }),
     ),
@@ -174,32 +175,32 @@ describe('ImpersonationSystem.end', () => {
     const ended = unwrapOk(
       ImpersonationSystem.end(
         activeSession(),
-        STARTED + 10 * MINUTE,
-        ImpersonationEndReason.adminEnded(adminId),
+        at(10),
+        EndReasonFields.adminEnded(adminId),
       ),
     );
-    expect(ImpersonationStatus.isActive(ended.status)).toBe(false);
-    expect(ended.status.kind).toBe(ImpersonationState.Ended);
+    expect(ImpersonationLifecycle.isActive(ended)).toBe(false);
+    expect(ended.impersonationStatus).toBe(ImpersonationStatus.Ended);
   });
 
   it('fails when ending an already-ended session', () => {
     const first = unwrapOk(
       ImpersonationSystem.end(
         activeSession(),
-        STARTED + 10 * MINUTE,
-        ImpersonationEndReason.expired(),
+        at(10),
+        EndReasonFields.expired(),
       ),
     );
     expect(
       unwrapErr(
         ImpersonationSystem.end(
           first,
-          STARTED + 11 * MINUTE,
-          ImpersonationEndReason.adminEnded(adminId),
+          at(11),
+          EndReasonFields.adminEnded(adminId),
         ),
       ),
     ).toEqual({
-      code: GovernanceErrorCode.ImpersonationAlreadyEnded,
+      errorCode: GovernanceErrorCode.ImpersonationAlreadyEnded,
       sessionId: 'sess-1',
     });
   });
@@ -209,7 +210,9 @@ describe('ImpersonationSystem.isExpired — boundary conditions (blueprint §7.8
   const session = activeSession(); // expiresAt = 2026-06-01T10:15:00Z
 
   it('is false just before expiresAt', () => {
-    expect(ImpersonationSystem.isExpired(session, EXPIRES - 1)).toBe(false);
+    expect(
+      ImpersonationSystem.isExpired(session, UtcEpochMs.plusMs(EXPIRES, -1)),
+    ).toBe(false);
   });
 
   it('is true exactly at expiresAt', () => {
@@ -217,39 +220,41 @@ describe('ImpersonationSystem.isExpired — boundary conditions (blueprint §7.8
   });
 
   it('is true just after expiresAt', () => {
-    expect(ImpersonationSystem.isExpired(session, EXPIRES + 1)).toBe(true);
+    expect(
+      ImpersonationSystem.isExpired(session, UtcEpochMs.plusMs(EXPIRES, 1)),
+    ).toBe(true);
   });
 });
 
 describe('ImpersonationSystem.faults (impersonation-session.spec.ts › reconstitute)', () => {
   const stored = (
-    overrides: Partial<ImpersonationSessionEntity> = {},
-  ): ImpersonationSessionEntity => ({
-    id: ImpersonationSessionId.of('sess-1'),
-    adminUserId: adminId,
-    targetUserId: targetId,
-    scope: ImpersonationScope.Read,
-    reason: 'Investigating issue #1234',
-    startedAtMs: STARTED,
-    expiresAtMs: EXPIRES,
-    status: ImpersonationStatus.active(),
-    ...overrides,
-  });
+    overrides: Partial<ImpersonationSession> = {},
+  ): ImpersonationSession =>
+    ({
+      id: ImpersonationSessionId.of('sess-1'),
+      adminUserId: adminId,
+      targetUserId: targetId,
+      impersonationScope: ImpersonationScope.Read,
+      reason: 'Investigating issue #1234',
+      startedAtUtcMs: STARTED,
+      expiresAtUtcMs: EXPIRES,
+      ...ImpersonationLifecycle.active(),
+      ...overrides,
+    }) as ImpersonationSession;
 
   it('rebuilds an active session without needing adminRoles', () => {
     expect(ImpersonationSystem.faults(stored())).toEqual([]);
   });
 
   it('rebuilds an ended session with its end reason', () => {
-    const ended = stored({
-      status: {
-        kind: ImpersonationState.Ended,
-        endedAtMs: STARTED + 10 * MINUTE,
-        reason: ImpersonationEndReason.expired(),
-      },
-    });
+    const ended: ImpersonationSession = {
+      ...stored(),
+      impersonationStatus: ImpersonationStatus.Ended,
+      endedAtUtcMs: at(10),
+      ...EndReasonFields.expired(),
+    };
     expect(ImpersonationSystem.faults(ended)).toEqual([]);
-    expect(ImpersonationStatus.isActive(ended.status)).toBe(false);
+    expect(ImpersonationLifecycle.isActive(ended)).toBe(false);
   });
 
   it('still rejects structurally invalid persisted data (self-impersonation)', () => {
@@ -262,7 +267,7 @@ describe('ImpersonationSystem.faults (impersonation-session.spec.ts › reconsti
 describe('ImpersonationSystem — the use cases (start/end-impersonation.use-case.spec.ts)', () => {
   it('starts a session for a staff admin', () => {
     const session = unwrapOk(ImpersonationSystem.start(startProps()));
-    expect(ImpersonationStatus.isActive(session.status)).toBe(true);
+    expect(ImpersonationLifecycle.isActive(session)).toBe(true);
   });
 
   it('rejects a non-staff impersonator', () => {
@@ -271,36 +276,41 @@ describe('ImpersonationSystem — the use cases (start/end-impersonation.use-cas
     ).toBe(false);
   });
 
-  it('ends an active session with an admin_ended reason before expiry', () => {
+  it('ends an active session with an ADMIN_ENDED reason before expiry', () => {
     const ended = unwrapOk(
       ImpersonationSystem.endByAdmin(
         activeSession(),
         UserId.of('admin_1'),
-        STARTED + 5 * MINUTE,
+        at(5),
       ),
     );
-    expect(ended.status).toEqual({
-      kind: ImpersonationState.Ended,
-      endedAtMs: STARTED + 5 * MINUTE,
-      reason: {
-        kind: ImpersonationEndReasonKind.AdminEnded,
-        endedBy: 'admin_1',
-      },
+    expect(ended).toEqual({
+      id: 'sess-1',
+      adminUserId: 'admin-1',
+      targetUserId: 'user-1',
+      impersonationScope: 'WRITE',
+      reason: 'fixing broken booking',
+      startedAtUtcMs: STARTED,
+      expiresAtUtcMs: EXPIRES,
+      impersonationStatus: ImpersonationStatus.Ended,
+      endedAtUtcMs: at(5),
+      impersonationEndReason: ImpersonationEndReason.AdminEnded,
+      endedByUserId: 'admin_1',
     });
   });
 
-  it('tags the reason as expired when the window had already lapsed', () => {
+  it('tags the reason as EXPIRED when the window had already lapsed', () => {
     const ended = unwrapOk(
       ImpersonationSystem.endByAdmin(
         activeSession(),
         UserId.of('admin_1'),
-        EXPIRES + 10 * MINUTE,
+        UtcEpochMs.plusMs(EXPIRES, 10 * MINUTE),
       ),
     );
     expect(
-      ended.status.kind === ImpersonationState.Ended &&
-        ended.status.reason.kind,
-    ).toBe(ImpersonationEndReasonKind.Expired);
+      ended.impersonationStatus === ImpersonationStatus.Ended &&
+        ended.impersonationEndReason,
+    ).toBe(ImpersonationEndReason.Expired);
   });
 });
 
@@ -316,7 +326,7 @@ describe('ImpersonationSystem properties', () => {
           const request = startProps({
             targetUserId: self ? adminId : targetId,
             reason,
-            expiresAtMs: STARTED + length * MINUTE,
+            expiresAtUtcMs: at(length),
             adminRoles: roles,
           });
           const sound = !self && reason.trim() !== '' && length > 0;

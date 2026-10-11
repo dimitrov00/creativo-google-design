@@ -1,16 +1,17 @@
 import {
   StreakInterval,
-  StreakIntervalKind,
+  StreakIntervalRule,
 } from '../components/streak-interval.data';
 import {
   StreakQualifier,
-  StreakQualifierKind,
+  StreakQualifierRule,
 } from '../components/streak-qualifier.data';
 import {
   STREAK_EXCUSES,
   StreakRule,
   type StreakExcuse,
   type StreakOnBreak,
+  type StreakRuleInput,
 } from '../components/streak-rule.data';
 
 /*
@@ -23,8 +24,10 @@ import {
  * can reach is one the rule refuses. The figure in hand wins; what depends
  * on it follows.
  *
- * A change names only what it moves: every part of `RhythmPatch` is present
- * and `null` where the change leaves it alone (absent is `null`).
+ * A change names only what it moves: it mirrors the FLAT rule field by
+ * field (Law 6), every field present and `null` where the change leaves it
+ * alone (absent is `null`); the qualifier and the interval are named whole,
+ * as the slices they are.
  */
 
 /** An inclusive range of a figure. */
@@ -37,15 +40,15 @@ export type RhythmRange = { readonly min: number; readonly max: number };
  */
 export type RhythmIntervalPatch =
   | {
-      readonly kind: typeof StreakIntervalKind.Fixed;
-      readonly days: number | null;
+      readonly streakInterval: typeof StreakInterval.Fixed;
+      readonly intervalDays: number | null;
     }
   | {
-      readonly kind: typeof StreakIntervalKind.Personal;
-      readonly tolerancePct: number | null;
-      readonly minDays: number | null;
-      readonly maxDays: number | null;
-      readonly fallbackDays: number | null;
+      readonly streakInterval: typeof StreakInterval.Personal;
+      readonly intervalTolerancePct: number | null;
+      readonly intervalMinDays: number | null;
+      readonly intervalMaxDays: number | null;
+      readonly intervalFallbackDays: number | null;
     };
 
 /**
@@ -55,38 +58,30 @@ export type RhythmIntervalPatch =
  */
 export type RhythmPatch = {
   readonly enabled: boolean | null;
-  readonly qualifier: StreakQualifier | null;
+  readonly qualifier: StreakQualifierRule | null;
   readonly minGapDays: number | null;
-  readonly bookingHold: {
-    readonly enabled: boolean | null;
-    readonly maxDaysPastDue: number | null;
-  } | null;
+  readonly bookingHoldEnabled: boolean | null;
+  readonly bookingHoldMaxDaysPastDue: number | null;
   readonly interval: RhythmIntervalPatch | null;
   readonly graceDays: number | null;
   readonly riskLeadDays: number | null;
-  readonly protections: {
-    readonly enabled: boolean | null;
-    readonly maxBanked: number | null;
-    readonly earnEvery: number | null;
-    readonly startWith: number | null;
-  } | null;
+  readonly protectionsEnabled: boolean | null;
+  readonly protectionsMaxBanked: number | null;
+  readonly protectionsEarnEvery: number | null;
+  readonly protectionsStartWith: number | null;
   readonly excuses: readonly StreakExcuse[] | null;
-  readonly clientPause: {
-    readonly enabled: boolean | null;
-    readonly maxDaysPerYear: number | null;
-  } | null;
-  readonly repair: {
-    readonly enabled: boolean | null;
-    readonly windowDays: number | null;
-    readonly perYear: number | null;
-  } | null;
+  readonly clientPauseEnabled: boolean | null;
+  readonly clientPauseMaxDaysPerYear: number | null;
+  readonly repairEnabled: boolean | null;
+  readonly repairWindowDays: number | null;
+  readonly repairPerYear: number | null;
   readonly onBreak: StreakOnBreak | null;
 };
 
 /** The last interval of each kind the draft held, so switching the kind and back loses nothing typed. */
 export type RememberedIntervals = {
-  readonly fixed: StreakInterval.Fixed | null;
-  readonly personal: StreakInterval.Personal | null;
+  readonly fixed: StreakIntervalRule.Fixed | null;
+  readonly personal: StreakIntervalRule.Personal | null;
 };
 
 /**
@@ -109,14 +104,21 @@ const NO_CHANGE: RhythmPatch = {
   enabled: null,
   qualifier: null,
   minGapDays: null,
-  bookingHold: null,
+  bookingHoldEnabled: null,
+  bookingHoldMaxDaysPastDue: null,
   interval: null,
   graceDays: null,
   riskLeadDays: null,
-  protections: null,
+  protectionsEnabled: null,
+  protectionsMaxBanked: null,
+  protectionsEarnEvery: null,
+  protectionsStartWith: null,
   excuses: null,
-  clientPause: null,
-  repair: null,
+  clientPauseEnabled: null,
+  clientPauseMaxDaysPerYear: null,
+  repairEnabled: null,
+  repairWindowDays: null,
+  repairPerYear: null,
   onBreak: null,
 };
 
@@ -147,56 +149,57 @@ function figure(
 }
 
 /** A range of the rule, held under the shortest interval. */
-function under(range: RhythmRange, interval: StreakInterval): RhythmRange {
+function under(range: RhythmRange, interval: StreakIntervalRule): RhythmRange {
   return {
     min: range.min,
     max: Math.max(
       range.min,
-      Math.min(range.max, StreakInterval.shortestDays(interval) - 1),
+      Math.min(range.max, StreakIntervalRule.shortestDays(interval) - 1),
     ),
   };
 }
 
 function intervalOf(
-  held: StreakInterval,
+  held: StreakIntervalRule,
   patch: RhythmIntervalPatch | null,
   remembered: RememberedIntervals,
-): StreakInterval {
-  if (patch === null) return held;
-  const { days, tolerancePct } = StreakInterval.LIMITS;
-  if (patch.kind === StreakIntervalKind.Fixed) {
+): StreakIntervalRule {
+  if (patch === null) return StreakIntervalRule.of(held);
+  const days = StreakIntervalRule.LIMITS.intervalDays;
+  const tolerancePct = StreakIntervalRule.LIMITS.intervalTolerancePct;
+  if (patch.streakInterval === StreakInterval.Fixed) {
     // Coming from a personal interval, the one number closest to it is the
     // newcomer's: what the rule already gave someone it did not know.
     const from =
-      held.kind === StreakIntervalKind.Fixed
-        ? held.days
-        : (remembered.fixed?.days ?? held.fallbackDays);
-    return StreakInterval.fixed(figure(patch.days, from, days));
+      held.streakInterval === StreakInterval.Fixed
+        ? held.intervalDays
+        : (remembered.fixed?.intervalDays ?? held.intervalFallbackDays);
+    return StreakIntervalRule.fixed(figure(patch.intervalDays, from, days));
   }
-  const from: StreakInterval.Personal =
-    held.kind === StreakIntervalKind.Personal
+  const from: StreakIntervalRule.Personal =
+    held.streakInterval === StreakInterval.Personal
       ? held
       : (remembered.personal ??
-        StreakInterval.personal(
+        StreakIntervalRule.personal(
           RECOMMENDED_PERSONAL.tolerancePct,
           RECOMMENDED_PERSONAL.minDays,
           RECOMMENDED_PERSONAL.maxDays,
-          held.days,
+          held.intervalDays,
         ));
-  let minDays = figure(patch.minDays, from.minDays, days);
-  let maxDays = figure(patch.maxDays, from.maxDays, days);
+  let minDays = figure(patch.intervalMinDays, from.intervalMinDays, days);
+  let maxDays = figure(patch.intervalMaxDays, from.intervalMaxDays, days);
   // The figure in hand wins and the other end of the clamp follows it: a
   // floor typed above the ceiling lifts the ceiling, a ceiling typed under
   // the floor lowers the floor.
   if (minDays > maxDays) {
-    if (patch.maxDays !== null) minDays = maxDays;
+    if (patch.intervalMaxDays !== null) minDays = maxDays;
     else maxDays = minDays;
   }
-  return StreakInterval.personal(
-    figure(patch.tolerancePct, from.tolerancePct, tolerancePct),
+  return StreakIntervalRule.personal(
+    figure(patch.intervalTolerancePct, from.intervalTolerancePct, tolerancePct),
     minDays,
     maxDays,
-    figure(patch.fallbackDays, from.fallbackDays, {
+    figure(patch.intervalFallbackDays, from.intervalFallbackDays, {
       min: minDays,
       max: maxDays,
     }),
@@ -223,18 +226,6 @@ function riskLeadOf(
   return longest ?? range.max;
 }
 
-/** A copy of the choice: the draft never shares a list with whoever handed it over. */
-function qualifierOf(qualifier: StreakQualifier): StreakQualifier {
-  switch (qualifier.kind) {
-    case StreakQualifierKind.Services:
-      return StreakQualifier.services([...qualifier.serviceIds]);
-    case StreakQualifierKind.Categories:
-      return StreakQualifier.categories([...qualifier.categoryIds]);
-    default:
-      return StreakQualifier.anyVisit();
-  }
-}
-
 /** The excuses in the vocabulary's order, each once; what the vocabulary does not know is dropped. */
 function excusesOf(excuses: readonly StreakExcuse[]): readonly StreakExcuse[] {
   const out: StreakExcuse[] = [];
@@ -256,21 +247,40 @@ function sameList(a: readonly string[], b: readonly string[]): boolean {
   return true;
 }
 
-function sameQualifier(a: StreakQualifier, b: StreakQualifier): boolean {
-  if (a.kind !== b.kind) return false;
-  if (a.kind === StreakQualifierKind.Services) {
+function sameQualifier(
+  a: StreakQualifierRule,
+  b: StreakQualifierRule,
+): boolean {
+  if (a.streakQualifier !== b.streakQualifier) return false;
+  if (a.streakQualifier === StreakQualifier.Services) {
     return (
-      b.kind === StreakQualifierKind.Services &&
-      sameList(a.serviceIds, b.serviceIds)
+      b.streakQualifier === StreakQualifier.Services &&
+      sameList(a.qualifierServiceIds, b.qualifierServiceIds)
     );
   }
-  if (a.kind === StreakQualifierKind.Categories) {
+  if (a.streakQualifier === StreakQualifier.Categories) {
     return (
-      b.kind === StreakQualifierKind.Categories &&
-      sameList(a.categoryIds, b.categoryIds)
+      b.streakQualifier === StreakQualifier.Categories &&
+      sameList(a.qualifierCategoryIds, b.qualifierCategoryIds)
     );
   }
   return true;
+}
+
+/** The interval a draft holds, as the change that names it whole. */
+function intervalPatchOf(interval: StreakIntervalRule): RhythmIntervalPatch {
+  return interval.streakInterval === StreakInterval.Fixed
+    ? {
+        streakInterval: StreakInterval.Fixed,
+        intervalDays: interval.intervalDays,
+      }
+    : {
+        streakInterval: StreakInterval.Personal,
+        intervalTolerancePct: interval.intervalTolerancePct,
+        intervalMinDays: interval.intervalMinDays,
+        intervalMaxDays: interval.intervalMaxDays,
+        intervalFallbackDays: interval.intervalFallbackDays,
+      };
 }
 
 export const RhythmDraftSystem = {
@@ -294,40 +304,40 @@ export const RhythmDraftSystem = {
    * counts is copied, never shared. A version's identity is kept.
    *
    * What it cannot mend is a LIST: «Посещение с избрани услуги» with no
-   * service chosen yet is no rule (`StreakRule.parse` says so).
+   * service chosen yet is no rule (`StreakRule.parse` says so). A draft is
+   * foreign input (`StreakRuleInput`): its day is carried through as it is,
+   * never read here — a parsed rule in is a rule out.
    */
-  clamp(
-    draft: StreakRule,
+  clamp<Day extends string>(
+    draft: StreakRuleInput & { readonly effectiveFromLocalDate: Day },
     patch: RhythmPatch,
     remembered: RememberedIntervals,
     riskLeadChoices: readonly number[],
-  ): StreakRule {
+  ): StreakRuleInput & { readonly effectiveFromLocalDate: Day } {
     const limits = StreakRule.LIMITS;
-    const interval = intervalOf(draft.interval, patch.interval, remembered);
+    const interval = intervalOf(draft, patch.interval, remembered);
     const maxBanked = figure(
-      patch.protections?.maxBanked ?? null,
-      draft.protections.maxBanked,
-      limits.protections.maxBanked,
+      patch.protectionsMaxBanked,
+      draft.protectionsMaxBanked,
+      limits.protectionsMaxBanked,
     );
     return {
       version: draft.version,
-      effectiveFromDayKey: draft.effectiveFromDayKey,
+      effectiveFromLocalDate: draft.effectiveFromLocalDate,
       enabled: patch.enabled ?? draft.enabled,
-      qualifier: qualifierOf(patch.qualifier ?? draft.qualifier),
+      ...StreakQualifierRule.of(patch.qualifier ?? draft),
       minGapDays: figure(
         patch.minGapDays,
         draft.minGapDays,
         under(limits.minGapDays, interval),
       ),
-      bookingHold: {
-        enabled: patch.bookingHold?.enabled ?? draft.bookingHold.enabled,
-        maxDaysPastDue: figure(
-          patch.bookingHold?.maxDaysPastDue ?? null,
-          draft.bookingHold.maxDaysPastDue,
-          limits.bookingHold.maxDaysPastDue,
-        ),
-      },
-      interval,
+      bookingHoldEnabled: patch.bookingHoldEnabled ?? draft.bookingHoldEnabled,
+      bookingHoldMaxDaysPastDue: figure(
+        patch.bookingHoldMaxDaysPastDue,
+        draft.bookingHoldMaxDaysPastDue,
+        limits.bookingHoldMaxDaysPastDue,
+      ),
+      ...interval,
       graceDays: figure(
         patch.graceDays,
         draft.graceDays,
@@ -339,126 +349,121 @@ export const RhythmDraftSystem = {
         under(limits.riskLeadDays, interval),
         riskLeadChoices,
       ),
-      protections: {
-        enabled: patch.protections?.enabled ?? draft.protections.enabled,
-        maxBanked,
-        earnEvery: figure(
-          patch.protections?.earnEvery ?? null,
-          draft.protections.earnEvery,
-          limits.protections.earnEvery,
-        ),
-        startWith: figure(
-          patch.protections?.startWith ?? null,
-          draft.protections.startWith,
-          {
-            min: limits.protections.startWith.min,
-            max: Math.min(limits.protections.startWith.max, maxBanked),
-          },
-        ),
-      },
+      protectionsEnabled: patch.protectionsEnabled ?? draft.protectionsEnabled,
+      protectionsMaxBanked: maxBanked,
+      protectionsEarnEvery: figure(
+        patch.protectionsEarnEvery,
+        draft.protectionsEarnEvery,
+        limits.protectionsEarnEvery,
+      ),
+      protectionsStartWith: figure(
+        patch.protectionsStartWith,
+        draft.protectionsStartWith,
+        {
+          min: limits.protectionsStartWith.min,
+          max: Math.min(limits.protectionsStartWith.max, maxBanked),
+        },
+      ),
       excuses: excusesOf(patch.excuses ?? draft.excuses),
-      clientPause: {
-        enabled: patch.clientPause?.enabled ?? draft.clientPause.enabled,
-        maxDaysPerYear: figure(
-          patch.clientPause?.maxDaysPerYear ?? null,
-          draft.clientPause.maxDaysPerYear,
-          limits.clientPause.maxDaysPerYear,
-        ),
-      },
-      repair: {
-        enabled: patch.repair?.enabled ?? draft.repair.enabled,
-        windowDays: figure(
-          patch.repair?.windowDays ?? null,
-          draft.repair.windowDays,
-          limits.repair.windowDays,
-        ),
-        perYear: figure(
-          patch.repair?.perYear ?? null,
-          draft.repair.perYear,
-          limits.repair.perYear,
-        ),
-      },
+      clientPauseEnabled: patch.clientPauseEnabled ?? draft.clientPauseEnabled,
+      clientPauseMaxDaysPerYear: figure(
+        patch.clientPauseMaxDaysPerYear,
+        draft.clientPauseMaxDaysPerYear,
+        limits.clientPauseMaxDaysPerYear,
+      ),
+      repairEnabled: patch.repairEnabled ?? draft.repairEnabled,
+      repairWindowDays: figure(
+        patch.repairWindowDays,
+        draft.repairWindowDays,
+        limits.repairWindowDays,
+      ),
+      repairPerYear: figure(
+        patch.repairPerYear,
+        draft.repairPerYear,
+        limits.repairPerYear,
+      ),
       onBreak: patch.onBreak ?? draft.onBreak,
     };
   },
 
   /** The ranges that move with the draft. */
-  bounds(draft: StreakRule): RhythmBounds {
+  bounds(draft: StreakRuleInput): RhythmBounds {
     const limits = StreakRule.LIMITS;
-    const { interval } = draft;
     return {
-      graceDays: under(limits.graceDays, interval),
-      riskLeadDays: under(limits.riskLeadDays, interval),
-      minGapDays: under(limits.minGapDays, interval),
+      graceDays: under(limits.graceDays, draft),
+      riskLeadDays: under(limits.riskLeadDays, draft),
+      minGapDays: under(limits.minGapDays, draft),
       startWith: {
-        min: limits.protections.startWith.min,
+        min: limits.protectionsStartWith.min,
         max: Math.min(
-          limits.protections.startWith.max,
-          draft.protections.maxBanked,
+          limits.protectionsStartWith.max,
+          draft.protectionsMaxBanked,
         ),
       },
       fallbackDays:
-        interval.kind === StreakIntervalKind.Personal
-          ? { min: interval.minDays, max: interval.maxDays }
-          : limits.interval.days,
+        draft.streakInterval === StreakInterval.Personal
+          ? { min: draft.intervalMinDays, max: draft.intervalMaxDays }
+          : limits.intervalDays,
     };
   },
 
   /**
    * The parameters of a draft that differ from the rule it was made on, as
    * the change that made them — what the admin did, apart from what the
-   * rule already said. A part that differs is named whole; the rest `null`.
+   * rule already said. A part that differs is named whole (every field of
+   * it); the rest `null`.
    */
-  diff(draft: StreakRule, madeOn: StreakRule): RhythmPatch {
-    const hold = draft.bookingHold;
-    const protections = draft.protections;
-    const pause = draft.clientPause;
-    const repair = draft.repair;
+  diff(draft: StreakRuleInput, madeOn: StreakRuleInput): RhythmPatch {
+    const holdMoved =
+      draft.bookingHoldEnabled !== madeOn.bookingHoldEnabled ||
+      draft.bookingHoldMaxDaysPastDue !== madeOn.bookingHoldMaxDaysPastDue;
+    const protectionsMoved =
+      draft.protectionsEnabled !== madeOn.protectionsEnabled ||
+      draft.protectionsMaxBanked !== madeOn.protectionsMaxBanked ||
+      draft.protectionsEarnEvery !== madeOn.protectionsEarnEvery ||
+      draft.protectionsStartWith !== madeOn.protectionsStartWith;
+    const pauseMoved =
+      draft.clientPauseEnabled !== madeOn.clientPauseEnabled ||
+      draft.clientPauseMaxDaysPerYear !== madeOn.clientPauseMaxDaysPerYear;
+    const repairMoved =
+      draft.repairEnabled !== madeOn.repairEnabled ||
+      draft.repairWindowDays !== madeOn.repairWindowDays ||
+      draft.repairPerYear !== madeOn.repairPerYear;
     return {
       enabled: draft.enabled === madeOn.enabled ? null : draft.enabled,
-      qualifier: sameQualifier(draft.qualifier, madeOn.qualifier)
+      qualifier: sameQualifier(draft, madeOn)
         ? null
-        : draft.qualifier,
+        : StreakQualifierRule.of(draft),
       minGapDays:
         draft.minGapDays === madeOn.minGapDays ? null : draft.minGapDays,
-      bookingHold:
-        hold.enabled === madeOn.bookingHold.enabled &&
-        hold.maxDaysPastDue === madeOn.bookingHold.maxDaysPastDue
-          ? null
-          : hold,
-      interval: StreakInterval.equals(draft.interval, madeOn.interval)
+      bookingHoldEnabled: holdMoved ? draft.bookingHoldEnabled : null,
+      bookingHoldMaxDaysPastDue: holdMoved
+        ? draft.bookingHoldMaxDaysPastDue
+        : null,
+      interval: StreakIntervalRule.equals(draft, madeOn)
         ? null
-        : draft.interval.kind === StreakIntervalKind.Fixed
-          ? { kind: StreakIntervalKind.Fixed, days: draft.interval.days }
-          : {
-              kind: StreakIntervalKind.Personal,
-              tolerancePct: draft.interval.tolerancePct,
-              minDays: draft.interval.minDays,
-              maxDays: draft.interval.maxDays,
-              fallbackDays: draft.interval.fallbackDays,
-            },
+        : intervalPatchOf(draft),
       graceDays: draft.graceDays === madeOn.graceDays ? null : draft.graceDays,
       riskLeadDays:
         draft.riskLeadDays === madeOn.riskLeadDays ? null : draft.riskLeadDays,
-      protections:
-        protections.enabled === madeOn.protections.enabled &&
-        protections.maxBanked === madeOn.protections.maxBanked &&
-        protections.earnEvery === madeOn.protections.earnEvery &&
-        protections.startWith === madeOn.protections.startWith
-          ? null
-          : protections,
+      protectionsEnabled: protectionsMoved ? draft.protectionsEnabled : null,
+      protectionsMaxBanked: protectionsMoved
+        ? draft.protectionsMaxBanked
+        : null,
+      protectionsEarnEvery: protectionsMoved
+        ? draft.protectionsEarnEvery
+        : null,
+      protectionsStartWith: protectionsMoved
+        ? draft.protectionsStartWith
+        : null,
       excuses: sameList(draft.excuses, madeOn.excuses) ? null : draft.excuses,
-      clientPause:
-        pause.enabled === madeOn.clientPause.enabled &&
-        pause.maxDaysPerYear === madeOn.clientPause.maxDaysPerYear
-          ? null
-          : pause,
-      repair:
-        repair.enabled === madeOn.repair.enabled &&
-        repair.windowDays === madeOn.repair.windowDays &&
-        repair.perYear === madeOn.repair.perYear
-          ? null
-          : repair,
+      clientPauseEnabled: pauseMoved ? draft.clientPauseEnabled : null,
+      clientPauseMaxDaysPerYear: pauseMoved
+        ? draft.clientPauseMaxDaysPerYear
+        : null,
+      repairEnabled: repairMoved ? draft.repairEnabled : null,
+      repairWindowDays: repairMoved ? draft.repairWindowDays : null,
+      repairPerYear: repairMoved ? draft.repairPerYear : null,
       onBreak: draft.onBreak === madeOn.onBreak ? null : draft.onBreak,
     };
   },

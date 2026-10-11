@@ -1,47 +1,67 @@
 import { Actor, SystemSource } from '../components/actor.data';
 import {
-  type AuditAction,
+  AuditAction,
   AuditContext,
+  AuditTargetRef,
   type ProfileAction,
-  AuditAction as AuditActions,
 } from '../components/audit-context.data';
 import { GovernanceError } from '../components/governance-errors.data';
 import { Result } from '../components/result.data';
 import {
   type Seat,
-  type SeatId,
-  SeatRelationship,
-  SeatSubjectKind,
+  SeatSubject,
+  SubjectRelationship,
 } from '../components/seat.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import type { AuditEntryEntity } from '../entities/audit-entry.entity';
-import { UserId } from '../entities/user.entity';
-import { type EditCommand, EditCommandKind } from './appointment-edit.system';
+import type { Appointment } from '../entities/appointment.entity';
+import type { AuditEntryMeta } from '../entities/audit-entry.entity';
+import {
+  type AppointmentId,
+  AuditResourceId,
+  type OperationId,
+  type PublishRequestId,
+  type SeatId,
+  type TriggerEventId,
+  UserId,
+} from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  EditCommand,
+  type EditCommandRequest,
+} from './appointment-edit.system';
+import { RequestedSubjectRole } from './guest-label.system';
 
 /**
  * A seat's person as the audit log sees them (`audit.ts:19-25`): an account
  * gets a row of its own, a guest does not — a label typed at the desk is not
- * somebody a per-client history can ever be asked about. The tags are the
- * seat subject's own (`SeatSubjectKind`).
+ * somebody a per-client history can ever be asked about. Discriminated by
+ * the seat's own `seatSubject` (`CUSTOMER` joins in the appointment flip (1),
+ * D29).
  */
 export type AuditSubject = AuditAccountSubject | AuditAnonymousSubject;
 
 export type AuditAccountSubject = {
-  readonly kind: typeof SeatSubjectKind.Account;
+  readonly seatSubject: typeof SeatSubject.Account;
   readonly userId: UserId;
 };
 
 export type AuditAnonymousSubject = {
-  readonly kind: typeof SeatSubjectKind.Anonymous;
+  readonly seatSubject: typeof SeatSubject.Anonymous;
 };
 
-const ANONYMOUS: AuditAnonymousSubject = { kind: SeatSubjectKind.Anonymous };
+const ANONYMOUS: AuditAnonymousSubject = {
+  seatSubject: SeatSubject.Anonymous,
+};
+
+function account(userId: UserId): AuditAccountSubject {
+  return { seatSubject: SeatSubject.Account, userId };
+}
 
 /**
  * One audited act, before it fans out to rows — the input of
  * {@link AuditSystem.plan}, and what every lifecycle and edit system hands
  * its pipeline (`AppointmentLifecycleSystem`'s `auditFacts`). Ids and CODES
- * only (T5, R36): never a sentence somebody typed.
+ * only (T5, R36): never a sentence somebody typed. The verb is the context's
+ * own discriminator (`context.auditAction`) — one source, never repeated.
  *
  * `changeKey` is what makes the act ONE logical change — the same on every
  * replay, different for every other change (the companion derivations of
@@ -49,13 +69,23 @@ const ANONYMOUS: AuditAnonymousSubject = { kind: SeatSubjectKind.Anonymous };
  * recognise: each row gets a fresh id from the pipeline's `nextId`.
  */
 export type AuditFact = {
-  readonly action: AuditAction;
-  readonly resourceId: string;
+  readonly resourceId: AuditResourceId;
   /** The seats the act touched, guests included; the plan picks the people. */
   readonly subjects: readonly AuditSubject[];
   readonly changeKey: string | null;
   readonly context: AuditContext;
 };
+
+/**
+ * One planned audit row — the `AuditEntry` archetype minus its `id`
+ * (`Omit<AuditEntry, 'id'>`, distributed over every variant): the instant and
+ * the resource, the flat actor slice, the flat context slice and the target
+ * slice.
+ */
+export type AuditRow = Omit<AuditEntryMeta, 'id'> &
+  Actor &
+  AuditContext &
+  AuditTargetRef;
 
 /**
  * One planned row and the basis of its id: the pipeline sets
@@ -64,42 +94,51 @@ export type AuditFact = {
  * change key, whose id the pipeline mints (`nextId`).
  */
 export type AuditRowPlan = {
-  readonly row: Omit<AuditEntryEntity, 'id'>;
+  readonly row: AuditRow;
   readonly idBasis: string | null;
 };
 
 /**
- * Who a REQUESTED seat is for — the cart a commit or a move decides
- * (`decide-booking.ts` `RequestedSeat['subject']`): the booker's own seat,
- * an anonymous guest, or a carried companion with their own account.
+ * A requested seat's subject, every field present (`userId` only for a
+ * companion) — who a seat of the cart a commit or a move decides is for
+ * (`decide-booking.ts` `RequestedSeat['subject']`).
  */
-export const AuditRequestedSubjectKind = {
-  Self: 'self',
-  Guest: 'guest',
-  Companion: 'companion',
-} as const;
-export type AuditRequestedSubjectKind =
-  (typeof AuditRequestedSubjectKind)[keyof typeof AuditRequestedSubjectKind];
-
-/** A requested seat's subject, every field present (`userId` only for a companion). */
 export type AuditRequestedSubject = {
-  readonly kind: AuditRequestedSubjectKind;
+  readonly requestedSubjectRole: RequestedSubjectRole;
   readonly userId: UserId | null;
 };
 
 /**
  * The Firestore trigger's `authType` — who the platform says wrote a
- * document (`audit-profile-changes.ts`). The ONLY source of these strings;
- * any other value is a writer the event cannot attribute.
+ * document (`audit-profile-changes.ts`). The ONLY source of these tags; the
+ * platform delivers them lower-case (`service_account`), and
+ * {@link AuditSystem.profileWriter} reads either spelling. Any other value is
+ * a writer the event cannot attribute.
  */
 export const ProfileAuthType = {
-  ServiceAccount: 'service_account',
-  System: 'system',
-  ApiKey: 'api_key',
-  Unauthenticated: 'unauthenticated',
+  ServiceAccount: 'SERVICE_ACCOUNT',
+  System: 'SYSTEM',
+  ApiKey: 'API_KEY',
+  Unauthenticated: 'UNAUTHENTICATED',
 } as const;
 export type ProfileAuthType =
   (typeof ProfileAuthType)[keyof typeof ProfileAuthType];
+
+const PROFILE_AUTH_TYPES: readonly ProfileAuthType[] = [
+  ProfileAuthType.ServiceAccount,
+  ProfileAuthType.System,
+  ProfileAuthType.ApiKey,
+  ProfileAuthType.Unauthenticated,
+];
+
+/** The platform's `authType` (lower-case) or the tag itself → the tag, or `null`. */
+function authTypeOf(raw: string): ProfileAuthType | null {
+  for (let i = 0; i < PROFILE_AUTH_TYPES.length; i++) {
+    const tag = PROFILE_AUTH_TYPES[i] as ProfileAuthType;
+    if (tag === raw || tag.toLowerCase() === raw) return tag;
+  }
+  return null;
+}
 
 /**
  * A `users/{uid}` write, as the profile trigger sees it
@@ -108,9 +147,10 @@ export type ProfileAuthType =
  * whose profile, who wrote it and which audited fields changed.
  */
 export type ProfileChange = {
-  readonly eventId: string;
-  /** The event's instant; `null` when it did not parse — the plan's `nowMs` stands in. */
-  readonly eventAtMs: number | null;
+  readonly eventId: TriggerEventId;
+  /** The event's instant; `null` when it did not parse — the plan's `nowUtcMs` stands in. */
+  readonly eventAtUtcMs: UtcEpochMs | null;
+  /** The account whose profile changed — an account act, so a `UserId` for good (D29). */
   readonly ownerUserId: UserId;
   readonly writer: Actor;
   readonly beforeExists: boolean;
@@ -144,6 +184,11 @@ function comparable(value: unknown): string {
     : JSON.stringify(value);
 }
 
+/**
+ * The basis of one person's row id for one logical change — TEXT in, text
+ * out (the brands' text is what is hashed; the action is the verb as the row
+ * stores it, so a legacy writer passing its stored verb keeps its ids).
+ */
 function rowBasis(
   action: string,
   resourceId: string,
@@ -170,7 +215,7 @@ function targets(
   const people: UserId[] = [];
   for (let i = 0; i < subjects.length; i++) {
     const subject = subjects[i] as AuditSubject;
-    if (subject.kind !== SeatSubjectKind.Account) continue;
+    if (subject.seatSubject !== SeatSubject.Account) continue;
     if (subject.userId.length === 0 || people.includes(subject.userId)) {
       continue;
     }
@@ -183,7 +228,8 @@ function targets(
  * The audit log's pure half (`audit.ts:65-178`, `audit-profile-changes.ts`):
  * who gets a row, what each row says, and the basis each row's id is hashed
  * from. No `crypto` here — the pipeline calls `hash(idBasis)`; no clock —
- * `nowMs` is a parameter; no I/O — the rows go to `AppendAudit`.
+ * `nowUtcMs` is a parameter (an audit row has no shop clock, F-5); no I/O —
+ * the rows go to `AppendAudit`.
  */
 export const AuditSystem = {
   /**
@@ -198,38 +244,39 @@ export const AuditSystem = {
 
   /**
    * The rows the facts write, one per person per fact: every row of one fact
-   * shares the actor, action, instant and context; only the target differs —
-   * which is what makes "everything done to Maria" one `targetUserId` query.
-   * A fact whose action is not an audited verb is refused whole rather than
-   * written half-formed (`AuditEntry.create`'s empty-action guard).
+   * shares the actor, the verb, the instant and the context; only the target
+   * slice differs — which is what makes "everything done to Maria" one
+   * `targetUserId` query. A fact whose verb is not an audited one is refused
+   * whole rather than written half-formed (`AuditEntry.create`'s
+   * empty-action guard).
    */
   plan(
     facts: readonly AuditFact[],
     actor: Actor,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
   ): Result<readonly AuditRowPlan[], GovernanceError.AuditEntryEmptyAction> {
     const rows: AuditRowPlan[] = [];
     for (let i = 0; i < facts.length; i++) {
       const fact = facts[i] as AuditFact;
-      if (!AuditContext.isAuditAction(fact.action)) {
+      const action = fact.context.auditAction;
+      if (!AuditContext.isAuditAction(action)) {
         return Result.err(GovernanceError.auditEntryEmptyAction());
       }
       const people = targets(fact.subjects);
       for (let k = 0; k < people.length; k++) {
-        const target = people[k] as UserId | null;
+        const target = people[k] ?? null;
         rows.push({
           row: {
-            actor,
-            action: fact.action,
-            atMs: nowMs,
-            targetUserId: target,
+            recordedAtUtcMs: nowUtcMs,
             resourceId: fact.resourceId,
-            context: fact.context,
+            ...actor,
+            ...fact.context,
+            ...AuditTargetRef.forUser(target),
           },
           idBasis:
             fact.changeKey === null
               ? null
-              : rowBasis(fact.action, fact.resourceId, target, fact.changeKey),
+              : rowBasis(action, fact.resourceId, target, fact.changeKey),
         });
       }
     }
@@ -248,11 +295,10 @@ export const AuditSystem = {
     const subjects: AuditSubject[] = [];
     for (let i = 0; i < seats.length; i++) {
       const seat = seats[i] as Seat;
-      if (seatId !== null && seat.id !== seatId) continue;
-      const subject = seat.subject;
+      if (seatId !== null && seat.seatId !== seatId) continue;
       subjects.push(
-        subject.kind === SeatSubjectKind.Account
-          ? { kind: SeatSubjectKind.Account, userId: subject.userId }
+        seat.seatSubject === SeatSubject.Account
+          ? account(seat.subjectUserId)
           : ANONYMOUS,
       );
     }
@@ -260,14 +306,14 @@ export const AuditSystem = {
   },
 
   /** Every person on a stored visit — {@link subjectsOfSeats} over all of its seats. */
-  subjectsOf(appointment: AppointmentEntity): readonly AuditSubject[] {
+  subjectsOf(appointment: Pick<Appointment, 'seats'>): readonly AuditSubject[] {
     return AuditSystem.subjectsOfSeats(appointment.seats, null);
   },
 
   /**
-   * The people on a REQUESTED cart: every `self` seat binds to the owner,
-   * a carried companion keeps their own account, every guest is anonymous —
-   * and a `self` seat on an owner-less walk-in names nobody.
+   * The people on a REQUESTED cart: every `SELF` seat binds to the owner, a
+   * carried companion keeps their own account, every guest is anonymous —
+   * and a `SELF` seat on an owner-less walk-in names nobody.
    */
   requestedSubjects(
     subjects: readonly AuditRequestedSubject[],
@@ -277,16 +323,16 @@ export const AuditSystem = {
     for (let i = 0; i < subjects.length; i++) {
       const subject = subjects[i] as AuditRequestedSubject;
       if (
-        subject.kind === AuditRequestedSubjectKind.Companion &&
+        subject.requestedSubjectRole === RequestedSubjectRole.Companion &&
         subject.userId !== null
       ) {
-        out.push({ kind: SeatSubjectKind.Account, userId: subject.userId });
+        out.push(account(subject.userId));
       } else if (
-        subject.kind === AuditRequestedSubjectKind.Self &&
+        subject.requestedSubjectRole === RequestedSubjectRole.Self &&
         ownerUserId !== null &&
         ownerUserId.length > 0
       ) {
-        out.push({ kind: SeatSubjectKind.Account, userId: ownerUserId });
+        out.push(account(ownerUserId));
       } else {
         out.push(ANONYMOUS);
       }
@@ -298,23 +344,23 @@ export const AuditSystem = {
    * Who a staff edit's rows name (`staffEditSubjects`): everyone the visit
    * had BEFORE the edit — a removed seat's person included, the edit was
    * done to them too — plus the owner when the batch gives them a seat of
-   * their own (an added `self` seat). Nobody else can join through an edit.
+   * their own (an added `SELF` seat). Nobody else can join through an edit.
    */
   staffEditSubjects(
     before: readonly AuditSubject[],
     ownerUserId: UserId | null,
-    commands: readonly EditCommand[],
+    commands: readonly EditCommandRequest[],
   ): readonly AuditSubject[] {
     let addsOwner = false;
     for (let i = 0; i < commands.length && !addsOwner; i++) {
-      const command = commands[i] as EditCommand;
+      const command = commands[i] as EditCommandRequest;
       addsOwner =
-        command.kind === EditCommandKind.AddSeat &&
-        command.subject.kind === SeatSubjectKind.Account &&
-        command.subject.relationship === SeatRelationship.Self;
+        command.editCommand === EditCommand.AddSeat &&
+        command.seatSubject === SeatSubject.Account &&
+        command.subjectRelationship === SubjectRelationship.Self;
     }
     return addsOwner && ownerUserId !== null && ownerUserId.length > 0
-      ? [...before, { kind: SeatSubjectKind.Account, userId: ownerUserId }]
+      ? [...before, account(ownerUserId)]
       : before;
   },
 
@@ -326,7 +372,7 @@ export const AuditSystem = {
    */
   changeKey: {
     /** A commit (`commit-booking.ts:222`): the attempt id, else the appointment's. */
-    attempt(attemptId: string | null, appointmentId: string): string {
+    attempt(attemptId: string | null, appointmentId: AppointmentId): string {
       return `attempt:${attemptId ?? appointmentId}`;
     },
     /** A named move (`reschedule-appointment.ts:109`). */
@@ -338,40 +384,40 @@ export const AuditSystem = {
       return `revision:${revision}`;
     },
     /** A staff edit (`staffEditChangeKey`): its operation id, else its revision. */
-    staffEdit(operationId: string | null, revision: number): string {
+    staffEdit(operationId: OperationId | null, revision: number): string {
       return operationId === null
         ? `revision:${revision}`
         : `operation:${operationId}`;
     },
     /** A client cancel (`cancel-appointment.ts:234`): the instant it stamped. */
-    cancelled(cancelledAtMs: number): string {
-      return `cancelled:${cancelledAtMs}`;
+    cancelled(cancelledAtUtcMs: UtcEpochMs): string {
+      return `cancelled:${cancelledAtUtcMs}`;
     },
     /**
      * A staff lifecycle verb (`transition-appointment.ts:517`) — the seat is
      * in the key because one person can hold two seats.
      */
-    transition(seatId: string | null, decidedAtMs: number): string {
-      return `transition:${seatId !== null && seatId.length > 0 ? seatId : 'party'}:${decidedAtMs}`;
+    transition(seatId: SeatId | null, decidedAtUtcMs: UtcEpochMs): string {
+      return `transition:${seatId !== null && seatId.length > 0 ? seatId : 'party'}:${decidedAtUtcMs}`;
     },
     /** An arrival stamped (`mark-arrived.ts:118`). */
-    arrived(stampMs: number): string {
-      return `arrived:${stampMs}`;
+    arrived(stampUtcMs: UtcEpochMs): string {
+      return `arrived:${stampUtcMs}`;
     },
     /** An arrival taken back (`clear-arrival.ts:88`): the stamp it cleared. */
-    unarrived(clearedStampMs: number): string {
-      return `unarrived:${clearedStampMs}`;
+    unarrived(clearedStampUtcMs: UtcEpochMs): string {
+      return `unarrived:${clearedStampUtcMs}`;
     },
     /** A tip recorded or cleared (`record-seat-tip.ts:155`). */
-    tip(seatId: string, recordedAtMs: number): string {
-      return `tip:${seatId}:${recordedAtMs}`;
+    tip(seatId: SeatId, recordedAtUtcMs: UtcEpochMs): string {
+      return `tip:${seatId}:${recordedAtUtcMs}`;
     },
     /** A streak publish or withdraw: the client's request id. */
-    publish(requestId: string): string {
+    publish(requestId: PublishRequestId): string {
       return requestId;
     },
     /** The profile trigger: the CloudEvent id — never a constant. */
-    profile(eventId: string): string {
+    profile(eventId: TriggerEventId): string {
       return eventId;
     },
   },
@@ -396,10 +442,10 @@ export const AuditSystem = {
 
   /** Creation, update and deletion, named apart. */
   profileAction(beforeExists: boolean, afterExists: boolean): ProfileAction {
-    if (!beforeExists) return AuditActions.ProfileCreated;
+    if (!beforeExists) return AuditAction.ProfileCreated;
     return afterExists
-      ? AuditActions.ProfileUpdated
-      : AuditActions.ProfileDeleted;
+      ? AuditAction.ProfileUpdated
+      : AuditAction.ProfileDeleted;
   },
 
   /**
@@ -409,16 +455,18 @@ export const AuditSystem = {
    * it could not tell.
    */
   profileWriter(authType: string, authId: string | null): Actor {
-    if (authType === ProfileAuthType.ServiceAccount) {
+    const tag = authTypeOf(authType);
+    if (tag === ProfileAuthType.ServiceAccount) {
       return Actor.system(SystemSource.AdminSdk);
     }
-    if (authType === ProfileAuthType.System) {
+    if (tag === ProfileAuthType.System) {
       return Actor.system(SystemSource.FirestoreSystem);
     }
     if (authId !== null && UID_SHAPE.test(authId)) {
-      return Actor.user(UserId.of(authId));
+      const userId = UserId.parse(authId);
+      if (userId.ok) return Actor.user(userId.value);
     }
-    switch (authType) {
+    switch (tag) {
       case ProfileAuthType.ApiKey:
         return Actor.system(SystemSource.UnattributedApiKey);
       case ProfileAuthType.Unauthenticated:
@@ -434,12 +482,12 @@ export const AuditSystem = {
    * instant. Its id basis IS the event id (`changeKey = event.id`): a
    * redelivery derives the same row, each distinct write its own. A write
    * that changed no audited field plans nothing; an event with no id is
-   * refused rather than minted one (`empty_action` is the governance code
+   * refused rather than minted one (`EMPTY_ACTION` is the governance code
    * for a half-formed row).
    */
   planProfileChange(
     change: ProfileChange,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
   ): Result<AuditRowPlan | null, GovernanceError.AuditEntryEmptyAction> {
     if (change.fields.length === 0) return Result.ok(null);
     if (change.eventId.trim().length === 0) {
@@ -449,15 +497,14 @@ export const AuditSystem = {
       change.beforeExists,
       change.afterExists,
     );
-    const resourceId = `users/${change.ownerUserId}`;
+    const resourceId = AuditResourceId.forUser(change.ownerUserId);
     return Result.ok({
       row: {
-        actor: change.writer,
-        action,
-        atMs: change.eventAtMs ?? nowMs,
-        targetUserId: change.ownerUserId,
+        recordedAtUtcMs: change.eventAtUtcMs ?? nowUtcMs,
         resourceId,
-        context: AuditContext.profile(action, change.fields),
+        ...change.writer,
+        ...AuditContext.profile(action, change.fields),
+        ...AuditTargetRef.user(change.ownerUserId),
       },
       idBasis: rowBasis(
         action,

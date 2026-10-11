@@ -1,94 +1,118 @@
-/** Why a journal entry was written, by kind — the stored `source.kind` tags, unchanged. */
-export const JournalSourceKind = {
-  /** A loyalty rule paid. */
-  Rule: 'rule',
-  /** A person adjusted the account. */
-  Manual: 'manual',
-  /** A person corrected an earlier entry. */
-  Correction: 'correction',
-  /** A scheduled job ran. */
-  System: 'system',
-  /** A data migration wrote it. */
-  Migration: 'migration',
-  /** A reward was redeemed. */
-  Redemption: 'redemption',
-} as const;
-export type JournalSourceKind =
-  (typeof JournalSourceKind)[keyof typeof JournalSourceKind];
+import type {
+  AchievementRuleId,
+  AdjustmentId,
+  JournalEventId,
+  MigrationBatchId,
+  RedemptionId,
+} from '../primitives/ids.primitive';
 
-/** The jobs that write the journal — the stored `source.job` strings, unchanged. */
+/** Why a journal entry was written — the entry's discriminator `journalSource`. */
+export const JournalSource = {
+  /** A loyalty rule paid. */
+  Rule: 'RULE',
+  /** A person adjusted the account. */
+  Manual: 'MANUAL',
+  /** A person corrected an earlier entry. */
+  Correction: 'CORRECTION',
+  /** A scheduled job ran. */
+  System: 'SYSTEM',
+  /** A data migration wrote it. */
+  Migration: 'MIGRATION',
+  /** A reward was redeemed. */
+  Redemption: 'REDEMPTION',
+} as const;
+export type JournalSource = (typeof JournalSource)[keyof typeof JournalSource];
+
+/** The jobs that write the journal — the SYSTEM source's field `sourceSystemJob`. */
 export const JournalSystemJob = {
-  Streak: 'streak',
-  Tier: 'tier',
-  PauseExpiry: 'pauseExpiry',
-  PointsExpiry: 'pointsExpiry',
-  RewardExpiry: 'rewardExpiry',
+  Streak: 'STREAK',
+  Tier: 'TIER',
+  PauseExpiry: 'PAUSE_EXPIRY',
+  PointsExpiry: 'POINTS_EXPIRY',
+  RewardExpiry: 'REWARD_EXPIRY',
 } as const;
 export type JournalSystemJob =
   (typeof JournalSystemJob)[keyof typeof JournalSystemJob];
 
-/** A rule version an entry cites (`ruleId@version`). */
+/** A rule version an entry cites (`ruleId@version`) — a value type for system I/O. */
 export type RuleRef = {
-  readonly ruleId: string;
+  readonly ruleId: AchievementRuleId;
   readonly version: number;
 };
 
 /**
  * Why an entry was written: a rule paid, a person asked, a job ran, a
- * migration, a redemption (`loyalty-document.ts:719-736`), unchanged.
- * `awardKey` is the rule's once-key; `eventId` the fact that fired it.
+ * migration, a redemption (`loyalty-document.ts:719-736`) — a union of FLAT
+ * variant slices at the entry's root, every variant-only field prefixed
+ * `source`. `sourceAwardKey` is the rule's once-key; `sourceEventId` the
+ * fact that fired it.
  */
-export type JournalSource =
-  | JournalSource.Rule
-  | JournalSource.Adjustment
-  | JournalSource.System
-  | JournalSource.Migration
-  | JournalSource.Redemption;
+export type JournalSourceRecord =
+  | JournalSourceRecord.Rule
+  | JournalSourceRecord.Adjustment
+  | JournalSourceRecord.System
+  | JournalSourceRecord.Migration
+  | JournalSourceRecord.Redemption;
 
-export const JournalSource = {
-  rule(rule: RuleRef, awardKey: string, eventId: string): JournalSource.Rule {
-    return { kind: JournalSourceKind.Rule, rule, awardKey, eventId };
+export const JournalSourceRecord = {
+  rule(
+    rule: RuleRef,
+    sourceAwardKey: string,
+    sourceEventId: JournalEventId,
+  ): JournalSourceRecord.Rule {
+    return {
+      journalSource: JournalSource.Rule,
+      sourceRuleId: rule.ruleId,
+      sourceRuleVersion: rule.version,
+      sourceAwardKey,
+      sourceEventId,
+    };
   },
-  manual(adjustmentId: string): JournalSource.Adjustment {
-    return { kind: JournalSourceKind.Manual, adjustmentId };
+  manual(sourceAdjustmentId: AdjustmentId): JournalSourceRecord.Adjustment {
+    return { journalSource: JournalSource.Manual, sourceAdjustmentId };
   },
-  correction(adjustmentId: string): JournalSource.Adjustment {
-    return { kind: JournalSourceKind.Correction, adjustmentId };
+  correction(sourceAdjustmentId: AdjustmentId): JournalSourceRecord.Adjustment {
+    return { journalSource: JournalSource.Correction, sourceAdjustmentId };
   },
-  system(job: JournalSystemJob): JournalSource.System {
-    return { kind: JournalSourceKind.System, job };
+  system(sourceSystemJob: JournalSystemJob): JournalSourceRecord.System {
+    return { journalSource: JournalSource.System, sourceSystemJob };
   },
-  migration(batchId: string): JournalSource.Migration {
-    return { kind: JournalSourceKind.Migration, batchId };
+  migration(sourceBatchId: MigrationBatchId): JournalSourceRecord.Migration {
+    return { journalSource: JournalSource.Migration, sourceBatchId };
   },
-  redemption(redemptionId: string): JournalSource.Redemption {
-    return { kind: JournalSourceKind.Redemption, redemptionId };
+  redemption(sourceRedemptionId: RedemptionId): JournalSourceRecord.Redemption {
+    return { journalSource: JournalSource.Redemption, sourceRedemptionId };
+  },
+  /** The rule version a RULE source cites, as the value type. */
+  ruleRef(source: JournalSourceRecord.Rule): RuleRef {
+    return { ruleId: source.sourceRuleId, version: source.sourceRuleVersion };
   },
 } as const;
 
-export namespace JournalSource {
+export namespace JournalSourceRecord {
   export type Rule = {
-    readonly kind: typeof JournalSourceKind.Rule;
-    readonly rule: RuleRef;
-    readonly awardKey: string;
-    readonly eventId: string;
+    readonly journalSource: typeof JournalSource.Rule;
+    readonly sourceRuleId: AchievementRuleId;
+    readonly sourceRuleVersion: number;
+    readonly sourceAwardKey: string;
+    readonly sourceEventId: JournalEventId;
   };
   /** A person's adjustment, or their correction of an earlier entry — one shape for both. */
   export type Adjustment = {
-    readonly kind:
-      typeof JournalSourceKind.Manual | typeof JournalSourceKind.Correction;
-    readonly adjustmentId: string;
+    readonly journalSource:
+      typeof JournalSource.Manual | typeof JournalSource.Correction;
+    readonly sourceAdjustmentId: AdjustmentId;
   };
   export type System = {
-    readonly kind: typeof JournalSourceKind.System;
-    readonly job: JournalSystemJob;
+    readonly journalSource: typeof JournalSource.System;
+    readonly sourceSystemJob: JournalSystemJob;
   };
   export type Migration = {
-    readonly kind: typeof JournalSourceKind.Migration;
-    readonly batchId: string;
+    readonly journalSource: typeof JournalSource.Migration;
+    readonly sourceBatchId: MigrationBatchId;
   };
   export type Redemption = {
-    readonly kind: typeof JournalSourceKind.Redemption;
-    readonly redemptionId: string;
+    readonly journalSource: typeof JournalSource.Redemption;
+    readonly sourceRedemptionId: RedemptionId;
   };
 }

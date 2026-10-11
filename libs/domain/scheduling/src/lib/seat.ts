@@ -12,6 +12,7 @@ import { Interval } from './interval';
 import { SeatLabel } from './seat-label';
 import { SEAT_SCHEDULED, SeatOutcome, isSeatResolved } from './seat-outcome';
 import { TimeSlot } from './time-slot';
+import { defect } from '@creativo/ecs-core';
 
 /**
  * How the seat's subject relates to the booking party's owner.
@@ -280,8 +281,7 @@ export class Seat {
     );
     // Unreachable: `ServiceTerms` rejects a non-positive duration at
     // construction, so the end is always strictly after the start.
-    if (result.isFailure())
-      throw new Error('unreachable: non-positive duration');
+    if (result.isFailure()) defect('unreachable: non-positive duration');
     return result.value;
   }
 

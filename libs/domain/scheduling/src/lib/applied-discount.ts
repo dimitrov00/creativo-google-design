@@ -6,9 +6,18 @@ import {
 } from '@creativo/domain/engagement';
 import {
   AppliedDiscount as AppliedDiscountData,
+  AppliedDiscountId,
+  Combinability,
   CouponGrantId,
   type CouponValue as CouponValueData,
+  Currency,
+  DiscountMethod,
+  DiscountProvenance,
   DiscountSystem,
+  PriceCents,
+  UtcEpochMs,
+  VoucherCode,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
@@ -20,30 +29,87 @@ import {
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
+/** The legacy lower-case value tag → the ecs-core `DiscountMethod`. */
+const LEGACY_DISCOUNT_METHOD = {
+  percent_off: DiscountMethod.PercentOff,
+  fixed_amount: DiscountMethod.FixedAmount,
+  free_service: DiscountMethod.FreeService,
+} as const satisfies Record<CouponValue['kind'], DiscountMethod>;
+
+/** The legacy `{ kind }` combinability → the ecs-core tag. */
+const LEGACY_COMBINABILITY = {
+  exclusive: Combinability.Exclusive,
+  stackable: Combinability.Stackable,
+} as const satisfies Record<CouponCombinability['kind'], Combinability>;
+
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a legacy `Money` / `ZonedDateTime` already holds the rule.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/** The legacy value as the flat slice — converted as it stands, never re-validated. */
 function toValueData(value: CouponValue): CouponValueData {
-  return value.kind === 'fixed_amount'
-    ? {
-        kind: 'fixed_amount',
-        amount: {
-          amountMinorUnits: value.amount.toMinorUnits(),
-          currencyCode: value.amount.currencyCode(),
-        },
-      }
-    : value;
+  switch (value.kind) {
+    case 'percent_off':
+      return {
+        discountMethod: LEGACY_DISCOUNT_METHOD.percent_off,
+        discountPercent: value.percent,
+      };
+    case 'fixed_amount':
+      return {
+        discountMethod: LEGACY_DISCOUNT_METHOD.fixed_amount,
+        discountAmountCents: sure(
+          PriceCents.of(value.amount.toMinorUnits()),
+          'an amount',
+        ),
+        discountCurrency: sure(
+          Currency.parse(value.amount.currencyCode()),
+          'a currency',
+        ),
+      };
+    case 'free_service':
+      return { discountMethod: LEGACY_DISCOUNT_METHOD.free_service };
+  }
+}
+
+/**
+ * The stored lower-case source and its loose `grantId`/`code` pair → the
+ * ecs-core provenance variant (flatten-spec §8.9), whose evidence sits on
+ * its own variant as `discountGrantId`/`discountCode`. A legacy `grant` or
+ * `code` row that lost its evidence (the legacy props leave both optional)
+ * keeps its source with the empty id as its evidence — which no real grant
+ * or code is — so two such rows still compare as the same promise and never
+ * as a real one, exactly as the legacy `null === null` did.
+ */
+function toProvenanceData(discount: AppliedDiscount): DiscountProvenance {
+  switch (discount.source) {
+    case 'grant':
+      return DiscountProvenance.grant(CouponGrantId.of(discount.grantId ?? ''));
+    case 'code':
+      return DiscountProvenance.code(VoucherCode.of(discount.code ?? ''));
+    case 'manual':
+      return DiscountProvenance.manual();
+  }
 }
 
 /** The legacy discount as the ECS `AppliedDiscount` struct (Phase 4 deletes it). */
 export function toEcsDiscount(discount: AppliedDiscount): AppliedDiscountData {
   return {
-    id: discount.id,
-    source: discount.source,
-    value: toValueData(discount.value),
+    discountId: AppliedDiscountId.of(discount.id),
     label: discount.label,
-    grantId:
-      discount.grantId === null ? null : CouponGrantId.of(discount.grantId),
-    code: discount.code,
-    appliedAtMs: discount.appliedAt.toMillis(),
-    combinability: discount.combinability,
+    appliedAtUtcMs: sure(
+      UtcEpochMs.of(discount.appliedAt.toMillis()),
+      'an instant',
+    ),
+    combinability: LEGACY_COMBINABILITY[discount.combinability.kind],
+    ...toProvenanceData(discount),
+    ...toValueData(discount.value),
   };
 }
 

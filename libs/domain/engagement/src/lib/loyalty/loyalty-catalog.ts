@@ -1,24 +1,25 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  type BadgeCategoryId as CategoryRefId,
+  BadgeCategoryId as CategoryRefId,
+  BadgeSeriesId as SeriesRefId,
   type CatalogCategoryRef,
   type CatalogRewardRef,
   type CatalogSeasonRef,
   type CatalogSeriesRef,
   type CatalogStreakRef,
   type CatalogTierRef,
-  DayKey,
   EngagementErrorCode,
+  LocalDate,
   type ValidLoyaltyCatalog as SystemCatalog,
   type LoyaltyCatalogError as SystemCatalogError,
   LoyaltyCatalogSystem,
-  type Metric as SystemMetric,
-  type Points,
-  type RewardId,
-  type SeasonId as SeasonRefId,
-  type SeriesId,
-  type StreakDefinitionId,
-  type TierId,
+  Points,
+  RewardId,
+  SeasonId as SeasonRefId,
+  SeasonPhase as SystemSeasonPhase,
+  StreakDefinitionId,
+  TierId,
+  defect,
 } from '@creativo/ecs-core';
 import type { BadgeCategory } from './badge-category';
 import type { BadgeSeries } from './badge-series';
@@ -106,20 +107,30 @@ export class LoyaltyCatalog {
   }
 
   category(id: string): BadgeCategory | null {
-    return LoyaltyCatalogSystem.category(this.refs, id)?.source ?? null;
+    return (
+      LoyaltyCatalogSystem.category(this.refs, CategoryRefId.of(id))?.source ??
+      null
+    );
   }
 
   series(id: string): BadgeSeries | null {
-    return LoyaltyCatalogSystem.series(this.refs, id)?.source ?? null;
+    return (
+      LoyaltyCatalogSystem.series(this.refs, SeriesRefId.of(id))?.source ?? null
+    );
   }
 
   /** A shelf's families, by `order`, retired ones included (the caller knows who started them). */
   seriesIn(categoryId: string): readonly BadgeSeries[] {
-    return LoyaltyCatalogSystem.seriesIn(this.refs, categoryId).map(sourceOf);
+    return LoyaltyCatalogSystem.seriesIn(
+      this.refs,
+      CategoryRefId.of(categoryId),
+    ).map(sourceOf);
   }
 
   season(id: string): Season | null {
-    return LoyaltyCatalogSystem.season(this.refs, id)?.source ?? null;
+    return (
+      LoyaltyCatalogSystem.season(this.refs, SeasonRefId.of(id))?.source ?? null
+    );
   }
 
   /**
@@ -130,18 +141,21 @@ export class LoyaltyCatalog {
   seasonsIn(phase: SeasonPhase, today: IsoDate): readonly Season[] {
     return LoyaltyCatalogSystem.seasonsIn(
       this.refs,
-      phase,
-      DayKey.of(today),
+      SEASON_PHASE[phase],
+      dayOf(today),
     ).map(sourceOf);
   }
 
   tier(id: string): TierDefinition | null {
-    return LoyaltyCatalogSystem.tier(this.refs, id)?.source ?? null;
+    return LoyaltyCatalogSystem.tier(this.refs, TierId.of(id))?.source ?? null;
   }
 
   /** A rhythm's head: the rule in force and the one that waits. */
   streakSchedule(id: string): StreakDefinitionSchedule | null {
-    return LoyaltyCatalogSystem.streak(this.refs, id)?.source ?? null;
+    return (
+      LoyaltyCatalogSystem.streak(this.refs, StreakDefinitionId.of(id))
+        ?.source ?? null
+    );
   }
 
   /**
@@ -170,11 +184,24 @@ type Refs = SystemCatalog<
 
 const sourceOf = <S>(ref: { readonly source: S }): S => ref.source;
 
+/** A window's phase, in the system's words. */
+const SEASON_PHASE = {
+  announced: SystemSeasonPhase.Announced,
+  open: SystemSeasonPhase.Open,
+  ended: SystemSeasonPhase.Ended,
+} as const satisfies Record<SeasonPhase, SystemSeasonPhase>;
+
+/** A Sofia day the catalogue holds: a validated window end, a clock's «today». */
+function dayOf(raw: IsoDate): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
 function categoryRef(
   category: BadgeCategory,
 ): Ref<CatalogCategoryRef, BadgeCategory> {
   return {
-    id: category.id.value as CategoryRefId,
+    id: CategoryRefId.of(category.id.value),
     order: category.order,
     source: category,
   };
@@ -182,13 +209,13 @@ function categoryRef(
 
 function seriesRef(series: BadgeSeries): Ref<CatalogSeriesRef, BadgeSeries> {
   return {
-    id: series.id.value as SeriesId,
+    id: SeriesRefId.of(series.id.value),
     categoryId:
       series.categoryId === null
         ? null
-        : (series.categoryId.value as CategoryRefId),
+        : CategoryRefId.of(series.categoryId.value),
     seasonId:
-      series.seasonId === null ? null : (series.seasonId.value as SeasonRefId),
+      series.seasonId === null ? null : SeasonRefId.of(series.seasonId.value),
     order: series.order,
     source: series,
   };
@@ -196,29 +223,23 @@ function seriesRef(series: BadgeSeries): Ref<CatalogSeriesRef, BadgeSeries> {
 
 function seasonRef(season: Season): Ref<CatalogSeasonRef, Season> {
   return {
-    id: season.id.value as SeasonRefId,
-    window: {
-      from: DayKey.of(season.window.from),
-      until: DayKey.of(season.window.until),
-    },
+    id: SeasonRefId.of(season.id.value),
+    windowFrom: dayOf(season.window.from),
+    windowUntil: dayOf(season.window.until),
     trackSeriesId:
       season.trackSeriesId === null
         ? null
-        : (season.trackSeriesId.value as SeriesId),
-    seriesIds: season.seriesIds.map((id) => id.value as SeriesId),
+        : SeriesRefId.of(season.trackSeriesId.value),
+    seriesIds: season.seriesIds.map((id) => SeriesRefId.of(id.value)),
     source: season,
   };
 }
 
 function tierRef(tier: TierDefinition): Ref<CatalogTierRef, TierDefinition> {
   return {
-    id: tier.id as TierId,
+    id: TierId.of(tier.id),
     rank: tier.rank,
-    qualify: {
-      metric: tier.qualify.metric as SystemMetric,
-      atLeast: tier.qualify.atLeast,
-      window: tier.qualify.window,
-    },
+    qualifyAtLeast: tier.qualify.atLeast,
     source: tier,
   };
 }
@@ -227,8 +248,8 @@ function rewardRef(
   reward: RewardCatalogItem,
 ): Ref<CatalogRewardRef, RewardCatalogItem> {
   return {
-    id: reward.id as RewardId,
-    cost: reward.cost as Points,
+    id: RewardId.of(reward.id),
+    cost: Points.of(reward.cost),
     order: reward.order,
     source: reward,
   };
@@ -237,12 +258,12 @@ function rewardRef(
 function streakRef(
   schedule: StreakDefinitionSchedule,
 ): Ref<CatalogStreakRef, StreakDefinitionSchedule> {
-  return { id: schedule.id as StreakDefinitionId, source: schedule };
+  return { id: StreakDefinitionId.of(schedule.id), source: schedule };
 }
 
 /** The system's struct error as the class the legacy readers know. */
 function legacyErrorOf(error: SystemCatalogError): LoyaltyCatalogError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case EngagementErrorCode.LoyaltyCatalogDuplicateId:
       return new LoyaltyCatalogDuplicateIdError(error.collection, error.id);
     case EngagementErrorCode.LoyaltyCatalogDanglingCategory:
@@ -256,8 +277,8 @@ function legacyErrorOf(error: SystemCatalogError): LoyaltyCatalogError {
         error.seriesId,
       );
     case EngagementErrorCode.LoyaltyCatalogTiersNotRising:
-      // The rank-ordered ids, joined by the system into one i18n parameter.
-      return new LoyaltyCatalogTiersNotRisingError(error.tierIds.split(', '));
+      // The rank-ordered ids.
+      return new LoyaltyCatalogTiersNotRisingError([...error.tierIds]);
     default:
       return new LoyaltyCatalogCostNotPositiveError(error.rewardId, error.cost);
   }

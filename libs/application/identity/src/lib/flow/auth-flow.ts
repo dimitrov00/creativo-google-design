@@ -4,7 +4,7 @@ import {
   AuthFlowStep,
   AuthFlowSystem,
   Identifier as Channel,
-  IdentifierKind,
+  IdentifierChannel,
   type ParsedIdentifier,
   SessionKind as SessionTag,
 } from '@creativo/ecs-core';
@@ -79,12 +79,12 @@ export const AUTH_FLOW_INITIAL_STATE: AuthFlowState = { kind: 'identify' };
 function toChannel(identifier: Identifier): ParsedIdentifier {
   return identifier.kind === 'phone'
     ? {
-        kind: IdentifierKind.Phone,
-        value: Channel.of(identifier.value.toString()),
+        identifierChannel: IdentifierChannel.Phone,
+        identifier: Channel.of(identifier.value.toString()),
       }
     : {
-        kind: IdentifierKind.Email,
-        value: Channel.of(identifier.value.toString()),
+        identifierChannel: IdentifierChannel.Email,
+        identifier: Channel.of(identifier.value.toString()),
       };
 }
 
@@ -143,7 +143,11 @@ function toLegacyIdentifier(
 ): Identifier {
   if (event.type === 'submit_identifier') return event.identifier;
   if (from.kind === 'otp' || from.kind === 'done') return from.identifier;
-  return reconstituteIdentifier({ kind: channel.kind, value: channel.value });
+  return reconstituteIdentifier({
+    kind:
+      channel.identifierChannel === IdentifierChannel.Phone ? 'phone' : 'email',
+    value: channel.identifier,
+  });
 }
 
 /** The next state back in the legacy shape. */
@@ -152,7 +156,7 @@ function toLegacyState(
   from: AuthFlowState,
   event: AuthFlowEvent,
 ): AuthFlowState {
-  switch (next.kind) {
+  switch (next.authFlowStep) {
     case AuthFlowStep.Identify:
       return next.error === null
         ? { kind: 'identify' }
@@ -170,7 +174,7 @@ function toLegacyState(
         kind: 'done',
         identifier: toLegacyIdentifier(next.identifier, from, event),
         session:
-          next.session === SessionTag.New ? NEW_SESSION : RETURNING_SESSION,
+          next.sessionKind === SessionTag.New ? NEW_SESSION : RETURNING_SESSION,
       };
     default:
       return { kind: 'authenticated' };

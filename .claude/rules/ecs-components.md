@@ -41,15 +41,13 @@ export const BookingLifecycle = {
     };
   },
   cancel(
-    from: BookingLifecycle.Confirmed,
     atUtcMs: UtcEpochMs,
-    reason: CancellationReason,
+    reasons: CancellationReasonSet,
   ): BookingLifecycle.Cancelled {
     return {
       bookingStatus: BookingStatus.Cancelled,
-      confirmedAtUtcMs: from.confirmedAtUtcMs,
       cancelledAtUtcMs: atUtcMs,
-      cancellationReason: reason,
+      cancellationReason: reasons,
     };
   },
   isTerminal(l: BookingLifecycle): boolean {
@@ -65,13 +63,11 @@ export namespace BookingLifecycle {
   };
   export type Cancelled = {
     readonly bookingStatus: typeof BookingStatus.Cancelled;
-    readonly confirmedAtUtcMs: UtcEpochMs; // history the next variant keeps, declared
-    readonly cancelledAtUtcMs: UtcEpochMs;
-    readonly cancellationReason: CancellationReason;
+    readonly cancelledAtUtcMs: UtcEpochMs; // the entering stamp only (F-20)
+    readonly cancellationReason: CancellationReasonSet; // a party's 1-to-N reasons, one stored string (F-24)
   };
   export type Completed = {
     readonly bookingStatus: typeof BookingStatus.Completed;
-    readonly confirmedAtUtcMs: UtcEpochMs;
     readonly completedAtUtcMs: UtcEpochMs;
   };
 }
@@ -84,30 +80,36 @@ export namespace BookingLifecycle {
 - Variant-only fields carry their own prefix (`cancelledAtUtcMs`,
   `cancellationReason`) so slices never collide.
 - **Transitions keep the document equal to exactly one variant:** the write
-  plan sets every field of the new variant and deletes (`FieldValue.delete()`)
-  every field of the old variant the new one does not declare. History worth
-  keeping is declared on the later variant (as `confirmedAtUtcMs` above).
+  plan is `WriteOp.transition(path, fields, WriteOp.variantFieldsToDelete(
+before, after))` — it sets every field of the new variant and deletes
+  (`FieldValue.delete()`) every field of the old variant the new one does
+  not declare; never hand-list the stale fields. Each variant carries only
+  its entering stamp (F-20: today's data has no history to declare); a
+  history worth keeping would be declared on the later variant.
 
 The type-alias + `as const` companion + type-only namespace triple merges, and
 esbuild erases the namespace entirely. The namespace must stay type-only — a
 value inside it would collide with the companion `const`.
 
-## A slice without variants (`time-coordinate.data.ts`)
+## A slice without variants (`appointment-time.data.ts`)
+
+The time slice is named for its domain — `AppointmentTime` (F-24; the
+general shape any temporal entity's time slice follows).
 
 ```ts
 /** Where a booking sits on the shop's clock, and on the absolute timeline. */
-export type TimeCoordinate = {
+export type AppointmentTime = {
   readonly localDate: LocalDate; // the shop's wall-clock day, 'YYYY-MM-DD'
   readonly startMinutes: MinuteOfDay; // [0, 1440) from the shop's local midnight
-  readonly endMinutes: MinuteOfDay; // [0, 1440)
+  readonly endMinutes: EndMinute; // (0, 1440] — an exclusive end (F-1)
   readonly utcEpochMs: UtcEpochMs; // absolute start — computed ONCE at ingestion, for indexes/crons/.ics only
 };
 
-export const TimeCoordinate = {
-  durationMinutes(t: TimeCoordinate): DurationMinutes {
-    return DurationMinutes.between(t.startMinutes, t.endMinutes);
+export const AppointmentTime = {
+  durationMinutes(t: AppointmentTime): MinuteCount {
+    return MinuteCount.span(t.startMinutes, t.endMinutes);
   },
-  overlaps(a: TimeCoordinate, b: TimeCoordinate): boolean {
+  overlaps(a: AppointmentTime, b: AppointmentTime): boolean {
     return (
       a.localDate === b.localDate &&
       a.startMinutes < b.endMinutes &&
@@ -125,18 +127,18 @@ here — `ZonedTimeSystem` does it once, at the ingestion boundary, on native
 ## An entity (`appointment.entity.ts`)
 
 ```ts
-import type { TimeCoordinate } from '../components/time-coordinate.data';
+import type { AppointmentTime } from '../components/appointment-time.data';
 import type { BookingLifecycle } from '../components/booking-lifecycle.data';
-import type { PaymentRecord } from '../components/payment-record.data';
 
-/** Branded id; its smart constructor lives in primitives/ids.primitive.ts. */
+/** Branded ids; their smart constructors live in primitives/ids.primitive.ts. */
 import type {
   AppointmentId,
   TenantId,
   LocationId,
   BarberId,
-  CustomerId,
+  UserId,
 } from '../primitives/ids.primitive';
+import type { Currency } from '../primitives/currency.primitive';
 import type { PriceCents } from '../primitives/price-cents.primitive';
 
 /** The identity slice: the id and the plain 1-to-1 attributes. */
@@ -147,15 +149,15 @@ export type AppointmentMeta = {
   readonly currency: Currency; // 'EUR' | 'BGN'
   readonly priceCents: PriceCents;
   readonly barberIds: readonly BarberId[]; // 1-to-N: an array is allowed
-  readonly customerIds: readonly CustomerId[]; // 1-to-N: the people booked
+  readonly subjectUserIds: readonly UserId[]; // 1-to-N; D29: flip (1) adds subjectCustomerIds beside it
   readonly seats: readonly Seat[]; // 1-to-N: an array of flat structs
 };
 
-/** The archetype — every 1-to-1 field at the root. The document is this minus `id`. */
-export type Appointment = AppointmentMeta &
-  TimeCoordinate &
-  BookingLifecycle &
-  PaymentRecord;
+/**
+ * The archetype — every 1-to-1 field at the root. The document is this minus
+ * `id`. No `PaymentRecord` slice: no payment data is stored today (F-24).
+ */
+export type Appointment = AppointmentMeta & AppointmentTime & BookingLifecycle;
 ```
 
 Ids are `Brand<string, '…'>` primitives (Law 7) — nominal per tag, zero
@@ -164,11 +166,19 @@ runtime cost. Do **not** add `assemble()`, `create()` that only spreads, or
 archetype's noun (`Appointment`), with no `Entity` suffix.
 
 Every entity ships a compile-only type-spec proving the intersection is not
-`never` and that each discriminator narrows:
+`never`, that each discriminator narrows, that every variant is flat and that
+its slices share no field name — with the helpers of
+`@creativo/ecs-core/testing` (`NoNested`, `AllTrue`, `KeysOfUnion`,
+`Disjoint`), never re-typed:
 
 ```ts
 type IsNever<T> = [T] extends [never] ? true : false;
 const notNever: IsNever<Appointment> = false;
+type EveryVariantFlat = Appointment extends unknown
+  ? AllTrue<NoNested<Appointment>>
+  : never;
+const flat: EveryVariantFlat = true;
+const disjoint: Disjoint<AppointmentMeta, AppointmentTime> = true;
 declare const apt: Appointment;
 if (apt.bookingStatus === BookingStatus.Cancelled) apt.cancellationReason; // ok
 // @ts-expect-error — a confirmed booking has no cancellationReason

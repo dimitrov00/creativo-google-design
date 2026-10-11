@@ -1,30 +1,31 @@
-import { DayKey } from '../components/day-key.data';
 import {
-  Frequency,
-  MonthlyDayKind,
-  RecurrenceEndKind,
+  MonthlyAnchor,
+  RecurrenceEnd,
+  RecurrenceFrequency,
+  RecurrencePattern,
   RecurrenceRule,
   WeekOfMonth,
 } from '../components/recurrence-rule.data';
 import { Result } from '../components/result.data';
 import { SchedulingError } from '../components/scheduling-errors.data';
-import { Weekday } from '../components/weekday.data';
+import type { Weekday } from '../components/weekday.data';
+import { LocalDate } from '../primitives/local-date.primitive';
 
 /**
- * A SERIES — a rule bound to the day it starts on, and so to its days
+ * A SERIES — a rule bound to the shop day it starts on, and so to its days
  * (`recurrence-rule.ts:478-557`). In memory only (§9 D16(b): a series is not
  * stored; its days are written one exception per barber-day).
  *
- * - `startDayKey` — the day the series was started from. It BOUNDS the
+ * - `startLocalDate` — the day the series was started from. It BOUNDS the
  *   series; it is not an occurrence by fiat (Outlook's reading, not RFC
  *   5545's): a Thursday nobody asked for is a Thursday no client can book.
- * - `dayKeys` — every day of the series, in order; never empty, never more
- *   than {@link RecurrenceRule.MAX_OCCURRENCES}.
+ * - `localDates` — every day of the series, in order; never empty, never
+ *   more than {@link RecurrenceRule.MAX_OCCURRENCES}.
  */
 export type RecurrenceSeries = {
-  readonly startDayKey: DayKey;
+  readonly startLocalDate: LocalDate;
   readonly rule: RecurrenceRule;
-  readonly dayKeys: readonly DayKey[];
+  readonly localDates: readonly LocalDate[];
 };
 
 /**
@@ -35,35 +36,12 @@ export type RecurrenceSeries = {
  */
 const PERIOD_GUARD = 10_000;
 
-/** The last day a four-digit day key can name — where every walk stops. */
-const LAST_EPOCH_DAY = DayKey.epochDayOf(9999, 12, 31);
+/** The last day a four-digit year can name — where every walk stops. */
+const LAST_EPOCH_DAY = LocalDate.epochDayOf(9999, 12, 31);
 
-/** The civil parts of an epoch day — the replacement for `civilOf`'s `new Date`. */
-type Civil = {
-  readonly year: number;
-  readonly month: number;
-  readonly date: number;
-};
-
-function civilOf(epochDay: number): Civil {
-  const key = DayKey.fromEpochDay(epochDay);
-  return {
-    year: Number(key.slice(0, 4)),
-    month: Number(key.slice(5, 7)),
-    date: Number(key.slice(8, 10)),
-  };
-}
-
-function civilOfKey(dayKey: DayKey): Civil {
-  return {
-    year: Number(dayKey.slice(0, 4)),
-    month: Number(dayKey.slice(5, 7)),
-    date: Number(dayKey.slice(8, 10)),
-  };
-}
-
-function weekdayOfKey(dayKey: DayKey): Weekday {
-  return Weekday.ofEpochDay(DayKey.toEpochDay(dayKey));
+/** The ISO weekday of an epoch day — through the civil day, the one weekday rule. */
+function weekdayOfEpochDay(epochDay: number): Weekday {
+  return LocalDate.weekday(LocalDate.fromEpochDay(epochDay));
 }
 
 /** The `week`-th (or last) `weekday` of a month, as an epoch day. Always exists. */
@@ -74,39 +52,29 @@ function nthWeekdayOf(
   week: WeekOfMonth,
 ): number {
   if (week === WeekOfMonth.Last) {
-    const last = DayKey.epochDayOf(
+    const last = LocalDate.epochDayOf(
       year,
       month,
-      DayKey.daysInMonth(year, month),
+      LocalDate.daysInMonth(year, month),
     );
-    return last - ((Weekday.ofEpochDay(last) - weekday + 7) % 7);
+    return last - ((weekdayOfEpochDay(last) - weekday + 7) % 7);
   }
-  const first = DayKey.epochDayOf(year, month, 1);
+  const first = LocalDate.epochDayOf(year, month, 1);
   return (
-    first + ((weekday - Weekday.ofEpochDay(first) + 7) % 7) + (week - 1) * 7
-  );
-}
-
-function sameMonthlyDay(
-  a: RecurrenceRule.MonthlyDay,
-  b: RecurrenceRule.MonthlyDay,
-): boolean {
-  if (a.kind === MonthlyDayKind.Date) {
-    return b.kind === MonthlyDayKind.Date && a.date === b.date;
-  }
-  return (
-    b.kind === MonthlyDayKind.Weekday &&
-    a.week === b.week &&
-    a.weekday === b.weekday
+    first + ((weekday - weekdayOfEpochDay(first) + 7) % 7) + (week - 1) * 7
   );
 }
 
 /** A pattern read off a real day — valid by construction, so no `Result`. */
 function withPattern(
   rule: RecurrenceRule,
-  pattern: RecurrenceRule.Pattern,
+  pattern: RecurrencePattern,
 ): RecurrenceRule {
-  return { pattern, interval: rule.interval, end: rule.end };
+  return RecurrenceRule.of(
+    pattern,
+    rule.recurrenceInterval,
+    RecurrenceRule.endOf(rule),
+  );
 }
 
 /**
@@ -124,8 +92,8 @@ function walk(
   limit: number,
 ): readonly number[] {
   const wanted =
-    rule.end.kind === RecurrenceEndKind.Count
-      ? Math.min(rule.end.count, limit)
+    rule.recurrenceEnd === RecurrenceEnd.Count
+      ? Math.min(rule.occurrenceCount, limit)
       : limit;
   const days: number[] = [];
   if (wanted <= 0) return days;
@@ -138,47 +106,51 @@ function walk(
     return days.length >= wanted;
   };
 
-  const step = rule.interval;
-  const pattern = rule.pattern;
-  switch (pattern.kind) {
-    case Frequency.Daily: {
+  const step = rule.recurrenceInterval;
+  switch (rule.recurrenceFrequency) {
+    case RecurrenceFrequency.Daily: {
       let day = from;
       while (!take(day)) day += step;
       break;
     }
-    case Frequency.Weekly: {
-      const monday = from - (Weekday.ofEpochDay(from) - 1);
+    case RecurrenceFrequency.Weekly: {
+      const monday = from - (weekdayOfEpochDay(from) - 1);
+      const weekdays = rule.recurrenceWeekdays;
       walking: for (let week = monday; week <= until; week += 7 * step) {
-        for (let i = 0; i < pattern.weekdays.length; i++) {
-          if (take(week + (pattern.weekdays[i] as Weekday) - 1)) break walking;
+        for (let i = 0; i < weekdays.length; i++) {
+          if (take(week + (weekdays[i] as Weekday) - 1)) break walking;
         }
       }
       break;
     }
-    case Frequency.Monthly: {
-      const origin = civilOf(from);
-      const day = pattern.day;
+    case RecurrenceFrequency.Monthly: {
+      const origin = LocalDate.parts(LocalDate.fromEpochDay(from));
       for (let period = 0; period < PERIOD_GUARD; period++) {
         const index = origin.month - 1 + period * step;
         const year = origin.year + Math.floor(index / 12);
         const month = (index % 12) + 1;
-        if (DayKey.epochDayOf(year, month, 1) > until) break;
-        if (day.kind === MonthlyDayKind.Date) {
-          if (day.date > DayKey.daysInMonth(year, month)) continue;
-          if (take(DayKey.epochDayOf(year, month, day.date))) break;
-        } else if (take(nthWeekdayOf(year, month, day.weekday, day.week))) {
+        if (LocalDate.epochDayOf(year, month, 1) > until) break;
+        if (rule.monthlyAnchor === MonthlyAnchor.Date) {
+          if (rule.monthlyDate > LocalDate.daysInMonth(year, month)) continue;
+          if (take(LocalDate.epochDayOf(year, month, rule.monthlyDate))) break;
+        } else if (
+          take(nthWeekdayOf(year, month, rule.monthlyWeekday, rule.monthlyWeek))
+        ) {
           break;
         }
       }
       break;
     }
-    case Frequency.Yearly: {
-      const origin = civilOf(from);
+    case RecurrenceFrequency.Yearly: {
+      const origin = LocalDate.parts(LocalDate.fromEpochDay(from));
       for (let period = 0; period < PERIOD_GUARD; period++) {
         const year = origin.year + period * step;
-        if (DayKey.epochDayOf(year, 1, 1) > until) break;
-        if (pattern.date > DayKey.daysInMonth(year, pattern.month)) continue;
-        if (take(DayKey.epochDayOf(year, pattern.month, pattern.date))) break;
+        if (LocalDate.epochDayOf(year, 1, 1) > until) break;
+        if (rule.yearlyDate > LocalDate.daysInMonth(year, rule.yearlyMonth)) {
+          continue;
+        }
+        if (take(LocalDate.epochDayOf(year, rule.yearlyMonth, rule.yearlyDate)))
+          break;
       }
       break;
     }
@@ -188,60 +160,54 @@ function walk(
 
 /** The rule's own last day as an epoch day, capped at the last four-digit day. */
 function endEpochDay(rule: RecurrenceRule): number {
-  return rule.end.kind === RecurrenceEndKind.Until
-    ? Math.min(DayKey.toEpochDay(rule.end.dayKey), LAST_EPOCH_DAY)
+  return rule.recurrenceEnd === RecurrenceEnd.Until
+    ? Math.min(LocalDate.toEpochDay(rule.untilLocalDate), LAST_EPOCH_DAY)
     : LAST_EPOCH_DAY;
 }
 
-function toKeys(days: readonly number[]): readonly DayKey[] {
-  const keys: DayKey[] = [];
+function toLocalDates(days: readonly number[]): readonly LocalDate[] {
+  const dates: LocalDate[] = [];
   for (let i = 0; i < days.length; i++) {
-    keys.push(DayKey.fromEpochDay(days[i] as number));
+    dates.push(LocalDate.fromEpochDay(days[i] as number));
   }
-  return keys;
+  return dates;
 }
 
 /**
- * Which days a recurrence rule selects — the walk, the presets and the
- * series limits of `recurrence-rule.ts:252-557`, over CIVIL day keys. The
- * rule itself (canonical weekdays, the interval and count caps, equality)
- * is the {@link RecurrenceRule} component.
+ * Which shop days a recurrence rule selects — the walk, the presets and the
+ * series limits of `recurrence-rule.ts:252-557`, over CIVIL days
+ * (`LocalDate`). The rule itself (canonical weekdays, the interval and count
+ * caps, equality) is the {@link RecurrenceRule} component.
  *
- * Civil arithmetic only: Howard Hinnant's `days_from_civil` /
- * `civil_from_days` (`DayKey.epochDayOf` / `DayKey.fromEpochDay`), the leap
- * rule's month lengths (`DayKey.daysInMonth`) and the epoch-day weekday
- * (`Weekday.ofEpochDay`) replace the legacy `Date.UTC` / `new Date` calls. A
- * weekday is a property of the civil day, the same in every zone, so no zone
- * table is needed — the series' day keys become instants only where a write
- * lifts them into the shop's zone.
+ * Civil arithmetic only (T8: multi-day spans are `LocalDate` arithmetic):
+ * Howard Hinnant's `days_from_civil` / `civil_from_days`
+ * (`LocalDate.epochDayOf` / `LocalDate.fromEpochDay`), the leap rule's month
+ * lengths (`LocalDate.daysInMonth`) and the civil weekday
+ * (`LocalDate.weekday`). A weekday is a property of the civil day, the same
+ * in every zone, so no zone is needed — the series' days become instants
+ * only where a write lifts them into the shop's zone.
  */
 export const RecurrenceSystem = {
   /**
-   * What a bare frequency means from `startDayKey` — «every week» on the
+   * What a bare frequency means from `startLocalDate` — «every week» on the
    * start's weekday, «every month» on its date, «every year» on its day
    * (`recurrence-rule.ts:276-290`). Total: a pattern read off a real day is
    * always a real pattern.
    */
   patternFor(
-    frequency: Frequency,
-    startDayKey: DayKey,
-  ): RecurrenceRule.Pattern {
-    const start = civilOfKey(startDayKey);
+    frequency: RecurrenceFrequency,
+    startLocalDate: LocalDate,
+  ): RecurrencePattern {
+    const start = LocalDate.parts(startLocalDate);
     switch (frequency) {
-      case Frequency.Daily:
-        return { kind: Frequency.Daily };
-      case Frequency.Weekly:
-        return {
-          kind: Frequency.Weekly,
-          weekdays: [weekdayOfKey(startDayKey)],
-        };
-      case Frequency.Monthly:
-        return {
-          kind: Frequency.Monthly,
-          day: { kind: MonthlyDayKind.Date, date: start.date },
-        };
-      case Frequency.Yearly:
-        return { kind: Frequency.Yearly, month: start.month, date: start.date };
+      case RecurrenceFrequency.Daily:
+        return RecurrencePattern.daily();
+      case RecurrenceFrequency.Weekly:
+        return RecurrencePattern.weekly([LocalDate.weekday(startLocalDate)]);
+      case RecurrenceFrequency.Monthly:
+        return RecurrencePattern.monthlyByDate(start.day);
+      case RecurrenceFrequency.Yearly:
+        return RecurrencePattern.yearly(start.month, start.day);
     }
   },
 
@@ -251,27 +217,24 @@ export const RecurrenceSystem = {
    * and «on the last Thursday» when the start is in its month's last seven
    * days. A fifth weekday offers only «last».
    */
-  monthlyDaysFor(startDayKey: DayKey): readonly RecurrenceRule.MonthlyDay[] {
-    const start = civilOfKey(startDayKey);
-    const weekday = weekdayOfKey(startDayKey);
-    const week = Math.ceil(start.date / 7);
-    const isLast = start.date + 7 > DayKey.daysInMonth(start.year, start.month);
-    const days: RecurrenceRule.MonthlyDay[] = [
-      { kind: MonthlyDayKind.Date, date: start.date },
+  monthlyDaysFor(
+    startLocalDate: LocalDate,
+  ): readonly RecurrencePattern.Monthly[] {
+    const start = LocalDate.parts(startLocalDate);
+    const weekday = LocalDate.weekday(startLocalDate);
+    const week = Math.ceil(start.day / 7);
+    const isLast =
+      start.day + 7 > LocalDate.daysInMonth(start.year, start.month);
+    const days: RecurrencePattern.Monthly[] = [
+      RecurrencePattern.monthlyByDate(start.day),
     ];
     if (week <= 4) {
-      days.push({
-        kind: MonthlyDayKind.Weekday,
-        week: week as WeekOfMonth,
-        weekday,
-      });
+      days.push(
+        RecurrencePattern.monthlyByWeekday(week as WeekOfMonth, weekday),
+      );
     }
     if (isLast) {
-      days.push({
-        kind: MonthlyDayKind.Weekday,
-        week: WeekOfMonth.Last,
-        weekday,
-      });
+      days.push(RecurrencePattern.monthlyByWeekday(WeekOfMonth.Last, weekday));
     }
     return days;
   },
@@ -286,32 +249,34 @@ export const RecurrenceSystem = {
    */
   followingStart(
     rule: RecurrenceRule,
-    fromDayKey: DayKey,
-    toDayKey: DayKey,
+    fromLocalDate: LocalDate,
+    toLocalDate: LocalDate,
   ): RecurrenceRule {
-    const pattern = rule.pattern;
-    switch (pattern.kind) {
-      case Frequency.Daily:
+    switch (rule.recurrenceFrequency) {
+      case RecurrenceFrequency.Daily:
         return rule;
-      case Frequency.Weekly: {
+      case RecurrenceFrequency.Weekly: {
         const own =
-          pattern.weekdays.length === 1 &&
-          pattern.weekdays[0] === weekdayOfKey(fromDayKey);
+          rule.recurrenceWeekdays.length === 1 &&
+          rule.recurrenceWeekdays[0] === LocalDate.weekday(fromLocalDate);
         return own
           ? withPattern(
               rule,
-              RecurrenceSystem.patternFor(Frequency.Weekly, toDayKey),
+              RecurrenceSystem.patternFor(
+                RecurrenceFrequency.Weekly,
+                toLocalDate,
+              ),
             )
           : rule;
       }
-      case Frequency.Monthly: {
-        const fromChoices = RecurrenceSystem.monthlyDaysFor(fromDayKey);
+      case RecurrenceFrequency.Monthly: {
+        const fromChoices = RecurrenceSystem.monthlyDaysFor(fromLocalDate);
         let own = false;
         for (let i = 0; i < fromChoices.length; i++) {
           if (
-            sameMonthlyDay(
-              fromChoices[i] as RecurrenceRule.MonthlyDay,
-              pattern.day,
+            RecurrencePattern.equals(
+              fromChoices[i] as RecurrencePattern.Monthly,
+              rule,
             )
           ) {
             own = true;
@@ -319,35 +284,37 @@ export const RecurrenceSystem = {
           }
         }
         if (!own) return rule;
-        const choices = RecurrenceSystem.monthlyDaysFor(toDayKey);
-        let kept: RecurrenceRule.MonthlyDay | null = null;
-        if (pattern.day.kind === MonthlyDayKind.Date) {
+        const choices = RecurrenceSystem.monthlyDaysFor(toLocalDate);
+        let kept: RecurrencePattern.Monthly | null = null;
+        if (rule.monthlyAnchor === MonthlyAnchor.Date) {
           kept = choices[0] ?? null;
         } else {
-          const wantLast = pattern.day.week === WeekOfMonth.Last;
-          let anyWeekday: RecurrenceRule.MonthlyDay | null = null;
+          const wantLast = rule.monthlyWeek === WeekOfMonth.Last;
+          let anyWeekday: RecurrencePattern.Monthly | null = null;
           for (let i = 0; i < choices.length; i++) {
-            const choice = choices[i] as RecurrenceRule.MonthlyDay;
-            if (choice.kind !== MonthlyDayKind.Weekday) continue;
+            const choice = choices[i] as RecurrencePattern.Monthly;
+            if (choice.monthlyAnchor !== MonthlyAnchor.Weekday) continue;
             if (anyWeekday === null) anyWeekday = choice;
-            if ((choice.week === WeekOfMonth.Last) === wantLast) {
+            if ((choice.monthlyWeek === WeekOfMonth.Last) === wantLast) {
               kept = choice;
               break;
             }
           }
           if (kept === null) kept = anyWeekday;
         }
-        return kept === null
-          ? rule
-          : withPattern(rule, { kind: Frequency.Monthly, day: kept });
+        return kept === null ? rule : withPattern(rule, kept);
       }
-      case Frequency.Yearly: {
-        const from = civilOfKey(fromDayKey);
-        const own = pattern.month === from.month && pattern.date === from.date;
+      case RecurrenceFrequency.Yearly: {
+        const from = LocalDate.parts(fromLocalDate);
+        const own =
+          rule.yearlyMonth === from.month && rule.yearlyDate === from.day;
         return own
           ? withPattern(
               rule,
-              RecurrenceSystem.patternFor(Frequency.Yearly, toDayKey),
+              RecurrenceSystem.patternFor(
+                RecurrenceFrequency.Yearly,
+                toLocalDate,
+              ),
             )
           : rule;
       }
@@ -355,23 +322,26 @@ export const RecurrenceSystem = {
   },
 
   /**
-   * The days `rule` selects from `fromDayKey` through `toDayKey` (both
-   * inclusive), in order — bounded by `toDayKey`, by the rule's own end (its
-   * `until` day or its `count`, counted from `fromDayKey`) AND by
-   * {@link RecurrenceRule.MAX_OCCURRENCES}, so no call materialises more than
-   * a year of days. `[]` when nothing lands (or `toDayKey` precedes
-   * `fromDayKey`).
+   * The days `rule` selects from `fromLocalDate` through `toLocalDate` (both
+   * inclusive), in order — bounded by `toLocalDate`, by the rule's own end
+   * (its `untilLocalDate` or its `occurrenceCount`, counted from
+   * `fromLocalDate`) AND by {@link RecurrenceRule.MAX_OCCURRENCES}, so no
+   * call materialises more than a year of days. `[]` when nothing lands (or
+   * `toLocalDate` precedes `fromLocalDate`).
    */
   occurrences(
     rule: RecurrenceRule,
-    fromDayKey: DayKey,
-    toDayKey: DayKey,
-  ): readonly DayKey[] {
-    const until = Math.min(endEpochDay(rule), DayKey.toEpochDay(toDayKey));
-    return toKeys(
+    fromLocalDate: LocalDate,
+    toLocalDate: LocalDate,
+  ): readonly LocalDate[] {
+    const until = Math.min(
+      endEpochDay(rule),
+      LocalDate.toEpochDay(toLocalDate),
+    );
+    return toLocalDates(
       walk(
         rule,
-        DayKey.toEpochDay(fromDayKey),
+        LocalDate.toEpochDay(fromLocalDate),
         until,
         RecurrenceRule.MAX_OCCURRENCES,
       ),
@@ -382,27 +352,31 @@ export const RecurrenceSystem = {
    * Bind `rule` to the day it starts on (`RecurrenceSeries.create`,
    * `recurrence-rule.ts:501-526`). The limits live here because only here
    * are they knowable, each a refusal rather than a silently truncated write:
-   * an `until` before the start (`scheduling.recurrence.ends_before_start`),
-   * more than {@link RecurrenceRule.MAX_OCCURRENCES} days
-   * (`scheduling.recurrence.too_long` — the walk looks one day past the cap
+   * an `untilLocalDate` before the start
+   * (`SCHEDULING_RECURRENCE_ENDS_BEFORE_START`), more than
+   * {@link RecurrenceRule.MAX_OCCURRENCES} days
+   * (`SCHEDULING_RECURRENCE_TOO_LONG` — the walk looks one day past the cap
    * to know), and a rule that selects nothing before its end
-   * (`scheduling.recurrence.never_occurs`).
+   * (`SCHEDULING_RECURRENCE_NEVER_OCCURS`).
    */
   series(
-    startDayKey: DayKey,
+    startLocalDate: LocalDate,
     rule: RecurrenceRule,
   ): Result<RecurrenceSeries, SchedulingError> {
     if (
-      rule.end.kind === RecurrenceEndKind.Until &&
-      rule.end.dayKey < startDayKey
+      rule.recurrenceEnd === RecurrenceEnd.Until &&
+      rule.untilLocalDate < startLocalDate
     ) {
       return Result.err(
-        SchedulingError.recurrenceEndsBeforeStart(startDayKey, rule.end.dayKey),
+        SchedulingError.recurrenceEndsBeforeStart(
+          startLocalDate,
+          rule.untilLocalDate,
+        ),
       );
     }
     const found = walk(
       rule,
-      DayKey.toEpochDay(startDayKey),
+      LocalDate.toEpochDay(startLocalDate),
       endEpochDay(rule),
       RecurrenceRule.MAX_OCCURRENCES + 1,
     );
@@ -412,13 +386,17 @@ export const RecurrenceSystem = {
       );
     }
     if (found.length === 0) {
-      return Result.err(SchedulingError.recurrenceNeverOccurs(startDayKey));
+      return Result.err(SchedulingError.recurrenceNeverOccurs(startLocalDate));
     }
-    return Result.ok({ startDayKey, rule, dayKeys: toKeys(found) });
+    return Result.ok({
+      startLocalDate,
+      rule,
+      localDates: toLocalDates(found),
+    });
   },
 
   /** Is the day the series was started from one of its days (its first)? */
   startsOnStart(series: RecurrenceSeries): boolean {
-    return series.dayKeys[0] === series.startDayKey;
+    return series.localDates[0] === series.startLocalDate;
   },
 } as const;

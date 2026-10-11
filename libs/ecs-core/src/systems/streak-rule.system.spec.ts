@@ -1,24 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
 import { LocalizedText } from '../components/localized-text.data';
-import type { StreakInterval } from '../components/streak-interval.data';
-import type { StreakQualifier } from '../components/streak-qualifier.data';
 import {
+  StreakInterval,
+  StreakIntervalRule,
+} from '../components/streak-interval.data';
+import { StreakQualifierRule } from '../components/streak-qualifier.data';
+import {
+  HeadRole,
   STREAK_EXCUSES,
+  StreakExcuse,
+  StreakOnBreak,
   StreakRule,
+  StreakRuleDirection,
+  StreakRuleParameter,
+  StreakTransition,
   type ScheduledStreakRule,
-  type StreakExcuse,
-  type StreakRuleDirection,
-  type StreakRuleParameter,
-  type StreakTransition,
 } from '../components/streak-rule.data';
-import { deepFreeze } from '../testing';
+import { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { deepFreeze, localDate } from '../testing';
 import {
   StreakRuleSystem,
   type StreakRuleChange,
   type StreakSchedule,
 } from './streak-rule.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * COPIED, never moved (the legacy specs keep running against their shims):
@@ -34,20 +39,36 @@ import { ZonedTimeSystem } from './zoned-time.system';
  *   streak-definition.spec.ts (`revise` and the factory's own cases stay
  *   with the class and `StreakRule.parse`).
  *
- * Re-targeted: a version is the plain `StreakRule` (its name is the head's,
+ * Re-targeted: a version is the FLAT `StreakRule` (its name is the head's,
  * so a `name` in a patch only says whether the name moved), `effectiveFrom`
- * is `effectiveFromDayKey`, a waiting version is the rule with its
- * `transition` beside it (`ScheduledStreakRule`), and an error's list
- * parameter is one joined string.
+ * is `effectiveFromLocalDate`, the head is the `rules` list (F-9) with the
+ * waiting version's `streakTransition` beside it, every tag is SCREAMING
+ * and an error names the flat field. A case's change is still written by
+ * PART — the interval and qualifier slices, each option part's figures
+ * together — and flattened onto the rule by `rule()`, so every case table
+ * reads as it did.
  */
 
-type Patch = Omit<Partial<StreakRule>, 'qualifier' | 'effectiveFromDayKey'> & {
+type Part<K extends string> = { readonly [F in K]?: number | boolean };
+
+type Patch = {
   readonly name?: LocalizedText;
+  readonly version?: number;
   readonly effectiveFrom?: string;
-  readonly qualifier?:
-    | { readonly kind: 'anyVisit' }
-    | { readonly kind: 'services'; readonly serviceIds: readonly string[] }
-    | { readonly kind: 'categories'; readonly categoryIds: readonly string[] };
+  readonly enabled?: boolean;
+  readonly qualifier?: StreakQualifierRule;
+  readonly minGapDays?: number;
+  readonly bookingHold?: Part<'enabled' | 'maxDaysPastDue'>;
+  readonly interval?: StreakIntervalRule;
+  readonly graceDays?: number;
+  readonly riskLeadDays?: number;
+  readonly protections?: Part<
+    'enabled' | 'maxBanked' | 'earnEvery' | 'startWith'
+  >;
+  readonly excuses?: readonly StreakExcuse[];
+  readonly clientPause?: Part<'enabled' | 'maxDaysPerYear'>;
+  readonly repair?: Part<'enabled' | 'windowDays' | 'perYear'>;
+  readonly onBreak?: StreakOnBreak;
 };
 
 /** The recommended rule as version 3 from 2026-09-01: what every case starts from. */
@@ -55,26 +76,58 @@ function base(): StreakRule {
   return {
     ...StreakRule.DEFAULT,
     version: 3,
-    effectiveFromDayKey: DayKey.of('2026-09-01'),
+    effectiveFromLocalDate: localDate('2026-09-01'),
   };
 }
 
+/** A part's figures, prefixed onto the flat rule (`protections.maxBanked` → `protectionsMaxBanked`). */
+function prefixed(
+  prefix: string,
+  part: Readonly<Record<string, number | boolean | undefined>> | undefined,
+): Record<string, number | boolean> {
+  const out: Record<string, number | boolean> = {};
+  for (const [field, value] of Object.entries(part ?? {})) {
+    if (value === undefined) continue;
+    out[`${prefix}${field.charAt(0).toUpperCase()}${field.slice(1)}`] = value;
+  }
+  return out;
+}
+
+/** The version a patch makes: the base with the patch flattened over it, parsed. */
 function rule(patch: Patch = {}): StreakRule {
-  const { effectiveFrom, qualifier, ...rest } = patch;
-  // The name is the head's: a version holds none.
-  const figures = Object.fromEntries(
-    Object.entries(rest).filter(([key]) => key !== 'name'),
-  ) as Partial<StreakRule>;
-  const result = StreakRule.parse({
-    ...base(),
-    ...figures,
-    ...(effectiveFrom === undefined
+  const draft = {
+    ...StreakRule.of(base()),
+    ...(patch.version === undefined ? {} : { version: patch.version }),
+    ...(patch.effectiveFrom === undefined
       ? {}
-      : { effectiveFromDayKey: DayKey.of(effectiveFrom) }),
-    ...(qualifier === undefined
+      : { effectiveFromLocalDate: localDate(patch.effectiveFrom) }),
+    ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+    ...(patch.minGapDays === undefined ? {} : { minGapDays: patch.minGapDays }),
+    ...(patch.graceDays === undefined ? {} : { graceDays: patch.graceDays }),
+    ...(patch.riskLeadDays === undefined
       ? {}
-      : { qualifier: qualifier as StreakQualifier }),
-  });
+      : { riskLeadDays: patch.riskLeadDays }),
+    ...(patch.excuses === undefined ? {} : { excuses: patch.excuses }),
+    ...(patch.onBreak === undefined ? {} : { onBreak: patch.onBreak }),
+    ...prefixed('bookingHold', patch.bookingHold),
+    ...prefixed('protections', patch.protections),
+    ...prefixed('clientPause', patch.clientPause),
+    ...prefixed('repair', patch.repair),
+  } as Record<string, unknown>;
+  // A slice replaces the variant whole: none of the old variant's fields stay.
+  if (patch.interval !== undefined) {
+    for (const key of Object.keys(draft)) {
+      if (key.startsWith('interval')) delete draft[key];
+    }
+    Object.assign(draft, patch.interval);
+  }
+  if (patch.qualifier !== undefined) {
+    for (const key of Object.keys(draft)) {
+      if (key.startsWith('qualifier')) delete draft[key];
+    }
+    Object.assign(draft, patch.qualifier);
+  }
+  const result = StreakRule.parse(draft as unknown as StreakRule);
   if (!result.ok) throw new Error(JSON.stringify(result.error));
   return result.value;
 }
@@ -83,26 +136,44 @@ function rule(patch: Patch = {}): StreakRule {
 const nameOf = (patch: Patch): LocalizedText =>
   patch.name ?? StreakRule.DEFAULT_NAME;
 
-const PERSONAL = {
-  kind: 'personal',
-  tolerancePct: 50,
-  minDays: 21,
-  maxDays: 70,
-  fallbackDays: 42,
-} as const satisfies StreakInterval;
+const fixed = (days: number): StreakIntervalRule =>
+  StreakIntervalRule.fixed(days);
 
-const protections = (patch: Partial<StreakRule['protections']>): Patch => ({
-  protections: { ...base().protections, ...patch },
+const PERSONAL = {
+  streakInterval: StreakInterval.Personal,
+  intervalTolerancePct: 50,
+  intervalMinDays: 21,
+  intervalMaxDays: 70,
+  intervalFallbackDays: 42,
+} as const satisfies StreakIntervalRule;
+
+/* Each part, as the base holds it — what a part's patch changes figures of. */
+const BASE_PROTECTIONS = {
+  enabled: true,
+  maxBanked: 2,
+  earnEvery: 5,
+  startWith: 0,
+};
+const BASE_REPAIR = { enabled: true, windowDays: 14, perYear: 1 };
+const BASE_HOLD = { enabled: true, maxDaysPastDue: 14 };
+const BASE_PAUSE = { enabled: false, maxDaysPerYear: 90 };
+
+const protections = (patch: Partial<typeof BASE_PROTECTIONS>): Patch => ({
+  protections: { ...BASE_PROTECTIONS, ...patch },
 });
-const repair = (patch: Partial<StreakRule['repair']>): Patch => ({
-  repair: { ...base().repair, ...patch },
+const repair = (patch: Partial<typeof BASE_REPAIR>): Patch => ({
+  repair: { ...BASE_REPAIR, ...patch },
 });
-const hold = (patch: Partial<StreakRule['bookingHold']>): Patch => ({
-  bookingHold: { ...base().bookingHold, ...patch },
+const hold = (patch: Partial<typeof BASE_HOLD>): Patch => ({
+  bookingHold: { ...BASE_HOLD, ...patch },
 });
-const pause = (patch: Partial<StreakRule['clientPause']>): Patch => ({
-  clientPause: { ...base().clientPause, ...patch },
+const pause = (patch: Partial<typeof BASE_PAUSE>): Patch => ({
+  clientPause: { ...BASE_PAUSE, ...patch },
 });
+
+/** The head's waiting element, or `null`, and its element in force — for the cases that read the head. */
+const scheduledOf = (head: StreakSchedule) => StreakRuleSystem.scheduled(head);
+const currentOf = (head: StreakSchedule) => StreakRuleSystem.current(head);
 
 // ── streak-schedule.spec.ts ──────────────────────────────────────────────
 
@@ -110,16 +181,36 @@ const CURRENT = rule();
 const NEXT = rule({
   version: 4,
   effectiveFrom: '2026-10-01',
-  interval: { kind: 'fixed', days: 35 },
+  interval: fixed(35),
 });
 
 const waiting = (
   definition: StreakRule,
-  transition: StreakTransition,
-): ScheduledStreakRule => ({ ...definition, transition });
+  streakTransition: StreakTransition,
+): ScheduledStreakRule => ({ ...definition, streakTransition });
+
+/** A rule as the head holds it in force: the rule alone, its role, no transition. */
+const asCurrent = (definition: StreakRule) => ({
+  ...StreakRule.of(definition),
+  headRole: HeadRole.Current,
+  streakTransition: null,
+});
+
+/** A rule as the head holds it waiting, with what it does to the runs that exist. */
+const asScheduled = (
+  definition: StreakRule,
+  streakTransition: StreakTransition,
+) => ({
+  ...StreakRule.of(definition),
+  headRole: HeadRole.Scheduled,
+  streakTransition,
+});
 
 function schedule(
-  scheduled: ScheduledStreakRule | null = waiting(NEXT, 'grandfather'),
+  scheduled: ScheduledStreakRule | null = waiting(
+    NEXT,
+    StreakTransition.Grandfather,
+  ),
   current: StreakRule = CURRENT,
 ): StreakSchedule {
   const result = StreakRuleSystem.schedule(current, scheduled);
@@ -127,10 +218,10 @@ function schedule(
   return result.value;
 }
 
-/** Each fault as `code field`, in the order they were found. */
+/** Each fault as `code field` (the code past its dictionary's prefix), in the order they were found. */
 function faults(
   definition: StreakRule,
-  transition: StreakTransition = 'grandfather',
+  transition: StreakTransition = StreakTransition.Grandfather,
 ): string[] {
   const result = StreakRuleSystem.schedule(
     CURRENT,
@@ -138,23 +229,33 @@ function faults(
   );
   return result.ok
     ? []
-    : result.error.map((e) => `${e.code.split('.').pop()} ${e.field}`);
+    : result.error.map(
+        (e) =>
+          `${e.errorCode.replace(/^ENGAGEMENT_STREAK_(SCHEDULE|DEFINITION)_/, '').toLowerCase()} ${e.field}`,
+      );
 }
 
 describe('StreakRuleSystem.schedule', () => {
   it('holds the rule in force alone', () => {
     const head = schedule(null);
-    expect(head.current).toBe(CURRENT);
-    expect(head.scheduled).toBeNull();
+    expect(head.rules).toHaveLength(1);
+    expect(currentOf(head)).toEqual(asCurrent(CURRENT));
+    expect(scheduledOf(head)).toBeNull();
   });
 
   it('holds the rule in force and the one that waits', () => {
     const head = schedule();
-    expect(head.current).toBe(CURRENT);
-    expect(head.scheduled).toEqual({ ...NEXT, transition: 'grandfather' });
+    expect(head.rules).toEqual([
+      asCurrent(CURRENT),
+      asScheduled(NEXT, StreakTransition.Grandfather),
+    ]);
+    expect(currentOf(head)).toEqual(asCurrent(CURRENT));
+    expect(scheduledOf(head)).toEqual(
+      asScheduled(NEXT, StreakTransition.Grandfather),
+    );
   });
 
-  it.each(['grandfather', 'recompute'] as const)(
+  it.each(['GRANDFATHER', 'RECOMPUTE'] as const)(
     'takes the transition %s',
     (transition) => {
       expect(faults(NEXT, transition)).toEqual([]);
@@ -164,12 +265,15 @@ describe('StreakRuleSystem.schedule', () => {
   it.each([3, 2])('refuses version %s after version 3', (version) => {
     const result = StreakRuleSystem.schedule(
       CURRENT,
-      waiting(rule({ version, effectiveFrom: '2026-10-01' }), 'grandfather'),
+      waiting(
+        rule({ version, effectiveFrom: '2026-10-01' }),
+        StreakTransition.Grandfather,
+      ),
     );
     expect(!result.ok && result.error).toHaveLength(1);
     expect(!result.ok && result.error[0]).toMatchObject({
-      code: 'engagement.streak_schedule.version_not_rising',
-      field: 'scheduled.version',
+      errorCode: 'ENGAGEMENT_STREAK_SCHEDULE_VERSION_NOT_RISING',
+      field: 'scheduledVersion',
       value: version,
       currentVersion: 3,
     });
@@ -187,14 +291,17 @@ describe('StreakRuleSystem.schedule', () => {
     (effectiveFrom) => {
       const result = StreakRuleSystem.schedule(
         CURRENT,
-        waiting(rule({ version: 4, effectiveFrom }), 'grandfather'),
+        waiting(
+          rule({ version: 4, effectiveFrom }),
+          StreakTransition.Grandfather,
+        ),
       );
       expect(!result.ok && result.error).toHaveLength(1);
       expect(!result.ok && result.error[0]).toMatchObject({
-        code: 'engagement.streak_schedule.scheduled_not_after_current',
-        field: 'scheduled.effectiveFromDayKey',
+        errorCode: 'ENGAGEMENT_STREAK_SCHEDULE_SCHEDULED_NOT_AFTER_CURRENT',
+        field: 'scheduledEffectiveFromLocalDate',
         value: effectiveFrom,
-        currentEffectiveFromDayKey: '2026-09-01',
+        currentEffectiveFromLocalDate: '2026-09-01',
       });
     },
   );
@@ -212,10 +319,10 @@ describe('StreakRuleSystem.schedule', () => {
     );
     expect(!result.ok && result.error).toHaveLength(1);
     expect(!result.ok && result.error[0]).toMatchObject({
-      code: 'engagement.streak_definition.unknown_option',
-      field: 'scheduled.transition',
+      errorCode: 'ENGAGEMENT_STREAK_DEFINITION_UNKNOWN_OPTION',
+      field: 'scheduledStreakTransition',
       value: 'forget',
-      options: 'grandfather, recompute',
+      options: 'GRANDFATHER, RECOMPUTE',
     });
   });
 
@@ -226,9 +333,9 @@ describe('StreakRuleSystem.schedule', () => {
         'forget' as string as StreakTransition,
       ),
     ).toEqual([
-      'version_not_rising scheduled.version',
-      'scheduled_not_after_current scheduled.effectiveFromDayKey',
-      'unknown_option scheduled.transition',
+      'version_not_rising scheduledVersion',
+      'scheduled_not_after_current scheduledEffectiveFromLocalDate',
+      'unknown_option scheduledStreakTransition',
     ]);
   });
 });
@@ -245,11 +352,11 @@ describe('StreakRuleSystem, by date', () => {
     'on $today version $inForce is in force and $upcoming waits',
     ({ today, inForce, upcoming }) => {
       const head = schedule();
-      expect(StreakRuleSystem.inForceOn(head, DayKey.of(today)).version).toBe(
+      expect(StreakRuleSystem.inForceOn(head, localDate(today)).version).toBe(
         inForce,
       );
       expect(
-        StreakRuleSystem.upcomingOn(head, DayKey.of(today))?.version ?? null,
+        StreakRuleSystem.upcomingOn(head, localDate(today))?.version ?? null,
       ).toBe(upcoming);
     },
   );
@@ -257,24 +364,26 @@ describe('StreakRuleSystem, by date', () => {
   it('hands the waiting rule over with what it does to the runs that exist', () => {
     expect(
       StreakRuleSystem.upcomingOn(
-        schedule(waiting(NEXT, 'recompute')),
-        DayKey.of('2026-09-29'),
+        schedule(waiting(NEXT, StreakTransition.Recompute)),
+        localDate('2026-09-29'),
       ),
-    ).toEqual({ ...NEXT, transition: 'recompute' });
+    ).toEqual(asScheduled(NEXT, StreakTransition.Recompute));
   });
 
   it('with nothing waiting, the rule in force is the rule on any day', () => {
     const head = schedule(null);
     for (const today of ['2026-09-01', '2026-09-29', '2030-01-01']) {
-      expect(StreakRuleSystem.inForceOn(head, DayKey.of(today))).toBe(CURRENT);
-      expect(StreakRuleSystem.upcomingOn(head, DayKey.of(today))).toBeNull();
+      expect(StreakRuleSystem.inForceOn(head, localDate(today))).toEqual(
+        asCurrent(CURRENT),
+      );
+      expect(StreakRuleSystem.upcomingOn(head, localDate(today))).toBeNull();
     }
   });
 
   it('a first rule that has not begun yet is still the only rule there is', () => {
     expect(
-      StreakRuleSystem.inForceOn(schedule(null), DayKey.of('2026-08-15')),
-    ).toBe(CURRENT);
+      StreakRuleSystem.inForceOn(schedule(null), localDate('2026-08-15')),
+    ).toEqual(asCurrent(CURRENT));
   });
 
   it('hands a rule that is off over as the rule in force: the reader asks it', () => {
@@ -283,18 +392,18 @@ describe('StreakRuleSystem, by date', () => {
       effectiveFrom: '2026-10-01',
       enabled: false,
     });
-    const head = schedule(waiting(off, 'grandfather'));
+    const head = schedule(waiting(off, StreakTransition.Grandfather));
     expect(
-      StreakRuleSystem.inForceOn(head, DayKey.of('2026-09-30')).enabled,
+      StreakRuleSystem.inForceOn(head, localDate('2026-09-30')).enabled,
     ).toBe(true);
     expect(
-      StreakRuleSystem.inForceOn(head, DayKey.of('2026-10-01')).enabled,
+      StreakRuleSystem.inForceOn(head, localDate('2026-10-01')).enabled,
     ).toBe(false);
   });
 });
 
 describe('StreakRuleSystem.earliestEffectiveDay', () => {
-  const TODAY = DayKey.of('2026-09-29');
+  const TODAY = localDate('2026-09-29');
   const change = (direction: StreakRuleDirection): StreakRuleChange => ({
     direction,
     changed: [],
@@ -303,16 +412,16 @@ describe('StreakRuleSystem.earliestEffectiveDay', () => {
   const seen = { clientsSeeRhythm: true, noticeDays: 30 };
 
   it.each<[StreakRuleDirection, typeof seen, string, string]>([
-    ['neutral', unseen, '2026-09-29', 'today'],
-    ['neutral', seen, '2026-09-29', 'today'],
-    ['looser', unseen, '2026-09-30', 'tomorrow'],
-    ['looser', seen, '2026-09-30', 'tomorrow'],
-    ['switch', unseen, '2026-09-30', 'tomorrow'],
-    ['switch', seen, '2026-09-30', 'tomorrow'],
-    ['stricter', unseen, '2026-09-30', 'tomorrow'],
-    ['mixed', unseen, '2026-09-30', 'tomorrow'],
-    ['stricter', seen, '2026-10-29', 'a notice period ahead'],
-    ['mixed', seen, '2026-10-29', 'a notice period ahead'],
+    ['NEUTRAL', unseen, '2026-09-29', 'today'],
+    ['NEUTRAL', seen, '2026-09-29', 'today'],
+    ['LOOSER', unseen, '2026-09-30', 'tomorrow'],
+    ['LOOSER', seen, '2026-09-30', 'tomorrow'],
+    ['SWITCH', unseen, '2026-09-30', 'tomorrow'],
+    ['SWITCH', seen, '2026-09-30', 'tomorrow'],
+    ['STRICTER', unseen, '2026-09-30', 'tomorrow'],
+    ['MIXED', unseen, '2026-09-30', 'tomorrow'],
+    ['STRICTER', seen, '2026-10-29', 'a notice period ahead'],
+    ['MIXED', seen, '2026-10-29', 'a notice period ahead'],
   ])('a %s change with %o may begin on %s (%s)', (direction, policy, day) => {
     expect(
       StreakRuleSystem.earliestEffectiveDay(
@@ -327,7 +436,7 @@ describe('StreakRuleSystem.earliestEffectiveDay', () => {
     for (const noticeDays of [0, -5]) {
       expect(
         StreakRuleSystem.earliestEffectiveDay(
-          change('stricter').direction,
+          change('STRICTER').direction,
           TODAY,
           {
             clientsSeeRhythm: true,
@@ -340,16 +449,16 @@ describe('StreakRuleSystem.earliestEffectiveDay', () => {
 
   it('reads the change the rule itself classified', () => {
     const stricter = StreakRuleSystem.changeFrom(NEXT, CURRENT, false);
-    expect(stricter.direction).toBe('stricter');
+    expect(stricter.direction).toBe('STRICTER');
     expect(
       StreakRuleSystem.earliestEffectiveDay(stricter.direction, TODAY, seen),
     ).toBe('2026-10-29');
   });
 });
 
-describe('addDays — the civil day count the schedule moves by (ZonedTimeSystem)', () => {
+describe('addDays — the civil day count the schedule moves by (LocalDate)', () => {
   const addDays = (day: string, days: number): string =>
-    ZonedTimeSystem.addDays(DayKey.of(day), days);
+    LocalDate.addDays(localDate(day), days);
 
   it.each([
     ['2026-09-29', 0, '2026-09-29'],
@@ -381,14 +490,14 @@ describe('StreakRuleSystem.summary', () => {
   it('states the recommended rule', () => {
     expect(StreakRuleSystem.summary(rule())).toEqual({
       enabled: true,
-      interval: { kind: 'fixed', days: 42 },
+      interval: { streakInterval: 'FIXED', intervalDays: 42 },
       graceDays: 7,
       protections: { maxBanked: 2, earnEvery: 5 },
       shopExcuses: true,
       hold: { maxDaysPastDue: 14 },
       repair: { windowDays: 14 },
       holdsCount: false,
-      qualifier: { kind: 'anyVisit' },
+      qualifier: { streakQualifier: 'ANY_VISIT' },
     });
   });
 
@@ -396,13 +505,16 @@ describe('StreakRuleSystem.summary', () => {
     const summary = StreakRuleSystem.summary(
       rule({
         interval: PERSONAL,
-        qualifier: { kind: 'services', serviceIds: ['svc-fade', 'svc-beard'] },
+        qualifier: StreakQualifierRule.services([
+          ServiceId.of('svc-fade'),
+          ServiceId.of('svc-beard'),
+        ]),
       }),
     );
     expect(summary.interval).toEqual(PERSONAL);
     expect(summary.qualifier).toEqual({
-      kind: 'services',
-      serviceIds: ['svc-fade', 'svc-beard'],
+      streakQualifier: 'SERVICES',
+      qualifierServiceIds: ['svc-fade', 'svc-beard'],
     });
   });
 
@@ -422,7 +534,7 @@ describe('StreakRuleSystem.summary', () => {
     ['a way back that is off', repair({ enabled: false }), { repair: null }],
     [
       'a miss that holds the count',
-      { onBreak: 'hold' },
+      { onBreak: 'HOLD' },
       { repair: null, holdsCount: true },
     ],
     ['no grace', { graceDays: 0 }, { graceDays: 0 }],
@@ -434,12 +546,16 @@ describe('StreakRuleSystem.summary', () => {
   it.each<[string, readonly StreakExcuse[], boolean]>([
     [
       'every visit the shop calls off',
-      ['shopClosure', 'barberAbsence', 'staffCancelled'],
+      ['SHOP_CLOSURE', 'BARBER_ABSENCE', 'STAFF_CANCELLED'],
       true,
     ],
     ['those and the closed days', [...STREAK_EXCUSES], true],
-    ['all but the staff’s own cancel', ['shopClosure', 'barberAbsence'], false],
-    ['the closed days alone', ['closedDays'], false],
+    [
+      'all but the staff’s own cancel',
+      ['SHOP_CLOSURE', 'BARBER_ABSENCE'],
+      false,
+    ],
+    ['the closed days alone', ['CLOSED_DAYS'], false],
     ['nothing', [], false],
   ])(
     'promises the shop’s excuses only when it excuses %s',
@@ -453,14 +569,16 @@ describe('StreakRuleSystem.summary', () => {
   it('hands out copies', () => {
     const made = rule({ interval: PERSONAL });
     const summary = StreakRuleSystem.summary(made);
-    (summary.interval as { minDays: number }).minDays = 14;
+    (summary.interval as { intervalMinDays: number }).intervalMinDays = 14;
     expect(StreakRuleSystem.summary(made).interval).toEqual(PERSONAL);
   });
 });
 
 describe('StreakRuleSystem.changeFrom', () => {
   const services = (...serviceIds: string[]): Patch => ({
-    qualifier: { kind: 'services', serviceIds },
+    qualifier: StreakQualifierRule.services(
+      serviceIds.map((id) => ServiceId.of(id)),
+    ),
   });
 
   /** `[what, the rule before, the rule after, the direction, what is listed]` */
@@ -473,280 +591,293 @@ describe('StreakRuleSystem.changeFrom', () => {
   ];
 
   it.each<Case>([
-    ['nothing', {}, {}, 'neutral', []],
+    ['nothing', {}, {}, 'NEUTRAL', []],
     [
       'a new version and day alone',
       {},
       { version: 4, effectiveFrom: '2026-10-01' },
-      'neutral',
+      'NEUTRAL',
       [],
     ],
     [
       'the name',
       {},
       { name: { bg: 'Ритъм', en: 'Rhythm' } },
-      'neutral',
-      ['name'],
+      'NEUTRAL',
+      ['NAME'],
     ],
-    ['the cue', {}, { riskLeadDays: 14 }, 'neutral', ['riskLeadDays']],
+    ['the cue', {}, { riskLeadDays: 14 }, 'NEUTRAL', ['RISK_LEAD_DAYS']],
 
-    [
-      'a longer interval',
-      {},
-      { interval: { kind: 'fixed', days: 49 } },
-      'looser',
-      ['interval'],
-    ],
+    ['a longer interval', {}, { interval: fixed(49) }, 'LOOSER', ['INTERVAL']],
     [
       'a shorter interval',
       {},
-      { interval: { kind: 'fixed', days: 35 } },
-      'stricter',
-      ['interval'],
+      { interval: fixed(35) },
+      'STRICTER',
+      ['INTERVAL'],
     ],
     [
       'more tolerance',
       { interval: PERSONAL },
-      { interval: { ...PERSONAL, tolerancePct: 75 } },
-      'looser',
-      ['interval'],
+      { interval: { ...PERSONAL, intervalTolerancePct: 75 } },
+      'LOOSER',
+      ['INTERVAL'],
     ],
     [
       'less tolerance',
       { interval: PERSONAL },
-      { interval: { ...PERSONAL, tolerancePct: 25 } },
-      'stricter',
-      ['interval'],
+      { interval: { ...PERSONAL, intervalTolerancePct: 25 } },
+      'STRICTER',
+      ['INTERVAL'],
     ],
     [
       'a higher floor',
       { interval: PERSONAL },
-      { interval: { ...PERSONAL, minDays: 28 } },
-      'looser',
-      ['interval'],
+      { interval: { ...PERSONAL, intervalMinDays: 28 } },
+      'LOOSER',
+      ['INTERVAL'],
     ],
     [
       'a lower ceiling',
       { interval: PERSONAL },
-      { interval: { ...PERSONAL, maxDays: 56 } },
-      'stricter',
-      ['interval'],
+      { interval: { ...PERSONAL, intervalMaxDays: 56 } },
+      'STRICTER',
+      ['INTERVAL'],
     ],
     [
       'a longer newcomer’s interval',
       { interval: PERSONAL },
-      { interval: { ...PERSONAL, fallbackDays: 49 } },
-      'looser',
-      ['interval'],
+      { interval: { ...PERSONAL, intervalFallbackDays: 49 } },
+      'LOOSER',
+      ['INTERVAL'],
     ],
     [
       'a higher floor under a lower ceiling',
       { interval: PERSONAL },
-      { interval: { ...PERSONAL, minDays: 28, maxDays: 56 } },
-      'mixed',
-      ['interval'],
+      { interval: { ...PERSONAL, intervalMinDays: 28, intervalMaxDays: 56 } },
+      'MIXED',
+      ['INTERVAL'],
     ],
     [
       'a habit that starts where the fixed one ended',
       {},
-      { interval: { ...PERSONAL, minDays: 42, fallbackDays: 42 } },
-      'looser',
-      ['interval'],
+      {
+        interval: {
+          ...PERSONAL,
+          intervalMinDays: 42,
+          intervalFallbackDays: 42,
+        },
+      },
+      'LOOSER',
+      ['INTERVAL'],
     ],
     [
       'a habit that ends where the fixed one stood',
       {},
-      { interval: { ...PERSONAL, maxDays: 42 } },
-      'stricter',
-      ['interval'],
+      { interval: { ...PERSONAL, intervalMaxDays: 42 } },
+      'STRICTER',
+      ['INTERVAL'],
     ],
     [
       'a habit around the fixed one',
       {},
       { interval: PERSONAL },
-      'mixed',
-      ['interval'],
+      'MIXED',
+      ['INTERVAL'],
     ],
     [
       'one number past every habit',
       { interval: PERSONAL },
-      { interval: { kind: 'fixed', days: 70 } },
-      'looser',
-      ['interval'],
+      { interval: fixed(70) },
+      'LOOSER',
+      ['INTERVAL'],
     ],
     [
       'one number under every habit',
       { interval: PERSONAL },
-      { interval: { kind: 'fixed', days: 21 }, graceDays: 7 },
-      'stricter',
-      ['interval'],
+      { interval: fixed(21), graceDays: 7 },
+      'STRICTER',
+      ['INTERVAL'],
     ],
     [
       'one number inside the habits',
       { interval: PERSONAL },
-      { interval: { kind: 'fixed', days: 42 } },
-      'mixed',
-      ['interval'],
+      { interval: fixed(42) },
+      'MIXED',
+      ['INTERVAL'],
     ],
     [
       'a habit clamped to the one number it replaces',
       {},
-      { interval: { ...PERSONAL, minDays: 42, maxDays: 42, fallbackDays: 42 } },
-      'neutral',
-      ['interval'],
+      {
+        interval: {
+          ...PERSONAL,
+          intervalMinDays: 42,
+          intervalMaxDays: 42,
+          intervalFallbackDays: 42,
+        },
+      },
+      'NEUTRAL',
+      ['INTERVAL'],
     ],
 
-    ['more grace', {}, { graceDays: 10 }, 'looser', ['graceDays']],
-    ['less grace', {}, { graceDays: 3 }, 'stricter', ['graceDays']],
-    ['a shorter minimum gap', {}, { minGapDays: 3 }, 'looser', ['minGapDays']],
+    ['more grace', {}, { graceDays: 10 }, 'LOOSER', ['GRACE_DAYS']],
+    ['less grace', {}, { graceDays: 3 }, 'STRICTER', ['GRACE_DAYS']],
+    [
+      'a shorter minimum gap',
+      {},
+      { minGapDays: 3 },
+      'LOOSER',
+      ['MIN_GAP_DAYS'],
+    ],
     [
       'a longer minimum gap',
       {},
       { minGapDays: 10 },
-      'stricter',
-      ['minGapDays'],
+      'STRICTER',
+      ['MIN_GAP_DAYS'],
     ],
 
     [
       'a wider hold',
       {},
       hold({ maxDaysPastDue: 21 }),
-      'looser',
-      ['bookingHold'],
+      'LOOSER',
+      ['BOOKING_HOLD'],
     ],
     [
       'a narrower hold',
       {},
       hold({ maxDaysPastDue: 7 }),
-      'stricter',
-      ['bookingHold'],
+      'STRICTER',
+      ['BOOKING_HOLD'],
     ],
     [
       'the hold switched on',
       hold({ enabled: false }),
       {},
-      'looser',
-      ['bookingHold'],
+      'LOOSER',
+      ['BOOKING_HOLD'],
     ],
     [
       'the hold switched off',
       {},
       hold({ enabled: false }),
-      'stricter',
-      ['bookingHold'],
+      'STRICTER',
+      ['BOOKING_HOLD'],
     ],
     [
       'a figure of a hold that stays off',
       hold({ enabled: false }),
       hold({ enabled: false, maxDaysPastDue: 28 }),
-      'neutral',
-      ['bookingHold'],
+      'NEUTRAL',
+      ['BOOKING_HOLD'],
     ],
     [
       'a hold of no day switched off',
       hold({ maxDaysPastDue: 0 }),
       hold({ enabled: false, maxDaysPastDue: 0 }),
-      'neutral',
-      ['bookingHold'],
+      'NEUTRAL',
+      ['BOOKING_HOLD'],
     ],
 
     [
       'a larger reserve',
       {},
       protections({ maxBanked: 3 }),
-      'looser',
-      ['protections'],
+      'LOOSER',
+      ['PROTECTIONS'],
     ],
     [
       'a smaller reserve',
       {},
       protections({ maxBanked: 1 }),
-      'stricter',
-      ['protections'],
+      'STRICTER',
+      ['PROTECTIONS'],
     ],
     [
       'protections earned faster',
       {},
       protections({ earnEvery: 4 }),
-      'looser',
-      ['protections'],
+      'LOOSER',
+      ['PROTECTIONS'],
     ],
     [
       'protections earned slower',
       {},
       protections({ earnEvery: 8 }),
-      'stricter',
-      ['protections'],
+      'STRICTER',
+      ['PROTECTIONS'],
     ],
     [
       'a first protection with the first visit',
       {},
       protections({ startWith: 1 }),
-      'looser',
-      ['protections'],
+      'LOOSER',
+      ['PROTECTIONS'],
     ],
     [
       'a larger reserve earned slower',
       {},
       protections({ maxBanked: 3, earnEvery: 8 }),
-      'mixed',
-      ['protections'],
+      'MIXED',
+      ['PROTECTIONS'],
     ],
     [
       'protections switched off',
       {},
       protections({ enabled: false }),
-      'stricter',
-      ['protections'],
+      'STRICTER',
+      ['PROTECTIONS'],
     ],
     [
       'protections switched on',
       protections({ enabled: false }),
       {},
-      'looser',
-      ['protections'],
+      'LOOSER',
+      ['PROTECTIONS'],
     ],
     [
       'a figure of protections that stay off',
       protections({ enabled: false }),
       protections({ enabled: false, earnEvery: 3 }),
-      'neutral',
-      ['protections'],
+      'NEUTRAL',
+      ['PROTECTIONS'],
     ],
     [
       'an empty reserve filled, earned slower',
       protections({ maxBanked: 0 }),
       protections({ maxBanked: 1, earnEvery: 10 }),
-      'looser',
-      ['protections'],
+      'LOOSER',
+      ['PROTECTIONS'],
     ],
 
     [
       'an excuse added',
       {},
       { excuses: [...STREAK_EXCUSES] },
-      'looser',
-      ['excuses'],
+      'LOOSER',
+      ['EXCUSES'],
     ],
     [
       'an excuse removed',
       {},
-      { excuses: ['shopClosure', 'barberAbsence'] },
-      'stricter',
-      ['excuses'],
+      { excuses: ['SHOP_CLOSURE', 'BARBER_ABSENCE'] },
+      'STRICTER',
+      ['EXCUSES'],
     ],
     [
       'one excuse for another',
       {},
-      { excuses: ['shopClosure', 'barberAbsence', 'closedDays'] },
-      'mixed',
-      ['excuses'],
+      { excuses: ['SHOP_CLOSURE', 'BARBER_ABSENCE', 'CLOSED_DAYS'] },
+      'MIXED',
+      ['EXCUSES'],
     ],
     [
       'the excuses said in another order',
       {},
-      { excuses: ['staffCancelled', 'shopClosure', 'barberAbsence'] },
-      'neutral',
+      { excuses: ['STAFF_CANCELLED', 'SHOP_CLOSURE', 'BARBER_ABSENCE'] },
+      'NEUTRAL',
       [],
     ],
 
@@ -754,185 +885,189 @@ describe('StreakRuleSystem.changeFrom', () => {
       'the client’s pause switched on',
       {},
       pause({ enabled: true }),
-      'looser',
-      ['clientPause'],
+      'LOOSER',
+      ['CLIENT_PAUSE'],
     ],
     [
       'the client’s pause switched off',
       pause({ enabled: true }),
       {},
-      'stricter',
-      ['clientPause'],
+      'STRICTER',
+      ['CLIENT_PAUSE'],
     ],
     [
       'a shorter pause',
       pause({ enabled: true }),
       pause({ enabled: true, maxDaysPerYear: 30 }),
-      'stricter',
-      ['clientPause'],
+      'STRICTER',
+      ['CLIENT_PAUSE'],
     ],
     [
       'a figure of a pause that stays off',
       {},
       pause({ maxDaysPerYear: 30 }),
-      'neutral',
-      ['clientPause'],
+      'NEUTRAL',
+      ['CLIENT_PAUSE'],
     ],
 
-    ['a longer way back', {}, repair({ windowDays: 21 }), 'looser', ['repair']],
+    ['a longer way back', {}, repair({ windowDays: 21 }), 'LOOSER', ['REPAIR']],
     [
       'a shorter way back',
       {},
       repair({ windowDays: 7 }),
-      'stricter',
-      ['repair'],
+      'STRICTER',
+      ['REPAIR'],
     ],
-    ['more ways back a year', {}, repair({ perYear: 2 }), 'looser', ['repair']],
+    ['more ways back a year', {}, repair({ perYear: 2 }), 'LOOSER', ['REPAIR']],
     [
       'a longer way back, fewer a year',
       repair({ perYear: 2 }),
       repair({ windowDays: 30, perYear: 1 }),
-      'mixed',
-      ['repair'],
+      'MIXED',
+      ['REPAIR'],
     ],
     [
       'the way back switched off',
       {},
       repair({ enabled: false }),
-      'stricter',
-      ['repair'],
+      'STRICTER',
+      ['REPAIR'],
     ],
     [
       'the way back switched on',
       repair({ enabled: false }),
       {},
-      'looser',
-      ['repair'],
+      'LOOSER',
+      ['REPAIR'],
     ],
     [
       'a figure of a way back that stays off',
       repair({ enabled: false }),
       repair({ enabled: false, windowDays: 30 }),
-      'neutral',
-      ['repair'],
+      'NEUTRAL',
+      ['REPAIR'],
     ],
 
     [
       'a miss that holds the count',
       {},
-      { onBreak: 'hold' },
-      'looser',
-      ['onBreak'],
+      { onBreak: 'HOLD' },
+      'LOOSER',
+      ['ON_BREAK'],
     ],
     [
       'a miss that starts over',
-      { onBreak: 'hold' },
+      { onBreak: 'HOLD' },
       {},
-      'stricter',
-      ['onBreak'],
+      'STRICTER',
+      ['ON_BREAK'],
     ],
     [
       'a miss that holds the count, the way back gone with it',
       {},
-      { onBreak: 'hold', ...repair({ enabled: false }) },
-      'looser',
-      ['repair', 'onBreak'],
+      { onBreak: 'HOLD', ...repair({ enabled: false }) },
+      'LOOSER',
+      ['REPAIR', 'ON_BREAK'],
     ],
     [
       'a way back under a count that is held',
-      { onBreak: 'hold' },
-      { onBreak: 'hold', ...repair({ windowDays: 7 }) },
-      'neutral',
-      ['repair'],
+      { onBreak: 'HOLD' },
+      { onBreak: 'HOLD', ...repair({ windowDays: 7 }) },
+      'NEUTRAL',
+      ['REPAIR'],
     ],
 
     [
       'any visit narrowed to chosen services',
       {},
       services('svc-fade'),
-      'stricter',
-      ['qualifier'],
+      'STRICTER',
+      ['QUALIFIER'],
     ],
     [
       'chosen services widened to any visit',
       services('svc-fade'),
       {},
-      'looser',
-      ['qualifier'],
+      'LOOSER',
+      ['QUALIFIER'],
     ],
     [
       'a service added',
       services('svc-fade'),
       services('svc-fade', 'svc-beard'),
-      'looser',
-      ['qualifier'],
+      'LOOSER',
+      ['QUALIFIER'],
     ],
     [
       'a service removed',
       services('svc-fade', 'svc-beard'),
       services('svc-beard'),
-      'stricter',
-      ['qualifier'],
+      'STRICTER',
+      ['QUALIFIER'],
     ],
     [
       'one service for another',
       services('svc-fade'),
       services('svc-beard'),
-      'mixed',
-      ['qualifier'],
+      'MIXED',
+      ['QUALIFIER'],
     ],
     [
       'services for categories',
       services('svc-fade'),
-      { qualifier: { kind: 'categories', categoryIds: ['cat-hair'] } },
-      'mixed',
-      ['qualifier'],
+      {
+        qualifier: StreakQualifierRule.categories([
+          ServiceCategoryId.of('cat-hair'),
+        ]),
+      },
+      'MIXED',
+      ['QUALIFIER'],
     ],
     [
       'the services said in another order',
       services('svc-fade', 'svc-beard'),
       services('svc-beard', 'svc-fade'),
-      'neutral',
+      'NEUTRAL',
       [],
     ],
 
     [
       'more grace and a shorter interval',
       {},
-      { graceDays: 10, interval: { kind: 'fixed', days: 35 } },
-      'mixed',
-      ['interval', 'graceDays'],
+      { graceDays: 10, interval: fixed(35) },
+      'MIXED',
+      ['INTERVAL', 'GRACE_DAYS'],
     ],
     [
       'more grace and a longer interval',
       {},
-      { graceDays: 10, interval: { kind: 'fixed', days: 49 } },
-      'looser',
-      ['interval', 'graceDays'],
+      { graceDays: 10, interval: fixed(49) },
+      'LOOSER',
+      ['INTERVAL', 'GRACE_DAYS'],
     ],
     [
       'less grace and another cue',
       {},
       { graceDays: 3, riskLeadDays: 3 },
-      'stricter',
-      ['graceDays', 'riskLeadDays'],
+      'STRICTER',
+      ['GRACE_DAYS', 'RISK_LEAD_DAYS'],
     ],
 
-    ['the rule switched off', {}, { enabled: false }, 'switch', ['enabled']],
-    ['the rule switched on', { enabled: false }, {}, 'switch', ['enabled']],
+    ['the rule switched off', {}, { enabled: false }, 'SWITCH', ['ENABLED']],
+    ['the rule switched on', { enabled: false }, {}, 'SWITCH', ['ENABLED']],
     [
       'the rule switched off, whatever moved with it',
       {},
       { enabled: false, graceDays: 0 },
-      'switch',
-      ['enabled', 'graceDays'],
+      'SWITCH',
+      ['ENABLED', 'GRACE_DAYS'],
     ],
     [
       'a figure of a rule that stays off',
       { enabled: false },
       { enabled: false, graceDays: 10 },
-      'looser',
-      ['graceDays'],
+      'LOOSER',
+      ['GRACE_DAYS'],
     ],
   ])('%s', (_, before, after, direction, changed) => {
     expect(
@@ -951,10 +1086,10 @@ describe('StreakRuleSystem.changeFrom', () => {
     const before = rule();
     const after = rule({ graceDays: 10, ...protections({ maxBanked: 3 }) });
     expect(StreakRuleSystem.changeFrom(after, before, false).direction).toBe(
-      'looser',
+      'LOOSER',
     );
     expect(StreakRuleSystem.changeFrom(before, after, false).direction).toBe(
-      'stricter',
+      'STRICTER',
     );
     expect(StreakRuleSystem.changeFrom(before, after, false).changed).toEqual(
       StreakRuleSystem.changeFrom(after, before, false).changed,
@@ -968,7 +1103,7 @@ describe('StreakRuleSystem.equals, a rule as a value', () => {
     expect(
       StreakRuleSystem.equals(
         rule({
-          excuses: ['staffCancelled', 'barberAbsence', 'shopClosure'],
+          excuses: ['STAFF_CANCELLED', 'BARBER_ABSENCE', 'SHOP_CLOSURE'],
         }),
         rule(),
       ),
@@ -981,7 +1116,7 @@ describe('StreakRuleSystem.equals, a rule as a value', () => {
     ['a rule that is off', { enabled: false }],
     [
       'another qualifier',
-      { qualifier: { kind: 'services', serviceIds: ['svc-fade'] } },
+      { qualifier: StreakQualifierRule.services([ServiceId.of('svc-fade')]) },
     ],
     ['another minimum gap', { minGapDays: 5 }],
     ['another hold', hold({ maxDaysPastDue: 7 })],
@@ -992,7 +1127,7 @@ describe('StreakRuleSystem.equals, a rule as a value', () => {
     ['other excuses', { excuses: [] }],
     ['another pause', pause({ enabled: true })],
     ['another way back', repair({ perYear: 2 })],
-    ['another miss', { onBreak: 'hold' }],
+    ['another miss', { onBreak: 'HOLD' }],
   ])('differs from %s', (_, patch) => {
     expect(StreakRuleSystem.equals(rule(patch), rule())).toBe(false);
     expect(StreakRuleSystem.equals(rule(), rule(patch))).toBe(false);
@@ -1003,17 +1138,20 @@ describe('StreakRuleSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const current = deepFreeze(rule());
     const next = deepFreeze(
-      waiting(rule({ version: 4, effectiveFrom: '2026-10-01' }), 'grandfather'),
+      waiting(
+        rule({ version: 4, effectiveFrom: '2026-10-01' }),
+        StreakTransition.Grandfather,
+      ),
     );
-    const head = deepFreeze({ current, scheduled: next });
-    const today = DayKey.of('2026-09-29');
+    const head = deepFreeze(schedule(next, current));
+    const today = localDate('2026-09-29');
     const once = [
       StreakRuleSystem.schedule(current, next),
       StreakRuleSystem.inForceOn(head, today),
       StreakRuleSystem.upcomingOn(head, today),
       StreakRuleSystem.changeFrom(next, current, true),
       StreakRuleSystem.summary(next),
-      StreakRuleSystem.earliestEffectiveDay('stricter', today, {
+      StreakRuleSystem.earliestEffectiveDay('STRICTER', today, {
         clientsSeeRhythm: true,
         noticeDays: 30,
       }),
@@ -1024,7 +1162,7 @@ describe('StreakRuleSystem purity', () => {
       StreakRuleSystem.upcomingOn(head, today),
       StreakRuleSystem.changeFrom(next, current, true),
       StreakRuleSystem.summary(next),
-      StreakRuleSystem.earliestEffectiveDay('stricter', today, {
+      StreakRuleSystem.earliestEffectiveDay('STRICTER', today, {
         clientsSeeRhythm: true,
         noticeDays: 30,
       }),

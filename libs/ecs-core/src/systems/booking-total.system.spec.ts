@@ -1,14 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import type { SeatAssignment } from '../components/booking-flow.data';
-import type { BookingCart } from '../components/cart-line.data';
+import type { BookingCart, CartLine } from '../components/cart-line.data';
+import { Money } from '../components/money.data';
+import { Currency } from '../primitives/currency.primitive';
 import {
-  ServiceTerms,
+  BarberId,
+  CartLineId,
+  SeatKeyText,
+  ServiceId,
   ServiceVariantId,
-} from '../components/service-terms.data';
-import { TimeInterval } from '../components/time-interval.data';
-import { BarberId } from '../entities/barber.entity';
-import { ServiceId } from '../entities/service.entity';
-import { deepFreeze, serviceFixture, textFixture } from '../testing';
+} from '../primitives/ids.primitive';
+import {
+  deepFreeze,
+  endMinute,
+  minute,
+  textFixture,
+  unwrapOk,
+} from '../testing';
+import { serviceFixture, termsFixture } from '../testing/booking-core.fixtures';
 import { BookingTotalSystem } from './booking-total.system';
 
 /*
@@ -24,31 +33,25 @@ const long = ServiceVariantId.of('long');
 
 const cut = serviceFixture({
   id: ServiceId.of('svc-cut'),
-  baseTerms: ServiceTerms.unpadded(1500, 'EUR', 30),
-  variants: [{ id: long, name: textFixture('Long') }],
+  ...termsFixture(1500, 30),
+  variants: [{ variantId: long, name: textFixture('Long') }],
   offerings: [
     {
       barberId: ivan,
-      base: ServiceTerms.unpadded(1450, 'EUR', 35),
-      overrides: [
-        { variantId: long, terms: ServiceTerms.unpadded(1850, 'EUR', 50) },
-      ],
+      ...termsFixture(1450, 35),
+      overrides: [{ variantId: long, ...termsFixture(1850, 50) }],
     },
-    {
-      barberId: niko,
-      base: ServiceTerms.unpadded(1300, 'EUR', 30),
-      overrides: [],
-    },
+    { barberId: niko, ...termsFixture(1300, 30), overrides: [] },
   ],
 });
 const beard = serviceFixture({
   id: ServiceId.of('svc-beard'),
-  baseTerms: ServiceTerms.unpadded(1000, 'EUR', 20),
+  ...termsFixture(1000, 20),
   offerings: [],
 });
 const levaShave = serviceFixture({
   id: ServiceId.of('svc-shave'),
-  baseTerms: ServiceTerms.unpadded(900, 'BGN', 20),
+  ...termsFixture(900, 20, 0, 0, Currency.BGN),
   offerings: [],
 });
 
@@ -57,9 +60,9 @@ const line = (
   seatKey: string,
   serviceId: string,
   variantId: ServiceVariantId | null = null,
-) => ({
-  lineId,
-  seatKey,
+): CartLine => ({
+  lineId: CartLineId.of(lineId),
+  seatKey: SeatKeyText.of(seatKey),
   serviceId: ServiceId.of(serviceId),
   variantId,
   barberId: null,
@@ -67,33 +70,32 @@ const line = (
 });
 
 const cart: BookingCart = {
-  seats: [
+  cartSeats: [
     {
-      seatKey: 'guest-1',
+      seatKey: SeatKeyText.of('guest-1'),
       lines: [line('line-0', 'guest-1', 'svc-cut', long)],
     },
     {
-      seatKey: 'self',
+      seatKey: SeatKeyText.of('self'),
       lines: [
         line('line-1', 'self', 'svc-cut'),
         line('line-2', 'self', 'svc-beard'),
       ],
     },
   ],
-  nextSequence: 3,
+  cartNextSequence: 3,
 };
 
 const assign = (lineId: string, barberId: BarberId): SeatAssignment => ({
-  lineId,
+  lineId: CartLineId.of(lineId),
   barberId,
-  timeInterval: TimeInterval.of(0, 1),
+  startMinutes: minute(0),
+  endMinutes: endMinute(1),
 });
 
 const S = BookingTotalSystem;
-const eur = (amountMinorUnits: number) => ({
-  amountMinorUnits,
-  currencyCode: 'EUR',
-});
+const eur = (amountCents: number): Money =>
+  unwrapOk(Money.of(amountCents, 'EUR'));
 
 describe('BookingTotalSystem.total — what it comes to', () => {
   it('prices each line at the barber who actually got it', () => {
@@ -175,6 +177,6 @@ describe('BookingTotalSystem.seatSubtotals — each seat’s run', () => {
     expect(S.seatSubtotals(assignments, frozenCart, services)).toEqual(
       S.seatSubtotals(assignments, frozenCart, services),
     );
-    expect(frozenCart.nextSequence).toBe(3);
+    expect(frozenCart.cartNextSequence).toBe(3);
   });
 });

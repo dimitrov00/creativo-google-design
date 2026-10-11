@@ -6,49 +6,84 @@ import type {
 import { Money } from '@creativo/domain/kernel';
 import type { GiftVoucher } from '@creativo/domain/engagement';
 import { giftVoucherFromDocument } from '@creativo/application/engagement';
+import type { ZonedDateTime } from '@creativo/domain/kernel';
 import {
-  type GiftVoucherEntity,
+  Currency,
+  type GiftVoucher as GiftVoucherData,
   GiftVoucherId,
+  type LocalDate,
   type Money as MoneyData,
+  PriceCents,
   UserId,
+  UtcEpochMs,
   VoucherCode,
-  VoucherState,
+  VoucherLifecycle,
   VoucherSystem,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
  * THIN SHIM (ECS migration Phase 2) — the math only. What a cancellation puts
  * back on a voucher is `VoucherSystem.restore` (never above what was issued,
- * allowed on a void or expired voucher); the reads and writes stay here.
+ * allowed on a void or expired voucher); the reads and writes stay here. The
+ * legacy voucher converts at this boundary (flatten-spec §8.9): `Money` →
+ * `*Cents` beside one `currency`, a `ZonedDateTime` → its instant and its
+ * shop day on its own zone's clock.
  */
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a legacy `Money` / `ZonedDateTime` already holds the rule.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+function instantOf(at: ZonedDateTime): UtcEpochMs {
+  return sure(UtcEpochMs.of(at.toMillis()), 'an instant');
+}
+
+function localDateOf(at: ZonedDateTime): LocalDate {
+  return ZonedTimeSystem.toLocal(
+    instantOf(at),
+    sure(ZonedTimeSystem.checkZone(at.zoneName), 'a zone'),
+  ).localDate;
+}
+
 function toMoneyData(money: Money): MoneyData {
   return {
-    amountMinorUnits: money.toMinorUnits(),
-    currencyCode: money.currencyCode(),
+    amountCents: sure(PriceCents.of(money.toMinorUnits()), 'an amount'),
+    currency: sure(Currency.parse(money.currencyCode()), 'a currency'),
   };
 }
 
-function toVoucherData(voucher: GiftVoucher): GiftVoucherEntity {
+function toVoucherData(voucher: GiftVoucher): GiftVoucherData {
   const state = voucher.state;
+  const balance = toMoneyData(voucher.balance);
   return {
     id: GiftVoucherId.of(voucher.id.value),
     code: VoucherCode.of(voucher.code),
-    initialValue: toMoneyData(voucher.initialValue),
-    balance: toMoneyData(voucher.balance),
-    issuedAtMs: voucher.issuedAt.toMillis(),
-    expiresAtMs:
-      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    initialValueCents: toMoneyData(voucher.initialValue).amountCents,
+    balanceCents: balance.amountCents,
+    currency: balance.currency,
+    issuedAtUtcMs: instantOf(voucher.issuedAt),
+    expiresAtUtcMs:
+      voucher.expiresAt === null ? null : instantOf(voucher.expiresAt),
+    expiresLocalDate:
+      voucher.expiresAt === null ? null : localDateOf(voucher.expiresAt),
     issuedToUserId:
       voucher.issuedToUserId === null
         ? null
         : UserId.of(voucher.issuedToUserId.value),
-    state:
-      state.kind === 'void'
-        ? VoucherState.voided(state.voidedAt.toMillis(), state.reason)
-        : VoucherState.active(),
+    ...(state.kind === 'void'
+      ? VoucherLifecycle.voided(instantOf(state.voidedAt), state.reason)
+      : VoucherLifecycle.active()),
   };
 }
 
@@ -110,7 +145,7 @@ export async function planVoucherRestore(
     if (!restored.ok) continue;
     restores.push({
       ref,
-      balanceMinorUnits: restored.value.balance.amountMinorUnits,
+      balanceMinorUnits: restored.value.balanceCents,
     });
   }
 

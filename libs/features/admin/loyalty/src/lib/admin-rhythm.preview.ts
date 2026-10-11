@@ -9,22 +9,29 @@ import {
 import {
   type IsoDate,
   type StreakDefinition,
+  type StreakDefinitionProps,
+  type StreakExcuse,
   type StreakFacts,
   type StreakPreview,
   type StreakState,
   projectStreak,
   sofiaDayOf,
+  streakFactsReader,
 } from '@creativo/application/engagement';
 import { RepositoryError } from '@creativo/application/shared';
 import {
-  DayKey,
-  type ServiceCategoryId,
-  type ServiceId,
-  type StreakFacts as SystemFacts,
-  StreakIntervalKind,
+  LocalDate,
+  ServiceCategoryId,
+  ServiceId,
+  StreakExcuse as SystemExcuse,
+  StreakIntervalRule,
+  StreakOnBreak as SystemOnBreak,
+  type StreakPreview as SystemPreview,
+  StreakPreviewOutcome,
   StreakPreviewSystem,
-  StreakQualifierKind,
+  StreakQualifierRule,
   type StreakRule,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
@@ -167,11 +174,15 @@ export function rhythmPreviewOf(input: {
   readonly facts: RhythmPreviewFacts;
   readonly today: IsoDate;
 }): StreakPreview {
-  return StreakPreviewSystem.estimate(
-    ruleOf(input.inForce),
-    ruleOf(input.draft),
-    input.facts.clients.map(factsOf),
-    DayKey.of(input.today),
+  const today = LocalDate.parse(input.today);
+  return legacyPreviewOf(
+    StreakPreviewSystem.estimate(
+      ruleOf(input.inForce),
+      ruleOf(input.draft),
+      input.facts.clients.map(streakFactsReader()),
+      // On a `today` that is no day nobody is judged.
+      today.ok ? today.value : null,
+    ),
   );
 }
 
@@ -240,76 +251,92 @@ export function sampleRhythmRun(
   return projectStreak(definition, sampleRhythmFacts(definition, today), today);
 }
 
-// ── The bridge: legacy class/facts → ecs-core struct (Phase 4 deletes it) ──
+// ── The bridge: legacy class/facts ↔ ecs-core struct (Phase 4 deletes it) ──
 
-/** A version as the system reads it: the class's figures, the day as a day key. */
-function ruleOf(definition: StreakDefinition): StreakRule {
-  const props = definition.toProps();
+const SYSTEM_EXCUSE = {
+  shopClosure: SystemExcuse.ShopClosure,
+  barberAbsence: SystemExcuse.BarberAbsence,
+  staffCancelled: SystemExcuse.StaffCancelled,
+  closedDays: SystemExcuse.ClosedDays,
+} as const satisfies Record<StreakExcuse, SystemExcuse>;
+
+const SYSTEM_ON_BREAK = {
+  restart: SystemOnBreak.Restart,
+  hold: SystemOnBreak.Hold,
+} as const satisfies Record<StreakDefinitionProps['onBreak'], SystemOnBreak>;
+
+/** A Sofia day this edge holds: a checked version day, a clock's «today». */
+function dayOf(raw: IsoDate): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/**
+ * A version as the system reads it: the figures, flat (every part's
+ * figures prefixed by the part), every tag the dictionary's; its day as
+ * `effectiveFromLocalDate`.
+ */
+function ruleOfProps(
+  props: StreakDefinitionProps,
+  effectiveFromLocalDate: LocalDate,
+): StreakRule {
   const { qualifier, interval } = props;
   return {
     version: props.version,
-    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    effectiveFromLocalDate,
     enabled: props.enabled,
-    qualifier:
-      qualifier.kind === 'services'
-        ? {
-            kind: StreakQualifierKind.Services,
-            serviceIds: qualifier.serviceIds as readonly ServiceId[],
-          }
-        : qualifier.kind === 'categories'
-          ? {
-              kind: StreakQualifierKind.Categories,
-              categoryIds:
-                qualifier.categoryIds as readonly ServiceCategoryId[],
-            }
-          : { kind: StreakQualifierKind.AnyVisit },
+    ...(qualifier.kind === 'services'
+      ? StreakQualifierRule.services(
+          qualifier.serviceIds.map((id) => ServiceId.of(id)),
+        )
+      : qualifier.kind === 'categories'
+        ? StreakQualifierRule.categories(
+            qualifier.categoryIds.map((id) => ServiceCategoryId.of(id)),
+          )
+        : StreakQualifierRule.anyVisit()),
     minGapDays: props.minGapDays,
-    bookingHold: props.bookingHold,
-    interval:
-      interval.kind === 'fixed'
-        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
-        : {
-            kind: StreakIntervalKind.Personal,
-            tolerancePct: interval.tolerancePct,
-            minDays: interval.minDays,
-            maxDays: interval.maxDays,
-            fallbackDays: interval.fallbackDays,
-          },
+    bookingHoldEnabled: props.bookingHold.enabled,
+    bookingHoldMaxDaysPastDue: props.bookingHold.maxDaysPastDue,
+    ...(interval.kind === 'fixed'
+      ? StreakIntervalRule.fixed(interval.days)
+      : StreakIntervalRule.personal(
+          interval.tolerancePct,
+          interval.minDays,
+          interval.maxDays,
+          interval.fallbackDays,
+        )),
     graceDays: props.graceDays,
     riskLeadDays: props.riskLeadDays,
-    protections: props.protections,
-    excuses: props.excuses,
-    clientPause: props.clientPause,
-    repair: props.repair,
-    onBreak: props.onBreak,
+    protectionsEnabled: props.protections.enabled,
+    protectionsMaxBanked: props.protections.maxBanked,
+    protectionsEarnEvery: props.protections.earnEvery,
+    protectionsStartWith: props.protections.startWith,
+    excuses: props.excuses.map((excuse) => SYSTEM_EXCUSE[excuse]),
+    clientPauseEnabled: props.clientPause.enabled,
+    clientPauseMaxDaysPerYear: props.clientPause.maxDaysPerYear,
+    repairEnabled: props.repair.enabled,
+    repairWindowDays: props.repair.windowDays,
+    repairPerYear: props.repair.perYear,
+    onBreak: SYSTEM_ON_BREAK[props.onBreak],
   };
 }
 
-/** One person's facts as the system reads them: every field present. */
-function factsOf(facts: StreakFacts): SystemFacts {
-  return {
-    visits: facts.visits.map((visit) => ({
-      day: DayKey.of(visit.day),
-      counted: visit.counted,
-      atMs: visit.at === undefined ? null : visit.at.getTime(),
-    })),
-    excused: facts.excused.map((excused) => ({
-      day: DayKey.of(excused.day),
-      reason: excused.reason,
-    })),
-    bookings: facts.bookings.map((booking) => ({
-      placedOn: DayKey.of(booking.placedOn),
-      day: DayKey.of(booking.day),
-      appointmentId: booking.appointmentId ?? null,
-    })),
-    pauses: facts.pauses.map((pause) => ({
-      from: DayKey.of(pause.from),
-      until: DayKey.of(pause.until),
-      reason: pause.reason,
-    })),
-    grants: facts.grants.map((grant) => ({
-      day: DayKey.of(grant.day),
-      count: grant.count,
-    })),
-  };
+/** A published version as the system reads it — its day was checked by `StreakDefinition.create`. */
+function ruleOf(definition: StreakDefinition): StreakRule {
+  const props = definition.toProps();
+  return ruleOfProps(props, dayOf(props.effectiveFrom));
+}
+
+/** The system's answer in the legacy words: `kind`, lowercase. */
+function legacyPreviewOf(preview: SystemPreview): StreakPreview {
+  return preview.streakPreviewOutcome === StreakPreviewOutcome.Unavailable
+    ? { kind: 'unavailable', reason: 'qualifier' }
+    : {
+        kind: 'estimate',
+        clients: preview.clients,
+        before: preview.before,
+        after: preview.after,
+        back: preview.back,
+        out: preview.out,
+      };
 }

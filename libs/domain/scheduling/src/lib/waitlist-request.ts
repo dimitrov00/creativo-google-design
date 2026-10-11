@@ -6,11 +6,14 @@ import { CalendarDay } from './calendar-day';
 import { FlexibleWhen, type FlexibleWhenProps } from './flexible-when';
 import { WaitlistRequestId } from './ids';
 import {
-  DayKey,
-  FlexibleWhen as WhenData,
   DayWindows as DayWindowsData,
-  WaitlistStatus as StatusData,
+  LocalDate,
+  UtcEpochMs,
+  WaitlistLifecycle,
+  WaitlistStatus as StatusTag,
   WaitlistSystem,
+  FlexibleWhen as WhenData,
+  defect,
 } from '@creativo/ecs-core';
 import {
   EmptyWaitlistCartError,
@@ -38,19 +41,45 @@ export type WaitlistStatus =
 
 /*
  * THIN SHIM (ECS migration Phase 2): the status graph is the ECS
- * `WaitlistStatus` component, the lapse rule `WaitlistSystem.hasLapsed`.
+ * `WaitlistLifecycle` component, the lapse rule `WaitlistSystem.hasLapsed`.
  * These helpers only convert the legacy status string and declaration.
  */
 
-/** A legacy status as the ECS struct (the instant is not the graph's concern). */
-function toStatusData(status: WaitlistStatus): StatusData {
-  return { kind: status, atMs: 0 };
+/** The legacy lowercase status ↔ the SCREAMING tag — the ONE table each way. */
+const LEGACY_WAITLIST_STATUS = {
+  open: StatusTag.Open,
+  matched: StatusTag.Matched,
+  booked: StatusTag.Booked,
+  cancelled: StatusTag.Cancelled,
+  expired: StatusTag.Expired,
+} as const satisfies Record<WaitlistStatus, StatusTag>;
+
+/** The graph does not read the stamp; one fixed instant stands in for it. */
+const NO_STAMP = (() => {
+  const zero = UtcEpochMs.of(0);
+  if (!zero.ok) defect('unreachable: epoch zero');
+  return zero.value;
+})();
+
+/** A legacy status as the ECS slice (the instant is not the graph's concern). */
+function toLifecycle(status: WaitlistStatus): WaitlistLifecycle {
+  return {
+    waitlistStatus: LEGACY_WAITLIST_STATUS[status],
+    waitlistStatusAtUtcMs: NO_STAMP,
+  };
 }
 
-/** The declaration's days as the ECS struct — the lapse rule reads only the keys. */
+/** A calendar day's key — a real day by construction (`CalendarDay`). */
+function localDateOf(key: string): LocalDate {
+  const parsed = LocalDate.parse(key);
+  if (!parsed.ok) defect(`unreachable: a CalendarDay key ${key}`);
+  return parsed.value;
+}
+
+/** The declaration's days as the ECS slice — the lapse rule reads only the days. */
 function toWhenData(when: FlexibleWhen): WhenData {
   return WhenData.of(
-    when.days.map((day) => DayWindowsData.wholeDay(DayKey.of(day.dayKey))),
+    when.days.map((day) => DayWindowsData.wholeDay(localDateOf(day.dayKey))),
   );
 }
 
@@ -182,18 +211,23 @@ export class WaitlistRequest {
   hasLapsedBy(today: CalendarDay): boolean {
     return WaitlistSystem.hasLapsed(
       toWhenData(this.when),
-      DayKey.of(today.key()),
+      localDateOf(today.key()),
     );
   }
 
   isWatching(): boolean {
-    return StatusData.isWatching(toStatusData(this.status));
+    return WaitlistLifecycle.isWatching(toLifecycle(this.status));
   }
 
   private transition(
     to: WaitlistStatus,
   ): Result<WaitlistRequest, WaitlistTransitionError> {
-    if (!StatusData.canTransition(toStatusData(this.status), to)) {
+    if (
+      !WaitlistLifecycle.canTransition(
+        toLifecycle(this.status),
+        LEGACY_WAITLIST_STATUS[to],
+      )
+    ) {
       return fail(new WaitlistTransitionError(this.status, to));
     }
     return ok(

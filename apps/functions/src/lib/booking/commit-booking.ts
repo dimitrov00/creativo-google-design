@@ -1,4 +1,4 @@
-import { AuditSystem } from '@creativo/ecs-core';
+import { AppointmentId, AuditSystem } from '@creativo/ecs-core';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
 import { SystemClock } from '../../adapters/system-clock';
@@ -38,8 +38,12 @@ export function toHttpsError(error: CommitBookingError): HttpsError {
       return new HttpsError('failed-precondition', error.message, details);
     case 'booking.commit.unknown_service':
       return new HttpsError('not-found', error.message, details);
+    // The owner-locked DST code (`DST_GAP_INVALID_TIME`) leaves as the
+    // edge's `TimeErrorCode` rule says: `time.nonexistent_local_time`,
+    // `invalid-argument` (edge.spec pins the two together).
     case 'booking.commit.invalid_input':
     case 'booking.commit.invariant_violated':
+    case 'time.nonexistent_local_time':
       return new HttpsError('invalid-argument', error.message, details);
     default:
       return new HttpsError('internal', error.message, details);
@@ -220,7 +224,10 @@ export const commitBooking = onCall(async (request) => {
     subjects: requestedSeatSubjects(seats, ownerUserId),
     atIso: new Date().toISOString(),
     context: { locationId: String(payload.locationId ?? '') },
-    changeKey: AuditSystem.changeKey.attempt(attemptId ?? null, appointmentId),
+    changeKey: AuditSystem.changeKey.attempt(
+      attemptId ?? null,
+      AppointmentId.of(appointmentId),
+    ),
   });
   return { appointmentId };
 });

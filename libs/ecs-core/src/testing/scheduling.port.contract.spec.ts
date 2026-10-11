@@ -1,22 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { firstValueFrom, of } from 'rxjs';
-import { DayKey } from '../components/day-key.data';
-import { TimeInterval } from '../components/time-interval.data';
-import type { BarberBusyDayEntity } from '../entities/barber-busy-day.entity';
-import { BarberId } from '../entities/barber.entity';
+import { BlockKind, MinuteBlock } from '../components/minute-block.data';
+import type { MinuteRange } from '../components/minute-range.data';
+import { RepositoryError } from '../components/repository-errors.data';
+import { Result } from '../components/result.data';
+import type { BarberBusyDay } from '../entities/barber-busy-day.entity';
+import { MinuteCount } from '../primitives/duration-minutes.primitive';
+import { BarberId } from '../primitives/ids.primitive';
+import type { TimeZone } from '../primitives/time-zone.primitive';
 import { Collections } from '../ports/collections';
+import type { LoadBusyDay, ObserveBusyDay } from '../ports/scheduling.port';
 import { AvailabilitySystem } from '../systems/availability.system';
-import { BusySystem } from '../systems/busy.system';
 import { IntervalSetSystem } from '../systems/interval-set.system';
 import {
+  FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
-  FIXTURE_ZONE,
   deepFreeze,
+  endMinute,
+  localDate,
+  memoryStore,
+  minute,
+  type MemoryStore,
+  utcMs,
+} from '../testing';
+import {
   memoryLoadBusyDay,
   memoryObserveBusyDay,
-  memoryStore,
-  type MemoryStore,
-} from '../testing';
+} from './booking-core.fixtures';
 import {
   type SchedulingBusyCase,
   schedulingPortsContract,
@@ -26,14 +36,15 @@ import {
  * The contract's own spec, and its first runner: the in-memory port
  * doubles. The cases are `availabilityReaderBusyCases`' (the legacy
  * `availability-reader.contract.spec.ts` checks the same answers against
- * `paddedBusy`), now over the raw `LoadBusyDay`/`ObserveBusyDay` streams.
+ * `paddedBusy`), now over the raw `LoadBusyDay`/`ObserveBusyDay` streams,
+ * on the shop's wall clock.
  */
 
 const ivan = BarberId.of('ivan');
 const niko = BarberId.of('niko');
 const contract = schedulingPortsContract({
-  dayKey: FIXTURE_TODAY,
-  zone: FIXTURE_ZONE,
+  localDate: FIXTURE_TODAY,
+  timeZone: FIXTURE_TIME_ZONE,
   barberId: ivan,
   otherBarberId: niko,
 });
@@ -49,18 +60,20 @@ function storeFor(entry: SchedulingBusyCase): MemoryStore {
 }
 
 /** Ivan's `busy` padded first and released after — the order the contract forbids. */
-function releasedLate(entry: SchedulingBusyCase): readonly TimeInterval[] {
+function releasedLate(entry: SchedulingBusyCase): readonly MinuteRange[] {
   const padded = AvailabilitySystem.paddedBusy({
     barberId: ivan,
     spans: entry.spans,
     turnaroundMinutes: entry.turnaroundMinutes,
     release: [],
   });
-  const own = (entry.release ?? [])
-    .filter((chair) => chair.barberId === ivan)
-    .map((chair) => chair.occupied);
+  const own = (entry.release ?? []).filter((chair) => chair.barberId === ivan);
   return IntervalSetSystem.subtract(padded, own);
 }
+
+/** A port that cannot read. */
+const readFailed = (): Result<never, RepositoryError> =>
+  Result.err(RepositoryError.readFailed(null, 'offline'));
 
 describe('schedulingPortsContract — the busy cases', () => {
   it('keeps the legacy contract’s six cases, by name and in order', () => {
@@ -75,14 +88,18 @@ describe('schedulingPortsContract — the busy cases', () => {
   });
 
   it('places every case on the asked day, under the one busy key', () => {
-    expect(contract.day.dayKey).toBe(FIXTURE_TODAY);
+    // 2026-09-28 00:00 EEST — the day's first instant, the one the
+    // projection stamps.
+    const dayStart = utcMs('2026-09-28T00:00:00+03:00');
+    expect(contract.localDate).toBe(FIXTURE_TODAY);
+    expect(contract.dayStartUtcMs).toBe(dayStart);
     expect(contract.key).toBe(`ivan__${FIXTURE_TODAY}`);
     for (const entry of CASES) {
       expect(entry.stored).toMatchObject({
         id: contract.key,
         barberId: ivan,
-        dayKey: FIXTURE_TODAY,
-        zone: FIXTURE_ZONE,
+        localDate: FIXTURE_TODAY,
+        utcEpochMs: dayStart,
       });
     }
   });
@@ -90,15 +107,26 @@ describe('schedulingPortsContract — the busy cases', () => {
   it.each(named)(
     'stores the spans as the projection does, and reads them back: %s',
     (_name, entry) => {
-      expect(BusySystem.spansOf(entry.stored.blocks, contract.day)).toEqual(
-        IntervalSetSystem.normalize(entry.spans),
+      const normalized = IntervalSetSystem.normalize(entry.spans);
+      // Stored: normalized, each a BUSY block on the wall clock.
+      expect(entry.stored.blocks).toEqual(
+        normalized.map((range) => ({ ...range, blockKind: BlockKind.Busy })),
       );
+      // Read back: the blocks ARE the spans — no conversion in between.
+      expect(
+        AvailabilitySystem.paddedBusy({
+          barberId: ivan,
+          spans: entry.stored.blocks,
+          turnaroundMinutes: MinuteCount.ZERO,
+          release: [],
+        }),
+      ).toEqual(normalized);
     },
   );
 
   it.each(named)('answers as the systems do: %s', (_name, entry) => {
     // The hand-worked answer IS the derivation over the stored day, and
-    // the server's own rule over the instants: the cases, the stored shape
+    // the server's own rule over the spans: the cases, the stored shape
     // and the systems cannot drift apart.
     expect(contract.busyOf(entry.stored, entry)).toEqual(entry.busy);
     expect(
@@ -154,9 +182,15 @@ describe('schedulingPortsContract — the busy cases', () => {
   it('catches a port that pads what it stores', () => {
     // A port that hands back the padded geometry gets the turnaround twice.
     const padded = CASES.filter((entry) => {
-      const twice: BarberBusyDayEntity = {
+      const twice: BarberBusyDay = {
         ...entry.stored,
-        blocks: BusySystem.blocksOf(entry.busy, contract.day),
+        blocks: entry.busy.map((range) =>
+          MinuteBlock.of(
+            minute(range.startMinutes),
+            endMinute(range.endMinutes),
+            BlockKind.Busy,
+          ),
+        ),
       };
       return (
         JSON.stringify(contract.busyOf(twice, entry)) !==
@@ -169,12 +203,12 @@ describe('schedulingPortsContract — the busy cases', () => {
   it('refuses a zone it cannot place the cases in', () => {
     expect(() =>
       schedulingPortsContract({
-        dayKey: DayKey.of('2026-09-28'),
-        zone: 'Nowhere/Atlantis',
+        localDate: localDate('2026-09-28'),
+        timeZone: 'Nowhere/Atlantis' as TimeZone,
         barberId: ivan,
         otherBarberId: niko,
       }),
-    ).toThrow(/no day table/);
+    ).toThrow(/cannot place 2026-09-28 in Nowhere\/Atlantis/);
   });
 });
 
@@ -194,8 +228,8 @@ describe('memoryLoadBusyDay — held to the contract', () => {
     expect(
       await load(
         schedulingPortsContract({
-          dayKey: DayKey.of('2026-09-29'),
-          zone: FIXTURE_ZONE,
+          localDate: localDate('2026-09-29'),
+          timeZone: FIXTURE_TIME_ZONE,
           barberId: ivan,
           otherBarberId: niko,
         }).key,
@@ -206,11 +240,7 @@ describe('memoryLoadBusyDay — held to the contract', () => {
   it('rejects with the port’s error, so a broken runner never passes', async () => {
     const [entry] = CASES;
     if (entry === undefined) throw new Error('no case');
-    const failing = async () =>
-      ({
-        ok: false,
-        error: { code: 'repo.read_failed', path: null, reason: 'offline' },
-      }) as const;
+    const failing: LoadBusyDay = async () => readFailed();
 
     await expect(contract.busyThroughLoad(failing, entry)).rejects.toThrow(
       /loadBusyDay\(ivan__2026-09-28\) failed/,
@@ -257,11 +287,7 @@ describe('memoryObserveBusyDay — held to the contract', () => {
   it('rejects with the stream’s error, so a broken runner never passes', async () => {
     const [entry] = CASES;
     if (entry === undefined) throw new Error('no case');
-    const failing = () =>
-      of({
-        ok: false,
-        error: { code: 'repo.read_failed', path: null, reason: 'offline' },
-      } as const);
+    const failing: ObserveBusyDay = () => of(readFailed());
 
     await expect(contract.busyThroughObserve(failing, entry)).rejects.toThrow(
       /observeBusyDay\(ivan__2026-09-28\) failed/,

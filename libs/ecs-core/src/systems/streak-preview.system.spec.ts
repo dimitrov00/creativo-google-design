@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
+import { StreakQualifierRule } from '../components/streak-qualifier.data';
 import { StreakRule, type StreakExcuse } from '../components/streak-rule.data';
 import type { StreakState } from '../components/streak-state.data';
-import { ServiceCategoryId } from '../entities/service-category.entity';
-import { ServiceId } from '../entities/service.entity';
-import { FIXTURE_TODAY, deepFreeze } from '../testing';
+import {
+  AppointmentId,
+  ServiceCategoryId,
+  ServiceId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  FIXTURE_TIME_ZONE,
+  FIXTURE_TODAY,
+  deepFreeze,
+  localDate,
+  unwrapOk,
+} from '../testing';
 import {
   StreakPreviewSystem,
   type StreakPreview,
@@ -12,6 +23,9 @@ import {
 import { StreakRuleSystem } from './streak-rule.system';
 import { StreakSystem, type StreakFacts as SystemFacts } from './streak.system';
 import { ZonedTimeSystem } from './zoned-time.system';
+
+/** An instant a case names: a safe epoch-ms inside the readable years. */
+const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 /*
  * The cases of libs/application/engagement/src/lib/use-cases/preview-streak-definition.use-case.spec.ts,
@@ -22,10 +36,39 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * / `projectStreak` are thin helpers over `StreakPreviewSystem.estimate` /
  * `StreakSystem.project`. Every case body is the legacy one but the
  * `changeFrom` call in one assertion message. Plus the system purity case.
+ *
+ * Flattened: a rule's patch names its flat fields (`intervalDays`,
+ * `protectionsStartWith`), a state's phase is `streakPhase` and its tags
+ * SCREAMING, the preview's answer is told by `streakPreviewOutcome`. The
+ * system reads no zone: `strict` stamps a visit known by its day with the
+ * first instant of that shop day (T3), as the page's boundary does.
  */
 
-const ZONE = 'Europe/Sofia';
 const TODAY: string = FIXTURE_TODAY; // 2026-09-28
+
+/**
+ * A shop day as the facts carry it: a real one is branded, a corrupt one
+ * (a stored value nobody guarded) is passed through as it was written —
+ * what the system's own day check is there for.
+ */
+function day(raw: string): LocalDate {
+  const parsed = LocalDate.parse(raw);
+  return parsed.ok ? parsed.value : (raw as LocalDate);
+}
+
+/** «Today» as the boundary hands it: the day, or `null` for one that is no day (nobody is judged). */
+function todayOf(raw: string): LocalDate | null {
+  const parsed = LocalDate.parse(raw);
+  return parsed.ok ? parsed.value : null;
+}
+
+/** The first instant of a visit's shop day, or the epoch for a day that is no day. */
+function startOf(raw: string): UtcEpochMs {
+  const parsed = LocalDate.parse(raw);
+  return parsed.ok
+    ? ZonedTimeSystem.startOfLocalDay(parsed.value, FIXTURE_TIME_ZONE)
+    : instant(0);
+}
 
 type StreakDefinition = StreakRule;
 type StreakDefinitionProps = StreakRule;
@@ -48,7 +91,7 @@ type StreakFacts = {
   readonly pauses: readonly {
     readonly from: string;
     readonly until: string;
-    readonly reason: 'pause' | 'clientPause';
+    readonly reason: 'PAUSE' | 'CLIENT_PAUSE';
   }[];
   readonly grants: readonly { readonly day: string; readonly count: number }[];
 };
@@ -56,33 +99,36 @@ type StreakFacts = {
 function strict(facts: StreakFacts): SystemFacts {
   return {
     visits: facts.visits.map((v) => ({
-      day: DayKey.of(v.day),
+      localDate: day(v.day),
       counted: v.counted,
-      atMs: null,
+      utcEpochMs: startOf(v.day),
     })),
     excused: facts.excused.map((e) => ({
-      day: DayKey.of(e.day),
+      localDate: day(e.day),
       reason: e.reason,
     })),
     bookings: facts.bookings.map((b) => ({
-      placedOn: DayKey.of(b.placedOn),
-      day: DayKey.of(b.day),
-      appointmentId: b.appointmentId ?? null,
+      placedOn: day(b.placedOn),
+      localDate: day(b.day),
+      appointmentId:
+        b.appointmentId === undefined
+          ? null
+          : AppointmentId.of(b.appointmentId),
     })),
     pauses: facts.pauses.map((p) => ({
-      from: DayKey.of(p.from),
-      until: DayKey.of(p.until),
+      from: day(p.from),
+      until: day(p.until),
       reason: p.reason,
     })),
     grants: facts.grants.map((g) => ({
-      day: DayKey.of(g.day),
+      localDate: day(g.day),
       count: g.count,
     })),
   };
 }
 
-const addDays = (day: string, days: number): string =>
-  ZonedTimeSystem.addDays(DayKey.of(day), days);
+const addDays = (on: string, days: number): string =>
+  LocalDate.addDays(localDate(on), days);
 
 function projectStreak(
   rule: StreakDefinition,
@@ -93,8 +139,7 @@ function projectStreak(
     StreakRule.DEFAULT_DEFINITION_ID,
     rule,
     strict(facts),
-    DayKey.of(today),
-    ZONE,
+    day(today),
   );
 }
 
@@ -110,7 +155,7 @@ const preview = {
       input.inForce,
       input.draft,
       input.clients.map(strict),
-      DayKey.of(input.today),
+      todayOf(input.today),
     );
   },
 };
@@ -124,14 +169,14 @@ function revised(patch: Partial<StreakDefinitionProps>): StreakDefinition {
     ...SIX_WEEKS,
     ...patch,
     version: SIX_WEEKS.version + 1,
-    effectiveFromDayKey: DayKey.of(addDays(TODAY, 1)),
-  });
+    effectiveFromLocalDate: localDate(addDays(TODAY, 1)),
+  } as StreakRule);
   if (!rule.ok) throw new Error('fixture: no such rule');
   return rule.value;
 }
 
-const EIGHT_WEEKS = revised({ interval: { kind: 'fixed', days: 56 } });
-const FOUR_WEEKS = revised({ interval: { kind: 'fixed', days: 28 } });
+const EIGHT_WEEKS = revised({ intervalDays: 56 });
+const FOUR_WEEKS = revised({ intervalDays: 28 });
 const OFF = revised({ enabled: false });
 
 /** A person whose worked visits were this many days ago; nothing else is known of them. */
@@ -163,24 +208,26 @@ function estimate(
   draft: StreakDefinition,
   clients: readonly StreakFacts[] = SHOP,
   inForce: StreakDefinition = SIX_WEEKS,
-): Extract<StreakPreview, { kind: 'estimate' }> {
+): Extract<StreakPreview, { streakPreviewOutcome: 'ESTIMATE' }> {
   const result = preview.execute({ inForce, draft, clients, today: TODAY });
-  if (result.kind !== 'estimate') throw new Error('expected an estimate');
+  if (result.streakPreviewOutcome !== 'ESTIMATE') {
+    throw new Error('expected an estimate');
+  }
   return result;
 }
 
 describe('PreviewStreakDefinitionUseCase', () => {
   it('stands on the domain’s projector: the people below are where it says they are', () => {
     const phases = SHOP.map(
-      (facts) => projectStreak(SIX_WEEKS, facts, TODAY)?.phase.kind,
+      (facts) => projectStreak(SIX_WEEKS, facts, TODAY)?.streakPhase,
     );
     expect(phases).toEqual([
-      'active',
-      'atRisk',
-      'inGrace',
-      'broken',
-      'broken',
-      'active',
+      'ACTIVE',
+      'AT_RISK',
+      'IN_GRACE',
+      'BROKEN',
+      'BROKEN',
+      'ACTIVE',
     ]);
   });
 
@@ -209,11 +256,11 @@ describe('PreviewStreakDefinitionUseCase', () => {
         {
           from: addDays(TODAY, -20),
           until: addDays(TODAY, 10),
-          reason: 'pause',
+          reason: 'PAUSE',
         },
       ],
     };
-    expect(projectStreak(SIX_WEEKS, paused, TODAY)?.phase.kind).toBe('frozen');
+    expect(projectStreak(SIX_WEEKS, paused, TODAY)?.streakPhase).toBe('FROZEN');
     expect(estimate(SIX_WEEKS, [paused]).before).toEqual({
       inRhythm: 1,
       inGrace: 0,
@@ -224,7 +271,7 @@ describe('PreviewStreakDefinitionUseCase', () => {
   it('shows what a LONGER interval brings back', () => {
     // Eight weeks: due 56 days after the visit, grace until the 63rd.
     expect(estimate(EIGHT_WEEKS)).toEqual({
-      kind: 'estimate',
+      streakPreviewOutcome: 'ESTIMATE',
       clients: 6,
       before: { inRhythm: 3, inGrace: 1, broken: 2 },
       after: { inRhythm: 5, inGrace: 0, broken: 1 },
@@ -238,7 +285,7 @@ describe('PreviewStreakDefinitionUseCase', () => {
     // regular, five weeks apart, keeps the run on the last day of grace
     // every time; whoever came 38 days ago is out, past the grace too.
     expect(estimate(FOUR_WEEKS)).toEqual({
-      kind: 'estimate',
+      streakPreviewOutcome: 'ESTIMATE',
       clients: 6,
       before: { inRhythm: 3, inGrace: 1, broken: 2 },
       after: { inRhythm: 2, inGrace: 0, broken: 4 },
@@ -247,23 +294,17 @@ describe('PreviewStreakDefinitionUseCase', () => {
     });
     expect(projectStreak(FOUR_WEEKS, REGULAR, TODAY)).toMatchObject({
       current: 5,
-      phase: { kind: 'active' },
+      streakPhase: 'ACTIVE',
     });
-    expect(projectStreak(FOUR_WEEKS, NEAR_DUE, TODAY)?.phase.kind).toBe(
-      'broken',
+    expect(projectStreak(FOUR_WEEKS, NEAR_DUE, TODAY)?.streakPhase).toBe(
+      'BROKEN',
     );
   });
 
   it('counts from the rule in force, whichever that is', () => {
     // From four weeks, twelve bring back everyone but the long gone.
-    expect(
-      estimate(
-        revised({ interval: { kind: 'fixed', days: 84 } }),
-        SHOP,
-        FOUR_WEEKS,
-      ),
-    ).toEqual({
-      kind: 'estimate',
+    expect(estimate(revised({ intervalDays: 84 }), SHOP, FOUR_WEEKS)).toEqual({
+      streakPreviewOutcome: 'ESTIMATE',
       clients: 6,
       before: { inRhythm: 2, inGrace: 0, broken: 4 },
       after: { inRhythm: 5, inGrace: 0, broken: 1 },
@@ -276,27 +317,33 @@ describe('PreviewStreakDefinitionUseCase', () => {
     // In force: six weeks, and a protection from the first visit on.
     // Proposed: eight weeks, no grace, no protections.
     const protectedRule = revised({
-      protections: { enabled: true, maxBanked: 2, earnEvery: 5, startWith: 1 },
+      protectionsEnabled: true,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 1,
     });
     const bareRule = revised({
-      interval: { kind: 'fixed', days: 56 },
+      intervalDays: 56,
       graceDays: 0,
-      protections: { enabled: false, maxBanked: 2, earnEvery: 5, startWith: 0 },
+      protectionsEnabled: false,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 0,
     });
     const covered = visited(60); // her protection covered the miss
     const late = visited(45);
-    expect(projectStreak(protectedRule, covered, TODAY)?.phase).toMatchObject({
-      kind: 'frozen',
-      reason: 'freeze',
+    expect(projectStreak(protectedRule, covered, TODAY)).toMatchObject({
+      streakPhase: 'FROZEN',
+      phaseFreezeReason: 'FREEZE',
     });
-    expect(projectStreak(bareRule, covered, TODAY)?.phase.kind).toBe('broken');
-    expect(projectStreak(protectedRule, late, TODAY)?.phase.kind).toBe(
-      'inGrace',
+    expect(projectStreak(bareRule, covered, TODAY)?.streakPhase).toBe('BROKEN');
+    expect(projectStreak(protectedRule, late, TODAY)?.streakPhase).toBe(
+      'IN_GRACE',
     );
-    expect(projectStreak(bareRule, late, TODAY)?.phase.kind).toBe('active');
+    expect(projectStreak(bareRule, late, TODAY)?.streakPhase).toBe('ACTIVE');
 
     expect(estimate(bareRule, [covered, late], protectedRule)).toEqual({
-      kind: 'estimate',
+      streakPreviewOutcome: 'ESTIMATE',
       clients: 2,
       before: { inRhythm: 1, inGrace: 1, broken: 0 },
       after: { inRhythm: 1, inGrace: 0, broken: 1 },
@@ -313,7 +360,7 @@ describe('PreviewStreakDefinitionUseCase', () => {
       revised({ graceDays: 0 }),
       revised({ graceDays: 21 }),
       revised({ riskLeadDays: 0 }),
-      revised({ onBreak: 'hold' }),
+      revised({ onBreak: 'HOLD' }),
     ]) {
       const result = estimate(draft);
       expect(
@@ -343,9 +390,10 @@ describe('PreviewStreakDefinitionUseCase', () => {
 
   it('agrees with the projector, person by person', () => {
     const standingOf = (rule: StreakDefinition, facts: StreakFacts) => {
-      const kind = projectStreak(rule, facts, TODAY)?.phase.kind;
-      if (kind === 'inGrace' || kind === 'broken') return kind;
-      return kind === undefined ? null : 'inRhythm';
+      const phase = projectStreak(rule, facts, TODAY)?.streakPhase;
+      if (phase === 'IN_GRACE') return 'inGrace';
+      if (phase === 'BROKEN') return 'broken';
+      return phase === undefined ? null : 'inRhythm';
     };
     for (const draft of [EIGHT_WEEKS, FOUR_WEEKS]) {
       const standings = SHOP.map((facts) => standingOf(draft, facts));
@@ -377,7 +425,7 @@ describe('PreviewStreakDefinitionUseCase', () => {
       expect(
         estimate(EIGHT_WEEKS, [nobody, ahead, uncounted, noDay, ON_TIME]),
       ).toEqual({
-        kind: 'estimate',
+        streakPreviewOutcome: 'ESTIMATE',
         clients: 1,
         before: { inRhythm: 1, inGrace: 0, broken: 0 },
         after: { inRhythm: 1, inGrace: 0, broken: 0 },
@@ -396,7 +444,7 @@ describe('PreviewStreakDefinitionUseCase', () => {
 
     it('estimates an empty shop as nobody, not as an error', () => {
       expect(estimate(EIGHT_WEEKS, [])).toEqual({
-        kind: 'estimate',
+        streakPreviewOutcome: 'ESTIMATE',
         clients: 0,
         before: { inRhythm: 0, inGrace: 0, broken: 0 },
         after: { inRhythm: 0, inGrace: 0, broken: 0 },
@@ -412,14 +460,17 @@ describe('PreviewStreakDefinitionUseCase', () => {
         clients: SHOP,
         today: 'tomorrow',
       });
-      expect(result).toMatchObject({ kind: 'estimate', clients: 0 });
+      expect(result).toMatchObject({
+        streakPreviewOutcome: 'ESTIMATE',
+        clients: 0,
+      });
     });
   });
 
   describe('the rule going off, or on', () => {
     it('counts nobody under a rule that is off: it judges no one', () => {
       expect(estimate(OFF)).toEqual({
-        kind: 'estimate',
+        streakPreviewOutcome: 'ESTIMATE',
         clients: 6,
         before: { inRhythm: 3, inGrace: 1, broken: 2 },
         after: null,
@@ -430,7 +481,7 @@ describe('PreviewStreakDefinitionUseCase', () => {
 
     it('counts where people will stand when the rule comes on', () => {
       expect(estimate(SIX_WEEKS, SHOP, OFF)).toEqual({
-        kind: 'estimate',
+        streakPreviewOutcome: 'ESTIMATE',
         clients: 6,
         before: null,
         after: { inRhythm: 3, inGrace: 1, broken: 2 },
@@ -441,15 +492,12 @@ describe('PreviewStreakDefinitionUseCase', () => {
   });
 
   describe('a rule that counts by a list', () => {
-    const BY_SERVICE = revised({
-      qualifier: { kind: 'services', serviceIds: [ServiceId.of('svc-fade')] },
-    });
-    const BY_CATEGORY = revised({
-      qualifier: {
-        kind: 'categories',
-        categoryIds: [ServiceCategoryId.of('cat-hair')],
-      },
-    });
+    const BY_SERVICE = revised(
+      StreakQualifierRule.services([ServiceId.of('svc-fade')]),
+    );
+    const BY_CATEGORY = revised(
+      StreakQualifierRule.categories([ServiceCategoryId.of('cat-hair')]),
+    );
 
     it.each([
       ['the draft counts chosen services', SIX_WEEKS, BY_SERVICE],
@@ -459,7 +507,7 @@ describe('PreviewStreakDefinitionUseCase', () => {
     ])('is not estimated when %s', (_when, inForce, draft) => {
       expect(
         preview.execute({ inForce, draft, clients: SHOP, today: TODAY }),
-      ).toEqual({ kind: 'unavailable', reason: 'qualifier' });
+      ).toEqual({ streakPreviewOutcome: 'UNAVAILABLE', reason: 'QUALIFIER' });
     });
   });
 
@@ -499,7 +547,7 @@ describe('StreakPreviewSystem purity', () => {
     const clients = deepFreeze(SHOP.map(strict));
     const inForce = deepFreeze(SIX_WEEKS);
     const draft = deepFreeze(EIGHT_WEEKS);
-    const today = DayKey.of(TODAY);
+    const today = localDate(TODAY);
     expect(
       StreakPreviewSystem.estimate(inForce, draft, clients, today),
     ).toEqual(StreakPreviewSystem.estimate(inForce, draft, clients, today));

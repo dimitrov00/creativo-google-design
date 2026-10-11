@@ -1,4 +1,5 @@
-import { DayKey } from './day-key.data';
+import type { Brand } from '../primitives/brand';
+import { LocalDate } from '../primitives/local-date.primitive';
 
 /** Strict `YYYY-MM-DD` — the shape `firestore.rules:93` tests. */
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -13,10 +14,11 @@ const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
  * This component owns what a birth date IS: a real calendar day (no
  * Feb 30, no month 13, year 1–9999). Whether a person may register with it —
  * the 16–120 age window and the not-in-the-future rule, which need "today"
- * from the zone's day table — is `AgeSystem.ageAt` (`systems/age.system.ts`),
- * never a creation-time check here.
+ * as the shop's `LocalDate` — is `AgeSystem.ageAt` (`systems/age.system.ts`),
+ * never a creation-time check here. A domain-value brand (F-15): it stays in
+ * this file on the one `Brand` helper, and its refusals are identity errors.
  */
-export type BirthDate = string & { readonly __brand: unique symbol };
+export type BirthDate = Brand<string, 'BirthDate'>;
 
 export const BirthDate = {
   /** The only cast site — for a value already canonical (read back from a document). */
@@ -53,7 +55,7 @@ export const BirthDate = {
       month < 1 ||
       month > 12 ||
       day < 1 ||
-      day > DayKey.daysInMonth(year, month)
+      day > LocalDate.daysInMonth(year, month)
     ) {
       return null;
     }

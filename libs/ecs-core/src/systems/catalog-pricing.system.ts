@@ -3,27 +3,27 @@ import type {
   ServiceTerms,
   ServiceVariant,
 } from '../components/service-terms.data';
-import type { BarberId } from '../entities/barber.entity';
-import type { ServiceEntity } from '../entities/service.entity';
+import type { Service } from '../entities/service.entity';
+import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
+import type { BarberId } from '../primitives/ids.primitive';
+import type { PriceCents } from '../primitives/price-cents.primitive';
 import {
   type OfferingRange,
   OfferingPriceSystem,
 } from './offering-price.system';
 
-/** What the catalogue views read of a service — a whole `ServiceEntity` passes in. */
-export type CatalogPriced = Pick<
-  ServiceEntity,
-  'baseTerms' | 'variants' | 'offerings'
->;
+/** What the catalogue views read of a service — a whole `Service` passes in. */
+export type CatalogPriced = ServiceTerms &
+  Pick<Service, 'variants' | 'offerings'>;
 
 /** The card's price tag: the cheapest bookable price, and whether others cost more. */
 export type CardPrice = {
-  readonly cheapestMinorUnits: number;
+  readonly cheapestCents: PriceCents;
   /** Some bookable terms cost more — the tag reads «от …» ("from"). */
   readonly spread: boolean;
 };
 
-/** One service a barber performs, at THEIR base terms. */
+/** One service a barber performs, at THEIR base terms (the offering's own). */
 export type BarberServiceTerms<S> = {
   readonly service: S;
   readonly terms: ServiceTerms;
@@ -32,20 +32,20 @@ export type BarberServiceTerms<S> = {
 /**
  * Every terms a client can BOOK, offering by offering: each performer's
  * base, then their terms for each declared variant (an override, or their
- * base again). A service nobody performs yet quotes its `baseTerms`.
+ * base again). A service nobody performs yet quotes its own terms.
  */
 function bookableTerms(service: CatalogPriced): readonly ServiceTerms[] {
-  if (service.offerings.length === 0) return [service.baseTerms];
+  if (service.offerings.length === 0) return [service];
   const all: ServiceTerms[] = [];
   for (let i = 0; i < service.offerings.length; i++) {
     const offering = service.offerings[i] as BarberOffering;
-    all.push(offering.base);
+    all.push(offering);
     for (let v = 0; v < service.variants.length; v++) {
       all.push(
         OfferingPriceSystem.termsFor(
           service,
           offering.barberId,
-          (service.variants[v] as ServiceVariant).id,
+          (service.variants[v] as ServiceVariant).variantId,
         ),
       );
     }
@@ -57,20 +57,16 @@ function bookableTerms(service: CatalogPriced): readonly ServiceTerms[] {
  * CatalogPricingSystem — the catalogue views' numbers
  * (`features/shared/catalog` `catalog-vm.ts` `servicePriceFrom`/
  * `serviceDurationRange`/`servicesByBarber`, `catalog-presenter.service.ts`
- * `serviceMeta`): minor units and minutes, never strings — `formatMoney` and
- * the duration formatter are the template's.
+ * `serviceMeta`): cents and minutes, never strings — `formatMoney` and the
+ * duration formatter are the template's.
  */
 export const CatalogPricingSystem = {
   /** Cheapest BASE offering — the "from" price on a marketing tile. */
-  priceFrom(service: CatalogPriced): number {
-    if (service.offerings.length === 0) {
-      return service.baseTerms.priceMinorUnits;
-    }
-    let cheapest = (service.offerings[0] as BarberOffering).base
-      .priceMinorUnits;
+  priceFrom(service: CatalogPriced): PriceCents {
+    if (service.offerings.length === 0) return service.priceCents;
+    let cheapest = (service.offerings[0] as BarberOffering).priceCents;
     for (let i = 1; i < service.offerings.length; i++) {
-      const price = (service.offerings[i] as BarberOffering).base
-        .priceMinorUnits;
+      const price = (service.offerings[i] as BarberOffering).priceCents;
       if (price < cheapest) cheapest = price;
     }
     return cheapest;
@@ -85,18 +81,18 @@ export const CatalogPricingSystem = {
    */
   cardPrice(service: CatalogPriced): CardPrice {
     const all = bookableTerms(service);
-    let cheapest = (all[0] as ServiceTerms).priceMinorUnits;
+    let cheapest = (all[0] as ServiceTerms).priceCents;
     let dearest = cheapest;
     for (let i = 1; i < all.length; i++) {
-      const price = (all[i] as ServiceTerms).priceMinorUnits;
+      const price = (all[i] as ServiceTerms).priceCents;
       if (price < cheapest) cheapest = price;
       if (price > dearest) dearest = price;
     }
-    return { cheapestMinorUnits: cheapest, spread: dearest > cheapest };
+    return { cheapestCents: cheapest, spread: dearest > cheapest };
   },
 
   /** Shortest and longest bookable duration, across offerings × variants. */
-  durationRange(service: CatalogPriced): OfferingRange {
+  durationRange(service: CatalogPriced): OfferingRange<DurationMinutes> {
     const all = bookableTerms(service);
     let min = (all[0] as ServiceTerms).durationMinutes;
     let max = min;
@@ -122,7 +118,7 @@ export const CatalogPricingSystem = {
     for (let i = 0; i < services.length; i++) {
       const service = services[i] as S;
       const offering = OfferingPriceSystem.offeringFor(service, barberId);
-      if (offering !== null) out.push({ service, terms: offering.base });
+      if (offering !== null) out.push({ service, terms: offering });
     }
     return out;
   },

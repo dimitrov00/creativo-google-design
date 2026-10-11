@@ -2,13 +2,12 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   ExceptionEffect,
-  ExceptionEffectKind,
+  ExceptionEffectRule,
 } from '../components/exception-effect.data';
 import { MinuteRange } from '../components/minute-range.data';
 import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { deepFreeze, unwrapErr, unwrapOk } from '../testing';
+import { BarberId, LocationId } from '../primitives/ids.primitive';
+import { deepFreeze, endMinute, minute, unwrapErr, unwrapOk } from '../testing';
 import {
   ExceptionDetail,
   ExceptionReason,
@@ -22,7 +21,7 @@ function at(clock: string): number {
 }
 
 function range(from: string, to: string): MinuteRange {
-  return MinuteRange.of(at(from), at(to));
+  return MinuteRange.of(minute(at(from)), endMinute(at(to)));
 }
 
 /*
@@ -37,10 +36,16 @@ describe('ScheduleExceptionSystem.publicEffect — the GDPR boundary', () => {
   // effect. If any of these ever diverge, a sick day becomes derivable from
   // a collection `/book` reads anonymously.
   const unavailable: readonly ExceptionDetail[] = [
-    { kind: ExceptionReason.TimeOff },
-    { kind: ExceptionReason.Sick, paid: true },
-    { kind: ExceptionReason.Training, topic: 'Fades masterclass' },
-    { kind: ExceptionReason.Travel, toLocationId: LocationId.of('loc-sea') },
+    { exceptionReason: ExceptionReason.TimeOff },
+    { exceptionReason: ExceptionReason.Sick, sickPaid: true },
+    {
+      exceptionReason: ExceptionReason.Training,
+      trainingTopic: 'Fades masterclass',
+    },
+    {
+      exceptionReason: ExceptionReason.Travel,
+      travelToLocationId: LocationId.of('loc-sea'),
+    },
   ];
 
   it('renders every whole-day reason as the SAME closed effect', () => {
@@ -48,7 +53,7 @@ describe('ScheduleExceptionSystem.publicEffect — the GDPR boundary', () => {
       unwrapOk(ScheduleExceptionSystem.publicEffect(detail)),
     );
     for (const effect of effects) {
-      expect(effect).toEqual({ kind: ExceptionEffectKind.Closed });
+      expect(effect).toEqual({ exceptionEffect: ExceptionEffect.Closed });
     }
     // Byte-for-byte identical, not merely same-shaped.
     const [first] = effects;
@@ -63,13 +68,20 @@ describe('ScheduleExceptionSystem.publicEffect — the GDPR boundary', () => {
     );
     for (const leak of [
       'sick',
+      'SICK',
       'paid',
+      'Paid',
       'training',
+      'TRAINING',
       'topic',
+      'Topic',
       'Fades',
       'travel',
+      'TRAVEL',
       'loc-sea',
       'time_off',
+      'TIME_OFF',
+      'exceptionReason',
     ]) {
       expect(serialized).not.toContain(leak);
     }
@@ -78,15 +90,15 @@ describe('ScheduleExceptionSystem.publicEffect — the GDPR boundary', () => {
   it('carves a partial block down to its ranges', () => {
     const effect = unwrapOk(
       ScheduleExceptionSystem.publicEffect({
-        kind: ExceptionReason.Admin,
-        ranges: [range('12:00', '13:00')],
+        exceptionReason: ExceptionReason.Admin,
+        exceptionRanges: [range('12:00', '13:00')],
         // A note is staff-only data and must not survive the trip.
-        note: 'dentist appointment',
+        adminNote: 'dentist appointment',
       }),
     );
     expect(effect).toEqual({
-      kind: ExceptionEffectKind.Blocked,
-      ranges: [{ startMinutes: 720, endMinutes: 780 }],
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [{ startMinutes: 720, endMinutes: 780 }],
     });
     expect(JSON.stringify(effect)).not.toContain('dentist');
   });
@@ -94,31 +106,31 @@ describe('ScheduleExceptionSystem.publicEffect — the GDPR boundary', () => {
   it('keeps a one-off shift as sellable hours', () => {
     const effect = unwrapOk(
       ScheduleExceptionSystem.publicEffect({
-        kind: ExceptionReason.Hours,
-        ranges: [range('11:00', '16:00')],
+        exceptionReason: ExceptionReason.Hours,
+        exceptionRanges: [range('11:00', '16:00')],
       }),
     );
     expect(effect).toEqual({
-      kind: ExceptionEffectKind.Hours,
-      ranges: [{ startMinutes: 660, endMinutes: 960 }],
+      exceptionEffect: ExceptionEffect.Hours,
+      exceptionRanges: [{ startMinutes: 660, endMinutes: 960 }],
     });
   });
 
   it('round-trips as the record the availability engine reads', () => {
     const effect = unwrapOk(
       ScheduleExceptionSystem.publicEffect({
-        kind: ExceptionReason.Admin,
-        ranges: [range('12:00', '13:00')],
-        note: '',
+        exceptionReason: ExceptionReason.Admin,
+        exceptionRanges: [range('12:00', '13:00')],
+        adminNote: '',
       }),
     );
-    // The stored body is the effect itself — no reader mapping: a `blocked`
-    // day reads back as a partial, roster-carving block.
-    const parsed = JSON.parse(JSON.stringify(effect)) as ExceptionEffect;
+    // The stored fields are the effect itself — no reader mapping: a
+    // `BLOCKED` day reads back as a partial, roster-carving block.
+    const parsed = JSON.parse(JSON.stringify(effect)) as ExceptionEffectRule;
     expect(parsed).toEqual(effect);
-    expect(parsed.kind).toBe(ExceptionEffectKind.Blocked);
-    expect(ExceptionEffect.isWholeDay(parsed)).toBe(false);
-    expect(ExceptionEffect.replacesRoster(parsed)).toBe(false);
+    expect(parsed.exceptionEffect).toBe(ExceptionEffect.Blocked);
+    expect(ExceptionEffectRule.isWholeDay(parsed)).toBe(false);
+    expect(ExceptionEffectRule.replacesRoster(parsed)).toBe(false);
   });
 });
 
@@ -126,71 +138,77 @@ describe('ScheduleExceptionSystem — reasons and refusals', () => {
   it('sanitises a break like an admin block, paid or not', () => {
     const effect = unwrapOk(
       ScheduleExceptionSystem.publicEffect({
-        kind: ExceptionReason.Break,
-        ranges: [range('13:00', '14:00')],
-        paid: true,
+        exceptionReason: ExceptionReason.Break,
+        exceptionRanges: [range('13:00', '14:00')],
+        breakPaid: true,
       }),
     );
     expect(effect).toEqual({
-      kind: ExceptionEffectKind.Blocked,
-      ranges: [range('13:00', '14:00')],
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [range('13:00', '14:00')],
     });
     expect(
       unwrapOk(
-        ScheduleExceptionSystem.publicEffect({ kind: ExceptionReason.Closed }),
+        ScheduleExceptionSystem.publicEffect({
+          exceptionReason: ExceptionReason.Closed,
+        }),
       ),
-    ).toEqual(ExceptionEffect.closed());
+    ).toEqual(ExceptionEffectRule.closed());
   });
 
   it('refuses a range-bearing reason with no range — empty hours would mean closed', () => {
     const error = unwrapErr(
       ScheduleExceptionSystem.publicEffect({
-        kind: ExceptionReason.Hours,
-        ranges: [],
+        exceptionReason: ExceptionReason.Hours,
+        exceptionRanges: [],
       }),
     );
-    expect(error.code).toBe(SchedulingErrorCode.ScheduleExceptionEmptyRanges);
+    expect(error.errorCode).toBe(
+      SchedulingErrorCode.ScheduleExceptionEmptyRanges,
+    );
   });
 
   it('normalizes the ranges it publishes', () => {
     const effect = unwrapOk(
       ScheduleExceptionSystem.publicEffect({
-        kind: ExceptionReason.Admin,
-        ranges: [
+        exceptionReason: ExceptionReason.Admin,
+        exceptionRanges: [
           range('14:00', '15:00'),
           range('09:00', '10:00'),
           range('09:30', '11:00'),
         ],
-        note: '',
+        adminNote: '',
       }),
     );
     expect(effect).toEqual({
-      kind: ExceptionEffectKind.Blocked,
-      ranges: [range('09:00', '11:00'), range('14:00', '15:00')],
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [range('09:00', '11:00'), range('14:00', '15:00')],
     });
   });
 
   it('knows which reasons take the whole day', () => {
     expect(
       ScheduleExceptionSystem.isWholeDay({
-        kind: ExceptionReason.Sick,
-        paid: false,
+        exceptionReason: ExceptionReason.Sick,
+        sickPaid: false,
       }),
     ).toBe(true);
     expect(
-      ScheduleExceptionSystem.isWholeDay({ kind: ExceptionReason.Closed }),
+      ScheduleExceptionSystem.isWholeDay({
+        exceptionReason: ExceptionReason.Closed,
+      }),
     ).toBe(true);
     expect(
       ScheduleExceptionSystem.isWholeDay({
-        kind: ExceptionReason.Hours,
-        ranges: [range('10:00', '12:00')],
+        exceptionReason: ExceptionReason.Hours,
+        exceptionRanges: [range('10:00', '12:00')],
       }),
     ).toBe(false);
     expect(
       ScheduleExceptionSystem.isWholeDay({
-        kind: ExceptionReason.Break,
-        ranges: [range('10:00', '12:00')],
-        paid: false,
+        exceptionReason: ExceptionReason.Break,
+        exceptionRanges: [range('10:00', '12:00')],
+        breakPaid: false,
       }),
     ).toBe(false);
   });
@@ -215,8 +233,8 @@ describe('ScheduleExceptionSystem — a location-wide closure fans out to every 
       ),
     }));
     expect(fanned).toEqual([
-      { barberId: anyone, effect: ExceptionEffect.closed() },
-      { barberId: ivan, effect: ExceptionEffect.closed() },
+      { barberId: anyone, effect: ExceptionEffectRule.closed() },
+      { barberId: ivan, effect: ExceptionEffectRule.closed() },
     ]);
   });
 
@@ -242,25 +260,27 @@ describe('ScheduleExceptionSystem — the writer arithmetic', () => {
 
   it('adds a range to a blocked day, a day of other hours and an empty day', () => {
     const blocked = unwrapOk(
-      ExceptionEffect.blocked([range('09:00', '10:00')]),
+      ExceptionEffectRule.blocked([range('09:00', '10:00')]),
     );
     expect(
       ScheduleExceptionSystem.addRanges(blocked, [range('09:30', '11:00')]),
     ).toEqual({
       ok: true,
       value: {
-        kind: ExceptionEffectKind.Blocked,
-        ranges: [range('09:00', '11:00')],
+        exceptionEffect: ExceptionEffect.Blocked,
+        exceptionRanges: [range('09:00', '11:00')],
       },
     });
-    const hours = unwrapOk(ExceptionEffect.hours([range('11:00', '16:00')]));
+    const hours = unwrapOk(
+      ExceptionEffectRule.hours([range('11:00', '16:00')]),
+    );
     expect(
       ScheduleExceptionSystem.addRanges(hours, [range('17:00', '18:00')]),
     ).toEqual({
       ok: true,
       value: {
-        kind: ExceptionEffectKind.Blocked,
-        ranges: [range('11:00', '16:00'), range('17:00', '18:00')],
+        exceptionEffect: ExceptionEffect.Blocked,
+        exceptionRanges: [range('11:00', '16:00'), range('17:00', '18:00')],
       },
     });
     expect(
@@ -268,15 +288,15 @@ describe('ScheduleExceptionSystem — the writer arithmetic', () => {
     ).toEqual({
       ok: true,
       value: {
-        kind: ExceptionEffectKind.Blocked,
-        ranges: [range('12:00', '13:00')],
+        exceptionEffect: ExceptionEffect.Blocked,
+        exceptionRanges: [range('12:00', '13:00')],
       },
     });
   });
 
   it('leaves a whole day off alone — the ranges add nothing to it', () => {
     expect(
-      ScheduleExceptionSystem.addRanges(ExceptionEffect.closed(), [
+      ScheduleExceptionSystem.addRanges(ExceptionEffectRule.closed(), [
         range('12:00', '13:00'),
       ]),
     ).toBeNull();
@@ -305,9 +325,9 @@ describe('ScheduleExceptionSystem — purity and properties', () => {
     ]);
     const add = deepFreeze([range('09:30', '12:00')]);
     const detail = deepFreeze<ExceptionDetail>({
-      kind: ExceptionReason.Admin,
-      ranges: [range('10:00', '11:00')],
-      note: 'x',
+      exceptionReason: ExceptionReason.Admin,
+      exceptionRanges: [range('10:00', '11:00')],
+      adminNote: 'x',
     });
     const once = ScheduleExceptionSystem.merge(existing, add);
     expect(ScheduleExceptionSystem.merge(existing, add)).toEqual(once);
@@ -324,7 +344,7 @@ describe('ScheduleExceptionSystem — purity and properties', () => {
   const anyRange = fc
     .tuple(fc.integer({ min: 0, max: 1439 }), fc.integer({ min: 1, max: 240 }))
     .map(([start, length]) =>
-      MinuteRange.of(start, Math.min(1440, start + length)),
+      MinuteRange.of(minute(start), endMinute(Math.min(1440, start + length))),
     );
 
   /** Which minutes of the day a list covers — the brute-force oracle. */

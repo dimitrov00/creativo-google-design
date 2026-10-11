@@ -1,47 +1,53 @@
-import type { DayKey } from '../components/day-key.data';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
 
 /** The grain a visit list is sectioned by — the ONLY source of these strings. */
 export const VisitGrain = {
-  Month: 'month',
-  Year: 'year',
+  Month: 'MONTH',
+  Year: 'YEAR',
 } as const;
 export type VisitGrain = (typeof VisitGrain)[keyof typeof VisitGrain];
 
 /** A row's own outcome, as a list narrows by it — the ONLY source of these strings. */
 export const VisitRowOutcome = {
-  Open: 'open',
-  Worked: 'worked',
-  NoShow: 'no_show',
-  Cancelled: 'cancelled',
+  Open: 'OPEN',
+  Worked: 'WORKED',
+  NoShow: 'NO_SHOW',
+  Cancelled: 'CANCELLED',
 } as const;
 export type VisitRowOutcome =
   (typeof VisitRowOutcome)[keyof typeof VisitRowOutcome];
 
 /** The funnel's options — the ONLY source of these strings. */
 export const VisitFilter = {
-  All: 'all',
-  Upcoming: 'upcoming',
-  Completed: 'completed',
-  Cancelled: 'cancelled',
-  NoShow: 'no_show',
+  All: 'ALL',
+  Upcoming: 'UPCOMING',
+  Completed: 'COMPLETED',
+  Cancelled: 'CANCELLED',
+  NoShow: 'NO_SHOW',
 } as const;
 export type VisitFilter = (typeof VisitFilter)[keyof typeof VisitFilter];
 
 /** Who reads the list — the ONLY source of these strings. */
 export const VisitPerspective = {
-  Client: 'client',
-  Staff: 'staff',
+  Client: 'CLIENT',
+  Staff: 'STAFF',
 } as const;
 export type VisitPerspective =
   (typeof VisitPerspective)[keyof typeof VisitPerspective];
 
-/** The upcoming run's key — not a date, so it can never collide with one. */
+/** The upcoming run's key — not a date, so it can never collide with one (a key, not a tag). */
 const UPCOMING_SECTION_KEY = 'upcoming';
 
-/** A row as sectioning reads it. */
+/**
+ * A row as sectioning reads it: where it starts on the shop's wall clock
+ * (Law 7.3, T1 — a list is ordered by shop day and minute, never by an
+ * instant).
+ */
 export type SectionRow = {
   readonly id: string;
-  readonly startMs: number;
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
   /** The dated section the row files under (`2026-09` / `2026`), or the upcoming key. */
   readonly sectionKey: string;
   readonly upcoming: boolean;
@@ -84,12 +90,20 @@ function byId(a: SectionRow, b: SectionRow): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+/** Wall-clock order: the shop day, then the minute inside it. */
+function byStart(a: SectionRow, b: SectionRow): number {
+  return (
+    LocalDate.compare(a.localDate, b.localDate) ||
+    a.startMinutes - b.startMinutes
+  );
+}
+
 function soonestFirst(a: SectionRow, b: SectionRow): number {
-  return a.startMs - b.startMs || byId(a, b);
+  return byStart(a, b) || byId(a, b);
 }
 
 function newestFirst(a: SectionRow, b: SectionRow): number {
-  return b.startMs - a.startMs || byId(a, b);
+  return byStart(b, a) || byId(a, b);
 }
 
 function newestKeyFirst(a: string, b: string): number {
@@ -108,12 +122,14 @@ export const VisitListSystem = {
 
   /**
    * The dated section a visit files under — `2026-09` by month, `2026` by
-   * year — from the day it falls on, on its OWN calendar (the day key comes
-   * from the shop zone's table), so a visit at 00:30 on the 1st is never
-   * filed under the month before.
+   * year — from the shop day it falls on (its `localDate`, the shop's own
+   * calendar), so a visit at 00:30 on the 1st is never filed under the
+   * month before.
    */
-  sectionKeyOf(dayKey: DayKey, grain: VisitGrain): string {
-    return grain === VisitGrain.Year ? dayKey.slice(0, 4) : dayKey.slice(0, 7);
+  sectionKeyOf(localDate: LocalDate, grain: VisitGrain): string {
+    return grain === VisitGrain.Year
+      ? localDate.slice(0, 4)
+      : localDate.slice(0, 7);
   },
 
   /**

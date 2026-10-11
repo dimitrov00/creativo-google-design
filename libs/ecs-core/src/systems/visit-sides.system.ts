@@ -1,9 +1,11 @@
+import type { PriceCents } from '../primitives/price-cents.primitive';
+
 /** The note and the tip, as one visit holds them. */
 export type VisitSides = {
   /** The team note, `null` for none. */
   readonly note: string | null;
-  /** What the chair was tipped, in minor units; `null` when unrecorded. */
-  readonly tipMinorUnits: number | null;
+  /** What the chair was tipped, in cents of the seat's currency; `null` when unrecorded. */
+  readonly tipCents: PriceCents | null;
 };
 
 /** Which of the side fields a write carries. */
@@ -29,7 +31,7 @@ export type DrawnSides = VisitSides & {
 export type LiveSides = {
   readonly note: string | null;
   readonly noteHeard: boolean;
-  readonly tipMinorUnits: number | null;
+  readonly tipCents: PriceCents | null;
   readonly tipHeard: boolean;
 };
 
@@ -73,30 +75,28 @@ export const VisitSidesSystem = {
       holder.note,
       holder.drawn.note,
     );
-    const tipUntouched = holder.tipMinorUnits === holder.drawn.tipMinorUnits;
+    const tipUntouched = holder.tipCents === holder.drawn.tipCents;
     const note = noteUntouched ? incoming.note : holder.note;
-    const tipMinorUnits = tipUntouched
-      ? incoming.tipMinorUnits
-      : holder.tipMinorUnits;
+    const tipCents = tipUntouched ? incoming.tipCents : holder.tipCents;
     const drawn: VisitSides = {
       note:
         noteUntouched || VisitSidesSystem.sameNote(incoming.note, holder.note)
           ? incoming.note
           : holder.drawn.note,
-      tipMinorUnits:
-        tipUntouched || incoming.tipMinorUnits === holder.tipMinorUnits
-          ? incoming.tipMinorUnits
-          : holder.drawn.tipMinorUnits,
+      tipCents:
+        tipUntouched || incoming.tipCents === holder.tipCents
+          ? incoming.tipCents
+          : holder.drawn.tipCents,
     };
     if (
       note === holder.note &&
-      tipMinorUnits === holder.tipMinorUnits &&
+      tipCents === holder.tipCents &&
       drawn.note === holder.drawn.note &&
-      drawn.tipMinorUnits === holder.drawn.tipMinorUnits
+      drawn.tipCents === holder.drawn.tipCents
     ) {
       return holder;
     }
-    return { ...holder, note, tipMinorUnits, drawn };
+    return { ...holder, note, tipCents, drawn };
   },
 
   /**
@@ -106,7 +106,7 @@ export const VisitSidesSystem = {
   writesOf(target: VisitSides, drawn: VisitSides): SideWrites {
     return {
       note: !VisitSidesSystem.sameNote(target.note, drawn.note),
-      tip: target.tipMinorUnits !== drawn.tipMinorUnits,
+      tip: target.tipCents !== drawn.tipCents,
     };
   },
 
@@ -132,8 +132,8 @@ export const VisitSidesSystem = {
     const tipMoved =
       writes.tip &&
       live.tipHeard &&
-      live.tipMinorUnits !== drawn.tipMinorUnits &&
-      live.tipMinorUnits !== target.tipMinorUnits;
+      live.tipCents !== drawn.tipCents &&
+      live.tipCents !== target.tipCents;
     return noteMoved || tipMoved;
   },
 } as const;

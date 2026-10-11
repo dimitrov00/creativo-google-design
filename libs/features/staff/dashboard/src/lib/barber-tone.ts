@@ -1,4 +1,4 @@
-import { BarberToneSystem } from '@creativo/ecs-core';
+import { BarberId, BarberToneSystem } from '@creativo/ecs-core';
 
 /**
  * WHOSE CHAIR — identity as colour, the last channel the schedule was missing.
@@ -42,12 +42,16 @@ export const BARBER_TONE_COUNT = BarberToneSystem.TONE_COUNT;
  * Phase 2 shim: the hash, the probe and the ascending-id walk are
  * `BarberToneSystem.assignBarberTones` in `@creativo/ecs-core`, which answers
  * parallel to the roster; this keeps the legacy map keyed by id for its
- * callers.
+ * callers. The system takes `BarberId` brands (Law 7); the roster's raw ids
+ * are document ids, so they become brands by construction (`BarberId.of`).
  */
 export function assignBarberTones(
   barberIds: readonly string[],
 ): ReadonlyMap<string, number> {
-  return toToneMap(barberIds, BarberToneSystem.assignBarberTones(barberIds));
+  return toToneMap(
+    barberIds,
+    BarberToneSystem.assignBarberTones(barberIds.map((id) => BarberId.of(id))),
+  );
 }
 
 /** The system's parallel answer → the legacy map (a repeated id keeps one entry). */

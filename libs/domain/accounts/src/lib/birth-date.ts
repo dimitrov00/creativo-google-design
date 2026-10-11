@@ -2,9 +2,12 @@ import {
   AgeSystem,
   AgeWindow,
   BirthDate as BirthDay,
-  DayKey,
   type IdentityError,
   IdentityErrorCode,
+  type LocalDate,
+  UtcEpochMs,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import {
@@ -27,9 +30,19 @@ export const MAX_AGE: typeof AgeWindow.MaxAge = 120;
  * besides the delegating bodies.
  */
 
-/** A parsed instant's calendar day, in its own zone. */
-function dayOf(instant: ZonedDateTime): DayKey {
-  return DayKey.of(instant.toISODate());
+/**
+ * An instant's calendar day in its own zone — the legacy instant converted
+ * through `ZonedTimeSystem.toLocal` (flatten-spec §8.9). A `ZonedDateTime`
+ * always names a real zone and an instant inside the window, so a refusal
+ * is a defect.
+ */
+function localDateOf(instant: ZonedDateTime): LocalDate {
+  const zone = ZonedTimeSystem.checkZone(instant.zoneName);
+  const at = UtcEpochMs.of(instant.toMillis());
+  if (!zone.ok || !at.ok) {
+    return defect(`${instant.toISO()} has no shop-clock day`);
+  }
+  return ZonedTimeSystem.toLocal(at.value, zone.value).localDate;
 }
 
 /**
@@ -40,16 +53,16 @@ function dayOf(instant: ZonedDateTime): DayKey {
 function ageBetween(birth: ZonedDateTime, today: ZonedDateTime): number {
   return AgeSystem.ageAtInstant(
     BirthDay.of(birth.toISODate()),
-    dayOf(today),
+    localDateOf(today),
     today.toMillis() > today.startOfDay().toMillis(),
   );
 }
 
 /** The window refusal back as this context's error class. */
 function toLegacyError(error: IdentityError): BirthDateError {
-  return error.code === IdentityErrorCode.BirthDateTooOld
+  return error.errorCode === IdentityErrorCode.BirthDateTooOld
     ? new BirthDateTooOldError(error.age, error.maxAge)
-    : error.code === IdentityErrorCode.BirthDateTooYoung
+    : error.errorCode === IdentityErrorCode.BirthDateTooYoung
       ? new BirthDateTooYoungError(error.age, error.minAge)
       : new BirthDateInvalidError('');
 }

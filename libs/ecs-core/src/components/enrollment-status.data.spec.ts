@@ -7,12 +7,12 @@ import {
 } from './enrollment-status.data';
 
 describe('EnrollmentStatus', () => {
-  it('keeps the stored strings', () => {
-    expect(ENROLLMENT_STATUSES).toEqual(['open', 'upcoming', 'closed']);
+  it('declares the statuses SCREAMING, in order', () => {
+    expect(ENROLLMENT_STATUSES).toEqual(['OPEN', 'UPCOMING', 'CLOSED']);
   });
 
   it('guards untrusted text', () => {
-    expect(isEnrollmentStatus('upcoming')).toBe(true);
+    expect(isEnrollmentStatus('UPCOMING')).toBe(true);
     expect(isEnrollmentStatus('Open')).toBe(false);
     expect(isEnrollmentStatus(null)).toBe(false);
   });

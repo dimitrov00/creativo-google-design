@@ -1,16 +1,25 @@
 import { type Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  DayKey,
-  type ServiceCategoryId,
-  type ServiceId,
+  HeadRole,
+  LocalDate,
+  ServiceCategoryId,
+  ServiceId,
   StreakDefinitionId,
-  StreakIntervalKind,
+  StreakExcuse as SystemExcuse,
+  StreakIntervalRule,
+  StreakOnBreak as SystemOnBreak,
   type StreakPublishError,
   StreakPublishErrorCode,
   StreakPublishSystem,
-  StreakQualifierKind,
+  StreakQualifierRule,
   type StreakRule,
+  StreakRuleDirection as SystemDirection,
+  StreakRuleField,
+  StreakRuleParameter,
+  StreakRuleSystem,
   type StreakSchedule,
+  StreakTransition as SystemTransition,
+  defect,
 } from '@creativo/ecs-core';
 import type { Actor } from '@creativo/domain/governance';
 import {
@@ -18,7 +27,9 @@ import {
   LOYALTY_ZONE,
   StreakDefinition,
   StreakDefinitionSchedule,
+  type StreakExcuse,
   type StreakNoticePolicy,
+  type StreakOnBreak,
   type StreakRuleChange,
   type StreakRuleDirection,
   type StreakTransition,
@@ -317,7 +328,7 @@ export class PublishStreakDefinitionUseCase {
     const admitted = StreakPublishSystem.admit(
       {
         baseVersion: input.baseVersion,
-        transition: input.transition,
+        streakTransition: transitionOf(input.transition),
         previewHash: input.previewHash,
       },
       { head, highestVersion: snapshot.highestVersion },
@@ -350,19 +361,28 @@ export class PublishStreakDefinitionUseCase {
 
     const decided = StreakPublishSystem.decide(
       structOf(definition),
-      input.transition,
+      transitionOf(input.transition),
       head,
-      DayKey.of(now.today),
+      dayOf(now.today),
       this.policy,
     );
     if (!decided.ok) return fail(refusalOf(decided.error));
-    const { change, calledOff, inForceVersion } = decided.value;
+    const { calledOff, inForceVersion } = decided.value;
+    // The change in the legacy words the receipt, the version and the
+    // audit row have always carried.
+    const change = {
+      direction: LEGACY_DIRECTION[decided.value.change.direction],
+      changed: decided.value.change.changed.map(
+        (parameter) => LEGACY_PARAMETER[parameter],
+      ),
+    };
 
     // The head the system decided, as the classes it was made of: the new
     // version in force at once, or waiting beside the rule in force.
     const inForce = schedule?.inForceOn(now.today) ?? null;
     const legacyHead = StreakDefinitionSchedule.create(
-      decided.value.head.scheduled === null || inForce === null
+      StreakRuleSystem.scheduled(decided.value.head) === null ||
+        inForce === null
         ? { current: definition, scheduled: null }
         : {
             current: inForce,
@@ -378,7 +398,7 @@ export class PublishStreakDefinitionUseCase {
     }
 
     const replaced = calledOff[0] ?? null;
-    const changed = change.changed as StreakRuleChange['changed'];
+    const changed: StreakRuleChange['changed'] = change.changed;
     return ok({
       receipt: {
         kind: 'published',
@@ -435,7 +455,7 @@ export class PublishStreakDefinitionUseCase {
     const withdrawn = StreakPublishSystem.withdraw(
       input.version,
       schedule === null ? null : headOf(schedule),
-      DayKey.of(now.today),
+      dayOf(now.today),
     );
     if (!withdrawn.ok || schedule === null) {
       return fail(
@@ -471,8 +491,13 @@ export class PublishStreakDefinitionUseCase {
           // What waited, and the version the shop stays under.
           from: String(input.version),
           to: String(schedule.current.version),
-          effectiveFrom: waiting.effectiveFromDayKey,
-          transition: waiting.transition,
+          effectiveFrom: waiting.effectiveFromLocalDate,
+          // What waits always names its transition (the head's SCHEDULED element).
+          transition:
+            LEGACY_TRANSITION[
+              waiting.streakTransition ??
+                defect('a waiting rule names its transition')
+            ],
         },
         changeKey: input.requestId,
       },
@@ -569,67 +594,186 @@ const unique = (fields: readonly string[]): readonly string[] => [
 
 // ── The bridge: legacy class ↔ ecs-core struct (Phase 4 deletes it) ──────
 
-/** A version as `StreakPublishSystem` reads it: the class's figures, the day as a day key. */
+const SYSTEM_EXCUSE = {
+  shopClosure: SystemExcuse.ShopClosure,
+  barberAbsence: SystemExcuse.BarberAbsence,
+  staffCancelled: SystemExcuse.StaffCancelled,
+  closedDays: SystemExcuse.ClosedDays,
+} as const satisfies Record<StreakExcuse, SystemExcuse>;
+
+const SYSTEM_ON_BREAK = {
+  restart: SystemOnBreak.Restart,
+  hold: SystemOnBreak.Hold,
+} as const satisfies Record<StreakOnBreak, SystemOnBreak>;
+
+const SYSTEM_TRANSITION = {
+  grandfather: SystemTransition.Grandfather,
+  recompute: SystemTransition.Recompute,
+} as const satisfies Record<StreakTransition, SystemTransition>;
+
+const LEGACY_TRANSITION = {
+  [SystemTransition.Grandfather]: 'grandfather',
+  [SystemTransition.Recompute]: 'recompute',
+} as const satisfies Record<SystemTransition, StreakTransition>;
+
+/** A change's direction, in the words the receipt and the audit row carry. */
+const LEGACY_DIRECTION: Readonly<Record<SystemDirection, StreakRuleDirection>> =
+  {
+    [SystemDirection.Looser]: 'looser',
+    [SystemDirection.Stricter]: 'stricter',
+    [SystemDirection.Mixed]: 'mixed',
+    [SystemDirection.Neutral]: 'neutral',
+    [SystemDirection.Switch]: 'switch',
+  };
+
+/** A parameter that moved, as the legacy props name it. */
+const LEGACY_PARAMETER: Readonly<
+  Record<StreakRuleParameter, StreakRuleChange['changed'][number]>
+> = {
+  [StreakRuleParameter.Name]: 'name',
+  [StreakRuleParameter.Enabled]: 'enabled',
+  [StreakRuleParameter.Qualifier]: 'qualifier',
+  [StreakRuleParameter.MinGapDays]: 'minGapDays',
+  [StreakRuleParameter.BookingHold]: 'bookingHold',
+  [StreakRuleParameter.Interval]: 'interval',
+  [StreakRuleParameter.GraceDays]: 'graceDays',
+  [StreakRuleParameter.RiskLeadDays]: 'riskLeadDays',
+  [StreakRuleParameter.Protections]: 'protections',
+  [StreakRuleParameter.Excuses]: 'excuses',
+  [StreakRuleParameter.ClientPause]: 'clientPause',
+  [StreakRuleParameter.Repair]: 'repair',
+  [StreakRuleParameter.OnBreak]: 'onBreak',
+};
+
+/**
+ * A field at fault as the callable has always spelled it: the legacy
+ * rule's dotted locator (`interval.days`, `scheduled.effectiveFrom`), never
+ * the flat field the system names (`intervalDays`,
+ * `scheduledEffectiveFromLocalDate`).
+ */
+const LEGACY_FIELD: Readonly<Record<StreakRuleField, string>> = {
+  [StreakRuleField.Id]: 'id',
+  [StreakRuleField.NameBg]: 'name.bg',
+  [StreakRuleField.NameEn]: 'name.en',
+  [StreakRuleField.Version]: 'version',
+  [StreakRuleField.EffectiveFromLocalDate]: 'effectiveFrom',
+  [StreakRuleField.QualifierKind]: 'qualifier.kind',
+  [StreakRuleField.QualifierServiceIds]: 'qualifier.serviceIds',
+  [StreakRuleField.QualifierCategoryIds]: 'qualifier.categoryIds',
+  [StreakRuleField.MinGapDays]: 'minGapDays',
+  [StreakRuleField.BookingHoldMaxDaysPastDue]: 'bookingHold.maxDaysPastDue',
+  [StreakRuleField.IntervalKind]: 'interval.kind',
+  [StreakRuleField.IntervalDays]: 'interval.days',
+  [StreakRuleField.IntervalTolerancePct]: 'interval.tolerancePct',
+  [StreakRuleField.IntervalMinDays]: 'interval.minDays',
+  [StreakRuleField.IntervalMaxDays]: 'interval.maxDays',
+  [StreakRuleField.IntervalFallbackDays]: 'interval.fallbackDays',
+  [StreakRuleField.GraceDays]: 'graceDays',
+  [StreakRuleField.RiskLeadDays]: 'riskLeadDays',
+  [StreakRuleField.ProtectionsMaxBanked]: 'protections.maxBanked',
+  [StreakRuleField.ProtectionsEarnEvery]: 'protections.earnEvery',
+  [StreakRuleField.ProtectionsStartWith]: 'protections.startWith',
+  [StreakRuleField.Excuses]: 'excuses',
+  [StreakRuleField.ClientPauseMaxDaysPerYear]: 'clientPause.maxDaysPerYear',
+  [StreakRuleField.RepairWindowDays]: 'repair.windowDays',
+  [StreakRuleField.RepairPerYear]: 'repair.perYear',
+  [StreakRuleField.OnBreak]: 'onBreak',
+  [StreakRuleField.ScheduledVersion]: 'scheduled.version',
+  [StreakRuleField.ScheduledEffectiveFromLocalDate]: 'scheduled.effectiveFrom',
+  [StreakRuleField.ScheduledTransition]: 'scheduled.transition',
+};
+
+/** The shop's day the server's clock read: always a day. */
+function dayOf(raw: IsoDate): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/**
+ * A transition in the system's words. One the vocabulary does not know
+ * is handed across as written: the system's own guard refuses it.
+ */
+function transitionOf(transition: StreakTransition): SystemTransition {
+  const known: SystemTransition | undefined = (
+    SYSTEM_TRANSITION as Readonly<Record<string, SystemTransition>>
+  )[transition];
+  return known ?? (transition as string as SystemTransition);
+}
+
+/**
+ * A version as `StreakPublishSystem` reads it: the class's figures, flat
+ * (every part's figures prefixed by the part), every tag the dictionary's;
+ * its day was checked by `StreakDefinition.create`.
+ */
 function structOf(definition: StreakDefinition): StreakRule {
   const props = definition.toProps();
   const { qualifier, interval } = props;
   return {
     version: props.version,
-    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    effectiveFromLocalDate: dayOf(props.effectiveFrom),
     enabled: props.enabled,
-    qualifier:
-      qualifier.kind === 'services'
-        ? {
-            kind: StreakQualifierKind.Services,
-            serviceIds: qualifier.serviceIds as readonly ServiceId[],
-          }
-        : qualifier.kind === 'categories'
-          ? {
-              kind: StreakQualifierKind.Categories,
-              categoryIds:
-                qualifier.categoryIds as readonly ServiceCategoryId[],
-            }
-          : { kind: StreakQualifierKind.AnyVisit },
+    ...(qualifier.kind === 'services'
+      ? StreakQualifierRule.services(
+          qualifier.serviceIds.map((id) => ServiceId.of(id)),
+        )
+      : qualifier.kind === 'categories'
+        ? StreakQualifierRule.categories(
+            qualifier.categoryIds.map((id) => ServiceCategoryId.of(id)),
+          )
+        : StreakQualifierRule.anyVisit()),
     minGapDays: props.minGapDays,
-    bookingHold: props.bookingHold,
-    interval:
-      interval.kind === 'fixed'
-        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
-        : {
-            kind: StreakIntervalKind.Personal,
-            tolerancePct: interval.tolerancePct,
-            minDays: interval.minDays,
-            maxDays: interval.maxDays,
-            fallbackDays: interval.fallbackDays,
-          },
+    bookingHoldEnabled: props.bookingHold.enabled,
+    bookingHoldMaxDaysPastDue: props.bookingHold.maxDaysPastDue,
+    ...(interval.kind === 'fixed'
+      ? StreakIntervalRule.fixed(interval.days)
+      : StreakIntervalRule.personal(
+          interval.tolerancePct,
+          interval.minDays,
+          interval.maxDays,
+          interval.fallbackDays,
+        )),
     graceDays: props.graceDays,
     riskLeadDays: props.riskLeadDays,
-    protections: props.protections,
-    excuses: props.excuses,
-    clientPause: props.clientPause,
-    repair: props.repair,
-    onBreak: props.onBreak,
+    protectionsEnabled: props.protections.enabled,
+    protectionsMaxBanked: props.protections.maxBanked,
+    protectionsEarnEvery: props.protections.earnEvery,
+    protectionsStartWith: props.protections.startWith,
+    excuses: props.excuses.map((excuse) => SYSTEM_EXCUSE[excuse]),
+    clientPauseEnabled: props.clientPause.enabled,
+    clientPauseMaxDaysPerYear: props.clientPause.maxDaysPerYear,
+    repairEnabled: props.repair.enabled,
+    repairWindowDays: props.repair.windowDays,
+    repairPerYear: props.repair.perYear,
+    onBreak: SYSTEM_ON_BREAK[props.onBreak],
   };
 }
 
-/** The head as the system reads it. */
+/** The head as the system reads it: its `rules` list, the rule in force first. */
 function headOf(schedule: StreakDefinitionSchedule): StreakSchedule {
   const { scheduled } = schedule;
+  const current = {
+    ...structOf(schedule.current),
+    headRole: HeadRole.Current,
+    streakTransition: null,
+  };
   return {
-    current: structOf(schedule.current),
-    scheduled:
+    rules:
       scheduled === null
-        ? null
-        : {
-            ...structOf(scheduled.definition),
-            transition: scheduled.transition,
-          },
+        ? [current]
+        : [
+            current,
+            {
+              ...structOf(scheduled.definition),
+              headRole: HeadRole.Scheduled,
+              streakTransition: transitionOf(scheduled.transition),
+            },
+          ],
   };
 }
 
 /** The system's refusal as the class the callable answers with; fields spelled as the legacy rule spells them. */
 function refusalOf(error: StreakPublishError): PublishStreakDefinitionFailure {
-  switch (error.code) {
+  switch (error.errorCode) {
     case StreakPublishErrorCode.RecomputeNeedsEngine:
       return new PublishStreakDefinitionRecomputeNeedsEngineError();
     case StreakPublishErrorCode.PreviewStale:
@@ -641,14 +785,16 @@ function refusalOf(error: StreakPublishError): PublishStreakDefinitionFailure {
       );
     case StreakPublishErrorCode.TooEarly:
       return new PublishStreakDefinitionTooEarlyError(
-        error.effectiveFromDayKey,
+        error.effectiveFromLocalDate,
         error.earliest,
       );
     default:
       return new PublishStreakDefinitionInvalidError(
         unique(
-          error.fields.map((field) =>
-            field.replace(/effectiveFromDayKey$/, 'effectiveFrom'),
+          error.fields.map(
+            (field) =>
+              (LEGACY_FIELD as Readonly<Record<string, string>>)[field] ??
+              field,
           ),
         ),
       );

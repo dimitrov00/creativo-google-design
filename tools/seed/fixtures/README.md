@@ -13,11 +13,11 @@ collections it reshapes here, in the same commit that changes their shape.
 - Every exported body is checked against its entity:
 
   ```ts
-  import type { ServiceEntity } from '@creativo/ecs-core';
+  import type { Service } from '@creativo/ecs-core';
 
   export const classicCut = {
     // …every field of the entity but `id`
-  } satisfies Omit<ServiceEntity, 'id'>;
+  } satisfies Omit<Service, 'id'>;
   ```
 
   `satisfies` does not exist in the `.mjs` the seed is written in, which is
@@ -40,7 +40,7 @@ collections it reshapes here, in the same commit that changes their shape.
 
 `seed-tools` is tagged `type:tooling`, whose row in the root
 `eslint.config.mjs` lets it depend on `type:tooling`, `type:util` and
-`type:domain` — so `import type { XEntity } from '@creativo/ecs-core'` is
+`type:domain` — so `import type { X } from '@creativo/ecs-core'` (the archetype noun, no `Entity` suffix — flatten-spec N1) is
 legal here, and nothing of `type:application`/`type:infrastructure` is.
 
 ## Not here

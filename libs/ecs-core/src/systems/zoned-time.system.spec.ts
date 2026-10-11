@@ -1,17 +1,28 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { DateRange, DayKey } from '../components/day-key.data';
-import { DayOffset } from '../components/day-offset.data';
 import type { Result } from '../components/result.data';
-import { TimeErrorCode } from '../components/time-errors.data';
+import {
+  DateTimeInvalidReason,
+  TimeErrorCode,
+} from '../components/time-errors.data';
 import { Weekday } from '../components/weekday.data';
-import { DstResolution, ZonedTimeSystem } from './zoned-time.system';
-import { deepFreeze } from '../testing';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import type { TimeZone } from '../primitives/time-zone.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { ZonedTimeSystem } from './zoned-time.system';
+import { deepFreeze, localDate, minute, unwrapOk, utcMs } from '../testing';
 
 /*
  * Every expected instant below is a LITERAL epoch-ms constant (its UTC
  * reading in the comment), never computed with a date library — the
- * successor of the kernel's 32 Luxon-backed DST specs (§9 D5).
+ * successor of the kernel's 32 Luxon-backed DST specs (§9 D5). The
+ * pre-flatten day-table API (`dayTable`, `instantOf`, `resolve`, `parseIso`,
+ * `wallClockOf`, `isoOf`, the day-key helpers) is gone (flatten-spec §2.2):
+ * every one of its cases below is re-shaped onto the ingestion API —
+ * `toUtc` (gap → `DST_GAP_INVALID_TIME`, repeat → the EARLIER offset),
+ * `toLocal`, `startOfLocalDay`, `parseOffsetIso`, `toIso` — and the civil
+ * day arithmetic lives in `local-date.primitive.spec.ts`.
  *
  * Europe/Sofia, the product's scheduling zone (EET +02:00 / EEST +03:00):
  *   2026-03-29  03:00 → 04:00   a 23-hour day; 03:00–03:59 never happens
@@ -76,7 +87,16 @@ const SCORESBY_1028_FIRST_MIDNIGHT = 1_540_684_800_000; // 2018-10-28T00:00Z (+0
 const SCORESBY_1028_SECOND_MIDNIGHT = 1_540_688_400_000; // 2018-10-28T01:00Z (−01:00)
 const SCORESBY_1029_START = 1_540_774_800_000; // 2018-10-29T01:00Z (−01:00)
 
-const key = (raw: string): DayKey => DayKey.of(raw);
+const SOFIA_TZ = unwrapOk(ZonedTimeSystem.checkZone(SOFIA));
+const KOLKATA_TZ = unwrapOk(ZonedTimeSystem.checkZone(KOLKATA));
+const UTC_TZ = unwrapOk(ZonedTimeSystem.checkZone(UTC));
+const SAO_PAULO_TZ = unwrapOk(ZonedTimeSystem.checkZone(SAO_PAULO));
+const LORD_HOWE_TZ = unwrapOk(ZonedTimeSystem.checkZone(LORD_HOWE));
+const CAIRO_TZ = unwrapOk(ZonedTimeSystem.checkZone(CAIRO));
+const SCORESBYSUND_TZ = unwrapOk(ZonedTimeSystem.checkZone(SCORESBYSUND));
+
+/** A literal epoch-ms constant of this file as the brand. */
+const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 function valueOf<T, E>(result: Result<T, E>): T {
   if (!result.ok)
@@ -90,281 +110,304 @@ function errorOf<T, E>(result: Result<T, E>): E {
   return result.error;
 }
 
-function row(zone: string, raw: string): DayOffset {
-  const day = ZonedTimeSystem.dayTable(zone, key(raw), key(raw))[0];
-  if (day === undefined) throw new Error(`no row for ${raw} in ${zone}`);
-  return day;
+/** The instant of a wall-clock minute — a gap minute is a broken fixture. */
+function utcOf(raw: string, wall: number, zone: TimeZone): number {
+  return valueOf(ZonedTimeSystem.toUtc(localDate(raw), minute(wall), zone));
 }
 
-/** Each row starts exactly where the previous one ends. */
-function expectContiguous(days: readonly DayOffset[]): void {
-  days.slice(1).forEach((day, i) => {
-    expect(day.dayStartMs).toBe(DayOffset.endMs(days.at(i) as DayOffset));
-  });
+/** The shop day's length in minutes: next local midnight − this one. */
+function dayLengthMinutes(raw: string, zone: TimeZone): number {
+  const day = localDate(raw);
+  return (
+    (ZonedTimeSystem.startOfLocalDay(LocalDate.addDays(day, 1), zone) -
+      ZonedTimeSystem.startOfLocalDay(day, zone)) /
+    MIN
+  );
 }
 
-describe('ZonedTimeSystem.dayTable — the DST set (Europe/Sofia)', () => {
-  it('carries the 23-hour spring day and its erased segment on the row', () => {
-    expect(row(SOFIA, '2026-03-29')).toEqual({
-      dayKey: '2026-03-29',
-      dayStartMs: SOFIA_0329_START,
-      offsetMinutes: 120,
-      transitionAtMinutes: 180,
-      transitionDeltaMinutes: 60,
-      weekday: Weekday.Sun,
-    });
-    const day = row(SOFIA, '2026-03-29');
-    expect(DayOffset.lengthMinutes(day)).toBe(23 * 60);
-    expect(DayOffset.endMs(day)).toBe(SOFIA_0330_START);
-  });
+/** The `±HH:MM` offset `toIso` spells for an instant — the offset in force. */
+function offsetOf(ms: number, zone: TimeZone): string {
+  return ZonedTimeSystem.toIso(at(ms), zone).slice(-6);
+}
 
-  it('carries the 25-hour autumn day and its repeated segment on the row', () => {
-    expect(row(SOFIA, '2026-10-25')).toEqual({
-      dayKey: '2026-10-25',
-      dayStartMs: SOFIA_1025_START,
-      offsetMinutes: 180,
-      transitionAtMinutes: 240,
-      transitionDeltaMinutes: -60,
-      weekday: Weekday.Sun,
-    });
-    const day = row(SOFIA, '2026-10-25');
-    expect(DayOffset.lengthMinutes(day)).toBe(25 * 60);
-    expect(DayOffset.endMs(day)).toBe(SOFIA_1026_START);
-  });
-
-  it('builds sorted, contiguous rows with the ordinary days unmarked', () => {
-    const days = ZonedTimeSystem.dayTable(
-      SOFIA,
-      key('2026-03-28'),
-      key('2026-03-30'),
-    );
-    expect(days.map((d) => d.dayKey)).toEqual([
-      '2026-03-28',
-      '2026-03-29',
-      '2026-03-30',
-    ]);
-    expect(days[0]).toEqual({
-      dayKey: '2026-03-28',
-      dayStartMs: SOFIA_0328_START,
-      offsetMinutes: 120,
-      transitionAtMinutes: null,
-      transitionDeltaMinutes: 0,
-      weekday: Weekday.Sat,
-    });
-    expect(days[2]).toMatchObject({
-      dayStartMs: SOFIA_0330_START,
-      offsetMinutes: 180,
-      transitionAtMinutes: null,
-      transitionDeltaMinutes: 0,
-      weekday: Weekday.Mon,
-    });
-    expectContiguous(days);
-  });
-
-  it('marks exactly the two switch days of a whole year, and loses no time', () => {
-    const year = ZonedTimeSystem.dayTable(
-      SOFIA,
-      key('2026-01-01'),
-      key('2026-12-31'),
-    );
-    expect(year).toHaveLength(365);
-    expect(year.filter(DayOffset.isTransition).map((d) => d.dayKey)).toEqual([
-      '2026-03-29',
-      '2026-10-25',
-    ]);
-    const first = year[0] as DayOffset;
-    const last = year[year.length - 1] as DayOffset;
-    // Spring and autumn cancel out: 365 days of exactly 24 hours each.
-    expect(DayOffset.endMs(last) - first.dayStartMs).toBe(365 * 24 * HOUR);
-    expectContiguous(year);
-    for (const day of year) {
-      expect(day.weekday).toBe(ZonedTimeSystem.weekdayOf(day.dayKey));
+describe('the DST set — day lengths and switch days (Europe/Sofia)', () => {
+  it('the 23-hour spring day: its 03:00–03:59 never happens', () => {
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-03-29'), SOFIA_TZ),
+    ).toBe(SOFIA_0329_START);
+    expect(dayLengthMinutes('2026-03-29', SOFIA_TZ)).toBe(23 * 60);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-03-30'), SOFIA_TZ),
+    ).toBe(SOFIA_0330_START);
+    expect(LocalDate.weekday(localDate('2026-03-29'))).toBe(Weekday.Sun);
+    expect(offsetOf(SOFIA_0329_START, SOFIA_TZ)).toBe('+02:00');
+    expect(offsetOf(SOFIA_SPRING_SWITCH, SOFIA_TZ)).toBe('+03:00');
+    for (const wall of [180, 239]) {
+      expect(
+        errorOf(
+          ZonedTimeSystem.toUtc(
+            localDate('2026-03-29'),
+            minute(wall),
+            SOFIA_TZ,
+          ),
+        ).errorCode,
+      ).toBe(TimeErrorCode.DstGap);
     }
   });
 
-  it('is empty for an inverted range or an unknown zone — it fails closed', () => {
+  it('the 25-hour autumn day: its 03:00–03:59 happens twice', () => {
     expect(
-      ZonedTimeSystem.dayTable(SOFIA, key('2026-03-30'), key('2026-03-29')),
-    ).toEqual([]);
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-10-25'), SOFIA_TZ),
+    ).toBe(SOFIA_1025_START);
+    expect(dayLengthMinutes('2026-10-25', SOFIA_TZ)).toBe(25 * 60);
     expect(
-      ZonedTimeSystem.dayTable(
-        'Not/AZone',
-        key('2026-03-29'),
-        key('2026-03-30'),
-      ),
-    ).toEqual([]);
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-10-26'), SOFIA_TZ),
+    ).toBe(SOFIA_1026_START);
     expect(
-      ZonedTimeSystem.dayTable(SOFIA, key('garbage'), key('2026-03-30')),
-    ).toEqual([]);
+      ZonedTimeSystem.toLocal(at(SOFIA_1025_0330_FIRST), SOFIA_TZ),
+    ).toEqual(ZonedTimeSystem.toLocal(at(SOFIA_1025_0330_SECOND), SOFIA_TZ));
+    expect(offsetOf(SOFIA_1025_0330_FIRST, SOFIA_TZ)).toBe('+03:00');
+    expect(offsetOf(SOFIA_1025_0330_SECOND, SOFIA_TZ)).toBe('+02:00');
+  });
+
+  it('the days either side are ordinary: 24 hours, each starting where the last ended', () => {
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-03-28'), SOFIA_TZ),
+    ).toBe(SOFIA_0328_START);
+    expect(dayLengthMinutes('2026-03-28', SOFIA_TZ)).toBe(24 * 60);
+    expect(dayLengthMinutes('2026-03-30', SOFIA_TZ)).toBe(24 * 60);
+    expect(offsetOf(SOFIA_0328_START, SOFIA_TZ)).toBe('+02:00');
+    expect(offsetOf(SOFIA_0330_START, SOFIA_TZ)).toBe('+03:00');
+    expect(LocalDate.weekday(localDate('2026-03-28'))).toBe(Weekday.Sat);
+    expect(LocalDate.weekday(localDate('2026-03-30'))).toBe(Weekday.Mon);
+  });
+
+  it('exactly the two switch days of a whole year differ from 24 hours, and no time is lost', () => {
+    const year = LocalDate.range(
+      localDate('2026-01-01'),
+      localDate('2026-12-31'),
+    );
+    expect(year).toHaveLength(365);
+    expect(
+      year.filter((day) => dayLengthMinutes(day, SOFIA_TZ) !== 24 * 60),
+    ).toEqual(['2026-03-29', '2026-10-25']);
+    // Spring and autumn cancel out: 365 days of exactly 24 hours each.
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2027-01-01'), SOFIA_TZ) -
+        ZonedTimeSystem.startOfLocalDay(localDate('2026-01-01'), SOFIA_TZ),
+    ).toBe(365 * 24 * HOUR);
+  });
+
+  it('fails closed on a zone the runtime does not know', () => {
+    const bogus = 'Not/AZone' as TimeZone;
+    expect(
+      errorOf(ZonedTimeSystem.toUtc(localDate('2026-03-29'), minute(0), bogus)),
+    ).toEqual({
+      errorCode: TimeErrorCode.InvalidTimeZone,
+      rawZone: 'Not/AZone',
+    });
+    expect(() =>
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-03-29'), bogus),
+    ).toThrow(/defect/);
   });
 
   it('fails closed outside the years it can read — year 0000 never reaches the formatter', () => {
-    // The formatter prints a year-0 instant as year 1 (no era part); a table
-    // built there would be a year off. Refused, not wrong.
+    // The formatter prints a year-0 instant as year 1 (no era part); an
+    // instant built there would be a year off. Refused, not wrong.
     expect(
-      ZonedTimeSystem.dayTable(UTC, key('0000-12-31'), key('0001-01-02')),
-    ).toEqual([]);
+      errorOf(
+        ZonedTimeSystem.toUtc(localDate('0000-12-31'), minute(0), UTC_TZ),
+      ),
+    ).toEqual({
+      errorCode: TimeErrorCode.InvalidDateTime,
+      rawValue: '0000-12-31T00:00',
+      dateTimeInvalidReason: DateTimeInvalidReason.OutOfRange,
+    });
     expect(
-      ZonedTimeSystem.dayTable(UTC, key('9999-12-30'), key('9999-12-31')),
-    ).toEqual([]);
+      ZonedTimeSystem.toUtc(localDate('9999-12-31'), minute(0), UTC_TZ).ok,
+    ).toBe(false);
+    expect(() =>
+      ZonedTimeSystem.startOfLocalDay(localDate('0001-01-02'), UTC_TZ),
+    ).toThrow(/outside the readable window/);
+    expect(() =>
+      ZonedTimeSystem.startOfLocalDay(localDate('9999-12-30'), UTC_TZ),
+    ).toThrow(/outside the readable window/);
     expect(
-      ZonedTimeSystem.dayTable(UTC, key('0001-01-05'), key('0001-01-05')),
-    ).toHaveLength(1);
+      ZonedTimeSystem.startOfLocalDay(localDate('0001-01-05'), UTC_TZ),
+    ).toBe(utcOf('0001-01-05', 0, UTC_TZ));
   });
 
-  it('fails closed on local mean time: an offset that is not whole minutes', () => {
+  it('local mean time: a second-precise offset still reads back as the same wall minute', () => {
     // Sofia kept Istanbul mean time (+01:56:56) until 1894-11-30; Monrovia
-    // kept −00:44:30 until 1972-01-07. Every row field is whole minutes.
-    expect(
-      ZonedTimeSystem.dayTable(SOFIA, key('1894-11-28'), key('1894-11-30')),
-    ).toEqual([]);
-    expect(
-      ZonedTimeSystem.dayTable(SOFIA, key('1894-12-01'), key('1894-12-03')),
-    ).toHaveLength(3);
-    expect(
-      ZonedTimeSystem.dayTable(
-        'Africa/Monrovia',
-        key('1971-06-01'),
-        key('1971-06-02'),
-      ),
-    ).toEqual([]);
-    expect(
-      ZonedTimeSystem.dayTable(
-        'Africa/Monrovia',
-        key('1972-02-01'),
-        key('1972-02-01'),
-      ),
-    ).toHaveLength(1);
+    // kept −00:44:30 until 1972-01-07. The instant carries the odd seconds;
+    // the wall clock it reads on is the minute that was asked for.
+    for (const [raw, zone] of [
+      ['1894-11-28', SOFIA_TZ],
+      ['1894-12-01', SOFIA_TZ],
+      ['1971-06-01', unwrapOk(ZonedTimeSystem.checkZone('Africa/Monrovia'))],
+      ['1972-02-01', unwrapOk(ZonedTimeSystem.checkZone('Africa/Monrovia'))],
+    ] as const) {
+      const instant = valueOf(
+        ZonedTimeSystem.toUtc(localDate(raw), minute(600), zone),
+      );
+      expect(ZonedTimeSystem.toLocal(instant, zone)).toEqual({
+        localDate: raw,
+        minute: 600,
+      });
+    }
+    expect(Math.abs(utcOf('1894-11-28', 600, SOFIA_TZ) % MIN)).not.toBe(0);
+    expect(Math.abs(utcOf('1894-12-01', 600, SOFIA_TZ) % MIN)).toBe(0);
   });
 
-  it('caps a table at ten years of days (3660 rows) — a longer span is refused', () => {
-    const from = key('2020-01-01');
+  it('reads any of ten years of days in one step each — no table to build', () => {
+    const from = localDate('2020-01-01');
+    const last = LocalDate.addDays(from, 3659);
     expect(
-      ZonedTimeSystem.dayTable(UTC, from, ZonedTimeSystem.addDays(from, 3659)),
-    ).toHaveLength(3660);
-    expect(
-      ZonedTimeSystem.dayTable(UTC, from, ZonedTimeSystem.addDays(from, 3660)),
-    ).toEqual([]);
+      ZonedTimeSystem.startOfLocalDay(last, UTC_TZ) -
+        ZonedTimeSystem.startOfLocalDay(from, UTC_TZ),
+    ).toBe(3659 * 24 * HOUR);
   });
 });
 
-describe('ZonedTimeSystem.instantOf / minuteOfDay — both sides of transitionAtMinutes', () => {
-  const spring = row(SOFIA, '2026-03-29');
-  const autumn = row(SOFIA, '2026-10-25');
-
+describe('both sides of the switch minute — toUtc / toLocal', () => {
   it('spring: before the switch is plain subtraction from local midnight', () => {
-    expect(ZonedTimeSystem.instantOf(spring, 0)).toBe(SOFIA_0329_START);
-    expect(ZonedTimeSystem.instantOf(spring, 179)).toBe(SOFIA_0329_0259);
-    expect(ZonedTimeSystem.minuteOfDay(SOFIA_0329_0259, spring)).toBe(179);
+    expect(utcOf('2026-03-29', 0, SOFIA_TZ)).toBe(SOFIA_0329_START);
+    expect(utcOf('2026-03-29', 179, SOFIA_TZ)).toBe(SOFIA_0329_0259);
+    expect(ZonedTimeSystem.toLocal(at(SOFIA_0329_0259), SOFIA_TZ).minute).toBe(
+      179,
+    );
   });
 
   it('spring: at and after the switch the clock is an hour ahead', () => {
-    expect(ZonedTimeSystem.instantOf(spring, 240)).toBe(SOFIA_SPRING_SWITCH);
-    expect(ZonedTimeSystem.minuteOfDay(SOFIA_SPRING_SWITCH, spring)).toBe(240);
-    expect(ZonedTimeSystem.instantOf(spring, 270)).toBe(SOFIA_0329_0430);
-    expect(ZonedTimeSystem.minuteOfDay(SOFIA_0329_0430, spring)).toBe(270);
+    expect(utcOf('2026-03-29', 240, SOFIA_TZ)).toBe(SOFIA_SPRING_SWITCH);
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_SPRING_SWITCH), SOFIA_TZ).minute,
+    ).toBe(240);
+    expect(utcOf('2026-03-29', 270, SOFIA_TZ)).toBe(SOFIA_0329_0430);
+    expect(ZonedTimeSystem.toLocal(at(SOFIA_0329_0430), SOFIA_TZ).minute).toBe(
+      270,
+    );
   });
 
-  it('spring: an erased wall minute resolves FORWARD to the first minute that exists', () => {
-    expect(ZonedTimeSystem.instantOf(spring, 180)).toBe(SOFIA_SPRING_SWITCH);
-    expect(ZonedTimeSystem.instantOf(spring, 210)).toBe(SOFIA_SPRING_SWITCH);
-    expect(ZonedTimeSystem.instantOf(spring, 239)).toBe(SOFIA_SPRING_SWITCH);
+  it('spring: an erased wall minute is refused; the first minute that exists is the switch', () => {
+    for (const wall of [180, 210, 239]) {
+      expect(
+        errorOf(
+          ZonedTimeSystem.toUtc(
+            localDate('2026-03-29'),
+            minute(wall),
+            SOFIA_TZ,
+          ),
+        ).errorCode,
+      ).toBe(TimeErrorCode.DstGap);
+    }
+    expect(utcOf('2026-03-29', 240, SOFIA_TZ)).toBe(SOFIA_SPRING_SWITCH);
   });
 
   it('autumn: the first 03:00–03:59 is before the switch, the second after it', () => {
-    expect(ZonedTimeSystem.instantOf(autumn, 210)).toBe(SOFIA_1025_0330_FIRST);
-    expect(ZonedTimeSystem.minuteOfDay(SOFIA_1025_0330_FIRST, autumn)).toBe(
-      210,
-    );
+    expect(utcOf('2026-10-25', 210, SOFIA_TZ)).toBe(SOFIA_1025_0330_FIRST);
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_1025_0330_FIRST), SOFIA_TZ).minute,
+    ).toBe(210);
     // The switch instant reads 03:00 again, and the second 03:30 reads 03:30.
-    expect(ZonedTimeSystem.minuteOfDay(SOFIA_FALL_SWITCH, autumn)).toBe(180);
-    expect(ZonedTimeSystem.minuteOfDay(SOFIA_1025_0330_SECOND, autumn)).toBe(
-      210,
-    );
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_FALL_SWITCH), SOFIA_TZ).minute,
+    ).toBe(180);
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_1025_0330_SECOND), SOFIA_TZ).minute,
+    ).toBe(210);
     // 04:00 exists once, after the repeat: 5 real hours after midnight.
-    expect(ZonedTimeSystem.instantOf(autumn, 240)).toBe(
+    expect(utcOf('2026-10-25', 240, SOFIA_TZ)).toBe(
       SOFIA_1025_START + 5 * HOUR,
     );
     expect(
-      ZonedTimeSystem.minuteOfDay(SOFIA_1025_START + 5 * HOUR, autumn),
+      ZonedTimeSystem.toLocal(at(SOFIA_1025_START + 5 * HOUR), SOFIA_TZ).minute,
     ).toBe(240);
-    expect(ZonedTimeSystem.instantOf(autumn, 239)).toBe(
+    expect(utcOf('2026-10-25', 239, SOFIA_TZ)).toBe(
       SOFIA_1025_START + 239 * MIN,
     );
   });
 
-  it('1440 is the next local midnight on every kind of day', () => {
-    expect(ZonedTimeSystem.instantOf(spring, 1440)).toBe(SOFIA_0330_START);
-    expect(ZonedTimeSystem.instantOf(autumn, 1440)).toBe(SOFIA_1026_START);
-    const ordinary = row(SOFIA, '2026-07-29');
-    expect(ZonedTimeSystem.instantOf(ordinary, 1440)).toBe(
-      SOFIA_0729_START + 24 * HOUR,
-    );
+  it('the closing midnight (1440) is the next day’s start on every kind of day', () => {
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-03-30'), SOFIA_TZ),
+    ).toBe(SOFIA_0330_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-10-26'), SOFIA_TZ),
+    ).toBe(SOFIA_1026_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-07-30'), SOFIA_TZ),
+    ).toBe(SOFIA_0729_START + 24 * HOUR);
   });
 
-  it('minuteOfDay floors to the minute and runs past 1440 for a visit crossing midnight', () => {
-    const ordinary = row(SOFIA, '2026-07-29');
+  it('toLocal floors to the minute, and a visit crossing midnight reads on the next day', () => {
     expect(
-      ZonedTimeSystem.minuteOfDay(SOFIA_0729_0930 + 59_999, ordinary),
-    ).toBe(570);
+      ZonedTimeSystem.toLocal(at(SOFIA_0729_0930 + 59_999), SOFIA_TZ),
+    ).toEqual({ localDate: '2026-07-29', minute: 570 });
     expect(
-      ZonedTimeSystem.minuteOfDay(
-        SOFIA_0729_START + 24 * HOUR + 15 * MIN,
-        ordinary,
+      ZonedTimeSystem.toLocal(
+        at(SOFIA_0729_START + 24 * HOUR + 15 * MIN),
+        SOFIA_TZ,
       ),
-    ).toBe(1455);
+    ).toEqual({ localDate: '2026-07-30', minute: 15 });
   });
 
   it('round-trips every existing wall minute of every Sofia day of 2026', () => {
-    const year = ZonedTimeSystem.dayTable(
-      SOFIA,
-      key('2026-01-01'),
-      key('2026-12-31'),
-    );
     const mismatches: string[] = [];
-    for (const day of year) {
+    for (const day of LocalDate.range(
+      localDate('2026-01-01'),
+      localDate('2026-12-31'),
+    )) {
       for (let wall = 0; wall < 1440; wall += 5) {
-        const at = ZonedTimeSystem.instantOf(day, wall);
-        const erased =
-          day.transitionAtMinutes !== null &&
-          day.transitionDeltaMinutes > 0 &&
-          wall >= day.transitionAtMinutes &&
-          wall < day.transitionAtMinutes + day.transitionDeltaMinutes;
-        const expected = erased
-          ? (day.transitionAtMinutes as number) + day.transitionDeltaMinutes
-          : wall;
-        if (ZonedTimeSystem.minuteOfDay(at, day) !== expected) {
-          mismatches.push(`${day.dayKey} ${wall}`);
+        const instant = ZonedTimeSystem.toUtc(day, minute(wall), SOFIA_TZ);
+        const erased = day === '2026-03-29' && wall >= 180 && wall < 240;
+        if (erased) {
+          if (instant.ok) mismatches.push(`${day} ${wall} not refused`);
+          continue;
+        }
+        if (!instant.ok) {
+          mismatches.push(`${day} ${wall} refused`);
+          continue;
+        }
+        const back = ZonedTimeSystem.toLocal(instant.value, SOFIA_TZ);
+        if (back.localDate !== day || back.minute !== wall) {
+          mismatches.push(`${day} ${wall}`);
         }
       }
     }
     expect(mismatches).toEqual([]);
   });
 
-  it('agrees with the zone itself (Intl) for any instant the table covers', () => {
-    const tables = [
-      ZonedTimeSystem.dayTable(SOFIA, key('2026-03-25'), key('2026-11-01')),
-      ZonedTimeSystem.dayTable(KOLKATA, key('2026-07-01'), key('2026-07-31')),
-      ZonedTimeSystem.dayTable(SAO_PAULO, key('2018-11-01'), key('2019-02-20')),
-    ];
-    const zones = [SOFIA, KOLKATA, SAO_PAULO];
+  it('agrees with the zone itself (Intl) for any instant', () => {
+    const zones = [SOFIA_TZ, KOLKATA_TZ, SAO_PAULO_TZ];
+    const formats = zones.map(
+      (timeZone) =>
+        new Intl.DateTimeFormat('en-CA', {
+          timeZone,
+          hourCycle: 'h23',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+    );
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 2 }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        (z, t) => {
-          const days = tables.at(z) as readonly DayOffset[];
-          const first = (days[0] as DayOffset).dayStartMs;
-          const end = DayOffset.endMs(days[days.length - 1] as DayOffset);
-          const ms = first + Math.floor(t * (end - first - 1));
-          const wall = valueOf(
-            ZonedTimeSystem.wallClockOf(ms, zones.at(z) as string),
+        fc.integer({ min: 1_541_000_000_000, max: 1_793_500_000_000 }),
+        (z, ms) => {
+          const parts = Object.fromEntries(
+            (formats.at(z) as Intl.DateTimeFormat)
+              .formatToParts(ms)
+              .map((part) => [part.type, part.value]),
           );
-          const index = DayOffset.indexAt(ms, days);
-          expect(ZonedTimeSystem.dayKeyOf(ms, days)).toBe(wall.dayKey);
           expect(
-            ZonedTimeSystem.minuteOfDay(ms, days.at(index) as DayOffset),
-          ).toBe(wall.minuteOfDay);
+            ZonedTimeSystem.toLocal(at(ms), zones.at(z) as TimeZone),
+          ).toEqual({
+            localDate: `${parts['year']}-${parts['month']}-${parts['day']}`,
+            minute: Number(parts['hour']) * 60 + Number(parts['minute']),
+          });
         },
       ),
     );
@@ -373,523 +416,286 @@ describe('ZonedTimeSystem.instantOf / minuteOfDay — both sides of transitionAt
 
 describe('a roster window spanning the switch', () => {
   it('places every post-switch shift at the right instant (spring)', () => {
-    const day = row(SOFIA, '2026-03-29');
     // 09:00–18:00 lies wholly after the switch: on the +03:00 clock.
-    expect(ZonedTimeSystem.instantOf(day, 9 * 60)).toBe(SOFIA_0329_0900);
-    expect(ZonedTimeSystem.instantOf(day, 18 * 60)).toBe(SOFIA_0329_1800);
+    expect(utcOf('2026-03-29', 9 * 60, SOFIA_TZ)).toBe(SOFIA_0329_0900);
+    expect(utcOf('2026-03-29', 18 * 60, SOFIA_TZ)).toBe(SOFIA_0329_1800);
     // 02:00–06:00 spans it: four hours of wall clock, three of real time.
-    const start = ZonedTimeSystem.instantOf(day, 2 * 60);
-    const end = ZonedTimeSystem.instantOf(day, 6 * 60);
+    const start = utcOf('2026-03-29', 2 * 60, SOFIA_TZ);
+    const end = utcOf('2026-03-29', 6 * 60, SOFIA_TZ);
     expect(start).toBe(SOFIA_0329_0200);
     expect(end - start).toBe(3 * HOUR);
   });
 
   it('places every post-switch shift at the right instant (autumn)', () => {
-    const day = row(SOFIA, '2026-10-25');
-    expect(ZonedTimeSystem.instantOf(day, 9 * 60)).toBe(SOFIA_1025_0900);
-    expect(ZonedTimeSystem.instantOf(day, 18 * 60)).toBe(SOFIA_1025_1800);
+    expect(utcOf('2026-10-25', 9 * 60, SOFIA_TZ)).toBe(SOFIA_1025_0900);
+    expect(utcOf('2026-10-25', 18 * 60, SOFIA_TZ)).toBe(SOFIA_1025_1800);
     // 02:00–06:00 spans it: four hours of wall clock, five of real time.
-    const start = ZonedTimeSystem.instantOf(day, 2 * 60);
-    const end = ZonedTimeSystem.instantOf(day, 6 * 60);
+    const start = utcOf('2026-10-25', 2 * 60, SOFIA_TZ);
+    const end = utcOf('2026-10-25', 6 * 60, SOFIA_TZ);
     expect(end - start).toBe(5 * HOUR);
   });
 
-  it('keeps a window that starts inside the erased hour monotone, never inverted', () => {
-    const day = row(SOFIA, '2026-03-29');
-    const start = ZonedTimeSystem.instantOf(day, 3 * 60 + 30);
-    const end = ZonedTimeSystem.instantOf(day, 4 * 60 + 15);
+  it('refuses a window that starts inside the erased hour; one from the switch stays monotone', () => {
+    expect(
+      ZonedTimeSystem.toUtc(
+        localDate('2026-03-29'),
+        minute(3 * 60 + 30),
+        SOFIA_TZ,
+      ).ok,
+    ).toBe(false);
+    const start = utcOf('2026-03-29', 4 * 60, SOFIA_TZ);
+    const end = utcOf('2026-03-29', 4 * 60 + 15, SOFIA_TZ);
     expect(start).toBe(SOFIA_SPRING_SWITCH);
     expect(end - start).toBe(15 * MIN);
   });
 });
 
-describe('ZonedTimeSystem.dayTableAround — the once-per-request call', () => {
-  it('centres the table on the local day of an instant on the switch day', () => {
-    const days = ZonedTimeSystem.dayTableAround(
-      SOFIA,
-      SOFIA_SPRING_SWITCH,
-      SOFIA_SPRING_SWITCH,
-      1,
-    );
-    expect(days.map((d) => d.dayKey)).toEqual([
-      '2026-03-28',
-      '2026-03-29',
-      '2026-03-30',
-    ]);
-    expect(ZonedTimeSystem.dayKeyOf(SOFIA_SPRING_SWITCH, days)).toBe(
-      '2026-03-29',
-    );
+describe('toLocal — the shop day of an instant, read on the zone clock', () => {
+  it('names the switch day of an instant on the switch', () => {
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_SPRING_SWITCH), SOFIA_TZ).localDate,
+    ).toBe('2026-03-29');
   });
 
   it('reads the day on the zone clock: 22:13 UTC on the 28th is already the 29th in Sofia', () => {
-    const ms = SOFIA_0329_START + 13 * MIN; // 2026-03-28T22:13Z
-    const days = ZonedTimeSystem.dayTableAround(SOFIA, ms, ms, 0);
-    expect(days.map((d) => d.dayKey)).toEqual(['2026-03-29']);
-    expect((days[0] as DayOffset).transitionAtMinutes).toBe(180);
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_0329_START + 13 * MIN), SOFIA_TZ),
+    ).toEqual({ localDate: '2026-03-29', minute: 13 });
   });
 
-  it('spans both instants of an interval crossing the autumn switch', () => {
-    const days = ZonedTimeSystem.dayTableAround(
-      SOFIA,
-      SOFIA_1025_START - HOUR,
-      SOFIA_1026_START + HOUR,
-      0,
-    );
-    expect(days.map((d) => d.dayKey)).toEqual([
-      '2026-10-24',
-      '2026-10-25',
-      '2026-10-26',
-    ]);
+  it('reads both ends of an interval crossing the autumn switch', () => {
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_1025_START - HOUR), SOFIA_TZ),
+    ).toEqual({
+      localDate: '2026-10-24',
+      minute: 23 * 60,
+    });
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_1026_START + HOUR), SOFIA_TZ),
+    ).toEqual({
+      localDate: '2026-10-26',
+      minute: 60,
+    });
   });
 
-  it('treats a negative pad as none, and fails closed on a bad zone or instant', () => {
-    expect(
-      ZonedTimeSystem.dayTableAround(
-        SOFIA,
-        SOFIA_0729_0930,
-        SOFIA_0729_0930,
-        -3,
-      ),
-    ).toHaveLength(1);
-    expect(
-      ZonedTimeSystem.dayTableAround(
-        'Not/AZone',
-        SOFIA_0729_0930,
-        SOFIA_0729_0930,
-        1,
-      ),
-    ).toEqual([]);
-    expect(
-      ZonedTimeSystem.dayTableAround(SOFIA, Number.NaN, SOFIA_0729_0930, 1),
-    ).toEqual([]);
-    expect(
-      ZonedTimeSystem.dayTableAround(
-        SOFIA,
-        SOFIA_0729_0930,
-        Number.POSITIVE_INFINITY,
-        1,
-      ),
-    ).toEqual([]);
+  it('a zone it does not know is a defect, and a non-instant never becomes a UtcEpochMs', () => {
+    expect(() =>
+      ZonedTimeSystem.toLocal(at(SOFIA_0729_0930), 'Not/AZone' as TimeZone),
+    ).toThrow(/defect/);
+    expect(UtcEpochMs.of(Number.NaN).ok).toBe(false);
+    expect(UtcEpochMs.of(Number.POSITIVE_INFINITY).ok).toBe(false);
   });
 
-  it('never spins on instants a request supplies: far-apart ends or a huge pad build nothing', () => {
-    // Years 0001 and 9999 are both readable instants; the span between them
-    // is ~3.65M days. Refused before a single row is built.
+  it('reads instants at both ends of the readable years in one step each', () => {
     expect(
-      ZonedTimeSystem.dayTableAround(
-        SOFIA,
-        -62_135_000_000_000,
-        253_402_000_000_000,
-        0,
-      ),
-    ).toEqual([]);
+      ZonedTimeSystem.toLocal(at(-62_135_000_000_000), SOFIA_TZ).localDate,
+    ).toBe('0001-01-07');
     expect(
-      ZonedTimeSystem.dayTableAround(
-        SOFIA,
-        SOFIA_0729_0930,
-        SOFIA_0729_0930,
-        1_000_000_000,
-      ),
-    ).toEqual([]);
-    expect(
-      ZonedTimeSystem.dayTableAround(
-        SOFIA,
-        SOFIA_0729_0930,
-        SOFIA_0729_0930,
-        Number.POSITIVE_INFINITY,
-      ),
-    ).toEqual([]);
+      ZonedTimeSystem.toLocal(at(253_402_000_000_000), SOFIA_TZ).localDate,
+    ).toBe('9999-12-28');
   });
 });
 
-describe('ZonedTimeSystem over the table', () => {
-  const days = ZonedTimeSystem.dayTable(
-    SOFIA,
-    key('2026-07-28'),
-    key('2026-07-30'),
-  );
-
-  it('dayKeyOf / startOfDayMs / startOfNextDayMs read the rows', () => {
-    expect(ZonedTimeSystem.dayKeyOf(SOFIA_0729_0930, days)).toBe('2026-07-29');
+describe('one shop day on the zone clock', () => {
+  it('toLocal / startOfLocalDay read the day and its edges', () => {
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_0729_0930), SOFIA_TZ).localDate,
+    ).toBe('2026-07-29');
     // Local midnight, not UTC midnight: 23:45 on the 29th still belongs to the 29th.
     expect(
-      ZonedTimeSystem.dayKeyOf(SOFIA_0729_START + 23 * HOUR + 45 * MIN, days),
+      ZonedTimeSystem.toLocal(
+        at(SOFIA_0729_START + 23 * HOUR + 45 * MIN),
+        SOFIA_TZ,
+      ).localDate,
     ).toBe('2026-07-29');
-    expect(ZonedTimeSystem.startOfDayMs(key('2026-07-29'), days)).toBe(
-      SOFIA_0729_START,
-    );
-    expect(ZonedTimeSystem.startOfNextDayMs(key('2026-07-29'), days)).toBe(
-      SOFIA_0729_START + 24 * HOUR,
-    );
-  });
-
-  it('answers null outside the table', () => {
-    expect(ZonedTimeSystem.dayKeyOf(SOFIA_0801_0900, days)).toBeNull();
-    expect(ZonedTimeSystem.startOfDayMs(key('2026-08-01'), days)).toBeNull();
     expect(
-      ZonedTimeSystem.startOfNextDayMs(key('2026-08-01'), days),
-    ).toBeNull();
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-07-29'), SOFIA_TZ),
+    ).toBe(SOFIA_0729_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-07-30'), SOFIA_TZ),
+    ).toBe(SOFIA_0729_START + 24 * HOUR);
   });
 
   it('places a roster window on a specific date (atTime)', () => {
-    const day = DayOffset.find(key('2026-07-29'), days) as DayOffset;
-    expect(ZonedTimeSystem.instantOf(day, 9 * 60 + 30)).toBe(SOFIA_0729_0930);
+    expect(utcOf('2026-07-29', 9 * 60 + 30, SOFIA_TZ)).toBe(SOFIA_0729_0930);
   });
 });
 
-describe('ZonedTimeSystem.resolve — DST is an explicit decision', () => {
+describe('toUtc — DST is decided once, locked (gap refused, repeat → the earlier offset)', () => {
   it('builds an ordinary wall-clock time', () => {
+    expect(utcOf('2026-07-29', 9 * 60 + 30, SOFIA_TZ)).toBe(SOFIA_0729_0930);
+  });
+
+  it('REFUSES a time the spring-forward erased, naming the shop day, minute and zone', () => {
     expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-07-29'),
-          9 * 60 + 30,
-          SOFIA,
-          DstResolution.Reject,
+      errorOf(
+        ZonedTimeSystem.toUtc(
+          localDate('2026-03-29'),
+          minute(3 * 60 + 30),
+          SOFIA_TZ,
         ),
       ),
     ).toEqual({
-      epochMs: SOFIA_0729_0930,
-      zone: SOFIA,
+      errorCode: TimeErrorCode.DstGap,
+      localDate: '2026-03-29',
+      minute: 210,
+      timeZone: SOFIA,
     });
   });
 
-  it('REJECTS a time the spring-forward erased (by default)', () => {
-    expect(
-      errorOf(
-        ZonedTimeSystem.resolve(
-          key('2026-03-29'),
-          3 * 60 + 30,
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ),
-    ).toEqual({
-      code: TimeErrorCode.NonexistentLocalTime,
-      rawValue: '2026-03-29T03:30',
-      zone: SOFIA,
-    });
-    // Earlier/Later answer a repeat, not a gap.
-    expect(
-      errorOf(
-        ZonedTimeSystem.resolve(
-          key('2026-03-29'),
-          210,
-          SOFIA,
-          DstResolution.Earlier,
-        ),
-      ).code,
-    ).toBe(TimeErrorCode.NonexistentLocalTime);
+  it('never shifts an erased time: 04:30 +03:00 is reached only by asking for 04:30', () => {
+    expect(utcOf('2026-03-29', 270, SOFIA_TZ)).toBe(SOFIA_0329_0430);
   });
 
-  it('shifts an erased time forward only when asked: 03:30 → 04:30 +03:00', () => {
-    expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-03-29'),
-          210,
-          SOFIA,
-          DstResolution.ShiftForward,
-        ),
-      ).epochMs,
-    ).toBe(SOFIA_0329_0430);
+  it('resolves a time the fall-back repeated to the EARLIER offset, never refusing it', () => {
+    expect(utcOf('2026-10-25', 210, SOFIA_TZ)).toBe(SOFIA_1025_0330_FIRST);
   });
 
-  it('REJECTS a time the fall-back repeated, rather than silently picking one', () => {
-    expect(
-      errorOf(
-        ZonedTimeSystem.resolve(
-          key('2026-10-25'),
-          210,
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ),
-    ).toEqual({
-      code: TimeErrorCode.AmbiguousLocalTime,
-      rawValue: '2026-10-25T03:30',
-      zone: SOFIA,
-    });
-    expect(
-      errorOf(
-        ZonedTimeSystem.resolve(
-          key('2026-10-25'),
-          210,
-          SOFIA,
-          DstResolution.ShiftForward,
-        ),
-      ).code,
-    ).toBe(TimeErrorCode.AmbiguousLocalTime);
-  });
-
-  it('resolves a repeated time to either occurrence on request, an hour apart', () => {
-    const earlier = valueOf(
-      ZonedTimeSystem.resolve(
-        key('2026-10-25'),
-        210,
-        SOFIA,
-        DstResolution.Earlier,
-      ),
+  it('the later occurrence is the same wall time an hour on', () => {
+    const earlier = utcOf('2026-10-25', 210, SOFIA_TZ);
+    expect(earlier + HOUR).toBe(SOFIA_1025_0330_SECOND);
+    expect(ZonedTimeSystem.toLocal(at(earlier + HOUR), SOFIA_TZ)).toEqual(
+      ZonedTimeSystem.toLocal(at(earlier), SOFIA_TZ),
     );
-    const later = valueOf(
-      ZonedTimeSystem.resolve(
-        key('2026-10-25'),
-        210,
-        SOFIA,
-        DstResolution.Later,
-      ),
-    );
-    expect(earlier.epochMs).toBe(SOFIA_1025_0330_FIRST);
-    expect(later.epochMs).toBe(SOFIA_1025_0330_SECOND);
-    expect(later.epochMs - earlier.epochMs).toBe(60 * MIN);
   });
 
-  it('rejects an unknown zone and impossible parts', () => {
+  it('refuses an unknown zone and impossible parts', () => {
     expect(
       errorOf(
-        ZonedTimeSystem.resolve(
-          key('2026-07-29'),
-          540,
-          'Not/AZone',
-          DstResolution.Reject,
+        ZonedTimeSystem.toUtc(
+          localDate('2026-07-29'),
+          minute(540),
+          'Not/AZone' as TimeZone,
         ),
       ),
     ).toEqual({
-      code: TimeErrorCode.InvalidTimeZone,
+      errorCode: TimeErrorCode.InvalidTimeZone,
       rawZone: 'Not/AZone',
     });
-    expect(
-      errorOf(
-        ZonedTimeSystem.resolve(
-          key('2026-02-30'),
-          540,
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ),
-    ).toEqual({
-      code: TimeErrorCode.InvalidDateTime,
-      rawValue: '2026-02-30T09:00',
-      reason: 'out_of_range',
-    });
-    for (const wall of [-1, 1440, 9.5]) {
+    // An impossible day never becomes a LocalDate …
+    expect(LocalDate.parse('2026-02-30').ok).toBe(false);
+    // … and a minute outside [0, 1440) that slipped past its brand is refused.
+    for (const [wall, rawValue] of [
+      [1440, '2026-07-29T24:00'],
+      [9.5, '2026-07-29T00:09.5'],
+    ] as const) {
       expect(
         errorOf(
-          ZonedTimeSystem.resolve(
-            key('2026-07-29'),
-            wall,
-            SOFIA,
-            DstResolution.Reject,
+          ZonedTimeSystem.toUtc(
+            localDate('2026-07-29'),
+            wall as MinuteOfDay,
+            SOFIA_TZ,
           ),
-        ).code,
-      ).toBe(TimeErrorCode.InvalidDateTime);
+        ),
+      ).toEqual({
+        errorCode: TimeErrorCode.InvalidDateTime,
+        rawValue,
+        dateTimeInvalidReason: DateTimeInvalidReason.OutOfRange,
+      });
     }
+    expect(
+      ZonedTimeSystem.toUtc(
+        localDate('2026-07-29'),
+        -1 as MinuteOfDay,
+        SOFIA_TZ,
+      ).ok,
+    ).toBe(false);
   });
 
-  it('round-trips through epoch millis', () => {
-    const wall = valueOf(ZonedTimeSystem.wallClockOf(SOFIA_0729_0930, SOFIA));
+  it('round-trips through the instant', () => {
+    const wall = ZonedTimeSystem.toLocal(at(SOFIA_0729_0930), SOFIA_TZ);
     expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          wall.dayKey,
-          wall.minuteOfDay,
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ).epochMs,
+      valueOf(ZonedTimeSystem.toUtc(wall.localDate, wall.minute, SOFIA_TZ)),
     ).toBe(SOFIA_0729_0930);
   });
 });
 
-describe('ZonedTimeSystem.parseIso', () => {
-  it('accepts a local ISO string with a valid IANA zone', () => {
-    expect(
-      valueOf(
-        ZonedTimeSystem.parseIso(
-          '2026-08-01T09:00:00.000',
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ),
-    ).toEqual({
-      epochMs: SOFIA_0801_0900,
-      zone: SOFIA,
-    });
-    expect(
-      valueOf(
-        ZonedTimeSystem.parseIso(
-          '2026-08-01T09:00',
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ).epochMs,
-    ).toBe(SOFIA_0801_0900);
+describe('reading ISO strings — an offset names an instant, a wall clock needs the zone', () => {
+  it('a local wall clock goes through toUtc with the location zone', () => {
+    expect(utcOf('2026-08-01', 9 * 60, SOFIA_TZ)).toBe(SOFIA_0801_0900);
     // A date alone means its local midnight.
     expect(
-      valueOf(
-        ZonedTimeSystem.parseIso('2026-07-29', SOFIA, DstResolution.Reject),
-      ).epochMs,
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-07-29'), SOFIA_TZ),
     ).toBe(SOFIA_0729_START);
-    // One or two fraction digits are tenths and hundredths.
+    // One fraction digit is tenths.
     expect(
-      valueOf(
-        ZonedTimeSystem.parseIso(
-          '2026-08-01T09:00:00.5',
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ).epochMs,
+      valueOf(ZonedTimeSystem.parseOffsetIso('2026-08-01T09:00:00.5+03:00')),
     ).toBe(SOFIA_0801_0900 + 500);
   });
 
   it('reads an explicit offset as the instant it names, whatever the zone', () => {
-    expect(
-      valueOf(
-        ZonedTimeSystem.parseIso(
-          '2026-08-01T06:00:00Z',
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ).epochMs,
-    ).toBe(SOFIA_0801_0900);
-    expect(
-      valueOf(
-        ZonedTimeSystem.parseIso(
-          '2026-08-01T11:30+0530',
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ).epochMs,
-    ).toBe(SOFIA_0801_0900);
-    expect(
-      valueOf(
-        ZonedTimeSystem.parseIso(
-          '2026-08-01T03:00:00-03:00',
-          UTC,
-          DstResolution.Reject,
-        ),
-      ),
-    ).toEqual({
-      epochMs: SOFIA_0801_0900,
-      zone: UTC,
-    });
+    for (const raw of [
+      '2026-08-01T06:00:00Z',
+      '2026-08-01T11:30+0530',
+      '2026-08-01T03:00:00-03:00',
+    ]) {
+      expect(valueOf(ZonedTimeSystem.parseOffsetIso(raw))).toBe(
+        SOFIA_0801_0900,
+      );
+    }
   });
 
   it('compares by INSTANT, not by the offset the local rendering carries', () => {
     // '…+03:00' sorts after '…+02:00' as a STRING while being the earlier
     // instant — the autumn fall-back hour inverted ordering in the old code.
     const earlier = valueOf(
-      ZonedTimeSystem.parseIso(
-        '2026-10-25T03:30:00+03:00',
-        SOFIA,
-        DstResolution.Reject,
-      ),
+      ZonedTimeSystem.parseOffsetIso('2026-10-25T03:30:00+03:00'),
     );
     const later = valueOf(
-      ZonedTimeSystem.parseIso(
-        '2026-10-25T03:30:00+02:00',
-        SOFIA,
-        DstResolution.Reject,
-      ),
+      ZonedTimeSystem.parseOffsetIso('2026-10-25T03:30:00+02:00'),
     );
-    expect(earlier.epochMs).toBe(SOFIA_1025_0330_FIRST);
-    expect(later.epochMs).toBe(SOFIA_1025_0330_SECOND);
+    expect(earlier).toBe(SOFIA_1025_0330_FIRST);
+    expect(later).toBe(SOFIA_1025_0330_SECOND);
+    expect(UtcEpochMs.compare(earlier, later)).toBe(-1);
   });
 
   it('measures elapsed time across a DST boundary, not clock difference', () => {
     // 01:30 → 04:30 reads as three hours on the wall but only two pass.
-    const before = valueOf(
-      ZonedTimeSystem.parseIso(
-        '2026-03-29T01:30:00',
-        SOFIA,
-        DstResolution.Reject,
-      ),
-    );
-    const after = valueOf(
-      ZonedTimeSystem.parseIso(
-        '2026-03-29T04:30:00',
-        SOFIA,
-        DstResolution.Reject,
-      ),
-    );
-    expect(before.epochMs).toBe(SOFIA_0329_0130);
-    expect((after.epochMs - before.epochMs) / MIN).toBe(120);
+    const before = utcOf('2026-03-29', 90, SOFIA_TZ);
+    const after = utcOf('2026-03-29', 270, SOFIA_TZ);
+    expect(before).toBe(SOFIA_0329_0130);
+    expect((after - before) / MIN).toBe(120);
   });
 
-  it('applies the same explicit DST decision to a local string', () => {
+  it('applies the same locked DST decision to a local wall clock', () => {
     expect(
       errorOf(
-        ZonedTimeSystem.parseIso(
-          '2026-03-29T03:30',
-          SOFIA,
-          DstResolution.Reject,
-        ),
-      ).code,
-    ).toBe(TimeErrorCode.NonexistentLocalTime);
-    expect(
-      valueOf(
-        ZonedTimeSystem.parseIso(
-          '2026-10-25T03:30',
-          SOFIA,
-          DstResolution.Later,
-        ),
-      ).epochMs,
-    ).toBe(SOFIA_1025_0330_SECOND);
+        ZonedTimeSystem.toUtc(localDate('2026-03-29'), minute(210), SOFIA_TZ),
+      ).errorCode,
+    ).toBe(TimeErrorCode.DstGap);
+    expect(utcOf('2026-10-25', 210, SOFIA_TZ)).toBe(SOFIA_1025_0330_FIRST);
   });
 
   it.each([
     'not-a-date',
-    '2026-8-01',
-    '2026-08-01 09:00',
-    '2026-08-01T9:00',
-    '2026-08-01T09',
-    '2026-08-01T09:0x',
-    '2026-08-01T09:00:0',
-    '2026-08-01T09:00:00.',
-    '2026-08-01T09:00:00,',
-    '2026-08-01T09:00:00;5',
-    '2026-08-01T09:00:00.1234567891',
-    '2026-08-01T09:00:00.12a',
+    '2026-8-01T09:00Z',
+    '2026-08-01 09:00Z',
+    '2026-08-01T9:00Z',
+    '2026-08-01T09Z',
+    '2026-08-01T09:0xZ',
+    '2026-08-01T09:00:0Z',
+    '2026-08-01T09:00:00.Z',
+    '2026-08-01T09:00:00,Z',
+    '2026-08-01T09:00:00;5Z',
+    '2026-08-01T09:00:00.1234567891Z',
+    '2026-08-01T09:00:00.12aZ',
     '2026-08-01T09:00+3',
     '2026-08-01T09:00+031',
     '2026-08-01T09:00+03:0',
     '2026-08-01T09:00+24:00',
     '2026-08-01T09:00+03:60',
   ])('refuses the malformed %j as unparsable', (raw) => {
-    expect(
-      errorOf(ZonedTimeSystem.parseIso(raw, SOFIA, DstResolution.Reject)),
-    ).toEqual({
-      code: TimeErrorCode.InvalidDateTime,
+    expect(errorOf(ZonedTimeSystem.parseOffsetIso(raw))).toEqual({
+      errorCode: TimeErrorCode.InvalidDateTime,
       rawValue: raw,
-      reason: 'unparsable',
+      dateTimeInvalidReason: DateTimeInvalidReason.Unparsable,
     });
   });
 
-  it.each([
-    '2026-02-30T09:00',
-    '2026-08-01T24:00',
-    '2026-08-01T09:60',
-    '2026-08-01T09:00:60',
-  ])('refuses the impossible %j as out of range', (raw) => {
-    expect(
-      errorOf(ZonedTimeSystem.parseIso(raw, SOFIA, DstResolution.Reject)),
-    ).toEqual({
-      code: TimeErrorCode.InvalidDateTime,
-      rawValue: raw,
-      reason: 'out_of_range',
-    });
-  });
-
-  it('rejects an invalid IANA zone', () => {
-    expect(
-      errorOf(
-        ZonedTimeSystem.parseIso(
-          '2026-08-01T09:00:00.000',
-          'Not/AZone',
-          DstResolution.Reject,
-        ),
-      ).code,
-    ).toBe(TimeErrorCode.InvalidTimeZone);
+  it('refuses an invalid IANA zone at its door', () => {
+    expect(errorOf(ZonedTimeSystem.checkZone('Not/AZone')).errorCode).toBe(
+      TimeErrorCode.InvalidTimeZone,
+    );
   });
 
   it.each([
@@ -904,46 +710,25 @@ describe('ZonedTimeSystem.parseIso', () => {
     // A comma as the decimal separator (ISO 8601 prefers it).
     ['2026-10-25T00:30:00,5Z', SOFIA_1025_0330_FIRST + 500],
   ])('reads the stored form %j the legacy fromISO read', (raw, epochMs) => {
-    expect(
-      valueOf(ZonedTimeSystem.parseIso(raw, SOFIA, DstResolution.Reject)),
-    ).toEqual({ epochMs, zone: SOFIA });
+    expect(valueOf(ZonedTimeSystem.parseOffsetIso(raw))).toBe(epochMs);
   });
 });
 
-describe('ZonedTimeSystem.wallClockOf / zones', () => {
+describe('zones — checkZone, and what an instant reads as', () => {
   it('recognizes a real IANA zone and rejects a bogus one', () => {
-    expect(ZonedTimeSystem.isValidZone(SOFIA)).toBe(true);
-    expect(ZonedTimeSystem.isValidZone(SOFIA)).toBe(true); // the cached formatter
-    expect(ZonedTimeSystem.isValidZone('Not/AZone')).toBe(false);
     expect(valueOf(ZonedTimeSystem.checkZone(SOFIA))).toBe(SOFIA);
+    expect(valueOf(ZonedTimeSystem.checkZone(SOFIA))).toBe(SOFIA); // the cached formatter
     expect(errorOf(ZonedTimeSystem.checkZone('Not/AZone'))).toEqual({
-      code: TimeErrorCode.InvalidTimeZone,
+      errorCode: TimeErrorCode.InvalidTimeZone,
       rawZone: 'Not/AZone',
     });
   });
 
   it('answers the CANONICAL zone id, so a stored zone is one spelling', () => {
     for (const spelling of ['europe/sofia', 'EUROPE/SOFIA', 'eUrope/sofia']) {
-      expect(valueOf(ZonedTimeSystem.checkZone(spelling))).toBe(SOFIA);
-      expect(
-        valueOf(
-          ZonedTimeSystem.resolve(
-            key('2026-07-29'),
-            9 * 60 + 30,
-            spelling,
-            DstResolution.Reject,
-          ),
-        ),
-      ).toEqual({ epochMs: SOFIA_0729_0930, zone: SOFIA });
-      expect(
-        valueOf(
-          ZonedTimeSystem.parseIso(
-            '2026-07-29T06:30:00Z',
-            spelling,
-            DstResolution.Reject,
-          ),
-        ).zone,
-      ).toBe(SOFIA);
+      const zone = valueOf(ZonedTimeSystem.checkZone(spelling));
+      expect(zone).toBe(SOFIA);
+      expect(utcOf('2026-07-29', 9 * 60 + 30, zone)).toBe(SOFIA_0729_0930);
     }
     expect(valueOf(ZonedTimeSystem.checkZone('utc'))).toBe(UTC);
     expect(valueOf(ZonedTimeSystem.checkZone('Etc/UTC'))).toBe(UTC);
@@ -951,275 +736,185 @@ describe('ZonedTimeSystem.wallClockOf / zones', () => {
 
   it('refuses an offset id — not every browser engine accepts one', () => {
     for (const offset of ['+03:00', '-0500', '+03']) {
-      expect(ZonedTimeSystem.isValidZone(offset)).toBe(false);
       expect(errorOf(ZonedTimeSystem.checkZone(offset))).toEqual({
-        code: TimeErrorCode.InvalidTimeZone,
+        errorCode: TimeErrorCode.InvalidTimeZone,
         rawZone: offset,
       });
-      expect(
-        ZonedTimeSystem.dayTable(offset, key('2026-07-29'), key('2026-07-29')),
-      ).toEqual([]);
     }
   });
 
-  it('exposes the calendar fields in the zone (2026-03-05 14:32, a Thursday)', () => {
-    const at = valueOf(
-      ZonedTimeSystem.parseIso(
-        '2026-03-05T14:32:07',
-        SOFIA,
-        DstResolution.Reject,
-      ),
-    ).epochMs;
-    expect(valueOf(ZonedTimeSystem.wallClockOf(at, SOFIA))).toEqual({
-      dayKey: '2026-03-05',
-      minuteOfDay: 14 * 60 + 32,
-      second: 7,
-      offsetMinutes: 120,
-      weekday: Weekday.Thu,
+  it('exposes the calendar fields in the zone (2026-03-05 14:32:07, a Thursday)', () => {
+    const instant = valueOf(
+      ZonedTimeSystem.parseOffsetIso('2026-03-05T14:32:07+02:00'),
+    );
+    expect(ZonedTimeSystem.toLocal(instant, SOFIA_TZ)).toEqual({
+      localDate: '2026-03-05',
+      minute: 14 * 60 + 32,
     });
+    expect(LocalDate.weekday(localDate('2026-03-05'))).toBe(Weekday.Thu);
+    expect(ZonedTimeSystem.toIso(instant, SOFIA_TZ)).toBe(
+      '2026-03-05T14:32:07.000+02:00',
+    );
   });
 
   it('reads the day on the Sofia clock, not the UTC one (loyalty sofiaDayOf)', () => {
     // 22:30 UTC in summer is 01:30 the next morning in Sofia (UTC+3).
     const dayOf = (ms: number) =>
-      valueOf(ZonedTimeSystem.wallClockOf(ms, SOFIA)).dayKey;
+      ZonedTimeSystem.toLocal(at(ms), SOFIA_TZ).localDate;
     expect(dayOf(1_785_537_000_000)).toBe('2026-08-01'); // 2026-07-31T22:30:00Z
     expect(dayOf(1_785_531_599_000)).toBe('2026-07-31'); // 2026-07-31T20:59:59Z
     // The winter offset too (UTC+2).
     expect(dayOf(1_798_754_399_000)).toBe('2026-12-31'); // 2026-12-31T21:59:59Z
     expect(dayOf(1_798_754_400_000)).toBe('2027-01-01'); // 2026-12-31T22:00:00Z
   });
-
-  it('the table gives the same day without touching Intl', () => {
-    const days = ZonedTimeSystem.dayTableAround(
-      SOFIA,
-      1_785_531_599_000,
-      1_798_754_400_000,
-      0,
-    );
-    expect(ZonedTimeSystem.dayKeyOf(1_785_537_000_000, days)).toBe(
-      '2026-08-01',
-    );
-    expect(ZonedTimeSystem.dayKeyOf(1_785_531_599_000, days)).toBe(
-      '2026-07-31',
-    );
-    expect(ZonedTimeSystem.dayKeyOf(1_798_754_399_000, days)).toBe(
-      '2026-12-31',
-    );
-    expect(ZonedTimeSystem.dayKeyOf(1_798_754_400_000, days)).toBe(
-      '2027-01-01',
-    );
-  });
-
-  it('refuses an unknown zone or an instant it cannot read', () => {
-    expect(errorOf(ZonedTimeSystem.wallClockOf(0, 'Not/AZone')).code).toBe(
-      TimeErrorCode.InvalidTimeZone,
-    );
-    expect(errorOf(ZonedTimeSystem.wallClockOf(Number.NaN, SOFIA))).toEqual({
-      code: TimeErrorCode.InvalidDateTime,
-      rawValue: 'NaN',
-      reason: 'out_of_range',
-    });
-  });
 });
 
-describe('ZonedTimeSystem.isoOf — an instant on the zone’s clock, with its offset', () => {
+describe('toIso — an instant on the zone’s clock, with its offset', () => {
   it('spells the instant as ZonedDateTime.toISO() did in the shop’s zone', () => {
     // 2026-10-10T11:00:00.000Z — Sofia summer (EEST, +03:00).
-    expect(valueOf(ZonedTimeSystem.isoOf(1_791_630_000_000, SOFIA))).toBe(
+    expect(ZonedTimeSystem.toIso(at(1_791_630_000_000), SOFIA_TZ)).toBe(
       '2026-10-10T14:00:00.000+03:00',
     );
     // 2026-12-01T08:30:15.007Z — Sofia winter (EET, +02:00); seconds and ms kept.
-    expect(valueOf(ZonedTimeSystem.isoOf(1_796_113_815_007, SOFIA))).toBe(
+    expect(ZonedTimeSystem.toIso(at(1_796_113_815_007), SOFIA_TZ)).toBe(
       '2026-12-01T10:30:15.007+02:00',
     );
   });
 
   it('names each occurrence of the repeated hour by its own offset', () => {
     // 2026-10-25T00:30Z and 01:30Z both read 03:30 in Sofia.
-    expect(valueOf(ZonedTimeSystem.isoOf(1_792_888_200_000, SOFIA))).toBe(
+    expect(ZonedTimeSystem.toIso(at(1_792_888_200_000), SOFIA_TZ)).toBe(
       '2026-10-25T03:30:00.000+03:00',
     );
-    expect(valueOf(ZonedTimeSystem.isoOf(1_792_891_800_000, SOFIA))).toBe(
+    expect(ZonedTimeSystem.toIso(at(1_792_891_800_000), SOFIA_TZ)).toBe(
       '2026-10-25T03:30:00.000+02:00',
     );
   });
 
   it('writes a non-hour, a negative and a zero offset as ±HH:MM', () => {
     // 2026-10-10T00:00Z.
-    expect(valueOf(ZonedTimeSystem.isoOf(1_791_590_400_000, KOLKATA))).toBe(
+    expect(ZonedTimeSystem.toIso(at(1_791_590_400_000), KOLKATA_TZ)).toBe(
       '2026-10-10T05:30:00.000+05:30',
     );
-    expect(valueOf(ZonedTimeSystem.isoOf(1_791_590_400_000, UTC))).toBe(
+    expect(ZonedTimeSystem.toIso(at(1_791_590_400_000), UTC_TZ)).toBe(
       '2026-10-10T00:00:00.000+00:00',
     );
     // 2026-10-10T02:00Z is the previous evening in São Paulo (-03:00).
-    expect(valueOf(ZonedTimeSystem.isoOf(1_791_597_600_000, SAO_PAULO))).toBe(
+    expect(ZonedTimeSystem.toIso(at(1_791_597_600_000), SAO_PAULO_TZ)).toBe(
       '2026-10-09T23:00:00.000-03:00',
     );
     // Before the epoch: the millisecond is still the positive remainder.
-    expect(valueOf(ZonedTimeSystem.isoOf(-1, UTC))).toBe(
+    expect(ZonedTimeSystem.toIso(at(-1), UTC_TZ)).toBe(
       '1969-12-31T23:59:59.999+00:00',
     );
   });
 
-  it('reads back through parseIso as the same instant', () => {
+  it('reads back through parseOffsetIso as the same instant', () => {
     for (const epochMs of [1_791_630_000_000, 1_792_891_800_000]) {
-      const iso = valueOf(ZonedTimeSystem.isoOf(epochMs, SOFIA));
-      expect(
-        valueOf(ZonedTimeSystem.parseIso(iso, SOFIA, DstResolution.Reject))
-          .epochMs,
-      ).toBe(epochMs);
+      const iso = ZonedTimeSystem.toIso(at(epochMs), SOFIA_TZ);
+      expect(valueOf(ZonedTimeSystem.parseOffsetIso(iso))).toBe(epochMs);
     }
   });
 
-  it('refuses a zone the runtime does not know, and an instant out of range', () => {
-    expect(errorOf(ZonedTimeSystem.isoOf(0, 'Not/AZone'))).toEqual({
-      code: TimeErrorCode.InvalidTimeZone,
-      rawZone: 'Not/AZone',
-    });
-    expect(errorOf(ZonedTimeSystem.isoOf(Number.NaN, SOFIA)).code).toBe(
-      TimeErrorCode.InvalidDateTime,
+  it('a zone the runtime does not know is a defect', () => {
+    expect(() => ZonedTimeSystem.toIso(at(0), 'Not/AZone' as TimeZone)).toThrow(
+      /defect/,
     );
   });
 });
 
 describe('UTC and a non-hour offset (sanity)', () => {
   it('UTC: every day starts at UTC midnight and nothing ever transitions', () => {
-    const days = ZonedTimeSystem.dayTable(
-      UTC,
-      key('2026-03-28'),
-      key('2026-10-26'),
-    );
+    for (const day of LocalDate.range(
+      localDate('2026-03-28'),
+      localDate('2026-10-26'),
+    )) {
+      expect(dayLengthMinutes(day, UTC_TZ)).toBe(24 * 60);
+    }
     expect(
-      days.every(
-        (d) => d.offsetMinutes === 0 && d.transitionAtMinutes === null,
-      ),
-    ).toBe(true);
-    expect(DayOffset.find(key('2026-07-29'), days)?.dayStartMs).toBe(
-      UTC_0729_START,
-    );
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-07-29'), UTC_TZ),
+    ).toBe(UTC_0729_START);
     expect(
-      valueOf(ZonedTimeSystem.wallClockOf(UTC_0729_START + 90 * MIN, UTC)),
-    ).toMatchObject({
-      dayKey: '2026-07-29',
-      minuteOfDay: 90,
-      offsetMinutes: 0,
+      ZonedTimeSystem.toLocal(at(UTC_0729_START + 90 * MIN), UTC_TZ),
+    ).toEqual({
+      localDate: '2026-07-29',
+      minute: 90,
     });
+    expect(offsetOf(UTC_0729_START, UTC_TZ)).toBe('+00:00');
   });
 
   it('Asia/Kolkata: +05:30 shifts the day by half an hour too', () => {
-    const day = row(KOLKATA, '2026-07-30');
-    expect(day).toEqual({
-      dayKey: '2026-07-30',
-      dayStartMs: KOLKATA_0730_START,
-      offsetMinutes: 330,
-      transitionAtMinutes: null,
-      transitionDeltaMinutes: 0,
-      weekday: Weekday.Thu,
-    });
-    expect(ZonedTimeSystem.instantOf(day, 9 * 60 + 15)).toBe(KOLKATA_0730_0915);
-    expect(ZonedTimeSystem.minuteOfDay(KOLKATA_0730_0915, day)).toBe(555);
     expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-07-30'),
-          555,
-          KOLKATA,
-          DstResolution.Reject,
-        ),
-      ).epochMs,
-    ).toBe(KOLKATA_0730_0915);
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-07-30'), KOLKATA_TZ),
+    ).toBe(KOLKATA_0730_START);
+    expect(dayLengthMinutes('2026-07-30', KOLKATA_TZ)).toBe(24 * 60);
+    expect(LocalDate.weekday(localDate('2026-07-30'))).toBe(Weekday.Thu);
+    expect(utcOf('2026-07-30', 9 * 60 + 15, KOLKATA_TZ)).toBe(
+      KOLKATA_0730_0915,
+    );
     expect(
-      valueOf(ZonedTimeSystem.wallClockOf(KOLKATA_0730_0915, KOLKATA))
-        .offsetMinutes,
-    ).toBe(330);
+      ZonedTimeSystem.toLocal(at(KOLKATA_0730_0915), KOLKATA_TZ).minute,
+    ).toBe(555);
+    expect(offsetOf(KOLKATA_0730_0915, KOLKATA_TZ)).toBe('+05:30');
   });
 });
 
 describe('a zone that moves its clocks at midnight (America/Sao_Paulo)', () => {
   it('spring: midnight itself is erased, so the day starts at 01:00 on the new clock', () => {
-    const days = ZonedTimeSystem.dayTable(
-      SAO_PAULO,
-      key('2018-11-03'),
-      key('2018-11-05'),
-    );
-    expect(days[0]).toMatchObject({
-      dayStartMs: SP_1103_START,
-      offsetMinutes: -180,
-      transitionAtMinutes: null,
-    });
-    expect(days[1]).toEqual({
-      dayKey: '2018-11-04',
-      dayStartMs: SP_SPRING_SWITCH,
-      offsetMinutes: -180,
-      transitionAtMinutes: 0,
-      transitionDeltaMinutes: 60,
-      weekday: Weekday.Sun,
-    });
-    expect((days[2] as DayOffset).dayStartMs).toBe(SP_1105_START);
-    const day = days[1] as DayOffset;
-    expect(ZonedTimeSystem.instantOf(day, 30)).toBe(SP_SPRING_SWITCH);
-    expect(ZonedTimeSystem.instantOf(day, 60)).toBe(SP_SPRING_SWITCH);
-    expect(ZonedTimeSystem.minuteOfDay(SP_SPRING_SWITCH, day)).toBe(60);
     expect(
-      errorOf(
-        ZonedTimeSystem.resolve(
-          key('2018-11-04'),
-          0,
-          SAO_PAULO,
-          DstResolution.Reject,
-        ),
-      ).code,
-    ).toBe(TimeErrorCode.NonexistentLocalTime);
-  });
-
-  it('a table that STARTS on the erased midnight still starts at the switch', () => {
+      ZonedTimeSystem.startOfLocalDay(localDate('2018-11-03'), SAO_PAULO_TZ),
+    ).toBe(SP_1103_START);
+    expect(offsetOf(SP_1103_START, SAO_PAULO_TZ)).toBe('-03:00');
     expect(
-      (
-        ZonedTimeSystem.dayTable(
-          SAO_PAULO,
-          key('2018-11-04'),
-          key('2018-11-04'),
-        )[0] as DayOffset
-      ).dayStartMs,
+      ZonedTimeSystem.startOfLocalDay(localDate('2018-11-04'), SAO_PAULO_TZ),
     ).toBe(SP_SPRING_SWITCH);
+    expect(dayLengthMinutes('2018-11-04', SAO_PAULO_TZ)).toBe(23 * 60);
+    expect(LocalDate.weekday(localDate('2018-11-04'))).toBe(Weekday.Sun);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2018-11-05'), SAO_PAULO_TZ),
+    ).toBe(SP_1105_START);
+    for (const wall of [0, 30]) {
+      expect(
+        errorOf(
+          ZonedTimeSystem.toUtc(
+            localDate('2018-11-04'),
+            minute(wall),
+            SAO_PAULO_TZ,
+          ),
+        ).errorCode,
+      ).toBe(TimeErrorCode.DstGap);
+    }
+    expect(utcOf('2018-11-04', 60, SAO_PAULO_TZ)).toBe(SP_SPRING_SWITCH);
+    expect(ZonedTimeSystem.toLocal(at(SP_SPRING_SWITCH), SAO_PAULO_TZ)).toEqual(
+      {
+        localDate: '2018-11-04',
+        minute: 60,
+      },
+    );
   });
 
   it('autumn: the 16th runs 25 hours and repeats its own last hour', () => {
-    const days = ZonedTimeSystem.dayTable(
-      SAO_PAULO,
-      key('2019-02-16'),
-      key('2019-02-17'),
-    );
-    expect(days[0]).toEqual({
-      dayKey: '2019-02-16',
-      dayStartMs: SP_0216_START,
-      offsetMinutes: -120,
-      transitionAtMinutes: 1440,
-      transitionDeltaMinutes: -60,
-      weekday: Weekday.Sat,
-    });
-    expect(days[1]).toMatchObject({
-      dayStartMs: SP_0217_START,
-      offsetMinutes: -180,
-      transitionAtMinutes: null,
-    });
-    const day = days[0] as DayOffset;
-    expect(DayOffset.endMs(day)).toBe(SP_0217_START);
-    expect(ZonedTimeSystem.minuteOfDay(SP_FALL_SWITCH, day)).toBe(23 * 60);
-    expect(ZonedTimeSystem.instantOf(day, 1440)).toBe(SP_0217_START);
-    expect(DayOffset.endMs(days[1] as DayOffset)).toBe(SP_0218_START);
     expect(
-      errorOf(
-        ZonedTimeSystem.resolve(
-          key('2019-02-16'),
-          23 * 60 + 30,
-          SAO_PAULO,
-          DstResolution.Reject,
-        ),
-      ).code,
-    ).toBe(TimeErrorCode.AmbiguousLocalTime);
+      ZonedTimeSystem.startOfLocalDay(localDate('2019-02-16'), SAO_PAULO_TZ),
+    ).toBe(SP_0216_START);
+    expect(offsetOf(SP_0216_START, SAO_PAULO_TZ)).toBe('-02:00');
+    expect(dayLengthMinutes('2019-02-16', SAO_PAULO_TZ)).toBe(25 * 60);
+    expect(LocalDate.weekday(localDate('2019-02-16'))).toBe(Weekday.Sat);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2019-02-17'), SAO_PAULO_TZ),
+    ).toBe(SP_0217_START);
+    expect(offsetOf(SP_0217_START, SAO_PAULO_TZ)).toBe('-03:00');
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2019-02-18'), SAO_PAULO_TZ),
+    ).toBe(SP_0218_START);
+    expect(ZonedTimeSystem.toLocal(at(SP_FALL_SWITCH), SAO_PAULO_TZ)).toEqual({
+      localDate: '2019-02-16',
+      minute: 23 * 60,
+    });
+    // 23:30 happens twice; ingestion takes the earlier (−02:00) occurrence.
+    expect(utcOf('2019-02-16', 23 * 60 + 30, SAO_PAULO_TZ)).toBe(
+      SP_FALL_SWITCH - 30 * MIN,
+    );
   });
 });
 
@@ -1232,319 +927,579 @@ describe('a zone that moves its clocks at midnight (America/Sao_Paulo)', () => {
  * the SECOND of two midnights.
  */
 describe('zones the Sofia set never reaches', () => {
-  it('Australia/Lord_Howe: a 30-minute overlap in April, rejected unless a side is named', () => {
-    const day = row(LORD_HOWE, '2026-04-05');
-    expect(day).toEqual({
-      dayKey: '2026-04-05',
-      dayStartMs: LH_0405_START,
-      offsetMinutes: 660,
-      transitionAtMinutes: 120,
-      transitionDeltaMinutes: -30,
-      weekday: Weekday.Sun,
-    });
-    expect(DayOffset.lengthMinutes(day)).toBe(1470);
+  it('Australia/Lord_Howe: a 30-minute overlap in April resolves to the earlier offset', () => {
     expect(
-      errorOf(
-        ZonedTimeSystem.resolve(
-          key('2026-04-05'),
-          105,
-          LORD_HOWE,
-          DstResolution.Reject,
-        ),
-      ).code,
-    ).toBe(TimeErrorCode.AmbiguousLocalTime);
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-04-05'), LORD_HOWE_TZ),
+    ).toBe(LH_0405_START);
+    expect(offsetOf(LH_0405_START, LORD_HOWE_TZ)).toBe('+11:00');
+    expect(dayLengthMinutes('2026-04-05', LORD_HOWE_TZ)).toBe(1470);
+    expect(utcOf('2026-04-05', 105, LORD_HOWE_TZ)).toBe(LH_0405_0145_FIRST);
     expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-04-05'),
-          105,
-          LORD_HOWE,
-          DstResolution.Earlier,
-        ),
-      ).epochMs,
-    ).toBe(LH_0405_0145_FIRST);
+      ZonedTimeSystem.toLocal(at(LH_0405_0145_FIRST), LORD_HOWE_TZ).minute,
+    ).toBe(105);
     expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-04-05'),
-          105,
-          LORD_HOWE,
-          DstResolution.Later,
-        ),
-      ).epochMs,
-    ).toBe(LH_0405_0145_SECOND);
-    expect(ZonedTimeSystem.instantOf(day, 105)).toBe(LH_0405_0145_FIRST);
-    expect(ZonedTimeSystem.minuteOfDay(LH_0405_0145_SECOND, day)).toBe(105);
+      ZonedTimeSystem.toLocal(at(LH_0405_0145_SECOND), LORD_HOWE_TZ).minute,
+    ).toBe(105);
+    expect(offsetOf(LH_0405_0145_SECOND, LORD_HOWE_TZ)).toBe('+10:30');
   });
 
-  it('Australia/Lord_Howe: a 30-minute gap in October, rejected unless shifted forward', () => {
-    const day = row(LORD_HOWE, '2026-10-04');
-    expect(day).toEqual({
-      dayKey: '2026-10-04',
-      dayStartMs: LH_1004_START,
-      offsetMinutes: 630,
-      transitionAtMinutes: 120,
-      transitionDeltaMinutes: 30,
-      weekday: Weekday.Sun,
-    });
-    expect(DayOffset.lengthMinutes(day)).toBe(1410);
+  it('Australia/Lord_Howe: a 30-minute gap in October is refused', () => {
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-10-04'), LORD_HOWE_TZ),
+    ).toBe(LH_1004_START);
+    expect(offsetOf(LH_1004_START, LORD_HOWE_TZ)).toBe('+10:30');
+    expect(dayLengthMinutes('2026-10-04', LORD_HOWE_TZ)).toBe(1410);
     expect(
       errorOf(
-        ZonedTimeSystem.resolve(
-          key('2026-10-04'),
-          135,
-          LORD_HOWE,
-          DstResolution.Reject,
+        ZonedTimeSystem.toUtc(
+          localDate('2026-10-04'),
+          minute(135),
+          LORD_HOWE_TZ,
         ),
-      ).code,
-    ).toBe(TimeErrorCode.NonexistentLocalTime);
-    expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-10-04'),
-          135,
-          LORD_HOWE,
-          DstResolution.ShiftForward,
-        ),
-      ).epochMs,
-    ).toBe(LH_1004_0215_SHIFTED);
-    // 01:45 exists on the gap day: only the erased half hour is refused.
-    expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-10-04'),
-          105,
-          LORD_HOWE,
-          DstResolution.Reject,
-        ),
-      ).epochMs,
-    ).toBe(LH_1004_START + 105 * MIN);
-  });
-
-  it('Africa/Cairo: a fall-back AT midnight — transitionAtMinutes 1440, the last hour repeated', () => {
-    const days = ZonedTimeSystem.dayTable(
-      CAIRO,
-      key('2026-10-29'),
-      key('2026-10-30'),
+      ).errorCode,
+    ).toBe(TimeErrorCode.DstGap);
+    // 02:45 exists on the new clock; 01:45 exists before the gap.
+    expect(utcOf('2026-10-04', 165, LORD_HOWE_TZ)).toBe(LH_1004_0215_SHIFTED);
+    expect(utcOf('2026-10-04', 105, LORD_HOWE_TZ)).toBe(
+      LH_1004_START + 105 * MIN,
     );
-    expect(days[0]).toEqual({
-      dayKey: '2026-10-29',
-      dayStartMs: CAIRO_1029_START,
-      offsetMinutes: 180,
-      transitionAtMinutes: 1440,
-      transitionDeltaMinutes: -60,
-      weekday: Weekday.Thu,
-    });
-    expect(days[1]).toMatchObject({
-      dayStartMs: CAIRO_1030_START,
-      offsetMinutes: 120,
-      transitionAtMinutes: null,
-    });
-    expectContiguous(days);
-    const day = days[0] as DayOffset;
-    // Every wall minute of [23:00, 24:00) happens twice…
+  });
+
+  it('Africa/Cairo: a fall-back AT midnight repeats the last hour, the earlier one is ingested', () => {
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-10-29'), CAIRO_TZ),
+    ).toBe(CAIRO_1029_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-10-30'), CAIRO_TZ),
+    ).toBe(CAIRO_1030_START);
+    expect(dayLengthMinutes('2026-10-29', CAIRO_TZ)).toBe(25 * 60);
+    expect(LocalDate.weekday(localDate('2026-10-29'))).toBe(Weekday.Thu);
+    // Every wall minute of [23:00, 24:00) happens twice — the first is taken …
     for (const wall of [1380, 1410, 1439]) {
-      expect(
-        errorOf(
-          ZonedTimeSystem.resolve(
-            key('2026-10-29'),
-            wall,
-            CAIRO,
-            DstResolution.Reject,
-          ),
-        ).code,
-      ).toBe(TimeErrorCode.AmbiguousLocalTime);
+      expect(utcOf('2026-10-29', wall, CAIRO_TZ)).toBe(
+        CAIRO_1029_START + wall * MIN,
+      );
     }
-    // …and 22:59 does not.
+    // … and 22:59 happens once.
+    expect(utcOf('2026-10-29', 1379, CAIRO_TZ)).toBe(
+      CAIRO_1029_START + 1379 * MIN,
+    );
+    expect(utcOf('2026-10-29', 1410, CAIRO_TZ)).toBe(CAIRO_1029_2330_FIRST);
     expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-10-29'),
-          1379,
-          CAIRO,
-          DstResolution.Reject,
-        ),
-      ).epochMs,
-    ).toBe(CAIRO_1029_START + 1379 * MIN);
-    expect(ZonedTimeSystem.instantOf(day, 1410)).toBe(CAIRO_1029_2330_FIRST);
-    expect(ZonedTimeSystem.minuteOfDay(CAIRO_FALL_SWITCH, day)).toBe(1380);
-    expect(ZonedTimeSystem.minuteOfDay(CAIRO_1029_2330_SECOND, day)).toBe(1410);
+      ZonedTimeSystem.toLocal(at(CAIRO_FALL_SWITCH), CAIRO_TZ).minute,
+    ).toBe(1380);
     expect(
-      valueOf(
-        ZonedTimeSystem.resolve(
-          key('2026-10-29'),
-          1410,
-          CAIRO,
-          DstResolution.Later,
-        ),
-      ).epochMs,
-    ).toBe(CAIRO_1029_2330_SECOND);
+      ZonedTimeSystem.toLocal(at(CAIRO_1029_2330_SECOND), CAIRO_TZ),
+    ).toEqual({
+      localDate: '2026-10-29',
+      minute: 1410,
+    });
   });
 
   it('America/Scoresbysund: a repeated MIDNIGHT — the day starts at the first one', () => {
-    const day = row(SCORESBYSUND, '2018-10-28');
-    expect(day).toEqual({
-      dayKey: '2018-10-28',
-      dayStartMs: SCORESBY_1028_FIRST_MIDNIGHT,
-      offsetMinutes: 0,
-      transitionAtMinutes: 60,
-      transitionDeltaMinutes: -60,
-      weekday: Weekday.Sun,
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2018-10-28'), SCORESBYSUND_TZ),
+    ).toBe(SCORESBY_1028_FIRST_MIDNIGHT);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2018-10-29'), SCORESBYSUND_TZ),
+    ).toBe(SCORESBY_1029_START);
+    expect(
+      ZonedTimeSystem.toLocal(
+        at(SCORESBY_1028_SECOND_MIDNIGHT),
+        SCORESBYSUND_TZ,
+      ),
+    ).toEqual({ localDate: '2018-10-28', minute: 0 });
+    expect(
+      ZonedTimeSystem.toLocal(
+        at(SCORESBY_1028_FIRST_MIDNIGHT - 1),
+        SCORESBYSUND_TZ,
+      ),
+    ).toEqual({ localDate: '2018-10-27', minute: 1439 });
+  });
+});
+
+/* ══ The ingestion API (flatten-spec §2.1) ═══════════════════════════════ */
+
+describe('ZonedTimeSystem.checkZone — the TimeZone smart constructor (F-2)', () => {
+  it('answers the canonical IANA id as a TimeZone', () => {
+    expect(SOFIA_TZ).toBe('Europe/Sofia');
+    expect(unwrapOk(ZonedTimeSystem.checkZone('europe/sofia'))).toBe(SOFIA);
+    expect(unwrapOk(ZonedTimeSystem.checkZone('Etc/UTC'))).toBe(UTC);
+  });
+
+  it('refuses an unknown zone and an offset id as TIME_INVALID_TIME_ZONE', () => {
+    for (const raw of ['Not/AZone', '+03:00', '']) {
+      expect(errorOf(ZonedTimeSystem.checkZone(raw))).toEqual({
+        errorCode: 'TIME_INVALID_TIME_ZONE',
+        rawZone: raw,
+      });
+    }
+  });
+});
+
+describe('ZonedTimeSystem.toUtc — the DST set, locked 2026-10-10', () => {
+  it('Europe/Sofia 2026-03-29: a time inside the spring-forward gap is DST_GAP_INVALID_TIME', () => {
+    for (const wall of [180, 210, 239]) {
+      expect(
+        errorOf(
+          ZonedTimeSystem.toUtc(
+            localDate('2026-03-29'),
+            minute(wall),
+            SOFIA_TZ,
+          ),
+        ),
+      ).toEqual({
+        errorCode: TimeErrorCode.DstGap,
+        localDate: '2026-03-29',
+        minute: wall,
+        timeZone: SOFIA,
+      });
+    }
+    expect(TimeErrorCode.DstGap).toBe('DST_GAP_INVALID_TIME');
+  });
+
+  it('Europe/Sofia 2026-03-29: the minutes either side of the gap resolve exactly', () => {
+    const day = localDate('2026-03-29');
+    expect(valueOf(ZonedTimeSystem.toUtc(day, minute(179), SOFIA_TZ))).toBe(
+      SOFIA_0329_0259,
+    );
+    expect(valueOf(ZonedTimeSystem.toUtc(day, minute(240), SOFIA_TZ))).toBe(
+      SOFIA_SPRING_SWITCH,
+    );
+    expect(valueOf(ZonedTimeSystem.toUtc(day, minute(270), SOFIA_TZ))).toBe(
+      SOFIA_0329_0430,
+    );
+    expect(valueOf(ZonedTimeSystem.toUtc(day, minute(0), SOFIA_TZ))).toBe(
+      SOFIA_0329_START,
+    );
+  });
+
+  it('Europe/Sofia 2026-10-25: a repeated time resolves to the EARLIER offset (+03:00)', () => {
+    const day = localDate('2026-10-25');
+    expect(valueOf(ZonedTimeSystem.toUtc(day, minute(210), SOFIA_TZ))).toBe(
+      SOFIA_1025_0330_FIRST,
+    );
+    expect(SOFIA_1025_0330_FIRST).toBeLessThan(SOFIA_1025_0330_SECOND);
+    expect(
+      ZonedTimeSystem.toIso(
+        valueOf(ZonedTimeSystem.toUtc(day, minute(210), SOFIA_TZ)),
+        SOFIA_TZ,
+      ),
+    ).toBe('2026-10-25T03:30:00.000+03:00');
+    // 03:00 itself is repeated too; 04:00 happens once, on the new clock.
+    expect(valueOf(ZonedTimeSystem.toUtc(day, minute(180), SOFIA_TZ))).toBe(
+      SOFIA_FALL_SWITCH - HOUR,
+    );
+    expect(valueOf(ZonedTimeSystem.toUtc(day, minute(540), SOFIA_TZ))).toBe(
+      SOFIA_1025_0900,
+    );
+  });
+
+  it('every minute of both Sofia DST days: the gap refused, the rest the earliest instant that reads it', () => {
+    const refused: string[] = [];
+    for (const raw of ['2026-03-29', '2026-10-25']) {
+      const day = localDate(raw);
+      for (let wall = 0; wall < 1440; wall++) {
+        const fresh = ZonedTimeSystem.toUtc(day, minute(wall), SOFIA_TZ);
+        if (!fresh.ok) {
+          refused.push(`${raw} ${wall}`);
+          continue;
+        }
+        expect(ZonedTimeSystem.toLocal(fresh.value, SOFIA_TZ)).toEqual({
+          localDate: raw,
+          minute: wall,
+        });
+        // The earliest: an hour before never reads the same wall minute.
+        expect(
+          ZonedTimeSystem.toLocal(at(fresh.value - HOUR), SOFIA_TZ),
+        ).not.toEqual({ localDate: raw, minute: wall });
+      }
+    }
+    expect(refused).toEqual(
+      Array.from({ length: 60 }, (_, i) => `2026-03-29 ${180 + i}`),
+    );
+  });
+
+  it('UTC: no gap and no repeat — every minute is exact', () => {
+    expect(
+      valueOf(
+        ZonedTimeSystem.toUtc(localDate('2026-07-29'), minute(0), UTC_TZ),
+      ),
+    ).toBe(UTC_0729_START);
+    expect(
+      valueOf(
+        ZonedTimeSystem.toUtc(localDate('2026-03-29'), minute(210), UTC_TZ),
+      ),
+    ).toBe(utcMs('2026-03-29T03:30:00Z'));
+  });
+
+  it('Asia/Kolkata: a half-hour offset (+05:30), no DST', () => {
+    expect(
+      valueOf(
+        ZonedTimeSystem.toUtc(localDate('2026-07-30'), minute(0), KOLKATA_TZ),
+      ),
+    ).toBe(KOLKATA_0730_START);
+    expect(
+      valueOf(
+        ZonedTimeSystem.toUtc(
+          localDate('2026-07-30'),
+          minute(9 * 60 + 15),
+          KOLKATA_TZ,
+        ),
+      ),
+    ).toBe(KOLKATA_0730_0915);
+  });
+
+  it('America/Sao_Paulo 2018-11-04: midnight itself is in the gap', () => {
+    expect(
+      errorOf(
+        ZonedTimeSystem.toUtc(localDate('2018-11-04'), minute(0), SAO_PAULO_TZ),
+      ).errorCode,
+    ).toBe('DST_GAP_INVALID_TIME');
+    expect(
+      valueOf(
+        ZonedTimeSystem.toUtc(
+          localDate('2018-11-04'),
+          minute(60),
+          SAO_PAULO_TZ,
+        ),
+      ),
+    ).toBe(SP_SPRING_SWITCH);
+  });
+
+  it('Australia/Lord_Howe: a 30-minute gap is refused, a 30-minute repeat takes the earlier offset', () => {
+    expect(
+      errorOf(
+        ZonedTimeSystem.toUtc(
+          localDate('2026-10-04'),
+          minute(2 * 60 + 15),
+          LORD_HOWE_TZ,
+        ),
+      ).errorCode,
+    ).toBe(TimeErrorCode.DstGap);
+    const repeated = valueOf(
+      ZonedTimeSystem.toUtc(
+        localDate('2026-04-05'),
+        minute(60 + 45),
+        LORD_HOWE_TZ,
+      ),
+    );
+    expect(ZonedTimeSystem.toIso(repeated, LORD_HOWE_TZ)).toBe(
+      '2026-04-05T01:45:00.000+11:00',
+    );
+  });
+
+  it('refuses an unknown zone and a day outside the readable window', () => {
+    expect(
+      errorOf(
+        ZonedTimeSystem.toUtc(
+          localDate('2026-07-29'),
+          minute(0),
+          'Not/AZone' as typeof SOFIA_TZ,
+        ),
+      ),
+    ).toEqual({ errorCode: 'TIME_INVALID_TIME_ZONE', rawZone: 'Not/AZone' });
+    expect(
+      errorOf(
+        ZonedTimeSystem.toUtc(localDate('0000-06-01'), minute(0), UTC_TZ),
+      ),
+    ).toEqual({
+      errorCode: TimeErrorCode.InvalidDateTime,
+      rawValue: '0000-06-01T00:00',
+      dateTimeInvalidReason: DateTimeInvalidReason.OutOfRange,
     });
-    expect(DayOffset.endMs(day)).toBe(SCORESBY_1029_START);
-    expect(
-      ZonedTimeSystem.minuteOfDay(SCORESBY_1028_SECOND_MIDNIGHT, day),
-    ).toBe(0);
-    expect(
-      ZonedTimeSystem.dayKeyOf(SCORESBY_1028_FIRST_MIDNIGHT - 1, [
-        row(SCORESBYSUND, '2018-10-27'),
-        day,
-      ]),
-    ).toBe('2018-10-27');
   });
 });
 
-describe('day keys — civil arithmetic', () => {
-  it('counts calendar days, signed, and is not thrown by a DST change', () => {
+describe('ZonedTimeSystem.toLocal / shopNow — the instant on the shop wall clock', () => {
+  it('reads the Sofia clock, not the UTC one (22:30Z in summer is 01:30 the next day)', () => {
     expect(
-      ZonedTimeSystem.daysBetween(key('2026-09-01'), key('2026-09-28')),
-    ).toBe(27);
-    expect(
-      ZonedTimeSystem.daysBetween(key('2026-09-28'), key('2026-09-01')),
-    ).toBe(-27);
-    expect(
-      ZonedTimeSystem.daysBetween(key('2026-09-28'), key('2026-09-28')),
-    ).toBe(0);
-    // The autumn transition makes one Sofia day 25 hours long; days are still days.
-    expect(
-      ZonedTimeSystem.daysBetween(key('2026-10-24'), key('2026-10-26')),
-    ).toBe(2);
-    expect(
-      ZonedTimeSystem.daysBetween(key('2026-03-28'), key('2026-03-30')),
-    ).toBe(2);
+      ZonedTimeSystem.toLocal(utcMs('2026-07-28T22:30:00Z'), SOFIA_TZ),
+    ).toEqual({ localDate: '2026-07-29', minute: 90 });
   });
 
-  it('addDays moves forward and backward across months and years', () => {
-    expect(ZonedTimeSystem.addDays(key('2026-01-31'), 1)).toBe('2026-02-01');
-    expect(ZonedTimeSystem.addDays(key('2026-01-31'), -1)).toBe('2026-01-30');
-    expect(ZonedTimeSystem.addDays(key('2026-12-31'), 1)).toBe('2027-01-01');
-    expect(ZonedTimeSystem.addDays(key('2028-02-28'), 1)).toBe('2028-02-29');
-    expect(ZonedTimeSystem.addDays(key('2026-03-28'), 0)).toBe('2026-03-28');
+  it('is total across both Sofia transitions', () => {
+    expect(ZonedTimeSystem.toLocal(at(SOFIA_0329_0259), SOFIA_TZ)).toEqual({
+      localDate: '2026-03-29',
+      minute: 179,
+    });
+    expect(ZonedTimeSystem.toLocal(at(SOFIA_SPRING_SWITCH), SOFIA_TZ)).toEqual({
+      localDate: '2026-03-29',
+      minute: 240,
+    });
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_1025_0330_FIRST), SOFIA_TZ),
+    ).toEqual({ localDate: '2026-10-25', minute: 210 });
+    expect(
+      ZonedTimeSystem.toLocal(at(SOFIA_1025_0330_SECOND), SOFIA_TZ),
+    ).toEqual({ localDate: '2026-10-25', minute: 210 });
   });
 
-  it('addMonths moves forward and backward, clamping to the month length', () => {
-    expect(ZonedTimeSystem.addMonths(key('2026-01-31'), 1)).toBe('2026-02-28');
-    expect(ZonedTimeSystem.addMonths(key('2028-01-31'), 1)).toBe('2028-02-29');
-    expect(ZonedTimeSystem.addMonths(key('2026-01-31'), -1)).toBe('2025-12-31');
-    expect(ZonedTimeSystem.addMonths(key('2026-03-17'), 12)).toBe('2027-03-17');
-    expect(ZonedTimeSystem.addMonths(key('2026-05-31'), -3)).toBe('2026-02-28');
+  it('UTC and Asia/Kolkata', () => {
+    expect(ZonedTimeSystem.toLocal(at(UTC_0729_START), UTC_TZ)).toEqual({
+      localDate: '2026-07-29',
+      minute: 0,
+    });
+    expect(ZonedTimeSystem.toLocal(at(KOLKATA_0730_0915), KOLKATA_TZ)).toEqual({
+      localDate: '2026-07-30',
+      minute: 555,
+    });
   });
 
-  it('startOfMonth resets to the 1st', () => {
-    expect(ZonedTimeSystem.startOfMonth(key('2026-03-17'))).toBe('2026-03-01');
+  it('round-trips toUtc for every minute of an ordinary day', () => {
+    for (let wall = 0; wall < 1440; wall += 7) {
+      const instant = valueOf(
+        ZonedTimeSystem.toUtc(localDate('2026-07-29'), minute(wall), SOFIA_TZ),
+      );
+      expect(ZonedTimeSystem.toLocal(instant, SOFIA_TZ)).toEqual({
+        localDate: '2026-07-29',
+        minute: wall,
+      });
+    }
   });
 
-  it('rangeKeys lists every day of the range, both ends included', () => {
-    expect(
-      ZonedTimeSystem.rangeKeys(
-        DateRange.of(key('2026-02-27'), key('2026-03-02')),
-      ),
-    ).toEqual(['2026-02-27', '2026-02-28', '2026-03-01', '2026-03-02']);
-    expect(
-      ZonedTimeSystem.rangeKeys(
-        DateRange.of(key('2026-03-02'), key('2026-03-01')),
-      ),
-    ).toEqual([]);
-  });
-
-  it('weekdayOf is the ISO weekday', () => {
-    expect(ZonedTimeSystem.weekdayOf(key('2026-03-05'))).toBe(Weekday.Thu);
-    expect(ZonedTimeSystem.weekdayOf(key('2026-06-15'))).toBe(Weekday.Mon);
-    expect(ZonedTimeSystem.weekdayOf(key('1970-01-01'))).toBe(Weekday.Thu);
-    expect(ZonedTimeSystem.weekdayOf(key('1969-12-28'))).toBe(Weekday.Sun);
-  });
-
-  it('wholeYearsBetween counts a birthday only once it has passed', () => {
-    const birth = key('2000-06-15');
-    expect(ZonedTimeSystem.wholeYearsBetween(birth, key('2026-06-14'))).toBe(
-      25,
-    );
-    expect(ZonedTimeSystem.wholeYearsBetween(birth, key('2026-06-15'))).toBe(
-      26,
-    );
-    expect(ZonedTimeSystem.wholeYearsBetween(birth, key('2026-06-16'))).toBe(
-      26,
-    );
-    // A leap-day birthday completes its year on 28 February in a common
-    // year — the legacy Luxon `yearsUntil` clamp (ZZD art. 72(2)).
-    expect(
-      ZonedTimeSystem.wholeYearsBetween(key('2000-02-29'), key('2001-02-27')),
-    ).toBe(0);
-    expect(
-      ZonedTimeSystem.wholeYearsBetween(key('2000-02-29'), key('2001-02-28')),
-    ).toBe(1);
-    expect(
-      ZonedTimeSystem.wholeYearsBetween(key('2000-02-29'), key('2001-03-01')),
-    ).toBe(1);
-    expect(
-      ZonedTimeSystem.wholeYearsBetween(key('2008-02-29'), key('2025-02-28')),
-    ).toBe(17);
-    // …and on 29 February itself in a leap year, never on the 28th.
-    expect(
-      ZonedTimeSystem.wholeYearsBetween(key('2000-02-29'), key('2004-02-28')),
-    ).toBe(3);
-    expect(
-      ZonedTimeSystem.wholeYearsBetween(key('2000-02-29'), key('2004-02-29')),
-    ).toBe(4);
-    expect(
-      ZonedTimeSystem.wholeYearsBetween(key('2001-02-28'), key('2000-02-29')),
-    ).toBe(-1);
-    // Backwards, truncated toward zero.
-    expect(
-      ZonedTimeSystem.wholeYearsBetween(key('2026-06-15'), key('2000-06-16')),
-    ).toBe(-25);
+  it('shopNow derives the shop-local now once: localDate + currentMinute + the same instant', () => {
+    const now = utcMs('2026-09-28T09:00:00+03:00');
+    expect(ZonedTimeSystem.shopNow(now, SOFIA_TZ)).toEqual({
+      localDate: '2026-09-28',
+      currentMinute: 540,
+      utcEpochMs: now,
+    });
+    expect(ZonedTimeSystem.shopNow(now, KOLKATA_TZ)).toEqual({
+      localDate: '2026-09-28',
+      currentMinute: 690,
+      utcEpochMs: now,
+    });
   });
 });
 
-describe('ZonedTimeSystem purity', () => {
+describe('ZonedTimeSystem.startOfLocalDay — the first instant of a shop day', () => {
+  it('is local midnight on ordinary and DST days alike', () => {
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-03-29'), SOFIA_TZ),
+    ).toBe(SOFIA_0329_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-03-30'), SOFIA_TZ),
+    ).toBe(SOFIA_0330_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-10-25'), SOFIA_TZ),
+    ).toBe(SOFIA_1025_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-07-29'), UTC_TZ),
+    ).toBe(UTC_0729_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2026-07-30'), KOLKATA_TZ),
+    ).toBe(KOLKATA_0730_START);
+  });
+
+  it('a midnight inside a gap resolves to the gap’s end (America/Sao_Paulo 2018-11-04)', () => {
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2018-11-04'), SAO_PAULO_TZ),
+    ).toBe(SP_SPRING_SWITCH);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2018-11-05'), SAO_PAULO_TZ),
+    ).toBe(SP_1105_START);
+  });
+
+  it('a repeated midnight takes its first occurrence (America/Sao_Paulo 2019-02-16)', () => {
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2019-02-16'), SAO_PAULO_TZ),
+    ).toBe(SP_0216_START);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(localDate('2019-02-17'), SAO_PAULO_TZ),
+    ).toBe(SP_0217_START);
+  });
+
+  it('on a month of Sofia days: midnight exists, reads back as minute 0, and follows the last minute of the day before', () => {
+    for (const day of LocalDate.range(
+      localDate('2026-03-15'),
+      localDate('2026-04-15'),
+    )) {
+      const start = ZonedTimeSystem.startOfLocalDay(day, SOFIA_TZ);
+      expect(start).toBe(utcOf(day, 0, SOFIA_TZ));
+      expect(ZonedTimeSystem.toLocal(start, SOFIA_TZ)).toEqual({
+        localDate: day,
+        minute: 0,
+      });
+      expect(ZonedTimeSystem.toLocal(at(start - 1), SOFIA_TZ)).toEqual({
+        localDate: LocalDate.addDays(day, -1),
+        minute: 1439,
+      });
+    }
+  });
+});
+
+describe('ZonedTimeSystem.parseOffsetIso — an instant that names its offset', () => {
+  it('reads every offset form the legacy reader read', () => {
+    expect(
+      valueOf(ZonedTimeSystem.parseOffsetIso('2026-08-01T09:00:00+03:00')),
+    ).toBe(SOFIA_0801_0900);
+    expect(
+      valueOf(ZonedTimeSystem.parseOffsetIso('2026-08-01T06:00:00Z')),
+    ).toBe(SOFIA_0801_0900);
+    expect(
+      valueOf(ZonedTimeSystem.parseOffsetIso('2026-08-01T09:00+0300')),
+    ).toBe(SOFIA_0801_0900);
+    expect(valueOf(ZonedTimeSystem.parseOffsetIso('2026-08-01T09:00+03'))).toBe(
+      SOFIA_0801_0900,
+    );
+    expect(
+      valueOf(
+        ZonedTimeSystem.parseOffsetIso('2026-08-01T09:00:00.123456+03:00'),
+      ),
+    ).toBe(SOFIA_0801_0900 + 123);
+    expect(
+      valueOf(ZonedTimeSystem.parseOffsetIso('2026-10-25T03:30:00.000+02:00')),
+    ).toBe(SOFIA_1025_0330_SECOND);
+  });
+
+  it('refuses a string with no offset — a wall clock goes through toUtc with the location zone', () => {
+    for (const raw of ['2026-08-01T09:00:00', '2026-08-01', 'not-a-date']) {
+      expect(errorOf(ZonedTimeSystem.parseOffsetIso(raw))).toEqual({
+        errorCode: 'TIME_INVALID_DATE_TIME',
+        rawValue: raw,
+        dateTimeInvalidReason: 'UNPARSABLE',
+      });
+    }
+  });
+
+  it('refuses an impossible date or clock time as OUT_OF_RANGE', () => {
+    for (const raw of [
+      '2026-02-30T09:00Z',
+      '2026-08-01T24:00Z',
+      '2026-08-01T09:60Z',
+      '2026-08-01T09:00:60Z',
+      '0000-01-01T00:00Z',
+    ]) {
+      expect(errorOf(ZonedTimeSystem.parseOffsetIso(raw))).toEqual({
+        errorCode: TimeErrorCode.InvalidDateTime,
+        rawValue: raw,
+        dateTimeInvalidReason: DateTimeInvalidReason.OutOfRange,
+      });
+    }
+  });
+});
+
+describe('ZonedTimeSystem.parseIsoIn — a wire start, on the shop’s terms', () => {
+  it('reads a string WITH an offset as the instant it names, whatever the zone', () => {
+    expect(
+      valueOf(ZonedTimeSystem.parseIsoIn('2026-08-01T09:00:00+03:00', UTC_TZ)),
+    ).toBe(SOFIA_0801_0900);
+    expect(
+      valueOf(
+        ZonedTimeSystem.parseIsoIn('2026-10-25T03:30:00.000+02:00', SOFIA_TZ),
+      ),
+    ).toBe(SOFIA_1025_0330_SECOND);
+  });
+
+  it('reads a bare wall clock on the zone’s clock — seconds and milliseconds kept, a date alone its midnight', () => {
+    expect(
+      valueOf(ZonedTimeSystem.parseIsoIn('2026-08-01T09:00', SOFIA_TZ)),
+    ).toBe(SOFIA_0801_0900);
+    expect(
+      valueOf(ZonedTimeSystem.parseIsoIn('2026-08-01T09:00:07.250', SOFIA_TZ)),
+    ).toBe(SOFIA_0801_0900 + 7_250);
+    expect(valueOf(ZonedTimeSystem.parseIsoIn('2026-03-29', SOFIA_TZ))).toBe(
+      SOFIA_0329_START,
+    );
+  });
+
+  it('refuses a wall clock inside the spring-forward gap, and resolves a repeat to the EARLIER offset (Law 7.3)', () => {
+    expect(
+      errorOf(ZonedTimeSystem.parseIsoIn('2026-03-29T03:30:00', SOFIA_TZ)),
+    ).toEqual({
+      errorCode: 'DST_GAP_INVALID_TIME',
+      localDate: '2026-03-29',
+      minute: 210,
+      timeZone: SOFIA_TZ,
+    });
+    expect(
+      valueOf(ZonedTimeSystem.parseIsoIn('2026-10-25T03:30', SOFIA_TZ)),
+    ).toBe(SOFIA_1025_0330_FIRST);
+  });
+
+  it('refuses what is no date-time at all, or no real one', () => {
+    expect(errorOf(ZonedTimeSystem.parseIsoIn('not-a-date', SOFIA_TZ))).toEqual(
+      {
+        errorCode: TimeErrorCode.InvalidDateTime,
+        rawValue: 'not-a-date',
+        dateTimeInvalidReason: DateTimeInvalidReason.Unparsable,
+      },
+    );
+    for (const raw of [
+      '2026-02-30T09:00',
+      '2026-08-01T24:00',
+      '2026-08-01T09:60',
+      '2026-08-01T09:00:60',
+    ]) {
+      expect(errorOf(ZonedTimeSystem.parseIsoIn(raw, SOFIA_TZ))).toEqual({
+        errorCode: TimeErrorCode.InvalidDateTime,
+        rawValue: raw,
+        dateTimeInvalidReason: DateTimeInvalidReason.OutOfRange,
+      });
+    }
+  });
+});
+
+describe('ZonedTimeSystem.toIso — byte-identical to the legacy ZonedDateTime.toISO()', () => {
+  it('spells the instant on the zone clock with its offset', () => {
+    expect(ZonedTimeSystem.toIso(at(SOFIA_0801_0900), SOFIA_TZ)).toBe(
+      '2026-08-01T09:00:00.000+03:00',
+    );
+    expect(ZonedTimeSystem.toIso(at(SOFIA_1025_0330_SECOND), SOFIA_TZ)).toBe(
+      '2026-10-25T03:30:00.000+02:00',
+    );
+    expect(ZonedTimeSystem.toIso(at(UTC_0729_START), UTC_TZ)).toBe(
+      '2026-07-29T00:00:00.000+00:00',
+    );
+    expect(ZonedTimeSystem.toIso(at(KOLKATA_0730_0915), KOLKATA_TZ)).toBe(
+      '2026-07-30T09:15:00.000+05:30',
+    );
+  });
+
+  it('spells the wall clock toLocal reads and round-trips through parseOffsetIso (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 4_102_444_800_000 }),
+        fc.constantFrom(
+          SOFIA_TZ,
+          KOLKATA_TZ,
+          UTC_TZ,
+          SAO_PAULO_TZ,
+          LORD_HOWE_TZ,
+        ),
+        (ms, zone) => {
+          const instant = at(ms);
+          const iso = ZonedTimeSystem.toIso(instant, zone);
+          const wall = ZonedTimeSystem.toLocal(instant, zone);
+          expect(iso.slice(0, 10)).toBe(wall.localDate);
+          expect(
+            Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16)),
+          ).toBe(wall.minute);
+          expect(valueOf(ZonedTimeSystem.parseOffsetIso(iso))).toBe(ms);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+});
+
+describe('ZonedTimeSystem ingestion API purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
-    const days = deepFreeze(
-      ZonedTimeSystem.dayTable(SOFIA, key('2026-03-28'), key('2026-03-30')),
-    );
-    const range = deepFreeze(
-      DateRange.of(key('2026-03-28'), key('2026-03-30')),
-    );
+    const day = deepFreeze(localDate('2026-10-25'));
     const run = () => ({
-      table: ZonedTimeSystem.dayTable(
-        SOFIA,
-        key('2026-03-28'),
-        key('2026-03-30'),
+      utc: ZonedTimeSystem.toUtc(day, minute(210), SOFIA_TZ),
+      gap: ZonedTimeSystem.toUtc(
+        localDate('2026-03-29'),
+        minute(210),
+        SOFIA_TZ,
       ),
-      around: ZonedTimeSystem.dayTableAround(
-        SOFIA,
-        SOFIA_SPRING_SWITCH,
-        SOFIA_SPRING_SWITCH,
-        1,
-      ),
-      dayKey: ZonedTimeSystem.dayKeyOf(SOFIA_0329_0430, days),
-      instant: ZonedTimeSystem.instantOf(days[1] as DayOffset, 270),
-      minute: ZonedTimeSystem.minuteOfDay(
-        SOFIA_0329_0430,
-        days[1] as DayOffset,
-      ),
-      keys: ZonedTimeSystem.rangeKeys(range),
-      resolved: ZonedTimeSystem.resolve(
-        key('2026-10-25'),
-        210,
-        SOFIA,
-        DstResolution.Later,
-      ),
-      wall: ZonedTimeSystem.wallClockOf(SOFIA_0329_0430, SOFIA),
+      local: ZonedTimeSystem.toLocal(at(SOFIA_SPRING_SWITCH), SOFIA_TZ),
+      now: ZonedTimeSystem.shopNow(at(SOFIA_0801_0900), SOFIA_TZ),
+      start: ZonedTimeSystem.startOfLocalDay(day, SOFIA_TZ),
+      iso: ZonedTimeSystem.toIso(at(SOFIA_0801_0900), SOFIA_TZ),
+      parsed: ZonedTimeSystem.parseOffsetIso('2026-08-01T09:00:00+03:00'),
     });
-    const once = run();
-    const twice = run();
-    expect(twice).toEqual(once);
-    expect(once.table).toEqual(days);
-    expect(once.around).toEqual(days);
+    expect(run()).toEqual(run());
   });
 });

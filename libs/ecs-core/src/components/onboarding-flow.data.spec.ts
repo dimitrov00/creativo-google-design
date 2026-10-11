@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ServiceId } from '../entities/service.entity';
+import { ServiceId } from '../primitives/ids.primitive';
 import {
   OnboardingFlowEvent,
   OnboardingFlowEventKind,
@@ -13,31 +13,31 @@ const picked = [ServiceId.of('svc-cut'), ServiceId.of('svc-beard')];
 describe('OnboardingFlowState', () => {
   it('opens on about with no error, a shared struct', () => {
     expect(OnboardingFlowState.initial()).toEqual({
-      kind: 'about',
+      onboardingFlowStep: 'ABOUT',
       error: null,
     });
     expect(OnboardingFlowState.initial()).toBe(OnboardingFlowState.about(null));
   });
 
   it('about(error) carries the refusal to show', () => {
-    expect(OnboardingFlowState.about('accounts.first_name.too_short')).toEqual({
-      kind: OnboardingFlowStep.About,
-      error: 'accounts.first_name.too_short',
+    expect(OnboardingFlowState.about('ACCOUNTS_FIRST_NAME_TOO_SHORT')).toEqual({
+      onboardingFlowStep: OnboardingFlowStep.About,
+      error: 'ACCOUNTS_FIRST_NAME_TOO_SHORT',
     });
   });
 
   it('the personalization steps carry the picked services', () => {
     expect(OnboardingFlowState.services(picked)).toEqual({
-      kind: 'services',
+      onboardingFlowStep: 'SERVICES',
       selected: picked,
     });
     expect(OnboardingFlowState.birthday(picked, null)).toEqual({
-      kind: 'birthday',
+      onboardingFlowStep: 'BIRTHDAY',
       selected: picked,
       error: null,
     });
     expect(OnboardingFlowState.avatar([])).toEqual({
-      kind: 'avatar',
+      onboardingFlowStep: 'AVATAR',
       selected: [],
     });
   });
@@ -49,8 +49,12 @@ describe('OnboardingFlowState', () => {
     expect(OnboardingFlowState.isTerminal(OnboardingFlowState.reward())).toBe(
       false,
     );
-    expect(OnboardingFlowState.reward()).toEqual({ kind: 'reward' });
-    expect(OnboardingFlowState.entering()).toEqual({ kind: 'entering' });
+    expect(OnboardingFlowState.reward()).toEqual({
+      onboardingFlowStep: 'REWARD',
+    });
+    expect(OnboardingFlowState.entering()).toEqual({
+      onboardingFlowStep: 'ENTERING',
+    });
   });
 });
 
@@ -64,21 +68,21 @@ describe('OnboardingFlowEvent — each event built from its tag', () => {
       birthDate: null,
     };
     expect(OnboardingFlowEvent.submitAbout(fields)).toEqual({
-      kind: OnboardingFlowEventKind.SubmitAbout,
+      onboardingFlowEventKind: OnboardingFlowEventKind.SubmitAbout,
       fields,
     });
     expect(OnboardingFlowEvent.registrationFailed('taken')).toEqual({
-      kind: OnboardingFlowEventKind.RegistrationFailed,
+      onboardingFlowEventKind: OnboardingFlowEventKind.RegistrationFailed,
       message: 'taken',
     });
     expect(
       OnboardingFlowEvent.submitServices([ServiceId.of('svc-cut')]),
     ).toEqual({
-      kind: OnboardingFlowEventKind.SubmitServices,
+      onboardingFlowEventKind: OnboardingFlowEventKind.SubmitServices,
       services: ['svc-cut'],
     });
     expect(OnboardingFlowEvent.birthdayFailed('invalid')).toEqual({
-      kind: OnboardingFlowEventKind.BirthdayFailed,
+      onboardingFlowEventKind: OnboardingFlowEventKind.BirthdayFailed,
       message: 'invalid',
     });
     expect([
@@ -91,14 +95,14 @@ describe('OnboardingFlowEvent — each event built from its tag', () => {
       OnboardingFlowEvent.skipAvatar(),
       OnboardingFlowEvent.back(),
     ]).toEqual([
-      { kind: OnboardingFlowEventKind.Registered },
-      { kind: OnboardingFlowEventKind.Personalize },
-      { kind: OnboardingFlowEventKind.EnterApp },
-      { kind: OnboardingFlowEventKind.SkipServices },
-      { kind: OnboardingFlowEventKind.SubmitBirthday },
-      { kind: OnboardingFlowEventKind.SkipBirthday },
-      { kind: OnboardingFlowEventKind.SkipAvatar },
-      { kind: OnboardingFlowEventKind.Back },
+      { onboardingFlowEventKind: OnboardingFlowEventKind.Registered },
+      { onboardingFlowEventKind: OnboardingFlowEventKind.Personalize },
+      { onboardingFlowEventKind: OnboardingFlowEventKind.EnterApp },
+      { onboardingFlowEventKind: OnboardingFlowEventKind.SkipServices },
+      { onboardingFlowEventKind: OnboardingFlowEventKind.SubmitBirthday },
+      { onboardingFlowEventKind: OnboardingFlowEventKind.SkipBirthday },
+      { onboardingFlowEventKind: OnboardingFlowEventKind.SkipAvatar },
+      { onboardingFlowEventKind: OnboardingFlowEventKind.Back },
     ]);
   });
 });

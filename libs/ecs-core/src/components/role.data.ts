@@ -4,7 +4,9 @@ import { Result } from './result.data';
 /**
  * The roles a user account may hold — the ONLY source of these strings
  * (`users.roles`, the ID token's `roles` claim, `firestore.rules`'
- * `hasAnyRole([...])` lists). No brand: the stored strings are unchanged, and
+ * `hasAnyRole([...])` lists) — claim and rules values, exempt from the
+ * SCREAMING sweep (flatten-spec §0.4, OQ-3). No brand: the stored strings
+ * are unchanged, and
  * guards compare `Role.Admin`, never a bare `'admin'` (blueprint §2.4).
  *
  * A user holds a SET of roles — a shop owner is commonly `barber` AND
@@ -86,7 +88,7 @@ export function isRole(value: unknown): value is Role {
 }
 
 /**
- * The edge guard with a refusal: a known role, or `accounts.user_role.invalid`
+ * The edge guard with a refusal: a known role, or `ACCOUNTS_USER_ROLE_INVALID`
  * carrying the raw text (an admin's pick, a callable payload).
  */
 export function parseRole(raw: string): Result<Role, AccountsError> {

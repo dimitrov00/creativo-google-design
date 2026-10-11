@@ -1,42 +1,53 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-  type AppliedDiscount,
-  AppliedDiscountSource,
-} from '../components/applied-discount.data';
-import { CouponCombinability } from '../components/coupon-combinability.data';
-import { CouponValue, CouponValueKind } from '../components/coupon-value.data';
+import type { AppliedDiscount } from '../components/applied-discount.data';
+import { Combinability } from '../components/coupon-combinability.data';
+import { CouponValue, DiscountMethod } from '../components/coupon-value.data';
+import { DiscountSource } from '../components/discount-provenance.data';
 import type { Money } from '../components/money.data';
 import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import type { Seat } from '../components/seat.data';
+import { Seat } from '../components/seat.data';
 import { ServiceTerms } from '../components/service-terms.data';
 import { VoucherCode } from '../components/voucher-code.data';
 import { VoucherRedemption } from '../components/voucher-redemption.data';
-import { VoucherState } from '../components/voucher-state.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import { CouponGrantId } from '../entities/coupon-grant.entity';
+import { VoucherLifecycle } from '../components/voucher-state.data';
+import type { Appointment } from '../entities/appointment.entity';
+import type { GiftVoucher } from '../entities/gift-voucher.entity';
+import { Currency } from '../primitives/currency.primitive';
+import { DurationMinutes } from '../primitives/duration-minutes.primitive';
 import {
-  type GiftVoucherEntity,
+  AppliedDiscountId,
+  CouponGrantId,
+  CouponId,
   GiftVoucherId,
-} from '../entities/gift-voucher.entity';
-import { UserId } from '../entities/user.entity';
+  SeatId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import {
-  appointmentFixture,
+  FIXTURE_NOW_UTC_MS,
   deepFreeze,
-  fixtureTodayAt,
-  seatFixture,
+  minute,
   unwrapErr,
   unwrapOk,
+  utcMs,
 } from '../testing';
+import {
+  appointmentFixture,
+  seatFixture,
+} from '../testing/appointment.fixtures';
 import { AppointmentLifecycleSystem } from './appointment-lifecycle.system';
 import { StaffEditErrorCode } from './appointment-edit.system';
 import {
-  BillPendingKind,
+  BillPending,
   BillingSystem,
   type PendingDiscount,
+  type PendingDiscounts,
+  type PendingVouchers,
   type ResolvedCode,
   type ResolvedGrant,
-  TipPresetKind,
+  TipPreset,
 } from './billing.system';
 
 /*
@@ -49,26 +60,42 @@ import {
  * originals keep running against their shims.
  */
 
-const NOW = fixtureTodayAt(9);
+/** 09:00 on the fixture shop's today. */
+const NOW = FIXTURE_NOW_UTC_MS;
 const OWNER = UserId.of('user-owner');
 
+const plus = (base: UtcEpochMs, ms: number): UtcEpochMs =>
+  UtcEpochMs.plusMs(base, ms);
+
+function cents(minor: number): PriceCents {
+  return unwrapOk(PriceCents.of(minor));
+}
+
+function money(minor: number, currency: Currency): Money {
+  return { amountCents: cents(minor), currency };
+}
+
 function eur(minor: number): Money {
-  return { amountMinorUnits: minor, currencyCode: 'EUR' };
+  return money(minor, Currency.EUR);
 }
 
 function seat(
-  priceMinorUnits: number,
+  priceCents: number,
   startHour: number,
   id = `s${startHour}`,
+  currency: Currency = Currency.EUR,
 ): Seat {
   return seatFixture({
-    id: id as Seat['id'],
-    terms: {
-      ...ServiceTerms.unpadded(priceMinorUnits, 'EUR', 30),
-      catalogPriceMinorUnits: null,
-      catalogDurationMinutes: null,
-    },
-    startMs: fixtureTodayAt(startHour),
+    seatId: SeatId.of(id),
+    terms: Seat.termsOf(
+      ServiceTerms.unpadded(
+        cents(priceCents),
+        currency,
+        unwrapOk(DurationMinutes.of(30)),
+      ),
+      null,
+    ),
+    startMinutes: minute(startHour * 60),
   });
 }
 
@@ -76,7 +103,7 @@ function seat(
 function visit(
   discounts: readonly AppliedDiscount[] = [],
   voucherRedemptions: readonly VoucherRedemption[] = [],
-): AppointmentEntity {
+): Appointment {
   return appointmentFixture({
     seats: [seat(2000, 10), seat(800, 11)],
     discounts,
@@ -89,21 +116,20 @@ function percent(value: number): CouponValue {
 }
 
 function fixed(minor: number): CouponValue {
-  return unwrapOk(CouponValue.fixedAmount(eur(minor)));
+  return unwrapOk(CouponValue.fixedAmount(cents(minor), Currency.EUR));
 }
 
 const birthday: AppliedDiscount = {
-  id: 'grant:grant-1',
-  source: AppliedDiscountSource.Grant,
-  value: percent(20),
+  discountId: AppliedDiscountId.of('grant:grant-1'),
+  discountSource: DiscountSource.Grant,
   label: 'Рожден ден',
-  grantId: CouponGrantId.of('grant-1'),
-  code: null,
-  appliedAtMs: NOW,
-  combinability: CouponCombinability.stackable(),
+  discountGrantId: CouponGrantId.of('grant-1'),
+  appliedAtUtcMs: NOW,
+  combinability: Combinability.Stackable,
+  ...percent(20),
 };
 
-function evaluate(appointment: AppointmentEntity) {
+function evaluate(appointment: Appointment) {
   return unwrapOk(BillingSystem.evaluate(appointment));
 }
 
@@ -116,39 +142,40 @@ describe('BillingSystem — an appointment’s discounts', () => {
 
   it('is empty by default, and then the total is the subtotal', () => {
     const bill = evaluate(visit());
-    expect(bill.subtotal).toEqual(eur(2800));
-    expect(bill.total).toEqual(eur(2800));
+    expect(bill.subtotalCents).toBe(2800);
+    expect(bill.totalCents).toBe(2800);
+    expect(bill.currency).toBe('EUR');
     expect(bill.breakdown.lines).toEqual([]);
   });
 
   it('takes the discount off the bill through the one evaluator', () => {
     const bill = evaluate(visit([birthday]));
-    expect(bill.breakdown.subtotal).toEqual(eur(2800));
-    expect(bill.breakdown.discountTotal).toEqual(eur(560));
-    expect(bill.breakdown.total).toEqual(eur(2240));
+    expect(bill.breakdown.subtotalCents).toBe(2800);
+    expect(bill.breakdown.discountTotalCents).toBe(560);
+    expect(bill.breakdown.totalCents).toBe(2240);
     expect(bill.breakdown.lines.map((line) => line.label)).toEqual([
       'Рожден ден',
     ]);
-    expect(bill.total).toEqual(eur(2240));
+    expect(bill.totalCents).toBe(2240);
   });
 
   it('clamps a fixed amount at the bill and a free service zeroes it', () => {
     const generous: AppliedDiscount = {
-      ...birthday,
-      id: 'manual',
-      source: AppliedDiscountSource.Manual,
+      discountId: AppliedDiscountId.of('manual'),
+      discountSource: DiscountSource.Manual,
       label: 'manual',
-      value: fixed(5000),
-      grantId: null,
+      appliedAtUtcMs: NOW,
+      combinability: Combinability.Stackable,
+      ...fixed(5000),
     };
-    expect(evaluate(visit([generous])).total).toEqual(eur(0));
+    expect(evaluate(visit([generous])).totalCents).toBe(0);
     const free: AppliedDiscount = {
       ...birthday,
-      id: 'grant:grant-2',
-      value: CouponValue.freeService(),
-      grantId: CouponGrantId.of('grant-2'),
+      discountId: AppliedDiscountId.of('grant:grant-2'),
+      discountGrantId: CouponGrantId.of('grant-2'),
+      ...CouponValue.freeService(),
     };
-    expect(evaluate(visit([free])).total).toEqual(eur(0));
+    expect(evaluate(visit([free])).totalCents).toBe(0);
   });
 
   it('survives every lifecycle move and can be replaced whole', () => {
@@ -157,47 +184,44 @@ describe('BillingSystem — an appointment’s discounts', () => {
       AppointmentLifecycleSystem.complete(discounted, NOW),
     );
     expect(completed.appointment.discounts).toHaveLength(1);
-    expect(evaluate(completed.appointment).total).toEqual(eur(2240));
+    expect(evaluate(completed.appointment).totalCents).toBe(2240);
     const cleared = { ...discounted, discounts: [] };
-    expect(evaluate(cleared).total).toEqual(eur(2800));
+    expect(evaluate(cleared).totalCents).toBe(2800);
     expect(discounted.discounts).toHaveLength(1);
   });
 
   it("stacks on the running remainder, in the evaluator's order", () => {
     const stackable: AppliedDiscount = {
-      ...birthday,
-      id: 'code:first10',
-      source: AppliedDiscountSource.Code,
+      discountId: AppliedDiscountId.of('code:first10'),
+      discountSource: DiscountSource.Code,
       label: 'Първо посещение',
-      value: percent(10),
-      grantId: null,
-      code: 'FIRST10',
+      discountCode: VoucherCode.of('FIRST10'),
+      appliedAtUtcMs: NOW,
+      combinability: Combinability.Stackable,
+      ...percent(10),
     };
     const five: AppliedDiscount = {
       ...stackable,
-      id: 'code:beard5',
+      discountId: AppliedDiscountId.of('code:beard5'),
       label: 'Брада −5 €',
-      value: fixed(500),
-      code: 'BEARD5',
-      appliedAtMs: NOW + 60_000,
+      discountCode: VoucherCode.of('BEARD5'),
+      appliedAtUtcMs: plus(NOW, 60_000),
+      ...fixed(500),
     };
     const bill = evaluate(visit([stackable, five]));
-    expect(
-      bill.breakdown.lines.map((line) => line.amount.amountMinorUnits),
-    ).toEqual([500, 230]);
-    expect(bill.total).toEqual(eur(2070));
+    expect(bill.breakdown.lines.map((line) => line.amountCents)).toEqual([
+      500, 230,
+    ]);
+    expect(bill.totalCents).toBe(2070);
   });
 
   it('refuses a bill with no seats, or seats in two currencies', () => {
-    expect(unwrapErr(BillingSystem.subtotalOf([])).code).toBe(
+    expect(unwrapErr(BillingSystem.subtotalOf([])).errorCode).toBe(
       SchedulingErrorCode.AppointmentEmptySeats,
     );
-    const usd = {
-      ...seat(100, 12),
-      terms: { ...seat(100, 12).terms, currencyCode: 'USD' },
-    };
+    const usd = seat(100, 12, 's12', Currency.USD);
     expect(unwrapErr(BillingSystem.subtotalOf([seat(100, 10), usd]))).toEqual({
-      code: SchedulingErrorCode.AppointmentMixedCurrency,
+      errorCode: SchedulingErrorCode.AppointmentMixedCurrency,
       expected: 'EUR',
       found: 'USD',
     });
@@ -206,36 +230,37 @@ describe('BillingSystem — an appointment’s discounts', () => {
 
 const redemption: VoucherRedemption = {
   voucherId: GiftVoucherId.of('v1'),
-  code: 'GIFT2025',
-  amount: eur(1000),
-  balanceAfter: eur(1500),
-  appliedAtMs: NOW,
-  reversedAtMs: null,
+  code: VoucherCode.of('GIFT2025'),
+  amountCents: cents(1000),
+  balanceAfterCents: cents(1500),
+  currency: Currency.EUR,
+  appliedAtUtcMs: NOW,
+  reversedAtUtcMs: null,
 };
 
 describe('BillingSystem — the vouchers on an appointment', () => {
   it('pays the bill without changing the price', () => {
     const bill = evaluate(visit([birthday], [redemption]));
-    expect(bill.total).toEqual(eur(2240));
-    expect(bill.redeemed).toEqual(eur(1000));
-    expect(bill.balanceDue).toEqual(eur(1240));
+    expect(bill.totalCents).toBe(2240);
+    expect(bill.redeemedCents).toBe(1000);
+    expect(bill.balanceDueCents).toBe(1240);
   });
 
   it('keeps a reversed line as history that counts for nothing', () => {
-    const reversed = VoucherRedemption.reversed(redemption, NOW + 1);
+    const reversed = VoucherRedemption.reversed(redemption, plus(NOW, 1));
     expect(VoucherRedemption.isLive(reversed)).toBe(false);
     const paid = visit([], [reversed]);
     const bill = evaluate(paid);
-    expect(bill.redeemed).toEqual(eur(0));
-    expect(bill.balanceDue).toEqual(eur(2800));
+    expect(bill.redeemedCents).toBe(0);
+    expect(bill.balanceDueCents).toBe(2800);
     // History, not deletion: the visit still holds the line, and a save that
     // never mentions vouchers carries it forward untouched.
     expect(paid.voucherRedemptions).toHaveLength(1);
     const carried = unwrapOk(
       BillingSystem.settleVouchers(
-        { kind: BillPendingKind.Keep },
+        { billPending: BillPending.Keep },
         paid.voucherRedemptions,
-        bill.total,
+        eur(bill.totalCents),
         [],
         NOW,
       ),
@@ -245,25 +270,28 @@ describe('BillingSystem — the vouchers on an appointment', () => {
   });
 
   it('never owes less than nothing, and survives the lifecycle', () => {
-    const generous = { ...redemption, amount: eur(5000) };
+    const generous = { ...redemption, amountCents: cents(5000) };
     const paid = visit([], [generous]);
-    expect(evaluate(paid).balanceDue).toEqual(eur(0));
+    expect(evaluate(paid).balanceDueCents).toBe(0);
     const completed = unwrapOk(AppointmentLifecycleSystem.complete(paid, NOW));
     expect(completed.appointment.voucherRedemptions).toHaveLength(1);
   });
 
   it('counts the tips the seats recorded — a null tip is not zero', () => {
-    expect(evaluate(visit()).tips).toBeNull();
+    expect(evaluate(visit()).tipsCents).toBeNull();
     const tipped = {
       ...visit(),
       seats: [
-        { ...seat(2000, 10), tip: eur(0) },
-        { ...seat(800, 11), tip: eur(200) },
+        Seat.withTip(seat(2000, 10), cents(0)),
+        Seat.withTip(seat(800, 11), cents(200)),
       ],
     };
-    expect(evaluate(tipped).tips).toEqual(eur(200));
-    const zero = { ...visit(), seats: [{ ...seat(2000, 10), tip: eur(0) }] };
-    expect(evaluate(zero).tips).toEqual(eur(0));
+    expect(evaluate(tipped).tipsCents).toBe(200);
+    const zero = {
+      ...visit(),
+      seats: [Seat.withTip(seat(2000, 10), cents(0))],
+    };
+    expect(evaluate(zero).tipsCents).toBe(0);
   });
 
   it('balance due + redeemed never exceeds the total, and never goes negative (property)', () => {
@@ -282,17 +310,14 @@ describe('BillingSystem — the vouchers on an appointment', () => {
               [],
               lines.map((entry) => ({
                 ...redemption,
-                amount: eur(entry.amount),
-                reversedAtMs: entry.reversed ? NOW : null,
+                amountCents: cents(entry.amount),
+                reversedAtUtcMs: entry.reversed ? NOW : null,
               })),
             ),
           );
-          expect(bill.balanceDue.amountMinorUnits).toBeGreaterThanOrEqual(0);
-          expect(bill.balanceDue.amountMinorUnits).toBe(
-            Math.max(
-              0,
-              bill.total.amountMinorUnits - bill.redeemed.amountMinorUnits,
-            ),
+          expect(bill.balanceDueCents).toBeGreaterThanOrEqual(0);
+          expect(bill.balanceDueCents).toBe(
+            Math.max(0, bill.totalCents - bill.redeemedCents),
           );
         },
       ),
@@ -308,33 +333,33 @@ const grants: ReadonlyMap<string, ResolvedGrant> = new Map(
       grantId: CouponGrantId.of('grant-1'),
       userId: OWNER,
       label: 'Рожден ден',
-      value: percent(20),
       usable: true,
       exclusive: true,
+      ...percent(20),
     },
     'grant-loyal': {
       grantId: CouponGrantId.of('grant-loyal'),
       userId: OWNER,
       label: 'Постоянен клиент',
-      value: percent(5),
       usable: true,
       exclusive: false,
+      ...percent(5),
     },
     'grant-spent': {
       grantId: CouponGrantId.of('grant-spent'),
       userId: OWNER,
       label: 'Рожден ден',
-      value: percent(20),
       usable: false,
       exclusive: true,
+      ...percent(20),
     },
     'grant-other': {
       grantId: CouponGrantId.of('grant-other'),
       userId: UserId.of('user-2'),
       label: 'Чужд',
-      value: percent(20),
       usable: true,
       exclusive: true,
+      ...percent(20),
     },
   }),
 );
@@ -342,42 +367,53 @@ const grants: ReadonlyMap<string, ResolvedGrant> = new Map(
 const codes: ReadonlyMap<string, ResolvedCode> = new Map(
   Object.entries({
     FIRST10: {
-      couponId: 'coupon-first10',
+      couponId: CouponId.of('coupon-first10'),
       label: 'Първо посещение',
-      value: percent(10),
-      code: 'FIRST10',
+      code: VoucherCode.of('FIRST10'),
       exclusive: false,
+      ...percent(10),
     },
     BEARD5: {
-      couponId: 'coupon-beard5',
+      couponId: CouponId.of('coupon-beard5'),
       label: 'Брада −5 €',
-      value: fixed(500),
-      code: 'BEARD5',
+      code: VoucherCode.of('BEARD5'),
       exclusive: false,
+      ...fixed(500),
     },
     SOLO: {
-      couponId: 'coupon-solo',
+      couponId: CouponId.of('coupon-solo'),
       label: 'Само това',
-      value: percent(15),
-      code: 'SOLO',
+      code: VoucherCode.of('SOLO'),
       exclusive: true,
+      ...percent(15),
     },
   }),
 );
 
 const grantArm = (grantId: string): PendingDiscount => ({
-  source: AppliedDiscountSource.Grant,
-  grantId,
+  discountSource: DiscountSource.Grant,
+  grantId: CouponGrantId.of(grantId),
   resolved: grants.get(grantId) ?? null,
 });
 const codeArm = (code: string): PendingDiscount => ({
-  source: AppliedDiscountSource.Code,
+  discountSource: DiscountSource.Code,
   code,
   resolved: codes.get(VoucherCode.normalize(code)) ?? null,
 });
 const manual = (percentOff: number): PendingDiscount => ({
-  source: AppliedDiscountSource.Manual,
-  value: { kind: CouponValueKind.PercentOff, percent: percentOff },
+  discountSource: DiscountSource.Manual,
+  value: {
+    discountMethod: DiscountMethod.PercentOff,
+    discountPercent: percentOff,
+  },
+});
+const manualAmount = (amountCents: PriceCents): PendingDiscount => ({
+  discountSource: DiscountSource.Manual,
+  value: {
+    discountMethod: DiscountMethod.FixedAmount,
+    discountAmountCents: amountCents,
+    discountCurrency: Currency.EUR,
+  },
 });
 
 function settle(
@@ -386,11 +422,11 @@ function settle(
   existing: readonly AppliedDiscount[] = [],
 ) {
   return BillingSystem.settleDiscounts(
-    { kind: BillPendingKind.Set, items },
+    { billPending: BillPending.Set, items },
     existing,
     OWNER,
     roles,
-    'EUR',
+    Currency.EUR,
     NOW,
   );
 }
@@ -403,32 +439,29 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
     const settled = unwrapOk(settle([manual(10)], ['receptionist']));
     expect(settled).toEqual([
       {
-        id: 'manual',
-        source: 'manual',
-        value: { kind: 'percent_off', percent: 10 },
+        discountId: 'manual',
+        discountSource: 'MANUAL',
         label: 'manual',
-        grantId: null,
-        code: null,
-        appliedAtMs: NOW,
-        combinability: { kind: 'stackable' },
+        appliedAtUtcMs: NOW,
+        combinability: 'STACKABLE',
+        discountMethod: 'PERCENT_OFF',
+        discountPercent: 10,
       },
     ]);
     expect(BillingSystem.totalOf(FADE, settled)).toEqual(eur(3600));
   });
 
   it('refuses a NEW manual figure from a barber — forbidden, not malformed — but lets him keep one the desk set', () => {
-    expect(unwrapErr(settle([manual(10)], ['barber'])).code).toBe(
-      'booking.staffEdit.forbidden',
+    expect(unwrapErr(settle([manual(10)], ['barber'])).errorCode).toBe(
+      'BOOKING_STAFF_EDIT_FORBIDDEN',
     );
     const storedManual: AppliedDiscount = {
-      id: 'manual',
-      source: AppliedDiscountSource.Manual,
-      value: percent(10),
+      discountId: AppliedDiscountId.of('manual'),
+      discountSource: DiscountSource.Manual,
       label: 'manual',
-      grantId: null,
-      code: null,
-      appliedAtMs: NOW - 3_600_000,
-      combinability: CouponCombinability.stackable(),
+      appliedAtUtcMs: plus(NOW, -3_600_000),
+      combinability: Combinability.Stackable,
+      ...percent(10),
     };
     expect(unwrapOk(settle([manual(10)], ['barber'], [storedManual]))).toEqual([
       storedManual,
@@ -438,17 +471,17 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
   it("honours the client's own grant — a barber may — and refuses another client's, a spent one, or none", () => {
     const honoured = unwrapOk(settle([grantArm('grant-1')], ['barber']));
     expect(honoured[0]).toMatchObject({
-      id: 'grant:grant-1',
-      source: 'grant',
+      discountId: 'grant:grant-1',
+      discountSource: 'GRANT',
       label: 'Рожден ден',
-      grantId: 'grant-1',
-      code: null,
-      value: { kind: 'percent_off', percent: 20 },
-      combinability: { kind: 'exclusive' },
+      discountGrantId: 'grant-1',
+      discountMethod: 'PERCENT_OFF',
+      discountPercent: 20,
+      combinability: 'EXCLUSIVE',
     });
     for (const grantId of ['grant-other', 'grant-spent', 'grant-unknown']) {
       expect(unwrapErr(settle([grantArm(grantId)], ['barber']))).toEqual({
-        code: StaffEditErrorCode.InvalidCommand,
+        errorCode: StaffEditErrorCode.InvalidCommand,
         field: 'discounts',
       });
     }
@@ -457,14 +490,14 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
   it('opens a code the shop published, however it was typed, and refuses one it did not', () => {
     const opened = unwrapOk(settle([codeArm(' first10 ')], ['barber']));
     expect(opened[0]).toMatchObject({
-      id: 'code:coupon-first10',
-      source: 'code',
+      discountId: 'code:coupon-first10',
+      discountSource: 'CODE',
       label: 'Първо посещение',
-      code: 'FIRST10',
-      grantId: null,
+      discountCode: 'FIRST10',
     });
-    expect(unwrapErr(settle([codeArm('SUMMER')], ['barber'])).code).toBe(
-      'booking.staffEdit.invalid_command',
+    expect(opened[0]).not.toHaveProperty('discountGrantId');
+    expect(unwrapErr(settle([codeArm('SUMMER')], ['barber'])).errorCode).toBe(
+      'BOOKING_STAFF_EDIT_INVALID_COMMAND',
     );
   });
 
@@ -481,8 +514,8 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
       [codeArm('FIRST10'), codeArm('first10')],
       [manual(10), manual(20)],
     ]) {
-      expect(unwrapErr(settle(items, ['admin'])).code).toBe(
-        'booking.staffEdit.invalid_command',
+      expect(unwrapErr(settle(items, ['admin'])).errorCode).toBe(
+        'BOOKING_STAFF_EDIT_INVALID_COMMAND',
       );
     }
     expect(settle([codeArm('SOLO')], ['barber']).ok).toBe(true);
@@ -490,14 +523,13 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
 
   it('keeps a stored discount whose coupon has since been retired, and carries the set when the batch says nothing', () => {
     const stored: AppliedDiscount = {
-      id: 'code:coupon-retired',
-      source: AppliedDiscountSource.Code,
-      value: percent(15),
+      discountId: AppliedDiscountId.of('code:coupon-retired'),
+      discountSource: DiscountSource.Code,
       label: 'Лятна промоция',
-      grantId: null,
-      code: 'SUMMER',
-      appliedAtMs: NOW - 3_600_000,
-      combinability: CouponCombinability.stackable(),
+      discountCode: VoucherCode.of('SUMMER'),
+      appliedAtUtcMs: plus(NOW, -3_600_000),
+      combinability: Combinability.Stackable,
+      ...percent(15),
     };
     expect(unwrapOk(settle([codeArm('SUMMER')], ['barber'], [stored]))).toEqual(
       [stored],
@@ -505,11 +537,11 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
     expect(
       unwrapOk(
         BillingSystem.settleDiscounts(
-          { kind: BillPendingKind.Keep },
+          { billPending: BillPending.Keep },
           [stored],
           OWNER,
           [],
-          'EUR',
+          Currency.EUR,
           NOW,
         ),
       ),
@@ -519,17 +551,7 @@ describe('BillingSystem.settleDiscounts — the discounts on the bill', () => {
 
   it('refuses a manual figure its guards refuse — a percent past 100, a zero amount', () => {
     expect(settle([manual(140)], ['admin']).ok).toBe(false);
-    expect(
-      settle(
-        [
-          {
-            source: AppliedDiscountSource.Manual,
-            value: { kind: CouponValueKind.FixedAmount, amountMinorUnits: 0 },
-          },
-        ],
-        ['admin'],
-      ).ok,
-    ).toBe(false);
+    expect(settle([manualAmount(cents(0))], ['admin']).ok).toBe(false);
   });
 });
 
@@ -541,24 +563,26 @@ function voucher(
   balance: number,
   options: {
     readonly initial?: number;
-    readonly expiresAtMs?: number | null;
-    readonly state?: VoucherState;
+    readonly expiresAtUtcMs?: UtcEpochMs | null;
+    readonly lifecycle?: VoucherLifecycle;
   } = {},
-): GiftVoucherEntity {
+): GiftVoucher {
   return {
     id: GiftVoucherId.of(id),
     code: VoucherCode.of(code),
-    initialValue: eur(options.initial ?? balance),
-    balance: eur(balance),
-    issuedAtMs: fixtureTodayAt(8),
-    expiresAtMs: options.expiresAtMs ?? null,
+    initialValueCents: cents(options.initial ?? balance),
+    balanceCents: cents(balance),
+    currency: Currency.EUR,
+    issuedAtUtcMs: utcMs('2026-09-28T08:00:00+03:00'),
+    expiresAtUtcMs: options.expiresAtUtcMs ?? null,
+    expiresLocalDate: null,
     issuedToUserId: null,
-    state: options.state ?? VoucherState.active(),
+    ...(options.lifecycle ?? VoucherLifecycle.active()),
   };
 }
 
-const named = (list: readonly string[]) => ({
-  kind: BillPendingKind.Set,
+const named = (list: readonly string[]): PendingVouchers => ({
+  billPending: BillPending.Set,
   codes: list,
 });
 
@@ -577,17 +601,18 @@ describe('BillingSystem.settleVouchers — the vouchers paying the bill', () => 
       {
         voucherId: 'v1',
         code: 'GIFT2025',
-        amount: eur(2500),
-        balanceAfter: eur(0),
-        appliedAtMs: NOW,
-        reversedAtMs: null,
+        amountCents: 2500,
+        balanceAfterCents: 0,
+        currency: 'EUR',
+        appliedAtUtcMs: NOW,
+        reversedAtUtcMs: null,
       },
     ]);
-    expect(settled.touched.map((v) => v.balance)).toEqual([eur(0)]);
+    expect(settled.touched.map((v) => v.balanceCents)).toEqual([0]);
     expect(
       BillingSystem.balanceDueOf(
         FADE,
-        BillingSystem.redeemedOf(settled.voucherRedemptions, 'EUR'),
+        BillingSystem.redeemedOf(settled.voucherRedemptions, Currency.EUR),
       ),
     ).toEqual(eur(1500));
   });
@@ -604,21 +629,19 @@ describe('BillingSystem.settleVouchers — the vouchers paying the bill', () => 
         NOW,
       ),
     );
-    expect(
-      settled.voucherRedemptions.map((l) => l.amount.amountMinorUnits),
-    ).toEqual([500, 2500]);
+    expect(settled.voucherRedemptions.map((l) => l.amountCents)).toEqual([
+      500, 2500,
+    ]);
     // Both drawn vouchers end at nothing (the legacy `balance('v5')`,
     // `balance('v1')`), in the order they covered the bill.
-    expect(
-      settled.touched.map((v) => [v.id, v.balance.amountMinorUnits]),
-    ).toEqual([
+    expect(settled.touched.map((v) => [v.id, v.balanceCents])).toEqual([
       ['v5', 0],
       ['v1', 0],
     ]);
     expect(
       BillingSystem.balanceDueOf(
         afterDiscounts,
-        BillingSystem.redeemedOf(settled.voucherRedemptions, 'EUR'),
+        BillingSystem.redeemedOf(settled.voucherRedemptions, Currency.EUR),
       ),
     ).toEqual(eur(600));
 
@@ -632,28 +655,27 @@ describe('BillingSystem.settleVouchers — the vouchers paying the bill', () => 
       ),
     );
     expect(paid.voucherRedemptions).toHaveLength(1);
-    expect(paid.touched.map((v) => [v.id, v.balance.amountMinorUnits])).toEqual(
-      [
-        ['v9', 5000],
-        ['v5', 500],
-      ],
-    );
+    expect(paid.touched.map((v) => [v.id, v.balanceCents])).toEqual([
+      ['v9', 5000],
+      ['v5', 500],
+    ]);
   });
 
   it('re-settles a saved draw when the bill shrinks, and gives everything back when the voucher is dropped', () => {
     const stored: VoucherRedemption = {
       voucherId: GiftVoucherId.of('v1'),
-      code: 'GIFT2025',
-      amount: eur(2500),
-      balanceAfter: eur(0),
-      appliedAtMs: fixtureTodayAt(8),
-      reversedAtMs: null,
+      code: VoucherCode.of('GIFT2025'),
+      amountCents: cents(2500),
+      balanceAfterCents: cents(0),
+      currency: Currency.EUR,
+      appliedAtUtcMs: utcMs('2026-09-28T08:00:00+03:00'),
+      reversedAtUtcMs: null,
     };
     const empty = voucher('v1', 'GIFT2025', 0, { initial: 2500 });
     // A reprice to 10,00 € with nothing about vouchers in the batch.
     const shrunk = unwrapOk(
       BillingSystem.settleVouchers(
-        { kind: BillPendingKind.Keep },
+        { billPending: BillPending.Keep },
         [stored],
         eur(1000),
         [empty],
@@ -661,25 +683,26 @@ describe('BillingSystem.settleVouchers — the vouchers paying the bill', () => 
       ),
     );
     expect(shrunk.voucherRedemptions).toEqual([
-      { ...stored, amount: eur(1000), balanceAfter: eur(1500) },
+      { ...stored, amountCents: 1000, balanceAfterCents: 1500 },
     ]);
-    expect(shrunk.touched.map((v) => v.balance)).toEqual([eur(1500)]);
+    expect(shrunk.touched.map((v) => v.balanceCents)).toEqual([1500]);
 
     const dropped = unwrapOk(
       BillingSystem.settleVouchers(named([]), [stored], FADE, [empty], NOW),
     );
     expect(dropped.voucherRedemptions).toEqual([
-      { ...stored, reversedAtMs: NOW },
+      { ...stored, reversedAtUtcMs: NOW },
     ]);
-    expect(dropped.touched.map((v) => v.balance)).toEqual([eur(2500)]);
+    expect(dropped.touched.map((v) => v.balanceCents)).toEqual([2500]);
   });
 
   it('refuses a code that opens nothing, and a voucher spent, expired or void', () => {
+    const seven = utcMs('2026-09-28T07:00:00+03:00');
     const vouchers = [
       voucher('empty', 'EMPTY001', 0, { initial: 1000 }),
-      voucher('late', 'LATE0001', 1000, { expiresAtMs: fixtureTodayAt(7) }),
+      voucher('late', 'LATE0001', 1000, { expiresAtUtcMs: seven }),
       voucher('gone', 'GONE0001', 1000, {
-        state: VoucherState.voided(fixtureTodayAt(7), 'lost'),
+        lifecycle: VoucherLifecycle.voided(seven, 'lost'),
       }),
       voucher('ok', 'GIFT5', 500),
     ];
@@ -693,16 +716,19 @@ describe('BillingSystem.settleVouchers — the vouchers paying the bill', () => 
         unwrapErr(
           BillingSystem.settleVouchers(named(list), [], FADE, vouchers, NOW),
         ),
-      ).toEqual({ code: StaffEditErrorCode.InvalidCommand, field: 'vouchers' });
+      ).toEqual({
+        errorCode: StaffEditErrorCode.InvalidCommand,
+        field: 'vouchers',
+      });
     }
   });
 
   it('changes nothing for a visit with no voucher and none named', () => {
-    const history = { ...redemption, reversedAtMs: NOW - 1 };
+    const history = { ...redemption, reversedAtUtcMs: plus(NOW, -1) };
     expect(
       unwrapOk(
         BillingSystem.settleVouchers(
-          { kind: BillPendingKind.Keep },
+          { billPending: BillPending.Keep },
           [history],
           FADE,
           [],
@@ -715,14 +741,14 @@ describe('BillingSystem.settleVouchers — the vouchers paying the bill', () => 
 
 describe('BillingSystem — the settle’s quieter paths', () => {
   it('keeps a grant the visit already holds, as stored, whatever the resolver says now', () => {
-    const kept = { ...birthday, appliedAtMs: NOW - 1 };
+    const kept = { ...birthday, appliedAtUtcMs: plus(NOW, -1) };
     expect(
       unwrapOk(
         settle(
           [
             {
-              source: AppliedDiscountSource.Grant,
-              grantId: 'grant-1',
+              discountSource: DiscountSource.Grant,
+              grantId: CouponGrantId.of('grant-1'),
               resolved: null,
             },
           ],
@@ -733,36 +759,33 @@ describe('BillingSystem — the settle’s quieter paths', () => {
     ).toEqual([kept]);
   });
 
-  it('refuses a manual amount that is not a whole, non-negative count of minor units', () => {
-    for (const amountMinorUnits of [-5, 1.5, Number.MAX_SAFE_INTEGER + 2]) {
-      expect(
-        settle(
-          [
-            {
-              source: AppliedDiscountSource.Manual,
-              value: { kind: CouponValueKind.FixedAmount, amountMinorUnits },
-            },
-          ],
-          ['admin'],
-        ).ok,
-      ).toBe(false);
+  it('refuses a manual amount that is not a whole, non-negative count of cents', () => {
+    // A negative amount is a legal signed `PriceCents`, and the bill refuses it…
+    expect(
+      settle([manualAmount(unwrapOk(PriceCents.signed(-5)))], ['admin']).ok,
+    ).toBe(false);
+    // …while a fraction or an unsafe figure never becomes `PriceCents` at all.
+    for (const amount of [1.5, Number.MAX_SAFE_INTEGER + 2]) {
+      expect(PriceCents.of(amount).ok).toBe(false);
+      expect(PriceCents.signed(amount).ok).toBe(false);
     }
   });
 
   it('finds a dropped voucher by its code when its id moved, and closes a line the bill no longer needs', () => {
     const stored: VoucherRedemption = {
       voucherId: GiftVoucherId.of('old-id'),
-      code: 'GIFT2025',
-      amount: eur(1000),
-      balanceAfter: eur(1500),
-      appliedAtMs: NOW - 1,
-      reversedAtMs: null,
+      code: VoucherCode.of('GIFT2025'),
+      amountCents: cents(1000),
+      balanceAfterCents: cents(1500),
+      currency: Currency.EUR,
+      appliedAtUtcMs: plus(NOW, -1),
+      reversedAtUtcMs: null,
     };
     const byCode = voucher('v1', 'GIFT2025', 1500, { initial: 2500 });
     const dropped = unwrapOk(
       BillingSystem.settleVouchers(named([]), [stored], FADE, [byCode], NOW),
     );
-    expect(dropped.touched.map((v) => v.balance)).toEqual([eur(2500)]);
+    expect(dropped.touched.map((v) => v.balanceCents)).toEqual([2500]);
 
     // Named, but a bill of nothing leaves it nothing to cover.
     const kept: VoucherRedemption = {
@@ -778,22 +801,25 @@ describe('BillingSystem — the settle’s quieter paths', () => {
         NOW,
       ),
     );
-    expect(free.voucherRedemptions).toEqual([{ ...kept, reversedAtMs: NOW }]);
+    expect(free.voucherRedemptions).toEqual([
+      { ...kept, reversedAtUtcMs: NOW },
+    ]);
   });
 
   it('settles one voucher twice on its running balance — touched once, last word kept', () => {
     const a: VoucherRedemption = {
       voucherId: GiftVoucherId.of('v1'),
-      code: 'GIFT2025',
-      amount: eur(500),
-      balanceAfter: eur(0),
-      appliedAtMs: NOW - 1,
-      reversedAtMs: null,
+      code: VoucherCode.of('GIFT2025'),
+      amountCents: cents(500),
+      balanceAfterCents: cents(0),
+      currency: Currency.EUR,
+      appliedAtUtcMs: plus(NOW, -1),
+      reversedAtUtcMs: null,
     };
     const settled = unwrapOk(
       BillingSystem.settleVouchers(
         named([]),
-        [a, { ...a, appliedAtMs: NOW - 2 }],
+        [a, { ...a, appliedAtUtcMs: plus(NOW, -2) }],
         FADE,
         [voucher('v1', 'GIFT2025', 1000, { initial: 2500 })],
         NOW,
@@ -805,59 +831,35 @@ describe('BillingSystem — the settle’s quieter paths', () => {
 
 describe('BillingSystem.tipPresets — the tip tiles', () => {
   it('offers round-ups to the next whole euro, 5 and 10, then up to three coins', () => {
-    expect(BillingSystem.tipPresets(2350)).toEqual([
-      {
-        kind: TipPresetKind.RoundUp,
-        amountMinorUnits: 50,
-        targetMinorUnits: 2400,
-      },
-      {
-        kind: TipPresetKind.RoundUp,
-        amountMinorUnits: 150,
-        targetMinorUnits: 2500,
-      },
-      {
-        kind: TipPresetKind.RoundUp,
-        amountMinorUnits: 650,
-        targetMinorUnits: 3000,
-      },
-      {
-        kind: TipPresetKind.Coin,
-        amountMinorUnits: 100,
-        targetMinorUnits: null,
-      },
-      {
-        kind: TipPresetKind.Coin,
-        amountMinorUnits: 200,
-        targetMinorUnits: null,
-      },
-      {
-        kind: TipPresetKind.Coin,
-        amountMinorUnits: 500,
-        targetMinorUnits: null,
-      },
+    expect(BillingSystem.tipPresets(cents(2350))).toEqual([
+      { tipPreset: TipPreset.RoundUp, amountCents: 50, targetCents: 2400 },
+      { tipPreset: TipPreset.RoundUp, amountCents: 150, targetCents: 2500 },
+      { tipPreset: TipPreset.RoundUp, amountCents: 650, targetCents: 3000 },
+      { tipPreset: TipPreset.Coin, amountCents: 100, targetCents: null },
+      { tipPreset: TipPreset.Coin, amountCents: 200, targetCents: null },
+      { tipPreset: TipPreset.Coin, amountCents: 500, targetCents: null },
     ]);
   });
 
   it('skips a round-up under 20 cents or over 40% of the bill, and a coin outside 3–50%', () => {
     // 10,00 €: every round-up is zero; coins 1, 2, 5 € (5 is exactly 50%).
     expect(
-      BillingSystem.tipPresets(1000).map((p) => p.amountMinorUnits),
+      BillingSystem.tipPresets(cents(1000)).map((p) => p.amountCents),
     ).toEqual([100, 200, 500]);
     // 1,99 €: round-up to 2 € is 1 cent; to 5 € is 3,01 (over 40%).
-    expect(BillingSystem.tipPresets(199)).toEqual([]);
+    expect(BillingSystem.tipPresets(cents(199))).toEqual([]);
   });
 
   it('offers nothing for an unknown or empty bill', () => {
     expect(BillingSystem.tipPresets(null)).toEqual([]);
-    expect(BillingSystem.tipPresets(0)).toEqual([]);
+    expect(BillingSystem.tipPresets(cents(0))).toEqual([]);
   });
 
   it('never offers one amount twice (property)', () => {
     fc.assert(
       fc.property(fc.integer({ min: 1, max: 100_000 }), (total) => {
-        const amounts = BillingSystem.tipPresets(total).map(
-          (p) => p.amountMinorUnits,
+        const amounts = BillingSystem.tipPresets(cents(total)).map(
+          (p) => p.amountCents,
         );
         expect(new Set(amounts).size).toBe(amounts.length);
       }),
@@ -871,8 +873,8 @@ describe('BillingSystem — purity', () => {
     expect(BillingSystem.evaluate(appointment)).toEqual(
       BillingSystem.evaluate(appointment),
     );
-    const pending = deepFreeze({
-      kind: BillPendingKind.Set,
+    const pending: PendingDiscounts = deepFreeze({
+      billPending: BillPending.Set,
       items: [codeArm('FIRST10'), manual(10)],
     });
     const once = BillingSystem.settleDiscounts(
@@ -880,11 +882,18 @@ describe('BillingSystem — purity', () => {
       [],
       OWNER,
       ['admin'],
-      'EUR',
+      Currency.EUR,
       NOW,
     );
     expect(
-      BillingSystem.settleDiscounts(pending, [], OWNER, ['admin'], 'EUR', NOW),
+      BillingSystem.settleDiscounts(
+        pending,
+        [],
+        OWNER,
+        ['admin'],
+        Currency.EUR,
+        NOW,
+      ),
     ).toEqual(once);
   });
 });

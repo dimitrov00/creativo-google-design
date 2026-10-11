@@ -1,32 +1,49 @@
-import { BarberPrefKind } from '../components/barber-pref.data';
-import { ClientStatsPolicy } from '../components/client-stats-policy.data';
-import type {
-  ClientMoneyStats,
-  ClientStats,
-  ClientStatsMeta,
-  PauseSuggestion,
-  PolicyPass,
-  VisitFact,
-  VisitLeg,
-  VisitRef,
-} from '../components/client-stats.data';
-import { Currency, type Money } from '../components/money.data';
-import type { PlacementKind } from '../components/placement-kind.data';
+import { BarberPreference } from '../components/barber-pref.data';
 import {
+  BookingLifecycle,
+  BookingStatus,
+} from '../components/booking-lifecycle.data';
+import { ClientStatsPolicy } from '../components/client-stats-policy.data';
+import {
+  type ClientMoneyStats,
+  type ClientStats,
+  type ClientStatsMeta,
+  LastVisit,
+  NextVisit,
+  PauseSuggestion,
+  type PolicyPass,
+  PolicyPassStamp,
+  type VisitFact,
+  type VisitLeg,
+} from '../components/client-stats.data';
+import type { Placement } from '../components/placement-kind.data';
+import {
+  AttendanceState,
   CancellationReason,
   CancelledBy,
   type SeatOutcome,
-  SeatOutcomeKind,
 } from '../components/seat-outcome.data';
-import { type Seat, SeatSubjectKind } from '../components/seat.data';
+import { type Seat, SeatSubject } from '../components/seat.data';
+import type { ShopNow } from '../components/shop-now.data';
 import { type DocPath, WriteOp } from '../components/write-op.data';
+import type { Appointment } from '../entities/appointment.entity';
+import { Currency } from '../primitives/currency.primitive';
+import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
 import type {
-  AppointmentEntity,
   AppointmentId,
-} from '../entities/appointment.entity';
-import type { BarberId } from '../entities/barber.entity';
-import type { ServiceId } from '../entities/service.entity';
-import type { UserId } from '../entities/user.entity';
+  BarberId,
+  SeatId,
+  ServiceId,
+  ServiceVariantId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type {
+  EndMinute,
+  MinuteOfDay,
+} from '../primitives/minute-of-day.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * One client's statistics, from every appointment they have a seat on
@@ -41,15 +58,20 @@ import type { UserId } from '../entities/user.entity';
  * it and agree. Counts are per VISIT per subject (R33): a party of three is
  * three visits, a cut and a beard for one client is one, and other people's
  * seats on the same appointment never touch this person's numbers.
+ *
+ * Time (Law 7): every window, the "next visit" and the cadence run on the
+ * shop wall clock — `localDate` + minutes against `ShopNow`, a rolling
+ * window of N days being `(localDate, minutes)` pairs compared with
+ * `(now.localDate − N, now.currentMinute)` (flatten-spec T8). The two
+ * comparisons of lifecycle instants — the late-cancel line and the pause
+ * dismissal — read `UtcEpochMs` (T2, T9).
  */
 
-const DAY_MS = 86_400_000;
+/** A day of real elapsed time — the cadence statistic's unit. */
+const MS_PER_DAY = 86_400_000;
 
 /** The fixed rate BGN retired at (2026): legacy seats priced in leva count in euro. */
 const BGN_PER_EUR = 1.95583;
-
-/** The one legacy currency with an honest fixed rate — read only here. */
-const LEGACY_LEVA = 'BGN';
 
 /** The counter windows a reader shows, in days (R35). */
 const LAST_12M_DAYS = 365;
@@ -61,8 +83,15 @@ const LAST_90D_DAYS = 90;
  * `inferredPlacement` is deliberately not in it (§12.5.1).
  */
 export type StatsAppointment = Pick<
-  AppointmentEntity,
-  'id' | 'timeInterval' | 'bookedAtMs' | 'placement' | 'seats'
+  Appointment,
+  | 'id'
+  | 'localDate'
+  | 'startMinutes'
+  | 'endMinutes'
+  | 'utcEpochMs'
+  | 'bookedAtUtcMs'
+  | 'placement'
+  | 'seats'
 >;
 
 /**
@@ -71,8 +100,9 @@ export type StatsAppointment = Pick<
  * is not this module's to repeat.
  */
 export type AppointmentBill = {
-  readonly subtotal: Money;
-  readonly total: Money;
+  readonly subtotalCents: PriceCents;
+  readonly totalCents: PriceCents;
+  readonly currency: Currency;
 };
 
 /** An appointment with its bill — what the spend reads. */
@@ -80,40 +110,52 @@ export type BilledAppointment = StatsAppointment & {
   readonly bill: AppointmentBill;
 };
 
-/** What one appointment was, for one person — the ONLY source of these strings. */
-export const SubjectVisitOutcomeKind = {
-  Worked: 'worked',
-  NoShow: 'no_show',
-  Cancelled: 'cancelled',
-  Open: 'open',
+/**
+ * What one appointment was, for one person — the ONLY source of these
+ * strings, the field `subjectVisitOutcome`.
+ */
+export const SubjectVisitOutcome = {
+  Worked: 'WORKED',
+  NoShow: 'NO_SHOW',
+  Cancelled: 'CANCELLED',
+  Open: 'OPEN',
 } as const;
-export type SubjectVisitOutcomeKind =
-  (typeof SubjectVisitOutcomeKind)[keyof typeof SubjectVisitOutcomeKind];
-
 export type SubjectVisitOutcome =
-  | { readonly kind: typeof SubjectVisitOutcomeKind.Worked }
-  | { readonly kind: typeof SubjectVisitOutcomeKind.NoShow }
-  | {
-      readonly kind: typeof SubjectVisitOutcomeKind.Cancelled;
-      /** The seat called off LAST — the cancellation that ended the visit. */
-      readonly decisive: SeatOutcome.Cancelled;
-    }
-  | { readonly kind: typeof SubjectVisitOutcomeKind.Open };
+  (typeof SubjectVisitOutcome)[keyof typeof SubjectVisitOutcome];
 
-/** One appointment as one person's visit: their seats, its span, their outcome. */
+/** One person's story of one appointment, discriminated by `subjectVisitOutcome`. */
+export type SubjectVisitOutcomeState =
+  | { readonly subjectVisitOutcome: typeof SubjectVisitOutcome.Worked }
+  | { readonly subjectVisitOutcome: typeof SubjectVisitOutcome.NoShow }
+  | {
+      readonly subjectVisitOutcome: typeof SubjectVisitOutcome.Cancelled;
+      /** The seat called off LAST — the cancellation that ended the visit. */
+      readonly decisive: Seat & SeatOutcome.Cancelled;
+    }
+  | { readonly subjectVisitOutcome: typeof SubjectVisitOutcome.Open };
+
+/**
+ * One appointment as one person's visit: their seats, its span on the shop
+ * wall clock, its start instant (the late-cancel line, T9) and their outcome.
+ */
 export type SubjectVisit<A extends StatsAppointment = StatsAppointment> = {
   readonly appointment: A;
   /** Only this person's seats, in seat order — the input's own structs. */
   readonly seats: readonly Seat[];
-  readonly atMs: number;
-  readonly endMs: number;
-  readonly outcome: SubjectVisitOutcome;
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
+  readonly startUtcMs: UtcEpochMs;
+  readonly outcome: SubjectVisitOutcomeState;
 };
 
-/** Who a cancellation is on, when an outcome correction said so (P4, R49). */
+/**
+ * Who a cancellation is on, when an outcome correction said so (P4, R49) —
+ * the ONLY source of these strings.
+ */
 export const CancellationAttribution = {
-  Client: 'client',
-  Shop: 'shop',
+  Client: 'CLIENT',
+  Shop: 'SHOP',
 } as const;
 export type CancellationAttribution =
   (typeof CancellationAttribution)[keyof typeof CancellationAttribution];
@@ -130,37 +172,42 @@ export type StatWindows = {
   readonly lateCancels: WindowedCount;
 };
 
+/**
+ * A no-show the pause suggestion may rest on: its fact, and the start
+ * instant the desk's dismissal is compared with (T2).
+ */
+export type PauseBasisFact = VisitFact & {
+  readonly startUtcMs: UtcEpochMs;
+};
+
 /** One seat as the change detection reads it — every field a stat can read, nothing else. */
 export type StatsInputSeat = {
-  readonly id: string;
-  readonly subject: {
-    readonly kind: string;
-    readonly userId: UserId | null;
-  };
-  readonly outcome: SeatOutcome;
-  readonly startMs: number;
-  readonly terms: {
-    readonly priceMinorUnits: number;
-    readonly currencyCode: string;
-    readonly durationMinutes: number;
-  };
+  readonly seatId: SeatId;
+  readonly seatSubject: SeatSubject;
+  readonly subjectUserId: UserId | null;
+  readonly startMinutes: MinuteOfDay;
+  readonly priceCents: PriceCents;
+  readonly currency: Currency;
+  readonly durationMinutes: DurationMinutes;
   readonly serviceId: ServiceId;
-  readonly variantId: string | null;
+  readonly variantId: ServiceVariantId | null;
   readonly barberId: BarberId;
-  readonly barberPref: BarberPrefKind | null;
-};
+  readonly barberPreference: BarberPreference | null;
+} & SeatOutcome;
 
 /**
  * The slice of a stored appointment the statistics and the spend can read —
- * so the only fields whose change can move anybody's stats (§13 R28). An
+ * so the only fields whose change can move anybody's stats (§13 R28): the
+ * booking lifecycle, the booking instant, the discounts, the commit's
+ * placement, the shop day and each seat's {@link StatsInputSeat}. An
  * arrival, a tip, a contact or a voucher changes none of it, and those are
  * most of the writes an appointment ever sees.
  */
-export type StatsInput = {
-  readonly bookingStatus: AppointmentEntity['bookingStatus'];
-  readonly bookedAtMs: number | null;
-  readonly discounts: AppointmentEntity['discounts'];
-  readonly placement: PlacementKind | null;
+export type StatsInput = BookingLifecycle & {
+  readonly bookedAtUtcMs: UtcEpochMs | null;
+  readonly discounts: Appointment['discounts'];
+  readonly placement: Placement | null;
+  readonly localDate: LocalDate;
   readonly seats: readonly StatsInputSeat[];
 };
 
@@ -183,8 +230,9 @@ export type ClientStatsWriteInput = {
   readonly money: ClientMoneyStats;
   /** False for a person with no appointment left at all. */
   readonly hasHistory: boolean;
-  readonly nowMs: number;
-  /** The pass stamp the written stats document carries (the pass guard's verdict). */
+  /** Stamps `updatedAtUtcMs` — a lifecycle instant, never compared here. */
+  readonly nowUtcMs: UtcEpochMs;
+  /** The pass the written stats document is stamped with (the pass guard's verdict). */
   readonly stamp: PolicyPass | null;
   /** The stored stamp must move even when the answer is unchanged. */
   readonly restamp: boolean;
@@ -196,56 +244,77 @@ export type ClientStatsPaths = {
   readonly money: DocPath;
 };
 
-/** The revision guard's verdict tags — the ONLY source of these strings. */
-export const ClientStatsWriteKind = {
-  Unchanged: 'unchanged',
-  Write: 'write',
+/** The revision guard's verdict tags — the ONLY source of these strings, the field `statsWriteDecision`. */
+export const StatsWriteDecision = {
+  Unchanged: 'UNCHANGED',
+  Write: 'WRITE',
 } as const;
-export type ClientStatsWriteKind =
-  (typeof ClientStatsWriteKind)[keyof typeof ClientStatsWriteKind];
+export type StatsWriteDecision =
+  (typeof StatsWriteDecision)[keyof typeof StatsWriteDecision];
 
 export type ClientStatsWritePlan =
   | {
-      readonly kind: typeof ClientStatsWriteKind.Unchanged;
+      readonly statsWriteDecision: typeof StatsWriteDecision.Unchanged;
       /** Nothing, or the stamp's move alone. */
       readonly writes: readonly WriteOp[];
     }
   | {
-      readonly kind: typeof ClientStatsWriteKind.Write;
+      readonly statsWriteDecision: typeof StatsWriteDecision.Write;
       readonly version: number;
-      readonly updatedAtMs: number;
+      readonly updatedAtUtcMs: UtcEpochMs;
       /** Both documents, at one version. */
       readonly writes: readonly WriteOp[];
     };
 
-const WORKED: SubjectVisitOutcome = { kind: SubjectVisitOutcomeKind.Worked };
-const NO_SHOW: SubjectVisitOutcome = { kind: SubjectVisitOutcomeKind.NoShow };
-const OPEN: SubjectVisitOutcome = { kind: SubjectVisitOutcomeKind.Open };
+const WORKED: SubjectVisitOutcomeState = {
+  subjectVisitOutcome: SubjectVisitOutcome.Worked,
+};
+const NO_SHOW: SubjectVisitOutcomeState = {
+  subjectVisitOutcome: SubjectVisitOutcome.NoShow,
+};
+const OPEN: SubjectVisitOutcomeState = {
+  subjectVisitOutcome: SubjectVisitOutcome.Open,
+};
+
+/** Order of two shop wall-clock points: negative, zero or positive. */
+function compareWall(
+  aDate: LocalDate,
+  aMinutes: number,
+  bDate: LocalDate,
+  bMinutes: number,
+): number {
+  if (aDate !== bDate) return aDate < bDate ? -1 : 1;
+  return aMinutes - bMinutes;
+}
 
 /**
  * The person's own story of one appointment, from their seats alone. Any
  * worked seat makes it a visit; otherwise an open seat keeps it open, and a
  * no-show beats cancellations. A fully cancelled visit is decided by the
- * seat called off LAST.
+ * seat called off LAST (the first of equal instants).
  */
-function outcomeOf(seats: readonly Seat[]): SubjectVisitOutcome {
+function outcomeOf(seats: readonly Seat[]): SubjectVisitOutcomeState {
   let open = false;
   let noShow = false;
-  let decisive: SeatOutcome.Cancelled | null = null;
+  let decisive: (Seat & SeatOutcome.Cancelled) | null = null;
   for (let i = 0; i < seats.length; i++) {
-    const outcome = (seats[i] as Seat).outcome;
-    switch (outcome.kind) {
-      case SeatOutcomeKind.Worked:
+    const seat = seats[i] as Seat;
+    switch (seat.attendanceState) {
+      case AttendanceState.Worked:
         return WORKED;
-      case SeatOutcomeKind.Scheduled:
+      case AttendanceState.Scheduled:
         open = true;
         break;
-      case SeatOutcomeKind.NoShow:
+      case AttendanceState.NoShow:
         noShow = true;
         break;
-      case SeatOutcomeKind.Cancelled:
-        if (decisive === null || outcome.atMs > decisive.atMs) {
-          decisive = outcome;
+      case AttendanceState.Cancelled:
+        if (
+          decisive === null ||
+          UtcEpochMs.compare(seat.cancelledAtUtcMs, decisive.cancelledAtUtcMs) >
+            0
+        ) {
+          decisive = seat;
         }
         break;
     }
@@ -255,12 +324,18 @@ function outcomeOf(seats: readonly Seat[]): SubjectVisitOutcome {
   // Seats are non-empty, so a visit that reaches here was cancelled.
   return decisive === null
     ? OPEN
-    : { kind: SubjectVisitOutcomeKind.Cancelled, decisive };
+    : { subjectVisitOutcome: SubjectVisitOutcome.Cancelled, decisive };
 }
 
-/** Oldest first, the id breaking ties — so input order never shows in the output. */
+/** Oldest first on the shop's clock, the id breaking ties — so input order never shows in the output. */
 function chronological(a: SubjectVisit, b: SubjectVisit): number {
-  if (a.atMs !== b.atMs) return a.atMs - b.atMs;
+  const order = compareWall(
+    a.localDate,
+    a.startMinutes,
+    b.localDate,
+    b.startMinutes,
+  );
+  if (order !== 0) return order;
   const x = a.appointment.id;
   const y = b.appointment.id;
   return x < y ? -1 : x > y ? 1 : 0;
@@ -288,69 +363,127 @@ function visitsOf<A extends StatsAppointment>(
 }
 
 function factOf(visit: SubjectVisit): VisitFact {
-  return { appointmentId: visit.appointment.id, atMs: visit.atMs };
+  return {
+    appointmentId: visit.appointment.id,
+    localDate: visit.localDate,
+    startMinutes: visit.startMinutes,
+  };
 }
 
-/** A visit as a reader shows it, from the seats whose outcome is `keep`. */
-function refOf(visit: SubjectVisit, keep: SeatOutcomeKind): VisitRef {
+function basisFactOf(visit: SubjectVisit): PauseBasisFact {
+  return {
+    appointmentId: visit.appointment.id,
+    localDate: visit.localDate,
+    startMinutes: visit.startMinutes,
+    startUtcMs: visit.startUtcMs,
+  };
+}
+
+/** The fields a reader shows of a visit, from the seats whose state is `keep`. */
+type VisitRefFields = {
+  readonly appointmentId: AppointmentId;
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
+  readonly serviceIds: readonly ServiceId[];
+  readonly barberIds: readonly BarberId[];
+  readonly legs: readonly VisitLeg[];
+};
+
+function refOf(visit: SubjectVisit, keep: AttendanceState): VisitRefFields {
   const serviceIds: ServiceId[] = [];
   const barberIds: BarberId[] = [];
   const legs: VisitLeg[] = [];
   for (let i = 0; i < visit.seats.length; i++) {
     const seat = visit.seats[i] as Seat;
-    if (seat.outcome.kind !== keep) continue;
+    if (seat.attendanceState !== keep) continue;
     if (!serviceIds.includes(seat.serviceId)) serviceIds.push(seat.serviceId);
     if (!barberIds.includes(seat.barberId)) barberIds.push(seat.barberId);
     legs.push({
-      seatId: seat.id,
+      seatId: seat.seatId,
       serviceId: seat.serviceId,
       variantId: seat.variantId,
       barberId: seat.barberId,
-      minutes: seat.terms.durationMinutes,
+      durationMinutes: seat.durationMinutes,
     });
   }
   return {
     appointmentId: visit.appointment.id,
-    atMs: visit.atMs,
+    localDate: visit.localDate,
+    startMinutes: visit.startMinutes,
     serviceIds,
     barberIds,
     legs,
   };
 }
 
+function lastVisitOf(visit: SubjectVisit | undefined): LastVisit {
+  if (visit === undefined) return LastVisit.NONE;
+  const ref = refOf(visit, AttendanceState.Worked);
+  return {
+    lastVisitAppointmentId: ref.appointmentId,
+    lastVisitLocalDate: ref.localDate,
+    lastVisitStartMinutes: ref.startMinutes,
+    lastVisitServiceIds: ref.serviceIds,
+    lastVisitBarberIds: ref.barberIds,
+    lastVisitLegs: ref.legs,
+  };
+}
+
+function nextVisitOf(visit: SubjectVisit | null): NextVisit {
+  if (visit === null) return NextVisit.NONE;
+  const ref = refOf(visit, AttendanceState.Scheduled);
+  return {
+    nextVisitAppointmentId: ref.appointmentId,
+    nextVisitLocalDate: ref.localDate,
+    nextVisitStartMinutes: ref.startMinutes,
+    nextVisitServiceIds: ref.serviceIds,
+    nextVisitBarberIds: ref.barberIds,
+    nextVisitLegs: ref.legs,
+  };
+}
+
 /**
  * R34: the mean gap between consecutive worked visits, once there are
- * three. A gap the SHOP stretched — a visit it cancelled falls inside it —
- * says nothing about the client's rhythm and is left out. Both lists are
- * oldest first, so one pointer walks the shop's cancellations once.
+ * three, in days of REAL elapsed time — a statistic, so it stays on the
+ * visits' instants (G-1(a), a T2 reading) and a DST transition between two
+ * visits moves no stored figure. A gap the SHOP stretched — a visit it
+ * cancelled falls inside it — says nothing about the client's rhythm and is
+ * left out. Both lists are oldest first, so one pointer walks the shop's
+ * cancellations once.
  */
 function cadenceOf(
   worked: readonly SubjectVisit[],
   shopCancelled: readonly SubjectVisit[],
 ): number | null {
   if (worked.length < 3) return null;
-  let total = 0;
+  let totalMs = 0;
   let gaps = 0;
   let j = 0;
   for (let i = 1; i < worked.length; i++) {
-    const from = (worked[i - 1] as SubjectVisit).atMs;
-    const to = (worked[i] as SubjectVisit).atMs;
+    const from = worked[i - 1] as SubjectVisit;
+    const to = worked[i] as SubjectVisit;
     while (
       j < shopCancelled.length &&
-      (shopCancelled[j] as SubjectVisit).atMs <= from
+      chronologicalPoint(shopCancelled[j] as SubjectVisit, from) <= 0
     ) {
       j++;
     }
     const stretched =
-      j < shopCancelled.length && (shopCancelled[j] as SubjectVisit).atMs < to;
+      j < shopCancelled.length &&
+      chronologicalPoint(shopCancelled[j] as SubjectVisit, to) < 0;
     if (stretched) continue;
-    total += to - from;
+    totalMs += UtcEpochMs.elapsedMs(from.startUtcMs, to.startUtcMs);
     gaps++;
   }
   if (gaps === 0) return null;
-  const meanDays = total / gaps / DAY_MS;
+  const meanDays = totalMs / gaps / MS_PER_DAY;
   // One decimal: enough for "every ~4 weeks", and a stable number to store.
   return Math.round(meanDays * 10) / 10;
+}
+
+/** Two visits' starts on the shop's clock: negative, zero or positive. */
+function chronologicalPoint(a: SubjectVisit, b: SubjectVisit): number {
+  return compareWall(a.localDate, a.startMinutes, b.localDate, b.startMinutes);
 }
 
 type Tally<K> = {
@@ -394,13 +527,13 @@ function frequent<K extends string>(
 }
 
 /**
- * The barber this client ASKS FOR: named (`specific`) on at least two of
+ * The barber this client ASKS FOR: named (`SPECIFIC`) on at least two of
  * their last three visits, and only on a visit its commit stamped — a
  * phone booking into whichever chair was free is no evidence, and a row the
  * commit did not stamp was written by the path that defaulted an omitted
- * preference to `specific` (§11.2 #6, §12.5.1). Such a visit still takes its
- * place among the last three. Two qualifying names go to the one asked for
- * most recently.
+ * preference to `SPECIFIC` (§11.2 #6, §12.5.1). Such a visit still takes
+ * its place among the last three. Two qualifying names go to the one asked
+ * for most recently.
  */
 function preferredBarberOf(worked: readonly SubjectVisit[]): BarberId | null {
   const tally = new Map<BarberId, Tally<BarberId>>();
@@ -412,8 +545,8 @@ function preferredBarberOf(worked: readonly SubjectVisit[]): BarberId | null {
     for (let i = 0; i < visit.seats.length; i++) {
       const seat = visit.seats[i] as Seat;
       if (
-        seat.outcome.kind === SeatOutcomeKind.Worked &&
-        seat.barberPref === BarberPrefKind.Specific &&
+        seat.attendanceState === AttendanceState.Worked &&
+        seat.barberPreference === BarberPreference.Specific &&
         !asked.includes(seat.barberId)
       ) {
         asked.push(seat.barberId);
@@ -436,7 +569,7 @@ function usualServicesOf(worked: readonly SubjectVisit[]): ServiceId[] {
     for (let i = 0; i < visit.seats.length; i++) {
       const seat = visit.seats[i] as Seat;
       if (
-        seat.outcome.kind === SeatOutcomeKind.Worked &&
+        seat.attendanceState === AttendanceState.Worked &&
         !services.includes(seat.serviceId)
       ) {
         services.push(seat.serviceId);
@@ -449,39 +582,74 @@ function usualServicesOf(worked: readonly SubjectVisit[]): ServiceId[] {
   return frequent(tally, 3);
 }
 
-function isWithin(fact: VisitFact, nowMs: number, days: number): boolean {
-  return fact.atMs <= nowMs && nowMs - fact.atMs < days * DAY_MS;
+/**
+ * A fact inside the rolling window ending at `now`, now included and the
+ * fact not in the future (T8): `fact ≤ now` and
+ * `fact > (cutoff, now.currentMinute)` — `cutoff` is `now.localDate − days`,
+ * computed ONCE by the caller, outside its loop ({@link cutoffOf}).
+ */
+function isWithin(fact: VisitFact, now: ShopNow, cutoff: LocalDate): boolean {
+  if (
+    compareWall(
+      fact.localDate,
+      fact.startMinutes,
+      now.localDate,
+      now.currentMinute,
+    ) > 0
+  ) {
+    return false;
+  }
+  return (
+    compareWall(fact.localDate, fact.startMinutes, cutoff, now.currentMinute) >
+    0
+  );
+}
+
+/** The day a rolling window of `days` ending at `now` opens after. */
+function cutoffOf(now: ShopNow, days: number): LocalDate {
+  return LocalDate.addDays(now.localDate, -days);
 }
 
 function countWithin(
   facts: readonly VisitFact[],
-  nowMs: number,
+  now: ShopNow,
   days: number,
 ): number {
+  const cutoff = cutoffOf(now, days);
   let n = 0;
   for (let i = 0; i < facts.length; i++) {
-    if (isWithin(facts[i] as VisitFact, nowMs, days)) n++;
+    if (isWithin(facts[i] as VisitFact, now, cutoff)) n++;
   }
   return n;
 }
 
-/** The facts of `visits` newer than `horizonMs`, oldest first. */
+/** The facts of `visits` that start after the horizon point, oldest first. */
 function boundedFacts(
   visits: readonly SubjectVisit[],
-  horizonMs: number,
+  horizonDate: LocalDate,
+  horizonMinutes: number,
 ): VisitFact[] {
   const facts: VisitFact[] = [];
   for (let i = 0; i < visits.length; i++) {
     const visit = visits[i] as SubjectVisit;
-    if (visit.atMs > horizonMs) facts.push(factOf(visit));
+    if (
+      compareWall(
+        visit.localDate,
+        visit.startMinutes,
+        horizonDate,
+        horizonMinutes,
+      ) > 0
+    ) {
+      facts.push(factOf(visit));
+    }
   }
   return facts;
 }
 
-/** Minor units of a legacy currency in EUR, or `null` when there is no honest rate. */
-function inEuroMinor(minor: number, currencyCode: string): number | null {
-  if (currencyCode === Currency.EUR) return minor;
-  if (currencyCode === LEGACY_LEVA) return Math.round(minor / BGN_PER_EUR);
+/** Cents of a stored currency in EUR, or `null` when there is no honest rate. */
+function inEuroCents(cents: number, currency: Currency): number | null {
+  if (currency === Currency.EUR) return cents;
+  if (currency === Currency.BGN) return Math.round(cents / BGN_PER_EUR);
   return null;
 }
 
@@ -489,7 +657,7 @@ function statsOf(
   subject: UserId,
   visits: readonly SubjectVisit[],
   policy: ClientStatsPolicy,
-  nowMs: number,
+  now: ShopNow,
 ): ClientStats {
   const worked: SubjectVisit[] = [];
   const noShows: SubjectVisit[] = [];
@@ -500,17 +668,27 @@ function statsOf(
   for (let i = 0; i < visits.length; i++) {
     const visit = visits[i] as SubjectVisit;
     const outcome = visit.outcome;
-    switch (outcome.kind) {
-      case SubjectVisitOutcomeKind.Worked:
+    switch (outcome.subjectVisitOutcome) {
+      case SubjectVisitOutcome.Worked:
         worked.push(visit);
         break;
-      case SubjectVisitOutcomeKind.NoShow:
+      case SubjectVisitOutcome.NoShow:
         noShows.push(visit);
         break;
-      case SubjectVisitOutcomeKind.Open:
-        if (next === null && visit.endMs > nowMs) next = visit;
+      case SubjectVisitOutcome.Open:
+        if (
+          next === null &&
+          compareWall(
+            visit.localDate,
+            visit.endMinutes,
+            now.localDate,
+            now.currentMinute,
+          ) > 0
+        ) {
+          next = visit;
+        }
         break;
-      case SubjectVisitOutcomeKind.Cancelled:
+      case SubjectVisitOutcome.Cancelled:
         if (!ClientStatsSystem.clientCaused(outcome.decisive)) {
           shopCancelled.push(visit);
           break;
@@ -519,12 +697,12 @@ function statsOf(
         // A late cancel needs a trustworthy lead time: a row with no
         // booking instant (its outcome instant derived) is never late.
         if (
-          visit.appointment.bookedAtMs !== null &&
+          visit.appointment.bookedAtUtcMs !== null &&
           ClientStatsPolicy.isLateCancellation(
             policy,
-            visit.atMs,
-            outcome.decisive.atMs,
-            outcome.decisive.windowHours,
+            visit.startUtcMs,
+            outcome.decisive.cancelledAtUtcMs,
+            outcome.decisive.cancellationWindowHours,
           )
         ) {
           lateCancels.push(visit);
@@ -533,34 +711,51 @@ function statsOf(
     }
   }
 
-  const horizonMs = nowMs - ClientStatsPolicy.BOUNDED_DAYS * DAY_MS;
-  const last = worked[worked.length - 1];
-  const recentNoShows = boundedFacts(noShows, horizonMs);
+  const horizonDate = LocalDate.addDays(
+    now.localDate,
+    -ClientStatsPolicy.BOUNDED_DAYS,
+  );
+  const first = worked[0];
+  const recentNoShows: PauseBasisFact[] = [];
+  for (let i = 0; i < noShows.length; i++) {
+    const visit = noShows[i] as SubjectVisit;
+    if (
+      compareWall(
+        visit.localDate,
+        visit.startMinutes,
+        horizonDate,
+        now.currentMinute,
+      ) > 0
+    ) {
+      recentNoShows.push(basisFactOf(visit));
+    }
+  }
 
   return {
     userId: subject,
-    lifetime: {
-      visitsCompleted: worked.length,
-      noShows: noShows.length,
-      lateCancels: lateCancels.length,
-      clientCancels: clientCancels.length,
-    },
-    last365: {
-      visitsCompleted: boundedFacts(worked, horizonMs),
-      noShows: recentNoShows,
-      lateCancels: boundedFacts(lateCancels, horizonMs),
-    },
-    firstVisitAtMs: worked[0]?.atMs ?? null,
-    lastVisit: last === undefined ? null : refOf(last, SeatOutcomeKind.Worked),
-    nextVisit: next === null ? null : refOf(next, SeatOutcomeKind.Scheduled),
+    lifetimeVisitsCompleted: worked.length,
+    lifetimeNoShows: noShows.length,
+    lifetimeLateCancels: lateCancels.length,
+    lifetimeClientCancels: clientCancels.length,
+    last365VisitsCompleted: boundedFacts(
+      worked,
+      horizonDate,
+      now.currentMinute,
+    ),
+    last365NoShows: boundedFacts(noShows, horizonDate, now.currentMinute),
+    last365LateCancels: boundedFacts(
+      lateCancels,
+      horizonDate,
+      now.currentMinute,
+    ),
+    firstVisitLocalDate: first === undefined ? null : first.localDate,
+    firstVisitStartMinutes: first === undefined ? null : first.startMinutes,
+    ...lastVisitOf(worked[worked.length - 1]),
+    ...nextVisitOf(next),
     avgCadenceDays: cadenceOf(worked, shopCancelled),
     preferredBarberId: preferredBarberOf(worked),
     usualServiceIds: usualServicesOf(worked),
-    pauseSuggestion: ClientStatsSystem.pauseSuggestionAt(
-      recentNoShows,
-      nowMs,
-      policy,
-    ),
+    ...ClientStatsSystem.pauseSuggestionAt(recentNoShows, now, policy),
   };
 }
 
@@ -571,23 +766,28 @@ function moneyOf(
   let spend = 0;
   for (let i = 0; i < visits.length; i++) {
     const visit = visits[i] as SubjectVisit<BilledAppointment>;
-    if (visit.outcome.kind !== SubjectVisitOutcomeKind.Worked) continue;
+    if (visit.outcome.subjectVisitOutcome !== SubjectVisitOutcome.Worked) {
+      continue;
+    }
     let own = 0;
     for (let s = 0; s < visit.seats.length; s++) {
       const seat = visit.seats[s] as Seat;
-      if (seat.outcome.kind === SeatOutcomeKind.Worked) {
-        own += seat.terms.priceMinorUnits;
+      if (seat.attendanceState === AttendanceState.Worked) {
+        own += seat.priceCents;
       }
     }
-    const { subtotal, total } = visit.appointment.bill;
-    const gross = subtotal.amountMinorUnits;
+    const { subtotalCents, totalCents, currency } = visit.appointment.bill;
     const net =
-      gross > 0 ? Math.round((own * total.amountMinorUnits) / gross) : 0;
-    spend += inEuroMinor(net, subtotal.currencyCode) ?? 0;
+      subtotalCents > 0 ? Math.round((own * totalCents) / subtotalCents) : 0;
+    spend += inEuroCents(net, currency) ?? 0;
   }
+  const lifetimeSpend = PriceCents.signed(spend);
   return {
     userId: subject,
-    lifetimeSpend: { amountMinorUnits: spend, currencyCode: Currency.EUR },
+    lifetimeSpendCents: lifetimeSpend.ok
+      ? lifetimeSpend.value
+      : PriceCents.ZERO,
+    currency: Currency.EUR,
   };
 }
 
@@ -595,41 +795,118 @@ function moneyOf(
 function statsContent(stats: ClientStats): ClientStats {
   return {
     userId: stats.userId,
-    lifetime: stats.lifetime,
-    last365: stats.last365,
-    firstVisitAtMs: stats.firstVisitAtMs,
-    lastVisit: stats.lastVisit,
-    nextVisit: stats.nextVisit,
+    lifetimeVisitsCompleted: stats.lifetimeVisitsCompleted,
+    lifetimeNoShows: stats.lifetimeNoShows,
+    lifetimeLateCancels: stats.lifetimeLateCancels,
+    lifetimeClientCancels: stats.lifetimeClientCancels,
+    last365VisitsCompleted: stats.last365VisitsCompleted,
+    last365NoShows: stats.last365NoShows,
+    last365LateCancels: stats.last365LateCancels,
+    firstVisitLocalDate: stats.firstVisitLocalDate,
+    firstVisitStartMinutes: stats.firstVisitStartMinutes,
+    lastVisitAppointmentId: stats.lastVisitAppointmentId,
+    lastVisitLocalDate: stats.lastVisitLocalDate,
+    lastVisitStartMinutes: stats.lastVisitStartMinutes,
+    lastVisitServiceIds: stats.lastVisitServiceIds,
+    lastVisitBarberIds: stats.lastVisitBarberIds,
+    lastVisitLegs: stats.lastVisitLegs,
+    nextVisitAppointmentId: stats.nextVisitAppointmentId,
+    nextVisitLocalDate: stats.nextVisitLocalDate,
+    nextVisitStartMinutes: stats.nextVisitStartMinutes,
+    nextVisitServiceIds: stats.nextVisitServiceIds,
+    nextVisitBarberIds: stats.nextVisitBarberIds,
+    nextVisitLegs: stats.nextVisitLegs,
     avgCadenceDays: stats.avgCadenceDays,
     preferredBarberId: stats.preferredBarberId,
     usualServiceIds: stats.usualServiceIds,
-    pauseSuggestion: stats.pauseSuggestion,
+    pauseSuggestedNoShows: stats.pauseSuggestedNoShows,
+    pauseSuggestedWindowDays: stats.pauseSuggestedWindowDays,
+    pauseSuggestionBasis: stats.pauseSuggestionBasis,
+    pauseSuggestedAtUtcMs: stats.pauseSuggestedAtUtcMs,
   };
 }
 
 function moneyContent(money: ClientMoneyStats): ClientMoneyStats {
-  return { userId: money.userId, lifetimeSpend: money.lifetimeSpend };
+  return {
+    userId: money.userId,
+    lifetimeSpendCents: money.lifetimeSpendCents,
+    currency: money.currency,
+  };
+}
+
+/** The lifecycle slice of an appointment — its tag and exactly its variant's fields. */
+function lifecycleOf(lifecycle: BookingLifecycle): BookingLifecycle {
+  switch (lifecycle.bookingStatus) {
+    case BookingStatus.Pending:
+      return {
+        bookingStatus: lifecycle.bookingStatus,
+        pendingAtUtcMs: lifecycle.pendingAtUtcMs,
+      };
+    case BookingStatus.Confirmed:
+      return {
+        bookingStatus: lifecycle.bookingStatus,
+        confirmedAtUtcMs: lifecycle.confirmedAtUtcMs,
+      };
+    case BookingStatus.Completed:
+      return {
+        bookingStatus: lifecycle.bookingStatus,
+        completedAtUtcMs: lifecycle.completedAtUtcMs,
+      };
+    case BookingStatus.NoShow:
+      return {
+        bookingStatus: lifecycle.bookingStatus,
+        noShowAtUtcMs: lifecycle.noShowAtUtcMs,
+      };
+    case BookingStatus.Cancelled:
+      return {
+        bookingStatus: lifecycle.bookingStatus,
+        cancelledAtUtcMs: lifecycle.cancelledAtUtcMs,
+        cancellationReason: lifecycle.cancellationReason,
+      };
+  }
+}
+
+/** The outcome slice of a seat — its state and exactly its variant's fields. */
+function seatOutcomeOf(seat: SeatOutcome): SeatOutcome {
+  switch (seat.attendanceState) {
+    case AttendanceState.Scheduled:
+      return { attendanceState: seat.attendanceState };
+    case AttendanceState.Worked:
+      return {
+        attendanceState: seat.attendanceState,
+        workedAtUtcMs: seat.workedAtUtcMs,
+      };
+    case AttendanceState.NoShow:
+      return {
+        attendanceState: seat.attendanceState,
+        noShowAtUtcMs: seat.noShowAtUtcMs,
+      };
+    case AttendanceState.Cancelled:
+      return {
+        attendanceState: seat.attendanceState,
+        cancelledAtUtcMs: seat.cancelledAtUtcMs,
+        cancelledBy: seat.cancelledBy,
+        cancellationReason: seat.cancellationReason,
+        cancellationWindowHours: seat.cancellationWindowHours,
+      };
+  }
 }
 
 function seatInputOf(seat: Seat): StatsInputSeat {
-  const subject = seat.subject;
   return {
-    id: seat.id,
-    subject: {
-      kind: subject.kind,
-      userId: subject.kind === SeatSubjectKind.Account ? subject.userId : null,
-    },
-    outcome: seat.outcome,
-    startMs: seat.startMs,
-    terms: {
-      priceMinorUnits: seat.terms.priceMinorUnits,
-      currencyCode: seat.terms.currencyCode,
-      durationMinutes: seat.terms.durationMinutes,
-    },
+    seatId: seat.seatId,
+    seatSubject: seat.seatSubject,
+    subjectUserId:
+      seat.seatSubject === SeatSubject.Account ? seat.subjectUserId : null,
+    startMinutes: seat.startMinutes,
+    priceCents: seat.priceCents,
+    currency: seat.currency,
+    durationMinutes: seat.durationMinutes,
     serviceId: seat.serviceId,
     variantId: seat.variantId,
     barberId: seat.barberId,
-    barberPref: seat.barberPref,
+    barberPreference: seat.barberPreference,
+    ...seatOutcomeOf(seat),
   };
 }
 
@@ -639,17 +916,20 @@ export const ClientStatsSystem = {
   /**
    * Does this cancellation count against the client (R33, §11)? The reason
    * decides when it names a side; otherwise the side that did the
-   * cancelling does — the client's own cancel path files `unspecified` with
-   * `by: client`, and reading the reason alone would let every self-service
-   * cancellation off. A converted no-show takes the correction's
-   * attribution, and with none recorded it is held against nobody. The same
-   * predicate excuses shop-caused gaps in the cadence.
+   * cancelling does — the client's own cancel path files `UNSPECIFIED` with
+   * `cancelledBy: CLIENT`, and reading the reason alone would let every
+   * self-service cancellation off. A converted no-show takes the
+   * correction's attribution, and with none recorded it is held against
+   * nobody. The same predicate excuses shop-caused gaps in the cadence.
    */
   clientCaused(
-    cancellation: Pick<SeatOutcome.Cancelled, 'by' | 'reason'>,
+    cancellation: Pick<
+      SeatOutcome.Cancelled,
+      'cancelledBy' | 'cancellationReason'
+    >,
     attribution: CancellationAttribution | null = null,
   ): boolean {
-    switch (cancellation.reason.kind) {
+    switch (cancellation.cancellationReason) {
       case CancellationReason.StaffBarberAbsence:
       case CancellationReason.StaffShopClosure:
         return false;
@@ -660,7 +940,7 @@ export const ClientStatsSystem = {
         return true;
       case CancellationReason.Unspecified:
       case CancellationReason.Other:
-        return cancellation.by === CancelledBy.Client;
+        return cancellation.cancelledBy === CancelledBy.Client;
     }
   },
 
@@ -677,8 +957,8 @@ export const ClientStatsSystem = {
     for (let i = 0; i < appointment.seats.length; i++) {
       const seat = appointment.seats[i] as Seat;
       if (
-        seat.subject.kind === SeatSubjectKind.Account &&
-        seat.subject.userId === subject
+        seat.seatSubject === SeatSubject.Account &&
+        seat.subjectUserId === subject
       ) {
         seats.push(seat);
       }
@@ -687,26 +967,28 @@ export const ClientStatsSystem = {
     return {
       appointment,
       seats,
-      atMs: appointment.timeInterval.startMs,
-      endMs: appointment.timeInterval.endMs,
+      localDate: appointment.localDate,
+      startMinutes: appointment.startMinutes,
+      endMinutes: appointment.endMinutes,
+      startUtcMs: appointment.utcEpochMs,
       outcome: outcomeOf(seats),
     };
   },
 
   /**
-   * One client's stats as of `nowMs`. A late cancel is judged by the window
+   * One client's stats as of `now`. A late cancel is judged by the window
    * stamped on the deciding seat — the rule in force when the client
    * cancelled — so a later policy change re-judges nothing; only a
    * cancellation recorded before the stamp falls back to `policy`'s current
-   * window. Only the last `ClientStatsPolicy.BOUNDED_DAYS` keep instants.
+   * window. Only the last `ClientStatsPolicy.BOUNDED_DAYS` keep their facts.
    */
   stats(
     subject: UserId,
     appointments: readonly StatsAppointment[],
     policy: ClientStatsPolicy,
-    nowMs: number,
+    now: ShopNow,
   ): ClientStats {
-    return statsOf(subject, visitsOf(subject, appointments), policy, nowMs);
+    return statsOf(subject, visitsOf(subject, appointments), policy, now);
   },
 
   /**
@@ -728,74 +1010,91 @@ export const ClientStatsSystem = {
     subject: UserId,
     appointments: readonly BilledAppointment[],
     policy: ClientStatsPolicy,
-    nowMs: number,
+    now: ShopNow,
   ): { readonly stats: ClientStats; readonly money: ClientMoneyStats } {
     const visits = visitsOf(subject, appointments);
     return {
-      stats: statsOf(subject, visits, policy, nowMs),
+      stats: statsOf(subject, visits, policy, now),
       money: moneyOf(subject, visits),
     };
   },
 
   /**
-   * The pause suggestion as of `nowMs`, from no-shows alone (R25) — a
-   * SUGGESTION, never a pause. Cheap, so a reader re-checks the stored one
-   * against its own clock: a basis that aged out of the window is gone
-   * without a write. `dismissedAtMs` is the desk's «Не сега»; it holds
-   * until a newer no-show raises the suggestion again (R49).
+   * The pause suggestion as of `now`, from no-shows alone (R25) — a
+   * SUGGESTION, never a pause; {@link PauseSuggestion.NONE} when none
+   * stands. Cheap, so a reader re-checks the stored one against its own
+   * clock: a basis that aged out of the window is gone without a write.
+   * `dismissedAtUtcMs` is the desk's «Не сега»; it holds until a newer
+   * no-show raises the suggestion again (R49) — two instants compared (T2).
    */
   pauseSuggestionAt(
-    noShows: readonly VisitFact[],
-    nowMs: number,
+    noShows: readonly PauseBasisFact[],
+    now: ShopNow,
     policy: ClientStatsPolicy = ClientStatsPolicy.DEFAULT,
-    dismissedAtMs: number | null = null,
-  ): PauseSuggestion | null {
-    const basis: VisitFact[] = [];
+    dismissedAtUtcMs: UtcEpochMs | null = null,
+  ): PauseSuggestion {
+    const basis: PauseBasisFact[] = [];
+    const cutoff = cutoffOf(now, policy.suggestPauseWindowDays);
     for (let i = 0; i < noShows.length; i++) {
-      const fact = noShows[i] as VisitFact;
-      if (isWithin(fact, nowMs, policy.suggestPauseWindowDays))
-        basis.push(fact);
+      const fact = noShows[i] as PauseBasisFact;
+      if (isWithin(fact, now, cutoff)) basis.push(fact);
     }
-    if (basis.length < policy.suggestPauseNoShows) return null;
+    if (basis.length < policy.suggestPauseNoShows) return PauseSuggestion.NONE;
     basis.sort(
-      (a, b) => a.atMs - b.atMs || (a.appointmentId < b.appointmentId ? -1 : 1),
+      (a, b) =>
+        compareWall(a.localDate, a.startMinutes, b.localDate, b.startMinutes) ||
+        (a.appointmentId < b.appointmentId ? -1 : 1),
     );
-    const raisedAtMs = (basis[basis.length - 1] as VisitFact).atMs;
-    if (dismissedAtMs !== null && dismissedAtMs >= raisedAtMs) return null;
+    const raisedAtUtcMs = (basis[basis.length - 1] as PauseBasisFact)
+      .startUtcMs;
+    if (
+      dismissedAtUtcMs !== null &&
+      UtcEpochMs.compare(dismissedAtUtcMs, raisedAtUtcMs) >= 0
+    ) {
+      return PauseSuggestion.NONE;
+    }
     const ids: AppointmentId[] = [];
     for (let i = 0; i < basis.length; i++) {
-      ids.push((basis[i] as VisitFact).appointmentId);
+      ids.push((basis[i] as PauseBasisFact).appointmentId);
     }
     return {
-      noShows: basis.length,
-      windowDays: policy.suggestPauseWindowDays,
-      basis: ids,
-      raisedAtMs,
+      pauseSuggestedNoShows: basis.length,
+      pauseSuggestedWindowDays: policy.suggestPauseWindowDays,
+      pauseSuggestionBasis: ids,
+      pauseSuggestedAtUtcMs: raisedAtUtcMs,
     };
   },
 
-  /** The windows every counter reads, computed at read from the stored instants (R33). */
+  /** The windows every counter reads, computed at read from the stored facts (R33, T8). */
   statWindows(
-    stats: Pick<ClientStats, 'lifetime' | 'last365'>,
-    nowMs: number,
+    stats: Pick<
+      ClientStats,
+      | 'lifetimeVisitsCompleted'
+      | 'lifetimeNoShows'
+      | 'lifetimeLateCancels'
+      | 'last365VisitsCompleted'
+      | 'last365NoShows'
+      | 'last365LateCancels'
+    >,
+    now: ShopNow,
   ): StatWindows {
     const windowed = (
       lifetime: number,
       facts: readonly VisitFact[],
     ): WindowedCount => ({
       lifetime,
-      last12m: countWithin(facts, nowMs, LAST_12M_DAYS),
-      last90d: countWithin(facts, nowMs, LAST_90D_DAYS),
+      last12m: countWithin(facts, now, LAST_12M_DAYS),
+      last90d: countWithin(facts, now, LAST_90D_DAYS),
     });
     return {
       visitsCompleted: windowed(
-        stats.lifetime.visitsCompleted,
-        stats.last365.visitsCompleted,
+        stats.lifetimeVisitsCompleted,
+        stats.last365VisitsCompleted,
       ),
-      noShows: windowed(stats.lifetime.noShows, stats.last365.noShows),
+      noShows: windowed(stats.lifetimeNoShows, stats.last365NoShows),
       lateCancels: windowed(
-        stats.lifetime.lateCancels,
-        stats.last365.lateCancels,
+        stats.lifetimeLateCancels,
+        stats.last365LateCancels,
       ),
     };
   },
@@ -813,32 +1112,33 @@ export const ClientStatsSystem = {
   },
 
   /**
-   * The stats input of a stored appointment (§13 R28): the booking status,
-   * the booking instant (the late-cancel rule), the discounts (spend is net
-   * of them), the commit's placement (the preferred barber), and each
-   * seat's subject, outcome, start, price, duration, service, barber and
-   * preference. `null` for no appointment (a create's before, a delete's
-   * after).
+   * The stats input of a stored appointment (§13 R28): the booking
+   * lifecycle, the booking instant (the late-cancel rule), the discounts
+   * (spend is net of them), the commit's placement (the preferred barber),
+   * the shop day, and each seat's subject, outcome, start, price, duration,
+   * service, barber and preference. `null` for no appointment (a create's
+   * before, a delete's after).
    */
-  statsInputOf(appointment: AppointmentEntity | null): StatsInput | null {
+  statsInputOf(appointment: Appointment | null): StatsInput | null {
     if (appointment === null) return null;
     const seats: StatsInputSeat[] = [];
     for (let i = 0; i < appointment.seats.length; i++) {
       seats.push(seatInputOf(appointment.seats[i] as Seat));
     }
     return {
-      bookingStatus: appointment.bookingStatus,
-      bookedAtMs: appointment.bookedAtMs,
+      ...lifecycleOf(appointment),
+      bookedAtUtcMs: appointment.bookedAtUtcMs,
       discounts: appointment.discounts,
       placement: appointment.placement,
+      localDate: appointment.localDate,
       seats,
     };
   },
 
   /** Did this write change anything a client's stats are computed from? */
   statsInputChanged(
-    before: AppointmentEntity | null,
-    after: AppointmentEntity | null,
+    before: Appointment | null,
+    after: Appointment | null,
   ): boolean {
     return (
       ClientStatsSystem.canonicalJson(
@@ -868,14 +1168,11 @@ export const ClientStatsSystem = {
    * no evidence (§12.5.1) — an inferred placement never reaches here.
    */
   placementsFrom(
-    rows: readonly {
-      readonly id: string;
-      readonly placement: PlacementKind | null;
-    }[],
-  ): ReadonlyMap<string, PlacementKind> {
-    const placements = new Map<string, PlacementKind>();
+    rows: readonly Pick<Appointment, 'id' | 'placement'>[],
+  ): ReadonlyMap<AppointmentId, Placement> {
+    const placements = new Map<AppointmentId, Placement>();
     for (let i = 0; i < rows.length; i++) {
-      const row = rows[i] as (typeof rows)[number];
+      const row = rows[i] as Pick<Appointment, 'id' | 'placement'>;
       if (row.placement !== null) placements.set(row.id, row.placement);
     }
     return placements;
@@ -886,17 +1183,23 @@ export const ClientStatsSystem = {
    * Windows and the pause suggestion depend on "now", so an attempt that
    * started before the last write and commits after it must not resurrect
    * a no-show the stored document already aged out. An unreadable stored
-   * time (`null`, `NaN`) is no bound.
+   * time (`null`, or a non-finite value read off a document) is no bound —
+   * a lifecycle-stamp ordering (T2).
    */
-  projectionClock(clockMs: number, storedUpdatedAtMs: number | null): number {
-    return storedUpdatedAtMs !== null && Number.isFinite(storedUpdatedAtMs)
-      ? Math.max(clockMs, storedUpdatedAtMs)
-      : clockMs;
+  projectionClock(
+    clockUtcMs: UtcEpochMs,
+    storedUpdatedAtUtcMs: UtcEpochMs | null,
+  ): UtcEpochMs {
+    return storedUpdatedAtUtcMs !== null &&
+      Number.isFinite(storedUpdatedAtUtcMs) &&
+      UtcEpochMs.compare(storedUpdatedAtUtcMs, clockUtcMs) > 0
+      ? storedUpdatedAtUtcMs
+      : clockUtcMs;
   },
 
   /**
    * Do two answers say the same — their content byte for byte, the
-   * bookkeeping (`version`, `updatedAtMs`) and the pass stamp aside? What
+   * bookkeeping (`version`, `updatedAtUtcMs`) and the pass stamp aside? What
    * the revision guard writes by, and what a backfill's closing sample
    * checks a stored answer against a fresh one by.
    */
@@ -919,7 +1222,8 @@ export const ClientStatsSystem = {
    * documents move together at one version; a stored pair that disagrees
    * on it is rewritten. Nobody to describe and nothing stored writes
    * nothing — zeros would only create a document for a stranger. An
-   * unchanged answer still moves a stamp a newer pass must leave.
+   * unchanged answer still moves a stamp a newer pass must leave: the
+   * stamp's root fields alone (Law 5).
    */
   planWrite(
     input: ClientStatsWriteInput,
@@ -927,7 +1231,10 @@ export const ClientStatsSystem = {
   ): ClientStatsWritePlan {
     const { stored } = input;
     if (!input.hasHistory && !stored.statsPresent && !stored.moneyPresent) {
-      return { kind: ClientStatsWriteKind.Unchanged, writes: [] };
+      return {
+        statsWriteDecision: StatsWriteDecision.Unchanged,
+        writes: [],
+      };
     }
     const same =
       stored.stats !== null &&
@@ -939,31 +1246,31 @@ export const ClientStatsSystem = {
       );
     if (same) {
       return {
-        kind: ClientStatsWriteKind.Unchanged,
+        statsWriteDecision: StatsWriteDecision.Unchanged,
         writes:
           input.restamp && stored.statsPresent
-            ? [WriteOp.update(paths.stats, { policyPass: input.stamp })]
+            ? [WriteOp.update(paths.stats, PolicyPassStamp.of(input.stamp))]
             : [],
       };
     }
     const version =
       Math.max(stored.statsVersion ?? 0, stored.moneyVersion ?? 0) + 1;
-    const updatedAtMs = input.nowMs;
+    const updatedAtUtcMs = input.nowUtcMs;
     return {
-      kind: ClientStatsWriteKind.Write,
+      statsWriteDecision: StatsWriteDecision.Write,
       version,
-      updatedAtMs,
+      updatedAtUtcMs,
       writes: [
         WriteOp.set(paths.stats, {
           ...statsContent(input.stats),
           version,
-          updatedAtMs,
-          policyPass: input.stamp,
+          updatedAtUtcMs,
+          ...PolicyPassStamp.of(input.stamp),
         }),
         WriteOp.set(paths.money, {
           ...moneyContent(input.money),
           version,
-          updatedAtMs,
+          updatedAtUtcMs,
         }),
       ],
     };

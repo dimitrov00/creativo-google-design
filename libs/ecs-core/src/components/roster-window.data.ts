@@ -1,49 +1,53 @@
-import type { BarberId } from '../entities/barber.entity';
-import type { LocationId } from '../entities/location.entity';
+import { MinuteCount } from '../primitives/duration-minutes.primitive';
+import type { BarberId, LocationId } from '../primitives/ids.primitive';
+import type {
+  EndMinute,
+  MinuteOfDay,
+} from '../primitives/minute-of-day.primitive';
 
 /**
- * A stretch of a barber's rostered day at one shop, in wall-clock minutes of
- * that day — the **in-memory** output of `RosterSystem.buildDayWindows`
+ * A stretch of a barber's rostered day at one shop, on that shop day's wall
+ * clock — the **in-memory** output of `RosterSystem.buildDayWindows`
  * (`roster-window.ts:19`), never a stored shape. `locationId` rides on the
  * window, not the day, because a barber may work two shops in one day.
- * Half-open `[startMinutes, endMinutes)`; it becomes instants only against a
- * day row of the zone table.
+ * Half-open `[startMinutes, endMinutes)`, structurally a `MinuteRange`; it
+ * becomes an instant only at an ingestion boundary, with the location's zone.
  */
 export type RosterWindow = {
   readonly barberId: BarberId;
   readonly locationId: LocationId;
-  readonly startMinutes: number;
-  readonly endMinutes: number;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
 };
 
 export const RosterWindow = {
   of(
     barberId: BarberId,
     locationId: LocationId,
-    startMinutes: number,
-    endMinutes: number,
+    startMinutes: MinuteOfDay,
+    endMinutes: EndMinute,
   ): RosterWindow {
     return { barberId, locationId, startMinutes, endMinutes };
   },
 
-  durationMinutes(window: RosterWindow): number {
-    return window.endMinutes - window.startMinutes;
+  durationMinutes(window: RosterWindow): MinuteCount {
+    return MinuteCount.span(window.startMinutes, window.endMinutes);
   },
 } as const;
 
 /**
- * The shop's own opening hours for one day, in wall-clock minutes — the
+ * The shop's own opening hours for one day, on its wall clock — the
  * in-memory envelope a roster window is clamped to (`roster-window.ts:39`).
  * A shop that publishes no hours, or is closed that day, is the caller's
  * `null` / empty list, never a zero-length struct.
  */
 export type ShopDayHours = {
-  readonly openMinutes: number;
-  readonly closeMinutes: number;
+  readonly openMinutes: MinuteOfDay;
+  readonly closeMinutes: EndMinute;
 };
 
 export const ShopDayHours = {
-  of(openMinutes: number, closeMinutes: number): ShopDayHours {
+  of(openMinutes: MinuteOfDay, closeMinutes: EndMinute): ShopDayHours {
     return { openMinutes, closeMinutes };
   },
 } as const;

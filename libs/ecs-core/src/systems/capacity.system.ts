@@ -1,13 +1,16 @@
 import { CapacityEntry } from '../components/capacity-entry.data';
-import { DayKey } from '../components/day-key.data';
-import { DayOffset } from '../components/day-offset.data';
+import type { MinuteRange } from '../components/minute-range.data';
 import type { DayHours } from '../components/opening-hours.data';
 import type { RosterWindow } from '../components/roster-window.data';
 import type { ScheduleVersion } from '../components/schedule-version.data';
-import type { TimeInterval } from '../components/time-interval.data';
-import type { BarberId } from '../entities/barber.entity';
-import type { CapacityMonthEntity } from '../entities/capacity-month.entity';
-import type { LocationId } from '../entities/location.entity';
+import type { CapacityMonth } from '../entities/capacity-month.entity';
+import type { MinuteCount } from '../primitives/duration-minutes.primitive';
+import type {
+  BarberId,
+  CapacityMonthId,
+  LocationId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
 import { AvailabilitySystem } from './availability.system';
 import { IntervalSetSystem } from './interval-set.system';
 import {
@@ -15,38 +18,37 @@ import {
   RosterSystem,
   type ShopHours,
 } from './roster.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /** The legacy walk's ceiling (`capacity-plan.ts:146`): a longer span is an authoring error. */
 const MAX_SPAN_DAYS = 500;
 
-/** One ACTIVE shop's published week (`LocationEntity.openingHours`, Mon-first). */
+/** One ACTIVE shop's published week (`ShopLocation.openingHours`, Mon-first). */
 export type CapacityShopWeek = {
   readonly locationId: LocationId;
   readonly week: readonly DayHours[];
 };
 
-/** One day of the barber's busy projection, as the UNPADDED instants it stores. */
+/** One shop day of the barber's busy projection, as the UNPADDED minute ranges it stores. */
 export type CapacityBusyDay = {
-  readonly dayKey: DayKey;
-  readonly spans: readonly TimeInterval[];
+  readonly localDate: LocalDate;
+  readonly spans: readonly MinuteRange[];
 };
 
 /** The barber's roster, or `null` when they have none — every day then empties. */
 export type CapacitySchedule = {
   readonly versions: readonly ScheduleVersion[];
-  readonly turnaroundMinutes: number;
+  readonly turnaroundMinutes: MinuteCount;
 };
 
 /**
  * Everything one barber's capacity rebuild reads (`capacity-plan.ts:32-44`),
- * every field present: the scope (`barberId` × `dayKeys`), the roster, the
+ * every field present: the scope (`barberId` × `localDates`), the roster, the
  * ACTIVE shops only (an archived shop must not sell hours), the busy days
  * and the published exceptions.
  */
 export type CapacityPlanInput = {
   readonly barberId: BarberId;
-  readonly dayKeys: readonly DayKey[];
+  readonly localDates: readonly LocalDate[];
   readonly schedule: CapacitySchedule | null;
   readonly shops: readonly CapacityShopWeek[];
   readonly busy: readonly CapacityBusyDay[];
@@ -55,22 +57,24 @@ export type CapacityPlanInput = {
 
 /**
  * One barber's recomputed capacity: the SCOPE it replaces (`barberId` ×
- * `dayKeys`, sorted, distinct) and the entries that replace it, sorted by
+ * `localDates`, sorted, distinct) and the entries that replace it, sorted by
  * `CapacityEntry.compare`. A day in scope with no entry is a day whose
  * entries are REMOVED — never left as a ghost.
  */
 export type CapacityPlan = {
   readonly barberId: BarberId;
-  readonly dayKeys: readonly DayKey[];
+  readonly localDates: readonly LocalDate[];
   readonly entries: readonly CapacityEntry[];
 };
 
 /** The part of a plan one month document takes. */
-export type CapacityMonthPlan = CapacityPlan & { readonly month: string };
+export type CapacityMonthPlan = CapacityPlan & {
+  readonly month: CapacityMonthId;
+};
 
-/** What {@link CapacitySystem.dayKeysBetween} walked, and whether it stopped at the cap. */
-export type DayKeySpan = {
-  readonly keys: readonly DayKey[];
+/** What {@link CapacitySystem.localDatesBetween} walked, and whether it stopped at the cap. */
+export type LocalDateSpan = {
+  readonly keys: readonly LocalDate[];
   readonly truncated: boolean;
 };
 
@@ -78,15 +82,15 @@ function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-/** Day order for anything keyed by a day (string order is day order). */
-function byDayKey(
-  a: { readonly dayKey: DayKey },
-  b: { readonly dayKey: DayKey },
+/** Day order for anything on a shop day (string order is day order). */
+function byLocalDate(
+  a: { readonly localDate: LocalDate },
+  b: { readonly localDate: LocalDate },
 ): number {
-  return compareStrings(a.dayKey, b.dayKey);
+  return compareStrings(a.localDate, b.localDate);
 }
 
-const NO_SPANS: readonly TimeInterval[] = [];
+const NO_SPANS: readonly MinuteRange[] = [];
 const NO_EXCEPTIONS: readonly DayException[] = [];
 
 function isActiveShop(
@@ -106,8 +110,8 @@ function isActiveShop(
 function entriesFor(
   input: CapacityPlanInput,
   schedule: CapacitySchedule,
-  day: DayOffset,
-  busy: readonly TimeInterval[],
+  localDate: LocalDate,
+  busy: readonly MinuteRange[],
   exceptions: readonly DayException[],
 ): readonly CapacityEntry[] {
   const shopHours: ShopHours[] = [];
@@ -115,19 +119,16 @@ function entriesFor(
     const shop = input.shops[i] as CapacityShopWeek;
     shopHours.push({
       locationId: shop.locationId,
-      hours: RosterSystem.shopDayHours(shop.week, day),
+      hours: RosterSystem.shopDayHours(shop.week, localDate),
     });
   }
-  const windows = RosterSystem.buildDayWindows(
-    {
-      barberId: input.barberId,
-      dayKey: day.dayKey,
-      versions: schedule.versions,
-      exceptions,
-      shopHours,
-    },
-    [day],
-  );
+  const windows = RosterSystem.buildDayWindows({
+    barberId: input.barberId,
+    localDate,
+    versions: schedule.versions,
+    exceptions,
+    shopHours,
+  });
   if (windows.length === 0) return [];
 
   // The ONE turnaround rule the grid and the commit check by.
@@ -143,7 +144,7 @@ function entriesFor(
   // the roster treats an absent hours entry as "no bound", which is right for
   // a shop that never authored hours and wrong for one that was retired.
   const shops: LocationId[] = [];
-  const windowsByShop: TimeInterval[][] = [];
+  const windowsByShop: RosterWindow[][] = [];
   for (let i = 0; i < windows.length; i++) {
     const window = windows[i] as RosterWindow;
     if (!isActiveShop(input.shops, window.locationId)) continue;
@@ -153,20 +154,19 @@ function entriesFor(
       shops.push(window.locationId);
       windowsByShop.push([]);
     }
-    (windowsByShop[at] as TimeInterval[]).push(
-      ...RosterSystem.intervalsOf([window], day),
-    );
+    // A roster window IS a minute range of the day (structurally).
+    (windowsByShop[at] as RosterWindow[]).push(window);
   }
 
   const entries: CapacityEntry[] = [];
   for (let i = 0; i < shops.length; i++) {
     const free = IntervalSetSystem.totalMinutes(
-      IntervalSetSystem.subtract(windowsByShop[i] as TimeInterval[], padded),
+      IntervalSetSystem.subtract(windowsByShop[i] as RosterWindow[], padded),
     );
     if (free > 0) {
       entries.push(
         CapacityEntry.of(
-          day.dayKey,
+          localDate,
           input.barberId,
           shops[i] as LocationId,
           free,
@@ -177,13 +177,13 @@ function entriesFor(
   return entries.sort(CapacityEntry.compare);
 }
 
-/** `dayKeys` distinct and sorted (string order is day order): one sort, then adjacent duplicates dropped. */
-function scopeOf(dayKeys: readonly DayKey[]): readonly DayKey[] {
-  const sorted = [...dayKeys].sort(compareStrings);
-  const out: DayKey[] = [];
+/** `localDates` distinct and sorted (string order is day order): one sort, then adjacent duplicates dropped. */
+function scopeOf(localDates: readonly LocalDate[]): readonly LocalDate[] {
+  const sorted = [...localDates].sort(compareStrings);
+  const out: LocalDate[] = [];
   for (let i = 0; i < sorted.length; i++) {
-    const key = sorted[i] as DayKey;
-    if (out.length === 0 || out[out.length - 1] !== key) out.push(key);
+    const day = sorted[i] as LocalDate;
+    if (out.length === 0 || out[out.length - 1] !== day) out.push(day);
   }
   return out;
 }
@@ -196,66 +196,69 @@ function scopeOf(dayKeys: readonly DayKey[]): readonly DayKey[] {
  * the barber's turnaround — and the replace-not-merge fold of a plan into a
  * month document's sorted `entries[]` (§3.6).
  *
- * Day arithmetic is over the zone table (hot path #5): no zone lookup per
- * day, no `Intl`, no `Date`.
+ * Day arithmetic is `LocalDate` arithmetic (flatten-spec T8) and the window
+ * math runs on each shop day's wall clock (T1): no zone, no `Intl`, no
+ * `Date`.
  */
 export const CapacitySystem = {
   /**
-   * One barber's entries for every day of `input.dayKeys`. A day the table
-   * does not cover, a barber with no roster, a whole-day absence, a fully
-   * booked day and a shop's rest day all yield NO entry — absent and zero
-   * render the same, and an emptied day must not survive as a zero.
+   * One barber's entries for every day of `input.localDates`. A barber with
+   * no roster, a whole-day absence, a fully booked day and a shop's rest day
+   * all yield NO entry — absent and zero render the same, and an emptied day
+   * must not survive as a zero.
    */
-  planBarberCapacity(
-    input: CapacityPlanInput,
-    days: readonly DayOffset[],
-  ): CapacityPlan {
-    const dayKeys = scopeOf(input.dayKeys);
+  planBarberCapacity(input: CapacityPlanInput): CapacityPlan {
+    const localDates = scopeOf(input.localDates);
     const entries: CapacityEntry[] = [];
     if (input.schedule !== null) {
       // Busy days and exceptions sorted once (copies — stable, so a day's
       // own keep their input order), then walked by two cursors beside the
       // sorted scope: each day reads its own, never the whole list.
-      const busy = [...input.busy].sort(byDayKey);
-      const exceptions = [...input.exceptions].sort(byDayKey);
+      const busy = [...input.busy].sort(byLocalDate);
+      const exceptions = [...input.exceptions].sort(byLocalDate);
       let b = 0;
       let x = 0;
-      for (let i = 0; i < dayKeys.length; i++) {
-        const dayKey = dayKeys[i] as DayKey;
+      for (let i = 0; i < localDates.length; i++) {
+        const localDate = localDates[i] as LocalDate;
         while (
           b < busy.length &&
-          (busy[b] as CapacityBusyDay).dayKey < dayKey
+          (busy[b] as CapacityBusyDay).localDate < localDate
         ) {
           b++;
         }
         // The FIRST entry for the day, as the scan it replaces read it.
         const spans =
-          b < busy.length && (busy[b] as CapacityBusyDay).dayKey === dayKey
+          b < busy.length &&
+          (busy[b] as CapacityBusyDay).localDate === localDate
             ? (busy[b] as CapacityBusyDay).spans
             : NO_SPANS;
         while (
           x < exceptions.length &&
-          (exceptions[x] as DayException).dayKey < dayKey
+          (exceptions[x] as DayException).localDate < localDate
         ) {
           x++;
         }
         let end = x;
         while (
           end < exceptions.length &&
-          (exceptions[end] as DayException).dayKey === dayKey
+          (exceptions[end] as DayException).localDate === localDate
         ) {
           end++;
         }
         const own = end === x ? NO_EXCEPTIONS : exceptions.slice(x, end);
-        const day = DayOffset.find(dayKey, days);
-        if (day === null) continue;
-        const dayEntries = entriesFor(input, input.schedule, day, spans, own);
+        const dayEntries = entriesFor(
+          input,
+          input.schedule,
+          localDate,
+          spans,
+          own,
+        );
         for (let k = 0; k < dayEntries.length; k++) {
           entries.push(dayEntries[k] as CapacityEntry);
         }
       }
     }
-    return { barberId: input.barberId, dayKeys, entries };
+    return { barberId: input.barberId, localDates, entries };
   },
 
   /**
@@ -267,38 +270,38 @@ export const CapacitySystem = {
     const months: CapacityMonthPlan[] = [];
     let e = 0;
     let d = 0;
-    while (d < plan.dayKeys.length) {
-      const month = CapacityEntry.monthOf(plan.dayKeys[d] as DayKey);
-      const dayKeys: DayKey[] = [];
+    while (d < plan.localDates.length) {
+      const month = LocalDate.monthKey(plan.localDates[d] as LocalDate);
+      const localDates: LocalDate[] = [];
       while (
-        d < plan.dayKeys.length &&
-        CapacityEntry.monthOf(plan.dayKeys[d] as DayKey) === month
+        d < plan.localDates.length &&
+        LocalDate.monthKey(plan.localDates[d] as LocalDate) === month
       ) {
-        dayKeys.push(plan.dayKeys[d++] as DayKey);
+        localDates.push(plan.localDates[d++] as LocalDate);
       }
       // Entries are sorted by day, so this month's are one contiguous run.
       while (
         e < plan.entries.length &&
-        CapacityEntry.monthOf((plan.entries[e] as CapacityEntry).dayKey) < month
+        LocalDate.monthKey((plan.entries[e] as CapacityEntry).localDate) < month
       ) {
         e++;
       }
       const entries: CapacityEntry[] = [];
       while (
         e < plan.entries.length &&
-        CapacityEntry.monthOf((plan.entries[e] as CapacityEntry).dayKey) ===
+        LocalDate.monthKey((plan.entries[e] as CapacityEntry).localDate) ===
           month
       ) {
         entries.push(plan.entries[e++] as CapacityEntry);
       }
-      months.push({ barberId: plan.barberId, month, dayKeys, entries });
+      months.push({ barberId: plan.barberId, month, localDates, entries });
     }
     return months;
   },
 
   /**
    * THE REPLACE-NOT-MERGE FOLD (§3.6): a month document's sorted `entries[]`
-   * with every entry in the plan's `(barberId, dayKey)` scope dropped and the
+   * with every entry in the plan's `(barberId, localDate)` scope dropped and the
    * plan's own entries for this month merged in at their key position. A
    * two-pointer merge — one pass over both sorted arrays, O(n + m), no sort,
    * no allocation beyond the result and one scope set. Other barbers' entries
@@ -307,11 +310,11 @@ export const CapacitySystem = {
    * `{ month, entries: [] }`; plan entries of other months are skipped.
    */
   applyPlan(
-    month: Pick<CapacityMonthEntity, 'month' | 'entries'>,
+    month: Pick<CapacityMonth, 'month' | 'entries'>,
     plan: CapacityPlan,
   ): readonly CapacityEntry[] {
     const existing = month.entries;
-    const scope = new Set<string>(plan.dayKeys);
+    const scope = new Set<string>(plan.localDates);
     const out: CapacityEntry[] = [];
     let i = 0;
     let j = 0;
@@ -320,7 +323,7 @@ export const CapacitySystem = {
       if (
         old !== undefined &&
         old.barberId === plan.barberId &&
-        scope.has(old.dayKey)
+        scope.has(old.localDate)
       ) {
         i++;
         continue;
@@ -328,7 +331,7 @@ export const CapacitySystem = {
       const next = plan.entries[j];
       if (
         next !== undefined &&
-        CapacityEntry.monthOf(next.dayKey) !== month.month
+        LocalDate.monthKey(next.localDate) !== month.month
       ) {
         j++;
         continue;
@@ -348,28 +351,29 @@ export const CapacitySystem = {
   },
 
   /**
-   * Every day `fromKey … toKey` inclusive, civil arithmetic — `truncated`
-   * when the walk stopped at {@link MAX_SPAN_DAYS} (the shell owns the
-   * warning). Empty when inverted.
+   * Every day `from … to` inclusive, civil arithmetic — `truncated` when the
+   * walk stopped at {@link MAX_SPAN_DAYS} (the shell owns the warning).
+   * Empty when inverted.
    */
-  dayKeysBetween(fromKey: DayKey, toKey: DayKey): DayKeySpan {
-    const span = ZonedTimeSystem.daysBetween(fromKey, toKey) + 1;
+  localDatesBetween(from: LocalDate, to: LocalDate): LocalDateSpan {
+    const span = LocalDate.daysBetween(from, to) + 1;
     if (span <= 0) return { keys: [], truncated: false };
     const count = span > MAX_SPAN_DAYS ? MAX_SPAN_DAYS : span;
-    const keys: DayKey[] = [];
-    const first = DayKey.toEpochDay(fromKey);
-    for (let i = 0; i < count; i++) keys.push(DayKey.fromEpochDay(first + i));
+    const keys: LocalDate[] = [];
+    const first = LocalDate.toEpochDay(from);
+    for (let i = 0; i < count; i++)
+      keys.push(LocalDate.fromEpochDay(first + i));
     return { keys, truncated: span > MAX_SPAN_DAYS };
   },
 
   /**
-   * The LAST day of the month after `horizonEndKey`'s — the month the
-   * horizon is about to slide into must already exist when it arrives
+   * The LAST day of the month after `horizonEnd`'s — the month the horizon
+   * is about to slide into must already exist when it arrives
    * (`2026-01-31` → `2026-02-28`, never rolling through a short month).
    */
-  horizonSpanEndKey(horizonEndKey: DayKey): DayKey {
-    return ZonedTimeSystem.addDays(
-      ZonedTimeSystem.addMonths(ZonedTimeSystem.startOfMonth(horizonEndKey), 2),
+  horizonSpanEnd(horizonEnd: LocalDate): LocalDate {
+    return LocalDate.addDays(
+      LocalDate.addMonths(LocalDate.startOfMonth(horizonEnd), 2),
       -1,
     );
   },

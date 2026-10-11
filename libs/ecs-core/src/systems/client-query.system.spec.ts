@@ -13,7 +13,8 @@ import {
  * functions are thin local adapters over `ClientQuerySystem` (the calling
  * code passed explicitly, the ranked indexes mapped back onto the pool), so
  * the arrange/assert bodies are the legacy ones. Plus the purity case and
- * properties of the ranking.
+ * properties of the ranking. Flatten pass: the leading part is the field
+ * `clientQueryShape` (N15), its values SCREAMING (`'name'` → `'NAME'`).
  */
 
 const S = ClientQuerySystem;
@@ -53,12 +54,12 @@ const PEOPLE = [ANNA, MARIA, MARTIN];
 
 describe('parseClientQuery', () => {
   it('reads nothing as empty', () => {
-    expect(parseClientQuery('   ').kind).toBe('empty');
+    expect(parseClientQuery('   ').clientQueryShape).toBe('EMPTY');
   });
 
   it('reads words as a name, lowercased for matching and kept as typed for the form', () => {
     const parsed = parseClientQuery('  Мария  Иванова ');
-    expect(parsed.kind).toBe('name');
+    expect(parsed.clientQueryShape).toBe('NAME');
     expect(parsed.name).toBe('Мария Иванова');
     expect(parsed.nameTokens).toEqual(['мария', 'иванова']);
   });
@@ -71,7 +72,7 @@ describe('parseClientQuery', () => {
       ['887654321', '887654321', false],
     ] as const) {
       const parsed = parseClientQuery(typed);
-      expect(parsed.kind, typed).toBe('phone');
+      expect(parsed.clientQueryShape, typed).toBe('PHONE');
       expect(parsed.phoneDigits, typed).toBe(digits);
       expect(parsed.phoneInternational, typed).toBe(international);
     }
@@ -79,14 +80,14 @@ describe('parseClientQuery', () => {
 
   it('reads a mail, or the beginning of one, lowercased', () => {
     expect(parseClientQuery('Maria@Mail.BG').email).toBe('maria@mail.bg');
-    expect(parseClientQuery('maria@').kind).toBe('email');
+    expect(parseClientQuery('maria@').clientQueryShape).toBe('EMAIL');
   });
 
   it('finds every part of a pasted line at once, the mail leading', () => {
     const parsed = parseClientQuery(
       'Мария Иванова 088 765 4321 <maria@mail.bg>,',
     );
-    expect(parsed.kind).toBe('email');
+    expect(parsed.clientQueryShape).toBe('EMAIL');
     expect(parsed.name).toBe('Мария Иванова');
     expect(parsed.phoneTyped).toBe('088 765 4321');
     expect(parsed.email).toBe('maria@mail.bg');
@@ -94,7 +95,7 @@ describe('parseClientQuery', () => {
 
   it('keeps a stray figure in the name — «Мария 2» is not a number', () => {
     const parsed = parseClientQuery('Мария 2');
-    expect(parsed.kind).toBe('name');
+    expect(parsed.clientQueryShape).toBe('NAME');
     expect(parsed.name).toBe('Мария 2');
     expect(parsed.phoneDigits).toBe('');
   });

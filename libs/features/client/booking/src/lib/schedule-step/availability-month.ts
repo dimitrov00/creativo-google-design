@@ -1,5 +1,5 @@
 import { CalendarDay, DateRange } from '@creativo/application/booking';
-import { CalendarGridSystem, DayKey } from '@creativo/ecs-core';
+import { CalendarGridSystem, LocalDate, defect } from '@creativo/ecs-core';
 
 export interface AvailabilityDayCell {
   readonly day: CalendarDay;
@@ -97,9 +97,10 @@ export function buildAvailabilityMonth(input: {
   // The month's own days are walked in order beside it, as the legacy days
   // this step renders.
   let cursor = monthStart;
+  const first = LocalDate.parse(monthStart.key());
+  if (!first.ok) defect('unreachable: a calendar day is a day');
   const weeks: AvailabilityGridCell[][] = CalendarGridSystem.monthGrid(
-    DayKey.of(monthStart.key()),
-    [],
+    first.value,
     [],
   ).map((week) =>
     week.map((cell): AvailabilityGridCell => {
@@ -108,12 +109,12 @@ export function buildAvailabilityMonth(input: {
       cursor = cursor.next();
       return {
         day,
-        dayKey: cell.dayKey,
+        dayKey: cell.localDate,
         dayOfMonth: cell.dayOfMonth,
         inCurrentMonth: true,
         isToday: day.equals(today),
         outOfRange: day.isBefore(today) || horizonEnd.isBefore(day),
-        freeMinutes: capacityByDay.get(cell.dayKey) ?? 0,
+        freeMinutes: capacityByDay.get(cell.localDate) ?? 0,
       };
     }),
   );

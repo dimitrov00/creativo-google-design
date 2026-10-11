@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { AuthClaims, AuthStage } from './auth-claims.data';
 import { IdentityErrorCode } from './identity-errors.data';
 import { Role } from './role.data';
-import { TenantId } from './tenant-id.data';
+import { TenantId } from '../primitives/ids.primitive';
 
 /*
  * The cases of libs/domain/identity/src/lib/auth-claims.spec.ts, copied over
- * the in-memory struct: `tenantId` beside `stage`, and `roles: []` on
- * onboarding claims (the token itself omits that key — `toToken`). Roles are
+ * the in-memory struct: `tenantId` beside `authStage`, and `roles: []` on
+ * onboarding claims (the token itself omits that key — `toToken`). The
+ * struct says `authStage`; the TOKEN keeps the claim key `stage`. Roles are
  * now the closed `Role` vocabulary, so the legacy fixture's `'owner'` is
  * `admin` here.
  */
@@ -17,14 +18,14 @@ describe('AuthClaims.active', () => {
   it('accepts a non-empty role set', () => {
     expect(AuthClaims.active(TENANT, [Role.Admin])).toEqual({
       ok: true,
-      value: { tenantId: 'creativo', stage: 'active', roles: ['admin'] },
+      value: { tenantId: 'creativo', authStage: 'active', roles: ['admin'] },
     });
   });
 
   it('rejects an empty role set', () => {
     expect(AuthClaims.active(TENANT, [])).toEqual({
       ok: false,
-      error: { code: IdentityErrorCode.AuthClaimsEmptyRoles },
+      error: { errorCode: IdentityErrorCode.AuthClaimsEmptyRoles },
     });
   });
 
@@ -40,7 +41,7 @@ describe('AuthClaims.onboarding', () => {
   it('carries the tenant, the onboarding stage and no roles', () => {
     expect(AuthClaims.onboarding(TENANT)).toEqual({
       tenantId: 'creativo',
-      stage: AuthStage.Onboarding,
+      authStage: AuthStage.Onboarding,
       roles: [],
     });
   });
@@ -54,7 +55,7 @@ describe('AuthClaims.fromToken', () => {
         stage: 'active',
         roles: ['client'],
       }),
-    ).toEqual({ tenantId: 'creativo', stage: 'active', roles: ['client'] });
+    ).toEqual({ tenantId: 'creativo', authStage: 'active', roles: ['client'] });
   });
 
   it('degrades to onboarding when stage is missing', () => {
@@ -140,7 +141,7 @@ describe('AuthClaims.toToken', () => {
   it('leaves a null tenant out rather than storing it', () => {
     const token = AuthClaims.toToken({
       tenantId: null,
-      stage: AuthStage.Onboarding,
+      authStage: AuthStage.Onboarding,
       roles: [],
     });
     expect(token).toEqual({ stage: 'onboarding' });

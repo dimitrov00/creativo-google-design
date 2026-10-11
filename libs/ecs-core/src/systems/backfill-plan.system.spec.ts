@@ -1,18 +1,20 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { PlacementKind } from '../components/placement-kind.data';
+import { AuditAction } from '../components/audit-context.data';
+import { Placement } from '../components/placement-kind.data';
 import {
-  BackfillJobId,
-  BackfillJobKind,
-  type BackfillJobEntity,
+  type BackfillJob,
+  BackfillJobName,
 } from '../entities/backfill-job.entity';
-import { deepFreeze } from '../testing';
+import { BackfillJobId, UserId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { deepFreeze, unwrapOk, utcMs } from '../testing';
 import {
   BackfillPhase,
   type BackfillPageWalk,
   BackfillPlanSystem,
   type BackfillPosition,
-  BackfillStartKind,
+  BackfillStart,
   type MirrorPatch,
   type MirrorRow,
 } from './backfill-plan.system';
@@ -20,10 +22,13 @@ import {
 /*
  * The cases of apps/functions/src/lib/ops/backfill-plan.spec.ts, copied (the
  * legacy spec keeps running against its shim) and re-targeted: a stored row
- * is read into a `MirrorRow` first (`rowOf` — the seats' subjects derived
- * the R33 way, the placements through the `PlacementKind` guard), and a
- * request names its start as a `BackfillStart` instead of an absent key.
- * Then the page bookkeeping of `run-backfill.ts`, which the system now owns.
+ * — in the flat seat layout (`seatSubject`, `subjectUserId`) with SCREAMING
+ * placements — is read into a `MirrorRow` first (`rowOf` — the seats'
+ * subjects derived the R33 way as `UserId`s, the placements through the
+ * `Placement` guard), a request names its job as `backfillJobName` and its
+ * start as a `BackfillStartRequest` instead of an absent key, and the audit
+ * actions are `AuditAction` values. Then the page bookkeeping of
+ * `run-backfill.ts`, which the system now owns, on `UtcEpochMs` stamps.
  */
 
 const {
@@ -37,13 +42,17 @@ const {
 } = BackfillPlanSystem;
 
 const seats = [
-  { subject: { kind: 'account', userId: 'zora', relationship: 'companion' } },
-  { subject: { kind: 'anonymous', label: 'Гост' } },
-  { subject: { kind: 'account', userId: 'ana', relationship: 'self' } },
+  {
+    seatSubject: 'ACCOUNT',
+    subjectUserId: 'zora',
+    subjectRelationship: 'COMPANION',
+  },
+  { seatSubject: 'ANONYMOUS', guestLabel: 'Гост' },
+  { seatSubject: 'ACCOUNT', subjectUserId: 'ana', subjectRelationship: 'SELF' },
 ];
 
 type StoredRow = {
-  readonly seats: readonly { readonly subject: Record<string, unknown> }[];
+  readonly seats: readonly Record<string, unknown>[];
   readonly subjectUserIds?: unknown;
   readonly placement?: unknown;
   readonly inferredPlacement?: unknown;
@@ -53,16 +62,18 @@ type StoredRow = {
 function rowOf(data: StoredRow): MirrorRow {
   const subjects = new Set<string>();
   for (const seat of data.seats) {
-    const { kind, userId } = seat.subject;
-    if (kind === 'account' && typeof userId === 'string') subjects.add(userId);
+    const { seatSubject, subjectUserId } = seat;
+    if (seatSubject === 'ACCOUNT' && typeof subjectUserId === 'string') {
+      subjects.add(subjectUserId);
+    }
   }
   return {
     storedSubjectUserIds: Array.isArray(data.subjectUserIds)
       ? (data.subjectUserIds as readonly unknown[])
       : null,
-    seatSubjectUserIds: [...subjects].sort(),
-    placement: PlacementKind.parse(data.placement ?? null),
-    inferredPlacement: PlacementKind.parse(data.inferredPlacement ?? null),
+    seatSubjectUserIds: [...subjects].sort().map(UserId.of),
+    placement: Placement.parse(data.placement ?? null),
+    inferredPlacement: Placement.parse(data.inferredPlacement ?? null),
   };
 }
 
@@ -76,53 +87,73 @@ function patched(row: MirrorRow, patch: MirrorPatch | null): MirrorRow {
   };
 }
 
-const resume = { kind: BackfillStartKind.Resume } as const;
-const top = { kind: BackfillStartKind.Top } as const;
+const resume = { backfillStart: BackfillStart.Resume } as const;
+const top = { backfillStart: BackfillStart.Top } as const;
 const after = (cursor: string) =>
-  ({ kind: BackfillStartKind.After, cursor }) as const;
+  ({ backfillStart: BackfillStart.After, cursor }) as const;
 
 describe('requestOf (toBackfillRequest)', () => {
   it('takes a known job, with a cursor to resume after, null to restart, or none', () => {
-    expect(requestOf({ job: 'clientStats' })).toEqual({
-      job: 'clientStats',
+    expect(requestOf({ backfillJobName: 'CLIENT_STATS' })).toEqual({
+      backfillJobName: 'CLIENT_STATS',
       start: resume,
     });
-    expect(requestOf({ job: 'subjectMirror', cursor: null })).toEqual({
-      job: 'subjectMirror',
+    expect(
+      requestOf({ backfillJobName: 'SUBJECT_MIRROR', cursor: null }),
+    ).toEqual({
+      backfillJobName: 'SUBJECT_MIRROR',
       start: top,
     });
-    expect(requestOf({ job: 'clientStats', cursor: 'appt_42' })).toEqual({
-      job: 'clientStats',
+    expect(
+      requestOf({ backfillJobName: 'CLIENT_STATS', cursor: 'appt_42' }),
+    ).toEqual({
+      backfillJobName: 'CLIENT_STATS',
       start: after('appt_42'),
     });
   });
 
   it('refuses an unknown job and a cursor that is not a document id', () => {
-    expect(requestOf({ job: 'dropEverything' })).toBeNull();
+    expect(requestOf({ backfillJobName: 'DROP_EVERYTHING' })).toBeNull();
+    // The pre-flatten spelling is no job here: the shim translates the wire.
+    expect(requestOf({ backfillJobName: 'clientStats' })).toBeNull();
     expect(requestOf(null)).toBeNull();
-    expect(requestOf({ job: 'clientStats', cursor: '../users/x' })).toBeNull();
-    expect(requestOf({ job: 'clientStats', cursor: 7 })).toBeNull();
-    expect(requestOf({ job: 'clientStats', cursor: '~../users/x' })).toBeNull();
+    expect(
+      requestOf({ backfillJobName: 'CLIENT_STATS', cursor: '../users/x' }),
+    ).toBeNull();
+    expect(
+      requestOf({ backfillJobName: 'CLIENT_STATS', cursor: 7 }),
+    ).toBeNull();
+    expect(
+      requestOf({ backfillJobName: 'CLIENT_STATS', cursor: '~../users/x' }),
+    ).toBeNull();
   });
 
   it('takes a stored-client cursor for the stats job only', () => {
-    expect(requestOf({ job: 'clientStats', cursor: '~' })).toEqual({
-      job: 'clientStats',
-      start: after('~'),
-    });
-    expect(requestOf({ job: 'clientStats', cursor: '~ana' })).toEqual({
-      job: 'clientStats',
+    expect(requestOf({ backfillJobName: 'CLIENT_STATS', cursor: '~' })).toEqual(
+      {
+        backfillJobName: 'CLIENT_STATS',
+        start: after('~'),
+      },
+    );
+    expect(
+      requestOf({ backfillJobName: 'CLIENT_STATS', cursor: '~ana' }),
+    ).toEqual({
+      backfillJobName: 'CLIENT_STATS',
       start: after('~ana'),
     });
-    expect(requestOf({ job: 'subjectMirror', cursor: '~' })).toBeNull();
+    expect(
+      requestOf({ backfillJobName: 'SUBJECT_MIRROR', cursor: '~' }),
+    ).toBeNull();
   });
 
   it('reads an explicit undefined cursor as none, and a non-object as no request', () => {
-    expect(requestOf({ job: 'subjectMirror', cursor: undefined })).toEqual({
-      job: 'subjectMirror',
+    expect(
+      requestOf({ backfillJobName: 'SUBJECT_MIRROR', cursor: undefined }),
+    ).toEqual({
+      backfillJobName: 'SUBJECT_MIRROR',
       start: resume,
     });
-    expect(requestOf('clientStats')).toBeNull();
+    expect(requestOf('CLIENT_STATS')).toBeNull();
     expect(BackfillPlanSystem.isDocId('appt_42')).toBe(true);
     expect(BackfillPlanSystem.isDocId('a/b')).toBe(false);
   });
@@ -131,15 +162,15 @@ describe('requestOf (toBackfillRequest)', () => {
 describe('the backfill cursor', () => {
   it('round-trips both phases, and an appointment id stays what it was', () => {
     const positions: readonly BackfillPosition[] = [
-      { phase: 'appointments', after: null },
-      { phase: 'appointments', after: 'appt_42' },
-      { phase: 'storedClients', after: null },
-      { phase: 'storedClients', after: 'dev-client-3' },
+      { backfillPhase: 'APPOINTMENTS', after: null },
+      { backfillPhase: 'APPOINTMENTS', after: 'appt_42' },
+      { backfillPhase: 'STORED_CLIENTS', after: null },
+      { backfillPhase: 'STORED_CLIENTS', after: 'dev-client-3' },
     ];
     for (const position of positions) {
       expect(positionOf(cursorOf(position))).toEqual(position);
     }
-    expect(cursorOf({ phase: 'appointments', after: 'appt_42' })).toBe(
+    expect(cursorOf({ backfillPhase: 'APPOINTMENTS', after: 'appt_42' })).toBe(
       'appt_42',
     );
   });
@@ -147,37 +178,43 @@ describe('the backfill cursor', () => {
 
 describe('inferPlacement (§12.5.1)', () => {
   it('believes the commit row when there is one', () => {
-    expect(inferPlacement(['booking.staff_created'])).toBe('staff');
-    expect(inferPlacement(['booking.tip_recorded', 'booking.committed'])).toBe(
-      'self',
-    );
+    expect(inferPlacement([AuditAction.BookingStaffCreated])).toBe('STAFF');
+    expect(
+      inferPlacement([
+        AuditAction.BookingTipRecorded,
+        AuditAction.BookingCommitted,
+      ]),
+    ).toBe('SELF');
   });
 
   // A legacy import has no audit rows and must import WITHOUT a placement,
   // or every legacy visit reads as the client's own request for good.
   it('infers nothing without a commit row, owner or not', () => {
     expect(inferPlacement([])).toBeNull();
-    expect(inferPlacement(['booking.tip_recorded'])).toBeNull();
+    expect(inferPlacement([AuditAction.BookingTipRecorded])).toBeNull();
   });
 });
 
 describe('mirrorPatch', () => {
   it('fills in both mirrors on a row written before them, the placement as an inference', () => {
-    expect(mirrorPatch(rowOf({ seats }), 'staff')).toEqual({
+    expect(mirrorPatch(rowOf({ seats }), Placement.Staff)).toEqual({
       subjectUserIds: ['ana', 'zora'],
-      inferredPlacement: 'staff',
+      inferredPlacement: 'STAFF',
     });
   });
 
   // The bug this shape exists for: stamping `placement` here made a pre-P0
-  // row's defaulted `specific` seats read as requests (§11.2 #6).
+  // row's defaulted `SPECIFIC` seats read as requests (§11.2 #6).
   it('never writes the commit’s own placement stamp', () => {
-    expect(mirrorPatch(rowOf({ seats }), 'self')).not.toHaveProperty(
+    expect(mirrorPatch(rowOf({ seats }), Placement.Self)).not.toHaveProperty(
       'placement',
     );
     expect(
-      mirrorPatch(rowOf({ seats, subjectUserIds: ['ana', 'zora'] }), 'staff'),
-    ).toEqual({ subjectUserIds: null, inferredPlacement: 'staff' });
+      mirrorPatch(
+        rowOf({ seats, subjectUserIds: ['ana', 'zora'] }),
+        Placement.Staff,
+      ),
+    ).toEqual({ subjectUserIds: null, inferredPlacement: 'STAFF' });
   });
 
   it('leaves an unknown placement unwritten, so a rerun stays a no-op', () => {
@@ -193,8 +230,8 @@ describe('mirrorPatch', () => {
   it('corrects a subject mirror that disagrees with the seats', () => {
     expect(
       mirrorPatch(
-        rowOf({ seats, subjectUserIds: ['ana'], placement: 'self' }),
-        'staff',
+        rowOf({ seats, subjectUserIds: ['ana'], placement: 'SELF' }),
+        Placement.Staff,
       ),
     ).toEqual({ subjectUserIds: ['ana', 'zora'], inferredPlacement: null });
   });
@@ -202,8 +239,8 @@ describe('mirrorPatch', () => {
   it('infers nothing over a placement the commit stamped', () => {
     expect(
       mirrorPatch(
-        rowOf({ seats, subjectUserIds: ['ana', 'zora'], placement: 'self' }),
-        'staff',
+        rowOf({ seats, subjectUserIds: ['ana', 'zora'], placement: 'SELF' }),
+        Placement.Staff,
       ),
     ).toBeNull();
   });
@@ -214,9 +251,9 @@ describe('mirrorPatch', () => {
         rowOf({
           seats,
           subjectUserIds: ['ana', 'zora'],
-          inferredPlacement: 'self',
+          inferredPlacement: 'SELF',
         }),
-        'staff',
+        Placement.Staff,
       ),
     ).toBeNull();
   });
@@ -224,15 +261,15 @@ describe('mirrorPatch', () => {
   it('is null on a complete row, which is what makes a second run a no-op', () => {
     expect(
       mirrorPatch(
-        rowOf({ seats: [], subjectUserIds: [], placement: 'staff' }),
-        'self',
+        rowOf({ seats: [], subjectUserIds: [], placement: 'STAFF' }),
+        Placement.Self,
       ),
     ).toBeNull();
   });
 });
 
 describe('mirrorPatch — properties', () => {
-  const placementArb = fc.constantFrom('self', 'staff', null, 'robot');
+  const placementArb = fc.constantFrom('SELF', 'STAFF', null, 'robot');
   const rowArb = fc.record(
     {
       seats: fc.constantFrom(seats, [], seats.slice(1)),
@@ -242,7 +279,7 @@ describe('mirrorPatch — properties', () => {
     },
     { requiredKeys: ['seats'] },
   );
-  const inferredArb = fc.constantFrom('self' as const, 'staff' as const, null);
+  const inferredArb = fc.constantFrom(Placement.Self, Placement.Staff, null);
 
   it('is idempotent: a patched row needs no second patch', () => {
     fc.assert(
@@ -273,13 +310,13 @@ describe('mirrorPatch — properties', () => {
 
 describe('mayLackMirrors', () => {
   it('flags a row whose subjects disagree or which has no placement of either kind', () => {
-    expect(mayLackMirrors(rowOf({ seats, placement: 'self' }))).toBe(true);
+    expect(mayLackMirrors(rowOf({ seats, placement: 'SELF' }))).toBe(true);
     expect(
       mayLackMirrors(rowOf({ seats, subjectUserIds: ['ana', 'zora'] })),
     ).toBe(true);
     expect(
       mayLackMirrors(
-        rowOf({ seats, subjectUserIds: ['ana', 'zora'], placement: 'staff' }),
+        rowOf({ seats, subjectUserIds: ['ana', 'zora'], placement: 'STAFF' }),
       ),
     ).toBe(false);
     expect(
@@ -287,7 +324,7 @@ describe('mayLackMirrors', () => {
         rowOf({
           seats,
           subjectUserIds: ['ana', 'zora'],
-          inferredPlacement: 'staff',
+          inferredPlacement: 'STAFF',
         }),
       ),
     ).toBe(false);
@@ -296,23 +333,24 @@ describe('mayLackMirrors', () => {
 
 /* ── The page bookkeeping (run-backfill.ts) ───────────────────────────── */
 
-const NOW = Date.parse('2026-09-25T08:00:00.000Z');
+const NOW = utcMs('2026-09-25T08:00:00.000Z');
+/** `NOW` moved by `ms`. */
+const nowPlus = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(NOW + ms));
 
-function progress(
-  overrides: Partial<BackfillJobEntity> = {},
-): BackfillJobEntity {
+function progress(overrides: Partial<BackfillJob> = {}): BackfillJob {
   return {
     id: BackfillJobId.of('clientStats'),
-    job: BackfillJobKind.ClientStats,
+    backfillJobName: BackfillJobName.ClientStats,
     cursor: 'appt_9',
     processed: 40,
     storedClients: 3,
     stamped: 2,
     recomputed: 7,
-    startedAtMs: NOW - 60_000,
-    finishedAtMs: null,
-    updatedAtMs: NOW - 1_000,
-    sample: null,
+    startedAtUtcMs: nowPlus(-60_000),
+    finishedAtUtcMs: null,
+    updatedAtUtcMs: nowPlus(-1_000),
+    sampleChecked: null,
+    sampleMismatched: [],
     ...overrides,
   };
 }
@@ -355,17 +393,17 @@ describe('resume — where a call starts', () => {
         storedClients: 3,
         stamped: 2,
         recomputed: 7,
-        startedAtMs: NOW - 60_000,
+        startedAtUtcMs: nowPlus(-60_000),
       },
     });
   });
 
   it('starts a new run from the top after a finished one, with no progress, or when asked to', () => {
-    const fresh = { cursor: null, carried: { ...ZERO, startedAtMs: NOW } };
+    const fresh = { cursor: null, carried: { ...ZERO, startedAtUtcMs: NOW } };
     expect(
       BackfillPlanSystem.resume(
         resume,
-        progress({ finishedAtMs: NOW - 5 }),
+        progress({ finishedAtUtcMs: nowPlus(-5) }),
         NOW,
       ),
     ).toEqual(fresh);
@@ -380,7 +418,7 @@ describe('resume — where a call starts', () => {
     ).toBe(40);
     expect(BackfillPlanSystem.resume(after('appt_3'), null, NOW)).toEqual({
       cursor: 'appt_3',
-      carried: { ...ZERO, startedAtMs: NOW },
+      carried: { ...ZERO, startedAtUtcMs: NOW },
     });
   });
 });
@@ -396,7 +434,7 @@ describe('pageWalk and nextPage — how a run goes on', () => {
 
   it('stops at the last row handled, early when the budget left rows, exhausted on a short full page', () => {
     expect(walkOf(2)).toEqual({
-      next: { phase: 'appointments', after: 'b' },
+      next: { backfillPhase: 'APPOINTMENTS', after: 'b' },
       exhausted: false,
       stoppedEarly: true,
     });
@@ -418,7 +456,7 @@ describe('pageWalk and nextPage — how a run goes on', () => {
 
   it('sends the stats job on to the stored clients when the appointments run out', () => {
     const verdict = BackfillPlanSystem.nextPage(
-      BackfillJobKind.ClientStats,
+      BackfillJobName.ClientStats,
       walkOf(2, ['a', 'b']),
       { ...ZERO, processed: 2 },
       () => {
@@ -436,7 +474,7 @@ describe('pageWalk and nextPage — how a run goes on', () => {
   it('finishes the mirror job at the end of the appointments, with no sample', () => {
     expect(
       BackfillPlanSystem.nextPage(
-        BackfillJobKind.SubjectMirror,
+        BackfillJobName.SubjectMirror,
         walkOf(2, ['a', 'b']),
         { ...ZERO, processed: 2 },
         () => true,
@@ -453,7 +491,7 @@ describe('pageWalk and nextPage — how a run goes on', () => {
     const end = walkOf(1, ['c1'], 3, BackfillPhase.StoredClients);
     expect(
       BackfillPlanSystem.nextPage(
-        BackfillJobKind.ClientStats,
+        BackfillJobName.ClientStats,
         end,
         { ...ZERO, storedClients: 1 },
         () => true,
@@ -466,7 +504,7 @@ describe('pageWalk and nextPage — how a run goes on', () => {
     });
     expect(
       BackfillPlanSystem.nextPage(
-        BackfillJobKind.ClientStats,
+        BackfillJobName.ClientStats,
         end,
         { ...ZERO, storedClients: 1 },
         () => false,
@@ -475,7 +513,7 @@ describe('pageWalk and nextPage — how a run goes on', () => {
     // The next call finds the phase empty and takes the sample first thing.
     expect(
       BackfillPlanSystem.nextPage(
-        BackfillJobKind.ClientStats,
+        BackfillJobName.ClientStats,
         BackfillPlanSystem.pageWalk(
           BackfillPhase.StoredClients,
           [],
@@ -497,7 +535,7 @@ describe('pageWalk and nextPage — how a run goes on', () => {
   it('carries on mid-page', () => {
     expect(
       BackfillPlanSystem.nextPage(
-        BackfillJobKind.ClientStats,
+        BackfillJobName.ClientStats,
         walkOf(3),
         { ...ZERO, processed: 3 },
         () => true,
@@ -514,7 +552,7 @@ describe('pageWalk and nextPage — how a run goes on', () => {
 describe('purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const row = deepFreeze(rowOf({ seats, subjectUserIds: ['ana'] }));
-    const actions = deepFreeze(['booking.committed']);
+    const actions = deepFreeze([AuditAction.BookingCommitted]);
     const once = mirrorPatch(row, inferPlacement(actions));
     const twice = mirrorPatch(row, inferPlacement(actions));
     expect(twice).toEqual(once);
@@ -527,7 +565,9 @@ describe('purity', () => {
       BackfillPlanSystem.chunk(items, 2),
     );
     expect(
-      requestOf(deepFreeze({ job: 'clientStats', cursor: '~ana' })),
-    ).toEqual(requestOf({ job: 'clientStats', cursor: '~ana' }));
+      requestOf(
+        deepFreeze({ backfillJobName: 'CLIENT_STATS', cursor: '~ana' }),
+      ),
+    ).toEqual(requestOf({ backfillJobName: 'CLIENT_STATS', cursor: '~ana' }));
   });
 });

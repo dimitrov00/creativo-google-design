@@ -1,3 +1,4 @@
+import type { Brand } from '../primitives/brand';
 /**
  * Shape check: one `@`, a non-empty local part, a dotted domain whose last
  * label has at least two characters, no whitespace anywhere. The accounts
@@ -13,7 +14,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
  * exists. The accounts, identity and models `Email` classes collapsed into
  * one (blueprint §2.4).
  */
-export type Email = string & { readonly __brand: unique symbol };
+export type Email = Brand<string, 'Email'>;
 
 export const Email = {
   /** The only cast site — for a value already canonical (read back from a document). */

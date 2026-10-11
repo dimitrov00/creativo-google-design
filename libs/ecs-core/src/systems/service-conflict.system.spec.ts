@@ -1,12 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ServiceComposition } from '../components/service-composition.data';
-import { ServiceId } from '../entities/service.entity';
+import { ServiceId } from '../primitives/ids.primitive';
 import { deepFreeze } from '../testing';
 import {
   type ConflictService,
+  Selectability,
   ServiceConflictSystem,
-  ServiceSelectabilityKind,
 } from './service-conflict.system';
 
 /*
@@ -23,9 +23,9 @@ function service(props: {
   return {
     id: ServiceId.of(props.id),
     conflictsWith: (props.conflictsWith ?? []).map(ServiceId.of),
-    composition: props.includes
+    ...(props.includes
       ? ServiceComposition.bundle(props.includes.map(ServiceId.of))
-      : ServiceComposition.single(),
+      : ServiceComposition.single()),
   };
 }
 
@@ -107,17 +107,19 @@ describe('conflictingWith / selectabilityFor', () => {
   });
 
   it('is selectable against an empty selection', () => {
-    expect(selectabilityFor([], CUT, [])).toEqual({ kind: 'selectable' });
+    expect(selectabilityFor([], CUT, [])).toEqual({
+      selectability: 'SELECTABLE',
+    });
   });
 
   it('is selectable alongside a complementary service', () => {
-    expect(selectabilityFor([BEARD], CUT, []).kind).toBe('selectable');
+    expect(selectabilityFor([BEARD], CUT, []).selectability).toBe('SELECTABLE');
   });
 
   it('names the blockers so the UI can explain the lock', () => {
     const selectability = selectabilityFor([CUT], FADE, []);
-    expect(selectability.kind).toBe('blocked');
-    if (selectability.kind === ServiceSelectabilityKind.Blocked) {
+    expect(selectability.selectability).toBe('BLOCKED');
+    if (selectability.selectability === Selectability.Blocked) {
       expect(selectability.by).toEqual(['cut']);
     }
   });
@@ -125,12 +127,12 @@ describe('conflictingWith / selectabilityFor', () => {
   it('scopes to ONE seat — the same pair is legal across two seats', () => {
     const guestA = [CUT];
     const guestB: ConflictService[] = [];
-    expect(selectabilityFor(guestA, FADE, []).kind).toBe('blocked');
-    expect(selectabilityFor(guestB, FADE, []).kind).toBe('selectable');
+    expect(selectabilityFor(guestA, FADE, []).selectability).toBe('BLOCKED');
+    expect(selectabilityFor(guestB, FADE, []).selectability).toBe('SELECTABLE');
   });
 
   it('lets a seat hold a second line of a service it already holds', () => {
-    expect(selectabilityFor([CUT], CUT, []).kind).toBe('selectable');
+    expect(selectabilityFor([CUT], CUT, []).selectability).toBe('SELECTABLE');
   });
 });
 
@@ -148,11 +150,11 @@ describe('ServiceConflictSystem — algebra and purity', () => {
     );
   });
 
-  it('treats a stored `null` composition as a single service', () => {
+  it('treats an UNSPECIFIED composition (the stored `null`) as a single service', () => {
     const bare: ConflictService = {
       id: ServiceId.of('bare'),
       conflictsWith: [ServiceId.of('cut')],
-      composition: null,
+      ...ServiceComposition.unspecified(),
     };
     expect(servicesConflict(bare, CUT, CATALOG)).toBe(true);
     expect(servicesConflict(bare, BEARD, CATALOG)).toBe(false);

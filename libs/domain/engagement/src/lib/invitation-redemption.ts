@@ -13,7 +13,9 @@ import {
   InvitationId as InvitationRefId,
   RedemptionCount,
   ReferralSystem,
-  type InvitationEntity,
+  UtcEpochMs,
+  defect,
+  type Invitation as InvitationEntity,
   UserId as UserRefId,
 } from '@creativo/ecs-core';
 import { InvitationId } from './ids';
@@ -69,7 +71,7 @@ export class InvitationRedemption {
     const redeemed = ReferralSystem.redeem(
       entityOf(invitation),
       UserRefId.of(refereeUserId.value),
-      redeemedAt.toMillis(),
+      utcOf(redeemedAt),
     );
     if (!redeemed.ok) return fail(new InvitationSelfRedemptionError());
     return ok(
@@ -107,6 +109,13 @@ function entityOf(invitation: Invitation): InvitationEntity {
     inviterUserId: UserRefId.of(invitation.inviterUserId.value),
     inviterName: invitation.inviterName,
     redemptionCount: RedemptionCount.of(invitation.redemptionCount),
-    createdAtMs: invitation.createdAt.toMillis(),
+    createdAtUtcMs: utcOf(invitation.createdAt),
   };
+}
+
+/** A class instant's epoch ms as the brand — every `ZonedDateTime` is inside its window. */
+function utcOf(instant: ZonedDateTime): UtcEpochMs {
+  const epochMs = instant.toMillis();
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
 }

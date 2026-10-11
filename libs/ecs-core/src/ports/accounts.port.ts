@@ -2,11 +2,12 @@ import type { Observable } from 'rxjs';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
 import type { Role } from '../components/role.data';
-import type { UserEntity, UserId } from '../entities/user.entity';
+import type { User } from '../entities/user.entity';
+import type { UserId } from '../primitives/ids.primitive';
 
 /**
  * The accounts context's ports (blueprint §4.1, §4.2) over `users/{uid}` —
- * the flat `UserEntity` straight from `snap.data()` (§9 D19), no mapper and
+ * the flat `User` straight from `snap.data()` (§9 D19), no mapper and
  * no search-result view model. Profile WRITES are the `updateProfile`
  * callable (SearchFieldsSystem derives `searchName`/`searchPrefixes` inside
  * its transaction), never a port here. No contact-change ports: §9 D12(b),
@@ -22,12 +23,12 @@ import type { UserEntity, UserId } from '../entities/user.entity';
 export type SearchUsers = (
   prefix: string,
   limit: number,
-) => Promise<Result<readonly UserEntity[], RepositoryError>>;
+) => Promise<Result<readonly User[], RepositoryError>>;
 
 /** `users/{uid}`, live — `null` before the account's first sign-in writes the stub. */
 export type ObserveProfile = (
   userId: UserId,
-) => Observable<Result<UserEntity | null, RepositoryError>>;
+) => Observable<Result<User | null, RepositoryError>>;
 
 /**
  * The STORED roles of `users/{uid}` — the server's second check behind a

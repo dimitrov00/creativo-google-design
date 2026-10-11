@@ -80,6 +80,58 @@ describe('firestore-tx adapter (emulator)', () => {
     expect(await body('barberBusy/old')).toBeUndefined();
   });
 
+  it('removes deleteFields at the root with FieldValue.delete() — a variant transition (Law 6)', async () => {
+    await db.doc('appointments/a1').set({
+      bookingStatus: 'CONFIRMED',
+      confirmedAtUtcMs: 1,
+      'a.b': 'literal',
+      a: { b: 1 },
+    });
+    const result = await firestoreCommitPlan(db)(
+      async () => null,
+      () =>
+        Result.ok({
+          writes: [
+            WriteOp.transition(
+              ['appointments', 'a1'],
+              { bookingStatus: 'CANCELLED', cancelledAtUtcMs: 2 },
+              ['confirmedAtUtcMs', 'a.b'],
+            ),
+          ],
+        }),
+    );
+    expect(result.ok).toBe(true);
+    // `a.b` is ONE root field — deleting it leaves the nested map alone.
+    expect(await body('appointments/a1')).toEqual({
+      bookingStatus: 'CANCELLED',
+      cancelledAtUtcMs: 2,
+      a: { b: 1 },
+    });
+  });
+
+  it('refuses a key both set and deleted as a value, applying nothing', async () => {
+    await db.doc('appointments/a1').set({ n: 1 });
+    const result = await firestoreCommitPlan(db)(
+      async () => null,
+      () =>
+        Result.ok({
+          writes: [
+            WriteOp.set(['barberBusy', 'k'], { blocks: [] }),
+            WriteOp.transition(['appointments', 'a1'], { n: 2 }, ['n']),
+          ],
+        }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: RepositoryError.writeFailed(
+        'appointments/a1',
+        'field-set-and-deleted',
+      ),
+    });
+    expect(await body('appointments/a1')).toEqual({ n: 1 });
+    expect(await body('barberBusy/k')).toBeUndefined();
+  });
+
   it('answers ALREADY_EXISTS as a value naming the document, and applies nothing', async () => {
     await db.doc('auditLog/taken').set({ action: 'first' });
 

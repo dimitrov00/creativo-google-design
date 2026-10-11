@@ -1,22 +1,8 @@
+import { Currency } from '../primitives/currency.primitive';
+import { defect } from '../primitives/defect';
+import { PriceCents } from '../primitives/price-cents.primitive';
 import { MoneyError } from './money-errors.data';
 import { Result } from './result.data';
-
-/**
- * The currencies a figure may carry — the ONLY source of these strings
- * (blueprint §2.7: `Currency = { EUR }`). `EUR` is the shop's currency; BGN
- * was retired in 2026 and is NOT recognised here: the one place leva still
- * appear is ClientStatsSystem's legacy rate (`client-stats.ts:19`,
- * `BGN_PER_EUR`), which converts a legacy seat's figure before it becomes
- * `Money`. Extend this dictionary when the business needs a currency, never
- * speculatively.
- */
-export const Currency = {
-  EUR: 'EUR',
-} as const;
-export type Currency = (typeof Currency)[keyof typeof Currency];
-
-/** Every recognised currency, dictionary order — derived, never a second source. */
-const CURRENCIES: readonly Currency[] = Object.values(Currency);
 
 /**
  * How `Money.scale` resolves a quotient that falls between two minor units.
@@ -26,127 +12,110 @@ const CURRENCIES: readonly Currency[] = Object.values(Currency);
  */
 export const RoundingMode = {
   /** Toward −∞ (dinero `down`). */
-  Floor: 'floor',
+  Floor: 'FLOOR',
   /** Toward +∞ (dinero `up`). */
-  Ceil: 'ceil',
+  Ceil: 'CEIL',
   /** Nearest; a tie goes toward +∞ (`Math.round`, dinero `halfUp`). */
-  HalfUp: 'half_up',
+  HalfUp: 'HALF_UP',
   /** Nearest; a tie goes toward −∞ (dinero `halfDown`). */
-  HalfDown: 'half_down',
+  HalfDown: 'HALF_DOWN',
   /** Nearest; a tie goes to the even neighbour — banker's rounding. */
-  HalfEven: 'half_even',
+  HalfEven: 'HALF_EVEN',
   /** Nearest; a tie goes toward zero. */
-  HalfTowardsZero: 'half_towards_zero',
+  HalfTowardsZero: 'HALF_TOWARDS_ZERO',
   /** Nearest; a tie goes away from zero (commercial rounding). */
-  HalfAwayFromZero: 'half_away_from_zero',
+  HalfAwayFromZero: 'HALF_AWAY_FROM_ZERO',
 } as const;
 export type RoundingMode = (typeof RoundingMode)[keyof typeof RoundingMode];
 
 /**
- * A money figure: an integer count of the currency's minor units (cents)
- * beside its ISO 4217 code — never a float, never a formatted string
- * (formatting is the template layer's `formatMoney`, `libs/infrastructure/i18n`).
- * A figure that stands alone on a document is this nested struct
- * (`Seat.tip`, `GiftVoucher.balance`, …); `ServiceTerms` keeps the flat
- * `priceMinorUnits` + `currencyCode` pair (blueprint §2.5).
+ * The system ARITHMETIC value (flatten-spec §1.4, F-14): an integer count of
+ * the currency's minor units (cents, stotinki) beside its ISO 4217 code —
+ * never a float, never a formatted string (formatting is the template
+ * layer's `formatMoney`, `libs/infrastructure/i18n`). Never a field of an
+ * entity, document or stored struct: those flatten to `…Cents: PriceCents`
+ * beside one `currency: Currency` (N6).
  *
- * `Money.of` is the edge guard (a non-negative safe integer in a recognised
+ * `Money.of` is the edge guard (a non-negative safe integer in a tradable
  * currency, the kernel's `fromMinorUnitsAndCode` invariant). Arithmetic is
  * plain integer math with a same-currency guard; `sub` may go below zero —
  * a difference is not a price, and clamping is the caller's decision.
  */
 export type Money = {
-  readonly amountMinorUnits: number;
-  readonly currencyCode: string;
+  readonly amountCents: PriceCents;
+  readonly currency: Currency;
 };
 
 export const Money = {
   /**
    * The edge guard — the only way a raw amount and code become `Money`.
    * The code is trimmed and upper-cased (`'eur'` → `'EUR'`); the amount must
-   * be a non-negative safe integer.
+   * be a non-negative safe integer (a negative zero folds into `0`).
    */
-  of(
-    amountMinorUnits: number,
-    currencyCode: string,
-  ): Result<Money, MoneyError> {
-    const currency = Money.currencyFrom(currencyCode);
-    if (currency === null) {
-      return Result.err(MoneyError.unknownCurrency(currencyCode));
+  of(amountCents: number, currency: string): Result<Money, MoneyError> {
+    const tradable = Money.currencyFrom(currency);
+    if (tradable === null) {
+      return Result.err(MoneyError.unknownCurrency(currency));
     }
-    if (!Number.isSafeInteger(amountMinorUnits) || amountMinorUnits < 0) {
-      return Result.err(MoneyError.invalidAmount(amountMinorUnits));
-    }
-    // `+ 0` folds a negative zero, so `-0` never reaches a document.
-    return Result.ok({
-      amountMinorUnits: amountMinorUnits + 0,
-      currencyCode: currency,
-    });
+    const cents = PriceCents.of(amountCents);
+    if (!cents.ok) return Result.err(MoneyError.invalidAmount(amountCents));
+    return Result.ok({ amountCents: cents.value, currency: tradable });
   },
 
-  /** Nothing, in `currencyCode` — the identity of `add` and the empty `sum`. */
-  zero(currencyCode: string): Money {
-    return { amountMinorUnits: 0, currencyCode };
+  /** Two brands that are already checked — no guard (flatten-spec §1.4). */
+  fromCents(amountCents: PriceCents, currency: Currency): Money {
+    return { amountCents, currency };
+  },
+
+  /** Nothing, in `currency` — the identity of `add` and the empty `sum`. */
+  zero(currency: Currency): Money {
+    return { amountCents: PriceCents.ZERO, currency };
   },
 
   /**
-   * The recognised currency a raw code names (trimmed, case-insensitive),
+   * The tradable currency a raw code names (trimmed, case-insensitive),
    * or `null` — the kernel's `currencyFromCode`, minus dinero.
    */
   currencyFrom(raw: string): Currency | null {
-    const code = raw.trim().toUpperCase();
-    for (let i = 0; i < CURRENCIES.length; i++) {
-      const currency = CURRENCIES[i] as Currency;
-      if (currency === code) return currency;
-    }
-    return null;
+    return Currency.tradable(raw);
   },
 
   add(a: Money, b: Money): Result<Money, MoneyError> {
-    if (a.currencyCode !== b.currencyCode) {
-      return Result.err(
-        MoneyError.currencyMismatch(a.currencyCode, b.currencyCode),
-      );
+    if (a.currency !== b.currency) {
+      return Result.err(MoneyError.currencyMismatch(a.currency, b.currency));
     }
     return Result.ok({
-      amountMinorUnits: a.amountMinorUnits + b.amountMinorUnits,
-      currencyCode: a.currencyCode,
+      amountCents: PriceCents.add(a.amountCents, b.amountCents),
+      currency: a.currency,
     });
   },
 
   /** `a − b`; the result may be negative (a difference, not a price). */
   sub(a: Money, b: Money): Result<Money, MoneyError> {
-    if (a.currencyCode !== b.currencyCode) {
-      return Result.err(
-        MoneyError.currencyMismatch(a.currencyCode, b.currencyCode),
-      );
+    if (a.currency !== b.currency) {
+      return Result.err(MoneyError.currencyMismatch(a.currency, b.currency));
     }
     return Result.ok({
-      amountMinorUnits: a.amountMinorUnits - b.amountMinorUnits,
-      currencyCode: a.currencyCode,
+      amountCents: PriceCents.sub(a.amountCents, b.amountCents),
+      currency: a.currency,
     });
   },
 
   /**
-   * The total of `items` in `currencyCode` — one linear scan, no
-   * intermediate structs. The first figure in another currency refuses the
-   * whole sum. An empty list sums to `zero(currencyCode)`.
+   * The total of `items` in `currency` — one linear scan, no intermediate
+   * structs. The first figure in another currency refuses the whole sum. An
+   * empty list sums to `zero(currency)`.
    */
-  sum(
-    items: readonly Money[],
-    currencyCode: string,
-  ): Result<Money, MoneyError> {
-    let total = 0;
+  sum(items: readonly Money[], currency: Currency): Result<Money, MoneyError> {
+    let total = PriceCents.ZERO;
     for (let i = 0; i < items.length; i++) {
       const item = items[i] as Money;
-      if (item.currencyCode !== currencyCode) {
-        return Result.err(
-          MoneyError.currencyMismatch(currencyCode, item.currencyCode),
-        );
+      if (item.currency !== currency) {
+        return Result.err(MoneyError.currencyMismatch(currency, item.currency));
       }
-      total += item.amountMinorUnits;
+      total = PriceCents.add(total, item.amountCents);
     }
-    return Result.ok({ amountMinorUnits: total, currencyCode });
+    return Result.ok({ amountCents: total, currency });
   },
 
   /**
@@ -157,8 +126,8 @@ export const Money = {
    * retirement rate is `scale(leva, 100_000, 195_583, …)`.
    *
    * Refuses a ratio that is not `integer / positive integer`
-   * (`money.invalid_ratio`) and a product beyond the safe-integer range
-   * (`money.invalid_amount`).
+   * (`MONEY_INVALID_RATIO`) and a product beyond the safe-integer range
+   * (`MONEY_INVALID_AMOUNT`).
    */
   scale(
     m: Money,
@@ -173,37 +142,32 @@ export const Money = {
     ) {
       return Result.err(MoneyError.invalidRatio(numerator, denominator));
     }
-    const product = m.amountMinorUnits * numerator;
+    const product = m.amountCents * numerator;
     if (!Number.isSafeInteger(product)) {
       return Result.err(MoneyError.invalidAmount(product));
     }
-    return Result.ok({
-      amountMinorUnits: divideRounded(product, denominator, mode),
-      currencyCode: m.currencyCode,
-    });
+    const scaled = PriceCents.signed(divideRounded(product, denominator, mode));
+    return scaled.ok
+      ? Result.ok({ amountCents: scaled.value, currency: m.currency })
+      : defect('a quotient of a safe integer is a safe integer');
   },
 
   /** Same currency and same amount. */
   equals(a: Money, b: Money): boolean {
-    return (
-      a.currencyCode === b.currencyCode &&
-      a.amountMinorUnits === b.amountMinorUnits
-    );
+    return a.currency === b.currency && a.amountCents === b.amountCents;
   },
 
   /** `-1`, `0` or `1` for `a` below, equal to or above `b`; refuses mixed currencies. */
   compare(a: Money, b: Money): Result<-1 | 0 | 1, MoneyError> {
-    if (a.currencyCode !== b.currencyCode) {
-      return Result.err(
-        MoneyError.currencyMismatch(a.currencyCode, b.currencyCode),
-      );
+    if (a.currency !== b.currency) {
+      return Result.err(MoneyError.currencyMismatch(a.currency, b.currency));
     }
-    const diff = a.amountMinorUnits - b.amountMinorUnits;
+    const diff = a.amountCents - b.amountCents;
     return Result.ok(diff < 0 ? -1 : diff > 0 ? 1 : 0);
   },
 
   isZero(m: Money): boolean {
-    return m.amountMinorUnits === 0;
+    return m.amountCents === 0;
   },
 } as const;
 

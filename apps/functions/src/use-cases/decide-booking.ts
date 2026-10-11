@@ -40,49 +40,70 @@ import {
   StandingDoubleSeatings,
   WEEKDAYS,
   labelSharedByTwoGuests,
+  paddedBusy,
   toEcsDetail,
 } from '@creativo/domain/scheduling';
 import { UserId } from '@creativo/domain/accounts';
 import type { AppointmentPlacement } from '@creativo/application/booking';
 import {
   BarberId as EcsBarberId,
-  type BookingCommitError,
-  BookingCommitErrorCode,
-  BookingCommitField,
+  BarberPreference,
+  type BookingDecision as EcsBookingDecision,
   BookingDecisionSystem,
-  type BookingPolicy as EcsBookingPolicy,
+  BookingError,
+  BookingErrorCode,
+  BookingErrorField,
+  BookingStatus,
   type BookingSnapshot as EcsBookingSnapshot,
   BusyKey,
+  type ChairTime as EcsChairTime,
+  Currency,
   DayHours,
-  DayKey,
-  type DayOffset,
-  type DecideBookingRequest as EcsDecideBookingRequest,
+  type DecideBookingInput as EcsDecideBookingInput,
+  type DecisionBusyDay,
+  type DecisionException,
+  type DecisionStandingSeat,
+  DurationMinutes,
   E164,
-  type ExceptionEffect,
+  EndMinute,
+  type ExceptionEffectRule,
   GuestLabelSystem,
+  LocalDate,
   LocationId as EcsLocationId,
-  type RequestedSubject,
+  MinuteCount,
+  MinuteOfDay,
+  type MinuteRange,
+  Placement,
+  PriceCents,
+  type RequestedSeatInput as EcsRequestedSeatInput,
+  type RequestedSubjectInput,
+  RequestedSubjectRole,
   type Seat as EcsSeat,
   ScheduleExceptionSystem,
   type ScheduleVersion,
   SchedulingErrorCode,
   type SchedulingError,
-  ServiceCategoryId,
-  ServiceComposition,
-  type ServiceEntity,
-  ServiceId as EcsServiceId,
-  ServiceTerms as EcsServiceTerms,
-  ServiceVariantId as EcsServiceVariantId,
   SeatId as EcsSeatId,
+  SeatKeyText,
+  SeatSubject as EcsSeatSubject,
   ShiftSegment,
+  type ShopNow,
   type StaffTermsOverride as EcsStaffTermsOverride,
+  SubjectRelationship,
+  type TimeError,
+  TimeErrorCode,
+  type TimeZone,
+  UserId as EcsUserId,
+  UtcEpochMs,
   type Weekday,
   ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import {
   CommitBookingBarberNotRosteredError,
   CommitBookingBeyondHorizonError,
   CommitBookingConflictingServicesError,
+  CommitBookingDstGapError,
   type CommitBookingError,
   CommitBookingInvalidInputError,
   CommitBookingInvariantError,
@@ -98,6 +119,7 @@ import {
   CommitBookingDuplicateGuestLabelError,
   CommitBookingPersonDoubleBookedError,
 } from './decide-booking.errors';
+import { toEcsPolicy, toEcsService } from './party-admission';
 
 /** One seat as the client asked for it — see `CommitBookingSeatRequest`. */
 export interface RequestedSeat {
@@ -398,33 +420,31 @@ export function decideBooking(
   deps: DecideBookingDeps,
 ): Result<BookingDecision, CommitBookingError> {
   const outside = deps.allowOutsideWindow === true;
-  const ecsRequest = toEcsRequest(request, snapshot.zone);
+  const framed = toEcsRequest(request, snapshot.zone);
+  if (framed.gap !== null)
+    return fail(new CommitBookingDstGapError(framed.gap));
+  // On a DST transition day the barber-busy collision is judged on the
+  // absolute timeline below (`collisionOnInstants`), not on the wall clock.
+  const onInstants = deps.allowOverlap !== true && isTransitionDay(framed);
   const decided = BookingDecisionSystem.decide(
-    ecsRequest,
-    toEcsSnapshot(snapshot),
+    framed.input,
+    toEcsSnapshot(snapshot, framed.timeZone),
     toEcsPolicy(deps.policy),
     {
       allowOutsideWindow: outside,
       skipMinNotice: outside,
-      allowOverlap: deps.allowOverlap === true,
+      allowOverlap: deps.allowOverlap === true || onInstants,
       allowConflictingServices: deps.allowConflictingServices === true,
     },
-    (snapshot.release ?? []).map((chair) => ({
-      barberId: EcsBarberId.of(chair.barberId.value),
-      occupied: chair.occupied,
-    })),
+    releaseOf(snapshot.release ?? [], framed),
     {
-      nowMs: deps.now.toMillis(),
+      now: shopNowOf(deps.now, framed.timeZone),
+      startUtcMs: framed.startUtcMs ?? instantOf(deps.now.toMillis()),
       nextId: deps.nextId,
-      days: dayTableOf(snapshot.zone, deps.now, ecsRequest),
-      ownerUserId: deps.ownerUserId,
+      ownerUserId:
+        deps.ownerUserId === null ? null : EcsUserId.of(deps.ownerUserId),
       termsOverrides: overridePatchesOf(deps.termsOverrides),
-      standing: (deps.standing ?? []).map((seat) => ({
-        id: seat.id,
-        subject: toEcsSubject(seat.subject),
-        startMs: seat.startMs,
-        durationMinutes: seat.durationMinutes,
-      })),
+      standing: standingOf(deps.standing ?? []),
       stood: (deps.stood ?? []).map(([seatId, otherSeatId]) => ({
         seatId: EcsSeatId.of(seatId),
         otherSeatId: EcsSeatId.of(otherSeatId),
@@ -433,7 +453,11 @@ export function decideBooking(
     },
   );
   if (!decided.ok) return fail(toLegacyError(decided.error, request));
-  return toLegacyDecision(decided.value, request, snapshot, deps);
+  if (onInstants) {
+    const collision = collisionOnInstants(decided.value, framed, snapshot);
+    if (collision !== null) return fail(toLegacyError(collision, request));
+  }
+  return toLegacyDecision(decided.value, request, snapshot, deps, framed);
 }
 
 /**
@@ -460,107 +484,435 @@ export function standingDoubleSeatingsOf(
 
 /* ── Phase 2 shim converters: legacy shapes ↔ ecs-core structs ──────────── */
 
-function toEcsSubject(subject: RequestedSeat['subject']): RequestedSubject {
+/*
+ * THE SHOP DAY. The system decides a request on ONE shop day, on its wall
+ * clock (T7, Law 7.3); the legacy request carries an instant per seat. The
+ * shim reads each start ONCE at this ingestion boundary with the location's
+ * zone (`ZonedTimeSystem.parseIsoIn`, flatten-spec §2.4): an offset start is
+ * the instant it names; a bare wall clock is placed on the shop's clock — a
+ * time inside the spring-forward gap is refused as `DST_GAP_INVALID_TIME`
+ * (never shifted forward), a fall-back repeat takes the earlier offset. Each
+ * instant is read back on the wall clock with `toLocal` and placed on the
+ * shop day of the FIRST seat that parses: a seat that does not parse, or one
+ * on another day, has no minute on that day and is refused where the
+ * decision refuses an unparsed start (`invalid_input: startIso`). Every
+ * instant the legacy answer carries — a seat's `startsAt`, a busy write — is
+ * the request's own, never a wall clock read back.
+ */
+
+/** A real day of 24 hours — a transition day is one hour shorter or longer. */
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * A brand the legacy value already satisfies — its own rules are the
+ * brand's (a legacy roster, `CalendarDay` or instant already holds every
+ * rule the brand checks), so a refusal is a programmer defect.
+ */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  return result.ok ? result.value : defect(`unreachable: ${what}`);
+}
+
+function instantOf(ms: number): UtcEpochMs {
+  return sure(UtcEpochMs.of(ms), 'an instant');
+}
+
+/**
+ * A wire `startIso`, read ONCE at the ingestion boundary with the shop's
+ * zone (`ZonedTimeSystem.parseIsoIn`): an offset start's own instant, a
+ * wall clock's through `toUtc` — `DST_GAP_INVALID_TIME` inside the
+ * spring-forward gap, the earlier offset in a fall-back repeat. The one
+ * reading the commit, a client's move and the transaction's busy read share
+ * (an unknown zone reads nothing: `TIME_INVALID_TIME_ZONE`).
+ */
+export function readStartIso(
+  startIso: string,
+  zone: string,
+): ReturnType<typeof ZonedTimeSystem.parseIsoIn> {
+  const timeZone = ZonedTimeSystem.checkZone(zone);
+  return timeZone.ok
+    ? ZonedTimeSystem.parseIsoIn(startIso, timeZone.value)
+    : timeZone;
+}
+
+/** The request on its shop day: the system's input, and how the shim reads it back. */
+type FramedRequest = {
+  readonly input: EcsDecideBookingInput;
+  /** The shop's zone, or `null` when the engine cannot read it. */
+  readonly timeZone: TimeZone | null;
+  /** Each request seat's parsed start (`null`: did not parse), by index. */
+  readonly startsMs: readonly (number | null)[];
+  /** The first seat start inside the spring-forward gap, refused before anything is decided. */
+  readonly gap: TimeError.DstGap | null;
+  /** The envelope's start instant — the earliest seat placed on the day. */
+  readonly startUtcMs: UtcEpochMs | null;
+};
+
+/**
+ * An instant → its wall-clock minute on `localDate`'s axis in `timeZone`
+ * (counted past `1440` for a later day, below `0` for an earlier one).
+ */
+function minuteOn(
+  localDate: LocalDate,
+  timeZone: TimeZone,
+  instantMs: number,
+): number {
+  const wall = ZonedTimeSystem.toLocal(instantOf(instantMs), timeZone);
+  return LocalDate.daysBetween(localDate, wall.localDate) * 1440 + wall.minute;
+}
+
+/** Instants → the minute ranges of `localDate`, clipped to it. */
+function rangesOn(
+  localDate: LocalDate,
+  timeZone: TimeZone,
+  intervals: readonly Interval[],
+): readonly MinuteRange[] {
+  const ranges: MinuteRange[] = [];
+  for (const interval of intervals) {
+    const start = Math.max(minuteOn(localDate, timeZone, interval.startMs), 0);
+    const end = Math.min(minuteOn(localDate, timeZone, interval.endMs), 1440);
+    const from = MinuteOfDay.of(start);
+    const to = EndMinute.of(end);
+    if (start < end && from.ok && to.ok) {
+      ranges.push({ startMinutes: from.value, endMinutes: to.value });
+    }
+  }
+  return ranges;
+}
+
+function toEcsSubject(
+  subject: RequestedSeat['subject'],
+): RequestedSubjectInput {
   switch (subject.kind) {
     case 'self':
-      return { kind: 'self' };
+      return { requestedSubjectRole: RequestedSubjectRole.Self };
     case 'companion':
-      return { kind: 'companion', userId: subject.userId };
+      return {
+        requestedSubjectRole: RequestedSubjectRole.Companion,
+        companionUserId: subject.userId,
+      };
     case 'guest':
       return {
-        kind: 'guest',
+        requestedSubjectRole: RequestedSubjectRole.Guest,
         label: subject.label,
         guestKey: subject.guestKey ?? null,
       };
   }
 }
 
-/** The request, its starts read as instants in the shop's zone (`null`: did not parse). */
+/** The legacy placement ↔ the dictionary (`'self'` ↔ `SELF`). */
+const PLACEMENT: Readonly<Record<AppointmentPlacement, Placement>> = {
+  self: Placement.Self,
+  staff: Placement.Staff,
+};
+
+/** The legacy preference ↔ the dictionary (`'any'` ↔ `ANY`). */
+const PREFERENCE: Readonly<Record<'any' | 'specific', BarberPreference>> = {
+  any: BarberPreference.Any,
+  specific: BarberPreference.Specific,
+};
+
+/** The request, its starts read in the shop's zone and placed on the first seat's shop day. */
 function toEcsRequest(
   request: DecideBookingRequest,
   zone: string,
-): EcsDecideBookingRequest {
-  return {
-    locationId: request.locationId,
-    seats: request.seats.map((seat) => {
-      const start = ZonedDateTime.fromISO(seat.startIso, zone);
-      return {
-        lineId: seat.lineId,
-        serviceId: seat.serviceId,
-        variantId: seat.variantId,
-        barberId: seat.barberId,
-        barberPref: seat.barberPref ?? null,
-        startMs: start.isSuccess() ? start.value.toMillis() : null,
-        subject: toEcsSubject(seat.subject),
-      };
-    }),
-    attemptId: request.attemptId ?? null,
-    bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
-    contact: request.contact
-      ? {
-          name: request.contact.name,
-          phone: request.contact.phone,
-          email: request.contact.email ?? null,
-          note: request.contact.note ?? null,
+): FramedRequest {
+  const timeZone = ZonedTimeSystem.checkZone(zone);
+  let gap: TimeError.DstGap | null = null;
+  const startsMs = request.seats.map((seat) => {
+    // An unreadable zone reads no start (every seat is refused unplaced).
+    if (!timeZone.ok) return null;
+    const start = ZonedTimeSystem.parseIsoIn(seat.startIso, timeZone.value);
+    if (start.ok) return start.value;
+    if (gap === null && start.error.errorCode === TimeErrorCode.DstGap) {
+      gap = start.error;
+    }
+    return null;
+  });
+  // The shop day: the first seat that parses (an unreadable zone has none).
+  let localDate: LocalDate | null = null;
+  if (timeZone.ok) {
+    for (const startMs of startsMs) {
+      const instant = startMs === null ? null : UtcEpochMs.of(startMs);
+      if (instant === null || !instant.ok) continue;
+      localDate = ZonedTimeSystem.toLocal(
+        instant.value,
+        timeZone.value,
+      ).localDate;
+      break;
+    }
+  }
+  let startUtcMs: UtcEpochMs | null = null;
+  const seats: EcsRequestedSeatInput[] = request.seats.map((seat, index) => {
+    const startMs = startsMs[index] ?? null;
+    let startMinutes: number | null = null;
+    if (startMs !== null && localDate !== null && timeZone.ok) {
+      const minute = minuteOn(localDate, timeZone.value, startMs);
+      // Only a minute OF this shop day places the seat on it.
+      if (MinuteOfDay.of(minute).ok) {
+        startMinutes = minute;
+        if (startUtcMs === null || startMs < startUtcMs) {
+          startUtcMs = instantOf(startMs);
         }
-      : null,
-    placement: request.placement ?? null,
+      }
+    }
+    return {
+      lineId: seat.lineId,
+      serviceId: seat.serviceId,
+      variantId: seat.variantId,
+      barberId: seat.barberId,
+      barberPreference:
+        seat.barberPref === undefined ? null : PREFERENCE[seat.barberPref],
+      startMinutes,
+      subject: toEcsSubject(seat.subject),
+    };
+  });
+  return {
+    input: {
+      locationId: request.locationId,
+      localDate: localDate ?? '',
+      seats,
+      attemptId: request.attemptId ?? null,
+      bookedFromAppointmentId: request.bookedFromAppointmentId ?? null,
+      contact: request.contact
+        ? {
+            name: request.contact.name,
+            phone: request.contact.phone,
+            email: request.contact.email ?? null,
+            note: request.contact.note ?? null,
+          }
+        : null,
+      placement:
+        request.placement === undefined ? null : PLACEMENT[request.placement],
+    },
+    timeZone: timeZone.ok ? timeZone.value : null,
+    startsMs,
+    gap,
+    startUtcMs,
   };
 }
 
-function toEcsSnapshot(snapshot: BookingSnapshot): EcsBookingSnapshot {
+/**
+ * Is the request's shop day a DST transition day — one whose wall clock is
+ * not its elapsed time (23 or 25 hours long)? On such a day a wall-clock
+ * minute range is no measure of what overlaps: a span after the
+ * spring-forward reads an hour later than the time that passed, and the
+ * fall-back hour reads twice.
+ */
+function isTransitionDay(framed: FramedRequest): boolean {
+  const day = LocalDate.parse(framed.input.localDate);
+  if (framed.timeZone === null || !day.ok) return false;
+  const length = UtcEpochMs.elapsedMs(
+    ZonedTimeSystem.startOfLocalDay(day.value, framed.timeZone),
+    ZonedTimeSystem.startOfLocalDay(
+      LocalDate.addDays(day.value, 1),
+      framed.timeZone,
+    ),
+  );
+  return length !== MS_PER_DAY;
+}
+
+/**
+ * The barber-busy collision on the ABSOLUTE timeline — the commit check the
+ * legacy decision made, kept for a transition day, where the wall-clock
+ * check would let a real double booking through (a seat before the
+ * spring-forward against a span after it) or refuse two seats an hour apart
+ * (the repeated fall-back hour). Each decided seat's chair time, on the
+ * request's own instants with its raw pads (exactly the busy write it would
+ * make), against what is taken — the stored spans with this visit's own
+ * chairs handed back first, padded by the barber's turnaround by the ONE
+ * rule the grid reads by (`paddedBusy`). The first seat that collides, in
+ * request order, is the refusal the decision would have given.
+ */
+function collisionOnInstants(
+  decision: EcsBookingDecision,
+  framed: FramedRequest,
+  snapshot: BookingSnapshot,
+): BookingError | null {
+  const localDate = LocalDate.parse(framed.input.localDate);
+  if (!localDate.ok) return null;
+  const decided = decision.appointment.seats;
+  for (let index = 0; index < decided.length; index++) {
+    const seat = decided.at(index) as EcsSeat;
+    const startMs = framed.startsMs.at(index) ?? null;
+    const barberId = BarberId.create(seat.barberId);
+    if (startMs === null || barberId.isFailure()) continue;
+    const occupied = Interval.of(
+      startMs - seat.setupMinutes * 60_000,
+      startMs + (seat.durationMinutes + seat.cleanupMinutes) * 60_000,
+    );
+    const taken = paddedBusy({
+      barberId: barberId.value,
+      spans:
+        snapshot.busy.get(BusyKey.of(seat.barberId, localDate.value)) ?? [],
+      turnaroundMinutes:
+        snapshot.schedules.get(seat.barberId)?.turnaroundMinutes ?? 0,
+      release: snapshot.release ?? [],
+    });
+    if (taken.some((span) => Interval.overlaps(span, occupied))) {
+      return BookingError.slotUnavailable(
+        seat.barberId,
+        localDate.value,
+        seat.startMinutes,
+        index,
+      );
+    }
+  }
+  return null;
+}
+
+/**
+ * The shop's "now" — derived once from the legacy clock's instant and the
+ * shop's zone (UTC stands in for a zone the engine cannot read: every seat
+ * is refused as unplaceable before the clock is compared).
+ */
+function shopNowOf(now: ZonedDateTime, timeZone: TimeZone | null): ShopNow {
+  return ZonedTimeSystem.shopNow(
+    instantOf(now.toMillis()),
+    timeZone ?? sure(ZonedTimeSystem.checkZone('UTC'), 'UTC'),
+  );
+}
+
+/** The chairs a rebuilt visit hands back, on the request's shop day. */
+function releaseOf(
+  release: readonly ChairTime[],
+  framed: FramedRequest,
+): readonly EcsChairTime[] {
+  const localDate = LocalDate.parse(framed.input.localDate);
+  if (framed.timeZone === null || !localDate.ok) return [];
+  const chairs: EcsChairTime[] = [];
+  for (const chair of release) {
+    for (const range of rangesOn(localDate.value, framed.timeZone, [
+      chair.occupied,
+    ])) {
+      chairs.push({
+        barberId: EcsBarberId.of(chair.barberId.value),
+        startMinutes: sure(MinuteOfDay.of(range.startMinutes), 'a chair start'),
+        endMinutes: sure(EndMinute.of(range.endMinutes), 'a chair end'),
+      });
+    }
+  }
+  return chairs;
+}
+
+/**
+ * The visit as it stands, for the "one person, one chair" rule — which only
+ * compares its seats WITH EACH OTHER (the pairs it already held), so they
+ * are read on their own frame: minutes from the earliest standing start.
+ */
+function standingOf(
+  standing: readonly StandingSeat[],
+): readonly DecisionStandingSeat[] {
+  let originMs = Number.POSITIVE_INFINITY;
+  for (const seat of standing) {
+    if (seat.startMs < originMs) originMs = seat.startMs;
+  }
+  const origin = Math.floor(originMs / 60_000) * 60_000;
+  return standing.map((seat) => ({
+    seatId: EcsSeatId.of(seat.id),
+    subject: toEcsSubject(seat.subject),
+    startMinutes: sure(
+      MinuteOfDay.of(Math.floor((seat.startMs - origin) / 60_000)),
+      'a standing start',
+    ),
+    durationMinutes: sure(
+      DurationMinutes.of(seat.durationMinutes),
+      'a standing duration',
+    ),
+  }));
+}
+
+function toEcsSnapshot(
+  snapshot: BookingSnapshot,
+  timeZone: TimeZone | null,
+): EcsBookingSnapshot {
+  const busy: DecisionBusyDay[] = [];
+  for (const [key, spans] of snapshot.busy) {
+    const id = BusyKey.parse(key);
+    const day = LocalDate.parse(key.slice(key.lastIndexOf('__') + 2));
+    if (id === null || !day.ok || timeZone === null) continue;
+    busy.push({ id, spans: rangesOn(day.value, timeZone, spans) });
+  }
+  const exceptions: DecisionException[] = [];
+  for (const [key, exception] of snapshot.exceptions) {
+    const id = BusyKey.parse(key);
+    const effect = effectOf(exception);
+    const localDate = LocalDate.parse(exception.day.key());
+    if (id === null || effect === null || !localDate.ok) continue;
+    exceptions.push({
+      // The key's barber half — everything before its LAST `__`.
+      barberId: EcsBarberId.of(key.slice(0, key.lastIndexOf('__'))),
+      localDate: localDate.value,
+      ...effect,
+    });
+  }
   return {
-    zone: snapshot.zone,
     shopHours: weekOf(snapshot.shopHours),
-    services: snapshot.services.map(toServiceEntity),
+    services: snapshot.services.map(toEcsService),
     schedules: [...snapshot.schedules].map(([barberId, schedule]) => ({
       barberId: EcsBarberId.of(barberId),
       versions: versionsOf(schedule.history),
-      turnaroundMinutes: schedule.turnaroundMinutes,
+      turnaroundMinutes: sure(
+        MinuteCount.of(schedule.turnaroundMinutes),
+        'a turnaround',
+      ),
     })),
-    busy: [...snapshot.busy].flatMap(([key, spans]) => {
-      const id = BusyKey.parse(key);
-      return id === null ? [] : [{ id, spans }];
-    }),
-    exceptions: [...snapshot.exceptions].flatMap(([key, exception]) => {
-      const id = BusyKey.parse(key);
-      const effect = effectOf(exception);
-      return id === null || effect === null
-        ? []
-        : [
-            {
-              barberId: BusyKey.split(id).barberId,
-              dayKey: DayKey.of(exception.day.key()),
-              effect,
-            },
-          ];
-    }),
+    busy,
+    exceptions,
   };
 }
 
-function toEcsPolicy(policy: BookingPolicy): EcsBookingPolicy {
-  return {
-    maxPartySize: policy.maxPartySize,
-    slotStepMinutes: policy.slotStepMinutes,
-    minLeadMinutes: policy.minLeadMinutes,
-    horizonMonths: policy.horizonMonths,
-    cancellationWindowHours: policy.cancellationWindow.hours,
-    maxFlexibleDays: policy.maxFlexibleDays,
-    autoConfirm: policy.autoConfirm,
-  };
+/**
+ * A carried figure → its brand. The carry is built server-side from STORED
+ * seats, so it always parses; one that does not is a corrupt carry, handed
+ * through as it is for the decision's own guards to refuse where they
+ * always did (`invalid_input: priceMinorUnits | durationMinutes`).
+ */
+function carried<T>(
+  parsed: { readonly ok: true; readonly value: T } | { readonly ok: false },
+  raw: number | string,
+): T {
+  return parsed.ok ? parsed.value : (raw as unknown as T);
 }
 
 function overridePatchesOf(
   overrides: ReadonlyMap<string, StaffTermsOverride> | undefined,
 ): readonly EcsStaffTermsOverride[] {
-  return [...(overrides ?? [])].map(([seatKey, override]) => ({
-    seatKey,
-    priceMinorUnits: override.priceMinorUnits ?? null,
-    currencyCode: override.currencyCode ?? null,
-    durationMinutes: override.durationMinutes ?? null,
-    setupMinutes: override.setupMinutes ?? null,
-    cleanupMinutes: override.cleanupMinutes ?? null,
-  }));
+  return [...(overrides ?? [])].map(([seatKey, override]) => {
+    const price = override.priceMinorUnits;
+    const code = override.currencyCode;
+    const duration = override.durationMinutes;
+    const setup = override.setupMinutes;
+    const cleanup = override.cleanupMinutes;
+    return {
+      seatKey: SeatKeyText.of(seatKey),
+      priceCents:
+        price === undefined ? null : carried(PriceCents.of(price), price),
+      // A stored code is read case-insensitively and untrimmed by the
+      // decision itself (`storedCurrencyOf`), as the legacy kernel read it.
+      currency:
+        code === undefined
+          ? null
+          : carried<Currency>(
+              code.trim() === code ? Currency.parse(code) : { ok: false },
+              code,
+            ),
+      durationMinutes:
+        duration === undefined
+          ? null
+          : carried(DurationMinutes.of(duration), duration),
+      setupMinutes:
+        setup === undefined ? null : carried(MinuteCount.of(setup), setup),
+      cleanupMinutes:
+        cleanup === undefined
+          ? null
+          : carried(MinuteCount.of(cleanup), cleanup),
+    };
+  });
 }
 
 /** The kernel's phone rule, so a contact parses exactly as it always did. */
@@ -569,87 +921,18 @@ function parsePhone(raw: string): E164 | null {
   return phone.isSuccess() ? E164.of(phone.value.value) : null;
 }
 
-/** The zone table around `now` and every parsed start, a day of margin each side. */
-function dayTableOf(
-  zone: string,
-  now: ZonedDateTime,
-  request: EcsDecideBookingRequest,
-): readonly DayOffset[] {
-  const instants = [now.toMillis()];
-  for (const seat of request.seats) {
-    if (seat.startMs !== null) instants.push(seat.startMs);
-  }
-  return ZonedTimeSystem.dayTableAround(
-    zone,
-    Math.min(...instants),
-    Math.max(...instants),
-    1,
-  );
-}
-
-function toTerms(terms: ServiceTerms): EcsServiceTerms {
-  return EcsServiceTerms.of(
-    terms.price.toMinorUnits(),
-    terms.price.currencyCode(),
-    terms.durationMinutes,
-    terms.setupMinutes,
-    terms.cleanupMinutes,
-  );
-}
-
-/** The legacy aggregate → the stored entity (the cover is not read by the decision). */
-function toServiceEntity(service: Service): ServiceEntity {
-  const composition = service.composition;
-  return {
-    id: EcsServiceId.of(service.id.value),
-    name: { bg: service.name.bg, en: service.name.en },
-    description: { bg: service.description.bg, en: service.description.en },
-    categoryId: ServiceCategoryId.of(service.categoryId.value),
-    baseTerms: toTerms(service.baseTerms),
-    variants: service.variants.map((variant) => ({
-      id: EcsServiceVariantId.of(variant.id.value),
-      name: { bg: variant.name.bg, en: variant.name.en },
-    })),
-    offerings: service.offerings.map((offering) => ({
-      barberId: EcsBarberId.of(offering.barberId.value),
-      base: toTerms(offering.base),
-      overrides: service.variants.flatMap((variant) => {
-        const terms = offering.termsFor(variant.id);
-        return terms === offering.base
-          ? []
-          : [
-              {
-                variantId: EcsServiceVariantId.of(variant.id.value),
-                terms: toTerms(terms),
-              },
-            ];
-      }),
-    })),
-    cover: null,
-    locationIds: service.locationIds.map((id) => EcsLocationId.of(id.value)),
-    conflictsWith: service.conflictsWith.map((id) => EcsServiceId.of(id.value)),
-    composition:
-      composition.kind === 'bundle'
-        ? ServiceComposition.bundle(
-            composition.includes.map((id) => EcsServiceId.of(id.value)),
-          )
-        : ServiceComposition.single(),
-    upsellOnly: service.upsellOnly,
-    popular: service.popular,
-    status: service.status,
-    sortOrder: service.sortOrder,
-  };
-}
-
 /** The roster history → its versions, the weekday map flattened to segments. */
 function versionsOf(history: StaffScheduleHistory): readonly ScheduleVersion[] {
   return history.all().map((version) => ({
     seq: version.seq,
-    effectiveFromDayKey: DayKey.of(version.effectiveFrom.key()),
-    effectiveToDayKey:
+    effectiveFromLocalDate: sure(
+      LocalDate.parse(version.effectiveFrom.key()),
+      'a version start',
+    ),
+    effectiveToLocalDate:
       version.effectiveTo === null
         ? null
-        : DayKey.of(version.effectiveTo.key()),
+        : sure(LocalDate.parse(version.effectiveTo.key()), 'a version end'),
     segments: WEEKDAYS.flatMap((weekday, index) =>
       version.pattern
         .segmentsOn(weekday)
@@ -657,8 +940,14 @@ function versionsOf(history: StaffScheduleHistory): readonly ScheduleVersion[] {
           ShiftSegment.of(
             (index + 1) as Weekday,
             EcsLocationId.of(segment.locationId.value),
-            segment.start.minutesFromMidnight(),
-            segment.end.minutesFromMidnight(),
+            sure(
+              MinuteOfDay.of(segment.start.minutesFromMidnight()),
+              'a segment start',
+            ),
+            sure(
+              EndMinute.of(segment.end.minutesFromMidnight()),
+              'a segment end',
+            ),
           ),
         ),
     ),
@@ -667,7 +956,8 @@ function versionsOf(history: StaffScheduleHistory): readonly ScheduleVersion[] {
 
 /**
  * `'HH:mm'` weeks → minutes. A week holding a clock that does not parse
- * (refused by the `Location` aggregate, so never stored) publishes nothing.
+ * (refused by the `Location` aggregate, so never stored) publishes nothing;
+ * a closing `00:00` opens nothing (an inverted day): closed.
  */
 function weekOf(weekly: readonly LocationDayHours[]): readonly DayHours[] {
   const week: DayHours[] = [];
@@ -679,7 +969,10 @@ function weekOf(weekly: readonly LocationDayHours[]): readonly DayHours[] {
     const opens = DayHours.parseClock(entry.opens);
     const closes = DayHours.parseClock(entry.closes);
     if (!opens.ok || !closes.ok) return [];
-    week.push(DayHours.open(opens.value, closes.value));
+    const end = EndMinute.of(closes.value);
+    week.push(
+      end.ok ? DayHours.open(opens.value, end.value) : DayHours.closed(),
+    );
   }
   return week;
 }
@@ -689,7 +982,7 @@ function weekOf(weekly: readonly LocationDayHours[]): readonly DayHours[] {
  * `ScheduleExceptionSystem.publicEffect`, the detail converted once by the
  * scheduling shim's `toEcsDetail`.
  */
-function effectOf(exception: ScheduleException): ExceptionEffect | null {
+function effectOf(exception: ScheduleException): ExceptionEffectRule | null {
   const effect = ScheduleExceptionSystem.publicEffect(
     toEcsDetail(exception.detail),
   );
@@ -719,21 +1012,21 @@ function namedGuestsOf(
 
 /** The system's refusal → the legacy error class the callers branch on. */
 function toLegacyError(
-  error: BookingCommitError,
+  error: BookingError,
   request: DecideBookingRequest,
 ): CommitBookingError {
-  switch (error.code) {
-    case BookingCommitErrorCode.InvalidInput:
-      if (error.field === BookingCommitField.LocationId && error.reason) {
+  switch (error.errorCode) {
+    case BookingErrorCode.InvalidInput:
+      if (error.field === BookingErrorField.LocationId && error.reason) {
         return new CommitBookingShopUnavailableError(
           error.detail ?? '',
           error.reason === 'unlisted' ? 'unlisted' : 'not_found',
         );
       }
-      if (error.field === BookingCommitField.PersonOverlap) {
+      if (error.field === BookingErrorField.PersonOverlap) {
         return new CommitBookingPersonDoubleBookedError(error.detail ?? '');
       }
-      if (error.field === BookingCommitField.GuestLabel) {
+      if (error.field === BookingErrorField.GuestLabel) {
         return new CommitBookingDuplicateGuestLabelError(
           labelSharedByTwoGuests(namedGuestsOf(request.seats))?.value ??
             error.detail ??
@@ -741,37 +1034,37 @@ function toLegacyError(
         );
       }
       return new CommitBookingInvalidInputError(error.field);
-    case BookingCommitErrorCode.Unauthenticated:
+    case BookingErrorCode.Unauthenticated:
       return new CommitBookingUnauthenticatedError();
-    case BookingCommitErrorCode.UnknownService:
+    case BookingErrorCode.UnknownService:
       return new CommitBookingUnknownServiceError(error.serviceId);
-    case BookingCommitErrorCode.ServiceNotAtLocation:
+    case BookingErrorCode.ServiceNotAtLocation:
       return new CommitBookingServiceNotAtLocationError(
         error.serviceId,
         error.locationId,
       );
-    case BookingCommitErrorCode.ConflictingServices:
+    case BookingErrorCode.ConflictingServices:
       return new CommitBookingConflictingServicesError(
         error.first,
         error.second,
       );
-    case BookingCommitErrorCode.BarberNotRostered:
+    case BookingErrorCode.BarberNotRostered:
       return new CommitBookingBarberNotRosteredError(
         error.barberId,
-        error.dayKey,
+        error.localDate,
       );
-    case BookingCommitErrorCode.SlotUnavailable:
+    case BookingErrorCode.SlotUnavailable:
       return new CommitBookingSlotUnavailableError(
         error.barberId,
         request.seats.at(error.seatIndex)?.startIso ?? '',
       );
-    case BookingCommitErrorCode.TooSoon:
+    case BookingErrorCode.TooSoon:
       return new CommitBookingTooSoonError(error.minLeadMinutes);
-    case BookingCommitErrorCode.BeyondHorizon:
+    case BookingErrorCode.BeyondHorizon:
       return new CommitBookingBeyondHorizonError(error.horizonMonths);
-    case BookingCommitErrorCode.PartyTooLarge:
+    case BookingErrorCode.PartyTooLarge:
       return new CommitBookingPartyTooLargeError(error.maxPartySize);
-    case BookingCommitErrorCode.InvariantViolated:
+    case BookingErrorCode.InvariantViolated:
       return new CommitBookingInvariantError(
         error.violations.map(toLegacyViolation),
       );
@@ -779,7 +1072,7 @@ function toLegacyError(
 }
 
 function toLegacyViolation(violation: SchedulingError): AppointmentError {
-  switch (violation.code) {
+  switch (violation.errorCode) {
     case SchedulingErrorCode.AppointmentEmptySeats:
       return new AppointmentEmptySeatsError();
     case SchedulingErrorCode.AppointmentMultipleSelfSeats:
@@ -805,30 +1098,36 @@ function toLegacyViolation(violation: SchedulingError): AppointmentError {
  * `reconstitute` for the shop's own placement, then `confirm`).
  */
 function toLegacyDecision(
-  decision: {
-    readonly appointment: {
-      readonly id: string;
-      readonly seats: readonly EcsSeat[];
-      readonly bookingStatus: { readonly kind: string };
-      readonly bookedFromAppointmentId: string | null;
-    };
-    readonly busyWrites: readonly {
-      readonly barberId: string;
-      readonly dayKey: string;
-      readonly interval: Interval;
-    }[];
-  },
+  decision: EcsBookingDecision,
   request: DecideBookingRequest,
   snapshot: BookingSnapshot,
   deps: DecideBookingDeps,
+  framed: FramedRequest,
 ): Result<BookingDecision, CommitBookingError> {
   const seats: Seat[] = [];
-  for (const seat of decision.appointment.seats) {
-    const legacy = toLegacySeat(seat, snapshot);
-    if (legacy === null) {
+  const busyWrites: BusyWrite[] = [];
+  const decided = decision.appointment.seats;
+  for (let index = 0; index < decided.length; index++) {
+    const seat = decided[index] as EcsSeat;
+    // Seats are decided in request order, each at its requested start: the
+    // request's own instant is the seat's.
+    const startMs = framed.startsMs[index] ?? null;
+    const legacy =
+      startMs === null ? null : toLegacySeat(seat, startMs, snapshot);
+    if (startMs === null || legacy === null) {
       return fail(new CommitBookingInvalidInputError('seats'));
     }
     seats.push(legacy);
+    // The projection records what is actually taken, pads included — the
+    // seat's chair time, on its shop day.
+    busyWrites.push({
+      barberId: seat.barberId,
+      dayKey: decision.appointment.localDate,
+      interval: Interval.of(
+        startMs - seat.setupMinutes * 60_000,
+        startMs + (seat.durationMinutes + seat.cleanupMinutes) * 60_000,
+      ),
+    });
   }
   let contact: BookingContact | null = null;
   if (request.contact) {
@@ -857,32 +1156,35 @@ function toLegacyDecision(
     return fail(new CommitBookingInvariantError(built.error));
   }
   const appointment =
-    decision.appointment.bookingStatus.kind === 'confirmed'
+    decision.appointment.bookingStatus === BookingStatus.Confirmed
       ? built.value.confirm()
       : ok(built.value);
   if (appointment.isFailure()) {
     return fail(new CommitBookingInvariantError(appointment.error));
   }
-  return ok({
-    appointment: appointment.value,
-    busyWrites: decision.busyWrites.map((write) => ({
-      barberId: write.barberId,
-      dayKey: write.dayKey,
-      interval: write.interval,
-    })),
-  });
+  return ok({ appointment: appointment.value, busyWrites });
 }
 
+/** The relationship dictionary → the legacy lowercase value. */
+const RELATIONSHIP: Readonly<
+  Record<SubjectRelationship, 'self' | 'companion' | 'client'>
+> = {
+  [SubjectRelationship.Self]: 'self',
+  [SubjectRelationship.Companion]: 'companion',
+  [SubjectRelationship.Client]: 'client',
+};
+
 /** One decided seat → the legacy `Seat`; `null` if a figure the system admitted does not rebuild. */
-function toLegacySeat(seat: EcsSeat, snapshot: BookingSnapshot): Seat | null {
-  const id = SeatId.create(seat.id);
+function toLegacySeat(
+  seat: EcsSeat,
+  startMs: number,
+  snapshot: BookingSnapshot,
+): Seat | null {
+  const id = SeatId.create(seat.seatId);
   const serviceId = ServiceId.create(seat.serviceId);
   const barberId = BarberId.create(seat.barberId);
-  const startsAt = ZonedDateTime.fromMillis(seat.startMs, snapshot.zone);
-  const price = Money.fromMinorUnitsAndCode(
-    seat.terms.priceMinorUnits,
-    seat.terms.currencyCode,
-  );
+  const startsAt = ZonedDateTime.fromMillis(startMs, snapshot.zone);
+  const price = Money.fromMinorUnitsAndCode(seat.priceCents, seat.currency);
   if (
     id.isFailure() ||
     serviceId.isFailure() ||
@@ -893,14 +1195,10 @@ function toLegacySeat(seat: EcsSeat, snapshot: BookingSnapshot): Seat | null {
     return null;
   }
   const pads = {
-    setupMinutes: seat.terms.setupMinutes,
-    cleanupMinutes: seat.terms.cleanupMinutes,
+    setupMinutes: seat.setupMinutes,
+    cleanupMinutes: seat.cleanupMinutes,
   };
-  const terms = ServiceTerms.create(
-    price.value,
-    seat.terms.durationMinutes,
-    pads,
-  );
+  const terms = ServiceTerms.create(price.value, seat.durationMinutes, pads);
   if (terms.isFailure()) return null;
 
   let variantId: ServiceVariantId | null = null;
@@ -911,17 +1209,20 @@ function toLegacySeat(seat: EcsSeat, snapshot: BookingSnapshot): Seat | null {
   }
 
   const catalogTerms =
-    seat.terms.catalogPriceMinorUnits === null
+    seat.catalogPriceCents === null
       ? null
       : catalogTermsOf(seat, snapshot.services, barberId.value, variantId);
 
   let subject: SeatSubject;
-  if (seat.subject.kind === 'account') {
-    const userId = UserId.create(seat.subject.userId);
+  if (seat.seatSubject === EcsSeatSubject.Account) {
+    const userId = UserId.create(seat.subjectUserId);
     if (userId.isFailure()) return null;
-    subject = SeatSubject.account(userId.value, seat.subject.relationship);
+    subject = SeatSubject.account(
+      userId.value,
+      RELATIONSHIP[seat.subjectRelationship],
+    );
   } else {
-    const label = SeatLabel.create(seat.subject.label);
+    const label = SeatLabel.create(seat.guestLabel);
     if (label.isFailure()) return null;
     subject = SeatSubject.anonymous(label.value);
   }
@@ -936,9 +1237,9 @@ function toLegacySeat(seat: EcsSeat, snapshot: BookingSnapshot): Seat | null {
     catalogTerms,
     startsAt: startsAt.value,
     pref:
-      seat.barberPref === 'any'
+      seat.barberPreference === BarberPreference.Any
         ? BarberPref.any()
-        : seat.barberPref === 'specific'
+        : seat.barberPreference === BarberPreference.Specific
           ? BarberPref.specific(barberId.value)
           : null,
   });
@@ -962,23 +1263,20 @@ function catalogTermsOf(
 ): ServiceTerms | null {
   const service = services.find((each) => each.id.value === seat.serviceId);
   if (service !== undefined) return service.termsFor(barberId, variantId);
-  if (
-    seat.terms.catalogPriceMinorUnits === null ||
-    seat.terms.catalogDurationMinutes === null
-  ) {
+  if (seat.catalogPriceCents === null || seat.catalogDurationMinutes === null) {
     return null;
   }
   const catalogPrice = Money.fromMinorUnitsAndCode(
-    seat.terms.catalogPriceMinorUnits,
-    seat.terms.currencyCode,
+    seat.catalogPriceCents,
+    seat.currency,
   );
   if (catalogPrice.isFailure()) return null;
   const catalog = ServiceTerms.create(
     catalogPrice.value,
-    seat.terms.catalogDurationMinutes,
+    seat.catalogDurationMinutes,
     {
-      setupMinutes: seat.terms.setupMinutes,
-      cleanupMinutes: seat.terms.cleanupMinutes,
+      setupMinutes: seat.setupMinutes,
+      cleanupMinutes: seat.cleanupMinutes,
     },
   );
   return catalog.isSuccess() ? catalog.value : null;

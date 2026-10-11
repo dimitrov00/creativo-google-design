@@ -13,30 +13,36 @@ const identifier = ParsedIdentifier.email(Email.of('client@example.com'));
 
 describe('AuthFlowState', () => {
   it('opens on identify with no error, a shared struct', () => {
-    expect(AuthFlowState.initial()).toEqual({ kind: 'identify', error: null });
+    expect(AuthFlowState.initial()).toEqual({
+      authFlowStep: 'IDENTIFY',
+      error: null,
+    });
     expect(AuthFlowState.initial()).toBe(AuthFlowState.identify(null));
   });
 
   it('identify(error) carries the refusal to show', () => {
-    expect(AuthFlowState.identify('identity.identifier.invalid')).toEqual({
-      kind: AuthFlowStep.Identify,
-      error: 'identity.identifier.invalid',
+    expect(AuthFlowState.identify('IDENTITY_IDENTIFIER_INVALID')).toEqual({
+      authFlowStep: AuthFlowStep.Identify,
+      error: 'IDENTITY_IDENTIFIER_INVALID',
     });
   });
 
   it('otp() carries the channel and the last refusal, every key present', () => {
     expect(AuthFlowState.otp(identifier, null)).toEqual({
-      kind: 'otp',
-      identifier: { kind: 'email', value: 'client@example.com' },
+      authFlowStep: 'OTP',
+      identifier: {
+        identifierChannel: 'EMAIL',
+        identifier: 'client@example.com',
+      },
       error: null,
     });
   });
 
   it('done() carries the channel and the session kind of a new person', () => {
     expect(AuthFlowState.done(identifier, SessionKind.New)).toEqual({
-      kind: 'done',
+      authFlowStep: 'DONE',
       identifier,
-      session: 'new',
+      sessionKind: 'NEW',
     });
   });
 
@@ -50,30 +56,32 @@ describe('AuthFlowState', () => {
     expect(AuthFlowState.isTerminal(AuthFlowState.otp(identifier, null))).toBe(
       false,
     );
-    expect(AuthFlowState.blocked()).toEqual({ kind: 'blocked' });
-    expect(AuthFlowState.authenticated()).toEqual({ kind: 'authenticated' });
+    expect(AuthFlowState.blocked()).toEqual({ authFlowStep: 'BLOCKED' });
+    expect(AuthFlowState.authenticated()).toEqual({
+      authFlowStep: 'AUTHENTICATED',
+    });
   });
 });
 
 describe('AuthFlowEvent — each event built from its tag', () => {
   it('carries the payload each event names, and nothing else', () => {
     expect(AuthFlowEvent.submitIdentifier(identifier)).toEqual({
-      kind: AuthFlowEventKind.SubmitIdentifier,
+      authFlowEventKind: AuthFlowEventKind.SubmitIdentifier,
       identifier,
     });
     expect(AuthFlowEvent.requestFailed(true, 'locked')).toEqual({
-      kind: AuthFlowEventKind.RequestFailed,
+      authFlowEventKind: AuthFlowEventKind.RequestFailed,
       blocked: true,
       message: 'locked',
     });
     expect(AuthFlowEvent.verifyFailed(false, 'wrong code')).toEqual({
-      kind: AuthFlowEventKind.VerifyFailed,
+      authFlowEventKind: AuthFlowEventKind.VerifyFailed,
       blocked: false,
       message: 'wrong code',
     });
     expect(AuthFlowEvent.verified(SessionKind.Returning)).toEqual({
-      kind: AuthFlowEventKind.Verified,
-      session: SessionKind.Returning,
+      authFlowEventKind: AuthFlowEventKind.Verified,
+      sessionKind: SessionKind.Returning,
     });
     expect([
       AuthFlowEvent.submitOtp(),
@@ -81,10 +89,10 @@ describe('AuthFlowEvent — each event built from its tag', () => {
       AuthFlowEvent.changeIdentifier(),
       AuthFlowEvent.back(),
     ]).toEqual([
-      { kind: AuthFlowEventKind.SubmitOtp },
-      { kind: AuthFlowEventKind.ResendOtp },
-      { kind: AuthFlowEventKind.ChangeIdentifier },
-      { kind: AuthFlowEventKind.Back },
+      { authFlowEventKind: AuthFlowEventKind.SubmitOtp },
+      { authFlowEventKind: AuthFlowEventKind.ResendOtp },
+      { authFlowEventKind: AuthFlowEventKind.ChangeIdentifier },
+      { authFlowEventKind: AuthFlowEventKind.Back },
     ]);
   });
 });

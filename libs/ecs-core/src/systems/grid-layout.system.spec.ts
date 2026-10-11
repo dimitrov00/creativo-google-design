@@ -1,22 +1,43 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BookingStatus } from '../components/booking-status.data';
-import { TimeInterval } from '../components/time-interval.data';
-import { appointmentFixture, deepFreeze, seatFixture } from '../testing';
+import { BookingLifecycle } from '../components/booking-lifecycle.data';
+import { MinuteRange } from '../components/minute-range.data';
+import {
+  CancellationReason,
+  CancellationReasonSet,
+} from '../components/seat-outcome.data';
+import { Seat } from '../components/seat.data';
+import type { ShopNow } from '../components/shop-now.data';
+import { BarberId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import {
+  FIXTURE_TIME_ZONE,
+  deepFreeze,
+  endMinute,
+  localDate,
+  minute,
+  unwrapOk,
+} from '../testing';
+import {
+  appointmentFixture,
+  seatFixture,
+} from '../testing/appointment.fixtures';
+import { termsFixture } from '../testing/booking-core.fixtures';
 import { IntervalSetSystem } from './interval-set.system';
 import {
-  type EventRuns,
-  GridEventKind,
+  GridEvent,
   GridLayoutSystem,
   type MinuteRun,
   type RunEvent,
 } from './grid-layout.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * COPIED and re-targeted:
  * - every case of libs/features/staff/dashboard/src/lib/lane-gaps.spec.ts
- *   (6) — `laneGaps` of `staff-day.store.ts`, the legacy `Interval.of` →
- *   `TimeInterval.of`;
+ *   (6) — `laneGaps` of `staff-day.store.ts`; the legacy `Interval.of` of two
+ *   instants → a `MinuteRange` on the lane's shop day, the clock → the
+ *   shop's `ShopNow`;
  * - the geometry cases of libs/features/staff/dashboard/src/lib/time-grid/
  *   staff-time-grid.spec.ts (13): «the closed shading» (5) and the two
  *   window-origin shadings of «the window» through `closedRuns` (a CSS
@@ -26,21 +47,49 @@ import {
  *   fraction of its block read back as the minute run it covers).
  * Plus the occupancy fold, the sorted sweep ≡ the legacy per-block scan
  * (property), the lane packer ≡ the legacy packer (property), and purity.
+ *
+ * Flatten pass (Law 7, T1): every span is a `MinuteRange` / `MinuteRun` of
+ * ONE shop day (`MinuteOfDay` → `EndMinute`), "now" is a `ShopNow`
+ * (`localDate` + `currentMinute`), seats are the flat `Seat`, the visit's
+ * state is `bookingStatus`, and the block tag is `gridEvent` (SCREAMING).
  */
 
 const S = GridLayoutSystem;
 
 /* ── lane-gaps.spec.ts ────────────────────────────────────────────────── */
 
-const H = 3_600_000;
-/** A day that starts at an arbitrary epoch — only the arithmetic matters. */
-const DAY = 1_000_000_000_000;
-const at = (hours: number): number => DAY + hours * H;
-const Interval = { of: TimeInterval.of };
-const laneGaps = S.laneGaps;
+/** The lane's shop day — only the arithmetic on its clock matters. */
+const DAY: LocalDate = localDate('2026-09-28');
+/** An hour of the day as its minute. */
+const at = (hours: number): number => Math.round(hours * 60);
+/** A span of the lane's day, `[from, to)` in minutes. */
+const range = (from: number, to: number): MinuteRange =>
+  MinuteRange.of(minute(from), endMinute(to));
+/** A span between two hours of the lane's day. */
+const hours = (from: number, to: number): MinuteRange =>
+  range(at(from), at(to));
+
+/**
+ * The shop's "now" `h` hours after the lane's midnight — past 24 the next
+ * day's clock — derived as the boundary derives it (`ZonedTimeSystem.shopNow`).
+ */
+function nowAt(h: number): ShopNow {
+  const days = Math.floor(h / 24);
+  const day = LocalDate.addDays(DAY, days);
+  const instant = unwrapOk(
+    ZonedTimeSystem.toUtc(day, minute(at(h - days * 24)), FIXTURE_TIME_ZONE),
+  );
+  return ZonedTimeSystem.shopNow(instant, FIXTURE_TIME_ZONE);
+}
+
+const laneGaps = (
+  rostered: readonly MinuteRange[],
+  occupied: readonly MinuteRange[],
+  now: ShopNow,
+) => S.laneGaps(rostered, occupied, now, DAY);
 
 describe('laneGaps', () => {
-  const rostered = [Interval.of(at(9), at(18))];
+  const rostered = [hours(9, 18)];
 
   it('draws the ELAPSED hole, which used to be discarded entirely', () => {
     // A hole that has already passed is not sellable, but it is a fact: the
@@ -48,16 +97,16 @@ describe('laneGaps', () => {
     // and a fully booked one render identically. With a 10:00 cut done and
     // the clock at 17:00 the rest of the day is one elapsed hole and one
     // sellable hour.
-    const gaps = laneGaps(rostered, [Interval.of(at(9), at(10))], at(17));
+    const gaps = laneGaps(rostered, [hours(9, 10)], nowAt(17));
     expect(gaps.length).toBe(2);
-    expect(gaps[0]).toMatchObject({ sellable: false, startMs: at(10) });
-    expect(gaps[1]).toMatchObject({ sellable: true, startMs: at(17) });
+    expect(gaps[0]).toMatchObject({ sellable: false, startMinutes: at(10) });
+    expect(gaps[1]).toMatchObject({ sellable: true, startMinutes: at(17) });
   });
 
   it('splits a hole that straddles the clock, and floors each piece AFTER', () => {
     // 10:00–18:00 free with now at 17:00 is seven elapsed hours and one
     // sellable one — two different facts that must not be one card.
-    const wide = laneGaps(rostered, [], at(12));
+    const wide = laneGaps(rostered, [], nowAt(12));
     expect(wide.length).toBe(2);
     expect(wide[0]).toMatchObject({ sellable: false, minutes: 3 * 60 });
     expect(wide[1]).toMatchObject({ sellable: true, minutes: 6 * 60 });
@@ -66,8 +115,8 @@ describe('laneGaps', () => {
   it('never emits a sellable sliver from a mostly-elapsed hole', () => {
     // Flooring BEFORE the split would let a 105-minute hole with five
     // minutes left on it advertise "5 мин свободни".
-    const nearlyOver = at(17) + 55 * 60_000; // 17:55, hole runs to 18:00
-    const gaps = laneGaps(rostered, [Interval.of(at(9), at(10))], nearlyOver);
+    const nearlyOver = nowAt(17 + 55 / 60); // 17:55, hole runs to 18:00
+    const gaps = laneGaps(rostered, [hours(9, 10)], nearlyOver);
     expect(gaps.every((gap) => gap.minutes >= 20)).toBe(true);
     expect(gaps.some((gap) => gap.sellable)).toBe(false);
   });
@@ -75,20 +124,17 @@ describe('laneGaps', () => {
   it('keeps the 20-minute floor on both sides of the clock', () => {
     // Below the floor a lane becomes a ladder of booking/gap/booking and the
     // three-second read is gone — the reason the floor exists at all.
-    const busy = [
-      Interval.of(at(9), at(12)),
-      Interval.of(at(12) + 600_000, at(18)),
-    ];
-    expect(laneGaps(rostered, busy, at(9)).length).toBe(0);
+    const busy = [hours(9, 12), range(at(12) + 10, at(18))];
+    expect(laneGaps(rostered, busy, nowAt(9)).length).toBe(0);
   });
 
   it('draws nothing for a chair that is not rostered', () => {
     // No window is not the same as an empty window, and never was.
-    expect(laneGaps([], [], at(12)).length).toBe(0);
+    expect(laneGaps([], [], nowAt(12)).length).toBe(0);
   });
 
   it('reports a wholly past day as entirely idle when nothing was booked', () => {
-    const gaps = laneGaps(rostered, [], at(30));
+    const gaps = laneGaps(rostered, [], nowAt(30));
     expect(gaps.length).toBe(1);
     expect(gaps[0]).toMatchObject({ sellable: false, minutes: 9 * 60 });
   });
@@ -96,62 +142,64 @@ describe('laneGaps', () => {
 
 describe('the row fold and the tick — holes take no clock', () => {
   it('splits the same holes at whatever minute the tick brings', () => {
-    const holes = S.holes(
-      [Interval.of(at(9), at(18))],
-      [Interval.of(at(9), at(10))],
+    const holes = S.holes([hours(9, 18)], [hours(9, 10)]);
+    expect(holes).toEqual([hours(10, 18)]);
+    expect(S.sellableAt(holes, nowAt(17), DAY)).toEqual(
+      laneGaps([hours(9, 18)], [hours(9, 10)], nowAt(17)),
     );
-    expect(holes).toEqual([Interval.of(at(10), at(18))]);
-    expect(S.sellableAt(holes, at(17))).toEqual(
-      S.laneGaps(
-        [Interval.of(at(9), at(18))],
-        [Interval.of(at(9), at(10))],
-        at(17),
-      ),
-    );
-    expect(S.sellableAt(holes, at(8))).toEqual([
-      { startMs: at(10), endMs: at(18), minutes: 8 * 60, sellable: true },
+    expect(S.sellableAt(holes, nowAt(8), DAY)).toEqual([
+      {
+        startMinutes: at(10),
+        endMinutes: at(18),
+        minutes: 8 * 60,
+        sellable: true,
+      },
     ]);
   });
 });
 
 describe('occupiedIntervals — what actually occupied a chair', () => {
-  const ivan = 'b-ivan';
-  const seat = (startHours: number, barberId = ivan) =>
+  const ivan = BarberId.of('b-ivan');
+  const seat = (startHours: number, barberId: BarberId = ivan): Seat =>
     seatFixture({
-      startMs: at(startHours),
-      barberId: barberId as never,
-      terms: { ...seatFixture().terms, setupMinutes: 5, cleanupMinutes: 10 },
+      startMinutes: minute(at(startHours)),
+      barberId,
+      terms: Seat.termsOf(termsFixture(2800, 30, 5, 10), null),
     });
+  /** A lifecycle stamp — irrelevant to occupancy. */
+  const stamp = nowAt(8).utcEpochMs;
 
   it('pads each of the barber’s seats by its own setup and cleanup, and merges what touches', () => {
     const visit = appointmentFixture({ seats: [seat(10), seat(10.75)] });
     expect(S.occupiedIntervals([visit], ivan, [])).toEqual([
       // 09:55 → 10:30 + 10 = 10:40, and 10:40 → 11:15 + 10 = 11:25: touching.
-      Interval.of(at(10) - 5 * 60_000, at(11.25) + 10 * 60_000),
+      range(at(10) - 5, at(11.25) + 10),
     ]);
   });
 
   it('keeps a no-show (the chair was held) and drops a cancellation (it went empty)', () => {
     const noShow = appointmentFixture({
       seats: [seat(12)],
-      bookingStatus: BookingStatus.noShow(at(13)),
+      lifecycle: BookingLifecycle.noShow(stamp),
     });
     const cancelled = appointmentFixture({
       seats: [seat(15)],
-      bookingStatus: BookingStatus.cancel(at(8), 'client'),
+      lifecycle: BookingLifecycle.cancel(
+        stamp,
+        CancellationReasonSet.of([CancellationReason.ClientChangedPlans]),
+      ),
     });
     expect(S.occupiedIntervals([noShow, cancelled], ivan, [])).toEqual([
-      Interval.of(at(12) - 5 * 60_000, at(12.5) + 10 * 60_000),
+      range(at(12) - 5, at(12.5) + 10),
     ]);
   });
 
   it('reads only this barber’s seats, beside the busy it was handed', () => {
-    const party = appointmentFixture({ seats: [seat(10), seat(10, 'b-niko')] });
-    expect(
-      S.occupiedIntervals([party], 'b-niko', [Interval.of(at(14), at(15))]),
-    ).toEqual([
-      Interval.of(at(10) - 5 * 60_000, at(10.5) + 10 * 60_000),
-      Interval.of(at(14), at(15)),
+    const niko = BarberId.of('b-niko');
+    const party = appointmentFixture({ seats: [seat(10), seat(10, niko)] });
+    expect(S.occupiedIntervals([party], niko, [hours(14, 15)])).toEqual([
+      range(at(10) - 5, at(10.5) + 10),
+      hours(14, 15),
     ]);
   });
 });
@@ -159,23 +207,21 @@ describe('occupiedIntervals — what actually occupied a chair', () => {
 /* ── staff-time-grid.spec.ts — the closed shading and the window ─────── */
 
 const SLOT = 15;
+/** A run of the track, `[from, to)` in minutes of the day. */
+const window = (from: number, to: number): MinuteRun => ({
+  startMinutes: minute(from),
+  endMinutes: endMinute(to),
+});
 /** A CSS grid-row of 15-minute slots from `origin`, read back as minutes. */
 function rowOf(row: string, origin = 0): MinuteRun {
   const [from, to] = row.split(' / ').map(Number) as [number, number];
-  return {
-    startMinute: origin + (from - 1) * SLOT,
-    endMinute: origin + (to - 1) * SLOT,
-  };
+  return window(origin + (from - 1) * SLOT, origin + (to - 1) * SLOT);
 }
 const closedRows = (
   open: readonly MinuteRun[],
   start = 0,
   end = 1440,
-): readonly MinuteRun[] => S.closedRuns(open, start, end);
-const window = (startMinute: number, endMinute: number): MinuteRun => ({
-  startMinute,
-  endMinute,
-});
+): readonly MinuteRun[] => S.closedRuns(open, minute(start), endMinute(end));
 
 describe('the closed shading', () => {
   // 96 slots of 15 minutes: 00:00 is grid line 1, 09:00 is line 37, 18:00 is
@@ -274,19 +320,24 @@ describe('overlap', () => {
 
 function event(
   id: string,
-  startMinute: number,
-  endMinute: number,
-  kind: GridEventKind = GridEventKind.Visit,
+  from: number,
+  to: number,
+  gridEvent: GridEvent = GridEvent.Visit,
 ): RunEvent {
-  return { id, kind, startMinute, endMinute };
+  return {
+    id,
+    gridEvent,
+    startMinutes: minute(from),
+    endMinutes: endMinute(to),
+  };
 }
 /** A mask's `[from, to]` fraction of its block, as the minute run it covers. */
 function fractionRun(block: RunEvent, from: number, to: number): MinuteRun {
-  const span = block.endMinute - block.startMinute;
-  return {
-    startMinute: block.startMinute + from * span,
-    endMinute: block.startMinute + to * span,
-  };
+  const span = block.endMinutes - block.startMinutes;
+  return window(
+    block.startMinutes + from * span,
+    block.startMinutes + to * span,
+  );
 }
 
 describe('masks', () => {
@@ -318,7 +369,7 @@ describe('masks', () => {
 
   it('does not call a gap a collision — landing on one is the point', () => {
     const [runs] = S.columnRuns(
-      [event('a', 600, 660), event('g', 600, 660, GridEventKind.Gap)],
+      [event('a', 600, 660), event('g', 600, 660, GridEvent.Gap)],
       [window(0, 1440)],
     );
     expect(runs?.overlap).toEqual([]);
@@ -328,10 +379,7 @@ describe('masks', () => {
 describe('columnRuns — the rest of the sweep', () => {
   it('marks no outside on a carve-out, and nothing at all on a block with no length', () => {
     const runs = S.columnRuns(
-      [
-        event('lunch', 1050, 1110, GridEventKind.Block),
-        event('zero', 700, 700),
-      ],
+      [event('lunch', 1050, 1110, GridEvent.Block), event('zero', 700, 700)],
       [window(540, 1080)],
     );
     expect(runs).toEqual([
@@ -363,39 +411,42 @@ describe('columnRuns — the rest of the sweep', () => {
 
 /* ── The legacy per-block scan, verbatim, as the oracle ──────────────── */
 
+/** The oracle's runs: plain numbers, compared field by field with the brands. */
+type PlainRun = { readonly startMinutes: number; readonly endMinutes: number };
+
 function legacyOutsideRuns(
   from: number,
   to: number,
   open: readonly MinuteRun[],
-): readonly MinuteRun[] {
-  const runs: MinuteRun[] = [];
+): readonly PlainRun[] {
+  const runs: PlainRun[] = [];
   let cursor = from;
-  const windows = [...open].sort((a, b) => a.startMinute - b.startMinute);
+  const windows = [...open].sort((a, b) => a.startMinutes - b.startMinutes);
   for (const w of windows) {
-    if (w.endMinute <= cursor) continue;
-    if (w.startMinute >= to) break;
-    if (w.startMinute > cursor) {
+    if (w.endMinutes <= cursor) continue;
+    if (w.startMinutes >= to) break;
+    if (w.startMinutes > cursor) {
       runs.push({
-        startMinute: cursor,
-        endMinute: Math.min(w.startMinute, to),
+        startMinutes: cursor,
+        endMinutes: Math.min(w.startMinutes, to),
       });
     }
-    cursor = Math.max(cursor, w.endMinute);
+    cursor = Math.max(cursor, w.endMinutes);
     if (cursor >= to) break;
   }
-  if (cursor < to) runs.push({ startMinute: cursor, endMinute: to });
+  if (cursor < to) runs.push({ startMinutes: cursor, endMinutes: to });
   return runs;
 }
 
 function legacyOverlapRuns(
   self: RunEvent,
   siblings: readonly RunEvent[],
-): readonly MinuteRun[] {
+): readonly PlainRun[] {
   const hits: [number, number][] = [];
   for (const other of siblings) {
-    if (other.id === self.id || other.kind === 'gap') continue;
-    const from = Math.max(self.startMinute, other.startMinute);
-    const to = Math.min(self.endMinute, other.endMinute);
+    if (other.id === self.id || other.gridEvent === 'GAP') continue;
+    const from = Math.max(self.startMinutes, other.startMinutes);
+    const to = Math.min(self.endMinutes, other.endMinutes);
     if (to > from) hits.push([from, to]);
   }
   hits.sort((a, b) => a[0] - b[0]);
@@ -408,21 +459,27 @@ function legacyOverlapRuns(
     }
     merged.push([...hit]);
   }
-  return merged.map(([startMinute, endMinute]) => ({ startMinute, endMinute }));
+  return merged.map(([startMinutes, endMinutes]) => ({
+    startMinutes,
+    endMinutes,
+  }));
 }
 
 function legacyColumn(
   events: readonly RunEvent[],
   open: readonly MinuteRun[],
-): readonly EventRuns[] {
+): readonly {
+  readonly outside: readonly PlainRun[];
+  readonly overlap: readonly PlainRun[];
+}[] {
   return events.map((self) =>
-    self.endMinute <= self.startMinute
+    self.endMinutes <= self.startMinutes
       ? { outside: [], overlap: [] }
       : {
           outside:
-            self.kind === 'block'
+            self.gridEvent === 'BLOCK'
               ? []
-              : legacyOutsideRuns(self.startMinute, self.endMinute, open),
+              : legacyOutsideRuns(self.startMinutes, self.endMinutes, open),
           overlap: legacyOverlapRuns(self, events),
         },
   );
@@ -431,18 +488,18 @@ function legacyColumn(
 function legacyLanes(events: readonly MinuteRun[]) {
   const sorted = events
     .map((e, index) => ({ ...e, index }))
-    .sort((a, b) => a.startMinute - b.startMinute);
+    .sort((a, b) => a.startMinutes - b.startMinutes);
   const clusters: (typeof sorted)[] = [];
   let current: typeof sorted = [];
   let clusterEnd = -Infinity;
   for (const e of sorted) {
-    if (current.length > 0 && e.startMinute >= clusterEnd) {
+    if (current.length > 0 && e.startMinutes >= clusterEnd) {
       clusters.push(current);
       current = [];
       clusterEnd = -Infinity;
     }
     current.push(e);
-    clusterEnd = Math.max(clusterEnd, e.endMinute);
+    clusterEnd = Math.max(clusterEnd, e.endMinutes);
   }
   if (current.length > 0) clusters.push(current);
   const out: { lane: number; lanes: number }[] = events.map(() => ({
@@ -452,12 +509,12 @@ function legacyLanes(events: readonly MinuteRun[]) {
   for (const cluster of clusters) {
     const laneEnds: number[] = [];
     const assigned = cluster.map((e) => {
-      let lane = laneEnds.findIndex((end) => end <= e.startMinute);
+      let lane = laneEnds.findIndex((end) => end <= e.startMinutes);
       if (lane === -1) {
         lane = laneEnds.length;
-        laneEnds.push(e.endMinute);
+        laneEnds.push(e.endMinutes);
       } else {
-        laneEnds.splice(lane, 1, e.endMinute);
+        laneEnds.splice(lane, 1, e.endMinutes);
       }
       return { e, lane };
     });
@@ -468,26 +525,26 @@ function legacyLanes(events: readonly MinuteRun[]) {
   return out;
 }
 
-const minute = fc.integer({ min: 0, max: 48 }).map((n) => n * 30);
+/*
+ * The track is one shop day: a start in `[0, 1440)`, an end in `(0, 1440]`
+ * (the brands' ranges), clamped there — inverted and empty blocks stay in
+ * the draw (a start of 30 with a length of −30 ends at 15).
+ */
+const trackStart = fc.integer({ min: 0, max: 47 }).map((n) => n * 30);
+const trackEnd = (raw: number): number => Math.min(1440, Math.max(15, raw));
 const arbEvent = fc
   .record({
     id: fc.constantFrom('a', 'b', 'c', 'd', 'e', 'f'),
-    kind: fc.constantFrom<GridEventKind>('visit', 'gap', 'block'),
-    startMinute: minute,
+    gridEvent: fc.constantFrom<GridEvent>('VISIT', 'GAP', 'BLOCK'),
+    start: trackStart,
     length: fc.integer({ min: -2, max: 8 }).map((n) => n * 15),
   })
-  .map(({ id, kind, startMinute, length }): RunEvent => ({
-    id,
-    kind,
-    startMinute,
-    endMinute: startMinute + length,
-  }));
+  .map(({ id, gridEvent, start, length }): RunEvent =>
+    event(id, start, trackEnd(start + length), gridEvent),
+  );
 const arbWindow = fc
-  .record({ startMinute: minute, length: fc.integer({ min: -1, max: 20 }) })
-  .map(({ startMinute, length }) => ({
-    startMinute,
-    endMinute: startMinute + length * 30,
-  }));
+  .record({ start: trackStart, length: fc.integer({ min: -1, max: 20 }) })
+  .map(({ start, length }) => window(start, trackEnd(start + length * 30)));
 
 describe('the sweep against the per-block scan', () => {
   it('equals the legacy outside and overlap runs of every block (property)', () => {
@@ -511,13 +568,12 @@ describe('the sweep against the per-block scan', () => {
         fc.array(
           fc
             .record({
-              startMinute: minute,
+              start: trackStart,
               length: fc.integer({ min: 1, max: 8 }),
             })
-            .map(({ startMinute, length }) => ({
-              startMinute,
-              endMinute: startMinute + length * 15,
-            })),
+            .map(({ start, length }) =>
+              window(start, trackEnd(start + length * 15)),
+            ),
           { maxLength: 14 },
         ),
         (events) => {
@@ -531,35 +587,38 @@ describe('the sweep against the per-block scan', () => {
   it('leaves the gaps inside the rostered day, disjoint, never under the floor (property)', () => {
     const interval = fc
       .record({
-        start: fc.integer({ min: 0, max: 96 }),
+        start: fc.integer({ min: 0, max: 95 }),
         length: fc.integer({ min: 1, max: 24 }),
       })
       .map(({ start, length }) =>
-        TimeInterval.of(
-          DAY + start * 15 * 60_000,
-          DAY + (start + length) * 15 * 60_000,
-        ),
+        range(start * 15, Math.min(start + length, 96) * 15),
       );
     fc.assert(
       fc.property(
         fc.array(interval, { maxLength: 3 }),
         fc.array(interval, { maxLength: 6 }),
-        fc.integer({ min: 0, max: 120 }).map((n) => DAY + n * 15 * 60_000),
-        (rostered, busy, nowMs) => {
-          const gaps = S.laneGaps(rostered, busy, nowMs);
+        fc.integer({ min: 0, max: 120 }).map((n) => nowAt((n * 15) / 60)),
+        (rostered, busy, now) => {
+          const gaps = laneGaps(rostered, busy, now);
+          // Ahead of the clock: a later day, or today past the minute.
+          const ahead = (end: number): boolean =>
+            DAY > now.localDate ||
+            (DAY === now.localDate && end > now.currentMinute);
           for (const gap of gaps) {
             expect(gap.minutes).toBeGreaterThanOrEqual(
               S.SHORTEST_SELLABLE_MINUTES,
             );
             const day = IntervalSetSystem.normalize(rostered);
-            expect(day.some((r) => TimeInterval.contains(r, gap))).toBe(true);
-            expect(busy.some((b) => TimeInterval.overlaps(b, gap))).toBe(false);
-            expect(gap.sellable).toBe(gap.endMs > nowMs);
+            expect(day.some((r) => MinuteRange.contains(r, gap))).toBe(true);
+            expect(busy.some((b) => MinuteRange.overlaps(b, gap))).toBe(false);
+            expect(gap.sellable).toBe(ahead(gap.endMinutes));
           }
           for (let i = 1; i < gaps.length; i++) {
             expect(
-              (gaps.at(i) as { startMs: number }).startMs,
-            ).toBeGreaterThanOrEqual((gaps[i - 1] as { endMs: number }).endMs);
+              (gaps.at(i) as { startMinutes: number }).startMinutes,
+            ).toBeGreaterThanOrEqual(
+              (gaps[i - 1] as { endMinutes: number }).endMinutes,
+            );
           }
         },
       ),
@@ -572,22 +631,27 @@ describe('GridLayoutSystem — purity', () => {
     const events = deepFreeze([
       event('b', 630, 690),
       event('a', 600, 660),
-      event('g', 600, 660, GridEventKind.Gap),
+      event('g', 600, 660, GridEvent.Gap),
     ]);
     const open = deepFreeze([window(720, 1080), window(540, 640)]);
     const once = S.columnRuns(events, open);
     expect(S.columnRuns(events, open)).toEqual(once);
     expect(S.lanes(events)).toEqual(S.lanes(events));
-    expect(S.closedRuns(open, 0, 1440)).toEqual(S.closedRuns(open, 0, 1440));
+    expect(S.closedRuns(open, minute(0), endMinute(1440))).toEqual(
+      S.closedRuns(open, minute(0), endMinute(1440)),
+    );
     expect(open[0]).toEqual(window(720, 1080));
 
+    const ivan = BarberId.of('b-ivan');
     const visits = deepFreeze([appointmentFixture()]);
-    const busy = deepFreeze([TimeInterval.of(at(14), at(15))]);
-    const occupied = S.occupiedIntervals(visits, 'b-ivan', busy);
-    expect(S.occupiedIntervals(visits, 'b-ivan', busy)).toEqual(occupied);
-    const rostered = deepFreeze([TimeInterval.of(at(9), at(18))]);
-    expect(S.laneGaps(rostered, occupied, at(12))).toEqual(
-      S.laneGaps(rostered, occupied, at(12)),
+    const busy = deepFreeze([hours(14, 15)]);
+    const occupied = S.occupiedIntervals(visits, ivan, busy);
+    expect(S.occupiedIntervals(visits, ivan, busy)).toEqual(occupied);
+    const rostered = deepFreeze([hours(9, 18)]);
+    const now = deepFreeze(nowAt(12));
+    expect(S.laneGaps(rostered, occupied, now, DAY)).toEqual(
+      S.laneGaps(rostered, occupied, now, DAY),
     );
+    expect(rostered[0]).toEqual(hours(9, 18));
   });
 });

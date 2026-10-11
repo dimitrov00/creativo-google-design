@@ -25,18 +25,25 @@ import {
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
 import {
+  AchievementRuleId,
   AgeSystem,
   BirthDate,
   ClientGlanceSystem,
   CouponGrantSystem,
   CouponOccasion,
-  DayKey,
-  type GiftVoucherEntity,
+  Currency,
+  type GiftVoucher as EcsGiftVoucher,
   GiftVoucherId,
-  type Money as SystemMoney,
+  type GlanceHoldings,
+  LocalDate,
+  PriceCents,
+  type TimeZone,
   UserId as UserRefId,
+  UtcEpochMs,
   VoucherCode,
-  VoucherState,
+  VoucherLifecycle,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import type { AchievementsContext } from './achievements.presenter';
 import type { ClientCardGrant } from './client-card.contracts';
@@ -106,7 +113,11 @@ import { medalRingVm } from './medals.presenter';
 const NO_SHOW_CAPSULE_AT = 2;
 
 /** The shop's zone: a voucher's last day is read on its calendar. */
-const SHOP_ZONE = 'Europe/Sofia';
+const SHOP_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
+  if (!zone.ok) defect('unreachable: the shop zone is a zone');
+  return zone.value;
+})();
 
 /** How far ahead a birthday is said: the week to come, never further. */
 const BIRTHDAY_NOTICE_DAYS = 7;
@@ -319,8 +330,9 @@ export interface BirthdayInput {
 
 /** The grant's coupon was made for the birthday; a name is never parsed (§4.6). */
 function isBirthdayGrant(grant: ClientCardGrant): boolean {
+  const occasion = grant.occasion ?? null;
   return CouponGrantSystem.isOccasion(
-    grant.occasion ?? null,
+    occasion === null ? null : COUPON_OCCASION_OF[occasion],
     CouponOccasion.Birthday,
   );
 }
@@ -331,7 +343,10 @@ function isBirthdayGrant(grant: ClientCardGrant): boolean {
  * can have been born in — the band then says the day without a figure.
  */
 function ageOn(day: string, birth: string): number | null {
-  return AgeSystem.ageReachedOn(BirthDate.of(birth), DayKey.of(day));
+  const shopDay = LocalDate.parse(day);
+  return shopDay.ok
+    ? AgeSystem.ageReachedOn(BirthDate.of(birth), shopDay.value)
+    : null;
 }
 
 /**
@@ -380,11 +395,13 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
 
   // The next birthday on or after today (`AgeSystem.nextBirthday`; today's
   // own is the band above, so the card's window starts at tomorrow).
-  const next = AgeSystem.nextBirthday(BirthDate.of(birth), DayKey.of(today));
+  const shopToday = LocalDate.parse(today);
+  if (!shopToday.ok) return null;
+  const next = AgeSystem.nextBirthday(BirthDate.of(birth), shopToday.value);
   if (next.inDays < 1 || next.inDays > BIRTHDAY_NOTICE_DAYS) return null;
   const title = words.birthday.upcoming(
-    weekdayLong(next.dayKey, words.lang),
-    dayShort(next.dayKey, today, words.lang),
+    weekdayLong(next.localDate, words.lang),
+    dayShort(next.localDate, today, words.lang),
     next.turning,
   );
   return {
@@ -562,13 +579,13 @@ interface Holding extends HoldingFactVm {
  * nothing is left.
  */
 function voucherHolding(
-  left: SystemMoney | null,
+  held: GlanceHoldings,
   words: ClientCardWords,
 ): Holding | null {
-  if (left === null) return null;
+  if (held.voucherCents === null || held.voucherCurrency === null) return null;
   const sum = Money.fromMinorUnitsAndCode(
-    left.amountMinorUnits,
-    left.currencyCode,
+    held.voucherCents,
+    held.voucherCurrency,
   );
   if (sum.isFailure()) return null;
   const value = formatMoney(sum.value, words.lang);
@@ -595,19 +612,26 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
     rule === null
       ? undefined
       : new Map(Object.entries(account.streaks)).get(rule.id);
+  const today = LocalDate.parse(input.today);
   const held = ClientGlanceSystem.holdings({
-    vouchers: input.vouchers === null ? null : input.vouchers.map(voucherOf),
-    punchCards: account.punchCards,
+    // A today that is no shop day reads no voucher's last day: no voucher fact.
+    vouchers:
+      input.vouchers === null || !today.ok ? null : vouchersOf(input.vouchers),
+    punchCards: account.punchCards.map((card) => ({
+      ruleId: AchievementRuleId.of(card.ruleId),
+      filled: card.filled,
+      size: card.size,
+      title: card.title,
+    })),
     achievements: flags.achievements,
     rhythmOn: flags.streaks && rule !== null && rule.enabled,
     rhythm: state === undefined ? null : { current: state.current },
     paused: input.paused,
-    today: DayKey.of(input.today),
-    zone: SHOP_ZONE,
+    today: today.ok ? today.value : LocalDate.fromEpochDay(0),
   });
   const holdings: Holding[] = [];
 
-  const voucher = voucherHolding(held.voucher, words);
+  const voucher = voucherHolding(held, words);
   if (voucher !== null) holdings.push(voucher);
 
   if (held.stamps !== null) {
@@ -833,28 +857,70 @@ export function medalsGlanceVm(
 
 // ── The bridge: legacy shapes → ecs-core structs (Phase 4 deletes it) ────
 
-/** A voucher as `ClientGlanceSystem.holdings` (and `VoucherSystem.spendable`) reads it. */
-function voucherOf(voucher: GiftVoucher): GiftVoucherEntity {
+/** The legacy coupon occasions ↔ `CouponOccasion` — the ONE table. */
+const COUPON_OCCASION_OF = {
+  birthday: CouponOccasion.Birthday,
+} as const satisfies Record<
+  NonNullable<ClientCardGrant['occasion']>,
+  CouponOccasion
+>;
+
+/** The vouchers `ClientGlanceSystem.holdings` can read; one it cannot hold in the flat shape is none it can spend. */
+function vouchersOf(vouchers: readonly GiftVoucher[]): EcsGiftVoucher[] {
+  const out: EcsGiftVoucher[] = [];
+  for (const voucher of vouchers) {
+    const struct = voucherOf(voucher);
+    if (struct !== null) out.push(struct);
+  }
+  return out;
+}
+
+/**
+ * A voucher as `ClientGlanceSystem.holdings` (and `VoucherSystem.spendable`)
+ * reads it: cents and one currency, its instants as `UtcEpochMs`, and its
+ * last day on the shop's calendar (`expiresLocalDate`, T5).
+ */
+function voucherOf(voucher: GiftVoucher): EcsGiftVoucher | null {
   const { state } = voucher;
-  const moneyOf = (money: GiftVoucher['balance']) => ({
-    amountMinorUnits: money.toMinorUnits(),
-    currencyCode: money.currencyCode(),
-  });
+  const initial = PriceCents.of(voucher.initialValue.toMinorUnits());
+  const balance = PriceCents.of(voucher.balance.toMinorUnits());
+  const currency = Currency.parse(voucher.balance.currencyCode());
+  const issuedAt = UtcEpochMs.of(voucher.issuedAt.toMillis());
+  const expiresAt =
+    voucher.expiresAt === null
+      ? null
+      : UtcEpochMs.of(voucher.expiresAt.toMillis());
+  const voidedAt =
+    state.kind === 'void' ? UtcEpochMs.of(state.voidedAt.toMillis()) : null;
+  if (
+    !initial.ok ||
+    !balance.ok ||
+    !currency.ok ||
+    !issuedAt.ok ||
+    (expiresAt !== null && !expiresAt.ok) ||
+    (voidedAt !== null && !voidedAt.ok)
+  ) {
+    return null;
+  }
+  const expiresAtUtcMs = expiresAt === null ? null : expiresAt.value;
   return {
     id: GiftVoucherId.of(voucher.id.value),
     code: VoucherCode.of(voucher.code),
-    initialValue: moneyOf(voucher.initialValue),
-    balance: moneyOf(voucher.balance),
-    issuedAtMs: voucher.issuedAt.toMillis(),
-    expiresAtMs:
-      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    initialValueCents: initial.value,
+    balanceCents: balance.value,
+    currency: currency.value,
+    issuedAtUtcMs: issuedAt.value,
+    expiresAtUtcMs,
+    expiresLocalDate:
+      expiresAtUtcMs === null
+        ? null
+        : ZonedTimeSystem.toLocal(expiresAtUtcMs, SHOP_ZONE).localDate,
     issuedToUserId:
       voucher.issuedToUserId === null
         ? null
         : UserRefId.of(voucher.issuedToUserId.value),
-    state:
-      state.kind === 'void'
-        ? VoucherState.voided(state.voidedAt.toMillis(), state.reason)
-        : VoucherState.active(),
+    ...(state.kind === 'void' && voidedAt !== null && voidedAt.ok
+      ? VoucherLifecycle.voided(voidedAt.value, state.reason)
+      : VoucherLifecycle.active()),
   };
 }

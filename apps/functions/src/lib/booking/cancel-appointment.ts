@@ -1,4 +1,4 @@
-import { AuditSystem } from '@creativo/ecs-core';
+import { AuditSystem, UtcEpochMs, defect } from '@creativo/ecs-core';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import type { Firestore } from 'firebase-admin/firestore';
@@ -18,6 +18,14 @@ import { TENANT_ZONE } from './tenant-zone';
 import { type AuditSubject, appendAudit, seatSubjectsOf } from './audit';
 import { callerActor } from './caller-roles';
 import { applyVoucherRestore, planVoucherRestore } from './voucher-restore';
+
+/** The committed cancel's stamp as the ecs-core instant its change key names. */
+function stampOf(cancelledAtMs: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(cancelledAtMs);
+  // Unreachable: the stamp is the transaction's own `Date.now()`.
+  if (!instant.ok) defect(`unreachable: instant ${cancelledAtMs}`);
+  return instant.value;
+}
 
 /**
  * The tenant policy a CLIENT'S cancel is judged by — or the refusal that
@@ -232,7 +240,7 @@ export const cancelAppointment = onCall(async (request) => {
     // One cancellation, one instant — and a reinstated visit cancelled again
     // is a second cancellation with an instant of its own. A retry of this
     // one is refused by the lifecycle graph before it gets here.
-    changeKey: AuditSystem.changeKey.cancelled(cancelledAtMs),
+    changeKey: AuditSystem.changeKey.cancelled(stampOf(cancelledAtMs)),
   });
 
   return { appointmentId };

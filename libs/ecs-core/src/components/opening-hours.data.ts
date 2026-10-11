@@ -1,24 +1,27 @@
+import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
 import { CatalogError } from './catalog-errors.data';
 import { Result } from './result.data';
 import type { Weekday } from './weekday.data';
 
-/** The stored day tags — the ONLY source of these strings. */
-export const DayHoursKind = {
-  Closed: 'closed',
-  Open: 'open',
+/**
+ * The day tags — the ONLY source of these strings, named after the field they
+ * type (`openingState`, Law 1/N15; was `DayHoursKind` / `kind`).
+ */
+export const OpeningState = {
+  Closed: 'CLOSED',
+  Open: 'OPEN',
 } as const;
-export type DayHoursKind = (typeof DayHoursKind)[keyof typeof DayHoursKind];
-
-/** Minutes in a day — a valid minute of the day is `0 … 1439` (00:00–23:59). */
-const MINUTES_PER_DAY = 1440;
+export type OpeningState = (typeof OpeningState)[keyof typeof OpeningState];
 
 /** `HH:mm`, 00:00–23:59 — the legacy `TIME_REGEX` (`location.ts:62`). */
 const CLOCK_SHAPE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /**
- * One weekday of a shop's opening hours (`location.ts:27-40`), in
- * minutes-of-day: `closed`, or `open` from `openMinutes` to `closeMinutes`
- * (half-open, `openMinutes < closeMinutes`, both within 00:00–23:59).
+ * One weekday of a shop's opening hours (`location.ts:27-40`), on the shop's
+ * wall clock: `CLOSED`, or `OPEN` from `openMinutes` to `closeMinutes`
+ * (half-open, `openMinutes < closeMinutes`, both authored within
+ * 00:00–23:59). An element of `ShopLocation.openingHours` — a flat struct
+ * with a domain-prefixed tag (Law 6).
  *
  * A location stores exactly seven, Monday first — index `weekday − 1` with
  * `weekday` the ISO `Weekday` — and keeps the closed day as an entry, so a
@@ -30,23 +33,34 @@ const CLOCK_SHAPE = /^([01]\d|2[0-3]):([0-5]\d)$/;
  */
 export type DayHours = DayHours.Closed | DayHours.Open;
 
-/** An open day as authored in clock text — the legacy stored shape. */
+/** A week day in minutes as authored or stored, before its edge guard. */
+export type DayHoursInput =
+  | DayHours.Closed
+  | {
+      readonly openingState: typeof OpeningState.Open;
+      readonly openMinutes: number;
+      readonly closeMinutes: number;
+    };
+
+/** An open day as authored in clock text — the legacy stored shape, re-tagged. */
 export type ClockDayHours =
   | DayHours.Closed
   | {
-      readonly kind: typeof DayHoursKind.Open;
+      readonly openingState: typeof OpeningState.Open;
       readonly opens: string;
       readonly closes: string;
     };
 
+const CLOSED: DayHours.Closed = { openingState: OpeningState.Closed };
+
 export const DayHours = {
   closed(): DayHours.Closed {
-    return { kind: DayHoursKind.Closed };
+    return CLOSED;
   },
 
   /** Trusted minutes; validate untrusted input with {@link parseWeek}. */
-  open(openMinutes: number, closeMinutes: number): DayHours.Open {
-    return { kind: DayHoursKind.Open, openMinutes, closeMinutes };
+  open(openMinutes: MinuteOfDay, closeMinutes: EndMinute): DayHours.Open {
+    return { openingState: OpeningState.Open, openMinutes, closeMinutes };
   },
 
   /**
@@ -58,51 +72,54 @@ export const DayHours = {
   },
 
   /**
-   * The shop is open at `minute` (minutes-of-day) on `weekday`: that day is
-   * open and `openMinutes ≤ minute < closeMinutes` — the closing minute
-   * itself is already closed. A closed or missing day is never open.
+   * The shop is open at `minute` on `weekday`: that day is open and
+   * `openMinutes ≤ minute < closeMinutes` — the closing minute itself is
+   * already closed. A closed or missing day is never open.
    */
   isOpenAt(
     week: readonly DayHours[],
     weekday: Weekday,
-    minute: number,
+    minute: MinuteOfDay,
   ): boolean {
     const day = week[weekday - 1];
     return (
       day !== undefined &&
-      day.kind === DayHoursKind.Open &&
+      day.openingState === OpeningState.Open &&
       day.openMinutes <= minute &&
       minute < day.closeMinutes
     );
   },
 
   /**
-   * `'HH:mm'` (00:00–23:59, zero-padded) → minutes of the day, or
-   * `catalog.location.invalid_time_of_day` carrying the text.
+   * `'HH:mm'` (00:00–23:59, zero-padded) → a minute of the day, or
+   * `CATALOG_LOCATION_INVALID_TIME_OF_DAY` carrying the text.
    */
   parseClock(
     raw: string,
-  ): Result<number, CatalogError.LocationInvalidTimeOfDay> {
+  ): Result<MinuteOfDay, CatalogError.LocationInvalidTimeOfDay> {
     const match = CLOCK_SHAPE.exec(raw);
-    if (match === null) {
-      return Result.err(CatalogError.locationInvalidTimeOfDay(raw));
-    }
-    return Result.ok(Number(match[1]) * 60 + Number(match[2]));
+    const minute =
+      match === null
+        ? null
+        : MinuteOfDay.of(Number(match[1]) * 60 + Number(match[2]));
+    return minute !== null && minute.ok
+      ? Result.ok(minute.value)
+      : Result.err(CatalogError.locationInvalidTimeOfDay(raw));
   },
 
   /**
    * The edge guard for a week in minutes (an admin write, a stored
    * document): exactly seven entries, Monday first
-   * (`catalog.location.invalid_hours_length`, reported alone); on each open
-   * day both figures a minute of the day (`catalog.location.invalid_time_of_day`
+   * (`CATALOG_LOCATION_INVALID_HOURS_LENGTH`, reported alone); on each open
+   * day both figures a minute of the day (`CATALOG_LOCATION_INVALID_TIME_OF_DAY`
    * with the figure as text — the opening figure is checked first and the
    * day stops at its first bad figure) and `openMinutes < closeMinutes`
-   * (`catalog.location.invalid_hours_range` with the day's index). Every day's
-   * violation is reported. Each entry comes back as a fresh struct holding
-   * only its own keys.
+   * (`CATALOG_LOCATION_INVALID_HOURS_RANGE` with the day's index). Every
+   * day's violation is reported. Each entry comes back as a fresh struct
+   * holding only its own keys.
    */
   parseWeek(
-    raw: readonly DayHours[],
+    raw: readonly DayHoursInput[],
   ): Result<readonly DayHours[], readonly CatalogError[]> {
     if (raw.length !== 7) {
       return Result.err([CatalogError.locationInvalidHoursLength(raw.length)]);
@@ -110,28 +127,29 @@ export const DayHours = {
     const errors: CatalogError[] = [];
     const week: DayHours[] = [];
     for (let i = 0; i < raw.length; i++) {
-      const day = raw[i] as DayHours;
-      if (day.kind === DayHoursKind.Closed) {
+      const day = raw[i] as DayHoursInput;
+      if (day.openingState === OpeningState.Closed) {
         week.push(DayHours.closed());
         continue;
       }
-      if (!isMinuteOfDay(day.openMinutes)) {
+      const opens = MinuteOfDay.of(day.openMinutes);
+      if (!opens.ok) {
         errors.push(
           CatalogError.locationInvalidTimeOfDay(String(day.openMinutes)),
         );
         continue;
       }
-      if (!isMinuteOfDay(day.closeMinutes)) {
+      // An authored closing figure is a minute of the day too (00:00–23:59).
+      const closes = MinuteOfDay.of(day.closeMinutes);
+      if (!closes.ok) {
         errors.push(
           CatalogError.locationInvalidTimeOfDay(String(day.closeMinutes)),
         );
         continue;
       }
-      if (day.openMinutes >= day.closeMinutes) {
-        errors.push(CatalogError.locationInvalidHoursRange(i));
-        continue;
-      }
-      week.push(DayHours.open(day.openMinutes, day.closeMinutes));
+      const opened = openDay(i, opens.value, closes.value);
+      if (opened.ok) week.push(opened.value);
+      else errors.push(opened.error);
     }
     return errors.length > 0 ? Result.err(errors) : Result.ok(week);
   },
@@ -139,10 +157,10 @@ export const DayHours = {
   /**
    * The legacy `validateHours` (`location.ts:251-292`) on the clock-text
    * shape every location stores today (`hours: [{ kind: 'open', opens:
-   * '09:00', closes: '20:00' }, …]`), converting to minutes: the same codes,
-   * in the same order, as {@link parseWeek} — the one guard the
-   * `hours` → `openingHours` reshaping and the seed run their seven days
-   * through.
+   * '09:00', closes: '20:00' }, …]`, re-tagged by the shim), converting to
+   * minutes: the same codes, in the same order, as {@link parseWeek} — the
+   * one guard the `hours` → `openingHours` reshaping and the seed run their
+   * seven days through.
    */
   parseClockWeek(
     raw: readonly ClockDayHours[],
@@ -154,7 +172,7 @@ export const DayHours = {
     const week: DayHours[] = [];
     for (let i = 0; i < raw.length; i++) {
       const day = raw[i] as ClockDayHours;
-      if (day.kind === DayHoursKind.Closed) {
+      if (day.openingState === OpeningState.Closed) {
         week.push(DayHours.closed());
         continue;
       }
@@ -168,29 +186,39 @@ export const DayHours = {
         errors.push(closes.error);
         continue;
       }
-      if (opens.value >= closes.value) {
-        errors.push(CatalogError.locationInvalidHoursRange(i));
-        continue;
-      }
-      week.push(DayHours.open(opens.value, closes.value));
+      const opened = openDay(i, opens.value, closes.value);
+      if (opened.ok) week.push(opened.value);
+      else errors.push(opened.error);
     }
     return errors.length > 0 ? Result.err(errors) : Result.ok(week);
   },
 } as const;
 
-export namespace DayHours {
-  export type Closed = {
-    readonly kind: typeof DayHoursKind.Closed;
-  };
-  export type Open = {
-    readonly kind: typeof DayHoursKind.Open;
-    /** First open minute of the day, `0 … 1439`. */
-    readonly openMinutes: number;
-    /** The minute the door closes (exclusive), after `openMinutes`. */
-    readonly closeMinutes: number;
-  };
+/**
+ * An open day from two minutes of the day: `opens < closes`, or
+ * `CATALOG_LOCATION_INVALID_HOURS_RANGE` with the day's index. The closing
+ * minute, strictly after an opening one, is a valid exclusive end.
+ */
+function openDay(
+  dayIndex: number,
+  opens: MinuteOfDay,
+  closes: MinuteOfDay,
+): Result<DayHours.Open, CatalogError.LocationInvalidHoursRange> {
+  const end = EndMinute.of(closes);
+  return opens < closes && end.ok
+    ? Result.ok(DayHours.open(opens, end.value))
+    : Result.err(CatalogError.locationInvalidHoursRange(dayIndex));
 }
 
-function isMinuteOfDay(minutes: number): boolean {
-  return Number.isInteger(minutes) && minutes >= 0 && minutes < MINUTES_PER_DAY;
+export namespace DayHours {
+  export type Closed = {
+    readonly openingState: typeof OpeningState.Closed;
+  };
+  export type Open = {
+    readonly openingState: typeof OpeningState.Open;
+    /** First open minute of the day. */
+    readonly openMinutes: MinuteOfDay;
+    /** The minute the door closes (exclusive), after `openMinutes`. */
+    readonly closeMinutes: EndMinute;
+  };
 }

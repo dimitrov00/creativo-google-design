@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { unwrapOk, utcMs } from '../testing';
 import { BookingPolicy } from './booking-policy.data';
 import { ClientStatsPolicy } from './client-stats-policy.data';
 import { SchedulingErrorCode } from './scheduling-errors.data';
 
 const HOUR = 3_600_000;
 /** A visit at 2026-10-12T10:00:00Z, as a literal instant. */
-const START = Date.UTC(2026, 9, 12, 10, 0, 0);
+const START = utcMs('2026-10-12T10:00:00.000Z');
+/** `START` moved by `ms` — an instant (the late line is elapsed time, T2). */
+const off = (ms: number): UtcEpochMs => UtcEpochMs.plusMs(START, ms);
+/** An instant literal in epoch ms. */
+const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 describe('ClientStatsPolicy defaults', () => {
   it('DEFAULT is R47 over the default booking policy', () => {
@@ -51,12 +57,12 @@ describe('ClientStatsPolicy.create', () => {
       ok: false,
       error: [
         {
-          code: SchedulingErrorCode.ClientStatsPolicyInvalid,
+          errorCode: SchedulingErrorCode.ClientStatsPolicyInvalid,
           field: 'suggestPauseNoShows',
           rawValue: 0,
         },
         {
-          code: SchedulingErrorCode.ClientStatsPolicyInvalid,
+          errorCode: SchedulingErrorCode.ClientStatsPolicyInvalid,
           field: 'suggestPauseWindowDays',
           rawValue: 366,
         },
@@ -80,7 +86,7 @@ describe('ClientStatsPolicy.isLateCancellation', () => {
       ClientStatsPolicy.isLateCancellation(
         policy,
         START,
-        START - 24 * HOUR,
+        off(-24 * HOUR),
         null,
       ),
     ).toBe(false);
@@ -88,7 +94,7 @@ describe('ClientStatsPolicy.isLateCancellation', () => {
       ClientStatsPolicy.isLateCancellation(
         policy,
         START,
-        START - 24 * HOUR + 1,
+        off(-24 * HOUR + 1),
         null,
       ),
     ).toBe(true);
@@ -96,13 +102,13 @@ describe('ClientStatsPolicy.isLateCancellation', () => {
 
   it('judges a stamped cancellation by its own window, never the current one', () => {
     // 30 h before the start: free under 24 h, late under a stamped 48 h.
-    const at = START - 30 * HOUR;
-    expect(ClientStatsPolicy.isLateCancellation(policy, START, at, null)).toBe(
-      false,
-    );
-    expect(ClientStatsPolicy.isLateCancellation(policy, START, at, 48)).toBe(
-      true,
-    );
+    const cancelled = off(-30 * HOUR);
+    expect(
+      ClientStatsPolicy.isLateCancellation(policy, START, cancelled, null),
+    ).toBe(false);
+    expect(
+      ClientStatsPolicy.isLateCancellation(policy, START, cancelled, 48),
+    ).toBe(true);
   });
 
   it('a stamped zero-hour window is a shop with no free cancellation window', () => {
@@ -110,20 +116,15 @@ describe('ClientStatsPolicy.isLateCancellation', () => {
       false,
     );
     expect(
-      ClientStatsPolicy.isLateCancellation(policy, START, START + 1, 0),
+      ClientStatsPolicy.isLateCancellation(policy, START, at(START + 1), 0),
     ).toBe(true);
   });
 
   it('draws the line with the booking policy’s own formula', () => {
     for (const offset of [-48, -24, -1, 0, 1].map((h) => h * HOUR)) {
       expect(
-        ClientStatsPolicy.isLateCancellation(
-          policy,
-          START,
-          START + offset,
-          null,
-        ),
-      ).toBe(!BookingPolicy.mayCancelAt(policy.booking, START, START + offset));
+        ClientStatsPolicy.isLateCancellation(policy, START, off(offset), null),
+      ).toBe(!BookingPolicy.mayCancelAt(policy.booking, START, off(offset)));
     }
   });
 });

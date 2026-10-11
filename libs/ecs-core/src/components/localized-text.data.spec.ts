@@ -22,7 +22,7 @@ describe('LocalizedText.parse', () => {
     expect(LocalizedText.parse({ en: '  ', bg: 'Коса' })).toEqual({
       ok: false,
       error: [
-        { code: 'catalog.localized_text.field_empty', locale: Locale.En },
+        { errorCode: 'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY', locale: Locale.En },
       ],
     });
   });
@@ -31,7 +31,7 @@ describe('LocalizedText.parse', () => {
     expect(LocalizedText.parse({ en: 'Haircut', bg: '' })).toEqual({
       ok: false,
       error: [
-        { code: 'catalog.localized_text.field_empty', locale: Locale.Bg },
+        { errorCode: 'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY', locale: Locale.Bg },
       ],
     });
   });
@@ -42,7 +42,7 @@ describe('LocalizedText.parse', () => {
     if (!result.ok) {
       expect(result.error).toHaveLength(2);
       expect(result.error[0]).toEqual({
-        code: 'catalog.localized_text.field_empty',
+        errorCode: 'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY',
         locale: 'en',
       });
     }

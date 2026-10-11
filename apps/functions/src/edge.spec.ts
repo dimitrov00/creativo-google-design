@@ -4,30 +4,46 @@ import ts from 'typescript';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
   AccountsError,
-  BookingCommitError,
-  BookingCommitErrorCode,
+  BarberId,
+  BookingError,
+  BookingStatus,
   Callables,
   type CancellationRefusal,
   CancellationRefusalCode,
+  CarriedSeatRefusal,
+  EndMinute,
   IdentityError,
   type MoveCarriedSeatUnplaceable,
+  MinuteCount,
   MoveErrorCode,
+  PrimitiveErrorCode,
   Result,
+  SchedulingErrorCode,
+  SeatId,
   ShopUnavailableReason,
   StaffEditError,
   StaffEditErrorCode,
   StreakPublishError,
   StreakPublishErrorCode,
   type TelemetryPorts,
+  LocalDate,
+  MinuteOfDay,
+  TimeError,
+  TimeErrorCode,
+  UtcEpochMs,
   WaitlistError,
+  WallTime,
   WorkBudgetSystem,
+  ZonedTimeSystem,
 } from '@creativo/ecs-core';
 import {
   EDGE_DICTIONARIES,
   EDGE_WIRE,
   type EdgeError,
   HttpsStatus,
+  LEGACY_WIRE_CODE,
   LegacyWireCode,
+  errorCodeOf,
   PLATFORM_TIMEOUT_SECONDS,
   WIRE_ZONE,
   WireShape,
@@ -36,16 +52,45 @@ import {
   legacyCallable,
   retryingTrigger,
   toHttpsError,
+  wallIso,
   wireDetails,
+  wireParamsOf,
   wireRuleOf,
   workBudget,
 } from './edge';
+
+/** A literal instant as the brand — specs only. */
+function utc(ms: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(ms);
+  if (!instant.ok) throw new Error(`a broken fixture: ${ms}`);
+  return instant.value;
+}
+
+/** A branded literal — a bad one is a broken fixture. */
+function sure<T>(
+  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
+): T {
+  if (!result.ok) throw new Error('a broken fixture');
+  return result.value;
+}
+const day = (raw: string): LocalDate => sure(LocalDate.parse(raw));
+const at = (minute: number): MinuteOfDay => sure(MinuteOfDay.of(minute));
+const until = (minute: number): EndMinute => sure(EndMinute.of(minute));
+const IVAN = BarberId.of('b_ivan');
 
 const SRC = resolve(__dirname);
 const ECS_CORE = resolve(__dirname, '../../../libs/ecs-core/src');
 
 const ALL_CODES: readonly string[] = Object.values(EDGE_DICTIONARIES).flatMap(
   (dictionary) => Object.values(dictionary),
+);
+
+/**
+ * The rule a WIRE code leaves by — today's handlers name the dotted wire
+ * code, the table is keyed by the ecs-core `errorCode` (F-10).
+ */
+const RULE_BY_WIRE_CODE = new Map(
+  Object.values(EDGE_WIRE).map((rule) => [rule.wireCode, rule] as const),
 );
 
 /** The answer `toHttpsError` gives, as plain data. */
@@ -214,6 +259,7 @@ function ecsErrorDictionaryNames(): readonly string[] {
   const names = new Set<string>();
   for (const file of [
     ...tsFiles(join(ECS_CORE, 'components')),
+    ...tsFiles(join(ECS_CORE, 'primitives')),
     ...tsFiles(join(ECS_CORE, 'systems')),
   ]) {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- ecs-core's own sources, found by listing them.
@@ -232,6 +278,11 @@ const ANSWERED_TODAY: ReadonlySet<string> = new Set([
   LegacyWireCode.StreakPublishNotAdmin,
 ]);
 
+/** The same, as the WIRE codes today's error classes carry. */
+const ANSWERED_TODAY_ON_THE_WIRE: ReadonlySet<string> = new Set(
+  [...ANSWERED_TODAY].map((code) => wireRuleOf(code).wireCode),
+);
+
 describe('edge — the wire table', () => {
   describe('totality', () => {
     it('maps every code of every covered dictionary to a rule an HttpsError can be built from', () => {
@@ -245,9 +296,10 @@ describe('edge — the wire table', () => {
       }
     });
 
-    it('holds exactly one rule per code — no code is spelled by two dictionaries', () => {
+    it('holds exactly one rule per code — no code is spelled by two dictionaries, no wire code by two rules', () => {
       expect(new Set(ALL_CODES).size).toBe(ALL_CODES.length);
       expect(Object.keys(EDGE_WIRE).sort()).toEqual([...ALL_CODES].sort());
+      expect(RULE_BY_WIRE_CODE.size).toBe(ALL_CODES.length);
     });
 
     it('covers every error dictionary ecs-core declares', () => {
@@ -274,8 +326,9 @@ describe('edge — the wire table', () => {
       // deletes handlers and lowers this floor in the same commit.
       expect(sites.length).toBeGreaterThanOrEqual(80);
       for (const site of sites) {
-        expect(Object.hasOwn(EDGE_WIRE, site.code), site.at).toBe(true);
-        const rule = wireRuleOf(site.code);
+        const rule = RULE_BY_WIRE_CODE.get(site.code);
+        expect(rule, site.at).toBeDefined();
+        if (rule === undefined) continue;
         expect(rule.wireShape, `${site.code} at ${site.at}`).not.toBe(
           WireShape.Answered,
         );
@@ -297,10 +350,10 @@ describe('edge — the wire table', () => {
         [LegacyWireCode.OtpValidationFailed, HttpsStatus.InvalidArgument],
       ]);
       for (const { code, at } of classes) {
-        expect(Object.hasOwn(EDGE_WIRE, code), `${code} (${at})`).toBe(true);
-        if (named.has(code)) continue;
-        const rule = wireRuleOf(code);
-        if (ANSWERED_TODAY.has(code)) {
+        const rule = RULE_BY_WIRE_CODE.get(code);
+        expect(rule, `${code} (${at})`).toBeDefined();
+        if (rule === undefined || named.has(code)) continue;
+        if (ANSWERED_TODAY_ON_THE_WIRE.has(code)) {
           expect(rule.wireShape, code).toBe(WireShape.Answered);
           continue;
         }
@@ -314,7 +367,7 @@ describe('edge — the wire table', () => {
 
   describe('details — today’s exact shapes', () => {
     it('`{ code, params }` with today’s stringified figures', () => {
-      expect(wire(BookingCommitError.tooSoon(30))).toEqual({
+      expect(wire(BookingError.tooSoon(sure(MinuteCount.of(30))))).toEqual({
         status: 'failed-precondition',
         message: 'booking.commit.too_soon',
         details: {
@@ -322,7 +375,7 @@ describe('edge — the wire table', () => {
           params: { minLeadMinutes: '30' },
         },
       });
-      expect(wireDetails(BookingCommitError.partyTooLarge(4))).toEqual({
+      expect(wireDetails(BookingError.partyTooLarge(4))).toEqual({
         code: 'booking.commit.party_too_large',
         params: { maxPartySize: '4' },
       });
@@ -333,7 +386,7 @@ describe('edge — the wire table', () => {
     });
 
     it('`params: {}` for a refusal with nothing to say, as a DomainError sends it', () => {
-      expect(wire(BookingCommitError.unauthenticated())).toEqual({
+      expect(wire(BookingError.unauthenticated())).toEqual({
         status: 'unauthenticated',
         message: 'booking.commit.unauthenticated',
         details: { code: 'booking.commit.unauthenticated', params: {} },
@@ -347,34 +400,31 @@ describe('edge — the wire table', () => {
     it('keeps what must stay on the server off the wire', () => {
       // A person key, a shop's reason, the violations, the seat index.
       expect(
-        wireDetails(BookingCommitError.personDoubleBooked('account:u-2')),
+        wireDetails(BookingError.personDoubleBooked('account:u-2')),
       ).toEqual({
         code: 'booking.commit.invalid_input',
         params: { field: 'person_overlap' },
       });
       expect(
         wireDetails(
-          BookingCommitError.shopUnavailable(
-            'loc-1',
-            ShopUnavailableReason.Unlisted,
-          ),
+          BookingError.shopUnavailable('loc-1', ShopUnavailableReason.Unlisted),
         ),
       ).toEqual({
         code: 'booking.commit.invalid_input',
         params: { field: 'locationId' },
       });
       expect(
-        wire(BookingCommitError.invariantViolated([{ code: 'x' } as never])),
+        wire(BookingError.invariantViolated([{ errorCode: 'x' } as never])),
       ).toMatchObject({
         status: 'invalid-argument',
         details: { code: 'booking.commit.invariant_violated', params: {} },
       });
     });
 
-    it('a lost race is `aborted`, its instant as today’s shop-clock ISO param', () => {
-      const startMs = Date.UTC(2026, 9, 7, 7, 0);
+    it('a lost race is `aborted`, its wall clock as today’s shop-clock ISO param', () => {
+      // 10:00 on the shop's clock = 07:00Z, Sofia summer.
       expect(
-        wire(BookingCommitError.slotUnavailable('b_ivan', startMs, 1)),
+        wire(BookingError.slotUnavailable(IVAN, day('2026-10-07'), at(600), 1)),
       ).toEqual({
         status: 'aborted',
         message: 'booking.commit.slot_unavailable',
@@ -391,30 +441,120 @@ describe('edge — the wire table', () => {
 
     it('spells every `*Iso` param on the shop’s clock with its offset — winter too, never UTC', () => {
       expect(WIRE_ZONE).toBe('Europe/Sofia');
-      // 2026-12-01T08:30:15.007Z — EET, +02:00.
+      // 10:30 on 2026-12-01 — EET, +02:00.
       expect(
         wireDetails(
-          BookingCommitError.slotUnavailable('b_ivan', 1_796_113_815_007, 1),
+          BookingError.slotUnavailable(IVAN, day('2026-12-01'), at(630), 1),
         ),
       ).toEqual({
         code: 'booking.commit.slot_unavailable',
         params: {
           barberId: 'b_ivan',
-          startIso: '2026-12-01T10:30:15.007+02:00',
+          startIso: '2026-12-01T10:30:00.000+02:00',
         },
       });
-      // Not an instant: left out, as an absent optional param is.
+      // Not a shop day: left out, as an absent optional param is.
       expect(
         wireDetails({
-          code: StaffEditErrorCode.Overlaps,
+          errorCode: StaffEditErrorCode.Overlaps,
           barberId: 'b_ivan',
-          startMs: Number.NaN,
+          localDate: '2026-02-30',
+          startMinutes: 600,
           edge: null,
         }),
       ).toEqual({
         code: 'booking.staffEdit.overlaps',
         params: { barberId: 'b_ivan' },
       });
+    });
+
+    it('keys the table by errorCode and leaves as the LEGACY wire code — the wire is frozen (F-10)', () => {
+      const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
+      const day = LocalDate.parse('2026-03-29');
+      const minute = MinuteOfDay.of(210);
+      if (!zone.ok || !day.ok || !minute.ok) throw new Error('fixture');
+      // A flattened struct names `errorCode`; it leaves as today's dotted code.
+      expect(
+        wire(TimeError.dstGap(day.value, minute.value, zone.value)),
+      ).toEqual({
+        status: 'invalid-argument',
+        message: 'time.nonexistent_local_time',
+        details: { code: 'time.nonexistent_local_time', params: {} },
+      });
+      expect(wire(TimeError.invalidTimeZone('Not/AZone'))).toEqual({
+        status: 'internal',
+        message: 'time.invalid_time_zone',
+        details: { code: 'time.invalid_time_zone', params: {} },
+      });
+      // Every flattened time code has a legacy wire code; every rule has one.
+      const legacy = new Map(Object.entries(LEGACY_WIRE_CODE));
+      for (const code of Object.values(TimeErrorCode)) {
+        expect(legacy.get(code), code).toMatch(/^time\./);
+        expect(wireRuleOf(code).wireCode).toBe(legacy.get(code));
+      }
+      for (const [code, rule] of Object.entries(EDGE_WIRE)) {
+        expect(rule.wireCode, code).toBe(legacy.get(code) ?? code);
+      }
+      // Every SCREAMING code but a primitive's has its legacy dotted (or
+      // undotted lowercase) wire code — so no SCREAMING code reaches a client.
+      for (const [name, dictionary] of Object.entries(EDGE_DICTIONARIES)) {
+        if (name === 'PrimitiveErrorCode' || name === 'LegacyWireCode') {
+          continue;
+        }
+        for (const code of Object.values(dictionary)) {
+          expect(code, name).toMatch(/^[A-Z][A-Z0-9_]+$/);
+          expect(legacy.get(code), code).toMatch(/^[a-z][a-zA-Z0-9_.]+$/);
+        }
+      }
+    });
+
+    it('a refused primitive leaves as invalid-argument under its own code (no legacy one)', () => {
+      expect(
+        wire({
+          errorCode: PrimitiveErrorCode.IdEmpty,
+          raw: '',
+          brand: 'AppointmentId',
+        }),
+      ).toEqual({
+        status: 'invalid-argument',
+        message: 'PRIMITIVE_ID_EMPTY',
+        details: { code: 'PRIMITIVE_ID_EMPTY', params: {} },
+      });
+    });
+
+    it('a local-coordinate param renders the same shop-clock ISO through toUtc; a gap is left out', () => {
+      const param = wallIso('startIso', 'localDate', 'startMinutes');
+      expect(param).toEqual({
+        wireName: 'startIso',
+        field: 'localDate',
+        paramFormat: 'ZONED_WALL_ISO',
+        minuteField: 'startMinutes',
+      });
+      const render = (localDate: unknown, startMinutes: unknown) =>
+        wireParamsOf(
+          {
+            code: StaffEditErrorCode.Overlaps,
+            localDate,
+            startMinutes,
+          },
+          [param],
+        );
+      expect(render('2026-10-07', 600)).toEqual({
+        startIso: '2026-10-07T10:00:00.000+03:00',
+      });
+      // The fall-back repeat takes the earlier offset (locked 2026-10-10).
+      expect(render('2026-10-25', 210)).toEqual({
+        startIso: '2026-10-25T03:30:00.000+03:00',
+      });
+      // An exclusive end of 1440 is the next day's first instant.
+      expect(render('2026-10-07', 1440)).toEqual({
+        startIso: '2026-10-08T00:00:00.000+03:00',
+      });
+      // A gap time, a non-day and a non-minute are left out, as absent params are.
+      expect(render('2026-03-29', 210)).toEqual({});
+      expect(render('2026-02-30', 600)).toEqual({});
+      expect(render('2026-10-07', 1441)).toEqual({});
+      expect(render('2026-10-07', null)).toEqual({});
     });
 
     it('an Admin-Auth step’s failure keeps today’s coded internal — never the raw pipeline code', () => {
@@ -454,10 +594,40 @@ describe('edge — the wire table', () => {
       });
     });
 
+    it('a `field` param leaves as the wire has always spelt it: a renamed field by its old name, a refusal by its legacy code', () => {
+      expect(wireDetails(WaitlistError.invalidRequest('localDate'))).toEqual({
+        code: 'booking.waitlist.invalid_request',
+        params: { field: 'dayKey' },
+      });
+      expect(
+        wireDetails(
+          WaitlistError.invalidRequest(SchedulingErrorCode.WaitlistNoDays),
+        ),
+      ).toEqual({
+        code: 'booking.waitlist.invalid_request',
+        params: { field: 'scheduling.waitlist.no_days' },
+      });
+      expect(
+        wireDetails(
+          WaitlistError.invalidRequest(SchedulingErrorCode.WaitlistEmptyCart),
+        ),
+      ).toEqual({
+        code: 'booking.waitlist.invalid_request',
+        params: { field: 'scheduling.waitlist.empty_cart' },
+      });
+      // A barber not on the roster names its day as today's `dayKey`.
+      expect(
+        wireDetails(BookingError.barberNotRostered(IVAN, day('2026-10-07'))),
+      ).toEqual({
+        code: 'booking.commit.barber_not_rostered',
+        params: { barberId: 'b_ivan', dayKey: '2026-10-07' },
+      });
+    });
+
     it('`{ code }` alone where today’s handlers throw inline', () => {
       const notCancellable: CancellationRefusal = {
-        code: CancellationRefusalCode.NotCancellable,
-        status: 'completed',
+        errorCode: CancellationRefusalCode.NotCancellable,
+        bookingStatus: BookingStatus.Completed,
       };
       expect(wire(notCancellable)).toEqual({
         status: 'failed-precondition',
@@ -465,7 +635,7 @@ describe('edge — the wire table', () => {
         details: { code: 'booking.cancel.not_cancellable' },
       });
       expect(
-        wire({ code: CancellationRefusalCode.PolicyUnavailable }),
+        wire({ errorCode: CancellationRefusalCode.PolicyUnavailable }),
       ).toMatchObject({
         status: 'unavailable',
         details: { code: 'booking.cancel.policy_unavailable' },
@@ -487,9 +657,9 @@ describe('edge — the wire table', () => {
 
     it('the cancel window and the transition graph carry today’s params', () => {
       const windowClosed: CancellationRefusal = {
-        code: CancellationRefusalCode.WindowClosed,
+        errorCode: CancellationRefusalCode.WindowClosed,
         windowHours: 24,
-        deadlineMs: 1,
+        deadlineUtcMs: utc(1),
       };
       expect(wireDetails(windowClosed)).toEqual({
         code: 'booking.cancel.window_closed',
@@ -512,9 +682,9 @@ describe('edge — the wire table', () => {
 
     it('a move and a staff edit say what they said: seat ids joined, instants as ISO, absent fields left out', () => {
       const carried: MoveCarriedSeatUnplaceable = {
-        code: MoveErrorCode.CarriedSeatUnplaceable,
-        refusal: 'barber_unavailable',
-        seatIds: ['s1', 's2'] as never,
+        errorCode: MoveErrorCode.CarriedSeatUnplaceable,
+        refusal: CarriedSeatRefusal.BarberUnavailable,
+        seatIds: [SeatId.of('s1'), SeatId.of('s2')],
       };
       expect(wire(carried)).toMatchObject({
         status: 'failed-precondition',
@@ -525,9 +695,10 @@ describe('edge — the wire table', () => {
       });
       expect(
         wireDetails({
-          code: StaffEditErrorCode.Overlaps,
+          errorCode: StaffEditErrorCode.Overlaps,
           barberId: 'b_ivan',
-          startMs: Date.UTC(2026, 9, 7, 8),
+          localDate: '2026-10-07',
+          startMinutes: 660,
           edge: null,
         }),
       ).toEqual({
@@ -540,8 +711,9 @@ describe('edge — the wire table', () => {
       expect(
         wireDetails(
           StaffEditError.beforeArrival(
-            Date.UTC(2026, 9, 7, 9),
-            Date.UTC(2026, 9, 7, 10),
+            day('2026-10-07'),
+            until(720),
+            WallTime.of(day('2026-10-07'), at(780)),
           ),
         ),
       ).toEqual({
@@ -665,7 +837,7 @@ function edgePorts(start = 1_000) {
     trackError: (error, context) => tracked.push({ error, context }),
   };
   return {
-    ports: { ...telemetry, nowMs: () => now },
+    ports: { ...telemetry, nowUtcMs: () => utc(now) },
     tracked,
     logged,
     advance: (ms: number) => {
@@ -760,12 +932,12 @@ describe('edge — the wrappers', () => {
     it('throws Result.err exactly as the table says', async () => {
       const { ports, tracked } = edgePorts();
       const handler = callableEdge(spec, ports, async () =>
-        Result.err(BookingCommitError.tooSoon(30)),
+        Result.err(BookingError.tooSoon(sure(MinuteCount.of(30)))),
       );
       const thrown = await rejection(handler(request({})));
       expect(thrown.code).toBe('failed-precondition');
       expect(thrown.details).toEqual({
-        code: BookingCommitErrorCode.TooSoon,
+        code: 'booking.commit.too_soon',
         params: { minLeadMinutes: '30' },
       });
       expect(tracked).toEqual([]);
@@ -778,7 +950,11 @@ describe('edge — the wrappers', () => {
           callable: Callables.PublishStreakDefinition,
           failureCode: LegacyWireCode.StreakPublishStoreFailed,
           timeoutSeconds: null,
-          answer: (refusal) => ({ kind: 'refused', code: refusal.code }),
+          // Today's answer names the refusal by its wire code.
+          answer: (refusal) => ({
+            kind: 'refused',
+            code: wireRuleOf(errorCodeOf(refusal)).wireCode,
+          }),
         },
         ports,
         async () => Result.err(StreakPublishError.stale(2, 3)),
@@ -939,7 +1115,7 @@ describe('edge — the wrappers', () => {
 
   it('workBudget starts on the clock it is given and is spent at its limit', () => {
     let now = 10;
-    const budget = workBudget(() => now, 100);
+    const budget = workBudget(() => utc(now), 100);
     expect(budget).toMatchObject({ startedMs: 10, limitMs: 100 });
     now = 109;
     expect(budget.spent()).toBe(false);

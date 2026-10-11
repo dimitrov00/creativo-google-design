@@ -64,23 +64,34 @@ import {
   type BookingFlowLimits,
   BookingFlowStep as FlowStep,
   BookingFlowSystem,
-  CommitSubjectKind,
-  DayKey,
+  type BarberPreference,
+  CartLineId as LineKey,
+  CommitSubjectRole,
   DayWindows as DayWindowsData,
+  EndMinute,
   FlexibleWhen as WhenData,
+  GuestId as GuestKey,
   GuestLabelSystem,
+  LocalDate,
   type LocationId as LocationKey,
+  MinuteOfDay,
   MinuteRange,
   type Party as PartyData,
   PartyMember as MemberData,
+  PartyRole,
   PrefillCompanions,
   type PrefillSeat,
+  type SeatAssignment,
+  SeatKeyText,
   SeatLabel as LabelData,
-  SeatSubject as SubjectData,
+  SeatOccupant as OccupantData,
   ServiceId as ServiceKey,
   ServiceVariantId as VariantKey,
-  TimeInterval,
+  SubjectRelationship,
   UserId as UserKey,
+  UtcEpochMs,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 
 /**
@@ -252,17 +263,19 @@ export class BookingFlowStore {
    * cannot do anything.
    */
   readonly isTerminal = computed(() =>
-    BookingFlowSystem.isTerminal(this.step()),
+    BookingFlowSystem.isTerminal(STEP_OF[this.step()]),
   );
 
   /** 1-based position on the wizard spine; terminal states report the end. */
   readonly currentStep = computed(() =>
-    BookingFlowSystem.currentStep(this.step()),
+    BookingFlowSystem.currentStep(STEP_OF[this.step()]),
   );
 
   // Terminal states report step 4 of 4, which used to light this up on the
   // confirmation screen — a back chevron the machine answers with a refusal.
-  readonly canGoBack = computed(() => BookingFlowSystem.canGoBack(this.step()));
+  readonly canGoBack = computed(() =>
+    BookingFlowSystem.canGoBack(STEP_OF[this.step()]),
+  );
 
   // ── Commands ───────────────────────────────────────────────────────
 
@@ -814,14 +827,7 @@ export class BookingFlowStore {
     const seats = BookingCartSystem.toCommitSeats(
       toCartData(cart),
       toPartyData(party),
-      selection.assignments.map((assignment) => ({
-        lineId: assignment.lineId.value,
-        barberId: BarberKey.of(assignment.barberId.value),
-        timeInterval: TimeInterval.of(
-          assignment.slot.start.toMillis(),
-          assignment.slot.end.toMillis(),
-        ),
-      })),
+      selection.assignments.map(toSeatAssignment),
     );
     if (seats === null) return null;
     return seats.map((seat, index): CommitBookingSeatRequest => ({
@@ -829,10 +835,10 @@ export class BookingFlowStore {
       serviceId: seat.serviceId,
       variantId: seat.variantId,
       barberId: seat.barberId,
-      barberPref: seat.barberPref,
+      barberPref: LEGACY_BARBER_PREF[seat.barberPreference],
       startIso: selection.assignments.at(index)?.slot.start.toISO() ?? '',
       subject:
-        seat.subject.kind === CommitSubjectKind.Self
+        seat.subject.commitSubjectRole === CommitSubjectRole.Self
           ? { kind: 'self' }
           : {
               kind: 'guest',
@@ -1195,27 +1201,25 @@ export class BookingFlowStore {
         state:
           draft.step === 'schedule' || draft.step === 'review'
             ? {
-                kind: FlowStep.Schedule,
+                bookingFlowStep: FlowStep.Schedule,
                 party: toPartyData(partyResult.value),
                 cart: toCartData(cartResult.value),
                 locationId: toLocationKey(locationId),
                 when: toWhenData(declared),
               }
             : {
-                kind: FlowStep.Services,
+                bookingFlowStep: FlowStep.Services,
                 party: toPartyData(partyResult.value),
                 cart: toCartData(cartResult.value),
                 locationId: toLocationKey(locationId),
               },
-        selectedDayKey:
-          draft.dayKey !== null && DayKey.isValid(draft.dayKey)
-            ? DayKey.of(draft.dayKey)
-            : null,
+        selectedLocalDate:
+          draft.dayKey === null ? null : localDateOrNull(draft.dayKey),
       },
       today ?? EARLIEST_DAY,
     );
-    if (resumed.state.kind === FlowStep.Schedule) {
-      const kept = WhenData.dayKeys(resumed.state.when);
+    if (resumed.state.bookingFlowStep === FlowStep.Schedule) {
+      const kept: readonly string[] = WhenData.localDates(resumed.state.when);
       this._zone.set(draft.zone);
       this._selectedDayKey.set(this.restoredDayKey(draft, today, resumed));
       this._state.set({
@@ -1224,7 +1228,7 @@ export class BookingFlowStore {
         cart: cartResult.value,
         locationId,
         when: FlexibleWhen.of(
-          declared.days.filter((day) => kept.includes(DayKey.of(day.dayKey))),
+          declared.days.filter((day) => kept.includes(day.dayKey)),
         ),
       });
       return true;
@@ -1258,12 +1262,12 @@ export class BookingFlowStore {
     return restored.isFailure() ? FlexibleWhen.empty() : restored.value;
   }
 
-  /** Today's key in `zone`, or `null` without a zone or a clock reading. */
-  private todayKeyOf(zone: string | null): DayKey | null {
+  /** Today's day in `zone`, or `null` without a zone or a clock reading. */
+  private todayKeyOf(zone: string | null): LocalDate | null {
     if (zone === null) return null;
     const now = this.clock.now(zone);
     if (now.isFailure()) return null;
-    return DayKey.of(CalendarDay.fromZonedDateTime(now.value).key());
+    return localDateOrNull(CalendarDay.fromZonedDateTime(now.value).key());
   }
 
   /**
@@ -1273,12 +1277,12 @@ export class BookingFlowStore {
    */
   private restoredDayKey(
     draft: BookingDraft,
-    today: DayKey | null,
-    resumed: { readonly selectedDayKey: DayKey | null },
+    today: LocalDate | null,
+    resumed: { readonly selectedLocalDate: LocalDate | null },
   ): string | null {
     if (draft.dayKey === null || draft.zone === null) return draft.dayKey;
-    if (today === null || !DayKey.isValid(draft.dayKey)) return null;
-    return resumed.selectedDayKey;
+    if (today === null || localDateOrNull(draft.dayKey) === null) return null;
+    return resumed.selectedLocalDate;
   }
 
   clearDraft(): void {
@@ -1653,8 +1657,49 @@ const FLOW_LIMITS: BookingFlowLimits = {
   maxFlexibleDays: MAX_FLEXIBLE_DAYS,
 };
 
+/** A brand built from a value its own legacy class already validated. */
+function sure<T>(
+  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
+  what: string,
+): T {
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/** A stored day key as a shop day — `null` when it is no day at all. */
+function localDateOrNull(raw: string): LocalDate | null {
+  const parsed = LocalDate.parse(raw);
+  return parsed.ok ? parsed.value : null;
+}
+
 /** Before every day a draft can name — prunes nothing. */
-const EARLIEST_DAY = DayKey.of('0000-01-01');
+const EARLIEST_DAY = sure(LocalDate.parse('0001-01-01'), 'the earliest day');
+
+/** The legacy wizard step ↔ the flow's dictionary, one table each way. */
+const STEP_OF = {
+  location: FlowStep.Location,
+  services: FlowStep.Services,
+  schedule: FlowStep.Schedule,
+  review: FlowStep.Review,
+  confirmed: FlowStep.Confirmed,
+  waitlisted: FlowStep.Waitlisted,
+} as const satisfies Record<BookingFlowStep, FlowStep>;
+
+/** The wire's barber preference, as it has always been spelt. */
+const LEGACY_BARBER_PREF = {
+  ANY: 'any',
+  SPECIFIC: 'specific',
+} as const satisfies Record<BarberPreference, 'any' | 'specific'>;
+
+/** A stored seat's relationship, legacy ↔ the occupant's dictionary. */
+const RELATIONSHIP_OF = {
+  self: SubjectRelationship.Self,
+  companion: SubjectRelationship.Companion,
+  client: SubjectRelationship.Client,
+} as const satisfies Record<
+  'self' | 'companion' | 'client',
+  SubjectRelationship
+>;
 
 function toLocationKey(locationId: LocationId | null): LocationKey | null {
   return locationId === null ? null : (locationId.value as LocationKey);
@@ -1667,7 +1712,10 @@ function toPartyData(party: BookingParty): PartyData {
     members: [
       MemberData.owner(),
       ...party.guests.map((guest) =>
-        MemberData.guest(guest.id.value, LabelData.of(guest.label.value)),
+        MemberData.guest(
+          GuestKey.of(guest.id.value),
+          LabelData.of(guest.label.value),
+        ),
       ),
     ],
     nextGuestSequence: party.nextGuestSequence,
@@ -1678,8 +1726,8 @@ function toPartyProps(party: PartyData) {
   return {
     ownerId: party.ownerUserId,
     guests: party.members.flatMap((member) =>
-      member.kind === 'guest'
-        ? [{ id: member.guestId, label: member.label as string }]
+      member.partyRole === PartyRole.Guest
+        ? [{ id: member.guestId, label: member.guestLabel as string }]
         : [],
     ),
     nextSequence: party.nextGuestSequence,
@@ -1688,28 +1736,33 @@ function toPartyProps(party: PartyData) {
 
 function toCartData(cart: BookingCart): CartData {
   return {
-    seats: cart.entries().map(([seatKey, lines]) => ({
-      seatKey,
-      lines: lines.map((line) => ({
-        lineId: line.id.value,
+    cartSeats: cart.entries().map(([text, lines]) => {
+      const seatKey = SeatKeyText.of(text);
+      return {
         seatKey,
-        serviceId: ServiceKey.of(line.serviceId.value),
-        variantId:
-          line.variantId === null ? null : VariantKey.of(line.variantId.value),
-        barberId:
-          line.barberPref.kind === 'specific'
-            ? BarberKey.of(line.barberPref.barberId.value)
-            : null,
-        locationId: null,
-      })),
-    })),
-    nextSequence: cart.nextLineSequence,
+        lines: lines.map((line) => ({
+          lineId: LineKey.of(line.id.value),
+          seatKey,
+          serviceId: ServiceKey.of(line.serviceId.value),
+          variantId:
+            line.variantId === null
+              ? null
+              : VariantKey.of(line.variantId.value),
+          barberId:
+            line.barberPref.kind === 'specific'
+              ? BarberKey.of(line.barberPref.barberId.value)
+              : null,
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: cart.nextLineSequence,
   };
 }
 
 function toCartProps(cart: CartData): ReconstituteBookingCartProps {
   return {
-    seats: cart.seats.map((seat) => ({
+    seats: cart.cartSeats.map((seat) => ({
       seatKey: seat.seatKey,
       lines: seat.lines.map((line) => ({
         id: line.lineId,
@@ -1718,7 +1771,7 @@ function toCartProps(cart: CartData): ReconstituteBookingCartProps {
         barberId: line.barberId,
       })),
     })),
-    nextSequence: cart.nextSequence,
+    nextSequence: cart.cartNextSequence,
   };
 }
 
@@ -1726,16 +1779,53 @@ function toWhenData(when: FlexibleWhen): WhenData {
   return WhenData.of(
     when.days.map((day) =>
       DayWindowsData.of(
-        DayKey.of(day.dayKey),
+        sure(LocalDate.parse(day.dayKey), 'a declared day'),
+        // A LocalTimeRange is a valid span of one day by construction.
         day.windows.map((window) =>
           MinuteRange.of(
-            window.start.minutesFromMidnight(),
-            window.end.minutesFromMidnight(),
+            sure(
+              MinuteOfDay.of(window.start.minutesFromMidnight()),
+              'a window start',
+            ),
+            sure(
+              EndMinute.of(window.end.minutesFromMidnight()),
+              'a window end',
+            ),
           ),
         ),
       ),
     ),
   );
+}
+
+/**
+ * An assignment on the shop day's wall clock (the slot's own zone): its
+ * start's minute, and its end's — `1440` when it ends at the next midnight.
+ */
+function toSeatAssignment(
+  assignment: ScheduleSelection['assignments'][number],
+): SeatAssignment {
+  const zone = sure(
+    ZonedTimeSystem.checkZone(assignment.slot.start.zoneName),
+    'the slot’s zone',
+  );
+  const start = ZonedTimeSystem.toLocal(
+    sure(UtcEpochMs.of(assignment.slot.start.toMillis()), 'a slot start'),
+    zone,
+  );
+  const end = ZonedTimeSystem.toLocal(
+    sure(UtcEpochMs.of(assignment.slot.end.toMillis()), 'a slot end'),
+    zone,
+  );
+  return {
+    lineId: LineKey.of(assignment.lineId.value),
+    barberId: BarberKey.of(assignment.barberId.value),
+    startMinutes: sure(MinuteOfDay.of(start.minute), 'a slot start minute'),
+    endMinutes: sure(
+      EndMinute.of(end.localDate > start.localDate ? 1440 : end.minute),
+      'a slot end minute',
+    ),
+  };
 }
 
 function toPrefillSeats(seats: Appointment['seats']): readonly PrefillSeat[] {
@@ -1744,12 +1834,11 @@ function toPrefillSeats(seats: Appointment['seats']): readonly PrefillSeat[] {
     variantId:
       seat.variantId === null ? null : VariantKey.of(seat.variantId.value),
     barberId: BarberKey.of(seat.barberId.value),
-    subject:
-      seat.subject.kind === 'anonymous'
-        ? SubjectData.anonymous(LabelData.of(seat.subject.label.value))
-        : SubjectData.account(
-            UserKey.of(seat.subject.userId.value),
-            seat.subject.relationship,
-          ),
+    ...(seat.subject.kind === 'anonymous'
+      ? OccupantData.anonymous(LabelData.of(seat.subject.label.value))
+      : OccupantData.account(
+          UserKey.of(seat.subject.userId.value),
+          RELATIONSHIP_OF[seat.subject.relationship],
+        )),
   }));
 }

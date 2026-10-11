@@ -1,46 +1,61 @@
 import type { BookingCart } from '../components/cart-line.data';
-import type { DayKey } from '../components/day-key.data';
 import type { FlexibleWhen } from '../components/flexible-when.data';
-import type { WaitlistStatus } from '../components/waitlist-status.data';
-import type { LocationId } from './location.entity';
-import type { UserId } from './user.entity';
+import type { WaitlistLifecycle } from '../components/waitlist-status.data';
+import type {
+  LocationId,
+  UserId,
+  WaitlistRequestId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+
+/*
+ * F0 STAGING BRIDGE (flatten-spec §1.5): the id is declared once, in
+ * `primitives/ids.primitive.ts` (`wl_` + the first 40 hex of the pipeline's
+ * `hash(WaitlistSystem.idBasis(cmd))` — deterministic, so a retried request
+ * lands on its own document); the barrel's flatten block and the legacy id
+ * type-specs still name this file for it until the integrator deletes those
+ * lines — this re-export goes with them.
+ */
 
 /**
- * `wl_` + the first 40 hex of the pipeline's `hash(WaitlistSystem.idBasis(cmd))`
- * — deterministic, so a retried request lands on its own document (the basis
- * keeps the shop, as today's id hash does).
+ * The identity slice of a waitlist request.
+ *
+ * - `ownerUserId` — REQUIRED and an ACCOUNT (D29): the request's whole value
+ *   is telling its owner later, through their inbox; the rules' and index
+ *   #17's key.
+ * - `locationId` — `null` = any shop; a non-null request matches ONLY that
+ *   shop.
+ * - `localDates` — the query mirror of `flexibleDays[].localDate` (index
+ *   #14).
+ * - `utcEpochMs` — the first instant of the first flexible day
+ *   (`ZonedTimeSystem.startOfLocalDay(localDates[0], location.timeZone)`,
+ *   computed once at ingestion, F-28) — for range indexes only; no zone is
+ *   stored (Law 7.2).
+ * - `createdAtUtcMs` — the lifecycle stamp of the request itself.
  */
-export type WaitlistRequestId = string & { readonly __brand: unique symbol };
-export const WaitlistRequestId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): WaitlistRequestId => raw as WaitlistRequestId,
-} as const;
+export type WaitlistRequestMeta = {
+  readonly id: WaitlistRequestId;
+  readonly ownerUserId: UserId;
+  readonly locationId: LocationId | null;
+  readonly localDates: readonly LocalDate[];
+  readonly utcEpochMs: UtcEpochMs;
+  readonly createdAtUtcMs: UtcEpochMs;
+};
 
 /**
  * A standing request to be told when the shop can fit a specific bag into
  * specific windows — `waitlistRequests/{id}` (`waitlist-document.ts:17-27`,
- * `waitlist-request.ts:50-61`). The owner is REQUIRED: its whole value is
- * being told later. The cart is snapshotted in the one cart serialisation,
- * because a matcher days later has no draft to read and no user to ask.
- * Expiry is derived from `when`, never stored.
+ * `waitlist-request.ts:50-61`). The cart is snapshotted in the one cart
+ * serialisation, because a matcher days later has no draft to read and no
+ * user to ask. Expiry is derived from `flexibleDays`, never stored.
  *
- * Declared changes: `createdAtIso` → `createdAtMs`; `status` string →
- * `{ kind; atMs }` (index #14 on `status.kind`); the stored `id` and the
- * `ownerId` duplicate of `ownerUserId` dropped.
+ * Flat (Law 6): the identity slice, the cart slice (`cartSeats`,
+ * `cartNextSequence`), the flexible declaration (`flexibleDays`) and the
+ * lifecycle slice (`waitlistStatus`, `waitlistStatusAtUtcMs`) — every
+ * 1-to-1 field at the root.
  */
-export type WaitlistRequestEntity = {
-  readonly id: WaitlistRequestId;
-  /** The rules' and index #17's key. */
-  readonly ownerUserId: UserId;
-  /** `null` = any shop; a non-null request matches ONLY that shop. */
-  readonly locationId: LocationId | null;
-  /** The windows are resolved in the request's zone. */
-  readonly zone: string;
-  readonly cart: BookingCart;
-  /** The per-day windows, persisted verbatim. */
-  readonly when: FlexibleWhen;
-  /** Derived query mirror of `when.days[].dayKey` (index #14). */
-  readonly dayKeys: readonly DayKey[];
-  readonly status: WaitlistStatus;
-  readonly createdAtMs: number;
-};
+export type WaitlistRequest = WaitlistRequestMeta &
+  BookingCart &
+  FlexibleWhen &
+  WaitlistLifecycle;

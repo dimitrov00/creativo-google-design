@@ -27,11 +27,14 @@ describe('ProfileCompletionSystem.completion', () => {
     expect(completion.total).toBe(4);
     expect(completion.complete).toBe(false);
     expect(
-      completion.items.find((i) => i.key === ProfileCompletionKey.Birthday)
-        ?.done,
+      completion.items.find(
+        (i) => i.profileCompletionKey === ProfileCompletionKey.Birthday,
+      )?.done,
     ).toBe(false);
     expect(
-      completion.items.find((i) => i.key === ProfileCompletionKey.Photo)?.done,
+      completion.items.find(
+        (i) => i.profileCompletionKey === ProfileCompletionKey.Photo,
+      )?.done,
     ).toBe(false);
   });
 
@@ -53,7 +56,9 @@ describe('ProfileCompletionSystem.completion', () => {
 
   it('lists the items in one fixed order — the card and the menu never disagree', () => {
     expect(
-      ProfileCompletionSystem.completion(user(), false).items.map((i) => i.key),
+      ProfileCompletionSystem.completion(user(), false).items.map(
+        (i) => i.profileCompletionKey,
+      ),
     ).toEqual([
       ProfileCompletionKey.Name,
       ProfileCompletionKey.Phone,

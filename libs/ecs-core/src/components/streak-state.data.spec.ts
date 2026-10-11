@@ -1,77 +1,84 @@
 import { describe, expect, it } from 'vitest';
-import { StreakDefinitionId } from '../entities/streak-definition.entity';
-import { DayKey } from './day-key.data';
+import { StreakDefinitionId } from '../primitives/ids.primitive';
+import { localDate } from '../testing';
+import { StreakIntervalSource } from './streak-interval.data';
 import {
   FreezeReason,
   StreakPeriodMark,
   StreakPhase,
-  StreakPhaseKind,
+  StreakPhaseState,
   StreakState,
 } from './streak-state.data';
 
-const day = DayKey.of;
+const day = localDate;
 
 function state(streakId: string, current: number): StreakState {
   return {
     streakId: StreakDefinitionId.of(streakId),
     definitionVersion: 1,
-    phase: StreakPhase.active(),
+    ...StreakPhaseState.active(),
     current,
     best: current,
-    lastQualifiedAtMs: null,
+    lastQualifiedAtUtcMs: null,
     dueBy: null,
     freezesBanked: 0,
-    period: null,
+    periodIntervalDays: null,
+    periodGraceDays: null,
+    periodSource: null,
+    periodHabitDays: null,
     periods: [],
-    heldBy: null,
+    heldByAppointmentId: null,
+    heldOn: null,
     runStartedOn: null,
   };
 }
 
-describe('StreakPhase', () => {
-  it('keeps the stored tags', () => {
-    expect(Object.values(StreakPhaseKind)).toEqual([
-      'active',
-      'atRisk',
-      'inGrace',
-      'frozen',
-      'broken',
+describe('StreakPhaseState', () => {
+  it('declares the tags SCREAMING (the discriminator `streakPhase`)', () => {
+    expect(Object.values(StreakPhase)).toEqual([
+      'ACTIVE',
+      'AT_RISK',
+      'IN_GRACE',
+      'FROZEN',
+      'BROKEN',
     ]);
     expect(Object.values(FreezeReason)).toEqual([
-      'freeze',
-      'pause',
-      'clientPause',
-      'excuse',
+      'FREEZE',
+      'PAUSE',
+      'CLIENT_PAUSE',
+      'EXCUSE',
     ]);
     expect(Object.values(StreakPeriodMark)).toEqual([
-      'kept',
-      'protected',
-      'repaired',
-      'missed',
+      'KEPT',
+      'PROTECTED',
+      'REPAIRED',
+      'MISSED',
     ]);
   });
 
-  it('builds every phase with its dates', () => {
-    expect(StreakPhase.active()).toEqual({ kind: 'active' });
-    expect(StreakPhase.atRisk(day('2026-10-12'))).toEqual({
-      kind: 'atRisk',
-      dueBy: '2026-10-12',
+  it('builds every phase with its dates, each variant-only field prefixed `phase`', () => {
+    expect(StreakPhaseState.active()).toEqual({ streakPhase: 'ACTIVE' });
+    expect(StreakPhaseState.atRisk(day('2026-10-12'))).toEqual({
+      streakPhase: 'AT_RISK',
+      phaseDueBy: '2026-10-12',
     });
-    expect(StreakPhase.inGrace(day('2026-10-19'))).toEqual({
-      kind: 'inGrace',
-      graceUntil: '2026-10-19',
+    expect(StreakPhaseState.inGrace(day('2026-10-19'))).toEqual({
+      streakPhase: 'IN_GRACE',
+      phaseGraceUntil: '2026-10-19',
     });
     expect(
-      StreakPhase.frozen(day('2026-11-01'), FreezeReason.ClientPause),
+      StreakPhaseState.frozen(day('2026-11-01'), FreezeReason.ClientPause),
     ).toEqual({
-      kind: 'frozen',
-      until: '2026-11-01',
-      reason: 'clientPause',
+      streakPhase: 'FROZEN',
+      phaseFrozenUntil: '2026-11-01',
+      phaseFreezeReason: 'CLIENT_PAUSE',
     });
-    expect(StreakPhase.broken(day('2026-10-20'), day('2026-11-03'))).toEqual({
-      kind: 'broken',
-      brokenAt: '2026-10-20',
-      repairableUntil: '2026-11-03',
+    expect(
+      StreakPhaseState.broken(day('2026-10-20'), day('2026-11-03')),
+    ).toEqual({
+      streakPhase: 'BROKEN',
+      phaseBrokenOn: '2026-10-20',
+      phaseRepairableUntil: '2026-11-03',
     });
   });
 });
@@ -93,5 +100,23 @@ describe('StreakState', () => {
       StreakState.find(states, StreakDefinitionId.of('winter')),
     ).toBeNull();
     expect(StreakState.find([], StreakDefinitionId.of('cadence'))).toBeNull();
+  });
+
+  it('reads the open period’s flat terms back as the value, or none while no period is open', () => {
+    expect(StreakState.periodTerms(state('cadence', 4))).toBeNull();
+    expect(
+      StreakState.periodTerms({
+        ...state('cadence', 4),
+        periodIntervalDays: 39,
+        periodGraceDays: 7,
+        periodSource: StreakIntervalSource.Personal,
+        periodHabitDays: 26,
+      }),
+    ).toEqual({
+      intervalDays: 39,
+      graceDays: 7,
+      source: 'PERSONAL',
+      habitDays: 26,
+    });
   });
 });

@@ -1,33 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from './day-key.data';
+import { localDate } from '../testing';
 import {
-  Frequency,
-  MonthlyDayKind,
-  RecurrenceEndKind,
+  RecurrenceEndRule,
+  RecurrencePattern,
   RecurrenceRule,
   WeekOfMonth,
 } from './recurrence-rule.data';
 import { Weekday } from './weekday.data';
 
-const times = (count: number): RecurrenceRule.End => ({
-  kind: RecurrenceEndKind.Count,
-  count,
-});
-const until = (raw: string): RecurrenceRule.End => ({
-  kind: RecurrenceEndKind.Until,
-  dayKey: DayKey.of(raw),
-});
-const DAILY: RecurrenceRule.Pattern = { kind: Frequency.Daily };
+const times = (count: number): RecurrenceEndRule =>
+  RecurrenceEndRule.count(count);
+const until = (raw: string): RecurrenceEndRule =>
+  RecurrenceEndRule.until(localDate(raw));
+const DAILY: RecurrencePattern = RecurrencePattern.daily();
 
 function rule(
-  pattern: RecurrenceRule.Pattern,
-  end: RecurrenceRule.End,
+  pattern: RecurrencePattern,
+  end: RecurrenceEndRule,
   interval = 1,
 ): RecurrenceRule {
   const result = RecurrenceRule.create(pattern, interval, end);
-  if (!result.ok) throw new Error(result.error.code);
+  if (!result.ok) throw new Error(result.error.errorCode);
   return result.value;
 }
+
+/** The same rule with another end — the flat slices swapped whole. */
+const withEnd = (base: RecurrenceRule, end: RecurrenceEndRule) =>
+  RecurrenceRule.of(
+    RecurrenceRule.patternOf(base),
+    base.recurrenceInterval,
+    end,
+  );
+/** The same rule with another interval. */
+const withInterval = (base: RecurrenceRule, interval: number) =>
+  RecurrenceRule.of(
+    RecurrenceRule.patternOf(base),
+    interval,
+    RecurrenceRule.endOf(base),
+  );
 
 describe('RecurrenceRule — the caps', () => {
   it('are companion members: 99 periods, 366 occurrences', () => {
@@ -42,7 +52,7 @@ describe('RecurrenceRule.create — what a rule may say', () => {
       expect(RecurrenceRule.create(DAILY, interval, times(3))).toEqual({
         ok: false,
         error: {
-          code: 'scheduling.recurrence.invalid_interval',
+          errorCode: 'SCHEDULING_RECURRENCE_INVALID_INTERVAL',
           interval,
           max: 99,
         },
@@ -51,7 +61,11 @@ describe('RecurrenceRule.create — what a rule may say', () => {
     for (const count of [0, 367, 2.5]) {
       expect(RecurrenceRule.create(DAILY, 1, times(count))).toEqual({
         ok: false,
-        error: { code: 'scheduling.recurrence.invalid_count', count, max: 366 },
+        error: {
+          errorCode: 'SCHEDULING_RECURRENCE_INVALID_COUNT',
+          count,
+          max: 366,
+        },
       });
     }
     expect(RecurrenceRule.create(DAILY, 99, times(366)).ok).toBe(true);
@@ -60,23 +74,23 @@ describe('RecurrenceRule.create — what a rule may say', () => {
 
   it('refuses a week with no days, and days that do not exist', () => {
     const weekly = RecurrenceRule.create(
-      { kind: Frequency.Weekly, weekdays: [] },
+      RecurrencePattern.weekly([]),
       1,
       times(3),
     );
-    expect(!weekly.ok && weekly.error.code).toBe(
-      'scheduling.recurrence.no_weekdays',
+    expect(!weekly.ok && weekly.error.errorCode).toBe(
+      'SCHEDULING_RECURRENCE_NO_WEEKDAYS',
     );
 
     const monthly = RecurrenceRule.create(
-      { kind: Frequency.Monthly, day: { kind: MonthlyDayKind.Date, date: 32 } },
+      RecurrencePattern.monthlyByDate(32),
       1,
       times(3),
     );
     expect(monthly).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.recurrence.invalid_day',
+        errorCode: 'SCHEDULING_RECURRENCE_INVALID_DAY',
         month: null,
         date: 32,
       },
@@ -84,116 +98,87 @@ describe('RecurrenceRule.create — what a rule may say', () => {
 
     // 30 February is no day at all; 29 February is a real, quadrennial one.
     const never = RecurrenceRule.create(
-      { kind: Frequency.Yearly, month: 2, date: 30 },
+      RecurrencePattern.yearly(2, 30),
       1,
       times(3),
     );
     expect(never).toEqual({
       ok: false,
-      error: { code: 'scheduling.recurrence.invalid_day', month: 2, date: 30 },
+      error: {
+        errorCode: 'SCHEDULING_RECURRENCE_INVALID_DAY',
+        month: 2,
+        date: 30,
+      },
     });
     expect(
-      RecurrenceRule.create(
-        { kind: Frequency.Yearly, month: 2, date: 29 },
-        1,
-        times(3),
-      ).ok,
+      RecurrenceRule.create(RecurrencePattern.yearly(2, 29), 1, times(3)).ok,
     ).toBe(true);
     expect(
-      RecurrenceRule.create(
-        { kind: Frequency.Yearly, month: 13, date: 1 },
-        1,
-        times(3),
-      ).ok,
+      RecurrenceRule.create(RecurrencePattern.yearly(13, 1), 1, times(3)).ok,
     ).toBe(false);
   });
 
   it('refuses a monthly ordinal that is not first…fourth or last', () => {
     const fifth = RecurrenceRule.create(
-      {
-        kind: Frequency.Monthly,
-        day: {
-          kind: MonthlyDayKind.Weekday,
-          week: 5 as WeekOfMonth,
-          weekday: Weekday.Thu,
-        },
-      },
+      RecurrencePattern.monthlyByWeekday(5 as WeekOfMonth, Weekday.Thu),
       1,
       times(3),
     );
     expect(fifth).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.recurrence.invalid_day',
+        errorCode: 'SCHEDULING_RECURRENCE_INVALID_DAY',
         month: null,
         date: 5,
       },
     });
     expect(
       RecurrenceRule.create(
-        {
-          kind: Frequency.Monthly,
-          day: {
-            kind: MonthlyDayKind.Weekday,
-            week: WeekOfMonth.Last,
-            weekday: Weekday.Thu,
-          },
-        },
+        RecurrencePattern.monthlyByWeekday(WeekOfMonth.Last, Weekday.Thu),
         1,
         times(3),
       ).ok,
     ).toBe(true);
   });
 
-  it('is canonical: the same days in any order, twice over, are the same rule', () => {
+  it('is canonical and flat: the same days in any order, twice over, are the same rule', () => {
     const a = rule(
-      {
-        kind: Frequency.Weekly,
-        weekdays: [Weekday.Fri, Weekday.Mon, Weekday.Mon],
-      },
+      RecurrencePattern.weekly([Weekday.Fri, Weekday.Mon, Weekday.Mon]),
       times(4),
     );
     const b = rule(
-      { kind: Frequency.Weekly, weekdays: [Weekday.Mon, Weekday.Fri] },
+      RecurrencePattern.weekly([Weekday.Mon, Weekday.Fri]),
       times(4),
     );
-    expect(a.pattern).toEqual({ kind: 'weekly', weekdays: [1, 5] });
+    expect(a).toEqual({
+      recurrenceFrequency: 'WEEKLY',
+      recurrenceWeekdays: [1, 5],
+      recurrenceInterval: 1,
+      recurrenceEnd: 'COUNT',
+      occurrenceCount: 4,
+    });
     expect(RecurrenceRule.equals(a, b)).toBe(true);
-    expect(RecurrenceRule.equals(a, { ...b, end: times(5) })).toBe(false);
-    expect(RecurrenceRule.equals(a, { ...b, interval: 2 })).toBe(false);
+    expect(RecurrenceRule.equals(a, withEnd(b, times(5)))).toBe(false);
+    expect(RecurrenceRule.equals(a, withInterval(b, 2))).toBe(false);
     expect(RecurrenceRule.equals(a, null)).toBe(false);
-    expect(RecurrenceRule.frequency(a)).toBe(Frequency.Weekly);
+    expect(RecurrenceRule.frequency(a)).toBe('WEEKLY');
   });
 });
 
 describe('RecurrenceRule.equals — per pattern and per end', () => {
   const monthlyDate = rule(
-    { kind: Frequency.Monthly, day: { kind: MonthlyDayKind.Date, date: 24 } },
+    RecurrencePattern.monthlyByDate(24),
     until('2026-12-31'),
   );
   const monthlyFourth = rule(
-    {
-      kind: Frequency.Monthly,
-      day: {
-        kind: MonthlyDayKind.Weekday,
-        week: WeekOfMonth.Fourth,
-        weekday: Weekday.Thu,
-      },
-    },
+    RecurrencePattern.monthlyByWeekday(WeekOfMonth.Fourth, Weekday.Thu),
     until('2026-12-31'),
   );
   const monthlyLast = rule(
-    {
-      kind: Frequency.Monthly,
-      day: {
-        kind: MonthlyDayKind.Weekday,
-        week: WeekOfMonth.Last,
-        weekday: Weekday.Thu,
-      },
-    },
+    RecurrencePattern.monthlyByWeekday(WeekOfMonth.Last, Weekday.Thu),
     until('2026-12-31'),
   );
-  const yearly = rule({ kind: Frequency.Yearly, month: 9, date: 24 }, times(3));
+  const yearly = rule(RecurrencePattern.yearly(9, 24), times(3));
   const daily = rule(DAILY, times(3));
 
   it('tells the date from the fourth Thursday from the last one', () => {
@@ -212,30 +197,27 @@ describe('RecurrenceRule.equals — per pattern and per end', () => {
     expect(
       RecurrenceRule.equals(
         yearly,
-        rule({ kind: Frequency.Yearly, month: 9, date: 25 }, times(3)),
+        rule(RecurrencePattern.yearly(9, 25), times(3)),
       ),
     ).toBe(false);
     expect(
-      RecurrenceRule.equals(monthlyDate, {
-        ...monthlyDate,
-        end: until('2027-01-01'),
-      }),
+      RecurrenceRule.equals(
+        monthlyDate,
+        withEnd(monthlyDate, until('2027-01-01')),
+      ),
     ).toBe(false);
     expect(
-      RecurrenceRule.equals(monthlyDate, { ...monthlyDate, end: times(3) }),
+      RecurrenceRule.equals(monthlyDate, withEnd(monthlyDate, times(3))),
     ).toBe(false);
     expect(
-      RecurrenceRule.equals(daily, { ...daily, end: until('2026-12-31') }),
+      RecurrenceRule.equals(daily, withEnd(daily, until('2026-12-31'))),
     ).toBe(false);
-    const weekly = rule(
-      { kind: Frequency.Weekly, weekdays: [Weekday.Mon] },
-      times(3),
-    );
+    const weekly = rule(RecurrencePattern.weekly([Weekday.Mon]), times(3));
     expect(RecurrenceRule.equals(weekly, daily)).toBe(false);
     expect(
       RecurrenceRule.equals(
         weekly,
-        rule({ kind: Frequency.Weekly, weekdays: [Weekday.Tue] }, times(3)),
+        rule(RecurrencePattern.weekly([Weekday.Tue]), times(3)),
       ),
     ).toBe(false);
   });

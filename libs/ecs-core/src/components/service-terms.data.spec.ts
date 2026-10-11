@@ -1,19 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cents,
+  duration,
+  EUR,
+  minuteCount,
+  termsFixture,
+} from '../testing/booking-core.fixtures';
+import { ServiceVariantId } from '../primitives/ids.primitive';
+import {
   ServiceTerms,
+  type ServiceTermsInput,
   ServiceVariant,
-  ServiceVariantId,
 } from './service-terms.data';
 
 const terms = (overrides: Partial<ServiceTerms> = {}): ServiceTerms => ({
-  ...ServiceTerms.unpadded(1500, 'EUR', 45),
+  ...termsFixture(1500, 45),
   ...overrides,
 });
 
-// catalog service-terms.spec.ts, on the stored struct.
+/** Raw authored terms — the edge guard's input. */
+const input = (
+  overrides: Partial<ServiceTermsInput> = {},
+): ServiceTermsInput => ({
+  priceCents: 1500,
+  currency: 'EUR',
+  durationMinutes: 45,
+  setupMinutes: 0,
+  cleanupMinutes: 0,
+  ...overrides,
+});
+
+// catalog service-terms.spec.ts, on the flat slice.
 describe('ServiceTerms — setup and cleanup', () => {
   it('defaults both pads to zero, so an unpadded service occupies exactly its duration', () => {
-    const bare = ServiceTerms.unpadded(1500, 'EUR', 45);
+    const bare = ServiceTerms.unpadded(cents(1500), EUR, duration(45));
     expect(bare.setupMinutes).toBe(0);
     expect(bare.cleanupMinutes).toBe(0);
     expect(ServiceTerms.occupiedMinutes(bare)).toBe(45);
@@ -21,34 +41,40 @@ describe('ServiceTerms — setup and cleanup', () => {
 
   it('keeps the pads OUTSIDE the sold duration', () => {
     // The client is quoted and charged for 45 minutes; the chair is held for 60.
-    const padded = ServiceTerms.of(1500, 'EUR', 45, 5, 10);
+    const padded = ServiceTerms.of(
+      cents(1500),
+      EUR,
+      duration(45),
+      minuteCount(5),
+      minuteCount(10),
+    );
     expect(padded.durationMinutes).toBe(45);
     expect(ServiceTerms.occupiedMinutes(padded)).toBe(60);
   });
 
   it('rejects a negative or fractional pad', () => {
-    expect(ServiceTerms.parse(terms({ cleanupMinutes: -5 }))).toEqual({
+    expect(ServiceTerms.parse(input({ cleanupMinutes: -5 }))).toEqual({
       ok: false,
-      error: [{ code: 'catalog.service.invalid_duration', rawValue: -5 }],
+      error: [{ errorCode: 'CATALOG_SERVICE_INVALID_DURATION', rawValue: -5 }],
     });
-    expect(ServiceTerms.parse(terms({ setupMinutes: 2.5 })).ok).toBe(false);
+    expect(ServiceTerms.parse(input({ setupMinutes: 2.5 })).ok).toBe(false);
   });
 
   it('distinguishes terms that differ only in their padding', () => {
-    expect(ServiceTerms.equals(terms(), terms({ cleanupMinutes: 10 }))).toBe(
-      false,
-    );
+    expect(
+      ServiceTerms.equals(terms(), terms({ cleanupMinutes: minuteCount(10) })),
+    ).toBe(false);
     expect(ServiceTerms.equals(terms(), terms())).toBe(true);
   });
 });
 
 describe('ServiceTerms.parse', () => {
   it('accepts valid terms and normalises the currency code', () => {
-    expect(ServiceTerms.parse(terms({ currencyCode: ' eur ' }))).toEqual({
+    expect(ServiceTerms.parse(input({ currency: ' eur ' }))).toEqual({
       ok: true,
       value: {
-        priceMinorUnits: 1500,
-        currencyCode: 'EUR',
+        priceCents: 1500,
+        currency: 'EUR',
         durationMinutes: 45,
         setupMinutes: 0,
         cleanupMinutes: 0,
@@ -57,16 +83,16 @@ describe('ServiceTerms.parse', () => {
   });
 
   it('accepts a free service', () => {
-    expect(ServiceTerms.parse(terms({ priceMinorUnits: 0 })).ok).toBe(true);
+    expect(ServiceTerms.parse(input({ priceCents: 0 })).ok).toBe(true);
   });
 
   it('rejects a zero, negative or fractional duration', () => {
     for (const durationMinutes of [0, -15, 30.5]) {
-      expect(ServiceTerms.parse(terms({ durationMinutes }))).toEqual({
+      expect(ServiceTerms.parse(input({ durationMinutes }))).toEqual({
         ok: false,
         error: [
           {
-            code: 'catalog.service.invalid_duration',
+            errorCode: 'CATALOG_SERVICE_INVALID_DURATION',
             rawValue: durationMinutes,
           },
         ],
@@ -75,31 +101,36 @@ describe('ServiceTerms.parse', () => {
   });
 
   it('rejects an unknown currency code and a negative price as money errors', () => {
-    expect(ServiceTerms.parse(terms({ currencyCode: 'XYZ' }))).toEqual({
-      ok: false,
-      error: [{ code: 'money.unknown_currency', rawCode: 'XYZ' }],
-    });
-    expect(ServiceTerms.parse(terms({ priceMinorUnits: -100 }))).toEqual({
-      ok: false,
-      error: [{ code: 'money.invalid_amount', rawAmount: -100 }],
-    });
+    const unknown = ServiceTerms.parse(input({ currency: 'XYZ' }));
+    expect(unknown.ok).toBe(false);
+    expect(!unknown.ok && unknown.error).toEqual([
+      expect.objectContaining({ rawCode: 'XYZ' }),
+    ]);
+    const negative = ServiceTerms.parse(input({ priceCents: -100 }));
+    expect(negative.ok).toBe(false);
+    expect(!negative.ok && negative.error).toEqual([
+      expect.objectContaining({ rawAmount: -100 }),
+    ]);
   });
 
   it('collects every violation at once', () => {
     const result = ServiceTerms.parse({
-      priceMinorUnits: 12.5,
-      currencyCode: 'EUR',
+      priceCents: 12.5,
+      currency: 'EUR',
       durationMinutes: 0,
       setupMinutes: -1,
       cleanupMinutes: 1.5,
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.map((e) => e.code)).toEqual([
-        'money.invalid_amount',
-        'catalog.service.invalid_duration',
-        'catalog.service.invalid_duration',
-        'catalog.service.invalid_duration',
+      expect(result.error).toHaveLength(4);
+      expect(result.error[0]).toEqual(
+        expect.objectContaining({ rawAmount: 12.5 }),
+      );
+      expect(result.error.slice(1)).toEqual([
+        { errorCode: 'CATALOG_SERVICE_INVALID_DURATION', rawValue: 0 },
+        { errorCode: 'CATALOG_SERVICE_INVALID_DURATION', rawValue: -1 },
+        { errorCode: 'CATALOG_SERVICE_INVALID_DURATION', rawValue: 1.5 },
       ]);
     }
   });
@@ -108,8 +139,8 @@ describe('ServiceTerms.parse', () => {
 describe('ServiceTerms.price', () => {
   it('lifts the flat pair into a standalone Money figure', () => {
     expect(ServiceTerms.price(terms())).toEqual({
-      amountMinorUnits: 1500,
-      currencyCode: 'EUR',
+      amountCents: 1500,
+      currency: 'EUR',
     });
   });
 });
@@ -120,44 +151,44 @@ describe('ServiceVariant.parse', () => {
   it('accepts an author-chosen slug and trims the name', () => {
     expect(
       ServiceVariant.parse({
-        id: 'short',
+        variantId: 'short',
         name: { bg: ' Къса коса ', en: 'Short hair' },
       }),
     ).toEqual({
       ok: true,
-      value: { id: ServiceVariantId.of('short'), name },
+      value: { variantId: ServiceVariantId.of('short'), name },
     });
   });
 
   it('rejects a blank id and blank name fields together', () => {
     const result = ServiceVariant.parse({
-      id: '  ',
+      variantId: '  ',
       name: { bg: '', en: 'Short' },
     });
     expect(result).toEqual({
       ok: false,
       error: [
-        { code: 'catalog.id.empty', idType: 'ServiceVariantId' },
-        { code: 'catalog.localized_text.field_empty', locale: 'bg' },
+        { errorCode: 'CATALOG_ID_EMPTY', idType: 'ServiceVariantId' },
+        { errorCode: 'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY', locale: 'bg' },
       ],
     });
   });
 
   it('reports a blank id alone when the name is fine', () => {
-    expect(ServiceVariant.parse({ id: '', name })).toEqual({
+    expect(ServiceVariant.parse({ variantId: '', name })).toEqual({
       ok: false,
-      error: [{ code: 'catalog.id.empty', idType: 'ServiceVariantId' }],
+      error: [{ errorCode: 'CATALOG_ID_EMPTY', idType: 'ServiceVariantId' }],
     });
   });
 });
 
 describe('ServiceVariant.parseAll', () => {
-  const short = { id: 'short', name: { bg: 'Къса', en: 'Short' } };
-  const long = { id: 'long', name: { bg: 'Дълга', en: 'Long' } };
+  const short = { variantId: 'short', name: { bg: 'Къса', en: 'Short' } };
+  const long = { variantId: 'long', name: { bg: 'Дълга', en: 'Long' } };
 
   it('keeps declaration order', () => {
     const result = ServiceVariant.parseAll([short, long]);
-    expect(result.ok && result.value.map((v) => v.id)).toEqual([
+    expect(result.ok && result.value.map((v) => v.variantId)).toEqual([
       'short',
       'long',
     ]);
@@ -171,19 +202,21 @@ describe('ServiceVariant.parseAll', () => {
     expect(ServiceVariant.parseAll([short, long, short])).toEqual({
       ok: false,
       error: [
-        { code: 'catalog.service.duplicate_variant', variantId: 'short' },
+        { errorCode: 'CATALOG_SERVICE_DUPLICATE_VARIANT', variantId: 'short' },
       ],
     });
   });
 
   it('reports each variant’s own violations beside the duplicates', () => {
     const result = ServiceVariant.parseAll([
-      { id: 'x', name: { bg: 'X', en: '' } },
-      { id: 'x', name: { bg: 'X', en: 'X' } },
+      { variantId: 'x', name: { bg: 'X', en: '' } },
+      { variantId: 'x', name: { bg: 'X', en: 'X' } },
     ]);
-    expect(result.ok === false && result.error.map((e) => e.code)).toEqual([
-      'catalog.localized_text.field_empty',
-      'catalog.service.duplicate_variant',
-    ]);
+    expect(result.ok === false && result.error.map((e) => e.errorCode)).toEqual(
+      [
+        'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY',
+        'CATALOG_SERVICE_DUPLICATE_VARIANT',
+      ],
+    );
   });
 });

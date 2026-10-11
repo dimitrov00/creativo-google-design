@@ -1,58 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import { ExceptionEffect, ExceptionEffectKind } from './exception-effect.data';
+import { endMinute, minute, unwrapOk } from '../testing';
+import { ExceptionEffect, ExceptionEffectRule } from './exception-effect.data';
 import { MinuteRange } from './minute-range.data';
 
 const r = (start: number, end: number): MinuteRange =>
-  MinuteRange.of(start, end);
+  MinuteRange.of(minute(start), endMinute(end));
 
-describe('ExceptionEffect — the public face, never the reason', () => {
+describe('ExceptionEffectRule — the public face, never the reason', () => {
   it('has exactly three effects, no field a reason could ride in', () => {
-    expect(Object.values(ExceptionEffectKind).sort()).toEqual([
-      'blocked',
-      'closed',
-      'hours',
+    expect(Object.values(ExceptionEffect).sort()).toEqual([
+      'BLOCKED',
+      'CLOSED',
+      'HOURS',
     ]);
-    expect(ExceptionEffect.closed()).toEqual({ kind: 'closed' });
+    expect(ExceptionEffectRule.closed()).toEqual({ exceptionEffect: 'CLOSED' });
   });
 
-  it('normalizes the ranges of hours and blocked effects', () => {
-    expect(ExceptionEffect.hours([r(780, 900), r(600, 800)])).toEqual({
+  it('normalizes the ranges of HOURS and BLOCKED effects', () => {
+    expect(ExceptionEffectRule.hours([r(780, 900), r(600, 800)])).toEqual({
       ok: true,
-      value: { kind: 'hours', ranges: [r(600, 900)] },
+      value: { exceptionEffect: 'HOURS', exceptionRanges: [r(600, 900)] },
     });
-    expect(ExceptionEffect.blocked([r(720, 780)])).toEqual({
+    expect(ExceptionEffectRule.blocked([r(720, 780)])).toEqual({
       ok: true,
-      value: { kind: 'blocked', ranges: [r(720, 780)] },
+      value: { exceptionEffect: 'BLOCKED', exceptionRanges: [r(720, 780)] },
     });
   });
 
-  it('refuses an empty range list — an empty `hours` would silently mean closed', () => {
-    expect(ExceptionEffect.hours([])).toEqual({
+  it('refuses an empty range list — an empty HOURS would silently mean CLOSED', () => {
+    expect(ExceptionEffectRule.hours([])).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.schedule_exception.empty_ranges',
-        exceptionKind: 'hours',
+        errorCode: 'SCHEDULING_SCHEDULE_EXCEPTION_EMPTY_RANGES',
+        exceptionKind: 'HOURS',
       },
     });
-    expect(ExceptionEffect.blocked([r(600, 600)])).toEqual({
+    expect(
+      ExceptionEffectRule.blocked([
+        MinuteRange.of(minute(600), endMinute(600)),
+      ]),
+    ).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.schedule_exception.empty_ranges',
-        exceptionKind: 'blocked',
+        errorCode: 'SCHEDULING_SCHEDULE_EXCEPTION_EMPTY_RANGES',
+        exceptionKind: 'BLOCKED',
       },
     });
   });
 
   it('answers whole-day and roster-replacing questions', () => {
-    const hours = ExceptionEffect.hours([r(600, 900)]);
-    const blocked = ExceptionEffect.blocked([r(720, 780)]);
-    if (!hours.ok || !blocked.ok) throw new Error('bad fixture');
-    expect(ExceptionEffect.isWholeDay(ExceptionEffect.closed())).toBe(true);
-    expect(ExceptionEffect.isWholeDay(hours.value)).toBe(false);
-    expect(ExceptionEffect.replacesRoster(hours.value)).toBe(true);
-    expect(ExceptionEffect.replacesRoster(blocked.value)).toBe(false);
-    expect(ExceptionEffect.replacesRoster(ExceptionEffect.closed())).toBe(
-      false,
+    const hours = unwrapOk(ExceptionEffectRule.hours([r(600, 900)]));
+    const blocked = unwrapOk(ExceptionEffectRule.blocked([r(720, 780)]));
+    expect(ExceptionEffectRule.isWholeDay(ExceptionEffectRule.closed())).toBe(
+      true,
     );
+    expect(ExceptionEffectRule.isWholeDay(hours)).toBe(false);
+    expect(ExceptionEffectRule.replacesRoster(hours)).toBe(true);
+    expect(ExceptionEffectRule.replacesRoster(blocked)).toBe(false);
+    expect(
+      ExceptionEffectRule.replacesRoster(ExceptionEffectRule.closed()),
+    ).toBe(false);
   });
 });

@@ -6,14 +6,15 @@ import {
 } from './otp-destination-type.data';
 
 describe('OtpDestinationType', () => {
-  it('keeps the stored otps.destinationType strings', () => {
-    expect([...OTP_DESTINATION_TYPES]).toEqual(['email', 'sms']);
-    expect(OtpDestinationType.Sms).toBe('sms');
+  it('keeps the stored otps.destinationType strings, upper-snaked', () => {
+    expect([...OTP_DESTINATION_TYPES]).toEqual(['EMAIL', 'SMS']);
+    expect(OtpDestinationType.Sms).toBe('SMS');
   });
 
   it('isOtpDestinationType narrows known channels and rejects strangers', () => {
-    expect(isOtpDestinationType('email')).toBe(true);
-    expect(isOtpDestinationType('phone')).toBe(false);
+    expect(isOtpDestinationType('EMAIL')).toBe(true);
+    expect(isOtpDestinationType('email')).toBe(false);
+    expect(isOtpDestinationType('PHONE')).toBe(false);
     expect(isOtpDestinationType(undefined)).toBe(false);
   });
 });

@@ -7,11 +7,18 @@ import {
   BarberId as EcsBarberId,
   type BookingCart as EcsBookingCart,
   BookingCartSystem,
+  CartLineId as EcsCartLineId,
   type CartRider,
   type CartServiceScope,
+  DurationMinutes,
+  type LineTerms,
   LocationId as EcsLocationId,
+  MinuteCount,
+  MinuteDelta,
+  SeatKeyText,
   ServiceId as EcsServiceId,
   ServiceVariantId as EcsServiceVariantId,
+  defect,
 } from '@creativo/ecs-core';
 
 /**
@@ -143,24 +150,50 @@ function scopesOf(services: readonly Service[]): readonly CartServiceScope[] {
 /** The cart's lines as the system reads them — only the services are asked of it. */
 function cartScopeOf(cart: BookingCart): EcsBookingCart {
   return {
-    seats: cart.entries().map(([seatKey, lines]) => ({
-      seatKey,
-      lines: lines.map((line) => ({
-        lineId: line.id.value,
+    cartSeats: cart.entries().map(([rawSeatKey, lines]) => {
+      const seatKey = SeatKeyText.of(rawSeatKey);
+      return {
         seatKey,
-        serviceId: serviceKeyOf(line.serviceId),
-        variantId:
-          line.variantId === null
-            ? null
-            : EcsServiceVariantId.of(line.variantId.value),
-        barberId:
-          line.barberPref.kind === 'specific'
-            ? EcsBarberId.of(line.barberPref.barberId.value)
-            : null,
-        locationId: null,
-      })),
-    })),
-    nextSequence: cart.nextLineSequence,
+        lines: lines.map((line) => ({
+          lineId: EcsCartLineId.of(line.id.value),
+          seatKey,
+          serviceId: serviceKeyOf(line.serviceId),
+          variantId:
+            line.variantId === null
+              ? null
+              : EcsServiceVariantId.of(line.variantId.value),
+          barberId:
+            line.barberPref.kind === 'specific'
+              ? EcsBarberId.of(line.barberPref.barberId.value)
+              : null,
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: cart.nextLineSequence,
+  };
+}
+
+/** Unreachable refusals of figures the catalogue checked when it sold the seat. */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/** A sold seat's terms as the engine reads them — branded minutes. */
+function lineTermsOf(terms: MoveRider['terms']): LineTerms {
+  return {
+    durationMinutes: sure(
+      DurationMinutes.of(terms.durationMinutes),
+      'a sold duration',
+    ),
+    padBeforeMinutes: sure(MinuteCount.of(terms.padBeforeMinutes), 'a pad'),
+    padAfterMinutes: sure(MinuteCount.of(terms.padAfterMinutes), 'a pad'),
   };
 }
 
@@ -168,8 +201,8 @@ function cartScopeOf(cart: BookingCart): EcsBookingCart {
 function riderScopeOf(rider: MoveRider): CartRider {
   return {
     barberId: EcsBarberId.of(rider.barberId.value),
-    offsetMinutes: rider.offsetMinutes,
-    terms: rider.terms,
+    offsetMinutes: sure(MinuteDelta.of(rider.offsetMinutes), 'an offset'),
+    terms: lineTermsOf(rider.terms),
     serviceId: serviceKeyOf(rider.serviceId),
   };
 }

@@ -1,30 +1,37 @@
-import type { BarberId } from '../entities/barber.entity';
-import type { LocationId } from '../entities/location.entity';
-import type { ServiceId } from '../entities/service.entity';
-import type { DayKey } from './day-key.data';
+import type {
+  BarberId,
+  LocationId,
+  ServiceId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
 import type { LocalizedText } from './localized-text.data';
 
 /**
  * THE LOYALTY CATALOGUE'S CLOSED VOCABULARIES (client-card-redesign §4.1) —
  * `badge-vocabulary.ts` re-shaped from the tuple arrays `BADGE_CATEGORY_KINDS`,
- * `BADGE_EMBLEMS`, `METRICS`, `PERK_IDS` into object dictionaries, the stored
- * strings unchanged (blueprint §2.3). Code-level on purpose: a new value is
- * a release, never data — composing families out of these is data. A list
- * survives only where code iterates it, derived with `Object.values`.
+ * `BADGE_EMBLEMS`, `METRICS`, `PERK_IDS` into object dictionaries (blueprint
+ * §2.3). Code-level on purpose: a new value is a release, never data —
+ * composing families out of these is data. A list survives only where code
+ * iterates it, derived with `Object.values`. The tag dictionaries are
+ * SCREAMING (Law 6); `BadgeEmblem`, `Metric` and `PerkId` are stable
+ * catalogue identifiers and keep their stored strings (flatten-spec §0.4).
  *
- * Beside them, the structs a family is composed of — what it counts
+ * Beside them, the flat slices a family is composed of — what it counts
  * (`MetricRef`), what a level paid (`AwardSummary`), what it is about
- * (`BadgeSubject`) — and the season vocabularies a window is drawn by.
+ * (`BadgeSubjectSlot`) — and the season vocabularies a window is drawn by.
  */
 
-/** A shelf of «Постижения». `records` holds no families: it is the personal-records rail. */
+/**
+ * A shelf of «Постижения» — the category's field `badgeCategoryKind`.
+ * `RECORDS` holds no families: it is the personal-records rail.
+ */
 export const BadgeCategoryKind = {
-  Milestones: 'milestones',
-  Mastery: 'mastery',
-  Barbers: 'barbers',
-  Rhythm: 'rhythm',
-  Special: 'special',
-  Records: 'records',
+  Milestones: 'MILESTONES',
+  Mastery: 'MASTERY',
+  Barbers: 'BARBERS',
+  Rhythm: 'RHYTHM',
+  Special: 'SPECIAL',
+  Records: 'RECORDS',
 } as const;
 export type BadgeCategoryKind =
   (typeof BadgeCategoryKind)[keyof typeof BadgeCategoryKind];
@@ -129,36 +136,35 @@ export const PerkId = {
 } as const;
 export type PerkId = (typeof PerkId)[keyof typeof PerkId];
 
-/** What a level paid, by kind. */
+/** What a level paid — the award element's field `awardKind`. */
 export const AwardKind = {
-  Points: 'points',
-  Coupon: 'coupon',
-  Freeze: 'freeze',
-  Perk: 'perk',
+  Points: 'POINTS',
+  Coupon: 'COUPON',
+  Freeze: 'FREEZE',
+  Perk: 'PERK',
 } as const;
 export type AwardKind = (typeof AwardKind)[keyof typeof AwardKind];
 
-/** What a family is about, by kind. */
-export const BadgeSubjectKind = {
-  Service: 'service',
-  Barber: 'barber',
-  Location: 'location',
+/** What a family is about — the family's field `badgeSubject` (`null` = about nothing). */
+export const BadgeSubject = {
+  Service: 'SERVICE',
+  Barber: 'BARBER',
+  Location: 'LOCATION',
 } as const;
-export type BadgeSubjectKind =
-  (typeof BadgeSubjectKind)[keyof typeof BadgeSubjectKind];
+export type BadgeSubject = (typeof BadgeSubject)[keyof typeof BadgeSubject];
 
-/** A season has a track (the family its gauge draws); an event is a short window without one. */
+/** A season has a track (the family its gauge draws); an event is a short window without one — the field `seasonKind`. */
 export const SeasonKind = {
-  Season: 'season',
-  Event: 'event',
+  Season: 'SEASON',
+  Event: 'EVENT',
 } as const;
 export type SeasonKind = (typeof SeasonKind)[keyof typeof SeasonKind];
 
 /** A window on a day: announced — shown «от 1.11», no progress yet; open; ended — archived. */
 export const SeasonPhase = {
-  Announced: 'announced',
-  Open: 'open',
-  Ended: 'ended',
+  Announced: 'ANNOUNCED',
+  Open: 'OPEN',
+  Ended: 'ENDED',
 } as const;
 export type SeasonPhase = (typeof SeasonPhase)[keyof typeof SeasonPhase];
 
@@ -169,36 +175,56 @@ export const BADGE_EMBLEMS: readonly BadgeEmblem[] = Object.values(BadgeEmblem);
 export const METRICS: readonly Metric[] = Object.values(Metric);
 export const PERK_IDS: readonly PerkId[] = Object.values(PerkId);
 
-/** A rolling window, in whole days back from today. */
-export type MetricWindow = { readonly lastDays: number };
-
 /**
- * Narrows a visit count to one service, barber or location; a `null` part
- * narrows nothing. Every part is present (absent is `null`), so every scope
- * shares one hidden class — today's `where` holds only the parts it uses.
- */
-export type MetricScope = {
-  readonly serviceId: ServiceId | null;
-  readonly barberId: BarberId | null;
-  readonly locationId: LocationId | null;
-};
-
-/**
- * What a family counts. A season's families count inside the season's
- * window, so they carry no `window` of their own (`null`); `where: null`
- * counts everywhere. Today both are ABSENT when unused — they are an
- * explicit `null` now (absent is `null`, §2.6).
+ * What a family counts — a FLAT slice at the root of a family (and, as
+ * `qualify*`, of a tier): the metric, its rolling window in whole days back
+ * from today, and the scope narrowing a visit count to one service, barber
+ * or location (a `null` part narrows nothing).
+ *
+ * Invariant (stated here, kept by every writer): `metric: null` — a one-off
+ * act, or the rhythm family — holds every other field `null` too. A
+ * season's families count inside the season's window, so they carry no
+ * `metricWindowDays` of their own (`null`); three `null` scope fields count
+ * everywhere (today's `where: null`, which the scope test reads the same way:
+ * "every non-null part matches").
  */
 export type MetricRef = {
-  readonly metric: Metric;
-  readonly window: MetricWindow | null;
-  readonly where: MetricScope | null;
+  readonly metric: Metric | null;
+  readonly metricWindowDays: number | null;
+  readonly metricScopeServiceId: ServiceId | null;
+  readonly metricScopeBarberId: BarberId | null;
+  readonly metricScopeLocationId: LocationId | null;
 };
 
+export const MetricRef = {
+  /** A family that counts nothing (a one-off act, the rhythm). */
+  none(): MetricRef {
+    return {
+      metric: null,
+      metricWindowDays: null,
+      metricScopeServiceId: null,
+      metricScopeBarberId: null,
+      metricScopeLocationId: null,
+    };
+  },
+
+  /** A count of `metric`, everywhere, over the whole history. */
+  of(metric: Metric): MetricRef {
+    return {
+      metric,
+      metricWindowDays: null,
+      metricScopeServiceId: null,
+      metricScopeBarberId: null,
+      metricScopeLocationId: null,
+    };
+  },
+} as const;
+
 /**
- * What a level paid, for «донесе …»: a summary of its rule's awards, so the
- * card never reads a rule. Every figure is a positive whole number; a perk's
- * `forDays: null` is for good.
+ * What a level paid, for «донесе …» — an element of a level's `awards`
+ * array, a union of FLAT variants on `awardKind`: a summary of its rule's
+ * awards, so the card never reads a rule. Every figure is a positive whole
+ * number; a perk's `awardPerkForDays: null` is for good.
  */
 export type AwardSummary =
   | AwardSummary.Points
@@ -207,41 +233,59 @@ export type AwardSummary =
   | AwardSummary.Perk;
 
 export const AwardSummary = {
-  points(points: number): AwardSummary.Points {
-    return { kind: AwardKind.Points, points };
+  points(awardPoints: number): AwardSummary.Points {
+    return { awardKind: AwardKind.Points, awardPoints };
   },
-  coupon(title: LocalizedText): AwardSummary.Coupon {
-    return { kind: AwardKind.Coupon, title };
+  coupon(awardCouponTitle: LocalizedText): AwardSummary.Coupon {
+    return { awardKind: AwardKind.Coupon, awardCouponTitle };
   },
-  freeze(count: number): AwardSummary.Freeze {
-    return { kind: AwardKind.Freeze, count };
+  freeze(awardFreezeCount: number): AwardSummary.Freeze {
+    return { awardKind: AwardKind.Freeze, awardFreezeCount };
   },
-  /** `forDays: null` is for good. */
-  perk(perkId: PerkId, forDays: number | null): AwardSummary.Perk {
-    return { kind: AwardKind.Perk, perkId, forDays };
-  },
-} as const;
-
-/** The catalogue thing a family is about; its art — the barber's face, the service's or shop's cover — comes from it. */
-export type BadgeSubject =
-  BadgeSubject.Service | BadgeSubject.Barber | BadgeSubject.Location;
-
-export const BadgeSubject = {
-  service(serviceId: ServiceId): BadgeSubject.Service {
-    return { kind: BadgeSubjectKind.Service, serviceId };
-  },
-  barber(barberId: BarberId): BadgeSubject.Barber {
-    return { kind: BadgeSubjectKind.Barber, barberId };
-  },
-  location(locationId: LocationId): BadgeSubject.Location {
-    return { kind: BadgeSubjectKind.Location, locationId };
+  /** `awardPerkForDays: null` is for good. */
+  perk(
+    awardPerkId: PerkId,
+    awardPerkForDays: number | null,
+  ): AwardSummary.Perk {
+    return { awardKind: AwardKind.Perk, awardPerkId, awardPerkForDays };
   },
 } as const;
 
-/** `{ from, until }`: a season's dated window in the shop's calendar, both ends inclusive. */
+/**
+ * The catalogue thing a family is about — a variant SLICE at the root of
+ * the family (F-26), discriminated by `badgeSubject` (`null` = about
+ * nothing). Each variant declares only its own id, so no system can read a
+ * `subjectServiceId` off a BARBER family. Its art — the barber's face, the
+ * service's or shop's cover — comes from it.
+ */
+export type BadgeSubjectSlot =
+  | BadgeSubjectSlot.None
+  | BadgeSubjectSlot.Service
+  | BadgeSubjectSlot.Barber
+  | BadgeSubjectSlot.Location;
+
+export const BadgeSubjectSlot = {
+  none(): BadgeSubjectSlot.None {
+    return { badgeSubject: null };
+  },
+  service(subjectServiceId: ServiceId): BadgeSubjectSlot.Service {
+    return { badgeSubject: BadgeSubject.Service, subjectServiceId };
+  },
+  barber(subjectBarberId: BarberId): BadgeSubjectSlot.Barber {
+    return { badgeSubject: BadgeSubject.Barber, subjectBarberId };
+  },
+  location(subjectLocationId: LocationId): BadgeSubjectSlot.Location {
+    return { badgeSubject: BadgeSubject.Location, subjectLocationId };
+  },
+} as const;
+
+/**
+ * A season's dated window in the shop's calendar, both ends inclusive — a
+ * flat slice at the root of the season (`windowFrom`, `windowUntil`).
+ */
 export type SeasonWindow = {
-  readonly from: DayKey;
-  readonly until: DayKey;
+  readonly windowFrom: LocalDate;
+  readonly windowUntil: LocalDate;
 };
 
 /** Is `raw` one of `values`? The one guard every vocabulary shares. */
@@ -282,23 +326,26 @@ export const Gamification = {
     return oneOf(PER_VISIT_METRICS, metric);
   },
   /** Tenure: nothing a visit does moves it, so it never sits in «Скоро». */
-  isCalendarDriven(ref: MetricRef | null): boolean {
-    return ref !== null && ref.metric === Metric.TenureDays;
+  isCalendarDriven(ref: Pick<MetricRef, 'metric'>): boolean {
+    return ref.metric === Metric.TenureDays;
   },
   /**
    * A paid award is a positive whole number of what it pays — a perk for
-   * good (`forDays: null`) or for a positive number of days; a coupon's
-   * title is judged by its own text guard. The `awardOf` check of
+   * good (`awardPerkForDays: null`) or for a positive number of days; a
+   * coupon's title is judged by its own text guard. The `awardOf` check of
    * `badge-series.ts`.
    */
   isAwardPositive(award: AwardSummary): boolean {
-    switch (award.kind) {
+    switch (award.awardKind) {
       case AwardKind.Points:
-        return positiveWhole(award.points);
+        return positiveWhole(award.awardPoints);
       case AwardKind.Freeze:
-        return positiveWhole(award.count);
+        return positiveWhole(award.awardFreezeCount);
       case AwardKind.Perk:
-        return award.forDays === null || positiveWhole(award.forDays);
+        return (
+          award.awardPerkForDays === null ||
+          positiveWhole(award.awardPerkForDays)
+        );
       default:
         return true;
     }
@@ -311,36 +358,38 @@ function positiveWhole(n: number): boolean {
 
 export namespace AwardSummary {
   export type Points = {
-    readonly kind: typeof AwardKind.Points;
-    readonly points: number;
+    readonly awardKind: typeof AwardKind.Points;
+    readonly awardPoints: number;
   };
   export type Coupon = {
-    readonly kind: typeof AwardKind.Coupon;
-    readonly title: LocalizedText;
+    readonly awardKind: typeof AwardKind.Coupon;
+    readonly awardCouponTitle: LocalizedText;
   };
   export type Freeze = {
-    readonly kind: typeof AwardKind.Freeze;
-    readonly count: number;
+    readonly awardKind: typeof AwardKind.Freeze;
+    readonly awardFreezeCount: number;
   };
   export type Perk = {
-    readonly kind: typeof AwardKind.Perk;
-    readonly perkId: PerkId;
+    readonly awardKind: typeof AwardKind.Perk;
+    readonly awardPerkId: PerkId;
     /** `null` = for good. */
-    readonly forDays: number | null;
+    readonly awardPerkForDays: number | null;
   };
 }
 
-export namespace BadgeSubject {
+export namespace BadgeSubjectSlot {
+  /** About nothing in particular (today's `subject: null`). */
+  export type None = { readonly badgeSubject: null };
   export type Service = {
-    readonly kind: typeof BadgeSubjectKind.Service;
-    readonly serviceId: ServiceId;
+    readonly badgeSubject: typeof BadgeSubject.Service;
+    readonly subjectServiceId: ServiceId;
   };
   export type Barber = {
-    readonly kind: typeof BadgeSubjectKind.Barber;
-    readonly barberId: BarberId;
+    readonly badgeSubject: typeof BadgeSubject.Barber;
+    readonly subjectBarberId: BarberId;
   };
   export type Location = {
-    readonly kind: typeof BadgeSubjectKind.Location;
-    readonly locationId: LocationId;
+    readonly badgeSubject: typeof BadgeSubject.Location;
+    readonly subjectLocationId: LocationId;
   };
 }

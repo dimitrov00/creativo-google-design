@@ -1,24 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { RewardId } from '../entities/reward-catalog-item.entity';
-import { DayKey } from './day-key.data';
+import { RewardId } from '../primitives/ids.primitive';
+import { localDate } from '../testing';
 import { RedeemProblem, RedemptionRecord } from './reward-redemption.data';
 
 describe('RedeemProblem / RedemptionRecord', () => {
-  it('names the seven reasons a reward stays locked, verbatim', () => {
+  it('names the seven reasons a reward stays locked, SCREAMING', () => {
     expect(Object.values(RedeemProblem)).toEqual([
-      'disabled',
-      'notYetAvailable',
-      'ended',
-      'soldOut',
-      'paused',
-      'insufficientPoints',
-      'perClientLimit',
+      'DISABLED',
+      'NOT_YET_AVAILABLE',
+      'ENDED',
+      'SOLD_OUT',
+      'PAUSED',
+      'INSUFFICIENT_POINTS',
+      'PER_CLIENT_LIMIT',
     ]);
   });
 
   it('records a redemption as the reward and the shop day it happened on', () => {
     expect(
-      RedemptionRecord.of(RewardId.of('rw-coffee'), DayKey.of('2026-10-10')),
+      RedemptionRecord.of(RewardId.of('rw-coffee'), localDate('2026-10-10')),
     ).toEqual({ rewardId: 'rw-coffee', on: '2026-10-10' });
   });
 });

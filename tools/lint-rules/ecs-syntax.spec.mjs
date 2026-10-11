@@ -8,8 +8,15 @@ import {
   ECS_ADAPTER_RESTRICTIONS,
   ECS_ALL_SUFFIXES,
   ECS_DATA_RESTRICTIONS,
+  ECS_DATE_RESTRICTIONS,
   ECS_ENTITY_RESTRICTIONS,
+  ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+  ECS_ID_CAST_RESTRICTIONS,
   ECS_INTL_RESTRICTION,
+  ECS_NESTED_TYPE_RESTRICTIONS,
+  ECS_PRIMITIVE_RESTRICTIONS,
+  ECS_RAW_PRIMITIVE_RESTRICTIONS,
+  ECS_THROW_RESTRICTION,
   ECS_PIPELINE_RESTRICTIONS,
   ECS_PORT_RESTRICTIONS,
   ECS_ROOT_SUFFIXES,
@@ -18,6 +25,7 @@ import {
   ECS_TOKEN_RESTRICTIONS,
   ECS_ZONED_TIME_RESTRICTIONS,
   ecsProjectBlocks,
+  ecsRootEveryFileBlocks,
   ecsSyntaxBlocks,
 } from './ecs-syntax.mjs';
 
@@ -144,9 +152,106 @@ const CASES = {
   'NewExpression[callee.name="InjectionToken"]': [
     `const T = new InjectionToken<string>('x');`,
   ],
+  // L1 — no generic discriminator (Law 6.2)
+  'TSPropertySignature[key.name=/^(kind|type|status)$/]': [
+    `type A = { readonly kind: 'confirmed' };`,
+    `type A = { readonly status: string };`,
+    `type A = { readonly type: 'x' };`,
+  ],
+  'Property[key.name=/^(kind|type|status)$/]': [
+    `export const A = { confirm: () => ({ kind: 'confirmed' }) } as const;`,
+  ],
+  // L2 — no nested 1-to-1 struct (Law 6.1)
+  'TSPropertySignature > TSTypeAnnotation > TSTypeLiteral': [
+    'type A = { readonly timing: { readonly startMinutes: number } };',
+  ],
+  'TSPropertySignature > TSTypeAnnotation > TSUnionType > TSTypeLiteral': [
+    'type A = { readonly geo: { readonly lat: number } | null };',
+  ],
+  // L3 — branded coordinates, money and ids (Law 7.4)
+  [ECS_RAW_PRIMITIVE_RESTRICTIONS[0].selector]: [
+    'type A = { readonly appointmentId: string };',
+    'type A = { readonly barberIds: readonly string[] };',
+    'type A = { readonly confirmedAtUtcMs: number };',
+    'type A = { readonly startMinutes: number };',
+    'type A = { readonly priceCents: number | null };',
+    'type A = { readonly localDate: string };',
+    'type A = { readonly timeZone: string };',
+    'type A = { readonly seatKey: string };',
+  ],
+  // L4 — no Date (Law 7.1)
+  "TSTypeReference[typeName.name='Date']": ['let at: Date | null = null;'],
+  "NewExpression[callee.name='Date']": ['const t = new Date(0);'],
+  "CallExpression[callee.name='Date']": ['const t = Date();'],
+  "MemberExpression[object.name='Date']": [
+    `const t = Date.parse('2026-10-07');`,
+  ],
+  // L5 — no throw (Law 7.5)
+  ThrowStatement: [`function f(): never { throw new Error('x'); }`],
+  // L7 — no cast to UserId / CustomerId (Law 7.4, D29)
+  'TSAsExpression > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]': [
+    `const u = raw as UserId;`,
+    `const c = raw as unknown as CustomerId;`,
+  ],
+  'TSAsExpression > TSUnionType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    [`const c = raw as CustomerId | null;`],
+  'TSAsExpression > TSArrayType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    [`const us = raws as UserId[];`],
+  'TSAsExpression > TSTypeOperator > TSArrayType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    [`const us = raws as readonly UserId[];`],
+  'TSTypeAssertion > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]': [
+    `const u = <UserId>raw;`,
+  ],
+  'TSTypeAssertion > TSUnionType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    [`const u = <UserId | null>raw;`],
+};
+
+/**
+ * One VALID snippet per flatten-pass selector (flatten-spec §7: every
+ * selector lands with an invalid AND a valid case) — the shape the guard
+ * steers to, which it must let through.
+ */
+const VALID_CASES = {
+  'TSPropertySignature[key.name=/^(kind|type|status)$/]':
+    "type A = { readonly bookingStatus: 'CONFIRMED' };",
+  'Property[key.name=/^(kind|type|status)$/]':
+    "export const A = { confirm: () => ({ bookingStatus: 'CONFIRMED' }) } as const;",
+  'TSPropertySignature > TSTypeAnnotation > TSTypeLiteral':
+    'type A = { readonly seats: readonly { readonly seatId: SeatId }[] };',
+  'TSPropertySignature > TSTypeAnnotation > TSUnionType > TSTypeLiteral':
+    'type A = { readonly latitude: Latitude | null };',
+  [ECS_RAW_PRIMITIVE_RESTRICTIONS[0].selector]:
+    'type A = { readonly appointmentId: AppointmentId; readonly startMinutes: MinuteOfDay; readonly nextId: () => string }; type RequestedSeatInput = { readonly barberId: string; readonly startMinutes: number };',
+  "TSTypeReference[typeName.name='Date']": 'let at: UtcEpochMs | null = null;',
+  "NewExpression[callee.name='Date']":
+    'const seen = new Map<string, number>();',
+  "CallExpression[callee.name='Date']": 'const t = nowUtcMs();',
+  "MemberExpression[object.name='Date']":
+    "const t = ZonedTimeSystem.parseOffsetIso('2026-10-07T09:00Z');",
+  ThrowStatement: "function f(): never { return defect('exhausted switch'); }",
+  // A companion `{ … } as const` whose members TAKE a `UserId` is no cast.
+  'TSAsExpression > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    'const u = UserId.of(raw); const b = raw as BarberId; export const A = { of(userId: UserId): UserId { return userId; } } as const;',
+  'TSAsExpression > TSUnionType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    'export const A = { f(userId: UserId | null) { return userId; } } as const; const b = raw as BarberId | null;',
+  'TSAsExpression > TSArrayType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    'const xs = raws as BarberId[]; const ys = [UserId.of(raw)] as const;',
+  'TSAsExpression > TSTypeOperator > TSArrayType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    'const xs = raws as readonly BarberId[];',
+  'TSTypeAssertion > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    'const c = CustomerId.forUser(u, hash);',
+  'TSTypeAssertion > TSUnionType > TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]':
+    'const b = <BarberId | null>raw;',
 };
 
 const ARRAYS = {
+  ECS_PRIMITIVE_RESTRICTIONS,
+  ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+  ECS_NESTED_TYPE_RESTRICTIONS,
+  ECS_RAW_PRIMITIVE_RESTRICTIONS,
+  ECS_DATE_RESTRICTIONS,
+  ECS_THROW: [ECS_THROW_RESTRICTION],
+  ECS_ID_CAST_RESTRICTIONS,
   ECS_SYSTEM_RESTRICTIONS,
   ECS_ZONED_TIME_RESTRICTIONS,
   ECS_DATA_RESTRICTIONS,
@@ -184,6 +289,22 @@ describe('ecs syntax restrictions — one case per selector', () => {
       }
     });
   }
+
+  it('every flatten-pass selector has a valid case it lets through', async () => {
+    const flat = [
+      ...ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+      ...ECS_NESTED_TYPE_RESTRICTIONS,
+      ...ECS_RAW_PRIMITIVE_RESTRICTIONS,
+      ...ECS_DATE_RESTRICTIONS,
+      ECS_THROW_RESTRICTION,
+      ...ECS_ID_CAST_RESTRICTIONS,
+    ];
+    for (const restriction of flat) {
+      const code = VALID_CASES[restriction.selector];
+      expect(code, restriction.selector).toBeDefined();
+      expect(await lint(code, [restriction]), code).toEqual([]);
+    }
+  });
 
   it('every message names the law or rule it enforces', () => {
     for (const restriction of restrictions.values()) {
@@ -270,8 +391,9 @@ describe('systems (ECS_SYSTEM_RESTRICTIONS)', () => {
       system,
     );
     // Three imports (crypto, SDK, port), then Date.now, new Date,
-    // Math.random, crypto.*, Intl.*, await and Object.freeze.
-    expect(messages).toHaveLength(10);
+    // Math.random, crypto.*, Intl.*, await and Object.freeze — and the
+    // flatten pass's L4 a second time on `Date.now` and `new Date`.
+    expect(messages).toHaveLength(12);
   });
 
   it('bans the ambient I/O globals', async () => {
@@ -333,7 +455,8 @@ describe('systems (ECS_SYSTEM_RESTRICTIONS)', () => {
     expect(ECS_ZONED_TIME_RESTRICTIONS).toHaveLength(
       ECS_SYSTEM_RESTRICTIONS.length - 1,
     );
-    expect(await lint('const t = Date.now();', zoned)).toHaveLength(1);
+    // The clock guard and L4 (no `Date` in the core) both hold here.
+    expect(await lint('const t = Date.now();', zoned)).toHaveLength(2);
   });
 
   it('does not cage a package by selector (that is no-restricted-imports, with per-file exemptions)', async () => {
@@ -357,28 +480,35 @@ describe('components and entities (ECS_DATA_RESTRICTIONS, ECS_ENTITY_RESTRICTION
     expect(
       await lint(
         `
-        export const BookingState = {
-          Pending: 'pending',
-          Confirmed: 'confirmed',
-        } as const;
-        export type BookingState = (typeof BookingState)[keyof typeof BookingState];
-        export type BookingStatus = BookingStatus.Pending | BookingStatus.Confirmed;
         export const BookingStatus = {
-          pending(atMs: number): BookingStatus.Pending {
-            return { kind: BookingState.Pending, atMs };
-          },
-          confirm(s: BookingStatus.Pending, atMs: number): BookingStatus.Confirmed {
-            return { kind: BookingState.Confirmed, atMs, pendingSinceMs: s.atMs };
-          },
-          isTerminal: (s: BookingStatus): boolean => s.kind === BookingState.Confirmed,
+          Confirmed: 'CONFIRMED',
+          Cancelled: 'CANCELLED',
         } as const;
-        export namespace BookingStatus {
-          export type Pending = { readonly kind: typeof BookingState.Pending; readonly atMs: number };
+        export type BookingStatus = (typeof BookingStatus)[keyof typeof BookingStatus];
+        export type BookingLifecycle = BookingLifecycle.Confirmed | BookingLifecycle.Cancelled;
+        export const BookingLifecycle = {
+          confirm(atUtcMs: UtcEpochMs): BookingLifecycle.Confirmed {
+            return { bookingStatus: BookingStatus.Confirmed, confirmedAtUtcMs: atUtcMs };
+          },
+          cancel(atUtcMs: UtcEpochMs, reasons: CancellationReasonSet): BookingLifecycle.Cancelled {
+            return {
+              bookingStatus: BookingStatus.Cancelled,
+              cancelledAtUtcMs: atUtcMs,
+              cancellationReason: reasons,
+            };
+          },
+          isTerminal: (l: BookingLifecycle): boolean =>
+            l.bookingStatus !== BookingStatus.Confirmed,
+        } as const;
+        export namespace BookingLifecycle {
           export type Confirmed = {
-            readonly kind: typeof BookingState.Confirmed;
-            readonly atMs: number;
-            readonly pendingSinceMs: number;
-            readonly note: string | null;
+            readonly bookingStatus: typeof BookingStatus.Confirmed;
+            readonly confirmedAtUtcMs: UtcEpochMs;
+          };
+          export type Cancelled = {
+            readonly bookingStatus: typeof BookingStatus.Cancelled;
+            readonly cancelledAtUtcMs: UtcEpochMs;
+            readonly cancellationReason: CancellationReasonSet;
           };
         }
       `,
@@ -391,16 +521,20 @@ describe('components and entities (ECS_DATA_RESTRICTIONS, ECS_ENTITY_RESTRICTION
     expect(
       await lint(
         `
-        import type { TimeInterval } from '../components/time-interval.data';
-        export type AppointmentId = string & { readonly __brand: unique symbol };
-        export const AppointmentId = {
-          of: (raw: string): AppointmentId => raw as AppointmentId,
-        } as const;
-        export type AppointmentEntity = {
+        import type { AppointmentTime } from '../components/appointment-time.data';
+        import type { BookingLifecycle } from '../components/booking-lifecycle.data';
+        import type { AppointmentId, BarberId, LocationId, TenantId, UserId } from '../primitives/ids.primitive';
+        export type AppointmentMeta = {
           readonly id: AppointmentId;
-          readonly timeInterval: TimeInterval;
-          readonly arrivedAtMs: number | null;
+          readonly tenantId: TenantId;
+          readonly locationId: LocationId;
+          readonly currency: Currency;
+          readonly priceCents: PriceCents;
+          readonly barberIds: readonly BarberId[];
+          readonly subjectUserIds: readonly UserId[];
+          readonly seats: readonly Seat[];
         };
+        export type Appointment = AppointmentMeta & AppointmentTime & BookingLifecycle;
       `,
         entity,
       ),
@@ -545,30 +679,163 @@ describe('ecsSyntaxBlocks', () => {
     ).toHaveLength(1);
   });
 
-  it('the root suffixes are the four no legacy file carries', () => {
-    expect(ECS_ROOT_SUFFIXES).toEqual(['system', 'data', 'entity', 'pipeline']);
+  it('the root suffixes are the five no legacy file carries', () => {
+    expect(ECS_ROOT_SUFFIXES).toEqual([
+      'system',
+      'data',
+      'entity',
+      'primitive',
+      'pipeline',
+    ]);
     expect(() => ecsSyntaxBlocks(['ports'])).toThrow(/Unknown ECS suffix/);
+  });
+
+  it('a primitive is data plus every flatten-pass guard (L6)', async () => {
+    const [primitive] = ecsSyntaxBlocks(['primitive']);
+    expect(primitive.files).toEqual(['**/*.primitive.ts']);
+    expect(primitive.rules['security/detect-object-injection']).toBe('off');
+    expect(primitive.rules['@typescript-eslint/no-namespace']).toBe('off');
+    const [, ...restrictions] = primitive.rules['no-restricted-syntax'];
+    // The ecs-primitives.md template passes …
+    expect(
+      await lint(
+        [
+          "import type { Brand } from './brand';",
+          'export type MinuteOfDay = Brand<number, "MinuteOfDay">;',
+          'export const MinuteOfDay = {',
+          '  of(raw: number): Result<MinuteOfDay, PrimitiveError> {',
+          '    return Number.isInteger(raw) && raw >= 0 && raw < 1440',
+          '      ? Result.ok(raw as MinuteOfDay)',
+          "      : Result.err({ errorCode: 'PRIMITIVE_MINUTE_OUT_OF_RANGE', raw, brand: 'MinuteOfDay' });",
+          '  },',
+          '} as const;',
+        ].join('\n'),
+        restrictions,
+      ),
+    ).toEqual([]);
+    // … and a raw coordinate, a Date, Intl, a throw and its `new` do not.
+    expect(
+      await lint(
+        "type A = { readonly startMinutes: number }; const f = (x: Date) => Intl.DateTimeFormat; function g() { throw new Error('x'); }",
+        restrictions,
+      ),
+    ).toHaveLength(5);
+  });
+});
+
+describe('the flatten-pass guards, widened (flatten-spec §7)', () => {
+  it('every suffix array carries its flatten-pass guards, and L7 reaches all of them', () => {
+    const flatData = [
+      ...ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+      ...ECS_NESTED_TYPE_RESTRICTIONS,
+      ...ECS_RAW_PRIMITIVE_RESTRICTIONS,
+      ...ECS_DATE_RESTRICTIONS,
+      ECS_THROW_RESTRICTION,
+      ...ECS_ID_CAST_RESTRICTIONS,
+    ];
+    expect(ECS_DATA_RESTRICTIONS).toEqual(expect.arrayContaining(flatData));
+    expect(ECS_ENTITY_RESTRICTIONS).toEqual(expect.arrayContaining(flatData));
+    expect(ECS_PRIMITIVE_RESTRICTIONS).toEqual(
+      expect.arrayContaining(flatData),
+    );
+    // A system's or port's I/O struct may nest; every other guard holds.
+    for (const list of [ECS_SYSTEM_RESTRICTIONS, ECS_PORT_RESTRICTIONS]) {
+      expect(list).toEqual(
+        expect.arrayContaining([
+          ...ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+          ...ECS_RAW_PRIMITIVE_RESTRICTIONS,
+          ...ECS_DATE_RESTRICTIONS,
+          ...ECS_ID_CAST_RESTRICTIONS,
+        ]),
+      );
+    }
+    expect(ECS_SYSTEM_RESTRICTIONS).toContain(ECS_THROW_RESTRICTION);
+    for (const list of [
+      ECS_SYSTEM_RESTRICTIONS,
+      ECS_ZONED_TIME_RESTRICTIONS,
+      ECS_DATA_RESTRICTIONS,
+      ECS_ENTITY_RESTRICTIONS,
+      ECS_PRIMITIVE_RESTRICTIONS,
+      ECS_PIPELINE_RESTRICTIONS,
+      ECS_PORT_RESTRICTIONS,
+      ECS_ADAPTER_RESTRICTIONS,
+    ]) {
+      expect(list).toEqual(expect.arrayContaining(ECS_ID_CAST_RESTRICTIONS));
+    }
+  });
+
+  it('a suffix block never restates an extra its array already carries', () => {
+    const [data] = ecsSyntaxBlocks(['data'], {
+      extra: [...ECS_DATE_RESTRICTIONS, ...ECS_TOKEN_RESTRICTIONS],
+    });
+    const [, ...restrictions] = data.rules['no-restricted-syntax'];
+    expect(new Set(restrictions).size).toBe(restrictions.length);
+    expect(restrictions).toEqual(
+      expect.arrayContaining(ECS_TOKEN_RESTRICTIONS),
+    );
+  });
+
+  it('L7 does not mistake a companion that takes a UserId for a cast', async () => {
+    const restrictions = [...ECS_ID_CAST_RESTRICTIONS];
+    expect(
+      await lint(
+        'export const ClientStats = { empty(subjectUserId: UserId | null, ids: readonly UserId[]) { return { subjectUserId, ids }; } } as const;',
+        restrictions,
+      ),
+    ).toEqual([]);
+    expect(await lint('const u = raw as UserId;', restrictions)).toHaveLength(
+      1,
+    );
+  });
+});
+
+describe('ecsRootEveryFileBlocks (the workspace root)', () => {
+  it('puts L7 beside the icon guards on every file, specs keeping their cast allowance', () => {
+    const [ts, spec] = ecsRootEveryFileBlocks();
+    expect(ts.files).toEqual(['**/*.ts']);
+    expect(ts.rules['no-restricted-syntax']).toEqual([
+      'error',
+      ...ICON_SYNTAX_RESTRICTIONS,
+      ...ECS_ID_CAST_RESTRICTIONS,
+    ]);
+    expect(spec.files).toEqual(['**/*.spec.ts']);
+    expect(spec.rules['no-restricted-syntax']).toEqual([
+      'error',
+      ...ICON_SPEC_SYNTAX_RESTRICTIONS,
+      ...ECS_ID_CAST_RESTRICTIONS,
+    ]);
   });
 });
 
 describe('ecsProjectBlocks (libs/ecs-core, apps/functions)', () => {
-  it('puts the token guard on every file, specs keep their cast allowance, then all six suffixes', () => {
+  it('puts the token guard and L7 on every file, specs keep their cast allowance, then all seven suffixes', () => {
     const [ts, spec, ...suffixes] = ecsProjectBlocks();
     expect(ts.files).toEqual(['**/*.ts']);
     expect(ts.rules['no-restricted-syntax']).toEqual([
       'error',
       ...ICON_SYNTAX_RESTRICTIONS,
+      ...ECS_ID_CAST_RESTRICTIONS,
       ...ECS_TOKEN_RESTRICTIONS,
     ]);
     expect(spec.files).toEqual(['**/*.spec.ts']);
     expect(spec.rules['no-restricted-syntax']).toEqual([
       'error',
       ...ICON_SPEC_SYNTAX_RESTRICTIONS,
+      ...ECS_ID_CAST_RESTRICTIONS,
       ...ECS_TOKEN_RESTRICTIONS,
     ]);
     expect(suffixes).toEqual(
       ecsSyntaxBlocks(ECS_ALL_SUFFIXES, { extra: ECS_TOKEN_RESTRICTIONS }),
     );
+  });
+
+  it('everyFile reaches every block — libs/ecs-core puts L4 on specs and test support too', () => {
+    const blocks = ecsProjectBlocks({ everyFile: ECS_DATE_RESTRICTIONS });
+    for (const block of blocks) {
+      expect(block.rules['no-restricted-syntax']).toEqual(
+        expect.arrayContaining(ECS_DATE_RESTRICTIONS),
+      );
+    }
   });
 
   it('the token guard fires through the every-file block', async () => {

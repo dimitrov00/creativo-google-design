@@ -1,11 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import type { Money } from '../components/money.data';
+import { Currency } from '../primitives/currency.primitive';
+import { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
+import { deepFreeze, textFixture } from '../testing';
 import {
-  ServiceTerms,
-  ServiceVariantId,
-} from '../components/service-terms.data';
-import { BarberId } from '../entities/barber.entity';
-import { deepFreeze, serviceFixture, textFixture } from '../testing';
+  cents,
+  duration,
+  serviceFixture,
+  termsFixture,
+} from '../testing/booking-core.fixtures';
 import { type TermsSpan, TermsSpanSystem } from './terms-span.system';
 
 /*
@@ -15,23 +19,22 @@ import { type TermsSpan, TermsSpanSystem } from './terms-span.system';
  * ceiling-to-ceiling — never a partial total across currencies.
  */
 
-const terms = (price: number, minutes: number, currency = 'EUR') =>
-  ServiceTerms.unpadded(price, currency, minutes);
+const terms = (price: number, minutes: number) => termsFixture(price, minutes);
 const ivan = BarberId.of('ivan');
 const niko = BarberId.of('niko');
 const long = ServiceVariantId.of('long');
 
 /** Ivan 14,50 / 35 (long 18,50 / 50); Niko 13,00 / 30; base 15,00 / 30. */
 const cut = serviceFixture({
-  baseTerms: terms(1500, 30),
-  variants: [{ id: long, name: textFixture('Long') }],
+  ...terms(1500, 30),
+  variants: [{ variantId: long, name: textFixture('Long') }],
   offerings: [
     {
       barberId: ivan,
-      base: terms(1450, 35),
-      overrides: [{ variantId: long, terms: terms(1850, 50) }],
+      ...terms(1450, 35),
+      overrides: [{ variantId: long, ...terms(1850, 50) }],
     },
-    { barberId: niko, base: terms(1300, 30), overrides: [] },
+    { barberId: niko, ...terms(1300, 30), overrides: [] },
   ],
 });
 
@@ -40,13 +43,13 @@ const span = (
   max: number,
   minMinutes: number,
   maxMinutes: number,
-  currencyCode = 'EUR',
+  currency: Currency = Currency.EUR,
 ): TermsSpan => ({
-  currencyCode,
-  minPriceMinorUnits: min,
-  maxPriceMinorUnits: max,
-  minMinutes,
-  maxMinutes,
+  currency,
+  minPriceCents: cents(min),
+  maxPriceCents: cents(max),
+  minMinutes: duration(minMinutes),
+  maxMinutes: duration(maxMinutes),
 });
 
 const S = TermsSpanSystem;
@@ -64,7 +67,7 @@ describe('TermsSpanSystem.spanFor — what a line will cost and take', () => {
 
   it('quotes the base terms for a service nobody performs yet', () => {
     const unclaimed = serviceFixture({
-      baseTerms: terms(2000, 45),
+      ...terms(2000, 45),
       offerings: [],
     });
     expect(S.spanFor(unclaimed, null, null)).toEqual(span(2000, 2000, 45, 45));
@@ -81,7 +84,7 @@ describe('TermsSpanSystem.sum — several spans as one', () => {
 
   it('answers nothing rather than a partial total across currencies', () => {
     expect(
-      S.sum([span(1450, 1450, 35, 35), span(1300, 1300, 30, 30, 'BGN')]),
+      S.sum([span(1450, 1450, 35, 35), span(1300, 1300, 30, 30, Currency.BGN)]),
     ).toBeNull();
     expect(S.sum([])).toBeNull();
   });
@@ -103,9 +106,7 @@ describe('TermsSpanSystem.sum — several spans as one', () => {
         (spans) => {
           const total = S.sum(spans) as TermsSpan;
           expect(S.sum([...spans].reverse())).toEqual(total);
-          expect(total.minPriceMinorUnits).toBeLessThanOrEqual(
-            total.maxPriceMinorUnits,
-          );
+          expect(total.minPriceCents).toBeLessThanOrEqual(total.maxPriceCents);
           expect(total.minMinutes).toBe(
             spans.reduce((sum, part) => sum + part.minMinutes, 0),
           );
@@ -122,9 +123,14 @@ describe('TermsSpanSystem.sum — several spans as one', () => {
     );
     expect(S.sum(spans)).toEqual(S.sum(spans));
     expect(spans).toEqual([span(1, 2, 3, 4), span(5, 6, 7, 8)]);
+    // Typed, so the arithmetic value's field names stay one definition.
+    const money = (amount: number): Money => ({
+      amountCents: cents(amount),
+      currency: Currency.EUR,
+    });
     expect(S.priceBounds(span(1, 2, 3, 4))).toEqual({
-      min: { amountMinorUnits: 1, currencyCode: 'EUR' },
-      max: { amountMinorUnits: 2, currencyCode: 'EUR' },
+      min: money(1),
+      max: money(2),
     });
   });
 });

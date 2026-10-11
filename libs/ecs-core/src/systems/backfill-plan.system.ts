@@ -1,8 +1,11 @@
-import { PlacementKind } from '../components/placement-kind.data';
+import { AuditAction } from '../components/audit-context.data';
+import { Placement } from '../components/placement-kind.data';
 import {
-  BackfillJobKind,
-  type BackfillJobEntity,
+  BackfillJobName,
+  type BackfillJob,
 } from '../entities/backfill-job.entity';
+import type { UserId } from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * The pure half of the ops backfill (`apps/functions/src/lib/ops/
@@ -10,16 +13,16 @@ import {
  * 383-570`): which job, which page, where the next call starts, what a
  * stored appointment's mirrors lack. The pipeline reads, walks and writes.
  *
- * `subjectMirror` stamps the R33 mirrors on rows written before them;
- * `clientStats` stamps them too and recomputes every subject on the page,
+ * `SUBJECT_MIRROR` stamps the R33 mirrors on rows written before them;
+ * `CLIENT_STATS` stamps them too and recomputes every subject on the page,
  * then every STORED client — the order the legacy-import runbook runs them
  * in (§12.5.6).
  */
 
 /** Every job a run may name, in runbook order. */
-const JOBS: readonly BackfillJobKind[] = [
-  BackfillJobKind.SubjectMirror,
-  BackfillJobKind.ClientStats,
+const JOBS: readonly BackfillJobName[] = [
+  BackfillJobName.SubjectMirror,
+  BackfillJobName.ClientStats,
 ];
 
 /** Appointments (or stored clients) per call at most — one page read. */
@@ -39,69 +42,68 @@ const STORED_CLIENTS_MARK = '~';
 
 const DOC_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
-/** The commit audit rows that say who placed a booking (§12.5.1). */
-const STAFF_CREATED_ACTION = 'booking.staff_created';
-const COMMITTED_ACTION = 'booking.committed';
-
 /**
- * The two walks a run makes — the ONLY source of these strings. Every job
- * pages the appointments; `clientStats` then pages the stored `clientStats`
- * documents themselves, because a person no appointment names any more is
- * reachable only from their own document (§12.4 P0).
+ * The two walks a run makes — the ONLY source of these strings, the field
+ * `backfillPhase`. Every job pages the appointments; `CLIENT_STATS` then
+ * pages the stored `clientStats` documents themselves, because a person no
+ * appointment names any more is reachable only from their own document
+ * (§12.4 P0).
  */
 export const BackfillPhase = {
-  Appointments: 'appointments',
-  StoredClients: 'storedClients',
+  Appointments: 'APPOINTMENTS',
+  StoredClients: 'STORED_CLIENTS',
 } as const;
 export type BackfillPhase = (typeof BackfillPhase)[keyof typeof BackfillPhase];
 
 export type BackfillPosition = {
-  readonly phase: BackfillPhase;
+  readonly backfillPhase: BackfillPhase;
   /** The document id to continue after, `null` at the phase's start. */
   readonly after: string | null;
 };
 
-/** Where a call asks to start — the ONLY source of these strings. */
-export const BackfillStartKind = {
+/** Where a call asks to start — the ONLY source of these strings, the field `backfillStart`. */
+export const BackfillStart = {
   /** No cursor sent: continue wherever the job's progress document says. */
-  Resume: 'resume',
+  Resume: 'RESUME',
   /** `cursor: null` sent: start over from the top. */
-  Top: 'top',
+  Top: 'TOP',
   /** A wire cursor a previous call returned. */
-  After: 'after',
+  After: 'AFTER',
 } as const;
-export type BackfillStartKind =
-  (typeof BackfillStartKind)[keyof typeof BackfillStartKind];
+export type BackfillStart = (typeof BackfillStart)[keyof typeof BackfillStart];
 
-export type BackfillStart =
-  | { readonly kind: typeof BackfillStartKind.Resume }
-  | { readonly kind: typeof BackfillStartKind.Top }
-  | { readonly kind: typeof BackfillStartKind.After; readonly cursor: string };
+export type BackfillStartRequest =
+  | { readonly backfillStart: typeof BackfillStart.Resume }
+  | { readonly backfillStart: typeof BackfillStart.Top }
+  | {
+      readonly backfillStart: typeof BackfillStart.After;
+      readonly cursor: string;
+    };
 
-/** A validated `runBackfill({ job, cursor? })` payload. */
+/** A validated `runBackfill({ backfillJobName, cursor? })` payload. */
 export type BackfillRequest = {
-  readonly job: BackfillJobKind;
-  readonly start: BackfillStart;
+  readonly backfillJobName: BackfillJobName;
+  readonly start: BackfillStartRequest;
 };
 
 /** A stored appointment's mirrors, as the backfill judges them. */
 export type MirrorRow = {
   /** The stored subject mirror; `null` when the row has none, or it is not a list. */
   readonly storedSubjectUserIds: readonly unknown[] | null;
-  /** The subjects the seats name — every account once, sorted (R33). */
-  readonly seatSubjectUserIds: readonly string[];
+  /** The subjects the seats name — every account once, sorted (R33); `UserId` until flip (1). */
+  readonly seatSubjectUserIds: readonly UserId[];
   /** The COMMIT's own placement stamp. */
-  readonly placement: PlacementKind | null;
+  readonly placement: Placement | null;
   /** The backfill's earlier inference. */
-  readonly inferredPlacement: PlacementKind | null;
+  readonly inferredPlacement: Placement | null;
 };
 
 /** What a row's mirrors lack; a `null` field writes nothing. */
 export type MirrorPatch = {
-  /** The re-derived subject list, when the stored one disagrees with the seats. */
-  readonly subjectUserIds: readonly string[] | null;
+  /** The re-derived subject list, when the stored one disagrees with the seats — `UserId` until flip (1). */
+  readonly subjectUserIds: readonly UserId[] | null;
   /** An inference to fill in — never the commit's own `placement`. */
-  readonly inferredPlacement: PlacementKind | null;
+  readonly inferredPlacement: Placement | null;
 };
 
 /** What one page walked, before the progress document records it. */
@@ -137,7 +139,7 @@ export type BackfillPageVerdict = {
 export type BackfillResume = {
   /** The cursor this page starts after, as resolved. */
   readonly cursor: string | null;
-  readonly carried: BackfillCounts & { readonly startedAtMs: number };
+  readonly carried: BackfillCounts & { readonly startedAtUtcMs: UtcEpochMs };
 };
 
 const ZERO_COUNTS: BackfillCounts = {
@@ -147,7 +149,7 @@ const ZERO_COUNTS: BackfillCounts = {
   recomputed: 0,
 };
 
-function isJob(raw: unknown): raw is BackfillJobKind {
+function isJob(raw: unknown): raw is BackfillJobName {
   for (let i = 0; i < JOBS.length; i++) if (JOBS[i] === raw) return true;
   return false;
 }
@@ -155,7 +157,7 @@ function isJob(raw: unknown): raw is BackfillJobKind {
 /** Two plain lists, the same by their JSON — what the stored mirror is compared by. */
 function sameList(
   stored: readonly unknown[] | null,
-  derived: readonly string[],
+  derived: readonly UserId[],
 ): boolean {
   return stored !== null && JSON.stringify(stored) === JSON.stringify(derived);
 }
@@ -173,7 +175,9 @@ export const BackfillPlanSystem = {
 
   /** The wire cursor for a position: an appointment id as before, `~uid` after. */
   cursorOf(position: BackfillPosition): string | null {
-    if (position.phase === BackfillPhase.Appointments) return position.after;
+    if (position.backfillPhase === BackfillPhase.Appointments) {
+      return position.after;
+    }
     return `${STORED_CLIENTS_MARK}${position.after ?? ''}`;
   },
 
@@ -182,37 +186,46 @@ export const BackfillPlanSystem = {
     if (cursor !== null && cursor.startsWith(STORED_CLIENTS_MARK)) {
       const after = cursor.slice(STORED_CLIENTS_MARK.length);
       return {
-        phase: BackfillPhase.StoredClients,
+        backfillPhase: BackfillPhase.StoredClients,
         after: after.length > 0 ? after : null,
       };
     }
-    return { phase: BackfillPhase.Appointments, after: cursor };
+    return { backfillPhase: BackfillPhase.Appointments, after: cursor };
   },
 
   /**
-   * The wire payload, shaped without trusting it; `null` when it names no
-   * job, or a cursor that is not a document id — a cursor becomes a
-   * `startAfter`, and anything else would start a scan from somewhere
-   * nobody chose. Only the stats job walks the stored clients.
+   * The payload `{ backfillJobName, cursor? }`, shaped without trusting it;
+   * `null` when it names no job, or a cursor that is not a document id — a
+   * cursor becomes a `startAfter`, and anything else would start a scan from
+   * somewhere nobody chose. Only the stats job walks the stored clients.
    */
   requestOf(raw: unknown): BackfillRequest | null {
     if (raw === null || typeof raw !== 'object') return null;
-    const job = 'job' in raw ? raw.job : undefined;
-    if (!isJob(job)) return null;
+    const backfillJobName =
+      'backfillJobName' in raw ? raw.backfillJobName : undefined;
+    if (!isJob(backfillJobName)) return null;
     if (!('cursor' in raw) || raw.cursor === undefined) {
-      return { job, start: { kind: BackfillStartKind.Resume } };
+      return {
+        backfillJobName,
+        start: { backfillStart: BackfillStart.Resume },
+      };
     }
     const cursor = raw.cursor;
-    if (cursor === null) return { job, start: { kind: BackfillStartKind.Top } };
+    if (cursor === null) {
+      return { backfillJobName, start: { backfillStart: BackfillStart.Top } };
+    }
     if (typeof cursor !== 'string') return null;
     const position = BackfillPlanSystem.positionOf(cursor);
     const valid =
-      position.phase === BackfillPhase.StoredClients
-        ? job === BackfillJobKind.ClientStats &&
+      position.backfillPhase === BackfillPhase.StoredClients
+        ? backfillJobName === BackfillJobName.ClientStats &&
           (position.after === null || DOC_ID.test(position.after))
         : DOC_ID.test(cursor);
     return valid
-      ? { job, start: { kind: BackfillStartKind.After, cursor } }
+      ? {
+          backfillJobName,
+          start: { backfillStart: BackfillStart.After, cursor },
+        }
       : null;
   },
 
@@ -221,18 +234,22 @@ export const BackfillPlanSystem = {
    * commit's audit row and nothing else; `null` without one. What this
    * returns is an INFERENCE and is stored as one (`inferredPlacement`),
    * never as the commit's `placement`: guessing from the owner would mark
-   * every legacy visit `self`, and look exactly like an audit-backed answer.
+   * every legacy visit `SELF`, and look exactly like an audit-backed answer.
    */
-  inferPlacement(auditActions: readonly string[]): PlacementKind | null {
-    if (auditActions.includes(STAFF_CREATED_ACTION)) return PlacementKind.Staff;
-    if (auditActions.includes(COMMITTED_ACTION)) return PlacementKind.Self;
+  inferPlacement(auditActions: readonly AuditAction[]): Placement | null {
+    if (auditActions.includes(AuditAction.BookingStaffCreated)) {
+      return Placement.Staff;
+    }
+    if (auditActions.includes(AuditAction.BookingCommitted)) {
+      return Placement.Self;
+    }
     return null;
   },
 
   /** Neither the commit's stamp nor an inference yet: the audit trail may know. */
   lacksPlacement(
-    placement: PlacementKind | null,
-    inferredPlacement: PlacementKind | null,
+    placement: Placement | null,
+    inferredPlacement: Placement | null,
   ): boolean {
     return placement === null && inferredPlacement === null;
   },
@@ -244,10 +261,7 @@ export const BackfillPlanSystem = {
    * inferred placement is only ever filled in, on a row with neither kind,
    * and only from evidence. The commit's `placement` is never written here.
    */
-  mirrorPatch(
-    row: MirrorRow,
-    inferred: PlacementKind | null,
-  ): MirrorPatch | null {
+  mirrorPatch(row: MirrorRow, inferred: Placement | null): MirrorPatch | null {
     const subjectUserIds = sameList(
       row.storedSubjectUserIds,
       row.seatSubjectUserIds,
@@ -293,20 +307,20 @@ export const BackfillPlanSystem = {
    * Where a call starts, and what it carries over. A call with no cursor
    * resumes an unfinished run where its progress document stopped; counts
    * carry over only while continuing an unfinished run, and a call from the
-   * top starts a new one at `nowMs`.
+   * top starts a new one at `nowUtcMs`.
    */
   resume(
-    start: BackfillStart,
-    previous: BackfillJobEntity | null,
-    nowMs: number,
+    start: BackfillStartRequest,
+    previous: BackfillJob | null,
+    nowUtcMs: UtcEpochMs,
   ): BackfillResume {
-    const resuming = previous !== null && previous.finishedAtMs === null;
+    const resuming = previous !== null && previous.finishedAtUtcMs === null;
     const cursor =
-      start.kind === BackfillStartKind.Resume
+      start.backfillStart === BackfillStart.Resume
         ? resuming
           ? previous.cursor
           : null
-        : start.kind === BackfillStartKind.Top
+        : start.backfillStart === BackfillStart.Top
           ? null
           : start.cursor;
     const carried =
@@ -316,9 +330,9 @@ export const BackfillPlanSystem = {
             storedClients: previous.storedClients,
             stamped: previous.stamped,
             recomputed: previous.recomputed,
-            startedAtMs: previous.startedAtMs,
+            startedAtUtcMs: previous.startedAtUtcMs,
           }
-        : { ...ZERO_COUNTS, startedAtMs: nowMs };
+        : { ...ZERO_COUNTS, startedAtUtcMs: nowUtcMs };
     return { cursor, carried };
   },
 
@@ -330,7 +344,7 @@ export const BackfillPlanSystem = {
    * of a short page ran off its end.
    */
   pageWalk(
-    phase: BackfillPhase,
+    backfillPhase: BackfillPhase,
     ids: readonly string[],
     handled: number,
     after: string | null,
@@ -339,7 +353,7 @@ export const BackfillPlanSystem = {
     const stoppedEarly = handled < ids.length;
     return {
       next: {
-        phase,
+        backfillPhase,
         after: handled > 0 ? (ids[handled - 1] ?? after) : after,
       },
       exhausted: !stoppedEarly && ids.length < pageSize,
@@ -356,24 +370,25 @@ export const BackfillPlanSystem = {
    * twice. `spent` is asked only when that is the question.
    */
   nextPage(
-    job: BackfillJobKind,
+    backfillJobName: BackfillJobName,
     walk: BackfillPageWalk,
     worked: BackfillCounts,
     spent: () => boolean,
   ): BackfillPageVerdict {
     const nextPhase =
       walk.exhausted &&
-      walk.next.phase === BackfillPhase.Appointments &&
-      job === BackfillJobKind.ClientStats;
+      walk.next.backfillPhase === BackfillPhase.Appointments &&
+      backfillJobName === BackfillJobName.ClientStats;
     const walkedAll = walk.exhausted && !nextPhase;
-    const sampleDue = walkedAll && job === BackfillJobKind.ClientStats;
+    const sampleDue =
+      walkedAll && backfillJobName === BackfillJobName.ClientStats;
     const workedAlready = worked.processed + worked.storedClients > 0;
     const sampleDeferred = sampleDue && workedAlready && spent();
     const done = walkedAll && !sampleDeferred;
     return {
       cursor: BackfillPlanSystem.cursorOf(
         nextPhase
-          ? { phase: BackfillPhase.StoredClients, after: null }
+          ? { backfillPhase: BackfillPhase.StoredClients, after: null }
           : walk.next,
       ),
       done,

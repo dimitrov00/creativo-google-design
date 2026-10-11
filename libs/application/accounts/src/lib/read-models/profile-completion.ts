@@ -1,5 +1,9 @@
 import { User } from '@creativo/domain/accounts';
-import { BirthDate, ProfileCompletionSystem } from '@creativo/ecs-core';
+import {
+  BirthDate,
+  ProfileCompletionKey as CompletionKey,
+  ProfileCompletionSystem,
+} from '@creativo/ecs-core';
 
 /**
  * Profile-completion model — a pure projection of the `User` aggregate
@@ -33,11 +37,32 @@ export function profileCompletion(
   user: User,
   hasPhoto: boolean,
 ): ProfileCompletion {
-  // Same keys (the system's dictionary holds these strings), same order.
-  return ProfileCompletionSystem.completion(profileOf(user), hasPhoto);
+  // Same items, same order — the system's; each key back in this file's
+  // lowercase spelling.
+  const completion = ProfileCompletionSystem.completion(
+    profileOf(user),
+    hasPhoto,
+  );
+  return {
+    items: completion.items.map((item) => ({
+      key: LEGACY_PROFILE_COMPLETION_KEY[item.profileCompletionKey],
+      done: item.done,
+    })),
+    done: completion.done,
+    total: completion.total,
+    complete: completion.complete,
+  };
 }
 
 // ── The bridge: the legacy aggregate → ecs-core's slice (Phase 4 deletes it) ─
+
+/** The system's SCREAMING key → this file's lowercase key (flatten-spec §8.9). */
+const LEGACY_PROFILE_COMPLETION_KEY = {
+  [CompletionKey.Name]: 'name',
+  [CompletionKey.Phone]: 'phone',
+  [CompletionKey.Birthday]: 'birthday',
+  [CompletionKey.Photo]: 'photo',
+} as const satisfies { readonly [K in CompletionKey]: ProfileCompletionKey };
 
 function profileOf(user: User): { readonly birthDate: BirthDate | null } {
   return {

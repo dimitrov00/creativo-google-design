@@ -1,4 +1,8 @@
-import { FieldPath, type Firestore } from 'firebase-admin/firestore';
+import {
+  FieldPath,
+  FieldValue,
+  type Firestore,
+} from 'firebase-admin/firestore';
 import type {
   CommitPlan,
   DocPath,
@@ -26,7 +30,9 @@ import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
  * transaction or batch holding it writes nothing at all, which is what the
  * audit writer's exactly-once rows rest on. A `FieldPath` update
  * (`update(ref, path, value, …)`) writes ROOT fields only — a
- * multi-segment path is refused (Law 5: never dot paths) — and of an absent
+ * multi-segment path is refused (Law 5: never dot paths), a
+ * `FieldValue.delete()` value removes that root field (how a variant
+ * transition's `deleteFields` reach the store, Law 6) — and of an absent
  * document fails with NOT_FOUND (gRPC 5), as the SDK's does; the object form
  * (`update(ref, patch)`) keeps this double's historical leniency — a
  * shallow merge that creates an absent document — for the legacy specs
@@ -268,11 +274,17 @@ function keepFor(
   }
 }
 
+/** The SDK's delete sentinel — `FieldValue.delete()` — as the value of an update pair. */
+const isDeleteSentinel = (value: unknown): boolean =>
+  value instanceof FieldValue && value.isEqual(FieldValue.delete());
+
 /**
  * `fields` merged into `base` at the ROOT. Law 5: writes target root fields,
  * never dot paths — the transaction adapter passes each key as a
  * single-segment `FieldPath` — so a multi-segment path (a nested-map write)
- * is refused loudly here rather than modelled.
+ * is refused loudly here rather than modelled. A `FieldValue.delete()` value
+ * removes the root field, as the SDK does (Law 6: a variant transition
+ * leaves the document exactly one variant).
  */
 function withFields(
   base: Data,
@@ -286,7 +298,8 @@ function withFields(
         `FakeProjectionFirestore: update of '${segments.join('.')}' — writes target root fields, never dot paths (Law 5)`,
       );
     }
-    next.set(field, value);
+    if (isDeleteSentinel(value)) next.delete(field);
+    else next.set(field, value);
   }
   return Object.fromEntries(next);
 }

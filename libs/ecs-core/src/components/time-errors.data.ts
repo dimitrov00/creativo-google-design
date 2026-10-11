@@ -1,100 +1,93 @@
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import type { TimeZone } from '../primitives/time-zone.primitive';
+
 /**
  * What turning raw time input into an instant can refuse — raised only at the
- * `ZonedTimeSystem` edge (a raw ISO string, a raw zone, a wall clock a DST
- * transition erased or repeated). Past the edge every system works on epoch
- * ms and the zone table, where nothing can fail.
+ * ingestion boundary, by `ZonedTimeSystem` (a raw zone, an ISO string without
+ * an offset, a shop wall clock a spring-forward erased). Past the boundary
+ * every system works on `LocalDate` + `MinuteOfDay`, where nothing can fail.
  *
- * Every field besides `code` is an i18n parameter: stable scalars only.
+ * Flat, zero-prototype, serialisable structs discriminated by `errorCode`
+ * (Law 7.5); every other field is an i18n parameter (`errors.<errorCode>`).
+ * A fall-back repeat is NOT an error: it resolves to the earlier offset
+ * (owner-locked 2026-10-10).
  */
 
-/** Error codes — the ONLY source of these strings; the UI translates them. */
+/** Error codes — the ONLY source of these strings (flatten-spec §2.1). */
 export const TimeErrorCode = {
-  InvalidDateTime: 'time.invalid_date_time',
-  InvalidTimeZone: 'time.invalid_time_zone',
-  NonexistentLocalTime: 'time.nonexistent_local_time',
-  AmbiguousLocalTime: 'time.ambiguous_local_time',
+  /** A wall-clock time inside the spring-forward gap — the owner-locked code (no `TIME_` prefix). */
+  DstGap: 'DST_GAP_INVALID_TIME',
+  InvalidDateTime: 'TIME_INVALID_DATE_TIME',
+  InvalidTimeZone: 'TIME_INVALID_TIME_ZONE',
 } as const;
 export type TimeErrorCode = (typeof TimeErrorCode)[keyof typeof TimeErrorCode];
 
-/** Why a date/time was refused before any zone was consulted. */
+/** Why a date/time was refused before any zone was consulted — the field `dateTimeInvalidReason`. */
 export const DateTimeInvalidReason = {
-  /** Not in a recognised `YYYY-MM-DD[THH:mm[:ss[.SSS]]][Z|±HH:mm]` form. */
-  Unparsable: 'unparsable',
-  /** Well-formed but not a real date or clock time (`2026-02-30`, `24:30`). */
-  OutOfRange: 'out_of_range',
+  /** Not a recognised form (an offset-less string where an instant is required, a typo). */
+  Unparsable: 'UNPARSABLE',
+  /** Well-formed but not a real date or clock time (`2026-02-30`, `24:30`), or outside 0001–9999. */
+  OutOfRange: 'OUT_OF_RANGE',
 } as const;
 export type DateTimeInvalidReason =
   (typeof DateTimeInvalidReason)[keyof typeof DateTimeInvalidReason];
 
 export type TimeError =
-  | TimeError.InvalidDateTime
-  | TimeError.InvalidTimeZone
-  | TimeError.NonexistentLocalTime
-  | TimeError.AmbiguousLocalTime;
+  TimeError.DstGap | TimeError.InvalidDateTime | TimeError.InvalidTimeZone;
 
 export const TimeError = {
+  /**
+   * A wall-clock time a spring-forward skipped — `2026-03-29 03:30` is never
+   * on the clock in Europe/Sofia. Refused, never shifted: accepting it
+   * silently books a barber an hour after the roster said.
+   */
+  dstGap(
+    localDate: LocalDate,
+    minute: MinuteOfDay,
+    timeZone: TimeZone,
+  ): TimeError.DstGap {
+    return { errorCode: TimeErrorCode.DstGap, localDate, minute, timeZone };
+  },
+
   invalidDateTime(
     rawValue: string,
-    reason: DateTimeInvalidReason,
+    dateTimeInvalidReason: DateTimeInvalidReason,
   ): TimeError.InvalidDateTime {
-    return { code: TimeErrorCode.InvalidDateTime, rawValue, reason };
+    return {
+      errorCode: TimeErrorCode.InvalidDateTime,
+      rawValue,
+      dateTimeInvalidReason,
+    };
   },
 
   invalidTimeZone(rawZone: string): TimeError.InvalidTimeZone {
-    return { code: TimeErrorCode.InvalidTimeZone, rawZone };
-  },
-
-  /**
-   * A wall-clock time a spring-forward skipped — `2026-03-29 03:30` is never
-   * on the clock in Europe/Sofia. Refused by default: accepting it silently
-   * books a barber an hour after the roster said, once a year, and the only
-   * symptom is a client arriving an hour late.
-   */
-  nonexistentLocalTime(
-    rawValue: string,
-    zone: string,
-  ): TimeError.NonexistentLocalTime {
-    return { code: TimeErrorCode.NonexistentLocalTime, rawValue, zone };
-  },
-
-  /**
-   * A wall-clock time a fall-back repeated — `2026-10-25 03:30` happens at
-   * both `+03:00` and `+02:00` in Europe/Sofia. Which one a booking means is a
-   * decision, not a default.
-   */
-  ambiguousLocalTime(
-    rawValue: string,
-    zone: string,
-  ): TimeError.AmbiguousLocalTime {
-    return { code: TimeErrorCode.AmbiguousLocalTime, rawValue, zone };
+    return { errorCode: TimeErrorCode.InvalidTimeZone, rawZone };
   },
 
   is<C extends TimeErrorCode>(
     error: TimeError,
-    code: C,
-  ): error is Extract<TimeError, { readonly code: C }> {
-    return error.code === code;
+    errorCode: C,
+  ): error is Extract<TimeError, { readonly errorCode: C }> {
+    return error.errorCode === errorCode;
   },
 } as const;
 
 export namespace TimeError {
+  export type DstGap = {
+    readonly errorCode: typeof TimeErrorCode.DstGap;
+    readonly localDate: LocalDate;
+    readonly minute: MinuteOfDay;
+    readonly timeZone: TimeZone;
+  };
   export type InvalidDateTime = {
-    readonly code: typeof TimeErrorCode.InvalidDateTime;
+    readonly errorCode: typeof TimeErrorCode.InvalidDateTime;
+    /** The input as received — the copied i18n text interpolates `{{rawValue}}`. */
     readonly rawValue: string;
-    readonly reason: DateTimeInvalidReason;
+    readonly dateTimeInvalidReason: DateTimeInvalidReason;
   };
   export type InvalidTimeZone = {
-    readonly code: typeof TimeErrorCode.InvalidTimeZone;
+    readonly errorCode: typeof TimeErrorCode.InvalidTimeZone;
     readonly rawZone: string;
-  };
-  export type NonexistentLocalTime = {
-    readonly code: typeof TimeErrorCode.NonexistentLocalTime;
-    readonly rawValue: string;
-    readonly zone: string;
-  };
-  export type AmbiguousLocalTime = {
-    readonly code: typeof TimeErrorCode.AmbiguousLocalTime;
-    readonly rawValue: string;
-    readonly zone: string;
   };
 }

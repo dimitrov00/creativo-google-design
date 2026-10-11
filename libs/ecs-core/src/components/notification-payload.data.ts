@@ -1,40 +1,44 @@
-import type { AppointmentId } from '../entities/appointment.entity';
-import type { WaitlistRequestId } from '../entities/waitlist-request.entity';
+import type {
+  AppointmentId,
+  WaitlistRequestId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import type { RewardRefFields } from './journal-effect.data';
 import type { LocalizedText } from './localized-text.data';
-import type { RewardRef } from './journal-effect.data';
 
 /**
- * What a notification is ABOUT — drives its glyph and its copy (and, later,
- * whether a channel may suppress it). A closed set: the UI renders every
- * case, so a new kind breaks the build until someone gives it an icon and
- * words. The stored strings of `NotificationKind` (`notification.ts:25-36`),
- * unchanged; index #15 keys on it.
+ * What a notification is ABOUT — the discriminator `notificationTopic` —
+ * drives its glyph and its copy (and, later, whether a channel may
+ * suppress it). A closed set: the UI renders every case, so a new topic
+ * breaks the build until someone gives it an icon and words. (Stored bytes
+ * are today's lowercase `kind` until the notifications flip; the shims map.)
  */
-export const NotificationKind = {
-  AppointmentReminder: 'appointment_reminder',
-  AppointmentChanged: 'appointment_changed',
+export const NotificationTopic = {
+  AppointmentReminder: 'APPOINTMENT_REMINDER',
+  AppointmentChanged: 'APPOINTMENT_CHANGED',
   /**
    * A standing waitlist request found something. The one time-critical
-   * kind: the slot it names is NOT held, so the notification invites a race
-   * for it and its copy must say so.
+   * topic: the slot it names is NOT held, so the notification invites a
+   * race for it and its copy must say so.
    */
-  WaitlistMatch: 'waitlist_match',
-  RewardGranted: 'reward_granted',
-  Announcement: 'announcement',
+  WaitlistMatch: 'WAITLIST_MATCH',
+  RewardGranted: 'REWARD_GRANTED',
+  Announcement: 'ANNOUNCEMENT',
 } as const;
-export type NotificationKind =
-  (typeof NotificationKind)[keyof typeof NotificationKind];
+export type NotificationTopic =
+  (typeof NotificationTopic)[keyof typeof NotificationTopic];
 
 /**
  * The FACTS a notification is made of (§9 D20) — never formatted words. The
- * matcher stops writing Bulgarian `title`/`body`/`deepLink`
- * (`firestore-notification-writer.ts:29-35`); the inbox words each kind
- * from i18n in the reader's locale, its time in the payload's `zone`, and
- * builds its link from the ids. Discriminated by the same `kind` as the
- * notification it sits on.
+ * inbox words each topic from i18n in the reader's locale and builds its
+ * link from the ids. A union of FLAT variant slices at the notification's
+ * root, discriminated by `notificationTopic`. A visit's time is the SHOP's
+ * wall clock — `localDate` + `startMinutes` — with no zone: the zone is the
+ * location's (Law 7.2).
  *
- * Only `waitlist_match` has a production writer today (`match-waitlist.ts`);
- * the other four kinds carry the facts their copy needs — the visit, the
+ * Only `WAITLIST_MATCH` has a production writer today (`match-waitlist.ts`);
+ * the other four topics carry the facts their copy needs — the visit, the
  * reward — and an announcement its authored bilingual text (content, like a
  * catalogue name, not i18n copy).
  */
@@ -48,77 +52,85 @@ export type NotificationPayload =
 export const NotificationPayload = {
   appointmentReminder(
     appointmentId: AppointmentId,
-    startMs: number,
-    zone: string,
+    localDate: LocalDate,
+    startMinutes: MinuteOfDay,
   ): NotificationPayload.AppointmentReminder {
     return {
-      kind: NotificationKind.AppointmentReminder,
+      notificationTopic: NotificationTopic.AppointmentReminder,
       appointmentId,
-      startMs,
-      zone,
+      localDate,
+      startMinutes,
     };
   },
 
   appointmentChanged(
     appointmentId: AppointmentId,
-    startMs: number,
-    zone: string,
+    localDate: LocalDate,
+    startMinutes: MinuteOfDay,
   ): NotificationPayload.AppointmentChanged {
     return {
-      kind: NotificationKind.AppointmentChanged,
+      notificationTopic: NotificationTopic.AppointmentChanged,
       appointmentId,
-      startMs,
-      zone,
+      localDate,
+      startMinutes,
     };
   },
 
-  /** The freed slot a waitlist request matched: when it starts, in the shop's zone. */
+  /** The freed slot a waitlist request matched: when it starts, on the shop's clock. */
   waitlistMatch(
-    requestId: WaitlistRequestId,
-    startMs: number,
-    zone: string,
+    waitlistRequestId: WaitlistRequestId,
+    localDate: LocalDate,
+    startMinutes: MinuteOfDay,
   ): NotificationPayload.WaitlistMatch {
-    return { kind: NotificationKind.WaitlistMatch, requestId, startMs, zone };
+    return {
+      notificationTopic: NotificationTopic.WaitlistMatch,
+      waitlistRequestId,
+      localDate,
+      startMinutes,
+    };
   },
 
-  rewardGranted(reward: RewardRef): NotificationPayload.RewardGranted {
-    return { kind: NotificationKind.RewardGranted, reward };
+  rewardGranted(reward: RewardRefFields): NotificationPayload.RewardGranted {
+    return { notificationTopic: NotificationTopic.RewardGranted, ...reward };
   },
 
   announcement(
-    title: LocalizedText,
-    body: LocalizedText | null,
+    announcementTitle: LocalizedText,
+    announcementBody: LocalizedText | null,
   ): NotificationPayload.Announcement {
-    return { kind: NotificationKind.Announcement, title, body };
+    return {
+      notificationTopic: NotificationTopic.Announcement,
+      announcementTitle,
+      announcementBody,
+    };
   },
 } as const;
 
 export namespace NotificationPayload {
   export type AppointmentReminder = {
-    readonly kind: typeof NotificationKind.AppointmentReminder;
+    readonly notificationTopic: typeof NotificationTopic.AppointmentReminder;
     readonly appointmentId: AppointmentId;
-    readonly startMs: number;
-    readonly zone: string;
+    readonly localDate: LocalDate;
+    readonly startMinutes: MinuteOfDay;
   };
   export type AppointmentChanged = {
-    readonly kind: typeof NotificationKind.AppointmentChanged;
+    readonly notificationTopic: typeof NotificationTopic.AppointmentChanged;
     readonly appointmentId: AppointmentId;
-    readonly startMs: number;
-    readonly zone: string;
+    readonly localDate: LocalDate;
+    readonly startMinutes: MinuteOfDay;
   };
   export type WaitlistMatch = {
-    readonly kind: typeof NotificationKind.WaitlistMatch;
-    readonly requestId: WaitlistRequestId;
-    readonly startMs: number;
-    readonly zone: string;
+    readonly notificationTopic: typeof NotificationTopic.WaitlistMatch;
+    readonly waitlistRequestId: WaitlistRequestId;
+    readonly localDate: LocalDate;
+    readonly startMinutes: MinuteOfDay;
   };
   export type RewardGranted = {
-    readonly kind: typeof NotificationKind.RewardGranted;
-    readonly reward: RewardRef;
-  };
+    readonly notificationTopic: typeof NotificationTopic.RewardGranted;
+  } & RewardRefFields;
   export type Announcement = {
-    readonly kind: typeof NotificationKind.Announcement;
-    readonly title: LocalizedText;
-    readonly body: LocalizedText | null;
+    readonly notificationTopic: typeof NotificationTopic.Announcement;
+    readonly announcementTitle: LocalizedText;
+    readonly announcementBody: LocalizedText | null;
   };
 }

@@ -2,18 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { PipelineError, PipelineErrorCode } from './pipeline-errors.data';
 
 describe('PipelineError', () => {
-  it('uses the dotted pipeline.* codes the UI translates', () => {
+  it('uses the SCREAMING PIPELINE_* codes the UI translates as errors.<errorCode>', () => {
     expect(Object.values(PipelineErrorCode)).toEqual([
-      'pipeline.unauthenticated',
-      'pipeline.slot_unavailable',
-      'pipeline.catalog_changed',
-      'pipeline.invalid_request',
-      'pipeline.unavailable',
-      'pipeline.unknown',
+      'PIPELINE_UNAUTHENTICATED',
+      'PIPELINE_SLOT_UNAVAILABLE',
+      'PIPELINE_CATALOG_CHANGED',
+      'PIPELINE_INVALID_REQUEST',
+      'PIPELINE_UNAVAILABLE',
+      'PIPELINE_UNKNOWN',
     ]);
   });
 
-  it('carries the server code and its reason as i18n parameters', () => {
+  it('carries the server wire code and its reason as i18n parameters', () => {
     expect(
       PipelineError.of(
         PipelineErrorCode.SlotUnavailable,
@@ -22,8 +22,8 @@ describe('PipelineError', () => {
         null,
       ),
     ).toEqual({
-      code: 'pipeline.slot_unavailable',
-      serverCode: 'booking.reschedule.carried_seat_unplaceable',
+      errorCode: 'PIPELINE_SLOT_UNAVAILABLE',
+      serverErrorCode: 'booking.reschedule.carried_seat_unplaceable',
       refusal: 'barber_unavailable',
       field: null,
     });
@@ -31,8 +31,8 @@ describe('PipelineError', () => {
 
   it('bare() has one shape with every detail null', () => {
     expect(PipelineError.bare(PipelineErrorCode.Unavailable)).toEqual({
-      code: 'pipeline.unavailable',
-      serverCode: null,
+      errorCode: 'PIPELINE_UNAVAILABLE',
+      serverErrorCode: null,
       refusal: null,
       field: null,
     });

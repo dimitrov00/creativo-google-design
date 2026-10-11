@@ -1,4 +1,4 @@
-import { WorkBudgetSystem } from '@creativo/ecs-core';
+import { UtcEpochMs, WorkBudgetSystem, defect } from '@creativo/ecs-core';
 
 /**
  * How long a piece of operational work may keep TAKING work — shared by the
@@ -14,7 +14,8 @@ import { WorkBudgetSystem } from '@creativo/ecs-core';
  * unit is state-based, so stopping BETWEEN them is always safe to resume.
  *
  * Phase 2 shim: the arithmetic is `WorkBudgetSystem` in `@creativo/ecs-core`;
- * this file keeps the legacy names for its callers and the awaiting walk.
+ * this file keeps the legacy names for its callers and the awaiting walk,
+ * and reads the injected epoch-ms clock as `UtcEpochMs` instants.
  */
 
 /** The share of the timeout spent taking new work; the rest is the unit in hand plus the bookkeeping. */
@@ -66,10 +67,21 @@ export interface WorkBudget {
  * run a "slow" invocation on a clock that jumps instead of waiting.
  */
 export function timeBudget(clockMs: () => number, limitMs: number): WorkBudget {
-  const startedMs = clockMs();
+  const startedAtUtcMs = instantOf(clockMs());
   return {
-    spent: () => WorkBudgetSystem.isSpent(startedMs, clockMs(), limitMs),
+    spent: () =>
+      WorkBudgetSystem.isSpent(startedAtUtcMs, instantOf(clockMs()), limitMs),
   };
+}
+
+/**
+ * A clock reading as an instant. The legacy clocks are `Date.now`-shaped,
+ * so a reading that is not one is a defect of the caller.
+ */
+function instantOf(ms: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(ms);
+  if (!instant.ok) defect(`unreachable: a clock read ${ms}`);
+  return instant.value;
 }
 
 /** A budget that never runs out — for a caller that bounds its work some other way. */

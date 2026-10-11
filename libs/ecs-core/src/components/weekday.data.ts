@@ -11,7 +11,7 @@ const ISO_WEEKDAY = {
 
 /**
  * ISO weekday, `1` = Monday … `7` = Sunday — the ONE dictionary
- * `DayOffset.weekday`, `DayHours` (indexed `weekday − 1`) and
+ * `LocalDate.weekday` answers, `DayHours` (indexed `weekday − 1`) and
  * `ShiftSegment.weekday` read. A number, so it indexes a seven-entry array
  * directly and a Mon-first week sorts by value.
  */
@@ -22,14 +22,5 @@ export const Weekday = {
 
   isWeekend(day: Weekday): boolean {
     return day === ISO_WEEKDAY.Sat || day === ISO_WEEKDAY.Sun;
-  },
-
-  /**
-   * The ISO weekday of a civil epoch day (days since 1970-01-01, which was a
-   * Thursday). Integer arithmetic, so no consumer ever constructs a `Date`
-   * for a weekday; correct for negative epoch days too.
-   */
-  ofEpochDay(epochDay: number): Weekday {
-    return (((((epochDay + 3) % 7) + 7) % 7) + 1) as Weekday;
   },
 } as const;

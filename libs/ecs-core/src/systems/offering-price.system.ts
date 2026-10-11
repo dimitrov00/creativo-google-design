@@ -1,20 +1,23 @@
-import {
-  BarberOffering,
-  type VariantTerms,
-} from '../components/barber-offering.data';
+import { BarberOffering } from '../components/barber-offering.data';
 import type { Money } from '../components/money.data';
-import {
-  ServiceTerms,
-  type ServiceVariantId,
-} from '../components/service-terms.data';
-import type { BarberId } from '../entities/barber.entity';
-import type { ServiceEntity } from '../entities/service.entity';
+import { ServiceTerms } from '../components/service-terms.data';
+import type { Service } from '../entities/service.entity';
+import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
+import type { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
+import type { PriceCents } from '../primitives/price-cents.primitive';
 
-/** What the terms matrix reads of a service — a whole `ServiceEntity` passes in. */
-export type PricedService = Pick<ServiceEntity, 'baseTerms' | 'offerings'>;
+/**
+ * What the terms matrix reads of a service — its own `ServiceTerms` fields
+ * (the catalogue terms, at the root) and its offerings. A whole `Service`
+ * passes straight in (Law 3: zero inbound mapping).
+ */
+export type PricedService = ServiceTerms & Pick<Service, 'offerings'>;
 
-/** A closed `[min, max]` of minor units or minutes. */
-export type OfferingRange = { readonly min: number; readonly max: number };
+/** A closed `[min, max]` of cents or minutes. */
+export type OfferingRange<T extends number = number> = {
+  readonly min: T;
+  readonly max: T;
+};
 
 /**
  * OfferingPriceSystem — the service terms matrix (`service.ts:360-412`): which
@@ -38,19 +41,20 @@ export const OfferingPriceSystem = {
 
   /**
    * The one `ServiceTerms` that applies. Falls back down the axes it cannot
-   * resolve: no barber (or one who does not perform it) yields `baseTerms`,
-   * and a barber who does not price the variant differently yields their
-   * own base. There is always an answer.
+   * resolve: no barber (or one who does not perform it) yields the service's
+   * own terms, and a barber who does not price the variant differently
+   * yields their own base. There is always an answer — a struct the caller
+   * already holds, never a copy.
    */
   termsFor(
     service: PricedService,
     barberId: BarberId | null,
     variantId: ServiceVariantId | null,
   ): ServiceTerms {
-    if (barberId === null) return service.baseTerms;
+    if (barberId === null) return service;
     const offering = OfferingPriceSystem.offeringFor(service, barberId);
     return offering === null
-      ? service.baseTerms
+      ? service
       : BarberOffering.termsFor(offering, variantId);
   },
 
@@ -78,30 +82,28 @@ export const OfferingPriceSystem = {
     return OfferingPriceSystem.offeringFor(service, barberId) !== null;
   },
 
-  /** Every terms a booking could land on — base, then each offering's base and overrides. */
+  /** Every terms a booking could land on — the service's, then each offering's base and overrides. */
   everyTerms(service: PricedService): readonly ServiceTerms[] {
-    const all: ServiceTerms[] = [service.baseTerms];
+    const all: ServiceTerms[] = [service];
     for (let i = 0; i < service.offerings.length; i++) {
       const offering = service.offerings[i] as BarberOffering;
-      all.push(offering.base);
-      for (let k = 0; k < offering.overrides.length; k++) {
-        all.push((offering.overrides[k] as VariantTerms).terms);
-      }
+      const own = BarberOffering.allTerms(offering);
+      for (let k = 0; k < own.length; k++) all.push(own[k] as ServiceTerms);
     }
     return all;
   },
 
   /**
-   * Cheapest and dearest the service can be, in minor units — the matrix is
-   * single-currency (an invariant of the service), so minor units compare
+   * Cheapest and dearest the service can be, in cents — the matrix is
+   * single-currency (an invariant of the service), so cents compare
    * directly.
    */
-  priceRange(service: PricedService): OfferingRange {
+  priceRange(service: PricedService): OfferingRange<PriceCents> {
     const all = OfferingPriceSystem.everyTerms(service);
-    let min = service.baseTerms.priceMinorUnits;
+    let min = service.priceCents;
     let max = min;
     for (let i = 1; i < all.length; i++) {
-      const price = (all[i] as ServiceTerms).priceMinorUnits;
+      const price = (all[i] as ServiceTerms).priceCents;
       if (price < min) min = price;
       if (price > max) max = price;
     }
@@ -109,9 +111,9 @@ export const OfferingPriceSystem = {
   },
 
   /** Shortest and longest sold duration across the whole matrix. */
-  durationRange(service: PricedService): OfferingRange {
+  durationRange(service: PricedService): OfferingRange<DurationMinutes> {
     const all = OfferingPriceSystem.everyTerms(service);
-    let min = service.baseTerms.durationMinutes;
+    let min = service.durationMinutes;
     let max = min;
     for (let i = 1; i < all.length; i++) {
       const minutes = (all[i] as ServiceTerms).durationMinutes;

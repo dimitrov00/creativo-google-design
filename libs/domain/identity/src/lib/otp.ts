@@ -1,7 +1,10 @@
 import {
+  DurationMinutes,
   IdentityErrorCode,
   type OtpCounters,
   OtpSystem,
+  UtcEpochMs,
+  defect,
 } from '@creativo/ecs-core';
 import {
   Result,
@@ -38,11 +41,31 @@ const OTP_ZONE = 'UTC';
 /** The four counters `OtpSystem.verify` reads, off this class. */
 function toCounters(otp: Otp): OtpCounters {
   return {
-    consumedAtMs: otp.consumedAt === null ? null : otp.consumedAt.toMillis(),
-    expiresAtMs: otp.expiresAt.toMillis(),
+    consumedAtUtcMs: otp.consumedAt === null ? null : utcOf(otp.consumedAt),
+    expiresAtUtcMs: utcOf(otp.expiresAt),
     attemptCount: otp.attemptCount,
     maxAttempts: otp.maxAttempts,
   };
+}
+
+/** A class instant's epoch ms as the brand — every `ZonedDateTime` is inside its window. */
+function utcOf(instant: ZonedDateTime): UtcEpochMs {
+  const epochMs = instant.toMillis();
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
+}
+
+/**
+ * When a challenge issued `now` under a `ttlMinutes` policy stops verifying
+ * — `OtpSystem.expiresAtUtcMs` for the positive whole TTL every deployment
+ * strategy carries (`AuthStrategy.parse` refuses anything else); a figure
+ * outside that brand keeps the class's unvalidated sum, as it always did.
+ */
+function expiresAtUtcMs(now: ZonedDateTime, ttlMinutes: number): UtcEpochMs {
+  const ttl = DurationMinutes.of(ttlMinutes);
+  return ttl.ok
+    ? OtpSystem.expiresAtUtcMs(utcOf(now), ttl.value)
+    : UtcEpochMs.plusMs(utcOf(now), ttlMinutes * 60_000);
 }
 
 /** An epoch-ms instant as the class's UTC ISO stamp (`''` — refused — never happens for a finite instant). */
@@ -129,7 +152,7 @@ export class Otp {
     const saltResult = Otp.validateSalt(props.salt);
     const maxAttemptsResult = Otp.validateMaxAttempts(props.maxAttempts);
     const expiresAtResult = ZonedDateTime.fromISO(
-      toUtcIso(OtpSystem.expiresAtMs(now.toMillis(), props.ttlMinutes)),
+      toUtcIso(expiresAtUtcMs(now, props.ttlMinutes)),
       OTP_ZONE,
     );
 
@@ -228,14 +251,10 @@ export class Otp {
     codeMatches: boolean,
     now: ZonedDateTime,
   ): Result<Otp, OtpVerificationError> {
-    const verdict = OtpSystem.verify(
-      toCounters(this),
-      codeMatches,
-      now.toMillis(),
-    );
+    const verdict = OtpSystem.verify(toCounters(this), codeMatches, utcOf(now));
     return verdict.ok
       ? ok(this.withConsumedAt(now))
-      : fail(toLegacyVerdict(verdict.error.code));
+      : fail(toLegacyVerdict(verdict.error.errorCode));
   }
 
   /** Explicit, separate mutation — the use-case calls this after a `verify()` failure with `kind: 'wrong_code'` so the incremented attempt count gets persisted. */

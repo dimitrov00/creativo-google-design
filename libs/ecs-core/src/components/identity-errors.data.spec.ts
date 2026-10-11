@@ -4,118 +4,118 @@ import {
   IdentityError,
   IdentityErrorCode,
 } from './identity-errors.data';
-import { IdentifierKind } from './identifier.data';
+import { IdentifierChannel } from './identifier.data';
 
 describe('IdentityError', () => {
-  it('keeps every code in the identity namespace, each once', () => {
+  it('keeps every code in the IDENTITY_ domain, SCREAMING_SNAKE, each once', () => {
     const codes = Object.values(IdentityErrorCode);
     expect(new Set(codes).size).toBe(codes.length);
-    for (const code of codes) expect(code).toMatch(/^identity\.[a-z_.]+$/);
+    for (const code of codes) expect(code).toMatch(/^IDENTITY_[A-Z_]+$/);
   });
 
-  it('keeps the translated codes verbatim (errors.identity.* in en/bg)', () => {
+  it('spells the translated codes per flatten-spec §4.2 (errors.<errorCode> in en/bg)', () => {
     expect(IdentityErrorCode.IdentifierInvalid).toBe(
-      'identity.identifier.invalid',
+      'IDENTITY_IDENTIFIER_INVALID',
     );
-    expect(IdentityErrorCode.OtpCodeInvalid).toBe('identity.otp_code.invalid');
+    expect(IdentityErrorCode.OtpCodeInvalid).toBe('IDENTITY_OTP_CODE_INVALID');
     expect(IdentityErrorCode.BirthDateInvalid).toBe(
-      'identity.birth_date.invalid',
+      'IDENTITY_BIRTH_DATE_INVALID',
     );
     expect(IdentityErrorCode.BirthDateInFuture).toBe(
-      'identity.birth_date.in_future',
+      'IDENTITY_BIRTH_DATE_IN_FUTURE',
     );
     expect(IdentityErrorCode.BirthDateTooYoung).toBe(
-      'identity.birth_date.too_young',
+      'IDENTITY_BIRTH_DATE_TOO_YOUNG',
     );
     expect(IdentityErrorCode.BirthDateTooOld).toBe(
-      'identity.birth_date.too_old',
+      'IDENTITY_BIRTH_DATE_TOO_OLD',
     );
   });
 
   it('the four OTP verdicts carry no payload and are shared structs', () => {
     expect(IdentityError.otpAlreadyConsumed()).toEqual({
-      code: 'identity.otp.already_consumed',
+      errorCode: 'IDENTITY_OTP_ALREADY_CONSUMED',
     });
     expect(IdentityError.otpExpired()).toEqual({
-      code: 'identity.otp.expired',
+      errorCode: 'IDENTITY_OTP_EXPIRED',
     });
     expect(IdentityError.otpLockedOut()).toEqual({
-      code: 'identity.otp.locked_out',
+      errorCode: 'IDENTITY_OTP_LOCKED_OUT',
     });
     expect(IdentityError.otpWrongCode()).toEqual({
-      code: 'identity.otp.wrong_code',
+      errorCode: 'IDENTITY_OTP_WRONG_CODE',
     });
     expect(IdentityError.otpWrongCode()).toBe(IdentityError.otpWrongCode());
   });
 
-  it('builds each edge struct with its dotted code and i18n params', () => {
+  it('builds each edge struct with its errorCode and i18n params', () => {
     expect(
-      IdentityError.identifierInvalid(IdentifierKind.Phone, 'nope'),
+      IdentityError.identifierInvalid(IdentifierChannel.Phone, 'nope'),
     ).toEqual({
-      code: 'identity.identifier.invalid',
-      identifierKind: 'phone',
+      errorCode: 'IDENTITY_IDENTIFIER_INVALID',
+      identifierKind: 'PHONE',
       attempted: 'nope',
     });
     expect(IdentityError.otpCodeInvalid('12')).toEqual({
-      code: 'identity.otp_code.invalid',
+      errorCode: 'IDENTITY_OTP_CODE_INVALID',
       attempted: '12',
     });
     expect(IdentityError.birthDateInvalid('2026-02-30')).toEqual({
-      code: 'identity.birth_date.invalid',
+      errorCode: 'IDENTITY_BIRTH_DATE_INVALID',
       attempted: '2026-02-30',
     });
     expect(IdentityError.birthDateInFuture('2099-01-01')).toEqual({
-      code: 'identity.birth_date.in_future',
+      errorCode: 'IDENTITY_BIRTH_DATE_IN_FUTURE',
       attempted: '2099-01-01',
     });
     expect(IdentityError.birthDateTooYoung(12, 16)).toEqual({
-      code: 'identity.birth_date.too_young',
+      errorCode: 'IDENTITY_BIRTH_DATE_TOO_YOUNG',
       age: 12,
       minAge: 16,
     });
     expect(IdentityError.birthDateTooOld(130, 120)).toEqual({
-      code: 'identity.birth_date.too_old',
+      errorCode: 'IDENTITY_BIRTH_DATE_TOO_OLD',
       age: 130,
       maxAge: 120,
     });
     expect(IdentityError.authClaimsEmptyRoles()).toEqual({
-      code: 'identity.auth_claims.empty_roles',
+      errorCode: 'IDENTITY_AUTH_CLAIMS_EMPTY_ROLES',
     });
     expect(IdentityError.authStrategyUnknownKind('oauth')).toEqual({
-      code: 'identity.auth_strategy.unknown_kind',
+      errorCode: 'IDENTITY_AUTH_STRATEGY_UNKNOWN_KIND',
       received: 'oauth',
     });
     expect(IdentityError.authStrategyUnknownField('middleName')).toEqual({
-      code: 'identity.auth_strategy.unknown_field',
+      errorCode: 'IDENTITY_AUTH_STRATEGY_UNKNOWN_FIELD',
       received: 'middleName',
     });
     expect(IdentityError.authStrategyRequiredEmpty()).toEqual({
-      code: 'identity.auth_strategy.required_empty',
+      errorCode: 'IDENTITY_AUTH_STRATEGY_REQUIRED_EMPTY',
     });
     expect(IdentityError.authStrategyPhoneMissing()).toEqual({
-      code: 'identity.auth_strategy.phone_missing',
+      errorCode: 'IDENTITY_AUTH_STRATEGY_PHONE_MISSING',
     });
     expect(
       IdentityError.authStrategyInvalidPolicy(AuthPolicyField.TtlMinutes),
     ).toEqual({
-      code: 'identity.auth_strategy.invalid_policy',
+      errorCode: 'IDENTITY_AUTH_STRATEGY_INVALID_POLICY',
       field: 'ttlMinutes',
     });
     expect(IdentityError.authFlowInvalidTransition('done', 'back')).toEqual({
-      code: 'identity.auth_flow.invalid_transition',
+      errorCode: 'IDENTITY_AUTH_FLOW_INVALID_TRANSITION',
       from: 'done',
       event: 'back',
     });
     expect(
       IdentityError.onboardingFlowInvalidTransition('entering', 'back'),
     ).toEqual({
-      code: 'identity.onboarding_flow.invalid_transition',
+      errorCode: 'IDENTITY_ONBOARDING_FLOW_INVALID_TRANSITION',
       from: 'entering',
       event: 'back',
     });
   });
 
-  it('is() narrows by code; isOtp() picks out the four verdicts', () => {
+  it('is() narrows by errorCode; isOtp() picks out the four verdicts', () => {
     const error: IdentityError = IdentityError.birthDateTooYoung(12, 16);
     expect(IdentityError.is(error, IdentityErrorCode.BirthDateTooYoung)).toBe(
       true,

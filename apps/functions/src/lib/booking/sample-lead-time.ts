@@ -9,10 +9,13 @@ import {
 import {
   BarberId,
   CapacityEntry,
-  DayKey,
   LeadTimeSystem,
+  LocalDate,
   LocationId,
+  MinuteCount,
+  UtcEpochMs,
   ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
@@ -163,13 +166,20 @@ function firstAvailableDay(input: {
   readonly daysByMonth: ReadonlyMap<string, Record<string, CapacityDayEntry>>;
   readonly thresholdMinutes: number;
 }): FirstAvailable | null {
-  return LeadTimeSystem.firstAvailableDay(
+  const found = LeadTimeSystem.firstAvailableDay(
     capacityEntriesOf(input.daysByMonth),
     BarberId.of(input.barberId),
-    DayKey.of(input.from.key()),
-    DayKey.of(input.to.key()),
-    input.thresholdMinutes,
+    localDateOf(input.from),
+    localDateOf(input.to),
+    sure(MinuteCount.of(input.thresholdMinutes), 'a threshold'),
   );
+  return found === null
+    ? null
+    : {
+        dayKey: found.localDate,
+        leadTimeDays: found.leadTimeDays,
+        freeMinutes: found.freeMinutes,
+      };
 }
 
 /** Every `YYYY-MM` the inclusive span touches, in order. */
@@ -177,23 +187,37 @@ function monthKeysBetween(
   from: CalendarDay,
   to: CalendarDay,
 ): readonly string[] {
-  return LeadTimeSystem.monthKeysBetween(
-    DayKey.of(from.key()),
-    DayKey.of(to.key()),
-  );
+  return LeadTimeSystem.monthKeysBetween(localDateOf(from), localDateOf(to));
 }
 
 function dayCountBetween(from: CalendarDay, to: CalendarDay): number {
-  return LeadTimeSystem.dayCountBetween(
-    DayKey.of(from.key()),
-    DayKey.of(to.key()),
-  );
+  return LeadTimeSystem.dayCountBetween(localDateOf(from), localDateOf(to));
+}
+
+/** A brand the legacy value already satisfies — its own rules are the brand's. */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a `CalendarDay` is a valid date and a policy's slot step a
+  // positive count, by construction.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+function localDateOf(day: CalendarDay): LocalDate {
+  return sure(LocalDate.parse(day.key()), 'a calendar day');
 }
 
 /** A wall-clock instant → its `YYYY-MM-DD` in `zone` (`''` for an unknown zone). */
 function dayKeyOf(instant: Date, zone: string): string {
-  const clock = ZonedTimeSystem.wallClockOf(instant.getTime(), zone);
-  return clock.ok ? clock.value.dayKey : '';
+  const timeZone = ZonedTimeSystem.checkZone(zone);
+  const at = UtcEpochMs.of(instant.getTime());
+  return timeZone.ok && at.ok
+    ? ZonedTimeSystem.toLocal(at.value, timeZone.value).localDate
+    : '';
 }
 
 /* ── Converter: the stored `days` map → the rollup's sorted entries ─────── */
@@ -201,7 +225,8 @@ function dayKeyOf(instant: Date, zone: string): string {
 /**
  * `{ [dayKey]: { [barberId]: { [locationId]: minutes } } }` per month → sorted
  * `CapacityEntry` rows, read the way `freeMinutesFor` reads them: a malformed
- * barber entry is skipped and a junk figure counts as zero.
+ * barber entry is skipped and a junk figure — anything but a whole,
+ * non-negative count of minutes — counts as zero.
  */
 function capacityEntriesOf(
   daysByMonth: ReadonlyMap<string, Record<string, CapacityDayEntry>>,
@@ -210,22 +235,20 @@ function capacityEntriesOf(
   for (const [month, days] of daysByMonth) {
     for (const [dayKey, day] of Object.entries(days)) {
       // A day is read from its own month's document only.
-      if (
-        !DayKey.isValid(dayKey) ||
-        CapacityEntry.monthOf(DayKey.of(dayKey)) !== month
-      ) {
+      const localDate = LocalDate.parse(dayKey);
+      if (!localDate.ok || LocalDate.monthKey(localDate.value) !== month) {
         continue;
       }
       for (const [barberId, contribution] of Object.entries(day)) {
         if (typeof contribution !== 'object' || contribution === null) continue;
         for (const [locationId, raw] of Object.entries(contribution)) {
-          const minutes = Number(raw);
+          const minutes = MinuteCount.of(Number(raw));
           entries.push(
             CapacityEntry.of(
-              DayKey.of(dayKey),
+              localDate.value,
               BarberId.of(barberId),
               LocationId.of(locationId),
-              Number.isFinite(minutes) ? minutes : 0,
+              minutes.ok ? minutes.value : MinuteCount.ZERO,
             ),
           );
         }

@@ -20,7 +20,7 @@ describe('OtpCode.parse', () => {
     for (const raw of ['12345', '1234567', '12a456', '', '١٢٣٤٥٦']) {
       expect(OtpCode.parse(raw)).toEqual({
         ok: false,
-        error: { code: IdentityErrorCode.OtpCodeInvalid, attempted: raw },
+        error: { errorCode: IdentityErrorCode.OtpCodeInvalid, attempted: raw },
       });
     }
   });

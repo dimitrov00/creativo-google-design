@@ -1,4 +1,10 @@
 import { VisitListSystem } from '@creativo/ecs-core';
+import {
+  LEGACY_VISIT_FILTER,
+  VISIT_FILTER_OF,
+  VISIT_PERSPECTIVE_OF,
+  filterRowOf,
+} from './visit-ecs.shim';
 import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
 
 /*
@@ -14,7 +20,20 @@ import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
  *
  * Phase 2 shim: the options, their order and the narrowing rule are
  * `VisitListSystem` in `@creativo/ecs-core`; the option words stay here.
+ * Flatten pass: the system's tags are SCREAMING; the legacy words are
+ * converted at this boundary (`visit-ecs.shim.ts`).
  */
+
+/** Each reader's options in the legacy words, built once — a stable array per reader. */
+const FILTERS_FOR: Readonly<Record<VisitPerspective, readonly VisitFilter[]>> =
+  {
+    client: VisitListSystem.filtersFor(VISIT_PERSPECTIVE_OF.client).map(
+      (filter) => LEGACY_VISIT_FILTER[filter],
+    ),
+    staff: VisitListSystem.filtersFor(VISIT_PERSPECTIVE_OF.staff).map(
+      (filter) => LEGACY_VISIT_FILTER[filter],
+    ),
+  };
 
 /**
  * The options, in the order each menu offers them: the client's list as it
@@ -24,7 +43,7 @@ import type { VisitFilter, VisitPerspective, VisitRowVm } from './visit-row.vm';
 export function visitFiltersFor(
   perspective: VisitPerspective,
 ): readonly VisitFilter[] {
-  return VisitListSystem.filtersFor(perspective);
+  return FILTERS_FOR[perspective];
 }
 
 /**
@@ -60,7 +79,11 @@ export function offeredVisitFilters(
   rows: readonly VisitRowVm[],
   options: { readonly complete: boolean },
 ): readonly VisitFilter[] {
-  return VisitListSystem.offered(perspective, rows, options.complete);
+  return VisitListSystem.offered(
+    VISIT_PERSPECTIVE_OF[perspective],
+    rows.map(filterRowOf),
+    options.complete,
+  ).map((filter) => LEGACY_VISIT_FILTER[filter]);
 }
 
 /**
@@ -77,5 +100,5 @@ export function matchesVisitFilter(
   row: VisitRowVm,
   filter: VisitFilter,
 ): boolean {
-  return VisitListSystem.matches(row, filter);
+  return VisitListSystem.matches(filterRowOf(row), VISIT_FILTER_OF[filter]);
 }

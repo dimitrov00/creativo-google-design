@@ -1,14 +1,19 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
-import { BookingCart, CartLine, SeatKey, SeatKeyKind } from './cart-line.data';
-import { ServiceVariantId } from './service-terms.data';
+import {
+  BarberId,
+  CartLineId,
+  GuestId,
+  LocationId,
+  type SeatKeyText,
+  ServiceId,
+  ServiceVariantId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { BookingCart, SeatKey, SeatKeyRole } from './cart-line.data';
 
-const SELF = CartLine.seatKeyValue(SeatKey.self());
-const GUEST = CartLine.seatKeyValue(SeatKey.guest('guest-0'));
+const SELF = SeatKey.text(SeatKey.self());
+const GUEST = SeatKey.text(SeatKey.guest(GuestId.of('guest-0')));
 const IVAN = BarberId.of('ivan');
 const STEFAN = BarberId.of('stefan');
 const ANA = BarberId.of('ana');
@@ -27,7 +32,7 @@ const BEARD = line('svc-beard');
 
 function added(
   cart: BookingCart,
-  seatKey: string,
+  seatKey: SeatKeyText,
   newLine: BookingCart.NewLine,
 ): BookingCart {
   const result = BookingCart.addLine(cart, seatKey, newLine);
@@ -35,43 +40,50 @@ function added(
   return result.value;
 }
 
-const firstLineId = (cart: BookingCart, seatKey: string): string => {
+const firstLineId = (cart: BookingCart, seatKey: SeatKeyText): CartLineId => {
   const first = BookingCart.linesFor(cart, seatKey)[0];
   if (first === undefined) throw new Error('bad fixture');
   return first.lineId;
 };
 
 describe('SeatKey — the cart’s key for a seat', () => {
-  it('distinguishes the booker from every guest and companion', () => {
+  it('distinguishes the booker from every guest and companion — the text form is unchanged', () => {
     expect(SELF).toBe('self');
     expect(GUEST).toBe('guest-0');
-    expect(CartLine.seatKeyValue(SeatKey.guest('guest-1'))).toBe('guest-1');
-    expect(CartLine.seatKeyValue(SeatKey.companion(UserId.of('u1')))).toBe(
+    expect(SeatKey.text(SeatKey.guest(GuestId.of('guest-1')))).toBe('guest-1');
+    expect(SeatKey.text(SeatKey.companion(UserId.of('u1')))).toBe(
       'companion-u1',
     );
   });
 
-  it('parses its own values back, and nothing else', () => {
+  it('parses its own text back, and nothing else', () => {
     for (const key of [
       SeatKey.self(),
-      SeatKey.guest('guest-3'),
+      SeatKey.guest(GuestId.of('guest-3')),
       SeatKey.companion(UserId.of('u1')),
     ]) {
-      expect(SeatKey.parse(CartLine.seatKeyValue(key))).toEqual(key);
+      expect(SeatKey.parse(SeatKey.text(key))).toEqual(key);
     }
     for (const raw of ['', 'Self', 'guest-', 'companion-', 'guest3']) {
       expect(SeatKey.parse(raw)).toBeNull();
     }
-    expect(SeatKey.self().kind).toBe(SeatKeyKind.Self);
+    expect(SeatKey.self().seatKeyRole).toBe(SeatKeyRole.Self);
+    expect(SeatKey.companion(UserId.of('u1'))).toEqual({
+      seatKeyRole: 'COMPANION',
+      companionUserId: 'u1',
+    });
   });
 
   it('compares by value', () => {
     expect(
-      SeatKey.equals(SeatKey.guest('guest-1'), SeatKey.guest('guest-1')),
+      SeatKey.equals(
+        SeatKey.guest(GuestId.of('guest-1')),
+        SeatKey.guest(GuestId.of('guest-1')),
+      ),
     ).toBe(true);
-    expect(SeatKey.equals(SeatKey.self(), SeatKey.guest('guest-1'))).toBe(
-      false,
-    );
+    expect(
+      SeatKey.equals(SeatKey.self(), SeatKey.guest(GuestId.of('guest-1'))),
+    ).toBe(false);
   });
 });
 
@@ -104,7 +116,7 @@ describe('BookingCart.addLine / removeLine', () => {
     expect(BookingCart.addLine(cart, SELF, CUT)).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.booking_cart.duplicate_service',
+        errorCode: 'SCHEDULING_BOOKING_CART_DUPLICATE_SERVICE',
         seatKey: 'self',
         serviceId: 'svc-cut',
       },
@@ -129,7 +141,10 @@ describe('BookingCart.addLine / removeLine', () => {
     const cart = added(added(BookingCart.empty(), SELF, CUT), GUEST, CUT);
     expect(BookingCart.linesFor(cart, SELF)).toHaveLength(1);
     expect(BookingCart.linesFor(cart, GUEST)).toHaveLength(1);
-    expect(cart.seats.map((seat) => seat.seatKey)).toEqual(['self', 'guest-0']);
+    expect(cart.cartSeats.map((seat) => seat.seatKey)).toEqual([
+      'self',
+      'guest-0',
+    ]);
   });
 
   it('never reuses a line id after add → remove → add (§7.7 discipline)', () => {
@@ -144,10 +159,12 @@ describe('BookingCart.addLine / removeLine', () => {
 
   it('fails removing a line the seat does not hold — or another seat’s line', () => {
     const cart = added(BookingCart.empty(), SELF, CUT);
-    expect(BookingCart.removeLine(cart, SELF, 'line-99')).toEqual({
+    expect(
+      BookingCart.removeLine(cart, SELF, CartLineId.of('line-99')),
+    ).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.booking_cart.line_not_found',
+        errorCode: 'SCHEDULING_BOOKING_CART_LINE_NOT_FOUND',
         seatKey: 'self',
         lineId: 'line-99',
       },
@@ -165,8 +182,8 @@ describe('BookingCart.addLine / removeLine', () => {
       firstLineId(cart, GUEST),
     );
     if (!removed.ok) throw new Error('bad fixture');
-    expect(removed.value.seats).toHaveLength(0);
-    expect(removed.value.nextSequence).toBe(1);
+    expect(removed.value.cartSeats).toHaveLength(0);
+    expect(removed.value.cartNextSequence).toBe(1);
   });
 });
 
@@ -176,7 +193,7 @@ describe('BookingCart.setVariant / setBarber', () => {
     const updated = BookingCart.setVariant(
       cart,
       SELF,
-      'line-0',
+      CartLineId.of('line-0'),
       ServiceVariantId.of('long'),
     );
     if (!updated.ok) throw new Error('bad fixture');
@@ -188,18 +205,32 @@ describe('BookingCart.setVariant / setBarber', () => {
 
   it('moves a line from "anyone" to a specific barber and back', () => {
     const cart = added(BookingCart.empty(), SELF, CUT);
-    const pinned = BookingCart.setBarber(cart, SELF, 'line-0', IVAN);
+    const pinned = BookingCart.setBarber(
+      cart,
+      SELF,
+      CartLineId.of('line-0'),
+      IVAN,
+    );
     if (!pinned.ok) throw new Error('bad fixture');
     expect(BookingCart.linesFor(pinned.value, SELF)[0]?.barberId).toBe(IVAN);
-    const loosened = BookingCart.setBarber(pinned.value, SELF, 'line-0', null);
+    const loosened = BookingCart.setBarber(
+      pinned.value,
+      SELF,
+      CartLineId.of('line-0'),
+      null,
+    );
     if (!loosened.ok) throw new Error('bad fixture');
     expect(BookingCart.linesFor(loosened.value, SELF)[0]?.barberId).toBeNull();
   });
 
   it('fails on an unknown line', () => {
     const cart = added(BookingCart.empty(), SELF, CUT);
-    expect(BookingCart.setVariant(cart, SELF, 'line-99', null).ok).toBe(false);
-    expect(BookingCart.setBarber(cart, GUEST, 'line-0', IVAN).ok).toBe(false);
+    expect(
+      BookingCart.setVariant(cart, SELF, CartLineId.of('line-99'), null).ok,
+    ).toBe(false);
+    expect(
+      BookingCart.setBarber(cart, GUEST, CartLineId.of('line-0'), IVAN).ok,
+    ).toBe(false);
   });
 });
 
@@ -267,7 +298,11 @@ describe('BookingCart.acceptedBarbers', () => {
       fc.property(fc.array(pin, { maxLength: 6 }), (pins) => {
         let cart = BookingCart.empty();
         pins.forEach((barberId, index) => {
-          cart = added(cart, `guest-${index}`, line('svc-cut', barberId));
+          cart = added(
+            cart,
+            SeatKey.text(SeatKey.guest(GuestId.of(`guest-${index}`))),
+            line('svc-cut', barberId),
+          );
         });
         const expected = POOL.filter((barber) =>
           pins.some((p) => p === null || p === barber),
@@ -305,32 +340,36 @@ describe('BookingCart.is — the edge guard', () => {
 
   it.each([
     null,
-    { seats: [], nextSequence: -1 },
-    { seats: [], nextSequence: 1.5 },
-    { seats: 'x', nextSequence: 0 },
-    { seats: [null], nextSequence: 1 },
-    { seats: [{ seatKey: 'self', lines: [] }], nextSequence: 1 },
-    { seats: [{ seatKey: '', lines: [good] }], nextSequence: 1 },
+    { cartSeats: [], cartNextSequence: -1 },
+    { cartSeats: [], cartNextSequence: 1.5 },
+    { cartSeats: 'x', cartNextSequence: 0 },
+    { cartSeats: [null], cartNextSequence: 1 },
+    { cartSeats: [{ seatKey: 'self', lines: [] }], cartNextSequence: 1 },
+    { cartSeats: [{ seatKey: '', lines: [good] }], cartNextSequence: 1 },
     {
-      seats: [
+      cartSeats: [
         { seatKey: 'self', lines: [good] },
         { seatKey: 'self', lines: [good] },
       ],
-      nextSequence: 1,
+      cartNextSequence: 1,
     },
-    { seats: [{ seatKey: 'guest-0', lines: [good] }], nextSequence: 1 },
+    { cartSeats: [{ seatKey: 'guest-0', lines: [good] }], cartNextSequence: 1 },
     {
-      seats: [{ seatKey: 'self', lines: [{ ...good, serviceId: '' }] }],
-      nextSequence: 1,
-    },
-    {
-      seats: [{ seatKey: 'self', lines: [{ ...good, barberId: 7 }] }],
-      nextSequence: 1,
+      cartSeats: [{ seatKey: 'self', lines: [{ ...good, serviceId: '' }] }],
+      cartNextSequence: 1,
     },
     {
-      seats: [{ seatKey: 'self', lines: [{ id: 'line-0', serviceId: 'svc' }] }],
-      nextSequence: 1,
+      cartSeats: [{ seatKey: 'self', lines: [{ ...good, barberId: 7 }] }],
+      cartNextSequence: 1,
     },
+    {
+      cartSeats: [
+        { seatKey: 'self', lines: [{ id: 'line-0', serviceId: 'svc' }] },
+      ],
+      cartNextSequence: 1,
+    },
+    // The pre-flatten shape is a stale draft, not a cart.
+    { seats: [], nextSequence: 0 },
   ])('refuses %j', (raw) => {
     expect(BookingCart.is(raw)).toBe(false);
   });

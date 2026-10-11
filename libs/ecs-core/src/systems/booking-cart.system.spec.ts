@@ -1,34 +1,56 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberOffering } from '../components/barber-offering.data';
-import { BarberPref, BarberPrefKind } from '../components/barber-pref.data';
+import { BarberPref, BarberPreference } from '../components/barber-pref.data';
 import {
   BookingFlowState,
   BookingFlowStep,
   type SeatAssignment,
 } from '../components/booking-flow.data';
 import { BookingPolicy } from '../components/booking-policy.data';
-import { BookingCart, CartLine, SeatKey } from '../components/cart-line.data';
-import { DayKey } from '../components/day-key.data';
-import type { DayOffset } from '../components/day-offset.data';
+import {
+  BookingCart,
+  type CartLine,
+  type CartSeatLines,
+  SeatKey,
+} from '../components/cart-line.data';
 import { DayWindows } from '../components/day-windows.data';
 import { FlexibleWhen } from '../components/flexible-when.data';
 import { MinuteRange } from '../components/minute-range.data';
-import { Party, PartyMember, PartyMemberKind } from '../components/party.data';
+import { Party, PartyMember, PartyRole } from '../components/party.data';
 import { RosterWindow } from '../components/roster-window.data';
 import { SchedulingErrorCode } from '../components/scheduling-errors.data';
 import { SeatLabel } from '../components/seat-label.data';
-import { SeatRelationship, SeatSubject } from '../components/seat.data';
+import { SeatOccupant, SubjectRelationship } from '../components/seat.data';
+import type { ShopNow } from '../components/shop-now.data';
 import {
-  ServiceTerms,
+  AppointmentId,
+  BarberId,
+  CartLineId,
+  GuestId,
+  LocationId,
+  SeatKeyText,
+  ServiceId,
   ServiceVariantId,
-} from '../components/service-terms.data';
-import { TimeInterval } from '../components/time-interval.data';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
-import { dayTableFixture, deepFreeze, unwrapErr, unwrapOk } from '../testing';
+  UserId,
+  WaitlistRequestId,
+} from '../primitives/ids.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import {
+  deepFreeze,
+  endMinute,
+  FIXTURE_TIME_ZONE,
+  localDate,
+  minute,
+  unwrapErr,
+  unwrapOk,
+  utcMs,
+} from '../testing';
+import {
+  duration,
+  minuteCount,
+  minuteDelta,
+  termsFixture,
+} from '../testing/booking-core.fixtures';
 import {
   type AvailabilityLine,
   AvailabilitySystem,
@@ -39,18 +61,22 @@ import {
   type CartBarberDay,
   type CartRider,
   type CartService,
-  CommitSubjectKind,
+  CommitSubjectRole,
   type PrefillSeat,
   PrefillCompanions,
 } from './booking-cart.system';
 import { BookingFlowEventKind, BookingFlowSystem } from './booking-flow.system';
 import { RosterSystem } from './roster.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 import cartSystemSource from './booking-cart.system.ts?raw';
 
 /* ── Fixtures ─────────────────────────────────────────────────────────── */
 
-const SELF = 'self';
-const GUEST = 'guest-0';
+const SELF = SeatKey.text(SeatKey.self());
+const GUEST = SeatKeyText.of('guest-0');
+/** A guest's seat key — the guest's own id, as text. */
+const seatOf = (guestId: GuestId): SeatKeyText =>
+  SeatKey.text(SeatKey.guest(guestId));
 const svc = (raw: string): ServiceId => ServiceId.of(raw);
 const barber = (raw: string): BarberId => BarberId.of(raw);
 const shop = (raw: string): LocationId => LocationId.of(raw);
@@ -75,10 +101,27 @@ const BEARD = line('svc-beard');
 /** `addLine` refuses a duplicate; these fixtures know their input is legal. */
 function added(
   cart: BookingCart,
-  seatKey: string,
+  seatKey: SeatKeyText,
   newLine: BookingCart.NewLine,
 ): BookingCart {
   return unwrapOk(BookingCart.addLine(cart, seatKey, newLine));
+}
+
+/** A line as a stored cart holds it — its ids by construction. */
+function storedLine(
+  seatKey: string,
+  lineId: string,
+  serviceId: string,
+  barberId: BarberId | null = null,
+): CartLine {
+  return {
+    lineId: CartLineId.of(lineId),
+    seatKey: SeatKeyText.of(seatKey),
+    serviceId: svc(serviceId),
+    variantId: null,
+    barberId,
+    locationId: null,
+  };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -88,11 +131,11 @@ function added(
  * (the forgiving `reconstitute`).
  * ═════════════════════════════════════════════════════════════════════ */
 
-describe('CartLine.seatKeyValue', () => {
+describe('SeatKey.text', () => {
   it('distinguishes the booker from every guest', () => {
-    expect(CartLine.seatKeyValue(SeatKey.self())).toBe('self');
-    expect(CartLine.seatKeyValue(SeatKey.guest('guest-0'))).toBe('guest-0');
-    expect(CartLine.seatKeyValue(SeatKey.guest('guest-1'))).toBe('guest-1');
+    expect(SeatKey.text(SeatKey.self())).toBe('self');
+    expect(seatOf(GuestId.of('guest-0'))).toBe('guest-0');
+    expect(seatOf(GuestId.of('guest-1'))).toBe('guest-1');
   });
 });
 
@@ -117,8 +160,8 @@ describe('BookingCart.addLine / removeLine', () => {
     const twice = BookingCart.addLine(cart, SELF, CUT);
 
     expect(twice.ok).toBe(false);
-    expect(!twice.ok && twice.error.code).toBe(
-      'scheduling.booking_cart.duplicate_service',
+    expect(!twice.ok && twice.error.errorCode).toBe(
+      'SCHEDULING_BOOKING_CART_DUPLICATE_SERVICE',
     );
     expect(BookingCart.linesFor(cart, SELF)).toHaveLength(1);
   });
@@ -149,9 +192,13 @@ describe('BookingCart.addLine / removeLine', () => {
 
   it('fails removing a line the seat does not hold', () => {
     const cart = added(BookingCart.empty(), SELF, CUT);
-    const result = BookingCart.removeLine(cart, SELF, CartLine.lineIdOf(99));
-    expect(!result.ok && result.error.code).toBe(
-      'scheduling.booking_cart.line_not_found',
+    const result = BookingCart.removeLine(
+      cart,
+      SELF,
+      CartLineId.forSequence(99),
+    );
+    expect(!result.ok && result.error.errorCode).toBe(
+      'SCHEDULING_BOOKING_CART_LINE_NOT_FOUND',
     );
   });
 
@@ -170,7 +217,7 @@ describe('BookingCart.addLine / removeLine', () => {
         (BookingCart.linesFor(cart, GUEST)[0] as CartLine).lineId,
       ),
     );
-    expect(removed.seats).toHaveLength(0);
+    expect(removed.cartSeats).toHaveLength(0);
   });
 });
 
@@ -207,8 +254,8 @@ describe('BookingCart.setVariant / setBarber', () => {
     expect(
       BarberPref.fromBarberId(
         (BookingCart.linesFor(pinned, SELF)[0] as CartLine).barberId,
-      ).kind,
-    ).toBe(BarberPrefKind.Specific);
+      ).barberPreference,
+    ).toBe(BarberPreference.Specific);
 
     const loosened = unwrapOk(
       BookingCart.setBarber(pinned, SELF, lineId, null),
@@ -216,14 +263,14 @@ describe('BookingCart.setVariant / setBarber', () => {
     expect(
       BarberPref.fromBarberId(
         (BookingCart.linesFor(loosened, SELF)[0] as CartLine).barberId,
-      ).kind,
-    ).toBe(BarberPrefKind.Any);
+      ).barberPreference,
+    ).toBe(BarberPreference.Any);
   });
 
   it('fails on an unknown line', () => {
     const cart = added(BookingCart.empty(), SELF, CUT);
     expect(
-      BookingCart.setVariant(cart, SELF, CartLine.lineIdOf(99), null).ok,
+      BookingCart.setVariant(cart, SELF, CartLineId.forSequence(99), null).ok,
     ).toBe(false);
   });
 });
@@ -276,7 +323,7 @@ describe('BookingCartSystem.salvage — the forgiving reconstitute', () => {
     ).toEqual(BarberPref.specific(barber('ivan')));
     // The restored cart must keep minting FORWARD of the persisted counter,
     // or a reload would resurrect an id the pre-reload session already used.
-    const beforeIds = original.seats.flatMap((seat) =>
+    const beforeIds = original.cartSeats.flatMap((seat) =>
       seat.lines.map((l) => l.lineId),
     );
     const next = BookingCart.linesFor(added(restored, SELF, BEARD), SELF).at(
@@ -287,38 +334,26 @@ describe('BookingCartSystem.salvage — the forgiving reconstitute', () => {
 
   it('rejects a corrupt sequence counter rather than coercing it', () => {
     const error = unwrapErr(
-      BookingCartSystem.salvage({ seats: [], nextSequence: -1 }),
+      BookingCartSystem.salvage({ cartSeats: [], cartNextSequence: -1 }),
     );
-    expect(error.code).toBe('scheduling.booking_cart.invalid_line_sequence');
+    expect(error.errorCode).toBe(
+      'SCHEDULING_BOOKING_CART_INVALID_LINE_SEQUENCE',
+    );
   });
 
   it('drops a malformed line but keeps the rest of the draft', () => {
     const restored = unwrapOk(
       BookingCartSystem.salvage({
-        seats: [
+        cartSeats: [
           {
-            seatKey: 'self',
+            seatKey: SELF,
             lines: [
-              {
-                lineId: 'line-0',
-                seatKey: 'self',
-                serviceId: svc(''),
-                variantId: null,
-                barberId: null,
-                locationId: null,
-              },
-              {
-                lineId: 'line-1',
-                seatKey: 'self',
-                serviceId: svc('svc-fade'),
-                variantId: null,
-                barberId: null,
-                locationId: null,
-              },
+              storedLine('self', 'line-0', ''),
+              storedLine('self', 'line-1', 'svc-fade'),
             ],
           },
         ],
-        nextSequence: 2,
+        cartNextSequence: 2,
       }),
     );
 
@@ -330,7 +365,11 @@ describe('BookingCartSystem.salvage — the forgiving reconstitute', () => {
 describe('BookingCart.acceptedBarbers', () => {
   const POOL = ['ivan', 'niko', 'stefan'].map(barber);
 
-  function pinned(cart: BookingCart, seatKey: string, id: string): BookingCart {
+  function pinned(
+    cart: BookingCart,
+    seatKey: SeatKeyText,
+    id: string,
+  ): BookingCart {
     const last = BookingCart.linesFor(cart, seatKey).at(-1);
     if (last === undefined) throw new Error('bad fixture');
     return unwrapOk(
@@ -384,25 +423,25 @@ describe('BookingCart.acceptedBarbers', () => {
         (seats, poolIds) => {
           const restored = unwrapOk(
             BookingCartSystem.salvage({
-              seats: seats.map((prefs, index) => {
+              cartSeats: seats.map((prefs, index): CartSeatLines => {
                 const seatKey = index === 0 ? 'self' : `guest-${index}`;
                 return {
-                  seatKey,
-                  lines: prefs.map((id, at) => ({
-                    lineId: `line-${index}-${at}`,
-                    seatKey,
-                    serviceId: svc(`svc-${at}`),
-                    variantId: null,
-                    barberId: id === null ? null : barber(id),
-                    locationId: null,
-                  })),
+                  seatKey: SeatKeyText.of(seatKey),
+                  lines: prefs.map((id, at) =>
+                    storedLine(
+                      seatKey,
+                      `line-${index}-${at}`,
+                      `svc-${at}`,
+                      id === null ? null : barber(id),
+                    ),
+                  ),
                 };
               }),
-              nextSequence: 99,
+              cartNextSequence: 99,
             }),
           );
           const pool = poolIds.map(barber);
-          const prefs = restored.seats.flatMap((entry) =>
+          const prefs = restored.cartSeats.flatMap((entry) =>
             entry.lines.map((l) => BarberPref.fromBarberId(l.barberId)),
           );
           const expected = pool.filter((id) =>
@@ -428,7 +467,7 @@ const SHOPS = ['loc-center', 'loc-mladost', 'loc-lozenets'].map(shop);
 function serviceAt(id: string, locationIds: readonly string[]): CartService {
   return {
     id: svc(id),
-    baseTerms: ServiceTerms.unpadded(2000, 'EUR', 30),
+    ...termsFixture(2000, 30),
     offerings: [],
     locationIds: locationIds.map(shop),
   };
@@ -521,8 +560,8 @@ describe('BookingCartSystem.partyServicesOf — what a visit asks a shop for', (
     const son: CartRider = {
       serviceId: svc('svc-perm'),
       barberId: barber('niko'),
-      offsetMinutes: 0,
-      terms: { durationMinutes: 30, padBeforeMinutes: 0, padAfterMinutes: 0 },
+      offsetMinutes: minuteDelta(0),
+      terms: lineTerms(30),
     };
 
     const asked = BookingCartSystem.partyServicesOf(cart, [son]);
@@ -548,41 +587,60 @@ describe('booking-cart.system — the lower module', () => {
  * libs/application/booking/src/lib/use-cases/observe-availability.use-case.spec.ts
  * — 15 of its 16 cases (the DateRange fixture sanity is not this system's),
  * re-targeted from the use case + reader to `BookingCartSystem
- * .toAvailabilityLines` / `optionsForDay` over a day row of the zone table:
- * the reader's padding is `AvailabilitySystem.paddedBusy`, its shop filter
- * `RosterSystem.windowsAt`.
+ * .toAvailabilityLines` / `optionsForDay` over ONE shop day's local minutes
+ * (Law 7.3): the reader's padding is `AvailabilitySystem.paddedBusy`, its
+ * shop filter `RosterSystem.windowsAt`, "now" a `ShopNow`.
  * ═════════════════════════════════════════════════════════════════════ */
 
-const DAY: DayOffset = dayTableFixture(
-  '2026-08-03',
-  '2026-08-03',
-  'Europe/Sofia',
-)[0] as DayOffset;
+const DAY = localDate('2026-08-03');
 const CENTER = shop('loc-center');
 const MLADOST = shop('loc-mladost');
 
-/** Local wall-clock on the fixture day, as epoch millis. */
-function at(hour: number, minute = 0): number {
-  return DAY.dayStartMs + (hour * 60 + minute) * 60_000;
+/** A wall-clock minute of the fixture day — a start. */
+function at(hour: number, minutes = 0): MinuteOfDay {
+  return minute(hour * 60 + minutes);
 }
-const mins = (hour: number, minute = 0): number => hour * 60 + minute;
+const mins = (hour: number, minutes = 0): number => hour * 60 + minutes;
+/** A roster window on the fixture day, `[from, to)` in minutes. */
+const rosterWindow = (
+  barberId: string,
+  locationId: LocationId,
+  from: number,
+  to: number,
+) => RosterWindow.of(barber(barberId), locationId, minute(from), endMinute(to));
+/** A span of the fixture day, `[from, to)` in minutes. */
+const span = (from: number, to: number): MinuteRange =>
+  MinuteRange.of(minute(from), endMinute(to));
+/** "Now" on the fixture day at a wall-clock time (Sofia, summer: +03:00). */
+function nowAt(hour: number, minutes = 0): ShopNow {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return ZonedTimeSystem.shopNow(
+    utcMs(`2026-08-03T${pad(hour)}:${pad(minutes)}:00+03:00`),
+    FIXTURE_TIME_ZONE,
+  );
+}
+/** A line's terms in plain minutes — the engine's `LineTerms`. */
+const lineTerms = (minutes: number, before = 0, after = 0) => ({
+  durationMinutes: duration(minutes),
+  padBeforeMinutes: minuteCount(before),
+  padAfterMinutes: minuteCount(after),
+});
 
 /**
  * A haircut Ivan does in 30 minutes and Niko in 45, with Niko needing 15
  * minutes of cleanup after. Both axes of the terms matrix in one fixture.
  */
 function fadeService(): CartService {
-  const offering = (barberId: string, terms: ServiceTerms): BarberOffering => ({
-    barberId: barber(barberId),
-    base: terms,
-    overrides: [],
-  });
   return {
     id: svc('svc-fade'),
-    baseTerms: ServiceTerms.unpadded(2500, 'EUR', 40),
+    ...termsFixture(2500, 40),
     offerings: [
-      offering('ivan', ServiceTerms.unpadded(2500, 'EUR', 30)),
-      offering('niko', ServiceTerms.of(2800, 'EUR', 45, 0, 15)),
+      { barberId: barber('ivan'), overrides: [], ...termsFixture(2500, 30) },
+      {
+        barberId: barber('niko'),
+        overrides: [],
+        ...termsFixture(2800, 45, 0, 15),
+      },
     ],
     locationIds: [CENTER],
   };
@@ -594,11 +652,11 @@ function cartWithFade(barberId: string | null = null): BookingCart {
 
 function barberDay(
   id: string,
-  window: readonly [number, number],
+  hours: readonly [number, number],
 ): CartBarberDay {
   return {
     barberId: barber(id),
-    windows: [RosterWindow.of(barber(id), CENTER, window[0], window[1])],
+    windows: [rosterWindow(id, CENTER, hours[0], hours[1])],
     busy: [],
   };
 }
@@ -615,7 +673,7 @@ function optionsFor(input: {
   readonly services: readonly CartService[];
   readonly barbers: readonly CartBarberDay[];
   readonly policy: BookingPolicy;
-  readonly nowMs: number;
+  readonly now: ShopNow;
   readonly riders?: readonly CartRider[];
 }) {
   return BookingCartSystem.optionsForDay({
@@ -623,17 +681,17 @@ function optionsFor(input: {
     services: input.services,
     riders: input.riders ?? [],
     barbers: input.barbers,
-    day: DAY,
+    localDate: DAY,
     policy: input.policy,
-    notBeforeMs: AvailabilitySystem.leadFloorMs(input.nowMs, input.policy),
-    withinMs: null,
+    notBefore: AvailabilitySystem.leadFloor(input.now, input.policy, DAY),
+    within: null,
     budget: AvailabilitySystem.DEFAULT_BUDGET,
   });
 }
 
 function startsOf(
   options: ReturnType<typeof BookingCartSystem.optionsForDay>,
-): readonly number[] {
+): readonly MinuteOfDay[] {
   return AvailabilitySystem.distinctStarts(
     options.map((entry) => entry.option),
   );
@@ -665,7 +723,11 @@ describe('BookingCartSystem.toAvailabilityLines', () => {
   });
 
   it('names each line’s PERSON by its seat — the key the engine keeps one person in one chair by', () => {
-    const cart = added(cartWithFade(), 'guest-3', line('svc-fade'));
+    const cart = added(
+      cartWithFade(),
+      SeatKeyText.of('guest-3'),
+      line('svc-fade'),
+    );
 
     const lines = BookingCartSystem.toAvailabilityLines(
       cart,
@@ -681,7 +743,7 @@ describe('BookingCartSystem.toAvailabilityLines', () => {
     // free all morning. Person-blind, the grid offered both at 09:00.
     const beard: CartService = {
       id: svc('svc-beard'),
-      baseTerms: ServiceTerms.unpadded(1500, 'EUR', 30),
+      ...termsFixture(1500, 30),
       offerings: [],
       locationIds: [CENTER],
     };
@@ -700,7 +762,7 @@ describe('BookingCartSystem.toAvailabilityLines', () => {
         barberDay('niko', [mins(9), mins(12)]),
       ],
       policy: policyWithLead(0),
-      nowMs: at(6),
+      now: nowAt(6),
     });
 
     expect(options.length).toBeGreaterThan(0);
@@ -708,7 +770,7 @@ describe('BookingCartSystem.toAvailabilityLines', () => {
     for (const { option } of options) {
       const [first, second] = option.assignments;
       if (!first || !second) throw new Error('two services, two seats');
-      expect(TimeInterval.overlaps(first.slot, second.slot)).toBe(false);
+      expect(MinuteRange.overlaps(first, second)).toBe(false);
     }
   });
 
@@ -729,7 +791,7 @@ describe('BookingCartSystem.optionsForDay', () => {
     cart,
     services: [fadeService()],
     policy,
-    nowMs: at(6),
+    now: nowAt(6),
   });
 
   it('sells each barber their OWN duration', () => {
@@ -742,12 +804,13 @@ describe('BookingCartSystem.optionsForDay', () => {
     });
 
     const byBarber = new Map(
-      options.map(({ option }) => [
-        option.assignments[0]?.barberId,
-        TimeInterval.durationMinutes(
-          option.assignments[0]?.slot as TimeInterval,
-        ),
-      ]),
+      options.map(({ option }) => {
+        const first = option.assignments[0];
+        return [
+          first?.barberId,
+          first === undefined ? 0 : first.endMinutes - first.startMinutes,
+        ];
+      }),
     );
     expect(byBarber.get(barber('ivan'))).toBe(30);
     expect(byBarber.get(barber('niko'))).toBe(45);
@@ -770,7 +833,7 @@ describe('BookingCartSystem.optionsForDay', () => {
     // "Now" is 10:00 with a 120-minute lead, so nothing before 12:00.
     const options = optionsFor({
       ...base(),
-      nowMs: at(10),
+      now: nowAt(10),
       barbers: [barberDay('ivan', [mins(9), mins(18)])],
     });
     expect(startsOf(options)[0]).toBe(at(12));
@@ -809,8 +872,8 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
   const son: CartRider = {
     serviceId: svc('svc-fade'),
     barberId: barber('niko'),
-    offsetMinutes: 0,
-    terms: { durationMinutes: 45, padBeforeMinutes: 0, padAfterMinutes: 0 },
+    offsetMinutes: minuteDelta(0),
+    terms: lineTerms(45),
   };
 
   /** Stored geometry, padded the way the grid's read pads it. */
@@ -818,7 +881,7 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
     days: readonly {
       readonly id: string;
       readonly window: readonly [number, number];
-      readonly spans: readonly TimeInterval[];
+      readonly spans: readonly MinuteRange[];
       readonly turnaroundMinutes?: number;
     }[],
     release: readonly ChairTime[] = [],
@@ -826,17 +889,12 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
     return days.map((entry) => ({
       barberId: barber(entry.id),
       windows: [
-        RosterWindow.of(
-          barber(entry.id),
-          CENTER,
-          entry.window[0],
-          entry.window[1],
-        ),
+        rosterWindow(entry.id, CENTER, entry.window[0], entry.window[1]),
       ],
       busy: AvailabilitySystem.paddedBusy({
         barberId: barber(entry.id),
         spans: entry.spans,
-        turnaroundMinutes: entry.turnaroundMinutes ?? 0,
+        turnaroundMinutes: minuteCount(entry.turnaroundMinutes ?? 0),
         release,
       }),
     }));
@@ -849,18 +907,24 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
       {
         id: 'niko',
         window: [mins(12), mins(14)],
-        spans: [TimeInterval.of(at(12), at(13))],
+        spans: [span(mins(12), mins(13))],
       },
     ]);
     const services = [fadeService()];
 
-    const alone = optionsFor({ cart, services, barbers, policy, nowMs: at(6) });
+    const alone = optionsFor({
+      cart,
+      services,
+      barbers,
+      policy,
+      now: nowAt(6),
+    });
     const carried = optionsFor({
       cart,
       services,
       barbers,
       policy,
-      nowMs: at(6),
+      now: nowAt(6),
       riders: [son],
     });
 
@@ -873,24 +937,26 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
     const own: readonly ChairTime[] = [
       {
         barberId: barber('ivan'),
-        occupied: TimeInterval.of(at(12), at(12, 30)),
+        startMinutes: at(12),
+        endMinutes: endMinute(mins(12, 30)),
       },
       {
         barberId: barber('niko'),
-        occupied: TimeInterval.of(at(12), at(12, 45)),
+        startMinutes: at(12),
+        endMinutes: endMinute(mins(12, 45)),
       },
     ];
     const geometry = [
       {
         id: 'ivan',
         window: [mins(12), mins(14)] as const,
-        spans: [(own[0] as ChairTime).occupied],
+        spans: [span(mins(12), mins(12, 30))],
         turnaroundMinutes: 10,
       },
       {
         id: 'niko',
         window: [mins(12), mins(14)] as const,
-        spans: [(own[1] as ChairTime).occupied],
+        spans: [span(mins(12), mins(12, 45))],
         turnaroundMinutes: 10,
       },
     ];
@@ -901,7 +967,7 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
       services,
       barbers: stored(geometry),
       policy,
-      nowMs: at(6),
+      now: nowAt(6),
       riders: [son],
     });
     const released = optionsFor({
@@ -909,7 +975,7 @@ describe('BookingCartSystem.optionsForDay — a move', () => {
       services,
       barbers: stored(geometry, own),
       policy,
-      nowMs: at(6),
+      now: nowAt(6),
       riders: [son],
     });
 
@@ -931,8 +997,8 @@ describe('BookingCartSystem.optionsForDay — a shop that cannot serve somebody 
     ['ivan', 'niko'].map((id) => ({
       barberId: barber(id),
       windows: [
-        RosterWindow.of(barber(id), CENTER, mins(12), mins(13)),
-        RosterWindow.of(barber(id), MLADOST, mins(15), mins(16)),
+        rosterWindow(id, CENTER, mins(12), mins(13)),
+        rosterWindow(id, MLADOST, mins(15), mins(16)),
       ],
       busy: [],
     }));
@@ -940,8 +1006,8 @@ describe('BookingCartSystem.optionsForDay — a shop that cannot serve somebody 
   const son = (serviceId: string): CartRider => ({
     serviceId: svc(serviceId),
     barberId: barber('niko'),
-    offsetMinutes: 0,
-    terms: { durationMinutes: 30, padBeforeMinutes: 0, padAfterMinutes: 0 },
+    offsetMinutes: minuteDelta(0),
+    terms: lineTerms(30),
   });
 
   const cartOf = (serviceId: string): BookingCart =>
@@ -967,7 +1033,7 @@ describe('BookingCartSystem.optionsForDay — a shop that cannot serve somebody 
       services: input.services ?? [cut(), beard()],
       barbers,
       policy,
-      nowMs: at(6),
+      now: nowAt(6),
       riders: input.riders ?? [],
     });
     return [...new Set(options.map((entry) => entry.locationId))];
@@ -1014,12 +1080,13 @@ describe('BookingCartSystem.optionsForDay — a shop that cannot serve somebody 
 
 const guestLabel = (ordinal: number): string => `Guest ${ordinal}`;
 const CLIENT = UserId.of('client-1');
-const account = (userId: string, relationship: SeatRelationship) =>
-  SeatSubject.account(UserId.of(userId), relationship);
-const anonymous = (label: string) => SeatSubject.anonymous(SeatLabel.of(label));
+const account = (userId: string, relationship: SubjectRelationship) =>
+  SeatOccupant.account(UserId.of(userId), relationship);
+const anonymous = (label: string) =>
+  SeatOccupant.anonymous(SeatLabel.of(label));
 
 function seat(
-  subject: SeatSubject,
+  occupant: SeatOccupant,
   barberId: string,
   serviceId: string,
 ): PrefillSeat {
@@ -1027,14 +1094,18 @@ function seat(
     serviceId: svc(serviceId),
     variantId: null,
     barberId: barber(barberId),
-    subject,
+    ...occupant,
   };
 }
 
 /** A father, his son (an ACCOUNT staff seated beside him) and a guest with two services. */
 const partyVisit: readonly PrefillSeat[] = [
-  seat(account('client-1', SeatRelationship.Self), 'ivan', 'svc-fade'),
-  seat(account('client-son', SeatRelationship.Companion), 'petar', 'svc-fade'),
+  seat(account('client-1', SubjectRelationship.Self), 'ivan', 'svc-fade'),
+  seat(
+    account('client-son', SubjectRelationship.Companion),
+    'petar',
+    'svc-fade',
+  ),
   seat(anonymous('Мария'), 'stefan', 'svc-fade'),
   seat(anonymous('Мария'), 'stefan', 'svc-beard'),
 ];
@@ -1044,7 +1115,7 @@ function sharedLabelVisit(
   arrangement: 'side_by_side' | 'back_to_back',
 ): readonly PrefillSeat[] {
   return [
-    seat(account('client-1', SeatRelationship.Self), 'ivan', 'svc-fade'),
+    seat(account('client-1', SubjectRelationship.Self), 'ivan', 'svc-fade'),
     seat(anonymous('Walk-in'), 'stefan', 'svc-fade'),
     arrangement === 'side_by_side'
       ? seat(anonymous('Walk-in'), 'petar', 'svc-beard')
@@ -1059,11 +1130,11 @@ function labelledGuestVisit(
   withCompanion = false,
 ): readonly PrefillSeat[] {
   return [
-    seat(account('client-1', SeatRelationship.Self), 'ivan', 'svc-fade'),
+    seat(account('client-1', SubjectRelationship.Self), 'ivan', 'svc-fade'),
     ...(withCompanion
       ? [
           seat(
-            account('client-son', SeatRelationship.Companion),
+            account('client-son', SubjectRelationship.Companion),
             'petar',
             'svc-fade',
           ),
@@ -1092,17 +1163,18 @@ function prefilled(
 }
 
 const guestLabels = (party: Party): readonly string[] =>
-  Party.guests(party).map((guest) => guest.label);
+  Party.guests(party).map((guest) => guest.guestLabel);
 const linesPerPerson = (cart: BookingCart): readonly number[] =>
-  cart.seats.map((entry) => entry.lines.length);
+  cart.cartSeats.map((entry) => entry.lines.length);
 
 /** Every line at 12:00 with Ivan — the schedule step's hand-off to review. */
 function assignmentsFor(cart: BookingCart): readonly SeatAssignment[] {
-  return cart.seats.flatMap((entry) =>
+  return cart.cartSeats.flatMap((entry) =>
     entry.lines.map((l) => ({
       lineId: l.lineId,
       barberId: barber('ivan'),
-      timeInterval: TimeInterval.of(at(12), at(13)),
+      startMinutes: at(12),
+      endMinutes: endMinute(mins(13)),
     })),
   );
 }
@@ -1113,7 +1185,7 @@ describe('BookingCartSystem.toCommitSeats — the commit request', () => {
     const guestId = (Party.guests(withMaria)[0] as PartyMember.Guest).guestId;
     const cart = added(
       added(BookingCart.empty(), SELF, line('svc-fade')),
-      guestId,
+      seatOf(guestId),
       line('svc-beard'),
     );
 
@@ -1127,16 +1199,25 @@ describe('BookingCartSystem.toCommitSeats — the commit request', () => {
     expect(seats).toHaveLength(2);
     // The guest's seat key rides beside the label.
     expect(seats?.map((entry) => entry.subject)).toEqual([
-      { kind: CommitSubjectKind.Self },
-      { kind: CommitSubjectKind.Guest, label: 'Maria', guestKey: 'guest-0' },
+      { commitSubjectRole: CommitSubjectRole.Self },
+      {
+        commitSubjectRole: CommitSubjectRole.Guest,
+        label: 'Maria',
+        guestKey: 'guest-0',
+      },
     ]);
     const first = seats?.[0] as unknown as Record<string, unknown>;
     // The server resolves terms.
+    expect(first['priceCents']).toBeUndefined();
     expect(first['priceMinorUnits']).toBeUndefined();
     expect(first['durationMinutes']).toBeUndefined();
     expect(first['barberId']).toBe('ivan');
-    expect(first['subject']).toEqual({ kind: CommitSubjectKind.Self });
-    expect(first['barberPref']).toBe(BarberPrefKind.Any);
+    // Its start is a minute of the selection's shop day.
+    expect(first['startMinutes']).toBe(mins(12));
+    expect(first['subject']).toEqual({
+      commitSubjectRole: CommitSubjectRole.Self,
+    });
+    expect(first['barberPreference']).toBe(BarberPreference.Any);
   });
 });
 
@@ -1178,7 +1259,7 @@ describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
     );
     expect(
       (seats ?? []).flatMap((entry) =>
-        entry.subject.kind === CommitSubjectKind.Guest
+        entry.subject.commitSubjectRole === CommitSubjectRole.Guest
           ? [entry.subject.label]
           : [],
       ),
@@ -1216,11 +1297,9 @@ describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
       assignmentsFor(bag.cart),
     );
 
-    expect(seats?.map((entry) => entry.subject.kind).sort()).toEqual([
-      'guest',
-      'guest',
-      'self',
-    ]);
+    expect(
+      seats?.map((entry) => entry.subject.commitSubjectRole).sort(),
+    ).toEqual(['GUEST', 'GUEST', 'SELF']);
   });
 
   for (const arrangement of ['side_by_side', 'back_to_back'] as const) {
@@ -1254,7 +1333,7 @@ describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
       ) ?? []
     )
       .flatMap((entry) =>
-        entry.subject.kind === CommitSubjectKind.Guest
+        entry.subject.commitSubjectRole === CommitSubjectRole.Guest
           ? [entry.subject.label]
           : [],
       )
@@ -1278,38 +1357,38 @@ describe('BookingCartSystem.restore — a draft brought back to today', () => {
     party = unwrapOk(Party.addGuest(party, 'Ani'));
     let cart = added(BookingCart.empty(), SELF, line('svc-fade'));
     for (const guest of Party.guests(party)) {
-      cart = added(cart, guest.guestId, line('svc-fade'));
+      cart = added(cart, seatOf(guest.guestId), line('svc-fade'));
     }
     // A draft from before the rule: both guests answer to «Maria».
     const stale: Party = {
       ...party,
       members: party.members.map((member) =>
-        member.kind === PartyMemberKind.Guest
+        member.partyRole === PartyRole.Guest
           ? PartyMember.guest(member.guestId, SeatLabel.of('Maria'))
           : member,
       ),
     };
     const draft = {
       state: {
-        kind: BookingFlowStep.Schedule,
+        bookingFlowStep: BookingFlowStep.Schedule,
         party: stale,
         cart,
         locationId: null,
         when: FlexibleWhen.empty(),
       } as BookingFlowState,
-      selectedDayKey: null,
+      selectedLocalDate: null,
     };
 
-    const restored = BookingCartSystem.restore(draft, DayKey.of('2026-08-03'));
+    const restored = BookingCartSystem.restore(draft, DAY);
     // Not the grid: it would seat two people the server counts as one.
-    expect(restored.state.kind).toBe(BookingFlowStep.Services);
+    expect(restored.state.bookingFlowStep).toBe(BookingFlowStep.Services);
     const limits = BookingPolicy.DEFAULT;
     const refused = BookingFlowSystem.next(
       restored.state,
-      { kind: BookingFlowEventKind.Next },
+      { bookingFlowEventKind: BookingFlowEventKind.Next },
       limits,
     );
-    expect(!refused.ok && refused.error.code).toBe(
+    expect(!refused.ok && refused.error.errorCode).toBe(
       SchedulingErrorCode.PartyDuplicateLabel,
     );
 
@@ -1318,7 +1397,7 @@ describe('BookingCartSystem.restore — a draft brought back to today', () => {
       BookingFlowSystem.next(
         restored.state,
         {
-          kind: BookingFlowEventKind.RenameGuest,
+          bookingFlowEventKind: BookingFlowEventKind.RenameGuest,
           guestId: second.guestId,
           label: 'Ani',
         },
@@ -1328,84 +1407,77 @@ describe('BookingCartSystem.restore — a draft brought back to today', () => {
     const moved = unwrapOk(
       BookingFlowSystem.next(
         renamed,
-        { kind: BookingFlowEventKind.Next },
+        { bookingFlowEventKind: BookingFlowEventKind.Next },
         limits,
       ),
     );
-    expect(moved.kind).toBe(BookingFlowStep.Schedule);
+    expect(moved.bookingFlowStep).toBe(BookingFlowStep.Schedule);
   });
 
   it('resumes a review on the schedule, drops lapsed days and a lapsed pick', () => {
-    const today = DayKey.of('2026-08-03');
+    const today = DAY;
     const cart = added(BookingCart.empty(), SELF, line('svc-fade'));
     const when = FlexibleWhen.of([
-      DayWindows.wholeDay(DayKey.of('2026-08-01')),
-      DayWindows.of(DayKey.of('2026-08-05'), [MinuteRange.of(600, 720)]),
+      DayWindows.wholeDay(localDate('2026-08-01')),
+      DayWindows.of(localDate('2026-08-05'), [span(600, 720)]),
     ]);
     const onSchedule = BookingCartSystem.restore(
       {
         state: {
-          kind: BookingFlowStep.Schedule,
+          bookingFlowStep: BookingFlowStep.Schedule,
           party: Party.owned(CLIENT),
           cart,
           locationId: CENTER,
           when,
         },
-        selectedDayKey: DayKey.of('2026-08-02'),
+        selectedLocalDate: localDate('2026-08-02'),
       },
       today,
     );
-    expect(onSchedule.state.kind).toBe(BookingFlowStep.Schedule);
+    expect(onSchedule.state.bookingFlowStep).toBe(BookingFlowStep.Schedule);
     expect(
-      onSchedule.state.kind === BookingFlowStep.Schedule &&
-        FlexibleWhen.dayKeys(onSchedule.state.when),
+      onSchedule.state.bookingFlowStep === BookingFlowStep.Schedule &&
+        FlexibleWhen.localDates(onSchedule.state.when),
     ).toEqual(['2026-08-05']);
-    expect(onSchedule.selectedDayKey).toBeNull();
+    expect(onSchedule.selectedLocalDate).toBeNull();
 
     const fromReview = BookingCartSystem.restore(
       {
         state: {
-          kind: BookingFlowStep.Review,
+          bookingFlowStep: BookingFlowStep.Review,
           party: Party.owned(CLIENT),
           cart,
           selection: {
             locationId: CENTER,
-            timeInterval: TimeInterval.of(at(12), at(13)),
+            localDate: today,
+            startMinutes: at(12),
+            endMinutes: endMinute(mins(13)),
             assignments: [],
           },
         },
-        selectedDayKey: today,
+        selectedLocalDate: today,
       },
       today,
     );
     expect(fromReview.state).toEqual({
-      kind: BookingFlowStep.Schedule,
+      bookingFlowStep: BookingFlowStep.Schedule,
       party: Party.owned(CLIENT),
       cart,
       locationId: CENTER,
       when: FlexibleWhen.empty(),
     });
-    expect(fromReview.selectedDayKey).toBe(today);
+    expect(fromReview.selectedLocalDate).toBe(today);
   });
 });
 
 describe('BookingCartSystem.partyForCart — a waitlist landing, one label one guest', () => {
   const cart = unwrapOk(
     BookingCartSystem.salvage({
-      seats: ['self', 'guest-0', 'guest-1'].map((seatKey, index) => ({
-        seatKey,
-        lines: [
-          {
-            lineId: `line-${index}`,
-            seatKey,
-            serviceId: svc('svc-fade'),
-            variantId: null,
-            barberId: null,
-            locationId: null,
-          },
-        ],
+      cartSeats: ['self', 'guest-0', 'guest-1'].map((seatKey, index) => ({
+        seatKey: SeatKeyText.of(seatKey),
+        lines: [storedLine(seatKey, `line-${index}`, 'svc-fade')],
       })),
-      nextSequence: 3,
+      cartNextSequence: 3,
     }),
   );
 
@@ -1421,7 +1493,7 @@ describe('BookingCartSystem.partyForCart — a waitlist landing, one label one g
     expect(
       party &&
         BookingFlowState.is({
-          kind: 'location',
+          bookingFlowStep: 'LOCATION',
           party,
           cart,
           locationId: null,
@@ -1515,7 +1587,7 @@ describe('BookingCartSystem — purity', () => {
         services,
         barbers,
         policy: policyWithLead(0),
-        nowMs: at(6),
+        now: nowAt(6),
       });
     const once = ask();
     expect(ask()).toEqual(once);
@@ -1564,28 +1636,18 @@ describe('BookingCartSystem — purity', () => {
             windows: MinuteRange.normalize(
               windows
                 .filter((w) => w.shop === 'loc-center')
-                .map((w) => MinuteRange.of(mins(w.from), mins(w.to))),
+                .map((w) => span(mins(w.from), mins(w.to))),
             )
               .map((r) =>
-                RosterWindow.of(
-                  barber(id),
-                  CENTER,
-                  r.startMinutes,
-                  r.endMinutes,
-                ),
+                rosterWindow(id, CENTER, r.startMinutes, r.endMinutes),
               )
               .concat(
                 MinuteRange.normalize(
                   windows
                     .filter((w) => w.shop === 'loc-mladost')
-                    .map((w) => MinuteRange.of(mins(w.from), mins(w.to))),
+                    .map((w) => span(mins(w.from), mins(w.to))),
                 ).map((r) =>
-                  RosterWindow.of(
-                    barber(id),
-                    MLADOST,
-                    r.startMinutes,
-                    r.endMinutes,
-                  ),
+                  rosterWindow(id, MLADOST, r.startMinutes, r.endMinutes),
                 ),
               ),
             busy: [],
@@ -1600,7 +1662,7 @@ describe('BookingCartSystem — purity', () => {
             services,
             barbers,
             policy: policyWithLead(0),
-            nowMs: at(6),
+            now: nowAt(6),
           });
           let previous: (typeof options)[number] | null = null;
           for (const entry of options) {
@@ -1608,8 +1670,7 @@ describe('BookingCartSystem — purity', () => {
               expect(entry.locationId).toBe('loc-center');
             if (previous !== null) {
               const order =
-                previous.option.envelope.startMs -
-                  entry.option.envelope.startMs ||
+                previous.option.startMinutes - entry.option.startMinutes ||
                 (previous.locationId < entry.locationId
                   ? -1
                   : previous.locationId > entry.locationId
@@ -1627,50 +1688,49 @@ describe('BookingCartSystem — purity', () => {
 });
 
 describe('BookingCartSystem — edges', () => {
-  const stored = (seatKey: string, lineId: string, serviceId: string) => ({
-    lineId,
-    seatKey,
-    serviceId: svc(serviceId),
-    variantId: null,
-    barberId: null,
-    locationId: null,
-  });
+  const stored = (seatKey: string, lineId: string, serviceId: string) =>
+    storedLine(seatKey, lineId, serviceId);
 
   it('keeps a seat listed twice at its first place with its last non-empty lines', () => {
     const restored = unwrapOk(
       BookingCartSystem.salvage({
-        seats: [
-          { seatKey: 'self', lines: [stored('self', 'line-0', 'svc-a')] },
-          { seatKey: 'guest-0', lines: [stored('guest-0', 'line-1', 'svc-b')] },
-          { seatKey: 'self', lines: [stored('wrong', 'line-2', 'svc-c')] },
-          { seatKey: 'guest-0', lines: [stored('guest-0', 'line-3', '')] },
+        cartSeats: [
+          { seatKey: SELF, lines: [stored('self', 'line-0', 'svc-a')] },
+          { seatKey: GUEST, lines: [stored('guest-0', 'line-1', 'svc-b')] },
+          { seatKey: SELF, lines: [stored('wrong', 'line-2', 'svc-c')] },
+          { seatKey: GUEST, lines: [stored('guest-0', 'line-3', '')] },
         ],
-        nextSequence: 4,
+        cartNextSequence: 4,
       }),
     );
-    expect(restored.seats.map((seat) => seat.seatKey)).toEqual([
+    expect(restored.cartSeats.map((seat) => seat.seatKey)).toEqual([
       'self',
       'guest-0',
     ]);
     // The later `self` replaces the earlier, and names its own seat.
-    expect(BookingCart.linesFor(restored, 'self')).toEqual([
+    expect(BookingCart.linesFor(restored, SELF)).toEqual([
       stored('self', 'line-2', 'svc-c'),
     ]);
     // An emptied later entry leaves the earlier alone.
-    expect(BookingCart.linesFor(restored, 'guest-0')).toHaveLength(1);
+    expect(BookingCart.linesFor(restored, GUEST)).toHaveLength(1);
   });
 
   it('refuses a commit naming a line the cart lost, or a seat that is nobody’s', () => {
     const cart = added(BookingCart.empty(), SELF, line('svc-fade'));
     const lost: SeatAssignment = {
-      lineId: 'line-99',
+      lineId: CartLineId.of('line-99'),
       barberId: barber('ivan'),
-      timeInterval: TimeInterval.of(at(12), at(13)),
+      startMinutes: at(12),
+      endMinutes: endMinute(mins(13)),
     };
     expect(
       BookingCartSystem.toCommitSeats(cart, Party.owned(CLIENT), [lost]),
     ).toBeNull();
-    const stranger = added(BookingCart.empty(), 'guest-7', line('svc-fade'));
+    const stranger = added(
+      BookingCart.empty(),
+      SeatKeyText.of('guest-7'),
+      line('svc-fade'),
+    );
     expect(
       BookingCartSystem.toCommitSeats(
         stranger,
@@ -1693,7 +1753,7 @@ describe('BookingCartSystem — edges', () => {
   it('rebuilds nothing from a visit the server carries whole, or under a placeholder that is no label', () => {
     const onlySon = [
       seat(
-        account('client-son', SeatRelationship.Companion),
+        account('client-son', SubjectRelationship.Companion),
         'petar',
         'svc-beard',
       ),
@@ -1716,7 +1776,7 @@ describe('BookingCartSystem — edges', () => {
         () => '   ',
       ),
     ).toBeNull();
-    const cart = added(BookingCart.empty(), 'guest-0', line('svc-fade'));
+    const cart = added(BookingCart.empty(), GUEST, line('svc-fade'));
     expect(BookingCartSystem.partyForCart(cart, CLIENT, () => ' ')).toBeNull();
   });
 
@@ -1725,43 +1785,46 @@ describe('BookingCartSystem — edges', () => {
     const location = BookingFlowState.initial(Party.owned(CLIENT));
     expect(
       BookingCartSystem.restore(
-        { state: location, selectedDayKey: null },
-        DayKey.of('2026-08-03'),
+        { state: location, selectedLocalDate: null },
+        DAY,
       ).state,
     ).toBe(location);
     const selection = {
       locationId: CENTER,
-      timeInterval: TimeInterval.of(at(12), at(13)),
+      localDate: DAY,
+      startMinutes: at(12),
+      endMinutes: endMinute(mins(13)),
       assignments: [],
     };
-    for (const terminal of [
+    const terminals: readonly BookingFlowState[] = [
       {
-        kind: BookingFlowStep.Confirmed,
+        bookingFlowStep: BookingFlowStep.Confirmed,
         confirmation: {
-          appointmentId: 'appt-1',
+          appointmentId: AppointmentId.of('appt-1'),
           party: Party.owned(CLIENT),
           cart,
           selection,
         },
       },
       {
-        kind: BookingFlowStep.Waitlisted,
+        bookingFlowStep: BookingFlowStep.Waitlisted,
         summary: {
-          requestId: 'wl-1',
+          requestId: WaitlistRequestId.of('wl-1'),
           party: Party.owned(CLIENT),
           cart,
           when: FlexibleWhen.empty(),
           locationId: CENTER,
         },
       },
-    ] as unknown as readonly BookingFlowState[]) {
+    ];
+    for (const terminal of terminals) {
       expect(
         BookingCartSystem.restore(
-          { state: terminal, selectedDayKey: null },
-          DayKey.of('2026-08-03'),
+          { state: terminal, selectedLocalDate: null },
+          DAY,
         ).state,
       ).toEqual({
-        kind: BookingFlowStep.Services,
+        bookingFlowStep: BookingFlowStep.Services,
         party: Party.owned(CLIENT),
         cart,
         locationId: CENTER,

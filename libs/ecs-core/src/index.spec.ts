@@ -16,7 +16,7 @@ describe('@creativo/ecs-core barrel', () => {
     const companions = {
       Result: ecs.Result,
       Money: ecs.Money,
-      TimeInterval: ecs.TimeInterval,
+      MinuteRange: ecs.MinuteRange,
       BookingStatus: ecs.BookingStatus,
       WriteOp: ecs.WriteOp,
       AppointmentId: ecs.AppointmentId,
@@ -27,9 +27,57 @@ describe('@creativo/ecs-core barrel', () => {
       RosterSystem: ecs.RosterSystem,
       AvailabilitySystem: ecs.AvailabilitySystem,
       Collections: ecs.Collections,
+      // The flatten-pass primitives and their companions (flatten-spec §1).
+      LocalDate: ecs.LocalDate,
+      MinuteOfDay: ecs.MinuteOfDay,
+      EndMinute: ecs.EndMinute,
+      DurationMinutes: ecs.DurationMinutes,
+      MinuteCount: ecs.MinuteCount,
+      MinuteDelta: ecs.MinuteDelta,
+      UtcEpochMs: ecs.UtcEpochMs,
+      PriceCents: ecs.PriceCents,
+      Currency: ecs.Currency,
+      CustomerId: ecs.CustomerId,
+      AuditResourceId: ecs.AuditResourceId,
+      SeatKeyText: ecs.SeatKeyText,
+      Latitude: ecs.Latitude,
+      EpochSeconds: ecs.EpochSeconds,
+      PrimitiveError: ecs.PrimitiveError,
+      ShopNow: ecs.ShopNow,
+      WallTime: ecs.WallTime,
+      DateRange: ecs.DateRange,
+      WriteAction: ecs.WriteAction,
+      defect: ecs.defect,
     };
     for (const [name, companion] of Object.entries(companions)) {
       expect(companion, name).toBeDefined();
+    }
+  });
+
+  it('exports each flatten-pass name once, from its one home', () => {
+    // DateRange is the flat local-date span; TenantId and BusyKey are the
+    // primitives (flatten-spec §1.5) — no pre-flatten twin is left.
+    expect(ecs.DateRange.of('a' as never, 'b' as never)).toEqual({
+      fromLocalDate: 'a',
+      toLocalDate: 'b',
+    });
+    expect(ecs.TenantId.parse('').ok).toBe(false);
+    expect(
+      Object.keys(
+        ecs.BusyKey.split(ecs.BusyKey.parse('b__2026-10-07') ?? ('' as never)),
+      ),
+    ).toEqual(['barberId', 'localDate']);
+    for (const gone of [
+      'DayKey',
+      'DayOffset',
+      'ZonedInstant',
+      'TimeInterval',
+      'CurrencyCode',
+      'WriteKind',
+      'LegacyTimeError',
+      'BookingCommitErrorCode',
+    ]) {
+      expect(Object.keys(ecs)).not.toContain(gone);
     }
   });
 

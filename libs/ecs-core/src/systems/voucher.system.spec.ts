@@ -4,19 +4,24 @@ import { EngagementErrorCode } from '../components/engagement-errors.data';
 import type { Money } from '../components/money.data';
 import { VoucherCode } from '../components/voucher-code.data';
 import type { VoucherRedemption } from '../components/voucher-redemption.data';
-import { VoucherRefusal, VoucherState } from '../components/voucher-state.data';
 import {
-  type GiftVoucherEntity,
-  GiftVoucherId,
-} from '../entities/gift-voucher.entity';
-import { UserId } from '../entities/user.entity';
+  VoucherLifecycle,
+  VoucherRefusal,
+} from '../components/voucher-state.data';
+import type { GiftVoucher } from '../entities/gift-voucher.entity';
+import { Currency } from '../primitives/currency.primitive';
+import { GiftVoucherId, UserId } from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import {
-  dayTableFixture,
+  FIXTURE_TIME_ZONE,
+  FIXTURE_TODAY,
   deepFreeze,
-  fixtureTodayAt,
   unwrapErr,
   unwrapOk,
+  utcMs,
 } from '../testing';
+import { ZonedTimeSystem } from './zoned-time.system';
 import { VoucherSystem } from './voucher.system';
 
 /*
@@ -26,30 +31,50 @@ import { VoucherSystem } from './voucher.system';
  * spendable math and the balance algebra as properties.
  */
 
-const NOW = Date.UTC(2026, 8, 10, 9, 0);
+const NOW = utcMs('2026-09-10T09:00:00Z');
+/** The first instant of the fixture shop's today (2026-09-28, Sofia). */
+const TODAY_START = utcMs('2026-09-28T00:00:00+03:00');
+
+function cents(minor: number): PriceCents {
+  return unwrapOk(PriceCents.of(minor));
+}
+
+function money(minor: number, currency: Currency): Money {
+  return { amountCents: cents(minor), currency };
+}
 
 function eur(minor: number): Money {
-  return { amountMinorUnits: minor, currencyCode: 'EUR' };
+  return money(minor, Currency.EUR);
 }
+
+const later = (base: UtcEpochMs, ms: number): UtcEpochMs =>
+  UtcEpochMs.plusMs(base, ms);
 
 function issued(
   overrides: {
     balance?: number;
-    expiresAtMs?: number | null;
-    state?: VoucherState;
+    expiresAtUtcMs?: UtcEpochMs | null;
+    lifecycle?: VoucherLifecycle;
     id?: string;
     code?: string;
   } = {},
-): GiftVoucherEntity {
+): GiftVoucher {
+  const expiresAtUtcMs = overrides.expiresAtUtcMs ?? null;
   return {
     id: GiftVoucherId.of(overrides.id ?? 'v1'),
     code: VoucherCode.of(overrides.code ?? 'GIFT2025'),
-    initialValue: eur(2500),
-    balance: eur(overrides.balance ?? 2500),
-    issuedAtMs: Date.UTC(2026, 8, 1, 6, 0),
-    expiresAtMs: overrides.expiresAtMs ?? null,
+    initialValueCents: cents(2500),
+    balanceCents: cents(overrides.balance ?? 2500),
+    currency: Currency.EUR,
+    issuedAtUtcMs: utcMs('2026-09-01T06:00:00Z'),
+    expiresAtUtcMs,
+    // The shop day of the expiry, written at the boundary from the same instant (T5).
+    expiresLocalDate:
+      expiresAtUtcMs === null
+        ? null
+        : ZonedTimeSystem.toLocal(expiresAtUtcMs, FIXTURE_TIME_ZONE).localDate,
     issuedToUserId: UserId.of('client-1'),
-    state: overrides.state ?? VoucherState.active(),
+    ...(overrides.lifecycle ?? VoucherLifecycle.active()),
   };
 }
 
@@ -59,14 +84,17 @@ describe('VoucherSystem — the balance algebra', () => {
       VoucherSystem.issue({
         id: GiftVoucherId.of('v2'),
         code: 'gift5',
-        value: eur(500),
-        issuedAtMs: NOW,
-        expiresAtMs: null,
+        valueCents: cents(500),
+        currency: Currency.EUR,
+        issuedAtUtcMs: NOW,
+        expiresAtUtcMs: null,
+        expiresLocalDate: null,
         issuedToUserId: null,
       }),
     );
     expect(voucher.code).toBe('GIFT5');
-    expect(voucher.balance.amountMinorUnits).toBe(500);
+    expect(voucher.balanceCents).toBe(500);
+    expect(voucher.voucherStatus).toBe('ACTIVE');
     expect(voucher.issuedToUserId).toBeNull();
     expect(VoucherSystem.isRedeemable(voucher, NOW)).toBe(true);
   });
@@ -74,111 +102,107 @@ describe('VoucherSystem — the balance algebra', () => {
   it('refuses to be issued worthless or with an illegal code', () => {
     const base = {
       id: GiftVoucherId.of('v'),
-      issuedAtMs: NOW,
-      expiresAtMs: null,
+      currency: Currency.EUR,
+      issuedAtUtcMs: NOW,
+      expiresAtUtcMs: null,
+      expiresLocalDate: null,
       issuedToUserId: null,
     };
     expect(
-      unwrapErr(VoucherSystem.issue({ ...base, code: 'GIFT5', value: eur(0) })),
-    ).toEqual([{ code: EngagementErrorCode.GiftVoucherValueInvalid }]);
+      unwrapErr(
+        VoucherSystem.issue({ ...base, code: 'GIFT5', valueCents: cents(0) }),
+      ),
+    ).toEqual([{ errorCode: EngagementErrorCode.GiftVoucherValueInvalid }]);
     expect(
-      unwrapErr(VoucherSystem.issue({ ...base, code: 'no', value: eur(500) })),
+      unwrapErr(
+        VoucherSystem.issue({ ...base, code: 'no', valueCents: cents(500) }),
+      ),
     ).toEqual([
-      { code: EngagementErrorCode.VoucherCodeInvalid, attempted: 'NO' },
+      { errorCode: EngagementErrorCode.VoucherCodeInvalid, attempted: 'NO' },
     ]);
   });
 
   it('says why it cannot be used — void, expired, empty — in that order', () => {
     expect(VoucherSystem.refusal(issued(), NOW)).toBeNull();
-    expect(VoucherSystem.refusal(issued({ balance: 0 }), NOW)).toBe('empty');
+    expect(VoucherSystem.refusal(issued({ balance: 0 }), NOW)).toBe('EMPTY');
     expect(
       VoucherSystem.refusal(
-        issued({ expiresAtMs: Date.UTC(2026, 8, 8, 21, 0) }),
+        issued({ expiresAtUtcMs: utcMs('2026-09-08T21:00:00Z') }),
         NOW,
       ),
-    ).toBe('expired');
+    ).toBe('EXPIRED');
     expect(
       VoucherSystem.refusal(
-        issued({ balance: 0, state: VoucherState.voided(NOW, 'lost') }),
+        issued({ balance: 0, lifecycle: VoucherLifecycle.voided(NOW, 'lost') }),
         NOW,
       ),
-    ).toBe('void');
+    ).toBe('VOID');
     // AT the expiry instant it is still usable.
-    expect(VoucherSystem.refusal(issued({ expiresAtMs: NOW }), NOW)).toBeNull();
+    expect(
+      VoucherSystem.refusal(issued({ expiresAtUtcMs: NOW }), NOW),
+    ).toBeNull();
   });
 
   it('covers what is owed or what it has, whichever is smaller', () => {
-    expect(VoucherSystem.coverage(issued(), eur(1450)).amountMinorUnits).toBe(
-      1450,
-    );
-    expect(VoucherSystem.coverage(issued(), eur(4000)).amountMinorUnits).toBe(
-      2500,
-    );
+    expect(VoucherSystem.coverage(issued(), eur(1450)).amountCents).toBe(1450);
+    expect(VoucherSystem.coverage(issued(), eur(4000)).amountCents).toBe(2500);
     expect(
-      VoucherSystem.coverage(issued({ balance: 0 }), eur(4000))
-        .amountMinorUnits,
+      VoucherSystem.coverage(issued({ balance: 0 }), eur(4000)).amountCents,
     ).toBe(0);
-    expect(
-      VoucherSystem.coverage(issued(), {
-        amountMinorUnits: 100,
-        currencyCode: 'BGN',
-      }),
-    ).toEqual(eur(0));
+    expect(VoucherSystem.coverage(issued(), money(100, Currency.BGN))).toEqual(
+      eur(0),
+    );
   });
 
   it('redeems within its balance and restores never above its value', () => {
     const drawn = unwrapOk(VoucherSystem.redeem(issued(), eur(1000), NOW));
-    expect(drawn.balance.amountMinorUnits).toBe(1500);
+    expect(drawn.balanceCents).toBe(1500);
     expect(unwrapErr(VoucherSystem.redeem(drawn, eur(1600), NOW))).toEqual({
-      code: EngagementErrorCode.GiftVoucherInsufficientBalance,
-      requestedMinorUnits: 1600,
-      balanceMinorUnits: 1500,
+      errorCode: EngagementErrorCode.GiftVoucherInsufficientBalance,
+      requestedCents: 1600,
+      balanceCents: 1500,
     });
     const back = unwrapOk(VoucherSystem.restore(drawn, eur(1000)));
-    expect(back.balance.amountMinorUnits).toBe(2500);
-    expect(unwrapErr(VoucherSystem.restore(back, eur(1))).code).toBe(
+    expect(back.balanceCents).toBe(2500);
+    expect(unwrapErr(VoucherSystem.restore(back, eur(1))).errorCode).toBe(
       EngagementErrorCode.GiftVoucherOverRestore,
     );
     // Money goes back even to a void voucher.
     const voided = VoucherSystem.void(drawn, NOW, 'lost');
+    expect(voided).toMatchObject({
+      voucherStatus: 'VOID',
+      voidedAtUtcMs: NOW,
+      voidReason: 'lost',
+      balanceCents: 1500,
+    });
     expect(VoucherSystem.restore(voided, eur(1000)).ok).toBe(true);
     expect(unwrapErr(VoucherSystem.redeem(voided, eur(1), NOW))).toEqual({
-      code: EngagementErrorCode.GiftVoucherNotRedeemable,
+      errorCode: EngagementErrorCode.GiftVoucherNotRedeemable,
       reason: VoucherRefusal.Void,
     });
     expect(
-      unwrapErr(
-        VoucherSystem.redeem(
-          drawn,
-          { amountMinorUnits: 1, currencyCode: 'BGN' },
-          NOW,
-        ),
-      ).code,
+      unwrapErr(VoucherSystem.redeem(drawn, money(1, Currency.BGN), NOW))
+        .errorCode,
     ).toBe(EngagementErrorCode.GiftVoucherCurrencyMismatch);
   });
 
   it("settles one visit's draw from a previous amount to the next", () => {
     const held = issued({ balance: 1500 });
     const grown = unwrapOk(VoucherSystem.settle(held, eur(1000), eur(2000)));
-    expect(grown.balance.amountMinorUnits).toBe(500);
+    expect(grown.balanceCents).toBe(500);
     expect(VoucherSystem.settle(held, eur(1000), eur(2600)).ok).toBe(false);
     const voided = VoucherSystem.void(held, NOW, 'lost');
     expect(VoucherSystem.settle(voided, eur(1000), eur(500)).ok).toBe(true);
     expect(VoucherSystem.settle(voided, eur(1000), eur(1500)).ok).toBe(false);
     const returned = unwrapOk(VoucherSystem.settle(held, eur(1000), eur(0)));
-    expect(returned.balance.amountMinorUnits).toBe(2500);
+    expect(returned.balanceCents).toBe(2500);
     expect(
-      unwrapErr(VoucherSystem.settle(issued(), eur(1000), eur(0))).code,
+      unwrapErr(VoucherSystem.settle(issued(), eur(1000), eur(0))).errorCode,
     ).toBe(EngagementErrorCode.GiftVoucherOverRestore);
     expect(
-      unwrapErr(
-        VoucherSystem.settle(held, eur(0), {
-          amountMinorUnits: 1,
-          currencyCode: 'BGN',
-        }),
-      ),
+      unwrapErr(VoucherSystem.settle(held, eur(0), money(1, Currency.BGN))),
     ).toEqual({
-      code: EngagementErrorCode.GiftVoucherCurrencyMismatch,
+      errorCode: EngagementErrorCode.GiftVoucherCurrencyMismatch,
       expected: 'EUR',
       found: 'BGN',
     });
@@ -197,16 +221,10 @@ describe('VoucherSystem — the balance algebra', () => {
             eur(next),
           );
           if (!settled.ok) return;
-          expect(settled.value.balance.amountMinorUnits).toBeGreaterThanOrEqual(
-            0,
-          );
-          expect(settled.value.balance.amountMinorUnits).toBeLessThanOrEqual(
-            2500,
-          );
+          expect(settled.value.balanceCents).toBeGreaterThanOrEqual(0);
+          expect(settled.value.balanceCents).toBeLessThanOrEqual(2500);
           // What the draw moved is exactly what the balance moved.
-          expect(balance - settled.value.balance.amountMinorUnits).toBe(
-            next - previous,
-          );
+          expect(balance - settled.value.balanceCents).toBe(next - previous);
         },
       ),
     );
@@ -238,15 +256,16 @@ describe('VoucherSystem — the balance algebra', () => {
 function line(
   voucherId: string,
   amount: number,
-  reversedAtMs: number | null = null,
+  reversedAtUtcMs: UtcEpochMs | null = null,
 ): VoucherRedemption {
   return {
     voucherId: GiftVoucherId.of(voucherId),
-    code: voucherId.toUpperCase(),
-    amount: eur(amount),
-    balanceAfter: eur(0),
-    appliedAtMs: NOW - 3_600_000,
-    reversedAtMs,
+    code: VoucherCode.of(voucherId.toUpperCase()),
+    amountCents: cents(amount),
+    balanceAfterCents: cents(0),
+    currency: Currency.EUR,
+    appliedAtUtcMs: later(NOW, -3_600_000),
+    reversedAtUtcMs,
   };
 }
 
@@ -254,23 +273,25 @@ describe('VoucherSystem.restorePlan — a cancellation gives the money back', ()
   it('plans nothing when the visit paid with no live voucher', () => {
     expect(VoucherSystem.restorePlan([], [issued()], NOW)).toBeNull();
     expect(
-      VoucherSystem.restorePlan([line('v1', 500, NOW - 1)], [issued()], NOW),
+      VoucherSystem.restorePlan(
+        [line('v1', 500, later(NOW, -1))],
+        [issued()],
+        NOW,
+      ),
     ).toBeNull();
   });
 
   it('restores every voucher drawn on and reverses every live line, keeping history', () => {
-    const history = line('v1', 300, NOW - 10);
+    const history = line('v1', 300, later(NOW, -10));
     const plan = VoucherSystem.restorePlan(
       [history, line('v1', 1000)],
       [issued({ balance: 1500 })],
       NOW,
     );
-    expect(plan?.vouchers.map((v) => v.balance.amountMinorUnits)).toEqual([
-      2500,
-    ]);
+    expect(plan?.vouchers.map((v) => v.balanceCents)).toEqual([2500]);
     expect(plan?.voucherRedemptions).toEqual([
       history,
-      { ...line('v1', 1000), reversedAtMs: NOW },
+      { ...line('v1', 1000), reversedAtUtcMs: NOW },
     ]);
   });
 
@@ -281,9 +302,9 @@ describe('VoucherSystem.restorePlan — a cancellation gives the money back', ()
       NOW,
     );
     expect(plan?.vouchers).toEqual([]);
-    expect(plan?.voucherRedemptions.every((l) => l.reversedAtMs === NOW)).toBe(
-      true,
-    );
+    expect(
+      plan?.voucherRedemptions.every((l) => l.reversedAtUtcMs === NOW),
+    ).toBe(true);
   });
 
   it('restores two lines on one voucher one after the other', () => {
@@ -292,38 +313,34 @@ describe('VoucherSystem.restorePlan — a cancellation gives the money back', ()
       [issued({ balance: 1000 })],
       NOW,
     );
-    expect(plan?.vouchers.map((v) => v.balance.amountMinorUnits)).toEqual([
-      2200,
-    ]);
+    expect(plan?.vouchers.map((v) => v.balanceCents)).toEqual([2200]);
   });
 });
 
 /* ── The wallet: what can be spent today ─────────────────────────────── */
 
 describe('VoucherSystem — spendable today, the soonest first', () => {
-  const todayStart = fixtureTodayAt(0);
-
   it('is spendable when active, holding money, and not past today', () => {
-    expect(VoucherSystem.spendable(issued(), todayStart)).toBe(true);
+    expect(VoucherSystem.spendable(issued(), FIXTURE_TODAY)).toBe(true);
     expect(
       VoucherSystem.spendable(
-        issued({ expiresAtMs: todayStart + 1 }),
-        todayStart,
+        issued({ expiresAtUtcMs: later(TODAY_START, 1) }),
+        FIXTURE_TODAY,
       ),
     ).toBe(true);
     expect(
       VoucherSystem.spendable(
-        issued({ expiresAtMs: todayStart - 1 }),
-        todayStart,
+        issued({ expiresAtUtcMs: later(TODAY_START, -1) }),
+        FIXTURE_TODAY,
       ),
     ).toBe(false);
-    expect(VoucherSystem.spendable(issued({ balance: 0 }), todayStart)).toBe(
+    expect(VoucherSystem.spendable(issued({ balance: 0 }), FIXTURE_TODAY)).toBe(
       false,
     );
     expect(
       VoucherSystem.spendable(
-        issued({ state: VoucherState.voided(NOW, 'lost') }),
-        todayStart,
+        issued({ lifecycle: VoucherLifecycle.voided(NOW, 'lost') }),
+        FIXTURE_TODAY,
       ),
     ).toBe(false);
   });
@@ -336,28 +353,45 @@ describe('VoucherSystem — spendable today, the soonest first', () => {
           issued({ balance: 0 }),
           issued({ balance: 300 }),
         ],
-        todayStart,
-        'EUR',
+        FIXTURE_TODAY,
+        Currency.EUR,
       ),
     ).toEqual(eur(1000));
   });
 
   it('orders by the last day, never-expiring last, ties by id', () => {
-    const days = dayTableFixture('2026-09-28', '2026-10-05');
     const never = issued({ id: 'a-never' });
-    const later = issued({
+    const laterDay = issued({
       id: 'b',
-      expiresAtMs: fixtureTodayAt(0) + 3 * 86_400_000,
+      expiresAtUtcMs: later(TODAY_START, 3 * 86_400_000),
     });
-    const soonB = issued({ id: 'd', expiresAtMs: fixtureTodayAt(12) });
-    const soonA = issued({ id: 'c', expiresAtMs: fixtureTodayAt(20) });
-    const input = deepFreeze([never, later, soonB, soonA]);
-    expect(VoucherSystem.soonestFirst(input, days).map((v) => v.id)).toEqual([
+    const soonB = issued({
+      id: 'd',
+      expiresAtUtcMs: later(TODAY_START, 12 * 3_600_000),
+    });
+    const soonA = issued({
+      id: 'c',
+      expiresAtUtcMs: later(TODAY_START, 20 * 3_600_000),
+    });
+    const input = deepFreeze([never, laterDay, soonB, soonA]);
+    expect(VoucherSystem.soonestFirst(input).map((v) => v.id)).toEqual([
       'c',
       'd',
       'b',
       'a-never',
     ]);
+  });
+});
+
+describe('VoucherSystem.transitionWrite — one variant on the stored document', () => {
+  it('sets the balance and the new variant, deletes the old variant’s fields', () => {
+    const voided = issued({ lifecycle: VoucherLifecycle.voided(NOW, 'lost') });
+    expect(VoucherSystem.transitionWrite(voided, issued())).toMatchObject({
+      writeAction: 'UPDATE',
+      path: ['giftVouchers', 'v1'],
+      fields: { balanceCents: 2500, voucherStatus: 'ACTIVE' },
+      deleteFields: ['voidedAtUtcMs', 'voidReason'],
+    });
   });
 });
 
@@ -371,6 +405,6 @@ describe('VoucherSystem — purity', () => {
     expect(VoucherSystem.restorePlan(lines, [voucher], NOW)).toEqual(
       VoucherSystem.restorePlan(lines, [voucher], NOW),
     );
-    expect(voucher.balance.amountMinorUnits).toBe(1500);
+    expect(voucher.balanceCents).toBe(1500);
   });
 });

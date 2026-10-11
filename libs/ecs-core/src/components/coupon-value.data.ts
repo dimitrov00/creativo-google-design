@@ -1,35 +1,44 @@
+import type { Currency } from '../primitives/currency.primitive';
+import type { PriceCents } from '../primitives/price-cents.primitive';
 import { EngagementError } from './engagement-errors.data';
-import type { Money } from './money.data';
 import { Result } from './result.data';
 
-/** What a discount does to a price, by kind — the stored tags, unchanged. */
-export const CouponValueKind = {
-  /** Subtract `percent` % of the price. */
-  PercentOff: 'percent_off',
-  /** Subtract a fixed `Money` amount from the price. */
-  FixedAmount: 'fixed_amount',
+/**
+ * What a discount does to a price — the field `discountMethod`, the ONLY
+ * source of these strings. The stored legacy tags are the lower-case
+ * `value.kind` values (`percent_off`, `fixed_amount`, `free_service`).
+ */
+export const DiscountMethod = {
+  /** Subtract `discountPercent` % of the price. */
+  PercentOff: 'PERCENT_OFF',
+  /** Subtract a fixed amount (`discountAmountCents` in `discountCurrency`). */
+  FixedAmount: 'FIXED_AMOUNT',
   /** The price becomes zero. */
-  FreeService: 'free_service',
+  FreeService: 'FREE_SERVICE',
 } as const;
-export type CouponValueKind =
-  (typeof CouponValueKind)[keyof typeof CouponValueKind];
+export type DiscountMethod =
+  (typeof DiscountMethod)[keyof typeof DiscountMethod];
 
 /**
- * What a discount actually does to a price — stored on `coupons/*`,
- * snapshotted onto `couponGrants/*` and onto an appointment's
- * `discounts[].value`. A `fixed_amount` carries a nested `Money` (the §2.5
- * money rule: a figure that stands alone; today the flat `amountMinorUnits`
- * + `currencyCode` of `couponValueToPersistence`).
+ * What a discount actually does to a price — a flat variant slice, stored at
+ * the root of `coupons/*`, snapshotted onto `couponGrants/*` and onto every
+ * element of an appointment's `discounts[]` (Law 6: the legacy nested
+ * `value: { kind, amount }` flattens). A `FIXED_AMOUNT` carries its own
+ * `discountCurrency` beside the cents (the one place two currencies could in
+ * principle differ — the bill's and the coupon's — so it is prefixed, N6).
  *
- * `free_service` carries nothing: the stored shape is `{ kind }` alone
- * (`coupon-persistence.ts:46-47`, `tools/seed/promotions.mjs:62`) — it
- * zeroes whatever is left of the price it is applied to.
+ * `FREE_SERVICE` carries nothing: it zeroes whatever is left of the price it
+ * is applied to.
  */
 export type CouponValue =
   CouponValue.PercentOff | CouponValue.FixedAmount | CouponValue.FreeService;
 
+const FREE_SERVICE: CouponValue.FreeService = {
+  discountMethod: DiscountMethod.FreeService,
+};
+
 export const CouponValue = {
-  /** The edge guard — the only way a raw percent becomes a `percent_off` value: 0–100 inclusive. */
+  /** The edge guard — the only way a raw percent becomes a `PERCENT_OFF` value: 0–100 inclusive. */
   percentOff(
     percent: number,
   ): Result<
@@ -39,7 +48,10 @@ export const CouponValue = {
     if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
       return Result.err(EngagementError.couponValuePercentageInvalid(percent));
     }
-    return Result.ok({ kind: CouponValueKind.PercentOff, percent });
+    return Result.ok({
+      discountMethod: DiscountMethod.PercentOff,
+      discountPercent: percent,
+    });
   },
 
   /**
@@ -47,34 +59,62 @@ export const CouponValue = {
    * coupon is a modelling error, not a discount.
    */
   fixedAmount(
-    amount: Money,
+    amountCents: PriceCents,
+    currency: Currency,
   ): Result<
     CouponValue.FixedAmount,
     EngagementError.CouponValueAmountNotPositive
   > {
-    if (amount.amountMinorUnits <= 0) {
+    if (amountCents <= 0) {
       return Result.err(
-        EngagementError.couponValueAmountNotPositive(amount.amountMinorUnits),
+        EngagementError.couponValueAmountNotPositive(amountCents),
       );
     }
-    return Result.ok({ kind: CouponValueKind.FixedAmount, amount });
+    return Result.ok({
+      discountMethod: DiscountMethod.FixedAmount,
+      discountAmountCents: amountCents,
+      discountCurrency: currency,
+    });
   },
 
   freeService(): CouponValue.FreeService {
-    return { kind: CouponValueKind.FreeService };
+    return FREE_SERVICE;
+  },
+
+  /**
+   * The value slice of a value that carries one — a grant, a coupon or an
+   * applied discount passes straight in — copied to exactly its variant's
+   * fields.
+   */
+  of(value: CouponValue): CouponValue {
+    switch (value.discountMethod) {
+      case DiscountMethod.PercentOff:
+        return {
+          discountMethod: DiscountMethod.PercentOff,
+          discountPercent: value.discountPercent,
+        };
+      case DiscountMethod.FixedAmount:
+        return {
+          discountMethod: DiscountMethod.FixedAmount,
+          discountAmountCents: value.discountAmountCents,
+          discountCurrency: value.discountCurrency,
+        };
+      default:
+        return FREE_SERVICE;
+    }
   },
 
   /**
    * The application order of the deterministic total order DiscountSystem
-   * applies by: fixed amounts come off first, then percentages bite the
-   * REDUCED remainder (15 % + 10 % is 23.5 % off, never 25 %), then
-   * `free_service` zeroes whatever is left.
+   * applies by (was `kindRank`): fixed amounts come off first, then
+   * percentages bite the REDUCED remainder (15 % + 10 % is 23.5 % off, never
+   * 25 %), then `FREE_SERVICE` zeroes whatever is left.
    */
-  kindRank(value: CouponValue): number {
-    switch (value.kind) {
-      case CouponValueKind.FixedAmount:
+  methodRank(value: CouponValue): number {
+    switch (value.discountMethod) {
+      case DiscountMethod.FixedAmount:
         return 0;
-      case CouponValueKind.PercentOff:
+      case DiscountMethod.PercentOff:
         return 1;
       default:
         return 2;
@@ -82,16 +122,16 @@ export const CouponValue = {
   },
 
   /**
-   * The secondary sort key within one kind — the "value" of the total order
-   * (kind rank → value → grantedAt → id). A comparison key only, never an
-   * amount on its own.
+   * The secondary sort key within one method — the "value" of the total
+   * order (method rank → value → grantedAt → id). A comparison key only,
+   * never an amount on its own.
    */
   magnitude(value: CouponValue): number {
-    switch (value.kind) {
-      case CouponValueKind.PercentOff:
-        return value.percent;
-      case CouponValueKind.FixedAmount:
-        return value.amount.amountMinorUnits;
+    switch (value.discountMethod) {
+      case DiscountMethod.PercentOff:
+        return value.discountPercent;
+      case DiscountMethod.FixedAmount:
+        return value.discountAmountCents;
       default:
         return 0;
     }
@@ -100,15 +140,16 @@ export const CouponValue = {
 
 export namespace CouponValue {
   export type PercentOff = {
-    readonly kind: typeof CouponValueKind.PercentOff;
+    readonly discountMethod: typeof DiscountMethod.PercentOff;
     /** 0–100 inclusive — built only through `CouponValue.percentOff`. */
-    readonly percent: number;
+    readonly discountPercent: number;
   };
   export type FixedAmount = {
-    readonly kind: typeof CouponValueKind.FixedAmount;
-    readonly amount: Money;
+    readonly discountMethod: typeof DiscountMethod.FixedAmount;
+    readonly discountAmountCents: PriceCents;
+    readonly discountCurrency: Currency;
   };
   export type FreeService = {
-    readonly kind: typeof CouponValueKind.FreeService;
+    readonly discountMethod: typeof DiscountMethod.FreeService;
   };
 }

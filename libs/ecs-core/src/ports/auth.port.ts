@@ -6,14 +6,14 @@ import type { Principal } from '../components/principal.data';
 import type { RegistrationFields } from '../components/registration.data';
 import type { Result } from '../components/result.data';
 import type { SessionKind } from '../components/session-kind.data';
-import type { OtpId } from '../entities/otp.entity';
+import type { OtpId } from '../primitives/ids.primitive';
 
 /**
  * The web's authentication ports (blueprint §4.2) — the Firebase Auth
  * session (`AuthGateway`) and the three OTP callables (`OtpClient`). Every
- * failure is the one `PipelineError` taxonomy; the server's own dotted code
- * (`identity.otp.wrong_code`, an account refusal) rides along as
- * `serverCode` for the UI to word.
+ * failure is the one `PipelineError` taxonomy; the server's own code (the
+ * wire's `identity.otp.wrong_code` until Phase 4, an account refusal) rides
+ * along in it for the UI to word.
  */
 
 // ── The session ───────────────────────────────────────────────────────────

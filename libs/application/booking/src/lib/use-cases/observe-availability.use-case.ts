@@ -10,11 +10,18 @@ import {
   BarberId as EcsBarberId,
   type BookingCart as CartData,
   BookingCartSystem,
+  CartLineId as EcsCartLineId,
   type CartService,
+  Currency,
+  DurationMinutes,
   LocationId as EcsLocationId,
+  MinuteCount,
+  PriceCents,
+  SeatKeyText,
   ServiceId as EcsServiceId,
-  type ServiceTerms as EcsServiceTerms,
+  ServiceTerms as EcsServiceTerms,
   ServiceVariantId as EcsServiceVariantId,
+  defect,
 } from '@creativo/ecs-core';
 import {
   type AvailabilityLine,
@@ -361,35 +368,50 @@ export class ObserveRangeCapacityUseCase {
 
 function cartDataOf(cart: BookingCart): CartData {
   return {
-    seats: cart.entries().map(([seatKey, lines]) => ({
-      seatKey,
-      lines: lines.map((line) => ({
-        lineId: line.id.value,
+    cartSeats: cart.entries().map(([rawSeatKey, lines]) => {
+      const seatKey = SeatKeyText.of(rawSeatKey);
+      return {
         seatKey,
-        serviceId: EcsServiceId.of(line.serviceId.value),
-        variantId:
-          line.variantId === null
-            ? null
-            : EcsServiceVariantId.of(line.variantId.value),
-        barberId:
-          line.barberPref.kind === 'specific'
-            ? EcsBarberId.of(line.barberPref.barberId.value)
-            : null,
-        locationId: null,
-      })),
-    })),
-    nextSequence: cart.nextLineSequence,
+        lines: lines.map((line) => ({
+          lineId: EcsCartLineId.of(line.id.value),
+          seatKey,
+          serviceId: EcsServiceId.of(line.serviceId.value),
+          variantId:
+            line.variantId === null
+              ? null
+              : EcsServiceVariantId.of(line.variantId.value),
+          barberId:
+            line.barberPref.kind === 'specific'
+              ? EcsBarberId.of(line.barberPref.barberId.value)
+              : null,
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: cart.nextLineSequence,
   };
 }
 
+/** Unreachable refusals of figures the legacy catalogue already checked. */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/** The legacy terms (a `Money` price) as the flat branded slice. */
 function termsDataOf(terms: ServiceTerms): EcsServiceTerms {
-  return {
-    priceMinorUnits: terms.price.toMinorUnits(),
-    currencyCode: terms.price.currencyCode(),
-    durationMinutes: terms.durationMinutes,
-    setupMinutes: terms.setupMinutes,
-    cleanupMinutes: terms.cleanupMinutes,
-  };
+  return EcsServiceTerms.of(
+    sure(PriceCents.of(terms.price.toMinorUnits()), 'a catalogue price'),
+    sure(Currency.parse(terms.price.currencyCode()), 'a catalogue currency'),
+    sure(DurationMinutes.of(terms.durationMinutes), 'a catalogue duration'),
+    sure(MinuteCount.of(terms.setupMinutes), 'a setup pad'),
+    sure(MinuteCount.of(terms.cleanupMinutes), 'a cleanup pad'),
+  );
 }
 
 /**
@@ -400,13 +422,13 @@ function serviceDataOf(service: Service): CartService {
   return {
     id: EcsServiceId.of(service.id.value),
     locationIds: service.locationIds.map((id) => EcsLocationId.of(id.value)),
-    baseTerms: termsDataOf(service.baseTerms),
+    ...termsDataOf(service.baseTerms),
     offerings: service.offerings.map((offering) => ({
       barberId: EcsBarberId.of(offering.barberId.value),
-      base: termsDataOf(offering.base),
+      ...termsDataOf(offering.base),
       overrides: offering.overrideEntries().map(([variantId, terms]) => ({
         variantId: EcsServiceVariantId.of(variantId),
-        terms: termsDataOf(terms),
+        ...termsDataOf(terms),
       })),
     })),
   };

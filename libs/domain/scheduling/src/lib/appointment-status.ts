@@ -1,4 +1,10 @@
-import { BookingStatus as BookingStatusData } from '@creativo/ecs-core';
+import {
+  BookingLifecycle,
+  BookingStatus,
+  CancellationReasonSet,
+  UtcEpochMs,
+  defect,
+} from '@creativo/ecs-core';
 
 /**
  * Lifecycle status of an `Appointment`. A discriminated union (not a status
@@ -48,10 +54,51 @@ export function cancelled(reason: string): AppointmentStatus {
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
-function toStatusData(status: AppointmentStatus): BookingStatusData {
-  return status.kind === 'cancelled'
-    ? BookingStatusData.cancel(0, status.reason)
-    : { kind: status.kind, atMs: 0 };
+/** The stored lower-case tag → the ecs-core `BookingStatus` (flatten-spec §8.9). */
+const LEGACY_BOOKING_STATUS = {
+  pending: BookingStatus.Pending,
+  confirmed: BookingStatus.Confirmed,
+  completed: BookingStatus.Completed,
+  no_show: BookingStatus.NoShow,
+  cancelled: BookingStatus.Cancelled,
+} as const satisfies Record<AppointmentStatusKind, BookingStatus>;
+
+/** The graph reads no instant; the legacy status carries none. */
+function noInstant(): UtcEpochMs {
+  const epoch = UtcEpochMs.of(0);
+  // Unreachable: the epoch is an instant.
+  if (!epoch.ok) defect('unreachable: the epoch');
+  return epoch.value;
+}
+
+/** A legacy tag as the ecs-core `BookingStatus` — the shims' one door for it. */
+export function toEcsBookingStatus(kind: AppointmentStatusKind): BookingStatus {
+  return LEGACY_BOOKING_STATUS[kind];
+}
+
+/**
+ * A legacy status as the ecs-core lifecycle slice (Phase 4 deletes it). The
+ * legacy status carries no instant, so every entering stamp is the epoch —
+ * read by no graph, guard or roll-up; a cancellation's reason rides verbatim
+ * as the stored set.
+ */
+export function toEcsLifecycle(status: AppointmentStatus): BookingLifecycle {
+  const at = noInstant();
+  switch (status.kind) {
+    case 'pending':
+      return BookingLifecycle.pending(at);
+    case 'confirmed':
+      return BookingLifecycle.confirm(at);
+    case 'completed':
+      return BookingLifecycle.complete(at);
+    case 'no_show':
+      return BookingLifecycle.noShow(at);
+    case 'cancelled':
+      return BookingLifecycle.cancel(
+        at,
+        CancellationReasonSet.fromStored(status.reason),
+      );
+  }
 }
 
 /**
@@ -60,12 +107,12 @@ function toStatusData(status: AppointmentStatus): BookingStatusData {
  * `isSettled` whether a visit should still appear in a live list.
  */
 export function isTerminal(status: AppointmentStatus): boolean {
-  return BookingStatusData.isTerminal(toStatusData(status));
+  return BookingLifecycle.isTerminal(toEcsLifecycle(status));
 }
 
 /** The visit is over, whatever became of it — a LIFECYCLE question. */
 export function isSettled(status: AppointmentStatus): boolean {
-  return BookingStatusData.isSettled(toStatusData(status));
+  return BookingLifecycle.isSettled(toEcsLifecycle(status));
 }
 
 /** Whether `from.kind → to` is a legal lifecycle move. */
@@ -73,5 +120,8 @@ export function canTransition(
   from: AppointmentStatus,
   to: AppointmentStatusKind,
 ): boolean {
-  return BookingStatusData.canTransition(toStatusData(from), to);
+  return BookingLifecycle.canTransition(
+    toEcsLifecycle(from),
+    LEGACY_BOOKING_STATUS[to],
+  );
 }

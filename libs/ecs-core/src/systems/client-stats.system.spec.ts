@@ -1,63 +1,118 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { BarberPreference } from '../components/barber-pref.data';
 import { BookingPolicy } from '../components/booking-policy.data';
 import { ClientStatsPolicy } from '../components/client-stats-policy.data';
-import type {
-  ClientMoneyStats,
+import {
+  type ClientMoneyStats,
   ClientStats,
-  ClientStatsMeta,
+  type ClientStatsMeta,
+  PauseSuggestion,
+  PolicyPassStamp,
+  PreciseInstant,
+  type VisitFact,
 } from '../components/client-stats.data';
 import { E164 } from '../components/phone-number.data';
-import { PlacementKind } from '../components/placement-kind.data';
+import { Placement } from '../components/placement-kind.data';
 import { SeatLabel } from '../components/seat-label.data';
 import {
+  AttendanceState,
   CancellationReason,
-  type CancelledBy,
-  SeatOutcome,
+  CancelledBy,
+  type SeatOutcome,
 } from '../components/seat-outcome.data';
 import {
-  Seat,
-  SeatId,
-  SeatRelationship,
+  type Seat,
   SeatSubject,
+  SubjectRelationship,
 } from '../components/seat.data';
-import { ServiceTerms } from '../components/service-terms.data';
 import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { TimeInterval } from '../components/time-interval.data';
-import { WriteKind, type WriteOp } from '../components/write-op.data';
+import type { ShopNow } from '../components/shop-now.data';
+import { WriteAction, WriteOp } from '../components/write-op.data';
+import type { Appointment } from '../entities/appointment.entity';
+import { Currency } from '../primitives/currency.primitive';
 import {
   AppointmentId,
-  type AppointmentEntity,
-} from '../entities/appointment.entity';
-import { BarberId } from '../entities/barber.entity';
-import { ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
-import { appointmentFixture, deepFreeze, seatFixture } from '../testing';
+  BarberId,
+  SeatId,
+  ServiceId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { EndMinute } from '../primitives/minute-of-day.primitive';
+import {
+  DurationMinutes,
+  MinuteCount,
+} from '../primitives/duration-minutes.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  FIXTURE_TIME_ZONE,
+  deepFreeze,
+  minute,
+  unwrapOk,
+  utcMs,
+} from '../testing';
+import {
+  appointmentFixture,
+  seatFixture,
+} from '../testing/appointment.fixtures';
 import {
   type BilledAppointment,
   ClientStatsSystem,
   type ClientStatsWriteInput,
+  type PauseBasisFact,
   type StoredClientStats,
 } from './client-stats.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/client-stats.spec.ts (the BGN
  * → EUR case included) and of apps/functions/src/lib/clients/
  * client-stats-projection.spec.ts (the canonical-JSON change detection, the
  * subjects, the clock, the revision guard, the placements), copied — the
- * legacy specs keep running against their shims — and re-targeted to plain
- * structs: an appointment is the stats slice of the entity with its bill,
- * ids are plain strings (`x.value` → `x`), the spend is a nested `Money`.
- * The policy-pass cases of the projection spec live in
+ * legacy specs keep running against their shims — and re-targeted to the
+ * flat shapes (Laws 6 and 7): an appointment is the stats slice of the
+ * entity (`localDate` + minutes on the shop's clock, `utcEpochMs` the start
+ * instant) with its bill in cents; a seat is the flat `Seat` (subject,
+ * terms and outcome at its root, SCREAMING tags); the answer is the flat
+ * `ClientStats` (`lifetime*`, `last365*`, `lastVisit*`, `pauseSuggested*`);
+ * the spend is `lifetimeSpendCents` + `currency`; "now" is a `ShopNow`.
+ *
+ * A case still NAMES a visit by its instant (`daysAgo(n)`, the legacy
+ * vocabulary) and the spec converts it at its own boundary — exactly what
+ * the ingestion boundary does — with `ZonedTimeSystem` in the fixture
+ * shop's zone. The rolling windows are `LocalDate` arithmetic (flatten-spec
+ * T8); every case sits well clear of a DST night, so each expectation keeps
+ * its meaning. The policy-pass cases of the projection spec live in
  * `policy-recompute-job.system.spec.ts`, beside the guard they exercise.
  */
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
+const MINUTE = 60_000;
 /** The clock every case reads — a Thursday noon in Sofia. */
-const NOW = Date.parse('2026-09-24T09:00:00.000Z');
+const NOW_UTC_MS = utcMs('2026-09-24T09:00:00.000Z');
 /** The shipping free-cancellation window — what a cancel stamps by default. */
 const DEFAULT_WINDOW_HOURS = BookingPolicy.DEFAULT.cancellationWindowHours;
+
+/** An instant literal in epoch ms. */
+const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
+/** "Now" as the fixture shop sees the instant `ms`. */
+const nowAt = (ms: number): ShopNow =>
+  ZonedTimeSystem.shopNow(instant(ms), FIXTURE_TIME_ZONE);
+const NOW: ShopNow = nowAt(NOW_UTC_MS);
+/** The shop wall clock of an instant — the boundary's conversion. */
+const wallOf = (ms: number) =>
+  ZonedTimeSystem.toLocal(instant(ms), FIXTURE_TIME_ZONE);
+/** A visit fact for the visit `id` starting at the instant `ms`. */
+const factAt = (id: string, ms: number): VisitFact => {
+  const wall = wallOf(ms);
+  return {
+    appointmentId: AppointmentId.of(id),
+    localDate: wall.localDate,
+    startMinutes: wall.minute,
+  };
+};
 
 const PEOPLE = {
   ana: UserId.of('ana'),
@@ -72,7 +127,7 @@ type OutcomeSpec =
   | {
       readonly kind: 'cancelled';
       readonly by: CancelledBy;
-      readonly reason: Exclude<CancellationReason, 'other'>;
+      readonly reason: Exclude<CancellationReason, 'OTHER'>;
       /** Hours before the visit's start it was called off. */
       readonly leadHours: number;
       /**
@@ -88,103 +143,123 @@ interface SeatSpec {
   readonly outcome: OutcomeSpec;
   readonly service?: string;
   readonly barber?: string;
-  readonly pref?: 'any' | 'specific' | null;
+  readonly pref?: BarberPreference | null;
   readonly price?: number;
   readonly tip?: number | null;
 }
 
 interface VisitSpec {
   readonly id: string;
+  /** The visit's start instant, epoch ms. */
   readonly startMs: number;
   readonly seats: readonly SeatSpec[];
-  /** Who put it in the book — `self` unless a case says otherwise; `null` is a legacy import. */
-  readonly placement?: PlacementKind | null;
+  /** Who put it in the book — `SELF` unless a case says otherwise; `null` is a legacy import. */
+  readonly placement?: Placement | null;
   /** False for a legacy row with no booking instant. */
   readonly booked?: boolean;
-  readonly currency?: string;
+  readonly currency?: Currency;
   /** A percent-off discount on the whole bill. */
   readonly percentOff?: number;
 }
 
 const SEAT_MINUTES = 30;
 /** Seats run back to back, so no party ever double-books a barber or a person. */
-const SEAT_STRIDE_MS = 45 * 60_000;
+const SEAT_STRIDE_MINUTES = 45;
 
 function outcomeOf(spec: OutcomeSpec, visitStartMs: number): SeatOutcome {
   switch (spec.kind) {
     case 'scheduled':
-      return SeatOutcome.scheduled();
+      return { attendanceState: AttendanceState.Scheduled };
     case 'worked':
-      return SeatOutcome.worked(visitStartMs + SEAT_MINUTES * 60_000);
+      return {
+        attendanceState: AttendanceState.Worked,
+        workedAtUtcMs: instant(visitStartMs + SEAT_MINUTES * MINUTE),
+      };
     case 'no_show':
-      return SeatOutcome.noShow(visitStartMs + 15 * 60_000);
+      return {
+        attendanceState: AttendanceState.NoShow,
+        noShowAtUtcMs: instant(visitStartMs + 15 * MINUTE),
+      };
     case 'cancelled':
-      return SeatOutcome.cancelled(
-        visitStartMs - spec.leadHours * HOUR,
-        spec.by,
-        spec.reason,
-        spec.windowHours === undefined
-          ? DEFAULT_WINDOW_HOURS
-          : spec.windowHours,
-      );
+      return {
+        attendanceState: AttendanceState.Cancelled,
+        cancelledAtUtcMs: instant(visitStartMs - spec.leadHours * HOUR),
+        cancelledBy: spec.by,
+        cancellationReason: spec.reason,
+        cancellationWindowHours:
+          spec.windowHours === undefined
+            ? DEFAULT_WINDOW_HOURS
+            : spec.windowHours,
+      };
   }
 }
 
 function seatOf(spec: SeatSpec, index: number, visit: VisitSpec): Seat {
-  const currency = visit.currency ?? 'EUR';
-  const charged = ServiceTerms.unpadded(
-    spec.price ?? 2000,
-    currency,
-    SEAT_MINUTES,
-  );
+  const currency = visit.currency ?? Currency.EUR;
+  const start = wallOf(visit.startMs);
+  const occupant =
+    spec.who === 'guest'
+      ? {
+          seatSubject: SeatSubject.Anonymous,
+          guestLabel: SeatLabel.of('Гост'),
+        }
+      : {
+          seatSubject: SeatSubject.Account,
+          subjectUserId: PEOPLE[spec.who],
+          subjectRelationship:
+            spec.who === 'ana'
+              ? SubjectRelationship.Self
+              : SubjectRelationship.Companion,
+        };
   return {
-    id: SeatId.of(`${visit.id}-seat-${index}`),
+    seatId: SeatId.of(`${visit.id}-seat-${index}`),
     serviceId: ServiceId.of(spec.service ?? 'cut'),
     variantId: null,
     barberId: BarberId.of(spec.barber ?? `barber-${index}`),
-    barberPref: spec.pref ?? null,
-    terms: Seat.termsOf(charged, null),
-    startMs: visit.startMs + index * SEAT_STRIDE_MS,
-    subject:
-      spec.who === 'guest'
-        ? SeatSubject.anonymous(SeatLabel.of('Гост'))
-        : SeatSubject.account(
-            PEOPLE[spec.who],
-            spec.who === 'ana'
-              ? SeatRelationship.Self
-              : SeatRelationship.Companion,
-          ),
-    outcome: outcomeOf(spec.outcome, visit.startMs),
-    tip:
-      spec.tip == null
-        ? null
-        : { amountMinorUnits: spec.tip, currencyCode: currency },
-  };
+    barberPreference: spec.pref ?? null,
+    // One shop day per appointment (T7): the party's seats on its day.
+    startMinutes: minute(start.minute + index * SEAT_STRIDE_MINUTES),
+    tipCents: spec.tip == null ? null : unwrapOk(PriceCents.of(spec.tip)),
+    priceCents: unwrapOk(PriceCents.of(spec.price ?? 2000)),
+    currency,
+    durationMinutes: unwrapOk(DurationMinutes.of(SEAT_MINUTES)),
+    setupMinutes: MinuteCount.ZERO,
+    cleanupMinutes: MinuteCount.ZERO,
+    catalogPriceCents: null,
+    catalogDurationMinutes: null,
+    ...occupant,
+    ...outcomeOf(spec.outcome, visit.startMs),
+  } as Seat;
 }
 
 /** The visit as the stats read it, with its bill (the discount taken off the subtotal). */
 function build(visit: VisitSpec): BilledAppointment {
   const seats = visit.seats.map((spec, index) => seatOf(spec, index, visit));
+  const start = wallOf(visit.startMs);
   let subtotal = 0;
-  let endMs = visit.startMs;
+  let end: number = start.minute;
   for (const seat of seats) {
-    subtotal += seat.terms.priceMinorUnits;
-    endMs = Math.max(endMs, Seat.endMs(seat));
+    subtotal += seat.priceCents;
+    end = Math.max(end, seat.startMinutes + seat.durationMinutes);
   }
   const off =
     visit.percentOff === undefined
       ? 0
       : Math.round((subtotal * visit.percentOff) / 100);
-  const currencyCode = visit.currency ?? 'EUR';
   return {
     id: AppointmentId.of(visit.id),
-    timeInterval: TimeInterval.of(visit.startMs, endMs),
-    bookedAtMs: visit.booked === false ? null : visit.startMs - 7 * DAY,
-    placement: visit.placement === undefined ? 'self' : visit.placement,
+    localDate: start.localDate,
+    startMinutes: start.minute,
+    endMinutes: unwrapOk(EndMinute.of(end)),
+    utcEpochMs: instant(visit.startMs),
+    bookedAtUtcMs:
+      visit.booked === false ? null : instant(visit.startMs - 7 * DAY),
+    placement: visit.placement === undefined ? Placement.Self : visit.placement,
     seats,
     bill: {
-      subtotal: { amountMinorUnits: subtotal, currencyCode },
-      total: { amountMinorUnits: subtotal - off, currencyCode },
+      subtotalCents: unwrapOk(PriceCents.of(subtotal)),
+      totalCents: unwrapOk(PriceCents.of(subtotal - off)),
+      currency: visit.currency ?? Currency.EUR,
     },
   };
 }
@@ -192,12 +267,12 @@ function build(visit: VisitSpec): BilledAppointment {
 function stats(
   visits: readonly VisitSpec[],
   who: Who = 'ana',
-  nowMs = NOW,
+  now: ShopNow = NOW,
   policy = ClientStatsPolicy.DEFAULT,
 ): ClientStats {
   if (who === 'guest') throw new Error('guests have no stats');
   const person = who === 'ana' ? PEOPLE.ana : PEOPLE.bob;
-  return ClientStatsSystem.stats(person, visits.map(build), policy, nowMs);
+  return ClientStatsSystem.stats(person, visits.map(build), policy, now);
 }
 
 /** The shipping stats policy over a booking policy with this free-cancellation window. */
@@ -212,7 +287,7 @@ function policyWithWindow(cancellationWindowHours: number): ClientStatsPolicy {
 const anaUnder = (hours: number, visits: readonly VisitSpec[]) =>
   stats(visits, 'ana', NOW, policyWithWindow(hours));
 
-const daysAgo = (days: number): number => NOW - days * DAY;
+const daysAgo = (days: number): number => NOW_UTC_MS - days * DAY;
 const WORKED: OutcomeSpec = { kind: 'worked' };
 const NO_SHOW: OutcomeSpec = { kind: 'no_show' };
 const solo = (
@@ -234,8 +309,8 @@ describe('stats — per visit, per subject', () => {
         ],
       },
     ]);
-    expect(result.lifetime.visitsCompleted).toBe(1);
-    expect(result.last365.visitsCompleted).toHaveLength(1);
+    expect(result.lifetimeVisitsCompleted).toBe(1);
+    expect(result.last365VisitsCompleted).toHaveLength(1);
   });
 
   it('reads only the person’s own seats on a party', () => {
@@ -248,13 +323,19 @@ describe('stats — per visit, per subject', () => {
         { who: 'guest', outcome: NO_SHOW },
       ],
     };
-    expect(stats([party], 'ana').lifetime).toEqual({
+    const lifetimeOf = (result: ClientStats) => ({
+      visitsCompleted: result.lifetimeVisitsCompleted,
+      noShows: result.lifetimeNoShows,
+      lateCancels: result.lifetimeLateCancels,
+      clientCancels: result.lifetimeClientCancels,
+    });
+    expect(lifetimeOf(stats([party], 'ana'))).toEqual({
       visitsCompleted: 1,
       noShows: 0,
       lateCancels: 0,
       clientCancels: 0,
     });
-    expect(stats([party], 'bob').lifetime).toEqual({
+    expect(lifetimeOf(stats([party], 'bob'))).toEqual({
       visitsCompleted: 0,
       noShows: 1,
       lateCancels: 0,
@@ -273,84 +354,86 @@ describe('stats — per visit, per subject', () => {
         ],
       },
     ]);
-    expect(result.lifetime.noShows).toBe(1);
-    expect(result.lifetime.visitsCompleted).toBe(0);
+    expect(result.lifetimeNoShows).toBe(1);
+    expect(result.lifetimeVisitsCompleted).toBe(0);
   });
 
   it('keeps a visit with any worked seat a visit, even with a service still to come', () => {
     const result = stats([
       {
         id: 'a1',
-        startMs: NOW - HOUR,
+        startMs: NOW_UTC_MS - HOUR,
         seats: [
           { who: 'ana', outcome: WORKED },
           { who: 'ana', outcome: { kind: 'scheduled' } },
         ],
       },
     ]);
-    expect(result.lifetime.visitsCompleted).toBe(1);
-    expect(result.nextVisit).toBeNull();
+    expect(result.lifetimeVisitsCompleted).toBe(1);
+    expect(result.nextVisitAppointmentId).toBeNull();
   });
 
   it('knows nothing about somebody with no seat anywhere', () => {
     const result = stats([solo('a1', daysAgo(3), WORKED)], 'bob');
-    expect(result.lifetime.visitsCompleted).toBe(0);
-    expect(result.lastVisit).toBeNull();
-    expect(result.firstVisitAtMs).toBeNull();
+    expect(result.lifetimeVisitsCompleted).toBe(0);
+    expect(result.lastVisitAppointmentId).toBeNull();
+    expect(result.lastVisitLegs).toEqual([]);
+    expect(result.firstVisitLocalDate).toBeNull();
+    expect(result.firstVisitStartMinutes).toBeNull();
   });
 });
 
 describe('stats — cancellations', () => {
   const cancel = (
     by: CancelledBy,
-    reason: Exclude<CancellationReason, 'other'>,
+    reason: Exclude<CancellationReason, 'OTHER'>,
     leadHours: number,
   ): OutcomeSpec => ({ kind: 'cancelled', by, reason, leadHours });
 
   it('counts a client cancel inside the window as late, and outside it as a cancel only', () => {
     const result = stats([
-      solo('late', daysAgo(20), cancel('client', 'unspecified', 2)),
-      solo('early', daysAgo(10), cancel('client', 'unspecified', 48)),
+      solo('late', daysAgo(20), cancel('CLIENT', 'UNSPECIFIED', 2)),
+      solo('early', daysAgo(10), cancel('CLIENT', 'UNSPECIFIED', 48)),
     ]);
-    expect(result.lifetime.clientCancels).toBe(2);
-    expect(result.lifetime.lateCancels).toBe(1);
-    expect(result.last365.lateCancels.map((f) => f.appointmentId)).toEqual([
+    expect(result.lifetimeClientCancels).toBe(2);
+    expect(result.lifetimeLateCancels).toBe(1);
+    expect(result.last365LateCancels.map((f) => f.appointmentId)).toEqual([
       'late',
     ]);
   });
 
   it('counts a client reason the desk filed as the client’s', () => {
     const result = stats([
-      solo('a1', daysAgo(5), cancel('staff', 'client_unwell', 1)),
+      solo('a1', daysAgo(5), cancel('STAFF', 'CLIENT_UNWELL', 1)),
     ]);
-    expect(result.lifetime.lateCancels).toBe(1);
+    expect(result.lifetimeLateCancels).toBe(1);
   });
 
   it('never counts a shop-caused cancellation, however late', () => {
     const result = stats([
-      solo('a1', daysAgo(5), cancel('staff', 'staff_barber_absence', 1)),
-      solo('a2', daysAgo(6), cancel('staff', 'staff_shop_closure', 1)),
-      solo('a3', daysAgo(7), cancel('staff', 'unspecified', 1)),
+      solo('a1', daysAgo(5), cancel('STAFF', 'STAFF_BARBER_ABSENCE', 1)),
+      solo('a2', daysAgo(6), cancel('STAFF', 'STAFF_SHOP_CLOSURE', 1)),
+      solo('a3', daysAgo(7), cancel('STAFF', 'UNSPECIFIED', 1)),
     ]);
-    expect(result.lifetime.clientCancels).toBe(0);
-    expect(result.lifetime.lateCancels).toBe(0);
+    expect(result.lifetimeClientCancels).toBe(0);
+    expect(result.lifetimeLateCancels).toBe(0);
   });
 
   it('holds a converted no-show against nobody until a correction says whose it was', () => {
     const result = stats([
-      solo('a1', daysAgo(5), cancel('staff', 'no_show_converted', 0)),
+      solo('a1', daysAgo(5), cancel('STAFF', 'NO_SHOW_CONVERTED', 0)),
     ]);
-    expect(result.lifetime.clientCancels).toBe(0);
+    expect(result.lifetimeClientCancels).toBe(0);
   });
 
   it('never calls a legacy row late — its cancellation instant is derived', () => {
     const legacy: VisitSpec = {
-      ...solo('a1', daysAgo(5), cancel('client', 'unspecified', 0)),
+      ...solo('a1', daysAgo(5), cancel('CLIENT', 'UNSPECIFIED', 0)),
       booked: false,
     };
     const result = stats([legacy]);
-    expect(result.lifetime.clientCancels).toBe(1);
-    expect(result.lifetime.lateCancels).toBe(0);
+    expect(result.lifetimeClientCancels).toBe(1);
+    expect(result.lifetimeLateCancels).toBe(0);
   });
 
   it('decides a fully cancelled visit by the seat called off last', () => {
@@ -359,12 +442,12 @@ describe('stats — cancellations', () => {
         id: 'a1',
         startMs: daysAgo(5),
         seats: [
-          { who: 'ana', outcome: cancel('client', 'client_changed_plans', 72) },
-          { who: 'ana', outcome: cancel('staff', 'staff_barber_absence', 3) },
+          { who: 'ana', outcome: cancel('CLIENT', 'CLIENT_CHANGED_PLANS', 72) },
+          { who: 'ana', outcome: cancel('STAFF', 'STAFF_BARBER_ABSENCE', 3) },
         ],
       },
     ]);
-    expect(result.lifetime.clientCancels).toBe(0);
+    expect(result.lifetimeClientCancels).toBe(0);
   });
 });
 
@@ -382,8 +465,8 @@ describe('stats — a cancellation keeps the window it was made under', () => {
   ): VisitSpec =>
     solo(id, daysAgo(10), {
       kind: 'cancelled',
-      by: 'client',
-      reason: 'client_changed_plans',
+      by: 'CLIENT',
+      reason: 'CLIENT_CHANGED_PLANS',
       leadHours,
       windowHours,
     });
@@ -391,18 +474,18 @@ describe('stats — a cancellation keeps the window it was made under', () => {
   it('never turns an on-time cancel late when the owner lengthens the window', () => {
     // 30 h ahead under a 24 h window: on time, and still on time at 48 h.
     const history = [clientCancel('a1', 30, 24)];
-    expect(anaUnder(24, history).lifetime.lateCancels).toBe(0);
-    expect(anaUnder(48, history).lifetime.lateCancels).toBe(0);
-    expect(anaUnder(48, history).lifetime.clientCancels).toBe(1);
+    expect(anaUnder(24, history).lifetimeLateCancels).toBe(0);
+    expect(anaUnder(48, history).lifetimeLateCancels).toBe(0);
+    expect(anaUnder(48, history).lifetimeClientCancels).toBe(1);
   });
 
   it('never lets a real late cancel go when the owner shortens the window', () => {
     // 3 h ahead under a 24 h window: late, and still late at 2 h.
     const history = [clientCancel('a1', 3, 24)];
-    expect(anaUnder(24, history).lifetime.lateCancels).toBe(1);
-    expect(anaUnder(2, history).lifetime.lateCancels).toBe(1);
+    expect(anaUnder(24, history).lifetimeLateCancels).toBe(1);
+    expect(anaUnder(2, history).lifetimeLateCancels).toBe(1);
     expect(
-      anaUnder(2, history).last365.lateCancels.map((f) => f.appointmentId),
+      anaUnder(2, history).last365LateCancels.map((f) => f.appointmentId),
     ).toEqual(['a1']);
   });
 
@@ -414,46 +497,44 @@ describe('stats — a cancellation keeps the window it was made under', () => {
     ];
     for (const today of [0, 6, 12, 24, 72]) {
       expect(
-        anaUnder(today, history).last365.lateCancels.map(
-          (f) => f.appointmentId,
-        ),
+        anaUnder(today, history).last365LateCancels.map((f) => f.appointmentId),
       ).toEqual(['under-12']);
     }
   });
 
   it('falls back to the current window for a cancellation recorded before the stamp', () => {
     const legacy = [clientCancel('a1', 30, null)];
-    expect(anaUnder(24, legacy).lifetime.lateCancels).toBe(0);
-    expect(anaUnder(48, legacy).lifetime.lateCancels).toBe(1);
+    expect(anaUnder(24, legacy).lifetimeLateCancels).toBe(0);
+    expect(anaUnder(48, legacy).lifetimeLateCancels).toBe(1);
   });
 });
 
 describe('clientCaused', () => {
   const clientCaused = ClientStatsSystem.clientCaused;
 
-  // The two `other` rows of the legacy spec carried a note; the reason is
-  // code-only now (§9 D23), so they are the same `other` by either side.
+  // The two `OTHER` rows of the legacy spec carried a note; the reason is
+  // code-only now (§9 D23), so they are the same `OTHER` by either side.
   it.each<[CancellationReason, CancelledBy, boolean]>([
-    ['client_changed_plans', 'staff', true],
-    ['client_unwell', 'client', true],
-    ['staff_barber_absence', 'client', false],
-    ['staff_shop_closure', 'staff', false],
-    ['unspecified', 'client', true],
-    ['unspecified', 'staff', false],
-    ['other', 'client', true],
-    ['other', 'staff', false],
-    ['no_show_converted', 'staff', false],
-  ])('%s by %s → %s', (reason, by, expected) => {
-    expect(clientCaused({ by, reason: { kind: reason } })).toBe(expected);
+    ['CLIENT_CHANGED_PLANS', 'STAFF', true],
+    ['CLIENT_UNWELL', 'CLIENT', true],
+    ['STAFF_BARBER_ABSENCE', 'CLIENT', false],
+    ['STAFF_SHOP_CLOSURE', 'STAFF', false],
+    ['UNSPECIFIED', 'CLIENT', true],
+    ['UNSPECIFIED', 'STAFF', false],
+    ['OTHER', 'CLIENT', true],
+    ['OTHER', 'STAFF', false],
+    ['NO_SHOW_CONVERTED', 'STAFF', false],
+  ])('%s by %s → %s', (cancellationReason, cancelledBy, expected) => {
+    expect(clientCaused({ cancelledBy, cancellationReason })).toBe(expected);
   });
 
   it('takes a converted no-show’s side from the correction', () => {
     const converted = {
-      by: 'staff' as const,
-      reason: { kind: CancellationReason.NoShowConverted },
+      cancelledBy: CancelledBy.Staff,
+      cancellationReason: CancellationReason.NoShowConverted,
     };
-    expect(clientCaused(converted, 'client')).toBe(true);
-    expect(clientCaused(converted, 'shop')).toBe(false);
+    expect(clientCaused(converted, 'CLIENT')).toBe(true);
+    expect(clientCaused(converted, 'SHOP')).toBe(false);
   });
 });
 
@@ -468,11 +549,15 @@ describe('stats — bounded instants and windows', () => {
 
   it('keeps lifetime counts whole and instants for the last 365 days only', () => {
     const result = stats(history);
-    expect(result.lifetime.visitsCompleted).toBe(3);
-    expect(result.last365.visitsCompleted.map((f) => f.appointmentId)).toEqual([
+    expect(result.lifetimeVisitsCompleted).toBe(3);
+    expect(result.last365VisitsCompleted.map((f) => f.appointmentId)).toEqual([
       'year',
       'recent',
     ]);
+    // A fact is the visit's start on the shop's clock.
+    expect(result.last365VisitsCompleted[1]).toEqual(
+      factAt('recent', daysAgo(30)),
+    );
   });
 
   it('computes the windows at read, so time alone moves a count', () => {
@@ -484,7 +569,8 @@ describe('stats — bounded instants and windows', () => {
     });
     // Half a year on, with nothing written: both windows have moved.
     expect(
-      ClientStatsSystem.statWindows(result, NOW + 180 * DAY).visitsCompleted,
+      ClientStatsSystem.statWindows(result, nowAt(NOW_UTC_MS + 180 * DAY))
+        .visitsCompleted,
     ).toEqual({ lifetime: 3, last12m: 1, last90d: 0 });
   });
 });
@@ -503,17 +589,28 @@ describe('stats — the visits a reader names', () => {
         ],
       },
       solo('stale', daysAgo(2), { kind: 'scheduled' }),
-      solo('later', NOW + 20 * DAY, { kind: 'scheduled' }),
-      solo('next', NOW + 5 * DAY, { kind: 'scheduled' }, { service: 'cut' }),
+      solo('later', NOW_UTC_MS + 20 * DAY, { kind: 'scheduled' }),
+      solo(
+        'next',
+        NOW_UTC_MS + 5 * DAY,
+        { kind: 'scheduled' },
+        {
+          service: 'cut',
+        },
+      ),
     ]);
-    expect(result.firstVisitAtMs).toBe(daysAgo(90));
-    expect(result.lastVisit?.appointmentId).toBe('last');
-    expect(result.lastVisit?.serviceIds).toEqual(['cut', 'beard']);
-    expect(result.lastVisit?.barberIds).toEqual(['ivan']);
-    expect(result.lastVisit?.legs).toHaveLength(2);
-    expect(result.lastVisit?.legs[1]?.minutes).toBe(SEAT_MINUTES);
+    const first = wallOf(daysAgo(90));
+    expect(result.firstVisitLocalDate).toBe(first.localDate);
+    expect(result.firstVisitStartMinutes).toBe(first.minute);
+    expect(result.lastVisitAppointmentId).toBe('last');
+    expect(result.lastVisitLocalDate).toBe(wallOf(daysAgo(10)).localDate);
+    expect(result.lastVisitServiceIds).toEqual(['cut', 'beard']);
+    expect(result.lastVisitBarberIds).toEqual(['ivan']);
+    expect(result.lastVisitLegs).toHaveLength(2);
+    expect(result.lastVisitLegs[1]?.durationMinutes).toBe(SEAT_MINUTES);
     // The unsettled visit two days ago is not "next"; the nearest future one is.
-    expect(result.nextVisit?.appointmentId).toBe('next');
+    expect(result.nextVisitAppointmentId).toBe('next');
+    expect(result.nextVisitServiceIds).toEqual(['cut']);
   });
 });
 
@@ -540,8 +637,8 @@ describe('stats — cadence (R34)', () => {
       solo('b', daysAgo(90), WORKED),
       solo('shop', daysAgo(60), {
         kind: 'cancelled',
-        by: 'staff',
-        reason: 'staff_barber_absence',
+        by: 'STAFF',
+        reason: 'STAFF_BARBER_ABSENCE',
         leadHours: 20,
       }),
       solo('c', daysAgo(30), WORKED),
@@ -549,24 +646,36 @@ describe('stats — cadence (R34)', () => {
     // 120→90 counts (30 days); 90→30 held the shop's cancellation.
     expect(result.avgCadenceDays).toBe(30);
   });
+
+  it('measures the gaps in REAL elapsed days — a spring-forward between two visits moves no stored figure', () => {
+    // 10 days, then 10 days 2:53 on the wall clock across 2026-03-29 — but
+    // one hour less of real time: (10 + 10.0786) / 2 = 10.04 → 10.0. Read on
+    // the wall clock the mean would be 10.06 → 10.1.
+    const result = stats([
+      solo('a', utcMs('2026-03-10T10:00:00+02:00'), WORKED),
+      solo('b', utcMs('2026-03-20T10:00:00+02:00'), WORKED),
+      solo('c', utcMs('2026-03-30T12:53:00+03:00'), WORKED),
+    ]);
+    expect(result.avgCadenceDays).toBe(10);
+  });
 });
 
 describe('stats — preferred barber and usual services', () => {
   it('names a barber asked for by name on two of the last three visits', () => {
     const result = stats([
-      solo('a', daysAgo(90), WORKED, { barber: 'petar', pref: 'specific' }),
-      solo('b', daysAgo(60), WORKED, { barber: 'ivan', pref: 'specific' }),
-      solo('c', daysAgo(30), WORKED, { barber: 'ivan', pref: 'specific' }),
-      solo('d', daysAgo(5), WORKED, { barber: 'petar', pref: 'any' }),
+      solo('a', daysAgo(90), WORKED, { barber: 'petar', pref: 'SPECIFIC' }),
+      solo('b', daysAgo(60), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
+      solo('c', daysAgo(30), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
+      solo('d', daysAgo(5), WORKED, { barber: 'petar', pref: 'ANY' }),
     ]);
     expect(result.preferredBarberId).toBe('ivan');
   });
 
   it('reads nothing into who happened to be free, or into an unknown preference', () => {
     const result = stats([
-      solo('a', daysAgo(60), WORKED, { barber: 'ivan', pref: 'any' }),
+      solo('a', daysAgo(60), WORKED, { barber: 'ivan', pref: 'ANY' }),
       solo('b', daysAgo(30), WORKED, { barber: 'ivan', pref: null }),
-      solo('c', daysAgo(5), WORKED, { barber: 'ivan', pref: 'specific' }),
+      solo('c', daysAgo(5), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
     ]);
     expect(result.preferredBarberId).toBeNull();
   });
@@ -576,25 +685,25 @@ describe('stats — preferred barber and usual services', () => {
   // among the last three.
   it('ignores a visit whose placement is unknown, a legacy import', () => {
     const result = stats([
-      solo('a', daysAgo(90), WORKED, { barber: 'ivan', pref: 'specific' }),
+      solo('a', daysAgo(90), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
       {
-        ...solo('b', daysAgo(60), WORKED, { barber: 'ivan', pref: 'specific' }),
+        ...solo('b', daysAgo(60), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
         placement: null,
       },
       {
-        ...solo('c', daysAgo(30), WORKED, { barber: 'ivan', pref: 'specific' }),
+        ...solo('c', daysAgo(30), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
         placement: null,
       },
-      solo('d', daysAgo(5), WORKED, { barber: 'ivan', pref: 'specific' }),
+      solo('d', daysAgo(5), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
     ]);
     // Last three: b, c (legacy) and d — one piece of evidence, not two.
     expect(result.preferredBarberId).toBeNull();
   });
 
   it('counts a staff placement only where the form recorded the request', () => {
-    const phoned = (id: string, days: number, pref: 'specific' | null) => ({
+    const phoned = (id: string, days: number, pref: 'SPECIFIC' | null) => ({
       ...solo(id, daysAgo(days), WORKED, { barber: 'niko', pref }),
-      placement: 'staff' as const,
+      placement: Placement.Staff,
     });
     // The desk put her in whichever chair was free: no preference recorded.
     expect(
@@ -606,18 +715,18 @@ describe('stats — preferred barber and usual services', () => {
     ).toBeNull();
     // The desk wrote down that she asked for Niko.
     expect(
-      stats([phoned('a', 60, 'specific'), phoned('b', 30, 'specific')])
+      stats([phoned('a', 60, 'SPECIFIC'), phoned('b', 30, 'SPECIFIC')])
         .preferredBarberId,
     ).toBe('niko');
   });
 
-  // The pre-P0 commit stored an omitted preference as `specific`. The
+  // The pre-P0 commit stored an omitted preference as `SPECIFIC`. The
   // backfill may learn from the audit trail that the desk placed these, but
   // it records that as an inference, which never reaches `placement` — so
   // the chairs that happened to be free cannot become «asks for Ivan».
   it('takes no pre-P0 phone booking as a request, whoever placed it', () => {
     const prePhone = (id: string, days: number): VisitSpec => ({
-      ...solo(id, daysAgo(days), WORKED, { barber: 'ivan', pref: 'specific' }),
+      ...solo(id, daysAgo(days), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
       placement: null,
     });
     const history = [prePhone('a', 90), prePhone('b', 60), prePhone('c', 30)];
@@ -626,7 +735,7 @@ describe('stats — preferred barber and usual services', () => {
     // Two visits the P0 commit recorded her asking for Petar: the signal
     // heals from new visits alone.
     const asked = (id: string, days: number): VisitSpec =>
-      solo(id, daysAgo(days), WORKED, { barber: 'petar', pref: 'specific' });
+      solo(id, daysAgo(days), WORKED, { barber: 'petar', pref: 'SPECIFIC' });
     expect(
       stats([...history, asked('d', 20), asked('e', 10)]).preferredBarberId,
     ).toBe('petar');
@@ -634,8 +743,8 @@ describe('stats — preferred barber and usual services', () => {
 
   it('reads no placements at all as no evidence', () => {
     const history = [
-      solo('a', daysAgo(60), WORKED, { barber: 'ivan', pref: 'specific' }),
-      solo('b', daysAgo(30), WORKED, { barber: 'ivan', pref: 'specific' }),
+      solo('a', daysAgo(60), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
+      solo('b', daysAgo(30), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
     ];
     expect(
       ClientStatsSystem.stats(
@@ -677,35 +786,61 @@ describe('pause suggestion (R25) — a suggestion, never a pause', () => {
     solo('n2', daysAgo(20), NO_SHOW),
     solo('n3', daysAgo(2), NO_SHOW),
   ];
+  /** The stored no-show facts with the start instants the dismissal is compared with. */
+  const basisOf = (
+    facts: readonly VisitFact[],
+    visits: readonly VisitSpec[],
+  ): PauseBasisFact[] =>
+    facts.map((fact) => ({
+      ...fact,
+      startUtcMs: instant(
+        visits.find((visit) => visit.id === fact.appointmentId)?.startMs ??
+          Number.NaN,
+      ),
+    }));
 
   it('raises at three no-shows inside sixty days, on the newest one', () => {
     const result = stats(three);
-    expect(result.pauseSuggestion).toEqual({
-      noShows: 3,
-      windowDays: 60,
-      basis: ['n1', 'n2', 'n3'],
-      raisedAtMs: daysAgo(2),
+    expect({
+      pauseSuggestedNoShows: result.pauseSuggestedNoShows,
+      pauseSuggestedWindowDays: result.pauseSuggestedWindowDays,
+      pauseSuggestionBasis: result.pauseSuggestionBasis,
+      pauseSuggestedAtUtcMs: result.pauseSuggestedAtUtcMs,
+    }).toEqual({
+      pauseSuggestedNoShows: 3,
+      pauseSuggestedWindowDays: 60,
+      pauseSuggestionBasis: ['n1', 'n2', 'n3'],
+      pauseSuggestedAtUtcMs: daysAgo(2),
     });
+    expect(PauseSuggestion.isRaised(result)).toBe(true);
   });
 
   it('stays quiet at two, or when the third is outside the window', () => {
-    expect(stats(three.slice(1)).pauseSuggestion).toBeNull();
+    const quiet = {
+      pauseSuggestedNoShows: null,
+      pauseSuggestedWindowDays: null,
+      pauseSuggestionBasis: [],
+      pauseSuggestedAtUtcMs: null,
+    };
+    expect(stats(three.slice(1))).toMatchObject(quiet);
     expect(
-      stats([solo('n0', daysAgo(70), NO_SHOW), ...three.slice(1)])
-        .pauseSuggestion,
-    ).toBeNull();
+      stats([solo('n0', daysAgo(70), NO_SHOW), ...three.slice(1)]),
+    ).toMatchObject(quiet);
   });
 
   it('is re-checked at read: the basis ages out, and «Не сега» holds until a newer no-show', () => {
     const result = stats(three);
+    const basis = basisOf(result.last365NoShows, three);
     const at = ClientStatsSystem.pauseSuggestionAt;
-    expect(at(result.last365.noShows, NOW + 15 * DAY)).toBeNull();
+    expect(at(basis, nowAt(NOW_UTC_MS + 15 * DAY))).toEqual(
+      PauseSuggestion.NONE,
+    );
     expect(
-      at(result.last365.noShows, NOW, ClientStatsPolicy.DEFAULT, daysAgo(1)),
-    ).toBeNull();
+      at(basis, NOW, ClientStatsPolicy.DEFAULT, instant(daysAgo(1))),
+    ).toEqual(PauseSuggestion.NONE);
     expect(
-      at(result.last365.noShows, NOW, ClientStatsPolicy.DEFAULT, daysAgo(10))
-        ?.noShows,
+      at(basis, NOW, ClientStatsPolicy.DEFAULT, instant(daysAgo(10)))
+        .pauseSuggestedNoShows,
     ).toBe(3);
   });
 });
@@ -728,8 +863,8 @@ describe('money', () => {
           daysAgo(4),
           {
             kind: 'cancelled',
-            by: 'client',
-            reason: 'unspecified',
+            by: 'CLIENT',
+            reason: 'UNSPECIFIED',
             leadHours: 1,
           },
           { price: 9900 },
@@ -738,7 +873,8 @@ describe('money', () => {
     ]);
     expect(result).toEqual({
       userId: PEOPLE.ana,
-      lifetimeSpend: { amountMinorUnits: 2500, currencyCode: 'EUR' },
+      lifetimeSpendCents: 2500,
+      currency: 'EUR',
     });
   });
 
@@ -754,19 +890,19 @@ describe('money', () => {
         percentOff: 10,
       }),
     ]);
-    expect(result.lifetimeSpend.amountMinorUnits).toBe(2700);
+    expect(result.lifetimeSpendCents).toBe(2700);
   });
 
   it('converts a legacy leva price at the fixed rate', () => {
     const result = ClientStatsSystem.money(PEOPLE.ana, [
       build({
         ...solo('a1', daysAgo(900), WORKED, { price: 3912 }),
-        currency: 'BGN',
+        currency: Currency.BGN,
       }),
     ]);
-    expect(result.lifetimeSpend).toEqual({
-      amountMinorUnits: 2000,
-      currencyCode: 'EUR',
+    expect(result).toMatchObject({
+      lifetimeSpendCents: 2000,
+      currency: 'EUR',
     });
   });
 
@@ -774,12 +910,12 @@ describe('money', () => {
     const result = ClientStatsSystem.money(PEOPLE.ana, [
       build({
         ...solo('a1', daysAgo(30), WORKED, { price: 5000 }),
-        currency: 'USD',
+        currency: Currency.USD,
       }),
       build(solo('a2', daysAgo(20), WORKED, { price: 0 })),
       build(solo('a3', daysAgo(10), WORKED, { price: 1200 })),
     ]);
-    expect(result.lifetimeSpend.amountMinorUnits).toBe(1200);
+    expect(result.lifetimeSpendCents).toBe(1200);
   });
 
   it('is what compute returns beside the stats, from one read of the history', () => {
@@ -818,37 +954,57 @@ describe('ClientStatsPolicy', () => {
       expect(
         result.error.map((error) => ('field' in error ? error.field : null)),
       ).toEqual(['suggestPauseNoShows', 'suggestPauseWindowDays']);
-      expect(result.error[0]?.code).toBe(
+      expect(result.error[0]?.errorCode).toBe(
         SchedulingErrorCode.ClientStatsPolicyInvalid,
       );
-      expect(result.error[0]?.code).toBe(
-        'scheduling.client_stats_policy.invalid',
+      expect(result.error[0]?.errorCode).toBe(
+        'SCHEDULING_CLIENT_STATS_POLICY_INVALID',
       );
     }
   });
 
   it('draws the late line exactly where the free cancellation ends', () => {
     const policy = ClientStatsPolicy.DEFAULT;
-    const start = NOW + 3 * DAY;
+    const start = NOW_UTC_MS + 3 * DAY;
     const deadline = start - policy.booking.cancellationWindowHours * HOUR;
     expect(
-      ClientStatsPolicy.isLateCancellation(policy, start, deadline, null),
+      ClientStatsPolicy.isLateCancellation(
+        policy,
+        instant(start),
+        instant(deadline),
+        null,
+      ),
     ).toBe(false);
     expect(
-      ClientStatsPolicy.isLateCancellation(policy, start, deadline + 1, null),
+      ClientStatsPolicy.isLateCancellation(
+        policy,
+        instant(start),
+        instant(deadline + 1),
+        null,
+      ),
     ).toBe(true);
   });
 
   it('draws a stamped line where THAT window ended, whatever the policy says now', () => {
-    const start = NOW + 3 * DAY;
+    const start = NOW_UTC_MS + 3 * DAY;
     const deadline = start - 6 * HOUR;
     for (const today of [0, 6, 24, 168]) {
       const policy = policyWithWindow(today);
       expect(
-        ClientStatsPolicy.isLateCancellation(policy, start, deadline, 6),
+        ClientStatsPolicy.isLateCancellation(
+          policy,
+          instant(start),
+          instant(deadline),
+          6,
+        ),
       ).toBe(false);
       expect(
-        ClientStatsPolicy.isLateCancellation(policy, start, deadline + 1, 6),
+        ClientStatsPolicy.isLateCancellation(
+          policy,
+          instant(start),
+          instant(deadline + 1),
+          6,
+        ),
       ).toBe(true);
     }
   });
@@ -857,12 +1013,12 @@ describe('ClientStatsPolicy', () => {
 // ── Properties ───────────────────────────────────────────────────────────
 
 const REASONS = [
-  'client_changed_plans',
-  'client_unwell',
-  'staff_barber_absence',
-  'staff_shop_closure',
-  'no_show_converted',
-  'unspecified',
+  'CLIENT_CHANGED_PLANS',
+  'CLIENT_UNWELL',
+  'STAFF_BARBER_ABSENCE',
+  'STAFF_SHOP_CLOSURE',
+  'NO_SHOW_CONVERTED',
+  'UNSPECIFIED',
 ] as const;
 
 const outcomeArb: fc.Arbitrary<OutcomeSpec> = fc.oneof(
@@ -871,7 +1027,7 @@ const outcomeArb: fc.Arbitrary<OutcomeSpec> = fc.oneof(
   fc.constant<OutcomeSpec>({ kind: 'no_show' }),
   fc.record({
     kind: fc.constant('cancelled' as const),
-    by: fc.constantFrom('client' as const, 'staff' as const),
+    by: fc.constantFrom(CancelledBy.Client, CancelledBy.Staff),
     reason: fc.constantFrom(...REASONS),
     leadHours: fc.integer({ min: 0, max: 96 }),
     // Stamped under some window, or older than the stamp.
@@ -896,9 +1052,9 @@ function stampedWith(
 
 const windowArb = fc.integer({ min: 0, max: 96 });
 
-const prefArb = fc.constantFrom<'any' | 'specific' | null>(
-  'any',
-  'specific',
+const prefArb = fc.constantFrom<BarberPreference | null>(
+  BarberPreference.Any,
+  BarberPreference.Specific,
   null,
 );
 
@@ -923,7 +1079,7 @@ const historyArb: fc.Arbitrary<VisitSpec[]> = fc
   .map((rows) =>
     rows.map((row, index) => ({
       id: `appt-${index}`,
-      startMs: NOW + row.dayOffset * DAY + row.minute * 60_000,
+      startMs: NOW_UTC_MS + row.dayOffset * DAY + row.minute * MINUTE,
       seats: row.seats,
     })),
   );
@@ -932,10 +1088,17 @@ const historyArb: fc.Arbitrary<VisitSpec[]> = fc
 const stampedHistoryArb: fc.Arbitrary<VisitSpec[]> = historyArb.chain(
   (history) =>
     fc
-      .array(fc.constantFrom<PlacementKind | null>('self', 'staff', null), {
-        minLength: history.length,
-        maxLength: history.length,
-      })
+      .array(
+        fc.constantFrom<Placement | null>(
+          Placement.Self,
+          Placement.Staff,
+          null,
+        ),
+        {
+          minLength: history.length,
+          maxLength: history.length,
+        },
+      )
       .map((placements) =>
         history.map((visit, index) => ({
           ...visit,
@@ -946,6 +1109,21 @@ const stampedHistoryArb: fc.Arbitrary<VisitSpec[]> = historyArb.chain(
 
 const ana = (history: readonly VisitSpec[]): ClientStats =>
   stats(history, 'ana');
+
+/** The lifetime counts of an answer. */
+const lifetimeOf = (result: ClientStats) => [
+  result.lifetimeVisitsCompleted,
+  result.lifetimeNoShows,
+  result.lifetimeLateCancels,
+  result.lifetimeClientCancels,
+];
+
+/** The bounded facts of an answer. */
+const last365Of = (result: ClientStats) => [
+  result.last365VisitsCompleted,
+  result.last365NoShows,
+  result.last365LateCancels,
+];
 
 describe('stats — properties', () => {
   it('is idempotent: the same history gives the same stats', () => {
@@ -986,10 +1164,10 @@ describe('stats — properties', () => {
             (seat) => seat.who === 'ana' && seat.outcome.kind === 'worked',
           ),
         ).length;
-        expect(ana(history).lifetime.visitsCompleted).toBe(workedFor);
+        expect(ana(history).lifetimeVisitsCompleted).toBe(workedFor);
         // Listing the same appointment twice cannot double it either.
-        expect(ana([...history, ...history]).lifetime).toEqual(
-          ana(history).lifetime,
+        expect(lifetimeOf(ana([...history, ...history]))).toEqual(
+          lifetimeOf(ana(history)),
         );
       }),
     );
@@ -1026,10 +1204,10 @@ describe('stats — properties', () => {
     const shopCancelArb = fc.record({
       dayOffset: fc.integer({ min: -400, max: 30 }),
       reason: fc.constantFrom(
-        'staff_barber_absence' as const,
-        'staff_shop_closure' as const,
+        CancellationReason.StaffBarberAbsence,
+        CancellationReason.StaffShopClosure,
       ),
-      by: fc.constantFrom('client' as const, 'staff' as const),
+      by: fc.constantFrom(CancelledBy.Client, CancelledBy.Staff),
       leadHours: fc.integer({ min: 0, max: 96 }),
     });
     fc.assert(
@@ -1038,7 +1216,7 @@ describe('stats — properties', () => {
         fc.array(shopCancelArb, { maxLength: 4 }),
         (history, shopCancels) => {
           const extra = shopCancels.map((cancel, index): VisitSpec =>
-            solo(`shop-${index}`, NOW + cancel.dayOffset * DAY, {
+            solo(`shop-${index}`, NOW_UTC_MS + cancel.dayOffset * DAY, {
               kind: 'cancelled',
               by: cancel.by,
               reason: cancel.reason,
@@ -1047,8 +1225,8 @@ describe('stats — properties', () => {
           );
           const before = ana(history);
           const after = ana([...history, ...extra]);
-          expect(after.lifetime).toEqual(before.lifetime);
-          expect(after.last365).toEqual(before.last365);
+          expect(lifetimeOf(after)).toEqual(lifetimeOf(before));
+          expect(last365Of(after)).toEqual(last365Of(before));
         },
       ),
     );
@@ -1101,7 +1279,7 @@ describe('stats — properties', () => {
               (seat) =>
                 seat.who === 'ana' &&
                 seat.outcome.kind === 'worked' &&
-                seat.pref === 'specific' &&
+                seat.pref === 'SPECIFIC' &&
                 seat.barber === preferred,
             ),
         );
@@ -1145,9 +1323,11 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       'fade',
       'beard',
     ]);
-    expect(visit?.atMs).toBe(appointment.timeInterval.startMs);
-    expect(visit?.endMs).toBe(appointment.timeInterval.endMs);
-    expect(visit?.outcome).toEqual({ kind: 'worked' });
+    expect(visit?.localDate).toBe(appointment.localDate);
+    expect(visit?.startMinutes).toBe(appointment.startMinutes);
+    expect(visit?.endMinutes).toBe(appointment.endMinutes);
+    expect(visit?.startUtcMs).toBe(appointment.utcEpochMs);
+    expect(visit?.outcome).toEqual({ subjectVisitOutcome: 'WORKED' });
   });
 
   // A companion's no-show says nothing about the booker, and the reverse.
@@ -1158,7 +1338,7 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
     ]);
     expect(
       ClientStatsSystem.subjectVisitOf(PEOPLE.bob, appointment)?.outcome,
-    ).toEqual({ kind: 'no_show' });
+    ).toEqual({ subjectVisitOutcome: 'NO_SHOW' });
   });
 
   it('keeps a visit open while any of the person’s seats is', () => {
@@ -1167,8 +1347,9 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       { who: 'ana', outcome: NO_SHOW },
     ]);
     expect(
-      ClientStatsSystem.subjectVisitOf(PEOPLE.ana, appointment)?.outcome.kind,
-    ).toBe('open');
+      ClientStatsSystem.subjectVisitOf(PEOPLE.ana, appointment)?.outcome
+        .subjectVisitOutcome,
+    ).toBe('OPEN');
   });
 
   it('decides a cancelled visit by the seat called off last', () => {
@@ -1177,8 +1358,8 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
         who: 'ana',
         outcome: {
           kind: 'cancelled',
-          by: 'client',
-          reason: 'client_changed_plans',
+          by: 'CLIENT',
+          reason: 'CLIENT_CHANGED_PLANS',
           leadHours: 48,
         },
       },
@@ -1186,8 +1367,8 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
         who: 'ana',
         outcome: {
           kind: 'cancelled',
-          by: 'staff',
-          reason: 'staff_shop_closure',
+          by: 'STAFF',
+          reason: 'STAFF_SHOP_CLOSURE',
           leadHours: 2,
         },
       },
@@ -1196,9 +1377,11 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       PEOPLE.ana,
       appointment,
     )?.outcome;
-    expect(outcome?.kind).toBe('cancelled');
-    if (outcome?.kind === 'cancelled') {
-      expect(outcome.decisive.by).toBe('staff');
+    expect(outcome?.subjectVisitOutcome).toBe('CANCELLED');
+    if (outcome?.subjectVisitOutcome === 'CANCELLED') {
+      expect(outcome.decisive.cancelledBy).toBe('STAFF');
+      // The decisive cancellation IS the seat that carries it.
+      expect(outcome.decisive).toBe(appointment.seats[1]);
       expect(ClientStatsSystem.clientCaused(outcome.decisive)).toBe(false);
     }
   });
@@ -1233,14 +1416,14 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       .map(
         (appointment) =>
           ClientStatsSystem.subjectVisitOf(PEOPLE.ana, appointment)?.outcome
-            .kind,
+            .subjectVisitOutcome,
       );
-    const counted = stats(visits).lifetime;
-    expect(outcomes.filter((kind) => kind === 'worked')).toHaveLength(
-      counted.visitsCompleted,
+    const counted = stats(visits);
+    expect(outcomes.filter((outcome) => outcome === 'WORKED')).toHaveLength(
+      counted.lifetimeVisitsCompleted,
     );
-    expect(outcomes.filter((kind) => kind === 'no_show')).toHaveLength(
-      counted.noShows,
+    expect(outcomes.filter((outcome) => outcome === 'NO_SHOW')).toHaveLength(
+      counted.lifetimeNoShows,
     );
   });
 });
@@ -1248,10 +1431,10 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
 /* ── The projection: client-stats-projection.spec.ts ─────────────────── */
 
 describe('statsInputChanged — the early exit (§13 R28)', () => {
-  const seat = seatFixture({ barberPref: 'specific' });
+  const seat = seatFixture({ barberPreference: BarberPreference.Specific });
   const visit = (
-    overrides: Partial<AppointmentEntity> = {},
-  ): AppointmentEntity =>
+    overrides: Parameters<typeof appointmentFixture>[0] = {},
+  ): Appointment =>
     appointmentFixture({ placement: null, seats: [seat], ...overrides });
   const base = visit();
   const changed = ClientStatsSystem.statsInputChanged;
@@ -1261,16 +1444,10 @@ describe('statsInputChanged — the early exit (§13 R28)', () => {
       changed(
         base,
         visit({
-          seats: [
-            { ...seat, tip: { amountMinorUnits: 500, currencyCode: 'EUR' } },
-          ],
-          arrivedAtMs: base.timeInterval.startMs - 2 * 60_000,
-          contact: {
-            name: 'Ана',
-            phone: E164.of('+359888000000'),
-            email: null,
-            note: null,
-          },
+          seats: [{ ...seat, tipCents: unwrapOk(PriceCents.of(500)) }],
+          arrivedAtUtcMs: instant(base.utcEpochMs - 2 * MINUTE),
+          contactName: 'Ана',
+          contactPhone: E164.of('+359888000000'),
           revision: 4,
           subjectUserIds: [UserId.of('ana')],
         }),
@@ -1280,31 +1457,40 @@ describe('statsInputChanged — the early exit (§13 R28)', () => {
 
   // The preferred barber counts only visits their commit stamped (§11.2 #6).
   it('wakes on a placement stamped or changed', () => {
-    const placed = visit({ placement: 'self' });
+    const placed = visit({ placement: Placement.Self });
     expect(changed(base, placed)).toBe(true);
-    expect(changed(placed, visit({ placement: 'staff' }))).toBe(true);
-    expect(changed(placed, visit({ placement: 'self' }))).toBe(false);
+    expect(changed(placed, visit({ placement: Placement.Staff }))).toBe(true);
+    expect(changed(placed, visit({ placement: Placement.Self }))).toBe(false);
   });
 
   // The backfill's inference is no stat's input, so stamping it on a
   // pre-P0 row moves nobody's stats and wakes no recompute.
   it('sleeps through an inferred placement', () => {
-    expect(changed(base, visit({ inferredPlacement: 'staff' }))).toBe(false);
+    expect(changed(base, visit({ inferredPlacement: Placement.Staff }))).toBe(
+      false,
+    );
   });
 
   it('wakes on an outcome, a subject, a time or a price', () => {
-    const changes = [
-      { ...seat, outcome: SeatOutcome.noShow(1) },
+    const changes: Seat[] = [
       {
         ...seat,
-        subject: SeatSubject.account(UserId.of('bob'), SeatRelationship.Self),
-      },
-      { ...seat, startMs: seat.startMs + DAY },
-      { ...seat, terms: { ...seat.terms, priceMinorUnits: 1800 } },
+        attendanceState: AttendanceState.NoShow,
+        noShowAtUtcMs: instant(1),
+      } as Seat,
+      { ...seat, subjectUserId: UserId.of('bob') } as Seat,
+      { ...seat, startMinutes: minute(seat.startMinutes + 30) },
+      { ...seat, priceCents: unwrapOk(PriceCents.of(1800)) },
     ];
     for (const next of changes) {
       expect(changed(base, visit({ seats: [next] }))).toBe(true);
     }
+    // The same minute on another day is another time.
+    const nextDay = ZonedTimeSystem.toLocal(
+      instant(base.utcEpochMs + DAY),
+      FIXTURE_TIME_ZONE,
+    ).localDate;
+    expect(changed(base, visit({ localDate: nextDay }))).toBe(true);
   });
 
   it('wakes on a create and a delete', () => {
@@ -1315,13 +1501,9 @@ describe('statsInputChanged — the early exit (§13 R28)', () => {
   it('does not mistake a reordered map for a change', () => {
     const reversed = <T extends object>(value: T): T =>
       Object.fromEntries(Object.entries(value).reverse()) as T;
-    const reordered: AppointmentEntity = {
+    const reordered: Appointment = {
       ...reversed(base),
-      bookingStatus: reversed(base.bookingStatus),
-      seats: base.seats.map((entry) => ({
-        ...reversed(entry),
-        terms: reversed(entry.terms),
-      })),
+      seats: base.seats.map((entry) => reversed(entry)),
     };
     expect(changed(base, reordered)).toBe(false);
     expect(ClientStatsSystem.canonicalJson({ b: 1, a: { d: 2, c: 3 } })).toBe(
@@ -1344,46 +1526,37 @@ describe('projectionClock', () => {
   it('never runs behind the stored answer', () => {
     expect(
       ClientStatsSystem.projectionClock(
-        Date.parse('2026-09-25T09:00:00.000Z'),
-        Date.parse('2026-09-25T10:00:00.000Z'),
+        utcMs('2026-09-25T09:00:00.000Z'),
+        utcMs('2026-09-25T10:00:00.000Z'),
       ),
-    ).toBe(Date.parse('2026-09-25T10:00:00.000Z'));
-    expect(ClientStatsSystem.projectionClock(5, null)).toBe(5);
-    expect(ClientStatsSystem.projectionClock(5, Number.NaN)).toBe(5);
+    ).toBe(utcMs('2026-09-25T10:00:00.000Z'));
+    expect(ClientStatsSystem.projectionClock(instant(5), null)).toBe(5);
+    // A corrupt stored time (a zero-mapper read of broken bytes) is no bound.
+    expect(
+      ClientStatsSystem.projectionClock(instant(5), Number.NaN as UtcEpochMs),
+    ).toBe(5);
   });
 });
 
 describe('planWrite (planClientStatsWrite) — the revision guard', () => {
-  const NOW_W = Date.parse('2026-09-25T10:00:00.000Z');
+  const NOW_W = utcMs('2026-09-25T10:00:00.000Z');
   const ANA = UserId.of('ana');
   const PATHS = {
     stats: ['clientStats', ANA],
     money: ['clientStats', ANA, 'restricted', 'money'],
   } as const;
   const content: ClientStats = {
-    userId: ANA,
-    lifetime: {
-      visitsCompleted: 1,
-      noShows: 0,
-      lateCancels: 0,
-      clientCancels: 0,
-    },
-    last365: { visitsCompleted: [], noShows: [], lateCancels: [] },
-    firstVisitAtMs: null,
-    lastVisit: null,
-    nextVisit: null,
-    avgCadenceDays: null,
-    preferredBarberId: null,
-    usualServiceIds: [],
-    pauseSuggestion: null,
+    ...ClientStats.empty(ANA),
+    lifetimeVisitsCompleted: 1,
   };
   const money: ClientMoneyStats = {
     userId: ANA,
-    lifetimeSpend: { amountMinorUnits: 2500, currencyCode: 'EUR' },
+    lifetimeSpendCents: unwrapOk(PriceCents.of(2500)),
+    currency: Currency.EUR,
   };
   const meta = (version: number): ClientStatsMeta => ({
     version,
-    updatedAtMs: NOW_W - 1000,
+    updatedAtUtcMs: instant(NOW_W - 1000),
   });
   const stored = (
     version: number,
@@ -1411,7 +1584,7 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
     stats: content,
     money,
     hasHistory: true,
-    nowMs: NOW_W,
+    nowUtcMs: NOW_W,
     stamp: null,
     restamp: false,
     ...overrides,
@@ -1419,32 +1592,35 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
   const plan = (overrides: Partial<ClientStatsWriteInput> = {}) =>
     ClientStatsSystem.planWrite(input(overrides), PATHS);
   const bodyOf = (op: WriteOp | undefined) =>
-    op !== undefined && op.kind === WriteKind.Set ? op.body : null;
+    op !== undefined && op.writeAction === WriteAction.Set ? op.body : null;
 
   it('writes nothing for a person with no history and nothing stored', () => {
     expect(plan({ hasHistory: false })).toEqual({
-      kind: 'unchanged',
+      statsWriteDecision: 'UNCHANGED',
       writes: [],
     });
   });
 
   it('writes both documents at version 1 the first time', () => {
     const first = plan();
-    expect(first.kind).toBe('write');
-    if (first.kind !== 'write') return;
+    expect(first.statsWriteDecision).toBe('WRITE');
+    if (first.statsWriteDecision !== 'WRITE') return;
     expect(first.version).toBe(1);
     const [stats, spend] = first.writes;
     expect(stats?.path).toEqual(PATHS.stats);
     expect(spend?.path).toEqual(PATHS.money);
     expect(bodyOf(stats)?.['version']).toBe(1);
     expect(bodyOf(spend)?.['version']).toBe(1);
-    expect(bodyOf(stats)?.['updatedAtMs']).toBe(NOW_W);
-    expect(bodyOf(stats)).not.toHaveProperty('lifetimeSpend');
+    expect(bodyOf(stats)?.['updatedAtUtcMs']).toBe(NOW_W);
+    expect(bodyOf(stats)).not.toHaveProperty('lifetimeSpendCents');
+    // Every 1-to-1 field at the document root (Law 6).
+    expect(bodyOf(stats)?.['lifetimeVisitsCompleted']).toBe(1);
+    expect(bodyOf(stats)?.['policyPassGeneration']).toBeNull();
   });
 
   it('leaves an unchanged answer alone — a redelivery bumps nothing', () => {
     expect(plan({ stored: stored(4) })).toEqual({
-      kind: 'unchanged',
+      statsWriteDecision: 'UNCHANGED',
       writes: [],
     });
   });
@@ -1452,33 +1628,24 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
   it('bumps both documents when only the spend moved', () => {
     const next = plan({
       stored: stored(4),
-      money: {
-        ...money,
-        lifetimeSpend: { amountMinorUnits: 3000, currencyCode: 'EUR' },
-      },
+      money: { ...money, lifetimeSpendCents: unwrapOk(PriceCents.of(3000)) },
     });
-    expect(next.kind === 'write' && next.version).toBe(5);
+    expect(next.statsWriteDecision === 'WRITE' && next.version).toBe(5);
   });
 
   it('rewrites a pair whose versions disagree', () => {
     const next = plan({ stored: stored(4, 3) });
-    expect(next.kind === 'write' && next.version).toBe(5);
+    expect(next.statsWriteDecision === 'WRITE' && next.version).toBe(5);
   });
 
   it('empties the stats of somebody who left every visit, rather than keeping stale numbers', () => {
     const next = plan({
       stored: stored(4),
-      stats: {
-        ...content,
-        lifetime: { ...content.lifetime, visitsCompleted: 0 },
-      },
-      money: {
-        ...money,
-        lifetimeSpend: { amountMinorUnits: 0, currencyCode: 'EUR' },
-      },
+      stats: { ...content, lifetimeVisitsCompleted: 0 },
+      money: { ...money, lifetimeSpendCents: PriceCents.ZERO },
       hasHistory: false,
     });
-    expect(next.kind === 'write' && next.version).toBe(5);
+    expect(next.statsWriteDecision === 'WRITE' && next.version).toBe(5);
   });
 
   it('never goes backwards past a stored version it could not parse', () => {
@@ -1488,21 +1655,32 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
       statsVersion: 9,
     };
     const next = plan({ stored: broken });
-    expect(next.kind === 'write' && next.version).toBe(10);
+    expect(next.statsWriteDecision === 'WRITE' && next.version).toBe(10);
   });
 
   it('carries the pass stamp on a write, and moves it alone on an unchanged answer', () => {
-    const stamp = {
-      generation: 'evt-a',
-      changedAt: { seconds: 1_790_000_000, nanos: 0 },
-    };
-    const written = plan({ stamp, restamp: true });
-    expect(bodyOf(written.writes[0])?.['policyPass']).toBe(stamp);
-    expect(plan({ stored: stored(4), stamp, restamp: true })).toEqual({
-      kind: 'unchanged',
-      writes: [
-        { kind: 'update', path: PATHS.stats, fields: { policyPass: stamp } },
-      ],
+    const changedAt = PreciseInstant.of(1_790_000_000, 0);
+    if (changedAt === null) throw new Error('a broken fixture instant');
+    const pass = { generation: 'evt-a', changedAt };
+    const written = plan({ stamp: pass, restamp: true });
+    expect(bodyOf(written.writes[0])).toMatchObject({
+      policyPassGeneration: 'evt-a',
+      policyPassChangedAtSeconds: 1_790_000_000,
+      policyPassChangedAtNanos: 0,
+    });
+    const moved = plan({ stored: stored(4), stamp: pass, restamp: true });
+    expect(moved).toEqual({
+      statsWriteDecision: 'UNCHANGED',
+      writes: [WriteOp.update(PATHS.stats, PolicyPassStamp.of(pass))],
+    });
+    // The stamp's root fields alone — never a nested `policyPass` (Law 5).
+    expect(moved.writes[0]).toMatchObject({
+      writeAction: WriteAction.Update,
+      fields: {
+        policyPassGeneration: 'evt-a',
+        policyPassChangedAtSeconds: 1_790_000_000,
+        policyPassChangedAtNanos: 0,
+      },
     });
   });
 
@@ -1513,7 +1691,7 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
         ...content,
         ...meta(7),
         id: ANA,
-        policyPass: null,
+        ...PolicyPassStamp.NONE,
       },
       money: { ...money, ...meta(7) },
     };
@@ -1527,10 +1705,7 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
     expect(
       ClientStatsSystem.sameAnswer(storedPair, {
         ...fresh,
-        money: {
-          ...money,
-          lifetimeSpend: { amountMinorUnits: 1, currencyCode: 'EUR' },
-        },
+        money: { ...money, lifetimeSpendCents: unwrapOk(PriceCents.of(1)) },
       }),
     ).toBe(false);
   });
@@ -1543,19 +1718,16 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
         fc.option(fc.integer({ min: 0, max: 50 }), { nil: null }),
         (visits, spend, storedVersion) => {
           const fresh = {
-            stats: {
-              ...content,
-              lifetime: { ...content.lifetime, visitsCompleted: visits },
-            },
+            stats: { ...content, lifetimeVisitsCompleted: visits },
             money: {
               ...money,
-              lifetimeSpend: { amountMinorUnits: spend, currencyCode: 'EUR' },
+              lifetimeSpendCents: unwrapOk(PriceCents.of(spend)),
             },
           };
           const before =
             storedVersion === null ? NOTHING : stored(storedVersion);
           const first = plan({ ...fresh, stored: before });
-          if (first.kind !== 'write') return;
+          if (first.statsWriteDecision !== 'WRITE') return;
           const after: StoredClientStats = {
             statsPresent: true,
             moneyPresent: true,
@@ -1565,7 +1737,9 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
             statsVersion: first.version,
             moneyVersion: first.version,
           };
-          expect(plan({ ...fresh, stored: after }).kind).toBe('unchanged');
+          expect(plan({ ...fresh, stored: after }).statsWriteDecision).toBe(
+            'UNCHANGED',
+          );
         },
       ),
     );
@@ -1581,39 +1755,39 @@ describe('placementsFrom', () => {
     }[],
   ) =>
     raw.map((row) => ({
-      id: row.id,
-      placement: PlacementKind.parse(row.placement ?? null),
+      id: AppointmentId.of(row.id),
+      placement: Placement.parse(row.placement ?? null),
     }));
 
   it('names each stored placement and leaves a legacy row out', () => {
     expect([
       ...ClientStatsSystem.placementsFrom(
         rows([
-          { id: 'a1', placement: 'self' },
-          { id: 'a2', placement: 'staff' },
+          { id: 'a1', placement: 'SELF' },
+          { id: 'a2', placement: 'STAFF' },
           { id: 'a3', placement: null },
           { id: 'a4' },
           { id: 'a5', placement: 'guessed' },
         ]),
       ),
     ]).toEqual([
-      ['a1', 'self'],
-      ['a2', 'staff'],
+      ['a1', 'SELF'],
+      ['a2', 'STAFF'],
     ]);
   });
 
-  // legacyPref: a pre-P0 row's seats carry the old defaulted `specific`, so
+  // legacyPref: a pre-P0 row's seats carry the old defaulted `SPECIFIC`, so
   // what the audit trail says about who placed it is no evidence of a request.
   it('never passes an inferred placement on as evidence', () => {
     expect([
       ...ClientStatsSystem.placementsFrom(
         rows([
-          { id: 'p1', inferredPlacement: 'staff' },
-          { id: 'p2', placement: null, inferredPlacement: 'self' },
-          { id: 'n1', placement: 'staff', inferredPlacement: 'self' },
+          { id: 'p1', inferredPlacement: 'STAFF' },
+          { id: 'p2', placement: null, inferredPlacement: 'SELF' },
+          { id: 'n1', placement: 'STAFF', inferredPlacement: 'SELF' },
         ]),
       ),
-    ]).toEqual([['n1', 'staff']]);
+    ]).toEqual([['n1', 'STAFF']]);
   });
 });
 
@@ -1621,10 +1795,10 @@ describe('purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const history = deepFreeze([
       build(
-        solo('a1', daysAgo(40), WORKED, { barber: 'ivan', pref: 'specific' }),
+        solo('a1', daysAgo(40), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
       ),
       build(
-        solo('a2', daysAgo(20), WORKED, { barber: 'ivan', pref: 'specific' }),
+        solo('a2', daysAgo(20), WORKED, { barber: 'ivan', pref: 'SPECIFIC' }),
       ),
       build(solo('a3', daysAgo(10), NO_SHOW)),
       build({
@@ -1638,12 +1812,13 @@ describe('purity', () => {
       }),
     ]);
     const policy = deepFreeze(policyWithWindow(12));
-    const once = ClientStatsSystem.compute(PEOPLE.ana, history, policy, NOW);
-    const twice = ClientStatsSystem.compute(PEOPLE.ana, history, policy, NOW);
+    const now = deepFreeze(NOW);
+    const once = ClientStatsSystem.compute(PEOPLE.ana, history, policy, now);
+    const twice = ClientStatsSystem.compute(PEOPLE.ana, history, policy, now);
     expect(twice).toEqual(once);
     expect(once.stats.preferredBarberId).toBe('ivan');
-    expect(ClientStatsSystem.statWindows(deepFreeze(once.stats), NOW)).toEqual(
-      ClientStatsSystem.statWindows(once.stats, NOW),
+    expect(ClientStatsSystem.statWindows(deepFreeze(once.stats), now)).toEqual(
+      ClientStatsSystem.statWindows(once.stats, now),
     );
     const entity = deepFreeze(appointmentFixture());
     expect(ClientStatsSystem.statsInputOf(entity)).toEqual(

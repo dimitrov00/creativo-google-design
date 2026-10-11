@@ -1,4 +1,4 @@
-import { FieldPath } from 'firebase-admin/firestore';
+import { FieldPath, FieldValue } from 'firebase-admin/firestore';
 import { QueryOp, RepositoryError, Result, WriteOp } from '@creativo/ecs-core';
 import { createProjectionFirestore } from './fake-projection-firestore';
 
@@ -104,6 +104,28 @@ describe('FakeProjectionFirestore', () => {
         }),
       ).rejects.toThrow(/never dot paths/);
       expect(fake.docs.get('settings/x')).toEqual({ a: { b: 1 }, 'a.b': 2 });
+    });
+
+    it('removes a root field on FieldValue.delete() (Law 6), still refusing a nested path', async () => {
+      const fake = createProjectionFirestore({
+        'settings/x': { keep: 1, drop: 2 },
+      });
+      const ref = fake.db.doc('settings/x');
+      await fake.db.runTransaction(async (tx) => {
+        tx.update(
+          ref,
+          new FieldPath('drop'),
+          FieldValue.delete(),
+          new FieldPath('added'),
+          3,
+        );
+      });
+      expect(fake.docs.get('settings/x')).toEqual({ keep: 1, added: 3 });
+      await expect(
+        fake.db.runTransaction(async (tx) => {
+          tx.update(ref, new FieldPath('keep', 'x'), FieldValue.delete());
+        }),
+      ).rejects.toThrow(/never dot paths/);
     });
 
     it('makes a transaction atomic: a throw in the callback writes nothing', async () => {

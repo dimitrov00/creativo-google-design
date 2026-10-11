@@ -1,6 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { PERSONALIZE_STEPS, type PersonalizeStep } from '@creativo/ecs-core';
 import {
   ANONYMOUS_PRINCIPAL,
   AUTH_DEPLOYMENT,
@@ -14,6 +13,8 @@ import {
   OTP_CLIENT,
   OnboardingFlowEvent,
   OnboardingFlowState,
+  PERSONALIZE_STEPS,
+  type PersonalizeStep,
   Principal,
   RegisterUserUseCase,
   RegistrationField,
@@ -37,10 +38,12 @@ import { ServiceId } from '@creativo/application/catalog';
 
 /**
  * The optional phase's steps, in the order the flow machine walks them — the
- * one list, `OnboardingFlowSystem`'s (`@creativo/ecs-core`). Stepping over
- * the steps a resume's plan leaves out is that system's math too (Phase 2):
- * this store dispatches through `advanceOnboardingFlowWithinPlan` /
- * `backOnboardingFlowWithinPlan` and keeps only the signals and the I/O.
+ * one list, `OnboardingFlowSystem`'s (`@creativo/ecs-core`), in the flow
+ * shim's lowercase spelling (`@creativo/application/identity` converts the
+ * SCREAMING tags, flatten pass). Stepping over the steps a resume's plan
+ * leaves out is that system's math too (Phase 2): this store dispatches
+ * through `advanceOnboardingFlowWithinPlan` / `backOnboardingFlowWithinPlan`
+ * and keeps only the signals and the I/O.
  */
 export { PERSONALIZE_STEPS, type PersonalizeStep };
 

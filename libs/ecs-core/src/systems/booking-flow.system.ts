@@ -5,8 +5,7 @@ import {
   BookingFlowStep,
   type ScheduleSelection,
 } from '../components/booking-flow.data';
-import { BookingCart } from '../components/cart-line.data';
-import type { DayKey } from '../components/day-key.data';
+import { BookingCart, SeatKey } from '../components/cart-line.data';
 import type { DayWindows } from '../components/day-windows.data';
 import { FlexibleWhen } from '../components/flexible-when.data';
 import { Party } from '../components/party.data';
@@ -15,36 +14,46 @@ import {
   SchedulingError,
   SchedulingErrorCode,
 } from '../components/scheduling-errors.data';
-import type { ServiceVariantId } from '../components/service-terms.data';
-import type { AppointmentId } from '../entities/appointment.entity';
-import type { BarberId } from '../entities/barber.entity';
-import type { LocationId } from '../entities/location.entity';
-import type { WaitlistRequestId } from '../entities/waitlist-request.entity';
+import type {
+  AppointmentId,
+  BarberId,
+  CartLineId,
+  GuestId,
+  LocationId,
+  SeatKeyText,
+  ServiceVariantId,
+  WaitlistRequestId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
 import { BookingCartSystem } from './booking-cart.system';
 
-/** What the booking wizard can be told — the ONLY source of these strings. */
+/**
+ * What the booking wizard can be told — the ONLY source of these strings.
+ * The union is `BookingFlowEvent`, so the field takes the dictionary's name
+ * (`bookingFlowEventKind`, N15).
+ */
 export const BookingFlowEventKind = {
-  AddGuest: 'add_guest',
-  RemoveGuest: 'remove_guest',
-  RenameGuest: 'rename_guest',
-  AddLine: 'add_line',
-  RemoveLine: 'remove_line',
-  SetLineVariant: 'set_line_variant',
-  SetLineBarber: 'set_line_barber',
+  AddGuest: 'ADD_GUEST',
+  RemoveGuest: 'REMOVE_GUEST',
+  RenameGuest: 'RENAME_GUEST',
+  AddLine: 'ADD_LINE',
+  RemoveLine: 'REMOVE_LINE',
+  SetLineVariant: 'SET_LINE_VARIANT',
+  SetLineBarber: 'SET_LINE_BARBER',
   /** `null` is the "any shop" answer — a choice, not the absence of one. */
-  SelectLocation: 'select_location',
-  SelectSchedule: 'select_schedule',
+  SelectLocation: 'SELECT_LOCATION',
+  SelectSchedule: 'SELECT_SCHEDULE',
   /** Select or deselect a day of the flexible declaration — one tap, one event. */
-  ToggleFlexibleDay: 'toggle_flexible_day',
+  ToggleFlexibleDay: 'TOGGLE_FLEXIBLE_DAY',
   /** Replace one day's spans — what the per-day window sheet commits. */
-  SetDayWindows: 'set_day_windows',
+  SetDayWindows: 'SET_DAY_WINDOWS',
   /** Back to a single-day pick — drops the whole declaration deliberately. */
-  ClearFlexible: 'clear_flexible',
-  Confirmed: 'confirmed',
-  /** The server accepted a standing request. Terminal, like `confirmed`. */
-  Waitlisted: 'waitlisted',
-  Next: 'next',
-  Back: 'back',
+  ClearFlexible: 'CLEAR_FLEXIBLE',
+  Confirmed: 'CONFIRMED',
+  /** The server accepted a standing request. Terminal, like `CONFIRMED`. */
+  Waitlisted: 'WAITLISTED',
+  Next: 'NEXT',
+  Back: 'BACK',
 } as const;
 export type BookingFlowEventKind =
   (typeof BookingFlowEventKind)[keyof typeof BookingFlowEventKind];
@@ -53,60 +62,70 @@ const E = BookingFlowEventKind;
 
 /**
  * One event of the booking wizard (`booking-flow.ts:203-260`), discriminated
- * by `kind`. Seats are named by their cart seat key (`'self'`, `'guest-3'`),
- * lines by their `lineId`; a line's barber is `null` for "anyone".
+ * by `bookingFlowEventKind`. Seats are named by their cart seat key
+ * (`'self'`, `'guest-3'`), lines by their `lineId`; a line's barber is `null`
+ * for "anyone".
  */
 export type BookingFlowEvent =
-  | { readonly kind: typeof E.AddGuest; readonly label: string }
-  | { readonly kind: typeof E.RemoveGuest; readonly guestId: string }
+  | { readonly bookingFlowEventKind: typeof E.AddGuest; readonly label: string }
   | {
-      readonly kind: typeof E.RenameGuest;
-      readonly guestId: string;
+      readonly bookingFlowEventKind: typeof E.RemoveGuest;
+      readonly guestId: GuestId;
+    }
+  | {
+      readonly bookingFlowEventKind: typeof E.RenameGuest;
+      readonly guestId: GuestId;
       readonly label: string;
     }
   | {
-      readonly kind: typeof E.AddLine;
-      readonly seatKey: string;
+      readonly bookingFlowEventKind: typeof E.AddLine;
+      readonly seatKey: SeatKeyText;
       readonly line: BookingCart.NewLine;
     }
   | {
-      readonly kind: typeof E.RemoveLine;
-      readonly seatKey: string;
-      readonly lineId: string;
+      readonly bookingFlowEventKind: typeof E.RemoveLine;
+      readonly seatKey: SeatKeyText;
+      readonly lineId: CartLineId;
     }
   | {
-      readonly kind: typeof E.SetLineVariant;
-      readonly seatKey: string;
-      readonly lineId: string;
+      readonly bookingFlowEventKind: typeof E.SetLineVariant;
+      readonly seatKey: SeatKeyText;
+      readonly lineId: CartLineId;
       readonly variantId: ServiceVariantId | null;
     }
   | {
-      readonly kind: typeof E.SetLineBarber;
-      readonly seatKey: string;
-      readonly lineId: string;
+      readonly bookingFlowEventKind: typeof E.SetLineBarber;
+      readonly seatKey: SeatKeyText;
+      readonly lineId: CartLineId;
       readonly barberId: BarberId | null;
     }
   | {
-      readonly kind: typeof E.SelectLocation;
+      readonly bookingFlowEventKind: typeof E.SelectLocation;
       readonly locationId: LocationId | null;
     }
   | {
-      readonly kind: typeof E.SelectSchedule;
+      readonly bookingFlowEventKind: typeof E.SelectSchedule;
       readonly selection: ScheduleSelection;
     }
-  | { readonly kind: typeof E.ToggleFlexibleDay; readonly dayKey: DayKey }
-  | { readonly kind: typeof E.SetDayWindows; readonly dayWindows: DayWindows }
-  | { readonly kind: typeof E.ClearFlexible }
   | {
-      readonly kind: typeof E.Confirmed;
+      readonly bookingFlowEventKind: typeof E.ToggleFlexibleDay;
+      readonly localDate: LocalDate;
+    }
+  | {
+      readonly bookingFlowEventKind: typeof E.SetDayWindows;
+      readonly dayWindows: DayWindows;
+    }
+  | { readonly bookingFlowEventKind: typeof E.ClearFlexible }
+  | {
+      readonly bookingFlowEventKind: typeof E.Confirmed;
       readonly appointmentId: AppointmentId;
     }
   | {
-      readonly kind: typeof E.Waitlisted;
+      readonly bookingFlowEventKind: typeof E.Waitlisted;
       readonly requestId: WaitlistRequestId;
     }
-  | { readonly kind: typeof E.Next }
-  | { readonly kind: typeof E.Back };
+  | { readonly bookingFlowEventKind: typeof E.Next }
+  | { readonly bookingFlowEventKind: typeof E.Back };
 
 /** The two policy numbers the wizard enforces — a whole `BookingPolicy` passes straight in. */
 export type BookingFlowLimits = Pick<
@@ -119,9 +138,9 @@ type FlowResult = Result<BookingFlowState, BookingFlowError>;
 
 /** A label the party refused, as the flow reports it: somebody else's label in its OWN words. */
 function guestLabelRefusal(error: SchedulingError): BookingFlowError {
-  return error.code === SchedulingErrorCode.PartyDuplicateLabel
+  return error.errorCode === SchedulingErrorCode.PartyDuplicateLabel
     ? error
-    : BookingFlowError.invalidGuest(error.code);
+    : BookingFlowError.invalidGuest(error.errorCode);
 }
 
 /**
@@ -134,7 +153,7 @@ function advanceParty(
   event: BookingFlowEvent,
   limits: BookingFlowLimits,
 ): FlowResult | null {
-  switch (event.kind) {
+  switch (event.bookingFlowEventKind) {
     case E.AddGuest: {
       // Every member is one seat — the booker included.
       if (state.party.members.length >= limits.maxPartySize) {
@@ -154,7 +173,10 @@ function advanceParty(
       return Result.ok({
         ...state,
         party: removed.value,
-        cart: BookingCart.dropSeat(state.cart, event.guestId),
+        cart: BookingCart.dropSeat(
+          state.cart,
+          SeatKey.text(SeatKey.guest(event.guestId)),
+        ),
       });
     }
     case E.RenameGuest: {
@@ -165,7 +187,7 @@ function advanceParty(
       );
       if (!renamed.ok) {
         return Result.err(
-          renamed.error.code === SchedulingErrorCode.PartyGuestNotFound
+          renamed.error.errorCode === SchedulingErrorCode.PartyGuestNotFound
             ? BookingFlowError.guestNotFound(event.guestId)
             : guestLabelRefusal(renamed.error),
         );
@@ -182,7 +204,9 @@ function withCart(
   cart: Result<BookingCart, SchedulingError>,
 ): FlowResult {
   if (!cart.ok) {
-    return Result.err(BookingFlowError.invalidCartOperation(cart.error.code));
+    return Result.err(
+      BookingFlowError.invalidCartOperation(cart.error.errorCode),
+    );
   }
   return Result.ok({ ...state, cart: cart.value });
 }
@@ -192,7 +216,7 @@ function advanceCart(
   state: Assembling,
   event: BookingFlowEvent,
 ): FlowResult | null {
-  switch (event.kind) {
+  switch (event.bookingFlowEventKind) {
     case E.AddLine:
       // A duplicate is a REFUSAL, not a silently appended second haircut.
       return withCart(
@@ -230,21 +254,26 @@ function advanceCart(
 }
 
 function invalid(state: BookingFlowState, event: BookingFlowEvent): FlowResult {
-  return Result.err(BookingFlowError.invalidTransition(state.kind, event.kind));
+  return Result.err(
+    BookingFlowError.invalidTransition(
+      state.bookingFlowStep,
+      event.bookingFlowEventKind,
+    ),
+  );
 }
 
 /**
  * The booking wizard as a total function over tagged unions
  * (`application/booking/src/lib/flow/booking-flow.ts:404-600`):
- * `location → services → schedule → review → confirmed`, with `waitlisted`
+ * `LOCATION → SERVICES → SCHEDULE → REVIEW → CONFIRMED`, with `WAITLISTED`
  * as the schedule step's other, equally terminal exit. Never performs I/O —
- * `confirmed` and `waitlisted` are events the wrapping store dispatches once
+ * `CONFIRMED` and `WAITLISTED` are events the wrapping store dispatches once
  * the server has answered.
  */
 export const BookingFlowSystem = {
   /**
    * One step of the wizard: the next state, or the refusal. An event the
-   * current step has no arm for is `booking.flow.invalid_transition`;
+   * current step has no arm for is `BOOKING_FLOW_INVALID_TRANSITION`;
    * terminal states take none.
    */
   next(
@@ -252,17 +281,17 @@ export const BookingFlowSystem = {
     event: BookingFlowEvent,
     limits: BookingFlowLimits,
   ): FlowResult {
-    switch (state.kind) {
+    switch (state.bookingFlowStep) {
       case BookingFlowStep.Location: {
         const party = advanceParty(state, event, limits);
         if (party !== null) return party;
-        if (event.kind === E.SelectLocation) {
+        if (event.bookingFlowEventKind === E.SelectLocation) {
           return Result.ok({ ...state, locationId: event.locationId });
         }
         // No precondition: `null` already means "any shop".
-        if (event.kind === E.Next) {
+        if (event.bookingFlowEventKind === E.Next) {
           return Result.ok({
-            kind: BookingFlowStep.Services,
+            bookingFlowStep: BookingFlowStep.Services,
             party: state.party,
             cart: state.cart,
             locationId: state.locationId,
@@ -276,15 +305,15 @@ export const BookingFlowSystem = {
         if (party !== null) return party;
         const cart = advanceCart(state, event);
         if (cart !== null) return cart;
-        if (event.kind === E.Back) {
+        if (event.bookingFlowEventKind === E.Back) {
           return Result.ok({
-            kind: BookingFlowStep.Location,
+            bookingFlowStep: BookingFlowStep.Location,
             party: state.party,
             cart: state.cart,
             locationId: state.locationId,
           });
         }
-        if (event.kind === E.Next) {
+        if (event.bookingFlowEventKind === E.Next) {
           // An empty bag first: «pick a service» is the truer message than
           // naming the booker as the one holding nothing.
           if (BookingCart.isEmpty(state.cart)) {
@@ -306,7 +335,7 @@ export const BookingFlowSystem = {
             return Result.err(SchedulingError.partyDuplicateLabel(shared));
           }
           return Result.ok({
-            kind: BookingFlowStep.Schedule,
+            bookingFlowStep: BookingFlowStep.Schedule,
             party: state.party,
             cart: state.cart,
             locationId: state.locationId,
@@ -317,26 +346,26 @@ export const BookingFlowSystem = {
       }
 
       case BookingFlowStep.Schedule: {
-        switch (event.kind) {
+        switch (event.bookingFlowEventKind) {
           case E.SelectLocation:
             return Result.ok({ ...state, locationId: event.locationId });
           case E.SelectSchedule:
             return Result.ok({
-              kind: BookingFlowStep.Review,
+              bookingFlowStep: BookingFlowStep.Review,
               party: state.party,
               cart: state.cart,
               selection: event.selection,
             });
           case E.ToggleFlexibleDay: {
-            if (FlexibleWhen.has(state.when, event.dayKey)) {
+            if (FlexibleWhen.has(state.when, event.localDate)) {
               return Result.ok({
                 ...state,
-                when: FlexibleWhen.withoutDay(state.when, event.dayKey),
+                when: FlexibleWhen.withoutDay(state.when, event.localDate),
               });
             }
             const added = FlexibleWhen.withDay(
               state.when,
-              event.dayKey,
+              event.localDate,
               limits.maxFlexibleDays,
             );
             if (!added.ok) {
@@ -361,7 +390,7 @@ export const BookingFlowSystem = {
               return Result.err(BookingFlowError.noFlexibleDays());
             }
             return Result.ok({
-              kind: BookingFlowStep.Waitlisted,
+              bookingFlowStep: BookingFlowStep.Waitlisted,
               summary: {
                 requestId: event.requestId,
                 party: state.party,
@@ -372,7 +401,7 @@ export const BookingFlowSystem = {
             });
           case E.Back:
             return Result.ok({
-              kind: BookingFlowStep.Services,
+              bookingFlowStep: BookingFlowStep.Services,
               party: state.party,
               cart: state.cart,
               locationId: state.locationId,
@@ -383,9 +412,9 @@ export const BookingFlowSystem = {
       }
 
       case BookingFlowStep.Review: {
-        if (event.kind === E.Confirmed) {
+        if (event.bookingFlowEventKind === E.Confirmed) {
           return Result.ok({
-            kind: BookingFlowStep.Confirmed,
+            bookingFlowStep: BookingFlowStep.Confirmed,
             confirmation: {
               appointmentId: event.appointmentId,
               party: state.party,
@@ -394,11 +423,11 @@ export const BookingFlowSystem = {
             },
           });
         }
-        if (event.kind === E.Back) {
+        if (event.bookingFlowEventKind === E.Back) {
           // The shop survives the step back; the flexible declaration does
           // not — reaching review means something concrete was chosen.
           return Result.ok({
-            kind: BookingFlowStep.Schedule,
+            bookingFlowStep: BookingFlowStep.Schedule,
             party: state.party,
             cart: state.cart,
             locationId: state.selection.locationId,
@@ -418,7 +447,7 @@ export const BookingFlowSystem = {
   /**
    * The flow is OVER at this step — confirmed or waitlisted, the states off
    * the spine (the shell drops its navigation chrome there). Takes the step
-   * (`state.kind`), so a view can ask without the whole state.
+   * (`state.bookingFlowStep`), so a view can ask without the whole state.
    */
   isTerminal(step: BookingFlowStep): boolean {
     return BookingFlowState.spineIndex(step) === -1;
@@ -460,21 +489,25 @@ export const BookingFlowSystem = {
     step: BookingFlowStep,
     limits: BookingFlowLimits,
   ): BookingFlowState {
-    if (step === state.kind) return state;
+    if (step === state.bookingFlowStep) return state;
     const target = BookingFlowState.spineIndex(step);
     if (
       target === -1 ||
-      target + 1 >= BookingFlowSystem.currentStep(state.kind)
+      target + 1 >= BookingFlowSystem.currentStep(state.bookingFlowStep)
     ) {
       return state;
     }
     let current = state;
     for (
       let guard = 0;
-      guard < BookingFlowState.SPINE.length && current.kind !== step;
+      guard < BookingFlowState.SPINE.length && current.bookingFlowStep !== step;
       guard++
     ) {
-      const back = BookingFlowSystem.next(current, { kind: E.Back }, limits);
+      const back = BookingFlowSystem.next(
+        current,
+        { bookingFlowEventKind: E.Back },
+        limits,
+      );
       if (!back.ok) break;
       current = back.value;
     }

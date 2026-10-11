@@ -1,8 +1,9 @@
 import {
   BarberId as EcsBarberId,
   CapacityEntry,
-  DayKey as EcsDayKey,
+  LocalDate,
   LocationId as EcsLocationId,
+  MinuteCount,
 } from '@creativo/ecs-core';
 
 /**
@@ -48,7 +49,12 @@ export const CAPACITY_COLLECTION = 'capacity';
 
 /** `2026-08-14` → `2026-08`. */
 export function capacityMonthKey(dayKey: string): string {
-  return CapacityEntry.monthOf(EcsDayKey.of(dayKey));
+  const localDate = LocalDate.parse(dayKey);
+  // A key that is no date keeps the legacy reading: its first seven
+  // characters.
+  return localDate.ok
+    ? LocalDate.monthKey(localDate.value)
+    : dayKey.slice(0, 7);
 }
 
 /** One barber's free minutes on one day, keyed by `LocationId.value`. */
@@ -72,7 +78,7 @@ export function freeMinutesFor(
   locationId: string | null,
 ): number {
   if (!dayEntry) return 0;
-  const day = EcsDayKey.of(ANY_DAY);
+  const day = ANY_DAY;
   return CapacityEntry.freeMinutesOn(
     entriesOf(dayEntry, barberIds, day),
     day,
@@ -83,30 +89,34 @@ export function freeMinutesFor(
 
 // ── The bridge: the stored day map → ecs-core entries (Phase 4 deletes it) ─
 
-/** Every entry of a converted day shares one key — any will do. */
-const ANY_DAY = '0000-00-00';
+/** Every entry of a converted day shares one shop day — any will do. */
+const ANY_DAY: LocalDate = LocalDate.fromEpochDay(0);
 
 /**
  * The day's map as `CapacityEntry` rows, for the barbers asked about, in
  * their order (a barber named twice is counted twice, as before). A
- * malformed contribution is no entry; a malformed figure is `0`.
+ * malformed contribution is no entry; a malformed figure — anything but a
+ * whole, non-negative count of minutes — is `0`.
  */
 function entriesOf(
   dayEntry: CapacityDayEntry,
   barberIds: readonly string[],
-  dayKey: EcsDayKey,
+  localDate: LocalDate,
 ): readonly CapacityEntry[] {
   const entries: CapacityEntry[] = [];
   for (const barberId of barberIds) {
     const contribution = dayEntry[barberId];
     if (typeof contribution !== 'object' || contribution === null) continue;
     for (const [locationId, minutes] of Object.entries(contribution)) {
-      entries.push({
-        dayKey,
-        barberId: EcsBarberId.of(barberId),
-        locationId: EcsLocationId.of(locationId),
-        freeMinutes: Number.isFinite(Number(minutes)) ? Number(minutes) : 0,
-      });
+      const figure = MinuteCount.of(Number(minutes));
+      entries.push(
+        CapacityEntry.of(
+          localDate,
+          EcsBarberId.of(barberId),
+          EcsLocationId.of(locationId),
+          figure.ok ? figure.value : MinuteCount.ZERO,
+        ),
+      );
     }
   }
   return entries;

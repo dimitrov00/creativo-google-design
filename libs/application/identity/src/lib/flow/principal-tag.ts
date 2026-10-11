@@ -18,12 +18,12 @@ import { Principal } from '@creativo/domain/identity';
 export function principalTagOf(principal: Principal): PrincipalTag {
   switch (principal.kind) {
     case 'anonymous':
-      return { kind: PrincipalKind.Anonymous };
+      return { principalKind: PrincipalKind.Anonymous };
     case 'onboarding':
-      return { kind: PrincipalKind.Onboarding };
+      return { principalKind: PrincipalKind.Onboarding };
     default:
       return {
-        kind: isStaff(knownRoles(principal.roles))
+        principalKind: isStaff(knownRoles(principal.roles))
           ? PrincipalKind.Staff
           : PrincipalKind.Client,
       };

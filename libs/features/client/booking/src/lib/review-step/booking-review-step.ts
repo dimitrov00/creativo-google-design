@@ -11,7 +11,9 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { Money, formatMoney } from '@creativo/application/booking';
 import {
   CalendarGridSystem,
-  DayKey,
+  Latitude,
+  LocalDate,
+  Longitude,
   ShopReachSystem,
 } from '@creativo/ecs-core';
 import { PhoneNumber } from '@creativo/application/identity';
@@ -238,10 +240,14 @@ export class BookingReviewStep {
    *  URL, so iOS offers Apple Maps and everything else opens Google Maps. */
   protected readonly directionsHref = computed(() => {
     const shop = this.shop();
-    return shop
+    if (!shop) return null;
+    const latitude = Latitude.of(shop.geo.lat);
+    const longitude = Longitude.of(shop.geo.lng);
+    // The catalogue validated its pin; an unreadable one has no destination.
+    return latitude.ok && longitude.ok
       ? ShopReachSystem.directionsHref({
-          lat: shop.geo.lat,
-          lng: shop.geo.lng,
+          latitude: latitude.value,
+          longitude: longitude.value,
         })
       : null;
   });
@@ -321,10 +327,11 @@ export class BookingReviewStep {
     if (!ymd) return [];
     // `CalendarGridSystem.monthGrid`: Monday-first, padded to whole weeks;
     // a weekday is civil arithmetic, so no day table is needed.
-    const month = DayKey.of(
+    const month = LocalDate.parse(
       `${String(ymd.year).padStart(4, '0')}-${String(ymd.month).padStart(2, '0')}-01`,
     );
-    return CalendarGridSystem.monthGrid(month, [], []).map((week) =>
+    if (!month.ok) return [];
+    return CalendarGridSystem.monthGrid(month.value, []).map((week) =>
       week.map((cell) => (cell.inMonth ? cell.dayOfMonth : null)),
     );
   });

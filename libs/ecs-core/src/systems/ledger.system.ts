@@ -1,52 +1,59 @@
-import {
-  JournalEffectKind,
-  RedemptionEffectOp,
-} from '../components/journal-effect.data';
-import { ZonedTimeSystem } from './zoned-time.system';
+import { JournalEffect, RedemptionOp } from '../components/journal-effect.data';
+import type {
+  BadgeSeriesId,
+  CorrelationId,
+  JournalEntryId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /*
  * «ДВИЖЕНИЕ» — THE JOURNAL AS A FEED, IN NUMBERS (client-card-revision-3
  * §2.2.5, §2.2.6, §4.7; `ledger.presenter.ts` `foldByEvent`,
  * `wholeMonthsOf`, `activityGroups`). Entries of one event become one: a
  * visit's seats, a level and the points it paid, a redemption and what it
- * cost; the events go by the shop's month, newest first, and a month's net
- * is printed only when the month is wholly loaded and wholly shown. Keys,
+ * cost; the events go by the shop's month (the entry's own `localDate`, T5
+ * — no zone is read here), newest first, and a month's net is printed only
+ * when the month is wholly loaded and wholly shown. Keys,
  * sums and balances only — the rows' words, glyphs and lines stay in the
  * presenter (a system that reshapes an entity for a template is the
  * `toViewModel()` mapper `angular-ui.md` bans).
  */
 
-/** The effects a feed row is about — the five the activity feed reads. */
+/** The effects a feed row is about — the five the activity feed reads, a subset of `JournalEffect`. */
 export type LedgerEffectKind =
-  | typeof JournalEffectKind.Points
-  | typeof JournalEffectKind.Achievement
-  | typeof JournalEffectKind.Tier
-  | typeof JournalEffectKind.Reward
-  | typeof JournalEffectKind.Redemption;
+  | typeof JournalEffect.Points
+  | typeof JournalEffect.Achievement
+  | typeof JournalEffect.Tier
+  | typeof JournalEffect.Reward
+  | typeof JournalEffect.Redemption;
 
 /**
  * One client-visible journal row, as the feed folds it. Every field is
- * present; the ones a kind does not carry are `null`.
+ * present; the ones an effect does not carry are `null`. It carries its
+ * instant AND its shop day (T5): the month a row falls in is read off
+ * `localDate`, never computed from the instant here.
  */
 export type LedgerEntryRef = {
-  readonly id: string;
+  readonly id: JournalEntryId;
   readonly seq: number;
-  readonly atMs: number;
+  readonly utcEpochMs: UtcEpochMs;
+  readonly localDate: LocalDate;
   /** Entries of one event share it: `appt:{appointmentId}[:seat:{seatId}]` for a visit. */
-  readonly correlationId: string;
+  readonly correlationId: CorrelationId;
   /** The entry this row compensates. */
-  readonly reverses: string | null;
+  readonly reverses: JournalEntryId | null;
   /** A level's family (the label's `seriesId`); `null` on other rows. */
-  readonly seriesId: string | null;
+  readonly badgeSeriesId: BadgeSeriesId | null;
   /** A level's number (the label's `level`); `null` on other rows. */
   readonly level: number | null;
-  readonly kind: LedgerEffectKind;
+  readonly journalEffect: LedgerEffectKind;
   /** A point row's signed delta; `null` on other rows. */
   readonly pointsDelta: number | null;
   /** The balance once a point row was folded in; `null` on other rows. */
   readonly balanceAfter: number | null;
   /** A redemption row's op; `null` on other rows. */
-  readonly redemptionOp: RedemptionEffectOp | null;
+  readonly redemptionOp: RedemptionOp | null;
   /** A redemption row's cost; `null` on other rows. */
   readonly cost: number | null;
 };
@@ -54,9 +61,11 @@ export type LedgerEntryRef = {
 /** One EVENT of the journal: the entries that share it, newest first. */
 export type LedgerEvent<E extends LedgerEntryRef = LedgerEntryRef> = {
   /** The event's newest entry. */
-  readonly id: string;
+  readonly id: JournalEntryId;
   /** The newest entry's instant. */
-  readonly atMs: number;
+  readonly utcEpochMs: UtcEpochMs;
+  /** The newest entry's shop day — the month the event is filed under. */
+  readonly localDate: LocalDate;
   /** Newest first. */
   readonly entries: readonly E[];
   /**
@@ -79,11 +88,11 @@ export type LedgerMonth<V extends LedgerEvent = LedgerEvent> = {
 
 /** The effects by rank: the highest one an event holds is what the row is about. */
 const EFFECT_RANK = {
-  [JournalEffectKind.Redemption]: 0,
-  [JournalEffectKind.Reward]: 1,
-  [JournalEffectKind.Tier]: 2,
-  [JournalEffectKind.Achievement]: 3,
-  [JournalEffectKind.Points]: 4,
+  [JournalEffect.Redemption]: 0,
+  [JournalEffect.Reward]: 1,
+  [JournalEffect.Tier]: 2,
+  [JournalEffect.Achievement]: 3,
+  [JournalEffect.Points]: 4,
 } as const;
 
 /**
@@ -122,8 +131,8 @@ function eventKeyOf(
   const appointmentId = appointmentIdOf(entry.correlationId);
   let event =
     appointmentId === null ? entry.correlationId : `appt:${appointmentId}`;
-  if (entry.seriesId !== null) {
-    event += `\u0000${entry.seriesId}\u0000${entry.level === null ? '' : String(entry.level)}`;
+  if (entry.badgeSeriesId !== null) {
+    event += `\u0000${entry.badgeSeriesId}\u0000${entry.level === null ? '' : String(entry.level)}`;
   }
   if (entry.reverses !== null) return `reversal\u0000${event}`;
   return voided.has(entry.id) ? `voided\u0000${event}` : `event\u0000${event}`;
@@ -138,7 +147,7 @@ function movementOf(entries: readonly LedgerEntryRef[]): {
   let balanceAfter: number | null = null;
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i] as LedgerEntryRef;
-    if (entry.kind !== JournalEffectKind.Points) continue;
+    if (entry.journalEffect !== JournalEffect.Points) continue;
     delta = (delta ?? 0) + (entry.pointsDelta ?? 0);
     // Newest first: the first point row met is the one the event ends on.
     if (balanceAfter === null) balanceAfter = entry.balanceAfter;
@@ -146,11 +155,11 @@ function movementOf(entries: readonly LedgerEntryRef[]): {
   if (delta !== null) return { delta, balanceAfter };
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i] as LedgerEntryRef;
-    if (entry.kind !== JournalEffectKind.Redemption) continue;
-    if (entry.redemptionOp === RedemptionEffectOp.Redeemed) {
+    if (entry.journalEffect !== JournalEffect.Redemption) continue;
+    if (entry.redemptionOp === RedemptionOp.Redeemed) {
       return { delta: -(entry.cost ?? 0), balanceAfter };
     }
-    if (entry.redemptionOp === RedemptionEffectOp.Reversed) {
+    if (entry.redemptionOp === RedemptionOp.Reversed) {
       return { delta: entry.cost ?? 0, balanceAfter };
     }
   }
@@ -185,7 +194,8 @@ export const LedgerSystem = {
       const movement = movementOf(rows);
       events.push({
         id: newest.id,
-        atMs: newest.atMs,
+        utcEpochMs: newest.utcEpochMs,
+        localDate: newest.localDate,
         entries: rows,
         delta: movement.delta,
         balanceAfter: movement.balanceAfter,
@@ -194,10 +204,9 @@ export const LedgerSystem = {
     return whole || events.length < 2 ? events : events.slice(0, -1);
   },
 
-  /** The month an instant falls in on the shop's calendar (`zone`): `YYYY-MM`, or `null` where the zone cannot place it. */
-  monthOf(atMs: number, zone: string): string | null {
-    const clock = ZonedTimeSystem.wallClockOf(atMs, zone);
-    return clock.ok ? clock.value.dayKey.slice(0, 7) : null;
+  /** The shop-calendar month a shop day falls in: `YYYY-MM`. */
+  monthOf(localDate: LocalDate): string {
+    return LocalDate.monthKey(localDate);
   },
 
   /**
@@ -209,15 +218,12 @@ export const LedgerSystem = {
   wholeMonths(
     entries: readonly LedgerEntryRef[],
     whole: boolean,
-    zone: string,
   ): readonly string[] {
     const months = new Set<string>();
     for (let i = 0; i < entries.length; i++) {
-      const month = LedgerSystem.monthOf(
-        (entries[i] as LedgerEntryRef).atMs,
-        zone,
+      months.add(
+        LedgerSystem.monthOf((entries[i] as LedgerEntryRef).localDate),
       );
-      if (month !== null) months.add(month);
     }
     const sorted = [...months].sort();
     return whole ? sorted : sorted.slice(1);
@@ -233,7 +239,6 @@ export const LedgerSystem = {
     events: readonly V[],
     limit: number | null,
     wholeMonths: readonly string[],
-    zone: string,
   ): readonly LedgerMonth<V>[] {
     const ordered = [...events].sort(
       (a, b) => (b.entries[0]?.seq ?? 0) - (a.entries[0]?.seq ?? 0),
@@ -244,14 +249,12 @@ export const LedgerSystem = {
     );
     const cut = new Set<string>();
     for (let i = shownCount; i < ordered.length; i++) {
-      const month = LedgerSystem.monthOf((ordered[i] as V).atMs, zone);
-      if (month !== null) cut.add(month);
+      cut.add(LedgerSystem.monthOf((ordered[i] as V).localDate));
     }
     const months = new Map<string, V[]>();
     for (let i = 0; i < shownCount; i++) {
       const event = ordered[i] as V;
-      const key = LedgerSystem.monthOf(event.atMs, zone);
-      if (key === null) continue;
+      const key = LedgerSystem.monthOf(event.localDate);
       const month = months.get(key);
       if (month === undefined) months.set(key, [event]);
       else month.push(event);
@@ -283,7 +286,7 @@ export const LedgerSystem = {
       const entry = event.entries[i] as E;
       if (
         leading === null ||
-        EFFECT_RANK[entry.kind] < EFFECT_RANK[leading.kind]
+        EFFECT_RANK[entry.journalEffect] < EFFECT_RANK[leading.journalEffect]
       ) {
         leading = entry;
       }

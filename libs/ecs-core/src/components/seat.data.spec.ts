@@ -1,162 +1,229 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberId } from '../entities/barber.entity';
-import { ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
-import { BarberPrefKind } from './barber-pref.data';
+import { Currency } from '../primitives/currency.primitive';
+import {
+  DurationMinutes,
+  MinuteCount,
+} from '../primitives/duration-minutes.primitive';
+import {
+  BarberId,
+  SeatId,
+  ServiceId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { minute, unwrapOk } from '../testing';
+import { BarberPreference } from './barber-pref.data';
 import { SchedulingError } from './scheduling-errors.data';
 import { SeatLabel } from './seat-label.data';
 import { SeatOutcome } from './seat-outcome.data';
 import { ServiceTerms } from './service-terms.data';
 import {
   Seat,
-  SeatId,
-  SeatRelationship,
+  type SeatCore,
+  SeatOccupant,
   SeatSubject,
-  SeatSubjectKind,
+  SubjectRelationship,
 } from './seat.data';
 
-const MIN = 60_000;
-const T0 = Date.UTC(2026, 9, 7, 7, 0); // 10:00 in Sofia
+const T0 = minute(600); // 10:00 on the shop's wall clock
+const STAMP = unwrapOk(UtcEpochMs.of(1_791_356_400_000));
 const IVAN = BarberId.of('ivan');
 const STEFAN = BarberId.of('stefan');
 const OWNER = UserId.of('u-owner');
 const OTHER = UserId.of('u-other');
 
-const CUT = ServiceTerms.of(2800, 'EUR', 30, 5, 10);
-
-function seat(overrides: Partial<Seat> = {}): Seat {
-  return {
-    id: SeatId.of('s1'),
-    serviceId: ServiceId.of('svc-cut'),
-    variantId: null,
-    barberId: IVAN,
-    barberPref: BarberPrefKind.Specific,
-    terms: Seat.termsOf(CUT, null),
-    startMs: T0,
-    subject: SeatSubject.anonymous(SeatLabel.of('Walk-in 10:00')),
-    outcome: SeatOutcome.scheduled(),
-    tip: null,
-    ...overrides,
-  };
+function terms(
+  price: number,
+  currency: Currency,
+  duration: number,
+  setup: number,
+  cleanup: number,
+): ServiceTerms {
+  return ServiceTerms.of(
+    unwrapOk(PriceCents.of(price)),
+    currency,
+    unwrapOk(DurationMinutes.of(duration)),
+    unwrapOk(MinuteCount.of(setup)),
+    unwrapOk(MinuteCount.of(cleanup)),
+  );
 }
 
-describe('SeatSubject', () => {
+const CUT = terms(2800, Currency.EUR, 30, 5, 10);
+
+type SeatOverrides = Partial<SeatCore> & {
+  readonly occupant?: SeatOccupant;
+  readonly outcome?: SeatOutcome;
+  readonly charged?: ServiceTerms;
+  readonly catalog?: ServiceTerms | null;
+};
+
+function seat(overrides: SeatOverrides = {}): Seat {
+  const { occupant, outcome, charged, catalog, ...core } = overrides;
+  return Seat.compose(
+    {
+      seatId: SeatId.of('s1'),
+      serviceId: ServiceId.of('svc-cut'),
+      variantId: null,
+      barberId: IVAN,
+      barberPreference: BarberPreference.Specific,
+      startMinutes: T0,
+      tipCents: null,
+      ...core,
+    },
+    Seat.termsOf(charged ?? CUT, catalog ?? null),
+    occupant ?? SeatOccupant.anonymous(SeatLabel.of('Walk-in 10:00')),
+    outcome ?? SeatOutcome.scheduled(),
+  );
+}
+
+describe('SeatOccupant', () => {
   it('anonymous subjects are contactless, accounts are not', () => {
-    expect(SeatSubject.isContactless(seat().subject)).toBe(true);
+    expect(SeatOccupant.isContactless(seat())).toBe(true);
     expect(Seat.isContactless(seat())).toBe(true);
     expect(
       Seat.isContactless(
-        seat({ subject: SeatSubject.account(OWNER, SeatRelationship.Self) }),
+        seat({
+          occupant: SeatOccupant.account(OWNER, SubjectRelationship.Self),
+        }),
       ),
     ).toBe(false);
     expect(
-      SeatSubject.isContactless(
-        SeatSubject.account(OWNER, SeatRelationship.Self),
+      SeatOccupant.isContactless(
+        SeatOccupant.account(OWNER, SubjectRelationship.Self),
       ),
     ).toBe(false);
-    expect(SeatSubject.account(OWNER, SeatRelationship.Companion)).toEqual({
-      kind: SeatSubjectKind.Account,
-      userId: OWNER,
-      relationship: 'companion',
+    expect(SeatOccupant.account(OWNER, SubjectRelationship.Companion)).toEqual({
+      seatSubject: SeatSubject.Account,
+      subjectUserId: OWNER,
+      subjectRelationship: 'COMPANION',
+    });
+  });
+
+  it('is flat at the seat element’s root', () => {
+    expect(seat()).toMatchObject({
+      seatId: 's1',
+      seatSubject: 'ANONYMOUS',
+      guestLabel: 'Walk-in 10:00',
+      attendanceState: 'SCHEDULED',
+      priceCents: 2800,
+      currency: 'EUR',
+      durationMinutes: 30,
     });
   });
 });
 
 describe('Seat — the end is DERIVED from the sold duration', () => {
   it('ends at start plus the snapshotted duration', () => {
-    expect(Seat.endMs(seat())).toBe(T0 + 30 * MIN);
-    expect(Seat.interval(seat())).toEqual({
-      startMs: T0,
-      endMs: T0 + 30 * MIN,
-    });
+    expect(Seat.endMinutes(seat())).toBe(630);
+    expect(Seat.range(seat())).toEqual({ startMinutes: 600, endMinutes: 630 });
   });
 
   it('sells the slot alone — the chair is held for setup and cleanup around it', () => {
     expect(Seat.chairTime(seat())).toEqual({
-      startMs: T0 - 5 * MIN,
-      endMs: T0 + 40 * MIN,
+      startMinutes: 595,
+      endMinutes: 640,
     });
+  });
+
+  it('clips the chair time to the shop day (T7)', () => {
+    const early = seat({ startMinutes: minute(2) });
+    expect(Seat.chairTime(early).startMinutes).toBe(0);
+    const late = seat({ startMinutes: minute(1405) });
+    expect(Seat.chairTime(late).endMinutes).toBe(1440);
   });
 });
 
 describe('Seat.collidesWith', () => {
   it('collides when the same barber has overlapping slots', () => {
-    const other = seat({ id: SeatId.of('s2'), startMs: T0 + 15 * MIN });
+    const other = seat({ seatId: SeatId.of('s2'), startMinutes: minute(615) });
     expect(Seat.collidesWith(seat(), other)).toBe(true);
     expect(Seat.collidesWith(other, seat())).toBe(true);
   });
 
   it('does NOT collide when the same barber works back to back', () => {
-    const other = seat({ id: SeatId.of('s2'), startMs: T0 + 30 * MIN });
+    const other = seat({ seatId: SeatId.of('s2'), startMinutes: minute(630) });
     expect(Seat.collidesWith(seat(), other)).toBe(false);
   });
 
   it('does NOT collide when different barbers work at the same time', () => {
-    const other = seat({ id: SeatId.of('s2'), barberId: STEFAN });
+    const other = seat({ seatId: SeatId.of('s2'), barberId: STEFAN });
     expect(Seat.collidesWith(seat(), other)).toBe(false);
   });
 });
 
 describe('Seat.termsOf — override provenance', () => {
   it('records the catalogue figures only when staff changed something', () => {
-    const discounted = ServiceTerms.of(2000, 'EUR', 30, 5, 10);
+    const discounted = terms(2000, Currency.EUR, 30, 5, 10);
     expect(Seat.termsOf(discounted, CUT)).toEqual({
       ...discounted,
-      catalogPriceMinorUnits: 2800,
+      catalogPriceCents: 2800,
       catalogDurationMinutes: 30,
     });
-    expect(
-      Seat.overridden(seat({ terms: Seat.termsOf(discounted, CUT) })),
-    ).toBe(true);
+    expect(Seat.overridden(seat({ charged: discounted, catalog: CUT }))).toBe(
+      true,
+    );
   });
 
   it('normalises catalogue terms EQUAL to the charged ones to no override', () => {
-    const terms = Seat.termsOf(CUT, ServiceTerms.of(2800, 'EUR', 30, 5, 10));
-    expect(terms.catalogPriceMinorUnits).toBeNull();
-    expect(terms.catalogDurationMinutes).toBeNull();
-    expect(Seat.overridden(seat({ terms }))).toBe(false);
+    const normalised = Seat.termsOf(CUT, terms(2800, Currency.EUR, 30, 5, 10));
+    expect(normalised.catalogPriceCents).toBeNull();
+    expect(normalised.catalogDurationMinutes).toBeNull();
+    expect(Seat.overridden(seat({ catalog: CUT }))).toBe(false);
   });
 });
 
 describe('Seat transitions carry every field', () => {
   const tipped = seat({
-    terms: Seat.termsOf(ServiceTerms.of(2000, 'EUR', 30, 5, 10), CUT),
-    tip: { amountMinorUnits: 500, currencyCode: 'EUR' },
+    charged: terms(2000, Currency.EUR, 30, 5, 10),
+    catalog: CUT,
+    tipCents: unwrapOk(PriceCents.of(500)),
   });
 
   it('withOutcome changes the outcome and nothing else', () => {
-    const resolved = Seat.withOutcome(tipped, SeatOutcome.worked(T0));
+    const resolved = Seat.withOutcome(tipped, SeatOutcome.worked(STAMP));
     expect(resolved).toEqual({
       ...tipped,
-      outcome: { kind: 'worked', atMs: T0 },
+      attendanceState: 'WORKED',
+      workedAtUtcMs: STAMP,
     });
-    expect(tipped.outcome).toEqual({ kind: 'scheduled' });
+    expect(tipped.attendanceState).toBe('SCHEDULED');
+  });
+
+  it('withOutcome drops the old outcome’s variant fields', () => {
+    const cancelled = Seat.withOutcome(
+      tipped,
+      SeatOutcome.cancelled(STAMP, 'CLIENT', 'CLIENT_UNWELL', 24),
+    );
+    const reopened = Seat.withOutcome(cancelled, SeatOutcome.scheduled());
+    expect(reopened).toEqual(tipped);
+    expect(Object.keys(reopened)).toEqual(Object.keys(tipped));
   });
 
   it('withTip changes the tip and nothing else; null clears it to "not recorded"', () => {
-    expect(Seat.withTip(tipped, null)).toEqual({ ...tipped, tip: null });
-    const zero = { amountMinorUnits: 0, currencyCode: 'EUR' };
-    expect(Seat.withTip(tipped, zero).tip).toEqual(zero);
+    expect(Seat.withTip(tipped, null)).toEqual({ ...tipped, tipCents: null });
+    expect(Seat.withTip(tipped, PriceCents.ZERO).tipCents).toBe(0);
   });
 
   it('a tip survives any run of outcome corrections', () => {
     let current = tipped;
     for (const outcome of [
-      SeatOutcome.noShow(T0),
+      SeatOutcome.noShow(STAMP),
       SeatOutcome.scheduled(),
-      SeatOutcome.worked(T0),
+      SeatOutcome.worked(STAMP),
     ]) {
       current = Seat.withOutcome(current, outcome);
     }
-    expect(current.tip).toEqual(tipped.tip);
-    expect(current.terms).toEqual(tipped.terms);
+    expect(current.tipCents).toBe(tipped.tipCents);
+    expect(current.priceCents).toBe(tipped.priceCents);
+    expect(current.catalogPriceCents).toBe(tipped.catalogPriceCents);
   });
 });
 
 describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move rebuilds', () => {
   const own = seat({
-    subject: SeatSubject.account(OWNER, SeatRelationship.Self),
+    occupant: SeatOccupant.account(OWNER, SubjectRelationship.Self),
   });
 
   it('is the booker’s for their own self seat', () => {
@@ -170,10 +237,12 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
 
   it('is the SHOP’s for a companion or a client the shop seated', () => {
     for (const relationship of [
-      SeatRelationship.Companion,
-      SeatRelationship.Client,
+      SubjectRelationship.Companion,
+      SubjectRelationship.Client,
     ]) {
-      const shops = seat({ subject: SeatSubject.account(OWNER, relationship) });
+      const shops = seat({
+        occupant: SeatOccupant.account(OWNER, relationship),
+      });
       expect(Seat.isMovableByBooker(shops, OWNER)).toBe(false);
     }
   });
@@ -187,28 +256,28 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
   });
 
   it('is exactly "anonymous, or self AND the owner’s own account" (property)', () => {
-    const subjects = fc.oneof(
-      fc.constant(SeatSubject.anonymous(SeatLabel.of('Guest'))),
+    const occupants = fc.oneof(
+      fc.constant<SeatOccupant>(SeatOccupant.anonymous(SeatLabel.of('Guest'))),
       fc
         .tuple(
           fc.constantFrom(OWNER, OTHER),
-          fc.constantFrom(...Object.values(SeatRelationship)),
+          fc.constantFrom(...Object.values(SubjectRelationship)),
         )
-        .map(([userId, relationship]) =>
-          SeatSubject.account(userId, relationship),
+        .map(([userId, relationship]): SeatOccupant =>
+          SeatOccupant.account(userId, relationship),
         ),
     );
     fc.assert(
       fc.property(
-        subjects,
+        occupants,
         fc.constantFrom(OWNER, OTHER, null),
-        (subject, owner) => {
+        (occupant, owner) => {
           const expected =
-            subject.kind === SeatSubjectKind.Anonymous ||
-            (subject.relationship === SeatRelationship.Self &&
+            occupant.seatSubject === SeatSubject.Anonymous ||
+            (occupant.subjectRelationship === SubjectRelationship.Self &&
               owner !== null &&
-              subject.userId === owner);
-          return Seat.isMovableByBooker(seat({ subject }), owner) === expected;
+              occupant.subjectUserId === owner);
+          return Seat.isMovableByBooker(seat({ occupant }), owner) === expected;
         },
       ),
     );
@@ -217,7 +286,7 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
 
 describe('Seat.violations — the aggregate invariants, every one at once', () => {
   const self = (userId: UserId) =>
-    SeatSubject.account(userId, SeatRelationship.Self);
+    SeatOccupant.account(userId, SubjectRelationship.Self);
 
   it('refuses no seats at all, alone', () => {
     expect(Seat.violations([])).toEqual([
@@ -226,30 +295,30 @@ describe('Seat.violations — the aggregate invariants, every one at once', () =
   });
 
   it('accepts sequential self seats and self seats of two accounts', () => {
-    const first = seat({ subject: self(OWNER) });
+    const first = seat({ occupant: self(OWNER) });
     const second = seat({
-      id: SeatId.of('s2'),
+      seatId: SeatId.of('s2'),
       barberId: STEFAN,
-      subject: self(OWNER),
-      startMs: T0 + 30 * MIN,
+      occupant: self(OWNER),
+      startMinutes: minute(630),
     });
     const other = seat({
-      id: SeatId.of('s3'),
+      seatId: SeatId.of('s3'),
       barberId: STEFAN,
-      subject: self(OTHER),
+      occupant: self(OTHER),
     });
     expect(Seat.violations([first, second])).toEqual([]);
     expect(Seat.violations([first, other])).toEqual([]);
   });
 
   it('refuses one person in two chairs once, and names a double-booked barber once', () => {
-    const a = seat({ subject: self(OWNER) });
+    const a = seat({ occupant: self(OWNER) });
     const b = seat({
-      id: SeatId.of('s2'),
-      subject: self(OWNER),
-      startMs: T0 + 10 * MIN,
+      seatId: SeatId.of('s2'),
+      occupant: self(OWNER),
+      startMinutes: minute(610),
     });
-    const c = seat({ id: SeatId.of('s3'), startMs: T0 + 20 * MIN });
+    const c = seat({ seatId: SeatId.of('s3'), startMinutes: minute(620) });
     expect(Seat.violations([a, b, c])).toEqual([
       SchedulingError.appointmentMultipleSelfSeats(),
       SchedulingError.appointmentBarberDoubleBooked(IVAN),
@@ -257,22 +326,20 @@ describe('Seat.violations — the aggregate invariants, every one at once', () =
   });
 
   it('refuses seats priced in two currencies, the first mismatch only', () => {
-    const usd = ServiceTerms.of(2800, 'USD', 30, 0, 0);
-    const gbp = ServiceTerms.of(2800, 'GBP', 30, 0, 0);
+    const usd = terms(2800, Currency.USD, 30, 0, 0);
+    const gbp = terms(2800, Currency.GBP, 30, 0, 0);
     expect(
       Seat.violations([
         seat(),
+        seat({ seatId: SeatId.of('s2'), barberId: STEFAN, charged: usd }),
         seat({
-          id: SeatId.of('s2'),
-          barberId: STEFAN,
-          terms: Seat.termsOf(usd, null),
-        }),
-        seat({
-          id: SeatId.of('s3'),
+          seatId: SeatId.of('s3'),
           barberId: BarberId.of('niko'),
-          terms: Seat.termsOf(gbp, null),
+          charged: gbp,
         }),
       ]),
-    ).toEqual([SchedulingError.appointmentMixedCurrency('EUR', 'USD')]);
+    ).toEqual([
+      SchedulingError.appointmentMixedCurrency(Currency.EUR, Currency.USD),
+    ]);
   });
 });

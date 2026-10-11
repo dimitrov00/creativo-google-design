@@ -1,57 +1,72 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { Actor, SystemSource } from '../components/actor.data';
-import { AuditAction, AuditContext } from '../components/audit-context.data';
+import {
+  AuditAction,
+  AuditContext,
+  AuditTargetRef,
+} from '../components/audit-context.data';
 import { GovernanceErrorCode } from '../components/governance-errors.data';
 import { Role } from '../components/role.data';
 import { SeatLabel } from '../components/seat-label.data';
 import {
-  SeatId,
-  SeatRelationship,
+  SeatOccupant,
   SeatSubject,
-  SeatSubjectKind,
+  SubjectRelationship,
 } from '../components/seat.data';
-import { BarberId } from '../entities/barber.entity';
-import { ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
+import { DurationMinutes } from '../primitives/duration-minutes.primitive';
 import {
-  FIXTURE_NOW_MS,
-  appointmentFixture,
+  AppointmentId,
+  AuditResourceId,
+  BarberId,
+  OperationId,
+  PublishRequestId,
+  SeatId,
+  ServiceId,
+  TriggerEventId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  FIXTURE_NOW_UTC_MS,
   deepFreeze,
-  seatFixture,
+  minute,
   unwrapErr,
   unwrapOk,
+  utcMs,
 } from '../testing';
-import { EditCommandKind } from './appointment-edit.system';
 import {
-  type AuditFact,
-  type AuditSubject,
-  AuditRequestedSubjectKind,
-  AuditSystem,
-} from './audit.system';
+  appointmentFixture,
+  seatFixture,
+} from '../testing/appointment.fixtures';
+import { EditCommand } from './appointment-edit.system';
+import { type AuditFact, type AuditSubject, AuditSystem } from './audit.system';
+import { RequestedSubjectRole } from './guest-label.system';
 
 /*
  * The pure cases of apps/functions/src/lib/booking/audit.spec.ts (targets,
  * the per-person plan, the people on a stored visit and on a requested cart,
  * the staff edit's people, the T5 context, the row id's basis), of
  * libs/domain/governance/src/lib/audit-entry.spec.ts and of
- * apps/functions/src/lib/booking/audit-profile-changes.spec.ts, copied. The
+ * apps/functions/src/lib/booking/audit-profile-changes.spec.ts, copied onto
+ * the flat audit row (actor, context and target slices at its root). The
  * row id is `hash(rowBasis(…))` — the hash is the pipeline's, so the id
  * cases assert the BASIS: deterministic, and separating every part.
  */
 
 const ivan = Actor.admin(UserId.of('dev-staff-ivan'));
 const account = (uid: string): AuditSubject => ({
-  kind: SeatSubjectKind.Account,
+  seatSubject: SeatSubject.Account,
   userId: UserId.of(uid),
 });
-const guest: AuditSubject = { kind: SeatSubjectKind.Anonymous };
-const AT_MS = Date.UTC(2026, 8, 25, 8, 0);
+const guest: AuditSubject = { seatSubject: SeatSubject.Anonymous };
+const AT = utcMs('2026-09-25T08:00:00Z');
+const APPT_1 = AuditResourceId.forAppointment(AppointmentId.of('appt-1'));
+const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 function fact(overrides: Partial<AuditFact> = {}): AuditFact {
   return {
-    action: AuditAction.BookingStaffMove,
-    resourceId: 'appt-1',
+    resourceId: APPT_1,
     subjects: [account('maria')],
     changeKey: null,
     context: AuditContext.staffEdit(AuditAction.BookingStaffMove, 3),
@@ -86,7 +101,7 @@ describe('AuditSystem.targets', () => {
         const targets = AuditSystem.targets(subjects);
         const people = new Set(
           subjects.flatMap((s) =>
-            s.kind === SeatSubjectKind.Account ? [s.userId] : [],
+            s.seatSubject === SeatSubject.Account ? [s.userId] : [],
           ),
         );
         expect(targets.length).toBe(Math.max(1, people.size));
@@ -102,16 +117,23 @@ describe('AuditSystem.plan — one row per person', () => {
       AuditSystem.plan(
         [fact({ subjects: [account('maria'), account('stefan')] })],
         ivan,
-        AT_MS,
+        AT,
       ),
     );
-    expect(rows.map((r) => r.row.targetUserId)).toEqual(['maria', 'stefan']);
+    expect(rows.map((r) => AuditTargetRef.targetUserIdOf(r.row))).toEqual([
+      'maria',
+      'stefan',
+    ]);
     for (const { row } of rows) {
-      expect(row.actor).toEqual(ivan);
-      expect(row.action).toBe('booking.staff_move');
-      expect(row.resourceId).toBe('appt-1');
-      expect(row.atMs).toBe(AT_MS);
-      expect(row.context).toEqual({ kind: 'booking.staff_move', revision: 3 });
+      expect(row).toMatchObject({
+        actorRole: 'ADMIN',
+        actorAdminUserId: 'dev-staff-ivan',
+        auditAction: 'BOOKING_STAFF_MOVE',
+        editRevision: 3,
+        resourceId: 'appt-1',
+        recordedAtUtcMs: AT,
+        auditTarget: 'USER',
+      });
     }
   });
 
@@ -120,78 +142,76 @@ describe('AuditSystem.plan — one row per person', () => {
       AuditSystem.plan(
         [fact({ subjects: [account('maria'), guest] })],
         ivan,
-        AT_MS,
+        AT,
       ),
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.row.targetUserId).toBe('maria');
+    expect(rows[0]?.row).toMatchObject({
+      auditTarget: 'USER',
+      targetUserId: 'maria',
+    });
   });
 
   it('writes one untargeted row for a walk-in of guests', () => {
     const rows = unwrapOk(
-      AuditSystem.plan([fact({ subjects: [guest] })], ivan, AT_MS),
+      AuditSystem.plan([fact({ subjects: [guest] })], ivan, AT),
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.row.targetUserId).toBeNull();
+    expect(rows[0]?.row.auditTarget).toBe('NONE');
   });
 
   it('refuses through the domain rather than writing a half-formed row', () => {
-    const blank = fact({ action: '  ' as AuditAction });
-    expect(unwrapErr(AuditSystem.plan([fact(), blank], ivan, AT_MS))).toEqual({
-      code: GovernanceErrorCode.AuditEntryEmptyAction,
+    const blank = fact({
+      context: { auditAction: '  ' as AuditAction } as AuditContext,
+    });
+    expect(unwrapErr(AuditSystem.plan([fact(), blank], ivan, AT))).toEqual({
+      errorCode: GovernanceErrorCode.AuditEntryEmptyAction,
     });
   });
 
   it('bases each row id on its change, once a change key is given — and leaves it to the pipeline without one', () => {
     const subjects = [account('maria'), account('stefan')];
     const keyed = unwrapOk(
-      AuditSystem.plan(
-        [fact({ subjects, changeKey: 'revision:4' })],
-        ivan,
-        AT_MS,
-      ),
+      AuditSystem.plan([fact({ subjects, changeKey: 'revision:4' })], ivan, AT),
     );
     expect(keyed.map((r) => r.idBasis)).toEqual([
       AuditSystem.rowBasis(
-        'booking.staff_move',
+        'BOOKING_STAFF_MOVE',
         'appt-1',
         'maria',
         'revision:4',
       ),
       AuditSystem.rowBasis(
-        'booking.staff_move',
+        'BOOKING_STAFF_MOVE',
         'appt-1',
         'stefan',
         'revision:4',
       ),
     ]);
-    const random = unwrapOk(
-      AuditSystem.plan([fact({ subjects })], ivan, AT_MS),
-    );
+    const random = unwrapOk(AuditSystem.plan([fact({ subjects })], ivan, AT));
     expect(random.map((r) => r.idBasis)).toEqual([null, null]);
   });
 
-  it('carries the targets and the instant from the governance entry: null target when none, the context as given', () => {
+  it('carries the target slice and the instant onto the flat row: NONE when nobody, the context as given', () => {
     const rows = unwrapOk(
       AuditSystem.plan(
         [
           fact({
-            action: AuditAction.BookingStaffArrived,
             subjects: [],
             context: AuditContext.arrival(AuditAction.BookingStaffArrived),
           }),
         ],
         Actor.system(SystemSource.Fixture),
-        AT_MS,
+        AT,
       ),
     );
     expect(rows[0]?.row).toEqual({
-      actor: { kind: 'system', source: 'fixture' },
-      action: 'booking.staff_arrived',
-      atMs: AT_MS,
-      targetUserId: null,
+      recordedAtUtcMs: AT,
       resourceId: 'appt-1',
-      context: { kind: 'booking.staff_arrived' },
+      actorRole: 'SYSTEM',
+      actorSystemSource: 'FIXTURE',
+      auditAction: 'BOOKING_STAFF_ARRIVED',
+      auditTarget: 'NONE',
     });
   });
 });
@@ -201,18 +221,21 @@ describe('AuditSystem.subjectsOfSeats — the people on a stored visit', () => {
     ownerUserId: UserId.of('maria'),
     seats: [
       seatFixture({
-        id: SeatId.of('s1'),
-        subject: SeatSubject.account(UserId.of('maria'), SeatRelationship.Self),
+        seatId: SeatId.of('s1'),
+        occupant: SeatOccupant.account(
+          UserId.of('maria'),
+          SubjectRelationship.Self,
+        ),
       }),
       seatFixture({
-        id: SeatId.of('s2'),
-        subject: SeatSubject.anonymous(unwrapOk(SeatLabel.parse('Синът'))),
+        seatId: SeatId.of('s2'),
+        occupant: SeatOccupant.anonymous(unwrapOk(SeatLabel.parse('Синът'))),
       }),
       seatFixture({
-        id: SeatId.of('s3'),
-        subject: SeatSubject.account(
+        seatId: SeatId.of('s3'),
+        occupant: SeatOccupant.account(
           UserId.of('stefan'),
-          SeatRelationship.Companion,
+          SubjectRelationship.Companion,
         ),
       }),
     ],
@@ -240,8 +263,14 @@ describe('AuditSystem.subjectsOfSeats — the people on a stored visit', () => {
 });
 
 describe('AuditSystem.requestedSubjects — the people on a requested cart', () => {
-  const self = { kind: AuditRequestedSubjectKind.Self, userId: null };
-  const son = { kind: AuditRequestedSubjectKind.Guest, userId: null };
+  const self = {
+    requestedSubjectRole: RequestedSubjectRole.Self,
+    userId: null,
+  };
+  const son = {
+    requestedSubjectRole: RequestedSubjectRole.Guest,
+    userId: null,
+  };
 
   it('binds every self seat to the owner and every guest to nobody', () => {
     expect(
@@ -255,7 +284,7 @@ describe('AuditSystem.requestedSubjects — the people on a requested cart', () 
         [
           self,
           {
-            kind: AuditRequestedSubjectKind.Companion,
+            requestedSubjectRole: RequestedSubjectRole.Companion,
             userId: UserId.of('son'),
           },
         ],
@@ -275,26 +304,24 @@ describe('AuditSystem.staffEditSubjects', () => {
       AuditSystem.staffEditSubjects(
         [account('maria'), account('stefan')],
         UserId.of('maria'),
-        [{ kind: EditCommandKind.RemoveSeat, seatId: SeatId.of('s3') }],
+        [{ editCommand: EditCommand.RemoveSeat, seatId: SeatId.of('s3') }],
       ),
     ).toEqual([account('maria'), account('stefan')]);
   });
 
-  it('adds the owner when an addSeat gives them a seat', () => {
+  it('adds the owner when an ADD_SEAT gives them a seat', () => {
     expect(
       AuditSystem.staffEditSubjects([guest], UserId.of('maria'), [
         {
-          kind: EditCommandKind.AddSeat,
+          editCommand: EditCommand.AddSeat,
           seatId: SeatId.of('new'),
           serviceId: ServiceId.of('svc'),
           variantId: null,
           barberId: BarberId.of('b'),
-          startMs: AT_MS,
-          minutes: 30,
-          subject: SeatSubject.account(
-            UserId.of('maria'),
-            SeatRelationship.Self,
-          ),
+          startMinutes: minute(600),
+          durationMinutes: unwrapOk(DurationMinutes.of(30)),
+          workedAtUtcMs: utcMs('2026-09-28T10:30:00+03:00'),
+          ...SeatOccupant.account(UserId.of('maria'), SubjectRelationship.Self),
         },
       ]),
     ).toEqual([guest, account('maria')]);
@@ -305,20 +332,24 @@ describe('audit context carries codes, never free text (T5)', () => {
   it("records a staff cancellation's reason code and the seat — there is no note to drop", () => {
     const context = AuditContext.transition(
       AuditAction.BookingStaffCancelled,
-      'other',
-      's1',
+      'OTHER',
+      SeatId.of('s1'),
     );
     expect(context).toEqual({
-      kind: 'booking.staff_cancelled',
-      reason: 'other',
-      seatId: 's1',
+      auditAction: 'BOOKING_STAFF_CANCELLED',
+      transitionReason: 'OTHER',
+      transitionSeatId: 's1',
     });
   });
 
   it('records nothing when there is nothing to record', () => {
     expect(
       AuditContext.transition(AuditAction.BookingStaffCompleted, null, null),
-    ).toEqual({ kind: 'booking.staff_completed', reason: null, seatId: null });
+    ).toEqual({
+      auditAction: 'BOOKING_STAFF_COMPLETED',
+      transitionReason: null,
+      transitionSeatId: null,
+    });
   });
 });
 
@@ -392,20 +423,21 @@ describe('AuditSystem.rowBasis — one id per person per logical change', () => 
 
   it('a retried attempt derives the same key, verb by verb — no per-attempt instant the verb does not carry', () => {
     const keys = AuditSystem.changeKey;
-    expect(keys.attempt('abc', 'appt-1')).toBe('attempt:abc');
-    expect(keys.attempt(null, 'appt-1')).toBe('attempt:appt-1');
+    const appt = AppointmentId.of('appt-1');
+    expect(keys.attempt('abc', appt)).toBe('attempt:abc');
+    expect(keys.attempt(null, appt)).toBe('attempt:appt-1');
     expect(keys.move('m1')).toBe('move:m1');
     expect(keys.revision(4)).toBe('revision:4');
-    expect(keys.staffEdit('op-1', 4)).toBe('operation:op-1');
+    expect(keys.staffEdit(OperationId.of('op-1'), 4)).toBe('operation:op-1');
     expect(keys.staffEdit(null, 4)).toBe('revision:4');
-    expect(keys.cancelled(123)).toBe('cancelled:123');
-    expect(keys.transition('s1', 9)).toBe('transition:s1:9');
-    expect(keys.transition(null, 9)).toBe('transition:party:9');
-    expect(keys.arrived(5)).toBe('arrived:5');
-    expect(keys.unarrived(5)).toBe('unarrived:5');
-    expect(keys.tip('s1', 7)).toBe('tip:s1:7');
-    expect(keys.publish('req-1')).toBe('req-1');
-    expect(keys.profile('evt-1')).toBe('evt-1');
+    expect(keys.cancelled(at(123))).toBe('cancelled:123');
+    expect(keys.transition(SeatId.of('s1'), at(9))).toBe('transition:s1:9');
+    expect(keys.transition(null, at(9))).toBe('transition:party:9');
+    expect(keys.arrived(at(5))).toBe('arrived:5');
+    expect(keys.unarrived(at(5))).toBe('unarrived:5');
+    expect(keys.tip(SeatId.of('s1'), at(7))).toBe('tip:s1:7');
+    expect(keys.publish(PublishRequestId.of('req-1'))).toBe('req-1');
+    expect(keys.profile(TriggerEventId.of('evt-1'))).toBe('evt-1');
   });
 });
 
@@ -455,24 +487,24 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
         const plan = unwrapOk(
           AuditSystem.planProfileChange(
             {
-              eventId: 'evt-1',
-              eventAtMs: AT_MS,
+              eventId: TriggerEventId.of('evt-1'),
+              eventAtUtcMs: AT,
               ownerUserId: UserId.of('maria'),
               writer: Actor.user(UserId.of('maria')),
               beforeExists: true,
               afterExists: true,
               fields,
             },
-            AT_MS,
+            AT,
           ),
         );
         if (fields.length === 0) {
           expect(plan).toBeNull();
           return;
         }
-        expect(plan?.row.context).toEqual({
-          kind: 'profile.updated',
-          fields,
+        expect(plan?.row).toMatchObject({
+          auditAction: 'PROFILE_UPDATED',
+          profileFields: fields,
         });
         for (const name of fields) expect(FIELDS).toContain(name);
       }),
@@ -482,9 +514,9 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
 
 describe('AuditSystem.profileAction', () => {
   it('names creation, update and deletion apart', () => {
-    expect(AuditSystem.profileAction(false, true)).toBe('profile.created');
-    expect(AuditSystem.profileAction(true, true)).toBe('profile.updated');
-    expect(AuditSystem.profileAction(true, false)).toBe('profile.deleted');
+    expect(AuditSystem.profileAction(false, true)).toBe('PROFILE_CREATED');
+    expect(AuditSystem.profileAction(true, true)).toBe('PROFILE_UPDATED');
+    expect(AuditSystem.profileAction(true, false)).toBe('PROFILE_DELETED');
   });
 });
 
@@ -508,6 +540,10 @@ describe('AuditSystem.profileWriter — who wrote it, from the auth context', ()
         'fn@project.iam.gserviceaccount.com',
       ),
     ).toEqual(Actor.system(SystemSource.AdminSdk));
+    // The tag itself reads the same as the platform's lower-case spelling.
+    expect(AuditSystem.profileWriter('SERVICE_ACCOUNT', null)).toEqual(
+      Actor.system(SystemSource.AdminSdk),
+    );
   });
 
   it('attributes a platform write to the platform', () => {
@@ -533,9 +569,10 @@ describe('AuditSystem.profileWriter — who wrote it, from the auth context', ()
 });
 
 describe('AuditSystem.planProfileChange — one row per event', () => {
+  const EVENT_AT = utcMs('2026-09-25T08:00:00.123Z');
   const change = {
-    eventId: 'evt-1f2e',
-    eventAtMs: Date.parse('2026-09-25T08:00:00.123Z'),
+    eventId: TriggerEventId.of('evt-1f2e'),
+    eventAtUtcMs: EVENT_AT,
     ownerUserId: UserId.of('maria'),
     writer: Actor.system(SystemSource.AdminSdk),
     beforeExists: true,
@@ -544,44 +581,50 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
   };
 
   it('keys the row by the event id, so a redelivery lands on the same document', () => {
-    const plan = unwrapOk(AuditSystem.planProfileChange(change, AT_MS));
+    const plan = unwrapOk(AuditSystem.planProfileChange(change, AT));
     expect(plan?.idBasis).toBe(
       AuditSystem.rowBasis(
-        'profile.updated',
+        'PROFILE_UPDATED',
         'users/maria',
         'maria',
         'evt-1f2e',
       ),
     );
     expect(
-      unwrapOk(AuditSystem.planProfileChange({ ...change }, AT_MS + 1))
-        ?.idBasis,
+      unwrapOk(
+        AuditSystem.planProfileChange({ ...change }, UtcEpochMs.plusMs(AT, 1)),
+      )?.idBasis,
     ).toBe(plan?.idBasis);
   });
 
   it('names the profile owner as the target and the fields as the only context', () => {
-    const plan = unwrapOk(AuditSystem.planProfileChange(change, AT_MS));
-    expect(plan?.row.targetUserId).toBe('maria');
-    expect(plan?.row.resourceId).toBe('users/maria');
-    expect(plan?.row.context).toEqual({
-      kind: 'profile.updated',
-      fields: ['firstName', 'lastName'],
+    const plan = unwrapOk(AuditSystem.planProfileChange(change, AT));
+    expect(plan?.row).toMatchObject({
+      auditTarget: 'USER',
+      targetUserId: 'maria',
+      resourceId: 'users/maria',
+      auditAction: 'PROFILE_UPDATED',
+      profileFields: ['firstName', 'lastName'],
+      actorRole: 'SYSTEM',
+      actorSystemSource: 'ADMIN_SDK',
     });
-    expect(plan?.row.actor).toEqual({ kind: 'system', source: 'admin_sdk' });
   });
 
   it("stamps the event's own instant, not the delivery's", () => {
-    const plan = unwrapOk(AuditSystem.planProfileChange(change, AT_MS));
-    expect(plan?.row.atMs).toBe(Date.parse('2026-09-25T08:00:00.123Z'));
+    const plan = unwrapOk(AuditSystem.planProfileChange(change, AT));
+    expect(plan?.row.recordedAtUtcMs).toBe(EVENT_AT);
     const unparsed = unwrapOk(
-      AuditSystem.planProfileChange({ ...change, eventAtMs: null }, AT_MS),
+      AuditSystem.planProfileChange({ ...change, eventAtUtcMs: null }, AT),
     );
-    expect(unparsed?.row.atMs).toBe(AT_MS);
+    expect(unparsed?.row.recordedAtUtcMs).toBe(AT);
   });
 
   it('refuses an event with no id rather than minting one', () => {
     expect(
-      AuditSystem.planProfileChange({ ...change, eventId: '' }, AT_MS).ok,
+      AuditSystem.planProfileChange(
+        { ...change, eventId: TriggerEventId.of('') },
+        AT,
+      ).ok,
     ).toBe(false);
   });
 });
@@ -592,8 +635,8 @@ describe('AuditSystem — purity', () => {
       fact({ subjects: [account('a'), guest, account('b')], changeKey: 'k' }),
     ]);
     const actor = deepFreeze(Actor.staff(UserId.of('s'), [Role.Barber]));
-    const once = AuditSystem.plan(facts, actor, FIXTURE_NOW_MS);
-    const twice = AuditSystem.plan(facts, actor, FIXTURE_NOW_MS);
+    const once = AuditSystem.plan(facts, actor, FIXTURE_NOW_UTC_MS);
+    const twice = AuditSystem.plan(facts, actor, FIXTURE_NOW_UTC_MS);
     expect(twice).toEqual(once);
   });
 });

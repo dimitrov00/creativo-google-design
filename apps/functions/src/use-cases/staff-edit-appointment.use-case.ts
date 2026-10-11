@@ -7,7 +7,12 @@ import {
 } from '@creativo/domain/kernel';
 import type { Transaction } from 'firebase-admin/firestore';
 import { worksTheBook } from '@creativo/domain/accounts';
-import { Coupon, CouponValue, GiftVoucher } from '@creativo/domain/engagement';
+import {
+  Coupon,
+  CouponCombinability,
+  CouponValue,
+  GiftVoucher,
+} from '@creativo/domain/engagement';
 import {
   AppliedDiscount,
   Appointment,
@@ -18,6 +23,8 @@ import {
   type SeatIdPair,
   type SeatOutcome,
   VoucherRedemption,
+  toEcsDiscount,
+  toEcsRedemption,
 } from '@creativo/domain/scheduling';
 import type { ClockPort } from '@creativo/application/shared';
 import type {
@@ -69,36 +76,56 @@ import {
 } from './staff-edit-appointment.errors';
 import { operationDigest } from './staff-edit-appointment.operations';
 import {
-  type AppliedDiscount as AppliedDiscountData,
   AppointmentEditSystem,
-  LedgerVerdictKind,
+  AppointmentIndexSystem,
+  type AppointmentTime,
+  AttendanceState,
   BarberId as BarberIdData,
-  BillPendingKind,
+  BarberPreference,
+  BillPending,
   BillingSystem,
-  type BookingState as BookingStateData,
-  type CouponValue as CouponValueData,
+  BookingStatus,
+  Combinability,
   CouponGrantId as CouponGrantIdData,
-  type GiftVoucherEntity,
+  CouponId as CouponIdData,
+  type CouponValue as CouponValueData,
+  Currency,
+  DiscountMethod,
+  DiscountProvenance,
+  DiscountSource,
+  DurationMinutes,
+  EditCommand,
+  type EditCommandRequest,
+  EndMinute,
+  type GiftVoucher as GiftVoucherData,
   GiftVoucherId as GiftVoucherIdData,
-  type Money as MoneyData,
-  type PendingDiscount,
-  StaffEditErrorCode,
-  UserId as UserIdData,
-  VoucherCode as VoucherCodeData,
-  type VoucherRedemption as VoucherRedemptionData,
-  VoucherState as VoucherStateData,
-  type EditCommand,
-  EditCommandKind,
+  LedgerVerdict,
+  type LocalDate,
+  LocalDate as LocalDateData,
   LocationId as LocationIdData,
+  MinuteCount,
+  MinuteOfDay,
+  type Money as MoneyData,
+  OperationId,
+  type PendingDiscount,
+  PriceCents,
   ResizeEdge,
-  type Seat as SeatData,
+  Seat as SeatData,
   SeatId as SeatIdData,
   SeatLabel as SeatLabelData,
+  SeatOccupant,
   SeatOutcome as SeatOutcomeData,
-  SeatSubject as SeatSubjectData,
   ServiceId as ServiceIdData,
-  type ServiceVariantId as ServiceVariantIdData,
-  TimeInterval as TimeIntervalData,
+  ServiceVariantId as ServiceVariantIdData,
+  StaffEditErrorCode,
+  type TimeZone,
+  UserId as UserIdData,
+  UtcEpochMs,
+  VoucherCode as VoucherCodeData,
+  VoucherLifecycle,
+  type WallTime,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
@@ -748,6 +775,11 @@ export class StaffEditAppointmentUseCase {
      * caller's, which is the only place that knows what the barber did.
      */
     let next: readonly StoredSeat[] = stored;
+    // The stored seats must sit on one shop day inside it (F-6) before any
+    // command folds over them.
+    if (storedTimeOf(stored) === null) {
+      return fail(new StaffEditInvalidCommandError('seats'));
+    }
     const fold: FoldContext = {
       // A seat added to a FINISHED visit was worked, not scheduled: the
       // sheet is being filled in after the cut (owner, 2026-09-09).
@@ -875,22 +907,34 @@ export class StaffEditAppointmentUseCase {
     // THIN SHIM (ECS Phase 2): `BillingSystem.settleDiscounts` decides — kept
     // as stored or NEW, who may add a manual figure, the legal set — and the
     // legacy snapshots ride back on what it decided.
-    const existingData = existing.map(toDiscountData);
+    const currency = Currency.parse(template.currencyCode);
+    const nowUtcMs = UtcEpochMs.of(now.value.toMillis());
+    if (!currency.ok || !nowUtcMs.ok) {
+      return fail(new StaffEditInvalidCommandError('discounts'));
+    }
+    const items: PendingDiscount[] = [];
+    for (const item of pending.items) {
+      const data = toPendingDiscountData(item, currency.value);
+      // A typed figure that is no amount of cents is no discount — the
+      // refusal the settle gives every figure it cannot value.
+      if (data === null) {
+        return fail(new StaffEditInvalidCommandError('discounts'));
+      }
+      items.push(data);
+    }
+    const existingData = existing.map(toEcsDiscount);
     const owner = current['ownerUserId'];
     const settled = BillingSystem.settleDiscounts(
-      {
-        kind: BillPendingKind.Set,
-        items: pending.items.map(toPendingDiscountData),
-      },
+      { billPending: LEGACY_BILL_PENDING.set, items },
       existingData,
       typeof owner === 'string' ? UserIdData.of(owner) : null,
       actorRoles,
-      template.currencyCode,
-      now.value.toMillis(),
+      currency.value,
+      nowUtcMs.value,
     );
     if (!settled.ok) {
       return fail(
-        settled.error.code === StaffEditErrorCode.Forbidden
+        settled.error.errorCode === StaffEditErrorCode.Forbidden
           ? new StaffEditForbiddenError()
           : new StaffEditInvalidCommandError('discounts'),
       );
@@ -901,14 +945,16 @@ export class StaffEditAppointmentUseCase {
         if (kept >= 0) return existing.at(kept) as AppliedDiscount;
         const item = pending.items.at(index) as PendingDiscountItem;
         return AppliedDiscount.of({
-          id: discount.id,
-          source: discount.source,
+          id: discount.discountId,
+          source: DISCOUNT_SOURCE_LEGACY[discount.discountSource],
           label: discount.label,
           value: legacyValueOf(item, template.currencyCode),
-          grantId: discount.grantId,
-          code: discount.code,
+          grantId: DiscountProvenance.grantIdOf(discount),
+          code: DiscountProvenance.codeOf(discount),
           appliedAt: now.value,
-          combinability: discount.combinability,
+          combinability: Combinability.isExclusive(discount.combinability)
+            ? CouponCombinability.exclusive()
+            : CouponCombinability.stackable(),
         });
       }),
     );
@@ -941,15 +987,17 @@ export class StaffEditAppointmentUseCase {
     // bill in order and gives back what is no longer named; the legacy lines
     // and vouchers ride back on what it decided.
     const stored = voucherRedemptionsFromDocument(current);
-    const storedData = stored.map(toRedemptionData);
+    const storedData = stored.map(toEcsRedemption);
+    const nowUtcMs = UtcEpochMs.of(now.toMillis());
+    if (!nowUtcMs.ok) return fail(new StaffEditInvalidCommandError('vouchers'));
     const settled = BillingSystem.settleVouchers(
       pending.kind === 'set'
-        ? { kind: BillPendingKind.Set, codes: pending.codes }
-        : { kind: BillPendingKind.Keep },
+        ? { billPending: LEGACY_BILL_PENDING.set, codes: pending.codes }
+        : { billPending: LEGACY_BILL_PENDING.keep },
       storedData,
       toMoneyData(appointment.total()),
       vouchers.map(toVoucherData),
-      now.toMillis(),
+      nowUtcMs.value,
     );
     if (!settled.ok) return fail(new StaffEditInvalidCommandError('vouchers'));
     const lines = settled.value.voucherRedemptions;
@@ -966,9 +1014,9 @@ export class StaffEditAppointmentUseCase {
         (entry) =>
           entry.live &&
           entry.voucherId === line.voucherId &&
-          entry.appliedAt.toMillis() === line.appliedAtMs,
+          entry.appliedAt.toMillis() === line.appliedAtUtcMs,
       );
-      if (line.reversedAtMs !== null && prior !== undefined) {
+      if (line.reversedAtUtcMs !== null && prior !== undefined) {
         redemptions.push(prior.reversed(now));
         continue;
       }
@@ -976,8 +1024,8 @@ export class StaffEditAppointmentUseCase {
         VoucherRedemption.of({
           voucherId: line.voucherId,
           code: line.code,
-          amount: fromMoneyData(line.amount),
-          balanceAfter: fromMoneyData(line.balanceAfter),
+          amount: fromCents(line.amountCents, line.currency),
+          balanceAfter: fromCents(line.balanceAfterCents, line.currency),
           appliedAt: prior?.appliedAt ?? now,
         }),
       );
@@ -990,7 +1038,7 @@ export class StaffEditAppointmentUseCase {
         id: voucher.id.value,
         code: voucher.code,
         value: voucher.initialValue,
-        balance: fromMoneyData(entity.balance),
+        balance: fromCents(entity.balanceCents, entity.currency),
         issuedAt: voucher.issuedAt,
         expiresAt: voucher.expiresAt,
         issuedToUserId: voucher.issuedToUserId?.value ?? null,
@@ -1027,28 +1075,27 @@ export class StaffEditAppointmentUseCase {
     // A visit that NEVER HAPPENED is history; a FINISHED one may be
     // corrected; nothing may end before its arrival stamp —
     // `AppointmentEditSystem.guard`.
+    // The folded seats on their day's wall clock, the arrival on the same
+    // clock (T6); the refusal's legacy params from the instants already held.
     const status = (current['status'] ?? {}) as AppointmentStatus;
     const arrivedAt = arrivedAtFromDocument(current);
+    const clock = seatsOnTheClock(planned.next);
+    if (clock === null) return fail(new StaffEditInvalidCommandError('seats'));
     const refusal = AppointmentEditSystem.guard(
-      status.kind as BookingStateData,
-      planned.next.map((seat) =>
-        TimeIntervalData.of(seat.startMs, endMs(seat)),
-      ),
-      arrivedAt === null ? null : arrivedAt.toMillis(),
+      bookingStatusOf(status.kind),
+      clock.localDate,
+      clock.seats.map((seat) => SeatData.range(seat)),
+      arrivedAt === null ? null : wallOf(arrivedAt, clock.zone),
     );
     if (refusal !== null) {
-      if (refusal.code !== StaffEditErrorCode.BeforeArrival) {
+      if (refusal.errorCode !== StaffEditErrorCode.BeforeArrival) {
         return fail(new CommitBookingInvalidInputError(refusal.field));
       }
-      const finishIso = ZonedDateTime.fromMillis(
-        refusal.finishMs,
-        snapshot.zone,
-      );
+      const finishMs = Math.max(...planned.next.map(endMs));
+      const finishIso = ZonedDateTime.fromMillis(finishMs, snapshot.zone);
       return fail(
         new StaffEditBeforeArrivalError(
-          finishIso.isSuccess()
-            ? finishIso.value.toISO()
-            : String(refusal.finishMs),
+          finishIso.isSuccess() ? finishIso.value.toISO() : String(finishMs),
           arrivedAt === null ? '' : arrivedAt.toISO(),
         ),
       );
@@ -1182,18 +1229,30 @@ function replayOf(
   operation: { readonly id: string; readonly digest: string } | null,
 ): Result<AppliedOperation | null, StaffEditError> {
   if (operation === null) return ok(null);
+  // The stored ledger as the flat entries the system reads (`operationId`,
+  // was `id`); a re-send's entry back as the legacy one the caller answers by.
   const verdict = AppointmentEditSystem.ledgerVerdict(
-    AppliedOperations.fromDocument(current).toArray(),
-    operation.id,
+    AppliedOperations.fromDocument(current)
+      .toArray()
+      .map((entry) => ({
+        operationId: OperationId.of(entry.id),
+        revision: entry.revision,
+        digest: entry.digest,
+      })),
+    OperationId.of(operation.id),
     operation.digest,
   );
-  switch (verdict.kind) {
-    case LedgerVerdictKind.New:
+  switch (verdict.ledgerVerdict) {
+    case LedgerVerdict.New:
       return ok(null);
-    case LedgerVerdictKind.Mismatch:
+    case LedgerVerdict.Mismatch:
       return fail(new StaffEditInvalidCommandError('operationId'));
-    case LedgerVerdictKind.Replay:
-      return ok(verdict.applied);
+    case LedgerVerdict.Replay:
+      return ok({
+        id: verdict.applied.operationId,
+        revision: verdict.applied.revision,
+        digest: verdict.applied.digest,
+      });
   }
 }
 
@@ -1457,51 +1516,142 @@ interface FoldContext {
 /* ── The bill: `BillingSystem.settleDiscounts/settleVouchers` (ECS shim) ──
  * Converters only: the system settles, the legacy snapshots ride back. */
 
-function toMoneyData(money: Money): MoneyData {
-  return {
-    amountMinorUnits: money.toMinorUnits(),
-    currencyCode: money.currencyCode(),
-  };
+/*
+ * Legacy ↔ ECS (flatten-spec §8.9): one table per dictionary, `Money` →
+ * `*Cents` beside one `currency`, instants branded, the stored seats placed
+ * on the wall clock of their own zone. A legacy instant already held is
+ * never re-derived from the wall clock; only a seat the fold MOVED is
+ * placed back on the timeline (`toUtc`).
+ */
+
+/** The legacy lower-case value tag → the ecs-core `DiscountMethod`. */
+const LEGACY_DISCOUNT_METHOD = {
+  percent_off: DiscountMethod.PercentOff,
+  fixed_amount: DiscountMethod.FixedAmount,
+  free_service: DiscountMethod.FreeService,
+} as const satisfies Record<CouponValue['kind'], DiscountMethod>;
+
+/** The ecs-core `DiscountSource` → the stored lower-case source. */
+const DISCOUNT_SOURCE_LEGACY = {
+  [DiscountSource.Grant]: 'grant',
+  [DiscountSource.Code]: 'code',
+  [DiscountSource.Manual]: 'manual',
+} as const satisfies Record<DiscountSource, AppliedDiscount['source']>;
+
+/** The batch's lower-case word on the bill → the ecs-core `BillPending`. */
+const LEGACY_BILL_PENDING = {
+  keep: BillPending.Keep,
+  set: BillPending.Set,
+} as const satisfies Record<PendingVouchers['kind'], BillPending>;
+
+/** The wire's lower-case edge → the ecs-core `ResizeEdge`. */
+const LEGACY_RESIZE_EDGE = {
+  start: ResizeEdge.Start,
+  end: ResizeEdge.End,
+} as const satisfies Record<'start' | 'end', ResizeEdge>;
+
+/** The stored lower-case status tag → the ecs-core `BookingStatus`. */
+const LEGACY_BOOKING_STATUS = {
+  pending: BookingStatus.Pending,
+  confirmed: BookingStatus.Confirmed,
+  completed: BookingStatus.Completed,
+  no_show: BookingStatus.NoShow,
+  cancelled: BookingStatus.Cancelled,
+} as const satisfies Record<AppointmentStatus['kind'], BookingStatus>;
+
+/** The stored lower-case barber preference → the ecs-core `BarberPreference`. */
+const LEGACY_BARBER_PREFERENCE = {
+  any: BarberPreference.Any,
+  specific: BarberPreference.Specific,
+} as const satisfies Record<'any' | 'specific', BarberPreference>;
+
+/**
+ * A stored status as the guard reads it. A status that is no lifecycle tag
+ * is not one the guard refuses (it refuses `CANCELLED` and `NO_SHOW` only):
+ * read as `CONFIRMED`, as the legacy guard let it through.
+ */
+function bookingStatusOf(kind: unknown): BookingStatus {
+  return typeof kind === 'string' && Object.hasOwn(LEGACY_BOOKING_STATUS, kind)
+    ? LEGACY_BOOKING_STATUS[kind as AppointmentStatus['kind']]
+    : BookingStatus.Confirmed;
 }
 
-function fromMoneyData(money: MoneyData): Money {
-  const result = Money.fromMinorUnitsAndCode(
-    money.amountMinorUnits,
-    money.currencyCode,
+function instantOf(ms: number): UtcEpochMs | null {
+  const instant = UtcEpochMs.of(ms);
+  return instant.ok ? instant.value : null;
+}
+
+/** A legacy instant on the shop's wall clock in `zone` (T6); `null` for no instant. */
+function wallOf(at: ZonedDateTime, zone: TimeZone): WallTime | null {
+  const instant = instantOf(at.toMillis());
+  return instant === null ? null : ZonedTimeSystem.toLocal(instant, zone);
+}
+
+/** A wire ISO instant on the shop's wall clock — to the nearest minute when `round`. */
+function wallOfIso(
+  iso: string,
+  zone: TimeZone,
+  round: boolean,
+): WallTime | null {
+  const ms = Date.parse(iso);
+  const instant = instantOf(
+    round ? Math.round(ms / MINUTE_MS) * MINUTE_MS : ms,
   );
+  return instant === null ? null : ZonedTimeSystem.toLocal(instant, zone);
+}
+
+function toMoneyData(money: Money): MoneyData {
+  const amountCents = PriceCents.of(money.toMinorUnits());
+  const currency = Currency.parse(money.currencyCode());
+  // Unreachable: a legacy `Money` is a non-negative amount in a known code.
+  if (!amountCents.ok || !currency.ok) defect('unreachable: money');
+  return { amountCents: amountCents.value, currency: currency.value };
+}
+
+function fromCents(amountCents: PriceCents, currency: Currency): Money {
+  const result = Money.fromMinorUnitsAndCode(amountCents, currency);
   // Unreachable: every figure carries the visit's own, valid currency.
-  if (result.isFailure()) throw new Error('unreachable: bill currency');
+  if (result.isFailure()) defect('unreachable: bill currency');
   return result.value;
 }
 
+/** A legacy value as the flat slice — converted as it stands, never re-validated. */
 function toValueData(value: CouponValue): CouponValueData {
-  return value.kind === 'fixed_amount'
-    ? { kind: 'fixed_amount', amount: toMoneyData(value.amount) }
-    : value;
+  switch (value.kind) {
+    case 'percent_off':
+      return {
+        discountMethod: LEGACY_DISCOUNT_METHOD.percent_off,
+        discountPercent: value.percent,
+      };
+    case 'fixed_amount': {
+      const money = toMoneyData(value.amount);
+      return {
+        discountMethod: LEGACY_DISCOUNT_METHOD.fixed_amount,
+        discountAmountCents: money.amountCents,
+        discountCurrency: money.currency,
+      };
+    }
+    case 'free_service':
+      return { discountMethod: LEGACY_DISCOUNT_METHOD.free_service };
+  }
 }
 
-function toDiscountData(discount: AppliedDiscount): AppliedDiscountData {
-  return {
-    id: discount.id,
-    source: discount.source,
-    value: toValueData(discount.value),
-    label: discount.label,
-    grantId:
-      discount.grantId === null ? null : CouponGrantIdData.of(discount.grantId),
-    code: discount.code,
-    appliedAtMs: discount.appliedAt.toMillis(),
-    combinability: discount.combinability,
-  };
-}
-
-function toPendingDiscountData(item: PendingDiscountItem): PendingDiscount {
+/**
+ * One requested discount with what the resolver found, as the settle reads
+ * it; `null` for a typed fixed figure that is no whole number of cents (the
+ * settle refuses it as it refuses every figure it cannot value).
+ */
+function toPendingDiscountData(
+  item: PendingDiscountItem,
+  currency: Currency,
+): PendingDiscount | null {
   const request = item.request;
   switch (request.source) {
     case 'grant': {
       const grant = item.grant ?? null;
       return {
-        source: 'grant',
-        grantId: request.grantId,
+        discountSource: DiscountSource.Grant,
+        grantId: CouponGrantIdData.of(request.grantId),
         resolved:
           grant === null
             ? null
@@ -1509,40 +1659,50 @@ function toPendingDiscountData(item: PendingDiscountItem): PendingDiscount {
                 grantId: CouponGrantIdData.of(grant.grantId),
                 userId: UserIdData.of(grant.userId),
                 label: grant.label,
-                value: toValueData(grant.value),
                 usable: grant.usable,
                 exclusive: grant.exclusive,
+                ...toValueData(grant.value),
               },
       };
     }
     case 'code': {
       const coupon = item.coupon ?? null;
       return {
-        source: 'code',
+        discountSource: DiscountSource.Code,
         code: request.code,
         resolved:
           coupon === null
             ? null
             : {
-                couponId: coupon.couponId,
+                couponId: CouponIdData.of(coupon.couponId),
                 label: coupon.label,
-                value: toValueData(coupon.value),
-                code: coupon.code,
+                code: VoucherCodeData.of(coupon.code),
                 exclusive: coupon.exclusive,
+                ...toValueData(coupon.value),
               },
       };
     }
-    case 'manual':
+    case 'manual': {
+      if (request.value.kind === 'percent_off') {
+        return {
+          discountSource: DiscountSource.Manual,
+          value: {
+            discountMethod: LEGACY_DISCOUNT_METHOD.percent_off,
+            discountPercent: request.value.percent,
+          },
+        };
+      }
+      const amount = PriceCents.signed(request.value.amountMinorUnits);
+      if (!amount.ok) return null;
       return {
-        source: 'manual',
-        value:
-          request.value.kind === 'percent_off'
-            ? { kind: 'percent_off', percent: request.value.percent }
-            : {
-                kind: 'fixed_amount',
-                amountMinorUnits: request.value.amountMinorUnits,
-              },
+        discountSource: DiscountSource.Manual,
+        value: {
+          discountMethod: LEGACY_DISCOUNT_METHOD.fixed_amount,
+          discountAmountCents: amount.value,
+          discountCurrency: currency,
+        },
       };
+    }
   }
 }
 
@@ -1559,133 +1719,316 @@ function legacyValueOf(
         ? (item.coupon?.value ?? null)
         : manualValue(request.value, currencyCode);
   // Unreachable: the settle refused every item it could not value.
-  if (value === null) throw new Error('unreachable: an unvalued discount');
+  if (value === null) defect('unreachable: an unvalued discount');
   return value;
 }
 
-function toRedemptionData(line: VoucherRedemption): VoucherRedemptionData {
-  return {
-    voucherId: GiftVoucherIdData.of(line.voucherId),
-    code: line.code,
-    amount: toMoneyData(line.amount),
-    balanceAfter: toMoneyData(line.balanceAfter),
-    appliedAtMs: line.appliedAt.toMillis(),
-    reversedAtMs: line.reversedAt === null ? null : line.reversedAt.toMillis(),
-  };
-}
-
-function toVoucherData(voucher: GiftVoucher): GiftVoucherEntity {
+/** A legacy voucher as the flat entity — its expiry's shop day on its own zone's clock (T5). */
+function toVoucherData(voucher: GiftVoucher): GiftVoucherData {
   const state = voucher.state;
+  const balance = toMoneyData(voucher.balance);
+  const instant = (at: ZonedDateTime): UtcEpochMs => {
+    const ms = instantOf(at.toMillis());
+    // Unreachable: a legacy `ZonedDateTime` is an instant.
+    if (ms === null) defect('unreachable: an instant');
+    return ms;
+  };
+  const expiresLocalDate = (at: ZonedDateTime): LocalDate => {
+    const zone = ZonedTimeSystem.checkZone(at.zoneName);
+    // Unreachable: a legacy `ZonedDateTime` names a real zone.
+    if (!zone.ok) defect('unreachable: a zone');
+    return ZonedTimeSystem.toLocal(instant(at), zone.value).localDate;
+  };
   return {
     id: GiftVoucherIdData.of(voucher.id.value),
     code: VoucherCodeData.of(voucher.code),
-    initialValue: toMoneyData(voucher.initialValue),
-    balance: toMoneyData(voucher.balance),
-    issuedAtMs: voucher.issuedAt.toMillis(),
-    expiresAtMs:
-      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    initialValueCents: toMoneyData(voucher.initialValue).amountCents,
+    balanceCents: balance.amountCents,
+    currency: balance.currency,
+    issuedAtUtcMs: instant(voucher.issuedAt),
+    expiresAtUtcMs:
+      voucher.expiresAt === null ? null : instant(voucher.expiresAt),
+    expiresLocalDate:
+      voucher.expiresAt === null ? null : expiresLocalDate(voucher.expiresAt),
     issuedToUserId:
       voucher.issuedToUserId === null
         ? null
         : UserIdData.of(voucher.issuedToUserId.value),
-    state:
-      state.kind === 'void'
-        ? VoucherStateData.voided(state.voidedAt.toMillis(), state.reason)
-        : VoucherStateData.active(),
+    ...(state.kind === 'void'
+      ? VoucherLifecycle.voided(instant(state.voidedAt), state.reason)
+      : VoucherLifecycle.active()),
+  };
+}
+
+/** A stored pad as whole minutes — unreadable is none (the fold never reads it). */
+function padOf(minutes: number): MinuteCount {
+  const pad = MinuteCount.of(minutes);
+  return pad.ok ? pad.value : MinuteCount.ZERO;
+}
+
+/**
+ * The running seats on the shop's wall clock: their zone (the first seat's),
+ * their day and its instant (the earliest seat's — the instant already held)
+ * and every seat on that day (F-6). `null` when a seat cannot be read onto
+ * the clock: no zone, no instant, a start off the day, a figure no brand
+ * holds.
+ */
+interface SeatsOnTheClock {
+  readonly zone: TimeZone;
+  readonly localDate: LocalDate;
+  readonly utcEpochMs: UtcEpochMs;
+  readonly seats: readonly SeatData[];
+}
+
+function seatsOnTheClock(
+  stored: readonly StoredSeat[],
+): SeatsOnTheClock | null {
+  const first = stored[0];
+  if (first === undefined) return null;
+  const zone = ZonedTimeSystem.checkZone(first.zone);
+  if (!zone.ok) return null;
+  let earliest = first.startMs;
+  for (const seat of stored) {
+    if (seat.startMs < earliest) earliest = seat.startMs;
+  }
+  const utcEpochMs = instantOf(earliest);
+  if (utcEpochMs === null) return null;
+  const localDate = ZonedTimeSystem.toLocal(utcEpochMs, zone.value).localDate;
+  const seats: SeatData[] = [];
+  for (const seat of stored) {
+    const data = toSeatData(seat, zone.value, localDate);
+    if (data === null) return null;
+    seats.push(data);
+  }
+  return { zone: zone.value, localDate, utcEpochMs, seats };
+}
+
+/** The STORED visit's time slice — the envelope on its day, its start instant. */
+function storedTimeOf(stored: readonly StoredSeat[]): AppointmentTime | null {
+  const clock = seatsOnTheClock(stored);
+  if (clock === null) return null;
+  const envelope = AppointmentIndexSystem.envelope(clock);
+  if (envelope === null) return null;
+  const startMinutes = MinuteOfDay.of(envelope.startMinutes);
+  const endMinutes = EndMinute.of(envelope.endMinutes);
+  if (!startMinutes.ok || !endMinutes.ok) return null;
+  return {
+    localDate: clock.localDate,
+    startMinutes: startMinutes.value,
+    endMinutes: endMinutes.value,
+    utcEpochMs: clock.utcEpochMs,
   };
 }
 
 /** A stored seat → the ECS seat the fold reads (subject and outcome only ride along). */
-function toSeatData(seat: StoredSeat): SeatData {
-  return {
-    id: SeatIdData.of(seat.id),
-    serviceId: ServiceIdData.of(seat.serviceId),
-    variantId: seat.variantId as ServiceVariantIdData | null,
-    barberId: BarberIdData.of(seat.barberId),
-    barberPref: seat.barberPref ?? null,
-    terms: {
-      priceMinorUnits: seat.priceMinorUnits,
-      currencyCode: seat.currencyCode,
-      durationMinutes: seat.durationMinutes,
-      setupMinutes: seat.setupMinutes,
-      cleanupMinutes: seat.cleanupMinutes,
-      catalogPriceMinorUnits: null,
+function toSeatData(
+  seat: StoredSeat,
+  zone: TimeZone,
+  localDate: LocalDate,
+): SeatData | null {
+  const at = instantOf(seat.startMs);
+  const duration = DurationMinutes.of(seat.durationMinutes);
+  const price = PriceCents.signed(seat.priceMinorUnits);
+  const currency = Currency.parse(seat.currencyCode);
+  if (at === null || !duration.ok || !price.ok || !currency.ok) return null;
+  const wall = ZonedTimeSystem.toLocal(at, zone);
+  // One shop day per appointment (F-6).
+  if (wall.localDate !== localDate) return null;
+  return SeatData.compose(
+    {
+      seatId: SeatIdData.of(seat.id),
+      serviceId: ServiceIdData.of(seat.serviceId),
+      variantId:
+        seat.variantId === null
+          ? null
+          : ServiceVariantIdData.of(seat.variantId),
+      barberId: BarberIdData.of(seat.barberId),
+      barberPreference:
+        seat.barberPref === undefined
+          ? null
+          : LEGACY_BARBER_PREFERENCE[seat.barberPref],
+      startMinutes: wall.minute,
+      tipCents: null,
+    },
+    {
+      priceCents: price.value,
+      currency: currency.value,
+      durationMinutes: duration.value,
+      setupMinutes: padOf(seat.setupMinutes),
+      cleanupMinutes: padOf(seat.cleanupMinutes),
+      catalogPriceCents: null,
       catalogDurationMinutes: null,
     },
-    startMs: seat.startMs,
     // The fold never reads who a seat is for; the stored subject rides
     // back from the original seat by id.
-    subject: SeatSubjectData.anonymous(SeatLabelData.of(seat.id)),
-    outcome:
-      seat.outcome.kind === 'scheduled'
-        ? SeatOutcomeData.scheduled()
-        : SeatOutcomeData.worked(0),
-    tip: null,
-  };
+    SeatOccupant.anonymous(SeatLabelData.of(seat.id)),
+    seat.outcome.kind === 'scheduled'
+      ? SeatOutcomeData.scheduled()
+      : SeatOutcomeData.worked(at),
+  );
 }
 
-/** The wire command → the ECS command (instants as epoch ms). */
-function toCommandData(command: StaffEditCommand): EditCommand {
+/**
+ * A resize's END on the running day: an exclusive end, the day's closing
+ * midnight included. An end at or before the day's start is a duration
+ * driven to nothing (`minutes`); one past the closing midnight leaves the
+ * day (`atIso`, F-6).
+ */
+function endMinuteOf(
+  wall: WallTime,
+  localDate: LocalDate,
+): Result<EndMinute, StaffEditError> {
+  const days = LocalDateData.daysBetween(localDate, wall.localDate);
+  const minutes = days * 1440 + wall.minute;
+  if (minutes <= 0) return fail(new StaffEditInvalidCommandError('minutes'));
+  const end = EndMinute.of(minutes);
+  return end.ok
+    ? ok(end.value)
+    : fail(new StaffEditInvalidCommandError('atIso'));
+}
+
+/** The wire command → the ECS command, its instants on the running day's wall clock. */
+function toCommandData(
+  command: StaffEditCommand,
+  clock: SeatsOnTheClock,
+): Result<EditCommandRequest, StaffEditError> {
   const scope = (ids: readonly string[] | undefined) =>
     ids === undefined ? null : ids.map((id) => SeatIdData.of(id));
   switch (command.kind) {
-    case 'move':
-      return {
-        kind: EditCommandKind.Move,
-        startMs: Date.parse(command.startIso),
+    case 'move': {
+      const wall = wallOfIso(command.startIso, clock.zone, false);
+      if (wall === null)
+        return fail(new StaffEditInvalidCommandError('startIso'));
+      return ok({
+        editCommand: EditCommand.Move,
+        localDate: wall.localDate,
+        startMinutes: wall.minute,
         seatIds: scope(command.seatIds),
-      };
-    case 'resize':
-      return {
-        kind: EditCommandKind.Resize,
-        edge: command.edge === 'start' ? ResizeEdge.Start : ResizeEdge.End,
-        atMs: Date.parse(command.atIso),
+      });
+    }
+    case 'resize': {
+      // The legacy fold measured a resize in WHOLE minutes, rounded once.
+      const wall = wallOfIso(command.atIso, clock.zone, true);
+      if (wall === null) return fail(new StaffEditInvalidCommandError('atIso'));
+      if (command.edge === 'end') {
+        const end = endMinuteOf(wall, clock.localDate);
+        if (end.isFailure()) return fail(end.error);
+        return ok({
+          editCommand: EditCommand.Resize,
+          resizeEdge: LEGACY_RESIZE_EDGE.end,
+          atMinutes: end.value,
+          seatIds: scope(command.seatIds),
+        });
+      }
+      if (wall.localDate !== clock.localDate) {
+        return fail(new StaffEditInvalidCommandError('atIso'));
+      }
+      return ok({
+        editCommand: EditCommand.Resize,
+        resizeEdge: LEGACY_RESIZE_EDGE.start,
+        atMinutes: wall.minute,
         seatIds: scope(command.seatIds),
-      };
-    case 'redurate':
-      return {
-        kind: EditCommandKind.Redurate,
+      });
+    }
+    case 'redurate': {
+      const duration = DurationMinutes.of(command.minutes);
+      if (!duration.ok)
+        return fail(new StaffEditInvalidCommandError('minutes'));
+      return ok({
+        editCommand: EditCommand.Redurate,
         seatId: SeatIdData.of(command.seatId),
-        minutes: command.minutes,
-      };
-    case 'reprice':
-      return {
-        kind: EditCommandKind.Reprice,
+        durationMinutes: duration.value,
+      });
+    }
+    case 'reprice': {
+      const price = PriceCents.of(command.priceMinorUnits);
+      if (!price.ok) {
+        return fail(new StaffEditInvalidCommandError('priceMinorUnits'));
+      }
+      return ok({
+        editCommand: EditCommand.Reprice,
         seatId: SeatIdData.of(command.seatId),
-        priceMinorUnits: command.priceMinorUnits,
-      };
+        priceCents: price.value,
+      });
+    }
     case 'restaff':
-      return {
-        kind: EditCommandKind.Restaff,
+      return ok({
+        editCommand: EditCommand.Restaff,
         seatId: SeatIdData.of(command.seatId),
         barberId: BarberIdData.of(command.barberId),
-      };
-    case 'addSeat':
-      return {
-        kind: EditCommandKind.AddSeat,
+      });
+    case 'addSeat': {
+      const wall = wallOfIso(command.startIso, clock.zone, false);
+      if (wall === null || wall.localDate !== clock.localDate) {
+        return fail(new StaffEditInvalidCommandError('startIso'));
+      }
+      const duration = DurationMinutes.of(command.minutes);
+      if (!duration.ok)
+        return fail(new StaffEditInvalidCommandError('minutes'));
+      // The instant the seat ends — the wire's own start instant plus its
+      // minutes, on the absolute timeline (the legacy stamp), so a finished
+      // visit's new seat is worked at the true instant whatever day the
+      // batch moved it to and whatever transition lies between.
+      const workedAt = instantOf(
+        Date.parse(command.startIso) + duration.value * MINUTE_MS,
+      );
+      if (workedAt === null)
+        return fail(new StaffEditInvalidCommandError('startIso'));
+      return ok({
+        editCommand: EditCommand.AddSeat,
         seatId: SeatIdData.of(command.seatId),
         serviceId: ServiceIdData.of(command.serviceId),
-        variantId: (command.variantId ?? null) as ServiceVariantIdData | null,
+        variantId:
+          command.variantId === undefined || command.variantId === null
+            ? null
+            : ServiceVariantIdData.of(command.variantId),
         barberId: BarberIdData.of(command.barberId),
-        startMs: Date.parse(command.startIso),
-        minutes: command.minutes,
-        subject: SeatSubjectData.anonymous(SeatLabelData.of(command.seatId)),
-      };
+        startMinutes: wall.minute,
+        durationMinutes: duration.value,
+        workedAtUtcMs: workedAt,
+        ...SeatOccupant.anonymous(SeatLabelData.of(command.seatId)),
+      });
+    }
     case 'removeSeat':
-      return {
-        kind: EditCommandKind.RemoveSeat,
+      return ok({
+        editCommand: EditCommand.RemoveSeat,
         seatId: SeatIdData.of(command.seatId),
-      };
+      });
     case 'relocate':
-      return {
-        kind: EditCommandKind.Relocate,
+      return ok({
+        editCommand: EditCommand.Relocate,
         locationId: LocationIdData.of(command.locationId),
-      };
+      });
     case 'discounts':
-      return { kind: EditCommandKind.Discounts };
+      return ok({ editCommand: EditCommand.Discounts });
     case 'vouchers':
-      return { kind: EditCommandKind.Vouchers };
+      return ok({ editCommand: EditCommand.Vouchers });
   }
+}
+
+/**
+ * Where a seat starts on the absolute timeline after the fold: the instant
+ * it already held when the fold left it where it was, else its new wall
+ * clock placed by the zone (`null` in a DST gap — no shop is open then).
+ */
+function startMsOf(
+  seat: SeatData,
+  localDate: LocalDate,
+  clock: SeatsOnTheClock,
+  original: StoredSeat | undefined,
+): number | null {
+  if (original !== undefined && localDate === clock.localDate) {
+    const before = clock.seats.find((entry) => entry.seatId === seat.seatId);
+    if (before !== undefined && before.startMinutes === seat.startMinutes) {
+      return original.startMs;
+    }
+  }
+  const instant = ZonedTimeSystem.toUtc(
+    localDate,
+    seat.startMinutes,
+    clock.zone,
+  );
+  return instant.ok ? instant.value : null;
 }
 
 /**
@@ -1695,40 +2038,45 @@ function toCommandData(command: StaffEditCommand): EditCommand {
  */
 function fromSeatData(
   seat: SeatData,
+  localDate: LocalDate,
+  clock: SeatsOnTheClock,
   originals: readonly StoredSeat[],
   command: StaffEditCommand,
-): StoredSeat {
-  const original = originals.find((entry) => entry.id === seat.id);
+): Result<StoredSeat, StaffEditError> {
+  const original = originals.find((entry) => entry.id === seat.seatId);
+  const startMs = startMsOf(seat, localDate, clock, original);
+  if (startMs === null)
+    return fail(new StaffEditInvalidCommandError('startIso'));
   if (original !== undefined) {
-    return {
+    return ok({
       ...original,
       barberId: seat.barberId,
-      startMs: seat.startMs,
-      durationMinutes: seat.terms.durationMinutes,
-      priceMinorUnits: seat.terms.priceMinorUnits,
-    };
+      startMs,
+      durationMinutes: seat.durationMinutes,
+      priceMinorUnits: seat.priceCents,
+    });
   }
   const template = originals[0] as StoredSeat;
-  return {
-    id: seat.id,
+  return ok({
+    id: seat.seatId,
     serviceId: seat.serviceId,
     variantId: seat.variantId,
     barberId: seat.barberId,
     zone: template.zone,
-    startMs: seat.startMs,
-    durationMinutes: seat.terms.durationMinutes,
+    startMs,
+    durationMinutes: seat.durationMinutes,
     priceMinorUnits: 0,
     currencyCode: template.currencyCode,
     setupMinutes: 0,
     cleanupMinutes: 0,
     outcome:
-      seat.outcome.kind === 'worked'
-        ? { kind: 'worked', atMs: seat.outcome.atMs }
+      seat.attendanceState === AttendanceState.Worked
+        ? { kind: 'worked', atMs: seat.workedAtUtcMs }
         : SEAT_SCHEDULED,
     tipMinorUnits: null,
     subject: command.kind === 'addSeat' ? command.subject : { kind: 'self' },
     fresh: true,
-  };
+  });
 }
 
 /** The command, applied to the running seats — `AppointmentEditSystem.applyCommand`. */
@@ -1737,9 +2085,13 @@ function applyCommand(
   command: StaffEditCommand,
   fold: FoldContext,
 ): Result<readonly StoredSeat[], StaffEditError> {
+  const clock = seatsOnTheClock(stored);
+  if (clock === null) return fail(new StaffEditInvalidCommandError('seats'));
+  const request = toCommandData(command, clock);
+  if (request.isFailure()) return fail(request.error);
   const applied = AppointmentEditSystem.applyCommand(
-    stored.map(toSeatData),
-    toCommandData(command),
+    { localDate: clock.localDate, seats: clock.seats },
+    request.value,
     {
       finished: fold.finished,
       held: [...fold.held].map((id) => SeatIdData.of(id)),
@@ -1748,7 +2100,19 @@ function applyCommand(
   if (!applied.ok) {
     return fail(new StaffEditInvalidCommandError(applied.error.field));
   }
-  return ok(applied.value.map((seat) => fromSeatData(seat, stored, command)));
+  const next: StoredSeat[] = [];
+  for (const seat of applied.value.seats) {
+    const back = fromSeatData(
+      seat,
+      applied.value.localDate,
+      clock,
+      stored,
+      command,
+    );
+    if (back.isFailure()) return fail(back.error);
+    next.push(back.value);
+  }
+  return ok(next);
 }
 
 function idsOf(seats: readonly StoredSeat[]): ReadonlySet<string> {

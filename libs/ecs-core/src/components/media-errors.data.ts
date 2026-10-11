@@ -3,7 +3,8 @@
  * (`ports/media.port.ts`). The application layer's `MediaUnavailableError`
  * (`catalog.media.not_found` / `catalog.media.forbidden`,
  * `media-reader.errors.ts`) and the transient `RepositoryError` it was
- * paired with, renamed to the dotted convention (blueprint §2.7 Errors row).
+ * paired with — flat structs discriminated by `errorCode` (Law 7.5),
+ * SCREAMING_SNAKE with the `MEDIA_` prefix (flatten-spec §4.2).
  *
  * The split is the whole point of the type: `NotFound` and `Forbidden` are
  * Storage's PERMANENT answer (asking again returns the same, so the caller
@@ -14,14 +15,13 @@
  * is a catalogue-data problem, a forbidden one a Storage-rules problem, and
  * a log line should say which.
  *
- * The `MediaRef` shape guard's codes (`catalog.media_ref.*`) are catalogue
- * codes and live in `catalog-errors.data.ts` (§2.2: the 25 dotted catalog
- * codes reused as is).
+ * The `MediaRef` shape guard's codes are catalogue codes and live in
+ * `catalog-errors.data.ts`.
  */
 export const MediaErrorCode = {
-  NotFound: 'media.not_found',
-  Forbidden: 'media.forbidden',
-  Transient: 'media.transient',
+  NotFound: 'MEDIA_NOT_FOUND',
+  Forbidden: 'MEDIA_FORBIDDEN',
+  Transient: 'MEDIA_TRANSIENT',
 } as const;
 export type MediaErrorCode =
   (typeof MediaErrorCode)[keyof typeof MediaErrorCode];
@@ -31,42 +31,42 @@ export type MediaError =
 
 export const MediaError = {
   notFound(path: string): MediaError.NotFound {
-    return { code: MediaErrorCode.NotFound, path };
+    return { errorCode: MediaErrorCode.NotFound, path };
   },
   forbidden(path: string): MediaError.Forbidden {
-    return { code: MediaErrorCode.Forbidden, path };
+    return { errorCode: MediaErrorCode.Forbidden, path };
   },
   transient(path: string): MediaError.Transient {
-    return { code: MediaErrorCode.Transient, path };
+    return { errorCode: MediaErrorCode.Transient, path };
   },
   /**
    * The retry decision: `true` for Storage's permanent answers, `false` for
    * the one failure worth asking again — never inferred from a message.
    */
   isPermanent(error: MediaError): boolean {
-    return error.code !== MediaErrorCode.Transient;
+    return error.errorCode !== MediaErrorCode.Transient;
   },
   /** Narrows an error to one code — `MediaError.is(e, MediaErrorCode.NotFound)`. */
   is<C extends MediaErrorCode>(
     error: MediaError,
-    code: C,
-  ): error is Extract<MediaError, { readonly code: C }> {
-    return error.code === code;
+    errorCode: C,
+  ): error is Extract<MediaError, { readonly errorCode: C }> {
+    return error.errorCode === errorCode;
   },
 } as const;
 
 export namespace MediaError {
   export type NotFound = {
-    readonly code: typeof MediaErrorCode.NotFound;
+    readonly errorCode: typeof MediaErrorCode.NotFound;
     /** The Storage object key the `MediaRef` pointed at. */
     readonly path: string;
   };
   export type Forbidden = {
-    readonly code: typeof MediaErrorCode.Forbidden;
+    readonly errorCode: typeof MediaErrorCode.Forbidden;
     readonly path: string;
   };
   export type Transient = {
-    readonly code: typeof MediaErrorCode.Transient;
+    readonly errorCode: typeof MediaErrorCode.Transient;
     readonly path: string;
   };
 }

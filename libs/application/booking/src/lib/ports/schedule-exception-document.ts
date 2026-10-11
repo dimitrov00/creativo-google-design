@@ -7,11 +7,14 @@ import {
   type ScheduleExceptionKind,
 } from '@creativo/domain/scheduling';
 import {
+  EndMinute,
   ExceptionDetail,
-  ExceptionEffectKind,
+  ExceptionEffect,
   LocationId as EcsLocationId,
+  MinuteOfDay,
   MinuteRange,
   ScheduleExceptionSystem,
+  defect,
 } from '@creativo/ecs-core';
 
 /**
@@ -94,13 +97,13 @@ function toEffect(detail: ScheduleExceptionKind): PublicExceptionEffect {
     return { kind: detail.kind === 'hours' ? 'hours' : 'blocked', ranges: [] };
   }
   const value = effect.value;
-  switch (value.kind) {
-    case ExceptionEffectKind.Closed:
+  switch (value.exceptionEffect) {
+    case ExceptionEffect.Closed:
       return { kind: 'closed' };
-    case ExceptionEffectKind.Hours:
-      return { kind: 'hours', ranges: toSpans(value.ranges) };
-    case ExceptionEffectKind.Blocked:
-      return { kind: 'blocked', ranges: toSpans(value.ranges) };
+    case ExceptionEffect.Hours:
+      return { kind: 'hours', ranges: toSpans(value.exceptionRanges) };
+    case ExceptionEffect.Blocked:
+      return { kind: 'blocked', ranges: toSpans(value.exceptionRanges) };
   }
 }
 
@@ -215,11 +218,14 @@ export function withoutRange(
 
 // ── The bridge: legacy shapes ↔ ecs-core structs (Phase 4 deletes it) ────
 
+/** A wall-clock span as the shop day's minutes — valid by construction (`LocalTimeRange`). */
 function minuteRangeOf(range: LocalTimeRange): MinuteRange {
-  return MinuteRange.of(
-    range.start.minutesFromMidnight(),
-    range.end.minutesFromMidnight(),
-  );
+  const start = MinuteOfDay.of(range.start.minutesFromMidnight());
+  const end = EndMinute.of(range.end.minutesFromMidnight());
+  if (!start.ok || !end.ok) {
+    defect(`unreachable: a LocalTimeRange ${String(range)}`);
+  }
+  return MinuteRange.of(start.value, end.value);
 }
 
 /** Minutes of the day as the stored `HH:mm` (zero-padded, as `LocalTimeOfDay` prints it). */

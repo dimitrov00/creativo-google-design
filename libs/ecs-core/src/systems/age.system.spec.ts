@@ -1,22 +1,21 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { BirthDate } from '../components/birth-date.data';
-import { DayKey } from '../components/day-key.data';
 import { IdentityErrorCode } from '../components/identity-errors.data';
-import { deepFreeze, unwrapErr, unwrapOk } from '../testing';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { deepFreeze, localDate, unwrapErr, unwrapOk } from '../testing';
 import { AgeSystem, AgeWindow } from './age.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The cases of BOTH birth-date specs, COPIED and re-targeted:
  * libs/domain/accounts/src/lib/birth-date.spec.ts and
  * libs/domain/identity/src/lib/birth-date.spec.ts. "Today" was a
- * `ZonedDateTime` noon in Europe/Sofia; it is now the zone's day key (what
- * `ZonedTimeSystem.dayKeyOf(nowMs, days)` answers for it), and the age is
- * whole calendar years over day keys. The accounts codes
- * (`accounts.birth_date.*`) collapsed into the identity ones (blueprint
- * §2.7); the accounts class's "a future date is too young" reading is
- * `ageOn` + `windowRefusal`, the identity class's `in_future` is `ageAt`.
+ * `ZonedDateTime` noon in Europe/Sofia; it is now the shop's `LocalDate`
+ * (what `ShopNow.localDate` answers for it), and the age is whole calendar
+ * years over local dates. The accounts codes (`accounts.birth_date.*`)
+ * collapsed into the identity ones (blueprint §2.7); the accounts class's
+ * "a future date is too young" reading is `ageOn` + `windowRefusal`, the
+ * identity class's `IN_FUTURE` is `ageAt`.
  * The class specs keep running against their shims.
  *
  * Also copied: the birth-date reasons of apps/functions/src/use-cases/
@@ -25,7 +24,7 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * `isBirthdayToday`).
  */
 
-const day = (raw: string): DayKey => DayKey.of(raw);
+const day = (raw: string): LocalDate => localDate(raw);
 const bd = (raw: string): BirthDate => BirthDate.of(raw);
 
 /** accounts/birth-date.spec.ts: 2026-07-22T12:00 Europe/Sofia. */
@@ -37,7 +36,8 @@ describe('AgeSystem — accounts BirthDate.create (accounts/birth-date.spec.ts)'
   /** The accounts reading: parse, then the window over the raw age. */
   function accountsCreate(raw: string) {
     const birthDate = BirthDate.parse(raw);
-    if (birthDate === null) return { code: IdentityErrorCode.BirthDateInvalid };
+    if (birthDate === null)
+      return { errorCode: IdentityErrorCode.BirthDateInvalid };
     return AgeSystem.windowRefusal(AgeSystem.ageOn(birthDate, ACCOUNTS_TODAY));
   }
 
@@ -47,7 +47,7 @@ describe('AgeSystem — accounts BirthDate.create (accounts/birth-date.spec.ts)'
 
   it('rejects someone who turns 16 tomorrow (15 today)', () => {
     expect(accountsCreate('2010-07-23')).toEqual({
-      code: IdentityErrorCode.BirthDateTooYoung,
+      errorCode: IdentityErrorCode.BirthDateTooYoung,
       age: 15,
       minAge: 16,
     });
@@ -58,13 +58,13 @@ describe('AgeSystem — accounts BirthDate.create (accounts/birth-date.spec.ts)'
   });
 
   it('rejects someone who is 121', () => {
-    expect(accountsCreate('1905-07-22')?.code).toBe(
+    expect(accountsCreate('1905-07-22')?.errorCode).toBe(
       IdentityErrorCode.BirthDateTooOld,
     );
   });
 
   it('rejects a malformed calendar date', () => {
-    expect(accountsCreate('not-a-date')?.code).toBe(
+    expect(accountsCreate('not-a-date')?.errorCode).toBe(
       IdentityErrorCode.BirthDateInvalid,
     );
   });
@@ -72,7 +72,7 @@ describe('AgeSystem — accounts BirthDate.create (accounts/birth-date.spec.ts)'
   it('rejects a birth date in the future', () => {
     // The accounts reading: a negative age, too young.
     expect(accountsCreate('2030-01-01')).toEqual({
-      code: IdentityErrorCode.BirthDateTooYoung,
+      errorCode: IdentityErrorCode.BirthDateTooYoung,
       age: -3,
       minAge: 16,
     });
@@ -80,7 +80,7 @@ describe('AgeSystem — accounts BirthDate.create (accounts/birth-date.spec.ts)'
     expect(
       unwrapErr(AgeSystem.ageAt(bd('2030-01-01'), ACCOUNTS_TODAY)),
     ).toEqual({
-      code: IdentityErrorCode.BirthDateInFuture,
+      errorCode: IdentityErrorCode.BirthDateInFuture,
       attempted: '2030-01-01',
     });
   });
@@ -176,7 +176,7 @@ describe('AgeSystem — identity BirthDate (identity/birth-date.spec.ts)', () =>
           AgeSystem.fromParts({ day: 30, month: 2, year: 1990 }, TODAY),
         ),
       ).toEqual({
-        code: IdentityErrorCode.BirthDateInvalid,
+        errorCode: IdentityErrorCode.BirthDateInvalid,
         attempted: '1990-02-30',
       });
     });
@@ -189,7 +189,7 @@ describe('AgeSystem — identity BirthDate (identity/birth-date.spec.ts)', () =>
         { day: 5.5, month: 5, year: 1990 },
         { day: 5, month: 5, year: 0 },
       ]) {
-        expect(unwrapErr(AgeSystem.fromParts(parts, TODAY)).code).toBe(
+        expect(unwrapErr(AgeSystem.fromParts(parts, TODAY)).errorCode).toBe(
           IdentityErrorCode.BirthDateInvalid,
         );
       }
@@ -199,7 +199,7 @@ describe('AgeSystem — identity BirthDate (identity/birth-date.spec.ts)', () =>
       expect(
         unwrapErr(AgeSystem.fromParts({ day: 1, month: 1, year: 2027 }, TODAY)),
       ).toEqual({
-        code: IdentityErrorCode.BirthDateInFuture,
+        errorCode: IdentityErrorCode.BirthDateInFuture,
         attempted: '2027-01-01',
       });
     });
@@ -208,7 +208,7 @@ describe('AgeSystem — identity BirthDate (identity/birth-date.spec.ts)', () =>
       // Turns 16 tomorrow (2026-07-26) — still 15 today.
       expect(
         unwrapErr(AgeSystem.fromParts({ day: 26, month: 7, year: 2010 }, TODAY))
-          .code,
+          .errorCode,
       ).toBe(IdentityErrorCode.BirthDateTooYoung);
 
       // Turned 16 today — accepted.
@@ -221,7 +221,7 @@ describe('AgeSystem — identity BirthDate (identity/birth-date.spec.ts)', () =>
       expect(
         unwrapErr(AgeSystem.fromParts({ day: 1, month: 1, year: 1900 }, TODAY)),
       ).toEqual({
-        code: IdentityErrorCode.BirthDateTooOld,
+        errorCode: IdentityErrorCode.BirthDateTooOld,
         age: 126,
         maxAge: 120,
       });
@@ -241,26 +241,26 @@ describe('AgeSystem — identity BirthDate (identity/birth-date.spec.ts)', () =>
     it('rejects non-ISO shapes outright', () => {
       for (const raw of ['03.07.1990', '1990-7-3', '19900703', 'yesterday']) {
         expect(unwrapErr(AgeSystem.parseIso(raw, TODAY))).toEqual({
-          code: IdentityErrorCode.BirthDateInvalid,
+          errorCode: IdentityErrorCode.BirthDateInvalid,
           attempted: raw,
         });
       }
     });
 
     it('applies the same age window as create', () => {
-      expect(unwrapErr(AgeSystem.parseIso('2020-01-01', TODAY)).code).toBe(
+      expect(unwrapErr(AgeSystem.parseIso('2020-01-01', TODAY)).errorCode).toBe(
         IdentityErrorCode.BirthDateTooYoung,
       );
     });
 
     it('refuses year 0000 by the window, as the legacy ISO reader did — not as text', () => {
       expect(unwrapErr(AgeSystem.parseIso('0000-01-01', TODAY))).toEqual({
-        code: IdentityErrorCode.BirthDateTooOld,
+        errorCode: IdentityErrorCode.BirthDateTooOld,
         age: 2026,
         maxAge: 120,
       });
       expect(unwrapErr(AgeSystem.parseIso('0000-02-30', TODAY))).toEqual({
-        code: IdentityErrorCode.BirthDateInvalid,
+        errorCode: IdentityErrorCode.BirthDateInvalid,
         attempted: '0000-02-30',
       });
     });
@@ -286,10 +286,10 @@ describe('AgeSystem — the registration boundary (complete-registration.use-cas
       ['03.07.1990', IdentityErrorCode.BirthDateInvalid],
       ['2020-01-01', IdentityErrorCode.BirthDateTooYoung],
     ] as const) {
-      expect(unwrapErr(AgeSystem.parseIso(raw, TODAY)).code).toBe(reason);
+      expect(unwrapErr(AgeSystem.parseIso(raw, TODAY)).errorCode).toBe(reason);
     }
     expect(unwrapErr(AgeSystem.parseIso('1990-02-30', TODAY))).toEqual({
-      code: IdentityErrorCode.BirthDateInvalid,
+      errorCode: IdentityErrorCode.BirthDateInvalid,
       attempted: '1990-02-30',
     });
   });
@@ -347,7 +347,7 @@ describe('AgeSystem — the client card birthday (glance.presenter.spec.ts BD, c
 
   it('says a birthday within the week to come — the day it falls on and the age it brings', () => {
     expect(AgeSystem.nextBirthday(bd('1992-10-02'), CARD_TODAY)).toEqual({
-      dayKey: '2026-10-02',
+      localDate: '2026-10-02',
       inDays: 4,
       turning: 34,
     });
@@ -359,7 +359,7 @@ describe('AgeSystem — the client card birthday (glance.presenter.spec.ts BD, c
     ).toBeNull();
     // Yesterday's is over; it comes again in a year.
     expect(AgeSystem.nextBirthday(bd('1992-09-27'), CARD_TODAY)).toEqual({
-      dayKey: '2027-09-27',
+      localDate: '2027-09-27',
       inDays: 364,
       turning: 35,
     });
@@ -370,7 +370,7 @@ describe('AgeSystem — the client card birthday (glance.presenter.spec.ts BD, c
   it('looks across the year’s end, and names the year the day falls in', () => {
     expect(AgeSystem.nextBirthday(bd('1990-01-02'), day('2026-12-29'))).toEqual(
       {
-        dayKey: '2027-01-02',
+        localDate: '2027-01-02',
         inDays: 4,
         turning: 37,
       },
@@ -380,13 +380,13 @@ describe('AgeSystem — the client card birthday (glance.presenter.spec.ts BD, c
   it('keeps a 29 February birthday on the 28th outside a leap year', () => {
     const leapling = bd('2000-02-29');
     expect(AgeSystem.nextBirthday(leapling, day('2027-02-25'))).toEqual({
-      dayKey: '2027-02-28',
+      localDate: '2027-02-28',
       inDays: 3,
       turning: 27,
     });
     expect(AgeSystem.nextBirthday(leapling, day('2027-02-28')).inDays).toBe(0);
     expect(AgeSystem.nextBirthday(leapling, day('2028-02-25'))).toEqual({
-      dayKey: '2028-02-29',
+      localDate: '2028-02-29',
       inDays: 4,
       turning: 28,
     });
@@ -402,7 +402,7 @@ describe('AgeSystem properties', () => {
       fc.integer({ min: 1, max: 12 }),
       fc.integer({ min: 1, max: 31 }),
     )
-    .filter(([y, m, d]) => d <= DayKey.daysInMonth(y, m))
+    .filter(([y, m, d]) => d <= LocalDate.daysInMonth(y, m))
     .map(([year, month, d]) =>
       BirthDate.of(
         `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`,
@@ -413,7 +413,7 @@ describe('AgeSystem properties', () => {
   it('the age is the count of kept birthdays come round — brute force over the years', () => {
     fc.assert(
       fc.property(anyBirth, anyOffset, (birthDate, offset) => {
-        const today = ZonedTimeSystem.addDays(DayKey.of(birthDate), offset);
+        const today = LocalDate.addDays(day(birthDate), offset);
         const birthYear = Number(birthDate.slice(0, 4));
         let count = 0;
         for (let k = 1; birthYear + k <= Number(today.slice(0, 4)); k++) {
@@ -430,7 +430,7 @@ describe('AgeSystem properties', () => {
         anyBirth,
         fc.integer({ min: -400, max: 130 * 366 }),
         (birthDate, offset) => {
-          const today = ZonedTimeSystem.addDays(DayKey.of(birthDate), offset);
+          const today = LocalDate.addDays(day(birthDate), offset);
           const result = AgeSystem.ageAt(birthDate, today);
           const age = AgeSystem.ageOn(birthDate, today);
           expect(result.ok).toBe(

@@ -12,10 +12,10 @@ import { SessionKind } from '../components/session-kind.data';
  * AuthFlowSystem — the identity flow's transition function (blueprint
  * §2.8), the pure port of `libs/application/identity/src/lib/flow/
  * auth-flow.ts` (`advanceAuthFlow`): `identify → otp → authenticated | done`,
- * with `blocked` for a locked-out channel.
+ * with `BLOCKED` for a locked-out channel.
  *
  * Total over the tagged unions: every (step, event) pair answers — the next
- * state, or `identity.auth_flow.invalid_transition` carrying the step and the
+ * state, or `IDENTITY_AUTH_FLOW_INVALID_TRANSITION` carrying the step and the
  * event tags. The network never runs here; the async send and verify
  * collapse into the events the store dispatches once the callables settle.
  */
@@ -29,15 +29,15 @@ export const AuthFlowSystem = {
     state: AuthFlowState,
     event: AuthFlowEvent,
   ): Result<AuthFlowState, IdentityError> {
-    switch (state.kind) {
+    switch (state.authFlowStep) {
       case AuthFlowStep.Identify:
-        if (event.kind === AuthFlowEventKind.SubmitIdentifier) {
+        if (event.authFlowEventKind === AuthFlowEventKind.SubmitIdentifier) {
           return Result.ok(AuthFlowState.otp(event.identifier, null));
         }
         break;
 
       case AuthFlowStep.Otp:
-        switch (event.kind) {
+        switch (event.authFlowEventKind) {
           case AuthFlowEventKind.RequestFailed:
             // A (re)send failed: back to identify with the error attached,
             // never stranded on the code step for a code that was not sent.
@@ -54,9 +54,9 @@ export const AuthFlowSystem = {
             );
           case AuthFlowEventKind.Verified:
             return Result.ok(
-              event.session === SessionKind.Returning
+              event.sessionKind === SessionKind.Returning
                 ? AuthFlowState.authenticated()
-                : AuthFlowState.done(state.identifier, event.session),
+                : AuthFlowState.done(state.identifier, event.sessionKind),
             );
           case AuthFlowEventKind.ChangeIdentifier:
           case AuthFlowEventKind.Back:
@@ -74,11 +74,14 @@ export const AuthFlowSystem = {
         break;
 
       default:
-        // blocked, done, authenticated: terminal, no outgoing transition.
+        // BLOCKED, DONE, AUTHENTICATED: terminal, no outgoing transition.
         break;
     }
     return Result.err(
-      IdentityError.authFlowInvalidTransition(state.kind, event.kind),
+      IdentityError.authFlowInvalidTransition(
+        state.authFlowStep,
+        event.authFlowEventKind,
+      ),
     );
   },
 } as const;

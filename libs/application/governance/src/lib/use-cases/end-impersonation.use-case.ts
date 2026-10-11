@@ -6,14 +6,17 @@ import {
 } from '@creativo/domain/governance';
 import { UserId } from '@creativo/domain/accounts';
 import {
+  EndReasonFields,
   ImpersonationEndReason as EcsEndReason,
-  ImpersonationEndReasonKind,
-  type ImpersonationSessionEntity,
+  ImpersonationLifecycle,
+  ImpersonationScope as EcsScope,
+  type ImpersonationSession as EcsSession,
   ImpersonationSessionId as EcsSessionId,
-  ImpersonationState,
   ImpersonationStatus,
   ImpersonationSystem,
   UserId as EcsUserId,
+  UtcEpochMs,
+  defect,
 } from '@creativo/ecs-core';
 import { ImpersonationPort } from '../ports/impersonation.port';
 import {
@@ -55,7 +58,7 @@ export class EndImpersonationUseCase {
     const decided = ImpersonationSystem.endByAdmin(
       entityOf(session),
       EcsUserId.of(input.endedBy.value),
-      input.now.toMillis(),
+      utcOf(input.now.toMillis()),
     );
     const reason =
       decided.ok && expiredIn(decided.value)
@@ -79,31 +82,43 @@ export class EndImpersonationUseCase {
 
 // ── The bridge: the legacy session → ecs-core's entity (Phase 4 deletes it) ─
 
-function entityOf(session: ImpersonationSession): ImpersonationSessionEntity {
-  return {
+/** The legacy lowercase scope → the SCREAMING tag (flatten-spec §8.9). */
+const ECS_IMPERSONATION_SCOPE = {
+  read: EcsScope.Read,
+  write: EcsScope.Write,
+} as const;
+
+/** A legacy instant's epoch ms as the brand — every `ZonedDateTime` is inside its window. */
+function utcOf(epochMs: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(epochMs);
+  return instant.ok ? instant.value : defect(`${epochMs} is not an instant`);
+}
+
+function entityOf(session: ImpersonationSession): EcsSession {
+  const meta = {
     id: EcsSessionId.of(session.id.value),
     adminUserId: EcsUserId.of(session.adminUserId.value),
     targetUserId: EcsUserId.of(session.targetUserId.value),
-    scope: session.scope,
+    impersonationScope: ECS_IMPERSONATION_SCOPE[session.scope],
     reason: session.reason,
-    startedAtMs: session.startedAt.toMillis(),
-    expiresAtMs: session.expiresAt.toMillis(),
-    status:
-      session.status.kind === 'active'
-        ? ImpersonationStatus.active()
-        : {
-            kind: ImpersonationState.Ended,
-            endedAtMs: session.status.endedAt.toMillis(),
-            // Only `active` is read by the end; an ended row is refused.
-            reason: EcsEndReason.expired(),
-          },
+    startedAtUtcMs: utcOf(session.startedAt.toMillis()),
+    expiresAtUtcMs: utcOf(session.expiresAt.toMillis()),
   };
+  return session.status.kind === 'active'
+    ? { ...meta, ...ImpersonationLifecycle.active() }
+    : {
+        ...meta,
+        impersonationStatus: ImpersonationStatus.Ended,
+        endedAtUtcMs: utcOf(session.status.endedAt.toMillis()),
+        // Only `ACTIVE` is read by the end; an ended row is refused.
+        ...EndReasonFields.expired(),
+      };
 }
 
-/** Did the system end the session as `expired`? */
-function expiredIn(ended: ImpersonationSessionEntity): boolean {
+/** Did the system end the session as `EXPIRED`? */
+function expiredIn(ended: EcsSession): boolean {
   return (
-    ended.status.kind === ImpersonationState.Ended &&
-    ended.status.reason.kind === ImpersonationEndReasonKind.Expired
+    ended.impersonationStatus === ImpersonationStatus.Ended &&
+    ended.impersonationEndReason === EcsEndReason.Expired
   );
 }

@@ -1,7 +1,11 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { deepFreeze } from '../testing';
-import { GuestLabelSystem, type RequestedSubject } from './guest-label.system';
+import {
+  GuestLabelSystem,
+  type RequestedSubjectInput,
+  RequestedSubjectRole,
+} from './guest-label.system';
 
 /*
  * The cases of `firstUnusedLabel — the one placeholder rule`
@@ -14,7 +18,11 @@ import { GuestLabelSystem, type RequestedSubject } from './guest-label.system';
 
 const S = GuestLabelSystem;
 const guest = (label: string, guestKey: string | null = null) =>
-  ({ kind: 'guest', label, guestKey }) as const;
+  ({
+    requestedSubjectRole: RequestedSubjectRole.Guest,
+    label,
+    guestKey,
+  }) as const;
 
 describe('firstUnusedLabel — the one placeholder rule', () => {
   const placeholder = (ordinal: number): string => `Гост ${ordinal}`;
@@ -110,10 +118,15 @@ describe('sharedLabel — one label, one guest', () => {
 
 describe('personKeyOf — one key per person on the cart', () => {
   it('keys the booker, an account and a guest apart', () => {
-    expect(S.personKeyOf({ kind: 'self' })).toBe('self');
-    expect(S.personKeyOf({ kind: 'companion', userId: 'son-1' })).toBe(
-      'account:son-1',
-    );
+    expect(
+      S.personKeyOf({ requestedSubjectRole: RequestedSubjectRole.Self }),
+    ).toBe('self');
+    expect(
+      S.personKeyOf({
+        requestedSubjectRole: RequestedSubjectRole.Companion,
+        companionUserId: 'son-1',
+      }),
+    ).toBe('account:son-1');
     expect(S.personKeyOf(guest('Maria'))).toBe('guest:Maria');
   });
 
@@ -122,9 +135,9 @@ describe('personKeyOf — one key per person on the cart', () => {
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
-    const subjects: readonly RequestedSubject[] = deepFreeze([
+    const subjects: readonly RequestedSubjectInput[] = deepFreeze([
       guest('Гост 1', 'guest-1'),
-      { kind: 'self' },
+      { requestedSubjectRole: RequestedSubjectRole.Self },
       guest(' Гост 1', 'guest-2'),
     ]);
     const taken = deepFreeze(['Гост 1']);

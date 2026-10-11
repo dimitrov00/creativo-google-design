@@ -1,3 +1,5 @@
+import type { BarberId } from '../primitives/ids.primitive';
+
 /** How many identity tones a shop's chairs are drawn in (`barber-tone.ts:35`). */
 const TONE_COUNT = 5;
 
@@ -36,7 +38,7 @@ export const BarberToneSystem = {
   },
 
   /** The slot an id prefers before collisions are settled. */
-  toneOf(barberId: string): number {
+  toneOf(barberId: BarberId): number {
     return BarberToneSystem.fnv1a(barberId) % TONE_COUNT;
   },
 
@@ -48,13 +50,13 @@ export const BarberToneSystem = {
    * twice, and both of its positions read the slot its LAST visit took (the
    * legacy map's last write).
    */
-  assignBarberTones(barberIds: readonly string[]): readonly number[] {
+  assignBarberTones(barberIds: readonly BarberId[]): readonly number[] {
     const sorted = [...barberIds].sort();
     const taken: boolean[] = [];
     for (let slot = 0; slot < TONE_COUNT; slot++) taken.push(false);
-    const toneById = new Map<string, number>();
+    const toneById = new Map<BarberId, number>();
     for (let i = 0; i < sorted.length; i++) {
-      const id = sorted[i] as string;
+      const id = sorted[i] as BarberId;
       const preferred = BarberToneSystem.toneOf(id);
       let slot = preferred;
       for (let step = 0; step < TONE_COUNT; step++) {
@@ -69,7 +71,7 @@ export const BarberToneSystem = {
     }
     const out: number[] = [];
     for (let i = 0; i < barberIds.length; i++) {
-      out.push(toneById.get(barberIds[i] as string) as number);
+      out.push(toneById.get(barberIds[i] as BarberId) as number);
     }
     return out;
   },

@@ -1,20 +1,23 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
 import {
-  Frequency,
-  RecurrenceEndKind,
+  RecurrenceEnd,
+  RecurrenceEndRule,
+  RecurrenceFrequency,
+  RecurrencePattern,
   RecurrenceRule,
 } from '../components/recurrence-rule.data';
 import { Weekday } from '../components/weekday.data';
-import { deepFreeze, unwrapOk } from '../testing';
+import { DurationMinutes } from '../primitives/duration-minutes.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { deepFreeze, endMinute, localDate, minute, unwrapOk } from '../testing';
 import { RecurrenceSystem } from './recurrence.system';
 import { RepeatPreset, VisitDraftSystem } from './visit-draft.system';
 
 /*
  * COPIED and re-targeted:
  * - every case of libs/features/staff/dashboard/src/lib/block-editor/
- *   block-repeat.spec.ts (8) — `CalendarDay` → `DayKey`, the legacy rule
+ *   block-repeat.spec.ts (8) — `CalendarDay` → `LocalDate`, the legacy rule
  *   class → the `RecurrenceRule` struct (`with` → `RecurrenceRule.create`,
  *   weekday names → ISO numbers, `{ frequency }` → `{ kind }`), the series
  *   → `RecurrenceSystem.series`;
@@ -27,38 +30,48 @@ import { RepeatPreset, VisitDraftSystem } from './visit-draft.system';
  * Plus the span and placeholder rules of the visit editor's draft
  * (`staff-visit-editor.ts` `spanOf`/`seedDraft`/`adoptPlaceholderLegs`),
  * properties and the purity case.
+ *
+ * Flatten pass (Law 6/7): days are `LocalDate`s, the rule is the FLAT
+ * `RecurrenceRule` (`recurrenceFrequency`, `recurrenceInterval`,
+ * `recurrenceEnd` at its root), the presets SCREAMING, every minute figure a
+ * `DurationMinutes` / `MinuteDelta` brand and the draft's frame
+ * `MinuteOfDay` → `EndMinute`.
  */
 
 const S = VisitDraftSystem;
 
 /* ── block-repeat.spec.ts ─────────────────────────────────────────────── */
 
-function day(key: string): DayKey {
-  if (!DayKey.isValid(key)) throw new Error(`bad fixture ${key}`);
-  return DayKey.of(key);
-}
+const day = (key: string): LocalDate => localDate(key);
+/** A positive minute figure literal. */
+const d = (raw: number): DurationMinutes => unwrapOk(DurationMinutes.of(raw));
 
-function keys(start: DayKey, rule: RecurrenceRule | null): readonly string[] {
+function keys(
+  start: LocalDate,
+  rule: RecurrenceRule | null,
+): readonly string[] {
   if (rule === null) return [start];
-  return unwrapOk(RecurrenceSystem.series(start, rule)).dayKeys;
+  return unwrapOk(RecurrenceSystem.series(start, rule)).localDates;
 }
 
-function endKey(end: RecurrenceRule.End): string {
-  return end.kind === RecurrenceEndKind.Until ? end.dayKey : `×${end.count}`;
+function endKey(end: RecurrenceEndRule): string {
+  return end.recurrenceEnd === RecurrenceEnd.Until
+    ? end.untilLocalDate
+    : `×${end.occurrenceCount}`;
 }
 
 function withRule(
   rule: RecurrenceRule,
   patch: {
-    readonly pattern?: RecurrenceRule.Pattern;
+    readonly pattern?: RecurrencePattern;
     readonly interval?: number;
   },
 ): RecurrenceRule {
   return unwrapOk(
     RecurrenceRule.create(
-      patch.pattern ?? rule.pattern,
-      patch.interval ?? rule.interval,
-      rule.end,
+      patch.pattern ?? RecurrenceRule.patternOf(rule),
+      patch.interval ?? rule.recurrenceInterval,
+      RecurrenceRule.endOf(rule),
     ),
   );
 }
@@ -68,16 +81,22 @@ const thursday = day('2026-09-24');
 
 describe('the repeat page policy', () => {
   it('ends a series by default on a DATE — four weeks, half a year, four years', () => {
-    expect(endKey(S.defaultEnd(Frequency.Daily, thursday))).toBe('2026-10-22');
-    expect(endKey(S.defaultEnd(Frequency.Weekly, thursday))).toBe('2026-10-22');
-    expect(endKey(S.defaultEnd(Frequency.Monthly, thursday))).toBe(
+    expect(endKey(S.defaultEnd(RecurrenceFrequency.Daily, thursday))).toBe(
+      '2026-10-22',
+    );
+    expect(endKey(S.defaultEnd(RecurrenceFrequency.Weekly, thursday))).toBe(
+      '2026-10-22',
+    );
+    expect(endKey(S.defaultEnd(RecurrenceFrequency.Monthly, thursday))).toBe(
       '2027-03-24',
     );
-    expect(endKey(S.defaultEnd(Frequency.Yearly, thursday))).toBe('2030-09-24');
-    // The 31st has no 31st six months on: the month's last day instead.
-    expect(endKey(S.defaultEnd(Frequency.Monthly, day('2026-08-31')))).toBe(
-      '2027-02-28',
+    expect(endKey(S.defaultEnd(RecurrenceFrequency.Yearly, thursday))).toBe(
+      '2030-09-24',
     );
+    // The 31st has no 31st six months on: the month's last day instead.
+    expect(
+      endKey(S.defaultEnd(RecurrenceFrequency.Monthly, day('2026-08-31'))),
+    ).toBe('2027-02-28');
   });
 
   it('turns every shortcut into its rule from the start — and reads it back', () => {
@@ -118,7 +137,7 @@ describe('the repeat page policy', () => {
     const fortnightly = withRule(weekly, { interval: 2 });
     expect(S.presetOf(fortnightly, thursday)).toBeNull();
     const mondays = withRule(weekly, {
-      pattern: { kind: Frequency.Weekly, weekdays: [Weekday.Mon] },
+      pattern: RecurrencePattern.weekly([Weekday.Mon]),
     });
     expect(S.presetOf(mondays, thursday)).toBeNull();
   });
@@ -126,19 +145,19 @@ describe('the repeat page policy', () => {
   it('keeps the end a series had when the shortcut changes, unless it no longer fits', () => {
     const daily = S.ruleForPreset(RepeatPreset.Daily, thursday, null);
     const weekly = S.ruleForPreset(RepeatPreset.Weekly, thursday, daily);
-    expect(weekly && endKey(weekly.end)).toBe('2026-10-22');
+    expect(weekly && endKey(weekly)).toBe('2026-10-22');
     // A yearly series four years long turned daily would be ~1,500 days:
     // past the cap, so the new frequency's own end is taken instead.
     const yearly = S.ruleForPreset(RepeatPreset.Yearly, thursday, null);
     const dailyAgain = S.ruleForPreset(RepeatPreset.Daily, thursday, yearly);
-    expect(dailyAgain && endKey(dailyAgain.end)).toBe('2026-10-22');
+    expect(dailyAgain && endKey(dailyAgain)).toBe('2026-10-22');
   });
 
   it("starts «Персонализирано» at Google's own default, or keeps the rule there is", () => {
     const custom = S.ruleForCustom(thursday, null);
-    expect(custom?.pattern).toEqual({
-      kind: Frequency.Weekly,
-      weekdays: [Weekday.Thu],
+    expect(custom && RecurrenceRule.patternOf(custom)).toEqual({
+      recurrenceFrequency: 'WEEKLY',
+      recurrenceWeekdays: [Weekday.Thu],
     });
     const monthly = S.ruleForPreset(RepeatPreset.Monthly, thursday, null);
     expect(S.ruleForCustom(thursday, monthly)).toBe(monthly);
@@ -148,22 +167,30 @@ describe('the repeat page policy', () => {
     const weekly = S.ruleForPreset(RepeatPreset.Weekly, thursday, null);
     if (weekly === null) throw new Error('fixture');
     const every2 = withRule(weekly, { interval: 2 });
-    const monthly = S.ruleForFrequency(every2, Frequency.Monthly, thursday);
-    expect(monthly.pattern).toEqual({
-      kind: Frequency.Monthly,
-      day: { kind: 'date', date: 24 },
+    const monthly = S.ruleForFrequency(
+      every2,
+      RecurrenceFrequency.Monthly,
+      thursday,
+    );
+    expect(RecurrenceRule.patternOf(monthly)).toEqual({
+      recurrenceFrequency: 'MONTHLY',
+      monthlyAnchor: 'DATE',
+      monthlyDate: 24,
     });
-    expect(monthly.interval).toBe(2);
+    expect(monthly.recurrenceInterval).toBe(2);
   });
 
   it('switches how it ends WITHOUT changing the days', () => {
     const weekly = S.ruleForPreset(RepeatPreset.Weekly, thursday, null);
     if (weekly === null) throw new Error('fixture');
-    const counted = S.ruleForEndKind(weekly, RecurrenceEndKind.Count, thursday);
-    expect(counted.end).toEqual({ kind: 'count', count: 5 });
+    const counted = S.ruleForEndKind(weekly, RecurrenceEnd.Count, thursday);
+    expect(RecurrenceRule.endOf(counted)).toEqual({
+      recurrenceEnd: 'COUNT',
+      occurrenceCount: 5,
+    });
     expect(keys(thursday, counted)).toEqual(keys(thursday, weekly));
-    const dated = S.ruleForEndKind(counted, RecurrenceEndKind.Until, thursday);
-    expect(endKey(dated.end)).toBe('2026-10-22');
+    const dated = S.ruleForEndKind(counted, RecurrenceEnd.Until, thursday);
+    expect(endKey(dated)).toBe('2026-10-22');
     expect(keys(thursday, dated)).toEqual(keys(thursday, weekly));
   });
 
@@ -171,14 +198,14 @@ describe('the repeat page policy', () => {
     const weekly = S.ruleForPreset(RepeatPreset.Weekly, thursday, null);
     if (weekly === null) throw new Error('fixture');
     const friday = S.ruleForStart(weekly, thursday, day('2026-09-25'));
-    expect(friday.pattern).toEqual({
-      kind: Frequency.Weekly,
-      weekdays: [Weekday.Fri],
+    expect(RecurrenceRule.patternOf(friday)).toEqual({
+      recurrenceFrequency: 'WEEKLY',
+      recurrenceWeekdays: [Weekday.Fri],
     });
-    expect(endKey(friday.end)).toBe('2026-10-22');
+    expect(endKey(friday)).toBe('2026-10-22');
     // Stepped past its own end: the end moves four weeks on from there.
     const later = S.ruleForStart(weekly, thursday, day('2026-11-05'));
-    expect(endKey(later.end)).toBe('2026-12-03');
+    expect(endKey(later)).toBe('2026-12-03');
   });
 });
 
@@ -190,8 +217,10 @@ describe('the repeat page policy — identities and fallbacks', () => {
   ) as RecurrenceRule;
 
   it('hands back the same rule when nothing is asked to change', () => {
-    expect(S.ruleForFrequency(weekly, Frequency.Weekly, thursday)).toBe(weekly);
-    expect(S.ruleForEndKind(weekly, RecurrenceEndKind.Until, thursday)).toBe(
+    expect(
+      S.ruleForFrequency(weekly, RecurrenceFrequency.Weekly, thursday),
+    ).toBe(weekly);
+    expect(S.ruleForEndKind(weekly, RecurrenceEnd.Until, thursday)).toBe(
       weekly,
     );
   });
@@ -199,19 +228,23 @@ describe('the repeat page policy — identities and fallbacks', () => {
   it('counts ten when a series that cannot be walked turns to a count', () => {
     // An until before the start makes no series from it.
     const stale = unwrapOk(
-      RecurrenceRule.create(weekly.pattern, 1, {
-        kind: RecurrenceEndKind.Until,
-        dayKey: day('2026-09-01'),
-      }),
+      RecurrenceRule.create(
+        RecurrenceRule.patternOf(weekly),
+        1,
+        RecurrenceEndRule.until(day('2026-09-01')),
+      ),
     );
     expect(
-      S.ruleForEndKind(stale, RecurrenceEndKind.Count, thursday).end,
-    ).toEqual({ kind: 'count', count: 10 });
+      RecurrenceRule.endOf(
+        S.ruleForEndKind(stale, RecurrenceEnd.Count, thursday),
+      ),
+    ).toEqual({ recurrenceEnd: 'COUNT', occurrenceCount: 10 });
     const counted = unwrapOk(
-      RecurrenceRule.create(weekly.pattern, 1, {
-        kind: RecurrenceEndKind.Count,
-        count: 3,
-      }),
+      RecurrenceRule.create(
+        RecurrenceRule.patternOf(weekly),
+        1,
+        RecurrenceEndRule.count(3),
+      ),
     );
     // From a count with no walkable series, the frequency's default date.
     expect(
@@ -219,29 +252,29 @@ describe('the repeat page policy — identities and fallbacks', () => {
         S.ruleForEndKind(
           unwrapOk(
             RecurrenceRule.create(
-              { kind: Frequency.Monthly, day: { kind: 'date', date: 31 } },
+              RecurrencePattern.monthlyByDate(31),
               12,
-              { kind: RecurrenceEndKind.Count, count: 3 },
+              RecurrenceEndRule.count(3),
             ),
           ),
-          RecurrenceEndKind.Until,
+          RecurrenceEnd.Until,
           day('2026-02-01'),
-        ).end,
+        ),
       ),
     ).toBe('2026-08-01');
     expect(
-      endKey(S.ruleForEndKind(counted, RecurrenceEndKind.Until, thursday).end),
+      endKey(S.ruleForEndKind(counted, RecurrenceEnd.Until, thursday)),
     ).toBe('2026-10-08');
   });
 
   it('reads the five shortcuts in the page order, Monday to Friday as the working week', () => {
     expect(S.REPEAT_PRESETS).toEqual([
-      'never',
-      'daily',
-      'weekdays',
-      'weekly',
-      'monthly',
-      'yearly',
+      'NEVER',
+      'DAILY',
+      'WEEKDAYS',
+      'WEEKLY',
+      'MONTHLY',
+      'YEARLY',
     ]);
     expect(S.MONDAY_TO_FRIDAY).toEqual([1, 2, 3, 4, 5]);
   });
@@ -334,8 +367,8 @@ describe('walkInLabels — no two strangers on one visit share a name', () => {
 describe('the catalogue delta', () => {
   it('sums the catalogue, and lets a retired service stand at its booked length', () => {
     const seats = [
-      { catalog: 45, booked: 30 },
-      { catalog: null, booked: 20 },
+      { catalog: d(45), booked: d(30) },
+      { catalog: null, booked: d(20) },
     ];
     expect(
       S.catalogMinutesOf(
@@ -350,45 +383,45 @@ describe('the catalogue delta', () => {
 
   it('writes the distance with a true minus, never a hyphen', () => {
     // The wording is the presenter's; the system hands it the signed figure.
-    expect(S.minutesDelta(45, 50)).toBe(-5);
-    expect(S.minutesDelta(60, 45)).toBe(15);
+    expect(S.minutesDelta(d(45), d(50))).toBe(-5);
+    expect(S.minutesDelta(d(60), d(45))).toBe(15);
   });
 
   it('tags only a visit that runs off the catalogue, and only when the catalogue can say', () => {
-    expect(S.minutesDelta(45, 50)).toBe(-5);
-    expect(S.minutesDelta(60, 45)).toBe(15);
-    expect(S.minutesDelta(45, 45)).toBeNull();
-    expect(S.minutesDelta(45, null)).toBeNull();
+    expect(S.minutesDelta(d(45), d(50))).toBe(-5);
+    expect(S.minutesDelta(d(60), d(45))).toBe(15);
+    expect(S.minutesDelta(d(45), d(45))).toBeNull();
+    expect(S.minutesDelta(d(45), null)).toBeNull();
   });
 });
 
 /* ── the draft's span and placeholder seats ───────────────────────────── */
 
 describe("the visit draft's span and placeholder seats", () => {
-  const legs = [{ minutes: 30 }, { minutes: 15 }];
+  const legs = [{ durationMinutes: d(30) }, { durationMinutes: d(15) }];
 
   it('spans its override, else its legs, else half an hour for a visit with no service yet', () => {
     expect(S.span(null, legs)).toBe(45);
-    expect(S.span(60, legs)).toBe(60);
+    expect(S.span(d(60), legs)).toBe(60);
     expect(S.span(null, [])).toBe(30);
     expect(S.legMinutes([])).toBe(S.DEFAULT_SPAN_MINUTES);
   });
 
   it('pins an override only when the booked span never was the legs’ own', () => {
-    expect(S.durationOverrideOf(600, 645, legs)).toBeNull();
-    expect(S.durationOverrideOf(600, 660, legs)).toBe(60);
+    expect(S.durationOverrideOf(minute(600), endMinute(645), legs)).toBeNull();
+    expect(S.durationOverrideOf(minute(600), endMinute(660), legs)).toBe(60);
     // A visit with no service drawn at its default half hour pins nothing.
-    expect(S.durationOverrideOf(600, 630, [])).toBeNull();
+    expect(S.durationOverrideOf(minute(600), endMinute(630), [])).toBeNull();
   });
 
   it('hands the placeholder seats to the first person to join, and no one else', () => {
     const drafted = [
-      { clientId: 'primary', minutes: 30 },
-      { clientId: 'u-anna', minutes: 15 },
+      { clientId: 'primary', durationMinutes: d(30) },
+      { clientId: 'u-anna', durationMinutes: d(15) },
     ];
     expect(S.adoptPlaceholderLegs(0, drafted, 'u-ivan')).toEqual([
-      { clientId: 'u-ivan', minutes: 30 },
-      { clientId: 'u-anna', minutes: 15 },
+      { clientId: 'u-ivan', durationMinutes: 30 },
+      { clientId: 'u-anna', durationMinutes: 15 },
     ]);
     // Somebody is already seated: the legs come back as given.
     expect(S.adoptPlaceholderLegs(1, drafted, 'u-ivan')).toBe(drafted);
@@ -406,8 +439,8 @@ describe('VisitDraftSystem — purity', () => {
     expect(S.presetOf(weekly, thursday)).toBe(RepeatPreset.Weekly);
 
     const legs = deepFreeze([
-      { clientId: 'primary', minutes: 30 },
-      { clientId: 'u-anna', minutes: 15 },
+      { clientId: 'primary', durationMinutes: d(30) },
+      { clientId: 'u-anna', durationMinutes: d(15) },
     ]);
     expect(S.adoptPlaceholderLegs(0, legs, 'u-ivan')).toEqual(
       S.adoptPlaceholderLegs(0, legs, 'u-ivan'),
@@ -432,9 +465,7 @@ describe('VisitDraftSystem — purity', () => {
           RepeatPreset.Yearly,
         ),
         (offset, preset) => {
-          const start = DayKey.fromEpochDay(
-            DayKey.toEpochDay(thursday) + offset,
-          );
+          const start = LocalDate.addDays(thursday, offset);
           const rule = S.ruleForPreset(preset, start, null);
           expect(rule).not.toBeNull();
           const read = S.presetOf(rule, start);

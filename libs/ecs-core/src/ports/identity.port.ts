@@ -6,15 +6,17 @@ import type {
 import type { PipelineError } from '../components/pipeline-errors.data';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
-import type { TenantId } from '../components/tenant-id.data';
-import type { OtpEntity, OtpId } from '../entities/otp.entity';
-import type { UserEntity, UserId } from '../entities/user.entity';
+import type { Customer } from '../entities/customer.entity';
+import type { Otp } from '../entities/otp.entity';
+import type { User } from '../entities/user.entity';
+import type { OtpId, TenantId, UserId } from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * The identity context's server ports (blueprint §4.1 `requestOtp`,
  * `verifyOtp`, `completeRegistration`): the `otps` reads and write, the
- * users lookup by destination, the Admin-Auth calls, the login-OTP sender
- * and the OTP randomness. Outbound side channels (Auth, the sender) answer
+ * users lookup by destination, the customer record of an account (D29), the
+ * Admin-Auth calls, the login-OTP sender and the OTP randomness. Outbound side channels (Auth, the sender) answer
  * `PipelineError`; storage reads answer `RepositoryError`.
  *
  * No `RequestContactChange`/`ConfirmContactChange`: §9 D12(b) — contact
@@ -25,7 +27,7 @@ import type { UserEntity, UserId } from '../entities/user.entity';
 // ── OTP challenges ────────────────────────────────────────────────────────
 
 /**
- * The tenant a new challenge belongs to (`OtpEntity.tenantId`, the token
+ * The tenant a new challenge belongs to (`Otp.tenantId`, the token
  * claims) — today the single deployment's `DEFAULT_TENANT_ID`
  * (`lib/otp/tenant.ts`), a port so a second tenant changes the root, not the
  * pipeline.
@@ -34,36 +36,34 @@ export type LoadTenant = () => Promise<Result<TenantId, RepositoryError>>;
 
 /**
  * Every still-open challenge for one destination created at or after
- * `sinceMs` — `destination ==`, `consumedAtMs == null`, `createdAtMs >=`
+ * `sinceUtcMs` — `destination ==`, not consumed, created at or after
  * (index #10; `findRecentUnconsumedByDestination`,
  * `otp-repository.port.ts`). OtpSystem decides from them whether a new
  * code may be issued; the port only reads.
  */
 export type LoadOpenOtps = (
   destination: Identifier,
-  sinceMs: number,
-) => Promise<Result<readonly OtpEntity[], RepositoryError>>;
+  sinceUtcMs: UtcEpochMs,
+) => Promise<Result<readonly Otp[], RepositoryError>>;
 
 /** `otps/{id}` — `null` when absent (an unknown or purged challenge). */
 export type LoadOtp = (
   id: OtpId,
-) => Promise<Result<OtpEntity | null, RepositoryError>>;
+) => Promise<Result<Otp | null, RepositoryError>>;
 
 /**
  * `otps/{id}` `Set` — the issued or updated challenge; the adapter stamps
- * the root `purgeAt` TTL (`expiresAtMs` + 24 h) beside the entity body.
+ * the root `purgeAt` TTL (`expiresAtUtcMs` + 24 h) beside the entity body.
  */
-export type SaveOtp = (
-  otp: OtpEntity,
-) => Promise<Result<void, RepositoryError>>;
+export type SaveOtp = (otp: Otp) => Promise<Result<void, RepositoryError>>;
 
 /**
  * Deliver a login code — the LOGIN-OTP sender identity, never shared with
  * a campaign sender (`console-otp-sender.adapter.ts` writes it through `Log`
  * today, as `console-otp-sender.ts` does). The destination arrives parsed —
- * its channel is the `kind` the edge parse or the stored `destinationType`
- * named (`ParsedIdentifier.ofDestination`) — so no adapter ever infers an
- * SMS from an e-mail by sniffing the string.
+ * its channel is the `identifierChannel` the edge parse or the stored
+ * `otpDestinationType` named (`ParsedIdentifier.ofDestination`) — so no
+ * adapter ever infers an SMS from an e-mail by sniffing the string.
  */
 export type SendOtp = (
   destination: ParsedIdentifier,
@@ -96,12 +96,24 @@ export type OtpCrypto = {
 /**
  * The account holding a phone or e-mail — the single-field users query
  * `where('phone' | 'email', '==', value)` (`firestore-user-repository.ts:175`,
- * no composite), the field picked by the parsed destination's `kind`;
- * `null` when none does.
+ * no composite), the field picked by the parsed destination's
+ * `identifierChannel`; `null` when none does.
  */
 export type FindUserByDestination = (
   destination: ParsedIdentifier,
-) => Promise<Result<UserEntity | null, RepositoryError>>;
+) => Promise<Result<User | null, RepositoryError>>;
+
+/**
+ * The client record of an account — `customers/{CustomerId.forUser(userId)}`,
+ * a `tx.get` by a derivable path, no query (D29, flatten-spec §5.1); `null`
+ * when the account has no record yet (every account registered before the
+ * identity flip (2)). Declared in the flatten pass, first called by the
+ * booking flip (1), which creates the missing record (`FIRST_BOOKING`)
+ * inside its commit.
+ */
+export type LoadCustomerForUser = (
+  userId: UserId,
+) => Promise<Result<Customer | null, RepositoryError>>;
 
 /**
  * The Firebase Auth user holding a phone or e-mail
@@ -156,7 +168,8 @@ export type SetDisplayName = (
 /**
  * The identity context's port catalogue. The users stub `Create` and the
  * registered body `Update` are entries of a `CommitPlan` (`tx.port.ts`),
- * never a port of their own.
+ * never a port of their own. {@link LoadCustomerForUser} joins the bundle
+ * that first calls it (the booking flip (1), flatten-spec §5.5).
  */
 export type IdentityPorts = {
   readonly loadTenant: LoadTenant;

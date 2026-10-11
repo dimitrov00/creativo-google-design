@@ -1,7 +1,11 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   AvailabilitySystem,
-  DayKey,
+  DayWindows as DayWindowsData,
+  EndMinute,
+  LocalDate,
+  MinuteOfDay,
+  MinuteRange,
   ZonedTimeSystem,
 } from '@creativo/ecs-core';
 import { CalendarDay } from './calendar-day';
@@ -9,6 +13,7 @@ import type { InvalidCalendarDayError } from './calendar-day.errors';
 import { Interval } from './interval';
 import { LocalTimeRange } from './local-time-of-day';
 import type { LocalTimeError } from './local-time-of-day.errors';
+import { unambiguousInstant } from './unambiguous-minute';
 
 /** Everything `DayWindows.create` can refuse: a bad date, or a bad span. */
 export type DayWindowsError = InvalidCalendarDayError | LocalTimeError;
@@ -19,6 +24,8 @@ export interface DayWindowsProps {
   /** `[{from:'08:00', to:'12:00'}]`. Empty ⇒ any time that day. */
   readonly windows: readonly { readonly from: string; readonly to: string }[];
 }
+
+const MINUTES_PER_DAY = 1440;
 
 /**
  * One day a client says they are free, and WHEN within it.
@@ -95,19 +102,49 @@ export class DayWindows {
    * instants anyway.
    */
   toIntervals(): readonly Interval[] {
-    // Phase 2 shim: the mask is `AvailabilitySystem.withinMsOf` over the
-    // day's row of its zone's table.
-    const dayKey = DayKey.of(this.day.key());
-    return AvailabilitySystem.withinMsOf(
-      {
-        dayKey,
-        windows: this.windows.map((window) => ({
-          startMinutes: window.start.minutesFromMidnight(),
-          endMinutes: window.end.minutesFromMidnight(),
-        })),
-      },
-      ZonedTimeSystem.dayTable(this.day.zone, dayKey, dayKey),
+    // Flatten-pass shim: the mask is `AvailabilitySystem.withinOf` on the
+    // shop day's wall clock; this boundary lifts it into instants of the
+    // day's zone (`ZonedTimeSystem`), as the legacy callers read it.
+    const localDate = LocalDate.parse(this.day.key());
+    const zone = ZonedTimeSystem.checkZone(this.day.zone);
+    // A day no zone can place has no instants — fail closed.
+    if (!localDate.ok || !zone.ok) return [];
+    const dayStart = ZonedTimeSystem.startOfLocalDay(
+      localDate.value,
+      zone.value,
     );
+    const dayEnd = ZonedTimeSystem.startOfLocalDay(
+      LocalDate.addDays(localDate.value, 1),
+      zone.value,
+    );
+    if (this.isWholeDay()) return [Interval.of(dayStart, dayEnd)];
+    const ranges: MinuteRange[] = [];
+    for (const window of this.windows) {
+      const start = MinuteOfDay.of(window.start.minutesFromMidnight());
+      const end = EndMinute.of(window.end.minutesFromMidnight());
+      if (start.ok && end.ok) {
+        ranges.push(MinuteRange.of(start.value, end.value));
+      }
+    }
+    const within = AvailabilitySystem.withinOf(
+      DayWindowsData.of(localDate.value, ranges),
+    );
+    const out: Interval[] = [];
+    for (const range of within) {
+      const startMs = unambiguousInstant(
+        localDate.value,
+        range.startMinutes,
+        zone.value,
+      );
+      const endMs =
+        range.endMinutes >= MINUTES_PER_DAY
+          ? dayEnd
+          : unambiguousInstant(localDate.value, range.endMinutes, zone.value);
+      if (startMs !== null && endMs !== null) {
+        out.push(Interval.of(startMs, endMs));
+      }
+    }
+    return out;
   }
 
   /** Add a span, re-normalizing — the window sheet's only write. */

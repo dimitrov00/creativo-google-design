@@ -1,5 +1,5 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { AuditSystem } from '@creativo/ecs-core';
+import { AuditSystem, OperationId } from '@creativo/ecs-core';
 import { FirestoreBookingStore } from '../../adapters/firestore-booking-store';
 import { FirestoreDiscountResolver } from '../../adapters/firestore-discount-resolver';
 import { FirestoreVoucherLedger } from '../../adapters/firestore-voucher-ledger';
@@ -101,7 +101,10 @@ export function staffEditChangeKey(
   operationId: string | null,
   revision: number,
 ): string {
-  return AuditSystem.changeKey.staffEdit(operationId, revision);
+  return AuditSystem.changeKey.staffEdit(
+    operationId === null ? null : OperationId.of(operationId),
+    revision,
+  );
 }
 
 /**

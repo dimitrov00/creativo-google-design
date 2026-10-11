@@ -1,32 +1,49 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BookingStatus } from '../components/booking-status.data';
-import { DayKey } from '../components/day-key.data';
+import {
+  BookingLifecycle,
+  type BookingStatus,
+} from '../components/booking-lifecycle.data';
 import {
   CancellationReason,
+  CancellationReasonSet,
   CancelledBy,
   SeatOutcome,
 } from '../components/seat-outcome.data';
 import { SeatLabel } from '../components/seat-label.data';
 import {
-  type Seat,
-  SeatId,
-  SeatRelationship,
+  Seat,
+  SeatOccupant,
   SeatSubject,
+  SubjectRelationship,
 } from '../components/seat.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import { BarberId } from '../entities/barber.entity';
-import { ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
+import { ShopNow } from '../components/shop-now.data';
+import { WallTime } from '../components/wall-time.data';
+import type { Appointment } from '../entities/appointment.entity';
 import {
-  appointmentFixture,
+  BarberId,
+  SeatId,
+  ServiceId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  FIXTURE_TIME_ZONE,
+  FIXTURE_TODAY,
   deepFreeze,
-  seatFixture,
+  localDate,
+  minute,
   unwrapOk,
 } from '../testing';
-import { VisitStorySystem } from './visit-story.system';
-import { DstResolution, ZonedTimeSystem } from './zoned-time.system';
+import {
+  appointmentFixture,
+  seatFixture,
+} from '../testing/appointment.fixtures';
+import { termsFixture } from '../testing/booking-core.fixtures';
+import { type PersonSubject, VisitStorySystem } from './visit-story.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * COPIED and re-targeted from libs/features/shared/visits/src/lib/
@@ -41,13 +58,32 @@ import { DstResolution, ZonedTimeSystem } from './zoned-time.system';
  * - «waitlistRowOf» (3 of 6): the days folded into runs, the passed ones
  *   dropped and the ones past a week dated, a run inside or across the week.
  * Plus the computed facts (`story`), properties and purity.
+ *
+ * Flatten pass (Laws 6/7): the visit is the flat `Appointment`
+ * (`bookingStatus` + its stamp, seats with `attendanceState` and
+ * `seatSubject`), every tag SCREAMING (`'cancelled'` → `'CANCELLED'`,
+ * `'client'` → `'CLIENT'`), the span the seats' `startMinutes` →
+ * `endMinutes` on the visit's `localDate`, money `totalCents` + `currency`,
+ * "upcoming" a `WallTime` against the shop's `ShopNow`, days `LocalDate`s.
  */
 
 const S = VisitStorySystem;
-const ZONE = 'Europe/Sofia';
 
-const at = (local: string): number =>
-  unwrapOk(ZonedTimeSystem.parseIso(local, ZONE, DstResolution.Reject)).epochMs;
+/** A wall clock `YYYY-MM-DDTHH:MM:SS` on the shop's calendar. */
+function wall(local: string): WallTime {
+  return WallTime.of(
+    localDate(local.slice(0, 10)),
+    minute(Number(local.slice(11, 13)) * 60 + Number(local.slice(14, 16))),
+  );
+}
+
+/** The instant that wall clock is in the shop's zone — for lifecycle stamps. */
+function at(local: string): UtcEpochMs {
+  const time = wall(local);
+  return unwrapOk(
+    ZonedTimeSystem.toUtc(time.localDate, time.minute, FIXTURE_TIME_ZONE),
+  );
+}
 
 const GEORGI = UserId.of('georgi');
 const IVO = UserId.of('ivo');
@@ -56,7 +92,13 @@ const PETAR = BarberId.of('barber-petar');
 const FADE = ServiceId.of('svc-fade');
 const BEARD = ServiceId.of('svc-beard');
 const WORKED_AT = at('2026-09-04T11:00:00');
-const NOW = at('2026-09-28T12:00:00');
+const NOW: ShopNow = ZonedTimeSystem.shopNow(
+  at('2026-09-28T12:00:00'),
+  FIXTURE_TIME_ZONE,
+);
+
+/** The shop day each built seat starts on — its visit's `localDate` (T7). */
+const dayOfSeat = new Map<Seat, LocalDate>();
 
 function seat(
   local: string,
@@ -64,41 +106,46 @@ function seat(
     readonly id?: string;
     readonly who?: UserId;
     readonly guest?: string;
-    readonly relationship?: SeatRelationship;
+    readonly relationship?: SubjectRelationship;
     readonly service?: ServiceId;
     readonly barber?: BarberId;
-    readonly priceMinor?: number;
+    readonly priceCents?: number;
     readonly outcome?: SeatOutcome;
   } = {},
 ): Seat {
-  const terms = ServiceTerms.unpadded(options.priceMinor ?? 2750, 'EUR', 30);
-  return seatFixture({
-    id: SeatId.of(options.id ?? `seat-${local}`),
+  const start = wall(local);
+  const built = seatFixture({
+    seatId: SeatId.of(options.id ?? `seat-${local}`),
     serviceId: options.service ?? FADE,
     barberId: options.barber ?? IVAN,
-    terms: {
-      ...terms,
-      catalogPriceMinorUnits: null,
-      catalogDurationMinutes: null,
-    },
-    startMs: at(local),
-    subject:
+    startMinutes: start.minute,
+    terms: Seat.termsOf(termsFixture(options.priceCents ?? 2750, 30), null),
+    occupant:
       options.guest !== undefined
-        ? SeatSubject.anonymous(SeatLabel.of(options.guest))
-        : SeatSubject.account(
+        ? SeatOccupant.anonymous(SeatLabel.of(options.guest))
+        : SeatOccupant.account(
             options.who ?? GEORGI,
-            options.relationship ?? SeatRelationship.Self,
+            options.relationship ?? SubjectRelationship.Self,
           ),
     outcome: options.outcome ?? SeatOutcome.scheduled(),
   });
+  dayOfSeat.set(built, start.localDate);
+  return built;
 }
 
 function visit(
   seats: readonly Seat[],
-  status: BookingStatus,
-  overrides: Partial<AppointmentEntity> = {},
-): AppointmentEntity {
-  return appointmentFixture({ seats, bookingStatus: status, ...overrides });
+  lifecycle: BookingLifecycle,
+): Appointment {
+  const first = seats[0];
+  return appointmentFixture({
+    seats,
+    lifecycle,
+    localDate:
+      first === undefined
+        ? FIXTURE_TODAY
+        : (dayOfSeat.get(first) ?? FIXTURE_TODAY),
+  });
 }
 
 const cancelled = (
@@ -107,30 +154,44 @@ const cancelled = (
   reason: CancellationReason,
 ) => SeatOutcome.cancelled(at(local), by, reason, null);
 
+/** A root cancellation for the given reasons. */
+const cancelledRoot = (local: string, ...reasons: CancellationReason[]) =>
+  BookingLifecycle.cancel(at(local), CancellationReasonSet.of(reasons));
+
 /** The row's own story, as the staff card tells it of `subject`. */
 const staffStory = (
-  appointment: AppointmentEntity,
+  appointment: Appointment,
   subject: UserId | null = GEORGI,
 ) => S.subjectStory(appointment, subject, true);
 
+/** Who a seat is for, as people are counted. */
+function personOf(entry: Seat): PersonSubject {
+  return entry.seatSubject === SeatSubject.Account
+    ? { seatSubject: SeatSubject.Account, userId: entry.subjectUserId }
+    : { seatSubject: SeatSubject.Anonymous, label: entry.guestLabel };
+}
+
 /** The OTHER people on the visit, as the row counts them. */
 function peersOf(
-  appointment: AppointmentEntity,
+  appointment: Appointment,
   subject: UserId | null = GEORGI,
 ): number {
   const story = staffStory(appointment, subject);
   return S.peerCount(
-    appointment.seats.map((entry) => entry.subject),
+    appointment.seats.map(personOf),
     appointment.seats.map((_, i) => story.seatIndexes.includes(i)),
   );
 }
+
+/** A lifecycle stamp of an epoch figure, for the ordering cases. */
+const stamp = (raw: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(raw));
 
 describe('visitRowOf · the staff card — the story', () => {
   it('strikes a cancellation, says who called it off and what was booked', () => {
     const called = visit(
       [
         seat('2026-07-16T10:00:00', {
-          priceMinor: 1750,
+          priceCents: 1750,
           outcome: cancelled(
             '2026-07-15T18:00:00',
             CancelledBy.Client,
@@ -138,15 +199,18 @@ describe('visitRowOf · the staff card — the story', () => {
           ),
         }),
       ],
-      BookingStatus.cancel(at('2026-07-15T18:00:00'), 'client_changed_plans'),
+      cancelledRoot(
+        '2026-07-15T18:00:00',
+        CancellationReason.ClientChangedPlans,
+      ),
     );
     expect(staffStory(called)).toEqual({
       seatIndexes: [0],
-      outcome: 'cancelled',
-      cancelledBy: 'client',
+      outcome: 'CANCELLED',
+      cancelledBy: 'CLIENT',
     });
     // What was booked: the struck figure.
-    expect(unwrapOk(S.story(called)).totalMinorUnits).toBe(1750);
+    expect(unwrapOk(S.story(called)).totalCents).toBe(1750);
 
     // The shop's own cancellation is the shop's.
     const byShop = visit(
@@ -159,9 +223,9 @@ describe('visitRowOf · the staff card — the story', () => {
           ),
         }),
       ],
-      BookingStatus.cancel(at('2026-07-17T09:00:00'), 'staff_shop_closure'),
+      cancelledRoot('2026-07-17T09:00:00', CancellationReason.StaffShopClosure),
     );
-    expect(staffStory(byShop).cancelledBy).toBe('shop');
+    expect(staffStory(byShop).cancelledBy).toBe('SHOP');
 
     // With company: the party counted beside the barber.
     const withCompany = visit(
@@ -177,7 +241,7 @@ describe('visitRowOf · the staff card — the story', () => {
         seat('2026-07-16T10:00:00', {
           id: 'seat-ivo-cancelled',
           who: IVO,
-          relationship: SeatRelationship.Companion,
+          relationship: SubjectRelationship.Companion,
           service: BEARD,
           barber: PETAR,
           outcome: cancelled(
@@ -187,9 +251,12 @@ describe('visitRowOf · the staff card — the story', () => {
           ),
         }),
       ],
-      BookingStatus.cancel(at('2026-07-15T18:00:00'), 'client_changed_plans'),
+      cancelledRoot(
+        '2026-07-15T18:00:00',
+        CancellationReason.ClientChangedPlans,
+      ),
     );
-    expect(staffStory(withCompany).cancelledBy).toBe('client');
+    expect(staffStory(withCompany).cancelledBy).toBe('CLIENT');
     expect(peersOf(withCompany)).toBe(1);
   });
 
@@ -200,11 +267,11 @@ describe('visitRowOf · the staff card — the story', () => {
           outcome: SeatOutcome.noShow(at('2026-07-07T10:20:00')),
         }),
       ],
-      BookingStatus.noShow(at('2026-07-07T10:20:00')),
+      BookingLifecycle.noShow(at('2026-07-07T10:20:00')),
     );
     expect(staffStory(noShow)).toEqual({
       seatIndexes: [0],
-      outcome: 'no_show',
+      outcome: 'NO_SHOW',
       cancelledBy: null,
     });
   });
@@ -212,25 +279,29 @@ describe('visitRowOf · the staff card — the story', () => {
   it('files an hour still to come under «Предстоящи», saying when in the day — nothing paid yet', () => {
     const ahead = visit(
       [seat('2026-10-02T10:00:00')],
-      BookingStatus.confirm(at('2026-09-20T10:00:00')),
+      BookingLifecycle.confirm(at('2026-09-20T10:00:00')),
     );
     const story = staffStory(ahead);
-    expect(story.outcome).toBe('open');
-    expect(S.isUpcoming(story.outcome, at('2026-10-02T10:00:00'), NOW)).toBe(
+    expect(story.outcome).toBe('OPEN');
+    expect(S.isUpcoming(story.outcome, wall('2026-10-02T10:00:00'), NOW)).toBe(
       true,
     );
     // An open hour already started is no longer ahead.
-    expect(S.isUpcoming('open', at('2026-09-28T10:00:00'), NOW)).toBe(false);
-    expect(S.isUpcoming('worked', at('2026-10-02T10:00:00'), NOW)).toBe(false);
+    expect(S.isUpcoming('OPEN', wall('2026-09-28T10:00:00'), NOW)).toBe(false);
+    expect(S.isUpcoming('WORKED', wall('2026-10-02T10:00:00'), NOW)).toBe(
+      false,
+    );
+    // The shop's minute itself is still ahead (`≥`), as the instant was.
+    expect(S.isUpcoming('OPEN', ShopNow.wallTime(NOW), NOW)).toBe(true);
   });
 
   it('says a request the shop has not confirmed is «Заявен»', () => {
     const pending = visit(
       [seat('2026-10-02T10:00:00')],
-      BookingStatus.pending(at('2026-09-27T10:00:00')),
+      BookingLifecycle.pending(at('2026-09-27T10:00:00')),
     );
     // Open — the word is the root status the template reads off the entity.
-    expect(staffStory(pending).outcome).toBe('open');
+    expect(staffStory(pending).outcome).toBe('OPEN');
   });
 
   describe('a party', () => {
@@ -245,16 +316,16 @@ describe('visitRowOf · the staff card — the story', () => {
         seat('2026-09-04T10:00:00', {
           id: 'seat-ivo',
           who: IVO,
-          relationship: SeatRelationship.Companion,
+          relationship: SubjectRelationship.Companion,
           service: BEARD,
           barber: PETAR,
-          priceMinor: 1200,
+          priceCents: 1200,
           outcome: SeatOutcome.noShow(WORKED_AT),
         }),
       ],
       // The legacy fixture's root discount is not pro-rated onto a share,
       // so the story below does not depend on it.
-      BookingStatus.complete(WORKED_AT),
+      BookingLifecycle.complete(WORKED_AT),
     );
 
     it('tells the subject’s own story — their seats, their outcome, their share, the others counted', () => {
@@ -262,14 +333,12 @@ describe('visitRowOf · the staff card — the story', () => {
       // A companion's no-show says nothing about the booker.
       expect(georgi).toEqual({
         seatIndexes: [0],
-        outcome: 'worked',
+        outcome: 'WORKED',
         cancelledBy: null,
       });
       // His seat's own price: a root discount is not pro-rated (Q2).
       const own = georgi.seatIndexes.map((i) => party.seats.at(i) as Seat);
-      expect(
-        own.reduce((sum, entry) => sum + entry.terms.priceMinorUnits, 0),
-      ).toBe(2750);
+      expect(own.reduce((sum, entry) => sum + entry.priceCents, 0)).toBe(2750);
       // The face is of who cut HIS seat, not the companion's.
       expect(S.distinct(own.map((entry) => entry.barberId))).toEqual([IVAN]);
       expect(peersOf(party, GEORGI)).toBe(1);
@@ -277,7 +346,7 @@ describe('visitRowOf · the staff card — the story', () => {
       const ivo = staffStory(party, IVO);
       expect(ivo).toEqual({
         seatIndexes: [1],
-        outcome: 'no_show',
+        outcome: 'NO_SHOW',
         cancelledBy: null,
       });
       const his = ivo.seatIndexes.map((i) => party.seats.at(i) as Seat);
@@ -307,7 +376,7 @@ describe('visitRowOf · the staff card — the story', () => {
             outcome: SeatOutcome.worked(WORKED_AT),
           }),
         ],
-        BookingStatus.complete(WORKED_AT),
+        BookingLifecycle.complete(WORKED_AT),
       );
       expect(peersOf(withGuest)).toBe(1);
     });
@@ -324,40 +393,40 @@ describe('visitRowOf · the staff card — the story', () => {
           id: 'seat-beard',
           service: BEARD,
           barber: PETAR,
-          priceMinor: 1200,
+          priceCents: 1200,
           outcome: SeatOutcome.worked(WORKED_AT),
         }),
       ],
-      BookingStatus.complete(WORKED_AT),
+      BookingLifecycle.complete(WORKED_AT),
     );
     const story = unwrapOk(S.story(two));
     expect(story.serviceIds).toEqual([FADE, BEARD]);
     expect(story.barberIds).toEqual([IVAN, PETAR]);
     // Both seats are his: the figure is the bill.
     expect(staffStory(two).seatIndexes).toEqual([0, 1]);
-    expect(story.totalMinorUnits).toBe(3950);
+    expect(story.totalCents).toBe(3950);
   });
 
   it('tells a guest’s visit as the appointment’s own, and quotes nobody', () => {
     const last = visit(
       [seat('2026-09-04T10:00:00', { outcome: SeatOutcome.worked(WORKED_AT) })],
-      BookingStatus.complete(WORKED_AT),
+      BookingLifecycle.complete(WORKED_AT),
     );
     expect(staffStory(last, null)).toEqual({
       seatIndexes: [0],
-      outcome: 'worked',
+      outcome: 'WORKED',
       cancelledBy: null,
     });
     // A subject with no seat on it: the appointment's too.
-    expect(staffStory(last, IVO).outcome).toBe('worked');
+    expect(staffStory(last, IVO).outcome).toBe('WORKED');
     // The client's own list always tells the appointment's.
     expect(S.subjectStory(last, IVO, false).seatIndexes).toEqual([0]);
   });
 });
 
 describe('waitlistRowOf — the days it watches', () => {
-  const TODAY = DayKey.of('2026-09-28');
-  const keys = (raw: readonly string[]) => raw.map((key) => DayKey.of(key));
+  const TODAY = localDate('2026-09-28');
+  const keys = (raw: readonly string[]) => raw.map((key) => localDate(key));
   /** The days still ahead, as the row keeps them. */
   const ahead = (raw: readonly string[]) =>
     keys(raw).filter((key) => key >= TODAY);
@@ -409,8 +478,8 @@ describe('waitlistRowOf — the days it watches', () => {
       '2026-10-06',
     ]);
     expect(S.dayRuns(leaving)).toEqual([{ first: 0, last: 3 }]);
-    expect(S.withinWeek(leaving[0] as DayKey, TODAY)).toBe(true);
-    expect(S.withinWeek(leaving[3] as DayKey, TODAY)).toBe(false);
+    expect(S.withinWeek(leaving[0] as LocalDate, TODAY)).toBe(true);
+    expect(S.withinWeek(leaving[3] as LocalDate, TODAY)).toBe(false);
     // Across the new year: still one run.
     expect(S.dayRuns(keys(['2026-12-31', '2027-01-01']))).toEqual([
       { first: 0, last: 1 },
@@ -432,45 +501,52 @@ describe('VisitStorySystem — the facts and the rules', () => {
         seat('2026-09-04T10:30:00', {
           service: BEARD,
           barber: PETAR,
-          priceMinor: 1200,
+          priceCents: 1200,
         }),
         seat('2026-09-04T10:00:00'),
       ],
-      BookingStatus.confirm(at('2026-09-01T10:00:00')),
+      BookingLifecycle.confirm(at('2026-09-01T10:00:00')),
     );
     const story = unwrapOk(S.story(two));
-    expect(story.envelope).toEqual({
-      startMs: at('2026-09-04T10:00:00'),
-      endMs: at('2026-09-04T11:00:00'),
+    const from: MinuteOfDay = wall('2026-09-04T10:00:00').minute;
+    expect(story).toMatchObject({
+      localDate: '2026-09-04',
+      startMinutes: from,
+      endMinutes: from + 60,
     });
-    expect(story.currencyCode).toBe('EUR');
+    expect(story.currency).toBe('EUR');
     expect(story.barberIds).toEqual([PETAR, IVAN]);
-    expect(S.story(visit([], BookingStatus.confirm(0))).ok).toBe(false);
+    expect(S.story(visit([], BookingLifecycle.confirm(stamp(0)))).ok).toBe(
+      false,
+    );
   });
 
   it('decides a cancelled visit by the seat called off last, the first of equal instants', () => {
-    expect(S.decisiveCancellationIndex([null, 5, 9, 9, null])).toBe(2);
-    expect(S.decisiveCancellationIndex([null, null])).toBe(-1);
     expect(
-      S.rootStory('cancelled', [
+      S.decisiveCancellationIndex([null, stamp(5), stamp(9), stamp(9), null]),
+    ).toBe(2);
+    expect(S.decisiveCancellationIndex([null, null])).toBe(-1);
+    const CANCELLED: BookingStatus = 'CANCELLED';
+    expect(
+      S.rootStory(CANCELLED, [
         SeatOutcome.cancelled(
-          1,
+          stamp(1),
           CancelledBy.Staff,
           CancellationReason.StaffShopClosure,
           null,
         ),
         SeatOutcome.cancelled(
-          2,
+          stamp(2),
           CancelledBy.Client,
           CancellationReason.Unspecified,
           null,
         ),
       ]),
-    ).toEqual({ outcome: 'cancelled', cancelledBy: 'client' });
+    ).toEqual({ outcome: 'CANCELLED', cancelledBy: 'CLIENT' });
     // A cancelled visit with no seat on record holds nothing against the client.
-    expect(S.rootStory('cancelled', [SeatOutcome.scheduled()])).toEqual({
-      outcome: 'cancelled',
-      cancelledBy: 'shop',
+    expect(S.rootStory(CANCELLED, [SeatOutcome.scheduled()])).toEqual({
+      outcome: 'CANCELLED',
+      cancelledBy: 'SHOP',
     });
   });
 
@@ -490,7 +566,7 @@ describe('VisitStorySystem — the facts and the rules', () => {
         }),
         (epochDays) => {
           const sorted = [...epochDays].sort((a, b) => a - b);
-          const days = sorted.map((day) => DayKey.fromEpochDay(day));
+          const days = sorted.map((day) => LocalDate.fromEpochDay(day));
           const runs = S.dayRuns(days);
           let next = 0;
           for (const run of runs) {
@@ -522,19 +598,24 @@ describe('VisitStorySystem — the facts and the rules', () => {
           }),
           seat('2026-09-04T10:00:00', {
             who: IVO,
-            relationship: SeatRelationship.Companion,
+            relationship: SubjectRelationship.Companion,
             outcome: SeatOutcome.noShow(WORKED_AT),
           }),
         ],
-        BookingStatus.complete(WORKED_AT),
+        BookingLifecycle.complete(WORKED_AT),
       ),
     );
     expect(S.story(party)).toEqual(S.story(party));
     expect(S.subjectStory(party, IVO, true)).toEqual(
       S.subjectStory(party, IVO, true),
     );
-    const days = deepFreeze([DayKey.of('2026-10-01'), DayKey.of('2026-10-02')]);
+    const days = deepFreeze([localDate('2026-10-01'), localDate('2026-10-02')]);
     expect(S.dayRuns(days)).toEqual(S.dayRuns(days));
+    const start = deepFreeze(wall('2026-10-02T10:00:00'));
+    const now = deepFreeze(NOW);
+    expect(S.isUpcoming('OPEN', start, now)).toBe(
+      S.isUpcoming('OPEN', start, now),
+    );
     expect(party.seats).toHaveLength(2);
   });
 });

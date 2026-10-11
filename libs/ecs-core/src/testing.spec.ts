@@ -1,43 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { BusyKey } from './components/busy-key.data';
-import { DayOffset } from './components/day-offset.data';
 import { Result } from './components/result.data';
-import { Seat } from './components/seat.data';
 import { Weekday } from './components/weekday.data';
 import { WriteOp } from './components/write-op.data';
 import { QueryOp } from './ports/collections';
 import type { QuerySpec } from './ports/tx.port';
 import { ZonedTimeSystem } from './systems/zoned-time.system';
+import { RepositoryErrorCode } from './components/repository-errors.data';
+import { LocalDate } from './primitives/local-date.primitive';
+import { UtcEpochMs } from './primitives/utc-epoch-ms.primitive';
 import {
-  FIXTURE_DAY_START_MS,
-  FIXTURE_IDS,
-  FIXTURE_NOW_MS,
+  FIELD_SET_AND_DELETED,
+  FIXTURE_NOW,
+  FIXTURE_NOW_UTC_MS,
+  FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
-  FIXTURE_ZONE,
-  appointmentFixture,
+  endMinute,
+  localDate,
+  minute,
+  pinnedNowUtcMs,
+  steppingNowUtcMs,
+  utcMs,
   applyWrites,
-  barberBusyDayFixture,
-  barberFixture,
-  barberScheduleFixture,
-  dayTableFixture,
   deepFreeze,
   fixtureHash,
-  fixtureTodayAt,
-  locationFixture,
   memoryCommitPlan,
   memoryReadTx,
   memoryStore,
   memoryTxPorts,
-  pinnedNowMs,
   recordingTelemetry,
-  scheduleExceptionFixture,
   sequentialIds,
-  serviceFixture,
-  steppingNowMs,
   textFixture,
   unwrapErr,
   unwrapOk,
-  userFixture,
 } from './testing';
 
 const query = (overrides: Partial<QuerySpec>): QuerySpec => ({
@@ -123,38 +117,40 @@ describe('unwrapOk / unwrapErr', () => {
 });
 
 describe('the pinned primitives', () => {
+  /** 2026-09-28 00:00 EEST = 2026-09-27T21:00:00Z — the fixture day's start. */
+  const FIXTURE_DAY_START_UTC_MS = 1_790_542_800_000;
+
   it('the literal fixture instants agree with ZonedTimeSystem', () => {
-    const [today] = dayTableFixture();
-    expect(today?.dayKey).toBe(FIXTURE_TODAY);
-    expect(today?.dayStartMs).toBe(FIXTURE_DAY_START_MS);
-    expect(today?.weekday).toBe(Weekday.Mon);
-    expect(today !== undefined && DayOffset.isTransition(today)).toBe(false);
-    expect(fixtureTodayAt(9)).toBe(FIXTURE_NOW_MS);
-    expect(ZonedTimeSystem.dayKeyOf(FIXTURE_NOW_MS, dayTableFixture())).toBe(
-      FIXTURE_TODAY,
-    );
-    expect(FIXTURE_ZONE).toBe('Europe/Sofia');
+    expect(LocalDate.weekday(FIXTURE_TODAY)).toBe(Weekday.Mon);
+    expect(
+      ZonedTimeSystem.startOfLocalDay(FIXTURE_TODAY, FIXTURE_TIME_ZONE),
+    ).toBe(FIXTURE_DAY_START_UTC_MS);
+    // An ordinary day: 24 hours to the next local midnight, no switch.
+    expect(
+      ZonedTimeSystem.startOfLocalDay(
+        LocalDate.addDays(FIXTURE_TODAY, 1),
+        FIXTURE_TIME_ZONE,
+      ) - FIXTURE_DAY_START_UTC_MS,
+    ).toBe(24 * 3_600_000);
+    expect(FIXTURE_NOW_UTC_MS - FIXTURE_DAY_START_UTC_MS).toBe(9 * 3_600_000);
+    expect(
+      ZonedTimeSystem.toLocal(FIXTURE_NOW_UTC_MS, FIXTURE_TIME_ZONE).localDate,
+    ).toBe(FIXTURE_TODAY);
+    expect(FIXTURE_TIME_ZONE).toBe('Europe/Sofia');
   });
 
-  it('a day table spans the asked range and refuses a broken one', () => {
-    expect(dayTableFixture('2026-09-28', '2026-10-04')).toHaveLength(7);
-    expect(() => dayTableFixture('2026-09-28', '2026-09-27')).toThrow(
-      /broken fixture/,
-    );
-    expect(() =>
-      dayTableFixture('2026-09-28', '2026-09-28', 'Not/AZone'),
-    ).toThrow(/broken fixture/);
-  });
-
-  it('pinnedNowMs, steppingNowMs and sequentialIds are deterministic', () => {
-    expect(pinnedNowMs()()).toBe(FIXTURE_NOW_MS);
-    expect(pinnedNowMs(5)()).toBe(5);
-    const clock = steppingNowMs(100, 10);
-    expect([clock(), clock(), clock()]).toEqual([100, 110, 120]);
-    expect(steppingNowMs()()).toBe(FIXTURE_NOW_MS);
+  it('sequentialIds is deterministic', () => {
     const next = sequentialIds('appt');
     expect([next(), next()]).toEqual(['appt-1', 'appt-2']);
     expect(sequentialIds()()).toBe('id-1');
+  });
+
+  it('textFixture fills both locales', () => {
+    expect(textFixture('Cut')).toEqual({ bg: 'Cut', en: 'Cut' });
+    expect(textFixture('Cut', 'Подстригване')).toEqual({
+      bg: 'Подстригване',
+      en: 'Cut',
+    });
   });
 
   it('fixtureHash is a stable 64-hex digest that separates inputs', () => {
@@ -256,6 +252,40 @@ describe('memoryReadTx', () => {
     ).toEqual([]);
   });
 
+  it('reads a flattened ROOT key first — a discriminator at the root matches, a pre-flatten dotted path does not', async () => {
+    const store = memoryStore([
+      {
+        path: ['appointments', 'f1'],
+        body: { bookingStatus: 'CONFIRMED', utcEpochMs: 20 },
+      },
+      {
+        path: ['appointments', 'f2'],
+        body: { bookingStatus: 'CANCELLED', utcEpochMs: 10 },
+      },
+      {
+        path: ['appointments', 'f3'],
+        body: { bookingStatus: 'CONFIRMED', utcEpochMs: 5 },
+      },
+    ]);
+    const flat = async (spec: Partial<QuerySpec>) =>
+      (await memoryReadTx(store).query<{ id: string }>(query(spec))).map(
+        (row) => row.id,
+      );
+    expect(
+      await flat({
+        where: [{ field: 'bookingStatus', op: QueryOp.Eq, value: 'CONFIRMED' }],
+        orderBy: [{ field: 'utcEpochMs', descending: false }],
+      }),
+    ).toEqual(['f3', 'f1']);
+    expect(
+      await flat({
+        where: [
+          { field: 'bookingStatus.kind', op: QueryOp.Eq, value: 'confirmed' },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
   it('reads dotted component paths and compares maps by value', async () => {
     expect(
       await ids({
@@ -332,6 +362,37 @@ describe('memoryReadTx', () => {
   });
 });
 
+describe('the flatten-pass time fixtures (flatten-spec §2.2)', () => {
+  it('pins now as the fixture shop sees it — 2026-09-28 09:00 EEST', () => {
+    expect(FIXTURE_TIME_ZONE).toBe('Europe/Sofia');
+    // 2026-09-28T06:00:00Z.
+    expect(FIXTURE_NOW_UTC_MS).toBe(1_790_575_200_000);
+    expect(FIXTURE_NOW).toEqual({
+      localDate: FIXTURE_TODAY,
+      currentMinute: 540,
+      utcEpochMs: FIXTURE_NOW_UTC_MS,
+    });
+  });
+
+  it('builds branded literals and throws on a broken one', () => {
+    expect(localDate('2026-10-07')).toBe('2026-10-07');
+    expect(minute(600)).toBe(600);
+    expect(endMinute(1440)).toBe(1440);
+    expect(utcMs('2026-09-28T09:00:00+03:00')).toBe(FIXTURE_NOW_UTC_MS);
+    expect(() => localDate('2026-02-30')).toThrow(/broken fixture/);
+    expect(() => minute(1440)).toThrow(/broken fixture/);
+    expect(() => endMinute(0)).toThrow(/broken fixture/);
+    expect(() => utcMs('2026-09-28T09:00:00')).toThrow(/broken fixture/);
+  });
+
+  it('pinnedNowUtcMs and steppingNowUtcMs are deterministic', () => {
+    expect(pinnedNowUtcMs()()).toBe(FIXTURE_NOW_UTC_MS);
+    const clock = steppingNowUtcMs(unwrapOk(UtcEpochMs.of(100)), 10);
+    expect([clock(), clock(), clock()]).toEqual([100, 110, 120]);
+    expect(steppingNowUtcMs()()).toBe(FIXTURE_NOW_UTC_MS);
+  });
+});
+
 describe('applyWrites', () => {
   it('applies set, create, update (root fields) and delete as one plan', () => {
     const store = memoryStore([
@@ -381,14 +442,65 @@ describe('applyWrites', () => {
     ).toThrow(/NOT_FOUND/);
   });
 
-  it('is all-or-nothing: ALREADY_EXISTS and NOT_FOUND leave the store untouched', () => {
+  it('removes deleteFields at the root — a variant transition leaves one variant (Law 6)', () => {
+    const store = memoryStore([
+      {
+        path: ['a', '1'],
+        body: { bookingStatus: 'CONFIRMED', confirmedAtUtcMs: 1, keep: true },
+      },
+    ]);
+    const before = store.get('a/1') ?? {};
+    const after = {
+      bookingStatus: 'CANCELLED',
+      cancelledAtUtcMs: 2,
+      keep: true,
+    };
+    expect(
+      applyWrites(store, [
+        WriteOp.transition(
+          ['a', '1'],
+          { bookingStatus: 'CANCELLED', cancelledAtUtcMs: 2 },
+          WriteOp.variantFieldsToDelete(before, after),
+        ),
+      ]),
+    ).toEqual({ ok: true, value: undefined });
+    expect(store.get('a/1')).toEqual(after);
+  });
+
+  it('refuses a key both set and deleted as a value, applying nothing', () => {
     const store = memoryStore([{ path: ['a', '1'], body: { n: 1 } }]);
-    expect(() =>
+    expect(
+      applyWrites(store, [
+        WriteOp.set(['a', '2'], { n: 2 }),
+        WriteOp.transition(['a', '1'], { n: 2 }, ['n']),
+      ]),
+    ).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.WriteFailed,
+        path: 'a/1',
+        reason: FIELD_SET_AND_DELETED,
+      },
+    });
+    expect([...store.keys()]).toEqual(['a/1']);
+    expect(store.get('a/1')).toEqual({ n: 1 });
+  });
+
+  it('is all-or-nothing: ALREADY_EXISTS answers as a value, NOT_FOUND throws; the store is untouched', () => {
+    const store = memoryStore([{ path: ['a', '1'], body: { n: 1 } }]);
+    expect(
       applyWrites(store, [
         WriteOp.set(['a', '2'], { n: 2 }),
         WriteOp.create(['a', '1'], { n: 9 }),
       ]),
-    ).toThrow(/ALREADY_EXISTS: a\/1/);
+    ).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.AlreadyExists,
+        path: 'a/1',
+        reason: null,
+      },
+    });
     expect(() =>
       applyWrites(store, [
         WriteOp.set(['a', '2'], { n: 2 }),
@@ -450,9 +562,35 @@ describe('memoryCommitPlan', () => {
     );
     expect(result).toEqual({
       ok: false,
-      error: { code: 'repo.already_exists', path: 'a/1', reason: null },
+      error: {
+        errorCode: 'REPOSITORY_ALREADY_EXISTS',
+        path: 'a/1',
+        reason: null,
+      },
     });
     expect([...store.keys()]).toEqual(['a/1']);
+    expect(store.get('a/1')).toEqual({ n: 1 });
+    expect(plans).toEqual([]);
+  });
+
+  it('a key both set and deleted answers field-set-and-deleted as a value and applies nothing', async () => {
+    const store = memoryStore([{ path: ['a', '1'], body: { n: 1 } }]);
+    const { commit, plans } = memoryCommitPlan(store);
+    const result = await commit(
+      async () => null,
+      () =>
+        Result.ok({
+          writes: [WriteOp.transition(['a', '1'], { n: 2 }, ['n'])],
+        }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        errorCode: RepositoryErrorCode.WriteFailed,
+        path: 'a/1',
+        reason: 'field-set-and-deleted',
+      },
+    });
     expect(store.get('a/1')).toEqual({ n: 1 });
     expect(plans).toEqual([]);
   });
@@ -474,7 +612,7 @@ describe('memoryCommitPlan', () => {
 describe('memoryTxPorts / recordingTelemetry', () => {
   it('bundles the commit double with pinned primitives, each overridable', async () => {
     const ports = memoryTxPorts(memoryStore());
-    expect(ports.nowMs()).toBe(FIXTURE_NOW_MS);
+    expect(ports.nowUtcMs()).toBe(FIXTURE_NOW_UTC_MS);
     expect(ports.nextId()).toBe('id-1');
     expect(ports.hash('x')).toBe(fixtureHash('x'));
     await ports.commit(
@@ -484,11 +622,11 @@ describe('memoryTxPorts / recordingTelemetry', () => {
     expect(ports.plans).toHaveLength(1);
     expect(ports.transactions).toHaveLength(1);
     const custom = memoryTxPorts(memoryStore(), {
-      nowMs: pinnedNowMs(1),
+      nowUtcMs: pinnedNowUtcMs(unwrapOk(UtcEpochMs.of(1))),
       nextId: sequentialIds('x'),
       hash: () => 'h',
     });
-    expect([custom.nowMs(), custom.nextId(), custom.hash('y')]).toEqual([
+    expect([custom.nowUtcMs(), custom.nextId(), custom.hash('y')]).toEqual([
       1,
       'x-1',
       'h',
@@ -516,77 +654,5 @@ describe('memoryTxPorts / recordingTelemetry', () => {
       { error: failure, context: { pipeline: 'book' } },
       { error: 'plain', context: null },
     ]);
-  });
-});
-
-describe('fixture builders', () => {
-  it('the appointment agrees with its seat, busy key and day', () => {
-    const appointment = appointmentFixture();
-    const seat = appointment.seats[0] as Seat;
-    expect(appointment.timeInterval).toEqual(Seat.interval(seat));
-    expect(appointment.timeInterval.startMs).toBe(fixtureTodayAt(10));
-    expect(appointment.busyKeys).toEqual([
-      BusyKey.of(seat.barberId, FIXTURE_TODAY),
-    ]);
-    expect(appointment.barberIds).toEqual([FIXTURE_IDS.barber]);
-    expect(
-      ZonedTimeSystem.dayKeyOf(
-        appointment.timeInterval.startMs,
-        dayTableFixture(),
-      ),
-    ).toBe(FIXTURE_TODAY);
-    expect(appointmentFixture({ revision: 4 }).revision).toBe(4);
-  });
-
-  it('the catalogue fixtures cross-reference the same ids', () => {
-    const barber = barberFixture();
-    const location = locationFixture();
-    const service = serviceFixture();
-    expect(barber.locationIds).toEqual([location.id]);
-    expect(service.locationIds).toEqual([location.id]);
-    expect(service.offerings[0]?.barberId).toBe(barber.id);
-    expect(location.openingHours).toHaveLength(7);
-    expect(location.zone).toBe(FIXTURE_ZONE);
-    expect(barberFixture({ sortOrder: 3 }).sortOrder).toBe(3);
-    expect(locationFixture({ mapUrl: 'https://maps.example' }).mapUrl).toBe(
-      'https://maps.example',
-    );
-    expect(serviceFixture({ popular: true }).popular).toBe(true);
-    expect(textFixture('Cut')).toEqual({ bg: 'Cut', en: 'Cut' });
-  });
-
-  it('the scheduling fixtures describe Ivan today', () => {
-    const schedule = barberScheduleFixture();
-    expect(schedule.versions[0]?.segments.map((s) => s.weekday)).toEqual([
-      1, 2, 3, 4, 5,
-    ]);
-    expect(barberBusyDayFixture().id).toBe(
-      BusyKey.of(FIXTURE_IDS.barber, FIXTURE_TODAY),
-    );
-    expect(barberBusyDayFixture().blocks[0]).toMatchObject({
-      startMinutes: 600,
-      endMinutes: 630,
-    });
-    expect(scheduleExceptionFixture().effect).toEqual({ kind: 'closed' });
-    expect(
-      barberScheduleFixture({ turnaroundMinutes: 5 }).turnaroundMinutes,
-    ).toBe(5);
-    expect(barberBusyDayFixture({ blocks: [] }).blocks).toEqual([]);
-    expect(scheduleExceptionFixture({ zone: 'UTC' }).zone).toBe('UTC');
-  });
-
-  it('the user fixture is a registered, active client', () => {
-    const user = userFixture();
-    expect(user.registration).toEqual({ kind: 'registered' });
-    expect(user.accountStatus).toEqual({ kind: 'active' });
-    expect(user.roles).toEqual(['client']);
-    expect(userFixture({ email: null }).email).toBeNull();
-  });
-
-  it('every fixture survives deepFreeze (no builder shares a mutable value)', () => {
-    const a = deepFreeze(appointmentFixture());
-    const b = appointmentFixture();
-    expect(Object.isFrozen(b)).toBe(false);
-    expect(b).toEqual(a);
   });
 });

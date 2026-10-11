@@ -1,9 +1,12 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  DayKey,
   DayWindows as DayWindowsData,
-  FlexibleWhen as WhenData,
+  EndMinute,
+  LocalDate,
+  MinuteOfDay,
   MinuteRange,
+  FlexibleWhen as WhenData,
+  defect,
 } from '@creativo/ecs-core';
 import { CalendarDay } from './calendar-day';
 import {
@@ -30,15 +33,27 @@ export interface FlexibleWhenProps {
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
+/** A calendar day's key — a real day by construction (`CalendarDay`). */
+function localDateOf(key: string): LocalDate {
+  const parsed = LocalDate.parse(key);
+  if (!parsed.ok) defect(`unreachable: a CalendarDay key ${key}`);
+  return parsed.value;
+}
+
+/** A wall-clock span as the shop day's minutes — valid by construction (`LocalTimeRange`). */
+function minuteRangeOf(range: DayWindows['windows'][number]): MinuteRange {
+  const start = MinuteOfDay.of(range.start.minutesFromMidnight());
+  const end = EndMinute.of(range.end.minutesFromMidnight());
+  if (!start.ok || !end.ok) {
+    defect(`unreachable: a LocalTimeRange ${String(range)}`);
+  }
+  return MinuteRange.of(start.value, end.value);
+}
+
 function toDayData(day: DayWindows): DayWindowsData {
   return DayWindowsData.of(
-    DayKey.of(day.dayKey),
-    day.windows.map((range) =>
-      MinuteRange.of(
-        range.start.minutesFromMidnight(),
-        range.end.minutesFromMidnight(),
-      ),
-    ),
+    localDateOf(day.dayKey),
+    day.windows.map(minuteRangeOf),
   );
 }
 
@@ -80,13 +95,13 @@ export class FlexibleWhen {
 
   /** Chronological, always — never tap order. */
   get days(): readonly DayWindows[] {
-    return this.data.days.map(
-      (day) => this.byDayKey.get(day.dayKey) as DayWindows,
+    return this.data.flexibleDays.map(
+      (day) => this.byDayKey.get(day.localDate) as DayWindows,
     );
   }
 
   get dayCount(): number {
-    return this.data.days.length;
+    return this.data.flexibleDays.length;
   }
 
   isEmpty(): boolean {
@@ -94,7 +109,7 @@ export class FlexibleWhen {
   }
 
   has(day: CalendarDay): boolean {
-    return WhenData.has(this.data, DayKey.of(day.key()));
+    return WhenData.has(this.data, localDateOf(day.key()));
   }
 
   for(day: CalendarDay): DayWindows | null {
@@ -106,7 +121,7 @@ export class FlexibleWhen {
     day: CalendarDay,
     maxDays: number,
   ): Result<FlexibleWhen, FlexibleWhenError> {
-    const next = WhenData.withDay(this.data, DayKey.of(day.key()), maxDays);
+    const next = WhenData.withDay(this.data, localDateOf(day.key()), maxDays);
     if (!next.ok) return fail(new FlexibleWhenFullError(maxDays));
     if (next.value === this.data) return ok(this);
     const byDayKey = new Map(this.byDayKey);
@@ -116,7 +131,7 @@ export class FlexibleWhen {
 
   /** Deselect a day — its windows leave with it, which is the point. */
   withoutDay(day: CalendarDay): FlexibleWhen {
-    const next = WhenData.withoutDay(this.data, DayKey.of(day.key()));
+    const next = WhenData.withoutDay(this.data, localDateOf(day.key()));
     if (next === this.data) return this;
     const byDayKey = new Map(this.byDayKey);
     byDayKey.delete(day.key());

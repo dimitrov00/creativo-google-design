@@ -7,9 +7,9 @@
  * Five families, each a plain function — no classes, no module state:
  *
  * - the purity contract's {@link deepFreeze} (`ecs-systems.md` spec contract);
- * - the pinned impure primitives a pipeline hands its systems — `nowMs`,
- *   `nextId`, `hash` (`tx.port.ts`) — and the one `FIXTURE_TODAY` pin
- *   (blueprint §7, tests Q1);
+ * - the pinned impure primitives a pipeline hands its systems — `nowUtcMs`,
+ *   `nextId`, `hash` (`tx.port.ts`) — the one `FIXTURE_TODAY` pin
+ *   (blueprint §7, tests Q1) and the shop's `FIXTURE_NOW` (a `ShopNow`);
  * - in-memory port doubles for the Phase 1 ports — the read half
  *   ({@link memoryReadTx}), the single commit port ({@link memoryCommitPlan},
  *   which records every applied plan for the spec to assert), the telemetry
@@ -21,84 +21,47 @@
  *   busy cases every `LoadBusyDay`/`ObserveBusyDay` implementation runs
  *   (the successor of the application layer's `availabilityReaderBusyCases`,
  *   blueprint §7);
- * - fixtures: complete, internally consistent entities and day tables with
- *   every field present, overridable field by field, and the loyalty
- *   fixtures of `testing/loyalty.fixtures.ts` — the rhythm's rule as
- *   entities, and the two loyalty JSON files (`testing/fixtures/loyalty/`)
- *   the dev seed reads by path.
+ * - fixtures: complete, internally consistent FLAT entities (Law 6) with
+ *   every field present, overridable field by field, one file per group
+ *   (`testing/{booking-core,appointment,booking-flow,identity,loyalty}.fixtures.ts`,
+ *   flatten-spec §8.1), plus the two loyalty JSON files
+ *   (`testing/fixtures/loyalty/`) the dev seed reads by path.
  *
- * Expected instants are literal epoch-ms constants, never computed with a
- * date library (§9 D5): zone math in a fixture goes through ZonedTimeSystem
- * like everywhere else.
+ * Expected instants come from `utcMs(…)` (ISO with an offset, through
+ * ZonedTimeSystem), never from a date library or `Date` (§9 D5, L4).
  */
-import { defer, of } from 'rxjs';
-import { AccountStatus } from './components/account-status.data';
-import { BookingStatus } from './components/booking-status.data';
-import { BusyKey } from './components/busy-key.data';
-import {
-  BarberState,
-  LocationState,
-  ServiceState,
-} from './components/catalog-status.data';
-import { DayHours } from './components/opening-hours.data';
-import { DayKey } from './components/day-key.data';
-import type { DayOffset } from './components/day-offset.data';
 import type { LocalizedText } from './components/localized-text.data';
-import { MinuteBlock, BlockKind } from './components/minute-block.data';
-import { E164 } from './components/phone-number.data';
-import { PlacementKind } from './components/placement-kind.data';
-import { Registration } from './components/registration.data';
 import { Result } from './components/result.data';
-import { Role } from './components/role.data';
-import { ShiftSegment } from './components/schedule-version.data';
-import type { ScheduleVersion } from './components/schedule-version.data';
-import { SeatOutcome } from './components/seat-outcome.data';
-import {
-  Seat,
-  SeatId,
-  SeatRelationship,
-  SeatSubject,
-} from './components/seat.data';
-import { ServiceTerms } from './components/service-terms.data';
-import { TenantConfig } from './components/tenant-config.data';
-import { TimeInterval } from './components/time-interval.data';
-import { Weekday } from './components/weekday.data';
-import { WriteKind } from './components/write-op.data';
+import { ShopNow } from './components/shop-now.data';
+import { WriteAction } from './components/write-op.data';
 import type { DocBody, DocPath, WriteOp } from './components/write-op.data';
-import { ExceptionEffect } from './components/exception-effect.data';
-import {
-  AppointmentId,
-  type AppointmentEntity,
-} from './entities/appointment.entity';
-import {
-  BarberBusyDayId,
-  type BarberBusyDayEntity,
-} from './entities/barber-busy-day.entity';
-import type { BarberScheduleEntity } from './entities/barber-schedule.entity';
-import { BarberId, type BarberEntity } from './entities/barber.entity';
-import { LocationId, type LocationEntity } from './entities/location.entity';
-import {
-  ScheduleExceptionId,
-  type ScheduleExceptionEntity,
-} from './entities/schedule-exception.entity';
-import { ServiceCategoryId } from './entities/service-category.entity';
-import { ServiceId, type ServiceEntity } from './entities/service.entity';
-import { UserId, type UserEntity } from './entities/user.entity';
 import { RepositoryError } from './components/repository-errors.data';
-import type { LoadBusyDay, ObserveBusyDay } from './ports/scheduling.port';
 import type { Log, TrackError } from './ports/telemetry.port';
-import { Collections, QueryOp } from './ports/collections';
+import { QueryOp } from './ports/collections';
 import type {
   CommitPlan,
   Hash,
   NextId,
-  NowMs,
+  NowUtcMs,
   QueryFilter,
   QuerySpec,
   ReadTx,
   TxPorts,
 } from './ports/tx.port';
 import { ZonedTimeSystem } from './systems/zoned-time.system';
+import {
+  AppointmentId,
+  BarberId,
+  LocationId,
+  SeatId,
+  ServiceCategoryId,
+  ServiceId,
+  UserId,
+} from './primitives/ids.primitive';
+import { LocalDate } from './primitives/local-date.primitive';
+import { EndMinute, MinuteOfDay } from './primitives/minute-of-day.primitive';
+import type { TimeZone } from './primitives/time-zone.primitive';
+import { UtcEpochMs } from './primitives/utc-epoch-ms.primitive';
 
 /* ── The purity contract ────────────────────────────────────────────────── */
 
@@ -107,7 +70,42 @@ export { deepFreeze } from './testing/deep-freeze';
 /* ── The port contracts and the fixture families of their own files ────── */
 
 export * from './testing/scheduling.port.contract';
+export * from './testing/booking-core.fixtures';
+export * from './testing/appointment.fixtures';
+export * from './testing/booking-flow.fixtures';
+export * from './testing/identity.fixtures';
 export * from './testing/loyalty.fixtures';
+
+/* ── Type-level helpers for the entity type-specs (flatten-spec §7, L2) ─── */
+
+/**
+ * `true` per field when it is a primitive (brands included), an array or a
+ * `LocalizedText` (F-7) — nullable or optional allowed; `false` for a nested
+ * struct (`Contact | null`, an object literal). An entity type-spec asserts
+ * `AllTrue<NoNested<V>>` for EVERY variant of the archetype (Law 6.1).
+ */
+export type NoNested<E> = {
+  [K in keyof E]-?: [NonNullable<E[K]>] extends [
+    string | number | boolean | bigint,
+  ]
+    ? true
+    : [NonNullable<E[K]>] extends [readonly unknown[]]
+      ? true
+      : [NonNullable<E[K]>] extends [LocalizedText]
+        ? true
+        : false;
+};
+
+/** `true` when every member of `T` is `true`. */
+export type AllTrue<T> = T[keyof T] extends true ? true : false;
+
+/** `keyof` of a union is only the shared keys; this is every variant's keys. */
+export type KeysOfUnion<T> = T extends unknown ? keyof T : never;
+
+/** `true` when two slices share no field name (Law 6.3). */
+export type Disjoint<A, B> = [KeysOfUnion<A> & KeysOfUnion<B>] extends [never]
+  ? true
+  : false;
 
 /* ── Result helpers ─────────────────────────────────────────────────────── */
 
@@ -131,42 +129,79 @@ export function unwrapErr<T, E>(result: Result<T, E>): E {
   return result.error;
 }
 
+/* ── Branded literals (test-only: a bad literal is a broken fixture) ───── */
+
+/** A `LocalDate` literal — `localDate('2026-10-07')`; throws on a non-day. */
+export function localDate(raw: string): LocalDate {
+  return unwrapOk(LocalDate.parse(raw));
+}
+
+/** A `MinuteOfDay` literal — `minute(600)` is 10:00; throws outside `[0, 1440)`. */
+export function minute(raw: number): MinuteOfDay {
+  return unwrapOk(MinuteOfDay.of(raw));
+}
+
+/** An `EndMinute` literal — `endMinute(1440)` is the closing midnight; throws outside `(0, 1440]`. */
+export function endMinute(raw: number): EndMinute {
+  return unwrapOk(EndMinute.of(raw));
+}
+
+/**
+ * A `UtcEpochMs` literal from ISO-8601 WITH an offset —
+ * `utcMs('2026-09-28T09:00:00+03:00')`; throws on an offset-less string.
+ * The way a spec names an instant without `Date.parse` (L4).
+ */
+export function utcMs(isoWithOffset: string): UtcEpochMs {
+  return unwrapOk(ZonedTimeSystem.parseOffsetIso(isoWithOffset));
+}
+
 /* ── Pinned impure primitives ───────────────────────────────────────────── */
 
-/** The tenant zone every fixture lives in (`TenantConfig.DEFAULT`). */
-export const FIXTURE_ZONE: string = TenantConfig.DEFAULT.zone;
+/** The zone every fixture shop lives in — the centre shop's `timeZone`. */
+export const FIXTURE_TIME_ZONE: TimeZone = unwrapOk(
+  ZonedTimeSystem.checkZone('Europe/Sofia'),
+);
 
 /**
  * The one "today" pin of the fixtures (blueprint §7, tests Q1 — the
  * `today: '2026-09-28'` of the legacy fixtures). A Monday in Sofia, summer
- * time (UTC+3), weeks clear of either DST switch.
+ * time (UTC+3), weeks clear of either DST switch. Keeps its name for the
+ * frozen consumers (flatten-spec §0.1); typed `LocalDate`, still a `string`.
  */
-export const FIXTURE_TODAY: DayKey = DayKey.of('2026-09-28');
+export const FIXTURE_TODAY: LocalDate = localDate('2026-09-28');
 
-/** Local midnight of {@link FIXTURE_TODAY} in Sofia: 2026-09-27T21:00:00Z. */
-export const FIXTURE_DAY_START_MS = 1_790_542_800_000;
+/** The pinned clock: 2026-09-28 09:00 EEST = 2026-09-28T06:00:00Z. */
+export const FIXTURE_NOW_UTC_MS: UtcEpochMs = utcMs(
+  '2026-09-28T09:00:00.000+03:00',
+);
 
-/** The pinned wall clock: 2026-09-28 09:00 EEST = 2026-09-28T06:00:00Z. */
-export const FIXTURE_NOW_MS = 1_790_575_200_000;
+/**
+ * The pinned "now" as the fixture shop sees it — {@link FIXTURE_TODAY} at
+ * 09:00 (`currentMinute: 540`), the instant {@link FIXTURE_NOW_UTC_MS}.
+ */
+export const FIXTURE_NOW: ShopNow = ZonedTimeSystem.shopNow(
+  FIXTURE_NOW_UTC_MS,
+  FIXTURE_TIME_ZONE,
+);
 
-const MS_PER_MINUTE = 60_000;
-
-/** A {@link NowMs} that always answers the same instant. */
-export function pinnedNowMs(epochMs: number = FIXTURE_NOW_MS): NowMs {
-  return () => epochMs;
+/** A {@link NowUtcMs} that always answers the same instant. */
+export function pinnedNowUtcMs(
+  utcEpochMs: UtcEpochMs = FIXTURE_NOW_UTC_MS,
+): NowUtcMs {
+  return () => utcEpochMs;
 }
 
 /**
- * A {@link NowMs} that advances by `stepMs` on every read — for a pipeline
+ * A {@link NowUtcMs} that advances by `stepMs` on every read — for a pipeline
  * that stamps "started" and "finished" separately. The first read answers
- * `startMs`.
+ * `startUtcMs`.
  */
-export function steppingNowMs(
-  startMs: number = FIXTURE_NOW_MS,
+export function steppingNowUtcMs(
+  startUtcMs: UtcEpochMs = FIXTURE_NOW_UTC_MS,
   stepMs = 1_000,
-): NowMs {
+): NowUtcMs {
   let reads = 0;
-  return () => startMs + stepMs * reads++;
+  return () => UtcEpochMs.plusMs(startUtcMs, stepMs * reads++);
 }
 
 /** A {@link NextId} answering `prefix-1`, `prefix-2`, … in call order. */
@@ -234,8 +269,18 @@ function own(map: object, name: string): unknown {
   return Object.getOwnPropertyDescriptor(map, name)?.value;
 }
 
-/** A dotted component path (`bookingStatus.kind`) read off a body. */
+/**
+ * A `where`/`orderBy` field read off a body. A field is a ROOT key of the
+ * flat document (`bookingStatus`, `utcEpochMs` — Laws 5 and 6), read first
+ * and as is. A dotted path (`status.kind`) is walked only when the body has
+ * no root key of that exact name: the legacy bridge for a collection whose
+ * 3b flip has not landed yet (`tx.port.ts`), deleted with the last flip —
+ * as the fake projection store's `valueAt` already says. On a flattened
+ * collection a pre-flatten dotted query walks into a root SCALAR and finds
+ * nothing, so query the root key there.
+ */
 function fieldAt(body: DocBody, field: string): unknown {
+  if (Object.hasOwn(body, field)) return own(body, field);
   let current: unknown = body;
   for (const part of field.split('.')) {
     if (typeof current !== 'object' || current === null) return undefined;
@@ -394,27 +439,47 @@ export function memoryReadTx(store: MemoryStore): MemoryReadTx {
 }
 
 /**
- * Merges an update's field map at the ROOT, as the transaction adapter
- * does: each key is one root field by its literal name (Law 5: writes
- * target root fields, never dot paths) — a `.` in a key is a character.
+ * Merges an update at the ROOT, as the transaction adapter does: each key of
+ * `fields` is one root field by its literal name (Law 5: writes target root
+ * fields, never dot paths — a `.` in a key is a character), and each key of
+ * `deleteFields` is removed (`FieldValue.delete()`).
  */
-function mergeFields(body: DocBody, fields: DocBody): DocBody {
-  return { ...body, ...fields };
+function mergeFields(
+  body: DocBody,
+  fields: DocBody,
+  deleteFields: readonly string[],
+): DocBody {
+  return Object.fromEntries(
+    Object.entries({ ...body, ...fields }).filter(
+      ([key]) => !deleteFields.includes(key),
+    ),
+  );
+}
+
+/** The first key an `Update` both sets and deletes, or `null` (one per plan is enough). */
+function setAndDeleted(op: WriteOp.Update): string | null {
+  for (const key of op.deleteFields) {
+    if (Object.hasOwn(op.fields, key)) return key;
+  }
+  return null;
 }
 
 /**
  * A plan staged against a store: the bodies it would leave (`null` = deleted),
- * or the first `Create` that met a document already there.
+ * or the refusal of the whole plan — the first `Create` that met a document
+ * already there, or an `Update` naming one key in both lists.
  */
 type StagedPlan =
-  | { readonly conflict: null; readonly staged: Map<string, DocBody | null> }
-  | { readonly conflict: string };
+  | { readonly refusal: null; readonly staged: Map<string, DocBody | null> }
+  | { readonly refusal: RepositoryError };
 
 /**
  * Stages a write plan without touching the store, seeing its own earlier
  * writes. A `Create` over an existing document stops the staging as the
- * plan's conflict (Firestore's ALREADY_EXISTS); an `Update` of an absent
- * one throws (NOT_FOUND — an infrastructure failure, never a value).
+ * plan's refusal (Firestore's ALREADY_EXISTS → `REPOSITORY_ALREADY_EXISTS`),
+ * and so does an `Update` that sets and deletes one key
+ * (`writeFailed(path, 'field-set-and-deleted')`); an `Update` of an absent
+ * document throws (NOT_FOUND — an infrastructure failure, never a value).
  */
 function stageWrites(
   store: MemoryStore,
@@ -427,28 +492,35 @@ function stageWrites(
       : (store.get(key) ?? null);
   for (const op of writes) {
     const key = pathKey(op.path);
-    switch (op.kind) {
-      case WriteKind.Set:
+    switch (op.writeAction) {
+      case WriteAction.Set:
         staged.set(key, op.body);
         break;
-      case WriteKind.Create:
-        if (current(key) !== null) return { conflict: key };
+      case WriteAction.Create:
+        if (current(key) !== null) {
+          return { refusal: RepositoryError.alreadyExists(key) };
+        }
         staged.set(key, op.body);
         break;
-      case WriteKind.Update: {
+      case WriteAction.Update: {
+        if (setAndDeleted(op) !== null) {
+          return {
+            refusal: RepositoryError.writeFailed(key, FIELD_SET_AND_DELETED),
+          };
+        }
         const existing = current(key);
         if (existing === null) {
           throw new Error(`NOT_FOUND: ${key} — the plan was not applied`);
         }
-        staged.set(key, mergeFields(existing, op.fields));
+        staged.set(key, mergeFields(existing, op.fields, op.deleteFields));
         break;
       }
-      case WriteKind.Delete:
+      case WriteAction.Delete:
         staged.set(key, null);
         break;
     }
   }
-  return { conflict: null, staged };
+  return { refusal: null, staged };
 }
 
 /** Writes a staged plan through to the store. */
@@ -462,24 +534,25 @@ function commitStaged(
   }
 }
 
+/** The reason a plan that sets and deletes one key is refused with — every adapter and double. */
+export const FIELD_SET_AND_DELETED = 'field-set-and-deleted';
+
 /**
- * Applies a write plan to a store all-or-nothing, with the transaction's
- * own failures: `create` over an existing document and `update` of an
- * absent one reject the whole plan (Firestore's ALREADY_EXISTS / NOT_FOUND),
- * leaving the store untouched. ({@link memoryCommitPlan} answers the
- * ALREADY_EXISTS as a value instead, as the `CommitPlan` port says.)
+ * Applies a write plan to a store all-or-nothing, answering like the
+ * `CommitPlan` port and the Firestore adapter: a `Create` over an existing
+ * document is `REPOSITORY_ALREADY_EXISTS` and a key both set and deleted is
+ * `writeFailed(path, 'field-set-and-deleted')` — VALUES, with the store
+ * untouched. An `Update` of an absent document throws (NOT_FOUND), the way an
+ * infrastructure failure rejects.
  */
 export function applyWrites(
   store: MemoryStore,
   writes: readonly WriteOp[],
-): void {
+): Result<void, RepositoryError> {
   const plan = stageWrites(store, writes);
-  if (plan.conflict !== null) {
-    throw new Error(
-      `ALREADY_EXISTS: ${plan.conflict} — the plan was not applied`,
-    );
-  }
+  if (plan.refusal !== null) return Result.err(plan.refusal);
   commitStaged(store, plan.staged);
+  return Result.ok(undefined);
 }
 
 /** A {@link CommitPlan} double and the record of what reached it. */
@@ -498,7 +571,8 @@ export type MemoryCommit = {
  * returned plan atomically and answers the decision without its plan. A
  * refusal writes nothing. A `Create` over an existing document answers
  * `RepositoryError.alreadyExists(path)` as a VALUE and applies nothing, as
- * the `CommitPlan` port and the Firestore adapter do; an `Update` of an
+ * the `CommitPlan` port and the Firestore adapter do, and so does an
+ * `Update` that sets and deletes one key (`field-set-and-deleted`); an `Update` of an
  * absent document (NOT_FOUND) rejects the promise, the way an
  * infrastructure failure does.
  */
@@ -517,9 +591,7 @@ export function memoryCommitPlan(store: MemoryStore): MemoryCommit {
     if (!decision.ok) return decision;
     const { writes, ...rest } = decision.value;
     const plan = stageWrites(store, writes);
-    if (plan.conflict !== null) {
-      return Result.err(RepositoryError.alreadyExists(plan.conflict));
-    }
+    if (plan.refusal !== null) return Result.err(plan.refusal);
     commitStaged(store, plan.staged);
     plans.push(writes);
     // `rest` is the decision minus its plan — `D` exactly, which the
@@ -532,14 +604,14 @@ export function memoryCommitPlan(store: MemoryStore): MemoryCommit {
 /** The pinned transaction bundle over a store, plus the commit record. */
 export function memoryTxPorts(
   store: MemoryStore,
-  options: Partial<Pick<TxPorts, 'nowMs' | 'nextId' | 'hash'>> = {},
+  options: Partial<Pick<TxPorts, 'nowUtcMs' | 'nextId' | 'hash'>> = {},
 ): TxPorts & Pick<MemoryCommit, 'plans' | 'transactions'> {
   const { commit, plans, transactions } = memoryCommitPlan(store);
   return {
     commit,
     plans,
     transactions,
-    nowMs: options.nowMs ?? pinnedNowMs(),
+    nowUtcMs: options.nowUtcMs ?? pinnedNowUtcMs(),
     nextId: options.nextId ?? sequentialIds(),
     hash: options.hash ?? fixtureHash,
   };
@@ -579,66 +651,7 @@ export function recordingTelemetry(): {
   };
 }
 
-/**
- * `loadBusyDay` — the server's busy read (`scheduling.port.ts`) — over a
- * store: `barberBusy/{key}` as the entity, `null` when the day holds
- * nothing. Exactly the stored document: no padding, no merging, no
- * release — availability is derived by the caller, never behind the port
- * (blueprint §4.2). The in-memory runner of `schedulingPortsContract`.
- */
-export function memoryLoadBusyDay(store: MemoryStore): LoadBusyDay {
-  return async (key) =>
-    Result.ok(
-      entityAt<BarberBusyDayEntity>(store, [Collections.BarberBusy, key]),
-    );
-}
-
-/**
- * `observeBusyDay` — the browser's busy stream — over a store: ONE
- * emission of the day as stored when subscribed, then complete. A later
- * write to the store is not re-emitted; a spec that needs the second
- * emission subscribes again.
- */
-export function memoryObserveBusyDay(store: MemoryStore): ObserveBusyDay {
-  return (key) =>
-    defer(() =>
-      of<Result<BarberBusyDayEntity | null, RepositoryError>>(
-        Result.ok(
-          entityAt<BarberBusyDayEntity>(store, [Collections.BarberBusy, key]),
-        ),
-      ),
-    );
-}
-
 /* ── Fixture builders ───────────────────────────────────────────────────── */
-
-/**
- * The day table a pipeline would build once per request, through
- * ZonedTimeSystem like every caller. Throws on an empty table (an unknown
- * zone or an inverted range is a broken fixture, not a case).
- */
-export function dayTableFixture(
-  fromDayKey: string = FIXTURE_TODAY,
-  toDayKey: string = fromDayKey,
-  zone: string = FIXTURE_ZONE,
-): readonly DayOffset[] {
-  const days = ZonedTimeSystem.dayTable(
-    zone,
-    DayKey.of(fromDayKey),
-    DayKey.of(toDayKey),
-  );
-  if (days.length === 0) {
-    throw new Error(
-      `no day table for ${zone} ${fromDayKey}..${toDayKey} — a broken fixture`,
-    );
-  }
-  return days;
-}
-
-/** The instant of a local wall-clock minute on {@link FIXTURE_TODAY}. */
-export function fixtureTodayAt(hours: number, minutes = 0): number {
-  return FIXTURE_DAY_START_MS + (hours * 60 + minutes) * MS_PER_MINUTE;
-}
 
 /** The ids every builder defaults to, so fixtures cross-reference. */
 export const FIXTURE_IDS = {
@@ -654,217 +667,4 @@ export const FIXTURE_IDS = {
 /** Bilingual text with both locales filled. */
 export function textFixture(en: string, bg: string = en): LocalizedText {
   return { bg, en };
-}
-
-/** The classic cut: 28,00 €, 30 minutes, no pads. */
-export const FIXTURE_TERMS: ServiceTerms = ServiceTerms.unpadded(
-  2800,
-  'EUR',
-  30,
-);
-
-/** A booked seat: the client's own classic cut with Ivan at 10:00 today. */
-export function seatFixture(overrides: Partial<Seat> = {}): Seat {
-  return {
-    id: FIXTURE_IDS.seat,
-    serviceId: FIXTURE_IDS.service,
-    variantId: null,
-    barberId: FIXTURE_IDS.barber,
-    barberPref: null,
-    terms: Seat.termsOf(FIXTURE_TERMS, FIXTURE_TERMS),
-    startMs: fixtureTodayAt(10),
-    subject: SeatSubject.account(FIXTURE_IDS.client, SeatRelationship.Self),
-    outcome: SeatOutcome.scheduled(),
-    tip: null,
-    ...overrides,
-  };
-}
-
-/**
- * A confirmed one-seat appointment consistent with its seat: the interval,
- * the barber list and the busy key are derived from {@link seatFixture}, so
- * override the seats and the derived fields together.
- */
-export function appointmentFixture(
-  overrides: Partial<AppointmentEntity> = {},
-): AppointmentEntity {
-  const seat = seatFixture();
-  return {
-    id: FIXTURE_IDS.appointment,
-    locationId: FIXTURE_IDS.location,
-    ownerUserId: FIXTURE_IDS.client,
-    subjectUserIds: [FIXTURE_IDS.client],
-    placement: PlacementKind.Self,
-    inferredPlacement: null,
-    barberIds: [seat.barberId],
-    busyKeys: [BusyKey.of(seat.barberId, FIXTURE_TODAY)],
-    timeInterval: TimeInterval.of(seat.startMs, Seat.endMs(seat)),
-    zone: FIXTURE_ZONE,
-    bookingStatus: BookingStatus.confirm(FIXTURE_NOW_MS - 86_400_000),
-    seats: [seat],
-    contact: null,
-    bookedAtMs: FIXTURE_NOW_MS - 86_400_000,
-    arrivedAtMs: null,
-    bookedFromAppointmentId: null,
-    discounts: [],
-    voucherRedemptions: [],
-    revision: 1,
-    appliedOperations: [],
-    stoodSeatPairs: null,
-    ...overrides,
-  };
-}
-
-/** Ivan, active, working at the centre shop. */
-export function barberFixture(
-  overrides: Partial<BarberEntity> = {},
-): BarberEntity {
-  return {
-    id: FIXTURE_IDS.barber,
-    name: textFixture('Ivan', 'Иван'),
-    handle: 'ivan',
-    title: textFixture('Barber', 'Бръснар'),
-    bio: textFixture('Classic cuts.', 'Класически подстрижки.'),
-    avatar: null,
-    yearsExperience: 8,
-    locationIds: [FIXTURE_IDS.location],
-    instagramHandle: null,
-    status: BarberState.Active,
-    sortOrder: 0,
-    ...overrides,
-  };
-}
-
-/** The centre shop, open 09:00–19:00 Monday to Saturday, closed Sunday. */
-export function locationFixture(
-  overrides: Partial<LocationEntity> = {},
-): LocationEntity {
-  const weekday = DayHours.open(9 * 60, 19 * 60);
-  return {
-    id: FIXTURE_IDS.location,
-    name: textFixture('Centre', 'Център'),
-    shortName: null,
-    address: textFixture('1 Vitosha Blvd, Sofia', 'бул. Витоша 1, София'),
-    geo: { lat: 42.6977, lng: 23.3219 },
-    phone: { e164: E164.of('+35921234567'), display: '02 123 4567' },
-    mapUrl: null,
-    cover: null,
-    photos: [],
-    openingHours: [
-      weekday,
-      weekday,
-      weekday,
-      weekday,
-      weekday,
-      weekday,
-      DayHours.closed(),
-    ],
-    zone: FIXTURE_ZONE,
-    status: LocationState.Active,
-    sortOrder: 0,
-    ...overrides,
-  };
-}
-
-/** The classic cut, offered by Ivan at the catalogue terms. */
-export function serviceFixture(
-  overrides: Partial<ServiceEntity> = {},
-): ServiceEntity {
-  return {
-    id: FIXTURE_IDS.service,
-    name: textFixture('Classic cut', 'Класическо подстригване'),
-    description: textFixture('Scissors and clippers.', 'Ножица и машинка.'),
-    categoryId: FIXTURE_IDS.category,
-    baseTerms: FIXTURE_TERMS,
-    variants: [],
-    offerings: [
-      { barberId: FIXTURE_IDS.barber, base: FIXTURE_TERMS, overrides: [] },
-    ],
-    cover: null,
-    locationIds: [FIXTURE_IDS.location],
-    conflictsWith: [],
-    composition: null,
-    upsellOnly: false,
-    popular: false,
-    status: ServiceState.Active,
-    sortOrder: 0,
-    ...overrides,
-  };
-}
-
-/** A registered, active client with a phone and nothing else optional. */
-export function userFixture(overrides: Partial<UserEntity> = {}): UserEntity {
-  return {
-    id: FIXTURE_IDS.client,
-    registration: Registration.registered(),
-    phone: E164.of('+359888123456'),
-    firstName: 'Maria',
-    lastName: 'Petrova',
-    roles: [Role.Client],
-    accountStatus: AccountStatus.active(),
-    email: null,
-    birthDate: null,
-    searchName: 'maria petrova',
-    searchPrefixes: ['m', 'ma', 'mar', 'p', 'pe', 'pet'],
-    ...overrides,
-  };
-}
-
-/**
- * Ivan's schedule: one open-ended version from 2026-01-01, 09:00–18:00 at the
- * centre shop Monday to Friday.
- */
-export function barberScheduleFixture(
-  overrides: Partial<BarberScheduleEntity> = {},
-): BarberScheduleEntity {
-  const workdays: readonly Weekday[] = [
-    Weekday.Mon,
-    Weekday.Tue,
-    Weekday.Wed,
-    Weekday.Thu,
-    Weekday.Fri,
-  ];
-  const version: ScheduleVersion = {
-    seq: 1,
-    effectiveFromDayKey: DayKey.of('2026-01-01'),
-    effectiveToDayKey: null,
-    segments: workdays.map((day) =>
-      ShiftSegment.of(day, FIXTURE_IDS.location, 9 * 60, 18 * 60),
-    ),
-  };
-  return {
-    id: FIXTURE_IDS.barber,
-    turnaroundMinutes: 0,
-    versions: [version],
-    ...overrides,
-  };
-}
-
-/** Ivan's busy day today: the fixture seat's 10:00–10:30 block. */
-export function barberBusyDayFixture(
-  overrides: Partial<BarberBusyDayEntity> = {},
-): BarberBusyDayEntity {
-  return {
-    id: BarberBusyDayId.of(BusyKey.of(FIXTURE_IDS.barber, FIXTURE_TODAY)),
-    barberId: FIXTURE_IDS.barber,
-    dayKey: FIXTURE_TODAY,
-    zone: FIXTURE_ZONE,
-    blocks: [MinuteBlock.of(10 * 60, 10 * 60 + 30, BlockKind.Busy)],
-    ...overrides,
-  };
-}
-
-/** Ivan off for the whole of today — the public effect only (§9 D16(b)). */
-export function scheduleExceptionFixture(
-  overrides: Partial<ScheduleExceptionEntity> = {},
-): ScheduleExceptionEntity {
-  return {
-    id: ScheduleExceptionId.of('exc-1'),
-    barberId: FIXTURE_IDS.barber,
-    dayKey: FIXTURE_TODAY,
-    zone: FIXTURE_ZONE,
-    locationId: FIXTURE_IDS.location,
-    effect: ExceptionEffect.closed(),
-    ...overrides,
-  };
 }

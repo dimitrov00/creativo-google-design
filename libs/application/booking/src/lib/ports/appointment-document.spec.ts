@@ -720,6 +720,100 @@ describe('persistedChairTimesOf — the chairs a stored visit holds, read off it
 });
 
 /*
+ * The projection reads the RAW stored geometry — the sold slot's own instants
+ * and the pads as stored — so its bytes never move with the wall clock: a pad
+ * is not clamped at the day's edge, a fraction of a minute is a fraction, and
+ * a seat sold past midnight (F-6 refuses one; none is stored) projects the
+ * chair it holds instead of throwing the rebuild over.
+ */
+describe('busyContributionsOf — the raw stored geometry, byte for byte', () => {
+  const doc = (
+    startIso: string,
+    endIso: string,
+    setupMinutes = 0,
+    cleanupMinutes = 0,
+  ) => ({
+    seats: [
+      {
+        id: 's1',
+        serviceId: 'svc',
+        barberId: 'ivan',
+        slot: { startIso, endIso, zone: ZONE },
+        terms: { setupMinutes, cleanupMinutes },
+      },
+    ],
+  });
+  const spans = (document: Record<string, unknown>) =>
+    [...busyContributionsOf(document)].map(([key, entry]) => [
+      key,
+      entry.intervals.map(
+        (interval) =>
+          `${new Date(interval.startMs).toISOString()}..${new Date(interval.endMs).toISOString()}`,
+      ),
+    ]);
+
+  it('projects a seat sold past midnight onto its start day, unclipped', () => {
+    const document = doc(
+      '2026-08-03T23:30:00.000+03:00',
+      '2026-08-04T00:30:00.000+03:00',
+    );
+    expect(spans(document)).toEqual([
+      [
+        'ivan__2026-08-03',
+        ['2026-08-03T20:30:00.000Z..2026-08-03T21:30:00.000Z'],
+      ],
+    ]);
+    expect(persistedChairTimesOf(document)).toHaveLength(1);
+  });
+
+  it('lays the pads past the day’s edges as stored, never clamped at midnight', () => {
+    expect(
+      spans(
+        doc(
+          '2026-08-03T23:30:00.000+03:00',
+          '2026-08-03T23:50:00.000+03:00',
+          0,
+          20,
+        ),
+      ),
+    ).toEqual([
+      [
+        'ivan__2026-08-03',
+        ['2026-08-03T20:30:00.000Z..2026-08-03T21:10:00.000Z'],
+      ],
+    ]);
+    expect(
+      spans(
+        doc(
+          '2026-08-03T00:05:00.000+03:00',
+          '2026-08-03T00:35:00.000+03:00',
+          10,
+          0,
+        ),
+      ),
+    ).toEqual([
+      [
+        'ivan__2026-08-03',
+        ['2026-08-02T20:55:00.000Z..2026-08-02T21:35:00.000Z'],
+      ],
+    ]);
+  });
+
+  it('projects a slot that is no whole number of minutes, as stored', () => {
+    expect(
+      spans(
+        doc('2026-08-03T10:00:00.000+03:00', '2026-08-03T10:30:30.000+03:00'),
+      ),
+    ).toEqual([
+      [
+        'ivan__2026-08-03',
+        ['2026-08-03T07:00:00.000Z..2026-08-03T07:30:30.000Z'],
+      ],
+    ]);
+  });
+});
+
+/*
  * THE REVISION A COPY WAS READ AT (round 6). The one reader that feeds the
  * staff dashboard reads through this mapper, and every staff intent drawn
  * from its copy claims `Appointment.revision` as `expectedVersion`. Left

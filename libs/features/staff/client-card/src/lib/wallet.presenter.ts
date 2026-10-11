@@ -9,26 +9,38 @@ import {
   tierSteps,
 } from '@creativo/application/engagement';
 import {
+  AdjustmentId,
   AppointmentId,
-  DayKey,
-  type Metric,
+  Currency,
+  FreezeReason,
+  LocalDate,
   Points,
   type RedeemableRewardRef,
   RewardId,
   RewardSystem,
   StreakDefinitionId,
+  StreakExcuse as SystemExcuse,
+  StreakIntervalSource as SystemIntervalSource,
+  StreakPeriodMark as SystemPeriodMark,
+  type StreakPeriodReason as SystemPeriodReason,
+  StreakPhaseState,
   type StreakState as SystemStreakState,
   StreakSystem,
   type StreakTrackMark,
+  StreakTrackMarkKind,
   TierId,
+  TierOverride,
   type TierState,
   type TierStepRef,
   TierSystem,
-  type GiftVoucherEntity,
+  UtcEpochMs,
+  defect,
+  type GiftVoucher as GiftVoucherEntity,
   GiftVoucherId,
+  PriceCents,
   UserId as UserRefId,
   VoucherCode,
-  VoucherState,
+  VoucherLifecycle,
   VoucherSystem,
   ZonedTimeSystem,
 } from '@creativo/ecs-core';
@@ -263,27 +275,11 @@ export function passVm(input: WalletInput): PassVm {
 
 // ── WC · What is held ───────────────────────────────────────────────────
 
-/** The shop's calendar — the zone `shopDayOf` (`sofiaDayOf`) reads. */
-const SHOP_ZONE = 'Europe/Sofia';
-
 /** A voucher's last day on the shop's calendar; `null` when it never expires. */
 function lastDayOf(voucher: GiftVoucher): string | null {
   return voucher.expiresAt === null
     ? null
     : shopDayOf(voucher.expiresAt.toMillis());
-}
-
-/**
- * Today's shop midnight — what a voucher must not expire before — read off
- * ONE day table per call, never one per voucher; `null` for a day the table
- * cannot place.
- */
-function todayStartMsOf(today: string): number | null {
-  const day = DayKey.of(today);
-  return ZonedTimeSystem.startOfDayMs(
-    day,
-    ZonedTimeSystem.dayTable(SHOP_ZONE, day, day),
-  );
 }
 
 /**
@@ -297,10 +293,12 @@ function spendableOf(
   vouchers: readonly GiftVoucher[],
   today: string,
 ): readonly GiftVoucher[] {
-  const startMs = todayStartMsOf(today);
-  if (startMs === null) return [];
+  // "Expires no earlier than today's shop midnight" is "expires on today
+  // or later" (T5); a day that is no day spends nothing.
+  const day = LocalDate.parse(today);
+  if (!day.ok) return [];
   return vouchers.filter((voucher) =>
-    VoucherSystem.spendable(voucherOf(voucher), startMs),
+    VoucherSystem.spendable(voucherOf(voucher), day.value),
   );
 }
 
@@ -585,7 +583,7 @@ interface RhythmStanding {
  * no period is open.
  */
 function inChairDueOf(state: StreakState, input: WalletInput): string | null {
-  return StreakSystem.inChairDue(streakStateOf(state), DayKey.of(input.today), {
+  return StreakSystem.inChairDue(streakStateOf(state), dayOf(input.today), {
     inChairToday: input.inChairToday,
     paused: input.paused,
   });
@@ -742,8 +740,9 @@ function openPeriod(
   // captioned a second time.
   const due = (day: string) =>
     day === standing.day ? '' : rhythm.dueBy(dayShort(day, today, lang));
-  if (mark.mark === 'protected') {
-    const reason = mark.reason as FrozenReason;
+  if (mark.streakTrackMarkKind === StreakTrackMarkKind.Protected) {
+    // The open mark's reason is the frozen phase's own.
+    const reason = LEGACY_FREEZE_REASON[mark.reason as FreezeReason];
     return {
       id: 'current',
       mark: 'protected',
@@ -789,7 +788,7 @@ function rhythmMarks(
 ): readonly UiStreakPeriod[] {
   const { words } = input;
   const track = StreakSystem.track(streakStateOf(state), {
-    today: DayKey.of(input.today),
+    today: dayOf(input.today),
     inChairToday: input.inChairToday,
     paused: input.paused,
     limit: WALLET_RHYTHM_PERIODS,
@@ -799,9 +798,14 @@ function rhythmMarks(
       ? openPeriod(mark, standing, input)
       : closedPeriod(
           {
-            mark: mark.mark as StreakPeriodFact['mark'],
+            mark: LEGACY_PERIOD_MARK[
+              mark.streakTrackMarkKind as SystemPeriodMark
+            ],
             on: mark.on,
-            reason: mark.reason as StreakPeriodFact['reason'],
+            reason:
+              mark.reason === null
+                ? null
+                : LEGACY_PERIOD_REASON[mark.reason as SystemPeriodReason],
           },
           input,
         );
@@ -986,7 +990,7 @@ function tilesOf(
       const reach = RewardSystem.affordable(
         rewardRefOf(reward),
         balance,
-        DayKey.of(today),
+        dayOf(today),
       );
       if (reach === null) return [];
       const title = reward.name.get(locale);
@@ -1114,52 +1118,161 @@ export function walletVm(input: WalletInput): WalletVm {
 /** What carries a frozen period, as the legacy phase names it. */
 type FrozenReason = Extract<StreakState['phase'], { kind: 'frozen' }>['reason'];
 
-/** The account's rhythm as `StreakSystem` reads it: the instant in ms, the ids as brands. */
+/** A shop day the card holds: a guarded document day, a clock's «today». */
+function dayOf(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/** An instant a document held: always inside the brand's window. */
+function utcOf(at: Date): UtcEpochMs {
+  const epochMs = at.getTime();
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
+}
+
+const SYSTEM_FREEZE_REASON = {
+  freeze: FreezeReason.Freeze,
+  pause: FreezeReason.Pause,
+  clientPause: FreezeReason.ClientPause,
+  excuse: FreezeReason.Excuse,
+} as const satisfies Record<FrozenReason, FreezeReason>;
+
+const LEGACY_FREEZE_REASON = {
+  [FreezeReason.Freeze]: 'freeze',
+  [FreezeReason.Pause]: 'pause',
+  [FreezeReason.ClientPause]: 'clientPause',
+  [FreezeReason.Excuse]: 'excuse',
+} as const satisfies Record<FreezeReason, FrozenReason>;
+
+const SYSTEM_PERIOD_MARK = {
+  kept: SystemPeriodMark.Kept,
+  protected: SystemPeriodMark.Protected,
+  repaired: SystemPeriodMark.Repaired,
+  missed: SystemPeriodMark.Missed,
+} as const satisfies Record<StreakPeriodFact['mark'], SystemPeriodMark>;
+
+const LEGACY_PERIOD_MARK = {
+  [SystemPeriodMark.Kept]: 'kept',
+  [SystemPeriodMark.Protected]: 'protected',
+  [SystemPeriodMark.Repaired]: 'repaired',
+  [SystemPeriodMark.Missed]: 'missed',
+} as const satisfies Record<SystemPeriodMark, StreakPeriodFact['mark']>;
+
+const SYSTEM_PERIOD_REASON = {
+  freeze: FreezeReason.Freeze,
+  pause: FreezeReason.Pause,
+  clientPause: FreezeReason.ClientPause,
+  shopClosure: SystemExcuse.ShopClosure,
+  barberAbsence: SystemExcuse.BarberAbsence,
+  staffCancelled: SystemExcuse.StaffCancelled,
+  closedDays: SystemExcuse.ClosedDays,
+} as const satisfies Record<
+  NonNullable<StreakPeriodFact['reason']>,
+  SystemPeriodReason
+>;
+
+const LEGACY_PERIOD_REASON = {
+  [FreezeReason.Freeze]: 'freeze',
+  [FreezeReason.Pause]: 'pause',
+  [FreezeReason.ClientPause]: 'clientPause',
+  [SystemExcuse.ShopClosure]: 'shopClosure',
+  [SystemExcuse.BarberAbsence]: 'barberAbsence',
+  [SystemExcuse.StaffCancelled]: 'staffCancelled',
+  [SystemExcuse.ClosedDays]: 'closedDays',
+} as const satisfies Record<
+  SystemPeriodReason,
+  NonNullable<StreakPeriodFact['reason']>
+>;
+
+const SYSTEM_INTERVAL_SOURCE = {
+  fixed: SystemIntervalSource.Fixed,
+  personal: SystemIntervalSource.Personal,
+  fallback: SystemIntervalSource.Fallback,
+} as const satisfies Record<
+  NonNullable<StreakState['period']>['source'],
+  SystemIntervalSource
+>;
+
+/** The legacy phase as the variant slice the state carries flat. */
+function phaseOf(phase: StreakState['phase']): StreakPhaseState {
+  switch (phase.kind) {
+    case 'atRisk':
+      return StreakPhaseState.atRisk(dayOf(phase.dueBy));
+    case 'inGrace':
+      return StreakPhaseState.inGrace(dayOf(phase.graceUntil));
+    case 'frozen':
+      return StreakPhaseState.frozen(
+        dayOf(phase.until),
+        SYSTEM_FREEZE_REASON[phase.reason],
+      );
+    case 'broken':
+      return StreakPhaseState.broken(
+        dayOf(phase.brokenAt),
+        dayOf(phase.repairableUntil),
+      );
+    default:
+      return StreakPhaseState.active();
+  }
+}
+
+/** The account's rhythm as `StreakSystem` reads it: flat (Law 6), the instant and the days as brands, the tags the dictionary's. */
 function streakStateOf(state: StreakState): SystemStreakState {
+  const { period, heldBy } = state;
   return {
     streakId: StreakDefinitionId.of(state.streakId),
     definitionVersion: state.definitionVersion,
-    phase: state.phase as SystemStreakState['phase'],
+    ...phaseOf(state.phase),
     current: state.current,
     best: state.best,
-    lastQualifiedAtMs:
-      state.lastQualifiedAt === null ? null : state.lastQualifiedAt.getTime(),
-    dueBy: state.dueBy === null ? null : DayKey.of(state.dueBy),
+    lastQualifiedAtUtcMs:
+      state.lastQualifiedAt === null ? null : utcOf(state.lastQualifiedAt),
+    dueBy: state.dueBy === null ? null : dayOf(state.dueBy),
     freezesBanked: state.freezesBanked,
-    period: state.period,
-    periods: state.periods as SystemStreakState['periods'],
-    heldBy:
-      state.heldBy === null
-        ? null
-        : {
-            appointmentId: AppointmentId.of(state.heldBy.appointmentId),
-            on: DayKey.of(state.heldBy.on),
-          },
+    periodIntervalDays: period === null ? null : period.intervalDays,
+    periodGraceDays: period === null ? null : period.graceDays,
+    periodSource:
+      period === null ? null : SYSTEM_INTERVAL_SOURCE[period.source],
+    periodHabitDays: period === null ? null : period.habitDays,
+    periods: state.periods.map((fact) => ({
+      streakPeriodMark: SYSTEM_PERIOD_MARK[fact.mark],
+      on: dayOf(fact.on),
+      periodReason:
+        fact.reason === null ? null : SYSTEM_PERIOD_REASON[fact.reason],
+    })),
+    heldByAppointmentId:
+      heldBy === null ? null : AppointmentId.of(heldBy.appointmentId),
+    heldOn: heldBy === null ? null : dayOf(heldBy.on),
     runStartedOn:
-      state.runStartedOn === null ? null : DayKey.of(state.runStartedOn),
+      state.runStartedOn === null ? null : dayOf(state.runStartedOn),
   };
 }
 
-/** The account's tier as `TierSystem` reads it. */
+/** The account's tier as `TierSystem` reads it: the standing and the override, flat. */
 function tierStateOf(tier: WalletInput['account']['tier']): TierState {
+  const { override } = tier;
+  const until =
+    override === null || override.until === null ? null : dayOf(override.until);
   return {
-    current: TierId.of(tier.current),
-    definitionVersion: tier.definitionVersion,
-    sinceMs: tier.since.getTime(),
-    qualifying: tier.qualifying,
-    next: tier.next === null ? null : TierId.of(tier.next),
-    remaining: tier.remaining,
-    override:
-      tier.override === null
-        ? null
-        : {
-            tierId: TierId.of(tier.override.tierId),
-            until:
-              tier.override.until === null
-                ? null
-                : DayKey.of(tier.override.until),
-            source: tier.override.source,
-          },
+    tierId: TierId.of(tier.current),
+    tierDefinitionVersion: tier.definitionVersion,
+    tierSinceUtcMs: utcOf(tier.since),
+    tierQualifying: tier.qualifying,
+    nextTierId: tier.next === null ? null : TierId.of(tier.next),
+    tierRemaining: tier.remaining,
+    ...(override === null
+      ? TierOverride.none()
+      : override.source.kind === 'award'
+        ? TierOverride.award(
+            TierId.of(override.tierId),
+            until,
+            override.source.awardKey,
+          )
+        : TierOverride.adjustment(
+            TierId.of(override.tierId),
+            until,
+            AdjustmentId.of(override.source.adjustmentId),
+          )),
   };
 }
 
@@ -1169,15 +1282,11 @@ function tierRefOf(tier: LoyaltyCatalog['tiers'][number]): TierStepRef {
     id: TierId.of(tier.id),
     rank: tier.rank,
     name: tier.name,
-    qualify: {
-      metric: tier.qualify.metric as Metric,
-      atLeast: tier.qualify.atLeast,
-      window: tier.qualify.window,
-    },
+    qualifyAtLeast: tier.qualify.atLeast,
   };
 }
 
-/** A reward as `RewardSystem` reads it. */
+/** A reward as `RewardSystem` reads it: flat, the days as brands. */
 function rewardRefOf(
   reward: LoyaltyCatalog['rewards'][number],
 ): RedeemableRewardRef {
@@ -1186,43 +1295,70 @@ function rewardRefOf(
     cost: Points.of(reward.cost),
     enabled: reward.enabled,
     order: reward.order,
-    available: {
-      from:
-        reward.available.from === null
-          ? null
-          : DayKey.of(reward.available.from),
-      until:
-        reward.available.until === null
-          ? null
-          : DayKey.of(reward.available.until),
-    },
-    limits: reward.limits,
+    availableFrom:
+      reward.available.from === null ? null : dayOf(reward.available.from),
+    availableUntil:
+      reward.available.until === null ? null : dayOf(reward.available.until),
+    perClientLimitCount: reward.limits.perClient?.count ?? null,
+    perClientLimitWindowDays: reward.limits.perClient?.windowDays ?? null,
+    totalLimit: reward.limits.total,
     redeemedCount: reward.redeemedCount,
   };
 }
 
-/** A voucher as `VoucherSystem.spendable` reads it. */
+/** A legacy figure the class already guarded, as the brand. */
+function sure<T>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: unknown },
+  what: string,
+): T {
+  return result.ok ? result.value : defect(`unreachable: ${what}`);
+}
+
+/**
+ * A voucher as `VoucherSystem.spendable` reads it: flat, the money as
+ * cents and one currency, the expiry's shop day beside its instant (T5,
+ * read on the instant's own zone, as the voucher's own shim reads it).
+ */
 function voucherOf(voucher: GiftVoucher): GiftVoucherEntity {
   const { state } = voucher;
-  const moneyOf = (money: GiftVoucher['balance']) => ({
-    amountMinorUnits: money.toMinorUnits(),
-    currencyCode: money.currencyCode(),
-  });
+  const instantOf = (at: NonNullable<GiftVoucher['expiresAt']>) =>
+    sure(UtcEpochMs.of(at.toMillis()), 'an instant');
   return {
     id: GiftVoucherId.of(voucher.id.value),
     code: VoucherCode.of(voucher.code),
-    initialValue: moneyOf(voucher.initialValue),
-    balance: moneyOf(voucher.balance),
-    issuedAtMs: voucher.issuedAt.toMillis(),
-    expiresAtMs:
-      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    initialValueCents: sure(
+      PriceCents.of(voucher.initialValue.toMinorUnits()),
+      'an amount',
+    ),
+    balanceCents: sure(
+      PriceCents.of(voucher.balance.toMinorUnits()),
+      'an amount',
+    ),
+    currency: sure(
+      Currency.parse(voucher.balance.currencyCode()),
+      'a currency',
+    ),
+    issuedAtUtcMs: instantOf(voucher.issuedAt),
+    expiresAtUtcMs:
+      voucher.expiresAt === null ? null : instantOf(voucher.expiresAt),
+    expiresLocalDate:
+      voucher.expiresAt === null
+        ? null
+        : ZonedTimeSystem.toLocal(
+            instantOf(voucher.expiresAt),
+            sure(
+              ZonedTimeSystem.checkZone(voucher.expiresAt.zoneName),
+              'a zone',
+            ),
+          ).localDate,
     issuedToUserId:
       voucher.issuedToUserId === null
         ? null
         : UserRefId.of(voucher.issuedToUserId.value),
-    state:
-      state.kind === 'void'
-        ? VoucherState.voided(state.voidedAt.toMillis(), state.reason)
-        : VoucherState.active(),
+    ...(state.kind === 'void'
+      ? VoucherLifecycle.voided(instantOf(state.voidedAt), state.reason)
+      : VoucherLifecycle.active()),
   };
 }

@@ -28,6 +28,9 @@
   ],
   "references": [
     {
+      "path": "../../../domain/scheduling/tsconfig.lib.json"
+    },
+    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
@@ -41,9 +44,6 @@
     },
     {
       "path": "../../../application/identity/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../../application/shared/tsconfig.lib.json"
@@ -65,6 +65,9 @@
     },
     {
       "path": "../../shared/catalog/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../../application/catalog/tsconfig.lib.json"

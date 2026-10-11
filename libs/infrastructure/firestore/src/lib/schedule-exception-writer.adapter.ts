@@ -19,9 +19,12 @@ import {
   toEcsDetail,
 } from '@creativo/domain/scheduling';
 import {
-  type ExceptionEffect,
+  EndMinute,
+  type ExceptionEffectRule,
+  MinuteOfDay,
   MinuteRange,
   ScheduleExceptionSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { scheduleExceptionDocRef } from './firestore-paths';
 
@@ -30,11 +33,14 @@ const BATCH_LIMIT = 500;
 
 /* ── Legacy ↔ ECS converters (the merge arithmetic is ScheduleExceptionSystem) ── */
 
+/** A wall-clock span as the shop day's minutes — valid by construction (`LocalTimeRange`). */
 function toMinuteRange(range: LocalTimeRange): MinuteRange {
-  return MinuteRange.of(
-    range.start.minutesFromMidnight(),
-    range.end.minutesFromMidnight(),
-  );
+  const start = MinuteOfDay.of(range.start.minutesFromMidnight());
+  const end = EndMinute.of(range.end.minutesFromMidnight());
+  if (!start.ok || !end.ok) {
+    defect(`unreachable: a LocalTimeRange ${String(range)}`);
+  }
+  return MinuteRange.of(start.value, end.value);
 }
 
 function toMinuteRanges(
@@ -69,7 +75,9 @@ function toLocalRanges(
  * is `ScheduleExceptionSystem.publicEffect`, the detail converted once by
  * the scheduling shim's `toEcsDetail`.
  */
-function effectOf(existing: ScheduleException | null): ExceptionEffect | null {
+function effectOf(
+  existing: ScheduleException | null,
+): ExceptionEffectRule | null {
   if (existing === null) return null;
   const effect = ScheduleExceptionSystem.publicEffect(
     toEcsDetail(existing.detail),
@@ -102,7 +110,7 @@ function withRanges(
     locationId,
     detail: {
       kind: 'admin',
-      ranges: added.ok ? toLocalRanges(added.value.ranges) : [],
+      ranges: added.ok ? toLocalRanges(added.value.exceptionRanges) : [],
       note: '',
     },
   });

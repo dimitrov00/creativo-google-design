@@ -855,6 +855,49 @@ describe('staffEditAppointment — services added and removed', () => {
     );
   });
 
+  it('stamps a seat added to a FINISHED visit the batch moved across the spring-forward night with its true end instant', async () => {
+    // Saturday 2026-03-28 10:00 EET (+02:00); Sofia springs forward that
+    // night, so Monday 2026-03-30 runs on EEST (+03:00). The seat's worked
+    // instant is the wire's start plus its minutes — never the stored
+    // envelope plus a wall-clock distance across the transition, which
+    // would land an hour late.
+    const saturday = '2026-03-28T10:00:00.000+02:00';
+    const done = document(
+      {
+        status: { kind: 'completed' },
+        busyKeys: ['ivan__2026-03-28'],
+        timeSlot: {
+          startIso: saturday,
+          endIso: '2026-03-28T10:45:00.000+02:00',
+          zone: ZONE,
+        },
+      },
+      [seatDoc({ startIso: saturday })],
+    );
+    const addedStart = '2026-03-30T10:45:00.000+03:00';
+    const { result, captured } = await edit(
+      [
+        { kind: 'move', startIso: '2026-03-30T10:00:00.000+03:00' },
+        {
+          kind: 'addSeat',
+          seatId: 'seat-2',
+          serviceId: 'svc-fade',
+          barberId: 'ivan',
+          startIso: addedStart,
+          minutes: 45,
+          subject: { kind: 'self' },
+        },
+      ],
+      { current: done, roles: ['admin'] },
+    );
+    expect(result.isSuccess()).toBe(true);
+    const added = seatsOf(captured)[1] as Record<string, unknown>;
+    expect(added['outcome']).toEqual({
+      kind: 'worked',
+      atMs: Date.parse(addedStart) + 45 * 60_000,
+    });
+  });
+
   it('lets one person hold a second, SEQUENTIAL seat — but never two at once', async () => {
     const atOnce = await edit([
       {

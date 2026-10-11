@@ -1,4 +1,4 @@
-import type { UserEntity } from '../entities/user.entity';
+import type { User } from '../entities/user.entity';
 
 /**
  * ProfileCompletionSystem — how complete a profile is (blueprint §2.8), the
@@ -7,21 +7,22 @@ import type { UserEntity } from '../entities/user.entity';
  * read by the `/account` completion card and the shell menu's "finish your
  * profile" row, so the two can never disagree about what is still missing.
  *
- * `name` and `phone` are always set at registration (the "you've started"
- * beat); `birthday` and `photo` are the optional enhancements the nudge
- * drives. The photo answer comes from storage, so it is a parameter.
+ * `NAME` and `PHONE` are always set at registration (the "you've started"
+ * beat); `BIRTHDAY` and `PHOTO` are the optional enhancements the nudge
+ * drives. The photo answer comes from storage, so it is a parameter. An
+ * item's key is its field `profileCompletionKey` (N15).
  */
 export const ProfileCompletionKey = {
-  Name: 'name',
-  Phone: 'phone',
-  Birthday: 'birthday',
-  Photo: 'photo',
+  Name: 'NAME',
+  Phone: 'PHONE',
+  Birthday: 'BIRTHDAY',
+  Photo: 'PHOTO',
 } as const;
 export type ProfileCompletionKey =
   (typeof ProfileCompletionKey)[keyof typeof ProfileCompletionKey];
 
 export type ProfileCompletionItem = {
-  readonly key: ProfileCompletionKey;
+  readonly profileCompletionKey: ProfileCompletionKey;
   readonly done: boolean;
 };
 
@@ -34,14 +35,17 @@ export type ProfileCompletion = {
 
 export const ProfileCompletionSystem = {
   completion(
-    profile: Pick<UserEntity, 'birthDate'>,
+    profile: Pick<User, 'birthDate'>,
     hasPhoto: boolean,
   ): ProfileCompletion {
     const items: readonly ProfileCompletionItem[] = [
-      { key: ProfileCompletionKey.Name, done: true },
-      { key: ProfileCompletionKey.Phone, done: true },
-      { key: ProfileCompletionKey.Birthday, done: profile.birthDate !== null },
-      { key: ProfileCompletionKey.Photo, done: hasPhoto },
+      { profileCompletionKey: ProfileCompletionKey.Name, done: true },
+      { profileCompletionKey: ProfileCompletionKey.Phone, done: true },
+      {
+        profileCompletionKey: ProfileCompletionKey.Birthday,
+        done: profile.birthDate !== null,
+      },
+      { profileCompletionKey: ProfileCompletionKey.Photo, done: hasPhoto },
     ];
     let done = 0;
     for (let i = 0; i < items.length; i++) {

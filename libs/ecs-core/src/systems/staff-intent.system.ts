@@ -1,4 +1,5 @@
 import { AppliedOperation } from '../components/applied-operation.data';
+import type { AppointmentId, OperationId } from '../primitives/ids.primitive';
 
 /**
  * One of THIS device's own intents that landed on a visit: the revision it
@@ -12,7 +13,7 @@ export type LandedRevision = {
 /** An intent that did not land, kept under the name it went out with. */
 export type UnsettledName = {
   readonly intent: string;
-  readonly operationId: string;
+  readonly operationId: OperationId;
 };
 
 /**
@@ -57,7 +58,7 @@ export const StaffIntentSystem = {
    * asked of it; read off the request AS SENT (the claim already rebased).
    */
   intentBasis(
-    appointmentId: string,
+    appointmentId: AppointmentId,
     command: unknown,
     acknowledgedOverlap: boolean,
     expectedVersion: number | null,
@@ -132,7 +133,7 @@ export const StaffIntentSystem = {
   operationIdFor(
     names: readonly UnsettledName[],
     intent: string,
-  ): string | null {
+  ): OperationId | null {
     for (let i = 0; i < names.length; i++) {
       const entry = names[i] as UnsettledName;
       if (entry.intent === intent) return entry.operationId;
@@ -148,7 +149,7 @@ export const StaffIntentSystem = {
   rememberUnsettled(
     names: readonly UnsettledName[],
     intent: string,
-    operationId: string,
+    operationId: OperationId,
   ): readonly UnsettledName[] {
     const next: UnsettledName[] = [];
     for (let i = 0; i < names.length; i++) {

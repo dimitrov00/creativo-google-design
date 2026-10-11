@@ -1,4 +1,9 @@
-import { AppointmentEditSystem, LedgerVerdictKind } from '@creativo/ecs-core';
+import {
+  AppointmentEditSystem,
+  LedgerVerdict,
+  OperationId,
+  TimeErrorCode,
+} from '@creativo/ecs-core';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
 import {
@@ -25,6 +30,7 @@ import {
 import { FirestoreBookingStore } from '../adapters/firestore-booking-store';
 import {
   type CommitBookingError,
+  CommitBookingDstGapError,
   CommitBookingInvalidInputError,
   CommitBookingInvariantError,
   CommitBookingStoreError,
@@ -38,6 +44,7 @@ import {
   type StaffTermsOverride,
   type StandingSeat,
   decideBooking,
+  readStartIso,
 } from './decide-booking';
 import {
   type CarriedSeatRefusal,
@@ -127,18 +134,30 @@ function replayOf(
   operation: { readonly id: string; readonly digest: string } | null,
 ): Result<AppliedOperation | null, RescheduleBookingError> {
   if (operation === null) return ok(null);
+  // The stored ledger as the flat entries the system reads (`operationId`,
+  // was `id`); a replay's entry back as the legacy one the caller answers by.
   const verdict = AppointmentEditSystem.ledgerVerdict(
-    AppliedOperations.fromDocument(current).toArray(),
-    operation.id,
+    AppliedOperations.fromDocument(current)
+      .toArray()
+      .map((entry) => ({
+        operationId: OperationId.of(entry.id),
+        revision: entry.revision,
+        digest: entry.digest,
+      })),
+    OperationId.of(operation.id),
     operation.digest,
   );
-  switch (verdict.kind) {
-    case LedgerVerdictKind.New:
+  switch (verdict.ledgerVerdict) {
+    case LedgerVerdict.New:
       return ok(null);
-    case LedgerVerdictKind.Mismatch:
+    case LedgerVerdict.Mismatch:
       return fail(new CommitBookingInvalidInputError('attemptId'));
-    case LedgerVerdictKind.Replay:
-      return ok(verdict.applied);
+    case LedgerVerdict.Replay:
+      return ok({
+        id: verdict.applied.operationId,
+        revision: verdict.applied.revision,
+        digest: verdict.applied.digest,
+      });
   }
 }
 
@@ -501,11 +520,17 @@ export class RescheduleBookingUseCase {
     const zone = stored.timeSlot.start.zoneName;
     const cartStarts: number[] = [];
     for (const seat of input.seats) {
-      const start = ZonedDateTime.fromISO(seat.startIso, zone);
-      if (start.isFailure()) {
-        return fail(new CommitBookingInvalidInputError('startIso'));
+      // Read once, at this ingestion boundary, with the shop's zone: a
+      // wall-clock start inside the spring-forward gap is refused by name.
+      const start = readStartIso(seat.startIso, zone);
+      if (!start.ok) {
+        return fail(
+          start.error.errorCode === TimeErrorCode.DstGap
+            ? new CommitBookingDstGapError(start.error)
+            : new CommitBookingInvalidInputError('startIso'),
+        );
       }
-      cartStarts.push(start.value.toMillis());
+      cartStarts.push(start.value);
     }
 
     /*

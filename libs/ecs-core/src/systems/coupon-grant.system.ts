@@ -1,211 +1,236 @@
 import type { CouponOccasion } from '../components/coupon-occasion.data';
+import { CouponValue } from '../components/coupon-value.data';
 import { EngagementError } from '../components/engagement-errors.data';
 import {
-  type CouponGrantCapacity,
-  type CouponGrantExpiration,
-  GrantCapacityKind,
-  GrantExpirationKind,
-  GrantState,
+  GrantCapacity,
+  GrantCapacityTerms,
+  GrantExpiry,
+  GrantExpiryTerms,
+  GrantLifecycle,
   GrantStatus,
+  type GrantTerms,
 } from '../components/grant-status.data';
 import { Result } from '../components/result.data';
-import type { CouponGrantEntity } from '../entities/coupon-grant.entity';
-import type { UserId } from '../entities/user.entity';
+import { WriteOp } from '../components/write-op.data';
+import type { CouponGrant } from '../entities/coupon-grant.entity';
+import type { UserId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { Collections } from '../ports/collections';
 
-/**
- * The terms a grant was issued under — its capacity when fresh and its
- * expiration. A `used` grant no longer carries them (`GrantStatus.Used` is
- * `{ usedAtMs, note }`), so {@link CouponGrantSystem.restore} takes them to
- * bring a spent grant back exactly as it was issued.
- */
-export type GrantTerms = {
-  readonly capacity: CouponGrantCapacity;
-  readonly expiration: CouponGrantExpiration;
-};
-
-function withState(
-  grant: CouponGrantEntity,
-  state: GrantStatus,
-): CouponGrantEntity {
-  return { ...grant, state };
-}
-
-function used(atMs: number, note: string): GrantStatus.Used {
-  return { kind: GrantState.Used, usedAtMs: atMs, note };
+/** The grant with a new lifecycle variant — its meta and value untouched, the old variant's fields gone. */
+function withLifecycle(
+  grant: CouponGrant,
+  lifecycle: GrantLifecycle,
+): CouponGrant {
+  return {
+    id: grant.id,
+    userId: grant.userId,
+    couponId: grant.couponId,
+    grantedAtUtcMs: grant.grantedAtUtcMs,
+    ...CouponValue.of(grant),
+    ...GrantLifecycle.of(lifecycle),
+  };
 }
 
 /**
  * A user's coupon grant through its life (`coupon-grant.ts:134-299`):
  *
- *   `active` ─ burn    → `active` (multi-use, one fewer) OR `used`
- *   `active` ─ expire  → `expired` (only with an `expires_at` expiration)
- *   `active` ─ revoke  → `revoked`
- *   `used` / `active` ─ restore → the exact inverse of `burn`
+ *   `ACTIVE` ─ burn    → `ACTIVE` (multi-use, one fewer) OR `USED`
+ *   `ACTIVE` ─ expire  → `EXPIRED` (only with an `EXPIRES_AT` expiry)
+ *   `ACTIVE` ─ revoke  → `REVOKED`
+ *   `USED` / `ACTIVE` ─ restore → the exact inverse of `burn`
  *
- * Every transition refuses a grant that is not `active` (`not_active`,
- * naming the state it found). `nowMs`/`atMs` are parameters.
+ * Every transition refuses a grant that is not `ACTIVE` (`NOT_ACTIVE`,
+ * naming the state it found). `nowUtcMs`/`atUtcMs` are parameters; usability
+ * against an expiry instant is a T2 lifecycle comparison (G-1).
  */
 export const CouponGrantSystem = {
-  isActive(grant: CouponGrantEntity): boolean {
-    return GrantStatus.isActive(grant.state);
+  isActive(grant: CouponGrant): boolean {
+    return GrantLifecycle.isActive(grant);
   },
 
   /** Active, and not past its expiry — AT the instant is still usable. */
-  isUsable(grant: CouponGrantEntity, nowMs: number): boolean {
-    const state = grant.state;
-    if (state.kind !== GrantState.Active) return false;
-    const expiration = state.expiration;
+  isUsable(grant: CouponGrant, nowUtcMs: UtcEpochMs): boolean {
+    if (grant.grantStatus !== GrantStatus.Active) return false;
     return !(
-      expiration.kind === GrantExpirationKind.ExpiresAt &&
-      nowMs > expiration.atMs
+      grant.grantExpiry === GrantExpiry.ExpiresAt &&
+      UtcEpochMs.compare(nowUtcMs, grant.grantExpiresAtUtcMs) > 0
     );
   },
 
   /**
    * One redemption (`markUsed`): a single-use grant goes straight to
-   * `used`; a multi-use one counts down, and is `used` at zero. `note` is
+   * `USED`; a multi-use one counts down, and is `USED` at zero. `note` is
    * the caller's account of the channel («appointment abc123»), `''` when
    * none was given.
    */
   burn(
-    grant: CouponGrantEntity,
-    atMs: number,
+    grant: CouponGrant,
+    atUtcMs: UtcEpochMs,
     note: string,
-  ): Result<CouponGrantEntity, EngagementError.CouponGrantNotActive> {
-    const state = grant.state;
-    if (state.kind !== GrantState.Active) {
-      return Result.err(EngagementError.couponGrantNotActive(state.kind));
+  ): Result<CouponGrant, EngagementError.CouponGrantNotActive> {
+    if (grant.grantStatus !== GrantStatus.Active) {
+      return Result.err(
+        EngagementError.couponGrantNotActive(grant.grantStatus),
+      );
     }
-    const capacity = state.capacity;
-    if (capacity.kind === GrantCapacityKind.SingleUse) {
-      return Result.ok(withState(grant, used(atMs, note)));
+    if (grant.grantCapacity === GrantCapacity.SingleUse) {
+      return Result.ok(
+        withLifecycle(grant, GrantLifecycle.used(atUtcMs, note)),
+      );
     }
-    const remaining = capacity.remaining - 1;
-    if (remaining <= 0) return Result.ok(withState(grant, used(atMs, note)));
+    const remaining = grant.usesRemaining - 1;
+    if (remaining <= 0) {
+      return Result.ok(
+        withLifecycle(grant, GrantLifecycle.used(atUtcMs, note)),
+      );
+    }
     return Result.ok(
-      withState(grant, {
-        kind: GrantState.Active,
-        capacity: {
-          kind: GrantCapacityKind.MultiUse,
-          remaining,
-          totalGranted: capacity.totalGranted,
-        },
-        expiration: state.expiration,
-      }),
+      withLifecycle(
+        grant,
+        GrantLifecycle.active(
+          {
+            grantCapacity: GrantCapacity.MultiUse,
+            usesRemaining: remaining,
+            usesGranted: grant.usesGranted,
+          },
+          grant,
+        ),
+      ),
     );
   },
 
   /**
    * The exact inverse of {@link burn} — a grant discount a save removed, or
-   * a cancel released, goes back to the client: a `used` grant returns to
-   * `active` with one use (single-use, or a multi-use with one of its
-   * `issued` total), a multi-use `active` one gains a use back. Refused for
-   * an expired or revoked grant (`not_active`), and for a grant with no use
-   * spent to give back (`invalid_capacity`, naming the count it would reach).
+   * a cancel released, goes back to the client: a `USED` grant returns to
+   * `ACTIVE` with one use (single-use, or a multi-use with one of its
+   * `issued` total), a multi-use `ACTIVE` one gains a use back. Refused for
+   * an expired or revoked grant (`NOT_ACTIVE`), and for a grant with no use
+   * spent to give back (`INVALID_CAPACITY`, naming the count it would reach).
    */
   restore(
-    grant: CouponGrantEntity,
+    grant: CouponGrant,
     issued: GrantTerms,
   ): Result<
-    CouponGrantEntity,
+    CouponGrant,
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantCapacityInvalid
   > {
-    const state = grant.state;
-    if (state.kind === GrantState.Used) {
-      const capacity: CouponGrantCapacity =
-        issued.capacity.kind === GrantCapacityKind.SingleUse
-          ? issued.capacity
+    if (grant.grantStatus === GrantStatus.Used) {
+      const capacity: GrantCapacityTerms =
+        issued.grantCapacity === GrantCapacity.SingleUse
+          ? GrantCapacityTerms.singleUse()
           : {
-              kind: GrantCapacityKind.MultiUse,
-              remaining: 1,
-              totalGranted: issued.capacity.totalGranted,
+              grantCapacity: GrantCapacity.MultiUse,
+              usesRemaining: 1,
+              usesGranted: issued.usesGranted,
             };
       return Result.ok(
-        withState(grant, GrantStatus.active(capacity, issued.expiration)),
+        withLifecycle(grant, GrantLifecycle.active(capacity, issued)),
       );
     }
-    if (state.kind !== GrantState.Active) {
-      return Result.err(EngagementError.couponGrantNotActive(state.kind));
+    if (grant.grantStatus !== GrantStatus.Active) {
+      return Result.err(
+        EngagementError.couponGrantNotActive(grant.grantStatus),
+      );
     }
-    const capacity = state.capacity;
     if (
-      capacity.kind === GrantCapacityKind.SingleUse ||
-      capacity.remaining >= capacity.totalGranted
+      grant.grantCapacity === GrantCapacity.SingleUse ||
+      grant.usesRemaining >= grant.usesGranted
     ) {
       return Result.err(
         EngagementError.couponGrantCapacityInvalid(
-          capacity.kind === GrantCapacityKind.SingleUse
+          grant.grantCapacity === GrantCapacity.SingleUse
             ? 2
-            : capacity.remaining + 1,
+            : grant.usesRemaining + 1,
         ),
       );
     }
     return Result.ok(
-      withState(grant, {
-        kind: GrantState.Active,
-        capacity: {
-          kind: GrantCapacityKind.MultiUse,
-          remaining: capacity.remaining + 1,
-          totalGranted: capacity.totalGranted,
-        },
-        expiration: state.expiration,
-      }),
+      withLifecycle(
+        grant,
+        GrantLifecycle.active(
+          {
+            grantCapacity: GrantCapacity.MultiUse,
+            usesRemaining: grant.usesRemaining + 1,
+            usesGranted: grant.usesGranted,
+          },
+          grant,
+        ),
+      ),
     );
   },
 
-  /** The expiry job's act — only an `active` grant that HAS an `expires_at`. */
+  /** The expiry job's act — only an `ACTIVE` grant that HAS an `EXPIRES_AT`. */
   expire(
-    grant: CouponGrantEntity,
-    atMs: number,
+    grant: CouponGrant,
+    atUtcMs: UtcEpochMs,
   ): Result<
-    CouponGrantEntity,
+    CouponGrant,
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantNotExpiring
   > {
-    const state = grant.state;
-    if (state.kind !== GrantState.Active) {
-      return Result.err(EngagementError.couponGrantNotActive(state.kind));
+    if (grant.grantStatus !== GrantStatus.Active) {
+      return Result.err(
+        EngagementError.couponGrantNotActive(grant.grantStatus),
+      );
     }
-    const expiration = state.expiration;
-    if (expiration.kind !== GrantExpirationKind.ExpiresAt) {
+    if (grant.grantExpiry !== GrantExpiry.ExpiresAt) {
       return Result.err(EngagementError.couponGrantNotExpiring());
     }
     return Result.ok(
-      withState(grant, {
-        kind: GrantState.Expired,
-        expiredAtMs: atMs,
-        scheduledForMs: expiration.atMs,
-      }),
+      withLifecycle(
+        grant,
+        GrantLifecycle.expired(atUtcMs, grant.grantExpiresAtUtcMs),
+      ),
     );
   },
 
   /** An admin takes a grant back — a reason is required, stored trimmed. */
   revoke(
-    grant: CouponGrantEntity,
-    atMs: number,
+    grant: CouponGrant,
+    atUtcMs: UtcEpochMs,
     revokedBy: UserId,
     reason: string,
   ): Result<
-    CouponGrantEntity,
+    CouponGrant,
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantReasonEmpty
   > {
-    const state = grant.state;
-    if (state.kind !== GrantState.Active) {
-      return Result.err(EngagementError.couponGrantNotActive(state.kind));
+    if (grant.grantStatus !== GrantStatus.Active) {
+      return Result.err(
+        EngagementError.couponGrantNotActive(grant.grantStatus),
+      );
     }
     const trimmed = reason.trim();
     if (trimmed.length === 0) {
       return Result.err(EngagementError.couponGrantReasonEmpty());
     }
     return Result.ok(
-      withState(grant, {
-        kind: GrantState.Revoked,
-        revokedAtMs: atMs,
-        revokedBy,
-        reason: trimmed,
-      }),
+      withLifecycle(grant, GrantLifecycle.revoked(atUtcMs, revokedBy, trimmed)),
+    );
+  },
+
+  /** The terms an active grant holds — what {@link restore} needs back once it is spent. */
+  termsOf(grant: GrantLifecycle.Active): GrantTerms {
+    return {
+      ...GrantCapacityTerms.of(grant),
+      ...GrantExpiryTerms.of(grant),
+    };
+  },
+
+  /**
+   * The write plan of a grant moving from `before` to `after`: ONE update of
+   * its root — every field of the new lifecycle variant set, every field of
+   * the old one the new one does not declare deleted (§6).
+   */
+  transitionWrite(before: CouponGrant, after: CouponGrant): WriteOp {
+    const from = GrantLifecycle.of(before);
+    const to = GrantLifecycle.of(after);
+    return WriteOp.transition(
+      [Collections.CouponGrants, after.id],
+      { ...to },
+      WriteOp.variantFieldsToDelete(from, to),
     );
   },
 

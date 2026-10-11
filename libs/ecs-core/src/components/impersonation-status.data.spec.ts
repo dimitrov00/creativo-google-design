@@ -1,71 +1,80 @@
 import { describe, expect, it } from 'vitest';
-import { UserId } from '../entities/user.entity';
+import { UserId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { utcMs } from '../testing';
 import {
+  EndReasonFields,
   ImpersonationEndReason,
-  ImpersonationEndReasonKind,
-  ImpersonationState,
+  ImpersonationLifecycle,
   ImpersonationStatus,
 } from './impersonation-status.data';
 
 const adminId = UserId.of('admin-1');
 const securityId = UserId.of('sec-1');
-const AT = Date.UTC(2026, 9, 10, 12, 0, 0);
+const AT = utcMs('2026-10-10T12:00:00Z');
 
-describe('ImpersonationEndReason', () => {
-  it('builds the three stored reasons with their payloads', () => {
-    expect(ImpersonationEndReason.adminEnded(adminId)).toEqual({
-      kind: 'admin_ended',
-      endedBy: 'admin-1',
+describe('EndReasonFields', () => {
+  it('builds the three stored reasons with their prefixed payloads', () => {
+    expect(EndReasonFields.adminEnded(adminId)).toEqual({
+      impersonationEndReason: 'ADMIN_ENDED',
+      endedByUserId: 'admin-1',
     });
-    expect(ImpersonationEndReason.expired()).toEqual({ kind: 'expired' });
-    expect(ImpersonationEndReason.expired()).toBe(
-      ImpersonationEndReason.expired(),
-    );
+    expect(EndReasonFields.expired()).toEqual({
+      impersonationEndReason: 'EXPIRED',
+    });
+    expect(EndReasonFields.expired()).toBe(EndReasonFields.expired());
     expect(
-      ImpersonationEndReason.revokedBySecurity(securityId, 'leaked token'),
+      EndReasonFields.revokedBySecurity(securityId, 'leaked token'),
     ).toEqual({
-      kind: ImpersonationEndReasonKind.RevokedBySecurity,
-      revokedBy: 'sec-1',
-      notes: 'leaked token',
+      impersonationEndReason: ImpersonationEndReason.RevokedBySecurity,
+      revokedByUserId: 'sec-1',
+      revocationNotes: 'leaked token',
     });
   });
 });
 
-describe('ImpersonationStatus', () => {
+describe('ImpersonationLifecycle', () => {
   it('active() is a shared struct with no end fields', () => {
-    expect(ImpersonationStatus.active()).toEqual({ kind: 'active' });
-    expect(ImpersonationStatus.active()).toBe(ImpersonationStatus.active());
-    expect(ImpersonationStatus.isActive(ImpersonationStatus.active())).toBe(
-      true,
+    expect(ImpersonationLifecycle.active()).toEqual({
+      impersonationStatus: 'ACTIVE',
+    });
+    expect(ImpersonationLifecycle.active()).toBe(
+      ImpersonationLifecycle.active(),
     );
+    expect(
+      ImpersonationLifecycle.isActive(ImpersonationLifecycle.active()),
+    ).toBe(true);
   });
 
-  it('end() closes an active status, carrying the instant and the reason', () => {
-    const ended = ImpersonationStatus.end(
-      ImpersonationStatus.active(),
+  it('end() closes an active lifecycle, the instant and the reason flat at the root', () => {
+    const ended = ImpersonationLifecycle.end(
+      ImpersonationLifecycle.active(),
       AT,
-      ImpersonationEndReason.adminEnded(adminId),
+      EndReasonFields.adminEnded(adminId),
     );
     expect(ended).toEqual({
-      kind: ImpersonationState.Ended,
-      endedAtMs: AT,
-      reason: { kind: 'admin_ended', endedBy: 'admin-1' },
+      impersonationStatus: ImpersonationStatus.Ended,
+      endedAtUtcMs: AT,
+      impersonationEndReason: 'ADMIN_ENDED',
+      endedByUserId: 'admin-1',
     });
-    expect(ended !== null && ImpersonationStatus.isActive(ended)).toBe(false);
+    expect(ended !== null && ImpersonationLifecycle.isActive(ended)).toBe(
+      false,
+    );
   });
 
-  it('end() of an ended status is null — the first end wins', () => {
-    const ended = ImpersonationStatus.end(
-      ImpersonationStatus.active(),
+  it('end() of an ended lifecycle is null — the first end wins', () => {
+    const ended = ImpersonationLifecycle.end(
+      ImpersonationLifecycle.active(),
       AT,
-      ImpersonationEndReason.expired(),
+      EndReasonFields.expired(),
     );
     if (ended === null) throw new Error('unexpected failure in test fixture');
     expect(
-      ImpersonationStatus.end(
+      ImpersonationLifecycle.end(
         ended,
-        AT + 1,
-        ImpersonationEndReason.adminEnded(adminId),
+        UtcEpochMs.plusMs(AT, 1),
+        EndReasonFields.adminEnded(adminId),
       ),
     ).toBeNull();
   });

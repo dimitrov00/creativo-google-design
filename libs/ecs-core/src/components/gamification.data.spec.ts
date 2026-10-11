@@ -1,35 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { ServiceId } from '../entities/service.entity';
+import { BarberId, LocationId, ServiceId } from '../primitives/ids.primitive';
 import {
   AwardKind,
   AwardSummary,
   BadgeSubject,
+  BadgeSubjectSlot,
   BADGE_CATEGORY_KINDS,
   BADGE_EMBLEMS,
-  BadgeSubjectKind,
   Gamification,
   METRICS,
   Metric,
+  MetricRef,
   PER_VISIT_METRICS,
   PERK_IDS,
   SeasonKind,
   SeasonPhase,
   PerkId,
-  type MetricRef,
 } from './gamification.data';
 
 describe('the loyalty catalogue vocabularies', () => {
-  it('keep the stored strings of the legacy tuples, in their order', () => {
+  it('declare the tags SCREAMING and keep the catalogue ids, in their order', () => {
     expect(BADGE_CATEGORY_KINDS).toEqual([
-      'milestones',
-      'mastery',
-      'barbers',
-      'rhythm',
-      'special',
-      'records',
+      'MILESTONES',
+      'MASTERY',
+      'BARBERS',
+      'RHYTHM',
+      'SPECIAL',
+      'RECORDS',
     ]);
+    // Art asset names and catalogue ids are external keys (flatten-spec §0.4).
     expect(BADGE_EMBLEMS).toHaveLength(31);
     expect(BADGE_EMBLEMS.slice(0, 3)).toEqual(['visits', 'streak', 'referral']);
     expect(BADGE_EMBLEMS.at(-1)).toBe('spa');
@@ -48,24 +47,24 @@ describe('the loyalty catalogue vocabularies', () => {
       'client.visits.onTime',
     ]);
     expect(Object.values(AwardKind)).toEqual([
-      'points',
-      'coupon',
-      'freeze',
-      'perk',
+      'POINTS',
+      'COUPON',
+      'FREEZE',
+      'PERK',
     ]);
-    expect(Object.values(BadgeSubjectKind)).toEqual([
-      'service',
-      'barber',
-      'location',
+    expect(Object.values(BadgeSubject)).toEqual([
+      'SERVICE',
+      'BARBER',
+      'LOCATION',
     ]);
-    expect(Object.values(SeasonKind)).toEqual(['season', 'event']);
-    expect(Object.values(SeasonPhase)).toEqual(['announced', 'open', 'ended']);
+    expect(Object.values(SeasonKind)).toEqual(['SEASON', 'EVENT']);
+    expect(Object.values(SeasonPhase)).toEqual(['ANNOUNCED', 'OPEN', 'ENDED']);
   });
 });
 
 describe('Gamification guards', () => {
   it('check untrusted text against the very dictionaries', () => {
-    expect(Gamification.isBadgeCategoryKind('rhythm')).toBe(true);
+    expect(Gamification.isBadgeCategoryKind('RHYTHM')).toBe(true);
     expect(Gamification.isBadgeCategoryKind('Rhythm')).toBe(false);
     expect(Gamification.isBadgeEmblem('beardOil')).toBe(true);
     expect(Gamification.isBadgeEmblem('season')).toBe(false); // retired, wave D r6
@@ -78,23 +77,35 @@ describe('Gamification guards', () => {
   it('knows the per-visit metrics and the one driven by the calendar', () => {
     expect(Gamification.isPerVisitMetric(Metric.VisitsOnTime)).toBe(true);
     expect(Gamification.isPerVisitMetric(Metric.VisitsWeekend)).toBe(false);
-    const tenure: MetricRef = {
-      metric: Metric.TenureDays,
-      window: null,
-      where: null,
-    };
+    const tenure: MetricRef = MetricRef.of(Metric.TenureDays);
     const visits: MetricRef = {
       metric: Metric.VisitsCompleted,
-      window: { lastDays: 365 },
-      where: {
-        serviceId: null,
-        barberId: null,
-        locationId: 'loc-center' as LocationId,
-      },
+      metricWindowDays: 365,
+      metricScopeServiceId: null,
+      metricScopeBarberId: null,
+      metricScopeLocationId: LocationId.of('loc-center'),
     };
     expect(Gamification.isCalendarDriven(tenure)).toBe(true);
     expect(Gamification.isCalendarDriven(visits)).toBe(false);
-    expect(Gamification.isCalendarDriven(null)).toBe(false);
+    // A family that counts nothing (today's `metric: null`): all-null slice.
+    expect(Gamification.isCalendarDriven(MetricRef.none())).toBe(false);
+  });
+
+  it('flattens what a family counts: a bare metric, or nothing at all', () => {
+    expect(MetricRef.of(Metric.VisitsCompleted)).toEqual({
+      metric: 'client.visits.completed',
+      metricWindowDays: null,
+      metricScopeServiceId: null,
+      metricScopeBarberId: null,
+      metricScopeLocationId: null,
+    });
+    expect(MetricRef.none()).toEqual({
+      metric: null,
+      metricWindowDays: null,
+      metricScopeServiceId: null,
+      metricScopeBarberId: null,
+      metricScopeLocationId: null,
+    });
   });
 
   it('announces a season thirty days ahead', () => {
@@ -116,39 +127,41 @@ describe('Gamification guards', () => {
   });
 });
 
-describe('AwardSummary / BadgeSubject — each variant built from its tag', () => {
-  it('stamps the award kind from the dictionary', () => {
+describe('AwardSummary / BadgeSubjectSlot — each flat variant built from its tag', () => {
+  it('stamps the award kind from the dictionary, every figure prefixed `award`', () => {
     expect(AwardSummary.points(50)).toEqual({
-      kind: AwardKind.Points,
-      points: 50,
+      awardKind: AwardKind.Points,
+      awardPoints: 50,
     });
     expect(AwardSummary.freeze(2)).toEqual({
-      kind: AwardKind.Freeze,
-      count: 2,
+      awardKind: AwardKind.Freeze,
+      awardFreezeCount: 2,
     });
     expect(AwardSummary.perk(PerkId.PriorityWaitlist, null)).toEqual({
-      kind: AwardKind.Perk,
-      perkId: PerkId.PriorityWaitlist,
-      forDays: null,
+      awardKind: AwardKind.Perk,
+      awardPerkId: PerkId.PriorityWaitlist,
+      awardPerkForDays: null,
     });
     expect(AwardSummary.coupon({ bg: 'Купон', en: 'Coupon' })).toEqual({
-      kind: AwardKind.Coupon,
-      title: { bg: 'Купон', en: 'Coupon' },
+      awardKind: AwardKind.Coupon,
+      awardCouponTitle: { bg: 'Купон', en: 'Coupon' },
     });
   });
 
-  it('stamps the subject kind from the dictionary', () => {
-    expect(BadgeSubject.service(ServiceId.of('svc-cut'))).toEqual({
-      kind: BadgeSubjectKind.Service,
-      serviceId: 'svc-cut',
+  it('stamps the subject from the dictionary, each variant declaring only its own id', () => {
+    expect(BadgeSubjectSlot.service(ServiceId.of('svc-cut'))).toEqual({
+      badgeSubject: BadgeSubject.Service,
+      subjectServiceId: 'svc-cut',
     });
-    expect(BadgeSubject.barber(BarberId.of('ivan'))).toEqual({
-      kind: BadgeSubjectKind.Barber,
-      barberId: 'ivan',
+    expect(BadgeSubjectSlot.barber(BarberId.of('ivan'))).toEqual({
+      badgeSubject: BadgeSubject.Barber,
+      subjectBarberId: 'ivan',
     });
-    expect(BadgeSubject.location(LocationId.of('loc-1'))).toEqual({
-      kind: BadgeSubjectKind.Location,
-      locationId: 'loc-1',
+    expect(BadgeSubjectSlot.location(LocationId.of('loc-1'))).toEqual({
+      badgeSubject: BadgeSubject.Location,
+      subjectLocationId: 'loc-1',
     });
+    // Today's `subject: null` is the slice's own variant.
+    expect(BadgeSubjectSlot.none()).toEqual({ badgeSubject: null });
   });
 });

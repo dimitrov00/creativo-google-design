@@ -1,22 +1,29 @@
+import { MinuteCount } from '../primitives/duration-minutes.primitive';
+import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+
 /**
- * A `[startMinutes, endMinutes)` span of wall-clock minutes within one day —
- * `{ startMinutes: 540, endMinutes: 720 }` is 09:00–12:00. No date, no zone,
- * no instant: a roster, an opening hour, a client's "I'm free 08:00–12:00"
- * or an exception's closed hours is a claim about clock faces, and stays true
- * across a DST transition precisely because it has no date. It becomes an
- * instant only against a day row of the zone table
- * (`ZonedTimeSystem.instantOf`), which is the single place DST can bite.
+ * A `[startMinutes, endMinutes)` span of the shop's wall clock within one
+ * day — `{ startMinutes: 540, endMinutes: 720 }` is 09:00–12:00. No date, no
+ * zone, no instant: a roster, an opening hour, a client's "I'm free
+ * 08:00–12:00", an exception's closed hours or a busy span on a KNOWN
+ * `localDate` is a claim about clock faces, and stays true across a DST
+ * transition precisely because it has no zone (Law 7.3: placement math is
+ * local).
  *
- * Within a day, `0 ≤ startMinutes < endMinutes ≤ 1440`; an overnight span is
- * two ranges on two days, so a range never belongs to two day documents.
+ * `startMinutes` is a `MinuteOfDay` (`[0, 1440)`), `endMinutes` an exclusive
+ * `EndMinute` (`(0, 1440]`, decision F-1); a non-empty range has
+ * `startMinutes < endMinutes`. An overnight span is two ranges on two days.
+ * Half-open is load-bearing: `[10:00, 10:45)` and `[10:45, 11:15)` do not
+ * overlap, which lets one barber take a party's second seat the minute the
+ * first ends.
  */
 export type MinuteRange = {
-  readonly startMinutes: number;
-  readonly endMinutes: number;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
 };
 
 export const MinuteRange = {
-  of(startMinutes: number, endMinutes: number): MinuteRange {
+  of(startMinutes: MinuteOfDay, endMinutes: EndMinute): MinuteRange {
     return { startMinutes, endMinutes };
   },
 
@@ -25,8 +32,36 @@ export const MinuteRange = {
     return a.startMinutes < b.endMinutes && b.startMinutes < a.endMinutes;
   },
 
-  durationMinutes(range: MinuteRange): number {
-    return range.endMinutes - range.startMinutes;
+  /** The range's length in minutes (`endMinutes − startMinutes`). */
+  durationMinutes(range: MinuteRange): MinuteCount {
+    return MinuteCount.span(range.startMinutes, range.endMinutes);
+  },
+
+  /** `inner` lies wholly inside `outer` (touching edges included). */
+  contains(outer: MinuteRange, inner: MinuteRange): boolean {
+    return (
+      outer.startMinutes <= inner.startMinutes &&
+      inner.endMinutes <= outer.endMinutes
+    );
+  },
+
+  /**
+   * Grow outward by the given minutes — how a buffer is applied — clamped to
+   * the day, `[0, 1440]` (a padded chair time never leaves its shop day, T7).
+   *
+   * Padding goes on the BUSY range, never on the candidate: pad both and a
+   * uniform turnaround produces twice the intended gap
+   * (`docs/design-research/availability-and-statistics-design.md` §9a R3).
+   */
+  pad(
+    range: MinuteRange,
+    before: MinuteCount,
+    after: MinuteCount,
+  ): MinuteRange {
+    return {
+      startMinutes: MinuteOfDay.minusClamped(range.startMinutes, before),
+      endMinutes: EndMinute.plusClamped(range.endMinutes, after),
+    };
   },
 
   /**

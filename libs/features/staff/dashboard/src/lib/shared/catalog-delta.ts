@@ -1,4 +1,4 @@
-import { VisitDraftSystem } from '@creativo/ecs-core';
+import { DurationMinutes, VisitDraftSystem, defect } from '@creativo/ecs-core';
 
 /**
  * THE TAG's arithmetic — how far a visit runs from the catalogue's length —
@@ -23,10 +23,13 @@ export function catalogMinutesOf<S>(
   bookedMinutes: (seat: S) => number,
 ): number | null {
   return VisitDraftSystem.catalogMinutesOf(
-    seats.map((seat) => ({
-      catalogMinutes: catalogMinutes(seat),
-      bookedMinutes: bookedMinutes(seat),
-    })),
+    seats.map((seat) => {
+      const catalog = catalogMinutes(seat);
+      return {
+        catalogMinutes: catalog === null ? null : minutesOf(catalog),
+        bookedMinutes: minutesOf(bookedMinutes(seat)),
+      };
+    }),
   );
 }
 
@@ -50,6 +53,21 @@ export function catalogTagOf(
   catalogMinutes: number | null,
   minutesLabel: (minutes: number) => string,
 ): string | null {
-  const delta = VisitDraftSystem.minutesDelta(spanMinutes, catalogMinutes);
+  const delta = VisitDraftSystem.minutesDelta(
+    minutesOf(spanMinutes),
+    catalogMinutes === null ? null : minutesOf(catalogMinutes),
+  );
   return delta === null ? null : minutesDeltaLabel(delta, minutesLabel);
+}
+
+/**
+ * A legacy minute figure → the system's `DurationMinutes` (flatten pass,
+ * Law 7). A service, a seat and a visit always last a positive whole number
+ * of minutes (the catalogue refuses anything else), so a figure that is not
+ * one is a broken invariant, never an input.
+ */
+function minutesOf(raw: number): DurationMinutes {
+  const minutes = DurationMinutes.of(raw);
+  if (!minutes.ok) defect(`not a positive whole number of minutes: ${raw}`);
+  return minutes.value;
 }

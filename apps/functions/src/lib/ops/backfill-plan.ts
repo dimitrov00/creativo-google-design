@@ -6,11 +6,17 @@ import {
   subjectUserIdsFromDocument,
 } from '@creativo/application/booking';
 import {
+  AuditAction,
+  BackfillJobName,
+  BackfillPhase as EcsBackfillPhase,
   BackfillPlanSystem,
+  type BackfillPosition as EcsBackfillPosition,
   type BackfillRequest as EcsBackfillRequest,
-  BackfillStartKind,
+  BackfillStart,
   type MirrorPatch,
   type MirrorRow,
+  Placement,
+  UserId,
 } from '@creativo/ecs-core';
 
 /**
@@ -19,7 +25,9 @@ import {
  *
  * Phase 2 shim: the decisions are `BackfillPlanSystem` in
  * `@creativo/ecs-core`; this file keeps the legacy names and shapes for its
- * callers and reads the stored rows through their mappers.
+ * callers and reads the stored rows through their mappers. The wire, the
+ * stored rows and the audit trail keep their legacy lowercase tags; the
+ * tables at the foot of the file are the ONE translation of each.
  */
 
 /**
@@ -69,18 +77,36 @@ export interface BackfillPosition {
 
 /** The wire cursor for a position: an appointment id as before, `~uid` after. */
 export function cursorOf(position: BackfillPosition): string | null {
-  return BackfillPlanSystem.cursorOf(position);
+  return BackfillPlanSystem.cursorOf({
+    backfillPhase: PHASE_OF[position.phase],
+    after: position.after,
+  });
 }
 
 /** The position a wire cursor names; `null` starts at the very top. */
 export function positionOf(cursor: string | null): BackfillPosition {
-  return BackfillPlanSystem.positionOf(cursor);
+  return legacyPositionOf(BackfillPlanSystem.positionOf(cursor));
 }
 
 /** The wire payload, shaped without trusting it; `null` when it names no job. */
 export function toBackfillRequest(raw: unknown): BackfillRequest | null {
-  const request = BackfillPlanSystem.requestOf(raw);
+  const request = BackfillPlanSystem.requestOf(requestStruct(raw));
   return request === null ? null : toLegacyRequest(request);
+}
+
+/** A legacy job string as the system's `BackfillJobName`. */
+export function backfillJobNameOf(job: BackfillJob): BackfillJobName {
+  return JOB_NAME_OF[job];
+}
+
+/** A system position as the legacy one (`phase` and its lowercase value). */
+export function legacyPositionOf(
+  position: EcsBackfillPosition,
+): BackfillPosition {
+  return {
+    phase: LEGACY_BACKFILL_PHASE[position.backfillPhase],
+    after: position.after,
+  };
 }
 
 /**
@@ -98,14 +124,16 @@ export function toBackfillRequest(raw: unknown): BackfillRequest | null {
 export function inferPlacement(
   auditActions: readonly string[],
 ): AppointmentPlacement | null {
-  return BackfillPlanSystem.inferPlacement(auditActions);
+  return legacyPlacementOf(
+    BackfillPlanSystem.inferPlacement(auditActionsOf(auditActions)),
+  );
 }
 
 /** Neither the commit's stamp nor an inference yet: the audit trail may know. */
 export function lacksPlacement(data: PersistedDocument): boolean {
   return BackfillPlanSystem.lacksPlacement(
-    placementFromDocument(data),
-    inferredPlacementFromDocument(data),
+    placementOf(placementFromDocument(data)),
+    placementOf(inferredPlacementFromDocument(data)),
   );
 }
 
@@ -136,8 +164,88 @@ export function mirrorPatch(
   inferred: AppointmentPlacement | null,
 ): Record<string, unknown> | null {
   return toLegacyPatch(
-    BackfillPlanSystem.mirrorPatch(mirrorRowOf(data), inferred),
+    BackfillPlanSystem.mirrorPatch(mirrorRowOf(data), placementOf(inferred)),
   );
+}
+
+/* ── The Phase 2 bridge: legacy values ↔ ecs-core structs ──────────────── */
+
+/** The legacy job strings ↔ `BackfillJobName` — the ONE table (and its inverse). */
+const LEGACY_BACKFILL_JOB_NAME = {
+  [BackfillJobName.SubjectMirror]: 'subjectMirror',
+  [BackfillJobName.ClientStats]: 'clientStats',
+} as const satisfies Record<BackfillJobName, BackfillJob>;
+const JOB_NAME_OF: Readonly<Record<BackfillJob, BackfillJobName>> = {
+  subjectMirror: BackfillJobName.SubjectMirror,
+  clientStats: BackfillJobName.ClientStats,
+};
+
+/** The legacy walk names ↔ `BackfillPhase` — the ONE table (and its inverse). */
+const LEGACY_BACKFILL_PHASE = {
+  [EcsBackfillPhase.Appointments]: 'appointments',
+  [EcsBackfillPhase.StoredClients]: 'storedClients',
+} as const satisfies Record<EcsBackfillPhase, BackfillPhase>;
+const PHASE_OF: Readonly<Record<BackfillPhase, EcsBackfillPhase>> = {
+  appointments: EcsBackfillPhase.Appointments,
+  storedClients: EcsBackfillPhase.StoredClients,
+};
+
+/** The stored placement strings ↔ `Placement` — the ONE table. */
+const LEGACY_PLACEMENT = {
+  [Placement.Self]: 'self',
+  [Placement.Staff]: 'staff',
+} as const satisfies Record<Placement, AppointmentPlacement>;
+
+/**
+ * The stored audit actions that say who placed a booking (§12.5.1) — the
+ * only ones `inferPlacement` reads; every other stored action reads as
+ * none of them.
+ */
+const LEGACY_PLACING_ACTIONS: ReadonlyMap<string, AuditAction> = new Map([
+  ['booking.committed', AuditAction.BookingCommitted],
+  ['booking.staff_created', AuditAction.BookingStaffCreated],
+]);
+
+function placementOf(raw: AppointmentPlacement | null): Placement | null {
+  return raw === null
+    ? null
+    : raw === LEGACY_PLACEMENT[Placement.Self]
+      ? Placement.Self
+      : Placement.Staff;
+}
+
+function legacyPlacementOf(
+  placement: Placement | null,
+): AppointmentPlacement | null {
+  return placement === null ? null : LEGACY_PLACEMENT[placement];
+}
+
+function auditActionsOf(stored: readonly string[]): readonly AuditAction[] {
+  const actions: AuditAction[] = [];
+  for (const raw of stored) {
+    const action = LEGACY_PLACING_ACTIONS.get(raw);
+    if (action !== undefined) actions.push(action);
+  }
+  return actions;
+}
+
+function isLegacyJob(raw: unknown): raw is BackfillJob {
+  return BACKFILL_JOBS.some((job) => job === raw);
+}
+
+/**
+ * The wire payload `{ job, cursor? }` (frozen) as the payload the system
+ * parses, `{ backfillJobName, cursor? }`: a legacy job string becomes its
+ * name, anything else no name at all; the cursor — absent, `undefined`,
+ * `null` or text — passes as sent.
+ */
+function requestStruct(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object') return raw;
+  const job = 'job' in raw ? raw.job : undefined;
+  return {
+    backfillJobName: isLegacyJob(job) ? JOB_NAME_OF[job] : undefined,
+    ...('cursor' in raw ? { cursor: raw.cursor } : {}),
+  };
 }
 
 /** A stored row as the system judges its mirrors. */
@@ -145,9 +253,11 @@ function mirrorRowOf(data: PersistedDocument): MirrorRow {
   const stored: unknown = data['subjectUserIds'];
   return {
     storedSubjectUserIds: Array.isArray(stored) ? stored : null,
-    seatSubjectUserIds: subjectUserIdsFromDocument(data),
-    placement: placementFromDocument(data),
-    inferredPlacement: inferredPlacementFromDocument(data),
+    seatSubjectUserIds: subjectUserIdsFromDocument(data).map((uid) =>
+      UserId.of(uid),
+    ),
+    placement: placementOf(placementFromDocument(data)),
+    inferredPlacement: placementOf(inferredPlacementFromDocument(data)),
   };
 }
 
@@ -158,22 +268,23 @@ function toLegacyPatch(
   if (patch === null) return null;
   const fields: Record<string, unknown> = {};
   if (patch.subjectUserIds !== null) {
-    fields['subjectUserIds'] = patch.subjectUserIds;
+    fields['subjectUserIds'] = [...patch.subjectUserIds];
   }
   if (patch.inferredPlacement !== null) {
-    fields['inferredPlacement'] = patch.inferredPlacement;
+    fields['inferredPlacement'] = LEGACY_PLACEMENT[patch.inferredPlacement];
   }
   return fields;
 }
 
 /** The validated request with its start as the legacy optional cursor. */
 function toLegacyRequest(request: EcsBackfillRequest): BackfillRequest {
-  switch (request.start.kind) {
-    case BackfillStartKind.Resume:
-      return { job: request.job };
-    case BackfillStartKind.Top:
-      return { job: request.job, cursor: null };
-    case BackfillStartKind.After:
-      return { job: request.job, cursor: request.start.cursor };
+  const job = LEGACY_BACKFILL_JOB_NAME[request.backfillJobName];
+  switch (request.start.backfillStart) {
+    case BackfillStart.Resume:
+      return { job };
+    case BackfillStart.Top:
+      return { job, cursor: null };
+    case BackfillStart.After:
+      return { job, cursor: request.start.cursor };
   }
 }

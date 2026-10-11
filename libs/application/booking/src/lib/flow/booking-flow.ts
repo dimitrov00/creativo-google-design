@@ -29,23 +29,32 @@ import {
   BookingFlowEventKind,
   type BookingFlowLimits,
   BookingFlowState as EcsBookingFlowState,
+  BookingFlowStep as FlowStep,
   BookingFlowSystem,
-  DayKey as EcsDayKey,
+  CartLineId as EcsCartLineId,
   DayWindows as DayWindowsData,
+  EndMinute,
   FlexibleWhen as WhenData,
+  GuestId as EcsGuestId,
+  LocalDate,
   LocationId as EcsLocationId,
+  MinuteOfDay,
   MinuteRange,
   type Party as PartyData,
   PartyMember,
-  PartyMemberKind,
+  PartyRole,
   type ScheduleSelection as SelectionData,
   SchedulingErrorCode,
+  SeatKeyText,
   SeatLabel as EcsSeatLabel,
   ServiceId as EcsServiceId,
   ServiceVariantId as EcsServiceVariantId,
-  TimeInterval,
   UserId as EcsUserId,
+  UtcEpochMs,
   WaitlistRequestId,
+  type WallTime,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import {
   BarberId,
@@ -316,7 +325,7 @@ export function initialBookingFlowState(
   // and the bag starts empty.
   const opening = EcsBookingFlowState.initial(partyDataOf(party));
   return {
-    kind: opening.kind,
+    kind: LEGACY_STEP_OF[opening.bookingFlowStep],
     party,
     cart: BookingCart.empty(),
     locationId: null,
@@ -378,6 +387,24 @@ export function advanceBookingFlow(
 
 /* ── The bridge: legacy classes ↔ ecs-core structs (Phase 4 deletes it) ── */
 
+/** The legacy lowercase step ↔ the SCREAMING tag — the ONE table each way. */
+const STEP_OF = {
+  location: FlowStep.Location,
+  services: FlowStep.Services,
+  schedule: FlowStep.Schedule,
+  review: FlowStep.Review,
+  confirmed: FlowStep.Confirmed,
+  waitlisted: FlowStep.Waitlisted,
+} as const satisfies Record<BookingFlowStep, FlowStep>;
+const LEGACY_STEP_OF = {
+  [FlowStep.Location]: 'location',
+  [FlowStep.Services]: 'services',
+  [FlowStep.Schedule]: 'schedule',
+  [FlowStep.Review]: 'review',
+  [FlowStep.Confirmed]: 'confirmed',
+  [FlowStep.Waitlisted]: 'waitlisted',
+} as const satisfies Record<FlowStep, BookingFlowStep>;
+
 /** The wizard's two policy numbers, as this module has always read them. */
 const FLOW_LIMITS: BookingFlowLimits = {
   maxPartySize: MAX_PARTY_SIZE,
@@ -391,7 +418,10 @@ function partyDataOf(party: BookingParty): PartyData {
     members: [
       PartyMember.owner(),
       ...party.guests.map((guest) =>
-        PartyMember.guest(guest.id.value, EcsSeatLabel.of(guest.label.value)),
+        PartyMember.guest(
+          EcsGuestId.of(guest.id.value),
+          EcsSeatLabel.of(guest.label.value),
+        ),
       ),
     ],
     nextGuestSequence: party.nextGuestSequence,
@@ -402,43 +432,46 @@ function legacyPartyOf(party: PartyData): BookingParty {
   const restored = BookingParty.reconstitute({
     ownerId: party.ownerUserId,
     guests: party.members.flatMap((member) =>
-      member.kind === PartyMemberKind.Guest
-        ? [{ id: member.guestId, label: member.label as string }]
+      member.partyRole === PartyRole.Guest
+        ? [{ id: member.guestId, label: member.guestLabel as string }]
         : [],
     ),
     nextSequence: party.nextGuestSequence,
   });
   // Unreachable: the system only ever hands back parties its own commands built.
-  if (restored.isFailure()) throw new Error('unreachable: party refused');
+  if (restored.isFailure()) defect('unreachable: party refused');
   return restored.value;
 }
 
 function cartDataOf(cart: BookingCart): CartData {
   return {
-    seats: cart.entries().map(([seatKey, lines]) => ({
-      seatKey,
-      lines: lines.map((line) => ({
-        lineId: line.id.value,
+    cartSeats: cart.entries().map(([rawSeatKey, lines]) => {
+      const seatKey = SeatKeyText.of(rawSeatKey);
+      return {
         seatKey,
-        serviceId: EcsServiceId.of(line.serviceId.value),
-        variantId:
-          line.variantId === null
-            ? null
-            : EcsServiceVariantId.of(line.variantId.value),
-        barberId:
-          line.barberPref.kind === 'specific'
-            ? EcsBarberId.of(line.barberPref.barberId.value)
-            : null,
-        locationId: null,
-      })),
-    })),
-    nextSequence: cart.nextLineSequence,
+        lines: lines.map((line) => ({
+          lineId: EcsCartLineId.of(line.id.value),
+          seatKey,
+          serviceId: EcsServiceId.of(line.serviceId.value),
+          variantId:
+            line.variantId === null
+              ? null
+              : EcsServiceVariantId.of(line.variantId.value),
+          barberId:
+            line.barberPref.kind === 'specific'
+              ? EcsBarberId.of(line.barberPref.barberId.value)
+              : null,
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: cart.nextLineSequence,
   };
 }
 
 function legacyCartOf(cart: CartData): BookingCart {
   const restored = BookingCart.reconstitute({
-    seats: cart.seats.map((seat) => ({
+    seats: cart.cartSeats.map((seat) => ({
       seatKey: seat.seatKey,
       lines: seat.lines.map((line) => ({
         id: line.lineId,
@@ -447,20 +480,36 @@ function legacyCartOf(cart: CartData): BookingCart {
         barberId: line.barberId,
       })),
     })),
-    nextSequence: cart.nextSequence,
+    nextSequence: cart.cartNextSequence,
   });
   // Unreachable: the system only ever hands back carts its own commands built.
-  if (restored.isFailure()) throw new Error('unreachable: cart refused');
+  if (restored.isFailure()) defect('unreachable: cart refused');
   return restored.value;
+}
+
+/** Unreachable refusals of values that are valid by construction. */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/** A calendar day's key — a real day by construction (`CalendarDay`). */
+function localDateOf(key: string): LocalDate {
+  return sure(LocalDate.parse(key), `a CalendarDay key ${key}`);
 }
 
 function dayWindowsDataOf(day: DayWindows): DayWindowsData {
   return DayWindowsData.of(
-    EcsDayKey.of(day.dayKey),
+    localDateOf(day.dayKey),
     day.windows.map((window) =>
       MinuteRange.of(
-        window.start.minutesFromMidnight(),
-        window.end.minutesFromMidnight(),
+        sure(MinuteOfDay.of(window.start.minutesFromMidnight()), 'a start'),
+        sure(EndMinute.of(window.end.minutesFromMidnight()), 'an end'),
       ),
     ),
   );
@@ -470,18 +519,44 @@ function whenDataOf(when: FlexibleWhen): WhenData {
   return WhenData.of(when.days.map(dayWindowsDataOf));
 }
 
-function intervalOf(slot: TimeSlot): TimeInterval {
-  return TimeInterval.of(slot.start.toMillis(), slot.end.toMillis());
+/** A slot's instant on the shop's wall clock — the slot's own zone (`TimeSlot` is zoned). */
+function wallOf(instant: TimeSlot['start']): WallTime {
+  return ZonedTimeSystem.toLocal(
+    sure(UtcEpochMs.of(instant.toMillis()), 'an instant'),
+    sure(ZonedTimeSystem.checkZone(instant.zoneName), 'a zone'),
+  );
 }
 
+/**
+ * A slot as minutes of `day` — the selection's shop day (T7: a visit never
+ * crosses midnight; an end AT the next midnight is the day's closing 1440).
+ */
+function minutesOf(
+  slot: TimeSlot,
+  day: LocalDate,
+): { readonly startMinutes: MinuteOfDay; readonly endMinutes: EndMinute } {
+  const start = wallOf(slot.start);
+  const end = wallOf(slot.end);
+  const endMinutes =
+    end.localDate === day ? end.minute : MINUTES_PER_DAY + end.minute;
+  return {
+    startMinutes: start.minute,
+    endMinutes: sure(EndMinute.of(endMinutes), 'a seat that ends on its day'),
+  };
+}
+
+const MINUTES_PER_DAY = 1440;
+
 function selectionDataOf(selection: ScheduleSelection): SelectionData {
+  const day = wallOf(selection.timeSlot.start).localDate;
   return {
     locationId: EcsLocationId.of(selection.locationId.value),
-    timeInterval: intervalOf(selection.timeSlot),
+    localDate: day,
+    ...minutesOf(selection.timeSlot, day),
     assignments: selection.assignments.map((assignment) => ({
-      lineId: assignment.lineId.value,
+      lineId: EcsCartLineId.of(assignment.lineId.value),
       barberId: EcsBarberId.of(assignment.barberId.value),
-      timeInterval: intervalOf(assignment.slot),
+      ...minutesOf(assignment.slot, day),
     })),
   };
 }
@@ -552,7 +627,7 @@ function bridgeOf(state: BookingFlowState, event: BookingFlowEvent): Bridge {
     case 'location':
     case 'services':
       data = {
-        kind: state.kind,
+        bookingFlowStep: STEP_OF[state.kind],
         party: party(state.party),
         cart: cart(state.cart),
         locationId: location(state.locationId),
@@ -560,7 +635,7 @@ function bridgeOf(state: BookingFlowState, event: BookingFlowEvent): Bridge {
       break;
     case 'schedule':
       data = {
-        kind: state.kind,
+        bookingFlowStep: STEP_OF[state.kind],
         party: party(state.party),
         cart: cart(state.cart),
         locationId: location(state.locationId),
@@ -569,7 +644,7 @@ function bridgeOf(state: BookingFlowState, event: BookingFlowEvent): Bridge {
       break;
     case 'review':
       data = {
-        kind: state.kind,
+        bookingFlowStep: STEP_OF[state.kind],
         party: party(state.party),
         cart: cart(state.cart),
         selection: selection(state.selection),
@@ -577,7 +652,7 @@ function bridgeOf(state: BookingFlowState, event: BookingFlowEvent): Bridge {
       break;
     case 'confirmed':
       data = {
-        kind: state.kind,
+        bookingFlowStep: STEP_OF[state.kind],
         confirmation: {
           appointmentId: AppointmentId.of(state.confirmation.appointmentId),
           party: party(state.confirmation.party),
@@ -588,7 +663,7 @@ function bridgeOf(state: BookingFlowState, event: BookingFlowEvent): Bridge {
       break;
     case 'waitlisted':
       data = {
-        kind: state.kind,
+        bookingFlowStep: STEP_OF[state.kind],
         summary: {
           requestId: WaitlistRequestId.of(state.summary.requestId),
           party: party(state.summary.party),
@@ -616,22 +691,25 @@ function eventDataOf(event: BookingFlowEvent, bridge: Bridge): FlowEventData {
   const selections = bridge.selections as Map<SelectionData, ScheduleSelection>;
   switch (event.type) {
     case 'add_guest':
-      return { kind: BookingFlowEventKind.AddGuest, label: event.label };
+      return {
+        bookingFlowEventKind: BookingFlowEventKind.AddGuest,
+        label: event.label,
+      };
     case 'remove_guest':
       return {
-        kind: BookingFlowEventKind.RemoveGuest,
-        guestId: event.guestId.value,
+        bookingFlowEventKind: BookingFlowEventKind.RemoveGuest,
+        guestId: EcsGuestId.of(event.guestId.value),
       };
     case 'rename_guest':
       return {
-        kind: BookingFlowEventKind.RenameGuest,
-        guestId: event.guestId.value,
+        bookingFlowEventKind: BookingFlowEventKind.RenameGuest,
+        guestId: EcsGuestId.of(event.guestId.value),
         label: event.label,
       };
     case 'add_line':
       return {
-        kind: BookingFlowEventKind.AddLine,
-        seatKey: seatKeyValue(event.seatKey),
+        bookingFlowEventKind: BookingFlowEventKind.AddLine,
+        seatKey: SeatKeyText.of(seatKeyValue(event.seatKey)),
         line: {
           serviceId: EcsServiceId.of(event.line.serviceId.value),
           variantId:
@@ -647,15 +725,15 @@ function eventDataOf(event: BookingFlowEvent, bridge: Bridge): FlowEventData {
       };
     case 'remove_line':
       return {
-        kind: BookingFlowEventKind.RemoveLine,
-        seatKey: seatKeyValue(event.seatKey),
-        lineId: event.lineId.value,
+        bookingFlowEventKind: BookingFlowEventKind.RemoveLine,
+        seatKey: SeatKeyText.of(seatKeyValue(event.seatKey)),
+        lineId: EcsCartLineId.of(event.lineId.value),
       };
     case 'set_line_variant':
       return {
-        kind: BookingFlowEventKind.SetLineVariant,
-        seatKey: seatKeyValue(event.seatKey),
-        lineId: event.lineId.value,
+        bookingFlowEventKind: BookingFlowEventKind.SetLineVariant,
+        seatKey: SeatKeyText.of(seatKeyValue(event.seatKey)),
+        lineId: EcsCartLineId.of(event.lineId.value),
         variantId:
           event.variantId === null
             ? null
@@ -663,9 +741,9 @@ function eventDataOf(event: BookingFlowEvent, bridge: Bridge): FlowEventData {
       };
     case 'set_line_barber':
       return {
-        kind: BookingFlowEventKind.SetLineBarber,
-        seatKey: seatKeyValue(event.seatKey),
-        lineId: event.lineId.value,
+        bookingFlowEventKind: BookingFlowEventKind.SetLineBarber,
+        seatKey: SeatKeyText.of(seatKeyValue(event.seatKey)),
+        lineId: EcsCartLineId.of(event.lineId.value),
         barberId:
           event.barberPref.kind === 'specific'
             ? EcsBarberId.of(event.barberPref.barberId.value)
@@ -673,7 +751,7 @@ function eventDataOf(event: BookingFlowEvent, bridge: Bridge): FlowEventData {
       };
     case 'select_location':
       return {
-        kind: BookingFlowEventKind.SelectLocation,
+        bookingFlowEventKind: BookingFlowEventKind.SelectLocation,
         locationId:
           event.locationId === null
             ? null
@@ -682,34 +760,37 @@ function eventDataOf(event: BookingFlowEvent, bridge: Bridge): FlowEventData {
     case 'select_schedule': {
       const data = selectionDataOf(event.selection);
       selections.set(data, event.selection);
-      return { kind: BookingFlowEventKind.SelectSchedule, selection: data };
+      return {
+        bookingFlowEventKind: BookingFlowEventKind.SelectSchedule,
+        selection: data,
+      };
     }
     case 'toggle_flexible_day':
       return {
-        kind: BookingFlowEventKind.ToggleFlexibleDay,
-        dayKey: EcsDayKey.of(event.day.key()),
+        bookingFlowEventKind: BookingFlowEventKind.ToggleFlexibleDay,
+        localDate: localDateOf(event.day.key()),
       };
     case 'set_day_windows':
       return {
-        kind: BookingFlowEventKind.SetDayWindows,
+        bookingFlowEventKind: BookingFlowEventKind.SetDayWindows,
         dayWindows: dayWindowsDataOf(event.dayWindows),
       };
     case 'clear_flexible':
-      return { kind: BookingFlowEventKind.ClearFlexible };
+      return { bookingFlowEventKind: BookingFlowEventKind.ClearFlexible };
     case 'confirmed':
       return {
-        kind: BookingFlowEventKind.Confirmed,
+        bookingFlowEventKind: BookingFlowEventKind.Confirmed,
         appointmentId: AppointmentId.of(event.appointmentId),
       };
     case 'waitlisted':
       return {
-        kind: BookingFlowEventKind.Waitlisted,
+        bookingFlowEventKind: BookingFlowEventKind.Waitlisted,
         requestId: WaitlistRequestId.of(event.requestId),
       };
     case 'next':
-      return { kind: BookingFlowEventKind.Next };
+      return { bookingFlowEventKind: BookingFlowEventKind.Next };
     case 'back':
-      return { kind: BookingFlowEventKind.Back };
+      return { bookingFlowEventKind: BookingFlowEventKind.Back };
   }
 }
 
@@ -743,9 +824,9 @@ function legacyWhenFrom(bridge: Bridge, when: WhenData): FlexibleWhen {
   if (own !== undefined) return own;
   if (WhenData.isEmpty(when)) return FlexibleWhen.empty();
   return FlexibleWhen.of(
-    when.days.map(
+    when.flexibleDays.map(
       (day) =>
-        bridge.days.get(day.dayKey) ??
+        bridge.days.get(day.localDate) ??
         DayWindows.of(bridge.toggled as CalendarDay),
     ),
   );
@@ -755,33 +836,33 @@ function legacyStateOf(
   next: EcsBookingFlowState,
   bridge: Bridge,
 ): BookingFlowState {
-  switch (next.kind) {
-    case 'location':
-    case 'services':
+  switch (next.bookingFlowStep) {
+    case FlowStep.Location:
+    case FlowStep.Services:
       return {
-        kind: next.kind,
+        kind: LEGACY_STEP_OF[next.bookingFlowStep],
         party: legacyPartyFrom(bridge, next.party),
         cart: legacyCartFrom(bridge, next.cart),
         locationId: legacyLocationFrom(bridge, next.locationId),
       };
-    case 'schedule':
+    case FlowStep.Schedule:
       return {
-        kind: next.kind,
+        kind: LEGACY_STEP_OF[next.bookingFlowStep],
         party: legacyPartyFrom(bridge, next.party),
         cart: legacyCartFrom(bridge, next.cart),
         locationId: legacyLocationFrom(bridge, next.locationId),
         when: legacyWhenFrom(bridge, next.when),
       };
-    case 'review':
+    case FlowStep.Review:
       return {
-        kind: next.kind,
+        kind: LEGACY_STEP_OF[next.bookingFlowStep],
         party: legacyPartyFrom(bridge, next.party),
         cart: legacyCartFrom(bridge, next.cart),
         selection: legacySelectionFrom(bridge, next.selection),
       };
-    case 'confirmed':
+    case FlowStep.Confirmed:
       return {
-        kind: next.kind,
+        kind: LEGACY_STEP_OF[next.bookingFlowStep],
         confirmation: {
           appointmentId: next.confirmation.appointmentId,
           party: legacyPartyFrom(bridge, next.confirmation.party),
@@ -789,9 +870,9 @@ function legacyStateOf(
           selection: legacySelectionFrom(bridge, next.confirmation.selection),
         },
       };
-    case 'waitlisted':
+    case FlowStep.Waitlisted:
       return {
-        kind: next.kind,
+        kind: LEGACY_STEP_OF[next.bookingFlowStep],
         summary: {
           requestId: next.summary.requestId,
           party: legacyPartyFrom(bridge, next.summary.party),
@@ -804,7 +885,7 @@ function legacyStateOf(
 }
 
 /** A seat key value back as the legacy key — the booker's, or a guest's own id. */
-function legacySeatKeyOf(party: BookingParty, seat: string): SeatKey {
+function legacySeatKeyOf(party: BookingParty, seat: SeatKeyText): SeatKey {
   const guest = party.guests.find((candidate) => candidate.id.value === seat);
   return guest === undefined ? SeatKey.self() : SeatKey.guest(guest.id);
 }
@@ -822,7 +903,7 @@ function legacyErrorOf(
   state: BookingFlowState,
   event: BookingFlowEvent,
 ): BookingFlowError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case BookingFlowErrorCode.InvalidTransition:
       return new InvalidBookingFlowTransitionError(state.kind, event.type);
     case BookingFlowErrorCode.InvalidGuest: {

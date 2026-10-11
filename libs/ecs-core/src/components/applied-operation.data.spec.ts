@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { OperationId } from '../primitives/ids.primitive';
 import { AppliedOperation } from './applied-operation.data';
 
 const op = (id: string, revision: number): AppliedOperation => ({
-  id,
+  operationId: OperationId.of(id),
   revision,
   digest: `d-${id}-${revision}`,
 });
@@ -10,8 +11,10 @@ const op = (id: string, revision: number): AppliedOperation => ({
 describe('AppliedOperation — the staff-edit ledger', () => {
   it('finds an operation by id, or nothing', () => {
     const ledger = [op('a', 1), op('b', 2)];
-    expect(AppliedOperation.find(ledger, 'b')).toEqual(op('b', 2));
-    expect(AppliedOperation.find(ledger, 'z')).toBeNull();
+    expect(AppliedOperation.find(ledger, OperationId.of('b'))).toEqual(
+      op('b', 2),
+    );
+    expect(AppliedOperation.find(ledger, OperationId.of('z'))).toBeNull();
   });
 
   it('records the newest last and replaces an older entry under the same id', () => {

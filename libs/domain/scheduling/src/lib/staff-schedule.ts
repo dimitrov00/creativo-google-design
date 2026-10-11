@@ -8,10 +8,11 @@ import {
 } from './staff-schedule.errors';
 import { WeeklyPattern } from './weekly-pattern';
 import {
-  DayKey,
+  LocalDate,
   RosterSystem,
   SchedulingErrorCode,
   ScheduleVersion as VersionData,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
@@ -26,14 +27,20 @@ import {
 /** The legacy version each ECS struct was made from. */
 const LEGACY_VERSIONS = new WeakMap<VersionData, StaffScheduleVersion>();
 
+/** A `CalendarDay` → its shop day; a `CalendarDay` key is a valid date by construction. */
+function localDateOf(day: CalendarDay): LocalDate {
+  const parsed = LocalDate.parse(day.key());
+  // Unreachable: `CalendarDay.create` already refused an impossible date.
+  if (!parsed.ok) defect(`unreachable: a calendar day ${day.key()}`);
+  return parsed.value;
+}
+
 function toVersionData(version: StaffScheduleVersion): VersionData {
   const data: VersionData = {
     seq: version.seq,
-    effectiveFromDayKey: DayKey.of(version.effectiveFrom.key()),
-    effectiveToDayKey:
-      version.effectiveTo === null
-        ? null
-        : DayKey.of(version.effectiveTo.key()),
+    effectiveFromLocalDate: localDateOf(version.effectiveFrom),
+    effectiveToLocalDate:
+      version.effectiveTo === null ? null : localDateOf(version.effectiveTo),
     segments: [],
   };
   LEGACY_VERSIONS.set(data, version);
@@ -78,7 +85,7 @@ export class StaffScheduleVersion {
   }
 
   coversDay(day: CalendarDay): boolean {
-    return VersionData.coversDay(toVersionData(this), DayKey.of(day.key()));
+    return VersionData.coversDay(toVersionData(this), localDateOf(day));
   }
 
   isOpenEnded(): boolean {
@@ -121,7 +128,7 @@ export class StaffScheduleHistory {
     if (!history.ok) {
       const error = history.error;
       return fail(
-        error.code === SchedulingErrorCode.StaffScheduleOverlappingVersions
+        error.errorCode === SchedulingErrorCode.StaffScheduleOverlappingVersions
           ? new OverlappingScheduleVersionsError(
               error.earlierFrom,
               error.laterFrom,
@@ -171,7 +178,7 @@ export class StaffScheduleHistory {
   versionFor(day: CalendarDay): StaffScheduleVersion | null {
     const found = RosterSystem.versionFor(
       this.versions.map(toVersionData),
-      DayKey.of(day.key()),
+      localDateOf(day),
     );
     return found === null ? null : (LEGACY_VERSIONS.get(found) ?? null);
   }
@@ -193,12 +200,13 @@ export class StaffScheduleHistory {
     const amended = VersionData.amend(
       this.versions.map(toVersionData),
       [],
-      DayKey.of(effectiveFrom.key()),
+      localDateOf(effectiveFrom),
     );
     if (!amended.ok) {
       const error = amended.error;
       return fail(
-        error.code === SchedulingErrorCode.StaffScheduleRetroactiveAmendment
+        error.errorCode ===
+          SchedulingErrorCode.StaffScheduleRetroactiveAmendment
           ? new RetroactiveScheduleAmendmentError(
               error.attemptedFrom,
               error.currentFrom,

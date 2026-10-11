@@ -1,12 +1,11 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { CapacityEntry } from '../components/capacity-entry.data';
-import { DayKey } from '../components/day-key.data';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { deepFreeze } from '../testing';
+import { BarberId, LocationId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { deepFreeze, localDate, utcMs } from '../testing';
+import { minuteCount } from '../testing/booking-core.fixtures';
 import { LeadTimeSystem } from './lead-time.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The cases of apps/functions/src/lib/booking/sample-lead-time.spec.ts (7),
@@ -17,9 +16,11 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * slot step.
  */
 
-const TODAY = DayKey.of('2026-08-05');
-const HORIZON = DayKey.of('2026-10-05');
-const STEP = 15;
+const TODAY = localDate('2026-08-05');
+const HORIZON = localDate('2026-10-05');
+const STEP = minuteCount(15);
+/** The sampling clock — 2026-08-05 09:00 in Sofia. */
+const SAMPLED_AT = utcMs('2026-08-05T09:00:00.000+03:00');
 const CENTER = LocationId.of('loc-center');
 const MLADOST = LocationId.of('loc-mladost');
 const ivan = BarberId.of('ivan');
@@ -27,11 +28,12 @@ const niko = BarberId.of('niko');
 const stefan = BarberId.of('stefan');
 
 const entry = (
-  dayKey: string,
+  day: string,
   barberId: BarberId,
   locationId: LocationId,
   minutes: number,
-) => CapacityEntry.of(DayKey.of(dayKey), barberId, locationId, minutes);
+) =>
+  CapacityEntry.of(localDate(day), barberId, locationId, minuteCount(minutes));
 
 const sampleFor = (entries: readonly CapacityEntry[], barberId: BarberId) =>
   LeadTimeSystem.sample(
@@ -40,14 +42,13 @@ const sampleFor = (entries: readonly CapacityEntry[], barberId: BarberId) =>
     TODAY,
     HORIZON,
     STEP,
-    'Europe/Sofia',
-    1_785_920_400_000,
+    SAMPLED_AT,
   ).body;
 
 describe('LeadTimeSystem — the sampled lead time', () => {
   it('reports zero lead time when the barber is free today', () => {
     const sample = sampleFor([entry(TODAY, ivan, CENTER, 240)], ivan);
-    expect(sample.firstAvailableDayKey).toBe(TODAY);
+    expect(sample.firstAvailableLocalDate).toBe(TODAY);
     expect(sample.leadTimeDays).toBe(0);
     expect(sample.freeMinutesOnFirstDay).toBe(240);
   });
@@ -62,7 +63,7 @@ describe('LeadTimeSystem — the sampled lead time', () => {
       [entry(TODAY, ivan, CENTER, 0), entry('2026-08-07', ivan, CENTER, 90)],
       ivan,
     );
-    expect(sample.firstAvailableDayKey).toBe('2026-08-07');
+    expect(sample.firstAvailableLocalDate).toBe('2026-08-07');
     expect(sample.leadTimeDays).toBe(2);
   });
 
@@ -72,7 +73,7 @@ describe('LeadTimeSystem — the sampled lead time', () => {
    */
   it('records null when nothing is free inside the horizon', () => {
     const sample = sampleFor([], ivan);
-    expect(sample.firstAvailableDayKey).toBeNull();
+    expect(sample.firstAvailableLocalDate).toBeNull();
     expect(sample.leadTimeDays).toBeNull();
     expect(sample.freeMinutesOnFirstDay).toBe(0);
   });
@@ -86,7 +87,7 @@ describe('LeadTimeSystem — the sampled lead time', () => {
       ],
       ivan,
     );
-    expect(sample.firstAvailableDayKey).toBe('2026-08-06');
+    expect(sample.firstAvailableLocalDate).toBe('2026-08-06');
   });
 
   it('sums a barber working two shops on one day', () => {
@@ -95,7 +96,7 @@ describe('LeadTimeSystem — the sampled lead time', () => {
       stefan,
     );
     // Neither shop clears the bar alone; the barber's own day does.
-    expect(sample.firstAvailableDayKey).toBe(TODAY);
+    expect(sample.firstAvailableLocalDate).toBe(TODAY);
     expect(sample.freeMinutesOnFirstDay).toBe(20);
   });
 
@@ -115,15 +116,15 @@ describe('LeadTimeSystem — the sampled lead time', () => {
       TODAY,
       HORIZON,
       STEP,
-      'Europe/Sofia',
-      1_785_920_400_000,
+      SAMPLED_AT,
     );
     expect(sample.id).toBe('ivan__2026-08-05');
-    expect(sample.body.dayKey).toBe(TODAY);
+    expect(sample.body.localDate).toBe(TODAY);
     expect(sample.body.barberId).toBe('ivan');
-    expect(sample.body.zone).toBe('Europe/Sofia');
+    // No zone on the sample (Law 7.2): the day and the stamp are enough.
+    expect(sample.body).not.toHaveProperty('zone');
     expect(sample.body.horizonDayCount).toBe(62);
-    expect(sample.body.sampledAtMs).toBe(1_785_920_400_000);
+    expect(sample.body.sampledAtUtcMs).toBe(SAMPLED_AT);
   });
 });
 
@@ -136,8 +137,8 @@ describe('LeadTimeSystem — the horizon walk', () => {
     ]);
     expect(
       LeadTimeSystem.monthKeysBetween(
-        DayKey.of('2026-12-31'),
-        DayKey.of('2027-01-01'),
+        localDate('2026-12-31'),
+        localDate('2027-01-01'),
       ),
     ).toEqual(['2026-12', '2027-01']);
     expect(LeadTimeSystem.monthKeysBetween(HORIZON, TODAY)).toEqual([]);
@@ -162,10 +163,10 @@ describe('LeadTimeSystem — the horizon walk', () => {
           const entries = raw
             .map(([offset, barber, shop, minutes]) =>
               CapacityEntry.of(
-                ZonedTimeSystem.addDays(TODAY, offset),
+                LocalDate.addDays(TODAY, offset),
                 barber,
                 shop,
-                minutes,
+                minuteCount(minutes),
               ),
             )
             .filter((candidate) => {
@@ -175,18 +176,22 @@ describe('LeadTimeSystem — the horizon walk', () => {
               return true;
             })
             .sort(CapacityEntry.compare);
-          const to = ZonedTimeSystem.addDays(TODAY, 30);
+          const to = LocalDate.addDays(TODAY, 30);
           let expected = null;
           for (let day = 0; day <= 30; day++) {
-            const dayKey = ZonedTimeSystem.addDays(TODAY, day);
+            const onDay = LocalDate.addDays(TODAY, day);
             const free = CapacityEntry.freeMinutesOn(
               entries,
-              dayKey,
+              onDay,
               [ivan],
               null,
             );
             if (free >= threshold) {
-              expected = { dayKey, leadTimeDays: day, freeMinutes: free };
+              expected = {
+                localDate: onDay,
+                leadTimeDays: day,
+                freeMinutes: free,
+              };
               break;
             }
           }
@@ -196,7 +201,7 @@ describe('LeadTimeSystem — the horizon walk', () => {
               ivan,
               TODAY,
               to,
-              threshold,
+              minuteCount(threshold),
             ),
           ).toEqual(expected);
         },
@@ -215,19 +220,10 @@ describe('LeadTimeSystem — the horizon walk', () => {
       TODAY,
       HORIZON,
       STEP,
-      'Europe/Sofia',
-      0,
+      SAMPLED_AT,
     );
     expect(
-      LeadTimeSystem.sample(
-        entries,
-        ivan,
-        TODAY,
-        HORIZON,
-        STEP,
-        'Europe/Sofia',
-        0,
-      ),
+      LeadTimeSystem.sample(entries, ivan, TODAY, HORIZON, STEP, SAMPLED_AT),
     ).toEqual(once);
     expect(entries.map((e) => e.freeMinutes)).toEqual([10, 30]);
   });

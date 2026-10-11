@@ -1,29 +1,27 @@
 import type { Observable } from 'rxjs';
-import type { JournalEffectKind } from '../components/journal-effect.data';
+import type { JournalEffect } from '../components/journal-effect.data';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
 import type { VoucherCode } from '../components/voucher-code.data';
-import type { BadgeCategoryEntity } from '../entities/badge-category.entity';
-import type { BadgeProgressEntity } from '../entities/badge-progress.entity';
-import type { BadgeSeriesEntity } from '../entities/badge-series.entity';
+import type { BadgeCategory } from '../entities/badge-category.entity';
+import type { BadgeProgress } from '../entities/badge-progress.entity';
+import type { BadgeSeries } from '../entities/badge-series.entity';
+import type { CouponGrant } from '../entities/coupon-grant.entity';
+import type { Coupon } from '../entities/coupon.entity';
+import type { GiftVoucher } from '../entities/gift-voucher.entity';
+import type { JournalEntry } from '../entities/journal-entry.entity';
+import type { LoyaltyAccount } from '../entities/loyalty-account.entity';
+import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
+import type { SeasonProgress } from '../entities/season-progress.entity';
+import type { Season } from '../entities/season.entity';
+import type { StreakDefinition } from '../entities/streak-definition.entity';
+import type { StreakDefinitionVersion } from '../entities/streak-definition-version.entity';
+import type { TierDefinition } from '../entities/tier-definition.entity';
 import type {
-  CouponGrantEntity,
   CouponGrantId,
-} from '../entities/coupon-grant.entity';
-import type { CouponEntity } from '../entities/coupon.entity';
-import type { GiftVoucherEntity } from '../entities/gift-voucher.entity';
-import type { JournalEntryEntity } from '../entities/journal-entry.entity';
-import type { LoyaltyAccountEntity } from '../entities/loyalty-account.entity';
-import type { RewardCatalogItemEntity } from '../entities/reward-catalog-item.entity';
-import type { SeasonProgressEntity } from '../entities/season-progress.entity';
-import type { SeasonEntity } from '../entities/season.entity';
-import type {
-  StreakDefinitionEntity,
   StreakDefinitionId,
-} from '../entities/streak-definition.entity';
-import type { StreakDefinitionVersionEntity } from '../entities/streak-definition-version.entity';
-import type { TierDefinitionEntity } from '../entities/tier-definition.entity';
-import type { UserId } from '../entities/user.entity';
+  UserId,
+} from '../primitives/ids.primitive';
 
 /**
  * The engagement context's read ports (blueprint §4.2): coupons, grants and
@@ -49,62 +47,63 @@ import type { UserId } from '../entities/user.entity';
  */
 export type FindCouponByCode = (
   code: VoucherCode,
-) => Promise<Result<CouponEntity | null, RepositoryError>>;
+) => Promise<Result<Coupon | null, RepositoryError>>;
 
 /** Every enabled coupon — `status ==` (`coupon-reader.adapter.ts:59`). */
 export type ListOpenCoupons = () => Promise<
-  Result<readonly CouponEntity[], RepositoryError>
+  Result<readonly Coupon[], RepositoryError>
 >;
 
 /** The gift voucher a code names — `code ==` (`gift-voucher-reader.adapter.ts:34`); `null` when none. */
 export type FindGiftVoucherByCode = (
   code: VoucherCode,
-) => Promise<Result<GiftVoucherEntity | null, RepositoryError>>;
+) => Promise<Result<GiftVoucher | null, RepositoryError>>;
 
 /** Every voucher issued to a person — `issuedToUserId ==` (`client-vouchers-reader.adapter.ts:49`). */
 export type ListGiftVouchersForHolder = (
   userId: UserId,
-) => Promise<Result<readonly GiftVoucherEntity[], RepositoryError>>;
+) => Promise<Result<readonly GiftVoucher[], RepositoryError>>;
 
 /** `couponGrants/{id}` — `null` when absent. */
 export type LoadCouponGrant = (
   id: CouponGrantId,
-) => Promise<Result<CouponGrantEntity | null, RepositoryError>>;
+) => Promise<Result<CouponGrant | null, RepositoryError>>;
 
 /**
- * A person's ACTIVE grants — `userId ==`, `state.kind == active`
+ * A person's ACTIVE grants — `userId ==`, the grant's status `== ACTIVE`
  * (`coupon-grant-repository.adapter.ts:308-309`, equality merge). Which of
- * them are usable at `nowMs` (an expiry the grant carries) is
- * `CouponGrantSystem`'s decision, not the query's.
+ * them are usable at `nowUtcMs` (an expiry the grant carries) is
+ * `CouponGrantSystem`'s decision, not the query's. Keyed by `UserId` until
+ * flip (1) (D29, §5.5).
  */
 export type ListUsableCouponGrants = (
   userId: UserId,
-) => Promise<Result<readonly CouponGrantEntity[], RepositoryError>>;
+) => Promise<Result<readonly CouponGrant[], RepositoryError>>;
 
 // ── Loyalty ───────────────────────────────────────────────────────────────
 
 /** `loyaltyAccounts/{uid}` — `null` before the person's first entry. */
 export type LoadLoyaltyAccount = (
   userId: UserId,
-) => Promise<Result<LoyaltyAccountEntity | null, RepositoryError>>;
+) => Promise<Result<LoyaltyAccount | null, RepositoryError>>;
 
 /** `loyaltyAccounts/{uid}/badgeProgress` — the whole subcollection. */
 export type ListBadgeProgress = (
   userId: UserId,
-) => Promise<Result<readonly BadgeProgressEntity[], RepositoryError>>;
+) => Promise<Result<readonly BadgeProgress[], RepositoryError>>;
 
 /** `loyaltyAccounts/{uid}/seasonProgress` — the whole subcollection. */
 export type ListSeasonProgress = (
   userId: UserId,
-) => Promise<Result<readonly SeasonProgressEntity[], RepositoryError>>;
+) => Promise<Result<readonly SeasonProgress[], RepositoryError>>;
 
 /** The five loyalty catalogue collections, each read whole. */
 export type LoyaltyCatalog = {
-  readonly badgeCategories: readonly BadgeCategoryEntity[];
-  readonly badgeSeries: readonly BadgeSeriesEntity[];
-  readonly seasons: readonly SeasonEntity[];
-  readonly tierDefinitions: readonly TierDefinitionEntity[];
-  readonly rewards: readonly RewardCatalogItemEntity[];
+  readonly badgeCategories: readonly BadgeCategory[];
+  readonly badgeSeries: readonly BadgeSeries[];
+  readonly seasons: readonly Season[];
+  readonly tierDefinitions: readonly TierDefinition[];
+  readonly rewards: readonly RewardCatalogItem[];
 };
 
 /**
@@ -117,31 +116,33 @@ export type LoadLoyaltyCatalog = () => Promise<
 
 /** One page of a person's client-visible journal, newest first. */
 export type JournalPage = {
-  readonly entries: readonly JournalEntryEntity[];
+  readonly entries: readonly JournalEntry[];
   /** The `seq` the next page reads strictly below; `null` at the end. */
   readonly nextBeforeSeq: number | null;
 };
 
 /**
  * The activity feed «Движение» — `clientJournal` where `userId ==`,
- * `visibility == client`, `effect.kind in effectKinds`, `orderBy seq desc`
- * (index #21, `loyalty-activity-reader.adapter.ts:75-107`). `effectKinds`
- * is the pill's list (the feed's `ACTIVITY_EFFECT_KINDS` table: points,
- * rewards, status, all); the paging trim is `PagingSystem`'s (§2.8).
+ * `journalVisibility == CLIENT`, `journalEffect in effects`, `orderBy seq
+ * desc` (index #21, re-declared by the loyalty flip (3);
+ * `loyalty-activity-reader.adapter.ts:75-107`). `effects` is the pill's
+ * list (the feed's `ACTIVITY_EFFECT_KINDS` table: points, rewards, status,
+ * all); the paging trim is `PagingSystem`'s (§2.8). Keyed by `UserId` until
+ * the loyalty flip (3) (D29, §5.5).
  */
 export type PageClientJournal = (
   userId: UserId,
-  effectKinds: readonly JournalEffectKind[],
+  effects: readonly JournalEffect[],
   beforeSeq: number | null,
   limit: number,
 ) => Promise<Result<JournalPage, RepositoryError>>;
 
 // ── Streak definitions ────────────────────────────────────────────────────
 
-/** `streakDefinitions/{id}`, live — the head with its current and scheduled rule. */
+/** `streakDefinitions/{id}`, live — the head with its `rules` list (the rule in force and the one that waits). */
 export type ObserveStreakDefinitionHead = (
   id: StreakDefinitionId,
-) => Observable<Result<StreakDefinitionEntity | null, RepositoryError>>;
+) => Observable<Result<StreakDefinition | null, RepositoryError>>;
 
 /**
  * The newest `limit` published versions — `streakDefinitions/{id}/versions`,
@@ -150,7 +151,7 @@ export type ObserveStreakDefinitionHead = (
 export type ListStreakDefinitionVersions = (
   id: StreakDefinitionId,
   limit: number,
-) => Promise<Result<readonly StreakDefinitionVersionEntity[], RepositoryError>>;
+) => Promise<Result<readonly StreakDefinitionVersion[], RepositoryError>>;
 
 /** The engagement context's port catalogue; each root binds the `Pick` it implements. */
 export type EngagementPorts = {

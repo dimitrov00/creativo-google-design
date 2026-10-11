@@ -1,58 +1,61 @@
 import { describe, expect, it } from 'vitest';
-import type { ServiceCategoryId } from '../entities/service-category.entity';
-import type { ServiceId } from '../entities/service.entity';
+import { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
 import {
   QualifierComparison,
   StreakQualifier,
-  StreakQualifierKind,
+  StreakQualifierRule,
 } from './streak-qualifier.data';
 
 // The cases of `streak-qualifier.spec.ts` (create / comparedTo / equals),
-// on the plain struct. `counts` — which visit keeps the rhythm — moves with
+// on the flat slice. `counts` — which visit keeps the rhythm — moves with
 // the projector to StreakSystem (Phase 2).
 
-const sid = (raw: string) => raw as ServiceId;
-const cid = (raw: string) => raw as ServiceCategoryId;
-const services = (...ids: string[]): StreakQualifier =>
-  StreakQualifier.services(ids.map(sid));
-const categories = (...ids: string[]): StreakQualifier =>
-  StreakQualifier.categories(ids.map(cid));
-const any = StreakQualifier.anyVisit();
+const services = (...ids: string[]): StreakQualifierRule =>
+  StreakQualifierRule.services(ids.map(ServiceId.of));
+const categories = (...ids: string[]): StreakQualifierRule =>
+  StreakQualifierRule.categories(ids.map(ServiceCategoryId.of));
+const any = StreakQualifierRule.anyVisit();
 
-function qualifier(raw: StreakQualifier): StreakQualifier {
-  const result = StreakQualifier.parse(raw);
+function qualifier(raw: StreakQualifierRule): StreakQualifierRule {
+  const result = StreakQualifierRule.parse(raw);
   if (!result.ok) throw new Error(JSON.stringify(result.error));
   return result.value;
 }
 
-describe('StreakQualifier.parse', () => {
-  it('keeps the stored tags', () => {
-    expect(Object.values(StreakQualifierKind)).toEqual([
-      'anyVisit',
-      'services',
-      'categories',
+describe('StreakQualifierRule.parse', () => {
+  it('declares the qualifiers SCREAMING (the discriminator `streakQualifier`)', () => {
+    expect(Object.values(StreakQualifier)).toEqual([
+      'ANY_VISIT',
+      'SERVICES',
+      'CATEGORIES',
+    ]);
+    expect(Object.values(QualifierComparison)).toEqual([
+      'SAME',
+      'WIDER',
+      'NARROWER',
+      'OTHER',
     ]);
   });
 
   it('takes any visit', () => {
-    expect(qualifier(any)).toEqual({ kind: 'anyVisit' });
+    expect(qualifier(any)).toEqual({ streakQualifier: 'ANY_VISIT' });
   });
 
   it('takes a list of services and a list of categories, in the order chosen', () => {
     expect(qualifier(services('svc-fade', 'svc-beard'))).toEqual({
-      kind: 'services',
-      serviceIds: ['svc-fade', 'svc-beard'],
+      streakQualifier: 'SERVICES',
+      qualifierServiceIds: ['svc-fade', 'svc-beard'],
     });
     expect(qualifier(categories('cat-hair'))).toEqual({
-      kind: 'categories',
-      categoryIds: ['cat-hair'],
+      streakQualifier: 'CATEGORIES',
+      qualifierCategoryIds: ['cat-hair'],
     });
   });
 
   it('says a name once, however often it was chosen', () => {
     expect(qualifier(services('svc-fade', 'svc-beard', 'svc-fade'))).toEqual({
-      kind: 'services',
-      serviceIds: ['svc-fade', 'svc-beard'],
+      streakQualifier: 'SERVICES',
+      qualifierServiceIds: ['svc-fade', 'svc-beard'],
     });
   });
 
@@ -61,8 +64,9 @@ describe('StreakQualifier.parse', () => {
     const parsed = qualifier(raw);
     expect(parsed).not.toBe(raw);
     expect(
-      parsed.kind === 'services' && raw.kind === 'services'
-        ? parsed.serviceIds !== raw.serviceIds
+      parsed.streakQualifier === StreakQualifier.Services &&
+        raw.streakQualifier === StreakQualifier.Services
+        ? parsed.qualifierServiceIds !== raw.qualifierServiceIds
         : false,
     ).toBe(true);
   });
@@ -72,11 +76,11 @@ describe('StreakQualifier.parse', () => {
     { what: 'a blank service', ids: ['svc-fade', '  '], value: 'svc-fade,   ' },
     { what: 'an empty service', ids: [''], value: '' },
   ])('refuses $what', ({ ids, value }) => {
-    const result = StreakQualifier.parse(services(...ids));
+    const result = StreakQualifierRule.parse(services(...ids));
     expect(result.ok ? [] : result.error).toEqual([
       {
-        code: 'engagement.streak_definition.qualifier_empty',
-        field: 'qualifier.serviceIds',
+        errorCode: 'ENGAGEMENT_STREAK_DEFINITION_QUALIFIER_EMPTY',
+        field: 'qualifierServiceIds',
         value,
       },
     ]);
@@ -86,58 +90,73 @@ describe('StreakQualifier.parse', () => {
     { what: 'no category', ids: [] as string[] },
     { what: 'a blank category', ids: [' '] },
   ])('refuses $what', ({ ids }) => {
-    const result = StreakQualifier.parse(categories(...ids));
+    const result = StreakQualifierRule.parse(categories(...ids));
     expect(result.ok ? [] : result.error.map((e) => e.field)).toEqual([
-      'qualifier.categoryIds',
+      'qualifierCategoryIds',
     ]);
   });
 
   it('refuses a list that is not one', () => {
-    const result = StreakQualifier.parse({
-      kind: 'services',
-    } as unknown as StreakQualifier);
+    const result = StreakQualifierRule.parse({
+      streakQualifier: StreakQualifier.Services,
+    } as unknown as StreakQualifierRule);
     expect(result.ok ? [] : result.error).toEqual([
       {
-        code: 'engagement.streak_definition.qualifier_empty',
-        field: 'qualifier.serviceIds',
+        errorCode: 'ENGAGEMENT_STREAK_DEFINITION_QUALIFIER_EMPTY',
+        field: 'qualifierServiceIds',
         value: null,
       },
     ]);
   });
 
-  it('refuses a kind it does not know', () => {
-    const result = StreakQualifier.parse({
-      kind: 'barbers',
-    } as unknown as StreakQualifier);
+  it('refuses a qualifier it does not know', () => {
+    const result = StreakQualifierRule.parse({
+      streakQualifier: 'BARBERS',
+    } as unknown as StreakQualifierRule);
     expect(result.ok ? [] : result.error).toEqual([
       {
-        code: 'engagement.streak_definition.unknown_option',
-        field: 'qualifier.kind',
-        value: 'barbers',
-        options: 'anyVisit, services, categories',
+        errorCode: 'ENGAGEMENT_STREAK_DEFINITION_UNKNOWN_OPTION',
+        field: 'streakQualifier',
+        value: 'BARBERS',
+        options: 'ANY_VISIT, SERVICES, CATEGORIES',
       },
     ]);
   });
+
+  it('copies just the qualifier fields of a whole rule, the list fresh', () => {
+    const rule = { ...services('a', 'b'), graceDays: 7 };
+    const copy = StreakQualifierRule.of(rule);
+    expect(copy).toEqual(services('a', 'b'));
+    expect(
+      copy.streakQualifier === StreakQualifier.Services
+        ? copy.qualifierServiceIds !==
+            (rule as StreakQualifierRule.Services).qualifierServiceIds
+        : false,
+    ).toBe(true);
+  });
 });
 
-describe('StreakQualifier.compare', () => {
+describe('StreakQualifierRule.compare', () => {
   it.each([
-    { now: any, before: any, is: 'same' },
-    { now: any, before: services('a'), is: 'wider' },
-    { now: any, before: categories('x'), is: 'wider' },
-    { now: services('a'), before: any, is: 'narrower' },
-    { now: categories('x'), before: any, is: 'narrower' },
-    { now: services('a', 'b'), before: services('b', 'a'), is: 'same' },
-    { now: services('a', 'b'), before: services('a'), is: 'wider' },
-    { now: services('a'), before: services('a', 'b'), is: 'narrower' },
-    { now: services('a', 'c'), before: services('a', 'b'), is: 'other' },
-    { now: categories('x', 'y'), before: categories('x'), is: 'wider' },
-    { now: categories('x'), before: services('x'), is: 'other' },
-    { now: services('x'), before: categories('x'), is: 'other' },
-  ])('$now.kind against $before.kind is $is', ({ now, before, is }) => {
-    expect(StreakQualifier.compare(now, before)).toBe(is);
-    expect(StreakQualifier.equals(now, before)).toBe(
-      is === QualifierComparison.Same,
-    );
-  });
+    { now: any, before: any, is: 'SAME' },
+    { now: any, before: services('a'), is: 'WIDER' },
+    { now: any, before: categories('x'), is: 'WIDER' },
+    { now: services('a'), before: any, is: 'NARROWER' },
+    { now: categories('x'), before: any, is: 'NARROWER' },
+    { now: services('a', 'b'), before: services('b', 'a'), is: 'SAME' },
+    { now: services('a', 'b'), before: services('a'), is: 'WIDER' },
+    { now: services('a'), before: services('a', 'b'), is: 'NARROWER' },
+    { now: services('a', 'c'), before: services('a', 'b'), is: 'OTHER' },
+    { now: categories('x', 'y'), before: categories('x'), is: 'WIDER' },
+    { now: categories('x'), before: services('x'), is: 'OTHER' },
+    { now: services('x'), before: categories('x'), is: 'OTHER' },
+  ])(
+    '$now.streakQualifier against $before.streakQualifier is $is',
+    ({ now, before, is }) => {
+      expect(StreakQualifierRule.compare(now, before)).toBe(is);
+      expect(StreakQualifierRule.equals(now, before)).toBe(
+        is === QualifierComparison.Same,
+      );
+    },
+  );
 });

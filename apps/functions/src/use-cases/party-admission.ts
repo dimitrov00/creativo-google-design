@@ -9,18 +9,26 @@ import type { BookingCart, BookingPolicy } from '@creativo/domain/scheduling';
 import {
   BarberId as EcsBarberId,
   type BookingCart as EcsBookingCart,
-  type BookingCommitError,
-  BookingCommitErrorCode,
+  type BookingError,
+  BookingErrorCode,
   type BookingPolicy as EcsBookingPolicy,
+  CartLineId,
+  Currency,
+  DurationMinutes,
   LocationId as EcsLocationId,
-  LocationState,
+  LocationStatus,
+  MinuteCount,
   PartyAdmissionSystem,
+  PriceCents,
+  SeatKeyText,
+  type Service as EcsService,
   ServiceCategoryId,
   ServiceComposition,
-  type ServiceEntity,
   ServiceId as EcsServiceId,
+  ServiceStatus,
   ServiceTerms,
   ServiceVariantId as EcsServiceVariantId,
+  defect,
 } from '@creativo/ecs-core';
 import {
   CommitBookingConflictingServicesError,
@@ -88,7 +96,11 @@ export function shopListed<T extends AdmissibleShop>(
   return PartyAdmissionSystem.shopListed(
     shop === null
       ? null
-      : { status: shop.active ? LocationState.Active : LocationState.Hidden },
+      : {
+          locationStatus: shop.active
+            ? LocationStatus.Active
+            : LocationStatus.Hidden,
+        },
   );
 }
 
@@ -139,8 +151,8 @@ export function partyAdmissible(
 ): Result<readonly AdmittedSeat[], CommitBookingError> {
   const admitted = PartyAdmissionSystem.admit(
     seats,
-    services.map(toServiceEntity),
-    toPolicy(policy),
+    services.map(toEcsService),
+    toEcsPolicy(policy),
     {
       locationId:
         options.locationId === null
@@ -177,8 +189,8 @@ export function cartAdmissible(
 ): Result<void, CommitBookingError> {
   const admitted = PartyAdmissionSystem.admitCart(
     toCart(cart),
-    services.map(toServiceEntity),
-    toPolicy(policy),
+    services.map(toEcsService),
+    toEcsPolicy(policy),
     locationId === null ? null : EcsLocationId.of(locationId.value),
   );
   return admitted.ok ? ok(undefined) : fail(toLegacyError(admitted.error));
@@ -186,32 +198,75 @@ export function cartAdmissible(
 
 /* ── Phase 2 shim converters: legacy aggregates ↔ ecs-core structs ──────── */
 
-function toTerms(terms: LegacyServiceTerms): ServiceTerms {
+/**
+ * The legacy wire spelling of each refusal code (`booking.commit.*`) — what
+ * a legacy error class carries where it names a code, as the callable edge
+ * still renders it (flatten-spec §4.3: the wire is frozen).
+ */
+export const LEGACY_BOOKING_CODE: Readonly<Record<BookingErrorCode, string>> = {
+  [BookingErrorCode.Unauthenticated]: 'booking.commit.unauthenticated',
+  [BookingErrorCode.InvalidInput]: 'booking.commit.invalid_input',
+  [BookingErrorCode.UnknownService]: 'booking.commit.unknown_service',
+  [BookingErrorCode.ServiceNotAtLocation]:
+    'booking.commit.service_not_at_location',
+  [BookingErrorCode.ConflictingServices]: 'booking.commit.conflicting_services',
+  [BookingErrorCode.BarberNotRostered]: 'booking.commit.barber_not_rostered',
+  [BookingErrorCode.SlotUnavailable]: 'booking.commit.slot_unavailable',
+  [BookingErrorCode.TooSoon]: 'booking.commit.too_soon',
+  [BookingErrorCode.BeyondHorizon]: 'booking.commit.beyond_horizon',
+  [BookingErrorCode.PartyTooLarge]: 'booking.commit.party_too_large',
+  [BookingErrorCode.InvariantViolated]: 'booking.commit.invariant_violated',
+};
+
+/** The legacy status ↔ the dictionary (`'active'` ↔ `ACTIVE`). */
+const SERVICE_STATUS: Readonly<Record<'active' | 'archived', ServiceStatus>> = {
+  active: ServiceStatus.Active,
+  archived: ServiceStatus.Archived,
+};
+
+/** A brand the legacy value already satisfies — its own rules are the brand's. */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a legacy `ServiceTerms` / `BookingPolicy` already holds
+  // every rule the brand checks.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/** Legacy terms → the five flat, branded `ServiceTerms` fields. */
+export function toEcsTerms(terms: LegacyServiceTerms): ServiceTerms {
   return ServiceTerms.of(
-    terms.price.toMinorUnits(),
-    terms.price.currencyCode(),
-    terms.durationMinutes,
-    terms.setupMinutes,
-    terms.cleanupMinutes,
+    sure(PriceCents.of(terms.price.toMinorUnits()), 'a price'),
+    sure(Currency.parse(terms.price.currencyCode()), 'a currency'),
+    sure(DurationMinutes.of(terms.durationMinutes), 'a duration'),
+    sure(MinuteCount.of(terms.setupMinutes), 'a pad'),
+    sure(MinuteCount.of(terms.cleanupMinutes), 'a pad'),
   );
 }
 
-/** The legacy aggregate → the stored entity (the cover is not read by admission). */
-function toServiceEntity(service: Service): ServiceEntity {
+/**
+ * The legacy aggregate → the flat stored entity (the cover is not read by
+ * admission or the decision: all seven fields `null`).
+ */
+export function toEcsService(service: Service): EcsService {
   const composition = service.composition;
   return {
     id: EcsServiceId.of(service.id.value),
     name: { bg: service.name.bg, en: service.name.en },
     description: { bg: service.description.bg, en: service.description.en },
     categoryId: ServiceCategoryId.of(service.categoryId.value),
-    baseTerms: toTerms(service.baseTerms),
+    ...toEcsTerms(service.baseTerms),
     variants: service.variants.map((variant) => ({
-      id: EcsServiceVariantId.of(variant.id.value),
+      variantId: EcsServiceVariantId.of(variant.id.value),
       name: { bg: variant.name.bg, en: variant.name.en },
     })),
     offerings: service.offerings.map((offering) => ({
       barberId: EcsBarberId.of(offering.barberId.value),
-      base: toTerms(offering.base),
+      ...toEcsTerms(offering.base),
       overrides: service.variants.flatMap((variant) => {
         const terms = offering.termsFor(variant.id);
         return terms === offering.base
@@ -219,32 +274,41 @@ function toServiceEntity(service: Service): ServiceEntity {
           : [
               {
                 variantId: EcsServiceVariantId.of(variant.id.value),
-                terms: toTerms(terms),
+                ...toEcsTerms(terms),
               },
             ];
       }),
     })),
-    cover: null,
     locationIds: service.locationIds.map((id) => EcsLocationId.of(id.value)),
     conflictsWith: service.conflictsWith.map((id) => EcsServiceId.of(id.value)),
-    composition:
-      composition.kind === 'bundle'
-        ? ServiceComposition.bundle(
-            composition.includes.map((id) => EcsServiceId.of(id.value)),
-          )
-        : ServiceComposition.single(),
+    ...(composition.kind === 'bundle'
+      ? ServiceComposition.bundle(
+          composition.includes.map((id) => EcsServiceId.of(id.value)),
+        )
+      : ServiceComposition.single()),
     upsellOnly: service.upsellOnly,
     popular: service.popular,
-    status: service.status,
+    serviceStatus: SERVICE_STATUS[service.status],
     sortOrder: service.sortOrder,
+    coverMediaId: null,
+    coverMediaPath: null,
+    coverMediaWidth: null,
+    coverMediaHeight: null,
+    coverMediaBlurhash: null,
+    coverMediaFocalX: null,
+    coverMediaFocalY: null,
   };
 }
 
-function toPolicy(policy: BookingPolicy): EcsBookingPolicy {
+/** The legacy policy → the branded one (its own rules are the brands'). */
+export function toEcsPolicy(policy: BookingPolicy): EcsBookingPolicy {
   return {
     maxPartySize: policy.maxPartySize,
-    slotStepMinutes: policy.slotStepMinutes,
-    minLeadMinutes: policy.minLeadMinutes,
+    slotStepMinutes: sure(
+      DurationMinutes.of(policy.slotStepMinutes),
+      'a slot step',
+    ),
+    minLeadMinutes: sure(MinuteCount.of(policy.minLeadMinutes), 'a lead'),
     horizonMonths: policy.horizonMonths,
     cancellationWindowHours: policy.cancellationWindow.hours,
     maxFlexibleDays: policy.maxFlexibleDays,
@@ -254,21 +318,24 @@ function toPolicy(policy: BookingPolicy): EcsBookingPolicy {
 
 function toCart(cart: BookingCart): EcsBookingCart {
   return {
-    seats: cart.entries().map(([seatKey, lines]) => ({
-      seatKey,
-      lines: lines.map((line) => ({
-        lineId: line.id.value,
+    cartSeats: cart.entries().map(([key, lines]) => {
+      const seatKey = SeatKeyText.of(key);
+      return {
         seatKey,
-        serviceId: EcsServiceId.of(line.serviceId.value),
-        variantId:
-          line.variantId === null
-            ? null
-            : EcsServiceVariantId.of(line.variantId.value),
-        barberId: null,
-        locationId: null,
-      })),
-    })),
-    nextSequence: 0,
+        lines: lines.map((line) => ({
+          lineId: CartLineId.of(line.id.value),
+          seatKey,
+          serviceId: EcsServiceId.of(line.serviceId.value),
+          variantId:
+            line.variantId === null
+              ? null
+              : EcsServiceVariantId.of(line.variantId.value),
+          barberId: null,
+          locationId: null,
+        })),
+      };
+    }),
+    cartNextSequence: 0,
   };
 }
 
@@ -279,26 +346,28 @@ function toVariantId(raw: string): ServiceVariantId | null {
 }
 
 /** The system's refusal → the legacy error class the callers branch on. */
-function toLegacyError(error: BookingCommitError): CommitBookingError {
-  switch (error.code) {
-    case BookingCommitErrorCode.PartyTooLarge:
+function toLegacyError(error: BookingError): CommitBookingError {
+  switch (error.errorCode) {
+    case BookingErrorCode.PartyTooLarge:
       return new CommitBookingPartyTooLargeError(error.maxPartySize);
-    case BookingCommitErrorCode.UnknownService:
+    case BookingErrorCode.UnknownService:
       return new CommitBookingUnknownServiceError(error.serviceId);
-    case BookingCommitErrorCode.ServiceNotAtLocation:
+    case BookingErrorCode.ServiceNotAtLocation:
       return new CommitBookingServiceNotAtLocationError(
         error.serviceId,
         error.locationId,
       );
-    case BookingCommitErrorCode.ConflictingServices:
+    case BookingErrorCode.ConflictingServices:
       return new CommitBookingConflictingServicesError(
         error.first,
         error.second,
       );
-    case BookingCommitErrorCode.InvalidInput:
+    case BookingErrorCode.InvalidInput:
       return new CommitBookingInvalidInputError(error.field);
     default:
       // Admission refuses with the five codes above only.
-      return new CommitBookingInvalidInputError(error.code);
+      return new CommitBookingInvalidInputError(
+        LEGACY_BOOKING_CODE[error.errorCode],
+      );
   }
 }

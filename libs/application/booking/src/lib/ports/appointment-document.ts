@@ -33,24 +33,20 @@ import {
   SeatSubject,
   TimeSlot,
   VoucherRedemption,
+  toEcsAppointment,
 } from '@creativo/domain/scheduling';
 import { RepositoryError } from '@creativo/application/shared';
 import {
   AppointmentIndexSystem,
   BarberId as EcsBarberId,
   BusyKey,
-  BusySystem,
-  DayKey as EcsDayKey,
-  type DayOffset,
   type IndexedSeat,
-  Seat as EcsSeat,
-  SeatId as EcsSeatId,
-  SeatLabel as EcsSeatLabel,
-  SeatOutcome as EcsSeatOutcome,
-  ServiceId as EcsServiceId,
-  SeatSubject as EcsSeatSubject,
+  LocalDate as EcsLocalDate,
+  SeatOccupant as EcsSeatOccupant,
+  SubjectRelationship as EcsSubjectRelationship,
   UserId as EcsUserId,
   ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 
 /**
@@ -114,7 +110,7 @@ export function appointmentToDocument(
     // what lets the stats trigger read a client's whole history (R33).
     subjectUserIds: subjectUserIdsOf(appointment),
     placement: context.placement ?? null,
-    barberIds: AppointmentIndexSystem.queryKeys(indexedSeatsOf(appointment), [])
+    barberIds: AppointmentIndexSystem.queryKeys(toEcsAppointment(appointment))
       .barberIds,
     // The (barber, day) projection docs this appointment occupies — the
     // rebuild trigger's reverse index. `array-contains` on this plus a
@@ -1048,7 +1044,7 @@ export function appointmentFromDocument(
  * never own anything.
  */
 export function ownerUserIdOf(appointment: Appointment): string | null {
-  return AppointmentIndexSystem.queryKeys(indexedSeatsOf(appointment), [])
+  return AppointmentIndexSystem.queryKeys(toEcsAppointment(appointment))
     .ownerUserId;
 }
 
@@ -1059,7 +1055,7 @@ export function ownerUserIdOf(appointment: Appointment): string | null {
  * history to find.
  */
 export function subjectUserIdsOf(appointment: Appointment): readonly string[] {
-  return AppointmentIndexSystem.queryKeys(indexedSeatsOf(appointment), [])
+  return AppointmentIndexSystem.queryKeys(toEcsAppointment(appointment))
     .subjectUserIds;
 }
 
@@ -1090,13 +1086,17 @@ export function subjectUserIdsFromDocument(
     ) {
       accounts.push({
         barberId: EcsBarberId.of(''),
-        startMs: Number.NaN,
-        subject: EcsSeatSubject.account(EcsUserId.of(userId), 'companion'),
+        ...EcsSeatOccupant.account(
+          EcsUserId.of(userId),
+          EcsSubjectRelationship.Companion,
+        ),
       });
     }
   }
-  return AppointmentIndexSystem.queryKeys({ seats: accounts }, [])
-    .subjectUserIds;
+  return AppointmentIndexSystem.queryKeys({
+    localDate: NO_DAY,
+    seats: accounts,
+  }).subjectUserIds;
 }
 
 function placementOf(raw: unknown): AppointmentPlacement | null {
@@ -1156,7 +1156,12 @@ export interface PersistedBusyDocument {
 
 /** Composite key — the barber AND the day, so the grid reads exactly what it renders. */
 export function busyDocumentId(barberId: string, dayKey: string): string {
-  return BusyKey.of(EcsBarberId.of(barberId), EcsDayKey.of(dayKey));
+  const day = EcsLocalDate.parse(dayKey);
+  // A stored day key that is no calendar day keeps today's spelling — the
+  // legacy key was an unchecked `${barberId}__${dayKey}` (behaviour frozen).
+  return day.ok
+    ? BusyKey.of(EcsBarberId.of(barberId), day.value)
+    : `${barberId}__${dayKey}`;
 }
 
 /**
@@ -1168,49 +1173,29 @@ export function busyDocumentId(barberId: string, dayKey: string): string {
  * one projection doc.
  */
 export function busyKeysOf(appointment: Appointment): readonly string[] {
-  return AppointmentIndexSystem.queryKeys(
-    indexedSeatsOf(appointment),
-    seatDayTableOf(appointment),
-  ).busyKeys;
+  return AppointmentIndexSystem.queryKeys(toEcsAppointment(appointment))
+    .busyKeys;
 }
 
-/* ── Phase 2 shim converters: the aggregate's seats → ecs-core structs ──── */
+/* ── Phase 2 shim converters: stored seats ↔ ecs-core structs ─────────── */
 
-/** What `AppointmentIndexSystem.queryKeys` reads of each seat. */
-function indexedSeatsOf(appointment: Appointment): {
-  readonly seats: readonly IndexedSeat[];
-} {
-  return {
-    seats: appointment.seats.map((seat) => ({
-      barberId: EcsBarberId.of(seat.barberId.value),
-      startMs: seat.slot.start.toMillis(),
-      subject:
-        seat.subject.kind === 'account'
-          ? EcsSeatSubject.account(
-              EcsUserId.of(seat.subject.userId.value),
-              seat.subject.relationship,
-            )
-          : EcsSeatSubject.anonymous(EcsSeatLabel.of(seat.subject.label.value)),
-    })),
-  };
+function sureOf<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a literal the brand accepts by construction.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
 }
 
 /**
- * The zone table the busy keys are resolved over: the seats' zone (one per
- * visit — the shop's), the days from the first sold start to the last.
+ * The day an index read that asks for no busy key is filed under — the
+ * accounts of a raw document have no chair and no day, and only their
+ * `subjectUserIds` are read.
  */
-function seatDayTableOf(appointment: Appointment): readonly DayOffset[] {
-  const starts = appointment.seats.map((seat) => seat.slot.start);
-  const first = starts[0];
-  if (first === undefined) return [];
-  const ms = starts.map((start) => start.toMillis());
-  return ZonedTimeSystem.dayTableAround(
-    first.zoneName,
-    Math.min(...ms),
-    Math.max(...ms),
-    0,
-  );
-}
+const NO_DAY = sureOf(EcsLocalDate.parse('1970-01-01'), 'the epoch day');
 
 /** One (barber, day) projection doc's share of a stored appointment. */
 export interface BusyContribution {
@@ -1232,36 +1217,29 @@ export function busyContributionsOf(
   data: PersistedDocument,
 ): ReadonlyMap<string, BusyContribution> {
   const byKey = new Map<string, { zone: string; intervals: Interval[] }>();
-  // The seats grouped by zone (a visit's seats share the shop's), in the
-  // order the zones first appear: ONE day table per zone, over its seats'
-  // span, and one `contributionsOf` per zone — never Intl per seat.
-  const seatsByZone = new Map<string, EcsSeat[]>();
-  for (const { seat, zone } of persistedSeatsOf(data)) {
-    const seats = seatsByZone.get(zone);
-    if (seats === undefined) seatsByZone.set(zone, [seat]);
-    else seats.push(seat);
+  const chairs = persistedChairsOf(data);
+  // By zone (a visit's seats share the shop's), in the order the zones first
+  // appear; within one, by busy key (`BusyKey`: the barber and the shop day
+  // the sold start falls on), each key's chairs in seat order.
+  const zones: string[] = [];
+  for (const chair of chairs) {
+    if (!zones.includes(chair.zone)) zones.push(chair.zone);
   }
-  for (const [zone, seats] of seatsByZone) {
-    let minStart = Number.POSITIVE_INFINITY;
-    let maxStart = Number.NEGATIVE_INFINITY;
-    for (const seat of seats) {
-      if (seat.startMs < minStart) minStart = seat.startMs;
-      if (seat.startMs > maxStart) maxStart = seat.startMs;
+  for (const zone of zones) {
+    const keys: string[] = [];
+    for (const chair of chairs) {
+      if (chair.zone === zone && !keys.includes(chair.key))
+        keys.push(chair.key);
     }
-    // The system keys the chair by its sold start's local day.
-    const days = ZonedTimeSystem.dayTableAround(zone, minStart, maxStart, 0);
-    for (const contribution of BusySystem.contributionsOf(
-      { seats, zone },
-      days,
-    )) {
-      const entry = byKey.get(contribution.id) ?? {
-        zone: contribution.zone,
-        intervals: [],
-      };
-      for (const span of contribution.spans) {
-        entry.intervals.push(Interval.of(span.startMs, span.endMs));
+    keys.sort();
+    for (const key of keys) {
+      const entry = byKey.get(key) ?? { zone, intervals: [] };
+      for (const chair of chairs) {
+        if (chair.zone === zone && chair.key === key) {
+          entry.intervals.push(chair.occupied);
+        }
       }
-      byKey.set(contribution.id, entry);
+      byKey.set(key, entry);
     }
   }
   return byKey;
@@ -1282,70 +1260,85 @@ export function busyContributionsOf(
 export function persistedChairTimesOf(
   data: PersistedDocument,
 ): readonly ChairTime[] {
-  return persistedSeatsOf(data).flatMap((seat): readonly ChairTime[] => {
-    const barberId = BarberId.create(seat.seat.barberId);
+  return persistedChairsOf(data).flatMap((chair): readonly ChairTime[] => {
+    const barberId = BarberId.create(chair.barberId);
     if (barberId.isFailure()) return [];
-    const occupied = EcsSeat.chairTime(seat.seat);
-    return [
-      {
-        barberId: barberId.value,
-        occupied: Interval.of(occupied.startMs, occupied.endMs),
-      },
-    ];
+    return [{ barberId: barberId.value, occupied: chair.occupied }];
   });
 }
 
 /**
- * The stored seats as `BusySystem` reads them — the edge parse of the raw
- * seat geometry (the sold slot's ISO pair, the pads), for the projection and
- * the release alike. Each seat carries its zone; the day table is the
- * projection's to build (once per zone), and the release needs none. A seat
- * with no zone or barber, or an unparseable slot, is skipped.
+ * A stored seat's chair: setup + service + cleanup around its sold slot,
+ * filed under its busy key — the barber and the shop day its sold start
+ * falls on, in its own zone.
+ *
+ * Read straight off the RAW stored geometry — the sold slot's own instants
+ * (the stored END is the truth the projection was drawn from, a fraction of
+ * a minute included) and the pads as stored — and laid on the absolute
+ * timeline from those instants, never from a wall-clock minute range: the
+ * projection stays byte-identical whatever the clock does around a seat. A
+ * pad is not clamped at the day's edge, and a seat sold past midnight (one
+ * the one-shop-day rule F-6 refuses; none is stored) still projects the
+ * chair it holds instead of throwing the rebuild over.
  */
-function persistedSeatsOf(data: PersistedDocument): readonly {
-  readonly seat: EcsSeat;
+interface PersistedChair {
+  readonly key: string;
   readonly zone: string;
-}[] {
+  readonly barberId: string;
+  readonly occupied: Interval;
+}
+
+/**
+ * The stored seats' chairs — the edge parse of the raw seat geometry, for
+ * the projection and the release alike. A seat with no zone or barber, or a
+ * slot that does not read as two instants in that zone, is skipped
+ * (fail-closed frees time rather than inventing a block nobody can
+ * explain). A pad that is no finite number counts as none.
+ */
+function persistedChairsOf(data: PersistedDocument): readonly PersistedChair[] {
   const seats = Array.isArray(data['seats'])
     ? (data['seats'] as readonly Record<string, unknown>[])
     : [];
-  return seats.flatMap((seat) => {
+  return seats.flatMap((seat): readonly PersistedChair[] => {
     const slot = (seat['slot'] ?? {}) as Record<string, unknown>;
     const terms = (seat['terms'] ?? {}) as Record<string, unknown>;
     const zone = String(slot['zone'] ?? '');
     const barberId = String(seat['barberId'] ?? '');
     if (zone.length === 0 || barberId.length === 0) return [];
 
-    const start = ZonedDateTime.fromISO(String(slot['startIso'] ?? ''), zone);
-    const end = ZonedDateTime.fromISO(String(slot['endIso'] ?? ''), zone);
-    if (start.isFailure() || end.isFailure()) return [];
-
-    const setup = Number(terms['setupMinutes'] ?? 0);
-    const cleanup = Number(terms['cleanupMinutes'] ?? 0);
-    const startMs = start.value.toMillis();
-    const struct: EcsSeat = {
-      id: EcsSeatId.of(String(seat['id'] ?? '')),
-      serviceId: EcsServiceId.of(String(seat['serviceId'] ?? '')),
-      variantId: null,
-      barberId: EcsBarberId.of(barberId),
-      barberPref: null,
-      terms: {
-        priceMinorUnits: 0,
-        currencyCode: '',
-        // The stored END is the truth the projection was drawn from.
-        durationMinutes: (end.value.toMillis() - startMs) / 60_000,
-        setupMinutes: Number.isFinite(setup) ? setup : 0,
-        cleanupMinutes: Number.isFinite(cleanup) ? cleanup : 0,
-        catalogPriceMinorUnits: null,
-        catalogDurationMinutes: null,
+    const timeZone = ZonedTimeSystem.checkZone(zone);
+    if (!timeZone.ok) return [];
+    const start = ZonedTimeSystem.parseIsoIn(
+      String(slot['startIso'] ?? ''),
+      timeZone.value,
+    );
+    const end = ZonedTimeSystem.parseIsoIn(
+      String(slot['endIso'] ?? ''),
+      timeZone.value,
+    );
+    if (!start.ok || !end.ok) return [];
+    const localDate = ZonedTimeSystem.toLocal(
+      start.value,
+      timeZone.value,
+    ).localDate;
+    return [
+      {
+        key: BusyKey.of(EcsBarberId.of(barberId), localDate),
+        zone,
+        barberId,
+        occupied: Interval.of(
+          start.value - padOf(terms['setupMinutes']) * 60_000,
+          end.value + padOf(terms['cleanupMinutes']) * 60_000,
+        ),
       },
-      startMs,
-      subject: EcsSeatSubject.anonymous(EcsSeatLabel.of('')),
-      outcome: EcsSeatOutcome.scheduled(),
-      tip: null,
-    };
-    return [{ seat: struct, zone }];
+    ];
   });
+}
+
+/** A stored pad in minutes, as stored — absent or no finite number is none. */
+function padOf(raw: unknown): number {
+  const pad = Number(raw ?? 0);
+  return Number.isFinite(pad) ? pad : 0;
 }
 
 /** Stored slots → intervals. An unparseable entry is skipped, never guessed at. */
@@ -1376,11 +1369,9 @@ export function mergeBusy(
   added: readonly Interval[],
   zone: string,
 ): readonly PersistedSlot[] {
-  const merged = BusySystem.mergeBusy(
-    busyIntervalsOf(existing, zone),
-    added,
-    [],
-  );
+  // Epoch-ms spans of any day: the legacy interval algebra (the busy
+  // system's merge is one shop day's minutes now).
+  const merged = Interval.union(busyIntervalsOf(existing, zone), added);
 
   const slots: PersistedSlot[] = [];
   for (const interval of merged) {

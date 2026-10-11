@@ -1,8 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
-import { DayOffset } from '../components/day-offset.data';
-import { ExceptionEffect } from '../components/exception-effect.data';
+import { ExceptionEffectRule } from '../components/exception-effect.data';
 import { MinuteRange } from '../components/minute-range.data';
 import { DayHours } from '../components/opening-hours.data';
 import {
@@ -13,10 +11,9 @@ import {
   ScheduleVersion,
   ShiftSegment,
 } from '../components/schedule-version.data';
-import { TimeInterval } from '../components/time-interval.data';
+import { TimeErrorCode } from '../components/time-errors.data';
 import { Weekday } from '../components/weekday.data';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
+import { BarberId, LocationId } from '../primitives/ids.primitive';
 import {
   type BuildDayWindowsInput,
   type DayException,
@@ -24,30 +21,26 @@ import {
   type ShopHours,
 } from './roster.system';
 import { ZonedTimeSystem } from './zoned-time.system';
-import { deepFreeze } from '../testing';
+import {
+  deepFreeze,
+  endMinute,
+  FIXTURE_TIME_ZONE,
+  localDate,
+  minute,
+  unwrapErr,
+  unwrapOk,
+} from '../testing';
+import { minuteCount } from '../testing/booking-core.fixtures';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/roster-window.spec.ts, copied
- * over plain arrays and the zone table (the class spec stays in place until
- * its Phase 2 shim), plus version selection, shop hours from a stored week,
- * DST edges, purity and a brute-force minute-set property.
+ * over plain arrays on the shop's wall clock (the class spec stays in place
+ * and runs against its shim), plus version selection, shop hours from a
+ * stored week, DST days (immune by construction: no zone reaches the
+ * roster, flatten-spec T1), purity and a brute-force minute-set property.
  */
 
-const SOFIA = 'Europe/Sofia';
-const key = (raw: string) => DayKey.of(raw);
-
-/** The Sofia table every case reads — built once, as a pipeline would. */
-const DAYS = ZonedTimeSystem.dayTable(
-  SOFIA,
-  key('2025-12-01'),
-  key('2026-12-31'),
-);
-
-function row(raw: string): DayOffset {
-  const day = DayOffset.find(key(raw), DAYS);
-  if (day === null) throw new Error(`bad fixture: ${raw} not in the table`);
-  return day;
-}
+const key = (raw: string) => localDate(raw);
 
 const IVAN = BarberId.of('ivan');
 const CENTER = LocationId.of('loc-center');
@@ -58,6 +51,10 @@ function clock(raw: string): number {
   return Number(raw.slice(0, 2)) * 60 + Number(raw.slice(3, 5));
 }
 
+/** `'HH:mm'` as a wall-clock start / exclusive end. */
+const at = (raw: string) => minute(clock(raw));
+const until = (raw: string) => endMinute(clock(raw));
+
 /** Minutes of the day → `'HH:mm'`. */
 function hhmm(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -66,7 +63,7 @@ function hhmm(minutes: number): string {
 }
 
 function range(start: string, end: string): MinuteRange {
-  return MinuteRange.of(clock(start), clock(end));
+  return MinuteRange.of(minute(clock(start)), endMinute(clock(end)));
 }
 
 const ALL_WEEKDAYS: readonly Weekday[] = [
@@ -98,8 +95,8 @@ function rosterOf(
         ShiftSegment.of(
           weekday,
           segment.locationId,
-          clock(segment.start),
-          clock(segment.end),
+          minute(clock(segment.start)),
+          endMinute(clock(segment.end)),
         ),
       );
     }
@@ -124,14 +121,14 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false }): T {
   return result.value;
 }
 
-const closed = (): ExceptionEffect => ExceptionEffect.closed();
-const hours = (...ranges: readonly MinuteRange[]): ExceptionEffect =>
-  unwrap(ExceptionEffect.hours(ranges));
-const blocked = (...ranges: readonly MinuteRange[]): ExceptionEffect =>
-  unwrap(ExceptionEffect.blocked(ranges));
+const closed = (): ExceptionEffectRule => ExceptionEffectRule.closed();
+const hours = (...ranges: readonly MinuteRange[]): ExceptionEffectRule =>
+  unwrap(ExceptionEffectRule.hours(ranges));
+const blocked = (...ranges: readonly MinuteRange[]): ExceptionEffectRule =>
+  unwrap(ExceptionEffectRule.blocked(ranges));
 
-function exception(effect: ExceptionEffect, onDay: string): DayException {
-  return { dayKey: key(onDay), effect };
+function exception(effect: ExceptionEffectRule, onDay: string): DayException {
+  return { localDate: key(onDay), ...effect };
 }
 
 /** One shop's published hours for a day, as the per-shop list. */
@@ -143,7 +140,7 @@ function shopHours(
     {
       locationId: at,
       hours: ranges.map(([start, end]) =>
-        ShopDayHours.of(clock(start), clock(end)),
+        ShopDayHours.of(minute(clock(start)), endMinute(clock(end))),
       ),
     },
   ];
@@ -159,17 +156,16 @@ function input(
 ): BuildDayWindowsInput {
   return {
     barberId: IVAN,
-    dayKey: key(onDay),
+    localDate: key(onDay),
     versions,
     exceptions: options.exceptions ?? [],
     shopHours: options.shopHours ?? [],
   };
 }
 
-const windowsOf = (i: BuildDayWindowsInput) =>
-  RosterSystem.buildDayWindows(i, DAYS);
+const windowsOf = (i: BuildDayWindowsInput) => RosterSystem.buildDayWindows(i);
 const carveOutsOf = (i: BuildDayWindowsInput) =>
-  RosterSystem.buildDayCarveOuts(i, DAYS);
+  RosterSystem.buildDayCarveOuts(i);
 
 /** Windows rendered as local HH:mm for readable assertions. */
 function asClock(windows: readonly RosterWindow[]): readonly string[] {
@@ -182,9 +178,7 @@ describe('buildDayWindows — the bookable window', () => {
       input('2026-07-29', scheduleFrom([['09:00', '18:00']])),
     );
     expect(asClock(windows)).toEqual(['09:00–18:00']);
-    expect(RosterSystem.rosteredMinutes(windows, row('2026-07-29'))).toBe(
-      9 * 60,
-    );
+    expect(RosterSystem.rosteredMinutes(windows)).toBe(9 * 60);
   });
 
   it('keeps a split shift split', () => {
@@ -198,9 +192,7 @@ describe('buildDayWindows — the bookable window', () => {
       ),
     );
     expect(asClock(windows)).toEqual(['09:00–13:00', '14:00–18:00']);
-    expect(RosterSystem.rosteredMinutes(windows, row('2026-07-29'))).toBe(
-      8 * 60,
-    );
+    expect(RosterSystem.rosteredMinutes(windows)).toBe(8 * 60);
   });
 
   it('returns nothing before the schedule began, or on an unworked weekday', () => {
@@ -225,7 +217,7 @@ describe('buildDayWindows — the bookable window', () => {
     expect(window?.barberId).toBe('ivan');
   });
 
-  it('reads the weekday from the table row, not a Date', () => {
+  it('reads the weekday from the LocalDate, not a Date', () => {
     // Sunday 2026-08-02 is index 6 of the week — a Mon-first slip would read
     // Saturday's (absent) segments and offer nothing.
     const sundaysOnly = rosterOf(
@@ -239,19 +231,25 @@ describe('buildDayWindows — the bookable window', () => {
     expect(windowsOf(input('2026-08-01', sundaysOnly))).toEqual([]);
   });
 
-  it('fails closed on a day the table does not cover', () => {
+  it('answers any day from the roster alone — there is no zone table to fall outside', () => {
+    // The legacy table covered a window of days and failed closed outside
+    // it; on the wall clock every LocalDate is a day the roster can answer.
     expect(
-      windowsOf(input('2027-03-01', scheduleFrom([['09:00', '18:00']]))),
-    ).toEqual([]);
-    expect(
-      carveOutsOf(
-        input('2027-03-01', scheduleFrom([['09:00', '18:00']]), {
-          exceptions: [
-            exception(blocked(range('13:00', '14:00')), '2027-03-01'),
-          ],
-        }),
+      asClock(
+        windowsOf(input('2027-03-01', scheduleFrom([['09:00', '18:00']]))),
       ),
-    ).toEqual([]);
+    ).toEqual(['09:00–18:00']);
+    expect(
+      asClock(
+        carveOutsOf(
+          input('2027-03-01', scheduleFrom([['09:00', '18:00']]), {
+            exceptions: [
+              exception(blocked(range('13:00', '14:00')), '2027-03-01'),
+            ],
+          }),
+        ),
+      ),
+    ).toEqual(['13:00–14:00']);
   });
 });
 
@@ -396,9 +394,7 @@ describe('buildDayWindows — exceptions', () => {
       }),
     );
     expect(asClock(windows)).toEqual(['09:00–13:00', '14:00–18:00']);
-    expect(RosterSystem.rosteredMinutes(windows, row('2026-07-29'))).toBe(
-      8 * 60,
-    );
+    expect(RosterSystem.rosteredMinutes(windows)).toBe(8 * 60);
   });
 
   it('an admin block is carved out the same way', () => {
@@ -422,49 +418,55 @@ describe('buildDayWindows — exceptions', () => {
   it('rejects a range-bearing exception with no ranges', () => {
     // An empty `hours` would silently mean "closed" — a second way to say one
     // thing is how two code paths start disagreeing.
-    expect(ExceptionEffect.hours([]).ok).toBe(false);
-    expect(ExceptionEffect.blocked([]).ok).toBe(false);
+    expect(ExceptionEffectRule.hours([]).ok).toBe(false);
+    expect(ExceptionEffectRule.blocked([]).ok).toBe(false);
   });
 });
 
-describe('buildDayWindows — DST', () => {
+describe('buildDayWindows — DST days are ordinary on the wall clock (T1)', () => {
+  /*
+   * The roster never sees a zone (Law 7.3): a shift is "09:00–18:00 on the
+   * shop's clock" and stays that on the two transition days. Whether a
+   * wall-clock minute exists as an instant is asked ONCE, at the ingestion
+   * boundary (`ZonedTimeSystem.toUtc` refuses a spring-forward gap time with
+   * `DST_GAP_INVALID_TIME` and resolves a fall-back repeat to the earlier
+   * offset — see the boundary block below). The legacy instant model
+   * measured these days in real time and dropped erased or repeated
+   * boundaries; each case below keeps its scenario and pins the wall-clock
+   * answer (the shop is closed between 03:00 and 04:00, so no product
+   * figure moves).
+   */
   it('a 23-hour day still materialises correctly', () => {
     const windows = windowsOf(
       input('2026-03-29', scheduleFrom([['09:00', '18:00']])),
     );
-    // 09:00–18:00 is entirely after the 03:00 transition, so it is a normal
-    // nine hours of real time.
-    expect(RosterSystem.rosteredMinutes(windows, row('2026-03-29'))).toBe(
-      9 * 60,
-    );
+    // 09:00–18:00 is entirely after the 03:00 transition: nine hours.
+    expect(RosterSystem.rosteredMinutes(windows)).toBe(9 * 60);
     expect(asClock(windows)).toEqual(['09:00–18:00']);
   });
 
-  it('a shift spanning the spring-forward loses the erased hour of REAL time', () => {
-    // 02:00–06:00 on the wall clock is only three hours of actual work,
-    // because 03:00–03:59 never happens. Utilisation must divide by three.
+  it('a shift spanning the spring-forward is counted on the wall clock', () => {
+    // 02:00–06:00 on the wall clock is four rostered hours; the elapsed
+    // three are the boundary's arithmetic (02:00 → 06:00 via toUtc).
     const windows = windowsOf(
       input('2026-03-29', scheduleFrom([['02:00', '06:00']])),
     );
-    expect(RosterSystem.rosteredMinutes(windows, row('2026-03-29'))).toBe(
-      3 * 60,
-    );
+    expect(RosterSystem.rosteredMinutes(windows)).toBe(4 * 60);
     expect(asClock(windows)).toEqual(['02:00–06:00']);
   });
 
-  it('a shift spanning the fall-back gains the repeated hour', () => {
+  it('a shift spanning the fall-back is counted on the wall clock', () => {
     const windows = windowsOf(
       input('2026-10-25', scheduleFrom([['02:00', '06:00']])),
     );
-    expect(RosterSystem.rosteredMinutes(windows, row('2026-10-25'))).toBe(
-      5 * 60,
-    );
+    expect(RosterSystem.rosteredMinutes(windows)).toBe(4 * 60);
     expect(asClock(windows)).toEqual(['02:00–06:00']);
   });
 
-  it('DROPS a rostered range the spring-forward erased entirely, rather than inventing one', () => {
-    // 03:15–03:45 does not exist on 2026-03-29. Relocating it would book a
-    // client at a time nobody rostered.
+  it('keeps a rostered range inside the spring-forward gap on the wall clock, inventing nothing', () => {
+    // 03:15–03:45 never happens on 2026-03-29 in Sofia. The roster neither
+    // relocates nor drops it: the shop's clock says what was rostered, and a
+    // booking at 03:15 is refused where it becomes an instant.
     const windows = windowsOf(
       input(
         '2026-03-29',
@@ -474,12 +476,10 @@ describe('buildDayWindows — DST', () => {
         ]),
       ),
     );
-    expect(asClock(windows)).toEqual(['09:00–12:00']);
+    expect(asClock(windows)).toEqual(['03:15–03:45', '09:00–12:00']);
   });
 
-  it('drops a segment whose boundary the fall-back REPEATS — which 03:30 would it be?', () => {
-    // The legacy `onDay` refused an ambiguous wall clock exactly as it
-    // refused an erased one; the port keeps that.
+  it('keeps a segment whose boundary the fall-back repeats — 03:30 is one wall-clock minute', () => {
     const windows = windowsOf(
       input(
         '2026-10-25',
@@ -489,30 +489,32 @@ describe('buildDayWindows — DST', () => {
         ]),
       ),
     );
-    expect(asClock(windows)).toEqual(['09:00–12:00']);
+    expect(asClock(windows)).toEqual(['03:30–06:00', '09:00–12:00']);
   });
 
-  it('closes the shop when its opening minute was erased, however the hours were loaded', () => {
-    // Hours mapped straight from a stored week (NOT through shopDayHours):
-    // open 03:30 on 2026-03-29, a minute that never happens. Snapping it to
-    // 04:00 would declare a window edge nobody set; the shop is closed.
+  it('bounds by the published hours on a transition day exactly as on any other', () => {
+    // Open 03:30 on 2026-03-29 (a minute that never happens), closing 03:30
+    // on the fall-back day (a minute that happens twice), and a week later:
+    // three days, one rule — roster ∩ hours on the wall clock.
     const roster = scheduleFrom([['01:00', '12:00']]);
     expect(
-      windowsOf(
-        input('2026-03-29', roster, {
-          shopHours: shopHours([['03:30', '10:00']]),
-        }),
+      asClock(
+        windowsOf(
+          input('2026-03-29', roster, {
+            shopHours: shopHours([['03:30', '10:00']]),
+          }),
+        ),
       ),
-    ).toEqual([]);
-    // …and a repeated closing minute on the fall-back day (03:30 twice).
+    ).toEqual(['03:30–10:00']);
     expect(
-      windowsOf(
-        input('2026-10-25', roster, {
-          shopHours: shopHours([['01:00', '03:30']]),
-        }),
+      asClock(
+        windowsOf(
+          input('2026-10-25', roster, {
+            shopHours: shopHours([['01:00', '03:30']]),
+          }),
+        ),
       ),
-    ).toEqual([]);
-    // A week later the same hours stand.
+    ).toEqual(['01:00–03:30']);
     expect(
       asClock(
         windowsOf(
@@ -524,13 +526,13 @@ describe('buildDayWindows — DST', () => {
     ).toEqual(['03:30–10:00']);
   });
 
-  it('drops a carve-out the transition erased, keeping the worked day whole', () => {
+  it('carves a break out of a transition day on the wall clock', () => {
     const windows = windowsOf(
       input('2026-03-29', scheduleFrom([['01:00', '06:00']]), {
         exceptions: [exception(blocked(range('03:00', '03:30')), '2026-03-29')],
       }),
     );
-    expect(asClock(windows)).toEqual(['01:00–06:00']);
+    expect(asClock(windows)).toEqual(['01:00–03:00', '03:30–06:00']);
   });
 });
 
@@ -613,20 +615,20 @@ describe('buildDayWindows — a barber who covers TWO shops', () => {
     // nobody can work is a mistake someone should fix.
     const impossible = ShiftSegment.validate(
       [
-        ShiftSegment.of(Weekday.Mon, CENTER, clock('09:00'), clock('13:00')),
-        ShiftSegment.of(Weekday.Mon, MLADOST, clock('13:00'), clock('18:00')),
+        ShiftSegment.of(Weekday.Mon, CENTER, at('09:00'), until('13:00')),
+        ShiftSegment.of(Weekday.Mon, MLADOST, at('13:00'), until('18:00')),
       ],
-      30,
+      minuteCount(30),
     );
     expect(impossible.ok).toBe(false);
 
     // The SAME shape at one shop is a legal split shift — nobody travels.
     const oneShop = ShiftSegment.validate(
       [
-        ShiftSegment.of(Weekday.Mon, CENTER, clock('09:00'), clock('13:00')),
-        ShiftSegment.of(Weekday.Mon, CENTER, clock('13:00'), clock('18:00')),
+        ShiftSegment.of(Weekday.Mon, CENTER, at('09:00'), until('13:00')),
+        ShiftSegment.of(Weekday.Mon, CENTER, at('13:00'), until('18:00')),
       ],
-      30,
+      minuteCount(30),
     );
     expect(oneShop.ok).toBe(true);
   });
@@ -765,49 +767,55 @@ describe('versionFor — the roster in force on a date', () => {
 describe('shopDayHours — a stored week, read for one day', () => {
   /** Mon–Sat 09:00–20:00, Sunday closed — Mon first. */
   const week: readonly DayHours[] = [
-    DayHours.open(540, 1200),
-    DayHours.open(540, 1200),
-    DayHours.open(540, 1200),
-    DayHours.open(540, 1200),
-    DayHours.open(540, 1200),
-    DayHours.open(600, 960),
+    DayHours.open(minute(540), endMinute(1200)),
+    DayHours.open(minute(540), endMinute(1200)),
+    DayHours.open(minute(540), endMinute(1200)),
+    DayHours.open(minute(540), endMinute(1200)),
+    DayHours.open(minute(540), endMinute(1200)),
+    DayHours.open(minute(600), endMinute(960)),
     DayHours.closed(),
   ];
 
-  it('indexes the Mon-first week by the row’s ISO weekday', () => {
-    expect(RosterSystem.shopDayHours(week, row('2026-07-29'))).toEqual([
-      ShopDayHours.of(540, 1200),
+  it('indexes the Mon-first week by the day’s ISO weekday', () => {
+    expect(RosterSystem.shopDayHours(week, key('2026-07-29'))).toEqual([
+      ShopDayHours.of(minute(540), endMinute(1200)),
     ]);
-    expect(RosterSystem.shopDayHours(week, row('2026-08-01'))).toEqual([
-      ShopDayHours.of(600, 960),
+    expect(RosterSystem.shopDayHours(week, key('2026-08-01'))).toEqual([
+      ShopDayHours.of(minute(600), endMinute(960)),
     ]);
   });
 
   it('is closed — an empty list — on the shop’s closed day', () => {
-    expect(RosterSystem.shopDayHours(week, row('2026-08-02'))).toEqual([]);
+    expect(RosterSystem.shopDayHours(week, key('2026-08-02'))).toEqual([]);
   });
 
   it('imposes no bound (null) when the week is not seven days', () => {
-    expect(RosterSystem.shopDayHours([], row('2026-07-29'))).toBeNull();
+    expect(RosterSystem.shopDayHours([], key('2026-07-29'))).toBeNull();
     expect(
-      RosterSystem.shopDayHours(week.slice(0, 6), row('2026-07-29')),
+      RosterSystem.shopDayHours(week.slice(0, 6), key('2026-07-29')),
     ).toBeNull();
   });
 
-  it('closes rather than guesses when the transition erased the opening minute', () => {
-    // 2026-03-29 is a Sunday: open 03:30 that day, which never happens.
+  it('reads the stored minutes as they are on a DST day — the gap is the boundary’s to refuse', () => {
+    // 2026-03-29 is a Sunday whose 03:30 never happens in Sofia. On the
+    // shop's wall clock the published hours are still 03:30–10:00, exactly
+    // as on any other Sunday; turning that opening into an instant is the
+    // ingestion boundary's job (`ZonedTimeSystem.toUtc` →
+    // `DST_GAP_INVALID_TIME`), never the roster's.
     const nightOwl: readonly DayHours[] = [
       ...week.slice(0, 6),
-      DayHours.open(210, 600),
+      DayHours.open(minute(210), endMinute(600)),
     ];
-    expect(RosterSystem.shopDayHours(nightOwl, row('2026-03-29'))).toEqual([]);
-    expect(RosterSystem.shopDayHours(nightOwl, row('2026-03-22'))).toEqual([
-      ShopDayHours.of(210, 600),
+    expect(RosterSystem.shopDayHours(nightOwl, key('2026-03-29'))).toEqual([
+      ShopDayHours.of(minute(210), endMinute(600)),
+    ]);
+    expect(RosterSystem.shopDayHours(nightOwl, key('2026-03-22'))).toEqual([
+      ShopDayHours.of(minute(210), endMinute(600)),
     ]);
   });
 
   it('bounds a roster through buildDayWindows — the closed Sunday offers nothing', () => {
-    const sunday = row('2026-08-02');
+    const sunday = key('2026-08-02');
     const hoursToday = RosterSystem.shopDayHours(week, sunday);
     const windows = windowsOf(
       input('2026-08-02', scheduleFrom([['09:00', '18:00']]), {
@@ -818,57 +826,62 @@ describe('shopDayHours — a stored week, read for one day', () => {
   });
 });
 
-describe('intervalsOf / resolvedIntervalsOf — minutes to instants over the row', () => {
-  const ordinary = row('2026-07-29');
-  const spring = row('2026-03-29');
-  const autumn = row('2026-10-25');
+/*
+ * `intervalsOf` / `resolvedIntervalsOf` are deleted (flatten-spec §2.4:
+ * windows ARE minute ranges). Their four cases move to the successor — the
+ * ingestion boundary that turns a window's minutes into instants with the
+ * location's zone (`ZonedTimeSystem.toUtc` / `toLocal`), on the same days.
+ */
+describe('a window becomes instants only at the boundary — ZonedTimeSystem', () => {
+  const ordinary = key('2026-07-29');
+  const spring = key('2026-03-29');
+  const autumn = key('2026-10-25');
+  const instant = (day: typeof ordinary, raw: string) =>
+    unwrapOk(ZonedTimeSystem.toUtc(day, minute(clock(raw)), FIXTURE_TIME_ZONE));
 
-  it('places a span on the row’s day: dayStart + minutes on an ordinary day', () => {
-    expect(
-      RosterSystem.intervalsOf([range('09:00', '10:30')], ordinary),
-    ).toEqual([
-      TimeInterval.of(
-        ordinary.dayStartMs + 540 * 60_000,
-        ordinary.dayStartMs + 630 * 60_000,
-      ),
-    ]);
+  it('places a span on its day: the day’s first instant + minutes on an ordinary day', () => {
+    const start = ZonedTimeSystem.startOfLocalDay(ordinary, FIXTURE_TIME_ZONE);
+    expect(instant(ordinary, '09:00')).toBe(start + 540 * 60_000);
+    expect(instant(ordinary, '10:30')).toBe(start + 630 * 60_000);
   });
 
   it('keeps the real length across a transition', () => {
-    const [springSpan] = RosterSystem.intervalsOf(
-      [range('02:00', '05:00')],
-      spring,
+    expect((instant(spring, '05:00') - instant(spring, '02:00')) / 60_000).toBe(
+      120,
     );
-    const [autumnSpan] = RosterSystem.intervalsOf(
-      [range('02:00', '05:00')],
-      autumn,
+    expect((instant(autumn, '05:00') - instant(autumn, '02:00')) / 60_000).toBe(
+      240,
     );
-    expect(TimeInterval.durationMinutes(springSpan as TimeInterval)).toBe(120);
-    expect(TimeInterval.durationMinutes(autumnSpan as TimeInterval)).toBe(240);
   });
 
-  it('drops a declared span whose end the spring-forward erased, or the fall-back repeated', () => {
+  it('refuses a declared minute the spring-forward erased; resolves a repeated one to the earlier offset', () => {
     expect(
-      RosterSystem.resolvedIntervalsOf([range('03:00', '03:30')], spring),
-    ).toEqual([]);
-    expect(
-      RosterSystem.resolvedIntervalsOf([range('01:00', '03:30')], autumn),
-    ).toEqual([]);
-    expect(
-      RosterSystem.resolvedIntervalsOf([range('01:00', '04:00')], autumn),
-    ).toHaveLength(1);
+      unwrapErr(
+        ZonedTimeSystem.toUtc(
+          spring,
+          minute(clock('03:30')),
+          FIXTURE_TIME_ZONE,
+        ),
+      ).errorCode,
+    ).toBe(TimeErrorCode.DstGap);
+    // 03:30 happens twice on the fall-back day: the earlier offset (EEST,
+    // UTC+3) wins, so it lands an hour before the second 03:30.
+    expect(instant(autumn, '03:30')).toBe(
+      instant(autumn, '04:00') - 90 * 60_000,
+    );
   });
 
   it('round-trips a window: minutes → instants → minutes', () => {
     for (const day of [ordinary, spring, autumn]) {
-      for (const span of [range('00:00', '02:59'), range('04:00', '23:59')]) {
-        const [interval] = RosterSystem.intervalsOf([span], day);
-        expect(
-          ZonedTimeSystem.minuteOfDay((interval as TimeInterval).startMs, day),
-        ).toBe(span.startMinutes);
-        expect(
-          ZonedTimeSystem.minuteOfDay((interval as TimeInterval).endMs, day),
-        ).toBe(span.endMinutes);
+      for (const [from, to] of [
+        ['00:00', '02:59'],
+        ['04:00', '23:59'],
+      ] as const) {
+        for (const raw of [from, to]) {
+          expect(
+            ZonedTimeSystem.toLocal(instant(day, raw), FIXTURE_TIME_ZONE),
+          ).toEqual({ localDate: day, minute: clock(raw) });
+        }
       }
     }
   });
@@ -876,7 +889,6 @@ describe('intervalsOf / resolvedIntervalsOf — minutes to instants over the row
 
 describe('RosterSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
-    const days = deepFreeze([...DAYS]);
     const fixture = deepFreeze(
       input(
         '2026-07-29',
@@ -896,11 +908,11 @@ describe('RosterSystem — purity', () => {
         },
       ),
     );
-    const once = RosterSystem.buildDayWindows(fixture, days);
-    const twice = RosterSystem.buildDayWindows(fixture, days);
+    const once = RosterSystem.buildDayWindows(fixture);
+    const twice = RosterSystem.buildDayWindows(fixture);
     expect(twice).toEqual(once);
-    expect(RosterSystem.buildDayCarveOuts(fixture, days)).toEqual(
-      RosterSystem.buildDayCarveOuts(fixture, days),
+    expect(RosterSystem.buildDayCarveOuts(fixture)).toEqual(
+      RosterSystem.buildDayCarveOuts(fixture),
     );
     expect(asClock(once)).toEqual([
       '09:00–11:00',
@@ -923,7 +935,10 @@ describe('RosterSystem — the minute-set model (property)', () => {
   const anyRange = fc
     .tuple(fc.integer({ min: 0, max: 95 }), fc.integer({ min: 1, max: 24 }))
     .map(([start, length]) =>
-      MinuteRange.of(start * 15, Math.min(1440, (start + length) * 15)),
+      MinuteRange.of(
+        minute(start * 15),
+        endMinute(Math.min(1440, (start + length) * 15)),
+      ),
     );
 
   it('windows = roster ∩ shop hours − blocks, and blocks are exactly what was removed', () => {
@@ -940,8 +955,8 @@ describe('RosterSystem — the minute-set model (property)', () => {
               ShiftSegment.of(
                 Weekday.Wed,
                 CENTER,
-                s.startMinutes,
-                s.endMinutes,
+                minute(s.startMinutes),
+                endMinute(s.endMinutes),
               ),
             ),
             key('2026-01-01'),
@@ -953,7 +968,10 @@ describe('RosterSystem — the minute-set model (property)', () => {
                   {
                     locationId: CENTER,
                     hours: MinuteRange.normalize(hoursRaw).map((h) =>
-                      ShopDayHours.of(h.startMinutes, h.endMinutes),
+                      ShopDayHours.of(
+                        minute(h.startMinutes),
+                        endMinute(h.endMinutes),
+                      ),
                     ),
                   },
                 ];
@@ -969,7 +987,7 @@ describe('RosterSystem — the minute-set model (property)', () => {
           const roster = coverage(segments);
           const open =
             hoursRaw === null
-              ? coverage([MinuteRange.of(0, 1440)])
+              ? coverage([MinuteRange.of(minute(0), endMinute(1440))])
               : coverage(hoursRaw);
           const cut = coverage(blocksRaw);
           const expectedWindows = roster.map(
@@ -993,7 +1011,7 @@ describe('RosterSystem — the minute-set model (property)', () => {
               );
             }
           }
-          expect(RosterSystem.rosteredMinutes(windows, row('2026-07-29'))).toBe(
+          expect(RosterSystem.rosteredMinutes(windows)).toBe(
             expectedWindows.filter(Boolean).length,
           );
         },

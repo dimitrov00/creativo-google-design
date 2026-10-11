@@ -1,3 +1,4 @@
+import type { Brand } from '../primitives/brand';
 import { EngagementError } from './engagement-errors.data';
 import { Result } from './result.data';
 
@@ -8,7 +9,7 @@ import { Result } from './result.data';
  * `redemptions/{refereeUserId}` document in ONE plan (§3.1), so the counter
  * and the documents cannot drift — never a raw client `+1`.
  */
-export type RedemptionCount = number & { readonly __brand: unique symbol };
+export type RedemptionCount = Brand<number, 'RedemptionCount'>;
 
 export const RedemptionCount = {
   /** The only cast site, for a stored count. Untrusted input goes through `parse`. */

@@ -13,8 +13,10 @@ import {
 } from '@creativo/application/shared';
 import {
   type Actor as EcsActor,
-  ActorKind,
+  ActorRole,
+  AuditAction,
   AuditSystem,
+  type ProfileAction,
   SystemSource,
 } from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
@@ -55,7 +57,9 @@ export function profileAuditAction(
   beforeExists: boolean,
   afterExists: boolean,
 ): string {
-  return AuditSystem.profileAction(beforeExists, afterExists);
+  return LEGACY_PROFILE_ACTION[
+    AuditSystem.profileAction(beforeExists, afterExists)
+  ];
 }
 
 /**
@@ -193,15 +197,40 @@ export const auditProfileChanges = onDocumentWrittenWithAuthContext(
 
 // ── The bridge: ecs-core's actor → the legacy class (Phase 4 deletes it) ──
 
+/**
+ * The stored dotted verb of each profile `AuditAction` — the bytes
+ * `auditLog.action` holds until the governance flip (flatten-spec §0.1:
+ * the shim converts SCREAMING ↔ legacy, one table per dictionary).
+ */
+const LEGACY_PROFILE_ACTION: { readonly [A in ProfileAction]: string } = {
+  [AuditAction.ProfileCreated]: 'profile.created',
+  [AuditAction.ProfileUpdated]: 'profile.updated',
+  [AuditAction.ProfileDeleted]: 'profile.deleted',
+};
+
+/** The stored lowercase `actor.source` of each `SystemSource` tag. */
+const LEGACY_SYSTEM_SOURCE: { readonly [S in SystemSource]: string } = {
+  [SystemSource.AdminSdk]: 'admin_sdk',
+  [SystemSource.FirestoreSystem]: 'firestore_system',
+  [SystemSource.ProfileTrigger]: 'profile_trigger',
+  [SystemSource.LoyaltyEngine]: 'loyalty_engine',
+  [SystemSource.UnattributedUnknown]: 'unattributed_unknown',
+  [SystemSource.UnattributedApiKey]: 'unattributed_api_key',
+  [SystemSource.UnattributedUnauthenticated]: 'unattributed_unauthenticated',
+  [SystemSource.Fixture]: 'fixture',
+};
+
 /** The writer as the legacy row holds it: a process by its source, a person by uid. */
 function legacyActorOf(actor: EcsActor): Actor {
-  if (actor.kind === ActorKind.User) {
-    const uid = UserId.create(actor.userId);
+  if (actor.actorRole === ActorRole.User) {
+    const uid = UserId.create(actor.actorUserId);
     if (uid.isSuccess()) return Actor.user(uid.value);
   }
   return Actor.system(
-    actor.kind === ActorKind.System
-      ? actor.source
-      : SystemSource.UnattributedUnknown,
+    LEGACY_SYSTEM_SOURCE[
+      actor.actorRole === ActorRole.System
+        ? actor.actorSystemSource
+        : SystemSource.UnattributedUnknown
+    ],
   );
 }

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
-import { deepFreeze, unwrapOk } from '../testing';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import {
+  FIXTURE_TIME_ZONE,
+  deepFreeze,
+  localDate,
+  minute,
+  utcMs,
+} from '../testing';
 import {
   type FilterRow,
   type SectionRow,
@@ -9,7 +16,7 @@ import {
   type VisitRowOutcome,
   type VisitSection,
 } from './visit-list.system';
-import { DstResolution, ZonedTimeSystem } from './zoned-time.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * COPIED and re-targeted:
@@ -25,23 +32,28 @@ import { DstResolution, ZonedTimeSystem } from './zoned-time.system';
  *   `matchesVisitFilter` / `visitFiltersFor` / `offeredVisitFilters` cases
  *   (10 of 12); the two `visitFilterWordKey` cases are catalogue keys.
  * Plus purity.
+ *
+ * Flatten pass (Law 7, T1): a row starts at a shop day and minute
+ * (`localDate` + `startMinutes`), not an instant, and every tag is SCREAMING
+ * (`'month'` → `'MONTH'`, `'no_show'` → `'NO_SHOW'`); the host words its test
+ * ids after the grain in lower case, as the legacy ids read.
  */
 
 const S = VisitListSystem;
-const ZONE = 'Europe/Sofia';
 const UPCOMING_SECTION_KEY = S.UPCOMING_SECTION_KEY;
 
 type Row = SectionRow & FilterRow;
 
-/** A wall clock in the shop's zone → its instant and its day. */
+/** A wall clock on the shop's calendar → its day and its minute. */
 function at(iso: string): {
-  readonly epochMs: number;
-  readonly dayKey: DayKey;
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
 } {
   return {
-    epochMs: unwrapOk(ZonedTimeSystem.parseIso(iso, ZONE, DstResolution.Reject))
-      .epochMs,
-    dayKey: DayKey.of(iso.slice(0, 10)),
+    localDate: localDate(iso.slice(0, 10)),
+    startMinutes: minute(
+      Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16)),
+    ),
   };
 }
 
@@ -51,7 +63,7 @@ function row(
   iso: string,
   options: {
     readonly upcoming?: boolean;
-    readonly grain?: 'month' | 'year';
+    readonly grain?: 'MONTH' | 'YEAR';
     readonly outcome?: VisitRowOutcome;
   } = {},
 ): Row {
@@ -59,12 +71,13 @@ function row(
   const upcoming = options.upcoming ?? false;
   return {
     id,
-    startMs: start.epochMs,
+    localDate: start.localDate,
+    startMinutes: start.startMinutes,
     sectionKey: upcoming
       ? UPCOMING_SECTION_KEY
-      : S.sectionKeyOf(start.dayKey, options.grain ?? 'month'),
+      : S.sectionKeyOf(start.localDate, options.grain ?? 'MONTH'),
     upcoming,
-    outcome: options.outcome ?? (upcoming ? 'open' : 'worked'),
+    outcome: options.outcome ?? (upcoming ? 'OPEN' : 'WORKED'),
   };
 }
 
@@ -72,7 +85,7 @@ function row(
 function sectionVisits(
   rows: readonly Row[],
   options: {
-    readonly grain: 'month' | 'year';
+    readonly grain: 'MONTH' | 'YEAR';
     readonly detail?: (rows: readonly Row[]) => number | null;
     readonly testIdPrefix?: string;
   },
@@ -86,7 +99,7 @@ function sectionVisits(
     detail: section.upcoming ? null : (options.detail?.(section.rows) ?? null),
     testId: section.upcoming
       ? `${prefix}-${UPCOMING_SECTION_KEY}`
-      : `${prefix}-${options.grain}-${section.key}`,
+      : `${prefix}-${options.grain.toLowerCase()}-${section.key}`,
   }));
 }
 
@@ -109,7 +122,7 @@ describe('sectionVisits', () => {
         row('aug-late', '2026-08-27T10:00:00'),
         row('sep-early', '2026-09-04T10:00:00'),
       ],
-      { grain: 'month' },
+      { grain: 'MONTH' },
     );
 
     expect(sections.map((section) => section.key)).toEqual([
@@ -139,7 +152,7 @@ describe('sectionVisits', () => {
         row('july-2026', '2026-07-16T10:00:00'),
         row('july-2025', '2025-07-07T10:00:00'),
       ],
-      { grain: 'month' },
+      { grain: 'MONTH' },
     );
     // Two keys, each with its year — so two headings.
     expect(sections.map((section) => section.key)).toEqual([
@@ -152,16 +165,16 @@ describe('sectionVisits', () => {
     const sections = sectionVisits(
       [
         // Built for the year grain, and for the month grain: both file by year.
-        row('sep-2026', '2026-09-04T10:00:00', { grain: 'year' }),
-        row('jul-2026', '2026-07-16T10:00:00', { outcome: 'cancelled' }),
-        row('mar-2025', '2025-03-06T10:00:00', { grain: 'year' }),
+        row('sep-2026', '2026-09-04T10:00:00', { grain: 'YEAR' }),
+        row('jul-2026', '2026-07-16T10:00:00', { outcome: 'CANCELLED' }),
+        row('mar-2025', '2025-03-06T10:00:00', { grain: 'YEAR' }),
         row('this-visit', '2026-10-02T10:00:00', { upcoming: true }),
       ],
       {
-        grain: 'year',
+        grain: 'YEAR',
         // The staff heading's figure: worked visits only, absent at zero.
         detail: (rows) => {
-          const worked = rows.filter((entry) => entry.outcome === 'worked');
+          const worked = rows.filter((entry) => entry.outcome === 'WORKED');
           return worked.length === 0 ? null : worked.length;
         },
         testIdPrefix: 'history',
@@ -206,7 +219,7 @@ describe('sectionVisits', () => {
         row('past', '2026-09-04T10:00:00'),
       ],
       {
-        grain: 'year',
+        grain: 'YEAR',
         detail: (rows) => {
           asked.push(...ids(rows));
           return null;
@@ -219,7 +232,7 @@ describe('sectionVisits', () => {
   it('gives a period with no visit no section at all, and an empty list none', () => {
     const sections = sectionVisits(
       [row('sep', '2026-09-04T10:00:00'), row('jun', '2026-06-11T10:00:00')],
-      { grain: 'month' },
+      { grain: 'MONTH' },
     );
     expect(sections.map((section) => section.key)).toEqual([
       '2026-09',
@@ -227,7 +240,7 @@ describe('sectionVisits', () => {
     ]);
     // No upcoming row, no upcoming heading.
     expect(sections.some((section) => section.key === 'upcoming')).toBe(false);
-    expect(sectionVisits([], { grain: 'month' })).toEqual([]);
+    expect(sectionVisits([], { grain: 'MONTH' })).toEqual([]);
   });
 
   it('keeps one order whatever order the rows arrive in', () => {
@@ -236,8 +249,8 @@ describe('sectionVisits', () => {
       row('a', '2026-09-04T10:00:00'),
       row('c', '2026-09-01T10:00:00'),
     ];
-    const forward = sectionVisits(rows, { grain: 'month' });
-    const backward = sectionVisits([...rows].reverse(), { grain: 'month' });
+    const forward = sectionVisits(rows, { grain: 'MONTH' });
+    const backward = sectionVisits([...rows].reverse(), { grain: 'MONTH' });
     expect(ids(forward[0]?.rows ?? [])).toEqual(['a', 'b', 'c']);
     expect(ids(backward[0]?.rows ?? [])).toEqual(['a', 'b', 'c']);
   });
@@ -248,7 +261,7 @@ describe('sectionVisits', () => {
         row('ahead', '2026-10-02T10:00:00', { upcoming: true }),
         row('past', '2026-09-04T10:00:00'),
       ],
-      { grain: 'month' },
+      { grain: 'MONTH' },
     );
     expect(sections.map((section) => section.testId)).toEqual([
       'visits-upcoming',
@@ -267,7 +280,7 @@ describe('workedVisitsDetail', () => {
         row('sep-c', '2026-09-02T10:00:00'),
         row('aug', '2026-08-03T10:00:00'),
       ],
-      { grain: 'month', detail: workedVisitsDetail() },
+      { grain: 'MONTH', detail: workedVisitsDetail() },
     );
     expect(sections.map((section) => [section.key, section.detail])).toEqual([
       // The upcoming run is a promise, not a record: never asked.
@@ -283,15 +296,15 @@ describe('workedVisitsDetail', () => {
     expect(
       detail([
         row('worked', '2026-07-20T10:00:00'),
-        row('missed', '2026-07-07T10:00:00', { outcome: 'no_show' }),
-        row('called-off', '2026-07-16T10:00:00', { outcome: 'cancelled' }),
+        row('missed', '2026-07-07T10:00:00', { outcome: 'NO_SHOW' }),
+        row('called-off', '2026-07-16T10:00:00', { outcome: 'CANCELLED' }),
       ]),
     ).toBeNull();
     expect(
       detail([
         row('worked-a', '2026-07-20T10:00:00'),
         row('worked-b', '2026-07-02T10:00:00'),
-        row('missed', '2026-07-07T10:00:00', { outcome: 'no_show' }),
+        row('missed', '2026-07-07T10:00:00', { outcome: 'NO_SHOW' }),
       ]),
     ).toBe(2);
     expect(detail([])).toBeNull();
@@ -300,12 +313,12 @@ describe('workedVisitsDetail', () => {
   it('takes the floor its grain asks for: a year’s figure is a fact from the first visit on', () => {
     const byYear = workedVisitsDetail(1);
     expect(
-      byYear([row('only', '2025-03-06T10:00:00', { grain: 'year' })]),
+      byYear([row('only', '2025-03-06T10:00:00', { grain: 'YEAR' })]),
     ).toBe(1);
     // Nothing worked is never «0 посещения», whatever the floor.
     expect(
       workedVisitsDetail(0)([
-        row('missed', '2025-03-06T10:00:00', { outcome: 'no_show' }),
+        row('missed', '2025-03-06T10:00:00', { outcome: 'NO_SHOW' }),
       ]),
     ).toBeNull();
   });
@@ -313,29 +326,21 @@ describe('workedVisitsDetail', () => {
 
 describe('visitSectionKey', () => {
   it('files a visit on its own calendar, never the device’s', () => {
-    // 00:30 on 1 October in Sofia is still 30 September in UTC: the day the
-    // shop's table names is the 1st.
-    const justAfterMidnight = at('2026-10-01T00:30:00');
-    const days = ZonedTimeSystem.dayTableAround(
-      ZONE,
-      justAfterMidnight.epochMs,
-      justAfterMidnight.epochMs,
-      1,
-    );
-    const day = ZonedTimeSystem.dayKeyOf(justAfterMidnight.epochMs, days);
-    if (day === null) throw new Error('fixture');
-    expect(S.sectionKeyOf(day, 'month')).toBe('2026-10');
-    expect(S.sectionKeyOf(day, 'year')).toBe('2026');
-    const newYear = at('2027-01-01T00:15:00');
-    const newYearDays = ZonedTimeSystem.dayTableAround(
-      ZONE,
-      newYear.epochMs,
-      newYear.epochMs,
-      1,
-    );
-    const newYearDay = ZonedTimeSystem.dayKeyOf(newYear.epochMs, newYearDays);
-    if (newYearDay === null) throw new Error('fixture');
-    expect(S.sectionKeyOf(newYearDay, 'year')).toBe('2027');
+    // 00:30 on 1 October in Sofia is still 30 September in UTC: the shop
+    // day the boundary reads off the instant (`toLocal`) is the 1st.
+    const justAfterMidnight = utcMs('2026-10-01T00:30:00.000+03:00');
+    const day = ZonedTimeSystem.toLocal(
+      justAfterMidnight,
+      FIXTURE_TIME_ZONE,
+    ).localDate;
+    expect(S.sectionKeyOf(day, 'MONTH')).toBe('2026-10');
+    expect(S.sectionKeyOf(day, 'YEAR')).toBe('2026');
+    const newYear = utcMs('2027-01-01T00:15:00.000+02:00');
+    const newYearDay = ZonedTimeSystem.toLocal(
+      newYear,
+      FIXTURE_TIME_ZONE,
+    ).localDate;
+    expect(S.sectionKeyOf(newYearDay, 'YEAR')).toBe('2027');
   });
 });
 
@@ -351,19 +356,19 @@ function filterRow(
 }
 
 const ROWS = [
-  filterRow('ahead', true, 'open'),
+  filterRow('ahead', true, 'OPEN'),
   filterRow('waiting', true, null),
-  filterRow('worked', false, 'worked'),
-  filterRow('no-show', false, 'no_show'),
-  filterRow('cancelled', false, 'cancelled'),
+  filterRow('worked', false, 'WORKED'),
+  filterRow('no-show', false, 'NO_SHOW'),
+  filterRow('cancelled', false, 'CANCELLED'),
   // A past hour nobody settled: none of the three outcomes, not ahead.
-  filterRow('unsettled', false, 'open'),
+  filterRow('unsettled', false, 'OPEN'),
 ];
 
 const matchesVisitFilter = S.matches;
 const visitFiltersFor = S.filtersFor;
 const offeredVisitFilters = (
-  perspective: 'client' | 'staff',
+  perspective: 'CLIENT' | 'STAFF',
   rows: readonly FilterRow[],
   options: { readonly complete: boolean },
 ) => S.offered(perspective, rows, options.complete);
@@ -375,70 +380,70 @@ const kept = (filter: VisitFilter) =>
 
 describe('matchesVisitFilter', () => {
   it('keeps every row unfiltered', () => {
-    expect(kept('all')).toEqual(ROWS.map((entry) => entry.id));
+    expect(kept('ALL')).toEqual(ROWS.map((entry) => entry.id));
   });
 
   it('keeps the run ahead under «Предстоящи», a waiting request included', () => {
-    expect(kept('upcoming')).toEqual(['ahead', 'waiting']);
+    expect(kept('UPCOMING')).toEqual(['ahead', 'waiting']);
   });
 
   it('narrows the past to the one outcome each terminal filter names', () => {
-    expect(kept('completed')).toEqual(['worked']);
-    expect(kept('no_show')).toEqual(['no-show']);
-    expect(kept('cancelled')).toEqual(['cancelled']);
+    expect(kept('COMPLETED')).toEqual(['worked']);
+    expect(kept('NO_SHOW')).toEqual(['no-show']);
+    expect(kept('CANCELLED')).toEqual(['cancelled']);
   });
 
   it('reads the row’s OWN outcome — the subject’s on the staff card', () => {
     // A companion no-showed on a visit the subject was worked on: the
     // subject's row is `worked`, and «Неявявания» must not list it.
-    const party = filterRow('party', false, 'worked');
-    expect(matchesVisitFilter(party, 'no_show')).toBe(false);
-    expect(matchesVisitFilter(party, 'completed')).toBe(true);
+    const party = filterRow('party', false, 'WORKED');
+    expect(matchesVisitFilter(party, 'NO_SHOW')).toBe(false);
+    expect(matchesVisitFilter(party, 'COMPLETED')).toBe(true);
   });
 });
 
 describe('visitFiltersFor', () => {
   it('offers the client’s options in the order their list always read', () => {
-    expect(visitFiltersFor('client')).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'cancelled',
-      'no_show',
+    expect(visitFiltersFor('CLIENT')).toEqual([
+      'ALL',
+      'UPCOMING',
+      'COMPLETED',
+      'CANCELLED',
+      'NO_SHOW',
     ]);
   });
 
   it('offers the staff history’s options as its spec lists them', () => {
-    expect(visitFiltersFor('staff')).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'no_show',
-      'cancelled',
+    expect(visitFiltersFor('STAFF')).toEqual([
+      'ALL',
+      'UPCOMING',
+      'COMPLETED',
+      'NO_SHOW',
+      'CANCELLED',
     ]);
   });
 });
 
 describe('offeredVisitFilters', () => {
   const past = ROWS.filter((entry) => !entry.upcoming);
-  const workedOnly = [filterRow('worked', false, 'worked')];
+  const workedOnly = [filterRow('worked', false, 'WORKED')];
 
   it('offers every option a row answers, in the menu’s order', () => {
-    expect(offeredVisitFilters('staff', ROWS, { complete: true })).toEqual(
-      visitFiltersFor('staff'),
+    expect(offeredVisitFilters('STAFF', ROWS, { complete: true })).toEqual(
+      visitFiltersFor('STAFF'),
     );
-    expect(offeredVisitFilters('client', ROWS, { complete: true })).toEqual(
-      visitFiltersFor('client'),
+    expect(offeredVisitFilters('CLIENT', ROWS, { complete: true })).toEqual(
+      visitFiltersFor('CLIENT'),
     );
   });
 
   it('leaves out what no row answers once the book is read to its end — «Всички» always stays', () => {
-    const withNoShow = [...workedOnly, filterRow('missed', false, 'no_show')];
+    const withNoShow = [...workedOnly, filterRow('missed', false, 'NO_SHOW')];
     expect(
-      offeredVisitFilters('staff', withNoShow, { complete: true }),
-    ).toEqual(['all', 'completed', 'no_show']);
-    expect(offeredVisitFilters('staff', [], { complete: true })).toEqual([
-      'all',
+      offeredVisitFilters('STAFF', withNoShow, { complete: true }),
+    ).toEqual(['ALL', 'COMPLETED', 'NO_SHOW']);
+    expect(offeredVisitFilters('STAFF', [], { complete: true })).toEqual([
+      'ALL',
     ]);
   });
 
@@ -447,49 +452,49 @@ describe('offeredVisitFilters', () => {
     // rows, so only «Всички» is left and the host shows no funnel.
     const worked = [
       ...workedOnly,
-      filterRow('worked-2', false, 'worked'),
-      filterRow('worked-3', false, 'worked'),
+      filterRow('worked-2', false, 'WORKED'),
+      filterRow('worked-3', false, 'WORKED'),
     ];
-    expect(offeredVisitFilters('staff', worked, { complete: true })).toEqual([
-      'all',
+    expect(offeredVisitFilters('STAFF', worked, { complete: true })).toEqual([
+      'ALL',
     ]);
-    expect(offeredVisitFilters('client', worked, { complete: true })).toEqual([
-      'all',
+    expect(offeredVisitFilters('CLIENT', worked, { complete: true })).toEqual([
+      'ALL',
     ]);
     // Nothing but what is ahead: «Предстоящи» narrows nothing either.
     const ahead = [
-      filterRow('next', true, 'open'),
+      filterRow('next', true, 'OPEN'),
       filterRow('waiting', true, null),
     ];
-    expect(offeredVisitFilters('staff', ahead, { complete: true })).toEqual([
-      'all',
+    expect(offeredVisitFilters('STAFF', ahead, { complete: true })).toEqual([
+      'ALL',
     ]);
     // One hour ahead is enough for both to narrow.
     expect(
       offeredVisitFilters(
-        'staff',
-        [...worked, filterRow('next', true, 'open')],
+        'STAFF',
+        [...worked, filterRow('next', true, 'OPEN')],
         { complete: true },
       ),
-    ).toEqual(['all', 'upcoming', 'completed']);
+    ).toEqual(['ALL', 'UPCOMING', 'COMPLETED']);
     // While older pages remain, an older page is a past hour, so a list of
     // upcoming rows alone still narrows under «Предстоящи».
-    expect(offeredVisitFilters('staff', ahead, { complete: false })).toEqual([
-      'all',
-      'upcoming',
-      'completed',
-      'no_show',
-      'cancelled',
+    expect(offeredVisitFilters('STAFF', ahead, { complete: false })).toEqual([
+      'ALL',
+      'UPCOMING',
+      'COMPLETED',
+      'NO_SHOW',
+      'CANCELLED',
     ]);
   });
 
   it('keeps the past outcomes while older pages remain, but «Предстоящи» is the first read’s to answer', () => {
     expect(
-      offeredVisitFilters('staff', workedOnly, { complete: false }),
-    ).toEqual(['all', 'completed', 'no_show', 'cancelled']);
+      offeredVisitFilters('STAFF', workedOnly, { complete: false }),
+    ).toEqual(['ALL', 'COMPLETED', 'NO_SHOW', 'CANCELLED']);
     expect(
-      offeredVisitFilters('staff', past, { complete: false }),
-    ).not.toContain('upcoming');
+      offeredVisitFilters('STAFF', past, { complete: false }),
+    ).not.toContain('UPCOMING');
   });
 });
 
@@ -499,14 +504,14 @@ describe('VisitListSystem — purity', () => {
       row('b', '2026-09-04T10:00:00'),
       row('next', '2026-10-05T10:00:00', { upcoming: true }),
       row('a', '2026-09-04T10:00:00'),
-      row('c', '2025-09-01T10:00:00', { outcome: 'no_show' }),
+      row('c', '2025-09-01T10:00:00', { outcome: 'NO_SHOW' }),
     ]);
-    const once = S.sections(rows, 'month');
-    expect(S.sections(rows, 'month')).toEqual(once);
-    expect(S.sections(rows, 'year')).toEqual(S.sections(rows, 'year'));
+    const once = S.sections(rows, 'MONTH');
+    expect(S.sections(rows, 'MONTH')).toEqual(once);
+    expect(S.sections(rows, 'YEAR')).toEqual(S.sections(rows, 'YEAR'));
     expect(ids(rows)).toEqual(['b', 'next', 'a', 'c']);
-    expect(S.offered('staff', rows, true)).toEqual(
-      S.offered('staff', rows, true),
+    expect(S.offered('STAFF', rows, true)).toEqual(
+      S.offered('STAFF', rows, true),
     );
   });
 });

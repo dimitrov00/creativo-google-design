@@ -1,148 +1,164 @@
-import type { ImpersonationSessionId } from '../entities/impersonation-session.entity';
-import type { UserId } from '../entities/user.entity';
+import type {
+  ImpersonationSessionId,
+  UserId,
+} from '../primitives/ids.primitive';
 import { ImpersonationScope } from './impersonation-scope.data';
 import { Role, isStaffRole, knownRoles } from './role.data';
 
-/** Actor tags — the stored `actor.kind` strings of `serializeActor`, unchanged. */
-export const ActorKind = {
-  System: 'system',
-  User: 'user',
-  Staff: 'staff',
-  Admin: 'admin',
-  Impersonator: 'impersonator',
+/**
+ * Actor tags — the ONLY source of these strings, the discriminator
+ * `actorRole` of {@link Actor} (flatten-spec §3.7).
+ */
+export const ActorRole = {
+  System: 'SYSTEM',
+  User: 'USER',
+  Staff: 'STAFF',
+  Admin: 'ADMIN',
+  Impersonator: 'IMPERSONATOR',
 } as const;
-export type ActorKind = (typeof ActorKind)[keyof typeof ActorKind];
+export type ActorRole = (typeof ActorRole)[keyof typeof ActorRole];
 
 /**
  * The processes that act with no person behind them — today's free-string
  * `source`s (accounts Q3 answered), closed so a typo is a compile error.
- * `unattributed_*` is what the profile trigger records when the write's auth
+ * `UNATTRIBUTED_*` is what the profile trigger records when the write's auth
  * context named no uid-shaped caller: it says it could not tell rather than
- * naming somebody.
+ * naming somebody. The field is `actorSystemSource` (a slice-prefixed
+ * reference, N15).
  */
 export const SystemSource = {
   /** A callable, the seed or a backfill through the Admin SDK. */
-  AdminSdk: 'admin_sdk',
+  AdminSdk: 'ADMIN_SDK',
   /** The platform itself (a TTL delete). */
-  FirestoreSystem: 'firestore_system',
-  ProfileTrigger: 'profile_trigger',
-  LoyaltyEngine: 'loyalty_engine',
-  UnattributedUnknown: 'unattributed_unknown',
-  UnattributedApiKey: 'unattributed_api_key',
-  UnattributedUnauthenticated: 'unattributed_unauthenticated',
+  FirestoreSystem: 'FIRESTORE_SYSTEM',
+  ProfileTrigger: 'PROFILE_TRIGGER',
+  LoyaltyEngine: 'LOYALTY_ENGINE',
+  UnattributedUnknown: 'UNATTRIBUTED_UNKNOWN',
+  UnattributedApiKey: 'UNATTRIBUTED_API_KEY',
+  UnattributedUnauthenticated: 'UNATTRIBUTED_UNAUTHENTICATED',
   /** Test and seed fixtures. */
-  Fixture: 'fixture',
+  Fixture: 'FIXTURE',
 } as const;
 export type SystemSource = (typeof SystemSource)[keyof typeof SystemSource];
 
 /**
- * Who initiated an audited act — the stored five-kind union of
- * `serializeActor` (`audit-log-document.ts:15-38`), kinds and keys
- * unchanged. A union, not a flat `{ userId?; adminUserId?; sessionId? }`,
+ * Who initiated an audited act — a union of five FLAT variant slices
+ * (Law 6), intersected at the root of `AuditEntry` and `JournalEntry`: every
+ * field carries the `actor` prefix, so the slice never collides with the
+ * entity's own fields. A union, not a flat `{ userId?; adminUserId?; … }`,
  * so "no actor at all" and "admin AND user at once" are unrepresentable.
+ * An actor is always an ACCOUNT (`UserId`), never a customer (D29).
  */
 export type Actor =
   Actor.System | Actor.User | Actor.Staff | Actor.Admin | Actor.Impersonator;
 
 export const Actor = {
-  system(source: SystemSource): Actor.System {
-    return { kind: ActorKind.System, source };
+  system(actorSystemSource: SystemSource): Actor.System {
+    return { actorRole: ActorRole.System, actorSystemSource };
   },
-  user(userId: UserId): Actor.User {
-    return { kind: ActorKind.User, userId };
+  user(actorUserId: UserId): Actor.User {
+    return { actorRole: ActorRole.User, actorUserId };
   },
   /** Copies the roles, so a caller that later mutates its array cannot rewrite history. */
-  staff(userId: UserId, roles: readonly Role[]): Actor.Staff {
-    return { kind: ActorKind.Staff, userId, roles: [...roles] };
+  staff(actorUserId: UserId, actorRoles: readonly Role[]): Actor.Staff {
+    return {
+      actorRole: ActorRole.Staff,
+      actorUserId,
+      actorRoles: [...actorRoles],
+    };
   },
-  admin(adminUserId: UserId): Actor.Admin {
-    return { kind: ActorKind.Admin, adminUserId };
+  admin(actorAdminUserId: UserId): Actor.Admin {
+    return { actorRole: ActorRole.Admin, actorAdminUserId };
   },
   impersonator(
-    adminUserId: UserId,
-    targetUserId: UserId,
-    sessionId: ImpersonationSessionId,
-    scope: ImpersonationScope,
+    actorAdminUserId: UserId,
+    actorTargetUserId: UserId,
+    actorSessionId: ImpersonationSessionId,
+    actorScope: ImpersonationScope,
   ): Actor.Impersonator {
     return {
-      kind: ActorKind.Impersonator,
-      adminUserId,
-      targetUserId,
-      sessionId,
-      scope,
+      actorRole: ActorRole.Impersonator,
+      actorAdminUserId,
+      actorTargetUserId,
+      actorSessionId,
+      actorScope,
     };
   },
 
   /**
    * Who a VERIFIED caller is, for attribution (`actorForCaller`): the shop's
-   * `admin` acts as `admin` whatever else they are — the log must tell an
+   * `admin` acts as `ADMIN` whatever else they are — the log must tell an
    * owner's override from a barber's act; any other staff role acts as
-   * `staff` with a snapshot of those roles (`sysadmin`, the vendor's support
+   * `STAFF` with a snapshot of those roles (`sysadmin`, the vendor's support
    * role, included — never mistaken for the owner); everyone else is a
-   * plain `user`. Attribution, not access. Takes unvalidated claims: an
+   * plain `USER`. Attribution, not access. Takes unvalidated claims: an
    * unrecognised string grants nothing and is not written into the snapshot.
    */
-  forCaller(uid: UserId, roles: readonly unknown[]): Actor {
+  forCaller(userId: UserId, roles: readonly unknown[]): Actor {
     const known = knownRoles(roles);
     const staffRoles: Role[] = [];
     for (let i = 0; i < known.length; i++) {
       const role = known[i] as Role;
-      if (role === Role.Admin) return Actor.admin(uid);
+      if (role === Role.Admin) return Actor.admin(userId);
       if (isStaffRole(role)) staffRoles.push(role);
     }
     return staffRoles.length > 0
-      ? { kind: ActorKind.Staff, userId: uid, roles: staffRoles }
-      : Actor.user(uid);
+      ? {
+          actorRole: ActorRole.Staff,
+          actorUserId: userId,
+          actorRoles: staffRoles,
+        }
+      : Actor.user(userId);
   },
 
   /**
-   * The uid the system "sees" acting — the target for an impersonator (the
-   * minted token's `sub` IS the target), the obvious one otherwise, `null`
-   * only for `system`.
+   * The account the system "sees" acting — the target for an impersonator
+   * (the minted token's `sub` IS the target), the obvious one otherwise,
+   * `null` only for `SYSTEM`.
    */
   apparentUserId(actor: Actor): UserId | null {
-    switch (actor.kind) {
-      case ActorKind.System:
+    switch (actor.actorRole) {
+      case ActorRole.System:
         return null;
-      case ActorKind.User:
-      case ActorKind.Staff:
-        return actor.userId;
-      case ActorKind.Admin:
-        return actor.adminUserId;
-      case ActorKind.Impersonator:
-        return actor.targetUserId;
+      case ActorRole.User:
+      case ActorRole.Staff:
+        return actor.actorUserId;
+      case ActorRole.Admin:
+        return actor.actorAdminUserId;
+      case ActorRole.Impersonator:
+        return actor.actorTargetUserId;
     }
   },
 
   /** True iff the act is taken under an impersonation session. */
   isImpersonating(actor: Actor): actor is Actor.Impersonator {
-    return actor.kind === ActorKind.Impersonator;
+    return actor.actorRole === ActorRole.Impersonator;
   },
 
-  /** Whether mutations are allowed — false only for a `read`-scope impersonator. */
+  /** Whether mutations are allowed — false only for a `READ`-scope impersonator. */
   canMutate(actor: Actor): boolean {
     return !(
-      actor.kind === ActorKind.Impersonator &&
-      actor.scope === ImpersonationScope.Read
+      actor.actorRole === ActorRole.Impersonator &&
+      actor.actorScope === ImpersonationScope.Read
     );
   },
 
   /**
    * The person themselves OR a system process — the only callers of a
    * consent-required mutation (registration, account deletion). An admin or
-   * an impersonator (even `write`-scoped: that scope is for support, not for
-   * filling in a person's consent) is refused; a `staff` actor is still the
+   * an impersonator (even `WRITE`-scoped: that scope is for support, not for
+   * filling in a person's consent) is refused; a `STAFF` actor is still the
    * person and may consent for himself, never for his client.
    */
   isSelfOrSystem(actor: Actor, expectedUserId: UserId): boolean {
-    switch (actor.kind) {
-      case ActorKind.System:
+    switch (actor.actorRole) {
+      case ActorRole.System:
         return true;
-      case ActorKind.User:
-      case ActorKind.Staff:
-        return actor.userId === expectedUserId;
-      case ActorKind.Admin:
-      case ActorKind.Impersonator:
+      case ActorRole.User:
+      case ActorRole.Staff:
+        return actor.actorUserId === expectedUserId;
+      case ActorRole.Admin:
+      case ActorRole.Impersonator:
         return false;
     }
   },
@@ -150,27 +166,27 @@ export const Actor = {
 
 export namespace Actor {
   export type System = {
-    readonly kind: typeof ActorKind.System;
-    readonly source: SystemSource;
+    readonly actorRole: typeof ActorRole.System;
+    readonly actorSystemSource: SystemSource;
   };
   export type User = {
-    readonly kind: typeof ActorKind.User;
-    readonly userId: UserId;
+    readonly actorRole: typeof ActorRole.User;
+    readonly actorUserId: UserId;
   };
   /**
-   * A non-admin staff caller acting on the book; `roles` is the snapshot of
-   * the caller's STAFF roles at the time of the act — the log must still say
-   * "a receptionist did this" after a promotion.
+   * A non-admin staff caller acting on the book; `actorRoles` is the
+   * snapshot of the caller's STAFF roles at the time of the act — the log
+   * must still say "a receptionist did this" after a promotion.
    */
   export type Staff = {
-    readonly kind: typeof ActorKind.Staff;
-    readonly userId: UserId;
-    readonly roles: readonly Role[];
+    readonly actorRole: typeof ActorRole.Staff;
+    readonly actorUserId: UserId;
+    readonly actorRoles: readonly Role[];
   };
   /** An admin acting AS THEMSELVES on shared administrative state. */
   export type Admin = {
-    readonly kind: typeof ActorKind.Admin;
-    readonly adminUserId: UserId;
+    readonly actorRole: typeof ActorRole.Admin;
+    readonly actorAdminUserId: UserId;
   };
   /**
    * An admin acting as a target user through a session — both ids, so
@@ -178,10 +194,10 @@ export namespace Actor {
    * apparent one, the session ties every write together.
    */
   export type Impersonator = {
-    readonly kind: typeof ActorKind.Impersonator;
-    readonly adminUserId: UserId;
-    readonly targetUserId: UserId;
-    readonly sessionId: ImpersonationSessionId;
-    readonly scope: ImpersonationScope;
+    readonly actorRole: typeof ActorRole.Impersonator;
+    readonly actorAdminUserId: UserId;
+    readonly actorTargetUserId: UserId;
+    readonly actorSessionId: ImpersonationSessionId;
+    readonly actorScope: ImpersonationScope;
   };
 }

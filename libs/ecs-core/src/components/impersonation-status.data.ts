@@ -1,118 +1,137 @@
-import type { UserId } from '../entities/user.entity';
-
-/** Session status tags — the ONLY source of these strings (`impersonationSessions.status.kind`). */
-export const ImpersonationState = {
-  Active: 'active',
-  Ended: 'ended',
-} as const;
-export type ImpersonationState =
-  (typeof ImpersonationState)[keyof typeof ImpersonationState];
-
-/** End-reason tags — the stored `status.reason.kind` strings, unchanged. */
-export const ImpersonationEndReasonKind = {
-  /** An admin ended it (`endedBy`). */
-  AdminEnded: 'admin_ended',
-  /** Its window ran out and something materialized the end. */
-  Expired: 'expired',
-  /** Security revoked it (`revokedBy`, with notes). */
-  RevokedBySecurity: 'revoked_by_security',
-} as const;
-export type ImpersonationEndReasonKind =
-  (typeof ImpersonationEndReasonKind)[keyof typeof ImpersonationEndReasonKind];
+import type { UserId } from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
- * Why a session ended — cause plus the responsible actor, no free-text escape
- * hatch (v2's `ImpersonationSession.EndReason`), payloads as stored
- * (`impersonation-session-status.ts:9-16`).
+ * Session status tags — the ONLY source of these strings, the discriminator
+ * `impersonationStatus` of {@link ImpersonationLifecycle} (today's stored
+ * `impersonationSessions.status.kind`, upper-snaked; flatten-spec §3.7).
  */
-export type ImpersonationEndReason =
-  | ImpersonationEndReason.AdminEnded
-  | ImpersonationEndReason.Expired
-  | ImpersonationEndReason.RevokedBySecurity;
+export const ImpersonationStatus = {
+  Active: 'ACTIVE',
+  Ended: 'ENDED',
+} as const;
+export type ImpersonationStatus =
+  (typeof ImpersonationStatus)[keyof typeof ImpersonationStatus];
 
-const EXPIRED: ImpersonationEndReason.Expired = {
-  kind: ImpersonationEndReasonKind.Expired,
+/**
+ * End-reason tags — the discriminator `impersonationEndReason` of
+ * {@link EndReasonFields} (today's stored `status.reason.kind`, upper-snaked).
+ */
+export const ImpersonationEndReason = {
+  /** An admin ended it (`endedByUserId`). */
+  AdminEnded: 'ADMIN_ENDED',
+  /** Its window ran out and something materialized the end. */
+  Expired: 'EXPIRED',
+  /** Security revoked it (`revokedByUserId`, with `revocationNotes`). */
+  RevokedBySecurity: 'REVOKED_BY_SECURITY',
+} as const;
+export type ImpersonationEndReason =
+  (typeof ImpersonationEndReason)[keyof typeof ImpersonationEndReason];
+
+/**
+ * Why a session ended — cause plus the responsible account, no free-text
+ * escape hatch (v2's `ImpersonationSession.EndReason`): a union of flat
+ * variant slices, flattened onto the ended session's root (Law 6).
+ */
+export type EndReasonFields =
+  | EndReasonFields.AdminEnded
+  | EndReasonFields.Expired
+  | EndReasonFields.RevokedBySecurity;
+
+const EXPIRED: EndReasonFields.Expired = {
+  impersonationEndReason: ImpersonationEndReason.Expired,
 };
 
-export const ImpersonationEndReason = {
-  adminEnded(endedBy: UserId): ImpersonationEndReason.AdminEnded {
-    return { kind: ImpersonationEndReasonKind.AdminEnded, endedBy };
+export const EndReasonFields = {
+  adminEnded(endedByUserId: UserId): EndReasonFields.AdminEnded {
+    return {
+      impersonationEndReason: ImpersonationEndReason.AdminEnded,
+      endedByUserId,
+    };
   },
-  expired(): ImpersonationEndReason.Expired {
+  expired(): EndReasonFields.Expired {
     return EXPIRED;
   },
   revokedBySecurity(
-    revokedBy: UserId,
-    notes: string,
-  ): ImpersonationEndReason.RevokedBySecurity {
+    revokedByUserId: UserId,
+    revocationNotes: string,
+  ): EndReasonFields.RevokedBySecurity {
     return {
-      kind: ImpersonationEndReasonKind.RevokedBySecurity,
-      revokedBy,
-      notes,
+      impersonationEndReason: ImpersonationEndReason.RevokedBySecurity,
+      revokedByUserId,
+      revocationNotes,
     };
   },
 } as const;
 
-export namespace ImpersonationEndReason {
+export namespace EndReasonFields {
   export type AdminEnded = {
-    readonly kind: typeof ImpersonationEndReasonKind.AdminEnded;
-    readonly endedBy: UserId;
+    readonly impersonationEndReason: typeof ImpersonationEndReason.AdminEnded;
+    readonly endedByUserId: UserId;
   };
   export type Expired = {
-    readonly kind: typeof ImpersonationEndReasonKind.Expired;
+    readonly impersonationEndReason: typeof ImpersonationEndReason.Expired;
   };
   export type RevokedBySecurity = {
-    readonly kind: typeof ImpersonationEndReasonKind.RevokedBySecurity;
-    readonly revokedBy: UserId;
-    readonly notes: string;
+    readonly impersonationEndReason: typeof ImpersonationEndReason.RevokedBySecurity;
+    readonly revokedByUserId: UserId;
+    readonly revocationNotes: string;
   };
 }
 
 /**
- * The stored `status` of an impersonation session — `ended` structurally
- * CARRIES its instant and reason, so an active session can never hold a
- * dangling end reason. The expiry rule is not here: a stored `active` row may
- * be past `expiresAtMs`, and `ImpersonationSystem.isExpired` is what an
- * authorization decision reads.
+ * The lifecycle slice of an impersonation session — `ENDED` structurally
+ * CARRIES its instant and reason (flat at the session's root), so an active
+ * session can never hold a dangling end reason. The expiry rule is not here:
+ * a stored `ACTIVE` row may be past `expiresAtUtcMs`, and
+ * `ImpersonationSystem.isExpired` is what an authorization decision reads.
  */
-export type ImpersonationStatus =
-  ImpersonationStatus.Active | ImpersonationStatus.Ended;
+export type ImpersonationLifecycle =
+  ImpersonationLifecycle.Active | ImpersonationLifecycle.Ended;
 
-const ACTIVE: ImpersonationStatus.Active = {
-  kind: ImpersonationState.Active,
+const ACTIVE: ImpersonationLifecycle.Active = {
+  impersonationStatus: ImpersonationStatus.Active,
 };
 
-export const ImpersonationStatus = {
-  active(): ImpersonationStatus.Active {
+export const ImpersonationLifecycle = {
+  active(): ImpersonationLifecycle.Active {
     return ACTIVE;
   },
 
   /**
-   * Close an active status at `endedAtMs` for `reason` — or `null` when it
-   * already ended: the first end wins, and the caller (which knows the
-   * session id) words the refusal `governance.impersonation_session.already_ended`.
+   * Close an active lifecycle at `endedAtUtcMs` for `reason` — or `null`
+   * when it already ended: the first end wins, and the caller (which knows
+   * the session id) words the refusal
+   * `GOVERNANCE_IMPERSONATION_SESSION_ALREADY_ENDED`.
    */
   end(
-    status: ImpersonationStatus,
-    endedAtMs: number,
-    reason: ImpersonationEndReason,
-  ): ImpersonationStatus.Ended | null {
-    if (status.kind !== ImpersonationState.Active) return null;
-    return { kind: ImpersonationState.Ended, endedAtMs, reason };
+    lifecycle: ImpersonationLifecycle,
+    endedAtUtcMs: UtcEpochMs,
+    reason: EndReasonFields,
+  ): ImpersonationLifecycle.Ended | null {
+    if (lifecycle.impersonationStatus !== ImpersonationStatus.Active) {
+      return null;
+    }
+    return {
+      impersonationStatus: ImpersonationStatus.Ended,
+      endedAtUtcMs,
+      ...reason,
+    };
   },
 
-  isActive(status: ImpersonationStatus): status is ImpersonationStatus.Active {
-    return status.kind === ImpersonationState.Active;
+  isActive(
+    lifecycle: ImpersonationLifecycle,
+  ): lifecycle is ImpersonationLifecycle.Active {
+    return lifecycle.impersonationStatus === ImpersonationStatus.Active;
   },
 } as const;
 
-export namespace ImpersonationStatus {
+export namespace ImpersonationLifecycle {
   export type Active = {
-    readonly kind: typeof ImpersonationState.Active;
+    readonly impersonationStatus: typeof ImpersonationStatus.Active;
   };
   export type Ended = {
-    readonly kind: typeof ImpersonationState.Ended;
-    readonly endedAtMs: number;
-    readonly reason: ImpersonationEndReason;
-  };
+    readonly impersonationStatus: typeof ImpersonationStatus.Ended;
+    readonly endedAtUtcMs: UtcEpochMs;
+  } & EndReasonFields;
 }

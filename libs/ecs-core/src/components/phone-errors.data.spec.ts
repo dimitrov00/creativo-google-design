@@ -8,7 +8,7 @@ import {
 describe('PhoneError', () => {
   it('builds the invalid struct with the raw text and the reason', () => {
     expect(PhoneError.invalid('123', PhoneInvalidReason.TooShort)).toEqual({
-      code: 'phone.invalid',
+      errorCode: 'PHONE_INVALID',
       attempted: '123',
       reason: 'too-short',
     });
@@ -16,12 +16,12 @@ describe('PhoneError', () => {
 
   it('builds the unsupported-country struct with the raw text', () => {
     expect(PhoneError.countryUnsupported('XX')).toEqual({
-      code: 'phone.country_unsupported',
+      errorCode: 'PHONE_COUNTRY_UNSUPPORTED',
       attempted: 'XX',
     });
   });
 
-  it('is() narrows by code', () => {
+  it('is() narrows by errorCode', () => {
     const error: PhoneError = PhoneError.invalid(
       'x',
       PhoneInvalidReason.Invalid,

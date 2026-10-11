@@ -15,14 +15,14 @@ injectables. That permission ends at the framework boundary.
 ## Naming
 
 - `Component` as a suffix belongs to Angular classes in `*.component.ts`
-  only. A data type is `TimeInterval`, `BookingStatus`, `ServiceBundle` —
-  never `TimeIntervalComponent`.
+  only. A data type is `MinuteRange`, `BookingStatus`, `ServiceBundle` —
+  never `MinuteRangeComponent`.
 - Selectors stay `ui-*` for the design system (`libs/ui/*`) and `lib-*` for
   feature components; tokens are `--sys-*`.
 
 ## Signals bind to plain ECS data
 
-- Stores (`*.store.ts`) hold `signal<AppointmentEntity[]>`,
+- Stores (`*.store.ts`) hold `signal<Appointment[]>`,
   `signal<BookingStatus>` — the same types the pipelines read and write. No
   view-model classes, no `toViewModel()` mappers; a template reads the
   component fields and a `computed()` calls a system for anything derived:

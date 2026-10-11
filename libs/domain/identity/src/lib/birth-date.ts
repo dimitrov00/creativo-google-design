@@ -1,9 +1,12 @@
 import {
   AgeSystem,
   AgeWindow,
-  DayKey,
   type IdentityError,
   IdentityErrorCode,
+  type LocalDate,
+  UtcEpochMs,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { Result, ZonedDateTime, fail, ok } from '@creativo/domain/kernel';
 import {
@@ -41,14 +44,24 @@ export interface BirthDateParts {
  * only code besides the delegating bodies.
  */
 
-/** `today`'s calendar day, in `today`'s own zone. */
-function todayKeyOf(today: ZonedDateTime): DayKey {
-  return DayKey.of(today.toISODate());
+/**
+ * An instant's calendar day in its own zone — the legacy instant converted
+ * through `ZonedTimeSystem.toLocal` (flatten-spec §8.9). A `ZonedDateTime`
+ * always names a real zone and an instant inside the window, so a refusal
+ * is a defect.
+ */
+function localDateOf(instant: ZonedDateTime): LocalDate {
+  const zone = ZonedTimeSystem.checkZone(instant.zoneName);
+  const at = UtcEpochMs.of(instant.toMillis());
+  if (!zone.ok || !at.ok) {
+    return defect(`${instant.toISO()} has no shop-clock day`);
+  }
+  return ZonedTimeSystem.toLocal(at.value, zone.value).localDate;
 }
 
 /** The system's refusal struct back as this context's error class. */
 function toLegacyError(error: IdentityError): BirthDateError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case IdentityErrorCode.BirthDateInFuture:
       return new BirthDateInFutureError(error.attempted);
     case IdentityErrorCode.BirthDateTooYoung:
@@ -57,7 +70,7 @@ function toLegacyError(error: IdentityError): BirthDateError {
       return new BirthDateTooOldError(error.age, error.maxAge);
     default:
       return new BirthDateInvalidError(
-        error.code === IdentityErrorCode.BirthDateInvalid
+        error.errorCode === IdentityErrorCode.BirthDateInvalid
           ? error.attempted
           : '',
       );
@@ -96,7 +109,7 @@ export class BirthDate {
     parts: BirthDateParts,
     today: ZonedDateTime,
   ): Result<BirthDate, BirthDateError> {
-    const checked = AgeSystem.fromParts(parts, todayKeyOf(today));
+    const checked = AgeSystem.fromParts(parts, localDateOf(today));
     return checked.ok
       ? ok(new BirthDate(checked.value))
       : fail(toLegacyError(checked.error));
@@ -111,7 +124,7 @@ export class BirthDate {
     raw: string,
     today: ZonedDateTime,
   ): Result<BirthDate, BirthDateError> {
-    const checked = AgeSystem.parseIso(raw, todayKeyOf(today));
+    const checked = AgeSystem.parseIso(raw, localDateOf(today));
     return checked.ok
       ? ok(new BirthDate(checked.value))
       : fail(toLegacyError(checked.error));

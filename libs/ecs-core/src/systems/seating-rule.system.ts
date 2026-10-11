@@ -1,5 +1,5 @@
 import { SeatIdPair } from '../components/seat-id-pair.data';
-import type { SeatId } from '../components/seat.data';
+import type { SeatId } from '../primitives/ids.primitive';
 import { StandingSeatPair } from '../components/standing-seat.data';
 
 /**

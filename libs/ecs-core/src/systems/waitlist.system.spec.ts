@@ -1,65 +1,80 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { BookingPolicy } from '../components/booking-policy.data';
-import { BookingCart, type CartLine } from '../components/cart-line.data';
-import { DayKey } from '../components/day-key.data';
-import type { DayOffset } from '../components/day-offset.data';
+import {
+  BookingCart,
+  type CartLine,
+  type CartSeatLines,
+} from '../components/cart-line.data';
 import { DayWindows } from '../components/day-windows.data';
 import { FlexibleWhen } from '../components/flexible-when.data';
 import { MinuteRange } from '../components/minute-range.data';
-import { NotificationKind } from '../components/notification-payload.data';
+import { NotificationTopic } from '../components/notification-payload.data';
 import { RosterWindow } from '../components/roster-window.data';
 import { SchedulingErrorCode } from '../components/scheduling-errors.data';
-import { ServiceTerms } from '../components/service-terms.data';
-import { TimeInterval } from '../components/time-interval.data';
+import type { ServiceTerms } from '../components/service-terms.data';
+import type { ShopNow } from '../components/shop-now.data';
 import {
-  WaitlistState,
+  WaitlistLifecycle,
   WaitlistStatus,
 } from '../components/waitlist-status.data';
-import { WriteKind } from '../components/write-op.data';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
+import { WriteAction } from '../components/write-op.data';
+import type { WaitlistRequest } from '../entities/waitlist-request.entity';
 import {
-  type WaitlistRequestEntity,
+  BarberId,
+  CartLineId,
+  LocationId,
+  SeatKeyText,
+  ServiceId,
+  ServiceVariantId,
+  UserId,
   WaitlistRequestId,
-} from '../entities/waitlist-request.entity';
-import { dayTableFixture, deepFreeze, unwrapErr, unwrapOk } from '../testing';
+} from '../primitives/ids.primitive';
+import {
+  deepFreeze,
+  endMinute,
+  FIXTURE_TIME_ZONE,
+  localDate,
+  minute,
+  unwrapErr,
+  unwrapOk,
+  utcMs,
+} from '../testing';
+import { minuteCount, termsFixture } from '../testing/booking-core.fixtures';
 import { AvailabilitySystem } from './availability.system';
 import type { CartBarberDay, CartService } from './booking-cart.system';
 import { WaitlistErrorCode } from '../components/waitlist-errors.data';
 import {
-  type WaitlistAsk,
+  type WaitlistAskInput,
   type WaitlistDoor,
   WaitlistSystem,
 } from './waitlist.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
-const ZONE = 'Europe/Sofia';
+const ZONE = FIXTURE_TIME_ZONE;
 const OWNER = 'user-waiting';
 const CENTER = LocationId.of('loc-center');
 const MLADOST = LocationId.of('loc-mladost');
 
-/** 2030-01-13 (now, 08:00) through the watched Tuesday 2030-01-15. */
-const TABLE = dayTableFixture('2030-01-13', '2030-01-15', ZONE);
-const TODAY = TABLE[0] as DayOffset;
-const DAY = TABLE[2] as DayOffset;
-const DAY_KEY = DAY.dayKey;
-const NOW_MS = TODAY.dayStartMs + 8 * 3_600_000;
+/** 2030-01-13 (now, 08:00 — Sofia winter, +02:00) through the watched Tuesday 2030-01-15. */
+const TODAY = localDate('2030-01-13');
+const DAY = localDate('2030-01-15');
+const NOW: ShopNow = ZonedTimeSystem.shopNow(
+  utcMs('2030-01-13T08:00:00+02:00'),
+  ZONE,
+);
+const NOW_UTC_MS = NOW.utcEpochMs;
 const POLICY = BookingPolicy.DEFAULT;
 
 const hhmm = (clock: string): number => {
   const [hours, minutes] = clock.split(':').map(Number) as [number, number];
   return hours * 60 + minutes;
 };
-/** `HH:MM` on the watched day → an instant. */
-const at = (clock: string): number => DAY.dayStartMs + hhmm(clock) * 60_000;
-const wallClock = (ms: number): string => {
-  const minutes = Math.round((ms - DAY.dayStartMs) / 60_000);
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-};
+/** A minute of the day → `HH:MM`. */
+const wallClock = (minutes: number): string =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 const window = (from: string, to: string): MinuteRange =>
-  MinuteRange.of(hhmm(from), hhmm(to));
+  MinuteRange.of(minute(hhmm(from)), endMinute(hhmm(to)));
 
 /** One seat per entry, keyed as the web cart keys them. */
 function cartOf(
@@ -71,15 +86,18 @@ function cartOf(
 ): BookingCart {
   let sequence = 0;
   return {
-    seats: seats.map((lines, index) => {
-      const seatKey = index === 0 ? 'self' : `guest-${index}`;
+    cartSeats: seats.map((lines, index): CartSeatLines => {
+      const seatKey = SeatKeyText.of(index === 0 ? 'self' : `guest-${index}`);
       return {
         seatKey,
         lines: lines.map((line): CartLine => ({
-          lineId: `line-${sequence++}`,
+          lineId: CartLineId.of(`line-${sequence++}`),
           seatKey,
           serviceId: ServiceId.of(line.serviceId),
-          variantId: (line.variantId ?? null) as CartLine['variantId'],
+          variantId:
+            line.variantId === undefined || line.variantId === null
+              ? null
+              : ServiceVariantId.of(line.variantId),
           barberId:
             line.barberId === undefined || line.barberId === null
               ? null
@@ -88,7 +106,7 @@ function cartOf(
         })),
       };
     }),
-    nextSequence: sequence,
+    cartNextSequence: sequence,
   };
 }
 
@@ -107,21 +125,19 @@ function cartOf(
 function ask(
   seats: Parameters<typeof cartOf>[0],
   locationId: string | null = CENTER,
-): WaitlistAsk {
+): WaitlistAskInput {
   return {
     locationId,
-    days: [{ dayKey: DAY_KEY, windows: [window('10:00', '12:00')] }],
+    days: [{ localDate: DAY, windows: [window('10:00', '12:00')] }],
     cart: cartOf(seats),
   };
 }
 
 function door(overrides: Partial<WaitlistDoor> = {}): WaitlistDoor {
   return {
-    ownerUserId: OWNER,
-    zone: ZONE,
-    nowMs: NOW_MS,
-    todayDayKey: TODAY.dayKey,
-    horizonEndDayKey: BookingPolicy.horizonEndFrom(POLICY, TODAY.dayKey),
+    ownerUserId: UserId.of(OWNER),
+    now: NOW,
+    horizonEndLocalDate: BookingPolicy.horizonEndFrom(POLICY, TODAY),
     maxFlexibleDays: POLICY.maxFlexibleDays,
     // The named shop, as the callable reads it: there, and listed.
     shopListed: true,
@@ -131,16 +147,19 @@ function door(overrides: Partial<WaitlistDoor> = {}): WaitlistDoor {
 }
 
 /** The refusal's field, as the client receives it — or `'accepted'`. */
-function answer(request: WaitlistAsk, overrides: Partial<WaitlistDoor> = {}) {
+function answer(
+  request: WaitlistAskInput,
+  overrides: Partial<WaitlistDoor> = {},
+) {
   const decided = WaitlistSystem.decide(request, door(overrides));
   if (decided.ok) return 'accepted';
-  expect(decided.error.code).toBe(WaitlistErrorCode.InvalidRequest);
-  return decided.error.code === WaitlistErrorCode.InvalidRequest
+  expect(decided.error.errorCode).toBe(WaitlistErrorCode.InvalidRequest);
+  return decided.error.errorCode === WaitlistErrorCode.InvalidRequest
     ? decided.error.field
-    : decided.error.code;
+    : decided.error.errorCode;
 }
 
-const refusedBy = (code: string) => ({ admission: { code } });
+const refusedBy = (errorCode: string) => ({ admission: { errorCode } });
 
 describe('WaitlistSystem.decide — refuses now what the commit refuses at every time', () => {
   it('accepts a party the commit would admit', () => {
@@ -155,15 +174,15 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
       [{ serviceId: 'svc-cut' }],
       [{ serviceId: 'svc-cut' }],
     ]);
-    expect(answer(three, refusedBy('booking.commit.party_too_large'))).toBe(
-      'booking.commit.party_too_large',
+    expect(answer(three, refusedBy('BOOKING_PARTY_TOO_LARGE'))).toBe(
+      'BOOKING_PARTY_TOO_LARGE',
     );
   });
 
   it('refuses a service the catalogue does not offer — unknown or retired', () => {
     const retired = ask([[{ serviceId: 'svc-retired' }]]);
-    expect(answer(retired, refusedBy('booking.commit.unknown_service'))).toBe(
-      'booking.commit.unknown_service',
+    expect(answer(retired, refusedBy('BOOKING_UNKNOWN_SERVICE'))).toBe(
+      'BOOKING_UNKNOWN_SERVICE',
     );
   });
 
@@ -172,11 +191,11 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
     const undeclared = ask([[{ serviceId: 'svc-color', variantId: 'medium' }]]);
     const chosen = ask([[{ serviceId: 'svc-color', variantId: 'long' }]]);
 
-    expect(answer(none, refusedBy('booking.commit.invalid_input'))).toBe(
-      'booking.commit.invalid_input',
+    expect(answer(none, refusedBy('BOOKING_INVALID_INPUT'))).toBe(
+      'BOOKING_INVALID_INPUT',
     );
-    expect(answer(undeclared, refusedBy('booking.commit.invalid_input'))).toBe(
-      'booking.commit.invalid_input',
+    expect(answer(undeclared, refusedBy('BOOKING_INVALID_INPUT'))).toBe(
+      'BOOKING_INVALID_INPUT',
     );
     expect(answer(chosen)).toBe('accepted');
   });
@@ -189,17 +208,17 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
       [{ serviceId: 'svc-beard' }],
       [{ serviceId: 'svc-shave' }],
     ]);
-    expect(
-      answer(onePerson, refusedBy('booking.commit.conflicting_services')),
-    ).toBe('booking.commit.conflicting_services');
+    expect(answer(onePerson, refusedBy('BOOKING_CONFLICTING_SERVICES'))).toBe(
+      'BOOKING_CONFLICTING_SERVICES',
+    );
     expect(answer(twoPeople)).toBe('accepted');
   });
 
   it('refuses a service the named shop does not offer — and watches any shop for it', () => {
     const atMladost = ask([[{ serviceId: 'svc-royal' }]], MLADOST);
     expect(
-      answer(atMladost, refusedBy('booking.commit.service_not_at_location')),
-    ).toBe('booking.commit.service_not_at_location');
+      answer(atMladost, refusedBy('BOOKING_SERVICE_NOT_AT_LOCATION')),
+    ).toBe('BOOKING_SERVICE_NOT_AT_LOCATION');
     expect(answer(ask([[{ serviceId: 'svc-royal' }]], null))).toBe('accepted');
   });
 
@@ -208,9 +227,9 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
     expect(answer(broken)).toBe('cart');
     // A corrupt line counter reads no better than a broken line.
     const fine = ask([[{ serviceId: 'svc-cut' }]]);
-    expect(answer({ ...fine, cart: { ...fine.cart, nextSequence: -1 } })).toBe(
-      'cart',
-    );
+    expect(
+      answer({ ...fine, cart: { ...fine.cart, cartNextSequence: -1 } }),
+    ).toBe('cart');
   });
 
   it('asks who is waiting before anything about the cart', () => {
@@ -218,10 +237,10 @@ describe('WaitlistSystem.decide — refuses now what the commit refuses at every
       ask([[{ serviceId: 'svc-retired' }]]),
       door({
         ownerUserId: null,
-        ...refusedBy('booking.commit.unknown_service'),
+        ...refusedBy('BOOKING_UNKNOWN_SERVICE'),
       }),
     );
-    expect(!decided.ok && decided.error.code).toBe(
+    expect(!decided.ok && decided.error.errorCode).toBe(
       WaitlistErrorCode.Unauthenticated,
     );
   });
@@ -235,7 +254,7 @@ describe('WaitlistSystem.decide — the shop it names, as the commit reads it', 
       WaitlistSystem.decide(ask(cut), door({ shopListed: false })),
     );
     expect(error).toEqual({
-      code: WaitlistErrorCode.InvalidRequest,
+      errorCode: WaitlistErrorCode.InvalidRequest,
       field: 'locationId',
     });
   });
@@ -256,7 +275,7 @@ describe('WaitlistSystem.decide — the shop it names, as the commit reads it', 
     expect(
       answer(ask([[{ serviceId: 'svc-retired' }]]), {
         shopListed: false,
-        ...refusedBy('booking.commit.unknown_service'),
+        ...refusedBy('BOOKING_UNKNOWN_SERVICE'),
       }),
     ).toBe('locationId');
   });
@@ -274,7 +293,7 @@ describe('WaitlistSystem.decide — the shop it names, as the commit reads it', 
         door({ shopListed: listed }),
       );
       expect(!decided.ok && decided.error).toEqual({
-        code: WaitlistErrorCode.InvalidRequest,
+        errorCode: WaitlistErrorCode.InvalidRequest,
         field: 'locationId',
       });
     },
@@ -295,16 +314,16 @@ describe('WaitlistSystem.decide — the shop it names, as the commit reads it', 
         door({ shopListed: false }),
       );
       expect(!waited.ok && waited.error).toEqual({
-        code: WaitlistErrorCode.InvalidRequest,
+        errorCode: WaitlistErrorCode.InvalidRequest,
         field: 'locationId',
       });
     },
   );
 
   it('asks about the shop before the days it watches', () => {
-    const badDay: WaitlistAsk = {
+    const badDay: WaitlistAskInput = {
       ...ask(cut, ''),
-      days: [{ dayKey: 'not-a-day', windows: [window('10:00', '12:00')] }],
+      days: [{ localDate: 'not-a-day', windows: [window('10:00', '12:00')] }],
     };
     expect(answer(badDay, { shopListed: false })).toBe('locationId');
   });
@@ -312,24 +331,21 @@ describe('WaitlistSystem.decide — the shop it names, as the commit reads it', 
 
 describe('WaitlistSystem.decide — the days and the bag it stores', () => {
   it('drops past days and days past the horizon, refuses a day that is no day, and caps the rest', () => {
-    const days = (keys: readonly string[]): WaitlistAsk => ({
+    const days = (raws: readonly string[]): WaitlistAskInput => ({
       ...ask([[{ serviceId: 'svc-cut' }]]),
-      days: keys.map((dayKey) => ({ dayKey, windows: [] })),
+      days: raws.map((raw) => ({ localDate: raw, windows: [] })),
     });
     const body = unwrapOk(
-      WaitlistSystem.decide(
-        days(['2030-01-12', DAY_KEY, '2031-01-01']),
-        door(),
-      ),
+      WaitlistSystem.decide(days(['2030-01-12', DAY, '2031-01-01']), door()),
     );
-    expect(body.dayKeys).toEqual([DAY_KEY]);
-    expect(answer(days(['2030-02-30']))).toBe('dayKey');
+    expect(body.localDates).toEqual([DAY]);
+    expect(answer(days(['2030-02-30']))).toBe('localDate');
     const eight = Array.from(
       { length: 8 },
       (_, i) => `2030-01-${String(15 + i).padStart(2, '0')}`,
     );
     expect(unwrapErr(WaitlistSystem.decide(days(eight), door()))).toEqual({
-      code: WaitlistErrorCode.TooManyDays,
+      errorCode: WaitlistErrorCode.TooManyDays,
       max: 7,
     });
     expect(answer(days(['2030-01-12']))).toBe(
@@ -338,9 +354,12 @@ describe('WaitlistSystem.decide — the days and the bag it stores', () => {
   });
 
   it('refuses a window that is no span, an empty bag, and stores the rest normalized', () => {
-    const backwards: WaitlistAsk = {
+    const backwards: WaitlistAskInput = {
       ...ask([[{ serviceId: 'svc-cut' }]]),
-      days: [{ dayKey: DAY_KEY, windows: [MinuteRange.of(720, 600)] }],
+      // Foreign input: a span the window rule refuses, as it arrives.
+      days: [
+        { localDate: DAY, windows: [{ startMinutes: 720, endMinutes: 600 }] },
+      ],
     };
     expect(answer(backwards)).toBe('windows');
     expect(answer({ ...ask([]), cart: BookingCart.empty() })).toBe(
@@ -352,7 +371,7 @@ describe('WaitlistSystem.decide — the days and the bag it stores', () => {
           ...ask([[{ serviceId: 'svc-cut' }]]),
           days: [
             {
-              dayKey: DAY_KEY,
+              localDate: DAY,
               windows: [window('11:00', '12:00'), window('10:00', '11:00')],
             },
           ],
@@ -360,22 +379,28 @@ describe('WaitlistSystem.decide — the days and the bag it stores', () => {
         door(),
       ),
     );
-    expect(body.when).toEqual(
-      FlexibleWhen.of([DayWindows.of(DAY_KEY, [window('10:00', '12:00')])]),
+    expect(body.flexibleDays).toEqual(
+      FlexibleWhen.of([DayWindows.of(DAY, [window('10:00', '12:00')])])
+        .flexibleDays,
     );
-    expect(body.status).toEqual(WaitlistStatus.open(NOW_MS));
+    expect({
+      waitlistStatus: body.waitlistStatus,
+      waitlistStatusAtUtcMs: body.waitlistStatusAtUtcMs,
+    }).toEqual(WaitlistLifecycle.open(NOW_UTC_MS));
     expect(body.ownerUserId).toBe(OWNER);
-    expect(body.createdAtMs).toBe(NOW_MS);
+    expect(body.createdAtUtcMs).toBe(NOW_UTC_MS);
+    // The zone is the location's: the body stores none (Law 7.2).
+    expect(body).not.toHaveProperty('zone');
   });
 });
 
 describe('WaitlistSystem.idBasis — a request is named by what it means', () => {
   it('collapses two phrasings of one ask to one basis, and tells different asks apart', () => {
-    const phrased = (windows: readonly MinuteRange[]): WaitlistAsk => ({
+    const phrased = (windows: readonly MinuteRange[]): WaitlistAskInput => ({
       ...ask([[{ serviceId: 'svc-cut' }]]),
       days: [
-        { dayKey: DAY_KEY, windows },
-        { dayKey: '2030-01-14', windows: [] },
+        { localDate: DAY, windows },
+        { localDate: '2030-01-14', windows: [] },
       ],
     });
     const a = unwrapOk(
@@ -415,10 +440,10 @@ describe('WaitlistSystem.idBasis — the stored ids do not move', () => {
           locationId: CENTER,
           days: [
             {
-              dayKey: DAY_KEY,
+              localDate: DAY,
               windows: [window('09:05', '11:00'), window('10:30', '12:00')],
             },
-            { dayKey: '2030-01-14', windows: [] },
+            { localDate: '2030-01-14', windows: [] },
           ],
           cart: cartOf([
             [{ serviceId: 'svc-cut', barberId: 'ivan' }],
@@ -510,28 +535,30 @@ describe('WaitlistSystem.withinReadBounds — a crafted cart costs the shop no r
   });
 });
 
-describe('WaitlistSystem.hasLapsed / cooldownSinceMs', () => {
+describe('WaitlistSystem.hasLapsed / cooldownSinceUtcMs', () => {
   // Copied from libs/domain/scheduling/src/lib/waitlist-request.spec.ts (expiry).
   const when = FlexibleWhen.of([
-    DayWindows.wholeDay(DayKey.of('2026-08-25')),
-    DayWindows.of(DayKey.of('2026-08-26'), [window('08:00', '12:00')]),
+    DayWindows.wholeDay(localDate('2026-08-25')),
+    DayWindows.of(localDate('2026-08-26'), [window('08:00', '12:00')]),
   ]);
 
   it('lapses once every day it named is behind us', () => {
-    expect(FlexibleWhen.lastDayKey(when)).toBe('2026-08-26');
-    expect(WaitlistSystem.hasLapsed(when, DayKey.of('2026-08-26'))).toBe(false);
-    expect(WaitlistSystem.hasLapsed(when, DayKey.of('2026-08-27'))).toBe(true);
+    expect(FlexibleWhen.lastLocalDate(when)).toBe('2026-08-26');
+    expect(WaitlistSystem.hasLapsed(when, localDate('2026-08-26'))).toBe(false);
+    expect(WaitlistSystem.hasLapsed(when, localDate('2026-08-27'))).toBe(true);
   });
 
   it('is still live on the last day itself', () => {
-    expect(WaitlistSystem.hasLapsed(when, DayKey.of('2026-08-25'))).toBe(false);
+    expect(WaitlistSystem.hasLapsed(when, localDate('2026-08-25'))).toBe(false);
     expect(
-      WaitlistSystem.hasLapsed(FlexibleWhen.empty(), DayKey.of('2026-08-25')),
+      WaitlistSystem.hasLapsed(FlexibleWhen.empty(), localDate('2026-08-25')),
     ).toBe(false);
   });
 
-  it('suppresses a second notification for six hours', () => {
-    expect(WaitlistSystem.cooldownSinceMs(NOW_MS)).toBe(NOW_MS - 6 * 3_600_000);
+  it('suppresses a second notification for six hours of elapsed time', () => {
+    expect(WaitlistSystem.cooldownSinceUtcMs(NOW_UTC_MS)).toBe(
+      NOW_UTC_MS - 6 * 3_600_000,
+    );
   });
 });
 
@@ -568,14 +595,14 @@ function service(
   terms: ServiceTerms,
   locationIds: readonly LocationId[],
 ): CartService {
-  return { id: ServiceId.of(id), baseTerms: terms, offerings: [], locationIds };
+  return { id: ServiceId.of(id), ...terms, offerings: [], locationIds };
 }
 
 /** The active catalogue: a cut everywhere, a royal shave at Center, a beard at Mladost. */
 const CATALOGUE: readonly CartService[] = [
-  service('svc-cut', ServiceTerms.unpadded(2500, 'EUR', 30), []),
-  service('svc-royal', ServiceTerms.of(2500, 'EUR', 45, 0, 10), [CENTER]),
-  service('svc-beard', ServiceTerms.of(2500, 'EUR', 20, 5, 0), [MLADOST]),
+  service('svc-cut', termsFixture(2500, 30), []),
+  service('svc-royal', termsFixture(2500, 45, 0, 10), [CENTER]),
+  service('svc-beard', termsFixture(2500, 20, 5, 0), [MLADOST]),
 ];
 
 /** The day as `loadDayAvailability` reads it; a hidden shop holds no windows. */
@@ -592,8 +619,8 @@ function snapshot(
         RosterWindow.of(
           id,
           segment.locationId,
-          hhmm(segment.start),
-          hhmm(segment.end),
+          minute(hhmm(segment.start)),
+          endMinute(hhmm(segment.end)),
         ),
       );
     if (windows.length === 0) continue;
@@ -602,10 +629,8 @@ function snapshot(
       windows,
       busy: AvailabilitySystem.paddedBusy({
         barberId: id,
-        spans: (seed.busy ?? []).map(([from, to]) =>
-          TimeInterval.of(at(from), at(to)),
-        ),
-        turnaroundMinutes: seed.turnaroundMinutes ?? 0,
+        spans: (seed.busy ?? []).map(([from, to]) => window(from, to)),
+        turnaroundMinutes: minuteCount(seed.turnaroundMinutes ?? 0),
         release: [],
       }),
     });
@@ -623,7 +648,7 @@ interface Ask {
   readonly windows: readonly { readonly from: string; readonly to: string }[];
 }
 
-function requestFor(wanted: Ask): WaitlistRequestEntity {
+function requestFor(wanted: Ask): WaitlistRequest {
   const cart = cartOf(
     wanted.seats.map((entry) => [
       { serviceId: entry.serviceId, barberId: entry.barberId ?? null },
@@ -631,7 +656,7 @@ function requestFor(wanted: Ask): WaitlistRequestEntity {
   );
   const when = FlexibleWhen.of([
     DayWindows.of(
-      DAY_KEY,
+      DAY,
       wanted.windows.map((w) => window(w.from, w.to)),
     ),
   ]);
@@ -639,21 +664,20 @@ function requestFor(wanted: Ask): WaitlistRequestEntity {
     id: WaitlistRequestId.of('wl-1'),
     ownerUserId: UserId.of(OWNER),
     locationId: wanted.locationId,
-    zone: ZONE,
-    cart,
-    when,
-    dayKeys: FlexibleWhen.dayKeys(when),
-    status: WaitlistStatus.open(NOW_MS),
-    createdAtMs: NOW_MS,
+    localDates: FlexibleWhen.localDates(when),
+    utcEpochMs: ZonedTimeSystem.startOfLocalDay(DAY, ZONE),
+    createdAtUtcMs: NOW_UTC_MS,
+    ...cart,
+    ...when,
+    ...WaitlistLifecycle.open(NOW_UTC_MS),
   };
 }
 
 function matchIn(
   barbers: readonly CartBarberDay[],
-  request: WaitlistRequestEntity,
+  request: WaitlistRequest,
   options: {
-    readonly nowMs?: number;
-    readonly todayDayKey?: DayKey;
+    readonly now?: ShopNow;
     readonly policy?: BookingPolicy;
     readonly admissible?: boolean;
     readonly services?: readonly CartService[];
@@ -664,22 +688,18 @@ function matchIn(
     DAY,
     { services: options.services ?? CATALOGUE, barbers },
     {
-      nowMs: options.nowMs ?? NOW_MS,
-      todayDayKey: options.todayDayKey ?? TODAY.dayKey,
+      now: options.now ?? NOW,
       policy: options.policy ?? POLICY,
       admissible: options.admissible ?? true,
     },
   );
 }
 
-function promised(
-  barbers: readonly CartBarberDay[],
-  request: WaitlistRequestEntity,
-) {
+function promised(barbers: readonly CartBarberDay[], request: WaitlistRequest) {
   const found = matchIn(barbers, request);
   if (found === null) return null;
   return {
-    at: wallClock(found.startMs),
+    at: wallClock(found.startMinutes),
     locationId: found.locationId,
     barbers: found.barberIds,
   };
@@ -887,9 +907,11 @@ describe('WaitlistSystem.match — a notification the booking path keeps', () =>
       seats: [{ seatKey: 'self', serviceId: 'svc-cut' }],
       windows: [{ from: '10:00', to: '11:00' }],
     });
-    expect(
-      matchIn(day, request, { todayDayKey: DayKey.of('2029-10-01') }),
-    ).toBeNull();
+    const autumn = ZonedTimeSystem.shopNow(
+      utcMs('2029-10-01T08:00:00+03:00'),
+      ZONE,
+    );
+    expect(matchIn(day, request, { now: autumn })).toBeNull();
   });
 });
 
@@ -914,9 +936,9 @@ describe('WaitlistSystem.match — sends nothing the catalogue no longer lets th
       seats: [{ seatKey: 'self', serviceId: 'svc-cut' }],
       windows: [{ from: '10:00', to: '12:00' }],
     });
-    const request: WaitlistRequestEntity = {
+    const request: WaitlistRequest = {
       ...base,
-      cart: cartOf([[{ serviceId: 'svc-cut' }, { serviceId: 'svc-royal' }]]),
+      ...cartOf([[{ serviceId: 'svc-cut' }, { serviceId: 'svc-royal' }]]),
     };
     expect(matchIn(day, request)).not.toBeNull();
     expect(matchIn(day, request, { admissible: false })).toBeNull();
@@ -1064,7 +1086,7 @@ describe('WaitlistSystem.match — every match is a promise the grid keeps', () 
           expect(found.locationId).toBe(asked.locationId);
         }
         // The WHOLE party is placed — a line left out is a visit nobody asked for.
-        const lines = request.cart.seats.flatMap((seat) => seat.lines);
+        const lines = request.cartSeats.flatMap((seat) => seat.lines);
         expect(found.assignments.map((a) => a.lineId).sort()).toEqual(
           lines.map((l) => l.lineId).sort(),
         );
@@ -1074,26 +1096,25 @@ describe('WaitlistSystem.match — every match is a promise the grid keeps', () 
           // A SPECIFIC barber the request asked for is the barber the match names.
           if (line?.barberId) expect(assignment.barberId).toBe(line.barberId);
           // Inside the declared window, after the lead floor.
-          expect(assignment.slot.startMs).toBeGreaterThanOrEqual(
-            at(declared.from),
+          expect(assignment.startMinutes).toBeGreaterThanOrEqual(
+            hhmm(declared.from),
           );
-          expect(assignment.slot.endMs).toBeLessThanOrEqual(at(declared.to));
-          expect(assignment.slot.startMs).toBeGreaterThanOrEqual(
-            AvailabilitySystem.leadFloorMs(NOW_MS, POLICY),
-          );
+          expect(assignment.endMinutes).toBeLessThanOrEqual(hhmm(declared.to));
+          const floor = AvailabilitySystem.leadFloor(NOW, POLICY, DAY);
+          expect(floor).not.toBeNull();
+          expect(assignment.startMinutes).toBeGreaterThanOrEqual(floor ?? 0);
           // At the shop's own rostered time, never on the barber's busy time.
           const barberDay = day.find((b) => b.barberId === assignment.barberId);
           expect(
             barberDay?.windows.some(
               (w) =>
                 w.locationId === found.locationId &&
-                DAY.dayStartMs + w.startMinutes * 60_000 <=
-                  assignment.slot.startMs &&
-                assignment.slot.endMs <= DAY.dayStartMs + w.endMinutes * 60_000,
+                w.startMinutes <= assignment.startMinutes &&
+                assignment.endMinutes <= w.endMinutes,
             ),
           ).toBe(true);
           for (const taken of barberDay?.busy ?? []) {
-            expect(TimeInterval.overlaps(taken, assignment.slot)).toBe(false);
+            expect(MinuteRange.overlaps(taken, assignment)).toBe(false);
           }
         }
       }),
@@ -1104,7 +1125,7 @@ describe('WaitlistSystem.match — every match is a promise the grid keeps', () 
   });
 });
 
-describe('WaitlistSystem.planMatch — one plan, notification and status together', () => {
+describe('WaitlistSystem.planMatch — one plan, notification and lifecycle together', () => {
   const request = requestFor({
     locationId: CENTER,
     seats: [{ seatKey: 'self', serviceId: 'svc-cut' }],
@@ -1115,44 +1136,52 @@ describe('WaitlistSystem.planMatch — one plan, notification and status togethe
     request,
   );
 
-  it('writes the notification FACTS under the owner and moves the request to matched', () => {
+  it('writes the notification FACTS under the owner and moves the request to MATCHED', () => {
     if (found === null) throw new Error('bad fixture');
     const plan = unwrapOk(
-      WaitlistSystem.planMatch(request, found, NOW_MS, () => 'n-1'),
+      WaitlistSystem.planMatch(request, found, NOW, () => 'n-1'),
     );
-    expect(plan.status).toEqual({ kind: WaitlistState.Matched, atMs: NOW_MS });
+    expect(plan.waitlist).toEqual({
+      waitlistStatus: WaitlistStatus.Matched,
+      waitlistStatusAtUtcMs: NOW_UTC_MS,
+    });
+    // The freed start on the shop's clock — no zone, no instant to word.
     expect(plan.notification).toEqual({
       id: 'n-1',
-      kind: NotificationKind.WaitlistMatch,
-      requestId: 'wl-1',
-      dayKey: DAY_KEY,
-      payload: {
-        kind: NotificationKind.WaitlistMatch,
-        requestId: 'wl-1',
-        startMs: found.startMs,
-        zone: ZONE,
-      },
-      sentAtMs: NOW_MS,
-      readAtMs: null,
+      sentAtUtcMs: NOW_UTC_MS,
+      readAtUtcMs: null,
+      notificationTopic: NotificationTopic.WaitlistMatch,
+      waitlistRequestId: 'wl-1',
+      localDate: DAY,
+      startMinutes: found.startMinutes,
     });
-    expect(plan.writes.map((op) => [op.kind, op.path])).toEqual([
-      [WriteKind.Create, ['users', OWNER, 'notifications', 'n-1']],
-      [WriteKind.Update, ['waitlistRequests', 'wl-1']],
+    expect(plan.writes.map((op) => [op.writeAction, op.path])).toEqual([
+      [WriteAction.Create, ['users', OWNER, 'notifications', 'n-1']],
+      [WriteAction.Update, ['waitlistRequests', 'wl-1']],
     ]);
+    // The transition writes root fields only (Law 5).
+    const update = plan.writes[1];
+    expect(update?.writeAction === WriteAction.Update && update.fields).toEqual(
+      {
+        waitlistStatus: WaitlistStatus.Matched,
+        waitlistStatusAtUtcMs: NOW_UTC_MS,
+      },
+    );
     // No words: the inbox words the facts in the reader's locale.
     expect(JSON.stringify(plan)).not.toMatch(/Освободи|"title"|"deepLink"/);
   });
 
   it('tells a terminal request nothing', () => {
     if (found === null) throw new Error('bad fixture');
-    const booked: WaitlistRequestEntity = {
+    const booked: WaitlistRequest = {
       ...request,
-      status: { kind: WaitlistState.Booked, atMs: NOW_MS },
+      waitlistStatus: WaitlistStatus.Booked,
+      waitlistStatusAtUtcMs: NOW_UTC_MS,
     };
     const error = unwrapErr(
-      WaitlistSystem.planMatch(booked, found, NOW_MS, () => 'n-1'),
+      WaitlistSystem.planMatch(booked, found, NOW, () => 'n-1'),
     );
-    expect(error.code).toBe(SchedulingErrorCode.WaitlistInvalidTransition);
+    expect(error.errorCode).toBe(SchedulingErrorCode.WaitlistInvalidTransition);
   });
 });
 

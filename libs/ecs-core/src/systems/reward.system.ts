@@ -1,10 +1,10 @@
-import type { DayKey } from '../components/day-key.data';
 import {
   RedeemProblem,
   type RedemptionRecord,
 } from '../components/reward-redemption.data';
-import type { RewardCatalogItemEntity } from '../entities/reward-catalog-item.entity';
-import { ZonedTimeSystem } from './zoned-time.system';
+import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
+import type { CouponGrantId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
 
 /*
  * WHAT POINTS BUY (client-card-redesign §4.2, `standing.ts:319-391`; the
@@ -18,15 +18,24 @@ import { ZonedTimeSystem } from './zoned-time.system';
 
 /** What the gate reads of a reward. */
 export type RedeemableRewardRef = Pick<
-  RewardCatalogItemEntity,
-  'id' | 'cost' | 'enabled' | 'order' | 'available' | 'limits' | 'redeemedCount'
+  RewardCatalogItem,
+  | 'id'
+  | 'cost'
+  | 'enabled'
+  | 'order'
+  | 'availableFrom'
+  | 'availableUntil'
+  | 'perClientLimitCount'
+  | 'perClientLimitWindowDays'
+  | 'totalLimit'
+  | 'redeemedCount'
 >;
 
 /** The client as the gate sees them. */
 export type RedeemContext = {
   /** Signed: an owed (negative) balance never redeems. */
   readonly balance: number;
-  readonly today: DayKey;
+  readonly today: LocalDate;
   /** A paused client earns but does not redeem. */
   readonly paused: boolean;
   /** The client's non-reversed redemptions. */
@@ -45,10 +54,10 @@ export type RewardReach = {
 
 /** What a ticket reads of a held grant: its id, what makes two grants one ticket, and when it expires. */
 export type GrantTicketRef = {
-  readonly grantId: string;
+  readonly grantId: CouponGrantId;
   /** Grants with one key are one ticket: the same coupon, worded the same. */
   readonly groupKey: string;
-  readonly expiresOn: DayKey | null;
+  readonly expiresOn: LocalDate | null;
 };
 
 /** One ticket: its grants, the soonest to expire first, and whether it stands on this visit's bill. */
@@ -80,30 +89,31 @@ export const RewardSystem = {
    */
   problem(item: RedeemableRewardRef, ctx: RedeemContext): RedeemProblem | null {
     if (!item.enabled) return RedeemProblem.Disabled;
-    if (item.available.from !== null && ctx.today < item.available.from) {
+    if (item.availableFrom !== null && ctx.today < item.availableFrom) {
       return RedeemProblem.NotYetAvailable;
     }
-    if (item.available.until !== null && ctx.today > item.available.until) {
+    if (item.availableUntil !== null && ctx.today > item.availableUntil) {
       return RedeemProblem.Ended;
     }
-    if (item.limits.total !== null && item.redeemedCount >= item.limits.total) {
+    if (item.totalLimit !== null && item.redeemedCount >= item.totalLimit) {
       return RedeemProblem.SoldOut;
     }
     if (ctx.paused) return RedeemProblem.Paused;
     if (ctx.balance < item.cost) return RedeemProblem.InsufficientPoints;
-    const per = item.limits.perClient;
-    if (per !== null) {
+    const perCount = item.perClientLimitCount;
+    const perWindowDays = item.perClientLimitWindowDays;
+    if (perCount !== null && perWindowDays !== null) {
       let inWindow = 0;
       for (let i = 0; i < ctx.recent.length; i++) {
         const record = ctx.recent[i] as RedemptionRecord;
         if (
           record.rewardId === item.id &&
-          ZonedTimeSystem.daysBetween(record.on, ctx.today) < per.windowDays
+          LocalDate.daysBetween(record.on, ctx.today) < perWindowDays
         ) {
           inWindow += 1;
         }
       }
-      if (inWindow >= per.count) return RedeemProblem.PerClientLimit;
+      if (inWindow >= perCount) return RedeemProblem.PerClientLimit;
     }
     return null;
   },
@@ -112,7 +122,7 @@ export const RewardSystem = {
   bestAffordable<R extends RedeemableRewardRef>(
     rewards: readonly R[],
     balance: number,
-    today: DayKey,
+    today: LocalDate,
   ): R | null {
     let best: R | null = null;
     for (let i = 0; i < rewards.length; i++) {
@@ -133,7 +143,7 @@ export const RewardSystem = {
   nextAffordable<R extends RedeemableRewardRef>(
     rewards: readonly R[],
     balance: number,
-    today: DayKey,
+    today: LocalDate,
   ): R | null {
     let next: R | null = null;
     for (let i = 0; i < rewards.length; i++) {
@@ -156,16 +166,16 @@ export const RewardSystem = {
   },
 
   /** The rewards a catalogue offers today: enabled, not ended — in the order given. */
-  offered<R extends Pick<RedeemableRewardRef, 'enabled' | 'available'>>(
+  offered<R extends Pick<RedeemableRewardRef, 'enabled' | 'availableUntil'>>(
     rewards: readonly R[],
-    today: DayKey,
+    today: LocalDate,
   ): readonly R[] {
     const out: R[] = [];
     for (let i = 0; i < rewards.length; i++) {
       const reward = rewards[i] as R;
       if (
         reward.enabled &&
-        (reward.available.until === null || reward.available.until >= today)
+        (reward.availableUntil === null || reward.availableUntil >= today)
       ) {
         out.push(reward);
       }
@@ -183,7 +193,7 @@ export const RewardSystem = {
   affordable(
     item: RedeemableRewardRef,
     balance: number,
-    today: DayKey,
+    today: LocalDate,
   ): RewardReach | null {
     const problem = RewardSystem.problem(item, open(balance, today));
     if (problem !== null && problem !== RedeemProblem.InsufficientPoints) {
@@ -230,6 +240,6 @@ export const RewardSystem = {
 } as const;
 
 /** The gate's context for a reward judged on points alone. */
-function open(balance: number, today: DayKey): RedeemContext {
+function open(balance: number, today: LocalDate): RedeemContext {
   return { balance, today, paused: false, recent: [] };
 }

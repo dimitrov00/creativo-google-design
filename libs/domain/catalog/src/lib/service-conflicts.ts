@@ -70,12 +70,12 @@ function toConflictService(service: Service): ConflictService {
   return {
     id: EcsServiceId.of(service.id.value),
     conflictsWith: service.conflictsWith.map((id) => EcsServiceId.of(id.value)),
-    composition:
-      composition.kind === 'bundle'
-        ? EcsServiceComposition.bundle(
-            composition.includes.map((id) => EcsServiceId.of(id.value)),
-          )
-        : EcsServiceComposition.single(),
+    // The composition is the flat `compositionKind` slice at the root.
+    ...(composition.kind === 'bundle'
+      ? EcsServiceComposition.bundle(
+          composition.includes.map((id) => EcsServiceId.of(id.value)),
+        )
+      : EcsServiceComposition.single()),
   };
 }
 

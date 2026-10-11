@@ -1,14 +1,21 @@
-import type { DayKey } from '../components/day-key.data';
 import { EngagementError } from '../components/engagement-errors.data';
 import { SeasonPhase } from '../components/gamification.data';
 import { Result } from '../components/result.data';
 import type { StreakRule } from '../components/streak-rule.data';
-import type { BadgeCategoryEntity } from '../entities/badge-category.entity';
-import type { BadgeSeriesEntity } from '../entities/badge-series.entity';
-import type { RewardCatalogItemEntity } from '../entities/reward-catalog-item.entity';
-import type { SeasonEntity } from '../entities/season.entity';
-import type { StreakDefinitionEntity } from '../entities/streak-definition.entity';
-import type { TierDefinitionEntity } from '../entities/tier-definition.entity';
+import type { BadgeCategory } from '../entities/badge-category.entity';
+import type { BadgeSeries } from '../entities/badge-series.entity';
+import type { RewardCatalogItem } from '../entities/reward-catalog-item.entity';
+import type { Season } from '../entities/season.entity';
+import type { StreakDefinition } from '../entities/streak-definition.entity';
+import type { TierDefinition } from '../entities/tier-definition.entity';
+import type {
+  BadgeCategoryId,
+  BadgeSeriesId,
+  SeasonId,
+  StreakDefinitionId,
+  TierId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
 import { SeasonSystem } from './season.system';
 import { StreakRuleSystem } from './streak-rule.system';
 
@@ -27,38 +34,35 @@ import { StreakRuleSystem } from './streak-rule.system';
  */
 
 /** What a catalogue reads of a shelf. */
-export type CatalogCategoryRef = Pick<BadgeCategoryEntity, 'id' | 'order'>;
+export type CatalogCategoryRef = Pick<BadgeCategory, 'id' | 'order'>;
 /** What a catalogue reads of a family. */
 export type CatalogSeriesRef = Pick<
-  BadgeSeriesEntity,
+  BadgeSeries,
   'id' | 'categoryId' | 'seasonId' | 'order'
 >;
 /** What a catalogue reads of a season. */
 export type CatalogSeasonRef = Pick<
-  SeasonEntity,
-  'id' | 'window' | 'trackSeriesId' | 'seriesIds'
+  Season,
+  'id' | 'windowFrom' | 'windowUntil' | 'trackSeriesId' | 'seriesIds'
 >;
 /** What a catalogue reads of a tier. */
 export type CatalogTierRef = Pick<
-  TierDefinitionEntity,
-  'id' | 'rank' | 'qualify'
+  TierDefinition,
+  'id' | 'rank' | 'qualifyAtLeast'
 >;
 /** What a catalogue reads of a reward. */
-export type CatalogRewardRef = Pick<
-  RewardCatalogItemEntity,
-  'id' | 'cost' | 'order'
->;
+export type CatalogRewardRef = Pick<RewardCatalogItem, 'id' | 'cost' | 'order'>;
 /** What a catalogue reads of a rhythm's head. */
-export type CatalogStreakRef = Pick<StreakDefinitionEntity, 'id'>;
+export type CatalogStreakRef = Pick<StreakDefinition, 'id'>;
 
 /** The lists a catalogue is built of, in any order. */
 export type LoyaltyCatalogParts<
-  C extends CatalogCategoryRef = BadgeCategoryEntity,
-  S extends CatalogSeriesRef = BadgeSeriesEntity,
-  N extends CatalogSeasonRef = SeasonEntity,
-  T extends CatalogTierRef = TierDefinitionEntity,
-  R extends CatalogRewardRef = RewardCatalogItemEntity,
-  H extends CatalogStreakRef = StreakDefinitionEntity,
+  C extends CatalogCategoryRef = BadgeCategory,
+  S extends CatalogSeriesRef = BadgeSeries,
+  N extends CatalogSeasonRef = Season,
+  T extends CatalogTierRef = TierDefinition,
+  R extends CatalogRewardRef = RewardCatalogItem,
+  H extends CatalogStreakRef = StreakDefinition,
 > = {
   readonly categories: readonly C[];
   readonly series: readonly S[];
@@ -71,12 +75,12 @@ export type LoyaltyCatalogParts<
 
 /** The catalogue, validated, every list in display order. */
 export type ValidLoyaltyCatalog<
-  C extends CatalogCategoryRef = BadgeCategoryEntity,
-  S extends CatalogSeriesRef = BadgeSeriesEntity,
-  N extends CatalogSeasonRef = SeasonEntity,
-  T extends CatalogTierRef = TierDefinitionEntity,
-  R extends CatalogRewardRef = RewardCatalogItemEntity,
-  H extends CatalogStreakRef = StreakDefinitionEntity,
+  C extends CatalogCategoryRef = BadgeCategory,
+  S extends CatalogSeriesRef = BadgeSeries,
+  N extends CatalogSeasonRef = Season,
+  T extends CatalogTierRef = TierDefinition,
+  R extends CatalogRewardRef = RewardCatalogItem,
+  H extends CatalogStreakRef = StreakDefinition,
 > = {
   /** The shelves, by `order`, then id. */
   readonly categories: readonly C[];
@@ -208,7 +212,7 @@ export const LoyaltyCatalogSystem = {
       const season = parts.seasons[i] as N;
       const familyIds = SeasonSystem.familyIds(season);
       for (let k = 0; k < familyIds.length; k++) {
-        const seriesId = familyIds[k] as string;
+        const seriesId = familyIds[k] as BadgeSeriesId;
         const family = find(parts.series, seriesId);
         if (family === null || family.seasonId !== season.id) {
           errors.push(
@@ -222,13 +226,13 @@ export const LoyaltyCatalogSystem = {
     let rising = true;
     for (let i = 1; i < tiers.length; i++) {
       if (
-        (tiers[i] as T).qualify.atLeast <= (tiers[i - 1] as T).qualify.atLeast
+        (tiers[i] as T).qualifyAtLeast <= (tiers[i - 1] as T).qualifyAtLeast
       ) {
         rising = false;
       }
     }
     if (!rising) {
-      const ids: string[] = [];
+      const ids: TierId[] = [];
       for (let i = 0; i < tiers.length; i++) ids.push((tiers[i] as T).id);
       errors.push(EngagementError.loyaltyCatalogTiersNotRising(ids));
     }
@@ -247,7 +251,7 @@ export const LoyaltyCatalogSystem = {
       families: [...parts.series].sort(byOrderThenId),
       seasons: [...parts.seasons].sort(
         (a, b) =>
-          compareText(a.window.from, b.window.from) || compareText(a.id, b.id),
+          compareText(a.windowFrom, b.windowFrom) || compareText(a.id, b.id),
       ),
       tiers,
       rewards: [...parts.rewards].sort(byOrderThenId),
@@ -258,7 +262,7 @@ export const LoyaltyCatalogSystem = {
   /** A shelf by id, or `null`. */
   category<C extends CatalogCategoryRef>(
     catalog: { readonly categories: readonly C[] },
-    id: string,
+    id: BadgeCategoryId,
   ): C | null {
     return find(catalog.categories, id);
   },
@@ -266,7 +270,7 @@ export const LoyaltyCatalogSystem = {
   /** A family by id, or `null`. */
   series<S extends CatalogSeriesRef>(
     catalog: { readonly families: readonly S[] },
-    id: string,
+    id: BadgeSeriesId,
   ): S | null {
     return find(catalog.families, id);
   },
@@ -274,7 +278,7 @@ export const LoyaltyCatalogSystem = {
   /** A shelf's families, by `order`, retired ones included (the caller knows who started them). */
   seriesIn<S extends CatalogSeriesRef>(
     catalog: { readonly families: readonly S[] },
-    categoryId: string,
+    categoryId: BadgeCategoryId,
   ): readonly S[] {
     const out: S[] = [];
     for (let i = 0; i < catalog.families.length; i++) {
@@ -287,7 +291,7 @@ export const LoyaltyCatalogSystem = {
   /** A season by id, or `null`. */
   season<N extends CatalogSeasonRef>(
     catalog: { readonly seasons: readonly N[] },
-    id: string,
+    id: SeasonId,
   ): N | null {
     return find(catalog.seasons, id);
   },
@@ -300,19 +304,19 @@ export const LoyaltyCatalogSystem = {
   seasonsIn<N extends CatalogSeasonRef>(
     catalog: { readonly seasons: readonly N[] },
     phase: SeasonPhase,
-    today: DayKey,
+    today: LocalDate,
   ): readonly N[] {
     const inPhase: N[] = [];
     for (let i = 0; i < catalog.seasons.length; i++) {
       const season = catalog.seasons[i] as N;
-      if (SeasonSystem.phaseOn(season.window, today) === phase) {
+      if (SeasonSystem.phaseOn(season, today) === phase) {
         inPhase.push(season);
       }
     }
     return phase === SeasonPhase.Ended
       ? inPhase.sort(
           (a, b) =>
-            compareText(b.window.until, a.window.until) ||
+            compareText(b.windowUntil, a.windowUntil) ||
             compareText(a.id, b.id),
         )
       : inPhase;
@@ -321,7 +325,7 @@ export const LoyaltyCatalogSystem = {
   /** A tier by id, or `null`. */
   tier<T extends CatalogTierRef>(
     catalog: { readonly tiers: readonly T[] },
-    id: string,
+    id: TierId,
   ): T | null {
     return find(catalog.tiers, id);
   },
@@ -329,7 +333,7 @@ export const LoyaltyCatalogSystem = {
   /** A rhythm's head by id, or `null`. */
   streak<H extends CatalogStreakRef>(
     catalog: { readonly streaks: readonly H[] },
-    id: string,
+    id: StreakDefinitionId,
   ): H | null {
     return find(catalog.streaks, id);
   },
@@ -340,9 +344,11 @@ export const LoyaltyCatalogSystem = {
    * whoever draws the rhythm asks it whether it is `enabled`.
    */
   streakInForce(
-    catalog: { readonly streaks: readonly StreakDefinitionEntity[] },
-    id: string,
-    today: DayKey,
+    catalog: {
+      readonly streaks: readonly Pick<StreakDefinition, 'id' | 'rules'>[];
+    },
+    id: StreakDefinitionId,
+    today: LocalDate,
   ): StreakRule | null {
     const head = find(catalog.streaks, id);
     return head === null ? null : StreakRuleSystem.inForceOn(head, today);

@@ -1,22 +1,31 @@
 import type { SeatAssignment } from '../components/booking-flow.data';
-import type { BookingCart, CartLine } from '../components/cart-line.data';
+import type {
+  BookingCart,
+  CartLine,
+  CartSeatLines,
+} from '../components/cart-line.data';
 import { Money } from '../components/money.data';
-import type { ServiceEntity } from '../entities/service.entity';
+import type { Service } from '../entities/service.entity';
+import type {
+  CartLineId,
+  SeatKeyText,
+  ServiceId,
+} from '../primitives/ids.primitive';
 import { OfferingPriceSystem } from './offering-price.system';
 
 /** One seat's subtotal on the review — `null` when its lines span two currencies. */
 export type SeatSubtotal = {
-  readonly seatKey: string;
+  readonly seatKey: SeatKeyText;
   readonly total: Money | null;
 };
 
 /** The cart line an assignment places, with its seat. */
 function lineOf(
   cart: BookingCart,
-  lineId: string,
-): { readonly seatKey: string; readonly line: CartLine } | null {
-  for (let s = 0; s < cart.seats.length; s++) {
-    const seat = cart.seats[s] as BookingCart.SeatLines;
+  lineId: CartLineId,
+): { readonly seatKey: SeatKeyText; readonly line: CartLine } | null {
+  for (let s = 0; s < cart.cartSeats.length; s++) {
+    const seat = cart.cartSeats[s] as CartSeatLines;
     for (let l = 0; l < seat.lines.length; l++) {
       const line = seat.lines[l] as CartLine;
       if (line.lineId === lineId) return { seatKey: seat.seatKey, line };
@@ -26,11 +35,11 @@ function lineOf(
 }
 
 function serviceOf(
-  services: readonly ServiceEntity[],
-  serviceId: string,
-): ServiceEntity | null {
+  services: readonly Service[],
+  serviceId: ServiceId,
+): Service | null {
   for (let i = 0; i < services.length; i++) {
-    const service = services[i] as ServiceEntity;
+    const service = services[i] as Service;
     if (service.id === serviceId) return service;
   }
   return null;
@@ -40,8 +49,8 @@ function serviceOf(
 function priceOf(
   assignment: SeatAssignment,
   cart: BookingCart,
-  services: readonly ServiceEntity[],
-): { readonly seatKey: string; readonly price: Money } | null {
+  services: readonly Service[],
+): { readonly seatKey: SeatKeyText; readonly price: Money } | null {
   const found = lineOf(cart, assignment.lineId);
   if (found === null) return null;
   const service = serviceOf(services, found.line.serviceId);
@@ -62,7 +71,8 @@ function priceOf(
  * `termsFor(the barber who actually got it)` — the same resolution the server
  * will redo, so the total and its parts cannot disagree and a summary never
  * quotes the catalogue base while the server charges the barber's rate.
- * Nothing is charged here (money is deferred, owner ruling 2026-07-29).
+ * Nothing is charged here (money is deferred, owner ruling 2026-07-29); the
+ * `Money` returned is the arithmetic value struct (F-14), never stored.
  */
 export const BookingTotalSystem = {
   /**
@@ -74,7 +84,7 @@ export const BookingTotalSystem = {
   total(
     assignments: readonly SeatAssignment[],
     cart: BookingCart,
-    services: readonly ServiceEntity[],
+    services: readonly Service[],
   ): Money | null {
     let total: Money | null = null;
     for (let i = 0; i < assignments.length; i++) {
@@ -99,9 +109,9 @@ export const BookingTotalSystem = {
   seatSubtotals(
     assignments: readonly SeatAssignment[],
     cart: BookingCart,
-    services: readonly ServiceEntity[],
+    services: readonly Service[],
   ): readonly SeatSubtotal[] {
-    const seatKeys: string[] = [];
+    const seatKeys: SeatKeyText[] = [];
     const totals: (Money | null)[] = [];
     const broken: boolean[] = [];
     for (let i = 0; i < assignments.length; i++) {
@@ -131,7 +141,7 @@ export const BookingTotalSystem = {
     const out: SeatSubtotal[] = [];
     for (let i = 0; i < seatKeys.length; i++) {
       out.push({
-        seatKey: seatKeys[i] as string,
+        seatKey: seatKeys[i] as SeatKeyText,
         total: totals[i] ?? null,
       });
     }

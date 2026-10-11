@@ -18,6 +18,14 @@
  *    the 44 legacy `libs/application/**\/*.port.ts` files and the 40 class
  *    adapters elsewhere. Phase 4 widens them to the root when those go.
  *
+ * The flatten-pass guards (Laws 6 and 7, flatten-spec §7, L1–L7) live in
+ * the suffix arrays themselves: data, entities and primitives carry all of
+ * them; systems and ports every one but the nested-type guard (a system's
+ * I/O struct may nest); pipelines and adapters L7. L7 also reaches every
+ * other file of the workspace through `ecsRootEveryFileBlocks`, and
+ * libs/ecs-core adds L4 (no `Date`) to every one of its files, specs and
+ * test support included (`ecsProjectBlocks({ everyFile })`).
+ *
  * Package cages (`luxon`, `dinero.js`, `libphonenumber-js`) are NOT
  * selectors here: they live in `no-restricted-imports`, whose per-file
  * exemption (`phone.system.ts`) a selector could not honour.
@@ -126,6 +134,118 @@ const DATA_SHAPE_GUARD = [
   },
 ];
 
+// ── flatten-pass guards (Laws 6 and 7 — flatten-spec §7, L1–L7) ──────────
+
+/** L1 — no generic discriminator (Law 6.2). */
+export const ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS = [
+  {
+    selector: 'TSPropertySignature[key.name=/^(kind|type|status)$/]',
+    message:
+      'No `kind`/`type`/`status` field (Law 6.2): name the discriminator after its domain (`bookingStatus`, `paymentMethod`, `attendanceState`) with SCREAMING values from its `as const` dictionary.',
+  },
+  {
+    selector: 'Property[key.name=/^(kind|type|status)$/]',
+    message:
+      'No `kind`/`type`/`status` key (Law 6.2): the discriminator is domain-prefixed (`bookingStatus: BookingStatus.Confirmed`).',
+  },
+];
+
+/** L2 — no nested object-literal TYPE for a 1-to-1 field (Law 6.1); arrays of literals stay legal. */
+export const ECS_NESTED_TYPE_RESTRICTIONS = [
+  {
+    selector: 'TSPropertySignature > TSTypeAnnotation > TSTypeLiteral',
+    message:
+      'No nested 1-to-1 struct (Law 6.1): every 1-to-1 field sits at the root of the flat archetype; sub-objects exist only as arrays (1-to-N) or third-party audit blobs.',
+  },
+  {
+    selector:
+      'TSPropertySignature > TSTypeAnnotation > TSUnionType > TSTypeLiteral',
+    message:
+      'No nullable nested 1-to-1 struct (Law 6.1): flatten it into root fields that are all `| null` together, or a variant slice.',
+  },
+];
+
+/**
+ * L3 — a coordinate, money or id property is a brand, never a raw
+ * number/string (Law 7.4). The `…Input` structs (foreign input before
+ * `parse`) are the escape, and so is a function-typed member: `nextId: () =>
+ * string` is the id-minting port the pipeline hands a system (ecs-systems.md),
+ * not an id field.
+ */
+export const ECS_RAW_PRIMITIVE_RESTRICTIONS = [
+  {
+    selector:
+      'TSTypeAliasDeclaration:not([id.name=/Input$/]) TSPropertySignature[key.name=/(Id|Ids|UtcMs|Minutes|Cents|[lL]ocalDate|[tT]imeZone|Latitude|Longitude|[sS]eatKey|[pP]ersonKey)$/] > TSTypeAnnotation :matches(TSNumberKeyword, TSStringKeyword):not(TSFunctionType *)',
+    message:
+      'A coordinate, amount or id is a branded primitive (Law 7.4): `UtcEpochMs`, `LocalDate`, `MinuteOfDay`/`EndMinute`/`DurationMinutes`, `PriceCents`, `TimeZone`, `XId` — never a raw `number`/`string` (foreign input is an `…Input` struct, parsed at the edge).',
+  },
+];
+
+/** L4 — no `Date` anywhere in the core (Law 7.1). */
+export const ECS_DATE_RESTRICTIONS = [
+  {
+    selector: "TSTypeReference[typeName.name='Date']",
+    message:
+      'No `Date` in the core (Law 7.1): instants are `UtcEpochMs`, shop days `LocalDate`, times of day `MinuteOfDay`; zone math is ZonedTimeSystem.',
+  },
+  {
+    selector: "NewExpression[callee.name='Date']",
+    message:
+      'No `new Date` in the core (Law 7.1): name an instant with the testing `utcMs(…)` helper or `UtcEpochMs.of`; zone math is ZonedTimeSystem.',
+  },
+  {
+    selector: "CallExpression[callee.name='Date']",
+    message:
+      'No `Date()` in the core (Law 7.1): the clock is the `nowUtcMs` port; zone math is ZonedTimeSystem.',
+  },
+  {
+    selector: "MemberExpression[object.name='Date']",
+    message:
+      'No `Date.*` in the core (Law 7.1): `Date.parse` → `ZonedTimeSystem.parseOffsetIso`, `Date.now` → the `nowUtcMs` port.',
+  },
+];
+
+/** L5 — no `throw` outside `primitives/defect.ts` (Law 7.5). */
+export const ECS_THROW_RESTRICTION = {
+  selector: 'ThrowStatement',
+  message:
+    'No `throw` in a system, component, entity or primitive (Law 7.5): return a `Result` whose error is a flat `{ errorCode, … }` struct; a programmer defect calls `defect(…)` (primitives/defect.ts).',
+};
+
+/**
+ * L7 — no cast to `UserId` or `CustomerId` (Law 7.4, D29). The selectors
+ * match the ASSERTED type only — the type annotation that is the cast's own
+ * child (bare, in a union, in an array) — never a `UserId` annotation inside
+ * the asserted expression, so a companion `{ … } as const` whose methods
+ * take a `UserId` parameter is not a cast.
+ */
+const ID_CAST_MESSAGE =
+  'No cast to `UserId`/`CustomerId` (Law 7.4, D29): an id of either brand comes only from its companion (`UserId.of/parse`, `CustomerId.forUser`) — never one value used as both.';
+const ID_ASSERTION_MESSAGE =
+  'No `<UserId>`/`<CustomerId>` assertion (Law 7.4, D29): an id of either brand comes only from its companion.';
+const ID_BRAND = 'TSTypeReference[typeName.name=/^(CustomerId|UserId)$/]';
+
+export const ECS_ID_CAST_RESTRICTIONS = [
+  { selector: `TSAsExpression > ${ID_BRAND}`, message: ID_CAST_MESSAGE },
+  {
+    selector: `TSAsExpression > TSUnionType > ${ID_BRAND}`,
+    message: ID_CAST_MESSAGE,
+  },
+  {
+    selector: `TSAsExpression > TSArrayType > ${ID_BRAND}`,
+    message: ID_CAST_MESSAGE,
+  },
+  {
+    selector: `TSAsExpression > TSTypeOperator > TSArrayType > ${ID_BRAND}`,
+    message: ID_CAST_MESSAGE,
+  },
+  { selector: `TSTypeAssertion > ${ID_BRAND}`, message: ID_ASSERTION_MESSAGE },
+  {
+    selector: `TSTypeAssertion > TSUnionType > ${ID_BRAND}`,
+    message: ID_ASSERTION_MESSAGE,
+  },
+];
+
 // ── per-suffix arrays ────────────────────────────────────────────────────
 
 /**
@@ -137,7 +257,7 @@ const DATA_SHAPE_GUARD = [
 export const ECS_INTL_RESTRICTION = {
   selector: 'MemberExpression[object.name="Intl"]',
   message:
-    'Intl is the zone-math engine of ZonedTimeSystem only (libs/ecs-core/src/systems/zoned-time.system.ts) — take epoch ms, minutes-of-day or a precomputed day table instead; formatting belongs to the UI.',
+    'Intl is the zone-math engine of ZonedTimeSystem only (libs/ecs-core/src/systems/zoned-time.system.ts) — take `LocalDate` + `MinuteOfDay` (or a `ShopNow`) instead; formatting belongs to the UI.',
 };
 
 /** Law 3: deterministic, I/O-free, mutation-free. */
@@ -145,13 +265,13 @@ export const ECS_SYSTEM_RESTRICTIONS = [
   {
     selector: 'NewExpression[callee.name="Date"]',
     message:
-      'A system never reads the clock (Law 3): take `nowMs: number` as a parameter; zone math goes through ZonedTimeSystem.',
+      'A system never reads the clock (Law 3): take `now: ShopNow` (or `nowUtcMs: UtcEpochMs` to stamp) as a parameter; zone math goes through ZonedTimeSystem.',
   },
   {
     selector:
       'CallExpression[callee.object.name="Date"][callee.property.name="now"]',
     message:
-      'A system never reads the clock (Law 3): take `nowMs: number` as a parameter.',
+      'A system never reads the clock (Law 3): take `now: ShopNow` (or `nowUtcMs: UtcEpochMs` to stamp) as a parameter.',
   },
   {
     selector: 'MemberExpression[object.name="Math"][property.name="random"]',
@@ -197,6 +317,12 @@ export const ECS_SYSTEM_RESTRICTIONS = [
   FREEZE_GUARD,
   ...IO_OPTIONAL_PROPERTY_GUARD,
   ...CLASS_GUARD,
+  // The flatten pass (Laws 6 and 7, flatten-spec §7).
+  ...ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+  ...ECS_RAW_PRIMITIVE_RESTRICTIONS,
+  ...ECS_DATE_RESTRICTIONS,
+  ECS_THROW_RESTRICTION,
+  ...ECS_ID_CAST_RESTRICTIONS,
 ];
 
 /** `ECS_SYSTEM_RESTRICTIONS` minus the `Intl` ban — `zoned-time.system.ts` only. */
@@ -204,21 +330,33 @@ export const ECS_ZONED_TIME_RESTRICTIONS = ECS_SYSTEM_RESTRICTIONS.filter(
   (restriction) => restriction !== ECS_INTL_RESTRICTION,
 );
 
-/** Law 1: `*.data.ts`. */
+/** The flatten-pass guards of a data or entity file (Laws 6 and 7). */
+const FLAT_DATA_GUARDS = [
+  ...ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+  ...ECS_NESTED_TYPE_RESTRICTIONS,
+  ...ECS_RAW_PRIMITIVE_RESTRICTIONS,
+  ...ECS_DATE_RESTRICTIONS,
+  ECS_THROW_RESTRICTION,
+  ...ECS_ID_CAST_RESTRICTIONS,
+];
+
+/** Laws 1, 6 and 7: `*.data.ts`. */
 export const ECS_DATA_RESTRICTIONS = [
   ...DATA_OPTIONAL_GUARD,
   ...DATA_SHAPE_GUARD,
   ...CLASS_GUARD,
+  ...FLAT_DATA_GUARDS,
 ];
 
-/** Law 2: `*.entity.ts` — the same shape guard as data. */
+/** Laws 2, 6 and 7: `*.entity.ts` — the same shape guard as data. */
 export const ECS_ENTITY_RESTRICTIONS = [
   ...DATA_OPTIONAL_GUARD,
   ...DATA_SHAPE_GUARD,
   ...CLASS_GUARD,
+  ...FLAT_DATA_GUARDS,
 ];
 
-/** Law 4: `*.pipeline.ts` — no SDK, the ports carry it. */
+/** Laws 4 and 7: `*.pipeline.ts` — no SDK, the ports carry it. */
 export const ECS_PIPELINE_RESTRICTIONS = [
   {
     selector:
@@ -229,16 +367,43 @@ export const ECS_PIPELINE_RESTRICTIONS = [
   FREEZE_GUARD,
   ...IO_OPTIONAL_PROPERTY_GUARD,
   ...CLASS_GUARD,
+  ...ECS_ID_CAST_RESTRICTIONS,
 ];
 
-/** Law 4: `*.port.ts` — plain function types, no classes, no shape toggles. */
+/** Laws 4, 6 and 7: `*.port.ts` — plain function types, no classes, no shape toggles. */
 export const ECS_PORT_RESTRICTIONS = [
   ...IO_OPTIONAL_PROPERTY_GUARD,
   ...CLASS_GUARD,
+  ...ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+  ...ECS_RAW_PRIMITIVE_RESTRICTIONS,
+  ...ECS_DATE_RESTRICTIONS,
+  ...ECS_ID_CAST_RESTRICTIONS,
 ];
 
 /** Law 4: `*.adapter.ts` — a function returning the port, never a class. */
-export const ECS_ADAPTER_RESTRICTIONS = [...CLASS_GUARD];
+export const ECS_ADAPTER_RESTRICTIONS = [
+  ...CLASS_GUARD,
+  ...ECS_ID_CAST_RESTRICTIONS,
+];
+
+/**
+ * L6 — `*.primitive.ts` is data (Laws 1 and 7): the data guards, no `Intl`,
+ * and every flatten-pass guard. `primitives/ids.primitive.ts` is the one file
+ * exempt from L7 (it IS the companion that makes the two brands) — its
+ * project block restates this list without `ECS_ID_CAST_RESTRICTIONS`.
+ */
+export const ECS_PRIMITIVE_RESTRICTIONS = [
+  ...DATA_OPTIONAL_GUARD,
+  ...DATA_SHAPE_GUARD,
+  ...CLASS_GUARD,
+  ECS_INTL_RESTRICTION,
+  ...ECS_GENERIC_DISCRIMINATOR_RESTRICTIONS,
+  ...ECS_NESTED_TYPE_RESTRICTIONS,
+  ...ECS_RAW_PRIMITIVE_RESTRICTIONS,
+  ...ECS_DATE_RESTRICTIONS,
+  ECS_THROW_RESTRICTION,
+  ...ECS_ID_CAST_RESTRICTIONS,
+];
 
 /**
  * Law 4: no IoC container outside Angular UI wiring. Installed only by the
@@ -257,15 +422,22 @@ const ECS_SUFFIX_RESTRICTIONS = {
   system: ECS_SYSTEM_RESTRICTIONS,
   data: ECS_DATA_RESTRICTIONS,
   entity: ECS_ENTITY_RESTRICTIONS,
+  primitive: ECS_PRIMITIVE_RESTRICTIONS,
   pipeline: ECS_PIPELINE_RESTRICTIONS,
   port: ECS_PORT_RESTRICTIONS,
   adapter: ECS_ADAPTER_RESTRICTIONS,
 };
 
-/** The four suffixes no legacy file carries — safe at the workspace root. */
-export const ECS_ROOT_SUFFIXES = ['system', 'data', 'entity', 'pipeline'];
+/** The five suffixes no legacy file carries — safe at the workspace root. */
+export const ECS_ROOT_SUFFIXES = [
+  'system',
+  'data',
+  'entity',
+  'primitive',
+  'pipeline',
+];
 
-/** All six — the project-scoped configs of libs/ecs-core and apps/functions. */
+/** All seven — the project-scoped configs of libs/ecs-core and apps/functions. */
 export const ECS_ALL_SUFFIXES = [...ECS_ROOT_SUFFIXES, 'port', 'adapter'];
 
 /** A system reaches no ambient I/O or timer. */
@@ -294,9 +466,10 @@ export const ECS_SYSTEM_GLOBALS = [
  * One `files:` block per suffix. Each restates the FULL syntax list —
  * `ICON_SYNTAX_RESTRICTIONS`, the suffix's own array, then `extra` (the
  * token guard in the project configs) — because `no-restricted-syntax`
- * options replace, never merge. Systems also get `no-restricted-globals`; data and entities
- * turn `@typescript-eslint/no-namespace` off for the one type-only
- * namespace; systems and data turn `security/detect-object-injection` off
+ * options replace, never merge. Systems also get `no-restricted-globals`; data, entities
+ * and primitives turn `@typescript-eslint/no-namespace` off for the one
+ * type-only namespace; systems, data and primitives turn
+ * `security/detect-object-injection` off
  * (indexed scans over struct arrays and `as const` dictionary lookups are
  * the point); ports get `consistent-type-imports` so the `Observable` of a
  * web-facing port is erased at build.
@@ -310,16 +483,18 @@ export function ecsSyntaxBlocks(suffixes, { extra = [] } = {}) {
         'error',
         ...ICON_SYNTAX_RESTRICTIONS,
         ...restrictions,
-        ...extra,
+        // An extra the suffix already carries is not restated: a selector
+        // listed twice would report every hit twice.
+        ...extra.filter((restriction) => !restrictions.includes(restriction)),
       ],
     };
     if (suffix === 'system') {
       rules['no-restricted-globals'] = ['error', ...ECS_SYSTEM_GLOBALS];
     }
-    if (suffix === 'system' || suffix === 'data') {
+    if (suffix === 'system' || suffix === 'data' || suffix === 'primitive') {
       rules['security/detect-object-injection'] = 'off';
     }
-    if (suffix === 'data' || suffix === 'entity') {
+    if (suffix === 'data' || suffix === 'entity' || suffix === 'primitive') {
       rules['@typescript-eslint/no-namespace'] = 'off';
     }
     if (suffix === 'port') {
@@ -333,14 +508,12 @@ export function ecsSyntaxBlocks(suffixes, { extra = [] } = {}) {
 }
 
 /**
- * The project-scoped half for libs/ecs-core and apps/functions, appended
- * after `...baseConfig`: the `InjectionToken` guard on every file (specs
- * keep their UiIconName-cast allowance), then all six suffix blocks — the
- * root's four restated with the token guard, plus `*.port.ts` and
- * `*.adapter.ts`. Order matters: a later block replaces the rule's options,
- * so the suffix blocks come after the `**\/*.ts` one.
+ * The every-file half of the root config (flatten-spec §7): L7 — no cast to
+ * `UserId`/`CustomerId` — on every `*.ts` and `*.spec.ts` in the workspace,
+ * beside the icon guards. The suffix arrays carry L7 themselves, so a suffix
+ * block that replaces these options keeps it.
  */
-export function ecsProjectBlocks() {
+export function ecsRootEveryFileBlocks() {
   return [
     {
       files: ['**/*.ts'],
@@ -348,7 +521,45 @@ export function ecsProjectBlocks() {
         'no-restricted-syntax': [
           'error',
           ...ICON_SYNTAX_RESTRICTIONS,
-          ...ECS_TOKEN_RESTRICTIONS,
+          ...ECS_ID_CAST_RESTRICTIONS,
+        ],
+      },
+    },
+    {
+      // Specs may cast to UiIconName to exercise the runtime fallback.
+      files: ['**/*.spec.ts'],
+      rules: {
+        'no-restricted-syntax': [
+          'error',
+          ...ICON_SPEC_SYNTAX_RESTRICTIONS,
+          ...ECS_ID_CAST_RESTRICTIONS,
+        ],
+      },
+    },
+  ];
+}
+
+/**
+ * The project-scoped half for libs/ecs-core and apps/functions, appended
+ * after `...baseConfig`: the `InjectionToken` guard and L7 on every file
+ * (specs keep their UiIconName-cast allowance), then all seven suffix
+ * blocks — the root's five restated with the token guard, plus `*.port.ts`
+ * and `*.adapter.ts`. `everyFile` adds a project's own guards to all of them
+ * (libs/ecs-core: L4, no `Date` — specs and test support included). Order
+ * matters: a later block replaces the rule's options, so the suffix blocks
+ * come after the `**\/*.ts` one.
+ */
+export function ecsProjectBlocks({ everyFile = [] } = {}) {
+  const extra = [...ECS_TOKEN_RESTRICTIONS, ...everyFile];
+  return [
+    {
+      files: ['**/*.ts'],
+      rules: {
+        'no-restricted-syntax': [
+          'error',
+          ...ICON_SYNTAX_RESTRICTIONS,
+          ...ECS_ID_CAST_RESTRICTIONS,
+          ...extra,
         ],
       },
     },
@@ -358,10 +569,11 @@ export function ecsProjectBlocks() {
         'no-restricted-syntax': [
           'error',
           ...ICON_SPEC_SYNTAX_RESTRICTIONS,
-          ...ECS_TOKEN_RESTRICTIONS,
+          ...ECS_ID_CAST_RESTRICTIONS,
+          ...extra,
         ],
       },
     },
-    ...ecsSyntaxBlocks(ECS_ALL_SUFFIXES, { extra: ECS_TOKEN_RESTRICTIONS }),
+    ...ecsSyntaxBlocks(ECS_ALL_SUFFIXES, { extra }),
   ];
 }

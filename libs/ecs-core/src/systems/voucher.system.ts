@@ -1,29 +1,34 @@
-import type { DayOffset } from '../components/day-offset.data';
 import { EngagementError } from '../components/engagement-errors.data';
 import type { Money } from '../components/money.data';
 import { Result } from '../components/result.data';
 import { VoucherCode } from '../components/voucher-code.data';
 import { VoucherRedemption } from '../components/voucher-redemption.data';
 import {
+  VoucherLifecycle,
   VoucherRefusal,
-  VoucherState,
-  VoucherStateKind,
+  VoucherStatus,
 } from '../components/voucher-state.data';
-import type {
-  GiftVoucherEntity,
-  GiftVoucherId,
-} from '../entities/gift-voucher.entity';
-import type { UserId } from '../entities/user.entity';
-import { ZonedTimeSystem } from './zoned-time.system';
+import { WriteOp } from '../components/write-op.data';
+import type { GiftVoucher } from '../entities/gift-voucher.entity';
+import type { Currency } from '../primitives/currency.primitive';
+import type { GiftVoucherId, UserId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { Collections } from '../ports/collections';
 
 /** What a new voucher is issued from — every field present. */
 export type IssueVoucher = {
   readonly id: GiftVoucherId;
   /** As typed or printed; normalised (trimmed, upper-case) and guarded here. */
   readonly code: string;
-  readonly value: Money;
-  readonly issuedAtMs: number;
-  readonly expiresAtMs: number | null;
+  readonly valueCents: PriceCents;
+  readonly currency: Currency;
+  readonly issuedAtUtcMs: UtcEpochMs;
+  readonly expiresAtUtcMs: UtcEpochMs | null;
+  /** The shop day of the expiry instant (T5) — `null` together with it. */
+  readonly expiresLocalDate: LocalDate | null;
+  /** The account it is issued to — a uid until the appointment flip (1) (D29). */
   readonly issuedToUserId: UserId | null;
 };
 
@@ -41,68 +46,60 @@ export type VoucherBalanceError =
  * history, never deleted.
  */
 export type VoucherRestorePlan = {
-  readonly vouchers: readonly GiftVoucherEntity[];
+  readonly vouchers: readonly GiftVoucher[];
   readonly voucherRedemptions: readonly VoucherRedemption[];
 };
 
-function figure(amountMinorUnits: number, currencyCode: string): Money {
-  return { amountMinorUnits: Math.max(0, amountMinorUnits) + 0, currencyCode };
+/** A non-negative amount of cents (a sum or difference of safe integer cents). */
+function cents(amount: number): PriceCents {
+  const clamped = PriceCents.of(Math.max(0, amount) + 0);
+  return clamped.ok ? clamped.value : PriceCents.ZERO;
 }
 
-function withBalance(
-  voucher: GiftVoucherEntity,
-  amountMinorUnits: number,
-): GiftVoucherEntity {
-  return {
-    ...voucher,
-    balance: figure(amountMinorUnits, voucher.balance.currencyCode),
-  };
+function figure(amountCents: number, currency: Currency): Money {
+  return { amountCents: cents(amountCents), currency };
+}
+
+function withBalance(voucher: GiftVoucher, balanceCents: number): GiftVoucher {
+  return { ...voucher, balanceCents: cents(balanceCents) };
 }
 
 function refusal(
-  voucher: GiftVoucherEntity,
-  nowMs: number,
+  voucher: GiftVoucher,
+  nowUtcMs: UtcEpochMs,
 ): VoucherRefusal | null {
-  if (VoucherState.isVoid(voucher.state)) return VoucherRefusal.Void;
-  if (voucher.expiresAtMs !== null && nowMs > voucher.expiresAtMs) {
+  if (VoucherLifecycle.isVoid(voucher)) return VoucherRefusal.Void;
+  if (
+    voucher.expiresAtUtcMs !== null &&
+    UtcEpochMs.compare(nowUtcMs, voucher.expiresAtUtcMs) > 0
+  ) {
     return VoucherRefusal.Expired;
   }
-  if (voucher.balance.amountMinorUnits <= 0) return VoucherRefusal.Empty;
+  if (voucher.balanceCents <= 0) return VoucherRefusal.Empty;
   return null;
 }
 
 function restore(
-  voucher: GiftVoucherEntity,
+  voucher: GiftVoucher,
   amount: Money,
 ): Result<
-  GiftVoucherEntity,
+  GiftVoucher,
   | EngagementError.GiftVoucherOverRestore
   | EngagementError.GiftVoucherCurrencyMismatch
 > {
-  const currency = voucher.balance.currencyCode;
-  if (amount.currencyCode !== currency) {
+  if (amount.currency !== voucher.currency) {
     return Result.err(
       EngagementError.giftVoucherCurrencyMismatch(
-        currency,
-        amount.currencyCode,
+        voucher.currency,
+        amount.currency,
       ),
     );
   }
-  const next = voucher.balance.amountMinorUnits + amount.amountMinorUnits;
-  if (next > voucher.initialValue.amountMinorUnits) {
+  const next = voucher.balanceCents + amount.amountCents;
+  if (next > voucher.initialValueCents) {
     return Result.err(EngagementError.giftVoucherOverRestore());
   }
   return Result.ok(withBalance(voucher, next));
-}
-
-/** A voucher's last day on the shop's calendar — `null` when it never expires or the table misses it. */
-function lastDayOf(
-  voucher: GiftVoucherEntity,
-  days: readonly DayOffset[],
-): string | null {
-  return voucher.expiresAtMs === null
-    ? null
-    : ZonedTimeSystem.dayKeyOf(voucher.expiresAtMs, days);
 }
 
 /**
@@ -110,18 +107,20 @@ function lastDayOf(
  * — money the shop has already been paid, drawn down by visits. A voucher
  * PAYS part of a visit; a coupon lowers its price. Every balance change goes
  * through redeem / restore / settle, which REFUSE rather than round: never
- * below zero, never above what was issued.
+ * below zero, never above what was issued. Redeemability against the expiry
+ * instant is a T2 lifecycle comparison (G-1); "spendable today" compares the
+ * expiry's shop day (`expiresLocalDate`, T5).
  */
 export const VoucherSystem = {
   /**
-   * A new voucher, its whole value as balance, `active` — every violation
+   * A new voucher, its whole value as balance, `ACTIVE` — every violation
    * at once: a code outside the shape (after normalising), a value of zero
    * or less.
    */
   issue(
     input: IssueVoucher,
   ): Result<
-    GiftVoucherEntity,
+    GiftVoucher,
     readonly (
       | EngagementError.VoucherCodeInvalid
       | EngagementError.GiftVoucherValueInvalid
@@ -133,79 +132,76 @@ export const VoucherSystem = {
     )[] = [];
     const code = VoucherCode.parseTyped(input.code);
     if (!code.ok) errors.push(code.error);
-    if (input.value.amountMinorUnits <= 0) {
+    if (input.valueCents <= 0) {
       errors.push(EngagementError.giftVoucherValueInvalid());
     }
     if (!code.ok || errors.length > 0) return Result.err(errors);
     return Result.ok({
       id: input.id,
       code: code.value,
-      initialValue: input.value,
-      balance: input.value,
-      issuedAtMs: input.issuedAtMs,
-      expiresAtMs: input.expiresAtMs,
+      initialValueCents: input.valueCents,
+      balanceCents: input.valueCents,
+      currency: input.currency,
+      issuedAtUtcMs: input.issuedAtUtcMs,
+      expiresAtUtcMs: input.expiresAtUtcMs,
+      expiresLocalDate: input.expiresLocalDate,
       issuedToUserId: input.issuedToUserId,
-      state: VoucherState.active(),
+      ...VoucherLifecycle.active(),
     });
   },
 
-  /** Why it cannot be used at `nowMs` — void, expired (AT the instant still is not), empty — or `null`. */
+  /** Why it cannot be used at `nowUtcMs` — void, expired (AT the instant still is not), empty — or `null`. */
   refusal,
 
-  isRedeemable(voucher: GiftVoucherEntity, nowMs: number): boolean {
-    return refusal(voucher, nowMs) === null;
+  isRedeemable(voucher: GiftVoucher, nowUtcMs: UtcEpochMs): boolean {
+    return refusal(voucher, nowUtcMs) === null;
   },
 
   /**
    * How much of `due` this voucher can settle — its whole balance or all of
    * what is owed, whichever is smaller; zero across a currency line.
    */
-  coverage(voucher: GiftVoucherEntity, due: Money): Money {
-    const currency = voucher.balance.currencyCode;
-    if (due.currencyCode !== currency) return figure(0, currency);
+  coverage(voucher: GiftVoucher, due: Money): Money {
+    if (due.currency !== voucher.currency) return figure(0, voucher.currency);
     return figure(
-      Math.min(voucher.balance.amountMinorUnits, due.amountMinorUnits),
-      currency,
+      Math.min(voucher.balanceCents, due.amountCents),
+      voucher.currency,
     );
   },
 
   /** `amount` taken off the balance — refused when not redeemable, in another currency, or more than is left. */
   redeem(
-    voucher: GiftVoucherEntity,
+    voucher: GiftVoucher,
     amount: Money,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
   ): Result<
-    GiftVoucherEntity,
+    GiftVoucher,
     | EngagementError.GiftVoucherNotRedeemable
     | EngagementError.GiftVoucherInsufficientBalance
     | EngagementError.GiftVoucherCurrencyMismatch
   > {
-    const refused = refusal(voucher, nowMs);
+    const refused = refusal(voucher, nowUtcMs);
     if (refused !== null) {
       return Result.err(EngagementError.giftVoucherNotRedeemable(refused));
     }
-    const currency = voucher.balance.currencyCode;
-    if (amount.currencyCode !== currency) {
+    if (amount.currency !== voucher.currency) {
       return Result.err(
         EngagementError.giftVoucherCurrencyMismatch(
-          currency,
-          amount.currencyCode,
+          voucher.currency,
+          amount.currency,
         ),
       );
     }
-    if (amount.amountMinorUnits > voucher.balance.amountMinorUnits) {
+    if (amount.amountCents > voucher.balanceCents) {
       return Result.err(
         EngagementError.giftVoucherInsufficientBalance(
-          amount.amountMinorUnits,
-          voucher.balance.amountMinorUnits,
+          amount.amountCents,
+          voucher.balanceCents,
         ),
       );
     }
     return Result.ok(
-      withBalance(
-        voucher,
-        voucher.balance.amountMinorUnits - amount.amountMinorUnits,
-      ),
+      withBalance(voucher, voucher.balanceCents - amount.amountCents),
     );
   },
 
@@ -220,42 +216,38 @@ export const VoucherSystem = {
    * One visit's draw CHANGED from `previous` to `next` — the save that
    * re-settles a bill. What the visit already holds is its own to keep or
    * give back whatever the voucher's state, so a void voucher refuses only a
-   * draw that GROWS; the balance stays within `[0, initialValue]`.
+   * draw that GROWS; the balance stays within `[0, initialValueCents]`.
    */
   settle(
-    voucher: GiftVoucherEntity,
+    voucher: GiftVoucher,
     previous: Money,
     next: Money,
-  ): Result<GiftVoucherEntity, VoucherBalanceError> {
-    const currency = voucher.balance.currencyCode;
-    if (previous.currencyCode !== currency || next.currencyCode !== currency) {
+  ): Result<GiftVoucher, VoucherBalanceError> {
+    const currency = voucher.currency;
+    if (previous.currency !== currency || next.currency !== currency) {
       return Result.err(
-        EngagementError.giftVoucherCurrencyMismatch(
-          currency,
-          next.currencyCode,
-        ),
+        EngagementError.giftVoucherCurrencyMismatch(currency, next.currency),
       );
     }
-    const available =
-      voucher.balance.amountMinorUnits + previous.amountMinorUnits;
+    const available = voucher.balanceCents + previous.amountCents;
     if (
-      next.amountMinorUnits > previous.amountMinorUnits &&
-      voucher.state.kind === VoucherStateKind.Void
+      next.amountCents > previous.amountCents &&
+      voucher.voucherStatus === VoucherStatus.Void
     ) {
       return Result.err(
         EngagementError.giftVoucherNotRedeemable(VoucherRefusal.Void),
       );
     }
-    if (next.amountMinorUnits > available) {
+    if (next.amountCents > available) {
       return Result.err(
         EngagementError.giftVoucherInsufficientBalance(
-          next.amountMinorUnits,
-          available,
+          next.amountCents,
+          cents(available),
         ),
       );
     }
-    const balance = available - next.amountMinorUnits;
-    if (balance > voucher.initialValue.amountMinorUnits) {
+    const balance = available - next.amountCents;
+    if (balance > voucher.initialValueCents) {
       return Result.err(EngagementError.giftVoucherOverRestore());
     }
     return Result.ok(withBalance(voucher, balance));
@@ -263,11 +255,22 @@ export const VoucherSystem = {
 
   /** The shop voids a voucher — the balance stays as history. */
   void(
-    voucher: GiftVoucherEntity,
-    nowMs: number,
+    voucher: GiftVoucher,
+    nowUtcMs: UtcEpochMs,
     reason: string,
-  ): GiftVoucherEntity {
-    return { ...voucher, state: VoucherState.voided(nowMs, reason) };
+  ): GiftVoucher {
+    return {
+      id: voucher.id,
+      code: voucher.code,
+      initialValueCents: voucher.initialValueCents,
+      balanceCents: voucher.balanceCents,
+      currency: voucher.currency,
+      issuedAtUtcMs: voucher.issuedAtUtcMs,
+      expiresAtUtcMs: voucher.expiresAtUtcMs,
+      expiresLocalDate: voucher.expiresLocalDate,
+      issuedToUserId: voucher.issuedToUserId,
+      ...VoucherLifecycle.voided(nowUtcMs, reason),
+    };
   },
 
   /**
@@ -279,11 +282,11 @@ export const VoucherSystem = {
    */
   restorePlan(
     redemptions: readonly VoucherRedemption[],
-    vouchers: readonly GiftVoucherEntity[],
-    nowMs: number,
+    vouchers: readonly GiftVoucher[],
+    nowUtcMs: UtcEpochMs,
   ): VoucherRestorePlan | null {
     let live = 0;
-    const restored: GiftVoucherEntity[] = [];
+    const restored: GiftVoucher[] = [];
     const lines: VoucherRedemption[] = [];
     for (let i = 0; i < redemptions.length; i++) {
       const redemption = redemptions[i] as VoucherRedemption;
@@ -292,24 +295,25 @@ export const VoucherSystem = {
         continue;
       }
       live++;
-      lines.push(VoucherRedemption.reversed(redemption, nowMs));
+      lines.push(VoucherRedemption.reversed(redemption, nowUtcMs));
       // A voucher two live lines drew on is restored once per line, each
       // restore on the balance the one before it left.
       let at = -1;
       for (let k = 0; k < restored.length && at < 0; k++) {
-        if ((restored[k] as GiftVoucherEntity).id === redemption.voucherId) {
-          at = k;
-        }
+        if ((restored[k] as GiftVoucher).id === redemption.voucherId) at = k;
       }
-      let voucher: GiftVoucherEntity | null =
-        at < 0 ? null : (restored[at] as GiftVoucherEntity);
+      let voucher: GiftVoucher | null =
+        at < 0 ? null : (restored[at] as GiftVoucher);
       for (let k = 0; k < vouchers.length && voucher === null; k++) {
-        if ((vouchers[k] as GiftVoucherEntity).id === redemption.voucherId) {
-          voucher = vouchers[k] as GiftVoucherEntity;
+        if ((vouchers[k] as GiftVoucher).id === redemption.voucherId) {
+          voucher = vouchers[k] as GiftVoucher;
         }
       }
       if (voucher === null) continue;
-      const back = restore(voucher, VoucherRedemption.restoreDelta(redemption));
+      const back = restore(voucher, {
+        amountCents: VoucherRedemption.restoreDelta(redemption),
+        currency: redemption.currency,
+      });
       if (!back.ok) continue;
       if (at < 0) restored.push(back.value);
       else restored[at] = back.value;
@@ -320,69 +324,66 @@ export const VoucherSystem = {
 
   /**
    * What can be spent today (the client-card wallet, `wallet.presenter.ts:252`):
-   * active, with a balance, and not past its last day — `todayStartMs` is
-   * the first instant of the shop's today, so a voucher expiring at any
-   * moment of today still counts.
+   * active, with a balance, and not past its last day — `expiresLocalDate`
+   * on or after the shop's `today` (T5: provably the legacy "expires at or
+   * after the first instant of today").
    */
-  spendable(voucher: GiftVoucherEntity, todayStartMs: number): boolean {
+  spendable(voucher: GiftVoucher, today: LocalDate): boolean {
     return (
-      voucher.state.kind === VoucherStateKind.Active &&
-      voucher.balance.amountMinorUnits > 0 &&
-      (voucher.expiresAtMs === null || voucher.expiresAtMs >= todayStartMs)
+      voucher.voucherStatus === VoucherStatus.Active &&
+      voucher.balanceCents > 0 &&
+      (voucher.expiresLocalDate === null || voucher.expiresLocalDate >= today)
     );
   },
 
-  /** The money the {@link spendable} vouchers in `currencyCode` still hold. */
+  /** The money the {@link spendable} vouchers in `currency` still hold. */
   spendableSum(
-    vouchers: readonly GiftVoucherEntity[],
-    todayStartMs: number,
-    currencyCode: string,
+    vouchers: readonly GiftVoucher[],
+    today: LocalDate,
+    currency: Currency,
   ): Money {
     let total = 0;
     for (let i = 0; i < vouchers.length; i++) {
-      const voucher = vouchers[i] as GiftVoucherEntity;
+      const voucher = vouchers[i] as GiftVoucher;
       if (
-        voucher.balance.currencyCode === currencyCode &&
-        VoucherSystem.spendable(voucher, todayStartMs)
+        voucher.currency === currency &&
+        VoucherSystem.spendable(voucher, today)
       ) {
-        total += voucher.balance.amountMinorUnits;
+        total += voucher.balanceCents;
       }
     }
-    return figure(total, currencyCode);
+    return figure(total, currency);
   },
 
   /**
    * The vouchers, the soonest to run out first — by their last DAY on the
-   * shop's calendar (`days`, the shop's day table), the never-expiring ones
-   * last, ties by id. A new array; the input is untouched.
+   * shop's calendar (`expiresLocalDate`), the never-expiring ones last, ties
+   * by id. A new array; the input is untouched.
    */
-  soonestFirst(
-    vouchers: readonly GiftVoucherEntity[],
-    days: readonly DayOffset[],
-  ): readonly GiftVoucherEntity[] {
-    const keyed: { voucher: GiftVoucherEntity; lastDay: string }[] = [];
-    for (let i = 0; i < vouchers.length; i++) {
-      const voucher = vouchers[i] as GiftVoucherEntity;
-      keyed.push({
-        voucher,
-        lastDay: lastDayOf(voucher, days) ?? '9999-12-31',
-      });
-    }
-    keyed.sort((a, b) =>
-      a.lastDay < b.lastDay
-        ? -1
-        : a.lastDay > b.lastDay
-          ? 1
-          : a.voucher.id < b.voucher.id
-            ? -1
-            : a.voucher.id > b.voucher.id
-              ? 1
-              : 0,
+  soonestFirst(vouchers: readonly GiftVoucher[]): readonly GiftVoucher[] {
+    const sorted = [...vouchers];
+    sorted.sort((a, b) => {
+      const dayA = a.expiresLocalDate ?? '9999-12-31';
+      const dayB = b.expiresLocalDate ?? '9999-12-31';
+      if (dayA !== dayB) return dayA < dayB ? -1 : 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    return sorted;
+  },
+
+  /**
+   * The write plan of a voucher moving from `before` to `after`: ONE update
+   * of its root — the balance and every field of the new lifecycle variant
+   * set, every field of the old variant the new one does not declare deleted
+   * (§6).
+   */
+  transitionWrite(before: GiftVoucher, after: GiftVoucher): WriteOp {
+    const from = VoucherLifecycle.of(before);
+    const to = VoucherLifecycle.of(after);
+    return WriteOp.transition(
+      [Collections.GiftVouchers, after.id],
+      { balanceCents: after.balanceCents, ...to },
+      WriteOp.variantFieldsToDelete(from, to),
     );
-    const out: GiftVoucherEntity[] = [];
-    for (let i = 0; i < keyed.length; i++) {
-      out.push((keyed[i] as { voucher: GiftVoucherEntity }).voucher);
-    }
-    return out;
   },
 } as const;

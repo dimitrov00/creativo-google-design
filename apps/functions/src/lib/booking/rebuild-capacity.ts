@@ -18,7 +18,12 @@ import {
   toShop,
 } from '../../adapters/firestore-booking-store';
 import { shopListed } from '../../use-cases/party-admission';
-import { DayKey, LeadTimeSystem, ZonedTimeSystem } from '@creativo/ecs-core';
+import {
+  LeadTimeSystem,
+  LocalDate,
+  UtcEpochMs,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import {
   dayKeysBetween,
@@ -210,8 +215,11 @@ async function horizonSpan(
 
 /** A wall-clock instant → its `YYYY-MM-DD` in `zone` (`''` for an unknown zone). */
 function dayKeyOf(instant: Date, zone: string): string {
-  const clock = ZonedTimeSystem.wallClockOf(instant.getTime(), zone);
-  return clock.ok ? clock.value.dayKey : '';
+  const timeZone = ZonedTimeSystem.checkZone(zone);
+  const at = UtcEpochMs.of(instant.getTime());
+  return timeZone.ok && at.ok
+    ? ZonedTimeSystem.toLocal(at.value, timeZone.value).localDate
+    : '';
 }
 
 /**
@@ -241,14 +249,16 @@ export async function rebuildBarberCapacity(
     logger.warn('capacity span truncated at 500 days', { fromKey, toKey });
   }
   const dayKeys = span.keys;
-  if (dayKeys.length === 0) return;
+  const first = LocalDate.parse(dayKeys[0] ?? '');
+  const last = LocalDate.parse(dayKeys[dayKeys.length - 1] ?? '');
+  if (!first.ok || !last.ok) return;
 
   await db.runTransaction(async (tx) => {
     // The month documents the walked days touch (`dayKeys` is one
     // contiguous, sorted run).
-    const monthKeys = LeadTimeSystem.monthKeysBetween(
-      DayKey.of(dayKeys[0] as string),
-      DayKey.of(dayKeys[dayKeys.length - 1] as string),
+    const monthKeys: readonly string[] = LeadTimeSystem.monthKeysBetween(
+      first.value,
+      last.value,
     );
     const [locationsSnap, scheduleSnap, busySnap, exceptionsSnap, monthSnaps] =
       await Promise.all([

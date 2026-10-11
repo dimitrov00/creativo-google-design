@@ -27,7 +27,7 @@ describe('VoucherCode.parse', () => {
   ])('rejects %j', (raw) => {
     expect(VoucherCode.parse(raw)).toEqual({
       ok: false,
-      error: { code: 'engagement.voucher_code.invalid', attempted: raw },
+      error: { errorCode: 'ENGAGEMENT_VOUCHER_CODE_INVALID', attempted: raw },
     });
   });
 
@@ -58,7 +58,7 @@ describe('the counter’s reading', () => {
   it('refuses an optional code that is not one', () => {
     expect(VoucherCode.parseOptional('no!')).toEqual({
       ok: false,
-      error: { code: 'engagement.voucher_code.invalid', attempted: 'NO!' },
+      error: { errorCode: 'ENGAGEMENT_VOUCHER_CODE_INVALID', attempted: 'NO!' },
     });
   });
 

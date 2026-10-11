@@ -2,16 +2,17 @@ import { GovernanceError } from './governance-errors.data';
 import { Result } from './result.data';
 
 /**
- * What an impersonator may DO inside a session — the stored
- * `impersonationSessions.scope` strings (`impersonation-session.ts:12-13`),
- * unchanged. Closed, not a boolean: `Actor.canMutate` and the session start
- * switch on it exhaustively.
+ * What an impersonator may DO inside a session — the session's field
+ * `impersonationScope` (today's stored `impersonationSessions.scope`
+ * strings `read`/`write`, upper-snaked; the stored bytes stay lowercase
+ * until the governance flip, the shims converting). Closed, not a boolean:
+ * `Actor.canMutate` and the session start switch on it exhaustively.
  */
 export const ImpersonationScope = {
   /** Observation only — a write-authorizing caller refuses mutations. */
-  Read: 'read',
+  Read: 'READ',
   /** Full target-user authority for the session's lifetime. */
-  Write: 'write',
+  Write: 'WRITE',
 } as const;
 export type ImpersonationScope =
   (typeof ImpersonationScope)[keyof typeof ImpersonationScope];
@@ -30,7 +31,7 @@ export function isImpersonationScope(
   return false;
 }
 
-/** The edge guard with a refusal: a known scope, or `governance.impersonation_scope.invalid`. */
+/** The edge guard with a refusal: a known scope, or `GOVERNANCE_IMPERSONATION_SCOPE_INVALID`. */
 export function parseImpersonationScope(
   raw: string,
 ): Result<ImpersonationScope, GovernanceError> {

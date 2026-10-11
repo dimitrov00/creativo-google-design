@@ -1,11 +1,16 @@
+import type { Currency } from '../primitives/currency.primitive';
+import { BarberId, ServiceVariantId } from '../primitives/ids.primitive';
 import type { Locale } from './locale.data';
 
 /**
- * The catalog context's error codes — the 25 dotted codes of
- * `libs/domain/catalog/src/lib/*.errors.ts`, reused as is (blueprint §2.2):
- * the `DomainError` subclasses collapse into this one dictionary of plain
- * structs. Every non-`code` field is an i18n parameter, so each one is an
- * i18n-safe scalar (infrastructure Q5).
+ * The catalog context's error codes — the 25 codes of
+ * `libs/domain/catalog/src/lib/*.errors.ts`, SCREAMING_SNAKE with the
+ * `CATALOG_` prefix (Law 7.5, flatten-spec §4.2; the legacy dotted
+ * `catalog.service.invalid_duration` is now `CATALOG_SERVICE_INVALID_DURATION`):
+ * the `DomainError` subclasses collapse into this one dictionary of flat
+ * structs discriminated by `errorCode`. Every other field is an i18n
+ * parameter, so each one is an i18n-safe scalar (infrastructure Q5); the UI
+ * resolves `errors.<errorCode>`.
  *
  * Raised by the catalogue edge guards — `LocalizedText.parse`,
  * `MediaRef.parse`, `GeoPoint.parse`, `ServiceTerms.parse`,
@@ -16,72 +21,72 @@ import type { Locale } from './locale.data';
  */
 export const CatalogErrorCode = {
   /** A blank id where a catalogue id was required (`idType` names which). */
-  IdEmpty: 'catalog.id.empty',
+  IdEmpty: 'CATALOG_ID_EMPTY',
   /** One locale of a `LocalizedText` is blank. */
-  LocalizedTextFieldEmpty: 'catalog.localized_text.field_empty',
+  LocalizedTextFieldEmpty: 'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY',
   /** A `MediaRef` with a blank Storage path. */
-  MediaRefEmptyPath: 'catalog.media_ref.empty_path',
+  MediaRefEmptyPath: 'CATALOG_MEDIA_REF_EMPTY_PATH',
   /** A `MediaRef` width or height that is not a positive integer. */
-  MediaRefInvalidDimension: 'catalog.media_ref.invalid_dimension',
+  MediaRefInvalidDimension: 'CATALOG_MEDIA_REF_INVALID_DIMENSION',
   /** A focal point outside 0..1 on either axis. */
-  MediaRefFocalPointOutOfRange: 'catalog.media_ref.focal_point_out_of_range',
+  MediaRefFocalPointOutOfRange: 'CATALOG_MEDIA_REF_FOCAL_POINT_OUT_OF_RANGE',
   /** A venue phone whose display text is blank. */
-  VenuePhoneBlankDisplay: 'catalog.venue_phone.blank_display',
+  VenuePhoneBlankDisplay: 'CATALOG_VENUE_PHONE_BLANK_DISPLAY',
   /** A barber with a blank handle. */
-  BarberEmptyHandle: 'catalog.barber.empty_handle',
+  BarberEmptyHandle: 'CATALOG_BARBER_EMPTY_HANDLE',
   /** Years of experience that are not a non-negative integer. */
-  BarberInvalidYearsExperience: 'catalog.barber.invalid_years_experience',
-  BarberInvalidSortOrder: 'catalog.barber.invalid_sort_order',
+  BarberInvalidYearsExperience: 'CATALOG_BARBER_INVALID_YEARS_EXPERIENCE',
+  BarberInvalidSortOrder: 'CATALOG_BARBER_INVALID_SORT_ORDER',
   ServiceCategoryInvalidSortOrder:
-    'catalog.service_category.invalid_sort_order',
+    'CATALOG_SERVICE_CATEGORY_INVALID_SORT_ORDER',
   /**
    * A duration that is not a positive integer of minutes — and, as in the
    * legacy `ServiceTerms.create`, a setup or cleanup pad that is not a
    * non-negative integer (`rawValue` is the offending figure).
    */
-  ServiceInvalidDuration: 'catalog.service.invalid_duration',
-  ServiceInvalidSortOrder: 'catalog.service.invalid_sort_order',
+  ServiceInvalidDuration: 'CATALOG_SERVICE_INVALID_DURATION',
+  ServiceInvalidSortOrder: 'CATALOG_SERVICE_INVALID_SORT_ORDER',
   /** A bundle composition that includes no service. */
-  ServiceEmptyBundleIncludes: 'catalog.service.empty_bundle_includes',
+  ServiceEmptyBundleIncludes: 'CATALOG_SERVICE_EMPTY_BUNDLE_INCLUDES',
   /** An offering prices a variant its service does not declare. */
-  ServiceUnknownVariantTerms: 'catalog.service.unknown_variant_terms',
+  ServiceUnknownVariantTerms: 'CATALOG_SERVICE_UNKNOWN_VARIANT_TERMS',
   /** An offering prices one variant twice. */
-  ServiceDuplicateVariantTerms: 'catalog.service.duplicate_variant_terms',
+  ServiceDuplicateVariantTerms: 'CATALOG_SERVICE_DUPLICATE_VARIANT_TERMS',
   /** A service declares one variant id twice. */
-  ServiceDuplicateVariant: 'catalog.service.duplicate_variant',
+  ServiceDuplicateVariant: 'CATALOG_SERVICE_DUPLICATE_VARIANT',
   /** A service lists one barber's offering twice. */
-  ServiceDuplicateOffering: 'catalog.service.duplicate_offering',
+  ServiceDuplicateOffering: 'CATALOG_SERVICE_DUPLICATE_OFFERING',
   /** A price on the terms matrix in a currency other than the base terms'. */
-  ServiceMixedCurrencyTerms: 'catalog.service.mixed_currency_terms',
+  ServiceMixedCurrencyTerms: 'CATALOG_SERVICE_MIXED_CURRENCY_TERMS',
   /** Latitude outside −90..90 or longitude outside −180..180. */
-  LocationInvalidGeoCoordinate: 'catalog.location.invalid_geo_coordinate',
+  LocationInvalidGeoCoordinate: 'CATALOG_LOCATION_INVALID_GEO_COORDINATE',
   /** A zone name the runtime does not know. */
-  LocationInvalidTimezone: 'catalog.location.invalid_timezone',
-  LocationInvalidSortOrder: 'catalog.location.invalid_sort_order',
+  LocationInvalidTimezone: 'CATALOG_LOCATION_INVALID_TIMEZONE',
+  LocationInvalidSortOrder: 'CATALOG_LOCATION_INVALID_SORT_ORDER',
   /** A map link that is not an absolute URL. */
-  LocationInvalidMapUrl: 'catalog.location.invalid_map_url',
+  LocationInvalidMapUrl: 'CATALOG_LOCATION_INVALID_MAP_URL',
   /** Opening hours that are not exactly seven days, Monday first. */
-  LocationInvalidHoursLength: 'catalog.location.invalid_hours_length',
+  LocationInvalidHoursLength: 'CATALOG_LOCATION_INVALID_HOURS_LENGTH',
   /** A time of day that is not `HH:mm` (00:00–23:59) — or not a minute of the day. */
-  LocationInvalidTimeOfDay: 'catalog.location.invalid_time_of_day',
+  LocationInvalidTimeOfDay: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
   /** An open day whose closing time is not after its opening time. */
-  LocationInvalidHoursRange: 'catalog.location.invalid_hours_range',
+  LocationInvalidHoursRange: 'CATALOG_LOCATION_INVALID_HOURS_RANGE',
 } as const;
 export type CatalogErrorCode =
   (typeof CatalogErrorCode)[keyof typeof CatalogErrorCode];
 
-/** Which side of a `MediaRef` failed `catalog.media_ref.invalid_dimension`. */
+/** Which side of a `MediaRef` failed `CATALOG_MEDIA_REF_INVALID_DIMENSION`. */
 export const MediaDimension = {
-  Width: 'width',
-  Height: 'height',
+  Width: 'WIDTH',
+  Height: 'HEIGHT',
 } as const;
 export type MediaDimension =
   (typeof MediaDimension)[keyof typeof MediaDimension];
 
-/** Which coordinate failed `catalog.location.invalid_geo_coordinate`. */
+/** Which coordinate failed `CATALOG_LOCATION_INVALID_GEO_COORDINATE`. */
 export const GeoAxis = {
-  Lat: 'lat',
-  Lng: 'lng',
+  Lat: 'LAT',
+  Lng: 'LNG',
 } as const;
 export type GeoAxis = (typeof GeoAxis)[keyof typeof GeoAxis];
 
@@ -114,23 +119,23 @@ export type CatalogError =
 
 export const CatalogError = {
   idEmpty(idType: string): CatalogError.IdEmpty {
-    return { code: CatalogErrorCode.IdEmpty, idType };
+    return { errorCode: CatalogErrorCode.IdEmpty, idType };
   },
   localizedTextFieldEmpty(
     locale: Locale,
   ): CatalogError.LocalizedTextFieldEmpty {
-    return { code: CatalogErrorCode.LocalizedTextFieldEmpty, locale };
+    return { errorCode: CatalogErrorCode.LocalizedTextFieldEmpty, locale };
   },
   mediaRefEmptyPath(): CatalogError.MediaRefEmptyPath {
-    return { code: CatalogErrorCode.MediaRefEmptyPath };
+    return { errorCode: CatalogErrorCode.MediaRefEmptyPath };
   },
   mediaRefInvalidDimension(
-    dimension: MediaDimension,
+    mediaDimension: MediaDimension,
     rawValue: number,
   ): CatalogError.MediaRefInvalidDimension {
     return {
-      code: CatalogErrorCode.MediaRefInvalidDimension,
-      dimension,
+      errorCode: CatalogErrorCode.MediaRefInvalidDimension,
+      mediaDimension,
       rawValue,
     };
   },
@@ -138,53 +143,57 @@ export const CatalogError = {
     x: number,
     y: number,
   ): CatalogError.MediaRefFocalPointOutOfRange {
-    return { code: CatalogErrorCode.MediaRefFocalPointOutOfRange, x, y };
+    return { errorCode: CatalogErrorCode.MediaRefFocalPointOutOfRange, x, y };
   },
   venuePhoneBlankDisplay(): CatalogError.VenuePhoneBlankDisplay {
-    return { code: CatalogErrorCode.VenuePhoneBlankDisplay };
+    return { errorCode: CatalogErrorCode.VenuePhoneBlankDisplay };
   },
   barberEmptyHandle(): CatalogError.BarberEmptyHandle {
-    return { code: CatalogErrorCode.BarberEmptyHandle };
+    return { errorCode: CatalogErrorCode.BarberEmptyHandle };
   },
   barberInvalidYearsExperience(
     rawValue: number,
   ): CatalogError.BarberInvalidYearsExperience {
-    return { code: CatalogErrorCode.BarberInvalidYearsExperience, rawValue };
+    return {
+      errorCode: CatalogErrorCode.BarberInvalidYearsExperience,
+      rawValue,
+    };
   },
   barberInvalidSortOrder(
     rawValue: number,
   ): CatalogError.BarberInvalidSortOrder {
-    return { code: CatalogErrorCode.BarberInvalidSortOrder, rawValue };
+    return { errorCode: CatalogErrorCode.BarberInvalidSortOrder, rawValue };
   },
   serviceCategoryInvalidSortOrder(
     rawValue: number,
   ): CatalogError.ServiceCategoryInvalidSortOrder {
     return {
-      code: CatalogErrorCode.ServiceCategoryInvalidSortOrder,
+      errorCode: CatalogErrorCode.ServiceCategoryInvalidSortOrder,
       rawValue,
     };
   },
   serviceInvalidDuration(
     rawValue: number,
   ): CatalogError.ServiceInvalidDuration {
-    return { code: CatalogErrorCode.ServiceInvalidDuration, rawValue };
+    return { errorCode: CatalogErrorCode.ServiceInvalidDuration, rawValue };
   },
   serviceInvalidSortOrder(
     rawValue: number,
   ): CatalogError.ServiceInvalidSortOrder {
-    return { code: CatalogErrorCode.ServiceInvalidSortOrder, rawValue };
+    return { errorCode: CatalogErrorCode.ServiceInvalidSortOrder, rawValue };
   },
   serviceEmptyBundleIncludes(): CatalogError.ServiceEmptyBundleIncludes {
-    return { code: CatalogErrorCode.ServiceEmptyBundleIncludes };
+    return { errorCode: CatalogErrorCode.ServiceEmptyBundleIncludes };
   },
+  /** The raw ids are echoed as authored (i18n params), under their brands. */
   serviceUnknownVariantTerms(
     barberId: string,
     variantId: string,
   ): CatalogError.ServiceUnknownVariantTerms {
     return {
-      code: CatalogErrorCode.ServiceUnknownVariantTerms,
-      barberId,
-      variantId,
+      errorCode: CatalogErrorCode.ServiceUnknownVariantTerms,
+      barberId: BarberId.of(barberId),
+      variantId: ServiceVariantId.of(variantId),
     };
   },
   serviceDuplicateVariantTerms(
@@ -192,184 +201,193 @@ export const CatalogError = {
     variantId: string,
   ): CatalogError.ServiceDuplicateVariantTerms {
     return {
-      code: CatalogErrorCode.ServiceDuplicateVariantTerms,
-      barberId,
-      variantId,
+      errorCode: CatalogErrorCode.ServiceDuplicateVariantTerms,
+      barberId: BarberId.of(barberId),
+      variantId: ServiceVariantId.of(variantId),
     };
   },
   serviceDuplicateVariant(
     variantId: string,
   ): CatalogError.ServiceDuplicateVariant {
-    return { code: CatalogErrorCode.ServiceDuplicateVariant, variantId };
+    return {
+      errorCode: CatalogErrorCode.ServiceDuplicateVariant,
+      variantId: ServiceVariantId.of(variantId),
+    };
   },
   serviceDuplicateOffering(
     barberId: string,
   ): CatalogError.ServiceDuplicateOffering {
-    return { code: CatalogErrorCode.ServiceDuplicateOffering, barberId };
+    return {
+      errorCode: CatalogErrorCode.ServiceDuplicateOffering,
+      barberId: BarberId.of(barberId),
+    };
   },
   serviceMixedCurrencyTerms(
-    expected: string,
-    found: string,
+    expected: Currency,
+    found: Currency,
   ): CatalogError.ServiceMixedCurrencyTerms {
     return {
-      code: CatalogErrorCode.ServiceMixedCurrencyTerms,
+      errorCode: CatalogErrorCode.ServiceMixedCurrencyTerms,
       expected,
       found,
     };
   },
   locationInvalidGeoCoordinate(
-    axis: GeoAxis,
+    geoAxis: GeoAxis,
     rawValue: number,
   ): CatalogError.LocationInvalidGeoCoordinate {
     return {
-      code: CatalogErrorCode.LocationInvalidGeoCoordinate,
-      axis,
+      errorCode: CatalogErrorCode.LocationInvalidGeoCoordinate,
+      geoAxis,
       rawValue,
     };
   },
   locationInvalidTimezone(
     rawValue: string,
   ): CatalogError.LocationInvalidTimezone {
-    return { code: CatalogErrorCode.LocationInvalidTimezone, rawValue };
+    return { errorCode: CatalogErrorCode.LocationInvalidTimezone, rawValue };
   },
   locationInvalidSortOrder(
     rawValue: number,
   ): CatalogError.LocationInvalidSortOrder {
-    return { code: CatalogErrorCode.LocationInvalidSortOrder, rawValue };
+    return { errorCode: CatalogErrorCode.LocationInvalidSortOrder, rawValue };
   },
   locationInvalidMapUrl(rawValue: string): CatalogError.LocationInvalidMapUrl {
-    return { code: CatalogErrorCode.LocationInvalidMapUrl, rawValue };
+    return { errorCode: CatalogErrorCode.LocationInvalidMapUrl, rawValue };
   },
   locationInvalidHoursLength(
     rawLength: number,
   ): CatalogError.LocationInvalidHoursLength {
-    return { code: CatalogErrorCode.LocationInvalidHoursLength, rawLength };
+    return {
+      errorCode: CatalogErrorCode.LocationInvalidHoursLength,
+      rawLength,
+    };
   },
   locationInvalidTimeOfDay(
     rawValue: string,
   ): CatalogError.LocationInvalidTimeOfDay {
-    return { code: CatalogErrorCode.LocationInvalidTimeOfDay, rawValue };
+    return { errorCode: CatalogErrorCode.LocationInvalidTimeOfDay, rawValue };
   },
   locationInvalidHoursRange(
     dayIndex: number,
   ): CatalogError.LocationInvalidHoursRange {
-    return { code: CatalogErrorCode.LocationInvalidHoursRange, dayIndex };
+    return { errorCode: CatalogErrorCode.LocationInvalidHoursRange, dayIndex };
   },
 
   /** Narrows an error to one code — `CatalogError.is(e, CatalogErrorCode.IdEmpty)`. */
   is<C extends CatalogErrorCode>(
     error: CatalogError,
-    code: C,
-  ): error is Extract<CatalogError, { readonly code: C }> {
-    return error.code === code;
+    errorCode: C,
+  ): error is Extract<CatalogError, { readonly errorCode: C }> {
+    return error.errorCode === errorCode;
   },
 } as const;
 
 export namespace CatalogError {
   export type IdEmpty = {
-    readonly code: typeof CatalogErrorCode.IdEmpty;
+    readonly errorCode: typeof CatalogErrorCode.IdEmpty;
     /** The id type that was blank, e.g. `'ServiceId'`, `'MediaRefId'`. */
     readonly idType: string;
   };
   export type LocalizedTextFieldEmpty = {
-    readonly code: typeof CatalogErrorCode.LocalizedTextFieldEmpty;
+    readonly errorCode: typeof CatalogErrorCode.LocalizedTextFieldEmpty;
     readonly locale: Locale;
   };
   export type MediaRefEmptyPath = {
-    readonly code: typeof CatalogErrorCode.MediaRefEmptyPath;
+    readonly errorCode: typeof CatalogErrorCode.MediaRefEmptyPath;
   };
   export type MediaRefInvalidDimension = {
-    readonly code: typeof CatalogErrorCode.MediaRefInvalidDimension;
-    readonly dimension: MediaDimension;
+    readonly errorCode: typeof CatalogErrorCode.MediaRefInvalidDimension;
+    readonly mediaDimension: MediaDimension;
     readonly rawValue: number;
   };
   export type MediaRefFocalPointOutOfRange = {
-    readonly code: typeof CatalogErrorCode.MediaRefFocalPointOutOfRange;
+    readonly errorCode: typeof CatalogErrorCode.MediaRefFocalPointOutOfRange;
     readonly x: number;
     readonly y: number;
   };
   export type VenuePhoneBlankDisplay = {
-    readonly code: typeof CatalogErrorCode.VenuePhoneBlankDisplay;
+    readonly errorCode: typeof CatalogErrorCode.VenuePhoneBlankDisplay;
   };
   export type BarberEmptyHandle = {
-    readonly code: typeof CatalogErrorCode.BarberEmptyHandle;
+    readonly errorCode: typeof CatalogErrorCode.BarberEmptyHandle;
   };
   export type BarberInvalidYearsExperience = {
-    readonly code: typeof CatalogErrorCode.BarberInvalidYearsExperience;
+    readonly errorCode: typeof CatalogErrorCode.BarberInvalidYearsExperience;
     readonly rawValue: number;
   };
   export type BarberInvalidSortOrder = {
-    readonly code: typeof CatalogErrorCode.BarberInvalidSortOrder;
+    readonly errorCode: typeof CatalogErrorCode.BarberInvalidSortOrder;
     readonly rawValue: number;
   };
   export type ServiceCategoryInvalidSortOrder = {
-    readonly code: typeof CatalogErrorCode.ServiceCategoryInvalidSortOrder;
+    readonly errorCode: typeof CatalogErrorCode.ServiceCategoryInvalidSortOrder;
     readonly rawValue: number;
   };
   export type ServiceInvalidDuration = {
-    readonly code: typeof CatalogErrorCode.ServiceInvalidDuration;
+    readonly errorCode: typeof CatalogErrorCode.ServiceInvalidDuration;
     readonly rawValue: number;
   };
   export type ServiceInvalidSortOrder = {
-    readonly code: typeof CatalogErrorCode.ServiceInvalidSortOrder;
+    readonly errorCode: typeof CatalogErrorCode.ServiceInvalidSortOrder;
     readonly rawValue: number;
   };
   export type ServiceEmptyBundleIncludes = {
-    readonly code: typeof CatalogErrorCode.ServiceEmptyBundleIncludes;
+    readonly errorCode: typeof CatalogErrorCode.ServiceEmptyBundleIncludes;
   };
   export type ServiceUnknownVariantTerms = {
-    readonly code: typeof CatalogErrorCode.ServiceUnknownVariantTerms;
-    readonly barberId: string;
-    readonly variantId: string;
+    readonly errorCode: typeof CatalogErrorCode.ServiceUnknownVariantTerms;
+    readonly barberId: BarberId;
+    readonly variantId: ServiceVariantId;
   };
   export type ServiceDuplicateVariantTerms = {
-    readonly code: typeof CatalogErrorCode.ServiceDuplicateVariantTerms;
-    readonly barberId: string;
-    readonly variantId: string;
+    readonly errorCode: typeof CatalogErrorCode.ServiceDuplicateVariantTerms;
+    readonly barberId: BarberId;
+    readonly variantId: ServiceVariantId;
   };
   export type ServiceDuplicateVariant = {
-    readonly code: typeof CatalogErrorCode.ServiceDuplicateVariant;
-    readonly variantId: string;
+    readonly errorCode: typeof CatalogErrorCode.ServiceDuplicateVariant;
+    readonly variantId: ServiceVariantId;
   };
   export type ServiceDuplicateOffering = {
-    readonly code: typeof CatalogErrorCode.ServiceDuplicateOffering;
-    readonly barberId: string;
+    readonly errorCode: typeof CatalogErrorCode.ServiceDuplicateOffering;
+    readonly barberId: BarberId;
   };
   export type ServiceMixedCurrencyTerms = {
-    readonly code: typeof CatalogErrorCode.ServiceMixedCurrencyTerms;
+    readonly errorCode: typeof CatalogErrorCode.ServiceMixedCurrencyTerms;
     /** The base terms' currency. */
-    readonly expected: string;
+    readonly expected: Currency;
     /** The first other currency met on the matrix. */
-    readonly found: string;
+    readonly found: Currency;
   };
   export type LocationInvalidGeoCoordinate = {
-    readonly code: typeof CatalogErrorCode.LocationInvalidGeoCoordinate;
-    readonly axis: GeoAxis;
+    readonly errorCode: typeof CatalogErrorCode.LocationInvalidGeoCoordinate;
+    readonly geoAxis: GeoAxis;
     readonly rawValue: number;
   };
   export type LocationInvalidTimezone = {
-    readonly code: typeof CatalogErrorCode.LocationInvalidTimezone;
+    readonly errorCode: typeof CatalogErrorCode.LocationInvalidTimezone;
     readonly rawValue: string;
   };
   export type LocationInvalidSortOrder = {
-    readonly code: typeof CatalogErrorCode.LocationInvalidSortOrder;
+    readonly errorCode: typeof CatalogErrorCode.LocationInvalidSortOrder;
     readonly rawValue: number;
   };
   export type LocationInvalidMapUrl = {
-    readonly code: typeof CatalogErrorCode.LocationInvalidMapUrl;
+    readonly errorCode: typeof CatalogErrorCode.LocationInvalidMapUrl;
     readonly rawValue: string;
   };
   export type LocationInvalidHoursLength = {
-    readonly code: typeof CatalogErrorCode.LocationInvalidHoursLength;
+    readonly errorCode: typeof CatalogErrorCode.LocationInvalidHoursLength;
     readonly rawLength: number;
   };
   export type LocationInvalidTimeOfDay = {
-    readonly code: typeof CatalogErrorCode.LocationInvalidTimeOfDay;
+    readonly errorCode: typeof CatalogErrorCode.LocationInvalidTimeOfDay;
     /** The text as given; a minute figure that is not a minute of the day is its decimal string. */
     readonly rawValue: string;
   };
   export type LocationInvalidHoursRange = {
-    readonly code: typeof CatalogErrorCode.LocationInvalidHoursRange;
+    readonly errorCode: typeof CatalogErrorCode.LocationInvalidHoursRange;
     /** `0` = Monday … `6` = Sunday — the index into the seven `DayHours`. */
     readonly dayIndex: number;
   };

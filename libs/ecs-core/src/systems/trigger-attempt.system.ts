@@ -1,3 +1,6 @@
+import type { TriggerEventId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+
 /**
  * How a retrying handler judges one failed attempt
  * (`apps/functions/src/lib/trigger-attempts.ts:11-127`) — shared by every
@@ -7,12 +10,17 @@
  * returns the verdict and the one structured line, never writes it.
  */
 
-/** Whether a redelivery could help — the ONLY source of these strings. */
+/**
+ * Whether a redelivery could help — the ONLY source of these strings, the
+ * field `attemptOutcome` (N15). The gRPC canonical code names a failure
+ * carries (`aborted`, `already-exists`) are an external vocabulary and stay
+ * as Firestore spells them (flatten-spec §0.4).
+ */
 export const AttemptOutcome = {
   /** A contended, overloaded or briefly absent backend: retry. */
-  Transient: 'transient',
+  Transient: 'TRANSIENT',
   /** Would fail the same way for the whole retry window: log and drop. */
-  Permanent: 'permanent',
+  Permanent: 'PERMANENT',
 } as const;
 export type AttemptOutcome =
   (typeof AttemptOutcome)[keyof typeof AttemptOutcome];
@@ -53,11 +61,15 @@ const TRANSIENT_CODES: readonly string[] = [
   'resource-exhausted',
 ];
 
-/** One failure, judged: the failure itself, its canonical code, and whether a redelivery could help. */
+/**
+ * One failure, judged: the failure itself, its canonical gRPC code name
+ * (`failureCode` — an external vocabulary, never an `errorCode` of ours), and
+ * whether a redelivery could help.
+ */
 export type AttemptFailure = {
   readonly error: unknown;
-  readonly code: string;
-  readonly outcome: AttemptOutcome;
+  readonly failureCode: string;
+  readonly attemptOutcome: AttemptOutcome;
 };
 
 /**
@@ -66,16 +78,17 @@ export type AttemptFailure = {
  */
 export type AttemptLine = {
   readonly fn: string;
-  readonly eventId: string;
-  readonly outcome: AttemptOutcome;
-  readonly code: string;
+  readonly eventId: TriggerEventId;
+  readonly attemptOutcome: AttemptOutcome;
+  readonly failureCode: string;
+  /** A duration (N5), not an instant. */
   readonly ageMs: number | null;
 };
 
 /** A delivered event as the verdict reads it: its id and its own time (`null` when unreadable). */
 export type AttemptEvent = {
-  readonly id: string;
-  readonly atMs: number | null;
+  readonly id: TriggerEventId;
+  readonly eventAtUtcMs: UtcEpochMs | null;
 };
 
 /** The `code` a thrown value carries, read without trusting its shape. */
@@ -110,17 +123,31 @@ export const TriggerAttemptSystem = {
       : AttemptOutcome.Permanent;
   },
 
-  /** How far into the retry window a delivery is — from the event's own time; `null` when that is unreadable. */
-  eventAgeMs(eventAtMs: number | null, nowMs: number): number | null {
-    return eventAtMs === null ? null : Math.max(0, nowMs - eventAtMs);
+  /**
+   * How far into the retry window a delivery is — from the event's own time;
+   * `null` when that is unreadable. Elapsed real time between two instants
+   * (flatten-spec T2); never below zero.
+   */
+  eventAgeMs(
+    eventAtUtcMs: UtcEpochMs | null,
+    nowUtcMs: UtcEpochMs,
+  ): number | null {
+    if (eventAtUtcMs === null) return null;
+    return UtcEpochMs.compare(nowUtcMs, eventAtUtcMs) > 0
+      ? UtcEpochMs.elapsedMs(eventAtUtcMs, nowUtcMs)
+      : 0;
   },
 
   /** One failure, judged by its code — read off it unless given. */
   attemptFailure(
     error: unknown,
-    code: string = TriggerAttemptSystem.failureCode(error),
+    failureCode: string = TriggerAttemptSystem.failureCode(error),
   ): AttemptFailure {
-    return { error, code, outcome: TriggerAttemptSystem.attemptOutcome(code) };
+    return {
+      error,
+      failureCode,
+      attemptOutcome: TriggerAttemptSystem.attemptOutcome(failureCode),
+    };
   },
 
   /**
@@ -132,7 +159,7 @@ export const TriggerAttemptSystem = {
     let first: AttemptFailure | null = null;
     for (let i = 0; i < errors.length; i++) {
       const failure = TriggerAttemptSystem.attemptFailure(errors[i]);
-      if (failure.outcome === AttemptOutcome.Transient) return failure;
+      if (failure.attemptOutcome === AttemptOutcome.Transient) return failure;
       first ??= failure;
     }
     return first;
@@ -142,14 +169,14 @@ export const TriggerAttemptSystem = {
     fn: string,
     event: AttemptEvent,
     failure: AttemptFailure,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
   ): AttemptLine {
     return {
       fn,
       eventId: event.id,
-      outcome: failure.outcome,
-      code: failure.code,
-      ageMs: TriggerAttemptSystem.eventAgeMs(event.atMs, nowMs),
+      attemptOutcome: failure.attemptOutcome,
+      failureCode: failure.failureCode,
+      ageMs: TriggerAttemptSystem.eventAgeMs(event.eventAtUtcMs, nowUtcMs),
     };
   },
 } as const;

@@ -1,25 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { PlacementKind } from './placement-kind.data';
+import { Placement } from './placement-kind.data';
 
-describe('PlacementKind', () => {
-  it('reads the two stored tags unchanged', () => {
-    expect(PlacementKind.Self).toBe('self');
-    expect(PlacementKind.Staff).toBe('staff');
+describe('Placement', () => {
+  it('pins the two tags', () => {
+    expect(Placement.Self).toBe('SELF');
+    expect(Placement.Staff).toBe('STAFF');
   });
 
-  it('parses a stored value, and reads anything else as unknown', () => {
-    expect(PlacementKind.parse('self')).toBe(PlacementKind.Self);
-    expect(PlacementKind.parse('staff')).toBe(PlacementKind.Staff);
-    for (const raw of [null, undefined, '', 'Staff', 'client', 1]) {
-      expect(PlacementKind.parse(raw)).toBeNull();
+  it('parses a tag, and reads anything else as unknown', () => {
+    expect(Placement.parse('SELF')).toBe(Placement.Self);
+    expect(Placement.parse('STAFF')).toBe(Placement.Staff);
+    for (const raw of [null, undefined, '', 'Staff', 'self', 'client', 1]) {
+      expect(Placement.parse(raw)).toBeNull();
     }
   });
 
   it('answers which side placed it, never guessing for null', () => {
-    expect(PlacementKind.isSelf(PlacementKind.Self)).toBe(true);
-    expect(PlacementKind.isStaff(PlacementKind.Staff)).toBe(true);
-    expect(PlacementKind.isSelf(null)).toBe(false);
-    expect(PlacementKind.isStaff(null)).toBe(false);
-    expect(PlacementKind.isStaff(PlacementKind.Self)).toBe(false);
+    expect(Placement.isSelf(Placement.Self)).toBe(true);
+    expect(Placement.isStaff(Placement.Staff)).toBe(true);
+    expect(Placement.isSelf(null)).toBe(false);
+    expect(Placement.isStaff(null)).toBe(false);
+    expect(Placement.isStaff(Placement.Self)).toBe(false);
   });
 });

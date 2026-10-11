@@ -1,12 +1,13 @@
 /**
- * The channel a one-time code is delivered over — the stored
- * `otps.destinationType` strings of `firestore-otp-repository.ts:14-27`,
- * unchanged (blueprint §2.6, §2.7). Law 1: read from this dictionary, never
- * a bare `'sms'` at a use site.
+ * The channel a one-time code is delivered over — the OTP's field
+ * `otpDestinationType` (N15; today's stored `otps.destinationType` strings
+ * of `firestore-otp-repository.ts:14-27`, upper-snaked — the stored bytes
+ * stay lowercase until the identity flip, the shims converting). Law 1: read
+ * from this dictionary, never a bare `'SMS'` at a use site.
  */
 export const OtpDestinationType = {
-  Email: 'email',
-  Sms: 'sms',
+  Email: 'EMAIL',
+  Sms: 'SMS',
 } as const;
 export type OtpDestinationType =
   (typeof OtpDestinationType)[keyof typeof OtpDestinationType];

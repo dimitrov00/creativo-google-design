@@ -1,34 +1,41 @@
-import { DayKey } from './day-key.data';
+import { defect } from '../primitives/defect';
+import {
+  DurationMinutes,
+  MinuteCount,
+} from '../primitives/duration-minutes.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { Result } from './result.data';
 import { SchedulingError } from './scheduling-errors.data';
 
 const MS_PER_HOUR = 3_600_000;
 
 /**
- * The ECMAScript time range's half-width in ms: `Date` holds instants up to
- * 8.64e15 ms either side of the epoch.
+ * The ECMAScript time range's half-width in ms: a `Date` held instants up to
+ * 8.64e15 ms either side of the epoch — the bound the window maximum keeps.
  */
 const TIME_RANGE_MS = 8_640_000_000_000_000;
 
 /**
  * Every number the booking flow used to hardcode, in one validated place —
  * the seven stored fields of `settings/bookingPolicy`, flat at the document
- * root (`booking-policy-document.ts:67-79`). Tenant policy, not domain
- * invariants: the engine takes it as an argument, which is also what lets a
- * test drive the engine at 5-minute steps without touching the defaults.
+ * root (`booking-policy-document.ts:67-79`), already a flat slice
+ * (flatten-spec §3.1). Tenant policy, not domain invariants: the engine takes
+ * it as an argument, which is also what lets a test drive the engine at
+ * 5-minute steps without touching the defaults.
  *
  * The free-cancellation window is plain whole hours here and wherever it is
- * stamped (`SeatOutcome` `cancelled.windowHours`), and one rule
+ * stamped (`SeatOutcome`'s `cancellationWindowHours`), and one rule
  * ({@link BookingPolicy.isValidCancellationWindowHours}) says what a window
  * may be, so the setting and the stamp accept exactly the same numbers.
  */
 export type BookingPolicy = {
   /** People per booking, the booker included. */
   readonly maxPartySize: number;
-  /** Candidate starts are aligned to this grid, in minutes; it divides the hour. */
-  readonly slotStepMinutes: number;
+  /** Candidate starts are aligned to this grid; it divides the hour. */
+  readonly slotStepMinutes: DurationMinutes;
   /** How soon from now a booking may start — the shop needs warning. */
-  readonly minLeadMinutes: number;
+  readonly minLeadMinutes: MinuteCount;
   /**
    * How far ahead the calendar opens, in WHOLE MONTHS — the number a shop
    * owner has an opinion about, ending where a month grid ends.
@@ -39,18 +46,34 @@ export type BookingPolicy = {
   /** How many days one flexible request may span — each is its own search. */
   readonly maxFlexibleDays: number;
   /**
-   * Does an online booking land `confirmed`, or wait for a human? Owner
+   * Does an online booking land `CONFIRMED`, or wait for a human? Owner
    * ruling 2026-08-07: default ON. Says the shop accepted, never that the
    * client is present.
    */
   readonly autoConfirm: boolean;
 };
 
+/** A policy as authored or stored, before its edge guard — raw figures. */
+export type BookingPolicyInput = {
+  readonly maxPartySize: number;
+  readonly slotStepMinutes: number;
+  readonly minLeadMinutes: number;
+  readonly horizonMonths: number;
+  readonly cancellationWindowHours: number;
+  readonly maxFlexibleDays: number;
+  readonly autoConfirm: boolean;
+};
+
+/** A brand the module builds from a literal it knows is valid. */
+function known<T>(result: Result<T, unknown>): T {
+  return result.ok ? result.value : defect('BookingPolicy: a broken default');
+}
+
 /** The shipping defaults (owner rulings 2026-07-29 and 2026-08-07). */
 const DEFAULT: BookingPolicy = {
   maxPartySize: 5,
-  slotStepMinutes: 15,
-  minLeadMinutes: 120,
+  slotStepMinutes: known(DurationMinutes.of(15)),
+  minLeadMinutes: known(MinuteCount.of(120)),
   horizonMonths: 2,
   cancellationWindowHours: 24,
   maxFlexibleDays: 7,
@@ -59,10 +82,6 @@ const DEFAULT: BookingPolicy = {
 
 function isPositiveInt(value: number): boolean {
   return Number.isInteger(value) && value > 0;
-}
-
-function isNonNegativeInt(value: number): boolean {
-  return Number.isInteger(value) && value >= 0;
 }
 
 /** A stored number, or the default when it is not a finite number at all. */
@@ -82,8 +101,8 @@ export const BookingPolicy = {
   /**
    * The longest window a policy may hold: 2,400,000,000 hours, the time
    * range's half-width — so for any visit at or after the epoch, the
-   * deadline `start − hours·1 h` is an exact, `Date`-representable instant.
-   * An arithmetic bound, not a product one.
+   * deadline `start − hours·1 h` is an exact, safe-integer instant. An
+   * arithmetic bound, not a product one.
    */
   CANCELLATION_WINDOW_MAX_HOURS: TIME_RANGE_MS / MS_PER_HOUR,
 
@@ -102,27 +121,26 @@ export const BookingPolicy = {
 
   /**
    * The edge guard, every invalid field at once (one
-   * `scheduling.booking_policy.invalid` per field). The slot step must
+   * `SCHEDULING_BOOKING_POLICY_INVALID` per field). The slot step must
    * divide the hour: a 25-minute grid drifts against every readable time.
    */
   create(
-    raw: BookingPolicy,
+    raw: BookingPolicyInput,
   ): Result<BookingPolicy, readonly SchedulingError[]> {
     const errors: SchedulingError[] = [];
     const check = (ok: boolean, field: string, value: number): void => {
       if (!ok) errors.push(SchedulingError.bookingPolicyInvalid(field, value));
     };
+    const step = DurationMinutes.of(raw.slotStepMinutes);
+    // `+ 0` folds a negative zero: store the zero every reader compares against.
+    const lead = MinuteCount.of(raw.minLeadMinutes + 0);
     check(isPositiveInt(raw.maxPartySize), 'maxPartySize', raw.maxPartySize);
     check(
-      isPositiveInt(raw.slotStepMinutes) && 60 % raw.slotStepMinutes === 0,
+      step.ok && 60 % raw.slotStepMinutes === 0,
       'slotStepMinutes',
       raw.slotStepMinutes,
     );
-    check(
-      isNonNegativeInt(raw.minLeadMinutes),
-      'minLeadMinutes',
-      raw.minLeadMinutes,
-    );
+    check(lead.ok, 'minLeadMinutes', raw.minLeadMinutes);
     check(isPositiveInt(raw.horizonMonths), 'horizonMonths', raw.horizonMonths);
     check(
       BookingPolicy.isValidCancellationWindowHours(raw.cancellationWindowHours),
@@ -134,12 +152,11 @@ export const BookingPolicy = {
       'maxFlexibleDays',
       raw.maxFlexibleDays,
     );
-    if (errors.length > 0) return Result.err(errors);
+    if (errors.length > 0 || !step.ok || !lead.ok) return Result.err(errors);
     return Result.ok({
       maxPartySize: raw.maxPartySize,
-      slotStepMinutes: raw.slotStepMinutes,
-      // `+ 0` folds a negative zero: store the zero every reader compares against.
-      minLeadMinutes: raw.minLeadMinutes + 0,
+      slotStepMinutes: step.value,
+      minLeadMinutes: lead.value,
       horizonMonths: raw.horizonMonths,
       cancellationWindowHours: raw.cancellationWindowHours + 0,
       maxFlexibleDays: raw.maxFlexibleDays,
@@ -158,7 +175,7 @@ export const BookingPolicy = {
   withDefaults(raw: unknown): BookingPolicy {
     if (raw === null || typeof raw !== 'object') return DEFAULT;
     const data = raw as Readonly<Record<string, unknown>>;
-    const candidate: BookingPolicy = {
+    const candidate: BookingPolicyInput = {
       maxPartySize: numberOr(data['maxPartySize'], DEFAULT.maxPartySize),
       slotStepMinutes: numberOr(
         data['slotStepMinutes'],
@@ -202,39 +219,45 @@ export const BookingPolicy = {
 
   /**
    * The last instant a cancellation under a `windowHours` window is still
-   * free — the start minus the window. THE formula: the callable that refuses
-   * a late cancel, the page that names the deadline and the stats that call a
-   * past cancellation late (on its stamped window) all draw it here.
+   * free — the start instant minus the window, in elapsed time (a T2 row of
+   * flatten-spec §2.3). THE formula: the callable that refuses a late cancel,
+   * the page that names the deadline and the stats that call a past
+   * cancellation late (on its stamped window) all draw it here.
    */
-  cancellationDeadlineMs(
+  cancellationDeadlineUtcMs(
     windowHours: number,
-    appointmentStartMs: number,
-  ): number {
-    return appointmentStartMs - windowHours * MS_PER_HOUR;
+    appointmentStartUtcMs: UtcEpochMs,
+  ): UtcEpochMs {
+    return UtcEpochMs.plusHours(appointmentStartUtcMs, -windowHours);
   },
 
-  /** Free at `atMs`: at the deadline itself still is, a millisecond past is not. */
+  /** Free at `atUtcMs`: at the deadline itself still is, a millisecond past is not. */
   allowsFreeCancelAt(
     windowHours: number,
-    appointmentStartMs: number,
-    atMs: number,
+    appointmentStartUtcMs: UtcEpochMs,
+    atUtcMs: UtcEpochMs,
   ): boolean {
     return (
-      atMs <=
-      BookingPolicy.cancellationDeadlineMs(windowHours, appointmentStartMs)
+      UtcEpochMs.compare(
+        atUtcMs,
+        BookingPolicy.cancellationDeadlineUtcMs(
+          windowHours,
+          appointmentStartUtcMs,
+        ),
+      ) <= 0
     );
   },
 
   /** {@link allowsFreeCancelAt} under this policy's own window. */
   mayCancelAt(
     policy: BookingPolicy,
-    appointmentStartMs: number,
-    nowMs: number,
+    appointmentStartUtcMs: UtcEpochMs,
+    nowUtcMs: UtcEpochMs,
   ): boolean {
     return BookingPolicy.allowsFreeCancelAt(
       policy.cancellationWindowHours,
-      appointmentStartMs,
-      nowMs,
+      appointmentStartUtcMs,
+      nowUtcMs,
     );
   },
 
@@ -242,19 +265,18 @@ export const BookingPolicy = {
    * The last day anyone may book, counting from `today`: the LAST day of the
    * month `horizonMonths` after today's, so a two-month horizon opened on
    * 31 January ends 31 March (never a clamped 28th) and the calendar grid
-   * ends where a month ends. Civil arithmetic, no zone.
+   * ends where a month ends. Civil arithmetic on the shop's days, no zone.
    */
-  horizonEndFrom(policy: BookingPolicy, today: DayKey): DayKey {
-    const year = Number(today.slice(0, 4));
-    const month = Number(today.slice(5, 7));
+  horizonEndFrom(policy: BookingPolicy, today: LocalDate): LocalDate {
+    const { year, month } = LocalDate.parts(today);
     const monthIndex = month - 1 + policy.horizonMonths;
     const endYear = year + Math.floor(monthIndex / 12);
     const endMonth = (monthIndex % 12) + 1;
-    return DayKey.fromEpochDay(
-      DayKey.epochDayOf(
+    return LocalDate.fromEpochDay(
+      LocalDate.epochDayOf(
         endYear,
         endMonth,
-        DayKey.daysInMonth(endYear, endMonth),
+        LocalDate.daysInMonth(endYear, endMonth),
       ),
     );
   },

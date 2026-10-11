@@ -1,18 +1,17 @@
 import type { Observable } from 'rxjs';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
-import type { AppointmentNoteEntity } from '../entities/appointment-note.entity';
-import type { AppointmentPhotoEntity } from '../entities/appointment-photo.entity';
-import type { AppointmentId } from '../entities/appointment.entity';
-import type { UserId } from '../entities/user.entity';
+import type { AppointmentNote } from '../entities/appointment-note.entity';
+import type { AppointmentPhoto } from '../entities/appointment-photo.entity';
+import type { AppointmentId, UserId } from '../primitives/ids.primitive';
 
 /**
  * The visit's staff-only notes and photos (blueprint §4.2) —
  * `appointmentNotes/{appointmentId}` and `appointmentPhotos/{id}`, each an
  * entity straight from `snap.data()`. Successor of `AppointmentNotes`,
  * `AppointmentPhotos` and `ClientPhotosReader`. The photo bytes go through
- * `UploadPhotoBytes` (`media.port.ts`) first; the stamps (`takenAtMs`,
- * `writtenAtMs`, the author) are filled by the caller from its injected
+ * `UploadPhotoBytes` (`media.port.ts`) first; the stamps (`takenAtUtcMs`,
+ * `writtenAtUtcMs`, the author) are filled by the caller from its injected
  * clock and session, never by the adapter.
  */
 
@@ -21,11 +20,11 @@ import type { UserId } from '../entities/user.entity';
 /** A visit's photos, live — `appointmentId ==`, single-field. */
 export type ObserveAppointmentPhotos = (
   appointmentId: AppointmentId,
-) => Observable<Result<readonly AppointmentPhotoEntity[], RepositoryError>>;
+) => Observable<Result<readonly AppointmentPhoto[], RepositoryError>>;
 
 /** `appointmentPhotos/{id}` `Set` — a shot or adopted photo, after its bytes are stored. */
 export type SaveAppointmentPhoto = (
-  photo: AppointmentPhotoEntity,
+  photo: AppointmentPhoto,
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
@@ -34,17 +33,18 @@ export type SaveAppointmentPhoto = (
  * object — an adopted reference keeps its original.
  */
 export type DeleteAppointmentPhoto = (
-  photo: AppointmentPhotoEntity,
+  photo: AppointmentPhoto,
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
  * A client's newest photos across visits — `clientUserId ==`,
- * `orderBy takenAtMs desc`, at most `limit` (index #22).
+ * `orderBy takenAtUtcMs desc`, at most `limit` (index #22). Keyed by the
+ * uid until the appointment flip (1) re-keys it to `clientCustomerId` (D29).
  */
 export type ListClientPhotos = (
   clientUserId: UserId,
   limit: number,
-) => Promise<Result<readonly AppointmentPhotoEntity[], RepositoryError>>;
+) => Promise<Result<readonly AppointmentPhoto[], RepositoryError>>;
 
 /**
  * How many photos each visit holds — `appointmentId ==` count aggregations,
@@ -59,7 +59,7 @@ export type CountPhotosByAppointment = (
 /** `appointmentNotes/{appointmentId}`, live — `null` when the visit has no note. */
 export type ObserveAppointmentNote = (
   appointmentId: AppointmentId,
-) => Observable<Result<AppointmentNoteEntity | null, RepositoryError>>;
+) => Observable<Result<AppointmentNote | null, RepositoryError>>;
 
 /**
  * `appointmentNotes/{appointmentId}` — `Set` the note, or DELETE the
@@ -68,7 +68,7 @@ export type ObserveAppointmentNote = (
  */
 export type SaveAppointmentNote = (
   appointmentId: AppointmentId,
-  note: AppointmentNoteEntity | null,
+  note: AppointmentNote | null,
 ) => Promise<Result<void, RepositoryError>>;
 
 /** The notes-and-photos bundle the web binds. */

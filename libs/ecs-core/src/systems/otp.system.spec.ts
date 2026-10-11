@@ -6,24 +6,32 @@ import {
 } from '../components/auth-strategy.data';
 import {
   Identifier,
-  IdentifierKind,
+  IdentifierChannel,
   ParsedIdentifier,
 } from '../components/identifier.data';
 import { IdentityErrorCode } from '../components/identity-errors.data';
 import { OtpDestinationType } from '../components/otp-destination-type.data';
 import { OtpPurpose } from '../components/otp-purpose.data';
 import { RegistrationField } from '../components/registration.data';
-import { TenantId } from '../components/tenant-id.data';
-import { type OtpEntity, OtpId } from '../entities/otp.entity';
-import { deepFreeze, sequentialIds, unwrapErr, unwrapOk } from '../testing';
+import type { Otp } from '../entities/otp.entity';
+import { DurationMinutes } from '../primitives/duration-minutes.primitive';
+import { OtpId, TenantId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  deepFreeze,
+  sequentialIds,
+  unwrapErr,
+  unwrapOk,
+  utcMs,
+} from '../testing';
 import { type OtpChallenge, OtpLimits, OtpSystem } from './otp.system';
 
 /*
  * The cases of libs/domain/identity/src/lib/otp.spec.ts (attempt limits,
  * expiry, lock-out), COPIED over struct literals — the class spec keeps
  * running against its shim. `isSuccess(r)` became `r.ok`, the class's
- * `ZonedDateTime` instants became epoch ms, and the `{ kind }` verdicts
- * became the four payload-free `identity.otp.*` codes. The edge refusals
+ * `ZonedDateTime` instants became `UtcEpochMs` lifecycle stamps, and the
+ * `{ kind }` verdicts became the four payload-free `IDENTITY_OTP_*` codes. The edge refusals
  * the class collected at issue time (blank hash/salt, a bad id, a bad
  * stored instant) are re-targeted to the edges that now own them: issue is
  * total over inputs already through `ParsedIdentifier.parse`,
@@ -36,19 +44,20 @@ import { type OtpChallenge, OtpLimits, OtpSystem } from './otp.system';
  * the deployment's own ttl/maxAttempts).
  */
 
-/** 2026-01-01T00:00:00.000Z */
-const T0 = 1_767_225_600_000;
+const T0 = utcMs('2026-01-01T00:00:00.000Z');
 const MINUTE = 60_000;
-const at = (minutes: number, seconds = 0): number =>
-  T0 + minutes * MINUTE + seconds * 1_000;
+const at = (minutes: number, seconds = 0): UtcEpochMs =>
+  UtcEpochMs.plusMs(T0, minutes * MINUTE + seconds * 1_000);
+const ttl = (minutes: number): DurationMinutes =>
+  unwrapOk(DurationMinutes.of(minutes));
 
 function challenge(overrides: Partial<OtpChallenge> = {}): OtpChallenge {
   return {
     tenantId: TenantId.of('creativo'),
     destination: Identifier.of('client@example.com'),
-    destinationType: OtpDestinationType.Email,
-    purpose: OtpPurpose.Login,
-    ttlMinutes: 5,
+    otpDestinationType: OtpDestinationType.Email,
+    otpPurpose: OtpPurpose.Login,
+    ttlMinutes: ttl(5),
     maxAttempts: 5,
     ...overrides,
   };
@@ -56,25 +65,25 @@ function challenge(overrides: Partial<OtpChallenge> = {}): OtpChallenge {
 
 const HASHED = { codeHash: 'hash(123456,fixed-salt)', salt: 'fixed-salt' };
 
-function issued(nowMs = T0, overrides: Partial<OtpChallenge> = {}): OtpEntity {
-  return OtpSystem.issue(challenge(overrides), HASHED, nowMs, () => 'otp_1');
+function issued(nowUtcMs = T0, overrides: Partial<OtpChallenge> = {}): Otp {
+  return OtpSystem.issue(challenge(overrides), HASHED, nowUtcMs, () => 'otp_1');
 }
 
 /** A stored body read back — the entity itself, no reconstitute step. */
-function stored(overrides: Partial<OtpEntity> = {}): OtpEntity {
+function stored(overrides: Partial<Otp> = {}): Otp {
   return {
     id: OtpId.of('otp_1'),
     tenantId: TenantId.of('creativo'),
     destination: Identifier.of('client@example.com'),
-    destinationType: OtpDestinationType.Email,
-    purpose: OtpPurpose.Login,
+    otpDestinationType: OtpDestinationType.Email,
+    otpPurpose: OtpPurpose.Login,
     codeHash: 'stored-hash',
     salt: 'stored-salt',
-    expiresAtMs: at(5),
+    expiresAtUtcMs: at(5),
     attemptCount: 2,
     maxAttempts: 5,
-    consumedAtMs: null,
-    createdAtMs: T0,
+    consumedAtUtcMs: null,
+    createdAtUtcMs: T0,
     ...overrides,
   };
 }
@@ -82,12 +91,12 @@ function stored(overrides: Partial<OtpEntity> = {}): OtpEntity {
 const readEmailOnly = () => null;
 
 function strategy(
-  kind: AuthStrategyKind,
+  authStrategyKind: AuthStrategyKind,
   policy = { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
 ): AuthStrategy {
   return unwrapOk(
     AuthStrategy.parse({
-      kind,
+      authStrategyKind,
       required: [
         RegistrationField.Phone,
         RegistrationField.FirstName,
@@ -103,26 +112,26 @@ describe('OtpSystem.issue (otp.spec.ts › Otp.issue)', () => {
     const otp = issued();
     expect(otp.codeHash).toBe('hash(123456,fixed-salt)');
     expect(otp.salt).toBe('fixed-salt');
-    expect(otp.destinationType).toBe(OtpDestinationType.Email);
+    expect(otp.otpDestinationType).toBe(OtpDestinationType.Email);
     expect(otp.attemptCount).toBe(0);
-    expect(otp.consumedAtMs).toBeNull();
-    expect(otp.createdAtMs).toBe(T0);
+    expect(otp.consumedAtUtcMs).toBeNull();
+    expect(otp.createdAtUtcMs).toBe(T0);
     expect(otp.id).toBe('otp_1');
   });
 
   it('computes expiresAt as now + ttlMinutes', () => {
-    expect(issued().expiresAtMs).toBe(at(5));
+    expect(issued().expiresAtUtcMs).toBe(at(5));
   });
 
   it('rejects an invalid identifier — the destination brand is reachable only through ParsedIdentifier.parse', () => {
     const refused = unwrapErr(
       ParsedIdentifier.parse(
-        IdentifierKind.Email,
+        IdentifierChannel.Email,
         'not-an-email',
         readEmailOnly,
       ),
     );
-    expect(refused.code).toBe(IdentityErrorCode.IdentifierInvalid);
+    expect(refused.errorCode).toBe(IdentityErrorCode.IdentifierInvalid);
   });
 
   it('rejects an empty codeHash — issue stores the OtpCrypto port hash verbatim and never trims or invents one', () => {
@@ -148,14 +157,14 @@ describe('OtpSystem.issue (otp.spec.ts › Otp.issue)', () => {
   it('rejects a non-positive maxAttempts — AuthStrategy.parse, the only source of the figure, refuses it', () => {
     const errors = unwrapErr(
       AuthStrategy.parse({
-        kind: AuthStrategyKind.EmailOtp,
+        authStrategyKind: AuthStrategyKind.EmailOtp,
         required: [RegistrationField.Phone],
         policy: { ttlMinutes: 5, maxAttempts: 0, sessionDays: 30 },
       }),
     );
     expect(errors).toEqual([
       {
-        code: IdentityErrorCode.AuthStrategyInvalidPolicy,
+        errorCode: IdentityErrorCode.AuthStrategyInvalidPolicy,
         field: 'maxAttempts',
       },
     ]);
@@ -164,7 +173,7 @@ describe('OtpSystem.issue (otp.spec.ts › Otp.issue)', () => {
   it('collects every field error at once — each edge reports all of its refusals together', () => {
     const errors = unwrapErr(
       AuthStrategy.parse({
-        kind: AuthStrategyKind.EmailOtp,
+        authStrategyKind: AuthStrategyKind.EmailOtp,
         required: ['middleName'],
         policy: { ttlMinutes: 0, maxAttempts: 0, sessionDays: 0 },
       }),
@@ -179,14 +188,16 @@ describe('OtpSystem.verify (otp.spec.ts › Otp.verify)', () => {
     const verifiedAt = at(1);
     const result = OtpSystem.verify(otp, true, verifiedAt);
     expect(result.ok).toBe(true);
-    expect(unwrapOk(result).consumedAtMs).toBe(verifiedAt);
+    expect(unwrapOk(result).consumedAtUtcMs).toBe(verifiedAt);
   });
 
-  it('fails with wrong_code when codeMatches is false, without mutating attemptCount itself', () => {
+  it('fails with WRONG_CODE when codeMatches is false, without mutating attemptCount itself', () => {
     const otp = issued();
     const result = OtpSystem.verify(otp, false, at(1));
     expect(result.ok).toBe(false);
-    expect(unwrapErr(result)).toEqual({ code: IdentityErrorCode.OtpWrongCode });
+    expect(unwrapErr(result)).toEqual({
+      errorCode: IdentityErrorCode.OtpWrongCode,
+    });
     expect(otp.attemptCount).toBe(0);
   });
 
@@ -197,37 +208,43 @@ describe('OtpSystem.verify (otp.spec.ts › Otp.verify)', () => {
     expect(otp.attemptCount).toBe(0);
   });
 
-  it('fails with expired once past expiresAt', () => {
+  it('fails with EXPIRED once past expiresAt', () => {
     const result = OtpSystem.verify(issued(), true, at(10));
     expect(result.ok).toBe(false);
-    expect(unwrapErr(result)).toEqual({ code: IdentityErrorCode.OtpExpired });
+    expect(unwrapErr(result)).toEqual({
+      errorCode: IdentityErrorCode.OtpExpired,
+    });
   });
 
-  it('fails with locked_out once attemptCount reaches maxAttempts', () => {
+  it('fails with LOCKED_OUT once attemptCount reaches maxAttempts', () => {
     let otp = issued();
     for (let i = 0; i < 5; i++) otp = OtpSystem.recordAttempt(otp);
     const result = OtpSystem.verify(otp, true, at(1));
     expect(result.ok).toBe(false);
-    expect(unwrapErr(result)).toEqual({ code: IdentityErrorCode.OtpLockedOut });
+    expect(unwrapErr(result)).toEqual({
+      errorCode: IdentityErrorCode.OtpLockedOut,
+    });
   });
 
-  it('fails with already_consumed on a second verify', () => {
+  it('fails with ALREADY_CONSUMED on a second verify', () => {
     const first = unwrapOk(OtpSystem.verify(issued(), true, at(1)));
     const second = OtpSystem.verify(first, true, at(2));
     expect(second.ok).toBe(false);
     expect(unwrapErr(second)).toEqual({
-      code: IdentityErrorCode.OtpAlreadyConsumed,
+      errorCode: IdentityErrorCode.OtpAlreadyConsumed,
     });
   });
 
   it('still verifies at the expiry instant itself — expired is strictly past it', () => {
     expect(OtpSystem.verify(issued(), true, at(5)).ok).toBe(true);
-    expect(OtpSystem.verify(issued(), true, at(5) + 1).ok).toBe(false);
+    expect(
+      OtpSystem.verify(issued(), true, UtcEpochMs.plusMs(at(5), 1)).ok,
+    ).toBe(false);
   });
 
   it('an error value never carries entity state', () => {
     const error = unwrapErr(OtpSystem.verify(issued(), false, at(1)));
-    expect(Object.keys(error)).toEqual(['code']);
+    expect(Object.keys(error)).toEqual(['errorCode']);
   });
 });
 
@@ -235,16 +252,16 @@ describe('OtpSystem over a stored body (otp.spec.ts › Otp.reconstitute)', () =
   it('rebuilds an Otp from persisted primitives — the stored body IS the entity', () => {
     const otp = stored();
     expect(otp.attemptCount).toBe(2);
-    expect(otp.consumedAtMs).toBeNull();
+    expect(otp.consumedAtUtcMs).toBeNull();
     expect(otp.codeHash).toBe('stored-hash');
-    expect(otp.destinationType).toBe(OtpDestinationType.Email);
+    expect(otp.otpDestinationType).toBe(OtpDestinationType.Email);
     expect(OtpSystem.recordAttempt(otp).attemptCount).toBe(3);
   });
 
-  it('rebuilds a consumed Otp correctly — a stored consumedAtMs refuses re-use', () => {
-    const otp = stored({ attemptCount: 1, consumedAtMs: at(1) });
-    expect(otp.consumedAtMs).not.toBeNull();
-    expect(unwrapErr(OtpSystem.verify(otp, true, at(2))).code).toBe(
+  it('rebuilds a consumed Otp correctly — a stored consumedAtUtcMs refuses re-use', () => {
+    const otp = stored({ attemptCount: 1, consumedAtUtcMs: at(1) });
+    expect(otp.consumedAtUtcMs).not.toBeNull();
+    expect(unwrapErr(OtpSystem.verify(otp, true, at(2))).errorCode).toBe(
       IdentityErrorCode.OtpAlreadyConsumed,
     );
   });
@@ -254,7 +271,7 @@ describe('OtpSystem over a stored body (otp.spec.ts › Otp.reconstitute)', () =
     expect(otp.id).toBe('otp-1');
   });
 
-  it('rejects an invalid persisted consumedAtIso — instants are epoch ms, null while open', () => {
+  it('rejects an invalid persisted consumedAtIso — instants are UtcEpochMs, null while open', () => {
     const open = stored();
     expect(OtpSystem.verify(open, true, at(1)).ok).toBe(true);
   });
@@ -263,7 +280,7 @@ describe('OtpSystem over a stored body (otp.spec.ts › Otp.reconstitute)', () =
 describe('OtpSystem.attempt (verify-otp.use-case.spec.ts)', () => {
   it('rejects an incorrect code and increments attemptCount on the stored OTP', () => {
     const decision = OtpSystem.attempt(issued(), false, T0);
-    expect(unwrapErr(decision.result).code).toBe(
+    expect(unwrapErr(decision.result).errorCode).toBe(
       IdentityErrorCode.OtpWrongCode,
     );
     expect(decision.write?.attemptCount).toBe(1);
@@ -276,21 +293,25 @@ describe('OtpSystem.attempt (verify-otp.use-case.spec.ts)', () => {
       otp = decision.write ?? otp;
     }
     const final = OtpSystem.attempt(otp, true, T0);
-    expect(unwrapErr(final.result).code).toBe(IdentityErrorCode.OtpLockedOut);
+    expect(unwrapErr(final.result).errorCode).toBe(
+      IdentityErrorCode.OtpLockedOut,
+    );
     expect(final.write).toBeNull();
   });
 
   it('rejects an expired OTP', () => {
     const decision = OtpSystem.attempt(issued(), true, at(10));
-    expect(unwrapErr(decision.result).code).toBe(IdentityErrorCode.OtpExpired);
+    expect(unwrapErr(decision.result).errorCode).toBe(
+      IdentityErrorCode.OtpExpired,
+    );
     expect(decision.write).toBeNull();
   });
 
   it('rejects reusing an already-consumed OTP', () => {
     const first = OtpSystem.attempt(issued(), true, T0);
-    expect(first.write?.consumedAtMs).toBe(T0);
-    const second = OtpSystem.attempt(first.write as OtpEntity, true, T0);
-    expect(unwrapErr(second.result).code).toBe(
+    expect(first.write?.consumedAtUtcMs).toBe(T0);
+    const second = OtpSystem.attempt(first.write as Otp, true, T0);
+    expect(unwrapErr(second.result).errorCode).toBe(
       IdentityErrorCode.OtpAlreadyConsumed,
     );
     expect(second.write).toBeNull();
@@ -312,13 +333,13 @@ describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => 
     expect(
       OtpSystem.mayIssue([issued(T0)], at(OtpLimits.ResendWindowMinutes)),
     ).toBe(false);
-    expect(OtpSystem.mayIssue([stored({ consumedAtMs: T0 })], at(0, 30))).toBe(
-      true,
-    );
-    expect(OtpSystem.resendWindowStartMs(at(1))).toBe(T0);
+    expect(
+      OtpSystem.mayIssue([stored({ consumedAtUtcMs: T0 })], at(0, 30)),
+    ).toBe(true);
+    expect(OtpSystem.resendWindowStartUtcMs(at(1))).toBe(T0);
   });
 
-  it('rejects an email request under a phone_otp deployment (channel mismatch)', () => {
+  it('rejects an EMAIL request under a PHONE_OTP deployment (channel mismatch)', () => {
     expect(
       OtpSystem.channelAccepts(
         strategy(AuthStrategyKind.PhoneOtp),
@@ -327,7 +348,7 @@ describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => 
     ).toBe(false);
   });
 
-  it('rejects an sms request under an email_otp deployment (channel mismatch)', () => {
+  it('rejects an SMS request under an EMAIL_OTP deployment (channel mismatch)', () => {
     const emailOtp = strategy(AuthStrategyKind.EmailOtp);
     expect(OtpSystem.channelAccepts(emailOtp, OtpDestinationType.Sms)).toBe(
       false,
@@ -346,7 +367,7 @@ describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => 
   it('issues no code challenge at all under a magic-link deployment', () => {
     const link = unwrapOk(
       AuthStrategy.parse({
-        kind: AuthStrategyKind.EmailLink,
+        authStrategyKind: AuthStrategyKind.EmailLink,
         required: [RegistrationField.Phone],
         policy: { ttlMinutes: 15, sessionDays: 30 },
       }),
@@ -357,9 +378,9 @@ describe('OtpSystem throttle and channel (request-otp.use-case.spec.ts)', () => 
   });
 
   it("issues the OTP with the deployment strategy's own ttl/maxAttempts, not local constants", () => {
-    const otp = issued(T0, { ttlMinutes: 7, maxAttempts: 2 });
+    const otp = issued(T0, { ttlMinutes: ttl(7), maxAttempts: 2 });
     expect(otp.maxAttempts).toBe(2);
-    expect(otp.expiresAtMs).toBe(at(7));
+    expect(otp.expiresAtUtcMs).toBe(at(7));
   });
 });
 
@@ -375,8 +396,8 @@ describe('OtpSystem properties', () => {
       stored({
         attemptCount,
         maxAttempts,
-        consumedAtMs: consumed ? T0 : null,
-        expiresAtMs: at(ttl),
+        consumedAtUtcMs: consumed ? T0 : null,
+        expiresAtUtcMs: at(ttl),
       }),
     );
 
@@ -387,16 +408,16 @@ describe('OtpSystem properties', () => {
         fc.boolean(),
         fc.integer({ min: 0, max: 40 * MINUTE }),
         (otp, codeMatches, offset) => {
-          const nowMs = T0 + offset;
-          const result = OtpSystem.verify(otp, codeMatches, nowMs);
+          const nowUtcMs = UtcEpochMs.plusMs(T0, offset);
+          const result = OtpSystem.verify(otp, codeMatches, nowUtcMs);
           const open =
-            otp.consumedAtMs === null &&
-            nowMs <= otp.expiresAtMs &&
+            otp.consumedAtUtcMs === null &&
+            nowUtcMs <= otp.expiresAtUtcMs &&
             otp.attemptCount < otp.maxAttempts &&
             codeMatches;
           expect(result.ok).toBe(open);
           if (result.ok)
-            expect(result.value).toEqual({ ...otp, consumedAtMs: nowMs });
+            expect(result.value).toEqual({ ...otp, consumedAtUtcMs: nowUtcMs });
         },
       ),
     );
@@ -413,19 +434,20 @@ describe('OtpSystem properties', () => {
           { maxLength: 6 },
         ),
         (rows) => {
-          const nowMs = T0;
+          const nowUtcMs = T0;
           const open = rows.map((row) =>
             stored({
-              createdAtMs: nowMs + row.created,
-              consumedAtMs: row.consumed ? nowMs : null,
+              createdAtUtcMs: UtcEpochMs.plusMs(nowUtcMs, row.created),
+              consumedAtUtcMs: row.consumed ? nowUtcMs : null,
             }),
           );
           const brute = !open.some(
             (otp) =>
-              otp.consumedAtMs === null &&
-              otp.createdAtMs >= nowMs - OtpLimits.ResendWindowMinutes * MINUTE,
+              otp.consumedAtUtcMs === null &&
+              otp.createdAtUtcMs >=
+                nowUtcMs - OtpLimits.ResendWindowMinutes * MINUTE,
           );
-          expect(OtpSystem.mayIssue(open, nowMs)).toBe(brute);
+          expect(OtpSystem.mayIssue(open, nowUtcMs)).toBe(brute);
         },
       ),
     );
@@ -437,7 +459,7 @@ describe('OtpSystem purity', () => {
     const otp = deepFreeze(stored());
     const request = deepFreeze(challenge());
     const code = deepFreeze({ ...HASHED });
-    const open = deepFreeze([stored({ createdAtMs: T0 })]);
+    const open = deepFreeze([stored({ createdAtUtcMs: T0 })]);
     const run = () => ({
       issued: OtpSystem.issue(request, code, T0, () => 'otp_9'),
       verified: OtpSystem.verify(otp, true, at(1)),

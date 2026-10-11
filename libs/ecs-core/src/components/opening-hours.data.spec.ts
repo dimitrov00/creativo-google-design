@@ -1,13 +1,23 @@
 import { describe, expect, it } from 'vitest';
+import { minute } from '../testing';
+import { until } from '../testing/booking-core.fixtures';
 import {
   type ClockDayHours,
   DayHours,
-  DayHoursKind,
+  type DayHoursInput,
+  OpeningState,
 } from './opening-hours.data';
 import { Weekday } from './weekday.data';
 
 const CLOSED = DayHours.closed();
-const NINE_TO_SIX = DayHours.open(540, 1080);
+const NINE_TO_SIX = DayHours.open(minute(540), until(18));
+
+/** A raw open day in minutes — the week guard's input. */
+const open = (openMinutes: number, closeMinutes: number): DayHoursInput => ({
+  openingState: OpeningState.Open,
+  openMinutes,
+  closeMinutes,
+});
 
 function week(): DayHours[] {
   return [
@@ -16,13 +26,18 @@ function week(): DayHours[] {
     NINE_TO_SIX,
     NINE_TO_SIX,
     NINE_TO_SIX,
-    DayHours.open(600, 1080),
+    DayHours.open(minute(600), until(18)),
     CLOSED,
   ];
 }
 
+/** The same week as raw input. */
+function rawWeek(): DayHoursInput[] {
+  return [...week()];
+}
+
 const clock = (opens: string, closes: string): ClockDayHours => ({
-  kind: DayHoursKind.Open,
+  openingState: OpeningState.Open,
   opens,
   closes,
 });
@@ -35,16 +50,16 @@ function clockWeek(): ClockDayHours[] {
     clock('09:00', '18:00'),
     clock('09:00', '18:00'),
     clock('10:00', '18:00'),
-    { kind: DayHoursKind.Closed },
+    { openingState: OpeningState.Closed },
   ];
 }
 
 describe('DayHours', () => {
-  it('keeps the stored tags', () => {
-    expect(DayHoursKind).toEqual({ Closed: 'closed', Open: 'open' });
-    expect(CLOSED).toEqual({ kind: 'closed' });
+  it('pins the opening tags', () => {
+    expect(OpeningState).toEqual({ Closed: 'CLOSED', Open: 'OPEN' });
+    expect(CLOSED).toEqual({ openingState: 'CLOSED' });
     expect(NINE_TO_SIX).toEqual({
-      kind: 'open',
+      openingState: 'OPEN',
       openMinutes: 540,
       closeMinutes: 1080,
     });
@@ -53,7 +68,7 @@ describe('DayHours', () => {
   it('forWeekday(): Monday first, index weekday − 1', () => {
     expect(DayHours.forWeekday(week(), Weekday.Mon)).toEqual(NINE_TO_SIX);
     expect(DayHours.forWeekday(week(), Weekday.Sat)).toEqual(
-      DayHours.open(600, 1080),
+      DayHours.open(minute(600), until(18)),
     );
     expect(DayHours.forWeekday(week(), Weekday.Sun)).toEqual(CLOSED);
     expect(DayHours.forWeekday([], Weekday.Mon)).toBeNull();
@@ -62,20 +77,22 @@ describe('DayHours', () => {
 
 describe('DayHours.isOpenAt', () => {
   it('is open from the opening minute up to, not including, the closing minute', () => {
-    expect(DayHours.isOpenAt(week(), Weekday.Mon, 539)).toBe(false);
-    expect(DayHours.isOpenAt(week(), Weekday.Mon, 540)).toBe(true);
-    expect(DayHours.isOpenAt(week(), Weekday.Mon, 1079)).toBe(true);
-    expect(DayHours.isOpenAt(week(), Weekday.Mon, 1080)).toBe(false);
+    expect(DayHours.isOpenAt(week(), Weekday.Mon, minute(539))).toBe(false);
+    expect(DayHours.isOpenAt(week(), Weekday.Mon, minute(540))).toBe(true);
+    expect(DayHours.isOpenAt(week(), Weekday.Mon, minute(1079))).toBe(true);
+    expect(DayHours.isOpenAt(week(), Weekday.Mon, minute(1080))).toBe(false);
   });
 
   it('reads the right weekday', () => {
-    expect(DayHours.isOpenAt(week(), Weekday.Fri, 570)).toBe(true);
-    expect(DayHours.isOpenAt(week(), Weekday.Sat, 570)).toBe(false);
+    expect(DayHours.isOpenAt(week(), Weekday.Fri, minute(570))).toBe(true);
+    expect(DayHours.isOpenAt(week(), Weekday.Sat, minute(570))).toBe(false);
   });
 
   it('is never open on a closed or missing day', () => {
-    expect(DayHours.isOpenAt(week(), Weekday.Sun, 720)).toBe(false);
-    expect(DayHours.isOpenAt([NINE_TO_SIX], Weekday.Tue, 720)).toBe(false);
+    expect(DayHours.isOpenAt(week(), Weekday.Sun, minute(720))).toBe(false);
+    expect(DayHours.isOpenAt([NINE_TO_SIX], Weekday.Tue, minute(720))).toBe(
+      false,
+    );
   });
 });
 
@@ -98,7 +115,10 @@ describe('DayHours.parseClock', () => {
     ]) {
       expect(DayHours.parseClock(raw)).toEqual({
         ok: false,
-        error: { code: 'catalog.location.invalid_time_of_day', rawValue: raw },
+        error: {
+          errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
+          rawValue: raw,
+        },
       });
     }
   });
@@ -106,65 +126,67 @@ describe('DayHours.parseClock', () => {
 
 describe('DayHours.parseWeek', () => {
   it('accepts seven Monday-first days, the closed day kept', () => {
-    const result = DayHours.parseWeek(week());
+    const result = DayHours.parseWeek(rawWeek());
     expect(result).toEqual({ ok: true, value: week() });
   });
 
   it('returns fresh structs holding only their own keys', () => {
     const stray = {
-      kind: 'open',
+      openingState: 'OPEN',
       openMinutes: 540,
       closeMinutes: 1080,
       opens: '09:00',
-    } as DayHours;
-    const raw = [stray, ...week().slice(1)];
+    } as DayHoursInput;
+    const raw = [stray, ...rawWeek().slice(1)];
     const result = DayHours.parseWeek(raw);
     expect(result.ok && result.value[0]).toEqual(NINE_TO_SIX);
     expect(result.ok && Object.keys(result.value[0] as DayHours)).toEqual([
-      'kind',
+      'openingState',
       'openMinutes',
       'closeMinutes',
     ]);
   });
 
   it('rejects a week that is not exactly 7 entries, alone', () => {
-    expect(DayHours.parseWeek(week().slice(0, 6))).toEqual({
+    expect(DayHours.parseWeek(rawWeek().slice(0, 6))).toEqual({
       ok: false,
-      error: [{ code: 'catalog.location.invalid_hours_length', rawLength: 6 }],
+      error: [
+        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_LENGTH', rawLength: 6 },
+      ],
     });
   });
 
   it('rejects a figure that is not a minute of the day', () => {
     for (const bad of [-1, 1440, 570.5, Number.NaN]) {
-      const raw = [DayHours.open(bad, 1080), ...week().slice(1)];
+      const raw = [open(bad, 1080), ...rawWeek().slice(1)];
       expect(DayHours.parseWeek(raw)).toEqual({
         ok: false,
         error: [
           {
-            code: 'catalog.location.invalid_time_of_day',
+            errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
             rawValue: String(bad),
           },
         ],
       });
     }
-    const lateClose = [DayHours.open(540, 1440), ...week().slice(1)];
+    const lateClose = [open(540, 1440), ...rawWeek().slice(1)];
     expect(DayHours.parseWeek(lateClose)).toEqual({
       ok: false,
       error: [
-        { code: 'catalog.location.invalid_time_of_day', rawValue: '1440' },
+        { errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY', rawValue: '1440' },
       ],
     });
   });
 
   it('rejects an open day where closing is not after opening, by day index', () => {
-    const raw = week();
-    raw[2] = DayHours.open(1080, 1080);
-    raw[4] = DayHours.open(1080, 540);
+    const raw = rawWeek();
+    raw[2] = open(1080, 1080);
+    raw[4] = open(1080, 540);
     expect(DayHours.parseWeek(raw)).toEqual({
       ok: false,
       error: [
-        { code: 'catalog.location.invalid_hours_range', dayIndex: 2 },
-        { code: 'catalog.location.invalid_hours_range', dayIndex: 4 },
+        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 2 },
+        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 4 },
       ],
     });
   });
@@ -187,16 +209,20 @@ describe('DayHours.parseClockWeek', () => {
       clock('09:00', '20:00'),
       clock('09:00', '21:00'),
       clock('10:00', '18:00'),
-      { kind: DayHoursKind.Closed },
+      { openingState: OpeningState.Closed },
     ]);
-    expect(result.ok && result.value[4]).toEqual(DayHours.open(540, 1260));
+    expect(result.ok && result.value[4]).toEqual(
+      DayHours.open(minute(540), until(21)),
+    );
     expect(result.ok && result.value[6]).toEqual(CLOSED);
   });
 
   it('rejects hours that are not exactly 7 entries', () => {
     expect(DayHours.parseClockWeek(clockWeek().slice(0, 6))).toEqual({
       ok: false,
-      error: [{ code: 'catalog.location.invalid_hours_length', rawLength: 6 }],
+      error: [
+        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_LENGTH', rawLength: 6 },
+      ],
     });
   });
 
@@ -208,9 +234,12 @@ describe('DayHours.parseClockWeek', () => {
     expect(DayHours.parseClockWeek(raw)).toEqual({
       ok: false,
       error: [
-        { code: 'catalog.location.invalid_time_of_day', rawValue: '9:00' },
-        { code: 'catalog.location.invalid_time_of_day', rawValue: '25:00' },
-        { code: 'catalog.location.invalid_time_of_day', rawValue: 'nope' },
+        { errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY', rawValue: '9:00' },
+        {
+          errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
+          rawValue: '25:00',
+        },
+        { errorCode: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY', rawValue: 'nope' },
       ],
     });
   });
@@ -220,7 +249,9 @@ describe('DayHours.parseClockWeek', () => {
     raw[3] = clock('18:00', '09:00');
     expect(DayHours.parseClockWeek(raw)).toEqual({
       ok: false,
-      error: [{ code: 'catalog.location.invalid_hours_range', dayIndex: 3 }],
+      error: [
+        { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 3 },
+      ],
     });
   });
 });

@@ -1,36 +1,45 @@
-import { BookingStatus } from '../components/booking-status.data';
-import { BusyKey } from '../components/busy-key.data';
-import type { DayKey } from '../components/day-key.data';
-import { DayOffset } from '../components/day-offset.data';
+import { BookingLifecycle } from '../components/booking-lifecycle.data';
 import { BlockKind, MinuteBlock } from '../components/minute-block.data';
+import type { MinuteRange } from '../components/minute-range.data';
 import { Seat } from '../components/seat.data';
-import { TimeInterval } from '../components/time-interval.data';
 import { WriteOp } from '../components/write-op.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import type { BarberBusyDayEntity } from '../entities/barber-busy-day.entity';
-import type { BarberId } from '../entities/barber.entity';
+import type { Appointment } from '../entities/appointment.entity';
+import type { BarberBusyDay } from '../entities/barber-busy-day.entity';
+import { BusyKey } from '../primitives/busy-key.primitive';
+import { defect } from '../primitives/defect';
+import type { BarberId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { Collections } from '../ports/collections';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import { IntervalSetSystem } from './interval-set.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /**
- * One (barber, day) projection document's share of an appointment
+ * One (barber, shop day) projection document's share of an appointment
  * (`appointment-document.ts:1172-1195`): the chair time of every seat the
- * barber holds that day — setup + service + cleanup around each SOLD slot,
- * the same envelope the commit writes — keyed by the sold start's local day,
- * as instants in seat order (unnormalized: the merge is the projection's).
+ * barber holds — setup + service + cleanup around each SOLD slot, the same
+ * envelope the commit writes, clipped to the shop day (T7) — on the
+ * appointment's `localDate`, in seat order (unnormalized: the merge is the
+ * projection's). No zone, no instant (Law 7.3).
  */
 export type BusyContribution = {
   readonly id: BusyKey;
   readonly barberId: BarberId;
-  readonly dayKey: DayKey;
-  readonly zone: string;
-  readonly spans: readonly TimeInterval[];
+  readonly localDate: LocalDate;
+  readonly spans: readonly MinuteRange[];
 };
 
 /** The `barberBusy` document body — the entity minus `id`. */
-export type BarberBusyDayBody = Omit<BarberBusyDayEntity, 'id'>;
+export type BarberBusyDayBody = Omit<BarberBusyDay, 'id'>;
+
+/**
+ * The first instant of a shop day, as the pipeline computed it from the
+ * location's zone (`ZonedTimeSystem.startOfLocalDay`) — handed in so the
+ * projection's `utcEpochMs` is stamped without this system ever touching a
+ * zone (Law 7.3, flatten-spec §2.5).
+ */
+export type DayStartUtcMs = (localDate: LocalDate) => UtcEpochMs;
 
 function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -38,16 +47,35 @@ function compareStrings(a: string, b: string): number {
 
 /** The keys a written appointment occupies: its mirror when present, else re-derived from its seats. */
 function keysOf(
-  appointment: AppointmentEntity | null,
-  days: readonly DayOffset[],
+  appointment: Pick<Appointment, 'busyKeys' | 'localDate' | 'seats'> | null,
 ): readonly BusyKey[] {
   if (appointment === null) return [];
   if (appointment.busyKeys.length > 0) return appointment.busyKeys;
-  return AppointmentIndexSystem.queryKeys(appointment, days).busyKeys;
+  return AppointmentIndexSystem.queryKeys(appointment).busyKeys;
 }
 
 /**
- * BusySystem — the PUBLIC busy projection, `barberBusy/{barberId}__{dayKey}`
+ * Spans → the stored blocks of a shop day: normalized (touching spans
+ * merged — density, never count), each a `BUSY` block on the wall clock.
+ * The busy projection's ONE rendering of chair time (was `blocksOf`; the
+ * blocks ARE minute ranges now, so there is no instant to clip).
+ */
+function blocksFrom(spans: readonly MinuteRange[]): readonly MinuteBlock[] {
+  const merged = IntervalSetSystem.normalize(spans);
+  const blocks: MinuteBlock[] = [];
+  for (let i = 0; i < merged.length; i++) {
+    const span = merged[i] as MinuteRange;
+    const start = MinuteOfDay.of(span.startMinutes);
+    const end = EndMinute.of(span.endMinutes);
+    // The algebra never leaves the shop day it was handed.
+    if (!start.ok || !end.ok) return defect('busy: a block off the clock');
+    blocks.push(MinuteBlock.of(start.value, end.value, BlockKind.Busy));
+  }
+  return blocks;
+}
+
+/**
+ * BusySystem — the PUBLIC busy projection, `barberBusy/{barberId}__{localDate}`
  * (`rebuild-busy.ts:105-116`, `application/booking` `busyContributionsOf`/
  * `mergeBusy`). Geometry and nothing else — no client, no service, no price,
  * no reason — stored UNPADDED (the reader applies the barber's turnaround)
@@ -59,48 +87,43 @@ function keysOf(
  * (barber, day) from every live appointment that touches it ({@link plan}) —
  * idempotent, and it repairs any drift, whatever wrote it.
  *
- * No `Intl`, no `Date` per element (hot path #6): the day of a seat is the
- * table's (`ZonedTimeSystem.dayKeyOf`), minutes ↔ instants are the table's
- * two-branch subtraction. The table must cover the visits' days
- * (`ZonedTimeSystem.dayTableAround`); a seat outside it projects nothing.
+ * Time-zone-blind (Law 7.3): a seat is placed by the appointment's
+ * `localDate` and its own `startMinutes` (one shop day per appointment,
+ * T7), chair time is `Seat.chairTime` clipped to `[0, 1440]`, and the one
+ * instant a busy day stores — its first, `utcEpochMs` — comes from the
+ * pipeline's {@link DayStartUtcMs}.
  */
 export const BusySystem = {
   /**
-   * What an appointment occupies, per busy document, sorted by key. A seat
-   * whose day the table does not cover contributes nothing — failing closed
-   * FREES time rather than inventing a block nobody can explain.
+   * What an appointment occupies, per busy document, sorted by key: one
+   * contribution per barber on the appointment's shop day.
    */
   contributionsOf(
-    appointment: Pick<AppointmentEntity, 'seats' | 'zone'>,
-    days: readonly DayOffset[],
+    appointment: Pick<Appointment, 'seats' | 'localDate'>,
   ): readonly BusyContribution[] {
     const ids: BusyKey[] = [];
-    const spans: TimeInterval[][] = [];
-    const out: { barberId: BarberId; dayKey: DayKey }[] = [];
+    const spans: MinuteRange[][] = [];
+    const barbers: BarberId[] = [];
     const seats = appointment.seats;
     for (let i = 0; i < seats.length; i++) {
       const seat = seats[i] as Seat;
-      const dayKey = ZonedTimeSystem.dayKeyOf(seat.startMs, days);
-      if (dayKey === null) continue;
-      const id = BusyKey.of(seat.barberId, dayKey);
+      const id = BusyKey.of(seat.barberId, appointment.localDate);
       let at = ids.indexOf(id);
       if (at < 0) {
         at = ids.length;
         ids.push(id);
         spans.push([]);
-        out.push({ barberId: seat.barberId, dayKey });
+        barbers.push(seat.barberId);
       }
-      (spans[at] as TimeInterval[]).push(Seat.chairTime(seat));
+      (spans[at] as MinuteRange[]).push(Seat.chairTime(seat));
     }
     const contributions: BusyContribution[] = [];
     for (let i = 0; i < ids.length; i++) {
-      const head = out[i] as { barberId: BarberId; dayKey: DayKey };
       contributions.push({
         id: ids[i] as BusyKey,
-        barberId: head.barberId,
-        dayKey: head.dayKey,
-        zone: appointment.zone,
-        spans: spans[i] as TimeInterval[],
+        barberId: barbers[i] as BarberId,
+        localDate: appointment.localDate,
+        spans: spans[i] as MinuteRange[],
       });
     }
     return contributions.sort((a, b) => compareStrings(a.id, b.id));
@@ -112,63 +135,14 @@ export const BusySystem = {
    * count). `remove` is `[]` on every commit; the legacy merge had none.
    */
   mergeBusy(
-    day: readonly TimeInterval[],
-    add: readonly TimeInterval[],
-    remove: readonly TimeInterval[],
-  ): readonly TimeInterval[] {
+    day: readonly MinuteRange[],
+    add: readonly MinuteRange[],
+    remove: readonly MinuteRange[],
+  ): readonly MinuteRange[] {
     return IntervalSetSystem.subtract(
       IntervalSetSystem.union(day, add),
       remove,
     );
-  },
-
-  /**
-   * Instants → the stored blocks of `day`: normalized, clipped INSIDE the
-   * day (a span running past midnight keeps only its part of this day — the
-   * projection is keyed by the sold start's day), as wall-clock minutes
-   * (`ZonedTimeSystem.minuteOfDay`; the day's exclusive end is `1440`).
-   */
-  blocksOf(
-    spans: readonly TimeInterval[],
-    day: DayOffset,
-  ): readonly MinuteBlock[] {
-    const clipped = IntervalSetSystem.clip(
-      spans,
-      TimeInterval.of(day.dayStartMs, DayOffset.endMs(day)),
-    );
-    const blocks: MinuteBlock[] = [];
-    for (let i = 0; i < clipped.length; i++) {
-      const span = clipped[i] as TimeInterval;
-      blocks.push(
-        MinuteBlock.of(
-          ZonedTimeSystem.minuteOfDay(span.startMs, day),
-          ZonedTimeSystem.minuteOfDay(span.endMs, day),
-          BlockKind.Busy,
-        ),
-      );
-    }
-    return blocks;
-  },
-
-  /**
-   * Stored blocks → the instants a placement is checked against (the
-   * inverse of {@link blocksOf}, `ZonedTimeSystem.instantOf`), normalized.
-   */
-  spansOf(
-    blocks: readonly MinuteBlock[],
-    day: DayOffset,
-  ): readonly TimeInterval[] {
-    const spans: TimeInterval[] = [];
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i] as MinuteBlock;
-      spans.push(
-        TimeInterval.of(
-          ZonedTimeSystem.instantOf(day, block.startMinutes),
-          ZonedTimeSystem.instantOf(day, block.endMinutes),
-        ),
-      );
-    }
-    return IntervalSetSystem.normalize(spans);
   },
 
   /**
@@ -178,12 +152,11 @@ export const BusySystem = {
    * seats. Distinct, sorted.
    */
   affectedKeys(
-    before: AppointmentEntity | null,
-    after: AppointmentEntity | null,
-    days: readonly DayOffset[],
+    before: Pick<Appointment, 'busyKeys' | 'localDate' | 'seats'> | null,
+    after: Pick<Appointment, 'busyKeys' | 'localDate' | 'seats'> | null,
   ): readonly BusyKey[] {
     const keys: BusyKey[] = [];
-    const sides = [keysOf(before, days), keysOf(after, days)];
+    const sides = [keysOf(before), keysOf(after)];
     for (let s = 0; s < sides.length; s++) {
       const side = sides[s] as readonly BusyKey[];
       for (let i = 0; i < side.length; i++) {
@@ -196,52 +169,48 @@ export const BusySystem = {
 
   /**
    * ONE busy document recomputed from the truth (`rebuild-busy.ts:85-123`):
-   * the contributions of every LIVE (pending or confirmed) appointment in
-   * `live` to `key`, merged. Nothing live occupies it → a `Delete` (readers
-   * treat a deleted and an empty document alike, and a deleted one is one
-   * the anonymous surface cannot even enumerate). The zone is the first
-   * contributing appointment's. `null` — no write at all — when the key does
-   * not parse or its day is outside the table.
+   * the chair time of every seat of every LIVE (pending or confirmed)
+   * appointment in `live` on the key's barber and shop day, merged. Nothing
+   * live occupies it → a `Delete` (readers treat a deleted and an empty
+   * document alike, and a deleted one is one the anonymous surface cannot
+   * even enumerate). `null` — no write at all — when the key does not
+   * parse.
    */
   rebuild(
     key: BusyKey,
-    live: readonly AppointmentEntity[],
-    days: readonly DayOffset[],
+    live: readonly Appointment[],
+    dayStartUtcMs: DayStartUtcMs,
   ): WriteOp | null {
     const parsed = BusyKey.parse(key);
     if (parsed === null) return null;
-    const { barberId, dayKey } = BusyKey.split(parsed);
-    const day = DayOffset.find(dayKey, days);
-    if (day === null) return null;
+    const { barberId, localDate } = BusyKey.split(parsed);
     const path = [Collections.BarberBusy, key];
 
     // The seats are walked directly: a seat contributes to this key exactly
-    // when its barber is the key's and its sold start falls on the key's day
+    // when its barber is the key's and its appointment sits on the key's day
     // (what `contributionsOf` keys it by) — no contribution list, no key
-    // strings, no sort per appointment; `blocksOf` normalizes the spans.
-    let zone: string | null = null;
-    const spans: TimeInterval[] = [];
+    // strings, no sort per appointment; `blocksFrom` normalizes the spans.
+    let occupied = false;
+    const spans: MinuteRange[] = [];
     for (let i = 0; i < live.length; i++) {
-      const appointment = live[i] as AppointmentEntity;
-      if (!BookingStatus.isLive(appointment.bookingStatus)) continue;
+      const appointment = live[i] as Appointment;
+      if (!BookingLifecycle.isLive(appointment)) continue;
+      if (appointment.localDate !== localDate) continue;
       const seats = appointment.seats;
       for (let k = 0; k < seats.length; k++) {
         const seat = seats[k] as Seat;
-        if (
-          seat.barberId === barberId &&
-          ZonedTimeSystem.dayKeyOf(seat.startMs, days) === dayKey
-        ) {
-          zone = zone ?? appointment.zone;
+        if (seat.barberId === barberId) {
+          occupied = true;
           spans.push(Seat.chairTime(seat));
         }
       }
     }
-    if (zone === null) return WriteOp.remove(path);
+    if (!occupied) return WriteOp.remove(path);
     const body: BarberBusyDayBody = {
       barberId,
-      dayKey,
-      zone,
-      blocks: BusySystem.blocksOf(spans, day),
+      localDate,
+      utcEpochMs: dayStartUtcMs(localDate),
+      blocks: blocksFrom(spans),
     };
     return WriteOp.set(path, body);
   },
@@ -250,18 +219,18 @@ export const BusySystem = {
    * The write plan of one appointment write: every busy document either
    * side touches, rebuilt from `live` — the appointments the pipeline loaded
    * for those keys (the `busyKeys array-contains` read, in the same
-   * transaction). Sorted by key; a key the table cannot place is left alone.
+   * transaction). Sorted by key; a key that does not parse is left alone.
    */
   plan(
-    before: AppointmentEntity | null,
-    after: AppointmentEntity | null,
-    live: readonly AppointmentEntity[],
-    days: readonly DayOffset[],
+    before: Appointment | null,
+    after: Appointment | null,
+    live: readonly Appointment[],
+    dayStartUtcMs: DayStartUtcMs,
   ): readonly WriteOp[] {
     const writes: WriteOp[] = [];
-    const keys = BusySystem.affectedKeys(before, after, days);
+    const keys = BusySystem.affectedKeys(before, after);
     for (let i = 0; i < keys.length; i++) {
-      const write = BusySystem.rebuild(keys[i] as BusyKey, live, days);
+      const write = BusySystem.rebuild(keys[i] as BusyKey, live, dayStartUtcMs);
       if (write !== null) writes.push(write);
     }
     return writes;

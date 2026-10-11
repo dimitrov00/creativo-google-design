@@ -1,36 +1,42 @@
 import type { PhotoOrigin } from '../components/photo-origin.data';
-import type { AppointmentId } from './appointment.entity';
-import type { BarberId } from './barber.entity';
-import type { UserId } from './user.entity';
+import type {
+  AppointmentId,
+  AppointmentPhotoId,
+  BarberId,
+  UserId,
+} from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
-/** The stored `photoId`, dropped from the body as the document id. */
-export type AppointmentPhotoId = string & { readonly __brand: unique symbol };
-export const AppointmentPhotoId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): AppointmentPhotoId => raw as AppointmentPhotoId,
-} as const;
+/*
+ * F0 STAGING: `AppointmentPhotoId` lives in `primitives/ids.primitive.ts`
+ * (§1.5); the barrel still names this file for it until the integrator drops
+ * that line.
+ */
 
 /**
  * A picture on a visit — `appointmentPhotos/{id}`, staff-only, a sibling
- * document per photo (`appointment-photos.adapter.ts:119-133,145-158`,
- * `takenAtIso` → `takenAtMs` and nothing else). `origin` is load-bearing:
- * deleting the photo removes the Storage object ONLY for a `shot`, so the
- * shop's own library picture is never deleted with a visit.
+ * document per photo (`appointment-photos.adapter.ts:119-133,145-158`).
+ * `photoOrigin` is load-bearing: deleting the photo removes the Storage
+ * object ONLY for a `SHOT`, so the shop's own library picture is never
+ * deleted with a visit.
  */
-export type AppointmentPhotoEntity = {
+export type AppointmentPhoto = {
   readonly id: AppointmentPhotoId;
   readonly appointmentId: AppointmentId;
   readonly barberId: BarberId;
+  /** The client the photo shows — a uid until the appointment flip (1) adds `clientCustomerId` (D29). */
   readonly clientUserId: UserId | null;
   readonly clientLabel: string;
-  readonly takenByUid: UserId | null;
-  readonly takenAtMs: number;
+  /** Was `takenByUid` (N11) — who took it, an account. */
+  readonly takenByUserId: UserId | null;
+  readonly takenAtUtcMs: UtcEpochMs;
   /** The Storage key — under `appointmentPhotos/{appointmentId}/…`, or the library object. */
   readonly path: string;
   /** Kept: an adopted library picture carries the library object's URL, not one derived from `path`. */
   readonly url: string;
   readonly width: number | null;
   readonly height: number | null;
-  readonly origin: PhotoOrigin;
+  /** Was `origin` (N15). */
+  readonly photoOrigin: PhotoOrigin;
   readonly label: string | null;
 };

@@ -6,7 +6,7 @@ import { Result } from './result.data';
  * Display text in both shop locales — two required, non-blank strings keyed
  * by the `Locale` values, stored as the plain `{ bg, en }` map (a bounded
  * map: its keys are fixed at design time). Used for `Barber.name/title/bio`,
- * `Location.name/address`, `ServiceCategory.name`, `Service.name/description`
+ * `ShopLocation.name/address`, `ServiceCategory.name`, `Service.name/description`
  * and the programs and loyalty catalogues — the catalog and programs
  * `LocalizedText` classes collapsed into one (blueprint §2.2).
  */

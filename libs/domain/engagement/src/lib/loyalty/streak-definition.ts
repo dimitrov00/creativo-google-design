@@ -1,12 +1,19 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
-  DayKey,
-  type ServiceCategoryId,
-  type ServiceId,
-  StreakIntervalKind,
-  StreakQualifierKind,
+  LocalDate,
+  ServiceCategoryId,
+  ServiceId,
+  StreakExcuse as SystemExcuse,
+  StreakInterval as SystemInterval,
+  StreakIntervalRule,
+  StreakOnBreak as SystemOnBreak,
+  StreakQualifier as SystemQualifier,
+  StreakQualifierRule,
   type StreakRule,
+  StreakRuleDirection as SystemDirection,
+  StreakRuleParameter,
   StreakRuleSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { LocalizedText, LocalizedTextProps } from '@creativo/domain/catalog';
 import { IsoDate, isIsoDate } from './loyalty-calendar';
@@ -474,7 +481,7 @@ export class StreakDefinition {
       repair: { enabled: true, windowDays: 14, perYear: 1 },
       onBreak: 'restart',
     });
-    if (result.isFailure()) throw new Error('unreachable: defaults are valid');
+    if (result.isFailure()) defect('unreachable: defaults are valid');
     StreakDefinition._default = result.value;
     return result.value;
   }
@@ -490,20 +497,23 @@ export class StreakDefinition {
     return {
       ...summary,
       interval:
-        interval.kind === StreakIntervalKind.Fixed
-          ? { kind: 'fixed', days: interval.days }
+        interval.streakInterval === SystemInterval.Fixed
+          ? { kind: 'fixed', days: interval.intervalDays }
           : {
               kind: 'personal',
-              tolerancePct: interval.tolerancePct,
-              minDays: interval.minDays,
-              maxDays: interval.maxDays,
-              fallbackDays: interval.fallbackDays,
+              tolerancePct: interval.intervalTolerancePct,
+              minDays: interval.intervalMinDays,
+              maxDays: interval.intervalMaxDays,
+              fallbackDays: interval.intervalFallbackDays,
             },
       qualifier:
-        qualifier.kind === StreakQualifierKind.Services
-          ? { kind: 'services', serviceIds: qualifier.serviceIds }
-          : qualifier.kind === StreakQualifierKind.Categories
-            ? { kind: 'categories', categoryIds: qualifier.categoryIds }
+        qualifier.streakQualifier === SystemQualifier.Services
+          ? { kind: 'services', serviceIds: qualifier.qualifierServiceIds }
+          : qualifier.streakQualifier === SystemQualifier.Categories
+            ? {
+                kind: 'categories',
+                categoryIds: qualifier.qualifierCategoryIds,
+              }
             : { kind: 'anyVisit' },
     };
   }
@@ -521,8 +531,8 @@ export class StreakDefinition {
       !this.name.equals(previous.name),
     );
     return {
-      direction: change.direction,
-      changed: change.changed as readonly (keyof StreakDefinitionProps)[],
+      direction: LEGACY_DIRECTION[change.direction],
+      changed: change.changed.map((parameter) => LEGACY_PARAMETER[parameter]),
     };
   }
 
@@ -576,47 +586,109 @@ export class StreakDefinition {
   }
 }
 
-// ── The bridge: legacy class → ecs-core struct (Phase 4 deletes it) ──────
+// ── The bridge: legacy class ↔ ecs-core struct (Phase 4 deletes it) ──────
 
-/** The version as `StreakRuleSystem` reads it: the class's figures, with the day as a day key. */
-function ruleOf(definition: StreakDefinition): StreakRule {
-  const qualifier = definition.qualifier.toProps();
-  const interval = definition.interval.toProps();
-  return {
-    version: definition.version,
-    effectiveFromDayKey: DayKey.of(definition.effectiveFrom),
-    enabled: definition.enabled,
-    qualifier:
-      qualifier.kind === 'services'
-        ? {
-            kind: StreakQualifierKind.Services,
-            serviceIds: qualifier.serviceIds as readonly ServiceId[],
-          }
-        : qualifier.kind === 'categories'
-          ? {
-              kind: StreakQualifierKind.Categories,
-              categoryIds:
-                qualifier.categoryIds as readonly ServiceCategoryId[],
-            }
-          : { kind: StreakQualifierKind.AnyVisit },
-    minGapDays: definition.minGapDays,
-    bookingHold: definition.bookingHold,
-    interval:
-      interval.kind === 'fixed'
-        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
-        : {
-            kind: StreakIntervalKind.Personal,
-            tolerancePct: interval.tolerancePct,
-            minDays: interval.minDays,
-            maxDays: interval.maxDays,
-            fallbackDays: interval.fallbackDays,
-          },
-    graceDays: definition.graceDays,
-    riskLeadDays: definition.riskLeadDays,
-    protections: definition.protections,
-    excuses: definition.excuses,
-    clientPause: definition.clientPause,
-    repair: definition.repair,
-    onBreak: definition.onBreak,
+/** The excuses, in the system's words. */
+const SYSTEM_EXCUSE = {
+  shopClosure: SystemExcuse.ShopClosure,
+  barberAbsence: SystemExcuse.BarberAbsence,
+  staffCancelled: SystemExcuse.StaffCancelled,
+  closedDays: SystemExcuse.ClosedDays,
+} as const satisfies Record<StreakExcuse, SystemExcuse>;
+
+/** What a miss does, in the system's words. */
+const SYSTEM_ON_BREAK = {
+  restart: SystemOnBreak.Restart,
+  hold: SystemOnBreak.Hold,
+} as const satisfies Record<StreakOnBreak, SystemOnBreak>;
+
+/** A change's direction, in the legacy words. */
+const LEGACY_DIRECTION: Readonly<Record<SystemDirection, StreakRuleDirection>> =
+  {
+    [SystemDirection.Looser]: 'looser',
+    [SystemDirection.Stricter]: 'stricter',
+    [SystemDirection.Mixed]: 'mixed',
+    [SystemDirection.Neutral]: 'neutral',
+    [SystemDirection.Switch]: 'switch',
   };
+
+/** A parameter that moved, as the legacy props name it. */
+const LEGACY_PARAMETER: Readonly<
+  Record<StreakRuleParameter, keyof StreakDefinitionProps>
+> = {
+  [StreakRuleParameter.Name]: 'name',
+  [StreakRuleParameter.Enabled]: 'enabled',
+  [StreakRuleParameter.Qualifier]: 'qualifier',
+  [StreakRuleParameter.MinGapDays]: 'minGapDays',
+  [StreakRuleParameter.BookingHold]: 'bookingHold',
+  [StreakRuleParameter.Interval]: 'interval',
+  [StreakRuleParameter.GraceDays]: 'graceDays',
+  [StreakRuleParameter.RiskLeadDays]: 'riskLeadDays',
+  [StreakRuleParameter.Protections]: 'protections',
+  [StreakRuleParameter.Excuses]: 'excuses',
+  [StreakRuleParameter.ClientPause]: 'clientPause',
+  [StreakRuleParameter.Repair]: 'repair',
+  [StreakRuleParameter.OnBreak]: 'onBreak',
+};
+
+/**
+ * The version as `StreakRuleSystem` reads it: the class's figures, flat
+ * (every part's figures prefixed by the part), its day a `LocalDate`,
+ * every tag the dictionary's.
+ */
+function ruleOf(definition: StreakDefinition): StreakRule {
+  const props = definition.toProps();
+  const day = LocalDate.parse(props.effectiveFrom);
+  return {
+    version: props.version,
+    // A version's day was checked by `create`.
+    effectiveFromLocalDate: day.ok
+      ? day.value
+      : defect(`${props.effectiveFrom} is no calendar day`),
+    enabled: props.enabled,
+    ...qualifierOf(props.qualifier),
+    minGapDays: props.minGapDays,
+    bookingHoldEnabled: props.bookingHold.enabled,
+    bookingHoldMaxDaysPastDue: props.bookingHold.maxDaysPastDue,
+    ...intervalOf(props.interval),
+    graceDays: props.graceDays,
+    riskLeadDays: props.riskLeadDays,
+    protectionsEnabled: props.protections.enabled,
+    protectionsMaxBanked: props.protections.maxBanked,
+    protectionsEarnEvery: props.protections.earnEvery,
+    protectionsStartWith: props.protections.startWith,
+    excuses: props.excuses.map((excuse) => SYSTEM_EXCUSE[excuse]),
+    clientPauseEnabled: props.clientPause.enabled,
+    clientPauseMaxDaysPerYear: props.clientPause.maxDaysPerYear,
+    repairEnabled: props.repair.enabled,
+    repairWindowDays: props.repair.windowDays,
+    repairPerYear: props.repair.perYear,
+    onBreak: SYSTEM_ON_BREAK[props.onBreak],
+  };
+}
+
+function qualifierOf(qualifier: StreakQualifierProps): StreakQualifierRule {
+  switch (qualifier.kind) {
+    case 'services':
+      return StreakQualifierRule.services(
+        qualifier.serviceIds.map((id) => ServiceId.of(id)),
+      );
+    case 'categories':
+      return StreakQualifierRule.categories(
+        qualifier.categoryIds.map((id) => ServiceCategoryId.of(id)),
+      );
+    default:
+      return StreakQualifierRule.anyVisit();
+  }
+}
+
+function intervalOf(interval: StreakIntervalProps): StreakIntervalRule {
+  return interval.kind === 'fixed'
+    ? StreakIntervalRule.fixed(interval.days)
+    : StreakIntervalRule.personal(
+        interval.tolerancePct,
+        interval.minDays,
+        interval.maxDays,
+        interval.fallbackDays,
+      );
 }

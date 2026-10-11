@@ -1,26 +1,34 @@
 import { describe, expect, it } from 'vitest';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { unwrapOk } from '../testing';
 import {
+  VoucherLifecycle,
   VoucherRefusal,
-  VoucherState,
-  VoucherStateKind,
+  VoucherStatus,
 } from './voucher-state.data';
 
-describe('VoucherState', () => {
-  it('keeps the stored tags and the refusal reasons', () => {
-    expect(Object.values(VoucherStateKind)).toEqual(['active', 'void']);
-    expect(Object.values(VoucherRefusal)).toEqual(['void', 'expired', 'empty']);
+describe('VoucherLifecycle', () => {
+  it('keeps one SCREAMING tag per state and refusal reason', () => {
+    expect(Object.values(VoucherStatus)).toEqual(['ACTIVE', 'VOID']);
+    expect(Object.values(VoucherRefusal)).toEqual(['VOID', 'EXPIRED', 'EMPTY']);
   });
 
   it('is active until voided, with when and why', () => {
-    const active = VoucherState.active();
-    const voided = VoucherState.voided(1_760_000_000_000, 'sold in error');
-    expect(active).toEqual({ kind: 'active' });
+    const active = VoucherLifecycle.active();
+    const voided = VoucherLifecycle.voided(
+      unwrapOk(UtcEpochMs.of(1_760_000_000_000)),
+      'sold in error',
+    );
+    expect(active).toEqual({ voucherStatus: 'ACTIVE' });
     expect(voided).toEqual({
-      kind: 'void',
-      voidedAtMs: 1_760_000_000_000,
-      reason: 'sold in error',
+      voucherStatus: 'VOID',
+      voidedAtUtcMs: 1_760_000_000_000,
+      voidReason: 'sold in error',
     });
-    expect(VoucherState.isVoid(active)).toBe(false);
-    expect(VoucherState.isVoid(voided)).toBe(true);
+    expect(VoucherLifecycle.isVoid(active)).toBe(false);
+    expect(VoucherLifecycle.isVoid(voided)).toBe(true);
+    const voucher = { ...voided, balanceCents: 0 };
+    expect(VoucherLifecycle.of(voucher)).toEqual(voided);
+    expect(VoucherLifecycle.of(active)).toBe(active);
   });
 });

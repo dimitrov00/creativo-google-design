@@ -12,11 +12,28 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { combineLatest, from, map, of, switchMap } from 'rxjs';
 import { settledViewTransition } from './shared/view-transition';
 import {
+  AppointmentId,
+  BarberId as EcsBarberId,
+  DurationMinutes,
+  EndMinute,
   GridLayoutSystem,
   type LandedRevision,
+  type LaneGap as EcsLaneGap,
+  LocalDate,
+  MinuteCount,
+  MinuteOfDay,
+  MinuteRange,
+  type OccupyingSeat,
   type OccupyingVisit,
+  OperationId,
+  type ShopNow,
   StaffIntentSystem,
+  type TimeZone,
   type UnsettledName,
+  UtcEpochMs,
+  type WallTime,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import {
   APPOINTMENT_NOTES,
@@ -40,6 +57,7 @@ import {
   Result,
   ZonedDateTime,
   ok,
+  toEcsBookingStatus,
 } from '@creativo/application/booking';
 import { downscaleImage } from '@creativo/infrastructure/storage';
 import { BarberId, LocationId } from '@creativo/application/catalog';
@@ -96,7 +114,7 @@ export function grantExpiresOn(
  */
 function intentOf(request: StaffEditAppointmentRequest): string {
   return StaffIntentSystem.intentBasis(
-    request.appointmentId,
+    AppointmentId.of(request.appointmentId),
     request.command,
     request.acknowledgedOverlap === true,
     request.expectedVersion ?? null,
@@ -204,11 +222,16 @@ export interface StaffDayCell {
   readonly lanes: readonly BarberDayLane[];
 }
 
-/** A day's lanes before the clock: each lane's holes, not yet split at now. */
+/**
+ * A day's lanes before the clock: each lane's holes, not yet split at now —
+ * on the lane's shop day (`day`, `null` for a key that names no day), in its
+ * wall-clock minutes (flatten pass, Law 7.3).
+ */
 interface DayGeometryCell {
   readonly dayKey: string;
   readonly lanes: readonly (Omit<BarberDayLane, 'gaps'> & {
-    readonly holes: readonly Interval[];
+    readonly day: LaneDay | null;
+    readonly holes: readonly MinuteRange[];
   })[];
 }
 
@@ -281,10 +304,22 @@ export function occupiedIntervals(
   barberId: string,
   busy: readonly Interval[],
 ): readonly Interval[] {
+  const day = dataDayOf(busy, appointments, barberId);
+  if (day === null) return [];
+  return intervalsOn(day, occupiedOn(day, appointments, barberId, busy));
+}
+
+/** What occupied the chair on one lane day, in that day's minutes. */
+function occupiedOn(
+  day: LaneDay,
+  appointments: readonly Appointment[],
+  barberId: string,
+  busy: readonly Interval[],
+): readonly MinuteRange[] {
   return GridLayoutSystem.occupiedIntervals(
-    appointments.map(toOccupyingVisit),
-    barberId,
-    busy,
+    appointments.map((appointment) => toOccupyingVisit(appointment, day)),
+    EcsBarberId.of(barberId),
+    rangesOn(day, busy),
   );
 }
 
@@ -305,26 +340,320 @@ export function laneGaps(
   // SPLIT AT NOW, then floor — never the other way round
   // (`GridLayoutSystem.sellableAt`). The holes take no clock; the minute
   // tick re-splits them alone (`StaffDayStore.dayCells`).
-  return GridLayoutSystem.laneGaps(rostered, occupied, nowMs);
+  const first = rostered[0];
+  if (first === undefined) return [];
+  const zone = STAFF_TIME_ZONE;
+  const day = laneDayOf(
+    wallTimeOf(first.startMs, zone).localDate,
+    zone,
+    rostered,
+    occupied,
+  );
+  const now = shopNowOf(nowMs, zone);
+  return gapsOn(
+    day,
+    GridLayoutSystem.laneGaps(
+      rangesOn(day, rostered),
+      rangesOn(day, occupied),
+      now,
+      day.localDate,
+    ),
+    cutOf(day, now, nowMs),
+  );
+}
+
+/* ── The lane geometry's boundary (flatten pass, Law 7.3) ─────────────── */
+
+/*
+ * `GridLayoutSystem` works on ONE shop day's wall clock: a lane is a
+ * barber's `LocalDate`, its spans `MinuteRange`s, "now" a `ShopNow`. The
+ * store keeps its legacy instants (`Interval`, `LaneGap.startMs`), so it
+ * reads them on the shop's calendar here, once per lane, and gives answers
+ * back as the caller's OWN instants: every minute an input named maps back
+ * to the instant it was read from, the clock's minute to the clock's own
+ * instant, and only a minute nobody named (a padded seat's edge) is read off
+ * the shop's clock (`ZonedTimeSystem.toUtc`). A lane never leaves its day —
+ * one shop day per visit (F-6), and the busy projection clips to it.
+ */
+
+/** The tenant zone, branded — the fallback until the catalogue names a shop's. */
+const STAFF_TIME_ZONE: TimeZone = zoneOf(STAFF_ZONE);
+
+/** One lane's shop day, and the caller's instants its minutes were read from. */
+interface LaneDay {
+  readonly localDate: LocalDate;
+  readonly timeZone: TimeZone;
+  /** A minute of the day (1440: the closing midnight) → the instant it came from; first wins. */
+  readonly instants: ReadonlyMap<number, number>;
+  /** Every instant the lane named, read on the shop's clock ONCE (`rangesOn` reads them back). */
+  readonly walls: ReadonlyMap<number, WallTime>;
+  /** The day's first instant on the shop's clock. */
+  readonly originUtcMs: number;
+  /**
+   * The day's wall clock runs 24 hours (no DST transition): a minute of it
+   * is `originUtcMs + minute` — resolved once per lane day, so the minute
+   * tick does plain arithmetic, never `Intl`.
+   */
+  readonly uniform: boolean;
+}
+
+/** One shop day's frame: its first instant, and whether it runs 24 hours. */
+interface DayFrame {
+  readonly originUtcMs: number;
+  readonly uniform: boolean;
+}
+
+const MS_PER_MINUTE = 60_000;
+const MS_PER_DAY = 86_400_000;
+
+/** The frames of the days a session draws, by zone and day — two `startOfLocalDay`s each, once. */
+const DAY_FRAMES = new Map<string, DayFrame>();
+
+function frameOf(localDate: LocalDate, timeZone: TimeZone): DayFrame {
+  const key = `${timeZone}|${localDate}`;
+  let frame = DAY_FRAMES.get(key);
+  if (frame === undefined) {
+    const origin = ZonedTimeSystem.startOfLocalDay(localDate, timeZone);
+    const next = ZonedTimeSystem.startOfLocalDay(
+      LocalDate.addDays(localDate, 1),
+      timeZone,
+    );
+    frame = {
+      originUtcMs: origin,
+      uniform: UtcEpochMs.elapsedMs(origin, next) === MS_PER_DAY,
+    };
+    DAY_FRAMES.set(key, frame);
+  }
+  return frame;
+}
+
+/** The clock's own minute and instant, when "now" falls on the lane's day. */
+interface LaneCut {
+  readonly minute: number;
+  readonly ms: number;
+}
+
+/** An IANA zone the legacy catalogue already accepted. */
+function zoneOf(raw: string): TimeZone {
+  const zone = ZonedTimeSystem.checkZone(raw);
+  if (!zone.ok) defect(`unreachable: an unknown zone ${raw}`);
+  return zone.value;
+}
+
+/** A legacy instant on the shop's wall clock. */
+function wallTimeOf(epochMs: number, timeZone: TimeZone): WallTime {
+  const instant = UtcEpochMs.of(Math.trunc(epochMs));
+  if (!instant.ok) defect(`unreachable: not an instant ${epochMs}`);
+  return ZonedTimeSystem.toLocal(instant.value, timeZone);
+}
+
+/** "Now" as the shop sees it — derived once per read from the store's clock. */
+function shopNowOf(nowMs: number, timeZone: TimeZone): ShopNow {
+  const instant = UtcEpochMs.of(Math.trunc(nowMs));
+  if (!instant.ok) defect(`unreachable: not an instant ${nowMs}`);
+  return ZonedTimeSystem.shopNow(instant.value, timeZone);
+}
+
+function startMinuteOf(minute: number): MinuteOfDay {
+  const start = MinuteOfDay.of(minute);
+  if (!start.ok) defect(`unreachable: a start off the clock ${minute}`);
+  return start.value;
+}
+
+function endMinuteOf(minute: number): EndMinute {
+  const end = EndMinute.of(minute);
+  if (!end.ok) defect(`unreachable: an end off the clock ${minute}`);
+  return end.value;
+}
+
+/** The lane day of `localDate`, naming every instant of `lists` that falls on it. */
+function laneDayOf(
+  localDate: LocalDate,
+  timeZone: TimeZone,
+  ...lists: readonly (readonly Interval[])[]
+): LaneDay {
+  const next = LocalDate.addDays(localDate, 1);
+  const instants = new Map<number, number>();
+  const walls = new Map<number, WallTime>();
+  const name = (epochMs: number): void => {
+    let at = walls.get(epochMs);
+    if (at === undefined) {
+      at = wallTimeOf(epochMs, timeZone);
+      walls.set(epochMs, at);
+    }
+    const minute =
+      at.localDate === localDate
+        ? at.minute
+        : at.localDate === next && at.minute === 0
+          ? 1440
+          : null;
+    if (minute !== null && !instants.has(minute)) instants.set(minute, epochMs);
+  };
+  for (const list of lists) {
+    for (const interval of list) {
+      name(interval.startMs);
+      name(interval.endMs);
+    }
+  }
+  return {
+    localDate,
+    timeZone,
+    instants,
+    walls,
+    ...frameOf(localDate, timeZone),
+  };
+}
+
+/** An instant on the lane's wall clock — the reading the lane already made, when it named it. */
+function wallOn(day: LaneDay, epochMs: number): WallTime {
+  return day.walls.get(epochMs) ?? wallTimeOf(epochMs, day.timeZone);
 }
 
 /**
- * A legacy appointment as the occupancy fold reads it — its status and, per
- * seat, the barber, the start and the snapshotted terms.
+ * The lane day the data itself is on, for a caller that names none: the
+ * first busy span's day, else the first of this barber's seats'. `null` when
+ * nothing at all occupied the chair.
  */
-function toOccupyingVisit(appointment: Appointment): OccupyingVisit {
-  return {
-    bookingStatus: { kind: appointment.status.kind },
-    seats: appointment.seats.map((seat) => ({
-      barberId: seat.barberId.value,
-      startMs: seat.slot.start.toMillis(),
-      terms: {
-        durationMinutes: seat.terms.durationMinutes,
-        setupMinutes: seat.terms.setupMinutes,
-        cleanupMinutes: seat.terms.cleanupMinutes,
-      },
-    })),
-  };
+function dataDayOf(
+  busy: readonly Interval[],
+  appointments: readonly Appointment[],
+  barberId: string,
+): LaneDay | null {
+  const zone = STAFF_TIME_ZONE;
+  const first = busy[0];
+  if (first !== undefined) {
+    return laneDayOf(wallTimeOf(first.startMs, zone).localDate, zone, busy);
+  }
+  for (const appointment of appointments) {
+    for (const seat of appointment.seats) {
+      if (seat.barberId.value !== barberId) continue;
+      const start = wallTimeOf(seat.slot.start.toMillis(), zone);
+      return laneDayOf(start.localDate, zone, busy);
+    }
+  }
+  return null;
+}
+
+/** Legacy instants as minute ranges of the lane's day, clipped to it. */
+function rangesOn(
+  day: LaneDay,
+  intervals: readonly Interval[],
+): readonly MinuteRange[] {
+  const out: MinuteRange[] = [];
+  for (const interval of intervals) {
+    const start = wallOn(day, interval.startMs);
+    const end = wallOn(day, interval.endMs);
+    const from =
+      start.localDate < day.localDate
+        ? 0
+        : start.localDate > day.localDate
+          ? null
+          : start.minute;
+    const to =
+      end.localDate > day.localDate
+        ? 1440
+        : end.localDate < day.localDate
+          ? null
+          : end.minute;
+    if (from === null || to === null || to <= from) continue;
+    out.push(MinuteRange.of(startMinuteOf(from), endMinuteOf(to)));
+  }
+  return out;
+}
+
+/** The instant a minute of the lane's day reads as — the caller's own where it named one. */
+function instantOn(day: LaneDay, minute: number, cut: LaneCut | null): number {
+  const named = day.instants.get(minute);
+  if (named !== undefined) return named;
+  if (cut !== null && cut.minute === minute) return cut.ms;
+  // A day of 24 hours: plain arithmetic from its first instant (1440 is the
+  // next day's start) — the zone was read once, when the lane day was made.
+  if (day.uniform) return day.originUtcMs + minute * MS_PER_MINUTE;
+  const next = LocalDate.addDays(day.localDate, 1);
+  if (minute >= 1440) {
+    return ZonedTimeSystem.startOfLocalDay(next, day.timeZone);
+  }
+  // A minute inside a spring-forward gap reads as the gap's end.
+  for (let at = minute; at < 1440; at++) {
+    const instant = ZonedTimeSystem.toUtc(
+      day.localDate,
+      startMinuteOf(at),
+      day.timeZone,
+    );
+    if (instant.ok) return instant.value;
+  }
+  return ZonedTimeSystem.startOfLocalDay(next, day.timeZone);
+}
+
+/** Minute ranges of the lane's day back as the caller's instants. */
+function intervalsOn(
+  day: LaneDay,
+  ranges: readonly MinuteRange[],
+): readonly Interval[] {
+  return ranges.map((range) =>
+    Interval.of(
+      instantOn(day, range.startMinutes, null),
+      instantOn(day, range.endMinutes, null),
+    ),
+  );
+}
+
+/** The clock's cut of a lane: its minute and instant, on the lane's own day only. */
+function cutOf(day: LaneDay, now: ShopNow, nowMs: number): LaneCut | null {
+  return now.localDate === day.localDate
+    ? { minute: now.currentMinute, ms: nowMs }
+    : null;
+}
+
+/** The system's gaps as the store's — instants, minutes, sellable. */
+function gapsOn(
+  day: LaneDay,
+  gaps: readonly EcsLaneGap[],
+  cut: LaneCut | null,
+): readonly LaneGap[] {
+  return gaps.map((gap) => ({
+    startMs: instantOn(day, gap.startMinutes, cut),
+    endMs: instantOn(day, gap.endMinutes, cut),
+    minutes: gap.minutes,
+    sellable: gap.sellable,
+  }));
+}
+
+/** A legacy figure of whole minutes — positive for a duration, non-negative for a pad. */
+function durationOf(minutes: number): DurationMinutes {
+  const duration = DurationMinutes.of(minutes);
+  if (!duration.ok) defect(`unreachable: a seat of ${minutes} min`);
+  return duration.value;
+}
+
+function countOf(minutes: number): MinuteCount {
+  const count = MinuteCount.of(minutes);
+  if (!count.ok) defect(`unreachable: a pad of ${minutes} min`);
+  return count.value;
+}
+
+/**
+ * A legacy appointment as the occupancy fold reads it on one lane day — its
+ * state and, per seat starting that day, the barber, the start on the shop's
+ * clock and the snapshotted minutes.
+ */
+function toOccupyingVisit(
+  appointment: Appointment,
+  day: LaneDay,
+): OccupyingVisit {
+  const seats: OccupyingSeat[] = [];
+  for (const seat of appointment.seats) {
+    const start = wallTimeOf(seat.slot.start.toMillis(), day.timeZone);
+    if (start.localDate !== day.localDate) continue;
+    seats.push({
+      barberId: EcsBarberId.of(seat.barberId.value),
+      startMinutes: start.minute,
+      durationMinutes: durationOf(seat.terms.durationMinutes),
+      setupMinutes: countOf(seat.terms.setupMinutes),
+      cleanupMinutes: countOf(seat.terms.cleanupMinutes),
+    });
+  }
+  return { bookingStatus: toEcsBookingStatus(appointment.status.kind), seats };
 }
 
 /**
@@ -391,6 +720,21 @@ export class StaffDayStore {
   private readonly catalog = inject(CatalogContentService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+
+  /**
+   * The shop's zone — the LOCATION's (`ShopLocation.timeZone`, Law 7.2), read
+   * off the catalogue's shops, never the browser's. Every shop of the tenant
+   * keeps one clock (blueprint §7.1), so the first shop that names a zone
+   * answers; until the catalogue does, the tenant zone `STAFF_ZONE`. "Today",
+   * "now" and every lane's shop day are read in it.
+   */
+  private readonly shopZone = computed<TimeZone>(() => {
+    for (const location of this.catalog.locations()) {
+      const zone = ZonedTimeSystem.checkZone(location.timezone);
+      if (zone.ok) return zone.value;
+    }
+    return STAFF_TIME_ZONE;
+  });
 
   /**
    * Today, RE-READ rather than frozen.
@@ -511,12 +855,12 @@ export class StaffDayStore {
    * on this surface goes through.
    */
   private resolveNowMs(): number {
-    const now = this.clock.now(STAFF_ZONE);
+    const now = this.clock.now(untracked(() => this.shopZone()));
     return now.isSuccess() ? now.value.toMillis() : 0;
   }
 
   private resolveToday(): string {
-    const now = this.clock.now(STAFF_ZONE);
+    const now = this.clock.now(untracked(() => this.shopZone()));
     return now.isSuccess()
       ? CalendarDay.fromZonedDateTime(now.value).key()
       : '1970-01-01';
@@ -1228,9 +1572,11 @@ export class StaffDayStore {
     if (!results) return [];
 
     const geometry = this.geometryResult()?.days;
+    const zone = this.shopZone();
 
     return days.map((dayKey, dayIndex) => {
       const dayGeometry = geometry?.[dayIndex];
+      const localDate = LocalDate.parse(dayKey);
       const byBarber = new Map(
         dayGeometry?.isSuccess()
           ? dayGeometry.value.map(
@@ -1245,16 +1591,25 @@ export class StaffDayStore {
         const geo = byBarber.get(barber.id.value);
         const rostered = (geo?.windows ?? []).map((window) => window.interval);
         const blocks = (geo?.blocks ?? []).map((block) => block.interval);
+        const busy = geo?.busy ?? [];
+        // The lane's shop day: its windows and busy spans in its minutes.
+        const day = localDate.ok
+          ? laneDayOf(localDate.value, zone, rostered, busy)
+          : null;
 
         return {
           barberId: barber.id.value,
           appointments,
           rostered,
           blocks,
-          holes: GridLayoutSystem.holes(
-            rostered,
-            occupiedIntervals(appointments, barber.id.value, geo?.busy ?? []),
-          ),
+          day,
+          holes:
+            day === null
+              ? []
+              : GridLayoutSystem.holes(
+                  rangesOn(day, rostered),
+                  occupiedOn(day, appointments, barber.id.value, busy),
+                ),
           failed: result !== undefined && result.isFailure(),
         };
       });
@@ -1272,11 +1627,19 @@ export class StaffDayStore {
    */
   readonly dayCells = computed<readonly StaffDayCell[]>(() => {
     const nowMs = this._nowMs();
+    const now = shopNowOf(nowMs, this.shopZone());
     return this.dayGeometry().map((cell) => ({
       dayKey: cell.dayKey,
-      lanes: cell.lanes.map(({ holes, ...lane }) => ({
+      lanes: cell.lanes.map(({ holes, day, ...lane }) => ({
         ...lane,
-        gaps: GridLayoutSystem.sellableAt(holes, nowMs),
+        gaps:
+          day === null
+            ? []
+            : gapsOn(
+                day,
+                GridLayoutSystem.sellableAt(holes, now, day.localDate),
+                cutOf(day, now, nowMs),
+              ),
       })),
     }));
   });
@@ -1879,7 +2242,7 @@ export class StaffDayStore {
       StaffIntentSystem.rememberUnsettled(
         this.unsettledOperations.get(appointmentId) ?? [],
         intent,
-        operationId,
+        OperationId.of(operationId),
       ),
     );
   }

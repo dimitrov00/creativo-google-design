@@ -8,15 +8,22 @@ import {
 } from '@creativo/domain/kernel';
 import { UserId } from '@creativo/domain/accounts';
 import {
+  Currency,
   EngagementErrorCode,
   type EngagementError as EngagementErrorData,
-  type GiftVoucherEntity,
+  type GiftVoucher as GiftVoucherData,
   GiftVoucherId as GiftVoucherIdData,
+  type LocalDate,
   type Money as MoneyData,
+  PriceCents,
   UserId as UserIdData,
+  UtcEpochMs,
   VoucherCode as VoucherCodeData,
-  VoucherState,
+  VoucherLifecycle,
+  VoucherRefusal,
   VoucherSystem,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { Coupon } from './coupon';
 import {
@@ -41,31 +48,77 @@ import { VoucherCodeInvalidError } from './voucher-code.errors';
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
+/** The legacy lower-case refusal → the ecs-core `VoucherRefusal` (flatten-spec §8.9). */
+const LEGACY_VOUCHER_REFUSAL = {
+  void: VoucherRefusal.Void,
+  expired: VoucherRefusal.Expired,
+  empty: VoucherRefusal.Empty,
+} as const satisfies Record<'void' | 'expired' | 'empty', VoucherRefusal>;
+
+/** The inverse: the ecs-core refusal → the legacy word callers compare. */
+const VOUCHER_REFUSAL_LEGACY = {
+  [LEGACY_VOUCHER_REFUSAL.void]: 'void',
+  [LEGACY_VOUCHER_REFUSAL.expired]: 'expired',
+  [LEGACY_VOUCHER_REFUSAL.empty]: 'empty',
+} as const satisfies Record<VoucherRefusal, 'void' | 'expired' | 'empty'>;
+
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a legacy `Money` / `ZonedDateTime` already holds the rule.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+function instantOf(at: ZonedDateTime): UtcEpochMs {
+  return sure(UtcEpochMs.of(at.toMillis()), 'an instant');
+}
+
+/** The shop day of a legacy instant, on its own zone's wall clock (T5). */
+function localDateOf(at: ZonedDateTime): LocalDate {
+  return ZonedTimeSystem.toLocal(
+    instantOf(at),
+    sure(ZonedTimeSystem.checkZone(at.zoneName), 'a zone'),
+  ).localDate;
+}
+
+function centsOf(money: Money): PriceCents {
+  return sure(PriceCents.of(money.toMinorUnits()), 'an amount');
+}
+
 function toMoneyData(money: Money): MoneyData {
   return {
-    amountMinorUnits: money.toMinorUnits(),
-    currencyCode: money.currencyCode(),
+    amountCents: centsOf(money),
+    currency: sure(Currency.parse(money.currencyCode()), 'a currency'),
   };
 }
 
-function toEntity(voucher: GiftVoucher): GiftVoucherEntity {
+function toEntity(voucher: GiftVoucher): GiftVoucherData {
   const state = voucher.state;
   return {
     id: GiftVoucherIdData.of(voucher.id.value),
     code: VoucherCodeData.of(voucher.code),
-    initialValue: toMoneyData(voucher.initialValue),
-    balance: toMoneyData(voucher.balance),
-    issuedAtMs: voucher.issuedAt.toMillis(),
-    expiresAtMs:
-      voucher.expiresAt === null ? null : voucher.expiresAt.toMillis(),
+    initialValueCents: centsOf(voucher.initialValue),
+    balanceCents: centsOf(voucher.balance),
+    currency: sure(
+      Currency.parse(voucher.balance.currencyCode()),
+      'a currency',
+    ),
+    issuedAtUtcMs: instantOf(voucher.issuedAt),
+    expiresAtUtcMs:
+      voucher.expiresAt === null ? null : instantOf(voucher.expiresAt),
+    expiresLocalDate:
+      voucher.expiresAt === null ? null : localDateOf(voucher.expiresAt),
     issuedToUserId:
       voucher.issuedToUserId === null
         ? null
         : UserIdData.of(voucher.issuedToUserId.value),
-    state:
-      state.kind === 'void'
-        ? VoucherState.voided(state.voidedAt.toMillis(), state.reason)
-        : VoucherState.active(),
+    ...(state.kind === 'void'
+      ? VoucherLifecycle.voided(instantOf(state.voidedAt), state.reason)
+      : VoucherLifecycle.active()),
   };
 }
 
@@ -77,13 +130,15 @@ type VoucherBalanceError =
 
 /** A struct refusal → the legacy class it always was. */
 function toLegacyError(error: EngagementErrorData): VoucherBalanceError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case EngagementErrorCode.GiftVoucherNotRedeemable:
-      return new GiftVoucherNotRedeemableError(error.reason);
+      return new GiftVoucherNotRedeemableError(
+        VOUCHER_REFUSAL_LEGACY[error.reason],
+      );
     case EngagementErrorCode.GiftVoucherInsufficientBalance:
       return new GiftVoucherInsufficientBalanceError(
-        error.requestedMinorUnits,
-        error.balanceMinorUnits,
+        error.requestedCents,
+        error.balanceCents,
       );
     case EngagementErrorCode.GiftVoucherCurrencyMismatch:
       return new GiftVoucherCurrencyMismatchError(error.expected, error.found);
@@ -204,7 +259,8 @@ export class GiftVoucher {
 
   /** Why it cannot be used now, or `null` when it can. */
   refusal(now: ZonedDateTime): 'void' | 'expired' | 'empty' | null {
-    return VoucherSystem.refusal(toEntity(this), now.toMillis());
+    const refused = VoucherSystem.refusal(toEntity(this), instantOf(now));
+    return refused === null ? null : VOUCHER_REFUSAL_LEGACY[refused];
   }
 
   isRedeemable(now: ZonedDateTime): boolean {
@@ -217,7 +273,7 @@ export class GiftVoucher {
    */
   coverage(due: Money): Money {
     return GiftVoucher.money(
-      VoucherSystem.coverage(toEntity(this), toMoneyData(due)).amountMinorUnits,
+      VoucherSystem.coverage(toEntity(this), toMoneyData(due)).amountCents,
       this.balance.currencyCode(),
     );
   }
@@ -235,7 +291,7 @@ export class GiftVoucher {
     const redeemed = VoucherSystem.redeem(
       toEntity(this),
       toMoneyData(amount),
-      now.toMillis(),
+      instantOf(now),
     );
     return redeemed.ok
       ? ok(this.withBalanceOf(redeemed.value))
@@ -309,12 +365,9 @@ export class GiftVoucher {
   }
 
   /** The struct's balance, back on the legacy voucher. */
-  private withBalanceOf(entity: GiftVoucherEntity): GiftVoucher {
+  private withBalanceOf(entity: GiftVoucherData): GiftVoucher {
     return this.withBalance(
-      GiftVoucher.money(
-        entity.balance.amountMinorUnits,
-        this.balance.currencyCode(),
-      ),
+      GiftVoucher.money(entity.balanceCents, this.balance.currencyCode()),
     );
   }
 

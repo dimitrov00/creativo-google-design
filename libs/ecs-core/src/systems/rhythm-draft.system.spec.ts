@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { StreakInterval } from '../components/streak-interval.data';
-import type { StreakQualifier } from '../components/streak-qualifier.data';
-import { StreakRule, type StreakExcuse } from '../components/streak-rule.data';
+import {
+  StreakInterval,
+  StreakIntervalRule,
+} from '../components/streak-interval.data';
+import {
+  StreakQualifier,
+  StreakQualifierRule,
+} from '../components/streak-qualifier.data';
+import {
+  StreakExcuse,
+  StreakOnBreak,
+  StreakRule,
+} from '../components/streak-rule.data';
+import { ServiceCategoryId, ServiceId } from '../primitives/ids.primitive';
 import { deepFreeze } from '../testing';
 import {
   RhythmDraftSystem,
@@ -14,11 +25,13 @@ import {
  * The pure cases of libs/features/admin/loyalty/src/lib/admin-rhythm.store.spec.ts,
  * COPIED (the store's spec keeps running against its shim): every case of
  * `patchedRhythmDraft` (→ `RhythmDraftSystem.clamp`) and `rhythmBoundsOf`
- * (→ `bounds`). Re-targeted: the draft is the plain `StreakRule` (a
+ * (→ `bounds`). Re-targeted: the draft is the FLAT `StreakRule` (a
  * version's id and name are the head's, not the draft's — the identity case
- * checks `version` and `effectiveFromDayKey`), a change is written as the
- * store's page writes it and made strict by `strict` (absent is `null`),
- * and the cue's menu is handed in. The other 94 cases of that spec are the
+ * checks `version` and `effectiveFromLocalDate`), a change is written as a
+ * page writes it (each part's figures together) and made strict and flat by
+ * `strict` (absent is `null`), and the cue's menu is handed in. The parts
+ * are read back off the flat rule by the projections below, so every
+ * expectation keeps its shape. The other 94 cases of that spec are the
  * store's own behaviour (TestBed: reads, saves, the preview's timer, the
  * words) and stay with it. After them: `diff` (the store's `touchedOf`),
  * `weeksOf`/`daysOf` (admin-rhythm.words.ts) and the purity case.
@@ -28,22 +41,22 @@ import {
 const RISK_LEAD_CHOICES = [0, 3, 7, 14] as const;
 
 type LooseInterval =
-  | { readonly kind: 'fixed'; readonly days?: number }
   | {
-      readonly kind: 'personal';
-      readonly tolerancePct?: number;
-      readonly minDays?: number;
-      readonly maxDays?: number;
-      readonly fallbackDays?: number;
+      readonly streakInterval: typeof StreakInterval.Fixed;
+      readonly intervalDays?: number;
+    }
+  | {
+      readonly streakInterval: typeof StreakInterval.Personal;
+      readonly intervalTolerancePct?: number;
+      readonly intervalMinDays?: number;
+      readonly intervalMaxDays?: number;
+      readonly intervalFallbackDays?: number;
     };
 
-/** A change as the page writes one: only what moves. */
+/** A change as the page writes one: only what moves, each part's figures together. */
 type AdminRhythmPatch = {
   readonly enabled?: boolean;
-  readonly qualifier?:
-    | { readonly kind: 'anyVisit' }
-    | { readonly kind: 'services'; readonly serviceIds: readonly string[] }
-    | { readonly kind: 'categories'; readonly categoryIds: readonly string[] };
+  readonly qualifier?: StreakQualifierRule;
   readonly minGapDays?: number;
   readonly bookingHold?: {
     readonly enabled?: boolean;
@@ -68,63 +81,46 @@ type AdminRhythmPatch = {
     readonly windowDays?: number;
     readonly perYear?: number;
   };
-  readonly onBreak?: 'restart' | 'hold';
+  readonly onBreak?: StreakOnBreak;
 };
 
 function intervalPatch(interval: LooseInterval): RhythmIntervalPatch {
-  return interval.kind === 'fixed'
-    ? { kind: 'fixed', days: interval.days ?? null }
+  return interval.streakInterval === StreakInterval.Fixed
+    ? {
+        streakInterval: StreakInterval.Fixed,
+        intervalDays: interval.intervalDays ?? null,
+      }
     : {
-        kind: 'personal',
-        tolerancePct: interval.tolerancePct ?? null,
-        minDays: interval.minDays ?? null,
-        maxDays: interval.maxDays ?? null,
-        fallbackDays: interval.fallbackDays ?? null,
+        streakInterval: StreakInterval.Personal,
+        intervalTolerancePct: interval.intervalTolerancePct ?? null,
+        intervalMinDays: interval.intervalMinDays ?? null,
+        intervalMaxDays: interval.intervalMaxDays ?? null,
+        intervalFallbackDays: interval.intervalFallbackDays ?? null,
       };
 }
 
-/** Every part present: what the system reads. */
+/** Every field present and flat: what the system reads. */
 function strict(patch: AdminRhythmPatch): RhythmPatch {
   return {
     enabled: patch.enabled ?? null,
-    qualifier: (patch.qualifier as StreakQualifier | undefined) ?? null,
+    qualifier: patch.qualifier ?? null,
     minGapDays: patch.minGapDays ?? null,
-    bookingHold:
-      patch.bookingHold === undefined
-        ? null
-        : {
-            enabled: patch.bookingHold.enabled ?? null,
-            maxDaysPastDue: patch.bookingHold.maxDaysPastDue ?? null,
-          },
+    bookingHoldEnabled: patch.bookingHold?.enabled ?? null,
+    bookingHoldMaxDaysPastDue: patch.bookingHold?.maxDaysPastDue ?? null,
     interval:
       patch.interval === undefined ? null : intervalPatch(patch.interval),
     graceDays: patch.graceDays ?? null,
     riskLeadDays: patch.riskLeadDays ?? null,
-    protections:
-      patch.protections === undefined
-        ? null
-        : {
-            enabled: patch.protections.enabled ?? null,
-            maxBanked: patch.protections.maxBanked ?? null,
-            earnEvery: patch.protections.earnEvery ?? null,
-            startWith: patch.protections.startWith ?? null,
-          },
+    protectionsEnabled: patch.protections?.enabled ?? null,
+    protectionsMaxBanked: patch.protections?.maxBanked ?? null,
+    protectionsEarnEvery: patch.protections?.earnEvery ?? null,
+    protectionsStartWith: patch.protections?.startWith ?? null,
     excuses: patch.excuses ?? null,
-    clientPause:
-      patch.clientPause === undefined
-        ? null
-        : {
-            enabled: patch.clientPause.enabled ?? null,
-            maxDaysPerYear: patch.clientPause.maxDaysPerYear ?? null,
-          },
-    repair:
-      patch.repair === undefined
-        ? null
-        : {
-            enabled: patch.repair.enabled ?? null,
-            windowDays: patch.repair.windowDays ?? null,
-            perYear: patch.repair.perYear ?? null,
-          },
+    clientPauseEnabled: patch.clientPause?.enabled ?? null,
+    clientPauseMaxDaysPerYear: patch.clientPause?.maxDaysPerYear ?? null,
+    repairEnabled: patch.repair?.enabled ?? null,
+    repairWindowDays: patch.repair?.windowDays ?? null,
+    repairPerYear: patch.repair?.perYear ?? null,
     onBreak: patch.onBreak ?? null,
   };
 }
@@ -148,7 +144,39 @@ function patchedRhythmDraft(
 
 const rhythmBoundsOf = RhythmDraftSystem.bounds;
 
-const fixed = (days: number): LooseInterval => ({ kind: 'fixed', days });
+const fixed = (intervalDays: number): LooseInterval => ({
+  streakInterval: StreakInterval.Fixed,
+  intervalDays,
+});
+const personal = (
+  figures: Omit<
+    Extract<LooseInterval, { streakInterval: 'PERSONAL' }>,
+    'streakInterval'
+  > = {},
+): LooseInterval => ({ streakInterval: StreakInterval.Personal, ...figures });
+
+/* The rule's parts, read back off the flat rule — the shapes the cases assert. */
+const intervalOf = (rule: StreakRule) => StreakIntervalRule.of(rule);
+const qualifierOf = (rule: StreakRule) => StreakQualifierRule.of(rule);
+const holdOf = (rule: StreakRule) => ({
+  enabled: rule.bookingHoldEnabled,
+  maxDaysPastDue: rule.bookingHoldMaxDaysPastDue,
+});
+const protectionsOf = (rule: StreakRule) => ({
+  enabled: rule.protectionsEnabled,
+  maxBanked: rule.protectionsMaxBanked,
+  earnEvery: rule.protectionsEarnEvery,
+  startWith: rule.protectionsStartWith,
+});
+const pauseOf = (rule: StreakRule) => ({
+  enabled: rule.clientPauseEnabled,
+  maxDaysPerYear: rule.clientPauseMaxDaysPerYear,
+});
+const repairOf = (rule: StreakRule) => ({
+  enabled: rule.repairEnabled,
+  windowDays: rule.repairWindowDays,
+  perYear: rule.repairPerYear,
+});
 
 const RECOMMENDED = StreakRule.DEFAULT;
 const LONG: AdminRhythmPatch = { interval: fixed(84) };
@@ -178,7 +206,9 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
     const next = patched({ enabled: false, graceDays: 3 });
 
     expect(next.version).toBe(RECOMMENDED.version);
-    expect(next.effectiveFromDayKey).toBe(RECOMMENDED.effectiveFromDayKey);
+    expect(next.effectiveFromLocalDate).toBe(
+      RECOMMENDED.effectiveFromLocalDate,
+    );
   });
 
   it.each([
@@ -187,7 +217,10 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
     ['the interval, a fraction', { interval: fixed(42.4) }, 42],
     ['the interval, no number', { interval: fixed(Number.NaN) }, 42],
   ] as const)('clamps %s', (_, patch, days) => {
-    expect(patched(patch).interval).toEqual({ kind: 'fixed', days });
+    expect(intervalOf(patched(patch))).toEqual({
+      streakInterval: 'FIXED',
+      intervalDays: days,
+    });
   });
 
   it.each([
@@ -207,26 +240,29 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
   });
 
   it('clamps each part’s figures to the domain’s range', () => {
+    expect(holdOf(patched({ bookingHold: { maxDaysPastDue: 99 } }))).toEqual({
+      enabled: true,
+      maxDaysPastDue: 28,
+    });
+    expect(holdOf(patched({ bookingHold: { maxDaysPastDue: -5 } }))).toEqual({
+      enabled: true,
+      maxDaysPastDue: 0,
+    });
     expect(
-      patched({ bookingHold: { maxDaysPastDue: 99 } }).bookingHold,
-    ).toEqual({ enabled: true, maxDaysPastDue: 28 });
-    expect(
-      patched({ bookingHold: { maxDaysPastDue: -5 } }).bookingHold,
-    ).toEqual({ enabled: true, maxDaysPastDue: 0 });
-    expect(
-      patched({ protections: { maxBanked: 9, earnEvery: 0 } }).protections,
+      protectionsOf(patched({ protections: { maxBanked: 9, earnEvery: 0 } })),
     ).toEqual({ enabled: true, maxBanked: 5, earnEvery: 1, startWith: 0 });
-    expect(patched({ protections: { earnEvery: 99 } }).protections).toEqual({
+    expect(protectionsOf(patched({ protections: { earnEvery: 99 } }))).toEqual({
       enabled: true,
       maxBanked: 2,
       earnEvery: 24,
       startWith: 0,
     });
     expect(
-      patched({ clientPause: { enabled: true, maxDaysPerYear: 999 } })
-        .clientPause,
+      pauseOf(patched({ clientPause: { enabled: true, maxDaysPerYear: 999 } })),
     ).toEqual({ enabled: true, maxDaysPerYear: 180 });
-    expect(patched({ repair: { windowDays: 0, perYear: 9 } }).repair).toEqual({
+    expect(
+      repairOf(patched({ repair: { windowDays: 0, perYear: 9 } })),
+    ).toEqual({
       enabled: true,
       windowDays: 1,
       perYear: 4,
@@ -234,11 +270,11 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
   });
 
   it('changes one figure of a part and keeps the rest of it', () => {
-    expect(patched({ bookingHold: { enabled: false } }).bookingHold).toEqual({
+    expect(holdOf(patched({ bookingHold: { enabled: false } }))).toEqual({
       enabled: false,
       maxDaysPastDue: 14,
     });
-    expect(patched({ repair: { windowDays: 21 } }).repair).toEqual({
+    expect(repairOf(patched({ repair: { windowDays: 21 } }))).toEqual({
       enabled: true,
       windowDays: 21,
       perYear: 1,
@@ -249,7 +285,10 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
     const long = patched({ graceDays: 21, riskLeadDays: 14, minGapDays: 14 });
     const short = patched({ interval: fixed(14) }, long);
 
-    expect(short.interval).toEqual({ kind: 'fixed', days: 14 });
+    expect(intervalOf(short)).toEqual({
+      streakInterval: 'FIXED',
+      intervalDays: 14,
+    });
     expect(short.graceDays).toBe(13);
     expect(short.minGapDays).toBe(13);
     // The cue is a menu: the longest it offers that fits, never «13 дни».
@@ -267,118 +306,145 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
 
   it('holds what a run starts with to what the reserve holds', () => {
     expect(
-      patched({ protections: { startWith: 4 } }).protections.startWith,
+      patched({ protections: { startWith: 4 } }).protectionsStartWith,
     ).toBe(2);
     const one = patched({ protections: { startWith: 1 } });
-    expect(one.protections.startWith).toBe(1);
-    expect(patched({ protections: { maxBanked: 0 } }, one).protections).toEqual(
-      { enabled: true, maxBanked: 0, earnEvery: 5, startWith: 0 },
-    );
+    expect(one.protectionsStartWith).toBe(1);
+    expect(
+      protectionsOf(patched({ protections: { maxBanked: 0 } }, one)),
+    ).toEqual({ enabled: true, maxBanked: 0, earnEvery: 5, startWith: 0 });
   });
 
   it('opens a personal interval on the recommended figures, around the interval it had', () => {
-    expect(patched({ interval: { kind: 'personal' } }).interval).toEqual({
-      kind: 'personal',
-      tolerancePct: 50,
-      minDays: 21,
-      maxDays: 70,
-      fallbackDays: 42,
+    expect(intervalOf(patched({ interval: personal() }))).toEqual({
+      streakInterval: 'PERSONAL',
+      intervalTolerancePct: 50,
+      intervalMinDays: 21,
+      intervalMaxDays: 70,
+      intervalFallbackDays: 42,
     });
     // A fixed interval outside the recommended clamp lands on its edge.
     expect(
-      patched({ interval: { kind: 'personal' } }, patched(LONG)).interval,
-    ).toMatchObject({ minDays: 21, maxDays: 70, fallbackDays: 70 });
+      intervalOf(patched({ interval: personal() }, patched(LONG))),
+    ).toMatchObject({
+      intervalMinDays: 21,
+      intervalMaxDays: 70,
+      intervalFallbackDays: 70,
+    });
   });
 
   it('lets the figure in hand win over the other end of the clamp', () => {
-    const personal = patched({ interval: { kind: 'personal' } });
+    const open = patched({ interval: personal() });
 
     expect(
-      patched({ interval: { kind: 'personal', minDays: 84 } }, personal)
-        .interval,
+      intervalOf(
+        patched({ interval: personal({ intervalMinDays: 84 }) }, open),
+      ),
     ).toEqual({
-      kind: 'personal',
-      tolerancePct: 50,
-      minDays: 84,
-      maxDays: 84,
-      fallbackDays: 84,
+      streakInterval: 'PERSONAL',
+      intervalTolerancePct: 50,
+      intervalMinDays: 84,
+      intervalMaxDays: 84,
+      intervalFallbackDays: 84,
     });
     expect(
-      patched({ interval: { kind: 'personal', maxDays: 14 } }, personal)
-        .interval,
+      intervalOf(
+        patched({ interval: personal({ intervalMaxDays: 14 }) }, open),
+      ),
     ).toEqual({
-      kind: 'personal',
-      tolerancePct: 50,
-      minDays: 14,
-      maxDays: 14,
-      fallbackDays: 14,
+      streakInterval: 'PERSONAL',
+      intervalTolerancePct: 50,
+      intervalMinDays: 14,
+      intervalMaxDays: 14,
+      intervalFallbackDays: 14,
     });
   });
 
   it('keeps the newcomer’s interval inside the clamp', () => {
-    const personal = patched({ interval: { kind: 'personal' } });
+    const open = patched({ interval: personal() });
 
     expect(
-      patched({ interval: { kind: 'personal', fallbackDays: 7 } }, personal)
-        .interval,
-    ).toMatchObject({ minDays: 21, maxDays: 70, fallbackDays: 21 });
+      intervalOf(
+        patched({ interval: personal({ intervalFallbackDays: 7 }) }, open),
+      ),
+    ).toMatchObject({
+      intervalMinDays: 21,
+      intervalMaxDays: 70,
+      intervalFallbackDays: 21,
+    });
     expect(
-      patched({ interval: { kind: 'personal', fallbackDays: 120 } }, personal)
-        .interval,
-    ).toMatchObject({ minDays: 21, maxDays: 70, fallbackDays: 70 });
+      intervalOf(
+        patched({ interval: personal({ intervalFallbackDays: 120 }) }, open),
+      ),
+    ).toMatchObject({
+      intervalMinDays: 21,
+      intervalMaxDays: 70,
+      intervalFallbackDays: 70,
+    });
     expect(
-      patched({ interval: { kind: 'personal', tolerancePct: 140 } }, personal)
-        .interval,
-    ).toMatchObject({ tolerancePct: 100 });
+      intervalOf(
+        patched({ interval: personal({ intervalTolerancePct: 140 }) }, open),
+      ),
+    ).toMatchObject({ intervalTolerancePct: 100 });
   });
 
   it('holds grace under the personal interval’s FLOOR, the shortest period it opens', () => {
-    const personal = patched({
-      interval: { kind: 'personal', minDays: 14 },
+    const open = patched({
+      interval: personal({ intervalMinDays: 14 }),
       graceDays: 21,
     });
 
-    expect(personal.graceDays).toBe(13);
+    expect(open.graceDays).toBe(13);
   });
 
   it('goes back to a fixed interval on the newcomer’s, or on the one it remembers', () => {
-    const personal = patched({
-      interval: { kind: 'personal', fallbackDays: 56 },
+    const open = patched({
+      interval: personal({ intervalFallbackDays: 56 }),
     });
 
-    expect(patched({ interval: { kind: 'fixed' } }, personal).interval).toEqual(
-      { kind: 'fixed', days: 56 },
-    );
     expect(
-      patchedRhythmDraft(
-        personal,
-        { interval: { kind: 'fixed' } },
-        { fixed: { kind: 'fixed', days: 35 } },
-      ).interval,
-    ).toEqual({ kind: 'fixed', days: 35 });
+      intervalOf(
+        patched({ interval: { streakInterval: StreakInterval.Fixed } }, open),
+      ),
+    ).toEqual({ streakInterval: 'FIXED', intervalDays: 56 });
+    expect(
+      intervalOf(
+        patchedRhythmDraft(
+          open,
+          { interval: { streakInterval: StreakInterval.Fixed } },
+          { fixed: StreakIntervalRule.fixed(35) },
+        ),
+      ),
+    ).toEqual({ streakInterval: 'FIXED', intervalDays: 35 });
   });
 
   it('holds the excuses to the rule’s vocabulary, in its order, each once', () => {
     expect(
       patched({
         excuses: [
-          'closedDays',
-          'shopClosure',
-          'closedDays',
-          'holiday' as never,
+          StreakExcuse.ClosedDays,
+          StreakExcuse.ShopClosure,
+          StreakExcuse.ClosedDays,
+          'HOLIDAY' as never,
         ],
       }).excuses,
-    ).toEqual(['shopClosure', 'closedDays']);
+    ).toEqual(['SHOP_CLOSURE', 'CLOSED_DAYS']);
     expect(patched({ excuses: [] }).excuses).toEqual([]);
   });
 
   it('takes the choice of what counts as it is handed, in a list of its own', () => {
-    const serviceIds = ['svc-fade', 'svc-beard'];
-    const next = patched({ qualifier: { kind: 'services', serviceIds } });
+    const serviceIds = [ServiceId.of('svc-fade'), ServiceId.of('svc-beard')];
+    const next = patched({
+      qualifier: StreakQualifierRule.services(serviceIds),
+    });
 
-    expect(next.qualifier).toEqual({ kind: 'services', serviceIds });
+    expect(qualifierOf(next)).toEqual({
+      streakQualifier: 'SERVICES',
+      qualifierServiceIds: serviceIds,
+    });
     expect(
-      next.qualifier.kind === 'services' && next.qualifier.serviceIds,
+      next.streakQualifier === StreakQualifier.Services &&
+        next.qualifierServiceIds,
     ).not.toBe(serviceIds);
   });
 
@@ -393,11 +459,15 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
     const flip = (): boolean => random() < 0.5;
     const changes: (() => AdminRhythmPatch)[] = [
       () => ({ interval: fixed(wild()) }),
-      () => ({ interval: { kind: 'personal', minDays: wild() } }),
-      () => ({ interval: { kind: 'personal', maxDays: wild() } }),
-      () => ({ interval: { kind: 'personal', fallbackDays: wild() } }),
-      () => ({ interval: { kind: 'personal', tolerancePct: wild() } }),
-      () => ({ interval: { kind: flip() ? 'fixed' : 'personal' } }),
+      () => ({ interval: personal({ intervalMinDays: wild() }) }),
+      () => ({ interval: personal({ intervalMaxDays: wild() }) }),
+      () => ({ interval: personal({ intervalFallbackDays: wild() }) }),
+      () => ({ interval: personal({ intervalTolerancePct: wild() }) }),
+      () => ({
+        interval: flip()
+          ? { streakInterval: StreakInterval.Fixed }
+          : personal(),
+      }),
       () => ({ graceDays: wild(), riskLeadDays: wild() }),
       () => ({ minGapDays: wild() }),
       () => ({ bookingHold: { enabled: flip(), maxDaysPastDue: wild() } }),
@@ -405,10 +475,13 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
       () => ({ protections: { enabled: flip(), earnEvery: wild() } }),
       () => ({ clientPause: { enabled: flip(), maxDaysPerYear: wild() } }),
       () => ({ repair: { windowDays: wild(), perYear: wild() } }),
-      () => ({ onBreak: flip() ? 'hold' : 'restart', enabled: flip() }),
+      () => ({
+        onBreak: flip() ? StreakOnBreak.Hold : StreakOnBreak.Restart,
+        enabled: flip(),
+      }),
     ];
 
-    let draft = RECOMMENDED;
+    let draft: StreakRule = RECOMMENDED;
     for (let step = 0; step < 600; step += 1) {
       const change = changes.at(Math.floor(random() * changes.length));
       if (change === undefined) continue;
@@ -416,7 +489,7 @@ describe('RhythmDraftSystem.clamp (admin-rhythm.store.spec.ts `patchedRhythmDraf
       draft = patchedRhythmDraft(draft, patch);
       const rule = StreakRule.parse(draft);
       expect(
-        rule.ok ? [] : rule.error.map((error) => error.code),
+        rule.ok ? [] : rule.error.map((error) => error.errorCode),
         `step ${step}: ${JSON.stringify(patch)}`,
       ).toEqual([]);
     }
@@ -430,7 +503,7 @@ describe('RhythmDraftSystem.bounds (admin-rhythm.store.spec.ts `rhythmBoundsOf`)
       riskLeadDays: { min: 0, max: 21 },
       minGapDays: { min: 0, max: 14 },
       startWith: { min: 0, max: 2 },
-      fallbackDays: StreakRule.LIMITS.interval.days,
+      fallbackDays: StreakRule.LIMITS.intervalDays,
     });
     expect(
       rhythmBoundsOf(patchedRhythmDraft(RECOMMENDED, { interval: fixed(14) })),
@@ -443,9 +516,7 @@ describe('RhythmDraftSystem.bounds (admin-rhythm.store.spec.ts `rhythmBoundsOf`)
 
   it('holds the newcomer’s interval inside a personal clamp', () => {
     expect(
-      rhythmBoundsOf(
-        patchedRhythmDraft(RECOMMENDED, { interval: { kind: 'personal' } }),
-      ),
+      rhythmBoundsOf(patchedRhythmDraft(RECOMMENDED, { interval: personal() })),
     ).toMatchObject({
       graceDays: { min: 0, max: 20 },
       fallbackDays: { min: 21, max: 70 },
@@ -464,11 +535,11 @@ describe('RhythmDraftSystem.diff (the store’s `touchedOf`)', () => {
     const draft = patchedRhythmDraft(RECOMMENDED, {
       graceDays: 10,
       repair: { windowDays: 21 },
-      interval: { kind: 'personal' },
-      qualifier: { kind: 'services', serviceIds: ['svc-fade'] },
-      excuses: ['shopClosure'],
+      interval: personal(),
+      qualifier: StreakQualifierRule.services([ServiceId.of('svc-fade')]),
+      excuses: [StreakExcuse.ShopClosure],
       enabled: false,
-      onBreak: 'hold',
+      onBreak: StreakOnBreak.Hold,
       minGapDays: 3,
       riskLeadDays: 3,
       bookingHold: { enabled: false },
@@ -477,23 +548,33 @@ describe('RhythmDraftSystem.diff (the store’s `touchedOf`)', () => {
     });
     expect(RhythmDraftSystem.diff(draft, RECOMMENDED)).toEqual({
       enabled: false,
-      qualifier: { kind: 'services', serviceIds: ['svc-fade'] },
+      qualifier: {
+        streakQualifier: 'SERVICES',
+        qualifierServiceIds: ['svc-fade'],
+      },
       minGapDays: 3,
-      bookingHold: { enabled: false, maxDaysPastDue: 14 },
+      bookingHoldEnabled: false,
+      bookingHoldMaxDaysPastDue: 14,
       interval: {
-        kind: 'personal',
-        tolerancePct: 50,
-        minDays: 21,
-        maxDays: 70,
-        fallbackDays: 42,
+        streakInterval: 'PERSONAL',
+        intervalTolerancePct: 50,
+        intervalMinDays: 21,
+        intervalMaxDays: 70,
+        intervalFallbackDays: 42,
       },
       graceDays: 10,
       riskLeadDays: 3,
-      protections: { enabled: true, maxBanked: 2, earnEvery: 5, startWith: 1 },
-      excuses: ['shopClosure'],
-      clientPause: { enabled: true, maxDaysPerYear: 90 },
-      repair: { enabled: true, windowDays: 21, perYear: 1 },
-      onBreak: 'hold',
+      protectionsEnabled: true,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 1,
+      excuses: ['SHOP_CLOSURE'],
+      clientPauseEnabled: true,
+      clientPauseMaxDaysPerYear: 90,
+      repairEnabled: true,
+      repairWindowDays: 21,
+      repairPerYear: 1,
+      onBreak: 'HOLD',
     });
   });
 
@@ -508,7 +589,8 @@ describe('RhythmDraftSystem.diff (the store’s `touchedOf`)', () => {
     );
     expect(carried).toMatchObject({
       graceDays: 10,
-      interval: { kind: 'fixed', days: 35 },
+      streakInterval: 'FIXED',
+      intervalDays: 35,
     });
   });
 
@@ -518,25 +600,31 @@ describe('RhythmDraftSystem.diff (the store’s `touchedOf`)', () => {
         patchedRhythmDraft(RECOMMENDED, { interval: fixed(35) }),
         RECOMMENDED,
       ).interval,
-    ).toEqual({ kind: 'fixed', days: 35 });
+    ).toEqual({ streakInterval: 'FIXED', intervalDays: 35 });
     const two = patchedRhythmDraft(RECOMMENDED, {
-      qualifier: { kind: 'categories', categoryIds: ['a', 'b'] },
+      qualifier: StreakQualifierRule.categories([
+        ServiceCategoryId.of('a'),
+        ServiceCategoryId.of('b'),
+      ]),
     });
     const swapped = patchedRhythmDraft(RECOMMENDED, {
-      qualifier: { kind: 'categories', categoryIds: ['b', 'a'] },
+      qualifier: StreakQualifierRule.categories([
+        ServiceCategoryId.of('b'),
+        ServiceCategoryId.of('a'),
+      ]),
     });
     expect(RhythmDraftSystem.diff(two, swapped).qualifier).toEqual(
-      two.qualifier,
+      qualifierOf(two),
     );
     expect(RhythmDraftSystem.diff(two, two).qualifier).toBeNull();
     expect(
       RhythmDraftSystem.diff(
         patchedRhythmDraft(RECOMMENDED, {
-          qualifier: { kind: 'services', serviceIds: ['a'] },
+          qualifier: StreakQualifierRule.services([ServiceId.of('a')]),
         }),
         RECOMMENDED,
       ).qualifier,
-    ).toEqual({ kind: 'services', serviceIds: ['a'] });
+    ).toEqual({ streakQualifier: 'SERVICES', qualifierServiceIds: ['a'] });
   });
 });
 
@@ -552,11 +640,11 @@ describe('RhythmDraftSystem.weeksOf and daysOf (admin-rhythm.words.ts)', () => {
 describe('RhythmDraftSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const draft = deepFreeze(
-      patchedRhythmDraft(RECOMMENDED, { interval: { kind: 'personal' } }),
+      patchedRhythmDraft(RECOMMENDED, { interval: personal() }),
     );
     const patch = deepFreeze(strict({ interval: fixed(14), graceDays: 30 }));
     const remembered = deepFreeze({
-      fixed: StreakInterval.fixed(35),
+      fixed: StreakIntervalRule.fixed(35),
       personal: null,
     });
     const run = () => [

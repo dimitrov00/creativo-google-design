@@ -1,27 +1,38 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { BookingErrorCode } from '../components/booking-errors.data';
 import { BookingPolicy } from '../components/booking-policy.data';
 import type { BookingCart } from '../components/cart-line.data';
-import { LocationState } from '../components/catalog-status.data';
+import { LocationStatus } from '../components/catalog-status.data';
 import { PlacementPolicy } from '../components/placement-policy.data';
+import type { Service } from '../entities/service.entity';
 import {
-  ServiceTerms,
+  CartLineId,
+  LocationId,
+  SeatKeyText,
+  ServiceId,
   ServiceVariantId,
-} from '../components/service-terms.data';
-import { LocationId } from '../entities/location.entity';
-import { type ServiceEntity, ServiceId } from '../entities/service.entity';
+  UserId,
+} from '../primitives/ids.primitive';
 import {
-  dayTableFixture,
+  FIXTURE_TIME_ZONE,
   deepFreeze,
-  locationFixture,
-  serviceFixture,
+  localDate,
+  minute,
   textFixture,
   unwrapOk,
+  utcMs,
 } from '../testing';
 import {
+  locationFixture,
+  serviceFixture,
+  termsFixture,
+} from '../testing/booking-core.fixtures';
+import {
   BookingDecisionSystem,
-  type RequestedSeat,
+  type RequestedSeatInput,
 } from './booking-decision.system';
+import { RequestedSubjectRole } from './guest-label.system';
 import { PartyAdmissionSystem } from './party-admission.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -32,22 +43,27 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * party through `BookingDecisionSystem.decide`; both ask `admit`, so over
  * random carts, caps, shops and catalogues they refuse together, with the
  * same code. `toShop` (the functions' document reader) stays with its
- * adapter; here the shop is the stored `status`.
+ * adapter; here the shop is the stored `locationStatus`.
  */
 
-const ZONE = 'Europe/Sofia';
 const CENTER = 'loc-center';
 const MLADOST = 'loc-mladost';
-const DAYS = dayTableFixture('2030-01-10', '2030-03-31', ZONE);
-const NOW_MS = Date.UTC(2030, 0, 13, 6, 0);
+/** 2030-01-13 08:00 in Sofia (winter time, UTC+2) — the shop's "now". */
+const NOW = ZonedTimeSystem.shopNow(
+  utcMs('2030-01-13T08:00:00+02:00'),
+  FIXTURE_TIME_ZONE,
+);
+/** Two days on, 08:00 — every requested seat's start. */
+const START_DATE = localDate('2030-01-15');
+const START_MINUTES = minute(8 * 60);
 
 /** The refusals that do not depend on the time — `admit`'s. */
-const ADMISSION = new Set([
-  'booking.commit.party_too_large',
-  'booking.commit.unknown_service',
-  'booking.commit.service_not_at_location',
-  'booking.commit.invalid_input',
-  'booking.commit.conflicting_services',
+const ADMISSION = new Set<string>([
+  BookingErrorCode.PartyTooLarge,
+  BookingErrorCode.UnknownService,
+  BookingErrorCode.ServiceNotAtLocation,
+  BookingErrorCode.InvalidInput,
+  BookingErrorCode.ConflictingServices,
 ]);
 
 function service(
@@ -57,21 +73,21 @@ function service(
     readonly conflictsWith?: readonly string[];
     readonly variants?: readonly string[];
   } = {},
-): ServiceEntity {
+): Service {
   return serviceFixture({
     id: ServiceId.of(id),
-    baseTerms: ServiceTerms.unpadded(2500, 'EUR', 30),
+    ...termsFixture(2500, 30),
     locationIds: (overrides.locationIds ?? []).map(LocationId.of),
     conflictsWith: (overrides.conflictsWith ?? []).map(ServiceId.of),
     variants: (overrides.variants ?? []).map((variant) => ({
-      id: ServiceVariantId.of(variant),
+      variantId: ServiceVariantId.of(variant),
       name: textFixture(variant),
     })),
     offerings: [],
   });
 }
 
-const CATALOGUE: readonly ServiceEntity[] = [
+const CATALOGUE: readonly Service[] = [
   service('svc-cut'),
   service('svc-royal', { locationIds: [CENTER] }),
   service('svc-beard', { conflictsWith: ['svc-shave'] }),
@@ -113,12 +129,14 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
           const policy = policyOf(cap);
           let sequence = 0;
           const cart: BookingCart = {
-            seats: seats.map((lines, index) => {
-              const seatKey = index === 0 ? 'self' : `guest-${index}`;
+            cartSeats: seats.map((lines, index) => {
+              const seatKey = SeatKeyText.of(
+                index === 0 ? 'self' : `guest-${index}`,
+              );
               return {
                 seatKey,
                 lines: lines.map((line) => ({
-                  lineId: `line-${sequence++}`,
+                  lineId: CartLineId.of(`line-${sequence++}`),
                   seatKey,
                   serviceId: ServiceId.of(line.serviceId),
                   variantId:
@@ -130,7 +148,7 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
                 })),
               };
             }),
-            nextSequence: sequence,
+            cartNextSequence: sequence,
           };
 
           const waitlist = PartyAdmissionSystem.admitCart(
@@ -140,19 +158,19 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
             LocationId.of(shop),
           );
 
-          const requested = cart.seats.flatMap((seat) =>
-            seat.lines.map((line): RequestedSeat => ({
+          const requested = cart.cartSeats.flatMap((seat) =>
+            seat.lines.map((line): RequestedSeatInput => ({
               lineId: line.lineId,
               serviceId: line.serviceId,
               variantId: line.variantId,
               barberId: 'ivan',
-              barberPref: null,
-              startMs: NOW_MS + 2 * 86_400_000,
+              barberPreference: null,
+              startMinutes: START_MINUTES,
               subject:
                 seat.seatKey === 'self'
-                  ? { kind: 'self' }
+                  ? { requestedSubjectRole: RequestedSubjectRole.Self }
                   : {
-                      kind: 'guest',
+                      requestedSubjectRole: RequestedSubjectRole.Guest,
                       label: seat.seatKey,
                       guestKey: seat.seatKey,
                     },
@@ -161,6 +179,7 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
           const commit = BookingDecisionSystem.decide(
             {
               locationId: shop,
+              localDate: START_DATE,
               seats: requested,
               attemptId: null,
               bookedFromAppointmentId: null,
@@ -168,7 +187,6 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
               placement: null,
             },
             {
-              zone: ZONE,
               shopHours: [],
               services: CATALOGUE,
               schedules: [],
@@ -179,10 +197,16 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
             PlacementPolicy.clientDefault(),
             [],
             {
-              nowMs: NOW_MS,
+              now: NOW,
+              startUtcMs: unwrapOk(
+                ZonedTimeSystem.toUtc(
+                  START_DATE,
+                  START_MINUTES,
+                  FIXTURE_TIME_ZONE,
+                ),
+              ),
               nextId: () => 'seat',
-              days: DAYS,
-              ownerUserId: 'user-1',
+              ownerUserId: UserId.of('user-1'),
               termsOverrides: [],
               standing: [],
               stood: [],
@@ -192,11 +216,11 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
           // Anything past admission (no roster here) is the commit's
           // time-dependent answer, and none of the waitlist's business.
           const commitAdmission =
-            !commit.ok && ADMISSION.has(commit.error.code)
-              ? commit.error.code
+            !commit.ok && ADMISSION.has(commit.error.errorCode)
+              ? commit.error.errorCode
               : null;
 
-          expect(waitlist.ok ? null : waitlist.error.code).toBe(
+          expect(waitlist.ok ? null : waitlist.error.errorCode).toBe(
             commitAdmission,
           );
         },
@@ -208,23 +232,23 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
 
 /*
  * THE SHOP A WAITLIST MAY WATCH (team decision, 2026-09-26): only a shop
- * that is there AND `active` is listed. A missing document, `hidden`, a
- * status the domain does not know (`archived`) and no status at all are
+ * that is there AND `ACTIVE` is listed. A missing document, `HIDDEN`, a
+ * status the domain does not know (`ARCHIVED`) and no status at all are
  * each refused: fail-closed.
  */
 describe('shopListed — the shop a waitlist may watch', () => {
   it.each([
-    ['there and active', true, { status: LocationState.Active }],
-    ['hidden', false, { status: LocationState.Hidden }],
+    ['there and active', true, { locationStatus: LocationStatus.Active }],
+    ['hidden', false, { locationStatus: LocationStatus.Hidden }],
     [
       'a status nobody modelled',
       false,
-      { status: 'archived' as LocationState },
+      { locationStatus: 'ARCHIVED' as LocationStatus },
     ],
     [
       'no status at all',
       false,
-      { status: undefined as unknown as LocationState },
+      { locationStatus: undefined as unknown as LocationStatus },
     ],
     ['not there', false, null],
   ] as const)('%s → listed: %s', (_label, listed, shop) => {
@@ -235,7 +259,7 @@ describe('shopListed — the shop a waitlist may watch', () => {
     expect(PartyAdmissionSystem.shopListed(locationFixture())).toBe(true);
     expect(
       PartyAdmissionSystem.shopListed(
-        locationFixture({ status: LocationState.Hidden }),
+        locationFixture({ locationStatus: LocationStatus.Hidden }),
       ),
     ).toBe(false);
   });
@@ -270,7 +294,7 @@ describe('PartyAdmissionSystem.admit — the commit’s order', () => {
     expect(admitted([])).toEqual({
       ok: false,
       error: {
-        code: 'booking.commit.invalid_input',
+        errorCode: 'BOOKING_INVALID_INPUT',
         field: 'seats',
         detail: null,
         reason: null,
@@ -284,7 +308,7 @@ describe('PartyAdmissionSystem.admit — the commit’s order', () => {
     ).toEqual({
       ok: false,
       error: {
-        code: 'booking.commit.conflicting_services',
+        errorCode: 'BOOKING_CONFLICTING_SERVICES',
         first: 'svc-shave',
         second: 'svc-beard',
       },
@@ -330,6 +354,7 @@ describe('PartyAdmissionSystem.admit — the commit’s order', () => {
       'svc-cut',
       'svc-color',
     ]);
-    expect(ZonedTimeSystem.dayKeyOf(NOW_MS, DAYS)).toBe('2030-01-13');
+    expect(NOW.localDate).toBe('2030-01-13');
+    expect(NOW.currentMinute).toBe(8 * 60);
   });
 });

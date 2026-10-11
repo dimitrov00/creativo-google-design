@@ -1,54 +1,56 @@
 import { describe, expect, it } from 'vitest';
-import { AppointmentId } from '../entities/appointment.entity';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { ServiceId } from '../entities/service.entity';
-import { WaitlistRequestId } from '../entities/waitlist-request.entity';
+import {
+  AppointmentId,
+  BarberId,
+  CartLineId,
+  LocationId,
+  ServiceId,
+  WaitlistRequestId,
+} from '../primitives/ids.primitive';
+import { endMinute, localDate, minute, unwrapOk } from '../testing';
 import {
   BookingFlowState,
   BookingFlowStep,
   MoveRefusal,
-  MoveRefusalKind,
+  MoveRefusalReason,
   ScheduleSelection,
   ShopReach,
   type SeatAssignment,
 } from './booking-flow.data';
-import { BookingCart } from './cart-line.data';
-import { DayKey } from './day-key.data';
+import { BookingCart, SeatKey } from './cart-line.data';
 import { FlexibleWhen } from './flexible-when.data';
 import { Party } from './party.data';
-import { TimeInterval } from './time-interval.data';
 
-const MIN = 60_000;
-const T0 = Date.UTC(2026, 9, 7, 7, 0);
+/** 09:00 — every assignment below is measured from it, on the one shop day. */
+const T0 = 9 * 60;
+const DAY = localDate('2026-10-07');
 const CENTER = LocationId.of('loc-center');
+const SELF = SeatKey.text(SeatKey.self());
 
 const assignment = (
   lineId: string,
   startMinute: number,
   minutes: number,
 ): SeatAssignment => ({
-  lineId,
+  lineId: CartLineId.of(lineId),
   barberId: BarberId.of('ivan'),
-  timeInterval: TimeInterval.of(
-    T0 + startMinute * MIN,
-    T0 + (startMinute + minutes) * MIN,
-  ),
+  startMinutes: minute(T0 + startMinute),
+  endMinutes: endMinute(T0 + startMinute + minutes),
 });
 
 function cartWithACut(): BookingCart {
-  const result = BookingCart.addLine(BookingCart.empty(), 'self', {
-    serviceId: ServiceId.of('svc-cut'),
-    variantId: null,
-    barberId: null,
-    locationId: null,
-  });
-  if (!result.ok) throw new Error('bad fixture');
-  return result.value;
+  return unwrapOk(
+    BookingCart.addLine(BookingCart.empty(), SELF, {
+      serviceId: ServiceId.of('svc-cut'),
+      variantId: null,
+      barberId: null,
+      locationId: null,
+    }),
+  );
 }
 
 function selection(): ScheduleSelection {
-  const built = ScheduleSelection.of(CENTER, [
+  const built = ScheduleSelection.of(CENTER, DAY, [
     assignment('line-0', 0, 30),
     assignment('line-1', 30, 45),
   ]);
@@ -56,23 +58,23 @@ function selection(): ScheduleSelection {
   return built;
 }
 
-describe('BookingFlowStep / MoveRefusalKind', () => {
-  it('keep the stored strings', () => {
+describe('BookingFlowStep / MoveRefusalReason', () => {
+  it('are SCREAMING tags', () => {
     expect(Object.values(BookingFlowStep)).toEqual([
-      'location',
-      'services',
-      'schedule',
-      'review',
-      'confirmed',
-      'waitlisted',
+      'LOCATION',
+      'SERVICES',
+      'SCHEDULE',
+      'REVIEW',
+      'CONFIRMED',
+      'WAITLISTED',
     ]);
-    expect(Object.values(MoveRefusalKind)).toEqual([
-      'companions_only',
-      'unavailable',
-      'carried_out_of_reach',
+    expect(Object.values(MoveRefusalReason)).toEqual([
+      'COMPANIONS_ONLY',
+      'UNAVAILABLE',
+      'CARRIED_OUT_OF_REACH',
     ]);
-    expect(MoveRefusal.of(MoveRefusalKind.Unavailable, null)).toEqual({
-      reason: 'unavailable',
+    expect(MoveRefusal.of(MoveRefusalReason.Unavailable, null)).toEqual({
+      moveRefusalReason: 'UNAVAILABLE',
       locationId: null,
     });
   });
@@ -92,23 +94,22 @@ describe('ShopReach — the shopReachKey values', () => {
 });
 
 describe('ScheduleSelection', () => {
-  it('derives the envelope from the assignments — first start to last end', () => {
-    expect(selection().timeInterval).toEqual({
-      startMs: T0,
-      endMs: T0 + 75 * MIN,
-    });
-    const parallel = ScheduleSelection.of(CENTER, [
+  it('derives the envelope from the assignments — first start to last end, on the shop day', () => {
+    const built = selection();
+    expect(built.localDate).toBe('2026-10-07');
+    expect([built.startMinutes, built.endMinutes]).toEqual([T0, T0 + 75]);
+    const parallel = ScheduleSelection.of(CENTER, DAY, [
       assignment('line-0', 0, 30),
       assignment('line-1', 0, 60),
     ]);
-    expect(parallel?.timeInterval).toEqual({
-      startMs: T0,
-      endMs: T0 + 60 * MIN,
-    });
+    expect([parallel?.startMinutes, parallel?.endMinutes]).toEqual([
+      T0,
+      T0 + 60,
+    ]);
   });
 
   it('describes no appointment without an assignment', () => {
-    expect(ScheduleSelection.of(CENTER, [])).toBeNull();
+    expect(ScheduleSelection.of(CENTER, DAY, [])).toBeNull();
   });
 });
 
@@ -116,19 +117,19 @@ describe('BookingFlowState', () => {
   it('opens on the location step with an empty bag and any shop', () => {
     const party = Party.anonymous();
     expect(BookingFlowState.initial(party)).toEqual({
-      kind: 'location',
+      bookingFlowStep: 'LOCATION',
       party,
-      cart: { seats: [], nextSequence: 0 },
+      cart: { cartSeats: [], cartNextSequence: 0 },
       locationId: null,
     });
   });
 
   it('walks the spine and knows its two terminal exits', () => {
     expect(BookingFlowState.SPINE).toEqual([
-      'location',
-      'services',
-      'schedule',
-      'review',
+      'LOCATION',
+      'SERVICES',
+      'SCHEDULE',
+      'REVIEW',
     ]);
     expect(BookingFlowState.spineIndex(BookingFlowStep.Schedule)).toBe(2);
     expect(BookingFlowState.spineIndex(BookingFlowStep.Confirmed)).toBe(-1);
@@ -137,7 +138,7 @@ describe('BookingFlowState', () => {
       false,
     );
     const confirmed: BookingFlowState = {
-      kind: BookingFlowStep.Confirmed,
+      bookingFlowStep: BookingFlowStep.Confirmed,
       confirmation: {
         appointmentId: AppointmentId.of('appt-1'),
         party,
@@ -152,21 +153,33 @@ describe('BookingFlowState', () => {
 describe('BookingFlowState.is — a stale draft fails and is cleared', () => {
   const party = Party.anonymous();
   const cart = cartWithACut();
-  const whenResult = FlexibleWhen.withDay(
-    FlexibleWhen.empty(),
-    DayKey.of('2026-10-08'),
-    7,
+  const when = unwrapOk(
+    FlexibleWhen.withDay(FlexibleWhen.empty(), localDate('2026-10-08'), 7),
   );
-  if (!whenResult.ok) throw new Error('bad fixture');
-  const when = whenResult.value;
 
   const states: readonly BookingFlowState[] = [
     BookingFlowState.initial(party),
-    { kind: BookingFlowStep.Services, party, cart, locationId: CENTER },
-    { kind: BookingFlowStep.Schedule, party, cart, locationId: null, when },
-    { kind: BookingFlowStep.Review, party, cart, selection: selection() },
     {
-      kind: BookingFlowStep.Confirmed,
+      bookingFlowStep: BookingFlowStep.Services,
+      party,
+      cart,
+      locationId: CENTER,
+    },
+    {
+      bookingFlowStep: BookingFlowStep.Schedule,
+      party,
+      cart,
+      locationId: null,
+      when,
+    },
+    {
+      bookingFlowStep: BookingFlowStep.Review,
+      party,
+      cart,
+      selection: selection(),
+    },
+    {
+      bookingFlowStep: BookingFlowStep.Confirmed,
       confirmation: {
         appointmentId: AppointmentId.of('appt-1'),
         party,
@@ -175,7 +188,7 @@ describe('BookingFlowState.is — a stale draft fails and is cleared', () => {
       },
     },
     {
-      kind: BookingFlowStep.Waitlisted,
+      bookingFlowStep: BookingFlowStep.Waitlisted,
       summary: {
         requestId: WaitlistRequestId.of('wl_abc'),
         party,
@@ -186,65 +199,84 @@ describe('BookingFlowState.is — a stale draft fails and is cleared', () => {
     },
   ];
 
-  it.each(states.map((state) => [state.kind, state] as const))(
+  it.each(states.map((state) => [state.bookingFlowStep, state] as const))(
     'takes a %s state, serialised as is',
-    (_kind, state) => {
+    (_step, state) => {
       expect(BookingFlowState.is(JSON.parse(JSON.stringify(state)))).toBe(true);
     },
   );
 
+  const envelope = {
+    locationId: 'loc',
+    localDate: '2026-10-07',
+    startMinutes: 1,
+    endMinutes: 2,
+  };
+
   it.each([
     null,
-    'location',
-    { kind: 'checkout' },
-    { kind: 'location', party, cart, locationId: 7 },
-    { kind: 'services', party: {}, cart, locationId: null },
-    { kind: 'services', party, cart: { seats: [] }, locationId: null },
-    { kind: 'schedule', party, cart, locationId: null },
-    { kind: 'schedule', party, cart, locationId: null, when: { days: 'x' } },
+    'LOCATION',
+    { bookingFlowStep: 'CHECKOUT' },
+    { bookingFlowStep: 'LOCATION', party, cart, locationId: 7 },
+    { bookingFlowStep: 'SERVICES', party: {}, cart, locationId: null },
     {
-      kind: 'review',
+      bookingFlowStep: 'SERVICES',
+      party,
+      cart: { cartSeats: [] },
+      locationId: null,
+    },
+    { bookingFlowStep: 'SCHEDULE', party, cart, locationId: null },
+    {
+      bookingFlowStep: 'SCHEDULE',
+      party,
+      cart,
+      locationId: null,
+      when: { flexibleDays: 'x' },
+    },
+    {
+      bookingFlowStep: 'REVIEW',
       party,
       cart,
       selection: { locationId: 'loc', assignments: [] },
     },
     {
-      kind: 'review',
+      bookingFlowStep: 'REVIEW',
       party,
       cart,
       selection: {
-        locationId: 'loc',
-        timeInterval: { startMs: 2, endMs: 1 },
+        ...envelope,
+        startMinutes: 2,
+        endMinutes: 1,
         assignments: [],
       },
     },
     {
-      kind: 'review',
+      bookingFlowStep: 'REVIEW',
       party,
       cart,
       selection: {
-        locationId: 'loc',
-        timeInterval: { startMs: 1, endMs: 2 },
+        ...envelope,
         assignments: [{ lineId: 'line-0', barberId: '' }],
       },
     },
     {
-      kind: 'review',
+      bookingFlowStep: 'REVIEW',
       party,
       cart,
-      selection: {
-        locationId: 'loc',
-        timeInterval: { startMs: 1, endMs: 2 },
-        assignments: [null],
-      },
+      selection: { ...envelope, assignments: [null] },
     },
-    { kind: 'confirmed', confirmation: null },
-    { kind: 'confirmed', confirmation: { appointmentId: '', party, cart } },
-    { kind: 'waitlisted', summary: 'x' },
+    { bookingFlowStep: 'CONFIRMED', confirmation: null },
     {
-      kind: 'waitlisted',
+      bookingFlowStep: 'CONFIRMED',
+      confirmation: { appointmentId: '', party, cart },
+    },
+    { bookingFlowStep: 'WAITLISTED', summary: 'x' },
+    {
+      bookingFlowStep: 'WAITLISTED',
       summary: { requestId: 'wl_1', party, cart, when, locationId: 3 },
     },
+    // A pre-flatten draft — the `kind` tag of the old shape — is stale.
+    { kind: 'location', party, cart, locationId: null },
   ])('refuses %j', (raw) => {
     expect(BookingFlowState.is(raw)).toBe(false);
   });

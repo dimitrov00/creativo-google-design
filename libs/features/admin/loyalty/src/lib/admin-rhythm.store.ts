@@ -43,15 +43,18 @@ import {
   type WithdrawOutcome,
 } from '@creativo/application/engagement';
 import {
-  DayKey,
   RhythmDraftSystem,
+  type RhythmIntervalPatch,
   type RhythmPatch,
-  type ServiceCategoryId,
-  type ServiceId,
-  StreakIntervalKind,
-  type StreakQualifier,
-  StreakQualifierKind,
-  type StreakRule,
+  ServiceCategoryId,
+  ServiceId,
+  StreakExcuse as SystemExcuse,
+  StreakInterval as SystemInterval,
+  StreakIntervalRule,
+  StreakOnBreak as SystemOnBreak,
+  StreakQualifier as SystemQualifier,
+  StreakQualifierRule,
+  type StreakRuleInput,
 } from '@creativo/ecs-core';
 import {
   CLOCK,
@@ -230,8 +233,19 @@ export function patchedRhythmDraft(
       ruleOf(draft),
       rhythmPatchOf(patch),
       {
-        fixed: remembered.fixed ?? null,
-        personal: remembered.personal ?? null,
+        fixed:
+          remembered.fixed === undefined
+            ? null
+            : StreakIntervalRule.fixed(remembered.fixed.days),
+        personal:
+          remembered.personal === undefined
+            ? null
+            : StreakIntervalRule.personal(
+                remembered.personal.tolerancePct,
+                remembered.personal.minDays,
+                remembered.personal.maxDays,
+                remembered.personal.fallbackDays,
+              ),
       },
       ADMIN_RHYTHM_CHOICES.riskLeadDays,
     ),
@@ -248,34 +262,72 @@ export function rhythmBoundsOf(
 
 // ── The bridge: props ↔ ecs-core struct (Phase 4 deletes it) ───────────────
 
-/** The draft as `RhythmDraftSystem` reads it: the figures, the day as a day key. */
-function ruleOf(props: StreakDefinitionProps): StreakRule {
-  const { interval } = props;
+const SYSTEM_EXCUSE = {
+  shopClosure: SystemExcuse.ShopClosure,
+  barberAbsence: SystemExcuse.BarberAbsence,
+  staffCancelled: SystemExcuse.StaffCancelled,
+  closedDays: SystemExcuse.ClosedDays,
+} as const satisfies Record<StreakExcuse, SystemExcuse>;
+
+const LEGACY_EXCUSE = {
+  [SystemExcuse.ShopClosure]: 'shopClosure',
+  [SystemExcuse.BarberAbsence]: 'barberAbsence',
+  [SystemExcuse.StaffCancelled]: 'staffCancelled',
+  [SystemExcuse.ClosedDays]: 'closedDays',
+} as const satisfies Record<SystemExcuse, StreakExcuse>;
+
+const SYSTEM_ON_BREAK = {
+  restart: SystemOnBreak.Restart,
+  hold: SystemOnBreak.Hold,
+} as const satisfies Record<StreakDefinitionProps['onBreak'], SystemOnBreak>;
+
+const LEGACY_ON_BREAK = {
+  [SystemOnBreak.Restart]: 'restart',
+  [SystemOnBreak.Hold]: 'hold',
+} as const satisfies Record<SystemOnBreak, StreakDefinitionProps['onBreak']>;
+
+/**
+ * The draft as `RhythmDraftSystem` reads it: the figures, flat (every
+ * part's figures prefixed by the part), every tag the dictionary's — a
+ * DRAFT, foreign input (`StreakRuleInput`): its day is the editor's, as
+ * written, never read by the draft's math (the clamp carries it through,
+ * and `propsOf` keeps the draft's own) and branded only by `parse`.
+ */
+function ruleOf(props: StreakDefinitionProps): StreakRuleInput {
   return {
     version: props.version,
-    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    effectiveFromLocalDate: props.effectiveFrom,
     enabled: props.enabled,
-    qualifier: qualifierOf(props.qualifier),
+    ...qualifierOf(props.qualifier),
     minGapDays: props.minGapDays,
-    bookingHold: props.bookingHold,
-    interval:
-      interval.kind === 'fixed'
-        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
-        : {
-            kind: StreakIntervalKind.Personal,
-            tolerancePct: interval.tolerancePct,
-            minDays: interval.minDays,
-            maxDays: interval.maxDays,
-            fallbackDays: interval.fallbackDays,
-          },
+    bookingHoldEnabled: props.bookingHold.enabled,
+    bookingHoldMaxDaysPastDue: props.bookingHold.maxDaysPastDue,
+    ...intervalOf(props.interval),
     graceDays: props.graceDays,
     riskLeadDays: props.riskLeadDays,
-    protections: props.protections,
-    excuses: props.excuses,
-    clientPause: props.clientPause,
-    repair: props.repair,
-    onBreak: props.onBreak,
+    protectionsEnabled: props.protections.enabled,
+    protectionsMaxBanked: props.protections.maxBanked,
+    protectionsEarnEvery: props.protections.earnEvery,
+    protectionsStartWith: props.protections.startWith,
+    excuses: props.excuses.map((excuse) => SYSTEM_EXCUSE[excuse]),
+    clientPauseEnabled: props.clientPause.enabled,
+    clientPauseMaxDaysPerYear: props.clientPause.maxDaysPerYear,
+    repairEnabled: props.repair.enabled,
+    repairWindowDays: props.repair.windowDays,
+    repairPerYear: props.repair.perYear,
+    onBreak: SYSTEM_ON_BREAK[props.onBreak],
   };
+}
+
+function intervalOf(interval: StreakIntervalProps): StreakIntervalRule {
+  return interval.kind === 'fixed'
+    ? StreakIntervalRule.fixed(interval.days)
+    : StreakIntervalRule.personal(
+        interval.tolerancePct,
+        interval.minDays,
+        interval.maxDays,
+        interval.fallbackDays,
+      );
 }
 
 /**
@@ -284,10 +336,9 @@ function ruleOf(props: StreakDefinitionProps): StreakRule {
  * name are the draft's.
  */
 function propsOf(
-  rule: StreakRule,
+  rule: StreakRuleInput,
   identity: StreakDefinitionProps,
 ): StreakDefinitionProps {
-  const { qualifier, interval } = rule;
   return {
     id: identity.id,
     name: { ...identity.name },
@@ -295,121 +346,110 @@ function propsOf(
     effectiveFrom: identity.effectiveFrom,
     enabled: rule.enabled,
     qualifier:
-      qualifier.kind === StreakQualifierKind.Services
-        ? { kind: 'services', serviceIds: qualifier.serviceIds }
-        : qualifier.kind === StreakQualifierKind.Categories
-          ? { kind: 'categories', categoryIds: qualifier.categoryIds }
+      rule.streakQualifier === SystemQualifier.Services
+        ? { kind: 'services', serviceIds: rule.qualifierServiceIds }
+        : rule.streakQualifier === SystemQualifier.Categories
+          ? { kind: 'categories', categoryIds: rule.qualifierCategoryIds }
           : { kind: 'anyVisit' },
     minGapDays: rule.minGapDays,
     bookingHold: {
-      enabled: rule.bookingHold.enabled,
-      maxDaysPastDue: rule.bookingHold.maxDaysPastDue,
+      enabled: rule.bookingHoldEnabled,
+      maxDaysPastDue: rule.bookingHoldMaxDaysPastDue,
     },
     interval:
-      interval.kind === StreakIntervalKind.Fixed
-        ? { kind: 'fixed', days: interval.days }
+      rule.streakInterval === SystemInterval.Fixed
+        ? { kind: 'fixed', days: rule.intervalDays }
         : {
             kind: 'personal',
-            tolerancePct: interval.tolerancePct,
-            minDays: interval.minDays,
-            maxDays: interval.maxDays,
-            fallbackDays: interval.fallbackDays,
+            tolerancePct: rule.intervalTolerancePct,
+            minDays: rule.intervalMinDays,
+            maxDays: rule.intervalMaxDays,
+            fallbackDays: rule.intervalFallbackDays,
           },
     graceDays: rule.graceDays,
     riskLeadDays: rule.riskLeadDays,
     protections: {
-      enabled: rule.protections.enabled,
-      maxBanked: rule.protections.maxBanked,
-      earnEvery: rule.protections.earnEvery,
-      startWith: rule.protections.startWith,
+      enabled: rule.protectionsEnabled,
+      maxBanked: rule.protectionsMaxBanked,
+      earnEvery: rule.protectionsEarnEvery,
+      startWith: rule.protectionsStartWith,
     },
-    excuses: [...rule.excuses],
+    excuses: rule.excuses.map((excuse) => LEGACY_EXCUSE[excuse]),
     clientPause: {
-      enabled: rule.clientPause.enabled,
-      maxDaysPerYear: rule.clientPause.maxDaysPerYear,
+      enabled: rule.clientPauseEnabled,
+      maxDaysPerYear: rule.clientPauseMaxDaysPerYear,
     },
     repair: {
-      enabled: rule.repair.enabled,
-      windowDays: rule.repair.windowDays,
-      perYear: rule.repair.perYear,
+      enabled: rule.repairEnabled,
+      windowDays: rule.repairWindowDays,
+      perYear: rule.repairPerYear,
     },
-    onBreak: rule.onBreak,
+    onBreak: LEGACY_ON_BREAK[rule.onBreak],
   };
 }
 
-/** The choice of what counts, as the system reads it: the same tags and ids. */
-function qualifierOf(qualifier: StreakQualifierProps): StreakQualifier {
+/** The choice of what counts, as the system reads it: the same ids, the dictionary's tag. */
+function qualifierOf(qualifier: StreakQualifierProps): StreakQualifierRule {
   switch (qualifier.kind) {
     case 'services':
-      return {
-        kind: StreakQualifierKind.Services,
-        serviceIds: qualifier.serviceIds as readonly ServiceId[],
-      };
+      return StreakQualifierRule.services(
+        qualifier.serviceIds.map((id) => ServiceId.of(id)),
+      );
     case 'categories':
-      return {
-        kind: StreakQualifierKind.Categories,
-        categoryIds: qualifier.categoryIds as readonly ServiceCategoryId[],
-      };
+      return StreakQualifierRule.categories(
+        qualifier.categoryIds.map((id) => ServiceCategoryId.of(id)),
+      );
     default:
-      return { kind: StreakQualifierKind.AnyVisit };
+      return StreakQualifierRule.anyVisit();
   }
 }
 
-/** The page's change with every part present: `null` where it moves nothing. */
+/** The page's interval change as the system reads it: `null` where a figure did not move. */
+function intervalPatchOf(
+  interval: AdminRhythmIntervalPatch,
+): RhythmIntervalPatch {
+  return interval.kind === 'fixed'
+    ? {
+        streakInterval: SystemInterval.Fixed,
+        intervalDays: interval.days ?? null,
+      }
+    : {
+        streakInterval: SystemInterval.Personal,
+        intervalTolerancePct: interval.tolerancePct ?? null,
+        intervalMinDays: interval.minDays ?? null,
+        intervalMaxDays: interval.maxDays ?? null,
+        intervalFallbackDays: interval.fallbackDays ?? null,
+      };
+}
+
+/** The page's change with every figure present, flat: `null` where it moves nothing. */
 function rhythmPatchOf(patch: AdminRhythmPatch): RhythmPatch {
-  const { interval } = patch;
   return {
     enabled: patch.enabled ?? null,
     qualifier:
       patch.qualifier === undefined ? null : qualifierOf(patch.qualifier),
     minGapDays: patch.minGapDays ?? null,
-    bookingHold:
-      patch.bookingHold === undefined
-        ? null
-        : {
-            enabled: patch.bookingHold.enabled ?? null,
-            maxDaysPastDue: patch.bookingHold.maxDaysPastDue ?? null,
-          },
+    bookingHoldEnabled: patch.bookingHold?.enabled ?? null,
+    bookingHoldMaxDaysPastDue: patch.bookingHold?.maxDaysPastDue ?? null,
     interval:
-      interval === undefined
-        ? null
-        : interval.kind === 'fixed'
-          ? { kind: StreakIntervalKind.Fixed, days: interval.days ?? null }
-          : {
-              kind: StreakIntervalKind.Personal,
-              tolerancePct: interval.tolerancePct ?? null,
-              minDays: interval.minDays ?? null,
-              maxDays: interval.maxDays ?? null,
-              fallbackDays: interval.fallbackDays ?? null,
-            },
+      patch.interval === undefined ? null : intervalPatchOf(patch.interval),
     graceDays: patch.graceDays ?? null,
     riskLeadDays: patch.riskLeadDays ?? null,
-    protections:
-      patch.protections === undefined
+    protectionsEnabled: patch.protections?.enabled ?? null,
+    protectionsMaxBanked: patch.protections?.maxBanked ?? null,
+    protectionsEarnEvery: patch.protections?.earnEvery ?? null,
+    protectionsStartWith: patch.protections?.startWith ?? null,
+    excuses:
+      patch.excuses === undefined
         ? null
-        : {
-            enabled: patch.protections.enabled ?? null,
-            maxBanked: patch.protections.maxBanked ?? null,
-            earnEvery: patch.protections.earnEvery ?? null,
-            startWith: patch.protections.startWith ?? null,
-          },
-    excuses: patch.excuses ?? null,
-    clientPause:
-      patch.clientPause === undefined
-        ? null
-        : {
-            enabled: patch.clientPause.enabled ?? null,
-            maxDaysPerYear: patch.clientPause.maxDaysPerYear ?? null,
-          },
-    repair:
-      patch.repair === undefined
-        ? null
-        : {
-            enabled: patch.repair.enabled ?? null,
-            windowDays: patch.repair.windowDays ?? null,
-            perYear: patch.repair.perYear ?? null,
-          },
-    onBreak: patch.onBreak ?? null,
+        : patch.excuses.map((excuse) => SYSTEM_EXCUSE[excuse]),
+    clientPauseEnabled: patch.clientPause?.enabled ?? null,
+    clientPauseMaxDaysPerYear: patch.clientPause?.maxDaysPerYear ?? null,
+    repairEnabled: patch.repair?.enabled ?? null,
+    repairWindowDays: patch.repair?.windowDays ?? null,
+    repairPerYear: patch.repair?.perYear ?? null,
+    onBreak:
+      patch.onBreak === undefined ? null : SYSTEM_ON_BREAK[patch.onBreak],
   };
 }
 
@@ -510,16 +550,22 @@ function touchedOf(
     ...(diff.enabled === null ? {} : { enabled: touched.enabled }),
     ...(diff.qualifier === null ? {} : { qualifier: touched.qualifier }),
     ...(diff.minGapDays === null ? {} : { minGapDays: touched.minGapDays }),
-    ...(diff.bookingHold === null ? {} : { bookingHold: touched.bookingHold }),
+    ...(diff.bookingHoldEnabled === null
+      ? {}
+      : { bookingHold: touched.bookingHold }),
     ...(diff.interval === null ? {} : { interval: touched.interval }),
     ...(diff.graceDays === null ? {} : { graceDays: touched.graceDays }),
     ...(diff.riskLeadDays === null
       ? {}
       : { riskLeadDays: touched.riskLeadDays }),
-    ...(diff.protections === null ? {} : { protections: touched.protections }),
+    ...(diff.protectionsEnabled === null
+      ? {}
+      : { protections: touched.protections }),
     ...(diff.excuses === null ? {} : { excuses: touched.excuses }),
-    ...(diff.clientPause === null ? {} : { clientPause: touched.clientPause }),
-    ...(diff.repair === null ? {} : { repair: touched.repair }),
+    ...(diff.clientPauseEnabled === null
+      ? {}
+      : { clientPause: touched.clientPause }),
+    ...(diff.repairEnabled === null ? {} : { repair: touched.repair }),
     ...(diff.onBreak === null ? {} : { onBreak: touched.onBreak }),
   };
 }

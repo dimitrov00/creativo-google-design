@@ -1,44 +1,36 @@
+import type { BackfillJobId, UserId } from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+
 /**
- * The ops backfill jobs — the stored `job` strings of `backfill-plan.ts:20`,
- * unchanged, and each one's document id under `backfillJobs/`. The ONLY
- * source of these strings.
+ * The ops backfill jobs — the ONLY source of these strings, the job's own
+ * tag field `backfillJobName` (N15: the name `BackfillJob` is the entity).
+ * Runbook order: the subject mirror first, then the stats.
+ *
+ * The stored document id stays the legacy job string (`backfillJobs/
+ * clientStats`) until flip (1) (OQ-9); the shim's table maps the two.
  */
-export const BackfillJobKind = {
+export const BackfillJobName = {
   /** Mirrors the seat subjects onto the appointment's query keys. */
-  SubjectMirror: 'subjectMirror',
+  SubjectMirror: 'SUBJECT_MIRROR',
   /** Recomputes every stored client's stats. */
-  ClientStats: 'clientStats',
+  ClientStats: 'CLIENT_STATS',
 } as const;
-export type BackfillJobKind =
-  (typeof BackfillJobKind)[keyof typeof BackfillJobKind];
-
-/** `backfillJobs/{job}` — the document id is the job's kind. */
-export type BackfillJobId = string & { readonly __brand: unique symbol };
-
-export const BackfillJobId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): BackfillJobId => raw as BackfillJobId,
-} as const;
-
-/**
- * The closing check of a stats run: a sample of stored clients recomputed
- * from scratch (`run-backfill.ts:64-68`) — `mismatched` must be empty.
- */
-export type SampleDiff = {
-  readonly checked: number;
-  /** Clients whose stored answer differs from a fresh one. */
-  readonly mismatched: readonly string[];
-};
+export type BackfillJobName =
+  (typeof BackfillJobName)[keyof typeof BackfillJobName];
 
 /**
  * A backfill's progress cursor — the stored body of `run-backfill.ts:561-572`
- * (blueprint §2.6), ISO stamps as epoch ms. Each call resumes from `cursor`
- * and adds its page to the counts; `finishedAtMs` is set when the walk ran
- * off the end. The document body is this type minus `id`.
+ * (blueprint §2.6), one flat archetype (Law 6). Each call resumes from
+ * `cursor` and adds its page to the counts; `finishedAtUtcMs` is set when
+ * the walk ran off the end. The closing check of a stats run — a sample of
+ * stored clients recomputed from scratch (`run-backfill.ts:64-68`) — is the
+ * 1-to-1 nullable `sample` flattened by prefix (N9): `sampleChecked` is
+ * `null` when no sample was taken, and then `sampleMismatched` is `[]`.
+ * The document body is this type minus `id`.
  */
-export type BackfillJobEntity = {
+export type BackfillJob = {
   readonly id: BackfillJobId;
-  readonly job: BackfillJobKind;
+  readonly backfillJobName: BackfillJobName;
   /** Opaque resume point; `null` at the top. */
   readonly cursor: string | null;
   /** Appointments walked by the whole run. */
@@ -47,8 +39,11 @@ export type BackfillJobEntity = {
   readonly storedClients: number;
   readonly stamped: number;
   readonly recomputed: number;
-  readonly startedAtMs: number;
-  readonly finishedAtMs: number | null;
-  readonly updatedAtMs: number;
-  readonly sample: SampleDiff | null;
+  readonly startedAtUtcMs: UtcEpochMs;
+  readonly finishedAtUtcMs: UtcEpochMs | null;
+  readonly updatedAtUtcMs: UtcEpochMs;
+  /** Stored clients the closing sample recomputed; `null` when none was taken. */
+  readonly sampleChecked: number | null;
+  /** Clients whose stored answer differs from a fresh one — `UserId` until flip (1) (D29, §5.5). */
+  readonly sampleMismatched: readonly UserId[];
 };

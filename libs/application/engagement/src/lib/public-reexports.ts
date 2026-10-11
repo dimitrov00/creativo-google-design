@@ -40,4 +40,5 @@ export {
   StreakDefinitionError,
   StreakDefinitionSchedule,
   projectStreak,
+  streakFactsReader,
 } from '@creativo/domain/engagement';

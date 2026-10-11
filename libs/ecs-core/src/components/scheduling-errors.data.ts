@@ -1,85 +1,104 @@
 /**
  * The scheduling context's error codes — the 51 `DomainError` subclasses of
  * `libs/domain/scheduling/src/lib/*.errors.ts` collapsed into ONE `as const`
- * dictionary (blueprint §2.1). Every code is dotted; the codes keep their
- * legacy strings except `booking.contact.*`, which move under the context
- * prefix (`scheduling.booking_contact.*`) so they stop sharing the
- * `booking.contact.*` namespace with the contact sheet's UI copy. Their
- * en/bg rows sit at `errors.scheduling.booking_contact.*`, beside the legacy
- * `booking.contact.*` rows the domain class raises until Phase 4 deletes it.
- * `appointment.not_arrivable` keeps its key, as the blueprint rules.
+ * dictionary (blueprint §2.1), SCREAMING_SNAKE and prefixed `SCHEDULING_`
+ * after the flatten pass (Law 7.5, flatten-spec §4.2) — `appointment.not_arrivable`
+ * included (`SCHEDULING_APPOINTMENT_NOT_ARRIVABLE`). The UI resolves
+ * `errors.<errorCode>`; the legacy dotted codes stay on the wire until Phase
+ * 4 (the edge's `LEGACY_WIRE_CODE` maps each code back).
  *
  * Dropped with their subjects: `scheduling.barber_day.block_collision`
  * (barber-day.ts is deleted), `scheduling.time_slot.invalid_range` (TimeSlot
- * is `TimeInterval`) and `scheduling.time_of_day.invalid` (no `'HH:mm'`
+ * is a minute range) and `scheduling.time_of_day.invalid` (no `'HH:mm'`
  * struct survives — minutes of day are integers).
  *
- * Every non-`code` field is an i18n parameter, so each is an i18n-safe
- * scalar (a string, a number or `null`). A field that names a state or a
- * kind is typed by that tag's dictionary (`BookingState`, `SeatOutcomeKind`,
- * `WaitlistState`, `ExceptionEffectKind`), so only a real tag fits it.
+ * Every non-`errorCode` field is an i18n parameter, so each is an i18n-safe
+ * scalar (a string, a number or `null`) — a branded one where it names an
+ * id, a coordinate or money (Law 7.4). A field that names a state is typed
+ * by that state's dictionary (`BookingStatus`, `AttendanceState`,
+ * `WaitlistStatus`, `ExceptionEffect`), so only a real tag fits it.
  */
-import type { BookingState } from './booking-status.data';
-import type { ExceptionEffectKind } from './exception-effect.data';
-import type { SeatOutcomeKind } from './seat-outcome.data';
-import type { WaitlistState } from './waitlist-status.data';
+import type { Currency } from '../primitives/currency.primitive';
+import type {
+  MinuteCount,
+  MinuteDelta,
+} from '../primitives/duration-minutes.primitive';
+import type {
+  BarberId,
+  CartLineId,
+  GuestId,
+  LocationId,
+  SeatId,
+  SeatKeyText,
+  ServiceId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type {
+  EndMinute,
+  MinuteOfDay,
+} from '../primitives/minute-of-day.primitive';
+import type { BookingStatus } from './booking-lifecycle.data';
+import type { ExceptionEffect } from './exception-effect.data';
+import type { AttendanceState } from './seat-outcome.data';
+import type { WaitlistStatus } from './waitlist-status.data';
+import type { Weekday } from './weekday.data';
 
 /** Error codes — the ONLY source of these strings; the UI translates them. */
 export const SchedulingErrorCode = {
-  AppointmentEmptySeats: 'scheduling.appointment.empty_seats',
-  AppointmentMultipleSelfSeats: 'scheduling.appointment.multiple_self_seats',
-  AppointmentPastStartTime: 'scheduling.appointment.past_start_time',
-  AppointmentBarberDoubleBooked: 'scheduling.appointment.barber_double_booked',
-  AppointmentMixedCurrency: 'scheduling.appointment.mixed_currency',
-  AppointmentInvalidTransition: 'scheduling.appointment.invalid_transition',
-  AppointmentReopenWindowClosed: 'scheduling.appointment.reopen_window_closed',
+  AppointmentEmptySeats: 'SCHEDULING_APPOINTMENT_EMPTY_SEATS',
+  AppointmentMultipleSelfSeats: 'SCHEDULING_APPOINTMENT_MULTIPLE_SELF_SEATS',
+  AppointmentPastStartTime: 'SCHEDULING_APPOINTMENT_PAST_START_TIME',
+  AppointmentBarberDoubleBooked: 'SCHEDULING_APPOINTMENT_BARBER_DOUBLE_BOOKED',
+  AppointmentMixedCurrency: 'SCHEDULING_APPOINTMENT_MIXED_CURRENCY',
+  AppointmentInvalidTransition: 'SCHEDULING_APPOINTMENT_INVALID_TRANSITION',
+  AppointmentReopenWindowClosed: 'SCHEDULING_APPOINTMENT_REOPEN_WINDOW_CLOSED',
   AppointmentEmptyCancellationReason:
-    'scheduling.appointment.empty_cancellation_reason',
-  AppointmentUnknownSeat: 'scheduling.appointment.unknown_seat',
+    'SCHEDULING_APPOINTMENT_EMPTY_CANCELLATION_REASON',
+  AppointmentUnknownSeat: 'SCHEDULING_APPOINTMENT_UNKNOWN_SEAT',
   AppointmentSeatAlreadyResolved:
-    'scheduling.appointment.seat_already_resolved',
-  /** Already dotted in the legacy code; keeps its i18n key unchanged. */
-  AppointmentNotArrivable: 'appointment.not_arrivable',
-  ContactEmptyName: 'scheduling.booking_contact.empty_name',
-  ContactInvalidPhone: 'scheduling.booking_contact.invalid_phone',
-  ContactInvalidEmail: 'scheduling.booking_contact.invalid_email',
-  ContactNoteTooLong: 'scheduling.booking_contact.note_too_long',
-  SeatLabelEmpty: 'scheduling.seat_label.empty',
-  SeatLabelTooLong: 'scheduling.seat_label.too_long',
-  CartLineNotFound: 'scheduling.booking_cart.line_not_found',
-  CartDuplicateService: 'scheduling.booking_cart.duplicate_service',
-  CartInvalidLineSequence: 'scheduling.booking_cart.invalid_line_sequence',
-  PartyGuestNotFound: 'scheduling.booking_party.guest_not_found',
-  PartyInvalidGuestSequence: 'scheduling.booking_party.invalid_guest_sequence',
-  PartyUnclaimed: 'scheduling.booking_party.unclaimed',
-  PartyDuplicateLabel: 'scheduling.booking_party.duplicate_label',
-  BookingPolicyInvalid: 'scheduling.booking_policy.invalid',
-  CancellationWindowInvalid: 'scheduling.cancellation_window.invalid',
-  ClientStatsPolicyInvalid: 'scheduling.client_stats_policy.invalid',
-  CalendarDayInvalid: 'scheduling.calendar_day.invalid',
-  DateRangeInvalid: 'scheduling.date_range.invalid',
-  TimeRangeInvalid: 'scheduling.time_range.invalid',
-  IdEmpty: 'scheduling.id.empty',
-  FlexibleWhenFull: 'scheduling.flexible_when.full',
-  RecurrenceInvalidInterval: 'scheduling.recurrence.invalid_interval',
-  RecurrenceNoWeekdays: 'scheduling.recurrence.no_weekdays',
-  RecurrenceInvalidDay: 'scheduling.recurrence.invalid_day',
-  RecurrenceInvalidCount: 'scheduling.recurrence.invalid_count',
-  RecurrenceEndsBeforeStart: 'scheduling.recurrence.ends_before_start',
-  RecurrenceNeverOccurs: 'scheduling.recurrence.never_occurs',
-  RecurrenceTooLong: 'scheduling.recurrence.too_long',
-  ShiftSegmentInvalidLocation: 'scheduling.shift_segment.invalid_location',
+    'SCHEDULING_APPOINTMENT_SEAT_ALREADY_RESOLVED',
+  /** Was `appointment.not_arrivable` — it takes its dictionary's prefix now. */
+  AppointmentNotArrivable: 'SCHEDULING_APPOINTMENT_NOT_ARRIVABLE',
+  ContactEmptyName: 'SCHEDULING_BOOKING_CONTACT_EMPTY_NAME',
+  ContactInvalidPhone: 'SCHEDULING_BOOKING_CONTACT_INVALID_PHONE',
+  ContactInvalidEmail: 'SCHEDULING_BOOKING_CONTACT_INVALID_EMAIL',
+  ContactNoteTooLong: 'SCHEDULING_BOOKING_CONTACT_NOTE_TOO_LONG',
+  SeatLabelEmpty: 'SCHEDULING_SEAT_LABEL_EMPTY',
+  SeatLabelTooLong: 'SCHEDULING_SEAT_LABEL_TOO_LONG',
+  CartLineNotFound: 'SCHEDULING_BOOKING_CART_LINE_NOT_FOUND',
+  CartDuplicateService: 'SCHEDULING_BOOKING_CART_DUPLICATE_SERVICE',
+  CartInvalidLineSequence: 'SCHEDULING_BOOKING_CART_INVALID_LINE_SEQUENCE',
+  PartyGuestNotFound: 'SCHEDULING_BOOKING_PARTY_GUEST_NOT_FOUND',
+  PartyInvalidGuestSequence: 'SCHEDULING_BOOKING_PARTY_INVALID_GUEST_SEQUENCE',
+  PartyUnclaimed: 'SCHEDULING_BOOKING_PARTY_UNCLAIMED',
+  PartyDuplicateLabel: 'SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL',
+  BookingPolicyInvalid: 'SCHEDULING_BOOKING_POLICY_INVALID',
+  CancellationWindowInvalid: 'SCHEDULING_CANCELLATION_WINDOW_INVALID',
+  ClientStatsPolicyInvalid: 'SCHEDULING_CLIENT_STATS_POLICY_INVALID',
+  CalendarDayInvalid: 'SCHEDULING_CALENDAR_DAY_INVALID',
+  DateRangeInvalid: 'SCHEDULING_DATE_RANGE_INVALID',
+  TimeRangeInvalid: 'SCHEDULING_TIME_RANGE_INVALID',
+  IdEmpty: 'SCHEDULING_ID_EMPTY',
+  FlexibleWhenFull: 'SCHEDULING_FLEXIBLE_WHEN_FULL',
+  RecurrenceInvalidInterval: 'SCHEDULING_RECURRENCE_INVALID_INTERVAL',
+  RecurrenceNoWeekdays: 'SCHEDULING_RECURRENCE_NO_WEEKDAYS',
+  RecurrenceInvalidDay: 'SCHEDULING_RECURRENCE_INVALID_DAY',
+  RecurrenceInvalidCount: 'SCHEDULING_RECURRENCE_INVALID_COUNT',
+  RecurrenceEndsBeforeStart: 'SCHEDULING_RECURRENCE_ENDS_BEFORE_START',
+  RecurrenceNeverOccurs: 'SCHEDULING_RECURRENCE_NEVER_OCCURS',
+  RecurrenceTooLong: 'SCHEDULING_RECURRENCE_TOO_LONG',
+  ShiftSegmentInvalidLocation: 'SCHEDULING_SHIFT_SEGMENT_INVALID_LOCATION',
   ShiftSegmentImpossibleTransfer:
-    'scheduling.shift_segment.impossible_transfer',
+    'SCHEDULING_SHIFT_SEGMENT_IMPOSSIBLE_TRANSFER',
   StaffScheduleOverlappingVersions:
-    'scheduling.staff_schedule.overlapping_versions',
+    'SCHEDULING_STAFF_SCHEDULE_OVERLAPPING_VERSIONS',
   StaffScheduleRetroactiveAmendment:
-    'scheduling.staff_schedule.retroactive_amendment',
-  WaitlistInvalid: 'scheduling.waitlist.invalid',
-  WaitlistNoDays: 'scheduling.waitlist.no_days',
-  WaitlistEmptyCart: 'scheduling.waitlist.empty_cart',
-  WaitlistInvalidTransition: 'scheduling.waitlist.invalid_transition',
-  ScheduleExceptionEmptyRanges: 'scheduling.schedule_exception.empty_ranges',
+    'SCHEDULING_STAFF_SCHEDULE_RETROACTIVE_AMENDMENT',
+  WaitlistInvalid: 'SCHEDULING_WAITLIST_INVALID',
+  WaitlistNoDays: 'SCHEDULING_WAITLIST_NO_DAYS',
+  WaitlistEmptyCart: 'SCHEDULING_WAITLIST_EMPTY_CART',
+  WaitlistInvalidTransition: 'SCHEDULING_WAITLIST_INVALID_TRANSITION',
+  ScheduleExceptionEmptyRanges: 'SCHEDULING_SCHEDULE_EXCEPTION_EMPTY_RANGES',
 } as const;
 export type SchedulingErrorCode =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];
@@ -139,213 +158,216 @@ const C = SchedulingErrorCode;
 export const SchedulingError = {
   /** An appointment must hold at least one seat. */
   appointmentEmptySeats(): SchedulingError.AppointmentEmptySeats {
-    return { code: C.AppointmentEmptySeats };
+    return { errorCode: C.AppointmentEmptySeats };
   },
   /** The booker cannot hold two seats at the same time. */
   appointmentMultipleSelfSeats(): SchedulingError.AppointmentMultipleSelfSeats {
-    return { code: C.AppointmentMultipleSelfSeats };
+    return { errorCode: C.AppointmentMultipleSelfSeats };
   },
   /** A new appointment cannot start in the past. */
   appointmentPastStartTime(): SchedulingError.AppointmentPastStartTime {
-    return { code: C.AppointmentPastStartTime };
+    return { errorCode: C.AppointmentPastStartTime };
   },
   /**
    * Two seats want the same barber at overlapping times. The same barber on
    * two seats that do NOT overlap («father and son, back to back») is legal.
    */
   appointmentBarberDoubleBooked(
-    barberId: string,
+    barberId: BarberId,
   ): SchedulingError.AppointmentBarberDoubleBooked {
-    return { code: C.AppointmentBarberDoubleBooked, barberId };
+    return { errorCode: C.AppointmentBarberDoubleBooked, barberId };
   },
   /** Seats priced in two currencies — a data error, never a feature. */
   appointmentMixedCurrency(
-    expected: string,
-    found: string,
+    expected: Currency,
+    found: Currency,
   ): SchedulingError.AppointmentMixedCurrency {
-    return { code: C.AppointmentMixedCurrency, expected, found };
+    return { errorCode: C.AppointmentMixedCurrency, expected, found };
   },
   appointmentInvalidTransition(
-    from: BookingState,
-    to: BookingState,
+    from: BookingStatus,
+    to: BookingStatus,
   ): SchedulingError.AppointmentInvalidTransition {
-    return { code: C.AppointmentInvalidTransition, from, to };
+    return { errorCode: C.AppointmentInvalidTransition, from, to };
   },
   /** A settled visit may only be reopened on its own day. */
   appointmentReopenWindowClosed(
-    from: BookingState,
+    from: BookingStatus,
   ): SchedulingError.AppointmentReopenWindowClosed {
-    return { code: C.AppointmentReopenWindowClosed, from };
+    return { errorCode: C.AppointmentReopenWindowClosed, from };
   },
   appointmentEmptyCancellationReason(): SchedulingError.AppointmentEmptyCancellationReason {
-    return { code: C.AppointmentEmptyCancellationReason };
+    return { errorCode: C.AppointmentEmptyCancellationReason };
   },
   /** A seat outcome addressed to a seat this appointment does not hold. */
   appointmentUnknownSeat(
-    seatId: string,
+    seatId: SeatId,
   ): SchedulingError.AppointmentUnknownSeat {
-    return { code: C.AppointmentUnknownSeat, seatId };
+    return { errorCode: C.AppointmentUnknownSeat, seatId };
   },
   /**
    * A seat's outcome is written ONCE: it carries the instant it was decided,
    * and every downstream number is keyed on that instant.
    */
   appointmentSeatAlreadyResolved(
-    seatId: string,
-    outcome: SeatOutcomeKind,
+    seatId: SeatId,
+    outcome: AttendanceState,
   ): SchedulingError.AppointmentSeatAlreadyResolved {
-    return { code: C.AppointmentSeatAlreadyResolved, seatId, outcome };
+    return { errorCode: C.AppointmentSeatAlreadyResolved, seatId, outcome };
   },
   /** Arriving is only a fact while the visit is still live. */
   appointmentNotArrivable(
-    status: BookingState,
+    bookingStatus: BookingStatus,
   ): SchedulingError.AppointmentNotArrivable {
-    return { code: C.AppointmentNotArrivable, status };
+    return { errorCode: C.AppointmentNotArrivable, bookingStatus };
   },
   /** The name the shop will call out. Empty is not a person. */
   contactEmptyName(): SchedulingError.ContactEmptyName {
-    return { code: C.ContactEmptyName };
+    return { errorCode: C.ContactEmptyName };
   },
   /** The phone did not parse — the shop's only reliable way to reach someone. */
   contactInvalidPhone(rawValue: string): SchedulingError.ContactInvalidPhone {
-    return { code: C.ContactInvalidPhone, rawValue };
+    return { errorCode: C.ContactInvalidPhone, rawValue };
   },
   /** Optional overall, but not optionally valid. */
   contactInvalidEmail(rawValue: string): SchedulingError.ContactInvalidEmail {
-    return { code: C.ContactInvalidEmail, rawValue };
+    return { errorCode: C.ContactInvalidEmail, rawValue };
   },
   contactNoteTooLong(maxLength: number): SchedulingError.ContactNoteTooLong {
-    return { code: C.ContactNoteTooLong, maxLength };
+    return { errorCode: C.ContactNoteTooLong, maxLength };
   },
   seatLabelEmpty(): SchedulingError.SeatLabelEmpty {
-    return { code: C.SeatLabelEmpty };
+    return { errorCode: C.SeatLabelEmpty };
   },
   seatLabelTooLong(max: number): SchedulingError.SeatLabelTooLong {
-    return { code: C.SeatLabelTooLong, max };
+    return { errorCode: C.SeatLabelTooLong, max };
   },
   cartLineNotFound(
-    seatKey: string,
-    lineId: string,
+    seatKey: SeatKeyText,
+    lineId: CartLineId,
   ): SchedulingError.CartLineNotFound {
-    return { code: C.CartLineNotFound, seatKey, lineId };
+    return { errorCode: C.CartLineNotFound, seatKey, lineId };
   },
   /** Nobody has two haircuts in one visit — the second belongs to another seat. */
   cartDuplicateService(
-    seatKey: string,
-    serviceId: string,
+    seatKey: SeatKeyText,
+    serviceId: ServiceId,
   ): SchedulingError.CartDuplicateService {
-    return { code: C.CartDuplicateService, seatKey, serviceId };
+    return { errorCode: C.CartDuplicateService, seatKey, serviceId };
   },
   cartInvalidLineSequence(
     value: number,
   ): SchedulingError.CartInvalidLineSequence {
-    return { code: C.CartInvalidLineSequence, value };
+    return { errorCode: C.CartInvalidLineSequence, value };
   },
-  partyGuestNotFound(guestId: string): SchedulingError.PartyGuestNotFound {
-    return { code: C.PartyGuestNotFound, guestId };
+  partyGuestNotFound(guestId: GuestId): SchedulingError.PartyGuestNotFound {
+    return { errorCode: C.PartyGuestNotFound, guestId };
   },
   partyInvalidGuestSequence(
     value: number,
   ): SchedulingError.PartyInvalidGuestSequence {
-    return { code: C.PartyInvalidGuestSequence, value };
+    return { errorCode: C.PartyInvalidGuestSequence, value };
   },
   /** The party has no owner yet — sign in to confirm. */
   partyUnclaimed(): SchedulingError.PartyUnclaimed {
-    return { code: C.PartyUnclaimed };
+    return { errorCode: C.PartyUnclaimed };
   },
   /** Another guest already answers to this label — one label, one guest. */
   partyDuplicateLabel(label: string): SchedulingError.PartyDuplicateLabel {
-    return { code: C.PartyDuplicateLabel, label };
+    return { errorCode: C.PartyDuplicateLabel, label };
   },
   bookingPolicyInvalid(
     field: string,
     rawValue: number,
   ): SchedulingError.BookingPolicyInvalid {
-    return { code: C.BookingPolicyInvalid, field, rawValue };
+    return { errorCode: C.BookingPolicyInvalid, field, rawValue };
   },
   cancellationWindowInvalid(
     rawValue: number,
   ): SchedulingError.CancellationWindowInvalid {
-    return { code: C.CancellationWindowInvalid, rawValue };
+    return { errorCode: C.CancellationWindowInvalid, rawValue };
   },
   clientStatsPolicyInvalid(
     field: string,
     rawValue: number,
   ): SchedulingError.ClientStatsPolicyInvalid {
-    return { code: C.ClientStatsPolicyInvalid, field, rawValue };
+    return { errorCode: C.ClientStatsPolicyInvalid, field, rawValue };
   },
   calendarDayInvalid(rawValue: string): SchedulingError.CalendarDayInvalid {
-    return { code: C.CalendarDayInvalid, rawValue };
+    return { errorCode: C.CalendarDayInvalid, rawValue };
   },
   dateRangeInvalid(from: string, to: string): SchedulingError.DateRangeInvalid {
-    return { code: C.DateRangeInvalid, from, to };
+    return { errorCode: C.DateRangeInvalid, from, to };
   },
-  /** A wall-clock span that is empty, backwards, outside 0…1440 or overlapping its neighbour. */
+  /** A wall-clock span that is empty, backwards or overlapping its neighbour. */
   timeRangeInvalid(
-    startMinutes: number,
-    endMinutes: number,
+    startMinutes: MinuteOfDay,
+    endMinutes: EndMinute,
   ): SchedulingError.TimeRangeInvalid {
-    return { code: C.TimeRangeInvalid, startMinutes, endMinutes };
+    return { errorCode: C.TimeRangeInvalid, startMinutes, endMinutes };
   },
   idEmpty(idType: string): SchedulingError.IdEmpty {
-    return { code: C.IdEmpty, idType };
+    return { errorCode: C.IdEmpty, idType };
   },
   /** A flexible request covers at most `max` days. */
   flexibleWhenFull(max: number): SchedulingError.FlexibleWhenFull {
-    return { code: C.FlexibleWhenFull, max };
+    return { errorCode: C.FlexibleWhenFull, max };
   },
   recurrenceInvalidInterval(
     interval: number,
     max: number,
   ): SchedulingError.RecurrenceInvalidInterval {
-    return { code: C.RecurrenceInvalidInterval, interval, max };
+    return { errorCode: C.RecurrenceInvalidInterval, interval, max };
   },
   recurrenceNoWeekdays(): SchedulingError.RecurrenceNoWeekdays {
-    return { code: C.RecurrenceNoWeekdays };
+    return { errorCode: C.RecurrenceNoWeekdays };
   },
   /** `month` is `null` for a monthly rule's day, the month for a yearly one. */
   recurrenceInvalidDay(
     month: number | null,
     date: number,
   ): SchedulingError.RecurrenceInvalidDay {
-    return { code: C.RecurrenceInvalidDay, month, date };
+    return { errorCode: C.RecurrenceInvalidDay, month, date };
   },
   recurrenceInvalidCount(
     count: number,
     max: number,
   ): SchedulingError.RecurrenceInvalidCount {
-    return { code: C.RecurrenceInvalidCount, count, max };
+    return { errorCode: C.RecurrenceInvalidCount, count, max };
   },
   recurrenceEndsBeforeStart(
-    start: string,
-    until: string,
+    start: LocalDate,
+    until: LocalDate,
   ): SchedulingError.RecurrenceEndsBeforeStart {
-    return { code: C.RecurrenceEndsBeforeStart, start, until };
+    return { errorCode: C.RecurrenceEndsBeforeStart, start, until };
   },
-  recurrenceNeverOccurs(start: string): SchedulingError.RecurrenceNeverOccurs {
-    return { code: C.RecurrenceNeverOccurs, start };
+  recurrenceNeverOccurs(
+    start: LocalDate,
+  ): SchedulingError.RecurrenceNeverOccurs {
+    return { errorCode: C.RecurrenceNeverOccurs, start };
   },
   recurrenceTooLong(max: number): SchedulingError.RecurrenceTooLong {
-    return { code: C.RecurrenceTooLong, max };
+    return { errorCode: C.RecurrenceTooLong, max };
   },
+  /** `rawLocationId` echoes the segment's blank location as it was held. */
   shiftSegmentInvalidLocation(
-    rawLocationId: string,
+    rawLocationId: LocationId,
   ): SchedulingError.ShiftSegmentInvalidLocation {
-    return { code: C.ShiftSegmentInvalidLocation, rawLocationId };
+    return { errorCode: C.ShiftSegmentInvalidLocation, rawLocationId };
   },
   /**
    * Two consecutive segments at different shops leave less than the travel
    * time between them — the barber cannot be in both places.
    */
   shiftSegmentImpossibleTransfer(
-    weekday: number,
-    fromLocationId: string,
-    toLocationId: string,
-    gapMinutes: number,
-    requiredMinutes: number,
+    weekday: Weekday,
+    fromLocationId: LocationId,
+    toLocationId: LocationId,
+    gapMinutes: MinuteDelta,
+    requiredMinutes: MinuteCount,
   ): SchedulingError.ShiftSegmentImpossibleTransfer {
     return {
-      code: C.ShiftSegmentImpossibleTransfer,
+      errorCode: C.ShiftSegmentImpossibleTransfer,
       weekday,
       fromLocationId,
       toLocationId,
@@ -355,254 +377,258 @@ export const SchedulingError = {
   },
   /** Exactly one roster version must be in force on any day. */
   staffScheduleOverlappingVersions(
-    earlierFrom: string,
-    laterFrom: string,
+    earlierFrom: LocalDate,
+    laterFrom: LocalDate,
   ): SchedulingError.StaffScheduleOverlappingVersions {
-    return { code: C.StaffScheduleOverlappingVersions, earlierFrom, laterFrom };
+    return {
+      errorCode: C.StaffScheduleOverlappingVersions,
+      earlierFrom,
+      laterFrom,
+    };
   },
   /** A roster cannot be amended from a day at or before the version in force began. */
   staffScheduleRetroactiveAmendment(
-    attemptedFrom: string,
-    currentFrom: string,
+    attemptedFrom: LocalDate,
+    currentFrom: LocalDate,
   ): SchedulingError.StaffScheduleRetroactiveAmendment {
     return {
-      code: C.StaffScheduleRetroactiveAmendment,
+      errorCode: C.StaffScheduleRetroactiveAmendment,
       attemptedFrom,
       currentFrom,
     };
   },
   waitlistInvalid(field: string): SchedulingError.WaitlistInvalid {
-    return { code: C.WaitlistInvalid, field };
+    return { errorCode: C.WaitlistInvalid, field };
   },
   waitlistNoDays(): SchedulingError.WaitlistNoDays {
-    return { code: C.WaitlistNoDays };
+    return { errorCode: C.WaitlistNoDays };
   },
   waitlistEmptyCart(): SchedulingError.WaitlistEmptyCart {
-    return { code: C.WaitlistEmptyCart };
+    return { errorCode: C.WaitlistEmptyCart };
   },
   waitlistInvalidTransition(
-    from: WaitlistState,
-    to: WaitlistState,
+    from: WaitlistStatus,
+    to: WaitlistStatus,
   ): SchedulingError.WaitlistInvalidTransition {
-    return { code: C.WaitlistInvalidTransition, from, to };
+    return { errorCode: C.WaitlistInvalidTransition, from, to };
   },
-  /** An `hours` or `blocked` effect with no range would silently mean something else. */
+  /** An `HOURS` or `BLOCKED` effect with no range would silently mean something else. */
   scheduleExceptionEmptyRanges(
-    exceptionKind: ExceptionEffectKind,
+    exceptionKind: ExceptionEffect,
   ): SchedulingError.ScheduleExceptionEmptyRanges {
-    return { code: C.ScheduleExceptionEmptyRanges, exceptionKind };
+    return { errorCode: C.ScheduleExceptionEmptyRanges, exceptionKind };
   },
 
   /** Narrows an error to one code — `SchedulingError.is(e, SchedulingErrorCode.FlexibleWhenFull)`. */
   is<K extends SchedulingErrorCode>(
     error: SchedulingError,
-    code: K,
-  ): error is Extract<SchedulingError, { readonly code: K }> {
-    return error.code === code;
+    errorCode: K,
+  ): error is Extract<SchedulingError, { readonly errorCode: K }> {
+    return error.errorCode === errorCode;
   },
 } as const;
 
 export namespace SchedulingError {
   export type AppointmentEmptySeats = {
-    readonly code: typeof SchedulingErrorCode.AppointmentEmptySeats;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentEmptySeats;
   };
   export type AppointmentMultipleSelfSeats = {
-    readonly code: typeof SchedulingErrorCode.AppointmentMultipleSelfSeats;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentMultipleSelfSeats;
   };
   export type AppointmentPastStartTime = {
-    readonly code: typeof SchedulingErrorCode.AppointmentPastStartTime;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentPastStartTime;
   };
   export type AppointmentBarberDoubleBooked = {
-    readonly code: typeof SchedulingErrorCode.AppointmentBarberDoubleBooked;
-    readonly barberId: string;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentBarberDoubleBooked;
+    readonly barberId: BarberId;
   };
   export type AppointmentMixedCurrency = {
-    readonly code: typeof SchedulingErrorCode.AppointmentMixedCurrency;
-    readonly expected: string;
-    readonly found: string;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentMixedCurrency;
+    readonly expected: Currency;
+    readonly found: Currency;
   };
   export type AppointmentInvalidTransition = {
-    readonly code: typeof SchedulingErrorCode.AppointmentInvalidTransition;
-    readonly from: BookingState;
-    readonly to: BookingState;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentInvalidTransition;
+    readonly from: BookingStatus;
+    readonly to: BookingStatus;
   };
   export type AppointmentReopenWindowClosed = {
-    readonly code: typeof SchedulingErrorCode.AppointmentReopenWindowClosed;
-    readonly from: BookingState;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentReopenWindowClosed;
+    readonly from: BookingStatus;
   };
   export type AppointmentEmptyCancellationReason = {
-    readonly code: typeof SchedulingErrorCode.AppointmentEmptyCancellationReason;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentEmptyCancellationReason;
   };
   export type AppointmentUnknownSeat = {
-    readonly code: typeof SchedulingErrorCode.AppointmentUnknownSeat;
-    readonly seatId: string;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentUnknownSeat;
+    readonly seatId: SeatId;
   };
   export type AppointmentSeatAlreadyResolved = {
-    readonly code: typeof SchedulingErrorCode.AppointmentSeatAlreadyResolved;
-    readonly seatId: string;
-    readonly outcome: SeatOutcomeKind;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentSeatAlreadyResolved;
+    readonly seatId: SeatId;
+    readonly outcome: AttendanceState;
   };
   export type AppointmentNotArrivable = {
-    readonly code: typeof SchedulingErrorCode.AppointmentNotArrivable;
-    readonly status: BookingState;
+    readonly errorCode: typeof SchedulingErrorCode.AppointmentNotArrivable;
+    readonly bookingStatus: BookingStatus;
   };
   export type ContactEmptyName = {
-    readonly code: typeof SchedulingErrorCode.ContactEmptyName;
+    readonly errorCode: typeof SchedulingErrorCode.ContactEmptyName;
   };
   export type ContactInvalidPhone = {
-    readonly code: typeof SchedulingErrorCode.ContactInvalidPhone;
+    readonly errorCode: typeof SchedulingErrorCode.ContactInvalidPhone;
     readonly rawValue: string;
   };
   export type ContactInvalidEmail = {
-    readonly code: typeof SchedulingErrorCode.ContactInvalidEmail;
+    readonly errorCode: typeof SchedulingErrorCode.ContactInvalidEmail;
     readonly rawValue: string;
   };
   export type ContactNoteTooLong = {
-    readonly code: typeof SchedulingErrorCode.ContactNoteTooLong;
+    readonly errorCode: typeof SchedulingErrorCode.ContactNoteTooLong;
     readonly maxLength: number;
   };
   export type SeatLabelEmpty = {
-    readonly code: typeof SchedulingErrorCode.SeatLabelEmpty;
+    readonly errorCode: typeof SchedulingErrorCode.SeatLabelEmpty;
   };
   export type SeatLabelTooLong = {
-    readonly code: typeof SchedulingErrorCode.SeatLabelTooLong;
+    readonly errorCode: typeof SchedulingErrorCode.SeatLabelTooLong;
     readonly max: number;
   };
   export type CartLineNotFound = {
-    readonly code: typeof SchedulingErrorCode.CartLineNotFound;
-    readonly seatKey: string;
-    readonly lineId: string;
+    readonly errorCode: typeof SchedulingErrorCode.CartLineNotFound;
+    readonly seatKey: SeatKeyText;
+    readonly lineId: CartLineId;
   };
   export type CartDuplicateService = {
-    readonly code: typeof SchedulingErrorCode.CartDuplicateService;
-    readonly seatKey: string;
-    readonly serviceId: string;
+    readonly errorCode: typeof SchedulingErrorCode.CartDuplicateService;
+    readonly seatKey: SeatKeyText;
+    readonly serviceId: ServiceId;
   };
   export type CartInvalidLineSequence = {
-    readonly code: typeof SchedulingErrorCode.CartInvalidLineSequence;
+    readonly errorCode: typeof SchedulingErrorCode.CartInvalidLineSequence;
     readonly value: number;
   };
   export type PartyGuestNotFound = {
-    readonly code: typeof SchedulingErrorCode.PartyGuestNotFound;
-    readonly guestId: string;
+    readonly errorCode: typeof SchedulingErrorCode.PartyGuestNotFound;
+    readonly guestId: GuestId;
   };
   export type PartyInvalidGuestSequence = {
-    readonly code: typeof SchedulingErrorCode.PartyInvalidGuestSequence;
+    readonly errorCode: typeof SchedulingErrorCode.PartyInvalidGuestSequence;
     readonly value: number;
   };
   export type PartyUnclaimed = {
-    readonly code: typeof SchedulingErrorCode.PartyUnclaimed;
+    readonly errorCode: typeof SchedulingErrorCode.PartyUnclaimed;
   };
   export type PartyDuplicateLabel = {
-    readonly code: typeof SchedulingErrorCode.PartyDuplicateLabel;
+    readonly errorCode: typeof SchedulingErrorCode.PartyDuplicateLabel;
     readonly label: string;
   };
   export type BookingPolicyInvalid = {
-    readonly code: typeof SchedulingErrorCode.BookingPolicyInvalid;
+    readonly errorCode: typeof SchedulingErrorCode.BookingPolicyInvalid;
     readonly field: string;
     readonly rawValue: number;
   };
   export type CancellationWindowInvalid = {
-    readonly code: typeof SchedulingErrorCode.CancellationWindowInvalid;
+    readonly errorCode: typeof SchedulingErrorCode.CancellationWindowInvalid;
     readonly rawValue: number;
   };
   export type ClientStatsPolicyInvalid = {
-    readonly code: typeof SchedulingErrorCode.ClientStatsPolicyInvalid;
+    readonly errorCode: typeof SchedulingErrorCode.ClientStatsPolicyInvalid;
     readonly field: string;
     readonly rawValue: number;
   };
   export type CalendarDayInvalid = {
-    readonly code: typeof SchedulingErrorCode.CalendarDayInvalid;
+    readonly errorCode: typeof SchedulingErrorCode.CalendarDayInvalid;
     readonly rawValue: string;
   };
   export type DateRangeInvalid = {
-    readonly code: typeof SchedulingErrorCode.DateRangeInvalid;
+    readonly errorCode: typeof SchedulingErrorCode.DateRangeInvalid;
     readonly from: string;
     readonly to: string;
   };
   export type TimeRangeInvalid = {
-    readonly code: typeof SchedulingErrorCode.TimeRangeInvalid;
-    readonly startMinutes: number;
-    readonly endMinutes: number;
+    readonly errorCode: typeof SchedulingErrorCode.TimeRangeInvalid;
+    readonly startMinutes: MinuteOfDay;
+    readonly endMinutes: EndMinute;
   };
   export type IdEmpty = {
-    readonly code: typeof SchedulingErrorCode.IdEmpty;
+    readonly errorCode: typeof SchedulingErrorCode.IdEmpty;
     readonly idType: string;
   };
   export type FlexibleWhenFull = {
-    readonly code: typeof SchedulingErrorCode.FlexibleWhenFull;
+    readonly errorCode: typeof SchedulingErrorCode.FlexibleWhenFull;
     readonly max: number;
   };
   export type RecurrenceInvalidInterval = {
-    readonly code: typeof SchedulingErrorCode.RecurrenceInvalidInterval;
+    readonly errorCode: typeof SchedulingErrorCode.RecurrenceInvalidInterval;
     readonly interval: number;
     readonly max: number;
   };
   export type RecurrenceNoWeekdays = {
-    readonly code: typeof SchedulingErrorCode.RecurrenceNoWeekdays;
+    readonly errorCode: typeof SchedulingErrorCode.RecurrenceNoWeekdays;
   };
   export type RecurrenceInvalidDay = {
-    readonly code: typeof SchedulingErrorCode.RecurrenceInvalidDay;
+    readonly errorCode: typeof SchedulingErrorCode.RecurrenceInvalidDay;
     readonly month: number | null;
     readonly date: number;
   };
   export type RecurrenceInvalidCount = {
-    readonly code: typeof SchedulingErrorCode.RecurrenceInvalidCount;
+    readonly errorCode: typeof SchedulingErrorCode.RecurrenceInvalidCount;
     readonly count: number;
     readonly max: number;
   };
   export type RecurrenceEndsBeforeStart = {
-    readonly code: typeof SchedulingErrorCode.RecurrenceEndsBeforeStart;
-    readonly start: string;
-    readonly until: string;
+    readonly errorCode: typeof SchedulingErrorCode.RecurrenceEndsBeforeStart;
+    readonly start: LocalDate;
+    readonly until: LocalDate;
   };
   export type RecurrenceNeverOccurs = {
-    readonly code: typeof SchedulingErrorCode.RecurrenceNeverOccurs;
-    readonly start: string;
+    readonly errorCode: typeof SchedulingErrorCode.RecurrenceNeverOccurs;
+    readonly start: LocalDate;
   };
   export type RecurrenceTooLong = {
-    readonly code: typeof SchedulingErrorCode.RecurrenceTooLong;
+    readonly errorCode: typeof SchedulingErrorCode.RecurrenceTooLong;
     readonly max: number;
   };
   export type ShiftSegmentInvalidLocation = {
-    readonly code: typeof SchedulingErrorCode.ShiftSegmentInvalidLocation;
-    readonly rawLocationId: string;
+    readonly errorCode: typeof SchedulingErrorCode.ShiftSegmentInvalidLocation;
+    readonly rawLocationId: LocationId;
   };
   export type ShiftSegmentImpossibleTransfer = {
-    readonly code: typeof SchedulingErrorCode.ShiftSegmentImpossibleTransfer;
-    readonly weekday: number;
-    readonly fromLocationId: string;
-    readonly toLocationId: string;
-    readonly gapMinutes: number;
-    readonly requiredMinutes: number;
+    readonly errorCode: typeof SchedulingErrorCode.ShiftSegmentImpossibleTransfer;
+    readonly weekday: Weekday;
+    readonly fromLocationId: LocationId;
+    readonly toLocationId: LocationId;
+    readonly gapMinutes: MinuteDelta;
+    readonly requiredMinutes: MinuteCount;
   };
   export type StaffScheduleOverlappingVersions = {
-    readonly code: typeof SchedulingErrorCode.StaffScheduleOverlappingVersions;
-    readonly earlierFrom: string;
-    readonly laterFrom: string;
+    readonly errorCode: typeof SchedulingErrorCode.StaffScheduleOverlappingVersions;
+    readonly earlierFrom: LocalDate;
+    readonly laterFrom: LocalDate;
   };
   export type StaffScheduleRetroactiveAmendment = {
-    readonly code: typeof SchedulingErrorCode.StaffScheduleRetroactiveAmendment;
-    readonly attemptedFrom: string;
-    readonly currentFrom: string;
+    readonly errorCode: typeof SchedulingErrorCode.StaffScheduleRetroactiveAmendment;
+    readonly attemptedFrom: LocalDate;
+    readonly currentFrom: LocalDate;
   };
   export type WaitlistInvalid = {
-    readonly code: typeof SchedulingErrorCode.WaitlistInvalid;
+    readonly errorCode: typeof SchedulingErrorCode.WaitlistInvalid;
     readonly field: string;
   };
   export type WaitlistNoDays = {
-    readonly code: typeof SchedulingErrorCode.WaitlistNoDays;
+    readonly errorCode: typeof SchedulingErrorCode.WaitlistNoDays;
   };
   export type WaitlistEmptyCart = {
-    readonly code: typeof SchedulingErrorCode.WaitlistEmptyCart;
+    readonly errorCode: typeof SchedulingErrorCode.WaitlistEmptyCart;
   };
   export type WaitlistInvalidTransition = {
-    readonly code: typeof SchedulingErrorCode.WaitlistInvalidTransition;
-    readonly from: WaitlistState;
-    readonly to: WaitlistState;
+    readonly errorCode: typeof SchedulingErrorCode.WaitlistInvalidTransition;
+    readonly from: WaitlistStatus;
+    readonly to: WaitlistStatus;
   };
   export type ScheduleExceptionEmptyRanges = {
-    readonly code: typeof SchedulingErrorCode.ScheduleExceptionEmptyRanges;
-    readonly exceptionKind: ExceptionEffectKind;
+    readonly errorCode: typeof SchedulingErrorCode.ScheduleExceptionEmptyRanges;
+    readonly exceptionKind: ExceptionEffect;
   };
 }

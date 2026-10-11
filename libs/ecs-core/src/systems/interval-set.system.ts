@@ -1,181 +1,212 @@
-import { TimeInterval } from '../components/time-interval.data';
+import { MinuteRange } from '../components/minute-range.data';
+import type { Brand } from '../primitives/brand';
+import { MinuteCount } from '../primitives/duration-minutes.primitive';
+import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
 
 /**
- * A canonical interval set: sorted by `startMs`, non-empty, pairwise
+ * A canonical range set: sorted by `startMinutes`, non-empty, pairwise
  * disjoint AND non-touching (touching runs are merged). Every operation of
  * {@link IntervalSetSystem} returns one; the brand flags it so a hot caller
  * can hold its sets normalized and hand them back in.
  */
-export type NormalizedIntervals = readonly TimeInterval[] & {
-  readonly __normalized: unique symbol;
-};
+export type NormalizedRanges = Brand<
+  readonly MinuteRange[],
+  'NormalizedRanges'
+>;
 
-function byStart(a: TimeInterval, b: TimeInterval): number {
-  return a.startMs - b.startMs || a.endMs - b.endMs;
+function byStart(a: MinuteRange, b: MinuteRange): number {
+  return a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes;
 }
 
 /** The one cast site of the brand: `xs` is already in canonical form. */
-function asNormalized(xs: readonly TimeInterval[]): NormalizedIntervals {
-  return xs as NormalizedIntervals;
+function asNormalized(xs: readonly MinuteRange[]): NormalizedRanges {
+  return xs as NormalizedRanges;
 }
 
 /** One linear pass: is `xs` canonical already? (No allocation.) */
-function isNormalized(xs: readonly TimeInterval[]): boolean {
+function isNormalized(xs: readonly MinuteRange[]): boolean {
   let lastEnd = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < xs.length; i++) {
-    const x = xs[i] as TimeInterval;
-    if (!(x.startMs < x.endMs) || x.startMs <= lastEnd) return false;
-    lastEnd = x.endMs;
+    const x = xs[i] as MinuteRange;
+    if (!(x.startMinutes < x.endMinutes) || x.startMinutes <= lastEnd) {
+      return false;
+    }
+    lastEnd = x.endMinutes;
   }
   return true;
 }
 
+function normalizeRanges(xs: readonly MinuteRange[]): NormalizedRanges {
+  if (isNormalized(xs)) return asNormalized(xs);
+  const sorted: MinuteRange[] = [];
+  for (let i = 0; i < xs.length; i++) {
+    const x = xs[i] as MinuteRange;
+    if (x.startMinutes < x.endMinutes) sorted.push(x);
+  }
+  sorted.sort(byStart);
+  const merged: MinuteRange[] = [];
+  for (let i = 0; i < sorted.length; i++) {
+    const next = sorted[i] as MinuteRange;
+    const last = merged[merged.length - 1];
+    if (last !== undefined && next.startMinutes <= last.endMinutes) {
+      if (next.endMinutes > last.endMinutes) {
+        merged[merged.length - 1] = MinuteRange.of(
+          last.startMinutes,
+          next.endMinutes,
+        );
+      }
+    } else {
+      merged.push(next);
+    }
+  }
+  return asNormalized(merged);
+}
+
+function subtractRanges(
+  base: readonly MinuteRange[],
+  cut: readonly MinuteRange[],
+): NormalizedRanges {
+  const windows = normalizeRanges(base);
+  const cuts = normalizeRanges(cut);
+  if (cuts.length === 0) return windows;
+  const out: MinuteRange[] = [];
+  let j = 0;
+  for (let i = 0; i < windows.length; i++) {
+    const window = windows[i] as MinuteRange;
+    // Cuts ending at or before this window cannot touch any later window.
+    while (
+      j < cuts.length &&
+      (cuts[j] as MinuteRange).endMinutes <= window.startMinutes
+    ) {
+      j++;
+    }
+    let cursor = window.startMinutes;
+    let consumed = false;
+    for (let k = j; k < cuts.length; k++) {
+      const taken = cuts[k] as MinuteRange;
+      if (taken.startMinutes >= window.endMinutes) break;
+      if (taken.startMinutes > cursor) {
+        // `taken.startMinutes > cursor >= 0`, so it is a valid exclusive end.
+        out.push(
+          MinuteRange.of(cursor, EndMinute.ofLaterStart(taken.startMinutes)),
+        );
+      }
+      // Cuts are disjoint and sorted, and those ending at or before the
+      // window were skipped, so every cut reached here ends past `cursor`.
+      if (taken.endMinutes >= window.endMinutes) {
+        consumed = true;
+        break;
+      }
+      // `taken.endMinutes < window.endMinutes <= 1440`: a minute of the day.
+      cursor = MinuteOfDay.ofOpenEnd(taken.endMinutes);
+    }
+    // Not consumed: `cursor` is the window's start or a cut's end inside it.
+    if (!consumed) out.push(MinuteRange.of(cursor, window.endMinutes));
+  }
+  return asNormalized(out);
+}
+
+function intersectRanges(
+  left: readonly MinuteRange[],
+  right: readonly MinuteRange[],
+): NormalizedRanges {
+  const a = normalizeRanges(left);
+  const b = normalizeRanges(right);
+  const out: MinuteRange[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    const x = a[i] as MinuteRange;
+    const y = b[j] as MinuteRange;
+    const start =
+      x.startMinutes > y.startMinutes ? x.startMinutes : y.startMinutes;
+    const end = x.endMinutes < y.endMinutes ? x.endMinutes : y.endMinutes;
+    if (start < end) out.push(MinuteRange.of(start, end));
+    if (x.endMinutes < y.endMinutes) i++;
+    else j++;
+  }
+  return asNormalized(out);
+}
+
+function unionRanges(
+  left: readonly MinuteRange[],
+  right: readonly MinuteRange[],
+): NormalizedRanges {
+  const a = normalizeRanges(left);
+  const b = normalizeRanges(right);
+  if (b.length === 0) return a;
+  if (a.length === 0) return b;
+  const out: MinuteRange[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    const fromA =
+      j >= b.length ||
+      (i < a.length &&
+        (a[i] as MinuteRange).startMinutes <=
+          (b[j] as MinuteRange).startMinutes);
+    const next = (fromA ? a[i++] : b[j++]) as MinuteRange;
+    const last = out[out.length - 1];
+    if (last !== undefined && next.startMinutes <= last.endMinutes) {
+      if (next.endMinutes > last.endMinutes) {
+        out[out.length - 1] = MinuteRange.of(
+          last.startMinutes,
+          next.endMinutes,
+        );
+      }
+    } else {
+      out.push(next);
+    }
+  }
+  return asNormalized(out);
+}
+
+function totalRangeMinutes(xs: readonly MinuteRange[]): MinuteCount {
+  const set = normalizeRanges(xs);
+  let total = MinuteCount.ZERO;
+  for (let i = 0; i < set.length; i++) {
+    const range = set[i] as MinuteRange;
+    total = MinuteCount.add(
+      total,
+      MinuteCount.span(range.startMinutes, range.endMinutes),
+    );
+  }
+  return total;
+}
+
+function clip(
+  xs: readonly MinuteRange[],
+  bound: MinuteRange,
+): NormalizedRanges {
+  return intersectRanges(xs, [bound]);
+}
+
 /**
- * Set algebra over half-open epoch-ms intervals — the arithmetic availability
- * is built from (working windows minus busy blocks, intersected with policy).
+ * Set algebra over half-open `MinuteRange`s of ONE shop day — the arithmetic
+ * availability is built from (working windows minus busy blocks, intersected
+ * with policy). Local integers only (Law 7.3): DST cannot enter a loop.
  *
  * Inputs are read, never written. Each operation first brings its inputs to
  * canonical form: an input that already is one (every output of this
  * system) is used as-is after one linear check — no copy, no sort — so a
  * caller that keeps its sets normalized pays O(n) per operation; anything
  * else is copied, sorted once and merged.
+ *
+ * Touching runs MERGE (`[540,600)` + `[600,660)` → `[540,660)`): leaving them
+ * split would reject a service that fits the union because it fits neither
+ * half. A cut that merely touches a window consumes nothing (half-open).
  */
 export const IntervalSetSystem = {
-  /**
-   * Sorted, non-overlapping, non-touching; empty and inverted intervals
-   * dropped. Touching runs MERGE (`[9,10)` + `[10,11)` → `[9,11)`): as a set
-   * of instants they are one run, and leaving them split would reject a
-   * service that fits the union because it fits neither half.
-   * Idempotent: a normalized input comes back unchanged.
-   */
-  normalize(xs: readonly TimeInterval[]): NormalizedIntervals {
-    if (isNormalized(xs)) return asNormalized(xs);
-    const sorted: TimeInterval[] = [];
-    for (let i = 0; i < xs.length; i++) {
-      const x = xs[i] as TimeInterval;
-      if (x.startMs < x.endMs) sorted.push(x);
-    }
-    sorted.sort(byStart);
-    const merged: TimeInterval[] = [];
-    for (let i = 0; i < sorted.length; i++) {
-      const next = sorted[i] as TimeInterval;
-      const last = merged[merged.length - 1];
-      if (last !== undefined && next.startMs <= last.endMs) {
-        if (next.endMs > last.endMs) {
-          merged[merged.length - 1] = TimeInterval.of(last.startMs, next.endMs);
-        }
-      } else {
-        merged.push(next);
-      }
-    }
-    return asNormalized(merged);
-  },
-
-  /**
-   * `base − cut` — the free time left after removing what is taken. One
-   * merge-style pass over both sorted sets: O(n + m). A cut that merely
-   * touches a window consumes nothing (half-open), which is what lets one
-   * barber take a party's next seat the instant the previous one ends.
-   */
-  subtract(
-    base: readonly TimeInterval[],
-    cut: readonly TimeInterval[],
-  ): NormalizedIntervals {
-    const windows = IntervalSetSystem.normalize(base);
-    const cuts = IntervalSetSystem.normalize(cut);
-    if (cuts.length === 0) return windows;
-    const out: TimeInterval[] = [];
-    let j = 0;
-    for (let i = 0; i < windows.length; i++) {
-      const window = windows[i] as TimeInterval;
-      // Cuts ending at or before this window cannot touch any later window.
-      while (
-        j < cuts.length &&
-        (cuts[j] as TimeInterval).endMs <= window.startMs
-      ) {
-        j++;
-      }
-      let cursor = window.startMs;
-      for (let k = j; k < cuts.length; k++) {
-        const taken = cuts[k] as TimeInterval;
-        if (taken.startMs >= window.endMs) break;
-        if (taken.startMs > cursor)
-          out.push(TimeInterval.of(cursor, taken.startMs));
-        // Cuts are disjoint and sorted, and those ending at or before the
-        // window were skipped, so every cut reached here ends past `cursor`.
-        cursor = taken.endMs;
-        if (cursor >= window.endMs) break;
-      }
-      if (cursor < window.endMs)
-        out.push(TimeInterval.of(cursor, window.endMs));
-    }
-    return asNormalized(out);
-  },
-
+  /** Sorted, non-overlapping, non-touching; empty and inverted ranges dropped. Idempotent. */
+  normalize: normalizeRanges,
+  /** `base − cut` — one merge-style pass over both sorted sets: O(n + m). */
+  subtract: subtractRanges,
   /** `a ∩ b` — a two-pointer sweep, O(n + m). Touching runs share nothing. */
-  intersect(
-    left: readonly TimeInterval[],
-    right: readonly TimeInterval[],
-  ): NormalizedIntervals {
-    const a = IntervalSetSystem.normalize(left);
-    const b = IntervalSetSystem.normalize(right);
-    const out: TimeInterval[] = [];
-    let i = 0;
-    let j = 0;
-    while (i < a.length && j < b.length) {
-      const x = a[i] as TimeInterval;
-      const y = b[j] as TimeInterval;
-      const start = x.startMs > y.startMs ? x.startMs : y.startMs;
-      const end = x.endMs < y.endMs ? x.endMs : y.endMs;
-      if (start < end) out.push(TimeInterval.of(start, end));
-      if (x.endMs < y.endMs) i++;
-      else j++;
-    }
-    return asNormalized(out);
-  },
-
+  intersect: intersectRanges,
   /** `a ∪ b` — a linear merge of the two sorted sets, O(n + m). */
-  union(
-    left: readonly TimeInterval[],
-    right: readonly TimeInterval[],
-  ): NormalizedIntervals {
-    const a = IntervalSetSystem.normalize(left);
-    const b = IntervalSetSystem.normalize(right);
-    if (b.length === 0) return a;
-    if (a.length === 0) return b;
-    const out: TimeInterval[] = [];
-    let i = 0;
-    let j = 0;
-    while (i < a.length || j < b.length) {
-      const fromA =
-        j >= b.length ||
-        (i < a.length &&
-          (a[i] as TimeInterval).startMs <= (b[j] as TimeInterval).startMs);
-      const next = (fromA ? a[i++] : b[j++]) as TimeInterval;
-      const last = out[out.length - 1];
-      if (last !== undefined && next.startMs <= last.endMs) {
-        if (next.endMs > last.endMs) {
-          out[out.length - 1] = TimeInterval.of(last.startMs, next.endMs);
-        }
-      } else {
-        out.push(next);
-      }
-    }
-    return asNormalized(out);
-  },
-
+  union: unionRanges,
   /** Clip to a bound, dropping whatever falls entirely outside it. */
-  clip(xs: readonly TimeInterval[], bound: TimeInterval): NormalizedIntervals {
-    return IntervalSetSystem.intersect(xs, [bound]);
-  },
-
+  clip,
   /** Total minutes covered; overlaps are never counted twice. */
-  totalMinutes(xs: readonly TimeInterval[]): number {
-    const set = IntervalSetSystem.normalize(xs);
-    let total = 0;
-    for (let i = 0; i < set.length; i++) {
-      total += TimeInterval.durationMinutes(set[i] as TimeInterval);
-    }
-    return total;
-  },
+  totalMinutes: totalRangeMinutes,
 } as const;

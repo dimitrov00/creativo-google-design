@@ -3,11 +3,14 @@ import {
   policyFromDocument,
 } from '@creativo/application/booking';
 import {
+  type PolicyRecomputeJob as EcsPolicyRecomputeJob,
   PolicyRecomputeJobId,
-  PolicyRecomputeJobKind,
   PolicyRecomputeJobSystem,
   PreciseInstant,
-  type PolicyRecomputeJobEntity,
+  RecomputeJobName,
+  UserId,
+  UtcEpochMs,
+  defect,
 } from '@creativo/ecs-core';
 import { BACKFILL_JOBS_COLLECTION } from '../ops/backfill-plan';
 
@@ -27,15 +30,19 @@ import { BACKFILL_JOBS_COLLECTION } from '../ops/backfill-plan';
  * over).
  *
  * Phase 2 shim: the decisions are `PolicyRecomputeJobSystem` in
- * `@creativo/ecs-core`, over the job as its entity — epoch ms, and the
- * change instant as a `{ seconds, nanos }` struct (§9 D17). This file keeps
- * the stored RFC 3339 shapes for its callers and converts at the edge: every
- * instant the system hands back unchanged keeps the exact text it came in
- * as, and an instant it stamps is `nowIso`.
+ * `@creativo/ecs-core`, over the job as its flat entity — `UtcEpochMs`
+ * stamps, the change instant as its D17 halves (`changedAtSeconds` +
+ * `changedAtNanos`), the cursor a `UserId`. This file keeps the stored RFC
+ * 3339 shapes for its callers and converts at the edge: every instant the
+ * system hands back unchanged keeps the exact text it came in as, and an
+ * instant it stamps is `nowIso`.
  */
 
-/** The job's document id, beside `runBackfill`'s own jobs. */
-export const POLICY_RECOMPUTE_JOB = PolicyRecomputeJobKind.ClientStatsPolicy;
+/**
+ * The job's document id, beside `runBackfill`'s own jobs — and the legacy
+ * `job` tag the stored document carries (OQ-9: both stay until flip (1)).
+ */
+export const POLICY_RECOMPUTE_JOB = PolicyRecomputeJobId.FIXED;
 
 export const POLICY_RECOMPUTE_PATH = `${BACKFILL_JOBS_COLLECTION}/${POLICY_RECOMPUTE_JOB}`;
 
@@ -149,10 +156,11 @@ export function policyJobToDocument(
  * seconds, and the fraction is read to the nanosecond.
  */
 export function compareInstants(a: string, b: string): number | null {
-  return PolicyRecomputeJobSystem.compareInstants(
-    instantFromIso(a),
-    instantFromIso(b),
-  );
+  const left = instantFromIso(a);
+  const right = instantFromIso(b);
+  // An instant that does not parse never proves an order.
+  if (left === null || right === null) return null;
+  return PolicyRecomputeJobSystem.compareInstants(left, right);
 }
 
 /**
@@ -175,14 +183,15 @@ export function planPolicyJobStart(
   nowIso: string,
 ): PolicyRecomputeJob | null {
   const texts: InstantTexts = new Map();
+  const was = current === null ? null : toEntity(current, texts);
   const next = PolicyRecomputeJobSystem.nextStep(
-    current === null ? null : toEntity(current, texts),
+    was,
     {
       generation: change.eventId,
-      changedAt: instantIn(change.atIso, texts),
+      changedAt: instantIn(change.atIso, texts, LATEST_INSTANT),
       windowHours: change.windowHours ?? null,
     },
-    msOf(nowIso),
+    instantOf(nowIso),
   );
   return next === null ? null : fromEntity(next, null, nowIso, texts);
 }
@@ -229,7 +238,17 @@ export function advancePolicyJob(
   const texts: InstantTexts = new Map();
   const was = toEntity(job, texts);
   return fromEntity(
-    PolicyRecomputeJobSystem.advance(was, step, msOf(nowIso)),
+    PolicyRecomputeJobSystem.advance(
+      was,
+      {
+        cursor: step.cursor === null ? null : UserId.of(step.cursor),
+        exhausted: step.exhausted,
+        visited: step.visited,
+        recomputed: step.recomputed,
+        failed: step.failed,
+      },
+      instantOf(nowIso),
+    ),
     { job, entity: was },
     nowIso,
     texts,
@@ -250,7 +269,7 @@ export function stallPolicyJob(
   const texts: InstantTexts = new Map();
   const was = toEntity(job, texts);
   return fromEntity(
-    PolicyRecomputeJobSystem.stall(was, code, msOf(nowIso)),
+    PolicyRecomputeJobSystem.stall(was, code, instantOf(nowIso)),
     { job, entity: was },
     nowIso,
     texts,
@@ -283,7 +302,11 @@ export function planPolicyJobNudge(
   if (job === null) return null;
   const texts: InstantTexts = new Map();
   const was = toEntity(job, texts);
-  const next = PolicyRecomputeJobSystem.nudge(was, msOf(nowIso), staleAfterMs);
+  const next = PolicyRecomputeJobSystem.nudge(
+    was,
+    instantOf(nowIso),
+    staleAfterMs,
+  );
   return next === null
     ? null
     : fromEntity(next, { job, entity: was }, nowIso, texts);
@@ -362,10 +385,12 @@ export function planPolicyCatchUp(
     job === null ? null : toEntity(job, texts),
     {
       updatedAt:
-        live.updatedAt === null ? null : instantIn(live.updatedAt, texts),
+        live.updatedAt === null
+          ? null
+          : instantIn(live.updatedAt, texts, LATEST_INSTANT),
       windowHours: live.windowHours,
     },
-    msOf(nowIso),
+    instantOf(nowIso),
     live.updatedAt ?? nowIso,
     policyFromDocument(undefined).cancellationWindowHours,
   );
@@ -378,61 +403,109 @@ export function planPolicyCatchUp(
 const RFC3339 =
   /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(\.\d+|)(Z|[+-]\d{2}:\d{2})$/i;
 
+/** A D17 instant the bridge builds from known-good parts. */
+function preciseOrThrow(seconds: number, nanos: number): PreciseInstant {
+  const instant = PreciseInstant.of(seconds, nanos);
+  if (instant === null) defect('unreachable: a broken D17 bound');
+  return instant;
+}
+
+/**
+ * The stand-ins for a stored instant that does not parse. The legacy
+ * reading made it an instant no order can be read from, which the system
+ * answered conservatively — restart, judge, nudge — never skip. A brand
+ * holds only real instants, so the bridge hands over the bound that gives
+ * that same answer in the role the text plays: an OLD stamp (a job's own
+ * change, its stored times) reads as the earliest instant, older than any
+ * change; a NEW one (the change being delivered, the live policy's update
+ * time) as the latest, newer than any stamp. The text itself rides back
+ * unchanged through {@link InstantTexts}.
+ */
+export const EARLIEST_INSTANT = preciseOrThrow(-Number.MAX_SAFE_INTEGER, 0);
+export const LATEST_INSTANT = preciseOrThrow(
+  Number.MAX_SAFE_INTEGER,
+  999_999_999,
+);
+const EARLIEST_UTC_MS = (() => {
+  const earliest = UtcEpochMs.of(-62_135_596_800_000);
+  if (!earliest.ok) defect('unreachable: the UtcEpochMs floor');
+  return earliest.value;
+})();
+
 /**
  * An RFC 3339 instant — what a legacy job or pass stamp holds — as the
- * §9 D17 `{ seconds, nanos }` struct, its fraction read to the nanosecond.
- * One that does not parse becomes an instant no order can be read from
- * (`NaN`), which `PolicyRecomputeJobSystem.compareInstants` answers `null`.
+ * §9 D17 `{ seconds, nanos }` value, its fraction read to the nanosecond;
+ * `null` for one that does not parse (no order can be read from it).
  * Shared with `client-stats-projection.ts`, the other side of the pass guard.
  */
-export function instantFromIso(iso: string): PreciseInstant {
+export function instantFromIso(iso: string): PreciseInstant | null {
   const match = RFC3339.exec(iso);
   const [, wholeSeconds, fraction, zone] = match ?? [];
   const ms =
     wholeSeconds === undefined || zone === undefined
       ? Number.NaN
       : Date.parse(`${wholeSeconds}${zone}`);
-  if (Number.isNaN(ms)) return { seconds: Number.NaN, nanos: Number.NaN };
+  if (Number.isNaN(ms)) return null;
   const digits = (fraction ?? '').slice(1, 10).padEnd(9, '0');
-  return { seconds: ms / 1000, nanos: Number(digits) };
+  return PreciseInstant.of(ms / 1000, Number(digits));
 }
 
-/** Each instant struct handed to the system, by identity, to the text it came in as. */
-type InstantTexts = Map<PreciseInstant, string>;
+/**
+ * Each D17 value handed to the system, by its value, to the text it came in
+ * as. Registered in reading order, so when two texts name the same instant
+ * the later one — the change being delivered — is the one a job that takes
+ * that change writes back.
+ */
+type InstantTexts = Map<string, string>;
 
-function instantIn(iso: string, texts: InstantTexts): PreciseInstant {
-  const instant = instantFromIso(iso);
-  texts.set(instant, iso);
+const keyOf = (instant: PreciseInstant): string =>
+  `${instant.seconds}:${instant.nanos}`;
+
+function instantIn(
+  iso: string,
+  texts: InstantTexts,
+  unreadable: PreciseInstant,
+): PreciseInstant {
+  const instant = instantFromIso(iso) ?? unreadable;
+  texts.set(keyOf(instant), iso);
   return instant;
 }
 
-const msOf = (iso: string): number => Date.parse(iso);
-const msOrNull = (iso: string | null): number | null =>
-  iso === null ? null : msOf(iso);
+/** A stored or stamped RFC 3339 time as an instant; one that does not parse reads as the earliest. */
+function instantOf(iso: string): UtcEpochMs {
+  const instant = UtcEpochMs.of(Date.parse(iso));
+  return instant.ok ? instant.value : EARLIEST_UTC_MS;
+}
+
+const instantOrNull = (iso: string | null): UtcEpochMs | null =>
+  iso === null ? null : instantOf(iso);
 
 function toEntity(
   job: PolicyRecomputeJob,
   texts: InstantTexts,
-): PolicyRecomputeJobEntity {
-  const finishedAtMs = msOrNull(job.finishedAt);
+): EcsPolicyRecomputeJob {
+  const changedAt = instantIn(job.changedAt, texts, EARLIEST_INSTANT);
+  const cursor = job.cursor === null ? null : UserId.of(job.cursor);
+  const finishedAtUtcMs = instantOrNull(job.finishedAt);
   return {
-    id: PolicyRecomputeJobId.of(PolicyRecomputeJobId.FIXED),
-    job: PolicyRecomputeJobKind.ClientStatsPolicy,
+    id: PolicyRecomputeJobId.FIXED,
+    recomputeJobName: RecomputeJobName.ClientStatsPolicy,
     generation: job.generation,
-    changedAt: instantIn(job.changedAt, texts),
-    cursor: job.cursor,
+    changedAtSeconds: changedAt.seconds,
+    changedAtNanos: changedAt.nanos,
+    cursor,
     storedClients: job.storedClients,
     recomputed: job.recomputed,
     failed: job.failed,
-    startedAtMs: msOf(job.startedAt),
-    updatedAtMs: msOf(job.updatedAt),
-    finishedAtMs,
+    startedAtUtcMs: instantOf(job.startedAt),
+    updatedAtUtcMs: instantOf(job.updatedAt),
+    finishedAtUtcMs,
     stepKey: PolicyRecomputeJobSystem.stepKeyOf(
       job.generation,
-      job.cursor,
-      finishedAtMs,
+      cursor,
+      finishedAtUtcMs,
     ),
-    stalledAtMs: msOrNull(job.stalledAt),
+    stalledAtUtcMs: instantOrNull(job.stalledAt),
     lastFailureCode: job.lastFailureCode,
     windowHours: job.windowHours,
   };
@@ -443,47 +516,53 @@ function toEntity(
  * as it was, `nowIso` when it stamped now (the only instant it makes).
  */
 function textOf(
-  ms: number,
-  wasMs: number | null,
+  utcMs: UtcEpochMs,
+  wasUtcMs: UtcEpochMs | null,
   wasText: string | null,
   nowIso: string,
 ): string {
-  if (wasText !== null && Object.is(ms, wasMs)) return wasText;
-  return Object.is(ms, msOf(nowIso)) || !Number.isFinite(ms)
-    ? nowIso
-    : new Date(ms).toISOString();
+  if (wasText !== null && utcMs === wasUtcMs) return wasText;
+  return utcMs === instantOf(nowIso) ? nowIso : new Date(utcMs).toISOString();
 }
 
 function textOrNull(
-  ms: number | null,
-  wasMs: number | null,
+  utcMs: UtcEpochMs | null,
+  wasUtcMs: UtcEpochMs | null,
   wasText: string | null,
   nowIso: string,
 ): string | null {
-  return ms === null ? null : textOf(ms, wasMs, wasText, nowIso);
+  return utcMs === null ? null : textOf(utcMs, wasUtcMs, wasText, nowIso);
 }
 
 /** The change instant back as text: the text it came in as, else `nowIso` (the sweep's no-document change). */
 function changedAtText(
-  instant: PreciseInstant,
+  next: EcsPolicyRecomputeJob,
   texts: InstantTexts,
   nowIso: string,
 ): string {
-  const text = texts.get(instant);
+  const instant = {
+    seconds: next.changedAtSeconds,
+    nanos: next.changedAtNanos,
+  };
+  const text = texts.get(keyOf(instant));
   if (text !== undefined) return text;
-  return PreciseInstant.equals(
-    instant,
-    PreciseInstant.fromEpochMs(msOf(nowIso)),
-  )
-    ? nowIso
-    : new Date(PreciseInstant.toEpochMs(instant)).toISOString();
+  if (
+    PreciseInstant.equals(
+      instant,
+      PreciseInstant.fromEpochMs(instantOf(nowIso)),
+    )
+  ) {
+    return nowIso;
+  }
+  const ms = PreciseInstant.toEpochMs(instant);
+  return ms === null ? nowIso : new Date(ms).toISOString();
 }
 
 function fromEntity(
-  next: PolicyRecomputeJobEntity,
+  next: EcsPolicyRecomputeJob,
   was: {
     readonly job: PolicyRecomputeJob;
-    readonly entity: PolicyRecomputeJobEntity;
+    readonly entity: EcsPolicyRecomputeJob;
   } | null,
   nowIso: string,
   texts: InstantTexts,
@@ -492,32 +571,32 @@ function fromEntity(
   const stored = was?.job ?? null;
   return {
     generation: next.generation,
-    changedAt: changedAtText(next.changedAt, texts, nowIso),
+    changedAt: changedAtText(next, texts, nowIso),
     cursor: next.cursor,
     storedClients: next.storedClients,
     recomputed: next.recomputed,
     failed: next.failed,
     startedAt: textOf(
-      next.startedAtMs,
-      before?.startedAtMs ?? null,
+      next.startedAtUtcMs,
+      before?.startedAtUtcMs ?? null,
       stored?.startedAt ?? null,
       nowIso,
     ),
     updatedAt: textOf(
-      next.updatedAtMs,
-      before?.updatedAtMs ?? null,
+      next.updatedAtUtcMs,
+      before?.updatedAtUtcMs ?? null,
       stored?.updatedAt ?? null,
       nowIso,
     ),
     finishedAt: textOrNull(
-      next.finishedAtMs,
-      before?.finishedAtMs ?? null,
+      next.finishedAtUtcMs,
+      before?.finishedAtUtcMs ?? null,
       stored?.finishedAt ?? null,
       nowIso,
     ),
     stalledAt: textOrNull(
-      next.stalledAtMs,
-      before?.stalledAtMs ?? null,
+      next.stalledAtUtcMs,
+      before?.stalledAtUtcMs ?? null,
       stored?.stalledAt ?? null,
       nowIso,
     ),

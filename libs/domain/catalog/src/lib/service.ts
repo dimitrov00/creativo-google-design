@@ -9,10 +9,15 @@ import {
 import {
   BarberId as EcsBarberId,
   type BarberOffering as EcsBarberOffering,
+  Currency as EcsCurrency,
+  DurationMinutes as EcsDurationMinutes,
+  MinuteCount as EcsMinuteCount,
   OfferingPriceSystem,
+  PriceCents as EcsPriceCents,
   type PricedService,
-  type ServiceTerms as EcsServiceTerms,
+  ServiceTerms as EcsServiceTerms,
   ServiceVariantId as EcsServiceVariantId,
+  defect,
 } from '@creativo/ecs-core';
 import { EmptyIdError } from './ids.errors';
 import {
@@ -459,34 +464,58 @@ type Matrix = {
   readonly offeringOf: ReadonlyMap<EcsBarberOffering, BarberOffering>;
 };
 
+/** A brand the legacy value already satisfies — its own rules are the brand's. */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a legacy `ServiceTerms` already holds every rule the brand
+  // checks (a non-negative integer price in a known currency, a positive
+  // duration, non-negative pads).
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/** Legacy terms → the five flat, branded `ServiceTerms` fields. */
+function ecsTermsOf(terms: ServiceTerms): EcsServiceTerms {
+  return EcsServiceTerms.of(
+    sure(EcsPriceCents.of(terms.price.toMinorUnits()), 'a price'),
+    sure(EcsCurrency.parse(terms.price.currencyCode()), 'a currency'),
+    sure(EcsDurationMinutes.of(terms.durationMinutes), 'a duration'),
+    sure(EcsMinuteCount.of(terms.setupMinutes), 'a pad'),
+    sure(EcsMinuteCount.of(terms.cleanupMinutes), 'a pad'),
+  );
+}
+
 function matrixOf(service: Service): Matrix {
   const termsOf = new Map<EcsServiceTerms, ServiceTerms>();
   const offeringOf = new Map<EcsBarberOffering, BarberOffering>();
-  const struct = (terms: ServiceTerms): EcsServiceTerms => {
-    const converted: EcsServiceTerms = {
-      priceMinorUnits: terms.price.toMinorUnits(),
-      currencyCode: terms.price.currencyCode(),
-      durationMinutes: terms.durationMinutes,
-      setupMinutes: terms.setupMinutes,
-      cleanupMinutes: terms.cleanupMinutes,
-    };
-    termsOf.set(converted, terms);
-    return converted;
+  // The flat matrix answers with the very structs it holds — the service
+  // itself (its own terms at the root), an offering itself (its base at the
+  // root) or one override — so each is mapped back to its legacy terms.
+  const priced: PricedService = {
+    ...ecsTermsOf(service.baseTerms),
+    offerings: service.offerings.map((offering) => {
+      const converted: EcsBarberOffering = {
+        barberId: EcsBarberId.of(offering.barberId.value),
+        ...ecsTermsOf(offering.base),
+        overrides: offering.overrideEntries().map(([variantId, terms]) => {
+          const override = {
+            variantId: EcsServiceVariantId.of(variantId),
+            ...ecsTermsOf(terms),
+          };
+          termsOf.set(override, terms);
+          return override;
+        }),
+      };
+      termsOf.set(converted, offering.base);
+      offeringOf.set(converted, offering);
+      return converted;
+    }),
   };
-  const baseTerms = struct(service.baseTerms);
-  const offerings = service.offerings.map((offering) => {
-    const converted: EcsBarberOffering = {
-      barberId: EcsBarberId.of(offering.barberId.value),
-      base: struct(offering.base),
-      overrides: offering.overrideEntries().map(([variantId, terms]) => ({
-        variantId: EcsServiceVariantId.of(variantId),
-        terms: struct(terms),
-      })),
-    };
-    offeringOf.set(converted, offering);
-    return converted;
-  });
-  const priced: PricedService = { baseTerms, offerings };
+  termsOf.set(priced, service.baseTerms);
   return {
     service: priced,
     every: OfferingPriceSystem.everyTerms(priced),
@@ -498,11 +527,11 @@ function matrixOf(service: Service): Matrix {
 /** The legacy price of the FIRST terms (in matrix order) at `minorUnits` — the one the legacy reduce kept. */
 function firstPricedAt(matrix: Matrix, minorUnits: number): Money {
   for (const terms of matrix.every) {
-    if (terms.priceMinorUnits === minorUnits) {
+    if (terms.priceCents === minorUnits) {
       const legacy = matrix.termsOf.get(terms);
       if (legacy !== undefined) return legacy.price;
     }
   }
   // Unreachable: the range is drawn from these very terms.
-  return (matrix.termsOf.get(matrix.service.baseTerms) as ServiceTerms).price;
+  return (matrix.termsOf.get(matrix.service) as ServiceTerms).price;
 }

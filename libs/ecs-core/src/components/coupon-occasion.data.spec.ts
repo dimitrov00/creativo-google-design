@@ -11,8 +11,8 @@ import {
 
 describe('CouponOccasion', () => {
   it('is a closed set of one', () => {
-    expect(COUPON_OCCASIONS).toEqual(['birthday']);
-    expect(CouponOccasion.Birthday).toBe('birthday');
+    expect(COUPON_OCCASIONS).toEqual(['BIRTHDAY']);
+    expect(CouponOccasion.Birthday).toBe('BIRTHDAY');
   });
 
   it.each([[null], [undefined]])('reads %s as no occasion', (raw) => {
@@ -29,12 +29,15 @@ describe('CouponOccasion', () => {
     }
   });
 
-  it.each([['nameday'], ['Birthday'], [' birthday'], [''], [0], [true]])(
+  it.each([['nameday'], ['Birthday'], [' BIRTHDAY'], [''], [0], [true]])(
     'refuses %j: a word the card does not know is never "no occasion"',
     (raw) => {
       expect(parseCouponOccasion(raw)).toEqual({
         ok: false,
-        error: { code: 'engagement.coupon.occasion_unknown', attempted: raw },
+        error: {
+          errorCode: 'ENGAGEMENT_COUPON_OCCASION_UNKNOWN',
+          attempted: raw,
+        },
       });
       expect(isCouponOccasion(raw)).toBe(false);
     },
@@ -48,6 +51,6 @@ describe('CouponOccasion', () => {
 
 describe('CouponStatus', () => {
   it('replaces the boolean `enabled` with two tags', () => {
-    expect(Object.values(CouponStatus)).toEqual(['enabled', 'disabled']);
+    expect(Object.values(CouponStatus)).toEqual(['ENABLED', 'DISABLED']);
   });
 });

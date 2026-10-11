@@ -1,40 +1,50 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-  type AppliedDiscount,
-  AppliedDiscountSource,
-} from '../components/applied-discount.data';
-import { CouponCombinability } from '../components/coupon-combinability.data';
+import type { AppliedDiscount } from '../components/applied-discount.data';
+import { Combinability } from '../components/coupon-combinability.data';
 import { CouponValue } from '../components/coupon-value.data';
+import { DiscountSource } from '../components/discount-provenance.data';
 import { EngagementErrorCode } from '../components/engagement-errors.data';
 import {
-  CouponGrantCapacity,
-  CouponGrantExpiration,
-  GrantState,
-  GrantStatus,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
 } from '../components/grant-status.data';
 import type { Money } from '../components/money.data';
+import { VoucherCode } from '../components/voucher-code.data';
+import type { CouponGrant } from '../entities/coupon-grant.entity';
+import { Currency } from '../primitives/currency.primitive';
 import {
-  type CouponGrantEntity,
+  AppliedDiscountId,
   CouponGrantId,
-} from '../entities/coupon-grant.entity';
-import { CouponId } from '../entities/coupon.entity';
-import { UserId } from '../entities/user.entity';
-import { deepFreeze, unwrapOk } from '../testing';
+  CouponId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { deepFreeze, unwrapOk, utcMs } from '../testing';
 import { type DiscountInput, DiscountSystem } from './discount.system';
 
 /*
  * The cases of libs/domain/engagement/src/lib/discount-application.spec.ts
  * and of libs/application/engagement/.../apply-discounts.use-case.spec.ts
- * (the anti-abuse cap over a client's grants), copied — `grantedAt` is an
- * instant in ms, `minSpend` is `null` when ungated, the cap is `null` when
+ * (the anti-abuse cap over a client's grants), copied — `grantedAtUtcMs` is
+ * an instant, `minSpendCents` is `null` when ungated, the cap is `null` when
  * none. The originals keep running against the `DiscountApplication` shim.
  */
 
-const BASE_MS = Date.UTC(2025, 11, 31, 22, 0);
+const BASE = utcMs('2026-01-01T00:00:00+02:00');
+
+function cents(minor: number): PriceCents {
+  return unwrapOk(PriceCents.of(minor));
+}
+
+function money(minor: number, currency: Currency): Money {
+  return { amountCents: cents(minor), currency };
+}
 
 function eur(major: number): Money {
-  return { amountMinorUnits: Math.round(major * 100), currencyCode: 'EUR' };
+  return money(Math.round(major * 100), Currency.EUR);
 }
 
 function pct(percent: number): CouponValue {
@@ -42,7 +52,9 @@ function pct(percent: number): CouponValue {
 }
 
 function fixed(major: number): CouponValue {
-  return unwrapOk(CouponValue.fixedAmount(eur(major)));
+  return unwrapOk(
+    CouponValue.fixedAmount(cents(Math.round(major * 100)), Currency.EUR),
+  );
 }
 
 function input(
@@ -51,27 +63,31 @@ function input(
   opts: { minSpend?: Money; grantedAtOffset?: number } = {},
 ): DiscountInput {
   return {
-    id,
+    id: AppliedDiscountId.of(id),
     label: id,
-    value,
-    grantedAtMs: BASE_MS + (opts.grantedAtOffset ?? 0) * 60_000,
-    minSpend: opts.minSpend ?? null,
+    grantedAtUtcMs: UtcEpochMs.plusMs(
+      BASE,
+      (opts.grantedAtOffset ?? 0) * 60_000,
+    ),
+    minSpendCents: opts.minSpend?.amountCents ?? null,
+    ...value,
   };
 }
 
 describe('DiscountSystem.apply — single value', () => {
   it('applies a percent off the subtotal', () => {
     const out = DiscountSystem.apply(eur(100), [input('p', pct(15))], null);
-    expect(out.discountTotal.amountMinorUnits).toBe(1500);
-    expect(out.total.amountMinorUnits).toBe(8500);
+    expect(out.discountTotalCents).toBe(1500);
+    expect(out.totalCents).toBe(8500);
     expect(out.lines).toHaveLength(1);
+    expect(out.currency).toBe('EUR');
   });
 
   it('no discounts ⇒ total equals subtotal, no lines', () => {
     const out = DiscountSystem.apply(eur(42), [], null);
     expect(out.lines).toHaveLength(0);
-    expect(out.discountTotal.amountMinorUnits).toBe(0);
-    expect(out.total.amountMinorUnits).toBe(4200);
+    expect(out.discountTotalCents).toBe(0);
+    expect(out.totalCents).toBe(4200);
   });
 });
 
@@ -83,8 +99,8 @@ describe('DiscountSystem.apply — stacking order (fixed → percent on remainde
       null,
     );
     expect(out.lines).toHaveLength(2);
-    expect(out.discountTotal.amountMinorUnits).toBe(2350);
-    expect(out.total.amountMinorUnits).toBe(7650);
+    expect(out.discountTotalCents).toBe(2350);
+    expect(out.totalCents).toBe(7650);
   });
 
   it('a fixed amount comes off before a percentage regardless of input order', () => {
@@ -99,17 +115,17 @@ describe('DiscountSystem.apply — stacking order (fixed → percent on remainde
       null,
     );
     expect(orderA.lines[0]?.id).toBe('f');
-    expect(orderA.total.amountMinorUnits).toBe(7200);
+    expect(orderA.totalCents).toBe(7200);
     expect(orderB.lines[0]?.id).toBe('f');
-    expect(orderB.total.amountMinorUnits).toBe(7200);
+    expect(orderB.totalCents).toBe(7200);
   });
 });
 
 describe('DiscountSystem.apply — clamping + free service', () => {
   it('a fixed amount larger than the subtotal clamps to zero, never negative', () => {
     const out = DiscountSystem.apply(eur(5), [input('f', fixed(10))], null);
-    expect(out.lines[0]?.amount.amountMinorUnits).toBe(500);
-    expect(out.total.amountMinorUnits).toBe(0);
+    expect(out.lines[0]?.amountCents).toBe(500);
+    expect(out.totalCents).toBe(0);
   });
 
   it('free_service zeroes the running remainder, applied after percents', () => {
@@ -120,7 +136,7 @@ describe('DiscountSystem.apply — clamping + free service', () => {
     );
     expect(out.lines[0]?.id).toBe('p');
     expect(out.lines[1]?.id).toBe('free');
-    expect(out.total.amountMinorUnits).toBe(0);
+    expect(out.totalCents).toBe(0);
   });
 });
 
@@ -151,13 +167,13 @@ describe('DiscountSystem.apply — anti-abuse cap', () => {
       [input('a', pct(40)), input('b', pct(40))],
       50,
     );
-    expect(out.discountTotal.amountMinorUnits).toBe(5000);
-    expect(out.total.amountMinorUnits).toBe(5000);
+    expect(out.discountTotalCents).toBe(5000);
+    expect(out.totalCents).toBe(5000);
   });
 
   it('leaves the breakdown untouched when under the cap', () => {
     const out = DiscountSystem.apply(eur(100), [input('a', pct(10))], 50);
-    expect(out.discountTotal.amountMinorUnits).toBe(1000);
+    expect(out.discountTotalCents).toBe(1000);
   });
 
   it('capPercent rejects an out-of-range value', () => {
@@ -166,7 +182,7 @@ describe('DiscountSystem.apply — anti-abuse cap', () => {
     expect(DiscountSystem.capPercent(Number.NaN)).toEqual({
       ok: false,
       error: {
-        code: EngagementErrorCode.DiscountCapInvalid,
+        errorCode: EngagementErrorCode.DiscountCapInvalid,
         attempted: Number.NaN,
       },
     });
@@ -178,7 +194,7 @@ describe('DiscountSystem.apply — anti-abuse cap', () => {
 
 const discountArb = fc
   .record({
-    kind: fc.constantFrom<'percent' | 'fixed' | 'free'>(
+    method: fc.constantFrom<'percent' | 'fixed' | 'free'>(
       'percent',
       'fixed',
       'free',
@@ -189,9 +205,9 @@ const discountArb = fc
   })
   .map((r) => ({
     value:
-      r.kind === 'percent'
+      r.method === 'percent'
         ? pct(r.percent)
-        : r.kind === 'fixed'
+        : r.method === 'fixed'
           ? fixed(r.fixedMajor)
           : CouponValue.freeService(),
     offset: r.offset,
@@ -218,8 +234,8 @@ describe('DiscountSystem.apply — property tests', () => {
             toInputs(items),
             capPercent,
           );
-          expect(out.total.amountMinorUnits).toBeGreaterThanOrEqual(0);
-          expect(out.discountTotal.amountMinorUnits).toBeGreaterThanOrEqual(0);
+          expect(out.totalCents).toBeGreaterThanOrEqual(0);
+          expect(out.discountTotalCents).toBeGreaterThanOrEqual(0);
         },
       ),
       { numRuns: 200 },
@@ -240,11 +256,9 @@ describe('DiscountSystem.apply — property tests', () => {
             capPercent,
           );
           const maxAllowed = Math.round(
-            (subtotal.amountMinorUnits * capPercent) / 100,
+            (subtotal.amountCents * capPercent) / 100,
           );
-          expect(out.discountTotal.amountMinorUnits).toBeLessThanOrEqual(
-            maxAllowed,
-          );
+          expect(out.discountTotalCents).toBeLessThanOrEqual(maxAllowed);
         },
       ),
       { numRuns: 200 },
@@ -263,11 +277,11 @@ describe('DiscountSystem.apply — property tests', () => {
           const shuffled = [...inputs].reverse();
           const outA = DiscountSystem.apply(subtotal, inputs, capPercent);
           const outB = DiscountSystem.apply(subtotal, shuffled, capPercent);
-          expect(outB.discountTotal).toEqual(outA.discountTotal);
-          expect(outB.total).toEqual(outA.total);
-          expect(
-            outB.lines.map((l) => [l.id, l.amount.amountMinorUnits]),
-          ).toEqual(outA.lines.map((l) => [l.id, l.amount.amountMinorUnits]));
+          expect(outB.discountTotalCents).toBe(outA.discountTotalCents);
+          expect(outB.totalCents).toBe(outA.totalCents);
+          expect(outB.lines.map((l) => [l.id, l.amountCents])).toEqual(
+            outA.lines.map((l) => [l.id, l.amountCents]),
+          );
         },
       ),
       { numRuns: 200 },
@@ -282,9 +296,9 @@ describe('DiscountSystem.apply — property tests', () => {
         (subtotalMajor, items) => {
           const subtotal = eur(subtotalMajor);
           const out = DiscountSystem.apply(subtotal, toInputs(items), null);
-          expect(
-            out.total.amountMinorUnits + out.discountTotal.amountMinorUnits,
-          ).toBe(subtotal.amountMinorUnits);
+          expect(out.totalCents + out.discountTotalCents).toBe(
+            subtotal.amountCents,
+          );
         },
       ),
       { numRuns: 200 },
@@ -294,20 +308,24 @@ describe('DiscountSystem.apply — property tests', () => {
 
 /* ── The client's grants (ApplyDiscountsUseCase) ──────────────────────── */
 
-const NOW_MS = Date.UTC(2026, 0, 1);
+const NOW = utcMs('2026-01-01T00:00:00Z');
 const USER = UserId.of('user_1');
 
-function grant(id: string, value: CouponValue): CouponGrantEntity {
+function grant(
+  id: string,
+  value: CouponValue,
+  lifecycle: GrantLifecycle = GrantLifecycle.active(
+    GrantCapacityTerms.singleUse(),
+    GrantExpiryTerms.none(),
+  ),
+): CouponGrant {
   return {
     id: CouponGrantId.of(id),
     userId: USER,
     couponId: CouponId.of(`coupon_${id}`),
-    value,
-    grantedAtMs: NOW_MS,
-    state: GrantStatus.active(
-      CouponGrantCapacity.singleUse(),
-      CouponGrantExpiration.none(),
-    ),
+    grantedAtUtcMs: NOW,
+    ...value,
+    ...lifecycle,
   };
 }
 
@@ -315,12 +333,12 @@ describe('DiscountSystem.inputsFromGrants — the client’s usable grants', () 
   it('applies a fixed-amount grant against the cart subtotal', () => {
     const inputs = DiscountSystem.inputsFromGrants(
       [{ grant: grant('grant_1', fixed(5)), label: '5 EUR off' }],
-      NOW_MS,
+      NOW,
     );
     const out = DiscountSystem.apply(eur(20), inputs, null);
     expect(out.lines).toHaveLength(1);
     expect(out.lines[0]?.label).toBe('5 EUR off');
-    expect(out.total.amountMinorUnits).toBe(1500);
+    expect(out.totalCents).toBe(1500);
   });
 
   it('respects the anti-abuse cap across multiple grants', () => {
@@ -329,19 +347,16 @@ describe('DiscountSystem.inputsFromGrants — the client’s usable grants', () 
         { grant: grant('grant_1', pct(50)), label: '50% off' },
         { grant: grant('grant_2', pct(20)), label: '20% off' },
       ],
-      NOW_MS,
+      NOW,
     );
     const out = DiscountSystem.apply(eur(100), inputs, 30);
-    expect(out.discountTotal.amountMinorUnits).toBeLessThanOrEqual(3000);
+    expect(out.discountTotalCents).toBeLessThanOrEqual(3000);
   });
 
   it('leaves out a grant that is no longer usable', () => {
-    const spent: CouponGrantEntity = {
-      ...grant('grant_3', pct(10)),
-      state: { kind: GrantState.Used, usedAtMs: NOW_MS, note: '' },
-    };
+    const spent = grant('grant_3', pct(10), GrantLifecycle.used(NOW, ''));
     expect(
-      DiscountSystem.inputsFromGrants([{ grant: spent, label: 'x' }], NOW_MS),
+      DiscountSystem.inputsFromGrants([{ grant: spent, label: 'x' }], NOW),
     ).toEqual([]);
   });
 });
@@ -349,14 +364,13 @@ describe('DiscountSystem.inputsFromGrants — the client’s usable grants', () 
 /* ── The discounts on a visit ─────────────────────────────────────────── */
 
 const birthday: AppliedDiscount = {
-  id: 'grant:grant-1',
-  source: AppliedDiscountSource.Grant,
-  value: pct(20),
+  discountId: AppliedDiscountId.of('grant:grant-1'),
+  discountSource: DiscountSource.Grant,
   label: 'Рожден ден',
-  grantId: CouponGrantId.of('grant-1'),
-  code: null,
-  appliedAtMs: BASE_MS,
-  combinability: CouponCombinability.stackable(),
+  discountGrantId: CouponGrantId.of('grant-1'),
+  appliedAtUtcMs: BASE,
+  combinability: Combinability.Stackable,
+  ...pct(20),
 };
 
 describe('DiscountSystem — the discounts on a visit', () => {
@@ -364,28 +378,33 @@ describe('DiscountSystem — the discounts on a visit', () => {
     expect(DiscountSystem.inputOf(birthday)).toEqual({
       id: 'grant:grant-1',
       label: 'Рожден ден',
-      value: pct(20),
-      grantedAtMs: BASE_MS,
-      minSpend: null,
+      grantedAtUtcMs: BASE,
+      minSpendCents: null,
+      discountMethod: 'PERCENT_OFF',
+      discountPercent: 20,
     });
-    const later = { ...birthday, appliedAtMs: BASE_MS + 86_400_000 };
+    const later: AppliedDiscount = {
+      ...birthday,
+      appliedAtUtcMs: UtcEpochMs.plusMs(BASE, 86_400_000),
+    };
     expect(DiscountSystem.samePromise(birthday, later)).toBe(true);
-    const other = { ...birthday, value: pct(10) };
+    const other: AppliedDiscount = { ...birthday, ...pct(10) };
     expect(DiscountSystem.samePromise(birthday, other)).toBe(false);
   });
 
   it('lets stackable promises share the bill and keeps an exclusive one alone', () => {
     const stackable: AppliedDiscount = {
-      ...birthday,
-      id: 'code:first10',
-      source: AppliedDiscountSource.Code,
-      value: pct(10),
-      grantId: null,
-      code: 'FIRST10',
+      discountId: AppliedDiscountId.of('code:first10'),
+      discountSource: DiscountSource.Code,
+      label: 'Рожден ден',
+      discountCode: VoucherCode.of('FIRST10'),
+      appliedAtUtcMs: BASE,
+      combinability: Combinability.Stackable,
+      ...pct(10),
     };
     const exclusive: AppliedDiscount = {
       ...birthday,
-      combinability: CouponCombinability.exclusive(),
+      combinability: Combinability.Exclusive,
     };
     expect(DiscountSystem.isLegalSet([])).toBe(true);
     expect(DiscountSystem.isLegalSet([stackable, birthday])).toBe(true);
@@ -397,11 +416,8 @@ describe('DiscountSystem — the discounts on a visit', () => {
   it('takes one value off an amount — never more than it, zero across a currency line', () => {
     expect(DiscountSystem.amountOf(eur(10), fixed(20))).toEqual(eur(10));
     expect(
-      DiscountSystem.amountOf(
-        { amountMinorUnits: 1000, currencyCode: 'BGN' },
-        fixed(5),
-      ),
-    ).toEqual({ amountMinorUnits: 0, currencyCode: 'BGN' });
+      DiscountSystem.amountOf(money(1000, Currency.BGN), fixed(5)),
+    ).toEqual(money(0, Currency.BGN));
     expect(DiscountSystem.amountOf(eur(10), CouponValue.freeService())).toEqual(
       eur(10),
     );

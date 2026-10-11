@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { UserId } from '../entities/user.entity';
-import { Party, PartyMember, PartyMemberKind } from './party.data';
+import { GuestId, UserId } from '../primitives/ids.primitive';
+import { Party, PartyMember, PartyRole } from './party.data';
 import { SeatLabel } from './seat-label.data';
 
 const OWNER = UserId.of('u-owner');
@@ -19,14 +19,14 @@ function partyOf(...labels: readonly string[]): Party {
 }
 
 const labelsOf = (party: Party): readonly string[] =>
-  Party.guests(party).map((guest) => guest.label);
+  Party.guests(party).map((guest) => guest.guestLabel);
 
 describe('Party — anonymous until claimed', () => {
   it('opens unclaimed, with the booker as its only member', () => {
     const party = Party.anonymous();
     expect(party).toEqual({
       ownerUserId: null,
-      members: [{ kind: 'owner' }],
+      members: [{ partyRole: 'OWNER' }],
       nextGuestSequence: 0,
     });
     expect(Party.isClaimed(party)).toBe(false);
@@ -50,31 +50,31 @@ describe('Party.addGuest / removeGuest', () => {
   it('adds a guest under a minted id and rejects an invalid label', () => {
     const party = partyOf('Мария');
     expect(Party.guests(party)).toEqual([
-      { kind: PartyMemberKind.Guest, guestId: 'guest-0', label: 'Мария' },
+      { partyRole: PartyRole.Guest, guestId: 'guest-0', guestLabel: 'Мария' },
     ]);
     expect(Party.addGuest(party, '   ')).toEqual({
       ok: false,
-      error: { code: 'scheduling.seat_label.empty' },
+      error: { errorCode: 'SCHEDULING_SEAT_LABEL_EMPTY' },
     });
     expect(Party.addGuest(party, 'x'.repeat(61)).ok).toBe(false);
   });
 
   it('rejects removing a guest that does not exist', () => {
-    expect(Party.removeGuest(partyOf('Мария'), 'guest-7')).toEqual({
+    expect(Party.removeGuest(partyOf('Мария'), GuestId.of('guest-7'))).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.booking_party.guest_not_found',
+        errorCode: 'SCHEDULING_BOOKING_PARTY_GUEST_NOT_FOUND',
         guestId: 'guest-7',
       },
     });
-    expect(Party.renameGuest(partyOf('Мария'), 'guest-7', 'Ани').ok).toBe(
-      false,
-    );
+    expect(
+      Party.renameGuest(partyOf('Мария'), GuestId.of('guest-7'), 'Ани').ok,
+    ).toBe(false);
   });
 
   it('never reuses a guest id after add → remove → add (blueprint §7.7 regression)', () => {
     const one = partyOf('Мария');
-    const removed = Party.removeGuest(one, 'guest-0');
+    const removed = Party.removeGuest(one, GuestId.of('guest-0'));
     if (!removed.ok) throw new Error('remove refused');
     expect(removed.value.nextGuestSequence).toBe(1);
     const readded = Party.addGuest(removed.value, 'Мария');
@@ -90,7 +90,7 @@ describe('Party — one label, one guest', () => {
     expect(Party.addGuest(partyOf('Мария'), 'Мария')).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.booking_party.duplicate_label',
+        errorCode: 'SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL',
         label: 'Мария',
       },
     });
@@ -106,26 +106,32 @@ describe('Party — one label, one guest', () => {
 
   it('refuses to RENAME a guest to another guest’s label, and leaves the party as it was', () => {
     const party = partyOf('Мария', 'Гост 2');
-    const result = Party.renameGuest(party, 'guest-1', 'Мария');
-    expect(!result.ok && result.error.code).toBe(
-      'scheduling.booking_party.duplicate_label',
+    const result = Party.renameGuest(party, GuestId.of('guest-1'), 'Мария');
+    expect(!result.ok && result.error.errorCode).toBe(
+      'SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL',
     );
     expect(labelsOf(party)).toEqual(['Мария', 'Гост 2']);
   });
 
   it('lets a guest keep — or re-type — their OWN label, keeping their id', () => {
-    const renamed = Party.renameGuest(partyOf('Мария'), 'guest-0', ' Мария ');
+    const renamed = Party.renameGuest(
+      partyOf('Мария'),
+      GuestId.of('guest-0'),
+      ' Мария ',
+    );
     expect(renamed.ok && Party.guests(renamed.value)).toEqual([
-      { kind: 'guest', guestId: 'guest-0', label: 'Мария' },
+      { partyRole: 'GUEST', guestId: 'guest-0', guestLabel: 'Мария' },
     ]);
   });
 
   it('frees a label once its guest leaves or takes another', () => {
     const party = partyOf('Мария', 'Гост 2');
-    const renamed = Party.renameGuest(party, 'guest-0', 'Ани');
+    const renamed = Party.renameGuest(party, GuestId.of('guest-0'), 'Ани');
     if (!renamed.ok) throw new Error('rename refused');
-    expect(Party.renameGuest(renamed.value, 'guest-1', 'Мария').ok).toBe(true);
-    const removed = Party.removeGuest(party, 'guest-0');
+    expect(
+      Party.renameGuest(renamed.value, GuestId.of('guest-1'), 'Мария').ok,
+    ).toBe(true);
+    const removed = Party.removeGuest(party, GuestId.of('guest-0'));
     if (!removed.ok) throw new Error('remove refused');
     expect(Party.addGuest(removed.value, 'Мария').ok).toBe(true);
   });
@@ -167,16 +173,16 @@ describe('Party — one label, one guest', () => {
     const restored: unknown = {
       ownerUserId: null,
       members: [
-        { kind: 'owner' },
-        { kind: 'guest', guestId: 'guest-0', label: 'Гост 1' },
-        { kind: 'guest', guestId: 'guest-1', label: 'Ани' },
-        { kind: 'guest', guestId: 'guest-2', label: 'Гост 1' },
+        { partyRole: 'OWNER' },
+        { partyRole: 'GUEST', guestId: 'guest-0', guestLabel: 'Гост 1' },
+        { partyRole: 'GUEST', guestId: 'guest-1', guestLabel: 'Ани' },
+        { partyRole: 'GUEST', guestId: 'guest-2', guestLabel: 'Гост 1' },
       ],
       nextGuestSequence: 3,
     };
     if (!Party.is(restored)) throw new Error('expected a restorable party');
     expect(Party.sharedLabel(restored)).toBe('Гост 1');
-    const renamed = Party.renameGuest(restored, 'guest-2', 'Мария');
+    const renamed = Party.renameGuest(restored, GuestId.of('guest-2'), 'Мария');
     expect(renamed.ok && Party.sharedLabel(renamed.value)).toBeNull();
   });
 });
@@ -219,9 +225,13 @@ describe('Party — accounts and seats', () => {
   const withCompanion: Party = {
     ownerUserId: OWNER,
     members: [
-      { kind: 'owner' },
-      { kind: 'companion', userId: COMPANION },
-      { kind: 'guest', guestId: 'guest-0', label: SeatLabel.of('Мария') },
+      { partyRole: 'OWNER' },
+      { partyRole: 'COMPANION', companionUserId: COMPANION },
+      {
+        partyRole: 'GUEST',
+        guestId: GuestId.of('guest-0'),
+        guestLabel: SeatLabel.of('Мария'),
+      },
     ],
     nextGuestSequence: 1,
   };
@@ -242,9 +252,9 @@ describe('Party — accounts and seats', () => {
 
   it('names every seat, the booker first', () => {
     expect(Party.seatKeys(withCompanion)).toEqual([
-      { kind: 'self' },
-      { kind: 'companion', userId: COMPANION },
-      { kind: 'guest', guestId: 'guest-0' },
+      { seatKeyRole: 'SELF' },
+      { seatKeyRole: 'COMPANION', companionUserId: COMPANION },
+      { seatKeyRole: 'GUEST', guestId: 'guest-0' },
     ]);
   });
 });
@@ -258,52 +268,67 @@ describe('Party.is — the edge guard', () => {
   it.each([
     null,
     { ownerUserId: null, members: [], nextGuestSequence: 0 },
-    { ownerUserId: '', members: [{ kind: 'owner' }], nextGuestSequence: 0 },
-    { ownerUserId: null, members: [{ kind: 'owner' }], nextGuestSequence: -1 },
-    { ownerUserId: null, members: [{ kind: 'owner' }], nextGuestSequence: 0.5 },
+    {
+      ownerUserId: '',
+      members: [{ partyRole: 'OWNER' }],
+      nextGuestSequence: 0,
+    },
     {
       ownerUserId: null,
-      members: [{ kind: 'guest', guestId: 'guest-0', label: 'A' }],
+      members: [{ partyRole: 'OWNER' }],
+      nextGuestSequence: -1,
+    },
+    {
+      ownerUserId: null,
+      members: [{ partyRole: 'OWNER' }],
+      nextGuestSequence: 0.5,
+    },
+    {
+      ownerUserId: null,
+      members: [{ partyRole: 'GUEST', guestId: 'guest-0', guestLabel: 'A' }],
       nextGuestSequence: 1,
     },
     {
       ownerUserId: null,
-      members: [{ kind: 'owner' }, { kind: 'owner' }],
+      members: [{ partyRole: 'OWNER' }, { partyRole: 'OWNER' }],
       nextGuestSequence: 0,
     },
     {
       ownerUserId: null,
       members: [
-        { kind: 'owner' },
-        { kind: 'guest', guestId: 'g0', label: 'A' },
+        { partyRole: 'OWNER' },
+        { partyRole: 'GUEST', guestId: 'g0', guestLabel: 'A' },
       ],
       nextGuestSequence: 1,
     },
     {
       ownerUserId: null,
       members: [
-        { kind: 'owner' },
-        { kind: 'guest', guestId: 'guest-0', label: ' A ' },
+        { partyRole: 'OWNER' },
+        { partyRole: 'GUEST', guestId: 'guest-0', guestLabel: ' A ' },
       ],
       nextGuestSequence: 1,
     },
     {
       ownerUserId: null,
       members: [
-        { kind: 'owner' },
-        { kind: 'guest', guestId: 'guest-0', label: 'A' },
-        { kind: 'guest', guestId: 'guest-0', label: 'B' },
+        { partyRole: 'OWNER' },
+        { partyRole: 'GUEST', guestId: 'guest-0', guestLabel: 'A' },
+        { partyRole: 'GUEST', guestId: 'guest-0', guestLabel: 'B' },
       ],
       nextGuestSequence: 1,
     },
     {
       ownerUserId: null,
-      members: [{ kind: 'owner' }, { kind: 'companion', userId: '' }],
+      members: [
+        { partyRole: 'OWNER' },
+        { partyRole: 'COMPANION', companionUserId: '' },
+      ],
       nextGuestSequence: 0,
     },
     {
       ownerUserId: null,
-      members: [{ kind: 'owner' }, { kind: 'stranger' }],
+      members: [{ partyRole: 'OWNER' }, { partyRole: 'STRANGER' }],
       nextGuestSequence: 0,
     },
   ])('refuses %j', (raw) => {
@@ -313,15 +338,17 @@ describe('Party.is — the edge guard', () => {
 
 describe('PartyMember — each member built from its tag', () => {
   it('builds the owner, a companion and a guest', () => {
-    expect(PartyMember.owner()).toEqual({ kind: PartyMemberKind.Owner });
+    expect(PartyMember.owner()).toEqual({ partyRole: PartyRole.Owner });
     expect(PartyMember.companion(UserId.of('u-2'))).toEqual({
-      kind: PartyMemberKind.Companion,
-      userId: 'u-2',
+      partyRole: PartyRole.Companion,
+      companionUserId: 'u-2',
     });
-    expect(PartyMember.guest('guest-0', SeatLabel.of('Мария'))).toEqual({
-      kind: PartyMemberKind.Guest,
+    expect(
+      PartyMember.guest(GuestId.of('guest-0'), SeatLabel.of('Мария')),
+    ).toEqual({
+      partyRole: PartyRole.Guest,
       guestId: 'guest-0',
-      label: 'Мария',
+      guestLabel: 'Мария',
     });
   });
 });

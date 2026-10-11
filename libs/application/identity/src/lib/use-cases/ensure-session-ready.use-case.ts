@@ -2,7 +2,7 @@ import { firstValueFrom } from 'rxjs';
 import {
   REFRESH_BACKOFF_MS,
   SessionAccessSystem,
-  SessionReadinessKind,
+  SessionReadiness,
 } from '@creativo/ecs-core';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { Principal } from '@creativo/domain/identity';
@@ -50,7 +50,7 @@ export class EnsureSessionReadyUseCase {
     let principal = await firstValueFrom(this.authGateway.observePrincipal());
     let refreshes = 0;
     let step = SessionAccessSystem.readiness(principalTagOf(principal), 0);
-    while (step.kind === SessionReadinessKind.Refresh) {
+    while (step.sessionReadiness === SessionReadiness.Refresh) {
       if (step.delayMs > 0) {
         await this.delay(step.delayMs);
       }

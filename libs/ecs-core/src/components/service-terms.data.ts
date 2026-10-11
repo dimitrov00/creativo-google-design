@@ -1,3 +1,11 @@
+import { Currency } from '../primitives/currency.primitive';
+import { defect } from '../primitives/defect';
+import {
+  DurationMinutes,
+  MinuteCount,
+} from '../primitives/duration-minutes.primitive';
+import { ServiceVariantId } from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
 import { CatalogError } from './catalog-errors.data';
 import { LocalizedText } from './localized-text.data';
 import { Money } from './money.data';
@@ -6,11 +14,10 @@ import { Result } from './result.data';
 
 /**
  * What one booking of a service costs, how long it takes and how much unsold
- * chair time surrounds it — `service-terms.ts:45`'s `ServiceTerms` class as
- * the stored struct. The flat `priceMinorUnits` + `currencyCode` pair stays
- * here (blueprint §2.5's one exception to the nested-`Money` rule): one code
- * prices one figure beside the duration fields, and the whole struct is
- * snapshotted onto every seat.
+ * chair time surrounds it — a SLICE (Law 6): its five fields sit at the root
+ * of whatever carries terms (a `Service`, a `BarberOffering`, a `Seat`), the
+ * way the service document already stores them. Money is `priceCents` beside
+ * one `currency` (N6); durations are branded minutes (N14).
  *
  * `setupMinutes` (prep before) and `cleanupMinutes` (mop-up after) are
  * **outside** the sold duration (owner ruling, 2026-07-29): the client is
@@ -22,13 +29,22 @@ import { Result } from './result.data';
  * both axes: "Ivan's colour needs 15 minutes of cleanup" needs no new field.
  */
 export type ServiceTerms = {
-  readonly priceMinorUnits: number;
-  readonly currencyCode: string;
-  /** The sold duration — a positive integer of minutes. */
-  readonly durationMinutes: number;
+  readonly priceCents: PriceCents;
+  readonly currency: Currency;
+  /** The sold duration — a positive whole number of minutes. */
+  readonly durationMinutes: DurationMinutes;
   /** Unsold time BEFORE the service — mixing, prep. Never charged for. */
-  readonly setupMinutes: number;
+  readonly setupMinutes: MinuteCount;
   /** Unsold time AFTER the service — the mop-up. Never charged for. */
+  readonly cleanupMinutes: MinuteCount;
+};
+
+/** Terms as authored (the catalogue seed, an admin write), before their edge guard — raw figures. */
+export type ServiceTermsInput = {
+  readonly priceCents: number;
+  readonly currency: string;
+  readonly durationMinutes: number;
+  readonly setupMinutes: number;
   readonly cleanupMinutes: number;
 };
 
@@ -41,15 +57,15 @@ export const ServiceTerms = {
    * input with {@link parse}.
    */
   of(
-    priceMinorUnits: number,
-    currencyCode: string,
-    durationMinutes: number,
-    setupMinutes: number,
-    cleanupMinutes: number,
+    priceCents: PriceCents,
+    currency: Currency,
+    durationMinutes: DurationMinutes,
+    setupMinutes: MinuteCount,
+    cleanupMinutes: MinuteCount,
   ): ServiceTerms {
     return {
-      priceMinorUnits,
-      currencyCode,
+      priceCents,
+      currency,
       durationMinutes,
       setupMinutes,
       cleanupMinutes,
@@ -62,70 +78,86 @@ export const ServiceTerms = {
    * parameter.
    */
   unpadded(
-    priceMinorUnits: number,
-    currencyCode: string,
-    durationMinutes: number,
+    priceCents: PriceCents,
+    currency: Currency,
+    durationMinutes: DurationMinutes,
   ): ServiceTerms {
     return ServiceTerms.of(
-      priceMinorUnits,
-      currencyCode,
+      priceCents,
+      currency,
       durationMinutes,
-      0,
-      0,
+      MinuteCount.ZERO,
+      MinuteCount.ZERO,
     );
   },
 
   /**
    * The edge guard (the catalogue seed, an admin write), every violation at
    * once: the price must be `Money` (a non-negative safe integer in a
-   * recognised currency — `money.unknown_currency` / `money.invalid_amount`),
+   * recognised currency — `MONEY_UNKNOWN_CURRENCY` / `MONEY_INVALID_AMOUNT`),
    * the duration a positive integer and each pad a non-negative integer
-   * (`catalog.service.invalid_duration`, carrying the offending figure — a
+   * (`CATALOG_SERVICE_INVALID_DURATION`, carrying the offending figure — a
    * negative or fractional pad is the same authoring mistake as a negative
    * duration and reaches the same place, the grid's arithmetic). The
-   * currency code comes back normalised (`'eur'` → `'EUR'`).
+   * currency comes back normalised (`'eur'` → `'EUR'`).
    */
-  parse(raw: ServiceTerms): Result<ServiceTerms, readonly ServiceTermsError[]> {
+  parse(
+    raw: ServiceTermsInput,
+  ): Result<ServiceTerms, readonly ServiceTermsError[]> {
     const errors: ServiceTermsError[] = [];
-    const price = Money.of(raw.priceMinorUnits, raw.currencyCode);
+    const price = Money.of(raw.priceCents, raw.currency);
     if (!price.ok) errors.push(price.error);
-    if (!Number.isInteger(raw.durationMinutes) || raw.durationMinutes <= 0) {
+    const duration = DurationMinutes.of(raw.durationMinutes);
+    if (!duration.ok) {
       errors.push(CatalogError.serviceInvalidDuration(raw.durationMinutes));
     }
-    if (!isPad(raw.setupMinutes)) {
+    const setup = MinuteCount.of(raw.setupMinutes);
+    if (!setup.ok) {
       errors.push(CatalogError.serviceInvalidDuration(raw.setupMinutes));
     }
-    if (!isPad(raw.cleanupMinutes)) {
+    const cleanup = MinuteCount.of(raw.cleanupMinutes);
+    if (!cleanup.ok) {
       errors.push(CatalogError.serviceInvalidDuration(raw.cleanupMinutes));
     }
-    if (!price.ok || errors.length > 0) return Result.err(errors);
-    return Result.ok({
-      priceMinorUnits: price.value.amountMinorUnits,
-      currencyCode: price.value.currencyCode,
-      durationMinutes: raw.durationMinutes,
-      setupMinutes: raw.setupMinutes,
-      cleanupMinutes: raw.cleanupMinutes,
-    });
+    if (
+      !price.ok ||
+      !duration.ok ||
+      !setup.ok ||
+      !cleanup.ok ||
+      errors.length > 0
+    ) {
+      return Result.err(errors);
+    }
+    return Result.ok(
+      ServiceTerms.of(
+        price.value.amountCents,
+        price.value.currency,
+        duration.value,
+        setup.value,
+        cleanup.value,
+      ),
+    );
   },
 
   /** Chair time one booking consumes — setup + sold duration + cleanup. */
-  occupiedMinutes(terms: ServiceTerms): number {
-    return terms.setupMinutes + terms.durationMinutes + terms.cleanupMinutes;
+  occupiedMinutes(terms: ServiceTerms): DurationMinutes {
+    const total = DurationMinutes.of(
+      terms.setupMinutes + terms.durationMinutes + terms.cleanupMinutes,
+    );
+    // A positive duration plus two non-negative pads is positive.
+    return total.ok ? total.value : defect('ServiceTerms: broken duration');
   },
 
-  /** The price as a standalone `Money` figure. */
+  /** The price as a standalone `Money` figure — the system arithmetic value. */
   price(terms: ServiceTerms): Money {
-    return {
-      amountMinorUnits: terms.priceMinorUnits,
-      currencyCode: terms.currencyCode,
-    };
+    return Money.fromCents(terms.priceCents, terms.currency);
   },
 
   /** Same price, currency, duration and padding — terms that differ only in padding are different terms. */
   equals(a: ServiceTerms, b: ServiceTerms): boolean {
     return (
-      a.priceMinorUnits === b.priceMinorUnits &&
-      a.currencyCode === b.currencyCode &&
+      a.priceCents === b.priceCents &&
+      a.currency === b.currency &&
       a.durationMinutes === b.durationMinutes &&
       a.setupMinutes === b.setupMinutes &&
       a.cleanupMinutes === b.cleanupMinutes
@@ -134,57 +166,49 @@ export const ServiceTerms = {
 } as const;
 
 /**
- * A variant's author-chosen slug (`short`, `long`) — the key a barber's
- * per-variant terms are stored under, so it stays stable across edits and is
- * never generated. A brand over the plain stored string.
- */
-export type ServiceVariantId = string & { readonly __brand: unique symbol };
-
-export const ServiceVariantId = {
-  /** The only cast site. Validate with `ServiceVariant.parse` at the edge, not here. */
-  of: (raw: string): ServiceVariantId => raw as ServiceVariantId,
-} as const;
-
-/**
  * A choice WITHIN a service that can move its terms — "short hair" vs "long
- * hair" on a haircut (`service-terms.ts:151`). Deliberately just id + name:
- * the price and duration live on each barber's offering
- * (`barber-offering.data.ts`), because the same variant costs different
- * amounts depending on who performs it.
+ * hair" on a haircut (`service-terms.ts:151`), an element of
+ * `Service.variants`. Deliberately just id + name: the price and duration
+ * live on each barber's offering (`barber-offering.data.ts`), because the same
+ * variant costs different amounts depending on who performs it. Its own id is
+ * `variantId` (N10).
  */
 export type ServiceVariant = {
-  readonly id: ServiceVariantId;
+  readonly variantId: ServiceVariantId;
   readonly name: LocalizedText;
 };
 
 /** A variant as authored, before its edge guard. */
 export type ServiceVariantInput = {
-  readonly id: string;
+  readonly variantId: string;
   readonly name: LocalizedText;
 };
 
 export const ServiceVariant = {
   /**
    * The edge guard for one variant, every violation at once: a blank id
-   * (`catalog.id.empty`) and each blank locale of the name. The id is kept
+   * (`CATALOG_ID_EMPTY`) and each blank locale of the name. The id is kept
    * exactly as given; the name is trimmed.
    */
   parse(
     raw: ServiceVariantInput,
   ): Result<ServiceVariant, readonly CatalogError[]> {
     const errors: CatalogError[] = [];
-    if (raw.id.trim().length === 0) {
+    if (raw.variantId.trim().length === 0) {
       errors.push(CatalogError.idEmpty('ServiceVariantId'));
     }
     const name = LocalizedText.parse(raw.name);
     if (!name.ok) errors.push(...name.error);
     if (!name.ok || errors.length > 0) return Result.err(errors);
-    return Result.ok({ id: ServiceVariantId.of(raw.id), name: name.value });
+    return Result.ok({
+      variantId: ServiceVariantId.of(raw.variantId),
+      name: name.value,
+    });
   },
 
   /**
    * A service's declared variants, in order: an id declared a second time is
-   * `catalog.service.duplicate_variant` (the repeat is skipped, not parsed),
+   * `CATALOG_SERVICE_DUPLICATE_VARIANT` (the repeat is skipped, not parsed),
    * and every variant's own violations are reported too.
    */
   parseAll(
@@ -195,7 +219,7 @@ export const ServiceVariant = {
     for (let i = 0; i < raws.length; i++) {
       const raw = raws[i] as ServiceVariantInput;
       if (declaredBefore(raws, i)) {
-        errors.push(CatalogError.serviceDuplicateVariant(raw.id));
+        errors.push(CatalogError.serviceDuplicateVariant(raw.variantId));
         continue;
       }
       const parsed = ServiceVariant.parse(raw);
@@ -206,18 +230,20 @@ export const ServiceVariant = {
   },
 } as const;
 
-function isPad(minutes: number): boolean {
-  return Number.isInteger(minutes) && minutes >= 0;
-}
-
 /** An earlier entry declares the same raw id — a linear scan; variant lists are a handful long. */
 function declaredBefore(
   raws: readonly ServiceVariantInput[],
   index: number,
 ): boolean {
-  const id = (raws[index] as ServiceVariantInput).id;
+  const id = (raws[index] as ServiceVariantInput).variantId;
   for (let j = 0; j < index; j++) {
-    if ((raws[j] as ServiceVariantInput).id === id) return true;
+    if ((raws[j] as ServiceVariantInput).variantId === id) return true;
   }
   return false;
 }
+
+/**
+ * Flatten-pass staging: the barrel still names this module for
+ * `ServiceVariantId` (its old home) until the integrator drops that line —
+ * the id itself lives in `primitives/ids.primitive.ts` (§1.5).
+ */

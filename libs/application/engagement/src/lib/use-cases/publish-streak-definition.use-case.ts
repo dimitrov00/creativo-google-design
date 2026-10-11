@@ -4,21 +4,32 @@ import {
   type StreakDefinitionError,
   type StreakDefinitionProps,
   StreakDefinitionSchedule,
+  type StreakExcuse,
   type StreakNoticePolicy,
+  type StreakOnBreak,
   type StreakRuleChange,
   type StreakRuleDirection,
   type StreakTransition,
   addDays,
 } from '@creativo/domain/engagement';
 import {
-  DayKey,
-  type ServiceCategoryId,
-  type ServiceId,
-  StreakIntervalKind,
+  DraftAssessment,
+  HeadRole,
+  LocalDate,
+  ServiceCategoryId,
+  ServiceId,
+  StreakExcuse as SystemExcuse,
+  StreakIntervalRule,
+  StreakOnBreak as SystemOnBreak,
   StreakPublishSystem,
-  StreakQualifierKind,
+  StreakQualifierRule,
   type StreakRule,
+  type StreakRuleInput,
+  StreakRuleDirection as SystemDirection,
+  StreakRuleParameter,
   type StreakSchedule,
+  StreakTransition as SystemTransition,
+  defect,
 } from '@creativo/ecs-core';
 import { RepositoryError } from '@creativo/application/shared';
 import {
@@ -153,16 +164,19 @@ export class PublishStreakDefinitionUseCase {
     // The decision is `StreakPublishSystem.assess` (`@creativo/ecs-core`);
     // the factory words a draft that is no rule as the classes the page
     // knows, and makes the version the page publishes.
+    // The day asked is handed across AS WRITTEN (a `StreakRuleInput`): the
+    // system's parse — the only door to the brand — refuses one that is no
+    // day, as a fault of the draft.
     const assessed = StreakPublishSystem.assess(
       headOf(schedule),
       published,
-      structOf(input.draft),
-      DayKey.of(input.effectiveFrom),
-      DayKey.of(input.today),
+      ruleOfProps(input.draft, input.effectiveFrom),
+      input.effectiveFrom,
+      dayOf(input.today),
       input.policy,
     );
     const baseVersion =
-      assessed.kind === 'valid'
+      assessed.draftAssessment === DraftAssessment.Valid
         ? assessed.baseVersion
         : published
           ? StreakPublishSystem.newestOf(headOf(schedule))
@@ -174,13 +188,15 @@ export class PublishStreakDefinitionUseCase {
       effectiveFrom: input.effectiveFrom,
     });
     if (built.isFailure()) return invalid(built.error);
-    if (assessed.kind !== 'valid') return invalid([]);
+    if (assessed.draftAssessment !== DraftAssessment.Valid) return invalid([]);
     return {
       kind: 'valid',
       definition: built.value,
       change: {
-        direction: assessed.change.direction,
-        changed: assessed.change.changed as StreakRuleChange['changed'],
+        direction: LEGACY_DIRECTION[assessed.change.direction],
+        changed: assessed.change.changed.map(
+          (parameter) => LEGACY_PARAMETER[parameter],
+        ),
       },
       earliest: assessed.earliest,
       baseVersion,
@@ -289,59 +305,134 @@ const laterOf = (a: IsoDate, b: IsoDate): IsoDate => (a > b ? a : b);
 
 // ── The bridge: legacy class/props ↔ ecs-core struct (Phase 4 deletes it) ──
 
-/** A version as `StreakPublishSystem` reads it: the figures, the day as a day key. */
-function structOf(props: StreakDefinitionProps): StreakRule {
+const SYSTEM_EXCUSE = {
+  shopClosure: SystemExcuse.ShopClosure,
+  barberAbsence: SystemExcuse.BarberAbsence,
+  staffCancelled: SystemExcuse.StaffCancelled,
+  closedDays: SystemExcuse.ClosedDays,
+} as const satisfies Record<StreakExcuse, SystemExcuse>;
+
+const SYSTEM_ON_BREAK = {
+  restart: SystemOnBreak.Restart,
+  hold: SystemOnBreak.Hold,
+} as const satisfies Record<StreakOnBreak, SystemOnBreak>;
+
+const SYSTEM_TRANSITION = {
+  grandfather: SystemTransition.Grandfather,
+  recompute: SystemTransition.Recompute,
+} as const satisfies Record<StreakTransition, SystemTransition>;
+
+/** A change's direction, in the legacy words. */
+const LEGACY_DIRECTION: Readonly<Record<SystemDirection, StreakRuleDirection>> =
+  {
+    [SystemDirection.Looser]: 'looser',
+    [SystemDirection.Stricter]: 'stricter',
+    [SystemDirection.Mixed]: 'mixed',
+    [SystemDirection.Neutral]: 'neutral',
+    [SystemDirection.Switch]: 'switch',
+  };
+
+/** A parameter that moved, as the legacy props name it. */
+const LEGACY_PARAMETER: Readonly<
+  Record<StreakRuleParameter, StreakRuleChange['changed'][number]>
+> = {
+  [StreakRuleParameter.Name]: 'name',
+  [StreakRuleParameter.Enabled]: 'enabled',
+  [StreakRuleParameter.Qualifier]: 'qualifier',
+  [StreakRuleParameter.MinGapDays]: 'minGapDays',
+  [StreakRuleParameter.BookingHold]: 'bookingHold',
+  [StreakRuleParameter.Interval]: 'interval',
+  [StreakRuleParameter.GraceDays]: 'graceDays',
+  [StreakRuleParameter.RiskLeadDays]: 'riskLeadDays',
+  [StreakRuleParameter.Protections]: 'protections',
+  [StreakRuleParameter.Excuses]: 'excuses',
+  [StreakRuleParameter.ClientPause]: 'clientPause',
+  [StreakRuleParameter.Repair]: 'repair',
+  [StreakRuleParameter.OnBreak]: 'onBreak',
+};
+
+/** A Sofia day this edge holds: a checked version day, a clock's «today». */
+function dayOf(raw: IsoDate): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/**
+ * A version as the system reads it: the figures, flat (every part's
+ * figures prefixed by the part), every tag the dictionary's; its day as
+ * `effectiveFromLocalDate` — a checked `LocalDate` makes a `StreakRule`, a
+ * day as written a `StreakRuleInput` for the parse to judge.
+ */
+function ruleOfProps<Day extends string>(
+  props: StreakDefinitionProps,
+  effectiveFromLocalDate: Day,
+): StreakRuleInput & { readonly effectiveFromLocalDate: Day } {
   const { qualifier, interval } = props;
   return {
     version: props.version,
-    effectiveFromDayKey: DayKey.of(props.effectiveFrom),
+    effectiveFromLocalDate,
     enabled: props.enabled,
-    qualifier:
-      qualifier.kind === 'services'
-        ? {
-            kind: StreakQualifierKind.Services,
-            serviceIds: qualifier.serviceIds as readonly ServiceId[],
-          }
-        : qualifier.kind === 'categories'
-          ? {
-              kind: StreakQualifierKind.Categories,
-              categoryIds:
-                qualifier.categoryIds as readonly ServiceCategoryId[],
-            }
-          : { kind: StreakQualifierKind.AnyVisit },
+    ...(qualifier.kind === 'services'
+      ? StreakQualifierRule.services(
+          qualifier.serviceIds.map((id) => ServiceId.of(id)),
+        )
+      : qualifier.kind === 'categories'
+        ? StreakQualifierRule.categories(
+            qualifier.categoryIds.map((id) => ServiceCategoryId.of(id)),
+          )
+        : StreakQualifierRule.anyVisit()),
     minGapDays: props.minGapDays,
-    bookingHold: props.bookingHold,
-    interval:
-      interval.kind === 'fixed'
-        ? { kind: StreakIntervalKind.Fixed, days: interval.days }
-        : {
-            kind: StreakIntervalKind.Personal,
-            tolerancePct: interval.tolerancePct,
-            minDays: interval.minDays,
-            maxDays: interval.maxDays,
-            fallbackDays: interval.fallbackDays,
-          },
+    bookingHoldEnabled: props.bookingHold.enabled,
+    bookingHoldMaxDaysPastDue: props.bookingHold.maxDaysPastDue,
+    ...(interval.kind === 'fixed'
+      ? StreakIntervalRule.fixed(interval.days)
+      : StreakIntervalRule.personal(
+          interval.tolerancePct,
+          interval.minDays,
+          interval.maxDays,
+          interval.fallbackDays,
+        )),
     graceDays: props.graceDays,
     riskLeadDays: props.riskLeadDays,
-    protections: props.protections,
-    excuses: props.excuses,
-    clientPause: props.clientPause,
-    repair: props.repair,
-    onBreak: props.onBreak,
+    protectionsEnabled: props.protections.enabled,
+    protectionsMaxBanked: props.protections.maxBanked,
+    protectionsEarnEvery: props.protections.earnEvery,
+    protectionsStartWith: props.protections.startWith,
+    excuses: props.excuses.map((excuse) => SYSTEM_EXCUSE[excuse]),
+    clientPauseEnabled: props.clientPause.enabled,
+    clientPauseMaxDaysPerYear: props.clientPause.maxDaysPerYear,
+    repairEnabled: props.repair.enabled,
+    repairWindowDays: props.repair.windowDays,
+    repairPerYear: props.repair.perYear,
+    onBreak: SYSTEM_ON_BREAK[props.onBreak],
   };
 }
 
-/** The head as the system reads it. */
+/** A published version as the system reads it — its day was checked by `StreakDefinition.create`. */
+function ruleOf(definition: StreakDefinition): StreakRule {
+  const props = definition.toProps();
+  return ruleOfProps(props, dayOf(props.effectiveFrom));
+}
+
+/** The head as the system reads it: its `rules` list, the rule in force first. */
 function headOf(schedule: StreakDefinitionSchedule): StreakSchedule {
   const { scheduled } = schedule;
+  const current = {
+    ...ruleOf(schedule.current),
+    headRole: HeadRole.Current,
+    streakTransition: null,
+  };
   return {
-    current: structOf(schedule.current.toProps()),
-    scheduled:
+    rules:
       scheduled === null
-        ? null
-        : {
-            ...structOf(scheduled.definition.toProps()),
-            transition: scheduled.transition,
-          },
+        ? [current]
+        : [
+            current,
+            {
+              ...ruleOf(scheduled.definition),
+              headRole: HeadRole.Scheduled,
+              streakTransition: SYSTEM_TRANSITION[scheduled.transition],
+            },
+          ],
   };
 }

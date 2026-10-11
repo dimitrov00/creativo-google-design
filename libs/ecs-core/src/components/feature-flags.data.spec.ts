@@ -114,7 +114,7 @@ describe('FeatureFlags.parse', () => {
       ok: false,
       error: [
         {
-          code: GovernanceErrorCode.FeatureFlagsUnknownKey,
+          errorCode: GovernanceErrorCode.FeatureFlagsUnknownKey,
           attempted: 'not.a.real.flag',
         },
       ],
@@ -125,8 +125,8 @@ describe('FeatureFlags.parse', () => {
     const result = FeatureFlags.parse({ 'rewards.points': false });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error[0]?.code).toBe(
-        'governance.feature_flags.unknown_key',
+      expect(result.error[0]?.errorCode).toBe(
+        'GOVERNANCE_FEATURE_FLAGS_UNKNOWN_KEY',
       );
     }
   });
@@ -136,7 +136,7 @@ describe('FeatureFlags.parse', () => {
       ok: false,
       error: [
         {
-          code: GovernanceErrorCode.FeatureFlagsInvalidValue,
+          errorCode: GovernanceErrorCode.FeatureFlagsInvalidValue,
           key: 'loyalty.points',
         },
       ],

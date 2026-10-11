@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { deepFreeze } from '../testing';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { deepFreeze, unwrapOk } from '../testing';
 import {
   type DrawnSides,
   type LiveSides,
@@ -15,10 +16,14 @@ import {
  * the legacy free functions are local adapters over `VisitSidesSystem`. The
  * one shape change is the live reading — the legacy `undefined` for a field
  * this device does not hear is `heard: false` (system I/O never carries
- * `undefined`), so `live(...)` builds it. Plus the purity case.
+ * `undefined`), so `live(...)` builds it. Plus the purity case. Flatten
+ * pass: the tip is `tipCents: PriceCents | null` (N6, Law 7), `c(300)` the
+ * legacy `300` minor units.
  */
 
 const S = VisitSidesSystem;
+/** A tip literal in cents. */
+const c = (raw: number): PriceCents => unwrapOk(PriceCents.of(raw));
 const storedNote = (note: string | null | undefined) =>
   S.storedNote(note ?? null);
 const sameNote = (a: string | null | undefined, b: string | null | undefined) =>
@@ -29,13 +34,13 @@ const sideWritesOf = S.writesOf;
 /** The legacy live reading: `undefined` is a field this device does not hear. */
 function live(sides: {
   readonly note: string | null | undefined;
-  readonly tipMinorUnits: number | null | undefined;
+  readonly tipCents: PriceCents | null | undefined;
 }): LiveSides {
   return {
     note: sides.note ?? null,
     noteHeard: sides.note !== undefined,
-    tipMinorUnits: sides.tipMinorUnits ?? null,
-    tipHeard: sides.tipMinorUnits !== undefined,
+    tipCents: sides.tipCents ?? null,
+    tipHeard: sides.tipCents !== undefined,
   };
 }
 
@@ -45,7 +50,7 @@ function sidesMovedUnder(
   target: VisitSides,
   stored: {
     readonly note: string | null | undefined;
-    readonly tipMinorUnits: number | null | undefined;
+    readonly tipCents: PriceCents | null | undefined;
   },
 ): boolean {
   return S.movedUnder(writes, drawn, target, live(stored));
@@ -56,7 +61,7 @@ function drawnFrom(sides: VisitSides): DrawnSides {
   return { ...sides, drawn: sides };
 }
 
-const NOTHING: VisitSides = { note: null, tipMinorUnits: null };
+const NOTHING: VisitSides = { note: null, tipCents: null };
 
 describe('the side fields — the note and the tip beside the batch', () => {
   it('stores a note trimmed, and a blank one as none', () => {
@@ -70,10 +75,10 @@ describe('the side fields — the note and the tip beside the batch', () => {
   it('follows what is stored while the barber leaves a field alone', () => {
     const opened = drawnFrom(NOTHING);
     // A colleague records a tip and writes a note under the open sheet.
-    const later = adoptSides(opened, { note: 'дължи 5 €', tipMinorUnits: 300 });
+    const later = adoptSides(opened, { note: 'дължи 5 €', tipCents: c(300) });
 
-    expect(later).toMatchObject({ note: 'дължи 5 €', tipMinorUnits: 300 });
-    expect(later.drawn).toEqual({ note: 'дължи 5 €', tipMinorUnits: 300 });
+    expect(later).toMatchObject({ note: 'дължи 5 €', tipCents: c(300) });
+    expect(later.drawn).toEqual({ note: 'дължи 5 €', tipCents: c(300) });
     // So a save of anything else writes neither.
     expect(sideWritesOf(later, later.drawn)).toEqual({
       note: false,
@@ -82,18 +87,18 @@ describe('the side fields — the note and the tip beside the batch', () => {
   });
 
   it('keeps what the barber typed, and knows the stored value moved under it', () => {
-    const typed: DrawnSides = { ...drawnFrom(NOTHING), tipMinorUnits: 500 };
-    const later = adoptSides(typed, { note: null, tipMinorUnits: 300 });
+    const typed: DrawnSides = { ...drawnFrom(NOTHING), tipCents: c(500) };
+    const later = adoptSides(typed, { note: null, tipCents: c(300) });
 
-    expect(later.tipMinorUnits).toBe(500);
+    expect(later.tipCents).toBe(500);
     // Still drawn from «none»: the colleague's 3,00 € was never shown.
-    expect(later.drawn.tipMinorUnits).toBeNull();
+    expect(later.drawn.tipCents).toBeNull();
     const writes = sideWritesOf(later, later.drawn);
     expect(writes).toEqual({ note: false, tip: true });
     expect(
       sidesMovedUnder(writes, later.drawn, later, {
         note: null,
-        tipMinorUnits: 300,
+        tipCents: c(300),
       }),
     ).toBe(true);
   });
@@ -103,20 +108,20 @@ describe('the side fields — the note and the tip beside the batch', () => {
     const typed: DrawnSides = { ...drawnFrom(NOTHING), note: 'къса отстрани' };
     const landed = adoptSides(typed, {
       note: 'къса отстрани',
-      tipMinorUnits: null,
+      tipCents: null,
     });
 
     expect(landed.drawn.note).toBe('къса отстрани');
     expect(sideWritesOf(landed, landed.drawn).note).toBe(false);
     // And a colleague's next note is followed again.
-    expect(
-      adoptSides(landed, { note: 'дължи 5 €', tipMinorUnits: null }).note,
-    ).toBe('дължи 5 €');
+    expect(adoptSides(landed, { note: 'дължи 5 €', tipCents: null }).note).toBe(
+      'дължи 5 €',
+    );
   });
 
   it('hands back the same object when nothing moved', () => {
-    const opened = drawnFrom({ note: 'дължи 5 €', tipMinorUnits: 300 });
-    expect(adoptSides(opened, { note: 'дължи 5 €', tipMinorUnits: 300 })).toBe(
+    const opened = drawnFrom({ note: 'дължи 5 €', tipCents: c(300) });
+    expect(adoptSides(opened, { note: 'дължи 5 €', tipCents: c(300) })).toBe(
       opened,
     );
   });
@@ -125,9 +130,9 @@ describe('the side fields — the note and the tip beside the batch', () => {
     expect(
       sidesMovedUnder(
         { note: true, tip: false },
-        { note: 'a', tipMinorUnits: null },
-        { note: 'b', tipMinorUnits: null },
-        { note: undefined, tipMinorUnits: undefined },
+        { note: 'a', tipCents: null },
+        { note: 'b', tipCents: null },
+        { note: undefined, tipCents: undefined },
       ),
     ).toBe(false);
   });
@@ -138,9 +143,9 @@ describe('the side fields — the note and the tip beside the batch', () => {
     expect(
       sidesMovedUnder(
         { note: false, tip: true },
-        { note: null, tipMinorUnits: 500 },
-        { note: null, tipMinorUnits: null },
-        { note: null, tipMinorUnits: null },
+        { note: null, tipCents: c(500) },
+        { note: null, tipCents: null },
+        { note: null, tipCents: null },
       ),
     ).toBe(false);
   });
@@ -148,8 +153,8 @@ describe('the side fields — the note and the tip beside the batch', () => {
   /* ── The invariants ──────────────────────────────────────────────────── */
 
   const note = fc.constantFrom(null, '', 'дължи 5 €', ' дължи 5 € ', 'къса');
-  const tip = fc.constantFrom(null, 0, 200, 300, 500);
-  const sides = fc.record({ note, tipMinorUnits: tip });
+  const tip = fc.constantFrom(null, c(0), c(200), c(300), c(500));
+  const sides = fc.record({ note, tipCents: tip });
 
   it('never writes a field the barber did not touch, whatever arrives (property)', () => {
     fc.assert(
@@ -168,7 +173,7 @@ describe('the side fields — the note and the tip beside the batch', () => {
           // And it shows what arrived last.
           const last = arrivals.at(-1);
           if (last !== undefined) {
-            expect(holder.tipMinorUnits).toBe(last.tipMinorUnits);
+            expect(holder.tipCents).toBe(last.tipCents);
             expect(sameNote(holder.note, last.note)).toBe(true);
           }
         },
@@ -183,13 +188,13 @@ describe('the side fields — the note and the tip beside the batch', () => {
         sides,
         fc.array(sides, { maxLength: 6 }),
         (opened, typed, drawnArrivals) => {
-          const tipTouched = typed.tipMinorUnits !== opened.tipMinorUnits;
+          const tipTouched = typed.tipCents !== opened.tipCents;
           const noteTouched = !sameNote(typed.note, opened.note);
           // The colleagues' writes, none of which happens to say what the
           // barber typed (that case is the "untouched again" one above).
           const arrivals = drawnArrivals.filter(
             (entry) =>
-              !(tipTouched && entry.tipMinorUnits === typed.tipMinorUnits) &&
+              !(tipTouched && entry.tipCents === typed.tipCents) &&
               !(noteTouched && sameNote(entry.note, typed.note)),
           );
           const holder = arrivals.reduce(
@@ -198,8 +203,7 @@ describe('the side fields — the note and the tip beside the batch', () => {
           );
 
           // What the barber typed is never taken from them.
-          if (tipTouched)
-            expect(holder.tipMinorUnits).toBe(typed.tipMinorUnits);
+          if (tipTouched) expect(holder.tipCents).toBe(typed.tipCents);
           if (noteTouched) expect(holder.note).toBe(typed.note);
           // The save carries exactly the fields they touched.
           expect(sideWritesOf(holder, holder.drawn)).toEqual({
@@ -211,7 +215,7 @@ describe('the side fields — the note and the tip beside the batch', () => {
           // what the sheet showed when the barber started typing.
           const stored = arrivals.at(-1) ?? opened;
           const colleagueMovedIt =
-            (tipTouched && stored.tipMinorUnits !== opened.tipMinorUnits) ||
+            (tipTouched && stored.tipCents !== opened.tipCents) ||
             (noteTouched && !sameNote(stored.note, opened.note));
           expect(
             sidesMovedUnder(
@@ -232,22 +236,22 @@ describe('VisitSidesSystem — purity', () => {
     // The note left alone follows what arrives; the typed tip is kept.
     const holder = deepFreeze({
       note: null,
-      tipMinorUnits: 500,
-      drawn: { note: null, tipMinorUnits: null },
+      tipCents: c(500),
+      drawn: { note: null, tipCents: null },
     } satisfies DrawnSides);
-    const incoming = deepFreeze({ note: 'дължи 5 €', tipMinorUnits: 300 });
+    const incoming = deepFreeze({ note: 'дължи 5 €', tipCents: c(300) });
     const once = S.adopt(holder, incoming);
     const twice = S.adopt(holder, incoming);
     expect(twice).toEqual(once);
     expect(once).not.toBe(holder);
-    expect(once).toMatchObject({ note: 'дължи 5 €', tipMinorUnits: 500 });
+    expect(once).toMatchObject({ note: 'дължи 5 €', tipCents: c(500) });
     expect(holder).toEqual({
       note: null,
-      tipMinorUnits: 500,
-      drawn: { note: null, tipMinorUnits: null },
+      tipCents: c(500),
+      drawn: { note: null, tipCents: null },
     });
     const writes = deepFreeze(S.writesOf(once, once.drawn));
-    const stored = deepFreeze(live({ note: 'дължи 5 €', tipMinorUnits: 300 }));
+    const stored = deepFreeze(live({ note: 'дължи 5 €', tipCents: c(300) }));
     expect(S.movedUnder(writes, once.drawn, once, stored)).toBe(true);
     expect(S.movedUnder(writes, once.drawn, once, stored)).toBe(
       S.movedUnder(writes, once.drawn, once, stored),

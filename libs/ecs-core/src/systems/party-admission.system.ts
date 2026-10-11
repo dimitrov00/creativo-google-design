@@ -1,14 +1,16 @@
-import { BookingCommitError } from '../components/booking-commit-errors.data';
+import { BookingError } from '../components/booking-errors.data';
 import type { BookingPolicy } from '../components/booking-policy.data';
-import type { BookingCart, CartLine } from '../components/cart-line.data';
-import { LocationState } from '../components/catalog-status.data';
+import type {
+  BookingCart,
+  CartLine,
+  CartSeatLines,
+} from '../components/cart-line.data';
+import { LocationStatus } from '../components/catalog-status.data';
 import { Result } from '../components/result.data';
-import {
-  type ServiceVariant,
-  ServiceVariantId,
-} from '../components/service-terms.data';
-import type { LocationEntity, LocationId } from '../entities/location.entity';
-import type { ServiceEntity } from '../entities/service.entity';
+import type { ServiceVariant } from '../components/service-terms.data';
+import type { Service } from '../entities/service.entity';
+import type { ShopLocation } from '../entities/shop-location.entity';
+import { type LocationId, ServiceVariantId } from '../primitives/ids.primitive';
 import { LocationScopeSystem } from './location-scope.system';
 import { ServiceConflictSystem } from './service-conflict.system';
 
@@ -20,9 +22,10 @@ import { ServiceConflictSystem } from './service-conflict.system';
  * compared for equality), what they ask for, and whether its terms are
  * CARRIED forward from a stored seat — a carried seat survives its service
  * leaving the catalogue, and keeps a `variantId: null` booked before its
- * service gained variants. The ids are raw request strings.
+ * service gained variants. The ids are raw request strings — foreign input,
+ * parsed here (the L3 `…Input` escape).
  */
-export type AdmissionSeat = {
+export type AdmissionSeatInput = {
   readonly personKey: string;
   readonly serviceId: string;
   readonly variantId: string | null;
@@ -32,7 +35,7 @@ export type AdmissionSeat = {
 /** What one seat resolved to, in the order asked. */
 export type AdmittedSeat = {
   /** The catalogue row, or `null` for a carried seat whose service retired. */
-  readonly service: ServiceEntity | null;
+  readonly service: Service | null;
   readonly variantId: ServiceVariantId | null;
 };
 
@@ -47,11 +50,11 @@ export type PartyAdmissionOptions = {
 
 /** The catalogue row for a raw id — a linear scan; a catalogue is a few dozen. */
 function serviceById(
-  services: readonly ServiceEntity[],
+  services: readonly Service[],
   serviceId: string,
-): ServiceEntity | null {
+): Service | null {
   for (let i = 0; i < services.length; i++) {
-    const service = services[i] as ServiceEntity;
+    const service = services[i] as Service;
     if (service.id === serviceId) return service;
   }
   return null;
@@ -62,16 +65,16 @@ function declaresVariant(
   variantId: ServiceVariantId,
 ): boolean {
   for (let i = 0; i < variants.length; i++) {
-    if ((variants[i] as ServiceVariant).id === variantId) return true;
+    if ((variants[i] as ServiceVariant).variantId === variantId) return true;
   }
   return false;
 }
 
 /** How many distinct people the seats name. */
-function peopleCount(seats: readonly AdmissionSeat[]): number {
+function peopleCount(seats: readonly AdmissionSeatInput[]): number {
   const people = new Set<string>();
   for (let i = 0; i < seats.length; i++) {
-    people.add((seats[i] as AdmissionSeat).personKey);
+    people.add((seats[i] as AdmissionSeatInput).personKey);
   }
   return people.size;
 }
@@ -85,97 +88,96 @@ function peopleCount(seats: readonly AdmissionSeat[]): number {
 export const PartyAdmissionSystem = {
   /**
    * THE SHOP A WAITLIST MAY WATCH: one that is there, and listed on the
-   * public surface (`status: 'active'`). Any other status — hidden, one
-   * nobody modelled — and no shop at all are refused: fail-closed, as every
-   * public query reads them. Not asked by the commit, which must still move
-   * a visit booked at a shop hidden since.
+   * public surface (`locationStatus: ACTIVE`). Any other status — hidden,
+   * one nobody modelled — and no shop at all are refused: fail-closed, as
+   * every public query reads them. Not asked by the commit, which must still
+   * move a visit booked at a shop hidden since.
    */
-  shopListed(shop: Pick<LocationEntity, 'status'> | null): boolean {
-    return shop !== null && shop.status === LocationState.Active;
+  shopListed(shop: Pick<ShopLocation, 'locationStatus'> | null): boolean {
+    return shop !== null && shop.locationStatus === LocationStatus.Active;
   },
 
   /**
    * THE PARTY'S TIME-INDEPENDENT ADMISSION, in the commit's order — the
    * party, then seat by seat:
    *
-   * - nobody to seat → `invalid_input: seats`;
-   * - more distinct people than `policy.maxPartySize` → `party_too_large`;
-   * - a service the catalogue does not hold → `unknown_service` (a CARRIED
-   *   seat survives it — its row decides nothing any more);
-   * - a service not offered at the shop → `service_not_at_location` (an
-   *   empty scope is every shop);
+   * - nobody to seat → `BOOKING_INVALID_INPUT: seats`;
+   * - more distinct people than `policy.maxPartySize` →
+   *   `BOOKING_PARTY_TOO_LARGE`;
+   * - a service the catalogue does not hold → `BOOKING_UNKNOWN_SERVICE` (a
+   *   CARRIED seat survives it — its row decides nothing any more);
+   * - a service not offered at the shop → `BOOKING_SERVICE_NOT_AT_LOCATION`
+   *   (an empty scope is every shop);
    * - a blank variant, one the service does not declare, or none for a
-   *   service that declares some (unless carried) → `invalid_input:
-   *   variantId` — committing without one would silently charge `baseTerms`;
-   * - two services one PERSON may not have together → `conflicting_services`,
-   *   unless the shop's own book allows it.
+   *   service that declares some (unless carried) → `BOOKING_INVALID_INPUT:
+   *   variantId` — committing without one would silently charge the
+   *   service's own terms;
+   * - two services one PERSON may not have together →
+   *   `BOOKING_CONFLICTING_SERVICES`, unless the shop's own book allows it.
    */
   admit(
-    seats: readonly AdmissionSeat[],
-    services: readonly ServiceEntity[],
+    seats: readonly AdmissionSeatInput[],
+    services: readonly Service[],
     policy: BookingPolicy,
     options: PartyAdmissionOptions,
-  ): Result<readonly AdmittedSeat[], BookingCommitError> {
+  ): Result<readonly AdmittedSeat[], BookingError> {
     if (seats.length === 0) {
-      return Result.err(BookingCommitError.invalidInput('seats'));
+      return Result.err(BookingError.invalidInput('seats'));
     }
     if (peopleCount(seats) > policy.maxPartySize) {
-      return Result.err(BookingCommitError.partyTooLarge(policy.maxPartySize));
+      return Result.err(BookingError.partyTooLarge(policy.maxPartySize));
     }
 
     /** Services already admitted, with their person — the conflict check's input. */
     const heldBy: string[] = [];
-    const held: ServiceEntity[] = [];
+    const held: Service[] = [];
     const admitted: AdmittedSeat[] = [];
 
     for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i] as AdmissionSeat;
+      const seat = seats[i] as AdmissionSeatInput;
       const service = serviceById(services, seat.serviceId);
       if (service === null) {
         if (!seat.carried) {
-          return Result.err(BookingCommitError.unknownService(seat.serviceId));
+          return Result.err(BookingError.unknownService(seat.serviceId));
         }
       } else if (
         options.locationId !== null &&
         !LocationScopeSystem.servesLocation(service, options.locationId)
       ) {
         return Result.err(
-          BookingCommitError.serviceNotAtLocation(
-            seat.serviceId,
-            options.locationId,
-          ),
+          BookingError.serviceNotAtLocation(seat.serviceId, options.locationId),
         );
       }
 
       let variantId: ServiceVariantId | null = null;
       if (seat.variantId !== null) {
         if (seat.variantId.trim().length === 0) {
-          return Result.err(BookingCommitError.invalidInput('variantId'));
+          return Result.err(BookingError.invalidInput('variantId'));
         }
         variantId = ServiceVariantId.of(seat.variantId);
         // A variant the service does not declare is unreachable through the
         // UI: a stale tab or a forged payload.
         if (service !== null && !declaresVariant(service.variants, variantId)) {
-          return Result.err(BookingCommitError.invalidInput('variantId'));
+          return Result.err(BookingError.invalidInput('variantId'));
         }
       } else if (
         service !== null &&
         service.variants.length > 0 &&
         !seat.carried
       ) {
-        return Result.err(BookingCommitError.invalidInput('variantId'));
+        return Result.err(BookingError.invalidInput('variantId'));
       }
 
       if (service !== null) {
         if (!options.allowConflictingServices) {
           for (let k = 0; k < held.length; k++) {
             if (heldBy[k] !== seat.personKey) continue;
-            const other = held[k] as ServiceEntity;
+            const other = held[k] as Service;
             if (
               ServiceConflictSystem.servicesConflict(service, other, services)
             ) {
               return Result.err(
-                BookingCommitError.conflictingServices(service.id, other.id),
+                BookingError.conflictingServices(service.id, other.id),
               );
             }
           }
@@ -194,17 +196,18 @@ export const PartyAdmissionSystem = {
    * A cart — a waitlist request's bag — as the commit would admit it
    * whatever the time (`cartAdmissible`): one person per cart seat (the
    * seat key is who sits there, as the booking grid counts people), nothing
-   * carried, conflicts judged.
+   * carried, conflicts judged. Reads the cart slice as it is (a whole
+   * `WaitlistRequest` passes).
    */
   admitCart(
     cart: BookingCart,
-    services: readonly ServiceEntity[],
+    services: readonly Service[],
     policy: BookingPolicy,
     locationId: LocationId | null,
-  ): Result<null, BookingCommitError> {
-    const seats: AdmissionSeat[] = [];
-    for (let i = 0; i < cart.seats.length; i++) {
-      const seat = cart.seats[i] as BookingCart.SeatLines;
+  ): Result<null, BookingError> {
+    const seats: AdmissionSeatInput[] = [];
+    for (let i = 0; i < cart.cartSeats.length; i++) {
+      const seat = cart.cartSeats[i] as CartSeatLines;
       for (let k = 0; k < seat.lines.length; k++) {
         const line = seat.lines[k] as CartLine;
         seats.push({

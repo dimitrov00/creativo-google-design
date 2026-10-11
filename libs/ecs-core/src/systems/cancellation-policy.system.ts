@@ -1,11 +1,14 @@
+import { AppointmentTime } from '../components/appointment-time.data';
+import {
+  BookingLifecycle,
+  BookingStatus,
+} from '../components/booking-lifecycle.data';
 import { BookingPolicy } from '../components/booking-policy.data';
-import { BookingState, BookingStatus } from '../components/booking-status.data';
 import { Result } from '../components/result.data';
 import { SchedulingError } from '../components/scheduling-errors.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
+import type { Appointment } from '../entities/appointment.entity';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { AppointmentIndexSystem } from './appointment-index.system';
-
-const MS_PER_HOUR = 3_600_000;
 
 /**
  * Why a client may not cancel (or move) a visit for free — the stable codes
@@ -15,48 +18,61 @@ const MS_PER_HOUR = 3_600_000;
  */
 export const CancellationRefusalCode = {
   /** The policy could not be read: nobody can say whether it is still free. */
-  PolicyUnavailable: 'booking.cancel.policy_unavailable',
+  PolicyUnavailable: 'BOOKING_CANCEL_POLICY_UNAVAILABLE',
   /** Completed, no-showed or already cancelled — the graph refuses. */
-  NotCancellable: 'booking.cancel.not_cancellable',
+  NotCancellable: 'BOOKING_CANCEL_NOT_CANCELLABLE',
   /** Past the free-cancellation deadline — call the shop instead. */
-  WindowClosed: 'booking.cancel.window_closed',
+  WindowClosed: 'BOOKING_CANCEL_WINDOW_CLOSED',
 } as const;
 export type CancellationRefusalCode =
   (typeof CancellationRefusalCode)[keyof typeof CancellationRefusalCode];
 
+/** Flat, serialisable refusals discriminated by `errorCode` (Law 7.5). */
 export type CancellationRefusal =
-  | { readonly code: typeof CancellationRefusalCode.PolicyUnavailable }
+  | { readonly errorCode: typeof CancellationRefusalCode.PolicyUnavailable }
   | {
-      readonly code: typeof CancellationRefusalCode.NotCancellable;
-      readonly status: BookingState;
+      readonly errorCode: typeof CancellationRefusalCode.NotCancellable;
+      /** The state the visit is in (was `status`). */
+      readonly bookingStatus: BookingStatus;
     }
   | {
-      readonly code: typeof CancellationRefusalCode.WindowClosed;
+      readonly errorCode: typeof CancellationRefusalCode.WindowClosed;
       readonly windowHours: number;
-      readonly deadlineMs: number;
+      readonly deadlineUtcMs: UtcEpochMs;
     };
 
 /** A free cancel (or move): the window it was allowed under — the stamp its seats carry. */
 export type CancellationAllowance = { readonly windowHours: number };
 
-function deadlineMs(windowHours: number, appointmentStartMs: number): number {
-  return appointmentStartMs - windowHours * MS_PER_HOUR;
+/** The free-cancellation deadline: `windowHours` of ELAPSED time before the start (T2). */
+function deadlineUtcMs(
+  windowHours: number,
+  startUtcMs: UtcEpochMs,
+): UtcEpochMs {
+  return UtcEpochMs.plusHours(startUtcMs, -windowHours);
 }
 
 function allowsFreeCancelAt(
   windowHours: number,
-  appointmentStartMs: number,
-  atMs: number,
+  startUtcMs: UtcEpochMs,
+  atUtcMs: UtcEpochMs,
 ): boolean {
-  return atMs <= deadlineMs(windowHours, appointmentStartMs);
+  return (
+    UtcEpochMs.compare(atUtcMs, deadlineUtcMs(windowHours, startUtcMs)) <= 0
+  );
 }
 
-/** The visit's start — the earliest seat, the truth; the mirror when it holds none. */
-function startOf(appointment: AppointmentEntity): number {
+/**
+ * The visit's start as an instant — the earliest seat, the truth, placed on
+ * the absolute timeline by its distance from the envelope
+ * (`AppointmentTime.seatStartUtcMs`, T9); the envelope's own instant when the
+ * visit holds no seat.
+ */
+function startUtcMsOf(appointment: Appointment): UtcEpochMs {
   const envelope = AppointmentIndexSystem.envelope(appointment);
   return envelope === null
-    ? appointment.timeInterval.startMs
-    : envelope.startMs;
+    ? appointment.utcEpochMs
+    : AppointmentTime.seatStartUtcMs(appointment, envelope);
 }
 
 /**
@@ -64,22 +80,23 @@ function startOf(appointment: AppointmentEntity): number {
  * whole hours (one rule for the number: `BookingPolicy.isValidCancellationWindowHours`,
  * which the setting and every stamp on a cancelled seat accept alike).
  *
- * ONE formula for the deadline (`start − hours × 1 h`): the callable that
- * refuses a late client cancel, the page that names the deadline and the
- * counter that calls a past cancellation late all draw it here, so they
- * agree to the millisecond. Free AT the deadline, not a millisecond past.
+ * ONE formula for the deadline (`start − hours × 1 h` of elapsed time — a T2
+ * lifecycle comparison on `UtcEpochMs`, G-1): the callable that refuses a
+ * late client cancel, the page that names the deadline and the counter that
+ * calls a past cancellation late all draw it here, so they agree to the
+ * millisecond. Free AT the deadline, not a millisecond past.
  */
 export const CancellationPolicySystem = {
   /**
    * The longest window a policy may hold — 2,400,000,000 hours, the time
    * range's half-width, so the deadline of any visit at or after the epoch
-   * is an exact, `Date`-representable instant. An arithmetic bound.
+   * stays an exact, safe integer. An arithmetic bound.
    */
   MAX_WINDOW_HOURS: BookingPolicy.CANCELLATION_WINDOW_MAX_HOURS,
 
   /**
    * The edge guard for a window: whole hours, zero or more, within the
-   * bound — refused with `scheduling.cancellation_window.invalid` and the raw
+   * bound — refused with `SCHEDULING_CANCELLATION_WINDOW_INVALID` and the raw
    * value otherwise. A negative zero is stored as the zero every reader
    * compares against.
    */
@@ -101,59 +118,61 @@ export const CancellationPolicySystem = {
     return policy === null ? null : policy.cancellationWindowHours;
   },
 
-  deadlineMs,
+  /** The deadline of a visit starting at `startUtcMs` (was `deadlineMs`). */
+  deadlineUtcMs,
 
   allowsFreeCancelAt,
 
+  /** The visit's start instant — the earliest seat's, else the envelope's. */
+  startUtcMsOf,
+
   /**
-   * A cancellation recorded at `cancelledAtMs` was LATE under the window it
-   * is judged by (its own stamp, else the current policy's).
+   * A cancellation recorded at `cancelledAtUtcMs` was LATE under the window
+   * it is judged by (its own stamp, else the current policy's), against the
+   * start of the seat it called off (`AppointmentTime.seatStartUtcMs`).
    */
   isLateCancellation(
     windowHours: number,
-    appointmentStartMs: number,
-    cancelledAtMs: number,
+    seatStartUtcMs: UtcEpochMs,
+    cancelledAtUtcMs: UtcEpochMs,
   ): boolean {
-    return !allowsFreeCancelAt(windowHours, appointmentStartMs, cancelledAtMs);
+    return !allowsFreeCancelAt(windowHours, seatStartUtcMs, cancelledAtUtcMs);
   },
 
   /**
    * May the CLIENT cancel this visit now (`cancel-appointment.ts:101-170`)?
    * The window is the rule this path enforces, so an unread policy refuses
-   * (`policy_unavailable`); the lifecycle graph refuses a visit that cannot
+   * (`POLICY_UNAVAILABLE`); the lifecycle graph refuses a visit that cannot
    * be cancelled at all; the deadline refuses a late one. A start that is
    * not a number falls OPEN: refusing over a malformed instant would trap
    * someone in a booking forever.
    */
   mayCancel(
-    appointment: AppointmentEntity,
+    appointment: Appointment,
     policy: BookingPolicy | null,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
   ): Result<CancellationAllowance, CancellationRefusal> {
     if (policy === null) {
-      return Result.err({ code: CancellationRefusalCode.PolicyUnavailable });
-    }
-    if (
-      !BookingStatus.canTransition(
-        appointment.bookingStatus,
-        BookingState.Cancelled,
-      )
-    ) {
       return Result.err({
-        code: CancellationRefusalCode.NotCancellable,
-        status: appointment.bookingStatus.kind,
+        errorCode: CancellationRefusalCode.PolicyUnavailable,
+      });
+    }
+    if (!BookingLifecycle.canTransition(appointment, BookingStatus.Cancelled)) {
+      return Result.err({
+        errorCode: CancellationRefusalCode.NotCancellable,
+        bookingStatus: appointment.bookingStatus,
       });
     }
     const windowHours = policy.cancellationWindowHours;
-    const startMs = startOf(appointment);
+    const startUtcMs = startUtcMsOf(appointment);
     if (
-      Number.isFinite(startMs) &&
-      !allowsFreeCancelAt(windowHours, startMs, nowMs)
+      Number.isFinite(startUtcMs) &&
+      !allowsFreeCancelAt(windowHours, startUtcMs, nowUtcMs)
     ) {
       return Result.err({
-        code: CancellationRefusalCode.WindowClosed,
+        errorCode: CancellationRefusalCode.WindowClosed,
         windowHours,
-        deadlineMs: deadlineMs(windowHours, startMs),
+        deadlineUtcMs: deadlineUtcMs(windowHours, startUtcMs),
       });
     }
     return Result.ok({ windowHours });
@@ -166,10 +185,10 @@ export const CancellationPolicySystem = {
    * around (`reschedule-booking.use-case.ts:446,651-664`).
    */
   mayMove(
-    appointment: AppointmentEntity,
+    appointment: Appointment,
     policy: BookingPolicy | null,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
   ): Result<CancellationAllowance, CancellationRefusal> {
-    return CancellationPolicySystem.mayCancel(appointment, policy, nowMs);
+    return CancellationPolicySystem.mayCancel(appointment, policy, nowUtcMs);
   },
 } as const;

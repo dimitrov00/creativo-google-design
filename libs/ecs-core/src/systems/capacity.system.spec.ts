@@ -1,25 +1,27 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { CapacityEntry } from '../components/capacity-entry.data';
-import { DayKey } from '../components/day-key.data';
-import { DayOffset } from '../components/day-offset.data';
-import { ExceptionEffect } from '../components/exception-effect.data';
+import { ExceptionEffectRule } from '../components/exception-effect.data';
+import { MinuteRange } from '../components/minute-range.data';
 import { DayHours } from '../components/opening-hours.data';
 import {
   type ScheduleVersion,
   ShiftSegment,
 } from '../components/schedule-version.data';
-import { TimeInterval } from '../components/time-interval.data';
 import { Weekday } from '../components/weekday.data';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { dayTableFixture, deepFreeze, unwrapOk } from '../testing';
+import {
+  BarberId,
+  CapacityMonthId,
+  LocationId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { deepFreeze, endMinute, localDate, minute, unwrapOk } from '../testing';
+import { minuteCount } from '../testing/booking-core.fixtures';
 import {
   type CapacityPlan,
   type CapacityPlanInput,
   CapacitySystem,
 } from './capacity.system';
-import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The cases of apps/functions/src/lib/booking/capacity-plan.spec.ts (14) and
@@ -33,15 +35,17 @@ import { ZonedTimeSystem } from './zoned-time.system';
 const B1 = BarberId.of('b1');
 const LOC_A = LocationId.of('loc-a');
 const LOC_B = LocationId.of('loc-b');
-const k = DayKey.of;
+const k = localDate;
+const m = minuteCount;
+/** A month document's id — `YYYY-MM`. */
+const month = (raw: string) => CapacityMonthId.of(raw);
 
-/** August and September 2026 in Sofia — 2026-08-03 is a Monday. */
-const DAYS = dayTableFixture('2026-08-01', '2026-09-30');
-
-/** Mon-first: open six days 09:00–17:00, closed Sunday. */
+/** Mon-first: open six days 09:00–17:00, closed Sunday. 2026-08-03 is a Monday. */
 function hours(opens = 9 * 60, closes = 17 * 60): readonly DayHours[] {
   return [
-    ...Array.from({ length: 6 }, () => DayHours.open(opens, closes)),
+    ...Array.from({ length: 6 }, () =>
+      DayHours.open(minute(opens), endMinute(closes)),
+    ),
     DayHours.closed(),
   ];
 }
@@ -65,35 +69,31 @@ function schedule(
 ) {
   const version: ScheduleVersion = {
     seq: 1,
-    effectiveFromDayKey: k('2026-01-01'),
-    effectiveToDayKey: null,
+    effectiveFromLocalDate: k('2026-01-01'),
+    effectiveToLocalDate: null,
     segments: WORKDAYS.flatMap((weekday) =>
       segments.map((segment) =>
         ShiftSegment.of(
           weekday,
           segment.locationId,
-          segment.start,
-          segment.end,
+          minute(segment.start),
+          endMinute(segment.end),
         ),
       ),
     ),
   };
-  return { versions: [version], turnaroundMinutes };
+  return { versions: [version], turnaroundMinutes: m(turnaroundMinutes) };
 }
 
-/** A wall-clock span on `dayKey`, as the instants the projection stores. */
-function busy(fromMinutes: number, toMinutes: number, dayKey: string) {
-  const day = DayOffset.find(k(dayKey), DAYS) as DayOffset;
-  return TimeInterval.of(
-    ZonedTimeSystem.instantOf(day, fromMinutes),
-    ZonedTimeSystem.instantOf(day, toMinutes),
-  );
+/** A wall-clock span of a shop day, as the minute ranges the projection stores. */
+function busy(fromMinutes: number, toMinutes: number) {
+  return MinuteRange.of(minute(fromMinutes), endMinute(toMinutes));
 }
 
 function input(overrides: Partial<CapacityPlanInput> = {}): CapacityPlanInput {
   return {
     barberId: B1,
-    dayKeys: [k('2026-08-03')],
+    localDates: [k('2026-08-03')],
     schedule: schedule([{ start: 540, end: 1020, locationId: LOC_A }]),
     shops: [{ locationId: LOC_A, week: hours() }],
     busy: [],
@@ -103,14 +103,14 @@ function input(overrides: Partial<CapacityPlanInput> = {}): CapacityPlanInput {
 }
 
 const plan = (overrides: Partial<CapacityPlanInput> = {}) =>
-  CapacitySystem.planBarberCapacity(input(overrides), DAYS);
+  CapacitySystem.planBarberCapacity(input(overrides));
 
 /** The day's free minutes per shop, as the legacy contribution map read. */
 function contributionOn(
   planned: CapacityPlan,
-  dayKey: string,
+  onDay: string,
 ): Record<string, number> | null {
-  const own = planned.entries.filter((entry) => entry.dayKey === dayKey);
+  const own = planned.entries.filter((entry) => entry.localDate === onDay);
   if (own.length === 0) return null;
   return Object.fromEntries(
     own.map((entry) => [entry.locationId, entry.freeMinutes]),
@@ -125,9 +125,7 @@ describe('planBarberCapacity', () => {
   it('pads busy with the turnaround on both sides before subtracting', () => {
     const planned = plan({
       schedule: schedule([{ start: 540, end: 1020, locationId: LOC_A }], 15),
-      busy: [
-        { dayKey: k('2026-08-03'), spans: [busy(600, 660, '2026-08-03')] },
-      ],
+      busy: [{ localDate: k('2026-08-03'), spans: [busy(600, 660)] }],
     });
     // 480 − (60 busy + 15 either side) = 390.
     expect(contributionOn(planned, '2026-08-03')).toEqual({ 'loc-a': 390 });
@@ -173,21 +171,19 @@ describe('planBarberCapacity', () => {
   it('deletes the entry for a day a published exception closes', () => {
     const planned = plan({
       exceptions: [
-        { dayKey: k('2026-08-03'), effect: ExceptionEffect.closed() },
+        { localDate: k('2026-08-03'), ...ExceptionEffectRule.closed() },
       ],
     });
     expect(contributionOn(planned, '2026-08-03')).toBeNull();
-    expect(planned.dayKeys).toEqual(['2026-08-03']);
+    expect(planned.localDates).toEqual(['2026-08-03']);
   });
 
   it('replaces the roster with an hours exception', () => {
     const planned = plan({
       exceptions: [
         {
-          dayKey: k('2026-08-03'),
-          effect: unwrapOk(
-            ExceptionEffect.hours([{ startMinutes: 600, endMinutes: 720 }]),
-          ),
+          localDate: k('2026-08-03'),
+          ...unwrapOk(ExceptionEffectRule.hours([busy(600, 720)])),
         },
       ],
     });
@@ -197,48 +193,46 @@ describe('planBarberCapacity', () => {
   it('deletes every entry when the barber has no roster at all', () => {
     const planned = plan({
       schedule: null,
-      dayKeys: [k('2026-08-03'), k('2026-08-04')],
+      localDates: [k('2026-08-03'), k('2026-08-04')],
     });
     expect(contributionOn(planned, '2026-08-03')).toBeNull();
     expect(contributionOn(planned, '2026-08-04')).toBeNull();
-    expect(planned.dayKeys).toEqual(['2026-08-03', '2026-08-04']);
+    expect(planned.localDates).toEqual(['2026-08-03', '2026-08-04']);
   });
 
   it('deletes the entry for a fully booked day rather than keeping zeros', () => {
     const planned = plan({
-      busy: [
-        { dayKey: k('2026-08-03'), spans: [busy(540, 1020, '2026-08-03')] },
-      ],
+      busy: [{ localDate: k('2026-08-03'), spans: [busy(540, 1020)] }],
     });
     expect(contributionOn(planned, '2026-08-03')).toBeNull();
   });
 
   it('deletes the entry on the shop rest day', () => {
     // 2026-08-09 is a Sunday: shop closed, roster has no sunday segments.
-    const planned = plan({ dayKeys: [k('2026-08-09')] });
+    const planned = plan({ localDates: [k('2026-08-09')] });
     expect(contributionOn(planned, '2026-08-09')).toBeNull();
   });
 
   it('groups a month-straddling span into sorted month plans', () => {
     const months = CapacitySystem.byMonth(
       plan({
-        dayKeys: [k('2026-08-31'), k('2026-09-01'), k('2026-09-02')],
+        localDates: [k('2026-08-31'), k('2026-09-01'), k('2026-09-02')],
       }),
     );
     expect(months.map((month) => month.month)).toEqual(['2026-08', '2026-09']);
-    expect(months[0]?.dayKeys).toEqual(['2026-08-31']);
-    expect(months[1]?.dayKeys).toEqual(['2026-09-01', '2026-09-02']);
-    expect(months[1]?.entries.map((entry) => entry.dayKey)).toEqual([
+    expect(months[0]?.localDates).toEqual(['2026-08-31']);
+    expect(months[1]?.localDates).toEqual(['2026-09-01', '2026-09-02']);
+    expect(months[1]?.entries.map((entry) => entry.localDate)).toEqual([
       '2026-09-01',
       '2026-09-02',
     ]);
   });
 });
 
-describe('dayKeysBetween', () => {
+describe('localDatesBetween', () => {
   it('walks the range inclusively', () => {
     expect(
-      CapacitySystem.dayKeysBetween(k('2026-08-30'), k('2026-09-02')),
+      CapacitySystem.localDatesBetween(k('2026-08-30'), k('2026-09-02')),
     ).toEqual({
       keys: ['2026-08-30', '2026-08-31', '2026-09-01', '2026-09-02'],
       truncated: false,
@@ -246,7 +240,7 @@ describe('dayKeysBetween', () => {
   });
 
   it('flags truncation at 500 days instead of walking forever', () => {
-    const result = CapacitySystem.dayKeysBetween(
+    const result = CapacitySystem.localDatesBetween(
       k('2026-01-01'),
       k('2030-01-01'),
     );
@@ -255,22 +249,14 @@ describe('dayKeysBetween', () => {
   });
 });
 
-describe('horizonSpanEndKey', () => {
+describe('horizonSpanEnd', () => {
   it('lands on the true last day of the following month', () => {
     // The failure this encodes: setUTCMonth(+1) on Jan 31 rolls THROUGH
     // short February and left its tail unmaterialized.
-    expect(CapacitySystem.horizonSpanEndKey(k('2026-01-31'))).toBe(
-      '2026-02-28',
-    );
-    expect(CapacitySystem.horizonSpanEndKey(k('2024-01-31'))).toBe(
-      '2024-02-29',
-    ); // leap
-    expect(CapacitySystem.horizonSpanEndKey(k('2026-12-31'))).toBe(
-      '2027-01-31',
-    ); // year roll
-    expect(CapacitySystem.horizonSpanEndKey(k('2026-10-15'))).toBe(
-      '2026-11-30',
-    ); // mid-month
+    expect(CapacitySystem.horizonSpanEnd(k('2026-01-31'))).toBe('2026-02-28');
+    expect(CapacitySystem.horizonSpanEnd(k('2024-01-31'))).toBe('2024-02-29'); // leap
+    expect(CapacitySystem.horizonSpanEnd(k('2026-12-31'))).toBe('2027-01-31'); // year roll
+    expect(CapacitySystem.horizonSpanEnd(k('2026-10-15'))).toBe('2026-11-30'); // mid-month
   });
 });
 
@@ -281,13 +267,13 @@ describe('the rollup’s read semantics (capacity-document)', () => {
   const mladost = LocationId.of('loc-mladost');
   const day = k('2026-08-14');
   const entries = [
-    CapacityEntry.of(day, ivan, center, 240),
-    CapacityEntry.of(day, stefan, center, 180),
-    CapacityEntry.of(day, stefan, mladost, 60),
+    CapacityEntry.of(day, ivan, center, m(240)),
+    CapacityEntry.of(day, stefan, center, m(180)),
+    CapacityEntry.of(day, stefan, mladost, m(60)),
   ];
 
-  it('derives the month key from a day key', () => {
-    expect(CapacityEntry.monthOf(day)).toBe('2026-08');
+  it('derives the month key from a shop day (LocalDate.monthKey)', () => {
+    expect(LocalDate.monthKey(day)).toBe('2026-08');
   });
 
   it('sums every shop for "any shop"', () => {
@@ -324,35 +310,38 @@ describe('applyPlan — the replace-not-merge fold (§3.6)', () => {
   const stefan = BarberId.of('stefan');
 
   it('drops the scope, merges the plan in place, leaves other barbers alone', () => {
-    const month = {
-      month: '2026-08',
+    const stored = {
+      month: month('2026-08'),
       entries: [
-        CapacityEntry.of(k('2026-08-03'), ivan, LOC_A, 100),
-        CapacityEntry.of(k('2026-08-03'), stefan, LOC_A, 50),
-        CapacityEntry.of(k('2026-08-04'), ivan, LOC_B, 30),
-        CapacityEntry.of(k('2026-08-05'), ivan, LOC_A, 70),
+        CapacityEntry.of(k('2026-08-03'), ivan, LOC_A, m(100)),
+        CapacityEntry.of(k('2026-08-03'), stefan, LOC_A, m(50)),
+        CapacityEntry.of(k('2026-08-04'), ivan, LOC_B, m(30)),
+        CapacityEntry.of(k('2026-08-05'), ivan, LOC_A, m(70)),
       ],
     };
     const replacement: CapacityPlan = {
       barberId: ivan,
-      dayKeys: [k('2026-08-03'), k('2026-08-04')],
-      entries: [CapacityEntry.of(k('2026-08-03'), ivan, LOC_B, 200)],
+      localDates: [k('2026-08-03'), k('2026-08-04')],
+      entries: [CapacityEntry.of(k('2026-08-03'), ivan, LOC_B, m(200))],
     };
-    expect(CapacitySystem.applyPlan(month, replacement)).toEqual([
-      CapacityEntry.of(k('2026-08-03'), ivan, LOC_B, 200),
-      CapacityEntry.of(k('2026-08-03'), stefan, LOC_A, 50),
+    expect(CapacitySystem.applyPlan(stored, replacement)).toEqual([
+      CapacityEntry.of(k('2026-08-03'), ivan, LOC_B, m(200)),
+      CapacityEntry.of(k('2026-08-03'), stefan, LOC_A, m(50)),
       // 2026-08-04 emptied: the ghost entry is gone, not zeroed.
-      CapacityEntry.of(k('2026-08-05'), ivan, LOC_A, 70),
+      CapacityEntry.of(k('2026-08-05'), ivan, LOC_A, m(70)),
     ]);
   });
 
   it('seeds a month that does not exist yet with only its own entries', () => {
     const planned = plan({
-      dayKeys: [k('2026-08-31'), k('2026-09-01')],
+      localDates: [k('2026-08-31'), k('2026-09-01')],
     });
     expect(
-      CapacitySystem.applyPlan({ month: '2026-09', entries: [] }, planned),
-    ).toEqual([CapacityEntry.of(k('2026-09-01'), B1, LOC_A, 480)]);
+      CapacitySystem.applyPlan(
+        { month: month('2026-09'), entries: [] },
+        planned,
+      ),
+    ).toEqual([CapacityEntry.of(k('2026-09-01'), B1, LOC_A, m(480))]);
   });
 
   const barberArb = fc.constantFrom('ana', 'ana2', 'ivan', 'stefan');
@@ -361,7 +350,12 @@ describe('applyPlan — the replace-not-merge fold (§3.6)', () => {
   const entryArb = fc
     .tuple(dayArb, barberArb, shopArb, fc.integer({ min: 1, max: 600 }))
     .map(([day, barber, shop, minutes]) =>
-      CapacityEntry.of(day, BarberId.of(barber), LocationId.of(shop), minutes),
+      CapacityEntry.of(
+        day,
+        BarberId.of(barber),
+        LocationId.of(shop),
+        m(minutes),
+      ),
     );
   /** Sorted, one entry per key — what a stored month or a plan holds. */
   const canonical = (entries: readonly CapacityEntry[]) => {
@@ -385,28 +379,29 @@ describe('applyPlan — the replace-not-merge fold (§3.6)', () => {
         fc.array(entryArb, { maxLength: 8 }),
         (stored, barber, scopeDays, planned) => {
           const barberId = BarberId.of(barber);
-          const dayKeys = [...new Set(scopeDays)].sort();
-          const month = { month: '2026-08', entries: canonical(stored) };
+          const localDates = [...new Set(scopeDays)].sort();
+          const doc = { month: month('2026-08'), entries: canonical(stored) };
           const replacement: CapacityPlan = {
             barberId,
-            dayKeys,
+            localDates,
             // A plan only ever holds its own barber's in-scope days.
             entries: canonical(
               planned
-                .filter((entry) => dayKeys.includes(entry.dayKey))
+                .filter((entry) => localDates.includes(entry.localDate))
                 .map((entry) => ({ ...entry, barberId })),
             ),
           };
           const brute = [
-            ...month.entries.filter(
+            ...doc.entries.filter(
               (entry) =>
                 !(
-                  entry.barberId === barberId && dayKeys.includes(entry.dayKey)
+                  entry.barberId === barberId &&
+                  localDates.includes(entry.localDate)
                 ),
             ),
             ...replacement.entries,
           ].sort(CapacityEntry.compare);
-          expect(CapacitySystem.applyPlan(month, replacement)).toEqual(brute);
+          expect(CapacitySystem.applyPlan(doc, replacement)).toEqual(brute);
         },
       ),
     );
@@ -415,23 +410,20 @@ describe('applyPlan — the replace-not-merge fold (§3.6)', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const frozenInput = deepFreeze(
       input({
-        dayKeys: [k('2026-08-04'), k('2026-08-03')],
-        busy: [
-          { dayKey: k('2026-08-03'), spans: [busy(600, 660, '2026-08-03')] },
-        ],
+        localDates: [k('2026-08-04'), k('2026-08-03')],
+        busy: [{ localDate: k('2026-08-03'), spans: [busy(600, 660)] }],
       }),
     );
-    const days = deepFreeze([...DAYS]);
-    const once = CapacitySystem.planBarberCapacity(frozenInput, days);
-    expect(CapacitySystem.planBarberCapacity(frozenInput, days)).toEqual(once);
-    const month = deepFreeze({
-      month: '2026-08',
-      entries: [CapacityEntry.of(k('2026-08-03'), B1, LOC_B, 5)],
+    const once = CapacitySystem.planBarberCapacity(frozenInput);
+    expect(CapacitySystem.planBarberCapacity(frozenInput)).toEqual(once);
+    const doc = deepFreeze({
+      month: month('2026-08'),
+      entries: [CapacityEntry.of(k('2026-08-03'), B1, LOC_B, m(5))],
     });
-    expect(CapacitySystem.applyPlan(month, once)).toEqual(
-      CapacitySystem.applyPlan(month, once),
+    expect(CapacitySystem.applyPlan(doc, once)).toEqual(
+      CapacitySystem.applyPlan(doc, once),
     );
-    expect(frozenInput.dayKeys).toEqual(['2026-08-04', '2026-08-03']);
-    expect(once.dayKeys).toEqual(['2026-08-03', '2026-08-04']);
+    expect(frozenInput.localDates).toEqual(['2026-08-04', '2026-08-03']);
+    expect(once.localDates).toEqual(['2026-08-03', '2026-08-04']);
   });
 });

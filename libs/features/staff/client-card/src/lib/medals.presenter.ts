@@ -1,8 +1,10 @@
 import {
-  DayKey,
+  LocalDate,
   type PersonalRecord as SystemRecord,
+  PersonalRecordKind as SystemRecordKind,
   RecordsSystem,
   ServiceId as ServiceRefId,
+  defect,
 } from '@creativo/ecs-core';
 import {
   type BadgeCategory,
@@ -293,7 +295,7 @@ export function recordSetOn(
   record: PersonalRecord,
   today: string,
 ): string | null {
-  return RecordsSystem.setOn(recordOf(record), DayKey.of(today));
+  return RecordsSystem.setOn(recordOf(record), dayOf(today));
 }
 
 /**
@@ -304,7 +306,7 @@ export function recordSetOn(
  * until the year closes on it.
  */
 export function isNewRecord(record: PersonalRecord, today: string): boolean {
-  return RecordsSystem.isNew(recordOf(record), DayKey.of(today));
+  return RecordsSystem.isNew(recordOf(record), dayOf(today));
 }
 
 /**
@@ -936,12 +938,26 @@ export function medalScopeVm(
 
 // ── The bridge: legacy record → ecs-core struct (Phase 4 deletes it) ─────
 
-/** A personal record as `RecordsSystem` reads it: the same figures, days and ids as brands. */
+/** A record's kind, in the system's words. */
+const RECORD_KIND = {
+  longestRhythm: SystemRecordKind.LongestRhythm,
+  mostVisitsInYear: SystemRecordKind.MostVisitsInYear,
+  favouriteService: SystemRecordKind.FavouriteService,
+  firstVisit: SystemRecordKind.FirstVisit,
+} as const satisfies Record<PersonalRecord['kind'], SystemRecordKind>;
+
+/** A shop day the card holds: a guarded document day, a clock's «today». */
+function dayOf(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/** A personal record as `RecordsSystem` reads it: the same figures, the kind the dictionary's, days and ids as brands. */
 function recordOf(record: PersonalRecord): SystemRecord {
   return {
-    kind: record.kind,
+    personalRecordKind: RECORD_KIND[record.kind],
     value: record.value,
-    on: record.on === null ? null : DayKey.of(record.on),
+    on: record.on === null ? null : dayOf(record.on),
     year: record.year,
     serviceId:
       record.serviceId === null ? null : ServiceRefId.of(record.serviceId),

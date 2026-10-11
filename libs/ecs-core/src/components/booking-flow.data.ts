@@ -1,42 +1,52 @@
-import type { AppointmentId } from '../entities/appointment.entity';
-import type { BarberId } from '../entities/barber.entity';
-import type { LocationId } from '../entities/location.entity';
-import type { WaitlistRequestId } from '../entities/waitlist-request.entity';
+import type {
+  AppointmentId,
+  BarberId,
+  CartLineId,
+  LocationId,
+  WaitlistRequestId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type {
+  EndMinute,
+  MinuteOfDay,
+} from '../primitives/minute-of-day.primitive';
 import { BookingCart } from './cart-line.data';
 import { FlexibleWhen } from './flexible-when.data';
 import { Party } from './party.data';
-import { TimeInterval } from './time-interval.data';
 
 /**
- * The booking wizard's steps — the ONLY source of these strings
- * (`booking-flow.ts`: `location → services → schedule → review →
- * confirmed`, with `waitlisted` as the schedule step's OTHER, equally
- * terminal exit).
+ * The booking wizard's steps — the ONLY source of these strings, named after
+ * the field it types (`bookingFlowStep`, N15): `LOCATION → SERVICES →
+ * SCHEDULE → REVIEW → CONFIRMED`, with `WAITLISTED` as the schedule step's
+ * OTHER, equally terminal exit.
  */
 export const BookingFlowStep = {
   /** WHERE — asked first, and optional: `null` is "any shop", a choice. */
-  Location: 'location',
-  Services: 'services',
-  Schedule: 'schedule',
-  Review: 'review',
-  Confirmed: 'confirmed',
+  Location: 'LOCATION',
+  Services: 'SERVICES',
+  Schedule: 'SCHEDULE',
+  Review: 'REVIEW',
+  Confirmed: 'CONFIRMED',
   /** Nothing fitted and the client asked to be told when something does. */
-  Waitlisted: 'waitlisted',
+  Waitlisted: 'WAITLISTED',
 } as const;
 export type BookingFlowStep =
   (typeof BookingFlowStep)[keyof typeof BookingFlowStep];
 
-/** Why a `?reschedule=` link did not become a move — the ONLY source of these strings. */
-export const MoveRefusalKind = {
+/**
+ * Why a `?reschedule=` link did not become a move — the ONLY source of these
+ * strings, named after the field it types (`moveRefusalReason`, N15).
+ */
+export const MoveRefusalReason = {
   /** Only seats the shop must re-seat remain (the server refuses `shop_only`). */
-  CompanionsOnly: 'companions_only',
+  CompanionsOnly: 'COMPANIONS_ONLY',
   /** The visit could not be read for this account, or no longer rebuilds into a bag. */
-  Unavailable: 'unavailable',
+  Unavailable: 'UNAVAILABLE',
   /** Somebody the move carries can no longer be served anywhere. */
-  CarriedOutOfReach: 'carried_out_of_reach',
+  CarriedOutOfReach: 'CARRIED_OUT_OF_REACH',
 } as const;
-export type MoveRefusalKind =
-  (typeof MoveRefusalKind)[keyof typeof MoveRefusalKind];
+export type MoveRefusalReason =
+  (typeof MoveRefusalReason)[keyof typeof MoveRefusalReason];
 
 /** How to reach the shop about a refusal — the i18n keys of the reach phrase. */
 const SHOP_REACH = {
@@ -49,7 +59,8 @@ const SHOP_REACH = {
 /**
  * Which "reach the shop" phrase a refusal ends with — the `shopReachKey`
  * values (`booking-gateway.port.ts:232`), a shared tag replacing the
- * ~120 bare-literal comparisons of the web client.
+ * ~120 bare-literal comparisons of the web client. Its values are i18n keys
+ * (flatten-spec §0.4): they stay byte-identical.
  */
 export type ShopReach = (typeof SHOP_REACH)[keyof typeof SHOP_REACH];
 
@@ -63,42 +74,51 @@ export const ShopReach = {
 } as const;
 
 /**
- * One cart line, placed: who serves it and exactly when. The barber is
- * RESOLVED even when the line asked for anyone — review must name the person.
+ * One cart line, placed: who serves it and exactly when, on the selection's
+ * shop day (Law 7.3: placement is local coordinates). The barber is RESOLVED
+ * even when the line asked for anyone — review must name the person.
  */
 export type SeatAssignment = {
-  readonly lineId: string;
+  readonly lineId: CartLineId;
   readonly barberId: BarberId;
-  readonly timeInterval: TimeInterval;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
 };
 
 /**
  * What the schedule step hands to review: WHERE, WHEN and BY WHOM. The
- * `timeInterval` is the ENVELOPE — first start to last end — derived from the
- * assignments ({@link ScheduleSelection.of}) and never authored separately.
+ * envelope (`startMinutes`–`endMinutes` on `localDate`) is first start to
+ * last end — derived from the assignments ({@link ScheduleSelection.of}) and
+ * never authored separately. Every seat starts on the one shop day (T7).
  */
 export type ScheduleSelection = {
   readonly locationId: LocationId;
-  readonly timeInterval: TimeInterval;
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
   readonly assignments: readonly SeatAssignment[];
 };
 
-function isInterval(raw: unknown): raw is TimeInterval {
-  if (raw === null || typeof raw !== 'object') return false;
-  const interval = raw as Readonly<Record<string, unknown>>;
-  const start = interval['startMs'];
-  const end = interval['endMs'];
+const MINUTES_PER_DAY = 1440;
+
+function isSpan(start: unknown, end: unknown): boolean {
   return (
     typeof start === 'number' &&
     typeof end === 'number' &&
-    Number.isFinite(start) &&
-    Number.isFinite(end) &&
-    start < end
+    Number.isInteger(start) &&
+    Number.isInteger(end) &&
+    start >= 0 &&
+    start < end &&
+    end <= MINUTES_PER_DAY
   );
 }
 
 function isId(raw: unknown): raw is string {
   return typeof raw === 'string' && raw.length > 0;
+}
+
+function isLocalDate(raw: unknown): boolean {
+  return typeof raw === 'string' && LocalDate.parse(raw).ok;
 }
 
 export const ScheduleSelection = {
@@ -108,29 +128,33 @@ export const ScheduleSelection = {
    */
   of(
     locationId: LocationId,
+    localDate: LocalDate,
     assignments: readonly SeatAssignment[],
   ): ScheduleSelection | null {
-    if (assignments.length === 0) return null;
-    let startMs = Number.POSITIVE_INFINITY;
-    let endMs = Number.NEGATIVE_INFINITY;
-    for (let i = 0; i < assignments.length; i++) {
-      const interval = (assignments[i] as SeatAssignment).timeInterval;
-      if (interval.startMs < startMs) startMs = interval.startMs;
-      if (interval.endMs > endMs) endMs = interval.endMs;
+    const first = assignments[0];
+    if (first === undefined) return null;
+    let startMinutes = first.startMinutes;
+    let endMinutes = first.endMinutes;
+    for (let i = 1; i < assignments.length; i++) {
+      const assignment = assignments[i] as SeatAssignment;
+      if (assignment.startMinutes < startMinutes) {
+        startMinutes = assignment.startMinutes;
+      }
+      if (assignment.endMinutes > endMinutes)
+        endMinutes = assignment.endMinutes;
     }
-    return {
-      locationId,
-      timeInterval: TimeInterval.of(startMs, endMs),
-      assignments,
-    };
+    return { locationId, localDate, startMinutes, endMinutes, assignments };
   },
 
-  /** The edge guard: a shop, a real envelope, and well-formed assignments. */
+  /** The edge guard: a shop, a real day and envelope, and well-formed assignments. */
   is(raw: unknown): raw is ScheduleSelection {
     if (raw === null || typeof raw !== 'object') return false;
     const selection = raw as Readonly<Record<string, unknown>>;
     if (!isId(selection['locationId'])) return false;
-    if (!isInterval(selection['timeInterval'])) return false;
+    if (!isLocalDate(selection['localDate'])) return false;
+    if (!isSpan(selection['startMinutes'], selection['endMinutes'])) {
+      return false;
+    }
     const assignments = selection['assignments'];
     if (!Array.isArray(assignments) || assignments.length === 0) return false;
     for (let i = 0; i < assignments.length; i++) {
@@ -140,7 +164,7 @@ export const ScheduleSelection = {
       if (
         !isId(assignment['lineId']) ||
         !isId(assignment['barberId']) ||
-        !isInterval(assignment['timeInterval'])
+        !isSpan(assignment['startMinutes'], assignment['endMinutes'])
       ) {
         return false;
       }
@@ -153,7 +177,8 @@ export const ScheduleSelection = {
  * What the confirmation screen renders — deliberately NOT an appointment:
  * the server builds that from server-resolved terms, and the browser
  * rebuilding one would describe what was REQUESTED. The `appointmentId` is
- * the receipt; the rest is what the client already agreed to.
+ * the receipt; the rest is what the client already agreed to. In-memory UI
+ * state (F-8): it keeps its named references.
  */
 export type BookingConfirmation = {
   readonly appointmentId: AppointmentId;
@@ -173,24 +198,29 @@ export type WaitlistedSummary = {
 
 /** A refused move, and its shop when known — the shell's call button. */
 export type MoveRefusal = {
-  readonly reason: MoveRefusalKind;
+  readonly moveRefusalReason: MoveRefusalReason;
   readonly locationId: LocationId | null;
 };
 
 export const MoveRefusal = {
-  of(reason: MoveRefusalKind, locationId: LocationId | null): MoveRefusal {
-    return { reason, locationId };
+  of(
+    moveRefusalReason: MoveRefusalReason,
+    locationId: LocationId | null,
+  ): MoveRefusal {
+    return { moveRefusalReason, locationId };
   },
 } as const;
 
 /**
  * Where the booking wizard is, with each step's own bags — the **persisted**
- * sessionStorage draft (§4.2: the draft IS this state, serialised as is; no
- * separate draft shape). The party and the cart ride from the first step on,
- * so removing a guest drops that guest's lines and the two never drift; the
- * flexible declaration rides on the schedule state so a step back from review
- * does not cost it. `BookingFlowSystem.next` steps over it; a stale draft
- * fails {@link BookingFlowState.is} and is cleared.
+ * draft (§4.2: the draft IS this state, serialised as is; no separate draft
+ * shape; stored under the versioned key of `storage.port.ts`, so a draft of
+ * the pre-flatten shape is dropped, never mis-read). The party and the cart
+ * ride from the first step on, so removing a guest drops that guest's lines
+ * and the two never drift; the flexible declaration rides on the schedule
+ * state so a step back from review does not cost it. `BookingFlowSystem.next`
+ * steps over it; a stale draft fails {@link BookingFlowState.is} and is
+ * cleared. In-memory UI state (F-8): only its discriminator is flattened.
  */
 export type BookingFlowState =
   | BookingFlowState.Location
@@ -218,7 +248,7 @@ export const BookingFlowState = {
   /** Where a new booking opens: the location step, an empty bag, any shop. */
   initial(party: Party): BookingFlowState.Location {
     return {
-      kind: BookingFlowStep.Location,
+      bookingFlowStep: BookingFlowStep.Location,
       party,
       cart: BookingCart.empty(),
       locationId: null,
@@ -228,8 +258,8 @@ export const BookingFlowState = {
   /** The flow is over — confirmed or waitlisted. */
   isTerminal(state: BookingFlowState): boolean {
     return (
-      state.kind === BookingFlowStep.Confirmed ||
-      state.kind === BookingFlowStep.Waitlisted
+      state.bookingFlowStep === BookingFlowStep.Confirmed ||
+      state.bookingFlowStep === BookingFlowStep.Waitlisted
     );
   },
 
@@ -249,7 +279,7 @@ export const BookingFlowState = {
   is(raw: unknown): raw is BookingFlowState {
     if (raw === null || typeof raw !== 'object') return false;
     const state = raw as Readonly<Record<string, unknown>>;
-    switch (state['kind']) {
+    switch (state['bookingFlowStep']) {
       case BookingFlowStep.Location:
       case BookingFlowStep.Services:
         return (
@@ -303,20 +333,20 @@ export const BookingFlowState = {
 
 export namespace BookingFlowState {
   export type Location = {
-    readonly kind: typeof BookingFlowStep.Location;
+    readonly bookingFlowStep: typeof BookingFlowStep.Location;
     readonly party: Party;
     readonly cart: BookingCart;
     /** `null` ⇒ any shop — chosen, not unanswered. */
     readonly locationId: LocationId | null;
   };
   export type Services = {
-    readonly kind: typeof BookingFlowStep.Services;
+    readonly bookingFlowStep: typeof BookingFlowStep.Services;
     readonly party: Party;
     readonly cart: BookingCart;
     readonly locationId: LocationId | null;
   };
   export type Schedule = {
-    readonly kind: typeof BookingFlowStep.Schedule;
+    readonly bookingFlowStep: typeof BookingFlowStep.Schedule;
     readonly party: Party;
     readonly cart: BookingCart;
     readonly locationId: LocationId | null;
@@ -324,17 +354,17 @@ export namespace BookingFlowState {
     readonly when: FlexibleWhen;
   };
   export type Review = {
-    readonly kind: typeof BookingFlowStep.Review;
+    readonly bookingFlowStep: typeof BookingFlowStep.Review;
     readonly party: Party;
     readonly cart: BookingCart;
     readonly selection: ScheduleSelection;
   };
   export type Confirmed = {
-    readonly kind: typeof BookingFlowStep.Confirmed;
+    readonly bookingFlowStep: typeof BookingFlowStep.Confirmed;
     readonly confirmation: BookingConfirmation;
   };
   export type Waitlisted = {
-    readonly kind: typeof BookingFlowStep.Waitlisted;
+    readonly bookingFlowStep: typeof BookingFlowStep.Waitlisted;
     readonly summary: WaitlistedSummary;
   };
 }

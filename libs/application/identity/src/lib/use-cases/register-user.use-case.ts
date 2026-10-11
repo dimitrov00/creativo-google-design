@@ -1,4 +1,4 @@
-import { IdentifierKind, RegistrationSystem } from '@creativo/ecs-core';
+import { IdentifierChannel, RegistrationSystem } from '@creativo/ecs-core';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
   AuthStrategy,
@@ -49,7 +49,9 @@ export class RegisterUserUseCase {
     // field for the requirement to be met (mirrors `completeRegistration`'s
     // own server-side check, which applies this same fallback).
     const effective = RegistrationSystem.effectiveFields(
-      identifier.kind === 'phone' ? IdentifierKind.Phone : IdentifierKind.Email,
+      identifier.kind === 'phone'
+        ? IdentifierChannel.Phone
+        : IdentifierChannel.Email,
       identifier.value.toString(),
       toRegistrationFields(fields),
     );

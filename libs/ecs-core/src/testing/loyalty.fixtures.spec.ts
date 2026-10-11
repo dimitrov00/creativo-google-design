@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
-import { StreakRule } from '../components/streak-rule.data';
-import { FIXTURE_TODAY } from '../testing';
+import { StreakInterval } from '../components/streak-interval.data';
+import { StreakQualifier } from '../components/streak-qualifier.data';
 import {
-  FIXTURE_STREAK_OPENED_AT_MS,
+  StreakExcuse,
+  StreakOnBreak,
+  StreakRule,
+  type StreakHeadRule,
+} from '../components/streak-rule.data';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { FIXTURE_TODAY, localDate, unwrapOk, utcMs } from '../testing';
+import {
+  FIXTURE_STREAK_OPENED_AT_UTC_MS,
   giftVouchersJson,
   loyaltyCatalogJson,
   streakDefinitionFixture,
@@ -14,9 +21,60 @@ import {
  * The loyalty fixtures tell ONE story: the JSON the dev seed writes and the
  * entities the loyalty flip's pipeline specs start from are the same rule,
  * opened the same instant.
+ *
+ * The JSON is today's wire (frozen): a nested rule with lowercase tags and
+ * an ISO instant. The entities are flat (Laws 6 and 7): `wire` below reads
+ * the one into the other field by field, by the tables of the wire's own
+ * words, so the two are held to each other rather than each to itself.
  */
 
 const head = loyaltyCatalogJson.streakDefinitions.cadence;
+
+/** The wire's tags, word for word, as the dictionaries hold them. */
+const WIRE_QUALIFIER = { anyVisit: StreakQualifier.AnyVisit } as const;
+const WIRE_INTERVAL = { fixed: StreakInterval.Fixed } as const;
+const WIRE_EXCUSE = {
+  shopClosure: StreakExcuse.ShopClosure,
+  barberAbsence: StreakExcuse.BarberAbsence,
+  staffCancelled: StreakExcuse.StaffCancelled,
+  closedDays: StreakExcuse.ClosedDays,
+} as const;
+const WIRE_ON_BREAK = {
+  restart: StreakOnBreak.Restart,
+  hold: StreakOnBreak.Hold,
+} as const;
+
+/** `catalog.json`'s rule in force, read flat — every part's figures prefixed by the part. */
+function wire(rule: typeof head.current): StreakRule {
+  return {
+    version: rule.version,
+    effectiveFromLocalDate: localDate(rule.effectiveFrom),
+    enabled: rule.enabled,
+    streakQualifier:
+      WIRE_QUALIFIER[rule.qualifier.kind as keyof typeof WIRE_QUALIFIER],
+    minGapDays: rule.minGapDays,
+    bookingHoldEnabled: rule.bookingHold.enabled,
+    bookingHoldMaxDaysPastDue: rule.bookingHold.maxDaysPastDue,
+    streakInterval:
+      WIRE_INTERVAL[rule.interval.kind as keyof typeof WIRE_INTERVAL],
+    intervalDays: rule.interval.days,
+    graceDays: rule.graceDays,
+    riskLeadDays: rule.riskLeadDays,
+    protectionsEnabled: rule.protections.enabled,
+    protectionsMaxBanked: rule.protections.maxBanked,
+    protectionsEarnEvery: rule.protections.earnEvery,
+    protectionsStartWith: rule.protections.startWith,
+    excuses: rule.excuses.map(
+      (excuse) => WIRE_EXCUSE[excuse as keyof typeof WIRE_EXCUSE],
+    ),
+    clientPauseEnabled: rule.clientPause.enabled,
+    clientPauseMaxDaysPerYear: rule.clientPause.maxDaysPerYear,
+    repairEnabled: rule.repair.enabled,
+    repairWindowDays: rule.repair.windowDays,
+    repairPerYear: rule.repair.perYear,
+    onBreak: WIRE_ON_BREAK[rule.onBreak as keyof typeof WIRE_ON_BREAK],
+  };
+}
 
 describe('the loyalty JSON fixtures', () => {
   it('holds every catalogue collection, keyed by collection', () => {
@@ -47,32 +105,43 @@ describe('the loyalty JSON fixtures', () => {
 
 describe('streakDefinitionFixture — catalog.json’s head, as the entity', () => {
   it('is the recommended rule the JSON opens with, in the ECS shape', () => {
-    const { effectiveFrom, ...rest } = head.current;
+    // Nothing waits on the wire (`scheduled: null`): the head is ONE element.
+    expect(head.scheduled).toBeNull();
     expect(streakDefinitionFixture()).toEqual({
       id: 'cadence',
       name: head.name,
-      current: { ...rest, effectiveFromDayKey: DayKey.of(effectiveFrom) },
-      scheduled: head.scheduled,
-      updatedAtMs: Date.parse(head.updatedAt),
+      rules: [
+        {
+          ...wire(head.current),
+          headRole: 'CURRENT',
+          streakTransition: null,
+        },
+      ],
+      updatedAtUtcMs: utcMs(head.updatedAt),
     });
-    expect(streakDefinitionFixture().current).toBe(StreakRule.DEFAULT);
+    const [current] = streakDefinitionFixture().rules;
+    expect(current === undefined ? null : StreakRule.of(current)).toEqual(
+      StreakRule.DEFAULT,
+    );
   });
 
   it('pins the opening instant as a literal that agrees with the JSON', () => {
-    expect(FIXTURE_STREAK_OPENED_AT_MS).toBe(Date.parse(head.updatedAt));
+    expect(FIXTURE_STREAK_OPENED_AT_UTC_MS).toBe(utcMs(head.updatedAt));
   });
 
   it('takes overrides field by field', () => {
-    const scheduled = {
+    const scheduled: StreakHeadRule = {
       ...StreakRule.DEFAULT,
       version: 2,
-      effectiveFromDayKey: DayKey.of('2026-10-05'),
+      effectiveFromLocalDate: localDate('2026-10-05'),
       graceDays: 10,
-      transition: 'grandfather' as const,
+      headRole: 'SCHEDULED',
+      streakTransition: 'GRANDFATHER',
     };
-    expect(streakDefinitionFixture({ scheduled })).toEqual({
+    const rules = [...streakDefinitionFixture().rules, scheduled];
+    expect(streakDefinitionFixture({ rules })).toEqual({
       ...streakDefinitionFixture(),
-      scheduled,
+      rules,
     });
   });
 });
@@ -82,19 +151,20 @@ describe('streakDefinitionVersionFixture — the history the seed gives the head
     expect(streakDefinitionVersionFixture()).toEqual({
       ...StreakRule.DEFAULT,
       id: '000001',
-      publishedAtMs: FIXTURE_STREAK_OPENED_AT_MS,
-      publishedBy: 'system',
-      transition: 'grandfather',
-      direction: 'neutral',
+      publishedAtUtcMs: FIXTURE_STREAK_OPENED_AT_UTC_MS,
+      publishedByUserId: 'system',
+      streakTransition: 'GRANDFATHER',
+      streakRuleDirection: 'NEUTRAL',
       changed: [],
       requestId: 'seed-cadence-000001',
-      withdrawnAtMs: null,
+      withdrawnAtUtcMs: null,
     });
   });
 
   it('takes overrides field by field', () => {
+    const withdrawnAtUtcMs = unwrapOk(UtcEpochMs.of(1));
     expect(
-      streakDefinitionVersionFixture({ withdrawnAtMs: 1 }).withdrawnAtMs,
+      streakDefinitionVersionFixture({ withdrawnAtUtcMs }).withdrawnAtUtcMs,
     ).toBe(1);
   });
 });

@@ -1,15 +1,16 @@
 /**
- * A careers-page role's stored `status` — the `as const` dictionary replacing
- * programs' bare `PositionStatus` union (`position.ts:11`), the ONLY source of
- * these strings. Values unchanged: index #12 filters `status == 'open'`.
+ * A careers-page role's status — the position's field `positionStatus`
+ * (was `status`, N8). Index #12 filters it (re-declared by the programs
+ * flip; the stored bytes stay today's lowercase until then).
  *
- * Admin-managed — a plain field an admin flips (as `LocationState`), not a
+ * Admin-managed — a plain field an admin flips (as `LocationStatus`), not a
  * domain-enforced transition graph, so there are no companion members; a
- * role is open when `position.status === PositionState.Open`. Courses keep
- * their own `EnrollmentStatus` (`enrollment-status.data.ts`).
+ * role is open when `position.positionStatus === PositionStatus.Open`.
+ * Courses keep their own `EnrollmentStatus` (`enrollment-status.data.ts`).
  */
-export const PositionState = {
-  Open: 'open',
-  Closed: 'closed',
+export const PositionStatus = {
+  Open: 'OPEN',
+  Closed: 'CLOSED',
 } as const;
-export type PositionState = (typeof PositionState)[keyof typeof PositionState];
+export type PositionStatus =
+  (typeof PositionStatus)[keyof typeof PositionStatus];

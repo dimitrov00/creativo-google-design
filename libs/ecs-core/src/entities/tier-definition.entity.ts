@@ -1,42 +1,32 @@
-import type { DayKey } from '../components/day-key.data';
-import type {
-  Metric,
-  MetricWindow,
-  PerkId,
-} from '../components/gamification.data';
+import type { Metric, PerkId } from '../components/gamification.data';
 import type { LocalizedText } from '../components/localized-text.data';
+import type { TierId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
 
-export type TierId = string & { readonly __brand: unique symbol };
-export const TierId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): TierId => raw as TierId,
-} as const;
+/*
+ * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
+ * re-exported here only while the barrel's staging block still names this
+ * file (`index.ts`), and leaves with that line.
+ */
 
 /**
  * `tierDefinitions/{id}` — Бронз · Сребро · Злато · Платина, the ONE tier
  * definition (§9 D21: no `.data.ts` twin). Qualifying is counted in VISITS
- * in a rolling window, never mixed with points; `rank` 0 is the entry tier
- * and the track draws tiers by rank.
- *
- * Declared change (§9 D24): `effectiveFrom` is a shop-calendar DAY —
- * tiers change at a day boundary, never mid-day — stored as
- * `effectiveFromDayKey` (today an ISO instant).
+ * in a rolling window, never mixed with points: at least `qualifyAtLeast`
+ * of `qualifyMetric` in the last `qualifyWindowDays` days (was the nested
+ * `qualify { metric; atLeast; window { lastDays } }`, N9). `rank` 0 is the
+ * entry tier and the track draws tiers by rank. `effectiveFromLocalDate`
+ * is a shop-calendar DAY (§9 D24) — tiers change at a day boundary, never
+ * mid-day.
  */
-export type TierDefinitionEntity = {
+export type TierDefinition = {
   readonly id: TierId;
   readonly name: LocalizedText;
   readonly rank: number;
   readonly benefits: readonly PerkId[];
   readonly version: number;
-  readonly effectiveFromDayKey: DayKey;
-  readonly qualify: TierDefinitionEntity.Qualify;
+  readonly effectiveFromLocalDate: LocalDate;
+  readonly qualifyMetric: Metric;
+  readonly qualifyAtLeast: number;
+  readonly qualifyWindowDays: number;
 };
-
-export namespace TierDefinitionEntity {
-  /** At least `atLeast` of `metric` in the last `window.lastDays` days. */
-  export type Qualify = {
-    readonly metric: Metric;
-    readonly atLeast: number;
-    readonly window: MetricWindow;
-  };
-}

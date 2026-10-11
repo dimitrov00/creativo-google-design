@@ -1,16 +1,19 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import { LocalizedText, LocalizedTextProps } from '@creativo/domain/catalog';
 import {
-  DayKey,
+  BadgeSeriesId as SystemSeriesId,
   EngagementErrorCode,
   Gamification,
+  LocalDate,
+  SeasonKind,
+  SeasonPhase as SystemSeasonPhase,
   type SeasonError as SystemSeasonError,
   SeasonSystem,
-  type SeriesId,
+  defect,
 } from '@creativo/ecs-core';
 import { BadgeSeriesId, SeasonId } from '../ids';
 import type { BadgeEmblem } from './badge-vocabulary';
-import { IsoDate, LOYALTY_ZONE } from './loyalty-calendar';
+import { IsoDate, sofiaDayOf } from './loyalty-calendar';
 import {
   SeasonAnnouncedLateError,
   SeasonError,
@@ -92,18 +95,17 @@ export class Season {
     }
 
     const { from, until } = props.window;
-    const rules = SeasonSystem.validate(
-      {
-        kind: props.kind,
-        window: { from: DayKey.of(from), until: DayKey.of(until) },
-        trackSeriesId:
-          props.trackSeriesId === null
-            ? null
-            : (props.trackSeriesId as SeriesId),
-        announcedAtMs: props.announcedAt.getTime(),
-      },
-      LOYALTY_ZONE,
-    );
+    const rules = SeasonSystem.validate({
+      seasonKind: SEASON_KIND[props.kind],
+      windowFrom: from,
+      windowUntil: until,
+      trackSeriesId:
+        props.trackSeriesId === null
+          ? null
+          : SystemSeriesId.of(props.trackSeriesId),
+      // The announcement's Sofia day, read at this edge (T5).
+      announcedLocalDate: dayOf(sofiaDayOf(props.announcedAt)),
+    });
     if (!rules.ok) {
       for (const error of rules.error) errors.push(legacyErrorOf(error));
     }
@@ -128,13 +130,15 @@ export class Season {
 
   /** Where the window stands on a Sofia day, both ends inclusive. */
   phaseOn(today: IsoDate): SeasonPhase {
-    return SeasonSystem.phaseOn(
-      {
-        from: DayKey.of(this.window.from),
-        until: DayKey.of(this.window.until),
-      },
-      DayKey.of(today),
-    );
+    return LEGACY_SEASON_PHASE[
+      SeasonSystem.phaseOn(
+        {
+          windowFrom: dayOf(this.window.from),
+          windowUntil: dayOf(this.window.until),
+        },
+        dayOf(today),
+      )
+    ];
   }
 
   /** Every family the window holds: the track first, then the rest in order. */
@@ -143,10 +147,29 @@ export class Season {
   }
 }
 
-// ── The bridge: ecs-core struct error → legacy class (Phase 4 deletes it) ──
+// ── The bridge: legacy words ↔ ecs-core structs (Phase 4 deletes it) ──────
+
+/** The window's kind, in the system's words. */
+const SEASON_KIND = {
+  season: SeasonKind.Season,
+  event: SeasonKind.Event,
+} as const satisfies Record<SeasonProps['kind'], SeasonKind>;
+
+/** A window's phase, in the legacy words. */
+const LEGACY_SEASON_PHASE: Readonly<Record<SystemSeasonPhase, SeasonPhase>> = {
+  [SystemSeasonPhase.Announced]: 'announced',
+  [SystemSeasonPhase.Open]: 'open',
+  [SystemSeasonPhase.Ended]: 'ended',
+};
+
+/** A Sofia day the class holds: a validated window end, a clock's «today». */
+function dayOf(raw: IsoDate): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
 
 function legacyErrorOf(error: SystemSeasonError): SeasonError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case EngagementErrorCode.SeasonWindowMalformed:
       return new SeasonWindowMalformedError(error.from, error.until);
     case EngagementErrorCode.SeasonWindowInverted:

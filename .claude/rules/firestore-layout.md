@@ -23,8 +23,8 @@ rows of root fields — not a serialized object graph.
   tenantId:          'creativo'
   locationId:        'loc_center'
   barberIds:         ['b_ivan']                 // 1-to-N: array
-  subjectUserIds:    ['u_42']                   // 1-to-N: array (query key)
-  localDate:         '2026-10-07'               // TimeCoordinate, flat at the root
+  subjectUserIds:    ['u_42']                   // 1-to-N: array (query key); D29: flip (1) adds subjectCustomerIds beside it
+  localDate:         '2026-10-07'               // AppointmentTime, flat at the root
   startMinutes:      600
   endMinutes:        645
   utcEpochMs:        1759820400000

@@ -2,14 +2,15 @@ import { EngagementError } from './engagement-errors.data';
 import { Result } from './result.data';
 
 /**
- * The occasion a coupon is given FOR, where it has one — a closed set, so
- * the card that dresses a grant for the day reads a fact, never a name
- * («Рожден ден −20 %» is copy an admin may reword). `birthday` is the gift a
- * client holds on their birthday. Today the tuple `COUPON_OCCASIONS =
- * ['birthday']` (`coupon.ts:64`); the stored strings are unchanged.
+ * The occasion a coupon is given FOR, where it has one — the coupon's field
+ * `couponOccasion` (was `occasion`, N15), a closed set, so the card that
+ * dresses a grant for the day reads a fact, never a name («Рожден ден −20 %»
+ * is copy an admin may reword). `BIRTHDAY` is the gift a client holds on
+ * their birthday. The stored legacy value is the lower-case `birthday`
+ * (`coupon.ts:64`); the legacy shims map it until the engagement flip.
  */
 export const CouponOccasion = {
-  Birthday: 'birthday',
+  Birthday: 'BIRTHDAY',
 } as const;
 export type CouponOccasion =
   (typeof CouponOccasion)[keyof typeof CouponOccasion];
@@ -19,15 +20,16 @@ export const COUPON_OCCASIONS: readonly CouponOccasion[] =
   Object.values(CouponOccasion);
 
 /**
- * Whether a coupon is on offer — the stored `coupons.status` that replaces
- * the boolean `enabled` (§2.6 CouponEntity, §3.1: the three
- * `where('enabled', '==', true)` reads become `where('status', '==',
- * CouponStatus.Enabled)`). It sits beside the occasion: both are tags of
- * the coupon itself, not of its value or its expiry.
+ * Whether a coupon is on offer — the coupon's field `couponStatus` (was
+ * `status`, N8), which replaces the stored boolean `enabled` (§2.6
+ * Coupon, §3.1: the three `where('enabled', '==', true)` reads become
+ * `where('couponStatus', '==', CouponStatus.Enabled)` in the engagement
+ * flip). It sits beside the occasion: both are tags of the coupon itself,
+ * not of its value or its expiry.
  */
 export const CouponStatus = {
-  Enabled: 'enabled',
-  Disabled: 'disabled',
+  Enabled: 'ENABLED',
+  Disabled: 'DISABLED',
 } as const;
 export type CouponStatus = (typeof CouponStatus)[keyof typeof CouponStatus];
 

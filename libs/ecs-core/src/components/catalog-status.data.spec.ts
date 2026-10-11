@@ -1,22 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
-  BarberState,
-  LocationState,
-  ServiceState,
+  BarberStatus,
+  LocationStatus,
+  ServiceStatus,
 } from './catalog-status.data';
 
-// The values are stored and filtered by composite indexes #1–#5 — a renamed
-// string would empty every public catalogue query, so they are pinned.
+// The tags are pinned: the legacy shims map them to the stored lowercase
+// strings composite indexes #1–#5 filter by, so a renamed value would empty
+// every public catalogue query read through them.
 describe('catalog status dictionaries', () => {
-  it('keeps the stored service status strings', () => {
-    expect(ServiceState).toEqual({ Active: 'active', Archived: 'archived' });
+  it('pins the service status tags', () => {
+    expect(ServiceStatus).toEqual({ Active: 'ACTIVE', Archived: 'ARCHIVED' });
   });
 
-  it('keeps the stored barber status strings', () => {
-    expect(BarberState).toEqual({ Active: 'active', Inactive: 'inactive' });
+  it('pins the barber status tags', () => {
+    expect(BarberStatus).toEqual({ Active: 'ACTIVE', Inactive: 'INACTIVE' });
   });
 
-  it('keeps the stored location status strings', () => {
-    expect(LocationState).toEqual({ Active: 'active', Hidden: 'hidden' });
+  it('pins the location status tags', () => {
+    expect(LocationStatus).toEqual({ Active: 'ACTIVE', Hidden: 'HIDDEN' });
   });
 });

@@ -11,14 +11,14 @@ describe('SeatLabel.parse', () => {
     const result = SeatLabel.parse('   ');
     expect(result.ok).toBe(false);
     if (!result.ok)
-      expect(result.error.code).toBe('scheduling.seat_label.empty');
+      expect(result.error.errorCode).toBe('SCHEDULING_SEAT_LABEL_EMPTY');
   });
 
   it('rejects a label longer than the max length — and takes one exactly at it', () => {
     const result = SeatLabel.parse('a'.repeat(SeatLabel.MAX_LENGTH + 1));
     expect(result).toEqual({
       ok: false,
-      error: { code: 'scheduling.seat_label.too_long', max: 60 },
+      error: { errorCode: 'SCHEDULING_SEAT_LABEL_TOO_LONG', max: 60 },
     });
     expect(SeatLabel.parse('a'.repeat(SeatLabel.MAX_LENGTH)).ok).toBe(true);
   });

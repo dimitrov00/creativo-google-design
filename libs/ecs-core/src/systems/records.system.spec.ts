@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
-import type { PersonalRecord } from '../components/personal-record.data';
-import { ServiceId } from '../entities/service.entity';
-import { deepFreeze } from '../testing';
+import {
+  PersonalRecordKind,
+  type PersonalRecord,
+} from '../components/personal-record.data';
+import { AppointmentId, ServiceId } from '../primitives/ids.primitive';
+import { deepFreeze, localDate } from '../testing';
 import { RecordsSystem, type RecordVisit } from './records.system';
 
 /*
@@ -15,52 +17,63 @@ import { RecordsSystem, type RecordVisit } from './records.system';
  * appointment; the system takes the visits it found.
  */
 
-const TODAY = DayKey.of('2026-09-28');
+const TODAY = localDate('2026-09-28');
 
-/** Георги's records as the seed stamps them. */
-const GEORGI: Record<PersonalRecord['kind'], PersonalRecord> = {
+/** Георги's records as the seed stamps them, by the cards' names. */
+const GEORGI = {
   longestRhythm: {
-    kind: 'longestRhythm',
+    personalRecordKind: PersonalRecordKind.LongestRhythm,
     value: 24,
-    on: DayKey.of('2026-09-28'),
+    on: localDate('2026-09-28'),
     year: null,
     serviceId: null,
   },
   mostVisitsInYear: {
-    kind: 'mostVisitsInYear',
+    personalRecordKind: PersonalRecordKind.MostVisitsInYear,
     value: 13,
     on: null,
     year: 2025,
     serviceId: null,
   },
   favouriteService: {
-    kind: 'favouriteService',
+    personalRecordKind: PersonalRecordKind.FavouriteService,
     value: 24,
     on: null,
     year: null,
     serviceId: ServiceId.of('svc-fade'),
   },
   firstVisit: {
-    kind: 'firstVisit',
+    personalRecordKind: PersonalRecordKind.FirstVisit,
     value: 1,
-    on: DayKey.of('2025-03-01'),
+    on: localDate('2025-03-01'),
     year: null,
     serviceId: null,
   },
-};
+} as const satisfies Record<string, PersonalRecord>;
+
+/** The cards' names of the kinds, as the cases read them. */
+const KIND = {
+  longestRhythm: PersonalRecordKind.LongestRhythm,
+  mostVisitsInYear: PersonalRecordKind.MostVisitsInYear,
+  favouriteService: PersonalRecordKind.FavouriteService,
+  firstVisit: PersonalRecordKind.FirstVisit,
+} as const;
+type Card = keyof typeof KIND;
 
 const record = (
-  kind: PersonalRecord['kind'],
+  card: Card,
   overrides: Partial<PersonalRecord> = {},
 ): PersonalRecord => {
-  const stamped = Object.values(GEORGI).find((r) => r.kind === kind);
-  if (stamped === undefined) throw new Error(kind);
+  const stamped = Object.values(GEORGI).find(
+    (r) => r.personalRecordKind === KIND[card],
+  );
+  if (stamped === undefined) throw new Error(card);
   return { ...stamped, ...overrides };
 };
 
 const newestKind = (records: readonly PersonalRecord[]) => {
   const index = RecordsSystem.newest(records, TODAY);
-  return index === null ? null : records.at(index)?.kind;
+  return index === null ? null : records.at(index)?.personalRecordKind;
 };
 
 describe('RecordsSystem.ordered (medals.presenter.ts `recordsOf`)', () => {
@@ -71,18 +84,22 @@ describe('RecordsSystem.ordered (medals.presenter.ts `recordsOf`)', () => {
       GEORGI.longestRhythm,
       GEORGI.mostVisitsInYear,
     ];
-    expect(RecordsSystem.ordered(shuffled, true).map((r) => r.kind)).toEqual([
-      'longestRhythm',
-      'mostVisitsInYear',
-      'favouriteService',
-      'firstVisit',
+    expect(
+      RecordsSystem.ordered(shuffled, true).map((r) => r.personalRecordKind),
+    ).toEqual([
+      'LONGEST_RHYTHM',
+      'MOST_VISITS_IN_YEAR',
+      'FAVOURITE_SERVICE',
+      'FIRST_VISIT',
     ]);
   });
 
   it('never features the longest run while the shop runs no rhythm', () => {
     expect(
-      RecordsSystem.ordered(Object.values(GEORGI), false).map((r) => r.kind),
-    ).toEqual(['mostVisitsInYear', 'favouriteService', 'firstVisit']);
+      RecordsSystem.ordered(Object.values(GEORGI), false).map(
+        (r) => r.personalRecordKind,
+      ),
+    ).toEqual(['MOST_VISITS_IN_YEAR', 'FAVOURITE_SERVICE', 'FIRST_VISIT']);
     expect(RecordsSystem.ordered([], true)).toEqual([]);
   });
 });
@@ -90,7 +107,7 @@ describe('RecordsSystem.ordered (medals.presenter.ts `recordsOf`)', () => {
 describe('RecordsSystem — the featured record (RC)', () => {
   it('is the record set most recently', () => {
     expect(newestKind(RecordsSystem.ordered(Object.values(GEORGI), true))).toBe(
-      'longestRhythm',
+      'LONGEST_RHYTHM',
     );
   });
 
@@ -99,13 +116,13 @@ describe('RecordsSystem — the featured record (RC)', () => {
     // Мартин's longest run closed on 19 August: forty days ago.
     expect(
       RecordsSystem.isNew(
-        record('longestRhythm', { value: 13, on: DayKey.of('2026-08-19') }),
+        record('longestRhythm', { value: 13, on: localDate('2026-08-19') }),
         TODAY,
       ),
     ).toBe(false);
     expect(
       RecordsSystem.isNew(
-        record('longestRhythm', { on: DayKey.of('2026-08-29') }),
+        record('longestRhythm', { on: localDate('2026-08-29') }),
         TODAY,
       ),
     ).toBe(true);
@@ -113,12 +130,12 @@ describe('RecordsSystem — the featured record (RC)', () => {
 
   it('is the best year while it is the newest, and no news while it still runs', () => {
     const records = [
-      record('longestRhythm', { value: 9, on: DayKey.of('2025-11-11') }),
+      record('longestRhythm', { value: 9, on: localDate('2025-11-11') }),
       record('mostVisitsInYear', { value: 13, year: 2025 }),
       record('favouriteService'),
       record('firstVisit'),
     ];
-    expect(newestKind(records)).toBe('mostVisitsInYear');
+    expect(newestKind(records)).toBe('MOST_VISITS_IN_YEAR');
     expect(RecordsSystem.setOn(records[1] as PersonalRecord, TODAY)).toBe(
       '2025-12-31',
     );
@@ -136,28 +153,28 @@ describe('RecordsSystem — the featured record (RC)', () => {
     expect(RecordsSystem.setOn(records[1] as PersonalRecord, TODAY)).toBe(
       TODAY,
     );
-    expect(newestKind(records)).toBe('longestRhythm');
+    expect(newestKind(records)).toBe('LONGEST_RHYTHM');
     // The year still running is the newest where the run is older, and no news.
     const older = [
-      record('longestRhythm', { on: DayKey.of('2026-06-15') }),
+      record('longestRhythm', { on: localDate('2026-06-15') }),
       record('mostVisitsInYear', { value: 14, year: 2026 }),
     ];
-    expect(newestKind(older)).toBe('mostVisitsInYear');
+    expect(newestKind(older)).toBe('MOST_VISITS_IN_YEAR');
     expect(RecordsSystem.isNew(older[1] as PersonalRecord, TODAY)).toBe(false);
   });
 
   it('is a favourite only where no record has a day', () => {
-    expect(newestKind([record('favouriteService')])).toBe('favouriteService');
+    expect(newestKind([record('favouriteService')])).toBe('FAVOURITE_SERVICE');
     expect(RecordsSystem.setOn(GEORGI.favouriteService, TODAY)).toBeNull();
     // Any record with a day is newer than one without.
     expect(newestKind([record('favouriteService'), record('firstVisit')])).toBe(
-      'firstVisit',
+      'FIRST_VISIT',
     );
   });
 
   it('is the first visit for a client with nothing else yet, never a record anyone broke', () => {
     const first = record('firstVisit', { on: TODAY });
-    expect(newestKind([first])).toBe('firstVisit');
+    expect(newestKind([first])).toBe('FIRST_VISIT');
     expect(RecordsSystem.isNew(first, TODAY)).toBe(false);
     expect(RecordsSystem.isNew(GEORGI.favouriteService, TODAY)).toBe(false);
   });
@@ -172,8 +189,8 @@ describe('RecordsSystem — the featured record (RC)', () => {
 
 describe('RecordsSystem.years — «По години» (RF)', () => {
   const visit = (appointmentId: string, day: string): RecordVisit => ({
-    appointmentId,
-    day: DayKey.of(day),
+    appointmentId: AppointmentId.of(appointmentId),
+    localDate: localDate(day),
   });
   const bars = (years: ReturnType<typeof RecordsSystem.years>) =>
     years?.map((y) => [y.year, y.count, y.record]) ?? null;
@@ -273,8 +290,14 @@ describe('RecordsSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const records = deepFreeze(Object.values(GEORGI));
     const visits = deepFreeze([
-      { appointmentId: 'a', day: DayKey.of('2024-05-10') },
-      { appointmentId: 'b', day: DayKey.of('2026-05-10') },
+      {
+        appointmentId: AppointmentId.of('a'),
+        localDate: localDate('2024-05-10'),
+      },
+      {
+        appointmentId: AppointmentId.of('b'),
+        localDate: localDate('2026-05-10'),
+      },
     ]);
     const run = () => [
       RecordsSystem.ordered(records, true),

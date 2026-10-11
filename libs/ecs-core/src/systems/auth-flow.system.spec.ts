@@ -21,7 +21,7 @@ import { AuthFlowSystem } from './auth-flow.system';
  * COPIED and re-targeted: `advanceAuthFlow` → `AuthFlowSystem.next`, the
  * `{ type }` events → the `AuthFlowEvent` companion, `isSuccess(r)` →
  * `r.ok`, the `InvalidAuthFlowTransitionError` class → the
- * `identity.auth_flow.invalid_transition` struct. The class spec keeps
+ * `IDENTITY_AUTH_FLOW_INVALID_TRANSITION` struct. The class spec keeps
  * running against its shim.
  */
 
@@ -38,23 +38,23 @@ const submitted = (): AuthFlowState =>
 
 describe('AuthFlowSystem.next', () => {
   it('opens on identify — the welcome interstitial is retired (design §1.5)', () => {
-    expect(AuthFlowSystem.initial().kind).toBe(AuthFlowStep.Identify);
+    expect(AuthFlowSystem.initial().authFlowStep).toBe(AuthFlowStep.Identify);
   });
 
   it('walks identify -> otp -> authenticated for a returning session', () => {
     let state = submitted();
-    expect(state.kind).toBe(AuthFlowStep.Otp);
+    expect(state.authFlowStep).toBe(AuthFlowStep.Otp);
 
     state = advance(state, AuthFlowEvent.verified(SessionKind.Returning));
-    expect(state.kind).toBe(AuthFlowStep.Authenticated);
+    expect(state.authFlowStep).toBe(AuthFlowStep.Authenticated);
   });
 
   it('routes a new session to done, carrying the session kind', () => {
     const state = advance(submitted(), AuthFlowEvent.verified(SessionKind.New));
 
-    expect(state.kind).toBe(AuthFlowStep.Done);
-    if (state.kind === AuthFlowStep.Done) {
-      expect(state.session).toBe(SessionKind.New);
+    expect(state.authFlowStep).toBe(AuthFlowStep.Done);
+    if (state.authFlowStep === AuthFlowStep.Done) {
+      expect(state.sessionKind).toBe(SessionKind.New);
       expect(state.identifier).toEqual(IDENTIFIER);
     }
   });
@@ -64,7 +64,7 @@ describe('AuthFlowSystem.next', () => {
       submitted(),
       AuthFlowEvent.verifyFailed(true, 'blocked'),
     );
-    expect(state.kind).toBe(AuthFlowStep.Blocked);
+    expect(state.authFlowStep).toBe(AuthFlowStep.Blocked);
   });
 
   it('keeps a non-blocked verify failure on the otp step, carrying the error', () => {
@@ -73,8 +73,8 @@ describe('AuthFlowSystem.next', () => {
       AuthFlowEvent.verifyFailed(false, 'incorrect code'),
     );
 
-    expect(state.kind).toBe(AuthFlowStep.Otp);
-    if (state.kind === AuthFlowStep.Otp) {
+    expect(state.authFlowStep).toBe(AuthFlowStep.Otp);
+    if (state.authFlowStep === AuthFlowStep.Otp) {
       expect(state.error).toBe('incorrect code');
       expect(state.identifier).toEqual(IDENTIFIER);
     }
@@ -86,8 +86,8 @@ describe('AuthFlowSystem.next', () => {
       AuthFlowEvent.requestFailed(false, 'rate limited'),
     );
 
-    expect(state.kind).toBe(AuthFlowStep.Identify);
-    if (state.kind === AuthFlowStep.Identify) {
+    expect(state.authFlowStep).toBe(AuthFlowStep.Identify);
+    if (state.authFlowStep === AuthFlowStep.Identify) {
       expect(state.error).toBe('rate limited');
     }
   });
@@ -97,11 +97,11 @@ describe('AuthFlowSystem.next', () => {
       submitted(),
       AuthFlowEvent.requestFailed(true, 'blocked'),
     );
-    expect(state.kind).toBe(AuthFlowStep.Blocked);
+    expect(state.authFlowStep).toBe(AuthFlowStep.Blocked);
   });
 
   it.each([AuthFlowEvent.changeIdentifier(), AuthFlowEvent.back()])(
-    'returns from otp to a clean identify on $kind',
+    'returns from otp to a clean identify on $authFlowEventKind',
     (event) => {
       // Even with an error attached, leaving the otp step drops it.
       let state = advance(
@@ -119,7 +119,7 @@ describe('AuthFlowSystem.next', () => {
     let state = advance(submitted(), AuthFlowEvent.changeIdentifier());
     state = advance(state, AuthFlowEvent.submitIdentifier(IDENTIFIER));
 
-    expect(state.kind).toBe(AuthFlowStep.Otp);
+    expect(state.authFlowStep).toBe(AuthFlowStep.Otp);
   });
 
   it('stays on otp for the self-transitions resend_otp and submit_otp', () => {
@@ -134,7 +134,7 @@ describe('AuthFlowSystem.next', () => {
       AuthFlowSystem.next(AuthFlowState.authenticated(), AuthFlowEvent.back()),
     );
     expect(error).toEqual({
-      code: IdentityErrorCode.AuthFlowInvalidTransition,
+      errorCode: IdentityErrorCode.AuthFlowInvalidTransition,
       from: AuthFlowStep.Authenticated,
       event: AuthFlowEventKind.Back,
     });
@@ -193,9 +193,9 @@ describe('AuthFlowSystem properties', () => {
           }
           if (!result.ok) {
             expect(result.error).toEqual({
-              code: IdentityErrorCode.AuthFlowInvalidTransition,
-              from: state.kind,
-              event: event.kind,
+              errorCode: IdentityErrorCode.AuthFlowInvalidTransition,
+              from: state.authFlowStep,
+              event: event.authFlowEventKind,
             });
           }
         },

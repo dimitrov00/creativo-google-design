@@ -1,12 +1,12 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-  ServiceTerms,
+  BarberId,
+  ServiceId,
   ServiceVariantId,
-} from '../components/service-terms.data';
-import { BarberId } from '../entities/barber.entity';
-import { ServiceId } from '../entities/service.entity';
-import { deepFreeze, serviceFixture, textFixture } from '../testing';
+} from '../primitives/ids.primitive';
+import { deepFreeze, textFixture } from '../testing';
+import { serviceFixture, termsFixture } from '../testing/booking-core.fixtures';
 import { CatalogPricingSystem } from './catalog-pricing.system';
 
 /*
@@ -17,8 +17,7 @@ import { CatalogPricingSystem } from './catalog-pricing.system';
  * a service nobody performs quotes its base.
  */
 
-const terms = (price: number, minutes: number) =>
-  ServiceTerms.unpadded(price, 'EUR', minutes);
+const terms = (price: number, minutes: number) => termsFixture(price, minutes);
 const ivan = BarberId.of('ivan');
 const niko = BarberId.of('niko');
 const long = ServiceVariantId.of('long');
@@ -27,31 +26,31 @@ const short = ServiceVariantId.of('short');
 /** Ivan 14,50/35 (long 18,50/50); Niko 13,00/30; base 15,00/30. */
 const cut = serviceFixture({
   id: ServiceId.of('svc-cut'),
-  baseTerms: terms(1500, 30),
+  ...terms(1500, 30),
   variants: [
-    { id: short, name: textFixture('Short') },
-    { id: long, name: textFixture('Long') },
+    { variantId: short, name: textFixture('Short') },
+    { variantId: long, name: textFixture('Long') },
   ],
   offerings: [
     {
       barberId: ivan,
-      base: terms(1450, 35),
-      overrides: [{ variantId: long, terms: terms(1850, 50) }],
+      ...terms(1450, 35),
+      overrides: [{ variantId: long, ...terms(1850, 50) }],
     },
-    { barberId: niko, base: terms(1300, 30), overrides: [] },
+    { barberId: niko, ...terms(1300, 30), overrides: [] },
   ],
 });
 const fixed = serviceFixture({
   id: ServiceId.of('svc-beard'),
-  baseTerms: terms(1000, 20),
+  ...terms(1000, 20),
   offerings: [
-    { barberId: ivan, base: terms(1000, 20), overrides: [] },
-    { barberId: niko, base: terms(1000, 20), overrides: [] },
+    { barberId: ivan, ...terms(1000, 20), overrides: [] },
+    { barberId: niko, ...terms(1000, 20), overrides: [] },
   ],
 });
 const unclaimed = serviceFixture({
   id: ServiceId.of('svc-new'),
-  baseTerms: terms(2200, 45),
+  ...terms(2200, 45),
   offerings: [],
 });
 
@@ -65,15 +64,15 @@ describe('CatalogPricingSystem', () => {
 
   it('folds every bookable terms into the card’s tag, «от» only when prices differ', () => {
     expect(S.cardPrice(cut)).toEqual({
-      cheapestMinorUnits: 1300,
+      cheapestCents: 1300,
       spread: true,
     });
     expect(S.cardPrice(fixed)).toEqual({
-      cheapestMinorUnits: 1000,
+      cheapestCents: 1000,
       spread: false,
     });
     expect(S.cardPrice(unclaimed)).toEqual({
-      cheapestMinorUnits: 2200,
+      cheapestCents: 2200,
       spread: false,
     });
   });
@@ -88,9 +87,7 @@ describe('CatalogPricingSystem', () => {
     const ivans = S.servicesByBarber(shelf, ivan);
     expect(ivans.map((entry) => entry.service)).toEqual([cut, fixed]);
     expect(ivans[0]?.service).toBe(cut);
-    expect(ivans.map((entry) => entry.terms.priceMinorUnits)).toEqual([
-      1450, 1000,
-    ]);
+    expect(ivans.map((entry) => entry.terms.priceCents)).toEqual([1450, 1000]);
     expect(S.servicesByBarber(shelf, BarberId.of('nobody'))).toEqual([]);
   });
 
@@ -103,14 +100,14 @@ describe('CatalogPricingSystem', () => {
         }),
         (prices) => {
           const service = serviceFixture({
-            baseTerms: terms(5000, 30),
+            ...terms(5000, 30),
             offerings: prices.map((price, index) => ({
               barberId: BarberId.of(`b${index}`),
-              base: terms(price, 30),
+              ...terms(price, 30),
               overrides: [],
             })),
           });
-          expect(S.cardPrice(service).cheapestMinorUnits).toBeLessThanOrEqual(
+          expect(S.cardPrice(service).cheapestCents).toBeLessThanOrEqual(
             S.priceFrom(service),
           );
           expect(S.priceFrom(service)).toBe(Math.min(...prices));

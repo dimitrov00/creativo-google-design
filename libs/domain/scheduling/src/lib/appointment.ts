@@ -17,7 +17,7 @@ import {
   type DiscountBreakdown,
 } from '@creativo/domain/engagement';
 import { AppliedDiscount, toEcsDiscount } from './applied-discount';
-import { VoucherRedemption } from './voucher-redemption';
+import { VoucherRedemption, toEcsRedemption } from './voucher-redemption';
 import {
   AppointmentBarberDoubleBookedError,
   AppointmentEmptyCancellationReasonError,
@@ -29,6 +29,7 @@ import {
   AppointmentNotArrivableError,
   AppointmentPastStartTimeError,
   AppointmentSeatAlreadyResolvedError,
+  AppointmentSeatOffTheDayError,
   AppointmentUnknownSeatError,
 } from './appointment.errors';
 import {
@@ -39,48 +40,62 @@ import {
   NO_SHOW,
   PENDING,
   cancelled,
+  toEcsBookingStatus,
+  toEcsLifecycle,
 } from './appointment-status';
 import { BookingContact } from './booking-contact';
 import { BookingPolicy } from './booking-policy';
-import { CalendarDay } from './calendar-day';
 import type { CancellationWindow } from './cancellation-window';
 import type { ChairTime } from './availability';
 import { AppointmentId, SeatId } from './ids';
 import { EmptyIdError } from './ids.errors';
-import { Seat } from './seat';
+import { Seat, type SeatRelationship } from './seat';
 import {
   CancellationReason,
   SEAT_SCHEDULED,
   SeatOutcome,
   outcomeForStatus,
+  summarizeSeatOutcomes,
+  toEcsSeatOutcome,
 } from './seat-outcome';
 import { TimeSlot } from './time-slot';
 import {
+  type Appointment as AppointmentData,
   AppointmentId as AppointmentIdData,
-  type AppointmentEntity,
   AppointmentIndexSystem,
   AppointmentLifecycleSystem,
   BarberId as BarberIdData,
+  BarberPreference,
   BillingSystem,
-  BookingStatus as BookingStatusData,
-  GiftVoucherId,
-  LocationId as LocationIdData,
+  BookingContact as BookingContactData,
+  CancellationReasonSet,
+  Currency,
+  DurationMinutes,
+  EndMinute,
   type LifecycleSlice,
+  type LocalDate,
+  LocationId as LocationIdData,
+  MinuteCount,
+  type MinuteOfDay,
   type Money as MoneyData,
   MoveSystem,
+  PriceCents,
   SchedulingErrorCode,
   type SchedulingError,
-  type Seat as SeatData,
+  Seat as SeatData,
   SeatId as SeatIdData,
   SeatLabel as SeatLabelData,
-  SeatOutcome as SeatOutcomes,
+  SeatOccupant,
   type SeatOutcome as SeatOutcomeData,
-  SeatSubject as SeatSubjectData,
   ServiceId as ServiceIdData,
-  type ServiceVariantId as ServiceVariantIdData,
-  TimeInterval,
+  ServiceVariantId as ServiceVariantIdData,
+  StoodSeatPairs,
+  SubjectRelationship,
+  type TimeZone,
   UserId as UserIdData,
-  type VoucherRedemption as VoucherRedemptionData,
+  UtcEpochMs,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 
 /*
@@ -89,114 +104,256 @@ import {
  * edges, arrival, the party's invariants) in `AppointmentLifecycleSystem`,
  * its bill in `BillingSystem`, the client move's facts in `MoveSystem`. This
  * class keeps the legacy API its callers hold — the kernel `Result`, the
- * legacy seats, statuses and errors — and only converts: the system decides,
- * the legacy values (an `other` reason's note, a `CancellationWindow`, the
+ * legacy seats, statuses and errors — and only converts (flatten-spec §8.9):
+ * the seats' `ZonedDateTime` starts to the shop's wall clock with their own
+ * zone (`ZonedTimeSystem.toLocal`), the envelope's instant kept as the legacy
+ * instant it already is, `Money` to `*Cents` beside one `currency`, the
+ * lower-case tags through one table each. The system decides; the legacy
+ * values (an `other` reason's note, a `CancellationWindow`, the
  * `ZonedDateTime` stamps) ride back on what it decided.
  */
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
+/** The legacy relationship tag → the ecs-core `SubjectRelationship`. */
+const LEGACY_SUBJECT_RELATIONSHIP = {
+  self: SubjectRelationship.Self,
+  companion: SubjectRelationship.Companion,
+  client: SubjectRelationship.Client,
+} as const satisfies Record<SeatRelationship, SubjectRelationship>;
+
+/** The legacy barber-preference tag → the ecs-core `BarberPreference`. */
+const LEGACY_BARBER_PREFERENCE = {
+  any: BarberPreference.Any,
+  specific: BarberPreference.Specific,
+} as const satisfies Record<
+  NonNullable<Seat['pref']>['kind'],
+  BarberPreference
+>;
+
+/**
+ * A brand the legacy value already satisfies — a legacy seat, `Money` or
+ * `ZonedDateTime` already holds every rule the brand checks, so a refusal
+ * is a programmer defect.
+ */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  return result.ok ? result.value : defect(`unreachable: ${what}`);
+}
+
+function instantOf(at: ZonedDateTime): UtcEpochMs {
+  return sure(UtcEpochMs.of(at.toMillis()), 'an instant');
+}
+
+function epochMsOf(ms: number): UtcEpochMs {
+  return sure(UtcEpochMs.of(ms), 'an instant');
+}
+
+function zoneOf(at: ZonedDateTime): TimeZone {
+  return sure(ZonedTimeSystem.checkZone(at.zoneName), 'a zone');
+}
+
+function centsOf(money: Money): PriceCents {
+  return sure(PriceCents.of(money.toMinorUnits()), 'an amount');
+}
+
+function currencyOf(money: Money): Currency {
+  return sure(Currency.parse(money.currencyCode()), 'a currency');
+}
+
 function toMoneyData(money: Money): MoneyData {
-  return {
-    amountMinorUnits: money.toMinorUnits(),
-    currencyCode: money.currencyCode(),
-  };
+  return { amountCents: centsOf(money), currency: currencyOf(money) };
 }
 
 function fromMoneyData(money: MoneyData): Money {
-  const result = Money.fromMinorUnitsAndCode(
-    money.amountMinorUnits,
-    money.currencyCode,
-  );
+  const result = Money.fromMinorUnitsAndCode(money.amountCents, money.currency);
   // Unreachable: the currency is the seats' own, validated at build.
-  if (result.isFailure()) throw new Error('unreachable: seat currency');
-  return result.value;
+  return result.isSuccess()
+    ? result.value
+    : defect('unreachable: seat currency');
 }
 
-function toOutcomeData(outcome: SeatOutcome): SeatOutcomeData {
-  switch (outcome.kind) {
-    case 'scheduled':
-      return SeatOutcomes.scheduled();
-    case 'worked':
-      return SeatOutcomes.worked(outcome.atMs);
-    case 'no_show':
-      return SeatOutcomes.noShow(outcome.atMs);
-    case 'cancelled':
-      return SeatOutcomes.cancelled(
-        outcome.atMs,
-        outcome.by,
-        outcome.reason.kind,
-        outcome.window === null ? null : outcome.window.hours,
-      );
-  }
+/**
+ * Where a seat starts on the visit's wall clock — `null` when it starts on
+ * another day (the one-shop-day rule, F-6, flatten-spec T7).
+ */
+function startOnTheDay(
+  seat: Seat,
+  zone: TimeZone,
+  localDate: LocalDate,
+): MinuteOfDay | null {
+  const wall = ZonedTimeSystem.toLocal(instantOf(seat.startsAt), zone);
+  return wall.localDate === localDate ? wall.minute : null;
 }
 
-function toStatusData(status: AppointmentStatus): BookingStatusData {
-  return status.kind === 'cancelled'
-    ? BookingStatusData.cancel(0, status.reason)
-    : { kind: status.kind, atMs: 0 };
+/**
+ * The seat's SOLD minutes as its day's wall clock holds them: its own, or —
+ * for a seat sold past the day's midnight (F-6; a NEW booking is refused so
+ * at `create`, a stored legacy visit is read as it stands) — what is left of
+ * the day, so no wall-clock fact ever throws over a stored visit. The seat's
+ * own instants keep its true end (`timeSlot`, the busy projection).
+ */
+function soldOnTheDay(seat: Seat, startMinutes: MinuteOfDay): DurationMinutes {
+  const sold = sure(
+    DurationMinutes.of(seat.terms.durationMinutes),
+    'a duration',
+  );
+  return EndMinute.after(startMinutes, sold).ok
+    ? sold
+    : sure(DurationMinutes.of(1440 - startMinutes), 'the rest of the day');
 }
 
-/** The ECS status a slice verb returned → the legacy status (no instant). */
-function fromStatusData(status: BookingStatusData): AppointmentStatus {
-  switch (status.kind) {
-    case 'pending':
-      return PENDING;
-    case 'confirmed':
-      return CONFIRMED;
-    case 'completed':
-      return COMPLETED;
-    case 'no_show':
-      return NO_SHOW;
-    case 'cancelled':
-      return cancelled(status.reason);
-  }
+/** Is the seat sold past its day's midnight (F-6)? */
+function soldPastMidnight(seat: Seat, startMinutes: MinuteOfDay): boolean {
+  const sold = DurationMinutes.of(seat.terms.durationMinutes);
+  return !sold.ok || !EndMinute.after(startMinutes, sold.value).ok;
 }
 
-function toSeatData(seat: Seat): SeatData {
+/** The legacy seat as the flat struct, at its start on the visit's wall clock. */
+function toSeatData(seat: Seat, startMinutes: MinuteOfDay): SeatData {
   const subject = seat.subject;
   const catalog = seat.catalogTerms;
-  return {
-    id: SeatIdData.of(seat.id.value),
-    serviceId: ServiceIdData.of(seat.serviceId.value),
-    variantId:
-      seat.variantId === null
-        ? null
-        : (seat.variantId.value as ServiceVariantIdData),
-    barberId: BarberIdData.of(seat.barberId.value),
-    barberPref: seat.pref === null ? null : seat.pref.kind,
-    terms: {
-      priceMinorUnits: seat.terms.price.toMinorUnits(),
-      currencyCode: seat.terms.price.currencyCode(),
-      durationMinutes: seat.terms.durationMinutes,
-      setupMinutes: seat.terms.setupMinutes,
-      cleanupMinutes: seat.terms.cleanupMinutes,
-      catalogPriceMinorUnits:
-        catalog === null ? null : catalog.price.toMinorUnits(),
-      catalogDurationMinutes: catalog === null ? null : catalog.durationMinutes,
+  return SeatData.compose(
+    {
+      seatId: SeatIdData.of(seat.id.value),
+      serviceId: ServiceIdData.of(seat.serviceId.value),
+      variantId:
+        seat.variantId === null
+          ? null
+          : ServiceVariantIdData.of(seat.variantId.value),
+      barberId: BarberIdData.of(seat.barberId.value),
+      barberPreference:
+        seat.pref === null ? null : LEGACY_BARBER_PREFERENCE[seat.pref.kind],
+      startMinutes,
+      tipCents: seat.tip === null ? null : centsOf(seat.tip),
     },
-    startMs: seat.startsAt.toMillis(),
-    subject:
-      subject.kind === 'account'
-        ? SeatSubjectData.account(
-            UserIdData.of(subject.userId.value),
-            subject.relationship,
-          )
-        : SeatSubjectData.anonymous(SeatLabelData.of(subject.label.value)),
-    outcome: toOutcomeData(seat.outcome),
-    tip: seat.tip === null ? null : toMoneyData(seat.tip),
+    {
+      priceCents: centsOf(seat.terms.price),
+      currency: currencyOf(seat.terms.price),
+      durationMinutes: soldOnTheDay(seat, startMinutes),
+      setupMinutes: sure(MinuteCount.of(seat.terms.setupMinutes), 'a pad'),
+      cleanupMinutes: sure(MinuteCount.of(seat.terms.cleanupMinutes), 'a pad'),
+      catalogPriceCents: catalog === null ? null : centsOf(catalog.price),
+      catalogDurationMinutes:
+        catalog === null
+          ? null
+          : sure(DurationMinutes.of(catalog.durationMinutes), 'a duration'),
+    },
+    subject.kind === 'account'
+      ? SeatOccupant.account(
+          UserIdData.of(subject.userId.value),
+          LEGACY_SUBJECT_RELATIONSHIP[subject.relationship],
+        )
+      : SeatOccupant.anonymous(SeatLabelData.of(subject.label.value)),
+    toEcsSeatOutcome(seat.outcome),
+  );
+}
+
+/**
+ * The visit's seats on its shop's wall clock: the zone the seats' own
+ * instants carry (the first seat's), the day and the instant of the
+ * EARLIEST seat — the envelope's start, kept as the legacy instant it is,
+ * never re-derived from the wall clock — and every seat converted on that
+ * day. `null` for no seats (a party being refused as empty).
+ */
+type SeatsOnTheClock = {
+  readonly zone: TimeZone;
+  readonly localDate: LocalDate;
+  readonly utcEpochMs: UtcEpochMs;
+  readonly seats: readonly SeatData[];
+};
+
+/**
+ * What reading a seat list onto its shop day found: the seats on the clock
+ * (`null` for no seats — a party refused as empty at build) with the first
+ * seat sold past the day's midnight (`null`: none), or the first seat that
+ * starts off the day — which no clock can hold (F-6).
+ */
+type ClockReading =
+  | {
+      readonly clockReading: typeof ClockReadingKind.OnTheDay;
+      readonly clock: SeatsOnTheClock | null;
+      readonly pastMidnightSeatId: string | null;
+    }
+  | {
+      readonly clockReading: typeof ClockReadingKind.OffTheDay;
+      readonly seatId: string;
+    };
+
+const ClockReadingKind = {
+  OnTheDay: 'ON_THE_DAY',
+  OffTheDay: 'OFF_THE_DAY',
+} as const;
+
+/**
+ * The seats read onto the shop day of the EARLIEST one, in the zone the
+ * seats' own instants carry (the first seat's). Total: a seat off that day,
+ * or sold past its midnight, is REPORTED (F-6), never thrown — the legacy
+ * values come from stored documents and requests, not from code.
+ */
+function readClock(seats: readonly Seat[]): ClockReading {
+  const first = seats[0];
+  if (first === undefined) {
+    return {
+      clockReading: ClockReadingKind.OnTheDay,
+      clock: null,
+      pastMidnightSeatId: null,
+    };
+  }
+  const zone = zoneOf(first.startsAt);
+  let earliest = first.startsAt;
+  for (const seat of seats) {
+    if (seat.startsAt.toMillis() < earliest.toMillis())
+      earliest = seat.startsAt;
+  }
+  const utcEpochMs = instantOf(earliest);
+  const localDate = ZonedTimeSystem.toLocal(utcEpochMs, zone).localDate;
+  const data: SeatData[] = [];
+  let pastMidnightSeatId: string | null = null;
+  for (const seat of seats) {
+    const start = startOnTheDay(seat, zone, localDate);
+    if (start === null) {
+      return {
+        clockReading: ClockReadingKind.OffTheDay,
+        seatId: seat.id.value,
+      };
+    }
+    if (pastMidnightSeatId === null && soldPastMidnight(seat, start)) {
+      pastMidnightSeatId = seat.id.value;
+    }
+    data.push(toSeatData(seat, start));
+  }
+  return {
+    clockReading: ClockReadingKind.OnTheDay,
+    clock: { zone, localDate, utcEpochMs, seats: data },
+    pastMidnightSeatId,
   };
 }
 
-function toRedemptionData(line: VoucherRedemption): VoucherRedemptionData {
-  return {
-    voucherId: GiftVoucherId.of(line.voucherId),
-    code: line.code,
-    amount: toMoneyData(line.amount),
-    balanceAfter: toMoneyData(line.balanceAfter),
-    appliedAtMs: line.appliedAt.toMillis(),
-    reversedAtMs: line.reversedAt === null ? null : line.reversedAt.toMillis(),
-  };
+/**
+ * The seats on the clock of a BUILT visit, memoised per instance: the class
+ * is immutable (every verb returns a new instance), so one reading — a zone
+ * check and a wall-clock read per seat — serves every derived fact asked of
+ * it, sort comparators included. A WeakMap rather than a field, so the
+ * instance's shape and equality never depend on what was asked of it.
+ */
+const CLOCKS = new WeakMap<Appointment, SeatsOnTheClock | null>();
+
+function clockOf(appointment: Appointment): SeatsOnTheClock | null {
+  const held = CLOCKS.get(appointment);
+  if (held !== undefined) return held;
+  const reading = readClock(appointment.seats);
+  // Unreachable: `build` refuses a seat F-6 refuses, and every verb keeps
+  // the seats' instants.
+  if (reading.clockReading === ClockReadingKind.OffTheDay) {
+    return defect(`unreachable: seat ${reading.seatId} off the visit's day`);
+  }
+  CLOCKS.set(appointment, reading.clock);
+  return reading.clock;
 }
 
 /**
@@ -208,13 +365,17 @@ function toRedemptionData(line: VoucherRedemption): VoucherRedemptionData {
  * aggregate, so a caller that has the document supplies it. Phase 4 deletes
  * it with the class.
  */
-export function toEcsAppointment(appointment: Appointment): AppointmentEntity {
+export function toEcsAppointment(appointment: Appointment): AppointmentData {
   return toEntity(appointment);
 }
 
-function toEntity(appointment: Appointment): AppointmentEntity {
-  const seats = appointment.seats.map(toSeatData);
-  const envelope = AppointmentIndexSystem.envelope({ seats });
+function toEntity(appointment: Appointment): AppointmentData {
+  const clock = clockOf(appointment);
+  // Unreachable: `validateSeats` refuses a party with no seat at build.
+  if (clock === null)
+    return defect('unreachable: an appointment without seats');
+  const envelope = AppointmentIndexSystem.envelope(clock);
+  if (envelope === null) return defect('unreachable: an empty envelope');
   return {
     id: AppointmentIdData.of(appointment.id.value),
     locationId: LocationIdData.of(appointment.locationId.value),
@@ -224,23 +385,23 @@ function toEntity(appointment: Appointment): AppointmentEntity {
     inferredPlacement: null,
     barberIds: [],
     busyKeys: [],
-    timeInterval:
-      envelope ??
-      TimeInterval.of(Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY),
-    zone: appointment.seats[0]?.startsAt.zoneName ?? '',
-    bookingStatus: toStatusData(appointment.status),
-    seats,
-    contact: null,
-    bookedAtMs:
-      appointment.bookedAt === null ? null : appointment.bookedAt.toMillis(),
-    arrivedAtMs:
-      appointment.arrivedAt === null ? null : appointment.arrivedAt.toMillis(),
+    seats: clock.seats,
     bookedFromAppointmentId: null,
     discounts: appointment.discounts.map(toEcsDiscount),
-    voucherRedemptions: appointment.voucherRedemptions.map(toRedemptionData),
+    voucherRedemptions: appointment.voucherRedemptions.map(toEcsRedemption),
     revision: appointment.revision ?? 0,
     appliedOperations: [],
-    stoodSeatPairs: null,
+    localDate: clock.localDate,
+    startMinutes: envelope.startMinutes,
+    endMinutes: envelope.endMinutes,
+    utcEpochMs: clock.utcEpochMs,
+    ...toEcsLifecycle(appointment.status),
+    ...BookingContactData.NONE,
+    bookedAtUtcMs:
+      appointment.bookedAt === null ? null : instantOf(appointment.bookedAt),
+    arrivedAtUtcMs:
+      appointment.arrivedAt === null ? null : instantOf(appointment.arrivedAt),
+    ...StoodSeatPairs.NONE,
   };
 }
 
@@ -251,14 +412,19 @@ function sameOutcome(a: SeatOutcomeData, b: SeatOutcomeData): boolean {
 
 function sliceOf(appointment: Appointment): LifecycleSlice {
   return {
-    status: toStatusData(appointment.status),
-    outcomes: appointment.seats.map((seat) => toOutcomeData(seat.outcome)),
+    lifecycle: toEcsLifecycle(appointment.status),
+    outcomes: appointment.seats.map((seat) => toEcsSeatOutcome(seat.outcome)),
   };
+}
+
+/** The shop day of a legacy instant, on its own zone's wall clock. */
+function localDateOf(at: ZonedDateTime): LocalDate {
+  return ZonedTimeSystem.toLocal(instantOf(at), zoneOf(at)).localDate;
 }
 
 /** A party invariant the system named → the legacy error class it always was. */
 function toLegacySeatError(error: SchedulingError): AppointmentError {
-  switch (error.code) {
+  switch (error.errorCode) {
     case SchedulingErrorCode.AppointmentEmptySeats:
       return new AppointmentEmptySeatsError();
     case SchedulingErrorCode.AppointmentMultipleSelfSeats:
@@ -280,7 +446,8 @@ export type AppointmentError =
   | AppointmentBarberDoubleBookedError
   | AppointmentMixedCurrencyError
   | AppointmentNotArrivableError
-  | AppointmentPastStartTimeError;
+  | AppointmentPastStartTimeError
+  | AppointmentSeatOffTheDayError;
 
 export interface CreateAppointmentProps {
   id: string;
@@ -443,7 +610,7 @@ export class Appointment {
   markArrived(at: ZonedDateTime): Result<Appointment, AppointmentError[]> {
     const step = AppointmentLifecycleSystem.markArrived(
       toEntity(this),
-      at.toMillis(),
+      instantOf(at),
     );
     if (!step.ok) {
       return fail([new AppointmentNotArrivableError(this.status.kind)]);
@@ -519,30 +686,28 @@ export class Appointment {
     Appointment,
     AppointmentInvalidTransitionError | AppointmentReopenWindowClosedError
   > {
-    // The day keys carry their zone: the legacy `CalendarDay.equals` is the
-    // key AND the zone, and only the system decides.
-    const dayOf = (instant: ZonedDateTime): string => {
-      const day = CalendarDay.fromZonedDateTime(instant);
-      return `${day.key()}@${day.zone}`;
-    };
+    // The legacy day is the key AND the zone (`CalendarDay.equals`): the
+    // visit's day is its envelope's END on that instant's own clock, and a
+    // `now` read in another zone is never "the same day". Only the system
+    // decides.
     const kind = this.status.kind;
+    const end =
+      kind === 'completed' || kind === 'cancelled' ? this.timeSlot.end : null;
     const reopened = AppointmentLifecycleSystem.reopenSettledSlice(
       sliceOf(this),
-      kind === 'completed' || kind === 'cancelled'
-        ? dayOf(this.timeSlot.end)
-        : null,
-      dayOf(now),
-      now.toMillis(),
+      end === null ? null : localDateOf(end),
+      end === null || end.zoneName === now.zoneName ? localDateOf(now) : null,
+      instantOf(now),
     );
     if (!reopened.ok) {
       return fail(
-        reopened.error.code ===
+        reopened.error.errorCode ===
           SchedulingErrorCode.AppointmentReopenWindowClosed
           ? new AppointmentReopenWindowClosedError(kind)
           : new AppointmentInvalidTransitionError(kind, 'confirmed'),
       );
     }
-    return ok(this.withSlice(reopened.value, SEAT_SCHEDULED));
+    return ok(this.withSlice(reopened.value, SEAT_SCHEDULED, CONFIRMED));
   }
 
   /**
@@ -559,12 +724,35 @@ export class Appointment {
   static create(
     props: CreateAppointmentProps,
   ): Result<Appointment, AppointmentError[]> {
-    const admitted = AppointmentLifecycleSystem.admit(
-      props.seats.map(toSeatData),
-      props.now.toMillis(),
-    );
-    if (admitted[0]?.code === SchedulingErrorCode.AppointmentPastStartTime) {
+    // The start is judged on the visit's own wall clock (T1): `now` read in
+    // the zone the seats' instants carry. A party with no seat is refused
+    // as empty at build, where every violation is reported; so is a seat
+    // off the visit's shop day (F-6), which has no wall clock to judge.
+    const reading = readClock(props.seats);
+    const clock =
+      reading.clockReading === ClockReadingKind.OnTheDay ? reading.clock : null;
+    const admitted =
+      clock === null
+        ? []
+        : AppointmentLifecycleSystem.admit(
+            clock,
+            ZonedTimeSystem.shopNow(instantOf(props.now), clock.zone),
+          );
+    if (
+      admitted[0]?.errorCode === SchedulingErrorCode.AppointmentPastStartTime
+    ) {
       return fail([new AppointmentPastStartTimeError()]);
+    }
+    // A NEW visit holds the whole rule: no seat sold past the day's midnight
+    // (F-6) — refused as a value, which a commit answers as
+    // `BOOKING_INVARIANT_VIOLATED`. A stored one is read as it stands.
+    if (
+      reading.clockReading === ClockReadingKind.OnTheDay &&
+      reading.pastMidnightSeatId !== null
+    ) {
+      return fail([
+        new AppointmentSeatOffTheDayError(reading.pastMidnightSeatId),
+      ]);
     }
     // `now` IS the booking instant — the clock the use case already resolved,
     // never a second reading, so lead time is measured against the same
@@ -647,10 +835,21 @@ export class Appointment {
       : null;
   }
 
+  /**
+   * The party's invariants (`AppointmentLifecycleSystem.seatViolations`) —
+   * and first the one shop day (F-6, flatten-spec T7): a seat that starts
+   * off the visit's day is refused as a value, which a commit answers as
+   * `BOOKING_INVARIANT_VIOLATED` (a seat sold past midnight is refused at
+   * `create`; a stored one is read as it stands).
+   */
   private static validateSeats(seats: Seat[]): AppointmentError[] {
-    return AppointmentLifecycleSystem.seatViolations(seats.map(toSeatData)).map(
-      toLegacySeatError,
-    );
+    const reading = readClock(seats);
+    if (reading.clockReading === ClockReadingKind.OffTheDay) {
+      return [new AppointmentSeatOffTheDayError(reading.seatId)];
+    }
+    return AppointmentLifecycleSystem.seatViolations(
+      reading.clock?.seats ?? [],
+    ).map(toLegacySeatError);
   }
 
   // ── Derived party facts ───────────────────────────────────────────────
@@ -661,40 +860,41 @@ export class Appointment {
    * whole chain. Derived, never stored — see the class doc.
    */
   get timeSlot(): TimeSlot {
-    const envelope = AppointmentIndexSystem.envelope({
-      seats: this.seats.map(toSeatData),
-    });
-    // The legacy instants at the envelope's bounds — the FIRST seat at
-    // each, as the legacy reduce kept them — so the slot keeps their zone
-    // and ISO text.
-    const start = this.seats.find(
-      (seat) => seat.slot.start.toMillis() === envelope?.startMs,
-    )?.slot.start;
-    const end = this.seats.find(
-      (seat) => seat.slot.end.toMillis() === envelope?.endMs,
-    )?.slot.end;
+    // The legacy instants at the envelope's bounds — the earliest start and
+    // the latest end, the FIRST seat at each, as the legacy reduce kept them
+    // — so the slot keeps their zone and ISO text. Read off the seats' own
+    // instants: no wall clock is needed to bound a list of instants, and a
+    // sort comparator asks this once per comparison.
+    let start: ZonedDateTime | null = null;
+    let end: ZonedDateTime | null = null;
+    for (const seat of this.seats) {
+      if (start === null || seat.slot.start.toMillis() < start.toMillis()) {
+        start = seat.slot.start;
+      }
+      if (end === null || seat.slot.end.toMillis() > end.toMillis()) {
+        end = seat.slot.end;
+      }
+    }
     // Unreachable: `seats` is non-empty by invariant and every seat's own
     // slot already satisfies start < end, so the envelope does too.
-    if (start === undefined || end === undefined) {
-      throw new Error('unreachable: invalid envelope');
+    if (start === null || end === null) {
+      return defect('unreachable: invalid envelope');
     }
     const result = TimeSlot.create({
       startIso: start.toISO(),
       endIso: end.toISO(),
       zone: start.zoneName,
     });
-    if (result.isFailure()) throw new Error('unreachable: invalid envelope');
-    return result.value;
+    return result.isSuccess()
+      ? result.value
+      : defect('unreachable: invalid envelope');
   }
 
   /** Who is working this appointment, deduped, in seat order. */
   barberIds(): readonly BarberId[] {
     // The mirror reads no day table for its barbers; the busy keys it
     // would also name are not this question.
-    const { barberIds } = AppointmentIndexSystem.queryKeys(
-      { seats: this.seats.map(toSeatData) },
-      [],
-    );
+    const { barberIds } = AppointmentIndexSystem.queryKeys(toEntity(this));
     return barberIds.map(
       (id) =>
         (this.seats.find((seat) => seat.barberId.value === id) as Seat)
@@ -713,11 +913,18 @@ export class Appointment {
    * invariant enforced at build, so there is no failure left to report.
    */
   subtotal(): Money {
-    const subtotal = BillingSystem.subtotalOf(this.seats.map(toSeatData));
+    // The price slice alone: the sum reads no seat's time.
+    const subtotal = BillingSystem.subtotalOf(
+      this.seats.map((seat) => ({
+        priceCents: centsOf(seat.terms.price),
+        currency: currencyOf(seat.terms.price),
+      })),
+    );
     // Unreachable: `validateSeats` refuses an empty or mixed-currency visit
     // at build, so the sum has nothing left to refuse.
-    if (!subtotal.ok) throw new Error('unreachable: mixed currency');
-    return fromMoneyData(subtotal.value);
+    return subtotal.ok
+      ? fromMoneyData(subtotal.value)
+      : defect('unreachable: mixed currency');
   }
 
   /**
@@ -744,8 +951,8 @@ export class Appointment {
   redeemedTotal(): Money {
     return fromMoneyData(
       BillingSystem.redeemedOf(
-        this.voucherRedemptions.map(toRedemptionData),
-        this.subtotal().currencyCode(),
+        this.voucherRedemptions.map(toEcsRedemption),
+        currencyOf(this.subtotal()),
       ),
     );
   }
@@ -852,14 +1059,14 @@ export class Appointment {
     // This edge has exactly one legal starting point.
     const reopened = AppointmentLifecycleSystem.reopenNoShowSlice(
       sliceOf(this),
-      0,
+      epochMsOf(0),
     );
     if (!reopened.ok) {
       return fail(
         new AppointmentInvalidTransitionError(this.status.kind, 'confirmed'),
       );
     }
-    return ok(this.withSlice(reopened.value, SEAT_SCHEDULED));
+    return ok(this.withSlice(reopened.value, SEAT_SCHEDULED, CONFIRMED));
   }
 
   /**
@@ -927,13 +1134,13 @@ export class Appointment {
     const marked = AppointmentLifecycleSystem.seatOutcomeSlice(
       sliceOf(this),
       index,
-      seatId.value,
-      toOutcomeData(outcome),
-      0,
+      SeatIdData.of(seatId.value),
+      toEcsSeatOutcome(outcome),
+      epochMsOf(0),
     );
     if (!marked.ok) {
       const seat = this.seats.at(index);
-      switch (marked.error.code) {
+      switch (marked.error.errorCode) {
         case SchedulingErrorCode.AppointmentUnknownSeat:
           return fail(new AppointmentUnknownSeatError(seatId.value));
         case SchedulingErrorCode.AppointmentSeatAlreadyResolved:
@@ -952,7 +1159,18 @@ export class Appointment {
           );
       }
     }
-    return ok(this.withSlice(marked.value, outcome));
+    // The root follows the seats: the same roll-up, read back as the legacy
+    // status (the lower-case reason codes the root stores).
+    const outcomes = this.seats.map((seat, at) =>
+      at === index ? outcome : seat.outcome,
+    );
+    return ok(
+      this.withSlice(
+        marked.value,
+        outcome,
+        summarizeSeatOutcomes(outcomes, this.status),
+      ),
+    );
   }
 
   /** Every seat whose story the shop has not told yet. */
@@ -969,7 +1187,7 @@ export class Appointment {
     const movable = MoveSystem.seatsTheBookerCanMove(
       toEntity(this),
       ownerUserId === null ? null : UserIdData.of(ownerUserId.value),
-    ).map((seat) => seat.id);
+    ).map((seat) => seat.seatId);
     return this.seats.filter((seat) =>
       movable.includes(SeatIdData.of(seat.id.value)),
     );
@@ -1006,16 +1224,16 @@ export class Appointment {
    * can move.
    */
   moveAnchor(ownerUserId: UserId | null): ZonedDateTime | null {
-    const anchorMs = MoveSystem.moveAnchor(
-      toEntity(this),
+    const entity = toEntity(this);
+    const anchor = MoveSystem.moveAnchor(
+      entity,
       ownerUserId === null ? null : UserIdData.of(ownerUserId.value),
     );
-    if (anchorMs === null) return null;
-    // The anchor is a seat's own start — handed back as that seat's instant.
-    return (
-      this.seats.find((seat) => seat.startsAt.toMillis() === anchorMs)
-        ?.startsAt ?? null
-    );
+    if (anchor === null) return null;
+    // The anchor is a seat's own start — handed back as that seat's instant
+    // (the seat structs are index-aligned with the seats).
+    const at = entity.seats.findIndex((seat) => seat.startMinutes === anchor);
+    return this.seats.at(at)?.startsAt ?? null;
   }
 
   /**
@@ -1028,10 +1246,13 @@ export class Appointment {
    * time before it offers a start (`paddedBusy`).
    */
   chairTimes(): readonly ChairTime[] {
-    const released = MoveSystem.release(toEntity(this));
-    return this.seats.map((seat, index) => ({
+    // `MoveSystem.release` answers the same question on the shop's wall
+    // clock, clipped to the visit's day; the legacy callers hold instants,
+    // which each seat's own chair time already is (setup before the start,
+    // cleanup after the end) — one per seat, in seat order.
+    return this.seats.map((seat) => ({
       barberId: seat.barberId,
-      occupied: released.at(index)?.occupied ?? seat.chairTime(),
+      occupied: seat.chairTime(),
     }));
   }
 
@@ -1062,20 +1283,17 @@ export class Appointment {
         : stamped;
     const moved = AppointmentLifecycleSystem.partyVerb(
       sliceOf(this),
-      to,
-      stamp === null ? null : toOutcomeData(stamp),
-      atMs ?? 0,
-      next.kind === 'cancelled' ? next.reason : '',
+      toEcsBookingStatus(to),
+      stamp === null ? null : toEcsSeatOutcome(stamp),
+      epochMsOf(atMs ?? 0),
+      CancellationReasonSet.fromStored(
+        next.kind === 'cancelled' ? next.reason : '',
+      ),
     );
     if (!moved.ok) {
       return fail(new AppointmentInvalidTransitionError(this.status.kind, to));
     }
-    return ok(
-      this.withSlice(
-        { status: toStatusData(next), outcomes: moved.value.outcomes },
-        stamp ?? SEAT_SCHEDULED,
-      ),
-    );
+    return ok(this.withSlice(moved.value, stamp ?? SEAT_SCHEDULED, next));
   }
 
   /**
@@ -1084,7 +1302,11 @@ export class Appointment {
    * what the struct cannot — an `other`'s note, the window value), every
    * other seat is kept as it was; the status follows the slice.
    */
-  private withSlice(slice: LifecycleSlice, outcome: SeatOutcome): Appointment {
+  private withSlice(
+    slice: LifecycleSlice,
+    outcome: SeatOutcome,
+    status: AppointmentStatus,
+  ): Appointment {
     const before = sliceOf(this).outcomes;
     const seats = this.seats.map((seat, index) => {
       const was = before.at(index);
@@ -1093,7 +1315,6 @@ export class Appointment {
         ? seat
         : seat.withOutcome(outcome);
     });
-    const status = fromStatusData(slice.status);
     return this.withSeats(
       seats,
       status.kind === this.status.kind && status.kind !== 'cancelled'

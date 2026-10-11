@@ -1,60 +1,91 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { AuditAction } from '../components/audit-context.data';
-import type { BookingContact } from '../components/booking-contact.data';
+import { BookingContact } from '../components/booking-contact.data';
+import {
+  BookingLifecycle,
+  BookingStatus,
+} from '../components/booking-lifecycle.data';
+import { Email } from '../components/email.data';
 import { E164 } from '../components/phone-number.data';
-import { BookingState, BookingStatus } from '../components/booking-status.data';
 import {
   SchedulingError,
   SchedulingErrorCode,
 } from '../components/scheduling-errors.data';
 import {
+  AttendanceState,
   CancellationReason,
+  CancellationReasonSet,
   CancelledBy,
   SeatOutcome,
-  SeatOutcomeKind,
 } from '../components/seat-outcome.data';
 import {
-  type Seat,
-  SeatId,
-  SeatRelationship,
-  SeatSubject,
+  Seat,
+  SeatOccupant,
+  SubjectRelationship,
 } from '../components/seat.data';
 import { ServiceTerms } from '../components/service-terms.data';
-import type { TimeInterval } from '../components/time-interval.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import { BarberId } from '../entities/barber.entity';
-import { UserId } from '../entities/user.entity';
+import type { ShopNow } from '../components/shop-now.data';
+import type { Appointment } from '../entities/appointment.entity';
+import { Currency } from '../primitives/currency.primitive';
+import { DurationMinutes } from '../primitives/duration-minutes.primitive';
 import {
-  appointmentFixture,
-  dayTableFixture,
+  AppointmentId,
+  AuditResourceId,
+  BarberId,
+  SeatId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  FIXTURE_TIME_ZONE,
+  FIXTURE_TODAY,
   deepFreeze,
-  fixtureTodayAt,
-  seatFixture,
+  minute,
   unwrapErr,
   unwrapOk,
+  utcMs,
 } from '../testing';
+import {
+  type AppointmentFixtureOverrides,
+  appointmentFixture,
+  seatFixture,
+} from '../testing/appointment.fixtures';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import {
   AppointmentLifecycleSystem,
   type LifecycleTransitionRequest,
 } from './appointment-lifecycle.system';
 import { AuditSystem } from './audit.system';
+import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The lifecycle cases of libs/domain/scheduling/src/lib/appointment.spec.ts,
  * copied (the class spec keeps running against its shim): admission and the
  * party's invariants, the transition matrix, cancel, the write-time
  * captures, seat outcomes, the correction edges and arrival — over plain
- * entities. `isSuccess(r)` → `r.ok`; the verbs' instant is a parameter.
+ * flat entities. `isSuccess(r)` → `r.ok`; the verbs' instant is a
+ * parameter, and "today" is the shop's `ShopNow`.
  */
 
+/** An instant on the fixture shop's wall clock today (Sofia, UTC+3). */
+const today = (hour: number, min = 0): UtcEpochMs =>
+  utcMs(
+    `2026-09-28T${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}:00+03:00`,
+  );
+/** "Now" as the fixture shop sees `instant`. */
+const nowAt = (instant: UtcEpochMs): ShopNow =>
+  ZonedTimeSystem.shopNow(instant, FIXTURE_TIME_ZONE);
+const plus = (base: UtcEpochMs, ms: number): UtcEpochMs =>
+  UtcEpochMs.plusMs(base, ms);
+
 /** The instant a lifecycle verb is taken. Fixed so outcomes are comparable. */
-const RESOLVED_AT_MS = fixtureTodayAt(9);
+const RESOLVED_AT = today(9);
 /** Before the visit's day — what "now" is when a booking is made. */
-const BOOKING_NOW_MS = fixtureTodayAt(0) - 30 * 86_400_000;
+const BOOKING_NOW = plus(today(0), -30 * 86_400_000);
 const MINUTE = 60_000;
-const DAYS = dayTableFixture('2026-09-27', '2026-09-30');
 
 let seq = 0;
 function nextSeatId(): SeatId {
@@ -76,32 +107,28 @@ type SeatOverrides = {
   readonly barberId?: BarberId;
   /** Minutes after local midnight of the fixture day. */
   readonly startMinute?: number;
-  readonly priceMinorUnits?: number;
+  readonly priceCents?: number;
   readonly durationMinutes?: number;
-  readonly currencyCode?: string;
+  readonly currency?: Currency;
 };
 
 function seat(overrides: SeatOverrides = {}): Seat {
   const terms = ServiceTerms.unpadded(
-    overrides.priceMinorUnits ?? 1500,
-    overrides.currencyCode ?? 'EUR',
-    overrides.durationMinutes ?? 30,
+    unwrapOk(PriceCents.of(overrides.priceCents ?? 1500)),
+    overrides.currency ?? Currency.EUR,
+    unwrapOk(DurationMinutes.of(overrides.durationMinutes ?? 30)),
   );
   return seatFixture({
-    id: nextSeatId(),
-    subject: SeatSubject.account(
+    seatId: nextSeatId(),
+    occupant: SeatOccupant.account(
       overrides.userId ?? nextUser(),
       overrides.relationship === 'companion'
-        ? SeatRelationship.Companion
-        : SeatRelationship.Self,
+        ? SubjectRelationship.Companion
+        : SubjectRelationship.Self,
     ),
     barberId: overrides.barberId ?? nextBarber(),
-    terms: {
-      ...terms,
-      catalogPriceMinorUnits: null,
-      catalogDurationMinutes: null,
-    },
-    startMs: fixtureTodayAt(0) + (overrides.startMinute ?? 600) * MINUTE,
+    terms: Seat.termsOf(terms, null),
+    startMinutes: minute(overrides.startMinute ?? 600),
   });
 }
 
@@ -112,42 +139,49 @@ function quarterPast10(quarter: number): number {
 
 function visit(
   seats: readonly Seat[],
-  status: BookingStatus = BookingStatus.confirm(BOOKING_NOW_MS),
-  overrides: Partial<AppointmentEntity> = {},
-): AppointmentEntity {
-  return appointmentFixture({ seats, bookingStatus: status, ...overrides });
+  lifecycle: BookingLifecycle = BookingLifecycle.confirm(BOOKING_NOW),
+  overrides: AppointmentFixtureOverrides = {},
+): Appointment {
+  return appointmentFixture({ seats, lifecycle, ...overrides });
 }
 
-function withStatus(status: BookingStatus): AppointmentEntity {
-  return visit([seat()], status);
+function withStatus(lifecycle: BookingLifecycle): Appointment {
+  return visit([seat()], lifecycle);
 }
 
-/** The envelope of a visit that has seats — a broken fixture otherwise. */
-function envelopeOf(appointment: AppointmentEntity): TimeInterval {
+/** The visit's end as an instant today — a broken fixture without seats. */
+function endInstantOf(appointment: Appointment): UtcEpochMs {
   const envelope = AppointmentIndexSystem.envelope(appointment);
-  if (envelope === null)
+  if (envelope === null) {
     throw new Error('a visit with no seats — a broken fixture');
-  return envelope;
+  }
+  return plus(today(0), envelope.endMinutes * MINUTE);
 }
 
 /** The id of the seat at `index` — a broken fixture when there is none. */
-function seatIdAt(appointment: AppointmentEntity, index: number): SeatId {
-  const seat = appointment.seats.at(index);
-  if (seat === undefined)
-    throw new Error(`no seat ${index} — a broken fixture`);
-  return seat.id;
+function seatIdAt(appointment: Appointment, index: number): SeatId {
+  const at = appointment.seats.at(index);
+  if (at === undefined) throw new Error(`no seat ${index} — a broken fixture`);
+  return at.seatId;
 }
 
-const PENDING = BookingStatus.pending(BOOKING_NOW_MS);
-const CONFIRMED = BookingStatus.confirm(BOOKING_NOW_MS);
-const COMPLETED = BookingStatus.complete(BOOKING_NOW_MS);
-const NO_SHOW = BookingStatus.noShow(BOOKING_NOW_MS);
+const PENDING = BookingLifecycle.pending(BOOKING_NOW);
+const CONFIRMED = BookingLifecycle.confirm(BOOKING_NOW);
+const COMPLETED = BookingLifecycle.complete(BOOKING_NOW);
+const NO_SHOW = BookingLifecycle.noShow(BOOKING_NOW);
 
 function codes(errors: readonly SchedulingError[]): readonly string[] {
-  return errors.map((error) => error.code);
+  return errors.map((error) => error.errorCode);
 }
 
-function party(): AppointmentEntity {
+function admit(seats: readonly Seat[], instant: UtcEpochMs) {
+  return AppointmentLifecycleSystem.admit(
+    { localDate: FIXTURE_TODAY, seats },
+    nowAt(instant),
+  );
+}
+
+function party(): Appointment {
   return visit([seat(), seat({ relationship: 'companion' })]);
 }
 
@@ -156,7 +190,7 @@ function seatCancelled(
   windowHours: number | null,
 ): SeatOutcome {
   return SeatOutcome.cancelled(
-    RESOLVED_AT_MS,
+    RESOLVED_AT,
     CancelledBy.Client,
     reason,
     windowHours,
@@ -164,7 +198,7 @@ function seatCancelled(
 }
 
 function request(
-  to: BookingState,
+  to: BookingStatus,
   overrides: Partial<LifecycleTransitionRequest> = {},
 ): LifecycleTransitionRequest {
   return { to, seatId: null, reason: null, windowHours: null, ...overrides };
@@ -172,42 +206,59 @@ function request(
 
 describe('AppointmentLifecycleSystem.admit — a new visit', () => {
   it('admits a visit in the future', () => {
-    expect(AppointmentLifecycleSystem.admit([seat()], BOOKING_NOW_MS)).toEqual(
-      [],
-    );
+    expect(admit([seat()], BOOKING_NOW)).toEqual([]);
   });
 
   it('rejects scheduling into the past', () => {
-    expect(
-      codes(AppointmentLifecycleSystem.admit([seat()], fixtureTodayAt(23))),
-    ).toEqual([SchedulingErrorCode.AppointmentPastStartTime]);
+    expect(codes(admit([seat()], today(23)))).toEqual([
+      SchedulingErrorCode.AppointmentPastStartTime,
+    ]);
   });
 
-  it('rejects an empty seats array', () => {
-    expect(codes(AppointmentLifecycleSystem.admit([], BOOKING_NOW_MS))).toEqual(
-      [SchedulingErrorCode.AppointmentEmptySeats],
-    );
-  });
-
-  it('rejects the booker in two chairs at once — two overlapping `self` seats for ONE account', () => {
-    const booker = nextUser();
+  it('judges the past on the shop’s wall clock — an earlier day is past whatever its minute', () => {
+    const tomorrowMorning = nowAt(plus(today(8), 86_400_000));
     expect(
       codes(
         AppointmentLifecycleSystem.admit(
-          [seat({ userId: booker }), seat({ userId: booker })],
-          BOOKING_NOW_MS,
+          { localDate: FIXTURE_TODAY, seats: [seat({ startMinute: 1380 })] },
+          tomorrowMorning,
         ),
       ),
-    ).toContain('scheduling.appointment.multiple_self_seats');
-  });
-
-  it('seats two `self` accounts side by side — the person is the account, not the relationship', () => {
+    ).toEqual([SchedulingErrorCode.AppointmentPastStartTime]);
     expect(
-      AppointmentLifecycleSystem.admit([seat(), seat()], BOOKING_NOW_MS),
+      AppointmentLifecycleSystem.admit(
+        {
+          localDate: LocalDate.addDays(FIXTURE_TODAY, 2),
+          seats: [seat({ startMinute: 60 })],
+        },
+        tomorrowMorning,
+      ),
     ).toEqual([]);
   });
 
-  it('refuses overlapping `self` seats exactly when ONE account holds both (property)', () => {
+  it('rejects an empty seats array', () => {
+    expect(codes(admit([], BOOKING_NOW))).toEqual([
+      SchedulingErrorCode.AppointmentEmptySeats,
+    ]);
+  });
+
+  it('rejects the booker in two chairs at once — two overlapping `SELF` seats for ONE account', () => {
+    const booker = nextUser();
+    expect(
+      codes(
+        admit(
+          [seat({ userId: booker }), seat({ userId: booker })],
+          BOOKING_NOW,
+        ),
+      ),
+    ).toContain('SCHEDULING_APPOINTMENT_MULTIPLE_SELF_SEATS');
+  });
+
+  it('seats two `SELF` accounts side by side — the person is the account, not the relationship', () => {
+    expect(admit([seat(), seat()], BOOKING_NOW)).toEqual([]);
+  });
+
+  it('refuses overlapping `SELF` seats exactly when ONE account holds both (property)', () => {
     const accounts = [nextUser(), nextUser(), nextUser()];
     const anySeat = fc.record({
       account: fc.nat({ max: accounts.length - 1 }),
@@ -231,16 +282,16 @@ describe('AppointmentLifecycleSystem.admit — a new visit', () => {
               (b, j) =>
                 j > i &&
                 a.account === b.account &&
-                a.seat.startMs < b.seat.startMs + b.minutes * MINUTE &&
-                b.seat.startMs < a.seat.startMs + a.minutes * MINUTE,
+                a.seat.startMinutes < b.seat.startMinutes + b.minutes &&
+                b.seat.startMinutes < a.seat.startMinutes + a.minutes,
             ),
           );
           const refused = codes(
-            AppointmentLifecycleSystem.admit(
+            admit(
               seats.map((entry) => entry.seat),
-              BOOKING_NOW_MS,
+              BOOKING_NOW,
             ),
-          ).includes('scheduling.appointment.multiple_self_seats');
+          ).includes('SCHEDULING_APPOINTMENT_MULTIPLE_SELF_SEATS');
           expect(refused).toBe(onePersonTwoChairs);
         },
       ),
@@ -257,11 +308,11 @@ describe('AppointmentLifecycleSystem — the arrangements a party may take', () 
       seat({ barberId: IVAN, startMinute: 600, durationMinutes: 45 }),
       seat({ relationship: 'companion', barberId: NIKO, startMinute: 600 }),
     ];
-    expect(AppointmentLifecycleSystem.admit(seats, BOOKING_NOW_MS)).toEqual([]);
+    expect(admit(seats, BOOKING_NOW)).toEqual([]);
     // The envelope is the LONGEST seat, not the sum — served at once.
     expect(AppointmentIndexSystem.envelope({ seats })).toEqual({
-      startMs: fixtureTodayAt(10),
-      endMs: fixtureTodayAt(10, 45),
+      startMinutes: 600,
+      endMinutes: 645,
     });
   });
 
@@ -275,16 +326,14 @@ describe('AppointmentLifecycleSystem — the arrangements a party may take', () 
         startMinute: 645,
       }),
     ];
-    expect(AppointmentLifecycleSystem.admit(seats, BOOKING_NOW_MS)).toEqual([]);
-    expect(AppointmentIndexSystem.envelope({ seats })?.endMs).toBe(
-      fixtureTodayAt(11, 15),
-    );
+    expect(admit(seats, BOOKING_NOW)).toEqual([]);
+    expect(AppointmentIndexSystem.envelope({ seats })?.endMinutes).toBe(675);
   });
 
   it('rejects one barber in two chairs at once', () => {
     expect(
       codes(
-        AppointmentLifecycleSystem.admit(
+        admit(
           [
             seat({ barberId: IVAN, startMinute: 600, durationMinutes: 45 }),
             seat({
@@ -293,20 +342,20 @@ describe('AppointmentLifecycleSystem — the arrangements a party may take', () 
               startMinute: 630,
             }),
           ],
-          BOOKING_NOW_MS,
+          BOOKING_NOW,
         ),
       ),
-    ).toContain('scheduling.appointment.barber_double_booked');
+    ).toContain('SCHEDULING_APPOINTMENT_BARBER_DOUBLE_BOOKED');
   });
 
   it('names each double-booked barber once, not once per colliding pair', () => {
-    const errors = AppointmentLifecycleSystem.admit(
+    const errors = admit(
       [
         seat({ barberId: IVAN, startMinute: 600, durationMinutes: 60 }),
         seat({ relationship: 'companion', barberId: IVAN, startMinute: 610 }),
         seat({ relationship: 'companion', barberId: IVAN, startMinute: 620 }),
       ],
-      BOOKING_NOW_MS,
+      BOOKING_NOW,
     );
     expect(errors).toEqual([
       SchedulingError.appointmentBarberDoubleBooked(IVAN),
@@ -314,12 +363,12 @@ describe('AppointmentLifecycleSystem — the arrangements a party may take', () 
   });
 
   it('takes the future-start check from the EARLIEST seat', () => {
-    const errors = AppointmentLifecycleSystem.admit(
+    const errors = admit(
       [
         seat({ startMinute: 600, durationMinutes: 30 }),
         seat({ relationship: 'companion', startMinute: 840 }),
       ],
-      fixtureTodayAt(12),
+      today(12),
     );
     expect(codes(errors)).toEqual([
       SchedulingErrorCode.AppointmentPastStartTime,
@@ -329,14 +378,16 @@ describe('AppointmentLifecycleSystem — the arrangements a party may take', () 
   it('rejects seats priced in two currencies', () => {
     expect(
       AppointmentLifecycleSystem.seatViolations([
-        seat({ currencyCode: 'EUR' }),
+        seat({ currency: Currency.EUR }),
         seat({
           relationship: 'companion',
           barberId: NIKO,
-          currencyCode: 'USD',
+          currency: Currency.USD,
         }),
       ]),
-    ).toEqual([SchedulingError.appointmentMixedCurrency('EUR', 'USD')]);
+    ).toEqual([
+      SchedulingError.appointmentMixedCurrency(Currency.EUR, Currency.USD),
+    ]);
   });
 });
 
@@ -349,7 +400,7 @@ describe('AppointmentLifecycleSystem — the revision survives every verb', () =
     for (const revision of [7, 0]) {
       const copy = visit([seat()], CONFIRMED, { revision });
       const arrived = unwrapOk(
-        AppointmentLifecycleSystem.markArrived(copy, RESOLVED_AT_MS),
+        AppointmentLifecycleSystem.markArrived(copy, RESOLVED_AT),
       );
       expect(arrived.appointment.revision).toBe(revision);
       const cleared = unwrapOk(
@@ -357,7 +408,7 @@ describe('AppointmentLifecycleSystem — the revision survives every verb', () =
       );
       expect(cleared.appointment.revision).toBe(revision);
       const completed = unwrapOk(
-        AppointmentLifecycleSystem.complete(copy, RESOLVED_AT_MS),
+        AppointmentLifecycleSystem.complete(copy, RESOLVED_AT),
       );
       expect(completed.appointment.revision).toBe(revision);
     }
@@ -366,19 +417,22 @@ describe('AppointmentLifecycleSystem — the revision survives every verb', () =
 
 describe('Appointment status transition matrix (goal condition item)', () => {
   const LEGAL: Record<string, readonly string[]> = {
-    pending: ['confirmed', 'cancelled'],
-    confirmed: ['completed', 'cancelled', 'no_show'],
-    completed: [],
-    cancelled: [],
-    no_show: ['confirmed'],
+    PENDING: ['CONFIRMED', 'CANCELLED'],
+    CONFIRMED: ['COMPLETED', 'CANCELLED', 'NO_SHOW'],
+    COMPLETED: [],
+    CANCELLED: [],
+    NO_SHOW: ['CONFIRMED'],
   };
 
-  const STARTING: Record<string, BookingStatus> = {
-    pending: PENDING,
-    confirmed: CONFIRMED,
-    completed: COMPLETED,
-    cancelled: BookingStatus.cancel(BOOKING_NOW_MS, 'customer request'),
-    no_show: NO_SHOW,
+  const STARTING: Record<string, BookingLifecycle> = {
+    PENDING,
+    CONFIRMED,
+    COMPLETED,
+    CANCELLED: BookingLifecycle.cancel(
+      BOOKING_NOW,
+      CancellationReasonSet.fromStored('customer request'),
+    ),
+    NO_SHOW,
   };
 
   /*
@@ -387,33 +441,33 @@ describe('Appointment status transition matrix (goal condition item)', () => {
    */
   const VERBS: Record<
     string,
-    (appointment: AppointmentEntity) => { readonly ok: boolean }
+    (appointment: Appointment) => { readonly ok: boolean }
   > = {
-    confirmed: (a) =>
+    CONFIRMED: (a) =>
       AppointmentLifecycleSystem.partyVerb(
-        { status: a.bookingStatus, outcomes: a.seats.map((s) => s.outcome) },
-        BookingState.Confirmed,
+        { lifecycle: a, outcomes: a.seats },
+        BookingStatus.Confirmed,
         null,
-        RESOLVED_AT_MS,
-        '',
+        RESOLVED_AT,
+        CancellationReasonSet.of([]),
       ),
-    completed: (a) => AppointmentLifecycleSystem.complete(a, RESOLVED_AT_MS),
-    cancelled: (a) =>
+    COMPLETED: (a) => AppointmentLifecycleSystem.complete(a, RESOLVED_AT),
+    CANCELLED: (a) =>
       AppointmentLifecycleSystem.cancel(
         a,
         CancellationReason.Other,
         24,
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
-    no_show: (a) => AppointmentLifecycleSystem.markNoShow(a, RESOLVED_AT_MS),
+    NO_SHOW: (a) => AppointmentLifecycleSystem.markNoShow(a, RESOLVED_AT),
   };
 
   const legal = new Map(Object.entries(LEGAL));
-  for (const [from, status] of Object.entries(STARTING)) {
+  for (const [from, lifecycle] of Object.entries(STARTING)) {
     for (const [to, verb] of Object.entries(VERBS)) {
       const shouldSucceed = (legal.get(from) ?? []).includes(to);
       it(`${from} → ${to} is ${shouldSucceed ? 'legal' : 'illegal'}`, () => {
-        expect(verb(withStatus(status)).ok).toBe(shouldSucceed);
+        expect(verb(withStatus(lifecycle)).ok).toBe(shouldSucceed);
       });
     }
   }
@@ -424,28 +478,31 @@ describe('AppointmentLifecycleSystem.cancel', () => {
     const error = unwrapErr(
       AppointmentLifecycleSystem.transition(
         withStatus(PENDING),
-        request(BookingState.Cancelled),
-        RESOLVED_AT_MS,
-        DAYS,
+        request(BookingStatus.Cancelled),
+        nowAt(RESOLVED_AT),
       ),
     );
-    expect(error.code).toBe(
+    expect(error.errorCode).toBe(
       SchedulingErrorCode.AppointmentEmptyCancellationReason,
     );
   });
 
-  it('carries the reason structurally on the cancelled status — the code', () => {
+  it('carries the reason structurally on the cancelled lifecycle — the code', () => {
     const step = unwrapOk(
       AppointmentLifecycleSystem.cancel(
         withStatus(PENDING),
         CancellationReason.ClientChangedPlans,
         24,
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
     );
-    expect(step.appointment.bookingStatus).toEqual(
-      BookingStatus.cancel(RESOLVED_AT_MS, 'client_changed_plans'),
+    expect(BookingLifecycle.sliceOf(step.appointment)).toEqual(
+      BookingLifecycle.cancel(
+        RESOLVED_AT,
+        CancellationReasonSet.of([CancellationReason.ClientChangedPlans]),
+      ),
     );
+    expect('pendingAtUtcMs' in step.appointment).toBe(false);
   });
 
   it('stamps the window in force on the seats it closes — the rule it is judged by', () => {
@@ -454,15 +511,40 @@ describe('AppointmentLifecycleSystem.cancel', () => {
         withStatus(CONFIRMED),
         CancellationReason.Other,
         6,
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
     );
-    expect(step.appointment.seats[0]?.outcome).toEqual({
-      kind: 'cancelled',
-      atMs: RESOLVED_AT_MS,
-      by: 'client',
-      reason: { kind: 'other' },
-      windowHours: 6,
+    expect(step.appointment.seats[0]).toMatchObject({
+      attendanceState: 'CANCELLED',
+      cancelledAtUtcMs: RESOLVED_AT,
+      cancelledBy: 'CLIENT',
+      cancellationReason: 'OTHER',
+      cancellationWindowHours: 6,
+    });
+  });
+
+  it('plans ONE root update: the new variant set, the old variant’s fields deleted', () => {
+    const before = withStatus(CONFIRMED);
+    const step = unwrapOk(
+      AppointmentLifecycleSystem.cancelByClient(
+        before,
+        CancellationReason.Other,
+        6,
+        RESOLVED_AT,
+      ),
+    );
+    expect(step.writes).toHaveLength(1);
+    expect(step.writes[0]).toMatchObject({
+      writeAction: 'UPDATE',
+      path: ['appointments', before.id],
+      fields: {
+        bookingStatus: 'CANCELLED',
+        cancelledAtUtcMs: RESOLVED_AT,
+        cancellationReason: 'OTHER',
+        seats: step.appointment.seats,
+        arrivedAtUtcMs: null,
+      },
+      deleteFields: ['confirmedAtUtcMs'],
     });
   });
 });
@@ -470,7 +552,7 @@ describe('AppointmentLifecycleSystem.cancel', () => {
 describe('AppointmentLifecycleSystem — the write-time captures', () => {
   it('reports booking lead time in minutes', () => {
     const one = visit([seat({ startMinute: 600 })], PENDING, {
-      bookedAtMs: fixtureTodayAt(9),
+      bookedAtUtcMs: today(9),
     });
     expect(AppointmentLifecycleSystem.bookingLeadTimeMinutes(one)).toBe(60);
   });
@@ -478,24 +560,27 @@ describe('AppointmentLifecycleSystem — the write-time captures', () => {
   it('has no lead time for an appointment written before bookedAt existed', () => {
     expect(
       AppointmentLifecycleSystem.bookingLeadTimeMinutes(
-        visit([seat()], PENDING, { bookedAtMs: null }),
+        visit([seat()], PENDING, { bookedAtUtcMs: null }),
       ),
     ).toBeNull();
   });
 
   it('measures lateness from the start — negative when early, null before arrival', () => {
     const one = visit([seat({ startMinute: 600 })], CONFIRMED, {
-      arrivedAtMs: fixtureTodayAt(10, 7),
+      arrivedAtUtcMs: today(10, 7),
     });
     expect(AppointmentLifecycleSystem.latenessMinutes(one)).toBe(7);
     expect(
       AppointmentLifecycleSystem.latenessMinutes({
         ...one,
-        arrivedAtMs: fixtureTodayAt(9, 55),
+        arrivedAtUtcMs: today(9, 55),
       }),
     ).toBe(-5);
     expect(
-      AppointmentLifecycleSystem.latenessMinutes({ ...one, arrivedAtMs: null }),
+      AppointmentLifecycleSystem.latenessMinutes({
+        ...one,
+        arrivedAtUtcMs: null,
+      }),
     ).toBeNull();
   });
 });
@@ -503,7 +588,9 @@ describe('AppointmentLifecycleSystem — the write-time captures', () => {
 describe('AppointmentLifecycleSystem — seat outcomes', () => {
   it('starts every seat scheduled', () => {
     expect(
-      party().seats.every((s) => s.outcome.kind === SeatOutcomeKind.Scheduled),
+      party().seats.every(
+        (s) => s.attendanceState === AttendanceState.Scheduled,
+      ),
     ).toBe(true);
     expect(AppointmentLifecycleSystem.openSeats(party())).toHaveLength(2);
   });
@@ -514,11 +601,11 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
       AppointmentLifecycleSystem.markSeatOutcome(
         appointment,
         seatIdAt(appointment, 0),
-        SeatOutcome.worked(RESOLVED_AT_MS),
-        RESOLVED_AT_MS,
+        SeatOutcome.worked(RESOLVED_AT),
+        RESOLVED_AT,
       ),
     );
-    expect(marked.bookingStatus.kind).toBe('confirmed');
+    expect(marked.bookingStatus).toBe('CONFIRMED');
     expect(AppointmentLifecycleSystem.openSeats(marked)).toHaveLength(1);
   });
 
@@ -528,21 +615,21 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
       AppointmentLifecycleSystem.markSeatOutcome(
         appointment,
         seatIdAt(appointment, 0),
-        SeatOutcome.worked(RESOLVED_AT_MS),
-        RESOLVED_AT_MS,
+        SeatOutcome.worked(RESOLVED_AT),
+        RESOLVED_AT,
       ),
     );
     const second = unwrapOk(
       AppointmentLifecycleSystem.markSeatOutcome(
         first,
         seatIdAt(first, 1),
-        SeatOutcome.noShow(RESOLVED_AT_MS),
-        RESOLVED_AT_MS,
+        SeatOutcome.noShow(RESOLVED_AT),
+        RESOLVED_AT,
       ),
     );
-    expect(second.bookingStatus.kind).toBe('completed');
-    expect(second.seats[0]?.outcome.kind).toBe('worked');
-    expect(second.seats[1]?.outcome.kind).toBe('no_show');
+    expect(second.bookingStatus).toBe('COMPLETED');
+    expect(second.seats[0]?.attendanceState).toBe('WORKED');
+    expect(second.seats[1]?.attendanceState).toBe('NO_SHOW');
   });
 
   it('summarises an all-cancelled party as cancelled, with groupable codes', () => {
@@ -552,7 +639,7 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         appointment,
         seatIdAt(appointment, 0),
         seatCancelled(CancellationReason.ClientUnwell, 24),
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
     );
     const second = unwrapOk(
@@ -560,13 +647,13 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         first,
         seatIdAt(first, 1),
         seatCancelled(CancellationReason.ClientChangedPlans, 24),
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
     );
-    expect(second.bookingStatus).toEqual(
-      BookingStatus.cancel(
-        RESOLVED_AT_MS,
-        'client_changed_plans+client_unwell',
+    expect(BookingLifecycle.sliceOf(second)).toEqual(
+      BookingLifecycle.cancel(
+        RESOLVED_AT,
+        CancellationReasonSet.fromStored('CLIENT_CHANGED_PLANS+CLIENT_UNWELL'),
       ),
     );
   });
@@ -576,11 +663,13 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
       AppointmentLifecycleSystem.markSeatOutcome(
         party(),
         SeatId.of('nobody'),
-        SeatOutcome.worked(RESOLVED_AT_MS),
-        RESOLVED_AT_MS,
+        SeatOutcome.worked(RESOLVED_AT),
+        RESOLVED_AT,
       ),
     );
-    expect(error).toEqual(SchedulingError.appointmentUnknownSeat('nobody'));
+    expect(error).toEqual(
+      SchedulingError.appointmentUnknownSeat(SeatId.of('nobody')),
+    );
   });
 
   it('refuses to re-resolve a seat', () => {
@@ -589,20 +678,20 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
       AppointmentLifecycleSystem.markSeatOutcome(
         appointment,
         seatIdAt(appointment, 0),
-        SeatOutcome.worked(RESOLVED_AT_MS),
-        RESOLVED_AT_MS,
+        SeatOutcome.worked(RESOLVED_AT),
+        RESOLVED_AT,
       ),
     );
     const again = AppointmentLifecycleSystem.markSeatOutcome(
       first,
       seatIdAt(first, 0),
-      SeatOutcome.noShow(RESOLVED_AT_MS),
-      RESOLVED_AT_MS,
+      SeatOutcome.noShow(RESOLVED_AT),
+      RESOLVED_AT,
     );
     expect(unwrapErr(again)).toEqual(
       SchedulingError.appointmentSeatAlreadyResolved(
         seatIdAt(first, 0),
-        SeatOutcomeKind.Worked,
+        AttendanceState.Worked,
       ),
     );
   });
@@ -614,7 +703,7 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         appointment,
         seatIdAt(appointment, 0),
         seatCancelled(CancellationReason.ClientUnwell, 48),
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
     );
     const done = unwrapOk(
@@ -622,13 +711,13 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         first,
         CancellationReason.StaffShopClosure,
         24,
-        RESOLVED_AT_MS + 1,
+        plus(RESOLVED_AT, 1),
       ),
     );
     expect(
       done.appointment.seats.map((s) =>
-        s.outcome.kind === SeatOutcomeKind.Cancelled
-          ? s.outcome.windowHours
+        s.attendanceState === AttendanceState.Cancelled
+          ? s.cancellationWindowHours
           : undefined,
       ),
     ).toEqual([48, 24]);
@@ -640,38 +729,37 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         party(),
         CancellationReason.StaffShopClosure,
         24,
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
     );
-    const terminal = {
+    const terminal: Appointment = {
       ...done.appointment,
-      seats: done.appointment.seats.map((s) => ({
-        ...s,
-        outcome: SeatOutcome.scheduled(),
-      })),
+      seats: done.appointment.seats.map((s) =>
+        Seat.withOutcome(s, SeatOutcome.scheduled()),
+      ),
     };
     const error = unwrapErr(
       AppointmentLifecycleSystem.markSeatOutcome(
         terminal,
         seatIdAt(terminal, 0),
-        SeatOutcome.worked(RESOLVED_AT_MS),
-        RESOLVED_AT_MS,
+        SeatOutcome.worked(RESOLVED_AT),
+        RESOLVED_AT,
       ),
     );
     expect(error).toEqual(
       SchedulingError.appointmentInvalidTransition(
-        BookingState.Cancelled,
-        BookingState.Completed,
+        BookingStatus.Cancelled,
+        BookingStatus.Completed,
       ),
     );
   });
 
   it('fans a party-level complete out to every open seat', () => {
     const step = unwrapOk(
-      AppointmentLifecycleSystem.complete(party(), RESOLVED_AT_MS),
+      AppointmentLifecycleSystem.complete(party(), RESOLVED_AT),
     );
     expect(
-      step.appointment.seats.every((s) => s.outcome.kind === 'worked'),
+      step.appointment.seats.every((s) => s.attendanceState === 'WORKED'),
     ).toBe(true);
   });
 
@@ -681,33 +769,27 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
       AppointmentLifecycleSystem.markSeatOutcome(
         appointment,
         seatIdAt(appointment, 0),
-        SeatOutcome.noShow(RESOLVED_AT_MS),
-        RESOLVED_AT_MS,
+        SeatOutcome.noShow(RESOLVED_AT),
+        RESOLVED_AT,
       ),
     );
     const done = unwrapOk(
-      AppointmentLifecycleSystem.complete(first, RESOLVED_AT_MS + MINUTE),
+      AppointmentLifecycleSystem.complete(first, plus(RESOLVED_AT, MINUTE)),
     );
-    expect(done.appointment.seats[0]?.outcome.kind).toBe('no_show');
-    expect(done.appointment.seats[1]?.outcome.kind).toBe('worked');
+    expect(done.appointment.seats[0]?.attendanceState).toBe('NO_SHOW');
+    expect(done.appointment.seats[1]?.attendanceState).toBe('WORKED');
   });
 
   it('reopens a no-show and lifts the stamp off the seats it wrote', () => {
     const marked = unwrapOk(
-      AppointmentLifecycleSystem.markNoShow(
-        withStatus(CONFIRMED),
-        RESOLVED_AT_MS,
-      ),
+      AppointmentLifecycleSystem.markNoShow(withStatus(CONFIRMED), RESOLVED_AT),
     );
-    expect(marked.appointment.seats[0]?.outcome.kind).toBe('no_show');
+    expect(marked.appointment.seats[0]?.attendanceState).toBe('NO_SHOW');
     const reopened = unwrapOk(
-      AppointmentLifecycleSystem.reopenNoShow(
-        marked.appointment,
-        RESOLVED_AT_MS,
-      ),
+      AppointmentLifecycleSystem.reopenNoShow(marked.appointment, RESOLVED_AT),
     );
-    expect(reopened.bookingStatus.kind).toBe('confirmed');
-    for (const s of reopened.seats) expect(s.outcome.kind).toBe('scheduled');
+    expect(reopened.bookingStatus).toBe('CONFIRMED');
+    for (const s of reopened.seats) expect(s.attendanceState).toBe('SCHEDULED');
   });
 
   it('reopening leaves a seat that was resolved on its own alone', () => {
@@ -717,31 +799,28 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         base,
         seatIdAt(base, 0),
         seatCancelled(CancellationReason.ClientUnwell, 24),
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
     );
     const marked = unwrapOk(
       AppointmentLifecycleSystem.markNoShow(
         withSeatCancelled,
-        RESOLVED_AT_MS + 1_000,
+        plus(RESOLVED_AT, 1_000),
       ),
     );
     const reopened = unwrapOk(
-      AppointmentLifecycleSystem.reopenNoShow(
-        marked.appointment,
-        RESOLVED_AT_MS,
-      ),
+      AppointmentLifecycleSystem.reopenNoShow(marked.appointment, RESOLVED_AT),
     );
-    expect(reopened.seats[0]?.outcome.kind).toBe('cancelled');
-    expect(reopened.seats[1]?.outcome.kind).toBe('scheduled');
+    expect(reopened.seats[0]?.attendanceState).toBe('CANCELLED');
+    expect(reopened.seats[1]?.attendanceState).toBe('SCHEDULED');
   });
 
   it('refuses to reopen anything that is not a no-show', () => {
-    for (const status of [PENDING, CONFIRMED, COMPLETED]) {
+    for (const lifecycle of [PENDING, CONFIRMED, COMPLETED]) {
       expect(
         AppointmentLifecycleSystem.reopenNoShow(
-          withStatus(status),
-          RESOLVED_AT_MS,
+          withStatus(lifecycle),
+          RESOLVED_AT,
         ).ok,
       ).toBe(false);
     }
@@ -749,25 +828,21 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 
   it('reopens a completed visit on its own day, every seat back to scheduled', () => {
     const confirmed = unwrapOk(
-      AppointmentLifecycleSystem.confirm(withStatus(PENDING), RESOLVED_AT_MS),
+      AppointmentLifecycleSystem.confirm(withStatus(PENDING), RESOLVED_AT),
     );
     const completed = unwrapOk(
-      AppointmentLifecycleSystem.complete(
-        confirmed.appointment,
-        RESOLVED_AT_MS,
-      ),
+      AppointmentLifecycleSystem.complete(confirmed.appointment, RESOLVED_AT),
     );
-    expect(completed.appointment.seats[0]?.outcome.kind).toBe('worked');
-    const end = envelopeOf(completed.appointment).endMs;
+    expect(completed.appointment.seats[0]?.attendanceState).toBe('WORKED');
+    const end = endInstantOf(completed.appointment);
     const reopened = unwrapOk(
       AppointmentLifecycleSystem.reopenSettled(
         completed.appointment,
-        end,
-        DAYS,
+        nowAt(end),
       ),
     );
-    expect(reopened.bookingStatus.kind).toBe('confirmed');
-    expect(reopened.seats[0]?.outcome.kind).toBe('scheduled');
+    expect(reopened.bookingStatus).toBe('CONFIRMED');
+    expect(reopened.seats[0]?.attendanceState).toBe('SCHEDULED');
   });
 
   it('reinstates a cancelled visit on its own day', () => {
@@ -776,53 +851,47 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
         withStatus(CONFIRMED),
         CancellationReason.Other,
         24,
-        RESOLVED_AT_MS,
+        RESOLVED_AT,
       ),
     );
-    const end = envelopeOf(cancelled.appointment).endMs;
+    const end = endInstantOf(cancelled.appointment);
     const back = unwrapOk(
       AppointmentLifecycleSystem.reopenSettled(
         cancelled.appointment,
-        end,
-        DAYS,
+        nowAt(end),
       ),
     );
-    expect(back.bookingStatus.kind).toBe('confirmed');
-    expect(back.seats[0]?.outcome.kind).toBe('scheduled');
+    expect(back.bookingStatus).toBe('CONFIRMED');
+    expect(back.seats[0]?.attendanceState).toBe('SCHEDULED');
   });
 
   it('refuses to reopen a settled visit the next day, or a live one at all', () => {
     const completed = withStatus(COMPLETED);
-    const end = envelopeOf(completed).endMs;
+    const end = endInstantOf(completed);
     const late = AppointmentLifecycleSystem.reopenSettled(
       completed,
-      end + 24 * 60 * MINUTE,
-      DAYS,
+      nowAt(plus(end, 24 * 60 * MINUTE)),
     );
-    expect(unwrapErr(late).code).toBe(
-      'scheduling.appointment.reopen_window_closed',
+    expect(unwrapErr(late).errorCode).toBe(
+      'SCHEDULING_APPOINTMENT_REOPEN_WINDOW_CLOSED',
     );
     const live = withStatus(CONFIRMED);
     expect(
-      AppointmentLifecycleSystem.reopenSettled(
-        live,
-        envelopeOf(live).endMs,
-        DAYS,
-      ).ok,
+      AppointmentLifecycleSystem.reopenSettled(live, nowAt(endInstantOf(live)))
+        .ok,
     ).toBe(false);
   });
 
   it('takes an arrival stamp back, and only while the visit is live', () => {
     const live = withStatus(CONFIRMED);
-    const start = envelopeOf(live).startMs;
     const arrived = unwrapOk(
-      AppointmentLifecycleSystem.markArrived(live, start),
+      AppointmentLifecycleSystem.markArrived(live, live.utcEpochMs),
     );
-    expect(arrived.appointment.arrivedAtMs).not.toBeNull();
+    expect(arrived.appointment.arrivedAtUtcMs).not.toBeNull();
     const cleared = unwrapOk(
       AppointmentLifecycleSystem.clearArrival(arrived.appointment),
     );
-    expect(cleared.appointment.arrivedAtMs).toBeNull();
+    expect(cleared.appointment.arrivedAtUtcMs).toBeNull();
     // Idempotent: clearing what was never set is a no-op.
     expect(AppointmentLifecycleSystem.clearArrival(live).ok).toBe(true);
     expect(
@@ -832,25 +901,25 @@ describe('AppointmentLifecycleSystem — seat outcomes', () => {
 
   it('confirming resolves nothing — it is about the booking, not the work', () => {
     const step = unwrapOk(
-      AppointmentLifecycleSystem.confirm(withStatus(PENDING), RESOLVED_AT_MS),
+      AppointmentLifecycleSystem.confirm(withStatus(PENDING), RESOLVED_AT),
     );
-    expect(step.appointment.seats[0]?.outcome.kind).toBe('scheduled');
+    expect(step.appointment.seats[0]?.attendanceState).toBe('SCHEDULED');
   });
 
   it('keeps the contact snapshot across a transition', () => {
     const contact: BookingContact = {
-      name: 'Ivan Petrov',
-      phone: E164.of('+359888123456'),
-      email: null,
-      note: null,
+      contactName: 'Ivan Petrov',
+      contactPhone: E164.of('+359888123456'),
+      contactEmail: Email.parse('ivan@example.com'),
+      contactNote: null,
     };
     const step = unwrapOk(
       AppointmentLifecycleSystem.confirm(
-        visit([seat()], PENDING, { contact }),
-        RESOLVED_AT_MS,
+        visit([seat()], PENDING, contact),
+        RESOLVED_AT,
       ),
     );
-    expect(step.appointment.contact).toBe(contact);
+    expect(BookingContact.of(step.appointment)).toEqual(contact);
   });
 });
 
@@ -858,23 +927,28 @@ describe('AppointmentLifecycleSystem — arrival', () => {
   it('stamps the first arrival and audits it once; a second tap changes nothing', () => {
     const live = withStatus(CONFIRMED);
     const first = unwrapOk(
-      AppointmentLifecycleSystem.markArrived(live, RESOLVED_AT_MS),
+      AppointmentLifecycleSystem.markArrived(live, RESOLVED_AT),
     );
-    expect(first.appointment.arrivedAtMs).toBe(RESOLVED_AT_MS);
+    expect(first.appointment.arrivedAtUtcMs).toBe(RESOLVED_AT);
     expect(first.auditFacts).toEqual([
       expect.objectContaining({
-        action: AuditAction.BookingStaffArrived,
-        changeKey: `arrived:${RESOLVED_AT_MS}`,
+        context: { auditAction: AuditAction.BookingStaffArrived },
+        changeKey: `arrived:${RESOLVED_AT}`,
       }),
     ]);
+    expect(first.writes[0]).toMatchObject({
+      fields: { arrivedAtUtcMs: RESOLVED_AT },
+      deleteFields: [],
+    });
     const again = unwrapOk(
       AppointmentLifecycleSystem.markArrived(
         first.appointment,
-        RESOLVED_AT_MS + MINUTE,
+        plus(RESOLVED_AT, MINUTE),
       ),
     );
-    expect(again.appointment.arrivedAtMs).toBe(RESOLVED_AT_MS);
+    expect(again.appointment.arrivedAtUtcMs).toBe(RESOLVED_AT);
     expect(again.auditFacts).toEqual([]);
+    expect(again.writes).toEqual([]);
   });
 
   it('refuses an arrival on a settled visit — a mis-tap, not a fact', () => {
@@ -882,14 +956,16 @@ describe('AppointmentLifecycleSystem — arrival', () => {
       unwrapErr(
         AppointmentLifecycleSystem.markArrived(
           withStatus(COMPLETED),
-          RESOLVED_AT_MS,
+          RESOLVED_AT,
         ),
       ),
-    ).toEqual(SchedulingError.appointmentNotArrivable(BookingState.Completed));
+    ).toEqual(SchedulingError.appointmentNotArrivable(BookingStatus.Completed));
   });
 
   it('keys an undo by the stamp it cleared', () => {
-    const arrived = visit([seat()], CONFIRMED, { arrivedAtMs: 123 });
+    const arrived = visit([seat()], CONFIRMED, {
+      arrivedAtUtcMs: unwrapOk(UtcEpochMs.of(123)),
+    });
     const cleared = unwrapOk(AppointmentLifecycleSystem.clearArrival(arrived));
     expect(cleared.auditFacts[0]?.changeKey).toBe('unarrived:123');
   });
@@ -902,50 +978,50 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
     const step = unwrapOk(
       AppointmentLifecycleSystem.transition(
         appointment,
-        request(BookingState.Cancelled, {
+        request(BookingStatus.Cancelled, {
           seatId,
           reason: CancellationReason.ClientUnwell,
           windowHours: 24,
         }),
-        RESOLVED_AT_MS,
-        DAYS,
+        nowAt(RESOLVED_AT),
       ),
     );
     expect(step.auditFacts).toEqual([
       {
-        action: AuditAction.BookingStaffCancelled,
-        resourceId: appointment.id,
+        resourceId: AuditResourceId.forAppointment(appointment.id),
         subjects: AuditSystem.subjectsOfSeats(appointment.seats, seatId),
-        changeKey: `transition:${seatId}:${RESOLVED_AT_MS}`,
+        changeKey: `transition:${seatId}:${RESOLVED_AT}`,
         context: {
-          kind: AuditAction.BookingStaffCancelled,
-          reason: 'client_unwell',
-          seatId,
+          auditAction: AuditAction.BookingStaffCancelled,
+          transitionReason: 'CLIENT_UNWELL',
+          transitionSeatId: seatId,
         },
       },
     ]);
   });
 
   it('files a correction under its own action — reopen a no-show, reopen completed, reinstate', () => {
-    const cases: readonly [BookingStatus, string][] = [
+    const cases: readonly [BookingLifecycle, string][] = [
       [NO_SHOW, AuditAction.BookingStaffReopenNoShow],
       [COMPLETED, AuditAction.BookingStaffReopenCompleted],
       [
-        BookingStatus.cancel(BOOKING_NOW_MS, 'unspecified'),
+        BookingLifecycle.cancel(
+          BOOKING_NOW,
+          CancellationReasonSet.of([CancellationReason.Unspecified]),
+        ),
         AuditAction.BookingStaffReinstate,
       ],
     ];
-    for (const [status, action] of cases) {
-      const appointment = withStatus(status);
+    for (const [lifecycle, action] of cases) {
+      const appointment = withStatus(lifecycle);
       const step = unwrapOk(
         AppointmentLifecycleSystem.transition(
           appointment,
-          request(BookingState.Confirmed),
-          envelopeOf(appointment).endMs,
-          DAYS,
+          request(BookingStatus.Confirmed),
+          nowAt(endInstantOf(appointment)),
         ),
       );
-      expect(step.auditFacts[0]?.action).toBe(action);
+      expect(step.auditFacts[0]?.context.auditAction).toBe(action);
       expect(step.auditFacts[0]?.changeKey).toMatch(/^transition:party:/);
     }
   });
@@ -955,9 +1031,8 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
     expect(
       AppointmentLifecycleSystem.transition(
         appointment,
-        request(BookingState.Confirmed, { seatId: seatIdAt(appointment, 0) }),
-        RESOLVED_AT_MS,
-        DAYS,
+        request(BookingStatus.Confirmed, { seatId: seatIdAt(appointment, 0) }),
+        nowAt(RESOLVED_AT),
       ).ok,
     ).toBe(false);
   });
@@ -967,18 +1042,16 @@ describe('AppointmentLifecycleSystem.transition — the staff verbs and their fa
       unwrapErr(
         AppointmentLifecycleSystem.transition(
           party(),
-          request(BookingState.Completed, { seatId: SeatId.of('nobody') }),
-          RESOLVED_AT_MS,
-          DAYS,
+          request(BookingStatus.Completed, { seatId: SeatId.of('nobody') }),
+          nowAt(RESOLVED_AT),
         ),
-      ).code,
+      ).errorCode,
     ).toBe(SchedulingErrorCode.AppointmentUnknownSeat);
     expect(
       AppointmentLifecycleSystem.transition(
         party(),
-        request(BookingState.Pending),
-        RESOLVED_AT_MS,
-        DAYS,
+        request(BookingStatus.Pending),
+        nowAt(RESOLVED_AT),
       ).ok,
     ).toBe(false);
   });
@@ -988,25 +1061,29 @@ describe('AppointmentLifecycleSystem.takenSince — a reinstated chair given awa
   it('finds a live seat of another visit on the same barber, overlapping', () => {
     const IVAN = BarberId.of('ivan');
     const mine = visit([seat({ barberId: IVAN, startMinute: 600 })]);
-    const theirs = {
-      ...visit([seat({ barberId: IVAN, startMinute: 615 })]),
-      id: 'other' as AppointmentEntity['id'],
-    };
+    const theirsSeats = [seat({ barberId: IVAN, startMinute: 615 })];
+    const other = AppointmentId.of('other');
+    const theirs = visit(theirsSeats, CONFIRMED, { id: other });
     expect(AppointmentLifecycleSystem.takenSince(mine, [theirs])).toBe(true);
     expect(
       AppointmentLifecycleSystem.takenSince(mine, [
-        { ...theirs, bookingStatus: COMPLETED },
+        visit(theirsSeats, COMPLETED, { id: other }),
       ]),
     ).toBe(false);
     expect(AppointmentLifecycleSystem.takenSince(mine, [mine])).toBe(false);
     const resolved = {
       ...theirs,
-      seats: theirs.seats.map((s) => ({
-        ...s,
-        outcome: SeatOutcome.worked(RESOLVED_AT_MS),
-      })),
+      seats: theirs.seats.map((s) =>
+        Seat.withOutcome(s, SeatOutcome.worked(RESOLVED_AT)),
+      ),
     };
     expect(AppointmentLifecycleSystem.takenSince(mine, [resolved])).toBe(false);
+    // The same minutes on ANOTHER day are no collision.
+    const tomorrow = visit(theirsSeats, CONFIRMED, {
+      id: other,
+      localDate: LocalDate.addDays(FIXTURE_TODAY, 1),
+    });
+    expect(AppointmentLifecycleSystem.takenSince(mine, [tomorrow])).toBe(false);
   });
 });
 
@@ -1014,7 +1091,7 @@ describe('AppointmentLifecycleSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const appointment = deepFreeze(party());
     const req = deepFreeze(
-      request(BookingState.Cancelled, {
+      request(BookingStatus.Cancelled, {
         reason: CancellationReason.ClientUnwell,
         windowHours: 24,
       }),
@@ -1022,19 +1099,17 @@ describe('AppointmentLifecycleSystem — purity', () => {
     const once = AppointmentLifecycleSystem.transition(
       appointment,
       req,
-      RESOLVED_AT_MS,
-      DAYS,
+      nowAt(RESOLVED_AT),
     );
     const twice = AppointmentLifecycleSystem.transition(
       appointment,
       req,
-      RESOLVED_AT_MS,
-      DAYS,
+      nowAt(RESOLVED_AT),
     );
     expect(twice).toEqual(once);
-    expect(appointment.seats.map((s) => s.outcome.kind)).toEqual([
-      'scheduled',
-      'scheduled',
+    expect(appointment.seats.map((s) => s.attendanceState)).toEqual([
+      'SCHEDULED',
+      'SCHEDULED',
     ]);
   });
 });

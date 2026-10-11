@@ -1,22 +1,25 @@
-import { BusyKey } from '../components/busy-key.data';
-import type { DayOffset } from '../components/day-offset.data';
-import type { PlacementKind } from '../components/placement-kind.data';
+import type { Placement } from '../components/placement-kind.data';
 import {
   Seat,
-  SeatRelationship,
-  SeatSubjectKind,
+  type SeatOccupant,
+  SeatSubject,
+  SubjectRelationship,
 } from '../components/seat.data';
-import { TimeInterval } from '../components/time-interval.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import type { BarberId } from '../entities/barber.entity';
-import type { UserId } from '../entities/user.entity';
-import { ZonedTimeSystem } from './zoned-time.system';
+import type { Appointment } from '../entities/appointment.entity';
+import { BusyKey } from '../primitives/busy-key.primitive';
+import type { BarberId, UserId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type {
+  EndMinute,
+  MinuteOfDay,
+} from '../primitives/minute-of-day.primitive';
 
 /**
  * The QUERY MIRRORS of an appointment (`appointment-document.ts:94-106`):
  * flat keys beside the seats so the indexed queries find the visit — "my
  * appointments" (`ownerUserId`), a client's whole history (`subjectUserIds`,
- * R33), a barber's book (`barberIds`) and the busy rebuild's reverse index
+ * R33 — `UserId` until the appointment flip (1) adds `subjectCustomerIds`,
+ * D29), a barber's book (`barberIds`) and the busy rebuild's reverse index
  * (`busyKeys`). The SEATS are the truth; a corrupt mirror can change which
  * queries find a visit, never what it says.
  */
@@ -27,40 +30,67 @@ export type AppointmentQueryKeys = {
   readonly busyKeys: readonly BusyKey[];
 };
 
-/** What the mirrors read of a seat — whose it is, whose chair, when it starts. */
-export type IndexedSeat = Pick<Seat, 'subject' | 'barberId' | 'startMs'>;
+/** What the mirrors read of a seat — whose it is and whose chair. */
+export type IndexedSeat = Pick<Seat, 'barberId'> & SeatOccupant;
+
+/**
+ * The envelope mirror — earliest sold start to latest sold end, both ends
+ * branded (a `MinuteRange` once the foundation flips its fields).
+ */
+export type AppointmentEnvelope = {
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
+};
+
+/** What the mirrors read of an appointment — its shop day and its seats. */
+export type IndexedAppointment = {
+  readonly localDate: LocalDate;
+  readonly seats: readonly IndexedSeat[];
+};
 
 function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** Earliest sold start and latest sold end of the seats, or `null` for none. */
+function spanOf(
+  seats: readonly Seat[],
+): { readonly start: MinuteOfDay; readonly end: EndMinute } | null {
+  const first = seats[0];
+  if (first === undefined) return null;
+  let start: MinuteOfDay = first.startMinutes;
+  let end: EndMinute = Seat.endMinutes(first);
+  for (let i = 1; i < seats.length; i++) {
+    const seat = seats[i] as Seat;
+    if (seat.startMinutes < start) start = seat.startMinutes;
+    const seatEnd = Seat.endMinutes(seat);
+    if (seatEnd > end) end = seatEnd;
+  }
+  return { start, end };
+}
+
 /**
  * AppointmentIndexSystem — the mirrors every write plan recomputes, and the
  * placement rule that rides beside them (R33). Used by every write plan and
- * by the seed; the busy key's day is zone math over the table, never `Intl`
- * or `new Date`, and `BusySystem.contributionsOf` passes the SAME table, so
- * the mirror and the projection name the same documents.
+ * by the seed. Zone-blind (Law 7.3): a busy key names the appointment's own
+ * shop day (`localDate`, one shop day per appointment — T7), so
+ * `BusySystem.contributionsOf` and the mirror name the same documents.
  */
 export const AppointmentIndexSystem = {
   /**
    * The four mirrors:
    *
-   * - `ownerUserId` — the first `self` seat's account (the booker); `null`
+   * - `ownerUserId` — the first `SELF` seat's account (the booker); `null`
    *   for a walk-in the shop entered itself;
    * - `subjectUserIds` — every ACCOUNT on the visit, distinct, sorted (the
    *   `busyKeys` precedent: one array mirror, one `array-contains` index);
    *   guests have no account and no history to find;
    * - `barberIds` — distinct, in seat order;
-   * - `busyKeys` — `BusyKey.of(barber, the SOLD start's local day)` per seat,
-   *   distinct, sorted: two seats with one barber on one day are one
-   *   projection document. A seat whose day the table does not cover names
-   *   no key — the caller builds the table around the visit
-   *   (`ZonedTimeSystem.dayTableAround`).
+   * - `busyKeys` — `BusyKey.of(barber, the appointment's shop day)` per
+   *   seat, distinct, sorted: two seats with one barber are one projection
+   *   document.
    */
-  queryKeys(
-    appointment: { readonly seats: readonly IndexedSeat[] },
-    days: readonly DayOffset[],
-  ): AppointmentQueryKeys {
+  queryKeys(appointment: IndexedAppointment): AppointmentQueryKeys {
     let ownerUserId: UserId | null = null;
     const subjects: UserId[] = [];
     const barberIds: BarberId[] = [];
@@ -68,22 +98,20 @@ export const AppointmentIndexSystem = {
     const seats = appointment.seats;
     for (let i = 0; i < seats.length; i++) {
       const seat = seats[i] as IndexedSeat;
-      const subject = seat.subject;
-      if (subject.kind === SeatSubjectKind.Account) {
+      if (seat.seatSubject === SeatSubject.Account) {
         if (
           ownerUserId === null &&
-          subject.relationship === SeatRelationship.Self
+          seat.subjectRelationship === SubjectRelationship.Self
         ) {
-          ownerUserId = subject.userId;
+          ownerUserId = seat.subjectUserId;
         }
-        if (!subjects.includes(subject.userId)) subjects.push(subject.userId);
+        if (!subjects.includes(seat.subjectUserId)) {
+          subjects.push(seat.subjectUserId);
+        }
       }
       if (!barberIds.includes(seat.barberId)) barberIds.push(seat.barberId);
-      const dayKey = ZonedTimeSystem.dayKeyOf(seat.startMs, days);
-      if (dayKey !== null) {
-        const key = BusyKey.of(seat.barberId, dayKey);
-        if (!busyKeys.includes(key)) busyKeys.push(key);
-      }
+      const key = BusyKey.of(seat.barberId, appointment.localDate);
+      if (!busyKeys.includes(key)) busyKeys.push(key);
     }
     subjects.sort(compareStrings);
     busyKeys.sort(compareStrings);
@@ -91,21 +119,17 @@ export const AppointmentIndexSystem = {
   },
 
   /**
-   * The envelope mirror — earliest sold start to latest sold end; `null`
-   * for a visit with no seats (which no write plan may produce).
+   * The envelope mirror — earliest sold start to latest sold end on the
+   * shop day's wall clock; `null` for a visit with no seats (which no write
+   * plan may produce).
    */
-  envelope(appointment: Pick<AppointmentEntity, 'seats'>): TimeInterval | null {
-    const seats = appointment.seats;
-    if (seats.length === 0) return null;
-    let startMs = Number.POSITIVE_INFINITY;
-    let endMs = Number.NEGATIVE_INFINITY;
-    for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i] as Seat;
-      if (seat.startMs < startMs) startMs = seat.startMs;
-      const end = Seat.endMs(seat);
-      if (end > endMs) endMs = end;
-    }
-    return TimeInterval.of(startMs, endMs);
+  envelope(
+    appointment: Pick<Appointment, 'seats'>,
+  ): AppointmentEnvelope | null {
+    const span = spanOf(appointment.seats);
+    return span === null
+      ? null
+      : { startMinutes: span.start, endMinutes: span.end };
   },
 
   /**
@@ -113,22 +137,21 @@ export const AppointmentIndexSystem = {
    * plan stores. `placement` (the COMMIT's own stamp) and `inferredPlacement`
    * (the backfill's reconstruction) ride through VERBATIM: no rewrite can
    * erase the inference, and none can promote it to a stamp. A visit with
-   * no seats keeps its stored envelope.
+   * no seats keeps its stored envelope. The envelope's `utcEpochMs` is the
+   * ingestion boundary's (it needs the location's zone) and rides through
+   * as given.
    */
-  withQueryKeys(
-    appointment: AppointmentEntity,
-    days: readonly DayOffset[],
-  ): AppointmentEntity {
-    const keys = AppointmentIndexSystem.queryKeys(appointment, days);
+  withQueryKeys(appointment: Appointment): Appointment {
+    const keys = AppointmentIndexSystem.queryKeys(appointment);
+    const span = spanOf(appointment.seats);
     return {
       ...appointment,
       ownerUserId: keys.ownerUserId,
       subjectUserIds: keys.subjectUserIds,
       barberIds: keys.barberIds,
       busyKeys: keys.busyKeys,
-      timeInterval:
-        AppointmentIndexSystem.envelope(appointment) ??
-        appointment.timeInterval,
+      startMinutes: span === null ? appointment.startMinutes : span.start,
+      endMinutes: span === null ? appointment.endMinutes : span.end,
     };
   },
 
@@ -139,8 +162,8 @@ export const AppointmentIndexSystem = {
    * recorded, not defaulted.
    */
   stampedPlacement(
-    appointment: Pick<AppointmentEntity, 'placement'>,
-  ): PlacementKind | null {
+    appointment: Pick<Appointment, 'placement'>,
+  ): Placement | null {
     return appointment.placement;
   },
 
@@ -148,11 +171,11 @@ export const AppointmentIndexSystem = {
    * Who most likely placed the booking, as the backfill reconstructed it
    * from the commit's audit row (§12.5.1) — read on its own, NEVER as the
    * stamp and never evidence about the seats (the old commit stored an
-   * omitted preference as `specific`). `null` when nothing was inferred.
+   * omitted preference as `SPECIFIC`). `null` when nothing was inferred.
    */
   inferPlacement(
-    appointment: Pick<AppointmentEntity, 'inferredPlacement'>,
-  ): PlacementKind | null {
+    appointment: Pick<Appointment, 'inferredPlacement'>,
+  ): Placement | null {
     return appointment.inferredPlacement;
   },
 } as const;

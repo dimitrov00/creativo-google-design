@@ -12,7 +12,7 @@ import { FirestoreNotificationWriter } from '../../adapters/firestore-notificati
 import { FirestoreWaitlistStore } from '../../adapters/firestore-waitlist-store';
 import { CryptoIdGenerator } from '../../adapters/crypto-id-generator';
 import { SystemClock } from '../../adapters/system-clock';
-import { WaitlistSystem } from '@creativo/ecs-core';
+import { UtcEpochMs, WaitlistSystem, defect } from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import { loadBookingPolicy } from './load-booking-policy';
 import { loadDayAvailability } from './load-day-availability';
@@ -86,10 +86,12 @@ export const matchWaitlistOnBusyChange = onDocumentWritten(
     const snapshot = await loadDayAvailability(db, day.value, zone);
 
     // How long a notification suppresses the next one for the same request
-    // (`WaitlistSystem.cooldownSinceMs`): one afternoon of rescheduling must
-    // not send the same person a dozen identical messages.
+    // (`WaitlistSystem.cooldownSinceUtcMs`): one afternoon of rescheduling
+    // must not send the same person a dozen identical messages.
+    const nowUtcMs = UtcEpochMs.of(now.toMillis());
+    if (!nowUtcMs.ok) defect('unreachable: the clock is an instant');
     const since = ZonedDateTime.fromMillis(
-      WaitlistSystem.cooldownSinceMs(now.toMillis()),
+      WaitlistSystem.cooldownSinceUtcMs(nowUtcMs.value),
       zone,
     );
 

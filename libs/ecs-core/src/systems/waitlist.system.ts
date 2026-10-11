@@ -1,36 +1,37 @@
 import { BookingPolicy } from '../components/booking-policy.data';
-import { BookingCart, type CartLine } from '../components/cart-line.data';
-import { DayKey } from '../components/day-key.data';
-import type { DayOffset } from '../components/day-offset.data';
+import {
+  BookingCart,
+  type CartLine,
+  type CartSeatLines,
+} from '../components/cart-line.data';
 import { DayWindows } from '../components/day-windows.data';
 import { FlexibleWhen } from '../components/flexible-when.data';
-import type { MinuteRange } from '../components/minute-range.data';
-import {
-  NotificationKind,
-  NotificationPayload,
-} from '../components/notification-payload.data';
+import { MinuteRange } from '../components/minute-range.data';
+import { NotificationPayload } from '../components/notification-payload.data';
 import { Result } from '../components/result.data';
 import {
   type SchedulingError,
   SchedulingErrorCode,
 } from '../components/scheduling-errors.data';
+import type { ShopNow } from '../components/shop-now.data';
+import { WaitlistError } from '../components/waitlist-errors.data';
 import {
-  WaitlistState,
+  WaitlistLifecycle,
   WaitlistStatus,
 } from '../components/waitlist-status.data';
-import { WaitlistError } from '../components/waitlist-errors.data';
 import { WriteOp } from '../components/write-op.data';
-import type { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
+import type { InboxNotification } from '../entities/notification.entity';
+import type { WaitlistRequest } from '../entities/waitlist-request.entity';
 import {
-  type NotificationEntity,
+  type BarberId,
+  LocationId,
   NotificationId,
-} from '../entities/notification.entity';
-import { UserId } from '../entities/user.entity';
-import type {
-  WaitlistRequestEntity,
-  WaitlistRequestId,
-} from '../entities/waitlist-request.entity';
+  type UserId,
+  type WaitlistRequestId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { Collections, Subcollections } from '../ports/collections';
 import {
   type AvailabilityAssignment,
@@ -48,21 +49,27 @@ const EMPTY_CART: string = SchedulingErrorCode.WaitlistEmptyCart;
 
 /** The commit's own field for a shop it does not serve (`CommitBookingShopUnavailableError.FIELD`). */
 const LOCATION_FIELD = 'locationId';
+/** The ask's field for a day that is no day. */
+const LOCAL_DATE_FIELD = 'localDate';
 
 /**
- * One day a request names, as the door receives it: its key not yet trusted,
- * its windows as wall-clock minutes (an unparseable span arrives as one that
- * fails the window rule below).
+ * One day a request names, as the door receives it — foreign input (the L3
+ * `…Input` escape): its day not yet trusted, its windows as raw wall-clock
+ * minutes `[startMinutes, endMinutes)` (an unparseable span arrives as one
+ * that fails the window rule below). A trusted `MinuteRange` passes as is.
  */
-export type WaitlistAskDay = {
-  readonly dayKey: string;
-  readonly windows: readonly MinuteRange[];
+export type WaitlistAskDayInput = {
+  readonly localDate: string;
+  readonly windows: readonly {
+    readonly startMinutes: number;
+    readonly endMinutes: number;
+  }[];
 };
 
-/** What a client asks the waitlist to watch: a shop (`null` = any), days, the bag. */
-export type WaitlistAsk = {
+/** What a client asks the waitlist to watch: a shop (`null` = any), days, the bag — foreign input. */
+export type WaitlistAskInput = {
   readonly locationId: string | null;
-  readonly days: readonly WaitlistAskDay[];
+  readonly days: readonly WaitlistAskDayInput[];
   readonly cart: BookingCart;
 };
 
@@ -70,9 +77,13 @@ export type WaitlistAsk = {
  * What the door knows besides the ask — every verdict a system cannot reach
  * on its own, precomputed by the pipeline:
  *
- * - `ownerUserId` — from the VERIFIED token, never the payload;
- * - `todayDayKey` / `horizonEndDayKey` — the shop's today and the policy's
- *   horizon (`BookingPolicy.horizonEndFrom`), as day keys of the zone;
+ * - `ownerUserId` — from the VERIFIED token, never the payload (an ACCOUNT,
+ *   D29: the request is told later through its inbox);
+ * - `now` — the shop's "now" (`ZonedTimeSystem.shopNow` at the boundary):
+ *   `now.localDate` is the shop's today, `now.utcEpochMs` stamps the
+ *   request;
+ * - `horizonEndLocalDate` — the policy's horizon
+ *   (`BookingPolicy.horizonEndFrom`);
  * - `shopListed` — the named shop is there and listed (`shopListed`, the
  *   waitlist's shop rule); ignored for an any-shop request;
  * - `admission` — the commit's own time-independent admission of the bag at
@@ -80,23 +91,26 @@ export type WaitlistAsk = {
  *   code.
  */
 export type WaitlistDoor = {
-  readonly ownerUserId: string | null;
-  readonly zone: string;
-  readonly nowMs: number;
-  readonly todayDayKey: DayKey;
-  readonly horizonEndDayKey: DayKey;
+  readonly ownerUserId: UserId | null;
+  readonly now: ShopNow;
+  readonly horizonEndLocalDate: LocalDate;
   readonly maxFlexibleDays: number;
   readonly shopListed: boolean;
-  readonly admission: { readonly code: string } | null;
+  readonly admission: { readonly errorCode: string } | null;
 };
 
-/** A decided request — the stored body; the pipeline names it (`wl_` + `hash(idBasis)`). */
-export type WaitlistRequestBody = Omit<WaitlistRequestEntity, 'id'>;
+/**
+ * A decided request — the stored body minus the two fields the boundary
+ * owns: the id it names it by (`wl_` + `hash(idBasis)`) and `utcEpochMs`,
+ * the first instant of `localDates[0]` in the location's zone
+ * (`ZonedTimeSystem.startOfLocalDay`, F-28 — a system never converts zones).
+ */
+export type WaitlistRequestBody = Omit<WaitlistRequest, 'id' | 'utcEpochMs'>;
 
 /**
- * What one freed day offers a request: the catalogue rows of its bag and
- * every barber rostered that day at a LISTED shop, busy already padded — the
- * grid's own read, shared by every request naming the day.
+ * What one freed shop day offers a request: the catalogue rows of its bag
+ * and every barber rostered that day at a LISTED shop, busy already padded —
+ * the grid's own read, shared by every request naming the day.
  */
 export type WaitlistDaySnapshot = {
   readonly services: readonly CartService[];
@@ -104,45 +118,44 @@ export type WaitlistDaySnapshot = {
 };
 
 /**
- * The matcher's context: now, the shop's today, the policy, and whether the
- * bag is still admissible against today's catalogue (`cartAdmissible`) —
- * catalogue drift since the request is never a promise.
+ * The matcher's context: the shop's now, the policy, and whether the bag is
+ * still admissible against today's catalogue (`cartAdmissible`) — catalogue
+ * drift since the request is never a promise.
  */
 export type WaitlistMatchContext = {
-  readonly nowMs: number;
-  readonly todayDayKey: DayKey;
+  readonly now: ShopNow;
   readonly policy: BookingPolicy;
   readonly admissible: boolean;
 };
 
 /**
  * Something opened up for a request (`match-waitlist.ts:24-52`): the ONE
- * shop the whole party is placed at, the envelope, the barbers and the
- * arrangement line by line — what a commit of this match is built from.
+ * shop the whole party is placed at, the envelope on the shop day, the
+ * barbers and the arrangement line by line — what a commit of this match is
+ * built from.
  */
 export type WaitlistMatch = {
   readonly requestId: WaitlistRequestId;
-  readonly dayKey: DayKey;
+  readonly localDate: LocalDate;
   readonly locationId: LocationId;
-  readonly startMs: number;
-  readonly endMs: number;
+  readonly startMinutes: MinuteOfDay;
+  readonly endMinutes: EndMinute;
   readonly barberIds: readonly BarberId[];
   readonly assignments: readonly AvailabilityAssignment[];
 };
 
 /**
- * The matcher's write, in ONE plan: the notification and the `matched`
+ * The matcher's write, in ONE plan: the notification and the `MATCHED`
  * transition land together or not at all (`match-waitlist.ts:192-202`).
  */
 export type WaitlistMatchPlan = {
-  readonly notification: NotificationEntity;
-  readonly status: WaitlistStatus;
+  readonly notification: InboxNotification;
+  readonly waitlist: WaitlistLifecycle;
   readonly writes: readonly WriteOp[];
 };
 
 /** How long a notification suppresses the next one for the same request. */
 const NOTIFY_COOLDOWN_HOURS = 6;
-const MS_PER_HOUR = 3_600_000;
 
 /**
  * Distinct services one allowed person may name before the cart is refused
@@ -150,14 +163,18 @@ const MS_PER_HOUR = 3_600_000;
  */
 const MAX_SERVICES_PER_PERSON = 8;
 
-function isWindow(range: MinuteRange): boolean {
-  return (
-    Number.isInteger(range.startMinutes) &&
-    Number.isInteger(range.endMinutes) &&
-    range.startMinutes >= 0 &&
-    range.startMinutes < range.endMinutes &&
-    range.endMinutes <= 1440
-  );
+/**
+ * A raw span as a span of the shop day — integers, `0 ≤ start < end ≤ 1440`
+ * — or `null` when it is no span at all.
+ */
+function windowOf(
+  raw: WaitlistAskDayInput['windows'][number],
+): MinuteRange | null {
+  const start = MinuteOfDay.of(raw.startMinutes);
+  const end = EndMinute.of(raw.endMinutes);
+  return start.ok && end.ok && start.value < end.value
+    ? MinuteRange.of(start.value, end.value)
+    : null;
 }
 
 /** A line every id of which is readable — the stored cart's own reading. */
@@ -170,13 +187,6 @@ function lineReadable(line: CartLine): boolean {
   );
 }
 
-/**
- * The waitlist (`apps/functions/src/use-cases/{decide-waitlist,match-waitlist}.ts`,
- * `lib/booking/{request-waitlist,match-waitlist}.ts`): the door that admits a
- * request, its deterministic id basis, the matcher that turns a freed day
- * into a promise, and the one write plan that keeps the notification and the
- * `matched` transition together. No `crypto`: the pipeline hashes the basis.
- */
 /** Minutes of the day → the zero-padded `'HH:mm'` face a stored window was written as. */
 function clockFace(minutes: number): string {
   const hours = Math.floor(minutes / 60);
@@ -184,6 +194,14 @@ function clockFace(minutes: number): string {
   return `${hours < 10 ? '0' : ''}${hours}:${rest < 10 ? '0' : ''}${rest}`;
 }
 
+/**
+ * The waitlist (`apps/functions/src/use-cases/{decide-waitlist,match-waitlist}.ts`,
+ * `lib/booking/{request-waitlist,match-waitlist}.ts`): the door that admits a
+ * request, its deterministic id basis, the matcher that turns a freed shop
+ * day into a promise, and the one write plan that keeps the notification and
+ * the `MATCHED` transition together. No `crypto`: the pipeline hashes the
+ * basis. Placement runs on the shop day's local minutes (Law 7.3).
+ */
 export const WaitlistSystem = {
   /** How long a notification suppresses the next one for the same request. */
   NOTIFY_COOLDOWN_HOURS,
@@ -194,23 +212,23 @@ export const WaitlistSystem = {
    * May a request be stored, and what storing it means
    * (`decideWaitlist`, `decide-waitlist.ts:91-186`), in the commit's order:
    *
-   * 1. nobody to notify — `booking.waitlist.unauthenticated`;
+   * 1. nobody to notify — `BOOKING_WAITLIST_UNAUTHENTICATED`;
    * 2. a named shop that is blank or not listed — `locationId`, before a
    *    single day or seat is looked at;
-   * 3. a day key that is no day — `dayKey`; a day behind today or past the
-   *    horizon is DROPPED, not refused (it stopped being bookable while the
-   *    client decided);
-   * 4. more usable days than the policy allows — `too_many_days`;
+   * 3. a day that is no day — `localDate`; a day behind the shop's today or
+   *    past the horizon is DROPPED, not refused (it stopped being bookable
+   *    while the client decided);
+   * 4. more usable days than the policy allows — `BOOKING_WAITLIST_TOO_MANY_DAYS`;
    * 5. a window that is no span of the day — `windows` (the rest are
    *    normalized: sorted, merged; a day named twice keeps its last entry);
-   * 6. no day left — `scheduling.waitlist.no_days`; no line at all —
-   *    `scheduling.waitlist.empty_cart`;
+   * 6. no day left — `SCHEDULING_WAITLIST_NO_DAYS`; no line at all —
+   *    `SCHEDULING_WAITLIST_EMPTY_CART`;
    * 7. a line that does not read, or a corrupt line counter — `cart`: a
    *    promise for part of the party is a broken one;
    * 8. the commit's own admission of the bag — its refusal code.
    */
   decide(
-    ask: WaitlistAsk,
+    ask: WaitlistAskInput,
     door: WaitlistDoor,
   ): Result<WaitlistRequestBody, WaitlistError> {
     if (door.ownerUserId === null || door.ownerUserId.trim().length === 0) {
@@ -223,15 +241,18 @@ export const WaitlistSystem = {
       return Result.err(WaitlistError.invalidRequest(LOCATION_FIELD));
     }
 
-    const usable: WaitlistAskDay[] = [];
+    const usable: WaitlistAskDayInput[] = [];
+    const usableDates: LocalDate[] = [];
     for (let i = 0; i < ask.days.length; i++) {
-      const day = ask.days[i] as WaitlistAskDay;
-      if (!DayKey.isValid(day.dayKey)) {
-        return Result.err(WaitlistError.invalidRequest('dayKey'));
+      const day = ask.days[i] as WaitlistAskDayInput;
+      const parsed = LocalDate.parse(day.localDate);
+      if (!parsed.ok) {
+        return Result.err(WaitlistError.invalidRequest(LOCAL_DATE_FIELD));
       }
-      if (day.dayKey < door.todayDayKey) continue;
-      if (door.horizonEndDayKey < day.dayKey) continue;
+      if (parsed.value < door.now.localDate) continue;
+      if (door.horizonEndLocalDate < parsed.value) continue;
       usable.push(day);
+      usableDates.push(parsed.value);
     }
     if (usable.length > door.maxFlexibleDays) {
       return Result.err(WaitlistError.tooManyDays(door.maxFlexibleDays));
@@ -239,13 +260,18 @@ export const WaitlistSystem = {
 
     const days: DayWindows[] = [];
     for (let i = 0; i < usable.length; i++) {
-      const day = usable[i] as WaitlistAskDay;
+      const day = usable[i] as WaitlistAskDayInput;
+      const windows: MinuteRange[] = [];
       for (let w = 0; w < day.windows.length; w++) {
-        if (!isWindow(day.windows[w] as MinuteRange)) {
+        const window = windowOf(
+          day.windows[w] as WaitlistAskDayInput['windows'][number],
+        );
+        if (window === null) {
           return Result.err(WaitlistError.invalidRequest('windows'));
         }
+        windows.push(window);
       }
-      days.push(DayWindows.of(DayKey.of(day.dayKey), day.windows));
+      days.push(DayWindows.of(usableDates[i] as LocalDate, windows));
     }
     const when = FlexibleWhen.of(days);
     if (FlexibleWhen.isEmpty(when))
@@ -254,12 +280,12 @@ export const WaitlistSystem = {
     if (BookingCart.lineCount(ask.cart) === 0) {
       return Result.err(WaitlistError.invalidRequest(EMPTY_CART));
     }
-    const sequence = ask.cart.nextSequence;
+    const sequence = ask.cart.cartNextSequence;
     if (!Number.isInteger(sequence) || sequence < 0) {
       return Result.err(WaitlistError.invalidRequest('cart'));
     }
-    for (let s = 0; s < ask.cart.seats.length; s++) {
-      const lines = (ask.cart.seats[s] as BookingCart.SeatLines).lines;
+    for (let s = 0; s < ask.cart.cartSeats.length; s++) {
+      const lines = (ask.cart.cartSeats[s] as CartSeatLines).lines;
       for (let k = 0; k < lines.length; k++) {
         if (!lineReadable(lines[k] as CartLine)) {
           return Result.err(WaitlistError.invalidRequest('cart'));
@@ -267,19 +293,19 @@ export const WaitlistSystem = {
       }
     }
     if (door.admission !== null) {
-      return Result.err(WaitlistError.invalidRequest(door.admission.code));
+      return Result.err(WaitlistError.invalidRequest(door.admission.errorCode));
     }
 
     return Result.ok({
-      ownerUserId: UserId.of(door.ownerUserId),
+      ownerUserId: door.ownerUserId,
       locationId:
         ask.locationId === null ? null : LocationId.of(ask.locationId),
-      zone: door.zone,
-      cart: ask.cart,
-      when,
-      dayKeys: FlexibleWhen.dayKeys(when),
-      status: WaitlistStatus.open(door.nowMs),
-      createdAtMs: door.nowMs,
+      cartSeats: ask.cart.cartSeats,
+      cartNextSequence: ask.cart.cartNextSequence,
+      flexibleDays: when.flexibleDays,
+      localDates: FlexibleWhen.localDates(when),
+      ...WaitlistLifecycle.open(door.now.utcEpochMs),
+      createdAtUtcMs: door.now.utcEpochMs,
     });
   },
 
@@ -290,22 +316,31 @@ export const WaitlistSystem = {
    * id and a duplicate is one atomic create refusal. The pipeline mints
    * `wl_` + the first 40 hex of `hash(basis)`.
    */
-  idBasis(body: WaitlistRequestBody): string {
+  idBasis(
+    body: Pick<
+      WaitlistRequest,
+      | 'ownerUserId'
+      | 'locationId'
+      | 'flexibleDays'
+      | 'cartSeats'
+      | 'cartNextSequence'
+    >,
+  ): string {
     // THE WIRE SHAPE THE ID WAS ALWAYS HASHED FROM, key for key and in that
     // order (`request-waitlist.ts` at P0: the request's legacy props) —
-    // windows as `'HH:mm'` faces, lines as `{ id, serviceId, variantId,
-    // barberId }`. Serialising the structs instead would rename every
-    // stored request: a re-sent ask would get a new `wl_` id, slip past the
-    // duplicate refusal and be notified twice.
+    // `dayKey` days, windows as `'HH:mm'` faces, lines as `{ id, serviceId,
+    // variantId, barberId }`. Serialising the structs instead would rename
+    // every stored request: a re-sent ask would get a new `wl_` id, slip
+    // past the duplicate refusal and be notified twice.
     const days: {
-      readonly dayKey: DayKey;
+      readonly dayKey: string;
       readonly windows: readonly {
         readonly from: string;
         readonly to: string;
       }[];
     }[] = [];
-    for (let d = 0; d < body.when.days.length; d++) {
-      const day = body.when.days[d] as DayWindows;
+    for (let d = 0; d < body.flexibleDays.length; d++) {
+      const day = body.flexibleDays[d] as DayWindows;
       const windows: { readonly from: string; readonly to: string }[] = [];
       for (let w = 0; w < day.windows.length; w++) {
         const window = day.windows[w] as MinuteRange;
@@ -314,7 +349,7 @@ export const WaitlistSystem = {
           to: clockFace(window.endMinutes),
         });
       }
-      days.push({ dayKey: day.dayKey, windows });
+      days.push({ dayKey: day.localDate, windows });
     }
     const seats: {
       readonly seatKey: string;
@@ -325,8 +360,8 @@ export const WaitlistSystem = {
         readonly barberId: string | null;
       }[];
     }[] = [];
-    for (let s = 0; s < body.cart.seats.length; s++) {
-      const seat = body.cart.seats[s] as BookingCart.SeatLines;
+    for (let s = 0; s < body.cartSeats.length; s++) {
+      const seat = body.cartSeats[s] as CartSeatLines;
       const lines: {
         readonly id: string;
         readonly serviceId: string;
@@ -348,7 +383,7 @@ export const WaitlistSystem = {
       owner: body.ownerUserId,
       locationId: body.locationId,
       when: { days },
-      cart: { seats, nextSequence: body.cart.nextSequence },
+      cart: { seats, nextSequence: body.cartNextSequence },
     });
   },
 
@@ -359,10 +394,10 @@ export const WaitlistSystem = {
    * services per allowed person — both refused without a read.
    */
   withinReadBounds(cart: BookingCart, maxPartySize: number): boolean {
-    if (cart.seats.length > maxPartySize) return false;
+    if (cart.cartSeats.length > maxPartySize) return false;
     const distinct: string[] = [];
-    for (let s = 0; s < cart.seats.length; s++) {
-      const lines = (cart.seats[s] as BookingCart.SeatLines).lines;
+    for (let s = 0; s < cart.cartSeats.length; s++) {
+      const lines = (cart.cartSeats[s] as CartSeatLines).lines;
       for (let k = 0; k < lines.length; k++) {
         const serviceId = (lines[k] as CartLine).serviceId;
         if (!distinct.includes(serviceId)) distinct.push(serviceId);
@@ -374,20 +409,24 @@ export const WaitlistSystem = {
   /**
    * Has every day the request named gone by (`hasLapsedBy`,
    * `waitlist-request.ts:177-180`)? Derived from its own content — a stored
-   * expiry would be a second copy that could disagree.
+   * expiry would be a second copy that could disagree. `today` is the shop's
+   * (`ShopNow.localDate`).
    */
-  hasLapsed(when: FlexibleWhen, todayDayKey: DayKey): boolean {
-    const last = FlexibleWhen.lastDayKey(when);
-    return last !== null && last < todayDayKey;
-  },
-
-  /** From when a sent notification still suppresses the next one for its request. */
-  cooldownSinceMs(nowMs: number): number {
-    return nowMs - NOTIFY_COOLDOWN_HOURS * MS_PER_HOUR;
+  hasLapsed(when: FlexibleWhen, today: LocalDate): boolean {
+    const last = FlexibleWhen.lastLocalDate(when);
+    return last !== null && last < today;
   },
 
   /**
-   * Does anything on this day now fit what the request asked for
+   * From when a sent notification still suppresses the next one for its
+   * request — a cooldown measured in elapsed real time on the stamps (T2).
+   */
+  cooldownSinceUtcMs(nowUtcMs: UtcEpochMs): UtcEpochMs {
+    return UtcEpochMs.plusHours(nowUtcMs, -NOTIFY_COOLDOWN_HOURS);
+  },
+
+  /**
+   * Does anything on this shop day now fit what the request asked for
    * (`matchWaitlist`, `match-waitlist.ts:110-202`)? A notification is a
    * PROMISE, so this is the grid's own question
    * ({@link BookingCartSystem.optionsForDay}) with the request's declared
@@ -398,22 +437,26 @@ export const WaitlistSystem = {
    * - a bag the catalogue no longer admits (`ctx.admissible`) — none;
    * - the shop it named narrows the pool to that shop's windows
    *   (`RosterSystem.windowsAt`); a barber with none there is not in it;
-   * - the lead-time floor (`AvailabilitySystem.leadFloorMs`);
+   * - the lead-time floor (`AvailabilitySystem.leadFloor`, on the shop's
+   *   clock);
    * - ONE match: each shop's search stops at the first arrangement, and the
    *   earliest across shops is the one named.
    *
    * `null` is the overwhelmingly common answer.
    */
   match(
-    request: Pick<WaitlistRequestEntity, 'id' | 'locationId' | 'cart' | 'when'>,
-    day: DayOffset,
+    request: Pick<
+      WaitlistRequest,
+      'id' | 'locationId' | 'cartSeats' | 'cartNextSequence' | 'flexibleDays'
+    >,
+    localDate: LocalDate,
     snapshot: WaitlistDaySnapshot,
     ctx: WaitlistMatchContext,
   ): WaitlistMatch | null {
-    const declared = FlexibleWhen.windowsFor(request.when, day.dayKey);
+    const declared = FlexibleWhen.windowsFor(request, localDate);
     if (declared === null) return null;
     if (
-      BookingPolicy.horizonEndFrom(ctx.policy, ctx.todayDayKey) < day.dayKey
+      BookingPolicy.horizonEndFrom(ctx.policy, ctx.now.localDate) < localDate
     ) {
       return null;
     }
@@ -438,18 +481,18 @@ export const WaitlistSystem = {
     }
     if (barbers.length === 0) return null;
 
-    const withinMs = AvailabilitySystem.withinMsOf(declared, [day]);
-    if (withinMs.length === 0) return null;
+    const within = AvailabilitySystem.withinOf(declared);
+    if (within.length === 0) return null;
 
     const options = BookingCartSystem.optionsForDay({
-      cart: request.cart,
+      cart: request,
       services: snapshot.services,
       riders: [],
       barbers,
-      day,
+      localDate,
       policy: ctx.policy,
-      notBeforeMs: AvailabilitySystem.leadFloorMs(ctx.nowMs, ctx.policy),
-      withinMs,
+      notBefore: AvailabilitySystem.leadFloor(ctx.now, ctx.policy, localDate),
+      within,
       budget: {
         nodeBudget: AvailabilitySystem.DEFAULT_BUDGET.nodeBudget,
         maxOptions: 1,
@@ -466,10 +509,10 @@ export const WaitlistSystem = {
     }
     return {
       requestId: request.id,
-      dayKey: day.dayKey,
+      localDate,
       locationId: first.locationId,
-      startMs: first.option.envelope.startMs,
-      endMs: first.option.envelope.endMs,
+      startMinutes: first.option.startMinutes,
+      endMinutes: first.option.endMinutes,
       barberIds,
       assignments: first.option.assignments,
     };
@@ -478,41 +521,39 @@ export const WaitlistSystem = {
   /**
    * The matcher's write for a match, in ONE plan
    * (`match-waitlist.ts:192-202`): the notification — FACTS, never words
-   * (§9 D20): the request, the freed start and the shop's zone, worded by
-   * the inbox in the reader's locale — created under the owner, and the
-   * request moved to `matched` at `nowMs`. Refused when the request can no
-   * longer be matched (`scheduling.waitlist.invalid_transition`), so a
-   * terminal request is never told anything.
+   * (§9 D20): the request and the freed start on the shop's clock, worded by
+   * the inbox in the reader's locale — created under the owner's ACCOUNT,
+   * and the request moved to `MATCHED`, both stamped with `now.utcEpochMs`.
+   * Refused when the request can no longer be matched
+   * (`SCHEDULING_WAITLIST_INVALID_TRANSITION`), so a terminal request is
+   * never told anything.
    */
   planMatch(
-    request: WaitlistRequestEntity,
+    request: WaitlistRequest,
     match: WaitlistMatch,
-    nowMs: number,
+    now: ShopNow,
     nextId: () => string,
   ): Result<WaitlistMatchPlan, SchedulingError> {
-    const status = WaitlistStatus.transition(
-      request.status,
-      WaitlistState.Matched,
-      nowMs,
+    const waitlist = WaitlistLifecycle.transition(
+      request,
+      WaitlistStatus.Matched,
+      now.utcEpochMs,
     );
-    if (!status.ok) return status;
-    const notification: NotificationEntity = {
+    if (!waitlist.ok) return waitlist;
+    const notification: InboxNotification = {
       id: NotificationId.of(nextId()),
-      kind: NotificationKind.WaitlistMatch,
-      requestId: request.id,
-      dayKey: match.dayKey,
-      payload: NotificationPayload.waitlistMatch(
+      sentAtUtcMs: now.utcEpochMs,
+      readAtUtcMs: null,
+      ...NotificationPayload.waitlistMatch(
         request.id,
-        match.startMs,
-        request.zone,
+        match.localDate,
+        match.startMinutes,
       ),
-      sentAtMs: nowMs,
-      readAtMs: null,
     };
     const { id, ...body } = notification;
     return Result.ok({
       notification,
-      status: status.value,
+      waitlist: waitlist.value,
       writes: [
         WriteOp.create(
           [
@@ -524,7 +565,8 @@ export const WaitlistSystem = {
           body,
         ),
         WriteOp.update([Collections.WaitlistRequests, request.id], {
-          status: status.value,
+          waitlistStatus: waitlist.value.waitlistStatus,
+          waitlistStatusAtUtcMs: waitlist.value.waitlistStatusAtUtcMs,
         }),
       ],
     });

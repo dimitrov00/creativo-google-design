@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { SeatIdPair, StoodSeatPairs } from './seat-id-pair.data';
-import { SeatId } from './seat.data';
+import { SeatId } from '../primitives/ids.primitive';
 
 const A = SeatId.of('seat-a');
 const B = SeatId.of('seat-b');
@@ -60,18 +60,21 @@ describe('SeatIdPair', () => {
 });
 
 describe('StoodSeatPairs — the undo window', () => {
-  it('remembers nothing when a save broke nothing — an empty memory is no field', () => {
-    expect(StoodSeatPairs.remember(3, [])).toBeNull();
-    expect(
-      StoodSeatPairs.remember(3, [{ seatId: A, otherSeatId: A }]),
-    ).toBeNull();
+  it('remembers nothing when a save broke nothing — no revision, no pairs', () => {
+    expect(StoodSeatPairs.remember(3, [])).toEqual({
+      stoodSeatPairsRevision: null,
+      stoodSeatPairs: [],
+    });
+    expect(StoodSeatPairs.remember(3, [{ seatId: A, otherSeatId: A }])).toBe(
+      StoodSeatPairs.NONE,
+    );
   });
 
   it('remembers the canonical pairs under the revision the save stamped', () => {
     expect(StoodSeatPairs.remember(3, [{ seatId: B, otherSeatId: A }])).toEqual(
       {
-        revision: 3,
-        pairs: [{ seatId: A, otherSeatId: B }],
+        stoodSeatPairsRevision: 3,
+        stoodSeatPairs: [{ seatId: A, otherSeatId: B }],
       },
     );
   });
@@ -83,6 +86,6 @@ describe('StoodSeatPairs — the undo window', () => {
     ]);
     // The next revision-stamping write (a staff edit, a client move) closes it.
     expect(StoodSeatPairs.liveAt(memory, 4)).toEqual([]);
-    expect(StoodSeatPairs.liveAt(null, 3)).toEqual([]);
+    expect(StoodSeatPairs.liveAt(StoodSeatPairs.NONE, 3)).toEqual([]);
   });
 });

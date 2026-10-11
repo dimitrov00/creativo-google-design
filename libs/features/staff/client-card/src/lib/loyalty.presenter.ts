@@ -5,7 +5,13 @@ import {
   type StreakState,
   sofiaDayOf,
 } from '@creativo/application/engagement';
-import { DayKey, type GrantTicketRef, RewardSystem } from '@creativo/ecs-core';
+import {
+  CouponGrantId,
+  type GrantTicketRef,
+  LocalDate,
+  RewardSystem,
+  defect,
+} from '@creativo/ecs-core';
 import type { ClientCardGrant } from './client-card.contracts';
 import { dayLong, dayShort, daysBetweenDays } from './client-card.format';
 import type { RewardReadyVm, Slice } from './client-pages.vm';
@@ -184,19 +190,11 @@ export function offered(
   return RewardSystem.offered(
     catalog.rewards.map((reward) => ({
       enabled: reward.enabled,
-      available: {
-        from:
-          reward.available.from === null
-            ? null
-            : DayKey.of(reward.available.from),
-        until:
-          reward.available.until === null
-            ? null
-            : DayKey.of(reward.available.until),
-      },
+      availableUntil:
+        reward.available.until === null ? null : dayOf(reward.available.until),
       source: reward,
     })),
-    DayKey.of(today),
+    dayOf(today),
   ).map((ref) => ref.source);
 }
 
@@ -244,6 +242,12 @@ export function sliceMap<T, U>(
 
 // ── The bridge: the card's grant → ecs-core struct (Phase 4 deletes it) ──
 
+/** A shop day the card holds: a guarded document day, a clock's «today». */
+function dayOf(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
 /**
  * A held grant as `RewardSystem.groupGrants` reads it: identical grants —
  * the same coupon, worded the same — share a key, and the grant rides along.
@@ -252,9 +256,9 @@ function ticketRefOf(grant: ClientCardGrant): GrantTicketRef & {
   readonly source: ClientCardGrant;
 } {
   return {
-    grantId: grant.grantId,
+    grantId: CouponGrantId.of(grant.grantId),
     groupKey: `${grant.title}\u0000${grant.valueLabel ?? ''}`,
-    expiresOn: grant.expiresOn === null ? null : DayKey.of(grant.expiresOn),
+    expiresOn: grant.expiresOn === null ? null : dayOf(grant.expiresOn),
     source: grant,
   };
 }

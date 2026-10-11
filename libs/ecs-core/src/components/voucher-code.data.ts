@@ -1,3 +1,4 @@
+import type { Brand } from '../primitives/brand';
 import { EngagementError } from './engagement-errors.data';
 import { Result } from './result.data';
 
@@ -13,7 +14,7 @@ const PATTERN = /^[A-Za-z0-9_-]+$/;
  * trimmed and upper-cased first (`normalize`), so `coupons.code` and
  * `giftVouchers.code` are stored upper-case.
  */
-export type VoucherCode = string & { readonly __brand: unique symbol };
+export type VoucherCode = Brand<string, 'VoucherCode'>;
 
 export const VoucherCode = {
   /** The only cast site. Validate untrusted text with `parse` / `parseTyped` first. */

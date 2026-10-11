@@ -1,14 +1,16 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { deepFreeze } from '../testing';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { deepFreeze, unwrapOk } from '../testing';
 import { WorkBudgetSystem } from './work-budget.system';
 
 /*
  * The cases of apps/functions/src/lib/ops/work-budget.spec.ts, copied (the
  * legacy spec keeps running against its shim). `timeBudget` is re-targeted
- * to `isSpent` over a clock the case reads itself, and `walkWithin` to the
- * pure chunk steps it is built from, driven by `walk` below exactly as the
- * shim drives them — the awaiting stays with the caller.
+ * to `isSpent` over a clock the case reads itself — instants as
+ * `UtcEpochMs` (flatten-spec T2) — and `walkWithin` to the pure chunk steps
+ * it is built from, driven by `walk` below exactly as the shim drives them —
+ * the awaiting stays with the caller.
  */
 
 const {
@@ -18,16 +20,22 @@ const {
   isSpent,
 } = WorkBudgetSystem;
 
+/** An instant literal in epoch ms. */
+const at = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
+
 /** A clock that reads `step` ms later every time it is read — a slow run, instantly. */
-function slowClock(step: number): () => number {
+function slowClock(step: number): () => UtcEpochMs {
   let now = 1_000_000;
-  return () => (now += step);
+  return () => at((now += step));
 }
 
 /** A budget of `limitMs` from the clock's first read — `timeBudget`, over `isSpent`. */
-function budgetOn(clockMs: () => number, limitMs: number): () => boolean {
-  const startedMs = clockMs();
-  return () => isSpent(startedMs, clockMs(), limitMs);
+function budgetOn(
+  clockUtcMs: () => UtcEpochMs,
+  limitMs: number,
+): () => boolean {
+  const startedAtUtcMs = clockUtcMs();
+  return () => isSpent(startedAtUtcMs, clockUtcMs(), limitMs);
 }
 
 /** The walk the shim's `walkWithin` runs, synchronously, over the system's steps. */
@@ -87,7 +95,7 @@ describe('callableBudgetMs', () => {
 describe('isSpent (timeBudget)', () => {
   it('is spent once the injected clock has moved past the limit', () => {
     let now = 0;
-    const spent = budgetOn(() => now, 1_000);
+    const spent = budgetOn(() => at(now), 1_000);
     expect(spent()).toBe(false);
     now = 999;
     expect(spent()).toBe(false);
@@ -181,6 +189,7 @@ describe('purity', () => {
     expect(twice).toEqual(once);
     expect(items).toEqual([1, 2, 3, 4, 5]);
     expect(callableBudgetMs(540, 70)).toBe(callableBudgetMs(540, 70));
-    expect(isSpent(0, 10, 5)).toBe(isSpent(0, 10, 5));
+    expect(isSpent(at(0), at(10), 5)).toBe(isSpent(at(0), at(10), 5));
+    expect(isSpent(at(0), at(10), 5)).toBe(true);
   });
 });

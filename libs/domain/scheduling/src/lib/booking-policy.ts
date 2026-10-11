@@ -2,6 +2,7 @@ import { Result, fail, ok } from '@creativo/domain/kernel';
 import { CalendarDay } from './calendar-day';
 import { InvalidBookingPolicyError } from './booking-policy.errors';
 import { CancellationWindow } from './cancellation-window';
+import { defect } from '@creativo/ecs-core';
 
 export interface BookingPolicyProps {
   /** People per booking, the booker included. */
@@ -162,7 +163,7 @@ export class BookingPolicy {
       // in `pending` — the model was.
       autoConfirm: true,
     });
-    if (result.isFailure()) throw new Error('unreachable: defaults are valid');
+    if (result.isFailure()) defect('unreachable: defaults are valid');
     BookingPolicy._default = result.value;
     return result.value;
   }

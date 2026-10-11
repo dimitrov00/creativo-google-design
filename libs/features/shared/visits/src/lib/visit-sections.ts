@@ -1,5 +1,11 @@
 import { ZonedDateTime } from '@creativo/application/booking';
-import { DayKey, VisitListSystem } from '@creativo/ecs-core';
+import {
+  LocalDate,
+  type MinuteOfDay,
+  VisitListSystem,
+  defect,
+} from '@creativo/ecs-core';
+import { VISIT_GRAIN_OF, filterRowOf, wallTimeOf } from './visit-ecs.shim';
 import type { VisitGrain, VisitRowVm, VisitSectionVm } from './visit-row.vm';
 
 /*
@@ -19,7 +25,10 @@ import type { VisitGrain, VisitRowVm, VisitSectionVm } from './visit-row.vm';
  *
  * Phase 2 shim: the sectioning, the section key and the worked figure are
  * `VisitListSystem` in `@creativo/ecs-core`; the headings' words, the
- * figure's word and the test ids stay here.
+ * figure's word and the test ids stay here. Flatten pass: the system orders
+ * a row by its shop day and minute (`localDate` + `startMinutes`, Law 7), so
+ * a row's start instant is read on the shop's calendar at this boundary, and
+ * the legacy grain word becomes the system's tag (`visit-ecs.shim.ts`).
  */
 
 /** The upcoming run's key — not a date, so it can never collide with one. */
@@ -68,7 +77,7 @@ export function workedVisitsDetail(
   atLeast = 2,
 ): (rows: readonly VisitRowVm[]) => string | null {
   return (rows) => {
-    const worked = VisitListSystem.workedFigure(rows, atLeast);
+    const worked = VisitListSystem.workedFigure(rows.map(filterRowOf), atLeast);
     return worked === null ? null : word(worked);
   };
 }
@@ -82,7 +91,9 @@ export function visitSectionKey(
   start: ZonedDateTime,
   grain: VisitGrain,
 ): string {
-  return VisitListSystem.sectionKeyOf(DayKey.of(start.toISODate()), grain);
+  const day = LocalDate.parse(start.toISODate());
+  if (!day.ok) defect('unreachable: an instant’s calendar day');
+  return VisitListSystem.sectionKeyOf(day.value, VISIT_GRAIN_OF[grain]);
 }
 
 /**
@@ -128,21 +139,45 @@ export function sectionVisits(
   options: VisitSectionOptions,
 ): readonly VisitSectionVm[] {
   const prefix = options.testIdPrefix ?? 'visits';
-  return VisitListSystem.sections(rows, options.grain).map((section) =>
-    section.upcoming
+  return VisitListSystem.sections(
+    rows.map(toSectionRow),
+    VISIT_GRAIN_OF[options.grain],
+  ).map((section) => {
+    const sectionRows = section.rows.map((entry) => entry.row);
+    return section.upcoming
       ? {
           key: section.key,
           label: options.labels.upcoming,
           detail: null,
-          rows: section.rows,
+          rows: sectionRows,
           testId: `${prefix}-${UPCOMING_SECTION_KEY}`,
         }
       : {
           key: section.key,
           label: options.labels.section(section.key),
-          detail: options.labels.detail?.(section.rows) ?? null,
-          rows: section.rows,
+          detail: options.labels.detail?.(sectionRows) ?? null,
+          rows: sectionRows,
           testId: `${prefix}-${options.grain}-${section.key}`,
-        },
-  );
+        };
+  });
+}
+
+/** A row as the system sections it: its start on the shop's wall clock, and the row itself. */
+function toSectionRow(row: VisitRowVm): {
+  readonly id: string;
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
+  readonly sectionKey: string;
+  readonly upcoming: boolean;
+  readonly row: VisitRowVm;
+} {
+  const start = wallTimeOf(row.startMs);
+  return {
+    id: row.id,
+    localDate: start.localDate,
+    startMinutes: start.minute,
+    sectionKey: row.sectionKey,
+    upcoming: row.upcoming,
+    row,
+  };
 }

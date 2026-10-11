@@ -2,45 +2,79 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { BarberPreference } from '../components/barber-pref.data';
+import {
+  BookingError,
+  BookingErrorField,
+  ShopUnavailableReason,
+} from '../components/booking-errors.data';
+import { BookingStatus } from '../components/booking-lifecycle.data';
 import { BookingPolicy } from '../components/booking-policy.data';
-import { BusyKey } from '../components/busy-key.data';
-import { DayKey } from '../components/day-key.data';
-import { DayOffset } from '../components/day-offset.data';
-import { ExceptionEffect } from '../components/exception-effect.data';
+import { ExceptionEffectRule } from '../components/exception-effect.data';
+import { MinuteRange } from '../components/minute-range.data';
 import { DayHours } from '../components/opening-hours.data';
-import { PlacementPolicy } from '../components/placement-policy.data';
+import { Placement } from '../components/placement-kind.data';
+import {
+  PlacementPolicy,
+  type StaffTermsOverride,
+} from '../components/placement-policy.data';
 import type { Result } from '../components/result.data';
 import {
   type ScheduleVersion,
   ShiftSegment,
 } from '../components/schedule-version.data';
-import { Seat, SeatSubjectKind } from '../components/seat.data';
-import {
-  ServiceTerms,
-  ServiceVariantId,
-} from '../components/service-terms.data';
-import { TimeInterval } from '../components/time-interval.data';
+import { type Seat, SeatSubject } from '../components/seat.data';
+import type { ShopNow } from '../components/shop-now.data';
 import { Weekday } from '../components/weekday.data';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { type ServiceEntity, ServiceId } from '../entities/service.entity';
-import { dayTableFixture, deepFreeze, serviceFixture } from '../testing';
+import type { Service } from '../entities/service.entity';
+import { BusyKey } from '../primitives/busy-key.primitive';
+import { Currency } from '../primitives/currency.primitive';
+import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
+import {
+  BarberId,
+  LocationId,
+  SeatId,
+  SeatKeyText,
+  ServiceId,
+  ServiceVariantId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { EndMinute, MinuteOfDay } from '../primitives/minute-of-day.primitive';
+import type { PriceCents } from '../primitives/price-cents.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  FIXTURE_TIME_ZONE,
+  deepFreeze,
+  localDate,
+  unwrapOk,
+  utcMs,
+} from '../testing';
+import {
+  at,
+  cents,
+  duration,
+  minuteCount,
+  serviceFixture,
+  termsFixture,
+  until,
+} from '../testing/booking-core.fixtures';
 import type { ChairTime } from './availability.system';
 import {
   type BookingDecision,
   BookingDecisionSystem,
   type BookingSnapshot,
-  type DecideBookingRequest,
+  type BusyWrite,
+  type DecideBookingContext,
+  type DecideBookingInput,
   type DecisionSchedule,
-  type RequestedSeat,
   type DecisionStandingSeat,
+  type RequestedSeatInput,
 } from './booking-decision.system';
-import type { RequestedSubject } from './guest-label.system';
 import {
-  BookingCommitError,
-  BookingCommitField,
-  ShopUnavailableReason,
-} from '../components/booking-commit-errors.data';
+  type RequestedSubjectInput,
+  RequestedSubjectRole,
+} from './guest-label.system';
 import { PhoneSystem } from './phone.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -48,27 +82,34 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * The 56 cases of apps/functions/src/use-cases/decide-booking.spec.ts,
  * COPIED (never moved) — the legacy spec keeps running against the shim
  * until `use-cases/*` dies in the booking-core flip. Re-targeted: the
- * legacy aggregates are plain structs (`ServiceEntity`, `ScheduleVersion`,
- * the snapshot's arrays), `isSuccess(r)` is `r.ok`, a legacy error class is
- * its `{ code, field }` struct, and `deps` is the policy, the placement
+ * legacy aggregates are plain structs (`Service`, `ScheduleVersion`, the
+ * snapshot's arrays), `isSuccess(r)` is `r.ok`, a legacy error class is its
+ * `{ errorCode, field }` struct, and `deps` is the policy, the placement
  * policy, the release and the context the system takes as parameters.
+ *
+ * Flattened (Law 7.3): every seat is on the request's ONE shop day
+ * (`localDate`, T7) at a wall-clock `startMinutes`, "now" is a `ShopNow`,
+ * and the one instant the decision stamps — the envelope's `utcEpochMs` —
+ * is the edge's, computed here as the callable edge does (`toUtc` of the
+ * earliest start in the shop's zone).
  */
 
-const ZONE = 'Europe/Sofia';
-const OWNER = 'user-1';
+const ZONE = FIXTURE_TIME_ZONE;
+const OWNER = UserId.of('user-1');
 const CENTER = LocationId.of('loc-center');
 
-/** Late July to the end of November: today, every seat and the horizon. */
-const DAYS = dayTableFixture('2026-07-25', '2026-11-30', ZONE);
 /** 2026-08-03 is a Monday in Sofia — the fixture roster works Mondays. */
-const AUG_3 = DayOffset.find(DayKey.of('2026-08-03'), DAYS) as DayOffset;
+const AUG_3 = localDate('2026-08-03');
 
-function at(hour: number, minute = 0): number {
-  return ZonedTimeSystem.instantOf(AUG_3, hour * 60 + minute);
+/** The shop's "now" on 2026-08-03 at `hh:mm`. */
+function nowAt(hour: number, minute = 0): ShopNow {
+  return ZonedTimeSystem.shopNow(
+    unwrapOk(ZonedTimeSystem.toUtc(AUG_3, at(hour, minute), ZONE)),
+    ZONE,
+  );
 }
-const plusMinutes = (ms: number, minutes: number) => ms + minutes * 60_000;
 
-const OPEN_9_20 = DayHours.open(9 * 60, 20 * 60);
+const OPEN_9_20 = DayHours.open(at(9), until(20));
 /** Mon..Sun — open every day but Sunday. */
 const SHOP_HOURS = [
   OPEN_9_20,
@@ -91,39 +132,29 @@ function fadeService(
       name: { bg: string; en: string };
     }[];
   } = {},
-): ServiceEntity {
+): Service {
   return serviceFixture({
     id: ServiceId.of('svc-fade'),
-    baseTerms: ServiceTerms.unpadded(4000, 'EUR', 60),
+    ...termsFixture(4000, 60),
     locationIds: (overrides.locationIds ?? ['loc-center']).map(LocationId.of),
     conflictsWith: (overrides.conflictsWith ?? []).map(ServiceId.of),
     variants: (overrides.variants ?? []).map((variant) => ({
-      id: ServiceVariantId.of(variant.id),
+      variantId: ServiceVariantId.of(variant.id),
       name: variant.name,
     })),
     offerings: [
-      {
-        barberId: ivan,
-        base: ServiceTerms.of(4500, 'EUR', 30, 0, 10),
-        overrides: [],
-      },
+      { barberId: ivan, overrides: [], ...termsFixture(4500, 30, 0, 10) },
     ],
   });
 }
 
-function beardService(conflictsWith: readonly string[] = []): ServiceEntity {
+function beardService(conflictsWith: readonly string[] = []): Service {
   return serviceFixture({
     id: ServiceId.of('svc-beard'),
-    baseTerms: ServiceTerms.unpadded(1500, 'EUR', 20),
+    ...termsFixture(1500, 20),
     locationIds: [CENTER],
     conflictsWith: conflictsWith.map(ServiceId.of),
-    offerings: [
-      {
-        barberId: ivan,
-        base: ServiceTerms.unpadded(1500, 'EUR', 20),
-        overrides: [],
-      },
-    ],
+    offerings: [{ barberId: ivan, overrides: [], ...termsFixture(1500, 20) }],
   });
 }
 
@@ -137,23 +168,22 @@ function schedule(
   const atShop = LocationId.of(options.locationId ?? 'loc-center');
   const version: ScheduleVersion = {
     seq: 1,
-    effectiveFromDayKey: DayKey.of('2026-01-01'),
-    effectiveToDayKey: null,
+    effectiveFromLocalDate: localDate('2026-01-01'),
+    effectiveToLocalDate: null,
     segments: [
-      ShiftSegment.of(Weekday.Mon, atShop, 9 * 60, 18 * 60),
-      ShiftSegment.of(Weekday.Tue, atShop, 9 * 60, 18 * 60),
+      ShiftSegment.of(Weekday.Mon, atShop, at(9), until(18)),
+      ShiftSegment.of(Weekday.Tue, atShop, at(9), until(18)),
     ],
   };
   return {
     barberId: BarberId.of(barber),
     versions: [version],
-    turnaroundMinutes: options.turnaroundMinutes ?? 0,
+    turnaroundMinutes: minuteCount(options.turnaroundMinutes ?? 0),
   };
 }
 
 function snapshot(overrides: Partial<BookingSnapshot> = {}): BookingSnapshot {
   return {
-    zone: ZONE,
     shopHours: SHOP_HOURS,
     services: [fadeService(), beardService()],
     schedules: [schedule('ivan')],
@@ -163,29 +193,42 @@ function snapshot(overrides: Partial<BookingSnapshot> = {}): BookingSnapshot {
   };
 }
 
-const SELF: RequestedSubject = { kind: 'self' };
-const guestOf = (label: string, guestKey: string | null = null) =>
-  ({ kind: 'guest', label, guestKey }) as const;
+const SELF: RequestedSubjectInput = {
+  requestedSubjectRole: RequestedSubjectRole.Self,
+};
+const guestOf = (
+  label: string,
+  guestKey: string | null = null,
+): RequestedSubjectInput => ({
+  requestedSubjectRole: RequestedSubjectRole.Guest,
+  label,
+  guestKey,
+});
+const companionOf = (userId: string): RequestedSubjectInput => ({
+  requestedSubjectRole: RequestedSubjectRole.Companion,
+  companionUserId: userId,
+});
 
-function seat(overrides: Partial<RequestedSeat> = {}): RequestedSeat {
+function seat(overrides: Partial<RequestedSeatInput> = {}): RequestedSeatInput {
   return {
     lineId: 'line-1',
     serviceId: 'svc-fade',
     variantId: null,
     barberId: 'ivan',
-    barberPref: null,
-    startMs: at(12),
+    barberPreference: null,
+    startMinutes: at(12),
     subject: SELF,
     ...overrides,
   };
 }
 
 function request(
-  seats: readonly RequestedSeat[] = [seat()],
-  overrides: Partial<DecideBookingRequest> = {},
-): DecideBookingRequest {
+  seats: readonly RequestedSeatInput[] = [seat()],
+  overrides: Partial<DecideBookingInput> = {},
+): DecideBookingInput {
   return {
     locationId: 'loc-center',
+    localDate: AUG_3,
     seats,
     attemptId: null,
     bookedFromAppointmentId: null,
@@ -195,12 +238,38 @@ function request(
   };
 }
 
+/**
+ * The envelope's start instant as the callable edge computes it: the
+ * earliest requested start on the request's day, `toUtc` in the shop's
+ * zone. A request whose day or starts do not parse is refused by the
+ * decision before the instant is read; the day's first instant stands in.
+ */
+function edgeStartUtcMs(req: DecideBookingInput): UtcEpochMs {
+  const day = LocalDate.parse(req.localDate);
+  if (!day.ok) return utcMs('2026-08-03T00:00:00+03:00');
+  let earliest: MinuteOfDay | null = null;
+  for (const requested of req.seats) {
+    if (requested.startMinutes === null) continue;
+    const start = MinuteOfDay.of(requested.startMinutes);
+    if (start.ok && (earliest === null || start.value < earliest)) {
+      earliest = start.value;
+    }
+  }
+  if (earliest === null) {
+    return ZonedTimeSystem.startOfLocalDay(day.value, ZONE);
+  }
+  const instant = ZonedTimeSystem.toUtc(day.value, earliest, ZONE);
+  return instant.ok
+    ? instant.value
+    : ZonedTimeSystem.startOfLocalDay(day.value, ZONE);
+}
+
 const POLICY = BookingPolicy.DEFAULT;
 
 /** The legacy `deps`: the clock, the owner and the staff relaxations. */
 type Deps = {
-  readonly nowMs: number;
-  readonly ownerUserId: string | null;
+  readonly now: ShopNow;
+  readonly ownerUserId: UserId | null;
   readonly allowOutsideWindow?: boolean;
   readonly allowOverlap?: boolean;
   readonly allowConflictingServices?: boolean;
@@ -208,8 +277,8 @@ type Deps = {
   readonly release?: readonly ChairTime[];
 };
 
-function deps(nowMs: number = at(8)): Deps {
-  return { nowMs, ownerUserId: OWNER };
+function deps(now: ShopNow = nowAt(8)): Deps {
+  return { now, ownerUserId: OWNER };
 }
 
 const parsePhone = (raw: string) => {
@@ -219,10 +288,10 @@ const parsePhone = (raw: string) => {
 
 /** The legacy `decideBooking(request, snapshot, deps)`, over the system. */
 function decideBooking(
-  req: DecideBookingRequest,
+  req: DecideBookingInput,
   snap: BookingSnapshot,
   given: Deps,
-): Result<BookingDecision, BookingCommitError> {
+): Result<BookingDecision, BookingError> {
   let counter = 0;
   const outside = given.allowOutsideWindow === true;
   return BookingDecisionSystem.decide(
@@ -237,9 +306,9 @@ function decideBooking(
     },
     given.release ?? [],
     {
-      nowMs: given.nowMs,
+      now: given.now,
+      startUtcMs: edgeStartUtcMs(req),
       nextId: () => `id-${counter++}`,
-      days: DAYS,
       ownerUserId: given.ownerUserId,
       termsOverrides: [],
       standing: given.standing ?? [],
@@ -250,7 +319,7 @@ function decideBooking(
 }
 
 function unwrap(
-  result: Result<BookingDecision, BookingCommitError>,
+  result: Result<BookingDecision, BookingError>,
 ): BookingDecision {
   if (!result.ok) {
     throw new Error(`fixture setup failed: ${JSON.stringify(result.error)}`);
@@ -258,19 +327,23 @@ function unwrap(
   return result.value;
 }
 
-const refusal = (result: Result<BookingDecision, BookingCommitError>) =>
+const refusal = (result: Result<BookingDecision, BookingError>) =>
   result.ok ? null : result.error;
 
 /** `toBeInstanceOf(CommitBookingPersonDoubleBookedError)`, as a struct. */
 const personDoubleBooked = {
-  code: 'booking.commit.invalid_input',
-  field: BookingCommitField.PersonOverlap,
+  errorCode: 'BOOKING_INVALID_INPUT',
+  field: BookingErrorField.PersonOverlap,
 };
 /** `toBeInstanceOf(CommitBookingDuplicateGuestLabelError)`, as a struct. */
 const duplicateGuestLabel = {
-  code: 'booking.commit.invalid_input',
-  field: BookingCommitField.GuestLabel,
+  errorCode: 'BOOKING_INVALID_INPUT',
+  field: BookingErrorField.GuestLabel,
 };
+
+/** A wall-clock busy span on the day. */
+const span = (from: MinuteOfDay, to: EndMinute): MinuteRange =>
+  MinuteRange.of(from, to);
 
 describe('decide — terms come from the catalog, never the client', () => {
   it('prices the seat from `termsFor(barber, variant)`', () => {
@@ -280,18 +353,18 @@ describe('decide — terms come from the catalog, never the client', () => {
     const decision = unwrap(decideBooking(request(), snapshot(), deps()));
     const [committed] = decision.appointment.seats;
 
-    expect(committed?.terms.priceMinorUnits).toBe(4500);
-    expect(committed?.terms.durationMinutes).toBe(30);
-    expect(committed?.terms.cleanupMinutes).toBe(10);
+    expect(committed?.priceCents).toBe(4500);
+    expect(committed?.durationMinutes).toBe(30);
+    expect(committed?.cleanupMinutes).toBe(10);
   });
 
   it('binds the self seat to the AUTH uid, not to anything in the payload', () => {
     const decision = unwrap(decideBooking(request(), snapshot(), deps()));
-    const subject = decision.appointment.seats[0]?.subject;
+    const committed = decision.appointment.seats[0];
 
-    expect(subject?.kind).toBe('account');
-    if (subject?.kind === SeatSubjectKind.Account) {
-      expect(subject.userId).toBe(OWNER);
+    expect(committed?.seatSubject).toBe(SeatSubject.Account);
+    if (committed?.seatSubject === SeatSubject.Account) {
+      expect(committed.subjectUserId).toBe(OWNER);
     }
   });
 
@@ -299,11 +372,9 @@ describe('decide — terms come from the catalog, never the client', () => {
     // The client is charged for 30 minutes; the barber is blocked for 40.
     const decision = unwrap(decideBooking(request(), snapshot(), deps()));
 
-    expect(decision.appointment.seats[0]?.terms.durationMinutes).toBe(30);
+    expect(decision.appointment.seats[0]?.durationMinutes).toBe(30);
     expect(
-      TimeInterval.durationMinutes(
-        decision.busyWrites[0]?.interval as TimeInterval,
-      ),
+      MinuteRange.durationMinutes(decision.busyWrites[0] as BusyWrite),
     ).toBe(40);
   });
 
@@ -322,20 +393,18 @@ describe('decide — terms come from the catalog, never the client', () => {
       snapshot({ services: [fadeService({ locationIds: ['loc-mladost'] })] }),
       deps(),
     );
-    expect(refusal(result)?.code).toBe(
-      'booking.commit.service_not_at_location',
-    );
+    expect(refusal(result)?.errorCode).toBe('BOOKING_SERVICE_NOT_AT_LOCATION');
   });
 
   it('refuses a service that is not in the snapshot at all', () => {
     const result = decideBooking(request(), snapshot({ services: [] }), deps());
-    expect(refusal(result)?.code).toBe('booking.commit.unknown_service');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_UNKNOWN_SERVICE');
   });
 });
 
 describe('decide — availability is re-checked, not trusted', () => {
-  const busyDay = (spans: readonly TimeInterval[]) => [
-    { id: BusyKey.of(ivan, AUG_3.dayKey), spans },
+  const busyDay = (spans: readonly MinuteRange[]) => [
+    { id: BusyKey.of(ivan, AUG_3), spans },
   ];
 
   // Copied from decide-waitlist.spec.ts:403 — the commit's decision refuses
@@ -354,13 +423,10 @@ describe('decide — availability is re-checked, not trusted', () => {
         deps(),
       );
       expect(!decided.ok && decided.error).toEqual(
-        BookingCommitError.shopUnavailable(
-          blank,
-          ShopUnavailableReason.NotFound,
-        ),
+        BookingError.shopUnavailable(blank, ShopUnavailableReason.NotFound),
       );
       expect(!decided.ok && decided.error).toMatchObject({
-        code: 'booking.commit.invalid_input',
+        errorCode: 'BOOKING_INVALID_INPUT',
         field: 'locationId',
       });
     }
@@ -369,10 +435,10 @@ describe('decide — availability is re-checked, not trusted', () => {
   it('refuses a slot that overlaps an existing booking', () => {
     const result = decideBooking(
       request(),
-      snapshot({ busy: busyDay([TimeInterval.of(at(12), at(13))]) }),
+      snapshot({ busy: busyDay([span(at(12), until(13))]) }),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.slot_unavailable');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_SLOT_UNAVAILABLE');
   });
 
   it('allows a booking that ABUTS an existing one when turnaround is zero', () => {
@@ -380,7 +446,7 @@ describe('decide — availability is re-checked, not trusted', () => {
     expect(
       decideBooking(
         request(),
-        snapshot({ busy: busyDay([TimeInterval.of(at(11), at(12))]) }),
+        snapshot({ busy: busyDay([span(at(11), until(12))]) }),
         deps(),
       ).ok,
     ).toBe(true);
@@ -391,28 +457,28 @@ describe('decide — availability is re-checked, not trusted', () => {
     const result = decideBooking(
       request(),
       snapshot({
-        busy: busyDay([TimeInterval.of(at(11), at(12))]),
+        busy: busyDay([span(at(11), until(12))]),
         schedules: [schedule('ivan', { turnaroundMinutes: 15 })],
       }),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.slot_unavailable');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_SLOT_UNAVAILABLE');
   });
 
   describe('a rebuilt visit’s own chairs (`release`)', () => {
     // Stored: the visit being moved (10:00–11:00) merged with a neighbour
     // (11:00–12:00), and a 15-minute reset. Ivan's fade holds the chair 40
     // minutes (30 + 10 of cleanup).
-    const ownChair = TimeInterval.of(at(10), at(11));
+    const ownChair = { startMinutes: at(10), endMinutes: until(11) };
     const moved = snapshot({
-      busy: busyDay([TimeInterval.of(at(10), at(12))]),
+      busy: busyDay([span(at(10), until(12))]),
       schedules: [schedule('ivan', { turnaroundMinutes: 15 })],
     });
     const startingAt = (hour: number, minute = 0) =>
-      request([seat({ startMs: at(hour, minute) })]);
+      request([seat({ startMinutes: at(hour, minute) })]);
 
     it('never lets them block where the visit goes next', () => {
-      const own = [{ barberId: ivan, occupied: ownChair }];
+      const own = [{ barberId: ivan, ...ownChair }];
       expect(decideBooking(startingAt(10), moved, deps()).ok).toBe(false);
       expect(
         decideBooking(startingAt(10), moved, { ...deps(), release: own }).ok,
@@ -421,16 +487,16 @@ describe('decide — availability is re-checked, not trusted', () => {
 
     it('hands them back BEFORE padding, so the neighbour keeps its reset', () => {
       // 10:15–10:55 ends inside the neighbour's reset (10:45–11:00).
-      const own = [{ barberId: ivan, occupied: ownChair }];
+      const own = [{ barberId: ivan, ...ownChair }];
       const result = decideBooking(startingAt(10, 15), moved, {
         ...deps(),
         release: own,
       });
-      expect(refusal(result)?.code).toBe('booking.commit.slot_unavailable');
+      expect(refusal(result)?.errorCode).toBe('BOOKING_SLOT_UNAVAILABLE');
     });
 
     it('frees nothing of another barber’s', () => {
-      const theirs = [{ barberId: BarberId.of('niko'), occupied: ownChair }];
+      const theirs = [{ barberId: BarberId.of('niko'), ...ownChair }];
       expect(
         decideBooking(startingAt(10), moved, { ...deps(), release: theirs }).ok,
       ).toBe(false);
@@ -440,11 +506,11 @@ describe('decide — availability is re-checked, not trusted', () => {
   it('refuses a time outside the barber’s rostered window', () => {
     // Rostered 09:00–18:00; 18:30 is not a window even though the shop is open.
     const result = decideBooking(
-      request([seat({ startMs: at(18, 30) })]),
+      request([seat({ startMinutes: at(18, 30) })]),
       snapshot(),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.slot_unavailable');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_SLOT_UNAVAILABLE');
   });
 
   it('refuses a barber with no roster document', () => {
@@ -453,7 +519,7 @@ describe('decide — availability is re-checked, not trusted', () => {
       snapshot({ schedules: [] }),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.barber_not_rostered');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_BARBER_NOT_ROSTERED');
   });
 
   it('refuses a day a published exception has closed, roster notwithstanding', () => {
@@ -463,22 +529,22 @@ describe('decide — availability is re-checked, not trusted', () => {
         exceptions: [
           {
             barberId: ivan,
-            dayKey: AUG_3.dayKey,
-            effect: ExceptionEffect.closed(),
+            localDate: AUG_3,
+            ...ExceptionEffectRule.closed(),
           },
         ],
       }),
       deps(),
     );
     // The roster says Ivan works; the exception says not today.
-    expect(refusal(result)?.code).toBe('booking.commit.barber_not_rostered');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_BARBER_NOT_ROSTERED');
   });
 
   it('clamps to the SHOP’s hours, not just the roster', () => {
     // Rostered 09:00–18:00, but the shop publishes 09:00–13:00 that day.
-    const shortDay = [DayHours.open(9 * 60, 13 * 60), ...SHOP_HOURS.slice(1)];
+    const shortDay = [DayHours.open(at(9), until(13)), ...SHOP_HOURS.slice(1)];
     const result = decideBooking(
-      request([seat({ startMs: at(14) })]),
+      request([seat({ startMinutes: at(14) })]),
       snapshot({ shopHours: shortDay }),
       deps(),
     );
@@ -489,8 +555,8 @@ describe('decide — availability is re-checked, not trusted', () => {
 describe('decide — policy and party rules', () => {
   it('refuses a booking inside the minimum lead time', () => {
     // Now is 11:00, the default lead is 120 minutes, the seat is at 12:00.
-    const result = decideBooking(request(), snapshot(), deps(at(11)));
-    expect(refusal(result)?.code).toBe('booking.commit.too_soon');
+    const result = decideBooking(request(), snapshot(), deps(nowAt(11)));
+    expect(refusal(result)?.errorCode).toBe('BOOKING_TOO_SOON');
   });
 
   it('refuses a party larger than the policy allows', () => {
@@ -498,7 +564,7 @@ describe('decide — policy and party rules', () => {
       seat({ lineId: `line-${index}`, subject: guestOf(`Guest ${index}`) }),
     );
     const result = decideBooking(request(seats), snapshot(), deps());
-    expect(refusal(result)?.code).toBe('booking.commit.party_too_large');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_PARTY_TOO_LARGE');
   });
 
   const conflicting = () =>
@@ -513,19 +579,27 @@ describe('decide — policy and party rules', () => {
     const result = decideBooking(
       request([
         seat(),
-        seat({ lineId: 'line-2', serviceId: 'svc-beard', startMs: at(14) }),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          startMinutes: at(14),
+        }),
       ]),
       conflicting(),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.conflicting_services');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_CONFLICTING_SERVICES');
   });
 
   it('ALLOWS two conflicting services for one person when the shop is booking — a staff edit or placement', () => {
     const result = decideBooking(
       request([
         seat(),
-        seat({ lineId: 'line-2', serviceId: 'svc-beard', startMs: at(14) }),
+        seat({
+          lineId: 'line-2',
+          serviceId: 'svc-beard',
+          startMinutes: at(14),
+        }),
       ]),
       conflicting(),
       { ...deps(), allowConflictingServices: true },
@@ -541,7 +615,7 @@ describe('decide — policy and party rules', () => {
         seat({
           lineId: 'line-2',
           serviceId: 'svc-beard',
-          startMs: at(14),
+          startMinutes: at(14),
           subject: guestOf('Maria'),
         }),
       ]),
@@ -557,11 +631,11 @@ describe('decide — policy and party rules', () => {
       snapshot(),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.invalid_input');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_INVALID_INPUT');
   });
 
   it('refuses a MISSING variant when the service declares some', () => {
-    // Committing without one would silently charge `baseTerms`.
+    // Committing without one would silently charge the service's own terms.
     const result = decideBooking(
       request(),
       snapshot({
@@ -573,7 +647,7 @@ describe('decide — policy and party rules', () => {
       }),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.invalid_input');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_INVALID_INPUT');
   });
 
   it('refuses a party whose own seats double-book one barber', () => {
@@ -590,7 +664,7 @@ describe('decide — policy and party rules', () => {
       snapshot(),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.invariant_violated');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_INVARIANT_VIOLATED');
   });
 
   it('accepts a party served back-to-back by ONE barber', () => {
@@ -601,7 +675,7 @@ describe('decide — policy and party rules', () => {
         seat({
           lineId: 'line-2',
           serviceId: 'svc-beard',
-          startMs: at(12, 40),
+          startMinutes: at(12, 40),
           subject: guestOf('Maria'),
         }),
       ]),
@@ -628,15 +702,22 @@ describe('decide — the contact rides along as a snapshot', () => {
         deps(),
       ),
     );
-    expect(decision.appointment.contact?.name).toBe('Емил Тестов');
-    expect(decision.appointment.contact?.phone).toBe('+359896330113');
-    expect(decision.appointment.contact?.email).toBe('emil@example.com');
-    expect(decision.appointment.contact?.note).toBe('закъснявам 5 минути');
+    expect(decision.appointment.contactName).toBe('Емил Тестов');
+    expect(decision.appointment.contactPhone).toBe('+359896330113');
+    expect(decision.appointment.contactEmail).toBe('emil@example.com');
+    expect(decision.appointment.contactNote).toBe('закъснявам 5 минути');
   });
 
   it('commits with no contact at all — an older client still books', () => {
     const decision = unwrap(decideBooking(request(), snapshot(), deps()));
-    expect(decision.appointment.contact).toBeNull();
+    const { contactName, contactPhone, contactEmail, contactNote } =
+      decision.appointment;
+    expect([contactName, contactPhone, contactEmail, contactNote]).toEqual([
+      null,
+      null,
+      null,
+      null,
+    ]);
   });
 
   it('REFUSES a contact the shop could not act on', () => {
@@ -645,7 +726,7 @@ describe('decide — the contact rides along as a snapshot', () => {
       snapshot(),
       deps(),
     );
-    expect(refusal(result)?.code).toBe('booking.commit.invalid_input');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_INVALID_INPUT');
   });
 });
 
@@ -663,15 +744,17 @@ describe('decide — the shop places its own book', () => {
         { ...deps(), ownerUserId: null, allowOutsideWindow: true },
       ),
     );
-    expect(decision.appointment.bookingStatus.kind).toBe('confirmed');
-    expect(decision.appointment.seats[0]?.subject.kind).toBe('anonymous');
+    expect(decision.appointment.bookingStatus).toBe(BookingStatus.Confirmed);
+    expect(decision.appointment.seats[0]?.seatSubject).toBe(
+      SeatSubject.Anonymous,
+    );
   });
 
   it('places a booking that has already started — the walk-in is in the chair', () => {
     const decision = decideBooking(
       request([seat({ subject: guestOf('Случаен клиент') })]),
       snapshot(),
-      { ...deps(at(12, 10)), ownerUserId: null, allowOutsideWindow: true },
+      { ...deps(nowAt(12, 10)), ownerUserId: null, allowOutsideWindow: true },
     );
     expect(decision.ok).toBe(true);
   });
@@ -683,33 +766,33 @@ describe('decide — the shop places its own book', () => {
           seat(),
           seat({
             lineId: 'line-2',
-            startMs: at(13),
-            subject: { kind: 'companion', userId: 'son-1' },
+            startMinutes: at(13),
+            subject: companionOf('son-1'),
           }),
         ]),
         snapshot(),
         { ...deps(), allowOutsideWindow: true },
       ),
     );
-    const [booker, companion] = decision.appointment.seats.map(
-      (decided) => decided.subject,
-    );
-    expect(booker?.kind === 'account' && booker.userId).toBe(OWNER);
+    const [booker, companion] = decision.appointment.seats;
     expect(
-      companion?.kind === 'account' && [
-        companion.userId,
-        companion.relationship,
+      booker?.seatSubject === SeatSubject.Account && booker.subjectUserId,
+    ).toBe(OWNER);
+    expect(
+      companion?.seatSubject === SeatSubject.Account && [
+        companion.subjectUserId,
+        companion.subjectRelationship,
       ],
-    ).toEqual(['son-1', 'companion']);
+    ).toEqual(['son-1', 'COMPANION']);
   });
 
   it('refuses a carried companion whose id is not a user id', () => {
     const decision = decideBooking(
-      request([seat({ subject: { kind: 'companion', userId: '' } })]),
+      request([seat({ subject: companionOf('') })]),
       snapshot(),
       { ...deps(), allowOutsideWindow: true },
     );
-    expect(refusal(decision)?.code).toBe('booking.commit.invalid_input');
+    expect(refusal(decision)?.errorCode).toBe('BOOKING_INVALID_INPUT');
   });
 
   it('still refuses a self seat with nobody to bind it to', () => {
@@ -725,13 +808,15 @@ describe('decide — the shop places its own book', () => {
     const decision = unwrap(
       decideBooking(request(), snapshot(), {
         ...deps(),
-        ownerUserId: 'client-7',
+        ownerUserId: UserId.of('client-7'),
         allowOutsideWindow: true,
       }),
     );
-    expect(decision.appointment.bookingStatus.kind).toBe('confirmed');
-    const subject = decision.appointment.seats[0]?.subject;
-    expect(subject?.kind === 'account' && subject.userId).toBe('client-7');
+    expect(decision.appointment.bookingStatus).toBe(BookingStatus.Confirmed);
+    const committed = decision.appointment.seats[0];
+    expect(
+      committed?.seatSubject === SeatSubject.Account && committed.subjectUserId,
+    ).toBe('client-7');
   });
 });
 
@@ -739,13 +824,15 @@ describe('decide — the shop places its own book', () => {
  * §11.2 #6: the preference is what somebody asked for, never a default.
  */
 describe('decide — the barber preference is recorded, never guessed', () => {
-  const prefOf = (requested: Partial<RequestedSeat>) =>
+  const prefOf = (requested: Partial<RequestedSeatInput>) =>
     unwrap(decideBooking(request([seat(requested)]), snapshot(), deps()))
-      .appointment.seats[0]?.barberPref ?? null;
+      .appointment.seats[0]?.barberPreference ?? null;
 
   it('stores «Всеки» as any and a named barber as specific', () => {
-    expect(prefOf({ barberPref: 'any' })).toBe('any');
-    expect(prefOf({ barberPref: 'specific' })).toBe('specific');
+    expect(prefOf({ barberPreference: BarberPreference.Any })).toBe('ANY');
+    expect(prefOf({ barberPreference: BarberPreference.Specific })).toBe(
+      'SPECIFIC',
+    );
   });
 
   it('stores an omitted preference as unknown, not as a request', () => {
@@ -774,7 +861,7 @@ describe('decide — one person is never in two chairs at once', () => {
     expect(error).toMatchObject(personDoubleBooked);
     // The reason rides on the wire as the field — never the person's key,
     // which can name somebody else's account (the shim keeps it off the wire).
-    expect(error?.code).toBe('booking.commit.invalid_input');
+    expect(error?.errorCode).toBe('BOOKING_INVALID_INPUT');
   });
 
   it('seats the same person back to back across two chairs', () => {
@@ -787,7 +874,7 @@ describe('decide — one person is never in two chairs at once', () => {
           lineId: 'line-2',
           serviceId: 'svc-beard',
           barberId: 'petar',
-          startMs: at(12, 30),
+          startMinutes: at(12, 30),
         }),
       ]),
       twoChairs(),
@@ -821,7 +908,7 @@ describe('decide — one person is never in two chairs at once', () => {
           lineId: 'line-2',
           serviceId: 'svc-beard',
           barberId: 'petar',
-          startMs: at(12, 15),
+          startMinutes: at(12, 15),
           subject: guestOf(' Maria '),
         }),
       ]),
@@ -873,7 +960,7 @@ describe('decide — one person is never in two chairs at once', () => {
               lineId: `line-${index}`,
               serviceId: draft.serviceId,
               barberId: `b${index}`,
-              startMs: plusMinutes(at(12), draft.quarter * 15),
+              startMinutes: at(12, draft.quarter * 15),
               subject: draft.person === 'self' ? SELF : guestOf(draft.person),
             }),
           );
@@ -920,12 +1007,22 @@ describe('decide — a double seating the visit already held stands', () => {
   const walkIn = guestOf('Случаен клиент');
   /** A 30-minute fade with Ivan beside a 20-minute beard with Petar, one label. */
   const heldPair: readonly DecisionStandingSeat[] = [
-    { id: 'id-0', subject: walkIn, startMs: at(12), durationMinutes: 30 },
-    { id: 'id-1', subject: walkIn, startMs: at(12), durationMinutes: 20 },
+    {
+      seatId: SeatId.of('id-0'),
+      subject: walkIn,
+      startMinutes: at(12),
+      durationMinutes: duration(30),
+    },
+    {
+      seatId: SeatId.of('id-1'),
+      subject: walkIn,
+      startMinutes: at(12),
+      durationMinutes: duration(20),
+    },
   ];
-  const fade = (overrides: Partial<RequestedSeat> = {}) =>
+  const fade = (overrides: Partial<RequestedSeatInput> = {}) =>
     seat({ subject: walkIn, ...overrides });
-  const beard = (overrides: Partial<RequestedSeat> = {}) =>
+  const beard = (overrides: Partial<RequestedSeatInput> = {}) =>
     seat({
       lineId: 'line-2',
       serviceId: 'svc-beard',
@@ -948,7 +1045,10 @@ describe('decide — a double seating the visit already held stands', () => {
 
   it('lets the whole visit be dragged, the pair moving together', () => {
     const result = decideBooking(
-      request([fade({ startMs: at(14) }), beard({ startMs: at(14) })]),
+      request([
+        fade({ startMinutes: at(14) }),
+        beard({ startMinutes: at(14) }),
+      ]),
       chairs(),
       held(),
     );
@@ -957,7 +1057,7 @@ describe('decide — a double seating the visit already held stands', () => {
 
   it('lets one seat of the pair move, stretch or change chair and still overlap', () => {
     for (const edited of [
-      beard({ startMs: at(12, 5) }),
+      beard({ startMinutes: at(12, 5) }),
       beard({ barberId: 'georgi' }),
     ]) {
       expect(
@@ -992,7 +1092,7 @@ describe('decide — a double seating the visit already held stands', () => {
           lineId: 'line-3',
           serviceId: 'svc-beard',
           barberId: 'georgi',
-          startMs: at(12, 10),
+          startMinutes: at(12, 10),
           subject: walkIn,
         }),
       ]),
@@ -1007,7 +1107,7 @@ describe('decide — a double seating the visit already held stands', () => {
       ...deps(),
       standing: heldPair.map((stood, index) => ({
         ...stood,
-        id: `seat-${index}`,
+        seatId: SeatId.of(`seat-${index}`),
       })),
     });
     expect(refusal(result)).toMatchObject(personDoubleBooked);
@@ -1015,7 +1115,7 @@ describe('decide — a double seating the visit already held stands', () => {
 
   it('lets a separating move through: the pair no longer overlaps', () => {
     const result = decideBooking(
-      request([fade(), beard({ startMs: at(12, 30) })]),
+      request([fade(), beard({ startMinutes: at(12, 30) })]),
       chairs(),
       held(),
     );
@@ -1040,24 +1140,21 @@ describe('decide — a double seating the visit already held stands', () => {
             wholeVisit
               ? (drafts.at(0)?.shift ?? 0)
               : (drafts.at(index)?.shift ?? 0);
-          const subjectOf = (person: string): RequestedSubject =>
-            person === 'companion'
-              ? { kind: 'companion', userId: 'user-2' }
-              : guestOf(person);
-          const startOf = (quarter: number) =>
-            plusMinutes(at(12), quarter * 15);
-          const standing = drafts.map((draft, index) => ({
-            id: `id-${index}`,
+          const subjectOf = (person: string): RequestedSubjectInput =>
+            person === 'companion' ? companionOf('user-2') : guestOf(person);
+          const startOf = (quarter: number) => at(12, quarter * 15);
+          const standing = drafts.map((draft, index): DecisionStandingSeat => ({
+            seatId: SeatId.of(`id-${index}`),
             subject: subjectOf(draft.person),
-            startMs: startOf(draft.quarter),
-            durationMinutes: MINUTES[draft.serviceId],
+            startMinutes: startOf(draft.quarter),
+            durationMinutes: duration(MINUTES[draft.serviceId]),
           }));
           const seats = drafts.map((draft, index) =>
             seat({
               lineId: `line-${index}`,
               serviceId: draft.serviceId,
               barberId: `b${index}`,
-              startMs: startOf(draft.quarter + shiftOf(index)),
+              startMinutes: startOf(draft.quarter + shiftOf(index)),
               subject: subjectOf(draft.person),
             }),
           );
@@ -1111,7 +1208,7 @@ describe('decide — two different guests may not share a label', () => {
         seat({
           lineId: 'line-2',
           serviceId: 'svc-beard',
-          startMs: at(14),
+          startMinutes: at(14),
           subject: guestOf('Гост 2', 'guest-4'),
         }),
       ]),
@@ -1119,7 +1216,7 @@ describe('decide — two different guests may not share a label', () => {
       deps(),
     );
     expect(refusal(result)).toMatchObject(duplicateGuestLabel);
-    expect(refusal(result)?.code).toBe('booking.commit.invalid_input');
+    expect(refusal(result)?.errorCode).toBe('BOOKING_INVALID_INPUT');
   });
 
   it('compares the labels as they will be stored — trimmed', () => {
@@ -1129,7 +1226,7 @@ describe('decide — two different guests may not share a label', () => {
         seat({
           lineId: 'line-2',
           serviceId: 'svc-beard',
-          startMs: at(14),
+          startMinutes: at(14),
           subject: guestOf('  Мария ', 'guest-2'),
         }),
       ]),
@@ -1146,7 +1243,7 @@ describe('decide — two different guests may not share a label', () => {
         seat({
           lineId: 'line-2',
           serviceId: 'svc-beard',
-          startMs: at(14),
+          startMinutes: at(14),
           subject: guestOf('Мария', 'guest-1'),
         }),
       ]),
@@ -1173,7 +1270,7 @@ describe('decide — two different guests may not share a label', () => {
         seat({
           lineId: 'line-2',
           serviceId: 'svc-beard',
-          startMs: at(14),
+          startMinutes: at(14),
           subject: guestOf('Мария'),
         }),
       ]),
@@ -1188,7 +1285,10 @@ describe('BookingDecisionSystem — the draft and purity', () => {
   it('writes the mirrors, the envelope and the status a commit stores', () => {
     const decision = unwrap(
       decideBooking(
-        request([seat()], { attemptId: 'attempt-7', placement: 'self' }),
+        request([seat()], {
+          attemptId: 'attempt-7',
+          placement: Placement.Self,
+        }),
         snapshot(),
         deps(),
       ),
@@ -1198,20 +1298,37 @@ describe('BookingDecisionSystem — the draft and purity', () => {
     expect(appointment.ownerUserId).toBe(OWNER);
     expect(appointment.subjectUserIds).toEqual([OWNER]);
     expect(appointment.barberIds).toEqual(['ivan']);
-    expect(appointment.busyKeys).toEqual([BusyKey.of(ivan, AUG_3.dayKey)]);
-    expect(appointment.timeInterval).toEqual(
-      Seat.interval(appointment.seats[0] as Seat),
-    );
-    expect(appointment.placement).toBe('self');
-    expect(appointment.bookingStatus).toEqual({
-      kind: 'confirmed',
-      atMs: at(8),
+    expect(appointment.busyKeys).toEqual([BusyKey.of(ivan, AUG_3)]);
+    // The envelope: the shop day, the sold minutes, and the edge's instant.
+    const [only] = appointment.seats as readonly Seat[];
+    expect({
+      localDate: appointment.localDate,
+      startMinutes: appointment.startMinutes,
+      endMinutes: appointment.endMinutes,
+      utcEpochMs: appointment.utcEpochMs,
+    }).toEqual({
+      localDate: AUG_3,
+      startMinutes: only?.startMinutes,
+      endMinutes: at(12, 30),
+      utcEpochMs: utcMs('2026-08-03T12:00:00+03:00'),
+    });
+    expect(appointment.placement).toBe('SELF');
+    expect({
+      bookingStatus: appointment.bookingStatus,
+      confirmedAtUtcMs:
+        appointment.bookingStatus === BookingStatus.Confirmed
+          ? appointment.confirmedAtUtcMs
+          : null,
+    }).toEqual({
+      bookingStatus: BookingStatus.Confirmed,
+      confirmedAtUtcMs: utcMs('2026-08-03T08:00:00+03:00'),
     });
     expect(decision.busyWrites).toEqual([
       {
         barberId: ivan,
-        dayKey: AUG_3.dayKey,
-        interval: TimeInterval.of(at(12), at(12, 40)),
+        localDate: AUG_3,
+        startMinutes: at(12),
+        endMinutes: until(12, 40),
       },
     ]);
   });
@@ -1225,9 +1342,9 @@ describe('BookingDecisionSystem — the draft and purity', () => {
       PlacementPolicy.clientDefault(),
       [],
       {
-        nowMs: at(8),
+        now: nowAt(8),
+        startUtcMs: edgeStartUtcMs(request()),
         nextId: () => `id-${counter++}`,
-        days: DAYS,
         ownerUserId: OWNER,
         termsOverrides: [],
         standing: [],
@@ -1235,8 +1352,8 @@ describe('BookingDecisionSystem — the draft and purity', () => {
         parsePhone,
       },
     );
-    expect(result.ok && result.value.appointment.bookingStatus.kind).toBe(
-      'pending',
+    expect(result.ok && result.value.appointment.bookingStatus).toBe(
+      BookingStatus.Pending,
     );
   });
 
@@ -1249,15 +1366,15 @@ describe('BookingDecisionSystem — the draft and purity', () => {
       PlacementPolicy.staffWalkIn(),
       [],
       {
-        nowMs: at(8),
+        now: nowAt(8),
+        startUtcMs: edgeStartUtcMs(request()),
         nextId: () => `id-${counter++}`,
-        days: DAYS,
         ownerUserId: OWNER,
         termsOverrides: [
           {
-            seatKey: 'line-1',
-            priceMinorUnits: 3000,
-            currencyCode: null,
+            seatKey: SeatKeyText.of('line-1'),
+            priceCents: cents(3000),
+            currency: null,
             durationMinutes: null,
             setupMinutes: null,
             cleanupMinutes: null,
@@ -1268,10 +1385,10 @@ describe('BookingDecisionSystem — the draft and purity', () => {
         parsePhone,
       },
     );
-    const terms = result.ok ? result.value.appointment.seats[0]?.terms : null;
-    expect(terms?.priceMinorUnits).toBe(3000);
+    const terms = result.ok ? result.value.appointment.seats[0] : null;
+    expect(terms?.priceCents).toBe(3000);
     expect(terms?.durationMinutes).toBe(30);
-    expect(terms?.catalogPriceMinorUnits).toBe(4500);
+    expect(terms?.catalogPriceCents).toBe(4500);
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
@@ -1281,13 +1398,13 @@ describe('BookingDecisionSystem — the draft and purity', () => {
         seat({
           lineId: 'line-2',
           serviceId: 'svc-beard',
-          startMs: at(12, 40),
+          startMinutes: at(12, 40),
           subject: guestOf('Maria'),
         }),
       ]),
     );
     const snap = deepFreeze(snapshot());
-    const days = deepFreeze([...DAYS]);
+    const now = deepFreeze(nowAt(8));
     const run = () => {
       let counter = 0;
       return BookingDecisionSystem.decide(
@@ -1297,9 +1414,9 @@ describe('BookingDecisionSystem — the draft and purity', () => {
         PlacementPolicy.clientDefault(),
         [],
         {
-          nowMs: at(8),
+          now,
+          startUtcMs: edgeStartUtcMs(req),
           nextId: () => `id-${counter++}`,
-          days,
           ownerUserId: OWNER,
           termsOverrides: [],
           standing: [],
@@ -1319,23 +1436,23 @@ describe('BookingDecisionSystem — the draft and purity', () => {
 });
 
 describe('BookingDecisionSystem — every remaining refusal, by its field', () => {
-  const field = (result: Result<BookingDecision, BookingCommitError>) =>
-    refusal(result)?.code === 'booking.commit.invalid_input'
+  const field = (result: Result<BookingDecision, BookingError>) =>
+    refusal(result)?.errorCode === 'BOOKING_INVALID_INPUT'
       ? (refusal(result) as { field: string }).field
-      : refusal(result)?.code;
+      : refusal(result)?.errorCode;
 
   /** The decision with a context override — the legacy `deps` cannot reach these. */
   function decideWith(
-    req: DecideBookingRequest,
-    overrides: Partial<Parameters<typeof BookingDecisionSystem.decide>[5]> = {},
+    req: DecideBookingInput,
+    overrides: Partial<DecideBookingContext> = {},
     placement = PlacementPolicy.clientDefault(),
     snap: BookingSnapshot = snapshot(),
   ) {
     let counter = 0;
     return BookingDecisionSystem.decide(req, snap, POLICY, placement, [], {
-      nowMs: at(8),
+      now: nowAt(8),
+      startUtcMs: edgeStartUtcMs(req),
       nextId: () => `id-${counter++}`,
-      days: DAYS,
       ownerUserId: OWNER,
       termsOverrides: [],
       standing: [],
@@ -1345,61 +1462,71 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
     });
   }
   const override = (
-    patch: Partial<Record<string, number | string | null>>,
-  ) => ({
-    seatKey: 'line-1',
-    priceMinorUnits: null,
-    currencyCode: null,
+    patch: Partial<StaffTermsOverride> = {},
+  ): StaffTermsOverride => ({
+    seatKey: SeatKeyText.of('line-1'),
+    priceCents: null,
+    currency: null,
     durationMinutes: null,
     setupMinutes: null,
     cleanupMinutes: null,
     ...patch,
   });
+  /*
+   * A CORRUPT carry — figures no brand admits, reaching the decision
+   * unparsed. The override is carried server-side from stored seats; the
+   * decision keeps its own guards, so a corrupt one is refused where it
+   * always was (the legacy shim hands its raw carry straight through).
+   */
+  const corruptCents = (raw: number) => raw as PriceCents;
+  const corruptCurrency = (raw: string) => raw as Currency;
+  const corruptDuration = (raw: number) => raw as DurationMinutes;
 
   it('names no shop for a blank location, and nobody for a blank owner', () => {
     expect(refusal(decideWith(request([seat()], { locationId: ' ' })))).toEqual(
       {
-        code: 'booking.commit.invalid_input',
+        errorCode: 'BOOKING_INVALID_INPUT',
         field: 'locationId',
         detail: ' ',
         reason: 'not_found',
       },
     );
-    expect(field(decideWith(request(), { ownerUserId: ' ' }))).toBe(
+    expect(field(decideWith(request(), { ownerUserId: UserId.of(' ') }))).toBe(
       'ownerUserId',
     );
   });
 
-  it('refuses a blank barber, an unparsed start and a day outside the table', () => {
+  it('refuses a blank barber, an unparsed start and a day outside the calendar', () => {
     expect(field(decideWith(request([seat({ barberId: '' })])))).toBe(
       'seat identifiers',
     );
-    expect(field(decideWith(request([seat({ startMs: null })])))).toBe(
+    expect(field(decideWith(request([seat({ startMinutes: null })])))).toBe(
+      'startIso',
+    );
+    // A start off the wall clock, and a shop day no calendar has.
+    expect(field(decideWith(request([seat({ startMinutes: 1440 })])))).toBe(
       'startIso',
     );
     expect(
-      field(
-        decideWith(request([seat({ startMs: at(12) + 400 * 86_400_000 })])),
-      ),
+      field(decideWith(request([seat()], { localDate: '2026-02-30' }))),
     ).toBe('startIso');
   });
 
   it('refuses a seat beyond the booking horizon', () => {
-    const december = DayOffset.find(DayKey.of('2026-11-02'), DAYS) as DayOffset;
     expect(
       field(
         decideWith(
-          request([
-            seat({ startMs: ZonedTimeSystem.instantOf(december, 600) }),
-          ]),
+          request([seat({ startMinutes: at(10) })], {
+            localDate: '2026-11-02',
+          }),
         ),
       ),
-    ).toBe('booking.commit.beyond_horizon');
+    ).toBe('BOOKING_BEYOND_HORIZON');
   });
 
   it('refuses terms nobody can name, a bad price and a bad duration', () => {
     const retired = snapshot({ services: [] });
-    const carried = (patch: Partial<Record<string, number | string | null>>) =>
+    const carried = (patch: Partial<StaffTermsOverride>) =>
       decideWith(
         request(),
         { termsOverrides: [override(patch)] },
@@ -1410,27 +1537,31 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
     expect(
       field(
         carried({
-          priceMinorUnits: 100,
-          currencyCode: 'XXX',
-          durationMinutes: 30,
+          priceCents: cents(100),
+          currency: corruptCurrency('XXX'),
+          durationMinutes: duration(30),
         }),
       ),
+    ).toBe('priceMinorUnits');
+    // A price with no currency to read it in, and no catalogue row to lend one.
+    expect(
+      field(carried({ priceCents: cents(100), durationMinutes: duration(30) })),
     ).toBe('priceMinorUnits');
     expect(
       field(
         carried({
-          priceMinorUnits: 100,
-          currencyCode: 'EUR',
-          durationMinutes: 0,
+          priceCents: cents(100),
+          currency: Currency.EUR,
+          durationMinutes: corruptDuration(0),
         }),
       ),
     ).toBe('durationMinutes');
     // A carried seat whose terms are whole stands without its catalogue row.
     expect(
       carried({
-        priceMinorUnits: 100,
-        currencyCode: 'EUR',
-        durationMinutes: 30,
+        priceCents: cents(100),
+        currency: Currency.EUR,
+        durationMinutes: duration(30),
       }).ok,
     ).toBe(true);
   });
@@ -1443,34 +1574,39 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
       request(),
       {
         termsOverrides: [
+          // As the legacy kernel read a stored code: case-insensitive.
           override({
-            priceMinorUnits: 3000,
-            currencyCode: 'bgn',
-            durationMinutes: 30,
+            priceCents: cents(3000),
+            currency: corruptCurrency('bgn'),
+            durationMinutes: duration(30),
           }),
         ],
       },
       PlacementPolicy.staffWalkIn(),
     );
     expect(leva.ok).toBe(true);
-    const terms = leva.ok ? leva.value.appointment.seats[0]?.terms : null;
-    expect(terms?.priceMinorUnits).toBe(3000);
-    expect(terms?.currencyCode).toBe('BGN');
+    const terms = leva.ok ? leva.value.appointment.seats[0] : null;
+    expect(terms?.priceCents).toBe(3000);
+    expect(terms?.currency).toBe('BGN');
     // The catalogue (EUR) is kept as provenance — the override differs.
-    expect(terms?.catalogPriceMinorUnits).toBe(4500);
+    expect(terms?.catalogPriceCents).toBe(4500);
     // A code no stored price ever carried is still refused, and so is a
     // fractional or negative amount.
     for (const bad of [
-      { priceMinorUnits: 100, currencyCode: 'XXX' },
-      { priceMinorUnits: 100, currencyCode: ' EUR' },
-      { priceMinorUnits: 10.5, currencyCode: 'BGN' },
-      { priceMinorUnits: -1, currencyCode: 'BGN' },
+      { priceCents: cents(100), currency: corruptCurrency('XXX') },
+      { priceCents: cents(100), currency: corruptCurrency(' EUR') },
+      { priceCents: corruptCents(10.5), currency: Currency.BGN },
+      { priceCents: corruptCents(-1), currency: Currency.BGN },
     ]) {
       expect(
         field(
           decideWith(
             request(),
-            { termsOverrides: [override({ ...bad, durationMinutes: 30 })] },
+            {
+              termsOverrides: [
+                override({ ...bad, durationMinutes: duration(30) }),
+              ],
+            },
             PlacementPolicy.staffWalkIn(),
           ),
         ),
@@ -1482,13 +1618,39 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
     // Ivan's offering: 45,00 € / 30 min, cleanup 10. Staff carry cleanup 0.
     const decided = decideWith(
       request(),
-      { termsOverrides: [override({ cleanupMinutes: 0 })] },
+      { termsOverrides: [override({ cleanupMinutes: minuteCount(0) })] },
       PlacementPolicy.staffWalkIn(),
     );
-    const terms = decided.ok ? decided.value.appointment.seats[0]?.terms : null;
+    const terms = decided.ok ? decided.value.appointment.seats[0] : null;
     expect(terms?.cleanupMinutes).toBe(0);
-    expect(terms?.catalogPriceMinorUnits).toBe(4500);
+    expect(terms?.catalogPriceCents).toBe(4500);
     expect(terms?.catalogDurationMinutes).toBe(30);
+  });
+
+  it('parses every foreign id at the door — one that would name a nested document is refused as the blank one is (Law 7.4)', () => {
+    expect(refusal(decideWith(request([], { locationId: 'loc/x' })))).toEqual(
+      BookingError.shopUnavailable('loc/x', ShopUnavailableReason.NotFound),
+    );
+    expect(field(decideWith(request([seat({ barberId: 'b/ivan' })])))).toBe(
+      'seat identifiers',
+    );
+    // A service id no catalogue row answers to is refused before the seat is.
+    expect(decideWith(request([seat({ serviceId: 'svc/fade' })])).ok).toBe(
+      false,
+    );
+    expect(
+      field(decideWith(request([seat({ subject: companionOf('user/2') })]))),
+    ).toBe('companion');
+    expect(
+      field(decideWith(request([seat()], { attemptId: 'attempt/7' }))),
+    ).toBe('attemptId');
+    // A rebooking link that is no id is dropped, never fatal.
+    const linked = decideWith(
+      request([seat()], { bookedFromAppointmentId: 'appt/9' }),
+    );
+    expect(linked.ok && linked.value.appointment.bookedFromAppointmentId).toBe(
+      null,
+    );
   });
 
   it('refuses a blank guest label, a blank seat id and a blank appointment id', () => {
@@ -1498,30 +1660,32 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
     expect(field(decideWith(request(), { nextId: () => ' ' }))).toBe('seatId');
     const blankId = decideWith(request([seat()], { attemptId: ' ' }));
     expect(refusal(blankId)).toEqual({
-      code: 'booking.commit.invariant_violated',
-      violations: [{ code: 'scheduling.id.empty', idType: 'AppointmentId' }],
+      errorCode: 'BOOKING_INVARIANT_VIOLATED',
+      violations: [
+        { errorCode: 'SCHEDULING_ID_EMPTY', idType: 'AppointmentId' },
+      ],
     });
   });
 
   it('refuses a booking whose start has already passed', () => {
     const result = decideWith(
       request(),
-      { nowMs: at(12) },
+      { now: nowAt(12) },
       {
         ...PlacementPolicy.clientDefault(),
         skipMinNotice: true,
       },
     );
     expect(refusal(result)).toEqual({
-      code: 'booking.commit.invariant_violated',
-      violations: [{ code: 'scheduling.appointment.past_start_time' }],
+      errorCode: 'BOOKING_INVARIANT_VIOLATED',
+      violations: [{ errorCode: 'SCHEDULING_APPOINTMENT_PAST_START_TIME' }],
     });
   });
 
   it('reports the booker in two chairs at once, and a cart in two currencies', () => {
     const levaBeard = serviceFixture({
       id: ServiceId.of('svc-beard'),
-      baseTerms: ServiceTerms.unpadded(1500, 'BGN', 20),
+      ...termsFixture(1500, 20, 0, 0, Currency.BGN),
       locationIds: [CENTER],
       offerings: [],
     });
@@ -1538,19 +1702,29 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
       ]),
       {
         standing: [
-          { id: 'id-0', subject: SELF, startMs: at(12), durationMinutes: 30 },
-          { id: 'id-1', subject: SELF, startMs: at(12), durationMinutes: 20 },
+          {
+            seatId: SeatId.of('id-0'),
+            subject: SELF,
+            startMinutes: at(12),
+            durationMinutes: duration(30),
+          },
+          {
+            seatId: SeatId.of('id-1'),
+            subject: SELF,
+            startMinutes: at(12),
+            durationMinutes: duration(20),
+          },
         ],
       },
       PlacementPolicy.clientDefault(),
       twoChairs,
     );
     expect(refusal(result)).toEqual({
-      code: 'booking.commit.invariant_violated',
+      errorCode: 'BOOKING_INVARIANT_VIOLATED',
       violations: [
-        { code: 'scheduling.appointment.multiple_self_seats' },
+        { errorCode: 'SCHEDULING_APPOINTMENT_MULTIPLE_SELF_SEATS' },
         {
-          code: 'scheduling.appointment.mixed_currency',
+          errorCode: 'SCHEDULING_APPOINTMENT_MIXED_CURRENCY',
           expected: 'EUR',
           found: 'BGN',
         },
@@ -1558,12 +1732,36 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
     });
   });
 
+  it('refuses a sold service that would run past the shop day’s midnight — one shop day per visit (F-6)', () => {
+    // Ivan's fade is sold for 30 minutes: 23:45 would end at 00:15 tomorrow.
+    const late = request([seat({ startMinutes: at(23, 45) })]);
+    // The client's answer is the slot's (re-pick from a fresh grid)…
+    expect(
+      field(
+        decideWith(
+          late,
+          {},
+          {
+            ...PlacementPolicy.clientDefault(),
+            skipMinNotice: true,
+          },
+        ),
+      ),
+    ).toBe('BOOKING_SLOT_UNAVAILABLE');
+    // …the shop's own placement learns it broke the visit's day.
+    expect(
+      refusal(decideWith(late, {}, PlacementPolicy.staffWalkIn())),
+    ).toEqual({ errorCode: 'BOOKING_INVARIANT_VIOLATED', violations: [] });
+  });
+
   it('builds the refusals the stores raise themselves', () => {
-    expect(BookingCommitError.unauthenticated()).toEqual({
-      code: 'booking.commit.unauthenticated',
+    expect(BookingError.unauthenticated()).toEqual({
+      errorCode: 'BOOKING_UNAUTHENTICATED',
     });
-    expect(BookingCommitError.shopUnavailable('loc-x', 'unlisted')).toEqual({
-      code: 'booking.commit.invalid_input',
+    expect(
+      BookingError.shopUnavailable('loc-x', ShopUnavailableReason.Unlisted),
+    ).toEqual({
+      errorCode: 'BOOKING_INVALID_INPUT',
       field: 'locationId',
       detail: 'loc-x',
       reason: 'unlisted',

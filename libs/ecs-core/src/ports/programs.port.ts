@@ -1,11 +1,17 @@
 import type { Observable } from 'rxjs';
 import type { EnrollmentStatus } from '../components/enrollment-status.data';
-import type { PositionState } from '../components/program-status.data';
+import type { PositionStatus } from '../components/program-status.data';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
-import type { CourseEntity, CourseId } from '../entities/course.entity';
-import type { EventEntity, EventId } from '../entities/event.entity';
-import type { PositionEntity, PositionId } from '../entities/position.entity';
+import type { Course } from '../entities/course.entity';
+import type { ShopEvent } from '../entities/event.entity';
+import type { Position } from '../entities/position.entity';
+import type {
+  CourseId,
+  EventId,
+  PositionId,
+} from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * The shop's programs content — `positions`, `courses`, `events` (blueprint
@@ -20,30 +26,30 @@ import type { PositionEntity, PositionId } from '../entities/position.entity';
 /** `positions/{id}` — `null` when absent. */
 export type LoadPosition = (
   id: PositionId,
-) => Promise<Result<PositionEntity | null, RepositoryError>>;
+) => Promise<Result<Position | null, RepositoryError>>;
 
 export type SavePosition = (
-  position: PositionEntity,
+  position: Position,
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
- * Careers-page roles, live, `orderBy sortOrder` — `status ==` the given
- * state (index #12; the public page asks `PositionState.Open`), or every
- * role when `null` (the admin list).
+ * Careers-page roles, live, `orderBy sortOrder` — `positionStatus ==` the
+ * given status (index #12; the public page asks `PositionStatus.Open`), or
+ * every role when `null` (the admin list).
  */
 export type ObservePositions = (
-  status: PositionState | null,
-) => Observable<Result<readonly PositionEntity[], RepositoryError>>;
+  positionStatus: PositionStatus | null,
+) => Observable<Result<readonly Position[], RepositoryError>>;
 
 // ── Courses ───────────────────────────────────────────────────────────────
 
 /** `courses/{id}` — `null` when absent. */
 export type LoadCourse = (
   id: CourseId,
-) => Promise<Result<CourseEntity | null, RepositoryError>>;
+) => Promise<Result<Course | null, RepositoryError>>;
 
 export type SaveCourse = (
-  course: CourseEntity,
+  course: Course,
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
@@ -53,35 +59,36 @@ export type SaveCourse = (
  */
 export type ObserveCourses = (
   statuses: readonly EnrollmentStatus[] | null,
-) => Observable<Result<readonly CourseEntity[], RepositoryError>>;
+) => Observable<Result<readonly Course[], RepositoryError>>;
 
 // ── Events ────────────────────────────────────────────────────────────────
 
 /** `events/{id}` — `null` when absent. */
 export type LoadEvent = (
   id: EventId,
-) => Promise<Result<EventEntity | null, RepositoryError>>;
+) => Promise<Result<ShopEvent | null, RepositoryError>>;
 
 export type SaveEvent = (
-  event: EventEntity,
+  event: ShopEvent,
 ) => Promise<Result<void, RepositoryError>>;
 
 /** Which side of an instant an events read covers. */
 export type EventsQuery = {
   /** The instant splitting upcoming from past — the caller's injected clock. */
-  readonly nowMs: number;
+  readonly nowUtcMs: UtcEpochMs;
   /**
-   * `true`: `startMs >= nowMs`, soonest first, every one. `false`:
-   * `startMs < nowMs`, newest first, the latest 24
-   * (`event-repository.adapter.ts:96-126`). Single-field either way.
+   * `true`: `utcEpochMs >= nowUtcMs`, soonest first, every one. `false`:
+   * `utcEpochMs < nowUtcMs`, newest first, the latest 24
+   * (`event-repository.adapter.ts:96-126`). A Firestore range on the
+   * event's one absolute instant (Law 7), single-field either way.
    */
   readonly upcoming: boolean;
 };
 
-/** The shop's events on one side of `nowMs`, live. */
+/** The shop's events on one side of `nowUtcMs`, live. */
 export type ObserveEvents = (
   query: EventsQuery,
-) => Observable<Result<readonly EventEntity[], RepositoryError>>;
+) => Observable<Result<readonly ShopEvent[], RepositoryError>>;
 
 /** The programs bundle the web binds. */
 export type ProgramsPorts = {

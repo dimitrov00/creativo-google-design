@@ -3,7 +3,7 @@ import {
   AttemptOutcome,
   AuthClaims,
   type FindAuthUserByDestination,
-  IdentifierKind,
+  IdentifierChannel,
   type MintCustomToken,
   PipelineError,
   PipelineErrorCode,
@@ -102,9 +102,9 @@ export const authClaimsPorts = (auth: Auth): AuthClaimsPorts => ({
   provisionAuthUser: async (destination) => {
     try {
       const created = await auth.createUser(
-        destination.kind === IdentifierKind.Email
-          ? { email: destination.value }
-          : { phoneNumber: destination.value },
+        destination.identifierChannel === IdentifierChannel.Email
+          ? { email: destination.identifier }
+          : { phoneNumber: destination.identifier },
       );
       return Result.ok(UserId.of(created.uid));
     } catch (error) {
@@ -118,9 +118,9 @@ export const authClaimsPorts = (auth: Auth): AuthClaimsPorts => ({
   findAuthUserByDestination: async (destination) => {
     try {
       const found =
-        destination.kind === IdentifierKind.Email
-          ? await auth.getUserByEmail(destination.value)
-          : await auth.getUserByPhoneNumber(destination.value);
+        destination.identifierChannel === IdentifierChannel.Email
+          ? await auth.getUserByEmail(destination.identifier)
+          : await auth.getUserByPhoneNumber(destination.identifier);
       return Result.ok(UserId.of(found.uid));
     } catch (error) {
       return authCodeOf(error) === AuthRefusal.UserNotFound

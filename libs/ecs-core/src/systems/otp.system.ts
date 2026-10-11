@@ -2,7 +2,10 @@ import {
   AuthStrategy,
   AuthStrategyKind,
 } from '../components/auth-strategy.data';
-import { type Identifier, IdentifierKind } from '../components/identifier.data';
+import {
+  type Identifier,
+  IdentifierChannel,
+} from '../components/identifier.data';
 import {
   IdentityError,
   IdentityErrorCode,
@@ -10,8 +13,10 @@ import {
 import { OtpDestinationType } from '../components/otp-destination-type.data';
 import type { OtpPurpose } from '../components/otp-purpose.data';
 import { Result } from '../components/result.data';
-import type { TenantId } from '../components/tenant-id.data';
-import { type OtpEntity, OtpId } from '../entities/otp.entity';
+import type { Otp } from '../entities/otp.entity';
+import type { DurationMinutes } from '../primitives/duration-minutes.primitive';
+import { OtpId, type TenantId } from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * OtpSystem — the one-time-code challenge as pure math (blueprint §2.8),
@@ -24,7 +29,10 @@ import { type OtpEntity, OtpId } from '../entities/otp.entity';
  * the code and the salt and hashes them, and hands this system the
  * {@link HashedCode}; on verify the pipeline compares the typed code against
  * the stored hash through the same port and passes the `codeMatches`
- * boolean. The clock (`nowMs`) and the id source (`nextId`) are parameters.
+ * boolean. The clock (`nowUtcMs`) and the id source (`nextId`) are
+ * parameters. An OTP has no location, so no shop clock (flatten-spec F-5):
+ * its TTL and resend window are T2 rows — lifecycle stamps compared and
+ * added in elapsed real time through `UtcEpochMs.compare`/`plusMs`.
  */
 
 const MS_PER_MINUTE = 60_000;
@@ -54,44 +62,44 @@ export type HashedCode = {
 export type OtpChallenge = {
   readonly tenantId: TenantId;
   readonly destination: Identifier;
-  readonly destinationType: OtpDestinationType;
-  readonly purpose: OtpPurpose;
-  readonly ttlMinutes: number;
+  readonly otpDestinationType: OtpDestinationType;
+  readonly otpPurpose: OtpPurpose;
+  readonly ttlMinutes: DurationMinutes;
   readonly maxAttempts: number;
 };
 
 /**
- * The four fields the verdict reads — an {@link OtpEntity} satisfies it, and
+ * The four fields the verdict reads — an {@link Otp} satisfies it, and
  * `verify`/`recordAttempt`/`attempt` hand back the same type they were given
  * (a legacy class's counters, read through its shim, included).
  */
 export type OtpCounters = Pick<
-  OtpEntity,
-  'consumedAtMs' | 'expiresAtMs' | 'attemptCount' | 'maxAttempts'
+  Otp,
+  'consumedAtUtcMs' | 'expiresAtUtcMs' | 'attemptCount' | 'maxAttempts'
 >;
 
 /**
  * What one verification attempt decided: the verdict, and the entity the
  * pipeline must persist — the consumed challenge on success, the challenge
- * with one more recorded attempt on `identity.otp.wrong_code`, and `null`
+ * with one more recorded attempt on `IDENTITY_OTP_WRONG_CODE`, and `null`
  * (nothing changed) on every other refusal. The verifyOtp transaction's
  * decide step, in one pure call (`verify-otp.use-case.ts:103-126`).
  */
-export type OtpAttempt<O extends OtpCounters = OtpEntity> = {
+export type OtpAttempt<O extends OtpCounters = Otp> = {
   readonly result: Result<O, IdentityError.Otp>;
   readonly write: O | null;
 };
 
-/** The identifier kind a stored destination type is delivered over. */
-function kindOf(destinationType: OtpDestinationType): IdentifierKind {
-  return destinationType === OtpDestinationType.Sms
-    ? IdentifierKind.Phone
-    : IdentifierKind.Email;
+/** The identifier channel a stored destination type is delivered over. */
+function channelOf(otpDestinationType: OtpDestinationType): IdentifierChannel {
+  return otpDestinationType === OtpDestinationType.Sms
+    ? IdentifierChannel.Phone
+    : IdentifierChannel.Email;
 }
 
 export const OtpSystem = {
   /**
-   * A fresh challenge: `expiresAtMs = nowMs + ttlMinutes`, no attempt
+   * A fresh challenge: `expiresAtUtcMs = nowUtcMs + ttlMinutes`, no attempt
    * recorded, not consumed, created now. Total — every input was validated
    * at its edge (the destination by `ParsedIdentifier.parse`, the policy by
    * `AuthStrategy.parse`, the hash by the crypto port).
@@ -99,52 +107,55 @@ export const OtpSystem = {
   issue(
     challenge: OtpChallenge,
     code: HashedCode,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
     nextId: () => string,
-  ): OtpEntity {
+  ): Otp {
     return {
       id: OtpId.of(nextId()),
       tenantId: challenge.tenantId,
       destination: challenge.destination,
-      destinationType: challenge.destinationType,
-      purpose: challenge.purpose,
+      otpDestinationType: challenge.otpDestinationType,
+      otpPurpose: challenge.otpPurpose,
       codeHash: code.codeHash,
       salt: code.salt,
-      expiresAtMs: OtpSystem.expiresAtMs(nowMs, challenge.ttlMinutes),
+      expiresAtUtcMs: OtpSystem.expiresAtUtcMs(nowUtcMs, challenge.ttlMinutes),
       attemptCount: 0,
       maxAttempts: challenge.maxAttempts,
-      consumedAtMs: null,
-      createdAtMs: nowMs,
+      consumedAtUtcMs: null,
+      createdAtUtcMs: nowUtcMs,
     };
   },
 
-  /** When a challenge issued at `nowMs` under a `ttlMinutes` policy stops verifying. */
-  expiresAtMs(nowMs: number, ttlMinutes: number): number {
-    return nowMs + ttlMinutes * MS_PER_MINUTE;
+  /** When a challenge issued at `nowUtcMs` under a `ttl` policy stops verifying. */
+  expiresAtUtcMs(nowUtcMs: UtcEpochMs, ttl: DurationMinutes): UtcEpochMs {
+    return UtcEpochMs.plusMs(nowUtcMs, ttl * MS_PER_MINUTE);
   },
 
   /**
    * The verdict, in the legacy order: already consumed → expired (strictly
-   * past `expiresAtMs`; the expiry instant itself still verifies) → locked
-   * out (`attemptCount` reached `maxAttempts`, even with the right code) →
-   * wrong code → the consumed challenge. Never records the attempt itself:
-   * a wrong code is reported WITHOUT touching `attemptCount`, and the
-   * pipeline calls {@link recordAttempt} (or {@link attempt}) to persist it.
+   * past `expiresAtUtcMs`; the expiry instant itself still verifies) →
+   * locked out (`attemptCount` reached `maxAttempts`, even with the right
+   * code) → wrong code → the consumed challenge. Never records the attempt
+   * itself: a wrong code is reported WITHOUT touching `attemptCount`, and
+   * the pipeline calls {@link recordAttempt} (or {@link attempt}) to
+   * persist it.
    */
   verify<O extends OtpCounters>(
     otp: O,
     codeMatches: boolean,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
   ): Result<O, IdentityError.Otp> {
-    if (otp.consumedAtMs !== null) {
+    if (otp.consumedAtUtcMs !== null) {
       return Result.err(IdentityError.otpAlreadyConsumed());
     }
-    if (nowMs > otp.expiresAtMs) return Result.err(IdentityError.otpExpired());
+    if (UtcEpochMs.compare(nowUtcMs, otp.expiresAtUtcMs) > 0) {
+      return Result.err(IdentityError.otpExpired());
+    }
     if (otp.attemptCount >= otp.maxAttempts) {
       return Result.err(IdentityError.otpLockedOut());
     }
     if (!codeMatches) return Result.err(IdentityError.otpWrongCode());
-    return Result.ok({ ...otp, consumedAtMs: nowMs });
+    return Result.ok({ ...otp, consumedAtUtcMs: nowUtcMs });
   },
 
   /** One more wrong code on record — a new entity, the input untouched. */
@@ -160,22 +171,25 @@ export const OtpSystem = {
   attempt<O extends OtpCounters>(
     otp: O,
     codeMatches: boolean,
-    nowMs: number,
+    nowUtcMs: UtcEpochMs,
   ): OtpAttempt<O> {
-    const result = OtpSystem.verify(otp, codeMatches, nowMs);
+    const result = OtpSystem.verify(otp, codeMatches, nowUtcMs);
     if (result.ok) return { result, write: result.value };
     return {
       result,
       write:
-        result.error.code === IdentityErrorCode.OtpWrongCode
+        result.error.errorCode === IdentityErrorCode.OtpWrongCode
           ? OtpSystem.recordAttempt(otp)
           : null,
     };
   },
 
-  /** The earliest `createdAtMs` an open challenge may carry and still throttle a resend. */
-  resendWindowStartMs(nowMs: number): number {
-    return nowMs - OtpLimits.ResendWindowMinutes * MS_PER_MINUTE;
+  /** The earliest `createdAtUtcMs` an open challenge may carry and still throttle a resend. */
+  resendWindowStartUtcMs(nowUtcMs: UtcEpochMs): UtcEpochMs {
+    return UtcEpochMs.plusMs(
+      nowUtcMs,
+      -OtpLimits.ResendWindowMinutes * MS_PER_MINUTE,
+    );
   },
 
   /**
@@ -184,11 +198,19 @@ export const OtpSystem = {
    * `LoadOpenOtps` port read for the destination; the scan re-checks both
    * conditions, so a wider read can never loosen the throttle.
    */
-  mayIssue(open: readonly OtpEntity[], nowMs: number): boolean {
-    const sinceMs = OtpSystem.resendWindowStartMs(nowMs);
+  mayIssue(
+    open: readonly Pick<Otp, 'consumedAtUtcMs' | 'createdAtUtcMs'>[],
+    nowUtcMs: UtcEpochMs,
+  ): boolean {
+    const sinceUtcMs = OtpSystem.resendWindowStartUtcMs(nowUtcMs);
     for (let i = 0; i < open.length; i++) {
-      const otp = open[i] as OtpEntity;
-      if (otp.consumedAtMs === null && otp.createdAtMs >= sinceMs) return false;
+      const otp = open[i] as Pick<Otp, 'consumedAtUtcMs' | 'createdAtUtcMs'>;
+      if (
+        otp.consumedAtUtcMs === null &&
+        UtcEpochMs.compare(otp.createdAtUtcMs, sinceUtcMs) >= 0
+      ) {
+        return false;
+      }
     }
     return true;
   },
@@ -199,12 +221,12 @@ export const OtpSystem = {
    * deployment issues no code challenges at all.
    */
   channelAccepts(
-    strategy: AuthStrategy,
-    destinationType: OtpDestinationType,
+    strategy: Pick<AuthStrategy, 'authStrategyKind'>,
+    otpDestinationType: OtpDestinationType,
   ): boolean {
     return (
-      strategy.kind !== AuthStrategyKind.EmailLink &&
-      kindOf(destinationType) === AuthStrategy.identifierKind(strategy)
+      strategy.authStrategyKind !== AuthStrategyKind.EmailLink &&
+      channelOf(otpDestinationType) === AuthStrategy.identifierKind(strategy)
     );
   },
 } as const;

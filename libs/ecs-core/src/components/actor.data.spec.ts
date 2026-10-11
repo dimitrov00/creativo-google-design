@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { ImpersonationSessionId } from '../entities/impersonation-session.entity';
-import { UserId } from '../entities/user.entity';
-import { Actor, ActorKind, SystemSource } from './actor.data';
+import { ImpersonationSessionId, UserId } from '../primitives/ids.primitive';
+import { Actor, ActorRole, SystemSource } from './actor.data';
 import { ImpersonationScope } from './impersonation-scope.data';
 import { Role } from './role.data';
 
 /*
  * The cases of libs/domain/governance/src/lib/actor.spec.ts, copied over the
- * union (`actorForCaller` is `Actor.forCaller`; the free-string system
- * sources are the `SystemSource` dictionary now).
+ * flat union (`actorForCaller` is `Actor.forCaller`; the free-string system
+ * sources are the `SystemSource` dictionary now; every field carries the
+ * `actor` prefix and the tag is `actorRole`).
  */
 const adminId = UserId.of('admin-1');
 const targetId = UserId.of('user-1');
@@ -18,17 +18,17 @@ const impersonator = (scope: ImpersonationScope) =>
   Actor.impersonator(adminId, targetId, sid, scope);
 
 describe('Actor — constructors and predicates', () => {
-  it('Actor.user has kind user and exposes apparentUserId', () => {
+  it('Actor.user has actorRole USER and exposes apparentUserId', () => {
     const a = Actor.user(targetId);
-    expect(a.kind).toBe('user');
+    expect(a.actorRole).toBe('USER');
     expect(Actor.apparentUserId(a)).toBe(targetId);
     expect(Actor.isImpersonating(a)).toBe(false);
     expect(Actor.canMutate(a)).toBe(true);
   });
 
-  it('Actor.admin has kind admin and exposes apparentUserId as the admin', () => {
+  it('Actor.admin has actorRole ADMIN and exposes apparentUserId as the admin', () => {
     const a = Actor.admin(adminId);
-    expect(a.kind).toBe('admin');
+    expect(a.actorRole).toBe('ADMIN');
     expect(Actor.apparentUserId(a)).toBe(adminId);
     expect(Actor.isImpersonating(a)).toBe(false);
     expect(Actor.canMutate(a)).toBe(true);
@@ -36,8 +36,8 @@ describe('Actor — constructors and predicates', () => {
 
   it('Actor.staff carries its roles snapshot and exposes the staff member as apparent', () => {
     const a = Actor.staff(adminId, [Role.Barber, Role.Receptionist]);
-    expect(a.kind).toBe('staff');
-    expect(a.roles).toEqual(['barber', 'receptionist']);
+    expect(a.actorRole).toBe('STAFF');
+    expect(a.actorRoles).toEqual(['barber', 'receptionist']);
     expect(Actor.apparentUserId(a)).toBe(adminId);
     expect(Actor.isImpersonating(a)).toBe(false);
     expect(Actor.canMutate(a)).toBe(true);
@@ -47,12 +47,12 @@ describe('Actor — constructors and predicates', () => {
     const roles: Role[] = [Role.Barber];
     const a = Actor.staff(adminId, roles);
     roles.push(Role.Receptionist);
-    expect(a.roles).toEqual(['barber']);
+    expect(a.actorRoles).toEqual(['barber']);
   });
 
-  it('Actor.system has no apparent user and keeps the stored source string', () => {
+  it('Actor.system has no apparent user and keeps its source tag', () => {
     const a = Actor.system(SystemSource.AdminSdk);
-    expect(a).toEqual({ kind: 'system', source: 'admin_sdk' });
+    expect(a).toEqual({ actorRole: 'SYSTEM', actorSystemSource: 'ADMIN_SDK' });
     expect(Actor.apparentUserId(a)).toBeNull();
     expect(Actor.canMutate(a)).toBe(true);
   });
@@ -60,11 +60,11 @@ describe('Actor — constructors and predicates', () => {
   it('Actor.impersonator preserves both admin + target ids and exposes target as apparent', () => {
     const a = impersonator(ImpersonationScope.Write);
     expect(a).toEqual({
-      kind: ActorKind.Impersonator,
-      adminUserId: 'admin-1',
-      targetUserId: 'user-1',
-      sessionId: 'sess-1',
-      scope: 'write',
+      actorRole: ActorRole.Impersonator,
+      actorAdminUserId: 'admin-1',
+      actorTargetUserId: 'user-1',
+      actorSessionId: 'sess-1',
+      actorScope: 'WRITE',
     });
     expect(Actor.apparentUserId(a)).toBe(targetId);
     expect(Actor.isImpersonating(a)).toBe(true);
@@ -164,10 +164,10 @@ describe('Actor.forCaller — attribution from verified claims', () => {
 });
 
 describe('SystemSource', () => {
-  it('holds today’s stored sources, each once', () => {
+  it('holds today’s stored sources upper-snaked, each once', () => {
     const sources = Object.values(SystemSource);
     expect(new Set(sources).size).toBe(sources.length);
-    expect(sources).toContain('loyalty_engine');
-    expect(sources).toContain('unattributed_api_key');
+    expect(sources).toContain('LOYALTY_ENGINE');
+    expect(sources).toContain('UNATTRIBUTED_API_KEY');
   });
 });

@@ -390,6 +390,81 @@ describe('Appointment.reconstitute — past appointments are legitimate', () => 
 });
 
 /*
+ * ONE SHOP DAY PER APPOINTMENT (F-6, flatten-spec T7): a seat whose sold end
+ * runs past the visit's midnight, or that starts on another day, is REFUSED
+ * as a value by every factory — never thrown out of a Result-returning API.
+ */
+describe('Appointment — one shop day per visit (F-6)', () => {
+  const NOW = at('2026-05-01T09:00:00');
+
+  it('refuses a NEW seat sold past midnight as a value, and reads a stored one as it stands without throwing', () => {
+    const late = [
+      seat({ startIso: '2026-06-01T23:30:00', durationMinutes: 60 }),
+    ];
+    const created = Appointment.create({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: late,
+      now: NOW,
+    });
+    expect(created.isFailure()).toBe(true);
+    if (created.isFailure()) {
+      expect(created.error.map((error) => error.code)).toEqual([
+        'scheduling.appointment.seat_off_the_day',
+      ]);
+    }
+    // A stored legacy visit (none is stored; a legacy spec builds one) is
+    // read as it stands: its own instants keep the true end, and every
+    // wall-clock fact asked of it answers instead of throwing.
+    const rebuilt = Appointment.reconstitute({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: late,
+      status: CONFIRMED,
+    });
+    expect(rebuilt.isSuccess()).toBe(true);
+    if (rebuilt.isSuccess()) {
+      expect(rebuilt.value.timeSlot.end.toISO()).toBe(
+        '2026-06-02T00:30:00.000+03:00',
+      );
+      expect(rebuilt.value.barberIds()).toHaveLength(1);
+      expect(rebuilt.value.latenessMinutes()).toBeNull();
+      expect(rebuilt.value.complete(RESOLVED_AT_MS).isSuccess()).toBe(true);
+    }
+  });
+
+  it('refuses a party whose second seat starts on the next day', () => {
+    const result = Appointment.reconstitute({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: [
+        seat({ startIso: '2026-06-01T22:00:00' }),
+        seat({ startIso: '2026-06-02T00:15:00' }),
+      ],
+      status: COMPLETED,
+    });
+    expect(result.isFailure() && result.error[0]?.code).toBe(
+      'scheduling.appointment.seat_off_the_day',
+    );
+  });
+
+  it('still takes a seat that ends exactly at midnight', () => {
+    const result = Appointment.reconstitute({
+      id: 'appointment-1',
+      locationId: LocationId.generate().toString(),
+      seats: [seat({ startIso: '2026-06-01T23:30:00', durationMinutes: 30 })],
+      status: COMPLETED,
+    });
+    expect(result.isSuccess()).toBe(true);
+    if (result.isSuccess()) {
+      expect(result.value.timeSlot.end.toISO()).toBe(
+        '2026-06-02T00:00:00.000+03:00',
+      );
+    }
+  });
+});
+
+/*
  * THE REVISION A COPY WAS READ AT (round 5): what a staff sheet drawn from
  * this copy claims on its next save, so a colleague's save since is refused
  * as stale rather than overwritten. A fact about the copy, not the visit.

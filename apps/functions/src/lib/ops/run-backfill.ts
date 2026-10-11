@@ -22,7 +22,11 @@ import {
 } from '@creativo/application/booking';
 import { AUDIT_LOG_COLLECTION } from '@creativo/application/shared';
 import type { Actor } from '@creativo/domain/governance';
-import { BackfillPhase, BackfillPlanSystem } from '@creativo/ecs-core';
+import {
+  BackfillPhase,
+  type BackfillPageWalk,
+  BackfillPlanSystem,
+} from '@creativo/ecs-core';
 import { adminFirestore } from '../firebase-admin';
 import { type AuditInput, appendAudit } from '../booking/audit';
 import { callerActor, callerRoles } from '../booking/caller-roles';
@@ -50,8 +54,8 @@ import {
   BACKFILL_JOBS_COLLECTION,
   BACKFILL_PAGE_SIZE,
   type BackfillJob,
-  type BackfillPosition,
   type BackfillRequest,
+  backfillJobNameOf,
   inferPlacement,
   lacksPlacement,
   mayLackMirrors,
@@ -295,13 +299,12 @@ export async function sampleDiff(
   return { checked: docs.length, mismatched };
 }
 
-/** One page's work, before the progress document records it. */
-interface PageOutcome {
-  readonly next: BackfillPosition;
-  /** The walk ran off the end of its phase. */
-  readonly exhausted: boolean;
-  /** The budget ran out before the page did; `next` is the last row handled. */
-  readonly stoppedEarly: boolean;
+/**
+ * One page's work, before the progress document records it: the walk as
+ * `BackfillPlanSystem.pageWalk` judged it (`next`, `exhausted`,
+ * `stoppedEarly`), and its counts.
+ */
+interface PageOutcome extends BackfillPageWalk {
   readonly processed: number;
   readonly storedClients: number;
   readonly stamped: number;
@@ -522,7 +525,7 @@ export async function runBackfillPage(
   // is finished; the closing sample waits for the next call when the budget
   // is spent (it is new work too), never twice.
   const verdict = BackfillPlanSystem.nextPage(
-    request.job,
+    backfillJobNameOf(request.job),
     outcome,
     outcome,
     () => call.budget.spent(),

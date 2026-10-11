@@ -3,8 +3,17 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { Result, ZonedDateTime } from '@creativo/domain/kernel';
 import { BarberId } from '@creativo/domain/catalog';
 import { CalendarDay, Interval } from '@creativo/domain/scheduling';
-import { BarberId as BarberKey, DayKey } from '@creativo/ecs-core';
-import { schedulingPortsContract } from '@creativo/ecs-core/testing';
+import {
+  BarberId as BarberKey,
+  LocalDate,
+  type MinuteRange,
+  MinuteOfDay,
+  ZonedTimeSystem,
+} from '@creativo/ecs-core';
+import {
+  FIXTURE_TIME_ZONE,
+  schedulingPortsContract,
+} from '@creativo/ecs-core/testing';
 import { createProjectionFirestore } from '../../test-support/fake-projection-firestore';
 import { loadDayAvailability } from './load-day-availability';
 
@@ -132,11 +141,37 @@ async function busyOf(
     ?.busy;
 }
 
+/** The contract's shop day, as the ecs-core date it places its cases on. */
+const LOCAL_DATE = ((parsed) => {
+  if (!parsed.ok) throw new Error(`fixture setup failed: ${DAY_KEY}`);
+  return parsed.value;
+})(LocalDate.parse(DAY_KEY));
+
+/**
+ * A contract range (the shop day's wall clock) → this loader's instants:
+ * `ZonedTimeSystem.toUtc` of each end on the contract's day.
+ */
+function instantsOf(ranges: readonly MinuteRange[]): readonly Interval[] {
+  const instantOf = (minute: number): number => {
+    const wall = MinuteOfDay.of(minute);
+    const instant = wall.ok
+      ? ZonedTimeSystem.toUtc(LOCAL_DATE, wall.value, FIXTURE_TIME_ZONE)
+      : null;
+    if (instant === null || !instant.ok) {
+      throw new Error(`fixture setup failed: minute ${minute}`);
+    }
+    return instant.value;
+  };
+  return ranges.map((range) =>
+    Interval.of(instantOf(range.startMinutes), instantOf(range.endMinutes)),
+  );
+}
+
 describe('loadDayAvailability — the port’s busy contract', () => {
   // A waitlist request is a new booking: nothing is ever handed back.
   const cases = schedulingPortsContract({
-    dayKey: DayKey.of(DAY_KEY),
-    zone: ZONE,
+    localDate: LOCAL_DATE,
+    timeZone: FIXTURE_TIME_ZONE,
     barberId: BarberKey.of(ivan.value),
     otherBarberId: BarberKey.of(niko.value),
   }).cases.filter((entry) => (entry.release ?? []).length === 0);
@@ -157,12 +192,12 @@ describe('loadDayAvailability — the port’s busy contract', () => {
         {
           id: 'ivan',
           turnaroundMinutes: entry.turnaroundMinutes,
-          spans: entry.spans,
+          spans: instantsOf(entry.spans),
         },
         { id: 'niko', turnaroundMinutes: 0, spans: [] },
       ]);
 
-      expect(await busyOf(db, ivan)).toEqual(entry.busy);
+      expect(await busyOf(db, ivan)).toEqual(instantsOf(entry.busy));
     },
   );
 

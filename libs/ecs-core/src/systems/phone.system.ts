@@ -99,7 +99,7 @@ const NON_DIGITS = /\D/g;
 export const PhoneSystem = {
   /**
    * The edge parse: an E.164 string, or a local-format string read against
-   * `defaultCountry` — the canonical number, or `phone.invalid` with the most
+   * `defaultCountry` — the canonical number, or `PHONE_INVALID` with the most
    * specific reason the library can give (`attempted` is the raw text,
    * untrimmed). A `defaultCountry` the metadata does not support refuses
    * with `invalid-country`, whatever the text.
@@ -148,7 +148,7 @@ export const PhoneSystem = {
   /**
    * The edge guard for an ISO-2 string from an untrusted source (deployment
    * config, route data, `navigator.language`'s region subtag): trimmed,
-   * upper-cased, supported by the metadata — or `phone.country_unsupported`
+   * upper-cased, supported by the metadata — or `PHONE_COUNTRY_UNSUPPORTED`
    * carrying the raw text. The kernel's `toCountryIso2`.
    */
   parseCountry(raw: string): Result<CountryIso2, PhoneError> {

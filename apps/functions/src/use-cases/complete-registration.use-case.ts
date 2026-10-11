@@ -2,8 +2,8 @@ import {
   BirthDate as BirthDay,
   E164,
   Email,
-  IdentifierKind,
-  Registration,
+  IdentifierChannel,
+  RegistrationState,
   type RegistrationStanding,
   RegistrationSystem,
   type Role,
@@ -109,9 +109,9 @@ const BIRTH_DATE_ZONE = 'UTC';
 /** What the stored document holds, as the system reads it (stored values were validated on the way in). */
 function toStanding(user: UserRecordSnapshot): RegistrationStanding {
   return {
-    registration: user.registered
-      ? Registration.registered()
-      : Registration.provisioned(),
+    registrationState: user.registered
+      ? RegistrationState.Registered
+      : RegistrationState.Provisioned,
     roles: user.roles as readonly Role[],
     email: user.email === null ? null : Email.of(user.email),
     phone: user.phone === null ? null : E164.of(user.phone),
@@ -144,7 +144,9 @@ export class CompleteRegistrationUseCase {
     // the login channel — the client never has to re-submit it as a form
     // field for the requirement to be met.
     const effectiveFields = RegistrationSystem.effectiveFields(
-      input.kind === 'phone' ? IdentifierKind.Phone : IdentifierKind.Email,
+      input.kind === 'phone'
+        ? IdentifierChannel.Phone
+        : IdentifierChannel.Email,
       input.value,
       toRegistrationFields(input.fields),
     );

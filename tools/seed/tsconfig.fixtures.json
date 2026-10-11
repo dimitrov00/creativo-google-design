@@ -1,6 +1,6 @@
 {
   // The seed's fixture bodies (tools/seed/fixtures/*.ts): every export is
-  // `satisfies Omit<XEntity, 'id'>` against @creativo/ecs-core, so a stale
+  // `satisfies Omit<X, 'id'>` (X the archetype noun) against @creativo/ecs-core, so a stale
   // shape fails `pnpm nx typecheck seed-tools`, not a query (ECS migration
   // §6 Phase 3, Risk 1, Risk 8). The `.mjs` writers import them through the
   // esbuild path of load-domain.mjs; this config only type-checks them.

@@ -27,18 +27,18 @@ describe('BookingContact.create', () => {
     expect(result).toEqual({
       ok: true,
       value: {
-        name: 'Емил',
-        phone: '+359896330113',
-        email: 'dimitar@example.com',
-        note: null,
+        contactName: 'Емил',
+        contactPhone: '+359896330113',
+        contactEmail: 'dimitar@example.com',
+        contactNote: null,
       },
     });
   });
 
   it('refuses a nameless booking — the shop calls out a name', () => {
     const result = BookingContact.create({ ...VALID, name: '   ' }, parsePhone);
-    expect(!result.ok && result.error.code).toBe(
-      'scheduling.booking_contact.empty_name',
+    expect(!result.ok && result.error.errorCode).toBe(
+      'SCHEDULING_BOOKING_CONTACT_EMPTY_NAME',
     );
   });
 
@@ -47,7 +47,7 @@ describe('BookingContact.create', () => {
     expect(result).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.booking_contact.invalid_phone',
+        errorCode: 'SCHEDULING_BOOKING_CONTACT_INVALID_PHONE',
         rawValue: '12',
       },
     });
@@ -55,11 +55,11 @@ describe('BookingContact.create', () => {
 
   it('accepts no email at all, but not a broken one', () => {
     const absent = BookingContact.create({ ...VALID, email: null }, parsePhone);
-    expect(absent.ok && absent.value.email).toBeNull();
+    expect(absent.ok && absent.value.contactEmail).toBeNull();
 
     // Whitespace is absence, not a value — a field the user cleared.
     const blank = BookingContact.create({ ...VALID, email: '   ' }, parsePhone);
-    expect(blank.ok && blank.value.email).toBeNull();
+    expect(blank.ok && blank.value.contactEmail).toBeNull();
 
     const broken = BookingContact.create(
       { ...VALID, email: 'not-an-email' },
@@ -68,7 +68,7 @@ describe('BookingContact.create', () => {
     expect(broken).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.booking_contact.invalid_email',
+        errorCode: 'SCHEDULING_BOOKING_CONTACT_INVALID_EMAIL',
         rawValue: 'not-an-email',
       },
     });
@@ -76,13 +76,13 @@ describe('BookingContact.create', () => {
 
   it('bounds the note, and treats an empty one as none', () => {
     const empty = BookingContact.create({ ...VALID, note: '   ' }, parsePhone);
-    expect(empty.ok && empty.value.note).toBeNull();
+    expect(empty.ok && empty.value.contactNote).toBeNull();
 
     const kept = BookingContact.create(
       { ...VALID, note: ' закъснявам 5 мин ' },
       parsePhone,
     );
-    expect(kept.ok && kept.value.note).toBe('закъснявам 5 мин');
+    expect(kept.ok && kept.value.contactNote).toBe('закъснявам 5 мин');
 
     const atLimit = BookingContact.create(
       { ...VALID, note: 'x'.repeat(BookingContact.MAX_NOTE_LENGTH) },
@@ -97,19 +97,22 @@ describe('BookingContact.create', () => {
     expect(tooLong).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.booking_contact.note_too_long',
+        errorCode: 'SCHEDULING_BOOKING_CONTACT_NOTE_TOO_LONG',
         maxLength: 200,
       },
     });
   });
 
-  it('round-trips through its stored shape — the struct is its own input', () => {
+  it('round-trips through its stored shape — the slice is its own input again', () => {
     const created = BookingContact.create(
       { ...VALID, note: 'без машинка' },
       parsePhone,
     );
     if (!created.ok) throw new Error('bad fixture');
-    const restored = BookingContact.create(created.value, parsePhone);
+    const restored = BookingContact.create(
+      BookingContact.inputOf(created.value),
+      parsePhone,
+    );
     if (!restored.ok) throw new Error('expected a contact');
     expect(BookingContact.equals(restored.value, created.value)).toBe(true);
   });
@@ -118,20 +121,40 @@ describe('BookingContact.create', () => {
     const created = BookingContact.create(VALID, parsePhone);
     if (!created.ok) throw new Error('bad fixture');
     const contact = created.value;
-    expect(BookingContact.equals(contact, { ...contact, note: 'x' })).toBe(
-      false,
-    );
-    expect(BookingContact.equals(contact, { ...contact, email: null })).toBe(
-      false,
-    );
-    expect(BookingContact.equals(contact, { ...contact, name: 'Иван' })).toBe(
-      false,
-    );
+    expect(
+      BookingContact.equals(contact, { ...contact, contactNote: 'x' }),
+    ).toBe(false);
+    expect(
+      BookingContact.equals(contact, { ...contact, contactEmail: null }),
+    ).toBe(false);
+    expect(
+      BookingContact.equals(contact, { ...contact, contactName: 'Иван' }),
+    ).toBe(false);
     expect(
       BookingContact.equals(contact, {
         ...contact,
-        phone: E164.of('+359888000000'),
+        contactPhone: E164.of('+359888000000'),
       }),
     ).toBe(false);
+  });
+});
+
+describe('BookingContact.NONE / isPresent / of', () => {
+  it('is absent with all four fields null together', () => {
+    expect(BookingContact.NONE).toEqual({
+      contactName: null,
+      contactPhone: null,
+      contactEmail: null,
+      contactNote: null,
+    });
+    expect(BookingContact.isPresent(BookingContact.NONE)).toBe(false);
+  });
+
+  it('is present once created, and copies itself out of a carrier', () => {
+    const created = BookingContact.create(VALID, parsePhone);
+    if (!created.ok) throw new Error('bad fixture');
+    expect(BookingContact.isPresent(created.value)).toBe(true);
+    const appointment = { ...created.value, bookingStatus: 'CONFIRMED' };
+    expect(BookingContact.of(appointment)).toEqual(created.value);
   });
 });

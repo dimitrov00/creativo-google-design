@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { GuestId, SeatKeyText } from '../primitives/ids.primitive';
 import {
   BookingFlowError,
   BookingFlowErrorCode,
@@ -6,45 +7,47 @@ import {
 import { SchedulingError } from './scheduling-errors.data';
 
 describe('BookingFlowError', () => {
-  it('keeps every legacy booking.flow.* key verbatim — each has its copy already', () => {
+  it('holds one SCREAMING BOOKING_FLOW_ code per legacy booking.flow.* key', () => {
     expect(Object.values(BookingFlowErrorCode).sort()).toEqual([
-      'booking.flow.empty_cart',
-      'booking.flow.flexible_days_full',
-      'booking.flow.guest_not_found',
-      'booking.flow.invalid_cart_operation',
-      'booking.flow.invalid_guest',
-      'booking.flow.invalid_transition',
-      'booking.flow.no_flexible_days',
-      'booking.flow.party_full',
-      'booking.flow.seat_without_service',
+      'BOOKING_FLOW_EMPTY_CART',
+      'BOOKING_FLOW_FLEXIBLE_DAYS_FULL',
+      'BOOKING_FLOW_GUEST_NOT_FOUND',
+      'BOOKING_FLOW_INVALID_CART_OPERATION',
+      'BOOKING_FLOW_INVALID_GUEST',
+      'BOOKING_FLOW_INVALID_TRANSITION',
+      'BOOKING_FLOW_NO_FLEXIBLE_DAYS',
+      'BOOKING_FLOW_PARTY_FULL',
+      'BOOKING_FLOW_SEAT_WITHOUT_SERVICE',
     ]);
   });
 
   it('builds plain structs whose wrapped refusals ride as codes, never structs', () => {
     const errors: readonly BookingFlowError[] = [
-      BookingFlowError.invalidTransition('location', 'confirmed'),
-      BookingFlowError.invalidGuest('scheduling.seat_label.empty'),
-      BookingFlowError.guestNotFound('guest-2'),
+      BookingFlowError.invalidTransition('LOCATION', 'CONFIRMED'),
+      BookingFlowError.invalidGuest('SCHEDULING_SEAT_LABEL_EMPTY'),
+      BookingFlowError.guestNotFound(GuestId.of('guest-2')),
       BookingFlowError.partyFull(5),
       BookingFlowError.emptyCart(),
-      BookingFlowError.seatWithoutService('guest-1'),
+      BookingFlowError.seatWithoutService(SeatKeyText.of('guest-1')),
       BookingFlowError.flexibleDaysFull(7),
       BookingFlowError.noFlexibleDays(),
       BookingFlowError.invalidCartOperation(
-        'scheduling.booking_cart.line_not_found',
+        'SCHEDULING_BOOKING_CART_LINE_NOT_FOUND',
       ),
     ];
-    expect(errors.map((error) => error.code).sort()).toEqual(
+    expect(errors.map((error) => error.errorCode).sort()).toEqual(
       Object.values(BookingFlowErrorCode).sort(),
     );
     expect(
-      BookingFlowError.invalidGuest('scheduling.seat_label.empty'),
+      BookingFlowError.invalidGuest('SCHEDULING_SEAT_LABEL_EMPTY'),
     ).toEqual({
-      code: 'booking.flow.invalid_guest',
-      reasonCode: 'scheduling.seat_label.empty',
+      errorCode: 'BOOKING_FLOW_INVALID_GUEST',
+      reasonCode: 'SCHEDULING_SEAT_LABEL_EMPTY',
     });
-    expect(BookingFlowError.seatWithoutService('guest-1')).toEqual({
-      code: 'booking.flow.seat_without_service',
+    expect(
+      BookingFlowError.seatWithoutService(SeatKeyText.of('guest-1')),
+    ).toEqual({
+      errorCode: 'BOOKING_FLOW_SEAT_WITHOUT_SERVICE',
       seatKey: 'guest-1',
     });
   });
@@ -52,7 +55,7 @@ describe('BookingFlowError', () => {
   it('passes the party duplicate label through as its own scheduling struct', () => {
     const error: BookingFlowError = SchedulingError.partyDuplicateLabel('Иван');
     expect(
-      BookingFlowError.is(error, 'scheduling.booking_party.duplicate_label'),
+      BookingFlowError.is(error, 'SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL'),
     ).toBe(true);
     expect(BookingFlowError.is(error, BookingFlowErrorCode.PartyFull)).toBe(
       false,

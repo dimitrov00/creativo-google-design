@@ -1,7 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { LocationId } from '../entities/location.entity';
-import { deepFreeze, serviceFixture } from '../testing';
+import { LocationId } from '../primitives/ids.primitive';
+import { deepFreeze } from '../testing';
+import { serviceFixture } from '../testing/booking-core.fixtures';
 import { LocationScopeSystem } from './location-scope.system';
 
 /*

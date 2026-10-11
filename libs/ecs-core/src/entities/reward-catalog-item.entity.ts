@@ -1,47 +1,44 @@
-import type { DayKey } from '../components/day-key.data';
 import type { LocalizedText } from '../components/localized-text.data';
 import type { Points } from '../components/points.data';
-import type { RewardGrant } from '../components/reward-grant.data';
+import type { RewardGrantRule } from '../components/reward-grant.data';
+import type { RewardId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
 
-export type RewardId = string & { readonly __brand: unique symbol };
-export const RewardId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): RewardId => raw as RewardId,
-} as const;
+/*
+ * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
+ * re-exported here only while the barrel's staging block still names this
+ * file (`index.ts`), and leaves with that line.
+ */
 
 /**
- * `rewardsCatalog/{id}` — what points buy (§9 D21's `RewardCatalogItem`).
- * `cost` is whole points, positive; `redeemedCount` is kept inside the
- * redemption transaction. RewardSystem decides `offered`/`affordable` and
- * why a reward cannot be redeemed. The stored body as is (the availability
- * window is shop-calendar days), save the voucher grant's `Money` (see
- * `RewardGrant`).
+ * The reward's identity slice. `availableFrom` / `availableUntil` were
+ * `available { from; until }` (shop-calendar days, both ends inclusive,
+ * `null` = open-ended); `perClientLimitCount` + `perClientLimitWindowDays`
+ * were `limits.perClient` (`null` together = no per-client limit) and
+ * `totalLimit` was `limits.total` (`null` = unlimited).
  */
-export type RewardCatalogItemEntity = {
+export type RewardCatalogItemMeta = {
   readonly id: RewardId;
   readonly name: LocalizedText;
   readonly cost: Points;
   readonly enabled: boolean;
   readonly order: number;
-  readonly grants: RewardGrant;
-  readonly available: RewardCatalogItemEntity.Availability;
-  readonly limits: RewardCatalogItemEntity.Limits;
+  readonly availableFrom: LocalDate | null;
+  readonly availableUntil: LocalDate | null;
+  /** At most `perClientLimitCount` redemptions per client in `perClientLimitWindowDays`. */
+  readonly perClientLimitCount: number | null;
+  readonly perClientLimitWindowDays: number | null;
+  /** At most this many in all. */
+  readonly totalLimit: number | null;
   readonly redeemedCount: number;
 };
 
-export namespace RewardCatalogItemEntity {
-  /** Both ends inclusive; `null` = open-ended. */
-  export type Availability = {
-    readonly from: DayKey | null;
-    readonly until: DayKey | null;
-  };
-  export type Limits = {
-    /** At most `count` redemptions per client in `windowDays`; `null` = no per-client limit. */
-    readonly perClient: {
-      readonly count: number;
-      readonly windowDays: number;
-    } | null;
-    /** At most this many in all; `null` = unlimited. */
-    readonly total: number | null;
-  };
-}
+/**
+ * `rewardsCatalog/{id}` — what points buy (§9 D21's `RewardCatalogItem`).
+ * `cost` is whole points, positive; `redeemedCount` is kept inside the
+ * redemption transaction. RewardSystem decides `offered`/`affordable` and
+ * why a reward cannot be redeemed. The archetype (Law 6): the identity
+ * slice and what a redemption mints (the `RewardGrantRule` variant slice,
+ * was `grants`).
+ */
+export type RewardCatalogItem = RewardCatalogItemMeta & RewardGrantRule;

@@ -1,4 +1,10 @@
-import { OtpSystem } from '@creativo/ecs-core';
+import {
+  AuthStrategyKind,
+  OtpDestinationType,
+  OtpSystem,
+  UtcEpochMs,
+  defect,
+} from '@creativo/ecs-core';
 import { Email, Otp, OtpId, OtpPurpose } from '@creativo/domain/models';
 import {
   PhoneNumber,
@@ -32,6 +38,27 @@ import {
 // `OtpSystem` math (`@creativo/ecs-core`, Phase 2 shim) — this use case
 // keeps its I/O order and its error classes.
 const OTP_ZONE = 'UTC';
+
+// ── The bridge: legacy tags and instants → ecs-core (Phase 4 deletes it) ──
+
+/** The legacy lowercase strategy tag → the SCREAMING one (flatten-spec §8.9). */
+const ECS_AUTH_STRATEGY_KIND = {
+  phone_otp: AuthStrategyKind.PhoneOtp,
+  email_otp: AuthStrategyKind.EmailOtp,
+  email_link: AuthStrategyKind.EmailLink,
+} as const;
+
+/** The legacy lowercase destination tag → the SCREAMING one. */
+const ECS_OTP_DESTINATION_TYPE = {
+  email: OtpDestinationType.Email,
+  sms: OtpDestinationType.Sms,
+} as const;
+
+/** A legacy instant's epoch ms as the brand — every `ZonedDateTime` is inside its window. */
+function utcOf(epochMs: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(epochMs);
+  return instant.ok ? instant.value : defect(`${epochMs} is not an instant`);
+}
 
 export interface RequestOtpInput {
   tenantId: string;
@@ -112,7 +139,10 @@ export class RequestOtpUseCase {
     // already refuses it); it narrows `strategy` to an OTP strategy, whose
     // policy carries `maxAttempts`, for the issue below.
     if (
-      !OtpSystem.channelAccepts(strategy, input.destinationType) ||
+      !OtpSystem.channelAccepts(
+        { authStrategyKind: ECS_AUTH_STRATEGY_KIND[strategy.kind] },
+        ECS_OTP_DESTINATION_TYPE[input.destinationType],
+      ) ||
       strategy.kind === 'email_link'
     ) {
       const requestedKind = input.destinationType === 'sms' ? 'phone' : 'email';
@@ -132,7 +162,7 @@ export class RequestOtpUseCase {
     const now = nowResult.value;
 
     const sinceResult = ZonedDateTime.fromMillis(
-      OtpSystem.resendWindowStartMs(now.toMillis()),
+      OtpSystem.resendWindowStartUtcMs(utcOf(now.toMillis())),
       OTP_ZONE,
     );
     if (sinceResult.isFailure()) {

@@ -28,9 +28,6 @@
   ],
   "references": [
     {
-      "path": "../../../ecs-core/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {

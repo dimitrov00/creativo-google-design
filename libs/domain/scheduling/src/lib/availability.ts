@@ -1,12 +1,24 @@
 import { BarberId } from '@creativo/domain/catalog';
 import {
   type AvailabilityLine as EcsAvailabilityLine,
+  type AvailabilityOption as EcsAvailabilityOption,
   type AvailabilityQuery as EcsAvailabilityQuery,
   AvailabilitySystem,
   BarberId as EcsBarberId,
-  type BarberPref as EcsBarberPref,
+  BarberPref as EcsBarberPref,
+  type BarberDayAvailability as EcsBarberDayAvailability,
   type BookingPolicy as EcsBookingPolicy,
+  CartLineId,
   type ChairTime as EcsChairTime,
+  DurationMinutes,
+  EndMinute,
+  type LineTerms as EcsLineTerms,
+  MinuteCount,
+  MinuteDelta,
+  MinuteOfDay,
+  type MinuteRange,
+  SeatKeyText,
+  defect,
 } from '@creativo/ecs-core';
 import { BarberPref } from './barber-pref';
 import { BookingPolicy } from './booking-policy';
@@ -64,8 +76,18 @@ export function termsForBarber(
   line: AvailabilityLine,
   barberId: BarberId,
 ): LineTerms {
+  // The system answers with the very struct it was handed — the defaults
+  // or one override — so each maps back to the caller's own object.
+  const legacyOf = new Map<EcsLineTerms, LineTerms>();
+  const defaults = ecsTermsOf(line);
+  legacyOf.set(defaults, line);
+  const overrides = [...(line.termsByBarber ?? [])].map(([id, terms]) => {
+    const converted = ecsTermsOf(terms);
+    legacyOf.set(converted, terms);
+    return { barberId: EcsBarberId.of(id), terms: converted };
+  });
   const [terms] = AvailabilitySystem.denseTerms(
-    line,
+    defaults,
     [
       {
         barberId: EcsBarberId.of(barberId.value),
@@ -74,9 +96,9 @@ export function termsForBarber(
         blocks: [],
       },
     ],
-    overridesOf(line),
+    overrides,
   );
-  return terms ?? line;
+  return (terms === undefined ? undefined : legacyOf.get(terms)) ?? line;
 }
 
 /**
@@ -154,12 +176,37 @@ export function paddedBusy(input: {
   readonly turnaroundMinutes: number;
   readonly release?: readonly ChairTime[];
 }): readonly Interval[] {
-  return AvailabilitySystem.paddedBusy({
-    barberId: EcsBarberId.of(input.barberId.value),
-    spans: input.spans,
-    turnaroundMinutes: input.turnaroundMinutes,
-    release: (input.release ?? []).map(toEcsChairTime),
-  });
+  const turnaround = sure(
+    MinuteCount.of(input.turnaroundMinutes),
+    'a turnaround',
+  );
+  const release = input.release ?? [];
+  // The frame starts a turnaround before the earliest span, so padding is
+  // never clipped at its origin.
+  const frame = frameAt(input.spans, turnaround);
+  if (frame === null) return [];
+  if (!holds(frame, input.spans, turnaround)) {
+    // A busy day wider than one frame (a 25-hour fall-back day, busy to its
+    // edges): the frame would clip the padding, so the instants answer by
+    // the same rule — release first, then pad, merged.
+    const own = release
+      .filter((chair) => chair.barberId.equals(input.barberId))
+      .map((chair) => chair.occupied);
+    return Interval.normalize(
+      Interval.subtract(input.spans, own).map((span) =>
+        Interval.pad(span, input.turnaroundMinutes, input.turnaroundMinutes),
+      ),
+    );
+  }
+  return intervalsOf(
+    frame,
+    AvailabilitySystem.paddedBusy({
+      barberId: EcsBarberId.of(input.barberId.value),
+      spans: rangesIn(frame, input.spans, Rounding.Cover),
+      turnaroundMinutes: turnaround,
+      release: chairsIn(frame, release),
+    }),
+  );
 }
 
 export interface AvailabilityAssignment {
@@ -246,12 +293,17 @@ export function candidateStarts(
   stepMinutes: number,
   notBeforeMs: number,
 ): readonly number[] {
+  const duration = DurationMinutes.of(durationMinutes);
+  const step = DurationMinutes.of(stepMinutes);
+  const frame = frameAt(free, MinuteCount.ZERO);
+  // A grid that never advances offers nothing, rather than hanging.
+  if (frame === null || !duration.ok || !step.ok) return [];
   return AvailabilitySystem.candidateStarts(
-    free,
-    durationMinutes,
-    stepMinutes,
-    notBeforeMs,
-  );
+    rangesIn(frame, free, Rounding.Inside),
+    duration.value,
+    step.value,
+    notBeforeIn(frame, notBeforeMs),
+  ).map((minute) => instantAt(frame, minute));
 }
 
 /**
@@ -291,10 +343,12 @@ export function candidateStarts(
 export function availableOptions(
   query: AvailabilityQuery,
 ): readonly AvailabilityOption[] {
-  const ecs = toEcsQuery(query);
+  const framed = toEcsQuery(query);
+  if (framed === null) return [];
   return toLegacyOptions(
     query,
-    AvailabilitySystem.availableOptions(ecs, budgetOf(query)).options,
+    framed.frame,
+    AvailabilitySystem.availableOptions(framed.query, budgetOf(query)).options,
   );
 }
 
@@ -318,16 +372,22 @@ export function availableOptions(
 export function availableStarts(
   query: AvailabilityQuery,
 ): readonly AvailabilityOption[] {
-  const ecs = toEcsQuery(query);
+  const framed = toEcsQuery(query);
+  if (framed === null) return [];
   return toLegacyOptions(
     query,
-    AvailabilitySystem.availableStarts(ecs, budgetOf(query)).options,
+    framed.frame,
+    AvailabilitySystem.availableStarts(framed.query, budgetOf(query)).options,
   );
 }
 
 /** Is there ANY way to serve this party today? Cheaper than enumerating. */
 export function hasAnyOption(query: AvailabilityQuery): boolean {
-  return AvailabilitySystem.hasAnyOption(toEcsQuery(query), budgetOf(query));
+  const framed = toEcsQuery(query);
+  return (
+    framed !== null &&
+    AvailabilitySystem.hasAnyOption(framed.query, budgetOf(query))
+  );
 }
 
 /**
@@ -338,13 +398,169 @@ export function hasAnyOption(query: AvailabilityQuery): boolean {
 export function distinctStarts(
   options: readonly AvailabilityOption[],
 ): readonly number[] {
-  // Only the envelopes are read; the assignments' shape is the legacy one.
+  // Only the envelope starts are read, and only for equality: each distinct
+  // instant is ranked (0-based) and the rank is its minute, so the system's
+  // first-seen order is the instants' own.
+  const instants = [
+    ...new Set(options.map((option) => option.envelope.startMs)),
+  ];
+  const rankOf = new Map(instants.map((instant, rank) => [instant, rank]));
   return AvailabilitySystem.distinctStarts(
-    options.map((option) => ({ envelope: option.envelope, assignments: [] })),
-  );
+    options.map((option) => ({
+      startMinutes: sure(
+        MinuteOfDay.of(rankOf.get(option.envelope.startMs) as number),
+        'a start rank',
+      ),
+    })),
+  ).map((rank) => instants[rank] as number);
 }
 
 /* ── Phase 2 shim converters: legacy shapes ↔ ecs-core structs ──────────── */
+
+/*
+ * THE DAY FRAME. The engine is wall-clock minutes of ONE shop day, `[0,
+ * 1440]` (Law 7.3); the legacy query is instants and holds no zone. Every
+ * rule the engine runs is translation-invariant (gaps, steps, pads, riders'
+ * offsets and the lead floor are all differences), so the legacy instants
+ * are read on a frame: minute `m` is `originMs + m · 60 000`, the origin the
+ * earliest window start floored to its minute. A party is only ever placed
+ * inside a window, and a shop day's windows span less than a day, so
+ * clipping the busy spans and the mask to the frame drops nothing the
+ * search could reach. The lead floor is rounded UP to its minute, which
+ * every start on a minute grid compares with exactly as with the instant.
+ */
+
+const MS_PER_MINUTE = 60_000;
+const DAY_MINUTES = 1440;
+
+/** Where minute 0 of the frame sits. */
+type Frame = { readonly originMs: number };
+
+/** How a span off the minute grid is read: covering it, or inside it. */
+const Rounding = { Cover: 'cover', Inside: 'inside' } as const;
+type Rounding = (typeof Rounding)[keyof typeof Rounding];
+
+/** A brand the legacy value already satisfies — its own rules are the brand's. */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: a legacy figure already holds every rule the brand checks.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/** The frame whose origin is `leadMinutes` before the earliest span's minute; `null` with no span. */
+function frameAt(
+  spans: readonly Interval[],
+  leadMinutes: number,
+): Frame | null {
+  let earliest = Number.POSITIVE_INFINITY;
+  for (const span of spans) {
+    if (span.startMs < earliest) earliest = span.startMs;
+  }
+  if (!Number.isFinite(earliest)) return null;
+  return {
+    originMs:
+      Math.floor(earliest / MS_PER_MINUTE) * MS_PER_MINUTE -
+      leadMinutes * MS_PER_MINUTE,
+  };
+}
+
+/** Every span, grown by `trailMinutes` past its end, still ends on the frame. */
+function holds(
+  frame: Frame,
+  spans: readonly Interval[],
+  trailMinutes: number,
+): boolean {
+  for (const span of spans) {
+    const end = Math.ceil((span.endMs - frame.originMs) / MS_PER_MINUTE);
+    if (end + trailMinutes > DAY_MINUTES) return false;
+  }
+  return true;
+}
+
+/** A span on the frame, clipped to it; `null` when nothing of it is on the frame. */
+function rangeIn(
+  frame: Frame,
+  span: Interval,
+  rounding: Rounding,
+): MinuteRange | null {
+  const from = (span.startMs - frame.originMs) / MS_PER_MINUTE;
+  const to = (span.endMs - frame.originMs) / MS_PER_MINUTE;
+  const cover = rounding === Rounding.Cover;
+  const start = Math.max(cover ? Math.floor(from) : Math.ceil(from), 0);
+  const end = Math.min(cover ? Math.ceil(to) : Math.floor(to), DAY_MINUTES);
+  if (!(start < end)) return null;
+  return {
+    startMinutes: sure(MinuteOfDay.of(start), 'a frame start'),
+    endMinutes: sure(EndMinute.of(end), 'a frame end'),
+  };
+}
+
+function rangesIn(
+  frame: Frame,
+  spans: readonly Interval[],
+  rounding: Rounding,
+): readonly MinuteRange[] {
+  const ranges: MinuteRange[] = [];
+  for (const span of spans) {
+    const range = rangeIn(frame, span, rounding);
+    if (range !== null) ranges.push(range);
+  }
+  return ranges;
+}
+
+function instantAt(frame: Frame, minute: number): number {
+  return frame.originMs + minute * MS_PER_MINUTE;
+}
+
+function intervalsOf(
+  frame: Frame,
+  ranges: readonly MinuteRange[],
+): readonly Interval[] {
+  return ranges.map((range) =>
+    Interval.of(
+      instantAt(frame, range.startMinutes),
+      instantAt(frame, range.endMinutes),
+    ),
+  );
+}
+
+/**
+ * The lead floor on the frame: rounded UP to its minute (a start on the
+ * minute grid is at or after the instant exactly when it is at or after
+ * that minute); before the frame is minute 0, past its end is `null` —
+ * nothing on the frame is late enough.
+ */
+function notBeforeIn(frame: Frame, notBeforeMs: number): MinuteOfDay | null {
+  const minute = Math.max(
+    Math.ceil((notBeforeMs - frame.originMs) / MS_PER_MINUTE),
+    0,
+  );
+  const floor = MinuteOfDay.of(minute);
+  return floor.ok ? floor.value : null;
+}
+
+/** The chairs handed back, on the frame (a chair off the frame frees nothing on it). */
+function chairsIn(
+  frame: Frame,
+  release: readonly ChairTime[],
+): readonly EcsChairTime[] {
+  const chairs: EcsChairTime[] = [];
+  for (const chair of release) {
+    const range = rangeIn(frame, chair.occupied, Rounding.Cover);
+    if (range === null) continue;
+    chairs.push({
+      barberId: EcsBarberId.of(chair.barberId.value),
+      startMinutes: sure(MinuteOfDay.of(range.startMinutes), 'a chair start'),
+      endMinutes: sure(EndMinute.of(range.endMinutes), 'a chair end'),
+    });
+  }
+  return chairs;
+}
 
 /** The legacy engine's brakes: 200 000 placements, `maxOptions` (200) options. */
 function budgetOf(query: AvailabilityQuery) {
@@ -357,14 +573,19 @@ function budgetOf(query: AvailabilityQuery) {
 
 function toEcsPref(pref: BarberPref): EcsBarberPref {
   return pref.kind === 'any'
-    ? { kind: 'any' }
-    : { kind: 'specific', barberId: EcsBarberId.of(pref.barberId.value) };
+    ? EcsBarberPref.any()
+    : EcsBarberPref.specific(EcsBarberId.of(pref.barberId.value));
 }
 
-function toEcsChairTime(chair: ChairTime): EcsChairTime {
+/** Legacy line terms → the branded triple. */
+function ecsTermsOf(terms: LineTerms): EcsLineTerms {
   return {
-    barberId: EcsBarberId.of(chair.barberId.value),
-    occupied: chair.occupied,
+    durationMinutes: sure(
+      DurationMinutes.of(terms.durationMinutes),
+      'a duration',
+    ),
+    padBeforeMinutes: sure(MinuteCount.of(terms.padBeforeMinutes), 'a pad'),
+    padAfterMinutes: sure(MinuteCount.of(terms.padAfterMinutes), 'a pad'),
   };
 }
 
@@ -372,15 +593,18 @@ function toEcsChairTime(chair: ChairTime): EcsChairTime {
 function overridesOf(line: AvailabilityLine) {
   return [...(line.termsByBarber ?? [])].map(([barberId, terms]) => ({
     barberId: EcsBarberId.of(barberId),
-    terms,
+    terms: ecsTermsOf(terms),
   }));
 }
 
 function toEcsPolicy(policy: BookingPolicy): EcsBookingPolicy {
   return {
     maxPartySize: policy.maxPartySize,
-    slotStepMinutes: policy.slotStepMinutes,
-    minLeadMinutes: policy.minLeadMinutes,
+    slotStepMinutes: sure(
+      DurationMinutes.of(policy.slotStepMinutes),
+      'a slot step',
+    ),
+    minLeadMinutes: sure(MinuteCount.of(policy.minLeadMinutes), 'a lead'),
     horizonMonths: policy.horizonMonths,
     cancellationWindowHours: policy.cancellationWindow.hours,
     maxFlexibleDays: policy.maxFlexibleDays,
@@ -392,62 +616,88 @@ function toEcsPolicy(policy: BookingPolicy): EcsBookingPolicy {
  * Every optional of the legacy query made explicit (Risk 9): no riders is
  * `[]`, an absent mask is `null` (unconstrained — never `[]`, which is
  * "nothing qualifies"), and each line's per-barber terms are dense over the
- * pool.
+ * pool — all on the day frame of the query's windows. `null` when no barber
+ * has a window: nothing can be placed.
  */
-function toEcsQuery(query: AvailabilityQuery): EcsAvailabilityQuery {
-  const barbers = query.barbers.map((barber) => ({
-    barberId: EcsBarberId.of(barber.barberId.value),
-    windows: barber.windows.map((window) => window.interval),
-    busy: barber.busy,
-    blocks: (barber.blocks ?? []).map((window) => window.interval),
-  }));
-  const lines: EcsAvailabilityLine[] = query.lines.map((line) => ({
-    lineId: line.lineId,
-    barberPref: toEcsPref(line.barberPref),
-    durationMinutes: line.durationMinutes,
-    padBeforeMinutes: line.padBeforeMinutes,
-    padAfterMinutes: line.padAfterMinutes,
-    termsByBarber: AvailabilitySystem.denseTerms(
-      line,
-      barbers,
-      overridesOf(line),
+function toEcsQuery(
+  query: AvailabilityQuery,
+): { readonly query: EcsAvailabilityQuery; readonly frame: Frame } | null {
+  const frame = frameAt(
+    query.barbers.flatMap((barber) =>
+      barber.windows.map((window) => window.interval),
     ),
-    personKey: line.personKey ?? null,
+    0,
+  );
+  if (frame === null) return null;
+  const barbers: EcsBarberDayAvailability[] = query.barbers.map((barber) => ({
+    barberId: EcsBarberId.of(barber.barberId.value),
+    windows: rangesIn(
+      frame,
+      barber.windows.map((window) => window.interval),
+      Rounding.Inside,
+    ),
+    busy: rangesIn(frame, barber.busy, Rounding.Cover),
+    blocks: rangesIn(
+      frame,
+      (barber.blocks ?? []).map((window) => window.interval),
+      Rounding.Inside,
+    ),
   }));
+  const lines: EcsAvailabilityLine[] = query.lines.map((line) => {
+    const defaults = ecsTermsOf(line);
+    return {
+      lineId: CartLineId.of(line.lineId),
+      ...toEcsPref(line.barberPref),
+      ...defaults,
+      termsByBarber: AvailabilitySystem.denseTerms(
+        defaults,
+        barbers,
+        overridesOf(line),
+      ),
+      personKey:
+        line.personKey === undefined ? null : SeatKeyText.of(line.personKey),
+    };
+  });
   return {
-    lines,
-    barbers,
-    policy: toEcsPolicy(query.policy),
-    notBeforeMs: query.notBeforeMs,
-    riders: (query.riders ?? []).map((rider) => ({
-      barberId: EcsBarberId.of(rider.barberId.value),
-      offsetMinutes: rider.offsetMinutes,
-      terms: rider.terms,
-    })),
-    withinMs: query.withinMs ?? null,
+    frame,
+    query: {
+      lines,
+      barbers,
+      policy: toEcsPolicy(query.policy),
+      notBefore: notBeforeIn(frame, query.notBeforeMs),
+      riders: (query.riders ?? []).map((rider) => ({
+        barberId: EcsBarberId.of(rider.barberId.value),
+        offsetMinutes: sure(MinuteDelta.of(rider.offsetMinutes), 'an offset'),
+        terms: ecsTermsOf(rider.terms),
+      })),
+      within:
+        query.withinMs === undefined
+          ? null
+          : rangesIn(frame, query.withinMs, Rounding.Inside),
+    },
   };
 }
 
 /** The system's options → the legacy shape, each barber the query's own id object. */
 function toLegacyOptions(
   query: AvailabilityQuery,
-  options: readonly {
-    readonly envelope: Interval;
-    readonly assignments: readonly {
-      readonly lineId: string;
-      readonly barberIndex: number;
-      readonly slot: Interval;
-    }[];
-  }[],
+  frame: Frame,
+  options: readonly EcsAvailabilityOption[],
 ): readonly AvailabilityOption[] {
   return options.map((option) => ({
-    envelope: option.envelope,
+    envelope: Interval.of(
+      instantAt(frame, option.startMinutes),
+      instantAt(frame, option.endMinutes),
+    ),
     assignments: option.assignments.map((assignment) => ({
       lineId: assignment.lineId,
       barberId: (
         query.barbers.at(assignment.barberIndex) as BarberDayAvailability
       ).barberId,
-      slot: assignment.slot,
+      slot: Interval.of(
+        instantAt(frame, assignment.startMinutes),
+        instantAt(frame, assignment.endMinutes),
+      ),
     })),
   }));
 }

@@ -1,39 +1,50 @@
 import { describe, expect, it } from 'vitest';
-import { CouponGrantId } from '../entities/coupon-grant.entity';
-import { GiftVoucherId } from '../entities/gift-voucher.entity';
-import type { TierId } from '../entities/tier-definition.entity';
-import { DayKey } from './day-key.data';
+import {
+  CouponGrantId,
+  GiftVoucherId,
+  TierId,
+} from '../primitives/ids.primitive';
+import { localDate } from '../testing';
 import { PerkId } from './gamification.data';
 import {
   CosmeticId,
+  GrantRefFields,
   JournalEffect,
-  JournalEffectKind,
+  JournalEffectRecord,
   JournalVisibility,
   LABEL_CODES,
   LabelCode,
   PauseScope,
   PauseTerm,
-  PauseTermKind,
   PublicLabel,
   RewardRef,
-  RewardRefKind,
+  RewardRefFields,
+  TierOp,
 } from './journal-effect.data';
 
 describe('the journal vocabularies', () => {
-  it('keep the stored tags', () => {
-    expect(Object.values(JournalEffectKind)).toEqual([
-      'points',
-      'streak',
-      'freeze',
-      'achievement',
-      'tier',
-      'reward',
-      'redemption',
-      'pause',
-      'visitOutcome',
+  it('declare the tags SCREAMING (the discriminator `journalEffect` and its peers) and keep the label keys', () => {
+    expect(Object.values(JournalEffect)).toEqual([
+      'POINTS',
+      'STREAK',
+      'FREEZE',
+      'ACHIEVEMENT',
+      'TIER',
+      'REWARD',
+      'REDEMPTION',
+      'PAUSE',
+      'VISIT_OUTCOME',
     ]);
-    expect(Object.values(JournalVisibility)).toEqual(['client', 'staff']);
-    expect(Object.values(PauseScope)).toEqual(['selfService', 'allBookings']);
+    expect(Object.values(JournalVisibility)).toEqual(['CLIENT', 'STAFF']);
+    expect(Object.values(PauseScope)).toEqual(['SELF_SERVICE', 'ALL_BOOKINGS']);
+    expect(Object.values(PauseTerm)).toEqual(['TEMPORARY', 'PERMANENT']);
+    expect(Object.values(RewardRef)).toEqual([
+      'COUPON_GRANT',
+      'GIFT_VOUCHER',
+      'PERK',
+      'COSMETIC',
+    ]);
+    // i18n message keys: an external contract, unchanged (flatten-spec §0.4).
     expect(LABEL_CODES).toHaveLength(26);
     expect(new Set(LABEL_CODES).size).toBe(26);
     expect(LABEL_CODES[0]).toBe('points.opening');
@@ -41,35 +52,35 @@ describe('the journal vocabularies', () => {
   });
 });
 
-describe('JournalEffect', () => {
+describe('JournalEffectRecord', () => {
   it('moves the balance by a points effect only', () => {
-    const earned = JournalEffect.points(120);
-    const spent = JournalEffect.points(-80);
-    const tier: JournalEffect = {
-      kind: 'tier',
-      op: 'changed',
-      from: 'silver' as TierId,
-      to: 'gold' as TierId,
-      until: DayKey.of('2026-12-31'),
+    const earned = JournalEffectRecord.points(120);
+    const spent = JournalEffectRecord.points(-80);
+    const tier: JournalEffectRecord = {
+      journalEffect: JournalEffect.Tier,
+      tierOp: TierOp.Changed,
+      tierFrom: TierId.of('silver'),
+      tierTo: TierId.of('gold'),
+      tierUntil: localDate('2026-12-31'),
     };
-    expect(earned).toEqual({ kind: 'points', delta: 120 });
-    expect(JournalEffect.movesBalance(earned)).toBe(true);
-    expect(JournalEffect.movesBalance(tier)).toBe(false);
-    expect([earned, spent, tier].map(JournalEffect.pointsDelta)).toEqual([
+    expect(earned).toEqual({ journalEffect: 'POINTS', pointsDelta: 120 });
+    expect(JournalEffectRecord.movesBalance(earned)).toBe(true);
+    expect(JournalEffectRecord.movesBalance(tier)).toBe(false);
+    expect([earned, spent, tier].map(JournalEffectRecord.pointsDelta)).toEqual([
       120, -80, 0,
     ]);
   });
 });
 
 describe('PublicLabel', () => {
-  it('carries its params as named pairs — no dynamic field path', () => {
+  it('carries its params as named pairs — no dynamic field path — flat at the entry root', () => {
     const label = PublicLabel.of(LabelCode.PointsRule, [
       { name: 'points', value: 50 },
       { name: 'rule', value: 'visit' },
     ]);
     expect(label).toEqual({
-      code: 'points.rule',
-      params: [
+      labelCode: 'points.rule',
+      labelParams: [
         { name: 'points', value: 50 },
         { name: 'rule', value: 'visit' },
       ],
@@ -80,31 +91,60 @@ describe('PublicLabel', () => {
   });
 });
 
-describe('RewardRef / PauseTerm — each variant built from its tag', () => {
-  it('names the reward a client holds', () => {
-    expect(RewardRef.couponGrant(CouponGrantId.of('g1'))).toEqual({
-      kind: RewardRefKind.CouponGrant,
-      id: 'g1',
+describe('RewardRefFields / GrantRefFields — each flat variant built from its tag', () => {
+  it('names the reward a client holds, each variant declaring only its own id', () => {
+    expect(RewardRefFields.couponGrant(CouponGrantId.of('g1'))).toEqual({
+      rewardRef: RewardRef.CouponGrant,
+      rewardCouponGrantId: 'g1',
     });
-    expect(RewardRef.giftVoucher(GiftVoucherId.of('v1'))).toEqual({
-      kind: RewardRefKind.GiftVoucher,
-      id: 'v1',
+    expect(RewardRefFields.giftVoucher(GiftVoucherId.of('v1'))).toEqual({
+      rewardRef: RewardRef.GiftVoucher,
+      rewardGiftVoucherId: 'v1',
     });
-    expect(RewardRef.perk(PerkId.BookFurtherAhead)).toEqual({
-      kind: RewardRefKind.Perk,
-      perkId: PerkId.BookFurtherAhead,
+    expect(RewardRefFields.perk(PerkId.BookFurtherAhead)).toEqual({
+      rewardRef: RewardRef.Perk,
+      rewardPerkId: PerkId.BookFurtherAhead,
     });
-    expect(RewardRef.cosmetic(CosmeticId.FrameWelcome)).toEqual({
-      kind: RewardRefKind.Cosmetic,
-      cosmeticId: CosmeticId.FrameWelcome,
+    expect(RewardRefFields.cosmetic(CosmeticId.FrameWelcome)).toEqual({
+      rewardRef: RewardRef.Cosmetic,
+      rewardCosmeticId: CosmeticId.FrameWelcome,
     });
   });
 
-  it('bounds a pause by a day, or not at all', () => {
-    expect(PauseTerm.temporary(DayKey.of('2026-11-30'))).toEqual({
-      kind: PauseTermKind.Temporary,
-      until: '2026-11-30',
+  it('names what a redemption minted — or nothing yet (today’s nullable `grant`)', () => {
+    expect(GrantRefFields.none()).toEqual({ grantRef: null });
+    expect(GrantRefFields.couponGrant(CouponGrantId.of('g1'))).toEqual({
+      grantRef: RewardRef.CouponGrant,
+      grantCouponGrantId: 'g1',
     });
-    expect(PauseTerm.permanent()).toEqual({ kind: PauseTermKind.Permanent });
+    expect(GrantRefFields.giftVoucher(GiftVoucherId.of('v1'))).toEqual({
+      grantRef: RewardRef.GiftVoucher,
+      grantGiftVoucherId: 'v1',
+    });
+    expect(GrantRefFields.perk(PerkId.FreeReschedule)).toEqual({
+      grantRef: RewardRef.Perk,
+      grantPerkId: PerkId.FreeReschedule,
+    });
+    expect(GrantRefFields.cosmetic(CosmeticId.FrameWelcome)).toEqual({
+      grantRef: RewardRef.Cosmetic,
+      grantCosmeticId: CosmeticId.FrameWelcome,
+    });
+  });
+
+  it('bounds a pause by a day, or not at all — the term a tag beside its own day', () => {
+    // Today's `PauseTerm.temporary(until)` / `.permanent()`: the PAUSE
+    // effect now carries `pauseTerm` and `pauseUntil` side by side.
+    const temporary: JournalEffectRecord.Pause['pauseTerm'] =
+      PauseTerm.Temporary;
+    const until: JournalEffectRecord.Pause['pauseUntil'] =
+      localDate('2026-11-30');
+    expect({ pauseTerm: temporary, pauseUntil: until }).toEqual({
+      pauseTerm: 'TEMPORARY',
+      pauseUntil: '2026-11-30',
+    });
+    expect({ pauseTerm: PauseTerm.Permanent, pauseUntil: null }).toEqual({
+      pauseTerm: 'PERMANENT',
+      pauseUntil: null,
+    });
   });
 });

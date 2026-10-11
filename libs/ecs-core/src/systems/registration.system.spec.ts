@@ -1,6 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { AccountStatus, BlockReason } from '../components/account-status.data';
+import {
+  AccountLifecycle,
+  AccountStatus,
+  BlockReason,
+} from '../components/account-status.data';
 import { AuthStage } from '../components/auth-claims.data';
 import {
   AuthStrategy,
@@ -9,7 +13,7 @@ import {
 import { BirthDate } from '../components/birth-date.data';
 import { Email } from '../components/email.data';
 import {
-  IdentifierKind,
+  IdentifierChannel,
   ParsedIdentifier,
 } from '../components/identifier.data';
 import { E164 } from '../components/phone-number.data';
@@ -18,12 +22,13 @@ import {
   Registration,
   RegistrationField,
   type RegistrationFields,
+  RegistrationState,
   isRegistrationField,
 } from '../components/registration.data';
 import { Role } from '../components/role.data';
-import { TenantId } from '../components/tenant-id.data';
-import { type UserEntity, UserId } from '../entities/user.entity';
-import { deepFreeze, unwrapOk } from '../testing';
+import type { User } from '../entities/user.entity';
+import { TenantId, UserId } from '../primitives/ids.primitive';
+import { deepFreeze, unwrapOk, utcMs } from '../testing';
 import {
   type RegistrationStanding,
   RegistrationSystem,
@@ -50,7 +55,7 @@ import { SearchFieldsSystem } from './search-fields.system';
 
 const STRATEGY: AuthStrategy = unwrapOk(
   AuthStrategy.parse({
-    kind: AuthStrategyKind.EmailOtp,
+    authStrategyKind: AuthStrategyKind.EmailOtp,
     required: [
       RegistrationField.Phone,
       RegistrationField.FirstName,
@@ -71,7 +76,7 @@ function stub(
   overrides: Partial<RegistrationStanding> = {},
 ): RegistrationStanding {
   return {
-    registration: Registration.provisioned(),
+    registrationState: RegistrationState.Provisioned,
     roles: [],
     email: null,
     phone: E164.of('+14155552671'),
@@ -85,7 +90,7 @@ function registered(
   overrides: Partial<RegistrationStanding> = {},
 ): RegistrationStanding {
   return stub({
-    registration: Registration.registered(),
+    registrationState: RegistrationState.Registered,
     roles: [Role.Client],
     ...overrides,
   });
@@ -94,7 +99,11 @@ function registered(
 describe('RegistrationSystem — the field check (register-user.use-case.spec.ts)', () => {
   const email = ParsedIdentifier.email(Email.of('client@example.com'));
   const effective = (given: Partial<RegistrationFields>) =>
-    RegistrationSystem.effectiveFields(email.kind, email.value, fields(given));
+    RegistrationSystem.effectiveFields(
+      email.identifierChannel,
+      email.identifier,
+      fields(given),
+    );
 
   it('completes registration once every required field is present', () => {
     expect(
@@ -142,7 +151,7 @@ describe('RegistrationSystem — the field check (register-user.use-case.spec.ts
   it('treats the identifier itself as satisfying its own required field, even when the caller never resupplies it', () => {
     const phoneStrategy = unwrapOk(
       AuthStrategy.parse({
-        kind: AuthStrategyKind.PhoneOtp,
+        authStrategyKind: AuthStrategyKind.PhoneOtp,
         required: [
           RegistrationField.Phone,
           RegistrationField.FirstName,
@@ -155,8 +164,8 @@ describe('RegistrationSystem — the field check (register-user.use-case.spec.ts
     // No `phone` key in `fields` — the about step never re-collects the
     // number that was just used to sign in.
     const forwarded = RegistrationSystem.effectiveFields(
-      phone.kind,
-      phone.value,
+      phone.identifierChannel,
+      phone.identifier,
       fields({ firstName: 'Ada', lastName: 'Lovelace' }),
     );
     expect(
@@ -167,7 +176,7 @@ describe('RegistrationSystem — the field check (register-user.use-case.spec.ts
 
   it('keeps a field the form DID send, even blank — and a blank required field is missing', () => {
     const forwarded = RegistrationSystem.effectiveFields(
-      IdentifierKind.Phone,
+      IdentifierChannel.Phone,
       '+14155552671',
       fields({ phone: '  ', firstName: 'Ada', lastName: 'Lovelace' }),
     );
@@ -181,7 +190,7 @@ describe('RegistrationSystem — the field check (register-user.use-case.spec.ts
 describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => {
   const byPhone = (given: Partial<RegistrationFields>) =>
     RegistrationSystem.effectiveFields(
-      IdentifierKind.Phone,
+      IdentifierChannel.Phone,
       '+14155552671',
       fields(given),
     );
@@ -202,13 +211,13 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
     });
     expect(
       RegistrationSystem.claimsFor(
-        Registration.registered(),
+        RegistrationState.Registered,
         settled.roles,
         TENANT,
       ),
     ).toEqual({
       tenantId: TENANT,
-      stage: AuthStage.Active,
+      authStage: AuthStage.Active,
       roles: [Role.Client],
     });
   });
@@ -247,7 +256,7 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
     const settled = RegistrationSystem.settle(
       stub({ email: Email.of('ada@example.com'), phone: null }),
       RegistrationSystem.effectiveFields(
-        IdentifierKind.Email,
+        IdentifierChannel.Email,
         'ada@example.com',
         fields({
           firstName: 'Ada',
@@ -268,21 +277,27 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
     const rerun = byPhone({ firstName: 'Ada', lastName: 'Lovelace' });
     const user = (
       standing: RegistrationStanding,
-      status: AccountStatus,
-    ): UserEntity => ({
+      lifecycle: AccountLifecycle,
+    ): User => ({
       id: UserId.of('uid_1'),
       firstName: 'Ada',
       lastName: 'Lovelace',
-      accountStatus: status,
+      ...lifecycle,
       searchName: 'ada lovelace',
       searchPrefixes: [],
       ...standing,
     });
-    const paused = AccountStatus.block(BlockReason.Manual, 1_796_083_200_000);
+    const paused = AccountLifecycle.block(
+      BlockReason.Manual,
+      utcMs('2026-12-01T00:00:00Z'),
+    );
 
-    function reregister(standing: RegistrationStanding, status: AccountStatus) {
+    function reregister(
+      standing: RegistrationStanding,
+      lifecycle: AccountLifecycle,
+    ) {
       const settled = RegistrationSystem.settle(standing, rerun, null);
-      return RegistrationSystem.register(user(standing, status), {
+      return RegistrationSystem.register(user(standing, lifecycle), {
         firstName: settled.firstName,
         lastName: settled.lastName,
         phone: E164.of(settled.phone),
@@ -293,15 +308,15 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
     }
 
     it('keeps a paused status — calling the callable again never lifts a pause', () => {
-      expect(reregister(registered(), paused).accountStatus).toEqual(paused);
+      expect(reregister(registered(), paused)).toMatchObject(paused);
     });
 
     it('keeps the pause even when the stored first name was blanked', () => {
       // Reads as UNregistered, yet the status there was still written by
       // the server.
-      expect(
-        reregister(stub({ roles: [Role.Client] }), paused).accountStatus,
-      ).toEqual(paused);
+      expect(reregister(stub({ roles: [Role.Client] }), paused)).toMatchObject(
+        paused,
+      );
     });
 
     it('keeps staff roles and mints them, never a demoting plain client', () => {
@@ -310,13 +325,13 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
       expect(settled.roles).toEqual([Role.Barber, Role.Receptionist]);
       expect(
         RegistrationSystem.claimsFor(
-          standing.registration,
+          standing.registrationState,
           standing.roles,
           TENANT,
         ),
       ).toEqual({
         tenantId: TENANT,
-        stage: AuthStage.Active,
+        authStage: AuthStage.Active,
         roles: [Role.Barber, Role.Receptionist],
       });
     });
@@ -337,7 +352,7 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
       const byEmailRun = RegistrationSystem.settle(
         standing,
         RegistrationSystem.effectiveFields(
-          IdentifierKind.Email,
+          IdentifierChannel.Email,
           'ada@example.com',
           fields({
             firstName: 'Ada',
@@ -385,24 +400,24 @@ describe('RegistrationSystem — the sign-in claims and the stub (verify-otp.use
     expect(provisioned).toMatchObject({
       email: 'client@example.com',
       phone: null,
-      registration: Registration.provisioned(),
+      registrationState: RegistrationState.Provisioned,
       roles: [],
       firstName: null,
       searchPrefixes: [],
     });
     expect(
       RegistrationSystem.claimsFor(
-        provisioned.registration,
+        provisioned.registrationState,
         provisioned.roles,
         TENANT,
       ),
-    ).toEqual({ tenantId: TENANT, stage: AuthStage.Onboarding, roles: [] });
+    ).toEqual({ tenantId: TENANT, authStage: AuthStage.Onboarding, roles: [] });
   });
 
   it('mints the STORED roles for a staff account — the out-of-band grant finally reaches the token', () => {
     expect(
       RegistrationSystem.claimsFor(
-        Registration.registered(),
+        RegistrationState.Registered,
         [Role.Barber, Role.Admin],
         TENANT,
       ).roles,
@@ -411,10 +426,10 @@ describe('RegistrationSystem — the sign-in claims and the stub (verify-otp.use
 
   it('falls back to client claims when the doc carries no roles — a stub or pre-roles record never escalates', () => {
     expect(
-      RegistrationSystem.claimsFor(Registration.registered(), [], TENANT),
+      RegistrationSystem.claimsFor(RegistrationState.Registered, [], TENANT),
     ).toEqual({
       tenantId: TENANT,
-      stage: AuthStage.Active,
+      authStage: AuthStage.Active,
       roles: [Role.Client],
     });
   });
@@ -429,12 +444,12 @@ describe('RegistrationSystem.provision (firestore-user-repository.spec.ts)', () 
       ),
     ).toEqual({
       id: 'uid_2',
-      registration: Registration.provisioned(),
+      registrationState: RegistrationState.Provisioned,
       phone: '+14155552671',
       firstName: null,
       lastName: null,
       roles: [],
-      accountStatus: AccountStatus.active(),
+      accountStatus: AccountStatus.Active,
       email: null,
       birthDate: null,
       searchName: null,
@@ -455,7 +470,7 @@ describe('RegistrationSystem.provision (firestore-user-repository.spec.ts)', () 
       birthDate: BirthDate.of('1990-07-03'),
       roles: [Role.Client],
     });
-    expect(body.registration).toEqual(Registration.registered());
+    expect(body.registrationState).toBe(RegistrationState.Registered);
     expect(body.searchName).toBe('ada lovelace');
     expect(body.searchPrefixes).toEqual(
       SearchFieldsSystem.searchFields(
@@ -465,7 +480,7 @@ describe('RegistrationSystem.provision (firestore-user-repository.spec.ts)', () 
         'client@example.com',
       ).searchPrefixes,
     );
-    expect(body.accountStatus).toEqual(AccountStatus.active());
+    expect(body.accountStatus).toBe(AccountStatus.Active);
   });
 });
 
@@ -480,8 +495,8 @@ describe('RegistrationField vocabulary (registration-field.spec.ts)', () => {
     ]) {
       expect(isRegistrationField(field)).toBe(true);
     }
-    expect(RegistrationSystem.fieldOf(IdentifierKind.Phone)).toBe('phone');
-    expect(RegistrationSystem.fieldOf(IdentifierKind.Email)).toBe('email');
+    expect(RegistrationSystem.fieldOf(IdentifierChannel.Phone)).toBe('phone');
+    expect(RegistrationSystem.fieldOf(IdentifierChannel.Email)).toBe('email');
   });
 
   it('rejects an unknown value', () => {
@@ -524,7 +539,7 @@ describe('RegistrationSystem properties', () => {
     fc.assert(
       fc.property(anyFields, (given) => {
         const out = RegistrationSystem.effectiveFields(
-          IdentifierKind.Email,
+          IdentifierChannel.Email,
           'a@b.cd',
           given,
         );
@@ -547,14 +562,14 @@ describe('RegistrationSystem purity', () => {
     const given = deepFreeze(fields({ firstName: ' Ada ', lastName: 'L' }));
     const run = () => ({
       effective: RegistrationSystem.effectiveFields(
-        IdentifierKind.Phone,
+        IdentifierChannel.Phone,
         '+14155552671',
         given,
       ),
       missing: RegistrationSystem.missingField(STRATEGY, given),
       settled: RegistrationSystem.settle(standing, given, null),
       claims: RegistrationSystem.claimsFor(
-        standing.registration,
+        standing.registrationState,
         standing.roles,
         TENANT,
       ),

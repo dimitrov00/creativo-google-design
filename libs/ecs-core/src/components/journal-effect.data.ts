@@ -1,129 +1,137 @@
-import type { AppointmentId } from '../entities/appointment.entity';
-import type { CouponGrantId } from '../entities/coupon-grant.entity';
-import type { GiftVoucherId } from '../entities/gift-voucher.entity';
-import type { RewardId } from '../entities/reward-catalog-item.entity';
-import type { StreakDefinitionId } from '../entities/streak-definition.entity';
-import type { TierId } from '../entities/tier-definition.entity';
-import type { DayKey } from './day-key.data';
+import type {
+  AchievementRuleId,
+  CouponGrantId,
+  GiftVoucherId,
+  PauseId,
+  RedemptionId,
+  RewardId,
+  SeatId,
+  StreakDefinitionId,
+  TierId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
 import type { PerkId } from './gamification.data';
-import type { RuleRef } from './journal-source.data';
-import type { Points as PointsAmount } from './points.data';
-import type { SeatOutcomeKind } from './seat-outcome.data';
+import type { AttendanceState } from './seat-outcome.data';
 
 /**
- * What a journal entry changed, by kind — the stored `effect.kind` tags,
- * unchanged; index #21 orders on `effect.kind`. `points` is the ONLY
- * effect that moves the balance.
+ * What a journal entry changed — the entry's discriminator `journalEffect`.
+ * `POINTS` is the ONLY effect that moves the balance. (Stored bytes are
+ * today's lowercase `effect.kind` until the loyalty flip (3); the legacy
+ * shims map.)
  */
-export const JournalEffectKind = {
-  Points: 'points',
-  Streak: 'streak',
-  Freeze: 'freeze',
-  Achievement: 'achievement',
-  Tier: 'tier',
-  Reward: 'reward',
-  Redemption: 'redemption',
-  Pause: 'pause',
-  VisitOutcome: 'visitOutcome',
+export const JournalEffect = {
+  Points: 'POINTS',
+  Streak: 'STREAK',
+  Freeze: 'FREEZE',
+  Achievement: 'ACHIEVEMENT',
+  Tier: 'TIER',
+  Reward: 'REWARD',
+  Redemption: 'REDEMPTION',
+  Pause: 'PAUSE',
+  VisitOutcome: 'VISIT_OUTCOME',
 } as const;
-export type JournalEffectKind =
-  (typeof JournalEffectKind)[keyof typeof JournalEffectKind];
+export type JournalEffect = (typeof JournalEffect)[keyof typeof JournalEffect];
 
-/** What happened to a run. */
-export const StreakEffectOp = {
-  Extended: 'extended',
-  Broken: 'broken',
-  Repaired: 'repaired',
-  ExtendedDue: 'extendedDue',
-  Excused: 'excused',
-  Reset: 'reset',
-  Set: 'set',
-  Recomputed: 'recomputed',
+/** What happened to a run — the STREAK effect's field `streakOp`. */
+export const StreakOp = {
+  Extended: 'EXTENDED',
+  Broken: 'BROKEN',
+  Repaired: 'REPAIRED',
+  ExtendedDue: 'EXTENDED_DUE',
+  Excused: 'EXCUSED',
+  Reset: 'RESET',
+  Set: 'SET',
+  Recomputed: 'RECOMPUTED',
 } as const;
-export type StreakEffectOp =
-  (typeof StreakEffectOp)[keyof typeof StreakEffectOp];
+export type StreakOp = (typeof StreakOp)[keyof typeof StreakOp];
 
-/** What happened to the protections a run banks. */
-export const FreezeEffectOp = {
-  Earned: 'earned',
-  Granted: 'granted',
-  Applied: 'applied',
+/** What happened to the protections a run banks — the field `freezeOp`. */
+export const FreezeOp = {
+  Earned: 'EARNED',
+  Granted: 'GRANTED',
+  Applied: 'APPLIED',
 } as const;
-export type FreezeEffectOp =
-  (typeof FreezeEffectOp)[keyof typeof FreezeEffectOp];
+export type FreezeOp = (typeof FreezeOp)[keyof typeof FreezeOp];
 
-export const AchievementEffectOp = {
-  Granted: 'granted',
-  Revoked: 'revoked',
+/** The field `achievementOp`. */
+export const AchievementOp = {
+  Granted: 'GRANTED',
+  Revoked: 'REVOKED',
 } as const;
-export type AchievementEffectOp =
-  (typeof AchievementEffectOp)[keyof typeof AchievementEffectOp];
+export type AchievementOp = (typeof AchievementOp)[keyof typeof AchievementOp];
 
-export const TierEffectOp = {
-  Changed: 'changed',
-  Granted: 'granted',
-  Overridden: 'overridden',
-  OverrideCleared: 'overrideCleared',
+/** The field `tierOp`. */
+export const TierOp = {
+  Changed: 'CHANGED',
+  Granted: 'GRANTED',
+  Overridden: 'OVERRIDDEN',
+  OverrideCleared: 'OVERRIDE_CLEARED',
 } as const;
-export type TierEffectOp = (typeof TierEffectOp)[keyof typeof TierEffectOp];
+export type TierOp = (typeof TierOp)[keyof typeof TierOp];
 
-export const RewardEffectOp = {
-  Granted: 'granted',
-  Reinstated: 'reinstated',
-  Revoked: 'revoked',
+/** The field `rewardOp`. */
+export const RewardOp = {
+  Granted: 'GRANTED',
+  Reinstated: 'REINSTATED',
+  Revoked: 'REVOKED',
 } as const;
-export type RewardEffectOp =
-  (typeof RewardEffectOp)[keyof typeof RewardEffectOp];
+export type RewardOp = (typeof RewardOp)[keyof typeof RewardOp];
 
-export const RedemptionEffectOp = {
-  Redeemed: 'redeemed',
-  Reversed: 'reversed',
-  Expired: 'expired',
+/** The field `redemptionOp`. */
+export const RedemptionOp = {
+  Redeemed: 'REDEEMED',
+  Reversed: 'REVERSED',
+  Expired: 'EXPIRED',
 } as const;
-export type RedemptionEffectOp =
-  (typeof RedemptionEffectOp)[keyof typeof RedemptionEffectOp];
+export type RedemptionOp = (typeof RedemptionOp)[keyof typeof RedemptionOp];
 
-export const PauseEffectOp = {
-  Applied: 'applied',
-  Edited: 'edited',
-  Lifted: 'lifted',
-  Expired: 'expired',
+/** The field `pauseOp`. */
+export const PauseOp = {
+  Applied: 'APPLIED',
+  Edited: 'EDITED',
+  Lifted: 'LIFTED',
+  Expired: 'EXPIRED',
 } as const;
-export type PauseEffectOp = (typeof PauseEffectOp)[keyof typeof PauseEffectOp];
+export type PauseOp = (typeof PauseOp)[keyof typeof PauseOp];
 
-/** A reward a client holds, by kind. */
-export const RewardRefKind = {
-  CouponGrant: 'couponGrant',
-  GiftVoucher: 'giftVoucher',
-  Perk: 'perk',
-  Cosmetic: 'cosmetic',
+/**
+ * A reward a client holds — the discriminator `rewardRef` of
+ * {@link RewardRefFields} (and, as `grantRef`, of {@link GrantRefFields}).
+ */
+export const RewardRef = {
+  CouponGrant: 'COUPON_GRANT',
+  GiftVoucher: 'GIFT_VOUCHER',
+  Perk: 'PERK',
+  Cosmetic: 'COSMETIC',
 } as const;
-export type RewardRefKind = (typeof RewardRefKind)[keyof typeof RewardRefKind];
+export type RewardRef = (typeof RewardRef)[keyof typeof RewardRef];
 
-/** The cosmetics a reward can be — one today. */
+/** The cosmetics a reward can be — one today. Stable catalogue ids (flatten-spec §0.4). */
 export const CosmeticId = {
   FrameWelcome: 'frame.welcome',
 } as const;
 export type CosmeticId = (typeof CosmeticId)[keyof typeof CosmeticId];
 
-/** How long a pause lasts, by kind. */
-export const PauseTermKind = {
-  Temporary: 'temporary',
-  Permanent: 'permanent',
+/** How long a pause lasts — the PAUSE effect's field `pauseTerm`. */
+export const PauseTerm = {
+  /** Through `pauseUntil`, inclusive. */
+  Temporary: 'TEMPORARY',
+  /** Until somebody lifts it. */
+  Permanent: 'PERMANENT',
 } as const;
-export type PauseTermKind = (typeof PauseTermKind)[keyof typeof PauseTermKind];
+export type PauseTerm = (typeof PauseTerm)[keyof typeof PauseTerm];
 
-/** What a pause stops: the client's own bookings, or every booking. */
+/** What a pause stops: the client's own bookings, or every booking — the field `pauseScope`. */
 export const PauseScope = {
-  SelfService: 'selfService',
-  AllBookings: 'allBookings',
+  SelfService: 'SELF_SERVICE',
+  AllBookings: 'ALL_BOOKINGS',
 } as const;
 export type PauseScope = (typeof PauseScope)[keyof typeof PauseScope];
 
-/** Who may read an entry: the ledger reads `client` rows only. */
+/** Who may read an entry — the entry's field `journalVisibility`; the ledger reads `CLIENT` rows only. */
 export const JournalVisibility = {
-  Client: 'client',
-  Staff: 'staff',
+  Client: 'CLIENT',
+  Staff: 'STAFF',
 } as const;
 export type JournalVisibility =
   (typeof JournalVisibility)[keyof typeof JournalVisibility];
@@ -131,7 +139,8 @@ export type JournalVisibility =
 /**
  * The client-visible copy keys of a journal row — today the tuple
  * `PUBLIC_LABEL_CODES` (`loyalty-document.ts:153-180`); i18n resolves each
- * with the row's `params`. Stored strings unchanged.
+ * with the row's `labelParams`. i18n message keys, so the stored strings are
+ * unchanged (flatten-spec §0.4).
  */
 export const LabelCode = {
   PointsOpening: 'points.opening',
@@ -166,39 +175,59 @@ export type LabelCode = (typeof LabelCode)[keyof typeof LabelCode];
 /** Every label code, dictionary order — derived, never a second source. */
 export const LABEL_CODES: readonly LabelCode[] = Object.values(LabelCode);
 
-/** A reward a client holds. */
-export type RewardRef =
-  | RewardRef.CouponGrant
-  | RewardRef.GiftVoucher
-  | RewardRef.Perk
-  | RewardRef.Cosmetic;
+/**
+ * A reward a client holds, as flat fields beside the one discriminator
+ * `rewardRef` — each variant declares only its own id (the REWARD effect,
+ * the REWARD_GRANTED notification).
+ */
+export type RewardRefFields =
+  | RewardRefFields.CouponGrant
+  | RewardRefFields.GiftVoucher
+  | RewardRefFields.Perk
+  | RewardRefFields.Cosmetic;
 
-export const RewardRef = {
-  couponGrant(id: CouponGrantId): RewardRef.CouponGrant {
-    return { kind: RewardRefKind.CouponGrant, id };
+export const RewardRefFields = {
+  couponGrant(rewardCouponGrantId: CouponGrantId): RewardRefFields.CouponGrant {
+    return { rewardRef: RewardRef.CouponGrant, rewardCouponGrantId };
   },
-  giftVoucher(id: GiftVoucherId): RewardRef.GiftVoucher {
-    return { kind: RewardRefKind.GiftVoucher, id };
+  giftVoucher(rewardGiftVoucherId: GiftVoucherId): RewardRefFields.GiftVoucher {
+    return { rewardRef: RewardRef.GiftVoucher, rewardGiftVoucherId };
   },
-  perk(perkId: PerkId): RewardRef.Perk {
-    return { kind: RewardRefKind.Perk, perkId };
+  perk(rewardPerkId: PerkId): RewardRefFields.Perk {
+    return { rewardRef: RewardRef.Perk, rewardPerkId };
   },
-  cosmetic(cosmeticId: CosmeticId): RewardRef.Cosmetic {
-    return { kind: RewardRefKind.Cosmetic, cosmeticId };
+  cosmetic(rewardCosmeticId: CosmeticId): RewardRefFields.Cosmetic {
+    return { rewardRef: RewardRef.Cosmetic, rewardCosmeticId };
   },
 } as const;
 
-/** How long a pause lasts: through a day (inclusive), or until lifted. */
-export type PauseTerm = PauseTerm.Temporary | PauseTerm.Permanent;
+/**
+ * What a redemption minted — today's nullable `grant` ref as a variant
+ * SLICE (F-26) on `grantRef` (`null` = nothing minted yet): every variant
+ * narrows, never four independent nullable ids.
+ */
+export type GrantRefFields =
+  | GrantRefFields.None
+  | GrantRefFields.CouponGrant
+  | GrantRefFields.GiftVoucher
+  | GrantRefFields.Perk
+  | GrantRefFields.Cosmetic;
 
-export const PauseTerm = {
-  /** Through `until`, inclusive. */
-  temporary(until: DayKey): PauseTerm.Temporary {
-    return { kind: PauseTermKind.Temporary, until };
+export const GrantRefFields = {
+  none(): GrantRefFields.None {
+    return { grantRef: null };
   },
-  /** Until somebody lifts it. */
-  permanent(): PauseTerm.Permanent {
-    return { kind: PauseTermKind.Permanent };
+  couponGrant(grantCouponGrantId: CouponGrantId): GrantRefFields.CouponGrant {
+    return { grantRef: RewardRef.CouponGrant, grantCouponGrantId };
+  },
+  giftVoucher(grantGiftVoucherId: GiftVoucherId): GrantRefFields.GiftVoucher {
+    return { grantRef: RewardRef.GiftVoucher, grantGiftVoucherId };
+  },
+  perk(grantPerkId: PerkId): GrantRefFields.Perk {
+    return { grantRef: RewardRef.Perk, grantPerkId };
+  },
+  cosmetic(grantCosmeticId: CosmeticId): GrantRefFields.Cosmetic {
+    return { grantRef: RewardRef.Cosmetic, grantCosmeticId };
   },
 } as const;
 
@@ -213,21 +242,27 @@ export type LabelParam = {
   readonly value: string | number;
 };
 
-/** A row's client-visible copy: a key and its parameters. */
+/**
+ * A row's client-visible copy, flat at the entry's root (Law 6.1): a key
+ * and its parameters (today's nested `publicLabel { code; params }`).
+ */
 export type PublicLabel = {
-  readonly code: LabelCode;
-  readonly params: readonly LabelParam[];
+  readonly labelCode: LabelCode;
+  readonly labelParams: readonly LabelParam[];
 };
 
 export const PublicLabel = {
-  of(code: LabelCode, params: readonly LabelParam[]): PublicLabel {
-    return { code, params };
+  of(labelCode: LabelCode, labelParams: readonly LabelParam[]): PublicLabel {
+    return { labelCode, labelParams };
   },
 
   /** A parameter's value by name, or `null` — what i18n interpolation reads. */
-  param(label: PublicLabel, name: string): string | number | null {
-    for (let i = 0; i < label.params.length; i++) {
-      const param = label.params[i] as LabelParam;
+  param(
+    label: Pick<PublicLabel, 'labelParams'>,
+    name: string,
+  ): string | number | null {
+    for (let i = 0; i < label.labelParams.length; i++) {
+      const param = label.labelParams[i] as LabelParam;
       if (param.name === name) return param.value;
     }
     return null;
@@ -235,130 +270,149 @@ export const PublicLabel = {
 } as const;
 
 /**
- * What a journal entry changed (`loyalty-document.ts:648-717`), the stored
- * union with its tags and keys unchanged; dates are shop-calendar day keys
- * (`dueBy`, a tier override's or a pause's `until`).
+ * What a journal entry changed (`loyalty-document.ts:648-717`) — a union of
+ * FLAT variant slices at the entry's root, discriminated by
+ * `journalEffect`; every variant-only field carries its effect's prefix so
+ * the slice never collides with the entry's other slices. Dates are
+ * shop-calendar days (`streakDueBy`, `tierUntil`, `pauseUntil`).
  */
-export type JournalEffect =
-  | JournalEffect.Points
-  | JournalEffect.Streak
-  | JournalEffect.Freeze
-  | JournalEffect.Achievement
-  | JournalEffect.Tier
-  | JournalEffect.Reward
-  | JournalEffect.Redemption
-  | JournalEffect.Pause
-  | JournalEffect.VisitOutcome;
+export type JournalEffectRecord =
+  | JournalEffectRecord.Points
+  | JournalEffectRecord.Streak
+  | JournalEffectRecord.Freeze
+  | JournalEffectRecord.Achievement
+  | JournalEffectRecord.Tier
+  | JournalEffectRecord.Reward
+  | JournalEffectRecord.Redemption
+  | JournalEffectRecord.Pause
+  | JournalEffectRecord.VisitOutcome;
 
-export const JournalEffect = {
-  points(delta: number): JournalEffect.Points {
-    return { kind: JournalEffectKind.Points, delta };
+export const JournalEffectRecord = {
+  points(pointsDelta: number): JournalEffectRecord.Points {
+    return { journalEffect: JournalEffect.Points, pointsDelta };
   },
 
-  /** Only a `points` effect moves the balance. */
-  movesBalance(effect: JournalEffect): effect is JournalEffect.Points {
-    return effect.kind === JournalEffectKind.Points;
+  /** Only a `POINTS` effect moves the balance. */
+  movesBalance(
+    effect: JournalEffectRecord,
+  ): effect is JournalEffectRecord.Points {
+    return effect.journalEffect === JournalEffect.Points;
   },
 
-  /** What the effect adds to the balance: its signed `delta`, `0` for every other effect. */
-  pointsDelta(effect: JournalEffect): number {
-    return effect.kind === JournalEffectKind.Points ? effect.delta : 0;
+  /** What the effect adds to the balance: its signed `pointsDelta`, `0` for every other effect. */
+  pointsDelta(effect: JournalEffectRecord): number {
+    return effect.journalEffect === JournalEffect.Points
+      ? effect.pointsDelta
+      : 0;
   },
 } as const;
 
-export namespace RewardRef {
+export namespace RewardRefFields {
   export type CouponGrant = {
-    readonly kind: typeof RewardRefKind.CouponGrant;
-    readonly id: CouponGrantId;
+    readonly rewardRef: typeof RewardRef.CouponGrant;
+    readonly rewardCouponGrantId: CouponGrantId;
   };
   export type GiftVoucher = {
-    readonly kind: typeof RewardRefKind.GiftVoucher;
-    readonly id: GiftVoucherId;
+    readonly rewardRef: typeof RewardRef.GiftVoucher;
+    readonly rewardGiftVoucherId: GiftVoucherId;
   };
   export type Perk = {
-    readonly kind: typeof RewardRefKind.Perk;
-    readonly perkId: PerkId;
+    readonly rewardRef: typeof RewardRef.Perk;
+    readonly rewardPerkId: PerkId;
   };
   export type Cosmetic = {
-    readonly kind: typeof RewardRefKind.Cosmetic;
-    readonly cosmeticId: CosmeticId;
+    readonly rewardRef: typeof RewardRef.Cosmetic;
+    readonly rewardCosmeticId: CosmeticId;
   };
 }
 
-export namespace PauseTerm {
-  export type Temporary = {
-    readonly kind: typeof PauseTermKind.Temporary;
-    readonly until: DayKey;
+export namespace GrantRefFields {
+  export type None = { readonly grantRef: null };
+  export type CouponGrant = {
+    readonly grantRef: typeof RewardRef.CouponGrant;
+    readonly grantCouponGrantId: CouponGrantId;
   };
-  export type Permanent = { readonly kind: typeof PauseTermKind.Permanent };
+  export type GiftVoucher = {
+    readonly grantRef: typeof RewardRef.GiftVoucher;
+    readonly grantGiftVoucherId: GiftVoucherId;
+  };
+  export type Perk = {
+    readonly grantRef: typeof RewardRef.Perk;
+    readonly grantPerkId: PerkId;
+  };
+  export type Cosmetic = {
+    readonly grantRef: typeof RewardRef.Cosmetic;
+    readonly grantCosmeticId: CosmeticId;
+  };
 }
 
-export namespace JournalEffect {
+export namespace JournalEffectRecord {
   export type Points = {
-    readonly kind: typeof JournalEffectKind.Points;
+    readonly journalEffect: typeof JournalEffect.Points;
     /** Signed: a spend or a reversal is negative. */
-    readonly delta: number;
+    readonly pointsDelta: number;
   };
   export type Streak = {
-    readonly kind: typeof JournalEffectKind.Streak;
+    readonly journalEffect: typeof JournalEffect.Streak;
     readonly streakId: StreakDefinitionId;
-    readonly op: StreakEffectOp;
-    readonly from: number;
-    readonly to: number;
-    readonly dueBy: DayKey | null;
+    readonly streakOp: StreakOp;
+    readonly streakFrom: number;
+    readonly streakTo: number;
+    readonly streakDueBy: LocalDate | null;
   };
   export type Freeze = {
-    readonly kind: typeof JournalEffectKind.Freeze;
+    readonly journalEffect: typeof JournalEffect.Freeze;
     readonly streakId: StreakDefinitionId;
-    readonly op: FreezeEffectOp;
-    readonly count: number;
-    readonly bankedAfter: number;
+    readonly freezeOp: FreezeOp;
+    readonly freezeCount: number;
+    readonly freezesBankedAfter: number;
   };
   export type Achievement = {
-    readonly kind: typeof JournalEffectKind.Achievement;
-    readonly rule: RuleRef;
-    readonly awardKey: string;
-    readonly op: AchievementEffectOp;
+    readonly journalEffect: typeof JournalEffect.Achievement;
+    /** The rule version cited (`ruleId@version`, today's nested `rule: RuleRef`). */
+    readonly achievementRuleId: AchievementRuleId;
+    readonly achievementRuleVersion: number;
+    readonly achievementAwardKey: string;
+    readonly achievementOp: AchievementOp;
   };
   export type Tier = {
-    readonly kind: typeof JournalEffectKind.Tier;
-    readonly op: TierEffectOp;
-    readonly from: TierId;
-    readonly to: TierId;
-    readonly until: DayKey | null;
+    readonly journalEffect: typeof JournalEffect.Tier;
+    readonly tierOp: TierOp;
+    readonly tierFrom: TierId;
+    readonly tierTo: TierId;
+    readonly tierUntil: LocalDate | null;
   };
   export type Reward = {
-    readonly kind: typeof JournalEffectKind.Reward;
-    readonly op: RewardEffectOp;
-    readonly ref: RewardRef;
-  };
+    readonly journalEffect: typeof JournalEffect.Reward;
+    readonly rewardOp: RewardOp;
+  } & RewardRefFields;
   export type Redemption = {
-    readonly kind: typeof JournalEffectKind.Redemption;
-    readonly op: RedemptionEffectOp;
-    readonly redemptionId: string;
-    readonly rewardId: RewardId;
+    readonly journalEffect: typeof JournalEffect.Redemption;
+    readonly redemptionOp: RedemptionOp;
+    readonly redemptionId: RedemptionId;
+    readonly redeemedRewardId: RewardId;
     /** What the reward cost, in points. */
-    readonly cost: PointsAmount;
-    readonly grant: RewardRef | null;
-  };
+    readonly redemptionCost: number;
+  } & GrantRefFields;
   export type Pause = {
-    readonly kind: typeof JournalEffectKind.Pause;
-    readonly op: PauseEffectOp;
-    readonly pauseId: string;
-    readonly term: PauseTerm;
-    readonly scope: PauseScope;
-    /** Before → after on every pause row; `null` on `applied`. */
-    readonly prior: {
-      readonly term: PauseTerm;
-      readonly scope: PauseScope;
-    } | null;
+    readonly journalEffect: typeof JournalEffect.Pause;
+    readonly pauseOp: PauseOp;
+    readonly pauseId: PauseId;
+    readonly pauseTerm: PauseTerm;
+    /** The last paused day, inclusive, of a `TEMPORARY` term; `null` for a `PERMANENT` one. */
+    readonly pauseUntil: LocalDate | null;
+    readonly pauseScope: PauseScope;
+    /** Before → after on every pause row; the three `null` together on `APPLIED`. */
+    readonly priorPauseTerm: PauseTerm | null;
+    readonly priorPauseUntil: LocalDate | null;
+    readonly priorPauseScope: PauseScope | null;
   };
   export type VisitOutcome = {
-    readonly kind: typeof JournalEffectKind.VisitOutcome;
-    readonly appointmentId: AppointmentId;
-    readonly seatId: string;
-    readonly from: SeatOutcomeKind;
-    readonly to: SeatOutcomeKind;
-    readonly revision: number;
+    readonly journalEffect: typeof JournalEffect.VisitOutcome;
+    /** The visit is the entry's root `appointmentId`. */
+    readonly outcomeSeatId: SeatId;
+    readonly outcomeFrom: AttendanceState;
+    readonly outcomeTo: AttendanceState;
+    readonly outcomeRevision: number;
   };
 }

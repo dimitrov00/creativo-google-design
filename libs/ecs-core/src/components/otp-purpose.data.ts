@@ -1,13 +1,15 @@
 /**
- * Why a one-time code was issued — the stored `otps.purpose` strings of
- * `models/otp.ts:17`, unchanged. A tag dictionary only, not a brand
- * (blueprint §2.7): the ONLY source of these strings.
+ * Why a one-time code was issued — the OTP's field `otpPurpose` (N15;
+ * today's stored `otps.purpose` strings of `models/otp.ts:17`,
+ * upper-snaked — the stored bytes stay lowercase until the identity flip).
+ * A tag dictionary only, not a brand (blueprint §2.7): the ONLY source of
+ * these strings.
  */
 export const OtpPurpose = {
   /** A known account signing in. */
-  Login: 'login',
+  Login: 'LOGIN',
   /** A first sign-in that provisions the account. */
-  Signup: 'signup',
+  Signup: 'SIGNUP',
 } as const;
 export type OtpPurpose = (typeof OtpPurpose)[keyof typeof OtpPurpose];
 

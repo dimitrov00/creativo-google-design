@@ -59,12 +59,15 @@ export const IntervalCollisionSystem = {
 ## Rules
 
 - **Zero inbound mapping (Law 6).** A system takes the slice it needs
-  (`readonly TimeCoordinate[]`) or the whole entity, by structural typing —
+  (`readonly AppointmentTime[]`) or the whole entity, by structural typing —
   never `.map()` to strip, rename or re-nest properties before calling it.
 - **Narrow on the domain discriminator** (`bookingStatus`, `paymentMethod`,
   `attendanceState`) with plain `===` against the dictionary value; never a
   generic `kind`/`type` field.
-- **Inputs in, outputs out.** `now` is a parameter (`nowMs: number`), ids come
+- **Inputs in, outputs out.** `now` is a parameter — `now: ShopNow` when the
+  system compares now with local coordinates, `nowUtcMs: UtcEpochMs` when it
+  only stamps (or, under G-1(a), compares) lifecycle instants (flatten-spec
+  T4) — never `nowMs: number`; ids come
   from a `nextId: () => string` parameter supplied by the pipeline, digests
   from a `hash: (input: string) => string` parameter, randomness is a
   parameter. Never `Date.now()`, `new Date()`, `Math.random()`, `crypto`.

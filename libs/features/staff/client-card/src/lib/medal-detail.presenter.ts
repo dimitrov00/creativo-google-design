@@ -17,11 +17,14 @@ import {
 import {
   AchievementsSystem,
   BarberId as BarberRefId,
-  DayKey,
+  LocalDate,
   LocationId as LocationRefId,
   type MetricRef,
+  MinuteOfDay,
   ServiceId as ServiceRefId,
+  UtcEpochMs,
   type Weekday,
+  defect,
 } from '@creativo/ecs-core';
 import {
   type RhythmRuleWords,
@@ -260,10 +263,13 @@ export function countsToward(
     ),
     barberIds: worked.seats.map((seat) => BarberRefId.of(seat.barberId.value)),
     locationId: LocationRefId.of(visit.locationId.value),
-    startMs: worked.start.toMillis(),
-    startMinuteOfDay: worked.start.hour * 60 + worked.start.minute,
-    startWeekday: worked.start.weekday as Weekday,
-    arrivedAtMs: visit.arrivedAt === null ? null : visit.arrivedAt.toMillis(),
+    // The start on the shop's wall clock, read here once (T1).
+    localDate: dayOf(worked.start.toISODate()),
+    startMinutes: minuteOf(worked.start.hour * 60 + worked.start.minute),
+    weekday: worked.start.weekday as Weekday,
+    startUtcMs: utcOf(worked.start.toMillis()),
+    arrivedAtUtcMs:
+      visit.arrivedAt === null ? null : utcOf(visit.arrivedAt.toMillis()),
     withCompany: worked.withCompany,
   });
 }
@@ -287,13 +293,13 @@ function insideWindows(
     season === null
       ? null
       : {
-          from: DayKey.of(season.window.from),
-          until: DayKey.of(season.window.until),
+          windowFrom: dayOf(season.window.from),
+          windowUntil: dayOf(season.window.until),
         },
     series.seasonId !== null,
-    series.metric?.window ?? null,
-    DayKey.of(day),
-    DayKey.of(data.today),
+    series.metric?.window?.lastDays ?? null,
+    dayOf(day),
+    dayOf(data.today),
   );
 }
 
@@ -353,13 +359,17 @@ function thisVisitCounts(
     ),
     // A draft with no shop yet is in none: no shop's family counts it.
     locationId: LocationRefId.of(visit.locationId ?? ''),
-    startMs: start === null ? Number.NaN : start.toMillis(),
-    startMinuteOfDay:
+    // No start yet: today, the day's last minute (never early) and a
+    // Monday (never a weekend) — what the old `NaN`/`∞` start answered.
+    localDate: start === null ? dayOf(data.today) : dayOf(start.toISODate()),
+    startMinutes:
       start === null
-        ? Number.POSITIVE_INFINITY
-        : start.hour * 60 + start.minute,
-    startWeekday: start === null ? WEEKDAY_MONDAY : (start.weekday as Weekday),
-    arrivedAtMs: null,
+        ? minuteOf(LAST_MINUTE_OF_DAY)
+        : minuteOf(start.hour * 60 + start.minute),
+    weekday: start === null ? WEEKDAY_MONDAY : (start.weekday as Weekday),
+    // Never compared: a draft has no arrival.
+    startUtcMs: utcOf(start === null ? 0 : start.toMillis()),
+    arrivedAtUtcMs: null,
     withCompany: false,
   });
 }
@@ -1072,28 +1082,44 @@ export function medalDetailVm(
 
 // ── The bridge: legacy shapes → ecs-core structs (Phase 4 deletes it) ────
 
-/** A family's metric as `AchievementsSystem` reads it: every part present, absent is `null`. */
+/** The last minute of a shop day: what a visit with no start yet is held to. */
+const LAST_MINUTE_OF_DAY = 1439;
+
+/** A shop day the card holds: a guarded document day, a clock's «today», a start's own day. */
+function dayOf(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/** A wall-clock minute a `ZonedDateTime` read: always inside the day. */
+function minuteOf(raw: number): MinuteOfDay {
+  const minute = MinuteOfDay.of(raw);
+  return minute.ok ? minute.value : defect(`${raw} is no minute of a day`);
+}
+
+/** An instant a `ZonedDateTime` held: always inside the brand's window. */
+function utcOf(epochMs: number): UtcEpochMs {
+  const utc = UtcEpochMs.of(epochMs);
+  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
+}
+
+/** A family's metric as `AchievementsSystem` reads it: flat, every part present, absent is `null`. */
 function metricRefOf(metric: NonNullable<BadgeSeries['metric']>): MetricRef {
   const where = metric.where;
   return {
     metric: metric.metric as MetricRef['metric'],
-    window: metric.window ?? null,
-    where:
-      where === undefined
+    metricWindowDays: metric.window?.lastDays ?? null,
+    metricScopeServiceId:
+      where?.serviceId === undefined
         ? null
-        : {
-            serviceId:
-              where.serviceId === undefined
-                ? null
-                : ServiceRefId.of(where.serviceId.value),
-            barberId:
-              where.barberId === undefined
-                ? null
-                : BarberRefId.of(where.barberId.value),
-            locationId:
-              where.locationId === undefined
-                ? null
-                : LocationRefId.of(where.locationId.value),
-          },
+        : ServiceRefId.of(where.serviceId.value),
+    metricScopeBarberId:
+      where?.barberId === undefined
+        ? null
+        : BarberRefId.of(where.barberId.value),
+    metricScopeLocationId:
+      where?.locationId === undefined
+        ? null
+        : LocationRefId.of(where.locationId.value),
   };
 }

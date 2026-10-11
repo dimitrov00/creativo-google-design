@@ -1,6 +1,8 @@
-import { BookingPolicySettingsId } from '../entities/booking-policy-settings.entity';
-import { ClientMoneyStatsId } from '../entities/client-money-stats.entity';
-import { PolicyRecomputeJobId } from '../entities/policy-recompute-job.entity';
+import {
+  BookingPolicySettingsId,
+  ClientMoneyStatsId,
+  PolicyRecomputeJobId,
+} from '../primitives/ids.primitive';
 
 /**
  * The collection-name registry (blueprint §3.1, §4.2) — the ONE spelling
@@ -20,51 +22,57 @@ import { PolicyRecomputeJobId } from '../entities/policy-recompute-job.entity';
 
 /** Top-level collections — `/{name}/{id}`. */
 export const Collections = {
-  /** `AppointmentEntity` — callable-only in the rules, staff included. */
+  /** `Appointment` — callable-only in the rules, staff included. */
   Appointments: 'appointments',
-  /** `AppointmentNoteEntity`, keyed by the appointment id. */
+  /** `AppointmentNote`, keyed by the appointment id. */
   AppointmentNotes: 'appointmentNotes',
   AppointmentPhotos: 'appointmentPhotos',
-  /** `BarberBusyDayEntity`, keyed by `BusyKey` (`{barberId}__{dayKey}`); TTL `purgeAt`. */
+  /** `BarberBusyDay`, keyed by `BusyKey` (`{barberId}__{localDate}`); TTL `purgeAt`. */
   BarberBusy: 'barberBusy',
-  /** `CapacityMonthEntity`, keyed by `YYYY-MM` (§9 D7); TTL `purgeAt`. */
+  /** `CapacityMonth`, keyed by `YYYY-MM` (§9 D7); TTL `purgeAt`. */
   Capacity: 'capacity',
-  /** `ScheduleExceptionEntity`, keyed by the same `BusyKey` as the busy day. */
+  /** `ScheduleException`, keyed by the same `BusyKey` as the busy day. */
   ScheduleExceptions: 'scheduleExceptions',
-  /** `BarberScheduleEntity`, keyed by the barber id. */
+  /** `BarberSchedule`, keyed by the barber id. */
   BarberSchedules: 'barberSchedules',
-  /** `BarberLeadTimeSampleEntity`, keyed by `{barberId}__{dayKey}`; TTL `purgeAt`. */
+  /** `BarberLeadTimeSample`, keyed by `{barberId}__{localDate}`; TTL `purgeAt`. */
   BarberLeadTimeSamples: 'barberLeadTimeSamples',
-  /** `WaitlistRequestEntity`; TTL `purgeAt`. */
+  /** `WaitlistRequest`; TTL `purgeAt`. */
   WaitlistRequests: 'waitlistRequests',
   Services: 'services',
   ServiceCategories: 'serviceCategories',
   Barbers: 'barbers',
   Locations: 'locations',
-  /** `UserEntity`, keyed by the Firebase Auth uid. */
+  /** `User`, keyed by the Firebase Auth uid. */
   Users: 'users',
-  /** `OtpEntity`; TTL `purgeAt`. */
+  /**
+   * `Customer` — the client RECORD (D29), keyed by a `CustomerId`
+   * (`CustomerId.forUser(uid)` for an account holder, a random `cus_…` for a
+   * walk-in). Registered now; nothing reads or writes it before flip (1).
+   */
+  Customers: 'customers',
+  /** `Otp`; TTL `purgeAt`. */
   Otps: 'otps',
-  /** `ImpersonationSessionEntity`; TTL `purgeAt`. */
+  /** `ImpersonationSession`; TTL `purgeAt`. */
   ImpersonationSessions: 'impersonationSessions',
-  /** `AuditEntryEntity`, id `hash(rowBasis)`. */
+  /** `AuditEntry`, id `hash(rowBasis)`. */
   AuditLog: 'auditLog',
   Coupons: 'coupons',
   CouponGrants: 'couponGrants',
   GiftVouchers: 'giftVouchers',
-  /** `LoyaltyAccountEntity`, keyed by the uid. */
+  /** `LoyaltyAccount`, keyed by the uid. */
   LoyaltyAccounts: 'loyaltyAccounts',
-  /** `JournalEntryEntity`, id `{userId}_{seq:6}`. */
+  /** `JournalEntry`, id `{userId}_{seq:6}`. */
   ClientJournal: 'clientJournal',
-  /** `StreakDefinitionEntity` (the head). */
+  /** `StreakDefinition` (the head). */
   StreakDefinitions: 'streakDefinitions',
-  /** `ClientStatsEntity`, keyed by the uid. */
+  /** `ClientStatsRecord`, keyed by the uid. */
   ClientStats: 'clientStats',
   BadgeCategories: 'badgeCategories',
   BadgeSeries: 'badgeSeries',
   Seasons: 'seasons',
   TierDefinitions: 'tierDefinitions',
-  /** `RewardCatalogItemEntity`. */
+  /** `RewardCatalogItem`. */
   RewardsCatalog: 'rewardsCatalog',
   Invitations: 'invitations',
   Positions: 'positions',
@@ -72,7 +80,7 @@ export const Collections = {
   Events: 'events',
   /** Fixed-id tenant settings — today only `bookingPolicy`. */
   Settings: 'settings',
-  /** `BackfillJobEntity` / `PolicyRecomputeJobEntity`, keyed by the job. */
+  /** `BackfillJob` / `PolicyRecomputeJob`, keyed by the job. */
   BackfillJobs: 'backfillJobs',
 } as const;
 export type CollectionName = (typeof Collections)[keyof typeof Collections];
@@ -114,13 +122,13 @@ export const RetiredSubcollections = {
 export type RetiredSubcollectionName =
   (typeof RetiredSubcollections)[keyof typeof RetiredSubcollections];
 
-/** `settings/bookingPolicy` — the one settings document (`BookingPolicySettingsEntity`). */
+/** `settings/bookingPolicy` — the one settings document (`BookingPolicySettings`). */
 export const BOOKING_POLICY_DOC = BookingPolicySettingsId.FIXED;
 
 /** `clientStats/{uid}/restricted/money` — the staff-only money projection. */
 export const CLIENT_MONEY_DOC = ClientMoneyStatsId.FIXED;
 
-/** `backfillJobs/clientStatsPolicy` — the policy-change recompute pass (`PolicyRecomputeJobEntity`). */
+/** `backfillJobs/clientStatsPolicy` — the policy-change recompute pass (`PolicyRecomputeJob`). */
 export const POLICY_RECOMPUTE_DOC = PolicyRecomputeJobId.FIXED;
 
 /**

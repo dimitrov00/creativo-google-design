@@ -1,26 +1,36 @@
+import type { BarberPreference } from '../components/barber-pref.data';
 import {
-  BookingCommitError,
-  BookingCommitErrorCode,
-} from '../components/booking-commit-errors.data';
-import type { BarberPrefKind } from '../components/barber-pref.data';
-import { BookingState, BookingStatus } from '../components/booking-status.data';
+  BookingLifecycle,
+  BookingStatus,
+} from '../components/booking-lifecycle.data';
+import {
+  BookingError,
+  BookingErrorCode,
+} from '../components/booking-errors.data';
 import { Result } from '../components/result.data';
 import { SchedulingErrorCode } from '../components/scheduling-errors.data';
 import { SeatOutcome } from '../components/seat-outcome.data';
-import { Seat, type SeatId, SeatSubjectKind } from '../components/seat.data';
+import { Seat, SeatSubject } from '../components/seat.data';
+import type { ServiceTerms } from '../components/service-terms.data';
+import type { Appointment } from '../entities/appointment.entity';
 import type {
-  ServiceTerms,
-  ServiceVariantId,
-} from '../components/service-terms.data';
-import type { AppointmentEntity } from '../entities/appointment.entity';
-import type { BarberId } from '../entities/barber.entity';
-import type { LocationId } from '../entities/location.entity';
-import type { ServiceId } from '../entities/service.entity';
-import type { UserId } from '../entities/user.entity';
+  DurationMinutes,
+  MinuteCount,
+} from '../primitives/duration-minutes.primitive';
+import { MinuteDelta } from '../primitives/duration-minutes.primitive';
+import {
+  type BarberId,
+  CartLineId,
+  type LocationId,
+  type SeatId,
+  type ServiceId,
+  type ServiceVariantId,
+  type UserId,
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import { MinuteOfDay } from '../primitives/minute-of-day.primitive';
 import type { ChairTime } from './availability.system';
 import { LocationScopeSystem } from './location-scope.system';
-
-const MS_PER_MINUTE = 60_000;
 
 /** The prefix the cart's re-keyed line ids live under. */
 const CART_LINE = 'cart-';
@@ -31,6 +41,9 @@ const CARRIED_LINE = 'carried-';
  * Why a seat CARRIED with a client's move cannot be placed — the ONLY
  * source of these strings (`CarriedSeatRefusal`,
  * `reschedule-booking.errors.ts`): the client is told to phone the shop.
+ * The values are i18n key SEGMENTS and wire params
+ * (`errors.BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.shop_only`), so they
+ * keep their spelling (flatten-spec §4.1).
  */
 export const CarriedSeatRefusal = {
   /** The seat's barber is not free, or not working, at the shifted time. */
@@ -47,70 +60,82 @@ export const CarriedSeatRefusal = {
 export type CarriedSeatRefusal =
   (typeof CarriedSeatRefusal)[keyof typeof CarriedSeatRefusal];
 
-/** The move's own refusal code — the rest are the commit's (`BookingCommitError`). */
+/** The move's own refusal code — the rest are the commit's (`BookingError`). */
 export const MoveErrorCode = {
-  CarriedSeatUnplaceable: 'booking.reschedule.carried_seat_unplaceable',
+  CarriedSeatUnplaceable: 'BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE',
 } as const;
 export type MoveErrorCode = (typeof MoveErrorCode)[keyof typeof MoveErrorCode];
 
 /** Somebody the move carries cannot be placed — the client phones the shop. */
 export type MoveCarriedSeatUnplaceable = {
-  readonly code: typeof MoveErrorCode.CarriedSeatUnplaceable;
+  readonly errorCode: typeof MoveErrorCode.CarriedSeatUnplaceable;
   readonly refusal: CarriedSeatRefusal;
   readonly seatIds: readonly SeatId[];
 };
 
 /**
- * What a move plan refuses with: the commit's `invalid_input` (`status`,
- * `seats`, `subject`, `seat_resolved`), or a carried seat it cannot place.
+ * What a move plan refuses with: the commit's `BOOKING_INVALID_INPUT`
+ * (`status`, `seats`, `subject`, `seat_resolved`), or a carried seat it
+ * cannot place.
  */
-export type MoveError =
-  BookingCommitError.InvalidInput | MoveCarriedSeatUnplaceable;
+export type MoveError = BookingError.InvalidInput | MoveCarriedSeatUnplaceable;
 
-/** Who a cart seat is for — the booker, or an anonymous guest by label. A cart never names another account. */
-export const MoveCartSubjectKind = {
-  Self: 'self',
-  Guest: 'guest',
+/**
+ * Who a cart seat is for — the field `moveSubjectRole`: the booker, or an
+ * anonymous guest by label. A cart never names another account.
+ */
+export const MoveSubjectRole = {
+  Self: 'SELF',
+  Guest: 'GUEST',
   /** Never sent by an honest client — refused by the plan (`subject`). */
-  Companion: 'companion',
+  Companion: 'COMPANION',
 } as const;
-export type MoveCartSubjectKind =
-  (typeof MoveCartSubjectKind)[keyof typeof MoveCartSubjectKind];
+export type MoveSubjectRole =
+  (typeof MoveSubjectRole)[keyof typeof MoveSubjectRole];
 
-/** One seat of the client's cart, as the move asks for it — every field present. */
-export type MoveCartSeat = {
-  readonly subjectKind: MoveCartSubjectKind;
+/**
+ * One seat of the client's cart, as the move asks for it (foreign input the
+ * edge already read: ids and the start on the request's day) — every field
+ * present.
+ */
+export type MoveCartSeatInput = {
+  readonly moveSubjectRole: MoveSubjectRole;
   /** The guest's label (trimmed by the plan); `null` for the booker. */
   readonly label: string | null;
   readonly serviceId: ServiceId;
   readonly variantId: ServiceVariantId | null;
   readonly barberId: BarberId;
-  readonly barberPref: BarberPrefKind | null;
-  readonly startMs: number;
+  readonly barberPreference: BarberPreference | null;
+  /** On the request's `localDate`, the shop's wall clock. */
+  readonly startMinutes: MinuteOfDay;
 };
 
-/** The client's move: the shop it goes to and the cart that stands in for their seats. */
-export type MoveRequest = {
+/**
+ * The client's move: the shop it goes to, the ONE shop day it lands on, and
+ * the cart that stands in for their seats.
+ */
+export type MoveRequestInput = {
   readonly locationId: LocationId;
-  readonly seats: readonly MoveCartSeat[];
+  readonly localDate: LocalDate;
+  readonly seats: readonly MoveCartSeatInput[];
 };
 
 /** A cart seat re-keyed by the server — positional, so no cart line can borrow a carried seat's terms. */
 export type MovedCartLine = {
-  readonly lineId: string;
-  readonly seat: MoveCartSeat;
+  readonly lineId: CartLineId;
+  readonly seat: MoveCartSeatInput;
 };
 
 /**
  * A seat the move CARRIES, shifted: the stored seat (its identity, service,
  * barber and the terms it was SOLD at — a move is not a re-sale) at its new
- * start, under a server-built line id.
+ * start on the request's day, under a server-built line id.
  */
 export type CarriedLine = {
-  readonly lineId: string;
+  readonly lineId: CartLineId;
   readonly seatId: SeatId;
   readonly userId: UserId | null;
-  readonly startMs: number;
+  readonly startMinutes: MinuteOfDay;
   readonly terms: ServiceTerms;
   readonly seat: Seat;
 };
@@ -134,16 +159,16 @@ export type MovePlan = {
 /**
  * One carried seat as the booking flow holds it while the client moves the
  * visit — what the review step shows and the grid keeps room for: its
- * distance from the move anchor and the chair time it was SOLD at.
+ * wall-clock distance from the move anchor and the chair time it was SOLD at.
  */
 export type MoveRider = {
   readonly serviceId: ServiceId;
   readonly variantId: ServiceVariantId | null;
   readonly barberId: BarberId;
-  readonly offsetMinutes: number;
-  readonly durationMinutes: number;
-  readonly setupMinutes: number;
-  readonly cleanupMinutes: number;
+  readonly offsetMinutes: MinuteDelta;
+  readonly durationMinutes: DurationMinutes;
+  readonly setupMinutes: MinuteCount;
+  readonly cleanupMinutes: MinuteCount;
 };
 
 /** What a move is decided with, read off the visit: the riders and every chair it holds. */
@@ -154,46 +179,66 @@ export type MoveFacts = {
 
 /**
  * What the reach question reads of a catalogue service — its id, the
- * variants it still sells, and where it is offered (`ServiceEntity` is one).
+ * variants it still sells, and where it is offered (a `Service` is one).
  */
 export type MoveCatalogService = {
   readonly id: ServiceId;
-  readonly variants: readonly { readonly id: ServiceVariantId }[];
+  readonly variants: readonly { readonly variantId: ServiceVariantId }[];
   readonly locationIds: readonly LocationId[];
 };
 
-/** A rider, and the instant the server will seat it at. */
+/**
+ * A rider, and the minute the server will seat it at on the move's day —
+ * `null` when its kept distance would take it off that day (one shop day per
+ * appointment, F-6), which the plan refuses.
+ */
 export type PlacedRider = {
   readonly rider: MoveRider;
-  readonly startMs: number;
+  readonly startMinutes: MinuteOfDay | null;
 };
 
-function carriedOffsetMinutes(seatStartMs: number, anchorMs: number): number {
-  return Math.round((seatStartMs - anchorMs) / MS_PER_MINUTE);
+function carriedOffsetMinutes(
+  seatStart: MinuteOfDay,
+  anchor: MinuteOfDay,
+): MinuteDelta {
+  return MinuteDelta.between(anchor, seatStart);
 }
 
-function carriedStartMs(cartEarliestMs: number, offsetMinutes: number): number {
-  return cartEarliestMs + offsetMinutes * MS_PER_MINUTE;
+function carriedStartMinutes(
+  cartEarliest: MinuteOfDay,
+  offsetMinutes: MinuteDelta,
+): MinuteOfDay | null {
+  const start = MinuteOfDay.of(cartEarliest + offsetMinutes);
+  return start.ok ? start.value : null;
 }
 
 function anchorOf(
-  appointment: AppointmentEntity,
+  appointment: Pick<Appointment, 'seats'>,
   ownerUserId: UserId | null,
-): number | null {
-  let anchor: number | null = null;
+): MinuteOfDay | null {
+  let anchor: MinuteOfDay | null = null;
   for (let i = 0; i < appointment.seats.length; i++) {
     const seat = appointment.seats[i] as Seat;
     if (!Seat.isMovableByBooker(seat, ownerUserId)) continue;
-    if (anchor === null || seat.startMs < anchor) anchor = seat.startMs;
+    if (anchor === null || seat.startMinutes < anchor) {
+      anchor = seat.startMinutes;
+    }
   }
   return anchor;
 }
 
-function releaseOf(appointment: AppointmentEntity): readonly ChairTime[] {
+function releaseOf(
+  appointment: Pick<Appointment, 'seats'>,
+): readonly ChairTime[] {
   const chairs: ChairTime[] = [];
   for (let i = 0; i < appointment.seats.length; i++) {
     const seat = appointment.seats[i] as Seat;
-    chairs.push({ barberId: seat.barberId, occupied: Seat.chairTime(seat) });
+    const chair = Seat.chairTime(seat);
+    chairs.push({
+      barberId: seat.barberId,
+      startMinutes: chair.startMinutes,
+      endMinutes: chair.endMinutes,
+    });
   }
   return chairs;
 }
@@ -201,19 +246,19 @@ function releaseOf(appointment: AppointmentEntity): readonly ChairTime[] {
 /** One placement as a comparable key: WHO, WHAT, WITH WHOM, WHEN, and what they asked for. */
 function placementKey(
   person: string,
-  serviceId: string,
-  variantId: string | null,
-  barberId: string,
-  startMs: number,
-  barberPref: string | null,
+  serviceId: ServiceId,
+  variantId: ServiceVariantId | null,
+  barberId: BarberId,
+  startMinutes: MinuteOfDay,
+  barberPreference: BarberPreference | null,
 ): string {
   return JSON.stringify([
     person,
     serviceId,
     variantId,
     barberId,
-    startMs,
-    barberPref,
+    startMinutes,
+    barberPreference,
   ]);
 }
 
@@ -235,24 +280,27 @@ function sameKeys(a: readonly string[], b: readonly string[]): boolean {
  * `reschedule-booking.use-case.ts`). The cart stands in for the seats the
  * booker can name (their own seat and anonymous guests); everybody else is
  * CARRIED, keeping their distance from the move anchor — side by side stays
- * side by side, straight after stays straight after, and the arithmetic is
- * on instants, so a DST boundary changes nothing. ONE implementation for
- * the server, the availability engine and the review card.
+ * side by side, straight after stays straight after. The shift is wall-clock
+ * arithmetic on the ONE shop day the request lands on (T1, F-6). ONE
+ * implementation for the server, the availability engine and the review
+ * card.
  */
 export const MoveSystem = {
   /**
-   * Minutes from the move anchor to a carried seat's start — what a move
-   * keeps, WHOLE minutes (rounded once, here). Negative when the carried
-   * seat starts first.
+   * Minutes from the move anchor to a carried seat's start on the wall
+   * clock — what a move keeps. Negative when the carried seat starts first.
    */
   carriedOffsetMinutes,
 
-  /** Where a carried seat starts once the cart's earliest seat starts at `cartEarliestMs`. */
-  carriedStartMs,
+  /**
+   * Where a carried seat starts once the cart's earliest seat starts at
+   * `cartEarliest` — `null` when its kept distance would leave the shop day.
+   */
+  carriedStartMinutes,
 
   /** The seats the booker's own cart can name, in seat order (`Seat.isMovableByBooker`). */
   seatsTheBookerCanMove(
-    appointment: AppointmentEntity,
+    appointment: Pick<Appointment, 'seats'>,
     ownerUserId: UserId | null,
   ): readonly Seat[] {
     const movable: Seat[] = [];
@@ -265,7 +313,7 @@ export const MoveSystem = {
 
   /** Can the booker move this visit at all? `false` when nothing on it is theirs to name. */
   hasSeatTheBookerCanMove(
-    appointment: AppointmentEntity,
+    appointment: Pick<Appointment, 'seats'>,
     ownerUserId: UserId | null,
   ): boolean {
     for (let i = 0; i < appointment.seats.length; i++) {
@@ -277,7 +325,7 @@ export const MoveSystem = {
   },
 
   /**
-   * The instant a move is measured FROM: the earliest start among the seats
+   * The minute a move is measured FROM: the earliest start among the seats
    * the booker can move — a companion going first does not move it. `null`
    * when nothing is the booker's (only the shop can move such a visit).
    */
@@ -297,7 +345,7 @@ export const MoveSystem = {
    * cart to stand in for.
    */
   facts(
-    appointment: AppointmentEntity,
+    appointment: Pick<Appointment, 'seats'>,
     ownerUserId: UserId | null,
   ): MoveFacts | null {
     const anchor = anchorOf(appointment, ownerUserId);
@@ -310,10 +358,10 @@ export const MoveSystem = {
         serviceId: seat.serviceId,
         variantId: seat.variantId,
         barberId: seat.barberId,
-        offsetMinutes: carriedOffsetMinutes(seat.startMs, anchor),
-        durationMinutes: seat.terms.durationMinutes,
-        setupMinutes: seat.terms.setupMinutes,
-        cleanupMinutes: seat.terms.cleanupMinutes,
+        offsetMinutes: carriedOffsetMinutes(seat.startMinutes, anchor),
+        durationMinutes: seat.durationMinutes,
+        setupMinutes: seat.setupMinutes,
+        cleanupMinutes: seat.cleanupMinutes,
       });
     }
     return { riders, release: releaseOf(appointment) };
@@ -325,13 +373,13 @@ export const MoveSystem = {
    * Empty when there is nothing to anchor to.
    */
   placeRiders(
-    assignmentStartsMs: readonly number[],
+    assignmentStarts: readonly MinuteOfDay[],
     riders: readonly MoveRider[],
   ): readonly PlacedRider[] {
-    if (assignmentStartsMs.length === 0) return [];
-    let earliest = Number.POSITIVE_INFINITY;
-    for (let i = 0; i < assignmentStartsMs.length; i++) {
-      const start = assignmentStartsMs[i] as number;
+    if (assignmentStarts.length === 0) return [];
+    let earliest = assignmentStarts[0] as MinuteOfDay;
+    for (let i = 1; i < assignmentStarts.length; i++) {
+      const start = assignmentStarts[i] as MinuteOfDay;
       if (start < earliest) earliest = start;
     }
     const placed: PlacedRider[] = [];
@@ -339,7 +387,7 @@ export const MoveSystem = {
       const rider = riders[i] as MoveRider;
       placed.push({
         rider,
-        startMs: carriedStartMs(earliest, rider.offsetMinutes),
+        startMinutes: carriedStartMinutes(earliest, rider.offsetMinutes),
       });
     }
     return placed;
@@ -373,7 +421,9 @@ export const MoveSystem = {
       if (rider.variantId !== null) {
         let offered = false;
         for (let k = 0; k < service.variants.length && !offered; k++) {
-          if (service.variants[k]?.id === rider.variantId) offered = true;
+          if (service.variants[k]?.variantId === rider.variantId) {
+            offered = true;
+          }
         }
         if (!offered) return null;
       }
@@ -427,29 +477,29 @@ export const MoveSystem = {
   /**
    * The commit refusal a carried seat hit → what the client is told to phone
    * about. Two refusals are read one level deeper than their code: an
-   * `invalid_input` on `variantId` is a retired variant (a retired service,
-   * one level down); an `invariant_violated` carrying the past-start
+   * `INVALID_INPUT` on `variantId` is a retired variant (a retired service,
+   * one level down); an `INVARIANT_VIOLATED` carrying the past-start
    * violation is a seat the shift moved to a start that is not after now.
    */
-  carriedRefusalOf(error: BookingCommitError): CarriedSeatRefusal {
-    switch (error.code) {
-      case BookingCommitErrorCode.SlotUnavailable:
-      case BookingCommitErrorCode.BarberNotRostered:
+  carriedRefusalOf(error: BookingError): CarriedSeatRefusal {
+    switch (error.errorCode) {
+      case BookingErrorCode.SlotUnavailable:
+      case BookingErrorCode.BarberNotRostered:
         return CarriedSeatRefusal.BarberUnavailable;
-      case BookingCommitErrorCode.UnknownService:
-      case BookingCommitErrorCode.ServiceNotAtLocation:
+      case BookingErrorCode.UnknownService:
+      case BookingErrorCode.ServiceNotAtLocation:
         return CarriedSeatRefusal.ServiceUnavailable;
-      case BookingCommitErrorCode.TooSoon:
-      case BookingCommitErrorCode.BeyondHorizon:
+      case BookingErrorCode.TooSoon:
+      case BookingErrorCode.BeyondHorizon:
         return CarriedSeatRefusal.OutsideBookingWindow;
-      case BookingCommitErrorCode.InvalidInput:
+      case BookingErrorCode.InvalidInput:
         return error.field === 'variantId'
           ? CarriedSeatRefusal.ServiceUnavailable
           : CarriedSeatRefusal.PartyConflict;
-      case BookingCommitErrorCode.InvariantViolated:
+      case BookingErrorCode.InvariantViolated:
         for (let i = 0; i < error.violations.length; i++) {
           if (
-            error.violations[i]?.code ===
+            error.violations[i]?.errorCode ===
             SchedulingErrorCode.AppointmentPastStartTime
           ) {
             return CarriedSeatRefusal.OutsideBookingWindow;
@@ -476,32 +526,30 @@ export const MoveSystem = {
    * same rule as a cancel); an empty cart (`seats`); a cart naming another
    * account (`subject` — a carried companion comes from the stored visit,
    * never the wire); a visit with no seat of the booker's (`shop_only`,
-   * naming the seats only the shop can move); and — unless the cart asks
-   * for exactly where the visit already is — a party MID-SERVICE
-   * (`seat_resolved`: re-seating it would erase a served or no-showed fact).
+   * naming the seats only the shop can move); a carried seat its kept
+   * distance would take off the request's shop day (`barber_unavailable` —
+   * the shop is closed at midnight, as the decision would have found); and —
+   * unless the cart asks for exactly where the visit already is — a party
+   * MID-SERVICE (`seat_resolved`: re-seating it would erase a served or
+   * no-showed fact).
    */
   plan(
-    appointment: AppointmentEntity,
+    appointment: Appointment,
     ownerUserId: UserId | null,
-    request: MoveRequest,
+    request: MoveRequestInput,
   ): Result<MovePlan, MoveError> {
-    if (
-      !BookingStatus.canTransition(
-        appointment.bookingStatus,
-        BookingState.Cancelled,
-      )
-    ) {
-      return Result.err(BookingCommitError.invalidInput('status'));
+    if (!BookingLifecycle.canTransition(appointment, BookingStatus.Cancelled)) {
+      return Result.err(BookingError.invalidInput('status'));
     }
     if (request.seats.length === 0) {
-      return Result.err(BookingCommitError.invalidInput('seats'));
+      return Result.err(BookingError.invalidInput('seats'));
     }
     for (let i = 0; i < request.seats.length; i++) {
       if (
-        (request.seats[i] as MoveCartSeat).subjectKind ===
-        MoveCartSubjectKind.Companion
+        (request.seats[i] as MoveCartSeatInput).moveSubjectRole ===
+        MoveSubjectRole.Companion
       ) {
-        return Result.err(BookingCommitError.invalidInput('subject'));
+        return Result.err(BookingError.invalidInput('subject'));
       }
     }
 
@@ -516,46 +564,56 @@ export const MoveSystem = {
     if (replaced.length === 0 || anchor === null) {
       const seatIds: SeatId[] = [];
       for (let i = 0; i < carriedSeats.length; i++) {
-        seatIds.push((carriedSeats[i] as Seat).id);
+        seatIds.push((carriedSeats[i] as Seat).seatId);
       }
       return Result.err({
-        code: MoveErrorCode.CarriedSeatUnplaceable,
+        errorCode: MoveErrorCode.CarriedSeatUnplaceable,
         refusal: CarriedSeatRefusal.ShopOnly,
         seatIds,
       });
     }
 
-    let cartEarliestMs = Number.POSITIVE_INFINITY;
+    let cartEarliest = (request.seats[0] as MoveCartSeatInput).startMinutes;
     const cart: MovedCartLine[] = [];
     for (let i = 0; i < request.seats.length; i++) {
-      const seat = request.seats[i] as MoveCartSeat;
-      if (seat.startMs < cartEarliestMs) cartEarliestMs = seat.startMs;
-      cart.push({ lineId: `${CART_LINE}${i}`, seat });
+      const seat = request.seats[i] as MoveCartSeatInput;
+      if (seat.startMinutes < cartEarliest) cartEarliest = seat.startMinutes;
+      cart.push({ lineId: CartLineId.of(`${CART_LINE}${i}`), seat });
     }
 
     const carried: CarriedLine[] = [];
+    const offDay: SeatId[] = [];
     for (let i = 0; i < carriedSeats.length; i++) {
       const seat = carriedSeats[i] as Seat;
-      const startMs = carriedStartMs(
-        cartEarliestMs,
-        carriedOffsetMinutes(seat.startMs, anchor),
+      const startMinutes = carriedStartMinutes(
+        cartEarliest,
+        carriedOffsetMinutes(seat.startMinutes, anchor),
       );
+      if (startMinutes === null) {
+        offDay.push(seat.seatId);
+        continue;
+      }
       carried.push({
-        lineId: `${CARRIED_LINE}${i}`,
-        seatId: seat.id,
+        lineId: CartLineId.of(`${CARRIED_LINE}${i}`),
+        seatId: seat.seatId,
         userId:
-          seat.subject.kind === SeatSubjectKind.Account
-            ? seat.subject.userId
-            : null,
-        startMs,
+          seat.seatSubject === SeatSubject.Account ? seat.subjectUserId : null,
+        startMinutes,
         terms: {
-          priceMinorUnits: seat.terms.priceMinorUnits,
-          currencyCode: seat.terms.currencyCode,
-          durationMinutes: seat.terms.durationMinutes,
-          setupMinutes: seat.terms.setupMinutes,
-          cleanupMinutes: seat.terms.cleanupMinutes,
+          priceCents: seat.priceCents,
+          currency: seat.currency,
+          durationMinutes: seat.durationMinutes,
+          setupMinutes: seat.setupMinutes,
+          cleanupMinutes: seat.cleanupMinutes,
         },
         seat,
+      });
+    }
+    if (offDay.length > 0) {
+      return Result.err({
+        errorCode: MoveErrorCode.CarriedSeatUnplaceable,
+        refusal: CarriedSeatRefusal.BarberUnavailable,
+        seatIds: offDay,
       });
     }
 
@@ -564,41 +622,42 @@ export const MoveSystem = {
       const seat = replaced[i] as Seat;
       storedKeys.push(
         placementKey(
-          seat.subject.kind === SeatSubjectKind.Anonymous
-            ? `guest:${seat.subject.label}`
+          seat.seatSubject === SeatSubject.Anonymous
+            ? `guest:${seat.guestLabel}`
             : 'self',
           seat.serviceId,
           seat.variantId,
           seat.barberId,
-          seat.startMs,
-          seat.barberPref,
+          seat.startMinutes,
+          seat.barberPreference,
         ),
       );
     }
     const cartKeys: string[] = [];
     for (let i = 0; i < request.seats.length; i++) {
-      const seat = request.seats[i] as MoveCartSeat;
+      const seat = request.seats[i] as MoveCartSeatInput;
       cartKeys.push(
         placementKey(
-          seat.subjectKind === MoveCartSubjectKind.Guest
+          seat.moveSubjectRole === MoveSubjectRole.Guest
             ? `guest:${(seat.label ?? '').trim()}`
             : 'self',
           seat.serviceId,
           seat.variantId,
           seat.barberId,
-          seat.startMs,
-          seat.barberPref,
+          seat.startMinutes,
+          seat.barberPreference,
         ),
       );
     }
     const unchanged =
       appointment.locationId === request.locationId &&
+      appointment.localDate === request.localDate &&
       sameKeys(storedKeys, cartKeys);
 
     if (!unchanged) {
       for (let i = 0; i < appointment.seats.length; i++) {
-        if (SeatOutcome.isResolved((appointment.seats[i] as Seat).outcome)) {
-          return Result.err(BookingCommitError.invalidInput('seat_resolved'));
+        if (SeatOutcome.isResolved(appointment.seats[i] as Seat)) {
+          return Result.err(BookingError.invalidInput('seat_resolved'));
         }
       }
     }

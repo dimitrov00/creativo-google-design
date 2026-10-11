@@ -1,29 +1,33 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
+import { localDate } from '../testing';
+import { minuteCount } from '../testing/booking-core.fixtures';
+import { BarberId, LocationId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
 import { CapacityEntry } from './capacity-entry.data';
-import { DayKey } from './day-key.data';
 
 const IVAN = BarberId.of('ivan');
 const STEFAN = BarberId.of('stefan');
 const CENTER = LocationId.of('loc-center');
 const MLADOST = LocationId.of('loc-mladost');
-const d = (raw: string): DayKey => DayKey.of(raw);
+const d = (raw: string): LocalDate => localDate(raw);
+const m = minuteCount;
 
 const ENTRIES: readonly CapacityEntry[] = [
-  CapacityEntry.of(d('2026-08-13'), IVAN, CENTER, 60),
-  CapacityEntry.of(d('2026-08-14'), IVAN, CENTER, 240),
-  CapacityEntry.of(d('2026-08-14'), STEFAN, CENTER, 180),
-  CapacityEntry.of(d('2026-08-14'), STEFAN, MLADOST, 60),
-  CapacityEntry.of(d('2026-08-15'), STEFAN, MLADOST, 30),
+  CapacityEntry.of(d('2026-08-13'), IVAN, CENTER, m(60)),
+  CapacityEntry.of(d('2026-08-14'), IVAN, CENTER, m(240)),
+  CapacityEntry.of(d('2026-08-14'), STEFAN, CENTER, m(180)),
+  CapacityEntry.of(d('2026-08-14'), STEFAN, MLADOST, m(60)),
+  CapacityEntry.of(d('2026-08-15'), STEFAN, MLADOST, m(30)),
 ];
 
 describe('CapacityEntry', () => {
-  it('names its month document and its own key', () => {
-    expect(CapacityEntry.monthOf(d('2026-08-14'))).toBe('2026-08');
+  it('names its month document (LocalDate.monthKey) and its own key', () => {
+    expect(LocalDate.monthKey(d('2026-08-14'))).toBe('2026-08');
     expect(
-      CapacityEntry.keyOf(CapacityEntry.of(d('2026-08-14'), IVAN, CENTER, 1)),
+      CapacityEntry.keyOf(
+        CapacityEntry.of(d('2026-08-14'), IVAN, CENTER, m(1)),
+      ),
     ).toBe('2026-08-14|ivan|loc-center');
   });
 
@@ -47,10 +51,10 @@ describe('CapacityEntry', () => {
       })
       .map((e) =>
         CapacityEntry.of(
-          DayKey.fromEpochDay(e.day),
+          LocalDate.fromEpochDay(e.day),
           BarberId.of(e.barber),
           LocationId.of(e.location),
-          1,
+          m(1),
         ),
       );
     fc.assert(
@@ -71,13 +75,13 @@ describe('CapacityEntry', () => {
       d('2026-08-14'),
       BarberId.of('ana'),
       CENTER,
-      1,
+      m(1),
     );
     const ana2 = CapacityEntry.of(
       d('2026-08-14'),
       BarberId.of('ana2'),
       CENTER,
-      1,
+      m(1),
     );
     expect(CapacityEntry.compare(ana, ana2)).toBe(-1);
   });

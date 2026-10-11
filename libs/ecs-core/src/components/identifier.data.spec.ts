@@ -4,7 +4,7 @@ import { CountryIso2 } from './country-iso2.data';
 import { Email } from './email.data';
 import {
   Identifier,
-  IdentifierKind,
+  IdentifierChannel,
   ParsedIdentifier,
   type ReadPhone,
 } from './identifier.data';
@@ -22,56 +22,59 @@ const readPhone: ReadPhone = (raw) => {
   return result.ok ? result.value.e164 : null;
 };
 
-function parsed(kind: IdentifierKind, raw: string): ParsedIdentifier {
-  const result = ParsedIdentifier.parse(kind, raw, readPhone);
+function parsed(
+  identifierChannel: IdentifierChannel,
+  raw: string,
+): ParsedIdentifier {
+  const result = ParsedIdentifier.parse(identifierChannel, raw, readPhone);
   if (!result.ok) throw new Error('unexpected failure in test fixture');
   return result.value;
 }
 
 describe('ParsedIdentifier.parse', () => {
   it('validates a phone identifier to its canonical E.164', () => {
-    expect(parsed(IdentifierKind.Phone, '+359885550100')).toEqual({
-      kind: 'phone',
-      value: '+359885550100',
+    expect(parsed(IdentifierChannel.Phone, '+359885550100')).toEqual({
+      identifierChannel: 'PHONE',
+      identifier: '+359885550100',
     });
     // National format under the default country is the same channel.
-    expect(parsed(IdentifierKind.Phone, '0885 550 100').value).toBe(
+    expect(parsed(IdentifierChannel.Phone, '0885 550 100').identifier).toBe(
       '+359885550100',
     );
   });
 
   it('validates an email identifier to its canonical form', () => {
-    expect(parsed(IdentifierKind.Email, ' Client@Example.com ')).toEqual({
-      kind: 'email',
-      value: 'client@example.com',
+    expect(parsed(IdentifierChannel.Email, ' Client@Example.com ')).toEqual({
+      identifierChannel: 'EMAIL',
+      identifier: 'client@example.com',
     });
   });
 
-  it('rejects an invalid phone number with its kind and raw text', () => {
+  it('rejects an invalid phone number with its channel and raw text', () => {
     const result = ParsedIdentifier.parse(
-      IdentifierKind.Phone,
+      IdentifierChannel.Phone,
       'not-a-phone',
       readPhone,
     );
     expect(result).toEqual({
       ok: false,
       error: {
-        code: IdentityErrorCode.IdentifierInvalid,
-        identifierKind: 'phone',
+        errorCode: IdentityErrorCode.IdentifierInvalid,
+        identifierKind: 'PHONE',
         attempted: 'not-a-phone',
       },
     });
   });
 
-  it('rejects an invalid email with its kind', () => {
+  it('rejects an invalid email with its channel', () => {
     const result = ParsedIdentifier.parse(
-      IdentifierKind.Email,
+      IdentifierChannel.Email,
       'not-an-email',
       readPhone,
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toMatchObject({ identifierKind: 'email' });
+      expect(result.error).toMatchObject({ identifierKind: 'EMAIL' });
     }
   });
 });
@@ -79,16 +82,16 @@ describe('ParsedIdentifier.parse', () => {
 describe('Identifier factories and the stored pair', () => {
   it('phone() / email() wrap already-canonical values', () => {
     expect(ParsedIdentifier.phone(E164.of('+359885550100'))).toEqual({
-      kind: 'phone',
-      value: '+359885550100',
+      identifierChannel: 'PHONE',
+      identifier: '+359885550100',
     });
     expect(ParsedIdentifier.email(Email.of('client@example.com'))).toEqual({
-      kind: 'email',
-      value: 'client@example.com',
+      identifierChannel: 'EMAIL',
+      identifier: 'client@example.com',
     });
   });
 
-  it('destinationTypeOf maps phone → sms and email → email', () => {
+  it('destinationTypeOf maps PHONE → SMS and EMAIL → EMAIL', () => {
     expect(
       ParsedIdentifier.destinationTypeOf(
         ParsedIdentifier.phone(E164.of('+359885550100')),
@@ -101,47 +104,61 @@ describe('Identifier factories and the stored pair', () => {
     ).toBe(OtpDestinationType.Email);
   });
 
-  it('ofDestination rebuilds the parse result from destination + destinationType', () => {
+  it('ofDestination rebuilds the parse result from destination + otpDestinationType', () => {
     expect(
       ParsedIdentifier.ofDestination(
         Identifier.of('+359885550100'),
         OtpDestinationType.Sms,
       ),
-    ).toEqual({ kind: 'phone', value: '+359885550100' });
+    ).toEqual({
+      identifierChannel: 'PHONE',
+      identifier: '+359885550100',
+    });
     expect(
       ParsedIdentifier.ofDestination(
         Identifier.of('a@b.co'),
         OtpDestinationType.Email,
       ),
-    ).toEqual({ kind: 'email', value: 'a@b.co' });
+    ).toEqual({
+      identifierChannel: 'EMAIL',
+      identifier: 'a@b.co',
+    });
   });
 });
 
 describe('ParsedIdentifier.channelKey', () => {
-  it('formats kind:value', () => {
+  it('formats channel:value with today’s lowercase channel text, unchanged', () => {
     expect(
       ParsedIdentifier.channelKey(
         ParsedIdentifier.email(Email.of('client@example.com')),
       ),
     ).toBe('email:client@example.com');
+    expect(
+      ParsedIdentifier.channelKey(
+        ParsedIdentifier.phone(E164.of('+359885550100')),
+      ),
+    ).toBe('phone:+359885550100');
   });
 });
 
 describe('ParsedIdentifier.equals', () => {
-  it('is true for the same kind and value', () => {
+  it('is true for the same channel and value', () => {
     const a = ParsedIdentifier.email(Email.of('client@example.com'));
     const b = ParsedIdentifier.email(Email.of('client@example.com'));
     expect(ParsedIdentifier.equals(a, b)).toBe(true);
   });
 
-  it('is false across different kinds', () => {
+  it('is false across different channels', () => {
     const a = ParsedIdentifier.email(Email.of('client@example.com'));
     expect(
-      ParsedIdentifier.equals(a, parsed(IdentifierKind.Phone, '+359885550100')),
+      ParsedIdentifier.equals(
+        a,
+        parsed(IdentifierChannel.Phone, '+359885550100'),
+      ),
     ).toBe(false);
   });
 
-  it('is false for different values of the same kind', () => {
+  it('is false for different values of the same channel', () => {
     const a = ParsedIdentifier.phone(E164.of('+359885550100'));
     const b = ParsedIdentifier.phone(E164.of('+359888123456'));
     expect(ParsedIdentifier.equals(a, b)).toBe(false);

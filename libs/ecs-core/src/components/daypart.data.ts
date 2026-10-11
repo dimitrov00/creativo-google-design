@@ -1,10 +1,12 @@
+import { defect } from '../primitives/defect';
+import { MinuteOfDay } from '../primitives/minute-of-day.primitive';
 import type { MinuteRange } from './minute-range.data';
 
 /** The parts of the day, in the day's order — the tag source of {@link Daypart}. */
 const DAYPART = {
-  Morning: 'morning',
-  Afternoon: 'afternoon',
-  Evening: 'evening',
+  Morning: 'MORNING',
+  Afternoon: 'AFTERNOON',
+  Evening: 'EVENING',
 } as const;
 
 /**
@@ -14,13 +16,23 @@ const DAYPART = {
  * waiting request's row names the parts its windows ask for, so a client who
  * picked a time under «следобед» reads «следобед» back. A claim about the
  * clock in the shop — minutes of the day — never about UTC.
+ *
+ * The values are SCREAMING tags (flatten pass), not i18n key segments: a
+ * consumer that words a part looks its copy up by the tag
+ * (`{ [Daypart.Morning]: 'morning', … }`), never by lower-casing the value.
  */
 export type Daypart = (typeof DAYPART)[keyof typeof DAYPART];
 
+/** A literal minute of the day — valid by construction, so a refusal is a defect. */
+function minuteConstant(raw: number): MinuteOfDay {
+  const parsed = MinuteOfDay.of(raw);
+  return parsed.ok ? parsed.value : defect(`not a minute of the day: ${raw}`);
+}
+
 /** Before 12:00 is the morning — so 12:00 sharp is already the afternoon. */
-const AFTERNOON_STARTS = 12 * 60;
+const AFTERNOON_STARTS = minuteConstant(12 * 60);
 /** Before 17:00 is the afternoon — so 17:00 sharp is the evening. */
-const EVENING_STARTS = 17 * 60;
+const EVENING_STARTS = minuteConstant(17 * 60);
 const MIDNIGHT = 24 * 60;
 
 /** Each part as the half-open span `[from, to)` of minutes from midnight. */
@@ -48,10 +60,10 @@ export const Daypart = {
     DAYPART.Evening,
   ] as readonly Daypart[],
 
-  /** The part of the day a wall-clock minute (`0…1439`) falls in. */
-  of(minuteOfDay: number): Daypart {
-    if (minuteOfDay < AFTERNOON_STARTS) return DAYPART.Morning;
-    if (minuteOfDay < EVENING_STARTS) return DAYPART.Afternoon;
+  /** The part of the day a wall-clock minute falls in. */
+  of(minute: MinuteOfDay): Daypart {
+    if (minute < AFTERNOON_STARTS) return DAYPART.Morning;
+    if (minute < EVENING_STARTS) return DAYPART.Afternoon;
     return DAYPART.Evening;
   },
 

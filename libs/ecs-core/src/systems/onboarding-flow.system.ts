@@ -19,7 +19,7 @@ import { Result } from '../components/result.data';
  * resume shows only the personalization steps its plan names; the machine
  * keeps its fixed order and the plan decides which steps are stepped over.
  * Total over the tagged unions: an event a step does not accept answers
- * `identity.onboarding_flow.invalid_transition` with the two tags.
+ * `IDENTITY_ONBOARDING_FLOW_INVALID_TRANSITION` with the two tags.
  */
 
 /** The optional phase's steps, in the order the machine walks them. */
@@ -55,7 +55,10 @@ function invalid(
   event: OnboardingFlowEvent,
 ): Result<OnboardingFlowState, IdentityError> {
   return Result.err(
-    IdentityError.onboardingFlowInvalidTransition(state.kind, event.kind),
+    IdentityError.onboardingFlowInvalidTransition(
+      state.onboardingFlowStep,
+      event.onboardingFlowEventKind,
+    ),
   );
 }
 
@@ -68,12 +71,12 @@ export const OnboardingFlowSystem = {
     state: OnboardingFlowState,
     event: OnboardingFlowEvent,
   ): Result<OnboardingFlowState, IdentityError> {
-    switch (state.kind) {
+    switch (state.onboardingFlowStep) {
       case OnboardingFlowStep.About:
-        switch (event.kind) {
+        switch (event.onboardingFlowEventKind) {
           case OnboardingFlowEventKind.SubmitAbout:
             // No state change — the store awaits the registration callable
-            // and dispatches `registered`/`registration_failed`.
+            // and dispatches `REGISTERED`/`REGISTRATION_FAILED`.
             return Result.ok(state);
           case OnboardingFlowEventKind.Registered:
             return Result.ok(OnboardingFlowState.reward());
@@ -84,16 +87,20 @@ export const OnboardingFlowSystem = {
         }
 
       case OnboardingFlowStep.Reward:
-        if (event.kind === OnboardingFlowEventKind.Personalize) {
+        if (
+          event.onboardingFlowEventKind === OnboardingFlowEventKind.Personalize
+        ) {
           return Result.ok(OnboardingFlowState.services([]));
         }
-        if (event.kind === OnboardingFlowEventKind.EnterApp) {
+        if (
+          event.onboardingFlowEventKind === OnboardingFlowEventKind.EnterApp
+        ) {
           return Result.ok(OnboardingFlowState.entering());
         }
         return invalid(state, event);
 
       case OnboardingFlowStep.Services:
-        switch (event.kind) {
+        switch (event.onboardingFlowEventKind) {
           case OnboardingFlowEventKind.SubmitServices:
             return Result.ok(
               OnboardingFlowState.birthday(event.services, null),
@@ -107,7 +114,7 @@ export const OnboardingFlowSystem = {
         }
 
       case OnboardingFlowStep.Birthday:
-        switch (event.kind) {
+        switch (event.onboardingFlowEventKind) {
           case OnboardingFlowEventKind.SubmitBirthday:
           case OnboardingFlowEventKind.SkipBirthday:
             return Result.ok(OnboardingFlowState.avatar(state.selected));
@@ -122,7 +129,7 @@ export const OnboardingFlowSystem = {
         }
 
       case OnboardingFlowStep.Avatar:
-        switch (event.kind) {
+        switch (event.onboardingFlowEventKind) {
           case OnboardingFlowEventKind.Back:
             return Result.ok(
               OnboardingFlowState.birthday(state.selected, null),
@@ -135,7 +142,7 @@ export const OnboardingFlowSystem = {
         }
 
       default:
-        // entering: terminal, no outgoing transition.
+        // ENTERING: terminal, no outgoing transition.
         return invalid(state, event);
     }
   },
@@ -161,10 +168,10 @@ export const OnboardingFlowSystem = {
     if (!first.ok) return first;
     let current = first.value;
     for (let guard = 0; guard < PERSONALIZE_STEPS.length; guard++) {
-      const kind = current.kind;
-      if (!OnboardingFlowSystem.isPersonalizeStep(kind) || planHas(plan, kind))
+      const step = current.onboardingFlowStep;
+      if (!OnboardingFlowSystem.isPersonalizeStep(step) || planHas(plan, step))
         break;
-      const skipped = OnboardingFlowSystem.next(current, skipEventOf(kind));
+      const skipped = OnboardingFlowSystem.next(current, skipEventOf(step));
       if (!skipped.ok) break;
       current = skipped.value;
     }
@@ -185,8 +192,8 @@ export const OnboardingFlowSystem = {
     if (!first.ok) return first;
     let current = first.value;
     for (let guard = 0; guard < PERSONALIZE_STEPS.length; guard++) {
-      const kind = current.kind;
-      if (!OnboardingFlowSystem.isPersonalizeStep(kind) || planHas(plan, kind))
+      const step = current.onboardingFlowStep;
+      if (!OnboardingFlowSystem.isPersonalizeStep(step) || planHas(plan, step))
         break;
       const stepped = OnboardingFlowSystem.next(current, back);
       if (!stepped.ok) break;
@@ -200,9 +207,11 @@ export const OnboardingFlowSystem = {
     state: OnboardingFlowState,
     plan: readonly PersonalizeStep[],
   ): number {
-    if (!OnboardingFlowSystem.isPersonalizeStep(state.kind)) return 0;
+    if (!OnboardingFlowSystem.isPersonalizeStep(state.onboardingFlowStep)) {
+      return 0;
+    }
     for (let i = 0; i < plan.length; i++) {
-      if (plan[i] === state.kind) return i + 1;
+      if (plan[i] === state.onboardingFlowStep) return i + 1;
     }
     return 0;
   },

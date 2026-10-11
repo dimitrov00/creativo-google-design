@@ -4,26 +4,41 @@ import { Result } from './result.data';
 import { SchedulingError } from './scheduling-errors.data';
 
 /**
- * Who the shop calls about THIS booking, and anything they should know first
- * — the stored `appointments.contact` (`booking-contact.ts:13-19`), branded
- * plain strings stored as scalars. A SNAPSHOT, not a pointer to the profile:
- * the number given for a booking is the number the shop dials for it, whatever
- * the profile says two months later. Ownership is NOT in here — `ownerUserId`
- * from the verified token decides who may see or cancel.
+ * Who the shop calls about THIS booking, and anything they should know
+ * first — a 1-to-1 slice flat at the root of the `Appointment` archetype
+ * (Law 6; was the nested, nullable `contact`, N9). A SNAPSHOT, not a pointer
+ * to the profile: the number given for a booking is the number the shop
+ * dials for it, whatever the profile says two months later. Ownership is
+ * NOT in here — `ownerUserId` from the verified token decides who may see or
+ * cancel.
  *
- * Registration takes this same component; there is no twin.
+ * Invariant (stated here, kept by {@link BookingContact.create} and
+ * {@link BookingContact.NONE}): `contactName === null ⇔ contactPhone ===
+ * null` — a contact is present with a name and a phone, or absent with all
+ * four fields `null` (a walk-in with nobody to call). Registration takes this
+ * same component; there is no twin.
  */
 export type BookingContact = {
-  readonly name: string;
-  readonly phone: E164;
-  readonly email: Email | null;
+  readonly contactName: string | null;
+  readonly contactPhone: E164 | null;
+  readonly contactEmail: Email | null;
   /** At most {@link BookingContact.MAX_NOTE_LENGTH} characters; empty is `null`. */
-  readonly note: string | null;
+  readonly contactNote: string | null;
+};
+
+const NONE: BookingContact = {
+  contactName: null,
+  contactPhone: null,
+  contactEmail: null,
+  contactNote: null,
 };
 
 export const BookingContact = {
   /** Two SMS worth — a request, not an essay. */
   MAX_NOTE_LENGTH: 200,
+
+  /** No contact — the walk-in with nobody to call; all four fields `null`. */
+  NONE,
 
   /**
    * The edge guard over raw input. `parsePhone` is the edge's phone parser
@@ -35,7 +50,7 @@ export const BookingContact = {
   create(
     raw: BookingContact.Input,
     parsePhone: (raw: string) => E164 | null,
-  ): Result<BookingContact, SchedulingError> {
+  ): Result<BookingContact.Present, SchedulingError> {
     const name = raw.name.trim();
     if (name.length === 0)
       return Result.err(SchedulingError.contactEmptyName());
@@ -62,25 +77,57 @@ export const BookingContact = {
     }
 
     return Result.ok({
-      name,
-      phone,
-      email,
-      note: note.length === 0 ? null : note,
+      contactName: name,
+      contactPhone: phone,
+      contactEmail: email,
+      contactNote: note.length === 0 ? null : note,
     });
+  },
+
+  /** Is there somebody to call? Narrows to the present contact. */
+  isPresent(contact: BookingContact): contact is BookingContact.Present {
+    return contact.contactName !== null && contact.contactPhone !== null;
+  },
+
+  /** A present contact as the raw fields {@link create} takes — its own input again. */
+  inputOf(contact: BookingContact.Present): BookingContact.Input {
+    return {
+      name: contact.contactName,
+      phone: contact.contactPhone,
+      email: contact.contactEmail,
+      note: contact.contactNote,
+    };
+  },
+
+  /** The contact slice of a value that carries one (a whole `Appointment`), copied. */
+  of(contact: BookingContact): BookingContact {
+    return {
+      contactName: contact.contactName,
+      contactPhone: contact.contactPhone,
+      contactEmail: contact.contactEmail,
+      contactNote: contact.contactNote,
+    };
   },
 
   equals(a: BookingContact, b: BookingContact): boolean {
     return (
-      a.name === b.name &&
-      a.phone === b.phone &&
-      a.email === b.email &&
-      a.note === b.note
+      a.contactName === b.contactName &&
+      a.contactPhone === b.contactPhone &&
+      a.contactEmail === b.contactEmail &&
+      a.contactNote === b.contactNote
     );
   },
 } as const;
 
 export namespace BookingContact {
-  /** The raw fields an edge hands {@link BookingContact.create}. */
+  /** A contact that is there — a name and a phone to dial. */
+  export type Present = {
+    readonly contactName: string;
+    readonly contactPhone: E164;
+    readonly contactEmail: Email | null;
+    readonly contactNote: string | null;
+  };
+  /** The raw fields an edge hands {@link BookingContact.create} (foreign input). */
   export type Input = {
     readonly name: string;
     readonly phone: string;

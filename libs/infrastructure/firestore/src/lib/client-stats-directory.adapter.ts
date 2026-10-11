@@ -9,7 +9,7 @@ import {
   query,
   startAfter,
 } from 'firebase/firestore';
-import { PageStepKind, PagingSystem } from '@creativo/ecs-core';
+import { PageStep, PagingSystem } from '@creativo/ecs-core';
 import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
 import { Result, fail, ok } from '@creativo/domain/kernel';
 import {
@@ -65,7 +65,7 @@ export class FirestoreClientStatsDirectory implements ClientStatsDirectory {
         (entry) => entry.id,
       );
       const read =
-        step.kind === PageStepKind.Page
+        step.pageStep === PageStep.Page
           ? step.rows
           : snapshot.docs.slice(0, size);
       return ok({
@@ -73,7 +73,7 @@ export class FirestoreClientStatsDirectory implements ClientStatsDirectory {
           const record = clientStatsFromDocument(entry.id, entry.data());
           return record === null ? [] : [record];
         }),
-        next: step.kind === PageStepKind.Page ? step.cursor : null,
+        next: step.pageStep === PageStep.Page ? step.cursor : null,
       });
     } catch (error) {
       return fail(

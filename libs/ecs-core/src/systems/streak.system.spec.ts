@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
+import { StreakIntervalRule } from '../components/streak-interval.data';
 import {
   STREAK_EXCUSES,
   STREAK_SHOP_EXCUSES,
@@ -8,11 +8,20 @@ import {
   StreakRule,
 } from '../components/streak-rule.data';
 import {
-  StreakPhase,
+  StreakPhaseState,
   StreakState,
   type StreakPeriodFact,
 } from '../components/streak-state.data';
-import { deepFreeze } from '../testing';
+import { AppointmentId } from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import {
+  FIXTURE_TIME_ZONE,
+  deepFreeze,
+  localDate,
+  unwrapOk,
+  utcMs,
+} from '../testing';
 import {
   StreakSystem,
   StreakTrackMarkKind,
@@ -20,6 +29,9 @@ import {
   type StreakTrace,
 } from './streak.system';
 import { ZonedTimeSystem } from './zoned-time.system';
+
+/** An instant a case names: a safe epoch-ms inside the readable years. */
+const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 /*
  * The cases of libs/domain/engagement/src/lib/loyalty/streak-projector.spec.ts,
@@ -29,12 +41,21 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * the plain `StreakRule` struct now (the legacy `StreakDefinition` class
  * and its props were the same figures), the facts are written as the
  * legacy spec wrote them and made strict by `strict` (absent is `null`),
- * and an instant is epoch ms (`lastQualifiedAt: Date` → `lastQualifiedAtMs`).
+ * and an instant is epoch ms (`lastQualifiedAt: Date` → `lastQualifiedAtUtcMs`).
  * After the copy: the purity case of the system contract, and the cases of
  * the two presenter functions the system took over (`inChairDue`, `track`).
+ *
+ * Flattened (Laws 6 and 7): the rule's parts are its flat fields
+ * (`protectionsMaxBanked`, `repairEnabled`, the interval slice), the
+ * state's phase is the variant slice `streakPhase` + `phase*` (read whole
+ * through `phaseOf`), its open period `period*` (read as terms through
+ * `periodOf`), the visit that holds it `heldByAppointmentId` + `heldOn`,
+ * and every tag is SCREAMING. The system reads no zone: `strict` stamps a
+ * visit known by its day alone with the first instant of that day in Sofia
+ * (`ZonedTimeSystem.startOfLocalDay`, T3), as the boundary does — so the
+ * instants the cases expect are the ones they always were.
  */
 
-const ZONE = 'Europe/Sofia';
 const STREAK_ID = StreakRule.DEFAULT_DEFINITION_ID;
 const STREAK_PERIODS_KEPT = StreakState.PERIODS_KEPT;
 
@@ -61,7 +82,7 @@ type StreakFacts = {
   readonly pauses: readonly {
     readonly from: string;
     readonly until: string;
-    readonly reason: 'pause' | 'clientPause';
+    readonly reason: 'PAUSE' | 'CLIENT_PAUSE';
   }[];
   readonly grants: readonly {
     readonly day: string;
@@ -69,30 +90,52 @@ type StreakFacts = {
   }[];
 };
 
+/**
+ * A shop day as a fact carries it: a real one branded, a corrupt one (a
+ * stored value nobody guarded) passed through as written — what the
+ * system's own day check is there for.
+ */
+function shopDay(raw: string): LocalDate {
+  const parsed = LocalDate.parse(raw);
+  return parsed.ok ? parsed.value : (raw as LocalDate);
+}
+
+/** The instant a visit began: the one it came with, else the first of its shop day (the epoch for a day that is no day). */
+function startOf(raw: string, atMs: number | undefined): UtcEpochMs {
+  if (atMs !== undefined) return instant(atMs);
+  const parsed = LocalDate.parse(raw);
+  return parsed.ok
+    ? ZonedTimeSystem.startOfLocalDay(parsed.value, FIXTURE_TIME_ZONE)
+    : instant(0);
+}
+
 /** Every field present: what the system reads. */
 function strict(facts: StreakFacts): SystemFacts {
   return {
     visits: facts.visits.map((visit) => ({
-      day: DayKey.of(visit.day),
+      localDate: shopDay(visit.day),
       counted: visit.counted,
-      atMs: visit.atMs ?? null,
+      utcEpochMs: startOf(visit.day, visit.atMs),
     })),
     excused: facts.excused.map((excused) => ({
-      day: DayKey.of(excused.day),
+      localDate: shopDay(excused.day),
       reason: excused.reason,
     })),
     bookings: facts.bookings.map((booking) => ({
-      placedOn: DayKey.of(booking.placedOn),
-      day: DayKey.of(booking.day),
-      appointmentId: booking.appointmentId ?? null,
+      placedOn: shopDay(booking.placedOn),
+      localDate: shopDay(booking.day),
+      appointmentId:
+        booking.appointmentId === undefined
+          ? null
+          : AppointmentId.of(booking.appointmentId),
     })),
     pauses: facts.pauses.map((pause) => ({
-      from: DayKey.of(pause.from),
-      until: DayKey.of(pause.until),
+      from: shopDay(pause.from),
+      until: shopDay(pause.until),
       reason: pause.reason,
     })),
     grants: facts.grants.map((grant) => ({
-      day: DayKey.of(grant.day),
+      localDate: shopDay(grant.day),
       count: grant.count,
     })),
   };
@@ -108,8 +151,7 @@ function traceStreak(
     STREAK_ID,
     definition,
     strict(facts),
-    DayKey.of(today),
-    ZONE,
+    shopDay(today),
   );
 }
 
@@ -124,14 +166,45 @@ function projectStreak(
 
 /** The calendar day `days` after `day`: civil arithmetic, no zone. */
 const addDays = (from: string, days: number): string =>
-  ZonedTimeSystem.addDays(DayKey.of(from), days);
+  LocalDate.addDays(localDate(from), days);
 
 /** The shop day an instant falls on. */
 function sofiaDayOf(ms: number): string {
-  const clock = ZonedTimeSystem.wallClockOf(ms, ZONE);
-  if (!clock.ok) throw new Error(clock.error.code);
-  return clock.value.dayKey;
+  return ZonedTimeSystem.toLocal(instant(ms), FIXTURE_TIME_ZONE).localDate;
 }
+
+/** The phase slice of a state, whole: its tag and every `phase*` field it carries — nothing of another variant may linger. */
+function phaseOf(state: StreakState): Record<string, unknown> {
+  const phase: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(state)) {
+    if (key === 'streakPhase' || key.startsWith('phase')) phase[key] = value;
+  }
+  return phase;
+}
+
+/** A state without its phase slice: what two rules that differ by the cue alone must agree on. */
+function apartFromPhase(state: StreakState): Record<string, unknown> {
+  const rest: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(state)) {
+    if (key !== 'streakPhase' && !key.startsWith('phase')) rest[key] = value;
+  }
+  return rest;
+}
+
+/** The open period's terms as the projector pinned them (`StreakState.periodTerms`), `null` while none is open. */
+function periodOf(
+  state: StreakState | null | undefined,
+): ReturnType<typeof StreakState.periodTerms> {
+  return state === null || state === undefined
+    ? null
+    : StreakState.periodTerms(state);
+}
+
+/** The visit on the book that holds the period: both fields, `null` together. */
+const heldOf = (state: StreakState) => ({
+  heldByAppointmentId: state.heldByAppointmentId,
+  heldOn: state.heldOn,
+});
 
 /** The seed's own day: Георги's cut is done, Мартин is in the chair. */
 const TODAY = '2026-09-28';
@@ -142,19 +215,23 @@ function rule(patch: Partial<StreakDefinitionProps> = {}): StreakDefinition {
   const result = StreakRule.parse({
     ...StreakRule.DEFAULT,
     ...patch,
-  });
+  } as StreakRule);
   if (!result.ok) throw new Error(JSON.stringify(result.error));
   return result.value;
 }
 
 const DEFAULT = rule();
 const OFF = { enabled: false } as const;
-const NO_EARN_BACK = { enabled: false, windowDays: 14, perYear: 1 } as const;
+const NO_EARN_BACK = {
+  repairEnabled: false,
+  repairWindowDays: 14,
+  repairPerYear: 1,
+} as const;
 const NO_PROTECTIONS = {
-  enabled: false,
-  maxBanked: 2,
-  earnEvery: 5,
-  startWith: 0,
+  protectionsEnabled: false,
+  protectionsMaxBanked: 2,
+  protectionsEarnEvery: 5,
+  protectionsStartWith: 0,
 } as const;
 
 function facts(patch: Partial<StreakFacts> = {}): StreakFacts {
@@ -187,8 +264,10 @@ function stateOf(
 }
 
 const marks = (periods: readonly StreakPeriodFact[]): string[] =>
-  periods.map(({ mark, on, reason }) =>
-    reason === null ? `${mark} ${on}` : `${mark} ${on} ${reason}`,
+  periods.map(({ streakPeriodMark, on, periodReason }) =>
+    periodReason === null
+      ? `${streakPeriodMark} ${on}`
+      : `${streakPeriodMark} ${on} ${periodReason}`,
   );
 
 // ── The seed's expectations, ported (tools/seed/loyalty.spec.mjs) ─────────
@@ -243,7 +322,7 @@ const georgi = facts({
     counted: true,
     // His cut today began at 10:00 in Sofia.
     ...(index === GEORGI.length - 1
-      ? { atMs: Date.parse('2026-09-28T07:00:00.000Z') }
+      ? { atMs: utcMs('2026-09-28T07:00:00.000Z') }
       : {}),
   })),
   grants: [{ day: '2025-06-21', count: 1 }],
@@ -255,7 +334,7 @@ const georgi = facts({
 /** Иван was off sick on 9 May: the shop called Мартин's visit off. */
 const martin = facts({
   visits: MARTIN.map((on) => ({ day: on, counted: true })),
-  excused: [{ day: '2026-05-09', reason: 'barberAbsence' }],
+  excused: [{ day: '2026-05-09', reason: 'BARBER_ABSENCE' }],
   grants: [{ day: '2025-11-15', count: 1 }],
   bookings: [
     { placedOn: '2026-09-21', day: '2026-09-28', appointmentId: 'appt-dev-2' },
@@ -268,25 +347,24 @@ describe('projectStreak, the seeded story', () => {
     expect(trace.state).toEqual({
       streakId: 'cadence',
       definitionVersion: 1,
-      phase: { kind: 'active' },
+      streakPhase: 'ACTIVE',
       current: 24,
       best: 24,
-      lastQualifiedAtMs: Date.parse('2026-09-28T07:00:00.000Z'),
+      lastQualifiedAtUtcMs: utcMs('2026-09-28T07:00:00.000Z'),
       dueBy: '2026-11-09',
       freezesBanked: 2,
-      period: {
-        intervalDays: 42,
-        graceDays: 7,
-        source: 'fixed',
-        habitDays: null,
-      },
+      periodIntervalDays: 42,
+      periodGraceDays: 7,
+      periodSource: 'FIXED',
+      periodHabitDays: null,
       periods: GEORGI.slice(-12).map((on) => ({
-        mark: 'kept',
+        streakPeriodMark: 'KEPT',
         on,
-        reason: null,
+        periodReason: null,
       })),
       // Today's booking is the visit that counted: nothing lies ahead.
-      heldBy: null,
+      heldByAppointmentId: null,
+      heldOn: null,
       // His first visit: twelve periods before the oldest the track keeps.
       runStartedOn: '2025-03-01',
     });
@@ -300,20 +378,22 @@ describe('projectStreak, the seeded story', () => {
     expect(state).toMatchObject({
       current: 13,
       best: 13,
-      phase: { kind: 'atRisk', dueBy: '2026-10-02' },
+      streakPhase: 'AT_RISK',
+      phaseDueBy: '2026-10-02',
       dueBy: '2026-10-02',
       freezesBanked: 2,
       // He is on the book for today, inside the period.
-      heldBy: { appointmentId: 'appt-dev-2', on: '2026-09-28' },
+      heldByAppointmentId: 'appt-dev-2',
+      heldOn: '2026-09-28',
     });
     // 37 days lie between the visits around 9 May: he came in time by
     // himself, so the excuse was never needed and is not drawn.
     expect(marks(state.periods)).toEqual(
-      MARTIN.slice(-12).map((on) => `kept ${on}`),
+      MARTIN.slice(-12).map((on) => `KEPT ${on}`),
     );
     // No instant came with the fact: the day's own beginning in Sofia.
-    expect(state.lastQualifiedAtMs).toEqual(
-      Date.parse('2026-08-20T21:00:00.000Z'),
+    expect(state.lastQualifiedAtUtcMs).toEqual(
+      utcMs('2026-08-20T21:00:00.000Z'),
     );
   });
 
@@ -322,23 +402,23 @@ describe('projectStreak, the seeded story', () => {
     expect(stateOf(DEFAULT, { visits: visitsAt([-80, -40]) })).toMatchObject({
       current: 2,
       best: 2,
-      phase: { kind: 'atRisk', dueBy: day(2) },
+      streakPhase: 'AT_RISK',
+      phaseDueBy: day(2),
       dueBy: day(2),
     });
-    expect(stateOf(DEFAULT, { visits: visitsAt([-80, -30]) }).phase).toEqual({
-      kind: 'active',
-    });
+    expect(phaseOf(stateOf(DEFAULT, { visits: visitsAt([-80, -30]) }))).toEqual(
+      { streakPhase: 'ACTIVE' },
+    );
     // Past due, inside the grace: still the same run.
-    expect(stateOf(DEFAULT, { visits: visitsAt([-80, -45]) }).phase).toEqual({
-      kind: 'inGrace',
-      graceUntil: day(4),
-    });
+    expect(phaseOf(stateOf(DEFAULT, { visits: visitsAt([-80, -45]) }))).toEqual(
+      { streakPhase: 'IN_GRACE', phaseGraceUntil: day(4) },
+    );
     // A visit 49 days on (42 + 7 grace) keeps the run.
     const kept = stateOf(DEFAULT, { visits: visitsAt([-60, -11]) });
     expect(kept.current).toBe(2);
     expect(marks(kept.periods)).toEqual([
-      `kept ${day(-60)}`,
-      `kept ${day(-11)}`,
+      `KEPT ${day(-60)}`,
+      `KEPT ${day(-11)}`,
     ]);
   });
 
@@ -362,20 +442,22 @@ describe('projectStreak, the seeded story', () => {
       current: 0,
       best: 3,
       dueBy: null,
-      period: null,
-      heldBy: null,
-      phase: {
-        kind: 'broken',
-        brokenAt: day(-240 + 50),
-        repairableUntil: day(-240 + 64),
-      },
+      periodIntervalDays: null,
+      periodGraceDays: null,
+      periodSource: null,
+      periodHabitDays: null,
+      heldByAppointmentId: null,
+      heldOn: null,
+      streakPhase: 'BROKEN',
+      phaseBrokenOn: day(-240 + 50),
+      phaseRepairableUntil: day(-240 + 64),
     });
     expect(marks(gone.state?.periods ?? [])).toEqual([
-      `kept ${day(-300)}`,
-      `kept ${day(-270)}`,
-      `kept ${day(-240)}`,
+      `KEPT ${day(-300)}`,
+      `KEPT ${day(-270)}`,
+      `KEPT ${day(-240)}`,
       // The due date nobody met, not the day it was judged.
-      `missed ${day(-240 + 42)}`,
+      `MISSED ${day(-240 + 42)}`,
     ]);
     expect(gone.record).toEqual({ value: 3, on: day(-240) });
     expect(gone.runStartedOn).toBeNull();
@@ -393,8 +475,8 @@ describe('projectStreak, the seeded story', () => {
     expect(repaired.comebacks).toEqual([]);
     expect(repaired.runStartedOn).toBe(day(-300));
     expect(marks(repaired.state?.periods ?? []).slice(-2)).toEqual([
-      `missed ${day(-198)}`,
-      `repaired ${day(-185)}`,
+      `MISSED ${day(-198)}`,
+      `REPAIRED ${day(-185)}`,
     ]);
     // Broken again on day −135 and back in five days: not a second time in a year.
     const later = [...offsets, -130, -100];
@@ -422,8 +504,8 @@ describe('projectStreak, the seeded story', () => {
     expect(state.current).toBe(6);
     expect(state.freezesBanked).toBe(1);
     expect(marks(state.periods).slice(-2)).toEqual([
-      `protected ${day(-280 + 42)} freeze`,
-      `kept ${day(-200)}`,
+      `PROTECTED ${day(-280 + 42)} FREEZE`,
+      `KEPT ${day(-200)}`,
     ]);
     // Without the fifth visit nothing was banked: the gap breaks the run.
     const unbanked = [-400, -370, -340, -310, -200];
@@ -438,15 +520,15 @@ describe('projectStreak, the seeded story', () => {
     const visits = visitsAt([-200, -120]);
     const state = stateOf(
       DEFAULT,
-      { visits, excused: [{ day: day(-165), reason: 'barberAbsence' }] },
+      { visits, excused: [{ day: day(-165), reason: 'BARBER_ABSENCE' }] },
       day(-115),
     );
     expect(state.current).toBe(2);
     // The period outlived its own deadline: drawn as covered, the reason named.
     expect(marks(state.periods)).toEqual([
-      `kept ${day(-200)}`,
-      `protected ${day(-200 + 42)} barberAbsence`,
-      `kept ${day(-120)}`,
+      `KEPT ${day(-200)}`,
+      `PROTECTED ${day(-200 + 42)} BARBER_ABSENCE`,
+      `KEPT ${day(-120)}`,
     ]);
     expect(stateOf(DEFAULT, { visits }, day(-115)).current).toBe(1);
   });
@@ -487,7 +569,7 @@ describe('projectStreak, nothing to project', () => {
         { day: '2026-02-30', counted: true },
         { day: 'yesterday', counted: true },
       ],
-      excused: [{ day: day(3), reason: 'shopClosure' }],
+      excused: [{ day: day(3), reason: 'SHOP_CLOSURE' }],
       grants: [
         { day: day(1), count: 2 },
         { day: day(-30), count: 0.5 },
@@ -524,15 +606,15 @@ describe('projectStreak, what counts (P2, P3)', () => {
       ],
     });
     expect(state).toMatchObject({ current: 1, dueBy: day(2) });
-    expect(sofiaDayOf(state.lastQualifiedAtMs ?? 0)).toBe(day(-40));
+    expect(sofiaDayOf(state.lastQualifiedAtUtcMs ?? 0)).toBe(day(-40));
   });
 
   it('P3: a visit closer than the minimum gap moves the due date and adds nothing', () => {
     // The same haircut, fixed up three days later.
     const fixedUp = stateOf(DEFAULT, { visits: visitsAt([-40, -37]) });
     expect(fixedUp).toMatchObject({ current: 1, best: 1, dueBy: day(5) });
-    expect(marks(fixedUp.periods)).toEqual([`kept ${day(-40)}`]);
-    expect(sofiaDayOf(fixedUp.lastQualifiedAtMs ?? 0)).toBe(day(-40));
+    expect(marks(fixedUp.periods)).toEqual([`KEPT ${day(-40)}`]);
+    expect(sofiaDayOf(fixedUp.lastQualifiedAtUtcMs ?? 0)).toBe(day(-40));
     // On the seventh day it is a visit of its own.
     expect(stateOf(DEFAULT, { visits: visitsAt([-40, -33]) }).current).toBe(2);
     // The gap is measured from the last visit that COUNTED: day −33 is
@@ -564,17 +646,22 @@ describe('projectStreak, a visit on the book (P4)', () => {
     expect(state).toMatchObject({
       current: 1,
       dueBy: day(-8),
-      phase: { kind: 'inGrace', graceUntil: day(3) },
-      heldBy: { appointmentId: 'appt-7', on: day(3) },
+      streakPhase: 'IN_GRACE',
+      phaseGraceUntil: day(3),
+      heldByAppointmentId: 'appt-7',
+      heldOn: day(3),
     });
-    expect(marks(state.periods)).toEqual([`kept ${day(-50)}`]);
+    expect(marks(state.periods)).toEqual([`KEPT ${day(-50)}`]);
   });
 
   it('is the miss without one', () => {
     expect(stateOf(DEFAULT, { visits })).toMatchObject({
       current: 0,
-      heldBy: null,
-      phase: { kind: 'broken', brokenAt: day(0), repairableUntil: day(14) },
+      heldByAppointmentId: null,
+      heldOn: null,
+      streakPhase: 'BROKEN',
+      phaseBrokenOn: day(0),
+      phaseRepairableUntil: day(14),
     });
   });
 
@@ -582,27 +669,36 @@ describe('projectStreak, a visit on the book (P4)', () => {
     ['later than the rule allows past the due date', booked(-10, 7, 'a')],
     ['placed after the grace ran out', booked(0, 3, 'a')],
   ])('does not hold when %s', (_label, booking) => {
-    expect(stateOf(DEFAULT, { visits, bookings: [booking] }).phase.kind).toBe(
-      'broken',
+    expect(stateOf(DEFAULT, { visits, bookings: [booking] }).streakPhase).toBe(
+      'BROKEN',
     );
   });
 
   it('holds to the last day the rule allows, and not at all when the hold is off', () => {
     expect(
-      stateOf(DEFAULT, { visits, bookings: [booked(-1, 6, 'a')] }).heldBy,
-    ).toEqual({ appointmentId: 'a', on: day(6) });
-    const off = rule({ bookingHold: { enabled: false, maxDaysPastDue: 14 } });
+      heldOf(stateOf(DEFAULT, { visits, bookings: [booked(-1, 6, 'a')] })),
+    ).toEqual({ heldByAppointmentId: 'a', heldOn: day(6) });
+    const off = rule({
+      bookingHoldEnabled: false,
+      bookingHoldMaxDaysPastDue: 14,
+    });
     expect(
       stateOf(off, { visits, bookings: [booked(-10, 3, 'a')] }),
-    ).toMatchObject({ heldBy: null, phase: { kind: 'broken' } });
+    ).toMatchObject({
+      heldByAppointmentId: null,
+      heldOn: null,
+      streakPhase: 'BROKEN',
+    });
   });
 
   it('holds the clock for a booking nobody named, and names no visit', () => {
     expect(
       stateOf(DEFAULT, { visits, bookings: [booked(-10, 3)] }),
     ).toMatchObject({
-      heldBy: null,
-      phase: { kind: 'inGrace', graceUntil: day(3) },
+      heldByAppointmentId: null,
+      heldOn: null,
+      streakPhase: 'IN_GRACE',
+      phaseGraceUntil: day(3),
     });
   });
 
@@ -615,8 +711,8 @@ describe('projectStreak, a visit on the book (P4)', () => {
     );
     expect(held.state?.current).toBe(2);
     expect(marks(held.state?.periods ?? [])).toEqual([
-      `kept ${day(-100)}`,
-      `kept ${day(-45)}`,
+      `KEPT ${day(-100)}`,
+      `KEPT ${day(-45)}`,
     ]);
     // Walking in unannounced, the same visit is the year's one earn-back.
     const walkedIn = stateOf(
@@ -625,23 +721,25 @@ describe('projectStreak, a visit on the book (P4)', () => {
       day(-40),
     );
     expect(marks(walkedIn.periods)).toEqual([
-      `kept ${day(-100)}`,
-      `missed ${day(-58)}`,
-      `repaired ${day(-45)}`,
+      `KEPT ${day(-100)}`,
+      `MISSED ${day(-58)}`,
+      `REPAIRED ${day(-45)}`,
     ]);
   });
 
   it('releases a booking nobody came to: judged as if it never existed', () => {
     expect(
-      stateOf(
-        DEFAULT,
-        { visits: visitsAt([-100]), bookings: [booked(-60, -45, 'a')] },
-        day(-40),
-      ).phase,
+      phaseOf(
+        stateOf(
+          DEFAULT,
+          { visits: visitsAt([-100]), bookings: [booked(-60, -45, 'a')] },
+          day(-40),
+        ),
+      ),
     ).toEqual({
-      kind: 'broken',
-      brokenAt: day(-50),
-      repairableUntil: day(-36),
+      streakPhase: 'BROKEN',
+      phaseBrokenOn: day(-50),
+      phaseRepairableUntil: day(-36),
     });
   });
 
@@ -651,18 +749,20 @@ describe('projectStreak, a visit on the book (P4)', () => {
       {
         visits: visitsAt([-100]),
         bookings: [booked(-60, -45, 'a')],
-        excused: [{ day: day(-45), reason: 'staffCancelled' }],
+        excused: [{ day: day(-45), reason: 'STAFF_CANCELLED' }],
       },
       day(-40),
     );
     expect(state).toMatchObject({
       current: 1,
       dueBy: day(-3),
-      phase: { kind: 'frozen', until: day(-3), reason: 'excuse' },
+      streakPhase: 'FROZEN',
+      phaseFrozenUntil: day(-3),
+      phaseFreezeReason: 'EXCUSE',
     });
     expect(marks(state.periods)).toEqual([
-      `kept ${day(-100)}`,
-      `protected ${day(-58)} staffCancelled`,
+      `KEPT ${day(-100)}`,
+      `PROTECTED ${day(-58)} STAFF_CANCELLED`,
     ]);
   });
 
@@ -673,34 +773,27 @@ describe('projectStreak, a visit on the book (P4)', () => {
         bookings: [booked(-10, 25, 'next')],
       }),
     ).toMatchObject({
-      phase: { kind: 'active' },
-      heldBy: { appointmentId: 'next', on: day(25) },
+      streakPhase: 'ACTIVE',
+      heldByAppointmentId: 'next',
+      heldOn: day(25),
     });
   });
 });
 
 describe('projectStreak, the interval (P5)', () => {
   it('fixed: one number for everyone, pinned on the period', () => {
-    const five = rule({ interval: { kind: 'fixed', days: 35 } });
+    const five = rule({ ...StreakIntervalRule.fixed(35) });
     expect(stateOf(five, { visits: visitsAt([-10]) })).toMatchObject({
       dueBy: day(25),
-      period: {
-        intervalDays: 35,
-        graceDays: 7,
-        source: 'fixed',
-        habitDays: null,
-      },
+      periodIntervalDays: 35,
+      periodGraceDays: 7,
+      periodSource: 'FIXED',
+      periodHabitDays: null,
     });
   });
 
   const personal = rule({
-    interval: {
-      kind: 'personal',
-      tolerancePct: 50,
-      minDays: 21,
-      maxDays: 70,
-      fallbackDays: 42,
-    },
+    ...StreakIntervalRule.personal(50, 21, 70, 42),
   });
   /** Visits `gap` days apart, the last of them `last` days from today. */
   const every = (gap: number, count: number, last = -1) =>
@@ -711,7 +804,9 @@ describe('projectStreak, the interval (P5)', () => {
   it('personal: the newcomer’s default until the third counted visit', () => {
     expect(stateOf(personal, { visits: every(26, 2) })).toMatchObject({
       dueBy: day(41),
-      period: { intervalDays: 42, source: 'fallback', habitDays: null },
+      periodIntervalDays: 42,
+      periodSource: 'FALLBACK',
+      periodHabitDays: null,
     });
   });
 
@@ -728,7 +823,9 @@ describe('projectStreak, the interval (P5)', () => {
       }),
     ).toMatchObject({
       dueBy: day(-1 + interval),
-      period: { intervalDays: interval, source: 'personal', habitDays: habit },
+      periodIntervalDays: interval,
+      periodSource: 'PERSONAL',
+      periodHabitDays: habit,
     });
   });
 
@@ -737,7 +834,7 @@ describe('projectStreak, the interval (P5)', () => {
     // year's earn-back, the third starts over. What the ceiling is for.
     const trace = traceStreak(personal, facts({ visits: every(60, 3) }), TODAY);
     expect(trace.counts.map(({ current }) => current)).toEqual([1, 0, 2, 0, 1]);
-    expect(trace.state?.period).toMatchObject({
+    expect(periodOf(trace.state)).toMatchObject({
       intervalDays: 70,
       habitDays: 60,
     });
@@ -750,23 +847,25 @@ describe('projectStreak, the interval (P5)', () => {
       ...Array.from({ length: 6 }, (_, i) => -101 + 20 * i),
     ];
     expect(
-      stateOf(personal, { visits: visitsAt(offsets) }).period,
+      periodOf(stateOf(personal, { visits: visitsAt(offsets) })),
     ).toMatchObject({ habitDays: 20, intervalDays: 30 });
     // One decimal: 26, 26, 27 days.
     expect(
-      stateOf(personal, { visits: visitsAt([-80, -54, -28, -1]) }).period,
+      periodOf(stateOf(personal, { visits: visitsAt([-80, -54, -28, -1]) })),
     ).toMatchObject({ habitDays: 26.3, intervalDays: 39 });
   });
 
   it('personal: a gap the shop stretched says nothing about the person', () => {
     const visits = visitsAt([-100, -60, -34]);
     expect(
-      stateOf(personal, {
-        visits,
-        excused: [{ day: day(-80), reason: 'barberAbsence' }],
-      }).period,
+      periodOf(
+        stateOf(personal, {
+          visits,
+          excused: [{ day: day(-80), reason: 'BARBER_ABSENCE' }],
+        }),
+      ),
     ).toMatchObject({ habitDays: 26, intervalDays: 39 });
-    expect(stateOf(personal, { visits }).period).toMatchObject({
+    expect(periodOf(stateOf(personal, { visits }))).toMatchObject({
       habitDays: 33,
       intervalDays: 50,
     });
@@ -779,23 +878,25 @@ describe('projectStreak, the interval (P5)', () => {
     expect(state).toMatchObject({
       current: 3,
       dueBy: day(-7 + 39),
-      period: { intervalDays: 39, source: 'personal', habitDays: 26 },
+      periodIntervalDays: 39,
+      periodSource: 'PERSONAL',
+      periodHabitDays: 26,
     });
   });
 });
 
 describe('projectStreak, grace and the cue (P6, P7)', () => {
   it('P6: the last day of grace keeps the run, the day after breaks it', () => {
-    const short = rule({ graceDays: 3, repair: NO_EARN_BACK });
+    const short = rule({ graceDays: 3, ...NO_EARN_BACK });
     expect(stateOf(short, { visits: visitsAt([-60, -15]) }).current).toBe(2);
     expect(stateOf(short, { visits: visitsAt([-60, -14]) }).current).toBe(1);
-    const none = rule({ graceDays: 0, repair: NO_EARN_BACK });
-    expect(stateOf(none, { visits: visitsAt([-42]) }).phase).toEqual({
-      kind: 'atRisk',
-      dueBy: day(0),
+    const none = rule({ graceDays: 0, ...NO_EARN_BACK });
+    expect(phaseOf(stateOf(none, { visits: visitsAt([-42]) }))).toEqual({
+      streakPhase: 'AT_RISK',
+      phaseDueBy: day(0),
     });
-    expect(stateOf(none, { visits: visitsAt([-43]) }).phase.kind).toBe(
-      'broken',
+    expect(stateOf(none, { visits: visitsAt([-43]) }).streakPhase).toBe(
+      'BROKEN',
     );
   });
 
@@ -803,34 +904,38 @@ describe('projectStreak, grace and the cue (P6, P7)', () => {
     expect(
       stateOf(rule({ graceDays: 3 }), { visits: visitsAt([-44]) }),
     ).toMatchObject({
-      phase: { kind: 'inGrace', graceUntil: day(1) },
-      period: { graceDays: 3 },
+      streakPhase: 'IN_GRACE',
+      phaseGraceUntil: day(1),
+      periodGraceDays: 3,
     });
   });
 
   it('P7: the cue turns as early as the rule says, and changes nothing else', () => {
     const early = rule({ riskLeadDays: 14 });
     // Due on day +14.
-    expect(stateOf(early, { visits: visitsAt([-28]) }).phase).toEqual({
-      kind: 'atRisk',
-      dueBy: day(14),
+    expect(phaseOf(stateOf(early, { visits: visitsAt([-28]) }))).toEqual({
+      streakPhase: 'AT_RISK',
+      phaseDueBy: day(14),
     });
-    expect(stateOf(early, { visits: visitsAt([-27]) }).phase).toEqual({
-      kind: 'active',
+    expect(phaseOf(stateOf(early, { visits: visitsAt([-27]) }))).toEqual({
+      streakPhase: 'ACTIVE',
     });
     const late = rule({ riskLeadDays: 0 });
-    expect(stateOf(late, { visits: visitsAt([-41]) }).phase.kind).toBe(
-      'active',
+    expect(stateOf(late, { visits: visitsAt([-41]) }).streakPhase).toBe(
+      'ACTIVE',
     );
-    expect(stateOf(late, { visits: visitsAt([-42]) }).phase.kind).toBe(
-      'atRisk',
+    expect(stateOf(late, { visits: visitsAt([-42]) }).streakPhase).toBe(
+      'AT_RISK',
     );
     // Мартин is due in four days: the cue is all the two rules differ by.
     const cued = stateOf(early, martin);
     const quiet = stateOf(late, martin);
-    expect(cued.phase).toEqual({ kind: 'atRisk', dueBy: '2026-10-02' });
-    expect(quiet.phase).toEqual({ kind: 'active' });
-    expect({ ...cued, phase: null }).toEqual({ ...quiet, phase: null });
+    expect(phaseOf(cued)).toEqual({
+      streakPhase: 'AT_RISK',
+      phaseDueBy: '2026-10-02',
+    });
+    expect(phaseOf(quiet)).toEqual({ streakPhase: 'ACTIVE' });
+    expect(apartFromPhase(cued)).toEqual(apartFromPhase(quiet));
   });
 });
 
@@ -848,14 +953,19 @@ describe('projectStreak, protections (P8)', () => {
       current: 5,
       freezesBanked: 0,
       dueBy: day(-196),
-      phase: { kind: 'frozen', until: day(-196), reason: 'freeze' },
+      streakPhase: 'FROZEN',
+      phaseFrozenUntil: day(-196),
+      phaseFreezeReason: 'FREEZE',
     });
-    expect(marks(state.periods).at(-1)).toBe(`protected ${day(-238)} freeze`);
+    expect(marks(state.periods).at(-1)).toBe(`PROTECTED ${day(-238)} FREEZE`);
   });
 
   it('covers one due date each: two protections carry a run across two', () => {
     const two = rule({
-      protections: { enabled: true, maxBanked: 2, earnEvery: 2, startWith: 0 },
+      protectionsEnabled: true,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 2,
+      protectionsStartWith: 0,
     });
     // Four in rhythm bank two; the fifth comes 130 days on (≤ 3 × 42 + 7).
     const state = stateOf(two, {
@@ -863,15 +973,15 @@ describe('projectStreak, protections (P8)', () => {
     });
     expect(state).toMatchObject({ current: 5, freezesBanked: 0 });
     expect(marks(state.periods).slice(-3)).toEqual([
-      `protected ${day(-118)} freeze`,
-      `protected ${day(-76)} freeze`,
-      `kept ${day(-30)}`,
+      `PROTECTED ${day(-118)} FREEZE`,
+      `PROTECTED ${day(-76)} FREEZE`,
+      `KEPT ${day(-30)}`,
     ]);
   });
 
   it('off: nothing is earned, given or spent', () => {
     const state = stateOf(
-      rule({ protections: NO_PROTECTIONS }),
+      rule({ ...NO_PROTECTIONS }),
       { visits: visitsAt(offsets), grants: [{ day: day(-340), count: 2 }] },
       soonAfter(offsets),
     );
@@ -880,7 +990,10 @@ describe('projectStreak, protections (P8)', () => {
 
   it('earns one every so many counted visits of the run', () => {
     const three = rule({
-      protections: { enabled: true, maxBanked: 5, earnEvery: 3, startWith: 0 },
+      protectionsEnabled: true,
+      protectionsMaxBanked: 5,
+      protectionsEarnEvery: 3,
+      protectionsStartWith: 0,
     });
     const offsets = [-180, -150, -120, -90, -60, -30];
     const banked = (count: number) =>
@@ -894,7 +1007,10 @@ describe('projectStreak, protections (P8)', () => {
 
   it('never holds more than the reserve', () => {
     const one = rule({
-      protections: { enabled: true, maxBanked: 1, earnEvery: 1, startWith: 1 },
+      protectionsEnabled: true,
+      protectionsMaxBanked: 1,
+      protectionsEarnEvery: 1,
+      protectionsStartWith: 1,
     });
     expect(
       stateOf(one, {
@@ -903,7 +1019,10 @@ describe('projectStreak, protections (P8)', () => {
       }).freezesBanked,
     ).toBe(1);
     const none = rule({
-      protections: { enabled: true, maxBanked: 0, earnEvery: 1, startWith: 0 },
+      protectionsEnabled: true,
+      protectionsMaxBanked: 0,
+      protectionsEarnEvery: 1,
+      protectionsStartWith: 0,
     });
     expect(
       stateOf(none, { visits: visitsAt([-90, -60, -30]) }).freezesBanked,
@@ -912,8 +1031,11 @@ describe('projectStreak, protections (P8)', () => {
 
   it('starts a client with some, once: a restart does not give them again', () => {
     const gift = rule({
-      protections: { enabled: true, maxBanked: 2, earnEvery: 24, startWith: 1 },
-      repair: NO_EARN_BACK,
+      protectionsEnabled: true,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 24,
+      protectionsStartWith: 1,
+      ...NO_EARN_BACK,
     });
     expect(stateOf(gift, { visits: visitsAt([-30]) }).freezesBanked).toBe(1);
     // 80 days on: the gift covers the one missed due date.
@@ -964,16 +1086,18 @@ describe('projectStreak, excuses (P9)', () => {
     // Due on day −18; the shop called the visit of day −30 off.
     const state = stateOf(DEFAULT, {
       visits: visitsAt([-60]),
-      excused: [{ day: day(-30), reason: 'shopClosure' }],
+      excused: [{ day: day(-30), reason: 'SHOP_CLOSURE' }],
     });
     expect(state).toMatchObject({
       current: 1,
       dueBy: day(12),
-      phase: { kind: 'frozen', until: day(12), reason: 'excuse' },
+      streakPhase: 'FROZEN',
+      phaseFrozenUntil: day(12),
+      phaseFreezeReason: 'EXCUSE',
     });
     expect(marks(state.periods)).toEqual([
-      `kept ${day(-60)}`,
-      `protected ${day(-18)} shopClosure`,
+      `KEPT ${day(-60)}`,
+      `PROTECTED ${day(-18)} SHOP_CLOSURE`,
     ]);
   });
 
@@ -982,26 +1106,26 @@ describe('projectStreak, excuses (P9)', () => {
       DEFAULT,
       {
         visits: visitsAt([-60]),
-        excused: [{ day: day(-30), reason: 'shopClosure' }],
+        excused: [{ day: day(-30), reason: 'SHOP_CLOSURE' }],
       },
       day(-11),
     );
-    expect(state.phase).toEqual({ kind: 'active' });
-    expect(marks(state.periods)).toEqual([`kept ${day(-60)}`]);
+    expect(phaseOf(state)).toEqual({ streakPhase: 'ACTIVE' });
+    expect(marks(state.periods)).toEqual([`KEPT ${day(-60)}`]);
   });
 
   it('covers a period once, however often the shop called it off', () => {
     const state = stateOf(DEFAULT, {
       visits: visitsAt([-100]),
       excused: [
-        { day: day(-70), reason: 'barberAbsence' },
-        { day: day(-35), reason: 'staffCancelled' },
+        { day: day(-70), reason: 'BARBER_ABSENCE' },
+        { day: day(-35), reason: 'STAFF_CANCELLED' },
       ],
     });
     expect(state).toMatchObject({ current: 1, dueBy: day(7) });
     expect(marks(state.periods)).toEqual([
-      `kept ${day(-100)}`,
-      `protected ${day(-58)} barberAbsence`,
+      `KEPT ${day(-100)}`,
+      `PROTECTED ${day(-58)} BARBER_ABSENCE`,
     ]);
   });
 
@@ -1012,7 +1136,7 @@ describe('projectStreak, excuses (P9)', () => {
       DEFAULT,
       {
         visits: visitsAt([-400, -370, -340, -310, -280]),
-        excused: [{ day: day(-200), reason: 'shopClosure' }],
+        excused: [{ day: day(-200), reason: 'SHOP_CLOSURE' }],
       },
       day(-180),
     );
@@ -1020,29 +1144,33 @@ describe('projectStreak, excuses (P9)', () => {
       current: 5,
       freezesBanked: 0,
       dueBy: day(-158),
-      phase: { kind: 'frozen', until: day(-158), reason: 'excuse' },
+      streakPhase: 'FROZEN',
+      phaseFrozenUntil: day(-158),
+      phaseFreezeReason: 'EXCUSE',
     });
     expect(marks(state.periods).slice(-2)).toEqual([
-      `protected ${day(-238)} freeze`,
-      `protected ${day(-196)} shopClosure`,
+      `PROTECTED ${day(-238)} FREEZE`,
+      `PROTECTED ${day(-196)} SHOP_CLOSURE`,
     ]);
   });
 
   it('restores nothing: an excuse after the miss is late', () => {
     expect(
-      stateOf(rule({ repair: NO_EARN_BACK }), {
-        visits: visitsAt([-100]),
-        excused: [{ day: day(-40), reason: 'shopClosure' }],
-      }).phase,
-    ).toMatchObject({ kind: 'broken', brokenAt: day(-50) });
+      phaseOf(
+        stateOf(rule({ ...NO_EARN_BACK }), {
+          visits: visitsAt([-100]),
+          excused: [{ day: day(-40), reason: 'SHOP_CLOSURE' }],
+        }),
+      ),
+    ).toMatchObject({ streakPhase: 'BROKEN', phaseBrokenOn: day(-50) });
   });
 
-  describe('closedDays', () => {
+  describe('CLOSED_DAYS', () => {
     const closing = rule({ excuses: STREAK_EXCUSES });
     // Due on day −7, and the shop was closed from that day for three.
     const closed = [-7, -6, -5].map((offset) => ({
       day: day(offset),
-      reason: 'closedDays' as StreakExcuse,
+      reason: 'CLOSED_DAYS' as StreakExcuse,
     }));
 
     it('moves the due date to the first open day and counts grace in open days', () => {
@@ -1054,17 +1182,23 @@ describe('projectStreak, excuses (P9)', () => {
       expect(state).toMatchObject({
         current: 1,
         dueBy: day(-4),
-        phase: { kind: 'inGrace', graceUntil: day(3) },
+        streakPhase: 'IN_GRACE',
+        phaseGraceUntil: day(3),
       });
       // The nominal deadline was day 0: the wait is in use, and drawn.
       expect(marks(state.periods)).toEqual([
-        `kept ${day(-49)}`,
-        `protected ${day(-7)} closedDays`,
+        `KEPT ${day(-49)}`,
+        `PROTECTED ${day(-7)} CLOSED_DAYS`,
       ]);
       expect(
-        stateOf(closing, { visits: visitsAt([-49]), excused: closed }, day(4))
-          .phase,
-      ).toMatchObject({ kind: 'broken', brokenAt: day(4) });
+        phaseOf(
+          stateOf(
+            closing,
+            { visits: visitsAt([-49]), excused: closed },
+            day(4),
+          ),
+        ),
+      ).toMatchObject({ streakPhase: 'BROKEN', phaseBrokenOn: day(4) });
     });
 
     it('is not drawn while the period is inside its nominal deadline', () => {
@@ -1073,19 +1207,24 @@ describe('projectStreak, excuses (P9)', () => {
           stateOf(closing, { visits: visitsAt([-49]), excused: closed }, day(0))
             .periods,
         ),
-      ).toEqual([`kept ${day(-49)}`]);
+      ).toEqual([`KEPT ${day(-49)}`]);
     });
 
     it('does nothing where the rule does not excuse closed days, and never restarts the clock', () => {
       expect(
-        stateOf(DEFAULT, { visits: visitsAt([-49]), excused: closed }, day(2))
-          .phase,
-      ).toMatchObject({ kind: 'broken', brokenAt: day(1) });
+        phaseOf(
+          stateOf(
+            DEFAULT,
+            { visits: visitsAt([-49]), excused: closed },
+            day(2),
+          ),
+        ),
+      ).toMatchObject({ streakPhase: 'BROKEN', phaseBrokenOn: day(1) });
       // A closed day inside the period is just a day.
       expect(
         stateOf(closing, {
           visits: visitsAt([-30]),
-          excused: [{ day: day(-10), reason: 'closedDays' }],
+          excused: [{ day: day(-10), reason: 'CLOSED_DAYS' }],
         }).dueBy,
       ).toBe(day(12));
     });
@@ -1093,10 +1232,13 @@ describe('projectStreak, excuses (P9)', () => {
 });
 
 describe('projectStreak, pauses (P10)', () => {
-  const pausing = rule({ clientPause: { enabled: true, maxDaysPerYear: 90 } });
+  const pausing = rule({
+    clientPauseEnabled: true,
+    clientPauseMaxDaysPerYear: 90,
+  });
   // Due on day −18; away for twenty days from day −30.
   const visits = visitsAt([-60]);
-  const away = (reason: 'pause' | 'clientPause', from = -30, until = -11) => ({
+  const away = (reason: 'PAUSE' | 'CLIENT_PAUSE', from = -30, until = -11) => ({
     from: day(from),
     until: day(until),
     reason,
@@ -1105,55 +1247,65 @@ describe('projectStreak, pauses (P10)', () => {
   it('freezes the run while the pause lasts and moves the due date by its length', () => {
     const during = stateOf(
       pausing,
-      { visits, pauses: [away('clientPause')] },
+      { visits, pauses: [away('CLIENT_PAUSE')] },
       day(-20),
     );
     expect(during).toMatchObject({
       current: 1,
       // The whole pause counted in: the promise does not creep day by day.
       dueBy: day(2),
-      phase: { kind: 'frozen', until: day(-11), reason: 'clientPause' },
+      streakPhase: 'FROZEN',
+      phaseFrozenUntil: day(-11),
+      phaseFreezeReason: 'CLIENT_PAUSE',
     });
-    const after = stateOf(pausing, { visits, pauses: [away('clientPause')] });
+    const after = stateOf(pausing, { visits, pauses: [away('CLIENT_PAUSE')] });
     expect(after).toMatchObject({
       current: 1,
       dueBy: day(2),
-      phase: { kind: 'atRisk', dueBy: day(2) },
+      streakPhase: 'AT_RISK',
+      phaseDueBy: day(2),
     });
     expect(marks(after.periods)).toEqual([
-      `kept ${day(-60)}`,
-      `protected ${day(-18)} clientPause`,
+      `KEPT ${day(-60)}`,
+      `PROTECTED ${day(-18)} CLIENT_PAUSE`,
     ]);
   });
 
   it('ticks through a client’s pause where the rule allows none', () => {
     expect(
-      stateOf(DEFAULT, { visits, pauses: [away('clientPause')] }).phase,
-    ).toMatchObject({ kind: 'broken', brokenAt: day(-10) });
+      phaseOf(stateOf(DEFAULT, { visits, pauses: [away('CLIENT_PAUSE')] })),
+    ).toMatchObject({ streakPhase: 'BROKEN', phaseBrokenOn: day(-10) });
   });
 
   it('always stops for the account’s pause: a pause freezes, it never zeroes', () => {
-    const state = stateOf(DEFAULT, { visits, pauses: [away('pause')] });
+    const state = stateOf(DEFAULT, { visits, pauses: [away('PAUSE')] });
     expect(state).toMatchObject({ current: 1, dueBy: day(2) });
-    expect(marks(state.periods).at(-1)).toBe(`protected ${day(-18)} pause`);
+    expect(marks(state.periods).at(-1)).toBe(`PROTECTED ${day(-18)} PAUSE`);
     expect(
-      stateOf(DEFAULT, { visits, pauses: [away('pause')] }, day(-11)).phase,
-    ).toEqual({ kind: 'frozen', until: day(-11), reason: 'pause' });
+      phaseOf(stateOf(DEFAULT, { visits, pauses: [away('PAUSE')] }, day(-11))),
+    ).toEqual({
+      streakPhase: 'FROZEN',
+      phaseFrozenUntil: day(-11),
+      phaseFreezeReason: 'PAUSE',
+    });
   });
 
   it('stops for as many days a year as the allowance has left', () => {
-    const ten = rule({ clientPause: { enabled: true, maxDaysPerYear: 10 } });
+    const ten = rule({
+      clientPauseEnabled: true,
+      clientPauseMaxDaysPerYear: 10,
+    });
     // Ten of the twenty days: due on day −8, the grace out on day −1.
     expect(
-      stateOf(ten, { visits, pauses: [away('clientPause')] }, day(-1)),
-    ).toMatchObject({ dueBy: day(-8), phase: { kind: 'inGrace' } });
+      stateOf(ten, { visits, pauses: [away('CLIENT_PAUSE')] }, day(-1)),
+    ).toMatchObject({ dueBy: day(-8), streakPhase: 'IN_GRACE' });
     expect(
-      stateOf(ten, { visits, pauses: [away('clientPause')] }).phase,
-    ).toMatchObject({ kind: 'broken', brokenAt: day(0) });
+      phaseOf(stateOf(ten, { visits, pauses: [away('CLIENT_PAUSE')] })),
+    ).toMatchObject({ streakPhase: 'BROKEN', phaseBrokenOn: day(0) });
     // Six days in spring and six in autumn: four of the second are left.
     const twice = [
-      away('clientPause', -200, -195),
-      away('clientPause', -30, -25),
+      away('CLIENT_PAUSE', -200, -195),
+      away('CLIENT_PAUSE', -30, -25),
     ];
     const regular = visitsAt([-210, -180, -150, -120, -90, -60]);
     expect(
@@ -1161,12 +1313,13 @@ describe('projectStreak, pauses (P10)', () => {
     ).toMatchObject({
       current: 6,
       dueBy: day(-18 + 4),
-      phase: { kind: 'inGrace', graceUntil: day(-18 + 4 + 7) },
+      streakPhase: 'IN_GRACE',
+      phaseGraceUntil: day(-18 + 4 + 7),
     });
     // A year on, the allowance is whole again.
     const nextYear = [
-      away('clientPause', -420, -411),
-      away('clientPause', -30, -25),
+      away('CLIENT_PAUSE', -420, -411),
+      away('CLIENT_PAUSE', -30, -25),
     ];
     expect(
       stateOf(ten, { visits: regular, pauses: nextYear }, day(-10)).dueBy,
@@ -1175,16 +1328,16 @@ describe('projectStreak, pauses (P10)', () => {
 
   it('starts too late once the period was missed', () => {
     expect(
-      stateOf(pausing, { visits, pauses: [away('clientPause', -10, 10)] }).phase
-        .kind,
-    ).toBe('broken');
+      stateOf(pausing, { visits, pauses: [away('CLIENT_PAUSE', -10, 10)] })
+        .streakPhase,
+    ).toBe('BROKEN');
   });
 
   it('skips a pause that ends before it starts', () => {
     expect(
-      stateOf(pausing, { visits, pauses: [away('clientPause', -11, -30)] })
-        .phase.kind,
-    ).toBe('broken');
+      stateOf(pausing, { visits, pauses: [away('CLIENT_PAUSE', -11, -30)] })
+        .streakPhase,
+    ).toBe('BROKEN');
   });
 });
 
@@ -1192,11 +1345,11 @@ describe('projectStreak, after a miss (P11, P12)', () => {
   const gone = visitsAt([-300, -270, -240]);
 
   it('P11 off: nothing is restored, and no day reads as one that would', () => {
-    const none = rule({ repair: NO_EARN_BACK });
-    expect(stateOf(none, { visits: gone }).phase).toEqual({
-      kind: 'broken',
-      brokenAt: day(-190),
-      repairableUntil: day(-191),
+    const none = rule({ ...NO_EARN_BACK });
+    expect(phaseOf(stateOf(none, { visits: gone }))).toEqual({
+      streakPhase: 'BROKEN',
+      phaseBrokenOn: day(-190),
+      phaseRepairableUntil: day(-191),
     });
     expect(
       stateOf(none, { visits: visitsAt([-300, -270, -240, -185]) }, day(-180))
@@ -1206,10 +1359,12 @@ describe('projectStreak, after a miss (P11, P12)', () => {
 
   it('P11: the window is the rule’s', () => {
     const month = rule({
-      repair: { enabled: true, windowDays: 30, perYear: 1 },
+      repairEnabled: true,
+      repairWindowDays: 30,
+      repairPerYear: 1,
     });
-    expect(stateOf(month, { visits: gone }).phase).toMatchObject({
-      repairableUntil: day(-160),
+    expect(phaseOf(stateOf(month, { visits: gone }))).toMatchObject({
+      phaseRepairableUntil: day(-160),
     });
     const back = (offset: number) =>
       stateOf(month, { visits: [...gone, ...visitsAt([offset])] }, day(-150))
@@ -1221,7 +1376,9 @@ describe('projectStreak, after a miss (P11, P12)', () => {
   it('P11: as many earn-backs a year as the rule gives', () => {
     const later = [-300, -270, -240, -185, -130, -100];
     const twice = rule({
-      repair: { enabled: true, windowDays: 14, perYear: 2 },
+      repairEnabled: true,
+      repairWindowDays: 14,
+      repairPerYear: 2,
     });
     const trace = traceStreak(
       twice,
@@ -1235,35 +1392,38 @@ describe('projectStreak, after a miss (P11, P12)', () => {
   it('P11: promises no earn-back the year has none left for', () => {
     // Restored on day −185, missed again on day −135.
     expect(
-      stateOf(
-        DEFAULT,
-        { visits: visitsAt([-300, -270, -240, -185]) },
-        day(-132),
-      ).phase,
+      phaseOf(
+        stateOf(
+          DEFAULT,
+          { visits: visitsAt([-300, -270, -240, -185]) },
+          day(-132),
+        ),
+      ),
     ).toEqual({
-      kind: 'broken',
-      brokenAt: day(-135),
-      repairableUntil: day(-136),
+      streakPhase: 'BROKEN',
+      phaseBrokenOn: day(-135),
+      phaseRepairableUntil: day(-136),
     });
   });
 
   it('P12 hold: the miss is drawn and the count stays', () => {
-    const holding = rule({ onBreak: 'hold' });
+    const holding = rule({ onBreak: 'HOLD' });
     const missed = traceStreak(holding, facts({ visits: gone }), TODAY);
     expect(missed.state).toMatchObject({
       current: 3,
       best: 3,
       dueBy: null,
-      period: null,
+      periodIntervalDays: null,
+      periodGraceDays: null,
+      periodSource: null,
+      periodHabitDays: null,
       // Nothing was lost, so nothing is there to restore.
-      phase: {
-        kind: 'broken',
-        brokenAt: day(-190),
-        repairableUntil: day(-191),
-      },
+      streakPhase: 'BROKEN',
+      phaseBrokenOn: day(-190),
+      phaseRepairableUntil: day(-191),
     });
     expect(marks(missed.state?.periods ?? []).at(-1)).toBe(
-      `missed ${day(-198)}`,
+      `MISSED ${day(-198)}`,
     );
     expect(missed.runStartedOn).toBe(day(-300));
 
@@ -1275,12 +1435,12 @@ describe('projectStreak, after a miss (P11, P12)', () => {
     expect(back.state).toMatchObject({
       current: 5,
       best: 5,
-      phase: { kind: 'active' },
+      streakPhase: 'ACTIVE',
     });
     expect(marks(back.state?.periods ?? []).slice(-3)).toEqual([
-      `missed ${day(-198)}`,
-      `kept ${day(-30)}`,
-      `kept ${day(-5)}`,
+      `MISSED ${day(-198)}`,
+      `KEPT ${day(-30)}`,
+      `KEPT ${day(-5)}`,
     ]);
     // The run never started over: nobody came BACK.
     expect(back.comebacks).toEqual([]);
@@ -1288,13 +1448,13 @@ describe('projectStreak, after a miss (P11, P12)', () => {
   });
 
   it('P12 hold: a protection still covers the period first', () => {
-    const state = stateOf(rule({ onBreak: 'hold' }), {
+    const state = stateOf(rule({ onBreak: 'HOLD' }), {
       visits: visitsAt([-400, -370, -340, -310, -280, -200]),
     });
     expect(marks(state.periods).slice(-3)).toEqual([
-      `protected ${day(-238)} freeze`,
-      `kept ${day(-200)}`,
-      `missed ${day(-158)}`,
+      `PROTECTED ${day(-238)} FREEZE`,
+      `KEPT ${day(-200)}`,
+      `MISSED ${day(-158)}`,
     ]);
     expect(state.current).toBe(6);
   });
@@ -1311,7 +1471,7 @@ describe('projectStreak, what a state carries', () => {
   it('pins the version it was judged by', () => {
     const third = rule({
       version: 3,
-      effectiveFromDayKey: DayKey.of('2026-09-01'),
+      effectiveFromLocalDate: localDate('2026-09-01'),
     });
     expect(stateOf(third, georgi)).toMatchObject({
       streakId: 'cadence',
@@ -1364,7 +1524,7 @@ describe('projectStreak, the day the run began', () => {
     // Missed on day −190: nothing runs until he is back.
     expect(stateOf(DEFAULT, { visits }, day(-170))).toMatchObject({
       current: 0,
-      phase: { kind: 'broken' },
+      streakPhase: 'BROKEN',
       runStartedOn: null,
     });
     expect(stateOf(DEFAULT, { visits }, day(-150))).toMatchObject({
@@ -1398,11 +1558,11 @@ describe('projectStreak, the day the run began', () => {
   });
 
   it('P12 hold: the count was never lost, so neither was its first day', () => {
-    const holding = rule({ onBreak: 'hold' });
+    const holding = rule({ onBreak: 'HOLD' });
     const gone = visitsAt([-300, -270, -240]);
     expect(stateOf(holding, { visits: gone })).toMatchObject({
       current: 3,
-      phase: { kind: 'broken' },
+      streakPhase: 'BROKEN',
       runStartedOn: day(-300),
     });
     expect(
@@ -1420,7 +1580,7 @@ describe('projectStreak, the day the run began', () => {
         DEFAULT,
         {
           visits: visitsAt([-200, -120]),
-          excused: [{ day: day(-165), reason: 'barberAbsence' }],
+          excused: [{ day: day(-165), reason: 'BARBER_ABSENCE' }],
         },
         day(-115),
       ),
@@ -1430,7 +1590,7 @@ describe('projectStreak, the day the run began', () => {
         DEFAULT,
         {
           visits: visitsAt([-200, -120]),
-          pauses: [{ from: day(-180), until: day(-140), reason: 'pause' }],
+          pauses: [{ from: day(-180), until: day(-140), reason: 'PAUSE' }],
         },
         day(-115),
       ),
@@ -1512,83 +1672,62 @@ interface Loosening {
 const between = (min: number, max: number, by: number): number =>
   min + Math.floor(by * (max - min + 1));
 
-const shortestOf = ({ interval }: StreakDefinitionProps): number =>
-  interval.kind === 'fixed' ? interval.days : interval.minDays;
+const shortestOf = (p: StreakDefinitionProps): number =>
+  p.streakInterval === 'FIXED' ? p.intervalDays : p.intervalMinDays;
 
 /** The clock: what decides whether a period was kept. */
 const CLOCK: readonly Loosening[] = [
   {
     name: 'a longer fixed interval',
     of: (p, by) =>
-      p.interval.kind === 'fixed' && p.interval.days < 182
-        ? {
-            ...p,
-            interval: {
-              kind: 'fixed',
-              days: between(p.interval.days + 1, 182, by),
-            },
-          }
+      p.streakInterval === 'FIXED' && p.intervalDays < 182
+        ? { ...p, intervalDays: between(p.intervalDays + 1, 182, by) }
         : null,
   },
   {
     name: 'a wider tolerance',
     of: (p, by) =>
-      p.interval.kind === 'personal' && p.interval.tolerancePct < 100
+      p.streakInterval === 'PERSONAL' && p.intervalTolerancePct < 100
         ? {
             ...p,
-            interval: {
-              ...p.interval,
-              tolerancePct: between(p.interval.tolerancePct + 1, 100, by),
-            },
+            intervalTolerancePct: between(p.intervalTolerancePct + 1, 100, by),
           }
         : null,
   },
   {
     name: 'a higher floor',
     of: (p, by) =>
-      p.interval.kind === 'personal' &&
-      p.interval.minDays < p.interval.fallbackDays
+      p.streakInterval === 'PERSONAL' &&
+      p.intervalMinDays < p.intervalFallbackDays
         ? {
             ...p,
-            interval: {
-              ...p.interval,
-              minDays: between(
-                p.interval.minDays + 1,
-                p.interval.fallbackDays,
-                by,
-              ),
-            },
+            intervalMinDays: between(
+              p.intervalMinDays + 1,
+              p.intervalFallbackDays,
+              by,
+            ),
           }
         : null,
   },
   {
     name: 'a higher ceiling',
     of: (p, by) =>
-      p.interval.kind === 'personal' && p.interval.maxDays < 182
-        ? {
-            ...p,
-            interval: {
-              ...p.interval,
-              maxDays: between(p.interval.maxDays + 1, 182, by),
-            },
-          }
+      p.streakInterval === 'PERSONAL' && p.intervalMaxDays < 182
+        ? { ...p, intervalMaxDays: between(p.intervalMaxDays + 1, 182, by) }
         : null,
   },
   {
     name: 'a longer default for newcomers',
     of: (p, by) =>
-      p.interval.kind === 'personal' &&
-      p.interval.fallbackDays < p.interval.maxDays
+      p.streakInterval === 'PERSONAL' &&
+      p.intervalFallbackDays < p.intervalMaxDays
         ? {
             ...p,
-            interval: {
-              ...p.interval,
-              fallbackDays: between(
-                p.interval.fallbackDays + 1,
-                p.interval.maxDays,
-                by,
-              ),
-            },
+            intervalFallbackDays: between(
+              p.intervalFallbackDays + 1,
+              p.intervalMaxDays,
+              by,
+            ),
           }
         : null,
   },
@@ -1612,16 +1751,18 @@ const CLOCK: readonly Loosening[] = [
   {
     name: 'a wider booking hold',
     of: (p, by) => {
-      if (!p.bookingHold.enabled) {
-        return { ...p, bookingHold: { ...p.bookingHold, enabled: true } };
+      if (!p.bookingHoldEnabled) {
+        return { ...p, bookingHoldEnabled: true };
       }
-      return p.bookingHold.maxDaysPastDue < 28
+      return p.bookingHoldMaxDaysPastDue < 28
         ? {
             ...p,
-            bookingHold: {
-              enabled: true,
-              maxDaysPastDue: between(p.bookingHold.maxDaysPastDue + 1, 28, by),
-            },
+            bookingHoldEnabled: true,
+            bookingHoldMaxDaysPastDue: between(
+              p.bookingHoldMaxDaysPastDue + 1,
+              28,
+              by,
+            ),
           }
         : null;
     },
@@ -1639,27 +1780,25 @@ const CLOCK: readonly Loosening[] = [
   {
     name: 'a longer client pause',
     of: (p, by) => {
-      if (!p.clientPause.enabled) {
-        return { ...p, clientPause: { ...p.clientPause, enabled: true } };
+      if (!p.clientPauseEnabled) {
+        return { ...p, clientPauseEnabled: true };
       }
-      return p.clientPause.maxDaysPerYear < 180
+      return p.clientPauseMaxDaysPerYear < 180
         ? {
             ...p,
-            clientPause: {
-              enabled: true,
-              maxDaysPerYear: between(
-                p.clientPause.maxDaysPerYear + 1,
-                180,
-                by,
-              ),
-            },
+            clientPauseEnabled: true,
+            clientPauseMaxDaysPerYear: between(
+              p.clientPauseMaxDaysPerYear + 1,
+              180,
+              by,
+            ),
           }
         : null;
     },
   },
   {
     name: 'a miss that holds the count',
-    of: (p) => (p.onBreak === 'restart' ? { ...p, onBreak: 'hold' } : null),
+    of: (p) => (p.onBreak === 'RESTART' ? { ...p, onBreak: 'HOLD' } : null),
   },
 ];
 
@@ -1668,71 +1807,48 @@ const CUSHION: readonly Loosening[] = [
   {
     name: 'protections switched on',
     of: (p) =>
-      p.protections.enabled
-        ? null
-        : { ...p, protections: { ...p.protections, enabled: true } },
+      p.protectionsEnabled ? null : { ...p, protectionsEnabled: true },
   },
   {
     name: 'a larger reserve',
     of: (p, by) =>
-      p.protections.enabled && p.protections.maxBanked < 5
+      p.protectionsEnabled && p.protectionsMaxBanked < 5
         ? {
             ...p,
-            protections: {
-              ...p.protections,
-              maxBanked: between(p.protections.maxBanked + 1, 5, by),
-            },
+            protectionsMaxBanked: between(p.protectionsMaxBanked + 1, 5, by),
           }
         : null,
   },
   {
     name: 'more protections to start with',
     of: (p, by) =>
-      p.protections.enabled && p.protections.startWith < p.protections.maxBanked
+      p.protectionsEnabled && p.protectionsStartWith < p.protectionsMaxBanked
         ? {
             ...p,
-            protections: {
-              ...p.protections,
-              startWith: between(
-                p.protections.startWith + 1,
-                p.protections.maxBanked,
-                by,
-              ),
-            },
+            protectionsStartWith: between(
+              p.protectionsStartWith + 1,
+              p.protectionsMaxBanked,
+              by,
+            ),
           }
         : null,
   },
   {
     name: 'the earn-back switched on',
-    of: (p) =>
-      p.repair.enabled
-        ? null
-        : { ...p, repair: { ...p.repair, enabled: true } },
+    of: (p) => (p.repairEnabled ? null : { ...p, repairEnabled: true }),
   },
   {
     name: 'a longer earn-back window',
     of: (p, by) =>
-      p.repair.enabled && p.repair.windowDays < 60
-        ? {
-            ...p,
-            repair: {
-              ...p.repair,
-              windowDays: between(p.repair.windowDays + 1, 60, by),
-            },
-          }
+      p.repairEnabled && p.repairWindowDays < 60
+        ? { ...p, repairWindowDays: between(p.repairWindowDays + 1, 60, by) }
         : null,
   },
   {
     name: 'more earn-backs a year',
     of: (p, by) =>
-      p.repair.enabled && p.repair.perYear < 4
-        ? {
-            ...p,
-            repair: {
-              ...p.repair,
-              perYear: between(p.repair.perYear + 1, 4, by),
-            },
-          }
+      p.repairEnabled && p.repairPerYear < 4
+        ? { ...p, repairPerYear: between(p.repairPerYear + 1, 4, by) }
         : null,
   },
 ];
@@ -1769,49 +1885,51 @@ const anyRule: fc.Arbitrary<StreakDefinitionProps> = fc
       windowDays: fc.integer({ min: 1, max: 60 }),
       perYear: fc.integer({ min: 1, max: 4 }),
     }),
-    onBreak: fc.constantFrom('restart' as const, 'hold' as const),
+    onBreak: fc.constantFrom('RESTART' as const, 'HOLD' as const),
   })
-  .map((drawn) => {
-    const interval: StreakDefinitionProps['interval'] = drawn.personal
-      ? {
-          kind: 'personal',
-          tolerancePct: drawn.tolerancePct,
-          minDays: drawn.floor,
-          maxDays: drawn.floor + drawn.span,
-          fallbackDays: between(
-            drawn.floor,
-            drawn.floor + drawn.span,
-            drawn.fallback,
-          ),
-        }
-      : { kind: 'fixed', days: drawn.days };
-    const under = (interval.kind === 'fixed' ? drawn.days : drawn.floor) - 1;
-    return {
+  .map((drawn): StreakDefinitionProps => {
+    // The draw is the one it always was (same record, same seeds); only
+    // the rule it makes is flat.
+    const interval: StreakIntervalRule = drawn.personal
+      ? StreakIntervalRule.personal(
+          drawn.tolerancePct,
+          drawn.floor,
+          drawn.floor + drawn.span,
+          between(drawn.floor, drawn.floor + drawn.span, drawn.fallback),
+        )
+      : StreakIntervalRule.fixed(drawn.days);
+    const under =
+      (interval.streakInterval === 'FIXED' ? drawn.days : drawn.floor) - 1;
+    return StreakRule.of({
       ...StreakRule.DEFAULT,
-      interval,
+      ...interval,
       graceDays: Math.min(drawn.graceDays, under),
       riskLeadDays: Math.min(drawn.riskLeadDays, under),
       minGapDays: Math.min(drawn.minGapDays, under),
-      bookingHold: drawn.bookingHold,
-      protections: {
-        ...drawn.protections,
-        startWith: Math.min(
-          drawn.protections.startWith,
-          drawn.protections.maxBanked,
-        ),
-      },
+      bookingHoldEnabled: drawn.bookingHold.enabled,
+      bookingHoldMaxDaysPastDue: drawn.bookingHold.maxDaysPastDue,
+      protectionsEnabled: drawn.protections.enabled,
+      protectionsMaxBanked: drawn.protections.maxBanked,
+      protectionsEarnEvery: drawn.protections.earnEvery,
+      protectionsStartWith: Math.min(
+        drawn.protections.startWith,
+        drawn.protections.maxBanked,
+      ),
       excuses: drawn.excuses,
-      clientPause: drawn.clientPause,
-      repair: drawn.repair,
+      clientPauseEnabled: drawn.clientPause.enabled,
+      clientPauseMaxDaysPerYear: drawn.clientPause.maxDaysPerYear,
+      repairEnabled: drawn.repair.enabled,
+      repairWindowDays: drawn.repair.windowDays,
+      repairPerYear: drawn.repair.perYear,
       onBreak: drawn.onBreak,
-    };
+    } as StreakRule);
   });
 
 /** The clock alone: no reserve and no earn-back, so a miss is a miss. */
 const plainClock = anyRule.map((props): StreakDefinitionProps => ({
   ...props,
-  protections: { ...props.protections, enabled: false },
-  repair: { ...props.repair, enabled: false },
+  protectionsEnabled: false,
+  repairEnabled: false,
 }));
 
 /** A few years of somebody's visits, with everything the book can hold around them. */
@@ -1852,7 +1970,7 @@ const anyFacts: fc.Arbitrary<{
           fc.record({
             at: fc.double({ min: 0, max: 0.999, noNaN: true }),
             days: fc.integer({ min: 1, max: 30 }),
-            reason: fc.constantFrom('pause' as const, 'clientPause' as const),
+            reason: fc.constantFrom('PAUSE' as const, 'CLIENT_PAUSE' as const),
           }),
           { nil: null, freq: 10 },
         ),
@@ -1894,7 +2012,7 @@ const anyFacts: fc.Arbitrary<{
       if (gap > 2 && visit.closed !== null) {
         const first = inside(visit.closed.at);
         for (let k = 0; k < visit.closed.days; k += 1) {
-          excused.push({ day: on(first + k), reason: 'closedDays' });
+          excused.push({ day: on(first + k), reason: 'CLOSED_DAYS' });
         }
       }
       if (gap > 2 && visit.paused !== null) {
@@ -1980,7 +2098,7 @@ describe('projectStreak, a looser rule', () => {
               fc.pre(looser !== null);
               fc.pre(
                 loosening.movesHabit !== true ||
-                  props.interval.kind === 'fixed',
+                  props.streakInterval === 'FIXED',
               );
               const before = projectStreak(made(props), facts, today);
               const after = projectStreak(made(looser ?? props), facts, today);
@@ -2005,8 +2123,8 @@ describe('projectStreak, a looser rule', () => {
       fc.property(anyRule, anyFacts, (props, { facts, today }) => {
         const rule = made(props);
         expect(
-          StreakSystem.phaseKind(rule, strict(facts), DayKey.of(today)),
-        ).toBe(projectStreak(rule, facts, today)?.phase.kind ?? null);
+          StreakSystem.phaseKind(rule, strict(facts), shopDay(today)),
+        ).toBe(projectStreak(rule, facts, today)?.streakPhase ?? null);
       }),
       RUNS,
     );
@@ -2015,10 +2133,10 @@ describe('projectStreak, a looser rule', () => {
   it('under any rule, a miss that holds the count never lowers it', () => {
     fc.assert(
       fc.property(anyRule, anyFacts, (props, { facts, today }) => {
-        fc.pre(props.onBreak === 'restart');
+        fc.pre(props.onBreak === 'RESTART');
         const before = projectStreak(made(props), facts, today);
         const after = projectStreak(
-          made({ ...props, onBreak: 'hold' }),
+          made({ ...props, onBreak: 'HOLD' }),
           facts,
           today,
         );
@@ -2068,18 +2186,20 @@ describe('projectStreak, a looser rule', () => {
         expect(trace.record?.value).toBe(state.best);
         expect(state.freezesBanked).toBeGreaterThanOrEqual(0);
         expect(state.freezesBanked).toBeLessThanOrEqual(
-          definition.protections.enabled ? definition.protections.maxBanked : 0,
+          definition.protectionsEnabled ? definition.protectionsMaxBanked : 0,
         );
         expect(state.periods.length).toBeLessThanOrEqual(STREAK_PERIODS_KEPT);
         expect(state.periods.map(({ on }) => on)).toEqual(
           state.periods.map(({ on }) => on).sort(),
         );
         // No open period, no promise; an open one is promised a day.
-        expect(state.dueBy === null).toBe(state.phase.kind === 'broken');
-        expect(state.period === null).toBe(state.phase.kind === 'broken');
-        if (state.heldBy !== null) {
-          expect(state.heldBy.on >= today).toBe(true);
-          expect(state.heldBy.appointmentId).not.toBe('');
+        expect(state.dueBy === null).toBe(state.streakPhase === 'BROKEN');
+        expect(periodOf(state) === null).toBe(state.streakPhase === 'BROKEN');
+        // The visit that holds the period: both its fields, or neither.
+        expect(state.heldOn === null).toBe(state.heldByAppointmentId === null);
+        if (state.heldByAppointmentId !== null && state.heldOn !== null) {
+          expect(state.heldOn >= today).toBe(true);
+          expect(state.heldByAppointmentId).not.toBe('');
         }
         // A run in progress began on a day, and only a run in progress.
         expect(state.runStartedOn === null).toBe(state.current === 0);
@@ -2104,10 +2224,10 @@ describe('projectStreak, a looser rule', () => {
         );
         expect(
           (state.runStartedOn ?? '') <=
-            sofiaDayOf(state.lastQualifiedAtMs ?? 0),
+            sofiaDayOf(state.lastQualifiedAtUtcMs ?? 0),
         ).toBe(true);
         // A miss that holds the count never starts anybody over.
-        if (props.onBreak === 'hold') {
+        if (props.onBreak === 'HOLD') {
           expect(state.runStartedOn).toBe([...counted].sort()[0]);
         }
       }),
@@ -2125,8 +2245,8 @@ describe('projectStreak, a looser rule', () => {
   describe('can still leave a count lower', () => {
     it('more grace: the earn-back is rationed by the year', () => {
       // No reserve, so the earn-back is all there is.
-      const week = rule({ protections: NO_PROTECTIONS });
-      const fortnight = rule({ protections: NO_PROTECTIONS, graceDays: 14 });
+      const week = rule({ ...NO_PROTECTIONS });
+      const fortnight = rule({ ...NO_PROTECTIONS, graceDays: 14 });
       const visits = visitsAt([
         -480,
         -450,
@@ -2156,15 +2276,13 @@ describe('projectStreak, a looser rule', () => {
     it('a longer interval: a gift that finds the reserve full is lost', () => {
       const every = (days: number) =>
         rule({
-          interval: { kind: 'fixed', days },
+          ...StreakIntervalRule.fixed(days),
           graceDays: 4,
-          protections: {
-            enabled: true,
-            maxBanked: 1,
-            earnEvery: 24,
-            startWith: 1,
-          },
-          repair: NO_EARN_BACK,
+          protectionsEnabled: true,
+          protectionsMaxBanked: 1,
+          protectionsEarnEvery: 24,
+          protectionsStartWith: 1,
+          ...NO_EARN_BACK,
         });
       const told = facts({
         visits: visitsAt([-115, -55, -5]),
@@ -2193,8 +2311,11 @@ describe('projectStreak, a looser rule', () => {
     it('a protection earned more often: a full reserve lets one go', () => {
       const earning = (earnEvery: number) =>
         rule({
-          protections: { enabled: true, maxBanked: 1, earnEvery, startWith: 0 },
-          repair: NO_EARN_BACK,
+          protectionsEnabled: true,
+          protectionsMaxBanked: 1,
+          protectionsEarnEvery: earnEvery,
+          protectionsStartWith: 0,
+          ...NO_EARN_BACK,
         });
       const visits = visitsAt([
         // Nine in rhythm. Every five: one banked on the fifth. Every
@@ -2224,9 +2345,9 @@ describe('StreakSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const rule = deepFreeze(DEFAULT);
     const input = deepFreeze(strict(martin));
-    const today = DayKey.of(TODAY);
-    const once = StreakSystem.trace(STREAK_ID, rule, input, today, ZONE);
-    const twice = StreakSystem.trace(STREAK_ID, rule, input, today, ZONE);
+    const today = localDate(TODAY);
+    const once = StreakSystem.trace(STREAK_ID, rule, input, today);
+    const twice = StreakSystem.trace(STREAK_ID, rule, input, today);
     expect(twice).toEqual(once);
     expect(input).toEqual(strict(martin));
   });
@@ -2236,30 +2357,26 @@ describe('StreakSystem purity', () => {
       fc.property(anyRule, anyFacts, (props, { facts: loose, today }) => {
         const rule = deepFreeze(made(props));
         const input = deepFreeze(strict(loose));
-        const once = StreakSystem.trace(
-          STREAK_ID,
-          rule,
-          input,
-          DayKey.of(today),
-          ZONE,
-        );
+        const once = StreakSystem.trace(STREAK_ID, rule, input, shopDay(today));
         expect(
-          StreakSystem.trace(STREAK_ID, rule, input, DayKey.of(today), ZONE),
+          StreakSystem.trace(STREAK_ID, rule, input, shopDay(today)),
         ).toEqual(once);
       }),
       { seed: 20261010, numRuns: 100 },
     );
   });
 
-  it('names a day the zone cannot place by no instant', () => {
+  it('stamps the instant the boundary handed with the visit: it places no day on a clock of its own', () => {
+    // A zone the system could not place used to name no instant; it reads
+    // no zone now, so the visit's own start is the stamp, whatever it is.
+    const atMs = utcMs('2026-09-18T07:30:00.000Z');
     const state = StreakSystem.project(
       STREAK_ID,
       DEFAULT,
-      strict(facts({ visits: visitsAt([-10]) })),
-      DayKey.of(TODAY),
-      'Not/AZone',
+      strict(facts({ visits: [{ day: day(-10), counted: true, atMs }] })),
+      localDate(TODAY),
     );
-    expect(state?.lastQualifiedAtMs).toBeNull();
+    expect(state?.lastQualifiedAtUtcMs).toBe(atMs);
   });
 
   it('trims the name of a booked visit, and a blank one names none', () => {
@@ -2267,9 +2384,15 @@ describe('StreakSystem purity', () => {
       stateOf(DEFAULT, {
         visits: visitsAt([-10]),
         bookings: [{ placedOn: day(-10), day: day(25), appointmentId }],
-      }).heldBy;
-    expect(booked('  next  ')).toEqual({ appointmentId: 'next', on: day(25) });
-    expect(booked('   ')).toBeNull();
+      });
+    expect(heldOf(booked('  next  '))).toEqual({
+      heldByAppointmentId: 'next',
+      heldOn: day(25),
+    });
+    expect(heldOf(booked('   '))).toEqual({
+      heldByAppointmentId: null,
+      heldOn: null,
+    });
   });
 });
 
@@ -2280,26 +2403,25 @@ function cardState(patch: Partial<StreakState> = {}): StreakState {
   return {
     streakId: STREAK_ID,
     definitionVersion: 1,
-    phase: StreakPhase.active(),
+    ...StreakPhaseState.active(),
     current: 24,
     best: 24,
-    lastQualifiedAtMs: Date.parse('2026-09-28T07:00:00.000Z'),
-    dueBy: DayKey.of('2026-11-09'),
+    lastQualifiedAtUtcMs: instant(utcMs('2026-09-28T07:00:00.000Z')),
+    dueBy: localDate('2026-11-09'),
     freezesBanked: 2,
-    period: {
-      intervalDays: 42,
-      graceDays: 7,
-      source: 'fixed',
-      habitDays: null,
-    },
+    periodIntervalDays: 42,
+    periodGraceDays: 7,
+    periodSource: 'FIXED',
+    periodHabitDays: null,
     periods: [],
-    heldBy: null,
-    runStartedOn: DayKey.of('2025-03-01'),
+    heldByAppointmentId: null,
+    heldOn: null,
+    runStartedOn: localDate('2025-03-01'),
     ...patch,
-  };
+  } as StreakState;
 }
 
-const CARD_TODAY = DayKey.of('2026-09-28');
+const CARD_TODAY = localDate('2026-09-28');
 const view = (
   patch: Partial<{
     inChairToday: boolean;
@@ -2342,84 +2464,97 @@ describe('StreakSystem.inChairDue', () => {
     expect(
       StreakSystem.inChairDue(
         cardState({
-          phase: StreakPhase.frozen(DayKey.of('2026-11-16'), 'freeze'),
+          ...StreakPhaseState.frozen(localDate('2026-11-16'), 'FREEZE'),
         }),
         CARD_TODAY,
         chair,
       ),
     ).toBeNull();
     expect(
-      StreakSystem.inChairDue(cardState({ period: null }), CARD_TODAY, chair),
+      StreakSystem.inChairDue(
+        cardState({
+          periodIntervalDays: null,
+          periodGraceDays: null,
+          periodSource: null,
+          periodHabitDays: null,
+        }),
+        CARD_TODAY,
+        chair,
+      ),
     ).toBeNull();
   });
 });
 
 describe('StreakSystem.track', () => {
   const closed = (
-    mark: StreakPeriodFact['mark'],
+    streakPeriodMark: StreakPeriodFact['streakPeriodMark'],
     on: string,
-    reason: StreakPeriodFact['reason'] = null,
-  ): StreakPeriodFact => ({ mark, on: DayKey.of(on), reason });
+    periodReason: StreakPeriodFact['periodReason'] = null,
+  ): StreakPeriodFact => ({
+    streakPeriodMark,
+    on: localDate(on),
+    periodReason,
+  });
 
   it('draws what became of each closed period, the visits alone dated as visits, then the open one', () => {
     const track = StreakSystem.track(
       cardState({
         periods: [
-          closed('kept', '2026-04-22'),
-          closed('missed', '2026-06-10'),
-          closed('repaired', '2026-06-20'),
-          closed('protected', '2026-08-08', 'staffCancelled'),
-          closed('protected', '2026-08-20', 'freeze'),
-          closed('kept', '2026-09-28'),
+          closed('KEPT', '2026-04-22'),
+          closed('MISSED', '2026-06-10'),
+          closed('REPAIRED', '2026-06-20'),
+          closed('PROTECTED', '2026-08-08', 'STAFF_CANCELLED'),
+          closed('PROTECTED', '2026-08-20', 'FREEZE'),
+          closed('KEPT', '2026-09-28'),
         ],
       }),
       view(),
     );
     expect(track.marks).toEqual([
       {
-        mark: 'kept',
+        streakTrackMarkKind: 'KEPT',
         on: '2026-04-22',
         reason: null,
         open: false,
         visitDay: '2026-04-22',
       },
       {
-        mark: 'missed',
+        streakTrackMarkKind: 'MISSED',
         on: '2026-06-10',
         reason: null,
         open: false,
         visitDay: null,
       },
       {
-        mark: 'repaired',
+        streakTrackMarkKind: 'REPAIRED',
         on: '2026-06-20',
         reason: null,
         open: false,
         visitDay: '2026-06-20',
       },
       {
-        mark: 'protected',
+        streakTrackMarkKind: 'PROTECTED',
         on: '2026-08-08',
-        reason: 'staffCancelled',
+        reason: 'STAFF_CANCELLED',
         open: false,
         visitDay: null,
       },
       {
-        mark: 'protected',
+        streakTrackMarkKind: 'PROTECTED',
         on: '2026-08-20',
-        reason: 'freeze',
+        reason: 'FREEZE',
         open: false,
         visitDay: null,
       },
       {
-        mark: 'kept',
+        streakTrackMarkKind: 'KEPT',
         on: '2026-09-28',
         reason: null,
         open: false,
         visitDay: '2026-09-28',
       },
       {
-        mark: StreakTrackMarkKind.Current,
+        streakTrackMarkKind: StreakTrackMarkKind.Current,
         on: '2026-11-09',
         reason: null,
         open: true,
@@ -2433,7 +2568,7 @@ describe('StreakSystem.track', () => {
   it('captions by day once two drawn visits share a month', () => {
     const track = StreakSystem.track(
       cardState({
-        periods: [closed('kept', '2026-09-03'), closed('kept', '2026-09-28')],
+        periods: [closed('KEPT', '2026-09-03'), closed('KEPT', '2026-09-28')],
       }),
       view(),
     );
@@ -2442,11 +2577,11 @@ describe('StreakSystem.track', () => {
 
   it('opens on today for the visit in the chair', () => {
     const track = StreakSystem.track(
-      cardState({ periods: [closed('kept', '2026-08-21')] }),
+      cardState({ periods: [closed('KEPT', '2026-08-21')] }),
       view({ inChairToday: true }),
     );
     expect(track.marks.at(-1)).toEqual({
-      mark: 'current',
+      streakTrackMarkKind: 'CURRENT',
       on: '2026-09-28',
       reason: null,
       open: true,
@@ -2455,19 +2590,19 @@ describe('StreakSystem.track', () => {
   });
 
   it('draws a covered period open as protected, by what covers it, until its moved due date — never while paused', () => {
-    const frozen = (reason: 'freeze' | 'pause' | 'clientPause' | 'excuse') =>
+    const frozen = (reason: 'FREEZE' | 'PAUSE' | 'CLIENT_PAUSE' | 'EXCUSE') =>
       cardState({
-        phase: StreakPhase.frozen(DayKey.of('2026-11-16'), reason),
-        dueBy: DayKey.of('2026-11-16'),
+        ...StreakPhaseState.frozen(localDate('2026-11-16'), reason),
+        dueBy: localDate('2026-11-16'),
       });
     for (const reason of [
-      'freeze',
-      'pause',
-      'clientPause',
-      'excuse',
+      'FREEZE',
+      'PAUSE',
+      'CLIENT_PAUSE',
+      'EXCUSE',
     ] as const) {
       expect(StreakSystem.track(frozen(reason), view()).marks.at(-1)).toEqual({
-        mark: 'protected',
+        streakTrackMarkKind: 'PROTECTED',
         on: '2026-11-16',
         reason,
         open: true,
@@ -2476,26 +2611,32 @@ describe('StreakSystem.track', () => {
     }
     // Paused, the open mark is the due date like any other.
     expect(
-      StreakSystem.track(frozen('pause'), view({ paused: true })).marks.at(-1),
-    ).toMatchObject({ mark: 'current', on: '2026-11-16' });
+      StreakSystem.track(frozen('PAUSE'), view({ paused: true })).marks.at(-1),
+    ).toMatchObject({ streakTrackMarkKind: 'CURRENT', on: '2026-11-16' });
   });
 
   it('ends on the last closed mark while no period is open', () => {
     const track = StreakSystem.track(
       cardState({
-        phase: StreakPhase.broken(
-          DayKey.of('2026-09-20'),
-          DayKey.of('2026-10-04'),
+        ...StreakPhaseState.broken(
+          localDate('2026-09-20'),
+          localDate('2026-10-04'),
         ),
         current: 0,
         dueBy: null,
-        period: null,
-        periods: [closed('kept', '2026-07-01'), closed('missed', '2026-08-12')],
+        periodIntervalDays: null,
+        periodGraceDays: null,
+        periodSource: null,
+        periodHabitDays: null,
+        periods: [closed('KEPT', '2026-07-01'), closed('MISSED', '2026-08-12')],
       }),
       view(),
     );
     expect(track.marks.filter((mark) => mark.open)).toEqual([]);
-    expect(track.marks.at(-1)).toMatchObject({ mark: 'missed', open: false });
+    expect(track.marks.at(-1)).toMatchObject({
+      streakTrackMarkKind: 'MISSED',
+      open: false,
+    });
   });
 
   it('draws eight marks at most, one of them open, whatever the run holds', () => {

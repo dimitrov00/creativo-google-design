@@ -1,17 +1,15 @@
 import type { Observable } from 'rxjs';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
+import type { Appointment } from '../entities/appointment.entity';
+import type { AuditEntry } from '../entities/audit-entry.entity';
+import type { BackfillJob } from '../entities/backfill-job.entity';
+import type { ImpersonationSession } from '../entities/impersonation-session.entity';
 import type {
-  AppointmentEntity,
   AppointmentId,
-} from '../entities/appointment.entity';
-import type { AuditEntryEntity } from '../entities/audit-entry.entity';
-import type {
-  BackfillJobEntity,
   BackfillJobId,
-} from '../entities/backfill-job.entity';
-import type { ImpersonationSessionEntity } from '../entities/impersonation-session.entity';
-import type { UserId } from '../entities/user.entity';
+  UserId,
+} from '../primitives/ids.primitive';
 
 /**
  * The governance context's ports (blueprint §4, §4.1, §4.2): the audit
@@ -31,7 +29,7 @@ import type { UserId } from '../entities/user.entity';
  * is logged through `Log`/`TrackError` and the booking stands (today's
  * `appendAudit`, `audit.ts:286`, "after the commit, never inside it").
  */
-export type AppendAudit = (rows: readonly AuditEntryEntity[]) => Promise<void>;
+export type AppendAudit = (rows: readonly AuditEntry[]) => Promise<void>;
 
 /**
  * `createAuditRows` — the profile-change trigger's ONLY write
@@ -40,7 +38,7 @@ export type AppendAudit = (rows: readonly AuditEntryEntity[]) => Promise<void>;
  * real failure IS reported, so the trigger's retry can deliver the row.
  */
 export type CreateAuditRows = (
-  rows: readonly AuditEntryEntity[],
+  rows: readonly AuditEntry[],
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
@@ -50,28 +48,29 @@ export type CreateAuditRows = (
  */
 export type AuditActionsFor = (
   appointmentIds: readonly AppointmentId[],
-) => Promise<Result<readonly AuditEntryEntity[], RepositoryError>>;
+) => Promise<Result<readonly AuditEntry[], RepositoryError>>;
 
 // ── Impersonation ─────────────────────────────────────────────────────────
 
 /**
- * The admin's live session, if any — `adminUserId ==`, `status.kind ==
- * active` (index #9, `impersonation.adapter.ts:207-208`); `null` when none.
+ * The admin's live session, if any — `adminUserId ==`, the stored status
+ * active (index #9, `impersonation.adapter.ts:207-208`; re-keyed on
+ * `impersonationStatus` by the governance flip); `null` when none.
  */
 export type ObserveActiveImpersonation = (
   adminUserId: UserId,
-) => Observable<Result<ImpersonationSessionEntity | null, RepositoryError>>;
+) => Observable<Result<ImpersonationSession | null, RepositoryError>>;
 
 // ── The operator backfill ─────────────────────────────────────────────────
 
 /** `backfillJobs/{job}` — the job's progress; `null` before its first page. */
 export type LoadBackfillJob = (
   id: BackfillJobId,
-) => Promise<Result<BackfillJobEntity | null, RepositoryError>>;
+) => Promise<Result<BackfillJob | null, RepositoryError>>;
 
 /** `backfillJobs/{job}` `Set` — the progress after a page (`writeJob`, §4.1). */
 export type WriteBackfillJob = (
-  job: BackfillJobEntity,
+  job: BackfillJob,
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
@@ -82,7 +81,7 @@ export type WriteBackfillJob = (
 export type PageAppointments = (
   afterId: AppointmentId | null,
   limit: number,
-) => Promise<Result<readonly AppointmentEntity[], RepositoryError>>;
+) => Promise<Result<readonly Appointment[], RepositoryError>>;
 
 /** The governance context's port catalogue; each root binds the `Pick` it implements. */
 export type GovernancePorts = {

@@ -1,8 +1,8 @@
 import {
   type ClientMoneyStats,
   type ClientStats,
-  type PauseSuggestion,
   type VisitFact,
+  type VisitPlacement,
   type VisitPlacements,
   type VisitRef,
   toEcsAppointment,
@@ -22,26 +22,41 @@ import {
   subjectUserIdsFromDocument,
 } from '@creativo/application/booking';
 import {
-  type AppointmentEntity,
+  type Appointment as EcsAppointment,
   AppointmentId as EcsAppointmentId,
   BarberId as EcsBarberId,
   type ClientMoneyStats as EcsClientMoneyStats,
   type ClientStats as EcsClientStats,
   ClientStatsSystem,
-  ClientStatsWriteKind,
-  type PauseSuggestion as EcsPauseSuggestion,
-  PlacementKind,
+  Currency,
+  DurationMinutes,
+  LastVisit,
+  NextVisit,
+  PauseSuggestion,
+  Placement,
   type PolicyPass as EcsPolicyPass,
-  PolicyPassVerdictKind,
+  PolicyPassVerdict as EcsPolicyPassVerdict,
   PolicyRecomputeJobSystem,
+  type PreciseInstant,
+  PriceCents,
   SeatId as EcsSeatId,
   ServiceId as EcsServiceId,
   ServiceVariantId as EcsServiceVariantId,
+  StatsWriteDecision,
+  type TimeZone,
   UserId as EcsUserId,
+  UtcEpochMs,
   type VisitFact as EcsVisitFact,
-  type VisitRef as EcsVisitRef,
+  type VisitLeg as EcsVisitLeg,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
-import { instantFromIso } from './policy-recompute-plan';
+import { TENANT_ZONE } from '../booking/tenant-zone';
+import {
+  EARLIEST_INSTANT,
+  LATEST_INSTANT,
+  instantFromIso,
+} from './policy-recompute-plan';
 
 /**
  * The pure half of the client-stats projection: what a write changed, whom
@@ -52,7 +67,9 @@ import { instantFromIso } from './policy-recompute-plan';
  * Phase 2 shim: the decisions are `ClientStatsSystem` and
  * `PolicyRecomputeJobSystem` (the pass guard) in `@creativo/ecs-core`; this
  * file keeps the legacy names for its callers, reads the stored documents
- * through their mappers, and converts at the edge.
+ * through their mappers, and converts at the edge: a stored instant becomes
+ * the shop wall clock (`localDate` + minutes) through `ZonedTimeSystem` in
+ * the tenant's zone, a placement its SCREAMING tag, money its cents brand.
  */
 
 /** JSON with object keys sorted, so two equal values always print the same. */
@@ -86,12 +103,17 @@ export function statsInputOf(data: PersistedDocument | undefined): unknown {
 export function placementsFrom(
   docs: readonly { readonly id: string; data(): PersistedDocument }[],
 ): VisitPlacements {
-  return ClientStatsSystem.placementsFrom(
+  const placements = ClientStatsSystem.placementsFrom(
     docs.map((doc) => ({
-      id: doc.id,
-      placement: placementFromDocument(doc.data()),
+      id: EcsAppointmentId.of(doc.id),
+      placement: placementOf(placementFromDocument(doc.data())),
     })),
   );
+  const legacy = new Map<string, VisitPlacement>();
+  for (const [id, placement] of placements) {
+    legacy.set(id, LEGACY_PLACEMENT[placement]);
+  }
+  return legacy;
 }
 
 /** Did this write change anything a client's stats are computed from? */
@@ -131,8 +153,8 @@ export function projectionClock(
 ): number {
   const updatedAt = stored?.['updatedAt'];
   return ClientStatsSystem.projectionClock(
-    clockMs,
-    typeof updatedAt === 'string' ? Date.parse(updatedAt) : null,
+    instantOrThrow(clockMs),
+    typeof updatedAt === 'string' ? instantOrNull(Date.parse(updatedAt)) : null,
   );
 }
 
@@ -172,34 +194,48 @@ export function planClientStatsWrite(
 ): ClientStatsWrite {
   const storedStats = clientStatsFromDocument(input.userId, input.stored.stats);
   const storedMoney = clientMoneyFromDocument(input.userId, input.stored.money);
+  // A stored answer the flat shapes cannot hold reads as one that no longer
+  // parses — the guard rewrites it, never keeps it.
+  const storedStatsStruct =
+    storedStats === null ? null : statsStruct(storedStats);
+  const storedStatsAt =
+    storedStats === null ? null : instantOrNull(storedStats.updatedAtMs);
+  const storedMoneyStruct =
+    storedMoney === null ? null : moneyStruct(storedMoney);
+  const storedMoneyAt =
+    storedMoney === null ? null : instantOrNull(storedMoney.updatedAtMs);
   const plan = ClientStatsSystem.planWrite(
     {
       stored: {
         statsPresent: input.stored.stats !== undefined,
         moneyPresent: input.stored.money !== undefined,
         stats:
-          storedStats === null
+          storedStats === null ||
+          storedStatsStruct === null ||
+          storedStatsAt === null
             ? null
             : {
-                ...statsStruct(storedStats),
+                ...storedStatsStruct,
                 version: storedStats.version,
-                updatedAtMs: storedStats.updatedAtMs,
+                updatedAtUtcMs: storedStatsAt,
               },
         money:
-          storedMoney === null
+          storedMoney === null ||
+          storedMoneyStruct === null ||
+          storedMoneyAt === null
             ? null
             : {
-                ...moneyStruct(storedMoney),
+                ...storedMoneyStruct,
                 version: storedMoney.version,
-                updatedAtMs: storedMoney.updatedAtMs,
+                updatedAtUtcMs: storedMoneyAt,
               },
         statsVersion: versionOf(input.stored.stats),
         moneyVersion: versionOf(input.stored.money),
       },
-      stats: statsStruct(input.stats),
-      money: moneyStruct(input.money),
+      stats: freshOrThrow(statsStruct(input.stats)),
+      money: freshOrThrow(moneyStruct(input.money)),
       hasHistory: input.hasHistory,
-      nowMs: input.nowMs,
+      nowUtcMs: instantOrThrow(input.nowMs),
       // The stamp rides the shell's own write (`policyPassFields`).
       stamp: null,
       restamp: false,
@@ -214,9 +250,10 @@ export function planClientStatsWrite(
       ],
     },
   );
-  if (plan.kind === ClientStatsWriteKind.Unchanged)
+  if (plan.statsWriteDecision === StatsWriteDecision.Unchanged) {
     return { kind: 'unchanged' };
-  const meta = { version: plan.version, updatedAtMs: plan.updatedAtMs };
+  }
+  const meta = { version: plan.version, updatedAtMs: plan.updatedAtUtcMs };
   return {
     kind: 'write',
     version: plan.version,
@@ -276,10 +313,14 @@ export function judgePolicyPass(
   mine: PolicyPass | null,
   stored: PolicyPass | null,
 ): PolicyPassVerdict {
-  const ecsMine = mine === null ? null : passStruct(mine);
-  const ecsStored = stored === null ? null : passStruct(stored);
+  // An instant that does not parse never proves an order: mine reads as
+  // the newest change there is, the stored one as the oldest — so the pass
+  // judges and restamps, never skips.
+  const ecsMine = mine === null ? null : passStruct(mine, LATEST_INSTANT);
+  const ecsStored =
+    stored === null ? null : passStruct(stored, EARLIEST_INSTANT);
   const verdict = PolicyRecomputeJobSystem.judgePolicyPass(ecsMine, ecsStored);
-  if (verdict.kind === PolicyPassVerdictKind.Superseded) {
+  if (verdict.policyPassVerdict === EcsPolicyPassVerdict.Superseded) {
     return { kind: 'superseded' };
   }
   return {
@@ -293,6 +334,45 @@ export function judgePolicyPass(
 
 /* ── The Phase 2 bridge: legacy values ↔ ecs-core structs ──────────────── */
 
+/** The tenant's zone, as the brand the conversions take (F-4: the legacy constant). */
+const SHOP_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone(TENANT_ZONE);
+  if (!zone.ok) defect(`unreachable: TENANT_ZONE ${TENANT_ZONE}`);
+  return zone.value;
+})();
+
+/** The stored placement strings ↔ `Placement` — the ONE table. */
+const LEGACY_PLACEMENT = {
+  [Placement.Self]: 'self',
+  [Placement.Staff]: 'staff',
+} as const satisfies Record<Placement, VisitPlacement>;
+
+function placementOf(raw: VisitPlacement | null): Placement | null {
+  return raw === null
+    ? null
+    : raw === LEGACY_PLACEMENT[Placement.Self]
+      ? Placement.Self
+      : Placement.Staff;
+}
+
+function instantOrNull(ms: number): UtcEpochMs | null {
+  const instant = UtcEpochMs.of(ms);
+  return instant.ok ? instant.value : null;
+}
+
+/** A clock reading as an instant — the legacy clocks are `Date.now`-shaped. */
+function instantOrThrow(ms: number): UtcEpochMs {
+  const instant = instantOrNull(ms);
+  if (instant === null) defect(`unreachable: a clock read ${ms}`);
+  return instant;
+}
+
+/** A freshly computed answer always fits the flat shapes; one that does not is a defect. */
+function freshOrThrow<T>(struct: T | null): T {
+  if (struct === null) defect('unreachable: a fresh answer unfit');
+  return struct;
+}
+
 /** Any id: the stats input never reads the visit's own. */
 const STATS_INPUT_ID = 'stats-input';
 
@@ -303,40 +383,59 @@ const STATS_INPUT_ID = 'stats-input';
  * document — and for one the mapper cannot read, which no recompute can
  * read either, so its edits move nobody's stats.
  */
-function toEntity(
-  data: PersistedDocument | undefined,
-): AppointmentEntity | null {
+function toEntity(data: PersistedDocument | undefined): EcsAppointment | null {
   if (data === undefined) return null;
   const parsed = appointmentFromDocument(STATS_INPUT_ID, data);
   if (parsed.isFailure()) return null;
   return {
     ...toEcsAppointment(parsed.value),
-    placement: PlacementKind.parse(placementFromDocument(data)),
+    placement: placementOf(placementFromDocument(data)),
   };
 }
 
-/** A pass stamp with its RFC 3339 instant as the §9 D17 struct. */
-function passStruct(pass: PolicyPass): EcsPolicyPass {
+/** A pass stamp with its RFC 3339 instant as the §9 D17 value; `unreadable` stands in for one that does not parse. */
+function passStruct(
+  pass: PolicyPass,
+  unreadable: PreciseInstant,
+): EcsPolicyPass {
   return {
     generation: pass.generation,
-    changedAt: instantFromIso(pass.changedAt),
+    changedAt: instantFromIso(pass.changedAt) ?? unreadable,
   };
 }
 
-function factStruct(fact: VisitFact): EcsVisitFact {
+/** An instant on the shop's wall clock; `null` for one that is not an instant. */
+function wallOf(ms: number) {
+  const instant = instantOrNull(ms);
+  return instant === null ? null : ZonedTimeSystem.toLocal(instant, SHOP_ZONE);
+}
+
+function factStruct(fact: VisitFact): EcsVisitFact | null {
+  const wall = wallOf(fact.atMs);
+  if (wall === null) return null;
   return {
     appointmentId: EcsAppointmentId.of(fact.appointmentId.value),
-    atMs: fact.atMs,
+    localDate: wall.localDate,
+    startMinutes: wall.minute,
   };
 }
 
-function refStruct(ref: VisitRef | null): EcsVisitRef | null {
-  if (ref === null) return null;
-  return {
-    ...factStruct(ref),
-    serviceIds: ref.serviceIds.map((id) => EcsServiceId.of(id.value)),
-    barberIds: ref.barberIds.map((id) => EcsBarberId.of(id.value)),
-    legs: ref.legs.map((leg) => ({
+function factsStruct(facts: readonly VisitFact[]): EcsVisitFact[] | null {
+  const out: EcsVisitFact[] = [];
+  for (const fact of facts) {
+    const struct = factStruct(fact);
+    if (struct === null) return null;
+    out.push(struct);
+  }
+  return out;
+}
+
+function legsStruct(ref: VisitRef): EcsVisitLeg[] | null {
+  const legs: EcsVisitLeg[] = [];
+  for (const leg of ref.legs) {
+    const minutes = DurationMinutes.of(leg.minutes);
+    if (!minutes.ok) return null;
+    legs.push({
       seatId: EcsSeatId.of(leg.seatId.value),
       serviceId: EcsServiceId.of(leg.serviceId.value),
       variantId:
@@ -344,41 +443,94 @@ function refStruct(ref: VisitRef | null): EcsVisitRef | null {
           ? null
           : EcsServiceVariantId.of(leg.variantId.value),
       barberId: EcsBarberId.of(leg.barberId.value),
-      minutes: leg.minutes,
-    })),
-  };
+      durationMinutes: minutes.value,
+    });
+  }
+  return legs;
 }
 
-function suggestionStruct(
-  suggestion: PauseSuggestion | null,
-): EcsPauseSuggestion | null {
-  if (suggestion === null) return null;
+function lastVisitStruct(ref: VisitRef | null): LastVisit | null {
+  if (ref === null) return LastVisit.NONE;
+  const fact = factStruct(ref);
+  const legs = legsStruct(ref);
+  if (fact === null || legs === null) return null;
   return {
-    noShows: suggestion.noShows,
-    windowDays: suggestion.windowDays,
-    basis: suggestion.basis.map((id) => EcsAppointmentId.of(id.value)),
-    raisedAtMs: suggestion.raisedAtMs,
+    lastVisitAppointmentId: fact.appointmentId,
+    lastVisitLocalDate: fact.localDate,
+    lastVisitStartMinutes: fact.startMinutes,
+    lastVisitServiceIds: ref.serviceIds.map((id) => EcsServiceId.of(id.value)),
+    lastVisitBarberIds: ref.barberIds.map((id) => EcsBarberId.of(id.value)),
+    lastVisitLegs: legs,
   };
 }
 
-/** The projection's content as the ecs-core struct the revision guard compares. */
-function statsStruct(stats: ClientStats): EcsClientStats {
+function nextVisitStruct(ref: VisitRef | null): NextVisit | null {
+  if (ref === null) return NextVisit.NONE;
+  const fact = factStruct(ref);
+  const legs = legsStruct(ref);
+  if (fact === null || legs === null) return null;
+  return {
+    nextVisitAppointmentId: fact.appointmentId,
+    nextVisitLocalDate: fact.localDate,
+    nextVisitStartMinutes: fact.startMinutes,
+    nextVisitServiceIds: ref.serviceIds.map((id) => EcsServiceId.of(id.value)),
+    nextVisitBarberIds: ref.barberIds.map((id) => EcsBarberId.of(id.value)),
+    nextVisitLegs: legs,
+  };
+}
+
+function suggestionStruct(stats: ClientStats): PauseSuggestion | null {
+  const suggestion = stats.pauseSuggestion;
+  if (suggestion === null) return PauseSuggestion.NONE;
+  const raisedAt = instantOrNull(suggestion.raisedAtMs);
+  if (raisedAt === null) return null;
+  return {
+    pauseSuggestedNoShows: suggestion.noShows,
+    pauseSuggestedWindowDays: suggestion.windowDays,
+    pauseSuggestionBasis: suggestion.basis.map((id) =>
+      EcsAppointmentId.of(id.value),
+    ),
+    pauseSuggestedAtUtcMs: raisedAt,
+  };
+}
+
+/**
+ * The projection's content as the flat ecs-core struct the revision guard
+ * compares; `null` when a stored instant or duration cannot be one.
+ */
+function statsStruct(stats: ClientStats): EcsClientStats | null {
+  const visitsCompleted = factsStruct(stats.last365.visitsCompleted);
+  const noShows = factsStruct(stats.last365.noShows);
+  const lateCancels = factsStruct(stats.last365.lateCancels);
+  const first =
+    stats.firstVisitAtMs === null ? null : wallOf(stats.firstVisitAtMs);
+  const lastVisit = lastVisitStruct(stats.lastVisit);
+  const nextVisit = nextVisitStruct(stats.nextVisit);
+  const suggestion = suggestionStruct(stats);
+  if (
+    visitsCompleted === null ||
+    noShows === null ||
+    lateCancels === null ||
+    (stats.firstVisitAtMs !== null && first === null) ||
+    lastVisit === null ||
+    nextVisit === null ||
+    suggestion === null
+  ) {
+    return null;
+  }
   return {
     userId: EcsUserId.of(stats.userId.value),
-    lifetime: {
-      visitsCompleted: stats.lifetime.visitsCompleted,
-      noShows: stats.lifetime.noShows,
-      lateCancels: stats.lifetime.lateCancels,
-      clientCancels: stats.lifetime.clientCancels,
-    },
-    last365: {
-      visitsCompleted: stats.last365.visitsCompleted.map(factStruct),
-      noShows: stats.last365.noShows.map(factStruct),
-      lateCancels: stats.last365.lateCancels.map(factStruct),
-    },
-    firstVisitAtMs: stats.firstVisitAtMs,
-    lastVisit: refStruct(stats.lastVisit),
-    nextVisit: refStruct(stats.nextVisit),
+    lifetimeVisitsCompleted: stats.lifetime.visitsCompleted,
+    lifetimeNoShows: stats.lifetime.noShows,
+    lifetimeLateCancels: stats.lifetime.lateCancels,
+    lifetimeClientCancels: stats.lifetime.clientCancels,
+    last365VisitsCompleted: visitsCompleted,
+    last365NoShows: noShows,
+    last365LateCancels: lateCancels,
+    firstVisitLocalDate: first === null ? null : first.localDate,
+    firstVisitStartMinutes: first === null ? null : first.minute,
+    ...lastVisit,
+    ...nextVisit,
     avgCadenceDays: stats.avgCadenceDays,
     preferredBarberId:
       stats.preferredBarberId === null
@@ -387,17 +539,18 @@ function statsStruct(stats: ClientStats): EcsClientStats {
     usualServiceIds: stats.usualServiceIds.map((id) =>
       EcsServiceId.of(id.value),
     ),
-    pauseSuggestion: suggestionStruct(stats.pauseSuggestion),
+    ...suggestion,
   };
 }
 
-/** The flat legacy spend as the nested `Money` (blueprint §2.5). */
-function moneyStruct(money: ClientMoneyStats): EcsClientMoneyStats {
+/** The flat legacy spend as the flat branded slice; `null` when it cannot be one. */
+function moneyStruct(money: ClientMoneyStats): EcsClientMoneyStats | null {
+  const cents = PriceCents.signed(money.lifetimeSpendMinor);
+  const currency = Currency.parse(money.currencyCode);
+  if (!cents.ok || !currency.ok) return null;
   return {
     userId: EcsUserId.of(money.userId.value),
-    lifetimeSpend: {
-      amountMinorUnits: money.lifetimeSpendMinor,
-      currencyCode: money.currencyCode,
-    },
+    lifetimeSpendCents: cents.value,
+    currency: currency.value,
   };
 }

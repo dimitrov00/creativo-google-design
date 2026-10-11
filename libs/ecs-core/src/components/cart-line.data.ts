@@ -1,57 +1,77 @@
-import type { BarberId } from '../entities/barber.entity';
-import type { LocationId } from '../entities/location.entity';
-import type { ServiceId } from '../entities/service.entity';
-import { UserId } from '../entities/user.entity';
+import {
+  type BarberId,
+  CartLineId,
+  GuestId,
+  type LocationId,
+  SeatKeyText,
+  type ServiceId,
+  type ServiceVariantId,
+  UserId,
+} from '../primitives/ids.primitive';
 import { Result } from './result.data';
 import { SchedulingError } from './scheduling-errors.data';
-import type { ServiceVariantId } from './service-terms.data';
 
-/** Which member of the party a cart seat belongs to — the ONLY source of these strings. */
-export const SeatKeyKind = {
+/**
+ * Which member of the party a cart seat belongs to — the ONLY source of
+ * these strings, named after the field it types (`seatKeyRole`, N15).
+ */
+export const SeatKeyRole = {
   /** The booker's own seat — always exists, whoever (if anyone) is signed in. */
-  Self: 'self',
+  Self: 'SELF',
   /** An account the booker vouches for (carried by a staff edit or a move). */
-  Companion: 'companion',
+  Companion: 'COMPANION',
   /** A guest on the party's roster, by the guest id the party minted. */
-  Guest: 'guest',
+  Guest: 'GUEST',
 } as const;
-export type SeatKeyKind = (typeof SeatKeyKind)[keyof typeof SeatKeyKind];
+export type SeatKeyRole = (typeof SeatKeyRole)[keyof typeof SeatKeyRole];
 
-const SELF_VALUE = 'self';
+const SELF_TEXT = 'self';
 const GUEST_PREFIX = 'guest-';
 const COMPANION_PREFIX = 'companion-';
 
 /**
  * WHICH member of the party a cart line belongs to (`booking-cart.ts:22`). A
  * union rather than `GuestId | null`, so the booker's seat is a named case.
- * Stored and keyed by its string value ({@link CartLine.seatKeyValue}):
+ * Stored and keyed by its text form ({@link SeatKey.text}, a `SeatKeyText`):
  * `'self'`, the guest's own id (`'guest-3'`, minted from the party's
  * monotonic counter, so a removed guest's key is never reused) or
- * `'companion-<uid>'`.
+ * `'companion-<uid>'` — the text is unchanged by the flatten pass.
  */
 export type SeatKey = SeatKey.Self | SeatKey.Companion | SeatKey.Guest;
 
-const SELF: SeatKey.Self = { kind: SeatKeyKind.Self };
+const SELF: SeatKey.Self = { seatKeyRole: SeatKeyRole.Self };
 
 export const SeatKey = {
   self(): SeatKey.Self {
     return SELF;
   },
 
-  companion(userId: UserId): SeatKey.Companion {
-    return { kind: SeatKeyKind.Companion, userId };
+  companion(companionUserId: UserId): SeatKey.Companion {
+    return { seatKeyRole: SeatKeyRole.Companion, companionUserId };
   },
 
   /** `guestId` is the party's minted id (`guest-<n>`). */
-  guest(guestId: string): SeatKey.Guest {
-    return { kind: SeatKeyKind.Guest, guestId };
+  guest(guestId: GuestId): SeatKey.Guest {
+    return { seatKeyRole: SeatKeyRole.Guest, guestId };
   },
 
-  /** A stored seat-key string back to its key, or `null` when it names no seat. */
+  /** The cart's key for a seat — `'self'`, `'guest-3'` or `'companion-<uid>'`. */
+  text(key: SeatKey): SeatKeyText {
+    switch (key.seatKeyRole) {
+      case SeatKeyRole.Self:
+        return SeatKeyText.of(SELF_TEXT);
+      case SeatKeyRole.Guest:
+        return SeatKeyText.of(key.guestId);
+      case SeatKeyRole.Companion:
+        return SeatKeyText.of(`${COMPANION_PREFIX}${key.companionUserId}`);
+    }
+  },
+
+  /** A stored seat-key text back to its key, or `null` when it names no seat. */
   parse(raw: string): SeatKey | null {
-    if (raw === SELF_VALUE) return SELF;
+    if (raw === SELF_TEXT) return SELF;
     if (raw.startsWith(GUEST_PREFIX) && raw.length > GUEST_PREFIX.length) {
-      return SeatKey.guest(raw);
+      return SeatKey.guest(GuestId.of(raw));
     }
     if (
       raw.startsWith(COMPANION_PREFIX) &&
@@ -63,45 +83,50 @@ export const SeatKey = {
   },
 
   equals(a: SeatKey, b: SeatKey): boolean {
-    return CartLine.seatKeyValue(a) === CartLine.seatKeyValue(b);
+    return SeatKey.text(a) === SeatKey.text(b);
   },
 } as const;
 
 export namespace SeatKey {
-  export type Self = { readonly kind: typeof SeatKeyKind.Self };
+  export type Self = { readonly seatKeyRole: typeof SeatKeyRole.Self };
   export type Companion = {
-    readonly kind: typeof SeatKeyKind.Companion;
-    readonly userId: UserId;
+    readonly seatKeyRole: typeof SeatKeyRole.Companion;
+    readonly companionUserId: UserId;
   };
   export type Guest = {
-    readonly kind: typeof SeatKeyKind.Guest;
-    readonly guestId: string;
+    readonly seatKeyRole: typeof SeatKeyRole.Guest;
+    readonly guestId: GuestId;
   };
 }
 
 /**
- * One thing one person is booking (`booking-cart.ts:82`): a service, the
- * variant chosen within it (`null` only when the service declares none) and
- * who they would like to perform it — `barberId: null` is "anyone"
- * (`BarberPref.fromBarberId`). `locationId` is the shop the line was picked
- * for, `null` for "any shop" (the flow's and the request's own `locationId`
- * governs where it is searched). Terms are deliberately ABSENT: a price
- * depends on the barber the engine assigns; a snapshot reaches the seat only
- * at commit.
+ * One thing one person is booking (`booking-cart.ts:82`) — an element of a
+ * {@link CartSeatLines}: a service, the variant chosen within it (`null`
+ * only when the service declares none) and who they would like to perform it
+ * — `barberId: null` is "anyone" (`BarberPref.fromBarberId`). `locationId` is
+ * the shop the line was picked for, `null` for "any shop" (the flow's and the
+ * request's own `locationId` governs where it is searched). Terms are
+ * deliberately ABSENT: a price depends on the barber the engine assigns; a
+ * snapshot reaches the seat only at commit.
  *
- * `lineId` is minted from the cart's monotonic counter (`line-<n>`) — never
- * from a position, so add → remove → add never resurrects an id (§7.7).
+ * `lineId` is minted from the cart's monotonic counter
+ * (`CartLineId.forSequence`, `line-<n>`) — never from a position, so
+ * add → remove → add never resurrects an id (§7.7).
  */
 export type CartLine = {
-  readonly lineId: string;
-  readonly seatKey: string;
+  readonly lineId: CartLineId;
+  readonly seatKey: SeatKeyText;
   readonly serviceId: ServiceId;
   readonly variantId: ServiceVariantId | null;
   readonly barberId: BarberId | null;
   readonly locationId: LocationId | null;
 };
 
-const LINE_PREFIX = 'line-';
+/** One seat's lines, in the order they were added — an element of `cartSeats`. */
+export type CartSeatLines = {
+  readonly seatKey: SeatKeyText;
+  readonly lines: readonly CartLine[];
+};
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -122,43 +147,26 @@ function isLine(raw: unknown, seatKey: string): raw is CartLine {
   );
 }
 
-export const CartLine = {
-  /** The cart's key for a seat — `'self'`, `'guest-3'` or `'companion-<uid>'`. */
-  seatKeyValue(key: SeatKey): string {
-    switch (key.kind) {
-      case SeatKeyKind.Self:
-        return SELF_VALUE;
-      case SeatKeyKind.Guest:
-        return key.guestId;
-      case SeatKeyKind.Companion:
-        return `${COMPANION_PREFIX}${key.userId}`;
-    }
-  },
-
-  /** The line id the counter value `sequence` mints — the only door. */
-  lineIdOf(sequence: number): string {
-    return `${LINE_PREFIX}${sequence}`;
-  },
-} as const;
-
 /**
  * The party's whole selection: per-seat lines and the line counter — THE one
  * cart serialisation (`booking-cart.ts:100-106`), stored verbatim on a
- * waitlist request and persisted in the booking draft. Seats appear in the
- * order they were first given something to book; a seat with no line is not
- * listed. `nextSequence` never decreases: removing a line or dropping a seat
+ * waitlist request and persisted in the booking draft. A flat slice (Law 6):
+ * `WaitlistRequest` intersects it, so its fields are named for their domain
+ * (`cartSeats`, `cartNextSequence`). Seats appear in the order they were
+ * first given something to book; a seat with no line is not listed.
+ * `cartNextSequence` never decreases: removing a line or dropping a seat
  * leaves it alone, so a reload cannot reuse an id either.
  */
 export type BookingCart = {
-  readonly seats: readonly BookingCart.SeatLines[];
-  readonly nextSequence: number;
+  readonly cartSeats: readonly CartSeatLines[];
+  readonly cartNextSequence: number;
 };
 
-const EMPTY_CART: BookingCart = { seats: [], nextSequence: 0 };
+const EMPTY_CART: BookingCart = { cartSeats: [], cartNextSequence: 0 };
 
-function seatIndex(cart: BookingCart, seatKey: string): number {
-  for (let i = 0; i < cart.seats.length; i++) {
-    if ((cart.seats[i] as BookingCart.SeatLines).seatKey === seatKey) return i;
+function seatIndex(cart: BookingCart, seatKey: SeatKeyText): number {
+  for (let i = 0; i < cart.cartSeats.length; i++) {
+    if ((cart.cartSeats[i] as CartSeatLines).seatKey === seatKey) return i;
   }
   return -1;
 }
@@ -168,19 +176,19 @@ function withSeatLines(
   cart: BookingCart,
   at: number,
   lines: readonly CartLine[],
-  nextSequence: number,
+  cartNextSequence: number,
 ): BookingCart {
-  const seats: BookingCart.SeatLines[] = [];
-  for (let i = 0; i < cart.seats.length; i++) {
-    if (i !== at) seats.push(cart.seats[i] as BookingCart.SeatLines);
+  const cartSeats: CartSeatLines[] = [];
+  for (let i = 0; i < cart.cartSeats.length; i++) {
+    if (i !== at) cartSeats.push(cart.cartSeats[i] as CartSeatLines);
     else if (lines.length > 0) {
-      seats.push({
-        seatKey: (cart.seats[i] as BookingCart.SeatLines).seatKey,
+      cartSeats.push({
+        seatKey: (cart.cartSeats[i] as CartSeatLines).seatKey,
         lines,
       });
     }
   }
-  return { seats, nextSequence };
+  return { cartSeats, cartNextSequence };
 }
 
 /**
@@ -189,12 +197,12 @@ function withSeatLines(
  */
 function replaceLine(
   cart: BookingCart,
-  seatKey: string,
-  lineId: string,
+  seatKey: SeatKeyText,
+  lineId: CartLineId,
   update: (line: CartLine) => CartLine | null,
 ): Result<BookingCart, SchedulingError> {
   const at = seatIndex(cart, seatKey);
-  const seat = at === -1 ? null : (cart.seats[at] as BookingCart.SeatLines);
+  const seat = at === -1 ? null : (cart.cartSeats[at] as CartSeatLines);
   if (seat !== null) {
     for (let i = 0; i < seat.lines.length; i++) {
       const line = seat.lines[i] as CartLine;
@@ -205,7 +213,7 @@ function replaceLine(
         if (k !== i) lines.push(seat.lines[k] as CartLine);
         else if (replacement !== null) lines.push(replacement);
       }
-      return Result.ok(withSeatLines(cart, at, lines, cart.nextSequence));
+      return Result.ok(withSeatLines(cart, at, lines, cart.cartNextSequence));
     }
   }
   return Result.err(SchedulingError.cartLineNotFound(seatKey, lineId));
@@ -216,15 +224,15 @@ export const BookingCart = {
     return EMPTY_CART;
   },
 
-  linesFor(cart: BookingCart, seatKey: string): readonly CartLine[] {
+  linesFor(cart: BookingCart, seatKey: SeatKeyText): readonly CartLine[] {
     const at = seatIndex(cart, seatKey);
-    return at === -1 ? [] : (cart.seats[at] as BookingCart.SeatLines).lines;
+    return at === -1 ? [] : (cart.cartSeats[at] as CartSeatLines).lines;
   },
 
   lineCount(cart: BookingCart): number {
     let total = 0;
-    for (let i = 0; i < cart.seats.length; i++) {
-      total += (cart.seats[i] as BookingCart.SeatLines).lines.length;
+    for (let i = 0; i < cart.cartSeats.length; i++) {
+      total += (cart.cartSeats[i] as CartSeatLines).lines.length;
     }
     return total;
   },
@@ -236,7 +244,7 @@ export const BookingCart = {
   /** Does this seat already hold `serviceId`? What the catalogue card reads. */
   hasService(
     cart: BookingCart,
-    seatKey: string,
+    seatKey: SeatKeyText,
     serviceId: ServiceId,
   ): boolean {
     const lines = BookingCart.linesFor(cart, seatKey);
@@ -249,13 +257,13 @@ export const BookingCart = {
   /**
    * Add a line to one seat, minting its id from the counter (which always
    * advances). REFUSES a service the seat already has
-   * (`scheduling.booking_cart.duplicate_service`): nobody has two haircuts in
+   * (`SCHEDULING_BOOKING_CART_DUPLICATE_SERVICE`): nobody has two haircuts in
    * one visit, and a second one belongs to another seat — so the UI can say
    * "already in the bag" instead of appearing to ignore the press.
    */
   addLine(
     cart: BookingCart,
-    seatKey: string,
+    seatKey: SeatKeyText,
     line: BookingCart.NewLine,
   ): Result<BookingCart, SchedulingError> {
     if (BookingCart.hasService(cart, seatKey, line.serviceId)) {
@@ -264,7 +272,7 @@ export const BookingCart = {
       );
     }
     const added: CartLine = {
-      lineId: CartLine.lineIdOf(cart.nextSequence),
+      lineId: CartLineId.forSequence(cart.cartNextSequence),
       seatKey,
       serviceId: line.serviceId,
       variantId: line.variantId,
@@ -272,29 +280,29 @@ export const BookingCart = {
       locationId: line.locationId,
     };
     const at = seatIndex(cart, seatKey);
-    const nextSequence = cart.nextSequence + 1;
+    const cartNextSequence = cart.cartNextSequence + 1;
     if (at === -1) {
       return Result.ok({
-        seats: [...cart.seats, { seatKey, lines: [added] }],
-        nextSequence,
+        cartSeats: [...cart.cartSeats, { seatKey, lines: [added] }],
+        cartNextSequence,
       });
     }
-    const lines = [...(cart.seats[at] as BookingCart.SeatLines).lines, added];
-    return Result.ok(withSeatLines(cart, at, lines, nextSequence));
+    const lines = [...(cart.cartSeats[at] as CartSeatLines).lines, added];
+    return Result.ok(withSeatLines(cart, at, lines, cartNextSequence));
   },
 
   removeLine(
     cart: BookingCart,
-    seatKey: string,
-    lineId: string,
+    seatKey: SeatKeyText,
+    lineId: CartLineId,
   ): Result<BookingCart, SchedulingError> {
     return replaceLine(cart, seatKey, lineId, () => null);
   },
 
   setVariant(
     cart: BookingCart,
-    seatKey: string,
-    lineId: string,
+    seatKey: SeatKeyText,
+    lineId: CartLineId,
     variantId: ServiceVariantId | null,
   ): Result<BookingCart, SchedulingError> {
     return replaceLine(cart, seatKey, lineId, (line) => ({
@@ -306,8 +314,8 @@ export const BookingCart = {
   /** Re-point a line to a barber, or back to anyone (`null`). */
   setBarber(
     cart: BookingCart,
-    seatKey: string,
-    lineId: string,
+    seatKey: SeatKeyText,
+    lineId: CartLineId,
     barberId: BarberId | null,
   ): Result<BookingCart, SchedulingError> {
     return replaceLine(cart, seatKey, lineId, (line) => ({
@@ -318,11 +326,13 @@ export const BookingCart = {
 
   /**
    * Forget everything a seat holds — called when its guest leaves the party.
-   * Never touches `nextSequence`: the counter only grows (§7.7).
+   * Never touches `cartNextSequence`: the counter only grows (§7.7).
    */
-  dropSeat(cart: BookingCart, seatKey: string): BookingCart {
+  dropSeat(cart: BookingCart, seatKey: SeatKeyText): BookingCart {
     const at = seatIndex(cart, seatKey);
-    return at === -1 ? cart : withSeatLines(cart, at, [], cart.nextSequence);
+    return at === -1
+      ? cart
+      : withSeatLines(cart, at, [], cart.cartNextSequence);
   },
 
   /**
@@ -336,8 +346,8 @@ export const BookingCart = {
   ): readonly BarberId[] {
     let anyone = false;
     const pinned: BarberId[] = [];
-    for (let i = 0; i < cart.seats.length; i++) {
-      const lines = (cart.seats[i] as BookingCart.SeatLines).lines;
+    for (let i = 0; i < cart.cartSeats.length; i++) {
+      const lines = (cart.cartSeats[i] as CartSeatLines).lines;
       for (let k = 0; k < lines.length; k++) {
         const barberId = (lines[k] as CartLine).barberId;
         if (barberId === null) anyone = true;
@@ -361,7 +371,7 @@ export const BookingCart = {
   is(raw: unknown): raw is BookingCart {
     if (raw === null || typeof raw !== 'object') return false;
     const cart = raw as Readonly<Record<string, unknown>>;
-    const sequence = cart['nextSequence'];
+    const sequence = cart['cartNextSequence'];
     if (
       typeof sequence !== 'number' ||
       !Number.isInteger(sequence) ||
@@ -369,7 +379,7 @@ export const BookingCart = {
     ) {
       return false;
     }
-    const seats = cart['seats'];
+    const seats = cart['cartSeats'];
     if (!Array.isArray(seats)) return false;
     const keys: string[] = [];
     for (let i = 0; i < seats.length; i++) {
@@ -390,11 +400,6 @@ export const BookingCart = {
 } as const;
 
 export namespace BookingCart {
-  /** One seat's lines, in the order they were added. */
-  export type SeatLines = {
-    readonly seatKey: string;
-    readonly lines: readonly CartLine[];
-  };
   /** A line before the cart has given it an id and a seat. */
   export type NewLine = {
     readonly serviceId: ServiceId;

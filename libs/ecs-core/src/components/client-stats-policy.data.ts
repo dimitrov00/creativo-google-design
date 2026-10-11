@@ -1,3 +1,4 @@
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import { BookingPolicy } from './booking-policy.data';
 import { Result } from './result.data';
 import { SchedulingError } from './scheduling-errors.data';
@@ -48,7 +49,7 @@ export const ClientStatsPolicy = {
 
   /**
    * The edge guard, every invalid field at once (one
-   * `scheduling.client_stats_policy.invalid` per field): a positive integer
+   * `SCHEDULING_CLIENT_STATS_POLICY_INVALID` per field): a positive integer
    * of no-shows, and a positive window that fits inside `BOUNDED_DAYS` — a
    * longer one would ask about no-shows the document no longer holds, and
    * the suggestion would quietly undercount.
@@ -98,20 +99,21 @@ export const ClientStatsPolicy = {
    * the stamp, or one whose policy read failed) and falls back to the
    * booking policy's CURRENT window. Either way the line is
    * `BookingPolicy.allowsFreeCancelAt`, the formula the cancel callable
-   * refuses by.
+   * refuses by — a lifecycle comparison of two instants (flatten-spec T2,
+   * gated by G-1).
    */
   isLateCancellation(
     policy: ClientStatsPolicy,
-    startMs: number,
-    cancelledAtMs: number,
+    seatStartUtcMs: UtcEpochMs,
+    cancelledAtUtcMs: UtcEpochMs,
     stampedWindowHours: number | null,
   ): boolean {
     const windowHours =
       stampedWindowHours ?? policy.booking.cancellationWindowHours;
     return !BookingPolicy.allowsFreeCancelAt(
       windowHours,
-      startMs,
-      cancelledAtMs,
+      seatStartUtcMs,
+      cancelledAtUtcMs,
     );
   },
 } as const;

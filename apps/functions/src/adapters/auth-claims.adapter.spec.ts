@@ -113,7 +113,7 @@ describe('auth-claims adapter', () => {
       const auth = fakeAuth();
       await authClaimsPorts(asAuth(auth)).setClaims(UID, {
         tenantId: null,
-        stage: AuthStage.Onboarding,
+        authStage: AuthStage.Onboarding,
         roles: [],
       });
       expect(auth.setCustomUserClaims).toHaveBeenCalledWith('u-1', {
@@ -170,8 +170,8 @@ describe('auth-claims adapter', () => {
       expect(result).toEqual({
         ok: false,
         error: {
-          code: PipelineErrorCode.Unknown,
-          serverCode: null,
+          errorCode: PipelineErrorCode.Unknown,
+          serverErrorCode: null,
           refusal: 'auth/user-not-found',
           field: null,
         },
@@ -192,8 +192,8 @@ describe('auth-claims adapter', () => {
       expect(result).toEqual({
         ok: false,
         error: {
-          code: PipelineErrorCode.Unknown,
-          serverCode: null,
+          errorCode: PipelineErrorCode.Unknown,
+          serverErrorCode: null,
           refusal: 'auth/invalid-uid',
           field: null,
         },
@@ -209,7 +209,7 @@ describe('auth-claims adapter', () => {
       );
       expect(result.ok).toBe(false);
       if (!result.ok)
-        expect(result.error.code).toBe(PipelineErrorCode.Unavailable);
+        expect(result.error.errorCode).toBe(PipelineErrorCode.Unavailable);
     });
   });
 
@@ -284,7 +284,7 @@ describe('auth-claims adapter', () => {
       const failed = await ports.findAuthUserByDestination(PHONE);
       expect(failed.ok).toBe(false);
       if (!failed.ok)
-        expect(failed.error.code).toBe(PipelineErrorCode.Unavailable);
+        expect(failed.error.errorCode).toBe(PipelineErrorCode.Unavailable);
     });
   });
 });

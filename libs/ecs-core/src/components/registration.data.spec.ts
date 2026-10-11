@@ -8,16 +8,26 @@ import {
 } from './registration.data';
 
 describe('Registration', () => {
-  it('provisioned() and registered() are shared tag structs', () => {
-    expect(Registration.provisioned()).toEqual({ kind: 'provisioned' });
-    expect(Registration.registered()).toEqual({ kind: 'registered' });
-    expect(Registration.registered()).toBe(Registration.registered());
+  it('the registration tags are a plain field’s SCREAMING values, each once', () => {
+    expect(Object.values(RegistrationState)).toEqual([
+      'PROVISIONED',
+      'REGISTERED',
+    ]);
+    expect(RegistrationState.Registered).toBe('REGISTERED');
+    expect(RegistrationState.Provisioned).toBe('PROVISIONED');
   });
 
-  it('isRegistered tells the stub from the registered body', () => {
-    expect(Registration.isRegistered(Registration.registered())).toBe(true);
-    expect(Registration.isRegistered(Registration.provisioned())).toBe(false);
-    expect(Registration.provisioned().kind).toBe(RegistrationState.Provisioned);
+  it('isRegistered tells the stub from the registered body, off the plain tag field', () => {
+    expect(
+      Registration.isRegistered({
+        registrationState: RegistrationState.Registered,
+      }),
+    ).toBe(true);
+    expect(
+      Registration.isRegistered({
+        registrationState: RegistrationState.Provisioned,
+      }),
+    ).toBe(false);
   });
 
   it('emptyFields() has every registration field, each null', () => {

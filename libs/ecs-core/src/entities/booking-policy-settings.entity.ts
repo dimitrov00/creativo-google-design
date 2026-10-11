@@ -1,28 +1,22 @@
 import type { BookingPolicy } from '../components/booking-policy.data';
-
-/** The fixed id `'bookingPolicy'` — the tenant has one policy document. */
-export type BookingPolicySettingsId = string & {
-  readonly __brand: unique symbol;
-};
-export const BookingPolicySettingsId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): BookingPolicySettingsId => raw as BookingPolicySettingsId,
-  /**
-   * The one document id there is (`BOOKING_POLICY_DOC`, read by
-   * `load-booking-policy.ts:27`, matched by `recompute-on-policy-change.ts:121-125`).
-   */
-  FIXED: 'bookingPolicy',
-} as const;
+import { BookingPolicySettingsId } from '../primitives/ids.primitive';
 
 /**
  * The tenant's booking policy — `settings/bookingPolicy`, AS STORED TODAY:
  * the seven `BookingPolicy` fields flat at the document root
- * (`booking-policy-document.ts:67-79`). `BookingPolicy.withDefaults` covers an
- * absent `autoConfirm` and an absent document. No `zone`, no
- * `countryCallingCode`, no `flags`: the tenant zone and dialling code are
- * deployment constants (`TenantConfig.DEFAULT`) and flags are build-time
- * manifest values.
+ * (`booking-policy-document.ts:67-79`), already the flat archetype
+ * `{ id } & BookingPolicy`. `BookingPolicy.withDefaults` covers an absent
+ * `autoConfirm` and an absent document. No zone, no `countryCallingCode`, no
+ * `flags`: the zone is the shop location's (Law 7.2), the dialling code a
+ * deployment constant and flags are build-time manifest values.
  */
-export type BookingPolicySettingsEntity = {
+export type BookingPolicySettings = {
   readonly id: BookingPolicySettingsId;
 } & BookingPolicy;
+
+/**
+ * Flatten-pass staging: the barrel's id block (and `ports/collections.ts`'s
+ * `BOOKING_POLICY_DOC`) still name this module for `BookingPolicySettingsId`
+ * until the integrator re-points them — the id, with its `FIXED`, lives in
+ * `primitives/ids.primitive.ts` (§1.5).
+ */

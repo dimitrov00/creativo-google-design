@@ -1,40 +1,46 @@
+import type {
+  ImpersonationSessionId,
+  UserId,
+} from '../primitives/ids.primitive';
+
 /**
- * The governance context's error codes — the dotted codes of
+ * The governance context's error codes — the codes of
  * `libs/domain/governance/src/lib/*.errors.ts` and of the governance use
- * cases (`end-impersonation.errors.ts`, `search-users.errors.ts`), reused as
- * is, collapsed from `DomainError` subclasses into one dictionary of plain
- * structs (blueprint §2.4, §2.7). Every non-`code` field is an i18n
- * parameter, so each one is an i18n-safe scalar (infrastructure Q5).
+ * cases (`end-impersonation.errors.ts`, `search-users.errors.ts`), collapsed
+ * from `DomainError` subclasses into one dictionary of flat structs
+ * discriminated by `errorCode` (Law 7.5), SCREAMING_SNAKE with the
+ * `GOVERNANCE_` prefix (flatten-spec §4.2). Every non-`errorCode` field is
+ * an i18n parameter, so each one is an i18n-safe scalar (infrastructure Q5).
  *
  * Not here: the tenant-config, locale and currency codes (a deployment
- * constant, `isLocale`, and `money.unknown_currency` now) and the
+ * constant, `isLocale`, and `MONEY_UNKNOWN_CURRENCY` now) and the
  * repository failures (`repository-errors.data.ts`).
  */
 export const GovernanceErrorCode = {
   /** An audit row with a blank action. */
-  AuditEntryEmptyAction: 'governance.audit_entry.empty_action',
+  AuditEntryEmptyAction: 'GOVERNANCE_AUDIT_ENTRY_EMPTY_ACTION',
   /** A flags bag carrying a key outside the `FlagName` dictionary. */
-  FeatureFlagsUnknownKey: 'governance.feature_flags.unknown_key',
+  FeatureFlagsUnknownKey: 'GOVERNANCE_FEATURE_FLAGS_UNKNOWN_KEY',
   /** A flags bag carrying a non-boolean value. */
-  FeatureFlagsInvalidValue: 'governance.feature_flags.invalid_value',
+  FeatureFlagsInvalidValue: 'GOVERNANCE_FEATURE_FLAGS_INVALID_VALUE',
   /** A scope outside the `ImpersonationScope` dictionary. */
-  ImpersonationScopeInvalid: 'governance.impersonation_scope.invalid',
+  ImpersonationScopeInvalid: 'GOVERNANCE_IMPERSONATION_SCOPE_INVALID',
   /** An admin cannot impersonate themselves. */
-  ImpersonationSelf: 'governance.impersonation_session.self_impersonation',
+  ImpersonationSelf: 'GOVERNANCE_IMPERSONATION_SESSION_SELF_IMPERSONATION',
   /** Every session demands a recorded justification. */
   ImpersonationReasonRequired:
-    'governance.impersonation_session.reason_required',
-  /** `expiresAtMs` not strictly after `startedAtMs`. */
-  ImpersonationInvalidExpiry: 'governance.impersonation_session.invalid_expiry',
+    'GOVERNANCE_IMPERSONATION_SESSION_REASON_REQUIRED',
+  /** `expiresAtUtcMs` not strictly after `startedAtUtcMs`. */
+  ImpersonationInvalidExpiry: 'GOVERNANCE_IMPERSONATION_SESSION_INVALID_EXPIRY',
   /** Only a staff role set may start a session. */
   ImpersonationAdminNotStaff:
-    'governance.impersonation_session.admin_not_staff',
+    'GOVERNANCE_IMPERSONATION_SESSION_ADMIN_NOT_STAFF',
   /** The session was already ended — the first end wins. */
-  ImpersonationAlreadyEnded: 'governance.impersonation_session.already_ended',
+  ImpersonationAlreadyEnded: 'GOVERNANCE_IMPERSONATION_SESSION_ALREADY_ENDED',
   /** No such `impersonationSessions/{id}` to end. */
-  EndImpersonationNotFound: 'governance.end_impersonation.not_found',
+  EndImpersonationNotFound: 'GOVERNANCE_END_IMPERSONATION_NOT_FOUND',
   /** A user search shorter than `minLength`. */
-  SearchUsersQueryTooShort: 'governance.search_users.query_too_short',
+  SearchUsersQueryTooShort: 'GOVERNANCE_SEARCH_USERS_QUERY_TOO_SHORT',
 } as const;
 export type GovernanceErrorCode =
   (typeof GovernanceErrorCode)[keyof typeof GovernanceErrorCode];
@@ -54,104 +60,116 @@ export type GovernanceError =
 
 export const GovernanceError = {
   auditEntryEmptyAction(): GovernanceError.AuditEntryEmptyAction {
-    return { code: GovernanceErrorCode.AuditEntryEmptyAction };
+    return { errorCode: GovernanceErrorCode.AuditEntryEmptyAction };
   },
   featureFlagsUnknownKey(
     attempted: string,
   ): GovernanceError.FeatureFlagsUnknownKey {
-    return { code: GovernanceErrorCode.FeatureFlagsUnknownKey, attempted };
+    return { errorCode: GovernanceErrorCode.FeatureFlagsUnknownKey, attempted };
   },
   featureFlagsInvalidValue(
     key: string,
   ): GovernanceError.FeatureFlagsInvalidValue {
-    return { code: GovernanceErrorCode.FeatureFlagsInvalidValue, key };
+    return { errorCode: GovernanceErrorCode.FeatureFlagsInvalidValue, key };
   },
   impersonationScopeInvalid(
     attempted: string,
   ): GovernanceError.ImpersonationScopeInvalid {
-    return { code: GovernanceErrorCode.ImpersonationScopeInvalid, attempted };
+    return {
+      errorCode: GovernanceErrorCode.ImpersonationScopeInvalid,
+      attempted,
+    };
   },
   impersonationSelf(): GovernanceError.ImpersonationSelf {
-    return { code: GovernanceErrorCode.ImpersonationSelf };
+    return { errorCode: GovernanceErrorCode.ImpersonationSelf };
   },
   impersonationReasonRequired(): GovernanceError.ImpersonationReasonRequired {
-    return { code: GovernanceErrorCode.ImpersonationReasonRequired };
+    return { errorCode: GovernanceErrorCode.ImpersonationReasonRequired };
   },
   impersonationInvalidExpiry(): GovernanceError.ImpersonationInvalidExpiry {
-    return { code: GovernanceErrorCode.ImpersonationInvalidExpiry };
+    return { errorCode: GovernanceErrorCode.ImpersonationInvalidExpiry };
   },
   impersonationAdminNotStaff(
-    adminUserId: string,
+    adminUserId: UserId,
   ): GovernanceError.ImpersonationAdminNotStaff {
     return {
-      code: GovernanceErrorCode.ImpersonationAdminNotStaff,
+      errorCode: GovernanceErrorCode.ImpersonationAdminNotStaff,
       adminUserId,
     };
   },
   impersonationAlreadyEnded(
-    sessionId: string,
+    sessionId: ImpersonationSessionId,
   ): GovernanceError.ImpersonationAlreadyEnded {
-    return { code: GovernanceErrorCode.ImpersonationAlreadyEnded, sessionId };
+    return {
+      errorCode: GovernanceErrorCode.ImpersonationAlreadyEnded,
+      sessionId,
+    };
   },
   endImpersonationNotFound(
-    sessionId: string,
+    sessionId: ImpersonationSessionId,
   ): GovernanceError.EndImpersonationNotFound {
-    return { code: GovernanceErrorCode.EndImpersonationNotFound, sessionId };
+    return {
+      errorCode: GovernanceErrorCode.EndImpersonationNotFound,
+      sessionId,
+    };
   },
   searchUsersQueryTooShort(
     minLength: number,
   ): GovernanceError.SearchUsersQueryTooShort {
-    return { code: GovernanceErrorCode.SearchUsersQueryTooShort, minLength };
+    return {
+      errorCode: GovernanceErrorCode.SearchUsersQueryTooShort,
+      minLength,
+    };
   },
 
   /** Narrows an error to one code — `GovernanceError.is(e, GovernanceErrorCode.ImpersonationSelf)`. */
   is<C extends GovernanceErrorCode>(
     error: GovernanceError,
-    code: C,
-  ): error is Extract<GovernanceError, { readonly code: C }> {
-    return error.code === code;
+    errorCode: C,
+  ): error is Extract<GovernanceError, { readonly errorCode: C }> {
+    return error.errorCode === errorCode;
   },
 } as const;
 
 export namespace GovernanceError {
   export type AuditEntryEmptyAction = {
-    readonly code: typeof GovernanceErrorCode.AuditEntryEmptyAction;
+    readonly errorCode: typeof GovernanceErrorCode.AuditEntryEmptyAction;
   };
   export type FeatureFlagsUnknownKey = {
-    readonly code: typeof GovernanceErrorCode.FeatureFlagsUnknownKey;
+    readonly errorCode: typeof GovernanceErrorCode.FeatureFlagsUnknownKey;
     readonly attempted: string;
   };
   export type FeatureFlagsInvalidValue = {
-    readonly code: typeof GovernanceErrorCode.FeatureFlagsInvalidValue;
+    readonly errorCode: typeof GovernanceErrorCode.FeatureFlagsInvalidValue;
     readonly key: string;
   };
   export type ImpersonationScopeInvalid = {
-    readonly code: typeof GovernanceErrorCode.ImpersonationScopeInvalid;
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationScopeInvalid;
     readonly attempted: string;
   };
   export type ImpersonationSelf = {
-    readonly code: typeof GovernanceErrorCode.ImpersonationSelf;
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationSelf;
   };
   export type ImpersonationReasonRequired = {
-    readonly code: typeof GovernanceErrorCode.ImpersonationReasonRequired;
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationReasonRequired;
   };
   export type ImpersonationInvalidExpiry = {
-    readonly code: typeof GovernanceErrorCode.ImpersonationInvalidExpiry;
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationInvalidExpiry;
   };
   export type ImpersonationAdminNotStaff = {
-    readonly code: typeof GovernanceErrorCode.ImpersonationAdminNotStaff;
-    readonly adminUserId: string;
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationAdminNotStaff;
+    readonly adminUserId: UserId;
   };
   export type ImpersonationAlreadyEnded = {
-    readonly code: typeof GovernanceErrorCode.ImpersonationAlreadyEnded;
-    readonly sessionId: string;
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationAlreadyEnded;
+    readonly sessionId: ImpersonationSessionId;
   };
   export type EndImpersonationNotFound = {
-    readonly code: typeof GovernanceErrorCode.EndImpersonationNotFound;
-    readonly sessionId: string;
+    readonly errorCode: typeof GovernanceErrorCode.EndImpersonationNotFound;
+    readonly sessionId: ImpersonationSessionId;
   };
   export type SearchUsersQueryTooShort = {
-    readonly code: typeof GovernanceErrorCode.SearchUsersQueryTooShort;
+    readonly errorCode: typeof GovernanceErrorCode.SearchUsersQueryTooShort;
     readonly minLength: number;
   };
 }

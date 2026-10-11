@@ -1,56 +1,59 @@
 import type { Observable } from 'rxjs';
-import type { NotificationKind } from '../components/notification-payload.data';
+import type { NotificationTopic } from '../components/notification-payload.data';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
+import type { InboxNotification } from '../entities/notification.entity';
 import type {
-  NotificationEntity,
   NotificationId,
-} from '../entities/notification.entity';
-import type { UserId } from '../entities/user.entity';
-import type { WaitlistRequestId } from '../entities/waitlist-request.entity';
+  UserId,
+  WaitlistRequestId,
+} from '../primitives/ids.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * A person's inbox — `users/{uid}/notifications`, the one owner-scoped
  * subcollection (blueprint §3.1, §4.2): payload facts, never formatted
- * words (§9 D20). The owner may update `readAtMs` only (rules
- * `hasOnly(['readAtMs'])`); a notification is CREATED only inside the
- * matcher's `CommitPlan`, never through a port.
+ * words (§9 D20). The inbox is the ACCOUNT's, keyed by `UserId` for good
+ * (D29). The owner may update the read stamp only; a notification is
+ * CREATED only inside the matcher's `CommitPlan`, never through a port.
  */
 
-/** The newest 50 notifications, live — `orderBy sentAtMs desc limit 50`, single-field. */
+/** The newest 50 notifications, live — `orderBy sentAtUtcMs desc limit 50`, single-field. */
 export type ObserveInbox = (
   userId: UserId,
-) => Observable<Result<readonly NotificationEntity[], RepositoryError>>;
+) => Observable<Result<readonly InboxNotification[], RepositoryError>>;
 
-/** Stamp one notification read at `readAtMs` (the caller's injected clock). */
+/** Stamp one notification read at `readAtUtcMs` (the caller's injected clock). */
 export type MarkNotificationRead = (
   userId: UserId,
   id: NotificationId,
-  readAtMs: number,
+  readAtUtcMs: UtcEpochMs,
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
- * Stamp every unread notification read at `readAtMs` — `readAtMs == null
- * limit 400` per batch (`notification-reader.adapter.ts:121`).
+ * Stamp every unread notification read at `readAtUtcMs` — the unread ones
+ * (`readAtUtcMs == null`), `limit 400` per batch
+ * (`notification-reader.adapter.ts:121`).
  */
 export type MarkAllNotificationsRead = (
   userId: UserId,
-  readAtMs: number,
+  readAtUtcMs: UtcEpochMs,
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
  * The waitlist matcher's cross-day cooldown probe (§4.1 `matchWaitlist`):
- * has this person already been told about this request since `sinceMs`?
- * `kind ==`, `requestId ==`, `sentAtMs >=`, `limit 1` (index #15,
+ * has this person already been told about this request since
+ * `sinceUtcMs`? `notificationTopic ==`, `waitlistRequestId ==`,
+ * `sentAtUtcMs >=`, `limit 1` (index #15, re-declared by flip (1);
  * `firestore-notification-writer.ts:105-122`). The request's `matched`
  * status is the primary guard; this survives a status write that failed
- * after the notification was written.
+ * after the notification was written. A cooldown is elapsed real time (T2).
  */
 export type HasRecentNotification = (
   userId: UserId,
-  kind: NotificationKind,
-  requestId: WaitlistRequestId,
-  sinceMs: number,
+  topic: NotificationTopic,
+  waitlistRequestId: WaitlistRequestId,
+  sinceUtcMs: UtcEpochMs,
 ) => Promise<Result<boolean, RepositoryError>>;
 
 /** The notifications context's port catalogue; each root binds the `Pick` it implements. */

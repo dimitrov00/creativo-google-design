@@ -1,28 +1,37 @@
+import { defect } from '../primitives/defect';
+import { DurationMinutes } from '../primitives/duration-minutes.primitive';
 import { CountryIso2 } from './country-iso2.data';
-import { IdentifierKind } from './identifier.data';
+import { IdentifierChannel } from './identifier.data';
 import { AuthPolicyField, IdentityError } from './identity-errors.data';
 import { RegistrationField, isRegistrationField } from './registration.data';
 import { Result } from './result.data';
 
-/** Strategy tags — the ONLY source of these strings (deployment config). */
+/**
+ * Strategy tags — the ONLY source of these strings (deployment config); the
+ * discriminator `authStrategyKind` (N15: `AuthStrategy` is the union).
+ */
 export const AuthStrategyKind = {
-  PhoneOtp: 'phone_otp',
-  EmailOtp: 'email_otp',
-  EmailLink: 'email_link',
+  PhoneOtp: 'PHONE_OTP',
+  EmailOtp: 'EMAIL_OTP',
+  EmailLink: 'EMAIL_LINK',
 } as const;
 export type AuthStrategyKind =
   (typeof AuthStrategyKind)[keyof typeof AuthStrategyKind];
 
-/** Policy for a code challenge (phone or e-mail OTP). */
+/**
+ * Policy for a code challenge (phone or e-mail OTP) — deployment config, a
+ * named reference of the strategy (F-8): a code lives `ttlMinutes`, locks
+ * out after `maxAttempts` wrong codes, and a session lasts `sessionDays`.
+ */
 export type OtpPolicy = {
-  readonly ttlMinutes: number;
+  readonly ttlMinutes: DurationMinutes;
   readonly maxAttempts: number;
   readonly sessionDays: number;
 };
 
-/** Policy for a magic-link challenge. */
+/** Policy for a magic-link challenge — deployment config. */
 export type LinkPolicy = {
-  readonly ttlMinutes: number;
+  readonly ttlMinutes: DurationMinutes;
   readonly sessionDays: number;
 };
 
@@ -35,15 +44,24 @@ export type LinkPolicy = {
 export type AuthStrategy =
   AuthStrategy.PhoneOtp | AuthStrategy.EmailOtp | AuthStrategy.EmailLink;
 
-/** The untyped shape a deployment config hands `parse`. */
+/** The untyped shape a deployment config hands `parse` — foreign input (the L3 `Input` escape). */
 export type AuthStrategyInput = {
-  readonly kind: string;
+  readonly authStrategyKind: string;
   readonly required: readonly string[];
-  readonly policy: { readonly [key: string]: unknown };
+  readonly policy: Readonly<Record<string, unknown>>;
 };
 
 function isPositiveInt(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+/**
+ * A policy's TTL as the brand — for a figure already checked positive (the
+ * parse's `checkPolicy`, a literal of this file), so a refusal is a defect.
+ */
+function ttlOf(raw: number): DurationMinutes {
+  const ttl = DurationMinutes.of(raw);
+  return ttl.ok ? ttl.value : defect(`${raw} is not a positive TTL`);
 }
 
 /** Collects a refusal for each policy figure that is not a positive integer. */
@@ -77,13 +95,13 @@ const LINK_POLICY_FIELDS = [
  * `parse` accepts (its spec holds the two equal).
  */
 const DEFAULT_STRATEGY: AuthStrategy.EmailOtp = {
-  kind: AuthStrategyKind.EmailOtp,
+  authStrategyKind: AuthStrategyKind.EmailOtp,
   required: [
     RegistrationField.Phone,
     RegistrationField.FirstName,
     RegistrationField.LastName,
   ],
-  policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
+  policy: { ttlMinutes: ttlOf(5), maxAttempts: 5, sessionDays: 30 },
 };
 
 export const AuthStrategy = {
@@ -98,7 +116,7 @@ export const AuthStrategy = {
   parse(
     input: AuthStrategyInput,
   ): Result<AuthStrategy, readonly IdentityError[]> {
-    const kind = input.kind;
+    const kind = input.authStrategyKind;
     if (
       kind !== AuthStrategyKind.PhoneOtp &&
       kind !== AuthStrategyKind.EmailOtp &&
@@ -134,28 +152,39 @@ export const AuthStrategy = {
     );
     if (errors.length > 0) return Result.err(errors);
 
-    const ttlMinutes = input.policy[AuthPolicyField.TtlMinutes] as number;
+    const ttlMinutes = ttlOf(
+      input.policy[AuthPolicyField.TtlMinutes] as number,
+    );
     const sessionDays = input.policy[AuthPolicyField.SessionDays] as number;
     if (kind === AuthStrategyKind.EmailLink) {
-      return Result.ok({ kind, required, policy: { ttlMinutes, sessionDays } });
+      return Result.ok({
+        authStrategyKind: kind,
+        required,
+        policy: { ttlMinutes, sessionDays },
+      });
     }
     const maxAttempts = input.policy[AuthPolicyField.MaxAttempts] as number;
     return Result.ok({
-      kind,
+      authStrategyKind: kind,
       required,
       policy: { ttlMinutes, maxAttempts, sessionDays },
     });
   },
 
-  /** The identifier kind a strategy authenticates with. */
-  identifierKind(strategy: AuthStrategy): IdentifierKind {
-    return strategy.kind === AuthStrategyKind.PhoneOtp
-      ? IdentifierKind.Phone
-      : IdentifierKind.Email;
+  /** The identifier channel a strategy authenticates with. */
+  identifierKind(
+    strategy: Pick<AuthStrategy, 'authStrategyKind'>,
+  ): IdentifierChannel {
+    return strategy.authStrategyKind === AuthStrategyKind.PhoneOtp
+      ? IdentifierChannel.Phone
+      : IdentifierChannel.Email;
   },
 
   /** Whether a registration field gates submission under this strategy. */
-  requires(strategy: AuthStrategy, field: RegistrationField): boolean {
+  requires(
+    strategy: Pick<AuthStrategy, 'required'>,
+    field: RegistrationField,
+  ): boolean {
     for (let i = 0; i < strategy.required.length; i++) {
       if (strategy.required[i] === field) return true;
     }
@@ -165,37 +194,40 @@ export const AuthStrategy = {
 
 export namespace AuthStrategy {
   export type PhoneOtp = {
-    readonly kind: typeof AuthStrategyKind.PhoneOtp;
+    readonly authStrategyKind: typeof AuthStrategyKind.PhoneOtp;
     readonly required: readonly RegistrationField[];
     readonly policy: OtpPolicy;
   };
   export type EmailOtp = {
-    readonly kind: typeof AuthStrategyKind.EmailOtp;
+    readonly authStrategyKind: typeof AuthStrategyKind.EmailOtp;
     readonly required: readonly RegistrationField[];
     readonly policy: OtpPolicy;
   };
   export type EmailLink = {
-    readonly kind: typeof AuthStrategyKind.EmailLink;
+    readonly authStrategyKind: typeof AuthStrategyKind.EmailLink;
     readonly required: readonly RegistrationField[];
     readonly policy: LinkPolicy;
   };
 }
 
-/** Entry-method tags of the identify screen. */
+/**
+ * Entry-method tags of the identify screen — the discriminator
+ * `authProviderKind` (N15: `AuthProvider` is the union).
+ */
 export const AuthProviderKind = {
   /** The deployment's own OTP flow. */
-  Otp: 'otp',
+  Otp: 'OTP',
   /** A third-party sign-in button. */
-  OAuth: 'oauth',
+  OAuth: 'OAUTH',
 } as const;
 export type AuthProviderKind =
   (typeof AuthProviderKind)[keyof typeof AuthProviderKind];
 
 /** The third-party providers a deployment may offer. */
 export const OAuthProvider = {
-  Google: 'google',
-  Apple: 'apple',
-  Facebook: 'facebook',
+  Google: 'GOOGLE',
+  Apple: 'APPLE',
+  Facebook: 'FACEBOOK',
 } as const;
 export type OAuthProvider = (typeof OAuthProvider)[keyof typeof OAuthProvider];
 
@@ -207,23 +239,25 @@ export type OAuthProvider = (typeof OAuthProvider)[keyof typeof OAuthProvider];
  */
 export type AuthProvider = AuthProvider.Otp | AuthProvider.OAuth;
 
-const OTP_PROVIDER: AuthProvider.Otp = { kind: AuthProviderKind.Otp };
+const OTP_PROVIDER: AuthProvider.Otp = {
+  authProviderKind: AuthProviderKind.Otp,
+};
 
 export const AuthProvider = {
   otp(): AuthProvider.Otp {
     return OTP_PROVIDER;
   },
   oauth(provider: OAuthProvider): AuthProvider.OAuth {
-    return { kind: AuthProviderKind.OAuth, provider };
+    return { authProviderKind: AuthProviderKind.OAuth, provider };
   },
 } as const;
 
 export namespace AuthProvider {
   export type Otp = {
-    readonly kind: typeof AuthProviderKind.Otp;
+    readonly authProviderKind: typeof AuthProviderKind.Otp;
   };
   export type OAuth = {
-    readonly kind: typeof AuthProviderKind.OAuth;
+    readonly authProviderKind: typeof AuthProviderKind.OAuth;
     readonly provider: OAuthProvider;
   };
 }

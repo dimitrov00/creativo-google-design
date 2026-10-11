@@ -1,15 +1,15 @@
 /**
  * The phone context's error codes — the kernel's flat `phone_number_invalid`
  * (`phone-number.errors.ts`) and `country_unsupported`
- * (`phone-country.errors.ts`), renamed to the dotted convention (blueprint
- * §2.5, catalog-kernel Q13). Raised only by `PhoneSystem`, the one
- * libphonenumber-caged module.
+ * (`phone-country.errors.ts`) — flat structs discriminated by `errorCode`
+ * (Law 7.5), SCREAMING_SNAKE with the `PHONE_` prefix (flatten-spec §4.2).
+ * Raised only by `PhoneSystem`, the one libphonenumber-caged module.
  */
 export const PhoneErrorCode = {
   /** The raw text is not a valid phone number; `reason` says why. */
-  Invalid: 'phone.invalid',
+  Invalid: 'PHONE_INVALID',
   /** The raw text is not an ISO 3166-1 alpha-2 code the phone metadata supports. */
-  CountryUnsupported: 'phone.country_unsupported',
+  CountryUnsupported: 'PHONE_COUNTRY_UNSUPPORTED',
 } as const;
 export type PhoneErrorCode =
   (typeof PhoneErrorCode)[keyof typeof PhoneErrorCode];
@@ -36,29 +36,29 @@ export type PhoneError = PhoneError.Invalid | PhoneError.CountryUnsupported;
 
 export const PhoneError = {
   invalid(attempted: string, reason: PhoneInvalidReason): PhoneError.Invalid {
-    return { code: PhoneErrorCode.Invalid, attempted, reason };
+    return { errorCode: PhoneErrorCode.Invalid, attempted, reason };
   },
   countryUnsupported(attempted: string): PhoneError.CountryUnsupported {
-    return { code: PhoneErrorCode.CountryUnsupported, attempted };
+    return { errorCode: PhoneErrorCode.CountryUnsupported, attempted };
   },
   /** Narrows an error to one code — `PhoneError.is(e, PhoneErrorCode.Invalid)`. */
   is<C extends PhoneErrorCode>(
     error: PhoneError,
-    code: C,
-  ): error is Extract<PhoneError, { readonly code: C }> {
-    return error.code === code;
+    errorCode: C,
+  ): error is Extract<PhoneError, { readonly errorCode: C }> {
+    return error.errorCode === errorCode;
   },
 } as const;
 
 export namespace PhoneError {
   export type Invalid = {
-    readonly code: typeof PhoneErrorCode.Invalid;
+    readonly errorCode: typeof PhoneErrorCode.Invalid;
     /** The raw text as the caller passed it, untrimmed. */
     readonly attempted: string;
     readonly reason: PhoneInvalidReason;
   };
   export type CountryUnsupported = {
-    readonly code: typeof PhoneErrorCode.CountryUnsupported;
+    readonly errorCode: typeof PhoneErrorCode.CountryUnsupported;
     readonly attempted: string;
   };
 }

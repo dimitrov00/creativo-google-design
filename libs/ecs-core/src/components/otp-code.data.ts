@@ -1,3 +1,4 @@
+import type { Brand } from '../primitives/brand';
 import { IdentityError } from './identity-errors.data';
 import { Result } from './result.data';
 
@@ -18,7 +19,7 @@ const ASCII_DIGITS = /^\d+$/;
  * its salt come from the `OtpCrypto` port (`identity.port.ts`); this only
  * validates an already-produced string.
  */
-export type OtpCode = string & { readonly __brand: unique symbol };
+export type OtpCode = Brand<string, 'OtpCode'>;
 
 export const OtpCode = {
   /** The only cast site — for a value known to be six digits (a generator's output). */

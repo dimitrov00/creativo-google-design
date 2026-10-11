@@ -3,8 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AuthClaims } from '../components/auth-claims.data';
 import { Principal } from '../components/principal.data';
 import { Role } from '../components/role.data';
-import { TenantId } from '../components/tenant-id.data';
-import { UserId } from '../entities/user.entity';
+import { TenantId, UserId } from '../primitives/ids.primitive';
 import { deepFreeze, unwrapOk } from '../testing';
 import {
   GuestGuardSystem,
@@ -24,15 +23,15 @@ const UID = UserId.of('user_1');
 const TENANT = TenantId.of('creativo');
 
 const onboarding = Principal.fromClaims({
-  uid: UID,
+  userId: UID,
   claims: AuthClaims.onboarding(TENANT),
 });
 const client = Principal.fromClaims({
-  uid: UID,
+  userId: UID,
   claims: unwrapOk(AuthClaims.active(TENANT, [Role.Client])),
 });
 const staff = Principal.fromClaims({
-  uid: UID,
+  userId: UID,
   claims: unwrapOk(AuthClaims.active(TENANT, [Role.Barber])),
 });
 

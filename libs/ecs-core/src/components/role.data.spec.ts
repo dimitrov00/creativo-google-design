@@ -124,7 +124,10 @@ describe('parseRole / knownRoles', () => {
   it('parseRole refuses a stranger with the accounts code', () => {
     expect(parseRole('customer')).toEqual({
       ok: false,
-      error: { code: AccountsErrorCode.UserRoleInvalid, attempted: 'customer' },
+      error: {
+        errorCode: AccountsErrorCode.UserRoleInvalid,
+        attempted: 'customer',
+      },
     });
   });
 

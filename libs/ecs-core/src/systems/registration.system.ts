@@ -1,10 +1,10 @@
-import { AccountStatus } from '../components/account-status.data';
+import { AccountLifecycle } from '../components/account-status.data';
 import { AuthClaims } from '../components/auth-claims.data';
 import type { AuthStrategy } from '../components/auth-strategy.data';
 import type { BirthDate } from '../components/birth-date.data';
 import { Email } from '../components/email.data';
 import {
-  IdentifierKind,
+  IdentifierChannel,
   type ParsedIdentifier,
 } from '../components/identifier.data';
 import { E164 } from '../components/phone-number.data';
@@ -12,10 +12,11 @@ import {
   Registration,
   RegistrationField,
   type RegistrationFields,
+  RegistrationState,
 } from '../components/registration.data';
 import { Role } from '../components/role.data';
-import type { TenantId } from '../components/tenant-id.data';
-import type { UserEntity, UserId } from '../entities/user.entity';
+import type { User } from '../entities/user.entity';
+import type { TenantId, UserId } from '../primitives/ids.primitive';
 import { SearchFieldsSystem } from './search-fields.system';
 
 /**
@@ -38,8 +39,8 @@ import { SearchFieldsSystem } from './search-fields.system';
  * the stub of a first sign-in, or a registered body on a re-run.
  */
 export type RegistrationStanding = Pick<
-  UserEntity,
-  'registration' | 'roles' | 'email' | 'phone' | 'birthDate'
+  User,
+  'registrationState' | 'roles' | 'email' | 'phone' | 'birthDate'
 >;
 
 /**
@@ -80,8 +81,8 @@ function trimmedOrNull(value: string | null): string | null {
 
 export const RegistrationSystem = {
   /** The registration field a login channel fills. */
-  fieldOf(kind: IdentifierKind): RegistrationField {
-    return kind === IdentifierKind.Phone
+  fieldOf(identifierChannel: IdentifierChannel): RegistrationField {
+    return identifierChannel === IdentifierChannel.Phone
       ? RegistrationField.Phone
       : RegistrationField.Email;
   },
@@ -93,17 +94,17 @@ export const RegistrationSystem = {
    * blank) is kept as sent.
    */
   effectiveFields(
-    kind: IdentifierKind,
+    identifierChannel: IdentifierChannel,
     value: string,
     fields: RegistrationFields,
   ): RegistrationFields {
-    const field = RegistrationSystem.fieldOf(kind);
+    const field = RegistrationSystem.fieldOf(identifierChannel);
     return { ...fields, [field]: fields[field] ?? value };
   },
 
   /** The first field the strategy requires that is absent or blank, in the strategy's order; `null` when all are there. */
   missingField(
-    strategy: AuthStrategy,
+    strategy: Pick<AuthStrategy, 'required'>,
     fields: RegistrationFields,
   ): RegistrationField | null {
     for (let i = 0; i < strategy.required.length; i++) {
@@ -131,7 +132,7 @@ export const RegistrationSystem = {
     fields: RegistrationFields,
     birthDate: BirthDate | null,
   ): RegistrationSettlement {
-    const keepContacts = Registration.isRegistered(standing.registration);
+    const keepContacts = Registration.isRegistered(standing);
     const formEmail = trimmedOrNull(fields[RegistrationField.Email]);
     const formPhone = fields[RegistrationField.Phone];
     return {
@@ -154,11 +155,11 @@ export const RegistrationSystem = {
    * onboarding on its next sign-in).
    */
   claimsFor(
-    registration: Registration,
+    registrationState: RegistrationState,
     storedRoles: readonly Role[],
     tenantId: TenantId,
   ): AuthClaims {
-    if (!Registration.isRegistered(registration)) {
+    if (!Registration.isRegistered({ registrationState })) {
       return AuthClaims.onboarding(tenantId);
     }
     const active = AuthClaims.active(
@@ -171,20 +172,20 @@ export const RegistrationSystem = {
 
   /**
    * The `users/{uid}` stub of a first sign-in: only the login channel,
-   * every other key present and empty — no names, no roles, active, no
+   * every other key present and empty — no names, no roles, `ACTIVE`, no
    * search keys. `completeRegistration` writes the registered body over it.
    */
-  provision(uid: UserId, identifier: ParsedIdentifier): UserEntity {
-    const isPhone = identifier.kind === IdentifierKind.Phone;
+  provision(userId: UserId, parsed: ParsedIdentifier): User {
+    const isPhone = parsed.identifierChannel === IdentifierChannel.Phone;
     return {
-      id: uid,
-      registration: Registration.provisioned(),
-      phone: isPhone ? E164.of(identifier.value) : null,
+      id: userId,
+      registrationState: RegistrationState.Provisioned,
+      phone: isPhone ? E164.of(parsed.identifier) : null,
       firstName: null,
       lastName: null,
       roles: [],
-      accountStatus: AccountStatus.active(),
-      email: isPhone ? null : Email.of(identifier.value),
+      ...AccountLifecycle.active(),
+      email: isPhone ? null : Email.of(parsed.identifier),
       birthDate: null,
       searchName: null,
       searchPrefixes: [],
@@ -193,11 +194,11 @@ export const RegistrationSystem = {
 
   /**
    * The registered body written over the standing document: the profile,
-   * the `registered` tag and the search keys of the new names and contact
-   * channels. The account status the document holds is kept — a re-run
+   * the `REGISTERED` tag and the search keys of the new names and contact
+   * channels. The account lifecycle the document holds is kept — a re-run
    * never lifts a pause.
    */
-  register(user: UserEntity, profile: RegisteredProfile): UserEntity {
+  register(user: User, profile: RegisteredProfile): User {
     const { searchName, searchPrefixes } = SearchFieldsSystem.searchFields(
       profile.firstName,
       profile.lastName,
@@ -206,7 +207,7 @@ export const RegistrationSystem = {
     );
     return {
       ...user,
-      registration: Registration.registered(),
+      registrationState: RegistrationState.Registered,
       phone: profile.phone,
       firstName: profile.firstName,
       lastName: profile.lastName,

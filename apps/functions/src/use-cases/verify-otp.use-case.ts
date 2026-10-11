@@ -2,9 +2,9 @@ import {
   AuthStage,
   type AuthClaims as ClaimsStruct,
   Identifier,
-  IdentifierKind,
+  IdentifierChannel,
   type ParsedIdentifier,
-  Registration,
+  RegistrationState,
   RegistrationSystem,
   type Role,
   TenantId,
@@ -56,9 +56,11 @@ const OTP_ZONE = 'UTC';
 
 function toChannel(destination: OtpDestination): ParsedIdentifier {
   return {
-    kind:
-      destination.kind === 'sms' ? IdentifierKind.Phone : IdentifierKind.Email,
-    value: Identifier.of(otpDestinationValue(destination)),
+    identifierChannel:
+      destination.kind === 'sms'
+        ? IdentifierChannel.Phone
+        : IdentifierChannel.Email,
+    identifier: Identifier.of(otpDestinationValue(destination)),
   };
 }
 
@@ -71,7 +73,7 @@ function toRoles(roles: readonly string[]): readonly Role[] {
 function toLegacyClaims(
   claims: ClaimsStruct,
 ): Result<AuthClaims, EmptyRolesError> {
-  return claims.stage === AuthStage.Active
+  return claims.authStage === AuthStage.Active
     ? activeClaims(claims.roles.map(roleFromPrimitive))
     : ok(ONBOARDING_CLAIMS);
 }
@@ -233,8 +235,8 @@ export class VerifyOtpUseCase {
     const claims = toLegacyClaims(
       RegistrationSystem.claimsFor(
         user.registered
-          ? Registration.registered()
-          : Registration.provisioned(),
+          ? RegistrationState.Registered
+          : RegistrationState.Provisioned,
         toRoles(user.roles),
         TenantId.of(verifiedOtp.tenantId.value),
       ),

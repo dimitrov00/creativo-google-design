@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BarberId } from '../entities/barber.entity';
-import { BarberPref, BarberPrefKind } from './barber-pref.data';
+import { BarberId } from '../primitives/ids.primitive';
+import { BarberPref, BarberPreference } from './barber-pref.data';
 
 const IVAN = BarberId.of('ivan');
 const STEFAN = BarberId.of('stefan');
@@ -31,29 +31,29 @@ describe('BarberPref', () => {
   it('round-trips the stored cart-line form, where null is anyone', () => {
     expect(BarberPref.toBarberIdOrNull(BarberPref.any())).toBeNull();
     expect(BarberPref.toBarberIdOrNull(BarberPref.specific(IVAN))).toBe(IVAN);
-    expect(BarberPref.fromBarberId(null)).toEqual({ kind: 'any' });
+    expect(BarberPref.fromBarberId(null)).toEqual({ barberPreference: 'ANY' });
     expect(BarberPref.fromBarberId(IVAN)).toEqual({
-      kind: 'specific',
-      barberId: IVAN,
+      barberPreference: 'SPECIFIC',
+      preferredBarberId: IVAN,
     });
   });
 
   it("reads a seat's stored tag with the seat's barber — and unknown never as any", () => {
-    expect(BarberPref.fromSeat(BarberPrefKind.Any, IVAN)).toEqual({
-      kind: 'any',
+    expect(BarberPref.fromSeat(BarberPreference.Any, IVAN)).toEqual({
+      barberPreference: 'ANY',
     });
-    expect(BarberPref.fromSeat(BarberPrefKind.Specific, IVAN)).toEqual({
-      kind: 'specific',
-      barberId: IVAN,
+    expect(BarberPref.fromSeat(BarberPreference.Specific, IVAN)).toEqual({
+      barberPreference: 'SPECIFIC',
+      preferredBarberId: IVAN,
     });
     expect(BarberPref.fromSeat(null, IVAN)).toBeNull();
   });
 
-  it('parses only the two stored tags', () => {
-    expect(BarberPref.parseKind('any')).toBe('any');
-    expect(BarberPref.parseKind('specific')).toBe('specific');
-    for (const raw of [null, undefined, '', 'Any', 3]) {
-      expect(BarberPref.parseKind(raw)).toBeNull();
+  it('parses only the two tags', () => {
+    expect(BarberPref.parsePreference('ANY')).toBe('ANY');
+    expect(BarberPref.parsePreference('SPECIFIC')).toBe('SPECIFIC');
+    for (const raw of [null, undefined, '', 'Any', 'any', 3]) {
+      expect(BarberPref.parsePreference(raw)).toBeNull();
     }
   });
 });

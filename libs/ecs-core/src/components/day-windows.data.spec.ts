@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from './day-key.data';
+import { endMinute, localDate, minute } from '../testing';
 import { DayWindows } from './day-windows.data';
 import { MinuteRange } from './minute-range.data';
 
-const DAY = DayKey.of('2026-08-26');
+const DAY = localDate('2026-08-26');
 const r = (start: number, end: number): MinuteRange =>
-  MinuteRange.of(start, end);
+  MinuteRange.of(minute(start), endMinute(end));
 
 describe('DayWindows', () => {
   it('offers the WHOLE day when no window was declared', () => {
@@ -47,10 +47,10 @@ describe('DayWindows', () => {
 
 describe('DayWindows.is — the edge guard', () => {
   it('takes a stored declaration', () => {
-    expect(DayWindows.is({ dayKey: '2026-08-26', windows: [] })).toBe(true);
+    expect(DayWindows.is({ localDate: '2026-08-26', windows: [] })).toBe(true);
     expect(
       DayWindows.is({
-        dayKey: '2026-08-26',
+        localDate: '2026-08-26',
         windows: [
           { startMinutes: 480, endMinutes: 720 },
           { startMinutes: 900, endMinutes: 990 },
@@ -62,13 +62,24 @@ describe('DayWindows.is — the edge guard', () => {
   it.each([
     null,
     'x',
-    { dayKey: '2026-02-30', windows: [] },
-    { dayKey: '2026-08-26' },
-    { dayKey: '2026-08-26', windows: [null] },
-    { dayKey: '2026-08-26', windows: [{ startMinutes: 960, endMinutes: 480 }] },
-    { dayKey: '2026-08-26', windows: [{ startMinutes: 0, endMinutes: 1441 }] },
-    { dayKey: '2026-08-26', windows: [{ startMinutes: 1.5, endMinutes: 60 }] },
-    { dayKey: '2026-08-26', windows: [{ from: '08:00', to: '12:00' }] },
+    { localDate: '2026-02-30', windows: [] },
+    { localDate: '2026-08-26' },
+    { localDate: '2026-08-26', windows: [null] },
+    {
+      localDate: '2026-08-26',
+      windows: [{ startMinutes: 960, endMinutes: 480 }],
+    },
+    {
+      localDate: '2026-08-26',
+      windows: [{ startMinutes: 0, endMinutes: 1441 }],
+    },
+    {
+      localDate: '2026-08-26',
+      windows: [{ startMinutes: 1.5, endMinutes: 60 }],
+    },
+    { localDate: '2026-08-26', windows: [{ from: '08:00', to: '12:00' }] },
+    // The pre-flatten key is a stale shape, not a day.
+    { dayKey: '2026-08-26', windows: [] },
   ])('refuses %j', (raw) => {
     expect(DayWindows.is(raw)).toBe(false);
   });

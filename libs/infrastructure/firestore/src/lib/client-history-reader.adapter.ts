@@ -19,7 +19,7 @@ import {
   appointmentFromDocument,
 } from '@creativo/application/booking';
 import { RepositoryError } from '@creativo/application/shared';
-import { PageStepKind, PagingSystem } from '@creativo/ecs-core';
+import { PageStep, PagingSystem } from '@creativo/ecs-core';
 import { appointmentsCollection } from './firestore-paths';
 
 type Snapshot = QueryDocumentSnapshot<DocumentData>;
@@ -39,6 +39,15 @@ type Snapshot = QueryDocumentSnapshot<DocumentData>;
  * minute is two appointments) and one more read says whether anything
  * older remains — the page never splits an instant the cursor could not
  * resume inside.
+ *
+ * Flatten pass (§3.8, §3.9): `PagingSystem`'s key is generic and opaque, so
+ * this legacy reader keeps paging on the stored `timeSlot.startIso` string
+ * (the frozen body and index) and narrows on `pageStep`. The typed cursor,
+ * `beforeUtcMs: UtcEpochMs` on the `PageClientHistory` port, is this
+ * shim's to convert when the booking-core flip (1) moves the query onto the
+ * flat `utcEpochMs` field: `ZonedTimeSystem.parseOffsetIso(startIso)` reads
+ * a stored start as the instant, `ZonedTimeSystem.toIso(utcMs, timeZone)`
+ * writes it back — until then the wire and the cursor stay the ISO text.
  */
 @Injectable()
 export class FirestoreClientHistoryReader implements ClientHistoryReader {
@@ -68,7 +77,7 @@ export class FirestoreClientHistoryReader implements ClientHistoryReader {
       // The same-instant boundary rule is `PagingSystem`'s: a page never
       // ends between two visits sharing one start.
       const step = PagingSystem.nextCursor(read, size, startIsoOf);
-      if (step.kind === PageStepKind.Page) {
+      if (step.pageStep === PageStep.Page) {
         return ok({
           appointments: parsed(step.rows),
           nextBeforeIso: step.cursor,

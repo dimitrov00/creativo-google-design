@@ -1,65 +1,94 @@
-import type { TierId } from '../entities/tier-definition.entity';
-import type { DayKey } from './day-key.data';
+import type { AdjustmentId, TierId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
-/** Where a manual tier override came from, by kind — the stored tags, unchanged. */
-export const TierOverrideSourceKind = {
-  /** An achievement's award set it. */
-  Award: 'award',
-  /** A staff adjustment set it. */
-  Adjustment: 'adjustment',
-} as const;
-export type TierOverrideSourceKind =
-  (typeof TierOverrideSourceKind)[keyof typeof TierOverrideSourceKind];
-
-/** Where a manual override came from. */
-export type TierOverrideSource =
-  TierOverrideSource.Award | TierOverrideSource.Adjustment;
-
+/** Where a manual tier override came from — the discriminator `tierOverrideSource` (`null` = no override). */
 export const TierOverrideSource = {
-  award(awardKey: string): TierOverrideSource.Award {
-    return { kind: TierOverrideSourceKind.Award, awardKey };
+  /** An achievement's award set it. */
+  Award: 'AWARD',
+  /** A staff adjustment set it. */
+  Adjustment: 'ADJUSTMENT',
+} as const;
+export type TierOverrideSource =
+  (typeof TierOverrideSource)[keyof typeof TierOverrideSource];
+
+/**
+ * The account's computed tier — from VISITS in the qualifying window, never
+ * points (`loyalty-document.ts:456-470`), a flat slice at the account's
+ * root, every field prefixed `tier` (`tierSinceUtcMs` was `tier.since`).
+ * `nextTierId`/`tierRemaining` are `null` at the top. TierSystem does the
+ * math.
+ */
+export type TierStanding = {
+  /** The tier the visits reached (was `current`). */
+  readonly tierId: TierId;
+  readonly tierDefinitionVersion: number;
+  readonly tierSinceUtcMs: UtcEpochMs;
+  /** Visits in the qualifying window. */
+  readonly tierQualifying: number;
+  readonly nextTierId: TierId | null;
+  readonly tierRemaining: number | null;
+};
+
+/**
+ * A manual tier, in force through `tierOverrideUntil` (a shop-calendar day,
+ * inclusive; `null` = for good) — the variant SLICE (F-26) that replaces
+ * today's nullable nested `override { tierId; until; source }` and its
+ * source union: `tierOverrideSource: null` is "no override", and each
+ * source declares only its own key, so every variant narrows.
+ */
+export type TierOverride =
+  TierOverride.None | TierOverride.Award | TierOverride.Adjustment;
+
+export const TierOverride = {
+  none(): TierOverride.None {
+    return { tierOverrideSource: null };
   },
-  adjustment(adjustmentId: string): TierOverrideSource.Adjustment {
-    return { kind: TierOverrideSourceKind.Adjustment, adjustmentId };
+  award(
+    tierOverrideTierId: TierId,
+    tierOverrideUntil: LocalDate | null,
+    tierOverrideAwardKey: string,
+  ): TierOverride.Award {
+    return {
+      tierOverrideSource: TierOverrideSource.Award,
+      tierOverrideTierId,
+      tierOverrideUntil,
+      tierOverrideAwardKey,
+    };
+  },
+  adjustment(
+    tierOverrideTierId: TierId,
+    tierOverrideUntil: LocalDate | null,
+    tierOverrideAdjustmentId: AdjustmentId,
+  ): TierOverride.Adjustment {
+    return {
+      tierOverrideSource: TierOverrideSource.Adjustment,
+      tierOverrideTierId,
+      tierOverrideUntil,
+      tierOverrideAdjustmentId,
+    };
   },
 } as const;
 
 /**
- * A manual tier, in force through `until` (a shop-calendar day, inclusive;
- * `null` = for good). `until` is stored and read as a DAY
- * (`override.nullableDate('until')`, `loyalty-document.ts:1413`), so it
- * stays a day key — the ISO → ms rule is for instants only.
+ * The account's tier — the computed standing and the optional manual
+ * override, both flat at the account's root (Law 6).
  */
-export type TierOverride = {
-  readonly tierId: TierId;
-  readonly until: DayKey | null;
-  readonly source: TierOverrideSource;
-};
+export type TierState = TierStanding & TierOverride;
 
-/**
- * The account's tier — computed from VISITS in the qualifying window, never
- * points, with an optional manual override (`loyalty-document.ts:456-470`,
- * `tier.since` → `sinceMs`). `next`/`remaining` are `null` at the top.
- * TierSystem does the math.
- */
-export type TierState = {
-  readonly current: TierId;
-  readonly definitionVersion: number;
-  readonly sinceMs: number;
-  /** Visits in the qualifying window. */
-  readonly qualifying: number;
-  readonly next: TierId | null;
-  readonly remaining: number | null;
-  readonly override: TierOverride | null;
-};
-
-export namespace TierOverrideSource {
+export namespace TierOverride {
+  /** No override stands (today's `override: null`). */
+  export type None = { readonly tierOverrideSource: null };
   export type Award = {
-    readonly kind: typeof TierOverrideSourceKind.Award;
-    readonly awardKey: string;
+    readonly tierOverrideSource: typeof TierOverrideSource.Award;
+    readonly tierOverrideTierId: TierId;
+    readonly tierOverrideUntil: LocalDate | null;
+    readonly tierOverrideAwardKey: string;
   };
   export type Adjustment = {
-    readonly kind: typeof TierOverrideSourceKind.Adjustment;
-    readonly adjustmentId: string;
+    readonly tierOverrideSource: typeof TierOverrideSource.Adjustment;
+    readonly tierOverrideTierId: TierId;
+    readonly tierOverrideUntil: LocalDate | null;
+    readonly tierOverrideAdjustmentId: AdjustmentId;
   };
 }

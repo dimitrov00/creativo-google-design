@@ -1,12 +1,12 @@
 import type { LocalizedText } from '../components/localized-text.data';
-import type { PositionState } from '../components/program-status.data';
-import type { LocationId } from './location.entity';
+import type { PositionStatus } from '../components/program-status.data';
+import type { LocationId, PositionId } from '../primitives/ids.primitive';
 
-export type PositionId = string & { readonly __brand: unique symbol };
-export const PositionId = {
-  /** The only cast site. Validate the raw string at the edge, not here. */
-  of: (raw: string): PositionId => raw as PositionId,
-} as const;
+/*
+ * The id lives in `primitives/ids.primitive.ts` (flatten-spec §1.5); it is
+ * re-exported here only while the barrel's staging block still names this
+ * file (`index.ts`), and leaves with that line.
+ */
 
 /**
  * An open role on the careers page — `positions/{id}` (the stored body of
@@ -14,14 +14,14 @@ export const PositionId = {
  * legacy reader re-added `applyUrl` by conditional spread, so one collection
  * carried two hidden-class shapes. Empty `locationIds` means every location.
  * `applyUrl` is where "Apply" sends a candidate; `null` falls back to the
- * shop's shared contact link.
+ * shop's shared contact link. `positionStatus` was `status` (N8).
  */
-export type PositionEntity = {
+export type Position = {
   readonly id: PositionId;
   readonly title: LocalizedText;
   readonly summary: LocalizedText;
   readonly locationIds: readonly LocationId[];
-  readonly status: PositionState;
+  readonly positionStatus: PositionStatus;
   readonly applyUrl: string | null;
   readonly sortOrder: number;
 };

@@ -1,30 +1,35 @@
-import type { UserId } from '../entities/user.entity';
+import { GuestId, type UserId } from '../primitives/ids.primitive';
 import { SeatKey } from './cart-line.data';
 import { Result } from './result.data';
 import { SchedulingError } from './scheduling-errors.data';
 import { SeatLabel } from './seat-label.data';
 
-/** Who a party member is — the ONLY source of these strings. */
-export const PartyMemberKind = {
+/**
+ * Who a party member is — the ONLY source of these strings, named after the
+ * field it types (`partyRole`, N15).
+ */
+export const PartyRole = {
   /** The booker — the `self` seat, always present, owned or not yet. */
-  Owner: 'owner',
+  Owner: 'OWNER',
   /** Someone with an account of their own on the booker's visit. */
-  Companion: 'companion',
+  Companion: 'COMPANION',
   /** A guest the booker names, known only by a label. */
-  Guest: 'guest',
+  Guest: 'GUEST',
 } as const;
-export type PartyMemberKind =
-  (typeof PartyMemberKind)[keyof typeof PartyMemberKind];
+export type PartyRole = (typeof PartyRole)[keyof typeof PartyRole];
 
 /**
  * WHO is booking — the party assembling a booking before it becomes an
  * appointment's seats (`booking-party.ts`). **In memory and in the booking
- * draft only**: the appointment stores `ownerUserId`/`subjectUserIds` and its
- * seats' subjects, from which `AppointmentIndexSystem.queryKeys` re-derives
- * the party.
+ * draft only** (F-8: in-memory UI state keeps its named references): the
+ * appointment stores `ownerUserId`/`subjectUserIds` and its seats'
+ * occupants, from which `AppointmentIndexSystem.queryKeys` re-derives the
+ * party.
  *
  * - `ownerUserId` is `null` while the party is unclaimed: `/book` is browsable
- *   anonymously, and a party graduates by {@link Party.claim} on sign-in.
+ *   anonymously, and a party graduates by {@link Party.claim} on sign-in. It
+ *   is the signed-in booker's ACCOUNT (D29): the booking pipeline resolves
+ *   the customer.
  * - `members` starts with the owner, then companions and guests in the order
  *   they joined.
  * - `nextGuestSequence` is the monotonic counter guest ids are minted from
@@ -39,45 +44,45 @@ export type Party = {
   readonly nextGuestSequence: number;
 };
 
-/** One member of a {@link Party}. */
+/** One member of a {@link Party} — a flat variant per role. */
 export type PartyMember =
   PartyMember.Owner | PartyMember.Companion | PartyMember.Guest;
 
-const OWNER: PartyMember.Owner = { kind: PartyMemberKind.Owner };
+const OWNER: PartyMember.Owner = { partyRole: PartyRole.Owner };
 
 export const PartyMember = {
   /** The booker — one per party, always first. */
   owner(): PartyMember.Owner {
     return OWNER;
   },
-  companion(userId: UserId): PartyMember.Companion {
-    return { kind: PartyMemberKind.Companion, userId };
+  companion(companionUserId: UserId): PartyMember.Companion {
+    return { partyRole: PartyRole.Companion, companionUserId };
   },
-  guest(guestId: string, label: SeatLabel): PartyMember.Guest {
-    return { kind: PartyMemberKind.Guest, guestId, label };
+  guest(guestId: GuestId, guestLabel: SeatLabel): PartyMember.Guest {
+    return { partyRole: PartyRole.Guest, guestId, guestLabel };
   },
 } as const;
 
 export namespace PartyMember {
-  export type Owner = { readonly kind: typeof PartyMemberKind.Owner };
+  export type Owner = { readonly partyRole: typeof PartyRole.Owner };
   export type Companion = {
-    readonly kind: typeof PartyMemberKind.Companion;
-    readonly userId: UserId;
+    readonly partyRole: typeof PartyRole.Companion;
+    readonly companionUserId: UserId;
   };
   export type Guest = {
-    readonly kind: typeof PartyMemberKind.Guest;
-    readonly guestId: string;
-    readonly label: SeatLabel;
+    readonly partyRole: typeof PartyRole.Guest;
+    readonly guestId: GuestId;
+    readonly guestLabel: SeatLabel;
   };
 }
 
 const GUEST_PREFIX = 'guest-';
 
 /** The guest member `guestId`'s index in `members`, or `-1`. */
-function guestIndex(party: Party, guestId: string): number {
+function guestIndex(party: Party, guestId: GuestId): number {
   for (let i = 0; i < party.members.length; i++) {
     const member = party.members[i] as PartyMember;
-    if (member.kind === PartyMemberKind.Guest && member.guestId === guestId) {
+    if (member.partyRole === PartyRole.Guest && member.guestId === guestId) {
       return i;
     }
   }
@@ -88,16 +93,16 @@ function guestIndex(party: Party, guestId: string): number {
 function labelFor(
   party: Party,
   raw: string,
-  except: string | null,
+  except: GuestId | null,
 ): Result<SeatLabel, SchedulingError> {
   const parsed = SeatLabel.parse(raw);
   if (!parsed.ok) return parsed;
   for (let i = 0; i < party.members.length; i++) {
     const member = party.members[i] as PartyMember;
     if (
-      member.kind === PartyMemberKind.Guest &&
+      member.partyRole === PartyRole.Guest &&
       member.guestId !== except &&
-      member.label === parsed.value
+      member.guestLabel === parsed.value
     ) {
       return Result.err(SchedulingError.partyDuplicateLabel(parsed.value));
     }
@@ -108,15 +113,15 @@ function labelFor(
 function isMember(raw: unknown): raw is PartyMember {
   if (raw === null || typeof raw !== 'object') return false;
   const member = raw as Readonly<Record<string, unknown>>;
-  switch (member['kind']) {
-    case PartyMemberKind.Owner:
+  switch (member['partyRole']) {
+    case PartyRole.Owner:
       return true;
-    case PartyMemberKind.Companion:
-      return (
-        typeof member['userId'] === 'string' && member['userId'].length > 0
-      );
-    case PartyMemberKind.Guest: {
-      const label = member['label'];
+    case PartyRole.Companion: {
+      const userId = member['companionUserId'];
+      return typeof userId === 'string' && userId.length > 0;
+    }
+    case PartyRole.Guest: {
+      const label = member['guestLabel'];
       return (
         typeof member['guestId'] === 'string' &&
         member['guestId'].startsWith(GUEST_PREFIX) &&
@@ -171,7 +176,7 @@ export const Party = {
     const guests: PartyMember.Guest[] = [];
     for (let i = 0; i < party.members.length; i++) {
       const member = party.members[i] as PartyMember;
-      if (member.kind === PartyMemberKind.Guest) guests.push(member);
+      if (member.partyRole === PartyRole.Guest) guests.push(member);
     }
     return guests;
   },
@@ -181,9 +186,9 @@ export const Party = {
     const keys: SeatKey[] = [SeatKey.self()];
     for (let i = 0; i < party.members.length; i++) {
       const member = party.members[i] as PartyMember;
-      if (member.kind === PartyMemberKind.Companion) {
-        keys.push(SeatKey.companion(member.userId));
-      } else if (member.kind === PartyMemberKind.Guest) {
+      if (member.partyRole === PartyRole.Companion) {
+        keys.push(SeatKey.companion(member.companionUserId));
+      } else if (member.partyRole === PartyRole.Guest) {
         keys.push(SeatKey.guest(member.guestId));
       }
     }
@@ -193,13 +198,13 @@ export const Party = {
   /**
    * Add a guest under a fresh id minted from the counter, which always
    * advances. Refuses a blank or over-long label and one another guest
-   * already answers to (`scheduling.booking_party.duplicate_label`).
+   * already answers to (`SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL`).
    */
   addGuest(party: Party, rawLabel: string): Result<Party, SchedulingError> {
     const label = labelFor(party, rawLabel, null);
     if (!label.ok) return label;
     const guest = PartyMember.guest(
-      `${GUEST_PREFIX}${party.nextGuestSequence}`,
+      GuestId.of(`${GUEST_PREFIX}${party.nextGuestSequence}`),
       label.value,
     );
     return Result.ok({
@@ -210,7 +215,7 @@ export const Party = {
   },
 
   /** Remove a guest — never touches the counter (§7.7: it only ever grows). */
-  removeGuest(party: Party, guestId: string): Result<Party, SchedulingError> {
+  removeGuest(party: Party, guestId: GuestId): Result<Party, SchedulingError> {
     const at = guestIndex(party, guestId);
     if (at === -1)
       return Result.err(SchedulingError.partyGuestNotFound(guestId));
@@ -231,7 +236,7 @@ export const Party = {
    */
   renameGuest(
     party: Party,
-    guestId: string,
+    guestId: GuestId,
     rawLabel: string,
   ): Result<Party, SchedulingError> {
     const at = guestIndex(party, guestId);
@@ -281,7 +286,7 @@ export const Party = {
     const labelled: Party.LabelledGuest[] = [];
     for (let i = 0; i < guests.length; i++) {
       const guest = guests[i] as PartyMember.Guest;
-      labelled.push({ key: guest.guestId, label: guest.label });
+      labelled.push({ key: guest.guestId, label: guest.guestLabel });
     }
     return Party.labelSharedByTwoGuests(labelled);
   },
@@ -293,10 +298,10 @@ export const Party = {
     for (let i = 0; i < party.members.length; i++) {
       const member = party.members[i] as PartyMember;
       if (
-        member.kind === PartyMemberKind.Companion &&
-        !ids.includes(member.userId)
+        member.partyRole === PartyRole.Companion &&
+        !ids.includes(member.companionUserId)
       ) {
-        ids.push(member.userId);
+        ids.push(member.companionUserId);
       }
     }
     return ids.sort();
@@ -308,8 +313,8 @@ export const Party = {
     for (let i = 0; i < party.members.length; i++) {
       const member = party.members[i] as PartyMember;
       if (
-        member.kind === PartyMemberKind.Companion &&
-        member.userId === userId
+        member.partyRole === PartyRole.Companion &&
+        member.companionUserId === userId
       ) {
         return true;
       }
@@ -345,8 +350,8 @@ export const Party = {
     for (let i = 0; i < members.length; i++) {
       const member: unknown = members[i];
       if (!isMember(member)) return false;
-      if ((member.kind === PartyMemberKind.Owner) !== (i === 0)) return false;
-      if (member.kind === PartyMemberKind.Guest) {
+      if ((member.partyRole === PartyRole.Owner) !== (i === 0)) return false;
+      if (member.partyRole === PartyRole.Guest) {
         if (guestIds.includes(member.guestId)) return false;
         guestIds.push(member.guestId);
       }

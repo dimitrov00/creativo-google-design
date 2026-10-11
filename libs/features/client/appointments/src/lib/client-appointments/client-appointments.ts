@@ -81,13 +81,14 @@ import {
 } from '@creativo/ui/modifiers';
 import {
   CalendarGridSystem,
-  DayKey,
   E164,
+  GeoPoint,
+  LocalDate,
   LocationId as LocationKey,
   type ReachableShop,
   ShopReach,
   ShopReachSystem,
-  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import { CLOCK } from '@creativo/application/shared';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
@@ -1029,26 +1030,22 @@ export class ClientAppointments {
     const firstOfMonth = Date.UTC(year, month - 1, 1);
     const todayKey = this.store.today.toISODate();
 
-    // The grid is `CalendarGridSystem.monthGrid` over the shop zone's day
-    // table; this list pads with BLANKS, so a neighbour's day reads as one.
-    const monthKey = DayKey.of(`${year}-${pad(month)}-01`);
-    const range = CalendarGridSystem.gridRange(monthKey);
+    // The grid is `CalendarGridSystem.monthGrid` on the shop's civil days
+    // (no zone, no day table — the weekday is the day's own); this list pads
+    // with BLANKS, so a neighbour's day reads as one.
+    const monthKey = LocalDate.parse(`${year}-${pad(month)}-01`);
+    if (!monthKey.ok) defect('unreachable: a month of the calendar');
     const weeks: VisitDayVm[][] = CalendarGridSystem.monthGrid(
-      monthKey,
-      ZonedTimeSystem.dayTable(
-        this.store.today.zoneName,
-        range.fromDayKey,
-        range.toDayKey,
-      ),
+      monthKey.value,
       [],
     ).map((week) =>
       week.map((cell) =>
         cell.inMonth
           ? {
-              dayKey: cell.dayKey,
+              dayKey: cell.localDate,
               dayOfMonth: cell.dayOfMonth,
-              isToday: cell.dayKey === todayKey,
-              visits: byDay.get(cell.dayKey) ?? [],
+              isToday: cell.localDate === todayKey,
+              visits: byDay.get(cell.localDate) ?? [],
             }
           : {
               dayKey: '',
@@ -1073,18 +1070,23 @@ export class ClientAppointments {
   }
 }
 
-/** A catalogue shop as `ShopReachSystem` reads it: its id, number and pin. */
+/**
+ * A catalogue shop as `ShopReachSystem` reads it: its id, number and pin —
+ * the flat `ShopLocation` slices (flatten pass: `phoneE164`, `latitude`,
+ * `longitude` at the root, each a brand). The legacy location's number is
+ * canonical and its pin was validated when the catalogue read it.
+ */
 function reachableShopOf(location: {
   readonly id: { readonly value: string };
   readonly phone: { readonly e164: string; readonly display: string };
   readonly geo: { readonly lat: number; readonly lng: number };
 }): ReachableShop {
+  const pin = GeoPoint.parse(location.geo.lat, location.geo.lng);
+  if (!pin.ok) defect('unreachable: a catalogue pin off the globe');
   return {
     id: LocationKey.of(location.id.value),
-    phone: {
-      e164: E164.of(location.phone.e164),
-      display: location.phone.display,
-    },
-    geo: { lat: location.geo.lat, lng: location.geo.lng },
+    phoneE164: E164.of(location.phone.e164),
+    latitude: pin.value.latitude,
+    longitude: pin.value.longitude,
   };
 }

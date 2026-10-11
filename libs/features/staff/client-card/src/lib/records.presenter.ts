@@ -13,11 +13,14 @@ import type {
   StreakState,
 } from '@creativo/application/engagement';
 import {
-  DayKey,
+  AppointmentId,
+  LocalDate,
   type PersonalRecord as SystemRecord,
+  PersonalRecordKind as SystemRecordKind,
   type RecordVisit,
   RecordsSystem,
   ServiceId as ServiceRefId,
+  defect,
 } from '@creativo/ecs-core';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { AchievementsContext } from './achievements.presenter';
@@ -153,7 +156,7 @@ function featuredOf(
   // breaking a tie.
   const index = RecordsSystem.newest(
     shown.map(({ record }) => recordOf(record)),
-    DayKey.of(data.today),
+    dayOf(data.today),
   );
   const newest = index === null ? undefined : shown.at(index);
   if (newest === undefined) return null;
@@ -454,8 +457,8 @@ function yearsOf(
     const visit = subjectVisitOf(subject.value, appointment);
     if (visit === null || visit.outcome.kind !== 'worked') continue;
     worked.push({
-      appointmentId: appointment.id.value,
-      day: DayKey.of(shopDayOf(visit.atMs)),
+      appointmentId: AppointmentId.of(appointment.id.value),
+      localDate: dayOf(shopDayOf(visit.atMs)),
     });
   }
   const stamped =
@@ -515,12 +518,26 @@ export function recordsPageVm(input: RecordsPageInput): RecordsPageVm {
 
 // ── The bridge: legacy record → ecs-core struct (Phase 4 deletes it) ─────
 
-/** A personal record as `RecordsSystem` reads it: the same figures, days and ids as brands. */
+/** A record's kind, in the system's words. */
+const RECORD_KIND = {
+  longestRhythm: SystemRecordKind.LongestRhythm,
+  mostVisitsInYear: SystemRecordKind.MostVisitsInYear,
+  favouriteService: SystemRecordKind.FavouriteService,
+  firstVisit: SystemRecordKind.FirstVisit,
+} as const satisfies Record<PersonalRecord['kind'], SystemRecordKind>;
+
+/** A shop day the card holds: a guarded document day, a clock's «today». */
+function dayOf(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/** A personal record as `RecordsSystem` reads it: the same figures, the kind the dictionary's, days and ids as brands. */
 function recordOf(record: PersonalRecord): SystemRecord {
   return {
-    kind: record.kind,
+    personalRecordKind: RECORD_KIND[record.kind],
     value: record.value,
-    on: record.on === null ? null : DayKey.of(record.on),
+    on: record.on === null ? null : dayOf(record.on),
     year: record.year,
     serviceId:
       record.serviceId === null ? null : ServiceRefId.of(record.serviceId),

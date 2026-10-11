@@ -1,16 +1,20 @@
 import { GovernanceError } from '../components/governance-errors.data';
 import type { ImpersonationScope } from '../components/impersonation-scope.data';
 import {
-  ImpersonationEndReason,
-  ImpersonationStatus,
+  EndReasonFields,
+  ImpersonationLifecycle,
 } from '../components/impersonation-status.data';
 import { Result } from '../components/result.data';
 import { type Role, isStaff } from '../components/role.data';
 import type {
-  ImpersonationSessionEntity,
-  ImpersonationSessionId,
+  ImpersonationSession,
+  ImpersonationSessionMeta,
 } from '../entities/impersonation-session.entity';
-import type { UserId } from '../entities/user.entity';
+import type {
+  ImpersonationSessionId,
+  UserId,
+} from '../primitives/ids.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /**
  * ImpersonationSystem — the time-bounded, audited session in which a staff
@@ -22,9 +26,11 @@ import type { UserId } from '../entities/user.entity';
  * The structural invariants hold on every session, started or read back:
  * no self-impersonation, a non-blank recorded justification, and an expiry
  * strictly after the start. Starting one also needs a staff role set. The
- * expiry rule is the ONE place `expiresAtMs <= nowMs` is written — a stored
- * row may still say `active` past it, and an authorization decision reads
+ * expiry rule is the ONE place "expired" is written — a stored row may
+ * still say `ACTIVE` past it, and an authorization decision reads
  * {@link ImpersonationSystem.isExpired}, never the stored status alone.
+ * Every instant is a lifecycle stamp compared in elapsed real time (a T2
+ * row, flatten-spec §2.3): a session has no location, so `nowUtcMs` (F-5).
  */
 
 /** What a start request carries — ids and scope already through their edge guards. */
@@ -34,17 +40,34 @@ export type StartImpersonation = {
   /** The roles the admin holds NOW — the staff gate is a creation-time check only. */
   readonly adminRoles: readonly Role[];
   readonly targetUserId: UserId;
-  readonly scope: ImpersonationScope;
+  readonly impersonationScope: ImpersonationScope;
   readonly reason: string;
-  readonly startedAtMs: number;
-  readonly expiresAtMs: number;
+  readonly startedAtUtcMs: UtcEpochMs;
+  readonly expiresAtUtcMs: UtcEpochMs;
 };
 
 /** The fields the structural invariants read. */
 export type ImpersonationShape = Pick<
-  ImpersonationSessionEntity,
-  'adminUserId' | 'targetUserId' | 'reason' | 'startedAtMs' | 'expiresAtMs'
+  ImpersonationSessionMeta,
+  | 'adminUserId'
+  | 'targetUserId'
+  | 'reason'
+  | 'startedAtUtcMs'
+  | 'expiresAtUtcMs'
 >;
+
+/** The meta slice of a session — the fields an end carries over unchanged. */
+function metaOf(session: ImpersonationSessionMeta): ImpersonationSessionMeta {
+  return {
+    id: session.id,
+    adminUserId: session.adminUserId,
+    targetUserId: session.targetUserId,
+    impersonationScope: session.impersonationScope,
+    reason: session.reason,
+    startedAtUtcMs: session.startedAtUtcMs,
+    expiresAtUtcMs: session.expiresAtUtcMs,
+  };
+}
 
 export const ImpersonationSystem = {
   /**
@@ -60,7 +83,9 @@ export const ImpersonationSystem = {
     if (session.reason.trim().length === 0) {
       faults.push(GovernanceError.impersonationReasonRequired());
     }
-    if (!(session.startedAtMs < session.expiresAtMs)) {
+    if (
+      UtcEpochMs.compare(session.startedAtUtcMs, session.expiresAtUtcMs) >= 0
+    ) {
       faults.push(GovernanceError.impersonationInvalidExpiry());
     }
     return faults;
@@ -68,12 +93,13 @@ export const ImpersonationSystem = {
 
   /**
    * A new active session, the reason trimmed. Structural faults come first
-   * and alone — the staff gate (`governance.impersonation_session.
-   * admin_not_staff`) is asked only of a structurally sound request.
+   * and alone — the staff gate
+   * (`GOVERNANCE_IMPERSONATION_SESSION_ADMIN_NOT_STAFF`) is asked only of a
+   * structurally sound request.
    */
   start(
     request: StartImpersonation,
-  ): Result<ImpersonationSessionEntity, readonly GovernanceError[]> {
+  ): Result<ImpersonationSession, readonly GovernanceError[]> {
     const faults = ImpersonationSystem.faults(request);
     if (faults.length > 0) return Result.err(faults);
     if (!isStaff(request.adminRoles)) {
@@ -85,48 +111,52 @@ export const ImpersonationSystem = {
       id: request.id,
       adminUserId: request.adminUserId,
       targetUserId: request.targetUserId,
-      scope: request.scope,
+      impersonationScope: request.impersonationScope,
       reason: request.reason.trim(),
-      startedAtMs: request.startedAtMs,
-      expiresAtMs: request.expiresAtMs,
-      status: ImpersonationStatus.active(),
+      startedAtUtcMs: request.startedAtUtcMs,
+      expiresAtUtcMs: request.expiresAtUtcMs,
+      ...ImpersonationLifecycle.active(),
     });
   },
 
-  /** Close an active session at `endedAtMs` for `reason`; the first end wins. */
+  /**
+   * Close an active session at `endedAtUtcMs` for `reason`; the first end
+   * wins. The ended session is exactly the `ENDED` variant: the meta slice,
+   * the stamp and the reason's own fields at the root.
+   */
   end(
-    session: ImpersonationSessionEntity,
-    endedAtMs: number,
-    reason: ImpersonationEndReason,
-  ): Result<ImpersonationSessionEntity, GovernanceError> {
-    const status = ImpersonationStatus.end(session.status, endedAtMs, reason);
-    if (status === null) {
+    session: ImpersonationSession,
+    endedAtUtcMs: UtcEpochMs,
+    reason: EndReasonFields,
+  ): Result<ImpersonationSession, GovernanceError> {
+    const ended = ImpersonationLifecycle.end(session, endedAtUtcMs, reason);
+    if (ended === null) {
       return Result.err(GovernanceError.impersonationAlreadyEnded(session.id));
     }
-    return Result.ok({ ...session, status });
+    return Result.ok({ ...metaOf(session), ...ended });
   },
 
   /**
-   * An admin's end-call: tagged `expired` when the window had already
-   * lapsed by the time the call arrived, `admin_ended` (by `endedBy`)
-   * otherwise.
+   * An admin's end-call: tagged `EXPIRED` when the window had already
+   * lapsed by the time the call arrived, `ADMIN_ENDED` (by
+   * `endedByUserId`) otherwise.
    */
   endByAdmin(
-    session: ImpersonationSessionEntity,
-    endedBy: UserId,
-    nowMs: number,
-  ): Result<ImpersonationSessionEntity, GovernanceError> {
-    const reason = ImpersonationSystem.isExpired(session, nowMs)
-      ? ImpersonationEndReason.expired()
-      : ImpersonationEndReason.adminEnded(endedBy);
-    return ImpersonationSystem.end(session, nowMs, reason);
+    session: ImpersonationSession,
+    endedByUserId: UserId,
+    nowUtcMs: UtcEpochMs,
+  ): Result<ImpersonationSession, GovernanceError> {
+    const reason = ImpersonationSystem.isExpired(session, nowUtcMs)
+      ? EndReasonFields.expired()
+      : EndReasonFields.adminEnded(endedByUserId);
+    return ImpersonationSystem.end(session, nowUtcMs, reason);
   },
 
-  /** The session's window has elapsed — true from `expiresAtMs` itself on. */
+  /** The session's window has elapsed — true from `expiresAtUtcMs` itself on. */
   isExpired(
-    session: Pick<ImpersonationSessionEntity, 'expiresAtMs'>,
-    nowMs: number,
+    session: Pick<ImpersonationSessionMeta, 'expiresAtUtcMs'>,
+    nowUtcMs: UtcEpochMs,
   ): boolean {
-    return session.expiresAtMs <= nowMs;
+    return UtcEpochMs.compare(session.expiresAtUtcMs, nowUtcMs) <= 0;
   },
 } as const;

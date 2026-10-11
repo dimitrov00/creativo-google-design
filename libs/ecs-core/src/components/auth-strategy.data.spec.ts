@@ -7,17 +7,19 @@ import {
   AuthStrategyKind,
   OAuthProvider,
 } from './auth-strategy.data';
-import { IdentifierKind } from './identifier.data';
+import { IdentifierChannel } from './identifier.data';
 import { IdentityErrorCode } from './identity-errors.data';
 import { RegistrationField } from './registration.data';
 
 /*
  * The cases of libs/domain/identity/src/lib/auth-strategy.spec.ts and
- * auth-deployment.spec.ts, copied over the union and its companion.
+ * auth-deployment.spec.ts, copied over the flat union and its companion:
+ * the tag is `authStrategyKind` (SCREAMING), the TTL a `DurationMinutes`
+ * (equal to its plain number at runtime).
  */
 function validPhoneOtpInput() {
   return {
-    kind: 'phone_otp',
+    authStrategyKind: 'PHONE_OTP',
     required: ['phone', 'firstName', 'lastName'],
     policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 90 },
   };
@@ -36,7 +38,7 @@ describe('AuthStrategy.parse — phone_otp', () => {
     expect(AuthStrategy.parse(validPhoneOtpInput())).toEqual({
       ok: true,
       value: {
-        kind: 'phone_otp',
+        authStrategyKind: 'PHONE_OTP',
         required: ['phone', 'firstName', 'lastName'],
         policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 90 },
       },
@@ -45,7 +47,7 @@ describe('AuthStrategy.parse — phone_otp', () => {
 
   it('derives the identifier kind and required-field check', () => {
     const parsed = strategy(validPhoneOtpInput());
-    expect(AuthStrategy.identifierKind(parsed)).toBe(IdentifierKind.Phone);
+    expect(AuthStrategy.identifierKind(parsed)).toBe(IdentifierChannel.Phone);
     expect(AuthStrategy.requires(parsed, RegistrationField.Phone)).toBe(true);
     expect(AuthStrategy.requires(parsed, RegistrationField.Email)).toBe(false);
   });
@@ -54,40 +56,43 @@ describe('AuthStrategy.parse — phone_otp', () => {
 describe('AuthStrategy.parse — email_otp', () => {
   it('accepts a well-formed email_otp strategy and reports its identifier kind', () => {
     const parsed = strategy({
-      kind: 'email_otp',
+      authStrategyKind: 'EMAIL_OTP',
       required: ['phone', 'email', 'firstName'],
       policy: { ttlMinutes: 10, maxAttempts: 3, sessionDays: 30 },
     });
-    expect(parsed.kind).toBe(AuthStrategyKind.EmailOtp);
-    expect(AuthStrategy.identifierKind(parsed)).toBe(IdentifierKind.Email);
+    expect(parsed.authStrategyKind).toBe(AuthStrategyKind.EmailOtp);
+    expect(AuthStrategy.identifierKind(parsed)).toBe(IdentifierChannel.Email);
   });
 });
 
 describe('AuthStrategy.parse — email_link', () => {
   it('accepts a well-formed email_link strategy (no maxAttempts in its policy)', () => {
     const parsed = strategy({
-      kind: 'email_link',
+      authStrategyKind: 'EMAIL_LINK',
       required: ['phone', 'firstName'],
       policy: { ttlMinutes: 15, sessionDays: 60 },
     });
     expect(parsed).toEqual({
-      kind: 'email_link',
+      authStrategyKind: 'EMAIL_LINK',
       required: ['phone', 'firstName'],
       policy: { ttlMinutes: 15, sessionDays: 60 },
     });
-    expect(AuthStrategy.identifierKind(parsed)).toBe(IdentifierKind.Email);
+    expect(AuthStrategy.identifierKind(parsed)).toBe(IdentifierChannel.Email);
   });
 });
 
 describe('AuthStrategy.parse — invalid inputs', () => {
   it('rejects an unknown kind', () => {
     expect(
-      AuthStrategy.parse({ ...validPhoneOtpInput(), kind: 'oauth_google' }),
+      AuthStrategy.parse({
+        ...validPhoneOtpInput(),
+        authStrategyKind: 'oauth_google',
+      }),
     ).toEqual({
       ok: false,
       error: [
         {
-          code: IdentityErrorCode.AuthStrategyUnknownKind,
+          errorCode: IdentityErrorCode.AuthStrategyUnknownKind,
           received: 'oauth_google',
         },
       ],
@@ -104,7 +109,7 @@ describe('AuthStrategy.parse — invalid inputs', () => {
       ok: false,
       error: [
         {
-          code: IdentityErrorCode.AuthStrategyUnknownField,
+          errorCode: IdentityErrorCode.AuthStrategyUnknownField,
           received: 'middleName',
         },
       ],
@@ -116,7 +121,7 @@ describe('AuthStrategy.parse — invalid inputs', () => {
       AuthStrategy.parse({ ...validPhoneOtpInput(), required: [] }),
     ).toEqual({
       ok: false,
-      error: [{ code: IdentityErrorCode.AuthStrategyRequiredEmpty }],
+      error: [{ errorCode: IdentityErrorCode.AuthStrategyRequiredEmpty }],
     });
   });
 
@@ -128,7 +133,7 @@ describe('AuthStrategy.parse — invalid inputs', () => {
       }),
     ).toEqual({
       ok: false,
-      error: [{ code: IdentityErrorCode.AuthStrategyPhoneMissing }],
+      error: [{ errorCode: IdentityErrorCode.AuthStrategyPhoneMissing }],
     });
   });
 
@@ -142,14 +147,14 @@ describe('AuthStrategy.parse — invalid inputs', () => {
       ok: false,
       error: [
         {
-          code: IdentityErrorCode.AuthStrategyInvalidPolicy,
+          errorCode: IdentityErrorCode.AuthStrategyInvalidPolicy,
           field: 'ttlMinutes',
         },
       ],
     });
     expect(
       AuthStrategy.parse({
-        kind: 'email_link',
+        authStrategyKind: 'EMAIL_LINK',
         required: ['phone'],
         policy: { ttlMinutes: 15, sessionDays: 1.5 },
       }).ok,
@@ -158,7 +163,7 @@ describe('AuthStrategy.parse — invalid inputs', () => {
 
   it('collects every validation error at once', () => {
     const result = AuthStrategy.parse({
-      kind: 'phone_otp',
+      authStrategyKind: 'PHONE_OTP',
       required: [],
       policy: { ttlMinutes: -1, maxAttempts: 0, sessionDays: 0 },
     });
@@ -172,7 +177,7 @@ describe('AuthStrategy.DEFAULT / AuthDeployment.DEFAULT', () => {
   it('the default strategy is exactly what parse accepts for its literal', () => {
     expect(
       AuthStrategy.parse({
-        kind: 'email_otp',
+        authStrategyKind: 'EMAIL_OTP',
         required: ['phone', 'firstName', 'lastName'],
         policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
       }),
@@ -182,14 +187,16 @@ describe('AuthStrategy.DEFAULT / AuthDeployment.DEFAULT', () => {
   it('wraps the default auth strategy unchanged', () => {
     expect(AuthDeployment.DEFAULT.strategy).toBe(AuthStrategy.DEFAULT);
     // Guard against a silent flip-back: email_otp is the adopted deployment.
-    expect(AuthDeployment.DEFAULT.strategy.kind).toBe('email_otp');
+    expect(AuthDeployment.DEFAULT.strategy.authStrategyKind).toBe('EMAIL_OTP');
     expect(AuthStrategy.identifierKind(AuthDeployment.DEFAULT.strategy)).toBe(
-      'email',
+      'EMAIL',
     );
   });
 
   it('offers only the OTP entry method today', () => {
-    expect(AuthDeployment.DEFAULT.providers).toEqual([{ kind: 'otp' }]);
+    expect(AuthDeployment.DEFAULT.providers).toEqual([
+      { authProviderKind: 'OTP' },
+    ]);
   });
 
   it('defaults phone entry to Bulgaria', () => {
@@ -205,8 +212,8 @@ describe('AuthProvider', () => {
   it('otp() is a shared struct; oauth() names the provider', () => {
     expect(AuthProvider.otp()).toBe(AuthProvider.otp());
     expect(AuthProvider.oauth(OAuthProvider.Google)).toEqual({
-      kind: AuthProviderKind.OAuth,
-      provider: 'google',
+      authProviderKind: AuthProviderKind.OAuth,
+      provider: 'GOOGLE',
     });
   });
 });

@@ -1,18 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { LocationId } from '../entities/location.entity';
-import { DayKey } from './day-key.data';
+import { endMinute, localDate, minute } from '../testing';
+import { minuteCount } from '../testing/booking-core.fixtures';
+import { LocationId } from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import { SchedulingErrorCode } from './scheduling-errors.data';
 import { ScheduleVersion, ShiftSegment } from './schedule-version.data';
 import { Weekday } from './weekday.data';
 
 const CENTER = LocationId.of('loc-center');
 const MLADOST = LocationId.of('loc-mladost');
-const day = (raw: string): DayKey => DayKey.of(raw);
+const day = (raw: string): LocalDate => localDate(raw);
 const seg = (
   weekday: Weekday,
   start: number,
   end: number,
   locationId: LocationId = CENTER,
-): ShiftSegment => ShiftSegment.of(weekday, locationId, start, end);
+): ShiftSegment =>
+  ShiftSegment.of(weekday, locationId, minute(start), endMinute(end));
 
 const WEEK = [seg(Weekday.Mon, 540, 1080), seg(Weekday.Tue, 540, 1080)];
 const LATER_WEEK = [seg(Weekday.Wed, 600, 1200)];
@@ -21,7 +25,7 @@ describe('ShiftSegment.validate — a weekly pattern', () => {
   it('holds SEVERAL ranges on one weekday — the lunch break', () => {
     const result = ShiftSegment.validate(
       [seg(Weekday.Mon, 780, 1080), seg(Weekday.Mon, 540, 720)],
-      0,
+      minuteCount(0),
     );
     expect(result).toEqual({
       ok: true,
@@ -36,7 +40,7 @@ describe('ShiftSegment.validate — a weekly pattern', () => {
         seg(Weekday.Mon, 600, 660),
         seg(Weekday.Mon, 540, 600),
       ],
-      0,
+      minuteCount(0),
     );
     expect(
       result.ok && result.value.map((s) => [s.weekday, s.startMinutes]),
@@ -50,13 +54,13 @@ describe('ShiftSegment.validate — a weekly pattern', () => {
   it('REJECTS overlapping ranges rather than merging them', () => {
     const result = ShiftSegment.validate(
       [seg(Weekday.Mon, 540, 720), seg(Weekday.Mon, 700, 900)],
-      0,
+      minuteCount(0),
     );
     expect(result).toEqual({
       ok: false,
       error: [
         {
-          code: 'scheduling.time_range.invalid',
+          errorCode: SchedulingErrorCode.TimeRangeInvalid,
           startMinutes: 700,
           endMinutes: 900,
         },
@@ -68,31 +72,33 @@ describe('ShiftSegment.validate — a weekly pattern', () => {
     expect(
       ShiftSegment.validate(
         [seg(Weekday.Mon, 540, 720), seg(Weekday.Mon, 720, 900)],
-        0,
+        minuteCount(0),
       ).ok,
     ).toBe(true);
   });
 
-  it('rejects a malformed or backwards range, and a segment with no shop', () => {
+  it('rejects a backwards or empty range, and a segment with no shop', () => {
+    // A range outside the day (0 → 1441) is no longer constructible: the
+    // `EndMinute` brand refuses it at its own edge (minute-of-day.primitive).
     const result = ShiftSegment.validate(
       [
         seg(Weekday.Mon, 720, 540),
-        seg(Weekday.Tue, 0, 1441),
+        seg(Weekday.Tue, 600, 600),
         seg(Weekday.Wed, 540, 600, LocationId.of('  ')),
       ],
-      0,
+      minuteCount(0),
     );
-    expect(!result.ok && result.error.map((error) => error.code)).toEqual([
-      'scheduling.time_range.invalid',
-      'scheduling.time_range.invalid',
-      'scheduling.shift_segment.invalid_location',
+    expect(!result.ok && result.error.map((error) => error.errorCode)).toEqual([
+      SchedulingErrorCode.TimeRangeInvalid,
+      SchedulingErrorCode.TimeRangeInvalid,
+      SchedulingErrorCode.ShiftSegmentInvalidLocation,
     ]);
   });
 
   it('does not judge overlap on a weekday that already holds a malformed segment', () => {
     const result = ShiftSegment.validate(
       [seg(Weekday.Mon, 540, 720), seg(Weekday.Mon, 600, 600)],
-      0,
+      minuteCount(0),
     );
     expect(!result.ok && result.error).toHaveLength(1);
   });
@@ -102,11 +108,11 @@ describe('ShiftSegment.validate — a weekly pattern', () => {
       seg(Weekday.Mon, 540, 720, CENTER),
       seg(Weekday.Mon, 730, 900, MLADOST),
     ];
-    expect(ShiftSegment.validate(tight, 30)).toEqual({
+    expect(ShiftSegment.validate(tight, minuteCount(30))).toEqual({
       ok: false,
       error: [
         {
-          code: 'scheduling.shift_segment.impossible_transfer',
+          errorCode: SchedulingErrorCode.ShiftSegmentImpossibleTransfer,
           weekday: 1,
           fromLocationId: 'loc-center',
           toLocationId: 'loc-mladost',
@@ -115,11 +121,11 @@ describe('ShiftSegment.validate — a weekly pattern', () => {
         },
       ],
     });
-    expect(ShiftSegment.validate(tight, 10).ok).toBe(true);
+    expect(ShiftSegment.validate(tight, minuteCount(10)).ok).toBe(true);
     expect(
       ShiftSegment.validate(
         [seg(Weekday.Mon, 540, 720), seg(Weekday.Mon, 720, 900)],
-        30,
+        minuteCount(30),
       ).ok,
     ).toBe(true);
   });
@@ -168,14 +174,14 @@ describe('ScheduleVersion — the roster history', () => {
       value: [
         {
           seq: 0,
-          effectiveFromDayKey: '2026-01-01',
-          effectiveToDayKey: '2026-02-28',
+          effectiveFromLocalDate: '2026-01-01',
+          effectiveToLocalDate: '2026-02-28',
           segments: WEEK,
         },
         {
           seq: 1,
-          effectiveFromDayKey: '2026-03-01',
-          effectiveToDayKey: null,
+          effectiveFromLocalDate: '2026-03-01',
+          effectiveToLocalDate: null,
           segments: LATER_WEEK,
         },
       ],
@@ -202,7 +208,7 @@ describe('ScheduleVersion — the roster history', () => {
       expect(ScheduleVersion.amend(history, LATER_WEEK, day(from))).toEqual({
         ok: false,
         error: {
-          code: 'scheduling.staff_schedule.retroactive_amendment',
+          errorCode: SchedulingErrorCode.StaffScheduleRetroactiveAmendment,
           attemptedFrom: from,
           currentFrom: '2026-01-01',
         },
@@ -225,7 +231,11 @@ describe('ScheduleVersion — the roster history', () => {
       current = next.value;
     }
     expect(
-      current.map((v) => [v.seq, v.effectiveFromDayKey, v.effectiveToDayKey]),
+      current.map((v) => [
+        v.seq,
+        v.effectiveFromLocalDate,
+        v.effectiveToLocalDate,
+      ]),
     ).toEqual([
       [0, '2026-01-01', '2026-01-31'],
       [1, '2026-02-01', '2026-02-28'],
@@ -239,21 +249,21 @@ describe('ScheduleVersion — the roster history', () => {
     const overlapping: readonly ScheduleVersion[] = [
       {
         seq: 0,
-        effectiveFromDayKey: day('2026-01-01'),
-        effectiveToDayKey: day('2026-02-15'),
+        effectiveFromLocalDate: day('2026-01-01'),
+        effectiveToLocalDate: day('2026-02-15'),
         segments: WEEK,
       },
       {
         seq: 1,
-        effectiveFromDayKey: day('2026-02-01'),
-        effectiveToDayKey: null,
+        effectiveFromLocalDate: day('2026-02-01'),
+        effectiveToLocalDate: null,
         segments: WEEK,
       },
     ];
     expect(ScheduleVersion.history(overlapping)).toEqual({
       ok: false,
       error: {
-        code: 'scheduling.staff_schedule.overlapping_versions',
+        errorCode: SchedulingErrorCode.StaffScheduleOverlappingVersions,
         earlierFrom: '2026-01-01',
         laterFrom: '2026-02-01',
       },
@@ -264,14 +274,14 @@ describe('ScheduleVersion — the roster history', () => {
     const openThenMore: readonly ScheduleVersion[] = [
       {
         seq: 1,
-        effectiveFromDayKey: day('2026-03-01'),
-        effectiveToDayKey: null,
+        effectiveFromLocalDate: day('2026-03-01'),
+        effectiveToLocalDate: null,
         segments: WEEK,
       },
       {
         seq: 0,
-        effectiveFromDayKey: day('2026-01-01'),
-        effectiveToDayKey: null,
+        effectiveFromLocalDate: day('2026-01-01'),
+        effectiveToLocalDate: null,
         segments: WEEK,
       },
     ];
@@ -282,14 +292,14 @@ describe('ScheduleVersion — the roster history', () => {
     const adjacent: readonly ScheduleVersion[] = [
       {
         seq: 1,
-        effectiveFromDayKey: day('2026-02-01'),
-        effectiveToDayKey: null,
+        effectiveFromLocalDate: day('2026-02-01'),
+        effectiveToLocalDate: null,
         segments: LATER_WEEK,
       },
       {
         seq: 0,
-        effectiveFromDayKey: day('2026-01-01'),
-        effectiveToDayKey: day('2026-01-31'),
+        effectiveFromLocalDate: day('2026-01-01'),
+        effectiveToLocalDate: day('2026-01-31'),
         segments: WEEK,
       },
     ];
@@ -301,14 +311,14 @@ describe('ScheduleVersion — the roster history', () => {
     const versions: readonly ScheduleVersion[] = [
       {
         seq: 0,
-        effectiveFromDayKey: day('2026-01-01'),
-        effectiveToDayKey: day('2026-01-31'),
+        effectiveFromLocalDate: day('2026-01-01'),
+        effectiveToLocalDate: day('2026-01-31'),
         segments: [seg(Weekday.Mon, 540, 600, MLADOST)],
       },
       {
         seq: 1,
-        effectiveFromDayKey: day('2026-02-01'),
-        effectiveToDayKey: null,
+        effectiveFromLocalDate: day('2026-02-01'),
+        effectiveToLocalDate: null,
         segments: WEEK,
       },
     ];

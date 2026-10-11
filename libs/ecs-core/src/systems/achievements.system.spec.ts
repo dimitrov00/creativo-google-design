@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DayKey } from '../components/day-key.data';
-import { Metric, type MetricRef } from '../components/gamification.data';
+import { Metric, MetricRef } from '../components/gamification.data';
 import { Weekday } from '../components/weekday.data';
-import { BarberId } from '../entities/barber.entity';
-import { LocationId } from '../entities/location.entity';
-import { ServiceId } from '../entities/service.entity';
-import { deepFreeze } from '../testing';
+import { BarberId, LocationId, ServiceId } from '../primitives/ids.primitive';
+import { MinuteDelta } from '../primitives/duration-minutes.primitive';
+import { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
+import { deepFreeze, localDate, minute, unwrapOk, utcMs } from '../testing';
 import { AchievementsSystem, type CountedVisit } from './achievements.system';
 
 /*
@@ -18,24 +17,27 @@ import { AchievementsSystem, type CountedVisit } from './achievements.system';
  * the first began in Sofia, is the presenter's read of an appointment (the
  * cases about another person's book, an unfinished companion and an hour
  * to come stay with its spec); the narrowing and every metric's test are
- * here. Plus `insideWindows` and the purity case.
+ * here — on the shop's wall clock (early bird, weekend) and on the two
+ * stamps (on time, T2). Plus `insideWindows` and the purity case.
  */
 
+/** What a family counts — the flat `MetricRef` slice, scoped by the parts given. */
 const by = (
   metric: Metric,
-  where: Partial<NonNullable<MetricRef['where']>> | null = null,
+  scope: {
+    readonly serviceId?: ServiceId;
+    readonly barberId?: BarberId;
+    readonly locationId?: LocationId;
+  } = {},
 ): MetricRef => ({
-  metric,
-  window: null,
-  where:
-    where === null
-      ? null
-      : {
-          serviceId: where.serviceId ?? null,
-          barberId: where.barberId ?? null,
-          locationId: where.locationId ?? null,
-        },
+  ...MetricRef.of(metric),
+  metricScopeServiceId: scope.serviceId ?? null,
+  metricScopeBarberId: scope.barberId ?? null,
+  metricScopeLocationId: scope.locationId ?? null,
 });
+
+const minutesFrom = (start: UtcEpochMs, minutes: number): UtcEpochMs =>
+  UtcEpochMs.plusMinutes(start, unwrapOk(MinuteDelta.of(minutes)));
 
 /** A fade with Иван at Център, 11:00 on Thursday 10 September, alone, never marked arrived. */
 function visit(overrides: Partial<CountedVisit> = {}): CountedVisit {
@@ -43,10 +45,11 @@ function visit(overrides: Partial<CountedVisit> = {}): CountedVisit {
     serviceIds: [ServiceId.of('svc-fade')],
     barberIds: [BarberId.of('ivan')],
     locationId: LocationId.of('loc-center'),
-    startMs: Date.parse('2026-09-10T08:00:00.000Z'),
-    startMinuteOfDay: 11 * 60,
-    startWeekday: Weekday.Thu,
-    arrivedAtMs: null,
+    localDate: localDate('2026-09-10'),
+    startMinutes: minute(11 * 60),
+    weekday: Weekday.Thu,
+    startUtcMs: utcMs('2026-09-10T08:00:00.000Z'),
+    arrivedAtUtcMs: null,
     withCompany: false,
     ...overrides,
   };
@@ -97,17 +100,29 @@ describe('AchievementsSystem.countsToward', () => {
   it('reads an early bird by when the person’s own first worked seat began: by 10:00', () => {
     const early = by(Metric.VisitsEarlyBird);
     expect(
-      AchievementsSystem.countsToward(early, visit({ startMinuteOfDay: 600 })),
+      AchievementsSystem.countsToward(
+        early,
+        visit({ startMinutes: minute(600) }),
+      ),
     ).toBe(true);
     expect(
-      AchievementsSystem.countsToward(early, visit({ startMinuteOfDay: 605 })),
+      AchievementsSystem.countsToward(
+        early,
+        visit({ startMinutes: minute(605) }),
+      ),
     ).toBe(false);
     // The booker sat at 9:30; the companion's own seat began at 10:15.
     expect(
-      AchievementsSystem.countsToward(early, visit({ startMinuteOfDay: 570 })),
+      AchievementsSystem.countsToward(
+        early,
+        visit({ startMinutes: minute(570) }),
+      ),
     ).toBe(true);
     expect(
-      AchievementsSystem.countsToward(early, visit({ startMinuteOfDay: 615 })),
+      AchievementsSystem.countsToward(
+        early,
+        visit({ startMinutes: minute(615) }),
+      ),
     ).toBe(false);
   });
 
@@ -122,28 +137,28 @@ describe('AchievementsSystem.countsToward', () => {
     for (const [day, counts] of days) {
       expect([
         day,
-        AchievementsSystem.countsToward(weekend, visit({ startWeekday: day })),
+        AchievementsSystem.countsToward(weekend, visit({ weekday: day })),
       ]).toEqual([day, counts]);
     }
   });
 
   it('counts a punctual visit only when the arrival was marked, by the start', () => {
     const onTime = by(Metric.VisitsOnTime);
-    const start = visit().startMs;
+    const start = visit().startUtcMs;
     expect(AchievementsSystem.countsToward(onTime, visit())).toBe(false);
     expect(
       AchievementsSystem.countsToward(
         onTime,
-        visit({ arrivedAtMs: start - 5 * 60_000 }),
+        visit({ arrivedAtUtcMs: minutesFrom(start, -5) }),
       ),
     ).toBe(true);
     expect(
-      AchievementsSystem.countsToward(onTime, visit({ arrivedAtMs: start })),
+      AchievementsSystem.countsToward(onTime, visit({ arrivedAtUtcMs: start })),
     ).toBe(true);
     expect(
       AchievementsSystem.countsToward(
         onTime,
-        visit({ arrivedAtMs: start + 5 * 60_000 }),
+        visit({ arrivedAtUtcMs: minutesFrom(start, 5) }),
       ),
     ).toBe(false);
   });
@@ -166,7 +181,10 @@ describe('AchievementsSystem.countsToward', () => {
   });
 
   it('answers no for a family that counts no single visit', () => {
-    expect(AchievementsSystem.countsToward(null, visit())).toBe(false);
+    // Today's `metric: null` — a single act, the rhythm — is the all-null slice.
+    expect(AchievementsSystem.countsToward(MetricRef.none(), visit())).toBe(
+      false,
+    );
     for (const metric of [
       Metric.TenureDays,
       Metric.BookingsSelfService,
@@ -189,10 +207,10 @@ describe('AchievementsSystem.countsToward', () => {
 });
 
 describe('AchievementsSystem.insideWindows', () => {
-  const TODAY = DayKey.of('2026-09-28');
+  const TODAY = localDate('2026-09-28');
   const autumn = {
-    from: DayKey.of('2026-09-01'),
-    until: DayKey.of('2026-11-30'),
+    windowFrom: localDate('2026-09-01'),
+    windowUntil: localDate('2026-11-30'),
   };
 
   it('counts a season’s family inside the season only, and nothing for a season the catalogue lacks', () => {
@@ -201,7 +219,7 @@ describe('AchievementsSystem.insideWindows', () => {
         autumn,
         true,
         null,
-        DayKey.of('2026-09-10'),
+        localDate('2026-09-10'),
         TODAY,
       ),
     ).toBe(true);
@@ -210,7 +228,7 @@ describe('AchievementsSystem.insideWindows', () => {
         autumn,
         true,
         null,
-        DayKey.of('2026-08-31'),
+        localDate('2026-08-31'),
         TODAY,
       ),
     ).toBe(false);
@@ -219,7 +237,7 @@ describe('AchievementsSystem.insideWindows', () => {
         null,
         true,
         null,
-        DayKey.of('2026-09-10'),
+        localDate('2026-09-10'),
         TODAY,
       ),
     ).toBe(false);
@@ -228,20 +246,20 @@ describe('AchievementsSystem.insideWindows', () => {
         null,
         false,
         null,
-        DayKey.of('2020-01-01'),
+        localDate('2020-01-01'),
         TODAY,
       ),
     ).toBe(true);
   });
 
   it('counts the last `lastDays` days of the metric’s own window, today included', () => {
-    const year = { lastDays: 365 };
+    const year = 365;
     expect(
       AchievementsSystem.insideWindows(
         null,
         false,
         year,
-        DayKey.of('2025-09-29'),
+        localDate('2025-09-29'),
         TODAY,
       ),
     ).toBe(true);
@@ -250,7 +268,7 @@ describe('AchievementsSystem.insideWindows', () => {
         null,
         false,
         year,
-        DayKey.of('2025-09-28'),
+        localDate('2025-09-28'),
         TODAY,
       ),
     ).toBe(false);

@@ -10,11 +10,20 @@ import type { Result } from '../components/result.data';
  * The booking draft IS `BookingFlowState` — the plain component bags the
  * BookingFlowSystem steps over, serialised as is; there is no separate
  * `BookingDraft` shape and no `Reconstitute*Props`. A stored draft that
- * fails the `BookingFlowState` guard (a stale shape, today's drafts
- * included) reads as `repo.malformed` and is cleared, never migrated
- * (CLAUDE.md §0); `BookingCartSystem.restore(draft, nowMs)` prunes the
- * expired days of a good one.
+ * fails the `BookingFlowState` guard (a stale shape) reads as a malformed
+ * repository error and is cleared, never migrated (CLAUDE.md §0);
+ * `BookingCartSystem.restore(draft, today)` prunes the lapsed days of a good
+ * one.
+ *
+ * **The key is versioned** ({@link BookingDraftStorageKey}): the flatten pass
+ * renamed the draft's fields (`bookingFlowStep`, `cartSeats`,
+ * `cartNextSequence`, `flexibleDays`, SCREAMING tags), so the adapter stores
+ * under `…/v2` and never reads the pre-flatten key — an old draft is
+ * dropped, not mis-read.
  */
+
+/** The `sessionStorage` key the booking draft adapter reads and writes. */
+export type BookingDraftStorageKey = 'creativo.booking-draft/v2';
 
 /** The saved draft; `null` when there is none. */
 export type LoadBookingDraft = () => Result<

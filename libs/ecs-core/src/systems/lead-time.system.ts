@@ -1,24 +1,26 @@
-import { CapacityEntry } from '../components/capacity-entry.data';
-import type { DayKey } from '../components/day-key.data';
+import type { CapacityEntry } from '../components/capacity-entry.data';
+import type { BarberLeadTimeSample } from '../entities/barber-lead-time-sample.entity';
+import { MinuteCount } from '../primitives/duration-minutes.primitive';
 import {
-  type BarberLeadTimeSampleEntity,
+  type BarberId,
   BarberLeadTimeSampleId,
-} from '../entities/barber-lead-time-sample.entity';
-import type { BarberId } from '../entities/barber.entity';
-import { ZonedTimeSystem } from './zoned-time.system';
+  type CapacityMonthId,
+} from '../primitives/ids.primitive';
+import { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 
 /** The first day a barber has sellable time, and how far away it is. */
 export type FirstAvailableDay = {
-  readonly dayKey: DayKey;
+  readonly localDate: LocalDate;
   /** Days from the walk's start — `0` is free TODAY. */
   readonly leadTimeDays: number;
-  readonly freeMinutes: number;
+  readonly freeMinutes: MinuteCount;
 };
 
 /** The sample document body — the entity minus `id`. */
-export type LeadTimeSampleBody = Omit<BarberLeadTimeSampleEntity, 'id'>;
+export type LeadTimeSampleBody = Omit<BarberLeadTimeSample, 'id'>;
 
-/** One sample: its id (`{barberId}__{dayKey}`) and body. */
+/** One sample: its id (`{barberId}__{localDate}`) and body. */
 export type LeadTimeSample = {
   readonly id: BarberLeadTimeSampleId;
   readonly body: LeadTimeSampleBody;
@@ -28,7 +30,8 @@ export type LeadTimeSample = {
  * LeadTimeSystem — how far out a barber's first free day is
  * (`sample-lead-time.ts:155-200`), read off the capacity rollup's sorted
  * entries rather than the availability engine, so the number the owner sees
- * agrees with what a client would have found on the calendar.
+ * agrees with what a client would have found on the calendar. Days are
+ * `LocalDate` arithmetic (flatten-spec T8); no zone.
  *
  * The rollup stores a day's free minutes as a SUM, not its longest block:
  * this is a LOWER BOUND on true lead time — it can report "free tomorrow"
@@ -38,41 +41,43 @@ export type LeadTimeSample = {
  */
 export const LeadTimeSystem = {
   /**
-   * Walk forward from `fromDayKey` (TODAY — same-day walk-ups are most of a
-   * barbershop's volume, so a lead time that could never be zero would hide
-   * the quiet days) to `toDayKey` inclusive, to the first day the barber's
-   * free minutes — every shop summed: the question is when, not where —
-   * reach `thresholdMinutes`. `null` is fully booked to the horizon, which
+   * Walk forward from `fromLocalDate` (TODAY — same-day walk-ups are most of
+   * a barbershop's volume, so a lead time that could never be zero would
+   * hide the quiet days) to `toLocalDate` inclusive, to the first day the
+   * barber's free minutes — every shop summed: the question is when, not
+   * where — reach `threshold`. `null` is fully booked to the horizon, which
    * is NOT zero. One linear pass over the sorted `entries`.
    */
   firstAvailableDay(
     entries: readonly CapacityEntry[],
     barberId: BarberId,
-    fromDayKey: DayKey,
-    toDayKey: DayKey,
-    thresholdMinutes: number,
+    fromLocalDate: LocalDate,
+    toLocalDate: LocalDate,
+    threshold: MinuteCount,
   ): FirstAvailableDay | null {
     let i = 0;
     let leadTimeDays = 0;
     for (
-      let dayKey = fromDayKey;
-      dayKey <= toDayKey;
-      dayKey = ZonedTimeSystem.addDays(dayKey, 1)
+      let localDate = fromLocalDate;
+      localDate <= toLocalDate;
+      localDate = LocalDate.addDays(localDate, 1)
     ) {
       while (
         i < entries.length &&
-        (entries[i] as CapacityEntry).dayKey < dayKey
+        (entries[i] as CapacityEntry).localDate < localDate
       ) {
         i++;
       }
-      let freeMinutes = 0;
+      let freeMinutes = MinuteCount.ZERO;
       for (let k = i; k < entries.length; k++) {
         const entry = entries[k] as CapacityEntry;
-        if (entry.dayKey !== dayKey) break;
-        if (entry.barberId === barberId) freeMinutes += entry.freeMinutes;
+        if (entry.localDate !== localDate) break;
+        if (entry.barberId === barberId) {
+          freeMinutes = MinuteCount.add(freeMinutes, entry.freeMinutes);
+        }
       }
-      if (freeMinutes >= thresholdMinutes) {
-        return { dayKey, leadTimeDays, freeMinutes };
+      if (freeMinutes >= threshold) {
+        return { localDate, leadTimeDays, freeMinutes };
       }
       leadTimeDays += 1;
     }
@@ -80,57 +85,63 @@ export const LeadTimeSystem = {
   },
 
   /** Every `YYYY-MM` the inclusive span touches, in order — the month documents to read. */
-  monthKeysBetween(fromDayKey: DayKey, toDayKey: DayKey): readonly string[] {
-    const keys: string[] = [];
-    if (toDayKey < fromDayKey) return keys;
-    const last = CapacityEntry.monthOf(toDayKey);
-    let cursor = ZonedTimeSystem.startOfMonth(fromDayKey);
+  monthKeysBetween(
+    fromLocalDate: LocalDate,
+    toLocalDate: LocalDate,
+  ): readonly CapacityMonthId[] {
+    const keys: CapacityMonthId[] = [];
+    if (toLocalDate < fromLocalDate) return keys;
+    const last = LocalDate.monthKey(toLocalDate);
+    let cursor = LocalDate.startOfMonth(fromLocalDate);
     for (;;) {
-      const month = CapacityEntry.monthOf(cursor);
+      const month = LocalDate.monthKey(cursor);
       keys.push(month);
       if (month >= last) return keys;
-      cursor = ZonedTimeSystem.addMonths(cursor, 1);
+      cursor = LocalDate.addMonths(cursor, 1);
     }
   },
 
   /** Days in the inclusive span (`0` when inverted) — the sample's horizon. */
-  dayCountBetween(fromDayKey: DayKey, toDayKey: DayKey): number {
-    const count = ZonedTimeSystem.daysBetween(fromDayKey, toDayKey) + 1;
+  dayCountBetween(fromLocalDate: LocalDate, toLocalDate: LocalDate): number {
+    const count = LocalDate.daysBetween(fromLocalDate, toLocalDate) + 1;
     return count > 0 ? count : 0;
   },
 
   /**
    * The day's sample for one barber — what `barberLeadTimeSamples/{id}`
-   * stores. A day has to hold at least `thresholdMinutes` (one slot step) of
-   * free time to count. `sampledAtMs` is the pipeline's clock.
+   * stores. A day has to hold at least `threshold` (one slot step) of free
+   * time to count. `sampledAtUtcMs` is the pipeline's clock — a lifecycle
+   * stamp, never compared here.
    */
   sample(
     entries: readonly CapacityEntry[],
     barberId: BarberId,
-    fromDayKey: DayKey,
-    toDayKey: DayKey,
-    thresholdMinutes: number,
-    zone: string,
-    sampledAtMs: number,
+    fromLocalDate: LocalDate,
+    toLocalDate: LocalDate,
+    threshold: MinuteCount,
+    sampledAtUtcMs: UtcEpochMs,
   ): LeadTimeSample {
     const found = LeadTimeSystem.firstAvailableDay(
       entries,
       barberId,
-      fromDayKey,
-      toDayKey,
-      thresholdMinutes,
+      fromLocalDate,
+      toLocalDate,
+      threshold,
     );
     return {
-      id: BarberLeadTimeSampleId.of(`${barberId}__${fromDayKey}`),
+      id: BarberLeadTimeSampleId.of(`${barberId}__${fromLocalDate}`),
       body: {
         barberId,
-        dayKey: fromDayKey,
-        zone,
-        firstAvailableDayKey: found === null ? null : found.dayKey,
+        localDate: fromLocalDate,
+        firstAvailableLocalDate: found === null ? null : found.localDate,
         leadTimeDays: found === null ? null : found.leadTimeDays,
-        freeMinutesOnFirstDay: found === null ? 0 : found.freeMinutes,
-        horizonDayCount: LeadTimeSystem.dayCountBetween(fromDayKey, toDayKey),
-        sampledAtMs,
+        freeMinutesOnFirstDay:
+          found === null ? MinuteCount.ZERO : found.freeMinutes,
+        horizonDayCount: LeadTimeSystem.dayCountBetween(
+          fromLocalDate,
+          toLocalDate,
+        ),
+        sampledAtUtcMs,
       },
     };
   },

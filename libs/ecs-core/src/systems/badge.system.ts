@@ -8,8 +8,8 @@ import {
 } from '../components/badge-level.data';
 import { EngagementError } from '../components/engagement-errors.data';
 import { Result } from '../components/result.data';
-import type { BadgeProgressEntity } from '../entities/badge-progress.entity';
-import type { BadgeSeriesEntity } from '../entities/badge-series.entity';
+import type { BadgeProgress } from '../entities/badge-progress.entity';
+import type { BadgeSeries } from '../entities/badge-series.entity';
 
 /*
  * ONE MEDAL FAMILY (client-card-redesign §4.2, `badge-series.ts:57-381`):
@@ -33,12 +33,12 @@ export type BadgeSeriesError =
 
 /** The parts of a family its rules read. */
 export type BadgeSeriesShape = Pick<
-  BadgeSeriesEntity,
+  BadgeSeries,
   'categoryId' | 'seasonId' | 'levels' | 'repeatable'
 >;
 
 /** The one client's progress a standing reads; `null` = not started. */
-export type BadgeProgressShape = Pick<BadgeProgressEntity, 'value' | 'earned'>;
+export type BadgeProgressShape = Pick<BadgeProgress, 'value' | 'earned'>;
 
 export const BadgeSystem = {
   /**
@@ -47,7 +47,7 @@ export const BadgeSystem = {
    * `highestLevel` (0 = none), the caption `value` / `target`.
    */
   standing(
-    series: Pick<BadgeSeriesEntity, 'levels'>,
+    series: Pick<BadgeSeries, 'levels'>,
     progress: BadgeProgressShape | null,
   ): SeriesStanding {
     let highestLevel = 0;
@@ -66,7 +66,7 @@ export const BadgeSystem = {
       }
     }
     return {
-      state:
+      medalState:
         highestLevel > 0
           ? MedalState.Earned
           : progress !== null
@@ -81,7 +81,7 @@ export const BadgeSystem = {
 
   /** A level by its number, or `null`. */
   levelAt(
-    series: Pick<BadgeSeriesEntity, 'levels'>,
+    series: Pick<BadgeSeries, 'levels'>,
     level: number,
   ): BadgeLevel | null {
     for (let i = 0; i < series.levels.length; i++) {
@@ -92,13 +92,13 @@ export const BadgeSystem = {
   },
 
   /** Withdrawn from the catalogue: shown only where a client already started it. */
-  isRetired(series: Pick<BadgeSeriesEntity, 'retiredAtMs'>): boolean {
-    return series.retiredAtMs !== null;
+  isRetired(series: Pick<BadgeSeries, 'retiredAtUtcMs'>): boolean {
+    return series.retiredAtUtcMs !== null;
   },
 
   /** Tenure: nothing a visit does moves it, so it never sits in «Скоро». */
-  isCalendarDriven(series: Pick<BadgeSeriesEntity, 'metric'>): boolean {
-    return Gamification.isCalendarDriven(series.metric);
+  isCalendarDriven(series: Pick<BadgeSeries, 'metric'>): boolean {
+    return Gamification.isCalendarDriven(series);
   },
 
   /**
@@ -114,7 +114,10 @@ export const BadgeSystem = {
       const award = level.awards[k] as AwardSummary;
       if (!Gamification.isAwardPositive(award)) {
         errors.push(
-          EngagementError.badgeSeriesAwardNotPositive(level.level, award.kind),
+          EngagementError.badgeSeriesAwardNotPositive(
+            level.level,
+            award.awardKind,
+          ),
         );
       }
     }

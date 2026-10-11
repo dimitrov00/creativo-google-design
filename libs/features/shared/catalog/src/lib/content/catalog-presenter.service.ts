@@ -4,8 +4,12 @@ import {
   BarberId,
   type CatalogPriced,
   CatalogPricingSystem,
+  Currency,
+  DurationMinutes,
+  PriceCents,
   ServiceTerms,
   ServiceVariantId,
+  defect,
 } from '@creativo/ecs-core';
 import {
   type Localized,
@@ -56,12 +60,13 @@ export class CatalogPresenter {
     // EVERY bookable term, not just the base ones — a card that folded only
     // `offering.base` quoted a cheapest price the sheet it opens could
     // contradict one tap later (`CatalogPricingSystem.cardPrice`).
+    const priced = pricedOf(service);
     const tag =
-      service.offerings.length > 0
-        ? CatalogPricingSystem.cardPrice(pricedOf(service))
-        : { cheapestMinorUnits: 0, spread: false };
+      priced !== null
+        ? CatalogPricingSystem.cardPrice(priced)
+        : { cheapestCents: 0, spread: false };
     return formatServiceMeta({
-      price: this.price(tag.cheapestMinorUnits / 100),
+      price: this.price(tag.cheapestCents / 100),
       fromLabel,
       spread: tag.spread,
     });
@@ -70,28 +75,49 @@ export class CatalogPresenter {
 
 /* ── Phase 2 shim converter: the view model → the catalogue's terms ─────── */
 
-/** EUR major units → the terms matrix the pricing system reads. */
-function pricedOf(service: ServiceVm): CatalogPriced {
+/** A brand the view model's figure already satisfies (catalogue terms, mapped). */
+function sure<T, E>(
+  result:
+    | { readonly ok: true; readonly value: T }
+    | { readonly ok: false; readonly error: E },
+  what: string,
+): T {
+  // Unreachable: `catalog-to-vm` maps the catalogue's own terms — a
+  // non-negative price and a positive duration.
+  if (!result.ok) defect(`unreachable: ${what}`);
+  return result.value;
+}
+
+/**
+ * EUR major units → the terms matrix the pricing system reads; `null` for a
+ * view model with no offering (no card price to fold).
+ */
+function pricedOf(service: ServiceVm): CatalogPriced | null {
   const terms = (vm: { readonly price: number; readonly minutes: number }) =>
-    ServiceTerms.unpadded(Math.round(vm.price * 100), 'EUR', vm.minutes);
+    ServiceTerms.unpadded(
+      sure(PriceCents.of(Math.round(vm.price * 100)), 'a price'),
+      Currency.EUR,
+      sure(DurationMinutes.of(vm.minutes), 'a duration'),
+    );
+  const first = service.offerings[0];
+  if (first === undefined) return null;
   const variantIds = new Set(service.variants.map((variant) => variant.id));
   for (const offering of service.offerings) {
     for (const id of Object.keys(offering.byVariant ?? {})) variantIds.add(id);
   }
-  const first = service.offerings[0];
   return {
-    baseTerms: first ? terms(first.base) : ServiceTerms.unpadded(0, 'EUR', 0),
+    ...terms(first.base),
     variants: [...variantIds].map((id) => ({
-      id: ServiceVariantId.of(id),
+      variantId: ServiceVariantId.of(id),
       name: { bg: id, en: id },
     })),
     offerings: service.offerings.map((offering) => ({
       barberId: BarberId.of(offering.barberId),
-      base: terms(offering.base),
+      ...terms(offering.base),
       overrides: Object.entries(offering.byVariant ?? {}).map(
         ([variantId, variantTerms]) => ({
           variantId: ServiceVariantId.of(variantId),
-          terms: terms(variantTerms),
+          ...terms(variantTerms),
         }),
       ),
     })),

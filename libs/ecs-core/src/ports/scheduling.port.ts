@@ -1,32 +1,30 @@
 import type { Observable } from 'rxjs';
 import type { BookingPolicy } from '../components/booking-policy.data';
-import type { BusyKey } from '../components/busy-key.data';
-import type { DayKey } from '../components/day-key.data';
 import type { PipelineError } from '../components/pipeline-errors.data';
 import type { RepositoryError } from '../components/repository-errors.data';
 import type { Result } from '../components/result.data';
+import type { Appointment } from '../entities/appointment.entity';
+import type { BarberBusyDay } from '../entities/barber-busy-day.entity';
+import type { BarberLeadTimeSample } from '../entities/barber-lead-time-sample.entity';
+import type { BarberSchedule } from '../entities/barber-schedule.entity';
+import type { CapacityMonth } from '../entities/capacity-month.entity';
+import type { ClientMoneyRecord } from '../entities/client-money-stats.entity';
+import type { ClientStatsRecord } from '../entities/client-stats.entity';
+import type { PolicyRecomputeJob } from '../entities/policy-recompute-job.entity';
+import type { ScheduleException } from '../entities/schedule-exception.entity';
+import type { ShopLocation } from '../entities/shop-location.entity';
+import type { WaitlistRequest } from '../entities/waitlist-request.entity';
+import type { BusyKey } from '../primitives/busy-key.primitive';
 import type {
-  AppointmentEntity,
   AppointmentId,
-} from '../entities/appointment.entity';
-import type { BarberBusyDayEntity } from '../entities/barber-busy-day.entity';
-import type { BarberLeadTimeSampleEntity } from '../entities/barber-lead-time-sample.entity';
-import type { BarberScheduleEntity } from '../entities/barber-schedule.entity';
-import type { BarberId } from '../entities/barber.entity';
-import type {
-  CapacityMonthEntity,
+  BarberId,
   CapacityMonthId,
-} from '../entities/capacity-month.entity';
-import type { ClientMoneyStatsEntity } from '../entities/client-money-stats.entity';
-import type { ClientStatsEntity } from '../entities/client-stats.entity';
-import type { LocationEntity, LocationId } from '../entities/location.entity';
-import type { PolicyRecomputeJobEntity } from '../entities/policy-recompute-job.entity';
-import type { ScheduleExceptionEntity } from '../entities/schedule-exception.entity';
-import type { UserId } from '../entities/user.entity';
-import type {
-  WaitlistRequestEntity,
+  LocationId,
+  UserId,
   WaitlistRequestId,
-} from '../entities/waitlist-request.entity';
+} from '../primitives/ids.primitive';
+import type { LocalDate } from '../primitives/local-date.primitive';
+import type { UtcEpochMs } from '../primitives/utc-epoch-ms.primitive';
 import type { CallableName } from './callables';
 
 /**
@@ -56,7 +54,7 @@ import type { CallableName } from './callables';
  */
 export type ObserveBusyDay = (
   key: BusyKey,
-) => Observable<Result<BarberBusyDayEntity | null, RepositoryError>>;
+) => Observable<Result<BarberBusyDay | null, RepositoryError>>;
 
 /**
  * One barber's schedule exception for one day — `scheduleExceptions/{BusyKey}`
@@ -65,17 +63,17 @@ export type ObserveBusyDay = (
  */
 export type ObserveExceptions = (
   key: BusyKey,
-) => Observable<Result<ScheduleExceptionEntity | null, RepositoryError>>;
+) => Observable<Result<ScheduleException | null, RepositoryError>>;
 
 /** A barber's roster versions — `barberSchedules/{barberId}`; `null` when unrostered. */
 export type ObserveSchedule = (
   barberId: BarberId,
-) => Observable<Result<BarberScheduleEntity | null, RepositoryError>>;
+) => Observable<Result<BarberSchedule | null, RepositoryError>>;
 
 /** One shop — `locations/{locationId}`; `null` when it is gone. */
 export type ObserveLocation = (
   locationId: LocationId,
-) => Observable<Result<LocationEntity | null, RepositoryError>>;
+) => Observable<Result<ShopLocation | null, RepositoryError>>;
 
 /**
  * The tenant's booking policy — `settings/bookingPolicy`, live. Never
@@ -95,14 +93,14 @@ export type ObservePolicy = () => Observable<
  */
 export type ObserveCapacityMonth = (
   month: CapacityMonthId,
-) => Observable<Result<CapacityMonthEntity | null, RepositoryError>>;
+) => Observable<Result<CapacityMonth | null, RepositoryError>>;
 
 // ── Appointments ──────────────────────────────────────────────────────────
 
 /** One visit — `appointments/{id}`; `null` when absent. */
 export type ObserveAppointment = (
   id: AppointmentId,
-) => Observable<Result<AppointmentEntity | null, RepositoryError>>;
+) => Observable<Result<Appointment | null, RepositoryError>>;
 
 /**
  * Everything on ONE barber's chair for ONE day, every status — the staff
@@ -112,67 +110,70 @@ export type ObserveAppointment = (
  */
 export type ObserveBarberDay = (
   key: BusyKey,
-) => Observable<Result<readonly AppointmentEntity[], RepositoryError>>;
+) => Observable<Result<readonly Appointment[], RepositoryError>>;
 
 /**
- * A person's live bookings — `ownerUserId ==`, `bookingStatus.kind in
- * [pending, confirmed]`, `orderBy timeInterval.startMs` (index #6). Which of
- * them are still ahead is decided by a system against `nowMs`, not here.
+ * A person's live bookings — `ownerUserId ==` (the ACCOUNT's own visits —
+ * `UserId` for good, D29), live statuses, ordered by start (index #6). Which
+ * of them are still ahead is decided by a system against `ShopNow`, not here.
  */
 export type ObserveUpcoming = (
   ownerUserId: UserId,
-) => Observable<Result<readonly AppointmentEntity[], RepositoryError>>;
+) => Observable<Result<readonly Appointment[], RepositoryError>>;
 
 /**
- * A person's newest visits, BOUNDED by `limit` — `ownerUserId ==`,
- * `orderBy timeInterval.startMs desc` (index #18): history grows without
- * end, the newest N is what a person scrolls.
+ * A person's newest visits, BOUNDED by `limit` — `ownerUserId ==`, newest
+ * start first (index #18): history grows without end, the newest N is what
+ * a person scrolls.
  */
 export type ObserveHistory = (
   ownerUserId: UserId,
   limit: number,
-) => Observable<Result<readonly AppointmentEntity[], RepositoryError>>;
+) => Observable<Result<readonly Appointment[], RepositoryError>>;
 
 /** One page of a client's visits, newest first, and where the next one starts. */
 export type ClientHistoryPage = {
-  readonly appointments: readonly AppointmentEntity[];
-  /** The `timeInterval.startMs` the next page reads strictly before; `null` at the end. */
-  readonly nextBeforeMs: number | null;
+  readonly appointments: readonly Appointment[];
+  /** The start instant (`utcEpochMs`) the next page reads strictly before; `null` at the end. */
+  readonly nextBeforeUtcMs: UtcEpochMs | null;
 };
 
 /**
- * The client card's visit history — `subjectUserIds array-contains`,
- * `timeInterval.startMs <` the cursor, `desc` (index #19,
- * `client-history-reader.adapter.ts:54-116`). A page never ends between two
- * visits sharing one start instant: `PagingSystem`'s same-instant boundary
- * rule (§2.8) decides the trim, so a cursor on that instant skips nothing.
+ * The client card's visit history — `subjectUserIds array-contains`
+ * (`UserId` until the appointment flip (1) re-keys it, D29), the start
+ * instant `<` the cursor, `desc` (index #19, `client-history-reader.adapter
+ * .ts:54-116`) — a Firestore range on `utcEpochMs`, which is what that field
+ * is for (Law 7.3). A page never ends between two visits sharing one start
+ * instant: `PagingSystem`'s same-instant boundary rule (§2.8) decides the
+ * trim, so a cursor on that instant skips nothing; the typed cursor is this
+ * port's, `PagingSystem`'s key stays opaque (flatten-spec §3.8).
  */
 export type PageClientHistory = (
   subjectUserId: UserId,
-  beforeMs: number | null,
+  beforeUtcMs: UtcEpochMs | null,
   limit: number,
 ) => Promise<Result<ClientHistoryPage, RepositoryError>>;
 
-/** A person's waitlist requests — `ownerUserId ==`, `orderBy createdAtMs desc` (index #17). */
+/** A person's waitlist requests — `ownerUserId ==` (the account, D29), `orderBy createdAtUtcMs desc` (index #17). */
 export type ObserveMyWaitlistRequests = (
   ownerUserId: UserId,
-) => Observable<Result<readonly WaitlistRequestEntity[], RepositoryError>>;
+) => Observable<Result<readonly WaitlistRequest[], RepositoryError>>;
 
 // ── Client stats ──────────────────────────────────────────────────────────
 
-/** `clientStats/{uid}` — `null` before the person's first projection. */
+/** `clientStats/{uid}` — `null` before the person's first projection (`UserId` until flip (1), D29). */
 export type LoadClientStats = (
   userId: UserId,
-) => Promise<Result<ClientStatsEntity | null, RepositoryError>>;
+) => Promise<Result<ClientStatsRecord | null, RepositoryError>>;
 
 /** `clientStats/{uid}/restricted/money` — staff-only; `null` when none is stored. */
 export type LoadClientMoney = (
   userId: UserId,
-) => Promise<Result<ClientMoneyStatsEntity | null, RepositoryError>>;
+) => Promise<Result<ClientMoneyRecord | null, RepositoryError>>;
 
 /** One page of stored client stats, by document id, and where the next starts. */
 export type ClientStatsPage = {
-  readonly records: readonly ClientStatsEntity[];
+  readonly records: readonly ClientStatsRecord[];
   /** The last id of this page — the next page reads strictly after it; `null` at the end. */
   readonly nextAfterUserId: UserId | null;
 };
@@ -203,7 +204,7 @@ export type PageClients = (
  * `backfillJobs/clientStatsPolicy`; `null` before the first pass (§9 D17).
  */
 export type LoadPolicyRecomputeJob = () => Promise<
-  Result<PolicyRecomputeJobEntity | null, RepositoryError>
+  Result<PolicyRecomputeJob | null, RepositoryError>
 >;
 
 // ── Schedule exceptions (the staff command) ───────────────────────────────
@@ -219,8 +220,8 @@ export type LoadPolicyRecomputeJob = () => Promise<
 export type WriteScheduleException = <E>(
   keys: readonly BusyKey[],
   merge: (
-    stored: readonly (ScheduleExceptionEntity | null)[],
-  ) => Result<readonly (ScheduleExceptionEntity | null)[], E>,
+    stored: readonly (ScheduleException | null)[],
+  ) => Result<readonly (ScheduleException | null)[], E>,
 ) => Promise<Result<void, E | RepositoryError>>;
 
 // ── The web's callable gateway ────────────────────────────────────────────
@@ -253,31 +254,31 @@ export type LoadPolicy = () => Promise<Result<BookingPolicy, RepositoryError>>;
 /** `appointments/{id}` — `null` when absent. */
 export type LoadAppointment = (
   id: AppointmentId,
-) => Promise<Result<AppointmentEntity | null, RepositoryError>>;
+) => Promise<Result<Appointment | null, RepositoryError>>;
 
 /** `barberBusy/{BusyKey}` — `null` when the day holds nothing. */
 export type LoadBusyDay = (
   key: BusyKey,
-) => Promise<Result<BarberBusyDayEntity | null, RepositoryError>>;
+) => Promise<Result<BarberBusyDay | null, RepositoryError>>;
 
 /** `barberSchedules/{barberId}` — `null` when unrostered. */
 export type LoadSchedule = (
   barberId: BarberId,
-) => Promise<Result<BarberScheduleEntity | null, RepositoryError>>;
+) => Promise<Result<BarberSchedule | null, RepositoryError>>;
 
 /** `waitlistRequests/{id}` — `null` when absent. */
 export type LoadWaitlistRequest = (
   id: WaitlistRequestId,
-) => Promise<Result<WaitlistRequestEntity | null, RepositoryError>>;
+) => Promise<Result<WaitlistRequest | null, RepositoryError>>;
 
 /**
- * Every open request naming `dayKey` — `status.kind == open`, `dayKeys
+ * Every open request naming `localDate` — open status, `localDates
  * array-contains` (index #14, `firestore-waitlist-store.ts:94-95`): what a
  * freed day has to consider.
  */
 export type LoadOpenWaitlist = (
-  dayKey: DayKey,
-) => Promise<Result<readonly WaitlistRequestEntity[], RepositoryError>>;
+  localDate: LocalDate,
+) => Promise<Result<readonly WaitlistRequest[], RepositoryError>>;
 
 /**
  * Several `capacity/{YYYY-MM}` documents in one `getAll`, positions
@@ -286,7 +287,7 @@ export type LoadOpenWaitlist = (
  */
 export type LoadCapacityMonths = (
   months: readonly CapacityMonthId[],
-) => Promise<Result<readonly (CapacityMonthEntity | null)[], RepositoryError>>;
+) => Promise<Result<readonly (CapacityMonth | null)[], RepositoryError>>;
 
 /**
  * `listBarbers` (§4.1 `sampleLeadTime`) — the ROSTERED barbers, the ids of
@@ -298,13 +299,13 @@ export type ListBarbers = () => Promise<
 >;
 
 /**
- * `barberLeadTimeSamples/{barberId__dayKey}` `Set` — one barber's daily
- * sample; the adapter stamps the root `purgeAt` (`dayKey` + 400 d). The
+ * `barberLeadTimeSamples/{barberId__localDate}` `Set` — one barber's daily
+ * sample; the adapter stamps the root `purgeAt` (`localDate` + 400 d). The
  * daily writer runs only behind the `leadTimeSampling` manifest flag until
  * the trend reader lands (§3.1).
  */
 export type WriteLeadTimeSample = (
-  sample: BarberLeadTimeSampleEntity,
+  sample: BarberLeadTimeSample,
 ) => Promise<Result<void, RepositoryError>>;
 
 /**

@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { AppliedOperation } from '../components/applied-operation.data';
+import { AppointmentId, OperationId } from '../primitives/ids.primitive';
 import { deepFreeze } from '../testing';
 import {
   type LandedRevision,
@@ -19,7 +20,9 @@ import {
  * queued cases are replayed in the order the queue sends them; the two
  * cases that only exercise the component (the queue's own naming of an
  * in-flight drop, the sheet's «Запази» wiring) stay in the component spec.
- * Plus the list rules, a property of the claim and purity.
+ * Plus the list rules, a property of the claim and purity. Flatten pass:
+ * the visit and the name are `AppointmentId` / `OperationId` brands (Law 7);
+ * the batch stays the opaque wire command the store sends.
  */
 
 const S = StaffIntentSystem;
@@ -38,7 +41,7 @@ type Intent = {
 };
 
 type Sent = {
-  readonly operationId: string;
+  readonly operationId: OperationId;
   readonly expectedVersion: number | null;
 };
 
@@ -57,15 +60,17 @@ function device(answer: (sent: Sent, index: number) => Answer) {
     send(intent: Intent): boolean {
       const claim = S.claimFor(chain, intent.expectedVersion ?? null);
       const key = S.intentBasis(
-        intent.appointmentId,
+        AppointmentId.of(intent.appointmentId),
         intent.command,
         intent.acknowledgedOverlap === true,
         claim,
       );
       const operationId =
-        intent.operationId ??
+        (intent.operationId === undefined
+          ? null
+          : OperationId.of(intent.operationId)) ??
         S.operationIdFor(names, key) ??
-        `operation-${String(++minted).padStart(16, '0')}`;
+        OperationId.of(`operation-${String(++minted).padStart(16, '0')}`);
       const request = { operationId, expectedVersion: claim };
       const reply = answer(request, sent.length);
       sent.push(request);
@@ -303,18 +308,21 @@ describe('StaffIntentSystem — the two lists', () => {
   });
 
   it('keys an intent by its visit, batch, acknowledgement and claim', () => {
-    const base = S.intentBasis('a-1', MOVE, false, 3);
-    expect(S.intentBasis('a-1', MOVE, false, 3)).toBe(base);
-    expect(S.intentBasis('a-2', MOVE, false, 3)).not.toBe(base);
-    expect(S.intentBasis('a-1', MOVE, true, 3)).not.toBe(base);
-    expect(S.intentBasis('a-1', MOVE, false, null)).not.toBe(base);
+    const a1 = AppointmentId.of('a-1');
+    const base = S.intentBasis(a1, MOVE, false, 3);
+    expect(S.intentBasis(a1, MOVE, false, 3)).toBe(base);
+    expect(S.intentBasis(AppointmentId.of('a-2'), MOVE, false, 3)).not.toBe(
+      base,
+    );
+    expect(S.intentBasis(a1, MOVE, true, 3)).not.toBe(base);
+    expect(S.intentBasis(a1, MOVE, false, null)).not.toBe(base);
     expect(base).toBe(JSON.stringify(['a-1', MOVE, false, 3]));
   });
 
   it('moves a name kept again to the end, and settles only that intent', () => {
-    let names = S.rememberUnsettled([], 'x', 'op-x');
-    names = S.rememberUnsettled(names, 'y', 'op-y');
-    names = S.rememberUnsettled(names, 'x', 'op-x2');
+    let names = S.rememberUnsettled([], 'x', OperationId.of('op-x'));
+    names = S.rememberUnsettled(names, 'y', OperationId.of('op-y'));
+    names = S.rememberUnsettled(names, 'x', OperationId.of('op-x2'));
     expect(names).toEqual([
       { intent: 'y', operationId: 'op-y' },
       { intent: 'x', operationId: 'op-x2' },
@@ -354,12 +362,15 @@ describe('StaffIntentSystem — the two lists', () => {
       { from: 3, to: 4 },
       { from: 4, to: 5 },
     ]);
-    const names = deepFreeze([{ intent: 'x', operationId: 'op-x' }]);
+    const names = deepFreeze([
+      { intent: 'x', operationId: OperationId.of('op-x') },
+    ]);
     expect(S.claimFor(chain, 3)).toBe(5);
     expect(S.claimFor(chain, 3)).toBe(S.claimFor(chain, 3));
     expect(S.recordLanded(chain, 5, 6)).toEqual(S.recordLanded(chain, 5, 6));
-    expect(S.rememberUnsettled(names, 'y', 'op-y')).toEqual(
-      S.rememberUnsettled(names, 'y', 'op-y'),
+    const opY = OperationId.of('op-y');
+    expect(S.rememberUnsettled(names, 'y', opY)).toEqual(
+      S.rememberUnsettled(names, 'y', opY),
     );
     expect(chain).toHaveLength(2);
     expect(names).toHaveLength(1);

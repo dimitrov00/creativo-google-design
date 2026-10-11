@@ -1,26 +1,27 @@
-import type { LocationId } from '../entities/location.entity';
+import type { LocationId } from '../primitives/ids.primitive';
 import type { MinuteRange } from './minute-range.data';
 
 /**
  * WHY a barber's roster does not apply on a day — the reasons the staff
  * editor knows (`schedule-exception.ts:36-51`). The ONLY source of these
- * strings, and in-memory vocabulary only: under §9 D16(b) the stored record
- * is the public `ExceptionEffect`, never a reason.
+ * strings, named after the field it types (`exceptionReason`, N15), and
+ * in-memory vocabulary only: under §9 D16(b) the stored record is the public
+ * `ExceptionEffectRule`, never a reason.
  */
 export const ExceptionReason = {
   /** The shop is shut (a holiday, a refurb). */
-  Closed: 'closed',
-  TimeOff: 'time_off',
+  Closed: 'CLOSED',
+  TimeOff: 'TIME_OFF',
   /** GDPR Art. 9 special-category data — never leaves the editor. */
-  Sick: 'sick',
-  Training: 'training',
-  Travel: 'travel',
+  Sick: 'SICK',
+  Training: 'TRAINING',
+  Travel: 'TRAVEL',
   /** A one-off different shift; its ranges REPLACE the roster. */
-  Hours: 'hours',
+  Hours: 'HOURS',
   /** A carve-out inside the roster (lunch). */
-  Break: 'break',
+  Break: 'BREAK',
   /** An admin block inside the roster. */
-  Admin: 'admin',
+  Admin: 'ADMIN',
 } as const;
 export type ExceptionReason =
   (typeof ExceptionReason)[keyof typeof ExceptionReason];
@@ -28,8 +29,9 @@ export type ExceptionReason =
 /**
  * The reasoned detail of an exception, as the staff editor holds it — an
  * INPUT to `ScheduleExceptionSystem.publicEffect`, never stored
- * (§9 D16(b)). Each arm carries only what it needs; ranges are wall-clock
- * minutes of the exception's day.
+ * (§9 D16(b)). Each variant is flat and carries only what it needs, every
+ * variant field prefixed by its reason (`sickPaid`, `travelToLocationId`);
+ * `exceptionRanges` are wall-clock minutes of the exception's day.
  */
 export type ExceptionDetail =
   | ExceptionDetail.Closed
@@ -43,58 +45,76 @@ export type ExceptionDetail =
 
 export const ExceptionDetail = {
   closed(): ExceptionDetail.Closed {
-    return { kind: ExceptionReason.Closed };
+    return { exceptionReason: ExceptionReason.Closed };
   },
   timeOff(): ExceptionDetail.TimeOff {
-    return { kind: ExceptionReason.TimeOff };
+    return { exceptionReason: ExceptionReason.TimeOff };
   },
-  sick(paid: boolean): ExceptionDetail.Sick {
-    return { kind: ExceptionReason.Sick, paid };
+  sick(sickPaid: boolean): ExceptionDetail.Sick {
+    return { exceptionReason: ExceptionReason.Sick, sickPaid };
   },
-  training(topic: string | null): ExceptionDetail.Training {
-    return { kind: ExceptionReason.Training, topic };
+  training(trainingTopic: string | null): ExceptionDetail.Training {
+    return { exceptionReason: ExceptionReason.Training, trainingTopic };
   },
-  travel(toLocationId: LocationId): ExceptionDetail.Travel {
-    return { kind: ExceptionReason.Travel, toLocationId };
+  travel(travelToLocationId: LocationId): ExceptionDetail.Travel {
+    return { exceptionReason: ExceptionReason.Travel, travelToLocationId };
   },
-  hours(ranges: readonly MinuteRange[]): ExceptionDetail.Hours {
-    return { kind: ExceptionReason.Hours, ranges };
+  hours(exceptionRanges: readonly MinuteRange[]): ExceptionDetail.Hours {
+    return { exceptionReason: ExceptionReason.Hours, exceptionRanges };
   },
-  break(ranges: readonly MinuteRange[], paid: boolean): ExceptionDetail.Break {
-    return { kind: ExceptionReason.Break, ranges, paid };
+  break(
+    exceptionRanges: readonly MinuteRange[],
+    breakPaid: boolean,
+  ): ExceptionDetail.Break {
+    return {
+      exceptionReason: ExceptionReason.Break,
+      exceptionRanges,
+      breakPaid,
+    };
   },
-  admin(ranges: readonly MinuteRange[], note: string): ExceptionDetail.Admin {
-    return { kind: ExceptionReason.Admin, ranges, note };
+  admin(
+    exceptionRanges: readonly MinuteRange[],
+    adminNote: string,
+  ): ExceptionDetail.Admin {
+    return {
+      exceptionReason: ExceptionReason.Admin,
+      exceptionRanges,
+      adminNote,
+    };
   },
 } as const;
 
 export namespace ExceptionDetail {
-  export type Closed = { readonly kind: typeof ExceptionReason.Closed };
-  export type TimeOff = { readonly kind: typeof ExceptionReason.TimeOff };
+  export type Closed = {
+    readonly exceptionReason: typeof ExceptionReason.Closed;
+  };
+  export type TimeOff = {
+    readonly exceptionReason: typeof ExceptionReason.TimeOff;
+  };
   export type Sick = {
-    readonly kind: typeof ExceptionReason.Sick;
-    readonly paid: boolean;
+    readonly exceptionReason: typeof ExceptionReason.Sick;
+    readonly sickPaid: boolean;
   };
   export type Training = {
-    readonly kind: typeof ExceptionReason.Training;
-    readonly topic: string | null;
+    readonly exceptionReason: typeof ExceptionReason.Training;
+    readonly trainingTopic: string | null;
   };
   export type Travel = {
-    readonly kind: typeof ExceptionReason.Travel;
-    readonly toLocationId: LocationId;
+    readonly exceptionReason: typeof ExceptionReason.Travel;
+    readonly travelToLocationId: LocationId;
   };
   export type Hours = {
-    readonly kind: typeof ExceptionReason.Hours;
-    readonly ranges: readonly MinuteRange[];
+    readonly exceptionReason: typeof ExceptionReason.Hours;
+    readonly exceptionRanges: readonly MinuteRange[];
   };
   export type Break = {
-    readonly kind: typeof ExceptionReason.Break;
-    readonly ranges: readonly MinuteRange[];
-    readonly paid: boolean;
+    readonly exceptionReason: typeof ExceptionReason.Break;
+    readonly exceptionRanges: readonly MinuteRange[];
+    readonly breakPaid: boolean;
   };
   export type Admin = {
-    readonly kind: typeof ExceptionReason.Admin;
-    readonly ranges: readonly MinuteRange[];
-    readonly note: string;
+    readonly exceptionReason: typeof ExceptionReason.Admin;
+    readonly exceptionRanges: readonly MinuteRange[];
+    readonly adminNote: string;
   };
 }

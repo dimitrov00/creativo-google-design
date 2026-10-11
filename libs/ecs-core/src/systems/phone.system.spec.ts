@@ -58,7 +58,7 @@ describe('PhoneSystem.parse', () => {
     expect(PhoneSystem.parse('not-a-phone', null)).toEqual({
       ok: false,
       error: {
-        code: PhoneErrorCode.Invalid,
+        errorCode: PhoneErrorCode.Invalid,
         attempted: 'not-a-phone',
         reason: PhoneInvalidReason.NotANumber,
       },
@@ -68,7 +68,7 @@ describe('PhoneSystem.parse', () => {
   it('rejects a number too short to be possible with reason too-short', () => {
     const result = PhoneSystem.parse('123', BG);
     expect(!result.ok && result.error).toEqual({
-      code: 'phone.invalid',
+      errorCode: 'PHONE_INVALID',
       attempted: '123',
       reason: 'too-short',
     });
@@ -78,7 +78,7 @@ describe('PhoneSystem.parse', () => {
     const result = PhoneSystem.parse('+3598855501001234567', null);
     expect(
       !result.ok &&
-        result.error.code === PhoneErrorCode.Invalid &&
+        result.error.errorCode === PhoneErrorCode.Invalid &&
         result.error.reason,
     ).toBe('too-long');
   });
@@ -87,7 +87,7 @@ describe('PhoneSystem.parse', () => {
     const result = PhoneSystem.parse('0885550100', null);
     expect(
       !result.ok &&
-        result.error.code === PhoneErrorCode.Invalid &&
+        result.error.errorCode === PhoneErrorCode.Invalid &&
         result.error.reason,
     ).toBe('invalid-country');
   });
@@ -95,7 +95,7 @@ describe('PhoneSystem.parse', () => {
   it('rejects any text against a default country the metadata does not support', () => {
     const result = PhoneSystem.parse('+359885550100', CountryIso2.of('XX'));
     expect(!result.ok && result.error).toEqual({
-      code: 'phone.invalid',
+      errorCode: 'PHONE_INVALID',
       attempted: '+359885550100',
       reason: 'invalid-country',
     });
@@ -106,7 +106,7 @@ describe('PhoneSystem.parse', () => {
     const result = PhoneSystem.parse('0123456789', BG);
     expect(
       !result.ok &&
-        result.error.code === PhoneErrorCode.Invalid &&
+        result.error.errorCode === PhoneErrorCode.Invalid &&
         result.error.reason,
     ).toBe('invalid');
   });
@@ -166,7 +166,7 @@ describe('PhoneSystem.parseCountry', () => {
   it('rejects an unassigned ISO-2 code', () => {
     expect(PhoneSystem.parseCountry('XX')).toEqual({
       ok: false,
-      error: { code: PhoneErrorCode.CountryUnsupported, attempted: 'XX' },
+      error: { errorCode: PhoneErrorCode.CountryUnsupported, attempted: 'XX' },
     });
   });
 
@@ -192,7 +192,11 @@ describe('PhoneSystem.listPhoneCountries', () => {
     const bulgaria = PhoneSystem.listPhoneCountries(namingFor('en')).find(
       (c) => c.code === 'BG',
     );
-    expect(bulgaria).toEqual({ code: 'BG', dialCode: '359', name: 'Bulgaria' });
+    expect(bulgaria).toEqual({
+      code: 'BG',
+      dialCode: '359',
+      name: 'Bulgaria',
+    });
   });
 
   it('localizes names for a Bulgarian locale', () => {

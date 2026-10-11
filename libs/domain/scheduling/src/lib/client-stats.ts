@@ -6,40 +6,59 @@ import type {
 } from '@creativo/domain/catalog';
 import type { Money } from '@creativo/domain/kernel';
 import {
+  type AppointmentBill,
   AppointmentId as EcsAppointmentId,
   BarberId as EcsBarberId,
+  BarberPreference as EcsBarberPreference,
   type BilledAppointment,
+  CancellationAttribution as EcsCancellationAttribution,
+  CancellationReason as EcsCancellationReason,
+  CancelledBy as EcsCancelledBy,
   type ClientStats as EcsClientStats,
   ClientStatsSystem,
-  type Money as EcsMoney,
+  Currency,
+  DurationMinutes,
+  EndMinute,
+  type LocalDate,
+  MinuteCount,
+  type MinuteOfDay,
+  type PauseBasisFact,
   type PauseSuggestion as EcsPauseSuggestion,
-  type Seat as EcsSeat,
+  Placement,
+  PriceCents,
+  Seat as EcsSeatComponent,
   SeatId as EcsSeatId,
   SeatLabel as EcsSeatLabel,
-  type SeatOutcome as EcsSeatOutcome,
-  SeatSubject as EcsSeatSubject,
+  SeatOccupant,
   ServiceId as EcsServiceId,
   ServiceVariantId as EcsServiceVariantId,
   type StatsAppointment,
-  type SubjectVisitOutcome as EcsSubjectVisitOutcome,
-  SubjectVisitOutcomeKind,
-  TimeInterval,
+  SubjectRelationship as EcsSubjectRelationship,
+  SubjectVisitOutcome as EcsSubjectVisitOutcome,
+  type SubjectVisitOutcomeState,
+  type TimeZone,
   UserId as EcsUserId,
+  UtcEpochMs,
   type VisitFact as EcsVisitFact,
-  type VisitRef as EcsVisitRef,
+  type VisitLeg as EcsVisitLeg,
+  ZonedTimeSystem,
+  defect,
 } from '@creativo/ecs-core';
 import type { Appointment } from './appointment';
 import { ClientStatsPolicy } from './client-stats-policy';
 import type { AppointmentId, SeatId } from './ids';
-import type { Seat } from './seat';
-import type { SeatOutcome } from './seat-outcome';
+import type { Seat, SeatRelationship } from './seat';
+import { type SeatOutcome, toEcsSeatOutcome } from './seat-outcome';
 
 /*
  * Phase 2 shim: the statistics are `ClientStatsSystem` in
  * `@creativo/ecs-core`. This file keeps the legacy shapes (class ids, the
- * `Appointment` aggregate, the flat spend) for its callers and converts at
- * the edge: appointments go in as the stats slice of the entity, and every
- * id, seat and outcome comes back as the caller's own instance.
+ * `Appointment` aggregate, epoch-ms instants, the flat spend) for its
+ * callers and converts at the edge: appointments go in as the stats slice
+ * of the entity (seats flat, outcomes through `toEcsSeatOutcome`), "now" as
+ * the shop's `ShopNow` and a stored instant as the shop wall clock,
+ * both through `ZonedTimeSystem` in the shop's zone; every id, seat, outcome
+ * and instant comes back as the caller's own value.
  */
 
 /** The fixed rate BGN retired at (2026): legacy seats priced in leva count in euro. */
@@ -193,8 +212,13 @@ export function clientCaused(
   correctionAttribution: CancellationAttribution | null = null,
 ): boolean {
   return ClientStatsSystem.clientCaused(
-    { by: cancellation.by, reason: { kind: cancellation.reason.kind } },
-    correctionAttribution,
+    {
+      cancelledBy: CANCELLED_BY_OF[cancellation.by],
+      cancellationReason: REASON_OF[cancellation.reason.kind],
+    },
+    correctionAttribution === null
+      ? null
+      : ATTRIBUTION_OF[correctionAttribution],
   );
 }
 
@@ -236,11 +260,12 @@ export function subjectVisitOf(
     statsAppointmentOf(appointment, null, bridge),
   );
   if (visit === null) return null;
+  const slot = slotOf(appointment);
   return {
     appointment,
     seats: visit.seats.map((seat) => known(bridge.seats, seat)),
-    atMs: visit.atMs,
-    endMs: visit.endMs,
+    atMs: slot.start.toMillis(),
+    endMs: slot.end.toMillis(),
     outcome: outcomeBack(visit.outcome, bridge),
   };
 }
@@ -259,13 +284,22 @@ export function pauseSuggestionAt(
   dismissedAtMs: number | null = null,
 ): PauseSuggestion | null {
   const bridge = newBridge();
-  for (const fact of noShows) remember(bridge.appointments, fact.appointmentId);
+  const zone = SHOP_ZONE;
+  const basis: PauseBasisFact[] = [];
+  for (const fact of noShows) {
+    remember(bridge.appointments, fact.appointmentId);
+    // A fact that is not an instant was never inside a window.
+    const struct = basisStruct(fact, zone);
+    if (struct !== null) basis.push(struct);
+  }
+  const dismissedAt =
+    dismissedAtMs === null ? null : instantOrNull(dismissedAtMs);
   return suggestionBack(
     ClientStatsSystem.pauseSuggestionAt(
-      noShows.map(factStruct),
-      nowMs,
+      basis,
+      shopNowOf(nowMs, zone),
       policy.toStruct(),
-      dismissedAtMs,
+      dismissedAt,
     ),
     bridge,
   );
@@ -310,7 +344,7 @@ export function computeClientStats(
       ),
     ),
     policy.toStruct(),
-    nowMs,
+    shopNowOf(nowMs, zoneOf(appointments)),
   );
   return statsBack(stats, subject, bridge);
 }
@@ -327,49 +361,131 @@ export function computeClientMoneyStats(
   appointments: readonly Appointment[],
 ): ClientMoneyStats {
   const bridge = newBridge();
-  const money = ClientStatsSystem.money(
-    EcsUserId.of(subject.value),
-    appointments.map((appointment): BilledAppointment => ({
-      ...statsAppointmentOf(appointment, null, bridge),
-      bill: {
-        subtotal: moneyStruct(appointment.subtotal()),
-        total: moneyStruct(appointment.total()),
-      },
-    })),
-  );
+  const billed: BilledAppointment[] = [];
+  for (const appointment of appointments) {
+    const bill = billOf(appointment.subtotal(), appointment.total());
+    // A bill in a currency with no code to read has no honest rate either:
+    // the spend leaves it out, as it leaves out any rate-less currency.
+    if (bill === null) continue;
+    billed.push({ ...statsAppointmentOf(appointment, null, bridge), bill });
+  }
+  const money = ClientStatsSystem.money(EcsUserId.of(subject.value), billed);
   return {
     userId: subject,
-    lifetimeSpendMinor: money.lifetimeSpend.amountMinorUnits,
+    lifetimeSpendMinor: money.lifetimeSpendCents,
     currencyCode: 'EUR',
   };
 }
 
 /** The windows every counter reads, computed at read from the stored instants (R33). */
 export function statWindows(stats: ClientStats, nowMs: number): StatWindows {
+  const zone = SHOP_ZONE;
   return ClientStatsSystem.statWindows(
     {
-      lifetime: stats.lifetime,
-      last365: {
-        visitsCompleted: stats.last365.visitsCompleted.map(factStruct),
-        noShows: stats.last365.noShows.map(factStruct),
-        lateCancels: stats.last365.lateCancels.map(factStruct),
-      },
+      lifetimeVisitsCompleted: stats.lifetime.visitsCompleted,
+      lifetimeNoShows: stats.lifetime.noShows,
+      lifetimeLateCancels: stats.lifetime.lateCancels,
+      last365VisitsCompleted: factsStruct(stats.last365.visitsCompleted, zone),
+      last365NoShows: factsStruct(stats.last365.noShows, zone),
+      last365LateCancels: factsStruct(stats.last365.lateCancels, zone),
     },
-    nowMs,
+    shopNowOf(nowMs, zone),
   );
 }
 
 /* ── The Phase 2 bridge: legacy values ↔ ecs-core structs ──────────────── */
 
 /**
+ * The shop's zone where a call names no appointment to read one from — the
+ * single shop's (blueprint §7.1, Europe/Sofia only; `TENANT_ZONE` on the
+ * server). Phase 4 deletes it with this file.
+ */
+const SHOP_ZONE: TimeZone = zoneOrThrow('Europe/Sofia');
+
+function zoneOrThrow(raw: string): TimeZone {
+  const zone = ZonedTimeSystem.checkZone(raw);
+  if (!zone.ok) defect(`unreachable: a zone that is none (${raw})`);
+  return zone.value;
+}
+
+/** The zone the appointments' own instants carry (the first seat's, as stored). */
+function zoneOf(appointments: readonly Appointment[]): TimeZone {
+  for (const appointment of appointments) {
+    const zone = appointment.seats[0]?.startsAt.zoneName;
+    if (zone !== undefined) {
+      const checked = ZonedTimeSystem.checkZone(zone);
+      if (checked.ok) return checked.value;
+    }
+  }
+  return SHOP_ZONE;
+}
+
+function instantOrNull(ms: number): UtcEpochMs | null {
+  const instant = UtcEpochMs.of(ms);
+  return instant.ok ? instant.value : null;
+}
+
+/** "Now" on the shop's clock — the legacy clocks are `Date.now`-shaped. */
+function shopNowOf(nowMs: number, zone: TimeZone) {
+  const now = instantOrNull(nowMs);
+  if (now === null) defect(`unreachable: a clock read ${nowMs}`);
+  return ZonedTimeSystem.shopNow(now, zone);
+}
+
+/** The legacy side strings ↔ `CancelledBy` — the ONE table. */
+const CANCELLED_BY_OF = {
+  client: EcsCancelledBy.Client,
+  staff: EcsCancelledBy.Staff,
+} as const satisfies Record<Cancellation['by'], EcsCancelledBy>;
+
+/** The legacy reason codes ↔ `CancellationReason` — the ONE table. */
+const REASON_OF = {
+  client_changed_plans: EcsCancellationReason.ClientChangedPlans,
+  client_unwell: EcsCancellationReason.ClientUnwell,
+  staff_barber_absence: EcsCancellationReason.StaffBarberAbsence,
+  staff_shop_closure: EcsCancellationReason.StaffShopClosure,
+  no_show_converted: EcsCancellationReason.NoShowConverted,
+  unspecified: EcsCancellationReason.Unspecified,
+  other: EcsCancellationReason.Other,
+} as const satisfies Record<
+  Cancellation['reason']['kind'],
+  EcsCancellationReason
+>;
+
+/** The legacy attributions ↔ `CancellationAttribution` — the ONE table. */
+const ATTRIBUTION_OF = {
+  client: EcsCancellationAttribution.Client,
+  shop: EcsCancellationAttribution.Shop,
+} as const satisfies Record<
+  CancellationAttribution,
+  EcsCancellationAttribution
+>;
+
+/** The legacy placements ↔ `Placement` — the ONE table. */
+const PLACEMENT_OF = {
+  self: Placement.Self,
+  staff: Placement.Staff,
+} as const satisfies Record<VisitPlacement, Placement>;
+
+/** The legacy visit outcomes ↔ `SubjectVisitOutcome` — the ONE table. */
+const LEGACY_SUBJECT_VISIT_OUTCOME = {
+  [EcsSubjectVisitOutcome.Worked]: 'worked',
+  [EcsSubjectVisitOutcome.NoShow]: 'no_show',
+  [EcsSubjectVisitOutcome.Cancelled]: 'cancelled',
+  [EcsSubjectVisitOutcome.Open]: 'open',
+} as const satisfies Record<EcsSubjectVisitOutcome, VisitOutcome['kind']>;
+
+/**
  * What one call converted, so the answer comes back as the caller's own
- * instances: each seat struct and cancelled outcome by identity, each id by
- * its string (the first instance seen — equal by value to any other).
+ * instances: each seat struct by identity (to the caller's seat), each id
+ * by its string (the first instance seen — equal by value to any other),
+ * and each appointment's start instant by its id and by its wall clock.
  */
 interface Bridge {
-  readonly seats: Map<EcsSeat, Seat>;
-  readonly cancellations: Map<EcsSeatOutcome, Cancellation>;
+  readonly seats: Map<object, Seat>;
   readonly appointments: Map<string, AppointmentId>;
+  readonly starts: Map<string, number>;
+  readonly startsByWall: Map<string, number>;
   readonly seatIds: Map<string, SeatId>;
   readonly services: Map<string, ServiceId>;
   readonly variants: Map<string, ServiceVariantId>;
@@ -379,8 +495,9 @@ interface Bridge {
 function newBridge(): Bridge {
   return {
     seats: new Map(),
-    cancellations: new Map(),
     appointments: new Map(),
+    starts: new Map(),
+    startsByWall: new Map(),
     seatIds: new Map(),
     services: new Map(),
     variants: new Map(),
@@ -399,148 +516,282 @@ function remember<T extends { readonly value: string }>(
 function known<K, V>(map: ReadonlyMap<K, V>, key: K): V {
   const value = map.get(key);
   if (value === undefined) {
-    throw new Error('unreachable: a value the call never handed over');
+    defect('unreachable: a value the call never handed over');
   }
   return value;
 }
 
-function moneyStruct(money: Money): EcsMoney {
+const wallKey = (localDate: LocalDate, minutes: MinuteOfDay): string =>
+  `${localDate}@${minutes}`;
+
+/**
+ * A spend figure as the bill's cents and currency; `null` when its currency
+ * is no code the brand knows (it has no rate, so it never counts).
+ */
+function billOf(subtotal: Money, total: Money): AppointmentBill | null {
+  const currency = Currency.parse(subtotal.currencyCode());
+  const subtotalCents = PriceCents.signed(subtotal.toMinorUnits());
+  const totalCents = PriceCents.signed(total.toMinorUnits());
+  if (!currency.ok || !subtotalCents.ok || !totalCents.ok) return null;
   return {
-    amountMinorUnits: money.toMinorUnits(),
-    currencyCode: money.currencyCode(),
+    subtotalCents: subtotalCents.value,
+    totalCents: totalCents.value,
+    currency: currency.value,
   };
 }
 
-function outcomeStruct(outcome: SeatOutcome, bridge: Bridge): EcsSeatOutcome {
-  if (outcome.kind !== 'cancelled') return outcome;
-  const struct: EcsSeatOutcome = {
-    kind: 'cancelled',
-    atMs: outcome.atMs,
-    by: outcome.by,
-    reason: { kind: outcome.reason.kind },
-    windowHours: outcome.window === null ? null : outcome.window.hours,
-  };
-  bridge.cancellations.set(struct, outcome);
-  return struct;
+/** The legacy preference kinds ↔ `BarberPreference` — the ONE table. */
+const PREFERENCE_OF = {
+  any: EcsBarberPreference.Any,
+  specific: EcsBarberPreference.Specific,
+} as const satisfies Record<
+  NonNullable<Seat['pref']>['kind'],
+  EcsBarberPreference
+>;
+
+/** The legacy relationships ↔ `SubjectRelationship` — the ONE table. */
+const RELATIONSHIP_OF = {
+  self: EcsSubjectRelationship.Self,
+  companion: EcsSubjectRelationship.Companion,
+  client: EcsSubjectRelationship.Client,
+} as const satisfies Record<SeatRelationship, EcsSubjectRelationship>;
+
+/**
+ * The party block — the earliest seat start to the latest seat end, each the
+ * legacy instant of its seat's own slot (the legacy reduce, kept: the first
+ * seat at each bound). Read off the seats rather than the aggregate's
+ * derived `timeSlot`, so a legacy visit that runs past midnight still reads.
+ */
+function slotOf(appointment: Appointment): {
+  readonly start: Seat['startsAt'];
+  readonly end: Seat['startsAt'];
+} {
+  const [first, ...rest] = appointment.seats;
+  if (first === undefined) {
+    defect('unreachable: an appointment without seats');
+  }
+  let start = first.slot.start;
+  let end = first.slot.end;
+  for (const seat of rest) {
+    const slot = seat.slot;
+    if (slot.start.toMillis() < start.toMillis()) start = slot.start;
+    if (slot.end.toMillis() > end.toMillis()) end = slot.end;
+  }
+  return { start, end };
 }
 
-function seatStruct(seat: Seat, bridge: Bridge): EcsSeat {
-  remember(bridge.seatIds, seat.id);
-  remember(bridge.services, seat.serviceId);
-  remember(bridge.barbers, seat.barberId);
-  if (seat.variantId !== null) remember(bridge.variants, seat.variantId);
+/** A value the legacy class already guaranteed, as its brand. */
+function sure<T>(
+  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
+): T {
+  if (!result.ok) defect('unreachable: a value its class guaranteed');
+  return result.value;
+}
+
+const centsOf = (money: Money): PriceCents =>
+  sure(PriceCents.signed(money.toMinorUnits()));
+
+/**
+ * A legacy seat as the flat `Seat` the statistics read — its start on the
+ * visit's wall clock, its money in cents, its outcome through the seat
+ * outcome's own converter. The catalogue terms are no stat's input.
+ */
+function seatStruct(seat: Seat, zone: TimeZone): EcsSeatComponent {
   const subject = seat.subject;
-  const struct: EcsSeat = {
-    id: EcsSeatId.of(seat.id.value),
-    serviceId: EcsServiceId.of(seat.serviceId.value),
-    variantId:
-      seat.variantId === null
-        ? null
-        : EcsServiceVariantId.of(seat.variantId.value),
-    barberId: EcsBarberId.of(seat.barberId.value),
-    barberPref: seat.pref === null ? null : seat.pref.kind,
-    terms: {
-      priceMinorUnits: seat.terms.price.toMinorUnits(),
-      currencyCode: seat.terms.price.currencyCode(),
-      durationMinutes: seat.terms.durationMinutes,
-      setupMinutes: seat.terms.setupMinutes,
-      cleanupMinutes: seat.terms.cleanupMinutes,
-      catalogPriceMinorUnits: null,
+  const start = ZonedTimeSystem.toLocal(
+    sure(UtcEpochMs.of(seat.startsAt.toMillis())),
+    zone,
+  );
+  return EcsSeatComponent.compose(
+    {
+      seatId: EcsSeatId.of(seat.id.value),
+      serviceId: EcsServiceId.of(seat.serviceId.value),
+      variantId:
+        seat.variantId === null
+          ? null
+          : EcsServiceVariantId.of(seat.variantId.value),
+      barberId: EcsBarberId.of(seat.barberId.value),
+      barberPreference:
+        seat.pref === null ? null : PREFERENCE_OF[seat.pref.kind],
+      startMinutes: start.minute,
+      tipCents: seat.tip === null ? null : centsOf(seat.tip),
+    },
+    {
+      priceCents: centsOf(seat.terms.price),
+      currency: sure(Currency.parse(seat.terms.price.currencyCode())),
+      durationMinutes: sure(DurationMinutes.of(seat.terms.durationMinutes)),
+      setupMinutes: sure(MinuteCount.of(seat.terms.setupMinutes)),
+      cleanupMinutes: sure(MinuteCount.of(seat.terms.cleanupMinutes)),
+      catalogPriceCents: null,
       catalogDurationMinutes: null,
     },
-    startMs: seat.startsAt.toMillis(),
-    subject:
-      subject.kind === 'account'
-        ? EcsSeatSubject.account(
-            EcsUserId.of(subject.userId.value),
-            subject.relationship,
-          )
-        : EcsSeatSubject.anonymous(EcsSeatLabel.of(subject.label.value)),
-    outcome: outcomeStruct(seat.outcome, bridge),
-    tip: seat.tip === null ? null : moneyStruct(seat.tip),
-  };
-  bridge.seats.set(struct, seat);
-  return struct;
+    subject.kind === 'account'
+      ? SeatOccupant.account(
+          EcsUserId.of(subject.userId.value),
+          RELATIONSHIP_OF[subject.relationship],
+        )
+      : SeatOccupant.anonymous(EcsSeatLabel.of(subject.label.value)),
+    toEcsSeatOutcome(seat.outcome),
+  );
 }
 
-/** The aggregate as the stats slice of the entity, with its commit's placement. */
+/**
+ * The aggregate as the stats slice of the entity, with its commit's
+ * placement: the visit's day, start and instant from its slot's start on its
+ * own zone's wall clock, its end on the same day — a legacy visit that runs
+ * past midnight is clipped at 1440, as the projections clip chair time
+ * (flatten-spec T7) — and the seats one by one, each mapped back to the
+ * caller's own by identity.
+ */
 function statsAppointmentOf(
   appointment: Appointment,
   placement: VisitPlacement | null,
   bridge: Bridge,
 ): StatsAppointment {
   remember(bridge.appointments, appointment.id);
-  const slot = appointment.timeSlot;
+  const zone = zoneOf([appointment]);
+  const slot = slotOf(appointment);
+  const startMs = slot.start.toMillis();
+  const utcEpochMs = sure(UtcEpochMs.of(startMs));
+  const start = ZonedTimeSystem.toLocal(utcEpochMs, zone);
+  const end = ZonedTimeSystem.toLocal(
+    sure(UtcEpochMs.of(slot.end.toMillis())),
+    zone,
+  );
+  const endMinutes = sure(
+    EndMinute.of(end.localDate === start.localDate ? end.minute : 1440),
+  );
+  bridge.starts.set(appointment.id.value, startMs);
+  bridge.startsByWall.set(wallKey(start.localDate, start.minute), startMs);
+  const seats: EcsSeatComponent[] = [];
+  for (const seat of appointment.seats) {
+    remember(bridge.seatIds, seat.id);
+    remember(bridge.services, seat.serviceId);
+    remember(bridge.barbers, seat.barberId);
+    if (seat.variantId !== null) remember(bridge.variants, seat.variantId);
+    const struct = seatStruct(seat, zone);
+    bridge.seats.set(struct, seat);
+    seats.push(struct);
+  }
   return {
     id: EcsAppointmentId.of(appointment.id.value),
-    timeInterval: TimeInterval.of(slot.start.toMillis(), slot.end.toMillis()),
-    bookedAtMs:
-      appointment.bookedAt === null ? null : appointment.bookedAt.toMillis(),
-    placement,
-    seats: appointment.seats.map((seat) => seatStruct(seat, bridge)),
+    localDate: start.localDate,
+    startMinutes: start.minute,
+    endMinutes,
+    utcEpochMs,
+    bookedAtUtcMs:
+      appointment.bookedAt === null
+        ? null
+        : sure(UtcEpochMs.of(appointment.bookedAt.toMillis())),
+    placement: placement === null ? null : PLACEMENT_OF[placement],
+    seats,
   };
 }
 
-function factStruct(fact: VisitFact): EcsVisitFact {
+/** A stored fact on the shop's wall clock; `null` for one that is not an instant. */
+function factStruct(fact: VisitFact, zone: TimeZone): EcsVisitFact | null {
+  const instant = instantOrNull(fact.atMs);
+  if (instant === null) return null;
+  const wall = ZonedTimeSystem.toLocal(instant, zone);
   return {
     appointmentId: EcsAppointmentId.of(fact.appointmentId.value),
-    atMs: fact.atMs,
+    localDate: wall.localDate,
+    startMinutes: wall.minute,
   };
+}
+
+/** The facts the windows can read — one that is not an instant is in none of them. */
+function factsStruct(
+  facts: readonly VisitFact[],
+  zone: TimeZone,
+): EcsVisitFact[] {
+  const out: EcsVisitFact[] = [];
+  for (const fact of facts) {
+    const struct = factStruct(fact, zone);
+    if (struct !== null) out.push(struct);
+  }
+  return out;
+}
+
+/** A stored no-show as the pause suggestion's basis — its fact and its start instant. */
+function basisStruct(fact: VisitFact, zone: TimeZone): PauseBasisFact | null {
+  const struct = factStruct(fact, zone);
+  const startUtcMs = instantOrNull(fact.atMs);
+  return struct === null || startUtcMs === null
+    ? null
+    : { ...struct, startUtcMs };
 }
 
 function outcomeBack(
-  outcome: EcsSubjectVisitOutcome,
+  outcome: SubjectVisitOutcomeState,
   bridge: Bridge,
 ): VisitOutcome {
-  switch (outcome.kind) {
-    case SubjectVisitOutcomeKind.Cancelled:
+  switch (outcome.subjectVisitOutcome) {
+    case EcsSubjectVisitOutcome.Cancelled: {
+      const decisive = known(bridge.seats, outcome.decisive).outcome;
+      if (decisive.kind !== 'cancelled') {
+        defect('unreachable: a decisive seat not cancelled');
+      }
+      return { kind: 'cancelled', decisive };
+    }
+    case EcsSubjectVisitOutcome.Worked:
+    case EcsSubjectVisitOutcome.NoShow:
+    case EcsSubjectVisitOutcome.Open:
       return {
-        kind: 'cancelled',
-        decisive: known(bridge.cancellations, outcome.decisive),
+        kind: LEGACY_SUBJECT_VISIT_OUTCOME[outcome.subjectVisitOutcome],
       };
-    case SubjectVisitOutcomeKind.Worked:
-      return { kind: 'worked' };
-    case SubjectVisitOutcomeKind.NoShow:
-      return { kind: 'no_show' };
-    case SubjectVisitOutcomeKind.Open:
-      return { kind: 'open' };
   }
 }
 
+/** A fact back: the caller's id, and the start instant its appointment came in with. */
 function factBack(fact: EcsVisitFact, bridge: Bridge): VisitFact {
   return {
     appointmentId: known(bridge.appointments, fact.appointmentId),
-    atMs: fact.atMs,
+    atMs: known(bridge.starts, fact.appointmentId),
   };
 }
 
-function refBack(ref: EcsVisitRef | null, bridge: Bridge): VisitRef | null {
-  if (ref === null) return null;
+function refBack(
+  fact: EcsVisitFact | null,
+  serviceIds: readonly string[],
+  barberIds: readonly string[],
+  legs: readonly EcsVisitLeg[],
+  bridge: Bridge,
+): VisitRef | null {
+  if (fact === null) return null;
   return {
-    ...factBack(ref, bridge),
-    serviceIds: ref.serviceIds.map((id) => known(bridge.services, id)),
-    barberIds: ref.barberIds.map((id) => known(bridge.barbers, id)),
-    legs: ref.legs.map((leg) => ({
+    ...factBack(fact, bridge),
+    serviceIds: serviceIds.map((id) => known(bridge.services, id)),
+    barberIds: barberIds.map((id) => known(bridge.barbers, id)),
+    legs: legs.map((leg) => ({
       seatId: known(bridge.seatIds, leg.seatId),
       serviceId: known(bridge.services, leg.serviceId),
       variantId:
         leg.variantId === null ? null : known(bridge.variants, leg.variantId),
       barberId: known(bridge.barbers, leg.barberId),
-      minutes: leg.minutes,
+      minutes: leg.durationMinutes,
     })),
   };
 }
 
 function suggestionBack(
-  suggestion: EcsPauseSuggestion | null,
+  suggestion: EcsPauseSuggestion,
   bridge: Bridge,
 ): PauseSuggestion | null {
-  if (suggestion === null) return null;
+  if (
+    suggestion.pauseSuggestedNoShows === null ||
+    suggestion.pauseSuggestedWindowDays === null ||
+    suggestion.pauseSuggestedAtUtcMs === null
+  ) {
+    return null;
+  }
   return {
-    noShows: suggestion.noShows,
-    windowDays: suggestion.windowDays,
-    basis: suggestion.basis.map((id) => known(bridge.appointments, id)),
-    raisedAtMs: suggestion.raisedAtMs,
+    noShows: suggestion.pauseSuggestedNoShows,
+    windowDays: suggestion.pauseSuggestedWindowDays,
+    basis: suggestion.pauseSuggestionBasis.map((id) =>
+      known(bridge.appointments, id),
+    ),
+    raisedAtMs: suggestion.pauseSuggestedAtUtcMs,
   };
 }
 
@@ -549,21 +800,59 @@ function statsBack(
   subject: UserId,
   bridge: Bridge,
 ): ClientStats {
+  const facts = (list: readonly EcsVisitFact[]) =>
+    list.map((fact) => factBack(fact, bridge));
   return {
     userId: subject,
-    lifetime: stats.lifetime,
-    last365: {
-      visitsCompleted: stats.last365.visitsCompleted.map((fact) =>
-        factBack(fact, bridge),
-      ),
-      noShows: stats.last365.noShows.map((fact) => factBack(fact, bridge)),
-      lateCancels: stats.last365.lateCancels.map((fact) =>
-        factBack(fact, bridge),
-      ),
+    lifetime: {
+      visitsCompleted: stats.lifetimeVisitsCompleted,
+      noShows: stats.lifetimeNoShows,
+      lateCancels: stats.lifetimeLateCancels,
+      clientCancels: stats.lifetimeClientCancels,
     },
-    firstVisitAtMs: stats.firstVisitAtMs,
-    lastVisit: refBack(stats.lastVisit, bridge),
-    nextVisit: refBack(stats.nextVisit, bridge),
+    last365: {
+      visitsCompleted: facts(stats.last365VisitsCompleted),
+      noShows: facts(stats.last365NoShows),
+      lateCancels: facts(stats.last365LateCancels),
+    },
+    firstVisitAtMs:
+      stats.firstVisitLocalDate === null ||
+      stats.firstVisitStartMinutes === null
+        ? null
+        : known(
+            bridge.startsByWall,
+            wallKey(stats.firstVisitLocalDate, stats.firstVisitStartMinutes),
+          ),
+    lastVisit: refBack(
+      stats.lastVisitAppointmentId === null ||
+        stats.lastVisitLocalDate === null ||
+        stats.lastVisitStartMinutes === null
+        ? null
+        : {
+            appointmentId: stats.lastVisitAppointmentId,
+            localDate: stats.lastVisitLocalDate,
+            startMinutes: stats.lastVisitStartMinutes,
+          },
+      stats.lastVisitServiceIds,
+      stats.lastVisitBarberIds,
+      stats.lastVisitLegs,
+      bridge,
+    ),
+    nextVisit: refBack(
+      stats.nextVisitAppointmentId === null ||
+        stats.nextVisitLocalDate === null ||
+        stats.nextVisitStartMinutes === null
+        ? null
+        : {
+            appointmentId: stats.nextVisitAppointmentId,
+            localDate: stats.nextVisitLocalDate,
+            startMinutes: stats.nextVisitStartMinutes,
+          },
+      stats.nextVisitServiceIds,
+      stats.nextVisitBarberIds,
+      stats.nextVisitLegs,
+      bridge,
+    ),
     avgCadenceDays: stats.avgCadenceDays,
     preferredBarberId:
       stats.preferredBarberId === null
@@ -572,6 +861,6 @@ function statsBack(
     usualServiceIds: stats.usualServiceIds.map((id) =>
       known(bridge.services, id),
     ),
-    pauseSuggestion: suggestionBack(stats.pauseSuggestion, bridge),
+    pauseSuggestion: suggestionBack(stats, bridge),
   };
 }

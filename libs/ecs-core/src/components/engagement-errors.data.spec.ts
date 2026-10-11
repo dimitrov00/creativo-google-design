@@ -1,194 +1,241 @@
 import { describe, expect, it } from 'vitest';
+import { Currency } from '../primitives/currency.primitive';
+import {
+  BadgeCategoryId,
+  BadgeSeriesId,
+  RewardId,
+  SeasonId,
+  TierId,
+} from '../primitives/ids.primitive';
+import { PriceCents } from '../primitives/price-cents.primitive';
+import { localDate, unwrapOk, utcMs } from '../testing';
 import {
   ENGAGEMENT_ERROR_CODES,
   EngagementError,
   EngagementErrorCode,
   StreakRuleField,
 } from './engagement-errors.data';
+import { AwardKind } from './gamification.data';
+import { GrantStatus } from './grant-status.data';
+import { VoucherRefusal } from './voucher-state.data';
+
+const cents = (raw: number): PriceCents => unwrapOk(PriceCents.of(raw));
 
 describe('EngagementErrorCode', () => {
-  it('keeps every code in the engagement namespace, each once', () => {
+  it('keeps every code SCREAMING under the ENGAGEMENT_ prefix, each once (Law 7.5)', () => {
     expect(new Set(ENGAGEMENT_ERROR_CODES).size).toBe(
       ENGAGEMENT_ERROR_CODES.length,
     );
-    for (const code of ENGAGEMENT_ERROR_CODES) {
-      expect(code).toMatch(/^engagement\.[a-z_]+\.[a-z_]+$/);
+    for (const errorCode of ENGAGEMENT_ERROR_CODES) {
+      expect(errorCode).toMatch(/^ENGAGEMENT_[A-Z_]+$/);
     }
   });
 
-  it('keeps the legacy engagement strings', () => {
+  it('maps the legacy dotted strings mechanically (flatten-spec §4.2)', () => {
     expect(EngagementErrorCode.PointsInsufficient).toBe(
-      'engagement.points.insufficient',
+      'ENGAGEMENT_POINTS_INSUFFICIENT',
     );
     expect(EngagementErrorCode.CouponValueAmountNotPositive).toBe(
-      'engagement.coupon_value.negative_amount',
+      'ENGAGEMENT_COUPON_VALUE_NEGATIVE_AMOUNT',
     );
     expect(EngagementErrorCode.StreakScheduleNotAfterCurrent).toBe(
-      'engagement.streak_schedule.scheduled_not_after_current',
+      'ENGAGEMENT_STREAK_SCHEDULE_SCHEDULED_NOT_AFTER_CURRENT',
     );
   });
 
   it('retires the schedule id mismatch and the notification title', () => {
     expect(ENGAGEMENT_ERROR_CODES).not.toContain(
-      'engagement.streak_schedule.id_mismatch',
+      'ENGAGEMENT_STREAK_SCHEDULE_ID_MISMATCH',
     );
     expect(ENGAGEMENT_ERROR_CODES).not.toContain(
-      'engagement.notification.empty_title',
+      'ENGAGEMENT_NOTIFICATION_EMPTY_TITLE',
     );
   });
 
-  it('names every field of the rule once, as the admin page keys it', () => {
+  it('names every field of the rule once, by its flat name (the admin page keys it)', () => {
     const fields = Object.values(StreakRuleField);
     expect(new Set(fields).size).toBe(fields.length);
-    expect(fields).toContain('effectiveFromDayKey');
+    expect(fields).toContain('effectiveFromLocalDate');
+    expect(fields).toContain('intervalDays');
+    expect(fields).toContain('protectionsMaxBanked');
+    expect(fields).toContain('scheduledVersion');
     expect(fields).not.toContain('effectiveFrom');
+    for (const field of fields) expect(field).not.toContain('.');
   });
 });
 
 describe('EngagementError factories', () => {
-  it('build each struct with its code and i18n params', () => {
+  it('build each struct with its errorCode and i18n params', () => {
     expect(EngagementError.idEmpty('CouponId')).toEqual({
-      code: 'engagement.id.empty',
+      errorCode: 'ENGAGEMENT_ID_EMPTY',
       idType: 'CouponId',
     });
     expect(EngagementError.couponNameEmpty()).toEqual({
-      code: 'engagement.coupon.empty_name',
+      errorCode: 'ENGAGEMENT_COUPON_EMPTY_NAME',
     });
     expect(EngagementError.couponUsageLimitInvalid(0)).toEqual({
-      code: 'engagement.coupon.invalid_usage_limit',
+      errorCode: 'ENGAGEMENT_COUPON_INVALID_USAGE_LIMIT',
       attempted: 0,
     });
-    expect(EngagementError.couponGrantNotActive('used')).toEqual({
-      code: 'engagement.coupon_grant.not_active',
-      currentState: 'used',
+    expect(EngagementError.couponGrantNotActive(GrantStatus.Used)).toEqual({
+      errorCode: 'ENGAGEMENT_COUPON_GRANT_NOT_ACTIVE',
+      currentState: 'USED',
     });
     expect(EngagementError.couponGrantNotExpiring()).toEqual({
-      code: 'engagement.coupon_grant.not_expiring',
+      errorCode: 'ENGAGEMENT_COUPON_GRANT_NOT_EXPIRING',
     });
     expect(EngagementError.couponGrantReasonEmpty()).toEqual({
-      code: 'engagement.coupon_grant.empty_reason',
+      errorCode: 'ENGAGEMENT_COUPON_GRANT_EMPTY_REASON',
     });
     expect(EngagementError.discountCapInvalid(120)).toEqual({
-      code: 'engagement.discount_application.invalid_cap',
+      errorCode: 'ENGAGEMENT_DISCOUNT_APPLICATION_INVALID_CAP',
       attempted: 120,
     });
     expect(EngagementError.giftVoucherValueInvalid()).toEqual({
-      code: 'engagement.gift_voucher.invalid_value',
+      errorCode: 'ENGAGEMENT_GIFT_VOUCHER_INVALID_VALUE',
     });
-    expect(EngagementError.giftVoucherNotRedeemable('expired')).toEqual({
-      code: 'engagement.gift_voucher.not_redeemable',
-      reason: 'expired',
+    expect(
+      EngagementError.giftVoucherNotRedeemable(VoucherRefusal.Expired),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_GIFT_VOUCHER_NOT_REDEEMABLE',
+      reason: VoucherRefusal.Expired,
     });
-    expect(EngagementError.giftVoucherInsufficientBalance(5000, 2000)).toEqual({
-      code: 'engagement.gift_voucher.insufficient_balance',
-      requestedMinorUnits: 5000,
-      balanceMinorUnits: 2000,
+    expect(
+      EngagementError.giftVoucherInsufficientBalance(cents(5000), cents(2000)),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_GIFT_VOUCHER_INSUFFICIENT_BALANCE',
+      requestedCents: 5000,
+      balanceCents: 2000,
     });
     expect(EngagementError.giftVoucherOverRestore()).toEqual({
-      code: 'engagement.gift_voucher.over_restore',
+      errorCode: 'ENGAGEMENT_GIFT_VOUCHER_OVER_RESTORE',
     });
-    expect(EngagementError.giftVoucherCurrencyMismatch('EUR', 'BGN')).toEqual({
-      code: 'engagement.gift_voucher.currency_mismatch',
+    expect(
+      EngagementError.giftVoucherCurrencyMismatch(Currency.EUR, Currency.BGN),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_GIFT_VOUCHER_CURRENCY_MISMATCH',
       expected: 'EUR',
       found: 'BGN',
     });
     expect(EngagementError.invitationInviterNameEmpty()).toEqual({
-      code: 'engagement.invitation.empty_inviter_name',
+      errorCode: 'ENGAGEMENT_INVITATION_EMPTY_INVITER_NAME',
     });
     expect(EngagementError.invitationSelfRedemption()).toEqual({
-      code: 'engagement.invitation.self_redemption',
+      errorCode: 'ENGAGEMENT_INVITATION_SELF_REDEMPTION',
+    });
+    expect(EngagementError.couponValueAmountNotPositive(cents(0))).toEqual({
+      errorCode: 'ENGAGEMENT_COUPON_VALUE_NEGATIVE_AMOUNT',
+      attemptedCents: 0,
     });
   });
 
-  it('build the catalogue faults, a list as one comma-separated param', () => {
+  it('build the catalogue faults, a list of figures as one comma-separated param and a list of ids as brands', () => {
     expect(EngagementError.badgeCategoryOrderNegative(-1)).toEqual({
-      code: 'engagement.badge_category.order_negative',
+      errorCode: 'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
       rawValue: -1,
     });
     expect(EngagementError.badgeSeriesNoLevels()).toEqual({
-      code: 'engagement.badge_series.no_levels',
+      errorCode: 'ENGAGEMENT_BADGE_SERIES_NO_LEVELS',
     });
     expect(EngagementError.badgeSeriesLevelGap([1, 2, 4])).toEqual({
-      code: 'engagement.badge_series.level_gap',
+      errorCode: 'ENGAGEMENT_BADGE_SERIES_LEVEL_GAP',
       levels: '1, 2, 4',
     });
     expect(EngagementError.badgeSeriesTargetsNotRising([5, 5])).toEqual({
-      code: 'engagement.badge_series.targets_not_rising',
+      errorCode: 'ENGAGEMENT_BADGE_SERIES_TARGETS_NOT_RISING',
       targets: '5, 5',
     });
-    expect(EngagementError.badgeSeriesHomeless().code).toBe(
-      'engagement.badge_series.homeless',
+    expect(EngagementError.badgeSeriesHomeless().errorCode).toBe(
+      'ENGAGEMENT_BADGE_SERIES_HOMELESS',
     );
-    expect(EngagementError.badgeSeriesOneOffWithSeveralLevels().code).toBe(
-      'engagement.badge_series.one_off_with_several_levels',
+    expect(EngagementError.badgeSeriesOneOffWithSeveralLevels().errorCode).toBe(
+      'ENGAGEMENT_BADGE_SERIES_ONE_OFF_WITH_SEVERAL_LEVELS',
     );
-    expect(EngagementError.badgeSeriesRepeatableWithSeveralLevels().code).toBe(
-      'engagement.badge_series.repeatable_with_several_levels',
-    );
+    expect(
+      EngagementError.badgeSeriesRepeatableWithSeveralLevels().errorCode,
+    ).toBe('ENGAGEMENT_BADGE_SERIES_REPEATABLE_WITH_SEVERAL_LEVELS');
     expect(EngagementError.badgeSeriesLevelWithoutRule(2)).toEqual({
-      code: 'engagement.badge_series.level_without_rule',
+      errorCode: 'ENGAGEMENT_BADGE_SERIES_LEVEL_WITHOUT_RULE',
       level: 2,
     });
-    expect(EngagementError.badgeSeriesAwardNotPositive(3, 'points')).toEqual({
-      code: 'engagement.badge_series.award_not_positive',
+    expect(
+      EngagementError.badgeSeriesAwardNotPositive(3, AwardKind.Points),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_BADGE_SERIES_AWARD_NOT_POSITIVE',
       level: 3,
-      kind: 'points',
+      awardKind: 'POINTS',
     });
     expect(
       EngagementError.seasonWindowMalformed('2026-13-01', '2026-11-30'),
     ).toEqual({
-      code: 'engagement.season.window_malformed',
+      errorCode: 'ENGAGEMENT_SEASON_WINDOW_MALFORMED',
       from: '2026-13-01',
       until: '2026-11-30',
     });
     expect(
-      EngagementError.seasonWindowInverted('2026-12-01', '2026-11-30').code,
-    ).toBe('engagement.season.window_inverted');
-    expect(EngagementError.seasonEventWithTrack().code).toBe(
-      'engagement.season.event_with_track',
+      EngagementError.seasonWindowInverted(
+        localDate('2026-12-01'),
+        localDate('2026-11-30'),
+      ).errorCode,
+    ).toBe('ENGAGEMENT_SEASON_WINDOW_INVERTED');
+    expect(EngagementError.seasonEventWithTrack().errorCode).toBe(
+      'ENGAGEMENT_SEASON_EVENT_WITH_TRACK',
     );
-    expect(EngagementError.seasonWithoutTrack().code).toBe(
-      'engagement.season.without_track',
+    expect(EngagementError.seasonWithoutTrack().errorCode).toBe(
+      'ENGAGEMENT_SEASON_WITHOUT_TRACK',
     );
     expect(
-      EngagementError.seasonAnnouncedLate('2026-10-20', '2026-11-01', 30),
+      EngagementError.seasonAnnouncedLate(
+        localDate('2026-10-20'),
+        localDate('2026-11-01'),
+        30,
+      ),
     ).toEqual({
-      code: 'engagement.season.announced_late',
+      errorCode: 'ENGAGEMENT_SEASON_ANNOUNCED_LATE',
       announcedOn: '2026-10-20',
       from: '2026-11-01',
       noticeDays: 30,
     });
     expect(
-      EngagementError.loyaltyCatalogDanglingCategory('series-a', 'cat-x'),
+      EngagementError.loyaltyCatalogDanglingCategory(
+        BadgeSeriesId.of('series-a'),
+        BadgeCategoryId.of('cat-x'),
+      ),
     ).toEqual({
-      code: 'engagement.loyalty_catalog.dangling_category',
+      errorCode: 'ENGAGEMENT_LOYALTY_CATALOG_DANGLING_CATEGORY',
       seriesId: 'series-a',
       categoryId: 'cat-x',
     });
     expect(
-      EngagementError.loyaltyCatalogDanglingSeason('season-x', 'series-a'),
+      EngagementError.loyaltyCatalogDanglingSeason(
+        SeasonId.of('season-x'),
+        BadgeSeriesId.of('series-a'),
+      ),
     ).toEqual({
-      code: 'engagement.loyalty_catalog.dangling_season',
+      errorCode: 'ENGAGEMENT_LOYALTY_CATALOG_DANGLING_SEASON',
       seasonId: 'season-x',
       seriesId: 'series-a',
     });
     expect(
       EngagementError.loyaltyCatalogDuplicateId('badgeSeries', 'series-a'),
     ).toEqual({
-      code: 'engagement.loyalty_catalog.duplicate_id',
+      errorCode: 'ENGAGEMENT_LOYALTY_CATALOG_DUPLICATE_ID',
       collection: 'badgeSeries',
       id: 'series-a',
     });
     expect(
-      EngagementError.loyaltyCatalogTiersNotRising(['gold', 'silver']),
+      EngagementError.loyaltyCatalogTiersNotRising([
+        TierId.of('gold'),
+        TierId.of('silver'),
+      ]),
     ).toEqual({
-      code: 'engagement.loyalty_catalog.tiers_not_rising',
-      tierIds: 'gold, silver',
+      errorCode: 'ENGAGEMENT_LOYALTY_CATALOG_TIERS_NOT_RISING',
+      tierIds: ['gold', 'silver'],
     });
     expect(
-      EngagementError.loyaltyCatalogCostNotPositive('reward-a', 0),
+      EngagementError.loyaltyCatalogCostNotPositive(RewardId.of('reward-a'), 0),
     ).toEqual({
-      code: 'engagement.loyalty_catalog.cost_not_positive',
+      errorCode: 'ENGAGEMENT_LOYALTY_CATALOG_COST_NOT_POSITIVE',
       rewardId: 'reward-a',
       cost: 0,
     });
@@ -196,23 +243,28 @@ describe('EngagementError factories', () => {
 
   it('build the schedule, notification and programs faults', () => {
     expect(EngagementError.streakScheduleVersionNotRising(3, 3)).toEqual({
-      code: 'engagement.streak_schedule.version_not_rising',
-      field: 'scheduled.version',
+      errorCode: 'ENGAGEMENT_STREAK_SCHEDULE_VERSION_NOT_RISING',
+      field: 'scheduledVersion',
       value: 3,
       currentVersion: 3,
     });
     expect(
-      EngagementError.streakScheduleNotAfterCurrent('2026-09-01', '2026-08-01'),
+      EngagementError.streakScheduleNotAfterCurrent(
+        localDate('2026-09-01'),
+        localDate('2026-08-01'),
+      ),
     ).toEqual({
-      code: 'engagement.streak_schedule.scheduled_not_after_current',
-      field: 'scheduled.effectiveFromDayKey',
+      errorCode: 'ENGAGEMENT_STREAK_SCHEDULE_SCHEDULED_NOT_AFTER_CURRENT',
+      field: 'scheduledEffectiveFromLocalDate',
       value: '2026-08-01',
-      currentEffectiveFromDayKey: '2026-09-01',
+      currentEffectiveFromLocalDate: '2026-09-01',
     });
-    expect(EngagementError.notificationReadBeforeSent(2_000, 1_000)).toEqual({
-      code: 'engagement.notification.read_before_sent',
-      sentAtMs: 2_000,
-      readAtMs: 1_000,
+    const sent = utcMs('2026-09-28T09:00:02.000+03:00');
+    const read = utcMs('2026-09-28T09:00:01.000+03:00');
+    expect(EngagementError.notificationReadBeforeSent(sent, read)).toEqual({
+      errorCode: 'ENGAGEMENT_NOTIFICATION_READ_BEFORE_SENT',
+      sentAtUtcMs: sent,
+      readAtUtcMs: read,
     });
     expect(
       EngagementError.program(
@@ -220,12 +272,15 @@ describe('EngagementError factories', () => {
         'not a url',
       ),
     ).toEqual({
-      code: 'engagement.course.invalid_apply_url',
+      errorCode: 'ENGAGEMENT_COURSE_INVALID_APPLY_URL',
       rawValue: 'not a url',
     });
     expect(
       EngagementError.program(EngagementErrorCode.PositionSortOrderInvalid, -1),
-    ).toEqual({ code: 'engagement.position.invalid_sort_order', rawValue: -1 });
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_POSITION_INVALID_SORT_ORDER',
+      rawValue: -1,
+    });
   });
 
   it('flatten any rule value to an i18n-safe scalar', () => {
@@ -244,7 +299,7 @@ describe('EngagementError factories', () => {
     expect(value({})).toBe('[object Object]');
   });
 
-  it('is() narrows by code', () => {
+  it('is() narrows by errorCode', () => {
     const error: EngagementError = EngagementError.pointsInsufficient(10, 5);
     expect(
       EngagementError.is(error, EngagementErrorCode.PointsInsufficient),
