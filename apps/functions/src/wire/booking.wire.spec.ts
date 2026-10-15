@@ -19,13 +19,14 @@ import {
   UtcEpochMs,
   Result,
 } from '@core/primitives';
-import { ArrivalAction } from '@core/pipelines';
+import { MarkArrivalAction } from '@core/pipelines';
 import {
   CancellationRefusalCode,
   EditCommand,
   MoveSubjectRole,
   RequestedSubjectRole,
   ResizeEdge,
+  StaffEditError,
   StaffEditErrorCode,
 } from '@core/systems';
 import { localDate, minute, utcMs } from '@core/testing';
@@ -651,13 +652,13 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
           decodeClearArrival({ ...staff, data: { appointmentId: 'a1' } }),
         ),
       ).toMatchObject({
-        arrivalAction: ArrivalAction.Clear,
+        markArrivalAction: MarkArrivalAction.Clear,
         appointmentId: 'a1',
       });
       expect(
         valueOf(decodeMarkArrived({ ...staff, data: { appointmentId: 'a1' } })),
       ).toMatchObject({
-        arrivalAction: ArrivalAction.Arrive,
+        markArrivalAction: MarkArrivalAction.Arrive,
         appointmentId: 'a1',
       });
       expect(
@@ -1067,6 +1068,89 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
           replayed: true,
         }),
       ).toEqual({ appointmentId: 'a1', revision: 4 });
+    });
+  });
+
+  describe('a refused field in today’s words', () => {
+    const invalidInput = (field: string) => ({
+      code: 'invalid-argument',
+      details: { code: 'booking.commit.invalid_input', params: { field } },
+    });
+    const invalidCommand = (field: string) => ({
+      code: 'invalid-argument',
+      details: { code: 'booking.staffEdit.invalid_command', params: { field } },
+    });
+
+    it('answers the seat start (as a minute of the day or an instant) as startIso', () => {
+      expect(
+        wire(commitBookingRefusal(BookingError.invalidInput('startMinutes'))),
+      ).toEqual(invalidInput('startIso'));
+      expect(
+        wire(
+          rescheduleAppointmentRefusal(BookingError.invalidInput('startUtcMs')),
+        ),
+      ).toEqual(invalidInput('startIso'));
+      expect(
+        wire(
+          rescheduleAppointmentRefusal(
+            BookingError.invalidInput('startMinutes'),
+          ),
+        ),
+      ).toEqual(invalidInput('startIso'));
+      expect(
+        wire(
+          staffEditAppointmentRefusal(
+            StaffEditError.invalidCommand('startUtcMs'),
+          ),
+        ),
+      ).toEqual(invalidCommand('startIso'));
+      expect(
+        wire(
+          staffEditAppointmentRefusal(
+            BookingError.invalidInput('startMinutes'),
+          ),
+        ),
+      ).toEqual(invalidInput('startIso'));
+    });
+
+    it('answers a resize handle as atIso and the stored lifecycle as status', () => {
+      expect(
+        wire(
+          staffEditAppointmentRefusal(StaffEditError.invalidCommand('atUtcMs')),
+        ),
+      ).toEqual(invalidCommand('atIso'));
+      expect(
+        wire(
+          staffEditAppointmentRefusal(
+            BookingError.invalidInput('bookingStatus'),
+          ),
+        ),
+      ).toEqual(invalidInput('status'));
+      expect(
+        wire(
+          rescheduleAppointmentRefusal(
+            BookingError.invalidInput('bookingStatus'),
+          ),
+        ),
+      ).toEqual(invalidInput('status'));
+    });
+
+    it('leaves every other field as the refusal names it', () => {
+      expect(
+        wire(commitBookingRefusal(BookingError.invalidInput('person_overlap'))),
+      ).toEqual(invalidInput('person_overlap'));
+      expect(
+        wire(
+          rescheduleAppointmentRefusal(
+            BookingError.invalidInput('window_closed'),
+          ),
+        ),
+      ).toEqual(invalidInput('window_closed'));
+      expect(
+        wire(
+          staffEditAppointmentRefusal(StaffEditError.invalidCommand('minutes')),
+        ),
+      ).toEqual(invalidCommand('minutes'));
     });
   });
 

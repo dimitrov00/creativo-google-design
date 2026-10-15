@@ -417,12 +417,14 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     });
   });
 
-  it('refuses a start that did not parse (startIso), and a shop that is not there', async () => {
+  it('refuses a start that did not parse (startUtcMs), and a shop that is not there', async () => {
     const { run } = rig([...catalogue(), stored(visit())]);
     const unparsed = await run(
       command({ seats: [{ ...CART_SEAT, startUtcMs: null }] }),
     );
-    expect(!unparsed.ok && unparsed.error).toMatchObject({ field: 'startIso' });
+    expect(!unparsed.ok && unparsed.error).toMatchObject({
+      field: 'startUtcMs',
+    });
     const missing = await run(command({ locationId: 'loc-gone' }));
     expect(!missing.ok && missing.error).toMatchObject({
       field: 'locationId',

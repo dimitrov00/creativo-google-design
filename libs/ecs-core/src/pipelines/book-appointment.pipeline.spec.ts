@@ -434,14 +434,14 @@ describe('bookAppointment', () => {
     expect(tx.plans).toEqual([]);
   });
 
-  it('refuses a start that did not parse as startIso', async () => {
+  it('refuses a start that did not parse (the seat’s startMinutes)', async () => {
     const { run } = rig(catalogue());
     const answer = await run(
       command({ seats: [{ ...SEAT, startUtcMs: null }] }),
     );
     expect(!answer.ok && answer.error).toMatchObject({
       errorCode: BookingErrorCode.InvalidInput,
-      field: 'startIso',
+      field: 'startMinutes',
     });
   });
 

@@ -31,7 +31,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import {
-  ArrivalAction,
+  MarkArrivalAction,
   type BookAppointmentAnswer,
   type BookAppointmentCommand,
   type BookAppointmentError,
@@ -184,6 +184,36 @@ function refusalOf<E extends { readonly errorCode: string }>(
 }
 
 /**
+ * A refused field as today's wire spells it (F1-3). The pipelines and
+ * systems name the field of their own struct — a seat start as its instant
+ * (`startUtcMs`) or as a minute of the shop day (`startMinutes`), a resize
+ * handle's instant (`atUtcMs`), the stored lifecycle (`bookingStatus`) —
+ * and the frozen callable answers in the payload's words. A field missing
+ * here leaves as it is.
+ */
+const WIRE_REFUSAL_FIELD: ReadonlyMap<string, string> = new Map([
+  ['startUtcMs', 'startIso'],
+  ['startMinutes', 'startIso'],
+  ['atUtcMs', 'atIso'],
+  ['bookingStatus', 'status'],
+]);
+
+/** The two refusals that name a field: the booking's invalid input, the edit's invalid command. */
+const FIELD_REFUSALS: ReadonlySet<string> = new Set([
+  BookingErrorCode.InvalidInput,
+  StaffEditErrorCode.InvalidCommand,
+]);
+
+/** A refusal with its `field` in the wire's words — every other refusal unchanged. */
+function inWireWords<E extends { readonly errorCode: string }>(error: E): E {
+  if (!FIELD_REFUSALS.has(error.errorCode)) return error;
+  const named = field(error, 'field');
+  const spelled =
+    typeof named === 'string' ? WIRE_REFUSAL_FIELD.get(named) : undefined;
+  return spelled === undefined ? error : { ...error, field: spelled };
+}
+
+/**
  * A pipeline's result as the callable answers it: the answer encoded, a
  * refusal in the callable's own words (a store failure thrown on the way).
  */
@@ -326,9 +356,9 @@ export function encodeCommitBookingAnswer(answer: BookAppointmentAnswer): {
   return { appointmentId: answer.appointmentId };
 }
 
-/** The commit's refusals all leave through the shared table. */
+/** The commit's refusals all leave through the shared table, a refused field in the wire's words. */
 export function commitBookingRefusal(error: BookAppointmentError): EdgeError {
-  return refusalOf(error);
+  return inWireWords(refusalOf(error));
 }
 
 // ── cancelAppointment ────────────────────────────────────────────────────
@@ -440,11 +470,11 @@ export function encodeRescheduleAppointmentAnswer(
   return { appointmentId: answer.appointmentId };
 }
 
-/** The move's refusals — the commit's codes and its own — all leave through the shared table. */
+/** The move's refusals — the commit's codes and its own — all leave through the shared table, a refused field in the wire's words. */
 export function rescheduleAppointmentRefusal(
   error: RescheduleAppointmentError,
 ): EdgeError {
-  return refusalOf(error);
+  return inWireWords(refusalOf(error));
 }
 
 // ── transitionAppointment ────────────────────────────────────────────────
@@ -557,7 +587,7 @@ export function transitionAppointmentRefusal(
 /** Both arrival callables read one payload and refuse alike (`booking.arrived.*`). */
 function arrivalOf(
   request: WireRequest,
-  arrivalAction: ArrivalAction,
+  markArrivalAction: MarkArrivalAction,
 ): Result<MarkArrivalCommand, EdgeError> {
   if (callerOf(request) === null) {
     return Result.err(legacy(LegacyWireCode.ArrivedUnauthenticated));
@@ -572,19 +602,23 @@ function arrivalOf(
   if (appointmentId === null) {
     return Result.err(legacy(LegacyWireCode.ArrivedInvalidInput));
   }
-  return Result.ok({ arrivalAction, appointmentId, actor: actorOf(request) });
+  return Result.ok({
+    markArrivalAction,
+    appointmentId,
+    actor: actorOf(request),
+  });
 }
 
 export function decodeMarkArrived(
   request: WireRequest,
 ): Result<MarkArrivalCommand, EdgeError> {
-  return arrivalOf(request, ArrivalAction.Arrive);
+  return arrivalOf(request, MarkArrivalAction.Arrive);
 }
 
 export function decodeClearArrival(
   request: WireRequest,
 ): Result<MarkArrivalCommand, EdgeError> {
-  return arrivalOf(request, ArrivalAction.Clear);
+  return arrivalOf(request, MarkArrivalAction.Clear);
 }
 
 export function encodeMarkArrivedAnswer(answer: MarkArrivalAnswer): {
@@ -1018,11 +1052,11 @@ const LEGACY_EDGE: { readonly [E in ResizeEdge]: string } = {
   [ResizeEdge.End]: 'end',
 };
 
-/** The staff edit's refusals through the shared table — an overlap's handle in today's words. */
+/** The staff edit's refusals through the shared table — an overlap's handle and a refused field in today's words. */
 export function staffEditAppointmentRefusal(
   failure: EditAppointmentError,
 ): EdgeError {
-  const error = refusalOf(failure);
+  const error = inWireWords(refusalOf(failure));
   if (error.errorCode === StaffEditErrorCode.Overlaps) {
     return {
       ...error,

@@ -10,19 +10,39 @@ import {
 } from '@jsverse/transloco';
 import { NEVER, type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
+import { type Result, ZonedDateTime } from '@creativo/application/booking';
 import {
-  CLIENT_STATS_DIRECTORY,
-  type ClientStatsRecord,
-  ZonedDateTime,
-  clientStatsFromDocument,
-  ok,
-} from '@creativo/application/booking';
-import { InMemoryClientStatsDirectory } from '@creativo/application/booking/testing';
+  CATALOG_PORTS,
+  CLIENT_STATS_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import {
-  CATALOG_READER,
+  ClientStats,
+  CompositionKind,
+  PolicyPassStamp,
+} from '@core/components';
+import type {
+  ClientStatsRecord,
   Service,
   ServiceCategory,
-} from '@creativo/application/catalog';
+} from '@core/entities';
+import {
+  AppointmentId,
+  CustomerId,
+  LocalDate,
+  type MinuteOfDay,
+  ServiceCategoryId,
+  ServiceId,
+} from '@core/primitives';
+import {
+  memoryCatalogReadPorts,
+  memoryClientStatsReadPorts,
+  minute,
+  serviceFixture,
+  termsFixture,
+  textFixture,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import {
   STREAK_DEFINITION_REPOSITORY,
   StreakDefinition,
@@ -64,47 +84,47 @@ class CatalogueLoader implements TranslocoLoader {
 /** Monday 28 September 2026, 12:40 in Sofia. */
 const NOW = '2026-09-28T12:40:00';
 const TODAY = '2026-09-28';
-const ZONE = 'Europe/Sofia';
 
-function unwrap<T>(result: { isFailure(): boolean; value: T }): T {
-  if (result.isFailure()) throw new Error('the fixture is no good');
+/** A legacy (flip-3) engagement answer, unwrapped. */
+function unwrap<T, E>(result: Result<T, E>): T {
+  if (!result.isSuccess()) throw new Error('the fixture is no good');
   return result.value;
 }
 
-function daysAgo(days: number): string {
-  const noon = unwrap(ZonedDateTime.fromISO(`${TODAY}T12:00:00`, ZONE));
-  return new Date(noon.plusDays(-days).toMillis()).toISOString();
+/** A visit on the shop's wall clock — the day and minute the statistics hold (Law 7.3). */
+interface Reading {
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
 }
 
-function statsOf(uid: string, visits: readonly string[]): ClientStatsRecord {
-  const record = clientStatsFromDocument(uid, {
-    userId: uid,
-    lifetime: {
-      visitsCompleted: visits.length,
-      noShows: 0,
-      lateCancels: 0,
-      clientCancels: 0,
-    },
-    last365: {
-      visitsCompleted: visits.map((at, index) => ({
-        appointmentId: `appt-${uid}-${index}`,
-        at,
-      })),
-      noShows: [],
-      lateCancels: [],
-    },
-    firstVisitAt: visits[0] ?? null,
-    lastVisit: null,
-    nextVisit: null,
-    avgCadenceDays: null,
-    preferredBarberId: null,
-    usualServiceIds: [],
-    pauseSuggestion: null,
+/** Noon in Sofia, that many days before today, as the statistics hold a visit. */
+function daysAgo(days: number): Reading {
+  return {
+    localDate: LocalDate.addDays(unwrapOk(LocalDate.parse(TODAY)), -days),
+    startMinutes: minute(12 * 60),
+  };
+}
+
+/** A client's statistics as stored: `clientStats/{customerId}`, the flat body (Law 5). */
+function statsOf(id: string, visits: readonly Reading[]): ClientStatsRecord {
+  const customerId = CustomerId.of(id);
+  const first = visits[0] ?? null;
+  return {
+    ...ClientStats.empty(),
+    lifetimeVisitsCompleted: visits.length,
+    last365VisitsCompleted: visits.map((visit, index) => ({
+      appointmentId: AppointmentId.of(`appt-${id}-${index}`),
+      localDate: visit.localDate,
+      startMinutes: visit.startMinutes,
+    })),
+    firstVisitLocalDate: first?.localDate ?? null,
+    firstVisitStartMinutes: first?.startMinutes ?? null,
+    id: customerId,
+    customerId,
     version: 1,
-    updatedAt: `${TODAY}T06:00:00.000Z`,
-  });
-  if (record === null) throw new Error(`the statistics of ${uid} do not parse`);
-  return record;
+    updatedAtUtcMs: utcMs(`${TODAY}T06:00:00+00:00`),
+    ...PolicyPassStamp.NONE,
+  };
 }
 
 function shop(): ClientStatsRecord[] {
@@ -116,34 +136,26 @@ function shop(): ClientStatsRecord[] {
   ];
 }
 
-const SERVICES = [
-  unwrap(
-    Service.create({
-      id: 'fade',
-      name: { bg: 'Фейд', en: 'Skin fade' },
-      description: { bg: 'Фейд', en: 'Skin fade' },
-      categoryId: 'hair',
-      priceMinorUnits: 2800,
-      currencyCode: 'EUR',
-      durationMinutes: 30,
-      locationIds: [],
-      conflictsWith: [],
-      composition: { kind: 'single' },
-      upsellOnly: false,
-      popular: true,
-      status: 'active',
-      sortOrder: 0,
-    }),
-  ),
+const SERVICES: readonly Service[] = [
+  serviceFixture({
+    id: ServiceId.of('fade'),
+    name: textFixture('Skin fade', 'Фейд'),
+    description: textFixture('Skin fade', 'Фейд'),
+    categoryId: ServiceCategoryId.of('hair'),
+    ...termsFixture(2800, 30),
+    offerings: [],
+    locationIds: [],
+    compositionKind: CompositionKind.Single,
+    popular: true,
+    sortOrder: 0,
+  }),
 ];
-const CATEGORIES = [
-  unwrap(
-    ServiceCategory.create({
-      id: 'hair',
-      name: { bg: 'Коса', en: 'Hair' },
-      sortOrder: 0,
-    }),
-  ),
+const CATEGORIES: readonly ServiceCategory[] = [
+  {
+    id: ServiceCategoryId.of('hair'),
+    name: textFixture('Hair', 'Коса'),
+    sortOrder: 0,
+  },
 ];
 
 // ── The rig ──────────────────────────────────────────────────────────────
@@ -188,23 +200,18 @@ async function rig(options: RigOptions = {}) {
         useValue: options.rules ?? seeded(),
       },
       {
-        provide: CLIENT_STATS_DIRECTORY,
-        useValue: new InMemoryClientStatsDirectory(shop()),
+        provide: CLIENT_STATS_READ_PORTS,
+        useValue: memoryClientStatsReadPorts({ stats: shop() }),
       },
       ...(options.catalog === false
         ? []
         : [
             {
-              provide: CATALOG_READER,
-              useValue: {
-                listActiveServices: () => of(ok(SERVICES)),
-                listServiceCategories: () => of(ok(CATEGORIES)),
-                listActiveBarbers: () => of(ok([])),
-                listActiveLocations: () => of(ok([])),
-                findServiceById: async () => ok(null),
-                findBarberById: async () => ok(null),
-                findLocationById: async () => ok(null),
-              },
+              provide: CATALOG_PORTS,
+              useValue: memoryCatalogReadPorts({
+                services: SERVICES,
+                categories: CATEGORIES,
+              }),
             },
           ]),
     ],

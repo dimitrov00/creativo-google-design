@@ -323,7 +323,7 @@ export type PhotoPlan = {
   readonly appointmentId: string;
   readonly barberId: string;
   /** The account in the chair — its client record is the photo's (D29). */
-  readonly clientUserId: string;
+  readonly clientAccountUid: string;
   readonly clientLabel: string;
   readonly takenByUserId: string;
   readonly takenAtUtcMs: number;
@@ -345,7 +345,7 @@ export function appointmentPhotoBody(plan: PhotoPlan): Body<AppointmentPhoto> {
   return {
     appointmentId: AppointmentId.of(plan.appointmentId),
     barberId: BarberId.of(plan.barberId),
-    clientCustomerId: customerIdOf(plan.clientUserId),
+    clientCustomerId: customerIdOf(plan.clientAccountUid),
     clientLabel: plan.clientLabel,
     takenByUserId: UserId.of(plan.takenByUserId),
     takenAtUtcMs: instant(plan.takenAtUtcMs),

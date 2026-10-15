@@ -376,8 +376,8 @@ export function busyMergeWrites(
  * Wire instants on the shop's clock (the ingestion boundary, Law 7.3): the
  * visit's ONE shop day is the day of the first start that parsed (T7); each
  * start becomes its minute of THAT day — `null` for a start that did not
- * parse or that falls on another day (the decision refuses it as
- * `startIso`) — and the envelope's instant is the earliest start placed on
+ * parse or that falls on another day (the decision refuses that start) —
+ * and the envelope's instant is the earliest start placed on
  * the day.
  */
 export type ShopDayFrame = {

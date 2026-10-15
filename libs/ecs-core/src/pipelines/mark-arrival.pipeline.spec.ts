@@ -23,7 +23,7 @@ import {
   memoryTxPorts,
   recordingTelemetry,
 } from '@core/testing';
-import { ArrivalAction, markArrival } from './mark-arrival.pipeline';
+import { MarkArrivalAction, markArrival } from './mark-arrival.pipeline';
 
 const STAFF = Actor.staff(UserId.of('u-staff'), []);
 
@@ -58,7 +58,7 @@ describe('markArrival', () => {
   it('stamps the arrival with the request’s instant in ONE root update, then audits it after the commit', async () => {
     const { store, tx, rows, run } = rig([appointmentFixture()]);
     const answer = await run({
-      arrivalAction: ArrivalAction.Arrive,
+      markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: FIXTURE_IDS.appointment,
       actor: STAFF,
     });
@@ -103,7 +103,7 @@ describe('markArrival', () => {
       appointmentFixture({ arrivedAtUtcMs: earlier }),
     ]);
     const answer = await run({
-      arrivalAction: ArrivalAction.Arrive,
+      markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: FIXTURE_IDS.appointment,
       actor: STAFF,
     });
@@ -119,7 +119,7 @@ describe('markArrival', () => {
       appointmentFixture({ arrivedAtUtcMs: earlier }),
     ]);
     const answer = await run({
-      arrivalAction: ArrivalAction.Clear,
+      markArrivalAction: MarkArrivalAction.Clear,
       appointmentId: FIXTURE_IDS.appointment,
       actor: STAFF,
     });
@@ -143,7 +143,7 @@ describe('markArrival', () => {
   it('clearing what was never set is a no-op, not an error', async () => {
     const { tx, rows, run } = rig([appointmentFixture()]);
     const answer = await run({
-      arrivalAction: ArrivalAction.Clear,
+      markArrivalAction: MarkArrivalAction.Clear,
       appointmentId: FIXTURE_IDS.appointment,
       actor: STAFF,
     });
@@ -155,16 +155,16 @@ describe('markArrival', () => {
     expect(rows).toEqual([]);
   });
 
-  it.each([ArrivalAction.Arrive, ArrivalAction.Clear])(
+  it.each([MarkArrivalAction.Arrive, MarkArrivalAction.Clear])(
     'refuses %s on a settled visit (NOT_ARRIVABLE), writing nothing',
-    async (arrivalAction) => {
+    async (markArrivalAction) => {
       const { tx, rows, run } = rig([
         appointmentFixture({
           lifecycle: BookingLifecycle.complete(FIXTURE_NOW_UTC_MS),
         }),
       ]);
       const answer = await run({
-        arrivalAction,
+        markArrivalAction,
         appointmentId: FIXTURE_IDS.appointment,
         actor: STAFF,
       });
@@ -180,7 +180,7 @@ describe('markArrival', () => {
   it('answers an unknown visit as invalid input on appointmentId (the edge’s not-found)', async () => {
     const { run } = rig([]);
     const answer = await run({
-      arrivalAction: ArrivalAction.Arrive,
+      markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: AppointmentId.of('nope'),
       actor: STAFF,
     });
@@ -198,7 +198,7 @@ describe('markArrival', () => {
   it('logs loudly and writes no row when no verified actor is known — the stamp still stands', async () => {
     const { store, rows, telemetry, run } = rig([appointmentFixture()]);
     const answer = await run({
-      arrivalAction: ArrivalAction.Arrive,
+      markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: FIXTURE_IDS.appointment,
       actor: null,
     });
@@ -213,7 +213,7 @@ describe('markArrival', () => {
   it('plans exactly the lifecycle system’s write', async () => {
     const { tx, run } = rig([appointmentFixture()]);
     await run({
-      arrivalAction: ArrivalAction.Arrive,
+      markArrivalAction: MarkArrivalAction.Arrive,
       appointmentId: FIXTURE_IDS.appointment,
       actor: STAFF,
     });

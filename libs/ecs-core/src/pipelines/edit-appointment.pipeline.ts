@@ -499,7 +499,7 @@ function wallOf(at: UtcEpochMs, zone: TimeZone) {
  * 7.3): a move names the day it lands on; a resize start must stay on the
  * running day, a resize end may be its closing midnight (an end at or
  * before the day's start drives the duration to nothing: `minutes`; past
- * the midnight it leaves the day: `atIso`); an added seat must start on the
+ * the midnight it leaves the day: `atUtcMs`); an added seat must start on the
  * running day.
  */
 function requestOf(
@@ -526,7 +526,8 @@ function requestOf(
         if (minutes <= 0)
           return Result.err(StaffEditError.invalidCommand('minutes'));
         const end = EndMinute.of(minutes);
-        if (!end.ok) return Result.err(StaffEditError.invalidCommand('atIso'));
+        if (!end.ok)
+          return Result.err(StaffEditError.invalidCommand('atUtcMs'));
         return Result.ok({
           editCommand: EditCommand.Resize,
           resizeEdge: ResizeEdge.End,
@@ -535,7 +536,7 @@ function requestOf(
         });
       }
       if (wall.localDate !== day) {
-        return Result.err(StaffEditError.invalidCommand('atIso'));
+        return Result.err(StaffEditError.invalidCommand('atUtcMs'));
       }
       return Result.ok({
         editCommand: EditCommand.Resize,
@@ -547,7 +548,7 @@ function requestOf(
     case EditCommand.AddSeat: {
       const wall = wallOf(command.startUtcMs, zone);
       if (wall.localDate !== day) {
-        return Result.err(StaffEditError.invalidCommand('startIso'));
+        return Result.err(StaffEditError.invalidCommand('startUtcMs'));
       }
       const occupant: AccountOccupant =
         command.addedSubject.requestedSubjectRole ===

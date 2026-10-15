@@ -1,22 +1,34 @@
 import { describe, expect, it } from 'vitest';
+import { ClientStats, PolicyPassStamp } from '@core/components';
+import type { ClientStatsRecord } from '@core/entities';
 import {
-  type ClientStatsDirectory,
-  type ClientStatsRecord,
-  ZonedDateTime,
-  clientStatsFromDocument,
-} from '@creativo/application/booking';
-import { InMemoryClientStatsDirectory } from '@creativo/application/booking/testing';
+  AppointmentId,
+  CustomerId,
+  LocalDate,
+  type MinuteOfDay,
+  RepositoryError,
+  RepositoryErrorCode,
+  Result,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  FIXTURE_TIME_ZONE,
+  memoryClientStatsReadPorts,
+  minute,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import {
   StreakDefinition,
   type StreakDefinitionProps,
 } from '@creativo/application/engagement';
-import { RepositoryError } from '@creativo/application/shared';
 import {
   RHYTHM_PREVIEW_CAP,
   RHYTHM_PREVIEW_DELAY_MS,
   RHYTHM_PREVIEW_PAGES,
   RHYTHM_PREVIEW_PAGE_SIZE,
   RhythmPreviewSource,
+  type RhythmStatsReader,
   readRhythmPreviewFacts,
   rhythmPreviewOf,
   rhythmPreviewReadsFacts,
@@ -29,48 +41,79 @@ import {
 
 /** Monday 28 September 2026 in Sofia: the fixtures' day. */
 const TODAY = '2026-09-28';
-const ZONE = 'Europe/Sofia';
 
-/** Noon in Sofia, that many days before today, as the statistics hold an instant. */
-function daysAgo(days: number): string {
-  const noon = ZonedDateTime.fromISO(`${TODAY}T12:00:00`, ZONE);
-  if (noon.isFailure()) throw noon.error;
-  return new Date(noon.value.plusDays(-days).toMillis()).toISOString();
+/** A visit on the shop's wall clock — the day and minute the statistics hold (Law 7.3). */
+interface Reading {
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
 }
 
-/** A client's statistics THROUGH THE WIRE'S OWN READER: a record the app could really hold. */
+/** Noon in Sofia, that many days before today, as the statistics hold a visit. */
+function daysAgo(days: number): Reading {
+  return {
+    localDate: LocalDate.addDays(unwrapOk(LocalDate.parse(TODAY)), -days),
+    startMinutes: minute(12 * 60),
+  };
+}
+
+/** An instant read ONCE in the shop's zone, the way the projector stores it. */
+function instant(isoWithOffset: string): Reading {
+  const wall = ZonedTimeSystem.toLocal(utcMs(isoWithOffset), FIXTURE_TIME_ZONE);
+  return { localDate: wall.localDate, startMinutes: wall.minute };
+}
+
+/** A client's statistics as stored: `clientStats/{customerId}`, the flat body (Law 5). */
 function statsOf(
-  uid: string,
-  visits: readonly string[] = [],
+  id: string,
+  visits: readonly Reading[] = [],
 ): ClientStatsRecord {
-  const record = clientStatsFromDocument(uid, {
-    userId: uid,
-    lifetime: {
-      visitsCompleted: visits.length,
-      noShows: 0,
-      lateCancels: 0,
-      clientCancels: 0,
-    },
-    last365: {
-      visitsCompleted: visits.map((at, index) => ({
-        appointmentId: `appt-${uid}-${index}`,
-        at,
-      })),
-      noShows: [],
-      lateCancels: [],
-    },
-    firstVisitAt: visits[0] ?? null,
-    lastVisit: null,
-    nextVisit: null,
-    avgCadenceDays: null,
-    preferredBarberId: null,
-    usualServiceIds: [],
-    pauseSuggestion: null,
+  const customerId = CustomerId.of(id);
+  const first = visits[0] ?? null;
+  return {
+    ...ClientStats.empty(),
+    lifetimeVisitsCompleted: visits.length,
+    last365VisitsCompleted: visits.map((visit, index) => ({
+      appointmentId: AppointmentId.of(`appt-${id}-${index}`),
+      localDate: visit.localDate,
+      startMinutes: visit.startMinutes,
+    })),
+    firstVisitLocalDate: first?.localDate ?? null,
+    firstVisitStartMinutes: first?.startMinutes ?? null,
+    id: customerId,
+    customerId,
     version: 1,
-    updatedAt: `${TODAY}T06:00:00.000Z`,
-  });
-  if (record === null) throw new Error(`the statistics of ${uid} do not parse`);
-  return record;
+    updatedAtUtcMs: utcMs(`${TODAY}T06:00:00+00:00`),
+    ...PolicyPassStamp.NONE,
+  };
+}
+
+/**
+ * `CLIENT_STATS_READ_PORTS.pageClientStats` over the in-memory reference
+ * (`memoryClientStatsReadPorts`), each call kept (`{ limit, after }`) and a
+ * failure switched on and off at will — a failing page is still a call.
+ */
+function statsReader(records: readonly ClientStatsRecord[] = []) {
+  const memory = memoryClientStatsReadPorts({ stats: records });
+  const calls: { readonly limit: number; readonly after: string | null }[] = [];
+  let failure: RepositoryError | null = null;
+  const reader = {
+    calls,
+    pageClientStats: (async (after, limit) => {
+      calls.push({ limit, after });
+      return failure === null
+        ? memory.pageClientStats(after, limit)
+        : Result.err(failure);
+    }) satisfies RhythmStatsReader['pageClientStats'],
+    failWith(error: RepositoryError = RepositoryError.unavailable()) {
+      failure = error;
+      return reader;
+    },
+    recover() {
+      failure = null;
+      return reader;
+    },
+  };
+  return reader;
 }
 
 /** `count` clients in the order the directory walks them, one visit each. */
@@ -106,9 +149,9 @@ describe('streakFactsOf', () => {
   it('counts every worked visit of the last year, on its day in Sofia', () => {
     const facts = streakFactsOf(
       statsOf('client-1', [
-        '2026-06-10T09:00:00.000Z',
+        instant('2026-06-10T09:00:00+00:00'),
         // 01:30 on the 28th in Sofia: the visit's day is the shop's, not UTC's.
-        '2026-09-27T22:30:00.000Z',
+        instant('2026-09-27T22:30:00+00:00'),
       ]),
     );
 
@@ -134,33 +177,31 @@ describe('streakFactsOf', () => {
 
 describe('readRhythmPreviewFacts', () => {
   it('reads a small shop in one page', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(3));
+    const directory = statsReader(shopOf(3));
 
     const facts = await readRhythmPreviewFacts(directory);
 
-    expect(facts.isSuccess() && facts.value.clients).toHaveLength(3);
-    expect(facts.isSuccess() && facts.value.capped).toBe(false);
+    expect(facts.ok && facts.value.clients).toHaveLength(3);
+    expect(facts.ok && facts.value.capped).toBe(false);
     expect(directory.calls).toEqual([{ limit: 200, after: null }]);
   });
 
   it('reads an empty shop as nobody', async () => {
-    const facts = await readRhythmPreviewFacts(
-      new InMemoryClientStatsDirectory(),
-    );
+    const facts = await readRhythmPreviewFacts(statsReader());
 
-    expect(facts.isSuccess() && facts.value).toEqual({
+    expect(facts.ok && facts.value).toEqual({
       clients: [],
       capped: false,
     });
   });
 
   it('walks page after page, each from where the last one stopped', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(450));
+    const directory = statsReader(shopOf(450));
 
     const facts = await readRhythmPreviewFacts(directory);
 
-    expect(facts.isSuccess() && facts.value.clients).toHaveLength(450);
-    expect(facts.isSuccess() && facts.value.capped).toBe(false);
+    expect(facts.ok && facts.value.clients).toHaveLength(450);
+    expect(facts.ok && facts.value.capped).toBe(false);
     expect(directory.calls).toEqual([
       { limit: 200, after: null },
       { limit: 200, after: 'client-00199' },
@@ -169,56 +210,60 @@ describe('readRhythmPreviewFacts', () => {
   });
 
   it('reads exactly 1 000 clients whole', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(1_000));
+    const directory = statsReader(shopOf(1_000));
 
     const facts = await readRhythmPreviewFacts(directory);
 
-    expect(facts.isSuccess() && facts.value.clients).toHaveLength(1_000);
-    expect(facts.isSuccess() && facts.value.capped).toBe(false);
+    expect(facts.ok && facts.value.clients).toHaveLength(1_000);
+    expect(facts.ok && facts.value.capped).toBe(false);
     expect(directory.calls).toHaveLength(5);
   });
 
   it('stops at the fifth page and says that clients are left', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(1_001));
+    const directory = statsReader(shopOf(1_001));
 
     const facts = await readRhythmPreviewFacts(directory);
 
-    expect(facts.isSuccess() && facts.value.clients).toHaveLength(1_000);
-    expect(facts.isSuccess() && facts.value.capped).toBe(true);
+    expect(facts.ok && facts.value.clients).toHaveLength(1_000);
+    expect(facts.ok && facts.value.capped).toBe(true);
     expect(directory.calls).toHaveLength(5);
   });
 
   it('fails whole when a page fails: half a shop is a wrong number', async () => {
-    const inner = new InMemoryClientStatsDirectory(shopOf(450));
+    const inner = statsReader(shopOf(450));
+    const pageTwo = RepositoryError.readFailed('clientStats', 'page two');
     let pages = 0;
-    const directory: ClientStatsDirectory = {
-      page: (limit, after) => {
+    const directory: RhythmStatsReader = {
+      pageClientStats: (after, limit) => {
         pages += 1;
-        if (pages === 2) inner.failWith(new RepositoryError('page two'));
-        return inner.page(limit, after);
+        if (pages === 2) inner.failWith(pageTwo);
+        return inner.pageClientStats(after, limit);
       },
     };
 
     const facts = await readRhythmPreviewFacts(directory);
 
-    expect(facts.isFailure() && facts.error.message).toBe('page two');
+    expect(!facts.ok && facts.error).toEqual(pageTwo);
     expect(pages).toBe(2);
   });
 
   it('answers a directory that throws as a failure', async () => {
-    const directory: ClientStatsDirectory = {
-      page: () => Promise.reject(new Error('the adapter did not load')),
+    const directory: RhythmStatsReader = {
+      pageClientStats: () =>
+        Promise.reject(new Error('the adapter did not load')),
     };
 
     const facts = await readRhythmPreviewFacts(directory);
 
-    expect(facts.isFailure() && facts.error).toBeInstanceOf(RepositoryError);
+    expect(!facts.ok && facts.error.errorCode).toBe(
+      RepositoryErrorCode.ReadFailed,
+    );
   });
 });
 
 describe('RhythmPreviewSource', () => {
   it('walks once, however often it is asked', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(450));
+    const directory = statsReader(shopOf(450));
     const source = new RhythmPreviewSource(directory);
 
     const first = await source.read();
@@ -229,7 +274,7 @@ describe('RhythmPreviewSource', () => {
   });
 
   it('answers two readers of one walk with the same facts', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(3));
+    const directory = statsReader(shopOf(3));
     const source = new RhythmPreviewSource(directory);
 
     const [first, second] = await Promise.all([source.read(), source.read()]);
@@ -239,14 +284,14 @@ describe('RhythmPreviewSource', () => {
   });
 
   it('answers a walk that failed as it failed, until it is told to forget it', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(3)).failWith();
+    const directory = statsReader(shopOf(3)).failWith();
     const source = new RhythmPreviewSource(directory);
 
     const failed = await source.read();
     directory.recover();
     const again = await source.read();
 
-    expect(failed.isFailure()).toBe(true);
+    expect(failed.ok).toBe(false);
     expect(again).toBe(failed);
     expect(source.failed).toBe(true);
     expect(directory.calls).toHaveLength(1);
@@ -255,13 +300,13 @@ describe('RhythmPreviewSource', () => {
     expect(source.failed).toBe(false);
     const read = await source.read();
 
-    expect(read.isSuccess() && read.value.clients).toHaveLength(3);
+    expect(read.ok && read.value.clients).toHaveLength(3);
     expect(source.failed).toBe(false);
     expect(directory.calls).toHaveLength(2);
   });
 
   it('has not failed before it has walked, nor while it walks', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(3)).failWith();
+    const directory = statsReader(shopOf(3)).failWith();
     const source = new RhythmPreviewSource(directory);
 
     expect(source.failed).toBe(false);
@@ -273,7 +318,7 @@ describe('RhythmPreviewSource', () => {
   });
 
   it('is not failed by a walk it was told to forget', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(3)).failWith();
+    const directory = statsReader(shopOf(3)).failWith();
     const source = new RhythmPreviewSource(directory);
 
     const forgotten = source.read();
@@ -283,11 +328,11 @@ describe('RhythmPreviewSource', () => {
     await forgotten;
 
     expect(source.failed).toBe(false);
-    expect((await read).isSuccess()).toBe(true);
+    expect((await read).ok).toBe(true);
   });
 
   it('walks again after `forget()`, even over facts it had', async () => {
-    const directory = new InMemoryClientStatsDirectory(shopOf(3));
+    const directory = statsReader(shopOf(3));
     const source = new RhythmPreviewSource(directory);
 
     const first = await source.read();
@@ -295,7 +340,7 @@ describe('RhythmPreviewSource', () => {
     const second = await source.read();
 
     expect(second).not.toBe(first);
-    expect(second.isSuccess() && second.value.clients).toHaveLength(3);
+    expect(second.ok && second.value.clients).toHaveLength(3);
     expect(directory.calls).toHaveLength(2);
   });
 });

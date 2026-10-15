@@ -48,7 +48,7 @@ function dateFormat(
  * A shop wall-clock reading as a number on the UTC axis — its civil fields,
  * not an instant. Only ever handed to a `timeZone: 'UTC'` formatter.
  */
-export function civilMs(localDate: LocalDate, minute: number = 0): number {
+export function civilMs(localDate: LocalDate, minute = 0): number {
   return LocalDate.toEpochDay(localDate) * MS_PER_DAY + minute * MS_PER_MINUTE;
 }
 

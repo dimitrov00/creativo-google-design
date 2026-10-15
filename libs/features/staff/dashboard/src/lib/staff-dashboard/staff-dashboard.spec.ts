@@ -90,12 +90,15 @@ import {
   CouponGrantId,
   CouponId,
   CustomerId,
+  ExceptionEffect,
   LocalDate,
   LocationId,
   MinuteCount,
   MinuteOfDay,
+  PriceCents,
   type RepositoryError,
   Result as PortResult,
+  ScheduleExceptionId,
   SeatId,
   ServiceCategoryId,
   ServiceId,
@@ -121,6 +124,7 @@ import {
   locationFixture,
   memoryAppointmentPhotoPorts,
   memoryCatalogReadPorts,
+  memoryCouponVoucherPorts,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
   seatFixture,
@@ -129,6 +133,7 @@ import {
   textFixture,
   unwrapOk,
   until,
+  utcMs,
 } from '@core/testing';
 import { StaffDashboard, reversibleSave } from './staff-dashboard';
 import {
@@ -683,22 +688,23 @@ describe('StaffDashboard', () => {
         {
           provide: COUPON_VOUCHER_PORTS,
           useValue: {
-            findCouponByCode: async () => PortResult.ok(null),
-            listOpenCoupons: async () => PortResult.ok([]),
-            loadCouponGrant: async () => PortResult.ok(null),
+            ...memoryCouponVoucherPorts(),
             listUsableCouponGrants: async (customerId: CustomerId) => {
               grantsAskedFor.push(customerId);
-              return PortResult.ok(heldGrants.map((held) => held.grant));
+              // The held grants, re-addressed to whoever asks: the
+              // fixture's booker has a fresh record on every read.
+              return memoryCouponVoucherPorts({
+                grants: heldGrants.map((entry) => ({
+                  ...entry.grant,
+                  customerId,
+                })),
+              }).listUsableCouponGrants(customerId);
             },
-            findGiftVoucherByCode: async () => PortResult.ok(null),
-            listGiftVouchersForHolder: async () => PortResult.ok([]),
             // Whatever the coupon's status: a held grant keeps its name.
             loadCoupons: async (ids: readonly CouponId[]) =>
-              PortResult.ok(
-                heldGrants
-                  .map((held) => held.coupon)
-                  .filter((coupon) => ids.includes(coupon.id)),
-              ),
+              memoryCouponVoucherPorts({
+                coupons: heldGrants.map((entry) => entry.coupon),
+              }).loadCoupons(ids),
           } satisfies CouponVoucherPorts,
         },
         {
@@ -2180,10 +2186,10 @@ describe('StaffDashboard', () => {
 
     await component.liftFromEditor();
     expect(component.blockLiftArmed()).toBe(true);
-    expect(clear).not.toHaveBeenCalled();
+    expect(writeScheduleException).not.toHaveBeenCalled();
 
     await component.liftFromEditor();
-    expect(clear).toHaveBeenCalledTimes(1);
+    expect(writeScheduleException).toHaveBeenCalledTimes(1);
     expect(component.blockLiftArmed()).toBe(false);
   });
 
@@ -2280,8 +2286,9 @@ describe('StaffDashboard', () => {
       localDate: '2026-08-05',
       locationId: 'loc-center',
       // Sanitized: the public EFFECT, and no reason rides in it.
-      ...ExceptionEffectRule.blocked([MinuteRange.of(wallAt(12), until(13))])
-        .value,
+      ...unwrapOk(
+        ExceptionEffectRule.blocked([MinuteRange.of(wallAt(12), until(13))]),
+      ),
     });
     expect(exceptions[0]).not.toHaveProperty('reason');
   });
@@ -2316,10 +2323,13 @@ describe('StaffDashboard', () => {
     await fixture.whenStable();
 
     expect(exceptions).toHaveLength(1);
-    expect(exceptions[0]?.exceptionRanges).toEqual([
-      MinuteRange.of(wallAt(12), until(13)),
-      MinuteRange.of(wallAt(15), until(16)),
-    ]);
+    expect(exceptions[0]).toMatchObject({
+      exceptionEffect: ExceptionEffect.Blocked,
+      exceptionRanges: [
+        MinuteRange.of(wallAt(12), until(13)),
+        MinuteRange.of(wallAt(15), until(16)),
+      ],
+    });
   });
 
   it('stands the whole day down when the switch is on', async () => {
@@ -4302,7 +4312,7 @@ describe('StaffDashboard', () => {
                     id: appointmentId,
                     text,
                     authorUserId: null,
-                    writtenAtUtcMs: null,
+                    writtenAtUtcMs: wall('2026-08-05T08:00:00').utcEpochMs,
                   },
             ),
           ),
@@ -5294,38 +5304,20 @@ describe('StaffDashboard', () => {
   it("numbers a stranger added on one chair of a split party past the other chair's walk-in", async () => {
     const visits = observeBarberDay.getMockImplementation();
     const WALK_IN = 'Случаен клиент';
-    const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-    const seatFor = (chair: string, subject: SeatSubject) =>
-      Seat.of({
-        id: SeatId.generate(),
-        subject,
-        serviceId: value(ServiceId.create('fade')),
-        variantId: null,
-        barberId: value(BarberId.create(chair)),
-        terms: value(ServiceTerms.create(price, 30)),
-        startsAt: at('2026-08-05T10:00:00'),
+    const seatFor = (chair: string, occupant: SeatOccupant) =>
+      seatAt({
+        chair,
+        startIso: '2026-08-05T10:00:00',
+        occupant,
+        serviceId: 'fade',
       });
-    const split = value(
-      Appointment.create({
-        id: 'appointment-split',
-        locationId: LocationId.generate().toString(),
-        seats: [
-          seatFor('ivan', SeatSubject.account(UserId.generate(), 'self')),
-          seatFor(
-            'niko',
-            SeatSubject.anonymous(value(SeatLabel.create(WALK_IN))),
-          ),
-        ],
-        now: at('2026-08-05T08:00:00'),
-        contact: value(
-          BookingContact.create({
-            name: 'Мартин Илиев',
-            phone: '+359881234567',
-            email: null,
-            note: null,
-          }),
-        ),
-      }),
+    const split = visitOf(
+      'appointment-split',
+      [
+        seatFor('ivan', accountOf(freshId('user'), SubjectRelationship.Self)),
+        seatFor('niko', SeatOccupant.anonymous(SeatLabel.of(WALK_IN))),
+      ],
+      { contact: contactOf('Мартин Илиев', '+359881234567') },
     );
     observeBarberDay.mockImplementation((barberId: string) =>
       of(
@@ -5733,10 +5725,13 @@ describe('StaffDashboard', () => {
       expect(catalog?.barberName('nobody')).toBeNull();
       expect(catalog?.serviceName('fade')).toBe('fade');
       expect(catalog?.serviceName('retired')).toBeNull();
-      // No category is listed and no shop is active in this fixture.
+      // No category is listed in this fixture; ONE shop is — the one the
+      // chairs work at, which the day's windows are kept at (F1-10) — and
+      // the card names it, and nothing it does not list.
       expect(catalog?.serviceCategory('fade')).toBeNull();
-      expect(catalog?.locationName('loc-center')).toBeNull();
-      expect(catalog?.locationCount).toBe(0);
+      expect(catalog?.locationName('loc-center')).toBe('Център');
+      expect(catalog?.locationName('loc-gone')).toBeNull();
+      expect(catalog?.locationCount).toBe(1);
       // One object: a new one each pass would re-open an open card.
       fixture.detectChanges();
       expect(editor.uiClientCardCatalog()).toBe(catalog);
@@ -5758,51 +5753,49 @@ describe('StaffDashboard', () => {
       name: string,
       percent: number,
       occasion: 'birthday' | null,
-    ) =>
-      value(
-        Coupon.create({
-          id,
-          name,
-          value: value(CouponValue.percentOff(percent)),
-          combinability:
-            occasion === null
-              ? CouponCombinability.stackable()
-              : CouponCombinability.exclusive(),
-          expiry: { kind: 'never' },
-          enabled: true,
-          occasion,
-        }),
-      );
-    // The port's answer is the pair; the store reads the grant's id, its
-    // value and WHEN it lapses, and asks it whether it is usable — that is
-    // the whole grant here. The birthday gift lapses at 22:30 UTC on 28
-    // October — 00:30 on the 29th in Sofia (UTC+2 once summer time has
-    // ended), the day the card must print.
+    ): Coupon => ({
+      id: CouponId.of(id),
+      name,
+      code: null,
+      combinability:
+        occasion === null ? Combinability.Stackable : Combinability.Exclusive,
+      usageLimit: null,
+      couponStatus: CouponStatus.Enabled,
+      couponOccasion: occasion === null ? null : CouponOccasion.Birthday,
+      ...unwrapOk(CouponValue.percentOff(percent)),
+      ...CouponExpiryRule.never(),
+    });
+    // The record's grant of that coupon: its value and WHEN it lapses are
+    // what the store reads, and it is ACTIVE, so usable. The birthday gift
+    // lapses at 22:30 UTC on 28 October — 00:30 on the 29th in Sofia
+    // (UTC+2 once summer time has ended), the day the card must print.
     const held = (
       grantId: string,
       of: Coupon,
-      expiresAt: ZonedDateTime | null = null,
-    ): CouponGrantWithCoupon => ({
+      expiresAtUtcMs: UtcEpochMs | null = null,
+    ): HeldGrant => ({
       grant: {
-        id: { value: grantId },
-        value: of.value,
-        isUsable: () => true,
-        state: {
-          kind: 'active',
-          capacity: { kind: 'single_use' },
-          expiration:
-            expiresAt === null
-              ? { kind: 'no_expiry' }
-              : { kind: 'expires_at', at: expiresAt },
-        },
-      } as unknown as CouponGrantWithCoupon['grant'],
+        id: CouponGrantId.of(grantId),
+        // Re-addressed to whoever asks by the port double in `build`.
+        customerId: CustomerId.of('customer-unknown'),
+        holderUserId: null,
+        couponId: of.id,
+        grantedAtUtcMs: wall('2026-08-01T09:00:00').utcEpochMs,
+        ...CouponValue.of(of),
+        ...GrantLifecycle.active(
+          GrantCapacityTerms.singleUse(),
+          expiresAtUtcMs === null
+            ? GrantExpiryTerms.none()
+            : GrantExpiryTerms.at(expiresAtUtcMs),
+        ),
+      },
       coupon: of,
     });
     heldGrants = [
       held(
         'grant-birthday',
         coupon('coupon-birthday', 'Рожден ден', 20, 'birthday'),
-        value(ZonedDateTime.fromISO('2026-10-28T22:30:00', 'UTC')),
+        utcMs('2026-10-28T22:30:00+00:00'),
       ),
       held('grant-loyal', coupon('coupon-loyal', 'Постоянен клиент', 5, null)),
     ];
@@ -5821,9 +5814,10 @@ describe('StaffDashboard', () => {
       await fixture.whenStable();
       fixture.detectChanges();
       const component = fixture.componentInstance as unknown as {
-        visitSheetRow: () => { ownerUserId: string | null } | null;
+        visitSheetRow: () => { ownerCustomerId: string | null } | null;
       };
-      const owner = component.visitSheetRow()?.ownerUserId ?? null;
+      // Asked by the booker's client RECORD (D29), never by the uid.
+      const owner = component.visitSheetRow()?.ownerCustomerId ?? null;
       expect(owner).not.toBeNull();
       expect(grantsAskedFor).toEqual([owner]);
       const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
@@ -5857,37 +5851,25 @@ describe('StaffDashboard', () => {
 
   it("names a companion by his own profile — never with the booker's name or number", async () => {
     const visits = observeBarberDay.getMockImplementation();
-    const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-    const seat = (chair: string, uid: string, relationship: SeatRelationship) =>
-      Seat.of({
-        id: SeatId.generate(),
-        subject: SeatSubject.account(value(UserId.create(uid)), relationship),
-        serviceId: ServiceId.generate(),
-        variantId: null,
-        barberId: value(BarberId.create(chair)),
-        terms: value(ServiceTerms.create(price, 30)),
-        startsAt: at('2026-08-05T10:00:00'),
+    const seat = (
+      chair: string,
+      uid: string,
+      relationship: SubjectRelationship,
+    ) =>
+      seatAt({
+        chair,
+        startIso: '2026-08-05T10:00:00',
+        occupant: accountOf(uid, relationship),
       });
     // A father books himself with Ivan and his son — an account of his
     // own — with Niko: the contact is the father's.
-    const family = value(
-      Appointment.create({
-        id: 'appointment-family',
-        locationId: LocationId.generate().toString(),
-        seats: [
-          seat('ivan', 'user-father', 'self'),
-          seat('niko', 'user-son', 'companion'),
-        ],
-        now: at('2026-08-05T08:00:00'),
-        contact: value(
-          BookingContact.create({
-            name: 'Стоян Колев',
-            phone: '+359 88 765 4321',
-            email: null,
-            note: null,
-          }),
-        ),
-      }),
+    const family = visitOf(
+      'appointment-family',
+      [
+        seat('ivan', 'user-father', SubjectRelationship.Self),
+        seat('niko', 'user-son', SubjectRelationship.Companion),
+      ],
+      { contact: contactOf('Стоян Колев', '+359 88 765 4321') },
     );
     profiles.set(
       'user-son',

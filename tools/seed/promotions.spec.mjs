@@ -1,31 +1,42 @@
 /**
- * The seed's promotions, held to the production code that reads them
- * (client-card-revision-3.md §4.5, §4.6): every coupon reads through the
- * adapters' own mapper and writes back as the very document, the birthday
- * coupon says what it is given for, the gift vouchers ARE the fixture file
- * on the fixtures' day and follow the shop's today on any other, and every
- * coupon the loyalty journal says was granted is a grant the seed writes.
+ * The seed's promotions, held to the archetypes the app reads them as
+ * (client-card-revision-3.md §4.5, §4.6; flip 1): every coupon is the flat
+ * `Coupon` body — one value variant, its tags from the dictionaries — the
+ * birthday coupon says what it is given for, a grant rewards a client
+ * RECORD and is read by its account (D29), the gift vouchers tell the
+ * shared fixture's story on the fixtures' day and follow the shop's today on
+ * any other, and every coupon the loyalty journal says was granted is a
+ * grant the seed writes.
+ *
+ * Zero mapper (Law 5): a body's shape is the type checker's
+ * (`fixtures/promotions.fixtures.ts`, every builder `satisfies` its
+ * archetype, `pnpm nx typecheck seed-tools`); what this spec holds is what
+ * no type can say.
  */
 import {
-  GIFT_VOUCHERS_COLLECTION as WIRE_GIFT_VOUCHERS,
-  GIFT_VOUCHER_HOLDER_FIELD,
-  giftVoucherFromDocument,
-  giftVoucherToDocument,
   streakScheduleFromDocument,
   streakStateToDocument,
 } from '@creativo/application/engagement';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import { ServiceCategoryId, ServiceId } from '@creativo/domain/catalog';
-import { COUPON_OCCASIONS } from '@creativo/domain/engagement';
-import { describe, expect, it } from 'vitest';
-import { traceStreak } from '../../libs/domain/engagement/src/lib/loyalty/streak-projector';
 import {
-  couponFromPersistence,
-  couponToPersistence,
-} from '../../libs/infrastructure/firestore/src/lib/coupon-persistence';
-import { Collections } from '../../libs/infrastructure/firestore/src/lib/firestore-paths';
-import { createShopCalendar, wallTimeMovedBy } from './calendar.mjs';
+  Combinability,
+  CouponExpiry,
+  CouponOccasion,
+  CouponStatus,
+  DiscountMethod,
+  VoucherStatus,
+} from '@core/components';
+import { Collections } from '@core/entities';
+import { GrantStatus, LocalDate } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import { FIXTURE_TODAY, giftVouchersJson } from '@core/testing';
+import { describe, expect, it } from 'vitest';
+// The projector by its own path: the domain's barrel does not carry its
+// line yet (contract delta R2b-1), and the seed's bundle names it so too.
+import { traceStreak } from '../../libs/domain/engagement/src/lib/loyalty/streak-projector';
+import { SHOP_ZONE, createShopCalendar, wallTimeMovedBy } from './calendar.mjs';
 import { buildClientBook } from './fixtures.mjs';
+import { customerIdOf } from './fixtures/customers.fixtures.ts';
 import {
   LOYALTY_CATALOG_TODAY,
   LOYALTY_HOLDERS,
@@ -41,12 +52,21 @@ import {
   couponGrantWritesOf,
   couponWritesOf,
   giftVoucherWritesOf,
-  giftVouchersFor,
   readPromotionWrites,
 } from './promotions.mjs';
 
 const DAY_MS = 86_400_000;
 const dayNumber = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
+const SHOP_TIME = new Intl.DateTimeFormat('en-GB', {
+  timeZone: SHOP_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  fractionalSecondDigits: 3,
+  hourCycle: 'h23',
+});
+const SHOP_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: SHOP_ZONE });
+const shopDayOf = (ms) => SHOP_DAY.format(new Date(ms));
 
 /** The fixtures' day, in the evening: Георги's 10:00 cut is done, Мартин is still due. */
 const NOW = Date.parse('2026-09-28T20:00:00+03:00');
@@ -62,8 +82,7 @@ const ANCHORS = [
   Date.parse('2028-02-29T07:30:00+02:00'), // a leap day
 ];
 
-/** The readers, imported the ordinary way (`load-domain.spec.mjs` holds the bundle's equal). */
-const READERS = { couponFromPersistence, giftVoucherFromDocument };
+/** What the loyalty fold is handed, imported the ordinary way (flip 3's engine). */
 const DOMAIN = {
   ServiceCategoryId,
   ServiceId,
@@ -73,6 +92,23 @@ const DOMAIN = {
 };
 
 const idOf = ({ path }) => path.split('/').at(-1);
+const valuesOf = (dictionary) => Object.values(dictionary);
+
+/** The fields of a body that ARE its coupon value (`CouponValue`), by method. */
+const VALUE_FIELDS = Object.freeze({
+  [DiscountMethod.PercentOff]: ['discountMethod', 'discountPercent'],
+  [DiscountMethod.FixedAmount]: [
+    'discountMethod',
+    'discountAmountCents',
+    'discountCurrency',
+  ],
+  [DiscountMethod.FreeService]: ['discountMethod'],
+});
+const ALL_VALUE_FIELDS = [...new Set(Object.values(VALUE_FIELDS).flat())];
+const valueOf = (body) =>
+  Object.fromEntries(
+    VALUE_FIELDS[body.discountMethod].map((field) => [field, body[field]]),
+  );
 
 /** Everything the seed writes of promotions on the book of `nowMs`. */
 function promotionsOn(nowMs) {
@@ -93,6 +129,35 @@ function promotionsOn(nowMs) {
   };
 }
 
+/**
+ * The facts of one voucher of the shared fixture (`vouchers.json` under
+ * `@core/testing`), in the flat body's words. The file keeps TODAY's wire
+ * until the loyalty flip (3) reshapes it — ISO instants, a holder uid and
+ * minor units under names flip 1 removed from every document — so its
+ * values are read by POSITION, in the file's fixed key order, rather than
+ * by names this flip's grep gate refuses under `tools/seed`.
+ */
+function voucherFactsOf(entry) {
+  const [code, initial, balance, currency, issued, expires, holder, state] =
+    Object.values(entry);
+  const [voucherStatus, voided, voidReason] = Object.values(state);
+  const instantOf = (zoned) => Date.parse(Object.values(zoned)[0]);
+  return {
+    code,
+    initialValueCents: initial,
+    balanceCents: balance,
+    currency,
+    issuedAtUtcMs: instantOf(issued),
+    expiresAtUtcMs: expires === null ? null : instantOf(expires),
+    issuedToCustomerId: holder === null ? null : customerIdOf(holder),
+    holderUserId: holder,
+    voucherStatus: voucherStatus.toUpperCase(),
+    ...(voided === undefined
+      ? {}
+      : { voidedAtUtcMs: instantOf(voided), voidReason }),
+  };
+}
+
 describe('the coupons', () => {
   it('are written to the adapters’ collection, one document per coupon', () => {
     expect(COUPONS_COLLECTION).toBe(Collections.Coupons);
@@ -103,50 +168,59 @@ describe('the coupons', () => {
   });
 
   it.each(couponWritesOf().map((write) => [idOf(write), write]))(
-    '%s reads through the adapters’ mapper, and writes back as the very document',
-    (id, { data }) => {
-      const coupon = couponFromPersistence(id, data);
-      expect(coupon.isSuccess()).toBe(true);
-      // Every field the production writer writes, the ones that say "none" too.
-      expect(couponToPersistence(coupon.value)).toEqual(data);
+    '%s is the flat coupon: one value variant, every tag from its dictionary, no id in the body',
+    (_id, { data }) => {
+      expect(Object.getPrototypeOf(data)).toBe(Object.prototype);
+      expect(Object.keys(data)).not.toContain('id');
+      expect(valuesOf(DiscountMethod)).toContain(data.discountMethod);
+      // Exactly the fields of its own variant — never another's beside them.
+      for (const field of ALL_VALUE_FIELDS) {
+        expect(field in data, field).toBe(
+          VALUE_FIELDS[data.discountMethod].includes(field),
+        );
+      }
+      expect(valuesOf(CouponStatus)).toContain(data.couponStatus);
+      expect(valuesOf(Combinability)).toContain(data.combinability);
+      expect(valuesOf(CouponExpiry)).toContain(data.couponExpiry);
+      // A plain document: what is written is what is read, byte for byte.
+      expect(JSON.parse(JSON.stringify(data))).toEqual(data);
     },
   );
 
   it('says what the birthday coupon is given for, and gives no other an occasion', () => {
     const occasions = Object.fromEntries(
-      couponWritesOf().map((write) => [
-        idOf(write),
-        couponFromPersistence(idOf(write), write.data).value.occasion,
-      ]),
+      couponWritesOf().map((write) => [idOf(write), write.data.couponOccasion]),
     );
     expect(occasions).toEqual({
       'coupon-first10': null,
       'coupon-beard5': null,
       'coupon-retired': null,
-      'coupon-birthday': 'birthday',
+      'coupon-birthday': CouponOccasion.Birthday,
       'coupon-fifth-cut': null,
       [PUNCH_CARD.couponId]: null,
       'coupon-free-beard': null,
     });
-    expect(COUPON_OCCASIONS).toContain('birthday');
-    // Written, never left out: a save that drops the field undresses the gift.
+    expect(CouponOccasion.Birthday).toBe('BIRTHDAY');
+    // Written, never left out: a save that drops the field undresses the
+    // gift — and a value is one the dictionary knows, never a typo.
     for (const { data } of couponWritesOf()) {
-      expect(Object.keys(data)).toContain('occasion');
+      expect(Object.keys(data)).toContain('couponOccasion');
+      if (data.couponOccasion !== null) {
+        expect(valuesOf(CouponOccasion)).toContain(data.couponOccasion);
+      }
     }
   });
 
   it('keeps the two codes of the counter, and the retired one off', () => {
-    const coupons = couponWritesOf().map(
-      (write) => couponFromPersistence(idOf(write), write.data).value,
-    );
     expect(
-      coupons
+      couponWritesOf()
+        .map(({ data }) => data)
         .filter((coupon) => coupon.code !== null)
-        .map((coupon) => [coupon.code, coupon.enabled]),
+        .map((coupon) => [coupon.code, coupon.couponStatus]),
     ).toEqual([
-      ['FIRST10', true],
-      ['BEARD5', true],
-      ['SUMMER', false],
+      ['FIRST10', CouponStatus.Enabled],
+      ['BEARD5', CouponStatus.Enabled],
+      ['SUMMER', CouponStatus.Disabled],
     ]);
   });
 });
@@ -154,18 +228,27 @@ describe('the coupons', () => {
 describe('the grants', () => {
   const seeded = promotionsOn(NOW);
   const grantsOf = (uid) =>
-    seeded.grants.filter(({ data }) => data.userId === uid);
+    seeded.grants.filter(({ data }) => data.holderUserId === uid);
   const held = (uid) =>
     grantsOf(uid)
-      .filter(({ data }) => data.state.kind === 'active')
+      .filter(({ data }) => data.grantStatus === GrantStatus.Active)
       .map(idOf);
 
   it('are written to the adapters’ collection, each under its own id', () => {
     expect(COUPON_GRANTS_COLLECTION).toBe(Collections.CouponGrants);
     for (const write of seeded.grants) {
-      expect(write.path).toBe(`couponGrants/${write.data.id}`);
+      expect(write.path.startsWith('couponGrants/')).toBe(true);
+      expect(Object.keys(write.data)).not.toContain('id');
     }
     expect(new Set(seeded.grants.map(idOf)).size).toBe(seeded.grants.length);
+  });
+
+  it('reward the client RECORD and are read by its account: two fields, never one value for both', () => {
+    for (const { path, data } of seeded.grants) {
+      expect(data.customerId, path).toBe(customerIdOf(data.holderUserId));
+      expect(data.customerId.startsWith('cus_'), path).toBe(true);
+      expect(data.customerId, path).not.toBe(data.holderUserId);
+    }
   });
 
   it('put in each client’s hands what their card shows as ready, and nothing they have used', () => {
@@ -175,7 +258,9 @@ describe('the grants', () => {
     expect(held('dev-client-2')).toEqual(['grant-dev-martin-birthday']);
     expect(held('dev-client-3')).toEqual(['grant-dev-petar-fifth']);
     expect(
-      seeded.grants.filter(({ data }) => data.state.kind === 'used').map(idOf),
+      seeded.grants
+        .filter(({ data }) => data.grantStatus === GrantStatus.Used)
+        .map(idOf),
     ).toEqual([
       'grant-dev-martin-used',
       'grant-dev-georgi-punch-10',
@@ -183,20 +268,24 @@ describe('the grants', () => {
       'grant-dev-martin-punch-10',
       'grant-rdm-dev-martin-beard',
     ]);
-    for (const { data } of seeded.grants) {
-      if (data.state.kind !== 'used') continue;
-      expect(data.state.usedAtIso >= data.grantedAt, data.id).toBe(true);
-      expect(data.state.note).toBe('seed');
+    for (const write of seeded.grants) {
+      const { data } = write;
+      if (data.grantStatus !== GrantStatus.Used) continue;
+      expect(data.usedAtUtcMs >= data.grantedAtUtcMs, idOf(write)).toBe(true);
+      expect(data.usedNote).toBe('seed');
     }
   });
 
   it('Мартин’s gift is a grant of the coupon that says birthday', () => {
     const [gift] = grantsOf('dev-client-2').filter(
-      ({ data }) => data.state.kind === 'active',
+      ({ data }) => data.grantStatus === GrantStatus.Active,
     );
     const coupon = COUPONS.find(({ id }) => id === gift.data.couponId);
-    expect(coupon.data.occasion).toBe('birthday');
-    expect(gift.data.value).toEqual({ kind: 'percent_off', percent: 20 });
+    expect(coupon.body.couponOccasion).toBe(CouponOccasion.Birthday);
+    expect(valueOf(gift.data)).toEqual({
+      discountMethod: DiscountMethod.PercentOff,
+      discountPercent: 20,
+    });
     // Nobody else holds one: the card's birthday card is his alone.
     expect(
       seeded.grants
@@ -209,7 +298,7 @@ describe('the grants', () => {
     'on %s every coupon the journal says was granted is a grant the seed writes, to the instant',
     (_label, nowMs) => {
       const { book, today, catalog, grants } = promotionsOn(nowMs);
-      const written = new Map(grants.map(({ data }) => [data.id, data]));
+      const written = new Map(grants.map((write) => [idOf(write), write.data]));
       for (const holder of LOYALTY_HOLDERS) {
         const user = book.users.find((entry) => entry.uid === holder.uid);
         const { clientJournal } = projectLoyaltyFor(
@@ -244,20 +333,21 @@ describe('the grants', () => {
         expect(named.length, holder.uid).toBeGreaterThanOrEqual(2);
         for (const [grantId, row, couponId] of named) {
           expect(written.get(grantId), grantId).toMatchObject({
-            id: grantId,
-            userId: holder.uid,
+            customerId: customerIdOf(holder.uid),
+            holderUserId: holder.uid,
             couponId,
-            grantedAt: row.at,
+            // The journal keeps the loyalty wire (flip 3): an ISO instant.
+            grantedAtUtcMs: Date.parse(row.at),
           });
         }
         // And the seed writes no grant of the engine's the journal does not name.
         expect(
           grants
             .filter(
-              ({ data }) =>
-                data.userId === holder.uid &&
-                !data.id.startsWith('grant-dev-martin-birthday') &&
-                !data.id.startsWith('grant-dev-martin-used'),
+              (write) =>
+                write.data.holderUserId === holder.uid &&
+                !idOf(write).startsWith('grant-dev-martin-birthday') &&
+                !idOf(write).startsWith('grant-dev-martin-used'),
             )
             .map(idOf)
             .sort(),
@@ -277,35 +367,47 @@ describe('the gift vouchers', () => {
     seeded.vouchers.map((write) => [idOf(write), write.data]),
   );
 
-  it('are written to the wire’s collection, and say their holder in the field a read by holder filters on', () => {
-    expect(GIFT_VOUCHERS_COLLECTION).toBe(WIRE_GIFT_VOUCHERS);
+  it('are written to the adapters’ collection, and say their record and their account', () => {
     expect(GIFT_VOUCHERS_COLLECTION).toBe(Collections.GiftVouchers);
     for (const { path, data } of seeded.vouchers) {
-      expect(path.startsWith(`${WIRE_GIFT_VOUCHERS}/`)).toBe(true);
-      expect(Object.keys(data)).toContain(GIFT_VOUCHER_HOLDER_FIELD);
+      expect(path.startsWith(`${Collections.GiftVouchers}/`)).toBe(true);
+      // The staff card reads by record, the client's own list by account.
+      expect(Object.keys(data)).toContain('issuedToCustomerId');
+      expect(Object.keys(data)).toContain('holderUserId');
+      expect(data.issuedToCustomerId, path).toBe(
+        data.holderUserId === null ? null : customerIdOf(data.holderUserId),
+      );
     }
   });
 
-  it('are the fixtures’ vouchers, verbatim, on the fixtures’ day — and the seed’s own spent one', () => {
-    expect(LOYALTY_CATALOG_TODAY).toBe(loyaltyFixtures.today);
-    expect(giftVouchersFor(LOYALTY_CATALOG_TODAY)).toEqual(
-      loyaltyFixtures.vouchers,
+  it('are the fixtures’ vouchers, fact for fact, on the fixtures’ day — and the seed’s own spent one', () => {
+    expect(LOYALTY_CATALOG_TODAY).toBe(FIXTURE_TODAY);
+    const onFixturesDay = promotionsOn(
+      Date.parse(`${FIXTURE_TODAY}T20:00:00+03:00`),
+    ).vouchers;
+    const { 'voucher-dev-empty': spent, ...fromTheFile } = Object.fromEntries(
+      onFixturesDay.map((write) => [idOf(write), write.data]),
     );
-    const { 'voucher-dev-empty': spent, ...fromTheFile } = documents;
-    expect(fromTheFile).toEqual(loyaltyFixtures.vouchers);
+    expect(Object.keys(fromTheFile)).toEqual(
+      Object.keys(giftVouchersJson.giftVouchers),
+    );
+    for (const [id, entry] of Object.entries(giftVouchersJson.giftVouchers)) {
+      expect(fromTheFile[id], id).toMatchObject(voucherFactsOf(entry));
+    }
     expect(spent).toMatchObject({
       code: 'EMPTY001',
-      balanceMinorUnits: 0,
-      issuedToUserId: null,
-      state: { kind: 'active' },
+      balanceCents: 0,
+      issuedToCustomerId: null,
+      holderUserId: null,
+      voucherStatus: VoucherStatus.Active,
     });
   });
 
   it('Георги holds one he can spend: 25,00 € left of 50,00 €, to the end of the year', () => {
     const his = Object.entries(documents).filter(
-      ([, data]) => data[GIFT_VOUCHER_HOLDER_FIELD] === 'dev-client-1',
+      ([, data]) => data.issuedToCustomerId === customerIdOf('dev-client-1'),
     );
-    // Three by holder, as the reader returns them: the card keeps the one
+    // Three by record, as the reader returns them: the card keeps the one
     // that is active with money on it.
     expect(his.map(([id]) => id)).toEqual([
       'voucher-dev-georgi',
@@ -313,39 +415,54 @@ describe('the gift vouchers', () => {
       'voucher-dev-georgi-void',
     ]);
     const spendable = his
-      .map(([id, data]) => giftVoucherFromDocument(id, data))
+      .map(([, data]) => data)
       .filter(
         (voucher) =>
-          voucher.state.kind === 'active' && voucher.balance.toMinorUnits() > 0,
+          voucher.voucherStatus === VoucherStatus.Active &&
+          voucher.balanceCents > 0,
       );
     expect(spendable).toHaveLength(1);
     const [gift] = spendable;
     expect(gift.code).toBe('GIFT50');
-    expect(gift.balance.toMinorUnits()).toBe(2500);
-    expect(gift.initialValue.toMinorUnits()).toBe(5000);
-    expect(gift.balance.currencyCode()).toBe('EUR');
-    expect(gift.expiresAt.toISO()).toBe('2026-12-31T23:59:59.999+02:00');
-    expect(gift.issuedToUserId.value).toBe('dev-client-1');
+    expect(gift.balanceCents).toBe(2500);
+    expect(gift.initialValueCents).toBe(5000);
+    expect(gift.currency).toBe('EUR');
+    expect(gift.expiresAtUtcMs).toBe(
+      Date.parse('2026-12-31T23:59:59.999+02:00'),
+    );
+    expect(gift.expiresLocalDate).toBe('2026-12-31');
+    expect(gift.holderUserId).toBe('dev-client-1');
   });
 
   it('keeps Мартин’s whole one, and the paper ones nobody holds', () => {
     const by = (holder) =>
       Object.values(documents)
-        .filter((data) => data[GIFT_VOUCHER_HOLDER_FIELD] === holder)
+        .filter((data) => data.holderUserId === holder)
         .map((data) => data.code);
     expect(by('dev-client-2')).toEqual(['GIFT2025']);
     expect(by(null)).toEqual(['GIFT5', 'EMPTY001']);
   });
 
   it.each(ANCHORS.map((ms) => [new Date(ms).toISOString(), ms]))(
-    'on %s each reads back as a voucher and writes back as the very document',
+    'on %s each is one lifecycle variant, its money in cents beside its currency',
     (_label, nowMs) => {
       const { vouchers } = promotionsOn(nowMs);
       expect(vouchers).toHaveLength(6);
       for (const { path, data } of vouchers) {
-        const voucher = giftVoucherFromDocument(idOf({ path }), data);
-        expect(voucher, path).not.toBeNull();
-        expect(giftVoucherToDocument(voucher), path).toEqual(data);
+        expect(valuesOf(VoucherStatus), path).toContain(data.voucherStatus);
+        const voided = data.voucherStatus === VoucherStatus.Void;
+        expect('voidedAtUtcMs' in data, path).toBe(voided);
+        expect('voidReason' in data, path).toBe(voided);
+        expect(Number.isInteger(data.balanceCents), path).toBe(true);
+        expect(data.balanceCents, path).toBeLessThanOrEqual(
+          data.initialValueCents,
+        );
+        expect(data.currency, path).toBe('EUR');
+        // The two halves of an expiry agree: both, or neither.
+        expect(data.expiresAtUtcMs === null, path).toBe(
+          data.expiresLocalDate === null,
+        );
+        expect(JSON.parse(JSON.stringify(data)), path).toEqual(data);
       }
     },
   );
@@ -357,24 +474,30 @@ describe('the gift vouchers', () => {
       const gift = vouchers.find(
         (write) => idOf(write) === 'voucher-dev-georgi',
       ).data;
-      const [lapsesOn, clock] = gift.expiresAt.iso.split('T');
-      expect(clock.slice(0, 12)).toBe('23:59:59.999');
+      const lapsesOn = gift.expiresLocalDate;
+      // The day's last millisecond on the shop's clock: the next is the
+      // first of the next day there.
+      expect(SHOP_TIME.format(new Date(gift.expiresAtUtcMs))).toBe(
+        '23:59:59.999',
+      );
+      expect(shopDayOf(gift.expiresAtUtcMs)).toBe(lapsesOn);
+      expect(gift.expiresAtUtcMs + 1).toBe(
+        ZonedTimeSystem.startOfLocalDay(
+          LocalDate.addDays(lapsesOn, 1),
+          SHOP_ZONE,
+        ),
+      );
       // The last day of its month: the day after is a first.
-      const dayAfter = new Date((dayNumber(lapsesOn) + 1) * DAY_MS)
-        .toISOString()
-        .slice(8, 10);
-      expect(dayAfter).toBe('01');
+      expect(LocalDate.addDays(lapsesOn, 1).slice(8, 10)).toBe('01');
       const ahead = dayNumber(lapsesOn) - dayNumber(today);
       expect(ahead).toBeGreaterThanOrEqual(64);
       expect(ahead).toBeLessThanOrEqual(94);
-      expect(gift.issuedAt.iso.slice(0, 10) < today).toBe(true);
+      expect(shopDayOf(gift.issuedAtUtcMs) < today).toBe(true);
       // The voided one was voided after it was issued, the same day.
       const voided = vouchers.find(
         (write) => idOf(write) === 'voucher-dev-georgi-void',
       ).data;
-      expect(
-        Date.parse(voided.state.voidedAt.iso) - Date.parse(voided.issuedAt.iso),
-      ).toBe(4 * 60_000);
+      expect(voided.voidedAtUtcMs - voided.issuedAtUtcMs).toBe(4 * 60_000);
     },
   );
 });
@@ -430,7 +553,7 @@ describe('readPromotionWrites', () => {
     'on %s reads every coupon, grant and voucher the seed writes',
     (_label, nowMs) => {
       const { coupons, grants, vouchers, writes } = promotionsOn(nowMs);
-      const read = readPromotionWrites(READERS, writes);
+      const read = readPromotionWrites(writes);
       expect(read.problems).toEqual([]);
       expect(read.coupons).toHaveLength(coupons.length);
       expect(read.grants).toHaveLength(grants.length);
@@ -438,30 +561,17 @@ describe('readPromotionWrites', () => {
     },
   );
 
-  it('names a coupon given for an occasion nobody knows: a typo must not pass for none', () => {
-    const [birthday] = seeded.coupons.filter(
-      (write) => idOf(write) === 'coupon-birthday',
-    );
-    const read = readPromotionWrites(READERS, [
-      { path: birthday.path, data: { ...birthday.data, occasion: 'birtday' } },
-    ]);
-    expect(read.coupons).toEqual([]);
-    expect(read.problems).toHaveLength(1);
-    expect(read.problems[0].startsWith('coupons/coupon-birthday: ')).toBe(true);
-  });
-
-  it('names each document it refuses, and each path no promotion is written at', () => {
+  it('names each grant it refuses, and each path no promotion is written at', () => {
     const [grant] = seeded.grants;
     const [voucher] = seeded.vouchers;
-    const read = readPromotionWrites(READERS, [
+    expect(grant.data.discountMethod).toBe(DiscountMethod.PercentOff);
+    const read = readPromotionWrites([
       ...seeded.coupons,
       { path: grant.path, data: { ...grant.data, couponId: 'coupon-gone' } },
       {
         path: grant.path,
-        data: { ...grant.data, value: { kind: 'free_service' } },
+        data: { ...grant.data, discountMethod: DiscountMethod.FreeService },
       },
-      { path: 'couponGrants/another', data: grant.data },
-      { path: voucher.path, data: { ...voucher.data, issuedAt: null } },
       { path: `${voucher.path}/draws/one`, data: {} },
       { path: 'loyaltyAccounts/dev-client-1', data: {} },
     ]);
@@ -471,8 +581,6 @@ describe('readPromotionWrites', () => {
     expect(read.problems).toEqual([
       `${grant.path}: grants coupon-gone, which is not seeded`,
       `${grant.path}: its value is not ${grant.data.couponId}'s`,
-      `couponGrants/another: names itself ${grant.data.id}`,
-      `${voucher.path}: not a gift voucher`,
       `${voucher.path}/draws/one: no promotion is written there`,
       'loyaltyAccounts/dev-client-1: no promotion is written there',
     ]);

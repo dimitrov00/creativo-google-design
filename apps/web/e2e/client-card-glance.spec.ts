@@ -3,6 +3,16 @@ import { join } from 'node:path';
 import { workspaceRoot } from '@nx/devkit';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { LoyaltyAccountFixture } from '@creativo/application/engagement/testing';
+import { ClientStats, type VisitFact } from '@core/components';
+import {
+  AppointmentId,
+  BarberId,
+  DurationMinutes,
+  LocalDate,
+  MinuteOfDay,
+  SeatId,
+  ServiceId,
+} from '@core/primitives';
 import { SHOP_ZONE } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
 import { expectNoAxeViolations } from './support/axe';
@@ -61,42 +71,52 @@ function georgiLoyalty(): LoyaltyAccountFixture {
   return JSON.parse(json) as LoyaltyAccountFixture;
 }
 
+/** One visit on the stats: the appointment at 10:00 on the shop's clock that day. */
+function tenAm(appointmentId: string, day: string): VisitFact {
+  const localDate = LocalDate.parse(day);
+  const startMinutes = MinuteOfDay.of(10 * 60);
+  if (!localDate.ok || !startMinutes.ok) throw new Error(`no day ${day}`);
+  return {
+    appointmentId: AppointmentId.of(appointmentId),
+    localDate: localDate.value,
+    startMinutes: startMinutes.value,
+  };
+}
+
 /**
- * The stats the two worked visits make: 10:00 in Sofia is 08:00 UTC on
- * both days (EET, before and after the summer), the last one a beard
- * with Иван — what «Повтори» would repeat.
+ * The stats the two worked visits make — the flat `ClientStats` slice of
+ * the `ClientStatsRecord` the projection writes (`seedClientStats` adds the
+ * record's key and stamps): both at 10:00 on the shop's clock, the last one
+ * a beard with Иван — what «Повтори» would repeat.
  */
 function statsFor(uid: string): ClientStatsSeed {
-  const older = { appointmentId: `${uid}-y25`, at: '2025-11-12T08:00:00.000Z' };
-  const last = { appointmentId: `${uid}-y26`, at: '2026-03-10T08:00:00.000Z' };
+  const older = tenAm(`${uid}-y25`, '2025-11-12');
+  const last = tenAm(`${uid}-y26`, '2026-03-10');
+  const beard = ServiceId.of('svc-beard');
+  const ivan = BarberId.of('ivan');
+  const minutes = DurationMinutes.of(30);
+  if (!minutes.ok) throw new Error('no thirty minutes');
   return {
-    lifetime: {
-      visitsCompleted: 2,
-      noShows: 0,
-      lateCancels: 0,
-      clientCancels: 0,
-    },
-    last365: { visitsCompleted: [older, last], noShows: [], lateCancels: [] },
-    firstVisitAt: older.at,
-    lastVisit: {
-      ...last,
-      serviceIds: ['svc-beard'],
-      barberIds: ['ivan'],
-      legs: [
-        {
-          seatId: `${uid}-y26-seat`,
-          serviceId: 'svc-beard',
-          variantId: null,
-          barberId: 'ivan',
-          minutes: 30,
-        },
-      ],
-    },
-    nextVisit: null,
-    avgCadenceDays: null,
-    preferredBarberId: 'ivan',
-    usualServiceIds: [],
-    pauseSuggestion: null,
+    ...ClientStats.empty(),
+    lifetimeVisitsCompleted: 2,
+    last365VisitsCompleted: [older, last],
+    firstVisitLocalDate: older.localDate,
+    firstVisitStartMinutes: older.startMinutes,
+    lastVisitAppointmentId: last.appointmentId,
+    lastVisitLocalDate: last.localDate,
+    lastVisitStartMinutes: last.startMinutes,
+    lastVisitServiceIds: [beard],
+    lastVisitBarberIds: [ivan],
+    lastVisitLegs: [
+      {
+        seatId: SeatId.of(`${uid}-y26-seat`),
+        serviceId: beard,
+        variantId: null,
+        barberId: ivan,
+        durationMinutes: minutes.value,
+      },
+    ],
+    preferredBarberId: ivan,
   };
 }
 
@@ -128,7 +148,7 @@ async function seedGeorgi(uid: string, today: string): Promise<void> {
   await seedUpcomingAppointment(`${uid}-today`, uid, `${today}T21:00:00`);
   await seedAppointmentPhoto(`${uid}-y26`, uid, {
     clientLabel: 'Георги Петров',
-    takenAtIso: '2026-03-10T08:40:00.000Z',
+    takenAt: '2026-03-10T08:40:00.000Z',
   });
   await seedLoyalty(uid, georgiLoyalty());
   // His punch-card reward, held: the glance's ready ticket (E).

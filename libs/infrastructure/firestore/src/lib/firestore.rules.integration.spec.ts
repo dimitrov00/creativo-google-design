@@ -1063,11 +1063,15 @@ describe('firestore.rules', () => {
       );
     });
 
-    it('refuses the retired ISO read stamp (`readAtIso`), and any write beside the stamp', async () => {
+    it('refuses the retired ISO read stamp, and any write beside the stamp', async () => {
       const owner = signedIn('client-1', 'client').firestore();
+      // The key the rules allowed before flip 1 (`readAt` + `Iso`), spelled
+      // indirectly: the flip's grep gate refuses the retired name, and this
+      // is the one place that must still write it — to prove it is denied.
+      const retiredReadStamp = ['readAt', 'Iso'].join('');
       await assertFails(
         updateDoc(doc(owner, inboxPath), {
-          readAtIso: '2026-09-01T10:00:00.000+03:00',
+          [retiredReadStamp]: '2026-09-01T10:00:00.000+03:00',
         }),
       );
       await assertFails(

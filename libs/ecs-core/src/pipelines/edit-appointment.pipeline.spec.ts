@@ -433,7 +433,7 @@ describe('editAppointment — the shop moving its own book', () => {
     expect(acknowledged.ok).toBe(true);
   });
 
-  it('refuses a visit that never happened (status) and an end before the arrival (BEFORE_ARRIVAL)', async () => {
+  it('refuses a visit that never happened (bookingStatus) and an end before the arrival (BEFORE_ARRIVAL)', async () => {
     const cancelled = visit({
       lifecycle: BookingLifecycle.cancel(
         FIXTURE_NOW_UTC_MS,
@@ -443,7 +443,7 @@ describe('editAppointment — the shop moving its own book', () => {
     const never = await rig([...catalogue(), stored(cancelled)]).run(command());
     expect(!never.ok && never.error).toMatchObject({
       errorCode: BookingErrorCode.InvalidInput,
-      field: 'status',
+      field: 'bookingStatus',
     });
     const arrived = visit({
       arrivedAtUtcMs: utcMs('2026-10-01T10:20:00.000+03:00'),

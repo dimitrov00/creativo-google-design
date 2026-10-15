@@ -10,15 +10,15 @@ import {
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ZonedDateTime } from '@creativo/application/booking';
-import {
-  Service,
-  ServiceCategory,
-  type ServiceCategoryGroup,
-} from '@creativo/application/catalog';
+import { CompositionKind } from '@core/components';
+import type { Service, ServiceCategory } from '@core/entities';
+import { ServiceCategoryId, ServiceId } from '@core/primitives';
+import { serviceFixture, termsFixture, textFixture } from '@core/testing';
 import { STREAK_DEFINITION_REPOSITORY } from '@creativo/application/engagement';
 import { InMemoryStreakDefinitionRepository } from '@creativo/application/engagement/testing';
 import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import { AdminRhythmStore } from '../admin-rhythm.store';
+import type { RhythmServiceGroup } from '../admin-rhythm/rhythm-service-groups';
 import {
   AdminRhythmSheet,
   type AdminRhythmSheetKind,
@@ -51,53 +51,39 @@ class CatalogueLoader implements TranslocoLoader {
 const NOW = '2026-09-28T12:40:00';
 const TODAY = '2026-09-28';
 
-function unwrap<T>(result: { isFailure(): boolean; value: T }): T {
-  if (result.isFailure()) throw new Error('the fixture is no good');
-  return result.value;
-}
-
+/** A catalogue service as stored (`services/{id}`), the flat entity (Law 5). */
 function service(
   id: string,
   bg: string,
   category: string,
   sortOrder: number,
 ): Service {
-  return unwrap(
-    Service.create({
-      id,
-      name: { bg, en: id },
-      description: { bg, en: id },
-      categoryId: category,
-      priceMinorUnits: 2800,
-      currencyCode: 'EUR',
-      durationMinutes: 30,
-      locationIds: [],
-      conflictsWith: [],
-      composition: { kind: 'single' },
-      upsellOnly: false,
-      popular: true,
-      status: 'active',
-      sortOrder,
-    }),
-  );
+  return serviceFixture({
+    id: ServiceId.of(id),
+    name: textFixture(id, bg),
+    description: textFixture(id, bg),
+    categoryId: ServiceCategoryId.of(category),
+    ...termsFixture(2800, 30),
+    offerings: [],
+    locationIds: [],
+    compositionKind: CompositionKind.Single,
+    popular: true,
+    sortOrder,
+  });
 }
 
-const HAIR = unwrap(
-  ServiceCategory.create({
-    id: 'hair',
-    name: { bg: 'Коса', en: 'Hair' },
-    sortOrder: 0,
-  }),
-);
-const BEARD = unwrap(
-  ServiceCategory.create({
-    id: 'beard',
-    name: { bg: 'Брада', en: 'Beard' },
-    sortOrder: 1,
-  }),
-);
+const HAIR: ServiceCategory = {
+  id: ServiceCategoryId.of('hair'),
+  name: textFixture('Hair', 'Коса'),
+  sortOrder: 0,
+};
+const BEARD: ServiceCategory = {
+  id: ServiceCategoryId.of('beard'),
+  name: textFixture('Beard', 'Брада'),
+  sortOrder: 1,
+};
 
-const GROUPS: readonly ServiceCategoryGroup[] = [
+const GROUPS: readonly RhythmServiceGroup[] = [
   {
     category: HAIR,
     services: [
@@ -403,7 +389,7 @@ describe('«Услуги»', () => {
   it('says when the catalogue is not there', async () => {
     const { host } = await rig(
       'services',
-      null as unknown as readonly ServiceCategoryGroup[],
+      null as unknown as readonly RhythmServiceGroup[],
     );
     expect(byId(host, 'admin-rhythm-services-unavailable')).not.toBeNull();
   });

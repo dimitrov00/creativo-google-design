@@ -1,15 +1,6 @@
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
-import type { CallableRequest } from 'firebase-functions/v2/https';
 import {
   Actor,
   CustomerOrigin,
@@ -34,9 +25,14 @@ import {
   type GiftVoucher,
   Collections,
 } from '@core/entities';
-import { EditCommand, MoveSubjectRole } from '@core/systems';
+import {
+  EditCommand,
+  MoveSubjectRole,
+  RequestedSubjectRole,
+} from '@core/systems';
 import {
   type EditAppointmentCommand,
+  type EditCommandInput,
   editAppointment,
   rescheduleAppointment,
 } from '@core/pipelines';
@@ -46,6 +42,7 @@ import {
   barberFixture,
   barberScheduleFixture,
   cents,
+  duration,
   endMinute,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
@@ -58,27 +55,17 @@ import {
   utcMs,
 } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
+import { toHttpsError } from '../edge';
+import {
+  encodeStaffEditAppointmentAnswer,
+  settle,
+  staffEditAppointmentRefusal,
+} from '../wire/booking.wire';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
 import { firestoreSettingsPorts } from '../adapters/firestore-settings.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
-
-/**
- * The CALLABLE reads its Firestore through `adminFirestore()`; here that is
- * this suite's own emulator project, so the production path (main.ts's
- * export, the wire, the pipeline, the real adapters, the audit rows) runs
- * end to end.
- */
-const wired = vi.hoisted(() => ({ db: null as unknown }));
-vi.mock('../lib/firebase-admin', () => ({
-  adminFirestore: () => wired.db,
-  adminAuth: () => {
-    throw new Error('no Auth in this suite');
-  },
-}));
-
-import { staffEditAppointment } from '../main';
 
 /**
  * One NAMED staff intent against the REAL Firestore emulator — the
@@ -139,7 +126,6 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       admin.apps.find((a) => a?.name === PROJECT_ID) ??
       admin.initializeApp({ projectId: PROJECT_ID }, PROJECT_ID);
     db = app.firestore();
-    wired.db = db;
   });
 
   afterAll(async () => {
@@ -395,13 +381,16 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
   });
 
   /*
-   * ONE PERSON, ONE CHAIR, THROUGH THE CALLABLE (round 4, 2026-09-25; by
+   * ONE PERSON, ONE CHAIR, AS THE CALLABLE ANSWERS (round 4, 2026-09-25; by
    * seat identity since round 5). A visit that already seats one walk-in
    * label in two chairs at once (booked before the sheet numbered its
    * strangers) still takes any save that makes it no worse — the pair left
    * where it stood, dragged whole, or one of its seats moved — and a batch
    * that puts a person in two chairs ANEW is refused on the wire as
-   * `booking.commit.invalid_input` naming the field.
+   * `booking.commit.invalid_input` naming the field. The commands are the
+   * decoded ones (the payloads' decoding is `booking.wire.spec.ts`'s); the
+   * answer and the refusal leave through the callable's own settle and
+   * `toHttpsError`, as `main.ts` wires them.
    */
   describe('a double seating the visit already held (callable)', () => {
     const PAIR = AppointmentId.of('appt-pair');
@@ -442,26 +431,78 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       );
     });
 
-    function call(
-      command: unknown,
-      extra: Record<string, unknown> = {},
+    /** One save from the desk, answered as the callable answers it (a refusal thrown). */
+    async function call(
+      commands: EditCommandInput | readonly EditCommandInput[],
+      expectedVersion: number | null = null,
     ): Promise<unknown> {
-      return staffEditAppointment.run({
-        data: { appointmentId: PAIR, command, ...extra },
-        auth: { uid: 'u-desk', token: { roles: ['receptionist'] } },
-        rawRequest: {},
-        acceptsStreaming: false,
-      } as unknown as CallableRequest);
+      const settled = settle(
+        await editAppointment(ports())({
+          appointmentId: PAIR,
+          actorRoles: [Role.Receptionist],
+          commands: Array.isArray(commands) ? commands : [commands],
+          acknowledgedOverlap: false,
+          expectedVersion,
+          operationId: null,
+          actor: RECEPTION,
+        }),
+        encodeStaffEditAppointmentAnswer,
+        staffEditAppointmentRefusal,
+      );
+      if (!settled.ok) throw toHttpsError(settled.error);
+      return settled.value;
     }
+
+    const repriceSeatA: EditCommandInput = {
+      editCommand: EditCommand.Reprice,
+      seatId: SeatId.of('seat-a'),
+      priceCents: cents(3000),
+    };
+    const removeSeatB: EditCommandInput = {
+      editCommand: EditCommand.RemoveSeat,
+      seatId: SeatId.of('seat-b'),
+    };
+    const moveTo = (
+      hour: number,
+      minute = 0,
+      seatIds: readonly string[] | null = null,
+    ): EditCommandInput => ({
+      editCommand: EditCommand.Move,
+      startUtcMs: thursdayAt(hour, minute),
+      seatIds: seatIds === null ? null : seatIds.map((id) => SeatId.of(id)),
+    });
+    const addGuest = (
+      seatId: string,
+      barberId: BarberId,
+      label: string,
+      hour: number,
+    ): EditCommandInput => {
+      const guest = SeatLabel.parse(label);
+      if (!guest.ok) throw new Error('a broken guest label');
+      return {
+        editCommand: EditCommand.AddSeat,
+        seatId: SeatId.of(seatId),
+        serviceId: FIXTURE_IDS.service,
+        variantId: null,
+        barberId,
+        startUtcMs: thursdayAt(hour),
+        durationMinutes: duration(30),
+        addedSubject: {
+          requestedSubjectRole: RequestedSubjectRole.Guest,
+          label: guest.value,
+        },
+      };
+    };
 
     const pair = () => stored(PAIR_PATH);
     const seatsOf = async () =>
       (await pair())['seats'] as readonly Record<string, unknown>[];
 
     it('saves a batch that leaves the pair where it stood', async () => {
-      await expect(
-        call({ kind: 'reprice', seatId: 'seat-a', priceMinorUnits: 3000 }),
-      ).resolves.toEqual({ appointmentId: PAIR, revision: 2 });
+      await expect(call(repriceSeatA)).resolves.toEqual({
+        appointmentId: PAIR,
+        revision: 2,
+      });
 
       const seats = await seatsOf();
       expect(
@@ -478,17 +519,11 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
     });
 
     it('refuses a batch that seats one person twice, naming the field', async () => {
-      const newPair = (seatId: string, barberId: string) => ({
-        kind: 'addSeat',
-        seatId,
-        serviceId: FIXTURE_IDS.service,
-        barberId,
-        startIso: '2026-10-01T11:00:00.000+03:00',
-        minutes: 30,
-        subject: { kind: 'guest', label: 'Мария' },
-      });
       await expect(
-        call([newPair('seat-c', FIXTURE_IDS.barber), newPair('seat-d', PETAR)]),
+        call([
+          addGuest('seat-c', FIXTURE_IDS.barber, 'Мария', 11),
+          addGuest('seat-d', PETAR, 'Мария', 11),
+        ]),
       ).rejects.toMatchObject({
         code: 'invalid-argument',
         details: {
@@ -503,22 +538,14 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
     // whole visit — which leaves it no worse — was refused with the
     // client's "pick another time", and no time would do.
     it('saves a whole-visit drag of the pair, then a move of one seat that still overlaps', async () => {
-      await expect(
-        call(
-          { kind: 'move', startIso: '2026-10-01T11:00:00.000+03:00' },
-          { expectedVersion: 1 },
-        ),
-      ).resolves.toEqual({ appointmentId: PAIR, revision: 2 });
-      await expect(
-        call(
-          {
-            kind: 'move',
-            seatIds: ['seat-b'],
-            startIso: '2026-10-01T11:15:00.000+03:00',
-          },
-          { expectedVersion: 2 },
-        ),
-      ).resolves.toEqual({ appointmentId: PAIR, revision: 3 });
+      await expect(call(moveTo(11), 1)).resolves.toEqual({
+        appointmentId: PAIR,
+        revision: 2,
+      });
+      await expect(call(moveTo(11, 15, ['seat-b']), 2)).resolves.toEqual({
+        appointmentId: PAIR,
+        revision: 3,
+      });
 
       expect(
         (await seatsOf()).map((seat) => [seat['seatId'], seat['startMinutes']]),
@@ -532,26 +559,19 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
     // removed one seat of the pair remembers the pair, under the revision
     // it stamped; the undo made on that stamp puts the seat back under its
     // old id. Anything written in between, and the seat is new again.
-    const readdSeatB = {
-      kind: 'addSeat',
-      seatId: 'seat-b',
-      serviceId: FIXTURE_IDS.service,
-      barberId: PETAR,
-      startIso: '2026-10-01T10:00:00.000+03:00',
-      minutes: 30,
-      subject: { kind: 'guest', label: WALK_IN },
-    };
+    const readdSeatB = addGuest('seat-b', PETAR, WALK_IN, 10);
 
     it('lets the undo of a removal put the seat of the pair back', async () => {
-      await expect(
-        call({ kind: 'removeSeat', seatId: 'seat-b' }, { expectedVersion: 1 }),
-      ).resolves.toEqual({ appointmentId: PAIR, revision: 2 });
+      await expect(call(removeSeatB, 1)).resolves.toEqual({
+        appointmentId: PAIR,
+        revision: 2,
+      });
       expect(await pair()).toMatchObject({
         stoodSeatPairsRevision: 2,
         stoodSeatPairs: [{ seatId: 'seat-a', otherSeatId: 'seat-b' }],
       });
 
-      await expect(call(readdSeatB, { expectedVersion: 2 })).resolves.toEqual({
+      await expect(call(readdSeatB, 2)).resolves.toEqual({
         appointmentId: PAIR,
         revision: 3,
       });
@@ -573,18 +593,10 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
     });
 
     it('judges the seat new once another save landed after the removal', async () => {
-      await call(
-        { kind: 'removeSeat', seatId: 'seat-b' },
-        { expectedVersion: 1 },
-      );
-      await call(
-        { kind: 'reprice', seatId: 'seat-a', priceMinorUnits: 3000 },
-        { expectedVersion: 2 },
-      );
+      await call(removeSeatB, 1);
+      await call(repriceSeatA, 2);
 
-      await expect(
-        call(readdSeatB, { expectedVersion: 3 }),
-      ).rejects.toMatchObject({
+      await expect(call(readdSeatB, 3)).rejects.toMatchObject({
         code: 'invalid-argument',
         details: {
           code: 'booking.commit.invalid_input',
@@ -597,16 +609,8 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
     // Round 5: the sheet claims the revision its draft was drawn from; a
     // colleague's save since is refused, typed, and nothing is written.
     it('refuses a save from a stale screen as failed-precondition, writing nothing', async () => {
-      await call(
-        { kind: 'move', startIso: '2026-10-01T11:00:00.000+03:00' },
-        { expectedVersion: 1 },
-      );
-      await expect(
-        call(
-          { kind: 'move', startIso: '2026-10-01T12:00:00.000+03:00' },
-          { expectedVersion: 1 },
-        ),
-      ).rejects.toMatchObject({
+      await call(moveTo(11), 1);
+      await expect(call(moveTo(12), 1)).rejects.toMatchObject({
         code: 'failed-precondition',
         details: {
           code: 'booking.staffEdit.stale',

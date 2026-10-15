@@ -12,10 +12,13 @@ import { workspaceRoot } from '@nx/devkit';
  * seeds it again.
  *
  * The CATALOGUE only (`--catalog-only`): no spec reads the dev seed's client
- * book, staff account, client avatars, promotions or stats — every spec
- * seeds the people and visits it asserts on (`seed-firestore.ts`) and signs
- * in with minted roles (`sign-in.ts`), and the rebooking spec needs only the
- * catalogue's chair and roster. The book's projections were some five
+ * book, client records, staff account, client avatars, promotions or stats
+ * — every spec seeds the people, their client records (`customers`, D29)
+ * and the visits it asserts on as flat archetype bodies
+ * (`seed-firestore.ts`) and signs in with minted roles (`sign-in.ts`), and
+ * the rebooking spec needs only the catalogue's chair and roster. The
+ * catalogue's busy days carry their TTL `purgeAt`, stamped by the server's
+ * own `purgeAtFor` (F1-7). The book's projections were some five
  * hundred function-trigger runs (the client stats, the busy and capacity
  * rebuilds), which share the emulator hub with Auth and Storage: seeding
  * from each worker once ran those storms underneath the tests, and a

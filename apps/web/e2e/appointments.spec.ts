@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
-  readAppointmentStatusKind,
+  readBookingStatus,
   readSeatCancellation,
   seedUpcomingAppointment,
   seedUserProfile,
@@ -66,7 +66,7 @@ test.describe('account appointments', () => {
     const row = page.locator(
       `[data-testid="appointment-row"][data-appointment-id="${appointmentId}"]`,
     );
-    await expect(row).toHaveAttribute('data-status', 'confirmed');
+    await expect(row).toHaveAttribute('data-status', 'CONFIRMED');
     // What and when: the catalogue's name for the service, in shop time
     // (the device reads 21:00).
     await expect(row).toContainText(/Оформяне на брада|Beard trim/);
@@ -162,7 +162,7 @@ test.describe('account appointments', () => {
     const row = page.locator(
       `[data-testid="appointment-row"][data-appointment-id="${appointmentId}"]`,
     );
-    await expect(row).toHaveAttribute('data-status', 'confirmed');
+    await expect(row).toHaveAttribute('data-status', 'CONFIRMED');
     // It is filed under the upcoming run, which is what the cancel must
     // take it out of.
     const upcomingPill = page.locator(
@@ -189,15 +189,13 @@ test.describe('account appointments', () => {
 
     // The live listeners move the visit on their own — out of the upcoming
     // run and into the history, as cancelled — no manual UI removal.
-    await expect(row).toHaveAttribute('data-status', 'cancelled');
+    await expect(row).toHaveAttribute('data-status', 'CANCELLED');
     await expect(upcomingPill).toHaveCount(0);
 
-    await expect
-      .poll(() => readAppointmentStatusKind(appointmentId))
-      .toBe('cancelled');
+    await expect.poll(() => readBookingStatus(appointmentId)).toBe('CANCELLED');
     // Filed as the client's, with no reason claimed on their behalf.
     await expect
       .poll(() => readSeatCancellation(appointmentId))
-      .toEqual({ by: 'client', reason: 'unspecified' });
+      .toEqual({ cancelledBy: 'CLIENT', cancellationReason: 'UNSPECIFIED' });
   });
 });

@@ -29,9 +29,6 @@
   ],
   "references": [
     {
-      "path": "../../../application/catalog/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
@@ -57,6 +54,9 @@
     },
     {
       "path": "../../../application/engagement/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     }
   ]
 }

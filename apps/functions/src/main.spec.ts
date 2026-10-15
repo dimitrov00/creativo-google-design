@@ -298,14 +298,14 @@ const FLIP_1: { readonly [name: string]: Case } = {
   markArrived: {
     pipeline: 'markArrival',
     input: request({ appointmentId: 'a-1' }, STAFF),
-    command: { arrivalAction: 'ARRIVE', appointmentId: 'a-1' },
+    command: { markArrivalAction: 'ARRIVE', appointmentId: 'a-1' },
     answer: ok({ appointmentId: 'a-1', unchanged: false }),
     expected: { appointmentId: 'a-1', alreadyArrived: false },
   },
   clearArrival: {
     pipeline: 'markArrival',
     input: request({ appointmentId: 'a-1' }, STAFF),
-    command: { arrivalAction: 'CLEAR', appointmentId: 'a-1' },
+    command: { markArrivalAction: 'CLEAR', appointmentId: 'a-1' },
     answer: ok({ appointmentId: 'a-1', unchanged: true }),
     expected: { appointmentId: 'a-1', alreadyClear: true },
   },

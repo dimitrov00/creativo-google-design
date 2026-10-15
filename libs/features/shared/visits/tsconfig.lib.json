@@ -35,15 +35,6 @@
       "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/booking/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/catalog/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/accounts/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {

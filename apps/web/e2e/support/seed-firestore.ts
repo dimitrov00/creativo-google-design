@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -9,8 +9,50 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import type { LoyaltyAccountFixture } from '@creativo/application/engagement/testing';
 import {
-  upcomingAppointmentDocument,
-  workedAppointmentDocument,
+  type ClientStats,
+  Combinability,
+  CouponExpiryRule,
+  CouponOccasion,
+  CouponStatus,
+  CouponValue,
+  CustomerOrigin,
+  Email,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
+  PhotoOrigin,
+  PolicyPassStamp,
+} from '@core/components';
+import {
+  type AppointmentPhoto,
+  type ClientStatsRecord,
+  Collections,
+  type Coupon,
+  type CouponGrant,
+  type Customer,
+  Profile,
+} from '@core/entities';
+import {
+  AppointmentId,
+  BarberId,
+  CouponId,
+  CustomerId,
+  LocalDate,
+  MinuteOfDay,
+  type Result,
+  type TimeZone,
+  UserId,
+  type UtcEpochMs,
+} from '@core/primitives';
+import {
+  PhoneSystem,
+  SearchFieldsSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
+import {
+  SHOP_ZONE,
+  upcomingAppointmentBody,
+  workedAppointmentBody,
 } from './appointment-seed-document';
 
 const PROJECT_ID = 'demo-creativo-test';
@@ -81,12 +123,99 @@ export async function seedProfilePhoto(uid: string): Promise<void> {
     .save(PHOTO_PNG, { contentType: 'image/png' });
 }
 
+/** A smart constructor's answer for a seed value that is one by construction. */
+function sure<T, E>(result: Result<T, E>, what: string): T {
+  if (!result.ok) throw new Error(`e2e seed: ${what} is not valid`);
+  return result.value;
+}
+
+const SHOP_TIME_ZONE: TimeZone = sure(
+  ZonedTimeSystem.checkZone(SHOP_ZONE),
+  SHOP_ZONE,
+);
+
+/** An instant on the shop's wall clock — `day` at `hour:minute`, read in its zone. */
+function shopInstant(day: string, hour: number, minute = 0): UtcEpochMs {
+  return sure(
+    ZonedTimeSystem.toUtc(
+      sure(LocalDate.parse(day), day),
+      sure(MinuteOfDay.of(hour * 60 + minute), `${hour}:${minute}`),
+      SHOP_TIME_ZONE,
+    ),
+    `${day} ${hour}:${minute}`,
+  );
+}
+
+/**
+ * The seed's fixed instants: a body is the same bytes on every run (no
+ * `Date.now()` in a body). A record opened before every visit a spec
+ * seeds; a grant, a stats write and a photo at one noon on the shop's clock.
+ */
+const RECORD_OPENED_AT_UTC_MS = shopInstant('2025-01-01', 12);
+const SEEDED_AT_UTC_MS = shopInstant('2026-09-01', 12);
+
+/** The `hash` port's production function: sha256 of the UTF-8 input, lower-case hex. */
+const sha256Hex = (input: string): string =>
+  createHash('sha256').update(input, 'utf8').digest('hex');
+
+/**
+ * `uid`'s client RECORD id (D29) — derived as the booking pipeline derives
+ * it (`CustomerId.forUser` over the production hash), so a booking the spec
+ * makes through the app finds the record the seed wrote, at the same id.
+ */
+export function customerIdFor(uid: string): CustomerId {
+  return CustomerId.forUser(UserId.of(uid), sha256Hex);
+}
+
+/**
+ * Seeds `customers/{customerIdFor(uid)}`: the record a first booking opens
+ * (flatten-spec §5.5), from the account's own profile — the name the shop
+ * calls them, the contact as the desk's copy, the search keys
+ * `SearchFieldsSystem` derives — so the staff card's record lookup
+ * (`customers where userId == uid`) finds it. Seed `users/{uid}` first.
+ */
+export async function seedCustomerRecord(uid: string): Promise<CustomerId> {
+  const db = getFirestore(adminApp());
+  const profile = (
+    await db.collection(Collections.Users).doc(uid).get()
+  ).data();
+  if (profile === undefined) {
+    throw new Error(`e2e seed: ${uid} has no profile to open a record from`);
+  }
+  const contact = {
+    firstName: String(profile['firstName'] ?? ''),
+    lastName: String(profile['lastName'] ?? ''),
+  };
+  const parsed = PhoneSystem.parse(String(profile['phone'] ?? ''), null);
+  const phone = parsed.ok ? parsed.value.e164 : null;
+  const rawEmail = profile['email'];
+  const email = typeof rawEmail === 'string' ? Email.parse(rawEmail) : null;
+  const id = customerIdFor(uid);
+  const body = {
+    userId: UserId.of(uid),
+    displayName: Profile.fullName(contact),
+    phone,
+    email,
+    ...SearchFieldsSystem.searchFields(
+      contact.firstName,
+      contact.lastName,
+      phone,
+      email,
+    ),
+    createdAtUtcMs: RECORD_OPENED_AT_UTC_MS,
+    customerOrigin: CustomerOrigin.Seed,
+  } satisfies Omit<Customer, 'id'>;
+  await db.collection(Collections.Customers).doc(id).set(body);
+  return id;
+}
+
 /**
  * Seeds `appointments/{id}`: a confirmed visit `ownerUserId` booked for
- * themselves in the dev catalogue's chair, starting at the naive shop-time
- * `startIso` — the document {@link upcomingAppointmentDocument} builds, which
- * `apps/web/src/testing/e2e-appointment-seed.spec.ts` holds to the real
- * mapper byte for byte.
+ * themselves in the dev catalogue's chair, starting at `startsAt` (a naive
+ * shop wall clock, `YYYY-MM-DDTHH:mm:ss`, read in the shop's zone at this
+ * boundary) — the flat body {@link upcomingAppointmentBody} builds, which
+ * `apps/web/src/testing/e2e-appointment-seed.spec.ts` holds to the
+ * archetype — and the owner's client record beside it.
  *
  * A screen that shows the service or the barber also needs the dev
  * catalogue, which `global-setup.ts` seeds once per run.
@@ -94,29 +223,31 @@ export async function seedProfilePhoto(uid: string): Promise<void> {
 export async function seedUpcomingAppointment(
   id: string,
   ownerUserId: string,
-  startIso: string,
+  startsAt: string,
 ): Promise<void> {
+  const customerId = await seedCustomerRecord(ownerUserId);
   await getFirestore(adminApp())
-    .collection('appointments')
+    .collection(Collections.Appointments)
     .doc(id)
-    .set(upcomingAppointmentDocument(id, ownerUserId, startIso));
+    .set(upcomingAppointmentBody(id, ownerUserId, customerId, startsAt));
 }
 
 /**
  * Seeds `appointments/{id}`: a finished visit `ownerUserId` booked for
  * themselves in the dev catalogue's chair, worked at the naive shop-time
- * `startIso` — the document {@link workedAppointmentDocument} builds. The
- * visit a client repeats with `/book?repeat=`.
+ * `startsAt` — the body {@link workedAppointmentBody} builds — and the
+ * owner's client record. The visit a client repeats with `/book?repeat=`.
  */
 export async function seedWorkedAppointment(
   id: string,
   ownerUserId: string,
-  startIso: string,
+  startsAt: string,
 ): Promise<void> {
+  const customerId = await seedCustomerRecord(ownerUserId);
   await getFirestore(adminApp())
-    .collection('appointments')
+    .collection(Collections.Appointments)
     .doc(id)
-    .set(workedAppointmentDocument(id, ownerUserId, startIso));
+    .set(workedAppointmentBody(id, ownerUserId, customerId, startsAt));
 }
 
 /**
@@ -128,139 +259,137 @@ export async function readAppointmentsOwnedBy(
   ownerUserId: string,
 ): Promise<({ readonly id: string } & Record<string, unknown>)[]> {
   const snapshot = await getFirestore(adminApp())
-    .collection('appointments')
+    .collection(Collections.Appointments)
     .where('ownerUserId', '==', ownerUserId)
     .get();
   return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
 }
 
 /**
- * Reads back `appointments/{id}`'s persisted `status.kind` directly via the
+ * Reads back `appointments/{id}`'s stored `bookingStatus` directly via the
  * Admin SDK — used to prove a cancel-own flow actually persisted the
  * domain transition (goal 6.4), not just updated the UI optimistically.
  */
-export async function readAppointmentStatusKind(
-  id: string,
-): Promise<string | null> {
+export async function readBookingStatus(id: string): Promise<string | null> {
   const snapshot = await getFirestore(adminApp())
-    .collection('appointments')
+    .collection(Collections.Appointments)
     .doc(id)
     .get();
-  const data = snapshot.data() as { status?: { kind?: string } } | undefined;
-  return data?.status?.kind ?? null;
+  const status = snapshot.get('bookingStatus') as unknown;
+  return typeof status === 'string' ? status : null;
 }
 
 /**
  * Reads back how the first seat of `appointments/{id}` was cancelled — who
- * called it off and the reason kind filed — or `null` while it is not a
- * cancellation. What the server FILED, which the screen cannot show.
+ * called it off and the reason filed, as the flat seat stores them — or
+ * `null` while it is not a cancellation. What the server FILED, which the
+ * screen cannot show.
  */
 export async function readSeatCancellation(
   id: string,
-): Promise<{ by: string; reason: string } | null> {
+): Promise<{ cancelledBy: string; cancellationReason: string } | null> {
   const snapshot = await getFirestore(adminApp())
-    .collection('appointments')
+    .collection(Collections.Appointments)
     .doc(id)
     .get();
-  const data = snapshot.data() as
-    | {
-        seats?: {
-          outcome?: { kind?: string; by?: string; reason?: { kind?: string } };
-        }[];
-      }
-    | undefined;
-  const outcome = data?.seats?.[0]?.outcome;
-  if (outcome?.kind !== 'cancelled') return null;
-  return { by: outcome.by ?? '', reason: outcome.reason?.kind ?? '' };
+  const seats = snapshot.get('seats') as
+    readonly Record<string, unknown>[] | undefined;
+  const seat = seats?.[0];
+  if (seat?.['attendanceState'] !== 'CANCELLED') return null;
+  return {
+    cancelledBy: String(seat['cancelledBy'] ?? ''),
+    cancellationReason: String(seat['cancellationReason'] ?? ''),
+  };
 }
 
 // ── The staff client card (client-card-redesign §7.3, WP7 → WP8) ────────
 
+/** A coupon of the dev seed's promotions: open to everyone, unlimited, `couponStatus: 'ENABLED'`. */
+const LISTED = {
+  usageLimit: null,
+  couponStatus: CouponStatus.Enabled,
+  couponOccasion: null,
+} as const;
+
+/**
+ * One active, single-use grant of `couponId` at its `value`, rewarding
+ * `uid`'s client RECORD and read by their account (D29) — granted at the
+ * seed's fixed instant.
+ */
+function activeGrantOf(uid: string, couponId: CouponId, value: CouponValue) {
+  return {
+    customerId: customerIdFor(uid),
+    holderUserId: UserId.of(uid),
+    couponId,
+    grantedAtUtcMs: SEEDED_AT_UTC_MS,
+    ...CouponValue.of(value),
+    ...GrantLifecycle.of(
+      GrantLifecycle.active(
+        GrantCapacityTerms.singleUse(),
+        GrantExpiryTerms.none(),
+      ),
+    ),
+  } satisfies Omit<CouponGrant, 'id'>;
+}
+
 /**
  * A HELD REWARD for `uid`: the dev seed's punch-card coupon — «Безплатно
  * подстригване», a free service, exclusive — and one active, single-use
- * grant of it, the one the visit sheet reads for the booker
- * (`findUsableForUser`: the user, `state.kind == 'active'`, joined with the
- * coupon). The coupon is the FULL seed's promotion, which `--catalog-only`
- * does not write, so it is written here with the seed's own id and
- * document shape (`tools/seed-dev-catalog.mjs` COUPONS / COUPON_GRANTS);
- * the grant's id is the attempt's. Returns the grant's id.
+ * grant of it, the one the visit sheet reads for the booker (the client
+ * record, `grantStatus == 'ACTIVE'`, joined with the coupon). The coupon is
+ * the FULL seed's promotion, which `--catalog-only` does not write, so it
+ * is written here with the seed's own id and flat body
+ * (`tools/seed/fixtures/promotions.fixtures.ts` COUPONS); the grant's id is
+ * the attempt's. Returns the grant's id.
  */
 export async function seedHeldReward(uid: string): Promise<string> {
   const db = getFirestore(adminApp());
-  const couponId = 'coupon-punch-free-cut';
-  await db
-    .collection('coupons')
-    .doc(couponId)
-    .set({
-      name: 'Безплатно подстригване',
-      code: null,
-      value: { kind: 'free_service' },
-      combinability: { kind: 'exclusive' },
-      expiry: { kind: 'never' },
-      enabled: true,
-    });
+  const couponId = CouponId.of('coupon-punch-free-cut');
+  const coupon = {
+    ...LISTED,
+    name: 'Безплатно подстригване',
+    code: null,
+    combinability: Combinability.Exclusive,
+    ...CouponValue.freeService(),
+    ...CouponExpiryRule.never(),
+  } satisfies Omit<Coupon, 'id'>;
+  await db.collection(Collections.Coupons).doc(couponId).set(coupon);
   const grantId = `grant-${uid}-punch`;
   await db
-    .collection('couponGrants')
+    .collection(Collections.CouponGrants)
     .doc(grantId)
-    .set({
-      id: grantId,
-      userId: uid,
-      couponId,
-      value: { kind: 'free_service' },
-      grantedAt: new Date().toISOString(),
-      state: {
-        kind: 'active',
-        capacity: { kind: 'single_use' },
-        expiration: { kind: 'no_expiry' },
-      },
-    });
+    .set(activeGrantOf(uid, couponId, coupon));
   return grantId;
 }
 
 /**
  * THE BIRTHDAY GIFT for `uid` (client-card-revision-3 §2.1.2 a, §4.6): the
  * dev seed's «Рожден ден» coupon — −20 %, exclusive, valid 30 days, and
- * carrying `occasion: 'birthday'`, which is what makes a grant of it THE
- * gift the glance's band heads (never its name) — and one active grant of
- * it for the attempt's client. The coupon is the FULL seed's promotion
- * (`tools/seed/promotions.mjs` COUPONS), which `--catalog-only` does not
- * write, so it is written here with the seed's own id and document shape;
- * the grant's id is the attempt's. Returns the grant's id.
+ * carrying `couponOccasion: 'BIRTHDAY'`, which is what makes a grant of it
+ * THE gift the glance's band heads (never its name) — and one active grant
+ * of it for the attempt's client. The coupon is the FULL seed's promotion
+ * (`tools/seed/fixtures/promotions.fixtures.ts` COUPONS), which
+ * `--catalog-only` does not write, so it is written here with the seed's own
+ * id and flat body; the grant's id is the attempt's. Returns the grant's id.
  */
 export async function seedBirthdayGift(uid: string): Promise<string> {
   const db = getFirestore(adminApp());
-  const couponId = 'coupon-birthday';
-  await db
-    .collection('coupons')
-    .doc(couponId)
-    .set({
-      name: 'Рожден ден',
-      code: null,
-      value: { kind: 'percent_off', percent: 20 },
-      combinability: { kind: 'exclusive' },
-      expiry: { kind: 'days', days: 30 },
-      usageLimit: null,
-      enabled: true,
-      occasion: 'birthday',
-    });
+  const couponId = CouponId.of('coupon-birthday');
+  const coupon = {
+    ...LISTED,
+    name: 'Рожден ден',
+    code: null,
+    combinability: Combinability.Exclusive,
+    ...sure(CouponValue.percentOff(20), 'twenty per cent'),
+    ...sure(CouponExpiryRule.days(30), 'thirty days'),
+    couponOccasion: CouponOccasion.Birthday,
+  } satisfies Omit<Coupon, 'id'>;
+  await db.collection(Collections.Coupons).doc(couponId).set(coupon);
   const grantId = `grant-${uid}-birthday`;
   await db
-    .collection('couponGrants')
+    .collection(Collections.CouponGrants)
     .doc(grantId)
-    .set({
-      id: grantId,
-      userId: uid,
-      couponId,
-      value: { kind: 'percent_off', percent: 20 },
-      grantedAt: new Date().toISOString(),
-      state: {
-        kind: 'active',
-        capacity: { kind: 'single_use' },
-        expiration: { kind: 'no_expiry' },
-      },
-    });
+    .set(activeGrantOf(uid, couponId, coupon));
   return grantId;
 }
 
@@ -302,59 +431,23 @@ export async function seedLoyalty(
   await batch.commit();
 }
 
-/** One visit on a client's stats: the appointment and its start, UTC ISO. */
-export interface ClientStatsFactSeed {
-  readonly appointmentId: string;
-  readonly at: string;
-}
-
-/** A visit the stats point at («last», «next»): its services, chairs and seats. */
-export interface ClientStatsVisitSeed extends ClientStatsFactSeed {
-  readonly serviceIds: readonly string[];
-  readonly barberIds: readonly string[];
-  readonly legs: readonly {
-    readonly seatId: string;
-    readonly serviceId: string;
-    readonly variantId: string | null;
-    readonly barberId: string;
-    readonly minutes: number;
-  }[];
-}
-
 /**
- * `clientStats/{uid}`'s content as `clientStatsContent` writes it
- * (`libs/application/booking/src/lib/ports/client-stats-document.ts`) —
- * hand-written for the reason `appointment-seed-document.ts` gives, and
- * read back by the app through `clientStatsFromDocument`.
+ * `clientStats/{customerId}`'s stats as the projection computes them — the
+ * flat `ClientStats` slice of the `ClientStatsRecord` archetype (counts,
+ * the bounded facts on the shop's wall clock, the first/last/next visit,
+ * the pause suggestion), every field at the root. The record's key and
+ * write stamps are {@link seedClientStats}'s.
  */
-export interface ClientStatsSeed {
-  readonly lifetime: {
-    readonly visitsCompleted: number;
-    readonly noShows: number;
-    readonly lateCancels: number;
-    readonly clientCancels: number;
-  };
-  readonly last365: {
-    readonly visitsCompleted: readonly ClientStatsFactSeed[];
-    readonly noShows: readonly ClientStatsFactSeed[];
-    readonly lateCancels: readonly ClientStatsFactSeed[];
-  };
-  readonly firstVisitAt: string | null;
-  readonly lastVisit: ClientStatsVisitSeed | null;
-  readonly nextVisit: ClientStatsVisitSeed | null;
-  readonly avgCadenceDays: number | null;
-  readonly preferredBarberId: string | null;
-  readonly usualServiceIds: readonly string[];
-  readonly pauseSuggestion: null;
-}
+export type ClientStatsSeed = ClientStats;
 
 /**
- * Writes `clientStats/{uid}` directly — AFTER the function triggers have
- * gone quiet (`tools/seed/settle.mjs`, run as a CLI: this project may not
- * import tooling), so the appointments trigger the spec's own seeding set
- * off cannot recompute over it. `sinceMs` is when that seeding began, so a
- * trigger that died meanwhile is reported by name. The version is far
- * ahead of any a recompute could reach in a run.
+ * Writes `clientStats/{customerIdFor(uid)}` directly — AFTER the function
+ * triggers have gone quiet (`tools/seed/settle.mjs`, run as a CLI: this
+ * project may not import tooling), so the appointments trigger the spec's
+ * own seeding set off cannot recompute over it. `sinceMs` is when that
+ * seeding began, so a trigger that died meanwhile is reported by name. The
+ * version is far ahead of any a recompute could reach in a run; no policy
+ * pass has judged it.
  */
 export async function seedClientStats(
   uid: string,
@@ -366,15 +459,18 @@ export async function seedClientStats(
     ['tools/seed/settle.mjs', `--since=${sinceMs}`],
     { cwd: workspaceRoot },
   );
+  const customerId = customerIdFor(uid);
+  const body = {
+    customerId,
+    ...stats,
+    version: 1_000,
+    updatedAtUtcMs: SEEDED_AT_UTC_MS,
+    ...PolicyPassStamp.NONE,
+  } satisfies Omit<ClientStatsRecord, 'id'>;
   await getFirestore(adminApp())
-    .collection('clientStats')
-    .doc(uid)
-    .set({
-      userId: uid,
-      ...stats,
-      version: 1_000,
-      updatedAt: new Date().toISOString(),
-    });
+    .collection(Collections.ClientStats)
+    .doc(customerId)
+    .set(body);
 }
 
 /** One of the shop's work shots — the picture a seeded cut shows (1100 × 1400). */
@@ -382,12 +478,14 @@ const WORK_SHOT = 'apps/web/public/work/fade-styling.jpg';
 
 /**
  * Puts a past cut on `appointmentId` as the visit sheet's shutter does
- * (`FirebaseAppointmentPhotos.attach`), the way the dev seed does (§4.6):
- * the JPEG at `appointmentPhotos/{appointmentId}/{photoId}` with the facts
- * as its metadata and a download token, and `appointmentPhotos/{photoId}`
- * beside it with every field `toPhoto` reads and the TOKENED url —
- * `appointmentPhotos/**` is staff-only in Storage, so a bare path would not
- * render. Returns the photo's id (`client-photo-{id}` on the card).
+ * (`uploadPhotoBytes`, then `saveAppointmentPhoto`), the way the dev seed
+ * does (§4.6): the JPEG at `appointmentPhotos/{appointmentId}/{photoId}`
+ * with the facts as its metadata under the archetype's key names and a
+ * download token, and `appointmentPhotos/{photoId}` beside it — the flat
+ * `AppointmentPhoto` body, naming `uid`'s client RECORD, with the TOKENED
+ * url (`appointmentPhotos/**` is staff-only in Storage, so a bare path would
+ * not render). `takenAt` is an ISO instant WITH its offset, read at this
+ * boundary. Returns the photo's id (`client-photo-{id}` on the card).
  */
 export async function seedAppointmentPhoto(
   appointmentId: string,
@@ -395,15 +493,32 @@ export async function seedAppointmentPhoto(
   options: {
     readonly barberId?: string;
     readonly clientLabel?: string;
-    readonly takenAtIso?: string;
+    readonly takenAt?: string;
   } = {},
 ): Promise<string> {
   const photoId = `photo-${appointmentId}`;
   const path = `appointmentPhotos/${appointmentId}/${photoId}`;
   const token = randomUUID();
-  const barberId = options.barberId ?? 'ivan';
-  const clientLabel = options.clientLabel ?? 'Ada Lovelace';
-  const takenAtIso = options.takenAtIso ?? new Date().toISOString();
+  const takenAtUtcMs =
+    options.takenAt === undefined
+      ? SEEDED_AT_UTC_MS
+      : sure(ZonedTimeSystem.parseOffsetIso(options.takenAt), 'taken at');
+  const body = {
+    appointmentId: AppointmentId.of(appointmentId),
+    barberId: BarberId.of(options.barberId ?? 'ivan'),
+    clientCustomerId: customerIdFor(uid),
+    clientLabel: options.clientLabel ?? 'Ada Lovelace',
+    takenByUserId: null,
+    takenAtUtcMs,
+    path,
+    url:
+      `http://${process.env['FIREBASE_STORAGE_EMULATOR_HOST']}/v0/b/${BUCKET}` +
+      `/o/${encodeURIComponent(path)}?alt=media&token=${token}`,
+    width: 1100,
+    height: 1400,
+    photoOrigin: PhotoOrigin.Shot,
+    label: null,
+  } satisfies Omit<AppointmentPhoto, 'id'>;
   const app = adminApp();
   await getStorage(app)
     .bucket(BUCKET)
@@ -414,34 +529,18 @@ export async function seedAppointmentPhoto(
       metadata: {
         metadata: {
           firebaseStorageDownloadTokens: token,
-          appointmentId,
-          barberId,
-          clientUserId: uid,
-          clientLabel,
-          takenByUid: null,
-          takenAtIso,
+          appointmentId: body.appointmentId,
+          barberId: body.barberId,
+          clientCustomerId: body.clientCustomerId,
+          clientLabel: body.clientLabel,
+          takenByUserId: '',
+          takenAtUtcMs: String(body.takenAtUtcMs),
         },
       },
     });
   await getFirestore(app)
-    .collection('appointmentPhotos')
+    .collection(Collections.AppointmentPhotos)
     .doc(photoId)
-    .set({
-      photoId,
-      appointmentId,
-      barberId,
-      clientUserId: uid,
-      clientLabel,
-      takenByUid: null,
-      takenAtIso,
-      path,
-      url:
-        `http://${process.env['FIREBASE_STORAGE_EMULATOR_HOST']}/v0/b/${BUCKET}` +
-        `/o/${encodeURIComponent(path)}?alt=media&token=${token}`,
-      width: 1100,
-      height: 1400,
-      origin: 'shot',
-      label: null,
-    });
+    .set(body);
   return photoId;
 }

@@ -24,15 +24,16 @@ import { appendAuditFacts, readAppointment } from './booking-read-set.pipeline';
  * act's row AFTER the commit (`arrived:<stamp>` / `unarrived:<stamp>`).
  */
 
-/** The verb — the field `arrivalAction`, the ONLY source of these strings. */
-export const ArrivalAction = {
+/** The verb — the field `markArrivalAction`, the ONLY source of these strings. */
+export const MarkArrivalAction = {
   Arrive: 'ARRIVE',
   Clear: 'CLEAR',
 } as const;
-export type ArrivalAction = (typeof ArrivalAction)[keyof typeof ArrivalAction];
+export type MarkArrivalAction =
+  (typeof MarkArrivalAction)[keyof typeof MarkArrivalAction];
 
 export type MarkArrivalCommand = {
-  readonly arrivalAction: ArrivalAction;
+  readonly markArrivalAction: MarkArrivalAction;
   readonly appointmentId: AppointmentId;
   /** The verified caller the row names; `null` logs loudly and writes no row. */
   readonly actor: Actor | null;
@@ -76,7 +77,7 @@ export const markArrival =
           return Result.err(BookingError.invalidInput('appointmentId'));
         }
         const step: Result<LifecycleStep, SchedulingError> =
-          cmd.arrivalAction === ArrivalAction.Arrive
+          cmd.markArrivalAction === MarkArrivalAction.Arrive
             ? AppointmentLifecycleSystem.markArrived(appointment, nowUtcMs)
             : AppointmentLifecycleSystem.clearArrival(appointment);
         if (!step.ok) return step;

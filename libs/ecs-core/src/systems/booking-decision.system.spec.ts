@@ -1601,15 +1601,15 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
       'seat identifiers',
     );
     expect(field(decideWith(request([seat({ startMinutes: null })])))).toBe(
-      'startIso',
+      'startMinutes',
     );
     // A start off the wall clock, and a shop day no calendar has.
     expect(field(decideWith(request([seat({ startMinutes: 1440 })])))).toBe(
-      'startIso',
+      'startMinutes',
     );
     expect(
       field(decideWith(request([seat()], { localDate: '2026-02-30' }))),
-    ).toBe('startIso');
+    ).toBe('startMinutes');
   });
 
   it('refuses a seat beyond the booking horizon', () => {

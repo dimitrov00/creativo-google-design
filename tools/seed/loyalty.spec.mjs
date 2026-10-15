@@ -18,10 +18,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  WAITLIST_COLLECTION,
-  appointmentFromDocument,
-} from '@creativo/application/booking';
-import {
   ACTIVITY_EFFECT_KINDS,
   BADGE_PROGRESS_COLLECTION as WIRE_BADGE_PROGRESS,
   CLIENT_JOURNAL_COLLECTION as WIRE_CLIENT_JOURNAL,
@@ -48,9 +44,11 @@ import {
   InMemoryStreakDefinitionRepository,
   loyaltyFixtures,
 } from '@creativo/application/engagement/testing';
-import { UserId } from '@creativo/domain/accounts';
 import { ServiceCategoryId, ServiceId } from '@creativo/domain/catalog';
-import { computeClientStats } from '@creativo/domain/scheduling';
+import { ClientStatsPolicy, WaitlistLifecycle } from '@core/components';
+import { Collections } from '@core/entities';
+import { clientStatsOf } from '@core/pipelines';
+import { WaitlistSystem, ZonedTimeSystem } from '@core/systems';
 import { beforeAll, describe, expect, it } from 'vitest';
 // The projector by its own path: the domain's barrel does not carry its
 // line yet (contract delta R2b-1), and the seed's bundle names it so too.
@@ -58,6 +56,7 @@ import { traceStreak } from '../../libs/domain/engagement/src/lib/loyalty/streak
 import { account, appointmentDocumentOf } from './appointments.mjs';
 import { createShopCalendar } from './calendar.mjs';
 import { buildClientBook } from './fixtures.mjs';
+import { customerIdOf } from './fixtures/customers.fixtures.ts';
 import { loadSeedDomain } from './load-domain.mjs';
 import {
   BADGE_PROGRESS_COLLECTION,
@@ -96,6 +95,7 @@ import {
   waitlistRequestWriteOf,
 } from './waitlist.mjs';
 
+const ZONE = 'Europe/Sofia';
 const DAY_MS = 86_400_000;
 const dayNumber = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
 const weekdayOf = (day) => new Date(`${day}T12:00:00Z`).getUTCDay();
@@ -195,16 +195,18 @@ const pointsOf = (journal) =>
 const rowsOf = (journal, kind) =>
   Object.values(journal).filter((row) => row.effect.kind === kind);
 
+/**
+ * `uid`'s client stats as the trigger projects them — `clientStatsOf` of
+ * `@core/pipelines` over the flat bodies, as entities (`{ id, ...doc }`,
+ * Law 5: no mapper), for the client record the seed derives for `uid`.
+ */
 function statsOf(book, uid, nowMs) {
-  return computeClientStats(
-    UserId.create(uid).value,
-    book.appointments.map(({ id, doc }) => {
-      const parsed = appointmentFromDocument(id, doc);
-      if (parsed.isFailure()) throw new Error(`${id}: ${parsed.error.message}`);
-      return parsed.value;
-    }),
-    nowMs,
-  );
+  return clientStatsOf(
+    customerIdOf(uid),
+    book.appointments.map(({ id, doc }) => ({ id, ...doc })),
+    ClientStatsPolicy.DEFAULT,
+    ZonedTimeSystem.shopNow(nowMs, ZONE),
+  ).stats;
 }
 
 /**
@@ -247,7 +249,7 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
   // «Посещения» is clientStats' completed visits.
   const stats = statsOf(book, uid, nowMs);
   expect(badgeProgress['series-visits']?.value, uid).toBe(
-    stats.lifetime.visitsCompleted,
+    stats.lifetimeVisitsCompleted,
   );
 
   // Dense over EVERY row, keyed, in time order; the balance runs over the
@@ -463,7 +465,7 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
   expect(acc.punchCards).toEqual([
     {
       ruleId: PUNCH_CARD.ruleId,
-      filled: stats.lifetime.visitsCompleted % PUNCH_CARD.size,
+      filled: stats.lifetimeVisitsCompleted % PUNCH_CARD.size,
       size: PUNCH_CARD.size,
       title: catalog.rewardsCatalog['reward-cut'].name,
     },
@@ -484,7 +486,8 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
   ).toEqual(
     minted.map((granted) => [
       { kind: 'couponGrant', id: granted.grantId },
-      granted.grantedAt,
+      // The journal keeps the loyalty wire (flip 3): an ISO instant.
+      new Date(granted.grantedAtUtcMs).toISOString(),
       granted.stamp,
     ]),
   );
@@ -1279,21 +1282,37 @@ describe('read back by the client card’s readers', () => {
   });
 
   describe('Мартин’s waitlist request', () => {
-    const readRequest = ({ path, data }) =>
-      domain.waitlistFromDocument(path.split('/').at(-1), data);
-
-    it('is written to the wire’s collection, under its own id', () => {
-      expect(WAITLIST_REQUESTS_COLLECTION).toBe(WAITLIST_COLLECTION);
+    it('is written to the adapters’ collection, under its own id', () => {
+      expect(WAITLIST_REQUESTS_COLLECTION).toBe(Collections.WaitlistRequests);
       const { path, data } = waitlistRequestWriteOf(buildClientBook(NOW));
-      expect(path).toBe(`${WAITLIST_COLLECTION}/${SEEDED_WAITLIST_REQUEST.id}`);
-      expect(data.id).toBe(SEEDED_WAITLIST_REQUEST.id);
+      expect(path).toBe(
+        `${Collections.WaitlistRequests}/${SEEDED_WAITLIST_REQUEST.id}`,
+      );
+      expect(Object.keys(data)).not.toContain('id');
+      expect(data.ownerUserId).toBe(SEEDED_WAITLIST_REQUEST.ownerUserId);
     });
 
-    it('reads as a request, and writes back as the very document', () => {
-      const write = waitlistRequestWriteOf(buildClientBook(NOW));
-      const request = readRequest(write);
-      expect(request).not.toBeNull();
-      expect(domain.waitlistToDocument(request)).toEqual(write.data);
+    it('is the flat request: its days mirrored for the matcher, the first day’s instant, its lifecycle at the root', () => {
+      const { data } = waitlistRequestWriteOf(buildClientBook(NOW));
+      expect(data.localDates).toEqual(
+        data.flexibleDays.map((watched) => watched.localDate).sort(),
+      );
+      expect(data.utcEpochMs).toBe(
+        ZonedTimeSystem.startOfLocalDay(data.localDates[0], ZONE),
+      );
+      expect(data).toMatchObject({
+        locationId: 'loc-center',
+        waitlistStatus: 'OPEN',
+        waitlistStatusAtUtcMs: data.createdAtUtcMs,
+      });
+      // Afternoons, two to five on the shop's clock.
+      for (const watched of data.flexibleDays) {
+        expect(watched.windows).toEqual([
+          { startMinutes: 14 * 60, endMinutes: 17 * 60 },
+        ]);
+      }
+      // Plain data: what is written is what is read, byte for byte.
+      expect(JSON.parse(JSON.stringify(data))).toEqual(data);
     });
 
     it.each(ANCHORS.map((ms) => [new Date(ms).toISOString(), ms]))(
@@ -1301,12 +1320,10 @@ describe('read back by the client card’s readers', () => {
       (_label, nowMs) => {
         const book = buildClientBook(nowMs);
         const write = waitlistRequestWriteOf(book);
-        const request = readRequest(write);
         const todayKey = book.calendar.dayKeyAt(0);
-        const today = domain.CalendarDay.create(todayKey, book.calendar.zone);
-        expect(request.isWatching()).toBe(true);
-        expect(request.hasLapsedBy(today.value)).toBe(false);
-        const [thursday, friday] = write.data.dayKeys;
+        expect(WaitlistLifecycle.isWatching(write.data)).toBe(true);
+        expect(WaitlistSystem.hasLapsed(write.data, todayKey)).toBe(false);
+        const [thursday, friday] = write.data.localDates;
         expect([thursday, friday].map(weekdayOf)).toEqual([4, 5]);
         const ahead = dayNumber(thursday) - dayNumber(todayKey);
         expect(ahead).toBeGreaterThanOrEqual(4);
@@ -1314,14 +1331,13 @@ describe('read back by the client card’s readers', () => {
         const booked = book.appointments
           .filter(
             ({ doc }) =>
-              doc.subjectUserIds.includes(SEEDED_WAITLIST_REQUEST.ownerId) &&
-              doc.bookedAt,
+              doc.subjectUserIds.includes(
+                SEEDED_WAITLIST_REQUEST.ownerUserId,
+              ) && doc.bookedAtUtcMs !== null,
           )
-          .map(({ doc }) => Date.parse(doc.bookedAt.iso));
+          .map(({ doc }) => doc.bookedAtUtcMs);
         expect(booked.length).toBeGreaterThan(0);
-        expect(Math.max(...booked)).toBeLessThan(
-          Date.parse(write.data.createdAtIso),
-        );
+        expect(Math.max(...booked)).toBeLessThan(write.data.createdAtUtcMs);
       },
     );
 
@@ -1329,15 +1345,12 @@ describe('read back by the client card’s readers', () => {
       const book = buildClientBook(NOW);
       const mine = book.appointments.find(
         ({ doc }) =>
-          doc.subjectUserIds.includes(SEEDED_WAITLIST_REQUEST.ownerId) &&
-          doc.bookedAt,
+          doc.subjectUserIds.includes(SEEDED_WAITLIST_REQUEST.ownerUserId) &&
+          doc.bookedAtUtcMs !== null,
       );
       const rebooked = {
         id: `${mine.id}-again`,
-        doc: {
-          ...mine.doc,
-          bookedAt: { ...mine.doc.bookedAt, iso: book.calendar.isoAt(0, 8) },
-        },
+        doc: { ...mine.doc, bookedAtUtcMs: book.calendar.msAt(0, 8) },
       };
       expect(() =>
         waitlistRequestWriteOf({
@@ -1470,10 +1483,10 @@ describe('read back by the client card’s readers', () => {
     for (const [written, readBack] of [
       [
         'withoutPublishedRules(seededCatalogWrites, publishedRules)',
-        'readLoyaltyWrites(domain, [...writes, ...kept])',
+        'readLoyaltyWrites(seed, [...writes, ...kept])',
       ],
-      ['giftVoucherWritesOf(calendar)', 'readPromotionWrites(domain, writes)'],
-      ['loyaltyWritesOf(uid, projection)', 'readLoyaltyWrites(domain, writes)'],
+      ['giftVoucherWritesOf(calendar)', 'readPromotionWrites(writes)'],
+      ['loyaltyWritesOf(uid, projection)', 'readLoyaltyWrites(seed, writes)'],
     ]) {
       const from = at(written);
       expect(at(readBack, from), written).toBeLessThan(
@@ -1481,12 +1494,13 @@ describe('read back by the client card’s readers', () => {
       );
     }
     // The fold is handed the bundle the documents are read back with.
-    expect(at('projectLoyaltyFor(\n    domain,')).toBeLessThan(
+    expect(at('projectLoyaltyFor(\n    seed,')).toBeLessThan(
       at('loyaltyWritesOf(uid, projection)'),
     );
+    // The waitlist request is the flat body, written with its TTL stamp.
     const waitlist = at('waitlistRequestWriteOf(clientBook)');
-    expect(at('domain.waitlistFromDocument(', waitlist)).toBeLessThan(
-      at('.set(data)', waitlist),
+    expect(at('.set(stamped(path, data))', waitlist)).toBeGreaterThan(
+      waitlist,
     );
   });
 });
@@ -1506,8 +1520,8 @@ function worked(id, dayOffset, overrides = {}) {
       locationId: 'loc-center',
       status: { kind: 'completed' },
       placement: 'staff',
-      bookedAt: { dayOffset: dayOffset - 3, hour: 12, minute: 0 },
-      arrivedAt: { hour: 9, minute: 55 },
+      booked: { dayOffset: dayOffset - 3, hour: 12, minute: 0 },
+      arrived: { hour: 9, minute: 55 },
       contact: null,
       seats: [
         {
@@ -1536,8 +1550,8 @@ function calledOffByShop(id, dayOffset) {
       locationId: 'loc-center',
       status: { kind: 'cancelled', reason: 'staff_barber_absence' },
       placement: 'staff',
-      bookedAt: { dayOffset: dayOffset - 5, hour: 12, minute: 0 },
-      arrivedAt: null,
+      booked: { dayOffset: dayOffset - 5, hour: 12, minute: 0 },
+      arrived: null,
       contact: null,
       seats: [
         {
@@ -2293,16 +2307,16 @@ describe('the coupons the engine granted', () => {
         appointmentId: visits[9].appointmentId,
         grantId: 'grant-dev-georgi-punch-10',
         couponId: PUNCH_CARD.couponId,
-        grantedAt: new Date(visits[9].doneMs).toISOString(),
-        usedAt: new Date(visits[10].doneMs).toISOString(),
+        grantedAtUtcMs: visits[9].doneMs,
+        usedAtUtcMs: visits[10].doneMs,
       },
       {
         stamp: 20,
         appointmentId: visits[19].appointmentId,
         grantId: 'grant-dev-georgi-punch',
         couponId: PUNCH_CARD.couponId,
-        grantedAt: new Date(visits[19].doneMs).toISOString(),
-        usedAt: null,
+        grantedAtUtcMs: visits[19].doneMs,
+        usedAtUtcMs: null,
       },
     ]);
   });
@@ -2318,14 +2332,14 @@ describe('the coupons the engine granted', () => {
       stamp: 10,
       grantId: 'grant-dev-martin-punch-10',
     });
-    expect(tenth.usedAt).not.toBeNull();
+    expect(tenth.usedAtUtcMs).not.toBeNull();
     // Ten visits and none since: the tenth's coupon waits.
     const ten = visitsAt(Array.from({ length: 10 }, (_, i) => -300 + i * 30));
     expect(punchCardGrantsOf(UID, ten, TODAY)).toEqual([
       expect.objectContaining({
         stamp: 10,
         grantId: `grant-${UID}-punch-10`,
-        usedAt: null,
+        usedAtUtcMs: null,
       }),
     ]);
   });
@@ -2341,10 +2355,11 @@ describe('the coupons the engine granted', () => {
         holder.redemptions,
       );
       expect(
-        granted.map(({ grantId, couponId, grantedAt }) => [
+        granted.map(({ grantId, couponId, grantedAtUtcMs }) => [
           grantId,
           couponId,
-          grantedAt,
+          // The journal keeps the loyalty wire (flip 3): an ISO instant.
+          new Date(grantedAtUtcMs).toISOString(),
         ]),
       ).toEqual(
         rowsOf(projection.clientJournal, 'redemption').map((row) => [
@@ -2353,8 +2368,8 @@ describe('the coupons the engine granted', () => {
           row.at,
         ]),
       );
-      for (const { grantedAt, usedAt } of granted) {
-        expect(usedAt > grantedAt).toBe(true);
+      for (const { grantedAtUtcMs, usedAtUtcMs } of granted) {
+        expect(usedAtUtcMs > grantedAtUtcMs).toBe(true);
       }
     }
     expect(redemptionGrantIdOf('rdm-dev-georgi-cut')).toBe(
@@ -2401,7 +2416,7 @@ describe('projectLoyaltyFor — facts no appointment carries', () => {
     };
     const complete = project(appointments, { profile });
     expect(complete.badgeProgress['series-profile'].earned[0].earnedAt).toBe(
-      new Date(Date.parse(appointments[0].doc.bookedAt.iso)).toISOString(),
+      new Date(appointments[0].doc.bookedAtUtcMs).toISOString(),
     );
     for (const missing of [
       { ...profile, email: null },
@@ -2551,9 +2566,9 @@ describe('the fold reads the book as clientStats does', () => {
     const { book } = seeded(NOW);
     const stats = statsOf(book, 'dev-client-10', NOW);
     expect(workedVisitsOf('dev-client-10', book.appointments)).toHaveLength(
-      stats.lifetime.visitsCompleted,
+      stats.lifetimeVisitsCompleted,
     );
-    expect(stats.lifetime.visitsCompleted).toBeGreaterThan(0);
+    expect(stats.lifetimeVisitsCompleted).toBeGreaterThan(0);
   });
 
   it('mints the stamp card’s coupon at every tenth visit, as that chair freed', () => {

@@ -821,7 +821,7 @@ for (const holder of LOYALTY_HOLDERS) {
     const body = appointmentPhotoBody({
       appointmentId: visit.appointmentId,
       barberId,
-      clientUserId: uid,
+      clientAccountUid: uid,
       clientLabel,
       takenByUserId: STAFF_UID,
       takenAtUtcMs: visit.doneMs,

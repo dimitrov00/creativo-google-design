@@ -774,3 +774,408 @@ with the scanner after the deletions; the floors equal the measured counts.
    `takenAtUtcMs`, §3.4) because `clientUserId`/`takenAtIso` are removed
    spellings and nothing reads the metadata. Keep today's keys instead
    (an allowlist line in the §6 gate, and the uid passed beside the photo)?
+
+---
+
+## 11. The P1 case ledger (§5.4)
+
+Every case of the 18 specs P1 deleted (§5.1, §5.2: 334 cases, read off
+`c0e5d73`), each against the successor case that holds it on the flip tree
+(`successor file` › its `it` title, describe path left out) or `dead:` with
+the reason its subject no longer exists. 323 cases have a successor, 11 are
+dead; none has neither. Prefixes: `fn:` = `apps/functions/src/`, `pl:` =
+`libs/ecs-core/src/pipelines/`, `systems/` and `components/` =
+`libs/ecs-core/src/…`. A `[each]` title is one table-driven case; its rows
+moved with it. Wire-only refusal words (`startIso`, `atIso`, `status`) are
+asserted where the wire is: the pipelines name their own fields
+(`startUtcMs`, `startMinutes`, `atUtcMs`, `bookingStatus`) and
+`fn:wire/booking.wire.spec.ts` › “a refused field in today’s words” pins
+the mapping back (F1-3).
+
+**`fn:adapters/firestore-booking-store.spec.ts`** (23)
+
+- hands back the chairs the aggregate reads off a stored visit → `systems/move.system.spec.ts` › hands back every chair the visit holds before it is placed again
+- hands back the same chairs for a visit the aggregate cannot read → **dead:** no aggregate can fail to read a stored visit — the document is the flat entity (zero-mapper); the chairs come from `move.system` › hands back every chair the visit holds
+- lets a legacy visit move a quarter of an hour earlier, over its own old chair → `pl:reschedule-appointment.pipeline.spec.ts` › moves a quarter of an hour earlier, over the visit’s own old chair
+- still keeps the neighbour’s reset for a legacy visit → **dead:** the legacy (pre-aggregate) visit body no longer exists — no backfill, documents are the flat entity; the neighbour's reset for every visit is `reschedule-appointment.pipeline` › moves the visit in ONE plan
+- takes a new client booking at a listed shop → `pl:book-appointment.pipeline.spec.ts` › a client’s booking arrives only at a listed shop; the shop’s own placement at any, CONFIRMED and owner-less for a walk-in
+- refuses a shop it cannot find, as `invalid_input: locationId` → `pl:book-appointment.pipeline.spec.ts` › refuses a shop that is not there — and one whose id names no document, unread
+- refuses a new client booking at a shop that is not listed (%s) — the same answer, nothing written [each] → `pl:book-appointment.pipeline.spec.ts` › a client’s booking arrives only at a listed shop; the shop’s own placement at any, CONFIRMED and owner-less for a walk-in
+- takes the shop’s own placement at a hidden shop — its desk is not the public surface → `pl:book-appointment.pipeline.spec.ts` › a client’s booking arrives only at a listed shop; the shop’s own placement at any, CONFIRMED and owner-less for a walk-in
+- refuses %s as the one answer — `not_found`, never `store_failed` [each] → `pl:book-appointment.pipeline.spec.ts` › refuses a shop that is not there — and one whose id names no document, unread
+- answers a retry of an attempt that committed before the shop was hidden with its own booking → `pl:book-appointment.pipeline.spec.ts` › answers a retry of an attempt that committed before the shop was hidden with its own booking
+- lets the client move their own visit → `pl:reschedule-appointment.pipeline.spec.ts` › lets the client move their own visit
+- lets staff edit it → **dead:** by construction — `editAppointment` never reads the shop's listing (staff placement is not the public surface, §3.2), so a hidden shop cannot strand a staff edit
+- moves the client’s visit to another shop `/book` lists → `pl:reschedule-appointment.pipeline.spec.ts` › moves the client’s visit to another shop `/book` lists
+- refuses a client moving their visit INTO a shop `/book` does not list (%s) — the commit’s answer, nothing written [each] → `pl:reschedule-appointment.pipeline.spec.ts` › refuses a client moving their visit INTO a shop `/book` does not list (%s) — the commit’s answer, nothing written [each]
+- lets the client move their visit OUT of a hidden shop, to one `/book` lists → `pl:reschedule-appointment.pipeline.spec.ts` › lets the client move their visit OUT of a hidden shop, to one `/book` lists
+- asks who brings a visit to a hidden shop: %s [each] → `pl:reschedule-appointment.pipeline.spec.ts` › refuses a client moving their visit INTO a shop `/book` does not list (%s) — the commit’s answer, nothing written [each]
+- reads the shop’s own zone, hours and status → **dead:** `toShop` (a location-document mapper) is gone — the location document is the `ShopLocation` entity read as is (Law 5); `party-admission.system` › reads the shop the commit reads — the stored location entity
+- reads a shop that names no zone in the tenant’s, and one that publishes no hours as bound by none → **dead:** `toShop`'s tenant-zone and no-hours defaults are gone — `timeZone` is a required field of the location entity (Law 7.2); the shop hours are judged in `booking-decision.system` › clamps to the SHOP’s hours, not just the roster
+- reads %s as not active — fail-closed [each] → `systems/party-admission.system.spec.ts` › %s → listed: %s [each]
+- is `null` when there is no document → `fn:adapters/firestore-tx.adapter.spec.ts` › reads a document as its entity — the body plus its id — and an absent one as null
+- %s → %s [each] → `systems/party-admission.system.spec.ts` › %s → listed: %s [each]
+- %s → %s [each] → `pl:booking-read-set.pipeline.spec.ts` › names a document only by an id that could be one
+- refuses at least every id the Admin SDK will not build a reference for → `pl:booking-read-set.pipeline.spec.ts` › names a document only by an id that could be one
+
+**`fn:lib/booking/audit.integration.spec.ts`** (3)
+
+- writes one row per person, and a replay of the same change adds none — silently → `fn:adapters/firestore-audit.adapter.integration.spec.ts` › writes one row per person, and a replay of the same change adds none — silently
+- writes distinct rows for distinct changes → `fn:adapters/firestore-audit.adapter.integration.spec.ts` › writes distinct rows for distinct changes
+- fills in a person a partial earlier write missed → `fn:adapters/firestore-audit.adapter.integration.spec.ts` › fills in a person a partial earlier write missed
+
+**`fn:lib/booking/audit.spec.ts`** (33)
+
+- names each account once, in seat order, and skips guests → `systems/audit.system.spec.ts` › names each client record once, in seat order, and skips guests
+- keeps one untargeted row when nobody on the visit has an account → `systems/audit.system.spec.ts` › keeps one untargeted row when nobody on the visit has an account
+- never names more people than there are account subjects, nor fewer than one row → `systems/audit.system.spec.ts` › never names more people than there are account subjects, nor fewer than one row
+- writes one row per account on a party of two, each naming that person → `systems/audit.system.spec.ts` › writes one row per client record on a party of two, each naming that person (D29)
+- gives a guest seat no row of its own — the booker's row covers the visit → `systems/audit.system.spec.ts` › gives a guest seat no row of its own — the booker's row covers the visit
+- writes one untargeted row for a walk-in of guests → `systems/audit.system.spec.ts` › writes one untargeted row for a walk-in of guests
+- refuses through the domain rather than writing a half-formed row → `systems/audit.system.spec.ts` › refuses through the domain rather than writing a half-formed row
+- reads every seat: accounts by uid, guests as anonymous → `systems/audit.system.spec.ts` › reads every seat: accounts by their client record, guests as anonymous
+- narrows to the one seat a per-seat verb touched — a companion's no-show is theirs → `systems/audit.system.spec.ts` › narrows to the one seat a per-seat verb touched — a companion's no-show is theirs
+- tolerates a malformed document instead of throwing → **dead:** no untyped document parse — the stored visit is the typed entity read by the transaction (zero-mapper)
+- reads the owner beside the seats → `systems/audit.system.spec.ts` › keeps everyone the visit had before the edit — a removed seat included
+- reads the stored seats and owner → `systems/audit.system.spec.ts` › reads every seat: accounts by their client record, guests as anonymous
+- reads nobody for a visit that is not there, or not named → **dead:** `loadAudience` (a read outside the transaction) is gone — each pipeline reads the visit inside its own transaction and refuses an absent one, e.g. `mark-arrival.pipeline` › answers an unknown visit as invalid input on appointmentId
+- binds every self seat to the owner and every guest to nobody → `systems/audit.system.spec.ts` › binds every self seat to the owner's record and every guest to nobody
+- names a carried companion by their own account → `systems/audit.system.spec.ts` › names a carried companion by their own record
+- names nobody on an owner-less walk-in → `systems/audit.system.spec.ts` › names nobody on an owner-less walk-in
+- keeps everyone the visit had before the edit — a removed seat included → `systems/audit.system.spec.ts` › keeps everyone the visit had before the edit — a removed seat included
+- adds the owner when an addSeat gives them a seat → `systems/audit.system.spec.ts` › adds the owner when an ADD_SEAT gives them a seat
+- records a staff cancellation's reason code and drops its note → `systems/audit.system.spec.ts` › records a staff cancellation's reason code and the seat — there is no note to drop
+- records nothing when there is nothing to record → `systems/audit.system.spec.ts` › records nothing when there is nothing to record
+- writes every row of one act in ONE batch, each naming its person → `fn:adapters/firestore-audit.adapter.spec.ts` › writes every row of one act in ONE batch — the act is logged for everybody or for nobody
+- writes nothing without a verified actor, and does not throw → `pl:booking-read-set.pipeline.spec.ts` › logs and writes nothing without a verified actor, or for nothing to log
+- swallows a failed write — the act it describes has already happened → `fn:adapters/firestore-audit.adapter.spec.ts` › never throws on a failed write: it logs once at error level and the act stands
+- derives the same id from the same change, every time → `systems/audit.system.spec.ts` › derives the same basis from the same change, every time
+- is always a legal Firestore document id — 64 hex characters, whatever goes in → `systems/audit.system.spec.ts` › keeps every part recoverable whatever goes in — a hash of it is a legal id
+- separates every part — a change to any one of them is a different row → `systems/audit.system.spec.ts` › separates every part — a change to any one of them is a different row
+- is what `planAuditEntries` mints once a change key is given — and random without one → `systems/audit.system.spec.ts` › bases each row id on its change, once a change key is given — and leaves it to the pipeline without one
+- writes the rows once, and a replay of the same change writes no second row → `fn:adapters/firestore-audit.adapter.spec.ts` › a replay writes nothing twice, fills a missing row, and is not logged as a failure
+- writes a row per change for two distinct changes to the same visit → `fn:adapters/firestore-audit.adapter.integration.spec.ts` › writes distinct rows for distinct changes
+- fills the gap when a replay names somebody the first call did not → `fn:adapters/firestore-audit.adapter.spec.ts` › a replay writes nothing twice, fills a missing row, and is not logged as a failure
+- still logs — and never throws — any failure that is not ALREADY_EXISTS → `fn:adapters/firestore-audit.adapter.spec.ts` › logs a gap-filling row that fails for any other reason than ALREADY_EXISTS, and never throws
+- logs a gap-filling row that fails for any other reason, and never throws → `fn:adapters/firestore-audit.adapter.spec.ts` › logs a gap-filling row that fails for any other reason than ALREADY_EXISTS, and never throws
+- keeps appending with random ids for a caller that sends no key → `pl:booking-read-set.pipeline.spec.ts` › ids each row hash(rowBasis) — a fact without a change key mints one
+
+**`fn:lib/booking/booking-callables.audit.spec.ts`** (25)
+
+- answers only once the row is written → `pl:book-appointment.pipeline.spec.ts` › commits ONE plan — the appointment Create, the busy Set, the FIRST_BOOKING customer Create — and audits after
+- still succeeds when the audit write fails, and says so in the log → `fn:adapters/firestore-audit.adapter.spec.ts` › never throws on a failed write: it logs once at error level and the act stands
+- commitBooking: a replayed attempt finds its row written and adds none → `pl:book-appointment.pipeline.spec.ts` › answers a replayed attempt with its original booking — nothing written, the row appended again under the same id
+- staffEditAppointment: the same edit logged twice is one row; the next edit is another → `pl:edit-appointment.pipeline.spec.ts` › answers a re-sent intent with its original revision — before the stale check — and writes nothing
+- rescheduleAppointment: names the carried companion, and a replayed move logs nothing more → `pl:reschedule-appointment.pipeline.spec.ts` › a re-sent named move answers its original revision, writes nothing, and re-files its row
+- rescheduleAppointment: a retry after the visit changed again is still ONE move, one row per person → `systems/move.system.spec.ts` › answers a replay from the ledger, and refuses the same name on a DIFFERENT move
+- rescheduleAppointment: a first-time "move" to where the visit already is logs no move → `pl:reschedule-appointment.pipeline.spec.ts` › a request for exactly where the visit already is changes nothing and logs nothing
+- rescheduleAppointment: a move whose rows were lost gets them from its retry — once → `pl:reschedule-appointment.pipeline.spec.ts` › a re-sent named move answers its original revision, writes nothing, and re-files its row
+- rescheduleAppointment: a retry of a move that WAS logged adds nothing, and keeps its revision → `pl:reschedule-appointment.pipeline.spec.ts` › a re-sent named move answers its original revision, writes nothing, and re-files its row
+- staffEditAppointment: a re-sent intent is logged under its name — a lost row filled, none doubled → `pl:edit-appointment.pipeline.spec.ts` › answers a re-sent intent with its original revision — before the stale check — and writes nothing
+- staffEditAppointment: two intents are two rows even when one revision number answers both → `systems/audit.system.spec.ts` › separates every part — a change to any one of them is a different row
+- markArrived: a second tap writes neither a stamp nor a row → `pl:mark-arrival.pipeline.spec.ts` › a second tap changes nothing: no write, no row — the first stamp wins
+- recordSeatTip: the same figure again is no change — no write, no row → `pl:record-seat-tip.pipeline.spec.ts` › %s is not a change: nothing written, nothing logged [each]
+- recordSeatTip: record, clear, record again are three changes and three rows → `pl:record-seat-tip.pipeline.spec.ts` › clears with null, audited as cleared
+- carries «Всеки» and a named barber through → `fn:wire/booking.wire.spec.ts` › carries «Всеки» and a named barber through, and leaves an absent or unknown preference unknown
+- leaves an absent or unknown preference absent → `fn:wire/booking.wire.spec.ts` › carries «Всеки» and a named barber through, and leaves an absent or unknown preference unknown
+- keys a move that wrote by its attempt, else by the revision it stamped → `pl:reschedule-appointment.pipeline.spec.ts` › an unnamed move is logged under the revision it stamped
+- re-attempts a replay of an attempt that wrote under its key, naming the revision it stamped → `pl:reschedule-appointment.pipeline.spec.ts` › a re-sent named move answers its original revision, writes nothing, and re-files its row
+- logs nothing for a replay whose attempt never wrote — the visit already stood there → `systems/move.system.spec.ts` › keeps a first-time no-op unproven — a new name for where the visit already is wrote nothing
+- logs nothing for a replay with no attempt to key it by, even one that says it re-attempted → `pl:reschedule-appointment.pipeline.spec.ts` › a request for exactly where the visit already is changes nothing and logs nothing
+- keeps an absent name absent, and hands anything else on as a string to check → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- keys the rows by the name when there is one, else by the revision → `pl:edit-appointment.pipeline.spec.ts` › folds a move and re-decides it: ONE Update (revision, ledger) and the busy Set, audited as the staff verb
+- hands the use case exactly that → `fn:wire/booking.wire.spec.ts` › decodes a batch: instants, a rounded resize, the discounts and the normalised voucher codes
+- refuses a create onto an existing document with ALREADY_EXISTS → `fn:test-support/fake-projection-firestore.spec.ts` › names the conflicting document of a plan that creates several, as the emulator does
+- writes nothing from a batch whose create collides — with the store or with itself → `fn:test-support/fake-projection-firestore.spec.ts` › batches stay all-or-nothing on a taken create
+
+**`fn:lib/booking/cancellation-window-stamp.spec.ts`** (10)
+
+- stamps the window it was allowed under on every seat it closes → `systems/cancellation-policy.system.spec.ts` › stamps the window it was allowed under on every seat it closes
+- writes a stamp the shared mapper reads back as that window → `components/seat-outcome.data.spec.ts` › stamps the window on the seats a party cancel closes, by staff
+- leaves a seat resolved before it — and that seat’s own stamp — alone → `systems/cancellation-policy.system.spec.ts` › leaves a seat resolved before it — and that seat’s own stamp — alone
+- refuses the cancel, and writes nothing, when the policy cannot be read → `pl:cancel-appointment.pipeline.spec.ts` › refuses when the policy cannot be read — before the transaction, nothing read, a warning logged
+- stamps the window in force on a party cancel → `systems/cancellation-policy.system.spec.ts` › stamps the window in force on a party cancel
+- stamps the window in force on one person’s seat → `systems/cancellation-policy.system.spec.ts` › stamps the window in force on one person’s seat
+- stamps a shop-side cancel too — every cancellation carries its window → `systems/cancellation-policy.system.spec.ts` › stamps a shop-side cancel too — every cancellation carries its window
+- still cancels the party when the policy cannot be read, stamping the window unknown → `systems/cancellation-policy.system.spec.ts` › still cancels the party when the policy cannot be read, stamping the window unknown
+- still cancels one person’s seat when the policy cannot be read → `systems/cancellation-policy.system.spec.ts` › still cancels one person’s seat when the policy cannot be read
+- reads no policy and stamps no window for a verb that is not a cancel → `systems/cancellation-policy.system.spec.ts` › stamps no window for a verb that is not a cancel
+
+**`fn:lib/booking/commit-booking.spec.ts`** (5)
+
+- passes a well-formed key through, beside the label → `fn:wire/booking.wire.spec.ts` › passes a well-formed guest key through beside the label, and never reads one off anybody but a guest
+- drops a key that is %s — the guest is read by label alone [each] → `fn:wire/booking.wire.spec.ts` › drops a guest key that is %s — the guest is read by label alone [each]
+- never reads a key off anybody but a guest → `fn:wire/booking.wire.spec.ts` › passes a well-formed guest key through beside the label, and never reads one off anybody but a guest
+- is refused whole, by name, rather than merged into one person → `systems/booking-decision.system.spec.ts` › refuses two named guests under one label, wherever they sit
+- is one guest with two services when the keys agree — not that refusal → `systems/booking-decision.system.spec.ts` › takes ONE guest with two services — one key, one label
+
+**`fn:lib/booking/reschedule-appointment.spec.ts`** (5)
+
+- moves a quarter of an hour earlier, over the visit’s own old chair → `pl:reschedule-appointment.pipeline.spec.ts` › moves a quarter of an hour earlier, over the visit’s own old chair
+- hands back only the visit’s own chair: the neighbour keeps the reset it is owed → `pl:reschedule-appointment.pipeline.spec.ts` › moves the visit in ONE plan: its Update (revision, ledger) and the busy Set of the NEW day only
+- stamps the client’s attempt into the visit’s ledger, by the same write that moves it → `pl:reschedule-appointment.pipeline.spec.ts` › moves the visit in ONE plan: its Update (revision, ledger) and the busy Set of the NEW day only
+- answers a retry from the ledger: nothing moves twice, and lost rows come back naming the ORIGINAL revision → `pl:reschedule-appointment.pipeline.spec.ts` › a re-sent named move answers its original revision, writes nothing, and re-files its row
+- logs no move for a first call that asks for where the visit already is → `pl:reschedule-appointment.pipeline.spec.ts` › a request for exactly where the visit already is changes nothing and logs nothing
+
+**`fn:lib/booking/staff-edit-appointment.spec.ts`** (6)
+
+- hands the use case the claim as sent → `fn:wire/booking.wire.spec.ts` › decodes a batch: instants, a rounded resize, the discounts and the normalised voucher codes
+- reads an absent claim as no claim → `fn:wire/booking.wire.spec.ts` › a lone command needs no array; an added seat is the owner’s or a guest’s
+- passes a malformed claim (%j) on as NaN, for the use case to refuse by name [each] → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- answers a stale refusal as the typed failed-precondition the sheet reloads on → `fn:integration/edit-appointment.integration.spec.ts` › refuses a save from a stale screen as failed-precondition, writing nothing
+- keeps numbers, absence and nothing else → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- maps the stale refusal to failed-precondition, never a retryable abort → `fn:integration/edit-appointment.integration.spec.ts` › refuses a save from a stale screen as failed-precondition, writing nothing
+
+**`fn:use-cases/commit-booking.use-case.spec.ts`** (3)
+
+- stamps a client’s own booking as self-placed → `pl:book-appointment.pipeline.spec.ts` › stamps a client’s own booking as self-placed
+- stamps the shop placing its own book as staff-placed, owner or not → `pl:book-appointment.pipeline.spec.ts` › stamps the shop placing its own book as staff-placed, owner or not
+- never takes the placement from the caller → `pl:book-appointment.pipeline.spec.ts` › stamps a client’s own booking as self-placed
+
+**`fn:use-cases/decide-booking.shim.spec.ts`** (7)
+
+- keeps the catalogue row, with ITS pads, as provenance when an override changes only cleanup → `components/seat.data.spec.ts` › records the catalogue figures only when staff changed something
+- records no provenance when the carried terms equal the catalogue → `components/seat.data.spec.ts` › normalises catalogue terms EQUAL to the charged ones to no override
+- accepts a staff edit of a visit priced in leva, as the legacy kernel did → `systems/booking-decision.system.spec.ts` › carries a stored price in the currency it was stored in — a staff edit of a leva visit
+- refuses 02:30 for an hour against a span at 04:00 the spring-forward put one real half-hour later → **dead:** Law 7.3 (locked 2026-10-10) — placement math runs on the shop wall clock, never on real elapsed time across the switch; the wall-clock collision is `seating-rule.system` › refuses the same person in an overlapping slot, the erased minutes `zoned-time.system` › REFUSES a time the spring-forward erased
+- still books 02:30 beside a span that ends before it → `systems/seating-rule.system.spec.ts` › allows the same person back to back — half-open, like every slot
+- books 03:00 EET beside a span at 03:00 EEST an hour earlier — the repeated hour is two hours of the clock → **dead:** Law 7.3 — the repeated hour resolves to the EARLIER offset at ingestion (`zoned-time.system` › resolves a time the fall-back repeated to the EARLIER offset, never refusing it); placement compares wall-clock minutes only
+- refuses a wall-clock start inside the spring-forward gap as DST_GAP_INVALID_TIME, never shifting it an hour on → `systems/zoned-time.system.spec.ts` › REFUSES a time the spring-forward erased, naming the shop day, minute and zone
+
+**`fn:use-cases/decide-booking.spec.ts`** (56)
+
+- prices the seat from `termsFor(barber, variant)` → `systems/booking-decision.system.spec.ts` › prices the seat from `termsFor(barber, variant)`
+- binds the self seat to the AUTH uid, not to anything in the payload → `systems/booking-decision.system.spec.ts` › binds the self seat to the AUTH uid, not to anything in the payload
+- claims the chair for setup + service + cleanup, but sells only the service → `systems/booking-decision.system.spec.ts` › claims the chair for setup + service + cleanup, but sells only the service
+- ALLOWS a service with no declared locations — empty means everywhere → `systems/booking-decision.system.spec.ts` › ALLOWS a service with no declared locations — empty means everywhere
+- refuses a service the shop does not offer at this location → `systems/booking-decision.system.spec.ts` › refuses a service the shop does not offer at this location
+- refuses a service that is not in the snapshot at all → `systems/booking-decision.system.spec.ts` › refuses a service that is not in the snapshot at all
+- refuses a slot that overlaps an existing booking → `systems/booking-decision.system.spec.ts` › refuses a slot that overlaps an existing booking
+- allows a booking that ABUTS an existing one when turnaround is zero → `systems/booking-decision.system.spec.ts` › allows a booking that ABUTS an existing one when turnaround is zero
+- refuses the same abutting booking once the barber has a turnaround → `systems/booking-decision.system.spec.ts` › refuses the same abutting booking once the barber has a turnaround
+- never lets them block where the visit goes next → `systems/booking-decision.system.spec.ts` › never lets them block where the visit goes next
+- hands them back BEFORE padding, so the neighbour keeps its reset → `systems/booking-decision.system.spec.ts` › hands them back BEFORE padding, so the neighbour keeps its reset
+- frees nothing of another barber’s → `systems/booking-decision.system.spec.ts` › frees nothing of another barber’s
+- refuses a time outside the barber’s rostered window → `systems/booking-decision.system.spec.ts` › refuses a time outside the barber’s rostered window
+- refuses a barber with no roster document → `systems/booking-decision.system.spec.ts` › refuses a barber with no roster document
+- refuses a day a published exception has closed, roster notwithstanding → `systems/booking-decision.system.spec.ts` › refuses a day a published exception has closed, roster notwithstanding
+- clamps to the SHOP’s hours, not just the roster → `systems/booking-decision.system.spec.ts` › clamps to the SHOP’s hours, not just the roster
+- refuses a booking inside the minimum lead time → `systems/booking-decision.system.spec.ts` › refuses a booking inside the minimum lead time
+- refuses a party larger than the policy allows → `systems/booking-decision.system.spec.ts` › refuses a party larger than the policy allows
+- refuses two conflicting services for ONE person → `systems/booking-decision.system.spec.ts` › refuses two conflicting services for ONE person
+- ALLOWS two conflicting services for one person when the shop is booking — a staff edit or placement → `systems/booking-decision.system.spec.ts` › ALLOWS two conflicting services for one person when the shop is booking — a staff edit or placement
+- ALLOWS the same conflicting pair across two different people → `systems/booking-decision.system.spec.ts` › ALLOWS the same conflicting pair across two different people
+- refuses a variant the service does not declare → `systems/booking-decision.system.spec.ts` › refuses a variant the service does not declare
+- refuses a MISSING variant when the service declares some → `systems/booking-decision.system.spec.ts` › refuses a MISSING variant when the service declares some
+- refuses a party whose own seats double-book one barber → `systems/booking-decision.system.spec.ts` › refuses a party whose own seats double-book one barber
+- accepts a party served back-to-back by ONE barber → `systems/booking-decision.system.spec.ts` › accepts a party served back-to-back by ONE barber
+- carries the contact onto the appointment, note and all → `systems/booking-decision.system.spec.ts` › carries the contact onto the appointment, note and all
+- commits with no contact at all — an older client still books → `systems/booking-decision.system.spec.ts` › commits with no contact at all — an older client still books
+- REFUSES a contact the shop could not act on → `systems/booking-decision.system.spec.ts` › REFUSES a contact the shop could not act on
+- books a walk-in nobody owns, as guest seats, confirmed → `systems/booking-decision.system.spec.ts` › books a walk-in nobody owns, as guest seats, confirmed
+- places a booking that has already started — the walk-in is in the chair → `systems/booking-decision.system.spec.ts` › places a booking that has already started — the walk-in is in the chair
+- keeps a carried companion on their OWN account, never the owner’s → `systems/booking-decision.system.spec.ts` › keeps a carried companion on their OWN account, never the owner’s
+- refuses a carried companion whose id is not a user id → `systems/booking-decision.system.spec.ts` › refuses a carried companion whose id is not a user id
+- still refuses a self seat with nobody to bind it to → `systems/booking-decision.system.spec.ts` › still refuses a self seat with nobody to bind it to
+- confirms a booking placed on behalf of a client → `systems/booking-decision.system.spec.ts` › confirms a booking placed on behalf of a client
+- stores «Всеки» as any and a named barber as specific → `systems/booking-decision.system.spec.ts` › stores «Всеки» as any and a named barber as specific
+- stores an omitted preference as unknown, not as a request → `systems/booking-decision.system.spec.ts` › stores an omitted preference as unknown, not as a request
+- refuses the booker’s cut and beard side by side in two chairs → `systems/booking-decision.system.spec.ts` › refuses the booker’s cut and beard side by side in two chairs
+- seats the same person back to back across two chairs → `systems/booking-decision.system.spec.ts` › seats the same person back to back across two chairs
+- still seats two different people side by side → `systems/booking-decision.system.spec.ts` › still seats two different people side by side
+- reads one label as one guest — two of its seats may not overlap either → `systems/booking-decision.system.spec.ts` › reads one label as one guest — two of its seats may not overlap either
+- holds on the shop’s own paths too — no acknowledgement seats a person twice → `systems/booking-decision.system.spec.ts` › holds on the shop’s own paths too — no acknowledgement seats a person twice
+- refuses exactly the carts that seat somebody twice (property) → `systems/booking-decision.system.spec.ts` › refuses exactly the carts that seat somebody twice (property)
+- carries the pair while the edit leaves both seats where they stood → `systems/booking-decision.system.spec.ts` › carries the pair while the edit leaves both seats where they stood
+- refuses the same pair from a write that does not name it as history → `systems/booking-decision.system.spec.ts` › refuses the same pair from a write that does not name it as history
+- lets the whole visit be dragged, the pair moving together → `systems/booking-decision.system.spec.ts` › lets the whole visit be dragged, the pair moving together
+- lets one seat of the pair move, stretch or change chair and still overlap → `systems/booking-decision.system.spec.ts` › lets one seat of the pair move, stretch or change chair and still overlap
+- refuses a NEW seat beside a seat that stood, whichever comes first → `systems/booking-decision.system.spec.ts` › refuses a NEW seat beside a seat that stood, whichever comes first
+- refuses a seat the edit adds beside a pair that stands → `systems/booking-decision.system.spec.ts` › refuses a seat the edit adds beside a pair that stands
+- knows the pair by seat IDENTITY — the same seats under other ids are new → `systems/booking-decision.system.spec.ts` › knows the pair by seat IDENTITY — the same seats under other ids are new
+- lets a separating move through: the pair no longer overlaps → `systems/booking-decision.system.spec.ts` › lets a separating move through: the pair no longer overlaps
+- refuses exactly the edits that seat somebody twice ANEW (property) → `systems/booking-decision.system.spec.ts` › refuses exactly the edits that seat somebody twice ANEW (property)
+- refuses two named guests under one label, wherever they sit → `systems/booking-decision.system.spec.ts` › refuses two named guests under one label, wherever they sit
+- compares the labels as they will be stored — trimmed → `systems/booking-decision.system.spec.ts` › compares the labels as they will be stored — trimmed
+- takes ONE guest with two services — one key, one label → `systems/booking-decision.system.spec.ts` › takes ONE guest with two services — one key, one label
+- asks the domain’s label rule — never a copy of it → `systems/booking-decision.system.spec.ts` › asks the label rule of the party — never a copy of it
+- reads one label as one person when the client names nobody — as it always has → `systems/booking-decision.system.spec.ts` › reads one label as one person when the client names nobody — as it always has
+
+**`fn:use-cases/party-admission.spec.ts`** (3)
+
+- refuses a cart exactly when the commit refuses the same party whatever the time (property) → `systems/party-admission.system.spec.ts` › refuses a cart exactly when the commit refuses the same party whatever the time (property)
+- %s → listed: %s [each] → `systems/party-admission.system.spec.ts` › %s → listed: %s [each]
+- reads the shop the commit reads — its own zone and hours, or the defaults → `systems/party-admission.system.spec.ts` › reads the shop the commit reads — the stored location entity
+
+**`fn:use-cases/reschedule-booking.integration.spec.ts`** (5)
+
+- moves the father and CARRIES his son — same seat, same terms, new time, both chairs claimed → `fn:integration/reschedule-appointment.integration.spec.ts` › moves the father and CARRIES his son — same seat, same terms, new time, both chairs claimed
+- answers a retried move without writing again → `fn:integration/reschedule-appointment.integration.spec.ts` › answers a retried move without writing again
+- stamps a NAMED move in the visit’s ledger, and answers its retry from it after the visit moved on → `fn:integration/reschedule-appointment.integration.spec.ts` › stamps a NAMED move in the visit’s ledger, and answers its retry from it after the visit moved on
+- refuses the whole move when the son’s barber is taken, and leaves the visit as it was → `fn:integration/reschedule-appointment.integration.spec.ts` › refuses the whole move when the son’s barber is taken, and leaves the visit as it was
+- refuses a visit left holding only the son — the shop moves it — and writes nothing → `fn:integration/reschedule-appointment.integration.spec.ts` › refuses a visit left holding only the son — the shop moves it — and writes nothing
+
+**`fn:use-cases/reschedule-booking.use-case.spec.ts`** (35)
+
+- carries the companion forward with their identity and facts, beside the client at the new time → `systems/move.system.spec.ts` › carries the companion forward with their identity and facts, beside the client at the new time
+- keeps a sequential party sequential — the companion moves by exactly what the client moved → `systems/move.system.spec.ts` › keeps a sequential party sequential — the companion moves by exactly what the client moved
+- carries a `self` seat bound to ANOTHER account — `self` alone is not the owner’s (the web flow reads the same rule) → `systems/move.system.spec.ts` › carries a `SELF` seat bound to ANOTHER account — `SELF` alone is not the owner’s
+- seats that foreign `self` BESIDE the owner at the new time — two accounts, two chairs, not one person twice → `systems/move.system.spec.ts` › seats that foreign `SELF` BESIDE the owner at the new time — two accounts, two chairs, not one person twice
+- preserves any relative offset, early or late, parallel or sequential (property) → `systems/move.system.spec.ts` › preserves any relative offset, early or late, parallel or sequential (property)
+- refuses the WHOLE move when the companion’s barber is not free, and writes nothing → `systems/move.system.spec.ts` › names the barber, the service, the window or the party, from the commit refusal
+- refuses when the companion’s service is no longer offered → `pl:reschedule-appointment.pipeline.spec.ts` › a carried seat whose service retired is the client’s call to the shop (service_unavailable)
+- refuses as service_unavailable when the VARIANT the companion was sold is retired → `systems/move.system.spec.ts` › is false when only the VARIANT the seat was sold as is retired — the server refuses that too
+- refuses as outside_booking_window when the shift puts the companion inside the lead time → `systems/move.system.spec.ts` › names the barber, the service, the window or the party, from the commit refusal
+- refuses as outside_booking_window when a zero-minute lead lets the shift land exactly on now → `systems/move.system.spec.ts` › names the barber, the service, the window or the party, from the commit refusal
+- refuses a visit that holds nobody but a companion — the shop moves it, and nothing is written → `systems/move.system.spec.ts` › refuses a visit that holds nobody but a companion — the shop moves it
+- refuses when the shift would sit the companion on the client’s own chair → `systems/move.system.spec.ts` › refuses when the shift would sit the companion on the client’s own chair
+- answers the client’s own taken slot the ordinary way, even with a companion aboard → `pl:reschedule-appointment.pipeline.spec.ts` › still answers the client’s own taken slot first when the companion’s service is gone too
+- still answers the client’s own taken slot first when the companion’s service is gone too → `pl:reschedule-appointment.pipeline.spec.ts` › still answers the client’s own taken slot first when the companion’s service is gone too
+- never lets a client payload seat another account → `systems/move.system.spec.ts` › never lets a client payload seat another account
+- never lets a cart line borrow a carried seat’s terms by naming its line → `systems/move.system.spec.ts` › never lets a cart line borrow a carried seat’s terms by naming its line — the server re-keys both
+- moves the visit — the carried pair keeps its standing and travels side by side → `systems/seating-rule.system.spec.ts` › lets the pair travel together — a whole-visit drag is no worse
+- still refuses a cart that seats somebody twice ANEW beside it → `systems/seating-rule.system.spec.ts` › refuses a seat the edit adds beside the pair
+- moves the visit once the same-label guest pair is separated — one after the other → `systems/seating-rule.system.spec.ts` › allows the same person back to back — half-open, like every slot
+- refuses a cart that keeps the same-label guest pair side by side — the client’s own seats earn no standing → `systems/seating-rule.system.spec.ts` › stands nothing for a new booking
+- asks for a second name when the cart tells the two apart — a same-label pair is renamed or separated → `components/party.data.spec.ts` › finds the label two different guests answer to
+- has no booker-in-two-chairs pair to carry: the aggregate never held one → `components/seat.data.spec.ts` › refuses one person in two chairs once, and names a double-booked barber once
+- rebuilds them from the cart at the new time, with fresh distinct ids and catalogue terms → `systems/move.system.spec.ts` › never lets a cart line borrow a carried seat’s terms by naming its line — the server re-keys both
+- keeps the visit’s identity: status, contact, booking instant, the bill, unknown fields — and bumps the revision → `pl:reschedule-appointment.pipeline.spec.ts` › moves the visit in ONE plan: its Update (revision, ledger) and the busy Set of the NEW day only
+- answers a retried move as the move it already was — nothing re-decided, nothing written → `systems/move.system.spec.ts` › answers a retried move as the move it already was — nothing changes
+- answers a retried move with a NAMED guest as a replay — the guest travels under the label the visit stored → `systems/move.system.spec.ts` › answers a retried move with a NAMED guest as a replay — the guest travels under the label the visit stored
+- still refuses a visit that is not the caller’s → `pl:reschedule-appointment.pipeline.spec.ts` › answers somebody else’s visit as one that is not there, and refuses an anonymous caller
+- still refuses a party with a resolved seat → `systems/move.system.spec.ts` › still refuses a party with a resolved seat — unless nothing would change
+- stamps the move’s name, and the revision it wrote, in the same write → `pl:reschedule-appointment.pipeline.spec.ts` › moves the visit in ONE plan: its Update (revision, ledger) and the busy Set of the NEW day only
+- keeps the staff intents the ledger already holds — a move adds its name beside them → `components/applied-operation.data.spec.ts` › records the newest last and replaces an older entry under the same id
+- answers a replay FROM THE LEDGER — no second write, and the revision the move stamped → `pl:reschedule-appointment.pipeline.spec.ts` › a re-sent named move answers its original revision, writes nothing, and re-files its row
+- never moves the visit AGAIN when the shop moved it after the first attempt landed → `systems/move.system.spec.ts` › answers a replay from the ledger, and refuses the same name on a DIFFERENT move
+- refuses the same name on a DIFFERENT move — answering “moved” would move nothing → `pl:reschedule-appointment.pipeline.spec.ts` › refuses a known name with another batch (attemptId)
+- keeps a first-time no-op unproven — a new name for where the visit already is wrote nothing → `systems/move.system.spec.ts` › keeps a first-time no-op unproven — a new name for where the visit already is wrote nothing
+- treats a name that is not an operation id as no name — no stamp → `fn:wire/booking.wire.spec.ts` › drops, never refuses, a malformed attempt id, rebooking edge, guest key or contact
+
+**`fn:use-cases/staff-edit-appointment.integration.spec.ts`** (9)
+
+- stamps the intent beside the edit, and answers its re-send without writing again → `fn:integration/edit-appointment.integration.spec.ts` › stamps the intent beside the edit, and answers its re-send without writing again
+- keeps the ledger through a client's move, so a late re-send is still recognised → `fn:integration/edit-appointment.integration.spec.ts` › keeps the ledger through a client's move, so a late re-send is still recognised
+- applies an unnamed send every time, exactly as before → `fn:integration/edit-appointment.integration.spec.ts` › applies an unnamed send every time, exactly as before
+- saves a batch that leaves the pair where it stood → `fn:integration/edit-appointment.integration.spec.ts` › saves a batch that leaves the pair where it stood
+- refuses a batch that seats one person twice, naming the field → `fn:integration/edit-appointment.integration.spec.ts` › refuses a batch that seats one person twice, naming the field
+- saves a whole-visit drag of the pair, then a move of one seat that still overlaps → `fn:integration/edit-appointment.integration.spec.ts` › saves a whole-visit drag of the pair, then a move of one seat that still overlaps
+- lets the undo of a removal put the seat of the pair back → `fn:integration/edit-appointment.integration.spec.ts` › lets the undo of a removal put the seat of the pair back
+- judges the seat new once another save landed after the removal → `fn:integration/edit-appointment.integration.spec.ts` › judges the seat new once another save landed after the removal
+- refuses a save from a stale screen as failed-precondition, writing nothing → `fn:integration/edit-appointment.integration.spec.ts` › refuses a save from a stale screen as failed-precondition, writing nothing
+
+**`fn:use-cases/staff-edit-appointment.operations.spec.ts`** (2)
+
+- is the same for the same batch and different for a different one → `systems/appointment-edit.system.spec.ts` › is the same for the same batch and different for a different one
+- is sixteen hex digits whatever goes in → `systems/appointment-edit.system.spec.ts` › is the tagged JSON of the batch whatever goes in — the pipeline hashes it
+
+**`fn:use-cases/staff-edit-appointment.undo.spec.ts`** (3)
+
+- puts back the seat the save removed, and the visit reads as it did → `systems/seating-rule.system.spec.ts` › never refuses the undo that seats the visit exactly as it was before the save (property)
+- keeps the undo open across a write that stamps no revision, such as an arrival → `components/seat-id-pair.data.spec.ts` › stands by its pairs only while the visit is still at that revision
+- judges the seat new once another staff edit stamped a revision after the save → `fn:integration/edit-appointment.integration.spec.ts` › judges the seat new once another save landed after the removal
+
+**`fn:use-cases/staff-edit-appointment.use-case.spec.ts`** (101)
+
+- moves a seat stored without a variant, on a service that now has some → `systems/party-admission.system.spec.ts` › lets a CARRIED seat survive its service retiring and keep no variant
+- refuses an unauthenticated caller → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- refuses `content_manager` — the role the RULES refuse every read → `components/role.data.spec.ts` › mayBook admits the book roles only
+- refuses a plain client → `components/role.data.spec.ts` › mayBook admits the book roles only
+- admits %s [each] → `components/role.data.spec.ts` › mayBook admits the book roles only
+- moves a booking the actor does not own — that is the job → `pl:edit-appointment.pipeline.spec.ts` › folds a move and re-decides it: ONE Update (revision, ledger) and the busy Set, audited as the staff verb
+- moves a WALK-IN nobody owns — previously unreschedulable by anyone → `fn:integration/edit-appointment.integration.spec.ts` › saves a whole-visit drag of the pair, then a move of one seat that still overlaps
+- shifts the start and holds the duration → `systems/appointment-edit.system.spec.ts` › shifts the start and holds the duration
+- shifts every seat of a party by ONE delta, preserving the arrangement → `systems/appointment-edit.system.spec.ts` › shifts every seat of a party by ONE delta, preserving the arrangement
+- moves a party with a companion on their OWN account, keeping who sits where → `systems/booking-decision.system.spec.ts` › keeps a carried companion on their OWN account, never the owner’s
+- still refuses a stored account seat with no relationship it can carry → `systems/booking-decision.system.spec.ts` › still refuses a self seat with nobody to bind it to
+- shifts ONLY the named seats, leaving the rest of the party put → `systems/appointment-edit.system.spec.ts` › shifts ONLY the named seats, leaving the rest of the party put
+- refuses a scope naming a seat this booking does not have → `systems/appointment-edit.system.spec.ts` › refuses a scope naming a seat this booking does not have
+- refuses an EMPTY scope rather than widening it to the whole party → `systems/appointment-edit.system.spec.ts` › refuses an EMPTY scope rather than widening it to the whole party
+- resizes only the scoped seat, not whichever runs latest → `systems/appointment-edit.system.spec.ts` › resizes only the scoped seat, not whichever runs latest
+- preserves a recorded tip across a move → `systems/appointment-edit.system.spec.ts` › preserves a recorded tip across a move
+- preserves a ZERO tip, which is a recording and not an absence → `systems/appointment-edit.system.spec.ts` › preserves a ZERO tip, which is a recording and not an absence
+- leaves an untipped seat untipped rather than defaulting it to zero → `systems/appointment-edit.system.spec.ts` › leaves an untipped seat untipped rather than defaulting it to zero
+- keeps the seat ids, so per-seat actions are not orphaned → `systems/appointment-edit.system.spec.ts` › keeps the seat ids, so per-seat actions are not orphaned
+- keeps `barberPref` — the fact that decides whether staff may phone → `systems/appointment-edit.system.spec.ts` › keeps `barberPreference` — the fact that decides whether staff may phone
+- keeps an unknown `barberPref` unknown → `systems/appointment-edit.system.spec.ts` › keeps an unknown `barberPreference` unknown
+- keeps the status, the contact and the booking instant → `pl:booking-read-set.pipeline.spec.ts` › placement fields are the geometry, the mirrors and the ledger — nothing of the lifecycle
+- `end` holds the start and writes a duration → `systems/appointment-edit.system.spec.ts` › `END` holds the start and writes a duration
+- `start` holds the END and writes both → `systems/appointment-edit.system.spec.ts` › `START` holds the END and writes both
+- extends only the seats that OWN the edge → `systems/appointment-edit.system.spec.ts` › extends only the seats that OWN the edge
+- refuses a resize that drives the duration to zero — as a DURATION → `systems/appointment-edit.system.spec.ts` › refuses a resize that drives the duration to zero — as a DURATION
+- adds a seat after the visit, priced by the catalogue, not the client → `systems/appointment-edit.system.spec.ts` › adds a seat after the visit, unpriced — the decision prices it from the catalogue, not the client
+- marks a seat added to a FINISHED visit as worked, not scheduled → `systems/appointment-edit.system.spec.ts` › marks a seat added to a FINISHED visit as worked, not scheduled
+- stamps a seat added to a FINISHED visit the batch moved across the spring-forward night with its true end instant → `systems/appointment-edit.system.spec.ts` › stamps a seat added after the batch moved a finished visit to another day with the boundary’s instant, as given — never a wall-clock distance across days
+- lets one person hold a second, SEQUENTIAL seat — but never two at once → `systems/seating-rule.system.spec.ts` › allows the same person back to back — half-open, like every slot
+- refuses a fresh seat on a chair the shop does not roster → `pl:edit-appointment.pipeline.spec.ts` › refuses a fresh seat on a chair this shop does not roster (barberId)
+- removes a scheduled seat and keeps the others → `systems/appointment-edit.system.spec.ts` › removes a scheduled seat and keeps the others
+- refuses to remove the last seat, or one somebody already sat in → `systems/appointment-edit.system.spec.ts` › refuses to remove the last seat, or one somebody already sat in
+- applies an add before the resize that follows it in one batch → `systems/appointment-edit.system.spec.ts` › applies an add before the resize that follows it in one batch
+- saves a batch that leaves the pair where it stood — a price, a discount, another guest → `fn:integration/edit-appointment.integration.spec.ts` › saves a batch that leaves the pair where it stood
+- saves a whole-visit drag of the pair — both seats move together → `systems/seating-rule.system.spec.ts` › lets the pair travel together — a whole-visit drag is no worse
+- saves a chair-wide resize of the pair, either edge → `systems/seating-rule.system.spec.ts` › lets one seat of the pair stretch or move and still overlap
+- saves a move of ONE seat of the pair that still overlaps — no worse than it was → `systems/seating-rule.system.spec.ts` › lets one seat of the pair stretch or move and still overlap
+- refuses a pair that did not overlap and does after the batch → `systems/seating-rule.system.spec.ts` › refuses a pair that did not overlap before and does now
+- separating the pair is always allowed — the move that makes the visit better → `systems/seating-rule.system.spec.ts` › never refuses an edit whose every overlap already stood (property)
+- refuses a NEW double seating beside a held one, and on a visit that had none → `systems/seating-rule.system.spec.ts` › refuses a seat the edit adds beside the pair
+- never lets a new seat pass as history by copying a held one → `systems/seating-rule.system.spec.ts` › earns nothing towards a third seat of the same person
+- never hands a new seat a removed seat’s id — the batch that drops seat-2 cannot mint it again → `systems/appointment-edit.system.spec.ts` › never hands a new seat a removed seat’s id — the batch that drops seat-2 cannot mint it again
+- remembers the pair a removal broke, under the revision the save stamps → `components/seat-id-pair.data.spec.ts` › remembers the canonical pairs under the revision the save stamped
+- remembers nothing for a save that broke no pair — and drops an older memory → `components/seat-id-pair.data.spec.ts` › remembers nothing when a save broke nothing — no revision, no pairs
+- lets «Отмени» put back the seat the save removed — exactly what the save changed → `systems/seating-rule.system.spec.ts` › never refuses the undo that seats the visit exactly as it was before the save (property)
+- lets «Отмени» move the pair back together after a save moved it apart → `systems/seating-rule.system.spec.ts` › lets the remembered pair stand for the undo, beside what the visit holds
+- judges the seat NEW once anything else was written after the save → `components/seat-id-pair.data.spec.ts` › stands by its pairs only while the visit is still at that revision
+- judges it new when the memory rides a write that moved the revision on → `components/seat-id-pair.data.spec.ts` › stands by its pairs only while the visit is still at that revision
+- stands nothing for a seat the memory does not name → `systems/seating-rule.system.spec.ts` › knows a pair named by id, in either order, and drops a seat paired with itself
+- reprices ONE seat and records what the catalogue said → `systems/appointment-edit.system.spec.ts` › reprices ONE seat
+- re-times ONE seat → `systems/appointment-edit.system.spec.ts` › re-times ONE seat
+- moves ONE seat to another chair → `systems/appointment-edit.system.spec.ts` › moves ONE seat to another chair
+- moves the WHOLE visit to the other shop — the root's own fact → `systems/appointment-edit.system.spec.ts` › moves the WHOLE visit to the other shop — the root's own fact, the seats untouched
+- refuses the other shop when it does not offer the service → `systems/booking-decision.system.spec.ts` › refuses a service the shop does not offer at this location
+- refuses a relocation that names no shop → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- refuses a seat the appointment does not have → `systems/appointment-edit.system.spec.ts` › refuses a seat the appointment does not have
+- refuses a command with no kind at all → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- does NOT re-price a booking somebody merely dragged → `systems/booking-decision.system.spec.ts` › carries a stored price in the currency it was stored in — a staff edit of a leva visit
+- refuses a move onto somebody else, with no edge to blame → `pl:edit-appointment.pipeline.spec.ts` › answers a collision as the acknowledgeable OVERLAP — naming a lone resize’s handle — and writes when acknowledged
+- names the EDGE when a resize is what collided → `pl:edit-appointment.pipeline.spec.ts` › answers a collision as the acknowledgeable OVERLAP — naming a lone resize’s handle — and writes when acknowledged
+- writes it anyway once the sheet has acknowledged it → `pl:edit-appointment.pipeline.spec.ts` › answers a collision as the acknowledgeable OVERLAP — naming a lone resize’s handle — and writes when acknowledged
+- places the visit OUTSIDE the rostered window, with no second tap → `systems/booking-decision.system.spec.ts` › books a walk-in nobody owns, as guest seats, confirmed
+- places it on a chair with no roster document at all → `systems/booking-decision.system.spec.ts` › books a walk-in nobody owns, as guest seats, confirmed
+- corrects a visit ALREADY IN THE CHAIR — the future-start rule is not asked → `systems/booking-decision.system.spec.ts` › places a booking that has already started — the walk-in is in the chair
+- does not apply the cancellation window → **dead:** by construction — `editAppointment`'s read set holds no booking policy (§3.2), so no cancellation window can be asked
+- restores `arrivedAt` — without it the completion verb vanishes → `pl:booking-read-set.pipeline.spec.ts` › placement fields are the geometry, the mirrors and the ledger — nothing of the lifecycle
+- refuses a move that would END the visit before its arrival stamp → `systems/appointment-edit.system.spec.ts` › refuses a move that would END the visit before its arrival stamp
+- restores per-seat OUTCOMES, so a party mid-service stays movable → `systems/appointment-edit.system.spec.ts` › restores per-seat OUTCOMES, so a party mid-service stays movable
+- keeps every document field this mapper does not own → `pl:booking-read-set.pipeline.spec.ts` › placement fields are the geometry, the mirrors and the ledger — nothing of the lifecycle
+- refuses to touch a visit that never happened — cancelled is history → `systems/appointment-edit.system.spec.ts` › refuses to touch a visit that never happened — cancelled is history
+- lets a FINISHED visit be corrected — the sheet is filled in after the cut → `systems/appointment-edit.system.spec.ts` › lets a FINISHED visit be corrected — the sheet is filled in after the cut
+- stamps the next revision beside the write → `pl:edit-appointment.pipeline.spec.ts` › folds a move and re-decides it: ONE Update (revision, ledger) and the busy Set, audited as the staff verb
+- refuses a save drawn from a screen the book has moved past → `systems/appointment-edit.system.spec.ts` › refuses a save drawn from a screen the book has moved past
+- does not refuse a caller that made no claim about what it read → `systems/appointment-edit.system.spec.ts` › does not refuse a caller that made no claim about what it read
+- takes the claim the mapper reads off the document, and refuses it once a colleague saved → `systems/appointment-edit.system.spec.ts` › refuses a save drawn from a screen the book has moved past
+- refuses a malformed claim (%j) by name, applying nothing [each] → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- takes a claim of revision 0 — every visit written before the counter → `systems/appointment-edit.system.spec.ts` › takes a claim of revision 0 — every visit written before the counter
+- refuses a re-sent save that still names the revision it was drawn from — one commit, one row → `pl:edit-appointment.pipeline.spec.ts` › refuses a stale claim (STALE, naming both revisions)
+- commits a re-sent gesture that makes no claim a SECOND time, under its own revision → `fn:integration/edit-appointment.integration.spec.ts` › applies an unnamed send every time, exactly as before
+- answers a re-sent intent from the ledger — nothing applied twice, ahead of the stale check → `pl:edit-appointment.pipeline.spec.ts` › answers a re-sent intent with its original revision — before the stale check — and writes nothing
+- still answers the re-send with ITS revision after another intent has landed → `fn:integration/edit-appointment.integration.spec.ts` › keeps the ledger through a client's move, so a late re-send is still recognised
+- refuses a known name on a DIFFERENT batch rather than answering "saved" → `pl:edit-appointment.pipeline.spec.ts` › refuses a known name with another batch (operationId)
+- applies a re-send the ledger has forgotten as new — and the batch cannot double anything → `systems/appointment-edit.system.spec.ts` › keeps at most CAP intents, the newest, oldest first
+- refuses a malformed name (%j) by name, applying nothing [each] → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- fails a replay nobody found with the staff family’s invariant, not a commit code → **dead:** the store that could answer a replay it never found is gone — the replay is decided inside the edit's own transaction from the ledger it read (`edit-appointment.pipeline` › answers a re-sent intent with its original revision)
+- treats a null name as an older client: applied, and the ledger carried as found → `fn:integration/edit-appointment.integration.spec.ts` › applies an unnamed send every time, exactly as before
+- folds several commands in order and decides once → `pl:edit-appointment.pipeline.spec.ts` › a batch is a save — folded in order, so the resize measures the MOVED seats
+- refuses the whole batch when one arm is malformed → `systems/appointment-edit.system.spec.ts` › refuses the whole batch when one arm is refused
+- refuses an empty batch rather than writing nothing quietly → `systems/appointment-edit.system.spec.ts` › refuses an empty batch rather than writing nothing quietly
+- takes a manual percent off from the front desk and stores it as a snapshot → `systems/billing.system.spec.ts` › takes a manual percent off from the front desk and stores it as a snapshot
+- refuses a NEW manual figure from a barber — forbidden, not malformed — but lets him keep one the desk set → `systems/billing.system.spec.ts` › refuses a NEW manual figure from a barber — forbidden, not malformed — but lets him keep one the desk set
+- honours the client's own grant — a barber may — and refuses another client's, a spent one, or none → `systems/billing.system.spec.ts` › honours the client's own grant — a barber may — and refuses another client's, a spent one, or none
+- opens a code the shop published, however it was typed, and refuses one it did not → `systems/billing.system.spec.ts` › opens a code the shop published, however it was typed, and refuses one it did not
+- stacks what may stack, in the evaluator's order, and refuses an exclusive coupon beside anything → `systems/billing.system.spec.ts` › stacks what may stack, in the evaluator's order, and refuses an exclusive coupon beside anything
+- keeps a stored discount whose coupon has since been retired, and carries the set through a move → `systems/billing.system.spec.ts` › keeps a stored discount whose coupon has since been retired, and carries the set when the batch says nothing
+- refuses a malformed arm before anything is read → `fn:wire/booking.wire.spec.ts` › refuses before anything is read: anonymous, role-less, no visit, a malformed name or version
+- draws a voucher down by what the bill needs, and records the balance it leaves → `systems/billing.system.spec.ts` › draws a voucher down by what the bill needs, and records the balance it leaves
+- covers in order, after the discounts, and stops at the bill → `systems/billing.system.spec.ts` › covers in order, after the discounts, and stops at the bill
+- re-settles a saved draw when the bill shrinks, and gives everything back when the voucher is dropped → `systems/billing.system.spec.ts` › re-settles a saved draw when the bill shrinks, and gives everything back when the voucher is dropped
+- refuses a code that opens nothing, and a voucher spent, expired, void, or named twice → `systems/billing.system.spec.ts` › refuses a code that opens nothing, and a voucher spent, expired or void

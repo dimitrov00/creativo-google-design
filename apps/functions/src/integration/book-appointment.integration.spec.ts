@@ -59,7 +59,7 @@ function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
 
 function booking(
   attemptId: AppointmentId,
-  startIso: string,
+  startUtcMs: UtcEpochMs,
 ): BookAppointmentCommand {
   return {
     locationId: FIXTURE_IDS.location,
@@ -70,7 +70,7 @@ function booking(
         variantId: null,
         barberId: FIXTURE_IDS.barber,
         barberPreference: BarberPreference.Specific,
-        startUtcMs: utcMs(startIso),
+        startUtcMs,
         subject: { requestedSubjectRole: RequestedSubjectRole.Self },
       },
     ],
@@ -149,7 +149,9 @@ describe('bookAppointment (emulator)', () => {
     (await db.collection(collection).get()).docs.map((doc) => doc.id).sort();
 
   it('books once, and answers a retried attempt with the original id, writing nothing more', async () => {
-    const first = await run(booking(ATTEMPT, '2026-10-01T10:00:00.000+03:00'));
+    const first = await run(
+      booking(ATTEMPT, utcMs('2026-10-01T10:00:00.000+03:00')),
+    );
     expect(first).toEqual({
       ok: true,
       value: { appointmentId: ATTEMPT, replayed: false },
@@ -177,7 +179,9 @@ describe('bookAppointment (emulator)', () => {
     ).toBeDefined();
     expect(await ids(Collections.AuditLog)).toHaveLength(1);
 
-    const replay = await run(booking(ATTEMPT, '2026-10-01T10:00:00.000+03:00'));
+    const replay = await run(
+      booking(ATTEMPT, utcMs('2026-10-01T10:00:00.000+03:00')),
+    );
 
     expect(replay).toEqual({
       ok: true,
@@ -193,8 +197,8 @@ describe('bookAppointment (emulator)', () => {
   it('creates the client record of a first booking — the account’s contact copied — and never twice when two first bookings race', async () => {
     const second = AppointmentId.of('attempt-fedcba9876543210');
     const [one, two] = await Promise.all([
-      run(booking(ATTEMPT, '2026-10-01T10:00:00.000+03:00')),
-      run(booking(second, '2026-10-01T14:00:00.000+03:00')),
+      run(booking(ATTEMPT, utcMs('2026-10-01T10:00:00.000+03:00'))),
+      run(booking(second, utcMs('2026-10-01T14:00:00.000+03:00'))),
     ]);
     expect(one.ok && two.ok).toBe(true);
 

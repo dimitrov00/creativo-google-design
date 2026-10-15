@@ -49,7 +49,7 @@ test.describe('account appointments — screenshot baseline', () => {
       await gotoAppointmentsWithTheme(page, uid, theme);
       await expect(page.getByTestId('appointment-row')).toHaveAttribute(
         'data-status',
-        'confirmed',
+        'CONFIRMED',
       );
       await expect(page.getByTestId('appointment-row')).toContainText(
         /Оформяне на брада|Beard trim/,

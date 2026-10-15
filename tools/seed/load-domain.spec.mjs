@@ -1,45 +1,41 @@
 /**
- * The loader the seed runs under plain Node: it must bundle the functions'
- * projection and agree with the same code imported the ordinary way — the
- * whole point is that the seed's stats ARE the trigger's. Likewise the
- * client card's readers the seed reads its loyalty and waitlist documents
- * back with: they must read what the card's own import reads.
+ * The loader the seed runs under plain Node: it must bundle the server's
+ * client-stats projection and agree with the same code imported the
+ * ordinary way — the whole point is that the seed's stats ARE the
+ * trigger's. Likewise the one TTL stamp (`purgeAtFor`, F1-7), the seed's
+ * own plan modules (whose bodies are TypeScript since flip 1) and the
+ * loyalty engine's readers the seed reads its loyalty documents back with:
+ * each must answer what the ordinary import answers.
  *
  * And since revision 3 of the client card (client-card-revision-3.md §4):
- * the rhythm's projector, the rule's readers and writers, the activity
- * feed's reader and the promotions' mappers. The seed's rhythm IS the
- * domain's projection only if the bundle folds a book into the very
- * documents the ordinary imports fold it into.
+ * the rhythm's projector and the rule's readers and writers. The seed's
+ * rhythm IS the domain's projection only if the bundle folds a book into
+ * the very documents the ordinary imports fold it into.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  appointmentFromDocument,
-  waitlistFromDocument,
-  waitlistToDocument,
-} from '@creativo/application/booking';
 import * as engagement from '@creativo/application/engagement';
 import { loyaltyFixtures } from '@creativo/application/engagement/testing';
-import { UserId } from '@creativo/domain/accounts';
 import { ServiceCategoryId, ServiceId } from '@creativo/domain/catalog';
-import {
-  ClientStatsPolicy,
-  computeClientStats,
-} from '@creativo/domain/scheduling';
-// By their own paths, as the bundle's entry names them: the domain's barrel
-// does not carry the projector's line yet (contract delta R2b-1), and the
-// coupon's mapper is on no barrel.
+import { BookingPolicy } from '@core/components';
+import { Collections } from '@core/entities';
+import { clientStatsPaths, projectClientStats } from '@core/pipelines';
+import { Result } from '@core/primitives';
+import { memoryStore, memoryTxPorts, recordingTelemetry } from '@core/testing';
+// By their own paths, as the bundle's entry names them: the server's TTL
+// stamp lives in the functions app, and the domain's barrel does not carry
+// the projector's line yet (contract delta R2b-1).
+import { purgeAtFor } from '../../apps/functions/src/adapters/firestore-ttl.adapter';
 import {
   projectStreak,
   traceStreak,
 } from '../../libs/domain/engagement/src/lib/loyalty/streak-projector';
-import {
-  couponFromPersistence,
-  couponToPersistence,
-} from '../../libs/infrastructure/firestore/src/lib/coupon-persistence';
+import { busyDayBody, busyKeyOf } from './catalog.mjs';
 import { buildClientBook } from './fixtures.mjs';
 import {
   SEED_DOMAIN_MODULES,
+  SEED_PLAN_MODULES,
+  SEED_SERVER_MODULES,
   WORKSPACE_ROOT,
   loadSeedDomain,
 } from './load-domain.mjs';
@@ -75,28 +71,49 @@ const LOYALTY_DOCUMENT_NAMES = [
   'streakScheduleToDocument',
   'streakStateToDocument',
 ];
-const GIFT_VOUCHER_DOCUMENT_NAMES = [
-  'giftVoucherFromDocument',
-  'giftVoucherToDocument',
-];
 
 /** The same names, imported the ordinary way. */
 const direct = {
   ...Object.fromEntries(
-    [...LOYALTY_DOCUMENT_NAMES, ...GIFT_VOUCHER_DOCUMENT_NAMES].map((name) => [
-      name,
-      engagement[name],
-    ]),
+    LOYALTY_DOCUMENT_NAMES.map((name) => [name, engagement[name]]),
   ),
   ServiceCategoryId,
   ServiceId,
-  couponFromPersistence,
-  couponToPersistence,
+  projectClientStats,
+  purgeAtFor,
   projectStreak,
   traceStreak,
 };
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
+
+/**
+ * Runs a `projectClientStats` over the book's appointments in a memory
+ * store, for `customerIds`, and answers the documents it left.
+ */
+async function projectedBy(project, book, customerIds) {
+  const store = memoryStore(
+    book.appointments.map(({ id, doc }) => ({
+      path: [Collections.Appointments, id],
+      body: doc,
+    })),
+  );
+  const answer = await project({
+    ...memoryTxPorts(store, { nowUtcMs: () => NOW }),
+    ...recordingTelemetry(),
+    tenantTimeZone: book.calendar.zone,
+    loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
+  })({ customerIds });
+  expect(answer.ok).toBe(true);
+  expect(answer.value.failures).toEqual([]);
+  return customerIds.map((customerId) => {
+    const paths = clientStatsPaths(customerId);
+    return {
+      stats: store.get(paths.stats.join('/')) ?? null,
+      money: store.get(paths.money.join('/')) ?? null,
+    };
+  });
+}
 
 describe('loadSeedDomain', () => {
   let domain;
@@ -104,41 +121,32 @@ describe('loadSeedDomain', () => {
     domain = await loadSeedDomain();
   });
 
-  it('bundles the projection the trigger runs, and computes what it computes', () => {
-    expect(typeof domain.recomputeClientStats).toBe('function');
-    expect(typeof domain.loadClientStatsPolicy).toBe('function');
+  it('bundles the projection the trigger runs, and computes what it computes', async () => {
+    expect(typeof domain.projectClientStats).toBe('function');
+    expect(typeof domain.firestoreCommitPlan).toBe('function');
+    expect(typeof domain.firestoreSettingsPorts).toBe('function');
 
     const book = buildClientBook(NOW);
-    // The stored placements too: the preferred barber reads them (§11.2 #6).
-    const placements = new Map(
-      book.appointments
-        .filter(({ doc }) => doc.placement != null)
-        .map(({ id, doc }) => [id, doc.placement]),
+    const customerIds = book.customers
+      .filter(({ uid }) =>
+        ['dev-client-1', 'dev-client-5', 'dev-client-10'].includes(uid),
+      )
+      .map(({ id }) => id);
+    expect(customerIds).toHaveLength(3);
+    const bundled = await projectedBy(
+      domain.projectClientStats,
+      book,
+      customerIds,
     );
-    for (const uid of ['dev-client-1', 'dev-client-5', 'dev-client-10']) {
-      const bundled = domain.computeClientStats(
-        domain.UserId.create(uid).value,
-        book.appointments.map(
-          ({ id, doc }) => domain.appointmentFromDocument(id, doc).value,
-        ),
-        NOW,
-        domain.ClientStatsPolicy.default(),
-        placements,
-      );
-      const ordinary = computeClientStats(
-        UserId.create(uid).value,
-        book.appointments.map(
-          ({ id, doc }) => appointmentFromDocument(id, doc).value,
-        ),
-        NOW,
-        ClientStatsPolicy.default(),
-        placements,
-      );
-      expect(plain(bundled), uid).toEqual(plain(ordinary));
+    const ordinary = await projectedBy(projectClientStats, book, customerIds);
+    for (const [index, written] of bundled.entries()) {
+      expect(written.stats, customerIds[index]).not.toBeNull();
+      expect(written.money, customerIds[index]).not.toBeNull();
     }
+    expect(plain(bundled)).toEqual(plain(ordinary));
   });
 
-  it('holds every name the fold and the read-back are handed, each a function', () => {
+  it('holds every name the fold, the read-back and the writes are handed, each a function', () => {
     for (const name of Object.keys(direct)) {
       expect(typeof domain[name], name).toBe('function');
       expect(typeof direct[name], `${name}, imported the ordinary way`).toBe(
@@ -147,16 +155,65 @@ describe('loadSeedDomain', () => {
     }
   });
 
-  it('names the engagement modules by their files, and each is there', () => {
+  it('names its modules by their files, and each is there', () => {
     expect(Object.keys(SEED_DOMAIN_MODULES).sort()).toEqual([
-      'couponPersistence',
-      'giftVoucherDocument',
       'loyaltyDocument',
       'streakProjector',
     ]);
-    for (const [name, module] of Object.entries(SEED_DOMAIN_MODULES)) {
+    expect(Object.keys(SEED_SERVER_MODULES).sort()).toEqual([
+      'commitPlan',
+      'settings',
+      'ttl',
+    ]);
+    for (const [name, module] of Object.entries({
+      ...SEED_DOMAIN_MODULES,
+      ...SEED_SERVER_MODULES,
+    })) {
       expect(existsSync(join(WORKSPACE_ROOT, `${module}.ts`)), name).toBe(true);
     }
+    for (const [name, file] of Object.entries(SEED_PLAN_MODULES)) {
+      expect(existsSync(join(WORKSPACE_ROOT, file)), name).toBe(true);
+      expect(domain[name], name).toBeDefined();
+    }
+  });
+
+  it('stamps purgeAt with the server’s own function: the bundle answers what the adapter answers', () => {
+    const book = buildClientBook(NOW);
+    const waitlist = waitlistRequestWriteOf(book);
+    const localDate = book.calendar.dayKeyAt(9);
+    const busyPath = `barberBusy/${busyKeyOf('ivan', localDate)}`;
+    const busy = busyDayBody('ivan', localDate, [[600, 645]]);
+    for (const [path, body] of [
+      [waitlist.path, waitlist.data],
+      [busyPath, busy],
+    ]) {
+      const segments = path.split('/');
+      const stamped = domain.purgeAtFor(segments, body);
+      expect(stamped, path).not.toBeNull();
+      expect(stamped.toMillis(), path).toBe(
+        purgeAtFor(segments, body).toMillis(),
+      );
+    }
+    // Only a TTL group is stamped: an appointment never is.
+    const [{ id, doc }] = book.appointments;
+    expect(domain.purgeAtFor(['appointments', id], doc)).toBeNull();
+  });
+
+  it('bundles the seed’s plan modules: each writes the very documents the ordinary import writes', () => {
+    const ordinary = buildClientBook(NOW);
+    const bundled = domain.book.buildClientBook(NOW);
+    const written = (book) =>
+      plain({
+        users: book.users,
+        customers: book.customers,
+        appointments: book.appointments,
+        subjects: book.subjects,
+        subjectCustomerIds: book.subjectCustomerIds,
+      });
+    expect(written(bundled)).toEqual(written(ordinary));
+    expect(plain(domain.waitlist.waitlistRequestWriteOf(bundled))).toEqual(
+      plain(waitlistRequestWriteOf(ordinary)),
+    );
   });
 
   it('bundles the client card’s readers, and they read what the card’s own import reads', () => {
@@ -173,12 +230,6 @@ describe('loadSeedDomain', () => {
     expect(bundled.ruleVersions).toHaveLength(1);
     expect(bundled.accounts).toHaveLength(2);
     expect(plain(bundled)).toEqual(plain(readLoyaltyWrites(direct, writes)));
-
-    const { path, data } = waitlistRequestWriteOf(buildClientBook(NOW));
-    const id = path.split('/').at(-1);
-    expect(
-      domain.waitlistToDocument(domain.waitlistFromDocument(id, data)),
-    ).toEqual(waitlistToDocument(waitlistFromDocument(id, data)));
   });
 
   it('bundles the rhythm’s projector: the seed’s book folds into the documents the ordinary imports fold it into', () => {
@@ -247,44 +298,24 @@ describe('loadSeedDomain', () => {
     expect(answers[0].state).toMatchObject({ streakId: 'cadence', current: 3 });
   });
 
-  it('bundles the promotions’ mappers, and they read what the app’s own import reads', () => {
+  it('bundles the promotions’ plan, and it writes and reads back what the ordinary import does', () => {
     const book = buildClientBook(NOW);
     const today = book.calendar.dayKeyAt(0);
-    const writes = [
-      ...couponWritesOf(),
-      ...couponGrantWritesOf(book, loyaltyCatalogFor(today), today),
-      ...giftVoucherWritesOf(book.calendar),
+    const catalog = loyaltyCatalogFor(today);
+    const writesBy = (promotions) => [
+      ...promotions.couponWritesOf(),
+      ...promotions.couponGrantWritesOf(book, catalog, today),
+      ...promotions.giftVoucherWritesOf(book.calendar),
     ];
-    const bundled = readPromotionWrites(domain, writes);
+    const writes = writesBy({
+      couponWritesOf,
+      couponGrantWritesOf,
+      giftVoucherWritesOf,
+    });
+    expect(plain(writesBy(domain.promotions))).toEqual(plain(writes));
+    const bundled = domain.promotions.readPromotionWrites(writes);
     expect(bundled.problems).toEqual([]);
     expect(bundled.coupons).toHaveLength(couponWritesOf().length);
-    expect(plain(bundled)).toEqual(plain(readPromotionWrites(direct, writes)));
-    // Both halves: what the bundle reads, it writes back as it was written.
-    for (const { path, data } of writes) {
-      const [collection, id] = path.split('/');
-      if (collection === 'coupons') {
-        expect(
-          domain.couponToPersistence(
-            domain.couponFromPersistence(id, data).value,
-          ),
-          path,
-        ).toEqual(data);
-      }
-      if (collection === 'giftVouchers') {
-        expect(
-          domain.giftVoucherToDocument(
-            domain.giftVoucherFromDocument(id, data),
-          ),
-          path,
-        ).toEqual(giftVoucherToDocumentOrdinary(id, data));
-      }
-    }
+    expect(plain(bundled)).toEqual(plain(readPromotionWrites(writes)));
   });
 });
-
-/** A voucher read and written back by the ordinary import. */
-function giftVoucherToDocumentOrdinary(id, data) {
-  return engagement.giftVoucherToDocument(
-    engagement.giftVoucherFromDocument(id, data),
-  );
-}

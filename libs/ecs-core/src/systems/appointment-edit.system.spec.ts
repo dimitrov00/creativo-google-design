@@ -595,7 +595,7 @@ describe('AppointmentEditSystem.guard — what may be corrected at all', () => {
         ),
       ).toEqual({
         errorCode: 'BOOKING_INVALID_INPUT',
-        field: 'status',
+        field: 'bookingStatus',
         detail: null,
         reason: null,
       });

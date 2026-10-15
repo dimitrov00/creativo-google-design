@@ -121,7 +121,7 @@ export type RescheduleSeatRequest = {
   readonly variantId: string | null;
   readonly barberId: string;
   readonly barberPreference: BarberPreference | null;
-  /** `null` when the wire start did not parse (refused as `startIso`). */
+  /** `null` when the wire start did not parse (refused as `startUtcMs`). */
   readonly startUtcMs: UtcEpochMs | null;
   /** The booker, or a guest by label (`COMPANION` is refused — a cart never names another account). */
   readonly moveSubjectRole: MoveSubjectRole;
@@ -371,7 +371,7 @@ async function readMove(
   ) {
     return {
       snapshot: 'REFUSED',
-      error: BookingError.invalidInput('startIso'),
+      error: BookingError.invalidInput('startUtcMs'),
     };
   }
   const plan = MoveSystem.plan(stored, owner, {
@@ -586,7 +586,7 @@ function decideMove(
       BookingError.invalidInput(
         allowed.error.errorCode === CancellationRefusalCode.WindowClosed
           ? 'window_closed'
-          : 'status',
+          : 'bookingStatus',
       ),
     );
   }

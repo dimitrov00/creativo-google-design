@@ -1,31 +1,37 @@
 /**
  * The dev seed's client book, checked against the production code that will
- * read it: every document round-trips through the real appointment mapper,
- * and every named fixture (design §12.4 P0 «Seed») is asserted through the
- * real `computeClientStats` — so "Георги is a regular with 23 visits" is a
- * fact the stats engine agrees with, not a comment.
+ * read it (flip 1: the documents ARE the flat `Appointment` bodies, Law 5):
+ * every document carries exactly the mirrors `AppointmentIndexSystem`
+ * derives from its seats and the one instant `ZonedTimeSystem` derives from
+ * its shop day, and every named fixture (design §12.4 P0 «Seed») is asserted
+ * through the real client-stats projection (`clientStatsOf` of
+ * `@core/pipelines`, the trigger's own) — so "Георги is a regular with 23
+ * visits" is a fact the stats engine agrees with, not a comment.
  *
  * "Now" is pinned. A sweep of anchor days (DST changes, 29 February, every
  * weekday) proves the counts hold whatever day the seed runs on.
  */
-import {
-  appointmentFromDocument,
-  appointmentToDocument,
-} from '@creativo/application/booking';
-import { AccountStatus, User, UserId } from '@creativo/domain/accounts';
+import { AccountStatus, User } from '@creativo/domain/accounts';
 import { ZonedDateTime } from '@creativo/domain/kernel';
 import {
+  BookingLifecycle,
   BookingPolicy,
   ClientStatsPolicy,
-  computeClientMoneyStats,
-  computeClientStats,
-  statWindows,
-} from '@creativo/domain/scheduling';
+  CustomerOrigin,
+  Seat,
+} from '@core/components';
+import { clientStatsOf } from '@core/pipelines';
+import {
+  AppointmentIndexSystem,
+  ClientStatsSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import fc from 'fast-check';
 import {
   CANCELLATION_WINDOW_HOURS,
   account,
   appointmentDocumentOf,
+  seatStartMsOf,
 } from './appointments.mjs';
 import { createShopCalendar } from './calendar.mjs';
 import {
@@ -39,10 +45,12 @@ import {
   turnaroundMinutesOf,
 } from './catalog.mjs';
 import { CLIENTS, buildClientBook } from './fixtures.mjs';
+import { customerIdOf } from './fixtures/customers.fixtures.ts';
 import { createChairBook, placeVisit } from './history.mjs';
 
 const ZONE = 'Europe/Sofia';
 const DAY_MS = 86_400_000;
+const dayNumber = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
 
 /** Before every one of today's fixtures (the first arrival is 09:56). */
 const MORNING = Date.parse('2026-09-25T07:30:00+03:00');
@@ -60,56 +68,76 @@ const ANCHORS = [
   Date.parse('2028-02-29T07:30:00+02:00'), // a birthday that is not every year
 ];
 
-const aggregatesOf = (book) =>
-  book.appointments.map(({ id, doc }) => {
-    const parsed = appointmentFromDocument(id, doc);
-    if (parsed.isFailure()) {
-      throw new Error(`${id}: ${parsed.error.message}`);
-    }
-    return parsed.value;
-  });
+/** The stored tags the seed writes (the dictionaries' values). */
+const CONFIRMED = 'CONFIRMED';
+const COMPLETED = 'COMPLETED';
+const NO_SHOW = 'NO_SHOW';
+const CANCELLED = 'CANCELLED';
+const SCHEDULED = 'SCHEDULED';
+const WORKED = 'WORKED';
+const ACCOUNT = 'ACCOUNT';
+const ANONYMOUS = 'ANONYMOUS';
 
-/** Who placed each visit — the stored `placement`, which the stats read beside the seats. */
-const placementsOf = (book) =>
-  new Map(
-    book.appointments
-      .filter(
-        ({ doc }) => doc.placement === 'self' || doc.placement === 'staff',
-      )
-      .map(({ id, doc }) => [id, doc.placement]),
-  );
+/** Every lifecycle stamp a root variant may carry; a document holds its own variant's only. */
+const LIFECYCLE_FIELDS = [
+  'pendingAtUtcMs',
+  'confirmedAtUtcMs',
+  'completedAtUtcMs',
+  'noShowAtUtcMs',
+  'cancelledAtUtcMs',
+  'cancellationReason',
+];
+/** Every field a seat's occupant or outcome variant may carry. */
+const SEAT_VARIANT_FIELDS = [
+  'subjectUserId',
+  'subjectCustomerId',
+  'subjectRelationship',
+  'guestLabel',
+  'workedAtUtcMs',
+  'noShowAtUtcMs',
+  'cancelledAtUtcMs',
+  'cancelledBy',
+  'cancellationReason',
+  'cancellationWindowHours',
+];
 
-function statsAt(nowMs, uid, policy = ClientStatsPolicy.default()) {
+/** The book's appointments as the entity: `{ id, ...body }` (Law 5 — no mapper). */
+const entitiesOf = (book) =>
+  book.appointments.map(({ id, doc }) => ({ id, ...doc }));
+
+const SHOP_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE });
+const SHOP_CLOCK = new Intl.DateTimeFormat('en-GB', {
+  timeZone: ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+const shopDayOf = (ms) => SHOP_DAY.format(new Date(ms));
+const shopClockOf = (ms) => SHOP_CLOCK.format(new Date(ms));
+const clockOf = (minutes) =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
+/** The instant a seat's outcome was stamped, or `null` while it is scheduled. */
+const outcomeAtOf = (seat) =>
+  seat.workedAtUtcMs ?? seat.noShowAtUtcMs ?? seat.cancelledAtUtcMs ?? null;
+
+/** One client's stats and spend as of `nowMs`, by the trigger's own projection. */
+function statsAt(nowMs, uid, policy = ClientStatsPolicy.DEFAULT) {
   const book = buildClientBook(nowMs);
-  const subject = UserId.create(uid);
-  if (subject.isFailure()) throw subject.error;
-  const appointments = aggregatesOf(book);
-  const stats = computeClientStats(
-    subject.value,
+  const appointments = entitiesOf(book);
+  const now = ZonedTimeSystem.shopNow(nowMs, ZONE);
+  const { stats, money } = clientStatsOf(
+    customerIdOf(uid),
     appointments,
-    nowMs,
     policy,
-    placementsOf(book),
+    now,
   );
   return {
     book,
     appointments,
     stats,
-    windows: statWindows(stats, nowMs),
-    money: computeClientMoneyStats(subject.value, appointments),
-  };
-}
-
-/** The walk-in's typed phone rides ahead of the P1 mapper, which drops it. */
-function withoutGuestPhones(doc) {
-  return {
-    ...doc,
-    seats: doc.seats.map((seat) => {
-      if (seat.subject.kind !== 'anonymous') return seat;
-      const subject = { ...seat.subject };
-      delete subject.phone;
-      return { ...seat, subject };
-    }),
+    windows: ClientStatsSystem.statWindows(stats, now),
+    money,
   };
 }
 
@@ -119,25 +147,29 @@ const docById = (book, id) => {
   return entry.doc;
 };
 
-const minuteOfDay = (iso) =>
-  Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
+const isOwnSeat = (seat, uid) =>
+  seat.seatSubject === ACCOUNT && seat.subjectUserId === uid;
 
 /** The barber's own offering of a service, read straight off the catalogue. */
 const offeringOf = (serviceId, barberId) =>
-  SERVICES.find((service) => service.id === serviceId)?.offerings.find(
+  SERVICES.find((service) => service.id === serviceId)?.body.offerings.find(
     (offering) => offering.barberId === barberId,
   );
 
 /**
- * The terms the catalogue sells THIS seat at: its barber's price for its
- * variant, else that barber's base — never another variant's, another
+ * The terms the catalogue sells THIS seat at: its barber's override for its
+ * variant, else that barber's own — never another variant's, another
  * barber's, or the service's list price.
  */
 const catalogTermsOf = (seat) => {
   const offering = offeringOf(seat.serviceId, seat.barberId);
   if (!offering) return undefined;
   return (
-    (seat.variantId && offering.byVariant?.[seat.variantId]) || offering.base
+    (seat.variantId &&
+      offering.overrides.find(
+        (override) => override.variantId === seat.variantId,
+      )) ||
+    offering
   );
 };
 
@@ -165,54 +197,126 @@ const weekdayName = (ms) => WEEKDAY_NAMES[createShopCalendar(ms).weekdayAt(0)];
 
 describe('the dev seed client book', () => {
   it('writes the same documents on every run of a day', () => {
-    const written = ({ users, appointments }) => ({ users, appointments });
+    const written = ({ users, customers, appointments }) => ({
+      users,
+      customers,
+      appointments,
+    });
     const first = buildClientBook(MORNING);
     expect(written(buildClientBook(MORNING))).toEqual(written(first));
     // Only today's settle-once-past fixtures may differ between morning
     // and evening; the past is the past.
     const past = (book) =>
-      book.appointments.filter(
-        ({ doc }) => doc.timeSlot.startIso < '2026-09-25',
-      );
+      book.appointments.filter(({ doc }) => doc.localDate < '2026-09-25');
     expect(past(buildClientBook(EVENING))).toEqual(past(first));
     expect(buildClientBook(EVENING).appointments.map(({ id }) => id)).toEqual(
       first.appointments.map(({ id }) => id),
     );
+    expect(buildClientBook(EVENING).customers).toEqual(first.customers);
   });
 
   it.each(ANCHORS.map((ms) => [new Date(ms).toISOString(), ms]))(
-    'every appointment is exactly the mapper’s shape (%s)',
+    'every appointment is exactly the flat archetype: its mirrors, its envelope, its instant, one variant (%s)',
     (_label, nowMs) => {
       const book = buildClientBook(nowMs);
+      const [first] = book.appointments;
+      const rootFields = (doc) =>
+        Object.keys(doc)
+          .filter((key) => !LIFECYCLE_FIELDS.includes(key))
+          .sort();
+      const seatFields = (seat) =>
+        Object.keys(seat)
+          .filter((key) => !SEAT_VARIANT_FIELDS.includes(key))
+          .sort();
       for (const { id, doc } of book.appointments) {
-        const parsed = appointmentFromDocument(id, doc);
-        expect(parsed.isSuccess(), id).toBe(true);
-        if (parsed.isFailure()) continue;
+        // The query mirrors, exactly as every write plan recomputes them.
+        const keys = AppointmentIndexSystem.queryKeys(doc);
+        for (const field of [
+          'ownerUserId',
+          'subjectUserIds',
+          'ownerCustomerId',
+          'subjectCustomerIds',
+          'barberIds',
+          'busyKeys',
+        ]) {
+          expect(doc[field], `${id}.${field}`).toEqual(keys[field]);
+        }
+        // The envelope of its seats, on one shop day, and the one instant
+        // the shop's zone gives its start.
+        const envelope = AppointmentIndexSystem.envelope(doc);
+        expect(doc.startMinutes, id).toBe(envelope.startMinutes);
+        expect(doc.endMinutes, id).toBe(envelope.endMinutes);
+        const start = ZonedTimeSystem.toUtc(
+          doc.localDate,
+          doc.startMinutes,
+          ZONE,
+        );
+        expect(start.ok, id).toBe(true);
+        expect(doc.utcEpochMs, id).toBe(start.value);
+        // Exactly one lifecycle variant at the root: its own stamps, no other's.
         expect(
-          appointmentToDocument(parsed.value, { placement: doc.placement }),
+          LIFECYCLE_FIELDS.filter((field) => field in doc),
           id,
-        ).toEqual(withoutGuestPhones(doc));
+        ).toEqual(
+          Object.keys(BookingLifecycle.sliceOf(doc)).filter(
+            (field) => field !== 'bookingStatus',
+          ),
+        );
+        // One hidden class: the same root fields and seat fields everywhere.
+        expect(rootFields(doc), id).toEqual(rootFields(first.doc));
+        for (const seat of doc.seats) {
+          expect(seatFields(seat), `${id}/${seat.seatId}`).toEqual(
+            seatFields(first.doc.seats[0]),
+          );
+        }
+        // Plain data: what is written is what is read, byte for byte.
+        expect(JSON.parse(JSON.stringify(doc)), id).toEqual(doc);
       }
     },
   );
+
+  it('writes one client record per client, at the id the booking derives, opened before their first visit', () => {
+    const book = buildClientBook(MORNING);
+    expect(book.customers.map(({ uid }) => uid)).toEqual(
+      CLIENTS.map(({ uid }) => uid),
+    );
+    const ids = new Set(book.customers.map(({ id }) => id));
+    for (const { uid, id, body } of book.customers) {
+      expect(id, uid).toBe(customerIdOf(uid));
+      expect(id.startsWith('cus_'), uid).toBe(true);
+      expect(body.userId, uid).toBe(uid);
+      expect(body.customerOrigin, uid).toBe(CustomerOrigin.Seed);
+      const visits = book.appointments.filter(({ doc }) =>
+        doc.subjectUserIds.includes(uid),
+      );
+      for (const { doc } of visits) {
+        expect(body.createdAtUtcMs, uid).toBeLessThanOrEqual(doc.utcEpochMs);
+      }
+    }
+    // Every record a visit names is one the seed writes.
+    expect(book.subjectCustomerIds.every((id) => ids.has(id))).toBe(true);
+    expect(book.subjectCustomerIds).toEqual(
+      [...new Set(book.subjects.map((uid) => customerIdOf(uid)))].sort(),
+    );
+  });
 
   it.each(ANCHORS.map((ms) => [new Date(ms).toISOString(), ms]))(
     'every named fixture holds its state on any day (%s)',
     (_label, nowMs) => {
       const georgi = statsAt(nowMs, 'dev-client-1');
-      expect(georgi.stats.lifetime.visitsCompleted).toBe(23);
+      expect(georgi.stats.lifetimeVisitsCompleted).toBe(23);
       expect(georgi.windows.visitsCompleted.last12m).toBe(13);
 
       const kiril = statsAt(nowMs, 'dev-client-5');
-      expect(kiril.stats.pauseSuggestion?.noShows).toBe(3);
-      expect(kiril.stats.pauseSuggestion?.windowDays).toBe(60);
+      expect(kiril.stats.pauseSuggestedNoShows).toBe(3);
+      expect(kiril.stats.pauseSuggestedWindowDays).toBe(60);
 
       const nikolay = statsAt(nowMs, 'dev-client-6');
-      expect(nikolay.stats.lifetime.lateCancels).toBe(1);
-      expect(nikolay.stats.lifetime.clientCancels).toBe(3);
+      expect(nikolay.stats.lifetimeLateCancels).toBe(1);
+      expect(nikolay.stats.lifetimeClientCancels).toBe(3);
 
       expect(
-        statsAt(nowMs, 'dev-client-10').stats.lifetime.visitsCompleted,
+        statsAt(nowMs, 'dev-client-10').stats.lifetimeVisitsCompleted,
       ).toBe(13);
     },
   );
@@ -220,99 +324,94 @@ describe('the dev seed client book', () => {
   it('stamps every cancellation with the window the seeded policy sets, as the cancel paths do', () => {
     // The seeded `settings/bookingPolicy` and the stamp are one number.
     expect(CANCELLATION_WINDOW_HOURS).toBe(
-      BookingPolicy.default().cancellationWindowHours,
+      BookingPolicy.DEFAULT.cancellationWindowHours,
     );
     const cancelled = buildClientBook(MORNING).appointments.flatMap(({ doc }) =>
-      doc.seats
-        .map((seat) => seat.outcome)
-        .filter((outcome) => outcome.kind === 'cancelled'),
+      doc.seats.filter((seat) => seat.attendanceState === CANCELLED),
     );
     expect(cancelled.length).toBeGreaterThan(0);
-    for (const outcome of cancelled) {
-      expect(outcome.windowHours).toBe(CANCELLATION_WINDOW_HOURS);
+    for (const seat of cancelled) {
+      expect(seat.cancellationWindowHours).toBe(CANCELLATION_WINDOW_HOURS);
     }
   });
 
   it('keeps Николай’s late cancel whatever the owner moves the window to', () => {
-    const defaults = BookingPolicy.default();
     fc.assert(
       fc.property(fc.integer({ min: 0, max: 96 }), (hours) => {
         const booking = BookingPolicy.create({
-          maxPartySize: defaults.maxPartySize,
-          slotStepMinutes: defaults.slotStepMinutes,
-          minLeadMinutes: defaults.minLeadMinutes,
-          horizonMonths: defaults.horizonMonths,
+          ...BookingPolicy.DEFAULT,
           cancellationWindowHours: hours,
-          maxFlexibleDays: defaults.maxFlexibleDays,
-          autoConfirm: defaults.autoConfirm,
         });
-        if (booking.isFailure()) throw new Error('bad policy');
+        if (!booking.ok) throw new Error('bad policy');
         const { stats } = statsAt(
           MORNING,
           'dev-client-6',
           ClientStatsPolicy.forBooking(booking.value),
         );
-        expect(stats.lifetime.lateCancels).toBe(1);
-        expect(stats.lifetime.clientCancels).toBe(3);
+        expect(stats.lifetimeLateCancels).toBe(1);
+        expect(stats.lifetimeClientCancels).toBe(3);
       }),
       { numRuns: 12 },
     );
   });
 
   it('Георги is the regular: 23 visits, 13 in a year, Ivan by name', () => {
-    const { stats, windows, money, appointments, book } = statsAt(
-      MORNING,
-      'dev-client-1',
-    );
-    expect(stats.lifetime).toEqual({
+    const { stats, windows, money, book } = statsAt(MORNING, 'dev-client-1');
+    expect({
+      visitsCompleted: stats.lifetimeVisitsCompleted,
+      noShows: stats.lifetimeNoShows,
+      lateCancels: stats.lifetimeLateCancels,
+      clientCancels: stats.lifetimeClientCancels,
+    }).toEqual({
       visitsCompleted: 23,
       noShows: 0,
       lateCancels: 0,
       clientCancels: 0,
     });
     expect(windows.visitsCompleted.last12m).toBe(13);
-    expect(stats.preferredBarberId?.value).toBe('ivan');
-    expect(stats.usualServiceIds.map((id) => id.value)).toContain('svc-fade');
+    expect(stats.preferredBarberId).toBe('ivan');
+    expect(stats.usualServiceIds).toContain('svc-fade');
     // Eighteen months of him, give or take a haircut.
-    expect(MORNING - (stats.firstVisitAtMs ?? MORNING)).toBeGreaterThan(
-      540 * DAY_MS,
-    );
+    expect(stats.firstVisitLocalDate).not.toBeNull();
+    expect(
+      dayNumber(book.calendar.dayKeyAt(0)) -
+        dayNumber(stats.firstVisitLocalDate),
+    ).toBeGreaterThan(540);
     // Today's 10:00 is still to come — and it was booked from his last visit.
-    expect(stats.nextVisit?.appointmentId.value).toBe('appt-dev-1');
+    expect(stats.nextVisitAppointmentId).toBe('appt-dev-1');
     expect(docById(book, 'appt-dev-1').bookedFromAppointmentId).toBe(
-      stats.lastVisit?.appointmentId.value,
+      stats.lastVisitAppointmentId,
     );
     // Spend is the worked seats' prices; tips are not the shop's money.
-    const own = appointments
-      .flatMap((appointment) => appointment.seats)
+    const own = book.appointments
+      .flatMap(({ doc }) => doc.seats)
       .filter(
         (seat) =>
-          seat.outcome.kind === 'worked' &&
-          seat.subject.kind === 'account' &&
-          seat.subject.userId.value === 'dev-client-1',
+          seat.attendanceState === WORKED && isOwnSeat(seat, 'dev-client-1'),
       );
-    expect(money.lifetimeSpendMinor).toBe(
-      own.reduce((sum, seat) => sum + seat.terms.price.toMinorUnits(), 0),
+    expect(money.lifetimeSpendCents).toBe(
+      own.reduce((sum, seat) => sum + seat.priceCents, 0),
     );
+    expect(money.currency).toBe('EUR');
 
     const evening = statsAt(EVENING, 'dev-client-1');
-    expect(evening.stats.lifetime.visitsCompleted).toBe(24);
+    expect(evening.stats.lifetimeVisitsCompleted).toBe(24);
     expect(evening.windows.visitsCompleted.last12m).toBe(14);
   });
 
   it('Кирил crosses the pause threshold before today, and today’s no-show is his 4th', () => {
     const morning = statsAt(MORNING, 'dev-client-5');
-    expect(morning.stats.pauseSuggestion?.basis).toHaveLength(3);
+    expect(morning.stats.pauseSuggestionBasis).toHaveLength(3);
     expect(morning.windows.noShows.last90d).toBe(3);
-    expect(morning.stats.lifetime.noShows).toBe(4);
-    expect(
-      statsAt(EVENING, 'dev-client-5').stats.pauseSuggestion?.noShows,
-    ).toBe(4);
+    expect(morning.stats.lifetimeNoShows).toBe(4);
+    expect(statsAt(EVENING, 'dev-client-5').stats.pauseSuggestedNoShows).toBe(
+      4,
+    );
   });
 
   it('Мартин: a birthday today, and a shop cancel that is nobody’s fault', () => {
     const { stats, book } = statsAt(MORNING, 'dev-client-2');
-    expect(stats.lifetime.clientCancels).toBe(0);
+    expect(stats.lifetimeClientCancels).toBe(0);
     expect(stats.avgCadenceDays).not.toBeNull();
     const martin = book.users.find(({ uid }) => uid === 'dev-client-2');
     expect(martin?.doc.birthDate?.slice(5)).toBe('09-25');
@@ -320,41 +419,65 @@ describe('the dev seed client book', () => {
       book.appointments.some(
         ({ doc }) =>
           doc.subjectUserIds.includes('dev-client-2') &&
-          doc.status.kind === 'cancelled' &&
-          doc.seats[0].outcome.by === 'staff',
+          doc.bookingStatus === CANCELLED &&
+          doc.seats[0].cancelledBy === 'STAFF',
       ),
     ).toBe(true);
   });
 
   it('Иво’s visits are found through the mirror, never as an owner', () => {
     const { stats, book } = statsAt(MORNING, 'dev-client-10');
-    expect(stats.lifetime.visitsCompleted).toBe(13);
+    expect(stats.lifetimeVisitsCompleted).toBe(13);
     const his = book.appointments.filter(({ doc }) =>
-      doc.subjectUserIds.includes('dev-client-10'),
+      doc.subjectCustomerIds.includes(customerIdOf('dev-client-10')),
     );
+    expect(his.length).toBeGreaterThan(0);
+    expect(
+      his.every(({ doc }) => doc.subjectUserIds.includes('dev-client-10')),
+    ).toBe(true);
     expect(his.every(({ doc }) => doc.ownerUserId === 'dev-client-3')).toBe(
       true,
     );
     expect(
-      docById(book, 'appt-dev-party').seats.map((seat) => seat.subject),
+      his.every(
+        ({ doc }) => doc.ownerCustomerId === customerIdOf('dev-client-3'),
+      ),
+    ).toBe(true);
+    expect(
+      docById(book, 'appt-dev-party').seats.map((seat) => ({
+        seatSubject: seat.seatSubject,
+        subjectUserId: seat.subjectUserId,
+        subjectCustomerId: seat.subjectCustomerId,
+        subjectRelationship: seat.subjectRelationship,
+      })),
     ).toEqual([
-      { kind: 'account', userId: 'dev-client-3', relationship: 'self' },
-      { kind: 'account', userId: 'dev-client-10', relationship: 'companion' },
+      {
+        seatSubject: ACCOUNT,
+        subjectUserId: 'dev-client-3',
+        subjectCustomerId: customerIdOf('dev-client-3'),
+        subjectRelationship: 'SELF',
+      },
+      {
+        seatSubject: ACCOUNT,
+        subjectUserId: 'dev-client-10',
+        subjectCustomerId: customerIdOf('dev-client-10'),
+        subjectRelationship: 'COMPANION',
+      },
     ]);
   });
 
   it('Петър’s 14:00 is a beard with Стефан, the barber his history names', () => {
     const { stats, book } = statsAt(MORNING, 'dev-client-3');
-    expect(stats.preferredBarberId?.value).toBe('stefan');
-    expect(stats.nextVisit?.appointmentId.value).toBe('appt-dev-3');
+    expect(stats.preferredBarberId).toBe('stefan');
+    expect(stats.nextVisitAppointmentId).toBe('appt-dev-3');
     // A service Стефан has worked on him before, not a new ask.
     expect(
       book.appointments.some(
         ({ doc }) =>
-          doc.status.kind === 'completed' &&
+          doc.bookingStatus === COMPLETED &&
           doc.seats.some(
             (seat) =>
-              seat.subject.userId === 'dev-client-3' &&
+              isOwnSeat(seat, 'dev-client-3') &&
               seat.barberId === 'stefan' &&
               seat.serviceId === 'svc-beard',
           ),
@@ -364,34 +487,39 @@ describe('the dev seed client book', () => {
     expect(seat).toMatchObject({
       barberId: 'stefan',
       serviceId: 'svc-beard',
-      barberPref: 'specific',
+      barberPreference: 'SPECIFIC',
     });
-    expect(seat.slot.startIso.slice(11, 16)).toBe('14:00');
+    expect(clockOf(seat.startMinutes)).toBe('14:00');
   });
 
   it('Даниел is a first visit: a profile, one booking, no history', () => {
     const { stats } = statsAt(MORNING, 'dev-client-9');
-    expect(stats.lifetime.visitsCompleted).toBe(0);
-    expect(stats.lastVisit).toBeNull();
-    expect(stats.nextVisit?.appointmentId.value).toBe('appt-dev-9');
+    expect(stats.lifetimeVisitsCompleted).toBe(0);
+    expect(stats.lastVisitAppointmentId).toBeNull();
+    expect(stats.nextVisitAppointmentId).toBe('appt-dev-9');
   });
 
-  it('guests carry the typed phone on the seat and no account', () => {
+  it('guests are anonymous seats: a handle staff typed, no account, no record', () => {
     const book = buildClientBook(MORNING);
     for (const id of ['appt-dev-guest', 'appt-dev-walkin']) {
       const doc = docById(book, id);
       expect(doc.ownerUserId, id).toBeNull();
+      expect(doc.ownerCustomerId, id).toBeNull();
       expect(doc.subjectUserIds, id).toEqual([]);
-      expect(doc.placement, id).toBe('staff');
-      expect(doc.seats[0].subject, id).toMatchObject({
-        kind: 'anonymous',
-        phone: expect.stringMatching(/^\+359\d{9}$/),
-      });
+      expect(doc.subjectCustomerIds, id).toEqual([]);
+      expect(doc.placement, id).toBe('STAFF');
+      const [seat] = doc.seats;
+      expect(seat.seatSubject, id).toBe(ANONYMOUS);
+      expect(seat.guestLabel.length, id).toBeGreaterThan(0);
+      // No PII beyond the handle: the seat has nowhere to keep a phone.
+      expect(Object.keys(seat), id).not.toContain('phone');
+      expect('subjectUserId' in seat, id).toBe(false);
     }
   });
 
   it('every account on a seat has a profile registration would accept', () => {
     const book = buildClientBook(MORNING);
+    // `users/{uid}` is flip 2's body: held to the account domain it still is.
     const today = ZonedDateTime.fromMillis(MORNING, ZONE);
     if (today.isFailure()) throw today.error;
     const uids = book.users.map(({ uid }) => uid);
@@ -420,21 +548,21 @@ describe('the dev seed client book', () => {
 
   it('today settles only once its time has passed', () => {
     const morning = docById(buildClientBook(MORNING), 'appt-dev-1');
-    expect(morning.status).toEqual({ kind: 'confirmed' });
-    expect(morning.seats[0].outcome).toEqual({ kind: 'scheduled' });
-    expect(morning.seats[0].tipMinorUnits).toBeNull();
-    expect(morning.arrivedAt).toBeNull();
+    expect(morning.bookingStatus).toBe(CONFIRMED);
+    expect(morning.seats[0].attendanceState).toBe(SCHEDULED);
+    expect(morning.seats[0].tipCents).toBeNull();
+    expect(morning.arrivedAtUtcMs).toBeNull();
 
     const evening = docById(buildClientBook(EVENING), 'appt-dev-1');
-    expect(evening.status).toEqual({ kind: 'completed' });
-    expect(evening.seats[0].outcome.kind).toBe('worked');
-    expect(evening.seats[0].tipMinorUnits).toBe(200);
+    expect(evening.bookingStatus).toBe(COMPLETED);
+    expect(evening.seats[0].attendanceState).toBe(WORKED);
+    expect(evening.seats[0].tipCents).toBe(200);
 
-    expect(docById(buildClientBook(MORNING), 'appt-dev-5').status.kind).toBe(
-      'confirmed',
+    expect(docById(buildClientBook(MORNING), 'appt-dev-5').bookingStatus).toBe(
+      CONFIRMED,
     );
-    expect(docById(buildClientBook(EVENING), 'appt-dev-5').status.kind).toBe(
-      'no_show',
+    expect(docById(buildClientBook(EVENING), 'appt-dev-5').bookingStatus).toBe(
+      NO_SHOW,
     );
   });
 
@@ -444,44 +572,42 @@ describe('the dev seed client book', () => {
     const docs = [...byId.values()];
 
     // Eighteen months back, not further.
-    const oldest = Math.min(
-      ...docs.map((doc) => Date.parse(doc.timeSlot.startIso)),
-    );
+    const oldest = Math.min(...docs.map((doc) => doc.utcEpochMs));
     expect(MORNING - oldest).toBeLessThan(610 * DAY_MS);
     expect(MORNING - oldest).toBeGreaterThan(540 * DAY_MS);
 
     // Both placements, and rebooking edges that point back at a visit of
     // somebody on this one, made before it.
     expect(new Set(docs.map((doc) => doc.placement))).toEqual(
-      new Set(['self', 'staff']),
+      new Set(['SELF', 'STAFF']),
     );
     const linked = docs.filter((doc) => doc.bookedFromAppointmentId !== null);
     expect(linked.length).toBeGreaterThan(10);
     for (const doc of linked) {
       const source = byId.get(doc.bookedFromAppointmentId);
       expect(source).toBeDefined();
-      expect(source.timeSlot.startIso < doc.timeSlot.startIso).toBe(true);
+      expect(source.utcEpochMs < doc.utcEpochMs).toBe(true);
       expect(
-        source.subjectUserIds.some((uid) => doc.subjectUserIds.includes(uid)),
+        source.subjectCustomerIds.some((id) =>
+          doc.subjectCustomerIds.includes(id),
+        ),
       ).toBe(true);
     }
     for (const doc of docs) {
-      if (doc.bookedAt === null) continue;
-      expect(Date.parse(doc.bookedAt.iso)).toBeLessThan(
-        Date.parse(doc.timeSlot.startIso),
-      );
-      expect(Date.parse(doc.bookedAt.iso)).toBeLessThanOrEqual(MORNING);
+      if (doc.bookedAtUtcMs === null) continue;
+      expect(doc.bookedAtUtcMs).toBeLessThan(doc.utcEpochMs);
+      expect(doc.bookedAtUtcMs).toBeLessThanOrEqual(MORNING);
     }
 
     // Tips on some worked seats and nowhere else; no fact from the future.
     const seats = docs.flatMap((doc) => doc.seats);
-    expect(
-      seats.filter((seat) => seat.tipMinorUnits !== null).length,
-    ).toBeGreaterThan(10);
+    expect(seats.filter((seat) => seat.tipCents !== null).length).toBeGreaterThan(
+      10,
+    );
     for (const seat of seats) {
-      if (seat.tipMinorUnits !== null) expect(seat.outcome.kind).toBe('worked');
-      if (seat.outcome.kind !== 'scheduled') {
-        expect(seat.outcome.atMs).toBeLessThanOrEqual(MORNING);
+      if (seat.tipCents !== null) expect(seat.attendanceState).toBe(WORKED);
+      if (seat.attendanceState !== SCHEDULED) {
+        expect(outcomeAtOf(seat)).toBeLessThanOrEqual(MORNING);
       }
     }
 
@@ -506,41 +632,39 @@ describe('the dev seed client book', () => {
       // own (a visit booked shorter or longer).
       for (const { id, doc } of book.appointments) {
         for (const seat of doc.seats) {
-          const where = `${id}/${seat.id}`;
+          const where = `${id}/${seat.seatId}`;
           const expected = catalogTermsOf(seat);
           expect(expected, where).toBeDefined();
           if (!expected) continue;
-          expect(seat.terms.priceMinorUnits, where).toBe(
-            expected.priceMinorUnits,
-          );
-          expect(seat.terms.currencyCode, where).toBe(expected.currencyCode);
-          expect(seat.terms.durationMinutes, where).toBe(
-            authoredMinutes.get(seat.id) ?? expected.durationMinutes,
+          expect(seat.priceCents, where).toBe(expected.priceCents);
+          expect(seat.currency, where).toBe(expected.currency);
+          expect(seat.durationMinutes, where).toBe(
+            authoredMinutes.get(seat.seatId) ?? expected.durationMinutes,
           );
           // A seat re-timed away from the catalogue keeps what the catalogue
           // said, as a staff re-timing does; one sold as the catalogue sells
           // it keeps nothing.
-          const retimed =
-            seat.terms.durationMinutes !== expected.durationMinutes;
-          expect(seat.terms.catalogPriceMinorUnits, where).toBe(
-            retimed ? expected.priceMinorUnits : null,
+          const retimed = seat.durationMinutes !== expected.durationMinutes;
+          expect(seat.catalogPriceCents, where).toBe(
+            retimed ? expected.priceCents : null,
           );
-          expect(seat.terms.catalogDurationMinutes, where).toBe(
+          expect(seat.catalogDurationMinutes, where).toBe(
             retimed ? expected.durationMinutes : null,
           );
         }
       }
       // No chair holds two live visits, nor one inside the other's
-      // turnaround — the padding `commitBooking` places against. The seats
-      // of one appointment are one party and never padded apart.
+      // turnaround — the padding the booking places against. The seats of
+      // one appointment are one party and never padded apart. Placement
+      // math runs on the shop's wall clock (Law 7).
       const lanes = new Map();
       for (const { id, doc } of book.appointments) {
-        if (doc.status.kind === 'cancelled') continue;
+        if (doc.bookingStatus === CANCELLED) continue;
         for (const seat of doc.seats) {
-          const key = `${seat.barberId}@${seat.slot.startIso.slice(0, 10)}`;
-          const reset = turnaroundMinutesOf(seat.barberId) * 60_000;
-          const start = Date.parse(seat.slot.startIso);
-          const end = Date.parse(seat.slot.endIso);
+          const key = `${seat.barberId}@${doc.localDate}`;
+          const reset = turnaroundMinutesOf(seat.barberId);
+          const start = seat.startMinutes;
+          const end = start + seat.durationMinutes;
           for (const [from, to, other] of lanes.get(key) ?? []) {
             if (other === id) continue;
             const crowds = start < to + reset && from - reset < end;
@@ -556,12 +680,12 @@ describe('the dev seed client book', () => {
       // authored as overtime, so none is let through.
       for (const { id, doc } of book.appointments) {
         for (const seat of doc.seats) {
-          const start = minuteOfDay(seat.slot.startIso);
-          const end = start + seat.terms.durationMinutes;
+          const start = seat.startMinutes;
+          const end = start + seat.durationMinutes;
           const window = segmentsAt(
             seat.barberId,
             book.calendar,
-            book.calendar.offsetOf(seat.slot.startIso.slice(0, 10)),
+            book.calendar.offsetOf(doc.localDate),
           ).find(
             (segment) =>
               segment.locationId === doc.locationId &&
@@ -570,7 +694,7 @@ describe('the dev seed client book', () => {
           );
           expect(
             window,
-            `${id}/${seat.id} ${seat.barberId} ${seat.slot.startIso} at ${doc.locationId}`,
+            `${id}/${seat.seatId} ${seat.barberId} ${doc.localDate} ${clockOf(start)} at ${doc.locationId}`,
           ).toBeDefined();
         }
       }
@@ -585,11 +709,11 @@ describe('the dev seed client book', () => {
       const days = book.appointments.filter(({ id }) => isDayFixture(id));
       expect(days).toHaveLength(12);
       const offsets = days.map(({ doc }) =>
-        book.calendar.offsetOf(doc.timeSlot.startIso.slice(0, 10)),
+        book.calendar.offsetOf(doc.localDate),
       );
       // Never into the past, where it would settle and move the counts.
       for (const { id, doc } of days) {
-        expect(doc.timeSlot.startIso.slice(0, 10) >= today, id).toBe(true);
+        expect(doc.localDate >= today, id).toBe(true);
       }
       // The seed's fabricated `barberBusy` starts the day after the last one.
       expect(book.appointmentDays).toBe(1 + Math.max(...offsets));
@@ -615,35 +739,29 @@ describe('the dev seed client book', () => {
   it('reads a seat re-timed away from the catalogue as a staff override, and no other', () => {
     const book = buildClientBook(MORNING);
     const authored = authoredMinutesOf(book);
-    const retimed = book.appointments
-      .flatMap(({ doc }) => doc.seats)
+    const seats = book.appointments.flatMap(({ doc }) => doc.seats);
+    const retimed = seats
       .filter(
         (seat) =>
-          authored.has(seat.id) &&
-          authored.get(seat.id) !== catalogTermsOf(seat)?.durationMinutes,
+          authored.has(seat.seatId) &&
+          authored.get(seat.seatId) !== catalogTermsOf(seat)?.durationMinutes,
       )
-      .map((seat) => seat.id)
+      .map((seat) => seat.seatId)
       .sort();
     // The day fixtures that name their own minutes (a fade booked at 45
     // rather than 50, …): the visit sheet's «custom» mark has seats to show.
     expect(retimed.length).toBeGreaterThan(0);
-    const seats = aggregatesOf(book).flatMap(
-      (appointment) => appointment.seats,
-    );
     expect(
       seats
-        .filter((seat) => seat.overridden())
-        .map((seat) => seat.id.value)
+        .filter((seat) => Seat.overridden(seat))
+        .map((seat) => seat.seatId)
         .sort(),
     ).toEqual(retimed);
     // Only the minutes moved: the catalogue's price is the price charged.
-    for (const seat of seats.filter((entry) => entry.overridden())) {
-      expect(
-        seat.catalogTerms?.price.equals(seat.terms.price),
-        seat.id.value,
-      ).toBe(true);
-      expect(seat.catalogTerms?.durationMinutes, seat.id.value).not.toBe(
-        seat.terms.durationMinutes,
+    for (const seat of seats.filter((entry) => Seat.overridden(entry))) {
+      expect(seat.catalogPriceCents, seat.seatId).toBe(seat.priceCents);
+      expect(seat.catalogDurationMinutes, seat.seatId).not.toBe(
+        seat.durationMinutes,
       );
     }
   });
@@ -652,7 +770,7 @@ describe('the dev seed client book', () => {
     const book = buildClientBook(MORNING);
     const at = (id) => {
       const doc = docById(book, id);
-      return `${book.calendar.offsetOf(doc.timeSlot.startIso.slice(0, 10))} ${doc.timeSlot.startIso.slice(11, 16)} ${doc.locationId}`;
+      return `${book.calendar.offsetOf(doc.localDate)} ${clockOf(doc.startMinutes)} ${doc.locationId}`;
     };
     // Ivan works Младост on Fridays, so his day is there.
     expect(at('appt-dev-1')).toBe('0 10:00 loc-mladost');
@@ -664,14 +782,11 @@ describe('the dev seed client book', () => {
     // Sunday is closed; Monday before Стефан's lunch.
     expect(at('appt-dev-8')).toBe('3 12:30 loc-center');
     // Arrivals ride along with visits that stayed on their day.
-    expect(docById(book, 'appt-dev-2').arrivedAt?.iso.slice(11, 16)).toBe(
+    expect(shopClockOf(docById(book, 'appt-dev-2').arrivedAtUtcMs)).toBe(
       '12:25',
     );
     expect(
-      docById(buildClientBook(EVENING), 'appt-dev-1').arrivedAt?.iso.slice(
-        11,
-        16,
-      ),
+      shopClockOf(docById(buildClientBook(EVENING), 'appt-dev-1').arrivedAtUtcMs),
     ).toBe('09:56');
   });
 });
@@ -685,14 +800,8 @@ describe('the dev seed client book', () => {
  */
 describe('what the rhythm and the feed read off the book (revision 3)', () => {
   const HOLDERS = ['dev-client-1', 'dev-client-2'];
-  const sofiaDay = (iso) =>
-    new Intl.DateTimeFormat('en-CA', { timeZone: ZONE }).format(
-      new Date(Date.parse(iso)),
-    );
   const ownSeatsOf = (doc, uid) =>
-    doc.seats.filter(
-      (seat) => seat.subject.kind === 'account' && seat.subject.userId === uid,
-    );
+    doc.seats.filter((seat) => isOwnSeat(seat, uid));
   /** Every appointment that seats `uid`, with the seats that are theirs. */
   const visitsOf = (book, uid) =>
     book.appointments
@@ -707,9 +816,12 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
         const visits = visitsOf(book, uid);
         expect(visits.length, uid).toBeGreaterThan(10);
         for (const { id, doc, own } of visits) {
-          expect(doc.bookedAt, id).not.toBeNull();
-          const day = sofiaDay(own.map((seat) => seat.slot.startIso).sort()[0]);
-          expect(sofiaDay(doc.bookedAt.iso) <= day, id).toBe(true);
+          expect(doc.bookedAtUtcMs, id).not.toBeNull();
+          const day = shopDayOf(
+            Math.min(...own.map((seat) => seatStartMsOf(doc, seat))),
+          );
+          expect(day, id).toBe(doc.localDate);
+          expect(shopDayOf(doc.bookedAtUtcMs) <= day, id).toBe(true);
         }
       }
     },
@@ -721,12 +833,12 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
       const book = buildClientBook(nowMs);
       for (const uid of HOLDERS) {
         for (const { id, doc, own } of visitsOf(book, uid)) {
-          if (!own.some((seat) => seat.outcome.kind === 'worked')) continue;
-          expect(doc.discounts ?? [], id).toEqual([]);
-          expect(doc.voucherRedemptions ?? [], id).toEqual([]);
+          if (!own.some((seat) => seat.attendanceState === WORKED)) continue;
+          expect(doc.discounts, id).toEqual([]);
+          expect(doc.voucherRedemptions, id).toEqual([]);
           for (const seat of own) {
-            expect(seat.terms.currencyCode).toBe('EUR');
-            expect(seat.terms.priceMinorUnits).toBeGreaterThanOrEqual(100);
+            expect(seat.currency).toBe('EUR');
+            expect(seat.priceCents).toBeGreaterThanOrEqual(100);
           }
         }
       }
@@ -736,7 +848,7 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
   it('Георги has visits of two seats, a fade and a beard: one row of the feed, not two', () => {
     const book = buildClientBook(EVENING);
     const visits = visitsOf(book, 'dev-client-1').filter(({ own }) =>
-      own.every((seat) => seat.outcome.kind === 'worked'),
+      own.every((seat) => seat.attendanceState === WORKED),
     );
     const both = visits.filter(({ own }) => own.length === 2);
     expect(visits).toHaveLength(24);
@@ -748,8 +860,7 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
       ]);
       expect(
         own.reduce(
-          (points, seat) =>
-            points + Math.floor(seat.terms.priceMinorUnits / 100),
+          (points, seat) => points + Math.floor(seat.priceCents / 100),
           0,
         ),
       ).toBe(27);
@@ -764,18 +875,18 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
     const book = buildClientBook(MORNING);
     const today = book.calendar.dayKeyAt(0);
     const calledOff = visitsOf(book, 'dev-client-2').filter(({ own }) =>
-      own.every((seat) => seat.outcome.kind === 'cancelled'),
+      own.every((seat) => seat.attendanceState === CANCELLED),
     );
     expect(
-      calledOff.map(({ own }) => [own[0].outcome.by, own[0].outcome.reason]),
-    ).toEqual([['staff', { kind: 'staff_barber_absence' }]]);
+      calledOff.map(({ own }) => [own[0].cancelledBy, own[0].cancellationReason]),
+    ).toEqual([['STAFF', 'STAFF_BARBER_ABSENCE']]);
     // The visit ahead that holds his period: `StreakState.heldBy` names it.
     const held = docById(book, 'appt-dev-2');
-    expect(sofiaDay(held.seats[0].slot.startIso)).toBe(today);
-    expect(sofiaDay(held.bookedAt.iso) < today).toBe(true);
-    expect(held.seats[0].outcome.kind).toBe('scheduled');
+    expect(held.localDate).toBe(today);
+    expect(shopDayOf(held.bookedAtUtcMs) < today).toBe(true);
+    expect(held.seats[0].attendanceState).toBe(SCHEDULED);
     // And Георги's own, which he has not cancelled either.
-    expect(docById(book, 'appt-dev-1').status.kind).not.toBe('cancelled');
+    expect(docById(book, 'appt-dev-1').bookingStatus).not.toBe(CANCELLED);
   });
 
   it('no holder cancelled a visit of their own: every booking they made still stands as a fact', () => {
@@ -785,7 +896,8 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
         visitsOf(book, uid).filter(({ own }) =>
           own.every(
             (seat) =>
-              seat.outcome.kind === 'cancelled' && seat.outcome.by === 'client',
+              seat.attendanceState === CANCELLED &&
+              seat.cancelledBy === 'CLIENT',
           ),
         ),
         uid,
@@ -803,7 +915,7 @@ describe('the seed’s booking guards', () => {
     dayOffset: 0,
     status: { kind: 'confirmed' },
     placement: 'self',
-    bookedAt: { dayOffset: -7, hour: 12, minute: 0 },
+    booked: { dayOffset: -7, hour: 12, minute: 0 },
     contact: null,
     seats: [
       {
@@ -840,9 +952,11 @@ describe('the seed’s booking guards', () => {
       fc.record({
         serviceId: fc.constant(service.id),
         variantId:
-          service.variants.length === 0
+          service.body.variants.length === 0
             ? fc.constant(null)
-            : fc.constantFrom(...service.variants.map((variant) => variant.id)),
+            : fc.constantFrom(
+                ...service.body.variants.map((variant) => variant.variantId),
+              ),
         barberId: fc.constantFrom(...BARBERS.map((barber) => barber.id)),
         hour: fc.integer({ min: 9, max: 17 }),
         minute: fc.constantFrom(0, 15, 30, 45),
@@ -860,13 +974,11 @@ describe('the seed’s booking guards', () => {
         }
         const [written] = appointmentDocumentOf(fixture, calendar).doc.seats;
         expect(written.barberId).toBe(seat.barberId);
-        // Exactly the variant's terms, else the barber's base — a long
-        // seat at the short price is as wrong as another barber's price.
-        const expected =
-          (seat.variantId && offering.byVariant?.[seat.variantId]) ||
-          offering.base;
-        expect(written.terms.priceMinorUnits).toBe(expected.priceMinorUnits);
-        expect(written.terms.durationMinutes).toBe(expected.durationMinutes);
+        // Exactly the variant's terms, else the barber's own — a long seat
+        // at the short price is as wrong as another barber's price.
+        const expected = catalogTermsOf(seat);
+        expect(written.priceCents).toBe(expected.priceCents);
+        expect(written.durationMinutes).toBe(expected.durationMinutes);
       }),
     );
   });

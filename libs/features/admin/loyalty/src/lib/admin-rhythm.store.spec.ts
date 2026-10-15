@@ -10,15 +10,24 @@ import {
 } from '@jsverse/transloco';
 import { NEVER, Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { type Result, ZonedDateTime } from '@creativo/application/booking';
+import { CLIENT_STATS_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import { ClientStats, PolicyPassStamp } from '@core/components';
+import type { ClientStatsRecord } from '@core/entities';
 import {
-  CLIENT_STATS_DIRECTORY,
-  type ClientStatsDirectory,
-  type ClientStatsRecord,
-  type Result,
-  ZonedDateTime,
-  clientStatsFromDocument,
-} from '@creativo/application/booking';
-import { InMemoryClientStatsDirectory } from '@creativo/application/booking/testing';
+  AppointmentId,
+  CustomerId,
+  LocalDate,
+  type MinuteOfDay,
+  RepositoryError as StatsReadError,
+  Result as PlainResult,
+} from '@core/primitives';
+import {
+  memoryClientStatsReadPorts,
+  minute,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import {
   type PublishStreakDefinition,
   type PublishStreakDefinitionError,
@@ -48,6 +57,7 @@ import {
   patchedRhythmDraft,
   rhythmBoundsOf,
 } from './admin-rhythm.store';
+import type { RhythmStatsReader } from './admin-rhythm.preview';
 
 // ── The app's own words ──────────────────────────────────────────────────
 
@@ -80,44 +90,70 @@ const NOW = '2026-09-28T12:40:00';
 const TODAY = '2026-09-28';
 const TOMORROW = '2026-09-29';
 const FIRST_OF_MONTH = '2026-10-01';
-const ZONE = 'Europe/Sofia';
 
-function daysAgo(days: number): string {
-  const noon = ZonedDateTime.fromISO(`${TODAY}T12:00:00`, ZONE);
-  if (noon.isFailure()) throw noon.error;
-  return new Date(noon.value.plusDays(-days).toMillis()).toISOString();
+/** A visit on the shop's wall clock — the day and minute the statistics hold (Law 7.3). */
+interface Reading {
+  readonly localDate: LocalDate;
+  readonly startMinutes: MinuteOfDay;
 }
 
-/** A client's statistics through the wire's own reader. */
-function statsOf(uid: string, visits: readonly string[]): ClientStatsRecord {
-  const record = clientStatsFromDocument(uid, {
-    userId: uid,
-    lifetime: {
-      visitsCompleted: visits.length,
-      noShows: 0,
-      lateCancels: 0,
-      clientCancels: 0,
-    },
-    last365: {
-      visitsCompleted: visits.map((at, index) => ({
-        appointmentId: `appt-${uid}-${index}`,
-        at,
-      })),
-      noShows: [],
-      lateCancels: [],
-    },
-    firstVisitAt: visits[0] ?? null,
-    lastVisit: null,
-    nextVisit: null,
-    avgCadenceDays: null,
-    preferredBarberId: null,
-    usualServiceIds: [],
-    pauseSuggestion: null,
+/** Noon in Sofia, that many days before today, as the statistics hold a visit. */
+function daysAgo(days: number): Reading {
+  return {
+    localDate: LocalDate.addDays(unwrapOk(LocalDate.parse(TODAY)), -days),
+    startMinutes: minute(12 * 60),
+  };
+}
+
+/** A client's statistics as stored: `clientStats/{customerId}`, the flat body (Law 5). */
+function statsOf(id: string, visits: readonly Reading[]): ClientStatsRecord {
+  const customerId = CustomerId.of(id);
+  const first = visits[0] ?? null;
+  return {
+    ...ClientStats.empty(),
+    lifetimeVisitsCompleted: visits.length,
+    last365VisitsCompleted: visits.map((visit, index) => ({
+      appointmentId: AppointmentId.of(`appt-${id}-${index}`),
+      localDate: visit.localDate,
+      startMinutes: visit.startMinutes,
+    })),
+    firstVisitLocalDate: first?.localDate ?? null,
+    firstVisitStartMinutes: first?.startMinutes ?? null,
+    id: customerId,
+    customerId,
     version: 1,
-    updatedAt: `${TODAY}T06:00:00.000Z`,
-  });
-  if (record === null) throw new Error(`the statistics of ${uid} do not parse`);
-  return record;
+    updatedAtUtcMs: utcMs(`${TODAY}T06:00:00+00:00`),
+    ...PolicyPassStamp.NONE,
+  };
+}
+
+/**
+ * `CLIENT_STATS_READ_PORTS.pageClientStats` over the in-memory reference
+ * (`memoryClientStatsReadPorts`), each call kept (`{ limit, after }`) and a
+ * failure switched on and off at will — a failing page is still a call.
+ */
+function statsReader(records: readonly ClientStatsRecord[] = []) {
+  const memory = memoryClientStatsReadPorts({ stats: records });
+  const calls: { readonly limit: number; readonly after: string | null }[] = [];
+  let failure: StatsReadError | null = null;
+  const reader = {
+    calls,
+    pageClientStats: (async (after, limit) => {
+      calls.push({ limit, after });
+      return failure === null
+        ? memory.pageClientStats(after, limit)
+        : PlainResult.err(failure);
+    }) satisfies RhythmStatsReader['pageClientStats'],
+    failWith(error: StatsReadError = StatsReadError.unavailable()) {
+      failure = error;
+      return reader;
+    },
+    recover() {
+      failure = null;
+      return reader;
+    },
+  };
+  return reader;
 }
 
 /**
@@ -259,13 +295,13 @@ interface RigOptions {
   /** What is bound in place of `rules`; `null` binds no port at all. */
   readonly port?: StreakDefinitionRepository | null;
   /** What is bound in place of the three clients' statistics; `null` binds none. */
-  readonly directory?: ClientStatsDirectory | null;
+  readonly directory?: RhythmStatsReader | null;
 }
 
 function rig(options: RigOptions = {}) {
   const rules = options.rules ?? seeded();
   const port = options.port === undefined ? rules : options.port;
-  const stats = new InMemoryClientStatsDirectory(shop());
+  const stats = statsReader(shop());
   const directory = options.directory === undefined ? stats : options.directory;
   const clock = { now: NOW };
   let issued = 0;
@@ -300,7 +336,7 @@ function rig(options: RigOptions = {}) {
         },
       },
       ...bind(STREAK_DEFINITION_REPOSITORY, port),
-      ...bind(CLIENT_STATS_DIRECTORY, directory),
+      ...bind(CLIENT_STATS_READ_PORTS, directory),
     ],
   });
   return { store: TestBed.inject(AdminRhythmStore), rules, stats, clock };
@@ -1853,7 +1889,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     const many = Array.from({ length: 1_001 }, (_, index) =>
       statsOf(`client-${String(index).padStart(5, '0')}`, [daysAgo(10)]),
     );
-    const directory = new InMemoryClientStatsDirectory(many);
+    const directory = statsReader(many);
     const { store } = await previewing({ directory });
 
     store.patch({ interval: fixed(28) });
@@ -1912,7 +1948,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
   });
 
   it('fails when the statistics cannot be read, and walks again on «Опитай пак»', async () => {
-    const directory = new InMemoryClientStatsDirectory(shop()).failWith();
+    const directory = statsReader(shop()).failWith();
     const { store } = await previewing({ directory });
 
     store.patch({ interval: fixed(28) });
@@ -1938,7 +1974,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
   });
 
   it('stays failed while the draft moves, until «Опитай пак»', async () => {
-    const directory = new InMemoryClientStatsDirectory(shop()).failWith();
+    const directory = statsReader(shop()).failWith();
     const { store } = await previewing({ directory });
     store.patch({ interval: fixed(28) });
     await vi.advanceTimersByTimeAsync(600);
@@ -1993,11 +2029,13 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
 
   it('drops an answer that arrives for an older draft', async () => {
     const held: (() => void)[] = [];
-    const inner = new InMemoryClientStatsDirectory(shop());
-    const directory: ClientStatsDirectory = {
-      page: (limit, after) =>
+    const inner = statsReader(shop());
+    const directory: RhythmStatsReader = {
+      pageClientStats: (after, limit) =>
         new Promise((answer) => {
-          held.push(() => void inner.page(limit, after).then(answer));
+          held.push(
+            () => void inner.pageClientStats(after, limit).then(answer),
+          );
         }),
     };
     const { store } = await previewing({ directory });

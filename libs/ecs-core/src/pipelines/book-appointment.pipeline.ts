@@ -103,7 +103,7 @@ export type BookSeatRequest = {
   readonly barberId: string;
   /** What the client ASKED for; `null` is stored as unknown, never guessed. */
   readonly barberPreference: BarberPreference | null;
-  /** The wire start as its instant; `null` when it did not parse (refused as `startIso`). */
+  /** The wire start as its instant; `null` when it did not parse (refused as the seat's `startMinutes`). */
   readonly startUtcMs: UtcEpochMs | null;
   readonly subject: RequestedSubjectInput;
 };

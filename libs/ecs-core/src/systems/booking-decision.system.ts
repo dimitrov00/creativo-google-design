@@ -67,9 +67,9 @@ import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
  * requested SOLD start on the request's `localDate` (the edge converts the
  * wire's `startIso` with `parseOffsetIso` → `toLocal` in the location's
  * zone), `null` when the payload's start did not parse — refused
- * (`BOOKING_INVALID_INPUT: startIso`) at the point the commit always refused
- * it. `barberPreference` is what the client ASKED for; `null` is stored as
- * unknown, never guessed.
+ * (`BOOKING_INVALID_INPUT: startMinutes`, the wire's `startIso`) at the
+ * point the commit always refused it. `barberPreference` is what the client
+ * ASKED for; `null` is stored as unknown, never guessed.
  */
 export type RequestedSeatInput = {
   readonly lineId: string;
@@ -572,7 +572,7 @@ export const BookingDecisionSystem = {
           ? null
           : MinuteOfDay.of(requested.startMinutes);
       if (start === null || !start.ok || !day.ok) {
-        return Result.err(BookingError.invalidInput('startIso'));
+        return Result.err(BookingError.invalidInput('startMinutes'));
       }
       const localDate = day.value;
       const startMinutes = start.value;

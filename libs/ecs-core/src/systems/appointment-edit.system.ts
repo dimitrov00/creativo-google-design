@@ -704,7 +704,7 @@ export const AppointmentEditSystem = {
    * May the folded visit be written at all
    * (`staff-edit-appointment.use-case.ts` `decide`)? A visit that NEVER
    * HAPPENED — cancelled, or a no-show — is history with nothing to correct
-   * (`BOOKING_INVALID_INPUT`, field `status`); a FINISHED one is not (owner,
+   * (`BOOKING_INVALID_INPUT`, field `bookingStatus`); a FINISHED one is not (owner,
    * 2026-09-09: the sheet is filled in after the cut). A visit with an
    * arrival stamp may not end at or before it (`BEFORE_ARRIVAL`) — compared
    * on the shop's wall clock: the folded visit's last end on its
@@ -718,7 +718,7 @@ export const AppointmentEditSystem = {
     arrival: WallTime | null,
   ): StaffEditGuardRefusal | null {
     if (state === BookingStatus.Cancelled || state === BookingStatus.NoShow) {
-      return BookingError.invalidInput('status');
+      return BookingError.invalidInput('bookingStatus');
     }
     if (arrival === null || sold.length === 0) return null;
     let finish = (sold[0] as MinuteRange).endMinutes;

@@ -8,18 +8,23 @@
  *   pnpm run verify:p0
  *
  * (a) `pnpm run seed:dev` succeeds twice, and the second run writes the same
- *     appointments, users and client stats as the first.
+ *     appointments, users, client records and client stats as the first.
  * (b) Two backfill runs (the `runBackfill` callable, as a sysadmin) leave
- *     every `clientStats` and `restricted/money` document byte-equal apart
- *     from `updatedAt`; the second run writes nothing.
- * (c) The seed's stats equal the backfill's for every seeded subject: the
- *     stats are deleted and rebuilt from the appointments alone, then
- *     compared with what the seed wrote.
+ *     every `clientStats/{customerId}` and `restricted/money` document
+ *     byte-equal apart from `updatedAtUtcMs`; the second run writes nothing.
+ * (c) The seed's stats equal the backfill's for every seeded subject — every
+ *     client RECORD a seat names (`subjectCustomerIds`, D29): the stats are
+ *     deleted and rebuilt from the appointments alone, then compared with
+ *     what the seed wrote.
  * (d) A staff edit of the seeded party of two (`staffEditAppointment` as
  *     dev-staff-ivan) writes one audit row per account person, each naming
- *     that person as `targetUserId`, attributed to Ivan as `admin`.
+ *     that person's client record as `targetCustomerId`, attributed to Ivan
+ *     as `ADMIN`. The party is re-read on its flat keys (`utcEpochMs`,
+ *     `localDate`, `startMinutes`); the callable's move payload keeps its
+ *     frozen wire (`startIso`, flip-1 plan F1-3).
  * (e) A client renaming themselves (a rules-checked owner write) leaves a
- *     `profile.updated` row whose context names the field and holds no value.
+ *     `PROFILE_UPDATED` row whose `profileFields` name the field and that
+ *     holds no value.
  * (f) The functions build's generated `dist/apps/functions/package.json`
  *     lists exactly the runtime dependencies of
  *     `functions-deps.baseline.json` (ECS migration §6 Phase 1 gate). It
@@ -292,7 +297,7 @@ function runSeed() {
   return tail;
 }
 
-/** Every stats pair, content only when asked: `updatedAt` (and `version`) dropped. */
+/** Every stats pair by client record, content only when asked: `updatedAtUtcMs` (and `version`) dropped. */
 async function statsBook() {
   const stats = await db.collection('clientStats').get();
   const money = stats.empty
@@ -332,14 +337,22 @@ async function collectionBytes(name) {
   return new Map(snapshot.docs.map((doc) => [doc.id, canonical(doc.data())]));
 }
 
+/** Every client record a seat names — whom the stats are kept for (D29). */
 async function seededSubjects() {
   const appointments = await db.collection('appointments').get();
   return [
     ...new Set(
-      appointments.docs.flatMap((doc) => doc.get('subjectUserIds') ?? []),
+      appointments.docs.flatMap((doc) => doc.get('subjectCustomerIds') ?? []),
     ),
   ].sort();
 }
+
+/** The fields of the stamp a policy pass leaves on a stats document. */
+const POLICY_PASS_FIELDS = [
+  'policyPassGeneration',
+  'policyPassChangedAtSeconds',
+  'policyPassChangedAtNanos',
+];
 
 /**
  * How long the runner waits on one `runBackfill` call: past the callable's
@@ -390,14 +403,20 @@ async function backfillRun(idToken) {
   }
   const progress = (await db.doc('backfillJobs/clientStats').get()).data();
   assert(
-    progress?.finishedAt != null,
+    progress?.finishedAtUtcMs != null,
     `the run ended unfinished: ${canonical(progress)}`,
   );
   return {
     processed: progress.processed,
     recomputed: progress.recomputed,
     stamped: progress.stamped,
-    sample: progress.sample ?? null,
+    sample:
+      progress.sampleChecked === null
+        ? null
+        : {
+            checked: progress.sampleChecked,
+            mismatched: progress.sampleMismatched ?? [],
+          },
   };
 }
 
@@ -413,15 +432,13 @@ async function newAuditRows(seen, field, value) {
   return rows.docs.filter((doc) => !seen.has(doc.id)).map((doc) => doc.data());
 }
 
-/** `startIso` moved by `minutes`, in the same offset (no DST edge inside a quarter hour here). */
-function shiftIso(iso, minutes) {
-  const offset = iso.slice(-6);
-  const [hours, mins] = offset.slice(1).split(':').map(Number);
-  const sign = offset.startsWith('-') ? -1 : 1;
-  const offsetMs = sign * (hours * 60 + mins) * 60_000;
-  const wall = new Date(Date.parse(iso) + minutes * 60_000 + offsetMs);
-  return `${wall.toISOString().slice(0, 23)}${offset}`;
-}
+/**
+ * The callable's frozen wire start (F1-3): an ISO instant WITH its offset,
+ * which the edge reads with `ZonedTimeSystem.parseOffsetIso`. The stored
+ * visit's one instant (`utcEpochMs`), moved by `minutes`, as UTC (`Z`).
+ */
+const wireStartOf = (utcEpochMs, minutes = 0) =>
+  new Date(utcEpochMs + minutes * 60_000).toISOString();
 
 // ── the proofs ──────────────────────────────────────────────────────────
 
@@ -444,7 +461,8 @@ await check(
     const before = {
       appointments: await collectionBytes('appointments'),
       users: await collectionBytes('users'),
-      stats: bookBytes(await statsBook(), 'updatedAt'),
+      customers: await collectionBytes('customers'),
+      stats: bookBytes(await statsBook(), 'updatedAtUtcMs'),
     };
     const secondSince = Date.now();
     runSeed();
@@ -452,9 +470,10 @@ await check(
     const after = {
       appointments: await collectionBytes('appointments'),
       users: await collectionBytes('users'),
-      stats: bookBytes(await statsBook(), 'updatedAt'),
+      customers: await collectionBytes('customers'),
+      stats: bookBytes(await statsBook(), 'updatedAtUtcMs'),
     };
-    for (const name of ['appointments', 'users', 'stats']) {
+    for (const name of ['appointments', 'users', 'customers', 'stats']) {
       const changed = differing(before[name], after[name]);
       assert(
         changed.length === 0,
@@ -463,7 +482,7 @@ await check(
     }
     seedStats = await statsBook();
     subjects = await seededSubjects();
-    return `${before.appointments.size} appointments, ${before.users.size} users, ${before.stats.size} stats pairs identical after the second run; last lines: ${first}`;
+    return `${before.appointments.size} appointments, ${before.users.size} users, ${before.customers.size} client records, ${before.stats.size} stats pairs identical after the second run; last lines: ${first}`;
   },
 );
 
@@ -491,7 +510,8 @@ await check(
   '(c) seed stats equal the backfill output for every seeded subject',
   async () => {
     const missing = subjects.filter(
-      (uid) => !seedStats.has(uid) || seedStats.get(uid).money === null,
+      (customerId) =>
+        !seedStats.has(customerId) || seedStats.get(customerId).money === null,
     );
     assert(
       missing.length === 0,
@@ -504,12 +524,13 @@ await check(
     const run = await backfillRun(sysadmin);
     await settle(since);
     firstRun = await statsBook();
-    // Bookkeeping, all three: a stack whose owner once moved the late line
-    // carries the policy pass's stamp (`policyPass`) on the seed's stats,
+    // Bookkeeping, all of it: a stack whose owner once moved the late line
+    // carries the policy pass's stamp (`policyPass*`) on the seed's stats,
     // and a rebuild from nothing has none to carry.
+    const bookkeeping = ['updatedAtUtcMs', 'version', ...POLICY_PASS_FIELDS];
     const changed = differing(
-      bookBytes(seedStats, 'updatedAt', 'version', 'policyPass'),
-      bookBytes(firstRun, 'updatedAt', 'version', 'policyPass'),
+      bookBytes(seedStats, ...bookkeeping),
+      bookBytes(firstRun, ...bookkeeping),
     );
     assert(
       changed.length === 0,
@@ -532,8 +553,8 @@ await check(
     await settle(since);
     const secondRun = await statsBook();
     const changed = differing(
-      bookBytes(firstRun, 'updatedAt'),
-      bookBytes(secondRun, 'updatedAt'),
+      bookBytes(firstRun, 'updatedAtUtcMs'),
+      bookBytes(secondRun, 'updatedAtUtcMs'),
     );
     assert(
       changed.length === 0,
@@ -545,8 +566,8 @@ await check(
     );
     const restricted = [...secondRun.values()].every(
       (pair) =>
-        !('lifetimeSpendMinor' in pair.stats) &&
-        pair.money?.lifetimeSpendMinor !== undefined,
+        !('lifetimeSpendCents' in pair.stats) &&
+        pair.money?.lifetimeSpendCents !== undefined,
     );
     assert(restricted, 'lifetime spend is not confined to restricted/money');
     return `${secondRun.size} stats pairs, 0 rewritten, 0 differing; lifetime spend only in restricted/money`;
@@ -567,31 +588,50 @@ await check(
       canonical(people) === canonical(PARTY_PEOPLE),
       `the party seats ${people.join(', ')}`,
     );
-    const originalStart = party.timeSlot.startIso;
+    // Each person's client record (D29): the record a seat names, whose
+    // account is that person — the key a booking act's audit row targets.
+    const records = [...(party.subjectCustomerIds ?? [])].sort();
+    const owners = (
+      await Promise.all(
+        records.map(async (id) =>
+          (await db.doc(`customers/${id}`).get()).get('userId'),
+        ),
+      )
+    ).sort();
+    assert(
+      records.length === PARTY_PEOPLE.length &&
+        canonical(owners) === canonical(PARTY_PEOPLE),
+      `the party's records ${records.join(', ')} belong to ${owners.join(', ')}`,
+    );
+    const original = {
+      utcEpochMs: party.utcEpochMs,
+      localDate: party.localDate,
+      startMinutes: party.startMinutes,
+    };
 
     const rowsFor = async (seen) =>
       (await newAuditRows(seen, 'resourceId', PARTY_ID)).filter((row) =>
-        String(row.action).startsWith('booking.staff_'),
+        String(row.auditAction).startsWith('BOOKING_STAFF_'),
       );
     const proveRows = (rows, move) => {
       assert(
         rows.length === 2,
         `${move}: ${rows.length} rows, expected 2: ${canonical(rows)}`,
       );
-      const targets = rows.map((row) => row.targetUserId).sort();
+      const targets = rows.map((row) => row.targetCustomerId).sort();
       assert(
-        canonical(targets) === canonical(PARTY_PEOPLE),
+        rows.every((row) => row.auditTarget === 'CUSTOMER') &&
+          canonical(targets) === canonical(records),
         `${move}: targets ${targets}`,
       );
       for (const row of rows) {
         assert(
-          canonical(row.actor) ===
-            canonical({ kind: 'admin', adminUserId: STAFF_UID }),
-          `${move}: actor ${canonical(row.actor)}`,
+          row.actorRole === 'ADMIN' && row.actorAdminUserId === STAFF_UID,
+          `${move}: actor ${row.actorRole} ${row.actorAdminUserId}`,
         );
         assert(
-          row.action === 'booking.staff_move',
-          `${move}: action ${row.action}`,
+          row.auditAction === 'BOOKING_STAFF_MOVE',
+          `${move}: action ${row.auditAction}`,
         );
       }
     };
@@ -599,19 +639,25 @@ await check(
     let seen = await auditRowIds();
     await callable('staffEditAppointment', ivan, {
       appointmentId: PARTY_ID,
-      command: { kind: 'move', startIso: shiftIso(originalStart, 15) },
+      command: { kind: 'move', startIso: wireStartOf(original.utcEpochMs, 15) },
       acknowledgedOverlap: true,
     });
     proveRows(
       await waitFor(() => rowsFor(seen), 2, 'rows for the move'),
       'move',
     );
+    const moved = (await db.doc(`appointments/${PARTY_ID}`).get()).data();
+    assert(
+      moved.utcEpochMs === original.utcEpochMs + 15 * 60_000 &&
+        moved.startMinutes === original.startMinutes + 15,
+      `the party did not move a quarter hour: ${moved.localDate} ${moved.startMinutes}`,
+    );
 
     // …and back, which is a second edit of the same party.
     seen = await auditRowIds();
     await callable('staffEditAppointment', ivan, {
       appointmentId: PARTY_ID,
-      command: { kind: 'move', startIso: originalStart },
+      command: { kind: 'move', startIso: wireStartOf(original.utcEpochMs) },
       acknowledgedOverlap: true,
     });
     const back = await waitFor(
@@ -620,14 +666,16 @@ await check(
       'rows for the move back',
     );
     proveRows(back, 'move back');
-    const restored = (await db.doc(`appointments/${PARTY_ID}`).get()).get(
-      'timeSlot.startIso',
-    );
+    const restored = (await db.doc(`appointments/${PARTY_ID}`).get()).data();
     assert(
-      restored === originalStart,
-      `the party did not move back: ${restored}`,
+      canonical({
+        utcEpochMs: restored.utcEpochMs,
+        localDate: restored.localDate,
+        startMinutes: restored.startMinutes,
+      }) === canonical(original),
+      `the party did not move back: ${restored.localDate} ${restored.startMinutes}`,
     );
-    return `2 rows per edit, targetUserId ${PARTY_PEOPLE.join(' + ')}, actor {kind: admin, adminUserId: ${STAFF_UID}}`;
+    return `2 rows per edit, targetCustomerId ${records.join(' + ')} (${PARTY_PEOPLE.join(' + ')}), actor ADMIN ${STAFF_UID}`;
   },
 );
 
@@ -642,9 +690,10 @@ await check(
     const original = profile.firstName;
     const renamed = `${original}-P0`;
 
+    // A profile act stays an ACCOUNT act (flip 2's): its row targets the user.
     const rowsFor = async (seen) =>
       (await newAuditRows(seen, 'targetUserId', RENAMED_UID)).filter(
-        (row) => row.action === 'profile.updated',
+        (row) => row.auditAction === 'PROFILE_UPDATED',
       );
     const proveRow = (rows, values) => {
       assert(
@@ -653,8 +702,8 @@ await check(
       );
       const [row] = rows;
       assert(
-        canonical(row.context) === canonical({ fields: 'firstName' }),
-        `context ${canonical(row.context)}`,
+        canonical(row.profileFields) === canonical(['firstName']),
+        `profileFields ${canonical(row.profileFields)}`,
       );
       const bytes = canonical(row);
       const leaked = values.filter((value) => bytes.includes(value));
@@ -675,7 +724,7 @@ await check(
       original,
       renamed,
     ]);
-    return `context ${canonical(row.context)}, actor ${canonical(row.actor)}, resourceId ${row.resourceId}`;
+    return `profileFields ${canonical(row.profileFields)}, actorRole ${row.actorRole}, resourceId ${row.resourceId}`;
   },
 );
 
