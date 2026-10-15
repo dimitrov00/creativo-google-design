@@ -362,6 +362,8 @@ shipped; its adapter goes), D16(b) (the public exception effect is the only
 record) and D27(b) (server pipelines in `apps/functions/src/pipelines/` —
 **superseded 2026-10-11 by Law 8**: all pipelines live in `@core/pipelines`;
 D2's single root barrel is superseded by Law 8's tier barrels too).
+**Where the work stands and what to do next — for any agent or developer
+resuming it — is `docs/architecture/HANDOFF.md`; read it before starting.**
 Phase status and baselines live in the auto-memory note
 `project-ecs-migration-status`. Implement the phase plan of the blueprint's
 §6; do not reopen a decided question in code.
