@@ -1,5 +1,6 @@
 import { type Result, fail, ok } from '@creativo/domain/kernel';
 import {
+  AuditResourceId,
   LocalDate,
   ServiceCategoryId,
   ServiceId,
@@ -7,9 +8,13 @@ import {
   type StreakPublishError,
   StreakPublishErrorCode,
   StreakRuleField,
+  UserId,
+  UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
+  Actor as AuditActor,
+  AuditContext,
   HeadRole,
   StreakExcuse as SystemExcuse,
   StreakIntervalRule,
@@ -56,13 +61,7 @@ import {
   PublishStreakDefinitionUnauthenticatedError,
 } from './publish-streak-definition.errors';
 
-/** The audit log's word for a rule published, and for a waiting one called off. */
-export const STREAK_DEFINITION_PUBLISHED =
-  'loyalty.streak_definition_published';
-export const STREAK_DEFINITION_WITHDRAWN =
-  'loyalty.streak_definition_withdrawn';
-
-/** What the audit row says was changed: the head's own path. */
+/** The head's own path — what a refused stored rule's fields are named under. */
 export function streakDefinitionResourceId(streakId: string): string {
   return `${STREAK_DEFINITIONS_COLLECTION}/${streakId}`;
 }
@@ -156,14 +155,20 @@ export interface StreakDefinitionSnapshot {
   readonly highestVersion: number;
 }
 
-/** The ONE audit row of an act: ids and codes only, never a sentence. */
+/**
+ * The ONE audit row of an act, as the flat log names it (F1-8): ids and
+ * codes only, never a sentence. The verb is the context's own
+ * discriminator (`context.auditAction`); the store plans the row with
+ * `AuditSystem` and derives its id from `changeKey`.
+ */
 export interface StreakDefinitionAudit {
-  readonly actor: Actor;
-  readonly action:
-    typeof STREAK_DEFINITION_PUBLISHED | typeof STREAK_DEFINITION_WITHDRAWN;
-  readonly resourceId: string;
-  readonly atIso: string;
-  readonly context: Readonly<Record<string, string>>;
+  /** Who acted — the verified caller as the row attributes them (`Actor.forCaller`). */
+  readonly actor: AuditActor;
+  /** What was changed: the head's own path (`streakDefinitions/{id}`). */
+  readonly resourceId: AuditResourceId;
+  /** The instant of the act, read once from the use case's clock. */
+  readonly atUtcMs: UtcEpochMs;
+  readonly context: AuditContext.StreakPublished | AuditContext.StreakWithdrawn;
   /** The intent's `requestId`: a retry derives the same row id and writes nothing twice. */
   readonly changeKey: string;
 }
@@ -424,19 +429,20 @@ export class PublishStreakDefinitionUseCase {
       },
       calledOff,
       audit: {
-        actor: caller.actor,
-        action: STREAK_DEFINITION_PUBLISHED,
-        resourceId: streakDefinitionResourceId(input.streakId),
-        atIso: now.at.toISOString(),
-        context: {
-          from: String(inForceVersion),
-          to: String(definition.version),
-          effectiveFrom: definition.effectiveFrom,
-          transition: input.transition,
-          direction: change.direction,
-          changed: changed.join(','),
-          ...(replaced === null ? {} : { replaced: String(replaced) }),
-        },
+        actor: auditActorOf(caller),
+        resourceId: AuditResourceId.forStreakDefinition(
+          StreakDefinitionId.of(input.streakId),
+        ),
+        atUtcMs: now.atUtcMs,
+        context: AuditContext.streakPublished({
+          streakFromVersion: inForceVersion,
+          streakToVersion: definition.version,
+          streakEffectiveFrom: dayOf(definition.effectiveFrom),
+          streakTransition: transitionOf(input.transition),
+          streakRuleDirection: decided.value.change.direction,
+          streakChanged: decided.value.change.changed,
+          streakReplacedVersion: replaced,
+        }),
         changeKey: input.requestId,
       },
     });
@@ -487,22 +493,21 @@ export class PublishStreakDefinitionUseCase {
       version: null,
       calledOff: withdrawn.value.calledOff,
       audit: {
-        actor: caller.actor,
-        action: STREAK_DEFINITION_WITHDRAWN,
-        resourceId: streakDefinitionResourceId(input.streakId),
-        atIso: now.at.toISOString(),
-        context: {
-          // What waited, and the version the shop stays under.
-          from: String(input.version),
-          to: String(schedule.current.version),
-          effectiveFrom: waiting.effectiveFromLocalDate,
+        actor: auditActorOf(caller),
+        resourceId: AuditResourceId.forStreakDefinition(
+          StreakDefinitionId.of(input.streakId),
+        ),
+        atUtcMs: now.atUtcMs,
+        // What waited, and the version the shop stays under.
+        context: AuditContext.streakWithdrawn({
+          streakFromVersion: input.version,
+          streakToVersion: schedule.current.version,
+          streakEffectiveFrom: waiting.effectiveFromLocalDate,
           // What waits always names its transition (the head's SCHEDULED element).
-          transition:
-            LEGACY_TRANSITION[
-              waiting.streakTransition ??
-                defect('a waiting rule names its transition')
-            ],
-        },
+          streakTransition:
+            waiting.streakTransition ??
+            defect('a waiting rule names its transition'),
+        }),
         changeKey: input.requestId,
       },
     });
@@ -515,19 +520,42 @@ export class PublishStreakDefinitionUseCase {
    */
   private now(): Result<Moment, PublishStreakDefinitionStoreError> {
     const now = this.clock.now(LOYALTY_ZONE);
-    return now.isFailure()
-      ? fail(new PublishStreakDefinitionStoreError(now.error))
-      : ok({
-          at: new Date(now.value.toMillis()),
+    if (now.isFailure()) {
+      return fail(new PublishStreakDefinitionStoreError(now.error));
+    }
+    const atUtcMs = UtcEpochMs.of(now.value.toMillis());
+    return atUtcMs.ok
+      ? ok({
+          at: new Date(atUtcMs.value),
+          atUtcMs: atUtcMs.value,
           today: now.value.toISODate(),
-        });
+        })
+      : fail(new PublishStreakDefinitionStoreError(atUtcMs.error));
   }
 }
 
-/** The instant of an act, and the Europe/Sofia day it falls on. */
+/** The instant of an act — read ONCE, both spellings of one reading — and the Europe/Sofia day it falls on. */
 interface Moment {
   readonly at: Date;
+  readonly atUtcMs: UtcEpochMs;
   readonly today: IsoDate;
+}
+
+/**
+ * The verified caller as the flat audit row attributes them — the same
+ * `Actor.forCaller` reading the booking callables give the token's claims,
+ * fed the legacy actor's kind and role snapshot (the caller arrives through
+ * today's handler; flip 3 hands the claims straight across).
+ */
+function auditActorOf(caller: StreakDefinitionCaller): AuditActor {
+  const { actor } = caller;
+  const claims =
+    actor.kind === 'admin'
+      ? ['admin']
+      : actor.kind === 'staff'
+        ? actor.roles
+        : [];
+  return AuditActor.forCaller(UserId.of(caller.uid), claims);
 }
 
 function receiptOf(outcome: StreakDefinitionOutcome): StreakDefinitionReceipt {
@@ -614,11 +642,6 @@ const SYSTEM_TRANSITION = {
   grandfather: SystemTransition.Grandfather,
   recompute: SystemTransition.Recompute,
 } as const satisfies Record<StreakTransition, SystemTransition>;
-
-const LEGACY_TRANSITION = {
-  [SystemTransition.Grandfather]: 'grandfather',
-  [SystemTransition.Recompute]: 'recompute',
-} as const satisfies Record<SystemTransition, StreakTransition>;
 
 /** A change's direction, in the words the receipt and the audit row carry. */
 const LEGACY_DIRECTION: Readonly<Record<SystemDirection, StreakRuleDirection>> =

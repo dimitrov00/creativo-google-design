@@ -1,12 +1,13 @@
 /**
  * Seeds the Firebase EMULATORS with a small barbershop catalog so the
- * onboarding services grid (and anything else reading `CatalogReader`) has
+ * onboarding services grid (and anything else reading the catalogue) has
  * real data to render in dev: one category, six single services and two
  * bundles with cover art uploaded to the Storage emulator from
  * `apps/web/public/work/`, plus the two shop `locations` the booking flow
  * schedules against — and a CLIENT BOOK: eighteen months of past visits,
- * one named fixture per client-details state, and the `clientStats` the
- * production projection computes from them.
+ * one named fixture per client-details state, each client's record
+ * (`customers`, D29) and the `clientStats` the production projection
+ * computes from them.
  *
  * The haircut family carries REAL `conflictsWith` data (a seat cannot hold
  * two haircuts) — `svc-finish` is deliberately left one-way so the booking
@@ -14,37 +15,44 @@
  * rather than only in unit tests.
  *
  * ### What lives where
- * `tools/seed/` holds the data and the pure generators — the catalogue
- * (`catalog.mjs`), the shop calendar (`calendar.mjs`), the clients and their
- * fixtures (`fixtures.mjs`, which names each state), the history generator
- * (`history.mjs`), the document builder (`appointments.mjs`), the loyalty
- * engine's output (`loyalty.mjs`) and the promotions (`promotions.mjs`).
- * This file only writes. `seed-tools`' specs check every document against
- * the real mapper and every fixture against the real `computeClientStats`.
+ * Every document this file writes is a FLAT ARCHETYPE BODY (Laws 5–7,
+ * flip 1 of the ECS migration): `tools/seed/fixtures/*.fixtures.ts` builds
+ * each one and holds it to its `@core/entities` type with
+ * `satisfies Omit<X, 'id'>`, so a stale shape fails
+ * `pnpm nx typecheck seed-tools` before it could fail a query. Beside them,
+ * `tools/seed/` holds the plan logic — the catalogue's hours and terms
+ * (`catalog.mjs`), the shop calendar (`calendar.mjs`), the clients and
+ * their fixtures (`fixtures.mjs`, which names each state), the history
+ * generator (`history.mjs`), the appointment plans (`appointments.mjs`), the
+ * loyalty engine's output (`loyalty.mjs`), the promotions (`promotions.mjs`)
+ * and Мартин's waitlist request (`waitlist.mjs`). This file only writes.
  *
  * ### Requirements beyond the emulators
- * The seed runs production TypeScript in-process: at start it bundles the
- * functions' `recomputeClientStats` (and the mapper it reads with) using the
+ * The seed runs TypeScript in-process: at start it bundles the fixtures,
+ * the plan modules and the server's own code it writes through — the
+ * `projectClientStats` pipeline, the `firestoreCommitPlan` it commits by,
+ * the policy read and `purgeAtFor`, the one TTL stamp — with the
  * workspace's own `esbuild`, into `node_modules/.cache/creativo-seed/`, and
- * imports it (`tools/seed/load-domain.mjs`, about half a second). So the
- * workspace's dependencies must be installed (`pnpm install`); nothing needs
- * building first. Every fixture is parsed by the real `appointmentFromDocument`
- * before the first write, so a document the trigger could not read stops the
- * seed instead of half-seeding the emulator. The client card's documents —
- * the loyalty catalogue, each loyalty account, Мартин's waitlist request —
- * are read back through the card's own readers from the same bundle just
- * before each is written (`readLoyaltyWrites`, `waitlistFromDocument`), so
- * one the card could not read is never written; the coupons and the gift
- * vouchers likewise (`readPromotionWrites`). The catalogue mode has no
- * bundle and writes its catalogue unread: `loyalty.spec.mjs` reads that
- * catalogue back on every day it tries.
+ * imports it (`tools/seed/load-domain.mjs`, well under a second). So the
+ * workspace's dependencies must be installed (`pnpm install`); nothing
+ * needs building first. Every body is built before the first write, and a
+ * builder refuses (throws) what its archetype cannot hold — a seat sold
+ * past midnight, a wall-clock start in a DST gap, a contact the booking
+ * flow would not take — so a document the app could not read stops the
+ * seed instead of half-seeding the emulator. The client card's loyalty
+ * documents — the loyalty catalogue, each loyalty account — are read back
+ * through the card's own readers from the same bundle just before each is
+ * written (`readLoyaltyWrites`), and the grants are held to the coupons
+ * they grant (`readPromotionWrites`).
  *
  * Emulator-only by construction: refuses to run unless
  * FIRESTORE_EMULATOR_HOST is set, so it can never touch a real project.
  * Idempotent — fixed doc ids, `set()` overwrites, every instant derived from
  * the shop's calendar rather than the clock, and the stats written only when
  * their state-based answer changed. A second run on the same day writes the
- * same documents.
+ * same documents. Every busy day and waitlist request carries its TTL
+ * `purgeAt`, stamped by the server's own `purgeAtFor` — never part of the
+ * body.
  *
  * Run with the dev stack up (`pnpm run dev`):
  *   pnpm run seed:dev
@@ -54,15 +62,15 @@
  * Writes the catalogue and stops after the booking policy: category,
  * locations, rosters, the busy days and the published exceptions, barbers
  * (their faces included), services. No staff account, client book, client
- * avatars, promotions or stats — and no TypeScript bundle, which only the
- * book needs. The e2e suite's global setup runs it: each spec seeds the
- * people and visits it asserts on, and the client book's five hundred
- * trigger runs would only load the emulators under the suite. The book's
- * shop calendar is still built, because the busy fabrication starts where
- * its appointment days end — so in this mode those first days carry no
- * busy at all. Nothing is deleted: a book an earlier full run wrote stays.
- * The loyalty catalogue is catalogue too, and is written in this mode; the
- * loyalty accounts are the book's, and are not.
+ * records, client avatars, promotions or stats. The e2e suite's global
+ * setup runs it: each spec seeds the people and visits it asserts on, and
+ * the client book's five hundred trigger runs would only load the
+ * emulators under the suite. The book's shop calendar is still built,
+ * because the busy fabrication starts where its appointment days end — so
+ * in this mode those first days carry no busy at all. Nothing is deleted: a
+ * book an earlier full run wrote stays. The loyalty catalogue is catalogue
+ * too, and is written in this mode; the loyalty accounts are the book's,
+ * and are not.
  *
  * ### `--check`
  *   node tools/seed-dev-catalog.mjs --check
@@ -100,43 +108,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import admin from 'firebase-admin';
-import {
-  BARBERS,
-  CATEGORY,
-  LOCATIONS,
-  SCHEDULES,
-  SERVICES,
-  scheduleExceptionsFor,
-} from './seed/catalog.mjs';
-import { CANCELLATION_WINDOW_HOURS } from './seed/appointments.mjs';
-import { buildClientBook, searchFields } from './seed/fixtures.mjs';
 import { loadSeedDomain } from './seed/load-domain.mjs';
-import {
-  BADGE_PROGRESS_COLLECTION,
-  CLIENT_JOURNAL_COLLECTION,
-  LOYALTY_ACCOUNTS_COLLECTION,
-  LOYALTY_CATALOG_TODAY,
-  LOYALTY_HOLDERS,
-  SEASON_PROGRESS_COLLECTION,
-  catalogAsHeld,
-  loyaltyCatalogDriftOf,
-  loyaltyCatalogFor,
-  loyaltyCatalogWritesOf,
-  loyaltyWritesOf,
-  projectLoyaltyFor,
-  readLoyaltyWrites,
-  rulesPublishedOver,
-  withoutPublishedRules,
-  workedVisitsOf,
-} from './seed/loyalty.mjs';
-import {
-  COUPON_GRANTS_COLLECTION,
-  couponGrantWritesOf,
-  couponWritesOf,
-  giftVoucherWritesOf,
-  readPromotionWrites,
-} from './seed/promotions.mjs';
-import { waitlistRequestWriteOf } from './seed/waitlist.mjs';
 
 /** The catalogue alone — see `--catalog-only` above. */
 const CATALOG_ONLY = process.argv.includes('--catalog-only');
@@ -160,31 +132,69 @@ admin.initializeApp({ projectId: PROJECT_ID, storageBucket: BUCKET });
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
 
+/*
+ * The bundle first, in EVERY mode (see "Requirements" above): the bodies
+ * are TypeScript, and so is the plan logic that places them.
+ */
+const seed = await loadSeedDomain();
+const {
+  BARBERS,
+  CATEGORY,
+  LOCATIONS,
+  SCHEDULES,
+  SERVICES,
+  busyDayBody,
+  busyKeyOf,
+  closedDayBody,
+  scheduleExceptionsFor,
+} = seed.catalog;
+const { CANCELLATION_WINDOW_HOURS, appointmentPhotoBody } = seed.appointments;
+const { buildClientBook, searchFields } = seed.book;
+const {
+  BADGE_PROGRESS_COLLECTION,
+  CLIENT_JOURNAL_COLLECTION,
+  LOYALTY_ACCOUNTS_COLLECTION,
+  LOYALTY_CATALOG_TODAY,
+  LOYALTY_HOLDERS,
+  SEASON_PROGRESS_COLLECTION,
+  catalogAsHeld,
+  loyaltyCatalogDriftOf,
+  loyaltyCatalogFor,
+  loyaltyCatalogWritesOf,
+  loyaltyWritesOf,
+  projectLoyaltyFor,
+  readLoyaltyWrites,
+  rulesPublishedOver,
+  withoutPublishedRules,
+  workedVisitsOf,
+} = seed.loyalty;
+const {
+  COUPON_GRANTS_COLLECTION,
+  couponGrantWritesOf,
+  couponWritesOf,
+  giftVoucherWritesOf,
+  readPromotionWrites,
+} = seed.promotions;
+const { waitlistRequestWriteOf } = seed.waitlist;
+
+/** A body as written: the body, and its TTL `purgeAt` when its group has one (F1-7). */
+function stamped(path, body) {
+  const purgeAt = seed.purgeAtFor(path.split('/'), body);
+  return purgeAt === null ? body : { ...body, purgeAt };
+}
+
 const publicDir = join(
   dirname(fileURLToPath(import.meta.url)),
   '..',
   'apps/web/public',
 );
 const workDir = join(publicDir, 'work');
-const barbersDir = join(publicDir, 'barbers');
 
-/** Uploads one local jpg into the Storage emulator, returns its MediaRef doc shape. */
-async function uploadCover(file, id) {
-  const path = `media/services/${id}.jpg`;
-  await bucket.file(path).save(readFileSync(join(workDir, file)), {
+/** Uploads one local jpg into the Storage emulator, at the path its body names. */
+async function upload(directory, file, path) {
+  await bucket.file(path).save(readFileSync(join(directory, file)), {
     contentType: 'image/jpeg',
   });
-  // 4/5 portrait dimensions matching the grid tiles; the media reader only
-  // forwards width as the variant width, exactness is not required.
-  return { id: `media-${id}`, path, width: 1200, height: 1500 };
-}
-
-async function uploadAvatar(file, id) {
-  const path = `media/barbers/${id}.jpg`;
-  await bucket.file(path).save(readFileSync(join(barbersDir, file)), {
-    contentType: 'image/jpeg',
-  });
-  return { id: `media-barber-${id}`, path, width: 1200, height: 1500 };
 }
 
 /**
@@ -253,89 +263,33 @@ if (CHECK_ONLY) {
 }
 
 /*
- * Everything that can refuse does so BEFORE the first write: the TypeScript
- * bundle, and every appointment the book is about to hold, read back through
- * the real mapper exactly as the stats trigger will read it.
+ * Everything that can refuse does so BEFORE the first write: the bundle
+ * (above), and every body the book is about to hold — each builder refuses
+ * what its archetype cannot hold while the book is built.
  */
-const domain = CATALOG_ONLY ? null : await loadSeedDomain();
 // Built in both modes: its calendar and its appointment days place the busy.
 const clientBook = buildClientBook(Date.now());
 const { calendar } = clientBook;
-if (!CATALOG_ONLY) {
-  for (const { id, doc } of clientBook.appointments) {
-    const parsed = domain.appointmentFromDocument(id, doc);
-    if (parsed.isFailure()) {
-      console.error(`seed: ${id} does not parse: ${parsed.error.message}`);
-      process.exit(1);
-    }
-  }
-}
 
-await db
-  .collection('serviceCategories')
-  .doc(CATEGORY.id)
-  .set({ name: CATEGORY.name, sortOrder: CATEGORY.sortOrder });
-
-/**
- * Firestore forbids DIRECTLY-NESTED ARRAYS, so a weekday's segments are stored
- * as an array of maps — which is also the only shape that can carry a location
- * per segment. This and the two adapters' `toPatternProps` are the only places
- * that know the persisted shape.
- */
-function toStoredPattern(weeklyPattern) {
-  return Object.fromEntries(
-    Object.entries(weeklyPattern).map(([weekday, segments]) => [
-      weekday,
-      segments.map(({ start, end, locationId }) => ({
-        start,
-        end,
-        locationId,
-      })),
-    ]),
-  );
-}
+await db.doc(`serviceCategories/${CATEGORY.id}`).set(CATEGORY.body);
 
 // Locations FIRST: seeding a roster fires the capacity trigger, which
 // clamps windows to shop hours — hours that must already exist or the
-// first materialization computes unclamped days.
+// first materialization computes unclamped days. Every slot the booking
+// flow computes is materialized against the shop's `timeZone`, never the
+// device's — the §7.1 rule that a UTC server or a travelling client must
+// still land on the shop's own calendar day.
 for (const location of LOCATIONS) {
-  await db.collection('locations').doc(location.id).set({
-    name: location.name,
-    shortName: location.shortName,
-    address: location.address,
-    phone: location.phone,
-    geo: location.geo,
-    hours: location.hours,
-    // Every slot the booking flow computes is materialized against this
-    // zone, never the device's — the §7.1 rule that a UTC server or a
-    // travelling client must still land on the shop's own calendar day.
-    timezone: 'Europe/Sofia',
-    status: 'active',
-    sortOrder: location.sortOrder,
-  });
+  await db.doc(`locations/${location.id}`).set(location.body);
   console.log(`seeded location ${location.id}`);
 }
 
+// NO document-level `locationId` on a roster: the location lives on each
+// segment, so one barber's week can span shops. One open-ended version;
+// `amend` closes it and appends the next.
 for (const schedule of SCHEDULES) {
-  await db
-    .collection('barberSchedules')
-    .doc(schedule.barberId)
-    .set({
-      barberId: schedule.barberId,
-      // NO document-level `locationId`: the location lives on each segment, so
-      // one barber's week can span shops. Ask the pattern where they work.
-      turnaroundMinutes: schedule.turnaroundMinutes,
-      // One open-ended version. `amend` closes it and appends the next.
-      versions: [
-        {
-          seq: 0,
-          effectiveFrom: '2026-01-01',
-          effectiveTo: null,
-          weeklyPattern: toStoredPattern(schedule.weeklyPattern),
-        },
-      ],
-    });
-  console.log(`seeded schedule for ${schedule.barberId}`);
+  await db.doc(`barberSchedules/${schedule.id}`).set(schedule.body);
+  console.log(`seeded schedule for ${schedule.id}`);
 }
 
 /**
@@ -347,14 +301,14 @@ for (const schedule of SCHEDULES) {
  * looking through the window) but never how many clients were served.
  *
  * Seeded here so the schedule step has a realistically busy shop to render
- * against; in production the `commitBooking` transaction writes it.
+ * against; in production the `rebuildBusy` trigger writes it from the
+ * appointments.
  *
- * Days and times come from the shop's calendar (`tools/seed/calendar.mjs`):
- * wall-clock ISO strings carrying the offset Sofia has THAT day — the shape
- * `commitBooking` writes — keyed by Sofia's date whatever the machine's zone.
+ * Days come from the shop's calendar (`tools/seed/calendar.mjs`), keyed by
+ * Sofia's date whatever the machine's zone; the spans are minutes of that
+ * shop day (`busyDayBody` merges them into the stored `BUSY` blocks), and
+ * each day carries its TTL `purgeAt`.
  */
-const SCHEDULING_ZONE = calendar.zone;
-
 const BUSY_PATTERN = {
   ivan: [
     [10, 0, 10, 45],
@@ -381,33 +335,26 @@ const BUSY_HORIZON_DAYS = 21;
 const APPOINTMENT_DAYS = clientBook.appointmentDays;
 
 for (const schedule of SCHEDULES) {
+  const barberId = schedule.id;
   // eslint-disable-next-line security/detect-object-injection -- fixed keys.
-  const pattern = BUSY_PATTERN[schedule.barberId] ?? [];
+  const pattern = BUSY_PATTERN[barberId] ?? [];
   for (let offset = APPOINTMENT_DAYS; offset < BUSY_HORIZON_DAYS; offset++) {
-    const dayKey = calendar.dayKeyAt(offset);
+    const localDate = calendar.dayKeyAt(offset);
 
     // Vary the load so the calendar's per-day markers are not uniform — a
     // grid where every day looks identical proves nothing.
-    const density = (offset * 7 + schedule.barberId.length) % 3;
-    const busy = pattern
+    const density = (offset * 7 + barberId.length) % 3;
+    const spans = pattern
       .slice(0, density === 0 ? pattern.length : density)
-      .map(([fromH, fromM, toH, toM]) => ({
-        startIso: calendar.isoAt(offset, fromH, fromM),
-        endIso: calendar.isoAt(offset, toH, toM),
-      }));
+      .map(([fromH, fromM, toH, toM]) => [fromH * 60 + fromM, toH * 60 + toM]);
 
+    const path = `barberBusy/${busyKeyOf(barberId, localDate)}`;
     await db
-      .collection('barberBusy')
-      .doc(`${schedule.barberId}__${dayKey}`)
-      .set({
-        barberId: schedule.barberId,
-        dayKey,
-        zone: SCHEDULING_ZONE,
-        busy,
-      });
+      .doc(path)
+      .set(stamped(path, busyDayBody(barberId, localDate, spans)));
   }
   console.log(
-    `seeded busy days ${APPOINTMENT_DAYS}..${BUSY_HORIZON_DAYS} for ${schedule.barberId}` +
+    `seeded busy days ${APPOINTMENT_DAYS}..${BUSY_HORIZON_DAYS} for ${barberId}` +
       (CATALOG_ONLY
         ? ' (earlier days stay free: no appointments in this mode)'
         : ' (earlier days come from real appointments)'),
@@ -426,32 +373,18 @@ for (const schedule of SCHEDULES) {
  * pipeline broke.
  */
 for (const exception of scheduleExceptionsFor(calendar)) {
-  const dayKey = calendar.dayKeyAt(exception.dayOffset);
-  const id = `${exception.barberId}__${dayKey}`;
-  await db.collection('scheduleExceptions').doc(id).set({
-    barberId: exception.barberId,
-    dayKey,
-    zone: SCHEDULING_ZONE,
-    locationId: exception.locationId,
-    effect: exception.effect,
-  });
-  console.log(`seeded scheduleExceptions/${id} (${exception.effect.kind})`);
+  const localDate = calendar.dayKeyAt(exception.dayOffset);
+  const path = `scheduleExceptions/${busyKeyOf(exception.barberId, localDate)}`;
+  await db
+    .doc(path)
+    .set(closedDayBody(exception.barberId, localDate, exception.locationId));
+  console.log(`seeded ${path} (${exception.exceptionEffect})`);
 }
 
+const barbersDir = join(publicDir, 'barbers');
 for (const barber of BARBERS) {
-  const avatar = await uploadAvatar(barber.file, barber.id);
-  await db.collection('barbers').doc(barber.id).set({
-    name: barber.name,
-    handle: barber.handle,
-    title: barber.title,
-    bio: barber.bio,
-    avatar,
-    yearsExperience: barber.yearsExperience,
-    locationIds: barber.locationIds,
-    instagramHandle: barber.instagramHandle,
-    status: 'active',
-    sortOrder: barber.sortOrder,
-  });
+  await upload(barbersDir, barber.file, barber.body.avatarMediaPath);
+  await db.doc(`barbers/${barber.id}`).set(barber.body);
   console.log(`seeded barber ${barber.id}`);
 }
 
@@ -461,42 +394,19 @@ for (const barber of BARBERS) {
  * copy under their own id — so every surface resolves it to one URL, and
  * the client card can tell one picture on two families from two pictures
  * (§3.3.3: the picture is the first family's, «Пълна грижа» and «Баща и
- * син» draw their letters). The booking pages still show it on both.
+ * син» draw their letters). The booking pages still show it on both. The
+ * body names the one object (`coverMediaPath`); each object goes up once.
  */
-const coverOfFile = new Map();
+const uploadedCovers = new Set();
 for (const service of SERVICES) {
-  const cover =
-    coverOfFile.get(service.file) ??
-    (await uploadCover(service.file, service.id));
-  coverOfFile.set(service.file, cover);
-  await db
-    .collection('services')
-    .doc(service.id)
-    .set({
-      name: service.name,
-      description: service.description,
-      categoryId: CATEGORY.id,
-      // Base terms — the catalog price before a barber or variant narrows
-      // it. `offerings` below never replace this, they refine it.
-      priceMinorUnits: service.priceMinorUnits,
-      currencyCode: 'EUR',
-      durationMinutes: service.durationMinutes,
-      variants: service.variants,
-      offerings: service.offerings,
-      cover,
-      locationIds: [],
-      conflictsWith: service.conflictsWith ?? [],
-      composition:
-        service.kind === 'bundle'
-          ? { kind: 'bundle', includes: service.includes }
-          : { kind: 'single' },
-      upsellOnly: false,
-      popular: service.popular,
-      status: 'active',
-      sortOrder: service.sortOrder,
-    });
+  const { coverMediaPath } = service.body;
+  if (!uploadedCovers.has(coverMediaPath)) {
+    await upload(workDir, service.file, coverMediaPath);
+    uploadedCovers.add(coverMediaPath);
+  }
+  await db.doc(`services/${service.id}`).set(service.body);
   console.log(
-    `seeded ${service.id} (${service.offerings.length} offerings, ${service.variants.length} variants)`,
+    `seeded ${service.id} (${service.body.offerings.length} offerings, ${service.body.variants.length} variants)`,
   );
 }
 
@@ -509,8 +419,8 @@ for (const service of SERVICES) {
  * With a real doc in the emulator, changing a number here must visibly move
  * the calendar horizon; if it doesn't, the wiring broke again.
  *
- * Field values mirror `BookingPolicy.default()` (`libs/domain/scheduling`);
- * the shape is owned by `booking-policy-document.ts` in application/booking.
+ * Field values mirror `BookingPolicy.withDefaults` (`@core/components`);
+ * the body keeps its shape in flip 1 (blueprint §2.6).
  */
 await db.collection('settings').doc('bookingPolicy').set({
   maxPartySize: 5,
@@ -550,16 +460,13 @@ const loyaltyCatalog = catalogAsHeld(
 );
 {
   const writes = withoutPublishedRules(seededCatalogWrites, publishedRules);
-  // Only the full run holds the readers (see "Requirements" above). The
-  // catalogue is read as the emulator will hold it: a rule the shop
+  // The catalogue is read as the emulator will hold it: a rule the shop
   // published is read beside what is written, and is not written.
-  if (domain) {
-    const kept = publishedRules.map((streakId) => ({
-      path: `streakDefinitions/${streakId}`,
-      data: loyaltyCatalog.streakDefinitions[streakId],
-    }));
-    refuseUnreadable(readLoyaltyWrites(domain, [...writes, ...kept]));
-  }
+  const kept = publishedRules.map((streakId) => ({
+    path: `streakDefinitions/${streakId}`,
+    data: loyaltyCatalog.streakDefinitions[streakId],
+  }));
+  refuseUnreadable(readLoyaltyWrites(seed, [...writes, ...kept]));
   const batch = db.batch();
   for (const { path, data } of writes) batch.set(db.doc(path), data);
   await batch.commit();
@@ -579,7 +486,7 @@ const loyaltyCatalog = catalogAsHeld(
 
 if (CATALOG_ONLY) {
   console.log(
-    'catalogue only: no staff account, client book, avatars, promotions, stats or loyalty accounts',
+    'catalogue only: no staff account, client book, client records, avatars, promotions, stats or loyalty accounts',
   );
   process.exit(0);
 }
@@ -625,6 +532,24 @@ console.log('seeded staff account: staff@test.local (barber+admin)');
 console.log(`seeded ${clientBook.users.length} client profiles`);
 
 /*
+ * THEIR CLIENT RECORDS (D29, flip 1): `customers/{customerId}`, one per
+ * seeded account, `customerOrigin: 'SEED'` — the shop's own copy of whom it
+ * serves, bills and rewards. The id is DERIVED from the account
+ * (`CustomerId.forUser(uid, sha256)`), as the booking transaction derives
+ * it, so the appointments, grants, vouchers, photos and stats below name
+ * the same record, and a booking by one of these accounts finds it instead
+ * of creating its own.
+ */
+{
+  const batch = db.batch();
+  for (const { id, body } of clientBook.customers) {
+    batch.set(db.doc(`customers/${id}`), body);
+  }
+  await batch.commit();
+}
+console.log(`seeded ${clientBook.customers.length} client records`);
+
+/*
  * CLIENT PORTRAITS — none until the seed has a client's own photo
  * (wave D r6). A client's portrait lives in Storage under their id — the
  * profile's own convention, `avatars/{uid}/original` — and from 2026-09-18
@@ -661,23 +586,23 @@ console.log(`seeded ${clientBook.users.length} client profiles`);
  * (§4.5), and the coupons the loyalty engine granted the two account
  * holders are here under the ids their journal rows name.
  *
- * Read back before anything is written: a coupon through the adapters' own
- * mapper, a voucher through its reader, a grant against the coupon it
- * points at. A holder's grant the seed once wrote and no longer does goes
- * in the same batch; nobody else's grant is touched.
+ * Held to what they point at before anything is written: a grant to the
+ * coupon it grants, at that coupon's value. A holder's grant the seed once
+ * wrote and no longer does goes in the same batch; nobody else's grant is
+ * touched.
  */
 {
   const coupons = couponWritesOf();
   const grants = couponGrantWritesOf(clientBook, loyaltyCatalog, loyaltyToday);
   const vouchers = giftVoucherWritesOf(calendar);
   const writes = [...coupons, ...grants, ...vouchers];
-  refuseUnreadable(readPromotionWrites(domain, writes));
+  refuseUnreadable(readPromotionWrites(writes));
   const keep = new Set(writes.map(({ path }) => path));
   const batch = db.batch();
   for (const holder of LOYALTY_HOLDERS) {
     const held = await db
       .collection(COUPON_GRANTS_COLLECTION)
-      .where('userId', '==', holder.uid)
+      .where('holderUserId', '==', holder.uid)
       .get();
     for (const { ref } of held.docs) {
       const seeded =
@@ -716,24 +641,23 @@ console.log(`seeded ${clientBook.users.length} client profiles`);
  * `tools/seed/history.mjs` generates the months behind them: real shifts,
  * catalogue prices in EUR, tips, both placements and the rebooking edge.
  *
- * ### The document shape IS `appointment-document.ts`'s
- * Built by `tools/seed/appointments.mjs`, parsed back through the real
- * `appointmentFromDocument` above before anything was written, and
- * round-tripped through `appointmentToDocument` in `seed-tools`' spec — the
- * `subjectUserIds` and `placement` mirrors (R33) included.
+ * ### The document IS the flat `Appointment` body
+ * Built by `appointmentBody` (`tools/seed/fixtures/appointments.fixtures.ts`,
+ * `satisfies Omit<Appointment, 'id'>`), its query mirrors recomputed from
+ * the seats by `AppointmentIndexSystem` as every write plan recomputes them:
+ * the account keys (`ownerUserId`, `subjectUserIds`) beside the client
+ * records (`ownerCustomerId`, `subjectCustomerIds`), `placement` included.
  */
 const WRITE_BATCH = 200;
 for (let i = 0; i < clientBook.appointments.length; i += WRITE_BATCH) {
   const batch = db.batch();
   for (const { id, doc } of clientBook.appointments.slice(i, i + WRITE_BATCH)) {
-    batch.set(db.collection('appointments').doc(id), doc);
+    batch.set(db.doc(`appointments/${id}`), doc);
   }
   await batch.commit();
 }
 {
-  const days = clientBook.appointments
-    .map(({ doc }) => doc.timeSlot.startIso.slice(0, 10))
-    .sort();
+  const days = clientBook.appointments.map(({ doc }) => doc.localDate).sort();
   console.log(
     `seeded ${clientBook.appointments.length} appointments, ${days[0]}..${days[days.length - 1]}` +
       ' (barberBusy for those days is rebuilt from them by the trigger)',
@@ -742,40 +666,49 @@ for (let i = 0; i < clientBook.appointments.length; i += WRITE_BATCH) {
 
 /*
  * CLIENT STATS, as the trigger computes them — because it IS the trigger's
- * code (design §12.5.7, "the seed is engine output"): `recomputeClientStats`
- * from `apps/functions/src/lib/clients/`, bundled at start and run here
- * in-process for every account on a seat. State-based under a revision
+ * code (design §12.5.7, "the seed is engine output"): `projectClientStats`
+ * from `@core/pipelines`, committed through the server's own
+ * `firestoreCommitPlan` under the policy `firestoreSettingsPorts` reads,
+ * bundled at start and run here in-process for every client RECORD on a
+ * seat (`clientStats/{customerId}`, D29). State-based under a revision
  * guard, so it writes only what differs from what is stored.
  *
  * With the functions emulator up, `dispatchClientProjections` is recomputing
  * the same clients from the writes above at the same time. Both land on the
- * same answer; a transaction that loses the race to the other is retried.
- * Without it (`firestore,auth` only), this is the only writer — and the
- * reason stats exist at all in that setup.
+ * same answer; a transaction that loses the race to the other is retried,
+ * and a recompute that still failed is run again. Without it
+ * (`firestore,auth` only), this is the only writer — and the reason stats
+ * exist at all in that setup.
  */
-const statsPolicy = await domain.loadClientStatsPolicy(db);
+const statsProjection = seed.projectClientStats({
+  commit: seed.firestoreCommitPlan(db),
+  nowUtcMs: () => Date.now(),
+  tenantTimeZone: LOCATIONS[0].body.timeZone,
+  ...seed.firestoreSettingsPorts(db),
+  log: () => {},
+});
 
-async function recomputeStats(userId) {
+async function recomputeStats(customerId) {
   for (let attempt = 1; ; attempt += 1) {
-    try {
-      return await domain.recomputeClientStats(db, userId, {
-        policy: statsPolicy,
-        clockMs: Date.now,
-      });
-    } catch (error) {
-      if (attempt >= 4) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    const answer = await statsProjection({ customerIds: [customerId] });
+    if (!answer.ok) throw new Error(`seed: ${answer.error.errorCode}`);
+    if (answer.value.failures.length === 0) return answer.value.written;
+    if (attempt >= 4) {
+      throw new Error(
+        `seed: the stats of ${customerId} did not recompute: ${String(answer.value.failures[0])}`,
+      );
     }
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
   }
 }
 
-const statsTally = { written: 0, unchanged: 0, skipped: 0 };
-for (const userId of clientBook.subjects) {
-  statsTally[await recomputeStats(userId)] += 1;
+let statsWritten = 0;
+for (const customerId of clientBook.subjectCustomerIds) {
+  statsWritten += await recomputeStats(customerId);
 }
 console.log(
-  `seeded clientStats + restricted/money for ${clientBook.subjects.length} clients` +
-    ` (${statsTally.written} written, ${statsTally.unchanged} already current)`,
+  `seeded clientStats + restricted/money for ${clientBook.subjectCustomerIds.length} clients` +
+    ` (${statsWritten} written, ${clientBook.subjectCustomerIds.length - statsWritten} already current)`,
 );
 
 /*
@@ -806,7 +739,7 @@ for (const holder of LOYALTY_HOLDERS) {
   if (!user) throw new Error(`seed: loyalty holder ${uid} has no profile`);
   const [hasAvatar] = await bucket.file(`avatars/${uid}/original`).exists();
   const projection = projectLoyaltyFor(
-    domain,
+    seed,
     uid,
     clientBook.appointments,
     loyaltyCatalog,
@@ -822,7 +755,7 @@ for (const holder of LOYALTY_HOLDERS) {
     },
   );
   const writes = projection === null ? [] : loyaltyWritesOf(uid, projection);
-  refuseUnreadable(readLoyaltyWrites(domain, writes));
+  refuseUnreadable(readLoyaltyWrites(seed, writes));
   const keep = new Set(writes.map(({ path }) => path));
   const account = db.collection(LOYALTY_ACCOUNTS_COLLECTION).doc(uid);
   const earlier = [
@@ -860,10 +793,12 @@ for (const holder of LOYALTY_HOLDERS) {
 
 /*
  * PAST CUTS (§4.6): a photo of each of Георги's last three worked visits,
- * as the visit sheet's shutter writes one (`FirebaseAppointmentPhotos.
- * attach`): the object at `appointmentPhotos/{appointmentId}/{photoId}`
- * with the facts as its metadata, the document beside it with every field
- * `toPhoto` reads. `appointmentPhotos/**` is staff-only in Storage, so the
+ * as the visit sheet's shutter writes one (`uploadPhotoBytes`, then
+ * `saveAppointmentPhoto`): the object at
+ * `appointmentPhotos/{appointmentId}/{photoId}` with the facts as its
+ * metadata under the archetype's key names, and the flat
+ * `AppointmentPhoto` body beside it (`appointmentPhotoBody`), naming his
+ * client RECORD. `appointmentPhotos/**` is staff-only in Storage, so the
  * stored `url` carries a download token — derived from the path, like every
  * id here, so a second run writes the same bytes. When a slot moves to a
  * newer visit, the object it held goes with it.
@@ -882,8 +817,21 @@ for (const holder of LOYALTY_HOLDERS) {
     const photoId = `photo-dev-georgi-${index + 1}`;
     const path = `appointmentPhotos/${visit.appointmentId}/${photoId}`;
     const token = downloadTokenFor(path);
-    const takenAtIso = new Date(visit.doneMs).toISOString();
     const [barberId] = visit.barberIds;
+    const body = appointmentPhotoBody({
+      appointmentId: visit.appointmentId,
+      barberId,
+      clientUserId: uid,
+      clientLabel,
+      takenByUserId: STAFF_UID,
+      takenAtUtcMs: visit.doneMs,
+      path,
+      url:
+        `http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}/v0/b/${BUCKET}` +
+        `/o/${encodeURIComponent(path)}?alt=media&token=${token}`,
+      width: 1100,
+      height: 1400,
+    });
     const ref = db.collection('appointmentPhotos').doc(photoId);
     const before = await ref.get();
     if (before.exists && before.get('path') !== path) {
@@ -894,32 +842,16 @@ for (const holder of LOYALTY_HOLDERS) {
       metadata: {
         metadata: {
           firebaseStorageDownloadTokens: token,
-          appointmentId: visit.appointmentId,
-          barberId,
-          clientUserId: uid,
-          clientLabel,
-          takenByUid: STAFF_UID,
-          takenAtIso,
+          appointmentId: body.appointmentId,
+          barberId: body.barberId,
+          clientCustomerId: body.clientCustomerId,
+          clientLabel: body.clientLabel,
+          takenByUserId: body.takenByUserId,
+          takenAtUtcMs: String(body.takenAtUtcMs),
         },
       },
     });
-    await ref.set({
-      photoId,
-      appointmentId: visit.appointmentId,
-      barberId,
-      clientUserId: uid,
-      clientLabel,
-      takenByUid: STAFF_UID,
-      takenAtIso,
-      path,
-      url:
-        `http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}/v0/b/${BUCKET}` +
-        `/o/${encodeURIComponent(path)}?alt=media&token=${token}`,
-      width: 1100,
-      height: 1400,
-      origin: 'shot',
-      label: null,
-    });
+    await ref.set(body);
   }
   console.log(`seeded ${recent.length} photos of ${uid}'s last visits`);
 }
@@ -927,16 +859,13 @@ for (const holder of LOYALTY_HOLDERS) {
 /*
  * МАРТИН IS WAITING (§4.6; the card's waitlist row): an open request for
  * Thursday and Friday afternoons next week, made last night after every
- * booking of his (`tools/seed/waitlist.mjs`), read back by the production
- * `waitlistFromDocument` before it is written.
+ * booking of his (`tools/seed/waitlist.mjs`), the flat `WaitlistRequest`
+ * body with its TTL `purgeAt`.
  */
 {
   const { path, data } = waitlistRequestWriteOf(clientBook);
-  if (domain.waitlistFromDocument(data.id, data) === null) {
-    throw new Error(`seed: the client card could not read ${path}`);
-  }
-  await db.doc(path).set(data);
-  console.log(`seeded ${path} (${data.dayKeys.join(', ')}, afternoons)`);
+  await db.doc(path).set(stamped(path, data));
+  console.log(`seeded ${path} (${data.localDates.join(', ')}, afternoons)`);
 }
 
 console.log(

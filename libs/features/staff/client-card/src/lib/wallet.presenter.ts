@@ -1,7 +1,5 @@
-import { formatMoney } from '@creativo/application/booking';
 import {
   type ActivityEntry,
-  type GiftVoucher,
   type LoyaltyCatalog,
   type StreakDefinition,
   type StreakPeriodFact,
@@ -11,16 +9,12 @@ import {
 import {
   AdjustmentId,
   AppointmentId,
-  Currency,
   LocalDate,
   RewardId,
   StreakDefinitionId,
   TierId,
   UtcEpochMs,
   defect,
-  GiftVoucherId,
-  PriceCents,
-  UserId as UserRefId,
 } from '@core/primitives';
 import {
   FreezeReason,
@@ -33,10 +27,8 @@ import {
   type StreakState as SystemStreakState,
   TierOverride,
   type TierState,
-  VoucherCode,
-  VoucherLifecycle,
 } from '@core/components';
-import { type GiftVoucher as GiftVoucherEntity } from '@core/entities';
+import type { GiftVoucher } from '@core/entities';
 import {
   type RedeemableRewardRef,
   RewardSystem,
@@ -46,9 +38,8 @@ import {
   type TierStepRef,
   TierSystem,
   VoucherSystem,
-  ZonedTimeSystem,
 } from '@core/systems';
-import { rhythmRuleWords } from '@creativo/features/shared/visits';
+import { formatCents, rhythmRuleWords } from '@creativo/features/shared/visits';
 import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
 import {
   cardLocaleOf,
@@ -59,7 +50,6 @@ import {
   monthLong,
   monthYearLong,
   runningCase,
-  shopDayOf,
 } from './client-card.format';
 import type {
   GaugeVm,
@@ -123,8 +113,8 @@ export const WALLET_RHYTHM_PERIODS_NARROW = 6;
 export interface WalletInput extends LoyaltyPageInput {
   /** The head's name; `null` until it is known. */
   readonly holder: string | null;
-  /** The first worked visit (`ClientStatsRecord.firstVisitAtMs`); `null` before it. */
-  readonly sinceMs: number | null;
+  /** The first worked visit's shop day (`ClientStatsRecord.firstVisitLocalDate`); `null` before it. */
+  readonly sinceDay: string | null;
   /** The vouchers issued to the person, any state; `null` = not read (no reader bound). */
   readonly vouchers: Slice<readonly GiftVoucher[]> | null;
   /**
@@ -230,9 +220,7 @@ export function passVm(input: WalletInput): PassVm {
   const holder = input.holder?.trim() ? input.holder.trim() : null;
   const tier = tierPlateOf(input, catalogOf(input));
   const since =
-    input.sinceMs === null
-      ? null
-      : monthYearLong(shopDayOf(input.sinceMs), lang);
+    input.sinceDay === null ? null : monthYearLong(input.sinceDay, lang);
   const state = passStateOf(input);
   const tenure = since === null ? null : words.head.since(since);
   if (!flags.points) {
@@ -281,9 +269,7 @@ export function passVm(input: WalletInput): PassVm {
 
 /** A voucher's last day on the shop's calendar; `null` when it never expires. */
 function lastDayOf(voucher: GiftVoucher): string | null {
-  return voucher.expiresAt === null
-    ? null
-    : shopDayOf(voucher.expiresAt.toMillis());
+  return voucher.expiresLocalDate;
 }
 
 /**
@@ -302,7 +288,7 @@ function spendableOf(
   const day = LocalDate.parse(today);
   if (!day.ok) return [];
   return vouchers.filter((voucher) =>
-    VoucherSystem.spendable(voucherOf(voucher), day.value),
+    VoucherSystem.spendable(voucher, day.value),
   );
 }
 
@@ -317,14 +303,14 @@ function voucherVm(
 ): VoucherVm {
   const page = words.loyaltyPage;
   const lang = words.lang;
-  const balance = formatMoney(voucher.balance, lang);
-  const value = formatMoney(voucher.initialValue, lang);
+  const balance = formatCents(voucher.balanceCents, voucher.currency, lang);
+  const value = formatCents(voucher.initialValueCents, voucher.currency, lang);
   const until = lastDay === null ? null : dayShort(lastDay, today, lang);
   // One fact, once: an untouched voucher's chip does not repeat the figure
   // over it, so it says its validity alone, or nothing.
-  const untouched = voucher.balance.equals(voucher.initialValue);
+  const untouched = voucher.balanceCents === voucher.initialValueCents;
   return {
-    voucherId: voucher.id.value,
+    voucherId: voucher.id,
     title: page.voucher,
     balance,
     detail: untouched
@@ -359,11 +345,7 @@ export function voucherVms(
   held.sort((a, b) => {
     const x = a.lastDay ?? NEVER;
     const y = b.lastDay ?? NEVER;
-    return x < y
-      ? -1
-      : x > y
-        ? 1
-        : a.voucher.id.value.localeCompare(b.voucher.id.value);
+    return x < y ? -1 : x > y ? 1 : a.voucher.id.localeCompare(b.voucher.id);
   });
   return held.map(({ voucher, lastDay }) =>
     voucherVm(voucher, lastDay, today, words),
@@ -468,20 +450,17 @@ function holdingsDetailOf(
   holdings: readonly WalletHoldingVm[],
 ): string | null {
   const { words, today } = input;
-  const [first, ...rest] = spendableOf(vouchersOf(input), today).map(
-    (voucher) => voucher.balance,
-  );
+  const [first, ...rest] = spendableOf(vouchersOf(input), today);
   if (first === undefined || rest.length === 0) return null;
-  let sum = first;
-  for (const balance of rest) {
-    const added = sum.add(balance);
+  let sum: number = first.balanceCents;
+  for (const voucher of rest) {
     // Two currencies have no sum: nothing to say.
-    if (added.isFailure()) return null;
-    sum = added.value;
+    if (voucher.currency !== first.currency) return null;
+    sum += voucher.balanceCents;
   }
   return words.loyaltyPage.walletSum(
     holdings.length,
-    formatMoney(sum, words.lang),
+    formatCents(sum, first.currency, words.lang),
   );
 }
 
@@ -1307,62 +1286,5 @@ function rewardRefOf(
     perClientLimitWindowDays: reward.limits.perClient?.windowDays ?? null,
     totalLimit: reward.limits.total,
     redeemedCount: reward.redeemedCount,
-  };
-}
-
-/** A legacy figure the class already guarded, as the brand. */
-function sure<T>(
-  result:
-    | { readonly ok: true; readonly value: T }
-    | { readonly ok: false; readonly error: unknown },
-  what: string,
-): T {
-  return result.ok ? result.value : defect(`unreachable: ${what}`);
-}
-
-/**
- * A voucher as `VoucherSystem.spendable` reads it: flat, the money as
- * cents and one currency, the expiry's shop day beside its instant (T5,
- * read on the instant's own zone, as the voucher's own shim reads it).
- */
-function voucherOf(voucher: GiftVoucher): GiftVoucherEntity {
-  const { state } = voucher;
-  const instantOf = (at: NonNullable<GiftVoucher['expiresAt']>) =>
-    sure(UtcEpochMs.of(at.toMillis()), 'an instant');
-  return {
-    id: GiftVoucherId.of(voucher.id.value),
-    code: VoucherCode.of(voucher.code),
-    initialValueCents: sure(
-      PriceCents.of(voucher.initialValue.toMinorUnits()),
-      'an amount',
-    ),
-    balanceCents: sure(
-      PriceCents.of(voucher.balance.toMinorUnits()),
-      'an amount',
-    ),
-    currency: sure(
-      Currency.parse(voucher.balance.currencyCode()),
-      'a currency',
-    ),
-    issuedAtUtcMs: instantOf(voucher.issuedAt),
-    expiresAtUtcMs:
-      voucher.expiresAt === null ? null : instantOf(voucher.expiresAt),
-    expiresLocalDate:
-      voucher.expiresAt === null
-        ? null
-        : ZonedTimeSystem.toLocal(
-            instantOf(voucher.expiresAt),
-            sure(
-              ZonedTimeSystem.checkZone(voucher.expiresAt.zoneName),
-              'a zone',
-            ),
-          ).localDate,
-    issuedToUserId:
-      voucher.issuedToUserId === null
-        ? null
-        : UserRefId.of(voucher.issuedToUserId.value),
-    ...(state.kind === 'void'
-      ? VoucherLifecycle.voided(instantOf(state.voidedAt), state.reason)
-      : VoucherLifecycle.active()),
   };
 }

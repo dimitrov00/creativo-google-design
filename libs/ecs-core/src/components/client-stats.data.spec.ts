@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { UserId, UtcEpochMs } from '@core/primitives';
+import { UtcEpochMs } from '@core/primitives';
 import { unwrapOk } from '@core/testing';
 import {
   ClientMoneyStats,
@@ -141,8 +141,7 @@ describe('PolicyPass / ClientStats / ClientMoneyStats', () => {
   });
 
   it('ClientStats.empty is a person with no history, every key present and flat', () => {
-    expect(ClientStats.empty(UserId.of('u-1'))).toEqual({
-      userId: 'u-1',
+    expect(ClientStats.empty()).toEqual({
       lifetimeVisitsCompleted: 0,
       lifetimeNoShows: 0,
       lifetimeLateCancels: 0,
@@ -172,14 +171,11 @@ describe('PolicyPass / ClientStats / ClientMoneyStats', () => {
       pauseSuggestionBasis: [],
       pauseSuggestedAtUtcMs: null,
     });
-    expect(PauseSuggestion.isRaised(ClientStats.empty(UserId.of('u-1')))).toBe(
-      false,
-    );
+    expect(PauseSuggestion.isRaised(ClientStats.empty())).toBe(false);
   });
 
   it('ClientMoneyStats.zero is a flat spend of nought cents in EUR', () => {
-    expect(ClientMoneyStats.zero(UserId.of('u-1'))).toEqual({
-      userId: 'u-1',
+    expect(ClientMoneyStats.zero()).toEqual({
       lifetimeSpendCents: 0,
       currency: 'EUR',
     });

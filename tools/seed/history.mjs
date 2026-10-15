@@ -289,17 +289,17 @@ export function historyForPlan(plan, profile, calendar, book) {
         // Only the booker names a barber; a companion goes where they go.
         pref: seatIndex === 0 ? plan.pref : 'any',
         outcome,
-        tipMinorUnits:
+        tipCents:
           worked && rng() < plan.tipRate ? pick(rng, TIP_AMOUNTS) : null,
       };
     });
 
     // Who put it in the book, and when.
     let placement = 'self';
-    let bookedAt;
+    let booked;
     let bookedFrom = null;
     if (rng() < plan.selfRate) {
-      bookedAt = {
+      booked = {
         dayOffset: placed.offset - between(rng, 2, 10),
         hour: between(rng, 19, 22),
         minute: pick(rng, [5, 20, 35, 50]),
@@ -309,11 +309,11 @@ export function historyForPlan(plan, profile, calendar, book) {
     } else if (lastWorked && rng() < 0.6) {
       placement = 'staff';
       // Rebooked at the chair as the last visit ended.
-      bookedAt = { ...lastWorked.endsAt, minute: lastWorked.endsAt.minute + 3 };
+      booked = { ...lastWorked.endsAt, minute: lastWorked.endsAt.minute + 3 };
       bookedFrom = lastWorked.id;
     } else {
       placement = 'staff';
-      bookedAt = {
+      booked = {
         dayOffset: placed.offset - between(rng, 1, 6),
         hour: between(rng, 10, 16),
         minute: pick(rng, [0, 10, 25, 40]),
@@ -328,9 +328,9 @@ export function historyForPlan(plan, profile, calendar, book) {
       locationId: placed.locationId,
       status: rootStatus(visit),
       placement,
-      bookedAt,
+      booked,
       bookedFromAppointmentId: bookedFrom,
-      arrivedAt: worked
+      arrived: worked
         ? { hour: Math.floor(arrivedMinute / 60), minute: arrivedMinute % 60 }
         : null,
       contact: profile.contact,

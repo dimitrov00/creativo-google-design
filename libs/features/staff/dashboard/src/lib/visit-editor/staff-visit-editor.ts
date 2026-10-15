@@ -19,17 +19,31 @@ import {
 } from './client-query';
 import { type VisitSides, adoptSides } from './visit-sides';
 import {
+  AppliedDiscountId,
+  Currency,
   DurationMinutes,
   EndMinute,
+  LocalDate,
   MinuteOfDay,
   PriceCents,
+  type TimeZone,
+  UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
+  CouponValue,
+  DiscountMethod,
+  type Money,
+  type VisitLeg,
+} from '@core/components';
+import {
   BillingSystem,
+  type DiscountInput,
+  DiscountSystem,
   type DraftLegMinutes,
   TipPreset,
   VisitDraftSystem,
+  ZonedTimeSystem,
 } from '@core/systems';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
@@ -52,12 +66,6 @@ import {
   viewChild,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
-  Money,
-  type VisitLeg,
-  ZonedDateTime,
-  formatMoney,
-} from '@creativo/application/booking';
 import { FEATURE_FLAGS } from '@creativo/application/shared';
 import {
   AchievementCategoryPage,
@@ -81,11 +89,6 @@ import {
   achievementScopeOf,
   visitsRows,
 } from '@creativo/features/staff/client-card';
-import {
-  CouponValue,
-  DiscountApplication,
-  type DiscountInput,
-} from '@creativo/application/engagement';
 import {
   type UiChoiceOption,
   type UiChoiceTile,
@@ -120,6 +123,7 @@ import {
   StaffEventHead,
   type StaffEventLine,
   type StaffEventRun,
+  formatCents,
 } from '@creativo/features/shared/visits';
 import { FrameFullscreen } from '../shared/frame-fullscreen';
 import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
@@ -363,6 +367,12 @@ export interface VisitEditorVm {
   readonly people?: readonly VisitEditorClientOption[];
   /** The client's account, when they have one — what a booking is placed FOR. */
   readonly clientUserId: string | null;
+  /**
+   * The booker's client RECORD (D29) — what a photo of the visit is filed
+   * under (`clientCustomerId`). Absent or `null` for a walk-in, and for a
+   * host that does not know it.
+   */
+  readonly clientCustomerId?: string | null;
   readonly phone: string | null;
   readonly phoneHref: string | null;
   /** `Нов` · `посл. 3 авг` — the shop's one fact about this person. */
@@ -514,7 +524,8 @@ export interface VisitEditorServiceOption {
 export interface VisitEditorPhoto {
   readonly photoId: string;
   readonly url: string;
-  readonly takenAtIso: string;
+  /** When it was taken — read on the shop's calendar for its label. */
+  readonly takenAtUtcMs: number;
   /** The chair, and its name when the catalogue still knows it. */
   readonly barberId: string;
   readonly barberName: string | null;
@@ -592,9 +603,9 @@ export interface VisitEditorClientSection {
 }
 
 /**
- * What a discount does to the bill, as plain data — the engagement domain's
- * `CouponValue` without the `Money` inside it, so a draft can hold it, a
- * `savedShape` can compare it and a VM can carry it across the sheet's edge.
+ * What a discount does to the bill, as plain data — the sheet's own draft
+ * vocabulary for a `CouponValue`, so a draft can hold it, a `savedShape`
+ * can compare it and a VM can carry it across the sheet's edge.
  */
 export type VisitEditorDiscountValue =
   | { readonly kind: 'percent_off'; readonly percent: number }
@@ -685,17 +696,21 @@ export interface VisitEditorCodeResult {
   readonly refusal: 'void' | 'expired' | 'empty' | null;
 }
 
-/** The domain's value → the sheet's plain one. The one place the two meet. */
+/**
+ * The stored value (a coupon's, a grant's, an applied discount's — any
+ * slice carrying `discountMethod`) → the sheet's plain one. The one place
+ * the two meet.
+ */
 export function discountValueOf(value: CouponValue): VisitEditorDiscountValue {
-  switch (value.kind) {
-    case 'percent_off':
-      return { kind: 'percent_off', percent: value.percent };
-    case 'fixed_amount':
+  switch (value.discountMethod) {
+    case DiscountMethod.PercentOff:
+      return { kind: 'percent_off', percent: value.discountPercent };
+    case DiscountMethod.FixedAmount:
       return {
         kind: 'fixed_amount',
-        amountMinorUnits: value.amount.toMinorUnits(),
+        amountMinorUnits: value.discountAmountCents,
       };
-    case 'free_service':
+    case DiscountMethod.FreeService:
       return { kind: 'free_service' };
   }
 }
@@ -718,21 +733,18 @@ function percentOffLabel(percent: number): string {
 /** The sheet's plain value → the domain's, through its validating doors, or `null`. */
 function toCouponValue(
   value: VisitEditorDiscountValue,
-  currencyCode: string,
+  currency: Currency,
 ): CouponValue | null {
   switch (value.kind) {
     case 'percent_off': {
       const result = CouponValue.percentOff(value.percent);
-      return result.isSuccess() ? result.value : null;
+      return result.ok ? result.value : null;
     }
     case 'fixed_amount': {
-      const money = Money.fromMinorUnitsAndCode(
-        value.amountMinorUnits,
-        currencyCode,
-      );
-      if (money.isFailure()) return null;
-      const result = CouponValue.fixedAmount(money.value);
-      return result.isSuccess() ? result.value : null;
+      const cents = PriceCents.of(value.amountMinorUnits);
+      if (!cents.ok) return null;
+      const result = CouponValue.fixedAmount(cents.value, currency);
+      return result.ok ? result.value : null;
     }
     case 'free_service':
       return CouponValue.freeService();
@@ -4893,7 +4905,7 @@ export class StaffVisitEditor {
     return {
       photoId: cut.photoId,
       url: cut.url,
-      takenAtIso: cut.takenAtIso,
+      takenAtUtcMs: cut.takenAtUtcMs,
       barberId: cut.barberId,
       barberName: this.cardCatalog().barberName(cut.barberId),
       clientLabel: store.displayName() ?? this.clientOfStack()?.label ?? '',
@@ -5145,12 +5157,12 @@ export class StaffVisitEditor {
 
   /** «4.09, 16:21» — the whole moment, for the names assistive tech hears (a thumbnail's, the picture's alt). */
   protected photoWhen(photo: VisitEditorPhoto): string {
-    return this.photoWhenFormat.format(new Date(photo.takenAtIso));
+    return this.photoWhenFormat.format(photo.takenAtUtcMs);
   }
 
   /** «4.09» (R59; «6.03.2025 г.» outside this year) — the photo page's bar title. */
   protected photoDay(photo: VisitEditorPhoto): string {
-    const at = new Date(photo.takenAtIso);
+    const at = photo.takenAtUtcMs;
     const year = new Intl.DateTimeFormat('en-CA', {
       timeZone: SHOP_ZONE,
       year: 'numeric',
@@ -5165,7 +5177,7 @@ export class StaffVisitEditor {
 
   /** «16:21» — the «Снимано» row: what the bar's day leaves unsaid. */
   protected photoTime(photo: VisitEditorPhoto): string {
-    return this.photoTimeFormat.format(new Date(photo.takenAtIso));
+    return this.photoTimeFormat.format(photo.takenAtUtcMs);
   }
 
   /** The picture's own shape for its page; a photo that never said is drawn 4:3. */
@@ -5228,7 +5240,7 @@ export class StaffVisitEditor {
       }
       case 'amount': {
         const minor = parsePriceInput(raw);
-        const subtotal = this.subtotalMoney()?.toMinorUnits() ?? null;
+        const subtotal = this.subtotalMoney()?.amountCents ?? null;
         return minor !== null && subtotal !== null && minor > subtotal
           ? this.figureOf(subtotal)
           : raw;
@@ -5435,7 +5447,7 @@ export class StaffVisitEditor {
 
   /** The bill, exactly — the sum's ceiling for the field; the ruler's is the last half-euro step under it. */
   protected readonly amountCap = computed<number | null>(
-    () => this.subtotalMoney()?.toMinorUnits() ?? null,
+    () => this.subtotalMoney()?.amountCents ?? null,
   );
 
   /** The sum in hand, in minor units: what is being typed, else the manual sum a new one would replace. */
@@ -5446,7 +5458,7 @@ export class StaffVisitEditor {
 
   /** The ruler runs to the bill — the last half-euro step that fits it; none without a bill. */
   protected readonly amountSliderMax = computed<number | null>(() => {
-    const subtotal = this.subtotalMoney()?.toMinorUnits() ?? null;
+    const subtotal = this.subtotalMoney()?.amountCents ?? null;
     if (subtotal === null) return null;
     const max =
       Math.floor(subtotal / AMOUNT_SLIDER_STEP_MINOR) *
@@ -5528,8 +5540,8 @@ export class StaffVisitEditor {
   private readonly subtotalMoney = computed<Money | null>(() => {
     const minor = this.vm().priceMinorUnits;
     if (minor === null || minor <= 0) return null;
-    const money = Money.fromMinorUnitsAndCode(minor, MONEY_CODE);
-    return money.isSuccess() ? money.value : null;
+    const cents = PriceCents.of(minor);
+    return cents.ok ? { amountCents: cents.value, currency: MONEY_CODE } : null;
   });
 
   /**
@@ -5588,31 +5600,35 @@ export class StaffVisitEditor {
       const key = discountKey(discount);
       keys.set(key, discount);
       inputs.push({
-        id: key,
+        id: AppliedDiscountId.of(key),
         label: discount.label,
-        value,
-        grantedAt: instantAt(index),
+        grantedAtUtcMs: instantAt(index),
+        minSpendCents: null,
+        ...value,
       });
     });
     const breakdown =
-      subtotal === null ? null : DiscountApplication.apply(subtotal, inputs);
+      subtotal === null ? null : DiscountSystem.apply(subtotal, inputs, null);
     const amounts = new Map<string, number>();
     for (const line of breakdown?.lines ?? []) {
-      amounts.set(line.id, line.amount.toMinorUnits());
+      amounts.set(line.id, line.amountCents);
     }
     // The evaluator's own order — the two keys where the meaning lives.
     const ordered = [...inputs].sort(
       (a, b) =>
-        CouponValue.kindRank(a.value) - CouponValue.kindRank(b.value) ||
-        CouponValue.magnitude(a.value) - CouponValue.magnitude(b.value),
+        CouponValue.methodRank(a) - CouponValue.methodRank(b) ||
+        CouponValue.magnitude(a) - CouponValue.magnitude(b),
     );
+    // Plain minor units from here on: the sheet does arithmetic on them.
+    const total: number | null =
+      breakdown?.totalCents ?? subtotal?.amountCents ?? null;
+    const discountTotal: number = breakdown?.discountTotalCents ?? 0;
     return {
-      subtotal,
-      discountTotal: breakdown?.discountTotal.toMinorUnits() ?? 0,
-      total:
-        breakdown?.total.toMinorUnits() ?? subtotal?.toMinorUnits() ?? null,
+      subtotal: subtotal?.amountCents ?? null,
+      discountTotal,
+      total,
       lines: ordered.map((input) => ({
-        key: input.id,
+        key: input.id as string,
         discount: keys.get(input.id) as VisitEditorDiscount,
         amount: amounts.get(input.id) ?? 0,
       })),
@@ -5712,10 +5728,10 @@ export class StaffVisitEditor {
 
   /** Minor units → `2,80 €`, or `''` for anything that is not money. */
   private moneyLabel(minor: number): string {
-    const money = Money.fromMinorUnitsAndCode(Math.max(0, minor), MONEY_CODE);
-    return money.isFailure()
-      ? ''
-      : formatMoney(money.value, this.transloco.getActiveLang());
+    const cents = PriceCents.of(Math.max(0, minor));
+    return cents.ok
+      ? formatCents(cents.value, MONEY_CODE, this.transloco.getActiveLang())
+      : '';
   }
 
   /**
@@ -5917,7 +5933,7 @@ export class StaffVisitEditor {
    * line that says what a discount did, or would do, without a word.
    */
   protected readonly dockWasLabel = computed<string | null>(() => {
-    const subtotal = this.subtotalMoney()?.toMinorUnits() ?? null;
+    const subtotal = this.subtotalMoney()?.amountCents ?? null;
     const due = this.dockDue();
     if (subtotal === null || due === null || due >= subtotal) return null;
     return this.moneyLabel(subtotal);
@@ -6449,11 +6465,7 @@ export class StaffVisitEditor {
     const vm = this.vm();
     const draft = this.draft();
     const partyOfOne = draft.clients.length <= 1;
-    const start = ZonedDateTime.fromISO(
-      `${draft.dayKey}T${clockLabel(draft.startMinute)}:00`,
-      SHOP_ZONE,
-    );
-    const startsAtIso = start.isSuccess() ? start.value.toISO() : '';
+    const startsAtIso = shopIsoOf(draft.dayKey, draft.startMinute);
     const legs: ClientCardLeg[] = draft.legs
       .filter((leg) => partyOfOne || leg.clientId === client.id)
       .map((leg) => ({
@@ -6872,12 +6884,12 @@ export class StaffVisitEditor {
     const repeated = legs.flatMap((leg): DraftLeg[] => {
       const option = this.uiServices().find(
         (entry) =>
-          entry.serviceId === leg.serviceId.value &&
-          (entry.variantId ?? null) === (leg.variantId?.value ?? null),
+          entry.serviceId === leg.serviceId &&
+          (entry.variantId ?? null) === leg.variantId,
       );
       if (option === undefined) return [];
       const chair = this.chairOf(
-        draft.chairId === '' ? leg.barberId.value : draft.chairId,
+        draft.chairId === '' ? leg.barberId : draft.chairId,
       );
       return [
         {
@@ -6885,14 +6897,14 @@ export class StaffVisitEditor {
           serviceId: option.serviceId,
           variantId: option.variantId,
           serviceLabel: option.serviceLabel ?? option.label,
-          minutes: leg.minutes,
+          minutes: leg.durationMinutes,
           priceLabel: option.priceLabel,
           barberId: chair.id,
           barberName: chair.name,
           barberTone: chair.tone,
           // The last visit's length, where it is not the catalogue's, is a
           // length somebody agreed — said on the row, as a stored one is.
-          overridden: leg.minutes !== option.minutes,
+          overridden: leg.durationMinutes !== option.minutes,
           clientId: client.id,
         },
       ];
@@ -6995,17 +7007,37 @@ export class StaffVisitEditor {
 /** How long after the focus lands the polite region speaks (old §8.6). */
 const ANNOUNCE_DELAY_MS = 150;
 
+/** The shop's zone, branded — every drafted wall-clock time is read in it. */
+const SHOP_TIME_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone(SHOP_ZONE);
+  return zone.ok ? zone.value : defect('unreachable: the shop zone');
+})();
+
+/**
+ * A drafted start — its shop day and minute — as the instant's ISO in the
+ * shop's zone (`2026-10-10T14:00:00.000+03:00`): the card's leg reads its
+ * start in that form. `''` for a day or a minute that names no instant (a
+ * spring-forward gap's minute included).
+ */
+function shopIsoOf(dayKey: string, minute: number): string {
+  const day = LocalDate.parse(dayKey);
+  const start = MinuteOfDay.of(minute);
+  if (!day.ok || !start.ok) return '';
+  const instant = ZonedTimeSystem.toUtc(day.value, start.value, SHOP_TIME_ZONE);
+  return instant.ok ? ZonedTimeSystem.toIso(instant.value, SHOP_TIME_ZONE) : '';
+}
+
 /** The shop's one currency (see `project_currency_is_eur`). */
-const MONEY_CODE = 'EUR';
+const MONEY_CODE: Currency = Currency.EUR;
 
 /**
  * The evaluator orders discounts by the instant they were applied, as its
  * last tie-break; a draft has no clock, so the order of ADDING stands in —
  * one millisecond apart from the epoch, deterministic and never read back.
  */
-function instantAt(index: number): ZonedDateTime {
-  const instant = ZonedDateTime.fromMillis(index, 'UTC');
-  if (instant.isFailure()) defect('unreachable: the UTC epoch');
+function instantAt(index: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(index);
+  if (!instant.ok) defect('unreachable: the UTC epoch');
   return instant.value;
 }
 

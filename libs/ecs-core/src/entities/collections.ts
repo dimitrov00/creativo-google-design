@@ -47,8 +47,11 @@ export const Collections = {
   Users: 'users',
   /**
    * `Customer` — the client RECORD (D29), keyed by a `CustomerId`
-   * (`CustomerId.forUser(uid)` for an account holder, a random `cus_…` for a
-   * walk-in). Registered now; nothing reads or writes it before flip (1).
+   * (`CustomerId.forUser(uid, hash)` for an account holder, a random `cus_…`
+   * for a walk-in). Live from the booking flip (1): the booking and edit
+   * transactions create an account holder's record (`FIRST_BOOKING`) in
+   * their phase-one read; the web resolves a signed-in account's record by
+   * `userId ==` (single-field).
    */
   Customers: 'customers',
   /** `Otp`; TTL `purgeAt`. */
@@ -66,7 +69,7 @@ export const Collections = {
   ClientJournal: 'clientJournal',
   /** `StreakDefinition` (the head). */
   StreakDefinitions: 'streakDefinitions',
-  /** `ClientStatsRecord`, keyed by the uid. */
+  /** `ClientStatsRecord`, keyed by the client record's `CustomerId` (D29, flip (1)). */
   ClientStats: 'clientStats',
   BadgeCategories: 'badgeCategories',
   BadgeSeries: 'badgeSeries',
@@ -89,7 +92,7 @@ export type CollectionName = (typeof Collections)[keyof typeof Collections];
 export const Subcollections = {
   /** `users/{uid}/notifications` — owner-read, TTL-purged, never queried across users. */
   Notifications: 'notifications',
-  /** `clientStats/{uid}/restricted/{docId}` — staff-only (`money`). */
+  /** `clientStats/{customerId}/restricted/{docId}` — staff-only (`money`). */
   Restricted: 'restricted',
   /** `streakDefinitions/{id}/versions/{version:6}`. */
   Versions: 'versions',
@@ -125,7 +128,7 @@ export type RetiredSubcollectionName =
 /** `settings/bookingPolicy` — the one settings document (`BookingPolicySettings`). */
 export const BOOKING_POLICY_DOC = BookingPolicySettingsId.FIXED;
 
-/** `clientStats/{uid}/restricted/money` — the staff-only money projection. */
+/** `clientStats/{customerId}/restricted/money` — the staff-only money projection. */
 export const CLIENT_MONEY_DOC = ClientMoneyStatsId.FIXED;
 
 /** `backfillJobs/clientStatsPolicy` — the policy-change recompute pass (`PolicyRecomputeJob`). */

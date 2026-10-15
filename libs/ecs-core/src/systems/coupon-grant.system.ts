@@ -25,7 +25,8 @@ function withLifecycle(
 ): CouponGrant {
   return {
     id: grant.id,
-    userId: grant.userId,
+    customerId: grant.customerId,
+    holderUserId: grant.holderUserId,
     couponId: grant.couponId,
     grantedAtUtcMs: grant.grantedAtUtcMs,
     ...CouponValue.of(grant),
@@ -34,7 +35,7 @@ function withLifecycle(
 }
 
 /**
- * A user's coupon grant through its life (`coupon-grant.ts:134-299`):
+ * A client's coupon grant through its life (`coupon-grant.ts:134-299`):
  *
  *   `ACTIVE` ─ burn    → `ACTIVE` (multi-use, one fewer) OR `USED`
  *   `ACTIVE` ─ expire  → `EXPIRED` (only with an `EXPIRES_AT` expiry)
@@ -46,12 +47,13 @@ function withLifecycle(
  * against an expiry instant is a T2 lifecycle comparison (G-1).
  */
 export const CouponGrantSystem = {
-  isActive(grant: CouponGrant): boolean {
+  /** Is the grant `ACTIVE`? Reads the lifecycle slice alone — a whole grant passes. */
+  isActive(grant: GrantLifecycle): boolean {
     return GrantLifecycle.isActive(grant);
   },
 
   /** Active, and not past its expiry — AT the instant is still usable. */
-  isUsable(grant: CouponGrant, nowUtcMs: UtcEpochMs): boolean {
+  isUsable(grant: GrantLifecycle, nowUtcMs: UtcEpochMs): boolean {
     if (grant.grantStatus !== GrantStatus.Active) return false;
     return !(
       grant.grantExpiry === GrantExpiry.ExpiresAt &&
@@ -59,44 +61,45 @@ export const CouponGrantSystem = {
     );
   },
 
+  /*
+   * The four verbs on the LIFECYCLE SLICE alone (`*Slice`) — the grant's
+   * state machine, total on `GrantLifecycle`, so a caller holding no
+   * entity (a legacy shim that cannot know the grant's client record, D29)
+   * asks the same question — and the entity verbs below, each its slice
+   * verb with the grant's meta and value carried through untouched.
+   */
+
   /**
    * One redemption (`markUsed`): a single-use grant goes straight to
    * `USED`; a multi-use one counts down, and is `USED` at zero. `note` is
    * the caller's account of the channel («appointment abc123»), `''` when
    * none was given.
    */
-  burn(
-    grant: CouponGrant,
+  burnSlice(
+    grant: GrantLifecycle,
     atUtcMs: UtcEpochMs,
     note: string,
-  ): Result<CouponGrant, EngagementError.CouponGrantNotActive> {
+  ): Result<GrantLifecycle, EngagementError.CouponGrantNotActive> {
     if (grant.grantStatus !== GrantStatus.Active) {
       return Result.err(
         EngagementError.couponGrantNotActive(grant.grantStatus),
       );
     }
     if (grant.grantCapacity === GrantCapacity.SingleUse) {
-      return Result.ok(
-        withLifecycle(grant, GrantLifecycle.used(atUtcMs, note)),
-      );
+      return Result.ok(GrantLifecycle.used(atUtcMs, note));
     }
     const remaining = grant.usesRemaining - 1;
     if (remaining <= 0) {
-      return Result.ok(
-        withLifecycle(grant, GrantLifecycle.used(atUtcMs, note)),
-      );
+      return Result.ok(GrantLifecycle.used(atUtcMs, note));
     }
     return Result.ok(
-      withLifecycle(
+      GrantLifecycle.active(
+        {
+          grantCapacity: GrantCapacity.MultiUse,
+          usesRemaining: remaining,
+          usesGranted: grant.usesGranted,
+        },
         grant,
-        GrantLifecycle.active(
-          {
-            grantCapacity: GrantCapacity.MultiUse,
-            usesRemaining: remaining,
-            usesGranted: grant.usesGranted,
-          },
-          grant,
-        ),
       ),
     );
   },
@@ -109,11 +112,11 @@ export const CouponGrantSystem = {
    * an expired or revoked grant (`NOT_ACTIVE`), and for a grant with no use
    * spent to give back (`INVALID_CAPACITY`, naming the count it would reach).
    */
-  restore(
-    grant: CouponGrant,
+  restoreSlice(
+    grant: GrantLifecycle,
     issued: GrantTerms,
   ): Result<
-    CouponGrant,
+    GrantLifecycle,
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantCapacityInvalid
   > {
@@ -126,9 +129,7 @@ export const CouponGrantSystem = {
               usesRemaining: 1,
               usesGranted: issued.usesGranted,
             };
-      return Result.ok(
-        withLifecycle(grant, GrantLifecycle.active(capacity, issued)),
-      );
+      return Result.ok(GrantLifecycle.active(capacity, issued));
     }
     if (grant.grantStatus !== GrantStatus.Active) {
       return Result.err(
@@ -148,26 +149,23 @@ export const CouponGrantSystem = {
       );
     }
     return Result.ok(
-      withLifecycle(
+      GrantLifecycle.active(
+        {
+          grantCapacity: GrantCapacity.MultiUse,
+          usesRemaining: grant.usesRemaining + 1,
+          usesGranted: grant.usesGranted,
+        },
         grant,
-        GrantLifecycle.active(
-          {
-            grantCapacity: GrantCapacity.MultiUse,
-            usesRemaining: grant.usesRemaining + 1,
-            usesGranted: grant.usesGranted,
-          },
-          grant,
-        ),
       ),
     );
   },
 
   /** The expiry job's act — only an `ACTIVE` grant that HAS an `EXPIRES_AT`. */
-  expire(
-    grant: CouponGrant,
+  expireSlice(
+    grant: GrantLifecycle,
     atUtcMs: UtcEpochMs,
   ): Result<
-    CouponGrant,
+    GrantLifecycle,
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantNotExpiring
   > {
@@ -180,21 +178,18 @@ export const CouponGrantSystem = {
       return Result.err(EngagementError.couponGrantNotExpiring());
     }
     return Result.ok(
-      withLifecycle(
-        grant,
-        GrantLifecycle.expired(atUtcMs, grant.grantExpiresAtUtcMs),
-      ),
+      GrantLifecycle.expired(atUtcMs, grant.grantExpiresAtUtcMs),
     );
   },
 
   /** An admin takes a grant back — a reason is required, stored trimmed. */
-  revoke(
-    grant: CouponGrant,
+  revokeSlice(
+    grant: GrantLifecycle,
     atUtcMs: UtcEpochMs,
     revokedBy: UserId,
     reason: string,
   ): Result<
-    CouponGrant,
+    GrantLifecycle,
     | EngagementError.CouponGrantNotActive
     | EngagementError.CouponGrantReasonEmpty
   > {
@@ -207,9 +202,66 @@ export const CouponGrantSystem = {
     if (trimmed.length === 0) {
       return Result.err(EngagementError.couponGrantReasonEmpty());
     }
-    return Result.ok(
-      withLifecycle(grant, GrantLifecycle.revoked(atUtcMs, revokedBy, trimmed)),
+    return Result.ok(GrantLifecycle.revoked(atUtcMs, revokedBy, trimmed));
+  },
+
+  /**
+   * One redemption (`markUsed`) of a whole grant — {@link burnSlice}, the
+   * meta and value carried through.
+   */
+  burn(
+    grant: CouponGrant,
+    atUtcMs: UtcEpochMs,
+    note: string,
+  ): Result<CouponGrant, EngagementError.CouponGrantNotActive> {
+    const next = CouponGrantSystem.burnSlice(grant, atUtcMs, note);
+    return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
+  },
+
+  /** {@link restoreSlice} on a whole grant. */
+  restore(
+    grant: CouponGrant,
+    issued: GrantTerms,
+  ): Result<
+    CouponGrant,
+    | EngagementError.CouponGrantNotActive
+    | EngagementError.CouponGrantCapacityInvalid
+  > {
+    const next = CouponGrantSystem.restoreSlice(grant, issued);
+    return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
+  },
+
+  /** {@link expireSlice} on a whole grant. */
+  expire(
+    grant: CouponGrant,
+    atUtcMs: UtcEpochMs,
+  ): Result<
+    CouponGrant,
+    | EngagementError.CouponGrantNotActive
+    | EngagementError.CouponGrantNotExpiring
+  > {
+    const next = CouponGrantSystem.expireSlice(grant, atUtcMs);
+    return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
+  },
+
+  /** {@link revokeSlice} on a whole grant. */
+  revoke(
+    grant: CouponGrant,
+    atUtcMs: UtcEpochMs,
+    revokedBy: UserId,
+    reason: string,
+  ): Result<
+    CouponGrant,
+    | EngagementError.CouponGrantNotActive
+    | EngagementError.CouponGrantReasonEmpty
+  > {
+    const next = CouponGrantSystem.revokeSlice(
+      grant,
+      atUtcMs,
+      revokedBy,
+      reason,
     );
+    return next.ok ? Result.ok(withLifecycle(grant, next.value)) : next;
   },
 
   /** The terms an active grant holds — what {@link restore} needs back once it is spent. */

@@ -1,19 +1,15 @@
 import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject, Subject, of } from 'rxjs';
 import {
-  Barber,
-  CATALOG_READER,
-  Location,
   MEDIA_READER,
-  MediaRef,
   MediaUnavailableError,
-  Service,
   fail,
   ok,
   type MediaReadError,
   type MediaReader,
+  type MediaRef,
   type MediaVariant,
-  type Result,
+  type Result as KernelResult,
 } from '@creativo/application/catalog';
 import {
   ANONYMOUS_PRINCIPAL,
@@ -23,71 +19,69 @@ import {
   type AuthGateway,
   type Principal,
 } from '@creativo/application/identity';
-import { RepositoryError } from '@creativo/application/shared';
+import { RepositoryError as KernelRepositoryError } from '@creativo/application/shared';
+import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { CatalogReadPorts } from '@core/ports';
+import type { Barber, Service, ShopLocation } from '@core/entities';
+import {
+  BarberId,
+  MediaRefId,
+  RepositoryError,
+  Result,
+  ServiceId,
+} from '@core/primitives';
+import {
+  barberFixture,
+  memoryCatalogReadPorts,
+  serviceFixture,
+} from '@core/testing';
 import { CatalogContentService } from './catalog-content.service';
 import { DEFAULT_MEDIA_RETRY_POLICY } from './media-url-cache';
 
-function unwrap<T>(result: {
-  isFailure(): boolean;
-  value?: T;
-  error?: unknown;
-}): T {
-  if (result.isFailure()) throw new Error('bad test fixture');
-  return result.value as T;
+/** The Storage objects the fixtures point at — what the media reader is asked for. */
+const cover = { path: 'services/fade.jpg', width: 1200 } as const;
+const avatar = { path: 'barbers/ivan.jpg', width: 1200 } as const;
+
+const fade: Service = serviceFixture({
+  id: ServiceId.of('svc-fade'),
+  name: { en: 'Skin fade', bg: 'Фейд' },
+  popular: true,
+  sortOrder: 1,
+  coverMediaId: MediaRefId.of('media-fade'),
+  coverMediaPath: cover.path,
+  coverMediaWidth: cover.width,
+  coverMediaHeight: 1500,
+});
+
+const ivan: Barber = barberFixture({
+  id: BarberId.of('ivan'),
+  sortOrder: 1,
+  avatarMediaId: MediaRefId.of('media-barber-ivan'),
+  avatarMediaPath: avatar.path,
+  avatarMediaWidth: avatar.width,
+  avatarMediaHeight: 1500,
+});
+
+const urlOf = (ref: { readonly path: string }) =>
+  `https://cdn.test/${ref.path}`;
+
+/**
+ * The catalogue double, with the streams under test wrapped to answer what
+ * the spec hands them — re-emits, a cold listener that waits, a failure.
+ */
+function catalogPorts(reads: {
+  readonly services: () => ReturnType<CatalogReadPorts['observeServices']>;
+  readonly barbers: () => ReturnType<CatalogReadPorts['observeBarbers']>;
+  readonly locations?: () => ReturnType<CatalogReadPorts['observeLocations']>;
+}): CatalogReadPorts {
+  const base = memoryCatalogReadPorts();
+  return {
+    ...base,
+    observeServices: () => reads.services(),
+    observeBarbers: () => reads.barbers(),
+    observeLocations: () => reads.locations?.() ?? base.observeLocations(),
+  };
 }
-
-const cover = unwrap<MediaRef>(
-  MediaRef.create({
-    id: 'media-fade',
-    path: 'services/fade.jpg',
-    width: 1200,
-    height: 1500,
-  }),
-);
-const avatar = unwrap<MediaRef>(
-  MediaRef.create({
-    id: 'media-barber-ivan',
-    path: 'barbers/ivan.jpg',
-    width: 1200,
-    height: 1500,
-  }),
-);
-
-const fade = unwrap<Service>(
-  Service.create({
-    id: 'svc-fade',
-    name: { en: 'Skin fade', bg: 'Фейд' },
-    description: { en: 'x', bg: 'x' },
-    categoryId: 'cat-hair',
-    priceMinorUnits: 1750,
-    currencyCode: 'EUR',
-    durationMinutes: 50,
-    cover,
-    locationIds: [],
-    conflictsWith: [],
-    composition: { kind: 'single' },
-    upsellOnly: false,
-    popular: true,
-    status: 'active',
-    sortOrder: 1,
-  }),
-);
-
-const ivan = unwrap<Barber>(
-  Barber.create({
-    id: 'ivan',
-    name: { en: 'Ivan', bg: 'Иван' },
-    handle: 'ivan',
-    title: { en: 'Barber', bg: 'Бръснар' },
-    bio: { en: 'x', bg: 'x' },
-    avatar,
-    locationIds: [],
-    status: 'active',
-    sortOrder: 1,
-  }),
-);
-
-const urlOf = (ref: MediaRef) => `https://cdn.test/${ref.path}`;
 
 /** Fails the first `failures` resolves of every path, then answers. */
 class FlakyReader implements MediaReader {
@@ -95,17 +89,17 @@ class FlakyReader implements MediaReader {
 
   constructor(private readonly failures: number) {}
 
-  callsFor(ref: MediaRef): number {
+  callsFor(ref: { readonly path: string }): number {
     return this.calls.filter((path) => path === ref.path).length;
   }
 
   resolve(
     ref: MediaRef,
-  ): Promise<Result<readonly MediaVariant[], RepositoryError>> {
+  ): Promise<KernelResult<readonly MediaVariant[], KernelRepositoryError>> {
     this.calls.push(ref.path);
     return Promise.resolve(
       this.callsFor(ref) <= this.failures
-        ? fail(new RepositoryError('storage/retry-limit-exceeded'))
+        ? fail(new KernelRepositoryError('storage/retry-limit-exceeded'))
         : ok([{ width: ref.width, url: urlOf(ref) }]),
     );
   }
@@ -121,7 +115,7 @@ describe('CatalogContentService — media', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     services = new BehaviorSubject<Result<readonly Service[], RepositoryError>>(
-      ok([fade]),
+      Result.ok([fade]),
     );
   });
 
@@ -134,12 +128,11 @@ describe('CatalogContentService — media', () => {
     TestBed.configureTestingModule({
       providers: [
         {
-          provide: CATALOG_READER,
-          useValue: {
-            listActiveServices: () => services.asObservable(),
-            listActiveBarbers: () => of(ok([ivan])),
-            listActiveLocations: () => of(ok([])),
-          },
+          provide: CATALOG_PORTS,
+          useValue: catalogPorts({
+            services: () => services.asObservable(),
+            barbers: () => of(Result.ok([ivan])),
+          }),
         },
         { provide: MEDIA_READER, useValue: reader },
       ],
@@ -159,7 +152,7 @@ describe('CatalogContentService — media', () => {
     expect(content.barberVms()[0]?.avatarSrc).toBe(urlOf(avatar));
 
     // A snapshot re-emit of the same catalogue fetches nothing again.
-    services.next(ok([fade]));
+    services.next(Result.ok([fade]));
     TestBed.tick();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(reader.calls).toEqual([cover.path, avatar.path]);
@@ -173,7 +166,7 @@ describe('CatalogContentService — media', () => {
     expect(content.serviceVms()[0]?.coverSrc).toBeUndefined();
 
     // The catalogue re-emits while the retry waits.
-    services.next(ok([fade]));
+    services.next(Result.ok([fade]));
     TestBed.tick();
     await vi.advanceTimersByTimeAsync(0);
     expect(reader.callsFor(cover)).toBe(1);
@@ -227,13 +220,13 @@ class ScriptedReader implements MediaReader {
     >,
   ) {}
 
-  callsFor(ref: MediaRef): number {
+  callsFor(ref: { readonly path: string }): number {
     return this.calls.filter((path) => path === ref.path).length;
   }
 
   resolve(
     ref: MediaRef,
-  ): Promise<Result<readonly MediaVariant[], MediaReadError>> {
+  ): Promise<KernelResult<readonly MediaVariant[], MediaReadError>> {
     this.calls.push(ref.path);
     const steps = this.script[ref.path] ?? ['ok'];
     const step = steps[Math.min(this.callsFor(ref), steps.length) - 1];
@@ -273,12 +266,11 @@ describe('CatalogContentService — a new viewer', () => {
     TestBed.configureTestingModule({
       providers: [
         {
-          provide: CATALOG_READER,
-          useValue: {
-            listActiveServices: () => of(ok([fade])),
-            listActiveBarbers: () => of(ok([ivan])),
-            listActiveLocations: () => of(ok([])),
-          },
+          provide: CATALOG_PORTS,
+          useValue: catalogPorts({
+            services: () => of(Result.ok([fade])),
+            barbers: () => of(Result.ok([ivan])),
+          }),
         },
         { provide: MEDIA_READER, useValue: reader },
         {
@@ -345,19 +337,21 @@ describe('CatalogContentService — has each read answered?', () => {
     readonly services: Subject<Result<readonly Service[], RepositoryError>>;
     readonly barbers: Subject<Result<readonly Barber[], RepositoryError>>;
     /** Answered at once, with no shop, unless the test holds it. */
-    readonly locations?: Subject<Result<readonly Location[], RepositoryError>>;
+    readonly locations?: Subject<
+      Result<readonly ShopLocation[], RepositoryError>
+    >;
   }): CatalogContentService {
     TestBed.configureTestingModule({
       providers: [
         {
-          provide: CATALOG_READER,
-          useValue: {
-            // Nothing until the test says so, the way a cold listener waits.
-            listActiveServices: () => reads.services.asObservable(),
-            listActiveBarbers: () => reads.barbers.asObservable(),
-            listActiveLocations: () =>
-              reads.locations?.asObservable() ?? of(ok([])),
-          },
+          provide: CATALOG_PORTS,
+          // Nothing until the test says so, the way a cold listener waits.
+          useValue: catalogPorts({
+            services: () => reads.services.asObservable(),
+            barbers: () => reads.barbers.asObservable(),
+            locations: () =>
+              reads.locations?.asObservable() ?? of(Result.ok([])),
+          }),
         },
         {
           provide: MEDIA_READER,
@@ -374,7 +368,7 @@ describe('CatalogContentService — has each read answered?', () => {
     const content = withReads({ services, barbers });
     expect(content.servicesKnown()).toBe(false);
 
-    services.next(ok([fade]));
+    services.next(Result.ok([fade]));
     // The services answered; the barbers have not, so "nobody is active"
     // is not yet an answer anyone may act on.
     expect(content.loading()).toBe(false);
@@ -382,7 +376,7 @@ describe('CatalogContentService — has each read answered?', () => {
     expect(content.barbersKnown()).toBe(false);
     expect(content.barbers()).toEqual([]);
 
-    barbers.next(ok([ivan]));
+    barbers.next(Result.ok([ivan]));
     expect(content.barbersKnown()).toBe(true);
     expect(content.barbers()).toEqual([ivan]);
   });
@@ -392,8 +386,8 @@ describe('CatalogContentService — has each read answered?', () => {
     const barbers = new Subject<Result<readonly Barber[], RepositoryError>>();
     const content = withReads({ services, barbers });
 
-    services.next(fail(new RepositoryError('unavailable')));
-    barbers.next(fail(new RepositoryError('unavailable')));
+    services.next(Result.err(RepositoryError.unavailable()));
+    barbers.next(Result.err(RepositoryError.unavailable()));
 
     // Loading is over, and both lists render empty — yet neither is known.
     expect(content.loading()).toBe(false);
@@ -402,13 +396,13 @@ describe('CatalogContentService — has each read answered?', () => {
     expect(content.barbersKnown()).toBe(false);
 
     // A later success is an answer again.
-    barbers.next(ok([ivan]));
+    barbers.next(Result.ok([ivan]));
     expect(content.barbersKnown()).toBe(true);
   });
 
   it('knows the shops only once THEIR read answers successfully — an answered empty list included', () => {
     const locations = new Subject<
-      Result<readonly Location[], RepositoryError>
+      Result<readonly ShopLocation[], RepositoryError>
     >();
     const content = withReads({
       services: new Subject(),
@@ -420,12 +414,12 @@ describe('CatalogContentService — has each read answered?', () => {
     expect(content.locationsKnown()).toBe(false);
 
     // Failed: still empty, still not an answer.
-    locations.next(fail(new RepositoryError('unavailable')));
+    locations.next(Result.err(RepositoryError.unavailable()));
     expect(content.locations()).toEqual([]);
     expect(content.locationsKnown()).toBe(false);
 
     // Answered with no active shop: empty, and that IS the answer.
-    locations.next(ok([]));
+    locations.next(Result.ok([]));
     expect(content.locations()).toEqual([]);
     expect(content.locationsKnown()).toBe(true);
   });

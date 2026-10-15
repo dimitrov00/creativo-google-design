@@ -1,14 +1,6 @@
 import type { User } from '@creativo/application/accounts';
+import type { Appointment, GiftVoucher, WaitlistRequest } from '@core/entities';
 import {
-  type Appointment,
-  CalendarDay,
-  Money,
-  type WaitlistRequest,
-  formatMoney,
-  statWindows,
-} from '@creativo/application/booking';
-import {
-  type GiftVoucher,
   type LoyaltyAccount,
   type LoyaltyCatalog,
   type PersonalRecord,
@@ -20,33 +12,26 @@ import {
   tierSteps,
 } from '@creativo/application/engagement';
 import {
+  formatCents,
   visitCardOf,
   visitRowOf,
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
 import {
   AchievementRuleId,
-  Currency,
-  GiftVoucherId,
   LocalDate,
-  PriceCents,
   type TimeZone,
-  UserId as UserRefId,
   UtcEpochMs,
   defect,
 } from '@core/primitives';
-import {
-  BirthDate,
-  CouponOccasion,
-  VoucherCode,
-  VoucherLifecycle,
-} from '@core/components';
-import { type GiftVoucher as EcsGiftVoucher } from '@core/entities';
+import { BirthDate, CouponOccasion, WaitlistLifecycle } from '@core/components';
 import {
   AgeSystem,
   ClientGlanceSystem,
+  ClientStatsSystem,
   CouponGrantSystem,
   type GlanceHoldings,
+  WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import type { AchievementsContext } from './achievements.presenter';
@@ -201,12 +186,12 @@ function heroLine(
   const stats = input.stats;
   if (
     stats === null ||
-    stats.lifetime.visitsCompleted === 0 ||
-    stats.firstVisitAtMs === null
+    stats.lifetimeVisitsCompleted === 0 ||
+    stats.firstVisitLocalDate === null
   ) {
     return plainLine(words.head.firstVisit);
   }
-  const since = monthYearLong(shopDayOf(stats.firstVisitAtMs), words.lang);
+  const since = monthYearLong(stats.firstVisitLocalDate, words.lang);
   // A cadence needs three worked visits (R34): until then the tenure alone.
   if (stats.avgCadenceDays === null) {
     return lineParts(words.head.since(since), [since]);
@@ -301,8 +286,12 @@ export function overviewCapsulesVm(
   input: Omit<CapsulesInput, 'tier'>,
 ): ClientCapsulesVm {
   const capsules: ClientCapsulesVm['shown'][number][] = [];
-  if (input.stats !== null) {
-    const noShows = statWindows(input.stats, input.nowMs).noShows.last90d;
+  const now = UtcEpochMs.of(input.nowMs);
+  if (input.stats !== null && now.ok) {
+    const noShows = ClientStatsSystem.statWindows(
+      input.stats,
+      ZonedTimeSystem.shopNow(now.value, SHOP_ZONE),
+    ).noShows.last90d;
     if (noShows >= NO_SHOW_CAPSULE_AT) {
       capsules.push({
         id: 'noShows',
@@ -455,6 +444,7 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
         perspective: 'staff',
         grain: 'month',
         subjectUserId: input.subjectUserId,
+        subjectCustomerId: input.subjectCustomerId,
         currentAppointmentId: context.appointmentId,
         nowMs: input.nowMs,
         locale: words.lang,
@@ -474,6 +464,7 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
         kind,
         perspective: 'staff',
         subjectUserId: input.subjectUserId,
+        subjectCustomerId: input.subjectCustomerId,
         nowMs: input.nowMs,
         locale: words.lang,
         words: words.visits,
@@ -482,13 +473,9 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
         // The last visit's own cuts, newest first; the card draws three.
         photos:
           kind === 'last'
-            ? input.photos
-                .filter((photo) => photo.appointmentId === appointment.id.value)
-                .map((photo) => ({
-                  id: photo.photoId,
-                  url: photo.url,
-                  takenAtIso: photo.takenAtIso,
-                }))
+            ? input.photos.filter(
+                (photo) => photo.appointmentId === appointment.id,
+              )
             : [],
         testId,
       },
@@ -502,7 +489,7 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
   );
 
   const upcoming = input.appointments
-    .filter((appointment) => appointment.id.value !== context.appointmentId)
+    .filter((appointment) => appointment.id !== context.appointmentId)
     .map((appointment) => ({ appointment, row: rowOf(appointment) }))
     .filter(({ row }) => row.upcoming)
     .sort((a, b) => a.row.startMs - b.row.startMs);
@@ -510,21 +497,26 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
 
   let waitlist: VisitCardsVm['waitlist'] = null;
   if (!input.paused && input.waitlist !== null) {
-    const day = CalendarDay.create(today, 'Europe/Sofia');
+    const day = LocalDate.parse(today);
+    // Booked at or after the request was made: the visit answers it (a
+    // stamp-order rule, T2 — the two instants compared as stamped).
     const bookedAfter = (request: WaitlistRequest) =>
       upcoming.some(
         ({ appointment }) =>
-          appointment.bookedAt !== null &&
-          appointment.bookedAt.toMillis() >= request.createdAt.toMillis(),
+          appointment.bookedAtUtcMs !== null &&
+          UtcEpochMs.compare(
+            appointment.bookedAtUtcMs,
+            request.createdAtUtcMs,
+          ) >= 0,
       );
     const watching = input.waitlist
       .filter(
         (request) =>
-          request.isWatching() &&
-          (day.isFailure() || !request.hasLapsedBy(day.value)) &&
+          WaitlistLifecycle.isWatching(request) &&
+          (!day.ok || !WaitlistSystem.hasLapsed(request, day.value)) &&
           !bookedAfter(request),
       )
-      .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+      .sort((a, b) => UtcEpochMs.compare(b.createdAtUtcMs, a.createdAtUtcMs));
     const newest = watching[0];
     if (newest !== undefined) {
       waitlist = waitlistCardOf(
@@ -587,12 +579,11 @@ function voucherHolding(
   words: ClientCardWords,
 ): Holding | null {
   if (held.voucherCents === null || held.voucherCurrency === null) return null;
-  const sum = Money.fromMinorUnitsAndCode(
+  const value = formatCents(
     held.voucherCents,
     held.voucherCurrency,
+    words.lang,
   );
-  if (sum.isFailure()) return null;
-  const value = formatMoney(sum.value, words.lang);
   return {
     id: 'voucher',
     label: words.loyalty.holding('voucher'),
@@ -619,8 +610,7 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
   const today = LocalDate.parse(input.today);
   const held = ClientGlanceSystem.holdings({
     // A today that is no shop day reads no voucher's last day: no voucher fact.
-    vouchers:
-      input.vouchers === null || !today.ok ? null : vouchersOf(input.vouchers),
+    vouchers: input.vouchers === null || !today.ok ? null : input.vouchers,
     punchCards: account.punchCards.map((card) => ({
       ruleId: AchievementRuleId.of(card.ruleId),
       filled: card.filled,
@@ -859,72 +849,12 @@ export function medalsGlanceVm(
   };
 }
 
-// ── The bridge: legacy shapes → ecs-core structs (Phase 4 deletes it) ────
+// ── The coupon occasion's word ─────────────────────────────────────────
 
-/** The legacy coupon occasions ↔ `CouponOccasion` — the ONE table. */
+/** The card's occasion words ↔ `CouponOccasion` — the ONE table. */
 const COUPON_OCCASION_OF = {
   birthday: CouponOccasion.Birthday,
 } as const satisfies Record<
   NonNullable<ClientCardGrant['occasion']>,
   CouponOccasion
 >;
-
-/** The vouchers `ClientGlanceSystem.holdings` can read; one it cannot hold in the flat shape is none it can spend. */
-function vouchersOf(vouchers: readonly GiftVoucher[]): EcsGiftVoucher[] {
-  const out: EcsGiftVoucher[] = [];
-  for (const voucher of vouchers) {
-    const struct = voucherOf(voucher);
-    if (struct !== null) out.push(struct);
-  }
-  return out;
-}
-
-/**
- * A voucher as `ClientGlanceSystem.holdings` (and `VoucherSystem.spendable`)
- * reads it: cents and one currency, its instants as `UtcEpochMs`, and its
- * last day on the shop's calendar (`expiresLocalDate`, T5).
- */
-function voucherOf(voucher: GiftVoucher): EcsGiftVoucher | null {
-  const { state } = voucher;
-  const initial = PriceCents.of(voucher.initialValue.toMinorUnits());
-  const balance = PriceCents.of(voucher.balance.toMinorUnits());
-  const currency = Currency.parse(voucher.balance.currencyCode());
-  const issuedAt = UtcEpochMs.of(voucher.issuedAt.toMillis());
-  const expiresAt =
-    voucher.expiresAt === null
-      ? null
-      : UtcEpochMs.of(voucher.expiresAt.toMillis());
-  const voidedAt =
-    state.kind === 'void' ? UtcEpochMs.of(state.voidedAt.toMillis()) : null;
-  if (
-    !initial.ok ||
-    !balance.ok ||
-    !currency.ok ||
-    !issuedAt.ok ||
-    (expiresAt !== null && !expiresAt.ok) ||
-    (voidedAt !== null && !voidedAt.ok)
-  ) {
-    return null;
-  }
-  const expiresAtUtcMs = expiresAt === null ? null : expiresAt.value;
-  return {
-    id: GiftVoucherId.of(voucher.id.value),
-    code: VoucherCode.of(voucher.code),
-    initialValueCents: initial.value,
-    balanceCents: balance.value,
-    currency: currency.value,
-    issuedAtUtcMs: issuedAt.value,
-    expiresAtUtcMs,
-    expiresLocalDate:
-      expiresAtUtcMs === null
-        ? null
-        : ZonedTimeSystem.toLocal(expiresAtUtcMs, SHOP_ZONE).localDate,
-    issuedToUserId:
-      voucher.issuedToUserId === null
-        ? null
-        : UserRefId.of(voucher.issuedToUserId.value),
-    ...(state.kind === 'void' && voidedAt !== null && voidedAt.ok
-      ? VoucherLifecycle.voided(voidedAt.value, state.reason)
-      : VoucherLifecycle.active()),
-  };
-}

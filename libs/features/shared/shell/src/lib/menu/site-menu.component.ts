@@ -12,16 +12,13 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { map, of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { UserId } from '@creativo/application/accounts';
-import {
-  NOTIFICATION_READER,
-  unreadCount,
-} from '@creativo/application/notifications';
-import {
-  APPOINTMENT_REPOSITORY,
-  ObserveUpcomingUseCase,
-} from '@creativo/application/booking';
 import { AUTH_GATEWAY, SignOutUseCase } from '@creativo/application/identity';
+import {
+  APPOINTMENT_READ_PORTS,
+  INBOX_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { UserId } from '@core/primitives';
+import { NotificationSystem } from '@core/systems';
 import {
   UiAvatar,
   UiBadge,
@@ -113,21 +110,17 @@ export class SiteMenuComponent {
    * Rendered only when non-zero — a "0" badge is noise, and its absence
    * already says "nothing upcoming".
    */
-  private readonly observeUpcoming = new ObserveUpcomingUseCase(
-    inject(APPOINTMENT_REPOSITORY),
-  );
+  private readonly appointments = inject(APPOINTMENT_READ_PORTS);
 
   protected readonly upcomingCount = toSignal(
     toObservable(this.identity.principal).pipe(
       switchMap((principal) => {
         if (principal.kind !== 'active') return of(0);
-        const userId = UserId.create(principal.uid.value);
-        if (userId.isFailure()) return of(0);
-        return this.observeUpcoming
-          .execute(userId.value)
-          .pipe(
-            map((result) => (result.isSuccess() ? result.value.length : 0)),
-          );
+        const userId = UserId.parse(principal.uid.value);
+        if (!userId.ok) return of(0);
+        return this.appointments
+          .observeUpcoming(userId.value)
+          .pipe(map((result) => (result.ok ? result.value.length : 0)));
       }),
     ),
     { initialValue: 0 },
@@ -138,23 +131,23 @@ export class SiteMenuComponent {
    * bookings count: absent at zero, because a "0" badge is noise and its
    * absence already says the inbox is clear.
    *
-   * Derived from the inbox stream via the domain's own `unreadCount`, not
-   * a second count query — one source, so the badge can never disagree
+   * Derived from the inbox stream via `NotificationSystem.unreadCount`,
+   * not a second count query — one source, so the badge can never disagree
    * with the list it stands for.
    */
-  private readonly notifications = inject(NOTIFICATION_READER);
+  private readonly inbox = inject(INBOX_PORTS);
 
   protected readonly unreadNotifications = toSignal(
     toObservable(this.identity.principal).pipe(
       switchMap((principal) => {
         if (principal.kind !== 'active') return of(0);
-        const userId = UserId.create(principal.uid.value);
-        if (userId.isFailure()) return of(0);
-        return this.notifications
-          .list(userId.value)
+        const userId = UserId.parse(principal.uid.value);
+        if (!userId.ok) return of(0);
+        return this.inbox
+          .observeInbox(userId.value)
           .pipe(
             map((result) =>
-              result.isSuccess() ? unreadCount(result.value) : 0,
+              result.ok ? NotificationSystem.unreadCount(result.value) : 0,
             ),
           );
       }),

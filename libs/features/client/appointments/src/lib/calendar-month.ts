@@ -1,5 +1,5 @@
 import { ZonedDateTime } from '@creativo/application/accounts';
-import { Appointment } from '@creativo/application/booking';
+import type { Appointment } from '@core/entities';
 import { LocalDate, defect } from '@core/primitives';
 import { CalendarGridSystem, type CalendarWeek } from '@core/systems';
 
@@ -35,11 +35,10 @@ export function buildCalendarMonth(
 ): CalendarMonth {
   const monthStart = anchor.startOfMonth();
   const monthKey = localDateOf(monthStart);
+  // A visit marks its own shop day — the stored `localDate`.
   const weeks = CalendarGridSystem.monthGrid(
     monthKey,
-    appointments.map((appointment) =>
-      parseDay(appointment.timeSlot.calendarDayKey()),
-    ),
+    appointments.map((appointment) => appointment.localDate),
   );
   return {
     year: monthStart.year,
@@ -54,14 +53,14 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`;
 }
 
-/** A `YYYY-MM-DD` the legacy calendar produced — a civil date by construction. */
+/** A `YYYY-MM-DD` built from the legacy calendar's parts — a civil date by construction. */
 function parseDay(raw: string): LocalDate {
   const day = LocalDate.parse(raw);
   if (!day.ok) defect(`unreachable: not a civil date: ${raw}`);
   return day.value;
 }
 
-/** Same `YYYY-MM-DD` shape as `TimeSlot.calendarDayKey()`, on the instant's own calendar. */
+/** The instant's own civil day, `YYYY-MM-DD`, on its own calendar. */
 function localDateOf(date: ZonedDateTime): LocalDate {
   return parseDay(`${date.year}-${pad2(date.month)}-${pad2(date.day)}`);
 }

@@ -44,12 +44,12 @@ import {
   defect,
 } from '@core/primitives';
 import {
-  SeatOccupant as EcsSeatOccupant,
+  SeatSubject as EcsSeatSubject,
   SubjectRelationship as EcsSubjectRelationship,
 } from '@core/components';
 import {
   AppointmentIndexSystem,
-  type IndexedSeat,
+  type AccountIndexedSeat,
   ZonedTimeSystem,
 } from '@core/systems';
 
@@ -114,7 +114,7 @@ export function appointmentToDocument(
     // what lets the stats trigger read a client's whole history (R33).
     subjectUserIds: subjectUserIdsOf(appointment),
     placement: context.placement ?? null,
-    barberIds: AppointmentIndexSystem.queryKeys(toEcsAppointment(appointment))
+    barberIds: AppointmentIndexSystem.accountKeys(toEcsAppointment(appointment))
       .barberIds,
     // The (barber, day) projection docs this appointment occupies — the
     // rebuild trigger's reverse index. `array-contains` on this plus a
@@ -1048,7 +1048,7 @@ export function appointmentFromDocument(
  * never own anything.
  */
 export function ownerUserIdOf(appointment: Appointment): string | null {
-  return AppointmentIndexSystem.queryKeys(toEcsAppointment(appointment))
+  return AppointmentIndexSystem.accountKeys(toEcsAppointment(appointment))
     .ownerUserId;
 }
 
@@ -1059,7 +1059,7 @@ export function ownerUserIdOf(appointment: Appointment): string | null {
  * history to find.
  */
 export function subjectUserIdsOf(appointment: Appointment): readonly string[] {
-  return AppointmentIndexSystem.queryKeys(toEcsAppointment(appointment))
+  return AppointmentIndexSystem.accountKeys(toEcsAppointment(appointment))
     .subjectUserIds;
 }
 
@@ -1076,7 +1076,7 @@ export function subjectUserIdsFromDocument(
     : [];
   // Only the accounts matter here: each raw account subject becomes a seat
   // the mirror reads (no chair, no day — neither is asked of it).
-  const accounts: IndexedSeat[] = [];
+  const accounts: AccountIndexedSeat[] = [];
   for (const raw of seats) {
     if (raw === null || typeof raw !== 'object') continue;
     const subject = (raw as Record<string, unknown>)['subject'];
@@ -1090,14 +1090,14 @@ export function subjectUserIdsFromDocument(
     ) {
       accounts.push({
         barberId: EcsBarberId.of(''),
-        ...EcsSeatOccupant.account(
-          EcsUserId.of(userId),
-          EcsSubjectRelationship.Companion,
-        ),
+        // The account mirror alone (D29): a raw legacy seat names no record.
+        seatSubject: EcsSeatSubject.Account,
+        subjectUserId: EcsUserId.of(userId),
+        subjectRelationship: EcsSubjectRelationship.Companion,
       });
     }
   }
-  return AppointmentIndexSystem.queryKeys({
+  return AppointmentIndexSystem.accountKeys({
     localDate: NO_DAY,
     seats: accounts,
   }).subjectUserIds;
@@ -1177,7 +1177,7 @@ export function busyDocumentId(barberId: string, dayKey: string): string {
  * one projection doc.
  */
 export function busyKeysOf(appointment: Appointment): readonly string[] {
-  return AppointmentIndexSystem.queryKeys(toEcsAppointment(appointment))
+  return AppointmentIndexSystem.accountKeys(toEcsAppointment(appointment))
     .busyKeys;
 }
 

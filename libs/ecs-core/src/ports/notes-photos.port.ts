@@ -3,9 +3,10 @@ import type {
   RepositoryError,
   Result,
   AppointmentId,
-  UserId,
+  CustomerId,
 } from '@core/primitives';
 import type { AppointmentNote, AppointmentPhoto } from '@core/entities';
+import type { UploadPhotoBytes } from './media.port';
 
 /**
  * The visit's staff-only notes and photos (blueprint §4.2) —
@@ -39,12 +40,11 @@ export type DeleteAppointmentPhoto = (
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
- * A client's newest photos across visits — `clientUserId ==`,
- * `orderBy takenAtUtcMs desc`, at most `limit` (index #22). Keyed by the
- * uid until the appointment flip (1) re-keys it to `clientCustomerId` (D29).
+ * A client record's newest photos across visits — `clientCustomerId ==`
+ * (D29), `orderBy takenAtUtcMs desc`, at most `limit` (index #22).
  */
 export type ListClientPhotos = (
-  clientUserId: UserId,
+  clientCustomerId: CustomerId,
   limit: number,
 ) => Promise<Result<readonly AppointmentPhoto[], RepositoryError>>;
 
@@ -73,13 +73,36 @@ export type SaveAppointmentNote = (
   note: AppointmentNote | null,
 ) => Promise<Result<void, RepositoryError>>;
 
-/** The notes-and-photos bundle the web binds. */
+/** The notes-and-photos port catalogue; each web bundle below is a `Pick` of it. */
 export type NotesPhotosPorts = {
   readonly observeAppointmentPhotos: ObserveAppointmentPhotos;
   readonly saveAppointmentPhoto: SaveAppointmentPhoto;
   readonly deleteAppointmentPhoto: DeleteAppointmentPhoto;
   readonly listClientPhotos: ListClientPhotos;
   readonly countPhotosByAppointment: CountPhotosByAppointment;
+  readonly uploadPhotoBytes: UploadPhotoBytes;
   readonly observeAppointmentNote: ObserveAppointmentNote;
   readonly saveAppointmentNote: SaveAppointmentNote;
 };
+
+/** A visit's note — the bundle the web's `APPOINTMENT_NOTE_PORTS` token binds. */
+export type AppointmentNotePorts = Pick<
+  NotesPhotosPorts,
+  'observeAppointmentNote' | 'saveAppointmentNote'
+>;
+
+/**
+ * A visit's photos and a client record's strip — the bundle the web's
+ * `APPOINTMENT_PHOTO_PORTS` token binds. `uploadPhotoBytes` (`media.port.ts`)
+ * rides here: the staff camera/attach flow uploads the bytes through it,
+ * then saves the document.
+ */
+export type AppointmentPhotoPorts = Pick<
+  NotesPhotosPorts,
+  | 'observeAppointmentPhotos'
+  | 'saveAppointmentPhoto'
+  | 'deleteAppointmentPhoto'
+  | 'listClientPhotos'
+  | 'countPhotosByAppointment'
+  | 'uploadPhotoBytes'
+>;

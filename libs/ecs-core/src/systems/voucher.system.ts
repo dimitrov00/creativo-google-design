@@ -3,6 +3,7 @@ import {
   Result,
   VoucherRefusal,
   type Currency,
+  type CustomerId,
   type GiftVoucherId,
   type UserId,
   type LocalDate,
@@ -17,7 +18,24 @@ import {
   VoucherStatus,
   WriteOp,
 } from '@core/components';
-import { type GiftVoucher, Collections } from '@core/entities';
+import {
+  type GiftVoucher,
+  type GiftVoucherMeta,
+  Collections,
+} from '@core/entities';
+
+/**
+ * What the balance algebra reads of a voucher — its money, its expiry and
+ * its lifecycle, never whose it is (D29): a whole `GiftVoucher` passes
+ * straight in (Law 3), and so does a voucher a legacy shim read, which
+ * cannot know its client record. A balance change hands the same value back
+ * with `balanceCents` replaced, whatever else it carries.
+ */
+export type VoucherBalance = Pick<
+  GiftVoucherMeta,
+  'initialValueCents' | 'balanceCents' | 'currency' | 'expiresAtUtcMs'
+> &
+  VoucherLifecycle;
 
 /** What a new voucher is issued from — every field present. */
 export type IssueVoucher = {
@@ -30,8 +48,14 @@ export type IssueVoucher = {
   readonly expiresAtUtcMs: UtcEpochMs | null;
   /** The shop day of the expiry instant (T5) — `null` together with it. */
   readonly expiresLocalDate: LocalDate | null;
-  /** The account it is issued to — a uid until the appointment flip (1) (D29). */
-  readonly issuedToUserId: UserId | null;
+  /** The client record it is issued to (D29); `null` for a paper voucher. */
+  readonly issuedToCustomerId: CustomerId | null;
+  /**
+   * The account that may read it — the record's `Customer.userId`, handed in
+   * by the boundary, never derived from `issuedToCustomerId` (D29); `null`
+   * for a paper voucher or a record without an account.
+   */
+  readonly holderUserId: UserId | null;
 };
 
 /** The errors a voucher's balance algebra can refuse with. */
@@ -62,12 +86,15 @@ function figure(amountCents: number, currency: Currency): Money {
   return { amountCents: cents(amountCents), currency };
 }
 
-function withBalance(voucher: GiftVoucher, balanceCents: number): GiftVoucher {
+function withBalance<V extends VoucherBalance>(
+  voucher: V,
+  balanceCents: number,
+): V {
   return { ...voucher, balanceCents: cents(balanceCents) };
 }
 
 function refusal(
-  voucher: GiftVoucher,
+  voucher: VoucherBalance,
   nowUtcMs: UtcEpochMs,
 ): VoucherRefusal | null {
   if (VoucherLifecycle.isVoid(voucher)) return VoucherRefusal.Void;
@@ -81,11 +108,11 @@ function refusal(
   return null;
 }
 
-function restore(
-  voucher: GiftVoucher,
+function restore<V extends VoucherBalance>(
+  voucher: V,
   amount: Money,
 ): Result<
-  GiftVoucher,
+  V,
   | EngagementError.GiftVoucherOverRestore
   | EngagementError.GiftVoucherCurrencyMismatch
 > {
@@ -147,7 +174,8 @@ export const VoucherSystem = {
       issuedAtUtcMs: input.issuedAtUtcMs,
       expiresAtUtcMs: input.expiresAtUtcMs,
       expiresLocalDate: input.expiresLocalDate,
-      issuedToUserId: input.issuedToUserId,
+      issuedToCustomerId: input.issuedToCustomerId,
+      holderUserId: input.holderUserId,
       ...VoucherLifecycle.active(),
     });
   },
@@ -155,7 +183,7 @@ export const VoucherSystem = {
   /** Why it cannot be used at `nowUtcMs` — void, expired (AT the instant still is not), empty — or `null`. */
   refusal,
 
-  isRedeemable(voucher: GiftVoucher, nowUtcMs: UtcEpochMs): boolean {
+  isRedeemable(voucher: VoucherBalance, nowUtcMs: UtcEpochMs): boolean {
     return refusal(voucher, nowUtcMs) === null;
   },
 
@@ -163,7 +191,7 @@ export const VoucherSystem = {
    * How much of `due` this voucher can settle — its whole balance or all of
    * what is owed, whichever is smaller; zero across a currency line.
    */
-  coverage(voucher: GiftVoucher, due: Money): Money {
+  coverage(voucher: VoucherBalance, due: Money): Money {
     if (due.currency !== voucher.currency) return figure(0, voucher.currency);
     return figure(
       Math.min(voucher.balanceCents, due.amountCents),
@@ -172,12 +200,12 @@ export const VoucherSystem = {
   },
 
   /** `amount` taken off the balance — refused when not redeemable, in another currency, or more than is left. */
-  redeem(
-    voucher: GiftVoucher,
+  redeem<V extends VoucherBalance>(
+    voucher: V,
     amount: Money,
     nowUtcMs: UtcEpochMs,
   ): Result<
-    GiftVoucher,
+    V,
     | EngagementError.GiftVoucherNotRedeemable
     | EngagementError.GiftVoucherInsufficientBalance
     | EngagementError.GiftVoucherCurrencyMismatch
@@ -220,11 +248,11 @@ export const VoucherSystem = {
    * give back whatever the voucher's state, so a void voucher refuses only a
    * draw that GROWS; the balance stays within `[0, initialValueCents]`.
    */
-  settle(
-    voucher: GiftVoucher,
+  settle<V extends VoucherBalance>(
+    voucher: V,
     previous: Money,
     next: Money,
-  ): Result<GiftVoucher, VoucherBalanceError> {
+  ): Result<V, VoucherBalanceError> {
     const currency = voucher.currency;
     if (previous.currency !== currency || next.currency !== currency) {
       return Result.err(
@@ -270,7 +298,8 @@ export const VoucherSystem = {
       issuedAtUtcMs: voucher.issuedAtUtcMs,
       expiresAtUtcMs: voucher.expiresAtUtcMs,
       expiresLocalDate: voucher.expiresLocalDate,
-      issuedToUserId: voucher.issuedToUserId,
+      issuedToCustomerId: voucher.issuedToCustomerId,
+      holderUserId: voucher.holderUserId,
       ...VoucherLifecycle.voided(nowUtcMs, reason),
     };
   },

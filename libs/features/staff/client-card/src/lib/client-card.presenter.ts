@@ -14,13 +14,13 @@ import {
   type WallTime,
 } from '@core/components';
 import { AgeSystem, ClientGlanceSystem, ZonedTimeSystem } from '@core/systems';
-import {
-  type Appointment,
-  type AppointmentPhoto,
-  type ClientStatsRecord,
-  type VisitLeg,
-  type WaitlistRequest,
-} from '@creativo/application/booking';
+import type {
+  Appointment,
+  AppointmentPhoto,
+  ClientStatsRecord,
+  WaitlistRequest,
+} from '@core/entities';
+import type { VisitLeg } from '@core/components';
 import {
   type BadgeSeries,
   type LoyaltyAccount,
@@ -125,7 +125,7 @@ export function displayNameOf(
 export interface HeadInput {
   readonly subject: ClientCardSubject;
   readonly user: User | null;
-  /** `users/{uid}` and `clientStats/{uid}` have both answered: the D-9 gate. */
+  /** `users/{uid}` and `clientStats/{customerId}` have both answered: the D-9 gate. */
   readonly settled: boolean;
   readonly stats: ClientStatsRecord | null;
   /** The stats were read (a bound reader answered); without them the line claims no tenure. */
@@ -165,13 +165,13 @@ export function clientHeadVm(input: HeadInput): ClientHeadVm {
       stateLine = null;
     } else if (
       stats === null ||
-      stats.lifetime.visitsCompleted === 0 ||
-      stats.firstVisitAtMs === null
+      stats.lifetimeVisitsCompleted === 0 ||
+      stats.firstVisitLocalDate === null
     ) {
       stateLine = words.head.firstVisit;
     } else {
       stateLine = words.head.since(
-        monthYearLong(shopDayOf(stats.firstVisitAtMs), words.lang),
+        monthYearLong(stats.firstVisitLocalDate, words.lang),
       );
     }
   }
@@ -239,13 +239,7 @@ export function sameLegs(
   draft: ClientCardContext['legs'],
 ): boolean {
   return ClientGlanceSystem.sameLegs(
-    last.map((leg) => ({
-      serviceId: ServiceId.of(leg.serviceId.value),
-      variantId:
-        leg.variantId === null
-          ? null
-          : ServiceVariantId.of(leg.variantId.value),
-    })),
+    last,
     draft.map((leg) => ({
       serviceId: ServiceId.of(leg.serviceId),
       variantId:
@@ -302,20 +296,22 @@ export function quickActionsVm(input: ActionsInput): readonly QuickActionVm[] {
       },
     );
   }
-  const last = input.stats?.lastVisit ?? null;
+  const stats = input.stats;
+  const lastId = stats?.lastVisitAppointmentId ?? null;
+  const lastDay = stats?.lastVisitLocalDate ?? null;
+  const lastLegs = stats?.lastVisitLegs ?? [];
   if (
-    last !== null &&
+    lastId !== null &&
+    lastDay !== null &&
     input.online &&
     !input.context.gone &&
-    last.appointmentId.value !== input.context.appointmentId &&
-    last.legs.length > 0 &&
-    !sameLegs(last.legs, input.context.legs)
+    lastId !== input.context.appointmentId &&
+    lastLegs.length > 0 &&
+    !sameLegs(lastLegs, input.context.legs)
   ) {
     const services = [
       ...new Set(
-        last.legs.map((leg) =>
-          input.context.catalog.serviceName(leg.serviceId.value),
-        ),
+        lastLegs.map((leg) => input.context.catalog.serviceName(leg.serviceId)),
       ),
     ].filter((service): service is string => service !== null);
     if (services.length > 0) {
@@ -326,10 +322,10 @@ export function quickActionsVm(input: ActionsInput): readonly QuickActionVm[] {
         label: words.actions.repeat,
         href: null,
         accessibleName: words.actions.againName(
-          dayLong(shopDayOf(last.atMs), today, words.lang),
+          dayLong(lastDay, today, words.lang),
           services.join(', '),
         ),
-        legs: last.legs,
+        legs: lastLegs,
       });
     }
   }
@@ -341,7 +337,10 @@ export function quickActionsVm(input: ActionsInput): readonly QuickActionVm[] {
 export interface VisitsModuleInput {
   /** The history's first page, newest first. */
   readonly appointments: readonly Appointment[];
+  /** The account the card is open on — whose own words a card quotes. */
   readonly subjectUserId: string;
+  /** Its client RECORD (D29) — whose seats and outcome a card tells; `null` before the record exists. */
+  readonly subjectCustomerId: string | null;
   readonly context: ClientCardContext;
   /** The client's past cuts, newest first — the featured card's thumbs. */
   readonly photos: readonly AppointmentPhoto[];
@@ -364,10 +363,10 @@ export function lastWorkedVisit(
   currentAppointmentId: string | null,
 ): { readonly appointment: Appointment; readonly row: VisitRowVm } | null {
   const newestFirst = [...appointments].sort(
-    (a, b) => b.timeSlot.start.toMillis() - a.timeSlot.start.toMillis(),
+    (a, b) => b.utcEpochMs - a.utcEpochMs,
   );
   for (const appointment of newestFirst) {
-    if (appointment.id.value === currentAppointmentId) continue;
+    if (appointment.id === currentAppointmentId) continue;
     const row = rowOf(appointment);
     if (row.outcome === 'worked') return { appointment, row };
   }
@@ -383,13 +382,12 @@ export function clientPhotoVm(
   words: ClientCardWords,
 ): ClientPhotoVm {
   const today = shopDayOf(nowMs);
-  const taken = Date.parse(photo.takenAtIso);
-  const day = Number.isFinite(taken) ? shopDayOf(taken) : today;
+  const day = shopDayOf(photo.takenAtUtcMs);
   return {
-    photoId: photo.photoId,
+    photoId: photo.id,
     appointmentId: photo.appointmentId,
     url: photo.url,
-    takenAtIso: photo.takenAtIso,
+    takenAtUtcMs: photo.takenAtUtcMs,
     dateLabel: dayShort(day, today, words.lang),
     accessibleName: words.photos.name(dayLong(day, today, words.lang)),
     barberId: photo.barberId,

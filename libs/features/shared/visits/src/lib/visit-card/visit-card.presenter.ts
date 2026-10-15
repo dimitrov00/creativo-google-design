@@ -1,13 +1,21 @@
-import { UserId } from '@creativo/application/accounts';
+import type { Appointment, WaitlistRequest } from '@core/entities';
+import type { ShopNow } from '@core/components';
 import {
-  type Appointment,
-  type Seat,
-  type WaitlistRequest,
-  ZonedDateTime,
-  subjectVisitOf,
-} from '@creativo/application/booking';
+  BookingStatus,
+  LocalDate,
+  type TimeZone,
+  type UtcEpochMs,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import { firstNameOf } from '../first-name';
-import { visitRowOf, waitlistRowOf } from '../visit-row.presenter';
+import { shopNowOf } from '../visit-ecs.shim';
+import {
+  storyOf,
+  visitRowOf,
+  visitZoneOf,
+  waitlistRowOf,
+} from '../visit-row.presenter';
+import { formatMinute, formatWallClock } from '../wall-clock';
 import type { VisitLookup, VisitRowVm } from '../visit-row.vm';
 import type {
   VisitCardOptions,
@@ -34,8 +42,9 @@ import type {
  * date is its tile and its section), the barber as a face in the corner,
  * a status as a capsule, the label over it all.
  *
- * Every date is formatted on the visit's own calendar — the shop's zone
- * travels with the instant — never on the device's.
+ * The visit's day and hour are its shop wall clock (`localDate` +
+ * `startMinutes`), printed as stored; "now" and a photo's instant are read
+ * in the location's zone, never the device's.
  */
 
 /** «·» between two facts of a line, as the row's fact line sets it. */
@@ -50,8 +59,14 @@ export function visitCardOf(
   const words = options.words;
   const staff = options.perspective === 'staff';
   const last = options.kind === 'last';
-  const start = appointment.timeSlot.start;
-  const at = new CardClock(start, options.nowMs, options.locale);
+  const zone = visitZoneOf(appointment.locationId, lookup);
+  const at = new CardClock(
+    appointment.localDate,
+    appointment.startMinutes,
+    shopNowOf(options.nowMs, zone),
+    options.locale,
+    zone,
+  );
 
   // The visit as both lists tell it. The grain is the list's, and a card
   // reads neither the tile nor the section it picks.
@@ -61,6 +76,7 @@ export function visitCardOf(
       perspective: options.perspective,
       grain: 'month',
       subjectUserId: options.subjectUserId,
+      subjectCustomerId: options.subjectCustomerId,
       currentAppointmentId: null,
       nowMs: options.nowMs,
       locale: options.locale,
@@ -78,7 +94,7 @@ export function visitCardOf(
   // name as the client knows it on their own; a party cut by several is
   // «Иван и Петър» to a barber and «2 бръснари» to the client.
   const barberIds = distinct(
-    seatsOf(appointment, options).map((seat) => seat.barberId.value),
+    storyOf(appointment, options).seats.map((seat) => seat.barberId),
   );
   const nameOf = (barberId: string) =>
     lookup.barberName(barberId) ?? words.barberRole;
@@ -107,7 +123,7 @@ export function visitCardOf(
   // tenant has more than one: the row's rule.
   const where =
     staff && last && row.outcome === 'worked' && lookup.locationCount > 1
-      ? lookup.locationName(appointment.locationId.value)
+      ? lookup.locationName(appointment.locationId)
       : null;
 
   // The figure is the staff's, of a worked visit: what the row prints on
@@ -117,13 +133,13 @@ export function visitCardOf(
     staff && last && row.outcome === 'worked' ? amountOf(row) : null;
 
   // A status is news on a visit still to come, and only there.
-  const status = appointment.status.kind;
+  const status = appointment.bookingStatus;
   const statusWord =
     last || row.outcome !== 'open'
       ? null
-      : status === 'pending'
+      : status === BookingStatus.Pending
         ? words.statusPending
-        : status === 'confirmed'
+        : status === BookingStatus.Confirmed
           ? (words.statusConfirmed ?? null)
           : null;
 
@@ -148,7 +164,7 @@ export function visitCardOf(
 
   // The client's own words, as the row rules whose they are. The sentence
   // says them whole, in its own form («от клиента: „…“»).
-  const note = row.quote === null ? null : (appointment.contact?.note ?? null);
+  const note = row.quote === null ? null : appointment.contactNote;
 
   // Every fact the eye reads, in reading order, through the row's own
   // sentence: the facts after the day follow one another, the first of
@@ -175,7 +191,7 @@ export function visitCardOf(
   const sentence = said.length > 0 ? worded : worded.replace(`${when}, `, when);
 
   return {
-    id: appointment.id.value,
+    id: appointment.id,
     kind: options.kind,
     label,
     services: row.title,
@@ -190,7 +206,7 @@ export function visitCardOf(
     photos: (options.photos ?? []).slice(0, 3).map((photo) => ({
       id: photo.id,
       url: photo.url,
-      alt: words.photoName(at.dayLong(photo.takenAtIso)),
+      alt: words.photoName(at.dayLong(photo.takenAtUtcMs)),
     })),
     accessibleName: options.cardWords.name(label, sentence),
     testId: options.testId,
@@ -245,27 +261,7 @@ export function waitlistCardOf(
   };
 }
 
-// ── The story's seats ──────────────────────────────────────────────────
-
-/**
- * The seats the card is about: the subject's own on the staff card (the
- * domain's reading, `subjectVisitOf`, the one the row and the statistics
- * count by); the whole party's on the client's page, and for a subject
- * with no seat on the visit.
- */
-function seatsOf(
-  appointment: Appointment,
-  options: Pick<VisitCardOptions, 'perspective' | 'subjectUserId'>,
-): readonly Seat[] {
-  if (options.perspective !== 'staff' || options.subjectUserId === null) {
-    return appointment.seats;
-  }
-  const subject = UserId.create(options.subjectUserId);
-  const visit = subject.isSuccess()
-    ? subjectVisitOf(subject.value, appointment)
-    : null;
-  return visit === null ? appointment.seats : visit.seats;
-}
+// ── The row's figure ───────────────────────────────────────────────
 
 /** The row's money, charged: «27,50 €». A struck amount is a visit that did not happen. */
 function amountOf(row: VisitRowVm): string | null {
@@ -285,58 +281,54 @@ function distinct(values: readonly string[]): string[] {
 // ── The clock ──────────────────────────────────────────────────────────
 
 /**
- * A visit's instant as a card prints it, on its own calendar against
+ * A visit's wall-clock start as a card prints it, against the shop's
  * "now". The two date faces are the card's own («5.09», «пт, 23.10»: a
- * row never prints its date); the day in words, the time and the list
- * are the row's forms.
+ * row never prints its date); the day in words, the time and the list are
+ * the row's forms.
  */
 class CardClock {
-  private readonly now: ZonedDateTime | null;
-
   constructor(
-    private readonly start: ZonedDateTime,
-    nowMs: number,
+    private readonly localDate: LocalDate,
+    private readonly minute: number,
+    private readonly now: ShopNow,
     private readonly locale: string,
-  ) {
-    const now = ZonedDateTime.fromMillis(nowMs, start.zoneName);
-    this.now = now.isSuccess() ? now.value : null;
-  }
+    private readonly timeZone: TimeZone,
+  ) {}
 
   /** «10:00». */
   time(): string {
-    return this.format(this.start, { hour: '2-digit', minute: '2-digit' });
+    return formatMinute(this.minute, this.locale);
   }
 
   /** «5.09» — a last visit's day (R59); the year only outside the current one. */
   day(): string {
-    return this.format(this.start, {
+    return formatWallClock(this.localDate, null, this.locale, {
       day: 'numeric',
       month: 'short',
-      ...this.yearIfElsewhere(this.start),
+      ...this.yearIfElsewhere(this.localDate),
     });
   }
 
   /** «пт, 23.10» — the day of a visit to come, as `/account` has always printed it. */
   weekdayAndDay(): string {
-    return this.format(this.start, {
+    return formatWallClock(this.localDate, null, this.locale, {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
-      ...this.yearIfElsewhere(this.start),
+      ...this.yearIfElsewhere(this.localDate),
     });
   }
 
   /**
-   * «5 септември» — the day as a reader hears it; a photo's own day for
-   * its name, the visit's when the photo's is unreadable.
+   * «5 септември» — the day as a reader hears it; a photo's own day (read
+   * on the shop's calendar) for its name, the visit's without one.
    */
-  dayLong(iso?: string): string {
-    const taken =
-      iso === undefined
-        ? null
-        : ZonedDateTime.fromISO(iso, this.start.zoneName);
-    const day = taken !== null && taken.isSuccess() ? taken.value : this.start;
-    return this.format(day, {
+  dayLong(takenAtUtcMs?: UtcEpochMs): string {
+    const day =
+      takenAtUtcMs === undefined
+        ? this.localDate
+        : ZonedTimeSystem.toLocal(takenAtUtcMs, this.timeZone).localDate;
+    return formatWallClock(day, null, this.locale, {
       day: 'numeric',
       month: 'long',
       ...this.yearIfElsewhere(day),
@@ -347,11 +339,11 @@ class CardClock {
   whenLong(today: string): string {
     return this.isToday()
       ? `${today}, ${this.time()}`
-      : this.format(this.start, {
+      : formatWallClock(this.localDate, this.minute, this.locale, {
           weekday: 'long',
           day: 'numeric',
           month: 'long',
-          ...this.yearIfElsewhere(this.start),
+          ...this.yearIfElsewhere(this.localDate),
           hour: '2-digit',
           minute: '2-digit',
         });
@@ -365,22 +357,16 @@ class CardClock {
   }
 
   isToday(): boolean {
-    return this.now !== null && this.now.toISODate() === this.start.toISODate();
+    return this.now.localDate === this.localDate;
   }
 
   /** The year only outside the current one (R59). */
   private yearIfElsewhere(
-    instant: ZonedDateTime,
+    day: LocalDate,
   ): Pick<Intl.DateTimeFormatOptions, 'year'> {
-    return this.now === null || this.now.year === instant.year
+    return LocalDate.parts(this.now.localDate).year ===
+      LocalDate.parts(day).year
       ? {}
       : { year: 'numeric' };
-  }
-
-  private format(
-    instant: ZonedDateTime,
-    options: Intl.DateTimeFormatOptions,
-  ): string {
-    return instant.toLocaleString(this.locale, options);
   }
 }

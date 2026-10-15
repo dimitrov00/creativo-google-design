@@ -13,7 +13,8 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { map, switchMap } from 'rxjs/operators';
-import type { ServiceCategoryGroup } from '@creativo/application/catalog';
+import { LocalizedText } from '@core/components';
+import type { RhythmServiceGroup } from '../admin-rhythm/rhythm-service-groups';
 import {
   STREAK_EXCUSES,
   type StreakExcuse,
@@ -125,7 +126,7 @@ export class AdminRhythmSheet {
   /** The sheet to show; `null` closes it. */
   readonly kind = input<AdminRhythmSheetKind | null>(null);
   /** The catalogue's services under their categories; `null` while unread. */
-  readonly services = input<readonly ServiceCategoryGroup[] | null>(null);
+  readonly services = input<readonly RhythmServiceGroup[] | null>(null);
   /** The sheet has closed (its exit finished): the owner clears `kind`. */
   readonly closed = output<void>();
 
@@ -233,12 +234,12 @@ export class AdminRhythmSheet {
       const query = this.query().trim().toLocaleLowerCase(locale);
       return groups
         .map((group) => ({
-          id: group.category.id.value,
-          name: group.category.name.get(locale),
+          id: group.category.id as string,
+          name: LocalizedText.pick(group.category.name, locale),
           services: group.services
             .map((service) => ({
-              id: service.id.value,
-              name: service.name.get(locale),
+              id: service.id as string,
+              name: LocalizedText.pick(service.name, locale),
             }))
             .filter(
               (service) =>

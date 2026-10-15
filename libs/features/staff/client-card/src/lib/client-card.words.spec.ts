@@ -1,3 +1,4 @@
+import { Daypart } from '@core/components';
 import type { Metric } from '@creativo/application/engagement';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { describe, expect, it } from 'vitest';
@@ -51,7 +52,7 @@ const NAMED_IN_BOTH_FORMS = [
 /** The words that take one of a closed set: every member is asked for. */
 const CLOSED_SETS: Readonly<Record<string, readonly (readonly unknown[])[]>> = {
   'words.monthShort': Array.from({ length: 12 }, (_, i) => [i + 1]),
-  'words.waitlist.daypart': [['morning'], ['afternoon'], ['evening']],
+  'words.waitlist.daypart': Daypart.ALL.map((part) => [part]),
   'words.visits.cancelledBy': [['client'], ['shop']],
   'words.visits.rowName': [
     [

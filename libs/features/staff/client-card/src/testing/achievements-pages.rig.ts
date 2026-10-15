@@ -32,24 +32,24 @@ import {
   type User,
   ZonedDateTime,
 } from '@creativo/application/accounts';
+import type { Result } from '@creativo/application/booking';
+import type {
+  AppointmentPhotoPorts,
+  AppointmentReadPorts,
+  ClientStatsReadPorts,
+  CouponVoucherPorts,
+  CustomerPorts,
+  WaitlistReadPorts,
+} from '@core/ports';
 import {
-  CLIENT_HISTORY_READER,
-  CLIENT_PHOTOS_READER,
-  CLIENT_STATS_READER,
-  type ClientHistoryReader,
-  type ClientPhotosReader,
-  type ClientStatsReader,
-  type Result,
-  WAITLIST_READER,
-  type WaitlistReader,
-} from '@creativo/application/booking';
+  APPOINTMENT_PHOTO_PORTS,
+  APPOINTMENT_READ_PORTS,
+  CLIENT_STATS_READ_PORTS,
+  COUPON_VOUCHER_PORTS,
+  CUSTOMER_PORTS,
+  WAITLIST_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import {
-  InMemoryClientHistoryReader,
-  InMemoryClientPhotosReader,
-} from '@creativo/application/booking/testing';
-import {
-  CLIENT_VOUCHERS_READER,
-  type ClientVouchersReader,
   LOYALTY_ACTIVITY_READER,
   LOYALTY_CATALOG_READER,
   LOYALTY_READER,
@@ -77,18 +77,21 @@ import {
   GEORGI_MONEY,
   InMemoryAvatars,
   InMemoryProfilePort,
-  InMemoryStatsReader,
-  InMemoryWaitlistReader,
   MARTIN,
   NOW_MS,
   catalogueOf,
+  customerPortsOf,
   georgiHistory,
   georgiPhotos,
   georgiUser,
+  historyPortsOf,
   martinHistory,
   martinUser,
   martinWaitlist,
+  photoPortsOf,
   statsOf,
+  statsPortsOf,
+  waitlistPortsOf,
 } from './client-card.fixtures';
 
 /** The id the visit editor labels its page container by. */
@@ -176,17 +179,19 @@ export interface AchievementsRig {
   /** «Now» for the shop's clock (Monday 28 September 2026, 12:40 by default). */
   readonly nowMs?: number;
   readonly profiles?: ProfilePort;
-  readonly stats?: ClientStatsReader;
-  readonly history?: ClientHistoryReader;
-  readonly photos?: ClientPhotosReader;
-  readonly waitlist?: WaitlistReader;
+  readonly stats?: ClientStatsReadPorts;
+  readonly history?: AppointmentReadPorts;
+  readonly photos?: AppointmentPhotoPorts;
+  readonly waitlist?: WaitlistReadPorts;
+  /** The client records the card resolves its person by (D29) — Георги's and Мартин's by default. */
+  readonly customers?: CustomerPorts;
   readonly avatars?: AvatarUploader;
   /**
    * The wallet's two readers (revision 3 §4.5, §4.7). Bound ONLY when a
    * spec hands them (B2-6): the glance pages' world stays the one without
    * them, so no holdings line or feed appears where a case never asked.
    */
-  readonly vouchers?: ClientVouchersReader;
+  readonly vouchers?: CouponVoucherPorts;
   readonly activity?: LoyaltyActivityReader;
 }
 
@@ -225,29 +230,26 @@ export function achievementsPageProviders(
         ),
     },
     {
-      provide: CLIENT_STATS_READER,
+      provide: CUSTOMER_PORTS,
+      useValue: rig.customers ?? customerPortsOf(),
+    },
+    {
+      provide: CLIENT_STATS_READ_PORTS,
       useValue:
         rig.stats ??
-        new InMemoryStatsReader(
-          new Map([
-            [GEORGI, statsOf(GEORGI, georgiHistory())],
-            [MARTIN, statsOf(MARTIN, martinHistory())],
-          ]),
-          new Map([[GEORGI, GEORGI_MONEY]]),
+        statsPortsOf(
+          [statsOf(GEORGI, georgiHistory()), statsOf(MARTIN, martinHistory())],
+          [GEORGI_MONEY],
         ),
     },
     {
-      provide: CLIENT_HISTORY_READER,
+      provide: APPOINTMENT_READ_PORTS,
       useValue:
-        rig.history ??
-        new InMemoryClientHistoryReader([
-          ...georgiHistory(),
-          ...martinHistory(),
-        ]),
+        rig.history ?? historyPortsOf([...georgiHistory(), ...martinHistory()]),
     },
     {
-      provide: CLIENT_PHOTOS_READER,
-      useValue: rig.photos ?? new InMemoryClientPhotosReader(georgiPhotos()),
+      provide: APPOINTMENT_PHOTO_PORTS,
+      useValue: rig.photos ?? photoPortsOf(georgiPhotos()),
     },
     {
       provide: LOYALTY_READER,
@@ -258,8 +260,8 @@ export function achievementsPageProviders(
       useValue: rig.catalog ?? new InMemoryLoyaltyCatalogReader(),
     },
     {
-      provide: WAITLIST_READER,
-      useValue: rig.waitlist ?? new InMemoryWaitlistReader([martinWaitlist()]),
+      provide: WAITLIST_READ_PORTS,
+      useValue: rig.waitlist ?? waitlistPortsOf([martinWaitlist()]),
     },
     {
       provide: AVATAR_UPLOADER,
@@ -271,7 +273,7 @@ export function achievementsPageProviders(
     },
     ...(rig.vouchers === undefined
       ? []
-      : [{ provide: CLIENT_VOUCHERS_READER, useValue: rig.vouchers }]),
+      : [{ provide: COUPON_VOUCHER_PORTS, useValue: rig.vouchers }]),
     ...(rig.activity === undefined
       ? []
       : [{ provide: LOYALTY_ACTIVITY_READER, useValue: rig.activity }]),

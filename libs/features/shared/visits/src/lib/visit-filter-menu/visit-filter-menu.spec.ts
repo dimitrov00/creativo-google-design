@@ -446,7 +446,7 @@ describe('VisitFilterMenu · «Моите часове» rebuilt from the shared
     const { fixture, host, byId, settle } = await mount(PageHost, (h) => {
       // A book with nothing missed in it…
       h.visits.set(
-        GEORGI_VISITS.filter((visit) => visit.status.kind !== 'no_show'),
+        GEORGI_VISITS.filter((visit) => visit.bookingStatus !== 'NO_SHOW'),
       );
       // …asked for its no-shows.
       h.filter.set('no_show');

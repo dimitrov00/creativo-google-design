@@ -13,29 +13,53 @@ import {
   AUTH_GATEWAY,
 } from '@creativo/application/identity';
 import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
+import { MEDIA_READER } from '@creativo/application/catalog';
 import {
-  Barber,
-  CATALOG_READER,
-  Location,
-  LocationId,
-  MEDIA_READER,
-  Service,
-} from '@creativo/application/catalog';
-import {
-  AVAILABILITY_READER,
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
-  BOOKING_POLICY_READER,
-  BookingPolicy,
   WAITLIST_GATEWAY,
-  APPOINTMENT_REPOSITORY,
-  WAITLIST_READER,
   ZonedDateTime,
-  fail,
   ok,
 } from '@creativo/application/booking';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
+import { CLOCK } from '@creativo/application/shared';
 import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
+import {
+  APPOINTMENT_READ_PORTS,
+  CATALOG_PORTS,
+  SCHEDULING_READ_PORTS,
+  WAITLIST_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { CatalogReadPorts } from '@core/ports';
+import type {
+  Barber,
+  CapacityMonth,
+  Service,
+  ShopLocation,
+} from '@core/entities';
+import { CapacityEntry, DayHours } from '@core/components';
+import {
+  BarberId,
+  CapacityMonthId,
+  LocalDate,
+  LocationId,
+  MinuteCount,
+  RepositoryError,
+  Result,
+  ServiceId,
+} from '@core/primitives';
+import {
+  at,
+  barberFixture,
+  locationFixture,
+  memoryAppointmentReadPorts,
+  memoryCatalogReadPorts,
+  memorySchedulingReadPorts,
+  memoryWaitlistReadPorts,
+  serviceFixture,
+  termsFixture,
+  unwrapOk,
+  until,
+} from '@core/testing';
 import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from '../client-booking/client-booking';
 
@@ -77,80 +101,105 @@ function provideTestI18n(): EnvironmentProviders[] {
 }
 
 function service(id: string, locationIds: readonly string[] = []): Service {
-  const result = Service.create({
-    id,
+  return serviceFixture({
+    id: ServiceId.of(id),
     name: { en: id, bg: id },
     description: { en: 'x', bg: 'x' },
-    categoryId: 'cat-hair',
-    priceMinorUnits: 1500,
-    currencyCode: 'EUR',
-    durationMinutes: 30,
+    ...termsFixture(1500, 30),
     variants: [],
     offerings: [
       {
-        barberId: 'ivan',
-        base: {
-          priceMinorUnits: 1450,
-          currencyCode: 'EUR',
-          durationMinutes: 35,
-        },
+        barberId: BarberId.of('ivan'),
+        overrides: [],
+        ...termsFixture(1450, 35),
       },
     ],
-    locationIds: [...locationIds],
-    conflictsWith: [],
-    composition: { kind: 'single' },
-    upsellOnly: false,
-    popular: false,
-    status: 'active',
+    locationIds: locationIds.map((shopId) => LocationId.of(shopId)),
     sortOrder: 0,
   });
-  if (result.isFailure()) throw new Error('bad fixture');
-  return result.value;
 }
 
 /** A barber on the ACTIVE list. */
 function barber(id: string): Barber {
-  const result = Barber.create({
-    id,
+  return barberFixture({
+    id: BarberId.of(id),
     name: { bg: id, en: id },
     handle: id,
-    title: { bg: 'Бръснар', en: 'Barber' },
     bio: { bg: '—', en: '—' },
+    yearsExperience: null,
     locationIds: [],
-    status: 'active',
     sortOrder: 1,
   });
-  if (result.isFailure()) throw new Error('bad fixture');
-  return result.value;
 }
 
-/** An ACTIVE shop. */
-function shop(id: string, name: string): Location {
-  const open = { kind: 'open' as const, opens: '09:00', closes: '20:00' };
-  const result = Location.create({
-    id,
+/** An ACTIVE shop, open 09:00–20:00 Monday to Saturday. */
+function shop(id: string, name: string): ShopLocation {
+  const open = DayHours.open(at(9), until(20));
+  return locationFixture({
+    id: LocationId.of(id),
     name: { en: name, bg: name },
     address: { en: '—', bg: '—' },
-    phone: { e164: '+359881234567', display: '+359 88 123 4567' },
-    geo: { lat: 42.6977, lng: 23.3219 },
     mapUrl: `https://maps.example.com/${id}`,
-    hours: [open, open, open, open, open, open, { kind: 'closed' }],
-    timezone: 'Europe/Sofia',
-    status: 'active',
-    sortOrder: 0,
+    openingHours: [open, open, open, open, open, open, DayHours.closed()],
   });
-  if (result.isFailure()) throw new Error('bad fixture');
-  return result.value;
 }
 
-/** Room on every day of the run, as far as the projection can tell. */
-function roomEveryDay(): ReadonlyMap<string, number> {
-  const free = new Map<string, number>();
-  for (let day = Date.UTC(2026, 7, 1); day <= Date.UTC(2026, 11, 31);) {
-    free.set(new Date(day).toISOString().slice(0, 10), 480);
-    day += 86_400_000;
+/**
+ * Which chairs the capacity projection has room on — a barber at a shop,
+ * with a full working day (480 free minutes) on every day of every month.
+ */
+type CapacityRoom = (barberId: string, locationId: string) => boolean;
+
+/** Room on every chair, every day of the run, as far as the projection can tell. */
+const roomEveryDay: CapacityRoom = () => true;
+
+/** The months the run can reach from the pinned "today" (2026-08-03) — its horizon and then some. */
+const RUN_MONTHS = ['2026-08', '2026-09', '2026-10', '2026-11', '2026-12'];
+
+/**
+ * The `capacity/{YYYY-MM}` documents the projection would hold: per month,
+ * an entry per day for every chair `room` has room on. None — never
+ * rebuilt — without a `room`.
+ */
+function capacityMonths(
+  room: CapacityRoom | undefined,
+  barbers: readonly Barber[],
+  shops: readonly ShopLocation[],
+): readonly CapacityMonth[] {
+  if (room === undefined) return [];
+  return RUN_MONTHS.map((raw) =>
+    capacityMonth(CapacityMonthId.of(raw), room, barbers, shops),
+  );
+}
+
+/** One month of {@link capacityMonths}. */
+function capacityMonth(
+  month: CapacityMonthId,
+  room: CapacityRoom,
+  barbers: readonly Barber[],
+  shops: readonly ShopLocation[],
+): CapacityMonth {
+  const first = unwrapOk(LocalDate.parse(`${month}-01`));
+  const { year, month: monthOfYear } = LocalDate.parts(first);
+  const entries: CapacityEntry[] = [];
+  for (const day of LocalDate.range(
+    first,
+    LocalDate.addDays(first, LocalDate.daysInMonth(year, monthOfYear) - 1),
+  )) {
+    for (const each of barbers) {
+      for (const at of shops) {
+        if (!room(each.id, at.id)) continue;
+        entries.push(
+          CapacityEntry.of(day, each.id, at.id, unwrapOk(MinuteCount.of(480))),
+        );
+      }
+    }
   }
-  return free;
+  return {
+    id: month,
+    month,
+    entries: [...entries].sort(CapacityEntry.compare),
+  };
 }
 
 const CATALOG = [service('cut')];
@@ -162,21 +211,22 @@ const CATALOG = [service('cut')];
  * about which minutes are free — they are about the bar's own anatomy, which
  * is supposed to be identical whether or not the day has anything in it. A
  * fixture that built real roster windows would make these tests fail for
- * reasons that have nothing to do with what they assert.
+ * reasons that have nothing to do with what they assert. So no barber is
+ * rostered on any day (no `barberSchedules` document), and the policy is the
+ * default one.
  */
 async function renderShell(
   options: {
     readonly services?: readonly Service[];
     readonly barbers?: readonly Barber[];
     /** `'pending'` never answers, the way a cold listener waits; `'failed'` errs. */
-    readonly locations?: readonly Location[] | 'pending' | 'failed';
+    readonly locations?: readonly ShopLocation[] | 'pending' | 'failed';
     /** The projection. No free minutes anywhere by default. */
-    readonly capacity?: (
-      locationId: LocationId | null,
-      barberIds: readonly string[],
-    ) => ReadonlyMap<string, number>;
+    readonly capacity?: CapacityRoom;
   } = {},
 ): Promise<ComponentFixture<ClientBooking>> {
+  const unavailable = Result.err(RepositoryError.unavailable());
+  const shops = Array.isArray(options.locations) ? options.locations : [];
   await TestBed.configureTestingModule({
     imports: [ClientBooking],
     providers: [
@@ -191,27 +241,15 @@ async function renderShell(
         },
       },
       {
-        provide: AVAILABILITY_READER,
-        useValue: {
-          observeDay: () => of(ok([])),
-          observeRangeCapacity: (
-            locationId: LocationId | null,
-            _range: unknown,
-            barberIds: readonly { readonly value: string }[],
-          ) =>
-            of(
-              ok(
-                options.capacity?.(
-                  locationId,
-                  barberIds.map((id) => id.value),
-                ) ?? new Map<string, number>(),
-              ),
-            ),
-        },
-      },
-      {
-        provide: BOOKING_POLICY_READER,
-        useValue: { observe: () => of(BookingPolicy.default()) },
+        // No roster, the default policy, and the projection's months.
+        provide: SCHEDULING_READ_PORTS,
+        useValue: memorySchedulingReadPorts({
+          capacityMonths: capacityMonths(
+            options.capacity,
+            options.barbers ?? [],
+            shops,
+          ),
+        }),
       },
       {
         provide: BOOKING_GATEWAY,
@@ -221,22 +259,14 @@ async function renderShell(
       },
       {
         // `?repeat=` reads the visit it is repeating; the shell injects the
-        // repository whether or not a spec exercises that path.
-        provide: APPOINTMENT_REPOSITORY,
-        useValue: {
-          findById: async () => ok(null),
-          save: async () => ok(undefined),
-          observeUpcomingFor: () => of(ok([])),
-          observeHistoryFor: () => of(ok([])),
-        },
+        // reads whether or not a spec exercises that path.
+        provide: APPOINTMENT_READ_PORTS,
+        useValue: memoryAppointmentReadPorts([]),
       },
       {
-        // The deep-link reader — never consulted without a ?waitlist param.
-        provide: WAITLIST_READER,
-        useValue: {
-          observeMine: () => of(ok([])),
-          findMine: async () => ok(null),
-        },
+        // The deep-link read — never consulted without a ?waitlist param.
+        provide: WAITLIST_READ_PORTS,
+        useValue: memoryWaitlistReadPorts([]),
       },
       {
         provide: WAITLIST_GATEWAY,
@@ -271,23 +301,20 @@ async function renderShell(
         },
       },
       {
-        provide: CATALOG_READER,
+        // The double, with the shop read held or failed when a spec says so.
+        provide: CATALOG_PORTS,
         useValue: {
-          listActiveServices: () => of(ok(options.services ?? CATALOG)),
-          listActiveBarbers: () => of(ok(options.barbers ?? [])),
-          listServiceCategories: () => of(ok([])),
-          listActiveLocations: () => {
-            const locations = options.locations;
-            if (locations === 'pending') return NEVER;
-            if (locations === 'failed') {
-              return of(fail(new RepositoryError('unavailable')));
-            }
-            return of(ok(locations ?? []));
-          },
-          findServiceById: () => Promise.resolve(ok(null)),
-          findBarberById: () => Promise.resolve(ok(null)),
-          findLocationById: () => Promise.resolve(ok(null)),
-        },
+          ...memoryCatalogReadPorts({
+            services: options.services ?? CATALOG,
+            barbers: options.barbers ?? [],
+            locations: shops,
+          }),
+          ...(options.locations === 'pending'
+            ? { observeLocations: () => NEVER }
+            : options.locations === 'failed'
+              ? { observeLocations: () => of(unavailable) }
+              : {}),
+        } satisfies CatalogReadPorts,
       },
       {
         provide: MEDIA_READER,
@@ -599,7 +626,7 @@ describe('BookingScheduleStep — a shop that cannot serve the visit', () => {
     button?.click();
     await settle(fixture);
 
-    expect(store(fixture).locationId()?.value).toBe('loc-center');
+    expect(store(fixture).shopId()).toBe('loc-center');
     expect(notice(fixture)).toBeNull();
     expect(
       host(fixture).querySelector<HTMLButtonElement>(
@@ -626,23 +653,18 @@ describe('BookingScheduleStep — a shop that cannot serve the visit', () => {
   });
 
   it('asks the projection about the ONE shop that can serve the visit under “any shop”', async () => {
-    const asked: (string | null)[] = [];
     const fixture = await toSchedule({
       services: CENTER_ONLY,
       barbers: BARBERS,
       locations: SHOPS,
-      capacity: (locationId) => {
-        asked.push(locationId?.value ?? null);
-        // Only Mladost has room: a day live for its chairs would open a
-        // sheet that can only say "busy", since the grid never runs it.
-        return locationId?.value === 'loc-center'
-          ? new Map<string, number>()
-          : roomEveryDay();
-      },
+      // Only Mladost has room: a day live for its chairs would open a sheet
+      // that can only say "busy", since the grid never runs it. Asked about
+      // every shop, Mladost's minutes would light the day; asked about the
+      // Center alone — the one shop that can serve the visit — it stays grey.
+      capacity: (_barberId, locationId) => locationId === 'loc-mladost',
     });
 
     expect(notice(fixture)).toBeNull();
-    expect(asked.at(-1)).toBe('loc-center');
     expect(
       host(fixture).querySelector<HTMLButtonElement>(
         '[data-testid="booking-day"][data-day-key="2026-08-04"]',
@@ -712,12 +734,7 @@ describe('BookingScheduleStep — a visit that asks for its barber', () => {
   });
 
   /** Room for Niko on every day; none for Ivan. */
-  function roomForNikoOnly(
-    _locationId: LocationId | null,
-    barberIds: readonly string[],
-  ): ReadonlyMap<string, number> {
-    return barberIds.includes('niko') ? roomEveryDay() : new Map();
-  }
+  const roomForNikoOnly: CapacityRoom = (barberId) => barberId === 'niko';
 
   function day(fixture: ComponentFixture<ClientBooking>, key: string) {
     return host(fixture).querySelector<HTMLButtonElement>(
@@ -725,36 +742,28 @@ describe('BookingScheduleStep — a visit that asks for its barber', () => {
     );
   }
 
+  // Niko's chair has room every day, Ivan's none: asked about Ivan alone the
+  // day stays grey, asked about every barber Niko's minutes light it.
   it('asks the projection about that barber alone, and greys the days only other chairs have room on', async () => {
-    const asked: (readonly string[])[] = [];
     const fixture = await toSchedule({
       barbers: BARBERS,
       locations: SHOPS,
       shopId: 'loc-center',
       barberId: 'ivan',
-      capacity: (locationId, barberIds) => {
-        asked.push(barberIds);
-        return roomForNikoOnly(locationId, barberIds);
-      },
+      capacity: roomForNikoOnly,
     });
 
-    expect(asked.at(-1)).toEqual(['ivan']);
     expect(day(fixture, '2026-08-04')?.disabled).toBe(true);
   });
 
   it('still asks about every barber when the line takes anyone', async () => {
-    const asked: (readonly string[])[] = [];
     const fixture = await toSchedule({
       barbers: BARBERS,
       locations: SHOPS,
       shopId: 'loc-center',
-      capacity: (locationId, barberIds) => {
-        asked.push(barberIds);
-        return roomForNikoOnly(locationId, barberIds);
-      },
+      capacity: roomForNikoOnly,
     });
 
-    expect(asked.at(-1)).toEqual(['ivan', 'niko']);
     expect(day(fixture, '2026-08-04')?.disabled).toBe(false);
   });
 });

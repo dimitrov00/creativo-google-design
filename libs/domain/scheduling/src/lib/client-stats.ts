@@ -29,10 +29,12 @@ import {
   CancelledBy as EcsCancelledBy,
   type ClientStats as EcsClientStats,
   type PauseSuggestion as EcsPauseSuggestion,
+  type AccountSeat as EcsAccountSeat,
   Placement,
   Seat as EcsSeatComponent,
   SeatLabel as EcsSeatLabel,
   SeatOccupant,
+  SeatSubject as EcsSeatSubject,
   SubjectRelationship as EcsSubjectRelationship,
   type VisitFact as EcsVisitFact,
   type VisitLeg as EcsVisitLeg,
@@ -259,7 +261,9 @@ export function subjectVisitOf(
   appointment: Appointment,
 ): SubjectVisit | null {
   const bridge = newBridge();
-  const visit = ClientStatsSystem.subjectVisitOf(
+  // The legacy subject is the ACCOUNT: its own seats, read by the uid the
+  // seats keep beside their client record (D29) — no record is invented.
+  const visit = ClientStatsSystem.accountVisitOf(
     EcsUserId.of(subject.value),
     statsAppointmentOf(appointment, null, bridge),
   );
@@ -338,13 +342,15 @@ export function computeClientStats(
   placements: VisitPlacements = NO_PLACEMENTS,
 ): ClientStats {
   const bridge = newBridge();
-  const stats = ClientStatsSystem.stats(
-    EcsUserId.of(subject.value),
-    appointments.map((appointment) =>
-      statsAppointmentOf(
-        appointment,
-        placements.get(appointment.id.value) ?? null,
-        bridge,
+  const stats = ClientStatsSystem.statsOfVisits(
+    ClientStatsSystem.accountVisitsOf(
+      EcsUserId.of(subject.value),
+      appointments.map((appointment) =>
+        statsAppointmentOf(
+          appointment,
+          placements.get(appointment.id.value) ?? null,
+          bridge,
+        ),
       ),
     ),
     policy.toStruct(),
@@ -373,7 +379,9 @@ export function computeClientMoneyStats(
     if (bill === null) continue;
     billed.push({ ...statsAppointmentOf(appointment, null, bridge), bill });
   }
-  const money = ClientStatsSystem.money(EcsUserId.of(subject.value), billed);
+  const money = ClientStatsSystem.moneyOfVisits(
+    ClientStatsSystem.accountVisitsOf(EcsUserId.of(subject.value), billed),
+  );
   return {
     userId: subject,
     lifetimeSpendMinor: money.lifetimeSpendCents,
@@ -600,13 +608,13 @@ const centsOf = (money: Money): PriceCents =>
  * visit's wall clock, its money in cents, its outcome through the seat
  * outcome's own converter. The catalogue terms are no stat's input.
  */
-function seatStruct(seat: Seat, zone: TimeZone): EcsSeatComponent {
+function seatStruct(seat: Seat, zone: TimeZone): EcsAccountSeat {
   const subject = seat.subject;
   const start = ZonedTimeSystem.toLocal(
     sure(UtcEpochMs.of(seat.startsAt.toMillis())),
     zone,
   );
-  return EcsSeatComponent.compose(
+  return EcsSeatComponent.composeAccount(
     {
       seatId: EcsSeatId.of(seat.id.value),
       serviceId: EcsServiceId.of(seat.serviceId.value),
@@ -629,11 +637,13 @@ function seatStruct(seat: Seat, zone: TimeZone): EcsSeatComponent {
       catalogPriceCents: null,
       catalogDurationMinutes: null,
     },
+    // The account as the legacy subject names it — no client record (D29).
     subject.kind === 'account'
-      ? SeatOccupant.account(
-          EcsUserId.of(subject.userId.value),
-          RELATIONSHIP_OF[subject.relationship],
-        )
+      ? {
+          seatSubject: EcsSeatSubject.Account,
+          subjectUserId: EcsUserId.of(subject.userId.value),
+          subjectRelationship: RELATIONSHIP_OF[subject.relationship],
+        }
       : SeatOccupant.anonymous(EcsSeatLabel.of(subject.label.value)),
     toEcsSeatOutcome(seat.outcome),
   );
@@ -667,7 +677,7 @@ function statsAppointmentOf(
   );
   bridge.starts.set(appointment.id.value, startMs);
   bridge.startsByWall.set(wallKey(start.localDate, start.minute), startMs);
-  const seats: EcsSeatComponent[] = [];
+  const seats: EcsAccountSeat[] = [];
   for (const seat of appointment.seats) {
     remember(bridge.seatIds, seat.id);
     remember(bridge.services, seat.serviceId);

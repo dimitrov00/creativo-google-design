@@ -1,7 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
+import { firstValueFrom, take } from 'rxjs';
 import {
-  APPOINTMENT_REPOSITORY,
-  AppointmentId,
   BOOKING_DRAFT_STORE,
   BOOKING_FLOW_STEPS,
   BOOKING_GATEWAY,
@@ -21,7 +20,6 @@ import {
   BookingParty,
   CalendarDay,
   CartLineId,
-  Interval,
   FlexibleWhen,
   GuestId,
   MAX_FLEXIBLE_DAYS,
@@ -36,34 +34,27 @@ import {
   WaitlistGatewayError,
   type WaitlistedSummary,
   advanceBookingFlow,
-  carriedOffsetMinutes,
   fail,
   initialBookingFlowState,
   ok,
   seatKeyValue,
 } from '@creativo/application/booking';
-import {
-  BarberId,
-  LocationId,
-  ServiceId,
-  ServiceVariantId,
-} from '@creativo/application/catalog';
-import { UserId } from '@creativo/application/accounts';
-import type {
-  Appointment,
-  BookingContactProps,
-  ChairTime,
-  MoveRider,
-  WaitlistRequest,
-} from '@creativo/application/booking';
+import { LocationId, ServiceVariantId } from '@creativo/application/catalog';
+import type { BookingContactProps } from '@creativo/application/booking';
 import { CLOCK } from '@creativo/application/shared';
+import { APPOINTMENT_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
+  AppointmentId as AppointmentKey,
   BarberId as BarberKey,
   CartLineId as LineKey,
+  DurationMinutes,
   EndMinute,
   GuestId as GuestKey,
   LocalDate,
-  type LocationId as LocationKey,
+  LocationId as LocationKey,
+  MinuteCount,
+  MinuteDelta,
   MinuteOfDay,
   SeatKeyText,
   ServiceId as ServiceKey,
@@ -84,17 +75,18 @@ import {
   PartyRole,
   type SeatAssignment,
   SeatLabel as LabelData,
-  SeatOccupant as OccupantData,
-  SubjectRelationship,
+  TimeCoordinate,
 } from '@core/components';
 import {
   BookingCartSystem,
   type BookingFlowLimits,
   BookingFlowSystem,
+  type CartRider,
   CommitSubjectRole,
   GuestLabelSystem,
+  type MoveRider,
+  MoveSystem,
   PrefillCompanions,
-  type PrefillSeat,
   ZonedTimeSystem,
 } from '@core/systems';
 
@@ -118,7 +110,7 @@ export class BookingFlowStore {
   private readonly gateway = inject(BOOKING_GATEWAY);
   private readonly waitlist = inject(WAITLIST_GATEWAY);
   /** The visit being moved, re-read when the flow's copy may be stale. */
-  private readonly appointments = inject(APPOINTMENT_REPOSITORY);
+  private readonly appointments = inject(APPOINTMENT_READ_PORTS);
 
   private readonly _state = signal<BookingFlowState>(initialBookingFlowState());
   readonly state = this._state.asReadonly();
@@ -203,6 +195,12 @@ export class BookingFlowStore {
     return state.locationId;
   });
 
+  /** {@link locationId} as the catalogue names the shop (`ShopLocation.id`). */
+  readonly shopId = computed<LocationKey | null>(() => {
+    const locationId = this.locationId();
+    return locationId === null ? null : LocationKey.of(locationId.value);
+  });
+
   // Both terminal states hold their party and cart INSIDE their receipt, so
   // the screens that render them read the same signals every other step does
   // rather than reaching into a state-specific shape.
@@ -218,6 +216,16 @@ export class BookingFlowStore {
     if (state.kind === 'confirmed') return null;
     if (state.kind === 'waitlisted') return state.summary.cart;
     return state.cart;
+  });
+
+  /**
+   * The bag as the cart math reads it (`BookingCart` of `@core/components`)
+   * — what every step hands the catalogue and availability systems, built
+   * once here rather than once per step.
+   */
+  readonly cartData = computed<CartData | null>(() => {
+    const cart = this.cart();
+    return cart === null ? null : toCartData(cart);
   });
 
   readonly guests = computed(() => this.party()?.guests ?? []);
@@ -338,6 +346,20 @@ export class BookingFlowStore {
     barberPref: BarberPref,
   ): void {
     this.dispatch({ type: 'set_line_barber', seatKey, lineId, barberPref });
+  }
+
+  /**
+   * {@link selectLocation} by the shop's catalogue id (`ShopLocation.id`) —
+   * the steps read the catalogue's entities, the flow machine (Phase 4)
+   * still holds the kernel's id. `null` is "any shop".
+   */
+  selectShop(locationId: LocationKey | null): void {
+    if (locationId === null) {
+      this.selectLocation(null);
+      return;
+    }
+    const id = LocationId.create(locationId);
+    if (id.isSuccess()) this.selectLocation(id.value);
   }
 
   /** `null` is the "any shop" answer — a choice, not the absence of one. */
@@ -532,19 +554,19 @@ export class BookingFlowStore {
   );
 
   /**
-   * The riders as the day query takes them (`MoveRider`) — pinned to the
-   * party's start, on their own barber and their SOLD terms, with the
-   * service they are served — for the engine's rider check, which drops
-   * every start where somebody the server carries could not sit, and for
-   * the shop check, which drops every shop that does not offer their
-   * service. The schedule step puts them on each day query.
+   * The riders as the move systems read them (`MoveRider`, `MoveSystem`):
+   * their service and the variant it was sold as, their barber, their
+   * wall-clock distance from the move anchor and the chair time they were
+   * SOLD at — what the shell asks the catalogue's reach about
+   * (`MoveSystem.carriedSeatsInReach`) and the review card places
+   * (`MoveSystem.placeRiders`).
    *
    * Total over what the flow holds: a rider is only ever held once
    * `moveRiderOf` parses it (`moveFacts` builds them from the visit,
    * `heldMove` refuses a stored move with one that does not parse), so none
    * is dropped here — a dropped rider is a seat the grid stops checking.
    */
-  readonly availabilityRiders = computed<readonly MoveRider[]>(() =>
+  readonly moveRiders = computed<readonly MoveRider[]>(() =>
     this.riders().flatMap((rider): readonly MoveRider[] => {
       const parsed = moveRiderOf(rider);
       return parsed === null ? [] : [parsed];
@@ -552,19 +574,27 @@ export class BookingFlowStore {
   );
 
   /**
-   * The chair time the visit being moved holds now, handed back on every day
-   * query of the move (`ObserveDayAvailabilityInput.release`). Its own seats
-   * never block its own move, because the server decides a move with the
-   * visit's contribution subtracted. Empty on a new booking. Total over what
-   * the flow holds, like the riders (`chairTimeOf`).
+   * The riders as the day query takes them (`CartRider`) — pinned to the
+   * party's start, on their own barber and their SOLD terms, with the
+   * service they are served — for the engine's rider check, which drops
+   * every start where somebody the server carries could not sit, and for
+   * the shop check, which drops every shop that does not offer their
+   * service. The schedule step puts them on each day query.
    */
-  readonly moveRelease = computed<readonly ChairTime[]>(() =>
-    (this._rescheduleOf()?.chairTimes ?? []).flatMap(
-      (chair): readonly ChairTime[] => {
-        const parsed = chairTimeOf(chair);
-        return parsed === null ? [] : [parsed];
-      },
-    ),
+  readonly availabilityRiders = computed<readonly CartRider[]>(() =>
+    this.moveRiders().map(cartRiderOf),
+  );
+
+  /**
+   * The chair time the visit being moved holds now, handed back on every day
+   * query of the move (`DayQuery.release`). Its own seats never block its
+   * own move, because the server decides a move with the visit's
+   * contribution subtracted. Empty on a new booking. Held as the draft keeps
+   * it — two instants per chair — and read on the shop's wall clock by the
+   * day query, the one place the shop's zone is known.
+   */
+  readonly moveRelease = computed<readonly BookingDraftChairTime[]>(
+    () => this._rescheduleOf()?.chairTimes ?? [],
   );
 
   /**
@@ -593,7 +623,7 @@ export class BookingFlowStore {
   }
 
   /** The move cannot be made here — see {@link moveRefusal}. */
-  refuseMove(reason: MoveRefusal, locationId: LocationId | null = null): void {
+  refuseMove(reason: MoveRefusal, locationId: LocationKey | null = null): void {
     this._moveRefusal.set({ reason, locationId });
   }
 
@@ -649,14 +679,17 @@ export class BookingFlowStore {
   async rereadMove(): Promise<void> {
     const held = this._rescheduleOf();
     if (held === null) return;
-    const id = AppointmentId.create(held.appointmentId);
-    if (id.isFailure()) return;
+    const id = AppointmentKey.parse(held.appointmentId);
+    if (!id.ok) return;
 
-    const found = await this.appointments.findById(id.value);
+    // One reading of the live visit: its first answer.
+    const found = await firstValueFrom(
+      this.appointments.observeAppointment(id.value).pipe(take(1)),
+    );
     // The flow let go of this move while the read was out (a claim by
     // somebody else, another landing): the answer is about nothing it holds.
     if (this._rescheduleOf()?.appointmentId !== held.appointmentId) return;
-    if (found.isFailure()) return;
+    if (!found.ok) return;
     if (found.value === null) {
       this.refuseMove('unavailable');
       return;
@@ -677,46 +710,43 @@ export class BookingFlowStore {
    * holds now. `null` when nobody is left for the cart to stand in for.
    *
    * WHOSE seat is whose is the domain's one rule, the server's too
-   * (`Seat.isMovableByBooker`): the booker's own seat and anonymous guests
-   * are the cart's; anybody else — a companion ACCOUNT the shop seated, a
-   * `self` seat bound to another account — the server carries with the move
-   * (`RescheduleBookingUseCase`). Turning them into a guest would put the
-   * same person on the visit twice.
+   * (`Seat.isMovableByBooker`, `MoveSystem.facts`): the booker's own seat
+   * and anonymous guests are the cart's; anybody else — a companion ACCOUNT
+   * the shop seated, a `self` seat bound to another account — the server
+   * carries with the move. Turning them into a guest would put the same
+   * person on the visit twice.
    */
   private moveFacts(
     appointment: Appointment,
   ): Pick<HeldMove, 'riders' | 'chairTimes'> | null {
-    const owner = this.readerOf(appointment);
-    const anchor = appointment.moveAnchor(owner);
-    if (anchor === null) return null;
+    const facts = MoveSystem.facts(appointment, this.readerOf(appointment));
+    if (facts === null) return null;
 
-    // Carried seats, by their distance from the domain's move anchor, on the
-    // terms they were sold at.
-    const riders = appointment.seats
-      .filter((seat) => !seat.isMovableByBooker(owner))
-      .map((seat): BookingDraftRider => ({
-        serviceId: seat.serviceId.value,
-        variantId: seat.variantId?.value ?? null,
-        barberId: seat.barberId.value,
-        // The domain's one shift (`carriedOffsetMinutes`), the server's too.
-        offsetMinutes: carriedOffsetMinutes(
-          seat.startsAt.toMillis(),
-          anchor.toMillis(),
-        ),
-        durationMinutes: seat.terms.durationMinutes,
-        setupMinutes: seat.terms.setupMinutes,
-        cleanupMinutes: seat.terms.cleanupMinutes,
-      }));
+    // Carried seats, by their wall-clock distance from the move anchor, on
+    // the terms they were sold at — as the draft keeps them.
+    const riders = facts.riders.map((rider): BookingDraftRider => ({
+      serviceId: rider.serviceId,
+      variantId: rider.variantId,
+      barberId: rider.barberId,
+      offsetMinutes: rider.offsetMinutes,
+      durationMinutes: rider.durationMinutes,
+      setupMinutes: rider.setupMinutes,
+      cleanupMinutes: rider.cleanupMinutes,
+    }));
 
     // …and every chair the visit holds now, the carried seats' included: the
-    // server subtracts the whole visit before it re-places it.
-    const chairTimes = appointment
-      .chairTimes()
-      .map((chair): BookingDraftChairTime => ({
-        barberId: chair.barberId.value,
-        startMs: chair.occupied.startMs,
-        endMs: chair.occupied.endMs,
-      }));
+    // server subtracts the whole visit before it re-places it. The draft
+    // keeps a chair as two instants: its start placed by its distance from
+    // the visit's own instant (T9, `TimeCoordinate.seatStartUtcMs`), its end
+    // its length later — read back on the shop's wall clock by the day query.
+    const chairTimes = facts.release.map((chair): BookingDraftChairTime => {
+      const startMs = TimeCoordinate.seatStartUtcMs(appointment, chair);
+      return {
+        barberId: chair.barberId,
+        startMs,
+        endMs: startMs + (chair.endMinutes - chair.startMinutes) * 60_000,
+      };
+    });
 
     return { riders, chairTimes };
   }
@@ -925,6 +955,9 @@ export class BookingFlowStore {
    * party's guest LABELS were never persisted (a guest is only a label until
    * they have an account), so guests come back under placeholder names the
    * caller supplies — which is exactly what they are on a receipt this old.
+   * The request is the stored entity (`waitlistRequests/{id}`): its
+   * `cartSeats` are the bag, its `flexibleDays` the days it watches. The
+   * caller names the shop's zone the day is in (the entity holds none).
    * The day lands as the single-day pick, and the arrival flag makes the
    * schedule step open the times sheet unprompted: the notification promised
    * a live search, not a calendar to re-navigate.
@@ -936,8 +969,14 @@ export class BookingFlowStore {
     request: WaitlistRequest,
     dayKey: string | null,
     guestLabel: (ordinal: number) => string,
+    zone: string,
   ): boolean {
-    const cartResult = BookingCart.reconstitute(request.cart);
+    const cartResult = BookingCart.reconstitute(
+      toCartProps({
+        cartSeats: request.cartSeats,
+        cartNextSequence: request.cartNextSequence,
+      }),
+    );
     if (cartResult.isFailure()) return false;
 
     // Placeholders, each one no other guest holds
@@ -945,27 +984,31 @@ export class BookingFlowStore {
     // step, past the rename that would fix it.
     const party = BookingCartSystem.partyForCart(
       toCartData(cartResult.value),
-      UserKey.of(request.ownerId.value),
+      request.ownerUserId,
       guestLabel,
     );
     if (party === null) return false;
     const partyResult = BookingParty.reconstitute(toPartyProps(party));
     if (partyResult.isFailure()) return false;
 
-    const props = request.toProps();
+    // A stored shop that no longer parses is "any shop", as on a restore.
+    const location =
+      request.locationId === null
+        ? null
+        : LocationId.create(request.locationId);
     this._state.set({
       kind: 'schedule',
       party: partyResult.value,
       cart: cartResult.value,
-      locationId: request.locationId,
+      locationId:
+        location !== null && location.isSuccess() ? location.value : null,
       when: FlexibleWhen.empty(),
     });
 
+    // The request's own watched days (`FlexibleWhen` at its root).
     const day =
-      dayKey ??
-      [...props.when.days.map((entry) => entry.dayKey)].sort().at(0) ??
-      null;
-    if (day) this.selectDay(day, props.zone);
+      dayKey ?? [...WhenData.localDates(request)].sort().at(0) ?? null;
+    if (day) this.selectDay(day, zone);
     this._waitlistArrival.set(true);
     this.persist();
     return true;
@@ -1025,8 +1068,8 @@ export class BookingFlowStore {
    */
   private sourceOf(appointment: Appointment): HeldSource {
     return {
-      appointmentId: appointment.id.value,
-      ownerId: this.readerOf(appointment)?.value ?? null,
+      appointmentId: appointment.id,
+      ownerId: this.readerOf(appointment),
     };
   }
 
@@ -1036,16 +1079,13 @@ export class BookingFlowStore {
    * which an owner-scoped read can only have been. What a held source is
    * bound to, and whose seats a move treats as the booker's own.
    */
-  private readerOf(appointment: Appointment): UserId | null {
+  private readerOf(appointment: Appointment): UserKey | null {
     const claimed = this.party()?.ownerId ?? null;
-    const reader = BookingCartSystem.readerOf(
-      toPrefillSeats(appointment.seats),
+    // The stored seats ARE what the rule reads (`PrefillSeat`).
+    return BookingCartSystem.readerOf(
+      appointment.seats,
       claimed === null ? null : UserKey.of(claimed.value),
     );
-    if (reader === null) return null;
-    if (claimed !== null) return claimed;
-    const self = UserId.create(reader);
-    return self.isSuccess() ? self.value : null;
   }
 
   /**
@@ -1092,8 +1132,8 @@ export class BookingFlowStore {
     // party inside its receipt and has none at the top level.
     const partyOwner = this.party()?.ownerId ?? null;
     const bag = BookingCartSystem.prefill(
-      toPrefillSeats(appointment.seats),
-      owner === null ? null : UserKey.of(owner.value),
+      appointment.seats,
+      owner,
       partyOwner === null ? null : UserKey.of(partyOwner.value),
       companions === 'as_guests'
         ? PrefillCompanions.AsGuests
@@ -1106,15 +1146,18 @@ export class BookingFlowStore {
     if (cartResult.isFailure()) return false;
     const partyResult = BookingParty.reconstitute(toPartyProps(bag.party));
     if (partyResult.isFailure()) return false;
+    const locationId = LocationId.create(appointment.locationId);
+    if (locationId.isFailure()) return false;
 
     this._state.set({
       kind: 'schedule',
       party: partyResult.value,
       cart: cartResult.value,
-      locationId: appointment.locationId,
+      locationId: locationId.value,
       when: FlexibleWhen.empty(),
     });
-    this._zone.set(appointment.timeSlot.start.zoneName);
+    // The visit's zone is its SHOP's (Law 7.2): the schedule step names it
+    // with the day the client picks (`selectDay`).
     this.persist();
     return true;
   }
@@ -1496,7 +1539,7 @@ export type MoveRefusal =
 /** A refused move, and its shop when known — the shell's call button. */
 export interface MoveRefusalState {
   readonly reason: MoveRefusal;
-  readonly locationId: LocationId | null;
+  readonly locationId: LocationKey | null;
 }
 
 /** A held source as the draft stores it; one bound to nobody is not stored. */
@@ -1583,38 +1626,57 @@ function isChairTime(value: unknown): value is BookingDraftChairTime {
 }
 
 /**
- * A held chair → what the day query hands back, or `null` when its barber
- * is not a barber id. The one reading shared by the restore guard
- * (`isChairTime`) and the grid (`moveRelease`).
+ * A held chair's barber, as a barber id — `null` when it is not one. The
+ * restore guard's reading (`isChairTime`): a chair the grid could not name a
+ * barber for is a chair it would silently stop handing back.
  */
-function chairTimeOf(chair: BookingDraftChairTime): ChairTime | null {
-  const barberId = BarberId.create(chair.barberId);
-  return barberId.isSuccess()
-    ? {
-        barberId: barberId.value,
-        occupied: Interval.of(chair.startMs, chair.endMs),
-      }
-    : null;
+function chairTimeOf(chair: BookingDraftChairTime): BarberKey | null {
+  const barberId = BarberKey.parse(chair.barberId);
+  return barberId.ok ? barberId.value : null;
 }
 
 /**
- * A held rider → what the day query checks it by, or `null` when any of its
- * identities does not parse. The one reading shared by the restore guard
- * (`isRider`) and the grid (`availabilityRiders`), so a rider the guard lets
- * through is always a rider the grid checks.
+ * A held rider → what the move systems read it as, or `null` when any of
+ * its identities or figures does not parse. The one reading shared by the
+ * restore guard (`isRider`) and the grid (`moveRiders`), so a rider the
+ * guard lets through is always a rider the grid checks.
  */
 function moveRiderOf(rider: BookingDraftRider): MoveRider | null {
-  const barberId = BarberId.create(rider.barberId);
-  const serviceId = ServiceId.create(rider.serviceId);
-  const variantParses =
-    rider.variantId === null ||
-    ServiceVariantId.create(rider.variantId).isSuccess();
-  if (barberId.isFailure() || serviceId.isFailure() || !variantParses) {
+  const barberId = BarberKey.parse(rider.barberId);
+  const serviceId = ServiceKey.parse(rider.serviceId);
+  const variantId =
+    rider.variantId === null ? null : VariantKey.parse(rider.variantId);
+  const offset = MinuteDelta.of(rider.offsetMinutes);
+  const duration = DurationMinutes.of(rider.durationMinutes);
+  const setup = MinuteCount.of(rider.setupMinutes);
+  const cleanup = MinuteCount.of(rider.cleanupMinutes);
+  if (
+    !barberId.ok ||
+    !serviceId.ok ||
+    (variantId !== null && !variantId.ok) ||
+    !offset.ok ||
+    !duration.ok ||
+    !setup.ok ||
+    !cleanup.ok
+  ) {
     return null;
   }
   return {
     serviceId: serviceId.value,
+    variantId: variantId === null ? null : variantId.value,
     barberId: barberId.value,
+    offsetMinutes: offset.value,
+    durationMinutes: duration.value,
+    setupMinutes: setup.value,
+    cleanupMinutes: cleanup.value,
+  };
+}
+
+/** A carried seat as the engine's rider check reads it: its barber, distance, SOLD chair time, and service. */
+function cartRiderOf(rider: MoveRider): CartRider {
+  return {
+    serviceId: rider.serviceId,
+    barberId: rider.barberId,
     offsetMinutes: rider.offsetMinutes,
     terms: {
       durationMinutes: rider.durationMinutes,
@@ -1695,18 +1757,8 @@ const LEGACY_BARBER_PREF = {
   SPECIFIC: 'specific',
 } as const satisfies Record<BarberPreference, 'any' | 'specific'>;
 
-/** A stored seat's relationship, legacy ↔ the occupant's dictionary. */
-const RELATIONSHIP_OF = {
-  self: SubjectRelationship.Self,
-  companion: SubjectRelationship.Companion,
-  client: SubjectRelationship.Client,
-} as const satisfies Record<
-  'self' | 'companion' | 'client',
-  SubjectRelationship
->;
-
 function toLocationKey(locationId: LocationId | null): LocationKey | null {
-  return locationId === null ? null : (locationId.value as LocationKey);
+  return locationId === null ? null : LocationKey.of(locationId.value);
 }
 
 function toPartyData(party: BookingParty): PartyData {
@@ -1830,19 +1882,4 @@ function toSeatAssignment(
       'a slot end minute',
     ),
   };
-}
-
-function toPrefillSeats(seats: Appointment['seats']): readonly PrefillSeat[] {
-  return seats.map((seat) => ({
-    serviceId: ServiceKey.of(seat.serviceId.value),
-    variantId:
-      seat.variantId === null ? null : VariantKey.of(seat.variantId.value),
-    barberId: BarberKey.of(seat.barberId.value),
-    ...(seat.subject.kind === 'anonymous'
-      ? OccupantData.anonymous(LabelData.of(seat.subject.label.value))
-      : OccupantData.account(
-          UserKey.of(seat.subject.userId.value),
-          RELATIONSHIP_OF[seat.subject.relationship],
-        )),
-  }));
 }

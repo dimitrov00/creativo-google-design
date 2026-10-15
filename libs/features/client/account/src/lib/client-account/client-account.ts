@@ -3,12 +3,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { map, of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
-  APPOINTMENT_REPOSITORY,
-  Appointment,
-  ObserveUpcomingUseCase,
-} from '@creativo/application/booking';
-import { UserId } from '@creativo/application/accounts';
+import { APPOINTMENT_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { Appointment } from '@core/entities';
+import { UserId } from '@core/primitives';
+import { WallTime } from '@core/components';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   SessionIdentityService,
@@ -84,7 +82,8 @@ const NO_CATALOGUE: VisitLookup = {
  *    has no chrome of its own.
  *  - Three live tiles: book a visit (`/book`), my appointments
  *    (`/account/appointments`) and my profile (`/account/profile`).
- *  - The next visit, from a live `ObserveUpcomingUseCase` subscription, as
+ *  - The next visit, from the live `APPOINTMENT_READ_PORTS.observeUpcoming`
+ *    stream, as
  *    the SHARED visit card (`lib-visit-card`, client-card revision 3 §3.10,
  *    R2-I — the card the staff glance draws too): «Предстоящ час» as the
  *    card's own heading, the day and the hour in the SHOP's zone, the
@@ -145,10 +144,7 @@ const NO_CATALOGUE: VisitLookup = {
   },
 })
 export class ClientAccount {
-  private readonly appointmentRepository = inject(APPOINTMENT_REPOSITORY);
-  private readonly observeUpcomingUseCase = new ObserveUpcomingUseCase(
-    this.appointmentRepository,
-  );
+  private readonly appointments = inject(APPOINTMENT_READ_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly router = inject(Router);
 
@@ -186,9 +182,9 @@ export class ClientAccount {
     toObservable(this.accountState.principal).pipe(
       switchMap((principal) => {
         if (principal.kind !== 'active') return of(null);
-        const userIdResult = UserId.create(principal.uid.value);
-        if (userIdResult.isFailure()) return of(null);
-        return this.observeUpcomingUseCase.execute(userIdResult.value);
+        const userIdResult = UserId.parse(principal.uid.value);
+        if (!userIdResult.ok) return of(null);
+        return this.appointments.observeUpcoming(userIdResult.value);
       }),
     ),
     { initialValue: undefined },
@@ -198,10 +194,14 @@ export class ClientAccount {
     const result = this.upcomingResult();
     if (result === undefined) return { kind: 'loading' };
     if (result === null) return { kind: 'empty' };
-    if (result.isFailure()) return { kind: 'error' };
+    if (!result.ok) return { kind: 'error' };
 
+    // The soonest, on the shop's wall clock (`localDate` + `startMinutes`).
     const next = [...result.value].sort((a, b) =>
-      a.timeSlot.start.isBefore(b.timeSlot.start) ? -1 : 1,
+      WallTime.compare(
+        WallTime.of(a.localDate, a.startMinutes),
+        WallTime.of(b.localDate, b.startMinutes),
+      ),
     )[0];
     return next ? { kind: 'populated', appointment: next } : { kind: 'empty' };
   });

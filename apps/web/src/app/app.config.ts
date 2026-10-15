@@ -2,6 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import {
   ApplicationConfig,
+  InjectionToken,
   inject,
   isDevMode,
   provideBrowserGlobalErrorListeners,
@@ -16,9 +17,21 @@ import {
 import { provideServiceWorker } from '@angular/service-worker';
 
 import {
+  APPOINTMENT_NOTE_PORTS,
+  APPOINTMENT_PHOTO_PORTS,
+  APPOINTMENT_READ_PORTS,
+  CATALOG_PORTS,
+  CLIENT_STATS_READ_PORTS,
+  COUPON_VOUCHER_PORTS,
+  CUSTOMER_PORTS,
   FIREBASE_FIRESTORE,
+  type FactoryPicker,
+  INBOX_PORTS,
   LazyAdapterScope,
   LazyPortLoadError,
+  SCHEDULE_EXCEPTION_PORTS,
+  SCHEDULING_READ_PORTS,
+  WAITLIST_READ_PORTS,
   provideFirebaseApp,
   provideFirebaseAuth,
   provideFirebaseFunctions,
@@ -26,7 +39,12 @@ import {
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
 import { fail } from '@creativo/domain/kernel';
-import { BookingPolicy } from '@creativo/domain/scheduling';
+import {
+  MediaError,
+  RepositoryError as PortRepositoryError,
+  Result,
+} from '@core/primitives';
+import type { AppointmentPhotoPorts } from '@core/ports';
 
 // Ports (application layer)
 import {
@@ -36,28 +54,12 @@ import {
   OTP_CLIENT,
 } from '@creativo/application/identity';
 import {
-  APPOINTMENT_NOTES,
-  APPOINTMENT_PHOTOS,
-  APPOINTMENT_REPOSITORY,
-  AVAILABILITY_READER,
-  SCHEDULE_EXCEPTION_WRITER,
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
-  BOOKING_POLICY_READER,
-  CLIENT_HISTORY_READER,
-  CLIENT_PHOTOS_READER,
-  CLIENT_STATS_DIRECTORY,
-  CLIENT_STATS_READER,
   WAITLIST_GATEWAY,
-  WAITLIST_READER,
 } from '@creativo/application/booking';
-import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
-import { NOTIFICATION_READER } from '@creativo/application/notifications';
+import { MEDIA_READER } from '@creativo/application/catalog';
 import {
-  CLIENT_VOUCHERS_READER,
-  COUPON_GRANT_REPOSITORY,
-  COUPON_READER,
-  GIFT_VOUCHER_READER,
   REWARD_PROGRESS_READER,
   INVITATION_PORT,
   LOYALTY_ACTIVITY_READER,
@@ -189,6 +191,56 @@ const rhythmRuleUnavailable = (error: LazyPortLoadError) =>
   );
 
 /**
+ * The same answer for a factory-form row over an ECS bundle: the flat
+ * `RepositoryError.unavailable()` struct (`REPOSITORY_UNAVAILABLE`) inside
+ * the port's `Result` — valid for every member of a bundle whose members all
+ * name `RepositoryError`. A store reading the scheduling streams keeps the
+ * policy's defaults on it, as on any other failed read.
+ */
+const ecsDataUnavailable = () => Result.err(PortRepositoryError.unavailable());
+
+/** What `firebaseData` loads: the Firestore and the Storage adapter modules. */
+type FirebaseDataModule =
+  typeof firebaseData extends LazyAdapterScope<infer M> ? M : never;
+
+/**
+ * The visit photos' ONE bundle, over both instances: the documents
+ * (Firestore) and their bytes (Storage). Its two rows below name this one
+ * factory, so the scope builds the bundle once and both halves call into it.
+ */
+const appointmentPhotoBundle: FactoryPicker<
+  FirebaseDataModule,
+  AppointmentPhotoPorts
+> = (m) => (inj) =>
+  m.storage.appointmentPhotoPorts(
+    inj.get(FIREBASE_FIRESTORE),
+    inj.get(m.storage.FIREBASE_STORAGE),
+  );
+
+/**
+ * The photo bundle speaks TWO failure vocabularies — its documents answer
+ * `RepositoryError`, its bytes (`uploadPhotoBytes`) `MediaError` — and a
+ * binding's ONE load-failure answer must be valid for every member it
+ * classifies. No value is both, so the bundle is bound as two halves over
+ * the one factory, each failing in its own words, and
+ * `APPOINTMENT_PHOTO_PORTS` is the two put back together. These tokens are
+ * this file's alone; features inject `APPOINTMENT_PHOTO_PORTS`.
+ */
+const APPOINTMENT_PHOTO_DOCUMENTS = new InjectionToken<
+  Omit<AppointmentPhotoPorts, 'uploadPhotoBytes'>
+>('APPOINTMENT_PHOTO_PORTS · documents');
+const APPOINTMENT_PHOTO_BYTES = new InjectionToken<
+  Pick<AppointmentPhotoPorts, 'uploadPhotoBytes'>
+>('APPOINTMENT_PHOTO_PORTS · bytes');
+
+/**
+ * The bytes' half failing to load: Storage's transient answer for the
+ * visit-photo folder — worth a bounded retry, as a failed chunk fetch is.
+ */
+const photoBytesUnavailable = () =>
+  Result.err(MediaError.transient('appointmentPhotos'));
+
+/**
  * The path a snapshot resolves to, WITHOUT its query parameters.
  *
  * Comparing `routeConfig` identity would be cheaper and is the obvious first
@@ -276,100 +328,145 @@ export const appConfig: ApplicationConfig = {
     // Each binding classifies every method of its port; the compiler
     // refuses a missing one, a wrong kind, a synchronous method, or an
     // `onLoadError` answer that is not valid for every method.
-    provideLazyPort(APPOINTMENT_REPOSITORY, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreAppointmentRepository,
+
+    // The booking core (flip 1): plain port BUNDLES, each built once per
+    // scope by its `(db) => bundle` export — the factory form.
+    provideLazyPort(SCHEDULING_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.schedulingReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        findById: 'promise',
-        save: 'promise',
-        observeUpcomingFor: 'observable',
-        observeHistoryFor: 'observable',
+        observeBusyDay: 'observable',
+        observeExceptions: 'observable',
+        observeSchedule: 'observable',
+        observeLocation: 'observable',
+        observePolicy: 'observable',
+        observeCapacityMonth: 'observable',
+      },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(SCHEDULE_EXCEPTION_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.scheduleExceptionPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { writeScheduleException: 'promise' },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(APPOINTMENT_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.appointmentReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        observeAppointment: 'observable',
         observeBarberDay: 'observable',
-        searchWindow: 'promise',
+        observeUpcoming: 'observable',
+        observeHistory: 'observable',
+        pageClientHistory: 'promise',
+        searchAppointmentWindow: 'promise',
       },
-      onLoadError: dataUnavailable,
+      onLoadError: ecsDataUnavailable,
     }),
-    provideLazyPort(APPOINTMENT_NOTES, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreAppointmentNotes,
-      methods: { observe: 'observable', save: 'promise' },
-      onLoadError: dataUnavailable,
+    provideLazyPort(WAITLIST_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.waitlistReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { observeMyWaitlistRequests: 'observable' },
+      onLoadError: ecsDataUnavailable,
     }),
-    provideLazyPort(APPOINTMENT_PHOTOS, firebaseData, {
-      adapter: (m) => m.storage.FirebaseAppointmentPhotos,
+    // The staff client card (client-card-redesign §6.2) and the admin page's
+    // preview of a rhythm rule, which walks every client's statistics a page
+    // at a time (client-card revision 3 §4.4); the spend is read on its own.
+    provideLazyPort(CLIENT_STATS_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.clientStatsReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observe: 'observable',
-        attach: 'promise',
-        adopt: 'promise',
-        remove: 'promise',
+        loadClientStats: 'promise',
+        loadClientMoney: 'promise',
+        pageClientStats: 'promise',
       },
-      onLoadError: dataUnavailable,
+      onLoadError: ecsDataUnavailable,
     }),
-    provideLazyPort(CATALOG_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreCatalogReader,
+    provideLazyPort(CATALOG_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.catalogReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        listActiveServices: 'observable',
-        findServiceById: 'promise',
-        listServiceCategories: 'observable',
-        listActiveBarbers: 'observable',
-        findBarberById: 'promise',
-        listActiveLocations: 'observable',
-        findLocationById: 'promise',
+        observeServices: 'observable',
+        observeBarbers: 'observable',
+        observeCategories: 'observable',
+        observeLocations: 'observable',
       },
-      onLoadError: dataUnavailable,
+      onLoadError: ecsDataUnavailable,
     }),
-    provideLazyPort(AVAILABILITY_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreAvailabilityReader,
-      methods: { observeDay: 'observable', observeRangeCapacity: 'observable' },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(SCHEDULE_EXCEPTION_WRITER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreScheduleExceptionWriter,
+    // The counter's code lookups (what a typed promo code opens), a client's
+    // held grants and the coupons they name whatever their status, and the
+    // wallet's gift vouchers.
+    provideLazyPort(COUPON_VOUCHER_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.couponVoucherPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        put: 'promise',
-        putRange: 'promise',
-        putSeries: 'promise',
-        clearRange: 'promise',
-        clear: 'promise',
+        findCouponByCode: 'promise',
+        listOpenCoupons: 'promise',
+        loadCouponGrant: 'promise',
+        listUsableCouponGrants: 'promise',
+        findGiftVoucherByCode: 'promise',
+        listGiftVouchersForHolder: 'promise',
+        loadCoupons: 'promise',
       },
-      onLoadError: dataUnavailable,
+      onLoadError: ecsDataUnavailable,
     }),
-    provideLazyPort(WAITLIST_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreWaitlistReader,
-      methods: { observeMine: 'observable', findMine: 'promise' },
-      onLoadError: dataUnavailable,
+    // The waitlist matcher writes a match into the recipient's inbox; the
+    // menu's unread count reads it live.
+    provideLazyPort(INBOX_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.inboxPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        observeInbox: 'observable',
+        markNotificationRead: 'promise',
+        markAllNotificationsRead: 'promise',
+      },
+      onLoadError: ecsDataUnavailable,
     }),
-    // The one port without a `Result`: every failure lands on the defaults
-    // (see the adapter), so a failed load does too.
-    provideLazyPort(BOOKING_POLICY_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreBookingPolicyReader,
-      methods: { observe: 'observable' },
-      onLoadError: () => BookingPolicy.default(),
+    provideLazyPort(APPOINTMENT_NOTE_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.appointmentNotePorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        observeAppointmentNote: 'observable',
+        saveAppointmentNote: 'promise',
+      },
+      onLoadError: ecsDataUnavailable,
     }),
-    provideLazyPort(CLIENT_STATS_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreClientStatsReader,
-      methods: { get: 'promise', getMoney: 'promise' },
-      onLoadError: dataUnavailable,
+    // The one bundle over both instances (`appointmentPhotoBundle`), bound
+    // as its two halves and handed to features whole.
+    provideLazyPort(APPOINTMENT_PHOTO_DOCUMENTS, firebaseData, {
+      factory: appointmentPhotoBundle,
+      methods: {
+        observeAppointmentPhotos: 'observable',
+        saveAppointmentPhoto: 'promise',
+        deleteAppointmentPhoto: 'promise',
+        listClientPhotos: 'promise',
+        countPhotosByAppointment: 'promise',
+      },
+      onLoadError: ecsDataUnavailable,
     }),
-    // The admin page's preview of a rhythm rule walks every client's
-    // statistics, a page at a time (client-card revision 3 §4.4); the spend
-    // is never read.
-    provideLazyPort(CLIENT_STATS_DIRECTORY, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreClientStatsDirectory,
-      methods: { page: 'promise' },
-      onLoadError: dataUnavailable,
+    provideLazyPort(APPOINTMENT_PHOTO_BYTES, firebaseData, {
+      factory: appointmentPhotoBundle,
+      methods: { uploadPhotoBytes: 'promise' },
+      onLoadError: photoBytesUnavailable,
     }),
-    // The staff client card (client-card-redesign §6.2): a person's visits
-    // as company too, their past cuts, and their loyalty with the catalogue
-    // it is read against.
-    provideLazyPort(CLIENT_HISTORY_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreClientHistoryReader,
-      methods: { pageForSubject: 'promise' },
-      onLoadError: dataUnavailable,
+    {
+      provide: APPOINTMENT_PHOTO_PORTS,
+      useFactory: (): AppointmentPhotoPorts => ({
+        ...inject(APPOINTMENT_PHOTO_DOCUMENTS),
+        ...inject(APPOINTMENT_PHOTO_BYTES),
+      }),
+    },
+    provideLazyPort(CUSTOMER_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.customerPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { loadCustomerForUser: 'promise' },
+      onLoadError: ecsDataUnavailable,
     }),
-    provideLazyPort(CLIENT_PHOTOS_READER, firebaseData, {
-      adapter: (m) => m.storage.FirebaseClientPhotosReader,
-      methods: { listForClient: 'promise', countByAppointment: 'promise' },
-      onLoadError: dataUnavailable,
-    }),
+
+    // The flip-2/3/4 adapters: classes, bound with the class form until
+    // their flips move them.
+    // The staff client card (client-card-redesign §6.2): a person's loyalty
+    // with the catalogue it is read against.
     provideLazyPort(LOYALTY_READER, firebaseData, {
       adapter: (m) => m.firestore.FirestoreLoyaltyReader,
       methods: {
@@ -399,53 +496,16 @@ export const appConfig: ApplicationConfig = {
       },
       onLoadError: rhythmRuleUnavailable,
     }),
-    // The wallet's two feeds (§4.5, §4.7): the gift vouchers issued to a
-    // holder, and the loyalty activity by kind, a page at a time.
-    provideLazyPort(CLIENT_VOUCHERS_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreClientVouchersReader,
-      methods: { listForHolder: 'promise' },
-      onLoadError: dataUnavailable,
-    }),
+    // The wallet's loyalty activity by kind, a page at a time (§4.7); its
+    // gift vouchers read through `COUPON_VOUCHER_PORTS`.
     provideLazyPort(LOYALTY_ACTIVITY_READER, firebaseData, {
       adapter: (m) => m.firestore.FirestoreLoyaltyActivityReader,
       methods: { page: 'promise' },
       onLoadError: dataUnavailable,
     }),
-    // Real now, not the in-memory stub: the waitlist matcher writes a
-    // `waitlist_match` notification into the recipient's inbox, and a stub
-    // reader meant that write landed in a collection nothing read.
-    provideLazyPort(NOTIFICATION_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreNotificationReader,
-      methods: {
-        list: 'observable',
-        markRead: 'promise',
-        markAllRead: 'promise',
-      },
-      onLoadError: dataUnavailable,
-    }),
     provideLazyPort(MEDIA_READER, firebaseData, {
       adapter: (m) => m.storage.StorageMediaReader,
       methods: { resolve: 'promise' },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(COUPON_GRANT_REPOSITORY, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreCouponGrantRepository,
-      methods: {
-        save: 'promise',
-        findById: 'promise',
-        findUsableForUser: 'promise',
-      },
-      onLoadError: dataUnavailable,
-    }),
-    // The counter's code lookup — what a typed promo code opens.
-    provideLazyPort(COUPON_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreCouponReader,
-      methods: { findByCode: 'promise', listOpen: 'promise' },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(GIFT_VOUCHER_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreGiftVoucherReader,
-      methods: { findByCode: 'promise' },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(REWARD_PROGRESS_READER, firebaseData, {

@@ -4,6 +4,8 @@ import type {
   RepositoryError,
   Result,
   CouponGrantId,
+  CouponId,
+  CustomerId,
   StreakDefinitionId,
   UserId,
 } from '@core/primitives';
@@ -39,7 +41,7 @@ import type {
 // ── Coupons, grants, vouchers ─────────────────────────────────────────────
 
 /**
- * The enabled coupon a typed code names — `code ==`, `status ==
+ * The enabled coupon a typed code names — `code ==`, `couponStatus ==
  * CouponStatus.Enabled`, `limit 1` (`coupon-reader.adapter.ts:34-35`,
  * single-field equality merge); `null` when none. `code` is already
  * normalised (`VoucherCode`). Also the `resolveDiscount` read of the
@@ -50,19 +52,36 @@ export type FindCouponByCode = (
   code: VoucherCode,
 ) => Promise<Result<Coupon | null, RepositoryError>>;
 
-/** Every enabled coupon — `status ==` (`coupon-reader.adapter.ts:59`). */
+/** Every enabled coupon — `couponStatus ==` (`coupon-reader.adapter.ts:59`). */
 export type ListOpenCoupons = () => Promise<
   Result<readonly Coupon[], RepositoryError>
 >;
+
+/**
+ * The coupons a set of grants was granted from — `documentId() in`, in
+ * chunks of 30 (Firestore's `in` bound), whatever their status: a held
+ * grant whose coupon was disabled since keeps its name, value and
+ * exclusivity in the «Отстъпка» menu, as `findUsableForUser` does today. An
+ * id with no document is simply absent from the answer (order not
+ * promised; the caller matches by `id`).
+ */
+export type LoadCoupons = (
+  ids: readonly CouponId[],
+) => Promise<Result<readonly Coupon[], RepositoryError>>;
 
 /** The gift voucher a code names — `code ==` (`gift-voucher-reader.adapter.ts:34`); `null` when none. */
 export type FindGiftVoucherByCode = (
   code: VoucherCode,
 ) => Promise<Result<GiftVoucher | null, RepositoryError>>;
 
-/** Every voucher issued to a person — `issuedToUserId ==` (`client-vouchers-reader.adapter.ts:49`). */
+/**
+ * Every voucher issued to a client record — `issuedToCustomerId ==` (D29;
+ * `client-vouchers-reader.adapter.ts:49`), the client card's wallet, a
+ * staff read (`worksTheBook`). A client's own reads are keyed by the rules'
+ * `holderUserId`, never through this port.
+ */
 export type ListGiftVouchersForHolder = (
-  userId: UserId,
+  customerId: CustomerId,
 ) => Promise<Result<readonly GiftVoucher[], RepositoryError>>;
 
 /** `couponGrants/{id}` — `null` when absent. */
@@ -71,14 +90,13 @@ export type LoadCouponGrant = (
 ) => Promise<Result<CouponGrant | null, RepositoryError>>;
 
 /**
- * A person's ACTIVE grants — `userId ==`, the grant's status `== ACTIVE`
- * (`coupon-grant-repository.adapter.ts:308-309`, equality merge). Which of
- * them are usable at `nowUtcMs` (an expiry the grant carries) is
- * `CouponGrantSystem`'s decision, not the query's. Keyed by `UserId` until
- * flip (1) (D29, §5.5).
+ * A client record's ACTIVE grants — `customerId ==`, `grantStatus ==
+ * ACTIVE` (D29; `coupon-grant-repository.adapter.ts:308-309`, equality
+ * merge, no composite). Which of them are usable at `nowUtcMs` (an expiry
+ * the grant carries) is `CouponGrantSystem`'s decision, not the query's.
  */
 export type ListUsableCouponGrants = (
-  userId: UserId,
+  customerId: CustomerId,
 ) => Promise<Result<readonly CouponGrant[], RepositoryError>>;
 
 // ── Loyalty ───────────────────────────────────────────────────────────────
@@ -158,6 +176,7 @@ export type ListStreakDefinitionVersions = (
 export type EngagementPorts = {
   readonly findCouponByCode: FindCouponByCode;
   readonly listOpenCoupons: ListOpenCoupons;
+  readonly loadCoupons: LoadCoupons;
   readonly findGiftVoucherByCode: FindGiftVoucherByCode;
   readonly listGiftVouchersForHolder: ListGiftVouchersForHolder;
   readonly loadCouponGrant: LoadCouponGrant;
@@ -170,3 +189,19 @@ export type EngagementPorts = {
   readonly observeStreakDefinitionHead: ObserveStreakDefinitionHead;
   readonly listStreakDefinitionVersions: ListStreakDefinitionVersions;
 };
+
+/**
+ * Coupons, grants and gift vouchers — the bundle the web's
+ * `COUPON_VOUCHER_PORTS` token binds (the visit editor's «Отстъпка» menu,
+ * the client card's wallet).
+ */
+export type CouponVoucherPorts = Pick<
+  EngagementPorts,
+  | 'findCouponByCode'
+  | 'listOpenCoupons'
+  | 'loadCouponGrant'
+  | 'listUsableCouponGrants'
+  | 'findGiftVoucherByCode'
+  | 'listGiftVouchersForHolder'
+  | 'loadCoupons'
+>;

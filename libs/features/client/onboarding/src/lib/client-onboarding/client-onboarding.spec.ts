@@ -23,16 +23,22 @@ import {
 } from '@creativo/application/identity';
 import { CLOCK, RepositoryError } from '@creativo/application/shared';
 import {
-  CATALOG_READER,
   MEDIA_READER,
-  MediaRef,
+  type MediaRef,
   MediaUnavailableError,
-  Service,
   type MediaReadError,
   type MediaReader,
   type MediaVariant,
   type Result,
 } from '@creativo/application/catalog';
+import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { Service } from '@core/entities';
+import { MediaRefId, ServiceId } from '@core/primitives';
+import {
+  memoryCatalogReadPorts,
+  serviceFixture,
+  termsFixture,
+} from '@core/testing';
 import {
   AVATAR_UPLOADER,
   PROFILE_PORT,
@@ -129,39 +135,24 @@ class HeldMediaReader implements MediaReader {
   }
 }
 
-const COVER = (() => {
-  const result = MediaRef.create({
-    id: 'media-fade',
-    path: 'services/fade.jpg',
-    width: 1200,
-    height: 1500,
-  });
-  if (result.isFailure()) throw new Error('fixture cover invalid');
-  return result.value;
-})();
+/** The Storage object the fixture service's cover points at. */
+const COVER = { path: 'services/fade.jpg', width: 1200 } as const;
 const COVER_URL = `https://cdn.test/${COVER.path}`;
 
-const FADE = (() => {
-  const result = Service.create({
-    id: 'svc-fade',
-    name: { en: 'Skin fade', bg: 'Фейд' },
-    description: { en: 'x', bg: 'x' },
-    categoryId: 'cat-hair',
-    priceMinorUnits: 1750,
-    currencyCode: 'EUR',
-    durationMinutes: 50,
-    cover: COVER,
-    locationIds: [],
-    conflictsWith: [],
-    composition: { kind: 'single' },
-    upsellOnly: false,
-    popular: true,
-    status: 'active',
-    sortOrder: 1,
-  });
-  if (result.isFailure()) throw new Error('fixture service invalid');
-  return result.value;
-})();
+const FADE: Service = serviceFixture({
+  id: ServiceId.of('svc-fade'),
+  name: { en: 'Skin fade', bg: 'Фейд' },
+  description: { en: 'x', bg: 'x' },
+  ...termsFixture(1750, 50),
+  offerings: [],
+  locationIds: [],
+  popular: true,
+  sortOrder: 1,
+  coverMediaId: MediaRefId.of('media-fade'),
+  coverMediaPath: COVER.path,
+  coverMediaWidth: COVER.width,
+  coverMediaHeight: 1500,
+});
 
 /** The longest wait the default retry policy can pick after the first failure. */
 const FIRST_BACKOFF_CEILING_MS = 2_000;
@@ -240,16 +231,8 @@ describe('ClientOnboarding', () => {
           },
         },
         {
-          provide: CATALOG_READER,
-          useValue: {
-            listActiveServices: () => of(ok(catalog.services)),
-            findServiceById: () => Promise.resolve(ok(null)),
-            listServiceCategories: () => of(ok([])),
-            listActiveBarbers: () => of(ok([])),
-            findBarberById: () => Promise.resolve(ok(null)),
-            listActiveLocations: () => of(ok([])),
-            findLocationById: () => Promise.resolve(ok(null)),
-          },
+          provide: CATALOG_PORTS,
+          useValue: memoryCatalogReadPorts({ services: catalog.services }),
         },
         { provide: MEDIA_READER, useValue: catalog.media },
       ],
@@ -615,7 +598,7 @@ describe('ClientOnboarding', () => {
 
     function coverSrc(): string | null {
       fixture.detectChanges();
-      const card = query(`service-card-${FADE.id.value}`);
+      const card = query(`service-card-${FADE.id}`);
       if (!card) throw new Error('service card not rendered');
       return (
         card.querySelector('img.ui-async-image__image')?.getAttribute('src') ??

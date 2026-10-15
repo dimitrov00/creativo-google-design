@@ -5,10 +5,10 @@ import {
   Currency,
   type AppointmentId,
   type BarberId,
+  type CustomerId,
   type SeatId,
   type ServiceId,
   type ServiceVariantId,
-  type UserId,
   type LocalDate,
   type MinuteOfDay,
   EpochSeconds,
@@ -134,10 +134,12 @@ export type VisitLeg = {
  * `[]` (likewise every `nextVisit*`); `pauseSuggestedNoShows`,
  * `pauseSuggestedWindowDays` and `pauseSuggestedAtUtcMs` are `null`
  * together, and then `pauseSuggestionBasis` is `[]`.
+ *
+ * The CONTENT only: whose stats they are is the record's
+ * {@link ClientStatsKey}, so the same math answers a client record (the
+ * projection) and an account's own visits alike (D29).
  */
 export type ClientStats = {
-  /** The client's account — `UserId` until flip (1) re-keys the record to `CustomerId` (D29, §5.5). */
-  readonly userId: UserId;
   readonly lifetimeVisitsCompleted: number;
   readonly lifetimeNoShows: number;
   /** Client-caused cancellations inside the free window in force when each was made. */
@@ -263,13 +265,22 @@ export const PauseSuggestion = {
  * Lifetime spend, tips excluded (a tip is not the shop's money), in the
  * cents of `currency` — the flat `lifetimeSpendMinor` + `currencyCode` the
  * document stores today, branded (N6). Its own slice because it lives in its
- * own admin-only document: rules cannot hide a field (R33).
+ * own admin-only document: rules cannot hide a field (R33). The content
+ * only — whose spend it is is the record's {@link ClientStatsKey}.
  */
 export type ClientMoneyStats = {
-  /** The client's account — `UserId` until flip (1) (D29, §5.5). */
-  readonly userId: UserId;
   readonly lifetimeSpendCents: PriceCents;
   readonly currency: Currency;
+};
+
+/**
+ * Whose projection a stored pair is — the CLIENT RECORD (D29, flatten-spec
+ * §5.4: whom the shop served), repeated in both bodies beside the document
+ * id (`clientStats/{customerId}` and its `restricted/money`), written by
+ * the revision guard (`ClientStatsSystem.planWrite`).
+ */
+export type ClientStatsKey = {
+  readonly customerId: CustomerId;
 };
 
 /**
@@ -357,9 +368,8 @@ export const PolicyPassStamp = {
 
 export const ClientStats = {
   /** A person with no history — what a first recompute starts from. */
-  empty(userId: UserId): ClientStats {
+  empty(): ClientStats {
     return {
-      userId,
       lifetimeVisitsCompleted: 0,
       lifetimeNoShows: 0,
       lifetimeLateCancels: 0,
@@ -381,9 +391,8 @@ export const ClientStats = {
 
 export const ClientMoneyStats = {
   /** Nothing spent yet, in the shop's currency. */
-  zero(userId: UserId): ClientMoneyStats {
+  zero(): ClientMoneyStats {
     return {
-      userId,
       lifetimeSpendCents: PriceCents.ZERO,
       currency: Currency.EUR,
     };

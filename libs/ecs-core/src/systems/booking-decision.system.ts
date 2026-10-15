@@ -31,6 +31,8 @@ import {
   MinuteCount,
   AppointmentId,
   BarberId,
+  type CustomerId,
+  defect,
   LocationId,
   SeatId,
   ServiceId,
@@ -153,7 +155,10 @@ export type DecisionStandingSeat = {
  * location's zone — an offset start's own instant, a wall clock's through
  * `toUtc` (the appointment's one `utcEpochMs`) — the transaction's id
  * mint, the VERIFIED owner (`null`: a
- * walk-in the shop entered itself), the staff term overrides, the visit as it
+ * walk-in the shop entered itself), the client record of every account on
+ * the cart (D29 — resolved by the pipeline, `CustomerId.forUser(uid, hash)`
+ * for each of {@link BookingDecisionSystem.accountSubjects}; the system is
+ * handed ids, never a hash), the staff term overrides, the visit as it
  * stands and the pairs its last save broke (both `[]` on a commit), and the
  * edge's phone parser.
  */
@@ -162,6 +167,7 @@ export type DecideBookingContext = {
   readonly startUtcMs: UtcEpochMs;
   readonly nextId: () => string;
   readonly ownerUserId: UserId | null;
+  readonly customerIds: ReadonlyMap<UserId, CustomerId>;
   readonly termsOverrides: readonly StaffTermsOverride[];
   readonly standing: readonly DecisionStandingSeat[];
   readonly stood: readonly SeatIdPair[];
@@ -332,20 +338,42 @@ function isPad(minutes: number): boolean {
 }
 
 /**
+ * The client record the pipeline resolved for an account on the cart (D29).
+ * The map names every one of {@link BookingDecisionSystem.accountSubjects},
+ * so a miss is the caller's defect, never a refusal.
+ */
+function customerOf(
+  customerIds: ReadonlyMap<UserId, CustomerId>,
+  userId: UserId,
+): CustomerId {
+  return (
+    customerIds.get(userId) ??
+    defect('an account subject without its resolved client record (D29)')
+  );
+}
+
+/**
  * The seat's occupant (`decide-booking.ts:860-890`): `SELF` is bound to the
  * TOKEN — refused outright with no owner, because the self seat IS the
  * owner's seat; a companion is only ever a stored person carried forward; a
- * guest is their label.
+ * guest is their label. An account carries its client record beside it.
  */
 function toOccupant(
   subject: RequestedSubjectInput,
   owner: UserId | null,
+  customerIds: ReadonlyMap<UserId, CustomerId>,
 ): Result<SeatOccupant, BookingError> {
   if (subject.requestedSubjectRole === RequestedSubjectRole.Self) {
     if (owner === null) {
       return Result.err(BookingError.invalidInput('ownerUserId'));
     }
-    return Result.ok(SeatOccupant.account(owner, SubjectRelationship.Self));
+    return Result.ok(
+      SeatOccupant.account(
+        owner,
+        customerOf(customerIds, owner),
+        SubjectRelationship.Self,
+      ),
+    );
   }
   if (subject.requestedSubjectRole === RequestedSubjectRole.Companion) {
     // Foreign input: the smart constructor is the door (Law 7.4) — a blank
@@ -355,7 +383,11 @@ function toOccupant(
       return Result.err(BookingError.invalidInput('companion'));
     }
     return Result.ok(
-      SeatOccupant.account(companion.value, SubjectRelationship.Companion),
+      SeatOccupant.account(
+        companion.value,
+        customerOf(customerIds, companion.value),
+        SubjectRelationship.Companion,
+      ),
     );
   }
   const label = SeatLabel.parse(subject.label);
@@ -397,6 +429,36 @@ type PlacementFacts = {
  * The availability engine is never run.
  */
 export const BookingDecisionSystem = {
+  /**
+   * The accounts a cart's seats name — the owner for a `SELF` seat (when
+   * there is one), each companion id that parses (Law 7.4: an id that does
+   * not is refused by {@link decide}, never resolved) — distinct, in seat
+   * order. What the pipeline resolves to client records
+   * (`CustomerId.forUser(uid, hash)`, and the FIRST_BOOKING `customers`
+   * read) before it calls `decide` with {@link DecideBookingContext.customerIds}.
+   */
+  accountSubjects(
+    seats: readonly Pick<RequestedSeatInput, 'subject'>[],
+    ownerUserId: UserId | null,
+  ): readonly UserId[] {
+    const out: UserId[] = [];
+    for (let i = 0; i < seats.length; i++) {
+      const subject = (seats[i] as Pick<RequestedSeatInput, 'subject'>).subject;
+      let userId: UserId | null = null;
+      if (subject.requestedSubjectRole === RequestedSubjectRole.Self) {
+        userId =
+          ownerUserId !== null && !isBlank(ownerUserId) ? ownerUserId : null;
+      } else if (
+        subject.requestedSubjectRole === RequestedSubjectRole.Companion
+      ) {
+        const companion = UserId.parse(subject.companionUserId);
+        userId = companion.ok ? companion.value : null;
+      }
+      if (userId !== null && !out.includes(userId)) out.push(userId);
+    }
+    return out;
+  },
+
   decide(
     request: DecideBookingInput,
     snapshot: BookingSnapshot,
@@ -538,7 +600,11 @@ export const BookingDecisionSystem = {
       const resolved = resolveTerms(catalogTerms, override);
       if (!resolved.ok) return resolved;
 
-      const occupant = toOccupant(requested.subject, owner);
+      const occupant = toOccupant(
+        requested.subject,
+        owner,
+        context.customerIds,
+      );
       if (!occupant.ok) return occupant;
 
       const rawSeatId = context.nextId();
@@ -740,6 +806,8 @@ export const BookingDecisionSystem = {
       locationId,
       ownerUserId: null,
       subjectUserIds: [],
+      ownerCustomerId: null,
+      subjectCustomerIds: [],
       placement: request.placement,
       inferredPlacement: null,
       barberIds: [],

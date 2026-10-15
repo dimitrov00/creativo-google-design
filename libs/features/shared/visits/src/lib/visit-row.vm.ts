@@ -1,4 +1,5 @@
-import type { Daypart } from '@creativo/application/booking';
+import type { Daypart } from '@core/components';
+import type { TimeZone } from '@core/primitives';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { StaffEventLine } from './event-head/staff-event-line';
 
@@ -168,7 +169,10 @@ export interface VisitRowVm {
   readonly marks: readonly VisitRowMark[];
   /** Null on a waitlist row. */
   readonly outcome: VisitRowOutcome | null;
-  /** The appointment's stored status (the client row's `data-status`); null on a waitlist row. */
+  /**
+   * The appointment's STORED `bookingStatus` — `'CONFIRMED'`, `'CANCELLED'`
+   * … (F1-9), the client row's `data-status`; null on a waitlist row.
+   */
   readonly status: string | null;
   /**
    * The row as one sentence — every fact, the status word, the price and
@@ -208,6 +212,12 @@ export interface VisitLookup {
   locationName(id: string): string | null;
   /** More than one shop puts the shop's name in a worked visit's fact line. */
   readonly locationCount: number;
+  /**
+   * The shop's IANA zone (`ShopLocation.timeZone`, Law 7.2) — what "today"
+   * and a photo's day are read in. Optional: a lookup that names none reads
+   * the tenant's zone (every shop of the tenant keeps one clock).
+   */
+  locationTimeZone?(id: string): TimeZone | null;
 }
 
 /**
@@ -305,7 +315,7 @@ export interface VisitWaitlistWords extends Pick<VisitWords, 'unknownService'> {
   readonly waiting: string;
   /** «{{services}}, чака свободен час: {{when}}» — the row's sentence, the days spelled out. */
   readonly name: (services: string, when: string) => string;
-  /** «сутрин» · «следобед» · «вечер» — the domain's parts (`daypartsTouchedBy`). */
+  /** «сутрин» · «следобед» · «вечер» — the domain's parts (`Daypart.touchedBy`). */
   readonly daypart: (part: Daypart) => string;
   /** «и още 2» — the watched days past the first three. */
   readonly moreDays: (count: number) => string;

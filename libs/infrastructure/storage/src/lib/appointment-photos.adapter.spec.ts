@@ -1,11 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TestBed } from '@angular/core/testing';
+import type { Firestore } from 'firebase/firestore';
+import type { FirebaseStorage } from 'firebase/storage';
+import { PhotoOrigin } from '@core/components';
 import {
-  FIREBASE_AUTH,
-  FIREBASE_FIRESTORE,
-} from '@creativo/infrastructure/firebase-app';
-import type { AppointmentPhoto } from '@creativo/application/booking';
-import { FIREBASE_STORAGE } from './storage.provider';
+  AppointmentId,
+  AppointmentPhotoId,
+  BarberId,
+  CustomerId,
+  MediaErrorCode,
+  RepositoryErrorCode,
+  Result,
+  UserId,
+} from '@core/primitives';
+import type { AppointmentPhoto } from '@core/entities';
+import { utcMs } from '@core/testing';
 
 const {
   refMock,
@@ -15,16 +23,24 @@ const {
   docMock,
   setDocMock,
   deleteDocMock,
+  getDocsMock,
   onSnapshotMock,
+  whereMock,
+  orderByMock,
+  limitMock,
 } = vi.hoisted(() => ({
-  refMock: vi.fn(),
+  refMock: vi.fn((_storage: unknown, path: string) => ({ path })),
   uploadBytesMock: vi.fn(),
   getDownloadURLMock: vi.fn(),
   deleteObjectMock: vi.fn(),
-  docMock: vi.fn(),
+  docMock: vi.fn((_db: unknown, col: string, id: string) => `${col}/${id}`),
   setDocMock: vi.fn(),
   deleteDocMock: vi.fn(),
+  getDocsMock: vi.fn(),
   onSnapshotMock: vi.fn(),
+  whereMock: vi.fn((...parts: unknown[]) => ({ where: parts })),
+  orderByMock: vi.fn((...parts: unknown[]) => ({ orderBy: parts })),
+  limitMock: vi.fn((max: number) => ({ limit: max })),
 }));
 
 vi.mock('firebase/storage', () => ({
@@ -35,75 +51,80 @@ vi.mock('firebase/storage', () => ({
 }));
 
 vi.mock('firebase/firestore', () => ({
-  collection: vi.fn(() => 'photos-collection'),
+  collection: vi.fn((_db: unknown, name: string) => ({ collection: name })),
   query: vi.fn((...parts: unknown[]) => parts),
-  where: vi.fn((...parts: unknown[]) => parts),
+  where: whereMock,
+  orderBy: orderByMock,
+  limit: limitMock,
   doc: docMock,
   setDoc: setDocMock,
   deleteDoc: deleteDocMock,
+  getDocs: getDocsMock,
   onSnapshot: onSnapshotMock,
 }));
 
-import { FirebaseAppointmentPhotos } from './appointment-photos.adapter';
+import { appointmentPhotoPorts } from './appointment-photos.adapter';
 
-function createPhotos(): FirebaseAppointmentPhotos {
-  TestBed.configureTestingModule({
-    providers: [
-      { provide: FIREBASE_STORAGE, useValue: {} },
-      { provide: FIREBASE_FIRESTORE, useValue: {} },
-      {
-        provide: FIREBASE_AUTH,
-        useValue: { currentUser: { uid: 'staff-ivan' } },
-      },
-      FirebaseAppointmentPhotos,
-    ],
-  });
-  return TestBed.inject(FirebaseAppointmentPhotos);
+const ports = () =>
+  appointmentPhotoPorts({} as Firestore, {} as FirebaseStorage);
+
+/** A visit photo as the staff flow hands it over: the facts, stamped by the caller. */
+function photo(overrides: Partial<AppointmentPhoto> = {}): AppointmentPhoto {
+  return {
+    id: AppointmentPhotoId.of('p1'),
+    appointmentId: AppointmentId.of('appt-1'),
+    barberId: BarberId.of('ivan'),
+    clientCustomerId: CustomerId.of('cus_georgi'),
+    clientLabel: 'Георги Петров',
+    takenByUserId: UserId.of('staff-ivan'),
+    takenAtUtcMs: utcMs('2026-09-17T16:00:00+03:00'),
+    path: 'appointmentPhotos/appt-1/p1',
+    url: 'https://cdn/p1.jpg',
+    width: 1600,
+    height: 1200,
+    photoOrigin: PhotoOrigin.Shot,
+    label: null,
+    ...overrides,
+  };
 }
 
-const attachment = (image: Blob) => ({
-  appointmentId: 'appt-1',
-  barberId: 'ivan',
-  clientUserId: 'user-georgi',
-  clientLabel: 'Георги Петров',
-  image,
-  width: 1600,
-  height: 1200,
-});
+/** What `uploadPhotoBytes` is handed: the photo before its bytes have a home. */
+function facts(overrides: Partial<AppointmentPhoto> = {}) {
+  const { path, url, ...rest } = photo(overrides);
+  expect([path, url]).toHaveLength(2);
+  return rest;
+}
 
-describe('FirebaseAppointmentPhotos', () => {
+/** A stored photo document, as `saveAppointmentPhoto` writes it. */
+function stored(overrides: Partial<AppointmentPhoto>) {
+  const { id, ...body } = photo(overrides);
+  return { id, data: () => body };
+}
+
+const image = (type: string, size = 120_000) => ({ type, size }) as Blob;
+
+describe('appointmentPhotoPorts', () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('attach', () => {
-    it('puts the bytes under the visit with the facts as metadata, writes the document with the URL, and hands the photo back', async () => {
-      refMock.mockImplementation((_storage: unknown, path: string) => ({
-        path,
-      }));
+  describe('uploadPhotoBytes', () => {
+    it('puts the bytes under the visit, the facts as the object’s own metadata, and answers the path and URL', async () => {
       uploadBytesMock.mockResolvedValue(undefined);
       getDownloadURLMock.mockResolvedValue('https://cdn/photo.jpg');
-      docMock.mockImplementation(
-        (_db: unknown, col: string, id: string) => `${col}/${id}`,
-      );
-      setDocMock.mockResolvedValue(undefined);
-      const photos = createPhotos();
 
-      const result = await photos.attach(
-        attachment({ type: 'image/jpeg', size: 120_000 } as Blob),
+      const answer = await ports().uploadPhotoBytes(
+        facts(),
+        image('image/jpeg'),
       );
 
-      expect(result.isSuccess()).toBe(true);
-      if (!result.isSuccess()) return;
-      const photo = result.value;
-      expect(photo.path).toBe(`appointmentPhotos/appt-1/${photo.photoId}`);
-      expect(photo.url).toBe('https://cdn/photo.jpg');
-      expect(photo.takenByUid).toBe('staff-ivan');
-      expect(photo.barberId).toBe('ivan');
-      expect(photo.clientLabel).toBe('Георги Петров');
-      expect(photo.origin).toBe('shot');
-      expect(photo.label).toBeNull();
-      // The object carries the facts itself.
+      expect(answer).toEqual(
+        Result.ok({
+          path: 'appointmentPhotos/appt-1/p1',
+          url: 'https://cdn/photo.jpg',
+        }),
+      );
+      expect(refMock).toHaveBeenCalledWith({}, 'appointmentPhotos/appt-1/p1');
       const [, , metadata] = uploadBytesMock.mock.calls[0] as [
         unknown,
         Blob,
@@ -113,204 +134,387 @@ describe('FirebaseAppointmentPhotos', () => {
       expect(metadata.customMetadata).toEqual({
         appointmentId: 'appt-1',
         barberId: 'ivan',
-        clientUserId: 'user-georgi',
+        clientCustomerId: 'cus_georgi',
         clientLabel: 'Георги Петров',
-        takenByUid: 'staff-ivan',
-        takenAtIso: photo.takenAtIso,
+        takenByUserId: 'staff-ivan',
+        takenAtUtcMs: String(utcMs('2026-09-17T16:00:00+03:00')),
       });
-      // The document is the photo, keyed by its id.
-      expect(setDocMock).toHaveBeenCalledWith(
-        `appointmentPhotos/${photo.photoId}`,
-        photo,
-      );
+      // The bytes only: the document is the caller's next step.
+      expect(setDocMock).not.toHaveBeenCalled();
     });
 
-    it('refuses what is not an image before anything goes up', async () => {
-      const photos = createPhotos();
-      const result = await photos.attach(
-        attachment({ type: 'application/pdf', size: 1000 } as Blob),
+    it('writes an empty string for a guest with no record and a shot nobody signed', async () => {
+      uploadBytesMock.mockResolvedValue(undefined);
+      getDownloadURLMock.mockResolvedValue('https://cdn/photo.jpg');
+
+      await ports().uploadPhotoBytes(
+        facts({ clientCustomerId: null, takenByUserId: null }),
+        image('image/png'),
       );
-      expect(result.isFailure()).toBe(true);
-      expect(uploadBytesMock).not.toHaveBeenCalled();
-      expect(setDocMock).not.toHaveBeenCalled();
+
+      const [, , metadata] = uploadBytesMock.mock.calls[0] as [
+        unknown,
+        Blob,
+        { customMetadata: Record<string, string> },
+      ];
+      expect(metadata.customMetadata['clientCustomerId']).toBe('');
+      expect(metadata.customMetadata['takenByUserId']).toBe('');
+    });
+
+    it('leaves the limits to the caller’s guard: what slips past it goes to Storage, whose refusal is MEDIA_FORBIDDEN', async () => {
+      // Not an image, and over 8 MiB: the store's `photoUploadRefusal` stops
+      // both before this call (`media.port.ts`); the adapter judges nothing.
+      uploadBytesMock.mockRejectedValue({ code: 'storage/unauthorized' });
+      const blob = image('application/pdf', 8 * 1024 * 1024 + 1);
+
+      const answer = await ports().uploadPhotoBytes(facts(), blob);
+
+      expect(answer).toEqual(
+        Result.err({
+          errorCode: MediaErrorCode.Forbidden,
+          path: 'appointmentPhotos/appt-1/p1',
+        }),
+      );
+      const [object, bytes, metadata] = uploadBytesMock.mock.calls[0] as [
+        { path: string },
+        Blob,
+        { contentType: string },
+      ];
+      expect(object.path).toBe('appointmentPhotos/appt-1/p1');
+      expect(bytes).toBe(blob);
+      expect(metadata.contentType).toBe('application/pdf');
+      expect(getDownloadURLMock).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['storage/unauthorized', MediaErrorCode.Forbidden],
+      ['storage/retry-limit-exceeded', MediaErrorCode.Transient],
+    ])('answers Storage’s %s as %s', async (code, errorCode) => {
+      uploadBytesMock.mockRejectedValue({ code });
+
+      const answer = await ports().uploadPhotoBytes(
+        facts(),
+        image('image/jpeg'),
+      );
+
+      expect(answer).toEqual(
+        Result.err({ errorCode, path: 'appointmentPhotos/appt-1/p1' }),
+      );
     });
   });
 
-  describe('adopt', () => {
-    it("assigns one of the shop's own pictures by writing the document alone — nothing goes up", async () => {
-      docMock.mockImplementation(
-        (_db: unknown, col: string, id: string) => `${col}/${id}`,
-      );
+  describe('saveAppointmentPhoto', () => {
+    it('writes the document — the photo minus its id — keyed by its id', async () => {
       setDocMock.mockResolvedValue(undefined);
-      const photos = createPhotos();
+      const { id, ...body } = photo();
 
-      const result = await photos.adopt({
-        appointmentId: 'appt-1',
-        barberId: 'ivan',
-        clientUserId: null,
-        clientLabel: 'Гост',
+      const answer = await ports().saveAppointmentPhoto(photo());
+
+      expect(answer).toEqual(Result.ok(undefined));
+      expect(setDocMock).toHaveBeenCalledWith(`appointmentPhotos/${id}`, body);
+    });
+
+    it("assigns one of the shop's own pictures by the document alone — nothing goes up", async () => {
+      setDocMock.mockResolvedValue(undefined);
+      const library = photo({
+        photoOrigin: PhotoOrigin.Library,
+        label: 'Модерна визия',
         path: '/work/modern-cut.jpg',
         url: '/work/modern-cut.jpg',
-        label: 'Модерна визия',
         width: null,
         height: null,
       });
 
-      expect(result.isSuccess()).toBe(true);
-      if (!result.isSuccess()) return;
-      expect(result.value.origin).toBe('library');
-      expect(result.value.label).toBe('Модерна визия');
-      expect(result.value.takenByUid).toBe('staff-ivan');
+      const answer = await ports().saveAppointmentPhoto(library);
+
+      expect(answer).toEqual(Result.ok(undefined));
       expect(uploadBytesMock).not.toHaveBeenCalled();
-      expect(setDocMock).toHaveBeenCalledWith(
-        `appointmentPhotos/${result.value.photoId}`,
-        result.value,
+      expect(setDocMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('turns a refused write into REPOSITORY_WRITE_FAILED', async () => {
+      setDocMock.mockRejectedValue({ code: 'permission-denied' });
+
+      const answer = await ports().saveAppointmentPhoto(photo());
+
+      expect(answer).toEqual(
+        Result.err({
+          errorCode: RepositoryErrorCode.WriteFailed,
+          path: 'appointmentPhotos/p1',
+          reason: 'permission-denied',
+        }),
       );
     });
   });
 
-  describe('observe', () => {
-    it("reads the visit's photos in the order they were taken and drops a document that does not say what a photo must", async () => {
+  describe('observeAppointmentPhotos', () => {
+    it("reads the visit's photos by one equality, in the order they were taken", async () => {
       onSnapshotMock.mockImplementation(
         (
           _query: unknown,
-          onNext: (snapshot: {
-            docs: { id: string; data: () => unknown }[];
-          }) => void,
+          onNext: (snapshot: { docs: ReturnType<typeof stored>[] }) => void,
         ) => {
           onNext({
             docs: [
-              {
-                id: 'later',
-                data: () => ({
-                  appointmentId: 'appt-1',
-                  barberId: 'ivan',
-                  takenAtIso: '2026-09-17T14:00:00.000Z',
-                  path: 'appointmentPhotos/appt-1/later',
-                  url: 'https://cdn/later.jpg',
-                  clientLabel: 'Георги Петров',
-                }),
-              },
-              { id: 'broken', data: () => ({ appointmentId: 'appt-1' }) },
-              {
-                id: 'earlier',
-                data: () => ({
-                  appointmentId: 'appt-1',
-                  barberId: 'ivan',
-                  takenAtIso: '2026-09-17T13:00:00.000Z',
-                  path: 'appointmentPhotos/appt-1/earlier',
-                  url: 'https://cdn/earlier.jpg',
-                  width: 1600,
-                  height: 1200,
-                }),
-              },
+              stored({
+                id: AppointmentPhotoId.of('later'),
+                takenAtUtcMs: utcMs('2026-09-17T17:00:00+03:00'),
+              }),
+              stored({
+                id: AppointmentPhotoId.of('earlier'),
+                takenAtUtcMs: utcMs('2026-09-17T16:00:00+03:00'),
+              }),
             ],
           });
           return () => undefined;
         },
       );
-      const photos = createPhotos();
 
-      // A mutable list OF readonly snapshots — the outer array is pushed to.
-      const seen: (readonly AppointmentPhoto[])[] = [];
-      photos.observe('appt-1').subscribe((result) => {
-        if (result.isSuccess()) seen.push([...result.value]);
-      });
-      await vi.waitFor(() => expect(seen.length).toBe(1));
+      const seen: Result<readonly AppointmentPhoto[], unknown>[] = [];
+      const subscription = ports()
+        .observeAppointmentPhotos(AppointmentId.of('appt-1'))
+        .subscribe((answer) => seen.push(answer));
 
-      expect(seen[0]?.map((photo) => photo.photoId)).toEqual([
-        'earlier',
-        'later',
+      expect(whereMock).toHaveBeenCalledWith('appointmentId', '==', 'appt-1');
+      expect(
+        seen.map((answer) => answer.ok && answer.value.map((p) => p.id)),
+      ).toEqual([['earlier', 'later']]);
+      subscription.unsubscribe();
+    });
+
+    it('answers a refused listen as the port’s RepositoryError', () => {
+      onSnapshotMock.mockImplementation(
+        (_query: unknown, _onNext: unknown, onError: (e: unknown) => void) => {
+          onError({ code: 'permission-denied' });
+          return () => undefined;
+        },
+      );
+
+      const seen: unknown[] = [];
+      ports()
+        .observeAppointmentPhotos(AppointmentId.of('appt-1'))
+        .subscribe((answer) => seen.push(answer))
+        .unsubscribe();
+
+      expect(seen).toEqual([
+        Result.err({
+          errorCode: RepositoryErrorCode.ReadFailed,
+          path: 'appointmentPhotos',
+          reason: 'permission-denied',
+        }),
       ]);
-      expect(seen[0]?.[0]?.width).toBe(1600);
-      expect(seen[0]?.[1]?.clientLabel).toBe('Георги Петров');
     });
   });
 
-  describe('remove', () => {
-    const photo: AppointmentPhoto = {
-      photoId: 'p1',
-      appointmentId: 'appt-1',
-      barberId: 'ivan',
-      clientUserId: null,
-      clientLabel: 'Гост',
-      takenByUid: 'staff-ivan',
-      takenAtIso: '2026-09-17T13:00:00.000Z',
-      path: 'appointmentPhotos/appt-1/p1',
-      url: 'https://cdn/p1.jpg',
-      width: null,
-      height: null,
-      origin: 'shot',
-      label: null,
-    };
-
-    it('drops the document and the bytes', async () => {
-      docMock.mockImplementation(
-        (_db: unknown, col: string, id: string) => `${col}/${id}`,
-      );
-      refMock.mockImplementation((_storage: unknown, path: string) => ({
-        path,
-      }));
+  describe('deleteAppointmentPhoto', () => {
+    it('drops the document and the bytes of a shot', async () => {
       deleteDocMock.mockResolvedValue(undefined);
       deleteObjectMock.mockResolvedValue(undefined);
-      const photos = createPhotos();
 
-      const result = await photos.remove(photo);
+      const answer = await ports().deleteAppointmentPhoto(photo());
 
-      expect(result.isSuccess()).toBe(true);
+      expect(answer).toEqual(Result.ok(undefined));
       expect(deleteDocMock).toHaveBeenCalledWith('appointmentPhotos/p1');
-      expect(deleteObjectMock).toHaveBeenCalledWith({ path: photo.path });
+      expect(deleteObjectMock).toHaveBeenCalledWith({
+        path: 'appointmentPhotos/appt-1/p1',
+      });
     });
 
     it("leaves the shop's own picture where it is when a library photo goes", async () => {
-      docMock.mockImplementation(
-        (_db: unknown, col: string, id: string) => `${col}/${id}`,
-      );
       deleteDocMock.mockResolvedValue(undefined);
-      const photos = createPhotos();
 
-      const result = await photos.remove({
-        ...photo,
-        origin: 'library',
-        label: 'Модерна визия',
-        path: '/work/modern-cut.jpg',
-      });
+      const answer = await ports().deleteAppointmentPhoto(
+        photo({
+          photoOrigin: PhotoOrigin.Library,
+          label: 'Модерна визия',
+          path: '/work/modern-cut.jpg',
+        }),
+      );
 
-      expect(result.isSuccess()).toBe(true);
+      expect(answer).toEqual(Result.ok(undefined));
       expect(deleteDocMock).toHaveBeenCalledWith('appointmentPhotos/p1');
       expect(deleteObjectMock).not.toHaveBeenCalled();
     });
 
     it('treats bytes already gone as gone', async () => {
-      docMock.mockImplementation(
-        (_db: unknown, col: string, id: string) => `${col}/${id}`,
-      );
-      refMock.mockImplementation((_storage: unknown, path: string) => ({
-        path,
-      }));
       deleteDocMock.mockResolvedValue(undefined);
       deleteObjectMock.mockRejectedValue({ code: 'storage/object-not-found' });
-      const photos = createPhotos();
 
-      const result = await photos.remove(photo);
+      const answer = await ports().deleteAppointmentPhoto(photo());
 
-      expect(result.isSuccess()).toBe(true);
+      expect(answer).toEqual(Result.ok(undefined));
     });
 
     it('surfaces a real storage failure', async () => {
-      docMock.mockImplementation(
-        (_db: unknown, col: string, id: string) => `${col}/${id}`,
-      );
-      refMock.mockImplementation((_storage: unknown, path: string) => ({
-        path,
-      }));
       deleteDocMock.mockResolvedValue(undefined);
       deleteObjectMock.mockRejectedValue({ code: 'storage/unauthorized' });
-      const photos = createPhotos();
 
-      const result = await photos.remove(photo);
+      const answer = await ports().deleteAppointmentPhoto(photo());
 
-      expect(result.isFailure()).toBe(true);
+      expect(answer).toEqual(
+        Result.err({
+          errorCode: RepositoryErrorCode.WriteFailed,
+          path: 'appointmentPhotos/appt-1/p1',
+          reason: 'storage/unauthorized',
+        }),
+      );
+    });
+  });
+
+  describe('listClientPhotos', () => {
+    it('asks for the client record’s newest photos, ordered so the limit keeps the newest', async () => {
+      getDocsMock.mockResolvedValue({
+        docs: [
+          stored({ id: AppointmentPhotoId.of('p3') }),
+          stored({ id: AppointmentPhotoId.of('p2') }),
+        ],
+      });
+
+      const answer = await ports().listClientPhotos(
+        CustomerId.of('cus_georgi'),
+        6,
+      );
+
+      expect(whereMock).toHaveBeenCalledWith(
+        'clientCustomerId',
+        '==',
+        'cus_georgi',
+      );
+      expect(orderByMock).toHaveBeenCalledWith('takenAtUtcMs', 'desc');
+      expect(limitMock).toHaveBeenCalledWith(6);
+      // The origin never goes into the query: the index is (client, taken).
+      expect(whereMock).not.toHaveBeenCalledWith(
+        'photoOrigin',
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(answer.ok && answer.value.map((p) => p.id)).toEqual(['p3', 'p2']);
+    });
+
+    it('sets the shop’s own pictures aside', async () => {
+      getDocsMock.mockResolvedValue({
+        docs: [
+          stored({
+            id: AppointmentPhotoId.of('cover'),
+            photoOrigin: PhotoOrigin.Library,
+          }),
+          stored({ id: AppointmentPhotoId.of('shot') }),
+        ],
+      });
+
+      const answer = await ports().listClientPhotos(
+        CustomerId.of('cus_georgi'),
+        6,
+      );
+
+      expect(answer.ok && answer.value.map((p) => p.id)).toEqual(['shot']);
+    });
+
+    it('reads nothing for no room', async () => {
+      const answer = await ports().listClientPhotos(
+        CustomerId.of('cus_georgi'),
+        0,
+      );
+
+      expect(answer).toEqual(Result.ok([]));
+      expect(getDocsMock).not.toHaveBeenCalled();
+    });
+
+    it('answers a failed read with a failed Result', async () => {
+      getDocsMock.mockRejectedValue({ code: 'permission-denied' });
+
+      const answer = await ports().listClientPhotos(
+        CustomerId.of('cus_georgi'),
+        6,
+      );
+
+      expect(answer).toEqual(
+        Result.err({
+          errorCode: RepositoryErrorCode.ReadFailed,
+          path: 'appointmentPhotos',
+          reason: 'permission-denied',
+        }),
+      );
+    });
+  });
+
+  describe('countPhotosByAppointment', () => {
+    it('counts each visit’s own photos, every asked id answered in its place', async () => {
+      getDocsMock.mockResolvedValue({
+        docs: [
+          stored({
+            id: AppointmentPhotoId.of('p1'),
+            appointmentId: AppointmentId.of('a-03'),
+          }),
+          stored({
+            id: AppointmentPhotoId.of('p2'),
+            appointmentId: AppointmentId.of('a-03'),
+          }),
+          stored({
+            id: AppointmentPhotoId.of('cover'),
+            appointmentId: AppointmentId.of('a-05'),
+            photoOrigin: PhotoOrigin.Library,
+          }),
+        ],
+      });
+
+      const answer = await ports().countPhotosByAppointment([
+        AppointmentId.of('a-03'),
+        AppointmentId.of('a-05'),
+        AppointmentId.of('a-07'),
+      ]);
+
+      expect(whereMock).toHaveBeenCalledWith('appointmentId', 'in', [
+        'a-03',
+        'a-05',
+        'a-07',
+      ]);
+      expect(answer).toEqual(Result.ok([2, 0, 0]));
+    });
+
+    it('asks thirty ids at a time — Firestore’s cap on one `in`', async () => {
+      getDocsMock.mockResolvedValue({ docs: [] });
+      const ids = Array.from({ length: 65 }, (_, i) =>
+        AppointmentId.of(`a-${i}`),
+      );
+
+      const answer = await ports().countPhotosByAppointment(ids);
+
+      expect(getDocsMock).toHaveBeenCalledTimes(3);
+      const sizes = whereMock.mock.calls.map(
+        (call) => (call[2] as readonly string[]).length,
+      );
+      expect(sizes).toEqual([30, 30, 5]);
+      expect(answer.ok && answer.value).toHaveLength(65);
+    });
+
+    it('reads nothing for no ids, and asks for an id once however often it is listed', async () => {
+      getDocsMock.mockResolvedValue({ docs: [] });
+
+      const none = await ports().countPhotosByAppointment([]);
+      expect(none).toEqual(Result.ok([]));
+      expect(getDocsMock).not.toHaveBeenCalled();
+
+      const twice = await ports().countPhotosByAppointment([
+        AppointmentId.of('a-1'),
+        AppointmentId.of('a-1'),
+        AppointmentId.of('a-2'),
+      ]);
+      expect(whereMock).toHaveBeenCalledWith('appointmentId', 'in', [
+        'a-1',
+        'a-2',
+      ]);
+      expect(twice).toEqual(Result.ok([0, 0, 0]));
+    });
+
+    it('answers a failed read with a failed Result', async () => {
+      getDocsMock.mockRejectedValue({ code: 'unavailable' });
+
+      const answer = await ports().countPhotosByAppointment([
+        AppointmentId.of('a-1'),
+      ]);
+
+      expect(answer.ok).toBe(false);
     });
   });
 });

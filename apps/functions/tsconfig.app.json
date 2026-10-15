@@ -28,19 +28,10 @@
       "path": "../../libs/domain/accounts/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/domain/notifications/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/domain/engagement/tsconfig.lib.json"
     },
     {
       "path": "../../libs/application/booking/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/domain/catalog/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/domain/scheduling/tsconfig.lib.json"
     },
     {
       "path": "../../libs/domain/identity/tsconfig.lib.json"

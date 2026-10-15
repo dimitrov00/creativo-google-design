@@ -1,169 +1,210 @@
 import { Provider } from '@angular/core';
-import { Observable, of } from 'rxjs';
+import { of } from 'rxjs';
 import {
-  Barber,
-  CATALOG_READER,
-  type CatalogReader,
-  type Location,
   MEDIA_READER,
-  MediaRef,
+  type MediaRef,
   type MediaReader,
   type MediaVariant,
-  Service,
   ok,
-  type Result,
+  type Result as KernelResult,
 } from '@creativo/application/catalog';
+import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { CatalogReadPorts } from '@core/ports';
+import type { Barber, Service } from '@core/entities';
+import {
+  BarberOffering,
+  BarberStatus,
+  LocalizedText,
+  ServiceComposition,
+  ServiceStatus,
+  ServiceTerms,
+  ServiceVariant,
+  type ServiceTermsInput,
+} from '@core/components';
+import {
+  BarberId,
+  Currency,
+  MediaRefId,
+  Result,
+  ServiceCategoryId,
+  ServiceId,
+} from '@core/primitives';
 import { BARBERS, SERVICES, type ServiceVm } from './content/landing-content';
 
 /**
  * Serves the SAME bundled demo fixture the landing used to render
- * directly, but as real `Service`/`Barber` aggregates behind
- * `CATALOG_READER`.
+ * directly, but as real `Service`/`Barber` entities behind `CATALOG_PORTS`
+ * — the catalogue's live streams, as a `CatalogReadPorts` bundle.
  *
- * Deliberately not hand-written stub objects: round-tripping the fixture
- * through `Service.create` means these specs also prove the domain →
- * `ServiceVm` mapping, and any aggregate invariant the fixture violates
+ * Deliberately not hand-written stub objects: every figure goes through the
+ * catalogue's own edge guards (`ServiceTerms.parse`, `ServiceVariant.parseAll`,
+ * `BarberOffering.parseAll`, `LocalizedText.parse`), so these specs also prove
+ * the entity → `ServiceVm` mapping, and any invariant the fixture violates
  * fails here instead of silently in production.
  */
 
-const unwrap = <T>(result: { isSuccess(): boolean; value?: T }): T => {
-  if (!result.isSuccess()) {
-    throw new Error('landing test fixture violates a domain invariant');
+const sure = <T, E>(result: Result<T, E>): T => {
+  if (!result.ok) {
+    throw new Error('landing test fixture violates a catalogue invariant');
   }
-  return result.value as T;
+  return result.value;
 };
 
-/** `14.5` major EUR → `1450` minor. */
-const minor = (major: number) => Math.round(major * 100);
+/** `14.5` major EUR → `1450` cents. */
+const cents = (major: number) => Math.round(major * 100);
 
-function coverRefFor(service: ServiceVm): MediaRef | undefined {
-  if (!service.coverSrc) return undefined;
-  return unwrap(
-    MediaRef.create({
-      id: `media-${service.id}`,
-      path: service.coverSrc,
-      width: 1200,
-      height: 1500,
-    }),
-  );
+/** One figure of the shelf fixture as the terms guard reads it — EUR, no pads. */
+function termsInput(price: number, minutes: number): ServiceTermsInput {
+  return {
+    priceCents: cents(price),
+    currency: Currency.EUR,
+    durationMinutes: minutes,
+    setupMinutes: 0,
+    cleanupMinutes: 0,
+  };
+}
+
+/** The flat cover fields of a fixture path — all seven `null` together when there is none (N9). */
+function coverOf(
+  service: ServiceVm,
+): Pick<
+  Service,
+  | 'coverMediaId'
+  | 'coverMediaPath'
+  | 'coverMediaWidth'
+  | 'coverMediaHeight'
+  | 'coverMediaBlurhash'
+  | 'coverMediaFocalX'
+  | 'coverMediaFocalY'
+> {
+  return {
+    coverMediaId: service.coverSrc
+      ? MediaRefId.of(`media-${service.id}`)
+      : null,
+    coverMediaPath: service.coverSrc ?? null,
+    coverMediaWidth: service.coverSrc ? 1200 : null,
+    coverMediaHeight: service.coverSrc ? 1500 : null,
+    coverMediaBlurhash: null,
+    coverMediaFocalX: null,
+    coverMediaFocalY: null,
+  };
 }
 
 function serviceFromVm(vm: ServiceVm): Service {
   // The shelf fixture prices everything through `offerings`; the cheapest
-  // one doubles as the aggregate's base terms so a service is never
-  // priceless.
-  const cheapest = vm.offerings.reduce(
+  // one doubles as the service's own terms so a service is never priceless.
+  const [first, ...rest] = vm.offerings;
+  if (first === undefined) {
+    throw new Error('landing test fixture lists a service nobody offers');
+  }
+  const cheapest = rest.reduce(
     (best, offering) =>
       offering.base.price < best.base.price ? offering : best,
-    vm.offerings[0]!,
+    first,
   );
-  return unwrap(
-    Service.create({
-      id: vm.id,
-      name: vm.name,
-      description: vm.description,
-      categoryId: 'cat-hair',
-      priceMinorUnits: minor(cheapest.base.price),
-      currencyCode: 'EUR',
-      durationMinutes: cheapest.base.minutes,
-      variants: vm.variants.map((variant) => ({
-        id: variant.id,
+  const variants = sure(
+    ServiceVariant.parseAll(
+      vm.variants.map((variant) => ({
+        variantId: variant.id,
         name: variant.name,
       })),
-      offerings: vm.offerings.map((offering) => ({
-        barberId: offering.barberId,
-        base: {
-          priceMinorUnits: minor(offering.base.price),
-          currencyCode: 'EUR',
-          durationMinutes: offering.base.minutes,
-        },
-        ...(offering.byVariant
-          ? {
-              byVariant: Object.fromEntries(
-                Object.entries(offering.byVariant).map(([id, terms]) => [
-                  id,
-                  {
-                    priceMinorUnits: minor(terms.price),
-                    currencyCode: 'EUR',
-                    durationMinutes: terms.minutes,
-                  },
-                ]),
-              ),
-            }
-          : {}),
-      })),
-      cover: coverRefFor(vm),
-      locationIds: [],
-      conflictsWith: [],
-      composition:
-        vm.kind === 'bundle'
-          ? { kind: 'bundle', includes: [...(vm.includes ?? [])] }
-          : { kind: 'single' },
-      upsellOnly: vm.upsellOnly,
-      popular: false,
-      status: 'active',
-      sortOrder: 0,
-    }),
+    ),
   );
+  const offerings = sure(
+    BarberOffering.parseAll(
+      vm.offerings.map((offering) => ({
+        barberId: offering.barberId,
+        ...termsInput(offering.base.price, offering.base.minutes),
+        overrides: Object.entries(offering.byVariant ?? {}).map(
+          ([variantId, terms]) => ({
+            variantId,
+            ...termsInput(terms.price, terms.minutes),
+          }),
+        ),
+      })),
+      variants,
+    ),
+  );
+  const composition: ServiceComposition =
+    vm.kind === 'bundle'
+      ? ServiceComposition.bundle(
+          (vm.includes ?? []).map((id) => ServiceId.of(id)),
+        )
+      : ServiceComposition.single();
+  return {
+    id: ServiceId.of(vm.id),
+    name: sure(LocalizedText.parse(vm.name)),
+    description: sure(LocalizedText.parse(vm.description)),
+    categoryId: ServiceCategoryId.of('cat-hair'),
+    ...sure(
+      ServiceTerms.parse(
+        termsInput(cheapest.base.price, cheapest.base.minutes),
+      ),
+    ),
+    variants,
+    offerings,
+    locationIds: [],
+    conflictsWith: [],
+    ...composition,
+    upsellOnly: vm.upsellOnly,
+    popular: false,
+    serviceStatus: ServiceStatus.Active,
+    sortOrder: 0,
+    ...coverOf(vm),
+  };
 }
 
 function barbers(): readonly Barber[] {
-  return BARBERS.map((vm, index) =>
-    unwrap(
-      Barber.create({
-        id: vm.id,
-        name: vm.name,
-        handle: vm.id,
-        title: vm.title,
-        bio: vm.bio,
-        avatar: unwrap(
-          MediaRef.create({
-            id: `media-barber-${vm.id}`,
-            path: vm.avatarSrc,
-            width: 1200,
-            height: 1500,
-          }),
-        ),
-        locationIds: [],
-        status: 'active',
-        sortOrder: index,
-      }),
-    ),
-  );
+  return BARBERS.map((vm, index): Barber => ({
+    id: BarberId.of(vm.id),
+    name: sure(LocalizedText.parse(vm.name)),
+    handle: vm.id,
+    title: sure(LocalizedText.parse(vm.title)),
+    bio: sure(LocalizedText.parse(vm.bio)),
+    yearsExperience: null,
+    locationIds: [],
+    instagramHandle: null,
+    barberStatus: BarberStatus.Active,
+    sortOrder: index,
+    avatarMediaId: MediaRefId.of(`media-barber-${vm.id}`),
+    avatarMediaPath: vm.avatarSrc,
+    avatarMediaWidth: 1200,
+    avatarMediaHeight: 1500,
+    avatarMediaBlurhash: null,
+    avatarMediaFocalX: null,
+    avatarMediaFocalY: null,
+  }));
 }
 
-class FixtureCatalogReader implements Partial<CatalogReader> {
-  private readonly services = SERVICES.map(serviceFromVm);
-  private readonly people = barbers();
-
-  listActiveServices(): Observable<Result<readonly Service[], never>> {
-    return of(ok(this.services));
-  }
-  listActiveBarbers(): Observable<Result<readonly Barber[], never>> {
-    return of(ok(this.people));
-  }
-  /**
-   * No shops: the landing's locations are still hand-authored, and the
-   * shared `CatalogContentService` it reads its services and barbers from
-   * subscribes to this read too.
-   */
-  listActiveLocations(): Observable<Result<readonly Location[], never>> {
-    return of(ok([]));
-  }
+/**
+ * The fixture catalogue as the live streams answer it. No shops: the
+ * landing's locations are still hand-authored, and the shared
+ * `CatalogContentService` it reads its services and barbers from subscribes
+ * to that stream too. No categories: nothing on the landing groups by them.
+ */
+function fixtureCatalogPorts(): CatalogReadPorts {
+  const services = SERVICES.map(serviceFromVm);
+  const people = barbers();
+  return {
+    observeServices: () => of(Result.ok(services)),
+    observeBarbers: () => of(Result.ok(people)),
+    observeCategories: () => of(Result.ok([])),
+    observeLocations: () => of(Result.ok([])),
+  };
 }
 
 /** Echoes the ref's own path back as the URL — the fixture stores real `/work/*.jpg` paths. */
 class FixtureMediaReader implements MediaReader {
   async resolve(
     ref: MediaRef,
-  ): Promise<Result<readonly MediaVariant[], never>> {
+  ): Promise<KernelResult<readonly MediaVariant[], never>> {
     return ok([{ width: ref.width, url: ref.path }]);
   }
 }
 
 export function provideTestCatalog(): Provider[] {
   return [
-    { provide: CATALOG_READER, useClass: FixtureCatalogReader },
+    { provide: CATALOG_PORTS, useFactory: fixtureCatalogPorts },
     { provide: MEDIA_READER, useClass: FixtureMediaReader },
   ];
 }

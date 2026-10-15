@@ -16,16 +16,20 @@ import {
   streakScheduleToDocument,
 } from '@creativo/application/engagement';
 import {
-  AUDIT_LOG_COLLECTION,
-  auditEntryToDocument,
-} from '@creativo/application/shared';
-import { auditEntryIdFor, planAuditEntries } from '../lib/booking/audit';
+  AuditEntryId,
+  AuditResourceId,
+  StreakDefinitionId,
+} from '@core/primitives';
+import { AuditAction } from '@core/components';
+import type { AuditEntry } from '@core/entities';
+import { AuditSystem } from '@core/systems';
+import { sha256Hex } from './crypto.adapter';
+import { auditRowCreate, auditRowRef } from './firestore-audit.adapter';
 import {
   type PublishStreakDefinitionFailure,
   PublishStreakDefinitionStoreError,
 } from '../use-cases/publish-streak-definition.errors';
 import {
-  STREAK_DEFINITION_WITHDRAWN,
   type StreakDefinitionAudit,
   type StreakDefinitionDecision,
   type StreakDefinitionIntent,
@@ -33,7 +37,6 @@ import {
   type StreakDefinitionReceipt,
   type StreakDefinitionSnapshot,
   type StreakDefinitionStore,
-  streakDefinitionResourceId,
 } from '../use-cases/publish-streak-definition.use-case';
 
 /** A version's document id: six digits or more, nothing else (`streakDefinitionVersionId`). */
@@ -64,9 +67,16 @@ const VERSION_ID = /^\d{6,}$/;
  * ### A retry writes nothing
  * A publish leaves its `requestId` on the version it wrote; a withdrawal
  * leaves its row, whose id is derived from the `requestId`
- * (`auditEntryIdFor`). Either is looked for FIRST. Without that, the retry
+ * (`hash(AuditSystem.rowBasis(…))`). Either is looked for FIRST. Without that, the retry
  * of a publish whose answer was lost would read its own write as a head
  * that moved, and tell the admin somebody else changed the rule.
+ *
+ * ### The row is the flat `AuditEntry` (F1-8)
+ * Planned by `AuditSystem.plan` — one untargeted row, the act's actor,
+ * instant and context at the root — its id `hash(rowBasis(…))` of the
+ * intent's `requestId`, staged through the audit adapter's
+ * `auditRowCreate`: the same body `appendAudit` writes, created in THIS
+ * transaction. The rest of the store (head, versions) waits for flip 3.
  *
  * Reads strictly precede writes, as Firestore requires.
  */
@@ -140,10 +150,9 @@ export class FirestoreStreakDefinitionStore implements StreakDefinitionStore {
   ): Promise<StreakDefinitionReceipt | null> {
     if (intent.act === 'withdraw') {
       const row = await tx.get(
-        this.auditRow(
-          STREAK_DEFINITION_WITHDRAWN,
-          intent.streakId,
-          intent.requestId,
+        auditRowRef(
+          this.db,
+          withdrawalRowId(intent.streakId, intent.requestId),
         ),
       );
       return row.exists ? { kind: 'withdrawn', version: intent.version } : null;
@@ -197,7 +206,7 @@ export class FirestoreStreakDefinitionStore implements StreakDefinitionStore {
   ): Promise<void> {
     // Planned before anything is written: a row the domain refuses fails
     // the act with nothing behind it.
-    const row = this.rowOf(decision.audit);
+    const row = auditRowCreate(this.db, rowOf(decision.audit));
 
     // The last reads. A version that waited and has no document of its own
     // (a head seeded without its history) has nothing to stamp.
@@ -221,43 +230,51 @@ export class FirestoreStreakDefinitionStore implements StreakDefinitionStore {
     // `set`, not `update`: the head is the schedule document, written
     // whole, so nothing of what stood before survives a publish.
     tx.set(head, { ...streakScheduleToDocument(decision.head, decision.at) });
-    tx.create(row.ref, row.data);
+    tx.create(row.ref, row.body);
   }
+}
 
-  /** The act's row, through the audit log's own planner: one row, about no one client. */
-  private rowOf(audit: StreakDefinitionAudit): {
-    readonly ref: DocumentReference;
-    readonly data: Record<string, unknown>;
-  } {
-    const planned = planAuditEntries({ ...audit, subjects: [] });
-    if (planned.isFailure()) {
-      throw new Error(
-        `audit entry refused by domain: ${planned.error
-          .map((error) => error.code)
-          .join(', ')}`,
-      );
-    }
-    const entry = planned.value[0];
-    if (entry === undefined) throw new Error('audit entry was not planned');
-    return {
-      ref: this.db.collection(AUDIT_LOG_COLLECTION).doc(entry.id.value),
-      data: auditEntryToDocument(entry),
-    };
-  }
-
-  /** Where an intent's row is, written or not: the id `planAuditEntries` derives for it. */
-  private auditRow(
-    action: string,
-    streakId: string,
-    requestId: string,
-  ): DocumentReference {
-    return this.db.collection(AUDIT_LOG_COLLECTION).doc(
-      auditEntryIdFor({
-        action,
-        resourceId: streakDefinitionResourceId(streakId),
-        targetUserId: null,
-        changeKey: requestId,
-      }),
+/**
+ * The act's ONE row as the flat log stores it — planned by `AuditSystem`
+ * (no subjects: a rule is about no one client, so one untargeted row), its
+ * id the hash of the basis the intent's `requestId` keys. A row the planner
+ * refuses fails the act with nothing behind it.
+ */
+function rowOf(audit: StreakDefinitionAudit): AuditEntry {
+  const planned = AuditSystem.plan(
+    [
+      {
+        resourceId: audit.resourceId,
+        subjects: [],
+        changeKey: audit.changeKey,
+        context: audit.context,
+      },
+    ],
+    audit.actor,
+    audit.atUtcMs,
+  );
+  if (!planned.ok) {
+    throw new Error(
+      `audit entry refused by domain: ${planned.error.errorCode}`,
     );
   }
+  const [plan] = planned.value;
+  if (plan === undefined || plan.idBasis === null) {
+    throw new Error('audit entry was not planned');
+  }
+  return { id: AuditEntryId.of(sha256Hex(plan.idBasis)), ...plan.row };
+}
+
+/** Where a withdrawal's row is, written or not: the id `rowOf` derives for the intent. */
+function withdrawalRowId(streakId: string, requestId: string): AuditEntryId {
+  return AuditEntryId.of(
+    sha256Hex(
+      AuditSystem.rowBasis(
+        AuditAction.LoyaltyStreakDefinitionWithdrawn,
+        AuditResourceId.forStreakDefinition(StreakDefinitionId.of(streakId)),
+        null,
+        requestId,
+      ),
+    ),
+  );
 }

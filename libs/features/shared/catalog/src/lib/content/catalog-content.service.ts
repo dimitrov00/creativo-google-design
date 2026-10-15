@@ -8,15 +8,10 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { distinctUntilChanged, map, skip } from 'rxjs';
-import {
-  Barber,
-  CATALOG_READER,
-  Location,
-  MEDIA_READER,
-  MediaRef,
-  Service,
-} from '@creativo/application/catalog';
+import { MEDIA_READER, MediaRef } from '@creativo/application/catalog';
 import { AUTH_GATEWAY, type Principal } from '@creativo/application/identity';
+import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { Barber, Service, ShopLocation } from '@core/entities';
 import { BARBER_ART, SERVICE_ART } from './catalog-art';
 import { type BarberVm, type ServiceVm } from './catalog-vm';
 import { barberToVm, serviceToVm } from './catalog-to-vm';
@@ -27,7 +22,7 @@ import { MediaUrlCache } from './media-url-cache';
  * "give me the services and barbers, ready to render".
  *
  * Extracted when booking became the third consumer of the same ~50 lines
- * (landing, onboarding, booking): two live `CatalogReader` subscriptions, a
+ * (landing, onboarding, booking): the live `CATALOG_PORTS` streams, a
  * `MediaRef` → URL cache that must not re-fetch on every snapshot re-emit,
  * and the mapping into view models. Three copies of that is three places
  * for the cache to drift.
@@ -37,7 +32,7 @@ import { MediaUrlCache } from './media-url-cache';
  */
 @Injectable({ providedIn: 'root' })
 export class CatalogContentService {
-  private readonly catalogReader = inject(CATALOG_READER);
+  private readonly catalog = inject(CATALOG_PORTS);
 
   /**
    * Resolved cover and avatar URLs, one resolve per media object — a
@@ -51,40 +46,39 @@ export class CatalogContentService {
    */
   private readonly media = new MediaUrlCache(inject(MEDIA_READER));
 
+  // `null` = every category / every shop: the whole active catalogue.
   private readonly servicesResult = toSignal(
-    this.catalogReader.listActiveServices(),
+    this.catalog.observeServices(null),
     { initialValue: null },
   );
 
-  private readonly barbersResult = toSignal(
-    this.catalogReader.listActiveBarbers(),
-    { initialValue: null },
-  );
+  private readonly barbersResult = toSignal(this.catalog.observeBarbers(null), {
+    initialValue: null,
+  });
 
-  private readonly locationsResult = toSignal(
-    this.catalogReader.listActiveLocations(),
-    { initialValue: null },
-  );
+  private readonly locationsResult = toSignal(this.catalog.observeLocations(), {
+    initialValue: null,
+  });
 
-  /** Active services as domain aggregates — for conflict rules and terms. */
+  /** Active services as the stored entities — for conflict rules and terms. */
   readonly services = computed<readonly Service[]>(() => {
     const result = this.servicesResult();
-    return result?.isSuccess() ? result.value : [];
+    return result?.ok ? result.value : [];
   });
 
   readonly barbers = computed<readonly Barber[]>(() => {
     const result = this.barbersResult();
-    return result?.isSuccess() ? result.value : [];
+    return result?.ok ? result.value : [];
   });
 
   /**
-   * Active shops. The booking flow needs them for their `hours` (the outer
-   * envelope every slot is clamped to) and their `timezone` — the scheduling
-   * zone is the SHOP's, never the device's.
+   * Active shops. The booking flow needs them for their `openingHours` (the
+   * outer envelope every slot is clamped to) and their `timeZone` — the
+   * scheduling zone is the SHOP's, never the device's.
    */
-  readonly locations = computed<readonly Location[]>(() => {
+  readonly locations = computed<readonly ShopLocation[]>(() => {
     const result = this.locationsResult();
-    return result?.isSuccess() ? result.value : [];
+    return result?.ok ? result.value : [];
   });
 
   /** True until the first answer lands — lets consumers tell empty from loading. */
@@ -98,18 +92,14 @@ export class CatalogContentService {
    * retired service) must wait for this one, or it reads "retired" off a
    * list that never arrived.
    */
-  readonly servicesKnown = computed(
-    () => this.servicesResult()?.isSuccess() === true,
-  );
+  readonly servicesKnown = computed(() => this.servicesResult()?.ok === true);
 
   /**
    * The same for the barbers, which are a separate read: who is active is
    * known only once that read answers successfully. `loading` covers the
    * services only.
    */
-  readonly barbersKnown = computed(
-    () => this.barbersResult()?.isSuccess() === true,
-  );
+  readonly barbersKnown = computed(() => this.barbersResult()?.ok === true);
 
   /**
    * The same for the shops, a third read. `locations()` is empty both while
@@ -117,9 +107,7 @@ export class CatalogContentService {
    * a consumer that decides from which shops are NOT on the list (a shop
    * that cannot serve somebody) waits for this one.
    */
-  readonly locationsKnown = computed(
-    () => this.locationsResult()?.isSuccess() === true,
-  );
+  readonly locationsKnown = computed(() => this.locationsResult()?.ok === true);
 
   readonly serviceVms = computed<readonly ServiceVm[]>(() =>
     this.services().map((service) => this.toServiceVm(service)),
@@ -129,20 +117,22 @@ export class CatalogContentService {
     this.barbers().map((barber) =>
       barberToVm(
         barber,
-        this.media.url(barber.avatar),
-        BARBER_ART[barber.id.value],
+        this.media.url(avatarRefOf(barber)),
+        BARBER_ART[barber.id],
       ),
     ),
   );
 
   /** Every cover and avatar the catalogue names. */
   private readonly mediaRefs = computed<readonly MediaRef[]>(() => [
-    ...this.services().flatMap((service) =>
-      service.cover ? [service.cover] : [],
-    ),
-    ...this.barbers().flatMap((barber) =>
-      barber.avatar ? [barber.avatar] : [],
-    ),
+    ...this.services().flatMap((service) => {
+      const cover = coverRefOf(service);
+      return cover ? [cover] : [];
+    }),
+    ...this.barbers().flatMap((barber) => {
+      const avatar = avatarRefOf(barber);
+      return avatar ? [avatar] : [];
+    }),
   ]);
 
   constructor() {
@@ -189,11 +179,11 @@ export class CatalogContentService {
    * catalogue — a grid that asks per card on every pass stays linear.
    */
   coverUrlOf(service: Service): string | undefined {
-    return this.media.url(service.cover);
+    return this.media.url(coverRefOf(service));
   }
 
   /**
-   * Domain → view model, WITH the shared art direction applied.
+   * Entity → view model, WITH the shared art direction applied.
    *
    * Passing `undefined` here is what made `/book` render the shared detail
    * sheet with an empty gallery: the sheet was reused, the editorial data it
@@ -204,13 +194,71 @@ export class CatalogContentService {
     return serviceToVm(
       service,
       this.coverUrlOf(service),
-      SERVICE_ART[service.id.value],
+      SERVICE_ART[service.id],
     );
   }
 
   findService(serviceId: string): Service | undefined {
-    return this.services().find((service) => service.id.value === serviceId);
+    return this.services().find((service) => service.id === serviceId);
   }
+}
+
+/**
+ * The cover as the media reader resolves it. `MEDIA_READER` is not part of
+ * the booking-core flip and still takes the kernel's `MediaRef`; the entity
+ * stores the seven `coverMedia*` fields flat, all `null` together (N9). The
+ * pointer is built at this one seam, keyed by its path in the cache, until
+ * the media port flips. `null` when there is no cover, or one the kernel's
+ * guard refuses — a placeholder, exactly as an unreadable ref read before.
+ */
+function coverRefOf(service: Service): MediaRef | null {
+  return mediaRefOf(
+    service.coverMediaId,
+    service.coverMediaPath,
+    service.coverMediaWidth,
+    service.coverMediaHeight,
+    service.coverMediaBlurhash,
+    service.coverMediaFocalX,
+    service.coverMediaFocalY,
+  );
+}
+
+/** The avatar as the media reader resolves it — {@link coverRefOf}'s seam, for `avatarMedia*`. */
+function avatarRefOf(barber: Barber): MediaRef | null {
+  return mediaRefOf(
+    barber.avatarMediaId,
+    barber.avatarMediaPath,
+    barber.avatarMediaWidth,
+    barber.avatarMediaHeight,
+    barber.avatarMediaBlurhash,
+    barber.avatarMediaFocalX,
+    barber.avatarMediaFocalY,
+  );
+}
+
+function mediaRefOf(
+  id: string | null,
+  path: string | null,
+  width: number | null,
+  height: number | null,
+  blurhash: string | null,
+  focalX: number | null,
+  focalY: number | null,
+): MediaRef | null {
+  if (id === null || path === null || width === null || height === null) {
+    return null;
+  }
+  const ref = MediaRef.create({
+    id,
+    path,
+    width,
+    height,
+    ...(blurhash === null ? {} : { blurhash }),
+    ...(focalX === null || focalY === null
+      ? {}
+      : { focalPoint: { x: focalX, y: focalY } }),
+  });
+  return ref.isSuccess() ? ref.value : null;
 }
 
 /**

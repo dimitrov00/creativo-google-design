@@ -11,33 +11,65 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
-import { UserId } from '@creativo/application/accounts';
-import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
-import { CouponValue } from '@creativo/application/engagement';
-import {
-  AppliedDiscount,
+import type {
   Appointment,
-  type AppointmentPhoto,
-  type AppointmentStatus,
-  BookingContact,
-  type ClientHistoryReader,
-  type ClientPhotosReader,
-  type Result,
-  SEAT_SCHEDULED,
-  Seat,
-  SeatId,
-  type SeatOutcome,
-  SeatSubject,
+  AppointmentPhoto,
   WaitlistRequest,
-  ZonedDateTime,
-  seatCancelled,
-  seatNoShow,
-  seatWorked,
-} from '@creativo/application/booking';
+} from '@core/entities';
+import {
+  type AppliedDiscount,
+  BookingContact,
+  BookingLifecycle,
+  CancellationReason,
+  CancellationReasonSet,
+  CancelledBy,
+  type CartLine,
+  Combinability,
+  CouponValue,
+  DayWindows,
+  DiscountProvenance,
+  MinuteRange,
+  PhotoOrigin,
+  Placement,
+  Seat,
+  SeatLabel,
+  SeatOccupant,
+  SeatOutcome,
+  SeatSubject,
+  SubjectRelationship,
+  VoucherCode,
+  WaitlistLifecycle,
+} from '@core/components';
+import {
+  AppliedDiscountId,
+  AppointmentId,
+  AppointmentPhotoId,
+  AttendanceState,
+  BarberId,
+  BusyKey,
+  CartLineId,
+  type CustomerId,
+  EndMinute,
+  LocalDate,
+  LocationId,
+  MinuteOfDay,
+  SeatId,
+  SeatKeyText,
+  ServiceId,
+  type TimeZone,
+  UserId,
+  type UtcEpochMs,
+  WaitlistRequestId,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import type { AppointmentPhotoPorts, AppointmentReadPorts } from '@core/ports';
+import {
+  appointmentFixture,
+  customerOf,
+  seatFixture,
+  termsFixture,
+  unwrapOk,
+} from '@core/testing';
 import {
   type VisitRowOptions,
   type VisitTranslate,
@@ -54,17 +86,27 @@ import type { VisitLookup, VisitRowVm } from '../visit-row.vm';
  * loyalty fixtures' Георги), on the fixtures' own calendar day — the last
  * visit with his words and a photo, a discounted cut with a beard, a
  * cancellation, a no-show, a party with Иво at the other shop, the visit on
- * screen and the one after it. Built through the domain's own factories,
+ * screen and the one after it. FLAT entities, exactly as their documents
+ * store them (flip 1), built through the ecs-core fixtures and companions,
  * so every row the specs draw is a row the presenter really builds; served
- * through `InMemoryClientHistoryReader` / `InMemoryClientPhotosReader` by
- * the specs, exactly as the Firestore adapters page it.
+ * through the `@core/testing` port doubles (`memoryAppointmentReadPorts`,
+ * `memoryAppointmentPhotoPorts`) by the specs, exactly as the Firestore
+ * adapters page them.
  */
 
 export const VISITS_ZONE = 'Europe/Sofia';
+/** The shops' zone, branded — every wall-clock fixture is read in it. */
+export const VISITS_TIME_ZONE: TimeZone = unwrapOk(
+  ZonedTimeSystem.checkZone(VISITS_ZONE),
+);
 /** Георги Петров — `InMemoryLoyaltyReader.seeded()`'s uid for him. */
 export const GEORGI_UID = 'dev-client-1';
+/** Георги's client record (D29), derived the way the pipelines derive it. */
+export const GEORGI_CUSTOMER_ID: CustomerId = customerOf(UserId.of(GEORGI_UID));
 /** Иво, the companion on Георги's December party. */
 export const IVO_UID = 'dev-client-10';
+/** Иво's client record. */
+export const IVO_CUSTOMER_ID: CustomerId = customerOf(UserId.of(IVO_UID));
 /** The appointment the staff sheet is open on: today, 10:00, with Иван. */
 export const CURRENT_APPOINTMENT_ID = 'appt-today';
 
@@ -91,24 +133,60 @@ export const VISITS_LOOKUP: VisitLookup = {
   locationCount: LOCATIONS.size,
 };
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('bad visits fixture');
-  return result.value;
+/** A wall-clock reading in Sofia (`YYYY-MM-DDTHH:mm:ss`) as the instant it names. */
+export function sofia(iso: string): UtcEpochMs {
+  return unwrapOk(ZonedTimeSystem.parseIsoIn(iso, VISITS_TIME_ZONE));
 }
 
-/** A wall-clock instant on the shops' calendar. */
-export function sofia(iso: string): ZonedDateTime {
-  return unwrap(ZonedDateTime.fromISO(iso, VISITS_ZONE));
+/** A wall-clock reading in Sofia as the shop day and minute it is stored as (Law 7.3). */
+export function sofiaWall(iso: string): {
+  readonly localDate: LocalDate;
+  readonly minute: MinuteOfDay;
+} {
+  return {
+    localDate: unwrapOk(LocalDate.parse(iso.slice(0, 10))),
+    minute: unwrapOk(
+      MinuteOfDay.of(
+        Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16)),
+      ),
+    ),
+  };
 }
 
 /** The loyalty fixtures' day (`loyaltyFixtures.today`), 09:00 in Sofia — before the 10:00 visit. */
 export function visitsNowMs(today: string): number {
-  return sofia(`${today}T09:00:00`).toMillis();
+  return sofia(`${today}T09:00:00`);
 }
 
-interface SeatSpec {
-  readonly id: string;
+/** A seat that was worked at `iso` (Sofia). */
+export function workedAt(iso: string): SeatOutcome {
+  return SeatOutcome.worked(sofia(iso));
+}
+
+/** A seat nobody came to, judged at `iso` (Sofia). */
+export function noShowAt(iso: string): SeatOutcome {
+  return SeatOutcome.noShow(sofia(iso));
+}
+
+/** A seat called off at `iso` (Sofia) by the client or the shop, for a reason. */
+export function cancelledAt(
+  iso: string,
+  by: 'client' | 'staff',
+  reason: CancellationReason = CancellationReason.Unspecified,
+): SeatOutcome {
+  return SeatOutcome.cancelled(
+    sofia(iso),
+    by === 'client' ? CancelledBy.Client : CancelledBy.Staff,
+    reason,
+    null,
+  );
+}
+
+export interface SeatSpec {
+  readonly id?: string;
+  /** An account's uid, or — with `guest` — a guest's name. */
   readonly who?: string;
+  readonly guest?: boolean;
   readonly relationship?: 'self' | 'companion';
   readonly service?: string;
   readonly barber?: string;
@@ -117,168 +195,276 @@ interface SeatSpec {
   readonly outcome?: SeatOutcome;
 }
 
-function seat(startIso: string, spec: SeatSpec): Seat {
-  return Seat.of({
-    id: unwrap(SeatId.create(spec.id)),
-    subject: SeatSubject.account(
-      unwrap(UserId.create(spec.who ?? GEORGI_UID)),
-      spec.relationship ?? 'self',
+/**
+ * One seat starting at `startIso` (Sofia, the visit's shop day): an account
+ * seat with its client record beside its uid (`customerOf`, D29), or a
+ * guest by label.
+ */
+export function visitSeat(startIso: string, spec: SeatSpec = {}): Seat {
+  const who = spec.who ?? GEORGI_UID;
+  return seatFixture({
+    seatId: SeatId.of(spec.id ?? 'seat-1'),
+    serviceId: ServiceId.of(spec.service ?? 'svc-fade'),
+    barberId: BarberId.of(spec.barber ?? 'barber-ivan'),
+    startMinutes: sofiaWall(startIso).minute,
+    terms: Seat.termsOf(
+      termsFixture(spec.priceMinor ?? 2750, spec.minutes ?? 30),
+      null,
     ),
-    serviceId: unwrap(ServiceId.create(spec.service ?? 'svc-fade')),
-    variantId: null,
-    barberId: unwrap(BarberId.create(spec.barber ?? 'barber-ivan')),
-    terms: unwrap(
-      ServiceTerms.fromMinorUnits(
-        spec.priceMinor ?? 2750,
-        'EUR',
-        spec.minutes ?? 30,
-      ),
-    ),
-    startsAt: sofia(startIso),
-    outcome: spec.outcome ?? SEAT_SCHEDULED,
+    occupant: spec.guest
+      ? SeatOccupant.anonymous(unwrapOk(SeatLabel.parse(who)))
+      : SeatOccupant.account(
+          UserId.of(who),
+          customerOf(UserId.of(who)),
+          spec.relationship === 'companion'
+            ? SubjectRelationship.Companion
+            : SubjectRelationship.Self,
+        ),
+    outcome: spec.outcome ?? SeatOutcome.scheduled(),
   });
 }
 
-function appointment(
+/** The stored states a fixture visit can be in. */
+export type VisitStatusSpec =
+  'pending' | 'confirmed' | 'completed' | 'no_show' | 'cancelled';
+
+export interface VisitExtras {
+  /** The client's own words (the booking's contact note). */
+  readonly note?: string;
+  /** A first-visit code applied at `discountAtIso`: «FIRST10», −10 %. */
+  readonly discountAtIso?: string;
+  /** Who booked: the uid of the `SELF` seat by default. */
+  readonly ownerUid?: string | null;
+}
+
+/** «FIRST10», −10 %, applied by code at `iso` — the bill's one snapshot. */
+export function firstTenDiscount(iso: string): AppliedDiscount {
+  return {
+    discountId: AppliedDiscountId.of('code:FIRST10'),
+    label: 'FIRST10',
+    appliedAtUtcMs: sofia(iso),
+    combinability: Combinability.Stackable,
+    ...DiscountProvenance.code(VoucherCode.of('FIRST10')),
+    ...unwrapOk(CouponValue.percentOff(10)),
+  };
+}
+
+/**
+ * A flat visit at `locationId` holding `seats` (all on the first seat's
+ * shop day, F-6), in `status`: its envelope, instant and query mirrors
+ * derived from the seats as the write plans derive them; a cancellation's
+ * reasons are its seats'.
+ */
+export function visitOf(
   id: string,
   locationId: string,
   seats: readonly Seat[],
-  status: AppointmentStatus,
-  extras: { readonly note?: string; readonly discountAtIso?: string } = {},
+  status: VisitStatusSpec,
+  startIso: string,
+  extras: VisitExtras = {},
 ): Appointment {
-  const built = unwrap(
-    Appointment.reconstitute({
-      id,
-      locationId,
-      seats: [...seats],
-      status,
-      contact:
-        extras.note === undefined
-          ? null
-          : unwrap(
-              BookingContact.create({
-                name: 'Георги Петров',
-                phone: '+359881234567',
-                email: null,
-                note: extras.note,
-              }),
-            ),
-    }),
+  const day = sofiaWall(startIso).localDate;
+  let start = Number.POSITIVE_INFINITY;
+  let end = 0;
+  const barbers: BarberId[] = [];
+  const users: UserId[] = [];
+  const customers: CustomerId[] = [];
+  let owner: Seat | null = null;
+  for (const seat of seats) {
+    start = Math.min(start, seat.startMinutes);
+    end = Math.max(end, Seat.endMinutes(seat));
+    if (!barbers.includes(seat.barberId)) barbers.push(seat.barberId);
+    if (seat.seatSubject === SeatSubject.Account) {
+      if (!users.includes(seat.subjectUserId)) users.push(seat.subjectUserId);
+      if (!customers.includes(seat.subjectCustomerId)) {
+        customers.push(seat.subjectCustomerId);
+      }
+      if (
+        owner === null &&
+        seat.subjectRelationship === SubjectRelationship.Self
+      ) {
+        owner = seat;
+      }
+    }
+  }
+  const startMinutes = unwrapOk(MinuteOfDay.of(start));
+  const instant = unwrapOk(
+    ZonedTimeSystem.toUtc(day, startMinutes, VISITS_TIME_ZONE),
   );
-  if (extras.discountAtIso === undefined) return built;
-  return built.withDiscounts([
-    AppliedDiscount.of({
-      id: 'code:FIRST10',
-      source: 'code',
-      label: 'FIRST10',
-      value: unwrap(CouponValue.percentOff(10)),
-      code: 'FIRST10',
-      appliedAt: sofia(extras.discountAtIso),
-    }),
-  ]);
+  const ownerSeat = owner as Seat | null;
+  const ownerUserId =
+    extras.ownerUid === undefined
+      ? ownerSeat !== null && ownerSeat.seatSubject === SeatSubject.Account
+        ? ownerSeat.subjectUserId
+        : null
+      : extras.ownerUid === null
+        ? null
+        : UserId.of(extras.ownerUid);
+  return appointmentFixture({
+    id: AppointmentId.of(id),
+    locationId: LocationId.of(locationId),
+    seats,
+    localDate: day,
+    startMinutes,
+    endMinutes: unwrapOk(EndMinute.of(end)),
+    utcEpochMs: instant,
+    barberIds: barbers,
+    busyKeys: barbers.map((barber) => BusyKey.of(barber, day)),
+    ownerUserId,
+    ownerCustomerId: ownerUserId === null ? null : customerOf(ownerUserId),
+    subjectUserIds: [...users].sort(),
+    subjectCustomerIds: [...customers].sort(),
+    placement: Placement.Self,
+    ...(extras.note === undefined
+      ? BookingContact.NONE
+      : {
+          contactName: 'Георги Петров',
+          contactPhone: null,
+          contactEmail: null,
+          contactNote: extras.note,
+        }),
+    discounts:
+      extras.discountAtIso === undefined
+        ? []
+        : [firstTenDiscount(extras.discountAtIso)],
+    lifecycle: lifecycleOf(status, seats, instant),
+  });
 }
 
-const worked = (iso: string) => seatWorked(sofia(iso).toMillis());
+/** The visit's lifecycle variant, stamped at its own start (a fixture needs no other clock). */
+function lifecycleOf(
+  status: VisitStatusSpec,
+  seats: readonly Seat[],
+  at: UtcEpochMs,
+): BookingLifecycle {
+  switch (status) {
+    case 'pending':
+      return BookingLifecycle.pending(at);
+    case 'confirmed':
+      return BookingLifecycle.confirm(at);
+    case 'completed':
+      return BookingLifecycle.complete(at);
+    case 'no_show':
+      return BookingLifecycle.noShow(at);
+    case 'cancelled':
+      return BookingLifecycle.cancel(
+        at,
+        CancellationReasonSet.of(
+          seats.flatMap((seat) =>
+            seat.attendanceState === AttendanceState.Cancelled
+              ? [seat.cancellationReason]
+              : [],
+          ),
+        ),
+      );
+  }
+}
 
-/** Георги's book, newest first — what `pageForSubject` pages through. */
+/** Георги's book, newest first — what `pageClientHistory` pages through. */
 export const GEORGI_VISITS: readonly Appointment[] = [
   // The one after this: requested online, not yet confirmed.
-  appointment(
+  visitOf(
     'appt-oct',
     'loc-center',
-    [seat('2026-10-02T10:00:00', { id: 'seat-oct' })],
-    { kind: 'pending' },
+    [visitSeat('2026-10-02T10:00:00', { id: 'seat-oct' })],
+    'pending',
+    '2026-10-02T10:00:00',
   ),
   // The visit on screen.
-  appointment(
+  visitOf(
     CURRENT_APPOINTMENT_ID,
     'loc-center',
-    [seat('2026-09-28T10:00:00', { id: 'seat-today' })],
-    { kind: 'confirmed' },
+    [visitSeat('2026-09-28T10:00:00', { id: 'seat-today' })],
+    'confirmed',
+    '2026-09-28T10:00:00',
   ),
   // The last visit: his words, one photo.
-  appointment(
+  visitOf(
     'appt-sep',
     'loc-center',
     [
-      seat('2026-09-04T10:00:00', {
+      visitSeat('2026-09-04T10:00:00', {
         id: 'seat-sep',
-        outcome: worked('2026-09-04T10:35:00'),
+        outcome: workedAt('2026-09-04T10:35:00'),
       }),
     ],
-    { kind: 'completed' },
+    'completed',
+    '2026-09-04T10:00:00',
     { note: 'Къса отстрани, по-дълго отгоре' },
   ),
   // A cut and a beard with a first-visit code: two photos.
-  appointment(
+  visitOf(
     'appt-aug',
     'loc-center',
     [
-      seat('2026-08-12T17:30:00', {
+      visitSeat('2026-08-12T17:30:00', {
         id: 'seat-aug-cut',
-        outcome: worked('2026-08-12T18:00:00'),
+        outcome: workedAt('2026-08-12T18:00:00'),
       }),
-      seat('2026-08-12T18:00:00', {
+      visitSeat('2026-08-12T18:00:00', {
         id: 'seat-aug-beard',
         service: 'svc-beard',
         priceMinor: 1500,
         minutes: 15,
-        outcome: worked('2026-08-12T18:15:00'),
+        outcome: workedAt('2026-08-12T18:15:00'),
       }),
     ],
-    { kind: 'completed' },
+    'completed',
+    '2026-08-12T17:30:00',
     { discountAtIso: '2026-08-12T18:20:00' },
   ),
   // Called off by Георги the evening before.
-  appointment(
+  visitOf(
     'appt-jul-cancelled',
     'loc-center',
     [
-      seat('2026-07-16T10:00:00', {
+      visitSeat('2026-07-16T10:00:00', {
         id: 'seat-jul-cancelled',
         priceMinor: 1750,
-        outcome: seatCancelled(
-          sofia('2026-07-15T18:00:00').toMillis(),
+        outcome: cancelledAt(
+          '2026-07-15T18:00:00',
           'client',
-          { kind: 'client_changed_plans' },
-          null,
+          CancellationReason.ClientChangedPlans,
         ),
       }),
     ],
-    { kind: 'cancelled', reason: 'client_changed_plans' },
+    'cancelled',
+    '2026-07-16T10:00:00',
   ),
   // Did not come.
-  appointment(
+  visitOf(
     'appt-jul-no-show',
     'loc-center',
     [
-      seat('2026-07-07T10:00:00', {
+      visitSeat('2026-07-07T10:00:00', {
         id: 'seat-jul-no-show',
-        outcome: seatNoShow(sofia('2026-07-07T10:20:00').toMillis()),
+        outcome: noShowAt('2026-07-07T10:20:00'),
       }),
     ],
-    { kind: 'no_show' },
+    'no_show',
+    '2026-07-07T10:00:00',
   ),
   // Last December at the other shop, with Иво in the next chair.
-  appointment(
+  visitOf(
     'appt-dec-party',
     'loc-mladost',
     [
-      seat('2025-12-05T11:00:00', {
+      visitSeat('2025-12-05T11:00:00', {
         id: 'seat-dec-georgi',
         barber: 'barber-petar',
         priceMinor: 2500,
-        outcome: worked('2025-12-05T11:30:00'),
+        outcome: workedAt('2025-12-05T11:30:00'),
       }),
-      seat('2025-12-05T11:00:00', {
+      visitSeat('2025-12-05T11:00:00', {
         id: 'seat-dec-ivo',
         who: IVO_UID,
         relationship: 'companion',
         priceMinor: 2500,
-        outcome: worked('2025-12-05T11:30:00'),
+        outcome: workedAt('2025-12-05T11:30:00'),
       }),
     ],
-    { kind: 'completed' },
+    'completed',
+    '2025-12-05T11:00:00',
   ),
 ];
 
@@ -289,18 +475,18 @@ function photo(
   origin: 'shot' | 'library' = 'shot',
 ): AppointmentPhoto {
   return {
-    photoId,
-    appointmentId,
-    barberId: 'barber-ivan',
-    clientUserId: GEORGI_UID,
+    id: AppointmentPhotoId.of(photoId),
+    appointmentId: AppointmentId.of(appointmentId),
+    barberId: BarberId.of('barber-ivan'),
+    clientCustomerId: GEORGI_CUSTOMER_ID,
     clientLabel: 'Георги Петров',
-    takenByUid: 'dev-staff-ivan',
-    takenAtIso,
+    takenByUserId: UserId.of('dev-staff-ivan'),
+    takenAtUtcMs: unwrapOk(ZonedTimeSystem.parseOffsetIso(takenAtIso)),
     path: `appointmentPhotos/${appointmentId}/${photoId}.jpg`,
     url: `https://example.test/photos/${photoId}.jpg`,
     width: 1100,
     height: 1400,
-    origin,
+    photoOrigin: origin === 'library' ? PhotoOrigin.Library : PhotoOrigin.Shot,
     label: origin === 'library' ? 'Фейд · витрина' : null,
   };
 }
@@ -313,46 +499,81 @@ export const GEORGI_PHOTOS: readonly AppointmentPhoto[] = [
   photo('photo-aug-cover', 'appt-aug', '2026-08-12T15:27:00.000Z', 'library'),
 ];
 
+/** One whole-day or windowed day a request watches (`HH:mm` windows). */
+export interface WatchedDay {
+  readonly dayKey: string;
+  readonly windows?: readonly { readonly from: string; readonly to: string }[];
+}
+
+function minuteOf(clock: string): number {
+  return Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3, 5));
+}
+
+/**
+ * A flat waitlist request: Георги's own (`ownerUserId`), watching `days`
+ * for `serviceIds`, made at `createdAtIso` (an ISO with its offset).
+ */
+export function waitlistOf(
+  id: string,
+  days: readonly WatchedDay[],
+  serviceIds: readonly string[] = ['svc-fade'],
+  createdAtIso = '2026-09-27T21:10:00+03:00',
+): WaitlistRequest {
+  const flexibleDays = days.map((day) =>
+    DayWindows.of(
+      unwrapOk(LocalDate.parse(day.dayKey)),
+      (day.windows ?? []).map((window) =>
+        MinuteRange.of(
+          unwrapOk(MinuteOfDay.of(minuteOf(window.from))),
+          unwrapOk(EndMinute.of(minuteOf(window.to))),
+        ),
+      ),
+    ),
+  );
+  const created = unwrapOk(ZonedTimeSystem.parseOffsetIso(createdAtIso));
+  const seatKey = unwrapOk(SeatKeyText.parse('self'));
+  const lines: CartLine[] = serviceIds.map((serviceId, index) => ({
+    lineId: CartLineId.forSequence(index + 1),
+    seatKey,
+    serviceId: ServiceId.of(serviceId),
+    variantId: null,
+    barberId: null,
+    locationId: null,
+  }));
+  const localDates = flexibleDays.map((day) => day.localDate);
+  const first = localDates[0];
+  return {
+    id: WaitlistRequestId.of(id),
+    ownerUserId: UserId.of(GEORGI_UID),
+    locationId: null,
+    localDates,
+    utcEpochMs:
+      first === undefined
+        ? created
+        : ZonedTimeSystem.startOfLocalDay(first, VISITS_TIME_ZONE),
+    createdAtUtcMs: created,
+    cartSeats: [{ seatKey, lines }],
+    cartNextSequence: lines.length + 1,
+    flexibleDays,
+    ...WaitlistLifecycle.open(created),
+  };
+}
+
+/**
+ * The visits' OWN pictures — the shots, never a library picture pointed at
+ * — what a row's photo mark counts (the photos adapter counts
+ * `photoOrigin == SHOT` alone, as the legacy reader did).
+ */
+export const GEORGI_SHOTS: AppointmentPhoto[] = GEORGI_PHOTOS.filter(
+  (entry) => entry.photoOrigin === PhotoOrigin.Shot,
+);
+
 /** Георги waiting for a free afternoon slot on two days next week. */
 export function georgiWaitlistRequest(): WaitlistRequest {
-  return unwrap(
-    WaitlistRequest.reconstitute({
-      id: 'waitlist-georgi',
-      ownerId: GEORGI_UID,
-      locationId: null,
-      when: {
-        days: [
-          {
-            dayKey: '2026-10-01',
-            windows: [{ from: '14:00', to: '17:00' }],
-          },
-          {
-            dayKey: '2026-10-02',
-            windows: [{ from: '14:00', to: '17:00' }],
-          },
-        ],
-      },
-      cart: {
-        seats: [
-          {
-            seatKey: 'self',
-            lines: [
-              {
-                id: 'line-1',
-                serviceId: 'svc-fade',
-                variantId: null,
-                barberId: null,
-              },
-            ],
-          },
-        ],
-        nextSequence: 2,
-      },
-      status: 'open',
-      createdAtIso: '2026-09-27T21:10:00+03:00',
-      zone: VISITS_ZONE,
-    }),
-  );
+  return waitlistOf('waitlist-georgi', [
+    { dayKey: '2026-10-01', windows: [{ from: '14:00', to: '17:00' }] },
+    { dayKey: '2026-10-02', windows: [{ from: '14:00', to: '17:00' }] },
+  ]);
 }
 
 /**
@@ -363,36 +584,37 @@ export function georgiWaitlistRequest(): WaitlistRequest {
  */
 export async function georgiStaffRows(
   readers: {
-    readonly history: ClientHistoryReader;
-    readonly photos: ClientPhotosReader;
+    readonly history: Pick<AppointmentReadPorts, 'pageClientHistory'>;
+    readonly photos: Pick<AppointmentPhotoPorts, 'countPhotosByAppointment'>;
   },
   options: Pick<VisitRowOptions, 'words' | 'nowMs'> &
     Partial<Pick<VisitRowOptions, 'grain' | 'currentAppointmentId'>>,
 ): Promise<readonly VisitRowVm[]> {
-  const page = await readers.history.pageForSubject(GEORGI_UID, {
-    beforeIso: null,
-    limit: 30,
-  });
-  if (page.isFailure()) throw page.error;
-  const appointments = page.value.appointments;
-  const counts = await readers.photos.countByAppointment(
-    appointments.map((visit) => visit.id.value),
+  const page = await readers.history.pageClientHistory(
+    GEORGI_CUSTOMER_ID,
+    null,
+    30,
   );
-  if (counts.isFailure()) throw counts.error;
-  return appointments.map((visit) =>
+  if (!page.ok) throw new Error('the history page failed');
+  const appointments = page.value.appointments;
+  const ids = appointments.map((visit) => visit.id);
+  const counts = await readers.photos.countPhotosByAppointment(ids);
+  if (!counts.ok) throw new Error('the photo counts failed');
+  return appointments.map((visit, index) =>
     visitRowOf(
       visit,
       {
         perspective: 'staff',
         grain: options.grain ?? 'year',
         subjectUserId: GEORGI_UID,
+        subjectCustomerId: GEORGI_CUSTOMER_ID,
         currentAppointmentId:
           options.currentAppointmentId === undefined
             ? CURRENT_APPOINTMENT_ID
             : options.currentAppointmentId,
         nowMs: options.nowMs,
         locale: 'bg',
-        photoCount: counts.value.get(visit.id.value) ?? 0,
+        photoCount: counts.value[index] ?? 0,
         words: options.words,
       },
       VISITS_LOOKUP,

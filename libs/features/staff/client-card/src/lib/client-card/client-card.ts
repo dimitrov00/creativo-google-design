@@ -7,7 +7,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import type { VisitLeg } from '@creativo/application/booking';
+import type { VisitLeg } from '@core/components';
 import { VisitCard } from '@creativo/features/shared/visits';
 import {
   UI_SHEET_HEADLINE,

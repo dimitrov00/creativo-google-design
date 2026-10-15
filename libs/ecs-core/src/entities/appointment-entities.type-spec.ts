@@ -20,6 +20,7 @@ import {
   GrantCapacity,
   type GrantLifecycle,
   type StoodSeatPairs,
+  type AccountSeat,
   type Seat,
   SeatSubject,
   type VoucherRedemption,
@@ -31,7 +32,9 @@ import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AppointmentNote } from './appointment-note.entity';
 import type { AppointmentPhoto } from './appointment-photo.entity';
 import type {
+  AccountAppointment,
   Appointment,
+  AppointmentClientRefs,
   AppointmentMeta,
   AppointmentStamps,
 } from './appointment.entity';
@@ -43,10 +46,18 @@ type IsNever<T> = [T] extends [never] ? true : false;
 /** `true` when EVERY variant of the union is flat (distributes over `E`). */
 type EveryVariantFlat<E> = E extends unknown ? AllTrue<NoNested<E>> : never;
 
-/* ── Appointment = Meta & Time & Lifecycle & Contact & Stamps & StoodPairs ── */
+/* ── Appointment = Meta & ClientRefs & Time & Lifecycle & Contact & Stamps & StoodPairs ── */
 
 export const appointmentNotNever: IsNever<Appointment> = false;
 export const appointmentFlat: EveryVariantFlat<Appointment> = true;
+export const clientRefsDisjoint: [
+  Disjoint<AppointmentClientRefs, AppointmentMeta>,
+  Disjoint<AppointmentClientRefs, TimeCoordinate>,
+  Disjoint<AppointmentClientRefs, BookingLifecycle>,
+  Disjoint<AppointmentClientRefs, BookingContact>,
+  Disjoint<AppointmentClientRefs, AppointmentStamps>,
+  Disjoint<AppointmentClientRefs, StoodSeatPairs>,
+] = [true, true, true, true, true, true];
 export const appointmentDisjoint: [
   Disjoint<AppointmentMeta, TimeCoordinate>,
   Disjoint<AppointmentMeta, BookingLifecycle>,
@@ -95,21 +106,54 @@ if (apt.bookingStatus === BookingStatus.NoShow) {
   // @ts-expect-error — a no-show has no completedAtUtcMs
   void apt.completedAtUtcMs;
 }
+// D29 (F1-4): the client records sit BESIDE the account keys, never instead.
+void apt.ownerUserId;
+void apt.ownerCustomerId;
+void apt.subjectUserIds;
+void apt.subjectCustomerIds;
 // @ts-expect-error — no time-zone field on a temporal entity (Law 7.2)
 void apt.zone;
 // @ts-expect-error — the nested lifecycle object is gone (Law 6)
 void apt.bookingStatus.kind;
 
+/* ── AccountAppointment — the account-rules view (D29) ─────────────────── */
+
+export const accountAppointmentNotNever: IsNever<AccountAppointment> = false;
+export const accountAppointmentFlat: EveryVariantFlat<AccountAppointment> = true;
+/** A whole appointment IS an account-rules view: `true` when it is assignable. */
+export const appointmentIsAccountView: Appointment extends AccountAppointment
+  ? true
+  : false = true;
+declare const view: AccountAppointment;
+if (view.bookingStatus === BookingStatus.Cancelled)
+  void view.cancellationReason;
+// @ts-expect-error — the view carries no client-record mirror
+void view.subjectCustomerIds;
+for (const viewSeat of view.seats) {
+  if (viewSeat.seatSubject === SeatSubject.Account) {
+    void viewSeat.subjectUserId;
+    // @ts-expect-error — an account-rules seat carries no client record
+    void viewSeat.subjectCustomerId;
+  }
+}
+
 /* ── Seat = Core & Terms & CatalogTerms & Occupant & Outcome (array element) ── */
 
 export const seatNotNever: IsNever<Seat> = false;
 export const seatFlat: EveryVariantFlat<Seat> = true;
+export const accountSeatNotNever: IsNever<AccountSeat> = false;
+export const seatIsAccountSeat: Seat extends AccountSeat ? true : false = true;
 declare const seat: Seat;
-if (seat.seatSubject === SeatSubject.Account) void seat.subjectUserId;
+if (seat.seatSubject === SeatSubject.Account) {
+  void seat.subjectUserId;
+  void seat.subjectCustomerId;
+}
 if (seat.seatSubject === SeatSubject.Anonymous) {
   void seat.guestLabel;
   // @ts-expect-error — a guest has no account
   void seat.subjectUserId;
+  // @ts-expect-error — nor a client record
+  void seat.subjectCustomerId;
 }
 if (seat.attendanceState === AttendanceState.Cancelled) {
   void seat.cancellationReason;
@@ -184,6 +228,11 @@ if (grant.grantStatus === GrantStatus.Active) {
   if (grant.grantCapacity === GrantCapacity.MultiUse) void grant.usesRemaining;
 }
 if (grant.grantStatus === GrantStatus.Revoked) void grant.revokedByUserId;
+// D29: the record the grant rewards, and the account that may read it.
+void grant.customerId;
+void grant.holderUserId;
+// @ts-expect-error — the uid key is renamed `holderUserId` (D29, flip 1)
+void grant.userId;
 if (grant.grantStatus === GrantStatus.Used) {
   // @ts-expect-error — a used grant holds no capacity
   void grant.grantCapacity;
@@ -197,6 +246,10 @@ export const voucherDisjoint: Disjoint<GiftVoucherMeta, VoucherLifecycle> =
   true;
 declare const voucher: GiftVoucher;
 if (voucher.voucherStatus === VoucherStatus.Void) void voucher.voidReason;
+void voucher.issuedToCustomerId;
+void voucher.holderUserId;
+// @ts-expect-error — the uid key is renamed `holderUserId` (D29, flip 1)
+void voucher.issuedToUserId;
 if (voucher.voucherStatus === VoucherStatus.Active) {
   // @ts-expect-error — an active voucher was not voided
   void voucher.voidedAtUtcMs;
@@ -206,3 +259,8 @@ if (voucher.voucherStatus === VoucherStatus.Active) {
 
 export const noteFlat: EveryVariantFlat<AppointmentNote> = true;
 export const photoFlat: EveryVariantFlat<AppointmentPhoto> = true;
+declare const photo: AppointmentPhoto;
+void photo.clientCustomerId;
+void photo.takenByUserId;
+// @ts-expect-error — the photo's client is a record, not an account (D29)
+void photo.clientUserId;

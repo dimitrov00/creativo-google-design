@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { LocationId } from '@creativo/application/catalog';
+import type { LocationId } from '@core/primitives';
 import {
   CatalogContentService,
   CatalogPresenter,
@@ -121,20 +121,18 @@ export class BookingLocationStep {
 
   protected readonly pins = computed<readonly UiMapPin[]>(() =>
     this.catalog.locations().map((shop) => ({
-      id: shop.id.value,
-      lat: shop.geo.lat,
-      lng: shop.geo.lng,
+      id: shop.id,
+      lat: shop.latitude,
+      lng: shop.longitude,
       label: this.content.text({ en: shop.name.en, bg: shop.name.bg }),
     })),
   );
 
   /** Which pin is filled. `null` under "any shop" — nothing is singled out. */
-  protected readonly selectedPinId = computed(
-    () => this.store.locationId()?.value ?? null,
-  );
+  protected readonly selectedPinId = computed(() => this.store.shopId());
 
   protected readonly rows = computed<readonly ShopRowVm[]>(() => {
-    const chosen = this.store.locationId();
+    const chosen = this.store.shopId();
 
     const any: ShopRowVm = {
       key: ANY_SHOP_KEY,
@@ -147,14 +145,14 @@ export class BookingLocationStep {
     return [
       any,
       ...this.catalog.locations().map((shop) => ({
-        key: shop.id.value,
+        key: shop.id,
         id: shop.id,
         name: this.content.text({ en: shop.name.en, bg: shop.name.bg }),
         detail: this.content.text({
           en: shop.address.en,
           bg: shop.address.bg,
         }),
-        selected: chosen?.equals(shop.id) ?? false,
+        selected: chosen === shop.id,
       })),
     ];
   });
@@ -167,7 +165,7 @@ export class BookingLocationStep {
   );
 
   protected select(row: ShopRowVm): void {
-    this.store.selectLocation(row.id);
+    this.store.selectShop(row.id);
     // Picking a specific shop is a request to SEE it: drop the sheet to the
     // shorter detent so the camera flight is actually visible. Choosing "any
     // shop" has nothing to look at, so the sheet stays where it is.
@@ -178,9 +176,9 @@ export class BookingLocationStep {
   protected selectPin(pinId: string): void {
     const shop = this.catalog
       .locations()
-      .find((candidate) => candidate.id.value === pinId);
+      .find((candidate) => candidate.id === pinId);
     if (!shop) return;
-    this.store.selectLocation(shop.id);
+    this.store.selectShop(shop.id);
     this.detent.set('medium');
   }
 }

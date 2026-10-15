@@ -1,6 +1,6 @@
 import type {
   PolicyRecomputeJobId,
-  UserId,
+  CustomerId,
   EpochSeconds,
   SubsecondNanos,
   UtcEpochMs,
@@ -11,7 +11,7 @@ import type {
  * field `recomputeJobName` (N15). A different job from the
  * `BackfillJobName`s, though it lives one document over in the same
  * `backfillJobs/` collection (document id `PolicyRecomputeJobId.FIXED`,
- * the legacy tag string, until flip (1) — OQ-9).
+ * the tag string kept as a stable path key by flip (1) — OQ-9).
  */
 export const RecomputeJobName = {
   ClientStatsPolicy: 'CLIENT_STATS_POLICY',
@@ -45,8 +45,8 @@ export type PolicyRecomputeJob = {
   readonly changedAtSeconds: EpochSeconds;
   /** That write's time, the nanoseconds inside its second (D17). */
   readonly changedAtNanos: SubsecondNanos;
-  /** The last `clientStats` id this pass finished; `null` at the top — `UserId` until flip (1). */
-  readonly cursor: UserId | null;
+  /** The last `clientStats` id (a client record, D29) this pass finished; `null` at the top. */
+  readonly cursor: CustomerId | null;
   /** Stored clients walked. */
   readonly storedClients: number;
   /** Of those, answers that changed and were written. */

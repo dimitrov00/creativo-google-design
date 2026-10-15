@@ -11,22 +11,26 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { distinctUntilChanged, of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
-  AVAILABILITY_READER,
-  BookingPolicy,
   CalendarDay,
-  DAYPARTS,
-  type Daypart,
-  type LocatedOption,
-  ObserveDayAvailabilityUseCase,
-  type ObserveDayAvailabilityInput,
   type ScheduleSelection,
   type SeatAssignment,
   TimeSlot,
   ZonedDateTime,
-  daypartOf,
 } from '@creativo/application/booking';
 import { BarberId, LocationId } from '@creativo/application/catalog';
 import { CLOCK } from '@creativo/application/shared';
+import { SCHEDULING_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import {
+  type BarberId as BarberKey,
+  type EndMinute,
+  LocalDate,
+  type LocationId as LocationKey,
+  type MinuteOfDay,
+  type TimeZone,
+  UtcEpochMs,
+} from '@core/primitives';
+import { type BookingPolicy, Daypart, type ShopNow } from '@core/components';
+import { type CartLocatedOption, ZonedTimeSystem } from '@core/systems';
 import {
   CatalogContentService,
   CatalogPresenter,
@@ -45,12 +49,31 @@ import {
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../../booking-flow.store';
-import { sameDayQuery } from '../same-day-query';
+import {
+  type DayQuery,
+  dayDocsKey,
+  dayOptions,
+  observeDayDocs,
+  sameDayDocsKey,
+} from '../day-availability';
 
-/** A run of start times sharing a part of the day (`daypartOf`). */
+/** The catalogue's key segment of each part of the day (`booking.schedule.daypart.morning`, …). */
+const DAYPART_KEY = {
+  [Daypart.Morning]: 'morning',
+  [Daypart.Afternoon]: 'afternoon',
+  [Daypart.Evening]: 'evening',
+} as const satisfies Record<Daypart, string>;
+
+/** A run of start times sharing a part of the day (`Daypart.of`). */
 interface DaypartVm {
-  readonly key: Daypart;
+  readonly key: (typeof DAYPART_KEY)[Daypart];
   readonly starts: readonly StartVm[];
+}
+
+/** One arrangement, at its shop, and the instant its party starts. */
+interface TimedOption {
+  readonly located: CartLocatedOption;
+  readonly startMs: number;
 }
 
 interface StartVm {
@@ -134,15 +157,11 @@ export class BookingTimeSheet {
   // The policy arrives as an INPUT now: the step already observes it for the
   // horizon its calendar runs to, and a sheet re-subscribing to the same port
   // could render one horizon while the grid behind it renders another.
-  private readonly availability = inject(AVAILABILITY_READER);
+  private readonly scheduling = inject(SCHEDULING_READ_PORTS);
 
   protected readonly catalog = inject(CatalogContentService);
   protected readonly content = inject(CatalogPresenter);
   protected readonly store = inject(BookingFlowStore);
-
-  private readonly observeDay = new ObserveDayAvailabilityUseCase(
-    this.availability,
-  );
 
   readonly day = input.required<CalendarDay>();
   readonly zone = input.required<string>();
@@ -162,12 +181,28 @@ export class BookingTimeSheet {
 
   private readonly selectedStartMs = this.store.selectedStartMs;
 
-  private readonly now = computed<ZonedDateTime | null>(() => {
-    const result = this.clock.now(this.zone());
-    return result.isSuccess() ? result.value : null;
+  /** The shop's zone as the time systems read it — `null` only for a zone `Intl` refuses. */
+  private readonly timeZone = computed<TimeZone | null>(() => {
+    const zone = ZonedTimeSystem.checkZone(this.zone());
+    return zone.ok ? zone.value : null;
   });
 
-  private readonly barberIds = computed<readonly BarberId[]>(() =>
+  /** "Now" on the shop's wall clock — the lead time's floor. */
+  private readonly now = computed<ShopNow | null>(() => {
+    const zone = this.timeZone();
+    const result = this.clock.now(this.zone());
+    if (!zone || result.isFailure()) return null;
+    const instant = UtcEpochMs.of(result.value.toMillis());
+    return instant.ok ? ZonedTimeSystem.shopNow(instant.value, zone) : null;
+  });
+
+  /** The day this sheet is about, as the shop's civil day. */
+  private readonly localDate = computed<LocalDate | null>(() => {
+    const day = LocalDate.parse(this.day().key());
+    return day.ok ? day.value : null;
+  });
+
+  private readonly barberIds = computed<readonly BarberKey[]>(() =>
     this.catalog.barbers().map((barber) => barber.id),
   );
 
@@ -201,80 +236,109 @@ export class BookingTimeSheet {
 
   // ── Live read ───────────────────────────────────────────────────────
 
-  private readonly dayQuery = computed<ObserveDayAvailabilityInput | null>(
-    () => {
-      const cart = this.store.cart();
-      const now = this.now();
-      if (!cart || !now) return null;
-      return {
-        cart,
-        services: this.catalog.services(),
-        barberIds: this.barberIds(),
-        locationId: this.store.locationId(),
-        day: this.day(),
-        policy: this.policy(),
-        now,
-        // Everybody a MOVE carries, pinned to the party's start, for the
-        // engine's rider check (`AvailabilityQuery.riders`): a start where one
-        // of them cannot sit is not offered, because the server would refuse
-        // it (`booking.reschedule.carried_seat_unplaceable`).
-        riders: this.store.availabilityRiders(),
-        // …and the visit's own chairs, handed back: its own seats never block
-        // its own move, for the cart's lines and the riders alike.
-        release: this.store.moveRelease(),
-      };
-    },
-  );
+  /** The day's question — the bag, the catalogue, the clock, a move's facts. */
+  private readonly dayQuery = computed<DayQuery | null>(() => {
+    const cart = this.store.cartData();
+    const now = this.now();
+    const localDate = this.localDate();
+    const timeZone = this.timeZone();
+    if (!cart || !now || !localDate || !timeZone) return null;
+    return {
+      cart,
+      services: this.catalog.services(),
+      barberIds: this.barberIds(),
+      locationId: this.store.shopId(),
+      localDate,
+      timeZone,
+      policy: this.policy(),
+      now,
+      // Everybody a MOVE carries, pinned to the party's start, for the
+      // engine's rider check (`AvailabilityQuery.riders`): a start where one
+      // of them cannot sit is not offered, because the server would refuse
+      // it (`booking.reschedule.carried_seat_unplaceable`).
+      riders: this.store.availabilityRiders(),
+      // …and the visit's own chairs, handed back: its own seats never block
+      // its own move, for the cart's lines and the riders alike.
+      release: this.store.moveRelease(),
+      shops: this.catalog.locations(),
+    };
+  });
 
-  private readonly dayResult = toSignal(
-    toObservable(this.dayQuery).pipe(
+  /** The day's raw documents, live (`SCHEDULING_READ_PORTS`). */
+  private readonly dayDocs = toSignal(
+    toObservable(
+      computed(() => {
+        const query = this.dayQuery();
+        return query === null ? null : dayDocsKey(query);
+      }),
+    ).pipe(
       // Structural identity, the schedule step's own: re-subscribing on a
       // no-op recompute re-bills this day's whole read.
-      distinctUntilChanged(sameDayQuery),
-      switchMap((input) =>
-        input === null ? of(null) : this.observeDay.execute(input),
+      distinctUntilChanged(sameDayDocsKey),
+      switchMap((key) =>
+        key === null ? of(null) : observeDayDocs(this.scheduling, key),
       ),
     ),
     { initialValue: null },
   );
 
-  protected readonly loading = computed(() => this.dayResult() === null);
+  /**
+   * The day's arrangements — derived from its documents by the systems
+   * (`dayOptions`), each with the instant its party starts on the shop's
+   * clock. `null` while the documents for THIS question are on their way;
+   * a read that failed offers nothing.
+   */
+  private readonly timedOptions = computed<readonly TimedOption[] | null>(
+    () => {
+      const query = this.dayQuery();
+      const docs = this.dayDocs();
+      if (query === null || docs === null) return null;
+      if (!docs.ok) return [];
+      if (!sameDayDocsKey(docs.value.key, dayDocsKey(query))) return null;
+      const timed: TimedOption[] = [];
+      for (const located of dayOptions(query, docs.value)) {
+        const startMs = this.instantAt(located.option.startMinutes);
+        if (startMs !== null) timed.push({ located, startMs });
+      }
+      return timed;
+    },
+  );
 
-  private readonly options = computed<readonly LocatedOption[]>(() => {
-    const result = this.dayResult();
-    return result?.isSuccess() ? result.value.options : [];
-  });
+  protected readonly loading = computed(() => this.timedOptions() === null);
+
+  private readonly options = computed<readonly TimedOption[]>(
+    () => this.timedOptions() ?? [],
+  );
 
   protected readonly dayparts = computed<readonly DaypartVm[]>(() => {
-    const result = this.dayResult();
-    if (!result?.isSuccess()) return [];
-
     // Named per shop only when the client did NOT pick one. With a shop chosen
     // every chip is at it, and repeating the name on 28 chips is noise.
-    const nameShops = this.store.locationId() === null;
+    const nameShops = this.store.shopId() === null;
 
     const groups = new Map<Daypart, StartVm[]>(
-      DAYPARTS.map((part) => [part, []]),
+      Daypart.ALL.map((part) => [part, []]),
     );
 
-    for (const { locationId, option } of result.value.options) {
-      const startMs = option.envelope.startMs;
-      // The shop's clock face, not the device's: «сутрин» is the shop's morning.
-      const start = ZonedDateTime.fromMillis(startMs, this.zone());
-      if (start.isFailure()) continue;
-      groups.get(daypartOf(start.value))?.push({
-        key: `${locationId.value}|${startMs}`,
+    for (const { located, startMs } of this.options()) {
+      const { locationId, option } = located;
+      // The shop's clock face, not the device's: «сутрин» is the shop's
+      // morning — the option's own minute of the shop day.
+      groups.get(Daypart.of(option.startMinutes))?.push({
+        key: `${locationId}|${startMs}`,
         startMs,
-        shopKey: locationId.value,
+        shopKey: locationId,
         label: this.formatTime(startMs),
         shopName: nameShops ? this.locationName(locationId) : null,
       });
     }
 
     // A heading with nothing under it is a promise the day cannot keep.
-    return [...groups.entries()]
-      .filter(([, starts]) => starts.length > 0)
-      .map(([key, starts]) => ({ key, starts }));
+    return (
+      [...groups.entries()]
+        .filter(([, starts]) => starts.length > 0)
+        // eslint-disable-next-line security/detect-object-injection -- closed union.
+        .map(([part, starts]) => ({ key: DAYPART_KEY[part], starts }))
+    );
   });
 
   protected readonly hasNoTimes = computed(
@@ -287,16 +351,15 @@ export class BookingTimeSheet {
    * The engine's order is total, so "the first option at this start" is a
    * stable choice rather than whichever branch the search found first.
    */
-  private readonly selectedOption = computed<LocatedOption | null>(() => {
+  private readonly selectedOption = computed<CartLocatedOption | null>(() => {
     const startMs = this.selectedStartMs();
     const shopKey = this.store.selectedShopKey();
     if (startMs === null || shopKey === null) return null;
     return (
       this.options().find(
         (entry) =>
-          entry.option.envelope.startMs === startMs &&
-          entry.locationId.value === shopKey,
-      ) ?? null
+          entry.startMs === startMs && entry.located.locationId === shopKey,
+      )?.located ?? null
     );
   });
 
@@ -323,13 +386,16 @@ export class BookingTimeSheet {
         }
       }
 
-      return option.option.assignments.map((assignment) => ({
-        barberName: this.barberName(assignment.barberId),
-        personLabel: this.personLabel(
-          seatByLineId.get(assignment.lineId) ?? '',
-        ),
-        timeLabel: this.formatTime(assignment.slot.startMs),
-      }));
+      return option.option.assignments.map((assignment) => {
+        const startMs = this.instantAt(assignment.startMinutes);
+        return {
+          barberName: this.barberName(assignment.barberId),
+          personLabel: this.personLabel(
+            seatByLineId.get(assignment.lineId) ?? '',
+          ),
+          timeLabel: startMs === null ? '' : this.formatTime(startMs),
+        };
+      });
     },
   );
 
@@ -342,9 +408,9 @@ export class BookingTimeSheet {
     () => {
       const option = this.selectedOption()?.option;
       if (!option || option.assignments.length < 2) return 'parallel';
-      const first = option.assignments[0]?.slot.startMs;
+      const first = option.assignments[0]?.startMinutes;
       return option.assignments.every(
-        (assignment) => assignment.slot.startMs === first,
+        (assignment) => assignment.startMinutes === first,
       )
         ? 'parallel'
         : 'sequential';
@@ -373,12 +439,23 @@ export class BookingTimeSheet {
    */
   protected confirm(): void {
     const located = this.selectedOption();
-    if (!located) return;
-    const selection = toScheduleSelection(located, this.zone(), (raw) =>
+    const localDate = this.localDate();
+    const timeZone = this.timeZone();
+    if (!located || !localDate || !timeZone) return;
+    const selection = toScheduleSelection(located, localDate, timeZone, (raw) =>
       this.store.cartLineId(raw),
     );
     if (!selection) return;
     this.confirmed.emit(selection);
+  }
+
+  /** A minute of this sheet's shop day as an instant — `null` in a spring-forward gap. */
+  private instantAt(minute: MinuteOfDay): number | null {
+    const localDate = this.localDate();
+    const timeZone = this.timeZone();
+    if (!localDate || !timeZone) return null;
+    const instant = ZonedTimeSystem.toUtc(localDate, minute, timeZone);
+    return instant.ok ? instant.value : null;
   }
 
   // ── Formatting ──────────────────────────────────────────────────────
@@ -391,22 +468,22 @@ export class BookingTimeSheet {
     return this.longDateFormat().format(new Date(day.startOfDay().toMillis()));
   }
 
-  protected locationName(locationId: LocationId): string {
+  protected locationName(locationId: LocationKey): string {
     const location = this.catalog
       .locations()
-      .find((candidate) => candidate.id.equals(locationId));
+      .find((candidate) => candidate.id === locationId);
     return location
       ? this.content.text({ en: location.name.en, bg: location.name.bg })
-      : locationId.value;
+      : locationId;
   }
 
-  private barberName(barberId: BarberId): string {
+  private barberName(barberId: BarberKey): string {
     const barber = this.catalog
       .barbers()
-      .find((candidate) => candidate.id.equals(barberId));
+      .find((candidate) => candidate.id === barberId);
     return barber
       ? this.content.text({ en: barber.name.en, bg: barber.name.bg })
-      : barberId.value;
+      : barberId;
   }
 
   /** `seatKeyValue` is `'self'` or the bare `GuestId` — never a prefixed form. */
@@ -429,18 +506,22 @@ export class BookingTimeSheet {
 /**
  * A located option → the event the machine takes.
  *
- * Free function rather than a method because BOTH sheets produce one: the
- * single-day picker and the flexible search offer arrangements from the same
- * engine, and they must hand the machine byte-identical selections or the
- * server's re-check can disagree with whichever one the user happened to use.
+ * Free function rather than a method because every sheet that offers an
+ * arrangement must hand the machine byte-identical selections, or the
+ * server's re-check can disagree with whichever one the user happened to
+ * use. The option is on the shop day's wall clock; the selection the flow
+ * machine holds (Phase 4) is in instants, so each minute is placed on the
+ * absolute timeline ONCE, here, with the shop's zone (the ingestion
+ * boundary of the wire's `startIso`).
  *
  * Returns `null` when an assignment names a line the cart no longer holds —
  * refusing here beats sending a request the server rejects for a reason the
  * user cannot act on.
  */
 export function toScheduleSelection(
-  located: LocatedOption,
-  zone: string,
+  located: CartLocatedOption,
+  localDate: LocalDate,
+  timeZone: TimeZone,
   resolveLineId: (raw: string) => SeatAssignment['lineId'] | null,
 ): {
   readonly locationId: LocationId;
@@ -452,39 +533,52 @@ export function toScheduleSelection(
 
   for (const assignment of option.assignments) {
     const slot = toTimeSlot(
-      assignment.slot.startMs,
-      assignment.slot.endMs,
-      zone,
+      localDate,
+      assignment.startMinutes,
+      assignment.endMinutes,
+      timeZone,
     );
     const lineId = resolveLineId(assignment.lineId);
-    if (!slot || !lineId) return null;
-    assignments.push({ lineId, barberId: assignment.barberId, slot });
+    const barberId = BarberId.create(assignment.barberId);
+    if (!slot || !lineId || barberId.isFailure()) return null;
+    assignments.push({ lineId, barberId: barberId.value, slot });
   }
 
   const envelope = toTimeSlot(
-    option.envelope.startMs,
-    option.envelope.endMs,
-    zone,
+    localDate,
+    option.startMinutes,
+    option.endMinutes,
+    timeZone,
   );
-  if (!envelope || assignments.length !== option.assignments.length)
+  // The shop comes from the OPTION, not from the picker: with "any shop"
+  // they differ, and the appointment happens where the barbers are.
+  const locationId = LocationId.create(located.locationId);
+  if (
+    !envelope ||
+    locationId.isFailure() ||
+    assignments.length !== option.assignments.length
+  ) {
     return null;
+  }
 
-  return {
-    // The shop comes from the OPTION, not from the picker: with "any shop"
-    // they differ, and the appointment happens where the barbers are.
-    locationId: located.locationId,
-    timeSlot: envelope,
-    assignments,
-  };
+  return { locationId: locationId.value, timeSlot: envelope, assignments };
 }
 
+/** A span of the shop day → the instants it covers, on the shop's own clock. */
 function toTimeSlot(
-  startMs: number,
-  endMs: number,
-  zone: string,
+  localDate: LocalDate,
+  startMinutes: MinuteOfDay,
+  endMinutes: EndMinute,
+  timeZone: TimeZone,
 ): TimeSlot | null {
-  const start = ZonedDateTime.fromMillis(startMs, zone);
-  const end = ZonedDateTime.fromMillis(endMs, zone);
+  const startMs = ZonedTimeSystem.toUtc(localDate, startMinutes, timeZone);
+  if (!startMs.ok) return null;
+  const endMs = UtcEpochMs.plusMs(
+    startMs.value,
+    (endMinutes - startMinutes) * 60_000,
+  );
+  const start = ZonedDateTime.fromMillis(startMs.value, timeZone);
+  const end = ZonedDateTime.fromMillis(endMs, timeZone);
   if (start.isFailure() || end.isFailure()) return null;
   const slot = TimeSlot.of(start.value, end.value);
   return slot.isSuccess() ? slot.value : null;

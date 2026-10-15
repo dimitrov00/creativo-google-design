@@ -12,7 +12,7 @@ import {
   UtcEpochMs,
   SchedulingError,
 } from '@core/primitives';
-import { minute, unwrapOk } from '@core/testing';
+import { minute, unwrapOk, customerOf } from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
 import { SeatLabel } from './seat-label.data';
 import { SeatOutcome } from './seat-outcome.data';
@@ -83,20 +83,53 @@ describe('SeatOccupant', () => {
     expect(
       Seat.isContactless(
         seat({
-          occupant: SeatOccupant.account(OWNER, SubjectRelationship.Self),
+          occupant: SeatOccupant.account(
+            OWNER,
+            customerOf(OWNER),
+            SubjectRelationship.Self,
+          ),
         }),
       ),
     ).toBe(false);
     expect(
       SeatOccupant.isContactless(
-        SeatOccupant.account(OWNER, SubjectRelationship.Self),
+        SeatOccupant.account(
+          OWNER,
+          customerOf(OWNER),
+          SubjectRelationship.Self,
+        ),
       ),
     ).toBe(false);
-    expect(SeatOccupant.account(OWNER, SubjectRelationship.Companion)).toEqual({
+    expect(
+      SeatOccupant.account(
+        OWNER,
+        customerOf(OWNER),
+        SubjectRelationship.Companion,
+      ),
+    ).toEqual({
       seatSubject: SeatSubject.Account,
       subjectUserId: OWNER,
+      subjectCustomerId: customerOf(OWNER),
       subjectRelationship: 'COMPANION',
     });
+  });
+
+  it('copies exactly one variant — the client record kept by `of`, left behind by `accountOf` (D29)', () => {
+    const account = SeatOccupant.account(
+      OWNER,
+      customerOf(OWNER),
+      SubjectRelationship.Self,
+    );
+    const whole = seat({ occupant: account });
+    expect(SeatOccupant.of(whole)).toEqual(account);
+    expect(SeatOccupant.accountOf(whole)).toEqual({
+      seatSubject: SeatSubject.Account,
+      subjectUserId: OWNER,
+      subjectRelationship: SubjectRelationship.Self,
+    });
+    const guest = SeatOccupant.anonymous(SeatLabel.of('Гост'));
+    expect(SeatOccupant.of(seat({ occupant: guest }))).toEqual(guest);
+    expect(SeatOccupant.accountOf(seat({ occupant: guest }))).toEqual(guest);
   });
 
   it('is flat at the seat element’s root', () => {
@@ -109,6 +142,38 @@ describe('SeatOccupant', () => {
       currency: 'EUR',
       durationMinutes: 30,
     });
+  });
+});
+
+describe('Seat.composeAccount — the account-rules view (D29)', () => {
+  it('is compose’s seat in compose’s field order, the client record left out', () => {
+    const occupant = SeatOccupant.account(
+      OWNER,
+      customerOf(OWNER),
+      SubjectRelationship.Self,
+    );
+    const whole = seat({ occupant });
+    const view = Seat.composeAccount(
+      whole,
+      whole,
+      {
+        seatSubject: SeatSubject.Account,
+        subjectUserId: OWNER,
+        subjectRelationship: SubjectRelationship.Self,
+      },
+      whole,
+    );
+    const recordless: Record<string, unknown> = { ...whole };
+    delete recordless['subjectCustomerId'];
+    expect(view).toEqual(recordless);
+    expect(Object.keys(view)).toEqual(Object.keys(recordless));
+    // A whole seat passed as the occupant leaves its record behind too.
+    expect(Seat.composeAccount(whole, whole, whole, whole)).toEqual(recordless);
+  });
+
+  it('keeps an anonymous guest as it is', () => {
+    const guest = seat();
+    expect(Seat.composeAccount(guest, guest, guest, guest)).toEqual(guest);
   });
 });
 
@@ -221,7 +286,11 @@ describe('Seat transitions carry every field', () => {
 
 describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move rebuilds', () => {
   const own = seat({
-    occupant: SeatOccupant.account(OWNER, SubjectRelationship.Self),
+    occupant: SeatOccupant.account(
+      OWNER,
+      customerOf(OWNER),
+      SubjectRelationship.Self,
+    ),
   });
 
   it('is the booker’s for their own self seat', () => {
@@ -239,7 +308,7 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
       SubjectRelationship.Client,
     ]) {
       const shops = seat({
-        occupant: SeatOccupant.account(OWNER, relationship),
+        occupant: SeatOccupant.account(OWNER, customerOf(OWNER), relationship),
       });
       expect(Seat.isMovableByBooker(shops, OWNER)).toBe(false);
     }
@@ -262,7 +331,7 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
           fc.constantFrom(...Object.values(SubjectRelationship)),
         )
         .map(([userId, relationship]): SeatOccupant =>
-          SeatOccupant.account(userId, relationship),
+          SeatOccupant.account(userId, customerOf(userId), relationship),
         ),
     );
     fc.assert(
@@ -284,7 +353,7 @@ describe('Seat.isMovableByBooker — the ONE rule for whose seat a client move r
 
 describe('Seat.violations — the aggregate invariants, every one at once', () => {
   const self = (userId: UserId) =>
-    SeatOccupant.account(userId, SubjectRelationship.Self);
+    SeatOccupant.account(userId, customerOf(userId), SubjectRelationship.Self);
 
   it('refuses no seats at all, alone', () => {
     expect(Seat.violations([])).toEqual([

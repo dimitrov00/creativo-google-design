@@ -4,6 +4,7 @@ export * from './lib/visit-filter';
 export * from './lib/visit-row.presenter';
 export * from './lib/first-name';
 export * from './lib/day-range';
+export * from './lib/wall-clock';
 export * from './lib/event-head/staff-event-line';
 export * from './lib/event-head/staff-event-head';
 export * from './lib/visit-row/visit-row';

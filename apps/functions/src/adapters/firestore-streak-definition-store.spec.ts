@@ -16,7 +16,10 @@ import {
   streakScheduleFromDocument,
   streakScheduleToDocument,
 } from '@creativo/application/engagement';
-import { auditEntryIdFor } from '../lib/booking/audit';
+import { AuditResourceId, StreakDefinitionId } from '@core/primitives';
+import { AuditAction } from '@core/components';
+import { AuditSystem } from '@core/systems';
+import { sha256Hex } from './crypto.adapter';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { FixedClock } from '../test-support/fixed-clock';
 import {
@@ -53,6 +56,17 @@ const NEXT_MONTH = '2026-10-28';
 const CADENCE = 'cadence';
 const HEAD = `streakDefinitions/${CADENCE}`;
 const versionPath = (id: string): string => `${HEAD}/versions/${id}`;
+
+/** The row id the flat log derives for one act of one intent (`hash(AuditSystem.rowBasis(…))`). */
+const rowIdOf = (auditAction: AuditAction, requestId: string): string =>
+  sha256Hex(
+    AuditSystem.rowBasis(
+      auditAction,
+      AuditResourceId.forStreakDefinition(StreakDefinitionId.of(CADENCE)),
+      null,
+      requestId,
+    ),
+  );
 
 function must<T, E>(result: Result<T, E>): T {
   if (result.isFailure()) throw result.error;
@@ -385,28 +399,27 @@ describe('FirestoreStreakDefinitionStore — a publish, written', () => {
     const input = publishOf({ graceDays: 10, riskLeadDays: 3 }, NEXT_WEEK);
     must(await useCaseOver(store).execute(input));
 
-    const id = auditEntryIdFor({
-      action: 'loyalty.streak_definition_published',
-      resourceId: 'streakDefinitions/cadence',
-      targetUserId: null,
-      changeKey: input.requestId,
-    });
+    const id = rowIdOf(
+      AuditAction.LoyaltyStreakDefinitionPublished,
+      input.requestId,
+    );
     expect(rows()).toEqual([`auditLog/${id}`]);
+    // The flat AuditEntry body (F1-8): every fact a root key, in codes.
     expect(docs.get(`auditLog/${id}`)).toEqual({
-      actor: { kind: 'admin', adminUserId: 'dev-staff-ivan' },
-      action: 'loyalty.streak_definition_published',
-      at: expect.stringMatching(/^2026-09-28T06:00:00\.000(Z|\+00:00)$/),
-      // The rule is the shop's: the row is about no one client.
-      targetUserId: null,
+      recordedAtUtcMs: Date.parse(NOW),
       resourceId: 'streakDefinitions/cadence',
-      context: {
-        from: '1',
-        to: '2',
-        effectiveFrom: NEXT_WEEK,
-        transition: 'grandfather',
-        direction: 'looser',
-        changed: 'graceDays,riskLeadDays',
-      },
+      actorRole: 'ADMIN',
+      actorAdminUserId: 'dev-staff-ivan',
+      auditAction: 'LOYALTY_STREAK_DEFINITION_PUBLISHED',
+      streakFromVersion: 1,
+      streakToVersion: 2,
+      streakEffectiveFrom: NEXT_WEEK,
+      streakTransition: 'GRANDFATHER',
+      streakRuleDirection: 'LOOSER',
+      streakChanged: ['GRACE_DAYS', 'RISK_LEAD_DAYS'],
+      streakReplacedVersion: null,
+      // The rule is the shop's: the row is about no one client.
+      auditTarget: 'NONE',
     });
   });
 
@@ -422,10 +435,10 @@ describe('FirestoreStreakDefinitionStore — a publish, written', () => {
         publishOf({ graceDays: 10 }, TOMORROW, { caller: vendor }),
       ),
     );
-    expect(docs.get(rows()[0] ?? '')?.['actor']).toEqual({
-      kind: 'staff',
-      userId: 'vendor-1',
-      roles: ['sysadmin'],
+    expect(docs.get(rows()[0] ?? '')).toMatchObject({
+      actorRole: 'STAFF',
+      actorUserId: 'vendor-1',
+      actorRoles: ['sysadmin'],
     });
     expect(docs.get(versionPath('000002'))?.['publishedBy']).toBe('vendor-1');
   });
@@ -582,24 +595,19 @@ describe('FirestoreStreakDefinitionStore — a withdrawal, written', () => {
     });
     expect(docs.has(versionPath('000003'))).toBe(false);
 
-    const id = auditEntryIdFor({
-      action: 'loyalty.streak_definition_withdrawn',
-      resourceId: 'streakDefinitions/cadence',
-      targetUserId: null,
-      changeKey: requestId,
-    });
+    const id = rowIdOf(AuditAction.LoyaltyStreakDefinitionWithdrawn, requestId);
     expect(rows()).toEqual([`auditLog/${id}`]);
-    expect(docs.get(`auditLog/${id}`)).toMatchObject({
-      actor: { kind: 'admin', adminUserId: 'dev-staff-ivan' },
-      action: 'loyalty.streak_definition_withdrawn',
-      targetUserId: null,
+    expect(docs.get(`auditLog/${id}`)).toEqual({
+      recordedAtUtcMs: Date.parse(NOW),
       resourceId: 'streakDefinitions/cadence',
-      context: {
-        from: '2',
-        to: '1',
-        effectiveFrom: NEXT_WEEK,
-        transition: 'grandfather',
-      },
+      actorRole: 'ADMIN',
+      actorAdminUserId: 'dev-staff-ivan',
+      auditAction: 'LOYALTY_STREAK_DEFINITION_WITHDRAWN',
+      streakFromVersion: 2,
+      streakToVersion: 1,
+      streakEffectiveFrom: NEXT_WEEK,
+      streakTransition: 'GRANDFATHER',
+      auditTarget: 'NONE',
     });
   });
 });

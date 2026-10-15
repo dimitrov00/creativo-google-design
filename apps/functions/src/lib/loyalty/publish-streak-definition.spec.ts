@@ -268,11 +268,15 @@ describe('publishStreakDefinition — who may ask', () => {
   });
 
   it.each([
-    ['the owner', owner, { kind: 'admin', adminUserId: 'dev-staff-ivan' }],
+    [
+      'the owner',
+      owner,
+      { actorRole: 'ADMIN', actorAdminUserId: 'dev-staff-ivan' },
+    ],
     [
       'the vendor',
       vendor,
-      { kind: 'staff', userId: 'vendor-1', roles: ['sysadmin'] },
+      { actorRole: 'STAFF', actorUserId: 'vendor-1', actorRoles: ['sysadmin'] },
     ],
   ])('admits %s, and the row names them', async (_who, auth, actor) => {
     const answer = await call(
@@ -281,7 +285,8 @@ describe('publishStreakDefinition — who may ask', () => {
     );
 
     expect(answer).toMatchObject({ kind: 'published', version: 2 });
-    expect(auditRows(docs).map((row) => row['actor'])).toEqual([actor]);
+    // The flat row's actor slice (F1-8): the owner's override told from the vendor's act.
+    expect(auditRows(docs)).toEqual([expect.objectContaining(actor)]);
     expect(docs.get(`${HEAD}/versions/000002`)?.['publishedBy']).toBe(auth.uid);
   });
 });
@@ -303,17 +308,16 @@ describe('publishStreakDefinition — the answers', () => {
     });
     expect(auditRows(docs)).toEqual([
       expect.objectContaining({
-        action: 'loyalty.streak_definition_published',
+        auditAction: 'LOYALTY_STREAK_DEFINITION_PUBLISHED',
         resourceId: 'streakDefinitions/cadence',
-        targetUserId: null,
-        context: {
-          from: '1',
-          to: '2',
-          effectiveFrom: NEXT_WEEK,
-          transition: 'grandfather',
-          direction: 'looser',
-          changed: 'graceDays',
-        },
+        auditTarget: 'NONE',
+        streakFromVersion: 1,
+        streakToVersion: 2,
+        streakEffectiveFrom: NEXT_WEEK,
+        streakTransition: 'GRANDFATHER',
+        streakRuleDirection: 'LOOSER',
+        streakChanged: ['GRACE_DAYS'],
+        streakReplacedVersion: null,
       }),
     ]);
   });
@@ -346,9 +350,9 @@ describe('publishStreakDefinition — the answers', () => {
     expect(docs.get(`${HEAD}/versions/000002`)).toMatchObject({
       withdrawnAt: NOW,
     });
-    expect(auditRows(docs).map((row) => row['action'])).toEqual([
-      'loyalty.streak_definition_published',
-      'loyalty.streak_definition_withdrawn',
+    expect(auditRows(docs).map((row) => row['auditAction'])).toEqual([
+      'LOYALTY_STREAK_DEFINITION_PUBLISHED',
+      'LOYALTY_STREAK_DEFINITION_WITHDRAWN',
     ]);
   });
 
@@ -887,11 +891,11 @@ describe('publishStreakDefinition — agrees with the page’s reference', () =>
     // One row per act that was written: five publishes, one withdrawal.
     expect(
       auditRows(docs)
-        .map((row) => row['action'])
+        .map((row) => row['auditAction'])
         .sort(),
     ).toEqual([
-      ...Array.from({ length: 5 }, () => 'loyalty.streak_definition_published'),
-      'loyalty.streak_definition_withdrawn',
+      ...Array.from({ length: 5 }, () => 'LOYALTY_STREAK_DEFINITION_PUBLISHED'),
+      'LOYALTY_STREAK_DEFINITION_WITHDRAWN',
     ]);
   });
 

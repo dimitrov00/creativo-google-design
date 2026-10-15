@@ -1,20 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { UserId, type ZonedDateTime } from '@creativo/application/accounts';
-import {
-  Appointment,
-  BookingContact,
-  type Result,
-  SEAT_SCHEDULED,
-  Seat,
-  SeatId,
-  SeatSubject,
-  seatWorked,
-} from '@creativo/application/booking';
-import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
+import { BookingLifecycle, SeatOutcome } from '@core/components';
+import type { Appointment } from '@core/entities';
+import { LocationId, UserId, UtcEpochMs } from '@core/primitives';
+import { customerOf } from '@core/testing';
 import type {
   BadgeProgress,
   BadgeSeries,
@@ -38,9 +26,11 @@ import {
 import { medalRingVm } from './medals.presenter';
 import {
   GEORGI,
+  GEORGI_CUSTOMER_ID,
   GEORGI_NEXT_ID,
   GEORGI_PREVIOUS_MS,
   MARTIN,
+  MARTIN_CUSTOMER_ID,
   MARTIN_PREVIOUS_MS,
   MARTIN_TODAY_ID,
   NOW_MS,
@@ -48,12 +38,17 @@ import {
   achievementsContextOf,
   achievementsDataOf,
   at,
+  contactOf,
+  visitOf as flatVisitOf,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
   martinContext,
   martinHistory,
   must,
+  seatOf,
+  sofia,
+  wallOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
 
@@ -82,11 +77,9 @@ const MARTIN_BOOK = martinHistory();
 
 const EDITABLE = { online: true, visitGone: false, paused: false } as const;
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) {
-    throw new Error(`bad fixture: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
+/** An account's client record (D29), derived as the pipelines derive it; a blank uid is nobody's. */
+function recordOf(uid: string): string {
+  return uid === '' ? '' : customerOf(UserId.of(uid));
 }
 
 function family(data: AchievementsData, id: string): BadgeSeries {
@@ -101,6 +94,7 @@ function rowsOf(
   return {
     appointments,
     subjectUserId,
+    subjectCustomerId: recordOf(subjectUserId),
     currentAppointmentId,
     nowMs: NOW_MS,
     photoCounts: new Map(),
@@ -115,7 +109,7 @@ function georgiExtra(
 ): MedalDetailExtra {
   return {
     visits: GEORGI_BOOK,
-    subjectUserId: GEORGI,
+    subjectCustomerId: GEORGI_CUSTOMER_ID,
     rule: null,
     rows: rowsOf(GEORGI_BOOK, GEORGI, 'appt-dev-1'),
     action: null,
@@ -128,7 +122,7 @@ function martinExtra(
 ): MedalDetailExtra {
   return {
     visits: MARTIN_BOOK,
-    subjectUserId: MARTIN,
+    subjectCustomerId: MARTIN_CUSTOMER_ID,
     rule: null,
     rows: rowsOf(MARTIN_BOOK, MARTIN, MARTIN_TODAY_ID),
     action: null,
@@ -202,54 +196,54 @@ interface SeatPlan {
   readonly worked?: boolean;
 }
 
-/** One appointment at Център, its seats one after another from `startsAt`. */
+const DAY_MS = 86_400_000;
+
+/** One appointment at Център, its seats one after another from `startsAt` (Sofia). */
 function visitOf(
   id: string,
-  startsAt: ZonedDateTime,
+  startsAt: string,
   seats: readonly SeatPlan[],
   options: {
-    readonly arrivedAt?: ZonedDateTime;
+    readonly arrivedAt?: string;
     readonly locationId?: string;
   } = {},
 ): Appointment {
   const allWorked = seats.every((seat) => seat.worked ?? true);
-  return unwrap(
-    Appointment.reconstitute({
-      id,
-      locationId: options.locationId ?? 'loc-center',
-      seats: seats.map((seat, index) =>
-        Seat.of({
-          id: unwrap(SeatId.create(`${id}-s${index + 1}`)),
-          subject: SeatSubject.account(
-            unwrap(UserId.create(seat.who)),
-            seat.who === seats[0]?.who ? 'self' : 'companion',
-          ),
-          serviceId: unwrap(ServiceId.create(seat.serviceId ?? 'svc-fade')),
-          variantId: null,
-          barberId: unwrap(BarberId.create(seat.barberId ?? 'ivan')),
-          terms: unwrap(ServiceTerms.fromMinorUnits(1750, 'EUR', 45)),
-          startsAt: startsAt.plusMinutes(index * 45),
-          outcome:
-            (seat.worked ?? true)
-              ? seatWorked(startsAt.plusMinutes((index + 1) * 45).toMillis())
-              : SEAT_SCHEDULED,
-        }),
-      ),
-      status: { kind: allWorked ? 'completed' : 'confirmed' },
-      contact: unwrap(
-        BookingContact.create({
-          name: 'Георги Петров',
-          phone: '+359881234567',
-          email: null,
-          note: null,
-        }),
-      ),
-      bookedAt: startsAt.plusDays(-7),
-      ...(options.arrivedAt === undefined
-        ? {}
-        : { arrivedAt: options.arrivedAt }),
-    }),
-  );
+  const wall = wallOf(startsAt);
+  const start = sofia(startsAt);
+  const doneAt = (index: number) =>
+    UtcEpochMs.plusMs(start, (index + 1) * 45 * 60_000);
+  const booked = UtcEpochMs.plusMs(start, -7 * DAY_MS);
+  const visit = flatVisitOf({
+    id,
+    localDate: wall.localDate,
+    seats: seats.map((seat, index) =>
+      seatOf({
+        id: `${id}-s${index + 1}`,
+        who: seat.who,
+        companion: seat.who !== seats[0]?.who,
+        serviceId: seat.serviceId ?? 'svc-fade',
+        barberId: seat.barberId ?? 'ivan',
+        minutes: 45,
+        priceMinor: 1750,
+        startMinutes: wall.minute + index * 45,
+        outcome:
+          (seat.worked ?? true)
+            ? SeatOutcome.worked(doneAt(index))
+            : SeatOutcome.scheduled(),
+      }),
+    ),
+    lifecycle: allWorked
+      ? BookingLifecycle.complete(doneAt(seats.length - 1))
+      : BookingLifecycle.confirm(booked),
+    contact: contactOf('Георги Петров', '+359881234567', null),
+    bookedAtUtcMs: booked,
+    arrivedAtUtcMs:
+      options.arrivedAt === undefined ? null : sofia(options.arrivedAt),
+  });
+  return options.locationId === undefined
+    ? visit
+    : { ...visit, locationId: LocationId.of(options.locationId) };
 }
 
 describe('countsToward', () => {
@@ -260,8 +254,8 @@ describe('countsToward', () => {
     who: string,
   ) =>
     book
-      .filter((visit) => countsToward(family(data, id), visit, who))
-      .map((visit) => visit.id.value);
+      .filter((visit) => countsToward(family(data, id), visit, recordOf(who)))
+      .map((visit) => visit.id);
 
   it('tells the projection’s own story: as many visits count as the family’s value says', () => {
     // The whole book is loaded, and none of these families has a window.
@@ -341,44 +335,52 @@ describe('countsToward', () => {
     expect(counted(GEORGI_DATA, 'series-visits', GEORGI_BOOK, '')).toEqual([]);
 
     // A companion's fade is not the booker's: his own seat was a beard.
-    const party = visitOf('appt-party', at('2026-09-12T11:00:00'), [
+    const party = visitOf('appt-party', '2026-09-12T11:00:00', [
       { who: GEORGI, serviceId: 'svc-beard' },
       { who: MARTIN, serviceId: 'svc-fade', barberId: 'niko' },
     ]);
     const fade = family(GEORGI_DATA, 'series-svc-fade');
     const niko = family(GEORGI_DATA, 'series-barber-niko');
-    expect(countsToward(fade, party, GEORGI)).toBe(false);
-    expect(countsToward(fade, party, MARTIN)).toBe(true);
-    expect(countsToward(niko, party, GEORGI)).toBe(false);
-    expect(countsToward(niko, party, MARTIN)).toBe(true);
+    expect(countsToward(fade, party, GEORGI_CUSTOMER_ID)).toBe(false);
+    expect(countsToward(fade, party, MARTIN_CUSTOMER_ID)).toBe(true);
+    expect(countsToward(niko, party, GEORGI_CUSTOMER_ID)).toBe(false);
+    expect(countsToward(niko, party, MARTIN_CUSTOMER_ID)).toBe(true);
   });
 
   it('counts the person’s worked seat on a visit a companion has not finished', () => {
-    const half = visitOf('appt-half', at('2026-09-12T11:00:00'), [
+    const half = visitOf('appt-half', '2026-09-12T11:00:00', [
       { who: GEORGI },
       { who: MARTIN, worked: false },
     ]);
     const visits = family(GEORGI_DATA, 'series-visits');
-    expect(countsToward(visits, half, GEORGI)).toBe(true);
-    expect(countsToward(visits, half, MARTIN)).toBe(false);
+    expect(countsToward(visits, half, GEORGI_CUSTOMER_ID)).toBe(true);
+    expect(countsToward(visits, half, MARTIN_CUSTOMER_ID)).toBe(false);
   });
 
   it('reads an early bird by when the person’s own first worked seat began: by 10:00', () => {
     const early = family(GEORGI_DATA, 'series-early-bird');
     const who = [{ who: GEORGI }];
     expect(
-      countsToward(early, visitOf('a', at('2026-09-10T10:00:00'), who), GEORGI),
+      countsToward(
+        early,
+        visitOf('a', '2026-09-10T10:00:00', who),
+        GEORGI_CUSTOMER_ID,
+      ),
     ).toBe(true);
     expect(
-      countsToward(early, visitOf('b', at('2026-09-10T10:05:00'), who), GEORGI),
+      countsToward(
+        early,
+        visitOf('b', '2026-09-10T10:05:00', who),
+        GEORGI_CUSTOMER_ID,
+      ),
     ).toBe(false);
     // The booker sat at 9:30; the companion's own seat began at 10:15.
-    const party = visitOf('c', at('2026-09-10T09:30:00'), [
+    const party = visitOf('c', '2026-09-10T09:30:00', [
       { who: GEORGI },
       { who: MARTIN },
     ]);
-    expect(countsToward(early, party, GEORGI)).toBe(true);
-    expect(countsToward(early, party, MARTIN)).toBe(false);
+    expect(countsToward(early, party, GEORGI_CUSTOMER_ID)).toBe(true);
+    expect(countsToward(early, party, MARTIN_CUSTOMER_ID)).toBe(false);
   });
 
   it('reads a weekend visit off the shop’s calendar: Saturday and Sunday', () => {
@@ -393,50 +395,56 @@ describe('countsToward', () => {
     for (const [day, counts] of days) {
       expect([
         day,
-        countsToward(weekend, visitOf('w', at(day), who), GEORGI),
+        countsToward(weekend, visitOf('w', day, who), GEORGI_CUSTOMER_ID),
       ]).toEqual([day, counts]);
     }
   });
 
   it('counts a punctual visit only when the arrival was marked, by the start', () => {
     const onTime = family(GEORGI_DATA, 'series-on-time');
-    const start = at('2026-09-10T11:00:00');
+    const start = '2026-09-10T11:00:00';
     const who = [{ who: GEORGI }];
-    expect(countsToward(onTime, visitOf('a', start, who), GEORGI)).toBe(false);
+    expect(
+      countsToward(onTime, visitOf('a', start, who), GEORGI_CUSTOMER_ID),
+    ).toBe(false);
     expect(
       countsToward(
         onTime,
-        visitOf('b', start, who, { arrivedAt: at('2026-09-10T10:55:00') }),
-        GEORGI,
+        visitOf('b', start, who, { arrivedAt: '2026-09-10T10:55:00' }),
+        GEORGI_CUSTOMER_ID,
       ),
     ).toBe(true);
     expect(
       countsToward(
         onTime,
         visitOf('c', start, who, { arrivedAt: start }),
-        GEORGI,
+        GEORGI_CUSTOMER_ID,
       ),
     ).toBe(true);
     expect(
       countsToward(
         onTime,
-        visitOf('d', start, who, { arrivedAt: at('2026-09-10T11:05:00') }),
-        GEORGI,
+        visitOf('d', start, who, { arrivedAt: '2026-09-10T11:05:00' }),
+        GEORGI_CUSTOMER_ID,
       ),
     ).toBe(false);
   });
 
   it('counts a visit with company only when someone else holds a seat on it', () => {
     const party = family(GEORGI_DATA, 'series-party');
-    const start = at('2026-09-10T11:00:00');
+    const start = '2026-09-10T11:00:00';
     expect(
-      countsToward(party, visitOf('a', start, [{ who: GEORGI }]), GEORGI),
+      countsToward(
+        party,
+        visitOf('a', start, [{ who: GEORGI }]),
+        GEORGI_CUSTOMER_ID,
+      ),
     ).toBe(false);
     expect(
       countsToward(
         party,
         visitOf('b', start, [{ who: GEORGI }, { who: MARTIN }]),
-        GEORGI,
+        GEORGI_CUSTOMER_ID,
       ),
     ).toBe(true);
     // Two services of his own are not company.
@@ -447,7 +455,7 @@ describe('countsToward', () => {
           { who: GEORGI },
           { who: GEORGI, serviceId: 'svc-beard' },
         ]),
-        GEORGI,
+        GEORGI_CUSTOMER_ID,
       ),
     ).toBe(false);
   });

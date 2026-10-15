@@ -8,6 +8,7 @@ import type {
   AppointmentId,
   BarberId,
   CapacityMonthId,
+  CustomerId,
   LocationId,
   UserId,
   WaitlistRequestId,
@@ -133,6 +134,23 @@ export type ObserveHistory = (
   limit: number,
 ) => Observable<Result<readonly Appointment[], RepositoryError>>;
 
+/**
+ * The staff search pool — the visits nearest `nowUtcMs` on BOTH sides: the
+ * `limitPerSide` latest starting before it (`utcEpochMs < now`, `desc`) and
+ * the `limitPerSide` earliest starting at or after it (`utcEpochMs >= now`,
+ * `asc`), merged oldest first. Each half is a range + `orderBy` on the ONE
+ * field, so both ride its automatic single-field index (no composite, no
+ * `fieldOverrides` entry on `utcEpochMs`); ordering each half outward from
+ * now makes the limit cut the far edges, never the middle. Every status.
+ * The successor of `APPOINTMENT_REPOSITORY.searchWindow` — what the staff
+ * day's search pool and the add-client page's «Скорошни» read
+ * (`staff-day.store.ts` `reloadSearchPool`).
+ */
+export type SearchAppointmentWindow = (
+  nowUtcMs: UtcEpochMs,
+  limitPerSide: number,
+) => Promise<Result<readonly Appointment[], RepositoryError>>;
+
 /** One page of a client's visits, newest first, and where the next one starts. */
 export type ClientHistoryPage = {
   readonly appointments: readonly Appointment[];
@@ -141,17 +159,17 @@ export type ClientHistoryPage = {
 };
 
 /**
- * The client card's visit history — `subjectUserIds array-contains`
- * (`UserId` until the appointment flip (1) re-keys it, D29), the start
- * instant `<` the cursor, `desc` (index #19, `client-history-reader.adapter
- * .ts:54-116`) — a Firestore range on `utcEpochMs`, which is what that field
- * is for (Law 7.3). A page never ends between two visits sharing one start
- * instant: `PagingSystem`'s same-instant boundary rule (§2.8) decides the
- * trim, so a cursor on that instant skips nothing; the typed cursor is this
- * port's, `PagingSystem`'s key stays opaque (flatten-spec §3.8).
+ * The client card's visit history — `subjectCustomerIds array-contains`
+ * (the client RECORD, D29), the start instant `<` the cursor, `desc` (index
+ * #19, `client-history-reader.adapter.ts:54-116`) — a Firestore range on
+ * `utcEpochMs`, which is what that field is for (Law 7.3). A page never ends
+ * between two visits sharing one start instant: `PagingSystem`'s
+ * same-instant boundary rule (§2.8) decides the trim, so a cursor on that
+ * instant skips nothing; the typed cursor is this port's, `PagingSystem`'s
+ * key stays opaque (flatten-spec §3.8).
  */
 export type PageClientHistory = (
-  subjectUserId: UserId,
+  subjectCustomerId: CustomerId,
   beforeUtcMs: UtcEpochMs | null,
   limit: number,
 ) => Promise<Result<ClientHistoryPage, RepositoryError>>;
@@ -163,21 +181,21 @@ export type ObserveMyWaitlistRequests = (
 
 // ── Client stats ──────────────────────────────────────────────────────────
 
-/** `clientStats/{uid}` — `null` before the person's first projection (`UserId` until flip (1), D29). */
+/** `clientStats/{customerId}` — `null` before the record's first projection (D29). */
 export type LoadClientStats = (
-  userId: UserId,
+  customerId: CustomerId,
 ) => Promise<Result<ClientStatsRecord | null, RepositoryError>>;
 
-/** `clientStats/{uid}/restricted/money` — staff-only; `null` when none is stored. */
+/** `clientStats/{customerId}/restricted/money` — staff-only; `null` when none is stored. */
 export type LoadClientMoney = (
-  userId: UserId,
+  customerId: CustomerId,
 ) => Promise<Result<ClientMoneyRecord | null, RepositoryError>>;
 
 /** One page of stored client stats, by document id, and where the next starts. */
 export type ClientStatsPage = {
   readonly records: readonly ClientStatsRecord[];
   /** The last id of this page — the next page reads strictly after it; `null` at the end. */
-  readonly nextAfterUserId: UserId | null;
+  readonly nextAfterCustomerId: CustomerId | null;
 };
 
 /**
@@ -186,20 +204,20 @@ export type ClientStatsPage = {
  * `client-stats-directory.adapter.ts:53`).
  */
 export type PageClientStats = (
-  afterUserId: UserId | null,
+  afterCustomerId: CustomerId | null,
   limit: number,
 ) => Promise<Result<ClientStatsPage, RepositoryError>>;
 
 /**
- * The ids of stored clients in document-id order, bodies NOT read
- * (`select()`) — the policy recompute's and the backfill's walk over
- * `clientStats` (`recompute-on-policy-change.ts:274-278`,
+ * The ids of stored clients — client records (D29) — in document-id order,
+ * bodies NOT read (`select()`): the policy recompute's and the backfill's
+ * walk over `clientStats` (`recompute-on-policy-change.ts:274-278`,
  * `run-backfill.ts:442-446`). A page shorter than `limit` is the last.
  */
 export type PageClients = (
-  afterUserId: UserId | null,
+  afterCustomerId: CustomerId | null,
   limit: number,
-) => Promise<Result<readonly UserId[], RepositoryError>>;
+) => Promise<Result<readonly CustomerId[], RepositoryError>>;
 
 /**
  * The policy recompute's progress document —
@@ -262,6 +280,16 @@ export type LoadAppointment = (
 export type LoadBusyDay = (
   key: BusyKey,
 ) => Promise<Result<BarberBusyDay | null, RepositoryError>>;
+
+/**
+ * `scheduleExceptions/{BusyKey}` — one barber's published exception for one
+ * day, read OUTSIDE a transaction (the waitlist matcher's day check, §4.1
+ * `matchWaitlist`); `null` when the day is as rostered. The same key as the
+ * busy day; the public effect only (§9 D16(b)).
+ */
+export type LoadScheduleException = (
+  key: BusyKey,
+) => Promise<Result<ScheduleException | null, RepositoryError>>;
 
 /** `barberSchedules/{barberId}` — `null` when unrostered. */
 export type LoadSchedule = (
@@ -327,6 +355,7 @@ export type SchedulingPorts = {
   readonly observeUpcoming: ObserveUpcoming;
   readonly observeHistory: ObserveHistory;
   readonly pageClientHistory: PageClientHistory;
+  readonly searchAppointmentWindow: SearchAppointmentWindow;
   readonly observeMyWaitlistRequests: ObserveMyWaitlistRequests;
   readonly loadClientStats: LoadClientStats;
   readonly loadClientMoney: LoadClientMoney;
@@ -338,6 +367,7 @@ export type SchedulingPorts = {
   readonly loadPolicy: LoadPolicy;
   readonly loadAppointment: LoadAppointment;
   readonly loadBusyDay: LoadBusyDay;
+  readonly loadScheduleException: LoadScheduleException;
   readonly loadSchedule: LoadSchedule;
   readonly loadWaitlistRequest: LoadWaitlistRequest;
   readonly loadOpenWaitlist: LoadOpenWaitlist;
@@ -346,16 +376,54 @@ export type SchedulingPorts = {
   readonly writeLeadTimeSample: WriteLeadTimeSample;
 };
 
+// ── The web's named bundles (one `InjectionToken` each, `ports.tokens.ts`) ──
+
 /**
  * The booking store's raw entity streams — the bundle the web's
  * `SCHEDULING_READ_PORTS` token binds (§4.3, §5.2), eager or lazy, the
- * `(db) => bundle` export of `scheduling.adapter.ts`.
+ * `(db) => bundle` export of `scheduling.adapter.ts`. Availability is a
+ * `computed()` over these (`RosterSystem` + `AvailabilitySystem`, and
+ * `CapacitySystem` over the month for the calendar's markers).
  */
 export type SchedulingReadPorts = Pick<
   SchedulingPorts,
   | 'observeBusyDay'
-  | 'observeSchedule'
   | 'observeExceptions'
+  | 'observeSchedule'
   | 'observeLocation'
   | 'observePolicy'
+  | 'observeCapacityMonth'
+>;
+
+/** The staff schedule-exception command — `SCHEDULE_EXCEPTION_PORTS`. */
+export type ScheduleExceptionPorts = Pick<
+  SchedulingPorts,
+  'writeScheduleException'
+>;
+
+/**
+ * The appointment readers — `APPOINTMENT_READ_PORTS`: one visit, a barber's
+ * day, an account's upcoming and history (`ownerUserId`, the account's own),
+ * a client record's history pages, and the staff search window.
+ */
+export type AppointmentReadPorts = Pick<
+  SchedulingPorts,
+  | 'observeAppointment'
+  | 'observeBarberDay'
+  | 'observeUpcoming'
+  | 'observeHistory'
+  | 'pageClientHistory'
+  | 'searchAppointmentWindow'
+>;
+
+/** An account's own waitlist requests — `WAITLIST_READ_PORTS`. */
+export type WaitlistReadPorts = Pick<
+  SchedulingPorts,
+  'observeMyWaitlistRequests'
+>;
+
+/** The client-stats readers, keyed by the client record (D29) — `CLIENT_STATS_READ_PORTS`. */
+export type ClientStatsReadPorts = Pick<
+  SchedulingPorts,
+  'loadClientStats' | 'loadClientMoney' | 'pageClientStats'
 >;

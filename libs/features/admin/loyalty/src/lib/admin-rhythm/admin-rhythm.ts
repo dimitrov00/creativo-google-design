@@ -12,13 +12,14 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { of } from 'rxjs';
+import { combineLatest, of } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
+import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import { LocalizedText } from '@core/components';
 import {
-  CATALOG_READER,
-  ListServicesGroupedByCategoryUseCase,
-  type ServiceCategoryGroup,
-} from '@creativo/application/catalog';
+  type RhythmServiceGroup,
+  rhythmServiceGroupsOf,
+} from './rhythm-service-groups';
 import {
   type PublishOutcome,
   type StreakRuleDirection,
@@ -181,7 +182,7 @@ let sequence = 0;
 export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly store = inject(AdminRhythmStore);
   private readonly transloco = inject(TranslocoService);
-  private readonly catalog = inject(CATALOG_READER, { optional: true });
+  private readonly catalog = inject(CATALOG_PORTS, { optional: true });
 
   private readonly seq = ++sequence;
 
@@ -470,15 +471,26 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   // ── The catalogue (the services sheet, the rule's named services) ───────
 
-  /** The catalogue's services under their categories; `null` until read, or with no catalogue bound. */
+  /**
+   * The catalogue's services under their categories (`rhythmServiceGroupsOf`
+   * over the two live streams); `null` until both have answered, when
+   * either fails, or with no catalogue bound.
+   */
   protected readonly serviceGroups: Signal<
-    readonly ServiceCategoryGroup[] | null
+    readonly RhythmServiceGroup[] | null
   > = toSignal(
     this.catalog === null
       ? of(null)
-      : new ListServicesGroupedByCategoryUseCase(this.catalog)
-          .execute()
-          .pipe(map((read) => (read.isSuccess() ? read.value : null))),
+      : combineLatest([
+          this.catalog.observeCategories(),
+          this.catalog.observeServices(null),
+        ]).pipe(
+          map(([categories, services]) =>
+            categories.ok && services.ok
+              ? rhythmServiceGroupsOf(categories.value, services.value)
+              : null,
+          ),
+        ),
     { initialValue: null },
   );
 
@@ -558,8 +570,8 @@ export class AdminRhythm implements AdminRhythmLeaving {
       for (const group of groups) {
         for (const service of group.services) {
           names.set(
-            service.id.value,
-            service.name.get(lang === 'en' ? 'en' : 'bg'),
+            service.id,
+            LocalizedText.pick(service.name, lang === 'en' ? 'en' : 'bg'),
           );
         }
       }

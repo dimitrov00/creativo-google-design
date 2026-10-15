@@ -9,7 +9,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status",
+          "fieldPath": "serviceStatus",
           "order": "ASCENDING"
         },
         {
@@ -23,7 +23,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "serviceStatus",
           "order": "ASCENDING"
         },
         {
@@ -41,7 +41,7 @@
           "arrayConfig": "CONTAINS"
         },
         {
-          "fieldPath": "status",
+          "fieldPath": "barberStatus",
           "order": "ASCENDING"
         },
         {
@@ -55,7 +55,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "barberStatus",
           "order": "ASCENDING"
         },
         {
@@ -69,7 +69,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "locationStatus",
           "order": "ASCENDING"
         },
         {
@@ -87,11 +87,11 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status.kind",
+          "fieldPath": "bookingStatus",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "timeSlot.startIso",
+          "fieldPath": "utcEpochMs",
           "order": "ASCENDING"
         }
       ]
@@ -105,7 +105,7 @@
           "arrayConfig": "CONTAINS"
         },
         {
-          "fieldPath": "status.kind",
+          "fieldPath": "bookingStatus",
           "order": "ASCENDING"
         }
       ]
@@ -193,7 +193,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "dayKey",
+          "fieldPath": "localDate",
           "order": "ASCENDING"
         }
       ]
@@ -203,11 +203,11 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "waitlistStatus",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "dayKeys",
+          "fieldPath": "localDates",
           "arrayConfig": "CONTAINS"
         }
       ]
@@ -217,15 +217,15 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "kind",
+          "fieldPath": "notificationTopic",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "requestId",
+          "fieldPath": "waitlistRequestId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "sentAtIso",
+          "fieldPath": "sentAtUtcMs",
           "order": "ASCENDING"
         }
       ]
@@ -239,7 +239,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "dayKey",
+          "fieldPath": "localDate",
           "order": "ASCENDING"
         }
       ]
@@ -253,7 +253,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAtIso",
+          "fieldPath": "createdAtUtcMs",
           "order": "DESCENDING"
         }
       ]
@@ -267,7 +267,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "timeSlot.startIso",
+          "fieldPath": "utcEpochMs",
           "order": "DESCENDING"
         }
       ]
@@ -277,25 +277,11 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "subjectUserIds",
+          "fieldPath": "subjectCustomerIds",
           "arrayConfig": "CONTAINS"
         },
         {
-          "fieldPath": "timeSlot.startIso",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "auditLog",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "targetUserId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "at",
+          "fieldPath": "utcEpochMs",
           "order": "DESCENDING"
         }
       ]
@@ -327,17 +313,62 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "clientUserId",
+          "fieldPath": "clientCustomerId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "takenAtIso",
+          "fieldPath": "takenAtUtcMs",
           "order": "DESCENDING"
         }
       ]
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "services",
+      "fieldPath": "offerings",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "services",
+      "fieldPath": "variants",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "services",
+      "fieldPath": "conflictsWith",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "services",
+      "fieldPath": "locationIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "services",
+      "fieldPath": "bundleServiceIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "locations",
+      "fieldPath": "openingHours",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "locations",
+      "fieldPath": "photos",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "barberSchedules",
+      "fieldPath": "versions",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "scheduleExceptions",
+      "fieldPath": "exceptionRanges",
+      "indexes": []
+    },
     {
       "collectionGroup": "appointments",
       "fieldPath": "appliedOperations",
@@ -346,6 +377,136 @@
     {
       "collectionGroup": "appointments",
       "fieldPath": "stoodSeatPairs",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "appointments",
+      "fieldPath": "seats",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "appointments",
+      "fieldPath": "discounts",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "appointments",
+      "fieldPath": "voucherRedemptions",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "appointments",
+      "fieldPath": "barberIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "appointments",
+      "fieldPath": "subjectUserIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "appointments",
+      "fieldPath": "placement",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "appointments",
+      "fieldPath": "inferredPlacement",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "barberBusy",
+      "fieldPath": "blocks",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "capacity",
+      "fieldPath": "entries",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "waitlistRequests",
+      "fieldPath": "cartSeats",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "waitlistRequests",
+      "fieldPath": "flexibleDays",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "profileFields",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "auditLog",
+      "fieldPath": "streakChanged",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "last365VisitsCompleted",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "last365NoShows",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "last365LateCancels",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "lastVisitServiceIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "lastVisitBarberIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "lastVisitLegs",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "nextVisitServiceIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "nextVisitBarberIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "nextVisitLegs",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "usualServiceIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientStats",
+      "fieldPath": "pauseSuggestionBasis",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "backfillJobs",
+      "fieldPath": "sampleMismatched",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "customers",
+      "fieldPath": "searchPrefixes",
       "indexes": []
     }
   ]

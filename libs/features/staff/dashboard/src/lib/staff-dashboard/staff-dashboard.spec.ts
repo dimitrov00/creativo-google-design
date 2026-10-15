@@ -18,52 +18,16 @@ import { USER_SEARCH_PORT } from '@creativo/application/governance';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Router, provideRouter } from '@angular/router';
 import {
-  APPOINTMENT_NOTES,
-  APPOINTMENT_PHOTOS,
-  APPOINTMENT_REPOSITORY,
-  AVAILABILITY_READER,
-  Appointment,
   BOOKING_GATEWAY,
   CommitBookingRequest,
-  BookingContact,
-  Interval,
-  Money,
-  Seat,
-  SeatId,
-  SeatLabel,
-  SCHEDULE_EXCEPTION_WRITER,
   Result,
-  ScheduleException,
-  SeatSubject,
-  type SeatRelationship,
   type StaffEditAppointmentRequest,
   ZonedDateTime,
   fail,
   ok,
-  AppliedOperations,
   BookingGatewayError,
-  appointmentFromDocument,
-  appointmentToDocument,
 } from '@creativo/application/booking';
-import {
-  COUPON_GRANT_REPOSITORY,
-  COUPON_READER,
-  Coupon,
-  CouponCombinability,
-  type CouponGrantWithCoupon,
-  CouponValue,
-  GIFT_VOUCHER_READER,
-} from '@creativo/application/engagement';
-import {
-  Barber,
-  BarberId,
-  CATALOG_READER,
-  LocationId,
-  MEDIA_READER,
-  Service,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
+import { MEDIA_READER } from '@creativo/application/catalog';
 import {
   AVATAR_UPLOADER,
   AccountStatus,
@@ -72,6 +36,100 @@ import {
   UserId,
 } from '@creativo/application/accounts';
 import { CLOCK, ID_GENERATOR } from '@creativo/application/shared';
+import {
+  APPOINTMENT_NOTE_PORTS,
+  APPOINTMENT_PHOTO_PORTS,
+  APPOINTMENT_READ_PORTS,
+  CATALOG_PORTS,
+  COUPON_VOUCHER_PORTS,
+  SCHEDULE_EXCEPTION_PORTS,
+  SCHEDULING_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import {
+  AppliedOperation,
+  BookingContact,
+  BookingLifecycle,
+  CancellationReason,
+  CancelledBy,
+  Combinability,
+  CompositionKind,
+  CouponExpiryRule,
+  CouponOccasion,
+  CouponStatus,
+  CouponValue,
+  DayHours,
+  E164,
+  ExceptionEffectRule,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
+  MinuteRange,
+  Seat,
+  SeatLabel,
+  SeatOccupant,
+  SeatOutcome,
+  ShiftSegment,
+  SubjectRelationship,
+} from '@core/components';
+import type {
+  Appointment,
+  AppointmentNote,
+  BarberBusyDay,
+  BarberSchedule,
+  Barber,
+  Coupon,
+  CouponGrant,
+  ScheduleException,
+  Service,
+} from '@core/entities';
+import {
+  AppointmentId,
+  BarberBusyDayId,
+  BarberId,
+  BusyKey,
+  CouponGrantId,
+  CouponId,
+  CustomerId,
+  LocalDate,
+  LocationId,
+  MinuteCount,
+  MinuteOfDay,
+  type RepositoryError,
+  Result as PortResult,
+  SeatId,
+  ServiceCategoryId,
+  ServiceId,
+  UserId as AccountId,
+  UtcEpochMs,
+  Weekday,
+} from '@core/primitives';
+import type {
+  AppointmentNotePorts,
+  AppointmentReadPorts,
+  CouponVoucherPorts,
+  SchedulingReadPorts,
+} from '@core/ports';
+import { AppointmentIndexSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  FIXTURE_TIME_ZONE,
+  appointmentFixture,
+  at as wallAt,
+  barberBusyDayFixture,
+  barberFixture,
+  barberScheduleFixture,
+  customerOf,
+  locationFixture,
+  memoryAppointmentPhotoPorts,
+  memoryCatalogReadPorts,
+  memoryScheduleExceptionPorts,
+  memorySchedulingReadPorts,
+  seatFixture,
+  serviceFixture,
+  termsFixture,
+  textFixture,
+  unwrapOk,
+  until,
+} from '@core/testing';
 import { StaffDashboard, reversibleSave } from './staff-dashboard';
 import {
   StaffVisitEditor,
@@ -92,53 +150,212 @@ function at(iso: string): ZonedDateTime {
   return value(ZonedDateTime.fromISO(iso, ZONE));
 }
 
-function barber(id: string, name: string): Barber {
-  return value(
-    Barber.create({
-      id,
-      name: { en: name, bg: name },
-      handle: id,
-      title: { en: 'Barber', bg: 'Бръснар' },
-      bio: { en: 'Bio', bg: 'Био' },
-      // A real location: blocking time writes against the chair's own shop,
-      // and a barber with none would make the write silently no-op.
-      locationIds: ['loc-center'],
-      status: 'active',
-      sortOrder: 0,
-    }),
+/** The shop the fixture's chairs work at — the one the catalogue lists. */
+const SHOP = LocationId.of('loc-center');
+
+/**
+ * A Sofia wall-clock reading (`2026-08-05T10:00:00`, no offset) as the shop
+ * day, the minute and the instant it names — the minutes are what a visit
+ * stores (Law 7.3), the instant is read once, here, in the shop's zone.
+ */
+function wall(iso: string): {
+  readonly localDate: LocalDate;
+  readonly minute: MinuteOfDay;
+  readonly utcEpochMs: UtcEpochMs;
+} {
+  const localDate = unwrapOk(LocalDate.parse(iso.slice(0, 10)));
+  const minute = unwrapOk(
+    MinuteOfDay.of(Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16))),
   );
+  return {
+    localDate,
+    minute,
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(localDate, minute, FIXTURE_TIME_ZONE),
+    ),
+  };
+}
+
+/** Fresh ids for the fixture's people and seats — the old `generate()`s, counted. */
+let fresh = 0;
+function freshId(prefix: string): string {
+  fresh += 1;
+  return `${prefix}-${String(fresh).padStart(4, '0')}`;
+}
+
+/** A person with an account, as a seat names them: the uid and the client record (D29). */
+function accountOf(
+  uid: string,
+  relationship: SubjectRelationship,
+): SeatOccupant {
+  const account = AccountId.of(uid);
+  return SeatOccupant.account(account, customerOf(account), relationship);
+}
+
+function barber(id: string, name: string): Barber {
+  return barberFixture({
+    id: BarberId.of(id),
+    name: textFixture(name),
+    handle: id,
+    title: { en: 'Barber', bg: 'Бръснар' },
+    bio: textFixture('Bio', 'Био'),
+    // A real location: blocking time writes against the chair's own shop,
+    // and a barber with none would make the write silently no-op.
+    locationIds: [SHOP],
+    sortOrder: 0,
+  });
 }
 
 /** One catalogue service, timed for `ivan` — the length the tag measures against. */
 function service(id: string, minutes: number): Service {
-  return value(
-    Service.create({
-      id,
-      name: { en: id, bg: id },
-      description: { en: 'x', bg: 'x' },
-      categoryId: 'cat-hair',
-      priceMinorUnits: 2800,
-      currencyCode: 'EUR',
-      durationMinutes: minutes,
-      offerings: [
-        {
-          barberId: 'ivan',
-          base: {
-            priceMinorUnits: 2800,
-            currencyCode: 'EUR',
-            durationMinutes: minutes,
-          },
-        },
-      ],
-      locationIds: [],
-      conflictsWith: [],
-      composition: { kind: 'single' },
-      upsellOnly: false,
-      popular: false,
-      status: 'active',
-      sortOrder: 0,
+  const terms = termsFixture(2800, minutes);
+  return serviceFixture({
+    id: ServiceId.of(id),
+    name: textFixture(id),
+    description: textFixture('x'),
+    categoryId: ServiceCategoryId.of('cat-hair'),
+    ...terms,
+    offerings: [{ barberId: BarberId.of('ivan'), overrides: [], ...terms }],
+    locationIds: [],
+    compositionKind: CompositionKind.Single,
+  });
+}
+
+/** The shop, open 09:00–19:00 every day — the hours every window is clamped to. */
+const SHOP_LOCATION = locationFixture({
+  id: SHOP,
+  openingHours: Array.from({ length: 7 }, () =>
+    DayHours.open(wallAt(9), until(19)),
+  ),
+});
+
+/**
+ * Ivan's roster: 09:00–18:00 at the shop, EVERY day — the window the old
+ * stub answered for any day asked. Niko has none: not rostered at all,
+ * which is what separates "off today" from "free day".
+ */
+function rosterOf(barberId: string): BarberSchedule | null {
+  if (barberId !== 'ivan') return null;
+  const days: readonly Weekday[] = [
+    Weekday.Mon,
+    Weekday.Tue,
+    Weekday.Wed,
+    Weekday.Thu,
+    Weekday.Fri,
+    Weekday.Sat,
+    Weekday.Sun,
+  ];
+  return barberScheduleFixture({
+    id: BarberId.of('ivan'),
+    turnaroundMinutes: MinuteCount.ZERO,
+    versions: [
+      {
+        seq: 1,
+        effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
+        effectiveToLocalDate: null,
+        segments: days.map((day) =>
+          ShiftSegment.of(day, SHOP, wallAt(9), until(18)),
+        ),
+      },
+    ],
+  });
+}
+
+/** Ivan's 10:00–10:30 taken, on whichever day is asked — the old stub's busy span. */
+function busyOf(key: BusyKey): BarberBusyDay | null {
+  const { barberId, localDate } = BusyKey.split(key);
+  if (barberId !== 'ivan') return null;
+  return barberBusyDayFixture({
+    id: BarberBusyDayId.of(key),
+    barberId,
+    localDate,
+    utcEpochMs: ZonedTimeSystem.startOfLocalDay(localDate, FIXTURE_TIME_ZONE),
+  });
+}
+
+/** The visit's index fields, recomputed from its seats — what a write plan stores. */
+function indexed(visit: Appointment): Appointment {
+  return AppointmentIndexSystem.withQueryKeys(visit);
+}
+
+/**
+ * A visit with these seats, on the first seat's shop day: the envelope, the
+ * instant, the barbers, the busy keys and both owners derived from the
+ * seats (`AppointmentIndexSystem`); booked at 08:00 that morning and still
+ * PENDING, as a fresh booking is; at the shop.
+ */
+function visitOf(
+  id: string,
+  seats: readonly Seat[],
+  extra: {
+    readonly contact?: BookingContact;
+    readonly lifecycle?: BookingLifecycle;
+    readonly bookedIso?: string;
+  } = {},
+): Appointment {
+  const first = seats[0];
+  if (first === undefined) throw new Error('a visit with no seats');
+  const day = seatDays.get(first.seatId);
+  if (day === undefined) throw new Error('a seat built outside seatAt');
+  const booked = wall(extra.bookedIso ?? `${day}T08:00:00`).utcEpochMs;
+  const start = Math.min(...seats.map((seat) => seat.startMinutes));
+  return indexed(
+    appointmentFixture({
+      id: AppointmentId.of(id),
+      locationId: SHOP,
+      seats,
+      localDate: day,
+      utcEpochMs: wall(
+        `${day}T${String(Math.floor(start / 60)).padStart(2, '0')}:${String(start % 60).padStart(2, '0')}:00`,
+      ).utcEpochMs,
+      bookedAtUtcMs: booked,
+      revision: 0,
+      ...(extra.contact ?? BookingContact.NONE),
+      lifecycle: extra.lifecycle ?? BookingLifecycle.pending(booked),
     }),
   );
+}
+
+/** Which shop day each fixture seat was built on — a seat stores only its minute. */
+const seatDays = new Map<SeatId, LocalDate>();
+
+/** One seat of a fixture visit: who sits, in whose chair, for what, from when (Sofia wall clock). */
+function seatAt(options: {
+  readonly chair: string;
+  readonly startIso: string;
+  readonly occupant: SeatOccupant;
+  readonly serviceId?: string;
+  readonly minutes?: number;
+  readonly outcome?: SeatOutcome;
+  readonly seatId?: string;
+}): Seat {
+  const start = wall(options.startIso);
+  const seat = seatFixture({
+    seatId: SeatId.of(options.seatId ?? freshId('seat')),
+    serviceId: ServiceId.of(options.serviceId ?? freshId('svc-unknown')),
+    variantId: null,
+    barberId: BarberId.of(options.chair),
+    startMinutes: start.minute,
+    terms: Seat.termsOf(termsFixture(2800, options.minutes ?? 30), null),
+    occupant: options.occupant,
+    outcome: options.outcome ?? SeatOutcome.scheduled(),
+  });
+  seatDays.set(seat.seatId, start.localDate);
+  return seat;
+}
+
+/** A booking contact as the commit stores it: a name, an E.164 phone, the note. */
+function contactOf(
+  name: string,
+  phone: string,
+  note: string | null = null,
+): BookingContact {
+  return {
+    contactName: name,
+    contactPhone: E164.of(phone.replace(/\s+/g, '')),
+    contactEmail: null,
+    contactNote: note,
+  };
 }
 
 /**
@@ -159,87 +376,52 @@ function appointment(
   /** A catalogue service by id — the default is one the catalogue never knew. */
   serviceId?: string,
 ): Appointment {
-  const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  // Only ONE seat may be `self` — `AppointmentMultipleSelfSeatsError` — and
-  // that is the real shape anyway: a father books himself and his son.
-  const makeSeat = (chair: string, relationship: SeatRelationship) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject: SeatSubject.account(UserId.generate(), relationship),
-      serviceId:
-        serviceId === undefined
-          ? ServiceId.generate()
-          : value(ServiceId.create(serviceId)),
-      variantId: null,
-      barberId: value(BarberId.create(chair)),
-      terms: value(ServiceTerms.create(price, 30)),
-      startsAt: at(startIso),
+  // Only ONE seat may be `self` — and that is the real shape anyway: a
+  // father books himself and his son.
+  const makeSeat = (chair: string, relationship: SubjectRelationship) =>
+    seatAt({
+      chair,
+      startIso,
+      occupant: accountOf(freshId('user'), relationship),
+      ...(serviceId === undefined ? {} : { serviceId }),
     });
-  const seat = makeSeat(barberId, 'self');
-  return value(
-    Appointment.create({
-      id,
-      locationId: LocationId.generate().toString(),
-      seats: withParty ? [seat, makeSeat('niko', 'companion')] : [seat],
-      now: at('2026-08-05T08:00:00'),
-      contact: contact
-        ? value(
-            BookingContact.create({
-              name: contact.name,
-              phone: contact.phone,
-              email: null,
-              // A real note, so the glyph row has something in it: the specs
-              // that read that row passed vacuously against a card with
-              // nothing to show.
-              note: 'Скъсява отстрани',
-            }),
-          )
-        : null,
-    }),
+  const seat = makeSeat(barberId, SubjectRelationship.Self);
+  return visitOf(
+    id,
+    withParty
+      ? [seat, makeSeat('niko', SubjectRelationship.Companion)]
+      : [seat],
+    {
+      // A real note, so the glyph row has something in it: the specs that
+      // read that row passed vacuously against a card with nothing to show.
+      ...(contact
+        ? {
+            contact: contactOf(contact.name, contact.phone, 'Скъсява отстрани'),
+          }
+        : {}),
+    },
   );
 }
 
-function interval(startIso: string, endIso: string): Interval {
-  return Interval.of(at(startIso).toMillis(), at(endIso).toMillis());
-}
-
 /**
- * The same visit as a reader that SAYS which stored revision it read —
- * what `appointmentFromDocument` hands the lanes once it reads the counter.
+ * The same visit as a reader that SAYS which stored revision it read — the
+ * document's own counter (Law 5: the body IS the entity).
  */
 function readAt(appointment: Appointment, revision: number): Appointment {
-  return value(
-    Appointment.reconstitute({
-      id: appointment.id.value,
-      locationId: appointment.locationId.value,
-      seats: [...appointment.seats],
-      status: appointment.status,
-      contact: appointment.contact,
-      bookedAt: appointment.bookedAt,
-      revision,
-    }),
-  );
+  return { ...appointment, revision };
 }
 
 /**
- * The same visit as the PRODUCTION reader hands it to the lanes: written to
- * its document with the stored counter beside it — none at all for a row
- * written before staff editing (`null`) — and read back through
- * `appointmentFromDocument`, the mapper the Firestore repository reads
- * every row through (round 6). Nothing here says which revision the copy
- * is at: the mapper reads it off the document, or the claim is not live.
+ * The same visit as the PRODUCTION reader hands it to the lanes: the
+ * stored document, its counter beside it — `0` for a row written before
+ * staff editing (`null` here), the counter the server reads it at. There is
+ * no mapper any more (Law 5): the document is the entity.
  */
 function storedAt(
   appointment: Appointment,
   revision: number | null,
 ): Appointment {
-  const document = appointmentToDocument(appointment);
-  return value(
-    appointmentFromDocument(
-      appointment.id.value,
-      revision === null ? document : { ...document, revision },
-    ),
-  );
+  return { ...appointment, revision: revision ?? 0 };
 }
 
 /**
@@ -268,23 +450,31 @@ function provideTestI18n(): EnvironmentProviders[] {
   });
 }
 
+/** A held grant and the coupon it was issued from — what the «Отстъпка» menu reads. */
+interface HeldGrant {
+  readonly grant: CouponGrant;
+  readonly coupon: Coupon;
+}
+
 describe('StaffDashboard', () => {
   let fixture: ComponentFixture<StaffDashboard>;
   /** How many staff intents `ID_GENERATOR` has named — see the fixture. */
   let minted = 0;
 
-  /** Ivan holds one 10:00 visit; Niko's chair is empty. Typed with the
-   *  port's two parameters so `mock.calls[n][1]` — the day subscribed — is a
-   *  string to the type system, not an out-of-range tuple index. */
+  /**
+   * Ivan holds one 10:00 visit; Niko's chair is empty. The port's busy key
+   * is handed in SPLIT — the chair and the shop day — so `mock.calls[n][1]`,
+   * the day subscribed, is a string to the type system.
+   */
   const observeBarberDay = vi.fn<
     (
-      barberId: { value: string },
+      barberId: string,
       dayKey: string,
-    ) => Observable<Result<readonly Appointment[], never>>
+    ) => Observable<PortResult<readonly Appointment[], RepositoryError>>
   >((barberId) =>
     of(
-      ok(
-        barberId.value === 'ivan'
+      PortResult.ok(
+        barberId === 'ivan'
           ? [
               // WITH a contact: the phone path is half this surface's point,
               // and without one "does not print the phone in the run" passed
@@ -305,34 +495,33 @@ describe('StaffDashboard', () => {
   );
 
   /**
-   * Ivan is rostered 09:00–18:00 with 10:00–10:30 taken; Niko is NOT rostered
-   * at all, which is what separates "off today" from "free day".
+   * Ivan is rostered 09:00–18:00 every day; Niko is NOT rostered at all,
+   * which is what separates "off today" from "free day". The raw roster —
+   * the store derives the windows (F1-10).
    */
-  const observeDay = vi.fn(() =>
-    of(
-      ok([
-        {
-          barberId: value(BarberId.create('ivan')),
-          windows: [
-            {
-              interval: interval('2026-08-05T09:00:00', '2026-08-05T18:00:00'),
-              locationId: LocationId.generate(),
-            },
-          ],
-          busy: [interval('2026-08-05T10:00:00', '2026-08-05T10:30:00')],
-        },
-      ]),
-    ),
+  const observeSchedule = vi.fn((barberId: BarberId) =>
+    of(PortResult.ok(rosterOf(barberId))),
+  );
+
+  /** Ivan's 10:00–10:30 is taken on every day asked; Niko holds nothing. */
+  const observeBusyDay = vi.fn((key: BusyKey) =>
+    of(PortResult.ok(busyOf(key))),
+  );
+
+  /** The changed days, as stored: the exception command writes them here, the stream reads them back. */
+  const exceptions: ScheduleException[] = [];
+  const writeScheduleException = vi.fn(
+    memoryScheduleExceptionPorts(exceptions).writeScheduleException,
   );
 
   /** The profiles `PROFILE_PORT` answers with, by uid (a companion's name). */
   const profiles = new Map<string, User>();
 
   /**
-   * The coupons `COUPON_GRANT_REPOSITORY` answers with, for whoever asks
-   * (the fixture's booker has a generated uid); who asked is kept.
+   * The coupons `COUPON_VOUCHER_PORTS` answers with, for whichever client
+   * record asks (the fixture's booker has a fresh one); who asked is kept.
    */
-  let heldGrants: readonly CouponGrantWithCoupon[] = [];
+  let heldGrants: readonly HeldGrant[] = [];
   const grantsAskedFor: string[] = [];
 
   /** Who is at the book. `next()` a plain barber to shut the money gate. */
@@ -342,14 +531,6 @@ describe('StaffDashboard', () => {
     roles: ['barber', 'admin'].map(roleFromPrimitive),
   });
 
-  const put = vi.fn((_exception: ScheduleException) =>
-    Promise.resolve(ok(undefined)),
-  );
-  const clear = vi.fn((_barberId: string, _dayKey: string) =>
-    Promise.resolve(ok(undefined)),
-  );
-  const putRange = vi.fn(() => Promise.resolve(ok(undefined)));
-  const clearRange = vi.fn(() => Promise.resolve(ok(undefined)));
   // Hoisted so the guards below can assert that a destructive write did NOT
   // happen on the tap that asked for it.
   const transition = vi.fn(
@@ -373,9 +554,10 @@ describe('StaffDashboard', () => {
     // "ships with free time off" quietly stopped being testable.
     localStorage.clear();
     observeBarberDay.mockClear();
-    observeDay.mockClear();
-    put.mockClear();
-    clear.mockClear();
+    observeSchedule.mockClear();
+    observeBusyDay.mockClear();
+    writeScheduleException.mockClear();
+    exceptions.length = 0;
     transition.mockClear();
     await TestBed.configureTestingModule({
       imports: [StaffDashboard],
@@ -399,23 +581,26 @@ describe('StaffDashboard', () => {
           },
         },
         {
-          provide: APPOINTMENT_REPOSITORY,
+          provide: APPOINTMENT_READ_PORTS,
           useValue: {
-            observeBarberDay,
-            searchWindow: () =>
-              Promise.resolve(
-                ok([
-                  appointment('appointment-1', '2026-08-05T10:00:00', {
-                    name: 'Георги Петров',
-                    phone: '+359 88 123 4567',
-                  }),
-                ]),
-              ),
-            findById: () => Promise.resolve(ok(null)),
-            observeUpcomingFor: () => of(ok([])),
-            observeHistoryFor: () => of(ok([])),
-            save: () => Promise.resolve(ok(undefined)),
-          },
+            observeAppointment: () => of(PortResult.ok(null)),
+            // `busyKeys array-contains`: the chair's day, handed in split.
+            observeBarberDay: (key) => {
+              const { barberId, localDate } = BusyKey.split(key);
+              return observeBarberDay(barberId, localDate);
+            },
+            observeUpcoming: () => of(PortResult.ok([])),
+            observeHistory: () => of(PortResult.ok([])),
+            pageClientHistory: async () =>
+              PortResult.ok({ appointments: [], nextBeforeUtcMs: null }),
+            searchAppointmentWindow: async () =>
+              PortResult.ok([
+                appointment('appointment-1', '2026-08-05T10:00:00', {
+                  name: 'Георги Петров',
+                  phone: '+359 88 123 4567',
+                }),
+              ]),
+          } satisfies AppointmentReadPorts,
         },
         {
           provide: BOOKING_GATEWAY,
@@ -429,30 +614,33 @@ describe('StaffDashboard', () => {
         {
           // A REAL roster. The stub used to return no barbers, which meant
           // not one lane, row, gap or verb on this surface was under test.
-          provide: CATALOG_READER,
-          useValue: {
-            // One timed service, so the tag has a catalogue to measure
-            // against; the fixture's own seats use ids it never knew.
-            listActiveServices: () => of(ok([service('fade', 45)])),
-            listActiveBarbers: () =>
-              of(ok([barber('ivan', 'Иван'), barber('niko', 'Нико')])),
-            listServiceCategories: () => of(ok([])),
-            listActiveLocations: () => of(ok([])),
-            findServiceById: () => Promise.resolve(ok(null)),
-            findBarberById: () => Promise.resolve(ok(null)),
-            findLocationById: () => Promise.resolve(ok(null)),
-          },
+          // One timed service, so the tag has a catalogue to measure
+          // against (the fixture's own seats use ids it never knew), and
+          // the shop the chairs work at — a window is kept only at a shop
+          // the day OFFERS.
+          provide: CATALOG_PORTS,
+          useValue: memoryCatalogReadPorts({
+            services: [service('fade', 45)],
+            barbers: [barber('ivan', 'Иван'), barber('niko', 'Нико')],
+            categories: [],
+            locations: [SHOP_LOCATION],
+          }),
         },
         {
-          provide: AVAILABILITY_READER,
+          // The raw availability streams; the store folds them (F1-10).
+          provide: SCHEDULING_READ_PORTS,
           useValue: {
-            observeDay,
-            observeRangeCapacity: () => of(ok(new Map())),
-          },
+            ...memorySchedulingReadPorts({
+              exceptions,
+              locations: [SHOP_LOCATION],
+            }),
+            observeSchedule,
+            observeBusyDay,
+          } satisfies SchedulingReadPorts,
         },
         {
-          provide: SCHEDULE_EXCEPTION_WRITER,
-          useValue: { put, clear, putRange, clearRange },
+          provide: SCHEDULE_EXCEPTION_PORTS,
+          useValue: { writeScheduleException },
         },
         {
           // The signed-in principal — a barber who also holds the keys, so
@@ -469,11 +657,11 @@ describe('StaffDashboard', () => {
           useValue: { search: async () => ok([]) },
         },
         {
-          provide: APPOINTMENT_NOTES,
+          provide: APPOINTMENT_NOTE_PORTS,
           useValue: {
-            observe: () => of(ok(null)),
-            save: async () => ok(undefined),
-          },
+            observeAppointmentNote: () => of(PortResult.ok(null)),
+            saveAppointmentNote: async () => PortResult.ok(undefined),
+          } satisfies AppointmentNotePorts,
         },
         {
           // Nobody has a portrait here; the lookup answers "none" at once.
@@ -485,59 +673,33 @@ describe('StaffDashboard', () => {
           },
         },
         {
-          provide: APPOINTMENT_PHOTOS,
           // The shop's photos of a visit: none, and every shutter lands.
-          useValue: {
-            observe: () => of(ok([])),
-            attach: async (attachment: { appointmentId: string }) =>
-              ok({
-                photoId: 'p',
-                ...attachment,
-                url: '',
-                path: '',
-                takenAtIso: '',
-                takenByUid: null,
-                width: null,
-                height: null,
-              }),
-            adopt: async (reference: { appointmentId: string }) =>
-              ok({
-                photoId: 'p',
-                ...reference,
-                url: '',
-                path: '',
-                takenAtIso: '',
-                takenByUid: null,
-                width: null,
-                height: null,
-                origin: 'library',
-                label: null,
-              }),
-            remove: async () => ok(undefined),
-          },
+          provide: APPOINTMENT_PHOTO_PORTS,
+          useValue: memoryAppointmentPhotoPorts([]),
         },
-        // The discount row's two reads (2026-09-10): nobody holds a coupon
+        // The discount row's reads (2026-09-10): nobody holds a coupon
         // unless a case puts one in `heldGrants`, and no code opens one, so
         // the menu offers «Без» and the typed arms.
         {
-          provide: COUPON_GRANT_REPOSITORY,
+          provide: COUPON_VOUCHER_PORTS,
           useValue: {
-            findUsableForUser: async (userId: UserId) => {
-              grantsAskedFor.push(userId.value);
-              return ok(heldGrants);
+            findCouponByCode: async () => PortResult.ok(null),
+            listOpenCoupons: async () => PortResult.ok([]),
+            loadCouponGrant: async () => PortResult.ok(null),
+            listUsableCouponGrants: async (customerId: CustomerId) => {
+              grantsAskedFor.push(customerId);
+              return PortResult.ok(heldGrants.map((held) => held.grant));
             },
-          },
-        },
-        {
-          provide: COUPON_READER,
-          useValue: {
-            findByCode: async () => ok(null),
-            listOpen: async () => ok([]),
-          },
-        },
-        {
-          provide: GIFT_VOUCHER_READER,
-          useValue: { findByCode: async () => ok(null) },
+            findGiftVoucherByCode: async () => PortResult.ok(null),
+            listGiftVouchersForHolder: async () => PortResult.ok([]),
+            // Whatever the coupon's status: a held grant keeps its name.
+            loadCoupons: async (ids: readonly CouponId[]) =>
+              PortResult.ok(
+                heldGrants
+                  .map((held) => held.coupon)
+                  .filter((coupon) => ids.includes(coupon.id)),
+              ),
+          } satisfies CouponVoucherPorts,
         },
         {
           provide: MEDIA_READER,
@@ -1592,46 +1754,36 @@ describe('StaffDashboard', () => {
    */
   it("reads a chair by its own seats' outcomes once all of them are resolved", async () => {
     const visits = observeBarberDay.getMockImplementation();
-    const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
     const seat = (
       chair: string,
-      relationship: SeatRelationship,
+      relationship: SubjectRelationship,
       cancelled: boolean,
     ) =>
-      Seat.of({
-        id: SeatId.generate(),
-        subject: SeatSubject.account(UserId.generate(), relationship),
-        serviceId: ServiceId.generate(),
-        variantId: null,
-        barberId: value(BarberId.create(chair)),
-        terms: value(ServiceTerms.create(price, 30)),
-        startsAt: at('2026-08-05T10:00:00'),
+      seatAt({
+        chair,
+        startIso: '2026-08-05T10:00:00',
+        occupant: accountOf(freshId('user'), relationship),
         ...(cancelled
           ? {
-              outcome: {
-                kind: 'cancelled' as const,
-                atMs: Date.UTC(2026, 7, 5, 7, 0, 0),
-                by: 'staff' as const,
-                reason: { kind: 'client_unwell' as const },
-                // The window the cancel was judged under; not this spec's
-                // concern, so none was recorded.
-                window: null,
-              },
+              // The window the cancel was judged under is not this spec's
+              // concern, so none was recorded.
+              outcome: SeatOutcome.cancelled(
+                wall('2026-08-05T10:00:00').utcEpochMs,
+                CancelledBy.Staff,
+                CancellationReason.ClientUnwell,
+                null,
+              ),
             }
           : {}),
       });
-    const party = value(
-      Appointment.create({
-        id: 'appointment-party',
-        locationId: LocationId.generate().toString(),
-        seats: [seat('ivan', 'self', false), seat('niko', 'companion', true)],
-        now: at('2026-08-05T08:00:00'),
-      }),
-    );
-    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+    const party = visitOf('appointment-party', [
+      seat('ivan', SubjectRelationship.Self, false),
+      seat('niko', SubjectRelationship.Companion, true),
+    ]);
+    observeBarberDay.mockImplementation((barberId: string) =>
       of(
-        ok(
-          barberId.value === 'ivan' || barberId.value === 'niko' ? [party] : [],
+        PortResult.ok(
+          barberId === 'ivan' || barberId === 'niko' ? [party] : [],
         ),
       ),
     );
@@ -2117,21 +2269,57 @@ describe('StaffDashboard', () => {
 
     // The default is a RANGE, not the whole day — standing a chair down for
     // a full day is the rarer act and must be chosen deliberately. And a
-    // range ACCUMULATES: it goes through `putRange`, which merges into the
-    // day, never through `put`, which would replace it.
-    expect(put).not.toHaveBeenCalled();
-    expect(putRange).toHaveBeenCalledTimes(1);
-    const args = putRange.mock.calls[0] as unknown as [
-      string,
-      string,
-      string,
-      string,
-      { start: { toString: () => string }; end: { toString: () => string } },
-    ];
-    expect(args[0]).toBe('ivan');
-    expect(args[2]).toBe('2026-08-05');
-    expect(args[4].start.toString()).toBe('12:00');
-    expect(args[4].end.toString()).toBe('13:00');
+    // range ACCUMULATES: the command reads the chair's day and merges the
+    // range into it, never replacing what the day already held.
+    expect(writeScheduleException).toHaveBeenCalledTimes(1);
+    const [keys] = writeScheduleException.mock.calls[0] ?? [];
+    expect(keys).toEqual(['ivan__2026-08-05']);
+    expect(exceptions).toHaveLength(1);
+    expect(exceptions[0]).toMatchObject({
+      barberId: 'ivan',
+      localDate: '2026-08-05',
+      locationId: 'loc-center',
+      // Sanitized: the public EFFECT, and no reason rides in it.
+      ...ExceptionEffectRule.blocked([MinuteRange.of(wallAt(12), until(13))])
+        .value,
+    });
+    expect(exceptions[0]).not.toHaveProperty('reason');
+  });
+
+  it('merges a range into the blocks the day already holds — never replacing them', async () => {
+    // The lunch hour is already blocked; a second range joins it.
+    const lunch = unwrapOk(
+      ExceptionEffectRule.blocked([MinuteRange.of(wallAt(15), until(16))]),
+    );
+    exceptions.push({
+      id: ScheduleExceptionId.of(
+        BusyKey.of(
+          BarberId.of('ivan'),
+          unwrapOk(LocalDate.parse('2026-08-05')),
+        ),
+      ),
+      barberId: BarberId.of('ivan'),
+      localDate: unwrapOk(LocalDate.parse('2026-08-05')),
+      utcEpochMs: ZonedTimeSystem.startOfLocalDay(
+        unwrapOk(LocalDate.parse('2026-08-05')),
+        FIXTURE_TIME_ZONE,
+      ),
+      locationId: SHOP,
+      ...lunch,
+    });
+    openBlockDoor();
+    (
+      host().querySelector(
+        '[data-testid="staff-block-save"]',
+      ) as HTMLButtonElement
+    ).click();
+    await fixture.whenStable();
+
+    expect(exceptions).toHaveLength(1);
+    expect(exceptions[0]?.exceptionRanges).toEqual([
+      MinuteRange.of(wallAt(12), until(13)),
+      MinuteRange.of(wallAt(15), until(16)),
+    ]);
   });
 
   it('stands the whole day down when the switch is on', async () => {
@@ -2149,10 +2337,12 @@ describe('StaffDashboard', () => {
     ).click();
     await fixture.whenStable();
 
-    const [written] = put.mock.calls[0] ?? [];
+    expect(writeScheduleException).toHaveBeenCalledTimes(1);
+    const [written] = exceptions;
     if (!written) throw new Error('the writer was never called');
-    // `time_off`, which the sanitizer collapses to a reason-free `closed`.
-    expect(written.detail.kind).toBe('time_off');
+    // A whole day off, whatever the reason: the reason-free `CLOSED`.
+    expect(written.exceptionEffect).toBe(ExceptionEffect.Closed);
+    expect(written).not.toHaveProperty('exceptionRanges');
   });
 
   /** The view options live in a pull-down now, so the trigger opens first. */
@@ -2568,30 +2758,17 @@ describe('StaffDashboard', () => {
     );
     const seat = base.seats[0];
     if (seat === undefined) throw new Error('the fixture has no seat');
-    const missed = value(
-      Appointment.create({
-        id: 'appointment-missed',
-        locationId: base.locationId.toString(),
-        seats: [
-          Seat.of({
-            id: seat.id,
-            subject: seat.subject,
-            serviceId: seat.serviceId,
-            variantId: null,
-            barberId: seat.barberId,
-            terms: seat.terms,
-            startsAt: seat.slot.start,
-            outcome: {
-              kind: 'no_show' as const,
-              atMs: Date.UTC(2026, 7, 5, 7, 0, 0),
-            },
-          }),
-        ],
-        now: at('2026-08-05T08:00:00'),
-      }),
-    );
-    observeBarberDay.mockImplementation((barberId: { value: string }) =>
-      of(ok(barberId.value === 'ivan' ? [missed] : [])),
+    const missed: Appointment = {
+      ...base,
+      seats: [
+        Seat.withOutcome(
+          seat,
+          SeatOutcome.noShow(wall('2026-08-05T10:00:00').utcEpochMs),
+        ),
+      ],
+    };
+    observeBarberDay.mockImplementation((barberId: string) =>
+      of(PortResult.ok(barberId === 'ivan' ? [missed] : [])),
     );
     try {
       TestBed.resetTestingModule();
@@ -2657,33 +2834,22 @@ describe('StaffDashboard', () => {
     );
     const seat = cancelled.seats[0];
     if (seat === undefined) throw new Error('the fixture has no seat');
-    const resolved = value(
-      Appointment.create({
-        id: 'appointment-fade-off',
-        locationId: cancelled.locationId.toString(),
-        seats: [
-          Seat.of({
-            id: seat.id,
-            subject: seat.subject,
-            serviceId: seat.serviceId,
-            variantId: null,
-            barberId: seat.barberId,
-            terms: seat.terms,
-            startsAt: seat.slot.start,
-            outcome: {
-              kind: 'cancelled' as const,
-              atMs: Date.UTC(2026, 7, 5, 7, 0, 0),
-              by: 'client' as const,
-              reason: { kind: 'client_unwell' as const },
-              window: null,
-            },
-          }),
-        ],
-        now: at('2026-08-05T08:00:00'),
-      }),
-    );
-    observeBarberDay.mockImplementation((barberId: { value: string }) =>
-      of(ok(barberId.value === 'ivan' ? [resolved] : [])),
+    const resolved: Appointment = {
+      ...cancelled,
+      seats: [
+        Seat.withOutcome(
+          seat,
+          SeatOutcome.cancelled(
+            wall('2026-08-05T10:00:00').utcEpochMs,
+            CancelledBy.Client,
+            CancellationReason.ClientUnwell,
+            null,
+          ),
+        ),
+      ],
+    };
+    observeBarberDay.mockImplementation((barberId: string) =>
+      of(PortResult.ok(barberId === 'ivan' ? [resolved] : [])),
     );
     try {
       TestBed.resetTestingModule();
@@ -2700,10 +2866,10 @@ describe('StaffDashboard', () => {
 
   /** Ivan's 14:00 fade: sold for 30 minutes, 45 in the chair's catalogue. */
   function stretchedFade(): void {
-    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+    observeBarberDay.mockImplementation((barberId: string) =>
       of(
-        ok(
-          barberId.value === 'ivan'
+        PortResult.ok(
+          barberId === 'ivan'
             ? [
                 appointment(
                   'appointment-fade',
@@ -2798,10 +2964,10 @@ describe('StaffDashboard', () => {
     // is off has no working lane, and the create chair used to be read off
     // the lanes alone.
     // No roster AND no bookings: a chair with a visit still works the day.
-    const roster = observeDay.getMockImplementation();
+    const roster = observeSchedule.getMockImplementation();
     const visits = observeBarberDay.getMockImplementation();
-    observeDay.mockImplementation(() => of(ok([])));
-    observeBarberDay.mockImplementation(() => of(ok([])));
+    observeSchedule.mockImplementation(() => of(PortResult.ok(null)));
+    observeBarberDay.mockImplementation(() => of(PortResult.ok([])));
     try {
       TestBed.resetTestingModule();
       await build();
@@ -2823,7 +2989,7 @@ describe('StaffDashboard', () => {
         host().querySelectorAll('[data-testid="staff-grid-closed"]'),
       ).toHaveLength(1);
     } finally {
-      if (roster) observeDay.mockImplementation(roster);
+      if (roster) observeSchedule.mockImplementation(roster);
       if (visits) observeBarberDay.mockImplementation(visits);
     }
   });
@@ -3162,7 +3328,7 @@ describe('StaffDashboard', () => {
     // applied intents); the batch's own shape is the backstop, pinned in
     // staff-edit-appointment.use-case.spec.ts (round 4, 2026-09-25).
     it('holds at most CAP failed names per visit, dropping the oldest', async () => {
-      const cap = AppliedOperations.CAP;
+      const cap = AppliedOperation.CAP;
       const sent = sends(Array.from({ length: cap + 2 }, () => 'lost'));
       const at = (minute: number) => ({
         ...MOVE,
@@ -3819,13 +3985,13 @@ describe('StaffDashboard', () => {
       visits = observeBarberDay.getMockImplementation();
       const original = visits;
       if (original === undefined) throw new Error('no lanes to wrap');
-      // Every visit stored at revision 3 and read through the production
-      // mapper — the claim is what the mapper reads off the document.
+      // Every visit stored at revision 3 — the claim is the counter the
+      // document carries (the document IS the entity, Law 5).
       observeBarberDay.mockImplementation((barberId, dayKey) =>
         original(barberId, dayKey).pipe(
           map((result) =>
-            result.isSuccess()
-              ? ok(result.value.map((visit) => storedAt(visit, 3)))
+            result.ok
+              ? PortResult.ok(result.value.map((visit) => storedAt(visit, 3)))
               : result,
           ),
         ),
@@ -3974,13 +4140,13 @@ describe('StaffDashboard', () => {
       return sent;
     }
 
-    it('puts the revision the mapper read off the document on the wire (round 6)', async () => {
+    it('puts the revision the document carries on the wire (round 6)', async () => {
       const sent = wire();
       openAndDrag();
       await save();
 
-      // Stored at 3, read through `appointmentFromDocument`, claimed as 3 —
-      // through the real store, as the callable receives it.
+      // Stored at 3, read as the document body, claimed as 3 — through the
+      // real store, as the callable receives it.
       expect(sent.map((request) => request.expectedVersion)).toEqual([3]);
     });
 
@@ -3989,8 +4155,10 @@ describe('StaffDashboard', () => {
         if (visits === undefined) throw new Error('no lanes to wrap');
         return visits(barberId, dayKey).pipe(
           map((result) =>
-            result.isSuccess()
-              ? ok(result.value.map((visit) => storedAt(visit, null)))
+            result.ok
+              ? PortResult.ok(
+                  result.value.map((visit) => storedAt(visit, null)),
+                )
               : result,
           ),
         );
@@ -4090,23 +4258,13 @@ describe('StaffDashboard', () => {
 
     /** The visit with Ivan's seat tipped `minor` — a stamp, same revision. */
     function tipped(visit: Appointment, minor: number | null): Appointment {
-      const money =
-        minor === null
-          ? null
-          : value(Money.fromMinorUnitsAndCode(minor, 'EUR'));
-      return value(
-        Appointment.reconstitute({
-          id: visit.id.value,
-          locationId: visit.locationId.value,
-          seats: visit.seats.map((seat) =>
-            seat.barberId.value === 'ivan' ? seat.withTip(money) : seat,
-          ),
-          status: visit.status,
-          contact: visit.contact,
-          bookedAt: visit.bookedAt,
-          revision: visit.revision,
-        }),
-      );
+      const tip = minor === null ? null : unwrapOk(PriceCents.of(minor));
+      return {
+        ...visit,
+        seats: visit.seats.map((seat) =>
+          seat.barberId === 'ivan' ? Seat.withTip(seat, tip) : seat,
+        ),
+      };
     }
 
     beforeEach(async () => {
@@ -4124,23 +4282,28 @@ describe('StaffDashboard', () => {
       lane$.next([stored]);
       note$.next(null);
       observeBarberDay.mockImplementation((barberId) =>
-        barberId.value === 'ivan'
-          ? lane$.pipe(map((list) => ok(list)))
-          : of(ok([])),
+        barberId === 'ivan'
+          ? lane$.pipe(map((list) => PortResult.ok(list)))
+          : of(PortResult.ok([])),
       );
       TestBed.resetTestingModule();
       await build();
       // The team note, live, as the notes collection would deliver it.
-      const notes = TestBed.inject(APPOINTMENT_NOTES) as unknown as {
-        observe: (id: string) => Observable<unknown>;
+      const notes = TestBed.inject(APPOINTMENT_NOTE_PORTS) as {
+        observeAppointmentNote: AppointmentNotePorts['observeAppointmentNote'];
       };
-      notes.observe = () =>
+      notes.observeAppointmentNote = (appointmentId) =>
         note$.pipe(
           map((text) =>
-            ok(
+            PortResult.ok<AppointmentNote | null>(
               text === null
                 ? null
-                : { text, authorUid: null, writtenAtIso: null },
+                : {
+                    id: appointmentId,
+                    text,
+                    authorUserId: null,
+                    writtenAtUtcMs: null,
+                  },
             ),
           ),
         );
@@ -4359,40 +4522,23 @@ describe('StaffDashboard', () => {
     });
 
     it('stamps the tip on a seat the batch KEPT, never on one it removed', async () => {
-      const booker = UserId.generate();
-      const price = value(Money.fromMinorUnitsAndCode(2800, 'EUR'));
+      const booker = freshId('user');
       const seatOf = (startIso: string) =>
-        Seat.of({
-          id: SeatId.generate(),
-          subject: SeatSubject.account(booker, 'self'),
-          serviceId: ServiceId.generate(),
-          variantId: null,
-          barberId: value(BarberId.create('ivan')),
-          terms: value(ServiceTerms.create(price, 30)),
-          startsAt: at(startIso),
+        seatAt({
+          chair: 'ivan',
+          startIso,
+          occupant: accountOf(booker, SubjectRelationship.Self),
         });
       const first = seatOf('2026-08-05T10:00:00');
       const second = seatOf('2026-08-05T10:30:00');
-      lane$.next([
-        readAt(
-          value(
-            Appointment.create({
-              id: 'appointment-1',
-              locationId: LocationId.generate().toString(),
-              seats: [first, second],
-              now: at('2026-08-05T08:00:00'),
-            }),
-          ),
-          3,
-        ),
-      ]);
+      lane$.next([readAt(visitOf('appointment-1', [first, second]), 3)]);
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
 
       const { sent, tips } = harness();
       const editor = open();
-      editor.removeLeg(first.id.value);
+      editor.removeLeg(first.seatId);
       editor.setTip(200);
       fixture.detectChanges();
       await save();
@@ -4400,7 +4546,7 @@ describe('StaffDashboard', () => {
       expect(sent).toEqual(['batch', 'tip']);
       expect(tips).toEqual([
         expect.objectContaining({
-          seatId: second.id.value,
+          seatId: second.seatId,
           amountMinorUnits: 200,
         }),
       ]);
@@ -5181,10 +5327,10 @@ describe('StaffDashboard', () => {
         ),
       }),
     );
-    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+    observeBarberDay.mockImplementation((barberId: string) =>
       of(
-        ok(
-          barberId.value === 'ivan' || barberId.value === 'niko' ? [split] : [],
+        PortResult.ok(
+          barberId === 'ivan' || barberId === 'niko' ? [split] : [],
         ),
       ),
     );
@@ -5759,12 +5905,10 @@ describe('StaffDashboard', () => {
         ),
       ),
     );
-    observeBarberDay.mockImplementation((barberId: { value: string }) =>
+    observeBarberDay.mockImplementation((barberId: string) =>
       of(
-        ok(
-          barberId.value === 'ivan' || barberId.value === 'niko'
-            ? [family]
-            : [],
+        PortResult.ok(
+          barberId === 'ivan' || barberId === 'niko' ? [family] : [],
         ),
       ),
     );

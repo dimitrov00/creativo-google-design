@@ -1,45 +1,38 @@
-import { UserId } from '@creativo/application/accounts';
+import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
-  type Appointment,
-  CalendarDay,
-  type DayWindows,
-  type Daypart,
-  type Money,
+  Daypart,
+  DayWindows,
   type Seat,
-  type SeatOutcome,
-  type WaitlistRequest,
-  ZonedDateTime,
-  daypartsTouchedBy,
-  formatMoney,
-  ownerUserIdOf,
-  subjectVisitOf,
-  toEcsBookingStatus,
-  toEcsSeatOutcome,
-} from '@creativo/application/booking';
+  SeatSubject,
+  type ShopNow,
+  VoucherRedemption,
+} from '@core/components';
 import {
-  AttendanceState,
+  BookingStatus,
+  CustomerId,
   LocalDate,
-  UserId as EcsUserId,
-  defect,
+  type TimeZone,
+  type UtcEpochMs,
 } from '@core/primitives';
 import {
-  type SeatOutcome as EcsSeatOutcome,
-  SeatSubject,
-} from '@core/components';
-import { type PersonSubject, VisitStorySystem } from '@core/systems';
+  BillingSystem,
+  type PersonSubject,
+  VisitStorySystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   LEGACY_CANCELLED_SIDE,
   LEGACY_VISIT_ROW_OUTCOME,
+  VISITS_TIME_ZONE,
   VISIT_ROW_OUTCOME_OF,
   shopNowOf,
-  wallTimeOf,
-  zoneOf,
 } from './visit-ecs.shim';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { dayRange } from './day-range';
 import type { StaffEventLine } from './event-head/staff-event-line';
 import { firstNameOf } from './first-name';
 import { UPCOMING_SECTION_KEY, visitSectionKey } from './visit-sections';
+import { formatCents, formatMinute, formatWallClock } from './wall-clock';
 import type {
   VisitGrain,
   VisitLookup,
@@ -64,18 +57,26 @@ import type {
  * service into specs that never provided one (FE-7), and a row reads the
  * same in a spec, on the client's page and on the staff card.
  *
- * Every date is formatted on the visit's own calendar — the shop's zone
- * travels with the instant — never on the device's.
+ * The visit is the FLAT entity straight from its document (flip 1, Law 5):
+ * its day and hour are the shop's wall clock (`localDate` +
+ * `startMinutes`, Law 7.3) and are printed as stored; only "now" — and a
+ * photo's instant — is read on the shop's calendar, in the LOCATION's zone
+ * (`VisitLookup.locationTimeZone`, the tenant's while the lookup names
+ * none), never the device's.
  *
- * Phase 2: the story's math — whose seats, the root outcome, the decisive
+ * The story's math — whose seats, the root outcome, the decisive
  * cancellation and its side, the people counted, the upcoming rule, the
- * runs of watched days — is `VisitStorySystem` in `@core/systems`;
- * the words, the clock's formatting and the money's stay here. The legacy
- * shapes reach it through the converters at the end of this file. Flatten
- * pass: the system's tags are SCREAMING and its clock is the shop's wall
- * clock — an hour is upcoming by its start `WallTime` against the shop's
- * `ShopNow`, both read in the visit's own zone at this boundary.
+ * runs of watched days — is `VisitStorySystem` in `@core/systems`; the
+ * bill is `BillingSystem`'s. The words, the clock's formatting and the
+ * money's stay here.
  */
+
+/** The catalogue's key segment of each part of the day (`*.daypart.morning`, …). */
+const DAYPART_KEY = {
+  [Daypart.Morning]: 'morning',
+  [Daypart.Afternoon]: 'afternoon',
+  [Daypart.Evening]: 'evening',
+} as const satisfies Record<Daypart, string>;
 
 /**
  * The row's words as the builders read them: `VisitWords`, and the one word
@@ -103,7 +104,8 @@ export type VisitCatalogueWords = VisitBuilderWords &
 export interface VisitRowPhotoSource {
   readonly id: string;
   readonly url: string;
-  readonly takenAtIso: string;
+  /** When it was taken — read on the shop's calendar for the thumb's name. */
+  readonly takenAtUtcMs: UtcEpochMs;
 }
 
 export interface VisitRowOptions {
@@ -112,10 +114,19 @@ export interface VisitRowOptions {
   readonly grain: VisitGrain;
   /**
    * Whose story the staff row tells — their seats, their outcome, their
-   * share. Null (a guest) tells the appointment's; the client's own list
-   * always does.
+   * share — by the ACCOUNT the seats name (`subjectUserId`), which also
+   * decides whose own words a row quotes. Null (a guest) tells the
+   * appointment's; the client's own list always does.
    */
   readonly subjectUserId: string | null;
+  /**
+   * The same person's client RECORD (D29: whom the shop served) — what the
+   * story is keyed by (`VisitStorySystem.subjectStory`). The staff card
+   * passes the record it resolved; absent, it is read off the seat that
+   * names `subjectUserId` (the seat's explicit `subjectCustomerId` link,
+   * never a uid taken for a record).
+   */
+  readonly subjectCustomerId?: string | null;
   /** The appointment the sheet is open on: it wears «Този час» wherever its date files it. */
   readonly currentAppointmentId: string | null;
   readonly nowMs: number;
@@ -129,7 +140,7 @@ export interface VisitRowOptions {
    * with it (contract delta Z2-1).
    */
   readonly photos?: readonly VisitRowPhotoSource[];
-  /** The visit's photos, counted (`CLIENT_PHOTOS_READER.countByAppointment`): a row's mark. */
+  /** The visit's photos, counted (`countPhotosByAppointment`): a row's mark. */
   readonly photoCount?: number;
   /**
    * @deprecated RETIRED (revision 3 §3.11, W4): a row is a row, and
@@ -224,7 +235,8 @@ export function visitWaitlistWordsOf(
     waiting: translate('clientCard.visits.waitlist'),
     name: (services, when) =>
       translate('clientCard.visits.waitlistName', { services, when }),
-    daypart: (part) => translate(`clientCard.visits.daypart.${part}`),
+    daypart: (part) =>
+      translate(`clientCard.visits.daypart.${DAYPART_KEY[part]}`),
     moreDays: (count) =>
       translate('clientCard.visits.waitlistMoreDays', { count }),
     moreRequests: (count) =>
@@ -246,7 +258,16 @@ export interface VisitStory {
   readonly cancelledBy: 'client' | 'shop' | null;
 }
 
-type Cancellation = Extract<SeatOutcome, { kind: 'cancelled' }>;
+/** The shop's zone a visit is read in: its location's, else the tenant's. */
+export function visitZoneOf(
+  locationId: string | null,
+  lookup: Pick<VisitLookup, 'locationTimeZone'>,
+): TimeZone {
+  return (
+    (locationId === null ? null : lookup.locationTimeZone?.(locationId)) ??
+    VISITS_TIME_ZONE
+  );
+}
 
 /** One appointment as a row of either list. */
 export function visitRowOf(
@@ -256,38 +277,43 @@ export function visitRowOf(
 ): VisitRowVm {
   const words = options.words;
   const staff = options.perspective === 'staff';
-  const start = appointment.timeSlot.start;
-  const startMs = start.toMillis();
-  const at = new VisitClock(start, options.nowMs, options.locale);
+  const zone = visitZoneOf(appointment.locationId, lookup);
+  // One reading per list: every row shares the list's `nowMs`.
+  const now = shopNowOf(options.nowMs, zone);
+  const at = new VisitClock(
+    appointment.localDate,
+    appointment.startMinutes,
+    now,
+    options.locale,
+    zone,
+  );
   const story = storyOf(appointment, options);
-  const id = appointment.id.value;
+  const id: string = appointment.id;
   const current = id === options.currentAppointmentId;
-  const zone = zoneOf(start.zoneName);
   const upcoming = VisitStorySystem.isUpcoming(
     VISIT_ROW_OUTCOME_OF[story.outcome],
-    wallTimeOf(startMs, zone),
-    // One reading per list: every row shares the list's `nowMs`.
-    shopNowOf(options.nowMs, zone),
+    { localDate: appointment.localDate, minute: appointment.startMinutes },
+    now,
   );
   const hollow = story.outcome === 'cancelled' || story.outcome === 'no_show';
 
   const title =
     distinct(
-      story.seats.map((seat) => lookup.serviceName(seat.serviceId.value)),
+      story.seats.map((seat) => lookup.serviceName(seat.serviceId)),
     ).join(' · ') || words.unknownService;
 
-  const barberIds = distinct(story.seats.map((seat) => seat.barberId.value));
+  const barberIds = distinct(story.seats.map((seat) => seat.barberId));
   const barberNames = barberIds.map(
     (barberId) => lookup.barberName(barberId) ?? words.barberRole,
   );
 
-  const status = appointment.status.kind;
+  const status = appointment.bookingStatus;
   const cancelledWord =
     story.cancelledBy === null ? null : words.cancelledBy(story.cancelledBy);
   const statusWord =
     story.outcome === 'no_show'
       ? words.noShow
-      : story.outcome === 'open' && status === 'pending'
+      : story.outcome === 'open' && status === BookingStatus.Pending
         ? words.statusPending
         : cancelledWord;
   const outcomeSlot = [current ? words.thisVisit : null, statusWord]
@@ -298,10 +324,11 @@ export function visitRowOf(
   // The caption says what the section does not: the weekday under a month
   // («пт», `Intl`), the month under a year and on the glance («септ.», the
   // catalogue's table — Bulgarian's `Intl` short month is numeric, LR4).
+  const day = LocalDate.parts(appointment.localDate);
   const tile = {
     caption:
-      options.grain === 'month' ? at.weekday() : words.tileMonth(start.month),
-    day: start.day,
+      options.grain === 'month' ? at.weekday() : words.tileMonth(day.month),
+    day: day.day,
     tone: hollow
       ? ('hollow' as const)
       : upcoming
@@ -312,16 +339,17 @@ export function visitRowOf(
   const base = {
     id,
     kind: 'visit' as const,
-    startMs,
+    startMs: appointment.utcEpochMs,
     sectionKey: upcoming
       ? UPCOMING_SECTION_KEY
-      : visitSectionKey(start, options.grain),
+      : visitSectionKey(appointment.localDate, options.grain),
     upcoming,
     tile,
     leadingIcon: null,
     title,
     struck: hollow,
     outcome: story.outcome,
+    // The STORED tag (F1-9): the client row's `data-status` reads it.
     status,
   };
 
@@ -375,7 +403,7 @@ export function visitRowOf(
   // that every shop shares (`VisitLookup.locationName`).
   const locationText =
     story.outcome === 'worked' && lookup.locationCount > 1
-      ? lookup.locationName(appointment.locationId.value)
+      ? lookup.locationName(appointment.locationId)
       : null;
 
   // The fact line never carries the date, because the tile and the section
@@ -388,25 +416,15 @@ export function visitRowOf(
   // ellipsis never takes (`hold`), so a long shop name, even one without a
   // short name, truncates before who did the cut (wave D r2).
   //
-  // A CANCELLED hour's word has a line of its own, FIRST (review r5). It
-  // led the barber's line, and beside the struck amount that line had
-  // ≈150 of the 215 column at 390: the ellipsis took the one word that
-  // says who called it off («Отказан от … · Иван»), and the shorter the
-  // phone, the less of it survived. So the word is the first line and
-  // keeps its words whole — the struck amount ends that line, as every
+  // A CANCELLED hour's word has a line of its own, FIRST (review r5): the
+  // word keeps its words whole — the struck amount ends that line, as every
   // row's fact ends its first — and the barber, with the party, runs the
-  // whole width under it, the way a waiting request's days run under its
-  // state. The visit on screen keeps its own grammar (below).
+  // whole width under it.
   //
   // THE VISIT ON SCREEN leads with its time alone («10:00 · Иван»): its day
   // is the tile's and the capsule «Този час» already names it, and its
-  // second line is the fullest of the list — the capsule, and the marks
-  // of a settled visit before it. With the day word too («днес, 10:00 ·
-  // Иван», 140 at 390) a marked current row did not fit the 215 column
-  // beside «▣ 1 · Този час» (103): it wrapped to a third line, and held to
-  // two only by cutting the lead to «днес,…», the time gone and the day
-  // word kept (revision 3 review 2, fix-visits-r1). The row's sentence
-  // still says the day.
+  // second line is the fullest of the list (revision 3 review 2,
+  // fix-visits-r1). The row's sentence still says the day.
   const statusLine = !current && cancelledWord !== null ? cancelledWord : null;
   const lead: readonly string[] = current
     ? [at.time()]
@@ -430,7 +448,7 @@ export function visitRowOf(
 
   const price =
     story.outcome === 'worked' || story.outcome === 'cancelled'
-      ? formatMoney(priceOf(appointment, story.seats), options.locale)
+      ? priceOf(appointment, story.seats, options.locale)
       : null;
 
   // THE FACE keeps the trailing edge, as on the client's own list (revision
@@ -467,7 +485,7 @@ export function visitRowOf(
               text: words.noShow,
               tone: 'warning',
             }
-          : story.outcome === 'open' && status === 'pending'
+          : story.outcome === 'open' && status === BookingStatus.Pending
             ? {
                 kind: 'status',
                 icon: 'visit.pending',
@@ -497,7 +515,7 @@ export function visitRowOf(
     if (
       alone &&
       words.voucher !== undefined &&
-      appointment.voucherRedemptions.some((redemption) => redemption.live)
+      appointment.voucherRedemptions.some(VoucherRedemption.isLive)
     ) {
       marks.push({ icon: 'promo.voucher', label: words.voucher, count: null });
     }
@@ -505,12 +523,12 @@ export function visitRowOf(
 
   // The client's own words belong to whoever booked: on a party someone
   // else booked they are the booker's, and the row does not carry them.
-  const note = appointment.contact?.note ?? null;
+  const note = appointment.contactNote;
   const quoted =
     note !== null &&
     options.clientWords !== false &&
     options.subjectUserId !== null &&
-    ownerUserIdOf(appointment) === options.subjectUserId
+    appointment.ownerUserId === options.subjectUserId
       ? note
       : null;
 
@@ -551,19 +569,18 @@ export function waitlistRowOf(
   lookup: VisitLookup,
 ): VisitRowVm {
   const words = options.words;
-  const today = CalendarDay.create(options.today, request.zone);
-  const all = request.when.days;
-  const ahead = today.isSuccess()
-    ? all.filter((day) => !day.day.isBefore(today.value))
-    : all;
+  const parsedToday = LocalDate.parse(options.today);
+  const today = parsedToday.ok ? parsedToday.value : null;
+  const all = request.flexibleDays;
+  const ahead =
+    today === null ? all : all.filter((day) => day.localDate >= today);
   // A request whose every day has passed is the host's to leave out; drawn
   // anyway, it names what it asked for rather than nothing.
   const days = ahead.length > 0 ? ahead : all;
-  const reference = today.isSuccess() ? today.value : null;
 
   const services =
     distinct(
-      request.cart.seats.flatMap((seat) =>
+      request.cartSeats.flatMap((seat) =>
         seat.lines.map((line) => lookup.serviceName(line.serviceId)),
       ),
     ).join(' · ') || words.unknownService;
@@ -572,7 +589,7 @@ export function waitlistRowOf(
   const partWords =
     parts.length === 0
       ? null
-      : new Intl.ListFormat(options.locale, { type: 'conjunction' }).format(
+      : listFormat(options.locale).format(
           parts.map((part) => words.daypart(part)),
         );
 
@@ -581,16 +598,15 @@ export function waitlistRowOf(
   // its dates «8.10 – 9.10» at both ends (one range, one face: never
   // «сб – 6.10»). Its dash is `Intl`'s, the one the card's season window
   // prints «1.09 – 30.11» with (wave D r6).
-  const todayKey = reference === null ? null : reference.key();
   const items = runsOf(days).map(({ first, last }) =>
     first === last
-      ? dayShort(first, reference, options.locale)
+      ? dayShort(first, today, options.locale)
       : dayRange(
-          first.day.key(),
-          last.day.key(),
-          todayKey,
+          first.localDate,
+          last.localDate,
+          today,
           options.locale,
-          withinWeek(first, reference) && withinWeek(last, reference)
+          withinWeek(first, today) && withinWeek(last, today)
             ? 'weekday'
             : 'date',
         ),
@@ -603,9 +619,9 @@ export function waitlistRowOf(
 
   // Spelled out for the row's name, every day in words: a reader never
   // hears «чт – пт».
-  const spelledDays = new Intl.ListFormat(options.locale, {
-    type: 'conjunction',
-  }).format(days.map((day) => dayLong(day, reference, options.locale)));
+  const spelledDays = listFormat(options.locale).format(
+    days.map((day) => dayLong(day, today, options.locale)),
+  );
   const whenLong =
     partWords === null ? spelledDays : `${spelledDays}, ${partWords}`;
 
@@ -614,9 +630,17 @@ export function waitlistRowOf(
   const first = days[0];
 
   return {
-    id: request.id.value,
+    id: request.id,
     kind: 'waitlist',
-    startMs: first === undefined ? 0 : first.day.startOfDay().toMillis(),
+    // The first watched day's first instant on the shop's calendar — the
+    // order within the upcoming run.
+    startMs:
+      first === undefined
+        ? 0
+        : ZonedTimeSystem.startOfLocalDay(
+            first.localDate,
+            visitZoneOf(request.locationId, lookup),
+          ),
     sectionKey: UPCOMING_SECTION_KEY,
     upcoming: true,
     tile: null,
@@ -641,115 +665,139 @@ export function waitlistRowOf(
 // ── The story ──────────────────────────────────────────────────────────
 
 /**
- * The staff row tells the SUBJECT's story (`subjectVisitOf`: their seats
- * alone, so a companion's no-show says nothing about the booker); the
- * client's list, and a subject with no seat on the visit, tell the
- * appointment's.
+ * The staff row tells the SUBJECT's story (their seats alone, so a
+ * companion's no-show says nothing about the booker —
+ * `VisitStorySystem.subjectStory`); the client's list, and a subject with no
+ * seat on the visit, tell the appointment's.
  */
 export function storyOf(
   appointment: Appointment,
-  options: Pick<VisitRowOptions, 'perspective' | 'subjectUserId'>,
+  options: Pick<
+    VisitRowOptions,
+    'perspective' | 'subjectUserId' | 'subjectCustomerId'
+  >,
 ): VisitStory {
-  if (options.perspective === 'staff' && options.subjectUserId !== null) {
-    const subject = UserId.create(options.subjectUserId);
-    const visit = subject.isSuccess()
-      ? subjectVisitOf(subject.value, appointment)
-      : null;
-    if (visit !== null) {
-      const outcome = visit.outcome;
-      return {
-        seats: visit.seats,
-        outcome: outcome.kind,
-        cancelledBy:
-          outcome.kind === 'cancelled' ? sideOf(outcome.decisive) : null,
-      };
-    }
-  }
-  return rootStoryOf(appointment);
-}
-
-function rootStoryOf(appointment: Appointment): VisitStory {
-  const root = VisitStorySystem.rootStory(
-    toEcsBookingStatus(appointment.status.kind),
-    appointment.seats.map((seat) => toEcsSeatOutcome(seat.outcome)),
+  const story = VisitStorySystem.subjectStory(
+    appointment,
+    subjectRecordOf(appointment, options),
+    options.perspective === 'staff',
   );
   return {
-    seats: appointment.seats,
-    outcome: LEGACY_VISIT_ROW_OUTCOME[root.outcome],
+    seats: story.seatIndexes.map((index) => appointment.seats[index] as Seat),
+    outcome: LEGACY_VISIT_ROW_OUTCOME[story.outcome],
     cancelledBy:
-      root.cancelledBy === null
+      story.cancelledBy === null
         ? null
-        : LEGACY_CANCELLED_SIDE[root.cancelledBy],
+        : LEGACY_CANCELLED_SIDE[story.cancelledBy],
   };
 }
 
 /**
- * Who a cancellation is on (`clientCaused`, the rule the stats count by).
- * A cancelled visit with no seat on record — every cancel path stamps its
- * seats, so only a hand-edited document — holds nothing against the client.
+ * The client record a row's story is about: the one the host named, else
+ * the record the seat of `subjectUserId` links to — `null` for a guest, and
+ * for an account with no seat on the visit (the appointment's story then).
  */
-function sideOf(cancellation: Cancellation | null): 'client' | 'shop' {
-  return LEGACY_CANCELLED_SIDE[
-    VisitStorySystem.cancelledSide(
-      cancellation === null ? null : toEcsCancellation(cancellation),
-    )
-  ];
+function subjectRecordOf(
+  appointment: Appointment,
+  options: Pick<VisitRowOptions, 'subjectUserId' | 'subjectCustomerId'>,
+): CustomerId | null {
+  const named = options.subjectCustomerId;
+  if (named !== undefined) return named === null ? null : CustomerId.of(named);
+  const account = options.subjectUserId;
+  if (account === null) return null;
+  for (const seat of appointment.seats) {
+    if (
+      seat.seatSubject === SeatSubject.Account &&
+      seat.subjectUserId === account
+    ) {
+      return seat.subjectCustomerId;
+    }
+  }
+  return null;
 }
 
 /**
- * What the row's figure says: the bill (`total()`, discounts taken off)
- * when the seats are the whole party; otherwise the subject's own seats'
- * prices — a root discount is not pro-rated onto a share (owner question Q2).
+ * What the row's figure says: the bill (`BillingSystem`, discounts taken
+ * off) when the seats are the whole party; otherwise the subject's own
+ * seats' prices — a root discount is not pro-rated onto a share (owner
+ * question Q2). `null` for a visit no bill can be read from (no seat, two
+ * currencies — refused at every write).
  */
-function priceOf(appointment: Appointment, seats: readonly Seat[]): Money {
-  if (seats.length === appointment.seats.length) return appointment.total();
-  return seats
-    .map((seat) => seat.terms.price)
-    .reduce((total, price) => {
-      const sum = total.add(price);
-      // Unreachable: `validateSeats` rejects a mixed-currency appointment
-      // at build, so `add` cannot mismatch here.
-      if (sum.isFailure()) defect('unreachable: mixed currency');
-      return sum.value;
-    });
+function priceOf(
+  appointment: Appointment,
+  seats: readonly Seat[],
+  locale: string,
+): string | null {
+  if (seats.length === appointment.seats.length) {
+    const bill = BillingSystem.evaluate(appointment);
+    return bill.ok
+      ? formatCents(bill.value.totalCents, bill.value.currency, locale)
+      : null;
+  }
+  const share = BillingSystem.subtotalOf(seats);
+  return share.ok
+    ? formatCents(share.value.amountCents, share.value.currency, locale)
+    : null;
 }
 
 /** The OTHER people on the visit — an account by its id, a guest by the seat's name. */
 function peersOf(appointment: Appointment, own: readonly Seat[]): number {
   return VisitStorySystem.peerCount(
-    appointment.seats.map((seat) => toPersonSubject(seat)),
+    appointment.seats.map(personSubjectOf),
     appointment.seats.map((seat) => own.includes(seat)),
   );
 }
 
+/** Who a seat is for, as people are counted. */
+function personSubjectOf(seat: Seat): PersonSubject {
+  return seat.seatSubject === SeatSubject.Account
+    ? { seatSubject: SeatSubject.Account, userId: seat.subjectUserId }
+    : { seatSubject: SeatSubject.Anonymous, label: seat.guestLabel };
+}
+
 /** Present names, each once, in first-seen order. */
-export function distinct(names: readonly (string | null)[]): string[] {
+export function distinct<T extends string>(names: readonly (T | null)[]): T[] {
   return [...VisitStorySystem.distinct(names)];
 }
 
 // ── The clock ──────────────────────────────────────────────────────────
 
-/** A visit's instant, read on its own calendar against "now". */
-export class VisitClock {
-  private readonly now: ZonedDateTime | null;
+const LIST_FORMATS = new Map<string, Intl.ListFormat>();
 
-  constructor(
-    private readonly start: ZonedDateTime,
-    nowMs: number,
-    private readonly locale: string,
-  ) {
-    const now = ZonedDateTime.fromMillis(nowMs, start.zoneName);
-    this.now = now.isSuccess() ? now.value : null;
+/** «Иван и Петър» — the locale's conjunction, one formatter per locale. */
+function listFormat(locale: string): Intl.ListFormat {
+  let format = LIST_FORMATS.get(locale);
+  if (format === undefined) {
+    format = new Intl.ListFormat(locale, { type: 'conjunction' });
+    LIST_FORMATS.set(locale, format);
   }
+  return format;
+}
+
+/**
+ * A visit's wall-clock start, read against the shop's "now". The day and
+ * the minute print as stored (`formatWallClock`); a photo's instant is read
+ * on the shop's calendar (`timeZone`, the location's).
+ */
+export class VisitClock {
+  constructor(
+    private readonly localDate: LocalDate,
+    private readonly minute: number,
+    private readonly now: ShopNow,
+    private readonly locale: string,
+    private readonly timeZone: TimeZone,
+  ) {}
 
   /** «10:00». */
   time(): string {
-    return this.format(this.start, { hour: '2-digit', minute: '2-digit' });
+    return formatMinute(this.minute, this.locale);
   }
 
   /** «пт» — the tile's caption under a month. */
   weekday(): string {
-    return this.format(this.start, { weekday: 'short' });
+    return formatWallClock(this.localDate, null, this.locale, {
+      weekday: 'short',
+    });
   }
 
   /**
@@ -765,20 +813,22 @@ export class VisitClock {
   whenLong(today: string): string {
     return this.isToday()
       ? `${today}, ${this.time()}`
-      : this.format(this.start, {
+      : formatWallClock(this.localDate, this.minute, this.locale, {
           day: 'numeric',
           month: 'long',
-          ...this.yearIfElsewhere(this.start),
+          ...this.yearIfElsewhere(this.localDate),
           hour: '2-digit',
           minute: '2-digit',
         });
   }
 
-  /** «4 септември» — a photo's day, for its name; the visit's own when unreadable. */
-  dayLong(iso: string): string {
-    const taken = ZonedDateTime.fromISO(iso, this.start.zoneName);
-    const day = taken.isSuccess() ? taken.value : this.start;
-    return this.format(day, {
+  /** «4 септември» — a photo's day, for its name; the visit's own day without one. */
+  dayLong(takenAtUtcMs?: UtcEpochMs): string {
+    const day =
+      takenAtUtcMs === undefined
+        ? this.localDate
+        : ZonedTimeSystem.toLocal(takenAtUtcMs, this.timeZone).localDate;
+    return formatWallClock(day, null, this.locale, {
       day: 'numeric',
       month: 'long',
       ...this.yearIfElsewhere(day),
@@ -787,28 +837,20 @@ export class VisitClock {
 
   /** «Иван» · «Иван и Петър» — the people, as the locale lists them. */
   list(names: readonly string[]): string {
-    return new Intl.ListFormat(this.locale, { type: 'conjunction' }).format(
-      names,
-    );
+    return listFormat(this.locale).format(names);
   }
 
-  /** The visit's day is today's, on the visit's own calendar. */
+  /** The visit's day is today's, on the shop's calendar. */
   isToday(): boolean {
-    return this.now !== null && this.now.toISODate() === this.start.toISODate();
+    return this.now.localDate === this.localDate;
   }
 
   /** The year only outside the current one (R59). */
-  yearIfElsewhere(
-    instant: ZonedDateTime,
-  ): Pick<Intl.DateTimeFormatOptions, 'year'> {
-    return this.now === null || this.now.year === instant.year
+  yearIfElsewhere(day: LocalDate): Pick<Intl.DateTimeFormatOptions, 'year'> {
+    return LocalDate.parts(this.now.localDate).year ===
+      LocalDate.parts(day).year
       ? {}
       : { year: 'numeric' };
-  }
-
-  /** An instant in the locale's form, on the calendar it carries. */
-  format(instant: ZonedDateTime, options: Intl.DateTimeFormatOptions): string {
-    return instant.toLocaleString(this.locale, options);
   }
 }
 
@@ -816,15 +858,15 @@ export class VisitClock {
 
 /**
  * The parts of the day the windows touch, in the day's order — the
- * domain's one rule (`daypartsTouchedBy`), the same boundaries the booking
+ * domain's one rule (`Daypart.touchedBy`), the same boundaries the booking
  * time sheet heads its times with, so the line names a window the way the
  * client's picker headed the times they chose from. A day offered whole
  * names none: «чт–пт, следобед» would be untrue of a Thursday that works at
  * any hour.
  */
 function daypartsOf(days: readonly DayWindows[]): readonly Daypart[] {
-  if (days.length === 0 || days.some((day) => day.isWholeDay())) return [];
-  return daypartsTouchedBy(days.flatMap((day) => day.windows));
+  if (days.length === 0 || days.some(DayWindows.isWholeDay)) return [];
+  return Daypart.touchedBy(days.flatMap((day) => day.windows));
 }
 
 /** A run of consecutive calendar days: one day when `first` is `last`. */
@@ -835,20 +877,28 @@ interface DayRun {
 
 /** Runs of consecutive calendar days, in order — «чт, пт» reads «чт – пт». */
 function runsOf(days: readonly DayWindows[]): readonly DayRun[] {
-  return VisitStorySystem.dayRuns(
-    days.map((day) => localDateOf(day.day.key())),
-  ).map((run) => ({
-    first: days[run.first] as DayWindows,
-    last: days[run.last] as DayWindows,
-  }));
+  return VisitStorySystem.dayRuns(days.map((day) => day.localDate)).map(
+    (run) => ({
+      first: days[run.first] as DayWindows,
+      last: days[run.last] as DayWindows,
+    }),
+  );
 }
 
 /** Inside the coming week: the weekday says it («чт»). */
-function withinWeek(day: DayWindows, today: CalendarDay | null): boolean {
-  return VisitStorySystem.withinWeek(
-    localDateOf(day.day.key()),
-    today === null ? null : localDateOf(today.key()),
-  );
+function withinWeek(day: DayWindows, today: LocalDate | null): boolean {
+  return VisitStorySystem.withinWeek(day.localDate, today);
+}
+
+/** The year only when the day is outside today's. */
+function yearUnlessToday(
+  day: LocalDate,
+  today: LocalDate | null,
+): Pick<Intl.DateTimeFormatOptions, 'year'> {
+  return today === null ||
+    LocalDate.parts(today).year === LocalDate.parts(day).year
+    ? {}
+    : { year: 'numeric' };
 }
 
 /**
@@ -858,70 +908,29 @@ function withinWeek(day: DayWindows, today: CalendarDay | null): boolean {
  */
 function dayShort(
   day: DayWindows,
-  today: CalendarDay | null,
+  today: LocalDate | null,
   locale: string,
 ): string {
-  const instant = day.day.startOfDay();
   return withinWeek(day, today)
-    ? instant.toLocaleString(locale, { weekday: 'short' })
-    : instant.toLocaleString(locale, {
+    ? formatWallClock(day.localDate, null, locale, { weekday: 'short' })
+    : formatWallClock(day.localDate, null, locale, {
         day: 'numeric',
         month: '2-digit',
-        ...(today === null || today.year === day.day.year
-          ? {}
-          : { year: 'numeric' }),
+        ...yearUnlessToday(day.localDate, today),
       });
 }
 
 /** «четвъртък» inside the coming week, else «12 октомври» — spelled for a reader. */
 function dayLong(
   day: DayWindows,
-  today: CalendarDay | null,
+  today: LocalDate | null,
   locale: string,
 ): string {
-  const instant = day.day.startOfDay();
   return withinWeek(day, today)
-    ? instant.toLocaleString(locale, { weekday: 'long' })
-    : instant.toLocaleString(locale, {
+    ? formatWallClock(day.localDate, null, locale, { weekday: 'long' })
+    : formatWallClock(day.localDate, null, locale, {
         day: 'numeric',
         month: 'long',
-        ...(today === null || today.year === day.day.year
-          ? {}
-          : { year: 'numeric' }),
+        ...yearUnlessToday(day.localDate, today),
       });
-}
-
-// ── Legacy ↔ ECS converters (Phase 2 shim) ──────────────────────────────
-
-/**
- * A legacy cancellation → the flat struct — the domain shim's own converter
- * (`toEcsSeatOutcome`, its window stamp as whole hours), narrowed back to
- * the variant it is.
- */
-function toEcsCancellation(
-  cancellation: Cancellation,
-): EcsSeatOutcome.Cancelled {
-  const outcome = toEcsSeatOutcome(cancellation);
-  // Unreachable: a legacy cancellation converts to the cancelled variant.
-  if (outcome.attendanceState !== AttendanceState.Cancelled) {
-    defect('unreachable: a cancellation that is not one');
-  }
-  return outcome;
-}
-
-/** Who a legacy seat is for, as people are counted. */
-function toPersonSubject(seat: Seat): PersonSubject {
-  return seat.subject.kind === 'account'
-    ? {
-        seatSubject: SeatSubject.Account,
-        userId: EcsUserId.of(seat.subject.userId.value),
-      }
-    : { seatSubject: SeatSubject.Anonymous, label: seat.subject.label.value };
-}
-
-/** A legacy calendar day's key — a civil date by construction. */
-function localDateOf(key: string): LocalDate {
-  const day = LocalDate.parse(key);
-  if (!day.ok) defect(`unreachable: not a civil date ${key}`);
-  return day.value;
 }

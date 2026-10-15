@@ -4,13 +4,13 @@ import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  InMemoryClientHistoryReader,
-  InMemoryClientPhotosReader,
-} from '@creativo/application/booking/testing';
+  memoryAppointmentPhotoPorts,
+  memoryAppointmentReadPorts,
+} from '@core/testing';
 import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import {
   CURRENT_APPOINTMENT_ID,
-  GEORGI_PHOTOS,
+  GEORGI_SHOTS,
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
@@ -90,8 +90,8 @@ let staffRows: ReadonlyMap<string, VisitRowVm>;
 beforeAll(async () => {
   const rows = await georgiStaffRows(
     {
-      history: new InMemoryClientHistoryReader(GEORGI_VISITS),
-      photos: new InMemoryClientPhotosReader(GEORGI_PHOTOS),
+      history: memoryAppointmentReadPorts(GEORGI_VISITS),
+      photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
     },
     { words: STAFF_WORDS, nowMs: NOW_MS, grain: 'month' },
   );
@@ -586,7 +586,7 @@ describe('VisitRow · the element is the host’s to say', () => {
 
   it('makes a client’s row a read row when its host asks, the sentence in its hidden line', async () => {
     const vm = visitRowOf(
-      GEORGI_VISITS.find((each) => each.id.value === 'appt-oct') ??
+      GEORGI_VISITS.find((each) => each.id === 'appt-oct') ??
         (GEORGI_VISITS[0] as (typeof GEORGI_VISITS)[number]),
       {
         perspective: 'client',
@@ -680,7 +680,7 @@ describe('VisitRow · the trailing edge', () => {
 
 describe('VisitRow · «Моите часове»', () => {
   function clientRow(id: string): VisitRowVm {
-    const visit = GEORGI_VISITS.find((each) => each.id.value === id);
+    const visit = GEORGI_VISITS.find((each) => each.id === id);
     if (visit === undefined) throw new Error(`no visit ${id}`);
     return visitRowOf(
       visit,
@@ -707,7 +707,7 @@ describe('VisitRow · «Моите часове»', () => {
     expect(row?.classList.contains('ui-list-row')).toBe(true);
     expect(row?.hasAttribute('data-interactive')).toBe(true);
     expect(row?.getAttribute('data-appointment-id')).toBe('appt-oct');
-    expect(row?.getAttribute('data-status')).toBe('pending');
+    expect(row?.getAttribute('data-status')).toBe('PENDING');
     expect(row?.getAttribute('aria-label')).toBe(vm.accessibleName);
     expect(q('lib-visit-row')?.getAttribute('role')).toBe('listitem');
 
@@ -754,7 +754,7 @@ describe('VisitRow · «Моите часове»', () => {
   it('strikes a cancelled visit on the client’s own list too, in the full ink', async () => {
     const { q } = await mount(clientRow('appt-jul-cancelled'), 'client');
     const row = q('[data-testid="appointment-row"]');
-    expect(row?.getAttribute('data-status')).toBe('cancelled');
+    expect(row?.getAttribute('data-status')).toBe('CANCELLED');
     expect(row?.hasAttribute('data-receded')).toBe(false);
     expect(q('lib-staff-event-head')?.hasAttribute('data-struck')).toBe(true);
   });

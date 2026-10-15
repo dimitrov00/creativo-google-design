@@ -81,18 +81,21 @@ import {
   defect,
 } from '@core/primitives';
 import {
+  type AccountSeat,
   BarberPreference,
   BookingContact as BookingContactData,
+  BookingLifecycle,
   CancellationReasonSet,
   type Money as MoneyData,
   Seat as SeatData,
   SeatLabel as SeatLabelData,
   SeatOccupant,
   type SeatOutcome as SeatOutcomeData,
+  SeatSubject,
   StoodSeatPairs,
   SubjectRelationship,
 } from '@core/components';
-import { type Appointment as AppointmentData } from '@core/entities';
+import { type AccountAppointment } from '@core/entities';
 import {
   AppointmentIndexSystem,
   AppointmentLifecycleSystem,
@@ -217,11 +220,16 @@ function soldPastMidnight(seat: Seat, startMinutes: MinuteOfDay): boolean {
   return !sold.ok || !EndMinute.after(startMinutes, sold.value).ok;
 }
 
-/** The legacy seat as the flat struct, at its start on the visit's wall clock. */
-function toSeatData(seat: Seat, startMinutes: MinuteOfDay): SeatData {
+/**
+ * The legacy seat as the flat struct the ACCOUNT rules read (`AccountSeat`),
+ * at its start on the visit's wall clock. An account subject is its uid
+ * alone: the client record a stored seat names (D29) is nothing a legacy
+ * seat can know, and no system this shim calls reads it.
+ */
+function toSeatData(seat: Seat, startMinutes: MinuteOfDay): AccountSeat {
   const subject = seat.subject;
   const catalog = seat.catalogTerms;
-  return SeatData.compose(
+  return SeatData.composeAccount(
     {
       seatId: SeatIdData.of(seat.id.value),
       serviceId: ServiceIdData.of(seat.serviceId.value),
@@ -248,10 +256,12 @@ function toSeatData(seat: Seat, startMinutes: MinuteOfDay): SeatData {
           : sure(DurationMinutes.of(catalog.durationMinutes), 'a duration'),
     },
     subject.kind === 'account'
-      ? SeatOccupant.account(
-          UserIdData.of(subject.userId.value),
-          LEGACY_SUBJECT_RELATIONSHIP[subject.relationship],
-        )
+      ? {
+          seatSubject: SeatSubject.Account,
+          subjectUserId: UserIdData.of(subject.userId.value),
+          subjectRelationship:
+            LEGACY_SUBJECT_RELATIONSHIP[subject.relationship],
+        }
       : SeatOccupant.anonymous(SeatLabelData.of(subject.label.value)),
     toEcsSeatOutcome(seat.outcome),
   );
@@ -268,7 +278,7 @@ type SeatsOnTheClock = {
   readonly zone: TimeZone;
   readonly localDate: LocalDate;
   readonly utcEpochMs: UtcEpochMs;
-  readonly seats: readonly SeatData[];
+  readonly seats: readonly AccountSeat[];
 };
 
 /**
@@ -316,7 +326,7 @@ function readClock(seats: readonly Seat[]): ClockReading {
   }
   const utcEpochMs = instantOf(earliest);
   const localDate = ZonedTimeSystem.toLocal(utcEpochMs, zone).localDate;
-  const data: SeatData[] = [];
+  const data: AccountSeat[] = [];
   let pastMidnightSeatId: string | null = null;
   for (const seat of seats) {
     const start = startOnTheDay(seat, zone, localDate);
@@ -361,19 +371,21 @@ function clockOf(appointment: Appointment): SeatsOnTheClock | null {
 }
 
 /**
- * The ECS entity the systems read. Only what they compute on is carried:
- * the query mirrors are not (no system here reads them), and the contact
- * stays on the legacy class. Exported as the ONE legacy aggregate → entity
- * converter for the shims that hand a stored visit to a system (the client
- * stats projection's early exit); the commit's `placement` is not on the
- * aggregate, so a caller that has the document supplies it. Phase 4 deletes
- * it with the class.
+ * The ECS entity as the ACCOUNT rules read it (`AccountAppointment`, D29):
+ * only what the systems here compute on is carried — the query mirrors are
+ * not (no system here reads them), the client records a stored visit names
+ * cannot be known from a legacy aggregate (no placeholder, no uid→customer
+ * cast), and the contact stays on the legacy class. Exported as the ONE
+ * legacy aggregate → entity converter for the shims that hand a stored
+ * visit to a system; the commit's `placement` is not on the aggregate, so a
+ * caller that has the document supplies it. Phase 4 deletes it with the
+ * class.
  */
-export function toEcsAppointment(appointment: Appointment): AppointmentData {
+export function toEcsAppointment(appointment: Appointment): AccountAppointment {
   return toEntity(appointment);
 }
 
-function toEntity(appointment: Appointment): AppointmentData {
+function toEntity(appointment: Appointment): AccountAppointment {
   const clock = clockOf(appointment);
   // Unreachable: `validateSeats` refuses a party with no seat at build.
   if (clock === null)
@@ -612,14 +624,14 @@ export class Appointment {
    * is already completed or cancelled is not a fact, it is a mis-tap.
    */
   markArrived(at: ZonedDateTime): Result<Appointment, AppointmentError[]> {
-    const step = AppointmentLifecycleSystem.markArrived(
-      toEntity(this),
-      instantOf(at),
-    );
-    if (!step.ok) {
+    // `AppointmentLifecycleSystem.markArrived`'s gate on the slice it reads —
+    // a live lifecycle (`BookingLifecycle.isLive`), the first stamp standing.
+    // The step's audit facts name the visit's client records (D29), which a
+    // legacy aggregate cannot know, so the shim asks the gate, not the step.
+    if (!BookingLifecycle.isLive(toEcsLifecycle(this.status))) {
       return fail([new AppointmentNotArrivableError(this.status.kind)]);
     }
-    if (step.value.auditFacts.length === 0) return ok(this);
+    if (this.arrivedAt !== null) return ok(this);
     return ok(
       new Appointment(
         this.id,
@@ -645,11 +657,12 @@ export class Appointment {
    * because the undo that calls this may outlive a second tap.
    */
   clearArrival(): Result<Appointment, AppointmentError[]> {
-    const step = AppointmentLifecycleSystem.clearArrival(toEntity(this));
-    if (!step.ok) {
+    // `AppointmentLifecycleSystem.clearArrival`'s gate on the slice it reads
+    // (see `markArrived`): a live lifecycle; nothing stamped is a no-op.
+    if (!BookingLifecycle.isLive(toEcsLifecycle(this.status))) {
       return fail([new AppointmentNotArrivableError(this.status.kind)]);
     }
-    if (step.value.auditFacts.length === 0) return ok(this);
+    if (this.arrivedAt === null) return ok(this);
     return ok(
       new Appointment(
         this.id,
@@ -898,7 +911,7 @@ export class Appointment {
   barberIds(): readonly BarberId[] {
     // The mirror reads no day table for its barbers; the busy keys it
     // would also name are not this question.
-    const { barberIds } = AppointmentIndexSystem.queryKeys(toEntity(this));
+    const { barberIds } = AppointmentIndexSystem.accountKeys(toEntity(this));
     return barberIds.map(
       (id) =>
         (this.seats.find((seat) => seat.barberId.value === id) as Seat)

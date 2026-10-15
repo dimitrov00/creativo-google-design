@@ -325,7 +325,9 @@ describe('edge — the wire table', () => {
       // (the inline throws with literal details, and every mapper case) —
       // so a broken scan can never pass by finding nothing. Each 3b flip
       // deletes handlers and lowers this floor in the same commit.
-      expect(sites.length).toBeGreaterThanOrEqual(80);
+      // 18 sites after flip 1, 2026-10-11: the OTP trio and the streak
+      // publish are all that still throw their own HttpsErrors.
+      expect(sites.length).toBeGreaterThanOrEqual(18);
       for (const site of sites) {
         const rule = RULE_BY_WIRE_CODE.get(site.code);
         expect(rule, site.at).toBeDefined();
@@ -344,7 +346,9 @@ describe('edge — the wire table', () => {
     it('maps every use-case error class code; one no mapper names keeps its mapper’s `default:` internal', () => {
       const named = new Set(todaysThrowSites().map((site) => site.code));
       const classes = todaysErrorClassCodes();
-      expect(classes.length).toBeGreaterThan(50);
+      // 33 classes after flip 1, 2026-10-11 (was > 50): the OTP trio's
+      // and the streak publish's error files are the survivors.
+      expect(classes.length).toBeGreaterThanOrEqual(33);
       // `toHttpsError` in lib/otp/request-otp.ts answers the aggregate by
       // `instanceof`, before its switch.
       const outsideASwitch = new Map<string, string>([

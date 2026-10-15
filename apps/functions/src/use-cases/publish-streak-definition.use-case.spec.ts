@@ -14,6 +14,15 @@ import {
   streakDefinitionToDocument,
 } from '@creativo/application/engagement';
 import type { ClockPort } from '@creativo/application/shared';
+import {
+  Actor as AuditActor,
+  AuditAction,
+  StreakRuleDirection,
+  StreakRuleParameter,
+  StreakTransition as AuditTransition,
+} from '@core/components';
+import { UserId as AccountId } from '@core/primitives';
+import { localDate, utcMs } from '@core/testing';
 import { FixedClock } from '../test-support/fixed-clock';
 import {
   type PublishStreakDefinitionFailure,
@@ -32,8 +41,6 @@ import {
   type PublishStreakDefinitionInput,
   PublishStreakDefinitionUseCase,
   RULE_CHANGE_NOTICE_DAYS,
-  STREAK_DEFINITION_PUBLISHED,
-  STREAK_DEFINITION_WITHDRAWN,
   type StreakDefinitionCaller,
   type StreakDefinitionDecision,
   type StreakDefinitionIntent,
@@ -329,24 +336,27 @@ describe('PublishStreakDefinitionUseCase — publish', () => {
     const input = publishOf({ graceDays: 10, riskLeadDays: 3 }, NEXT_WEEK);
     await useCase.execute(input);
 
+    // The flat row's own words (F1-8): the owner as ADMIN, the instant
+    // read once off the clock, the facts in codes.
     expect(store.written[0]?.audit).toEqual({
-      actor: OWNER.actor,
-      action: 'loyalty.streak_definition_published',
+      actor: AuditActor.admin(AccountId.of('dev-staff-ivan')),
       resourceId: 'streakDefinitions/cadence',
-      atIso: NOW,
+      atUtcMs: utcMs(NOW),
       context: {
-        from: '1',
-        to: '2',
-        effectiveFrom: NEXT_WEEK,
-        transition: 'grandfather',
-        direction: 'looser',
-        changed: 'graceDays,riskLeadDays',
+        auditAction: AuditAction.LoyaltyStreakDefinitionPublished,
+        streakFromVersion: 1,
+        streakToVersion: 2,
+        streakEffectiveFrom: localDate(NEXT_WEEK),
+        streakTransition: AuditTransition.Grandfather,
+        streakRuleDirection: StreakRuleDirection.Looser,
+        streakChanged: [
+          StreakRuleParameter.GraceDays,
+          StreakRuleParameter.RiskLeadDays,
+        ],
+        streakReplacedVersion: null,
       },
       changeKey: input.requestId,
     });
-    expect(STREAK_DEFINITION_PUBLISHED).toBe(
-      'loyalty.streak_definition_published',
-    );
     expect(streakDefinitionResourceId(CADENCE)).toBe(
       'streakDefinitions/cadence',
     );
@@ -379,9 +389,9 @@ describe('PublishStreakDefinitionUseCase — publish', () => {
     expect(decision?.head.scheduled?.definition.version).toBe(3);
     // Compared with the rule IN FORCE, never with the one that waited.
     expect(decision?.audit.context).toMatchObject({
-      from: '1',
-      to: '3',
-      replaced: '2',
+      streakFromVersion: 1,
+      streakToVersion: 3,
+      streakReplacedVersion: 2,
     });
   });
 
@@ -402,7 +412,7 @@ describe('PublishStreakDefinitionUseCase — publish', () => {
     expect(decision?.head.scheduled?.definition.graceDays).toBe(14);
     // It is in force: nothing waited, nothing is called off.
     expect(decision?.calledOff).toEqual([]);
-    expect(decision?.audit.context['from']).toBe('2');
+    expect(decision?.audit.context.streakFromVersion).toBe(2);
   });
 
   it('publishes a shop’s first rule on nothing: base 0, version 1, in force whatever its day', async () => {
@@ -423,7 +433,10 @@ describe('PublishStreakDefinitionUseCase — publish', () => {
     // The name is the recommended rule's: a draft carries none.
     expect(decision?.head.current.name.bg).toBe('Посещения в ритъм');
     expect(decision?.version?.changed).toEqual([]);
-    expect(decision?.audit.context).toMatchObject({ from: '0', to: '1' });
+    expect(decision?.audit.context).toMatchObject({
+      streakFromVersion: 0,
+      streakToVersion: 1,
+    });
   });
 
   it('opens no rule but the business’s one: another id names nothing', async () => {
@@ -767,21 +780,18 @@ describe('PublishStreakDefinitionUseCase — withdraw', () => {
     expect(decision?.version).toBeNull();
     expect(decision?.calledOff).toEqual([2]);
     expect(decision?.audit).toEqual({
-      actor: OWNER.actor,
-      action: 'loyalty.streak_definition_withdrawn',
+      actor: AuditActor.admin(AccountId.of('dev-staff-ivan')),
       resourceId: 'streakDefinitions/cadence',
-      atIso: NOW,
+      atUtcMs: utcMs(NOW),
       context: {
-        from: '2',
-        to: '1',
-        effectiveFrom: NEXT_WEEK,
-        transition: 'grandfather',
+        auditAction: AuditAction.LoyaltyStreakDefinitionWithdrawn,
+        streakFromVersion: 2,
+        streakToVersion: 1,
+        streakEffectiveFrom: localDate(NEXT_WEEK),
+        streakTransition: AuditTransition.Grandfather,
       },
       changeKey: input.requestId,
     });
-    expect(STREAK_DEFINITION_WITHDRAWN).toBe(
-      'loyalty.streak_definition_withdrawn',
-    );
   });
 
   it('refuses what no longer waits: another version, nothing, a day that came, no rule', async () => {
@@ -884,7 +894,9 @@ describe('PublishStreakDefinitionUseCase — a retry, the clock, the store', () 
 
     expect(result.isSuccess()).toBe(true);
     expect(store.written[0]?.head.scheduled).toBeNull();
-    expect(store.written[0]?.audit.atIso).toBe('2026-09-28T22:30:00.000Z');
+    expect(store.written[0]?.audit.atUtcMs).toBe(
+      utcMs('2026-09-28T22:30:00.000Z'),
+    );
   });
 
   it('hands a store that could not write on as it is', async () => {

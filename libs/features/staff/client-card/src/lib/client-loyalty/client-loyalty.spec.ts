@@ -1,17 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Result } from '@creativo/application/booking';
+import type { CouponVoucherPorts } from '@core/ports';
 import {
-  type ClientVouchersReader,
-  type GiftVoucher,
-} from '@creativo/application/engagement';
-import {
-  InMemoryClientVouchersReader,
   InMemoryLoyaltyActivityReader,
   InMemoryLoyaltyCatalogReader,
   InMemoryLoyaltyReader,
 } from '@creativo/application/engagement/testing';
-import type { RepositoryError } from '@creativo/application/shared';
 import {
   GEORGI,
   GEORGI_GRANT,
@@ -25,6 +19,7 @@ import {
   must,
   pausedUntilOctober,
   subjectOf,
+  voucherPortsOf,
 } from '../../testing/client-card.fixtures';
 import {
   ALL_LOYALTY_FLAGS,
@@ -60,23 +55,20 @@ interface WalletMountOptions {
 }
 
 /** The seeded vouchers, answering only when the spec says so: the holdings on their way. */
-class HeldVouchersReader implements ClientVouchersReader {
-  private release: (() => void) | null = null;
-  private readonly gate = new Promise<void>((resolve) => {
-    this.release = resolve;
+function heldVouchers(): CouponVoucherPorts & { answer(): void } {
+  let release: (() => void) | null = null;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
   });
-  private readonly inner = InMemoryClientVouchersReader.seeded();
-
-  async listForHolder(
-    userId: string,
-  ): Promise<Result<readonly GiftVoucher[], RepositoryError>> {
-    await this.gate;
-    return this.inner.listForHolder(userId);
-  }
-
-  answer(): void {
-    this.release?.();
-  }
+  const inner = voucherPortsOf();
+  return {
+    ...inner,
+    listGiftVouchersForHolder: async (customerId) => {
+      await gate;
+      return inner.listGiftVouchersForHolder(customerId);
+    },
+    answer: () => release?.(),
+  };
 }
 
 /** Everything the page emits, in order. */
@@ -101,7 +93,7 @@ function holdingId(holding: WalletHoldingVm): string {
 
 async function mount(options: WalletMountOptions = {}) {
   const {
-    vouchers = InMemoryClientVouchersReader.seeded(),
+    vouchers = voucherPortsOf(),
     activity = InMemoryLoyaltyActivityReader.seeded(),
     ...rig
   } = options.rig ?? {};
@@ -709,7 +701,7 @@ describe('lib-client-loyalty — anchors', () => {
 
   it('waits for the holdings above before landing on the status, and for the status before the catalogue', async () => {
     stubScrollIntoView();
-    const vouchers = new HeldVouchersReader();
+    const vouchers = heldVouchers();
     const held = await mount({ anchor: 'status', rig: { vouchers } });
     const status = must(held.byId('rewards-status')?.querySelector('h3'));
     expect(held.byId('rewards-wallet-skeleton')).not.toBeNull();
@@ -787,7 +779,7 @@ describe('lib-client-loyalty — its states', () => {
   });
 
   it('failed vouchers · keeps «В портфейла» over one retry and the rest of the page whole, and reads them again', async () => {
-    const vouchers = InMemoryClientVouchersReader.seeded().failWith();
+    const vouchers = voucherPortsOf().failWith();
     const { byId, text, render, wallet } = await mount({ rig: { vouchers } });
     expect(text(byId('rewards-wallet')?.querySelector('h3'))).toBe(
       'В портфейла',

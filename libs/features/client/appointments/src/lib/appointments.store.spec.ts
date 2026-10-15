@@ -1,86 +1,102 @@
 import { TestBed } from '@angular/core/testing';
-import { EMPTY, Subject, of } from 'rxjs';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
-import { UserId, ZonedDateTime } from '@creativo/application/accounts';
+import { EMPTY, type Observable, Subject, of } from 'rxjs';
+import { CLOCK } from '@creativo/application/shared';
+import { ZonedDateTime } from '@creativo/application/accounts';
 import {
-  APPOINTMENT_REPOSITORY,
-  Appointment,
-  AppointmentId,
-  AppointmentRepository,
   BOOKING_GATEWAY,
-  BOOKING_POLICY_READER,
-  BookingPolicy,
   BookingGateway,
   BookingGatewayError,
-  Result,
-  Seat,
-  SeatId,
-  SeatSubject,
-  TimeSlot,
   fail,
   ok,
 } from '@creativo/application/booking';
-import { NOTIFICATION_READER } from '@creativo/application/notifications';
 import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
+  APPOINTMENT_READ_PORTS,
+  INBOX_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { AppointmentReadPorts } from '@core/ports';
+import type { Appointment } from '@core/entities';
+import {
+  BookingLifecycle,
+  CancellationReason,
+  CancellationReasonSet,
+  Seat,
+} from '@core/components';
+import {
+  AppointmentId,
+  BusyKey,
+  LocalDate,
+  RepositoryError,
+  Result,
+  UserId,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  FIXTURE_NOW_UTC_MS,
+  FIXTURE_TIME_ZONE,
+  appointmentFixture,
+  memoryAppointmentReadPorts,
+  memoryInboxPorts,
+  minute,
+  seatFixture,
+  unwrapOk,
+} from '@core/testing';
 import { AppointmentsStore } from './appointments.store';
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
+type AppointmentsResult = Result<readonly Appointment[], RepositoryError>;
+
+/** A confirmed one-seat visit at `HH:MM` (minutes from midnight) on the shop day `localDate`. */
+function appointmentAt(
+  id: string,
+  localDate: string,
+  startMinutes: number,
+  lifecycle?: BookingLifecycle,
+): Appointment {
+  const day = unwrapOk(LocalDate.parse(localDate));
+  const seat = seatFixture({ startMinutes: minute(startMinutes) });
+  return appointmentFixture({
+    id: AppointmentId.of(id),
+    localDate: day,
+    startMinutes: seat.startMinutes,
+    endMinutes: Seat.endMinutes(seat),
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(day, seat.startMinutes, FIXTURE_TIME_ZONE),
+    ),
+    seats: [seat],
+    busyKeys: [BusyKey.of(seat.barberId, day)],
+    ...(lifecycle ? { lifecycle } : {}),
+  });
 }
 
-function appointmentAt(id: string, startIso: string): Appointment {
-  const start = unwrap(ZonedDateTime.fromISO(startIso, 'Europe/Sofia'));
-  const timeSlot = unwrap(
-    TimeSlot.create({
-      startIso,
-      endIso: start.plusMinutes(30).toISO(),
-      zone: 'Europe/Sofia',
-    }),
-  );
-  const seat = Seat.of({
-    id: unwrap(SeatId.create('seat_1')),
-    subject: SeatSubject.account(unwrap(UserId.create('user_1')), 'self'),
-    serviceId: unwrap(ServiceId.create('service_1')),
-    variantId: null,
-    barberId: unwrap(BarberId.create('barber_1')),
-    terms: unwrap(ServiceTerms.fromMinorUnits(1500, 'EUR', 30)),
-    startsAt: timeSlot.start,
-  });
-  return unwrap(
-    Appointment.reconstitute({
-      id,
-      locationId: 'location_1',
-      seats: [seat],
-      status: { kind: 'confirmed' },
-    }),
-  );
+/**
+ * The appointment reads this store opens: the double, with the two members
+ * a spec scripts (a held, failing or counted listener) wrapped; the rest
+ * answer an empty book.
+ */
+function appointmentReads(
+  reads: Partial<
+    Pick<AppointmentReadPorts, 'observeUpcoming' | 'observeHistory'>
+  >,
+): AppointmentReadPorts {
+  return {
+    ...memoryAppointmentReadPorts([]),
+    observeUpcoming: reads.observeUpcoming ?? (() => EMPTY),
+    observeHistory: reads.observeHistory ?? (() => EMPTY),
+  };
 }
 
 function configure(
-  repository: AppointmentRepository,
+  reads: AppointmentReadPorts,
   gateway: Partial<BookingGateway> = {},
 ): AppointmentsStore {
   TestBed.configureTestingModule({
     providers: [
       AppointmentsStore,
+      // The shell menu's notifications row reads the inbox.
+      { provide: INBOX_PORTS, useValue: memoryInboxPorts(new Map()) },
+      { provide: APPOINTMENT_READ_PORTS, useValue: reads },
       {
-        // The shell menu's notifications row reads the inbox.
-        provide: NOTIFICATION_READER,
-        useValue: {
-          list: () => of(ok([])),
-          markRead: async () => ok(undefined),
-          markAllRead: async () => ok(undefined),
-        },
-      },
-      { provide: APPOINTMENT_REPOSITORY, useValue: repository },
-      {
-        // Cancellation goes through the CALLABLE gateway, never the
-        // repository — the repository's save() refuses on the client.
+        // Cancellation goes through the CALLABLE gateway, never a write
+        // port — the web never writes an appointment.
         provide: BOOKING_GATEWAY,
         useValue: {
           commit: async () => {
@@ -91,12 +107,11 @@ function configure(
         },
       },
       {
-        provide: BOOKING_POLICY_READER,
-        useValue: { observe: () => of(BookingPolicy.default()) },
-      },
-      {
         provide: CLOCK,
-        useValue: { now: (zone: string) => ZonedDateTime.now(zone) },
+        useValue: {
+          now: (zone: string) =>
+            ZonedDateTime.fromMillis(FIXTURE_NOW_UTC_MS, zone),
+        },
       },
     ],
   });
@@ -105,72 +120,59 @@ function configure(
 
 describe('AppointmentsStore', () => {
   it('starts loading, then reflects the repository stream once a userId is set', () => {
-    const upcoming$ = new Subject<
-      Result<readonly Appointment[], RepositoryError>
-    >();
-    const store = configure({
-      findById: async () => ok(null),
-      save: async () => ok(undefined),
-      observeUpcomingFor: () => upcoming$.asObservable(),
-      // Staff-side readers the port grew; this store only watches upcoming.
-      observeHistoryFor: () => EMPTY,
-      observeBarberDay: () => EMPTY,
-      searchWindow: async () => ok([]),
-    });
+    const upcoming$ = new Subject<AppointmentsResult>();
+    const store = configure(
+      // Staff-side readers the bundle carries; this store only watches upcoming.
+      appointmentReads({ observeUpcoming: () => upcoming$.asObservable() }),
+    );
 
     expect(store.upcoming().kind).toBe('loading');
 
-    store.setUserId(unwrap(UserId.create('user_1')));
+    store.setUserId(UserId.of('user_1'));
     TestBed.tick();
     expect(store.upcoming().kind).toBe('loading');
 
-    upcoming$.next(ok([appointmentAt('appt_1', '2030-06-01T10:00:00')]));
+    upcoming$.next(Result.ok([appointmentAt('appt_1', '2030-06-01', 600)]));
     TestBed.tick();
     expect(store.upcoming().kind).toBe('ready');
     expect(store.appointments()).toHaveLength(1);
   });
 
   it('surfaces a repository failure as the error state', () => {
-    const store = configure({
-      findById: async () => ok(null),
-      save: async () => ok(undefined),
-      observeUpcomingFor: () => of(fail(new RepositoryError('boom'))),
-      observeHistoryFor: () => EMPTY,
-      observeBarberDay: () => EMPTY,
-      searchWindow: async () => ok([]),
-    });
+    const store = configure(
+      appointmentReads({
+        observeUpcoming: () =>
+          of(Result.err(RepositoryError.readFailed('appointments', 'boom'))),
+      }),
+    );
 
-    store.setUserId(unwrap(UserId.create('user_1')));
+    store.setUserId(UserId.of('user_1'));
     TestBed.tick();
     expect(store.upcoming().kind).toBe('error');
   });
 
   it('retry() opens both reads afresh, and loads until the new listener answers', () => {
-    const upcomingReads: Subject<
-      Result<readonly Appointment[], RepositoryError>
-    >[] = [];
+    const upcomingReads: Subject<AppointmentsResult>[] = [];
     let historyReads = 0;
-    const store = configure({
-      findById: async () => ok(null),
-      save: async () => ok(undefined),
-      observeUpcomingFor: () => {
-        const read = new Subject<
-          Result<readonly Appointment[], RepositoryError>
-        >();
-        upcomingReads.push(read);
-        return read.asObservable();
-      },
-      observeHistoryFor: () => {
-        historyReads += 1;
-        return of(ok([]));
-      },
-      observeBarberDay: () => EMPTY,
-      searchWindow: async () => ok([]),
-    });
+    const store = configure(
+      appointmentReads({
+        observeUpcoming: () => {
+          const read = new Subject<AppointmentsResult>();
+          upcomingReads.push(read);
+          return read.asObservable();
+        },
+        observeHistory: (): Observable<AppointmentsResult> => {
+          historyReads += 1;
+          return of(Result.ok([]));
+        },
+      }),
+    );
 
-    store.setUserId(unwrap(UserId.create('user_1')));
+    store.setUserId(UserId.of('user_1'));
     TestBed.tick();
-    upcomingReads[0]?.next(fail(new RepositoryError('denied')));
+    upcomingReads[0]?.next(
+      Result.err(RepositoryError.readFailed('appointments', 'denied')),
+    );
     TestBed.tick();
     expect(store.upcoming().kind).toBe('error');
 
@@ -184,22 +186,50 @@ describe('AppointmentsStore', () => {
     expect(store.upcoming().kind).toBe('loading');
 
     upcomingReads[1]?.next(
-      ok([appointmentAt('appt_1', '2030-06-01T10:00:00')]),
+      Result.ok([appointmentAt('appt_1', '2030-06-01', 600)]),
     );
     TestBed.tick();
     expect(store.upcoming().kind).toBe('ready');
     expect(store.appointments()).toHaveLength(1);
   });
 
+  it('files a visit under history once it has begun or settled, never while it is still ahead', () => {
+    const store = configure(
+      appointmentReads({
+        observeHistory: () =>
+          of(
+            Result.ok([
+              // Ahead and open: the upcoming list's, not the history's.
+              appointmentAt('ahead', '2030-06-01', 600),
+              // Ahead, but already cancelled: settled is history.
+              appointmentAt(
+                'called-off',
+                '2030-06-02',
+                600,
+                BookingLifecycle.cancel(
+                  FIXTURE_NOW_UTC_MS,
+                  CancellationReasonSet.of([CancellationReason.Unspecified]),
+                ),
+              ),
+              // Begun (the pinned now is 2026-09-28 09:00 at the shop).
+              appointmentAt('begun', '2026-09-28', 540),
+            ]),
+          ),
+      }),
+    );
+
+    store.setUserId(UserId.of('user_1'));
+    TestBed.tick();
+    expect(store.history().map((appointment) => appointment.id)).toEqual([
+      'called-off',
+      'begun',
+    ]);
+  });
+
   it('nextMonth()/previousMonth() move the focused month forward/back from today', () => {
-    const store = configure({
-      findById: async () => ok(null),
-      save: async () => ok(undefined),
-      observeUpcomingFor: () => of(ok([])),
-      observeHistoryFor: () => EMPTY,
-      observeBarberDay: () => EMPTY,
-      searchWindow: async () => ok([]),
-    });
+    const store = configure(
+      appointmentReads({ observeUpcoming: () => of(Result.ok([])) }),
+    );
 
     const startMonth = store.focusedMonth().month;
     store.nextMonth();
@@ -215,14 +245,7 @@ describe('AppointmentsStore', () => {
   it('cancel() sends the id and reason through the gateway and reports success', async () => {
     const cancelled: { appointmentId: string; reason: string }[] = [];
     const store = configure(
-      {
-        findById: async () => ok(null),
-        save: async () => ok(undefined),
-        observeUpcomingFor: () => of(ok([])),
-        observeHistoryFor: () => EMPTY,
-        observeBarberDay: () => EMPTY,
-        searchWindow: async () => ok([]),
-      },
+      appointmentReads({ observeUpcoming: () => of(Result.ok([])) }),
       {
         cancel: async (request) => {
           cancelled.push(request);
@@ -232,7 +255,7 @@ describe('AppointmentsStore', () => {
     );
 
     const outcome = await store.cancel(
-      unwrap(AppointmentId.create('appt_1')),
+      AppointmentId.of('appt_1'),
       'client requested',
     );
 
@@ -245,24 +268,14 @@ describe('AppointmentsStore', () => {
 
   it('cancel() surfaces a translated-ready DomainError on failure', async () => {
     const store = configure(
-      {
-        findById: async () => ok(null),
-        save: async () => ok(undefined),
-        observeUpcomingFor: () => of(ok([])),
-        observeHistoryFor: () => EMPTY,
-        observeBarberDay: () => EMPTY,
-        searchWindow: async () => ok([]),
-      },
+      appointmentReads({ observeUpcoming: () => of(Result.ok([])) }),
       {
         cancel: async () =>
           fail(new BookingGatewayError('invalid_request', 'no such booking')),
       },
     );
 
-    const outcome = await store.cancel(
-      unwrap(AppointmentId.create('missing')),
-      'reason',
-    );
+    const outcome = await store.cancel(AppointmentId.of('missing'), 'reason');
 
     expect(outcome).toBe(false);
     expect(store.cancelError()?.code).toBe('booking.gateway.failed');

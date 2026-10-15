@@ -15,13 +15,13 @@ import {
   ZonedDateTime,
 } from '@creativo/application/accounts';
 import {
-  APPOINTMENT_REPOSITORY,
-  Appointment,
-} from '@creativo/application/booking';
-import {
-  NOTIFICATION_READER,
-  Notification,
-} from '@creativo/application/notifications';
+  APPOINTMENT_READ_PORTS,
+  INBOX_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { AppointmentReadPorts, InboxPorts } from '@core/ports';
+import type { Appointment, InboxNotification } from '@core/entities';
+import { Result as EcsResult } from '@core/primitives';
+import { memoryAppointmentReadPorts, memoryInboxPorts } from '@core/testing';
 import {
   ANONYMOUS_PRINCIPAL,
   AUTH_GATEWAY,
@@ -164,39 +164,40 @@ describe('SiteMenuComponent', () => {
           },
         },
         {
-          provide: APPOINTMENT_REPOSITORY,
+          provide: APPOINTMENT_READ_PORTS,
           useValue: {
+            ...memoryAppointmentReadPorts([]),
             // The row only reads `.length`, so bare placeholders are
-            // honest here — building real aggregates would test the
-            // fixture, not the badge.
-            observeUpcomingFor: () =>
+            // honest here — building real entities would test the
+            // fixture, not the badge. The one member wrapped.
+            observeUpcoming: () =>
               of(
-                ok(
+                EcsResult.ok(
                   Array.from(
                     { length: inputs.upcoming ?? 0 },
                     () => ({}) as Appointment,
                   ),
                 ),
               ),
-          },
+          } satisfies AppointmentReadPorts,
         },
         {
-          provide: NOTIFICATION_READER,
+          provide: INBOX_PORTS,
           useValue: {
-            // The badge counts UNREAD, so the placeholders have to answer
-            // `isUnread()` — that is the only thing `unreadCount` asks.
-            list: () =>
+            ...memoryInboxPorts(new Map()),
+            // The badge counts UNREAD, so the placeholders carry no read
+            // stamp — `readAtUtcMs === null` is the only thing
+            // `NotificationSystem.unreadCount` asks. The one member wrapped.
+            observeInbox: () =>
               of(
-                ok(
+                EcsResult.ok(
                   Array.from(
                     { length: inputs.unread ?? 0 },
-                    () => ({ isUnread: () => true }) as Notification,
+                    () => ({ readAtUtcMs: null }) as InboxNotification,
                   ),
                 ),
               ),
-            markRead: async () => ok(undefined),
-            markAllRead: async () => ok(undefined),
-          },
+          } satisfies InboxPorts,
         },
       ],
     }).compileComponents();

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
-import type { Firestore } from 'firebase-admin/firestore';
+import { type Firestore, Timestamp } from 'firebase-admin/firestore';
 import { RepositoryError, Result } from '@core/primitives';
 import { WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
@@ -174,20 +174,20 @@ describe('firestore-tx adapter (emulator)', () => {
     expect(await body('barberBusy/k')).toBeUndefined();
   });
 
-  it('reads a query as data — a dotted field, `in`, ordering and a limit', async () => {
+  it('reads a query as data — a root key, `in`, ordering and a limit', async () => {
     await Promise.all([
       db
         .doc('appointments/a1')
-        .set({ status: { kind: 'pending' }, startMs: 3 }),
+        .set({ bookingStatus: 'PENDING', utcEpochMs: 3 }),
       db
         .doc('appointments/a2')
-        .set({ status: { kind: 'confirmed' }, startMs: 1 }),
+        .set({ bookingStatus: 'CONFIRMED', utcEpochMs: 1 }),
       db
         .doc('appointments/a3')
-        .set({ status: { kind: 'cancelled' }, startMs: 2 }),
+        .set({ bookingStatus: 'CANCELLED', utcEpochMs: 2 }),
       db
         .doc('appointments/a5')
-        .set({ status: { kind: 'pending' }, startMs: 9 }),
+        .set({ bookingStatus: 'PENDING', utcEpochMs: 9 }),
     ]);
     const result = await firestoreCommitPlan(db)(
       (tx) =>
@@ -195,17 +195,41 @@ describe('firestore-tx adapter (emulator)', () => {
           collection: ['appointments'],
           where: [
             {
-              field: 'status.kind',
+              field: 'bookingStatus',
               op: QueryOp.In,
-              value: ['pending', 'confirmed'],
+              value: ['PENDING', 'CONFIRMED'],
             },
           ],
-          orderBy: [{ field: 'startMs', descending: true }],
+          orderBy: [{ field: 'utcEpochMs', descending: true }],
           limit: 2,
         }),
       (rows) => Result.ok({ ids: rows.map((row) => row.id), writes: [] }),
     );
     expect(result).toEqual({ ok: true, value: { ids: ['a5', 'a1'] } });
+  });
+
+  it('stamps the TTL purgeAt as a real Timestamp on a TTL group’s Set, and nothing elsewhere (F1-7)', async () => {
+    const result = await firestoreCommitPlan(db)(
+      async () => null,
+      () =>
+        Result.ok({
+          writes: [
+            WriteOp.set(['barberBusy', 'b_ivan__2026-10-07'], {
+              barberId: 'b_ivan',
+              localDate: '2026-10-07',
+              blocks: [],
+            }),
+            WriteOp.set(['appointments', 'a9'], { localDate: '2026-10-07' }),
+          ],
+        }),
+    );
+    expect(result.ok).toBe(true);
+    const busy = await body('barberBusy/b_ivan__2026-10-07');
+    expect(busy?.['purgeAt']).toBeInstanceOf(Timestamp);
+    expect((busy?.['purgeAt'] as Timestamp).toMillis()).toBe(
+      Date.UTC(2026, 9, 7) + 30 * 86_400_000,
+    );
+    expect(await body('appointments/a9')).toEqual({ localDate: '2026-10-07' });
   });
 
   it('re-runs read → decide on contention, so two racing increments both land', async () => {

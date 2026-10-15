@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { ClientStatsRecord } from '@creativo/application/booking';
+import type { ClientStatsRecord } from '@core/entities';
 import { historyFacts, historyRows } from './history.presenter';
 import {
   GEORGI,
+  GEORGI_CUSTOMER_ID,
   GEORGI_MONEY,
   MARTIN,
   NBSP_EURO,
@@ -19,11 +20,14 @@ const GEORGI_BOOK = georgiHistory();
 const GEORGI_STATS = statsOf(GEORGI, GEORGI_BOOK);
 const MARTIN_STATS = statsOf(MARTIN, martinHistory());
 
+/** The record with some lifetime counts changed (the flat `lifetime*` fields, Law 6). */
 function withLifetime(
   stats: ClientStatsRecord,
-  lifetime: Partial<ClientStatsRecord['lifetime']>,
+  lifetime: Partial<
+    Pick<ClientStatsRecord, 'lifetimeClientCancels' | 'lifetimeNoShows'>
+  >,
 ): ClientStatsRecord {
-  return { ...stats, lifetime: { ...stats.lifetime, ...lifetime } };
+  return { ...stats, ...lifetime };
 }
 
 describe('the footnote', () => {
@@ -45,7 +49,7 @@ describe('the footnote', () => {
     );
     expect(
       historyFacts(
-        withLifetime(GEORGI_STATS, { clientCancels: 1 }),
+        withLifetime(GEORGI_STATS, { lifetimeClientCancels: 1 }),
         null,
         WORDS,
       ).note,
@@ -54,7 +58,11 @@ describe('the footnote', () => {
 
   it('says nothing about a record with a no-show, and «Първо посещение» before the first visit', () => {
     expect(
-      historyFacts(withLifetime(GEORGI_STATS, { noShows: 1 }), null, WORDS),
+      historyFacts(
+        withLifetime(GEORGI_STATS, { lifetimeNoShows: 1 }),
+        null,
+        WORDS,
+      ),
     ).toEqual({ note: null, spend: null });
     expect(historyFacts(null, null, WORDS).note).toBe('Първо посещение');
   });
@@ -65,6 +73,7 @@ describe('the rows and the year sections', () => {
     const rows = historyRows({
       appointments: [...GEORGI_BOOK, ...GEORGI_BOOK.slice(0, 3)],
       subjectUserId: GEORGI,
+      subjectCustomerId: GEORGI_CUSTOMER_ID,
       currentAppointmentId: 'appt-dev-1',
       nowMs: NOW_MS,
       photoCounts: new Map(),

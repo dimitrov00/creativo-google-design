@@ -84,3 +84,12 @@ export type CatalogPorts = {
   readonly observeLocations: ObserveLocations;
   readonly loadCatalog: LoadCatalog;
 };
+
+/** The catalogue's four live streams — the bundle the web's `CATALOG_PORTS` token binds. */
+export type CatalogReadPorts = Pick<
+  CatalogPorts,
+  | 'observeServices'
+  | 'observeBarbers'
+  | 'observeCategories'
+  | 'observeLocations'
+>;

@@ -1,10 +1,5 @@
-import type {
-  MediaError,
-  Result,
-  AppointmentId,
-  AppointmentPhotoId,
-  UserId,
-} from '@core/primitives';
+import type { MediaError, Result, UserId } from '@core/primitives';
+import type { AppointmentPhoto } from '@core/entities';
 
 /**
  * The web's Cloud Storage ports (blueprint §4.2): avatars, catalogue media
@@ -54,13 +49,16 @@ export type ResolveMedia = (
 ) => Promise<Result<readonly MediaVariant[], MediaError>>;
 
 /**
- * Upload a visit photo's bytes to `appointmentPhotos/{appointmentId}/{photoId}`
- * in Storage; the document (`SaveAppointmentPhoto`, `notes-photos.port.ts`)
- * is written after, naming the answered path and URL.
+ * Upload a visit photo's bytes. The photo arrives as its own facts, every
+ * field of the document but the two Storage answers (`path`, `url`): the
+ * adapter derives today's object path `appointmentPhotos/{appointmentId}/{id}`
+ * and the object's custom metadata from those facts (no argument it could
+ * mis-order), and answers the stored path and download URL. The document
+ * (`SaveAppointmentPhoto`, `notes-photos.port.ts`) is written after, the
+ * facts plus that answer.
  */
 export type UploadPhotoBytes = (
-  appointmentId: AppointmentId,
-  photoId: AppointmentPhotoId,
+  photo: Omit<AppointmentPhoto, 'path' | 'url'>,
   image: Blob,
 ) => Promise<Result<StoredFile, MediaError>>;
 

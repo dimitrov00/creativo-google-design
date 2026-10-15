@@ -1,4 +1,6 @@
 import {
+  type AccountOccupant,
+  type ChairGeometry,
   type Placement,
   Seat,
   type SeatOccupant,
@@ -9,6 +11,7 @@ import type { Appointment } from '@core/entities';
 import {
   BusyKey,
   type BarberId,
+  type CustomerId,
   type UserId,
   type LocalDate,
   type EndMinute,
@@ -16,22 +19,35 @@ import {
 } from '@core/primitives';
 
 /**
- * The QUERY MIRRORS of an appointment (`appointment-document.ts:94-106`):
+ * The ACCOUNT mirrors of an appointment (`appointment-document.ts:94-106`):
  * flat keys beside the seats so the indexed queries find the visit — "my
- * appointments" (`ownerUserId`), a client's whole history (`subjectUserIds`,
- * R33 — `UserId` until the appointment flip (1) adds `subjectCustomerIds`,
- * D29), a barber's book (`barberIds`) and the busy rebuild's reverse index
- * (`busyKeys`). The SEATS are the truth; a corrupt mirror can change which
- * queries find a visit, never what it says.
+ * appointments" (`ownerUserId`), the accounts on it (`subjectUserIds`, kept
+ * beside the client records, D29), a barber's book (`barberIds`) and the
+ * busy rebuild's reverse index (`busyKeys`). The SEATS are the truth; a
+ * corrupt mirror can change which queries find a visit, never what it says.
  */
-export type AppointmentQueryKeys = {
+export type AppointmentAccountKeys = {
   readonly ownerUserId: UserId | null;
   readonly subjectUserIds: readonly UserId[];
   readonly barberIds: readonly BarberId[];
   readonly busyKeys: readonly BusyKey[];
 };
 
-/** What the mirrors read of a seat — whose it is and whose chair. */
+/**
+ * Every query mirror — the account keys and, beside them, the CLIENT-RECORD
+ * keys (D29, F1-4): the `SELF` seat's record (`ownerCustomerId`) and every
+ * record on the visit (`subjectCustomerIds` — a client's whole history, R33,
+ * index #19, and the stats projection's read set).
+ */
+export type AppointmentQueryKeys = AppointmentAccountKeys & {
+  readonly ownerCustomerId: CustomerId | null;
+  readonly subjectCustomerIds: readonly CustomerId[];
+};
+
+/** What the account mirrors read of a seat — whose account it is and whose chair. */
+export type AccountIndexedSeat = Pick<Seat, 'barberId'> & AccountOccupant;
+
+/** What every mirror reads of a seat — whose account and record it is, and whose chair. */
 export type IndexedSeat = Pick<Seat, 'barberId'> & SeatOccupant;
 
 /**
@@ -43,7 +59,13 @@ export type AppointmentEnvelope = {
   readonly endMinutes: EndMinute;
 };
 
-/** What the mirrors read of an appointment — its shop day and its seats. */
+/** What the account mirrors read of an appointment — its shop day and its seats. */
+export type AccountIndexedAppointment = {
+  readonly localDate: LocalDate;
+  readonly seats: readonly AccountIndexedSeat[];
+};
+
+/** What every mirror reads of an appointment — its shop day and its seats. */
 export type IndexedAppointment = {
   readonly localDate: LocalDate;
   readonly seats: readonly IndexedSeat[];
@@ -55,14 +77,14 @@ function compareStrings(a: string, b: string): number {
 
 /** Earliest sold start and latest sold end of the seats, or `null` for none. */
 function spanOf(
-  seats: readonly Seat[],
+  seats: readonly ChairGeometry[],
 ): { readonly start: MinuteOfDay; readonly end: EndMinute } | null {
   const first = seats[0];
   if (first === undefined) return null;
   let start: MinuteOfDay = first.startMinutes;
   let end: EndMinute = Seat.endMinutes(first);
   for (let i = 1; i < seats.length; i++) {
-    const seat = seats[i] as Seat;
+    const seat = seats[i] as ChairGeometry;
     if (seat.startMinutes < start) start = seat.startMinutes;
     const seatEnd = Seat.endMinutes(seat);
     if (seatEnd > end) end = seatEnd;
@@ -79,26 +101,26 @@ function spanOf(
  */
 export const AppointmentIndexSystem = {
   /**
-   * The four mirrors:
+   * The four ACCOUNT mirrors — what a reader that knows no client record
+   * (a legacy shim, flatten L7) can derive:
    *
    * - `ownerUserId` — the first `SELF` seat's account (the booker); `null`
    *   for a walk-in the shop entered itself;
    * - `subjectUserIds` — every ACCOUNT on the visit, distinct, sorted (the
-   *   `busyKeys` precedent: one array mirror, one `array-contains` index);
-   *   guests have no account and no history to find;
+   *   `busyKeys` precedent: one array mirror); guests have no account;
    * - `barberIds` — distinct, in seat order;
    * - `busyKeys` — `BusyKey.of(barber, the appointment's shop day)` per
    *   seat, distinct, sorted: two seats with one barber are one projection
    *   document.
    */
-  queryKeys(appointment: IndexedAppointment): AppointmentQueryKeys {
+  accountKeys(appointment: AccountIndexedAppointment): AppointmentAccountKeys {
     let ownerUserId: UserId | null = null;
     const subjects: UserId[] = [];
     const barberIds: BarberId[] = [];
     const busyKeys: BusyKey[] = [];
     const seats = appointment.seats;
     for (let i = 0; i < seats.length; i++) {
-      const seat = seats[i] as IndexedSeat;
+      const seat = seats[i] as AccountIndexedSeat;
       if (seat.seatSubject === SeatSubject.Account) {
         if (
           ownerUserId === null &&
@@ -120,13 +142,47 @@ export const AppointmentIndexSystem = {
   },
 
   /**
+   * Every mirror: the {@link accountKeys} and, derived beside them from the
+   * same seats (D29, F1-4),
+   *
+   * - `ownerCustomerId` — the first `SELF` seat's client record; `null`
+   *   exactly when `ownerUserId` is;
+   * - `subjectCustomerIds` — every client record on the visit, distinct,
+   *   sorted (one `array-contains` index, #19); guests have none.
+   */
+  queryKeys(appointment: IndexedAppointment): AppointmentQueryKeys {
+    let ownerCustomerId: CustomerId | null = null;
+    const customers: CustomerId[] = [];
+    const seats = appointment.seats;
+    for (let i = 0; i < seats.length; i++) {
+      const seat = seats[i] as IndexedSeat;
+      if (seat.seatSubject !== SeatSubject.Account) continue;
+      if (
+        ownerCustomerId === null &&
+        seat.subjectRelationship === SubjectRelationship.Self
+      ) {
+        ownerCustomerId = seat.subjectCustomerId;
+      }
+      if (!customers.includes(seat.subjectCustomerId)) {
+        customers.push(seat.subjectCustomerId);
+      }
+    }
+    customers.sort(compareStrings);
+    return {
+      ...AppointmentIndexSystem.accountKeys(appointment),
+      ownerCustomerId,
+      subjectCustomerIds: customers,
+    };
+  },
+
+  /**
    * The envelope mirror — earliest sold start to latest sold end on the
    * shop day's wall clock; `null` for a visit with no seats (which no write
    * plan may produce).
    */
-  envelope(
-    appointment: Pick<Appointment, 'seats'>,
-  ): AppointmentEnvelope | null {
+  envelope(appointment: {
+    readonly seats: readonly ChairGeometry[];
+  }): AppointmentEnvelope | null {
     const span = spanOf(appointment.seats);
     return span === null
       ? null
@@ -149,6 +205,8 @@ export const AppointmentIndexSystem = {
       ...appointment,
       ownerUserId: keys.ownerUserId,
       subjectUserIds: keys.subjectUserIds,
+      ownerCustomerId: keys.ownerCustomerId,
+      subjectCustomerIds: keys.subjectCustomerIds,
       barberIds: keys.barberIds,
       busyKeys: keys.busyKeys,
       startMinutes: span === null ? appointment.startMinutes : span.start,

@@ -35,6 +35,7 @@ import {
   utcMs,
   appointmentFixture,
   seatFixture,
+  customerOf,
 } from '@core/testing';
 import {
   AppointmentLifecycleSystem,
@@ -350,13 +351,21 @@ function storedParty(
     seatId: SeatId.of('s1'),
     barberId: BarberId.of('ivan'),
     startMinutes: minute(600),
-    occupant: SeatOccupant.account(ANA, SubjectRelationship.Self),
+    occupant: SeatOccupant.account(
+      ANA,
+      customerOf(ANA),
+      SubjectRelationship.Self,
+    ),
   });
   const s2 = seatFixture({
     seatId: SeatId.of('s2'),
     barberId: BarberId.of('niko'),
     startMinutes: minute(600),
-    occupant: SeatOccupant.account(BOB, SubjectRelationship.Companion),
+    occupant: SeatOccupant.account(
+      BOB,
+      customerOf(BOB),
+      SubjectRelationship.Companion,
+    ),
     outcome: second,
   });
   return appointmentFixture({

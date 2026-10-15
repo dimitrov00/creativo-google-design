@@ -482,9 +482,25 @@ export function loyaltyCatalogDriftOf(writes, stored) {
 
 // ── Reading the book ───────────────────────────────────────────────────────
 
+/** `AttendanceState` / `SeatSubject` / `CancelledBy` / `Placement` tags, as the flat seat stores them. */
+const WORKED = 'WORKED';
+const CANCELLED = 'CANCELLED';
+const ACCOUNT = 'ACCOUNT';
+const BY_CLIENT = 'CLIENT';
+const SELF_PLACED = 'SELF';
+
 const isOwnSeat = (seat, uid) =>
-  seat.subject?.kind === 'account' && seat.subject.userId === uid;
+  seat.seatSubject === ACCOUNT && seat.subjectUserId === uid;
 const distinct = (values) => [...new Set(values)];
+
+/**
+ * The instant a seat of a stored visit starts: the visit's one instant plus
+ * the seat's wall-clock distance from the visit's start
+ * (`TimeCoordinate.seatStartUtcMs`, T9 — exact: no visit straddles a DST
+ * switch, the shop is closed then).
+ */
+const seatStartMs = (doc, seat) =>
+  doc.utcEpochMs + (seat.startMinutes - doc.startMinutes) * MINUTE_MS;
 
 /**
  * Every visit `uid` was worked on, oldest first: an appointment with a
@@ -503,39 +519,34 @@ export function workedVisitsOf(uid, appointments) {
     if (seen.has(id)) continue;
     seen.add(id);
     const worked = doc.seats.filter(
-      (seat) => isOwnSeat(seat, uid) && seat.outcome.kind === 'worked',
+      (seat) => isOwnSeat(seat, uid) && seat.attendanceState === WORKED,
     );
     if (worked.length === 0) continue;
-    if (
-      (doc.discounts ?? []).length > 0 ||
-      (doc.voucherRedemptions ?? []).length > 0
-    ) {
+    if (doc.discounts.length > 0 || doc.voucherRedemptions.length > 0) {
       throw new Error(`seed: loyalty cannot price ${id}: it carries discounts`);
     }
-    const startMs = Math.min(
-      ...worked.map((seat) => Date.parse(seat.slot.startIso)),
-    );
+    const startMs = Math.min(...worked.map((seat) => seatStartMs(doc, seat)));
     const last = worked.reduce((a, b) =>
-      b.outcome.atMs > a.outcome.atMs ? b : a,
+      b.workedAtUtcMs > a.workedAtUtcMs ? b : a,
     );
     const wall = sofiaWallOf(startMs);
-    const arrivedMs = doc.arrivedAt ? Date.parse(doc.arrivedAt.iso) : null;
+    const arrivedMs = doc.arrivedAtUtcMs;
     visits.push({
       appointmentId: id,
       locationId: doc.locationId,
       startMs,
-      doneMs: last.outcome.atMs,
-      lastSeatId: last.id,
+      doneMs: last.workedAtUtcMs,
+      lastSeatId: last.seatId,
       day: wall.day,
       startMinute: wall.minute,
       seats: worked.map((seat) => {
-        if (seat.terms.currencyCode !== 'EUR') {
-          throw new Error(`seed: ${id}/${seat.id} is not sold in EUR`);
+        if (seat.currency !== 'EUR') {
+          throw new Error(`seed: ${id}/${seat.seatId} is not sold in EUR`);
         }
         return {
-          seatId: seat.id,
-          priceMinor: seat.terms.priceMinorUnits,
-          workedAtMs: seat.outcome.atMs,
+          seatId: seat.seatId,
+          priceMinor: seat.priceCents,
+          workedAtMs: seat.workedAtUtcMs,
         };
       }),
       serviceIds: distinct(worked.map((seat) => seat.serviceId)),
@@ -556,38 +567,38 @@ function selfBookingsOf(uid, appointments) {
     .filter(
       ({ doc }) =>
         doc.ownerUserId === uid &&
-        doc.placement === 'self' &&
-        doc.bookedAt != null,
+        doc.placement === SELF_PLACED &&
+        doc.bookedAtUtcMs !== null,
     )
     .map(({ id, doc }) => ({
       appointmentId: id,
-      atMs: Date.parse(doc.bookedAt.iso),
+      atMs: doc.bookedAtUtcMs,
     }));
 }
 
 /** When `uid` first put anything in the book, or `null`. */
 function firstBookingMsOf(uid, appointments) {
   const booked = appointments
-    .filter(({ doc }) => doc.ownerUserId === uid && doc.bookedAt != null)
-    .map(({ doc }) => Date.parse(doc.bookedAt.iso));
+    .filter(({ doc }) => doc.ownerUserId === uid && doc.bookedAtUtcMs !== null)
+    .map(({ doc }) => doc.bookedAtUtcMs);
   return booked.length === 0 ? null : Math.min(...booked);
 }
 
 /**
- * The streak excuse a called-off visit carries, as `clientCaused` reads
- * its decisive cancellation: the shop's own reasons, or the staff calling it
- * off with none. `null` for the client's, and for a converted no-show, which
- * nobody is held to.
+ * The streak excuse a called-off seat carries, as `clientCaused` reads its
+ * decisive cancellation: the shop's own reasons, or the staff calling it
+ * off with none. `null` for the client's, and for a converted no-show,
+ * which nobody is held to.
  */
-function excuseOf(cancellation) {
-  switch (cancellation.reason.kind) {
-    case 'staff_barber_absence':
+function excuseOf(seat) {
+  switch (seat.cancellationReason) {
+    case 'STAFF_BARBER_ABSENCE':
       return 'barberAbsence';
-    case 'staff_shop_closure':
+    case 'STAFF_SHOP_CLOSURE':
       return 'shopClosure';
-    case 'unspecified':
-    case 'other':
-      return cancellation.by === 'client' ? null : 'staffCancelled';
+    case 'UNSPECIFIED':
+    case 'OTHER':
+      return seat.cancelledBy === BY_CLIENT ? null : 'staffCancelled';
     default:
       return null;
   }
@@ -607,15 +618,13 @@ function calledOffVisitsOf(uid, appointments) {
     seen.add(id);
     const own = doc.seats.filter((seat) => isOwnSeat(seat, uid));
     if (own.length === 0) continue;
-    if (!own.every((seat) => seat.outcome.kind === 'cancelled')) continue;
+    if (!own.every((seat) => seat.attendanceState === CANCELLED)) continue;
     const decisive = own.reduce((a, b) =>
-      b.outcome.atMs > a.outcome.atMs ? b : a,
+      b.cancelledAtUtcMs > a.cancelledAtUtcMs ? b : a,
     );
-    const reason = excuseOf(decisive.outcome);
+    const reason = excuseOf(decisive);
     if (reason === null) continue;
-    const startMs = Math.min(
-      ...own.map((seat) => Date.parse(seat.slot.startIso)),
-    );
+    const startMs = Math.min(...own.map((seat) => seatStartMs(doc, seat)));
     calledOff.push({ atMs: startMs, day: sofiaWallOf(startMs).day, reason });
   }
   return calledOff;
@@ -638,20 +647,16 @@ function bookingsOf(uid, appointments) {
     if (own.length === 0) continue;
     const released = own.every(
       (seat) =>
-        seat.outcome.kind === 'cancelled' && seat.outcome.by === 'client',
+        seat.attendanceState === CANCELLED && seat.cancelledBy === BY_CLIENT,
     );
     if (released) continue;
-    const startMs = Math.min(
-      ...own.map((seat) => Date.parse(seat.slot.startIso)),
-    );
+    const startMs = Math.min(...own.map((seat) => seatStartMs(doc, seat)));
     const day = sofiaWallOf(startMs).day;
     bookings.push({
       appointmentId: id,
       // A visit nobody booked ahead was placed as it began.
       placedOn:
-        doc.bookedAt == null
-          ? day
-          : sofiaWallOf(Date.parse(doc.bookedAt.iso)).day,
+        doc.bookedAtUtcMs === null ? day : sofiaWallOf(doc.bookedAtUtcMs).day,
       day,
     });
   }
@@ -1605,13 +1610,14 @@ export const redemptionGrantIdOf = (redemptionId) => `grant-${redemptionId}`;
  * chair freed on their next visit, or `null` while there has been none.
  */
 const usedAfter = (visits, index) =>
-  visits[index + 1] === undefined ? null : isoOf(visits[index + 1].doneMs);
+  visits[index + 1] === undefined ? null : visits[index + 1].doneMs;
 
 /**
  * The stamp card's coupons: one at every `PUNCH_CARD.size`-th worked visit
  * up to `today`, granted as that visit's chair freed — each with the id its
  * `reward` row names (`stampGrantIdOf`) and when it was used: on the visit
- * after, but for the newest a holder still holds (`usedAt: null`).
+ * after, but for the newest a holder still holds (`usedAtUtcMs: null`).
+ * Instants are epoch ms, as `couponGrantBody` stores them.
  */
 export function punchCardGrantsOf(uid, appointments, today, naming = null) {
   const visits = workedVisitsOf(uid, appointments).filter(
@@ -1628,8 +1634,8 @@ export function punchCardGrantsOf(uid, appointments, today, naming = null) {
         appointmentId: visit.appointmentId,
         grantId: stampGrantIdOf(uid, stamp, { naming, newest }),
         couponId: PUNCH_CARD.couponId,
-        grantedAt: isoOf(visit.doneMs),
-        usedAt: held ? null : usedAfter(visits, index),
+        grantedAtUtcMs: visit.doneMs,
+        usedAtUtcMs: held ? null : usedAfter(visits, index),
       },
     ];
   });
@@ -1660,8 +1666,8 @@ export function redemptionGrantsOf(
         redemptionId: redemption.id,
         grantId: redemptionGrantIdOf(redemption.id),
         couponId: reward.grants.couponId,
-        grantedAt: isoOf(visit.doneMs + 2 * MINUTE_MS),
-        usedAt: usedAfter(visits, index),
+        grantedAtUtcMs: visit.doneMs + 2 * MINUTE_MS,
+        usedAtUtcMs: usedAfter(visits, index),
       },
     ];
   });

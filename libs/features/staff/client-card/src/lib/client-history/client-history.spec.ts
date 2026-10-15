@@ -1,11 +1,6 @@
-import {
-  type ClientHistoryPage as HistoryPage,
-  type ClientHistoryReader,
-  type Result,
-  fail,
-} from '@creativo/application/booking';
-import { InMemoryClientHistoryReader } from '@creativo/application/booking/testing';
-import { RepositoryError } from '@creativo/application/shared';
+import type { AppointmentReadPorts } from '@core/ports';
+import { RepositoryError, Result } from '@core/primitives';
+import { memoryAppointmentReadPorts } from '@core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   GEORGI,
@@ -14,6 +9,7 @@ import {
   NBSP_EURO,
   georgiContext,
   georgiHistory,
+  historyPortsOf,
   martinContext,
   martinHistory,
   must,
@@ -38,33 +34,37 @@ import { ClientHistoryPage } from './client-history';
  * (`visits-page.presenter.spec.ts`).
  */
 
-/** The dev books, read in pages of ten; the second read can be made to fail. */
-class TenAtATime implements ClientHistoryReader {
-  private readonly inner = new InMemoryClientHistoryReader([
+/**
+ * The dev books, read in pages of ten (`APPOINTMENT_READ_PORTS` over the
+ * `@core/testing` double); the reads named in `failing` (1-based) answer
+ * an error.
+ */
+function tenAtATime(): AppointmentReadPorts & {
+  readonly failing: Set<number>;
+} {
+  const inner = memoryAppointmentReadPorts([
     ...georgiHistory(),
     ...martinHistory(),
   ]);
-  /** Which reads (1-based) answer an error. */
-  readonly failing = new Set<number>();
-  reads = 0;
-
-  async pageForSubject(
-    userId: string,
-    page: { readonly beforeIso: string | null; readonly limit: number },
-  ): Promise<Result<HistoryPage, RepositoryError>> {
-    this.reads += 1;
-    if (this.failing.has(this.reads)) {
-      return fail(new RepositoryError('The older visits are unavailable'));
-    }
-    return this.inner.pageForSubject(userId, { ...page, limit: 10 });
-  }
+  const failing = new Set<number>();
+  let reads = 0;
+  return {
+    ...inner,
+    failing,
+    pageClientHistory: async (subjectCustomerId, beforeUtcMs) => {
+      reads += 1;
+      if (failing.has(reads)) return Result.err(RepositoryError.unavailable());
+      return inner.pageClientHistory(subjectCustomerId, beforeUtcMs, 10);
+    },
+  };
 }
 
 /** A history that never answers: the first page's placeholders. */
-class Silent implements ClientHistoryReader {
-  pageForSubject(): Promise<Result<HistoryPage, RepositoryError>> {
-    return new Promise(() => undefined);
-  }
+function silent(): AppointmentReadPorts {
+  return {
+    ...memoryAppointmentReadPorts([]),
+    pageClientHistory: () => new Promise(() => undefined),
+  };
 }
 
 async function mount(options: Partial<MountOptions> = {}) {
@@ -317,8 +317,8 @@ describe('lib-client-history — the browser', () => {
   });
 
   it('shows no funnel when no choice would narrow the book — every visit worked, none ahead — and the pills stay', async () => {
-    const history = new InMemoryClientHistoryReader(
-      georgiHistory().filter((visit) => visit.id.value !== GEORGI_NEXT_ID),
+    const history = historyPortsOf(
+      georgiHistory().filter((visit) => visit.id !== GEORGI_NEXT_ID),
     );
     const { byId, rows, pills } = await mount({ rig: { history } });
     expect(rows()).toHaveLength(24);
@@ -332,7 +332,7 @@ describe('lib-client-history — the browser', () => {
 
 describe('lib-client-history — paging', () => {
   it('reads older visits a page at a time, then says where the history begins', async () => {
-    const history = new TenAtATime();
+    const history = tenAtATime();
     const { byId, text, click, rows } = await mount({ rig: { history } });
     expect(rows()).toHaveLength(10);
     const more = must(byId<HTMLButtonElement>('history-more'));
@@ -348,7 +348,7 @@ describe('lib-client-history — paging', () => {
   });
 
   it('offers the whole list back when a filter finds nothing: the pills go, the funnel stays, no list is closed', async () => {
-    const history = new TenAtATime();
+    const history = tenAtATime();
     const { byId, text, click, rows } = await mount({ rig: { history } });
     // Older pages remain, and a past outcome may be among them: offered.
     await click('history-filter');
@@ -390,7 +390,7 @@ describe('lib-client-history — paging', () => {
   });
 
   it('says so when an older page did not come, keeps the rows, and reads it again', async () => {
-    const history = new TenAtATime();
+    const history = tenAtATime();
     history.failing.add(2);
     const { byId, text, click, rows } = await mount({ rig: { history } });
     await click('history-more');
@@ -407,7 +407,7 @@ describe('lib-client-history — paging', () => {
   });
 
   it('offline · keeps the saved rows, says so, and offers no page it cannot read', async () => {
-    const history = new TenAtATime();
+    const history = tenAtATime();
     const { byId, render, rows } = await mount({ rig: { history } });
     window.dispatchEvent(new Event('offline'));
     await render();
@@ -427,7 +427,7 @@ describe('lib-client-history — paging', () => {
 describe('lib-client-history — its states', () => {
   it('loading · the line’s placeholder, three pill capsules and two groups of two rows; nothing to filter yet', async () => {
     const { byId, all, text } = await mount({
-      rig: { history: new Silent() },
+      rig: { history: silent() },
       settle: false,
     });
     expect(text(byId('history-title'))).toBe('Посещения');
@@ -449,7 +449,7 @@ describe('lib-client-history — its states', () => {
   });
 
   it('loading · says the record once it is known, while the list is still on its way', async () => {
-    const { byId, text } = await mount({ rig: { history: new Silent() } });
+    const { byId, text } = await mount({ rig: { history: silent() } });
     expect(byId('history-skeleton')).not.toBeNull();
     expect(byId('history-subline-skeleton')).toBeNull();
     expect(text(byId('history-count-visits'))).toBe('24');
@@ -467,9 +467,7 @@ describe('lib-client-history — its states', () => {
   });
 
   it('failed · the browser’s one notice and «Опитай пак», the record still said above it', async () => {
-    const history = new InMemoryClientHistoryReader([
-      ...georgiHistory(),
-    ]).failWith();
+    const history = historyPortsOf([...georgiHistory()]).failWith();
     const { byId, text, click, rows } = await mount({ rig: { history } });
     const notice = must(byId('history-error'));
     expect(notice.tagName).toBe('UI-NOTICE');

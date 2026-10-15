@@ -8,16 +8,18 @@ import {
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROFILE_PORT, ZonedDateTime } from '@creativo/application/accounts';
-import { CLIENT_STATS_READER } from '@creativo/application/booking';
 import {
-  CLIENT_VOUCHERS_READER,
+  CLIENT_STATS_READ_PORTS,
+  COUPON_VOUCHER_PORTS,
+  CUSTOMER_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import {
   LOYALTY_ACTIVITY_READER,
   LOYALTY_CATALOG_READER,
   LOYALTY_READER,
   type LoyaltyActivityReader,
 } from '@creativo/application/engagement';
 import {
-  InMemoryClientVouchersReader,
   InMemoryLoyaltyActivityReader,
   InMemoryLoyaltyCatalogReader,
   InMemoryLoyaltyReader,
@@ -26,10 +28,10 @@ import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import {
   GEORGI,
   InMemoryProfilePort,
-  InMemoryStatsReader,
   MARTIN,
   NOW_MS,
   catalogueOf,
+  customerPortsOf,
   georgiHistory,
   georgiOpenContext,
   georgiUser,
@@ -37,7 +39,9 @@ import {
   martinUser,
   must,
   statsOf,
+  statsPortsOf,
   subjectOf,
+  voucherPortsOf,
 } from '../../testing/client-card.fixtures';
 import { cssRule } from '../../testing/css-rule';
 import { ClientCardStore } from '../client-card.store';
@@ -109,24 +113,20 @@ async function mount(options: MountOptions = {}) {
           ]),
         ),
       },
+      { provide: CUSTOMER_PORTS, useValue: customerPortsOf() },
       {
-        provide: CLIENT_STATS_READER,
-        useValue: new InMemoryStatsReader(
-          new Map([
-            [GEORGI, statsOf(GEORGI, georgiHistory())],
-            [MARTIN, statsOf(MARTIN, martinHistory())],
-          ]),
-        ),
+        provide: CLIENT_STATS_READ_PORTS,
+        useValue: statsPortsOf([
+          statsOf(GEORGI, georgiHistory()),
+          statsOf(MARTIN, martinHistory()),
+        ]),
       },
       { provide: LOYALTY_READER, useValue: InMemoryLoyaltyReader.seeded() },
       {
         provide: LOYALTY_CATALOG_READER,
         useValue: new InMemoryLoyaltyCatalogReader(),
       },
-      {
-        provide: CLIENT_VOUCHERS_READER,
-        useValue: InMemoryClientVouchersReader.seeded(),
-      },
+      { provide: COUPON_VOUCHER_PORTS, useValue: voucherPortsOf() },
       { provide: LOYALTY_ACTIVITY_READER, useValue: activity },
     ],
     errorOnUnknownElements: true,

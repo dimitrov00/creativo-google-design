@@ -5,13 +5,13 @@ import { TestBed } from '@angular/core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { UiButton } from '@creativo/ui/controls';
 import {
-  InMemoryClientHistoryReader,
-  InMemoryClientPhotosReader,
-} from '@creativo/application/booking/testing';
+  memoryAppointmentPhotoPorts,
+  memoryAppointmentReadPorts,
+} from '@core/testing';
 import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import {
-  GEORGI_PHOTOS,
+  GEORGI_SHOTS,
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
@@ -136,8 +136,8 @@ let staffSections: readonly VisitSectionVm[];
 beforeAll(async () => {
   const rows = await georgiStaffRows(
     {
-      history: new InMemoryClientHistoryReader(GEORGI_VISITS),
-      photos: new InMemoryClientPhotosReader(GEORGI_PHOTOS),
+      history: memoryAppointmentReadPorts(GEORGI_VISITS),
+      photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
     },
     { words: visitWordsOf(BG, 'bg', 'staff'), nowMs: NOW_MS },
   );
@@ -509,8 +509,8 @@ describe('VisitList · the staff history as the client’s screen (inset grouped
   beforeAll(async () => {
     const rows = await georgiStaffRows(
       {
-        history: new InMemoryClientHistoryReader(GEORGI_VISITS),
-        photos: new InMemoryClientPhotosReader(GEORGI_PHOTOS),
+        history: memoryAppointmentReadPorts(GEORGI_VISITS),
+        photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
       },
       {
         words: visitWordsOf(BG, 'bg', 'staff'),

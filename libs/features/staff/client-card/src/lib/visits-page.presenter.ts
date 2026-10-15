@@ -1,4 +1,4 @@
-import type { ClientStatsRecord } from '@creativo/application/booking';
+import type { ClientStatsRecord } from '@core/entities';
 import {
   type VisitFilter,
   type VisitRowVm,
@@ -20,7 +20,6 @@ import {
   joined,
   quietRun,
   runsOf,
-  shopDayOf,
   unbroken,
 } from './client-card.format';
 import type {
@@ -67,7 +66,7 @@ const TEST_ID_PREFIX = 'history';
 export function visitsRows(input: HistoryRowsInput): readonly VisitRowVm[] {
   const seen = new Set<string>();
   return input.appointments.flatMap((appointment) => {
-    const id = appointment.id.value;
+    const id: string = appointment.id;
     if (seen.has(id)) return [];
     seen.add(id);
     return [
@@ -77,6 +76,7 @@ export function visitsRows(input: HistoryRowsInput): readonly VisitRowVm[] {
           perspective: 'staff',
           grain: 'month',
           subjectUserId: input.subjectUserId,
+          subjectCustomerId: input.subjectCustomerId,
           currentAppointmentId: input.currentAppointmentId,
           nowMs: input.nowMs,
           locale: input.words.lang,
@@ -160,7 +160,7 @@ function headOf(
   words: ClientCardWords,
 ): VisitsHead {
   const lang = words.lang;
-  const visits = stats?.lifetime.visitsCompleted ?? 0;
+  const visits = stats?.lifetimeVisitsCompleted ?? 0;
   const weeks =
     stats?.avgCadenceDays == null ? null : cadenceWeeks(stats.avgCadenceDays);
   const cells = historyCells(stats, words).filter(
@@ -337,8 +337,8 @@ export function visitsPageVm(input: VisitsPageInput): VisitsPageVm {
 
 /** What `visitsPaging` reads of the store's pages. */
 export interface VisitsPagingInput {
-  /** The next page's cursor; `null` once the last page is read. */
-  readonly cursor: string | null;
+  /** The next page's cursor (the start instant it reads before); `null` once the last page is read. */
+  readonly cursor: number | null;
   readonly more: 'idle' | 'loading' | 'failed';
   readonly online: boolean;
   readonly stats: ClientStatsRecord | null;
@@ -363,8 +363,8 @@ export function visitsPaging(input: VisitsPagingInput): HistoryPagingVm | null {
     };
   }
   const history = input.words.history;
-  const visits = input.stats?.lifetime.visitsCompleted ?? 0;
-  const first = input.stats?.firstVisitAtMs ?? null;
+  const visits = input.stats?.lifetimeVisitsCompleted ?? 0;
+  const first = input.stats?.firstVisitLocalDate ?? null;
   return {
     kind: 'end',
     endLabel:
@@ -372,6 +372,6 @@ export function visitsPaging(input: VisitsPagingInput): HistoryPagingVm | null {
         ? history.onlyThisVisit
         : first === null
           ? null
-          : history.first(dayWithYear(shopDayOf(first), input.words.lang)),
+          : history.first(dayWithYear(first, input.words.lang)),
   };
 }

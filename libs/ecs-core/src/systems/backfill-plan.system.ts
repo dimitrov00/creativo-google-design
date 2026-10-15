@@ -1,6 +1,6 @@
 import { AuditAction, Placement, BackfillJobName } from '@core/components';
 import type { BackfillJob } from '@core/entities';
-import type { UserId, UtcEpochMs } from '@core/primitives';
+import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * The pure half of the ops backfill (`apps/functions/src/lib/ops/
@@ -81,12 +81,20 @@ export type BackfillRequest = {
   readonly start: BackfillStartRequest;
 };
 
-/** A stored appointment's mirrors, as the backfill judges them. */
+/**
+ * A stored appointment's mirrors, as the backfill judges them — the account
+ * mirror and, beside it, the client-record mirror (D29, F1-4), each the
+ * stored list against the one its seats name.
+ */
 export type MirrorRow = {
-  /** The stored subject mirror; `null` when the row has none, or it is not a list. */
+  /** The stored account mirror; `null` when the row has none, or it is not a list. */
   readonly storedSubjectUserIds: readonly unknown[] | null;
-  /** The subjects the seats name — every account once, sorted (R33); `UserId` until flip (1). */
+  /** The accounts the seats name — every account once, sorted (R33). */
   readonly seatSubjectUserIds: readonly UserId[];
+  /** The stored client-record mirror; `null` when the row has none, or it is not a list. */
+  readonly storedSubjectCustomerIds: readonly unknown[] | null;
+  /** The client records the seats name — every record once, sorted (R33, D29). */
+  readonly seatSubjectCustomerIds: readonly CustomerId[];
   /** The COMMIT's own placement stamp. */
   readonly placement: Placement | null;
   /** The backfill's earlier inference. */
@@ -95,8 +103,10 @@ export type MirrorRow = {
 
 /** What a row's mirrors lack; a `null` field writes nothing. */
 export type MirrorPatch = {
-  /** The re-derived subject list, when the stored one disagrees with the seats — `UserId` until flip (1). */
+  /** The re-derived account list, when the stored one disagrees with the seats. */
   readonly subjectUserIds: readonly UserId[] | null;
+  /** The re-derived client-record list, when the stored one disagrees with the seats (D29). */
+  readonly subjectCustomerIds: readonly CustomerId[] | null;
   /** An inference to fill in — never the commit's own `placement`. */
   readonly inferredPlacement: Placement | null;
 };
@@ -152,7 +162,7 @@ function isJob(raw: unknown): raw is BackfillJobName {
 /** Two plain lists, the same by their JSON — what the stored mirror is compared by. */
 function sameList(
   stored: readonly unknown[] | null,
-  derived: readonly UserId[],
+  derived: readonly string[],
 ): boolean {
   return stored !== null && JSON.stringify(stored) === JSON.stringify(derived);
 }
@@ -168,7 +178,10 @@ export const BackfillPlanSystem = {
     return DOC_ID.test(raw);
   },
 
-  /** The wire cursor for a position: an appointment id as before, `~uid` after. */
+  /**
+   * The wire cursor for a position: an appointment id as before, `~customerId`
+   * after (a stored client record, D29).
+   */
   cursorOf(position: BackfillPosition): string | null {
     if (position.backfillPhase === BackfillPhase.Appointments) {
       return position.after;
@@ -252,7 +265,8 @@ export const BackfillPlanSystem = {
   /**
    * What a stored appointment's mirrors lack, or `null` when it lacks
    * nothing that can be filled — which is what makes a second run a no-op.
-   * The subject list is re-derived and replaced whenever it disagrees; an
+   * Each subject list (the accounts, the client records beside them — D29)
+   * is re-derived and replaced whenever it disagrees; an
    * inferred placement is only ever filled in, on a row with neither kind,
    * and only from evidence. The commit's `placement` is never written here.
    */
@@ -263,19 +277,27 @@ export const BackfillPlanSystem = {
     )
       ? null
       : row.seatSubjectUserIds;
+    const subjectCustomerIds = sameList(
+      row.storedSubjectCustomerIds,
+      row.seatSubjectCustomerIds,
+    )
+      ? null
+      : row.seatSubjectCustomerIds;
     const inferredPlacement =
       inferred !== null &&
       BackfillPlanSystem.lacksPlacement(row.placement, row.inferredPlacement)
         ? inferred
         : null;
-    return subjectUserIds === null && inferredPlacement === null
+    return subjectUserIds === null &&
+      subjectCustomerIds === null &&
+      inferredPlacement === null
       ? null
-      : { subjectUserIds, inferredPlacement };
+      : { subjectUserIds, subjectCustomerIds, inferredPlacement };
   },
 
   /**
-   * Could this row be missing a mirror? A subject list that disagrees with
-   * the seats, or no placement of either kind yet — whether the audit trail
+   * Could this row be missing a mirror? A subject list (either) that
+   * disagrees with the seats, or no placement of either kind yet — whether the audit trail
    * can supply one is the pipeline's to find out.
    */
   mayLackMirrors(row: MirrorRow): boolean {

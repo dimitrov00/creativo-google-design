@@ -12,16 +12,16 @@ import {
   vi,
 } from 'vitest';
 import {
-  InMemoryClientHistoryReader,
-  InMemoryClientPhotosReader,
-} from '@creativo/application/booking/testing';
+  memoryAppointmentPhotoPorts,
+  memoryAppointmentReadPorts,
+} from '@core/testing';
 import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { UiButton } from '@creativo/ui/controls';
 import { appCatalogue } from '../testing/app-catalogue';
 import { cssRule } from '../testing/css-rule';
 import {
-  GEORGI_PHOTOS,
+  GEORGI_SHOTS,
   GEORGI_UID,
   GEORGI_VISITS,
   VISITS_LOOKUP,
@@ -241,8 +241,8 @@ function clientSections(): readonly VisitSectionVm[] {
 beforeAll(async () => {
   const rows = await georgiStaffRows(
     {
-      history: new InMemoryClientHistoryReader(GEORGI_VISITS),
-      photos: new InMemoryClientPhotosReader(GEORGI_PHOTOS),
+      history: memoryAppointmentReadPorts(GEORGI_VISITS),
+      photos: memoryAppointmentPhotoPorts(GEORGI_SHOTS),
     },
     { words: visitWordsOf(BG, 'bg', 'staff'), nowMs: NOW_MS, grain: 'month' },
   );

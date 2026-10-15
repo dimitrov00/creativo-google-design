@@ -16,51 +16,85 @@ import {
   activePrincipal,
   roleFromPrimitive,
 } from '@creativo/application/identity';
+import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  UserId,
-} from '@creativo/application/accounts';
-import {
-  AVAILABILITY_READER,
-  Appointment,
-  type AvailabilityReader,
-  type BarberDayAvailability,
-  Interval,
-  TimeSlot,
-  paddedBusy,
-  fail,
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
-  BOOKING_POLICY_READER,
-  ZonedDateTime,
-  BookingPolicy,
-  Money,
-  Seat,
-  SeatId,
-  SeatSubject,
+  TimeSlot,
   WAITLIST_GATEWAY,
-  APPOINTMENT_REPOSITORY,
-  WAITLIST_READER,
+  ZonedDateTime,
   MAX_PARTY_SIZE,
-  ObserveDayAvailabilityUseCase,
   type Result,
   ok,
 } from '@creativo/application/booking';
-import { InMemoryAvailabilityReader } from '@creativo/application/booking/testing';
 import {
-  Barber,
   BarberId,
-  CATALOG_READER,
-  Location,
   LocationId,
   MEDIA_READER,
-  Service,
-  ServiceId,
-  ServiceTerms,
 } from '@creativo/application/catalog';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
+import { CLOCK } from '@creativo/application/shared';
 import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
+import {
+  APPOINTMENT_READ_PORTS,
+  CATALOG_PORTS,
+  SCHEDULING_READ_PORTS,
+  WAITLIST_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { CatalogReadPorts } from '@core/ports';
+import type {
+  Appointment,
+  Barber,
+  BarberBusyDay,
+  Service,
+  ShopLocation,
+} from '@core/entities';
+import {
+  BlockKind,
+  DayHours,
+  E164,
+  MinuteBlock,
+  Seat,
+  SeatOccupant,
+  SeatSubject,
+  ShiftSegment,
+  SubjectRelationship,
+} from '@core/components';
+import {
+  AppointmentId,
+  BarberBusyDayId,
+  BarberId as BarberKey,
+  BusyKey,
+  CustomerId,
+  LocalDate,
+  LocationId as LocationKey,
+  MinuteCount,
+  RepositoryError,
+  Result as EcsResult,
+  SeatId,
+  ServiceId,
+  ServiceVariantId,
+  UserId,
+  Weekday,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  FIXTURE_TIME_ZONE,
+  type SchedulingReadState,
+  appointmentFixture,
+  at,
+  barberFixture,
+  barberScheduleFixture,
+  locationFixture,
+  memoryAppointmentReadPorts,
+  memoryCatalogReadPorts,
+  memorySchedulingReadPorts,
+  memoryWaitlistReadPorts,
+  seatFixture,
+  serviceFixture,
+  termsFixture,
+  unwrapOk,
+  until,
+} from '@core/testing';
 import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from './client-booking';
 
@@ -99,6 +133,16 @@ function provideTestI18n(): EnvironmentProviders[] {
 }
 
 /**
+ * The day documents of `/book` the grid reads (`memorySchedulingReadPorts`)
+ * — none by default: no barber is rostered on any day, the policy is the
+ * default one, and no capacity month has ever been rebuilt (every day the
+ * projection answers is "full").
+ */
+type SchedulingDocs = Partial<
+  Pick<SchedulingReadState, 'schedules' | 'busyDays'>
+>;
+
+/**
  * The real `sessionStorage`-backed store, not a fake — the draft round-trip
  * IS one of the behaviours under test, and a fake would prove only that the
  * store calls a method.
@@ -130,12 +174,12 @@ async function renderShell(
         | readonly Barber[]
         | 'pending'
         | 'failed'
-        | Observable<Result<readonly Barber[], RepositoryError>>;
+        | Observable<EcsResult<readonly Barber[], RepositoryError>>;
       /** The same, for the shops: `'pending'` never answers, `'failed'` errs. */
-      readonly locations?: readonly Location[] | 'pending' | 'failed';
+      readonly locations?: readonly ShopLocation[] | 'pending' | 'failed';
     };
-    /** One day's geometry. No barbers on any day by default. */
-    readonly observeDay?: AvailabilityReader['observeDay'];
+    /** The day documents the grid reads. No barber rostered by default. */
+    readonly scheduling?: SchedulingDocs;
     /** The server's answer to a move. Never asked by default. */
     readonly reschedule?: () => Promise<
       Result<{ readonly appointmentId: string }, never>
@@ -143,6 +187,9 @@ async function renderShell(
   } = {},
 ): Promise<ComponentFixture<ClientBooking>> {
   const catalog = options.catalog ?? {};
+  const unavailable = EcsResult.err(RepositoryError.unavailable());
+  const barbersStream =
+    catalog.barbers instanceof Observable ? catalog.barbers : null;
   await TestBed.configureTestingModule({
     imports: [ClientBooking],
     providers: [
@@ -170,28 +217,22 @@ async function renderShell(
             (() => Promise.reject(new Error('not used in this spec'))),
         },
       },
+      {
+        // `?repeat=` / `?reschedule=` read the visit they land; the shell
+        // injects the reads whether or not a spec exercises that path.
+        provide: APPOINTMENT_READ_PORTS,
+        useValue: memoryAppointmentReadPorts(
+          options.visit ? [options.visit] : [],
+        ),
+      },
+      {
+        // The deep-link read — never consulted without a ?waitlist param.
+        provide: WAITLIST_READ_PORTS,
+        useValue: memoryWaitlistReadPorts([]),
+      },
       // Same posture for the waitlist: these specs never reach the schedule
       // step's flexible fork, so a double that fails loudly if called is the
       // honest stand-in.
-      {
-        // `?repeat=` reads the visit it is repeating; the shell injects the
-        // repository whether or not a spec exercises that path.
-        provide: APPOINTMENT_REPOSITORY,
-        useValue: {
-          findById: async () => ok(options.visit ?? null),
-          save: async () => ok(undefined),
-          observeUpcomingFor: () => of(ok([])),
-          observeHistoryFor: () => of(ok([])),
-        },
-      },
-      {
-        // The deep-link reader — never consulted without a ?waitlist param.
-        provide: WAITLIST_READER,
-        useValue: {
-          observeMine: () => of(ok([])),
-          findMine: async () => ok(null),
-        },
-      },
       {
         provide: WAITLIST_GATEWAY,
         useValue: {
@@ -200,17 +241,11 @@ async function renderShell(
         },
       },
       {
-        provide: BOOKING_POLICY_READER,
-        useValue: { observe: () => of(BookingPolicy.default()) },
-      },
-      {
-        // A landed move opens on the schedule step, which reads the grid.
-        // Empty is enough: these specs are about the shell, not the grid.
-        provide: AVAILABILITY_READER,
-        useValue: {
-          observeDay: options.observeDay ?? (() => of(ok([]))),
-          observeRangeCapacity: () => of(ok(new Map<string, number>())),
-        },
+        // A landed move opens on the schedule step, which reads the grid's
+        // raw day documents. None by default: these specs are about the
+        // shell, not the grid.
+        provide: SCHEDULING_READ_PORTS,
+        useValue: memorySchedulingReadPorts(options.scheduling),
       },
       {
         provide: AUTH_GATEWAY,
@@ -242,31 +277,29 @@ async function renderShell(
         // The services step reads the live catalog. These specs are about
         // the shell and the party step, so an EMPTY catalog is the honest
         // stub — the services step's own behaviour has its own spec.
-        provide: CATALOG_READER,
+        // The double, with the one member a spec fails or holds wrapped.
+        provide: CATALOG_PORTS,
         useValue: {
-          listActiveServices: () => of(ok(catalog.services ?? [])),
-          listActiveBarbers: () => {
-            const barbers = catalog.barbers;
-            if (barbers === 'pending') return NEVER;
-            if (barbers === 'failed') {
-              return of(fail(new RepositoryError('unavailable')));
-            }
-            if (barbers instanceof Observable) return barbers;
-            return of(ok(barbers ?? []));
-          },
-          listServiceCategories: () => of(ok([])),
-          listActiveLocations: () => {
-            const locations = catalog.locations;
-            if (locations === 'pending') return NEVER;
-            if (locations === 'failed') {
-              return of(fail(new RepositoryError('unavailable')));
-            }
-            return of(ok(locations ?? []));
-          },
-          findServiceById: () => Promise.resolve(ok(null)),
-          findBarberById: () => Promise.resolve(ok(null)),
-          findLocationById: () => Promise.resolve(ok(null)),
-        },
+          ...memoryCatalogReadPorts({
+            services: catalog.services ?? [],
+            barbers: Array.isArray(catalog.barbers) ? catalog.barbers : [],
+            locations: Array.isArray(catalog.locations)
+              ? catalog.locations
+              : [],
+          }),
+          ...(catalog.barbers === 'pending'
+            ? { observeBarbers: () => NEVER }
+            : catalog.barbers === 'failed'
+              ? { observeBarbers: () => of(unavailable) }
+              : barbersStream !== null
+                ? { observeBarbers: () => barbersStream }
+                : {}),
+          ...(catalog.locations === 'pending'
+            ? { observeLocations: () => NEVER }
+            : catalog.locations === 'failed'
+              ? { observeLocations: () => of(unavailable) }
+              : {}),
+        } satisfies CatalogReadPorts,
       },
       {
         provide: MEDIA_READER,
@@ -361,41 +394,77 @@ function unwrap<T, E>(result: Result<T, E>): T {
   return result.value;
 }
 
-/** A past visit of `client-1`'s: one fade with Ivan. */
-function pastVisit(id: string): Appointment {
-  const at = (hour: number) =>
-    unwrap(
-      ZonedDateTime.fromParts(
-        { year: 2026, month: 7, day: 20, hour, minute: 0 },
-        'Europe/Sofia',
-      ),
-    );
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        Seat.of({
-          id: SeatId.generate(),
-          subject: SeatSubject.account(
-            unwrap(UserId.create('client-1')),
-            'self',
-          ),
-          serviceId: unwrap(ServiceId.create('svc-fade')),
-          variantId: null,
-          barberId: unwrap(BarberId.create('ivan')),
-          terms: unwrap(
-            ServiceTerms.create(
-              unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR')),
-              45,
-            ),
-          ),
-          startsAt: at(10),
-        }),
-      ],
-      now: at(8),
+/** An account seat's occupant — the uid and the client record beside it (D29). */
+function account(uid: string, relationship: SubjectRelationship): SeatOccupant {
+  return SeatOccupant.account(
+    UserId.of(uid),
+    CustomerId.of(`cus_${uid}`),
+    relationship,
+  );
+}
+
+/** One seat of a fixture visit: who, with whom, on what, and when. */
+interface VisitSeat {
+  readonly occupant: SeatOccupant;
+  readonly barberId: string;
+  /** Minutes from the shop's midnight. */
+  readonly startMinutes: number;
+  readonly serviceId?: string;
+}
+
+/**
+ * A visit of `client-1`'s at the Center on the shop day `localDate`, as
+ * stored: every seat a 45-minute fade sold at 28,00 €, the envelope and its
+ * instant derived from the seats (the shop's zone placing it once).
+ */
+function visitOf(
+  id: string,
+  localDate: string,
+  seats: readonly VisitSeat[],
+): Appointment {
+  const day = unwrapOk(LocalDate.parse(localDate));
+  const stored = seats.map((seat, index) =>
+    seatFixture({
+      seatId: SeatId.of(`${id}-seat-${index + 1}`),
+      serviceId: ServiceId.of(seat.serviceId ?? 'svc-fade'),
+      barberId: BarberKey.of(seat.barberId),
+      startMinutes: at(0, seat.startMinutes),
+      terms: Seat.termsOf(termsFixture(2800, 45), termsFixture(2800, 45)),
+      occupant: seat.occupant,
     }),
   );
+  const starts = stored.map((seat) => seat.startMinutes);
+  const start = at(0, Math.min(...starts));
+  const barberIds = [...new Set(stored.map((seat) => seat.barberId))];
+  return appointmentFixture({
+    id: AppointmentId.of(id),
+    locationId: LocationKey.of('loc-center'),
+    ownerUserId: UserId.of('client-1'),
+    subjectUserIds: stored.flatMap((seat) =>
+      seat.seatSubject === SeatSubject.Account ? [seat.subjectUserId] : [],
+    ),
+    barberIds,
+    busyKeys: barberIds.map((barberId) => BusyKey.of(barberId, day)),
+    seats: stored,
+    localDate: day,
+    startMinutes: start,
+    endMinutes: until(
+      0,
+      Math.max(...stored.map((seat) => Seat.endMinutes(seat))),
+    ),
+    utcEpochMs: unwrapOk(ZonedTimeSystem.toUtc(day, start, FIXTURE_TIME_ZONE)),
+  });
+}
+
+/** A past visit of `client-1`'s: one fade with Ivan. */
+function pastVisit(id: string): Appointment {
+  return visitOf(id, '2026-07-20', [
+    {
+      occupant: account('client-1', SubjectRelationship.Self),
+      barberId: 'ivan',
+      startMinutes: 10 * 60,
+    },
+  ]);
 }
 
 /**
@@ -403,39 +472,13 @@ function pastVisit(id: string): Appointment {
  * removed the father's own seat. Only the shop can move it.
  */
 function sonOnlyVisit(id: string): Appointment {
-  const at = (hour: number) =>
-    unwrap(
-      ZonedDateTime.fromParts(
-        { year: 2026, month: 8, day: 20, hour, minute: 0 },
-        'Europe/Sofia',
-      ),
-    );
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        Seat.of({
-          id: SeatId.generate(),
-          subject: SeatSubject.account(
-            unwrap(UserId.create('client-son')),
-            'companion',
-          ),
-          serviceId: unwrap(ServiceId.create('svc-fade')),
-          variantId: null,
-          barberId: unwrap(BarberId.create('petar')),
-          terms: unwrap(
-            ServiceTerms.create(
-              unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR')),
-              45,
-            ),
-          ),
-          startsAt: at(10),
-        }),
-      ],
-      now: at(8),
-    }),
-  );
+  return visitOf(id, '2026-08-20', [
+    {
+      occupant: account('client-son', SubjectRelationship.Companion),
+      barberId: 'petar',
+      startMinutes: 10 * 60,
+    },
+  ]);
 }
 
 /**
@@ -456,62 +499,24 @@ function fatherAndSonVisit(
     readonly barberId: string;
   }[] = [],
 ): Appointment {
-  const at = (hour: number, minute = 0) =>
-    unwrap(
-      ZonedDateTime.fromParts(
-        { year: 2026, month: 8, day: 20, hour, minute },
-        'Europe/Sofia',
-      ),
-    );
-  const seat = (
-    subject: SeatSubject,
-    barberId: string,
-    startsAt: ZonedDateTime = at(10),
-    serviceId = 'svc-fade',
-  ) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject,
-      serviceId: unwrap(ServiceId.create(serviceId)),
-      variantId: null,
-      barberId: unwrap(BarberId.create(barberId)),
-      terms: unwrap(
-        ServiceTerms.create(
-          unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR')),
-          45,
-        ),
-      ),
-      startsAt,
-    });
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-1')), 'self'),
-          'ivan',
-        ),
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-son')), 'companion'),
-          son.barberId,
-          at(10, son.minute),
-        ),
-        ...others.map((other) =>
-          seat(
-            SeatSubject.account(
-              unwrap(UserId.create(other.userId)),
-              'companion',
-            ),
-            other.barberId,
-            at(10),
-            other.serviceId,
-          ),
-        ),
-      ],
-      now: at(8),
-    }),
-  );
+  return visitOf(id, '2026-08-20', [
+    {
+      occupant: account('client-1', SubjectRelationship.Self),
+      barberId: 'ivan',
+      startMinutes: 10 * 60,
+    },
+    {
+      occupant: account('client-son', SubjectRelationship.Companion),
+      barberId: son.barberId,
+      startMinutes: 10 * 60 + son.minute,
+    },
+    ...others.map((other) => ({
+      occupant: account(other.userId, SubjectRelationship.Companion),
+      barberId: other.barberId,
+      startMinutes: 10 * 60,
+      serviceId: other.serviceId,
+    })),
+  ]);
 }
 
 /**
@@ -526,45 +531,36 @@ function catalogService(
   }[] = [],
   locationIds: readonly string[] = [],
 ): Service {
-  return unwrap(
-    Service.create({
-      id,
-      name: { bg: 'Фейд', en: 'Fade' },
-      description: { bg: '—', en: '—' },
-      categoryId: 'cat-hair',
-      priceMinorUnits: 2800,
-      currencyCode: 'EUR',
-      durationMinutes: 45,
-      locationIds: [...locationIds],
-      conflictsWith: [],
-      variants: [...variants],
-      composition: { kind: 'single' },
-      upsellOnly: false,
-      popular: false,
-      status: 'active',
-      sortOrder: 1,
-    }),
-  );
+  return serviceFixture({
+    id: ServiceId.of(id),
+    name: { bg: 'Фейд', en: 'Fade' },
+    description: { bg: '—', en: '—' },
+    ...termsFixture(2800, 45),
+    offerings: [],
+    locationIds: locationIds.map((shopId) => LocationKey.of(shopId)),
+    variants: variants.map((variant) => ({
+      variantId: ServiceVariantId.of(variant.id),
+      name: variant.name,
+    })),
+    sortOrder: 1,
+  });
 }
 
 /** A barber on the ACTIVE list. */
 function activeBarber(id: string): Barber {
-  return unwrap(
-    Barber.create({
-      id,
-      name: { bg: id, en: id },
-      handle: id,
-      title: { bg: 'Бръснар', en: 'Barber' },
-      bio: { bg: '—', en: '—' },
-      locationIds: [],
-      status: 'active',
-      sortOrder: 1,
-    }),
-  );
+  return barberFixture({
+    id: BarberKey.of(id),
+    name: { bg: id, en: id },
+    handle: id,
+    bio: { bg: '—', en: '—' },
+    yearsExperience: null,
+    locationIds: [],
+    sortOrder: 1,
+  });
 }
 
 /** The visit's shop, with a number to dial. */
-function centerShop(): Location {
+function centerShop(): ShopLocation {
   return activeShop('loc-center', {
     en: 'Creativo · Center',
     bg: 'Креативо · Център',
@@ -572,32 +568,28 @@ function centerShop(): Location {
 }
 
 /** The other active shop. */
-function mladostShop(): Location {
+function mladostShop(): ShopLocation {
   return activeShop('loc-mladost', {
     en: 'Creativo · Mladost',
     bg: 'Креативо · Младост',
   });
 }
 
+/** An ACTIVE shop, open 09:00–20:00 Monday to Saturday. */
 function activeShop(
   id: string,
   name: { readonly en: string; readonly bg: string },
-): Location {
-  const open = { kind: 'open' as const, opens: '09:00', closes: '20:00' };
-  return unwrap(
-    Location.create({
-      id,
-      name,
-      address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
-      phone: { e164: '+359881234567', display: '+359 88 123 4567' },
-      geo: { lat: 42.6977, lng: 23.3219 },
-      mapUrl: `https://maps.example.com/${id}`,
-      hours: [open, open, open, open, open, open, { kind: 'closed' }],
-      timezone: 'Europe/Sofia',
-      status: 'active',
-      sortOrder: 0,
-    }),
-  );
+): ShopLocation {
+  const open = DayHours.open(at(9), until(20));
+  return locationFixture({
+    id: LocationKey.of(id),
+    name,
+    address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
+    phoneE164: E164.of('+359881234567'),
+    phoneDisplay: '+359 88 123 4567',
+    mapUrl: `https://maps.example.com/${id}`,
+    openingHours: [open, open, open, open, open, open, DayHours.closed()],
+  });
 }
 
 /** Let an async landing (an owner-scoped read, then the store) finish. */
@@ -1086,11 +1078,7 @@ describe('ClientBooking — a move asks the grid to keep room for who it carries
     vi.restoreAllMocks();
   });
 
-  it('sends the son the server carries with every day query of the move', async () => {
-    const execute = vi.spyOn(
-      ObserveDayAvailabilityUseCase.prototype,
-      'execute',
-    );
+  async function landMove(): Promise<ComponentFixture<ClientBooking>> {
     const fixture = await renderShell(
       { reschedule: 'appt-moving' },
       {
@@ -1105,23 +1093,24 @@ describe('ClientBooking — a move asks the grid to keep room for who it carries
       },
     );
     await settle(fixture);
+    return fixture;
+  }
+
+  // Every day query of the move (the calendar's exact days, the time sheet)
+  // reads its riders and its release off the store — `DayQuery.riders` /
+  // `.release` are `availabilityRiders()` / `moveRelease()` — so what the
+  // store holds once the move landed is what each query is asked with.
+  it('sends the son the server carries with every day query of the move', async () => {
+    const fixture = await landMove();
 
     expect(host(fixture).getAttribute('data-state')).toBe('schedule');
     expect(
       host(fixture).querySelector('[data-testid="booking-move-refused"]'),
     ).toBeNull();
-    const asked = execute.mock.calls.map(
-      ([input]) => (input as { readonly riders?: unknown }).riders,
-    );
-    expect(asked.length).toBeGreaterThan(0);
-    const [riders] = asked.slice(-1) as {
-      readonly barberId: { readonly value: string };
-      readonly offsetMinutes: number;
-      readonly terms: { readonly durationMinutes: number };
-    }[][];
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
     expect(
-      riders?.map((rider) => ({
-        barberId: rider.barberId.value,
+      store.availabilityRiders().map((rider) => ({
+        barberId: rider.barberId,
         offsetMinutes: rider.offsetMinutes,
         durationMinutes: rider.terms.durationMinutes,
       })),
@@ -1129,36 +1118,8 @@ describe('ClientBooking — a move asks the grid to keep room for who it carries
   });
 
   it('hands the visit’s own chairs back on every day query, so they never block its move', async () => {
-    const execute = vi.spyOn(
-      ObserveDayAvailabilityUseCase.prototype,
-      'execute',
-    );
-    const fixture = await renderShell(
-      { reschedule: 'appt-moving' },
-      {
-        principal: signedIn('client-1'),
-        visit: fatherAndSonVisit('appt-moving'),
-        catalog: {
-          services: [catalogService()],
-          barbers: [activeBarber('ivan'), activeBarber('petar')],
-          locations: [centerShop()],
-        },
-      },
-    );
-    await settle(fixture);
+    const fixture = await landMove();
 
-    const released = execute.mock.calls.map(
-      ([input]) =>
-        (
-          input as {
-            readonly release?: readonly {
-              readonly barberId: { readonly value: string };
-              readonly occupied: { readonly startMs: number };
-            }[];
-          }
-        ).release,
-    );
-    expect(released.length).toBeGreaterThan(0);
     const tenOClock = unwrap(
       ZonedDateTime.fromParts(
         { year: 2026, month: 8, day: 20, hour: 10, minute: 0 },
@@ -1167,10 +1128,9 @@ describe('ClientBooking — a move asks the grid to keep room for who it carries
     ).toMillis();
     // Both chairs — the father's the cart rebuilds AND the son's it carries:
     // the server subtracts the whole visit before it re-places it.
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
     expect(
-      released
-        .at(-1)
-        ?.map((chair) => [chair.barberId.value, chair.occupied.startMs]),
+      store.moveRelease().map((chair) => [chair.barberId, chair.startMs]),
     ).toEqual([
       ['ivan', tenOClock],
       ['petar', tenOClock],
@@ -1194,65 +1154,61 @@ describe('ClientBooking — the moved visit’s own day on the calendar', () => 
   }
 
   /**
-   * The visit's day as the barberBusy projection stores it: Ivan and Petar
-   * rostered 10:00–10:45 at Center and nothing else, both taken by the
-   * visit's own chairs. `honours` picks the port's reference reader, which
-   * hands the `release` back as the contract says (`paddedBusy`), or a
-   * reader that BREAKS the contract by ignoring it — the calendar must stay
-   * honest with either.
+   * The visit's day as the documents store it: Ivan and Petar rostered
+   * 10:00–10:45 at Center on Thursdays and nothing else, both taken by the
+   * visit's own chairs on 2026-08-20. With `neighbour`, somebody ELSE is
+   * booked straight after on both chairs and each barber needs a quarter of
+   * an hour to turn the chair round: the visit's chairs handed back still
+   * leave too little for a 45-minute cut — the day is genuinely full.
    */
-  function visitDayReader(honours: boolean): AvailabilityReader['observeDay'] {
-    const center = unwrap(LocationId.create('loc-center'));
-    const at = (minute: number) =>
-      unwrap(
-        ZonedDateTime.fromParts(
-          { year: 2026, month: 8, day: 20, hour: 10, minute },
-          'Europe/Sofia',
+  function visitDay(neighbour: boolean): SchedulingDocs {
+    const visitDate = unwrapOk(LocalDate.parse('2026-08-20'));
+    const ids = ['ivan', 'petar'].map((id) => BarberKey.of(id));
+    return {
+      schedules: ids.map((id) =>
+        barberScheduleFixture({
+          id,
+          turnaroundMinutes: unwrapOk(MinuteCount.of(neighbour ? 15 : 0)),
+          versions: [
+            {
+              seq: 1,
+              effectiveFromLocalDate: unwrapOk(LocalDate.parse('2026-01-01')),
+              effectiveToLocalDate: null,
+              segments: [
+                ShiftSegment.of(
+                  Weekday.Thu,
+                  LocationKey.of('loc-center'),
+                  at(10),
+                  until(10, 45),
+                ),
+              ],
+            },
+          ],
+        }),
+      ),
+      busyDays: ids.map((id): BarberBusyDay => ({
+        id: BarberBusyDayId.of(BusyKey.of(id, visitDate)),
+        barberId: id,
+        localDate: visitDate,
+        utcEpochMs: ZonedTimeSystem.startOfLocalDay(
+          visitDate,
+          FIXTURE_TIME_ZONE,
         ),
-      ).toMillis();
-    const chair = Interval.of(at(0), at(45));
-    const stored = new InMemoryAvailabilityReader((day) =>
-      day.key() !== '2026-08-20'
-        ? []
-        : ['ivan', 'petar'].map((id) => ({
-            barberId: unwrap(BarberId.create(id)),
-            windows: [{ interval: chair, locationId: center }],
-            spans: [chair],
-            turnaroundMinutes: 0,
-          })),
-    );
-    if (honours) {
-      return (locationId, day, barberIds, release) =>
-        stored.observeDay(locationId, day, barberIds, release);
-    }
-    return (_locationId, day) => {
-      if (day.key() !== '2026-08-20') return of(ok([]));
-      return of(
-        ok(
-          ['ivan', 'petar'].map((id): BarberDayAvailability => {
-            const barberId = unwrap(BarberId.create(id));
-            return {
-              barberId,
-              windows: [{ interval: chair, locationId: center }],
-              // The release dropped: what the contract spec now refuses in
-              // every real reader (`availabilityReaderBusyCases`).
-              busy: paddedBusy({
-                barberId,
-                spans: [chair],
-                turnaroundMinutes: 0,
-              }),
-            };
-          }),
-        ),
-      );
+        blocks: [
+          MinuteBlock.of(at(10), until(10, 45), BlockKind.Busy),
+          ...(neighbour
+            ? [MinuteBlock.of(at(10, 45), until(11), BlockKind.Busy)]
+            : []),
+        ],
+      })),
     };
   }
 
   async function landMove(
-    honours: boolean,
+    neighbour: boolean,
   ): Promise<ComponentFixture<ClientBooking>> {
-    // The capacity stub reports no free minutes anywhere: every day the
-    // projection answers is "full", the visit's own chairs included.
+    // No capacity month was ever rebuilt: every day the projection answers
+    // is "full", the visit's own chairs included.
     const fixture = await renderShell(
       { reschedule: 'appt-moving' },
       {
@@ -1263,7 +1219,7 @@ describe('ClientBooking — the moved visit’s own day on the calendar', () => 
           barbers: [activeBarber('ivan'), activeBarber('petar')],
           locations: [centerShop()],
         },
-        observeDay: visitDayReader(honours),
+        scheduling: visitDay(neighbour),
       },
     );
     await settle(fixture);
@@ -1271,7 +1227,7 @@ describe('ClientBooking — the moved visit’s own day on the calendar', () => 
   }
 
   it('keeps the day the visit sits on tappable when its own chairs are all that fill it', async () => {
-    const fixture = await landMove(true);
+    const fixture = await landMove(false);
 
     // Only the exact query can see it: the visit's chairs handed back, the
     // father and the son fit where they sit now.
@@ -1280,10 +1236,10 @@ describe('ClientBooking — the moved visit’s own day on the calendar', () => 
     expect(day(fixture, '2026-08-21')?.disabled).toBe(true);
   });
 
-  it('greys that day when the reader does not hand the chairs back — never a tappable day with an empty sheet', async () => {
-    // A reader that ignores `release`: the day answers what its sheet
-    // would show — nothing — rather than a tappable day with an empty sheet.
-    const fixture = await landMove(false);
+  it('greys that day when something else still fills it — never a tappable day with an empty sheet', async () => {
+    // The day answers what its sheet would show — nothing — rather than a
+    // tappable day with an empty sheet.
+    const fixture = await landMove(true);
 
     expect(day(fixture, '2026-08-20')?.disabled).toBe(true);
   });
@@ -1304,7 +1260,7 @@ describe('ClientBooking — a companion the shop can no longer serve here', () =
       readonly services?: readonly Service[];
       readonly barbers?: readonly Barber[] | 'pending' | 'failed';
       /** The Center alone by default. */
-      readonly locations?: readonly Location[] | 'pending' | 'failed';
+      readonly locations?: readonly ShopLocation[] | 'pending' | 'failed';
     },
     visit: Appointment = fatherAndSonVisit('appt-moving'),
   ): Promise<ComponentFixture<ClientBooking>> {
@@ -1533,8 +1489,8 @@ describe('ClientBooking — a companion the shop can no longer serve here', () =
 
   it('never replaces a confirmed move with the call panel when the catalogue changes afterwards', async () => {
     const barbers = new BehaviorSubject<
-      Result<readonly Barber[], RepositoryError>
-    >(ok([activeBarber('ivan'), activeBarber('petar')]));
+      EcsResult<readonly Barber[], RepositoryError>
+    >(EcsResult.ok([activeBarber('ivan'), activeBarber('petar')]));
     const fixture = await renderShell(
       { reschedule: 'appt-moving' },
       {
@@ -1578,7 +1534,7 @@ describe('ClientBooking — a companion the shop can no longer serve here', () =
     expect(host(fixture).getAttribute('data-state')).toBe('confirmed');
 
     // …and THEN Petar leaves the active list.
-    barbers.next(ok([activeBarber('ivan')]));
+    barbers.next(EcsResult.ok([activeBarber('ivan')]));
     await settle(fixture);
 
     expect(refusal(fixture)).toBeNull();

@@ -709,7 +709,7 @@ export const PHOTOS = [
     photoId: 'photo-0808',
     appointmentId: 'apt-2026-08-08',
     url: 'media/photos/0808.jpg',
-    takenAtIso: '2026-08-08T11:05:00+03:00',
+    takenAtUtcMs: 1_786_176_300_000, // 2026-08-08T11:05:00+03:00
     dateLabel: '8.08',
     accessibleName: 'Снимка от 8 август',
     barberId: 'barber-ivan',
@@ -720,7 +720,7 @@ export const PHOTOS = [
     photoId: 'photo-0711',
     appointmentId: 'apt-2026-07-11',
     url: 'media/photos/0711.jpg',
-    takenAtIso: '2026-07-11T10:50:00+03:00',
+    takenAtUtcMs: 1_783_756_200_000, // 2026-07-11T10:50:00+03:00
     dateLabel: '11.07',
     accessibleName: 'Снимка от 11 юли',
     barberId: 'barber-ivan',
@@ -731,7 +731,7 @@ export const PHOTOS = [
     photoId: 'photo-0613',
     appointmentId: 'apt-2026-06-13',
     url: 'media/photos/0613.jpg',
-    takenAtIso: '2026-06-13T10:45:00+03:00',
+    takenAtUtcMs: 1_781_336_700_000, // 2026-06-13T10:45:00+03:00
     dateLabel: '13.06',
     accessibleName: 'Снимка от 13 юни',
     barberId: 'barber-ivan',

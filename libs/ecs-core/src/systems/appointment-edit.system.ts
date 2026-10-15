@@ -1,9 +1,11 @@
 import {
+  type AccountOccupant,
   AppliedOperation,
   type MinuteRange,
   SeatOutcome,
   Seat,
-  type SeatOccupant,
+  SeatOccupant,
+  SeatSubject,
   type WallTime,
 } from '@core/components';
 import {
@@ -14,11 +16,14 @@ import {
   DurationMinutes,
   MinuteCount,
   type BarberId,
+  type CustomerId,
+  defect,
   type LocationId,
   type OperationId,
   type SeatId,
   type ServiceId,
   type ServiceVariantId,
+  type UserId,
   type LocalDate,
   EndMinute,
   MinuteOfDay,
@@ -194,7 +199,12 @@ export type EditCommandRequest =
        * visit is finished; unread otherwise.
        */
       readonly workedAtUtcMs: UtcEpochMs;
-    } & SeatOccupant)
+      /*
+       * Who the seat is for, as the request names them: an account by its
+       * uid (the client record is the fold's — `FoldContext.customerIds`,
+       * D29), or a guest by label.
+       */
+    } & AccountOccupant)
   | {
       readonly editCommand: typeof EditCommand.RemoveSeat;
       readonly seatId: SeatId;
@@ -209,7 +219,8 @@ export type EditCommandRequest =
 /**
  * What one batch's fold reads besides the running seats
  * (`staff-edit-appointment.use-case.ts:1481-1497`) — derived from the
- * STORED visit by {@link AppointmentEditSystem.foldContextOf}.
+ * STORED visit by {@link AppointmentEditSystem.foldContextOf}, with the
+ * client records the pipeline resolved.
  */
 export type FoldContext = {
   /** The visit is finished: a seat it gains was worked, not scheduled. */
@@ -219,6 +230,12 @@ export type FoldContext = {
    * visit held is never minted again by the batch that dropped it.
    */
   readonly held: readonly SeatId[];
+  /**
+   * The client record of every account an added seat names (D29) —
+   * resolved by the pipeline (`CustomerId.forUser(uid, hash)` for each of
+   * {@link AppointmentEditSystem.accountSubjects}); never a hash here.
+   */
+  readonly customerIds: ReadonlyMap<UserId, CustomerId>;
 };
 
 /** The running visit a batch folds over: its shop day and its seats on it. */
@@ -297,6 +314,27 @@ function scopeOf(
     if (includesId(wanted, seat.seatId)) scope.push(seat);
   }
   return scope.length === wanted.length ? Result.ok(scope) : invalid('seatIds');
+}
+
+/**
+ * The seat an `ADD_SEAT` names, its occupant resolved: an account carries
+ * its client record beside it (D29) — the map names every account of
+ * {@link AppointmentEditSystem.accountSubjects}, so a miss is the caller's
+ * defect, never a refusal.
+ */
+function addedOccupant(
+  occupant: AccountOccupant,
+  customerIds: ReadonlyMap<UserId, CustomerId>,
+): SeatOccupant {
+  if (occupant.seatSubject === SeatSubject.Anonymous) {
+    return SeatOccupant.anonymous(occupant.guestLabel);
+  }
+  return SeatOccupant.account(
+    occupant.subjectUserId,
+    customerIds.get(occupant.subjectUserId) ??
+      defect('an added account seat without its resolved client record (D29)'),
+    occupant.subjectRelationship,
+  );
 }
 
 /** The earliest start of a non-empty scope. */
@@ -399,8 +437,35 @@ export const AppointmentEditSystem = {
     return JSON.stringify([DIGEST_TAG, commands]);
   },
 
-  /** The fold's reading of the stored visit: finished or not, and the ids it held. */
-  foldContextOf(appointment: Appointment): FoldContext {
+  /**
+   * The accounts a batch's added seats name — each `ADD_SEAT` for an
+   * account, distinct, in batch order. What the pipeline resolves to client
+   * records (and the FIRST_BOOKING `customers` read) before it folds; the
+   * stored seats already carry theirs.
+   */
+  accountSubjects(commands: readonly EditCommandRequest[]): readonly UserId[] {
+    const out: UserId[] = [];
+    for (let i = 0; i < commands.length; i++) {
+      const command = commands[i] as EditCommandRequest;
+      if (
+        command.editCommand === EditCommand.AddSeat &&
+        command.seatSubject === SeatSubject.Account &&
+        !out.includes(command.subjectUserId)
+      ) {
+        out.push(command.subjectUserId);
+      }
+    }
+    return out;
+  },
+
+  /**
+   * The fold's reading of the stored visit — finished or not, and the ids it
+   * held — beside the client records the pipeline resolved for the batch.
+   */
+  foldContextOf(
+    appointment: Appointment,
+    customerIds: ReadonlyMap<UserId, CustomerId>,
+  ): FoldContext {
     const held: SeatId[] = [];
     for (let i = 0; i < appointment.seats.length; i++) {
       held.push((appointment.seats[i] as Seat).seatId);
@@ -408,6 +473,7 @@ export const AppointmentEditSystem = {
     return {
       finished: appointment.bookingStatus === BookingStatus.Completed,
       held,
+      customerIds,
     };
   },
 
@@ -547,7 +613,7 @@ export const AppointmentEditSystem = {
             catalogPriceCents: null,
             catalogDurationMinutes: null,
           },
-          command,
+          addedOccupant(command, context.customerIds),
           context.finished
             ? SeatOutcome.worked(command.workedAtUtcMs)
             : SeatOutcome.scheduled(),
@@ -588,15 +654,20 @@ export const AppointmentEditSystem = {
    * The batch FOLDED over the stored seats, in the caller's order, so a save
    * that moves the day and then stretches the block resizes the MOVED seats.
    * An empty batch is refused as `command` (it would write nothing quietly),
-   * an empty visit as `seats` (a cancellation has its own path).
+   * an empty visit as `seats` (a cancellation has its own path). An added
+   * account seat takes its client record from `customerIds` (D29).
    */
   fold(
     appointment: Appointment,
     commands: readonly EditCommandRequest[],
+    customerIds: ReadonlyMap<UserId, CustomerId>,
   ): Result<EditOutcome, StaffEditInvalidCommand> {
     if (commands.length === 0) return invalid('command');
     if (appointment.seats.length === 0) return invalid('seats');
-    const context = AppointmentEditSystem.foldContextOf(appointment);
+    const context = AppointmentEditSystem.foldContextOf(
+      appointment,
+      customerIds,
+    );
     let draft: EditDraft = {
       localDate: appointment.localDate,
       seats: appointment.seats,

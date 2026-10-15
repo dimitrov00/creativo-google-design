@@ -19,22 +19,12 @@ import {
   activePrincipal,
   roleFromPrimitive,
 } from '@creativo/application/identity';
+import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  UserId,
-} from '@creativo/application/accounts';
-import {
-  APPOINTMENT_REPOSITORY,
-  Appointment,
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
   BookingGatewayError,
-  Money,
   type Result,
-  Seat,
-  SeatId,
-  SeatSubject,
   TimeSlot,
   WAITLIST_GATEWAY,
   ZonedDateTime,
@@ -43,14 +33,47 @@ import {
 } from '@creativo/application/booking';
 import {
   BarberId,
-  CATALOG_READER,
-  Location,
   LocationId,
   MEDIA_READER,
-  ServiceId,
-  ServiceTerms,
 } from '@creativo/application/catalog';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
+import { CLOCK } from '@creativo/application/shared';
+import {
+  APPOINTMENT_READ_PORTS,
+  CATALOG_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { AppointmentReadPorts } from '@core/ports';
+import type { Appointment, ShopLocation } from '@core/entities';
+import {
+  DayHours,
+  E164,
+  Seat,
+  SeatOccupant,
+  SubjectRelationship,
+} from '@core/components';
+import {
+  AppointmentId,
+  BarberId as BarberKey,
+  BusyKey,
+  CustomerId,
+  LocalDate,
+  LocationId as LocationKey,
+  SeatId,
+  ServiceId,
+  UserId,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  FIXTURE_TIME_ZONE,
+  appointmentFixture,
+  at as minuteAt,
+  locationFixture,
+  memoryAppointmentReadPorts,
+  memoryCatalogReadPorts,
+  seatFixture,
+  termsFixture,
+  unwrapOk,
+  until,
+} from '@core/testing';
 import { UiMap, type UiMapPin } from '@creativo/ui/controls';
 import { BookingFlowStore } from '../booking-flow.store';
 import { BookingChromeService } from '../chrome/booking-chrome.service';
@@ -126,77 +149,101 @@ class InertMap {
 }
 
 /** The visit's shop, as the catalogue lists it — with a number to dial. */
-function centerShop(): Location {
-  const open = { kind: 'open' as const, opens: '09:00', closes: '20:00' };
-  return unwrap(
-    Location.create({
-      id: 'loc-center',
-      name: { en: 'Creativo · Center', bg: 'Креативо · Център' },
-      address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
-      phone: { e164: '+359881234567', display: '+359 88 123 4567' },
-      geo: { lat: 42.6977, lng: 23.3219 },
-      mapUrl: 'https://maps.example.com/center',
-      hours: [open, open, open, open, open, open, { kind: 'closed' }],
-      timezone: ZONE,
-      status: 'active',
-      sortOrder: 0,
-    }),
+function centerShop(): ShopLocation {
+  const open = DayHours.open(minuteAt(9), until(20));
+  return locationFixture({
+    id: LocationKey.of('loc-center'),
+    name: { en: 'Creativo · Center', bg: 'Креативо · Център' },
+    address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
+    phoneE164: E164.of('+359881234567'),
+    phoneDisplay: '+359 88 123 4567',
+    mapUrl: 'https://maps.example.com/center',
+    openingHours: [open, open, open, open, open, open, DayHours.closed()],
+  });
+}
+
+/** An account seat's occupant — the uid and the client record beside it (D29). */
+function account(uid: string, relationship: SubjectRelationship): SeatOccupant {
+  return SeatOccupant.account(
+    UserId.of(uid),
+    CustomerId.of(`cus_${uid}`),
+    relationship,
   );
 }
 
 /**
  * The booker at 10:00 with Ivan, and the son the shop seated with Petar —
- * or wherever staff have re-seated him since (`son`).
+ * or wherever staff have re-seated him since (`son`, minutes from the shop's
+ * midnight) — on 2026-08-20, as stored.
  */
 function fatherAndSon(
-  son: { readonly barberId: string; readonly startsAt: ZonedDateTime } = {
+  son: { readonly barberId: string; readonly startMinutes: number } = {
     barberId: 'petar',
-    startsAt: at(10),
+    startMinutes: 10 * 60,
   },
 ): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  const seat = (
-    subject: SeatSubject,
-    barberId: string,
-    startsAt: ZonedDateTime = at(10),
-  ) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject,
-      serviceId: unwrap(ServiceId.create('svc-fade')),
-      variantId: null,
-      barberId: unwrap(BarberId.create(barberId)),
-      terms: unwrap(ServiceTerms.create(price, 45)),
-      startsAt,
-    });
-  return unwrap(
-    Appointment.create({
-      id: 'appt-moving',
-      locationId: 'loc-center',
-      seats: [
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-1')), 'self'),
-          'ivan',
-        ),
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-son')), 'companion'),
-          son.barberId,
-          son.startsAt,
-        ),
-      ],
-      now: at(8),
+  const day = unwrapOk(LocalDate.parse('2026-08-20'));
+  const terms = Seat.termsOf(termsFixture(2800, 45), termsFixture(2800, 45));
+  const seats = [
+    seatFixture({
+      seatId: SeatId.of('seat-father'),
+      serviceId: ServiceId.of('svc-fade'),
+      barberId: BarberKey.of('ivan'),
+      startMinutes: minuteAt(10),
+      terms,
+      occupant: account('client-1', SubjectRelationship.Self),
     }),
-  );
+    seatFixture({
+      seatId: SeatId.of('seat-son'),
+      serviceId: ServiceId.of('svc-fade'),
+      barberId: BarberKey.of(son.barberId),
+      startMinutes: minuteAt(0, son.startMinutes),
+      terms,
+      occupant: account('client-son', SubjectRelationship.Companion),
+    }),
+  ];
+  const barberIds = [...new Set(seats.map((seat) => seat.barberId))];
+  return appointmentFixture({
+    id: AppointmentId.of('appt-moving'),
+    locationId: LocationKey.of('loc-center'),
+    ownerUserId: UserId.of('client-1'),
+    subjectUserIds: [UserId.of('client-1'), UserId.of('client-son')],
+    barberIds,
+    busyKeys: barberIds.map((barberId) => BusyKey.of(barberId, day)),
+    seats,
+    localDate: day,
+    startMinutes: minuteAt(10),
+    endMinutes: until(
+      0,
+      Math.max(...seats.map((seat) => Seat.endMinutes(seat))),
+    ),
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(day, minuteAt(10), FIXTURE_TIME_ZONE),
+    ),
+  });
 }
 
 /** The owner-scoped visit read a move is re-read through. */
 class StubAppointments {
-  stored: Appointment | null = fatherAndSon();
+  /** What is stored — the double reads this array by reference. */
+  private readonly visits: Appointment[] = [fatherAndSon()];
   reads = 0;
 
-  async findById(): Promise<Result<Appointment | null, RepositoryError>> {
-    this.reads += 1;
-    return ok(this.stored);
+  /** Replace the stored visit (staff changed it since the landing). */
+  set stored(visit: Appointment) {
+    this.visits.splice(0, this.visits.length, visit);
+  }
+
+  /** `APPOINTMENT_READ_PORTS` over the stored visit, its reads counted. */
+  ports(): AppointmentReadPorts {
+    const base = memoryAppointmentReadPorts(this.visits);
+    return {
+      ...base,
+      observeAppointment: (id) => {
+        this.reads += 1;
+        return base.observeAppointment(id);
+      },
+    };
   }
 }
 
@@ -214,7 +261,7 @@ class StubGateway {
 
 async function render(
   gateway: StubGateway,
-  locations: readonly Location[] = [centerShop()],
+  locations: readonly ShopLocation[] = [centerShop()],
   appointments: StubAppointments = new StubAppointments(),
 ): Promise<{
   fixture: ComponentFixture<BookingReviewStep>;
@@ -242,7 +289,7 @@ async function render(
         },
       },
       { provide: BOOKING_GATEWAY, useValue: gateway },
-      { provide: APPOINTMENT_REPOSITORY, useValue: appointments },
+      { provide: APPOINTMENT_READ_PORTS, useValue: appointments.ports() },
       {
         provide: WAITLIST_GATEWAY,
         useValue: {
@@ -291,16 +338,8 @@ async function render(
         },
       },
       {
-        provide: CATALOG_READER,
-        useValue: {
-          listActiveServices: () => of(ok([])),
-          listActiveBarbers: () => of(ok([])),
-          listServiceCategories: () => of(ok([])),
-          listActiveLocations: () => of(ok(locations)),
-          findServiceById: () => Promise.resolve(ok(null)),
-          findBarberById: () => Promise.resolve(ok(null)),
-          findLocationById: () => Promise.resolve(ok(null)),
-        },
+        provide: CATALOG_PORTS,
+        useValue: memoryCatalogReadPorts({ locations }),
       },
       {
         provide: MEDIA_READER,
@@ -435,15 +474,9 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
       appointments,
     );
     // Since the landing, staff re-seated the son: Niko, at 10:30.
-    const halfPastTen = unwrap(
-      ZonedDateTime.fromParts(
-        { year: 2026, month: 8, day: 20, hour: 10, minute: 30 },
-        ZONE,
-      ),
-    );
     appointments.stored = fatherAndSon({
       barberId: 'niko',
-      startsAt: halfPastTen,
+      startMinutes: 10 * 60 + 30,
     });
 
     await confirm(fixture);
@@ -455,7 +488,7 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
     expect(
       store.riders().map((rider) => [rider.barberId, rider.offsetMinutes]),
     ).toEqual([['niko', 30]]);
-    expect(store.moveRelease().map((chair) => chair.barberId.value)).toEqual([
+    expect(store.moveRelease().map((chair) => chair.barberId)).toEqual([
       'ivan',
       'niko',
     ]);

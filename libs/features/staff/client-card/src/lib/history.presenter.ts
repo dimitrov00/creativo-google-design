@@ -1,11 +1,13 @@
+import type {
+  Appointment,
+  ClientMoneyRecord,
+  ClientStatsRecord,
+} from '@core/entities';
 import {
-  type Appointment,
-  type ClientMoneyRecord,
-  type ClientStatsRecord,
-  Money,
-  formatMoney,
-} from '@creativo/application/booking';
-import { type VisitRowVm, visitRowOf } from '@creativo/features/shared/visits';
+  type VisitRowVm,
+  formatCents,
+  visitRowOf,
+} from '@creativo/features/shared/visits';
 import type { ClientCardCatalog } from './client-card.contracts';
 import { figure } from './client-card.format';
 import type {
@@ -46,7 +48,7 @@ export function historyCells(
 ): readonly HistoryCellVm[] {
   const lang = words.lang;
   const history = words.history;
-  const visits = stats?.lifetime.visitsCompleted ?? 0;
+  const visits = stats?.lifetimeVisitsCompleted ?? 0;
   const cells: HistoryCellVm[] = [
     {
       id: 'visits',
@@ -62,7 +64,7 @@ export function historyCells(
       caption: history.interval,
     });
   }
-  const noShows = stats?.lifetime.noShows ?? 0;
+  const noShows = stats?.lifetimeNoShows ?? 0;
   if (noShows > 0) {
     cells.push({
       id: 'noShows',
@@ -70,7 +72,7 @@ export function historyCells(
       caption: history.noShows(noShows),
     });
   }
-  const cancelled = stats?.lifetime.clientCancels ?? 0;
+  const cancelled = stats?.lifetimeClientCancels ?? 0;
   if (cancelled > 0) {
     cells.push({
       id: 'cancelled',
@@ -93,20 +95,18 @@ export function historyFacts(
   money: ClientMoneyRecord | null,
   words: ClientCardWords,
 ): HistoryFactsVm {
-  const visits = stats?.lifetime.visitsCompleted ?? 0;
+  const visits = stats?.lifetimeVisitsCompleted ?? 0;
   const clean =
-    (stats?.lifetime.noShows ?? 0) === 0 &&
-    (stats?.lifetime.clientCancels ?? 0) === 0;
+    (stats?.lifetimeNoShows ?? 0) === 0 &&
+    (stats?.lifetimeClientCancels ?? 0) === 0;
   let spend: HistorySpendVm | null = null;
   if (money !== null) {
-    const amount = Money.fromMinorUnitsAndCode(
-      money.lifetimeSpendMinor,
-      money.currencyCode,
+    const value = formatCents(
+      money.lifetimeSpendCents,
+      money.currency,
+      words.lang,
     );
-    if (amount.isSuccess()) {
-      const value = formatMoney(amount.value, words.lang);
-      spend = { value, sentence: words.history.spend(value) };
-    }
+    spend = { value, sentence: words.history.spend(value) };
   }
   return {
     note:
@@ -121,7 +121,13 @@ export function historyFacts(
 
 export interface HistoryRowsInput {
   readonly appointments: readonly Appointment[];
+  /** The account the card is open on — whose own words a row quotes. */
   readonly subjectUserId: string;
+  /**
+   * Its client RECORD (D29) — whose seats, outcome and share a row tells;
+   * `null` when the account has no record yet (then no visit is theirs).
+   */
+  readonly subjectCustomerId: string | null;
   readonly currentAppointmentId: string | null;
   readonly nowMs: number;
   /** Each visit's own photos, counted (`countByAppointment`); a visit it does not name has none. */
@@ -136,7 +142,7 @@ export interface HistoryRowsInput {
 export function historyRows(input: HistoryRowsInput): readonly VisitRowVm[] {
   const seen = new Set<string>();
   return input.appointments.flatMap((appointment) => {
-    const id = appointment.id.value;
+    const id: string = appointment.id;
     if (seen.has(id)) return [];
     seen.add(id);
     return [
@@ -146,6 +152,7 @@ export function historyRows(input: HistoryRowsInput): readonly VisitRowVm[] {
           perspective: 'staff',
           grain: 'year',
           subjectUserId: input.subjectUserId,
+          subjectCustomerId: input.subjectCustomerId,
           currentAppointmentId: input.currentAppointmentId,
           nowMs: input.nowMs,
           locale: input.words.lang,

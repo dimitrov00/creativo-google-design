@@ -1,4 +1,4 @@
-import type { BackfillJobId, UserId, UtcEpochMs } from '@core/primitives';
+import type { BackfillJobId, CustomerId, UtcEpochMs } from '@core/primitives';
 import type { BackfillJobName } from '@core/components';
 
 /**
@@ -27,6 +27,6 @@ export type BackfillJob = {
   readonly updatedAtUtcMs: UtcEpochMs;
   /** Stored clients the closing sample recomputed; `null` when none was taken. */
   readonly sampleChecked: number | null;
-  /** Clients whose stored answer differs from a fresh one — `UserId` until flip (1) (D29, §5.5). */
-  readonly sampleMismatched: readonly UserId[];
+  /** Client records whose stored answer differs from a fresh one (D29). */
+  readonly sampleMismatched: readonly CustomerId[];
 };

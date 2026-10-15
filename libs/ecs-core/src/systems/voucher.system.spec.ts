@@ -23,6 +23,7 @@ import {
   unwrapErr,
   unwrapOk,
   utcMs,
+  customerOf,
 } from '@core/testing';
 import { ZonedTimeSystem } from './zoned-time.system';
 import { VoucherSystem } from './voucher.system';
@@ -76,7 +77,8 @@ function issued(
       expiresAtUtcMs === null
         ? null
         : ZonedTimeSystem.toLocal(expiresAtUtcMs, FIXTURE_TIME_ZONE).localDate,
-    issuedToUserId: UserId.of('client-1'),
+    issuedToCustomerId: customerOf(UserId.of('client-1')),
+    holderUserId: UserId.of('client-1'),
     ...(overrides.lifecycle ?? VoucherLifecycle.active()),
   };
 }
@@ -92,13 +94,15 @@ describe('VoucherSystem — the balance algebra', () => {
         issuedAtUtcMs: NOW,
         expiresAtUtcMs: null,
         expiresLocalDate: null,
-        issuedToUserId: null,
+        issuedToCustomerId: null,
+        holderUserId: null,
       }),
     );
     expect(voucher.code).toBe('GIFT5');
     expect(voucher.balanceCents).toBe(500);
     expect(voucher.voucherStatus).toBe('ACTIVE');
-    expect(voucher.issuedToUserId).toBeNull();
+    expect(voucher.issuedToCustomerId).toBeNull();
+    expect(voucher.holderUserId).toBeNull();
     expect(VoucherSystem.isRedeemable(voucher, NOW)).toBe(true);
   });
 
@@ -109,7 +113,8 @@ describe('VoucherSystem — the balance algebra', () => {
       issuedAtUtcMs: NOW,
       expiresAtUtcMs: null,
       expiresLocalDate: null,
-      issuedToUserId: null,
+      issuedToCustomerId: null,
+      holderUserId: null,
     };
     expect(
       unwrapErr(
@@ -195,6 +200,9 @@ describe('VoucherSystem — the balance algebra', () => {
     expect(grown.balanceCents).toBe(500);
     expect(VoucherSystem.settle(held, eur(1000), eur(2600)).ok).toBe(false);
     const voided = VoucherSystem.void(held, NOW, 'lost');
+    // Whose it is rides the void: the record and the reading account (D29).
+    expect(voided.issuedToCustomerId).toBe(held.issuedToCustomerId);
+    expect(voided.holderUserId).toBe(held.holderUserId);
     expect(VoucherSystem.settle(voided, eur(1000), eur(500)).ok).toBe(true);
     expect(VoucherSystem.settle(voided, eur(1000), eur(1500)).ok).toBe(false);
     const returned = unwrapOk(VoucherSystem.settle(held, eur(1000), eur(0)));

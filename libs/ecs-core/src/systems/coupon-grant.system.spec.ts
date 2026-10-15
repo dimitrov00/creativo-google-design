@@ -18,7 +18,13 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import type { CouponGrant } from '@core/entities';
-import { deepFreeze, unwrapErr, unwrapOk, utcMs } from '@core/testing';
+import {
+  deepFreeze,
+  unwrapErr,
+  unwrapOk,
+  utcMs,
+  customerOf,
+} from '@core/testing';
 import { CouponGrantSystem } from './coupon-grant.system';
 
 /*
@@ -38,7 +44,8 @@ function makeActiveGrant(
 ): CouponGrant {
   return {
     id: CouponGrantId.of('grant-1'),
-    userId: UserId.of('user-1'),
+    customerId: customerOf(UserId.of('user-1')),
+    holderUserId: UserId.of('user-1'),
     couponId: CouponId.of('coupon-1'),
     grantedAtUtcMs: JAN_1,
     ...unwrapOk(CouponValue.percentOff(10)),
@@ -82,6 +89,9 @@ describe('CouponGrantSystem.burn', () => {
     });
     expect('grantCapacity' in used).toBe(false);
     expect(CouponValue.of(used)).toEqual(unwrapOk(CouponValue.percentOff(10)));
+    // Whose it is rides every transition: the record and the reading account (D29).
+    expect(used.customerId).toBe(grant.customerId);
+    expect(used.holderUserId).toBe(grant.holderUserId);
   });
 
   it('multi-use decrements remaining and stays active until exhausted', () => {

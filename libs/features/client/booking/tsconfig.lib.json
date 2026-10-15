@@ -28,9 +28,6 @@
   ],
   "references": [
     {
-      "path": "../../../domain/scheduling/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
@@ -74,6 +71,12 @@
     },
     {
       "path": "../../../application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../shared/visits/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     }
   ]
 }

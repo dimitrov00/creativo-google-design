@@ -52,19 +52,16 @@
       "path": "../account-state/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/notifications/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/booking/tsconfig.lib.json"
-    },
-    {
       "path": "../../../application/identity/tsconfig.lib.json"
     },
     {
       "path": "../../../application/accounts/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/catalog/tsconfig.lib.json"
+      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ecs-core/tsconfig.lib.json"
     }
   ]
 }

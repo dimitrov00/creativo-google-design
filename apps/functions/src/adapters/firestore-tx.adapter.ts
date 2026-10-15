@@ -21,6 +21,7 @@ import {
   type ReadTx,
 } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
+import { withPurgeAt } from './firestore-ttl.adapter';
 
 /**
  * The transactional sandwich over the Admin SDK (`tx.port.ts`, blueprint §4):
@@ -46,6 +47,10 @@ import { TriggerAttemptSystem } from '@core/systems';
  * - Every other failure (retries exhausted, the store unreachable, an
  *   `Update` of an absent document) rejects: infrastructure, mapped once by
  *   the edge.
+ * - Every `Set` and `Create` of a TTL group carries its root `purgeAt`
+ *   (flip 1, F1-7): the one stamp of `firestore-ttl.adapter.ts`
+ *   (`purgeAtFor`), added here beside the entity body — the plan never
+ *   carries it, so no pipeline or system ever sees a `Timestamp`.
  *
  * An `Update` key is ONE root field (Laws 5 and 6: writes target root
  * fields, never dot paths). Each `fields` key goes to the SDK as a
@@ -152,10 +157,10 @@ function applyPlan(
     const ref = docRef(db, op.path);
     switch (op.writeAction) {
       case WriteAction.Set:
-        tx.set(ref, op.body as DocumentData);
+        tx.set(ref, withPurgeAt(op.path, op.body) as DocumentData);
         break;
       case WriteAction.Create:
-        tx.create(ref, op.body as DocumentData);
+        tx.create(ref, withPurgeAt(op.path, op.body) as DocumentData);
         break;
       case WriteAction.Update:
         applyUpdate(tx, ref, op.fields, op.deleteFields);

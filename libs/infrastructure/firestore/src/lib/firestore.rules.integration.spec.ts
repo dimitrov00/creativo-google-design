@@ -21,27 +21,75 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import {
-  Coupon,
-  CouponCombinability,
-  CouponExpiry,
-  CouponValue,
-  StreakDefinition,
-} from '@creativo/domain/engagement';
+import { StreakDefinition } from '@creativo/domain/engagement';
 import {
   ACTIVITY_EFFECT_KINDS,
-  GIFT_VOUCHER_HOLDER_FIELD,
   streakDefinitionVersionId,
 } from '@creativo/application/engagement';
 import {
   InMemoryStreakDefinitionRepository,
   loyaltyFixtures,
 } from '@creativo/application/engagement/testing';
-import { createEmulatorTestEnv } from '../testing/emulator-test-env';
 import {
-  couponFromPersistence,
-  couponToPersistence,
-} from './coupon-persistence';
+  AuditAction,
+  Actor,
+  AuditContext,
+  AuditTargetRef,
+  Combinability,
+  CouponExpiryRule,
+  CouponOccasion,
+  CouponStatus,
+  CouponValue,
+  CustomerOrigin,
+  DayWindows,
+  ExceptionEffectRule,
+  GrantCapacityTerms,
+  GrantExpiryTerms,
+  GrantLifecycle,
+  MinuteRange,
+  NotificationPayload,
+  NotificationTopic,
+  PhotoOrigin,
+  SystemSource,
+  VoucherCode,
+  VoucherLifecycle,
+  WaitlistLifecycle,
+} from '@core/components';
+import type {
+  AppointmentPhoto,
+  AuditEntry,
+  BarberLeadTimeSample,
+  ClientMoneyRecord,
+  ClientStatsRecord,
+  Coupon,
+  CouponGrant,
+  Customer,
+  GiftVoucher,
+  InboxNotification,
+  ScheduleException,
+  WaitlistRequest,
+} from '@core/entities';
+import {
+  AppointmentId,
+  AuditResourceId,
+  BarberId,
+  CouponId,
+  Currency,
+  LocationId,
+  UserId,
+  WaitlistRequestId,
+} from '@core/primitives';
+import {
+  cents,
+  customerOf,
+  endMinute,
+  localDate,
+  minute,
+  minuteCount,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
+import { createEmulatorTestEnv } from '../testing/emulator-test-env';
 
 /**
  * A registered `users/{uid}` document, field for field what the functions'
@@ -64,6 +112,82 @@ function registeredUser(
     searchPrefixes: ['i', 'iv', 'iva', 'ivan', 'p', 'pe', 'pet', 'petr'],
     ...overrides,
   };
+}
+
+/** The client record of an account, derived as the pipelines derive it (D29). */
+const recordOf = (uid: string) => customerOf(UserId.of(uid));
+
+/** 2026-09-01 09:00 in Sofia — the instant the flat fixtures below stamp. */
+const SEPT_FIRST = utcMs('2026-09-01T09:00:00.000+03:00');
+
+/**
+ * A coupon grant as `couponGrants/{id}` stores it (`CouponGrant`, flip 1):
+ * the record it rewards, the account that may read it, the value it was
+ * granted at and its lifecycle — every field at the root.
+ */
+function grantBody(
+  holder: string | null,
+  lifecycle: GrantLifecycle = GrantLifecycle.active(
+    GrantCapacityTerms.singleUse(),
+    GrantExpiryTerms.none(),
+  ),
+): Omit<CouponGrant, 'id'> {
+  return {
+    customerId: recordOf(holder ?? 'walk-in'),
+    holderUserId: holder === null ? null : UserId.of(holder),
+    couponId: CouponId.of('coupon-1'),
+    grantedAtUtcMs: SEPT_FIRST,
+    ...unwrapOk(CouponValue.percentOff(20)),
+    ...lifecycle,
+  } satisfies Omit<CouponGrant, 'id'>;
+}
+
+/** A gift voucher as `giftVouchers/{id}` stores it (`GiftVoucher`, flip 1). */
+function voucherBody(
+  holder: string | null,
+  code: string,
+  balance = 2500,
+): Omit<GiftVoucher, 'id'> {
+  return {
+    code: VoucherCode.of(code),
+    initialValueCents: cents(5000),
+    balanceCents: cents(balance),
+    currency: Currency.EUR,
+    issuedAtUtcMs: SEPT_FIRST,
+    expiresAtUtcMs: null,
+    expiresLocalDate: null,
+    issuedToCustomerId: holder === null ? null : recordOf(holder),
+    holderUserId: holder === null ? null : UserId.of(holder),
+    ...VoucherLifecycle.active(),
+  } satisfies Omit<GiftVoucher, 'id'>;
+}
+
+/**
+ * A client's statistics, trimmed: rules check who, never the shape — but
+ * every key a flat `ClientStatsRecord` key, keyed by the client RECORD.
+ */
+function statsBody(uid: string): Partial<Omit<ClientStatsRecord, 'id'>> {
+  return {
+    customerId: recordOf(uid),
+    lifetimeVisitsCompleted: 23,
+    lifetimeNoShows: 1,
+    lifetimeLateCancels: 0,
+    lifetimeClientCancels: 2,
+    avgCadenceDays: 28,
+    version: 4,
+    updatedAtUtcMs: SEPT_FIRST,
+  } satisfies Partial<Omit<ClientStatsRecord, 'id'>>;
+}
+
+/** The staff-only spend beside them (`ClientMoneyRecord`, `lifetimeSpendCents` + `currency`). */
+function moneyBody(uid: string, spent: number): Omit<ClientMoneyRecord, 'id'> {
+  return {
+    customerId: recordOf(uid),
+    lifetimeSpendCents: cents(spent),
+    currency: Currency.EUR,
+    version: 4,
+    updatedAtUtcMs: SEPT_FIRST,
+  } satisfies Omit<ClientMoneyRecord, 'id'>;
 }
 
 describe('firestore.rules', () => {
@@ -566,10 +690,14 @@ describe('firestore.rules', () => {
     async function seedSample(): Promise<void> {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(doc(ctx.firestore(), 'barberLeadTimeSamples', sampleId), {
-          barberId: 'ivan',
-          dayKey: '2026-08-05',
+          barberId: BarberId.of('ivan'),
+          localDate: localDate('2026-08-05'),
+          firstAvailableLocalDate: localDate('2026-08-07'),
           leadTimeDays: 2,
-        });
+          freeMinutesOnFirstDay: minuteCount(120),
+          horizonDayCount: 60,
+          sampledAtUtcMs: utcMs('2026-08-05T03:30:00.000+03:00'),
+        } satisfies Omit<BarberLeadTimeSample, 'id'>);
       });
     }
 
@@ -611,7 +739,7 @@ describe('firestore.rules', () => {
         await assertFails(
           setDoc(
             doc(actor.firestore(), 'barberLeadTimeSamples', 'ivan__2026-08-06'),
-            { barberId: 'ivan', leadTimeDays: 0 },
+            { barberId: 'ivan', localDate: '2026-08-06', leadTimeDays: 0 },
           ),
         );
       }
@@ -646,17 +774,21 @@ describe('firestore.rules', () => {
   });
 
   describe('scheduleExceptions — public read, staff write', () => {
+    /** A day off as `scheduleExceptions/{BusyKey}` stores it — geometry only, no zone (Law 7.2). */
+    const closedDay = (day: string): Omit<ScheduleException, 'id'> =>
+      ({
+        barberId: BarberId.of('ivan'),
+        localDate: localDate(day),
+        utcEpochMs: utcMs(`${day}T00:00:00.000+03:00`),
+        locationId: LocationId.of('loc-center'),
+        ...ExceptionEffectRule.closed(),
+      }) satisfies Omit<ScheduleException, 'id'>;
+
     it('lets an anonymous visitor read an exception, and a client not write one', async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(
           doc(ctx.firestore(), 'scheduleExceptions', 'ivan__2026-09-01'),
-          {
-            barberId: 'ivan',
-            dayKey: '2026-09-01',
-            zone: 'Europe/Sofia',
-            locationId: 'loc-center',
-            effect: { kind: 'closed' },
-          },
+          closedDay('2026-09-01'),
         );
       });
       const anon = testEnv.unauthenticatedContext();
@@ -669,42 +801,37 @@ describe('firestore.rules', () => {
       await assertFails(
         setDoc(
           doc(client.firestore(), 'scheduleExceptions', 'ivan__2026-09-02'),
-          {
-            barberId: 'ivan',
-            dayKey: '2026-09-02',
-            zone: 'Europe/Sofia',
-            locationId: 'loc-center',
-            effect: { kind: 'closed' },
-          },
+          closedDay('2026-09-02'),
         ),
       );
     });
   });
 
-  describe('couponGrants — the owner, and the book (2026-09-10)', () => {
-    const grant = {
-      id: 'grant-1',
-      userId: 'client-1',
-      couponId: 'coupon-1',
-      value: { kind: 'percent_off', percent: 20 },
-      grantedAt: '2026-09-01T09:00:00.000Z',
-      state: {
-        kind: 'active',
-        capacity: { kind: 'single_use' },
-        expiration: { kind: 'no_expiry' },
-      },
-    };
-
+  describe('couponGrants — the holder, and the book (2026-09-10)', () => {
     beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(doc(ctx.firestore(), 'couponGrants', 'grant-1'), grant);
-      });
+      await seed('couponGrants/grant-1', grantBody('client-1'));
+      await seed(
+        'couponGrants/grant-used',
+        grantBody(
+          'client-1',
+          GrantLifecycle.used(utcMs('2026-09-10T12:00:00.000+03:00'), 'seed'),
+        ),
+      );
     });
 
-    it('lets the owner and a barber read a grant — the barber honours it at the chair', async () => {
+    it('lets the holder and a barber read a grant — the barber honours it at the chair', async () => {
       const owner = testEnv.authenticatedContext('client-1');
       await assertSucceeds(
         getDoc(doc(owner.firestore(), 'couponGrants', 'grant-1')),
+      );
+      // The holder's own list, pinned to the account key the rule reads.
+      await assertSucceeds(
+        getDocs(
+          query(
+            collection(owner.firestore(), 'couponGrants'),
+            where('holderUserId', '==', 'client-1'),
+          ),
+        ),
       );
       const barber = testEnv.authenticatedContext('staff-1', {
         roles: ['barber'],
@@ -712,11 +839,12 @@ describe('firestore.rules', () => {
       await assertSucceeds(
         getDoc(doc(barber.firestore(), 'couponGrants', 'grant-1')),
       );
+      // The visit sheet lists a client's grants by their RECORD (D29).
       await assertSucceeds(
         getDocs(
           query(
             collection(barber.firestore(), 'couponGrants'),
-            where('userId', '==', 'client-1'),
+            where('customerId', '==', recordOf('client-1')),
           ),
         ),
       );
@@ -726,6 +854,15 @@ describe('firestore.rules', () => {
       const other = testEnv.authenticatedContext('client-2');
       await assertFails(
         getDoc(doc(other.firestore(), 'couponGrants', 'grant-1')),
+      );
+      // A list not pinned to the caller's own account is refused whole.
+      await assertFails(
+        getDocs(
+          query(
+            collection(other.firestore(), 'couponGrants'),
+            where('holderUserId', '==', 'client-1'),
+          ),
+        ),
       );
       const copy = testEnv.authenticatedContext('staff-2', {
         roles: ['content_manager'],
@@ -738,24 +875,99 @@ describe('firestore.rules', () => {
         getDoc(doc(anon.firestore(), 'couponGrants', 'grant-1')),
       );
     });
+
+    it('refuses a walk-in’s grant (no holder account) to every client, and lets the book read it', async () => {
+      await seed('couponGrants/grant-walk-in', grantBody(null));
+      await assertFails(
+        getDoc(
+          doc(
+            signedIn('client-1', 'client').firestore(),
+            'couponGrants',
+            'grant-walk-in',
+          ),
+        ),
+      );
+      await assertSucceeds(
+        getDoc(
+          doc(
+            signedIn('staff-1', 'barber').firestore(),
+            'couponGrants',
+            'grant-walk-in',
+          ),
+        ),
+      );
+    });
+
+    /**
+     * TIGHTENED in flip 1 (blueprint §3.2): `allow update: if false`. The
+     * owner's exclusion-list update let a client move its own grant's
+     * lifecycle — a used grant back to active included — and no sanctioned
+     * client path ever needed it.
+     */
+    it('refuses the holder flipping their used grant back to active', async () => {
+      const owner = signedIn('client-1', 'client').firestore();
+      const active = GrantLifecycle.active(
+        GrantCapacityTerms.singleUse(),
+        GrantExpiryTerms.none(),
+      );
+      await assertFails(
+        updateDoc(doc(owner, 'couponGrants', 'grant-used'), {
+          ...active,
+          usedAtUtcMs: deleteField(),
+          usedNote: deleteField(),
+        }),
+      );
+      await assertFails(
+        setDoc(
+          doc(owner, 'couponGrants', 'grant-used'),
+          grantBody('client-1', active),
+        ),
+      );
+    });
+
+    it('refuses every other client-side update of a grant — the holder’s, the book’s and the admin’s', async () => {
+      const used = GrantLifecycle.used(
+        utcMs('2026-09-12T12:00:00.000+03:00'),
+        'client',
+      );
+      for (const [uid, role] of [
+        ['client-1', 'client'],
+        ['staff-1', 'barber'],
+        ['staff-2', 'receptionist'],
+        ['staff-3', 'admin'],
+        ['staff-4', 'sysadmin'],
+      ] as const) {
+        const db = signedIn(uid, role).firestore();
+        // The lifecycle a redemption would move — never from a client.
+        await assertFails(
+          updateDoc(doc(db, 'couponGrants', 'grant-1'), { ...used }),
+        );
+        // Nor a key the old exclusion list left open.
+        await assertFails(
+          updateDoc(doc(db, 'couponGrants', 'grant-1'), {
+            grantedAtUtcMs: utcMs('2026-09-02T09:00:00.000+03:00'),
+          }),
+        );
+      }
+    });
+
+    it('refuses minting or deleting a grant from a client, whoever signs in', async () => {
+      for (const [uid, role] of [
+        ['client-1', 'client'],
+        ['staff-3', 'admin'],
+      ] as const) {
+        const db = signedIn(uid, role).firestore();
+        await assertFails(
+          setDoc(doc(db, 'couponGrants', 'grant-new'), grantBody(uid)),
+        );
+        await assertFails(deleteDoc(doc(db, 'couponGrants', 'grant-1')));
+      }
+    });
   });
 
   describe('giftVouchers — the holder, the book, and nobody writes (2026-09-10)', () => {
-    const voucher = {
-      code: 'GIFT2025',
-      initialValueMinorUnits: 2500,
-      balanceMinorUnits: 2500,
-      currencyCode: 'EUR',
-      issuedAt: { iso: '2026-09-01T09:00:00.000+03:00', zone: 'Europe/Sofia' },
-      expiresAt: null,
-      issuedToUserId: 'client-1',
-      state: { kind: 'active' },
-    };
-
     beforeEach(async () => {
-      await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(doc(ctx.firestore(), 'giftVouchers', 'v1'), voucher);
-      });
+      await seed('giftVouchers/v1', voucherBody('client-1', 'GIFT2025'));
     });
 
     it('lets the holder and a barber read a voucher, by id and by code', async () => {
@@ -789,7 +1001,7 @@ describe('firestore.rules', () => {
       });
       await assertFails(
         updateDoc(doc(admin.firestore(), 'giftVouchers', 'v1'), {
-          balanceMinorUnits: 0,
+          balanceCents: cents(0),
         }),
       );
     });
@@ -797,34 +1009,270 @@ describe('firestore.rules', () => {
 
   describe('waitlistRequests — callable-only writes', () => {
     it('refuses the owner direct status flip the callable replaced', async () => {
+      const opened = utcMs('2026-08-31T21:10:00.000+03:00');
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(doc(ctx.firestore(), 'waitlistRequests', 'wl-1'), {
-          ownerUserId: 'user-1',
-          status: 'open',
-          dayKeys: ['2026-09-01'],
-        });
+          ownerUserId: UserId.of('user-1'),
+          locationId: LocationId.of('loc-center'),
+          localDates: [localDate('2026-09-01')],
+          utcEpochMs: utcMs('2026-09-01T00:00:00.000+03:00'),
+          createdAtUtcMs: opened,
+          cartSeats: [],
+          cartNextSequence: 0,
+          flexibleDays: [
+            DayWindows.of(localDate('2026-09-01'), [
+              MinuteRange.of(minute(14 * 60), endMinute(17 * 60)),
+            ]),
+          ],
+          ...WaitlistLifecycle.open(opened),
+        } satisfies Omit<WaitlistRequest, 'id'>);
       });
       const owner = testEnv.authenticatedContext('user-1', {
         roles: ['client'],
       });
       await assertFails(
         updateDoc(doc(owner.firestore(), 'waitlistRequests', 'wl-1'), {
-          status: 'cancelled',
+          waitlistStatus: 'CANCELLED',
         }),
       );
     });
   });
 
+  describe('users/{uid}/notifications — the recipient may stamp the read, and nothing else', () => {
+    const inboxPath = 'users/client-1/notifications/n1';
+    const sent = utcMs('2026-09-01T09:00:00.000+03:00');
+    const readAt = utcMs('2026-09-01T10:00:00.000+03:00');
+
+    beforeEach(async () => {
+      await seed(inboxPath, {
+        sentAtUtcMs: sent,
+        readAtUtcMs: null,
+        ...NotificationPayload.waitlistMatch(
+          WaitlistRequestId.of('wl-1'),
+          localDate('2026-09-04'),
+          minute(15 * 60),
+        ),
+      } satisfies Omit<InboxNotification, 'id'>);
+    });
+
+    it('lets the recipient read their inbox and stamp a notification read', async () => {
+      const owner = signedIn('client-1', 'client').firestore();
+      await assertSucceeds(getDoc(doc(owner, inboxPath)));
+      await assertSucceeds(
+        updateDoc(doc(owner, inboxPath), { readAtUtcMs: readAt }),
+      );
+    });
+
+    it('refuses the retired ISO read stamp (`readAtIso`), and any write beside the stamp', async () => {
+      const owner = signedIn('client-1', 'client').firestore();
+      await assertFails(
+        updateDoc(doc(owner, inboxPath), {
+          readAtIso: '2026-09-01T10:00:00.000+03:00',
+        }),
+      );
+      await assertFails(
+        updateDoc(doc(owner, inboxPath), {
+          readAtUtcMs: readAt,
+          startMinutes: minute(9 * 60),
+        }),
+      );
+      await assertFails(
+        updateDoc(doc(owner, inboxPath), {
+          notificationTopic: NotificationTopic.Announcement,
+        }),
+      );
+    });
+
+    it('refuses another account, the book, and every create or delete from a client', async () => {
+      for (const db of [
+        signedIn('client-2', 'client').firestore(),
+        signedIn('staff-1', 'admin').firestore(),
+      ]) {
+        await assertFails(getDoc(doc(db, inboxPath)));
+        await assertFails(
+          updateDoc(doc(db, inboxPath), { readAtUtcMs: readAt }),
+        );
+      }
+      const owner = signedIn('client-1', 'client').firestore();
+      await assertFails(
+        setDoc(doc(owner, 'users/client-1/notifications/n2'), {
+          sentAtUtcMs: sent,
+          readAtUtcMs: null,
+          notificationTopic: NotificationTopic.RewardGranted,
+        }),
+      );
+      await assertFails(deleteDoc(doc(owner, inboxPath)));
+    });
+  });
+
+  describe('customers — the book keeps the records, an account reads its own (D29, flip 1)', () => {
+    const ownPath = `customers/${recordOf('client-1')}`;
+    const walkInPath = 'customers/cus_walkin0000000000000';
+
+    /** A client record as `customers/{customerId}` stores it (`Customer`). */
+    const customerBody = (userId: string | null): Omit<Customer, 'id'> =>
+      ({
+        userId: userId === null ? null : UserId.of(userId),
+        displayName: 'Иван Петров',
+        phone: null,
+        email: null,
+        searchName: 'иван петров',
+        searchPrefixes: ['и', 'ив', 'ива', 'иван', 'п', 'пе', 'пет'],
+        createdAtUtcMs: SEPT_FIRST,
+        customerOrigin:
+          userId === null ? CustomerOrigin.StaffWalkIn : CustomerOrigin.Seed,
+      }) satisfies Omit<Customer, 'id'>;
+
+    beforeEach(async () => {
+      await seed(ownPath, customerBody('client-1'));
+      await seed(walkInPath, customerBody(null));
+    });
+
+    it.each(['barber', 'receptionist', 'admin', 'sysadmin'])(
+      'lets a %s read and keep client records',
+      async (role) => {
+        const db = signedIn('staff-1', role).firestore();
+        await assertSucceeds(getDoc(doc(db, ownPath)));
+        await assertSucceeds(getDoc(doc(db, walkInPath)));
+        await assertSucceeds(
+          getDocs(
+            query(
+              collection(db, 'customers'),
+              where('userId', '==', 'client-1'),
+              limit(1),
+            ),
+          ),
+        );
+        await assertSucceeds(
+          setDoc(
+            doc(db, 'customers/cus_walkin0000000000001'),
+            customerBody(null),
+          ),
+        );
+        await assertSucceeds(
+          updateDoc(doc(db, walkInPath), { displayName: 'Борис' }),
+        );
+      },
+    );
+
+    it('lets an account read its own record, by id and by the one-record query', async () => {
+      const owner = signedIn('client-1', 'client').firestore();
+      await assertSucceeds(getDoc(doc(owner, ownPath)));
+      await assertSucceeds(
+        getDocs(
+          query(
+            collection(owner, 'customers'),
+            where('userId', '==', 'client-1'),
+            limit(1),
+          ),
+        ),
+      );
+    });
+
+    it('refuses another client, a content manager and an anonymous visitor', async () => {
+      for (const db of [
+        signedIn('client-2', 'client').firestore(),
+        signedIn('copy-1', 'content_manager').firestore(),
+        testEnv.unauthenticatedContext().firestore(),
+      ]) {
+        await assertFails(getDoc(doc(db, ownPath)));
+        await assertFails(getDoc(doc(db, walkInPath)));
+      }
+      await assertFails(
+        getDocs(
+          query(
+            collection(signedIn('client-2', 'client').firestore(), 'customers'),
+            where('userId', '==', 'client-1'),
+          ),
+        ),
+      );
+    });
+
+    it('refuses a client writing a record — their own included — and everyone deleting one', async () => {
+      const owner = signedIn('client-1', 'client').firestore();
+      await assertFails(updateDoc(doc(owner, ownPath), { displayName: 'X' }));
+      await assertFails(
+        setDoc(
+          doc(owner, `customers/${recordOf('client-9')}`),
+          customerBody('client-9'),
+        ),
+      );
+      for (const role of ['client', 'barber', 'admin', 'sysadmin']) {
+        await assertFails(
+          deleteDoc(doc(signedIn('user-1', role).firestore(), ownPath)),
+        );
+      }
+    });
+  });
+
+  describe('appointmentPhotos — the book’s pictures of a visit, staff-only both ways', () => {
+    const photoPath = 'appointmentPhotos/photo-1';
+
+    /** A photo as `appointmentPhotos/{id}` stores it (`AppointmentPhoto`, `clientCustomerId`). */
+    const photoBody = (): Omit<AppointmentPhoto, 'id'> =>
+      ({
+        appointmentId: AppointmentId.of('appt-1'),
+        barberId: BarberId.of('ivan'),
+        clientCustomerId: recordOf('client-1'),
+        clientLabel: 'Иван Петров',
+        takenByUserId: UserId.of('staff-1'),
+        takenAtUtcMs: SEPT_FIRST,
+        path: 'appointmentPhotos/appt-1/photo-1',
+        url: 'https://example.test/photo-1.jpg',
+        width: 1100,
+        height: 1400,
+        photoOrigin: PhotoOrigin.Shot,
+        label: null,
+      }) satisfies Omit<AppointmentPhoto, 'id'>;
+
+    beforeEach(async () => {
+      await seed(photoPath, photoBody());
+    });
+
+    it('lets the book read a client’s photos by their record, newest first, and save one', async () => {
+      const db = signedIn('staff-1', 'barber').firestore();
+      await assertSucceeds(getDoc(doc(db, photoPath)));
+      await assertSucceeds(
+        getDocs(
+          query(
+            collection(db, 'appointmentPhotos'),
+            where('clientCustomerId', '==', recordOf('client-1')),
+            orderBy('takenAtUtcMs', 'desc'),
+          ),
+        ),
+      );
+      await assertSucceeds(
+        setDoc(doc(db, 'appointmentPhotos/photo-2'), {
+          ...photoBody(),
+          path: 'appointmentPhotos/appt-1/photo-2',
+        }),
+      );
+    });
+
+    it('refuses the client in the picture, a content manager and an anonymous visitor', async () => {
+      for (const db of [
+        signedIn('client-1', 'client').firestore(),
+        signedIn('copy-1', 'content_manager').firestore(),
+        testEnv.unauthenticatedContext().firestore(),
+      ]) {
+        await assertFails(getDoc(doc(db, photoPath)));
+        await assertFails(
+          setDoc(doc(db, 'appointmentPhotos/photo-3'), photoBody()),
+        );
+      }
+    });
+  });
+
   describe('auditLog — admins read, only the server writes (FIX 1)', () => {
-    // The persisted row shape (`auditEntryToDocument`).
+    // The flat row a booking act appends (`AuditEntry`): the actor, the
+    // context and the CUSTOMER target slices at the root (D29).
     const row = {
-      actor: { kind: 'admin', adminUserId: 'staff-1' },
-      action: 'profile.updated',
-      at: '2026-09-25T10:00:00.000Z',
-      targetUserId: 'client-1',
-      resourceId: 'client-1',
-      context: null,
-    };
+      recordedAtUtcMs: utcMs('2026-09-25T13:00:00.000+03:00'),
+      resourceId: AuditResourceId.forAppointment(AppointmentId.of('appt-1')),
+      ...Actor.system(SystemSource.FirestoreSystem),
+      ...AuditContext.cancelled('CLIENT_CHANGED_PLANS'),
+      ...AuditTargetRef.customer(recordOf('client-1')),
+    } satisfies Omit<AuditEntry, 'id'>;
 
     it.each(['admin', 'sysadmin'])(
       'refuses a %s client appending an audit row',
@@ -846,7 +1294,7 @@ describe('firestore.rules', () => {
         getDocs(
           query(
             collection(admin.firestore(), 'auditLog'),
-            where('targetUserId', '==', 'client-1'),
+            where('targetCustomerId', '==', recordOf('client-1')),
           ),
         ),
       );
@@ -871,72 +1319,41 @@ describe('firestore.rules', () => {
         'auditLog',
         'row-1',
       );
-      await assertFails(updateDoc(target, { action: 'nothing.happened' }));
+      await assertFails(
+        updateDoc(target, { auditAction: AuditAction.BookingCommitted }),
+      );
       await assertFails(deleteDoc(target));
     });
   });
 
   describe('clientStats — the book reads, only the server writes', () => {
-    // A trimmed `ClientStats`: rules check who, never the shape.
-    const stats = {
-      userId: 'client-1',
-      lifetime: {
-        visitsCompleted: 23,
-        noShows: 1,
-        lateCancels: 0,
-        clientCancels: 2,
-      },
-      avgCadenceDays: 28,
-      version: 4,
-      updatedAt: '2026-09-25T10:00:00.000Z',
-    };
+    // Keyed by the client RECORD (D29): `clientStats/{customerId}`.
+    const statsPath = `clientStats/${recordOf('client-1')}`;
 
     beforeEach(async () => {
-      await seed('clientStats/client-1', stats);
+      await seed(statsPath, statsBody('client-1'));
     });
 
     it.each(['barber', 'receptionist', 'admin', 'sysadmin'])(
       "lets a %s read a client's statistics",
       async (role) => {
         await assertSucceeds(
-          getDoc(
-            doc(
-              signedIn('staff-1', role).firestore(),
-              'clientStats',
-              'client-1',
-            ),
-          ),
+          getDoc(doc(signedIn('staff-1', role).firestore(), statsPath)),
         );
       },
     );
 
     it('refuses the client they describe, a content manager and an anonymous visitor', async () => {
       await assertFails(
-        getDoc(
-          doc(
-            signedIn('client-1', 'client').firestore(),
-            'clientStats',
-            'client-1',
-          ),
-        ),
+        getDoc(doc(signedIn('client-1', 'client').firestore(), statsPath)),
       );
       await assertFails(
         getDoc(
-          doc(
-            signedIn('copy-1', 'content_manager').firestore(),
-            'clientStats',
-            'client-1',
-          ),
+          doc(signedIn('copy-1', 'content_manager').firestore(), statsPath),
         ),
       );
       await assertFails(
-        getDoc(
-          doc(
-            testEnv.unauthenticatedContext().firestore(),
-            'clientStats',
-            'client-1',
-          ),
-        ),
+        getDoc(doc(testEnv.unauthenticatedContext().firestore(), statsPath)),
       );
     });
 
@@ -949,28 +1366,22 @@ describe('firestore.rules', () => {
     ])('refuses a client-side write by %s (%s)', async (uid, role) => {
       const db = signedIn(uid, role).firestore();
       await assertFails(
-        setDoc(doc(db, 'clientStats', 'client-1'), { ...stats, version: 5 }),
+        setDoc(doc(db, statsPath), { ...statsBody('client-1'), version: 5 }),
       );
       await assertFails(
-        setDoc(doc(db, 'clientStats', 'client-2'), {
-          ...stats,
-          userId: 'client-2',
-        }),
+        setDoc(
+          doc(db, `clientStats/${recordOf('client-2')}`),
+          statsBody('client-2'),
+        ),
       );
     });
   });
 
-  describe('clientStats/{uid}/restricted — lifetime spend is the shop admin’s alone', () => {
-    const moneyPath = 'clientStats/client-1/restricted/money';
-    const money = {
-      userId: 'client-1',
-      lifetimeSpendMinor: 64_000,
-      version: 4,
-      updatedAt: '2026-09-25T10:00:00.000Z',
-    };
+  describe('clientStats/{customerId}/restricted — lifetime spend is the shop admin’s alone', () => {
+    const moneyPath = `clientStats/${recordOf('client-1')}/restricted/money`;
 
     beforeEach(async () => {
-      await seed(moneyPath, money);
+      await seed(moneyPath, moneyBody('client-1', 64_000));
     });
 
     it('lets the shop admin read lifetime spend', async () => {
@@ -999,10 +1410,10 @@ describe('firestore.rules', () => {
     it('refuses every client-side write, the admin’s included', async () => {
       for (const role of ['admin', 'sysadmin']) {
         await assertFails(
-          setDoc(doc(signedIn('staff-1', role).firestore(), moneyPath), {
-            ...money,
-            lifetimeSpendMinor: 0,
-          }),
+          setDoc(
+            doc(signedIn('staff-1', role).firestore(), moneyPath),
+            moneyBody('client-1', 0),
+          ),
         );
       }
     });
@@ -1337,88 +1748,63 @@ describe('firestore.rules', () => {
   describe('coupons — an admin’s save keeps what the coupon is given for (2026-09-29)', () => {
     const couponPath = 'coupons/coupon-birthday';
 
-    function birthday(percent: number): Coupon {
-      const value = CouponValue.percentOff(percent);
-      const expiry = CouponExpiry.days(30);
-      if (value.isFailure() || expiry.isFailure()) {
-        throw new Error('bad fixture coupon');
-      }
-      const coupon = Coupon.create({
-        id: 'coupon-birthday',
+    /**
+     * The birthday coupon as `coupons/{id}` stores it (`Coupon`, flip 1):
+     * the value, the expiry and the occasion slices at the root — what the
+     * seed writes and an admin's editor saves back whole.
+     */
+    function birthday(percent: number): Omit<Coupon, 'id'> {
+      return {
         name: 'Рожден ден',
-        value: value.value,
-        combinability: CouponCombinability.exclusive(),
-        expiry: expiry.value,
-        enabled: true,
-        occasion: 'birthday',
-      });
-      if (coupon.isFailure()) throw new Error('bad fixture coupon');
-      return coupon.value;
+        code: null,
+        combinability: Combinability.Exclusive,
+        usageLimit: null,
+        couponStatus: CouponStatus.Enabled,
+        couponOccasion: CouponOccasion.Birthday,
+        ...unwrapOk(CouponValue.percentOff(percent)),
+        ...unwrapOk(CouponExpiryRule.days(30)),
+      } satisfies Omit<Coupon, 'id'>;
     }
 
     async function stored(
       db: ReturnType<RulesTestContext['firestore']>,
-    ): Promise<Coupon> {
+    ): Promise<Record<string, unknown>> {
       const snapshot = await assertSucceeds(getDoc(doc(db, couponPath)));
-      const coupon = couponFromPersistence(snapshot.id, snapshot.data() ?? {});
-      if (coupon.isFailure()) throw coupon.error;
-      return coupon.value;
+      return snapshot.data() ?? {};
     }
 
     it('round-trips the occasion through an admin’s edit of the birthday coupon', async () => {
       // As the seed writes it.
-      await seed(couponPath, couponToPersistence(birthday(20)));
+      await seed(couponPath, birthday(20));
       const admin = signedIn('staff-2', 'admin').firestore();
 
       // The editor reads the coupon, changes the figure, saves the whole document.
       const read = await stored(admin);
-      expect(read.occasion).toBe('birthday');
-      const edited = Coupon.create({
-        id: read.id.value,
-        name: read.name,
-        value: birthday(25).value,
-        combinability: read.combinability,
-        expiry: read.expiry,
-        enabled: read.enabled,
-        code: read.code,
-        occasion: read.occasion,
-      });
-      if (edited.isFailure()) throw new Error('bad edit');
+      expect(read['couponOccasion']).toBe(CouponOccasion.Birthday);
       await assertSucceeds(
-        setDoc(doc(admin, couponPath), couponToPersistence(edited.value)),
+        setDoc(doc(admin, couponPath), { ...read, discountPercent: 25 }),
       );
 
       // What the card reads afterwards: the gift is still the birthday's.
       const back = await stored(signedIn('staff-1', 'barber').firestore());
-      expect(back.occasion).toBe('birthday');
-      expect(couponToPersistence(back)).toEqual(
-        couponToPersistence(birthday(25)),
-      );
+      expect(back['couponOccasion']).toBe(CouponOccasion.Birthday);
+      expect(back).toEqual(birthday(25));
     });
 
-    it('reads a coupon written before occasions existed as tied to none, and writes the field back', async () => {
-      await seed(
-        couponPath,
-        Object.fromEntries(
-          Object.entries(couponToPersistence(birthday(20))).filter(
-            ([field]) => field !== 'occasion',
-          ),
-        ),
-      );
+    it('writes a coupon tied to no occasion back with the field, as `null`', async () => {
+      await seed(couponPath, { ...birthday(20), couponOccasion: null });
       const admin = signedIn('staff-2', 'admin').firestore();
 
       const read = await stored(admin);
-      expect(read.occasion).toBeNull();
-      await assertSucceeds(
-        setDoc(doc(admin, couponPath), couponToPersistence(read)),
-      );
+      expect(read['couponOccasion']).toBeNull();
+      await assertSucceeds(setDoc(doc(admin, couponPath), read));
 
       const snapshot = await assertSucceeds(getDoc(doc(admin, couponPath)));
-      expect(snapshot.data()).toHaveProperty('occasion', null);
+      expect(snapshot.data()).toHaveProperty('couponOccasion', null);
     });
 
     it('refuses the save to everyone but the admin pair', async () => {
-      await seed(couponPath, couponToPersistence(birthday(20)));
+      await seed(couponPath, birthday(20));
       for (const [uid, role] of [
         ['staff-1', 'barber'],
         ['staff-3', 'receptionist'],
@@ -1426,7 +1812,7 @@ describe('firestore.rules', () => {
       ] as const) {
         await assertFails(
           updateDoc(doc(signedIn(uid, role).firestore(), couponPath), {
-            occasion: null,
+            couponOccasion: null,
           }),
         );
       }
@@ -1434,17 +1820,6 @@ describe('firestore.rules', () => {
   });
 
   describe('the card’s new reads: a holder’s vouchers, the activity, the shop’s statistics (2026-09-29)', () => {
-    const voucher = (holder: string | null, code: string) => ({
-      code,
-      initialValueMinorUnits: 5000,
-      balanceMinorUnits: 2500,
-      currencyCode: 'EUR',
-      issuedAt: { iso: '2026-06-13T10:45:00.000+03:00', zone: 'Europe/Sofia' },
-      expiresAt: null,
-      issuedToUserId: holder,
-      state: { kind: 'active' },
-    });
-
     const journalRow = (
       seq: number,
       kind: string,
@@ -1452,9 +1827,9 @@ describe('firestore.rules', () => {
     ) => ({ userId: 'client-1', seq, visibility, effect: { kind } });
 
     beforeEach(async () => {
-      await seed('giftVouchers/v-georgi', voucher('client-1', 'GIFT50'));
-      await seed('giftVouchers/v-martin', voucher('client-2', 'GIFT2025'));
-      await seed('giftVouchers/v-paper', voucher(null, 'GIFT5'));
+      await seed('giftVouchers/v-georgi', voucherBody('client-1', 'GIFT50'));
+      await seed('giftVouchers/v-martin', voucherBody('client-2', 'GIFT2025'));
+      await seed('giftVouchers/v-paper', voucherBody(null, 'GIFT5'));
       await seed('clientJournal/client-1_000001', journalRow(1, 'points'));
       await seed('clientJournal/client-1_000002', journalRow(2, 'tier'));
       await seed('clientJournal/client-1_000003', journalRow(3, 'reward'));
@@ -1466,11 +1841,11 @@ describe('firestore.rules', () => {
         journalRow(7, 'pause', 'staff'),
       );
       for (const uid of ['client-1', 'client-2', 'client-3']) {
-        await seed(`clientStats/${uid}`, { userId: uid, version: 1 });
-        await seed(`clientStats/${uid}/restricted/money`, {
-          userId: uid,
-          lifetimeSpendMinor: 12_000,
-        });
+        await seed(`clientStats/${recordOf(uid)}`, statsBody(uid));
+        await seed(
+          `clientStats/${recordOf(uid)}/restricted/money`,
+          moneyBody(uid, 12_000),
+        );
       }
     });
 
@@ -1481,7 +1856,7 @@ describe('firestore.rules', () => {
       getDocs(
         query(
           collection(db, 'giftVouchers'),
-          where(GIFT_VOUCHER_HOLDER_FIELD, '==', holder),
+          where('holderUserId' satisfies keyof GiftVoucher, '==', holder),
         ),
       );
 
@@ -1581,13 +1956,14 @@ describe('firestore.rules', () => {
       async (role) => {
         const db = signedIn('staff-1', role).firestore();
 
+        // The records in document-id order, as the walk pages them.
+        const [one, two, three] = ['client-1', 'client-2', 'client-3']
+          .map(recordOf)
+          .sort();
         const first = await assertSucceeds(statsPage(db, null));
-        expect(first.docs.map((entry) => entry.id)).toEqual([
-          'client-1',
-          'client-2',
-        ]);
-        const second = await assertSucceeds(statsPage(db, 'client-2'));
-        expect(second.docs.map((entry) => entry.id)).toEqual(['client-3']);
+        expect(first.docs.map((entry) => entry.id)).toEqual([one, two]);
+        const second = await assertSucceeds(statsPage(db, two ?? ''));
+        expect(second.docs.map((entry) => entry.id)).toEqual([three]);
         expect(
           [...first.docs, ...second.docs].every(
             (entry) => entry.ref.parent.path === 'clientStats',

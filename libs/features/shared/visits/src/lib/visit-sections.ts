@@ -1,7 +1,7 @@
-import { ZonedDateTime } from '@creativo/application/booking';
-import { LocalDate, type MinuteOfDay, defect } from '@core/primitives';
+import { LocalDate, type MinuteOfDay } from '@core/primitives';
 import { VisitListSystem } from '@core/systems';
 import { VISIT_GRAIN_OF, filterRowOf, wallTimeOf } from './visit-ecs.shim';
+import { formatWallClockParts } from './wall-clock';
 import type { VisitGrain, VisitRowVm, VisitSectionVm } from './visit-row.vm';
 
 /*
@@ -80,16 +80,11 @@ export function workedVisitsDetail(
 
 /**
  * The dated section a visit files under — `2026-09` by month, `2026` by
- * year — on its OWN calendar (the shop's zone travels with the instant), so
+ * year — by its SHOP day (`localDate`, the wall clock it is stored on), so
  * a visit at 00:30 on the 1st is never filed under the month before.
  */
-export function visitSectionKey(
-  start: ZonedDateTime,
-  grain: VisitGrain,
-): string {
-  const day = LocalDate.parse(start.toISODate());
-  if (!day.ok) defect('unreachable: an instant’s calendar day');
-  return VisitListSystem.sectionKeyOf(day.value, VISIT_GRAIN_OF[grain]);
+export function visitSectionKey(day: LocalDate, grain: VisitGrain): string {
+  return VisitListSystem.sectionKeyOf(day, VISIT_GRAIN_OF[grain]);
 }
 
 /**
@@ -101,19 +96,10 @@ export function visitSectionKey(
 export function visitSectionLabel(key: string, locale: string): string {
   const month = /^(\d{4})-(\d{2})$/.exec(key);
   if (!month) return key;
-  // Mid-month at noon: no zone's offset can move it into another month.
-  const noon = ZonedDateTime.fromParts(
-    {
-      year: Number(month[1]),
-      month: Number(month[2]),
-      day: 15,
-      hour: 12,
-      minute: 0,
-    },
-    'UTC',
-  );
-  if (noon.isFailure()) return key;
-  const label = noon.value.toLocaleString(locale, {
+  // The month's middle day, printed as a wall-clock day (no zone moves it).
+  const mid = LocalDate.fromParts(Number(month[1]), Number(month[2]), 15);
+  if (!mid.ok) return key;
+  const label = formatWallClockParts(mid.value, null, locale, {
     month: 'long',
     year: 'numeric',
   });

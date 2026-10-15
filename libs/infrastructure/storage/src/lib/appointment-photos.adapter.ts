@@ -1,237 +1,271 @@
-import { Injectable, inject } from '@angular/core';
 import {
+  type DocumentData,
+  type Firestore,
+  type QueryConstraint,
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  limit,
   onSnapshot,
+  orderBy,
   query,
   setDoc,
   where,
 } from 'firebase/firestore';
 import {
+  type FirebaseStorage,
   deleteObject,
   getDownloadURL,
   ref,
   uploadBytes,
 } from 'firebase/storage';
-import { Observable } from 'rxjs';
-import {
-  FIREBASE_AUTH,
-  FIREBASE_FIRESTORE,
-} from '@creativo/infrastructure/firebase-app';
+import { type Observable, map } from 'rxjs';
 import { subscribeWithRetry } from '@creativo/infrastructure/firestore';
+import { PhotoOrigin } from '@core/components';
 import {
-  APPOINTMENT_PHOTOS_COLLECTION,
-  type AppointmentPhoto,
-  type AppointmentPhotoAttachment,
-  type AppointmentPhotoReference,
-  type AppointmentPhotos,
-} from '@creativo/application/booking';
-import { RepositoryError } from '@creativo/application/shared';
-import { Result, fail, ok } from '@creativo/domain/kernel';
-import { FIREBASE_STORAGE } from './storage.provider';
+  type AppointmentId,
+  MediaError,
+  RepositoryError,
+  Result,
+} from '@core/primitives';
+import { type AppointmentPhoto, Collections } from '@core/entities';
+import type { AppointmentPhotoPorts } from '@core/ports';
 import { storageErrorCode } from './storage-error-code';
 
-const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+/** Firestore's cap on the values of one `in` filter. */
+const IN_FILTER_MAX = 30;
+
+const PHOTOS = Collections.AppointmentPhotos;
+
+/** A photo document as its entity — the body beside its id (Law 5), no mapping. */
+const photoOf = (id: string, data: DocumentData): AppointmentPhoto =>
+  ({ id, ...data }) as AppointmentPhoto;
+
+/** Only the visit's own pictures count as a client's photos — the shop's library pictures never do. */
+const isShot = (photo: AppointmentPhoto): boolean =>
+  photo.photoOrigin === PhotoOrigin.Shot;
+
+/** Ascending by the instant taken — the order a visit's strip reads in. */
+const byTaken = (a: AppointmentPhoto, b: AppointmentPhoto): number =>
+  a.takenAtUtcMs - b.takenAtUtcMs;
+
+/** The store's own reason for a failure: the SDK's `code`, else the message. */
+function reasonOf(cause: unknown): string | null {
+  const code = storageErrorCode(cause);
+  if (code !== undefined) return code;
+  return cause instanceof Error ? cause.message : null;
+}
 
 /**
- * `appointmentPhotos/{photoId}` beside `appointmentPhotos/{appointmentId}/
- * {photoId}` in Storage — the shop's photos of a visit, staff-only in both
- * places (the rules files match the one name).
- *
- * A plain `setDoc` after a plain `uploadBytes`, deliberately: like the
- * team's note, nothing here is the availability engine's business, so there
- * is no callable between the shutter and the write. The facts — the visit,
- * the chair, the client, who and when — are stamped here, on the document
- * and on the object's own metadata. The download URL is written with the
- * document so a visit's photos read in one snapshot, never one URL lookup
- * per picture.
+ * A Storage failure as the media port's error: Storage's two permanent
+ * answers (`object-not-found`, `unauthorized`) are permanent here too;
+ * everything else is worth a bounded retry.
  */
-@Injectable()
-export class FirebaseAppointmentPhotos implements AppointmentPhotos {
-  private readonly db = inject(FIREBASE_FIRESTORE);
-  private readonly storage = inject(FIREBASE_STORAGE);
-  private readonly auth = inject(FIREBASE_AUTH);
-
-  observe(
-    appointmentId: string,
-  ): Observable<Result<readonly AppointmentPhoto[], RepositoryError>> {
-    // An equality alone, sorted here: an `orderBy` beside it would need a
-    // composite index for a list that is never longer than a visit.
-    const photos = query(
-      collection(this.db, APPOINTMENT_PHOTOS_COLLECTION),
-      where('appointmentId', '==', appointmentId),
-    );
-    return subscribeWithRetry<readonly AppointmentPhoto[]>((onNext, onError) =>
-      onSnapshot(
-        photos,
-        (snapshot) => {
-          onNext(
-            snapshot.docs
-              .flatMap((entry) => {
-                const photo = toPhoto(entry.id, entry.data());
-                return photo === null ? [] : [photo];
-              })
-              .sort((a, b) => a.takenAtIso.localeCompare(b.takenAtIso)),
-          );
-        },
-        onError,
-      ),
-    );
+function mediaErrorOf(path: string, cause: unknown): MediaError {
+  switch (storageErrorCode(cause)) {
+    case 'storage/object-not-found':
+      return MediaError.notFound(path);
+    case 'storage/unauthorized':
+      return MediaError.forbidden(path);
+    default:
+      return MediaError.transient(path);
   }
+}
 
-  async attach(
-    attachment: AppointmentPhotoAttachment,
-  ): Promise<Result<AppointmentPhoto, RepositoryError>> {
-    const { image } = attachment;
-    if (!image.type.startsWith('image/')) {
-      return fail(
-        new RepositoryError(`"${image.type}" is not an image content type`),
+/** `ids`, each once, in chunks one `in` filter can carry. */
+function chunksOf(
+  ids: readonly AppointmentId[],
+): readonly (readonly AppointmentId[])[] {
+  const distinct = [...new Set(ids)];
+  const chunks: AppointmentId[][] = [];
+  for (let start = 0; start < distinct.length; start += IN_FILTER_MAX) {
+    chunks.push(distinct.slice(start, start + IN_FILTER_MAX));
+  }
+  return chunks;
+}
+
+/**
+ * The shop's photos of a visit (flip 1, plan §3.4) —
+ * `appointmentPhotos/{photoId}` documents beside their bytes at
+ * `appointmentPhotos/{appointmentId}/{photoId}` in Storage, staff-only in
+ * both places (the two rules files match the one name). The successor of
+ * `FirebaseAppointmentPhotos` and `FirebaseClientPhotosReader`.
+ *
+ * The staff camera and attach flow uploads the bytes first
+ * (`uploadPhotoBytes`, answering the path and download URL), then saves
+ * the document (`saveAppointmentPhoto`) — the photo arrives whole, its
+ * facts and stamps the caller's (session, injected clock), never this
+ * adapter's. The download URL rides on the document, so a visit's photos
+ * read in one snapshot, never one URL lookup per picture.
+ *
+ * The live and one-shot document reads follow the firestore lib's
+ * `observe.ts` exactly; they are restated here because that module sits in
+ * the lib's lazy half, which no other lib may import statically.
+ */
+export const appointmentPhotoPorts = (
+  db: Firestore,
+  storage: FirebaseStorage,
+): AppointmentPhotoPorts => {
+  const photos = collection(db, PHOTOS);
+
+  const readPhotos = async (
+    ...constraints: readonly QueryConstraint[]
+  ): Promise<Result<readonly AppointmentPhoto[], RepositoryError>> => {
+    try {
+      const snap = await getDocs(query(photos, ...constraints));
+      return Result.ok(
+        snap.docs.map((entry) => photoOf(entry.id, entry.data())),
       );
+    } catch (cause) {
+      return Result.err(RepositoryError.readFailed(PHOTOS, reasonOf(cause)));
     }
-    if (image.size > MAX_PHOTO_BYTES) {
-      return fail(
-        new RepositoryError(
-          `The photo is ${image.size} bytes, over the ${MAX_PHOTO_BYTES}-byte limit`,
+  };
+
+  return {
+    /**
+     * A visit's photos, live, in the order they were taken — an equality
+     * alone, sorted here: an `orderBy` beside it would need a composite
+     * index for a list never longer than a visit.
+     */
+    observeAppointmentPhotos: (
+      appointmentId,
+    ): Observable<Result<readonly AppointmentPhoto[], RepositoryError>> =>
+      subscribeWithRetry<readonly AppointmentPhoto[]>((next, error) =>
+        onSnapshot(
+          query(photos, where('appointmentId', '==', appointmentId)),
+          (snap) =>
+            next(
+              snap.docs
+                .map((entry) => photoOf(entry.id, entry.data()))
+                .sort(byTaken),
+            ),
+          error,
+        ),
+      ).pipe(
+        map((answer) =>
+          answer.isSuccess()
+            ? Result.ok(answer.value)
+            : Result.err(
+                RepositoryError.readFailed(
+                  PHOTOS,
+                  reasonOf(answer.error.cause),
+                ),
+              ),
+        ),
+      ),
+
+    saveAppointmentPhoto: async (photo) => {
+      const { id, ...body } = photo;
+      try {
+        await setDoc(doc(db, PHOTOS, id), body);
+        return Result.ok(undefined);
+      } catch (cause) {
+        return Result.err(
+          RepositoryError.writeFailed(`${PHOTOS}/${id}`, reasonOf(cause)),
+        );
+      }
+    },
+
+    /**
+     * The document goes; the bytes go with it only when the photo was SHOT
+     * for the visit (`PhotoOrigin.ownsBytes`) — the shop's own library
+     * picture stays the shop's. Bytes already gone are gone: the document
+     * was the record.
+     */
+    deleteAppointmentPhoto: async (photo) => {
+      try {
+        await deleteDoc(doc(db, PHOTOS, photo.id));
+      } catch (cause) {
+        return Result.err(
+          RepositoryError.writeFailed(`${PHOTOS}/${photo.id}`, reasonOf(cause)),
+        );
+      }
+      if (!PhotoOrigin.ownsBytes(photo.photoOrigin))
+        return Result.ok(undefined);
+      try {
+        await deleteObject(ref(storage, photo.path));
+        return Result.ok(undefined);
+      } catch (cause) {
+        return storageErrorCode(cause) === 'storage/object-not-found'
+          ? Result.ok(undefined)
+          : Result.err(
+              RepositoryError.writeFailed(photo.path, reasonOf(cause)),
+            );
+      }
+    },
+
+    /**
+     * A client's newest photos across visits — `clientCustomerId ==`,
+     * `takenAtUtcMs` desc (index #22; the `orderBy` is what makes `limit`
+     * keep the newest), the visits' own shots only. No room, no read.
+     */
+    listClientPhotos: async (clientCustomerId, max) => {
+      if (!(max >= 1)) return Result.ok([]);
+      const read = await readPhotos(
+        where('clientCustomerId', '==', clientCustomerId),
+        orderBy('takenAtUtcMs', 'desc'),
+        limit(Math.floor(max)),
+      );
+      return read.ok ? Result.ok(read.value.filter(isShot)) : read;
+    },
+
+    /**
+     * How many of its own shots each visit holds — `appointmentId in`,
+     * thirty ids a query (single-field), counted here. Positions preserved:
+     * `out[i]` counts `appointmentIds[i]`; an id is asked once however often
+     * it is listed. No ids, no read.
+     */
+    countPhotosByAppointment: async (appointmentIds) => {
+      const reads = await Promise.all(
+        chunksOf(appointmentIds).map((batch) =>
+          readPhotos(where('appointmentId', 'in', batch)),
         ),
       );
-    }
-    const photoId = crypto.randomUUID();
-    const path = `${APPOINTMENT_PHOTOS_COLLECTION}/${attachment.appointmentId}/${photoId}`;
-    const takenByUid = this.auth.currentUser?.uid ?? null;
-    const takenAtIso = new Date().toISOString();
-    try {
-      const objectRef = ref(this.storage, path);
-      await uploadBytes(objectRef, image, {
-        contentType: image.type,
-        // The facts on the object itself, so the file says who and for whom
-        // with no document beside it. Metadata is strings only.
-        customMetadata: {
-          appointmentId: attachment.appointmentId,
-          barberId: attachment.barberId,
-          clientUserId: attachment.clientUserId ?? '',
-          clientLabel: attachment.clientLabel,
-          takenByUid: takenByUid ?? '',
-          takenAtIso,
-        },
-      });
-      const url = await getDownloadURL(objectRef);
-      const photo: AppointmentPhoto = {
-        photoId,
-        appointmentId: attachment.appointmentId,
-        barberId: attachment.barberId,
-        clientUserId: attachment.clientUserId,
-        clientLabel: attachment.clientLabel,
-        takenByUid,
-        takenAtIso,
-        path,
-        url,
-        width: attachment.width,
-        height: attachment.height,
-        origin: 'shot',
-        label: null,
-      };
-      await setDoc(doc(this.db, APPOINTMENT_PHOTOS_COLLECTION, photoId), photo);
-      return ok(photo);
-    } catch (cause) {
-      return fail(new RepositoryError('Could not attach the photo', cause));
-    }
-  }
-
-  async adopt(
-    reference: AppointmentPhotoReference,
-  ): Promise<Result<AppointmentPhoto, RepositoryError>> {
-    const photoId = crypto.randomUUID();
-    const photo: AppointmentPhoto = {
-      photoId,
-      appointmentId: reference.appointmentId,
-      barberId: reference.barberId,
-      clientUserId: reference.clientUserId,
-      clientLabel: reference.clientLabel,
-      takenByUid: this.auth.currentUser?.uid ?? null,
-      takenAtIso: new Date().toISOString(),
-      path: reference.path,
-      url: reference.url,
-      width: reference.width,
-      height: reference.height,
-      origin: 'library',
-      label: reference.label,
-    };
-    try {
-      await setDoc(doc(this.db, APPOINTMENT_PHOTOS_COLLECTION, photoId), photo);
-      return ok(photo);
-    } catch (cause) {
-      return fail(new RepositoryError('Could not assign the picture', cause));
-    }
-  }
-
-  async remove(
-    photo: AppointmentPhoto,
-  ): Promise<Result<void, RepositoryError>> {
-    try {
-      await deleteDoc(
-        doc(this.db, APPOINTMENT_PHOTOS_COLLECTION, photo.photoId),
-      );
-      // The shop's own picture stays the shop's: only the visit's own bytes go.
-      if (photo.origin === 'library') return ok(undefined);
-      try {
-        await deleteObject(ref(this.storage, photo.path));
-      } catch (error) {
-        // Bytes already gone are gone: the document was the record, and it
-        // is deleted. Only a REAL storage failure is one.
-        if (storageErrorCode(error) !== 'storage/object-not-found') {
-          throw error;
+      const counts = new Map<string, number>();
+      for (const read of reads) {
+        if (!read.ok) return read;
+        for (const photo of read.value) {
+          if (isShot(photo)) {
+            counts.set(
+              photo.appointmentId,
+              (counts.get(photo.appointmentId) ?? 0) + 1,
+            );
+          }
         }
       }
-      return ok(undefined);
-    } catch (cause) {
-      return fail(new RepositoryError('Could not remove the photo', cause));
-    }
-  }
-}
+      return Result.ok(appointmentIds.map((id) => counts.get(id) ?? 0));
+    },
 
-/**
- * A document read back — or nothing, for one that does not say what a photo must.
- *
- * Exported for this lib's other photo reader (`FirebaseClientPhotosReader`)
- * so both read a photo one way; not on the lib's public barrel.
- */
-export function toPhoto(
-  photoId: string,
-  data: Record<string, unknown> | undefined,
-): AppointmentPhoto | null {
-  if (data === undefined) return null;
-  const text = (key: string): string | null =>
-    typeof data[key] === 'string' ? (data[key] as string) : null;
-  const size = (key: string): number | null =>
-    typeof data[key] === 'number' ? (data[key] as number) : null;
-  const appointmentId = text('appointmentId');
-  const barberId = text('barberId');
-  const takenAtIso = text('takenAtIso');
-  const path = text('path');
-  const url = text('url');
-  if (
-    appointmentId === null ||
-    barberId === null ||
-    takenAtIso === null ||
-    path === null ||
-    url === null
-  ) {
-    return null;
-  }
-  return {
-    photoId,
-    appointmentId,
-    barberId,
-    clientUserId: text('clientUserId'),
-    clientLabel: text('clientLabel') ?? '',
-    takenByUid: text('takenByUid'),
-    takenAtIso,
-    path,
-    url,
-    width: size('width'),
-    height: size('height'),
-    origin: data['origin'] === 'library' ? 'library' : 'shot',
-    label: text('label'),
+    /**
+     * The bytes up to `appointmentPhotos/{appointmentId}/{photoId}` (today's
+     * object path, byte for byte), then their download URL. The object
+     * carries the photo's six facts as its own metadata (strings only),
+     * under the entity's key names: `clientCustomerId` and `takenByUserId`
+     * empty when absent, `takenAtUtcMs` in decimal. The limits — an image,
+     * at most `storage.rules`' 8 MiB — are the caller's guard BEFORE this
+     * call (`media.port.ts`), never this adapter's: whatever slips past it,
+     * Storage itself refuses, answered as `MEDIA_FORBIDDEN`.
+     */
+    uploadPhotoBytes: async (photo, image) => {
+      const path = `${PHOTOS}/${photo.appointmentId}/${photo.id}`;
+      try {
+        const object = ref(storage, path);
+        await uploadBytes(object, image, {
+          contentType: image.type,
+          customMetadata: {
+            appointmentId: photo.appointmentId,
+            barberId: photo.barberId,
+            clientCustomerId: photo.clientCustomerId ?? '',
+            clientLabel: photo.clientLabel,
+            takenByUserId: photo.takenByUserId ?? '',
+            takenAtUtcMs: String(photo.takenAtUtcMs),
+          },
+        });
+        return Result.ok({ path, url: await getDownloadURL(object) });
+      } catch (cause) {
+        return Result.err(mediaErrorOf(path, cause));
+      }
+    },
   };
-}
+};

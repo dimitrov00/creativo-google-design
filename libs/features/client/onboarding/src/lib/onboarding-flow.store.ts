@@ -34,7 +34,8 @@ import {
 } from '@creativo/application/accounts';
 import { CLOCK } from '@creativo/application/shared';
 import { Observable, map } from 'rxjs';
-import { ServiceId } from '@creativo/application/catalog';
+import { ServiceId as FlowServiceId } from '@creativo/application/catalog';
+import type { ServiceId } from '@core/primitives';
 
 /**
  * The optional phase's steps, in the order the flow machine walks them — the
@@ -203,8 +204,19 @@ export class OnboardingFlowStore {
     this.dispatch({ type: 'personalize' });
   }
 
+  /**
+   * The picked catalogue services, as the stored entities name them. The
+   * flow machine (identity, flip 2) still holds the kernel's ids, so they
+   * are built at this one seam until it flips; a catalogue id is never
+   * blank, so none is dropped.
+   */
   submitServices(services: readonly ServiceId[]): void {
-    this.dispatch({ type: 'submit_services', services });
+    const ids: FlowServiceId[] = [];
+    for (const raw of services) {
+      const id = FlowServiceId.create(raw);
+      if (id.isSuccess()) ids.push(id.value);
+    }
+    this.dispatch({ type: 'submit_services', services: ids });
   }
 
   skipServices(): void {

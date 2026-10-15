@@ -54,7 +54,7 @@ const CSS = readFileSync(resolve(__dirname, 'visit-card.css'), 'utf8');
 const NBSP = ' ';
 
 function visit(id: string) {
-  const found = GEORGI_VISITS.find((each) => each.id.value === id);
+  const found = GEORGI_VISITS.find((each) => each.id === id);
   if (found === undefined) throw new Error(`no visit ${id}`);
   return found;
 }
@@ -74,9 +74,9 @@ function lastVisit(): VisitCardVm {
       photos: GEORGI_PHOTOS.filter(
         (photo) => photo.appointmentId === 'appt-sep',
       ).map((photo) => ({
-        id: photo.photoId,
+        id: photo.id as string,
         url: photo.url,
-        takenAtIso: photo.takenAtIso,
+        takenAtUtcMs: photo.takenAtUtcMs,
       })),
       testId: 'client-visit-last',
     },

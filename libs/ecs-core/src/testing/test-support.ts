@@ -43,6 +43,7 @@ import {
   RepositoryError,
   AppointmentId,
   BarberId,
+  CustomerId,
   LocationId,
   SeatId,
   ServiceCategoryId,
@@ -232,6 +233,28 @@ export const fixtureHash: Hash = (input) => {
   }
   return out;
 };
+
+/**
+ * The client record of an account, DERIVED the way the pipelines derive it
+ * — `CustomerId.forUser(uid, hash)` over {@link fixtureHash} (D29) — so a
+ * spec never casts a uid into a `CustomerId`.
+ */
+export function customerOf(userId: UserId): CustomerId {
+  return CustomerId.forUser(userId, fixtureHash);
+}
+
+/**
+ * The resolved-record map a booking or edit decision takes
+ * (`DecideBookingContext.customerIds`, `FoldContext.customerIds`): each
+ * account → {@link customerOf} it.
+ */
+export function resolvedCustomerIds(
+  userIds: readonly UserId[],
+): ReadonlyMap<UserId, CustomerId> {
+  const out = new Map<UserId, CustomerId>();
+  for (const userId of userIds) out.set(userId, customerOf(userId));
+  return out;
+}
 
 /* ── In-memory port doubles ─────────────────────────────────────────────── */
 
@@ -657,6 +680,11 @@ export const FIXTURE_IDS = {
   service: ServiceId.of('svc-classic-cut'),
   category: ServiceCategoryId.of('cat-cuts'),
   client: UserId.of('u-client'),
+  /**
+   * The client record of `client` (D29) — DERIVED the way the pipelines do
+   * ({@link customerOf}), never a cast.
+   */
+  customer: customerOf(UserId.of('u-client')),
   appointment: AppointmentId.of('appt-1'),
   seat: SeatId.of('seat-1'),
 } as const;

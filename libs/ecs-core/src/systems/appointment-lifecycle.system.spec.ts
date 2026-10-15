@@ -44,6 +44,7 @@ import {
   type AppointmentFixtureOverrides,
   appointmentFixture,
   seatFixture,
+  customerOf,
 } from '@core/testing';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import {
@@ -110,10 +111,12 @@ function seat(overrides: SeatOverrides = {}): Seat {
     overrides.currency ?? Currency.EUR,
     unwrapOk(DurationMinutes.of(overrides.durationMinutes ?? 30)),
   );
+  const userId = overrides.userId ?? nextUser();
   return seatFixture({
     seatId: nextSeatId(),
     occupant: SeatOccupant.account(
-      overrides.userId ?? nextUser(),
+      userId,
+      customerOf(userId),
       overrides.relationship === 'companion'
         ? SubjectRelationship.Companion
         : SubjectRelationship.Self,

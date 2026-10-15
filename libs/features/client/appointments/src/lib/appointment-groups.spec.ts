@@ -1,67 +1,49 @@
+import type { Appointment } from '@core/entities';
+import { Seat } from '@core/components';
+import { AppointmentId, BusyKey, LocalDate } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import {
-  Appointment,
-  Result,
-  Seat,
-  SeatId,
-  SeatSubject,
-  TimeSlot,
-} from '@creativo/application/booking';
-import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
-import { UserId, ZonedDateTime } from '@creativo/application/accounts';
+  FIXTURE_TIME_ZONE,
+  appointmentFixture,
+  minute,
+  seatFixture,
+  unwrapOk,
+} from '@core/testing';
 import { groupAppointmentsByDay } from './appointment-groups';
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
-}
-
-function appointmentAt(id: string, startIso: string): Appointment {
-  const start = unwrap(ZonedDateTime.fromISO(startIso, 'Europe/Sofia'));
-  const timeSlot = unwrap(
-    TimeSlot.create({
-      startIso,
-      endIso: start.plusMinutes(30).toISO(),
-      zone: 'Europe/Sofia',
-    }),
-  );
-  const seat = Seat.of({
-    id: unwrap(SeatId.create('seat_1')),
-    subject: SeatSubject.account(unwrap(UserId.create('user_1')), 'self'),
-    serviceId: unwrap(ServiceId.create('service_1')),
-    variantId: null,
-    barberId: unwrap(BarberId.create('barber_1')),
-    terms: unwrap(ServiceTerms.fromMinorUnits(1500, 'EUR', 30)),
-    startsAt: timeSlot.start,
+/** A confirmed one-seat visit at `startMinutes` on the shop day `localDate`. */
+function appointmentAt(
+  id: string,
+  localDate: string,
+  startMinutes: number,
+): Appointment {
+  const day = unwrapOk(LocalDate.parse(localDate));
+  const seat = seatFixture({ startMinutes: minute(startMinutes) });
+  return appointmentFixture({
+    id: AppointmentId.of(id),
+    localDate: day,
+    startMinutes: seat.startMinutes,
+    endMinutes: Seat.endMinutes(seat),
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(day, seat.startMinutes, FIXTURE_TIME_ZONE),
+    ),
+    seats: [seat],
+    busyKeys: [BusyKey.of(seat.barberId, day)],
   });
-  return unwrap(
-    Appointment.reconstitute({
-      id,
-      locationId: 'location_1',
-      seats: [seat],
-      status: { kind: 'confirmed' },
-    }),
-  );
 }
 
 describe('groupAppointmentsByDay', () => {
   it('groups same-day appointments together, sorted chronologically', () => {
     const groups = groupAppointmentsByDay([
-      appointmentAt('later', '2030-06-01T15:00:00'),
-      appointmentAt('earlier', '2030-06-01T09:00:00'),
-      appointmentAt('nextDay', '2030-06-02T09:00:00'),
+      appointmentAt('later', '2030-06-01', 15 * 60),
+      appointmentAt('earlier', '2030-06-01', 9 * 60),
+      appointmentAt('nextDay', '2030-06-02', 9 * 60),
     ]);
 
     expect(groups).toHaveLength(2);
     const [first, second] = groups;
-    expect(first?.appointments.map((a) => a.id.value)).toEqual([
-      'earlier',
-      'later',
-    ]);
-    expect(second?.appointments.map((a) => a.id.value)).toEqual(['nextDay']);
+    expect(first?.appointments.map((a) => a.id)).toEqual(['earlier', 'later']);
+    expect(second?.appointments.map((a) => a.id)).toEqual(['nextDay']);
   });
 
   it('returns an empty array for no appointments', () => {

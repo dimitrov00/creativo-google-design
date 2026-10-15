@@ -13,11 +13,12 @@ import { TranslocoService } from '@jsverse/transloco';
 import type { Subscription } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
 import {
-  CLIENT_STATS_DIRECTORY,
   type Result,
   ZonedDateTime,
   fail,
 } from '@creativo/application/booking';
+import { CLIENT_STATS_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import { Result as PlainResult } from '@core/primitives';
 import {
   type IsoDate,
   type ObservedStreakDefinition,
@@ -601,7 +602,8 @@ export class AdminRhythmStore {
   private readonly definitions = inject(STREAK_DEFINITION_REPOSITORY, {
     optional: true,
   });
-  private readonly directory = inject(CLIENT_STATS_DIRECTORY, {
+  /** `clientStats` paged by record (D29): the preview's walk. */
+  private readonly statsReader = inject(CLIENT_STATS_READ_PORTS, {
     optional: true,
   });
   private readonly clock = inject(CLOCK, { optional: true });
@@ -619,7 +621,9 @@ export class AdminRhythmStore {
       ? null
       : new PublishStreakDefinitionUseCase(this.definitions);
   private readonly facts =
-    this.directory === null ? null : new RhythmPreviewSource(this.directory);
+    this.statsReader === null
+      ? null
+      : new RhythmPreviewSource(this.statsReader);
 
   /** `loyalty.streaks`: off, the page still works (the rule is prepared before the rollout) and says so. */
   readonly streaksOn = this.flags?.isEnabled('loyalty.streaks') ?? false;
@@ -1145,7 +1149,7 @@ export class AdminRhythmStore {
     if (generation !== this.generation || ticket !== this.versionsTicket) {
       return;
     }
-    if (read.isSuccess()) {
+    if (read.ok) {
       this._versions.set({ status: 'ready', data: read.value });
     } else if (this._versions().status !== 'ready') {
       this._versions.set(FAILED);
@@ -1372,7 +1376,7 @@ export class AdminRhythmStore {
     }
     const read = await this.timed(() => facts.read());
     if (stale()) return;
-    if (read.isFailure()) {
+    if (!read.ok) {
       // The answer on screen is about another draft: it goes.
       this._preview.set(FAILED);
       this._previewBusy.set(false);
@@ -1425,36 +1429,44 @@ export class AdminRhythmStore {
     this.headTimer = null;
   }
 
-  /** The read, or a failure after `ADMIN_RHYTHM_READ_TIMEOUT_MS`; a thrown error is a failure too. */
+  /**
+   * The read, or a failure after `ADMIN_RHYTHM_READ_TIMEOUT_MS`; a thrown
+   * error is a failure too. Answers one plain `Result` whichever the reader
+   * speaks — the ecs-core ports' (the preview's walk) or the streak
+   * repository's legacy `Success`/`Failure` (flip 3 re-types it).
+   */
   private timed<T>(
-    read: () => Promise<Result<T, RepositoryError>>,
-  ): Promise<Result<T, RepositoryError>> {
+    read: () => Promise<Result<T, unknown> | PlainResult<T, unknown>>,
+  ): Promise<PlainResult<T, unknown>> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.timers.delete(timer);
-        resolve(
-          fail(
-            new RepositoryError(
-              `The read did not answer within ${ADMIN_RHYTHM_READ_TIMEOUT_MS} ms`,
-            ),
-          ),
-        );
+        resolve(PlainResult.err('timeout'));
       }, ADMIN_RHYTHM_READ_TIMEOUT_MS);
       this.timers.add(timer);
-      const settle = (result: Result<T, RepositoryError>) => {
+      const settle = (result: PlainResult<T, unknown>) => {
         clearTimeout(timer);
         this.timers.delete(timer);
         resolve(result);
       };
-      let pending: Promise<Result<T, RepositoryError>>;
+      const plain = (
+        answer: Result<T, unknown> | PlainResult<T, unknown>,
+      ): PlainResult<T, unknown> =>
+        'ok' in answer
+          ? answer
+          : answer.isSuccess()
+            ? PlainResult.ok(answer.value)
+            : PlainResult.err(answer.error);
+      let pending: Promise<Result<T, unknown> | PlainResult<T, unknown>>;
       try {
         pending = read();
-      } catch (error) {
-        settle(fail(new RepositoryError('The read threw', error)));
+      } catch {
+        settle(PlainResult.err('threw'));
         return;
       }
-      pending.then(settle, (error: unknown) =>
-        settle(fail(new RepositoryError('The read threw', error))),
+      pending.then(
+        (answer) => settle(plain(answer)),
+        () => settle(PlainResult.err('threw')),
       );
     });
   }

@@ -10,26 +10,19 @@ import {
   EmptyIdError as AccountsEmptyIdError,
 } from '@creativo/domain/accounts';
 import {
-  CouponGrantId as CouponGrantIdData,
-  CouponId as CouponIdData,
-  Currency,
   type EngagementError as EngagementErrorData,
   EngagementErrorCode,
   GrantStatus,
-  PriceCents,
   UserId as UserIdData,
   UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
-  type CouponValue as CouponValueData,
-  DiscountMethod,
   GrantCapacity,
   GrantCapacityTerms,
   GrantExpiry,
   GrantLifecycle,
 } from '@core/components';
-import { type CouponGrant as CouponGrantData } from '@core/entities';
 import { CouponGrantSystem } from '@core/systems';
 import { CouponValue } from './coupon-value';
 import {
@@ -153,13 +146,6 @@ export interface ReconstituteCouponGrantProps {
 
 /* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
 
-/** The legacy lower-case value tag → the ecs-core `DiscountMethod` (flatten-spec §8.9). */
-const LEGACY_DISCOUNT_METHOD = {
-  percent_off: DiscountMethod.PercentOff,
-  fixed_amount: DiscountMethod.FixedAmount,
-  free_service: DiscountMethod.FreeService,
-} as const satisfies Record<CouponValue['kind'], DiscountMethod>;
-
 /** The legacy lower-case state tag → the ecs-core `GrantStatus`. */
 const LEGACY_GRANT_STATUS = {
   active: GrantStatus.Active,
@@ -201,31 +187,6 @@ function sure<T, E>(
 
 function instantOf(at: ZonedDateTime): UtcEpochMs {
   return sure(UtcEpochMs.of(at.toMillis()), 'an instant');
-}
-
-/** The legacy value as the flat slice — converted as it stands, never re-validated. */
-function toValueData(value: CouponValue): CouponValueData {
-  switch (value.kind) {
-    case 'percent_off':
-      return {
-        discountMethod: LEGACY_DISCOUNT_METHOD.percent_off,
-        discountPercent: value.percent,
-      };
-    case 'fixed_amount':
-      return {
-        discountMethod: LEGACY_DISCOUNT_METHOD.fixed_amount,
-        discountAmountCents: sure(
-          PriceCents.of(value.amount.toMinorUnits()),
-          'an amount',
-        ),
-        discountCurrency: sure(
-          Currency.parse(value.amount.currencyCode()),
-          'a currency',
-        ),
-      };
-    case 'free_service':
-      return { discountMethod: LEGACY_DISCOUNT_METHOD.free_service };
-  }
 }
 
 function toCapacityData(capacity: CouponGrantCapacity): GrantCapacityTerms {
@@ -282,15 +243,14 @@ function toLifecycleData(state: CouponGrantState): GrantLifecycle {
   }
 }
 
-function toEntity(grant: CouponGrant): CouponGrantData {
-  return {
-    id: CouponGrantIdData.of(grant.id.value),
-    userId: UserIdData.of(grant.userId.value),
-    couponId: CouponIdData.of(grant.couponId.value),
-    grantedAtUtcMs: instantOf(grant.grantedAt),
-    ...toValueData(grant.value),
-    ...toLifecycleData(grant.state),
-  };
+/**
+ * The legacy grant as the slice its state machine reads — the lifecycle
+ * (`CouponGrantSystem`'s `*Slice` verbs). Whose it is stays on the legacy
+ * class: the verbs never read it, and the client record a flat grant names
+ * (D29) is nothing a legacy grant can know.
+ */
+function lifecycleOf(grant: CouponGrant): GrantLifecycle {
+  return toLifecycleData(grant.state);
 }
 
 type CouponGrantTransitionError =
@@ -393,12 +353,12 @@ export class CouponGrant {
   }
 
   isActive(): boolean {
-    return CouponGrantSystem.isActive(toEntity(this));
+    return CouponGrantSystem.isActive(lifecycleOf(this));
   }
 
   /** Active + (no expiry OR not past expiry). */
   isUsable(now: ZonedDateTime): boolean {
-    return CouponGrantSystem.isUsable(toEntity(this), instantOf(now));
+    return CouponGrantSystem.isUsable(lifecycleOf(this), instantOf(now));
   }
 
   /** Apply one redemption — decrements multi-use capacity or transitions single-use straight to `used`. */
@@ -406,7 +366,11 @@ export class CouponGrant {
     at: ZonedDateTime,
     note = '',
   ): Result<CouponGrant, CouponGrantNotActiveError> {
-    const burnt = CouponGrantSystem.burn(toEntity(this), instantOf(at), note);
+    const burnt = CouponGrantSystem.burnSlice(
+      lifecycleOf(this),
+      instantOf(at),
+      note,
+    );
     if (!burnt.ok) {
       return fail(
         new CouponGrantNotActiveError(
@@ -437,7 +401,10 @@ export class CouponGrant {
     CouponGrant,
     CouponGrantNotActiveError | CouponGrantNotExpiringError
   > {
-    const expired = CouponGrantSystem.expire(toEntity(this), instantOf(at));
+    const expired = CouponGrantSystem.expireSlice(
+      lifecycleOf(this),
+      instantOf(at),
+    );
     if (
       !expired.ok ||
       this.state.kind !== 'active' ||
@@ -469,8 +436,8 @@ export class CouponGrant {
     CouponGrant,
     CouponGrantNotActiveError | CouponGrantEmptyReasonError
   > {
-    const revoked = CouponGrantSystem.revoke(
-      toEntity(this),
+    const revoked = CouponGrantSystem.revokeSlice(
+      lifecycleOf(this),
       instantOf(at),
       UserIdData.of(revokedBy.value),
       reason,

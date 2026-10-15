@@ -14,32 +14,16 @@ import {
   BarberPref,
   type CartLine,
   CartLineId,
-  Money,
-  formatMoney,
 } from '@creativo/application/booking';
-import {
-  BarberId,
-  type Service,
-  ServiceVariantId,
-} from '@creativo/application/catalog';
+import { BarberId, ServiceVariantId } from '@creativo/application/catalog';
+import type { Service } from '@core/entities';
 import {
   BarberId as BarberKey,
-  Currency,
-  DurationMinutes,
-  MinuteCount,
-  PriceCents,
   ServiceVariantId as VariantKey,
-  defect,
 } from '@core/primitives';
-import {
-  type Money as MoneyData,
-  ServiceTerms as TermsData,
-} from '@core/components';
-import {
-  type PricedService,
-  type TermsSpan,
-  TermsSpanSystem,
-} from '@core/systems';
+import type { Money as MoneyData } from '@core/components';
+import { type TermsSpan, TermsSpanSystem } from '@core/systems';
+import { formatCents } from '@creativo/features/shared/visits';
 import {
   CatalogContentService,
   CatalogPresenter,
@@ -349,8 +333,9 @@ export class BookingBagSheet {
     variantId: ServiceVariantId | null,
     barberId: BarberId | null,
   ): TermsSpan {
+    // The service IS its terms matrix: its own terms and its offerings.
     return TermsSpanSystem.spanFor(
-      pricedServiceOf(service),
+      service,
       variantId === null ? null : VariantKey.of(variantId.value),
       barberId === null ? null : BarberKey.of(barberId.value),
     );
@@ -378,13 +363,11 @@ export class BookingBagSheet {
 
   /** A struct amount in the locale's words — the one money formatter. */
   private money(amount: MoneyData): string {
-    const money = Money.fromMinorUnitsAndCode(
+    return formatCents(
       amount.amountCents,
       amount.currency,
+      this.content.locale(),
     );
-    return money.isSuccess()
-      ? formatMoney(money.value, this.content.locale())
-      : '';
   }
 
   /** A menu option's one-line terms — "45 мин · 28,00 €". */
@@ -554,40 +537,4 @@ export class BookingBagSheet {
       options: [anyone, ...named],
     };
   }
-}
-
-/* ── The bridge: the catalogue class → the terms matrix struct ─────────── */
-
-/** A brand built from a catalogue value its own class already validated. */
-function sure<T>(
-  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
-  what: string,
-): T {
-  if (!result.ok) defect(`unreachable: ${what}`);
-  return result.value;
-}
-
-function termsDataOf(terms: Service['baseTerms']): TermsData {
-  return TermsData.of(
-    sure(PriceCents.of(terms.price.toMinorUnits()), 'a catalogue price'),
-    sure(Currency.parse(terms.price.currencyCode()), 'a catalogue currency'),
-    sure(DurationMinutes.of(terms.durationMinutes), 'a catalogue duration'),
-    sure(MinuteCount.of(terms.setupMinutes), 'a setup pad'),
-    sure(MinuteCount.of(terms.cleanupMinutes), 'a cleanup pad'),
-  );
-}
-
-/** A service's terms matrix as `TermsSpanSystem` reads it. */
-function pricedServiceOf(service: Service): PricedService {
-  return {
-    ...termsDataOf(service.baseTerms),
-    offerings: service.offerings.map((offering) => ({
-      barberId: BarberKey.of(offering.barberId.value),
-      ...termsDataOf(offering.base),
-      overrides: offering.overrideEntries().map(([variantId, terms]) => ({
-        variantId: VariantKey.of(variantId),
-        ...termsDataOf(terms),
-      })),
-    })),
-  };
 }

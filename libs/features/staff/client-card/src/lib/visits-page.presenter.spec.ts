@@ -1,4 +1,4 @@
-import type { ClientStatsRecord } from '@creativo/application/booking';
+import type { ClientStatsRecord } from '@core/entities';
 import type {
   VisitFilter,
   VisitRowVm,
@@ -23,16 +23,19 @@ import {
 } from './visits-page.presenter';
 import {
   GEORGI,
+  GEORGI_CUSTOMER_ID,
   GEORGI_MONEY,
   GEORGI_NEXT_ID,
   GEORGI_NOTE,
   MARTIN,
+  MARTIN_CUSTOMER_ID,
   MARTIN_TODAY_ID,
   NBSP_EURO,
   NOW_MS,
   SHOP_CATALOG,
   georgiHistory,
   martinHistory,
+  sofia,
   statsOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
@@ -83,6 +86,7 @@ function georgiInput(
   return {
     appointments: GEORGI_BOOK,
     subjectUserId: GEORGI,
+    subjectCustomerId: GEORGI_CUSTOMER_ID,
     currentAppointmentId: 'appt-dev-1',
     nowMs: NOW_MS,
     photoCounts: new Map([['appt-hist-c1-23', 1]]),
@@ -99,6 +103,7 @@ function martinInput(
   return georgiInput({
     appointments: MARTIN_BOOK,
     subjectUserId: MARTIN,
+    subjectCustomerId: MARTIN_CUSTOMER_ID,
     currentAppointmentId: MARTIN_TODAY_ID,
     photoCounts: new Map(),
     ...overrides,
@@ -123,18 +128,36 @@ function page(overrides: Partial<VisitsPageInput> = {}): VisitsPageVm {
   });
 }
 
+/** The record with some lifetime counts changed — its flat `lifetime*` fields (Law 6). */
 function withLifetime(
   stats: ClientStatsRecord,
-  lifetime: Partial<ClientStatsRecord['lifetime']>,
+  lifetime: Partial<{
+    readonly visitsCompleted: number;
+    readonly noShows: number;
+    readonly clientCancels: number;
+  }>,
 ): ClientStatsRecord {
-  return { ...stats, lifetime: { ...stats.lifetime, ...lifetime } };
+  return {
+    ...stats,
+    lifetimeVisitsCompleted:
+      lifetime.visitsCompleted ?? stats.lifetimeVisitsCompleted,
+    lifetimeNoShows: lifetime.noShows ?? stats.lifetimeNoShows,
+    lifetimeClientCancels:
+      lifetime.clientCancels ?? stats.lifetimeClientCancels,
+  };
 }
+
+/** No first visit on the record (its day and minute are `null` together, N9). */
+const NO_FIRST_VISIT = {
+  firstVisitLocalDate: null,
+  firstVisitStartMinutes: null,
+} as const;
 
 /** Before the first worked visit: a record that counts nothing yet. */
 const NEW_CLIENT: ClientStatsRecord = {
   ...withLifetime(GEORGI_STATS, { visitsCompleted: 0 }),
   avgCadenceDays: null,
-  firstVisitAtMs: null,
+  ...NO_FIRST_VISIT,
 };
 
 const text = (line: readonly LinePart[] | null): string =>
@@ -746,7 +769,7 @@ describe('the page', () => {
 describe('HI/HJ · the list’s foot', () => {
   const foot = (overrides: Partial<VisitsPagingInput> = {}) =>
     visitsPaging({
-      cursor: '2025-03-06T08:00:00.000Z',
+      cursor: sofia('2025-03-06T10:00:00'),
       more: 'idle',
       online: true,
       stats: GEORGI_STATS,
@@ -792,7 +815,7 @@ describe('HI/HJ · the list’s foot', () => {
       'Това е първото посещение.',
     );
     expect(
-      foot({ cursor: null, stats: { ...GEORGI_STATS, firstVisitAtMs: null } }),
+      foot({ cursor: null, stats: { ...GEORGI_STATS, ...NO_FIRST_VISIT } }),
     ).toEqual({ kind: 'end', endLabel: null });
   });
 });

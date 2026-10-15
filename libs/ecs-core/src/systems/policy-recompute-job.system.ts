@@ -6,7 +6,7 @@ import {
 import { RecomputeJobName, type PolicyRecomputeJob } from '@core/entities';
 import {
   PolicyRecomputeJobId,
-  type UserId,
+  type CustomerId,
   UtcEpochMs,
 } from '@core/primitives';
 
@@ -52,8 +52,8 @@ export type PolicyChange = {
 
 /** What one step of the walk got through. */
 export type PolicyStep = {
-  /** The last client finished; the cursor the next step starts after — `UserId` until flip (1). */
-  readonly cursor: UserId | null;
+  /** The last client record finished (D29); the cursor the next step starts after. */
+  readonly cursor: CustomerId | null;
   /** The walk ran off the end of the stored clients. */
   readonly exhausted: boolean;
   readonly visited: number;
@@ -141,7 +141,7 @@ export const PolicyRecomputeJobSystem = {
    */
   stepKeyOf(
     generation: string,
-    cursor: UserId | null,
+    cursor: CustomerId | null,
     finishedAtUtcMs: UtcEpochMs | null,
   ): string {
     return JSON.stringify([

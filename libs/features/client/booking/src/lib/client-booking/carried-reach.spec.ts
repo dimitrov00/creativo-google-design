@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import type { BookingDraftRider, Result } from '@creativo/application/booking';
-import { Barber, Location, Service } from '@creativo/application/catalog';
+import type { Barber, Service, ShopLocation } from '@core/entities';
+import {
+  BarberId,
+  LocationId,
+  ServiceId,
+  ServiceVariantId,
+} from '@core/primitives';
+import type { MoveRider } from '@core/systems';
+import {
+  barberFixture,
+  duration,
+  locationFixture,
+  minuteCount,
+  minuteDelta,
+  serviceFixture,
+} from '@core/testing';
 import { carriedSeatsInReach } from './carried-reach';
-
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) {
-    throw new Error(`fixture setup failed: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
-}
 
 function beard(
   variants: readonly string[] = [],
@@ -24,72 +31,44 @@ function offered(
   locationIds: readonly string[] = [],
   variants: readonly string[] = [],
 ): Service {
-  return unwrap(
-    Service.create({
-      id,
-      name: { bg: id, en: id },
-      description: { bg: '—', en: '—' },
-      categoryId: 'cat-hair',
-      priceMinorUnits: 2000,
-      currencyCode: 'EUR',
-      durationMinutes: 30,
-      locationIds: [...locationIds],
-      conflictsWith: [],
-      variants: variants.map((id) => ({ id, name: { bg: id, en: id } })),
-      composition: { kind: 'single' },
-      upsellOnly: false,
-      popular: false,
-      status: 'active',
-      sortOrder: 1,
-    }),
-  );
+  return serviceFixture({
+    id: ServiceId.of(id),
+    name: { bg: id, en: id },
+    locationIds: locationIds.map((shopId) => LocationId.of(shopId)),
+    variants: variants.map((variantId) => ({
+      variantId: ServiceVariantId.of(variantId),
+      name: { bg: variantId, en: variantId },
+    })),
+    offerings: [],
+  });
 }
 
 function barber(id: string): Barber {
-  return unwrap(
-    Barber.create({
-      id,
-      name: { bg: id, en: id },
-      handle: id,
-      title: { bg: 'Бръснар', en: 'Barber' },
-      bio: { bg: '—', en: '—' },
-      locationIds: [],
-      status: 'active',
-      sortOrder: 1,
-    }),
-  );
+  return barberFixture({ id: BarberId.of(id), name: { bg: id, en: id } });
 }
 
 /** An ACTIVE shop, by id. */
-function shop(id: string): Location {
-  const open = { kind: 'open' as const, opens: '09:00', closes: '20:00' };
-  return unwrap(
-    Location.create({
-      id,
-      name: { en: id, bg: id },
-      address: { en: '—', bg: '—' },
-      phone: { e164: '+359881234567', display: '+359 88 123 4567' },
-      geo: { lat: 42.6977, lng: 23.3219 },
-      mapUrl: `https://maps.example.com/${id}`,
-      hours: [open, open, open, open, open, open, { kind: 'closed' }],
-      timezone: 'Europe/Sofia',
-      status: 'active',
-      sortOrder: 0,
-    }),
-  );
+function shop(id: string): ShopLocation {
+  return locationFixture({ id: LocationId.of(id), name: { en: id, bg: id } });
 }
 
 /** The son the shop seated: a beard with Petar. */
-function son(overrides: Partial<BookingDraftRider> = {}): BookingDraftRider {
+function son(
+  overrides: {
+    readonly serviceId?: string;
+    readonly variantId?: string | null;
+    readonly barberId?: string;
+  } = {},
+): MoveRider {
+  const variantId = overrides.variantId ?? null;
   return {
-    serviceId: 'svc-beard',
-    variantId: null,
-    barberId: 'petar',
-    offsetMinutes: 0,
-    durationMinutes: 30,
-    setupMinutes: 0,
-    cleanupMinutes: 0,
-    ...overrides,
+    serviceId: ServiceId.of(overrides.serviceId ?? 'svc-beard'),
+    variantId: variantId === null ? null : ServiceVariantId.of(variantId),
+    barberId: BarberId.of(overrides.barberId ?? 'petar'),
+    offsetMinutes: minuteDelta(0),
+    durationMinutes: duration(30),
+    setupMinutes: minuteCount(0),
+    cleanupMinutes: minuteCount(0),
   };
 }
 

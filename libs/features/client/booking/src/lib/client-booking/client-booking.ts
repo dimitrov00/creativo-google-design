@@ -7,20 +7,13 @@ import {
   untracked,
 } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
+import { firstValueFrom, take } from 'rxjs';
 import {
-  APPOINTMENT_REPOSITORY,
-  AppointmentId,
-  WAITLIST_READER,
-} from '@creativo/application/booking';
-import type { Location } from '@creativo/application/catalog';
-import {
-  Latitude,
-  LocationId as LocationKey,
-  Longitude,
-  defect,
-} from '@core/primitives';
-import { E164 } from '@core/components';
-import { type ReachableShop, ShopReachSystem } from '@core/systems';
+  APPOINTMENT_READ_PORTS,
+  WAITLIST_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { AppointmentId, UserId } from '@core/primitives';
+import { ShopReachSystem } from '@core/systems';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
@@ -131,8 +124,8 @@ export class ClientBooking {
   /** `?reschedule={appointmentId}` — the SAME booking, at a new time. */
   readonly reschedule = input<string | undefined>(undefined);
 
-  private readonly waitlistReader = inject(WAITLIST_READER);
-  private readonly appointments = inject(APPOINTMENT_REPOSITORY);
+  private readonly waitlistReads = inject(WAITLIST_READ_PORTS);
+  private readonly appointments = inject(APPOINTMENT_READ_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CatalogContentService);
 
@@ -147,14 +140,53 @@ export class ClientBooking {
    * none of them are worth an error screen over what is still a working
    * booking flow.
    */
-  private async landWaitlistDeepLink(requestId: string): Promise<void> {
-    const found = await this.waitlistReader.findMine(requestId);
-    if (found.isFailure() || found.value === null) return;
-    this.store.restoreFromWaitlist(found.value, this.day() ?? null, (ordinal) =>
-      this.transloco.translate('booking.party.guest', {
-        number: ordinal,
-      }),
+  private async landWaitlistDeepLink(
+    requestId: string,
+    ownerUid: string,
+  ): Promise<void> {
+    const owner = UserId.parse(ownerUid);
+    if (!owner.ok) return;
+    // The caller's OWN requests (`ownerUserId ==`, owner-readable), first
+    // answer — a foreign id is simply not among them.
+    const mine = await firstValueFrom(
+      this.waitlistReads.observeMyWaitlistRequests(owner.value).pipe(take(1)),
     );
+    if (!mine.ok) return;
+    const found = mine.value.find((request) => request.id === requestId);
+    if (found === undefined) return;
+    this.store.restoreFromWaitlist(
+      found,
+      this.day() ?? null,
+      (ordinal) =>
+        this.transloco.translate('booking.party.guest', {
+          number: ordinal,
+        }),
+      this.shopZone(found.locationId),
+    );
+  }
+
+  /**
+   * The zone a shop's days are in — its own `timeZone` (Law 7.2); under
+   * "any shop", or before the catalogue answers, the first listed shop's,
+   * and the tenant's one city otherwise (the schedule step's own rule).
+   */
+  private shopZone(locationId: string | null): string {
+    const shops = this.catalog.locations();
+    return (
+      shops.find((shop) => shop.id === locationId)?.timeZone ??
+      shops.at(0)?.timeZone ??
+      'Europe/Sofia'
+    );
+  }
+
+  /** One reading of the live visit — its first answer (owner-readable). */
+  private async readVisit(appointmentId: string) {
+    const id = AppointmentId.parse(appointmentId);
+    if (!id.ok) return null;
+    const found = await firstValueFrom(
+      this.appointments.observeAppointment(id.value).pipe(take(1)),
+    );
+    return found.ok ? found.value : null;
   }
 
   /**
@@ -171,19 +203,16 @@ export class ClientBooking {
     // landing ran) has nothing to do: the draft brought it back.
     if (this.restoredDraft && this.store.bookedFrom() === appointmentId) return;
 
-    const id = AppointmentId.create(appointmentId);
-    if (id.isFailure()) return;
-
-    const found = await this.appointments.findById(id.value);
-    if (found.isFailure() || found.value === null) return;
+    const found = await this.readVisit(appointmentId);
+    if (found === null) return;
     if (this.restoredDraft) {
       // The person's own flow is back (the sign-in round trip of somebody who
       // arrived signed out and built the bag themselves): attach the visit it
       // started from, never overwrite what they built.
-      this.store.attachRepeatSource(found.value);
+      this.store.attachRepeatSource(found);
       return;
     }
-    this.store.repeat(found.value, (ordinal) =>
+    this.store.repeat(found, (ordinal) =>
       this.transloco.translate('booking.party.guest', { number: ordinal }),
     );
   }
@@ -211,19 +240,13 @@ export class ClientBooking {
       await this.store.rereadMove();
       return;
     }
-    const id = AppointmentId.create(appointmentId);
-    if (id.isFailure()) {
-      this.store.refuseMove('unavailable');
-      return;
-    }
-
-    const found = await this.appointments.findById(id.value);
-    if (found.isFailure() || found.value === null) {
+    const found = await this.readVisit(appointmentId);
+    if (found === null) {
       this.store.refuseMove('unavailable');
       return;
     }
     // Refuses on its own when the visit cannot move here — see `MoveRefusal`.
-    this.store.rescheduleFrom(found.value, (ordinal) =>
+    this.store.rescheduleFrom(found, (ordinal) =>
       this.transloco.translate('booking.party.guest', { number: ordinal }),
     );
   }
@@ -244,7 +267,7 @@ export class ClientBooking {
    * the list reopens the move.
    */
   private readonly carriedRefusal = computed<MoveRefusalState | null>(() => {
-    const riders = this.store.riders();
+    const riders = this.store.moveRiders();
     if (riders.length === 0) return null;
     if (!this.catalog.servicesKnown() || !this.catalog.barbersKnown()) {
       return null;
@@ -256,7 +279,7 @@ export class ClientBooking {
       this.catalog.locationsKnown() ? this.catalog.locations() : null,
     )
       ? null
-      : { reason: 'carried_out_of_reach', locationId: this.store.locationId() };
+      : { reason: 'carried_out_of_reach', locationId: this.store.shopId() };
   });
 
   /**
@@ -279,13 +302,13 @@ export class ClientBooking {
    * companion only the shop can move is one phone call away, so the refusal
    * offers the call rather than just describing it.
    */
-  private readonly refusalReach = computed(() => {
-    const locationId = this.refusal()?.locationId ?? null;
-    return ShopReachSystem.reach(
-      this.catalog.locations().map(reachableShopOf),
-      locationId === null ? null : LocationKey.of(locationId.value),
-    );
-  });
+  private readonly refusalReach = computed(() =>
+    // The catalogue's shops as they are: id, number and pin at their roots.
+    ShopReachSystem.reach(
+      this.catalog.locations(),
+      this.refusal()?.locationId ?? null,
+    ),
+  );
 
   protected readonly refusalCallHref = computed(
     () => this.refusalReach().callHref,
@@ -355,7 +378,9 @@ export class ClientBooking {
       if (this.waitlistLanded || !waitlistId) return;
       if (principal.kind !== 'active') return;
       this.waitlistLanded = true;
-      untracked(() => void this.landWaitlistDeepLink(waitlistId));
+      untracked(
+        () => void this.landWaitlistDeepLink(waitlistId, principal.uid.value),
+      );
     });
 
     // Same rule, same reason: the appointment is owner-readable, and on a
@@ -459,23 +484,4 @@ export class ClientBooking {
     this.store.clearDraft();
     await this.router.navigate(['/']);
   }
-}
-
-/** A brand built from a catalogue value its own class already validated. */
-function sure<T>(
-  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
-  what: string,
-): T {
-  if (!result.ok) defect(`unreachable: ${what}`);
-  return result.value;
-}
-
-/** A catalogue shop as `ShopReachSystem` reads it: its id, number and pin. */
-function reachableShopOf(location: Location): ReachableShop {
-  return {
-    id: LocationKey.of(location.id.value),
-    phoneE164: E164.of(location.phone.e164),
-    latitude: sure(Latitude.of(location.geo.lat), 'a catalogue latitude'),
-    longitude: sure(Longitude.of(location.geo.lng), 'a catalogue longitude'),
-  };
 }

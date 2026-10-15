@@ -1,24 +1,27 @@
 import type {
   ClientStats,
+  ClientStatsKey,
   ClientStatsMeta,
   PolicyPassStamp,
 } from '@core/components';
-import type { UserId } from '@core/primitives';
+import type { CustomerId } from '@core/primitives';
 
 /**
- * `clientStats/{uid}` — the projection, its bookkeeping and the stamp of
- * the policy pass that last judged it, every 1-to-1 field at the root
- * (Law 6). The id is the client's uid (`userId` repeats it in the body, as
- * stored) until flip (1) re-keys the record to `clientStats/{customerId}`
- * (D29, §5.5). Read by the book (`worksTheBook`); rebuilt whole by the
- * recompute, never edited.
+ * `clientStats/{customerId}` — the projection of one CLIENT RECORD's visits
+ * (D29, flatten-spec §5.4: whom the shop served), its bookkeeping and the
+ * stamp of the policy pass that last judged it, every 1-to-1 field at the
+ * root (Law 6). The id is the record's `CustomerId`, repeated in the body as
+ * `customerId` (`ClientStatsKey`). Read by the book (`worksTheBook`);
+ * rebuilt whole by the projection (`projectClientStats`, reading
+ * `subjectCustomerIds array-contains`, index #19), never edited.
  *
  * Named `ClientStatsRecord` (F-17): `ClientStats` is the slice. The
  * `PolicyPassStamp` fields are `null` on the documents no pass has touched
- * yet (most, today).
+ * yet.
  */
-export type ClientStatsRecord = ClientStats &
+export type ClientStatsRecord = ClientStatsKey &
+  ClientStats &
   ClientStatsMeta &
   PolicyPassStamp & {
-    readonly id: UserId;
+    readonly id: CustomerId;
   };

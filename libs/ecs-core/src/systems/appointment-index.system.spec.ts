@@ -18,6 +18,7 @@ import {
   type AppointmentFixtureOverrides,
   appointmentFixture,
   seatFixture,
+  customerOf,
 } from '@core/testing';
 import { AppointmentIndexSystem } from './appointment-index.system';
 
@@ -50,7 +51,11 @@ function seat(
 }
 
 const account = (uid: string, relationship: SubjectRelationship) =>
-  SeatOccupant.account(UserId.of(uid), relationship);
+  SeatOccupant.account(
+    UserId.of(uid),
+    customerOf(UserId.of(uid)),
+    relationship,
+  );
 const guest = () => SeatOccupant.anonymous(SeatLabel.of('Гост 1'));
 
 /** A party of four on 2026-06-01: the booker twice, a companion, a guest — in no order. */
@@ -121,6 +126,49 @@ describe('queryKeys — the subject and placement mirrors (R33)', () => {
     expect(Placement.parse('STAFF')).toBe('STAFF');
     expect(Placement.parse('robot')).toBeNull();
     expect(Placement.parse(undefined)).toBeNull();
+  });
+});
+
+describe('queryKeys — the client-record mirrors beside the accounts (D29, F1-4)', () => {
+  const cus = (uid: string) => customerOf(UserId.of(uid));
+
+  it('writes every client record on the visit once, sorted, guests left out', () => {
+    const expected = [cus('ana'), cus('zora')].sort();
+    expect(S.queryKeys(party()).subjectCustomerIds).toEqual(expected);
+  });
+
+  it("names the first self seat's record as the owner's — null exactly when the owner is", () => {
+    expect(S.queryKeys(party()).ownerCustomerId).toBe(cus('ana'));
+    const walkIn = party({ seats: [seat('s1', guest(), at(9), 'ivan')] });
+    expect(S.queryKeys(walkIn).ownerCustomerId).toBeNull();
+    expect(S.queryKeys(walkIn).ownerUserId).toBeNull();
+    expect(S.queryKeys(walkIn).subjectCustomerIds).toEqual([]);
+  });
+
+  it('recomputes a stale record mirror from the seats, never carries it', () => {
+    const stale = S.withQueryKeys(
+      party({ ownerCustomerId: null, subjectCustomerIds: [] }),
+    );
+    expect(stale.ownerCustomerId).toBe(cus('ana'));
+    expect(stale.subjectCustomerIds).toEqual([cus('ana'), cus('zora')].sort());
+  });
+
+  it('accountKeys is the account half alone — what a seat with no client record yields', () => {
+    const keys = S.queryKeys(party());
+    const accountOnly = S.accountKeys({
+      localDate: JUNE_1,
+      seats: party().seats.map((entry) => ({
+        barberId: entry.barberId,
+        ...SeatOccupant.accountOf(entry),
+      })),
+    });
+    expect(accountOnly).toEqual({
+      ownerUserId: keys.ownerUserId,
+      subjectUserIds: keys.subjectUserIds,
+      barberIds: keys.barberIds,
+      busyKeys: keys.busyKeys,
+    });
+    expect(accountOnly).not.toHaveProperty('subjectCustomerIds');
   });
 });
 

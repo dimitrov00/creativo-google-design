@@ -16,7 +16,7 @@ import type {
   UiStreakPeriod,
 } from '@creativo/ui/controls';
 import type { ClientCardRegion } from './client-card.contracts';
-import type { VisitLeg } from '@creativo/application/booking';
+import type { VisitLeg } from '@core/components';
 import type {
   BadgeProgress,
   LoyaltyAccount,
@@ -145,7 +145,7 @@ export interface RepeatActionVm {
   readonly href: null;
   /** Begins with the visible word (WCAG 2.5.3): «Повтори посещението от 4 септември: фейд». */
   readonly accessibleName: string;
-  /** `ClientStatsRecord.lastVisit.legs`: what the editor puts back in the draft. */
+  /** `ClientStatsRecord.lastVisitLegs`: what the editor puts back in the draft. */
   readonly legs: readonly VisitLeg[];
 }
 
@@ -241,7 +241,8 @@ export interface ClientPhotoVm {
   readonly photoId: string;
   readonly appointmentId: string;
   readonly url: string;
-  readonly takenAtIso: string;
+  /** When it was taken (`AppointmentPhoto.takenAtUtcMs`). */
+  readonly takenAtUtcMs: number;
   /** «12.08» (R59): the tile's on-media badge and the photo page's bar title. */
   readonly dateLabel: string;
   /** «Снимка от 12 август». */

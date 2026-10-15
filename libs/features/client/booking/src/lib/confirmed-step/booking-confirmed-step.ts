@@ -100,8 +100,8 @@ export class BookingConfirmedStep {
     if (!confirmation) return '';
     const shop = this.catalog
       .locations()
-      .find((candidate) =>
-        candidate.id.equals(confirmation.selection.locationId),
+      .find(
+        (candidate) => candidate.id === confirmation.selection.locationId.value,
       );
     return shop
       ? this.content.text({ en: shop.name.en, bg: shop.name.bg })
@@ -143,7 +143,7 @@ export class BookingConfirmedStep {
   private barberName(barberId: BarberId): string {
     const barber = this.catalog
       .barbers()
-      .find((candidate) => candidate.id.equals(barberId));
+      .find((candidate) => candidate.id === barberId.value);
     return barber
       ? this.content.text({ en: barber.name.en, bg: barber.name.bg })
       : barberId.value;

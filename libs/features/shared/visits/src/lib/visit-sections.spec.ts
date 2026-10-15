@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { ZonedDateTime } from '@creativo/application/booking';
+import { LocalDate, type UtcEpochMs } from '@core/primitives';
+import type { WallTime } from '@core/components';
+import { ZonedTimeSystem } from '@core/systems';
+import { unwrapOk } from '@core/testing';
 import type { VisitRowOutcome, VisitRowVm } from './visit-row.vm';
 import {
   UPCOMING_SECTION_KEY,
@@ -9,12 +12,12 @@ import {
   workedVisitsDetail,
 } from './visit-sections';
 
-const ZONE = 'Europe/Sofia';
+const ZONE = unwrapOk(ZonedTimeSystem.checkZone('Europe/Sofia'));
 
-function at(iso: string): ZonedDateTime {
-  const result = ZonedDateTime.fromISO(iso, ZONE);
-  if (result.isFailure()) throw new Error(`bad fixture instant ${iso}`);
-  return result.value;
+/** A wall-clock reading in Sofia: its instant, and the shop day it falls on. */
+function at(iso: string): WallTime & { readonly utcMs: UtcEpochMs } {
+  const utcMs = unwrapOk(ZonedTimeSystem.parseIsoIn(iso, ZONE));
+  return { ...ZonedTimeSystem.toLocal(utcMs, ZONE), utcMs };
 }
 
 /** A row as the builder files it: only what sectioning reads is real. */
@@ -32,14 +35,14 @@ function row(
   return {
     id,
     kind: 'visit',
-    startMs: start.toMillis(),
+    startMs: start.utcMs,
     sectionKey: upcoming
       ? UPCOMING_SECTION_KEY
-      : visitSectionKey(start, options.grain ?? 'month'),
+      : visitSectionKey(start.localDate, options.grain ?? 'month'),
     upcoming,
     tile: {
       caption: 'пт',
-      day: start.day,
+      day: LocalDate.parts(start.localDate).day,
       tone: upcoming ? 'upcoming' : 'past',
     },
     leadingIcon: null,
@@ -294,12 +297,15 @@ describe('workedVisitsDetail', () => {
 
 describe('visitSectionKey', () => {
   it('files a visit on its own calendar, never the device’s', () => {
-    // 00:30 on 1 October in Sofia is still 30 September in UTC.
+    // 00:30 on 1 October in Sofia is still 30 September in UTC: the visit
+    // files under its SHOP day, the one it is stored on.
     const justAfterMidnight = at('2026-10-01T00:30:00');
-    expect(visitSectionKey(justAfterMidnight, 'month')).toBe('2026-10');
-    expect(visitSectionKey(justAfterMidnight, 'year')).toBe('2026');
+    expect(visitSectionKey(justAfterMidnight.localDate, 'month')).toBe(
+      '2026-10',
+    );
+    expect(visitSectionKey(justAfterMidnight.localDate, 'year')).toBe('2026');
     const newYear = at('2027-01-01T00:15:00');
-    expect(visitSectionKey(newYear, 'year')).toBe('2027');
+    expect(visitSectionKey(newYear.localDate, 'year')).toBe('2027');
   });
 });
 

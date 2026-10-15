@@ -1,6 +1,8 @@
 /**
  * The shop's calendar for the dev seed: day offsets from TODAY IN SOFIA,
- * turned into the `{iso, zone}` strings `appointmentToDocument` writes.
+ * turned into shop days (`dayKeyAt`, the bodies' `localDate`), wall-clock
+ * ISO strings with the offset each day really has (`isoAt`) and the
+ * epoch-ms instants the bodies store (`msAt`, every `*UtcMs`).
  *
  * The seed used to derive days from the MACHINE's local midnight and only
  * borrow Sofia's offset for the string — right on a Sofia laptop, a day out
@@ -103,8 +105,8 @@ export function createShopCalendar(nowMs, zone = SHOP_ZONE) {
   const weekdayAt = (offset) => new Date(base + offset * DAY_MS).getUTCDay();
 
   /** `dayKeyAt`'s inverse: the offset of a `YYYY-MM-DD` shop day from today. */
-  const offsetOf = (dayKey) =>
-    Math.round((Date.parse(`${dayKey}T00:00:00Z`) - base) / DAY_MS);
+  const offsetOf = (localDate) =>
+    Math.round((Date.parse(`${localDate}T00:00:00Z`) - base) / DAY_MS);
 
   /**
    * `2026-09-25T10:00:00.000+03:00` — a wall-clock time on the shop's day

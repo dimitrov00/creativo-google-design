@@ -20,39 +20,58 @@ import {
   User,
   UserId,
 } from '@creativo/application/accounts';
+import { type Result, ZonedDateTime, ok } from '@creativo/application/booking';
 import {
-  Appointment,
-  type AppointmentPhoto,
-  CLIENT_HISTORY_READER,
-  CLIENT_PHOTOS_READER,
-  COMPLETED,
-  Money,
-  type Result,
+  BookingLifecycle,
+  CustomerOrigin,
+  PhotoOrigin,
   Seat,
-  SeatId,
-  SeatSubject,
+  SeatOccupant,
+  SeatOutcome,
+  SubjectRelationship,
   type VisitLeg,
-  ZonedDateTime,
-  ok,
-  seatWorked,
-} from '@creativo/application/booking';
+} from '@core/components';
+import type { Appointment, AppointmentPhoto, Customer } from '@core/entities';
 import {
-  InMemoryClientHistoryReader,
-  InMemoryClientPhotosReader,
-} from '@creativo/application/booking/testing';
-import {
+  AppointmentId,
+  AppointmentPhotoId,
   BarberId,
+  BusyKey,
+  EndMinute,
+  LocalDate,
+  LocationId,
+  MinuteOfDay,
+  SeatId,
   ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
+  UserId as CoreUserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import {
-  CLIENT_VOUCHERS_READER,
+  FIXTURE_TIME_ZONE,
+  appointmentFixture,
+  customerOf,
+  memoryAppointmentPhotoPorts,
+  memoryAppointmentReadPorts,
+  memoryCouponVoucherPorts,
+  memoryCustomerPorts,
+  seatFixture,
+  termsFixture,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
+import {
+  APPOINTMENT_PHOTO_PORTS,
+  APPOINTMENT_READ_PORTS,
+  COUPON_VOUCHER_PORTS,
+  CUSTOMER_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import {
   LOYALTY_ACTIVITY_READER,
   LOYALTY_CATALOG_READER,
   LOYALTY_READER,
 } from '@creativo/application/engagement';
 import {
-  InMemoryClientVouchersReader,
   InMemoryLoyaltyActivityReader,
   InMemoryLoyaltyCatalogReader,
   InMemoryLoyaltyReader,
@@ -3726,7 +3745,7 @@ describe('StaffVisitEditor', () => {
         photoId: 'p-1',
         barberId: 'ivan',
         url: 'https://cdn/p1.jpg',
-        takenAtIso: '2026-08-26T09:05:00.000Z',
+        takenAtUtcMs: utcMs('2026-08-26T09:05:00.000Z'),
         barberName: 'Иван Колев',
         clientLabel: 'Георги Петров',
         width: 1600,
@@ -3738,7 +3757,7 @@ describe('StaffVisitEditor', () => {
         photoId: 'p-2',
         barberId: 'gone',
         url: 'https://cdn/p2.jpg',
-        takenAtIso: '2026-08-26T09:40:00.000Z',
+        takenAtUtcMs: utcMs('2026-08-26T09:40:00.000Z'),
         barberName: null,
         clientLabel: 'Георги Петров',
         width: null,
@@ -3752,7 +3771,7 @@ describe('StaffVisitEditor', () => {
       photoId: 'p-3',
       barberId: 'ivan',
       url: '/work/modern-cut.jpg',
-      takenAtIso: '2026-08-26T10:00:00.000Z',
+      takenAtUtcMs: utcMs('2026-08-26T10:00:00.000Z'),
       barberName: 'Иван Колев',
       clientLabel: 'Георги Петров',
       width: null,
@@ -3784,14 +3803,14 @@ describe('StaffVisitEditor', () => {
       fixture.detectChanges();
     };
     /** The sheet's own clock for a photo — the shop's zone, so the host's cannot fail the test. */
-    const when = (iso: string) =>
+    const when = (utcEpochMs: number) =>
       new Intl.DateTimeFormat('bg-BG', {
         timeZone: 'Europe/Sofia',
         day: 'numeric',
         month: 'short',
         hour: '2-digit',
         minute: '2-digit',
-      }).format(new Date(iso));
+      }).format(utcEpochMs);
 
     it('shows the pictures taken as a grid under the note, each a door, and the add row over a bare image input', () => {
       const host = render(visit({ photos: PHOTOS }));
@@ -3811,7 +3830,7 @@ describe('StaffVisitEditor', () => {
         'staff-visit-photo-p-2',
       ]);
       expect(doors[0]?.getAttribute('aria-label')).toBe(
-        `Снимка от ${when(PHOTOS[0]!.takenAtIso)}`,
+        `Снимка от ${when(PHOTOS[0]!.takenAtUtcMs)}`,
       );
       const thumb = doors[0]?.querySelector('ui-async-image');
       expect(thumb?.getAttribute('style')).toContain('aspect-ratio');
@@ -6624,50 +6643,72 @@ const CARD_NOW_MS = must(
   ZonedDateTime.fromISO('2026-09-28T12:40:00', CARD_ZONE),
 ).toMillis();
 
+/** Георги's client record (D29), as the card resolves it through `CUSTOMER_PORTS`. */
+const GEORGI_RECORD: Customer = {
+  id: customerOf(CoreUserId.of(GEORGI)),
+  userId: CoreUserId.of(GEORGI),
+  displayName: 'Георги Петров',
+  phone: null,
+  email: null,
+  searchName: 'георги петров',
+  searchPrefixes: [],
+  createdAtUtcMs: utcMs('2025-03-01T10:00:00+02:00'),
+  customerOrigin: CustomerOrigin.Registration,
+};
+
 /** Георги's last worked visit: a fade with Нико on 4 September — what «Повтори» repeats. */
 function georgiLastVisit(): Appointment {
-  const start = must(ZonedDateTime.fromISO('2026-09-04T10:00:00', CARD_ZONE));
-  return must(
-    Appointment.reconstitute({
-      id: 'appt-georgi-last',
-      locationId: 'loc-center',
-      seats: [
-        Seat.of({
-          id: must(SeatId.create('seat-georgi-last')),
-          subject: SeatSubject.account(must(UserId.create(GEORGI)), 'self'),
-          serviceId: must(ServiceId.create('fade')),
-          variantId: null,
-          barberId: must(BarberId.create('niko')),
-          terms: must(
-            ServiceTerms.create(
-              must(Money.fromMinorUnitsAndCode(2800, 'EUR')),
-              45,
-            ),
-          ),
-          startsAt: start,
-          outcome: seatWorked(start.toMillis() + 45 * 60_000),
-        }),
-      ],
-      status: COMPLETED,
-      bookedAt: start,
-    }),
+  const day = unwrapOk(LocalDate.parse('2026-09-04'));
+  const startMinutes = unwrapOk(MinuteOfDay.of(10 * 60));
+  const start = unwrapOk(
+    ZonedTimeSystem.toUtc(day, startMinutes, FIXTURE_TIME_ZONE),
   );
+  const seat = seatFixture({
+    seatId: SeatId.of('seat-georgi-last'),
+    serviceId: ServiceId.of('fade'),
+    barberId: BarberId.of('niko'),
+    startMinutes,
+    terms: Seat.termsOf(termsFixture(2800, 45), null),
+    occupant: SeatOccupant.account(
+      CoreUserId.of(GEORGI),
+      GEORGI_RECORD.id,
+      SubjectRelationship.Self,
+    ),
+    outcome: SeatOutcome.worked(UtcEpochMs.plusMs(start, 45 * 60_000)),
+  });
+  return appointmentFixture({
+    id: AppointmentId.of('appt-georgi-last'),
+    locationId: LocationId.of('loc-center'),
+    seats: [seat],
+    localDate: day,
+    startMinutes,
+    endMinutes: unwrapOk(EndMinute.of(Seat.endMinutes(seat))),
+    utcEpochMs: start,
+    barberIds: [seat.barberId],
+    busyKeys: [BusyKey.of(seat.barberId, day)],
+    ownerUserId: CoreUserId.of(GEORGI),
+    ownerCustomerId: GEORGI_RECORD.id,
+    subjectUserIds: [CoreUserId.of(GEORGI)],
+    subjectCustomerIds: [GEORGI_RECORD.id],
+    bookedAtUtcMs: start,
+    lifecycle: BookingLifecycle.complete(UtcEpochMs.plusMs(start, 45 * 60_000)),
+  });
 }
 
 /** A past cut of Георги's, from another visit — the card's photo rail. */
 const PAST_CUT: AppointmentPhoto = {
-  photoId: 'cut-1',
-  appointmentId: 'appt-georgi-last',
-  barberId: 'niko',
-  clientUserId: GEORGI,
+  id: AppointmentPhotoId.of('cut-1'),
+  appointmentId: AppointmentId.of('appt-georgi-last'),
+  barberId: BarberId.of('niko'),
+  clientCustomerId: GEORGI_RECORD.id,
   clientLabel: 'Георги Петров',
-  takenByUid: 'dev-staff-ivan',
-  takenAtIso: '2026-09-04T08:10:00.000Z',
+  takenByUserId: CoreUserId.of('dev-staff-ivan'),
+  takenAtUtcMs: utcMs('2026-09-04T08:10:00.000Z'),
   path: 'appointmentPhotos/appt-georgi-last/cut-1',
   url: 'https://example.test/cuts/cut-1.jpg',
   width: 1100,
   height: 1400,
-  origin: 'shot',
+  photoOrigin: PhotoOrigin.Shot,
   label: null,
 };
 
@@ -6774,21 +6815,22 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
         },
         // Revision 3's two reads: the wallet's holdings and its feed, the
         // ledger page's rows (the same fixtures' voucher and journals).
-        {
-          provide: CLIENT_VOUCHERS_READER,
-          useValue: InMemoryClientVouchersReader.seeded(),
-        },
+        { provide: COUPON_VOUCHER_PORTS, useValue: memoryCouponVoucherPorts() },
         {
           provide: LOYALTY_ACTIVITY_READER,
           useValue: InMemoryLoyaltyActivityReader.seeded(),
         },
         {
-          provide: CLIENT_HISTORY_READER,
-          useValue: new InMemoryClientHistoryReader([georgiLastVisit()]),
+          provide: CUSTOMER_PORTS,
+          useValue: memoryCustomerPorts([GEORGI_RECORD]),
         },
         {
-          provide: CLIENT_PHOTOS_READER,
-          useValue: new InMemoryClientPhotosReader([PAST_CUT]),
+          provide: APPOINTMENT_READ_PORTS,
+          useValue: memoryAppointmentReadPorts([georgiLastVisit()]),
+        },
+        {
+          provide: APPOINTMENT_PHOTO_PORTS,
+          useValue: memoryAppointmentPhotoPorts([PAST_CUT]),
         },
         {
           // The profile the birthday card reads a date of birth from: a
@@ -7161,7 +7203,7 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     await openCard();
     // The card names itself in a large title; the bar waits for it.
     expect(editor().pageHasNoLargeTitle()).toBe(false);
-    child(ClientCard).openPhoto.emit(PAST_CUT.photoId);
+    child(ClientCard).openPhoto.emit(PAST_CUT.id);
     await settle();
     expect(pageKind()).toBe('photo');
     expect(editor().depth()).toBe(2);
@@ -7199,11 +7241,11 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     render();
     await openCard();
     const last: readonly VisitLeg[] = georgiLastVisit().seats.map((seat) => ({
-      seatId: seat.id,
+      seatId: seat.seatId,
       serviceId: seat.serviceId,
       variantId: seat.variantId,
       barberId: seat.barberId,
-      minutes: seat.terms.durationMinutes,
+      durationMinutes: seat.durationMinutes,
     }));
     child(ClientCard).repeatLast.emit(last);
     await settle();

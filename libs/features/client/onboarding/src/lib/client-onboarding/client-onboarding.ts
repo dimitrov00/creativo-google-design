@@ -17,7 +17,10 @@ import {
   LastName,
   MAX_AVATAR_BYTES,
 } from '@creativo/application/accounts';
-import { Service, ServiceId, formatMoney } from '@creativo/application/catalog';
+import type { Service } from '@core/entities';
+import type { ServiceId } from '@core/primitives';
+import { OfferingPriceSystem } from '@core/systems';
+import { formatCents } from '@creativo/features/shared/visits';
 import {
   CatalogContentService,
   ServiceCardComponent,
@@ -261,14 +264,14 @@ export class ClientOnboarding {
     return service ? this.catalog.toServiceVm(service) : null;
   });
 
-  /** Id-keyed twins of the domain helpers — the sheet hands back view models, not aggregates. */
+  /** Id-keyed twins of the entity helpers — the sheet hands back view models, not entities. */
   protected isServiceSelectedById(id: string): boolean {
-    return this.selectedServiceIds().some((existing) => existing.value === id);
+    return this.selectedServiceIds().some((existing) => existing === id);
   }
 
   /** Following a reference inside the sheet reopens it on that service (one surface, one subject). */
   protected openDetailsById(id: string): void {
-    const service = this.services().find((s) => s.id.value === id);
+    const service = this.services().find((s) => s.id === id);
     if (service) this.detailsService.set(service);
   }
 
@@ -549,12 +552,12 @@ export class ClientOnboarding {
     await this.router.navigateByUrl('/');
   }
 
-  /** Value-compared (snapshot re-emits rebuild `ServiceId` instances — reference identity would silently break toggling). Adding past the cap is a no-op: the card is disabled, this is the honest backstop. */
+  /** Value-compared (a branded string — a snapshot re-emit hands back the same id). Adding past the cap is a no-op: the card is disabled, this is the honest backstop. */
   protected toggleService(id: ServiceId): void {
     const current = this.selectedServiceIds();
     if (this.isServiceSelected(id)) {
       this.selectedServiceIds.set(
-        current.filter((existing) => existing.value !== id.value),
+        current.filter((existing) => existing !== id),
       );
       return;
     }
@@ -563,9 +566,7 @@ export class ClientOnboarding {
   }
 
   protected isServiceSelected(id: ServiceId): boolean {
-    return this.selectedServiceIds().some(
-      (existing) => existing.value === id.value,
-    );
+    return this.selectedServiceIds().includes(id);
   }
 
   protected submitServices(): void {
@@ -588,7 +589,8 @@ export class ClientOnboarding {
    * "45 мин · 15,00 €", or "35–50 мин · от 13,00 €" once barbers price the
    * service differently — one pre-formatted line shared by card and sheet.
    *
-   * Reads the aggregate's folded RANGES, not one canonical price: with a
+   * Reads the terms matrix's folded RANGES (`OfferingPriceSystem`), not
+   * one canonical price: with a
    * barber × variant matrix there is no single number to show before the
    * customer has picked either, so the grid quotes the cheapest and says
    * so. `priceRange().min === max` collapses back to a bare price, which
@@ -597,14 +599,14 @@ export class ClientOnboarding {
    * The SHAPE of the line — which fact leads, where the "from" goes — comes
    * from `formatServiceMeta`, because booking's grid renders the same card
    * and its own copy of this had already drifted away from it. Only the
-   * inputs are local: onboarding folds them off the domain aggregate, which
-   * is where the currency-aware `formatMoney` lives.
+   * inputs are local: onboarding folds them off the service entity, and
+   * formats the cents with the currency's own exponent (`formatCents`).
    */
   protected serviceMeta(service: Service): string {
     const lang = this.transloco.getActiveLang();
     const locale = lang === 'en' ? 'en-GB' : 'bg-BG';
 
-    const duration = service.durationRange();
+    const duration = OfferingPriceSystem.durationRange(service);
     const minutes = this.transloco.translate('onboarding.services.minutes', {
       minutes:
         duration.min === duration.max
@@ -612,16 +614,17 @@ export class ClientOnboarding {
           : `${duration.min}–${duration.max}`,
     });
 
-    // `formatMoney` takes the VO and reads the currency's own exponent and
-    // fraction digits — the old inline formatter divided by a hardcoded 100
-    // and forced `maximumFractionDigits: 0`, printing `28 лв.` for a price
-    // the rest of the app renders as `28,00 €`.
-    const { min, max } = service.priceRange();
+    // `formatCents` reads the currency's own exponent and fraction digits —
+    // the old inline formatter divided by a hardcoded 100 and forced
+    // `maximumFractionDigits: 0`, printing `28 лв.` for a price the rest of
+    // the app renders as `28,00 €`. Every price of one service shares its
+    // currency (the one-currency invariant of the matrix).
+    const { min, max } = OfferingPriceSystem.priceRange(service);
     return formatServiceMeta({
       duration: minutes,
-      price: formatMoney(min, locale),
+      price: formatCents(min, service.currency, locale),
       fromLabel: this.transloco.translate('onboarding.services.from'),
-      spread: !min.equals(max),
+      spread: min !== max,
     });
   }
 

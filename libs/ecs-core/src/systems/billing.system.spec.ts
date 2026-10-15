@@ -36,6 +36,7 @@ import {
   utcMs,
   appointmentFixture,
   seatFixture,
+  customerOf,
 } from '@core/testing';
 import { AppointmentLifecycleSystem } from './appointment-lifecycle.system';
 import { StaffEditErrorCode } from './appointment-edit.system';
@@ -62,7 +63,8 @@ import {
 
 /** 09:00 on the fixture shop's today. */
 const NOW = FIXTURE_NOW_UTC_MS;
-const OWNER = UserId.of('user-owner');
+/** The visit owner's client record (D29) — what a new grant must belong to. */
+const OWNER = customerOf(UserId.of('user-owner'));
 
 const plus = (base: UtcEpochMs, ms: number): UtcEpochMs =>
   UtcEpochMs.plusMs(base, ms);
@@ -331,7 +333,7 @@ const grants: ReadonlyMap<string, ResolvedGrant> = new Map(
   Object.entries({
     'grant-1': {
       grantId: CouponGrantId.of('grant-1'),
-      userId: OWNER,
+      customerId: OWNER,
       label: 'Рожден ден',
       usable: true,
       exclusive: true,
@@ -339,7 +341,7 @@ const grants: ReadonlyMap<string, ResolvedGrant> = new Map(
     },
     'grant-loyal': {
       grantId: CouponGrantId.of('grant-loyal'),
-      userId: OWNER,
+      customerId: OWNER,
       label: 'Постоянен клиент',
       usable: true,
       exclusive: false,
@@ -347,7 +349,7 @@ const grants: ReadonlyMap<string, ResolvedGrant> = new Map(
     },
     'grant-spent': {
       grantId: CouponGrantId.of('grant-spent'),
-      userId: OWNER,
+      customerId: OWNER,
       label: 'Рожден ден',
       usable: false,
       exclusive: true,
@@ -355,7 +357,7 @@ const grants: ReadonlyMap<string, ResolvedGrant> = new Map(
     },
     'grant-other': {
       grantId: CouponGrantId.of('grant-other'),
-      userId: UserId.of('user-2'),
+      customerId: customerOf(UserId.of('user-2')),
       label: 'Чужд',
       usable: true,
       exclusive: true,
@@ -576,7 +578,8 @@ function voucher(
     issuedAtUtcMs: utcMs('2026-09-28T08:00:00+03:00'),
     expiresAtUtcMs: options.expiresAtUtcMs ?? null,
     expiresLocalDate: null,
-    issuedToUserId: null,
+    issuedToCustomerId: null,
+    holderUserId: null,
     ...(options.lifecycle ?? VoucherLifecycle.active()),
   };
 }

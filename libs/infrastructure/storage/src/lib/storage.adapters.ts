@@ -8,4 +8,3 @@ export * from './storage.provider';
 export * from './avatar-uploader.adapter';
 export * from './media-reader.adapter';
 export * from './appointment-photos.adapter';
-export * from './client-photos-reader.adapter';

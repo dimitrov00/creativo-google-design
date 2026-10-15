@@ -58,9 +58,6 @@
       "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/notifications/tsconfig.lib.json"
-    },
-    {
       "path": "../../../application/shared/tsconfig.lib.json"
     },
     {
@@ -71,6 +68,9 @@
     },
     {
       "path": "../../../application/booking/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     }
   ]
 }

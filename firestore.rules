@@ -161,55 +161,54 @@ service cloud.firestore {
       }
 
       match /notifications/{notificationId} {
-        // The recipient's own inbox. Delivered server-side only (the
-        // waitlist matcher writes here via the Admin SDK, which bypasses
-        // these rules) — a client that could write its own notifications
-        // could forge a "your slot is free" message.
+        // The recipient's own inbox (`InboxNotification`). Delivered
+        // server-side only (the waitlist matcher writes here via the Admin
+        // SDK, which bypasses these rules) — a client that could write its
+        // own notifications could forge a "your slot is free" message.
         allow read: if isOwner(uid);
-        // The ONE thing a recipient may change is their own read receipt.
-        // Everything else — what the message says, who it is from, where it
-        // points — is the sender's, and a client that could rewrite `body`
-        // or `deepLink` could turn its own inbox into a phishing surface.
+        // The ONE thing a recipient may change is their own read stamp,
+        // `readAtUtcMs` (flip 1: the flat root field the inbox writes).
+        // Everything else — the topic, what it is about, when it was sent —
+        // is the sender's, and a client that could rewrite the payload
+        // could turn its own inbox into a phishing surface.
         allow update: if isOwner(uid)
-          && affectedKeys().hasOnly(['readAtIso']);
+          && affectedKeys().hasOnly(['readAtUtcMs']);
         allow create, delete: if false;
       }
     }
 
-    // TOP-LEVEL `couponGrants/{grantId}`, owner in the `userId` field. The
-    // subcollection layout this replaces needed a `{path=**}` collection-
-    // group rule that any signed-in account could dump EVERY user's grants
-    // through — the rule could not condition on `resource.data.userId`
-    // because the CG query filtered on a different field and failed the
-    // static list-time check. Top-level, `get` proves ownership on the doc
-    // itself, and `list` is only legal when the query's own filter pins
-    // `userId` to the caller (which `findUsableForUser` does).
+    // TOP-LEVEL `couponGrants/{grantId}` (`CouponGrant`): the client record
+    // it rewards in `customerId`, the account that may READ it in
+    // `holderUserId` (D29 — written at the boundary from the record's
+    // `Customer.userId`, never derived from the record id's text; `null` for
+    // a grant held by a walk-in, which no client reads). Top-level, `get`
+    // proves ownership on the document itself, and `list` is only legal
+    // when the query's own filter pins `holderUserId` to the caller.
     // …and the BOOK may read them too (2026-09-10): a barber at the chair
     // honours a coupon the client already holds, which means the visit
     // sheet has to list the client's usable grants. Same predicate the
     // clientele read uses — a copy-and-media role still sees nothing.
     match /couponGrants/{grantId} {
       allow get: if isSignedIn()
-        && (resource.data.userId == request.auth.uid || worksTheBook());
+        && (resource.data.holderUserId == request.auth.uid || worksTheBook());
       allow list: if isSignedIn()
-        && (resource.data.userId == request.auth.uid || worksTheBook());
-      // Grants are minted server-side only; the owner may transition their
-      // own grant's `state` (active → used), nothing security-relevant.
-      // Deliberately NOT `affectedKeys().hasOnly(['state'])` — `grantedAt`
-      // is free to re-serialize to a different (but instant-equal) ISO
-      // string across a read→reconstitute→persist round trip. What actually
-      // must never change is the grant's identity/value/ownership.
-      allow update: if isSignedIn()
-        && resource.data.userId == request.auth.uid
-        && !affectedKeys().hasAny(['id', 'userId', 'couponId', 'value']);
+        && (resource.data.holderUserId == request.auth.uid || worksTheBook());
+      // Grants are minted, used and revoked server-side only (flip 1,
+      // blueprint §3.2: TIGHTENED). The owner's exclusion-list update that
+      // stood here let a client flip its own grant's lifecycle — a used
+      // grant back to active included — and nothing a client sanctioned
+      // ever needed it: a grant's `grantStatus` moves inside the server
+      // transaction that redeems it, or not at all.
+      allow update: if false;
       allow create, delete: if false;
     }
 
     // ── scheduling ──────────────────────────────────────────────────────
     match /appointments/{appointmentId} {
-      // `ownerUserId` is a denormalized field (not part of the `Appointment`
-      // domain aggregate) written by the adapter purely so rules/queries can
-      // identify "my appointments" without scanning the `seats` array.
+      // `ownerUserId` is the `SELF` seat's ACCOUNT, a query mirror every write
+      // plan recomputes from the seats, so rules/queries can identify "my
+      // appointments" without scanning the `seats` array (D29: it stays the
+      // account key beside the client-record mirror `ownerCustomerId`).
       // NOT `isStaff()`: that grouping includes `content_manager`, which
       // could read every appointment, every client name, phone and note in
       // the shop for a role that only edits marketing copy.
@@ -219,7 +218,7 @@ service cloud.firestore {
       // CLIENTS MAY NOT CREATE APPOINTMENTS. This previously allowed any
       // signed-in user to write an appointment naming any barber, any time and
       // any price, on top of anyone else's booking — the document carries
-      // `seats[].terms.priceMinorUnits` and `seats[].slot`, and rules cannot
+      // `seats[].priceCents` and `seats[].startMinutes`, and rules cannot
       // check availability. Double-booking was the default behaviour, not a
       // race.
       //
@@ -284,13 +283,32 @@ service cloud.firestore {
       allow read, write: if worksTheBook();
     }
 
+    // ── the shop's client records (D29, flip 1) ──────────────────────────
+    // `customers/{customerId}` — whom the shop serves, bills and rewards,
+    // with or without an account (`Customer`). The book reads and keeps
+    // them; the account a record names (`userId`) reads its own and nothing
+    // else — a client may never see the desk's copy of another person, and
+    // no anonymous visitor any. The booking transaction creates an account
+    // holder's record with the Admin SDK (`FIRST_BOOKING`); the desk's
+    // `create`/`update` is the walk-in path's (flatten-spec §5.5). Records
+    // are never deleted from a client: a visit, a grant or a voucher may
+    // name one.
+    match /customers/{customerId} {
+      allow read: if worksTheBook()
+        || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create, update: if worksTheBook();
+      allow delete: if false;
+    }
+
     // ── the client's visit statistics (2026-09-25) ───────────────────────
     // Visits, no-shows, late cancels, cadence — materialised per subject by
     // the appointments trigger and the backfill (Admin SDK), never by a
     // client. The book reads them; the client they describe does not: the
     // document carries the staff-only pause suggestion, and a client's own
     // visits reach them through the journal instead.
-    match /clientStats/{uid} {
+    // Keyed by the client RECORD (`clientStats/{customerId}`, D29) — staff
+    // read it by the record, so the key changes nothing about who may.
+    match /clientStats/{customerId} {
       allow read: if worksTheBook();
       allow write: if false;
 
@@ -472,8 +490,8 @@ service cloud.firestore {
       // Written ONLY by `requestWaitlist` and the matcher (Admin SDK, which
       // bypasses rules). A client that could write its own document could
       // name a different owner and sign a stranger up for notifications, or
-      // set `dayKeys` wider than the days it actually declared and make the
-      // matcher do unbounded work on every cancellation.
+      // set `localDates` wider than the days it actually declared and make
+      // the matcher do unbounded work on every cancellation.
       allow create: if false;
 
       // Withdrawal goes through the `cancelWaitlist` callable — ONE door.
@@ -518,9 +536,12 @@ service cloud.firestore {
     // at the counter has to be looked up before it is honoured. Never
     // written from a client: a balance moves only inside the server
     // transaction that writes the visit drawing on it.
+    // The holder is the ACCOUNT in `holderUserId` (D29), written at the
+    // boundary from the record in `issuedToCustomerId`; a paper voucher has
+    // neither, and only the book reads it.
     match /giftVouchers/{voucherId} {
       allow get, list: if isSignedIn()
-        && (resource.data.issuedToUserId == request.auth.uid || worksTheBook());
+        && (resource.data.holderUserId == request.auth.uid || worksTheBook());
       allow write: if false;
     }
 

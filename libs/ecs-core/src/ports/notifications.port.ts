@@ -63,3 +63,9 @@ export type NotificationsPorts = {
   readonly markAllNotificationsRead: MarkAllNotificationsRead;
   readonly hasRecentNotification: HasRecentNotification;
 };
+
+/** The signed-in account's inbox — the bundle the web's `INBOX_PORTS` token binds. */
+export type InboxPorts = Pick<
+  NotificationsPorts,
+  'observeInbox' | 'markNotificationRead' | 'markAllNotificationsRead'
+>;

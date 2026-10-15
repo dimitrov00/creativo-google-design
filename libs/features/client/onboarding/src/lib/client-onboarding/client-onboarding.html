@@ -402,9 +402,9 @@
                sheet; at the cap the unselected remainder dims until a slot
                frees up. -->
           <ui-grid [uiColumns]="2" uiSpacing="compact">
-            @for (service of services(); track service.id.value) {
+            @for (service of services(); track service.id) {
             <cr-service-card
-              [uiServiceId]="service.id.value"
+              [uiServiceId]="service.id"
               [uiName]="serviceName(service)"
               [uiMeta]="serviceMeta(service)"
               [uiCoverUrl]="serviceCoverUrl(service)"

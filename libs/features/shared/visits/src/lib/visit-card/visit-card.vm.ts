@@ -113,6 +113,12 @@ export interface VisitCardOptions {
   readonly perspective: VisitPerspective;
   /** Whose story the staff card tells; `null` (a guest, the client's own page) tells the appointment's. */
   readonly subjectUserId: string | null;
+  /**
+   * The same person's client RECORD (D29), what the story is keyed by —
+   * the staff card passes the one it resolved; absent, the seat's own link
+   * names it (`VisitRowOptions.subjectCustomerId`).
+   */
+  readonly subjectCustomerId?: string | null;
   readonly nowMs: number;
   readonly locale: string;
   /**

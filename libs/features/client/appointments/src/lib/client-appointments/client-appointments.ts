@@ -15,17 +15,9 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { map, switchMap } from 'rxjs';
-import { UserId, ZonedDateTime } from '@creativo/application/accounts';
-import {
-  Appointment,
-  AppointmentId,
-  AppointmentStatusKind,
-  BOOKING_POLICY_READER,
-  BookingPolicy,
-  Money,
-  formatMoney,
-  wordError,
-} from '@creativo/application/booking';
+import { ZonedDateTime } from '@creativo/application/accounts';
+import { wordError } from '@creativo/application/booking';
+import { SCHEDULING_READ_PORTS } from '@creativo/infrastructure/firebase-app';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
@@ -46,6 +38,9 @@ import {
   visitSectionKey,
   visitSectionLabel,
   visitWordsOf,
+  formatCents,
+  formatMinute,
+  formatWallClock,
 } from '@creativo/features/shared/visits';
 import {
   UiAvatar,
@@ -79,11 +74,27 @@ import {
   UiTextDirective,
   UiWeightDirective,
 } from '@creativo/ui/modifiers';
-import { LocalDate, LocationId as LocationKey, defect } from '@core/primitives';
-import { E164, GeoPoint, ShopReach } from '@core/components';
+import type { Appointment } from '@core/entities';
+import {
+  type AppointmentId,
+  BookingStatus,
+  LocalDate,
+  UserId,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  BookingLifecycle,
+  BookingPolicy,
+  Money,
+  ServiceTerms,
+  ShopReach,
+  TimeCoordinate,
+} from '@core/components';
 import {
   CalendarGridSystem,
-  type ReachableShop,
+  CancellationPolicySystem,
+  MoveSystem,
   ShopReachSystem,
 } from '@core/systems';
 import { CLOCK } from '@creativo/application/shared';
@@ -117,18 +128,26 @@ function shiftMonthKey(key: string, delta: number): string {
   return `${shiftedYear}-${String(shiftedMonth).padStart(2, '0')}`;
 }
 
-const CANCELLABLE_STATUSES = new Set<AppointmentStatusKind>([
-  'pending',
-  'confirmed',
-]);
-
-const STATUS_TONES: Record<AppointmentStatusKind, UiBadgeTone> = {
-  pending: 'neutral',
-  confirmed: 'accent',
-  completed: 'success',
-  cancelled: 'destructive',
-  no_show: 'warning',
+const STATUS_TONES: Record<BookingStatus, UiBadgeTone> = {
+  [BookingStatus.Pending]: 'neutral',
+  [BookingStatus.Confirmed]: 'accent',
+  [BookingStatus.Completed]: 'success',
+  [BookingStatus.Cancelled]: 'destructive',
+  [BookingStatus.NoShow]: 'warning',
 };
+
+/**
+ * The catalogue's key segment of each stored status
+ * (`appointments.status.confirmed`, …): the stored tag is SCREAMING (F1-9),
+ * the words keep their keys.
+ */
+const STATUS_KEY = {
+  [BookingStatus.Pending]: 'pending',
+  [BookingStatus.Confirmed]: 'confirmed',
+  [BookingStatus.Completed]: 'completed',
+  [BookingStatus.Cancelled]: 'cancelled',
+  [BookingStatus.NoShow]: 'no_show',
+} as const satisfies Record<BookingStatus, string>;
 /**
  * Empty until the client types something. The field is optional, and the
  * callable files any text as the client's own words (`other`), so a
@@ -136,6 +155,8 @@ const STATUS_TONES: Record<AppointmentStatusKind, UiBadgeTone> = {
  * explained — in English, on a Bulgarian screen — instead of `unspecified`.
  */
 const DEFAULT_CANCEL_REASON = '';
+
+const MS_PER_MINUTE = 60_000;
 
 /** The server's refusal of a cancel whose free window has closed. */
 const CANCEL_WINDOW_CLOSED = 'booking.cancel.window_closed';
@@ -201,8 +222,8 @@ interface VisitMonthVm {
  * repeated down a list turns a history into a list of things to delete). The
  * row opens the visit, and the visit is where the deadline, the honest
  * "window closed" line, and the cancel action live — the same
- * `BookingPolicy.mayCancelAt` rule the server refuses by, so the button never
- * promises what the callable will deny.
+ * `CancellationPolicySystem.mayCancel` rule the server refuses by, so the
+ * button never promises what the callable will deny.
  */
 @Component({
   selector: 'lib-client-appointments',
@@ -257,15 +278,22 @@ export class ClientAppointments {
   private readonly content = inject(CatalogPresenter);
 
   protected readonly store = inject(AppointmentsStore);
-  private readonly policyReader = inject(BOOKING_POLICY_READER);
+  private readonly scheduling = inject(SCHEDULING_READ_PORTS);
 
   /**
-   * The tenant's cancellation window — the SAME `BookingPolicy.mayCancelAt`
-   * rule the `cancelAppointment` callable refuses by.
+   * The tenant's cancellation window — the SAME
+   * `CancellationPolicySystem.mayCancel` rule the `cancelAppointment`
+   * callable refuses by. A policy that cannot be read is the default one,
+   * as an absent `settings/bookingPolicy` document is.
    */
-  protected readonly policy = toSignal(this.policyReader.observe(), {
-    initialValue: BookingPolicy.default(),
-  });
+  protected readonly policy = toSignal(
+    this.scheduling
+      .observePolicy()
+      .pipe(
+        map((result) => (result.ok ? result.value : BookingPolicy.DEFAULT)),
+      ),
+    { initialValue: BookingPolicy.DEFAULT },
+  );
 
   protected readonly view = signal<AppointmentsView>('list');
 
@@ -362,12 +390,14 @@ export class ClientAppointments {
       },
       barberAvatarSrc: (id) => barbers.get(id)?.avatarSrc ?? null,
       locationName: (id) => {
-        const shop = locations.find((location) => location.id.value === id);
+        const shop = locations.find((location) => location.id === id);
         return shop
           ? this.content.text({ en: shop.name.en, bg: shop.name.bg })
           : null;
       },
       locationCount: locations.length,
+      locationTimeZone: (id) =>
+        locations.find((location) => location.id === id)?.timeZone ?? null,
     };
   });
 
@@ -384,8 +414,8 @@ export class ClientAppointments {
       ...this.store.appointments(),
       ...this.store.history(),
     ]) {
-      if (seen.has(appointment.id.value)) continue;
-      seen.add(appointment.id.value);
+      if (seen.has(appointment.id)) continue;
+      seen.add(appointment.id);
       appointments.push(appointment);
     }
     return appointments;
@@ -401,8 +431,8 @@ export class ClientAppointments {
     const lang = this.loadedLang();
     if (words === null || lang === null) return [];
     const lookup = this.lookup();
-    const nowMs = this.store.today.toMillis();
-    const owner = this.store.owner()?.value ?? null;
+    const nowMs = this.store.nowUtcMs;
+    const owner = this.store.owner();
     return this.appointments().map((appointment) => {
       const row = visitRowOf(
         appointment,
@@ -501,7 +531,7 @@ export class ClientAppointments {
 
     const byDay = new Map<string, ClientVisitVm[]>();
     for (const visit of visits) {
-      const key = visit.appointment.timeSlot.calendarDayKey();
+      const key = visit.appointment.localDate;
       const bucket = byDay.get(key);
       if (bucket) bucket.push(visit);
       else byDay.set(key, [visit]);
@@ -511,7 +541,7 @@ export class ClientAppointments {
     // nothing in it is still a month a person may want to look at. It is
     // then widened to hold every visit, so a booking outside the current
     // window is never unreachable.
-    const todayKey = visitSectionKey(this.store.today, 'month');
+    const todayKey = visitSectionKey(this.store.now.localDate, 'month');
     const keys = [...byDay.keys()].sort();
     const earliestVisit = (keys.at(0) ?? todayKey).slice(0, 7);
     const latestVisit = (keys.at(-1) ?? todayKey).slice(0, 7);
@@ -552,7 +582,7 @@ export class ClientAppointments {
     return (
       this.catalog
         .locations()
-        .find((shop) => shop.id.equals(visit.appointment.locationId)) ?? null
+        .find((shop) => shop.id === visit.appointment.locationId) ?? null
     );
   });
 
@@ -578,9 +608,10 @@ export class ClientAppointments {
    */
   private readonly openVisitReach = computed(() => {
     const shop = this.openVisitShop();
+    // The shop as it is: its id, number and pin are its own root fields.
     return ShopReachSystem.reach(
-      shop === null ? [] : [reachableShopOf(shop)],
-      shop === null ? null : LocationKey.of(shop.id.value),
+      shop === null ? [] : [shop],
+      shop === null ? null : shop.id,
     );
   });
 
@@ -634,27 +665,27 @@ export class ClientAppointments {
    * cannot re-read is a note you cannot trust was received.
    */
   protected readonly openVisitNote = computed(
-    () => this.openVisit()?.appointment.contact?.note ?? null,
+    () => this.openVisit()?.appointment.contactNote ?? null,
   );
 
   /** What this visit comes to, summed from the seats' own terms. */
   protected readonly openVisitTotal = computed(() => {
     const visit = this.openVisit();
-    if (!visit) return null;
-
-    let total: Money | null = null;
-    for (const seat of visit.appointment.seats) {
-      if (total === null) {
-        total = seat.terms.price;
-        continue;
-      }
-      const sum = total.add(seat.terms.price);
-      // Mixed currencies are a data error the aggregate also refuses; a
-      // partial total would be worse than none.
-      if (sum.isFailure()) return null;
-      total = sum.value;
-    }
-    return total ? formatMoney(total, this.locale()) : null;
+    const first = visit?.appointment.seats[0];
+    if (!visit || first === undefined) return null;
+    const total = Money.sum(
+      visit.appointment.seats.map((seat) => ServiceTerms.price(seat)),
+      first.currency,
+    );
+    // Mixed currencies are a data error the entity also refuses; a partial
+    // total would be worse than none.
+    return total.ok
+      ? formatCents(
+          total.value.amountCents,
+          total.value.currency,
+          this.locale(),
+        )
+      : null;
   });
 
   protected readonly openVisit = computed<ClientVisitVm | null>(() => {
@@ -685,8 +716,8 @@ export class ClientAppointments {
     effect(() => {
       const principal = this.accountState.principal();
       if (principal.kind !== 'active') return;
-      const userIdResult = UserId.create(principal.uid.value);
-      if (userIdResult.isSuccess()) {
+      const userIdResult = UserId.parse(principal.uid.value);
+      if (userIdResult.ok) {
         this.store.setUserId(userIdResult.value);
       }
     });
@@ -759,7 +790,7 @@ export class ClientAppointments {
    * cheaper than two code paths.
    */
   protected scrollToToday(smooth = false): void {
-    const key = visitSectionKey(this.store.today, 'month');
+    const key = visitSectionKey(this.store.now.localDate, 'month');
     afterNextRender(
       () => {
         this.calendarScroller()
@@ -797,12 +828,19 @@ export class ClientAppointments {
     const shopName = this.openVisitShopName();
     const address = this.openVisitAddress();
 
+    // The `.ics` is what an instant is FOR (Law 7.3): the start as stored,
+    // the end its sold span later.
+    const startMs = visit.appointment.utcEpochMs;
+    const endMs = UtcEpochMs.plusMs(
+      startMs,
+      TimeCoordinate.durationMinutes(visit.appointment) * MS_PER_MINUTE,
+    );
     const ics = buildVisitIcs(
       {
         uid: `${visit.id}@creativo`,
         title: visit.title,
-        startMs: visit.appointment.timeSlot.start.toMillis(),
-        endMs: visit.appointment.timeSlot.end.toMillis(),
+        startMs,
+        endMs,
         location: [shopName, address].filter(Boolean).join(', '),
         description: [
           `${this.transloco.translate('appointments.visit.barberRole')}: ${
@@ -813,16 +851,14 @@ export class ClientAppointments {
           .filter(Boolean)
           .join('\n'),
       },
-      now.isSuccess()
-        ? now.value.toMillis()
-        : visit.appointment.timeSlot.start.toMillis(),
+      now.isSuccess() ? now.value.toMillis() : startMs,
     );
 
     const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `creativo-${visit.appointment.timeSlot.calendarDayKey()}.ics`;
+    link.download = `creativo-${visit.appointment.localDate}.ics`;
     link.click();
     // Freed on the next turn of the loop — revoking synchronously races the
     // click the browser has not finished handling.
@@ -863,10 +899,11 @@ export class ClientAppointments {
   // ── Policy ───────────────────────────────────────────────────────────
 
   protected canCancel(appointment: Appointment): boolean {
-    return (
-      CANCELLABLE_STATUSES.has(appointment.status.kind) &&
-      !this.windowClosed(appointment)
-    );
+    return CancellationPolicySystem.mayCancel(
+      appointment,
+      this.policy(),
+      this.store.nowUtcMs,
+    ).ok;
   }
 
   /**
@@ -879,7 +916,7 @@ export class ClientAppointments {
   protected canMove(appointment: Appointment): boolean {
     return (
       this.canCancel(appointment) &&
-      appointment.hasSeatTheBookerCanMove(this.store.owner())
+      MoveSystem.hasSeatTheBookerCanMove(appointment, this.store.owner())
     );
   }
 
@@ -895,15 +932,16 @@ export class ClientAppointments {
   /** Still cancellable by STATUS, but the free window has passed. */
   protected windowClosed(appointment: Appointment): boolean {
     return (
-      CANCELLABLE_STATUSES.has(appointment.status.kind) &&
-      !this.policy().mayCancelAt(
-        appointment.timeSlot.start.toMillis(),
-        this.store.today.toMillis(),
+      BookingLifecycle.isLive(appointment) &&
+      !BookingPolicy.mayCancelAt(
+        this.policy(),
+        CancellationPolicySystem.startUtcMsOf(appointment),
+        this.store.nowUtcMs,
       )
     );
   }
 
-  /** "Free cancellation until …" — the deadline, human-shaped. */
+  /** "Free cancellation until …" — the deadline, human-shaped, on the shop's calendar. */
   protected cancellationDeadline(appointment: Appointment): string {
     return new Intl.DateTimeFormat(this.locale(), {
       weekday: 'short',
@@ -914,16 +952,22 @@ export class ClientAppointments {
       hour12: false,
       timeZone: APPOINTMENTS_ZONE,
     }).format(
-      new Date(
-        this.policy().cancellationDeadlineMs(
-          appointment.timeSlot.start.toMillis(),
-        ),
+      BookingPolicy.cancellationDeadlineUtcMs(
+        this.policy().cancellationWindowHours,
+        CancellationPolicySystem.startUtcMsOf(appointment),
       ),
     );
   }
 
-  protected statusTone(kind: AppointmentStatusKind): UiBadgeTone {
-    return STATUS_TONES[kind];
+  protected statusTone(status: BookingStatus): UiBadgeTone {
+    // eslint-disable-next-line security/detect-object-injection -- closed union.
+    return STATUS_TONES[status];
+  }
+
+  /** The status's word key segment — `appointments.status.<key>`. */
+  protected statusKey(status: BookingStatus): string {
+    // eslint-disable-next-line security/detect-object-injection -- closed union.
+    return STATUS_KEY[status];
   }
 
   // ── Formatting ───────────────────────────────────────────────────────
@@ -942,7 +986,8 @@ export class ClientAppointments {
   }
 
   protected fullDayLabel(visit: ClientVisitVm): string {
-    return visit.appointment.timeSlot.start.toLocaleString(this.locale(), {
+    // The shop's own day, printed as stored (no zone is consulted).
+    return formatWallClock(visit.appointment.localDate, null, this.locale(), {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
@@ -997,9 +1042,8 @@ export class ClientAppointments {
     lookup: VisitLookup,
     locale: string,
   ): ClientVisitVm {
-    const barberIds = appointment.barberIds();
-    const single =
-      barberIds.length === 1 ? (barberIds[0]?.value ?? null) : null;
+    const barberIds = appointment.barberIds;
+    const single = barberIds.length === 1 ? (barberIds[0] ?? null) : null;
     const trailing = row.trailing;
     return {
       id: row.id,
@@ -1008,12 +1052,9 @@ export class ClientAppointments {
       barberLabel: trailing?.kind === 'barber' ? trailing.name : '',
       barberAvatarSrc: single === null ? null : lookup.barberAvatarSrc(single),
       barberMonogram: single === null ? '' : (lookup.barberName(single) ?? ''),
-      timeLabel: appointment.timeSlot.start.toLocaleString(locale, {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      timeLabel: formatMinute(appointment.startMinutes, locale),
       upcoming: row.upcoming,
-      status: appointment.status.kind,
+      status: appointment.bookingStatus,
     };
   }
 
@@ -1024,7 +1065,7 @@ export class ClientAppointments {
   ): VisitMonthVm {
     const pad = (value: number) => String(value).padStart(2, '0');
     const firstOfMonth = Date.UTC(year, month - 1, 1);
-    const todayKey = this.store.today.toISODate();
+    const todayKey = this.store.now.localDate;
 
     // The grid is `CalendarGridSystem.monthGrid` on the shop's civil days
     // (no zone, no day table — the weekday is the day's own); this list pads
@@ -1064,25 +1105,4 @@ export class ClientAppointments {
       weeks,
     };
   }
-}
-
-/**
- * A catalogue shop as `ShopReachSystem` reads it: its id, number and pin —
- * the flat `ShopLocation` slices (flatten pass: `phoneE164`, `latitude`,
- * `longitude` at the root, each a brand). The legacy location's number is
- * canonical and its pin was validated when the catalogue read it.
- */
-function reachableShopOf(location: {
-  readonly id: { readonly value: string };
-  readonly phone: { readonly e164: string; readonly display: string };
-  readonly geo: { readonly lat: number; readonly lng: number };
-}): ReachableShop {
-  const pin = GeoPoint.parse(location.geo.lat, location.geo.lng);
-  if (!pin.ok) defect('unreachable: a catalogue pin off the globe');
-  return {
-    id: LocationKey.of(location.id.value),
-    phoneE164: E164.of(location.phone.e164),
-    latitude: pin.value.latitude,
-    longitude: pin.value.longitude,
-  };
 }

@@ -19,40 +19,26 @@ import {
 } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
-  AVAILABILITY_READER,
-  BOOKING_POLICY_READER,
-  BookingPolicy,
   CalendarDay,
-  ObserveDayAvailabilityUseCase,
-  type ObserveDayAvailabilityInput,
-  ObserveRangeCapacityUseCase,
   type ScheduleSelection,
   ZonedDateTime,
 } from '@creativo/application/booking';
-import type { BookingCart, MoveRider } from '@creativo/application/booking';
+import { SCHEDULING_READ_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
-  BarberId as BarberKey,
-  CartLineId as LineKey,
-  DurationMinutes,
-  LocationId as LocationKey,
-  MinuteCount,
-  MinuteDelta,
-  SeatKeyText,
-  ServiceId as ServiceKey,
-  ServiceVariantId as VariantKey,
-  defect,
-} from '@core/primitives';
-import { type BookingCart as CartData } from '@core/components';
-import {
-  BookingCartSystem,
-  type CartRider,
-  type CartServiceScope,
-} from '@core/systems';
-import {
-  BarberId,
+  type BarberId,
+  LocalDate,
   type LocationId,
-  type Service,
-} from '@creativo/application/catalog';
+  type RepositoryError,
+  type Result,
+  type TimeZone,
+  UtcEpochMs,
+} from '@core/primitives';
+import {
+  BookingCart as CartData,
+  BookingPolicy,
+  type ShopNow,
+} from '@core/components';
+import { BookingCartSystem, ZonedTimeSystem } from '@core/systems';
 import { CLOCK } from '@creativo/application/shared';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
@@ -82,14 +68,23 @@ import {
 } from '../chrome/booking-chrome.service';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
 import { BookingTimeSheet } from './time-sheet/booking-time-sheet';
-import { sameDayQuery } from './same-day-query';
+import {
+  type DayDocs,
+  type DayQuery,
+  capacityByDay,
+  capacityMonthsOf,
+  dayDocsKey,
+  dayOptions,
+  observeCapacityEntries,
+  observeDayDocs,
+  sameDayDocsKey,
+} from './day-availability';
 import {
   type AvailabilityDayCell,
   type AvailabilityMonth,
   type ScheduleDayVm,
   type ScheduleMonthVm,
   buildAvailabilityMonths,
-  horizonQueryRange,
 } from './availability-month';
 
 /**
@@ -175,8 +170,7 @@ import {
 export class BookingScheduleStep {
   private readonly transloco = inject(TranslocoService);
   private readonly clock = inject(CLOCK);
-  private readonly availability = inject(AVAILABILITY_READER);
-  private readonly policyReader = inject(BOOKING_POLICY_READER);
+  private readonly scheduling = inject(SCHEDULING_READ_PORTS);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
   private readonly router = inject(Router);
@@ -186,26 +180,23 @@ export class BookingScheduleStep {
   protected readonly content = inject(CatalogPresenter);
   protected readonly store = inject(BookingFlowStore);
 
-  private readonly observeCapacity = new ObserveRangeCapacityUseCase(
-    this.availability,
-  );
-
-  /** The days the projection cannot answer — see {@link exactDays}. */
-  private readonly observeExact = new ObserveDayAvailabilityUseCase(
-    this.availability,
-  );
-
   /**
-   * Tenant policy, through the port.
+   * Tenant policy, live (`SCHEDULING_READ_PORTS.observePolicy`).
    *
    * The horizon this calendar runs to is a shop's decision, not a constant —
    * and it is the number most visibly on screen here, since it is literally
-   * how far the page scrolls. `BookingPolicy.default()` is the adapter's
-   * fallback, so this reads the same before any admin surface exists.
+   * how far the page scrolls. `BookingPolicy.DEFAULT` stands in until it
+   * answers and when it cannot be read, as an absent document does, so this
+   * reads the same before any admin surface exists.
    */
-  protected readonly policy = toSignal(this.policyReader.observe(), {
-    initialValue: BookingPolicy.default(),
-  });
+  protected readonly policy = toSignal(
+    this.scheduling
+      .observePolicy()
+      .pipe(
+        map((result) => (result.ok ? result.value : BookingPolicy.DEFAULT)),
+      ),
+    { initialValue: BookingPolicy.DEFAULT },
+  );
 
   protected readonly selectedDayKey = this.store.selectedDayKey;
 
@@ -214,10 +205,10 @@ export class BookingScheduleStep {
   protected readonly locations = computed(() => this.catalog.locations());
 
   private readonly location = computed(() => {
-    const chosen = this.store.locationId();
+    const chosen = this.store.shopId();
     if (!chosen) return null;
     return (
-      this.locations().find((candidate) => candidate.id.equals(chosen)) ?? null
+      this.locations().find((candidate) => candidate.id === chosen) ?? null
     );
   });
 
@@ -228,12 +219,18 @@ export class BookingScheduleStep {
    * single city. A chain spanning zones would have to render each option in
    * its own shop's clock, which is a different design and a different problem.
    */
-  protected readonly zone = computed(
+  protected readonly zone = computed<string>(
     () =>
-      this.location()?.timezone ??
-      this.locations().at(0)?.timezone ??
+      this.location()?.timeZone ??
+      this.locations().at(0)?.timeZone ??
       'Europe/Sofia',
   );
+
+  /** The same zone as the brand the time systems read — `null` only for a zone `Intl` refuses. */
+  private readonly timeZone = computed<TimeZone | null>(() => {
+    const zone = ZonedTimeSystem.checkZone(this.zone());
+    return zone.ok ? zone.value : null;
+  });
 
   /**
    * EVERY active barber — the ROSTER decides who works where, not the barber's
@@ -254,9 +251,9 @@ export class BookingScheduleStep {
    * A chair no line accepts can never make a day bookable for this visit.
    */
   private readonly capacityBarberIds = computed<readonly BarberId[]>(() => {
-    const cart = this.store.cart();
+    const cart = this.store.cartData();
     const pool = this.barberIds();
-    return cart ? cart.acceptedBarbers(pool) : pool;
+    return cart ? CartData.acceptedBarbers(cart, pool) : pool;
   });
 
   // ── Which shops can serve this visit ────────────────────────────────
@@ -276,7 +273,7 @@ export class BookingScheduleStep {
    * send the client round a loop. That is a shop outage, not this notice's.
    */
   private readonly servingShops = computed<readonly LocationId[] | null>(() => {
-    const cart = this.store.cart();
+    const cart = this.store.cartData();
     if (
       !cart ||
       !this.catalog.servicesKnown() ||
@@ -288,17 +285,11 @@ export class BookingScheduleStep {
     if (shops.length === 0) return null;
     // `BookingCartSystem.shopsServingParty` — the shops, in the order given,
     // that offer every service on the visit.
-    const serving = BookingCartSystem.shopsServingParty(
-      BookingCartSystem.partyServicesOf(
-        toCartData(cart),
-        this.store.availabilityRiders().map(toCartRider),
-      ),
-      this.catalog.services().map(toServiceScope),
-      shops.map((shop) => LocationKey.of(shop.id.value)),
+    return BookingCartSystem.shopsServingParty(
+      BookingCartSystem.partyServicesOf(cart, this.store.availabilityRiders()),
+      this.catalog.services(),
+      shops.map((shop) => shop.id),
     );
-    return shops
-      .filter((shop) => serving.includes(LocationKey.of(shop.id.value)))
-      .map((shop) => shop.id);
   });
 
   /**
@@ -324,17 +315,17 @@ export class BookingScheduleStep {
   protected readonly shopReach = computed<ShopReach>(() => {
     const serving = this.servingShops();
     if (serving === null) return SERVED;
-    const chosen = this.store.locationId();
+    const chosen = this.store.shopId();
     if (chosen === null) {
       return serving.length > 0 ? SERVED : { kind: 'nowhere' };
     }
     const chosenShop = this.location();
-    if (!chosenShop || serving.some((id) => id.equals(chosen))) return SERVED;
+    if (!chosenShop || serving.includes(chosen)) return SERVED;
     if (serving.length === 0) return { kind: 'nowhere' };
 
     const only = serving.length === 1 ? serving[0] : undefined;
     const target = only
-      ? this.locations().find((shop) => shop.id.equals(only))
+      ? this.locations().find((shop) => shop.id === only)
       : undefined;
     return {
       kind: 'elsewhere',
@@ -366,7 +357,7 @@ export class BookingScheduleStep {
    * time are dropped with the shop, as on the location step.
    */
   protected switchShop(locationId: LocationId | null): void {
-    this.store.selectLocation(locationId);
+    this.store.selectShop(locationId);
   }
 
   // ── When ────────────────────────────────────────────────────────────
@@ -381,10 +372,34 @@ export class BookingScheduleStep {
     return now ? CalendarDay.fromZonedDateTime(now) : null;
   });
 
+  /**
+   * "Now" on the shop's wall clock (`ShopNow`) — what the day query's lead
+   * time floors against, read from the same clock reading as {@link today}.
+   */
+  private readonly shopNow = computed<ShopNow | null>(() => {
+    const now = this.now();
+    const zone = this.timeZone();
+    if (!now || !zone) return null;
+    const instant = UtcEpochMs.of(now.toMillis());
+    return instant.ok ? ZonedTimeSystem.shopNow(instant.value, zone) : null;
+  });
+
+  /** Today's shop day as the time systems read it. */
+  private readonly todayDate = computed<LocalDate | null>(
+    () => this.shopNow()?.localDate ?? null,
+  );
+
   /** The last bookable day — the policy's own calendar walk, in months. */
+  private readonly horizonEndDate = computed<LocalDate | null>(() => {
+    const today = this.todayDate();
+    return today ? BookingPolicy.horizonEndFrom(this.policy(), today) : null;
+  });
+
   private readonly horizonEnd = computed<CalendarDay | null>(() => {
-    const today = this.today();
-    return today ? this.policy().horizonEndFrom(today) : null;
+    const end = this.horizonEndDate();
+    if (!end) return null;
+    const day = CalendarDay.create(end, this.zone());
+    return day.isSuccess() ? day.value : null;
   });
 
   private readonly rawMonths = computed<readonly AvailabilityMonth[]>(() => {
@@ -547,15 +562,15 @@ export class BookingScheduleStep {
    * is built FROM this query's result, so reading it here would make the query
    * depend on its own output.
    */
-  private readonly capacityQuery = computed(() => {
-    const today = this.today();
-    const horizonEnd = this.horizonEnd();
+  private readonly capacityQuery = computed<CapacityQuery | null>(() => {
+    const from = this.todayDate();
+    const to = this.horizonEndDate();
     const barberIds = this.capacityBarberIds();
-    if (!today || !horizonEnd || barberIds.length === 0) return null;
-    const range = horizonQueryRange(today, horizonEnd);
-    return range
-      ? { locationId: this.capacityLocationId(), range, barberIds }
-      : null;
+    if (!from || !to || barberIds.length === 0) return null;
+    // The run is today through the horizon; a horizon before today asks
+    // nothing (a day nobody may book can only ever answer "no").
+    if (LocalDate.compare(to, from) < 0) return null;
+    return { locationId: this.capacityLocationId(), from, to, barberIds };
   });
 
   /**
@@ -570,7 +585,7 @@ export class BookingScheduleStep {
    * shop, and the sheet stays the authority.
    */
   private readonly capacityLocationId = computed<LocationId | null>(() => {
-    const chosen = this.store.locationId();
+    const chosen = this.store.shopId();
     if (chosen !== null) return chosen;
     const serving = this.servingShops();
     return serving !== null && serving.length === 1
@@ -578,26 +593,49 @@ export class BookingScheduleStep {
       : null;
   });
 
-  private readonly capacityResult = toSignal(
-    toObservable(this.capacityQuery).pipe(
+  /**
+   * The `capacity/{YYYY-MM}` month documents the run reads — two or three,
+   * however many barbers the shop has. The listener set depends only on
+   * the RANGE: the barbers and the shop are applied in {@link capacityByDay}.
+   */
+  private readonly capacityMonths = computed(() => {
+    const query = this.capacityQuery();
+    return query === null ? null : capacityMonthsOf(query.from, query.to);
+  });
+
+  private readonly capacityEntries = toSignal(
+    toObservable(this.capacityMonths).pipe(
       // STRUCTURAL identity, not object identity. The computed above mints a
-      // fresh literal per recompute, and `switchMap` on raw identity answered
+      // fresh list per recompute, and `switchMap` on raw identity answered
       // every no-op recompute by tearing down and re-billing the whole
       // listener set — the single largest avoidable read cost in the app.
-      // Re-subscribe only when the QUERY genuinely changes.
-      distinctUntilChanged(
-        (a, b) => capacityQueryKey(a) === capacityQueryKey(b),
-      ),
-      switchMap((input) =>
-        input === null ? of(null) : this.observeCapacity.execute(input),
+      // Re-subscribe only when the MONTHS genuinely change.
+      distinctUntilChanged((a, b) => (a ?? []).join() === (b ?? []).join()),
+      switchMap((months) =>
+        months === null
+          ? of(null)
+          : observeCapacityEntries(this.scheduling, months),
       ),
     ),
     { initialValue: null },
   );
 
+  /**
+   * Per-day free minutes across the run — the calendar's markers
+   * (`CapacityEntry.freeMinutesOn` over the month documents): the barbers
+   * the bag accepts, at the shop asked about.
+   */
   private readonly capacityByDay = computed<ReadonlyMap<string, number>>(() => {
-    const result = this.capacityResult();
-    return result?.isSuccess() ? result.value : new Map();
+    const query = this.capacityQuery();
+    const entries = this.capacityEntries();
+    if (query === null || !entries?.ok) return new Map();
+    return capacityByDay(
+      entries.value,
+      query.from,
+      query.to,
+      query.barberIds,
+      query.locationId,
+    );
   });
 
   // ── Bookability ─────────────────────────────────────────────────────
@@ -631,37 +669,40 @@ export class BookingScheduleStep {
    *   show. A projection-free "keep it tappable" would promise a sheet that
    *   is empty whenever the release is not honoured.
    */
-  private readonly exactDays = computed<readonly CalendarDay[]>(() => {
-    const today = this.today();
-    if (!today) return [];
-    const zone = this.zone();
-    const days = new Map([[today.key(), today]]);
+  private readonly exactDays = computed<readonly LocalDate[]>(() => {
+    const today = this.todayDate();
+    const zone = this.timeZone();
+    if (!today || !zone) return [];
+    const days: LocalDate[] = [today];
     for (const chair of this.store.moveRelease()) {
-      const start = ZonedDateTime.fromMillis(chair.occupied.startMs, zone);
-      if (start.isFailure()) continue;
-      const day = CalendarDay.fromZonedDateTime(start.value);
+      const instant = UtcEpochMs.of(chair.startMs);
+      if (!instant.ok) continue;
+      const day = ZonedTimeSystem.toLocal(instant.value, zone).localDate;
       // A day gone by has no cell to answer for.
-      if (!day.isBefore(today)) days.set(day.key(), day);
+      if (LocalDate.compare(day, today) >= 0 && !days.includes(day)) {
+        days.push(day);
+      }
     }
-    return [...days.values()];
+    return days;
   });
 
   /**
-   * One live query per exact day. Worth it: today is the difference between
+   * One day query per exact day. Worth it: today is the difference between
    * "grey because the shop is closed" and "tappable at 22:00 and lying about
    * it", and a move's own day is the one it most often lands back on.
    */
-  private readonly exactQueries = computed<
-    readonly ObserveDayAvailabilityInput[] | null
-  >(() => {
-    const cart = this.store.cart();
-    const now = this.now();
-    if (!cart || !now) return null;
-    const query = {
+  private readonly exactQueries = computed<readonly DayQuery[] | null>(() => {
+    const cart = this.store.cartData();
+    const now = this.shopNow();
+    const timeZone = this.timeZone();
+    if (!cart || !now || !timeZone) return null;
+    return this.exactDays().map((localDate) => ({
       cart,
       services: this.catalog.services(),
       barberIds: this.barberIds(),
-      locationId: this.store.locationId(),
+      locationId: this.store.shopId(),
+      localDate,
+      timeZone,
       policy: this.policy(),
       now,
       // Everybody a MOVE carries, pinned to the party's start, for the
@@ -672,39 +713,63 @@ export class BookingScheduleStep {
       // …and the visit's own chairs, handed back: its own seats never block
       // its own move, for the cart's lines and the riders alike.
       release: this.store.moveRelease(),
-    };
-    return this.exactDays().map((day) => ({ ...query, day }));
+      shops: this.catalog.locations(),
+    }));
   });
 
-  /** Each exact day's answer, by day key, once all of them have answered. */
-  private readonly exactAnswers = toSignal(
-    toObservable(this.exactQueries).pipe(
-      // The capacity stream's structural guard, one query at a time.
+  /** Each exact day's raw documents, live — re-subscribed only when WHICH documents changes. */
+  private readonly exactDocs = toSignal(
+    toObservable(
+      computed(
+        () => this.exactQueries()?.map((query) => dayDocsKey(query)) ?? null,
+      ),
+    ).pipe(
+      // The capacity stream's structural guard, one key at a time.
       distinctUntilChanged((a, b) =>
         a === null || b === null
           ? a === b
           : a.length === b.length &&
-            a.every((query, index) => sameDayQuery(query, b.at(index) ?? null)),
+            a.every((key, index) => sameDayDocsKey(key, b.at(index) ?? null)),
       ),
-      switchMap((queries): Observable<ReadonlyMap<string, boolean> | null> => {
-        if (queries === null) return of(null);
+      switchMap((keys): Observable<readonly DayDocsResult[] | null> => {
+        if (keys === null) return of(null);
         // `combineLatest([])` completes without emitting; no day is no answer.
-        if (queries.length === 0) return of(new Map());
+        if (keys.length === 0) return of([]);
         return combineLatest(
-          queries.map((query) =>
-            this.observeExact
-              .execute(query)
-              .pipe(
-                map((result): readonly [string, boolean] => [
-                  query.day.key(),
-                  result.isSuccess() && result.value.options.length > 0,
-                ]),
-              ),
-          ),
-        ).pipe(map((answers) => new Map(answers)));
+          keys.map((key) => observeDayDocs(this.scheduling, key)),
+        );
       }),
     ),
     { initialValue: null },
+  );
+
+  /**
+   * Each exact day's answer, by day key, once all of them have answered:
+   * the day's arrangements, derived from its documents by the systems
+   * (`dayOptions`). A day whose read failed offers nothing.
+   */
+  private readonly exactAnswers = computed<ReadonlyMap<string, boolean> | null>(
+    () => {
+      const queries = this.exactQueries();
+      const docs = this.exactDocs();
+      if (queries === null || docs === null) return null;
+      const answers = new Map<string, boolean>();
+      for (const query of queries) {
+        const key = dayDocsKey(query);
+        const read = docs.find((entry) =>
+          entry.ok ? sameDayDocsKey(entry.value.key, key) : false,
+        );
+        const failed = docs.find((entry) => !entry.ok);
+        if (read === undefined || !read.ok) {
+          // Not answered for THIS question yet — loading, unless a read failed.
+          if (failed === undefined) return null;
+          answers.set(query.localDate, false);
+          continue;
+        }
+        answers.set(query.localDate, dayOptions(query, read.value).length > 0);
+      }
+      return answers;
+    },
   );
 
   // ── Commands ────────────────────────────────────────────────────────
@@ -898,34 +963,16 @@ export class BookingScheduleStep {
   }
 }
 
-/**
- * The capacity query, flattened to a comparable string.
- *
- * The adapter listens to `capacity/{YYYY-MM}` month docs now, so the
- * listener set depends only on the RANGE; `barberIds` and `locationId` are
- * applied in its pure map. They stay in the key regardless: a change to
- * either must re-emit a recomputed capacity map, and re-subscribing two or
- * three month-doc listeners to get one is noise-level cost. `null` (query
- * not ready) never equals a real key, so readiness transitions still pass.
- */
-function capacityQueryKey(
-  query: {
-    readonly locationId: { readonly value: string } | null;
-    readonly range: {
-      readonly from: { key(): string };
-      readonly to: { key(): string };
-    };
-    readonly barberIds: readonly { readonly value: string }[];
-  } | null,
-): string {
-  if (query === null) return '∅';
-  return [
-    query.locationId?.value ?? '*',
-    query.range.from.key(),
-    query.range.to.key(),
-    query.barberIds.map((id) => id.value).join(','),
-  ].join('|');
+/** What the calendar's capacity markers are asked — see `BookingScheduleStep.capacityQuery`. */
+interface CapacityQuery {
+  readonly locationId: LocationId | null;
+  readonly from: LocalDate;
+  readonly to: LocalDate;
+  readonly barberIds: readonly BarberId[];
 }
+
+/** One exact day's documents, or why they could not be read. */
+type DayDocsResult = Result<DayDocs, RepositoryError>;
 
 /** Can the chosen shop serve the visit — see `BookingScheduleStep.shopReach`. */
 type ShopReach =
@@ -943,69 +990,3 @@ type ShopReach =
   | { readonly kind: 'nowhere' };
 
 const SERVED: ShopReach = { kind: 'served' };
-
-/* ── Legacy ↔ ECS converters (the shop rule is BookingCartSystem's) ────── */
-
-function toServiceScope(service: Service): CartServiceScope {
-  return {
-    id: ServiceKey.of(service.id.value),
-    locationIds: service.locationIds.map((id) => LocationKey.of(id.value)),
-  };
-}
-
-/** A brand built from a stored value its own record already validated. */
-function sure<T>(
-  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
-  what: string,
-): T {
-  if (!result.ok) defect(`unreachable: ${what}`);
-  return result.value;
-}
-
-function toCartRider(rider: MoveRider): CartRider {
-  return {
-    serviceId: ServiceKey.of(rider.serviceId.value),
-    barberId: BarberKey.of(rider.barberId.value),
-    offsetMinutes: sure(MinuteDelta.of(rider.offsetMinutes), 'an offset'),
-    terms: {
-      durationMinutes: sure(
-        DurationMinutes.of(rider.terms.durationMinutes),
-        'a sold duration',
-      ),
-      padBeforeMinutes: sure(
-        MinuteCount.of(rider.terms.padBeforeMinutes),
-        'a pad',
-      ),
-      padAfterMinutes: sure(
-        MinuteCount.of(rider.terms.padAfterMinutes),
-        'a pad',
-      ),
-    },
-  };
-}
-
-function toCartData(cart: BookingCart): CartData {
-  return {
-    cartSeats: cart.entries().map(([text, lines]) => {
-      const seatKey = SeatKeyText.of(text);
-      return {
-        seatKey,
-        lines: lines.map((line) => ({
-          lineId: LineKey.of(line.id.value),
-          seatKey,
-          serviceId: ServiceKey.of(line.serviceId.value),
-          variantId:
-            line.variantId === null
-              ? null
-              : VariantKey.of(line.variantId.value),
-          barberId:
-            line.barberPref.kind === 'specific'
-              ? BarberKey.of(line.barberPref.barberId.value)
-              : null,
-          locationId: null,
-        })),
-      };
-    }),
-    cartNextSequence: cart.nextLineSequence,
-  };
-}

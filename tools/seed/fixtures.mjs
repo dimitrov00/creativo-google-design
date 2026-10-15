@@ -8,7 +8,7 @@
  * | `dev-client-1` Георги Петров | the regular: 23 settled visits before today, 13 of them in the last 12 months, Ivan asked for by name; today's 10:00 cut, once its time passes, is his 24th |
  * | `dev-client-2` Мартин Илиев | birthday TODAY (`users.birthDate`); in the chair at 12:30; one visit the shop cancelled (Ivan off sick), which the cadence ignores |
  * | `dev-client-3` Петър Димитров | asks for Стефан by name — today a beard with him at 14:00; tomorrow he brings his son into the next chair, a party with a companion who has an account |
- * | `dev-client-10` Иво Димитров | that companion: a history found only through `subjectUserIds`, never as an owner |
+ * | `dev-client-10` Иво Димитров | that companion: a history found only through `subjectCustomerIds`, never as an owner |
  * | `dev-client-5` Кирил Тодоров | exactly 3 no-shows in the last 60 days — the pause-suggestion threshold — before today; today's 11:00 no-show, once its time passes, is the 4th |
  * | `dev-client-6` Николай Иванов | a LATE cancel (his own, 3 h before, inside the 24 h window), an in-window one, and tomorrow's in-window cancel |
  * | `dev-client-9` Даниел Маринов | a first visit: a new profile, no history, one booking later today |
@@ -35,6 +35,10 @@ import {
 } from './appointments.mjs';
 import { createShopCalendar } from './calendar.mjs';
 import { chairTerms } from './catalog.mjs';
+import {
+  customerIdOf,
+  seededCustomerBody,
+} from './fixtures/customers.fixtures.ts';
 import {
   cadence,
   createChairBook,
@@ -456,8 +460,8 @@ function walkInFixture(calendar, book) {
     status: { kind: 'completed' },
     placement: 'staff',
     // Entered at the desk as he sat down.
-    bookedAt: { dayOffset: placed.offset, hour, minute: minute - 2 },
-    arrivedAt: { hour, minute: minute - 2 },
+    booked: { dayOffset: placed.offset, hour, minute: minute - 2 },
+    arrived: { hour, minute: minute - 2 },
     contact: null,
     seats: [
       {
@@ -466,10 +470,10 @@ function walkInFixture(calendar, book) {
         serviceId: 'svc-fade',
         hour,
         minute,
-        subject: guest('Пламен (на място)', '+359885553344'),
+        subject: guest('Пламен (на място)'),
         pref: 'any',
         outcome: WORKED,
-        tipMinorUnits: 200,
+        tipCents: 200,
       },
     ],
   };
@@ -508,9 +512,9 @@ function dayFixtures(history) {
       status: { kind: 'completed' },
       // Rebooked at the chair as his last visit ended.
       placement: 'staff',
-      bookedAt: rebookedAtEndOf(georgiLast),
+      booked: rebookedAtEndOf(georgiLast),
       bookedFromAppointmentId: georgiLast.id,
-      arrivedAt: { hour: 9, minute: 56 },
+      arrived: { hour: 9, minute: 56 },
       contact: contactOf('dev-client-1'),
       seats: [
         {
@@ -523,7 +527,7 @@ function dayFixtures(history) {
           subject: account('dev-client-1'),
           pref: 'specific',
           outcome: WORKED,
-          tipMinorUnits: 200,
+          tipCents: 200,
         },
       ],
     },
@@ -532,10 +536,10 @@ function dayFixtures(history) {
       dayOffset: 0,
       status: { kind: 'confirmed' },
       placement: 'self',
-      bookedAt: weekBefore(0),
+      booked: weekBefore(0),
       // Already in the chair: the NOW treatment and the "Done" verb both need
       // an arrival to be reachable at all.
-      arrivedAt: { hour: 12, minute: 25 },
+      arrived: { hour: 12, minute: 25 },
       contact: contactOf('dev-client-2', 'Къса отстрани'),
       seats: [
         {
@@ -560,7 +564,7 @@ function dayFixtures(history) {
       dayOffset: 0,
       status: { kind: 'confirmed' },
       placement: 'self',
-      bookedAt: weekBefore(0),
+      booked: weekBefore(0),
       contact: contactOf('dev-client-3'),
       seats: [
         {
@@ -583,7 +587,7 @@ function dayFixtures(history) {
       dayOffset: 0,
       status: { kind: 'confirmed' },
       placement: 'self',
-      bookedAt: weekBefore(0),
+      booked: weekBefore(0),
       contact: contactOf('dev-client-4'),
       seats: [
         {
@@ -616,7 +620,7 @@ function dayFixtures(history) {
       dayOffset: 0,
       status: { kind: 'no_show' },
       placement: 'self',
-      bookedAt: weekBefore(0),
+      booked: weekBefore(0),
       contact: contactOf('dev-client-5'),
       seats: [
         {
@@ -639,7 +643,7 @@ function dayFixtures(history) {
       dayOffset: 0,
       status: { kind: 'confirmed' },
       placement: 'self',
-      bookedAt: { dayOffset: -2, hour: 21, minute: 10 },
+      booked: { dayOffset: -2, hour: 21, minute: 10 },
       contact: contactOf('dev-client-9'),
       seats: [
         {
@@ -663,7 +667,7 @@ function dayFixtures(history) {
       dayOffset: 0,
       status: { kind: 'confirmed' },
       placement: 'staff',
-      bookedAt: { dayOffset: -4, hour: 11, minute: 0 },
+      booked: { dayOffset: -4, hour: 11, minute: 0 },
       contact: contactOf('dev-client-11'),
       seats: [
         {
@@ -687,7 +691,7 @@ function dayFixtures(history) {
       dayOffset: 0,
       status: { kind: 'confirmed' },
       placement: 'staff',
-      bookedAt: { dayOffset: -1, hour: 17, minute: 40 },
+      booked: { dayOffset: -1, hour: 17, minute: 40 },
       contact: null,
       seats: [
         {
@@ -696,7 +700,7 @@ function dayFixtures(history) {
           serviceId: 'svc-fade',
           hour: 18,
           minute: 0,
-          subject: guest('Борис', '+359885551122'),
+          subject: guest('Борис'),
           pref: 'any',
           outcome: { kind: 'scheduled' },
         },
@@ -707,7 +711,7 @@ function dayFixtures(history) {
       dayOffset: 1,
       status: { kind: 'cancelled', reason: 'client_changed_plans' },
       placement: 'self',
-      bookedAt: weekBefore(1),
+      booked: weekBefore(1),
       contact: contactOf('dev-client-6'),
       seats: [
         {
@@ -735,7 +739,7 @@ function dayFixtures(history) {
       dayOffset: 1,
       status: { kind: 'confirmed' },
       placement: 'staff',
-      bookedAt: weekBefore(1),
+      booked: weekBefore(1),
       contact: contactOf('dev-client-7'),
       seats: [
         {
@@ -759,7 +763,7 @@ function dayFixtures(history) {
       dayOffset: 1,
       status: { kind: 'confirmed' },
       placement: 'self',
-      bookedAt: { dayOffset: -3, hour: 20, minute: 15 },
+      booked: { dayOffset: -3, hour: 20, minute: 15 },
       bookedFromAppointmentId: petarLast.id,
       contact: contactOf('dev-client-3'),
       seats: [
@@ -793,7 +797,7 @@ function dayFixtures(history) {
       dayOffset: 2,
       status: { kind: 'confirmed' },
       placement: 'self',
-      bookedAt: weekBefore(2),
+      booked: weekBefore(2),
       contact: contactOf('dev-client-8'),
       seats: [
         {
@@ -874,24 +878,54 @@ function placeDayFixture(fixture, calendar, book) {
     ...fixture,
     dayOffset: placed.offset,
     locationId: placed.locationId,
-    arrivedAt:
-      fixture.arrivedAt && placed.offset === fixture.dayOffset
-        ? moved(fixture.arrivedAt)
+    arrived:
+      fixture.arrived && placed.offset === fixture.dayOffset
+        ? moved(fixture.arrived)
         : null,
     seats: fixture.seats.map((seat) => ({ ...seat, ...moved(seat) })),
   };
 }
 
 /**
+ * A seeded client's record (D29, `customers/{customerId}`): opened when the
+ * shop first wrote them into the book — the earliest booking instant among
+ * their visits, or the visit itself when nobody booked it ahead — so a
+ * second run the same day writes the same bytes. A client with no visit is
+ * opened at the start of the shop's today.
+ */
+function customerRecordOf(client, appointments, calendar) {
+  const opened = appointments
+    .filter(({ doc }) => doc.subjectUserIds.includes(client.uid))
+    .map(({ doc }) => doc.bookedAtUtcMs ?? doc.utcEpochMs);
+  return {
+    uid: client.uid,
+    id: customerIdOf(client.uid),
+    body: seededCustomerBody(
+      client.uid,
+      {
+        firstName: client.firstName,
+        lastName: client.lastName,
+        phone: client.phone,
+        email: client.email,
+      },
+      opened.length === 0 ? calendar.msAt(0, 0, 0) : Math.min(...opened),
+    ),
+  };
+}
+
+/**
  * Everything the seed writes about clients, as of `nowMs`: their `users`
- * docs and every appointment, past and coming, in `appointmentToDocument`'s
- * shape. Pure — the same `nowMs` day gives the same documents.
+ * docs, their client records (`customers`, D29) and every appointment, past
+ * and coming, as the flat `Appointment` body. Pure — the same `nowMs` day
+ * gives the same documents.
  *
- * Also `fixtures`, the symbolic fixtures those documents were built from (as
- * placed and settled), so a test can read what was authored — a seat's own
- * minutes — beside what was written; and `appointmentDays`, how many days
- * from today on hold real appointments, where the seed's fabricated
- * `barberBusy` must start.
+ * `subjects` are the accounts on a seat, `subjectCustomerIds` their client
+ * records — whom `projectClientStats` recomputes. Also `fixtures`, the
+ * symbolic fixtures those documents were built from (as placed and
+ * settled), so a test can read what was authored — a seat's own minutes —
+ * beside what was written; and `appointmentDays`, how many days from today
+ * on hold real appointments, where the seed's fabricated `barberBusy` must
+ * start.
  */
 export function buildClientBook(nowMs) {
   const calendar = createShopCalendar(nowMs);
@@ -912,14 +946,21 @@ export function buildClientBook(nowMs) {
   const subjects = [
     ...new Set(appointments.flatMap(({ doc }) => doc.subjectUserIds)),
   ].sort();
+  const subjectCustomerIds = [
+    ...new Set(appointments.flatMap(({ doc }) => doc.subjectCustomerIds)),
+  ].sort();
   return {
     calendar,
     users: CLIENTS.map((client) => ({
       uid: client.uid,
       doc: userDocumentOf(client, calendar),
     })),
+    customers: CLIENTS.map((client) =>
+      customerRecordOf(client, appointments, calendar),
+    ),
     appointments,
     subjects,
+    subjectCustomerIds,
     fixtures,
     appointmentDays: 1 + Math.max(...days.map((fixture) => fixture.dayOffset)),
   };

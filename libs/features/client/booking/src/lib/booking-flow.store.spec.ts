@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 import {
-  APPOINTMENT_REPOSITORY,
-  Appointment,
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
   BarberPref,
@@ -12,30 +11,57 @@ import {
   BookingGatewayError,
   type CommitBookingRequest,
   type CommittedBooking,
-  Money,
   type Result,
   ScheduleSelection,
-  Seat,
-  SeatId,
   SeatKey,
-  SeatLabel,
-  SeatSubject,
   TimeSlot,
   WAITLIST_GATEWAY,
   WaitlistGatewayError,
-  WaitlistRequest,
   ZonedDateTime,
   fail,
   ok,
 } from '@creativo/application/booking';
+import { BarberId, LocationId, ServiceId } from '@creativo/application/catalog';
+import { CLOCK } from '@creativo/application/shared';
+import { APPOINTMENT_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { AppointmentReadPorts } from '@core/ports';
+import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
-  BarberId,
-  LocationId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
-import { UserId } from '@creativo/application/accounts';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
+  Seat,
+  SeatLabel,
+  SeatOccupant,
+  SeatSubject,
+  SubjectRelationship,
+  WaitlistLifecycle,
+} from '@core/components';
+import {
+  AppointmentId,
+  BarberId as BarberKey,
+  BusyKey,
+  CartLineId,
+  CustomerId,
+  LocalDate,
+  LocationId as LocationKey,
+  RepositoryError,
+  Result as EcsResult,
+  SeatId,
+  SeatKeyText,
+  ServiceId as ServiceKey,
+  UserId,
+  WaitlistRequestId,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  FIXTURE_TIME_ZONE,
+  appointmentFixture,
+  at as minuteAt,
+  memoryAppointmentReadPorts,
+  seatFixture,
+  termsFixture,
+  unwrapOk,
+  until,
+  utcMs,
+} from '@core/testing';
 import { BookingFlowStore, firstUnusedLabel } from './booking-flow.store';
 
 const ZONE = 'Europe/Sofia';
@@ -124,12 +150,18 @@ class StubWaitlistGateway {
 
 /** The owner-scoped visit read: answers as told, and counts the reads. */
 class StubAppointments {
-  answer: Result<Appointment | null, RepositoryError> = ok(null);
+  answer: EcsResult<Appointment | null, RepositoryError> = EcsResult.ok(null);
   reads = 0;
 
-  async findById(): Promise<Result<Appointment | null, RepositoryError>> {
-    this.reads += 1;
-    return this.answer;
+  /** `APPOINTMENT_READ_PORTS`, its visit read — the one member wrapped — answering {@link answer}. */
+  ports(): AppointmentReadPorts {
+    return {
+      ...memoryAppointmentReadPorts([]),
+      observeAppointment: () => {
+        this.reads += 1;
+        return of(this.answer);
+      },
+    };
   }
 }
 
@@ -158,7 +190,7 @@ function createStore(
       { provide: BOOKING_DRAFT_STORE, useValue: draftStore },
       { provide: BOOKING_GATEWAY, useValue: gateway },
       { provide: WAITLIST_GATEWAY, useValue: waitlist },
-      { provide: APPOINTMENT_REPOSITORY, useValue: appointments },
+      { provide: APPOINTMENT_READ_PORTS, useValue: appointments.ports() },
       // Fixed, not the system clock: the store reads it to prune a restored
       // declaration's lapsed days, and a spec whose meaning changes at
       // midnight is a spec that fails once a day.
@@ -348,27 +380,89 @@ describe('BookingFlowStore — commit', () => {
   });
 });
 
+/** An account seat's occupant — the uid and the client record beside it (D29). */
+function account(uid: string, relationship: SubjectRelationship): SeatOccupant {
+  return SeatOccupant.account(
+    UserId.of(uid),
+    CustomerId.of(`cus_${uid}`),
+    relationship,
+  );
+}
+
+const self = (uid: string) => account(uid, SubjectRelationship.Self);
+const companion = (uid: string) => account(uid, SubjectRelationship.Companion);
+const guest = (label: string) => SeatOccupant.anonymous(SeatLabel.of(label));
+
+/** One stored seat: who, with whom, on what, when (minutes from the shop's midnight) and on what terms. */
+interface StoredSeat {
+  readonly occupant: SeatOccupant;
+  readonly barberId: string;
+  readonly serviceId?: string;
+  readonly startMinutes: number;
+  readonly priceCents?: number;
+  readonly durationMinutes?: number;
+  readonly setupMinutes?: number;
+  readonly cleanupMinutes?: number;
+}
+
+/**
+ * A visit at the Center on 2026-08-03 (the pinned clock's day), as stored:
+ * the seats, and the envelope and its instant derived from them — the
+ * shop's zone placing it once. Every seat sold at 28,00 € for 45 minutes
+ * unless it says otherwise.
+ */
+function storedVisit(id: string, seats: readonly StoredSeat[]): Appointment {
+  const day = unwrapOk(LocalDate.parse('2026-08-03'));
+  const stored = seats.map((seat, index) => {
+    const terms = termsFixture(
+      seat.priceCents ?? 2800,
+      seat.durationMinutes ?? 45,
+      seat.setupMinutes ?? 0,
+      seat.cleanupMinutes ?? 0,
+    );
+    return seatFixture({
+      seatId: SeatId.of(`${id}-seat-${index + 1}`),
+      serviceId: ServiceKey.of(seat.serviceId ?? 'svc-fade'),
+      barberId: BarberKey.of(seat.barberId),
+      startMinutes: minuteAt(0, seat.startMinutes),
+      terms: Seat.termsOf(terms, terms),
+      occupant: seat.occupant,
+    });
+  });
+  const start = minuteAt(
+    0,
+    Math.min(...stored.map((seat) => seat.startMinutes)),
+  );
+  const barberIds = [...new Set(stored.map((seat) => seat.barberId))];
+  return appointmentFixture({
+    id: AppointmentId.of(id),
+    locationId: LocationKey.of('loc-center'),
+    ownerUserId: UserId.of('client-1'),
+    subjectUserIds: [
+      ...new Set(
+        stored.flatMap((seat) =>
+          seat.seatSubject === SeatSubject.Account ? [seat.subjectUserId] : [],
+        ),
+      ),
+    ],
+    barberIds,
+    busyKeys: barberIds.map((barberId) => BusyKey.of(barberId, day)),
+    seats: stored,
+    localDate: day,
+    startMinutes: start,
+    endMinutes: until(
+      0,
+      Math.max(...stored.map((seat) => Seat.endMinutes(seat))),
+    ),
+    utcEpochMs: unwrapOk(ZonedTimeSystem.toUtc(day, start, FIXTURE_TIME_ZONE)),
+  });
+}
+
 /** A visit to book again: the booker's fade with Ivan at the Center. */
 function visit(id: string, booker = 'client-1'): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        Seat.of({
-          id: SeatId.generate(),
-          subject: SeatSubject.account(unwrap(UserId.create(booker)), 'self'),
-          serviceId: unwrap(ServiceId.create('svc-fade')),
-          variantId: null,
-          barberId: unwrap(BarberId.create('ivan')),
-          terms: unwrap(ServiceTerms.create(price, 45)),
-          startsAt: at(10),
-        }),
-      ],
-      now: at(8),
-    }),
-  );
+  return storedVisit(id, [
+    { occupant: self(booker), barberId: 'ivan', startMinutes: 10 * 60 },
+  ]);
 }
 
 const guestLabel = (ordinal: number): string => `Guest ${ordinal}`;
@@ -470,46 +564,21 @@ describe('BookingFlowStore — the rebooking edge', () => {
  * services — the party a prefill has to keep straight.
  */
 function partyVisit(id: string): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  const seat = (
-    subject: SeatSubject,
-    barberId: string,
-    serviceId: string,
-    start: ZonedDateTime,
-  ) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject,
-      serviceId: unwrap(ServiceId.create(serviceId)),
-      variantId: null,
-      barberId: unwrap(BarberId.create(barberId)),
-      terms: unwrap(ServiceTerms.create(price, 45)),
-      startsAt: start,
-    });
-  const maria = SeatSubject.anonymous(unwrap(SeatLabel.create('Мария')));
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-1')), 'self'),
-          'ivan',
-          'svc-fade',
-          at(10),
-        ),
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-son')), 'companion'),
-          'petar',
-          'svc-fade',
-          at(10),
-        ),
-        seat(maria, 'stefan', 'svc-fade', at(10)),
-        seat(maria, 'stefan', 'svc-beard', at(11)),
-      ],
-      now: at(8),
-    }),
-  );
+  return storedVisit(id, [
+    { occupant: self('client-1'), barberId: 'ivan', startMinutes: 10 * 60 },
+    {
+      occupant: companion('client-son'),
+      barberId: 'petar',
+      startMinutes: 10 * 60,
+    },
+    { occupant: guest('Мария'), barberId: 'stefan', startMinutes: 10 * 60 },
+    {
+      occupant: guest('Мария'),
+      barberId: 'stefan',
+      serviceId: 'svc-beard',
+      startMinutes: 11 * 60,
+    },
+  ]);
 }
 
 /**
@@ -517,66 +586,29 @@ function partyVisit(id: string): Appointment {
  * when he could not come. Nobody on it is the cart's to name.
  */
 function companionOnlyVisit(id: string): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2000, 'EUR'));
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        Seat.of({
-          id: SeatId.generate(),
-          subject: SeatSubject.account(
-            unwrap(UserId.create('client-son')),
-            'companion',
-          ),
-          serviceId: unwrap(ServiceId.create('svc-beard')),
-          variantId: null,
-          barberId: unwrap(BarberId.create('petar')),
-          terms: unwrap(ServiceTerms.create(price, 30)),
-          startsAt: at(10),
-        }),
-      ],
-      now: at(8),
-    }),
-  );
+  return storedVisit(id, [
+    {
+      occupant: companion('client-son'),
+      barberId: 'petar',
+      serviceId: 'svc-beard',
+      startMinutes: 10 * 60,
+      priceCents: 2000,
+      durationMinutes: 30,
+    },
+  ]);
 }
 
 /** The father at 10:00 with Ivan, and his son straight after, same chair. */
 function sequentialVisit(id: string): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  const seat = (
-    subject: SeatSubject,
-    serviceId: string,
-    start: ZonedDateTime,
-  ) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject,
-      serviceId: unwrap(ServiceId.create(serviceId)),
-      variantId: null,
-      barberId: unwrap(BarberId.create('ivan')),
-      terms: unwrap(ServiceTerms.create(price, 45)),
-      startsAt: start,
-    });
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-1')), 'self'),
-          'svc-fade',
-          at(10),
-        ),
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-son')), 'companion'),
-          'svc-beard',
-          at(10).plusMinutes(45),
-        ),
-      ],
-      now: at(8),
-    }),
-  );
+  return storedVisit(id, [
+    { occupant: self('client-1'), barberId: 'ivan', startMinutes: 10 * 60 },
+    {
+      occupant: companion('client-son'),
+      barberId: 'ivan',
+      serviceId: 'svc-beard',
+      startMinutes: 10 * 60 + 45,
+    },
+  ]);
 }
 
 /**
@@ -584,45 +616,18 @@ function sequentialVisit(id: string): Appointment {
  * fifteen minutes EARLIER, on hand-set terms with setup and cleanup.
  */
 function padsVisit(id: string): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        Seat.of({
-          id: SeatId.generate(),
-          subject: SeatSubject.account(
-            unwrap(UserId.create('client-1')),
-            'self',
-          ),
-          serviceId: unwrap(ServiceId.create('svc-fade')),
-          variantId: null,
-          barberId: unwrap(BarberId.create('ivan')),
-          terms: unwrap(ServiceTerms.create(price, 45)),
-          startsAt: at(10),
-        }),
-        Seat.of({
-          id: SeatId.generate(),
-          subject: SeatSubject.account(
-            unwrap(UserId.create('client-son')),
-            'companion',
-          ),
-          serviceId: unwrap(ServiceId.create('svc-beard')),
-          variantId: null,
-          barberId: unwrap(BarberId.create('petar')),
-          terms: unwrap(
-            ServiceTerms.create(price, 30, {
-              setupMinutes: 5,
-              cleanupMinutes: 10,
-            }),
-          ),
-          startsAt: at(10).plusMinutes(-15),
-        }),
-      ],
-      now: at(8),
-    }),
-  );
+  return storedVisit(id, [
+    { occupant: self('client-1'), barberId: 'ivan', startMinutes: 10 * 60 },
+    {
+      occupant: companion('client-son'),
+      barberId: 'petar',
+      serviceId: 'svc-beard',
+      startMinutes: 10 * 60 - 15,
+      durationMinutes: 30,
+      setupMinutes: 5,
+      cleanupMinutes: 10,
+    },
+  ]);
 }
 
 /**
@@ -630,28 +635,14 @@ function padsVisit(id: string): Appointment {
  * after — a stored shape the client's cart cannot speak for.
  */
 function foreignSelfVisit(id: string): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  const seat = (userId: string, barberId: string, start: ZonedDateTime) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject: SeatSubject.account(unwrap(UserId.create(userId)), 'self'),
-      serviceId: unwrap(ServiceId.create('svc-fade')),
-      variantId: null,
-      barberId: unwrap(BarberId.create(barberId)),
-      terms: unwrap(ServiceTerms.create(price, 45)),
-      startsAt: start,
-    });
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        seat('client-1', 'ivan', at(10)),
-        seat('client-other', 'petar', at(11)),
-      ],
-      now: at(8),
-    }),
-  );
+  return storedVisit(id, [
+    { occupant: self('client-1'), barberId: 'ivan', startMinutes: 10 * 60 },
+    {
+      occupant: self('client-other'),
+      barberId: 'petar',
+      startMinutes: 11 * 60,
+    },
+  ]);
 }
 
 /**
@@ -662,46 +653,26 @@ function sharedLabelVisit(
   id: string,
   arrangement: 'side_by_side' | 'back_to_back',
 ): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  const seat = (
-    subject: SeatSubject,
-    barberId: string,
-    serviceId: string,
-    start: ZonedDateTime,
-  ) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject,
-      serviceId: unwrap(ServiceId.create(serviceId)),
-      variantId: null,
-      barberId: unwrap(BarberId.create(barberId)),
-      terms: unwrap(ServiceTerms.create(price, 45)),
-      startsAt: start,
-    });
-  const walkIn = SeatSubject.anonymous(unwrap(SeatLabel.create('Walk-in')));
-  const maria = SeatSubject.anonymous(unwrap(SeatLabel.create('Мария')));
-  const second =
+  const second: StoredSeat =
     arrangement === 'side_by_side'
-      ? seat(walkIn, 'petar', 'svc-beard', at(12))
-      : seat(walkIn, 'stefan', 'svc-beard', at(13));
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-1')), 'self'),
-          'ivan',
-          'svc-fade',
-          at(10),
-        ),
-        seat(walkIn, 'stefan', 'svc-fade', at(12)),
-        second,
-        seat(maria, 'ivan', 'svc-fade', at(11)),
-      ],
-      now: at(8),
-    }),
-  );
+      ? {
+          occupant: guest('Walk-in'),
+          barberId: 'petar',
+          serviceId: 'svc-beard',
+          startMinutes: 12 * 60,
+        }
+      : {
+          occupant: guest('Walk-in'),
+          barberId: 'stefan',
+          serviceId: 'svc-beard',
+          startMinutes: 13 * 60,
+        };
+  return storedVisit(id, [
+    { occupant: self('client-1'), barberId: 'ivan', startMinutes: 10 * 60 },
+    { occupant: guest('Walk-in'), barberId: 'stefan', startMinutes: 12 * 60 },
+    second,
+    { occupant: guest('Мария'), barberId: 'ivan', startMinutes: 11 * 60 },
+  ]);
 }
 
 /**
@@ -713,42 +684,19 @@ function labelledGuestVisit(
   label: string,
   options: { readonly withCompanion?: boolean } = {},
 ): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  const seat = (subject: SeatSubject, barberId: string) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject,
-      serviceId: unwrap(ServiceId.create('svc-fade')),
-      variantId: null,
-      barberId: unwrap(BarberId.create(barberId)),
-      terms: unwrap(ServiceTerms.create(price, 45)),
-      startsAt: at(10),
-    });
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-1')), 'self'),
-          'ivan',
-        ),
-        ...(options.withCompanion
-          ? [
-              seat(
-                SeatSubject.account(
-                  unwrap(UserId.create('client-son')),
-                  'companion',
-                ),
-                'petar',
-              ),
-            ]
-          : []),
-        seat(SeatSubject.anonymous(unwrap(SeatLabel.create(label))), 'stefan'),
-      ],
-      now: at(8),
-    }),
-  );
+  return storedVisit(id, [
+    { occupant: self('client-1'), barberId: 'ivan', startMinutes: 10 * 60 },
+    ...(options.withCompanion
+      ? [
+          {
+            occupant: companion('client-son'),
+            barberId: 'petar',
+            startMinutes: 10 * 60,
+          },
+        ]
+      : []),
+    { occupant: guest(label), barberId: 'stefan', startMinutes: 10 * 60 },
+  ]);
 }
 
 function linesPerPerson(store: BookingFlowStore): number[] {
@@ -1038,7 +986,7 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
     expect(result.isFailure() && result.error).toBe('companions_only');
     expect(store.moveRefusal()?.reason).toBe('companions_only');
     // The shop it is at — what the refusal's call button dials.
-    expect(store.moveRefusal()?.locationId?.value).toBe('loc-center');
+    expect(store.moveRefusal()?.locationId).toBe('loc-center');
     expect(store.isRescheduling()).toBe(false);
     // Nothing was prefilled: the son is not turned into a guest to move.
     expect(store.lineCount()).toBe(0);
@@ -1112,10 +1060,10 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
     store.rescheduleFrom(padsVisit('appt-moving'), guestLabel);
     const [pinned, ...rest] = store.availabilityRiders();
     expect(rest).toEqual([]);
-    expect(pinned?.barberId.value).toBe('petar');
+    expect(pinned?.barberId).toBe('petar');
     // …and WHAT he is served: a shop that does not offer his beard has no
     // time for this move, and the day query can only tell by the service.
-    expect(pinned?.serviceId.value).toBe('svc-beard');
+    expect(pinned?.serviceId).toBe('svc-beard');
     // The son goes fifteen minutes BEFORE the booker the move is measured from.
     expect(pinned?.offsetMinutes).toBe(-15);
     // The seat's stored chair time, pads and all — what the server re-checks.
@@ -1158,9 +1106,9 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
     store.rescheduleFrom(padsVisit('appt-moving'), guestLabel);
     expect(
       store.moveRelease().map((chair) => ({
-        barberId: chair.barberId.value,
-        startMs: chair.occupied.startMs,
-        endMs: chair.occupied.endMs,
+        barberId: chair.barberId,
+        startMs: chair.startMs,
+        endMs: chair.endMs,
       })),
     ).toEqual([
       // The booker's fade with Ivan, the seat the cart rebuilds…
@@ -1621,42 +1569,14 @@ describe('BookingFlowStore — the sources survive the sign-in round trip', () =
  * his father, and Petar's 10:00 chair free for somebody else.
  */
 function reseatedPartyVisit(id: string): Appointment {
-  const price = unwrap(Money.fromMinorUnitsAndCode(2800, 'EUR'));
-  const seat = (subject: SeatSubject, barberId: string, start: ZonedDateTime) =>
-    Seat.of({
-      id: SeatId.generate(),
-      subject,
-      serviceId: unwrap(ServiceId.create('svc-fade')),
-      variantId: null,
-      barberId: unwrap(BarberId.create(barberId)),
-      terms: unwrap(ServiceTerms.create(price, 45)),
-      startsAt: start,
-    });
-  const halfPastTen = unwrap(
-    ZonedDateTime.fromParts(
-      { year: 2026, month: 8, day: 3, hour: 10, minute: 30 },
-      ZONE,
-    ),
-  );
-  return unwrap(
-    Appointment.create({
-      id,
-      locationId: 'loc-center',
-      seats: [
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-1')), 'self'),
-          'ivan',
-          at(10),
-        ),
-        seat(
-          SeatSubject.account(unwrap(UserId.create('client-son')), 'companion'),
-          'niko',
-          halfPastTen,
-        ),
-      ],
-      now: at(8),
-    }),
-  );
+  return storedVisit(id, [
+    { occupant: self('client-1'), barberId: 'ivan', startMinutes: 10 * 60 },
+    {
+      occupant: companion('client-son'),
+      barberId: 'niko',
+      startMinutes: 10 * 60 + 30,
+    },
+  ]);
 }
 
 describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
@@ -1679,12 +1599,12 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
   function chairs(): string[] {
     return store
       .moveRelease()
-      .map((chair) => `${chair.barberId.value}@${chair.occupied.startMs}`);
+      .map((chair) => `${chair.barberId}@${chair.startMs}`);
   }
 
   it('brings who it carries and the chairs it holds in line with the STORED visit, and keeps the bag', async () => {
     const bag = store.cart();
-    appointments.answer = ok(reseatedPartyVisit('appt-moving'));
+    appointments.answer = EcsResult.ok(reseatedPartyVisit('appt-moving'));
 
     await store.rereadMove();
 
@@ -1702,7 +1622,7 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
 
   it('keeps what it holds when the read FAILS — the server stays the authority', async () => {
     const before = { riders: store.riders(), release: store.moveRelease() };
-    appointments.answer = fail(new RepositoryError('unavailable'));
+    appointments.answer = EcsResult.err(RepositoryError.unavailable());
 
     await store.rereadMove();
 
@@ -1712,7 +1632,7 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
   });
 
   it('refuses the move, as the landing would, once the visit is gone', async () => {
-    appointments.answer = ok(null);
+    appointments.answer = EcsResult.ok(null);
 
     await store.rereadMove();
 
@@ -1720,7 +1640,7 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
   });
 
   it('refuses the move as the shop’s once only a companion is left on it', async () => {
-    appointments.answer = ok(companionOnlyVisit('appt-moving'));
+    appointments.answer = EcsResult.ok(companionOnlyVisit('appt-moving'));
 
     await store.rereadMove();
 
@@ -1728,7 +1648,7 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
   });
 
   it('ignores an answer about a move the flow let go of while the read was out', async () => {
-    appointments.answer = ok(reseatedPartyVisit('appt-moving'));
+    appointments.answer = EcsResult.ok(reseatedPartyVisit('appt-moving'));
 
     const reading = store.rereadMove();
     // Somebody else signs in: the move they never read is released.
@@ -1759,37 +1679,47 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
 // A waitlist match lands on the SCHEDULE step, past the rename that would
 // fix two guests under one name, so its placeholders must already differ.
 describe('BookingFlowStore.restoreFromWaitlist — one label, one guest', () => {
-  const line = (id: string) => ({
-    id,
-    serviceId: 'svc-fade',
+  const line = (id: string, seatKey: string) => ({
+    lineId: CartLineId.of(id),
+    seatKey: SeatKeyText.of(seatKey),
+    serviceId: ServiceKey.of('svc-fade'),
     variantId: null,
     barberId: null,
+    locationId: null,
   });
-  const request = unwrap(
-    WaitlistRequest.create({
-      id: 'wl-1',
-      ownerId: 'client-1',
-      locationId: 'loc-center',
-      when: { days: [{ dayKey: '2026-08-25', windows: [] }] },
-      cart: {
-        seats: [
-          { seatKey: 'self', lines: [line('line-0')] },
-          { seatKey: 'guest-0', lines: [line('line-1')] },
-          { seatKey: 'guest-1', lines: [line('line-2')] },
-        ],
-        nextSequence: 3,
+  const watched = unwrapOk(LocalDate.parse('2026-08-25'));
+  const createdAtUtcMs = utcMs('2026-08-03T10:00:00.000+03:00');
+  /** The stored request: the bag, the shop, the one watched day, open. */
+  const request: WaitlistRequest = {
+    id: WaitlistRequestId.of('wl-1'),
+    ownerUserId: UserId.of('client-1'),
+    locationId: LocationKey.of('loc-center'),
+    localDates: [watched],
+    utcEpochMs: ZonedTimeSystem.startOfLocalDay(watched, FIXTURE_TIME_ZONE),
+    createdAtUtcMs,
+    cartSeats: [
+      { seatKey: SeatKeyText.of('self'), lines: [line('line-0', 'self')] },
+      {
+        seatKey: SeatKeyText.of('guest-0'),
+        lines: [line('line-1', 'guest-0')],
       },
-      status: 'open',
-      createdAtIso: '2026-08-03T10:00:00.000+03:00',
-      zone: ZONE,
-    }),
-  );
+      {
+        seatKey: SeatKeyText.of('guest-1'),
+        lines: [line('line-2', 'guest-1')],
+      },
+    ],
+    cartNextSequence: 3,
+    flexibleDays: [{ localDate: watched, windows: [] }],
+    ...WaitlistLifecycle.open(createdAtUtcMs),
+  };
 
   beforeEach(() => TestBed.resetTestingModule());
 
   it('names the guests as the catalogue numbers them', () => {
     const store = createStore(new StubGateway());
-    expect(store.restoreFromWaitlist(request, null, guestLabel)).toBe(true);
+    expect(store.restoreFromWaitlist(request, null, guestLabel, ZONE)).toBe(
+      true,
+    );
     expect(store.guests().map((guest) => guest.label.value)).toEqual([
       'Guest 1',
       'Guest 2',
@@ -1798,7 +1728,9 @@ describe('BookingFlowStore.restoreFromWaitlist — one label, one guest', () => 
 
   it('never hands two guests one placeholder, even from copy that drops the number', () => {
     const store = createStore(new StubGateway());
-    expect(store.restoreFromWaitlist(request, null, () => 'Гост')).toBe(true);
+    expect(store.restoreFromWaitlist(request, null, () => 'Гост', ZONE)).toBe(
+      true,
+    );
     expect(store.step()).toBe('schedule');
     expect(store.party()?.sharedLabel()).toBeNull();
   });

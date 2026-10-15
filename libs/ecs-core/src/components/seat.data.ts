@@ -3,6 +3,7 @@ import {
   type DurationMinutes,
   type MinuteCount,
   type BarberId,
+  type CustomerId,
   type SeatId,
   type ServiceId,
   type ServiceVariantId,
@@ -33,11 +34,13 @@ export type ChairGeometry = {
 
 /**
  * Who a seat's subject is — the field `seatSubject`, the ONLY source of
- * these strings. `ACCOUNT` holds a uid until the appointment flip (1)
- * replaces it with `CUSTOMER` (D29, flatten-spec §5.5).
+ * these strings. `ACCOUNT` names the account AND, beside it, the client
+ * record the shop keeps about that person (D29, the appointment flip (1),
+ * F1-4: "beside, not instead"); a `CUSTOMER` variant — a record with no
+ * account — joins with the walk-in path.
  */
 export const SeatSubject = {
-  /** A registered account, referenced by id — never an embedded profile. */
+  /** A registered account and its client record, each referenced by id — never an embedded profile. */
   Account: 'ACCOUNT',
   /** No account, no PII beyond a `SeatLabel` handle. */
   Anonymous: 'ANONYMOUS',
@@ -59,19 +62,36 @@ export type SubjectRelationship =
 /**
  * WHO a seat is FOR (`seat.ts:22,40-52`) — a flat variant slice of every
  * `seats[]` element, discriminated by `seatSubject`: an account by its uid
- * (`subjectUserId`, a `UserId` until flip (1), D29) and its relationship to
- * the booker, or an anonymous guest by label.
+ * (`subjectUserId` — who signs in, the rules and "my …" key) with the
+ * client record the shop keeps about that person (`subjectCustomerId` —
+ * whom the shop serves, bills and rewards; D29: two fields, two values,
+ * never derived from each other) and its relationship to the booker, or an
+ * anonymous guest by label.
  */
 export type SeatOccupant = SeatOccupant.Account | SeatOccupant.Anonymous;
+
+/**
+ * The `ACCOUNT` variant as the ACCOUNT rules read it — who signed in, never
+ * whom the shop serves (D29): the booker's own seat, one person in two
+ * chairs, the uid mirrors. A {@link SeatOccupant.Account} passes straight in
+ * (Law 3); so does an occupant a legacy shim built, which cannot know a
+ * `CustomerId` — no placeholder value, no uid→customer cast (flatten L7).
+ */
+export type AccountRef = Omit<SeatOccupant.Account, 'subjectCustomerId'>;
+
+/** An occupant as the account rules read it — {@link AccountRef} or an anonymous guest. */
+export type AccountOccupant = AccountRef | SeatOccupant.Anonymous;
 
 export const SeatOccupant = {
   account(
     userId: UserId,
+    customerId: CustomerId,
     relationship: SubjectRelationship,
   ): SeatOccupant.Account {
     return {
       seatSubject: SeatSubject.Account,
       subjectUserId: userId,
+      subjectCustomerId: customerId,
       subjectRelationship: relationship,
     };
   },
@@ -81,7 +101,7 @@ export const SeatOccupant = {
   },
 
   /** A subject with no identity and no contact channel. */
-  isContactless(occupant: SeatOccupant): boolean {
+  isContactless(occupant: AccountOccupant): boolean {
     return occupant.seatSubject === SeatSubject.Anonymous;
   },
 
@@ -90,8 +110,24 @@ export const SeatOccupant = {
     return occupant.seatSubject === SeatSubject.Account
       ? SeatOccupant.account(
           occupant.subjectUserId,
+          occupant.subjectCustomerId,
           occupant.subjectRelationship,
         )
+      : SeatOccupant.anonymous(occupant.guestLabel);
+  },
+
+  /**
+   * The account-rules occupant of a value that carries one (a whole seat,
+   * either view), copied to exactly its fields — the client record left
+   * behind.
+   */
+  accountOf(occupant: AccountOccupant): AccountOccupant {
+    return occupant.seatSubject === SeatSubject.Account
+      ? {
+          seatSubject: SeatSubject.Account,
+          subjectUserId: occupant.subjectUserId,
+          subjectRelationship: occupant.subjectRelationship,
+        }
       : SeatOccupant.anonymous(occupant.guestLabel);
   },
 } as const;
@@ -100,6 +136,8 @@ export namespace SeatOccupant {
   export type Account = {
     readonly seatSubject: typeof SeatSubject.Account;
     readonly subjectUserId: UserId;
+    /** The client record of this account (D29) — `CustomerId.forUser(subjectUserId, hash)`, resolved by the pipeline. */
+    readonly subjectCustomerId: CustomerId;
     readonly subjectRelationship: SubjectRelationship;
   };
   export type Anonymous = {
@@ -154,6 +192,18 @@ export type Seat = SeatCore &
   ServiceTerms &
   SeatCatalogTerms &
   SeatOccupant &
+  SeatOutcome;
+
+/**
+ * A seat as the ACCOUNT rules read it — every slice of {@link Seat}, its
+ * occupant an {@link AccountOccupant} (D29). What a system that reads no
+ * client record takes (Law 3: the slice it reads), so a whole `Seat` passes
+ * straight in and a legacy seat that cannot know its `CustomerId` does too.
+ */
+export type AccountSeat = SeatCore &
+  ServiceTerms &
+  SeatCatalogTerms &
+  AccountOccupant &
   SeatOutcome;
 
 function outcomeOf(outcome: SeatOutcome): SeatOutcome {
@@ -219,6 +269,37 @@ export const Seat = {
   },
 
   /**
+   * An {@link AccountSeat} from its slices — {@link compose} for the
+   * account-rules view, with the same field order, the client record left
+   * out (a seat a legacy shim reads off a stored visit has none to give).
+   */
+  composeAccount(
+    core: SeatCore,
+    terms: ServiceTerms & SeatCatalogTerms,
+    occupant: AccountOccupant,
+    outcome: SeatOutcome,
+  ): AccountSeat {
+    return {
+      seatId: core.seatId,
+      serviceId: core.serviceId,
+      variantId: core.variantId,
+      barberId: core.barberId,
+      barberPreference: core.barberPreference,
+      startMinutes: core.startMinutes,
+      tipCents: core.tipCents,
+      priceCents: terms.priceCents,
+      currency: terms.currency,
+      durationMinutes: terms.durationMinutes,
+      setupMinutes: terms.setupMinutes,
+      cleanupMinutes: terms.cleanupMinutes,
+      catalogPriceCents: terms.catalogPriceCents,
+      catalogDurationMinutes: terms.catalogDurationMinutes,
+      ...SeatOccupant.accountOf(occupant),
+      ...outcomeOf(outcome),
+    };
+  },
+
+  /**
    * The charged terms and the catalogue's — normalised: catalogue terms
    * EQUAL to the charged ones are no override, however they were passed, so
    * {@link overridden} is never true for a seat nobody changed.
@@ -266,7 +347,10 @@ export const Seat = {
   },
 
   /** Would these two seats need the same barber in two chairs at once? */
-  collidesWith(a: Seat, b: Seat): boolean {
+  collidesWith(
+    a: Pick<Seat, 'barberId'> & ChairGeometry,
+    b: Pick<Seat, 'barberId'> & ChairGeometry,
+  ): boolean {
     return (
       a.barberId === b.barberId &&
       a.startMinutes < endOf(b) &&
@@ -285,7 +369,7 @@ export const Seat = {
     );
   },
 
-  isContactless(seat: Seat): boolean {
+  isContactless(seat: AccountOccupant): boolean {
     return SeatOccupant.isContactless(seat);
   },
 
@@ -295,7 +379,10 @@ export const Seat = {
    * account. A `SELF` seat naming another account is the shop's, like a
    * companion; `null` names nobody, so only the anonymous guests remain.
    */
-  isMovableByBooker(seat: Seat, ownerUserId: UserId | null): boolean {
+  isMovableByBooker(
+    seat: AccountOccupant,
+    ownerUserId: UserId | null,
+  ): boolean {
     if (seat.seatSubject === SeatSubject.Anonymous) return true;
     return (
       seat.subjectRelationship === SubjectRelationship.Self &&
@@ -333,7 +420,7 @@ export const Seat = {
    * currencies (the first mismatch). The one check `BookingDecisionSystem`
    * and `AppointmentLifecycleSystem` share.
    */
-  violations(seats: readonly Seat[]): readonly SchedulingError[] {
+  violations(seats: readonly AccountSeat[]): readonly SchedulingError[] {
     const errors: SchedulingError[] = [];
     if (seats.length === 0) {
       errors.push(SchedulingError.appointmentEmptySeats());
@@ -342,9 +429,9 @@ export const Seat = {
     let selfOverlap = false;
     const doubleBooked: BarberId[] = [];
     for (let i = 0; i < seats.length; i++) {
-      const a = seats[i] as Seat;
+      const a = seats[i] as AccountSeat;
       for (let j = i + 1; j < seats.length; j++) {
-        const b = seats[j] as Seat;
+        const b = seats[j] as AccountSeat;
         if (
           !selfOverlap &&
           a.seatSubject === SeatSubject.Account &&
@@ -372,9 +459,9 @@ export const Seat = {
         ),
       );
     }
-    const expected = (seats[0] as Seat).currency;
+    const expected = (seats[0] as AccountSeat).currency;
     for (let i = 0; i < seats.length; i++) {
-      const found = (seats[i] as Seat).currency;
+      const found = (seats[i] as AccountSeat).currency;
       if (found !== expected) {
         errors.push(SchedulingError.appointmentMixedCurrency(expected, found));
         break;

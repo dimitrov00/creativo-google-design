@@ -6,46 +6,79 @@ import {
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { EMPTY, NEVER, Observable, of } from 'rxjs';
-import {
-  Barber,
-  BarberId,
-  Location,
-  Service,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
-import { UserId, ZonedDateTime } from '@creativo/application/accounts';
+import { NEVER, Observable, of } from 'rxjs';
+import { ZonedDateTime } from '@creativo/application/accounts';
 import {
   PrincipalId,
   activePrincipal,
   roleFromPrimitive,
 } from '@creativo/application/identity';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
+import { CLOCK } from '@creativo/application/shared';
 import {
-  APPOINTMENT_REPOSITORY,
-  Appointment,
-  AppointmentRepository,
   BOOKING_GATEWAY,
-  BOOKING_POLICY_READER,
-  BookingPolicy,
   BookingGateway,
   BookingGatewayError,
-  Result,
-  Seat,
-  SeatId,
-  SeatSubject,
-  TimeSlot,
+  type Result as KernelResult,
   fail,
   ok,
 } from '@creativo/application/booking';
-import { NOTIFICATION_READER } from '@creativo/application/notifications';
-import { CATALOG_READER, MEDIA_READER } from '@creativo/application/catalog';
+import { MEDIA_READER } from '@creativo/application/catalog';
+import {
+  APPOINTMENT_READ_PORTS,
+  CATALOG_PORTS,
+  INBOX_PORTS,
+  SCHEDULING_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { AppointmentReadPorts } from '@core/ports';
+import type {
+  Appointment,
+  Barber,
+  Service,
+  ShopLocation,
+} from '@core/entities';
+import {
+  BookingLifecycle,
+  CancellationReason,
+  CancellationReasonSet,
+  E164,
+  Seat,
+  SeatOccupant,
+  SeatSubject,
+  SubjectRelationship,
+} from '@core/components';
+import {
+  AppointmentId,
+  BarberId,
+  BusyKey,
+  CustomerId,
+  LocationId,
+  RepositoryError,
+  Result,
+  SeatId,
+  ServiceId,
+  UserId,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  FIXTURE_TIME_ZONE,
+  appointmentFixture,
+  barberFixture,
+  locationFixture,
+  memoryAppointmentReadPorts,
+  memoryCatalogReadPorts,
+  memoryInboxPorts,
+  memorySchedulingReadPorts,
+  seatFixture,
+  serviceFixture,
+  termsFixture,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { visitSectionLabel } from '@creativo/features/shared/visits';
 import { ClientAppointments } from './client-appointments';
 
-function unwrap<T, E>(result: Result<T, E>): T {
+function unwrap<T, E>(result: KernelResult<T, E>): T {
   if (result.isFailure()) throw new Error('unexpected failure in test fixture');
   return result.value;
 }
@@ -55,37 +88,78 @@ const PRINCIPAL = unwrap(
   activePrincipal(PRINCIPAL_ID, [roleFromPrimitive('client')]),
 );
 
-/** The signed-in client's own seat — the default subject of every visit. */
-const OWN_SEAT = SeatSubject.account(unwrap(UserId.create('user_1')), 'self');
+/** An account seat's occupant: the uid and the client record beside it (D29). */
+function accountSeat(
+  uid: string,
+  relationship: SubjectRelationship,
+): SeatOccupant {
+  return SeatOccupant.account(
+    UserId.of(uid),
+    CustomerId.of(`cus_${uid}`),
+    relationship,
+  );
+}
 
+/** The signed-in client's own seat — the default subject of every visit. */
+const OWN_SEAT = accountSeat('user_1', SubjectRelationship.Self);
+
+/** When a fixture's lifecycle was entered — any instant; nothing reads it. */
+const STAMP = utcMs('2020-01-01T00:00:00.000+00:00');
+const CONFIRMED = BookingLifecycle.confirm(STAMP);
+const COMPLETED = BookingLifecycle.complete(STAMP);
+const NO_SHOW = BookingLifecycle.noShow(STAMP);
+function cancelled(
+  reason: CancellationReason = CancellationReason.Unspecified,
+): BookingLifecycle {
+  return BookingLifecycle.cancel(STAMP, CancellationReasonSet.of([reason]));
+}
+
+/**
+ * A one-seat visit of the fixture service with the fixture barber at the
+ * shop's wall time `startIso` — `YYYY-MM-DDTHH:MM:SS` on the shop's clock,
+ * or an instant with its offset — 30 minutes, 15,00 €.
+ */
 function appointment(
   id: string,
   startIso: string,
-  status: Appointment['status'] = { kind: 'confirmed' },
-  subject: SeatSubject = OWN_SEAT,
+  lifecycle: BookingLifecycle = CONFIRMED,
+  subject: SeatOccupant = OWN_SEAT,
 ): Appointment {
-  const start = unwrap(ZonedDateTime.fromISO(startIso, 'Europe/Sofia'));
-  const end = start.plusMinutes(30);
-  const timeSlot = unwrap(
-    TimeSlot.create({ startIso, endIso: end.toISO(), zone: 'Europe/Sofia' }),
+  const start = ZonedTimeSystem.toLocal(
+    unwrapOk(ZonedTimeSystem.parseIsoIn(startIso, FIXTURE_TIME_ZONE)),
+    FIXTURE_TIME_ZONE,
   );
-  const seat = Seat.of({
-    id: unwrap(SeatId.create('seat_1')),
-    subject,
-    serviceId: unwrap(ServiceId.create('service_1')),
-    variantId: null,
-    barberId: unwrap(BarberId.create('barber_1')),
-    terms: unwrap(ServiceTerms.fromMinorUnits(1500, 'EUR', 30)),
-    startsAt: timeSlot.start,
+  const seat = seatFixture({
+    seatId: SeatId.of('seat_1'),
+    serviceId: ServiceId.of('service_1'),
+    barberId: BarberId.of('barber_1'),
+    startMinutes: start.minute,
+    terms: Seat.termsOf(termsFixture(1500, 30), termsFixture(1500, 30)),
+    occupant: subject,
   });
-  return unwrap(
-    Appointment.reconstitute({
-      id,
-      locationId: 'location_1',
-      seats: [seat],
-      status,
-    }),
-  );
+  return appointmentFixture({
+    id: AppointmentId.of(id),
+    locationId: LocationId.of('location_1'),
+    ownerUserId: UserId.of('user_1'),
+    subjectUserIds:
+      subject.seatSubject === SeatSubject.Account
+        ? [subject.subjectUserId]
+        : [],
+    barberIds: [seat.barberId],
+    busyKeys: [BusyKey.of(seat.barberId, start.localDate)],
+    seats: [seat],
+    localDate: start.localDate,
+    startMinutes: seat.startMinutes,
+    endMinutes: Seat.endMinutes(seat),
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(
+        start.localDate,
+        seat.startMinutes,
+        FIXTURE_TIME_ZONE,
+      ),
+    ),
+    lifecycle,
+  });
 }
 
 /**
@@ -135,76 +209,60 @@ function accountStateStub(): AccountStateService {
   } as unknown as AccountStateService;
 }
 
-function repositoryStub(
+/**
+ * The account's visits as the double stores them — the open bookings and
+ * the past ones in one book, each once: its upcoming read answers the live
+ * ones, its history the newest of them all.
+ */
+function appointmentReads(
   upcoming: readonly Appointment[],
   history: readonly Appointment[] = [],
-): AppointmentRepository {
-  return {
-    findById: async () => ok(upcoming[0] ?? null),
-    save: async () =>
-      fail(new RepositoryError('appointments are written server-side')),
-    observeUpcomingFor: () => of(ok(upcoming)),
-    observeBarberDay: () => EMPTY,
-    observeHistoryFor: () => of(ok(history)),
-    searchWindow: async () => ok([]),
-  };
+): AppointmentReadPorts {
+  const book = [...upcoming];
+  for (const visit of history) {
+    if (!book.some((entry) => entry.id === visit.id)) book.push(visit);
+  }
+  return memoryAppointmentReadPorts(book);
 }
 
+/** A read that failed for good — a rule denial. */
+const DENIED = Result.err(RepositoryError.readFailed('appointments', 'denied'));
+
 /** The visits' shop, as the catalogue lists it — with a number to call. */
-function centerShop(): Location {
-  const open = { kind: 'open' as const, opens: '09:00', closes: '18:00' };
-  return unwrap(
-    Location.create({
-      id: 'location_1',
-      name: { en: 'Creativo · Center', bg: 'Креативо · Център' },
-      address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
-      phone: { e164: '+359881234567', display: '+359 88 123 4567' },
-      geo: { lat: 42.6977, lng: 23.3219 },
-      mapUrl: 'https://maps.example.com/center',
-      hours: [open, open, open, open, open, open, { kind: 'closed' }],
-      timezone: 'Europe/Sofia',
-      status: 'active',
-      sortOrder: 0,
-    }),
-  );
+function centerShop(): ShopLocation {
+  return locationFixture({
+    id: LocationId.of('location_1'),
+    name: { en: 'Creativo · Center', bg: 'Креативо · Център' },
+    address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
+    phoneE164: E164.of('+359881234567'),
+    phoneDisplay: '+359 88 123 4567',
+    mapUrl: 'https://maps.example.com/center',
+  });
 }
 
 /** The service every fixture visit books, as the catalogue names it. */
 function fadeService(): Service {
-  return unwrap(
-    Service.create({
-      id: 'service_1',
-      name: { en: 'Skin fade', bg: 'Фейд' },
-      description: { en: 'A skin fade.', bg: 'Фейд до кожата.' },
-      categoryId: 'cat-hair',
-      priceMinorUnits: 1500,
-      currencyCode: 'EUR',
-      durationMinutes: 30,
-      locationIds: [],
-      conflictsWith: [],
-      composition: { kind: 'single' },
-      upsellOnly: false,
-      popular: true,
-      status: 'active',
-      sortOrder: 1,
-    }),
-  );
+  return serviceFixture({
+    id: ServiceId.of('service_1'),
+    name: { en: 'Skin fade', bg: 'Фейд' },
+    description: { en: 'A skin fade.', bg: 'Фейд до кожата.' },
+    ...termsFixture(1500, 30),
+    offerings: [],
+    locationIds: [],
+    popular: true,
+    sortOrder: 1,
+  });
 }
 
 /** The barber every fixture visit is cut by. */
 function ivan(): Barber {
-  return unwrap(
-    Barber.create({
-      id: 'barber_1',
-      name: { en: 'Ivan', bg: 'Иван' },
-      handle: 'ivan',
-      title: { en: 'Barber', bg: 'Бръснар' },
-      bio: { en: 'Fades.', bg: 'Фейдове.' },
-      locationIds: [],
-      status: 'active',
-      sortOrder: 1,
-    }),
-  );
+  return barberFixture({
+    id: BarberId.of('barber_1'),
+    bio: { en: 'Fades.', bg: 'Фейдове.' },
+    yearsExperience: null,
+    locationIds: [],
+    sortOrder: 1,
+  });
 }
 
 interface ConfigureExtras {
@@ -212,7 +270,7 @@ interface ConfigureExtras {
   readonly services?: readonly Service[];
   readonly barbers?: readonly Barber[];
   /** Replaces the upcoming read (a failure, a read that never answers). */
-  readonly observeUpcomingFor?: AppointmentRepository['observeUpcomingFor'];
+  readonly observeUpcoming?: AppointmentReadPorts['observeUpcoming'];
 }
 
 async function configure(
@@ -220,10 +278,10 @@ async function configure(
   cancelBehavior: BookingGateway['cancel'] = async () => ok(undefined),
   history: readonly Appointment[] = [],
   /** The shops the catalogue lists — none by default, see below. */
-  locations: readonly Location[] = [],
+  locations: readonly ShopLocation[] = [],
   extras: ConfigureExtras = {},
 ): Promise<ComponentFixture<ClientAppointments>> {
-  const repository = repositoryStub(upcoming, history);
+  const reads = appointmentReads(upcoming, history);
   await TestBed.configureTestingModule({
     imports: [ClientAppointments],
     errorOnUnknownElements: true,
@@ -234,44 +292,35 @@ async function configure(
       { provide: AccountStateService, useValue: accountStateStub() },
       {
         // The shell menu's notifications row reads the inbox.
-        provide: NOTIFICATION_READER,
-        useValue: {
-          list: () => of(ok([])),
-          markRead: async () => ok(undefined),
-          markAllRead: async () => ok(undefined),
-        },
+        provide: INBOX_PORTS,
+        useValue: memoryInboxPorts(new Map()),
       },
       {
-        provide: APPOINTMENT_REPOSITORY,
+        provide: APPOINTMENT_READ_PORTS,
         useValue: {
-          ...repository,
-          observeUpcomingFor:
-            extras.observeUpcomingFor ?? repository.observeUpcomingFor,
-        },
+          ...reads,
+          observeUpcoming: extras.observeUpcoming ?? reads.observeUpcoming,
+        } satisfies AppointmentReadPorts,
       },
       {
         // A row names its service and shows its barber's face — both come
         // from the catalog. An EMPTY catalog is the honest stub here: the
         // row must still render (with its fallback title) when the service
         // it names has since been retired.
-        provide: CATALOG_READER,
-        useValue: {
-          listActiveServices: () => of(ok(extras.services ?? [])),
-          listActiveBarbers: () => of(ok(extras.barbers ?? [])),
-          listServiceCategories: () => of(ok([])),
-          listActiveLocations: () => of(ok(locations)),
-          findServiceById: async () => ok(null),
-          findBarberById: async () => ok(null),
-          findLocationById: async () => ok(null),
-        },
+        provide: CATALOG_PORTS,
+        useValue: memoryCatalogReadPorts({
+          services: extras.services ?? [],
+          barbers: extras.barbers ?? [],
+          locations,
+        }),
       },
       {
         provide: MEDIA_READER,
         useValue: { resolve: async () => ok([]) },
       },
       {
-        // Cancellation is the CALLABLE's job now; the repository refuses
-        // writes on the client by design.
+        // Cancellation is the CALLABLE's job; the web never writes an
+        // appointment.
         provide: BOOKING_GATEWAY,
         useValue: {
           commit: async () => {
@@ -281,8 +330,9 @@ async function configure(
         },
       },
       {
-        provide: BOOKING_POLICY_READER,
-        useValue: { observe: () => of(BookingPolicy.default()) },
+        // The page reads the policy only (the default 24 h window).
+        provide: SCHEDULING_READ_PORTS,
+        useValue: memorySchedulingReadPorts(),
       },
       {
         provide: CLOCK,
@@ -344,19 +394,15 @@ describe('ClientAppointments', () => {
       [appointment('appt_1', '2030-06-01T10:00:00')],
       undefined,
       [
-        appointment('appt_past_1', '2020-07-04T10:00:00', {
-          kind: 'completed',
-        }),
-        appointment('appt_past_2', '2020-06-02T10:00:00', {
-          kind: 'completed',
-        }),
+        appointment('appt_past_1', '2020-07-04T10:00:00', COMPLETED),
+        appointment('appt_past_2', '2020-06-02T10:00:00', COMPLETED),
       ],
     );
     const host = await render(fixture);
 
     const rows = host.querySelectorAll('[data-testid="appointment-row"]');
     expect(rows.length).toBe(3);
-    expect(rows[0]?.getAttribute('data-status')).toBe('confirmed');
+    expect(rows[0]?.getAttribute('data-status')).toBe('CONFIRMED');
 
     // Upcoming, then one per month that actually holds a visit — July and
     // June, newest first.
@@ -389,11 +435,7 @@ describe('ClientAppointments', () => {
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
       undefined,
-      [
-        appointment('appt_past_1', '2020-07-04T10:00:00', {
-          kind: 'completed',
-        }),
-      ],
+      [appointment('appt_past_1', '2020-07-04T10:00:00', COMPLETED)],
     );
     const host = await render(fixture);
 
@@ -416,9 +458,7 @@ describe('ClientAppointments', () => {
 
     it('mounts the shared visits BROWSER (client-card revision 3 §3.11): the pills are its own now, under the same ids', async () => {
       const fixture = await configure([appointment('appt_1', FAR)], undefined, [
-        appointment('appt_past', '2020-07-04T10:00:00', {
-          kind: 'completed',
-        }),
+        appointment('appt_past', '2020-07-04T10:00:00', COMPLETED),
       ]);
       const host = await render(fixture);
 
@@ -501,12 +541,8 @@ describe('ClientAppointments', () => {
 
     it('heads each month with its year — two Julys are two headings — and the pills say what the headings say', async () => {
       const fixture = await configure([], undefined, [
-        appointment('appt_jul_2021', '2021-07-03T10:00:00', {
-          kind: 'completed',
-        }),
-        appointment('appt_jul_2020', '2020-07-04T10:00:00', {
-          kind: 'completed',
-        }),
+        appointment('appt_jul_2021', '2021-07-03T10:00:00', COMPLETED),
+        appointment('appt_jul_2020', '2020-07-04T10:00:00', COMPLETED),
       ]);
       const host = await render(fixture);
 
@@ -540,13 +576,12 @@ describe('ClientAppointments', () => {
 
     it('strikes an hour that did not happen, in the full ink', async () => {
       const fixture = await configure([], undefined, [
-        appointment('appt_missed', '2020-07-04T10:00:00', {
-          kind: 'no_show',
-        }),
-        appointment('appt_called_off', '2020-06-02T10:00:00', {
-          kind: 'cancelled',
-          reason: 'client_changed_plans',
-        }),
+        appointment('appt_missed', '2020-07-04T10:00:00', NO_SHOW),
+        appointment(
+          'appt_called_off',
+          '2020-06-02T10:00:00',
+          cancelled(CancellationReason.ClientChangedPlans),
+        ),
       ]);
       const host = await render(fixture);
 
@@ -595,9 +630,7 @@ describe('ClientAppointments', () => {
 
     it('jumps to a month’s heading when its pill is tapped — the browser’s jump, through the page’s ids', async () => {
       const fixture = await configure([appointment('appt_1', FAR)], undefined, [
-        appointment('appt_past', '2020-07-04T10:00:00', {
-          kind: 'completed',
-        }),
+        appointment('appt_past', '2020-07-04T10:00:00', COMPLETED),
       ]);
       const host = await render(fixture);
       const scrolled: string[] = [];
@@ -628,7 +661,7 @@ describe('ClientAppointments', () => {
 
     it('words the list’s empty itself: a booking when there is nothing, the filter back when the funnel hides it', async () => {
       const fixture = await configure([], undefined, [
-        appointment('appt_done', '2020-07-04T10:00:00', { kind: 'completed' }),
+        appointment('appt_done', '2020-07-04T10:00:00', COMPLETED),
       ]);
       const host = await render(fixture);
       const empty = () =>
@@ -663,7 +696,7 @@ describe('ClientAppointments', () => {
 
     it('shows the list’s placeholders under the title while the first read is on its way', async () => {
       const fixture = await configure([], undefined, [], [], {
-        observeUpcomingFor: () => NEVER,
+        observeUpcoming: () => NEVER,
       });
       const host = await render(fixture);
 
@@ -687,12 +720,10 @@ describe('ClientAppointments', () => {
         [],
         [],
         {
-          observeUpcomingFor: () => {
+          observeUpcoming: () => {
             reads += 1;
             return of(
-              reads === 1
-                ? fail(new RepositoryError('denied'))
-                : ok([appointment('appt_1', FAR)]),
+              reads === 1 ? DENIED : Result.ok([appointment('appt_1', FAR)]),
             );
           },
         },
@@ -723,9 +754,9 @@ describe('ClientAppointments', () => {
     it('offers the same retry in the calendar view', async () => {
       let reads = 0;
       const fixture = await configure([], undefined, [], [], {
-        observeUpcomingFor: () => {
+        observeUpcoming: () => {
           reads += 1;
-          return of(reads === 1 ? fail(new RepositoryError('denied')) : ok([]));
+          return of(reads === 1 ? DENIED : Result.ok([]));
         },
       });
       const host = await render(fixture);
@@ -939,11 +970,7 @@ describe('ClientAppointments', () => {
       const fixture = await configure(
         [],
         undefined,
-        [
-          appointment('appt_done', '2020-07-04T10:00:00', {
-            kind: 'completed',
-          }),
-        ],
+        [appointment('appt_done', '2020-07-04T10:00:00', COMPLETED)],
         [centerShop()],
       );
       const host = await render(fixture);
@@ -968,7 +995,7 @@ describe('ClientAppointments', () => {
 
     it('closes up around the verbs a past visit has not got', async () => {
       const fixture = await configure([], undefined, [
-        appointment('appt_done', '2020-07-04T10:00:00', { kind: 'completed' }),
+        appointment('appt_done', '2020-07-04T10:00:00', COMPLETED),
       ]);
       const host = await render(fixture);
       await openFirstVisit(fixture, host);
@@ -1005,12 +1032,9 @@ describe('ClientAppointments', () => {
     it('offers no move for a visit only the shop can move — and says why instead of a dead end', async () => {
       // Staff removed the client's own seat; the son they added is all that
       // is left. A move link here could only ever be refused.
-      const son = SeatSubject.account(
-        unwrap(UserId.create('user_son')),
-        'companion',
-      );
+      const son = accountSeat('user_son', SubjectRelationship.Companion);
       const fixture = await configure([
-        appointment('appt_son', FAR, { kind: 'confirmed' }, son),
+        appointment('appt_son', FAR, CONFIRMED, son),
       ]);
       const host = await render(fixture);
       await openFirstVisit(fixture, host);
@@ -1025,12 +1049,9 @@ describe('ClientAppointments', () => {
     });
 
     it('points at the call verb when the catalogue knows the shop — «Обади се» stands where «Премести» would', async () => {
-      const son = SeatSubject.account(
-        unwrap(UserId.create('user_son')),
-        'companion',
-      );
+      const son = accountSeat('user_son', SubjectRelationship.Companion);
       const fixture = await configure(
-        [appointment('appt_son', FAR, { kind: 'confirmed' }, son)],
+        [appointment('appt_son', FAR, CONFIRMED, son)],
         undefined,
         [],
         [centerShop()],
@@ -1049,12 +1070,9 @@ describe('ClientAppointments', () => {
     });
 
     it('treats a `self` seat bound to another account as the shop’s — the same rule the server moves by', async () => {
-      const foreign = SeatSubject.account(
-        unwrap(UserId.create('user_other')),
-        'self',
-      );
+      const foreign = accountSeat('user_other', SubjectRelationship.Self);
       const fixture = await configure([
-        appointment('appt_foreign', FAR, { kind: 'confirmed' }, foreign),
+        appointment('appt_foreign', FAR, CONFIRMED, foreign),
       ]);
       const host = await render(fixture);
       await openFirstVisit(fixture, host);
@@ -1066,15 +1084,12 @@ describe('ClientAppointments', () => {
     it('says nothing about who moves it once the window has closed — that has its own reason', async () => {
       const nowResult = ZonedDateTime.now('Europe/Sofia');
       if (nowResult.isFailure()) throw new Error('unreachable');
-      const son = SeatSubject.account(
-        unwrap(UserId.create('user_son')),
-        'companion',
-      );
+      const son = accountSeat('user_son', SubjectRelationship.Companion);
       const fixture = await configure([
         appointment(
           'appt_soon',
           nowResult.value.plusMinutes(120).toISO(),
-          { kind: 'confirmed' },
+          CONFIRMED,
           son,
         ),
       ]);
@@ -1092,15 +1107,13 @@ describe('ClientAppointments', () => {
       [appointment('appt_1', '2030-06-01T10:00:00')],
       undefined,
       [
-        appointment('appt_past_1', '2020-07-04T10:00:00', {
-          kind: 'completed',
-        }),
-        appointment('appt_past_2', '2020-06-02T10:00:00', {
-          kind: 'cancelled',
-          // The arm carries its reason — a cancelled status without one is
+        appointment('appt_past_1', '2020-07-04T10:00:00', COMPLETED),
+        appointment(
+          'appt_past_2',
+          '2020-06-02T10:00:00', // The variant carries its reason — a cancelled status without one is
           // not representable, which is the whole point of the union.
-          reason: 'client_changed_plans',
-        }),
+          cancelled(CancellationReason.ClientChangedPlans),
+        ),
       ],
     );
     const host = await render(fixture);
@@ -1122,7 +1135,7 @@ describe('ClientAppointments', () => {
 
     const rows = host.querySelectorAll('[data-testid="appointment-row"]');
     expect(rows.length).toBe(1);
-    expect(rows[0]?.getAttribute('data-status')).toBe('cancelled');
+    expect(rows[0]?.getAttribute('data-status')).toBe('CANCELLED');
     // The pills follow the narrowed list — June is all that is left.
     expect(
       [...host.querySelectorAll('[data-testid="appointments-pill"]')].map(
@@ -1135,11 +1148,7 @@ describe('ClientAppointments', () => {
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
       undefined,
-      [
-        appointment('appt_past_1', '2020-07-04T10:00:00', {
-          kind: 'completed',
-        }),
-      ],
+      [appointment('appt_past_1', '2020-07-04T10:00:00', COMPLETED)],
     );
     const host = await render(fixture);
 
@@ -1207,7 +1216,7 @@ describe('ClientAppointments', () => {
     const longAgo = now.value.plusMinutes(-60 * 24 * 730).toISO();
 
     const fixture = await configure([], undefined, [
-      appointment('appt_ancient', longAgo, { kind: 'completed' }),
+      appointment('appt_ancient', longAgo, COMPLETED),
     ]);
     const host = await render(fixture);
 
@@ -1402,7 +1411,7 @@ describe('ClientAppointments', () => {
 
   /** A cancel the server refuses because the free window closed meanwhile. */
   async function refusedAsClosed(
-    locations: readonly Location[],
+    locations: readonly ShopLocation[],
   ): Promise<HTMLElement> {
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],

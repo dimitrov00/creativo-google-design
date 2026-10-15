@@ -1,82 +1,36 @@
-import { Injectable, inject } from '@angular/core';
-import { deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { Observable } from 'rxjs';
-import {
-  FIREBASE_AUTH,
-  FIREBASE_FIRESTORE,
-} from '@creativo/infrastructure/firebase-app';
-import {
-  APPOINTMENT_NOTES_COLLECTION,
-  type AppointmentNote,
-  type AppointmentNotes,
-} from '@creativo/application/booking';
-import { RepositoryError } from '@creativo/application/shared';
-import { Result, fail, ok } from '@creativo/domain/kernel';
-import { subscribeWithRetry } from './subscribe-with-retry';
+import { type Firestore, deleteDoc, doc, setDoc } from 'firebase/firestore';
+import { defect } from '@core/primitives';
+import { type AppointmentNote, Collections } from '@core/entities';
+import type { AppointmentNotePorts } from '@core/ports';
+import { attemptWrite, observeDoc } from './observe';
 
 /**
- * `appointmentNotes/{appointmentId}` — the team's note, staff-only.
+ * `appointmentNotes/{appointmentId}` — the team's note on a visit,
+ * staff-only (flip 1, plan §3.4), one note per visit so the id IS the
+ * appointment's. A plain write, deliberately: the collection is
+ * `read, write: if worksTheBook()` and nothing here is the availability
+ * engine's business, so no callable stands between the sheet and the
+ * document.
  *
- * A plain `setDoc`, deliberately: the collection is `read, write: if
- * worksTheBook()` and the document carries nothing the availability engine
- * has to see, so there is no callable between the sheet and the write. The
- * author and the instant are stamped here so the note can say who wrote it.
+ * The note arrives whole: its trimmed text, its author and its instant are
+ * the caller's (a system decides blankness; the session and the injected
+ * clock stamp it), never this adapter's. `null` deletes the document — a
+ * cleared note leaves nothing behind.
  */
-@Injectable()
-export class FirestoreAppointmentNotes implements AppointmentNotes {
-  private readonly db = inject(FIREBASE_FIRESTORE);
-  private readonly auth = inject(FIREBASE_AUTH);
+export const appointmentNotePorts = (db: Firestore): AppointmentNotePorts => ({
+  observeAppointmentNote: (appointmentId) =>
+    observeDoc<AppointmentNote>(
+      doc(db, Collections.AppointmentNotes, appointmentId),
+    ),
 
-  observe(
-    appointmentId: string,
-  ): Observable<Result<AppointmentNote | null, RepositoryError>> {
-    const ref = doc(this.db, APPOINTMENT_NOTES_COLLECTION, appointmentId);
-    return subscribeWithRetry<AppointmentNote | null>((onNext, onError) =>
-      onSnapshot(
-        ref,
-        (snapshot) => {
-          const data = snapshot.data();
-          const text = typeof data?.['text'] === 'string' ? data['text'] : '';
-          onNext(
-            text.trim().length === 0
-              ? null
-              : {
-                  text,
-                  authorUid:
-                    typeof data?.['authorUid'] === 'string'
-                      ? data['authorUid']
-                      : null,
-                  writtenAtIso:
-                    typeof data?.['writtenAtIso'] === 'string'
-                      ? data['writtenAtIso']
-                      : null,
-                },
-          );
-        },
-        onError,
-      ),
-    );
-  }
-
-  async save(
-    appointmentId: string,
-    text: string | null,
-  ): Promise<Result<void, RepositoryError>> {
-    const ref = doc(this.db, APPOINTMENT_NOTES_COLLECTION, appointmentId);
-    const trimmed = text?.trim() ?? '';
-    try {
-      if (trimmed.length === 0) {
-        await deleteDoc(ref);
-      } else {
-        await setDoc(ref, {
-          text: trimmed,
-          authorUid: this.auth.currentUser?.uid ?? null,
-          writtenAtIso: new Date().toISOString(),
-        });
-      }
-      return ok(undefined);
-    } catch (cause) {
-      return fail(new RepositoryError('Could not save the note', cause));
+  saveAppointmentNote: (appointmentId, note) => {
+    const ref = doc(db, Collections.AppointmentNotes, appointmentId);
+    if (note === null) return attemptWrite(ref.path, () => deleteDoc(ref));
+    // The note's id IS the appointment's: the body is the entity minus it.
+    const { id, ...body } = note;
+    if (id !== appointmentId) {
+      defect(`saveAppointmentNote: note ${id} handed for ${appointmentId}`);
     }
-  }
-}
+    return attemptWrite(ref.path, () => setDoc(ref, body));
+  },
+});

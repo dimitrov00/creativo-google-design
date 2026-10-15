@@ -11,21 +11,13 @@ import {
   Currency,
   EngagementErrorCode,
   type EngagementError as EngagementErrorData,
-  GiftVoucherId as GiftVoucherIdData,
-  type LocalDate,
   PriceCents,
-  UserId as UserIdData,
   UtcEpochMs,
   VoucherRefusal,
   defect,
 } from '@core/primitives';
-import {
-  type Money as MoneyData,
-  VoucherCode as VoucherCodeData,
-  VoucherLifecycle,
-} from '@core/components';
-import { type GiftVoucher as GiftVoucherData } from '@core/entities';
-import { VoucherSystem, ZonedTimeSystem } from '@core/systems';
+import { type Money as MoneyData, VoucherLifecycle } from '@core/components';
+import { type VoucherBalance, VoucherSystem } from '@core/systems';
 import { Coupon } from './coupon';
 import {
   GiftVoucherCurrencyMismatchError,
@@ -78,14 +70,6 @@ function instantOf(at: ZonedDateTime): UtcEpochMs {
   return sure(UtcEpochMs.of(at.toMillis()), 'an instant');
 }
 
-/** The shop day of a legacy instant, on its own zone's wall clock (T5). */
-function localDateOf(at: ZonedDateTime): LocalDate {
-  return ZonedTimeSystem.toLocal(
-    instantOf(at),
-    sure(ZonedTimeSystem.checkZone(at.zoneName), 'a zone'),
-  ).localDate;
-}
-
 function centsOf(money: Money): PriceCents {
   return sure(PriceCents.of(money.toMinorUnits()), 'an amount');
 }
@@ -97,26 +81,23 @@ function toMoneyData(money: Money): MoneyData {
   };
 }
 
-function toEntity(voucher: GiftVoucher): GiftVoucherData {
+/**
+ * The legacy voucher as the slice the balance algebra reads
+ * (`VoucherBalance`) — its money, its expiry and its lifecycle. Whose it is
+ * stays on the legacy class: the algebra never reads it, and the client
+ * record a flat voucher names (D29) is nothing a legacy voucher can know.
+ */
+function toBalance(voucher: GiftVoucher): VoucherBalance {
   const state = voucher.state;
   return {
-    id: GiftVoucherIdData.of(voucher.id.value),
-    code: VoucherCodeData.of(voucher.code),
     initialValueCents: centsOf(voucher.initialValue),
     balanceCents: centsOf(voucher.balance),
     currency: sure(
       Currency.parse(voucher.balance.currencyCode()),
       'a currency',
     ),
-    issuedAtUtcMs: instantOf(voucher.issuedAt),
     expiresAtUtcMs:
       voucher.expiresAt === null ? null : instantOf(voucher.expiresAt),
-    expiresLocalDate:
-      voucher.expiresAt === null ? null : localDateOf(voucher.expiresAt),
-    issuedToUserId:
-      voucher.issuedToUserId === null
-        ? null
-        : UserIdData.of(voucher.issuedToUserId.value),
     ...(state.kind === 'void'
       ? VoucherLifecycle.voided(instantOf(state.voidedAt), state.reason)
       : VoucherLifecycle.active()),
@@ -260,7 +241,7 @@ export class GiftVoucher {
 
   /** Why it cannot be used now, or `null` when it can. */
   refusal(now: ZonedDateTime): 'void' | 'expired' | 'empty' | null {
-    const refused = VoucherSystem.refusal(toEntity(this), instantOf(now));
+    const refused = VoucherSystem.refusal(toBalance(this), instantOf(now));
     return refused === null ? null : VOUCHER_REFUSAL_LEGACY[refused];
   }
 
@@ -274,7 +255,7 @@ export class GiftVoucher {
    */
   coverage(due: Money): Money {
     return GiftVoucher.money(
-      VoucherSystem.coverage(toEntity(this), toMoneyData(due)).amountCents,
+      VoucherSystem.coverage(toBalance(this), toMoneyData(due)).amountCents,
       this.balance.currencyCode(),
     );
   }
@@ -290,7 +271,7 @@ export class GiftVoucher {
     | GiftVoucherCurrencyMismatchError
   > {
     const redeemed = VoucherSystem.redeem(
-      toEntity(this),
+      toBalance(this),
       toMoneyData(amount),
       instantOf(now),
     );
@@ -316,7 +297,10 @@ export class GiftVoucher {
     GiftVoucher,
     GiftVoucherOverRestoreError | GiftVoucherCurrencyMismatchError
   > {
-    const restored = VoucherSystem.restore(toEntity(this), toMoneyData(amount));
+    const restored = VoucherSystem.restore(
+      toBalance(this),
+      toMoneyData(amount),
+    );
     return restored.ok
       ? ok(this.withBalanceOf(restored.value))
       : fail(
@@ -343,7 +327,7 @@ export class GiftVoucher {
     | GiftVoucherOverRestoreError
   > {
     const settled = VoucherSystem.settle(
-      toEntity(this),
+      toBalance(this),
       toMoneyData(previous),
       toMoneyData(next),
     );
@@ -366,7 +350,7 @@ export class GiftVoucher {
   }
 
   /** The struct's balance, back on the legacy voucher. */
-  private withBalanceOf(entity: GiftVoucherData): GiftVoucher {
+  private withBalanceOf(entity: VoucherBalance): GiftVoucher {
     return this.withBalance(
       GiftVoucher.money(entity.balanceCents, this.balance.currencyCode()),
     );

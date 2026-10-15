@@ -35,6 +35,7 @@ import {
   appointmentFixture,
   seatFixture,
   termsFixture,
+  customerOf,
 } from '@core/testing';
 import { type PersonSubject, VisitStorySystem } from './visit-story.system';
 import { ZonedTimeSystem } from './zoned-time.system';
@@ -119,6 +120,7 @@ function seat(
         ? SeatOccupant.anonymous(SeatLabel.of(options.guest))
         : SeatOccupant.account(
             options.who ?? GEORGI,
+            customerOf(options.who ?? GEORGI),
             options.relationship ?? SubjectRelationship.Self,
           ),
     outcome: options.outcome ?? SeatOutcome.scheduled(),
@@ -152,11 +154,16 @@ const cancelled = (
 const cancelledRoot = (local: string, ...reasons: CancellationReason[]) =>
   BookingLifecycle.cancel(at(local), CancellationReasonSet.of(reasons));
 
-/** The row's own story, as the staff card tells it of `subject`. */
+/** The row's own story, as the staff card tells it of `subject`'s client record (D29). */
 const staffStory = (
   appointment: Appointment,
   subject: UserId | null = GEORGI,
-) => S.subjectStory(appointment, subject, true);
+) =>
+  S.subjectStory(
+    appointment,
+    subject === null ? null : customerOf(subject),
+    true,
+  );
 
 /** Who a seat is for, as people are counted. */
 function personOf(entry: Seat): PersonSubject {
@@ -414,7 +421,9 @@ describe('visitRowOf · the staff card — the story', () => {
     // A subject with no seat on it: the appointment's too.
     expect(staffStory(last, IVO).outcome).toBe('WORKED');
     // The client's own list always tells the appointment's.
-    expect(S.subjectStory(last, IVO, false).seatIndexes).toEqual([0]);
+    expect(S.subjectStory(last, customerOf(IVO), false).seatIndexes).toEqual([
+      0,
+    ]);
   });
 });
 
@@ -600,8 +609,8 @@ describe('VisitStorySystem — the facts and the rules', () => {
       ),
     );
     expect(S.story(party)).toEqual(S.story(party));
-    expect(S.subjectStory(party, IVO, true)).toEqual(
-      S.subjectStory(party, IVO, true),
+    expect(S.subjectStory(party, customerOf(IVO), true)).toEqual(
+      S.subjectStory(party, customerOf(IVO), true),
     );
     const days = deepFreeze([localDate('2026-10-01'), localDate('2026-10-02')]);
     expect(S.dayRuns(days)).toEqual(S.dayRuns(days));

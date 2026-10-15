@@ -1,21 +1,33 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject } from 'rxjs';
 import {
-  Barber,
-  CATALOG_READER,
   MEDIA_READER,
-  MediaRef,
   MediaUnavailableError,
-  Service,
   fail,
   ok,
   type MediaReadError,
   type MediaReader,
+  type MediaRef,
   type MediaVariant,
-  type Result,
+  type Result as KernelResult,
 } from '@creativo/application/catalog';
-import { RepositoryError } from '@creativo/application/shared';
+import { RepositoryError as KernelRepositoryError } from '@creativo/application/shared';
+import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { CatalogReadPorts } from '@core/ports';
+import type { Barber, Service } from '@core/entities';
+import {
+  BarberId,
+  MediaRefId,
+  type RepositoryError,
+  Result,
+  ServiceId,
+} from '@core/primitives';
+import {
+  barberFixture,
+  memoryCatalogReadPorts,
+  serviceFixture,
+} from '@core/testing';
 import {
   CatalogContentService,
   DEFAULT_MEDIA_RETRY_POLICY,
@@ -23,63 +35,32 @@ import {
 import { LanguageService } from '@creativo/features/shared/shell';
 import { LandingContentService } from './landing-content.service';
 
-function unwrap<T>(result: { isFailure(): boolean; value?: T }): T {
-  if (result.isFailure()) throw new Error('bad test fixture');
-  return result.value as T;
-}
+/** The Storage objects the fixtures point at — what the media reader is asked for. */
+const cover = { path: 'services/fade.jpg', width: 1200 } as const;
+const avatar = { path: 'barbers/ivan.jpg', width: 1200 } as const;
 
-const cover = unwrap<MediaRef>(
-  MediaRef.create({
-    id: 'media-fade',
-    path: 'services/fade.jpg',
-    width: 1200,
-    height: 1500,
-  }),
-);
-const avatar = unwrap<MediaRef>(
-  MediaRef.create({
-    id: 'media-barber-ivan',
-    path: 'barbers/ivan.jpg',
-    width: 1200,
-    height: 1500,
-  }),
-);
+const fade: Service = serviceFixture({
+  id: ServiceId.of('svc-fade'),
+  name: { en: 'Skin fade', bg: 'Фейд' },
+  popular: true,
+  sortOrder: 1,
+  coverMediaId: MediaRefId.of('media-fade'),
+  coverMediaPath: cover.path,
+  coverMediaWidth: cover.width,
+  coverMediaHeight: 1500,
+});
 
-const fade = unwrap<Service>(
-  Service.create({
-    id: 'svc-fade',
-    name: { en: 'Skin fade', bg: 'Фейд' },
-    description: { en: 'x', bg: 'x' },
-    categoryId: 'cat-hair',
-    priceMinorUnits: 1750,
-    currencyCode: 'EUR',
-    durationMinutes: 50,
-    cover,
-    locationIds: [],
-    conflictsWith: [],
-    composition: { kind: 'single' },
-    upsellOnly: false,
-    popular: true,
-    status: 'active',
-    sortOrder: 1,
-  }),
-);
+const ivan: Barber = barberFixture({
+  id: BarberId.of('ivan'),
+  sortOrder: 1,
+  avatarMediaId: MediaRefId.of('media-barber-ivan'),
+  avatarMediaPath: avatar.path,
+  avatarMediaWidth: avatar.width,
+  avatarMediaHeight: 1500,
+});
 
-const ivan = unwrap<Barber>(
-  Barber.create({
-    id: 'ivan',
-    name: { en: 'Ivan', bg: 'Иван' },
-    handle: 'ivan',
-    title: { en: 'Barber', bg: 'Бръснар' },
-    bio: { en: 'x', bg: 'x' },
-    avatar,
-    locationIds: [],
-    status: 'active',
-    sortOrder: 1,
-  }),
-);
-
-const urlOf = (ref: MediaRef) => `https://cdn.test/${ref.path}`;
+const urlOf = (ref: { readonly path: string }) =>
+  `https://cdn.test/${ref.path}`;
 
 /** What one resolve answers: a URL, a transient failure, or a permanent one. */
 type Step = 'ok' | 'transient' | 'reject' | 'missing' | 'forbidden';
@@ -90,13 +71,13 @@ class ScriptedReader implements MediaReader {
 
   constructor(private readonly script: Readonly<Record<string, Step[]>>) {}
 
-  callsFor(ref: MediaRef): number {
+  callsFor(ref: { readonly path: string }): number {
     return this.calls.filter((path) => path === ref.path).length;
   }
 
   resolve(
     ref: MediaRef,
-  ): Promise<Result<readonly MediaVariant[], MediaReadError>> {
+  ): Promise<KernelResult<readonly MediaVariant[], MediaReadError>> {
     this.calls.push(ref.path);
     const steps = this.script[ref.path] ?? ['ok'];
     const step = steps[Math.min(this.callsFor(ref), steps.length) - 1] ?? 'ok';
@@ -105,7 +86,7 @@ class ScriptedReader implements MediaReader {
         return Promise.resolve(ok([{ width: ref.width, url: urlOf(ref) }]));
       case 'transient':
         return Promise.resolve(
-          fail(new RepositoryError('storage/retry-limit-exceeded')),
+          fail(new KernelRepositoryError('storage/retry-limit-exceeded')),
         );
       case 'reject':
         return Promise.reject(new Error('network'));
@@ -134,7 +115,7 @@ describe('LandingContentService — media', () => {
     catalogueReads = 0;
     vi.useFakeTimers();
     services = new BehaviorSubject<Result<readonly Service[], RepositoryError>>(
-      ok([fade]),
+      Result.ok([fade]),
     );
   });
 
@@ -148,15 +129,16 @@ describe('LandingContentService — media', () => {
       providers: [
         { provide: LanguageService, useValue: { activeLang: signal('bg') } },
         {
-          provide: CATALOG_READER,
+          // The double, its services stream wrapped: re-emitted by the
+          // spec, and every subscription counted.
+          provide: CATALOG_PORTS,
           useValue: {
-            listActiveServices: () => {
+            ...memoryCatalogReadPorts({ barbers: [ivan] }),
+            observeServices: () => {
               catalogueReads++;
               return services.asObservable();
             },
-            listActiveBarbers: () => of(ok([ivan])),
-            listActiveLocations: () => of(ok([])),
-          },
+          } satisfies CatalogReadPorts,
         },
         { provide: MEDIA_READER, useValue: reader },
       ],
@@ -168,7 +150,7 @@ describe('LandingContentService — media', () => {
 
   /** The catalogue re-emits the same snapshot (a live query does, often). */
   function reEmit(): void {
-    services.next(ok([fade]));
+    services.next(Result.ok([fade]));
     TestBed.tick();
   }
 

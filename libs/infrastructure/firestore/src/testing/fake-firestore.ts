@@ -1,9 +1,10 @@
 /**
  * A FIRESTORE THAT FITS IN A SPEC: documents by path, and the handful of
- * `firebase/firestore` functions the read adapters call, which really
- * filter, order, page and notify. A spec that mocks the SDK with it
- * asserts what a query RETURNS, not which functions were called to build
- * it, so an adapter that pages wrongly fails here and not in production.
+ * `firebase/firestore` functions the adapters call, which really filter,
+ * order, page, notify and write. A spec that mocks the SDK with it asserts
+ * what a query RETURNS (and what a write LEAVES), not which functions were
+ * called to build it, so an adapter that pages wrongly fails here and not in
+ * production.
  *
  * It is NOT the emulator: it knows no rules and no indexes, and only the
  * operators listed in `matches`. What a rule lets through, and what the
@@ -17,8 +18,9 @@
  * );
  * ```
  *
- * and hand a `FakeFirestore` over as `FIREBASE_FIRESTORE`. Test support:
- * excluded from `tsconfig.lib.json`, never part of the lib's public API.
+ * and hand a `FakeFirestore` over as the adapter's `Firestore` (or as
+ * `FIREBASE_FIRESTORE`). Test support: excluded from `tsconfig.lib.json`,
+ * never part of the lib's public API.
  */
 
 /** A document's data: any object. A typed wire document has no index signature, and needs none here. */
@@ -58,18 +60,26 @@ interface CollectionRef {
 
 interface DocumentSnapshot {
   readonly id: string;
+  readonly ref: DocumentRef;
   exists(): boolean;
   data(): Fields | undefined;
 }
 
 interface QueryDocument {
   readonly id: string;
+  readonly ref: DocumentRef;
   data(): Fields;
 }
 
+interface QuerySnapshot {
+  readonly docs: readonly QueryDocument[];
+  readonly empty: boolean;
+  readonly size: number;
+}
+
 interface Listener {
-  readonly path: string;
-  readonly next: (snapshot: DocumentSnapshot) => void;
+  readonly ref: DocumentRef | CollectionRef;
+  readonly next: (snapshot: DocumentSnapshot | QuerySnapshot) => void;
   readonly error: (error: unknown) => void;
 }
 
@@ -81,9 +91,28 @@ export interface FakeRead {
   readonly constraints: readonly string[];
 }
 
+/** One write the fake applied: what a spec asserts was (or was not) written. */
+export interface FakeWrite {
+  readonly kind: 'set' | 'update' | 'delete';
+  readonly path: string;
+  /** The fields written; `null` for a delete. */
+  readonly data: Fields | null;
+}
+
+/** A write waiting for its batch or transaction to commit. */
+type PendingWrite =
+  | {
+      readonly kind: 'set' | 'update';
+      readonly ref: DocumentRef;
+      readonly data: Fields;
+    }
+  | { readonly kind: 'delete'; readonly ref: DocumentRef };
+
 export class FakeFirestore {
   /** Every read, in order. */
   readonly reads: FakeRead[] = [];
+  /** Every write an adapter made through the SDK functions, in order (not `set`/`delete` seeding). */
+  readonly writes: FakeWrite[] = [];
   private readonly documents = new Map<string, Fields>();
   private readonly listeners = new Set<Listener>();
   private failure: unknown = null;
@@ -115,7 +144,7 @@ export class FakeFirestore {
     return this.told(path);
   }
 
-  /** Every read rejects with this until `recover()`; a listener hears it as its error. */
+  /** Every read and write rejects with this until `recover()`; a listener hears it as its error. */
   failWith(error: unknown = new Error('permission-denied')): this {
     this.failure = error;
     for (const listener of [...this.listeners]) listener.error(error);
@@ -138,65 +167,120 @@ export class FakeFirestore {
   read(ref: DocumentRef): DocumentSnapshot {
     this.reads.push({ kind: 'document', path: ref.path, constraints: [] });
     if (this.failure !== null) throw this.failure;
-    return this.snapshotOf(ref.path);
+    return this.snapshotOf(ref);
   }
 
   /** @internal */
-  run(ref: CollectionRef): { readonly docs: readonly QueryDocument[] } {
+  run(ref: CollectionRef): QuerySnapshot {
     this.reads.push({
       kind: 'query',
       path: ref.path,
       constraints: ref.constraints.map(describe),
     });
     if (this.failure !== null) throw this.failure;
-    return { docs: evaluate(this.childrenOf(ref.path), ref.constraints) };
+    return this.queryResultOf(ref);
   }
 
   /** @internal */
   listen(
-    ref: DocumentRef,
+    ref: DocumentRef | CollectionRef,
     next: Listener['next'],
     error: Listener['error'],
   ): () => void {
-    this.reads.push({ kind: 'listen', path: ref.path, constraints: [] });
-    const listener: Listener = { path: ref.path, next, error };
+    this.reads.push({
+      kind: 'listen',
+      path: ref.path,
+      constraints:
+        ref.kind === 'collection' ? ref.constraints.map(describe) : [],
+    });
+    const listener: Listener = { ref, next, error };
     this.listeners.add(listener);
     if (this.failure !== null) error(this.failure);
-    else next(this.snapshotOf(ref.path));
+    else next(this.answerOf(ref));
     return () => {
       this.listeners.delete(listener);
     };
   }
 
+  /**
+   * @internal Applies writes as ONE commit: all of them or, on a failure,
+   * none. An `update` of an absent document is Firestore's `not-found`.
+   */
+  commit(pending: readonly PendingWrite[]): void {
+    if (this.failure !== null) throw this.failure;
+    for (const write of pending) {
+      if (write.kind === 'update' && !this.documents.has(write.ref.path)) {
+        throw Object.assign(
+          new Error(`No document to update: ${write.ref.path}`),
+          {
+            code: 'not-found',
+          },
+        );
+      }
+    }
+    for (const write of pending) {
+      const path = write.ref.path;
+      if (write.kind === 'delete') {
+        this.writes.push({ kind: 'delete', path, data: null });
+        this.delete(path);
+      } else if (write.kind === 'set') {
+        this.writes.push({ kind: 'set', path, data: write.data });
+        this.set(path, write.data);
+      } else {
+        this.writes.push({ kind: 'update', path, data: write.data });
+        this.set(path, { ...this.documents.get(path), ...write.data });
+      }
+    }
+  }
+
   private told(path: string): this {
     for (const listener of [...this.listeners]) {
-      if (listener.path === path) listener.next(this.snapshotOf(path));
+      const { ref } = listener;
+      if (
+        ref.kind === 'document' ? ref.path === path : isChildOf(path, ref.path)
+      ) {
+        listener.next(this.answerOf(ref));
+      }
     }
     return this;
   }
 
-  private snapshotOf(path: string): DocumentSnapshot {
-    const data = this.documents.get(path);
+  private answerOf(
+    ref: DocumentRef | CollectionRef,
+  ): DocumentSnapshot | QuerySnapshot {
+    return ref.kind === 'document'
+      ? this.snapshotOf(ref)
+      : this.queryResultOf(ref);
+  }
+
+  private snapshotOf(ref: DocumentRef): DocumentSnapshot {
+    const data = this.documents.get(ref.path);
     return {
-      id: lastSegment(path),
+      id: ref.id,
+      ref,
       exists: () => data !== undefined,
       data: () => data,
     };
   }
 
+  private queryResultOf(ref: CollectionRef): QuerySnapshot {
+    const docs = evaluate(this.childrenOf(ref.path), ref.constraints);
+    return { docs, empty: docs.length === 0, size: docs.length };
+  }
+
   /** The documents DIRECTLY under a collection: a subcollection's are not its own. */
   private childrenOf(collectionPath: string): QueryDocument[] {
-    const prefix = `${collectionPath}/`;
     return [...this.documents]
-      .filter(
-        ([path]) =>
-          path.startsWith(prefix) && !path.slice(prefix.length).includes('/'),
-      )
-      .map(([path, data]) => ({ id: lastSegment(path), data: () => data }));
+      .filter(([path]) => isChildOf(path, collectionPath))
+      .map(([path, data]) => ({
+        id: lastSegment(path),
+        ref: { kind: 'document', db: this, path, id: lastSegment(path) },
+        data: () => data,
+      }));
   }
 }
 
-/** The mocked `firebase/firestore`: exactly the functions the read adapters and the path helpers import. */
+/** The mocked `firebase/firestore`: exactly the functions the adapters and the path helpers import. */
 export function fakeFirestoreModule(): Record<string, unknown> {
   return {
     collection: (db: FakeFirestore, ...segments: string[]): CollectionRef => ({
@@ -242,14 +326,64 @@ export function fakeFirestoreModule(): Record<string, unknown> {
     },
     getDoc: async (ref: DocumentRef): Promise<DocumentSnapshot> =>
       ref.db.read(ref),
-    getDocs: async (
-      ref: CollectionRef,
-    ): Promise<{ readonly docs: readonly QueryDocument[] }> => ref.db.run(ref),
+    getDocs: async (ref: CollectionRef): Promise<QuerySnapshot> =>
+      ref.db.run(ref),
     onSnapshot: (
-      ref: DocumentRef,
+      ref: DocumentRef | CollectionRef,
       next: Listener['next'],
       error: Listener['error'],
     ): (() => void) => ref.db.listen(ref, next, error),
+    setDoc: async (ref: DocumentRef, data: Fields): Promise<void> =>
+      ref.db.commit([{ kind: 'set', ref, data }]),
+    updateDoc: async (ref: DocumentRef, data: Fields): Promise<void> =>
+      ref.db.commit([{ kind: 'update', ref, data }]),
+    deleteDoc: async (ref: DocumentRef): Promise<void> =>
+      ref.db.commit([{ kind: 'delete', ref }]),
+    writeBatch: (db: FakeFirestore) => {
+      const pending: PendingWrite[] = [];
+      const batch = {
+        set: (ref: DocumentRef, data: Fields) => {
+          pending.push({ kind: 'set', ref, data });
+          return batch;
+        },
+        update: (ref: DocumentRef, data: Fields) => {
+          pending.push({ kind: 'update', ref, data });
+          return batch;
+        },
+        delete: (ref: DocumentRef) => {
+          pending.push({ kind: 'delete', ref });
+          return batch;
+        },
+        commit: async (): Promise<void> => db.commit(pending),
+      };
+      return batch;
+    },
+    /** One attempt (no contention here): reads through the fake, writes applied only when `update` resolves. */
+    runTransaction: async <T>(
+      db: FakeFirestore,
+      update: (transaction: unknown) => Promise<T>,
+    ): Promise<T> => {
+      const pending: PendingWrite[] = [];
+      const transaction = {
+        get: async (ref: DocumentRef): Promise<DocumentSnapshot> =>
+          db.read(ref),
+        set: (ref: DocumentRef, data: Fields) => {
+          pending.push({ kind: 'set', ref, data });
+          return transaction;
+        },
+        update: (ref: DocumentRef, data: Fields) => {
+          pending.push({ kind: 'update', ref, data });
+          return transaction;
+        },
+        delete: (ref: DocumentRef) => {
+          pending.push({ kind: 'delete', ref });
+          return transaction;
+        },
+      };
+      const answer = await update(transaction);
+      db.commit(pending);
+      return answer;
+    },
   };
 }
 
@@ -312,9 +446,37 @@ function matches(
       return (
         Array.isArray(constraint.value) && constraint.value.includes(value)
       );
+    case 'array-contains':
+      return Array.isArray(value) && value.includes(constraint.value);
+    // A range compares values of one type only, as Firestore does: a
+    // document whose field is absent or of another type never matches.
+    case '<':
+      return (
+        sameType(value, constraint.value) &&
+        compare(value, constraint.value) < 0
+      );
+    case '<=':
+      return (
+        sameType(value, constraint.value) &&
+        compare(value, constraint.value) <= 0
+      );
+    case '>':
+      return (
+        sameType(value, constraint.value) &&
+        compare(value, constraint.value) > 0
+      );
+    case '>=':
+      return (
+        sameType(value, constraint.value) &&
+        compare(value, constraint.value) >= 0
+      );
     default:
       throw new Error(`FakeFirestore does not know "${constraint.op}"`);
   }
+}
+
+function sameType(a: unknown, b: unknown): boolean {
+  return a !== undefined && a !== null && typeof a === typeof b;
 }
 
 /** A field by its dotted path (`effect.kind`), or the document's id. */
@@ -348,6 +510,12 @@ function describe(constraint: Constraint): string {
     case 'limit':
       return `limit ${constraint.count}`;
   }
+}
+
+/** Whether `path` is a document directly under `collectionPath`. */
+function isChildOf(path: string, collectionPath: string): boolean {
+  const prefix = `${collectionPath}/`;
+  return path.startsWith(prefix) && !path.slice(prefix.length).includes('/');
 }
 
 function lastSegment(path: string): string {

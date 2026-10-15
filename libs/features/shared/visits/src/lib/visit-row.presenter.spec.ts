@@ -1,35 +1,27 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { UserId } from '@creativo/application/accounts';
+import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
-import { CouponValue } from '@creativo/application/engagement';
-import {
-  AppliedDiscount,
-  Appointment,
-  type AppointmentStatus,
-  BookingContact,
-  DAYPARTS,
-  Money,
-  type Result,
-  SEAT_SCHEDULED,
-  Seat,
-  SeatId,
-  SeatLabel,
-  type SeatOutcome,
-  SeatSubject,
-  VoucherRedemption,
-  WaitlistRequest,
-  ZonedDateTime,
-  seatCancelled,
-  seatNoShow,
-  seatWorked,
-} from '@creativo/application/booking';
+  CancellationReason,
+  CancelledBy,
+  Daypart,
+  type Seat,
+  SeatOutcome,
+  VoucherCode,
+  type VoucherRedemption,
+} from '@core/components';
+import { GiftVoucherId, type UtcEpochMs } from '@core/primitives';
+import { EUR, cents } from '@core/testing';
 import { dayRange } from './day-range';
+import {
+  type SeatSpec,
+  type VisitStatusSpec,
+  sofia,
+  visitOf,
+  visitSeat,
+  waitlistOf,
+} from './testing/visit-fixtures';
 import {
   type VisitRowOptions,
   type VisitBuilderWords,
@@ -88,7 +80,6 @@ const WAITLIST_WORDS = visitWaitlistWordsOf(BG);
 
 // ── The shop ─────────────────────────────────────────────────────────────
 
-const ZONE = 'Europe/Sofia';
 const GEORGI = 'client-georgi';
 const IVO = 'client-ivo';
 
@@ -111,89 +102,75 @@ const LOOKUP: VisitLookup = {
   locationCount: 2,
 };
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('bad fixture');
-  return result.value;
-}
-
-function at(iso: string): ZonedDateTime {
-  return unwrap(ZonedDateTime.fromISO(iso, ZONE));
-}
-
 /** Monday 28 September 2026, 09:00 in Sofia. */
-const NOW_MS = at('2026-09-28T09:00:00').toMillis();
+const NOW_MS = sofia('2026-09-28T09:00:00');
 
-interface SeatSpec {
-  readonly id?: string;
-  /** An account's uid, or a guest's name. */
-  readonly who?: string;
-  readonly guest?: boolean;
-  readonly relationship?: 'self' | 'companion';
-  readonly service?: string;
-  readonly barber?: string;
-  readonly priceMinor?: number;
-  readonly outcome?: SeatOutcome;
-}
+/** Each seat's own start, so a visit knows its shop day (a seat holds only its minute). */
+const SEAT_START = new WeakMap<Seat, string>();
 
+/** One seat of Георги's book (`visitSeat`), a guest named «Гост» when the spec gives none. */
 function seat(startIso: string, spec: SeatSpec = {}): Seat {
-  return Seat.of({
-    id: unwrap(SeatId.create(spec.id ?? 'seat-1')),
-    subject: spec.guest
-      ? SeatSubject.anonymous(unwrap(SeatLabel.create(spec.who ?? 'Гост')))
-      : SeatSubject.account(
-          unwrap(UserId.create(spec.who ?? GEORGI)),
-          spec.relationship ?? 'self',
-        ),
-    serviceId: unwrap(ServiceId.create(spec.service ?? 'svc-fade')),
-    variantId: null,
-    barberId: unwrap(BarberId.create(spec.barber ?? 'barber-ivan')),
-    terms: unwrap(
-      ServiceTerms.fromMinorUnits(spec.priceMinor ?? 2750, 'EUR', 30),
-    ),
-    startsAt: at(startIso),
-    outcome: spec.outcome ?? SEAT_SCHEDULED,
+  const built = visitSeat(startIso, {
+    ...spec,
+    who: spec.who ?? (spec.guest ? 'Гост' : GEORGI),
   });
+  SEAT_START.set(built, startIso);
+  return built;
 }
 
+const seatWorked = (at: UtcEpochMs): SeatOutcome => SeatOutcome.worked(at);
+const seatNoShow = (at: UtcEpochMs): SeatOutcome => SeatOutcome.noShow(at);
+
+/** A seat called off — by whom, for which stored reason. */
+function seatCancelled(
+  at: UtcEpochMs,
+  by: 'client' | 'staff',
+  reason: { readonly kind: string },
+  window: null,
+): SeatOutcome {
+  return SeatOutcome.cancelled(
+    at,
+    by === 'client' ? CancelledBy.Client : CancelledBy.Staff,
+    SeatOutcome.reasonOf(reason.kind) ?? CancellationReason.Unspecified,
+    window,
+  );
+}
+
+/**
+ * A flat visit at the centre (`visitOf`), on its first seat's day, in
+ * `status`. A cancelled visit's `reason` is the legacy whole-visit word: the
+ * flat document keeps the reason on each SEAT (`seat()`'s outcome), so the
+ * word here only names the case.
+ */
 function visit(
   id: string,
   seats: readonly Seat[],
-  status: AppointmentStatus,
-  extras: { readonly note?: string; readonly discounted?: boolean } = {},
+  status: { readonly kind: VisitStatusSpec; readonly reason?: string },
+  extras: {
+    readonly note?: string;
+    readonly discounted?: boolean;
+    readonly vouchers?: readonly VoucherRedemption[];
+  } = {},
 ): Appointment {
-  const appointment = unwrap(
-    Appointment.reconstitute({
-      id,
-      locationId: 'loc-center',
-      seats: [...seats],
-      status,
-      contact:
-        extras.note === undefined
-          ? null
-          : unwrap(
-              BookingContact.create({
-                name: 'Георги Петров',
-                phone: '+359881234567',
-                email: null,
-                note: extras.note,
-              }),
-            ),
-    }),
+  const first = seats[0];
+  const built = visitOf(
+    id,
+    'loc-center',
+    seats,
+    status.kind,
+    (first === undefined ? null : SEAT_START.get(first)) ??
+      '2026-09-04T10:00:00',
+    {
+      note: extras.note,
+      discountAtIso: extras.discounted ? '2026-09-04T10:40:00' : undefined,
+    },
   );
-  if (!extras.discounted) return appointment;
-  return appointment.withDiscounts([
-    AppliedDiscount.of({
-      id: 'code:FIRST10',
-      source: 'code',
-      label: 'FIRST10',
-      value: unwrap(CouponValue.percentOff(10)),
-      code: 'FIRST10',
-      appliedAt: at('2026-09-04T10:40:00'),
-    }),
-  ]);
+  return extras.vouchers === undefined
+    ? built
+    : { ...built, voucherRedemptions: extras.vouchers };
 }
 
-const WORKED_AT = at('2026-09-04T10:40:00').toMillis();
+const WORKED_AT = sofia('2026-09-04T10:40:00');
 
 /** Георги's last visit: a fade with Иван at the centre, in his own words. */
 const LAST_VISIT = visit(
@@ -228,7 +205,7 @@ describe('visitRowOf · the staff card', () => {
     expect(row).toEqual({
       id: 'appt-sep',
       kind: 'visit',
-      startMs: at('2026-09-04T10:00:00').toMillis(),
+      startMs: sofia('2026-09-04T10:00:00'),
       sectionKey: '2026',
       upcoming: false,
       // Under a year the tile says the month, from the catalogue's table
@@ -260,7 +237,7 @@ describe('visitRowOf · the staff card', () => {
       },
       marks: [{ icon: 'client.photos', label: '1 снимка', count: 1 }],
       outcome: 'worked',
-      status: 'completed',
+      status: 'COMPLETED',
       accessibleName: EURO(
         'Фейд, 4 септември в 10:00, Иван, Център, 27,50 €, 1 снимка, от клиента: „Къса отстрани, по-дълго отгоре“',
       ),
@@ -288,7 +265,7 @@ describe('visitRowOf · the staff card', () => {
         seat('2026-07-16T10:00:00', {
           priceMinor: 1750,
           outcome: seatCancelled(
-            at('2026-07-15T18:00:00').toMillis(),
+            sofia('2026-07-15T18:00:00'),
             'client',
             { kind: 'client_changed_plans' },
             null,
@@ -326,7 +303,7 @@ describe('visitRowOf · the staff card', () => {
       [
         seat('2026-07-18T10:00:00', {
           outcome: seatCancelled(
-            at('2026-07-17T09:00:00').toMillis(),
+            sofia('2026-07-17T09:00:00'),
             'staff',
             { kind: 'staff_shop_closure' },
             null,
@@ -348,7 +325,7 @@ describe('visitRowOf · the staff card', () => {
         seat('2026-07-16T10:00:00', {
           id: 'seat-georgi-cancelled',
           outcome: seatCancelled(
-            at('2026-07-15T18:00:00').toMillis(),
+            sofia('2026-07-15T18:00:00'),
             'client',
             { kind: 'client_changed_plans' },
             null,
@@ -361,7 +338,7 @@ describe('visitRowOf · the staff card', () => {
           service: 'svc-beard',
           barber: 'barber-petar',
           outcome: seatCancelled(
-            at('2026-07-15T18:00:00').toMillis(),
+            sofia('2026-07-15T18:00:00'),
             'client',
             { kind: 'client_changed_plans' },
             null,
@@ -381,7 +358,7 @@ describe('visitRowOf · the staff card', () => {
       'appt-jul-no-show',
       [
         seat('2026-07-07T10:00:00', {
-          outcome: seatNoShow(at('2026-07-07T10:20:00').toMillis()),
+          outcome: seatNoShow(sofia('2026-07-07T10:20:00')),
         }),
       ],
       { kind: 'no_show' },
@@ -615,7 +592,7 @@ describe('visitRowOf · the staff card', () => {
         seat('2025-03-06T10:00:00', {
           barber: 'barber-gone',
           service: 'svc-gone',
-          outcome: seatWorked(at('2025-03-06T10:40:00').toMillis()),
+          outcome: seatWorked(sofia('2025-03-06T10:40:00')),
         }),
       ],
       { kind: 'completed' },
@@ -700,24 +677,23 @@ describe('visitRowOf · the staff card', () => {
   });
 
   describe('a voucher', () => {
-    const redemption = (reversed: boolean) => {
-      const drawn = VoucherRedemption.of({
-        voucherId: 'voucher-1',
-        code: 'GIFT-50',
-        amount: unwrap(Money.fromMinorUnitsAndCode(2750, 'EUR')),
-        balanceAfter: unwrap(Money.fromMinorUnitsAndCode(2250, 'EUR')),
-        appliedAt: at('2026-09-04T10:40:00'),
-      });
-      return reversed ? drawn.reversed(at('2026-09-04T10:45:00')) : drawn;
-    };
+    const redemption = (reversed: boolean): VoucherRedemption => ({
+      voucherId: GiftVoucherId.of('voucher-1'),
+      code: VoucherCode.of('GIFT-50'),
+      amountCents: cents(2750),
+      balanceAfterCents: cents(2250),
+      currency: EUR,
+      appliedAtUtcMs: sofia('2026-09-04T10:40:00'),
+      reversedAtUtcMs: reversed ? sofia('2026-09-04T10:45:00') : null,
+    });
 
     it('marks a visit a voucher paid for, after its photos and its discount', () => {
       const paid = visit(
         'appt-voucher',
         [seat('2026-09-04T10:00:00', { outcome: seatWorked(WORKED_AT) })],
         { kind: 'completed' },
-        { discounted: true },
-      ).withVoucherRedemptions([redemption(false)]);
+        { discounted: true, vouchers: [redemption(false)] },
+      );
       const row = visitRowOf(paid, staffOptions({ photoCount: 2 }), LOOKUP);
       expect(row.marks).toEqual([
         { icon: 'client.photos', label: '2 снимки', count: 2 },
@@ -738,18 +714,20 @@ describe('visitRowOf · the staff card', () => {
         'appt-voucher-reversed',
         [seat('2026-09-04T10:00:00', { outcome: seatWorked(WORKED_AT) })],
         { kind: 'completed' },
-      ).withVoucherRedemptions([redemption(true)]);
+        { vouchers: [redemption(true)] },
+      );
       expect(visitRowOf(reversed, staffOptions(), LOOKUP).marks).toEqual([]);
 
       const missed = visit(
         'appt-voucher-missed',
         [
           seat('2026-09-04T10:00:00', {
-            outcome: seatNoShow(at('2026-09-04T10:20:00').toMillis()),
+            outcome: seatNoShow(sofia('2026-09-04T10:20:00')),
           }),
         ],
         { kind: 'no_show' },
-      ).withVoucherRedemptions([redemption(false)]);
+        { vouchers: [redemption(false)] },
+      );
       expect(visitRowOf(missed, staffOptions(), LOOKUP).marks).toEqual([]);
     });
 
@@ -770,7 +748,8 @@ describe('visitRowOf · the staff card', () => {
           }),
         ],
         { kind: 'completed' },
-      ).withVoucherRedemptions([redemption(false)]);
+        { vouchers: [redemption(false)] },
+      );
       expect(
         visitRowOf(party, staffOptions({ subjectUserId: IVO }), LOOKUP).marks,
       ).toEqual([]);
@@ -784,7 +763,8 @@ describe('visitRowOf · the staff card', () => {
         'appt-voucher-older',
         [seat('2026-09-04T10:00:00', { outcome: seatWorked(WORKED_AT) })],
         { kind: 'completed' },
-      ).withVoucherRedemptions([redemption(false)]);
+        { vouchers: [redemption(false)] },
+      );
       expect(
         visitRowOf(paid, staffOptions({ words: older }), LOOKUP).marks,
       ).toEqual([]);
@@ -852,7 +832,7 @@ describe('visitRowOf · the client’s own list', () => {
     expect(row).toEqual({
       id: 'appt-sep',
       kind: 'visit',
-      startMs: at('2026-09-04T10:00:00').toMillis(),
+      startMs: sofia('2026-09-04T10:00:00'),
       sectionKey: '2026-09',
       upcoming: false,
       tile: { caption: 'пт', day: 4, tone: 'past' },
@@ -872,7 +852,7 @@ describe('visitRowOf · the client’s own list', () => {
       trailingFact: null,
       marks: [],
       outcome: 'worked',
-      status: 'completed',
+      status: 'COMPLETED',
       accessibleName: 'Фейд, 4 септември в 10:00, Иван',
       // The id every client spec and e2e reads (§5.3.5).
       testId: 'appointment-row',
@@ -885,7 +865,7 @@ describe('visitRowOf · the client’s own list', () => {
       [
         seat('2026-07-16T10:00:00', {
           outcome: seatCancelled(
-            at('2026-07-15T18:00:00').toMillis(),
+            sofia('2026-07-15T18:00:00'),
             'client',
             { kind: 'unspecified' },
             null,
@@ -896,7 +876,7 @@ describe('visitRowOf · the client’s own list', () => {
     );
     const row = visitRowOf(cancelled, clientOptions(), LOOKUP);
     expect(row.struck).toBe(true);
-    expect(row.status).toBe('cancelled');
+    expect(row.status).toBe('CANCELLED');
     expect(row.lines).toEqual([{ text: 'Иван · 10:00' }]);
     expect(row.accessibleName).toBe('Фейд, 16 юли в 10:00, Иван, Отказан');
 
@@ -904,7 +884,7 @@ describe('visitRowOf · the client’s own list', () => {
       'appt-missed',
       [
         seat('2026-07-07T10:00:00', {
-          outcome: seatNoShow(at('2026-07-07T10:20:00').toMillis()),
+          outcome: seatNoShow(sofia('2026-07-07T10:20:00')),
         }),
       ],
       { kind: 'no_show' },
@@ -1013,7 +993,7 @@ describe('visitWordsOf', () => {
           waiting.unknownService,
           waiting.waiting,
           waiting.name('S', 'W'),
-          ...DAYPARTS.map((part) => waiting.daypart(part)),
+          ...Daypart.ALL.map((part) => waiting.daypart(part)),
           waiting.moreDays(2),
           waiting.moreRequests(1),
         ].every((word) => word.length > 0),
@@ -1076,43 +1056,11 @@ describe('waitlistRowOf', () => {
       }[];
     }[],
   ): WaitlistRequest {
-    return unwrap(
-      WaitlistRequest.reconstitute({
-        id: 'waitlist-1',
-        ownerId: GEORGI,
-        locationId: null,
-        when: {
-          days: days.map((day) => ({
-            dayKey: day.dayKey,
-            windows: day.windows ?? [],
-          })),
-        },
-        cart: {
-          seats: [
-            {
-              seatKey: 'self',
-              lines: [
-                {
-                  id: 'line-1',
-                  serviceId: 'svc-fade',
-                  variantId: null,
-                  barberId: null,
-                },
-                {
-                  id: 'line-2',
-                  serviceId: 'svc-fade',
-                  variantId: null,
-                  barberId: null,
-                },
-              ],
-            },
-          ],
-          nextSequence: 3,
-        },
-        status: 'open',
-        createdAtIso: '2026-09-20T12:00:00+03:00',
-        zone: ZONE,
-      }),
+    return waitlistOf(
+      'waitlist-1',
+      days,
+      ['svc-fade', 'svc-fade'],
+      '2026-09-20T12:00:00+03:00',
     );
   }
 
@@ -1131,7 +1079,7 @@ describe('waitlistRowOf', () => {
     expect(row).toEqual({
       id: 'waitlist-1',
       kind: 'waitlist',
-      startMs: at('2026-10-01T00:00:00').toMillis(),
+      startMs: sofia('2026-10-01T00:00:00'),
       sectionKey: 'upcoming',
       upcoming: true,
       tile: null,
@@ -1174,7 +1122,7 @@ describe('waitlistRowOf', () => {
     expect(row.accessibleName).toBe(
       'Фейд, чака свободен час: четвъртък, 12 октомври, 14 октомври, 20 октомври и 22 октомври',
     );
-    expect(row.startMs).toBe(at('2026-10-01T00:00:00').toMillis());
+    expect(row.startMs).toBe(sofia('2026-10-01T00:00:00'));
   });
 
   it('prints a run of days through the house range, one face at both ends', () => {

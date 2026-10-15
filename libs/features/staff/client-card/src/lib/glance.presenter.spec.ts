@@ -1,24 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { AccountStatus, User, UserId } from '@creativo/application/accounts';
-import {
+import { AccountStatus, User } from '@creativo/application/accounts';
+import { BookingLifecycle } from '@core/components';
+import type {
   Appointment,
-  BookingContact,
-  type ClientStatsRecord,
-  SEAT_SCHEDULED,
-  Seat,
-  SeatId,
-  SeatSubject,
-} from '@creativo/application/booking';
+  ClientStatsRecord,
+  GiftVoucher,
+} from '@core/entities';
+import { AppointmentId, AppointmentPhotoId } from '@core/primitives';
 import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
-import {
-  type GiftVoucher,
+  type GiftVoucherFields,
   type LoyaltyAccount,
   StreakDefinition,
-  giftVoucherFromDocument,
 } from '@creativo/application/engagement';
 import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import {
@@ -58,12 +50,14 @@ import {
 import { medalRingVm } from './medals.presenter';
 import {
   GEORGI,
+  GEORGI_CUSTOMER_ID,
   GEORGI_GRANT,
   GEORGI_NEXT_ID,
   GEORGI_NOTE,
   GEORGI_PREVIOUS_MS,
   GUEST,
   MARTIN,
+  MARTIN_CUSTOMER_ID,
   MARTIN_PREVIOUS_MS,
   NBSP_EURO,
   NOW_MS,
@@ -71,11 +65,14 @@ import {
   achievementsContextOf,
   achievementsDataOf,
   at,
+  contactOf,
+  factMs,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
   georgiPhotos,
   georgiUser,
+  giftVoucherOf,
   loyaltyCatalogWith,
   martinContext,
   martinHistory,
@@ -83,8 +80,12 @@ import {
   martinWaitlist,
   must,
   pausedUntilOctober,
+  seatOf,
+  sofia,
   statsOf,
   subjectOf,
+  visitOf,
+  wallOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
 
@@ -341,10 +342,7 @@ describe('the hero (A)', () => {
     ]);
     expect(
       heroOf({
-        stats: {
-          ...GEORGI_STATS,
-          lifetime: { ...GEORGI_STATS.lifetime, visitsCompleted: 0 },
-        },
+        stats: { ...GEORGI_STATS, lifetimeVisitsCompleted: 0 },
       }).line,
     ).toEqual([{ text: 'Първо посещение', fact: false }]);
     expect(
@@ -470,14 +468,15 @@ describe('the hero (A)', () => {
 describe('the capsules (B)', () => {
   const noShowsOf = (...days: readonly string[]): ClientStatsRecord => ({
     ...MARTIN_STATS,
-    last365: {
-      ...MARTIN_STATS.last365,
-      noShows: days.map((day, index) => ({
-        appointmentId: must(MARTIN_STATS.last365.visitsCompleted.at(index))
+    last365NoShows: days.map((day, index) => {
+      const wall = wallOf(`${day}T12:30:00`);
+      return {
+        appointmentId: must(MARTIN_STATS.last365VisitsCompleted.at(index))
           .appointmentId,
-        atMs: at(`${day}T12:30:00`).toMillis(),
-      })),
-    },
+        localDate: wall.localDate,
+        startMinutes: wall.minute,
+      };
+    }),
   });
   const capsules = (stats: ClientStatsRecord | null) =>
     overviewCapsulesVm({
@@ -747,42 +746,26 @@ describe('the birthday card (BD)', () => {
 
 /** A fade of Георги's still to come, with Нико, asked for and not yet confirmed. */
 function fadeOn(id: string, iso: string): Appointment {
-  const valueOf = <T>(result: {
-    isFailure(): boolean;
-    readonly value?: T;
-  }): T => {
-    if (result.isFailure() || result.value === undefined) {
-      throw new Error('bad fixture');
-    }
-    return result.value;
-  };
-  const appointment = Appointment.reconstitute({
+  const wall = wallOf(iso);
+  const booked = sofia('2026-09-28T10:50:00');
+  return visitOf({
     id,
-    locationId: 'loc-center',
+    localDate: wall.localDate,
     seats: [
-      Seat.of({
-        id: valueOf(SeatId.create(`${id}-s1`)),
-        subject: SeatSubject.account(valueOf(UserId.create(GEORGI)), 'self'),
-        serviceId: valueOf(ServiceId.create('svc-fade')),
-        variantId: null,
-        barberId: valueOf(BarberId.create('niko')),
-        terms: valueOf(ServiceTerms.fromMinorUnits(1750, 'EUR', 45)),
-        startsAt: at(iso),
-        outcome: SEAT_SCHEDULED,
+      seatOf({
+        id: `${id}-s1`,
+        who: GEORGI,
+        serviceId: 'svc-fade',
+        barberId: 'niko',
+        minutes: 45,
+        priceMinor: 1750,
+        startMinutes: wall.minute,
       }),
     ],
-    status: { kind: 'pending' },
-    contact: valueOf(
-      BookingContact.create({
-        name: 'Георги Петров',
-        phone: '+359881234567',
-        email: null,
-        note: null,
-      }),
-    ),
-    bookedAt: at('2026-09-28T10:50:00'),
+    lifecycle: BookingLifecycle.pending(booked),
+    contact: contactOf('Георги Петров', '+359881234567', null),
+    bookedAtUtcMs: booked,
   });
-  return valueOf(appointment);
 }
 
 describe('«Посещения» (H)', () => {
@@ -792,6 +775,7 @@ describe('«Посещения» (H)', () => {
     visitCardsVm({
       appointments: GEORGI_BOOK,
       subjectUserId: GEORGI,
+      subjectCustomerId: GEORGI_CUSTOMER_ID,
       context: georgiContext(),
       photos: georgiPhotos(),
       waitlist: [],
@@ -877,12 +861,16 @@ describe('«Посещения» (H)', () => {
     const shot = must(georgiPhotos().at(1));
     const many = Array.from({ length: 5 }, (_, index) => ({
       ...shot,
-      photoId: `p-${index}`,
+      id: AppointmentPhotoId.of(`p-${index}`),
     }));
     const vm = georgi({
       photos: [
         must(georgiPhotos().at(0)),
-        { ...shot, photoId: 'p-ahead', appointmentId: GEORGI_NEXT_ID },
+        {
+          ...shot,
+          id: AppointmentPhotoId.of('p-ahead'),
+          appointmentId: AppointmentId.of(GEORGI_NEXT_ID),
+        },
         ...many,
       ],
     });
@@ -932,6 +920,7 @@ describe('«Посещения» (H)', () => {
     visitCardsVm({
       appointments: MARTIN_BOOK,
       subjectUserId: MARTIN,
+      subjectCustomerId: MARTIN_CUSTOMER_ID,
       context: martinContext(),
       photos: [],
       waitlist: [martinWaitlist()],
@@ -1013,19 +1002,16 @@ function ruleWith(
   return rule.value;
 }
 
-/** The fixture's vouchers, read as production reads them. */
+/** The fixture's vouchers, one field of a document edited, as flat bodies. */
 function voucherOf(
   id: string,
-  edit: Readonly<Record<string, unknown>> = {},
+  edit: Partial<GiftVoucherFields> = {},
 ): GiftVoucher {
   const document = must(
     new Map(Object.entries(loyaltyFixtures.vouchers)).get(id),
     `the voucher ${id}`,
   );
-  return must(
-    giftVoucherFromDocument(id, { ...document, ...edit }),
-    `the voucher ${id}, parsed`,
-  );
+  return giftVoucherOf(id, { ...document, ...edit });
 }
 
 /** Георги's three: 25,00 € left of 50,00 €, one spent, one void. */
@@ -1049,7 +1035,7 @@ function loyaltyOf(
     account: LOYALTY.account,
     catalog: LOYALTY.catalog,
     flags: ALL_FLAGS,
-    visitsMs: GEORGI_STATS.last365.visitsCompleted.map((fact) => fact.atMs),
+    visitsMs: GEORGI_STATS.last365VisitsCompleted.map(factMs),
     inChairToday: false,
     paused: false,
     today: TODAY,

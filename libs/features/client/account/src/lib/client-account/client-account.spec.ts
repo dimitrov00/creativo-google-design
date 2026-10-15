@@ -8,15 +8,9 @@ import {
 } from '@jsverse/transloco';
 import { NEVER, Observable, of } from 'rxjs';
 import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
-import {
   AVATAR_UPLOADER,
   AvatarUploader,
   User,
-  UserId,
   ZonedDateTime,
 } from '@creativo/application/accounts';
 import {
@@ -28,14 +22,28 @@ import {
   roleFromPrimitive,
 } from '@creativo/application/identity';
 import {
-  APPOINTMENT_REPOSITORY,
-  Appointment,
-  Seat,
-  SeatId,
-  SeatSubject,
-  TimeSlot,
-} from '@creativo/application/booking';
-import { NOTIFICATION_READER } from '@creativo/application/notifications';
+  APPOINTMENT_READ_PORTS,
+  INBOX_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { AppointmentReadPorts } from '@core/ports';
+import type { Appointment } from '@core/entities';
+import { Seat } from '@core/components';
+import {
+  AppointmentId,
+  BusyKey,
+  LocalDate,
+  RepositoryError,
+  Result as EcsResult,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  appointmentFixture,
+  memoryAppointmentReadPorts,
+  memoryInboxPorts,
+  minute,
+  seatFixture,
+  unwrapOk,
+} from '@core/testing';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { ClientAccount } from './client-account';
@@ -68,31 +76,29 @@ function user(birthDate?: string): User {
   );
 }
 
+/**
+ * The client's confirmed visit at 10:00 on 2030-01-01 on the shop's wall
+ * clock, its instant placed in the shop's `zone` (the one field that zone
+ * reaches: a temporal entity stores no zone of its own).
+ */
 function appointment(zone = 'Europe/Sofia'): Appointment {
-  const timeSlot = unwrap(
-    TimeSlot.create({
-      startIso: '2030-01-01T10:00:00',
-      endIso: '2030-01-01T10:30:00',
-      zone,
-    }),
-  );
-  const seat = Seat.of({
-    id: unwrap(SeatId.create('seat_1')),
-    subject: SeatSubject.account(unwrap(UserId.create('user_1')), 'self'),
-    serviceId: unwrap(ServiceId.create('service_1')),
-    variantId: null,
-    barberId: unwrap(BarberId.create('barber_1')),
-    terms: unwrap(ServiceTerms.fromMinorUnits(1500, 'EUR', 30)),
-    startsAt: timeSlot.start,
+  const day = unwrapOk(LocalDate.parse('2030-01-01'));
+  const seat = seatFixture({ startMinutes: minute(600) });
+  return appointmentFixture({
+    id: AppointmentId.of('appt_1'),
+    localDate: day,
+    startMinutes: seat.startMinutes,
+    endMinutes: Seat.endMinutes(seat),
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(
+        day,
+        seat.startMinutes,
+        unwrapOk(ZonedTimeSystem.checkZone(zone)),
+      ),
+    ),
+    seats: [seat],
+    busyKeys: [BusyKey.of(seat.barberId, day)],
   });
-  return unwrap(
-    Appointment.reconstitute({
-      id: 'appt_1',
-      locationId: 'location_1',
-      seats: [seat],
-      status: { kind: 'confirmed' },
-    }),
-  );
 }
 
 @Injectable()
@@ -141,7 +147,8 @@ function accountStateStub(options: {
 async function configure(
   accountState: AccountStateService,
   upcoming:
-    readonly Appointment[] | Observable<Result<readonly Appointment[], never>>,
+    | readonly Appointment[]
+    | Observable<EcsResult<readonly Appointment[], RepositoryError>>,
   options: {
     readonly hasPhoto?: boolean;
     /** Stands in for Storage outright — for the specs that count or sequence its answers. */
@@ -149,8 +156,10 @@ async function configure(
   } = {},
 ): Promise<ComponentFixture<ClientAccount>> {
   const upcoming$ = Array.isArray(upcoming)
-    ? of(ok(upcoming))
-    : (upcoming as Observable<Result<readonly Appointment[], never>>);
+    ? of(EcsResult.ok(upcoming))
+    : (upcoming as Observable<
+        EcsResult<readonly Appointment[], RepositoryError>
+      >);
   await TestBed.configureTestingModule({
     imports: [ClientAccount],
     providers: [
@@ -171,18 +180,17 @@ async function configure(
       },
       {
         // The shell menu's notifications row reads the inbox.
-        provide: NOTIFICATION_READER,
-        useValue: {
-          list: () => of(ok([])),
-          markRead: async () => ok(undefined),
-          markAllRead: async () => ok(undefined),
-        },
+        provide: INBOX_PORTS,
+        useValue: memoryInboxPorts(new Map()),
       },
       {
-        provide: APPOINTMENT_REPOSITORY,
+        // The page and the shell menu read the account's live bookings —
+        // the one member wrapped, so a spec can hold its answer back.
+        provide: APPOINTMENT_READ_PORTS,
         useValue: {
-          observeUpcomingFor: () => upcoming$,
-        },
+          ...memoryAppointmentReadPorts([]),
+          observeUpcoming: () => upcoming$,
+        } satisfies AppointmentReadPorts,
       },
       {
         provide: AVATAR_UPLOADER,

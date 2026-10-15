@@ -27,6 +27,7 @@ import {
   locationFixture,
   serviceFixture,
   termsFixture,
+  resolvedCustomerIds,
 } from '@core/testing';
 import {
   BookingDecisionSystem,
@@ -207,6 +208,7 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
               ),
               nextId: () => 'seat',
               ownerUserId: UserId.of('user-1'),
+              customerIds: resolvedCustomerIds([UserId.of('user-1')]),
               termsOverrides: [],
               standing: [],
               stood: [],

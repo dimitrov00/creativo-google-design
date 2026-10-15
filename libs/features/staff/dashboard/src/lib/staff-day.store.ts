@@ -9,73 +9,88 @@ import {
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { combineLatest, from, map, of, switchMap } from 'rxjs';
+import { type Observable, combineLatest, from, map, of, switchMap } from 'rxjs';
 import { settledViewTransition } from './shared/view-transition';
 import {
   AppointmentId,
-  BarberId as EcsBarberId,
-  DurationMinutes,
+  AppointmentPhotoId,
+  BarberId,
+  BusyKey,
+  CouponId,
+  CustomerId,
   EndMinute,
+  ExceptionEffect,
+  GrantStatus,
   LocalDate,
-  MinuteCount,
+  LocationId,
   MinuteOfDay,
   OperationId,
+  type RepositoryError,
+  Result,
+  ScheduleExceptionId,
+  SchedulingError,
   type TimeZone,
+  UserId,
   UtcEpochMs,
+  VoucherRefusal,
   defect,
 } from '@core/primitives';
-import { MinuteRange, type ShopNow, type WallTime } from '@core/components';
 import {
+  Combinability,
+  CouponOccasion,
+  ExceptionEffectRule,
+  GrantExpiry,
+  MinuteRange,
+  PhotoOrigin,
+  type ShopNow,
+  VoucherCode,
+  type WallTime,
+} from '@core/components';
+import type {
+  Appointment,
+  AppointmentNote,
+  AppointmentPhoto,
+  BarberBusyDay,
+  BarberSchedule,
+  Coupon,
+  CouponGrant,
+  GiftVoucher,
+  ScheduleException,
+  ScheduleExceptionMeta,
+  ShopLocation,
+} from '@core/entities';
+import {
+  AvailabilitySystem,
+  CouponGrantSystem,
   GridLayoutSystem,
   type LandedRevision,
   type LaneGap as EcsLaneGap,
-  type OccupyingSeat,
-  type OccupyingVisit,
+  RosterSystem,
+  ScheduleExceptionSystem,
   StaffIntentSystem,
   type UnsettledName,
+  VoucherSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  APPOINTMENT_NOTES,
-  APPOINTMENT_PHOTOS,
-  type AppointmentPhoto,
-  APPOINTMENT_REPOSITORY,
-  AVAILABILITY_READER,
-  Appointment,
   BOOKING_GATEWAY,
   BookingGatewayError,
   type CommitBookingRequest,
-  CalendarDay,
-  Interval,
-  LocalTimeRange,
-  SCHEDULE_EXCEPTION_WRITER,
-  ScheduleException,
-  ScheduleExceptionId,
   type RecordSeatTipRequest,
   type StaffEditAppointmentRequest,
   type TransitionAppointmentRequest,
-  Result,
-  ZonedDateTime,
-  ok,
-  toEcsBookingStatus,
 } from '@creativo/application/booking';
 import { downscaleImage } from '@creativo/infrastructure/storage';
-import { BarberId, LocationId } from '@creativo/application/catalog';
+import { AUTH_GATEWAY } from '@creativo/application/identity';
 import {
-  COUPON_GRANT_REPOSITORY,
-  COUPON_READER,
-  type Coupon,
-  CouponCombinability,
-  type CouponGrantWithCoupon,
-  GIFT_VOUCHER_READER,
-  type GiftVoucher,
-} from '@creativo/application/engagement';
-import { UserId } from '@creativo/application/identity';
-import {
-  CLOCK,
-  ID_GENERATOR,
-  RepositoryError,
-} from '@creativo/application/shared';
+  APPOINTMENT_NOTE_PORTS,
+  APPOINTMENT_PHOTO_PORTS,
+  APPOINTMENT_READ_PORTS,
+  COUPON_VOUCHER_PORTS,
+  SCHEDULE_EXCEPTION_PORTS,
+  SCHEDULING_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { CLOCK, ID_GENERATOR } from '@creativo/application/shared';
 import {
   type VisitEditorGrantOption,
   type VisitEditorPromoOption,
@@ -88,19 +103,18 @@ export const STAFF_ZONE = 'Europe/Sofia';
 
 /**
  * The shop's day a held coupon lapses on (`YYYY-MM-DD`), or `null` for one
- * that never does. The grant's expiry is an instant the adapter rebuilds
- * in UTC; the card prints a DAY on the shop's calendar («до 28.10»), so
- * the instant is read in the shop's zone first — a grant lapsing at
- * 00:30 Sofia is one more day held here, not one less.
+ * that never does. The grant's expiry is an instant (`grantExpiresAtUtcMs`);
+ * the card prints a DAY on the shop's calendar («до 28.10»), so the instant
+ * is read in the shop's zone — a grant lapsing at 00:30 Sofia is one more
+ * day held here, not one less.
  */
 export function grantExpiresOn(
-  grant: CouponGrantWithCoupon['grant'],
+  grant: CouponGrant,
+  timeZone: TimeZone = STAFF_TIME_ZONE,
 ): string | null {
-  if (grant.state.kind !== 'active') return null;
-  const { expiration } = grant.state;
-  if (expiration.kind !== 'expires_at') return null;
-  const local = ZonedDateTime.fromMillis(expiration.at.toMillis(), STAFF_ZONE);
-  return (local.isSuccess() ? local.value : expiration.at).toISODate();
+  if (grant.grantStatus !== GrantStatus.Active) return null;
+  if (grant.grantExpiry !== GrantExpiry.ExpiresAt) return null;
+  return ZonedTimeSystem.toLocal(grant.grantExpiresAtUtcMs, timeZone).localDate;
 }
 
 /**
@@ -139,6 +153,35 @@ export type StaffIntent = StaffEditAppointmentRequest & {
  * name, and small enough to match in memory without a pause.
  */
 const SEARCH_WINDOW_PER_SIDE = 300;
+
+/** A held grant and the coupon it was issued from — one row of the «Отстъпка» menu. */
+interface HeldGrant {
+  readonly grant: CouponGrant;
+  readonly coupon: Coupon;
+}
+
+/** The sheet's word for each refusal a typed voucher can earn. */
+const VOUCHER_REFUSAL_WORD = {
+  [VoucherRefusal.Void]: 'void',
+  [VoucherRefusal.Expired]: 'expired',
+  [VoucherRefusal.Empty]: 'empty',
+} as const satisfies Record<VoucherRefusal, 'void' | 'expired' | 'empty'>;
+
+/** The largest visit photo the shop takes, after downscaling — today's limit. */
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+
+/**
+ * THE UPLOAD GUARD — run BEFORE the bytes go up (`media.port.ts`: limits
+ * are a guard before the upload, never the adapter's): what is not an image
+ * is refused, and so is one over the limit. `null` lets it through.
+ */
+export function photoUploadRefusal(
+  image: Blob,
+): 'not_an_image' | 'too_large' | null {
+  if (!image.type.startsWith('image/')) return 'not_an_image';
+  if (image.size > MAX_PHOTO_BYTES) return 'too_large';
+  return null;
+}
 
 /**
  * The renderings the toolbar switches between.
@@ -216,6 +259,17 @@ export function startOfWeek(dayKey: string): string {
   return addDays(dayKey, -weekday);
 }
 
+/**
+ * A stretch of a lane on the absolute timeline — what the sheet draws a
+ * window, a block or a hole from. Read off the shop's wall clock once, by
+ * the store (`ZonedTimeSystem`, the location's zone): the minutes are the
+ * truth (Law 7.3), these are where they fall for the drawing.
+ */
+export interface LaneSpan {
+  readonly startMs: number;
+  readonly endMs: number;
+}
+
 /** One visible day with a lane per chair in scope. */
 export interface StaffDayCell {
   readonly dayKey: string;
@@ -225,7 +279,7 @@ export interface StaffDayCell {
 /**
  * A day's lanes before the clock: each lane's holes, not yet split at now —
  * on the lane's shop day (`day`, `null` for a key that names no day), in its
- * wall-clock minutes (flatten pass, Law 7.3).
+ * wall-clock minutes (Law 7.3).
  */
 interface DayGeometryCell {
   readonly dayKey: string;
@@ -251,32 +305,31 @@ export interface LaneGap {
   readonly sellable: boolean;
 }
 
-/**
- * `YYYY-MM-DD` → `CalendarDay`, or `null` on anything malformed.
- *
- * The key is ours (produced by `CalendarDay.key()` or the `?day=` param), so
- * this is a parse rather than a validation — but a hand-edited URL reaches it,
- * and a bad day must yield no geometry rather than a thrown listener.
- */
 /** One string for one subscription — the days and the chairs it answers. */
 function laneKeyOf(
   days: readonly string[],
-  barbers: readonly { readonly value: string }[],
+  barbers: readonly string[],
 ): string {
-  return `${days.join('|')}#${barbers.map((barber) => barber.value).join('|')}`;
+  return `${days.join('|')}#${barbers.join('|')}`;
 }
 
-function dayFromKey(dayKey: string): CalendarDay | null {
-  const result = CalendarDay.create(dayKey, STAFF_ZONE);
-  return result.isSuccess() ? result.value : null;
+/**
+ * `YYYY-MM-DD` → the shop day, or `null` on anything malformed. The key is
+ * ours (the `?day=` param, `addDays`), so this is a parse rather than a
+ * validation — but a hand-edited URL reaches it, and a bad day must yield
+ * no geometry rather than a thrown listener.
+ */
+function localDateOf(dayKey: string): LocalDate | null {
+  const day = LocalDate.parse(dayKey);
+  return day.ok ? day.value : null;
 }
 
 /**
  * What actually occupied a chair, from the appointments themselves.
  *
  * ### Why not `barberBusy`
- * The projection keeps only `pending`/`confirmed` (`rebuild-busy.ts`) and
- * TTLs thirty days after the day it describes. That is exactly right for its
+ * The projection keeps only `PENDING`/`CONFIRMED` (`rebuildBusy`) and TTLs
+ * thirty days after the day it describes. That is exactly right for its
  * job — `/book` reads it anonymously and it must mean "what can I sell" —
  * and it makes it structurally unable to describe a past day: by close of
  * business every completed and no-showed visit has dropped out of it, so it
@@ -285,10 +338,10 @@ function dayFromKey(dayKey: string): CalendarDay | null {
  * per chair on any day older than a month.
  *
  * The lane already holds every appointment, untruncated and untimed-out.
- * This rebuilds the SAME envelope `busyContributionsOf` writes — the seat's
- * slot padded by its own setup and cleanup — so the two sources coincide
- * exactly wherever both exist, and there is no padded/unpadded seam at the
- * clock.
+ * This rebuilds the SAME envelope the busy projection writes — the seat's
+ * slot padded by its own setup and cleanup (`GridLayoutSystem`) — so the
+ * two sources coincide exactly wherever both exist, and there is no
+ * padded/unpadded seam at the clock.
  *
  * A CANCELLED appointment contributes nothing: the chair genuinely went
  * empty, and that lost hour becoming visible is the point. Everything else
@@ -296,45 +349,55 @@ function dayFromKey(dayKey: string): CalendarDay | null {
  * especially: nobody came, but nobody else could have been booked either.
  *
  * `blocks` are deliberately NOT added. They were already subtracted from
- * `windows` upstream (`availability.ts`), and counting them again would turn
- * every lunch break into idleness.
+ * the windows upstream (`RosterSystem.buildDayWindows`), and counting them
+ * again would turn every lunch break into idleness.
  */
 export function occupiedIntervals(
   appointments: readonly Appointment[],
   barberId: string,
-  busy: readonly Interval[],
-): readonly Interval[] {
+  busy: readonly LaneSpan[],
+): readonly LaneSpan[] {
   const day = dataDayOf(busy, appointments, barberId);
   if (day === null) return [];
-  return intervalsOn(day, occupiedOn(day, appointments, barberId, busy));
+  return intervalsOn(
+    day,
+    occupiedOn(day, appointments, barberId, rangesOn(day, busy)),
+  );
 }
 
-/** What occupied the chair on one lane day, in that day's minutes. */
+/**
+ * What occupied the chair on one lane day, in that day's minutes. The
+ * day's appointments are the visits (an `Appointment` IS an occupying
+ * visit, Law 3); one on another shop day holds nothing here.
+ */
 function occupiedOn(
   day: LaneDay,
   appointments: readonly Appointment[],
   barberId: string,
-  busy: readonly Interval[],
+  busy: readonly MinuteRange[],
 ): readonly MinuteRange[] {
   return GridLayoutSystem.occupiedIntervals(
-    appointments.map((appointment) => toOccupyingVisit(appointment, day)),
-    EcsBarberId.of(barberId),
-    rangesOn(day, busy),
+    appointments.filter(
+      (appointment) => appointment.localDate === day.localDate,
+    ),
+    BarberId.of(barberId),
+    busy,
   );
 }
 
 /**
  * Rostered time minus what is taken — every hole in the chair's day.
  *
- * `busy` arrives ALREADY padded by the barber's turnaround (the reader's own
- * contract), so a gap here is genuinely bookable rather than a sliver that
- * only exists because the padding has not been applied yet. Holes under
- * `GridLayoutSystem.SHORTEST_SELLABLE_MINUTES` (20) are dropped, not drawn quieter: an unsellable
- * two-minute rounding artefact is noise on a surface graded on being scannable.
+ * `busy` arrives ALREADY padded by the barber's turnaround (the store's own
+ * `AvailabilitySystem.paddedBusy`), so a gap here is genuinely bookable
+ * rather than a sliver that only exists because the padding has not been
+ * applied yet. Holes under `GridLayoutSystem.SHORTEST_SELLABLE_MINUTES` (20)
+ * are dropped, not drawn quieter: an unsellable two-minute rounding artefact
+ * is noise on a surface graded on being scannable.
  */
 export function laneGaps(
-  rostered: readonly Interval[],
-  occupied: readonly Interval[],
+  rostered: readonly LaneSpan[],
+  occupied: readonly LaneSpan[],
   nowMs: number,
 ): readonly LaneGap[] {
   // SPLIT AT NOW, then floor — never the other way round
@@ -362,18 +425,20 @@ export function laneGaps(
   );
 }
 
-/* ── The lane geometry's boundary (flatten pass, Law 7.3) ─────────────── */
+/* ── The lane geometry's boundary (Law 7.3) ───────────────────────────── */
 
 /*
  * `GridLayoutSystem` works on ONE shop day's wall clock: a lane is a
  * barber's `LocalDate`, its spans `MinuteRange`s, "now" a `ShopNow`. The
- * store keeps its legacy instants (`Interval`, `LaneGap.startMs`), so it
- * reads them on the shop's calendar here, once per lane, and gives answers
- * back as the caller's OWN instants: every minute an input named maps back
- * to the instant it was read from, the clock's minute to the clock's own
- * instant, and only a minute nobody named (a padded seat's edge) is read off
- * the shop's clock (`ZonedTimeSystem.toUtc`). A lane never leaves its day —
- * one shop day per visit (F-6), and the busy projection clips to it.
+ * roster, the busy projection and the visits all ARE wall-clock minutes;
+ * the sheet draws on instants (`LaneSpan`), so the store reads each minute
+ * back once, through the lane day's frame. A caller handing instants in
+ * (`laneGaps`, `occupiedIntervals`) gets its OWN instants back: every
+ * minute an input named maps back to the instant it was read from, the
+ * clock's minute to the clock's own instant, and only a minute nobody named
+ * is read off the shop's clock (`ZonedTimeSystem.toUtc`). A lane never
+ * leaves its day — one shop day per visit (F-6), and the busy projection
+ * clips to it.
  */
 
 /** The tenant zone, branded — the fallback until the catalogue names a shop's. */
@@ -433,25 +498,28 @@ interface LaneCut {
   readonly ms: number;
 }
 
-/** An IANA zone the legacy catalogue already accepted. */
+/** An IANA zone the catalogue already accepted. */
 function zoneOf(raw: string): TimeZone {
   const zone = ZonedTimeSystem.checkZone(raw);
   if (!zone.ok) defect(`unreachable: an unknown zone ${raw}`);
   return zone.value;
 }
 
-/** A legacy instant on the shop's wall clock. */
-function wallTimeOf(epochMs: number, timeZone: TimeZone): WallTime {
+/** An instant as the brand (a stored or clock instant is a safe integer). */
+function utcMsOf(epochMs: number): UtcEpochMs {
   const instant = UtcEpochMs.of(Math.trunc(epochMs));
   if (!instant.ok) defect(`unreachable: not an instant ${epochMs}`);
-  return ZonedTimeSystem.toLocal(instant.value, timeZone);
+  return instant.value;
+}
+
+/** An instant on the shop's wall clock. */
+function wallTimeOf(epochMs: number, timeZone: TimeZone): WallTime {
+  return ZonedTimeSystem.toLocal(utcMsOf(epochMs), timeZone);
 }
 
 /** "Now" as the shop sees it — derived once per read from the store's clock. */
 function shopNowOf(nowMs: number, timeZone: TimeZone): ShopNow {
-  const instant = UtcEpochMs.of(Math.trunc(nowMs));
-  if (!instant.ok) defect(`unreachable: not an instant ${nowMs}`);
-  return ZonedTimeSystem.shopNow(instant.value, timeZone);
+  return ZonedTimeSystem.shopNow(utcMsOf(nowMs), timeZone);
 }
 
 function startMinuteOf(minute: number): MinuteOfDay {
@@ -470,7 +538,7 @@ function endMinuteOf(minute: number): EndMinute {
 function laneDayOf(
   localDate: LocalDate,
   timeZone: TimeZone,
-  ...lists: readonly (readonly Interval[])[]
+  ...lists: readonly (readonly LaneSpan[])[]
 ): LaneDay {
   const next = LocalDate.addDays(localDate, 1);
   const instants = new Map<number, number>();
@@ -490,9 +558,9 @@ function laneDayOf(
     if (minute !== null && !instants.has(minute)) instants.set(minute, epochMs);
   };
   for (const list of lists) {
-    for (const interval of list) {
-      name(interval.startMs);
-      name(interval.endMs);
+    for (const span of list) {
+      name(span.startMs);
+      name(span.endMs);
     }
   }
   return {
@@ -511,11 +579,11 @@ function wallOn(day: LaneDay, epochMs: number): WallTime {
 
 /**
  * The lane day the data itself is on, for a caller that names none: the
- * first busy span's day, else the first of this barber's seats'. `null` when
- * nothing at all occupied the chair.
+ * first busy span's day, else the first of this barber's visits'. `null`
+ * when nothing at all occupied the chair.
  */
 function dataDayOf(
-  busy: readonly Interval[],
+  busy: readonly LaneSpan[],
   appointments: readonly Appointment[],
   barberId: string,
 ): LaneDay | null {
@@ -525,24 +593,22 @@ function dataDayOf(
     return laneDayOf(wallTimeOf(first.startMs, zone).localDate, zone, busy);
   }
   for (const appointment of appointments) {
-    for (const seat of appointment.seats) {
-      if (seat.barberId.value !== barberId) continue;
-      const start = wallTimeOf(seat.slot.start.toMillis(), zone);
-      return laneDayOf(start.localDate, zone, busy);
+    if (appointment.seats.some((seat) => seat.barberId === barberId)) {
+      return laneDayOf(appointment.localDate, zone, busy);
     }
   }
   return null;
 }
 
-/** Legacy instants as minute ranges of the lane's day, clipped to it. */
+/** Instants as minute ranges of the lane's day, clipped to it. */
 function rangesOn(
   day: LaneDay,
-  intervals: readonly Interval[],
+  spans: readonly LaneSpan[],
 ): readonly MinuteRange[] {
   const out: MinuteRange[] = [];
-  for (const interval of intervals) {
-    const start = wallOn(day, interval.startMs);
-    const end = wallOn(day, interval.endMs);
+  for (const span of spans) {
+    const start = wallOn(day, span.startMs);
+    const end = wallOn(day, span.endMs);
     const from =
       start.localDate < day.localDate
         ? 0
@@ -585,17 +651,30 @@ function instantOn(day: LaneDay, minute: number, cut: LaneCut | null): number {
   return ZonedTimeSystem.startOfLocalDay(next, day.timeZone);
 }
 
-/** Minute ranges of the lane's day back as the caller's instants. */
+/**
+ * A wall-clock reading of the shop — a day and a minute of it (1440: the
+ * closing midnight) — as the instant it names, through the same day frame
+ * the lanes are drawn on, so a visit's block and the lane's spans agree to
+ * the millisecond. A minute inside a spring-forward gap reads as the gap's
+ * end. What the sheet's rows draw a visit's start and end from.
+ */
+export function wallClockInstant(
+  localDate: LocalDate,
+  minute: number,
+  timeZone: TimeZone = STAFF_TIME_ZONE,
+): number {
+  return instantOn(laneDayOf(localDate, timeZone), minute, null);
+}
+
+/** Minute ranges of the lane's day as instants. */
 function intervalsOn(
   day: LaneDay,
   ranges: readonly MinuteRange[],
-): readonly Interval[] {
-  return ranges.map((range) =>
-    Interval.of(
-      instantOn(day, range.startMinutes, null),
-      instantOn(day, range.endMinutes, null),
-    ),
-  );
+): readonly LaneSpan[] {
+  return ranges.map((range) => ({
+    startMs: instantOn(day, range.startMinutes, null),
+    endMs: instantOn(day, range.endMinutes, null),
+  }));
 }
 
 /** The clock's cut of a lane: its minute and instant, on the lane's own day only. */
@@ -619,41 +698,106 @@ function gapsOn(
   }));
 }
 
-/** A legacy figure of whole minutes — positive for a duration, non-negative for a pad. */
-function durationOf(minutes: number): DurationMinutes {
-  const duration = DurationMinutes.of(minutes);
-  if (!duration.ok) defect(`unreachable: a seat of ${minutes} min`);
-  return duration.value;
+/** One chair's day as the roster, the exceptions and the busy projection draw it. */
+interface LaneGeometry {
+  /** The BOOKABLE windows — roster ∩ shop hours − blocks, at the shops the day offers. */
+  readonly rostered: readonly MinuteRange[];
+  /** The carve-outs — a break, an admin hour — clipped to worked time. */
+  readonly blocks: readonly MinuteRange[];
+  /** The busy projection's spans, padded by the barber's turnaround. */
+  readonly busy: readonly MinuteRange[];
 }
 
-function countOf(minutes: number): MinuteCount {
-  const count = MinuteCount.of(minutes);
-  if (!count.ok) defect(`unreachable: a pad of ${minutes} min`);
-  return count.value;
+const NO_GEOMETRY: LaneGeometry = { rostered: [], blocks: [], busy: [] };
+
+/**
+ * ONE CHAIR'S DAY, derived (F1-10, blueprint §4.2) — the availability the
+ * store used to receive pre-folded from an adapter, computed here from the
+ * raw streams with the systems `/book` and the commit use, so the shop is
+ * never shown a hole the public grid would refuse to sell:
+ *
+ * - the windows are `RosterSystem.buildDayWindows` — the version in force,
+ *   the day's exception, each shop's published hours — kept only at a shop
+ *   the day OFFERS (an active shop of the catalogue): a shop absent from the
+ *   hours would otherwise read as "publishes no bound" and its chair reach
+ *   the grid unclamped;
+ * - the blocks are `RosterSystem.buildDayCarveOuts`, the same inputs' second
+ *   question — the windows say what is left, these say what was blocked;
+ * - the busy spans are the projection's, padded by the schedule's
+ *   turnaround (`AvailabilitySystem.paddedBusy`). Busy is location-agnostic
+ *   on purpose: a barber booked at the other shop is not free here either.
+ *
+ * A barber with no schedule, or no window that day, has no geometry at all
+ * — not rostered, and nothing of theirs to draw.
+ */
+function laneGeometryOf(
+  barberId: BarberId,
+  localDate: LocalDate,
+  schedule: BarberSchedule | null,
+  busyDay: BarberBusyDay | null,
+  exception: ScheduleException | null,
+  locations: readonly ShopLocation[],
+): LaneGeometry {
+  if (schedule === null) return NO_GEOMETRY;
+  const offered = new Set<LocationId>(locations.map((shop) => shop.id));
+  const input = {
+    barberId,
+    localDate,
+    versions: schedule.versions,
+    exceptions: exception === null ? [] : [exception],
+    shopHours: locations.map((shop) => ({
+      locationId: shop.id,
+      hours: RosterSystem.shopDayHours(shop.openingHours, localDate),
+    })),
+  };
+  const rostered = RosterSystem.buildDayWindows(input).filter((window) =>
+    offered.has(window.locationId),
+  );
+  if (rostered.length === 0) return NO_GEOMETRY;
+  return {
+    rostered,
+    blocks: RosterSystem.buildDayCarveOuts(input).filter((window) =>
+      offered.has(window.locationId),
+    ),
+    busy: AvailabilitySystem.paddedBusy({
+      barberId,
+      spans: busyDay?.blocks ?? [],
+      turnaroundMinutes: schedule.turnaroundMinutes,
+      release: [],
+    }),
+  };
 }
 
 /**
- * A legacy appointment as the occupancy fold reads it on one lane day — its
- * state and, per seat starting that day, the barber, the start on the shop's
- * clock and the snapshotted minutes.
+ * A changed day's identity slice — keyed by its `BusyKey` (the busy
+ * projection's key, read by the commit beside it), its `utcEpochMs` the
+ * shop day's first instant in the shop's zone (computed once, here, at the
+ * write — F-28).
  */
-function toOccupyingVisit(
-  appointment: Appointment,
-  day: LaneDay,
-): OccupyingVisit {
-  const seats: OccupyingSeat[] = [];
-  for (const seat of appointment.seats) {
-    const start = wallTimeOf(seat.slot.start.toMillis(), day.timeZone);
-    if (start.localDate !== day.localDate) continue;
-    seats.push({
-      barberId: EcsBarberId.of(seat.barberId.value),
-      startMinutes: start.minute,
-      durationMinutes: durationOf(seat.terms.durationMinutes),
-      setupMinutes: countOf(seat.terms.setupMinutes),
-      cleanupMinutes: countOf(seat.terms.cleanupMinutes),
-    });
-  }
-  return { bookingStatus: toEcsBookingStatus(appointment.status.kind), seats };
+function exceptionMetaOf(
+  barberId: BarberId,
+  localDate: LocalDate,
+  locationId: string,
+  timeZone: TimeZone,
+): ScheduleExceptionMeta {
+  return {
+    id: ScheduleExceptionId.of(BusyKey.of(barberId, localDate)),
+    barberId,
+    localDate,
+    utcEpochMs: ZonedTimeSystem.startOfLocalDay(localDate, timeZone),
+    locationId: LocationId.of(locationId),
+  };
+}
+
+/** A stored changed day's identity slice alone — its effect left behind for the next one. */
+function metaOfStored(stored: ScheduleException): ScheduleExceptionMeta {
+  return {
+    id: stored.id,
+    barberId: stored.barberId,
+    localDate: stored.localDate,
+    utcEpochMs: stored.utcEpochMs,
+    locationId: stored.locationId,
+  };
 }
 
 /**
@@ -665,9 +809,10 @@ function toOccupyingVisit(
  */
 export interface BarberDayLane {
   readonly barberId: string;
+  /** The day's visits on this chair, as stored — every status. */
   readonly appointments: readonly Appointment[];
   /** The chair's working windows today. Empty means NOT ROSTERED. */
-  readonly rostered: readonly Interval[];
+  readonly rostered: readonly LaneSpan[];
   /**
    * Time BLOCKED OUT of the worked day — a break, an admin hour.
    *
@@ -677,7 +822,7 @@ export interface BarberDayLane {
    * "the shop is shut" — which is exactly what the calendar could not do, and
    * why time you blocked yourself came back as anonymous grey shading.
    */
-  readonly blocks: readonly Interval[];
+  readonly blocks: readonly LaneSpan[];
   /**
    * EVERY hole inside those windows, already padded by turnaround — the
    * elapsed ones as well as the sellable ones, split at the clock and
@@ -693,9 +838,9 @@ export interface BarberDayLane {
  *
  * ### One `busyKeys` query per barber, not one shop query
  * The roster is bounded (a barbershop, not a franchise) and the
- * `{barberId}__{dayKey}` mirror is single-field-indexed, so N tiny listeners
- * beat inventing a new composite index and a zoned-ISO range query whose
- * ordering breaks across DST. The lanes re-subscribe when the day changes.
+ * `{barberId}__{localDate}` mirror is single-field-indexed, so N tiny
+ * listeners beat inventing a new composite index. The lanes re-subscribe
+ * when the day changes.
  *
  * ### Transitions are server writes
  * `gateway.transition` calls the role-checked callable; the live listeners
@@ -705,14 +850,13 @@ export interface BarberDayLane {
  */
 @Injectable()
 export class StaffDayStore {
-  private readonly repository = inject(APPOINTMENT_REPOSITORY);
-  private readonly notes = inject(APPOINTMENT_NOTES);
-  private readonly photos = inject(APPOINTMENT_PHOTOS);
-  private readonly grantRepository = inject(COUPON_GRANT_REPOSITORY);
-  private readonly coupons = inject(COUPON_READER);
-  private readonly giftVouchers = inject(GIFT_VOUCHER_READER);
-  private readonly availability = inject(AVAILABILITY_READER);
-  private readonly exceptions = inject(SCHEDULE_EXCEPTION_WRITER);
+  private readonly appointments = inject(APPOINTMENT_READ_PORTS);
+  private readonly notes = inject(APPOINTMENT_NOTE_PORTS);
+  private readonly photos = inject(APPOINTMENT_PHOTO_PORTS);
+  private readonly couponsVouchers = inject(COUPON_VOUCHER_PORTS);
+  /** The raw availability streams the lanes' geometry is derived from (F1-10). */
+  private readonly scheduling = inject(SCHEDULING_READ_PORTS);
+  private readonly exceptions = inject(SCHEDULE_EXCEPTION_PORTS);
   private readonly gateway = inject(BOOKING_GATEWAY);
   private readonly clock = inject(CLOCK);
   /** Mints each staff intent's `operationId` — see `staffEdit`. */
@@ -722,19 +866,32 @@ export class StaffDayStore {
   private readonly route = inject(ActivatedRoute);
 
   /**
+   * WHO IS AT THE BOOK — the session the stamps name: who wrote a team note,
+   * who took a photo (`notes-photos.port.ts`: the caller fills them from its
+   * own clock and session, never the adapter). `null` until the principal
+   * is an onboarded one.
+   */
+  private readonly principal = toSignal(
+    inject(AUTH_GATEWAY).observePrincipal(),
+    { initialValue: null },
+  );
+
+  /** The signed-in account, or `null` — what a stamp's `*ByUserId` names. */
+  private currentUserId(): UserId | null {
+    const principal = untracked(this.principal);
+    return principal?.kind === 'active' ? UserId.of(principal.uid.value) : null;
+  }
+
+  /**
    * The shop's zone — the LOCATION's (`ShopLocation.timeZone`, Law 7.2), read
    * off the catalogue's shops, never the browser's. Every shop of the tenant
    * keeps one clock (blueprint §7.1), so the first shop that names a zone
    * answers; until the catalogue does, the tenant zone `STAFF_ZONE`. "Today",
    * "now" and every lane's shop day are read in it.
    */
-  private readonly shopZone = computed<TimeZone>(() => {
-    for (const location of this.catalog.locations()) {
-      const zone = ZonedTimeSystem.checkZone(location.timezone);
-      if (zone.ok) return zone.value;
-    }
-    return STAFF_TIME_ZONE;
-  });
+  private readonly shopZone = computed<TimeZone>(
+    () => this.catalog.locations()[0]?.timeZone ?? STAFF_TIME_ZONE,
+  );
 
   /**
    * Today, RE-READ rather than frozen.
@@ -839,7 +996,7 @@ export class StaffDayStore {
       if (
         scope !== null &&
         barbers.length > 0 &&
-        !barbers.some((barber) => barber.id.value === scope)
+        !barbers.some((barber) => barber.id === scope)
       ) {
         untracked(() => this.setScope(null));
       }
@@ -859,10 +1016,19 @@ export class StaffDayStore {
     return now.isSuccess() ? now.value.toMillis() : 0;
   }
 
+  /** Now as the brand — what a stamp and an elapsed-time rule read (T2). */
+  private nowUtcMs(): UtcEpochMs {
+    return utcMsOf(this.resolveNowMs());
+  }
+
+  /** Today on the SHOP's calendar — the clock read in the location's zone. */
   private resolveToday(): string {
     const now = this.clock.now(untracked(() => this.shopZone()));
     return now.isSuccess()
-      ? CalendarDay.fromZonedDateTime(now.value).key()
+      ? shopNowOf(
+          now.value.toMillis(),
+          untracked(() => this.shopZone()),
+        ).localDate
       : '1970-01-01';
   }
 
@@ -1115,9 +1281,7 @@ export class StaffDayStore {
   private readonly scopedBarbers = computed(() => {
     const all = this.catalog.barbers();
     const scope = this._scope();
-    return scope === null
-      ? all
-      : all.filter((barber) => barber.id.value === scope);
+    return scope === null ? all : all.filter((barber) => barber.id === scope);
   });
 
   /**
@@ -1175,7 +1339,9 @@ export class StaffDayStore {
       switchMap((id) =>
         id === null
           ? of(null)
-          : this.notes.observe(id).pipe(map((result) => ({ id, result }))),
+          : this.notes
+              .observeAppointmentNote(AppointmentId.of(id))
+              .pipe(map((result) => ({ id, result }))),
       ),
     ),
     { initialValue: null },
@@ -1192,7 +1358,8 @@ export class StaffDayStore {
    * `undefined` when it cannot say — nobody is listening to that visit's
    * note, it has not answered yet, or it failed. What a save measures a
    * colleague's note against (`sidesMovedUnder`): a note this device does
-   * not hear is not judged, never guessed.
+   * not hear is not judged, never guessed. A stored note of blanks is no
+   * note (the write never leaves one).
    */
   teamNoteOf(appointmentId: string): string | null | undefined {
     const read = this.noteRead();
@@ -1200,11 +1367,12 @@ export class StaffDayStore {
       read === null ||
       read.id !== appointmentId ||
       read.id !== this._noteFor() ||
-      read.result.isFailure()
+      !read.result.ok
     ) {
       return undefined;
     }
-    return read.result.value?.text ?? null;
+    const note = read.result.value;
+    return note === null || note.text.trim().length === 0 ? null : note.text;
   }
 
   /* ── The shop's photos of the open visit ─────────────────────────────── */
@@ -1219,20 +1387,30 @@ export class StaffDayStore {
 
   private readonly photosResult = toSignal(
     toObservable(this._photosFor).pipe(
-      switchMap((id) =>
-        id === null
-          ? of(ok<readonly AppointmentPhoto[]>([]))
-          : this.photos.observe(id),
+      switchMap(
+        (
+          id,
+        ): Observable<Result<readonly AppointmentPhoto[], RepositoryError>> =>
+          id === null
+            ? of(Result.ok([]))
+            : this.photos.observeAppointmentPhotos(AppointmentId.of(id)),
       ),
     ),
     { initialValue: undefined },
   );
 
-  /** The open visit's photos in the order they were taken — none while loading, absent, or with no visit open. */
+  /**
+   * The open visit's photos in the order they were taken — none while
+   * loading, absent, or with no visit open. The read is one equality, so
+   * the order is the store's (an `orderBy` would need a composite index for
+   * a list never longer than a visit).
+   */
   readonly visitPhotos = computed<readonly AppointmentPhoto[]>(() => {
     const result = this.photosResult();
-    if (result === undefined || result.isFailure()) return [];
-    return result.value;
+    if (result === undefined || !result.ok) return [];
+    return [...result.value].sort((a, b) =>
+      UtcEpochMs.compare(a.takenAtUtcMs, b.takenAtUtcMs),
+    );
   });
 
   private readonly _photoWork = signal(0);
@@ -1240,30 +1418,49 @@ export class StaffDayStore {
   readonly photoBusy = computed(() => this._photoWork() > 0);
 
   /**
-   * A shutter press: the picture sized for the wire, then up with the
-   * visit's facts. `true` once the photo is on the visit — the live read
-   * draws it; the caller has no thumbnail to place.
+   * A shutter press: the picture sized for the wire, checked against the
+   * upload guard, then its bytes up and its document written with the
+   * visit's facts. The photo's id, its instant and its taker are stamped
+   * HERE, from the store's clock and session (`notes-photos.port.ts`), and
+   * the guard runs BEFORE the upload (`media.port.ts`: limits are never the
+   * adapter's). `true` once the photo is on the visit — the live read draws
+   * it; the caller has no thumbnail to place.
    */
   async attachPhoto(request: {
     readonly appointmentId: string;
     readonly barberId: string;
-    readonly clientUserId: string | null;
+    readonly clientCustomerId: string | null;
     readonly clientLabel: string;
     readonly file: Blob;
   }): Promise<boolean> {
     this._photoWork.update((count) => count + 1);
     try {
       const sized = await downscaleImage(request.file);
-      const result = await this.photos.attach({
-        appointmentId: request.appointmentId,
-        barberId: request.barberId,
-        clientUserId: request.clientUserId,
+      if (photoUploadRefusal(sized.image) !== null) return false;
+      const facts: Omit<AppointmentPhoto, 'path' | 'url'> = {
+        id: AppointmentPhotoId.of(this.ids.next()),
+        appointmentId: AppointmentId.of(request.appointmentId),
+        barberId: BarberId.of(request.barberId),
+        clientCustomerId:
+          request.clientCustomerId === null
+            ? null
+            : CustomerId.of(request.clientCustomerId),
         clientLabel: request.clientLabel,
-        image: sized.image,
+        takenByUserId: this.currentUserId(),
+        takenAtUtcMs: this.nowUtcMs(),
         width: sized.width,
         height: sized.height,
+        photoOrigin: PhotoOrigin.Shot,
+        label: null,
+      };
+      const stored = await this.photos.uploadPhotoBytes(facts, sized.image);
+      if (!stored.ok) return false;
+      const saved = await this.photos.saveAppointmentPhoto({
+        ...facts,
+        path: stored.value.path,
+        url: stored.value.url,
       });
-      return result.isSuccess();
+      return saved.ok;
     } finally {
       this._photoWork.update((count) => count - 1);
     }
@@ -1273,7 +1470,7 @@ export class StaffDayStore {
   async adoptPhoto(reference: {
     readonly appointmentId: string;
     readonly barberId: string;
-    readonly clientUserId: string | null;
+    readonly clientCustomerId: string | null;
     readonly clientLabel: string;
     readonly path: string;
     readonly url: string;
@@ -1281,12 +1478,25 @@ export class StaffDayStore {
   }): Promise<boolean> {
     this._photoWork.update((count) => count + 1);
     try {
-      const result = await this.photos.adopt({
-        ...reference,
+      const result = await this.photos.saveAppointmentPhoto({
+        id: AppointmentPhotoId.of(this.ids.next()),
+        appointmentId: AppointmentId.of(reference.appointmentId),
+        barberId: BarberId.of(reference.barberId),
+        clientCustomerId:
+          reference.clientCustomerId === null
+            ? null
+            : CustomerId.of(reference.clientCustomerId),
+        clientLabel: reference.clientLabel,
+        takenByUserId: this.currentUserId(),
+        takenAtUtcMs: this.nowUtcMs(),
+        path: reference.path,
+        url: reference.url,
         width: null,
         height: null,
+        photoOrigin: PhotoOrigin.Library,
+        label: reference.label,
       });
-      return result.isSuccess();
+      return result.ok;
     } finally {
       this._photoWork.update((count) => count - 1);
     }
@@ -1295,14 +1505,14 @@ export class StaffDayStore {
   async removePhoto(photo: AppointmentPhoto): Promise<boolean> {
     this._photoWork.update((count) => count + 1);
     try {
-      const result = await this.photos.remove(photo);
-      return result.isSuccess();
+      const result = await this.photos.deleteAppointmentPhoto(photo);
+      return result.ok;
     } finally {
       this._photoWork.update((count) => count - 1);
     }
   }
 
-  /** The client whose usable coupons the sheet is offering, or `null`. */
+  /** The client RECORD whose usable coupons the sheet is offering, or `null`. */
   private readonly _grantsFor = signal<string | null>(null);
 
   /**
@@ -1311,60 +1521,79 @@ export class StaffDayStore {
    * The sheet's «Отстъпка» row offers the coupons the client already holds
    * — the shop keeping its own word, which a barber may do at the chair —
    * so they are read beside the visit, like the team note, and released
-   * with it. A walk-in has no account and no grants; `null` reads as none.
-   * One read per client rather than a listener: a grant does not change
-   * under an open sheet, and the save re-checks it on the server anyway.
+   * with it. They are held by the client RECORD (D29): the seat's
+   * `subjectCustomerId`. A walk-in has no record and no grants; `null`
+   * reads as none. One read per client rather than a listener: a grant does
+   * not change under an open sheet, and the save re-checks it on the server
+   * anyway.
    */
-  probeGrants(userId: string | null): void {
-    if (userId === this._grantsFor()) return;
-    this._grantsFor.set(userId);
+  probeGrants(customerId: string | null): void {
+    if (customerId === this._grantsFor()) return;
+    this._grantsFor.set(customerId);
   }
 
   private readonly grantsResult = toSignal(
     toObservable(this._grantsFor).pipe(
       switchMap((id) =>
         id === null
-          ? of(ok<readonly CouponGrantWithCoupon[], RepositoryError>([]))
-          : from(this.loadGrants(id)),
+          ? of(Result.ok<readonly HeldGrant[]>([]))
+          : from(this.loadGrants(CustomerId.of(id))),
       ),
     ),
     { initialValue: undefined },
   );
 
+  /**
+   * The record's ACTIVE grants (the port's query) that are still usable now
+   * (`CouponGrantSystem.isUsable`, so an expired one never reaches the
+   * menu), each joined to its coupon by id — WHATEVER the coupon's status
+   * (`loadCoupons`): a held grant whose coupon was disabled since keeps its
+   * name, value and exclusivity in the menu. A grant whose coupon is gone
+   * altogether has nothing to say and is left out.
+   */
   private async loadGrants(
-    id: string,
-  ): Promise<Result<readonly CouponGrantWithCoupon[], RepositoryError>> {
-    const userId = UserId.create(id);
-    const now = this.clock.now(STAFF_ZONE);
-    if (userId.isFailure() || now.isFailure()) return ok([]);
-    const result = await this.grantRepository.findUsableForUser(
-      userId.value,
-      now.value,
+    customerId: CustomerId,
+  ): Promise<Result<readonly HeldGrant[], RepositoryError>> {
+    const held = await this.couponsVouchers.listUsableCouponGrants(customerId);
+    if (!held.ok) return held;
+    const nowUtcMs = this.nowUtcMs();
+    const usable = held.value.filter((grant) =>
+      CouponGrantSystem.isUsable(grant, nowUtcMs),
     );
-    if (result.isFailure()) return result;
-    // The port already filters to active grants; the expiry is the domain's
-    // own test, applied here so an expired one never reaches the menu.
-    return ok(result.value.filter(({ grant }) => grant.isUsable(now.value)));
+    if (usable.length === 0) return Result.ok([]);
+    const coupons = await this.couponsVouchers.loadCoupons([
+      ...new Set<CouponId>(usable.map((grant) => grant.couponId)),
+    ]);
+    if (!coupons.ok) return coupons;
+    const byId = new Map(coupons.value.map((coupon) => [coupon.id, coupon]));
+    return Result.ok(
+      usable.flatMap((grant) => {
+        const coupon = byId.get(grant.couponId);
+        return coupon === undefined ? [] : [{ grant, coupon }];
+      }),
+    );
   }
 
   /** What the sheet's discount menu offers — empty while loading, on failure, or for nobody. */
   readonly grants = computed<readonly VisitEditorGrantOption[]>(() => {
     const result = this.grantsResult();
-    if (result === undefined || result.isFailure()) return [];
+    if (result === undefined || !result.ok) return [];
+    const zone = this.shopZone();
     return result.value.map(({ grant, coupon }) => ({
-      grantId: grant.id.value,
-      couponId: coupon.id.value,
+      grantId: grant.id,
+      couponId: coupon.id,
       label: coupon.name,
-      value: discountValueOf(grant.value),
-      exclusive: CouponCombinability.isExclusive(coupon.combinability),
+      value: discountValueOf(grant),
+      exclusive: Combinability.isExclusive(coupon.combinability),
       // The coupon's moment (revision 3 §4.6): the client card heads a
       // birthday gift with its band only when the coupon says so — a
       // grant that reaches it without one is a plain ticket, every day.
-      occasion: coupon.occasion,
+      occasion:
+        coupon.couponOccasion === CouponOccasion.Birthday ? 'birthday' : null,
       // When it lapses, on the shop's calendar: the card's tickets print
       // it as their chip («до 28.10») and put the soonest first; a grant
       // that never lapses prints none (review 2: every ticket was chipless).
-      expiresOn: grantExpiresOn(grant),
+      expiresOn: grantExpiresOn(grant, zone),
     }));
   });
 
@@ -1375,13 +1604,14 @@ export class StaffDayStore {
    * shop published. A failed read is an empty list — the voucher field
    * still takes a typed code, and the save re-resolves on the server.
    */
-  private readonly promosResult = toSignal(from(this.coupons.listOpen()), {
-    initialValue: undefined,
-  });
+  private readonly promosResult = toSignal(
+    from(this.couponsVouchers.listOpenCoupons()),
+    { initialValue: undefined },
+  );
 
   readonly promos = computed<readonly VisitEditorPromoOption[]>(() => {
     const result = this.promosResult();
-    if (result === undefined || result.isFailure()) return [];
+    if (result === undefined || !result.ok) return [];
     return (
       result.value
         .flatMap((coupon) =>
@@ -1390,12 +1620,10 @@ export class StaffDayStore {
             : [
                 {
                   code: coupon.code,
-                  couponId: coupon.id.value,
+                  couponId: coupon.id,
                   label: coupon.name,
-                  value: discountValueOf(coupon.value),
-                  exclusive: CouponCombinability.isExclusive(
-                    coupon.combinability,
-                  ),
+                  value: discountValueOf(coupon),
+                  exclusive: Combinability.isExclusive(coupon.combinability),
                 },
               ],
         )
@@ -1409,27 +1637,34 @@ export class StaffDayStore {
    * `null` for no such code. A failed read is `null` too: at the chair,
    * "could not check" and "no such code" call for the same next move —
    * try again — and the save re-resolves the code on the server regardless.
+   * A typed code that is not a code's shape opens nothing.
    */
   async resolveCode(code: string): Promise<Coupon | null> {
-    const result = await this.coupons.findByCode(code);
-    return result.isSuccess() ? result.value : null;
+    const typed = VoucherCode.parseTyped(code);
+    if (!typed.ok) return null;
+    const result = await this.couponsVouchers.findCouponByCode(typed.value);
+    return result.ok ? result.value : null;
   }
 
   /**
    * The other thing a typed code can be: a gift voucher, WHATEVER its state
    * — the sheet says why an empty or a void one will not take, which "no
-   * such code" cannot.
+   * such code" cannot (`VoucherSystem.refusal`, at the store's clock).
    */
   async resolveVoucher(code: string): Promise<{
     readonly voucher: GiftVoucher;
     readonly refusal: 'void' | 'expired' | 'empty' | null;
   } | null> {
-    const result = await this.giftVouchers.findByCode(code);
-    if (result.isFailure() || result.value === null) return null;
-    const now = this.clock.now(STAFF_ZONE);
+    const typed = VoucherCode.parseTyped(code);
+    if (!typed.ok) return null;
+    const result = await this.couponsVouchers.findGiftVoucherByCode(
+      typed.value,
+    );
+    if (!result.ok || result.value === null) return null;
+    const refusal = VoucherSystem.refusal(result.value, this.nowUtcMs());
     return {
       voucher: result.value,
-      refusal: now.isSuccess() ? result.value.refusal(now.value) : null,
+      refusal: refusal === null ? null : VOUCHER_REFUSAL_WORD[refusal],
     };
   }
 
@@ -1437,14 +1672,28 @@ export class StaffDayStore {
   private readonly _noteError = signal<string | null>(null);
   readonly noteError = this._noteError.asReadonly();
 
-  /** Writes straight through; an empty text deletes. */
+  /**
+   * Writes straight through; an empty text deletes. The note's author and
+   * instant are stamped here, from the store's session and clock.
+   */
   async saveTeamNote(
     appointmentId: string,
     text: string | null,
   ): Promise<boolean> {
-    const result = await this.notes.save(appointmentId, text);
-    this._noteError.set(result.isFailure() ? appointmentId : null);
-    return result.isSuccess();
+    const id = AppointmentId.of(appointmentId);
+    const trimmed = text?.trim() ?? '';
+    const note: AppointmentNote | null =
+      trimmed.length === 0
+        ? null
+        : {
+            id,
+            text: trimmed,
+            authorUserId: this.currentUserId(),
+            writtenAtUtcMs: this.nowUtcMs(),
+          };
+    const result = await this.notes.saveAppointmentNote(id, note);
+    this._noteError.set(result.ok ? null : appointmentId);
+    return result.ok;
   }
 
   private readonly _probeDay = signal<string | null>(null);
@@ -1478,6 +1727,17 @@ export class StaffDayStore {
     barbers: this.scopedBarbers().map((barber) => barber.id),
   }));
 
+  /** The appointments of one chair on one shop day — `busyKeys array-contains`. */
+  private barberDay(
+    barberId: BarberId,
+    dayKey: string,
+  ): Observable<Result<readonly Appointment[], RepositoryError>> {
+    const day = localDateOf(dayKey);
+    return day === null
+      ? of(Result.ok([]))
+      : this.appointments.observeBarberDay(BusyKey.of(barberId, day));
+  }
+
   /**
    * Appointments for every (day, barber) on screen, flattened in that order
    * so the index arithmetic below is the only place the pairing lives.
@@ -1496,9 +1756,7 @@ export class StaffDayStore {
           ? of([])
           : combineLatest(
               days.flatMap((dayKey) =>
-                barbers.map((barberId) =>
-                  this.repository.observeBarberDay(barberId, dayKey),
-                ),
+                barbers.map((barberId) => this.barberDay(barberId, dayKey)),
               ),
             )
         ).pipe(map((lanes) => ({ key: laneKeyOf(days, barbers), lanes }))),
@@ -1508,27 +1766,46 @@ export class StaffDayStore {
   );
 
   /**
-   * The GEOMETRY of every visible day — rostered windows and padded busy
-   * intervals.
-   *
-   * Same reader `/book` uses, and deliberately so: the shop must not be shown
-   * a hole the public grid would refuse to sell. It is PII-free by
+   * The RAW GEOMETRY of every visible day — each scoped chair's schedule,
+   * and per (day, chair) its busy projection and its exception — the same
+   * public streams `/book` reads, deliberately so: the shop must not be
+   * shown a hole the public grid would refuse to sell. PII-free by
    * construction, which is why it can answer "what can I sell" without
-   * touching the appointment documents the lanes already carry.
+   * touching the appointment documents the lanes already carry. What it
+   * MEANS (windows, blocks, padded busy) is derived in `dayGeometry`, never
+   * behind a port (F1-10).
    */
   private readonly geometryResult = toSignal(
     toObservable(this.laneInputs).pipe(
       switchMap(({ days, barbers }) => {
         const key = laneKeyOf(days, barbers);
-        if (barbers.length === 0) return of({ key, days: undefined });
-        const perDay = days.map((dayKey) => {
-          const day = dayFromKey(dayKey);
-          return day === null
-            ? of(undefined)
-            : this.availability.observeDay(null, day, barbers);
-        });
-        return combineLatest(perDay).pipe(
-          map((answers) => ({ key, days: answers })),
+        if (barbers.length === 0) {
+          return of({ key, schedules: [], days: undefined });
+        }
+        const schedules = combineLatest(
+          barbers.map((barberId) => this.scheduling.observeSchedule(barberId)),
+        );
+        const perDay = combineLatest(
+          days.map((dayKey) => {
+            const day = localDateOf(dayKey);
+            if (day === null) return of(null);
+            return combineLatest(
+              barbers.map((barberId) => {
+                const busyKey = BusyKey.of(barberId, day);
+                return combineLatest([
+                  this.scheduling.observeBusyDay(busyKey),
+                  this.scheduling.observeExceptions(busyKey),
+                ]);
+              }),
+            );
+          }),
+        );
+        return combineLatest([schedules, perDay]).pipe(
+          map(([schedules, perDayAnswers]) => ({
+            key,
+            schedules,
+            days: perDayAnswers,
+          })),
         );
       }),
     ),
@@ -1546,7 +1823,11 @@ export class StaffDayStore {
     const { days, barbers } = this.laneInputs();
     const key = laneKeyOf(days, barbers);
     return (
-      this.lanesResult()?.key === key && this.geometryResult()?.key === key
+      this.lanesResult()?.key === key &&
+      this.geometryResult()?.key === key &&
+      // The shops' hours clamp every window: a roster read before them
+      // would draw the day unclamped, so the day is not yet answered.
+      this.catalog.locationsKnown()
     );
   });
 
@@ -1571,46 +1852,59 @@ export class StaffDayStore {
     const days = this.subscribedDays();
     if (!results) return [];
 
-    const geometry = this.geometryResult()?.days;
+    const geometry = this.geometryResult();
+    const schedules = geometry?.schedules ?? [];
+    const locations = this.catalog.locations();
     const zone = this.shopZone();
 
     return days.map((dayKey, dayIndex) => {
-      const dayGeometry = geometry?.[dayIndex];
-      const localDate = LocalDate.parse(dayKey);
-      const byBarber = new Map(
-        dayGeometry?.isSuccess()
-          ? dayGeometry.value.map(
-              (entry) => [entry.barberId.value, entry] as const,
-            )
-          : [],
-      );
+      const localDate = localDateOf(dayKey);
+      const answers = geometry?.days?.[dayIndex] ?? null;
+      // One chair's read failing is the whole day's geometry failing:
+      // quietly dropping one would render a grid that looks complete while
+      // hiding someone's free time.
+      const dayFailed =
+        answers === null ||
+        schedules.length !== barbers.length ||
+        schedules.some((result) => !result.ok) ||
+        answers.some(([busy, exception]) => !busy.ok || !exception.ok);
 
       const lanes = barbers.map((barber, barberIndex) => {
         const result = results[dayIndex * barbers.length + barberIndex];
-        const appointments = result?.isSuccess() ? result.value : [];
-        const geo = byBarber.get(barber.id.value);
-        const rostered = (geo?.windows ?? []).map((window) => window.interval);
-        const blocks = (geo?.blocks ?? []).map((block) => block.interval);
-        const busy = geo?.busy ?? [];
+        const appointments = result?.ok ? result.value : [];
+        const answer = answers?.[barberIndex];
+        const schedule = schedules[barberIndex];
+        const geo =
+          localDate === null ||
+          dayFailed ||
+          answer === undefined ||
+          schedule === undefined
+            ? NO_GEOMETRY
+            : laneGeometryOf(
+                barber.id,
+                localDate,
+                schedule.ok ? schedule.value : null,
+                answer[0].ok ? answer[0].value : null,
+                answer[1].ok ? answer[1].value : null,
+                locations,
+              );
         // The lane's shop day: its windows and busy spans in its minutes.
-        const day = localDate.ok
-          ? laneDayOf(localDate.value, zone, rostered, busy)
-          : null;
+        const day = localDate === null ? null : laneDayOf(localDate, zone);
 
         return {
-          barberId: barber.id.value,
+          barberId: barber.id as string,
           appointments,
-          rostered,
-          blocks,
+          rostered: day === null ? [] : intervalsOn(day, geo.rostered),
+          blocks: day === null ? [] : intervalsOn(day, geo.blocks),
           day,
           holes:
             day === null
               ? []
               : GridLayoutSystem.holes(
-                  rangesOn(day, rostered),
-                  occupiedOn(day, appointments, barber.id.value, busy),
+                  geo.rostered,
+                  occupiedOn(day, appointments, barber.id, geo.busy),
                 ),
-          failed: result !== undefined && result.isFailure(),
+          failed: result !== undefined && !result.ok,
         };
       });
 
@@ -1755,17 +2049,21 @@ export class StaffDayStore {
     if (this._pool().length === 0) await this.reloadSearchPool();
   }
 
-  /** Re-read the window — after a write, or when search is reopened stale. */
+  /**
+   * Re-read the window — after a write, or when search is reopened stale:
+   * the `SEARCH_WINDOW_PER_SIDE` visits each side of now, by their start
+   * instant (`searchAppointmentWindow`, the range `utcEpochMs` is for).
+   */
   async reloadSearchPool(): Promise<void> {
-    const now = this.clock.now(STAFF_ZONE);
+    const now = this.clock.now(untracked(() => this.shopZone()));
     if (now.isFailure()) return;
     this._searchLoading.set(true);
     try {
-      const result = await this.repository.searchWindow(
-        now.value.toISO(),
+      const result = await this.appointments.searchAppointmentWindow(
+        utcMsOf(now.value.toMillis()),
         SEARCH_WINDOW_PER_SIDE,
       );
-      if (result.isSuccess()) this._pool.set(result.value);
+      if (result.ok) this._pool.set(result.value);
     } finally {
       this._searchLoading.set(false);
     }
@@ -1784,92 +2082,101 @@ export class StaffDayStore {
    *
    * `ranges` empty means the whole day; otherwise the given spans are carved
    * out of an otherwise ordinary roster. Either way what reaches Firestore is
-   * the sanitized EFFECT — `exceptionToDocument` is total over the kind union
-   * and a reason has no field to ride in.
+   * the sanitized public EFFECT (`ExceptionEffectRule` — `CLOSED` or
+   * `BLOCKED`); a reason has no field to ride in.
    */
   async blockTime(
     barberId: string,
     locationId: string,
-    ranges: readonly LocalTimeRange[],
+    ranges: readonly MinuteRange[],
     // THE DAY IS A PARAMETER (2026-09-09): the block sheet steps its frame
     // off the shown day, and a series is written day by day. Defaults to
     // the day on screen, which is what every earlier caller meant.
     dayKey: string = this._dayKey(),
   ): Promise<boolean> {
     if (this._absencePending()) return false;
-
-    const day = dayFromKey(dayKey);
-    const barber = BarberId.create(barberId);
-    const location = LocationId.create(locationId);
-    if (!day || barber.isFailure() || location.isFailure()) {
+    if (localDateOf(dayKey) === null || !barberId || !locationId) {
       this._absenceError.set('invalid');
       return false;
     }
-
-    const exception = ScheduleException.create({
-      id: ScheduleExceptionId.of(`${barberId}__${day.key()}`),
-      day,
-      barberId: barber.value,
-      locationId: location.value,
-      // A whole-day stand-down is `time_off`, which the sanitizer collapses
-      // to `closed`; a partial block is `admin`, which collapses to
-      // `blocked`. Neither carries a reason into the public document.
-      detail:
-        ranges.length === 0
-          ? { kind: 'time_off' }
-          : { kind: 'admin', ranges, note: '' },
-    });
-    if (exception.isFailure()) {
-      this._absenceError.set('invalid');
-      return false;
-    }
-
-    this._absencePending.set(true);
-    this._absenceError.set(null);
-    try {
-      // A RANGE ACCUMULATES; a whole day REPLACES (2026-09-08). One document
-      // per barber-day made a second lunch overwrite the first; the writer's
-      // `putRange` reads the day and merges instead.
-      const result =
-        ranges.length === 0
-          ? await this.exceptions.put(exception.value)
-          : await this.putRanges(barberId, locationId, ranges, dayKey);
-      if (result.isFailure()) {
-        this._absenceError.set('failed');
-        return false;
-      }
-      return true;
-    } finally {
-      this._absencePending.set(false);
-    }
+    // A RANGE ACCUMULATES; a whole day REPLACES (2026-09-08). One document
+    // per barber-day made a second lunch overwrite the first; the merge
+    // reads the day inside the write and adds to it instead.
+    return this.writeBlocks(barberId, locationId, ranges, [dayKey]);
   }
 
   /**
-   * A SERIES — the same block on many days of one chair, as ONE batched
-   * write (2026-09-24): `putSeries` reads the days in parallel and writes
-   * them in batches, where a day-by-day `blockTime` loop was two round
-   * trips a day — a year of lunches, a minute of spinner. `ranges` empty
-   * stands each day down whole. Same pending and error signals as
-   * `blockTime`: from the sheet's side it is the same act.
+   * A SERIES — the same block on many days of one chair, as ONE write
+   * (2026-09-24): every day is read and merged inside one transaction,
+   * where a day-by-day `blockTime` loop was two round trips a day — a year
+   * of lunches, a minute of spinner. `ranges` empty stands each day down
+   * whole. Same pending and error signals as `blockTime`: from the sheet's
+   * side it is the same act.
    */
   async blockSeries(
     barberId: string,
     locationId: string,
-    ranges: readonly LocalTimeRange[],
+    ranges: readonly MinuteRange[],
     dayKeys: readonly string[],
   ): Promise<boolean> {
     if (this._absencePending()) return false;
+    if (dayKeys.some((dayKey) => localDateOf(dayKey) === null)) {
+      this._absenceError.set('failed');
+      return false;
+    }
+    return this.writeBlocks(barberId, locationId, ranges, dayKeys);
+  }
+
+  /**
+   * The one exception write behind `blockTime` and `blockSeries`: per day,
+   * a whole-day stand-down REPLACES what the day held (`CLOSED`), and a
+   * range MERGES into its stored blocks (`ScheduleExceptionSystem.addRanges`
+   * — a day already off whole stays off, never demoted to a partial block).
+   */
+  private async writeBlocks(
+    barberId: string,
+    locationId: string,
+    ranges: readonly MinuteRange[],
+    dayKeys: readonly string[],
+  ): Promise<boolean> {
+    const barber = BarberId.of(barberId);
+    const days = dayKeys.flatMap((dayKey) => {
+      const day = localDateOf(dayKey);
+      return day === null ? [] : [day];
+    });
+    // The exception's day instant is read in ITS shop's zone (Law 7.2).
+    const zone =
+      untracked(() => this.catalog.locations()).find(
+        (shop) => shop.id === locationId,
+      )?.timeZone ?? untracked(() => this.shopZone());
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
-      const result = await this.exceptions.putSeries(
-        barberId,
-        locationId,
-        dayKeys,
-        STAFF_ZONE,
-        ranges,
+      const result = await this.exceptions.writeScheduleException(
+        days.map((day) => BusyKey.of(barber, day)),
+        (stored) => {
+          const next: (ScheduleException | null)[] = [];
+          for (const [index, day] of days.entries()) {
+            const existing = stored[index] ?? null;
+            const effect: Result<ExceptionEffectRule, SchedulingError> | null =
+              ranges.length === 0
+                ? Result.ok(ExceptionEffectRule.closed())
+                : ScheduleExceptionSystem.addRanges(existing, ranges);
+            if (effect === null) {
+              // A whole day off already covers every minute asked for.
+              next.push(existing);
+              continue;
+            }
+            if (!effect.ok) return effect;
+            next.push({
+              ...exceptionMetaOf(barber, day, locationId, zone),
+              ...effect.value,
+            });
+          }
+          return Result.ok(next);
+        },
       );
-      if (result.isFailure()) {
+      if (!result.ok) {
         this._absenceError.set('failed');
         return false;
       }
@@ -1877,46 +2184,56 @@ export class StaffDayStore {
     } finally {
       this._absencePending.set(false);
     }
-  }
-
-  /** Lift the block — the chair returns to its ordinary roster. */
-  private async putRanges(
-    barberId: string,
-    locationId: string,
-    ranges: readonly LocalTimeRange[],
-    dayKey: string,
-  ): Promise<Result<void, RepositoryError>> {
-    for (const range of ranges) {
-      const result = await this.exceptions.putRange(
-        barberId,
-        locationId,
-        dayKey,
-        STAFF_ZONE,
-        range,
-      );
-      if (result.isFailure()) return result;
-    }
-    return ok(undefined);
   }
 
   /**
    * Lift ONE block when a range is given, or the whole day when it is not —
    * the day-wide form is the armed, destructive path the sheet names as such.
+   * A day off WHOLE has no ranges to lift one from: the range form refuses
+   * it, and the day-wide clear is the honest path.
    */
   async clearBlock(
     barberId: string,
-    range: LocalTimeRange | null = null,
+    range: MinuteRange | null = null,
     dayKey: string = this._dayKey(),
   ): Promise<boolean> {
     if (this._absencePending()) return false;
+    const day = localDateOf(dayKey);
+    if (day === null) {
+      this._absenceError.set('failed');
+      return false;
+    }
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
-      const result =
-        range === null
-          ? await this.exceptions.clear(barberId, dayKey)
-          : await this.exceptions.clearRange(barberId, dayKey, range);
-      if (result.isFailure()) {
+      const result = await this.exceptions.writeScheduleException(
+        [BusyKey.of(BarberId.of(barberId), day)],
+        (stored) => {
+          const existing = stored[0] ?? null;
+          if (range === null || existing === null) {
+            return Result.ok([null]);
+          }
+          if (existing.exceptionEffect === ExceptionEffect.Closed) {
+            return Result.err(
+              SchedulingError.scheduleExceptionEmptyRanges(
+                ExceptionEffect.Closed,
+              ),
+            );
+          }
+          const left = ScheduleExceptionSystem.withoutRange(
+            existing.exceptionRanges,
+            range,
+          );
+          if (left.length === 0) return Result.ok([null]);
+          const effect =
+            existing.exceptionEffect === ExceptionEffect.Hours
+              ? ExceptionEffectRule.hours(left)
+              : ExceptionEffectRule.blocked(left);
+          if (!effect.ok) return effect;
+          return Result.ok([{ ...metaOfStored(existing), ...effect.value }]);
+        },
+      );
+      if (!result.ok) {
         this._absenceError.set('failed');
         return false;
       }

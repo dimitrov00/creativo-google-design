@@ -1,11 +1,5 @@
-import {
-  type ClientStatsDirectory,
-  type ClientStatsRecord,
-  type Result,
-  ZonedDateTime,
-  fail,
-  ok,
-} from '@creativo/application/booking';
+import type { ClientStatsRecord } from '@core/entities';
+import type { ClientStatsReadPorts } from '@core/ports';
 import {
   type IsoDate,
   type StreakDefinition,
@@ -15,12 +9,13 @@ import {
   type StreakPreview,
   type StreakState,
   projectStreak,
-  sofiaDayOf,
   streakFactsReader,
 } from '@creativo/application/engagement';
-import { RepositoryError } from '@creativo/application/shared';
 import {
+  type CustomerId,
   LocalDate,
+  RepositoryError,
+  Result,
   ServiceCategoryId,
   ServiceId,
   defect,
@@ -62,8 +57,6 @@ export const RHYTHM_PREVIEW_CAP =
 /** The preview recomputes by itself this long after the last change. */
 export const RHYTHM_PREVIEW_DELAY_MS = 600;
 
-const SHOP_ZONE = 'Europe/Sofia';
-
 /** What the walk read. */
 export interface RhythmPreviewFacts {
   /** One person's facts each, in the order of the walk. */
@@ -74,14 +67,15 @@ export interface RhythmPreviewFacts {
 
 /**
  * One client's statistics as the projector's facts. The statistics hold a
- * visit's instant and nothing else, so every worked visit counts and
- * nothing is known of what the shop called off, of a visit on the book or
- * of a pause: that is why the preview is labelled «приблизително».
+ * visit's shop day (and minute) and nothing else, so every worked visit
+ * counts and nothing is known of what the shop called off, of a visit on
+ * the book or of a pause: that is why the preview is labelled
+ * «приблизително».
  */
 export function streakFactsOf(record: ClientStatsRecord): StreakFacts {
   return {
-    visits: record.last365.visitsCompleted.map((fact) => ({
-      day: sofiaDayOf(new Date(fact.atMs)),
+    visits: record.last365VisitsCompleted.map((fact) => ({
+      day: fact.localDate,
       counted: true,
     })),
     excused: [],
@@ -91,32 +85,35 @@ export function streakFactsOf(record: ClientStatsRecord): StreakFacts {
   };
 }
 
+/** The statistics reader the walk pages through (`CLIENT_STATS_READ_PORTS`). */
+export type RhythmStatsReader = Pick<ClientStatsReadPorts, 'pageClientStats'>;
+
 /**
- * The walk: `clientStats` in the order of its ids, a page after a page,
- * until nobody is left or the fifth page is read. A page that fails fails
- * the walk: a preview over half the shop would be a wrong number, not an
- * estimate.
+ * The walk: `clientStats` in the order of its ids (client records, D29), a
+ * page after a page, until nobody is left or the fifth page is read. A page
+ * that fails fails the walk: a preview over half the shop would be a wrong
+ * number, not an estimate.
  */
 export async function readRhythmPreviewFacts(
-  directory: ClientStatsDirectory,
+  stats: RhythmStatsReader,
 ): Promise<Result<RhythmPreviewFacts, RepositoryError>> {
   const clients: StreakFacts[] = [];
-  let after: string | null = null;
+  let after: CustomerId | null = null;
   for (let page = 0; page < RHYTHM_PREVIEW_PAGES; page += 1) {
-    let read: Awaited<ReturnType<ClientStatsDirectory['page']>>;
+    let read: Awaited<ReturnType<RhythmStatsReader['pageClientStats']>>;
     try {
-      read = await directory.page(RHYTHM_PREVIEW_PAGE_SIZE, after);
-    } catch (error) {
-      return fail(new RepositoryError('The statistics read threw', error));
+      read = await stats.pageClientStats(after, RHYTHM_PREVIEW_PAGE_SIZE);
+    } catch {
+      return Result.err(RepositoryError.readFailed(null, 'threw'));
     }
-    if (read.isFailure()) return fail(read.error);
+    if (!read.ok) return read;
     for (const record of read.value.records) {
       clients.push(streakFactsOf(record));
     }
-    after = read.value.next;
-    if (after === null) return ok({ clients, capped: false });
+    after = read.value.nextAfterCustomerId;
+    if (after === null) return Result.ok({ clients, capped: false });
   }
-  return ok({ clients, capped: true });
+  return Result.ok({ clients, capped: true });
 }
 
 /**
@@ -131,7 +128,7 @@ export class RhythmPreviewSource {
     null;
   private walkFailed = false;
 
-  constructor(private readonly directory: ClientStatsDirectory) {}
+  constructor(private readonly stats: RhythmStatsReader) {}
 
   /** The walk was made and failed: there is nothing to wait for until `forget()`. */
   get failed(): boolean {
@@ -140,9 +137,9 @@ export class RhythmPreviewSource {
 
   read(): Promise<Result<RhythmPreviewFacts, RepositoryError>> {
     if (this.walk !== null) return this.walk;
-    const walk = readRhythmPreviewFacts(this.directory).then((facts) => {
+    const walk = readRhythmPreviewFacts(this.stats).then((facts) => {
       // A walk that was forgotten meanwhile says nothing of the one after it.
-      if (this.walk === walk) this.walkFailed = facts.isFailure();
+      if (this.walk === walk) this.walkFailed = !facts.ok;
       return facts;
     });
     this.walk = walk;
@@ -219,8 +216,9 @@ export function sampleRhythmFacts(
     pauses: [],
     grants: [],
   };
-  const noon = ZonedDateTime.fromISO(`${today}T12:00:00`, SHOP_ZONE);
-  if (noon.isFailure()) return none;
+  // Plain calendar arithmetic on the shop's day (no zone moves a civil date).
+  const day = LocalDate.parse(today);
+  if (!day.ok) return none;
 
   const onTime = definition.interval.daysFor(null).days;
   const late = 2 * definition.interval.daysFor(onTime).days;
@@ -238,7 +236,7 @@ export function sampleRhythmFacts(
   return {
     ...none,
     visits: days.reverse().map((ago) => ({
-      day: noon.value.plusDays(-ago).toISODate(),
+      day: LocalDate.addDays(day.value, -ago),
       counted: true,
     })),
   };

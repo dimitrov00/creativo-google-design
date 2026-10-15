@@ -1,10 +1,5 @@
-import { UserId } from '@creativo/application/accounts';
-import {
-  type Appointment,
-  type Seat,
-  ZonedDateTime,
-  subjectVisitOf,
-} from '@creativo/application/booking';
+import { ZonedDateTime } from '@creativo/application/booking';
+import type { Appointment } from '@core/entities';
 import {
   type BadgeLevel,
   type BadgeProgress,
@@ -15,17 +10,24 @@ import {
   sofiaDayOf,
 } from '@creativo/application/engagement';
 import {
+  AttendanceState,
   BarberId as BarberRefId,
+  CustomerId,
   LocalDate,
   LocationId as LocationRefId,
   MinuteOfDay,
   ServiceId as ServiceRefId,
+  type TimeZone,
   UtcEpochMs,
   type Weekday,
   defect,
 } from '@core/primitives';
-import { type MetricRef } from '@core/components';
-import { AchievementsSystem } from '@core/systems';
+import { type MetricRef, type Seat } from '@core/components';
+import {
+  AchievementsSystem,
+  ClientStatsSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   type RhythmRuleWords,
   type VisitRowVm,
@@ -94,6 +96,12 @@ import { visitsRows } from './visits-page.presenter';
 
 /** Where the shop's hours are read: the zone of every visit on the card. */
 const SHOP_ZONE = 'Europe/Sofia';
+
+/** The shop's zone, branded — where a worked minute is read back as an instant. */
+const SHOP_TIME_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone(SHOP_ZONE);
+  return zone.ok ? zone.value : defect('unreachable: the shop zone');
+})();
 
 /** A draft with no start yet: a weekday that is no weekend. */
 const WEEKDAY_MONDAY: Weekday = 1;
@@ -193,30 +201,40 @@ function canStillMove(
 
 // ── What counts ─────────────────────────────────────────────────────────
 
-/** One appointment as the person's WORKED visit: their worked seats, when it began, who else came. */
+/**
+ * One appointment as the person's WORKED visit: their worked seats, the
+ * minute of its shop day the first of them began, who else came.
+ */
 interface WorkedVisit {
   readonly seats: readonly Seat[];
-  readonly start: ZonedDateTime;
+  readonly startMinutes: MinuteOfDay;
   readonly withCompany: boolean;
 }
 
+/** The client RECORD's worked seats of a visit (D29: whom the shop served). */
 function workedVisitOf(
   visit: Appointment,
-  subjectUserId: string,
+  subjectCustomerId: string | null,
 ): WorkedVisit | null {
-  const subject = UserId.create(subjectUserId);
-  if (subject.isFailure()) return null;
-  const own = subjectVisitOf(subject.value, visit);
+  if (subjectCustomerId === null) return null;
+  const own = ClientStatsSystem.subjectVisitOf(
+    CustomerId.of(subjectCustomerId),
+    visit,
+  );
   if (own === null) return null;
-  const seats = own.seats.filter((seat) => seat.outcome.kind === 'worked');
+  const seats = visit.seats.filter(
+    (seat) =>
+      own.seats.includes(seat) &&
+      seat.attendanceState === AttendanceState.Worked,
+  );
   const first = seats[0];
   if (first === undefined) return null;
   return {
     seats,
-    start: seats.reduce(
+    startMinutes: seats.reduce(
       (earliest, seat) =>
-        seat.startsAt.isBefore(earliest) ? seat.startsAt : earliest,
-      first.startsAt,
+        seat.startMinutes < earliest ? seat.startMinutes : earliest,
+      first.startMinutes,
     ),
     withCompany: own.seats.length < visit.seats.length,
   };
@@ -251,25 +269,29 @@ function workedVisitOf(
 export function countsToward(
   series: BadgeSeries,
   visit: Appointment,
-  subjectUserId: string,
+  subjectCustomerId: string | null,
 ): boolean {
   const metric = series.metric;
   if (metric === null) return false;
-  const worked = workedVisitOf(visit, subjectUserId);
+  const worked = workedVisitOf(visit, subjectCustomerId);
   if (worked === null) return false;
+  // The worked start's instant — the punctuality rule compares it with the
+  // arrival stamp (T2); the visit's own instant when the minute names none.
+  const start = ZonedTimeSystem.toUtc(
+    visit.localDate,
+    worked.startMinutes,
+    SHOP_TIME_ZONE,
+  );
   return AchievementsSystem.countsToward(metricRefOf(metric), {
-    serviceIds: worked.seats.map((seat) =>
-      ServiceRefId.of(seat.serviceId.value),
-    ),
-    barberIds: worked.seats.map((seat) => BarberRefId.of(seat.barberId.value)),
-    locationId: LocationRefId.of(visit.locationId.value),
-    // The start on the shop's wall clock, read here once (T1).
-    localDate: dayOf(worked.start.toISODate()),
-    startMinutes: minuteOf(worked.start.hour * 60 + worked.start.minute),
-    weekday: worked.start.weekday as Weekday,
-    startUtcMs: utcOf(worked.start.toMillis()),
-    arrivedAtUtcMs:
-      visit.arrivedAt === null ? null : utcOf(visit.arrivedAt.toMillis()),
+    serviceIds: worked.seats.map((seat) => seat.serviceId),
+    barberIds: worked.seats.map((seat) => seat.barberId),
+    locationId: visit.locationId,
+    // The start on the shop's wall clock, as stored (T1).
+    localDate: visit.localDate,
+    startMinutes: worked.startMinutes,
+    weekday: LocalDate.weekday(visit.localDate),
+    startUtcMs: start.ok ? start.value : visit.utcEpochMs,
+    arrivedAtUtcMs: visit.arrivedAtUtcMs,
     withCompany: worked.withCompany,
   });
 }
@@ -284,7 +306,7 @@ function insideWindows(
   visit: Appointment,
   data: AchievementsData,
 ): boolean {
-  const day = sofiaDayOf(new Date(visit.timeSlot.start.toMillis()));
+  const day = visit.localDate;
   const season =
     series.seasonId === null
       ? null
@@ -298,7 +320,7 @@ function insideWindows(
         },
     series.seasonId !== null,
     series.metric?.window?.lastDays ?? null,
-    dayOf(day),
+    day,
     dayOf(data.today),
   );
 }
@@ -1000,11 +1022,11 @@ function countedVisitsOf(
   const counted = extra.visits
     .filter(
       (visit) =>
-        (current !== null && visit.id.value === current) ||
-        (countsToward(series, visit, extra.subjectUserId) &&
+        (current !== null && visit.id === current) ||
+        (countsToward(series, visit, extra.subjectCustomerId) &&
           insideWindows(series, visit, data)),
     )
-    .sort((a, b) => b.timeSlot.start.toMillis() - a.timeSlot.start.toMillis());
+    .sort((a, b) => UtcEpochMs.compare(b.utcEpochMs, a.utcEpochMs));
   return visitsRows({ ...rows, appointments: counted }).slice(
     0,
     COUNTED_VISITS_LIMIT,
@@ -1038,7 +1060,8 @@ function neighboursOf(
 export interface MedalDetailExtra {
   /** The history's loaded pages (`ClientCardStore.loadedVisits`). */
   readonly visits: readonly Appointment[];
-  readonly subjectUserId: string;
+  /** The client RECORD the card is open on (D29) — whose seats count; `null` before it exists. */
+  readonly subjectCustomerId: string | null;
   /** The rhythm's rule in force, worded (`rhythmRuleWords`); `null` while it is not known, or off. */
   readonly rule: RhythmRuleWords | null;
   /** What the staff rows are worded with (`ClientCardStore.visitRowsInput`); `null` until the history is read: no rows. */

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
-  type BookingDraftRider,
   CartLineId,
   type Result,
   type ScheduleSelection,
@@ -9,6 +8,12 @@ import {
   ZonedDateTime,
 } from '@creativo/application/booking';
 import { BarberId, LocationId } from '@creativo/application/catalog';
+import {
+  BarberId as BarberKey,
+  ServiceId as ServiceKey,
+} from '@core/primitives';
+import type { MoveRider } from '@core/systems';
+import { duration, minuteCount, minuteDelta } from '@core/testing';
 import { placeRiders } from './rider-placement';
 
 const ZONE = 'Europe/Sofia';
@@ -44,32 +49,35 @@ function selection(starts: readonly ZonedDateTime[]): ScheduleSelection {
   };
 }
 
-function rider(offsetMinutes: number): BookingDraftRider {
+function rider(offsetMinutes: number): MoveRider {
   return {
-    serviceId: 'svc-beard',
+    serviceId: ServiceKey.of('svc-beard'),
     variantId: null,
-    barberId: 'petar',
-    offsetMinutes,
-    durationMinutes: 30,
-    setupMinutes: 0,
-    cleanupMinutes: 0,
+    barberId: BarberKey.of('petar'),
+    offsetMinutes: minuteDelta(offsetMinutes),
+    durationMinutes: duration(30),
+    setupMinutes: minuteCount(0),
+    cleanupMinutes: minuteCount(0),
   };
 }
 
-describe('placeRiders — the server’s shift, restated for the review card', () => {
+/** `HH:MM` on the shop's wall clock, as minutes from its midnight. */
+const minuteOf = (hour: number, minute = 0) => hour * 60 + minute;
+
+describe('placeRiders — the server’s shift, on the shop’s wall clock, for the review card', () => {
   it('seats a side-by-side companion at the booker’s new start', () => {
     const [placed] = placeRiders(selection([at(14)]), [rider(0)]);
-    expect(placed?.startMs).toBe(at(14).toMillis());
+    expect(placed?.startMinutes).toBe(minuteOf(14));
   });
 
   it('keeps a companion straight after the booker straight after them', () => {
     const [placed] = placeRiders(selection([at(14)]), [rider(45)]);
-    expect(placed?.startMs).toBe(at(14, 45).toMillis());
+    expect(placed?.startMinutes).toBe(minuteOf(14, 45));
   });
 
   it('anchors on the EARLIEST seat the cart holds, whatever order it lists them in', () => {
     const [placed] = placeRiders(selection([at(15), at(14, 30)]), [rider(-30)]);
-    expect(placed?.startMs).toBe(at(14).toMillis());
+    expect(placed?.startMinutes).toBe(minuteOf(14));
   });
 
   it('places nobody when there is no seat to anchor to', () => {
@@ -92,8 +100,8 @@ describe('placeRiders — the server’s shift, restated for the review card', (
           const start = at(0).plusMinutes(startMinutes);
           const placed = placeRiders(selection([start]), offsets.map(rider));
           expect(
-            placed.map((entry) => entry.startMs - start.toMillis()),
-          ).toEqual(offsets.map((offset) => offset * 60_000));
+            placed.map((entry) => (entry.startMinutes ?? NaN) - startMinutes),
+          ).toEqual(offsets);
         },
       ),
     );

@@ -2,8 +2,13 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { AuditAction, Placement, BackfillJobName } from '@core/components';
 import type { BackfillJob } from '@core/entities';
-import { BackfillJobId, UserId, UtcEpochMs } from '@core/primitives';
-import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
+import {
+  BackfillJobId,
+  CustomerId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import { customerOf, deepFreeze, unwrapOk, utcMs } from '@core/testing';
 import {
   BackfillPhase,
   type BackfillPageWalk,
@@ -24,7 +29,19 @@ import {
  * start as a `BackfillStartRequest` instead of an absent key, and the audit
  * actions are `AuditAction` values. Then the page bookkeeping of
  * `run-backfill.ts`, which the system now owns, on `UtcEpochMs` stamps.
+ *
+ * D29 (flip 1): each account seat carries its client record beside its uid,
+ * and the row stores a second mirror, `subjectCustomerIds`. A stored row
+ * that names only `subjectUserIds` stands for a writer that wrote BOTH
+ * mirrors from the same seats (`rowOf` derives the record mirror of those
+ * uids), so the legacy cases keep their meaning; the cases at the end of
+ * `mirrorPatch` give the two mirrors apart.
  */
+
+/** A client record, derived as the pipelines derive it. */
+const cus = (uid: string): CustomerId => customerOf(UserId.of(uid));
+/** The record mirror of the default seats — ana's and zora's, sorted. */
+const RECORDS: readonly CustomerId[] = [cus('ana'), cus('zora')].sort();
 
 const {
   cursorOf,
@@ -40,26 +57,48 @@ const seats = [
   {
     seatSubject: 'ACCOUNT',
     subjectUserId: 'zora',
+    subjectCustomerId: cus('zora'),
     subjectRelationship: 'COMPANION',
   },
   { seatSubject: 'ANONYMOUS', guestLabel: 'Гост' },
-  { seatSubject: 'ACCOUNT', subjectUserId: 'ana', subjectRelationship: 'SELF' },
+  {
+    seatSubject: 'ACCOUNT',
+    subjectUserId: 'ana',
+    subjectCustomerId: cus('ana'),
+    subjectRelationship: 'SELF',
+  },
 ];
 
 type StoredRow = {
   readonly seats: readonly Record<string, unknown>[];
   readonly subjectUserIds?: unknown;
+  readonly subjectCustomerIds?: unknown;
   readonly placement?: unknown;
   readonly inferredPlacement?: unknown;
 };
 
-/** A stored row as the backfill reads it: every account on its seats once, sorted. */
+/** The record mirror a writer would have stored beside this account mirror. */
+function pairedRecords(stored: unknown): readonly unknown[] | null {
+  if (!Array.isArray(stored)) return null;
+  return stored
+    .map((uid: unknown) => (typeof uid === 'string' ? cus(uid) : uid))
+    .sort();
+}
+
+/**
+ * A stored row as the backfill reads it: every account and every client
+ * record on its seats once, sorted.
+ */
 function rowOf(data: StoredRow): MirrorRow {
   const subjects = new Set<string>();
+  const records = new Set<string>();
   for (const seat of data.seats) {
-    const { seatSubject, subjectUserId } = seat;
+    const { seatSubject, subjectUserId, subjectCustomerId } = seat;
     if (seatSubject === 'ACCOUNT' && typeof subjectUserId === 'string') {
       subjects.add(subjectUserId);
+    }
+    if (seatSubject === 'ACCOUNT' && typeof subjectCustomerId === 'string') {
+      records.add(subjectCustomerId);
     }
   }
   return {
@@ -67,6 +106,13 @@ function rowOf(data: StoredRow): MirrorRow {
       ? (data.subjectUserIds as readonly unknown[])
       : null,
     seatSubjectUserIds: [...subjects].sort().map(UserId.of),
+    storedSubjectCustomerIds:
+      'subjectCustomerIds' in data
+        ? Array.isArray(data.subjectCustomerIds)
+          ? (data.subjectCustomerIds as readonly unknown[])
+          : null
+        : pairedRecords(data.subjectUserIds),
+    seatSubjectCustomerIds: [...records].sort().map(CustomerId.of),
     placement: Placement.parse(data.placement ?? null),
     inferredPlacement: Placement.parse(data.inferredPlacement ?? null),
   };
@@ -78,6 +124,8 @@ function patched(row: MirrorRow, patch: MirrorPatch | null): MirrorRow {
   return {
     ...row,
     storedSubjectUserIds: patch.subjectUserIds ?? row.storedSubjectUserIds,
+    storedSubjectCustomerIds:
+      patch.subjectCustomerIds ?? row.storedSubjectCustomerIds,
     inferredPlacement: patch.inferredPlacement ?? row.inferredPlacement,
   };
 }
@@ -194,6 +242,7 @@ describe('mirrorPatch', () => {
   it('fills in both mirrors on a row written before them, the placement as an inference', () => {
     expect(mirrorPatch(rowOf({ seats }), Placement.Staff)).toEqual({
       subjectUserIds: ['ana', 'zora'],
+      subjectCustomerIds: RECORDS,
       inferredPlacement: 'STAFF',
     });
   });
@@ -209,12 +258,17 @@ describe('mirrorPatch', () => {
         rowOf({ seats, subjectUserIds: ['ana', 'zora'] }),
         Placement.Staff,
       ),
-    ).toEqual({ subjectUserIds: null, inferredPlacement: 'STAFF' });
+    ).toEqual({
+      subjectUserIds: null,
+      subjectCustomerIds: null,
+      inferredPlacement: 'STAFF',
+    });
   });
 
   it('leaves an unknown placement unwritten, so a rerun stays a no-op', () => {
     expect(mirrorPatch(rowOf({ seats }), null)).toEqual({
       subjectUserIds: ['ana', 'zora'],
+      subjectCustomerIds: RECORDS,
       inferredPlacement: null,
     });
     expect(
@@ -228,7 +282,11 @@ describe('mirrorPatch', () => {
         rowOf({ seats, subjectUserIds: ['ana'], placement: 'SELF' }),
         Placement.Staff,
       ),
-    ).toEqual({ subjectUserIds: ['ana', 'zora'], inferredPlacement: null });
+    ).toEqual({
+      subjectUserIds: ['ana', 'zora'],
+      subjectCustomerIds: RECORDS,
+      inferredPlacement: null,
+    });
   });
 
   it('infers nothing over a placement the commit stamped', () => {
@@ -260,6 +318,72 @@ describe('mirrorPatch', () => {
         Placement.Self,
       ),
     ).toBeNull();
+  });
+});
+
+describe('mirrorPatch — the client-record mirror beside the accounts (D29)', () => {
+  it('fills in a missing record mirror on a row whose account mirror is right', () => {
+    expect(
+      mirrorPatch(
+        rowOf({
+          seats,
+          subjectUserIds: ['ana', 'zora'],
+          subjectCustomerIds: undefined,
+          placement: 'SELF',
+        }),
+        null,
+      ),
+    ).toEqual({
+      subjectUserIds: null,
+      subjectCustomerIds: RECORDS,
+      inferredPlacement: null,
+    });
+  });
+
+  it('corrects a record mirror that disagrees with the seats, and leaves a right one alone', () => {
+    expect(
+      mirrorPatch(
+        rowOf({
+          seats,
+          subjectUserIds: ['ana', 'zora'],
+          subjectCustomerIds: [cus('ana')],
+          placement: 'SELF',
+        }),
+        null,
+      ),
+    ).toEqual({
+      subjectUserIds: null,
+      subjectCustomerIds: RECORDS,
+      inferredPlacement: null,
+    });
+    expect(
+      mirrorPatch(
+        rowOf({
+          seats,
+          subjectUserIds: ['ana'],
+          subjectCustomerIds: RECORDS,
+          placement: 'SELF',
+        }),
+        null,
+      ),
+    ).toEqual({
+      subjectUserIds: ['ana', 'zora'],
+      subjectCustomerIds: null,
+      inferredPlacement: null,
+    });
+  });
+
+  it('flags a row whose record mirror alone is off', () => {
+    expect(
+      mayLackMirrors(
+        rowOf({
+          seats,
+          subjectUserIds: ['ana', 'zora'],
+          subjectCustomerIds: [],
+          placement: 'STAFF',
+        }),
+      ),
+    ).toBe(true);
   });
 });
 

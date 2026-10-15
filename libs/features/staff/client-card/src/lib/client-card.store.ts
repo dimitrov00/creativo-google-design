@@ -19,26 +19,38 @@ import {
   type User,
   UserId,
 } from '@creativo/application/accounts';
+import type {
+  Appointment,
+  AppointmentPhoto,
+  ClientMoneyRecord,
+  ClientStatsRecord,
+  GiftVoucher,
+  WaitlistRequest,
+} from '@core/entities';
 import {
-  type Appointment,
-  type AppointmentPhoto,
-  CLIENT_HISTORY_READER,
-  CLIENT_PHOTOS_READER,
-  CLIENT_STATS_READER,
-  type ClientMoneyRecord,
-  type ClientStatsRecord,
-  type Result,
-  WAITLIST_READER,
-  type WaitlistRequest,
-  fail,
-  ok,
-} from '@creativo/application/booking';
+  type AppointmentId,
+  CustomerId,
+  RepositoryError,
+  Result,
+  type TimeZone,
+  type UtcEpochMs,
+  UserId as UserRef,
+  defect,
+} from '@core/primitives';
+import type { VisitFact } from '@core/components';
+import { ZonedTimeSystem } from '@core/systems';
+import {
+  APPOINTMENT_PHOTO_PORTS,
+  APPOINTMENT_READ_PORTS,
+  CLIENT_STATS_READ_PORTS,
+  COUPON_VOUCHER_PORTS,
+  CUSTOMER_PORTS,
+  WAITLIST_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import {
   type ActivityEntry,
   type ActivityKind,
   type BadgeProgress,
-  CLIENT_VOUCHERS_READER,
-  type GiftVoucher,
   LOYALTY_ACTIVITY_READER,
   LOYALTY_CATALOG_READER,
   LOYALTY_READER,
@@ -49,11 +61,7 @@ import {
   type StreakDefinitionSchedule,
   type StreakRuleSummary,
 } from '@creativo/application/engagement';
-import {
-  CLOCK,
-  FEATURE_FLAGS,
-  RepositoryError,
-} from '@creativo/application/shared';
+import { CLOCK, FEATURE_FLAGS } from '@creativo/application/shared';
 import {
   type VisitFilter,
   type VisitRowVm,
@@ -144,12 +152,52 @@ const PHOTOS_LIMIT = 12;
 
 const SHOP_ZONE = 'Europe/Sofia';
 
-/** A read that did not answer in time. */
-export class ClientCardReadTimeoutError extends RepositoryError {
-  constructor() {
-    super(`The read did not answer within ${CLIENT_CARD_READ_TIMEOUT_MS} ms`);
-  }
+/** The shop's zone, branded — where a stored shop day and minute are read back as an instant. */
+const SHOP_TIME_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone(SHOP_ZONE);
+  return zone.ok ? zone.value : defect('unreachable: the shop zone');
+})();
+
+/**
+ * A worked visit's stored shop day and minute (Law 7.3) as the instant the
+ * loyalty presenters (flip 3) still read — once, at this boundary, in the
+ * shop's zone; a minute inside a spring-forward gap reads as the day's start.
+ */
+function factInstant(fact: VisitFact): number {
+  const at = ZonedTimeSystem.toUtc(
+    fact.localDate,
+    fact.startMinutes,
+    SHOP_TIME_ZONE,
+  );
+  return at.ok
+    ? at.value
+    : ZonedTimeSystem.startOfLocalDay(fact.localDate, SHOP_TIME_ZONE);
 }
+
+/**
+ * A read's answer as the store settles it — the ecs-core ports' plain
+ * `Result`, or a loyalty reader's (flip 3) `Success`/`Failure` class, which
+ * the store reads through `settled` until that flip re-types them.
+ */
+type ReadAnswer<T> =
+  | Result<T, unknown>
+  | {
+      isSuccess(): boolean;
+      readonly value?: T;
+      readonly error?: unknown;
+    };
+
+/** Either answer, as one plain `Result`. */
+function settled<T>(answer: ReadAnswer<T>): Result<T, unknown> {
+  if ('ok' in answer) return answer;
+  return answer.isSuccess()
+    ? Result.ok(answer.value as T)
+    : Result.err(answer.error);
+}
+
+/** A read that did not answer in time (`CLIENT_CARD_READ_TIMEOUT_MS`), or threw. */
+const READ_TIMED_OUT = RepositoryError.readFailed(null, 'timeout');
+const READ_THREW = RepositoryError.readFailed(null, 'threw');
 
 /** The history's pages as the store holds them. */
 interface HistoryState {
@@ -157,8 +205,8 @@ interface HistoryState {
   readonly status: Slice<unknown>['status'];
   /** Every loaded visit, newest first, page after page. */
   readonly appointments: readonly Appointment[];
-  /** Where the next page starts; `null` = nothing older. */
-  readonly cursor: string | null;
+  /** Where the next page starts — the start instant it reads before; `null` = nothing older. */
+  readonly cursor: UtcEpochMs | null;
   /** The «Покажи още» read. */
   readonly more: 'idle' | 'loading' | 'failed';
   /** Each loaded visit's own photos, counted, for the rows' marks. */
@@ -269,14 +317,22 @@ function dataOf<T>(slice: Slice<T> | null): T | null {
 export class ClientCardStore {
   private readonly profiles = inject(PROFILE_PORT, { optional: true });
   private readonly avatars = inject(AVATAR_UPLOADER, { optional: true });
-  private readonly statsReader = inject(CLIENT_STATS_READER, {
+  /**
+   * The client RECORD of the account (D29) — read once per person; stats,
+   * money, history, photos and vouchers are all keyed by it. Absent (no
+   * port bound) reads as no record.
+   */
+  private readonly customers = inject(CUSTOMER_PORTS, { optional: true });
+  private readonly statsReader = inject(CLIENT_STATS_READ_PORTS, {
     optional: true,
   });
-  private readonly waitlistReader = inject(WAITLIST_READER, { optional: true });
-  private readonly historyReader = inject(CLIENT_HISTORY_READER, {
+  private readonly waitlistReader = inject(WAITLIST_READ_PORTS, {
     optional: true,
   });
-  private readonly photosReader = inject(CLIENT_PHOTOS_READER, {
+  private readonly historyReader = inject(APPOINTMENT_READ_PORTS, {
+    optional: true,
+  });
+  private readonly photosReader = inject(APPOINTMENT_PHOTO_PORTS, {
     optional: true,
   });
   private readonly loyaltyReader = inject(LOYALTY_READER, { optional: true });
@@ -284,7 +340,7 @@ export class ClientCardStore {
     optional: true,
   });
   /** The gift vouchers a person holds (revision 3 §4.5): the wallet's holdings, the glance's voucher fact. */
-  private readonly vouchersReader = inject(CLIENT_VOUCHERS_READER, {
+  private readonly vouchersReader = inject(COUPON_VOUCHER_PORTS, {
     optional: true,
   });
   /** The journal as a feed (§4.7): the wallet's «Движение» and the ledger page. */
@@ -316,6 +372,18 @@ export class ClientCardStore {
   private catalogCache: LoyaltyCatalog | null = null;
 
   private readonly _subject = signal<ClientCardSubject | null>(null);
+  /**
+   * The subject's client record, once read: the id, `null` for an account
+   * with no record yet (today's "no stats yet"), `undefined` before the
+   * read has answered — or when it failed, so a retry reads it again.
+   */
+  private readonly _customerId = signal<CustomerId | null | undefined>(
+    undefined,
+  );
+  /** The record's id as the rows key their story; `null` until it is known, or for none. */
+  readonly customerId = computed<string | null>(
+    () => this._customerId() ?? null,
+  );
   private readonly _context = signal<ClientCardContext | null>(null);
   private readonly _nowMs = signal(0);
   private readonly _profile = signal<Slice<User | null> | null>(null);
@@ -480,6 +548,7 @@ export class ClientCardStore {
     return {
       appointments: history.appointments,
       subjectUserId: subject.userId,
+      subjectCustomerId: this._customerId() ?? null,
       currentAppointmentId: context.appointmentId,
       nowMs: this._nowMs(),
       photoCounts: history.photoCounts,
@@ -512,10 +581,10 @@ export class ClientCardStore {
     const byId = new Map(this.historyRowVms().map((row) => [row.id, row]));
     const featured = lastWorkedVisit(
       history.appointments,
-      (appointment) => byId.get(appointment.id.value) as VisitRowVm,
+      (appointment) => byId.get(appointment.id) as VisitRowVm,
       context.appointmentId,
     );
-    return featured?.appointment.id.value ?? null;
+    return featured?.appointment.id ?? null;
   });
 
   /** The tier capsule's inputs: `null` = no capsule, `'loading'` = not known yet. */
@@ -539,9 +608,13 @@ export class ClientCardStore {
     },
   );
 
-  /** The visits the rhythm reads: the stats' worked visits of the last year. */
+  /**
+   * The visits the rhythm reads: the stats' worked visits of the last year,
+   * each a shop day and minute (Law 7.3), read back as the instant the
+   * loyalty presenters (flip 3) still take — once, here, in the shop's zone.
+   */
   private readonly visitsMs = computed(
-    () => this.stats()?.last365.visitsCompleted.map((fact) => fact.atMs) ?? [],
+    () => this.stats()?.last365VisitsCompleted.map(factInstant) ?? [],
   );
 
   /**
@@ -624,14 +697,21 @@ export class ClientCardStore {
     const current = this._context()?.appointmentId ?? null;
     if (stats === null) return null;
     let latest: number | null = null;
-    for (const fact of stats.last365.visitsCompleted) {
-      if (fact.appointmentId.value === current) continue;
-      if (latest === null || fact.atMs > latest) latest = fact.atMs;
+    for (const fact of stats.last365VisitsCompleted) {
+      if (fact.appointmentId === current) continue;
+      const at = factInstant(fact);
+      if (latest === null || at > latest) latest = at;
     }
     if (latest !== null) return latest;
-    const last = stats.lastVisit;
-    return last !== null && last.appointmentId.value !== current
-      ? last.atMs
+    return stats.lastVisitAppointmentId !== null &&
+      stats.lastVisitAppointmentId !== current &&
+      stats.lastVisitLocalDate !== null &&
+      stats.lastVisitStartMinutes !== null
+      ? factInstant({
+          appointmentId: stats.lastVisitAppointmentId,
+          localDate: stats.lastVisitLocalDate,
+          startMinutes: stats.lastVisitStartMinutes,
+        })
       : null;
   });
 
@@ -893,11 +973,12 @@ export class ClientCardStore {
       data: visitCardsVm({
         appointments: history.appointments,
         subjectUserId: subject.userId,
+        subjectCustomerId: this._customerId() ?? null,
         context,
         photos: dataOf(photos) ?? [],
         waitlist: dataOf(waitlist),
         paused: this.paused(),
-        count: this.stats()?.lifetime.visitsCompleted ?? 0,
+        count: this.stats()?.lifetimeVisitsCompleted ?? 0,
         clientWords: !context.viewer.roles.includes('sysadmin'),
         nowMs: this._nowMs(),
         words,
@@ -936,7 +1017,7 @@ export class ClientCardStore {
       catalog: dataOf(catalog),
       flags,
       visitsMs: this.visitsMs(),
-      lifetimeVisits: this.stats()?.lifetime.visitsCompleted ?? null,
+      lifetimeVisits: this.stats()?.lifetimeVisitsCompleted ?? null,
       inChairToday: this.inChairToday(),
       paused: this.paused(),
       today: this.today(),
@@ -1094,14 +1175,14 @@ export class ClientCardStore {
         usableGrants: usable ? context.grants : [],
         usableGrantsOnBill: usable ? context.grantsOnBill : [],
         visitsMs: this.visitsMs(),
-        lifetimeVisits: stats?.lifetime.visitsCompleted ?? null,
+        lifetimeVisits: stats?.lifetimeVisitsCompleted ?? null,
         visitTitles: this.visitNames(),
         visitBarbers: this.visitBarbers(),
         inChairToday: this.inChairToday(),
         today: this.today(),
         words,
         holder: this.displayName(),
-        sinceMs: stats?.firstVisitAtMs ?? null,
+        sinceDay: stats?.firstVisitLocalDate ?? null,
         vouchers: this._vouchers(),
         activity: this._activity(),
         ruleInForce: this.ruleInForce(),
@@ -1374,7 +1455,9 @@ export class ClientCardStore {
         case 'visits':
         case 'history':
           if (this._history()?.status === 'failed') {
-            void this.loadFirstPage(generation, userId);
+            void this.withRecord(generation, userId, (record) =>
+              this.loadFirstPage(generation, record),
+            );
           } else if (
             region === 'history' &&
             this._history()?.more === 'failed'
@@ -1384,7 +1467,11 @@ export class ClientCardStore {
           if (failed(this._waitlist())) this.watchWaitlist(generation, userId);
           return;
         case 'photos':
-          if (failed(this._photos())) void this.loadPhotos(generation, userId);
+          if (failed(this._photos())) {
+            void this.withRecord(generation, userId, (record) =>
+              this.loadPhotos(generation, record),
+            );
+          }
           return;
         case 'loyalty':
         case 'achievements':
@@ -1392,8 +1479,11 @@ export class ClientCardStore {
           if (failed(this._catalog())) void this.loadCatalog();
           return;
         case 'vouchers':
-          if (failed(this._vouchers()))
-            void this.loadVouchers(generation, userId);
+          if (failed(this._vouchers())) {
+            void this.withRecord(generation, userId, (record) =>
+              this.loadVouchers(generation, record),
+            );
+          }
           return;
         case 'activity':
           if (failed(this._activity())) void this.loadFeed(generation, userId);
@@ -1411,7 +1501,7 @@ export class ClientCardStore {
   photoById(photoId: string): ClientPhotoVm | null {
     const photos = dataOf(this._photos());
     const words = this.words();
-    const photo = photos?.find((p) => p.photoId === photoId);
+    const photo = photos?.find((p) => p.id === photoId);
     return photo === undefined || words === null
       ? null
       : clientPhotoVm(photo, this._nowMs(), words);
@@ -1475,10 +1565,89 @@ export class ClientCardStore {
     return now?.isSuccess() ? now.value.toMillis() : Date.now();
   }
 
+  /**
+   * The subject's client record (D29): the one the store already read, else
+   * `customers where userId == uid` (`CUSTOMER_PORTS.loadCustomerForUser`) —
+   * `null` for an account with no record yet, and with no port bound;
+   * `'failed'` when the read failed or timed out (the record stays unknown,
+   * so a retry reads it again). An answer for an older open is dropped.
+   */
+  private recordOf(
+    generation: number,
+    uid: string,
+  ): Promise<CustomerId | null | 'failed'> {
+    const known = untracked(this._customerId);
+    if (known !== undefined) return Promise.resolve(known);
+    // ONE read per open: every keyed read waits on the same answer.
+    const pending = this.recordRead;
+    if (
+      pending !== null &&
+      pending.uid === uid &&
+      pending.generation === generation
+    ) {
+      return pending.answer;
+    }
+    const answer = this.readRecord(generation, uid);
+    this.recordRead = { uid, generation, answer };
+    void answer.then(() => {
+      if (this.recordRead?.answer === answer) this.recordRead = null;
+    });
+    return answer;
+  }
+
+  /** The in-flight record read, shared by every read of one open. */
+  private recordRead: {
+    readonly uid: string;
+    readonly generation: number;
+    readonly answer: Promise<CustomerId | null | 'failed'>;
+  } | null = null;
+
+  private async readRecord(
+    generation: number,
+    uid: string,
+  ): Promise<CustomerId | null | 'failed'> {
+    const customers = this.customers;
+    if (customers === null) {
+      this._customerId.set(null);
+      return null;
+    }
+    const userId = UserRef.parse(uid);
+    if (!userId.ok) return 'failed';
+    const result = await this.timed(() =>
+      customers.loadCustomerForUser(userId.value),
+    );
+    if (generation !== this.generation) return 'failed';
+    if (!result.ok) return 'failed';
+    const record = result.value === null ? null : result.value.id;
+    this._customerId.set(record);
+    return record;
+  }
+
+  /**
+   * A read keyed by the record, once it is known: `run` for a record, the
+   * reader's empty answer for none (an account with no record has no
+   * stats, visits, photos or vouchers yet), and the slice `failed` when the
+   * record itself could not be read.
+   */
+  private async withRecord(
+    generation: number,
+    uid: string,
+    run: (record: CustomerId) => Promise<void>,
+    none?: () => void,
+    failed?: () => void,
+  ): Promise<void> {
+    const record = await this.recordOf(generation, uid);
+    if (generation !== this.generation) return;
+    if (record === 'failed') failed?.();
+    else if (record === null) none?.();
+    else await run(record);
+  }
+
   /** A new person: every slice back to its first state (loading where it will be read, absent where it will not). */
   private reset(subject: ClientCardSubject): void {
     this.waitlistSubscription?.unsubscribe();
     this.waitlistSubscription = null;
+    this._customerId.set(undefined);
     this._filter.set('all');
     this._avatar.set(null);
     this._money.set(null);
@@ -1517,9 +1686,16 @@ export class ClientCardStore {
     this._medalsChip.set(CHIP_ALL);
   }
 
-  /** `users/{uid}` first — the gate — then everything else at once. */
+  /**
+   * `users/{uid}` first — the gate — then everything else at once. The
+   * client record is asked for beside the profile (it keys the stats, the
+   * history, the photos and the vouchers, D29), so it costs no round trip
+   * of its own.
+   */
   private async loadAll(generation: number, uid: string): Promise<void> {
     const userId = UserId.create(uid);
+    // Asked for at once, beside the gate: every keyed read below waits on it.
+    void this.recordOf(generation, uid);
     const profiles = this.profiles;
     if (profiles !== null) {
       if (userId.isFailure()) {
@@ -1533,20 +1709,75 @@ export class ClientCardStore {
     }
     const stats = this.statsReader;
     if (stats !== null) {
-      void this.read(generation, this._stats, () => stats.get(uid));
+      void this.withRecord(
+        generation,
+        uid,
+        async (customerId) => {
+          await this.read(generation, this._stats, () =>
+            stats.loadClientStats(customerId),
+          );
+        },
+        // No record yet: no projection either — the head's "first visit".
+        () => this._stats.set({ status: 'ready', data: null }),
+        () => this._stats.set(FAILED),
+      );
       if (this._context()?.viewer.roles.includes('admin') === true) {
-        void this.loadMoney(generation, uid);
+        void this.withRecord(generation, uid, (customerId) =>
+          this.loadMoney(generation, customerId),
+        );
       }
     }
     if (this.avatars !== null && userId.isSuccess()) {
       void this.loadAvatar(generation, userId.value);
     }
-    void this.loadFirstPage(generation, uid);
+    void this.withRecord(
+      generation,
+      uid,
+      (customerId) => this.loadFirstPage(generation, customerId),
+      () =>
+        this._history.update((history) =>
+          history === null ? null : { ...LOADING_HISTORY, status: 'ready' },
+        ),
+      () =>
+        this._history.update((history) =>
+          history === null || history.status === 'ready'
+            ? history
+            : { ...LOADING_HISTORY, status: 'failed' },
+        ),
+    );
     this.watchWaitlist(generation, uid);
-    void this.loadPhotos(generation, uid);
+    void this.withRecord(
+      generation,
+      uid,
+      (customerId) => this.loadPhotos(generation, customerId),
+      () => {
+        if (this._photos() !== null) {
+          this._photos.set({ status: 'ready', data: [] });
+        }
+      },
+      () => {
+        if (this._photos()?.status !== 'ready' && this._photos() !== null) {
+          this._photos.set(FAILED);
+        }
+      },
+    );
     this.loadLoyalty(generation, uid, false);
     void this.loadCatalog();
-    void this.loadVouchers(generation, uid);
+    void this.withRecord(
+      generation,
+      uid,
+      (customerId) => this.loadVouchers(generation, customerId),
+      () => {
+        if (this._vouchers() !== null) {
+          this._vouchers.set({ status: 'ready', data: [] });
+        }
+      },
+      () => {
+        if (this._vouchers()?.status !== 'ready' && this._vouchers() !== null) {
+          this._vouchers.set(FAILED);
+        }
+      },
+    );
     void this.loadFeed(generation, uid);
     this.loadLedgerFirst(generation, uid);
   }
@@ -1560,12 +1791,12 @@ export class ClientCardStore {
   private async read<T>(
     generation: number,
     target: WritableSignal<Slice<T> | null>,
-    read: () => Promise<Result<T, unknown>>,
+    read: () => Promise<ReadAnswer<T>>,
   ): Promise<boolean> {
     if (target()?.status !== 'ready') target.set(LOADING);
     const result = await this.timed(read);
     if (generation !== this.generation) return false;
-    if (result.isSuccess()) {
+    if (result.ok) {
       target.set({ status: 'ready', data: result.value });
       return true;
     }
@@ -1578,12 +1809,12 @@ export class ClientCardStore {
 
   /** The read, or a failure after `CLIENT_CARD_READ_TIMEOUT_MS`; a thrown error is a failure too. */
   private timed<T>(
-    read: () => Promise<Result<T, unknown>>,
+    read: () => Promise<ReadAnswer<T>>,
   ): Promise<Result<T, unknown>> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.timers.delete(timer);
-        resolve(fail(new ClientCardReadTimeoutError()));
+        resolve(Result.err(READ_TIMED_OUT));
       }, CLIENT_CARD_READ_TIMEOUT_MS);
       this.timers.add(timer);
       const settle = (result: Result<T, unknown>) => {
@@ -1591,15 +1822,16 @@ export class ClientCardStore {
         this.timers.delete(timer);
         resolve(result);
       };
-      let pending: Promise<Result<T, unknown>>;
+      let pending: Promise<ReadAnswer<T>>;
       try {
         pending = read();
-      } catch (error) {
-        settle(fail(new RepositoryError('The read threw', error)));
+      } catch {
+        settle(Result.err(READ_THREW));
         return;
       }
-      pending.then(settle, (error: unknown) =>
-        settle(fail(new RepositoryError('The read threw', error))),
+      pending.then(
+        (answer) => settle(settled(answer)),
+        () => settle(Result.err(READ_THREW)),
       );
     });
   }
@@ -1610,27 +1842,33 @@ export class ClientCardStore {
     const result = await this.timed(() => avatars.find(userId));
     if (generation !== this.generation) return;
     // A missing or unreadable picture is the monogram, never an error.
-    this._avatar.set(result.isSuccess() ? (result.value?.url ?? null) : null);
+    this._avatar.set(result.ok ? (result.value?.url ?? null) : null);
   }
 
   /** ‹admin› — `restricted/money`; never asked for anyone else, and a refusal is simply no figure. */
-  private async loadMoney(generation: number, uid: string): Promise<void> {
+  private async loadMoney(
+    generation: number,
+    customerId: CustomerId,
+  ): Promise<void> {
     const stats = this.statsReader;
     if (stats === null) return;
-    const result = await this.timed(() => stats.getMoney(uid));
+    const result = await this.timed(() => stats.loadClientMoney(customerId));
     if (generation !== this.generation) return;
-    this._money.set(result.isSuccess() ? result.value : null);
+    this._money.set(result.ok ? result.value : null);
   }
 
-  private async loadFirstPage(generation: number, uid: string): Promise<void> {
+  private async loadFirstPage(
+    generation: number,
+    customerId: CustomerId,
+  ): Promise<void> {
     const reader = this.historyReader;
     if (reader === null) return;
     if (this._history()?.status !== 'ready') this._history.set(LOADING_HISTORY);
     const result = await this.timed(() =>
-      reader.pageForSubject(uid, { beforeIso: null, limit: HISTORY_PAGE_SIZE }),
+      reader.pageClientHistory(customerId, null, HISTORY_PAGE_SIZE),
     );
     if (generation !== this.generation) return;
-    if (result.isFailure()) {
+    if (!result.ok) {
       if (this._history()?.status !== 'ready') {
         this._history.set({ ...LOADING_HISTORY, status: 'failed' });
       }
@@ -1639,7 +1877,7 @@ export class ClientCardStore {
     this._history.set({
       status: 'ready',
       appointments: result.value.appointments,
-      cursor: result.value.nextBeforeIso,
+      cursor: result.value.nextBeforeUtcMs,
       more: 'idle',
       photoCounts: new Map(),
     });
@@ -1653,15 +1891,22 @@ export class ClientCardStore {
   ): Promise<void> {
     const photos = this.photosReader;
     if (photos === null || appointments.length === 0) return;
-    const ids = appointments.map((appointment) => appointment.id.value);
-    const result = await this.timed(() => photos.countByAppointment(ids));
-    if (generation !== this.generation || result.isFailure()) return;
+    const ids: readonly AppointmentId[] = appointments.map(
+      (appointment) => appointment.id,
+    );
+    const result = await this.timed(() => photos.countPhotosByAppointment(ids));
+    if (generation !== this.generation || !result.ok) return;
+    // Positions preserved: `counts[i]` counts `ids[i]`.
+    const counts = result.value;
     this._history.update((history) =>
       history === null
         ? null
         : {
             ...history,
-            photoCounts: new Map([...history.photoCounts, ...result.value]),
+            photoCounts: new Map([
+              ...history.photoCounts,
+              ...ids.map((id, index) => [id, counts[index] ?? 0] as const),
+            ]),
           },
     );
   }
@@ -1669,11 +1914,11 @@ export class ClientCardStore {
   /** The next page; `true` when one was added. */
   private async fetchMore(): Promise<boolean> {
     const reader = this.historyReader;
-    const uid = untracked(this._subject)?.userId ?? null;
+    const customerId = untracked(this._customerId) ?? null;
     const history = untracked(this._history);
     if (
       reader === null ||
-      uid === null ||
+      customerId === null ||
       history === null ||
       history.status !== 'ready' ||
       history.cursor === null ||
@@ -1686,22 +1931,19 @@ export class ClientCardStore {
     const cursor = history.cursor;
     this._history.set({ ...history, more: 'loading' });
     const result = await this.timed(() =>
-      reader.pageForSubject(uid, {
-        beforeIso: cursor,
-        limit: HISTORY_PAGE_SIZE,
-      }),
+      reader.pageClientHistory(customerId, cursor, HISTORY_PAGE_SIZE),
     );
     if (generation !== this.generation) return false;
     const now = this._history();
     if (now === null) return false;
-    if (result.isFailure()) {
+    if (!result.ok) {
       this._history.set({ ...now, more: 'failed' });
       return false;
     }
     this._history.set({
       ...now,
       appointments: [...now.appointments, ...result.value.appointments],
-      cursor: result.value.nextBeforeIso,
+      cursor: result.value.nextBeforeUtcMs,
       more: 'idle',
     });
     void this.loadCounts(generation, result.value.appointments);
@@ -1719,12 +1961,16 @@ export class ClientCardStore {
     }
   }
 
-  /** The waitlist is a live read: its first answer settles the slice (or the timeout fails it), later ones update it. */
+  /**
+   * The waitlist is a live read of the ACCOUNT's own requests (they stay
+   * keyed by the account, D29): its first answer settles the slice (or the
+   * timeout fails it), later ones update it.
+   */
   private watchWaitlist(generation: number, uid: string): void {
     const reader = this.waitlistReader;
     if (reader === null) return;
-    const userId = UserId.create(uid);
-    if (userId.isFailure()) {
+    const userId = UserRef.parse(uid);
+    if (!userId.ok) {
       this._waitlist.set(FAILED);
       return;
     }
@@ -1744,33 +1990,39 @@ export class ClientCardStore {
       clearTimeout(timer);
       this.timers.delete(timer);
     };
-    this.waitlistSubscription = reader.observeMine(userId.value).subscribe({
-      next: (result) => {
-        settle();
-        if (generation !== this.generation) return;
-        if (result.isSuccess()) {
-          this._waitlist.set({ status: 'ready', data: result.value });
-        } else if (this._waitlist()?.status !== 'ready') {
-          this._waitlist.set(FAILED);
-        }
-      },
-      error: () => {
-        settle();
-        if (
-          generation === this.generation &&
-          this._waitlist()?.status !== 'ready'
-        ) {
-          this._waitlist.set(FAILED);
-        }
-      },
-    });
+    this.waitlistSubscription = reader
+      .observeMyWaitlistRequests(userId.value)
+      .subscribe({
+        next: (result) => {
+          settle();
+          if (generation !== this.generation) return;
+          if (result.ok) {
+            this._waitlist.set({ status: 'ready', data: result.value });
+          } else if (this._waitlist()?.status !== 'ready') {
+            this._waitlist.set(FAILED);
+          }
+        },
+        error: () => {
+          settle();
+          if (
+            generation === this.generation &&
+            this._waitlist()?.status !== 'ready'
+          ) {
+            this._waitlist.set(FAILED);
+          }
+        },
+      });
   }
 
-  private async loadPhotos(generation: number, uid: string): Promise<void> {
+  /** The record's newest photos across visits (`listClientPhotos`, index #22). */
+  private async loadPhotos(
+    generation: number,
+    customerId: CustomerId,
+  ): Promise<void> {
     const reader = this.photosReader;
     if (reader === null) return;
     await this.read(generation, this._photos, () =>
-      reader.listForClient(uid, { limit: PHOTOS_LIMIT }),
+      reader.listClientPhotos(customerId, PHOTOS_LIMIT),
     );
   }
 
@@ -1813,7 +2065,7 @@ export class ClientCardStore {
     }
     this._catalog.set(LOADING);
     const result = await this.timed(() => reader.getCatalog());
-    if (result.isSuccess()) {
+    if (result.ok) {
       this.catalogCache = result.value;
       if (this._catalog() !== null) {
         this._catalog.set({ status: 'ready', data: result.value });
@@ -1825,12 +2077,18 @@ export class ClientCardStore {
 
   // ── Revision 3: the wallet's two reads ──────────────────────────────
 
-  /** The vouchers issued to the person, whatever their state (`CLIENT_VOUCHERS_READER`); the wallet keeps what it shows. */
-  private async loadVouchers(generation: number, uid: string): Promise<void> {
+  /**
+   * The vouchers issued to the client record, whatever their state
+   * (`listGiftVouchersForHolder`, D29); the wallet keeps what it shows.
+   */
+  private async loadVouchers(
+    generation: number,
+    customerId: CustomerId,
+  ): Promise<void> {
     const reader = this.vouchersReader;
     if (reader === null || this._vouchers() === null) return;
     await this.read(generation, this._vouchers, () =>
-      reader.listForHolder(uid),
+      reader.listGiftVouchersForHolder(customerId),
     );
   }
 
@@ -1844,7 +2102,9 @@ export class ClientCardStore {
         limit: WALLET_ACTIVITY_READ,
         after: null,
       });
-      return page.isSuccess() ? ok(page.value.entries) : fail(page.error);
+      return page.isSuccess()
+        ? Result.ok(page.value.entries)
+        : Result.err(page.error);
     });
   }
 
@@ -1879,7 +2139,7 @@ export class ClientCardStore {
     }
     const now = this._ledgerPage();
     if (now === null || now.filter !== kind) return;
-    if (result.isFailure()) {
+    if (!result.ok) {
       if (now.status !== 'ready')
         this._ledgerPage.set({ ...now, status: 'failed' });
       return;
@@ -1921,7 +2181,7 @@ export class ClientCardStore {
     }
     const now = this._ledgerPage();
     if (now === null || now.filter !== state.filter) return;
-    if (result.isFailure()) {
+    if (!result.ok) {
       this._ledgerPage.set({ ...now, more: 'failed' });
       return;
     }

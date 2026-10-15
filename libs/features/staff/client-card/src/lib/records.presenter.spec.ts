@@ -1,22 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { UserId } from '@creativo/application/accounts';
 import {
-  Appointment,
-  BookingContact,
-  type ClientStatsRecord,
-  type Result,
-  SEAT_SCHEDULED,
-  Seat,
-  SeatId,
-  SeatSubject,
-  seatCancelled,
-  seatWorked,
-} from '@creativo/application/booking';
-import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
+  BookingLifecycle,
+  CancellationReason,
+  CancellationReasonSet,
+  CancelledBy,
+  SeatOutcome,
+} from '@core/components';
+import type { Appointment, ClientStatsRecord } from '@core/entities';
+import { BarberId, ServiceId, UtcEpochMs } from '@core/primitives';
 import type {
   PersonalRecord,
   StreakDefinition,
@@ -37,25 +28,24 @@ import {
   MARTIN_PREVIOUS_MS,
   achievementsContextOf,
   achievementsDataOf,
-  at,
+  contactOf,
   georgiContext,
   georgiHistory,
   loyaltyCatalogWith,
   martinContext,
   martinHistory,
   must,
+  seatOf,
+  sofia,
   statsOf,
+  visitOf,
+  wallOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
 
 const DATA = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 const SETTLED = achievementsContextOf(georgiContext(), 'Георги Петров');
 const RULE = must(DATA.catalog.streakInForce('cadence', DATA.today), 'rule');
-
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error(JSON.stringify(result.error));
-  return result.value;
-}
 
 /** Георги's page as the store hands it over: the whole history loaded. */
 function georgi(overrides: Partial<RecordsPageInput> = {}): RecordsPageInput {
@@ -127,6 +117,8 @@ function ruleOff(): StreakDefinition {
   return must(catalog.streakInForce('cadence', DATA.today), 'rule off');
 }
 
+const DAY_MS = 86_400_000;
+
 /** One visit of Георги's, a fade with Иван at Център, as its outcome says. */
 function visit(
   id: string,
@@ -134,49 +126,48 @@ function visit(
   outcome: 'worked' | 'open' | 'cancelled' = 'worked',
   who: string = GEORGI,
 ): Appointment {
-  const start = at(startsAt);
-  const seat = Seat.of({
-    id: unwrap(SeatId.create(`${id}-s1`)),
-    subject: SeatSubject.account(unwrap(UserId.create(who)), 'self'),
-    serviceId: unwrap(ServiceId.create('svc-fade')),
-    variantId: null,
-    barberId: unwrap(BarberId.create('ivan')),
-    terms: unwrap(ServiceTerms.fromMinorUnits(1750, 'EUR', 45)),
-    startsAt: start,
-    outcome:
+  const wall = wallOf(startsAt);
+  const start = sofia(startsAt);
+  const worked = UtcEpochMs.plusMs(start, 45 * 60_000);
+  const cancelled = UtcEpochMs.plusMs(start, -DAY_MS);
+  const booked = UtcEpochMs.plusMs(start, -14 * DAY_MS);
+  return visitOf({
+    id,
+    localDate: wall.localDate,
+    seats: [
+      seatOf({
+        id: `${id}-s1`,
+        who,
+        serviceId: 'svc-fade',
+        barberId: 'ivan',
+        minutes: 45,
+        priceMinor: 1750,
+        startMinutes: wall.minute,
+        outcome:
+          outcome === 'worked'
+            ? SeatOutcome.worked(worked)
+            : outcome === 'cancelled'
+              ? SeatOutcome.cancelled(
+                  cancelled,
+                  CancelledBy.Client,
+                  CancellationReason.ClientChangedPlans,
+                  null,
+                )
+              : SeatOutcome.scheduled(),
+      }),
+    ],
+    lifecycle:
       outcome === 'worked'
-        ? seatWorked(start.plusMinutes(45).toMillis())
+        ? BookingLifecycle.complete(worked)
         : outcome === 'cancelled'
-          ? seatCancelled(
-              start.plusDays(-1).toMillis(),
-              'client',
-              { kind: 'client_changed_plans' },
-              null,
+          ? BookingLifecycle.cancel(
+              cancelled,
+              CancellationReasonSet.of([CancellationReason.ClientChangedPlans]),
             )
-          : SEAT_SCHEDULED,
+          : BookingLifecycle.confirm(booked),
+    contact: contactOf('Георги Петров', '+359881234567', null),
+    bookedAtUtcMs: booked,
   });
-  return unwrap(
-    Appointment.reconstitute({
-      id,
-      locationId: 'loc-center',
-      seats: [seat],
-      status:
-        outcome === 'worked'
-          ? { kind: 'completed' }
-          : outcome === 'cancelled'
-            ? { kind: 'cancelled', reason: 'Промяна в плановете' }
-            : { kind: 'confirmed' },
-      contact: unwrap(
-        BookingContact.create({
-          name: 'Георги Петров',
-          phone: '+359881234567',
-          email: null,
-          note: null,
-        }),
-      ),
-      bookedAt: start.plusDays(-14),
-    }),
-  );
 }
 
 /** Георги's stats with what the book would say of his habits. */
@@ -374,10 +365,10 @@ describe('recordsPageVm', () => {
     it('gives every row the theme of the group it stands in, and a registered glyph or a picture', () => {
       const input = georgi({
         stats: statsWith({
-          preferredBarberId: unwrap(BarberId.create('ivan')),
+          preferredBarberId: BarberId.of('ivan'),
           usualServiceIds: [
-            unwrap(ServiceId.create('svc-fade')),
-            unwrap(ServiceId.create('svc-beard')),
+            ServiceId.of('svc-fade'),
+            ServiceId.of('svc-beard'),
           ],
         }),
       });
@@ -544,13 +535,13 @@ describe('recordsPageVm', () => {
       expect(row(georgi({ stats: null }), 'totalVisits')).toBeNull();
       expect(row(georgi({ stats: null }), 'last12Months')).toBeNull();
       const none = statsWith({
-        lifetime: {
-          visitsCompleted: 0,
-          noShows: 1,
-          lateCancels: 0,
-          clientCancels: 0,
-        },
-        last365: { visitsCompleted: [], noShows: [], lateCancels: [] },
+        lifetimeVisitsCompleted: 0,
+        lifetimeNoShows: 1,
+        lifetimeLateCancels: 0,
+        lifetimeClientCancels: 0,
+        last365VisitsCompleted: [],
+        last365NoShows: [],
+        last365LateCancels: [],
       });
       expect(row(georgi({ stats: none }), 'totalVisits')).toBeNull();
       expect(row(georgi({ stats: none }), 'last12Months')).toBeNull();
@@ -605,7 +596,10 @@ describe('recordsPageVm', () => {
         row(
           georgi({
             data: unstamped,
-            stats: statsWith({ firstVisitAtMs: null }),
+            stats: statsWith({
+              firstVisitLocalDate: null,
+              firstVisitStartMinutes: null,
+            }),
           }),
           'firstVisit',
         ),
@@ -639,7 +633,7 @@ describe('recordsPageVm', () => {
         row(
           georgi({
             stats: statsWith({
-              preferredBarberId: unwrap(BarberId.create(barberId)),
+              preferredBarberId: BarberId.of(barberId),
             }),
           }),
           'preferredBarber',
@@ -671,7 +665,7 @@ describe('recordsPageVm', () => {
             catalog: { ...SETTLED.catalog, barberName: () => 'Иван Колев' },
           },
           stats: statsWith({
-            preferredBarberId: unwrap(BarberId.create('ivan')),
+            preferredBarberId: BarberId.of('ivan'),
           }),
         }),
         'preferredBarber',
@@ -690,7 +684,7 @@ describe('recordsPageVm', () => {
         row(
           georgi({
             stats: statsWith({
-              preferredBarberId: unwrap(BarberId.create('gone')),
+              preferredBarberId: BarberId.of('gone'),
             }),
           }),
           'preferredBarber',
@@ -703,7 +697,7 @@ describe('recordsPageVm', () => {
         row(
           georgi({
             stats: statsWith({
-              usualServiceIds: ids.map((id) => unwrap(ServiceId.create(id))),
+              usualServiceIds: ids.map((id) => ServiceId.of(id)),
             }),
           }),
           'usualServices',
@@ -732,10 +726,10 @@ describe('recordsPageVm', () => {
       const vm = recordsPageVm(
         georgi({
           stats: statsWith({
-            preferredBarberId: unwrap(BarberId.create('ivan')),
+            preferredBarberId: BarberId.of('ivan'),
             usualServiceIds: [
-              unwrap(ServiceId.create('svc-fade')),
-              unwrap(ServiceId.create('svc-beard')),
+              ServiceId.of('svc-fade'),
+              ServiceId.of('svc-beard'),
             ],
           }),
         }),
@@ -838,7 +832,8 @@ describe('recordsPageVm', () => {
       // 00:30 on 1 January in Sofia is still the old year in UTC.
       const visits = [
         visit('a', '2026-01-01T00:30:00'),
-        visit('b', '2024-12-31T23:30:00'),
+        // A seat ends by midnight on its own day (F-6): the year's last fade.
+        visit('b', '2024-12-31T23:15:00'),
       ];
       expect(
         recordsPageVm(georgi({ visits })).years?.map((y) => [y.year, y.count]),

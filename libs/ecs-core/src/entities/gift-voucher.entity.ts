@@ -1,6 +1,7 @@
 import type { VoucherCode, VoucherLifecycle } from '@core/components';
 import type {
   Currency,
+  CustomerId,
   GiftVoucherId,
   UserId,
   LocalDate,
@@ -28,11 +29,18 @@ export type GiftVoucherMeta = {
    */
   readonly expiresLocalDate: LocalDate | null;
   /**
-   * The account it was sold or gifted to; a paper voucher has none. A uid
-   * until the appointment flip (1) adds `issuedToCustomerId` and renames this
-   * access key `holderUserId` (D29, §5.4).
+   * The client record it was sold or gifted to (D29, flatten-spec §5.4); a
+   * paper voucher has none.
    */
-  readonly issuedToUserId: UserId | null;
+  readonly issuedToCustomerId: CustomerId | null;
+  /**
+   * The account that may READ it — the rules key of `get`/`list`
+   * (`resource.data.holderUserId == request.auth.uid`), written at the
+   * boundary from the record's `Customer.userId`, never derived from
+   * `issuedToCustomerId`'s text. `null` for a paper voucher, or one issued
+   * to a record without an account.
+   */
+  readonly holderUserId: UserId | null;
 };
 
 /**

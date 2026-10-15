@@ -22,6 +22,7 @@ import {
 } from '@core/components';
 import type {
   Appointment,
+  AppointmentClientRefs,
   AppointmentMeta,
   AppointmentStamps,
 } from '@core/entities';
@@ -61,7 +62,11 @@ export function seatFixture(overrides: SeatFixtureOverrides = {}): Seat {
     },
     terms ?? Seat.termsOf(FIXTURE_TERMS, FIXTURE_TERMS),
     occupant ??
-      SeatOccupant.account(FIXTURE_IDS.client, SubjectRelationship.Self),
+      SeatOccupant.account(
+        FIXTURE_IDS.client,
+        FIXTURE_IDS.customer,
+        SubjectRelationship.Self,
+      ),
     outcome ?? SeatOutcome.scheduled(),
   );
 }
@@ -69,6 +74,7 @@ export function seatFixture(overrides: SeatFixtureOverrides = {}): Seat {
 /** An appointment override: any non-lifecycle field, or a whole lifecycle variant. */
 export type AppointmentFixtureOverrides = Partial<
   AppointmentMeta &
+    AppointmentClientRefs &
     TimeCoordinate &
     BookingContact &
     AppointmentStamps &
@@ -111,8 +117,13 @@ export function appointmentFixture(
     revision: 1,
     appliedOperations: [],
   };
+  const clientRefs: AppointmentClientRefs = {
+    ownerCustomerId: FIXTURE_IDS.customer,
+    subjectCustomerIds: [FIXTURE_IDS.customer],
+  };
   const merged = {
     ...meta,
+    ...clientRefs,
     localDate: FIXTURE_TODAY,
     startMinutes: seat.startMinutes,
     endMinutes: Seat.endMinutes(seat),

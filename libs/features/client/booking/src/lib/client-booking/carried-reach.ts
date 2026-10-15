@@ -1,67 +1,13 @@
-import type { BookingDraftRider } from '@creativo/application/booking';
-import type { Barber, Location, Service } from '@creativo/application/catalog';
-import {
-  BarberId,
-  DurationMinutes,
-  LocationId,
-  MinuteCount,
-  MinuteDelta,
-  ServiceId,
-  ServiceVariantId,
-  defect,
-} from '@core/primitives';
-import {
-  type MoveCatalogService,
-  type MoveRider,
-  MoveSystem,
-} from '@core/systems';
+import type { Barber, Service, ShopLocation } from '@core/entities';
+import { type MoveRider, MoveSystem } from '@core/systems';
 
 /*
- * THIN SHIM (ECS migration Phase 2). Whether the shop can still serve who a
- * move carries — each rider's barber active, service offered, the variant it
- * was sold as still sold, and ONE active shop offering every carried service
- * at once — is `MoveSystem.carriedSeatsInReach`. This keeps the legacy
- * signature and only converts.
+ * Whether the shop can still serve who a move carries — each rider's barber
+ * active, service offered, the variant it was sold as still sold, and ONE
+ * active shop offering every carried service at once — is
+ * `MoveSystem.carriedSeatsInReach`, over the catalogue's own entities (a
+ * `Service` is a `MoveCatalogService`, a barber and a shop give their ids).
  */
-
-/* ── Legacy ↔ ECS converters ─────────────────────────────────────────── */
-
-/** A brand built from a stored value its own record already validated. */
-function sure<T>(
-  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
-  what: string,
-): T {
-  return result.ok ? result.value : defect(`unreachable: ${what}`);
-}
-
-function toRiderData(rider: BookingDraftRider): MoveRider {
-  return {
-    serviceId: ServiceId.of(rider.serviceId),
-    variantId:
-      rider.variantId === null ? null : ServiceVariantId.of(rider.variantId),
-    barberId: BarberId.of(rider.barberId),
-    offsetMinutes: sure(
-      MinuteDelta.of(rider.offsetMinutes),
-      'a stored rider distance',
-    ),
-    durationMinutes: sure(
-      DurationMinutes.of(rider.durationMinutes),
-      'a stored rider duration',
-    ),
-    setupMinutes: sure(MinuteCount.of(rider.setupMinutes), 'a setup pad'),
-    cleanupMinutes: sure(MinuteCount.of(rider.cleanupMinutes), 'a cleanup pad'),
-  };
-}
-
-function toServiceData(service: Service): MoveCatalogService {
-  return {
-    id: ServiceId.of(service.id.value),
-    variants: service.variants.map((variant) => ({
-      variantId: ServiceVariantId.of(variant.id.value),
-    })),
-    locationIds: service.locationIds.map((id) => LocationId.of(id.value)),
-  };
-}
 
 /**
  * Can the shop still serve every seat a move CARRIES, together, on some day,
@@ -101,17 +47,15 @@ function toServiceData(service: Service): MoveCatalogService {
  * it is an answer: there is nowhere to seat the companion.
  */
 export function carriedSeatsInReach(
-  riders: readonly BookingDraftRider[],
+  riders: readonly MoveRider[],
   services: readonly Service[],
   barbers: readonly Barber[],
-  locations: readonly Location[] | null,
+  locations: readonly ShopLocation[] | null,
 ): boolean {
   return MoveSystem.carriedSeatsInReach(
-    riders.map(toRiderData),
-    barbers.map((barber) => BarberId.of(barber.id.value)),
-    services.map(toServiceData),
-    locations === null
-      ? null
-      : locations.map((location) => LocationId.of(location.id.value)),
+    riders,
+    barbers.map((barber) => barber.id),
+    services,
+    locations === null ? null : locations.map((location) => location.id),
   );
 }

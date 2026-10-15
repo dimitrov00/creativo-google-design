@@ -17,44 +17,20 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Observable, of } from 'rxjs';
+import { type Observable, isObservable, of } from 'rxjs';
 import {
   AccountStatus,
   type AvatarRef,
   type AvatarUploader,
   type ProfilePort,
   User,
-  UserId,
+  type UserId as AccountUserId,
   ZonedDateTime,
 } from '@creativo/application/accounts';
-import {
-  Appointment,
-  type AppointmentPhoto,
-  BookingContact,
-  type ClientMoneyRecord,
-  type ClientStatsReader,
-  type ClientStatsRecord,
-  type Result,
-  SEAT_SCHEDULED,
-  Seat,
-  SeatId,
-  SeatSubject,
-  type WaitlistReader,
-  WaitlistRequest,
-  computeClientStats,
-  fail,
-  ok,
-  seatCancelled,
-  seatWorked,
-} from '@creativo/application/booking';
-import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-  ServiceVariantId,
-} from '@creativo/application/catalog';
+import { type Result, fail, ok } from '@creativo/application/booking';
 import {
   type BadgeProgress,
+  type GiftVoucherFields,
   type SeasonProgress,
   badgeProgressFromDocument,
   loyaltyAccountFromDocument,
@@ -67,6 +43,91 @@ import {
   loyaltyFixtures,
 } from '@creativo/application/engagement/testing';
 import { RepositoryError } from '@creativo/application/shared';
+import {
+  AppointmentId,
+  AppointmentPhotoId,
+  AttendanceState,
+  BarberId,
+  BusyKey,
+  CartLineId,
+  ClientMoneyStatsId,
+  Currency,
+  type CustomerId,
+  EndMinute,
+  GiftVoucherId,
+  LocalDate,
+  LocationId,
+  MinuteOfDay,
+  RepositoryError as CoreRepositoryError,
+  Result as CoreResult,
+  SeatId,
+  SeatKeyText,
+  ServiceId,
+  ServiceVariantId,
+  type TimeZone,
+  UserId,
+  UtcEpochMs,
+  WaitlistRequestId,
+  WaitlistStatus,
+} from '@core/primitives';
+import {
+  BookingContact,
+  BookingLifecycle,
+  CancellationReason,
+  CancellationReasonSet,
+  CancelledBy,
+  type CartLine,
+  ClientStatsPolicy,
+  CustomerOrigin,
+  DayWindows,
+  E164,
+  Email,
+  MinuteRange,
+  PhotoOrigin,
+  Placement,
+  PolicyPassStamp,
+  Seat,
+  SeatOccupant,
+  SeatOutcome,
+  SeatSubject,
+  SubjectRelationship,
+  type VisitFact,
+  VoucherCode,
+  VoucherLifecycle,
+  WaitlistLifecycle,
+} from '@core/components';
+import type {
+  Appointment,
+  AppointmentPhoto,
+  ClientMoneyRecord,
+  ClientStatsRecord,
+  Customer,
+  GiftVoucher,
+  WaitlistRequest,
+} from '@core/entities';
+import type {
+  AppointmentPhotoPorts,
+  AppointmentReadPorts,
+  ClientStatsReadPorts,
+  CouponVoucherPorts,
+  CustomerPorts,
+  WaitlistReadPorts,
+} from '@core/ports';
+import { ClientStatsSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  appointmentFixture,
+  cents,
+  customerOf,
+  memoryAppointmentPhotoPorts,
+  memoryAppointmentReadPorts,
+  memoryClientStatsReadPorts,
+  memoryCouponVoucherPorts,
+  memoryCustomerPorts,
+  memoryWaitlistReadPorts,
+  seatFixture,
+  termsFixture,
+  unwrapOk,
+} from '@core/testing';
 import type {
   ClientCardCatalog,
   ClientCardContext,
@@ -102,13 +163,58 @@ function unwrap<T, E>(result: Result<T, E>): T {
   return result.value;
 }
 
-/** A Sofia wall-clock time as an instant. */
+/**
+ * A Sofia wall-clock time as the legacy instant — what the accounts and
+ * loyalty readers (flip 3) still take. The booking fixtures below read
+ * the shop's clock through {@link sofia} and {@link wallOf} instead.
+ */
 export function at(iso: string): ZonedDateTime {
   return unwrap(ZonedDateTime.fromISO(iso, ZONE));
 }
 
+/** The shops' zone, branded — every booking fixture is read in it. */
+export const SHOP_TIME_ZONE: TimeZone = unwrapOk(
+  ZonedTimeSystem.checkZone(ZONE),
+);
+
+/** A Sofia wall-clock reading (`YYYY-MM-DDTHH:mm:ss`) as the instant it names. */
+export function sofia(iso: string): UtcEpochMs {
+  return unwrapOk(ZonedTimeSystem.parseIsoIn(iso, SHOP_TIME_ZONE));
+}
+
+/** A Sofia wall-clock reading as the shop day and minute it is stored as (Law 7.3). */
+export function wallOf(iso: string): {
+  readonly localDate: LocalDate;
+  readonly minute: MinuteOfDay;
+} {
+  return {
+    localDate: unwrapOk(LocalDate.parse(iso.slice(0, 10))),
+    minute: unwrapOk(
+      MinuteOfDay.of(
+        Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16)),
+      ),
+    ),
+  };
+}
+
 /** Monday 28 September 2026, 12:40 in Sofia. */
-export const NOW_MS = at('2026-09-28T12:40:00').toMillis();
+export const NOW_MS: UtcEpochMs = sofia('2026-09-28T12:40:00');
+
+/**
+ * A stored fact's shop wall clock as the instant it names — what the
+ * loyalty presenters (flip 3) still count in (`visitsMs`), the store's own
+ * reading of a `VisitFact`.
+ */
+export function factMs(fact: VisitFact): UtcEpochMs {
+  return unwrapOk(
+    ZonedTimeSystem.toUtc(fact.localDate, fact.startMinutes, SHOP_TIME_ZONE),
+  );
+}
+
+/** Георги's client record (D29), derived the way the pipelines derive it. */
+export const GEORGI_CUSTOMER_ID: CustomerId = customerOf(UserId.of(GEORGI));
+/** Мартин's client record. */
+export const MARTIN_CUSTOMER_ID: CustomerId = customerOf(UserId.of(MARTIN));
 
 // ── The app's own words ─────────────────────────────────────────────────
 
@@ -252,7 +358,7 @@ const SEAT_BY_SPEND = new Map([
 interface WorkedSeat {
   readonly appointmentId: string;
   readonly seatId: string;
-  readonly workedAtMs: number;
+  readonly workedAtMs: UtcEpochMs;
   readonly serviceId: string;
   readonly minutes: number;
   readonly priceMinor: number;
@@ -279,7 +385,7 @@ function workedSeatsOf(fixture: LoyaltyAccountFixture): readonly WorkedSeat[] {
         {
           appointmentId,
           seatId,
-          workedAtMs: Date.parse(entry.at),
+          workedAtMs: unwrapOk(ZonedTimeSystem.parseOffsetIso(entry.at)),
           serviceId: seat.serviceId,
           minutes: seat.minutes,
           priceMinor: typeof spend === 'number' ? spend : 0,
@@ -291,7 +397,7 @@ function workedSeatsOf(fixture: LoyaltyAccountFixture): readonly WorkedSeat[] {
     );
 }
 
-interface SeatSpec {
+export interface SeatSpec {
   readonly id: string;
   readonly who: string;
   readonly serviceId: string;
@@ -299,30 +405,127 @@ interface SeatSpec {
   readonly barberId: string;
   readonly minutes: number;
   readonly priceMinor: number;
-  readonly startsAt: ZonedDateTime;
-  readonly outcome?: Seat['outcome'];
+  /** Where the seat starts on the shop's wall clock. */
+  readonly startMinutes: number;
+  readonly outcome?: SeatOutcome;
+  /** A companion's seat on someone else's booking; the person's own by default. */
+  readonly companion?: boolean;
 }
 
-function seatOf(spec: SeatSpec): Seat {
-  return Seat.of({
-    id: unwrap(SeatId.create(spec.id)),
-    subject: SeatSubject.account(unwrap(UserId.create(spec.who)), 'self'),
-    serviceId: unwrap(ServiceId.create(spec.serviceId)),
+/** One account seat — the person's own unless a companion's — their client record beside their uid (D29). */
+export function seatOf(spec: SeatSpec): Seat {
+  const userId = UserId.of(spec.who);
+  return seatFixture({
+    seatId: SeatId.of(spec.id),
+    serviceId: ServiceId.of(spec.serviceId),
     variantId:
-      spec.variantId == null
-        ? null
-        : unwrap(ServiceVariantId.create(spec.variantId)),
-    barberId: unwrap(BarberId.create(spec.barberId)),
-    terms: unwrap(
-      ServiceTerms.fromMinorUnits(spec.priceMinor, 'EUR', spec.minutes),
+      spec.variantId == null ? null : ServiceVariantId.of(spec.variantId),
+    barberId: BarberId.of(spec.barberId),
+    startMinutes: unwrapOk(MinuteOfDay.of(spec.startMinutes)),
+    terms: Seat.termsOf(termsFixture(spec.priceMinor, spec.minutes), null),
+    occupant: SeatOccupant.account(
+      userId,
+      customerOf(userId),
+      spec.companion === true
+        ? SubjectRelationship.Companion
+        : SubjectRelationship.Self,
     ),
-    startsAt: spec.startsAt,
-    outcome: spec.outcome ?? SEAT_SCHEDULED,
+    outcome: spec.outcome ?? SeatOutcome.scheduled(),
   });
 }
 
-function contactOf(name: string, phone: string, note: string | null) {
-  return unwrap(BookingContact.create({ name, phone, email: null, note }));
+/** A booking's contact block, as the guest form fills it. */
+export function contactOf(
+  name: string,
+  phone: string,
+  note: string | null,
+): BookingContact {
+  return {
+    contactName: name,
+    contactPhone: E164.of(phone),
+    contactEmail: null,
+    contactNote: note,
+  };
+}
+
+export interface VisitSpec {
+  readonly id: string;
+  readonly localDate: LocalDate;
+  readonly seats: readonly Seat[];
+  readonly lifecycle: BookingLifecycle;
+  readonly contact: BookingContact;
+  readonly bookedAtUtcMs: UtcEpochMs;
+  readonly arrivedAtUtcMs?: UtcEpochMs | null;
+}
+
+/**
+ * A flat visit at Център holding `seats` on one shop day: its envelope,
+ * instant and query mirrors derived from the seats as the write plans
+ * derive them (the owner is the first `SELF` seat).
+ */
+export function visitOf(spec: VisitSpec): Appointment {
+  let start = Number.POSITIVE_INFINITY;
+  let end = 0;
+  const barbers: BarberId[] = [];
+  const users: UserId[] = [];
+  const customers: CustomerId[] = [];
+  let owner: UserId | null = null;
+  for (const seat of spec.seats) {
+    start = Math.min(start, seat.startMinutes);
+    end = Math.max(end, Seat.endMinutes(seat));
+    if (!barbers.includes(seat.barberId)) barbers.push(seat.barberId);
+    if (seat.seatSubject !== SeatSubject.Account) continue;
+    if (!users.includes(seat.subjectUserId)) users.push(seat.subjectUserId);
+    if (!customers.includes(seat.subjectCustomerId)) {
+      customers.push(seat.subjectCustomerId);
+    }
+    if (
+      owner === null &&
+      seat.subjectRelationship === SubjectRelationship.Self
+    ) {
+      owner = seat.subjectUserId;
+    }
+  }
+  const startMinutes = unwrapOk(MinuteOfDay.of(start));
+  return appointmentFixture({
+    id: AppointmentId.of(spec.id),
+    locationId: LocationId.of('loc-center'),
+    seats: spec.seats,
+    localDate: spec.localDate,
+    startMinutes,
+    endMinutes: unwrapOk(EndMinute.of(end)),
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(spec.localDate, startMinutes, SHOP_TIME_ZONE),
+    ),
+    barberIds: barbers,
+    busyKeys: barbers.map((barber) => BusyKey.of(barber, spec.localDate)),
+    ownerUserId: owner,
+    ownerCustomerId: owner === null ? null : customerOf(owner),
+    subjectUserIds: [...users].sort(),
+    subjectCustomerIds: [...customers].sort(),
+    placement: Placement.Self,
+    ...spec.contact,
+    bookedAtUtcMs: spec.bookedAtUtcMs,
+    arrivedAtUtcMs: spec.arrivedAtUtcMs ?? null,
+    lifecycle: spec.lifecycle,
+  });
+}
+
+/** A cancelled visit's lifecycle: the reasons its cancelled seats carry. */
+function cancelledLifecycle(
+  at: UtcEpochMs,
+  seats: readonly Seat[],
+): BookingLifecycle {
+  return BookingLifecycle.cancel(
+    at,
+    CancellationReasonSet.of(
+      seats.flatMap((seat) =>
+        seat.attendanceState === AttendanceState.Cancelled
+          ? [seat.cancellationReason]
+          : [],
+      ),
+    ),
+  );
 }
 
 interface HistoryPlan {
@@ -334,6 +537,8 @@ interface HistoryPlan {
   /** The client's own words, by appointment id. */
   readonly notes?: ReadonlyMap<string, string>;
 }
+
+const DAY_MS = 86_400_000;
 
 /** The journal's worked visits as completed appointments at Център, each seat after the one before. */
 function workedHistory(
@@ -350,14 +555,13 @@ function workedHistory(
   return [...byVisit.entries()].map(([appointmentId, seats], index) => {
     const worked = Math.max(...seats.map((s) => s.workedAtMs));
     const total = seats.reduce((sum, s) => sum + s.minutes, 0);
-    const start = unwrap(
-      ZonedDateTime.fromMillis(worked - total * 60_000, ZONE),
-    );
-    let cursor = start;
+    const startMs = unwrapOk(UtcEpochMs.of(worked - total * 60_000));
+    const wall = ZonedTimeSystem.toLocal(startMs, SHOP_TIME_ZONE);
+    let cursor: number = wall.minute;
     const barberId = plan.barberOf(index);
     const built = seats.map((seat) => {
-      const startsAt = cursor;
-      cursor = cursor.plusMinutes(seat.minutes);
+      const startMinutes = cursor;
+      cursor += seat.minutes;
       return seatOf({
         id: seat.seatId,
         who: plan.uid,
@@ -365,24 +569,22 @@ function workedHistory(
         barberId,
         minutes: seat.minutes,
         priceMinor: seat.priceMinor,
-        startsAt,
-        outcome: seatWorked(seat.workedAtMs),
+        startMinutes,
+        outcome: SeatOutcome.worked(seat.workedAtMs),
       });
     });
-    return unwrap(
-      Appointment.reconstitute({
-        id: appointmentId,
-        locationId: 'loc-center',
-        seats: built,
-        status: { kind: 'completed' },
-        contact: contactOf(
-          plan.name,
-          plan.phone,
-          plan.notes?.get(appointmentId) ?? null,
-        ),
-        bookedAt: start.plusDays(-14),
-      }),
-    );
+    return visitOf({
+      id: appointmentId,
+      localDate: wall.localDate,
+      seats: built,
+      lifecycle: BookingLifecycle.complete(unwrapOk(UtcEpochMs.of(worked))),
+      contact: contactOf(
+        plan.name,
+        plan.phone,
+        plan.notes?.get(appointmentId) ?? null,
+      ),
+      bookedAtUtcMs: unwrapOk(UtcEpochMs.of(startMs - 14 * DAY_MS)),
+    });
   });
 }
 
@@ -405,26 +607,25 @@ export function georgiHistory(): readonly Appointment[] {
     barberOf: () => 'ivan',
     notes: new Map([['appt-hist-c1-23', GEORGI_NOTE]]),
   });
-  const next = unwrap(
-    Appointment.reconstitute({
-      id: GEORGI_NEXT_ID,
-      locationId: 'loc-center',
-      seats: [
-        seatOf({
-          id: 'seat-next-1',
-          who: GEORGI,
-          serviceId: 'svc-fade',
-          barberId: 'ivan',
-          minutes: 45,
-          priceMinor: 1750,
-          startsAt: at('2026-10-02T10:00:00'),
-        }),
-      ],
-      status: { kind: 'confirmed' },
-      contact: contactOf('Георги Петров', '+359881234567', null),
-      bookedAt: at('2026-09-28T10:45:00'),
-    }),
-  );
+  const booked = sofia('2026-09-28T10:45:00');
+  const next = visitOf({
+    id: GEORGI_NEXT_ID,
+    localDate: wallOf('2026-10-02T10:00:00').localDate,
+    seats: [
+      seatOf({
+        id: 'seat-next-1',
+        who: GEORGI,
+        serviceId: 'svc-fade',
+        barberId: 'ivan',
+        minutes: 45,
+        priceMinor: 1750,
+        startMinutes: wallOf('2026-10-02T10:00:00').minute,
+      }),
+    ],
+    lifecycle: BookingLifecycle.confirm(booked),
+    contact: contactOf('Георги Петров', '+359881234567', null),
+    bookedAtUtcMs: booked,
+  });
   return [...worked, next];
 }
 
@@ -460,103 +661,118 @@ export function martinHistory(): readonly Appointment[] {
     phone: '+359887654321',
     barberOf: (index) => chairs.at(index) ?? 'ivan',
   });
-  const cancelledAt = at('2026-05-10T09:00:00').toMillis();
-  const cancelled = unwrap(
-    Appointment.reconstitute({
-      id: 'appt-hist-c2-11',
-      locationId: 'loc-center',
-      seats: [
-        seatOf({
-          id: 'appt-hist-c2-11-s1',
-          who: MARTIN,
-          serviceId: 'svc-classic-cut',
-          barberId: 'niko',
-          minutes: 30,
-          priceMinor: 1500,
-          startsAt: at('2026-05-12T12:30:00'),
-          outcome: seatCancelled(
-            cancelledAt,
-            'staff',
-            { kind: 'staff_barber_absence' },
-            null,
-          ),
-        }),
-      ],
-      status: { kind: 'cancelled', reason: 'Нико отсъства' },
-      contact: contactOf('Мартин Илиев', '+359887654321', null),
-      bookedAt: at('2026-04-22T13:00:00'),
+  const cancelledAt = sofia('2026-05-10T09:00:00');
+  const cancelledSeats = [
+    seatOf({
+      id: 'appt-hist-c2-11-s1',
+      who: MARTIN,
+      serviceId: 'svc-classic-cut',
+      barberId: 'niko',
+      minutes: 30,
+      priceMinor: 1500,
+      startMinutes: wallOf('2026-05-12T12:30:00').minute,
+      outcome: SeatOutcome.cancelled(
+        cancelledAt,
+        CancelledBy.Staff,
+        CancellationReason.StaffBarberAbsence,
+        null,
+      ),
     }),
-  );
-  const today = unwrap(
-    Appointment.reconstitute({
-      id: MARTIN_TODAY_ID,
-      locationId: 'loc-center',
-      seats: [
-        seatOf({
-          id: 'seat-2',
-          who: MARTIN,
-          serviceId: 'svc-classic-cut',
-          variantId: 'short',
-          barberId: 'ivan',
-          minutes: 30,
-          priceMinor: 1500,
-          startsAt: at('2026-09-28T12:30:00'),
-        }),
-      ],
-      status: { kind: 'confirmed' },
-      contact: contactOf('Мартин Илиев', '+359887654321', 'Къса отстрани'),
-      bookedAt: at('2026-09-21T12:00:00'),
-      arrivedAt: at('2026-09-28T12:25:00'),
-    }),
-  );
+  ];
+  const cancelled = visitOf({
+    id: 'appt-hist-c2-11',
+    localDate: wallOf('2026-05-12T12:30:00').localDate,
+    seats: cancelledSeats,
+    lifecycle: cancelledLifecycle(cancelledAt, cancelledSeats),
+    contact: contactOf('Мартин Илиев', '+359887654321', null),
+    bookedAtUtcMs: sofia('2026-04-22T13:00:00'),
+  });
+  const booked = sofia('2026-09-21T12:00:00');
+  const today = visitOf({
+    id: MARTIN_TODAY_ID,
+    localDate: wallOf('2026-09-28T12:30:00').localDate,
+    seats: [
+      seatOf({
+        id: 'seat-2',
+        who: MARTIN,
+        serviceId: 'svc-classic-cut',
+        variantId: 'short',
+        barberId: 'ivan',
+        minutes: 30,
+        priceMinor: 1500,
+        startMinutes: wallOf('2026-09-28T12:30:00').minute,
+      }),
+    ],
+    lifecycle: BookingLifecycle.confirm(booked),
+    contact: contactOf('Мартин Илиев', '+359887654321', 'Къса отстрани'),
+    bookedAtUtcMs: booked,
+    arrivedAtUtcMs: sofia('2026-09-28T12:25:00'),
+  });
   return [...worked, cancelled, today];
 }
 
-/** The projection the server keeps, computed from the same book at «now». */
+/** The projection the server keeps (`clientStats/{customerId}`), computed from the same book at «now». */
 export function statsOf(
   uid: string,
   appointments: readonly Appointment[],
-  nowMs = NOW_MS,
+  nowMs: number = NOW_MS,
 ): ClientStatsRecord {
+  const customerId = customerOf(UserId.of(uid));
+  const now = unwrapOk(UtcEpochMs.of(nowMs));
   return {
-    ...computeClientStats(unwrap(UserId.create(uid)), appointments, nowMs),
+    ...ClientStatsSystem.stats(
+      customerId,
+      appointments,
+      ClientStatsPolicy.DEFAULT,
+      ZonedTimeSystem.shopNow(now, SHOP_TIME_ZONE),
+    ),
+    id: customerId,
+    customerId,
     version: 1,
-    updatedAtMs: nowMs,
+    updatedAtUtcMs: now,
+    ...PolicyPassStamp.NONE,
   };
 }
 
 /** Георги's lifetime spend — the ‹admin› figure. */
 export const GEORGI_MONEY: ClientMoneyRecord = {
-  userId: unwrap(UserId.create(GEORGI)),
-  lifetimeSpendMinor: 46250,
-  currencyCode: 'EUR',
+  id: ClientMoneyStatsId.FIXED,
+  customerId: GEORGI_CUSTOMER_ID,
+  lifetimeSpendCents: cents(46250),
+  currency: Currency.EUR,
   version: 1,
-  updatedAtMs: NOW_MS,
+  updatedAtUtcMs: NOW_MS,
 };
 
 /** The three past cuts on Георги's last three visits, newest first (the dev seed's). */
-export function georgiPhotos(): readonly AppointmentPhoto[] {
+export function georgiPhotos(): AppointmentPhoto[] {
   const shots: readonly [string, string][] = [
     ['appt-dev-1', '2026-09-28T10:44:00'],
     ['appt-hist-c1-23', '2026-09-03T10:44:00'],
     ['appt-hist-c1-22', '2026-08-06T10:44:00'],
   ];
   return shots.map(([appointmentId, taken], index) => ({
-    photoId: `photo-dev-georgi-${index + 1}`,
-    appointmentId,
-    barberId: 'ivan',
-    clientUserId: GEORGI,
+    id: AppointmentPhotoId.of(`photo-dev-georgi-${index + 1}`),
+    appointmentId: AppointmentId.of(appointmentId),
+    barberId: BarberId.of('ivan'),
+    clientCustomerId: GEORGI_CUSTOMER_ID,
     clientLabel: 'Георги Петров',
-    takenByUid: 'dev-staff-ivan',
-    takenAtIso: at(taken).toISO(),
+    takenByUserId: UserId.of('dev-staff-ivan'),
+    takenAtUtcMs: sofia(taken),
     path: `appointmentPhotos/${appointmentId}/photo-dev-georgi-${index + 1}.jpg`,
     url: `https://example.test/photos/photo-dev-georgi-${index + 1}.jpg`,
     width: 1100,
     height: 1400,
-    origin: 'shot',
+    photoOrigin: PhotoOrigin.Shot,
     label: null,
   }));
 }
+
+const WAITLIST_STATUS = {
+  open: WaitlistStatus.Open,
+  matched: WaitlistStatus.Matched,
+  booked: WaitlistStatus.Booked,
+} as const;
 
 /** Мартин's waitlist request: Thursday and Friday next week, 14:00–17:00, a short classic cut; created last night. */
 export function martinWaitlist(
@@ -566,38 +782,118 @@ export function martinWaitlist(
     readonly id: string;
   }> = {},
 ): WaitlistRequest {
-  return unwrap(
-    WaitlistRequest.reconstitute({
-      id: overrides.id ?? 'waitlist-dev-martin',
-      ownerId: MARTIN,
-      locationId: 'loc-center',
-      when: {
-        days: [
-          { dayKey: '2026-10-08', windows: [{ from: '14:00', to: '17:00' }] },
-          { dayKey: '2026-10-09', windows: [{ from: '14:00', to: '17:00' }] },
-        ],
-      },
-      cart: {
-        seats: [
-          {
-            seatKey: 'self',
-            lines: [
-              {
-                id: 'line-1',
-                serviceId: 'svc-classic-cut',
-                variantId: 'short',
-                barberId: null,
-              },
-            ],
-          },
-        ],
-        nextSequence: 2,
-      },
-      status: overrides.status ?? 'open',
-      createdAtIso: overrides.createdAtIso ?? '2026-09-27T21:10:00+03:00',
-      zone: ZONE,
-    }),
+  const window = MinuteRange.of(
+    unwrapOk(MinuteOfDay.of(14 * 60)),
+    unwrapOk(EndMinute.of(17 * 60)),
   );
+  const flexibleDays = ['2026-10-08', '2026-10-09'].map((day) =>
+    DayWindows.of(unwrapOk(LocalDate.parse(day)), [window]),
+  );
+  const created = unwrapOk(
+    ZonedTimeSystem.parseOffsetIso(
+      overrides.createdAtIso ?? '2026-09-27T21:10:00+03:00',
+    ),
+  );
+  const seatKey = unwrapOk(SeatKeyText.parse('self'));
+  const line: CartLine = {
+    lineId: CartLineId.forSequence(1),
+    seatKey,
+    serviceId: ServiceId.of('svc-classic-cut'),
+    variantId: ServiceVariantId.of('short'),
+    barberId: null,
+    locationId: null,
+  };
+  const localDates = flexibleDays.map((day) => day.localDate);
+  const first = localDates[0];
+  return {
+    id: WaitlistRequestId.of(overrides.id ?? 'waitlist-dev-martin'),
+    ownerUserId: UserId.of(MARTIN),
+    locationId: LocationId.of('loc-center'),
+    localDates,
+    utcEpochMs:
+      first === undefined
+        ? created
+        : ZonedTimeSystem.startOfLocalDay(first, SHOP_TIME_ZONE),
+    createdAtUtcMs: created,
+    cartSeats: [{ seatKey, lines: [line] }],
+    cartNextSequence: 2,
+    flexibleDays,
+    ...WaitlistLifecycle.open(created),
+    waitlistStatus: WAITLIST_STATUS[overrides.status ?? 'open'],
+  };
+}
+
+/** The fixture's ISO instant (`{ iso }`), read as the instant it is. */
+function instantOf(document: { readonly iso: string }): UtcEpochMs {
+  return unwrapOk(ZonedTimeSystem.parseOffsetIso(document.iso));
+}
+
+/**
+ * One of the fixture's gift vouchers (`loyaltyFixtures.vouchers`, the wire
+ * shape a spec may edit) as the flat `giftVouchers/{id}` body: the holder's
+ * client record beside their uid, the lapse as an instant and the shop day
+ * it falls on.
+ */
+export function giftVoucherOf(
+  id: string,
+  fields: GiftVoucherFields,
+): GiftVoucher {
+  const holder =
+    fields.issuedToUserId === null ? null : UserId.of(fields.issuedToUserId);
+  const expires =
+    fields.expiresAt === null ? null : instantOf(fields.expiresAt);
+  return {
+    id: GiftVoucherId.of(id),
+    code: VoucherCode.of(fields.code),
+    initialValueCents: cents(fields.initialValueMinorUnits),
+    balanceCents: cents(fields.balanceMinorUnits),
+    currency: Currency.EUR,
+    issuedAtUtcMs: instantOf(fields.issuedAt),
+    expiresAtUtcMs: expires,
+    expiresLocalDate:
+      expires === null
+        ? null
+        : ZonedTimeSystem.toLocal(expires, SHOP_TIME_ZONE).localDate,
+    issuedToCustomerId: holder === null ? null : customerOf(holder),
+    holderUserId: holder,
+    ...(fields.state.kind === 'void'
+      ? VoucherLifecycle.voided(
+          instantOf(fields.state.voidedAt),
+          fields.state.reason,
+        )
+      : VoucherLifecycle.active()),
+  };
+}
+
+/** The fixture's five gift vouchers: three of Георги's, Мартин's one, one on paper. */
+export function fixtureVouchers(): readonly GiftVoucher[] {
+  return Object.entries(loyaltyFixtures.vouchers).map(([id, fields]) =>
+    giftVoucherOf(id, fields),
+  );
+}
+
+/** The client records the card resolves its people by (`CUSTOMER_PORTS`). */
+export function fixtureCustomers(): readonly Customer[] {
+  const recordOf = (
+    uid: string,
+    displayName: string,
+    phone: string,
+    email: string,
+  ): Customer => ({
+    id: customerOf(UserId.of(uid)),
+    userId: UserId.of(uid),
+    displayName,
+    phone: E164.of(phone),
+    email: Email.of(email),
+    searchName: displayName.toLowerCase(),
+    searchPrefixes: [],
+    createdAtUtcMs: sofia('2025-03-01T10:00:00'),
+    customerOrigin: CustomerOrigin.Registration,
+  });
+  return [
+    recordOf(GEORGI, 'Георги Петров', '+359881234567', 'georgi@example.test'),
+    recordOf(MARTIN, 'Мартин Илиев', '+359887654321', 'martin@example.test'),
+  ];
 }
 
 // ── The people ─────────────────────────────────────────────────────────
@@ -864,49 +1160,19 @@ export class InMemoryProfilePort implements ProfilePort {
     return this;
   }
   async getProfile(
-    userId: UserId,
+    userId: AccountUserId,
   ): Promise<Result<User | null, RepositoryError>> {
     this.calls.push(userId.value);
     if (this.failure !== null) return fail(this.failure);
     return ok(this.users.get(userId.value) ?? null);
   }
   observeProfile(
-    userId: UserId,
+    userId: AccountUserId,
   ): Observable<Result<User | null, RepositoryError>> {
     return of(ok(this.users.get(userId.value) ?? null));
   }
   async saveProfile(): Promise<Result<void, RepositoryError>> {
     return fail(new RepositoryError('the card never writes a profile'));
-  }
-}
-
-/** `CLIENT_STATS_READER` over a map of records. */
-export class InMemoryStatsReader implements ClientStatsReader {
-  readonly moneyCalls: string[] = [];
-  private failure: RepositoryError | null = null;
-  constructor(
-    private readonly stats: ReadonlyMap<string, ClientStatsRecord>,
-    private readonly money: ReadonlyMap<string, ClientMoneyRecord> = new Map(),
-  ) {}
-  failWith(error = new RepositoryError('clientStats unavailable')): this {
-    this.failure = error;
-    return this;
-  }
-  recover(): this {
-    this.failure = null;
-    return this;
-  }
-  async get(
-    userId: string,
-  ): Promise<Result<ClientStatsRecord | null, RepositoryError>> {
-    if (this.failure !== null) return fail(this.failure);
-    return ok(this.stats.get(userId) ?? null);
-  }
-  async getMoney(
-    userId: string,
-  ): Promise<Result<ClientMoneyRecord | null, RepositoryError>> {
-    this.moneyCalls.push(userId);
-    return ok(this.money.get(userId) ?? null);
   }
 }
 
@@ -918,7 +1184,7 @@ export class InMemoryAvatars implements AvatarUploader {
   async upload(): Promise<Result<AvatarRef, never>> {
     throw new Error('the card never uploads');
   }
-  async find(userId: UserId): Promise<Result<AvatarRef | null, never>> {
+  async find(userId: AccountUserId): Promise<Result<AvatarRef | null, never>> {
     const url = this.avatars.get(userId.value);
     return ok(
       url === undefined ? null : { url, path: `avatars/${userId.value}` },
@@ -929,23 +1195,102 @@ export class InMemoryAvatars implements AvatarUploader {
   }
 }
 
-/** `WAITLIST_READER` answering one list per owner, or failing. */
-export class InMemoryWaitlistReader implements WaitlistReader {
-  private failure: RepositoryError | null = null;
-  constructor(private readonly requests: readonly WaitlistRequest[] = []) {}
-  failWith(error = new RepositoryError('waitlist unavailable')): this {
-    this.failure = error;
-    return this;
+// ── The booking ports: the `@core/testing` doubles, failing on demand ───
+
+/** One read a double answered: the port method and its arguments. */
+export interface PortCall {
+  readonly method: string;
+  readonly args: readonly unknown[];
+}
+
+/**
+ * A `@core/testing` port double that records every read and fails on
+ * demand: from `failWith()` until `recover()` each method answers the
+ * error — a stream port in one emission, as its adapter would.
+ */
+export type PortDouble<P> = P & {
+  readonly calls: PortCall[];
+  /** The arguments of every call to `method`, in order. */
+  callsTo(method: keyof P & string): readonly (readonly unknown[])[];
+  failWith(error?: CoreRepositoryError): PortDouble<P>;
+  recover(): PortDouble<P>;
+};
+
+export function portDouble<P extends object>(ports: P): PortDouble<P> {
+  const calls: PortCall[] = [];
+  let failure: CoreRepositoryError | null = null;
+  const members: Record<string, unknown> = {};
+  for (const [method, member] of Object.entries(ports)) {
+    if (typeof member !== 'function') {
+      members[method] = member;
+      continue;
+    }
+    const read = member as (...args: unknown[]) => unknown;
+    members[method] = (...args: unknown[]) => {
+      calls.push({ method, args });
+      const answer = read(...args);
+      if (failure === null) return answer;
+      const refused = CoreResult.err(failure);
+      return isObservable(answer) ? of(refused) : Promise.resolve(refused);
+    };
   }
-  observeMine(
-    userId: UserId,
-  ): Observable<Result<readonly WaitlistRequest[], RepositoryError>> {
-    if (this.failure !== null) return of(fail(this.failure));
-    return of(ok(this.requests.filter((r) => r.ownerId.equals(userId))));
-  }
-  async findMine(
-    requestId: string,
-  ): Promise<Result<WaitlistRequest | null, RepositoryError>> {
-    return ok(this.requests.find((r) => r.id.value === requestId) ?? null);
-  }
+  const double = Object.assign(members, {
+    calls,
+    callsTo: (method: string) =>
+      calls.filter((call) => call.method === method).map((call) => call.args),
+    failWith: (
+      error: CoreRepositoryError = CoreRepositoryError.unavailable(),
+    ) => {
+      failure = error;
+      return double;
+    },
+    recover: () => {
+      failure = null;
+      return double;
+    },
+  }) as unknown as PortDouble<P>;
+  return double;
+}
+
+/** `CLIENT_STATS_READ_PORTS` over the stats pairs. */
+export function statsPortsOf(
+  stats: readonly ClientStatsRecord[],
+  money: readonly ClientMoneyRecord[] = [],
+): PortDouble<ClientStatsReadPorts> {
+  return portDouble(memoryClientStatsReadPorts({ stats, money }));
+}
+
+/** `APPOINTMENT_READ_PORTS` over a book — the history pages. */
+export function historyPortsOf(
+  appointments: readonly Appointment[],
+): PortDouble<AppointmentReadPorts> {
+  return portDouble(memoryAppointmentReadPorts(appointments));
+}
+
+/** `APPOINTMENT_PHOTO_PORTS` over the photos — the rail and the rows' counts. */
+export function photoPortsOf(
+  photos: readonly AppointmentPhoto[],
+): PortDouble<AppointmentPhotoPorts> {
+  return portDouble(memoryAppointmentPhotoPorts([...photos]));
+}
+
+/** `WAITLIST_READ_PORTS` over the requests. */
+export function waitlistPortsOf(
+  requests: readonly WaitlistRequest[] = [],
+): PortDouble<WaitlistReadPorts> {
+  return portDouble(memoryWaitlistReadPorts(requests));
+}
+
+/** `COUPON_VOUCHER_PORTS` over the vouchers — the fixture's five unless said. */
+export function voucherPortsOf(
+  vouchers: readonly GiftVoucher[] = fixtureVouchers(),
+): PortDouble<CouponVoucherPorts> {
+  return portDouble(memoryCouponVoucherPorts({ vouchers }));
+}
+
+/** `CUSTOMER_PORTS` over the client records — Георги's and Мартин's unless said. */
+export function customerPortsOf(
+  customers: readonly Customer[] = fixtureCustomers(),
+): PortDouble<CustomerPorts> {
+  return portDouble(memoryCustomerPorts(customers));
 }

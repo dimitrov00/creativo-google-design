@@ -1,8 +1,4 @@
-import type { VisitLeg } from '@creativo/application/booking';
-import {
-  InMemoryClientHistoryReader,
-  InMemoryClientPhotosReader,
-} from '@creativo/application/booking/testing';
+import type { VisitLeg } from '@core/components';
 import { InMemoryLoyaltyReader } from '@creativo/application/engagement/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletAnchor } from '../client-card.contracts';
@@ -18,11 +14,13 @@ import {
   georgiOpenContext,
   georgiPhotos,
   georgiUser,
+  historyPortsOf,
   martinContext,
   martinHistory,
   martinUser,
   must,
   pausedUntilOctober,
+  photoPortsOf,
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
@@ -780,7 +778,7 @@ describe('lib-client-card — Мартин, in the chair on his birthday', () =>
     expect(run.style.getPropertyValue('--ui-quick-actions-columns')).toBe('4');
     await click('client-quick-same');
     expect(emitted.repeats).toHaveLength(1);
-    expect(must(emitted.repeats[0]).map((leg) => leg.serviceId.value)).toEqual([
+    expect(must(emitted.repeats[0]).map((leg) => leg.serviceId)).toEqual([
       'svc-classic-cut',
     ]);
   });
@@ -889,7 +887,7 @@ describe('lib-client-card — its states', () => {
   });
 
   it('keeps a failed module’s heading over its one retry, and reads it again', async () => {
-    const photos = new InMemoryClientPhotosReader(georgiPhotos()).failWith();
+    const photos = photoPortsOf(georgiPhotos()).failWith();
     const { byId, text, headings, click } = await mount({ rig: { photos } });
     expect(headings()).toContain('Снимки');
     const notice = must(byId('client-failed-photos'));
@@ -907,11 +905,11 @@ describe('lib-client-card — its states', () => {
   });
 
   it('folds two failed modules into one notice under the head, their headings alone', async () => {
-    const history = new InMemoryClientHistoryReader([
+    const history = historyPortsOf([
       ...georgiHistory(),
       ...martinHistory(),
     ]).failWith();
-    const photos = new InMemoryClientPhotosReader(georgiPhotos()).failWith();
+    const photos = photoPortsOf(georgiPhotos()).failWith();
     const { byId, text, headings, click, before } = await mount({
       rig: { history, photos },
     });

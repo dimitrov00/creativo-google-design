@@ -6,6 +6,7 @@ import {
   type Currency,
   type BarberId,
   type ServiceId,
+  type CustomerId,
   type UserId,
   LocalDate,
   type EndMinute,
@@ -147,20 +148,20 @@ export const VisitStorySystem = {
   },
 
   /**
-   * The story a row tells. The staff row tells the SUBJECT's (their seats
-   * alone, so a companion's no-show says nothing about the booker — the
-   * statistics' own reading, `ClientStatsSystem.subjectVisitOf`); the
-   * client's list, a guest (`null`) and a subject with no seat on the visit
-   * tell the appointment's.
+   * The story a row tells. The staff row tells the SUBJECT's — the client
+   * record the card is about (D29), its seats alone, so a companion's
+   * no-show says nothing about the booker (the statistics' own reading,
+   * `ClientStatsSystem.subjectVisitOf`); the client's list, a guest
+   * (`null`) and a record with no seat on the visit tell the appointment's.
    */
   subjectStory(
     appointment: Appointment,
-    subjectUserId: UserId | null,
+    subjectCustomerId: CustomerId | null,
     staff: boolean,
   ): SubjectStory {
-    if (staff && subjectUserId !== null) {
+    if (staff && subjectCustomerId !== null) {
       const visit = ClientStatsSystem.subjectVisitOf(
-        subjectUserId,
+        subjectCustomerId,
         appointment,
       );
       if (visit !== null) {

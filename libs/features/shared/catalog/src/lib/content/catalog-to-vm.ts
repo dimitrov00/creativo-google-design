@@ -1,4 +1,10 @@
-import type { Barber, Service } from '@creativo/application/catalog';
+import type { Barber, Service } from '@core/entities';
+import {
+  BarberOffering,
+  CompositionKind,
+  type ServiceTerms,
+  type ServiceVariant,
+} from '@core/components';
 import type {
   BarberVm,
   Localized,
@@ -9,7 +15,7 @@ import type {
 } from './catalog-vm';
 
 /**
- * Domain → view model, so the landing renders the REAL catalog while its
+ * Entity → view model, so the landing renders the REAL catalog while its
  * components keep binding the `ServiceVm`/`BarberVm` shapes they were
  * written against. The view models stay: what changed is their source.
  *
@@ -41,29 +47,32 @@ function localized(text: { en: string; bg: string }): Localized {
   return { en: text.en, bg: text.bg };
 }
 
-/** `Money` → the VM's major-unit number (`1450` minor → `14.5`). */
-function termsToVm(terms: {
-  price: { toMajorUnits(): number };
-  durationMinutes: number;
-}): ServiceTermsVm {
-  return { price: terms.price.toMajorUnits(), minutes: terms.durationMinutes };
+/**
+ * The flat terms → the VM's major-unit number (`1450` cents → `14.5`). The
+ * VM is EUR major units by contract (`catalog-vm.ts`); EUR's exponent is 2.
+ */
+function termsToVm(terms: ServiceTerms): ServiceTermsVm {
+  return { price: terms.priceCents / 100, minutes: terms.durationMinutes };
 }
 
 function offeringToVm(
-  offering: Service['offerings'][number],
-  /** The service's DOMAIN variants — `termsFor` takes the id VO, not the slug. */
-  variants: readonly Service['variants'][number][],
+  offering: BarberOffering,
+  /** The service's declared variants — `termsFor` takes the variant's id. */
+  variants: readonly ServiceVariant[],
 ): ServiceOfferingVm {
   const byVariant: Record<string, ServiceTermsVm> = {};
   for (const variant of variants) {
     // Ask the offering for every declared variant and let its own sparse
     // fallback decide. Terms equal to base are still written out: the VM's
     // helpers read this map directly and have no fallback of their own.
-    byVariant[variant.id.value] = termsToVm(offering.termsFor(variant.id));
+    byVariant[variant.variantId] = termsToVm(
+      BarberOffering.termsFor(offering, variant.variantId),
+    );
   }
   return {
-    barberId: offering.barberId.value,
-    base: termsToVm(offering.base),
+    barberId: offering.barberId,
+    // The offering's own five root fields ARE its base terms (the slice).
+    base: termsToVm(offering),
     ...(variants.length > 0 ? { byVariant } : {}),
   };
 }
@@ -74,7 +83,7 @@ export function serviceToVm(
   art: ServiceArtDirection | undefined,
 ): ServiceVm {
   const variants: ServiceVariantVm[] = service.variants.map((variant) => ({
-    id: variant.id.value,
+    id: variant.variantId,
     name: localized(variant.name),
     // The icon is a rendering choice, not catalog data; length is the only
     // axis the seed declares, and `skin` was never wired to anything.
@@ -85,22 +94,26 @@ export function serviceToVm(
     offeringToVm(offering, service.variants),
   );
 
+  const bundle = service.compositionKind === CompositionKind.Bundle;
   return {
-    id: service.id.value,
-    kind: service.composition.kind,
+    id: service.id,
+    // An unspecified composition (`composition: null` as authored) draws as
+    // a single service, as it always did.
+    kind: bundle ? 'bundle' : 'single',
     name: localized(service.name),
     description: localized(service.description),
     ...(coverSrc ? { coverSrc } : {}),
     variants,
     // A service nobody is priced for yet still has to show a price, so its
-    // `baseTerms` stands in as a single anonymous offering. Without this
-    // the VM's `servicePriceFrom` would fold an empty list.
+    // own terms (the five root fields) stand in as a single anonymous
+    // offering. Without this the VM's `servicePriceFrom` would fold an empty
+    // list.
     offerings:
       offerings.length > 0
         ? offerings
-        : [{ barberId: '', base: termsToVm(service.baseTerms) }],
-    ...(service.composition.kind === 'bundle'
-      ? { includes: service.composition.includes.map((id) => id.value) }
+        : [{ barberId: '', base: termsToVm(service) }],
+    ...(service.compositionKind === CompositionKind.Bundle
+      ? { includes: [...service.bundleServiceIds] }
       : {}),
     upsellOnly: service.upsellOnly,
     gallery: art?.gallery ?? [],
@@ -113,7 +126,7 @@ export function barberToVm(
   art: BarberArtDirection | undefined,
 ): BarberVm {
   return {
-    id: barber.id.value,
+    id: barber.id,
     name: localized(barber.name),
     title: localized(barber.title),
     bio: localized(barber.bio),

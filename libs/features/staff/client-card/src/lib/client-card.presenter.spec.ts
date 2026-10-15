@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AccountStatus, User } from '@creativo/application/accounts';
+import { AppointmentId, AppointmentPhotoId } from '@core/primitives';
 import {
   capsulesRun,
   clientHeadVm,
@@ -35,6 +36,7 @@ import {
   martinUser,
   must,
   pausedUntilOctober,
+  sofia,
   statsOf,
   subjectOf,
   wordsOf,
@@ -261,7 +263,7 @@ describe('the quick actions (D)', () => {
         href: null,
         accessibleName:
           'Повтори посещението от 19 август: Класическа подстрижка',
-        legs: must(MARTIN_STATS.lastVisit).legs,
+        legs: MARTIN_STATS.lastVisitLegs,
       },
     ]);
   });
@@ -347,7 +349,7 @@ describe('the photo rail (I)', () => {
         photoId: 'photo-dev-georgi-3',
         appointmentId: 'appt-hist-c1-22',
         url: 'https://example.test/photos/photo-dev-georgi-3.jpg',
-        takenAtIso: at('2026-08-06T10:44:00').toISO(),
+        takenAtUtcMs: sofia('2026-08-06T10:44:00'),
         dateLabel: '6.08',
         accessibleName: 'Снимка от 6 август',
         barberId: 'ivan',
@@ -360,8 +362,8 @@ describe('the photo rail (I)', () => {
   it('shows six at most, newest first', () => {
     const many = Array.from({ length: 9 }, (_, i) => ({
       ...must(georgiPhotos()[2]),
-      photoId: `p-${i}`,
-      appointmentId: `appt-${i}`,
+      id: AppointmentPhotoId.of(`p-${i}`),
+      appointmentId: AppointmentId.of(`appt-${i}`),
     }));
     expect(
       photoRailVm(many, [null], NOW_MS, WORDS).map((p) => p.photoId),
@@ -371,7 +373,7 @@ describe('the photo rail (I)', () => {
   it('dates a photo from another year with its year', () => {
     const old = {
       ...must(georgiPhotos()[0]),
-      takenAtIso: at('2025-12-01T10:00:00').toISO(),
+      takenAtUtcMs: sofia('2025-12-01T10:00:00'),
     };
     expect(clientPhotoVm(old, NOW_MS, WORDS)).toMatchObject({
       dateLabel: '1.12.2025 г.',

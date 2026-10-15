@@ -18,7 +18,7 @@ import {
   AppliedDiscountId,
   type CouponGrantId,
   type CouponId,
-  type UserId,
+  type CustomerId,
   PriceCents,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -65,8 +65,8 @@ export type BillPending = (typeof BillPending)[keyof typeof BillPending];
 /** A grant as the resolver found it — whose it is, whether it can still be honoured, and its value. */
 export type ResolvedGrant = {
   readonly grantId: CouponGrantId;
-  /** The grant's account — a uid until the appointment flip (1) (D29). */
-  readonly userId: UserId;
+  /** The client record the grant rewards (D29) — matched against the visit's `ownerCustomerId`. */
+  readonly customerId: CustomerId;
   /** The coupon's name — what the receipt calls the promise. */
   readonly label: string;
   readonly usable: boolean;
@@ -368,8 +368,8 @@ export const BillingSystem = {
    * ones carried forward (`KEEP`), or the named set, each item KEPT as
    * stored (the same grant, the same code, the same manual figure — a
    * promise once kept is not withdrawn by a coupon retired since) or NEW, a
-   * snapshot stamped `nowUtcMs`. A NEW grant must be the owner's own and
-   * still usable; a new code must have opened a coupon; a NEW manual figure
+   * snapshot stamped `nowUtcMs`. A NEW grant must be the owner's own (the
+   * visit's `ownerCustomerId`, D29) and still usable; a new code must have opened a coupon; a NEW manual figure
    * needs a role that handles money (`FORBIDDEN` otherwise — keeping one
    * somebody else set does not). Then the set: at most one manual figure, an
    * exclusive coupon alone, no promise twice.
@@ -377,7 +377,7 @@ export const BillingSystem = {
   settleDiscounts(
     pending: PendingDiscounts,
     existing: readonly AppliedDiscount[],
-    ownerUserId: UserId | null,
+    ownerCustomerId: CustomerId | null,
     actorRoles: readonly string[],
     currency: Currency,
     nowUtcMs: UtcEpochMs,
@@ -408,8 +408,8 @@ export const BillingSystem = {
           if (
             grant === null ||
             !grant.usable ||
-            ownerUserId === null ||
-            ownerUserId !== grant.userId
+            ownerCustomerId === null ||
+            ownerCustomerId !== grant.customerId
           ) {
             return invalid('discounts');
           }

@@ -7,8 +7,11 @@ import {
   CancellationReasonSet,
   CancelledBy,
   SeatOutcome,
+  type AccountSeat,
+  type ChairGeometry,
   Seat,
   type ShopNow,
+  type TimeCoordinate,
   WriteOp,
 } from '@core/components';
 import {
@@ -143,6 +146,8 @@ function withLifecycle(
     locationId: appointment.locationId,
     ownerUserId: appointment.ownerUserId,
     subjectUserIds: appointment.subjectUserIds,
+    ownerCustomerId: appointment.ownerCustomerId,
+    subjectCustomerIds: appointment.subjectCustomerIds,
     placement: appointment.placement,
     inferredPlacement: appointment.inferredPlacement,
     barberIds: appointment.barberIds,
@@ -839,7 +844,7 @@ export const AppointmentLifecycleSystem = {
    * chairs at once, named ONCE per barber in discovery order; seats priced
    * in two currencies (the first mismatch).
    */
-  seatViolations(seats: readonly Seat[]): readonly SchedulingError[] {
+  seatViolations(seats: readonly AccountSeat[]): readonly SchedulingError[] {
     return Seat.violations(seats);
   },
 
@@ -850,7 +855,10 @@ export const AppointmentLifecycleSystem = {
    * then its seats must hold every invariant of {@link seatViolations}.
    */
   admit(
-    visit: Pick<Appointment, 'localDate' | 'seats'>,
+    visit: {
+      readonly localDate: LocalDate;
+      readonly seats: readonly AccountSeat[];
+    },
     now: ShopNow,
   ): readonly SchedulingError[] {
     const envelope = AppointmentIndexSystem.envelope(visit);
@@ -882,7 +890,10 @@ export const AppointmentLifecycleSystem = {
    * they have not arrived, which is NOT zero and never averaged as punctual.
    * Elapsed time between two instants (a T2 statistic, G-1).
    */
-  latenessMinutes(appointment: Appointment): number | null {
+  latenessMinutes(
+    appointment: Pick<Appointment, 'arrivedAtUtcMs'> &
+      TimeCoordinate & { readonly seats: readonly ChairGeometry[] },
+  ): number | null {
     if (appointment.arrivedAtUtcMs === null || appointment.seats.length === 0) {
       return null;
     }
@@ -898,7 +909,10 @@ export const AppointmentLifecycleSystem = {
    * written before the stamp, excluded from lead-time statistics (a T2
    * statistic, G-1).
    */
-  bookingLeadTimeMinutes(appointment: Appointment): number | null {
+  bookingLeadTimeMinutes(
+    appointment: Pick<Appointment, 'bookedAtUtcMs'> &
+      TimeCoordinate & { readonly seats: readonly ChairGeometry[] },
+  ): number | null {
     if (appointment.bookedAtUtcMs === null || appointment.seats.length === 0) {
       return null;
     }

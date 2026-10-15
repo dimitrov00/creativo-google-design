@@ -28,30 +28,51 @@ import {
   principalHasRole,
   roleFromPrimitive,
 } from '@creativo/application/identity';
-import { Coupon } from '@creativo/application/engagement';
 import {
   BookingGatewayError,
   type StaffDiscountRequest,
 } from '@creativo/application/booking';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
-  type AppointmentPhoto,
-  Appointment,
   type AppointmentStatusKind,
   CancellationReasonKind,
-  LocalTimeRange,
-  type Money,
   OFFERED_CANCELLATION_REASONS,
-  type Seat,
-  type SeatOutcome,
   type StaffEditCommand,
-  canTransition,
-  formatMoney,
-  summarizeSeatOutcomes,
   type CommitBookingSeatRequest,
-  ownerUserIdOf,
   wordError,
 } from '@creativo/application/booking';
+import type {
+  Appointment,
+  AppointmentPhoto,
+  ServiceCategory,
+} from '@core/entities';
+import {
+  AttendanceState,
+  BookingStatus,
+  EndMinute,
+  MinuteOfDay,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  AppliedDiscount,
+  BookingLifecycle,
+  CancellationReason,
+  CancelledBy,
+  Combinability,
+  DiscountProvenance,
+  DiscountSource,
+  MinuteRange,
+  PhotoOrigin,
+  Seat,
+  SeatOutcome,
+  SeatSubject,
+  SubjectRelationship,
+  VoucherCode,
+  VoucherRedemption,
+} from '@core/components';
+import { BillingSystem, PhoneSystem } from '@core/systems';
+import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
 import { AGENDA_FIELDS, AgendaFields } from '../agenda-fields';
 import {
   StaffVisitEditor,
@@ -89,6 +110,7 @@ import { catalogMinutesOf, catalogTagOf } from '../shared/catalog-delta';
 import { walkInLabels } from '../shared/walk-in-labels';
 import {
   firstNameOf,
+  formatCents,
   hollowStatus,
   StaffEventHead,
   type StaffEventLine,
@@ -151,6 +173,7 @@ import {
   startOfWeek,
   type BarberDayLane,
   type StaffView,
+  wallClockInstant,
 } from '../staff-day.store';
 import {
   type AllDayEntry,
@@ -177,10 +200,6 @@ import {
   PROFILE_PORT,
   UserId,
 } from '@creativo/application/accounts';
-import {
-  CATALOG_READER,
-  type ServiceCategory,
-} from '@creativo/application/catalog';
 import type { ClientCardCatalog } from '@creativo/features/staff/client-card';
 import {
   AUTH_DEPLOYMENT,
@@ -393,6 +412,11 @@ interface DayRowVm {
   readonly selfSeat: boolean;
   /** The account the booking belongs to, or `null` for a walk-in. */
   readonly ownerUserId: string | null;
+  /**
+   * The booker's client RECORD (D29) — what their held coupons, the photos
+   * of the visit and the client card are keyed by; `null` for a walk-in.
+   */
+  readonly ownerCustomerId: string | null;
   /** Seats in the whole party, across every lane. `1` is the ordinary case. */
   readonly partySize: number;
   /**
@@ -739,6 +763,40 @@ const ANCHOR_FRAMES = 24;
 /** Close enough, in px — sub-pixel layout must not keep the loop alive. */
 const ANCHOR_TOLERANCE = 2;
 
+/**
+ * The sheet's word for each stored status — the callable wire's own
+ * vocabulary (`TransitionAppointmentRequest.to`, F1-3), which the rows, the
+ * verbs and the block states speak. The stored tag is the truth; this is
+ * how the frozen wire names it.
+ */
+const WIRE_STATUS = {
+  [BookingStatus.Pending]: 'pending',
+  [BookingStatus.Confirmed]: 'confirmed',
+  [BookingStatus.Completed]: 'completed',
+  [BookingStatus.NoShow]: 'no_show',
+  [BookingStatus.Cancelled]: 'cancelled',
+} as const satisfies Record<BookingStatus, AppointmentStatusKind>;
+
+/** The stored tag a wire word names — the inverse of {@link WIRE_STATUS}. */
+const BOOKING_STATUS_OF = {
+  pending: BookingStatus.Pending,
+  confirmed: BookingStatus.Confirmed,
+  completed: BookingStatus.Completed,
+  no_show: BookingStatus.NoShow,
+  cancelled: BookingStatus.Cancelled,
+} as const satisfies Record<AppointmentStatusKind, BookingStatus>;
+
+/** The catalogue key segment of each stored cancellation reason (`staff.day.cancelReasonCode.*`). */
+const REASON_KEY = {
+  [CancellationReason.ClientChangedPlans]: 'client_changed_plans',
+  [CancellationReason.ClientUnwell]: 'client_unwell',
+  [CancellationReason.StaffBarberAbsence]: 'staff_barber_absence',
+  [CancellationReason.StaffShopClosure]: 'staff_shop_closure',
+  [CancellationReason.NoShowConverted]: 'no_show_converted',
+  [CancellationReason.Unspecified]: 'unspecified',
+  [CancellationReason.Other]: 'other',
+} as const satisfies Record<CancellationReason, string>;
+
 /** Settled, whatever became of it — a cancelled seat is never "in the chair". */
 function isTerminalStatus(status: AppointmentStatusKind): boolean {
   return (
@@ -746,13 +804,21 @@ function isTerminalStatus(status: AppointmentStatusKind): boolean {
   );
 }
 
-/** `13:05` for minute 785 — the clock the exception writer reads. */
 /** The shortest visit a converted block may draft — the catalogue's grain. */
 const GRAIN_MINUTES_FOR_KIND = 5;
 
-function clockOfMinute(minute: number): string {
-  const hours = Math.floor(minute / 60) % 24;
-  return `${String(hours).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+/**
+ * A block's span on the shop's wall clock — a start in `[0, 1440)` and a
+ * later end in `(0, 1440]` — or `null` for anything that is not one.
+ */
+function minuteRangeOf(
+  startMinute: number,
+  endMinute: number,
+): MinuteRange | null {
+  const start = MinuteOfDay.of(startMinute);
+  const end = EndMinute.of(endMinute);
+  if (!start.ok || !end.ok || end.value <= start.value) return null;
+  return MinuteRange.of(start.value, end.value);
 }
 
 /** One field that matched, split so the matching run can be marked. */
@@ -1285,7 +1351,7 @@ export class StaffDashboard {
 
   /** The shop's service categories — the card's «Майсторство» sections name them. */
   private readonly serviceCategories = toSignal(
-    inject(CATALOG_READER).listServiceCategories(),
+    inject(CATALOG_PORTS).observeCategories(),
     { initialValue: null },
   );
 
@@ -1313,16 +1379,18 @@ export class StaffDashboard {
       serviceCategory: (id: string) => {
         const service = catalog.findService(id);
         const listed = categories();
-        if (service === undefined || !listed?.isSuccess()) return null;
-        const category = listed.value.find((entry: ServiceCategory) =>
-          entry.id.equals(service.categoryId),
+        if (service === undefined || listed === null || !listed.ok) {
+          return null;
+        }
+        const category = listed.value.find(
+          (entry: ServiceCategory) => entry.id === service.categoryId,
         );
         return category === undefined
           ? null
-          : { id: category.id.value, name: content.text(category.name) };
+          : { id: category.id as string, name: content.text(category.name) };
       },
       barberName: (id: string) => {
-        const barber = catalog.barbers().find((entry) => entry.id.value === id);
+        const barber = catalog.barbers().find((entry) => entry.id === id);
         return barber === undefined ? null : content.text(barber.name);
       },
       barberAvatarSrc: (id: string) =>
@@ -1330,15 +1398,18 @@ export class StaffDashboard {
       // A row's fact line names the shop without the brand every shop
       // carries: `Location.shortName` (its name when the catalogue has none).
       locationName: (id: string) => {
-        const location = catalog
-          .locations()
-          .find((entry) => entry.id.value === id);
-        return location === undefined ? null : content.text(location.shortName);
+        const location = catalog.locations().find((entry) => entry.id === id);
+        return location === undefined
+          ? null
+          : content.text(location.shortName ?? location.name);
       },
       locationCoverSrc: () => null,
       get locationCount() {
         return catalog.locations().length;
       },
+      // The shop's own zone: what a visit row reads "today" in (Law 7.2).
+      locationTimeZone: (id: string) =>
+        catalog.locations().find((entry) => entry.id === id)?.timeZone ?? null,
     };
   })();
   protected readonly store = inject(StaffDayStore);
@@ -1449,14 +1520,14 @@ export class StaffDashboard {
       );
       if (matched.length === 0) continue;
 
-      const startMs = appointment.timeSlot.start.toMillis();
+      const startMs = appointment.utcEpochMs;
       // The client is the title, highlighted when it is what matched. Every
       // OTHER matched field lists beneath — so a phone search shows the
       // number it hit, and a name search does not print the name twice.
       const titleField = fields[0];
       hits.push({
-        id: appointment.id.value,
-        dayKey: this.dayKeyOf(startMs),
+        id: appointment.id,
+        dayKey: appointment.localDate,
         whenLabel: this.searchWhenLabel(startMs),
         whenMs: startMs,
         // ONE definition of past, shared with the grid (see `eventsFor`): a
@@ -1465,8 +1536,8 @@ export class StaffDashboard {
         // history here and rendered live there — the same appointment, two
         // answers, on two surfaces a person moves between. Whatever is
         // happening right now belongs with what is coming.
-        past: appointment.timeSlot.end.toMillis() <= nowMs,
-        status: appointment.status.kind,
+        past: endInstantOf(appointment) <= nowMs,
+        status: WIRE_STATUS[appointment.bookingStatus],
         titleParts: titleField
           ? splitOnTerm(titleField.value, term)
           : [{ text: '', hit: false }],
@@ -1498,37 +1569,31 @@ export class StaffDashboard {
     appointment: Appointment,
   ): readonly { label: string; value: string }[] {
     const out: { label: string; value: string }[] = [];
-    const contact = appointment.contact;
-    if (contact?.name) out.push({ label: 'client', value: contact.name });
+    if (appointment.contactName) {
+      out.push({ label: 'client', value: appointment.contactName });
+    }
     for (const seat of appointment.seats) {
-      if (seat.subject.kind === 'anonymous') {
-        out.push({ label: 'client', value: seat.subject.label.value });
+      if (seat.seatSubject === SeatSubject.Anonymous) {
+        out.push({ label: 'client', value: seat.guestLabel });
       }
-      const service = this.catalog
-        .services()
-        .find((entry) => entry.id.value === seat.serviceId.value);
+      const service = this.catalog.findService(seat.serviceId);
       if (service) {
         out.push({ label: 'service', value: this.content.text(service.name) });
       }
     }
-    if (contact?.phone) {
-      out.push({ label: 'phone', value: contact.phone.formatInternational() });
+    if (appointment.contactPhone !== null) {
+      out.push({
+        label: 'phone',
+        value: PhoneSystem.formatInternational(appointment.contactPhone),
+      });
     }
-    if (contact?.email) {
-      out.push({ label: 'email', value: contact.email.value });
+    if (appointment.contactEmail !== null) {
+      out.push({ label: 'email', value: appointment.contactEmail });
     }
-    if (contact?.note) out.push({ label: 'note', value: contact.note });
+    if (appointment.contactNote) {
+      out.push({ label: 'note', value: appointment.contactNote });
+    }
     return out;
-  }
-
-  private dayKeyOf(ms: number): string {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      timeZone: STAFF_ZONE,
-    }).format(new Date(ms));
-    return parts;
   }
 
   private searchWhenLabel(ms: number): string {
@@ -1733,11 +1798,11 @@ export class StaffDashboard {
   protected readonly shopOptions = computed<readonly VisitEditorShopOption[]>(
     () =>
       this.catalog.locations().map((location) => ({
-        id: location.id.value,
+        id: location.id as string,
         label: this.content.text(location.name),
         address: streetOf(this.content.text(location.address)),
-        lat: location.geo.lat,
-        lng: location.geo.lng,
+        lat: location.latitude,
+        lng: location.longitude,
       })),
   );
 
@@ -2303,35 +2368,25 @@ export class StaffDashboard {
   }
 
   /**
-   * What this lane's seats come to, as one figure.
-   *
-   * `Money.add` returns a Result because two currencies cannot be summed —
-   * a failure means the party is mixed-currency, and the honest answer there
-   * is no number at all rather than a wrong one.
+   * What this lane's seats come to, in minor units — what a tip preset is a
+   * share of. `BillingSystem.subtotalOf` refuses two currencies: a party
+   * mixed-currency has no number at all rather than a wrong one.
    */
-  /** The same sum, in minor units — what a tip preset is a share of. */
   private seatsPriceMinor(seats: readonly Seat[]): number | null {
-    const first = seats[0];
-    if (!first) return null;
-    let total: Money = first.terms.price;
-    for (const seat of seats.slice(1)) {
-      const sum = total.add(seat.terms.price);
-      if (sum.isFailure()) return null;
-      total = sum.value;
-    }
-    return total.toMinorUnits();
+    const sum = BillingSystem.subtotalOf(seats);
+    return sum.ok ? sum.value.amountCents : null;
   }
 
+  /** The same sum, formatted («27,50 €»). */
   private seatsPrice(seats: readonly Seat[]): string | null {
-    const first = seats[0];
-    if (!first) return null;
-    let total: Money = first.terms.price;
-    for (const seat of seats.slice(1)) {
-      const sum = total.add(seat.terms.price);
-      if (sum.isFailure()) return null;
-      total = sum.value;
-    }
-    return formatMoney(total, this.transloco.getActiveLang());
+    const sum = BillingSystem.subtotalOf(seats);
+    return sum.ok
+      ? formatCents(
+          sum.value.amountCents,
+          sum.value.currency,
+          this.transloco.getActiveLang(),
+        )
+      : null;
   }
 
   /**
@@ -2345,27 +2400,26 @@ export class StaffDashboard {
     tipLabel: string | null;
     tipMinorUnits: number | null;
   } {
-    const tips = seats.flatMap((seat) => (seat.tip === null ? [] : [seat.tip]));
-    const [first, ...rest] = tips;
-    if (first === undefined) return { tipLabel: null, tipMinorUnits: null };
-    let total: Money = first;
-    for (const tip of rest) {
-      const sum = total.add(tip);
-      // Mixed currencies within one chair is a data error, not a feature;
-      // the honest answer is no figure rather than a wrong one.
-      if (sum.isFailure()) return { tipLabel: null, tipMinorUnits: null };
-      total = sum.value;
-    }
+    const first = seats[0];
+    // Mixed currencies within one chair is a data error, not a feature;
+    // the tips are read in the chair's own currency (`BillingSystem.tipsOf`).
+    const total =
+      first === undefined ? null : BillingSystem.tipsOf(seats, first.currency);
+    if (total === null) return { tipLabel: null, tipMinorUnits: null };
     return {
-      tipLabel: formatMoney(total, this.transloco.getActiveLang()),
-      tipMinorUnits: total.toMinorUnits(),
+      tipLabel: formatCents(
+        total.amountCents,
+        total.currency,
+        this.transloco.getActiveLang(),
+      ),
+      tipMinorUnits: total.amountCents,
     };
   }
 
   private barberNameOf(barberId: string): string {
     const barber = this.catalog
       .barbers()
-      .find((entry) => entry.id.value === barberId);
+      .find((entry) => entry.id === barberId);
     return barber ? this.content.text(barber.name) : barberId;
   }
 
@@ -2844,27 +2898,33 @@ export class StaffDashboard {
    * than no line, and `0,00 €` would claim every visit had been settled.
    */
   protected readonly dayTips = computed<string | null>(() => {
-    let total: Money | null = null;
+    let total: { cents: number; currency: string } | null = null;
     for (const lane of this.store.lanes()) {
       for (const appointment of lane.appointments) {
         for (const seat of appointment.seats) {
-          if (seat.barberId.value !== lane.barberId) continue;
-          if (seat.tip === null) continue;
+          if (seat.barberId !== lane.barberId) continue;
+          if (seat.tipCents === null) continue;
           if (total === null) {
-            total = seat.tip;
+            total = { cents: seat.tipCents, currency: seat.currency };
             continue;
           }
-          const sum = total.add(seat.tip);
           // A mixed-currency day is a data error, not a feature.
-          if (sum.isFailure()) return null;
-          total = sum.value;
+          if (seat.currency !== total.currency) return null;
+          total = {
+            cents: total.cents + seat.tipCents,
+            currency: total.currency,
+          };
         }
       }
     }
     return total === null
       ? null
       : this.transloco.translate('staff.day.daySummaryTips', {
-          amount: formatMoney(total, this.transloco.getActiveLang()),
+          amount: formatCents(
+            total.cents,
+            total.currency,
+            this.transloco.getActiveLang(),
+          ),
         });
   });
 
@@ -3242,28 +3302,30 @@ export class StaffDashboard {
     visitStartMs: number,
   ): VisitEditorResolution | null {
     if (status !== 'cancelled' && status !== 'no_show') return null;
-    const outcomes = seats
-      .map((seat) => seat.outcome)
-      .filter(
-        (
-          outcome,
-        ): outcome is Extract<SeatOutcome, { kind: 'cancelled' | 'no_show' }> =>
-          outcome.kind === status,
-      );
-    if (outcomes.length === 0) return null;
-    const cancellations = outcomes.filter(
-      (outcome): outcome is Extract<SeatOutcome, { kind: 'cancelled' }> =>
-        outcome.kind === 'cancelled',
-    );
+    const stamps: number[] = [];
+    const cancellations: (Seat & SeatOutcome.Cancelled)[] = [];
+    for (const seat of seats) {
+      if (
+        status === 'cancelled' &&
+        seat.attendanceState === AttendanceState.Cancelled
+      ) {
+        cancellations.push(seat);
+        stamps.push(seat.cancelledAtUtcMs);
+      } else if (
+        status === 'no_show' &&
+        seat.attendanceState === AttendanceState.NoShow
+      ) {
+        stamps.push(seat.noShowAtUtcMs);
+      }
+    }
+    if (stamps.length === 0) return null;
     const details = new Set<string>();
-    for (const { reason } of cancellations) {
-      if (reason.kind === 'unspecified') continue;
+    for (const { cancellationReason } of cancellations) {
+      if (cancellationReason === CancellationReason.Unspecified) continue;
       details.add(
-        reason.kind === 'other'
-          ? reason.note
-          : this.transloco.translate(
-              'staff.day.cancelReasonCode.' + reason.kind,
-            ),
+        this.transloco.translate(
+          'staff.day.cancelReasonCode.' + REASON_KEY[cancellationReason],
+        ),
       );
     }
     return {
@@ -3271,13 +3333,12 @@ export class StaffDashboard {
       by:
         cancellations.length === 0
           ? null
-          : cancellations.every((entry) => entry.by === 'client')
+          : cancellations.every(
+                (entry) => entry.cancelledBy === CancelledBy.Client,
+              )
             ? 'client'
             : 'staff',
-      whenLabel: this.stampLabel(
-        Math.max(...outcomes.map((outcome) => outcome.atMs)),
-        visitStartMs,
-      ),
+      whenLabel: this.stampLabel(Math.max(...stamps), visitStartMs),
       detail: details.size > 0 ? [...details].join(' · ') : null,
     };
   }
@@ -3293,18 +3354,15 @@ export class StaffDashboard {
    * nothing when the catalogue no longer knows the service — the seat's own
    * booked terms then stand in, exactly as they do on the sheet.
    */
-  private chairMinutesOf(
-    seat: Appointment['seats'][number],
-    barberId: string,
-  ): number | null {
+  private chairMinutesOf(seat: Seat, barberId: string): number | null {
     const service = this.catalog
       .serviceVms()
-      .find((entry) => entry.id === seat.serviceId.value);
+      .find((entry) => entry.id === seat.serviceId);
     const offering =
       service?.offerings.find((entry) => entry.barberId === barberId) ??
       service?.offerings[0];
     if (offering === undefined) return null;
-    const variantId = seat.variantId?.value ?? null;
+    const variantId = seat.variantId;
     const variantTerms = Object.entries(offering.byVariant ?? {}).find(
       ([id]) => id === variantId,
     )?.[1];
@@ -3321,7 +3379,7 @@ export class StaffDashboard {
    * the moment the words are there (review r4, 2026-10-06).
    */
   private catalogTag(
-    seats: readonly Appointment['seats'][number][],
+    seats: readonly Seat[],
     barberId: string,
     startMs: number,
     endMs: number,
@@ -3332,7 +3390,7 @@ export class StaffDashboard {
     const sold = catalogMinutesOf(
       seats,
       (seat) => this.chairMinutesOf(seat, barberId),
-      (seat) => seat.terms.durationMinutes,
+      (seat) => seat.durationMinutes,
     );
     return catalogTagOf(span, sold, (minutes) => fill(pattern, { minutes }));
   }
@@ -3343,17 +3401,22 @@ export class StaffDashboard {
     nowMs: number,
   ): DayRowVm {
     const seats = appointment.seats.filter(
-      (seat) => seat.barberId.value === barberId,
+      (seat) => seat.barberId === barberId,
     );
-    const start = seats[0]?.slot.start ?? appointment.timeSlot.start;
-    const end = seats.at(-1)?.slot.end ?? appointment.timeSlot.end;
+    // The chair's own span on the visit's shop day (Law 7.3): its first
+    // seat's start to its last seat's end — the envelope's when it holds none.
+    const first = seats[0];
+    const last = seats.at(-1);
+    const startMinute = first?.startMinutes ?? appointment.startMinutes;
+    const endMinute =
+      last === undefined ? appointment.endMinutes : Seat.endMinutes(last);
+    const startMs = wallClockInstant(appointment.localDate, startMinute);
+    const endMs = wallClockInstant(appointment.localDate, endMinute);
 
     const serviceLabel = seats
       .map((seat) => {
-        const service = this.catalog.findService(seat.serviceId.value);
-        return service
-          ? this.content.text({ en: service.name.en, bg: service.name.bg })
-          : seat.serviceId.value;
+        const service = this.catalog.findService(seat.serviceId);
+        return service ? this.content.text(service.name) : seat.serviceId;
       })
       .join(' + ');
 
@@ -3372,11 +3435,16 @@ export class StaffDashboard {
      * holding the account holder — alone or beside a guest — keeps the
      * contact's name, because that IS the person in it.
      */
-    const contact = appointment.contact;
+    const contactName = appointment.contactName;
+    const contactPhone = appointment.contactPhone;
+    const phoneLabel =
+      contactPhone === null
+        ? null
+        : PhoneSystem.formatInternational(contactPhone);
     const guestLabels = guestLabelsOf(seats);
     const allGuests = seats.length > 0 && guestLabels.length === seats.length;
     const clientLabel: string =
-      (allGuests ? guestLabels.join(' + ') : contact?.name) ??
+      (allGuests ? guestLabels.join(' + ') : contactName) ??
       guestLabels[0] ??
       this.transloco.translate('staff.day.unnamedClient');
 
@@ -3395,32 +3463,32 @@ export class StaffDashboard {
      * booking's.
      */
     const companionNames = this.companionNames();
-    const personOf = (seat: (typeof seats)[number]): VisitEditorClientOption =>
-      seat.subject.kind === 'anonymous'
+    const personOf = (seat: Seat): VisitEditorClientOption =>
+      seat.seatSubject === SeatSubject.Anonymous
         ? {
-            id: `guest-${seat.subject.label.value}`,
-            label: seat.subject.label.value,
+            id: `guest-${seat.guestLabel}`,
+            label: seat.guestLabel,
             phone: null,
             phoneHref: null,
             meta: null,
           }
-        : seat.subject.relationship === 'companion'
+        : seat.subjectRelationship === SubjectRelationship.Companion
           ? {
-              id: seat.subject.userId.value,
+              id: seat.subjectUserId,
               label:
-                companionNames[seat.subject.userId.value] ??
+                companionNames[seat.subjectUserId] ??
                 this.transloco.translate('staff.day.unnamedClient'),
               phone: null,
               phoneHref: null,
               meta: null,
             }
           : {
-              id: seat.subject.userId.value,
+              id: seat.subjectUserId,
               label:
-                contact?.name ??
+                contactName ??
                 this.transloco.translate('staff.day.unnamedClient'),
-              phone: contact?.phone.formatInternational() ?? null,
-              phoneHref: contact?.phone.value ?? null,
+              phone: phoneLabel,
+              phoneHref: contactPhone,
               meta: null,
             };
     const people = seats
@@ -3434,25 +3502,26 @@ export class StaffDashboard {
      * THIS CHAIR'S status, not the party's (found live, 2026-09-11).
      *
      * A party across two chairs is one appointment whose ROOT stays
-     * `confirmed` while any seat is still scheduled — so a guest cancelled
+     * `CONFIRMED` while any seat is still scheduled — so a guest cancelled
      * out of it kept reading as a live visit on his own chair, the sheet
      * offered «Откажи часа» a second time, and the server refused it as
      * already resolved with nothing the sheet could say but "something went
      * wrong". Once every seat on this chair is resolved, the chair's own
-     * outcome is the row's status: the domain's fold (`summarizeSeatOutcomes`
+     * outcome is the row's status: the domain's fold (`SeatOutcome.summarize`
      * — cancelled if all cancelled, completed if any worked, else no-show),
      * applied to this chair's seats. A chair with a seat still open keeps
      * the root's word, as before; a one-chair visit is unchanged, because
      * the root was folded from the same seats when it was written.
      */
-    const chairStatus = summarizeSeatOutcomes(
-      seats.map((seat) => seat.outcome),
-      appointment.status,
+    const chairLifecycle = SeatOutcome.summarize(
+      seats,
+      appointment,
+      utcEpochMsOf(nowMs),
     );
-    const status = chairStatus.kind;
-    const startMs = start.toMillis();
-    const endMs = end.toMillis();
-    const legal = OFFERED.filter((to) => canTransition(chairStatus, to));
+    const status = WIRE_STATUS[chairLifecycle.bookingStatus];
+    const legal = OFFERED.filter((to) =>
+      BookingLifecycle.canTransition(chairLifecycle, BOOKING_STATUS_OF[to]),
+    );
     // The same-day correction edges (owner ruling 2026-09-08): the graph
     // keeps `completed` and `cancelled` terminal, but the callable lets the
     // ROOT back to `confirmed` while the shop is still in the visit's day.
@@ -3462,12 +3531,12 @@ export class StaffDashboard {
     // whole appointment or nothing.
     if (
       (status === 'completed' || status === 'cancelled') &&
-      appointment.status.kind === status &&
+      WIRE_STATUS[appointment.bookingStatus] === status &&
       this.store.isToday()
     ) {
       legal.push('confirmed');
     }
-    const arrived = appointment.arrivedAt !== null;
+    const arrived = appointment.arrivedAtUtcMs !== null;
     const primary = primaryVerb(status, legal, arrived);
     const seatCount = appointment.seats.length;
     /*
@@ -3481,23 +3550,25 @@ export class StaffDashboard {
      */
     // «1/2», set tight (owner, 2026-09-16): a share, not a sum.
     const partyLabel = seatCount > 1 ? `${seats.length}/${seatCount}` : null;
+    const note = appointment.contactNote?.trim() || null;
 
     return {
       kind: 'visit',
-      id: rowKey(appointment.id.value, barberId),
-      appointmentId: appointment.id.value,
+      id: rowKey(appointment.id, barberId),
+      appointmentId: appointment.id,
       revision: appointment.revision,
-      locationId: appointment.locationId.value,
-      seatId: seats[0]?.id.value ?? '',
-      seatIds: seats.map((seat) => seat.id.value),
+      locationId: appointment.locationId,
+      seatId: first?.seatId ?? '',
+      seatIds: seats.map((seat) => seat.seatId),
       selfSeat: seats.some(
         (seat) =>
-          seat.subject.kind === 'account' &&
-          seat.subject.relationship === 'self',
+          seat.seatSubject === SeatSubject.Account &&
+          seat.subjectRelationship === SubjectRelationship.Self,
       ),
-      ownerUserId: ownerUserIdOf(appointment),
+      ownerUserId: appointment.ownerUserId,
+      ownerCustomerId: appointment.ownerCustomerId,
       arrived,
-      arrivedMs: appointment.arrivedAt?.toMillis() ?? null,
+      arrivedMs: appointment.arrivedAtUtcMs,
       endMs,
       partySize: seatCount,
       seatsHere: seats.length,
@@ -3516,18 +3587,18 @@ export class StaffDashboard {
       // Set by the lane, which is the only scope that can know which visit is
       // FIRST — a row cannot see its siblings.
       isNext: false,
-      // The seat's own start day owns the row, so a run past midnight is a
-      // LABEL problem, not a lane problem — mark it rather than move it.
+      // One shop day per visit (F-6): a chair that runs to the closing
+      // midnight ends on the next day's first instant — mark it, never move it.
       crossesMidnight: this.dayOf(endMs) !== this.dayOf(startMs),
       serviceLabel,
       clientLabel,
-      phone: contact?.phone.formatInternational() ?? null,
-      phoneHref: contact?.phone.value ?? null,
-      email: contact?.email?.value ?? null,
-      rebooked: appointment.bookedFrom !== null,
+      phone: phoneLabel,
+      phoneHref: contactPhone,
+      email: appointment.contactEmail,
+      rebooked: appointment.bookedFromAppointmentId !== null,
       // The note's EXISTENCE is a row signal; its prose belongs in the sheet.
-      hasNote: (contact?.note?.trim().length ?? 0) > 0,
-      note: contact?.note?.trim() || null,
+      hasNote: note !== null,
+      note,
       partyLabel,
       ...this.seatsTip(seats),
       discounts: discountsOf(appointment),
@@ -3535,26 +3606,26 @@ export class StaffDashboard {
       resolution: this.resolutionOf(seats, status, startMs),
       people,
       legs: seats.map((seat) => {
-        const service = this.catalog.findService(seat.serviceId.value);
-        const seatBarberId = seat.barberId.value;
+        const service = this.catalog.findService(seat.serviceId);
+        const seatBarberId = seat.barberId;
         return {
-          seatId: seat.id.value,
-          serviceId: seat.serviceId.value,
-          variantId: seat.variantId?.value ?? null,
+          seatId: seat.seatId,
+          serviceId: seat.serviceId,
+          variantId: seat.variantId,
           clientId: personOf(seat).id,
           serviceLabel: service
-            ? this.content.text({ en: service.name.en, bg: service.name.bg })
-            : seat.serviceId.value,
-          minutes: seat.terms.durationMinutes,
+            ? this.content.text(service.name)
+            : seat.serviceId,
+          minutes: seat.durationMinutes,
           // The same resolver the card's tag reads, so the frame agrees.
           catalogMinutes: this.chairMinutesOf(seat, seatBarberId),
           priceLabel: this.seatsPrice([seat]),
           barberId: seatBarberId,
           barberName: this.barberNameOf(seatBarberId),
           barberTone: this.toneOf(seatBarberId),
-          // `catalogTerms` is kept only when the stored terms DIFFER from the
-          // catalogue's (see `Seat`), so its presence is the override mark.
-          overridden: seat.catalogTerms !== null,
+          // The catalogue's terms are kept only when the stored ones DIFFER
+          // (`Seat.termsOf`), so their presence is the override mark.
+          overridden: seat.catalogPriceCents !== null,
         };
       }),
       status,
@@ -3790,20 +3861,18 @@ export class StaffDashboard {
        * them off the documents rather than making the whole agenda run twice.
        */
       const neighbours = (draftLane?.appointments ?? [])
-        .filter((appointment) => appointment.id.value !== row.appointmentId)
+        .filter((appointment) => appointment.id !== row.appointmentId)
         .flatMap((appointment) => {
           const name: string =
-            appointment.contact?.name ??
+            appointment.contactName ??
             this.transloco.translate<string>('staff.day.unnamedClient');
           return appointment.seats
-            .filter((seat) => seat.barberId.value === barberId)
+            .filter((seat) => seat.barberId === barberId)
             .map((seat) => ({
               name,
-              startMinute: shopMinuteOfDay(seat.slot.start.toMillis()),
-              endMinute: shopMinuteAfter(
-                seat.slot.start.toMillis(),
-                seat.slot.end.toMillis(),
-              ),
+              // The seat's own wall clock — the frame's axis (Law 7.3).
+              startMinute: seat.startMinutes,
+              endMinute: Seat.endMinutes(seat),
               tone: this.toneOf(barberId),
             }));
         });
@@ -3960,6 +4029,7 @@ export class StaffDashboard {
       clientLabel: row.clientLabel,
       people: row.people,
       clientUserId: row.ownerUserId,
+      clientCustomerId: row.ownerCustomerId,
       phone: row.phone,
       phoneHref: row.phoneHref,
       // `rebooked` is the one durable fact the shop holds about a person here:
@@ -4061,7 +4131,7 @@ export class StaffDashboard {
     this.store.probePhotos(row.appointmentId);
     // The client's own coupons, for the discount row — nobody's for a
     // walk-in, which reads as none.
-    this.store.probeGrants(row.ownerUserId);
+    this.store.probeGrants(row.ownerCustomerId);
     this.visitCodeResult.set(null);
   }
 
@@ -4174,8 +4244,8 @@ export class StaffDashboard {
         code,
         promo: {
           label: coupon.name,
-          value: discountValueOf(coupon.value),
-          exclusive: coupon.combinability.kind === 'exclusive',
+          value: discountValueOf(coupon),
+          exclusive: Combinability.isExclusive(coupon.combinability),
         },
         voucher: null,
         refusal: null,
@@ -4192,9 +4262,9 @@ export class StaffDashboard {
         found === null
           ? null
           : {
-              voucherId: found.voucher.id.value,
+              voucherId: found.voucher.id,
               code: found.voucher.code,
-              availableMinorUnits: found.voucher.balance.toMinorUnits(),
+              availableMinorUnits: found.voucher.balanceCents,
             },
       refusal: found?.refusal ?? null,
     });
@@ -4850,15 +4920,15 @@ export class StaffDashboard {
     for (const cell of this.store.dayCells()) {
       for (const lane of cell.lanes) {
         const appointment = lane.appointments.find(
-          (entry) => entry.id.value === appointmentId,
+          (entry) => entry.id === appointmentId,
         );
         if (appointment === undefined) continue;
         if (lane.barberId === barberId) {
           return this.toRow(appointment, barberId, nowMs);
         }
         const here = appointment.seats
-          .filter((seat) => seat.barberId.value === lane.barberId)
-          .map((seat) => seat.id.value);
+          .filter((seat) => seat.barberId === lane.barberId)
+          .map((seat) => seat.seatId);
         if (holds(here)) return this.toRow(appointment, lane.barberId, nowMs);
       }
     }
@@ -4927,9 +4997,9 @@ export class StaffDashboard {
   /** A photo as the sheet shows it: the chair by name, where the catalogue still has it. */
   private toEditorPhoto(photo: AppointmentPhoto): VisitEditorPhoto {
     return {
-      photoId: photo.photoId,
+      photoId: photo.id,
       url: photo.url,
-      takenAtIso: photo.takenAtIso,
+      takenAtUtcMs: photo.takenAtUtcMs,
       barberId: photo.barberId,
       barberName:
         this.barberOptions().find((chair) => chair.id === photo.barberId)
@@ -4937,7 +5007,7 @@ export class StaffDashboard {
       clientLabel: photo.clientLabel,
       width: photo.width,
       height: photo.height,
-      origin: photo.origin,
+      origin: photo.photoOrigin === PhotoOrigin.Library ? 'library' : 'shot',
       label: photo.label,
     };
   }
@@ -4971,7 +5041,7 @@ export class StaffDashboard {
     const done = await this.store.adoptPhoto({
       appointmentId: vm.appointmentId,
       barberId: vm.chairId,
-      clientUserId: vm.clientUserId,
+      clientCustomerId: vm.clientCustomerId ?? null,
       clientLabel: vm.clientLabel,
       path: image.path,
       url: image.url,
@@ -4993,7 +5063,7 @@ export class StaffDashboard {
     const done = await this.store.attachPhoto({
       appointmentId: vm.appointmentId,
       barberId: vm.chairId,
-      clientUserId: vm.clientUserId,
+      clientCustomerId: vm.clientCustomerId ?? null,
       clientLabel: vm.clientLabel,
       file,
     });
@@ -5003,7 +5073,7 @@ export class StaffDashboard {
   protected async removePhotoFromEditor(photoId: string): Promise<void> {
     const photo = this.store
       .visitPhotos()
-      .find((entry) => entry.photoId === photoId);
+      .find((entry) => entry.id === photoId);
     if (photo === undefined) return;
     if (!(await this.store.removePhoto(photo))) {
       this.refuse(null, 'staff.visit.photoRemoveFailed');
@@ -5184,11 +5254,9 @@ export class StaffDashboard {
       // A new visit starts in the chair's own shop — the first it is
       // rostered at — and the «Салон» row may move it before the save.
       locationId:
-        this.catalog
-          .barbers()
-          .find((barber) => barber.id.value === create.barberId)?.locationIds[0]
-          ?.value ??
-        this.catalog.locations()[0]?.id.value ??
+        this.catalog.barbers().find((barber) => barber.id === create.barberId)
+          ?.locationIds[0] ??
+        this.catalog.locations()[0]?.id ??
         null,
       peers: [],
       dayKey: this.store.dayKey(),
@@ -5404,10 +5472,10 @@ export class StaffDashboard {
       for (const appointment of lane.appointments) {
         for (const seat of appointment.seats) {
           if (
-            seat.subject.kind === 'account' &&
-            seat.subject.relationship === 'companion'
+            seat.seatSubject === SeatSubject.Account &&
+            seat.subjectRelationship === SubjectRelationship.Companion
           ) {
-            ids.add(seat.subject.userId.value);
+            ids.add(seat.subjectUserId);
           }
         }
       }
@@ -5461,29 +5529,24 @@ export class StaffDashboard {
     const recent: VisitEditorClientOption[] = [];
     const past = this.store
       .window()
-      .filter((appointment) => appointment.timeSlot.start.toMillis() < now)
-      .sort(
-        (a, b) => b.timeSlot.start.toMillis() - a.timeSlot.start.toMillis(),
-      );
+      .filter((appointment) => appointment.utcEpochMs < now)
+      .sort((a, b) => b.utcEpochMs - a.utcEpochMs);
     for (const appointment of past) {
-      const owner = appointment.seats.find(
-        (seat) => seat.subject.kind === 'account',
-      )?.subject;
-      if (owner === undefined || owner.kind !== 'account') continue;
-      const id = owner.userId.value;
-      if (recentSeen.has(id)) continue;
+      const id = accountOf(appointment);
+      if (id === null || recentSeen.has(id)) continue;
       recentSeen.add(id);
-      const contact = appointment.contact;
+      const phone = appointment.contactPhone;
       recent.push({
         id,
         label:
-          contact?.name ?? this.transloco.translate('staff.day.unnamedClient'),
-        phone: contact?.phone.formatInternational() ?? null,
-        phoneHref: contact?.phone.value ?? null,
+          appointment.contactName ??
+          this.transloco.translate('staff.day.unnamedClient'),
+        phone: phone === null ? null : PhoneSystem.formatInternational(phone),
+        phoneHref: phone,
         meta: this.transloco.translate('staff.visit.lastVisit', {
-          date: this.shortDate(appointment.timeSlot.start.toMillis()),
+          date: this.shortDate(appointment.utcEpochMs),
         }),
-        email: contact?.email?.value ?? null,
+        email: appointment.contactEmail,
       });
       if (recent.length >= 8) break;
     }
@@ -5495,24 +5558,21 @@ export class StaffDashboard {
     const bookSeen = new Set<string>();
     const book: VisitEditorClientOption[] = [];
     const newestFirst = [...this.store.window()].sort(
-      (a, b) => b.timeSlot.start.toMillis() - a.timeSlot.start.toMillis(),
+      (a, b) => b.utcEpochMs - a.utcEpochMs,
     );
     for (const appointment of newestFirst) {
-      const owner = appointment.seats.find(
-        (seat) => seat.subject.kind === 'account',
-      )?.subject;
-      if (owner === undefined || owner.kind !== 'account') continue;
-      const id = owner.userId.value;
-      const contact = appointment.contact;
-      if (bookSeen.has(id) || contact === null) continue;
+      const id = accountOf(appointment);
+      const name = appointment.contactName;
+      if (id === null || bookSeen.has(id) || name === null) continue;
       bookSeen.add(id);
+      const phone = appointment.contactPhone;
       book.push({
         id,
-        label: contact.name,
-        phone: contact.phone.formatInternational(),
-        phoneHref: contact.phone.value,
+        label: name,
+        phone: phone === null ? null : PhoneSystem.formatInternational(phone),
+        phoneHref: phone,
         meta: null,
-        email: contact.email?.value ?? null,
+        email: appointment.contactEmail,
       });
     }
     this.visitClientBook.set(book);
@@ -5636,7 +5696,7 @@ export class StaffDashboard {
     for (const cell of this.store.dayCells()) {
       for (const lane of cell.lanes) {
         const appointment = lane.appointments.find(
-          (entry) => entry.id.value === appointmentId,
+          (entry) => entry.id === appointmentId,
         );
         if (appointment !== undefined) return guestLabelsOf(appointment.seats);
       }
@@ -5699,10 +5759,8 @@ export class StaffDashboard {
     // sheet had none to offer, the chair's own.
     const locationId =
       commit.locationId ??
-      this.catalog
-        .barbers()
-        .find((barber) => barber.id.value === create.barberId)?.locationIds[0]
-        ?.value;
+      this.catalog.barbers().find((barber) => barber.id === create.barberId)
+        ?.locationIds[0];
     if (!locationId) return;
     // `primary` is the seeded placeholder for a walk-in's label and `guest-*`
     // a client minted on the search page; only a real id is an account.
@@ -5903,20 +5961,21 @@ export class StaffDashboard {
     return {
       barberId,
       neighbours: (draftLane?.appointments ?? [])
-        .filter((appointment) => !isTerminalStatus(appointment.status.kind))
+        .filter(
+          (appointment) =>
+            !isTerminalStatus(WIRE_STATUS[appointment.bookingStatus]),
+        )
         .flatMap((appointment) => {
           const name: string =
-            appointment.contact?.name ??
+            appointment.contactName ??
             this.transloco.translate<string>('staff.day.unnamedClient');
           return appointment.seats
-            .filter((seat) => seat.barberId.value === barberId)
+            .filter((seat) => seat.barberId === barberId)
             .map((seat) => ({
               name,
-              startMinute: shopMinuteOfDay(seat.slot.start.toMillis()),
-              endMinute: shopMinuteAfter(
-                seat.slot.start.toMillis(),
-                seat.slot.end.toMillis(),
-              ),
+              // The seat's own wall clock — the frame's axis (Law 7.3).
+              startMinute: seat.startMinutes,
+              endMinute: Seat.endMinutes(seat),
               tone: this.toneOf(barberId),
             }));
         }),
@@ -5983,14 +6042,11 @@ export class StaffDashboard {
     // A saved block is opened from the grid, on the day on screen; a draft
     // stepped elsewhere has nothing saved to lift.
     if (range.dayKey !== this.store.dayKey()) return;
-    const lifted = LocalTimeRange.create(
-      clockOfMinute(range.startMinute),
-      clockOfMinute(range.endMinute),
-    );
-    if (lifted.isFailure()) return;
+    const lifted = minuteRangeOf(range.startMinute, range.endMinute);
+    if (lifted === null) return;
     const done = await this.store.clearBlock(
       range.barberId,
-      lifted.value,
+      lifted,
       range.dayKey,
     );
     if (!done) return;
@@ -6108,31 +6164,25 @@ export class StaffDashboard {
     if (edit === null) return;
     const shownDay = this.store.dayKey();
     if (edit.blockId !== null && !edit.allDay) {
-      const old = LocalTimeRange.create(
-        clockOfMinute(edit.startMinute),
-        clockOfMinute(edit.endMinute),
-      );
+      const old = minuteRangeOf(edit.startMinute, edit.endMinute);
       const from = edit.barberIds[0];
-      if (old.isSuccess() && from !== undefined) {
-        const lifted = await this.store.clearBlock(from, old.value, shownDay);
+      if (old !== null && from !== undefined) {
+        const lifted = await this.store.clearBlock(from, old, shownDay);
         if (!lifted) return;
       }
     }
-    let ranges: readonly LocalTimeRange[] = [];
+    let ranges: readonly MinuteRange[] = [];
     if (!commit.allDay) {
-      const range = LocalTimeRange.create(
-        clockOfMinute(commit.startMinute),
-        clockOfMinute(commit.endMinute),
-      );
-      if (range.isFailure()) return;
-      ranges = [range.value];
+      const range = minuteRangeOf(commit.startMinute, commit.endMinute);
+      if (range === null) return;
+      ranges = [range];
     }
     const days = commit.days;
     const only = days.length === 1 ? days[0] : undefined;
     for (const barberId of commit.barberIds) {
       const locationId = this.catalog
         .barbers()
-        .find((barber) => barber.id.value === barberId)?.locationIds[0]?.value;
+        .find((barber) => barber.id === barberId)?.locationIds[0];
       if (!locationId) continue;
       const done =
         only !== undefined
@@ -6161,12 +6211,9 @@ export class StaffDashboard {
       if (done) this.closeBlockSheet();
       return;
     }
-    const range = LocalTimeRange.create(
-      clockOfMinute(edit.startMinute),
-      clockOfMinute(edit.endMinute),
-    );
-    if (range.isFailure()) return;
-    const done = await this.store.clearBlock(barberId, range.value, dayKey);
+    const range = minuteRangeOf(edit.startMinute, edit.endMinute);
+    if (range === null) return;
+    const done = await this.store.clearBlock(barberId, range, dayKey);
     if (done) this.closeBlockSheet();
   }
 
@@ -6395,23 +6442,51 @@ export class StaffDashboard {
  * identity, and what the server's party check tells people apart by
  * (`personKey`).
  */
-function guestLabelsOf(
-  seats: readonly Appointment['seats'][number][],
-): string[] {
+function guestLabelsOf(seats: readonly Seat[]): string[] {
   return seats.flatMap((seat) =>
-    seat.subject.kind === 'anonymous' ? [seat.subject.label.value] : [],
+    seat.seatSubject === SeatSubject.Anonymous ? [seat.guestLabel] : [],
   );
 }
+
+/**
+ * The account a visit is booked under — its first account seat's, the way
+ * the add-client page has always picked a visit's person — or `null` for a
+ * visit of guests only.
+ */
+function accountOf(appointment: Appointment): string | null {
+  for (const seat of appointment.seats) {
+    if (seat.seatSubject === SeatSubject.Account) return seat.subjectUserId;
+  }
+  return null;
+}
+
+/** A clock or stored instant as the brand (a safe integer by construction). */
+function utcEpochMsOf(epochMs: number): UtcEpochMs {
+  const instant = UtcEpochMs.of(Math.trunc(epochMs));
+  return instant.ok ? instant.value : defect(`not an instant ${epochMs}`);
+}
+
+/** When a visit's envelope ends, on the absolute timeline — what "past" is judged by. */
+function endInstantOf(appointment: Appointment): number {
+  return wallClockInstant(appointment.localDate, appointment.endMinutes);
+}
+
+/** The sheet's word for where a discount came from. */
+const DISCOUNT_SOURCE_WORD = {
+  [DiscountSource.Grant]: 'grant',
+  [DiscountSource.Code]: 'code',
+  [DiscountSource.Manual]: 'manual',
+} as const satisfies Record<DiscountSource, VisitEditorDiscount['source']>;
 
 /** The bill's discounts as the sheet reads them — every snapshot, in stored order. */
 function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
   return appointment.discounts.map((applied) => ({
-    source: applied.source,
+    source: DISCOUNT_SOURCE_WORD[applied.discountSource],
     label: applied.label,
-    value: discountValueOf(applied.value),
-    grantId: applied.grantId,
-    code: applied.code,
-    exclusive: applied.exclusive,
+    value: discountValueOf(applied),
+    grantId: DiscountProvenance.grantIdOf(applied),
+    code: DiscountProvenance.codeOf(applied),
+    exclusive: AppliedDiscount.isExclusive(applied),
   }));
 }
 
@@ -6422,13 +6497,12 @@ function discountsOf(appointment: Appointment): VisitEditorDiscount[] {
  */
 function vouchersOf(appointment: Appointment): VisitEditorVoucher[] {
   return appointment.voucherRedemptions
-    .filter((redemption) => redemption.live)
+    .filter(VoucherRedemption.isLive)
     .map((redemption) => ({
       voucherId: redemption.voucherId,
       code: redemption.code,
       availableMinorUnits:
-        redemption.amount.toMinorUnits() +
-        redemption.balanceAfter.toMinorUnits(),
+        redemption.amountCents + redemption.balanceAfterCents,
     }));
 }
 
@@ -6459,7 +6533,7 @@ function sameCodes(a: readonly string[], b: readonly string[]): boolean {
     a.length === b.length &&
     a.every(
       (code, index) =>
-        Coupon.normalizeCode(code) === Coupon.normalizeCode(b[index] ?? ''),
+        VoucherCode.normalize(code) === VoucherCode.normalize(b[index] ?? ''),
     )
   );
 }

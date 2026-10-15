@@ -1,7 +1,5 @@
-import {
-  Appointment,
-  AppointmentStatusKind,
-} from '@creativo/application/booking';
+import type { Appointment } from '@core/entities';
+import type { BookingStatus } from '@core/primitives';
 
 /**
  * One visit, as the CALENDAR and the VISIT SHEET state it: the day cell's
@@ -22,6 +20,7 @@ import {
  */
 export interface ClientVisitVm {
   readonly id: string;
+  /** The stored visit — the flat entity straight from its document. */
   readonly appointment: Appointment;
   /** The services, deduplicated and joined — what the visit IS (the row's title). */
   readonly title: string;
@@ -38,5 +37,6 @@ export interface ClientVisitVm {
   readonly timeLabel: string;
   /** Still ahead — open, and not yet begun (the row's `upcoming`, filed under «Предстоящи»). */
   readonly upcoming: boolean;
-  readonly status: AppointmentStatusKind;
+  /** The stored `bookingStatus` (`'CONFIRMED'`, …). */
+  readonly status: BookingStatus;
 }

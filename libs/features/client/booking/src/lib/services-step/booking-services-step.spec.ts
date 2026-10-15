@@ -15,11 +15,8 @@ import {
 import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
 import {
   BarberId,
-  CATALOG_READER,
   MEDIA_READER,
-  MediaRef,
   type MediaReader,
-  Service,
   ServiceId,
 } from '@creativo/application/catalog';
 import {
@@ -28,12 +25,29 @@ import {
   BarberPref,
   SeatKey,
   WAITLIST_GATEWAY,
-  APPOINTMENT_REPOSITORY,
-  WAITLIST_READER,
   ZonedDateTime,
   ok,
-  type Result,
 } from '@creativo/application/booking';
+import {
+  APPOINTMENT_READ_PORTS,
+  CATALOG_PORTS,
+  WAITLIST_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { Service } from '@core/entities';
+import { ServiceComposition } from '@core/components';
+import {
+  BarberId as BarberKey,
+  MediaRefId,
+  ServiceId as ServiceKey,
+  ServiceVariantId,
+} from '@core/primitives';
+import {
+  memoryAppointmentReadPorts,
+  memoryCatalogReadPorts,
+  memoryWaitlistReadPorts,
+  serviceFixture,
+  termsFixture,
+} from '@core/testing';
 import { CLOCK } from '@creativo/application/shared';
 import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
@@ -85,52 +99,37 @@ function service(props: {
   /** A cover at this Storage path. None by default. */
   cover?: string;
 }): Service {
-  const result = Service.create({
+  return serviceFixture({
     ...(props.cover === undefined
       ? {}
       : {
-          cover: unwrapFixture(
-            MediaRef.create({
-              id: `media-${props.id}`,
-              path: props.cover,
-              width: 1200,
-              height: 1500,
-            }),
-          ),
+          coverMediaId: MediaRefId.of(`media-${props.id}`),
+          coverMediaPath: props.cover,
+          coverMediaWidth: 1200,
+          coverMediaHeight: 1500,
         }),
-    id: props.id,
+    id: ServiceKey.of(props.id),
     name: { en: props.id, bg: props.id },
     description: { en: 'x', bg: 'x' },
-    categoryId: 'cat-hair',
-    priceMinorUnits: 1500,
-    currencyCode: 'EUR',
-    durationMinutes: 30,
+    ...termsFixture(1500, 30),
     variants: (props.variants ?? []).map((id) => ({
-      id,
+      variantId: ServiceVariantId.of(id),
       name: { en: id, bg: id },
     })),
     offerings: (
       props.performers ?? [{ id: 'ivan', minor: 1450, minutes: 35 }]
     ).map((performer) => ({
-      barberId: performer.id,
-      base: {
-        priceMinorUnits: performer.minor,
-        currencyCode: 'EUR',
-        durationMinutes: performer.minutes,
-      },
+      barberId: BarberKey.of(performer.id),
+      overrides: [],
+      ...termsFixture(performer.minor, performer.minutes),
     })),
     locationIds: [],
-    conflictsWith: [...(props.conflictsWith ?? [])],
-    composition: props.includes
-      ? { kind: 'bundle', includes: [...props.includes] }
-      : { kind: 'single' },
-    upsellOnly: false,
-    popular: false,
-    status: 'active',
+    conflictsWith: (props.conflictsWith ?? []).map((id) => ServiceKey.of(id)),
+    ...(props.includes
+      ? ServiceComposition.bundle(props.includes.map((id) => ServiceKey.of(id)))
+      : ServiceComposition.single()),
     sortOrder: 0,
   });
-  if (result.isFailure()) throw new Error('bad fixture');
-  return result.value;
 }
 
 const CATALOG = [
@@ -147,11 +146,6 @@ const CATALOG = [
   }),
   service({ id: 'full-care', includes: ['cut', 'beard'] }),
 ];
-
-function unwrapFixture<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('bad fixture');
-  return result.value;
-}
 
 /** What a spec changes about the shell's world. */
 interface ShellOptions {
@@ -192,22 +186,14 @@ async function renderShell(
       // the schedule step, so a double that fails loudly if called is honest.
       {
         // `?repeat=` reads the visit it is repeating; the shell injects the
-        // repository whether or not a spec exercises that path.
-        provide: APPOINTMENT_REPOSITORY,
-        useValue: {
-          findById: async () => ok(null),
-          save: async () => ok(undefined),
-          observeUpcomingFor: () => of(ok([])),
-          observeHistoryFor: () => of(ok([])),
-        },
+        // reads whether or not a spec exercises that path.
+        provide: APPOINTMENT_READ_PORTS,
+        useValue: memoryAppointmentReadPorts([]),
       },
       {
-        // The deep-link reader — never consulted without a ?waitlist param.
-        provide: WAITLIST_READER,
-        useValue: {
-          observeMine: () => of(ok([])),
-          findMine: async () => ok(null),
-        },
+        // The deep-link read — never consulted without a ?waitlist param.
+        provide: WAITLIST_READ_PORTS,
+        useValue: memoryWaitlistReadPorts([]),
       },
       {
         provide: WAITLIST_GATEWAY,
@@ -242,16 +228,10 @@ async function renderShell(
         },
       },
       {
-        provide: CATALOG_READER,
-        useValue: {
-          listActiveServices: () => of(ok(options.catalog ?? CATALOG)),
-          listActiveBarbers: () => of(ok([])),
-          listServiceCategories: () => of(ok([])),
-          listActiveLocations: () => of(ok([])),
-          findServiceById: () => Promise.resolve(ok(null)),
-          findBarberById: () => Promise.resolve(ok(null)),
-          findLocationById: () => Promise.resolve(ok(null)),
-        },
+        provide: CATALOG_PORTS,
+        useValue: memoryCatalogReadPorts({
+          services: options.catalog ?? CATALOG,
+        }),
       },
       {
         provide: MEDIA_READER,

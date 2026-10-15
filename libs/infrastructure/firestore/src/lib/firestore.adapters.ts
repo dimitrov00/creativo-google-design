@@ -6,25 +6,22 @@
 // tools/verify/bundle/check-initial-bundle.mjs fails a build where it leaks.
 export * from './firestore-db.provider';
 export * from './firestore-paths';
-export * from './appointment-repository.adapter';
+// The flip-1 bundles (booking core): `(db) => bundle` factories, each bound
+// in app.config.ts with `provideLazyPort`'s factory form.
 export * from './appointment-notes.adapter';
-export * from './availability-reader.adapter';
-export * from './booking-policy-reader.adapter';
-export * from './client-stats-reader.adapter';
-export * from './client-stats-directory.adapter';
-export * from './client-history-reader.adapter';
+export * from './appointments.adapter';
+export * from './catalog.adapter';
+export * from './client-stats.adapter';
+export * from './coupons-vouchers.adapter';
+export * from './customers.adapter';
+export * from './notifications.adapter';
+export * from './scheduling.adapter';
+export * from './waitlist.adapter';
+// The flip-2/3/4 class adapters, still bound with the class form.
 export * from './loyalty-reader.adapter';
 export * from './loyalty-catalog-reader.adapter';
 export * from './loyalty-activity-reader.adapter';
 export * from './streak-definition-repository.adapter';
-export * from './notification-reader.adapter';
-export * from './schedule-exception-writer.adapter';
-export * from './waitlist-reader.adapter';
-export * from './catalog-reader.adapter';
-export * from './coupon-grant-repository.adapter';
-export * from './coupon-reader.adapter';
-export * from './gift-voucher-reader.adapter';
-export * from './client-vouchers-reader.adapter';
 export * from './impersonation.adapter';
 export * from './invitation.adapter';
 export * from './profile.adapter';

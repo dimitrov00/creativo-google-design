@@ -1,51 +1,46 @@
 /**
- * The production TypeScript the seed runs in-process: the appointment
- * mapper's reader and the functions' own `recomputeClientStats`, so the
- * `clientStats` the seed writes are the trigger's answer by construction
- * (design §12.5.7, "the seed is engine output"), not a second copy of it.
+ * The production TypeScript the seed runs in-process — BUNDLED, because
+ * every document the seed writes is TypeScript now (flip 1, booking core):
  *
- * And the READERS of what the seed writes for the client card
- * (client-card-redesign.md §4.4, §4.6): the loyalty mappers the client
- * card's adapters run — the catalogue as one validated model, the account,
- * family progress, season tracks and point rows — and the waitlist
- * request's, with `CalendarDay` for its lapse rule. The seed reads each
- * document back through them before writing it (`readLoyaltyWrites` in
- * `loyalty.mjs`), so a document the card could not read stops the seed.
- *
- * Since revision 3 of the client card (client-card-revision-3.md §4) also:
- *
- * - THE RHYTHM'S PROJECTOR, `traceStreak`. The seed held a copy of the
- *   rule's clock (`rhythmOf`); it now folds each holder's visits through
- *   the domain's own, under the rule the shop has in force, so a rule the
- *   admin publishes moves Георги's and Мартин's cards on the next run;
- * - the rule's head and its versions, read and written
- *   (`streakScheduleFromDocument`, `streakDefinitionVersion…`), and the
- *   state's write half (`streakStateToDocument`);
- * - the activity feed's reader (`activityEntryFromDocument`), which reads
- *   every kind of row the journal now holds;
- * - the gift voucher's and the coupon's mappers, both halves, so a
- *   voucher with a holder and the birthday coupon's occasion read back
- *   before they are written (`promotions.mjs`).
- *
- * ### Why the entry names FILES, not barrels, for the engagement libs
- * A bundle follows every import of every module it reaches. The barrel
- * `@creativo/application/engagement` also exports the use cases, and one of
- * them imports `projectStreak` from the barrel `@creativo/domain/engagement`,
- * which does not carry the projector's line yet (contract delta R2b-1): the
- * bundle of the barrel does not build, and the seed could not run at all.
- * The modules below are the ones the barrels re-export, by their own
- * paths: the same code, and a bundle that builds before and after that
- * line lands. `load-domain.spec.mjs` holds each name equal to the one the
- * barrel hands out.
+ * - THE SEED ITSELF. The catalogue, the rosters, the appointments, the
+ *   promotions, the waitlist request and the client records are bodies in
+ *   `tools/seed/fixtures/*.fixtures.ts`, each `satisfies Omit<X, 'id'>` of
+ *   its `@core/entities` archetype, and the plan modules that place them
+ *   (`catalog.mjs`, `fixtures.mjs`, `appointments.mjs`, `loyalty.mjs`,
+ *   `promotions.mjs`, `waitlist.mjs`) import those bodies. Plain Node can
+ *   neither strip their types nor resolve their `@core/*` aliases, so
+ *   `seed-dev-catalog.mjs` reaches every one of them through this bundle
+ *   (`SEED_PLAN_MODULES`), in every mode. The specs import them directly:
+ *   vitest resolves both.
+ * - THE SERVER'S OWN CODE, by path (`SEED_SERVER_MODULES`), so the seed's
+ *   writes are the server's by construction (design §12.5.7, "the seed is
+ *   engine output"), never a second copy: `projectClientStats` from
+ *   `@core/pipelines` writes `clientStats/{customerId}` and its
+ *   `restricted/money` through the server's `firestoreCommitPlan`, under
+ *   the policy `firestoreSettingsPorts` reads; `purgeAtFor` is the ONE
+ *   `purgeAt` stamp (F1-7) every busy day and waitlist request the seed
+ *   writes carries.
+ * - THE LOYALTY ENGINE'S READERS (flip 3's, until it lands): the
+ *   catalogue as one validated model, the account, family progress, season
+ *   tracks and point rows (`readLoyaltyWrites` in `loyalty.mjs` reads each
+ *   document back through them before writing it), and the rhythm's
+ *   projector, `traceStreak`, with the rule's head and version readers and
+ *   the state's write half. Named by FILE, not barrel: the barrel
+ *   `@creativo/application/engagement` also exports use cases that reach
+ *   for lines the domain barrel does not carry (contract delta R2b-1).
+ *   `load-domain.spec.mjs` holds each name equal to the barrel's.
  *
  * `tools/icons/load-ts.mjs` transpiles file by file and follows relative
- * imports only; this graph crosses the `@creativo/*` and `@core/*` path aliases and a
- * hundred-odd files, so it is BUNDLED instead — with the workspace's own
- * esbuild, reading `tsconfig.base.json` for the aliases. npm packages stay
- * external and resolve from the workspace `node_modules`, which is why the
- * bundle is written under `node_modules/.cache` rather than the OS temp dir.
- * Each call bundles into its own directory, so two seeds running at once
- * (the e2e workers do) never import each other's half-written file.
+ * imports only; this graph crosses the `@creativo/*` and `@core/*` path
+ * aliases and a few hundred files, so it is BUNDLED instead — with the
+ * workspace's own esbuild, reading `tsconfig.base.json` for the aliases.
+ * npm packages stay external and resolve from the workspace
+ * `node_modules`, which is why the bundle is written under
+ * `node_modules/.cache` rather than the OS temp dir; and so does THIS
+ * module (`WORKSPACE_ROOT` is computed from where it lies, which a copy
+ * inside the bundle would get wrong). Each call bundles into its own
+ * directory, so two seeds running at once never import each other's
+ * half-written file.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -57,25 +52,38 @@ export const WORKSPACE_ROOT = join(
   '..',
 );
 
-/** The modules the entry names by path, relative to the workspace root. */
+/** The seed's plan modules the bundle hands out as namespaces, by file. */
+export const SEED_PLAN_MODULES = Object.freeze({
+  catalog: 'tools/seed/catalog.mjs',
+  book: 'tools/seed/fixtures.mjs',
+  appointments: 'tools/seed/appointments.mjs',
+  loyalty: 'tools/seed/loyalty.mjs',
+  promotions: 'tools/seed/promotions.mjs',
+  waitlist: 'tools/seed/waitlist.mjs',
+  customers: 'tools/seed/fixtures/customers.fixtures.ts',
+});
+
+/** The server modules the seed runs by path, relative to the workspace root. */
+export const SEED_SERVER_MODULES = Object.freeze({
+  commitPlan: 'apps/functions/src/adapters/firestore-tx.adapter',
+  ttl: 'apps/functions/src/adapters/firestore-ttl.adapter',
+  settings: 'apps/functions/src/adapters/firestore-settings.adapter',
+});
+
+/** The loyalty engine's modules the entry names by path (flip 3's). */
 export const SEED_DOMAIN_MODULES = Object.freeze({
   loyaltyDocument: 'libs/application/engagement/src/lib/ports/loyalty-document',
-  giftVoucherDocument:
-    'libs/application/engagement/src/lib/ports/gift-voucher-document',
   streakProjector: 'libs/domain/engagement/src/lib/loyalty/streak-projector',
-  couponPersistence: 'libs/infrastructure/firestore/src/lib/coupon-persistence',
 });
 
 const ENTRY = `
-export {
-  loadClientStatsPolicy,
-  recomputeClientStats,
-} from './apps/functions/src/lib/clients/recompute-client-stats';
-export {
-  appointmentFromDocument,
-  waitlistFromDocument,
-  waitlistToDocument,
-} from '@creativo/application/booking';
+export { projectClientStats } from '@core/pipelines';
+export { firestoreCommitPlan } from './${SEED_SERVER_MODULES.commitPlan}';
+export { purgeAtFor } from './${SEED_SERVER_MODULES.ttl}';
+export { firestoreSettingsPorts } from './${SEED_SERVER_MODULES.settings}';
+${Object.entries(SEED_PLAN_MODULES)
+  .map(([name, path]) => `export * as ${name} from './${path}';`)
+  .join('\n')}
 export {
   activityEntryFromDocument,
   badgeProgressFromDocument,
@@ -90,30 +98,27 @@ export {
   streakStateToDocument,
 } from './${SEED_DOMAIN_MODULES.loyaltyDocument}';
 export {
-  giftVoucherFromDocument,
-  giftVoucherToDocument,
-} from './${SEED_DOMAIN_MODULES.giftVoucherDocument}';
-export {
   projectStreak,
   traceStreak,
 } from './${SEED_DOMAIN_MODULES.streakProjector}';
-export {
-  couponFromPersistence,
-  couponToPersistence,
-} from './${SEED_DOMAIN_MODULES.couponPersistence}';
-export {
-  CalendarDay,
-  ClientStatsPolicy,
-  computeClientStats,
-} from '@creativo/domain/scheduling';
 export { ServiceCategoryId, ServiceId } from '@creativo/domain/catalog';
-export { UserId } from '@creativo/domain/accounts';
 `;
 
-/** Bare specifiers other than the workspace aliases and JSON stay imports. */
+/** This very module, imported by the bundle where it lies (see the head of the file). */
+const THIS_MODULE = fileURLToPath(import.meta.url);
+
+/**
+ * Bare specifiers other than the workspace aliases and JSON stay imports;
+ * so does this module, by its file URL.
+ */
 const externalPackages = {
   name: 'external-packages',
   setup(build) {
+    build.onResolve({ filter: /load-domain\.mjs$/ }, (args) =>
+      join(args.resolveDir, args.path) === THIS_MODULE
+        ? { path: pathToFileURL(THIS_MODULE).href, external: true }
+        : undefined,
+    );
     build.onResolve({ filter: /^[^./]/ }, (args) =>
       args.path.startsWith('@creativo/') ||
       args.path.startsWith('@core/') ||

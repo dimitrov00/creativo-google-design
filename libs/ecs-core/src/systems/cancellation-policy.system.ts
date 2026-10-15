@@ -1,5 +1,6 @@
 import {
   TimeCoordinate,
+  type ChairGeometry,
   BookingLifecycle,
   BookingPolicy,
 } from '@core/components';
@@ -70,7 +71,9 @@ function allowsFreeCancelAt(
  * (`TimeCoordinate.seatStartUtcMs`, T9); the envelope's own instant when the
  * visit holds no seat.
  */
-function startUtcMsOf(appointment: Appointment): UtcEpochMs {
+function startUtcMsOf(
+  appointment: TimeCoordinate & { readonly seats: readonly ChairGeometry[] },
+): UtcEpochMs {
   const envelope = AppointmentIndexSystem.envelope(appointment);
   return envelope === null
     ? appointment.utcEpochMs

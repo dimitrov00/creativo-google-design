@@ -17,7 +17,7 @@ import {
   CancellationReason,
   CancelledBy,
   type SeatOutcome,
-  type Seat,
+  Seat,
   SeatSubject,
   SubjectRelationship,
   type ShopNow,
@@ -48,6 +48,7 @@ import {
   utcMs,
   appointmentFixture,
   seatFixture,
+  customerOf,
 } from '@core/testing';
 import {
   type BilledAppointment,
@@ -110,6 +111,11 @@ const factAt = (id: string, ms: number): VisitFact => {
 const PEOPLE = {
   ana: UserId.of('ana'),
   bob: UserId.of('bob'),
+} as const;
+/** Their client records (D29) — whose visits the statistics count. */
+const RECORDS = {
+  ana: customerOf(PEOPLE.ana),
+  bob: customerOf(PEOPLE.bob),
 } as const;
 type Who = keyof typeof PEOPLE | 'guest';
 
@@ -199,6 +205,7 @@ function seatOf(spec: SeatSpec, index: number, visit: VisitSpec): Seat {
       : {
           seatSubject: SeatSubject.Account,
           subjectUserId: PEOPLE[spec.who],
+          subjectCustomerId: RECORDS[spec.who],
           subjectRelationship:
             spec.who === 'ana'
               ? SubjectRelationship.Self
@@ -226,7 +233,7 @@ function seatOf(spec: SeatSpec, index: number, visit: VisitSpec): Seat {
 }
 
 /** The visit as the stats read it, with its bill (the discount taken off the subtotal). */
-function build(visit: VisitSpec): BilledAppointment {
+function build(visit: VisitSpec): BilledAppointment<Seat> {
   const seats = visit.seats.map((spec, index) => seatOf(spec, index, visit));
   const start = wallOf(visit.startMs);
   let subtotal = 0;
@@ -264,7 +271,7 @@ function stats(
   policy = ClientStatsPolicy.DEFAULT,
 ): ClientStats {
   if (who === 'guest') throw new Error('guests have no stats');
-  const person = who === 'ana' ? PEOPLE.ana : PEOPLE.bob;
+  const person = who === 'ana' ? RECORDS.ana : RECORDS.bob;
   return ClientStatsSystem.stats(person, visits.map(build), policy, now);
 }
 
@@ -741,7 +748,7 @@ describe('stats — preferred barber and usual services', () => {
     ];
     expect(
       ClientStatsSystem.stats(
-        PEOPLE.ana,
+        RECORDS.ana,
         history.map((visit) => build({ ...visit, placement: null })),
         ClientStatsPolicy.DEFAULT,
         NOW,
@@ -840,7 +847,7 @@ describe('pause suggestion (R25) — a suggestion, never a pause', () => {
 
 describe('money', () => {
   it('sums worked seats, never tips, no-shows or cancellations', () => {
-    const result = ClientStatsSystem.money(PEOPLE.ana, [
+    const result = ClientStatsSystem.money(RECORDS.ana, [
       build({
         id: 'a1',
         startMs: daysAgo(10),
@@ -865,14 +872,13 @@ describe('money', () => {
       ),
     ]);
     expect(result).toEqual({
-      userId: PEOPLE.ana,
       lifetimeSpendCents: 2500,
       currency: 'EUR',
     });
   });
 
   it('takes the person’s pro-rata share of a discount', () => {
-    const result = ClientStatsSystem.money(PEOPLE.ana, [
+    const result = ClientStatsSystem.money(RECORDS.ana, [
       build({
         id: 'a1',
         startMs: daysAgo(10),
@@ -887,7 +893,7 @@ describe('money', () => {
   });
 
   it('converts a legacy leva price at the fixed rate', () => {
-    const result = ClientStatsSystem.money(PEOPLE.ana, [
+    const result = ClientStatsSystem.money(RECORDS.ana, [
       build({
         ...solo('a1', daysAgo(900), WORKED, { price: 3912 }),
         currency: Currency.BGN,
@@ -900,7 +906,7 @@ describe('money', () => {
   });
 
   it('leaves out a price in a currency with no fixed rate, and a free visit', () => {
-    const result = ClientStatsSystem.money(PEOPLE.ana, [
+    const result = ClientStatsSystem.money(RECORDS.ana, [
       build({
         ...solo('a1', daysAgo(30), WORKED, { price: 5000 }),
         currency: Currency.USD,
@@ -918,19 +924,19 @@ describe('money', () => {
     ];
     expect(
       ClientStatsSystem.compute(
-        PEOPLE.ana,
+        RECORDS.ana,
         history,
         ClientStatsPolicy.DEFAULT,
         NOW,
       ),
     ).toEqual({
       stats: ClientStatsSystem.stats(
-        PEOPLE.ana,
+        RECORDS.ana,
         history,
         ClientStatsPolicy.DEFAULT,
         NOW,
       ),
-      money: ClientStatsSystem.money(PEOPLE.ana, history),
+      money: ClientStatsSystem.money(RECORDS.ana, history),
     });
   });
 });
@@ -1142,8 +1148,8 @@ describe('stats — properties', () => {
         ([history, shuffled]) => {
           expect(ana(shuffled)).toEqual(ana(history));
           expect(
-            ClientStatsSystem.money(PEOPLE.ana, shuffled.map(build)),
-          ).toEqual(ClientStatsSystem.money(PEOPLE.ana, history.map(build)));
+            ClientStatsSystem.money(RECORDS.ana, shuffled.map(build)),
+          ).toEqual(ClientStatsSystem.money(RECORDS.ana, history.map(build)));
         },
       ),
     );
@@ -1300,8 +1306,74 @@ describe('stats — properties', () => {
   });
 });
 
+describe('the account’s own reading — accountVisitOf, statsOfVisits, moneyOfVisits (D29)', () => {
+  const history = [
+    solo('a1', daysAgo(90), WORKED, { price: 2500 }),
+    {
+      id: 'a2',
+      startMs: daysAgo(40),
+      seats: [
+        { who: 'ana' as const, outcome: WORKED },
+        { who: 'bob' as const, outcome: NO_SHOW },
+      ],
+    },
+    solo('a3', daysAgo(5), NO_SHOW),
+  ].map(build);
+  /** The same visits as a seat with no client record reads them (a legacy shim's). */
+  const recordless = history.map((visit) => ({
+    ...visit,
+    seats: visit.seats.map((seat) =>
+      Seat.composeAccount(seat, seat, seat, seat),
+    ),
+  }));
+
+  it('picks the account’s seats as the record reading picks the record’s — the same visit', () => {
+    for (const appointment of history) {
+      expect(ClientStatsSystem.accountVisitOf(PEOPLE.ana, appointment)).toEqual(
+        ClientStatsSystem.subjectVisitOf(RECORDS.ana, appointment),
+      );
+    }
+    for (const appointment of history) {
+      expect(
+        ClientStatsSystem.accountVisitOf(UserId.of('stranger'), appointment),
+      ).toBeNull();
+    }
+  });
+
+  it('counts the same stats and spend from an account’s visits as from its record’s', () => {
+    const visits = ClientStatsSystem.accountVisitsOf(PEOPLE.ana, recordless);
+    expect(visits.map((visit) => visit.appointment.id)).toEqual([
+      'a1',
+      'a2',
+      'a3',
+    ]);
+    expect(
+      ClientStatsSystem.statsOfVisits(visits, ClientStatsPolicy.DEFAULT, NOW),
+    ).toEqual(
+      ClientStatsSystem.stats(
+        RECORDS.ana,
+        history,
+        ClientStatsPolicy.DEFAULT,
+        NOW,
+      ),
+    );
+    expect(ClientStatsSystem.moneyOfVisits(visits)).toEqual(
+      ClientStatsSystem.money(RECORDS.ana, history),
+    );
+  });
+
+  it('counts an appointment listed twice once', () => {
+    expect(
+      ClientStatsSystem.accountVisitsOf(PEOPLE.ana, [
+        ...recordless,
+        ...recordless,
+      ]),
+    ).toHaveLength(3);
+  });
+});
+
 describe('subjectVisitOf — one appointment, one person’s story', () => {
-  const party = (seats: readonly SeatSpec[]): BilledAppointment =>
+  const party = (seats: readonly SeatSpec[]): BilledAppointment<Seat> =>
     build({ id: 'appt-party', startMs: daysAgo(3), seats });
 
   it('is the person’s own seats, the visit’s span and their outcome', () => {
@@ -1310,7 +1382,7 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       { who: 'bob', outcome: NO_SHOW },
       { who: 'ana', outcome: WORKED, service: 'beard' },
     ]);
-    const visit = ClientStatsSystem.subjectVisitOf(PEOPLE.ana, appointment);
+    const visit = ClientStatsSystem.subjectVisitOf(RECORDS.ana, appointment);
     expect(visit?.appointment).toBe(appointment);
     expect(visit?.seats.map((seat) => seat.serviceId)).toEqual([
       'fade',
@@ -1330,7 +1402,7 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       { who: 'bob', outcome: NO_SHOW },
     ]);
     expect(
-      ClientStatsSystem.subjectVisitOf(PEOPLE.bob, appointment)?.outcome,
+      ClientStatsSystem.subjectVisitOf(RECORDS.bob, appointment)?.outcome,
     ).toEqual({ subjectVisitOutcome: 'NO_SHOW' });
   });
 
@@ -1340,7 +1412,7 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       { who: 'ana', outcome: NO_SHOW },
     ]);
     expect(
-      ClientStatsSystem.subjectVisitOf(PEOPLE.ana, appointment)?.outcome
+      ClientStatsSystem.subjectVisitOf(RECORDS.ana, appointment)?.outcome
         .subjectVisitOutcome,
     ).toBe('OPEN');
   });
@@ -1367,7 +1439,7 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       },
     ]);
     const outcome = ClientStatsSystem.subjectVisitOf(
-      PEOPLE.ana,
+      RECORDS.ana,
       appointment,
     )?.outcome;
     expect(outcome?.subjectVisitOutcome).toBe('CANCELLED');
@@ -1385,7 +1457,7 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       { who: 'guest', outcome: WORKED },
     ]);
     expect(
-      ClientStatsSystem.subjectVisitOf(PEOPLE.ana, appointment),
+      ClientStatsSystem.subjectVisitOf(RECORDS.ana, appointment),
     ).toBeNull();
   });
 
@@ -1408,7 +1480,7 @@ describe('subjectVisitOf — one appointment, one person’s story', () => {
       .map(build)
       .map(
         (appointment) =>
-          ClientStatsSystem.subjectVisitOf(PEOPLE.ana, appointment)?.outcome
+          ClientStatsSystem.subjectVisitOf(RECORDS.ana, appointment)?.outcome
             .subjectVisitOutcome,
       );
     const counted = stats(visits);
@@ -1443,6 +1515,7 @@ describe('statsInputChanged — the early exit (§13 R28)', () => {
           contactPhone: E164.of('+359888000000'),
           revision: 4,
           subjectUserIds: [UserId.of('ana')],
+          subjectCustomerIds: [customerOf(UserId.of('ana'))],
         }),
       ),
     ).toBe(false);
@@ -1472,6 +1545,8 @@ describe('statsInputChanged — the early exit (§13 R28)', () => {
         noShowAtUtcMs: instant(1),
       } as Seat,
       { ...seat, subjectUserId: UserId.of('bob') } as Seat,
+      // D29: whose client record the seat is — the projection's key.
+      { ...seat, subjectCustomerId: customerOf(UserId.of('bob')) } as Seat,
       { ...seat, startMinutes: minute(seat.startMinutes + 30) },
       { ...seat, priceCents: unwrapOk(PriceCents.of(1800)) },
     ];
@@ -1533,17 +1608,16 @@ describe('projectionClock', () => {
 
 describe('planWrite (planClientStatsWrite) — the revision guard', () => {
   const NOW_W = utcMs('2026-09-25T10:00:00.000Z');
-  const ANA = UserId.of('ana');
+  const ANA = customerOf(UserId.of('ana'));
   const PATHS = {
     stats: ['clientStats', ANA],
     money: ['clientStats', ANA, 'restricted', 'money'],
   } as const;
   const content: ClientStats = {
-    ...ClientStats.empty(ANA),
+    ...ClientStats.empty(),
     lifetimeVisitsCompleted: 1,
   };
   const money: ClientMoneyStats = {
-    userId: ANA,
     lifetimeSpendCents: unwrapOk(PriceCents.of(2500)),
     currency: Currency.EUR,
   };
@@ -1573,6 +1647,7 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
   const input = (
     overrides: Partial<ClientStatsWriteInput> = {},
   ): ClientStatsWriteInput => ({
+    customerId: ANA,
     stored: NOTHING,
     stats: content,
     money,
@@ -1605,6 +1680,9 @@ describe('planWrite (planClientStatsWrite) — the revision guard', () => {
     expect(bodyOf(stats)?.['version']).toBe(1);
     expect(bodyOf(spend)?.['version']).toBe(1);
     expect(bodyOf(stats)?.['updatedAtUtcMs']).toBe(NOW_W);
+    // Whose pair it is, in both bodies — the client record (D29).
+    expect(bodyOf(stats)?.['customerId']).toBe(ANA);
+    expect(bodyOf(spend)?.['customerId']).toBe(ANA);
     expect(bodyOf(stats)).not.toHaveProperty('lifetimeSpendCents');
     // Every 1-to-1 field at the document root (Law 6).
     expect(bodyOf(stats)?.['lifetimeVisitsCompleted']).toBe(1);
@@ -1806,8 +1884,8 @@ describe('purity', () => {
     ]);
     const policy = deepFreeze(policyWithWindow(12));
     const now = deepFreeze(NOW);
-    const once = ClientStatsSystem.compute(PEOPLE.ana, history, policy, now);
-    const twice = ClientStatsSystem.compute(PEOPLE.ana, history, policy, now);
+    const once = ClientStatsSystem.compute(RECORDS.ana, history, policy, now);
+    const twice = ClientStatsSystem.compute(RECORDS.ana, history, policy, now);
     expect(twice).toEqual(once);
     expect(once.stats.preferredBarberId).toBe('ivan');
     expect(ClientStatsSystem.statWindows(deepFreeze(once.stats), now)).toEqual(

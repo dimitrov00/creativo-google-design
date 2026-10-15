@@ -1,28 +1,30 @@
-import { UserId } from '@creativo/application/accounts';
 import { firstNameOf } from '@creativo/features/shared/visits';
-import {
-  type Appointment,
-  type ClientStatsRecord,
-  ZonedDateTime,
-  statWindows,
-  subjectVisitOf,
-} from '@creativo/application/booking';
+import type { Appointment, ClientStatsRecord } from '@core/entities';
 import type {
   PersonalRecord,
   StreakDefinition,
   StreakState,
 } from '@creativo/application/engagement';
 import {
-  AppointmentId,
   LocalDate,
+  MinuteOfDay,
   ServiceId as ServiceRefId,
+  type TimeZone,
+  UserId,
   defect,
 } from '@core/primitives';
 import {
   type PersonalRecord as SystemRecord,
   PersonalRecordKind as SystemRecordKind,
+  type ShopNow,
 } from '@core/components';
-import { type RecordVisit, RecordsSystem } from '@core/systems';
+import {
+  ClientStatsSystem,
+  type RecordVisit,
+  RecordsSystem,
+  SubjectVisitOutcome,
+  ZonedTimeSystem,
+} from '@core/systems';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { AchievementsContext } from './achievements.presenter';
 import {
@@ -31,7 +33,6 @@ import {
   figure,
   monthYearLong,
   runningCase,
-  shopDayOf,
 } from './client-card.format';
 import type {
   AchievementsData,
@@ -62,7 +63,7 @@ import { RECORD_ICONS, recordCardVm, recordsOf } from './medals.presenter';
 export interface RecordsPageInput {
   readonly data: AchievementsData;
   readonly ctx: AchievementsContext;
-  /** `clientStats/{uid}`, read for the head; `null` until it answers, and for a client without one. */
+  /** `clientStats/{customerId}`, read for the head; `null` until it answers, and for a client without one. */
   readonly stats: ClientStatsRecord | null;
   /**
    * The rhythm's rule in force; `null` with `loyalty.streaks` off and in a
@@ -302,11 +303,26 @@ function countRow(
   };
 }
 
-/** The end of the shop's today, for the windows a count is read through. */
-function endOfDayMs(today: string): number | null {
-  const end = ZonedDateTime.fromISO(`${today}T23:59:59`, SHOP_ZONE);
-  return end.isFailure() ? null : end.value.toMillis();
+/** The shop's zone, branded — where the end of today is read. */
+const SHOP_TIME_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone(SHOP_ZONE);
+  return zone.ok ? zone.value : defect('unreachable: the shop zone');
+})();
+
+/** The end of the shop's today, as the shop's "now" the windows are read at. */
+function endOfDay(today: string): ShopNow | null {
+  const day = LocalDate.parse(today);
+  if (!day.ok) return null;
+  const end = ZonedTimeSystem.toUtc(
+    day.value,
+    MinuteOfDay.ofProven(LAST_MINUTE),
+    SHOP_TIME_ZONE,
+  );
+  return end.ok ? ZonedTimeSystem.shopNow(end.value, SHOP_TIME_ZONE) : null;
 }
+
+/** The day's last minute — 23:59. */
+const LAST_MINUTE = 1439;
 
 /** Every row the page can draw, by id; a row whose datum is absent is not in it. */
 function rowsOf(
@@ -341,26 +357,26 @@ function rowsOf(
     );
   }
 
-  if (stats !== null && stats.lifetime.visitsCompleted > 0) {
+  if (stats !== null && stats.lifetimeVisitsCompleted > 0) {
     add(
       countRow(
         'totalVisits',
         ROW_ICONS.totalVisits,
-        stats.lifetime.visitsCompleted,
+        stats.lifetimeVisitsCompleted,
         null,
         input,
       ),
     );
     // The window is read at the shop's today, as every counter's is
-    // (`statWindows`): a visit of thirteen months ago has left it without
-    // anything being rewritten.
-    const nowMs = endOfDayMs(data.today);
-    if (nowMs !== null) {
+    // (`ClientStatsSystem.statWindows`): a visit of thirteen months ago has
+    // left it without anything being rewritten.
+    const now = endOfDay(data.today);
+    if (now !== null) {
       add(
         countRow(
           'last12Months',
           ROW_ICONS.last12Months,
-          statWindows(stats, nowMs).visitsCompleted.last12m,
+          ClientStatsSystem.statWindows(stats, now).visitsCompleted.last12m,
           null,
           input,
         ),
@@ -372,12 +388,12 @@ function rowsOf(
   if (
     !rows.has('firstVisit') &&
     stats !== null &&
-    stats.firstVisitAtMs !== null
+    stats.firstVisitLocalDate !== null
   ) {
-    add(firstVisitRow(shopDayOf(stats.firstVisitAtMs), input));
+    add(firstVisitRow(stats.firstVisitLocalDate, input));
   }
 
-  const barberId = stats?.preferredBarberId?.value ?? null;
+  const barberId: string | null = stats?.preferredBarberId ?? null;
   const barber = barberId === null ? null : ctx.catalog.barberName(barberId);
   if (barberId !== null && barber !== null) {
     const title = words.records.row('preferredBarber');
@@ -403,8 +419,8 @@ function rowsOf(
     records.find((record) => record.kind === 'favouriteService')?.serviceId ??
     null;
   const usual = (stats?.usualServiceIds ?? []).flatMap((id) => {
-    const name = ctx.catalog.serviceName(id.value);
-    return name === null ? [] : [{ id: id.value, name }];
+    const name = ctx.catalog.serviceName(id);
+    return name === null ? [] : [{ id: id as string, name }];
   });
   if (usual.some((service) => service.id !== favourite)) {
     const title = words.records.row('usualServices');
@@ -448,18 +464,24 @@ function yearsOf(
   if (!input.historyComplete) return null;
   const { data, ctx } = input;
   const words = ctx.words;
-  const subject = UserId.create(data.account.userId);
-  if (subject.isFailure()) return null;
+  const subject = UserId.parse(data.account.userId);
+  if (!subject.ok) return null;
 
-  // The worked visits of this person, by the shop's day; the counting is
-  // `RecordsSystem.years`.
+  // The worked visits of this person — the account's own seats, the
+  // loyalty account being an account's — by the shop's day; the counting
+  // is `RecordsSystem.years`.
   const worked: RecordVisit[] = [];
   for (const appointment of input.visits) {
-    const visit = subjectVisitOf(subject.value, appointment);
-    if (visit === null || visit.outcome.kind !== 'worked') continue;
+    const visit = ClientStatsSystem.accountVisitOf(subject.value, appointment);
+    if (
+      visit === null ||
+      visit.outcome.subjectVisitOutcome !== SubjectVisitOutcome.Worked
+    ) {
+      continue;
+    }
     worked.push({
-      appointmentId: AppointmentId.of(appointment.id.value),
-      localDate: dayOf(shopDayOf(visit.atMs)),
+      appointmentId: appointment.id,
+      localDate: visit.localDate,
     });
   }
   const stamped =

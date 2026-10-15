@@ -16,6 +16,7 @@ import {
   CancellationReason,
   CancelledBy,
   type SeatOutcome,
+  type AccountSeat,
   type Seat,
   SeatSubject,
   type ShopNow,
@@ -29,6 +30,7 @@ import {
   type DurationMinutes,
   type AppointmentId,
   type BarberId,
+  type CustomerId,
   type SeatId,
   type ServiceId,
   type ServiceVariantId,
@@ -44,7 +46,7 @@ import type { Appointment } from '@core/entities';
 /**
  * One client's statistics, from every appointment they have a seat on
  * (`libs/domain/scheduling/src/lib/client-stats.ts:16-615`), and the pure
- * half of the projection that keeps `clientStats/{uid}` current
+ * half of the projection that keeps `clientStats/{customerId}` current
  * (`apps/functions/src/lib/clients/client-stats-projection.ts:21-231`, hot
  * path #8): which writes can move anybody's stats, whom they concern, and
  * whether a recomputed answer is worth a write.
@@ -76,9 +78,12 @@ const LAST_90D_DAYS = 90;
 /**
  * One appointment as the statistics read it — the slice of the entity they
  * may read (R28). `placement` is the COMMIT's own stamp; the backfill's
- * `inferredPlacement` is deliberately not in it (§12.5.1).
+ * `inferredPlacement` is deliberately not in it (§12.5.1). The math reads
+ * no client record (D29), so the seats are {@link AccountSeat}s by default;
+ * picking a CLIENT RECORD's seats ({@link ClientStatsSystem.subjectVisitOf})
+ * needs `StatsAppointment<Seat>` — seats that carry their `subjectCustomerId`.
  */
-export type StatsAppointment = Pick<
+export type StatsAppointment<S extends AccountSeat = AccountSeat> = Pick<
   Appointment,
   | 'id'
   | 'localDate'
@@ -87,8 +92,9 @@ export type StatsAppointment = Pick<
   | 'utcEpochMs'
   | 'bookedAtUtcMs'
   | 'placement'
-  | 'seats'
->;
+> & {
+  readonly seats: readonly S[];
+};
 
 /**
  * What the party owes before and after its discounts — `BillingSystem`'s
@@ -102,9 +108,10 @@ export type AppointmentBill = {
 };
 
 /** An appointment with its bill — what the spend reads. */
-export type BilledAppointment = StatsAppointment & {
-  readonly bill: AppointmentBill;
-};
+export type BilledAppointment<S extends AccountSeat = AccountSeat> =
+  StatsAppointment<S> & {
+    readonly bill: AppointmentBill;
+  };
 
 /**
  * What one appointment was, for one person — the ONLY source of these
@@ -126,7 +133,7 @@ export type SubjectVisitOutcomeState =
   | {
       readonly subjectVisitOutcome: typeof SubjectVisitOutcome.Cancelled;
       /** The seat called off LAST — the cancellation that ended the visit. */
-      readonly decisive: Seat & SeatOutcome.Cancelled;
+      readonly decisive: AccountSeat & SeatOutcome.Cancelled;
     }
   | { readonly subjectVisitOutcome: typeof SubjectVisitOutcome.Open };
 
@@ -137,7 +144,7 @@ export type SubjectVisitOutcomeState =
 export type SubjectVisit<A extends StatsAppointment = StatsAppointment> = {
   readonly appointment: A;
   /** Only this person's seats, in seat order — the input's own structs. */
-  readonly seats: readonly Seat[];
+  readonly seats: readonly AccountSeat[];
   readonly localDate: LocalDate;
   readonly startMinutes: MinuteOfDay;
   readonly endMinutes: EndMinute;
@@ -176,11 +183,17 @@ export type PauseBasisFact = VisitFact & {
   readonly startUtcMs: UtcEpochMs;
 };
 
-/** One seat as the change detection reads it — every field a stat can read, nothing else. */
+/**
+ * One seat as the change detection reads it — every field a stat can read,
+ * nothing else: whose it is among them, by its client record (the
+ * projection's key, D29) and by the account beside it (an account's own
+ * reading of its visits), so a change of either wakes a recompute.
+ */
 export type StatsInputSeat = {
   readonly seatId: SeatId;
   readonly seatSubject: SeatSubject;
   readonly subjectUserId: UserId | null;
+  readonly subjectCustomerId: CustomerId | null;
   readonly startMinutes: MinuteOfDay;
   readonly priceCents: PriceCents;
   readonly currency: Currency;
@@ -221,6 +234,8 @@ export type StoredClientStats = {
 };
 
 export type ClientStatsWriteInput = {
+  /** Whose pair it is — the client record both bodies repeat (D29). */
+  readonly customerId: CustomerId;
   readonly stored: StoredClientStats;
   readonly stats: ClientStats;
   readonly money: ClientMoneyStats;
@@ -289,12 +304,12 @@ function compareWall(
  * no-show beats cancellations. A fully cancelled visit is decided by the
  * seat called off LAST (the first of equal instants).
  */
-function outcomeOf(seats: readonly Seat[]): SubjectVisitOutcomeState {
+function outcomeOf(seats: readonly AccountSeat[]): SubjectVisitOutcomeState {
   let open = false;
   let noShow = false;
-  let decisive: (Seat & SeatOutcome.Cancelled) | null = null;
+  let decisive: (AccountSeat & SeatOutcome.Cancelled) | null = null;
   for (let i = 0; i < seats.length; i++) {
-    const seat = seats[i] as Seat;
+    const seat = seats[i] as AccountSeat;
     switch (seat.attendanceState) {
       case AttendanceState.Worked:
         return WORKED;
@@ -338,13 +353,13 @@ function chronological(a: SubjectVisit, b: SubjectVisit): number {
 }
 
 /**
- * Every appointment this person has a seat on, as their visits, oldest
- * first. An appointment listed twice counts once: the unit is the visit,
- * and a caller merging two reads must not be able to double it.
+ * Every appointment `visitOf` reads as this person's visit, oldest first.
+ * An appointment listed twice counts once: the unit is the visit, and a
+ * caller merging two reads must not be able to double it.
  */
-function visitsOf<A extends StatsAppointment>(
-  subject: UserId,
+function collectVisits<A extends StatsAppointment>(
   appointments: readonly A[],
+  visitOf: (appointment: A) => SubjectVisit<A> | null,
 ): SubjectVisit<A>[] {
   const seen = new Set<string>();
   const visits: SubjectVisit<A>[] = [];
@@ -352,10 +367,37 @@ function visitsOf<A extends StatsAppointment>(
     const appointment = appointments[i] as A;
     if (seen.has(appointment.id)) continue;
     seen.add(appointment.id);
-    const visit = ClientStatsSystem.subjectVisitOf(subject, appointment);
+    const visit = visitOf(appointment);
     if (visit !== null) visits.push(visit);
   }
   return visits.sort(chronological);
+}
+
+/** A client record's visits (D29) — {@link collectVisits} over its own seats. */
+function visitsOf<A extends StatsAppointment<Seat>>(
+  subject: CustomerId,
+  appointments: readonly A[],
+): SubjectVisit<A>[] {
+  return collectVisits(appointments, (appointment) =>
+    ClientStatsSystem.subjectVisitOf(subject, appointment),
+  );
+}
+
+/** One appointment as a visit of the seats picked from it — `null` when none were. */
+function visitOfSeats<A extends StatsAppointment>(
+  appointment: A,
+  seats: readonly AccountSeat[],
+): SubjectVisit<A> | null {
+  if (seats.length === 0) return null;
+  return {
+    appointment,
+    seats,
+    localDate: appointment.localDate,
+    startMinutes: appointment.startMinutes,
+    endMinutes: appointment.endMinutes,
+    startUtcMs: appointment.utcEpochMs,
+    outcome: outcomeOf(seats),
+  };
 }
 
 function factOf(visit: SubjectVisit): VisitFact {
@@ -390,7 +432,7 @@ function refOf(visit: SubjectVisit, keep: AttendanceState): VisitRefFields {
   const barberIds: BarberId[] = [];
   const legs: VisitLeg[] = [];
   for (let i = 0; i < visit.seats.length; i++) {
-    const seat = visit.seats[i] as Seat;
+    const seat = visit.seats[i] as AccountSeat;
     if (seat.attendanceState !== keep) continue;
     if (!serviceIds.includes(seat.serviceId)) serviceIds.push(seat.serviceId);
     if (!barberIds.includes(seat.barberId)) barberIds.push(seat.barberId);
@@ -539,7 +581,7 @@ function preferredBarberOf(worked: readonly SubjectVisit[]): BarberId | null {
     if (visit.appointment.placement === null) continue;
     const asked: BarberId[] = [];
     for (let i = 0; i < visit.seats.length; i++) {
-      const seat = visit.seats[i] as Seat;
+      const seat = visit.seats[i] as AccountSeat;
       if (
         seat.attendanceState === AttendanceState.Worked &&
         seat.barberPreference === BarberPreference.Specific &&
@@ -563,7 +605,7 @@ function usualServicesOf(worked: readonly SubjectVisit[]): ServiceId[] {
     const visit = worked[worked.length - 1 - rank] as SubjectVisit;
     const services: ServiceId[] = [];
     for (let i = 0; i < visit.seats.length; i++) {
-      const seat = visit.seats[i] as Seat;
+      const seat = visit.seats[i] as AccountSeat;
       if (
         seat.attendanceState === AttendanceState.Worked &&
         !services.includes(seat.serviceId)
@@ -650,7 +692,6 @@ function inEuroCents(cents: number, currency: Currency): number | null {
 }
 
 function statsOf(
-  subject: UserId,
   visits: readonly SubjectVisit[],
   policy: ClientStatsPolicy,
   now: ShopNow,
@@ -728,7 +769,6 @@ function statsOf(
   }
 
   return {
-    userId: subject,
     lifetimeVisitsCompleted: worked.length,
     lifetimeNoShows: noShows.length,
     lifetimeLateCancels: lateCancels.length,
@@ -756,7 +796,6 @@ function statsOf(
 }
 
 function moneyOf(
-  subject: UserId,
   visits: readonly SubjectVisit<BilledAppointment>[],
 ): ClientMoneyStats {
   let spend = 0;
@@ -767,7 +806,7 @@ function moneyOf(
     }
     let own = 0;
     for (let s = 0; s < visit.seats.length; s++) {
-      const seat = visit.seats[s] as Seat;
+      const seat = visit.seats[s] as AccountSeat;
       if (seat.attendanceState === AttendanceState.Worked) {
         own += seat.priceCents;
       }
@@ -779,7 +818,6 @@ function moneyOf(
   }
   const lifetimeSpend = PriceCents.signed(spend);
   return {
-    userId: subject,
     lifetimeSpendCents: lifetimeSpend.ok
       ? lifetimeSpend.value
       : PriceCents.ZERO,
@@ -790,7 +828,6 @@ function moneyOf(
 /** The projection's CONTENT — everything but the bookkeeping and the stamp. */
 function statsContent(stats: ClientStats): ClientStats {
   return {
-    userId: stats.userId,
     lifetimeVisitsCompleted: stats.lifetimeVisitsCompleted,
     lifetimeNoShows: stats.lifetimeNoShows,
     lifetimeLateCancels: stats.lifetimeLateCancels,
@@ -824,7 +861,6 @@ function statsContent(stats: ClientStats): ClientStats {
 
 function moneyContent(money: ClientMoneyStats): ClientMoneyStats {
   return {
-    userId: money.userId,
     lifetimeSpendCents: money.lifetimeSpendCents,
     currency: money.currency,
   };
@@ -894,6 +930,8 @@ function seatInputOf(seat: Seat): StatsInputSeat {
     seatSubject: seat.seatSubject,
     subjectUserId:
       seat.seatSubject === SeatSubject.Account ? seat.subjectUserId : null,
+    subjectCustomerId:
+      seat.seatSubject === SeatSubject.Account ? seat.subjectCustomerId : null,
     startMinutes: seat.startMinutes,
     priceCents: seat.priceCents,
     currency: seat.currency,
@@ -941,12 +979,13 @@ export const ClientStatsSystem = {
   },
 
   /**
-   * One appointment as this person's visit, from their seats alone — `null`
-   * when they hold no seat on it. The same reading the statistics count by,
-   * so a history row and the counts above it never tell two stories.
+   * One appointment as this CLIENT RECORD's visit (D29 — whom the shop
+   * served), from its seats alone — `null` when it holds no seat on it. The
+   * same reading the statistics count by, so a history row and the counts
+   * above it never tell two stories.
    */
-  subjectVisitOf<A extends StatsAppointment>(
-    subject: UserId,
+  subjectVisitOf<A extends StatsAppointment<Seat>>(
+    subject: CustomerId,
     appointment: A,
   ): SubjectVisit<A> | null {
     const seats: Seat[] = [];
@@ -954,21 +993,50 @@ export const ClientStatsSystem = {
       const seat = appointment.seats[i] as Seat;
       if (
         seat.seatSubject === SeatSubject.Account &&
-        seat.subjectUserId === subject
+        seat.subjectCustomerId === subject
       ) {
         seats.push(seat);
       }
     }
-    if (seats.length === 0) return null;
-    return {
-      appointment,
-      seats,
-      localDate: appointment.localDate,
-      startMinutes: appointment.startMinutes,
-      endMinutes: appointment.endMinutes,
-      startUtcMs: appointment.utcEpochMs,
-      outcome: outcomeOf(seats),
-    };
+    return visitOfSeats(appointment, seats);
+  },
+
+  /**
+   * One appointment as this ACCOUNT's own visit — the signed-in person's
+   * view of their seats (`subjectUserId`, who may read; D29), `null` when
+   * the account holds no seat on it. The same reading as
+   * {@link subjectVisitOf}, keyed by the account the seats keep beside their
+   * record, so it needs no client record at all.
+   */
+  accountVisitOf<A extends StatsAppointment>(
+    account: UserId,
+    appointment: A,
+  ): SubjectVisit<A> | null {
+    const seats: AccountSeat[] = [];
+    for (let i = 0; i < appointment.seats.length; i++) {
+      const seat = appointment.seats[i] as AccountSeat;
+      if (
+        seat.seatSubject === SeatSubject.Account &&
+        seat.subjectUserId === account
+      ) {
+        seats.push(seat);
+      }
+    }
+    return visitOfSeats(appointment, seats);
+  },
+
+  /**
+   * Every appointment the account holds a seat on, as its visits, oldest
+   * first — {@link accountVisitOf} over the list, an appointment listed
+   * twice counted once.
+   */
+  accountVisitsOf<A extends StatsAppointment>(
+    account: UserId,
+    appointments: readonly A[],
+  ): readonly SubjectVisit<A>[] {
+    return collectVisits(appointments, (appointment) =>
+      ClientStatsSystem.accountVisitOf(account, appointment),
+    );
   },
 
   /**
@@ -979,12 +1047,25 @@ export const ClientStatsSystem = {
    * window. Only the last `ClientStatsPolicy.BOUNDED_DAYS` keep their facts.
    */
   stats(
-    subject: UserId,
-    appointments: readonly StatsAppointment[],
+    subject: CustomerId,
+    appointments: readonly StatsAppointment<Seat>[],
     policy: ClientStatsPolicy,
     now: ShopNow,
   ): ClientStats {
-    return statsOf(subject, visitsOf(subject, appointments), policy, now);
+    return statsOf(visitsOf(subject, appointments), policy, now);
+  },
+
+  /**
+   * The stats of visits already read — {@link stats} after the pick: the
+   * same counts whichever reading picked them (a record's seats, an
+   * account's own).
+   */
+  statsOfVisits(
+    visits: readonly SubjectVisit[],
+    policy: ClientStatsPolicy,
+    now: ShopNow,
+  ): ClientStats {
+    return statsOf(visits, policy, now);
   },
 
   /**
@@ -995,23 +1076,30 @@ export const ClientStatsSystem = {
    * price in a currency with no fixed rate is left out, never guessed at.
    */
   money(
-    subject: UserId,
-    appointments: readonly BilledAppointment[],
+    subject: CustomerId,
+    appointments: readonly BilledAppointment<Seat>[],
   ): ClientMoneyStats {
-    return moneyOf(subject, visitsOf(subject, appointments));
+    return moneyOf(visitsOf(subject, appointments));
+  },
+
+  /** The spend of visits already read — {@link money} after the pick. */
+  moneyOfVisits(
+    visits: readonly SubjectVisit<BilledAppointment>[],
+  ): ClientMoneyStats {
+    return moneyOf(visits);
   },
 
   /** Both projections of one history, read once. */
   compute(
-    subject: UserId,
-    appointments: readonly BilledAppointment[],
+    subject: CustomerId,
+    appointments: readonly BilledAppointment<Seat>[],
     policy: ClientStatsPolicy,
     now: ShopNow,
   ): { readonly stats: ClientStats; readonly money: ClientMoneyStats } {
     const visits = visitsOf(subject, appointments);
     return {
-      stats: statsOf(subject, visits, policy, now),
-      money: moneyOf(subject, visits),
+      stats: statsOf(visits, policy, now),
+      money: moneyOf(visits),
     };
   },
 
@@ -1258,12 +1346,14 @@ export const ClientStatsSystem = {
       updatedAtUtcMs,
       writes: [
         WriteOp.set(paths.stats, {
+          customerId: input.customerId,
           ...statsContent(input.stats),
           version,
           updatedAtUtcMs,
           ...PolicyPassStamp.of(input.stamp),
         }),
         WriteOp.set(paths.money, {
+          customerId: input.customerId,
           ...moneyContent(input.money),
           version,
           updatedAtUtcMs,

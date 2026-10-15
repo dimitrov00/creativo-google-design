@@ -106,16 +106,38 @@ export type FindUserByDestination = (
 ) => Promise<Result<User | null, RepositoryError>>;
 
 /**
- * The client record of an account — `customers/{CustomerId.forUser(userId)}`,
- * a `tx.get` by a derivable path, no query (D29, flatten-spec §5.1); `null`
- * when the account has no record yet (every account registered before the
- * identity flip (2)). Declared in the flatten pass, first called by the
- * booking flip (1), which creates the missing record (`FIRST_BOOKING`)
- * inside its commit.
+ * The client record of an account, OUTSIDE any transaction — `customers
+ * where userId == uid limit 1` (the single-field index on `userId`, D29,
+ * flatten-spec §5.5): what the web reads to learn the signed-in account's
+ * `CustomerId`; `null` when the account has no record yet (every account
+ * registered before the identity flip (2) that never booked). Inside a
+ * booking or edit transaction the server reads `customers/{CustomerId.forUser
+ * (uid, hash)}` by its derivable path through `ReadTx` instead, and creates
+ * a missing one (`FIRST_BOOKING`) in that commit (F1-5).
  */
 export type LoadCustomerForUser = (
   userId: UserId,
 ) => Promise<Result<Customer | null, RepositoryError>>;
+
+/**
+ * The account fields a first-booking client record copies (F1-5): the
+ * names and the sign-in contact of `users/{uid}`, their kept key names.
+ */
+export type AccountContact = Pick<
+  User,
+  'firstName' | 'lastName' | 'phone' | 'email'
+>;
+
+/**
+ * The FIRST_BOOKING contact snapshot (F1-5) — one NON-transactional
+ * `getAll` of `users/{uid}` for the given accounts, read BEFORE the booking
+ * or edit transaction opens, so `users/{uid}` never enters its conflict set
+ * (a stale name in a first-booking copy is harmless). An account with no
+ * document is absent from the map; the order of `userIds` is not kept.
+ */
+export type LoadAccountContacts = (
+  userIds: readonly UserId[],
+) => Promise<Result<ReadonlyMap<UserId, AccountContact>, RepositoryError>>;
 
 /**
  * The Firebase Auth user holding a phone or e-mail
@@ -170,10 +192,12 @@ export type SetDisplayName = (
 /**
  * The identity context's port catalogue. The users stub `Create` and the
  * registered body `Update` are entries of a `CommitPlan` (`tx.port.ts`),
- * never a port of their own. {@link LoadCustomerForUser} joins the bundle
- * that first calls it (the booking flip (1), flatten-spec §5.5).
+ * never a port of their own; so is a `FIRST_BOOKING` customer `Create`
+ * (F1-5).
  */
 export type IdentityPorts = {
+  readonly loadCustomerForUser: LoadCustomerForUser;
+  readonly loadAccountContacts: LoadAccountContacts;
   readonly loadTenant: LoadTenant;
   readonly loadOpenOtps: LoadOpenOtps;
   readonly loadOtp: LoadOtp;
@@ -187,3 +211,6 @@ export type IdentityPorts = {
   readonly setClaims: SetClaims;
   readonly setDisplayName: SetDisplayName;
 };
+
+/** The signed-in account's client record — the bundle the web's `CUSTOMER_PORTS` token binds. */
+export type CustomerPorts = Pick<IdentityPorts, 'loadCustomerForUser'>;

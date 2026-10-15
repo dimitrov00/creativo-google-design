@@ -15,24 +15,31 @@ import {
   type UserId,
   ZonedDateTime,
 } from '@creativo/application/accounts';
+import { type Result, fail } from '@creativo/application/booking';
+import type { Appointment } from '@core/entities';
+import type {
+  AppointmentPhotoPorts,
+  AppointmentReadPorts,
+  ClientStatsReadPorts,
+  CouponVoucherPorts,
+  CustomerPorts,
+  WaitlistReadPorts,
+} from '@core/ports';
 import {
-  type Appointment,
-  CLIENT_HISTORY_READER,
-  CLIENT_PHOTOS_READER,
-  CLIENT_STATS_READER,
-  type ClientHistoryPage,
-  type ClientHistoryReader,
-  type Result,
-  WAITLIST_READER,
-  fail,
-} from '@creativo/application/booking';
+  RepositoryError as CoreRepositoryError,
+  Result as CoreResult,
+} from '@core/primitives';
+import { memoryAppointmentReadPorts } from '@core/testing';
 import {
-  InMemoryClientHistoryReader,
-  InMemoryClientPhotosReader,
-} from '@creativo/application/booking/testing';
+  APPOINTMENT_PHOTO_PORTS,
+  APPOINTMENT_READ_PORTS,
+  CLIENT_STATS_READ_PORTS,
+  COUPON_VOUCHER_PORTS,
+  CUSTOMER_PORTS,
+  WAITLIST_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import {
   type ActivityEntry,
-  CLIENT_VOUCHERS_READER,
   LOYALTY_ACTIVITY_READER,
   LOYALTY_CATALOG_READER,
   LOYALTY_READER,
@@ -41,7 +48,6 @@ import {
   type LoyaltyActivityReader,
 } from '@creativo/application/engagement';
 import {
-  InMemoryClientVouchersReader,
   InMemoryLoyaltyActivityReader,
   InMemoryLoyaltyCatalogReader,
   InMemoryLoyaltyReader,
@@ -55,7 +61,7 @@ import type {
   ClientCardContext,
   ClientCardSubject,
 } from './client-card.contracts';
-import { dayWithYear, shopDayOf } from './client-card.format';
+import { dayWithYear } from './client-card.format';
 import {
   CLIENT_CARD_READ_TIMEOUT_MS,
   ClientCardStore,
@@ -64,31 +70,37 @@ import { LEDGER_PAGE_READ, foldByEvent } from './ledger.presenter';
 import { WALLET_ACTIVITY_READ } from './wallet.presenter';
 import {
   GEORGI,
+  GEORGI_CUSTOMER_ID,
   GEORGI_GRANT,
   GEORGI_MONEY,
   GEORGI_PREVIOUS_MS,
   GUEST,
   InMemoryAvatars,
   InMemoryProfilePort,
-  InMemoryStatsReader,
-  InMemoryWaitlistReader,
   MARTIN,
   NBSP_EURO,
   NOW_MS,
+  type PortDouble,
   catalogueOf,
+  customerPortsOf,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
   georgiPhotos,
   georgiUser,
+  historyPortsOf,
   martinContext,
   martinHistory,
   martinUser,
   martinWaitlist,
   must,
   pausedUntilOctober,
+  photoPortsOf,
   statsOf,
+  statsPortsOf,
   subjectOf,
+  voucherPortsOf,
+  waitlistPortsOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
 
@@ -107,51 +119,60 @@ const ALL_FLAGS = {
   'loyalty.tiers': true,
 };
 
-/** A history reader serving small pages, so paging shows on a real book. */
-class PagedHistory implements ClientHistoryReader {
-  readonly calls: (string | null)[] = [];
-  private failNext = false;
-  constructor(
-    private readonly inner: ClientHistoryReader,
-    private readonly size: number,
-  ) {}
-  failOnce(): this {
-    this.failNext = true;
-    return this;
-  }
-  async pageForSubject(
-    userId: string,
-    page: { readonly beforeIso: string | null; readonly limit: number },
-  ): Promise<Result<ClientHistoryPage, RepositoryError>> {
-    this.calls.push(page.beforeIso);
-    if (this.failNext) {
-      this.failNext = false;
-      return fail(new RepositoryError('page unavailable'));
-    }
-    return this.inner.pageForSubject(userId, { ...page, limit: this.size });
-  }
+type HistoryPage = ReturnType<AppointmentReadPorts['pageClientHistory']>;
+
+/** A history serving small pages, so paging shows on a real book; each read's cursor recorded. */
+function pagedHistory(
+  inner: AppointmentReadPorts,
+  size: number,
+): AppointmentReadPorts & {
+  readonly calls: (number | null)[];
+  failOnce(): void;
+} {
+  const calls: (number | null)[] = [];
+  let failNext = false;
+  return {
+    ...inner,
+    calls,
+    failOnce: () => {
+      failNext = true;
+    },
+    pageClientHistory: async (subjectCustomerId, beforeUtcMs) => {
+      calls.push(beforeUtcMs);
+      if (failNext) {
+        failNext = false;
+        return CoreResult.err(CoreRepositoryError.unavailable());
+      }
+      return inner.pageClientHistory(subjectCustomerId, beforeUtcMs, size);
+    },
+  };
 }
 
-/** A reader that answers only when the spec says so. */
-class HeldHistory implements ClientHistoryReader {
-  readonly calls: number[] = [];
-  private readonly answers: (() => void)[] = [];
-  constructor(private readonly inner: ClientHistoryReader) {}
-  pageForSubject(
-    userId: string,
-    page: { readonly beforeIso: string | null; readonly limit: number },
-  ): Promise<Result<ClientHistoryPage, RepositoryError>> {
-    this.calls.push(this.calls.length);
-    return new Promise((resolve) => {
-      void this.inner.pageForSubject(userId, page).then((result) => {
-        this.answers.push(() => resolve(result));
+/** A history that answers only when the spec says so. */
+function heldHistory(inner: AppointmentReadPorts): AppointmentReadPorts & {
+  readonly calls: number[];
+  release(): void;
+} {
+  const calls: number[] = [];
+  const answers: (() => void)[] = [];
+  return {
+    ...inner,
+    calls,
+    pageClientHistory: (subjectCustomerId, beforeUtcMs, limit): HistoryPage => {
+      calls.push(calls.length);
+      return new Promise((resolve) => {
+        void inner
+          .pageClientHistory(subjectCustomerId, beforeUtcMs, limit)
+          .then((result) => {
+            answers.push(() => resolve(result));
+          });
       });
-    });
-  }
-  /** Every answer held so far. */
-  release(): void {
-    for (const answer of this.answers.splice(0)) answer();
-  }
+    },
+    /** Every answer held so far. */
+    release: () => {
+      for (const answer of answers.splice(0)) answer();
+    },
+  };
 }
 
 /** A profile port whose answer waits for the spec. */
@@ -221,14 +242,15 @@ class HeldActivity implements LoyaltyActivityReader {
 interface RigOptions {
   readonly flags?: Readonly<Record<string, boolean>>;
   readonly profiles?: InMemoryProfilePort | null;
-  readonly stats?: InMemoryStatsReader | null;
-  readonly history?: ClientHistoryReader | null;
-  readonly photos?: InMemoryClientPhotosReader | null;
+  readonly customers?: CustomerPorts | null;
+  readonly stats?: PortDouble<ClientStatsReadPorts> | null;
+  readonly history?: AppointmentReadPorts | null;
+  readonly photos?: PortDouble<AppointmentPhotoPorts> | null;
   readonly loyalty?: InMemoryLoyaltyReader | null;
   readonly catalog?: InMemoryLoyaltyCatalogReader | null;
-  readonly waitlist?: InMemoryWaitlistReader | null;
+  readonly waitlist?: WaitlistReadPorts | null;
   readonly avatars?: InMemoryAvatars | null;
-  readonly vouchers?: InMemoryClientVouchersReader | null;
+  readonly vouchers?: PortDouble<CouponVoucherPorts> | null;
   readonly activity?: LoyaltyActivityReader | null;
 }
 
@@ -242,22 +264,20 @@ function defaults() {
         [MARTIN, martinUser()],
       ]),
     ),
-    stats: new InMemoryStatsReader(
-      new Map([
-        [GEORGI, statsOf(GEORGI, georgiHistory())],
-        [MARTIN, statsOf(MARTIN, martinHistory())],
-      ]),
-      new Map([[GEORGI, GEORGI_MONEY]]),
+    customers: customerPortsOf(),
+    stats: statsPortsOf(
+      [statsOf(GEORGI, georgiHistory()), statsOf(MARTIN, martinHistory())],
+      [GEORGI_MONEY],
     ),
-    history: new InMemoryClientHistoryReader(BOOK),
-    photos: new InMemoryClientPhotosReader(georgiPhotos()),
+    history: historyPortsOf(BOOK) as AppointmentReadPorts,
+    photos: photoPortsOf(georgiPhotos()),
     loyalty: InMemoryLoyaltyReader.seeded(),
     catalog: new InMemoryLoyaltyCatalogReader(),
-    waitlist: new InMemoryWaitlistReader([martinWaitlist()]),
+    waitlist: waitlistPortsOf([martinWaitlist()]) as WaitlistReadPorts,
     avatars: new InMemoryAvatars(
       new Map([[GEORGI, 'https://example.test/avatars/georgi.jpg']]),
     ),
-    vouchers: InMemoryClientVouchersReader.seeded(),
+    vouchers: voucherPortsOf(),
     activity: InMemoryLoyaltyActivityReader.seeded() as LoyaltyActivityReader,
   };
 }
@@ -286,14 +306,15 @@ function rig(options: RigOptions = {}) {
         },
       },
       ...bind(PROFILE_PORT, ports.profiles),
-      ...bind(CLIENT_STATS_READER, ports.stats),
-      ...bind(CLIENT_HISTORY_READER, ports.history),
-      ...bind(CLIENT_PHOTOS_READER, ports.photos),
+      ...bind(CUSTOMER_PORTS, ports.customers),
+      ...bind(CLIENT_STATS_READ_PORTS, ports.stats),
+      ...bind(APPOINTMENT_READ_PORTS, ports.history),
+      ...bind(APPOINTMENT_PHOTO_PORTS, ports.photos),
       ...bind(LOYALTY_READER, ports.loyalty),
       ...bind(LOYALTY_CATALOG_READER, ports.catalog),
-      ...bind(WAITLIST_READER, ports.waitlist),
+      ...bind(WAITLIST_READ_PORTS, ports.waitlist),
       ...bind(AVATAR_UPLOADER, ports.avatars),
-      ...bind(CLIENT_VOUCHERS_READER, ports.vouchers),
+      ...bind(COUPON_VOUCHER_PORTS, ports.vouchers),
       ...bind(LOYALTY_ACTIVITY_READER, ports.activity),
     ],
   });
@@ -332,10 +353,10 @@ const textOf = (parts: readonly { readonly text: string }[]) =>
 
 describe('ClientCardStore — a guest', () => {
   it('reads nothing, and draws the hero, the phone and the exit', async () => {
-    const history = new InMemoryClientHistoryReader(BOOK);
+    const history = historyPortsOf(BOOK);
     const profiles = new InMemoryProfilePort(new Map());
     const loyalty = InMemoryLoyaltyReader.seeded();
-    const photos = new InMemoryClientPhotosReader(georgiPhotos());
+    const photos = photoPortsOf(georgiPhotos());
     const { store } = rig({ history, profiles, loyalty, photos });
     open(
       store,
@@ -464,7 +485,7 @@ describe('ClientCardStore — Георги, settled', () => {
     const barber = rig();
     open(barber.store, subjectOf(GEORGI), georgiContext());
     await settle();
-    expect(barber.stats?.moneyCalls).toEqual([]);
+    expect(barber.stats?.callsTo('loadClientMoney')).toEqual([]);
     expect(textOf(barber.store.visits().facts ?? [])).not.toContain('€');
     TestBed.resetTestingModule();
 
@@ -475,7 +496,9 @@ describe('ClientCardStore — Георги, settled', () => {
       georgiContext({ viewer: { uid: 'dev-admin', roles: ['admin'] } }),
     );
     await settle();
-    expect(admin.stats?.moneyCalls).toEqual([GEORGI]);
+    expect(admin.stats?.callsTo('loadClientMoney')).toEqual([
+      [GEORGI_CUSTOMER_ID],
+    ]);
     const facts = textOf(admin.store.visits().facts ?? []);
     expect(facts).toContain('462,50');
     expect(facts).toContain('€');
@@ -598,7 +621,7 @@ describe('ClientCardStore — the D-9 gate', () => {
     const profiles = new HeldProfiles(
       new Map([[GEORGI, georgiUser(pausedUntilOctober())]]),
     );
-    const history = new InMemoryClientHistoryReader(BOOK);
+    const history = historyPortsOf(BOOK);
     const { store } = rig({ profiles, history });
     open(store, subjectOf(GEORGI), georgiOpenContext());
     await settle();
@@ -633,7 +656,7 @@ describe('ClientCardStore — the D-9 gate', () => {
     const profiles = new InMemoryProfilePort(
       new Map([[GEORGI, georgiUser()]]),
     ).failWith();
-    const history = new InMemoryClientHistoryReader(BOOK);
+    const history = historyPortsOf(BOOK);
     const loyalty = InMemoryLoyaltyReader.seeded();
     const { store } = rig({ profiles, history, loyalty });
     open(store, subjectOf(GEORGI), georgiContext());
@@ -664,7 +687,7 @@ describe('ClientCardStore — the D-9 gate', () => {
     const profiles = new InMemoryProfilePort(
       new Map([[GEORGI, georgiUser()]]),
     ).failWith();
-    const history = new InMemoryClientHistoryReader(BOOK);
+    const history = historyPortsOf(BOOK);
     const { store } = rig({ profiles, history });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -678,7 +701,7 @@ describe('ClientCardStore — the D-9 gate', () => {
   });
 
   it('counts a failed stats read as the whole card’s', async () => {
-    const stats = new InMemoryStatsReader(new Map()).failWith();
+    const stats = statsPortsOf([]).failWith();
     const { store } = rig({ stats });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -692,7 +715,7 @@ describe('ClientCardStore — the D-9 gate', () => {
 
 describe('ClientCardStore — module failures', () => {
   it('fails one module under its heading, and retries it alone', async () => {
-    const photos = new InMemoryClientPhotosReader(georgiPhotos()).failWith();
+    const photos = photoPortsOf(georgiPhotos()).failWith();
     const { store, loyalty } = rig({ photos });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -712,8 +735,8 @@ describe('ClientCardStore — module failures', () => {
   });
 
   it('names every failed module; the page folds two or more into one notice', async () => {
-    const photos = new InMemoryClientPhotosReader(georgiPhotos()).failWith();
-    const history = new InMemoryClientHistoryReader(BOOK).failWith();
+    const photos = photoPortsOf(georgiPhotos()).failWith();
+    const history = historyPortsOf(BOOK).failWith();
     const { store } = rig({ photos, history });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -742,7 +765,7 @@ describe('ClientCardStore — module failures', () => {
   });
 
   it('keeps the visits module when only the waitlist fails — without the card', async () => {
-    const waitlist = new InMemoryWaitlistReader([martinWaitlist()]).failWith();
+    const waitlist = waitlistPortsOf([martinWaitlist()]).failWith();
     const { store } = rig({ waitlist });
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
@@ -754,8 +777,9 @@ describe('ClientCardStore — module failures', () => {
 
   it('settles a read that never answers as failed after ten seconds', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const silent: ClientHistoryReader = {
-      pageForSubject: () => new Promise(() => undefined),
+    const silent: AppointmentReadPorts = {
+      ...memoryAppointmentReadPorts([]),
+      pageClientHistory: () => new Promise(() => undefined),
     };
     const { store } = rig({ history: silent });
     open(store, subjectOf(GEORGI), georgiContext());
@@ -842,8 +866,8 @@ describe('ClientCardStore — flags, ports and accounts', () => {
 
 describe('ClientCardStore — opening again', () => {
   it('refreshes the same person without skeletons', async () => {
-    const inner = new InMemoryClientHistoryReader(BOOK);
-    const held = new HeldHistory(inner);
+    const inner = historyPortsOf(BOOK);
+    const held = heldHistory(inner);
     const { store } = rig({ history: held });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -862,8 +886,8 @@ describe('ClientCardStore — opening again', () => {
   });
 
   it('starts over for another person, dropping the first one’s late answers', async () => {
-    const inner = new InMemoryClientHistoryReader(BOOK);
-    const held = new HeldHistory(inner);
+    const inner = historyPortsOf(BOOK);
+    const held = heldHistory(inner);
     const { store } = rig({ history: held });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -891,7 +915,7 @@ describe('ClientCardStore — the history’s pages and filter', () => {
     store.visits().sections.flatMap((s) => s.rows);
 
   it('pages older visits in on «Покажи още», and ends on the first visit', async () => {
-    const history = new PagedHistory(new InMemoryClientHistoryReader(BOOK), 10);
+    const history = pagedHistory(historyPortsOf(BOOK), 10);
     const { store } = rig({ history });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -912,7 +936,7 @@ describe('ClientCardStore — the history’s pages and filter', () => {
   });
 
   it('keeps a failed page’s rows, says so, and retries the page', async () => {
-    const history = new PagedHistory(new InMemoryClientHistoryReader(BOOK), 10);
+    const history = pagedHistory(historyPortsOf(BOOK), 10);
     const { store } = rig({ history });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -927,7 +951,7 @@ describe('ClientCardStore — the history’s pages and filter', () => {
   });
 
   it('fetches up to three more pages when a filter leaves fewer than ten rows', async () => {
-    const history = new PagedHistory(new InMemoryClientHistoryReader(BOOK), 3);
+    const history = pagedHistory(historyPortsOf(BOOK), 3);
     const { store } = rig({ history });
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
@@ -945,7 +969,7 @@ describe('ClientCardStore — the history’s pages and filter', () => {
 
 describe('ClientCardStore — offline', () => {
   it('follows the device, keeps the phone, and drops what writes or reads', async () => {
-    const history = new PagedHistory(new InMemoryClientHistoryReader(BOOK), 10);
+    const history = pagedHistory(historyPortsOf(BOOK), 10);
     const { store } = rig({ history });
     open(store, subjectOf(MARTIN), martinContext({ grants: [GEORGI_GRANT] }));
     await settle();
@@ -1050,7 +1074,7 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     expect(
       overview.visits?.status === 'ready' && overview.visits.data,
     ).toMatchObject({
-      count: GEORGI_STATS.lifetime.visitsCompleted,
+      count: GEORGI_STATS.lifetimeVisitsCompleted,
       waitlist: null,
     });
     expect(
@@ -1085,7 +1109,9 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     const { store, vouchers, activity } = rig();
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
-    expect(vouchers?.calls).toEqual([{ userId: GEORGI }]);
+    expect(vouchers?.callsTo('listGiftVouchersForHolder')).toEqual([
+      [GEORGI_CUSTOMER_ID],
+    ]);
     // Two reads of the journal: the wallet's feed and the ledger's first page.
     expect((activity as InMemoryLoyaltyActivityReader).calls).toEqual(
       expect.arrayContaining([
@@ -1174,10 +1200,10 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     for (const key of keys.slice(1)) expect(key).toMatch(/^\d{4}-\d{2}$/u);
     expect(visits.offeredFilters).toContain('all');
     // The whole book is one page: the foot names the first visit's day.
-    const first = must(GEORGI_STATS.firstVisitAtMs, 'his first visit');
+    const first = must(GEORGI_STATS.firstVisitLocalDate, 'his first visit');
     expect(visits.paging).toEqual({
       kind: 'end',
-      endLabel: WORDS.history.first(dayWithYear(shopDayOf(first), 'bg')),
+      endLabel: WORDS.history.first(dayWithYear(first, 'bg')),
     });
     expect(store.loadedVisits()).toHaveLength(georgiHistory().length);
     expect(store.historyComplete()).toBe(true);
@@ -1320,7 +1346,7 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
 
 describe('ClientCardStore — revision 3: the vouchers', () => {
   it('fails the holdings alone, keeps the glance’s card without the voucher, and retries the vouchers', async () => {
-    const vouchers = InMemoryClientVouchersReader.seeded().failWith();
+    const vouchers = voucherPortsOf().failWith();
     const { store } = rig({ vouchers });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();

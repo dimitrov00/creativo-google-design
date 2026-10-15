@@ -155,7 +155,7 @@ export class AchievementDetailPage {
       (data, ctx) =>
         medalDetailVm(seriesId, data, ctx, {
           visits: this.store.loadedVisits(),
-          subjectUserId: this.store.subject()?.userId ?? '',
+          subjectCustomerId: this.store.customerId(),
           rule: this.rule(),
           rows: this.store.visitRowsInput(),
           action: this.store.detailAction(seriesId),

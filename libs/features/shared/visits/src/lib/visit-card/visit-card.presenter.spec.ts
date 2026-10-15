@@ -1,21 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { UserId } from '@creativo/application/accounts';
-import {
-  BarberId,
-  ServiceId,
-  ServiceTerms,
-} from '@creativo/application/catalog';
-import {
-  Appointment,
-  type AppointmentStatus,
-  type Result,
-  SEAT_SCHEDULED,
-  Seat,
-  SeatId,
-  type SeatOutcome,
-  SeatSubject,
-  seatWorked,
-} from '@creativo/application/booking';
+import type { Appointment } from '@core/entities';
+import { type Seat, SeatOutcome } from '@core/components';
 import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import { appCatalogue } from '../testing/app-catalogue';
 import {
@@ -25,8 +10,11 @@ import {
   IVO_UID,
   VISITS_LOOKUP,
   catalogueTranslator,
+  type VisitStatusSpec,
   georgiWaitlistRequest,
   sofia,
+  visitOf,
+  visitSeat,
   visitsNowMs,
 } from '../testing/visit-fixtures';
 import {
@@ -82,7 +70,7 @@ const NOW_MS = visitsNowMs(loyaltyFixtures.today);
 const EURO = (text: string) => text.replaceAll(' €', ' €');
 
 function visit(id: string): Appointment {
-  const found = GEORGI_VISITS.find((each) => each.id.value === id);
+  const found = GEORGI_VISITS.find((each) => each.id === id);
   if (found === undefined) throw new Error(`no visit ${id}`);
   return found;
 }
@@ -117,10 +105,8 @@ const factsOf = (card: VisitCardVm) =>
 
 // ── Appointments the book does not hold ────────────────────────────────
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('bad visit-card fixture');
-  return result.value;
-}
+/** Each seat's own start, so a visit knows its shop day (a seat holds only its minute). */
+const SEAT_START = new WeakMap<Seat, string>();
 
 function seatOf(
   id: string,
@@ -133,39 +119,29 @@ function seatOf(
     readonly outcome?: SeatOutcome;
   } = {},
 ): Seat {
-  return Seat.of({
-    id: unwrap(SeatId.create(id)),
-    subject: SeatSubject.account(
-      unwrap(UserId.create(spec.who ?? GEORGI_UID)),
-      'self',
-    ),
-    serviceId: unwrap(ServiceId.create(spec.service ?? 'svc-fade')),
-    variantId: null,
-    barberId: unwrap(BarberId.create(spec.barber ?? 'barber-ivan')),
-    terms: unwrap(
-      ServiceTerms.fromMinorUnits(spec.priceMinor ?? 2750, 'EUR', 30),
-    ),
-    startsAt: sofia(startIso),
-    outcome: spec.outcome ?? SEAT_SCHEDULED,
-  });
+  const seat = visitSeat(startIso, { id, ...spec });
+  SEAT_START.set(seat, startIso);
+  return seat;
 }
 
 function appointmentOf(
   id: string,
   seats: readonly Seat[],
-  status: AppointmentStatus,
+  status: { readonly kind: VisitStatusSpec },
   locationId = 'loc-center',
 ): Appointment {
-  return unwrap(
-    Appointment.reconstitute({
-      id,
-      locationId,
-      seats: [...seats],
-      status,
-      contact: null,
-    }),
+  const first = seats[0];
+  return visitOf(
+    id,
+    locationId,
+    seats,
+    status.kind,
+    (first === undefined ? null : SEAT_START.get(first)) ??
+      '2026-10-09T10:00:00',
   );
 }
+
+const seatWorked = SeatOutcome.worked;
 
 describe('visitCardOf · the last visit, on the staff glance', () => {
   it('leads with the services and sets the DATE apart in the quiet line', () => {
@@ -251,9 +227,9 @@ describe('visitCardOf · the last visit, on the staff glance', () => {
     const photos = GEORGI_PHOTOS.filter(
       (photo) => photo.appointmentId === 'appt-aug',
     ).map((photo) => ({
-      id: photo.photoId,
+      id: photo.id as string,
       url: photo.url,
-      takenAtIso: photo.takenAtIso,
+      takenAtUtcMs: photo.takenAtUtcMs,
     }));
     const card = staffCard(visit('appt-aug'), 'last', { photos });
     expect(card.photos).toEqual([
@@ -624,7 +600,7 @@ describe('the card’s figures against a worked party the subject paid alone', (
       [
         seatOf('seat-a', '2026-09-10T10:00:00', {
           priceMinor: 3000,
-          outcome: seatWorked(sofia('2026-09-10T10:30:00').toMillis()),
+          outcome: seatWorked(sofia('2026-09-10T10:30:00')),
         }),
       ],
       { kind: 'completed' },

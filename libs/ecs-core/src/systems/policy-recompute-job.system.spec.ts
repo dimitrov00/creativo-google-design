@@ -8,7 +8,7 @@ import {
 import { type PolicyRecomputeJob, RecomputeJobName } from '@core/entities';
 import {
   PolicyRecomputeJobId,
-  UserId,
+  CustomerId,
   type EpochSeconds,
   type SubsecondNanos,
   UtcEpochMs,
@@ -28,8 +28,9 @@ import { ZonedTimeSystem } from './zoned-time.system';
  * flat job entity: every lifecycle instant a `UtcEpochMs` (`*UtcMs`), the
  * change instant the D17 halves `changedAtSeconds` + `changedAtNanos` (a
  * `PreciseInstant` value in system I/O) compared as integers, the cursor a
- * `UserId`, the verdict the SCREAMING `policyPassVerdict`. Reading an RFC
- * 3339 string (offsets, digit counts) is the edge's parse, not the
+ * `CustomerId` (a client record, D29), the verdict the SCREAMING
+ * `policyPassVerdict`. Reading an RFC 3339 string (offsets, digit counts)
+ * is the edge's parse, not the
  * system's, so those cases assert the struct order they parse to; an
  * unreadable instant is the corrupt value a zero-mapper read of a broken
  * document hands over (a cast HERE, standing for the bytes). The document
@@ -78,7 +79,7 @@ const UNREADABLE: PreciseInstant = {
   nanos: NOT_A_NUMBER,
 };
 const step = (overrides: Partial<PolicyStep> = {}): PolicyStep => ({
-  cursor: UserId.of('m'),
+  cursor: CustomerId.of('m'),
   exhausted: false,
   visited: 9,
   recomputed: 9,
@@ -101,7 +102,7 @@ describe('the job document', () => {
     const advanced = advance(
       job,
       step({
-        cursor: UserId.of('ana'),
+        cursor: CustomerId.of('ana'),
         visited: 3,
         recomputed: 2,
         failed: 1,
@@ -141,7 +142,7 @@ describe('nextStep (planPolicyJobStart)', () => {
     const midway = advance(running, step(), t(1));
     const done = advance(
       midway,
-      step({ cursor: UserId.of('z'), exhausted: true }),
+      step({ cursor: CustomerId.of('z'), exhausted: true }),
       t(2),
     );
     for (const job of [midway, done]) {
@@ -311,7 +312,7 @@ describe('stall and nudge — a stalled pass is findable and restartable', () =>
     expect(
       advance(
         stalled,
-        step({ cursor: UserId.of('z'), visited: 1, recomputed: 0 }),
+        step({ cursor: CustomerId.of('z'), visited: 1, recomputed: 0 }),
         t(3_000),
       ),
     ).toMatchObject({ stalledAtUtcMs: null, lastFailureCode: null });
@@ -344,7 +345,7 @@ describe('stall and nudge — a stalled pass is findable and restartable', () =>
     const done = advance(
       job,
       step({
-        cursor: UserId.of('z'),
+        cursor: CustomerId.of('z'),
         exhausted: true,
         visited: 1,
         recomputed: 0,
@@ -373,7 +374,7 @@ describe('sameStep and advance — one continuation per step', () => {
         fc.boolean(),
         fc.nat(50),
         (fromRaw, to, exhausted, visited) => {
-          const from = fromRaw === null ? null : UserId.of(fromRaw);
+          const from = fromRaw === null ? null : CustomerId.of(fromRaw);
           const here = {
             ...job,
             cursor: from,
@@ -384,7 +385,7 @@ describe('sameStep and advance — one continuation per step', () => {
             ),
           };
           // A step that is not the last finished a page, so its cursor moved.
-          const cursor = exhausted ? from : UserId.of(`${from ?? ''}${to}`);
+          const cursor = exhausted ? from : CustomerId.of(`${from ?? ''}${to}`);
           const next = advance(
             here,
             { cursor, exhausted, visited, recomputed: 0, failed: 0 },
@@ -402,7 +403,7 @@ describe('sameStep and advance — one continuation per step', () => {
     const next = advance(
       { ...job, storedClients: 5, recomputed: 2, failed: 1 },
       {
-        cursor: UserId.of('z'),
+        cursor: CustomerId.of('z'),
         exhausted: true,
         visited: 3,
         recomputed: 1,
@@ -419,7 +420,7 @@ describe('sameStep and advance — one continuation per step', () => {
       finishedAtUtcMs: t(7),
       stepKey: PolicyRecomputeJobSystem.stepKeyOf(
         'evt-a',
-        UserId.of('z'),
+        CustomerId.of('z'),
         t(7),
       ),
     });
@@ -438,7 +439,7 @@ describe('the line a pass draws (windowHours)', () => {
     // A step keeps it: the pass draws one line from its start to its end.
     const advanced = advance(
       job,
-      step({ cursor: UserId.of('ana'), visited: 1, recomputed: 1 }),
+      step({ cursor: CustomerId.of('ana'), visited: 1, recomputed: 1 }),
       t(1),
     );
     expect(advanced.windowHours).toBe(48);
@@ -479,7 +480,7 @@ describe('catchUp (planPolicyCatchUp) — the pass a dropped start owed', () => 
     advance(
       job,
       {
-        cursor: UserId.of('z'),
+        cursor: CustomerId.of('z'),
         exhausted: true,
         visited: 2,
         recomputed: 2,
@@ -653,7 +654,7 @@ describe('purity', () => {
     const live = deepFreeze({ updatedAt: at(5), windowHours: 48 });
     const run = () => [
       nextStep(job, deepFreeze(change('evt-b', 2)), t(3)),
-      advance(job, deepFreeze(step({ cursor: UserId.of('q') })), t(4)),
+      advance(job, deepFreeze(step({ cursor: CustomerId.of('q') })), t(4)),
       stall(job, 'internal', t(5)),
       nudge(job, t(2 * STALE_AFTER_MS)),
       catchUp(job, live, t(6), 'label'),

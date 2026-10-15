@@ -50,6 +50,8 @@ import {
   type SeatFixtureOverrides,
   appointmentFixture,
   seatFixture,
+  resolvedCustomerIds,
+  customerOf,
 } from '@core/testing';
 import {
   AppointmentEditSystem,
@@ -447,8 +449,8 @@ function visitOf(...occupants: SeatOccupant[]): Appointment {
 describe('MoveSystem — which seats the booker can move', () => {
   it('names the booker’s own seat and every anonymous guest, in seat order — never the companion', () => {
     const visit = visitOf(
-      SeatOccupant.account(OWNER, SubjectRelationship.Self),
-      SeatOccupant.account(SON, SubjectRelationship.Companion),
+      SeatOccupant.account(OWNER, customerOf(OWNER), SubjectRelationship.Self),
+      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
       guest('Мария'),
     );
     expect(
@@ -459,21 +461,23 @@ describe('MoveSystem — which seats the booker can move', () => {
 
   it('has nothing for the booker once only a companion is left — the shop moves that visit', () => {
     const visit = visitOf(
-      SeatOccupant.account(SON, SubjectRelationship.Companion),
+      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
     );
     expect(MoveSystem.seatsTheBookerCanMove(visit, OWNER)).toEqual([]);
     expect(MoveSystem.hasSeatTheBookerCanMove(visit, OWNER)).toBe(false);
   });
 
   it('does not hand the booker a `SELF` seat that belongs to another account', () => {
-    const visit = visitOf(SeatOccupant.account(SON, SubjectRelationship.Self));
+    const visit = visitOf(
+      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Self),
+    );
     expect(MoveSystem.hasSeatTheBookerCanMove(visit, OWNER)).toBe(false);
   });
 
   it('measures a move from the booker’s EARLIEST seat — a companion going first does not move the anchor', () => {
     const visit = visitOf(
-      SeatOccupant.account(SON, SubjectRelationship.Companion),
-      SeatOccupant.account(OWNER, SubjectRelationship.Self),
+      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
+      SeatOccupant.account(OWNER, customerOf(OWNER), SubjectRelationship.Self),
       guest('Мария'),
     );
     expect(MoveSystem.moveAnchor(visit, OWNER)).toBe(at(11));
@@ -481,16 +485,16 @@ describe('MoveSystem — which seats the booker can move', () => {
 
   it('has no anchor when nothing is the booker’s', () => {
     const visit = visitOf(
-      SeatOccupant.account(SON, SubjectRelationship.Companion),
+      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
     );
     expect(MoveSystem.moveAnchor(visit, OWNER)).toBeNull();
   });
 
   it('agrees with the per-seat rule, seat for seat', () => {
     const visit = visitOf(
-      SeatOccupant.account(OWNER, SubjectRelationship.Self),
-      SeatOccupant.account(SON, SubjectRelationship.Self),
-      SeatOccupant.account(SON, SubjectRelationship.Companion),
+      SeatOccupant.account(OWNER, customerOf(OWNER), SubjectRelationship.Self),
+      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Self),
+      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
       guest('Гост 1'),
     );
     expect(MoveSystem.seatsTheBookerCanMove(visit, OWNER)).toEqual([
@@ -550,8 +554,8 @@ describe('MoveSystem.release — what a move hands back before it re-places the 
 describe('MoveSystem.facts — what the booking flow decides a move with', () => {
   it('carries the shop’s seats by their distance from the anchor, on their sold terms, and every chair', () => {
     const visit = visitOf(
-      SeatOccupant.account(OWNER, SubjectRelationship.Self),
-      SeatOccupant.account(SON, SubjectRelationship.Companion),
+      SeatOccupant.account(OWNER, customerOf(OWNER), SubjectRelationship.Self),
+      SeatOccupant.account(SON, customerOf(SON), SubjectRelationship.Companion),
     );
     const facts = MoveSystem.facts(visit, OWNER);
     expect(facts?.riders).toEqual([
@@ -568,7 +572,13 @@ describe('MoveSystem.facts — what the booking flow decides a move with', () =>
     expect(facts?.release).toEqual(MoveSystem.release(visit));
     expect(
       MoveSystem.facts(
-        visitOf(SeatOccupant.account(SON, SubjectRelationship.Companion)),
+        visitOf(
+          SeatOccupant.account(
+            SON,
+            customerOf(SON),
+            SubjectRelationship.Companion,
+          ),
+        ),
         OWNER,
       ),
     ).toBeNull();
@@ -603,7 +613,11 @@ function party(
         barberId: IVAN,
         barberPreference: BarberPreference.Specific,
         startMinutes: at(10),
-        occupant: SeatOccupant.account(OWNER, SubjectRelationship.Self),
+        occupant: SeatOccupant.account(
+          OWNER,
+          customerOf(OWNER),
+          SubjectRelationship.Self,
+        ),
       }),
       seat('seat-son', {
         serviceId: BEARD,
@@ -613,7 +627,11 @@ function party(
         terms: Seat.termsOf(terms(1500, 30), null),
         occupant:
           sonOccupant ??
-          SeatOccupant.account(SON, SubjectRelationship.Companion),
+          SeatOccupant.account(
+            SON,
+            customerOf(SON),
+            SubjectRelationship.Companion,
+          ),
       }),
     ],
   });
@@ -681,7 +699,11 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
   });
 
   it('carries a `SELF` seat bound to ANOTHER account — `SELF` alone is not the owner’s', () => {
-    const foreignSelf = SeatOccupant.account(SON, SubjectRelationship.Self);
+    const foreignSelf = SeatOccupant.account(
+      SON,
+      customerOf(SON),
+      SubjectRelationship.Self,
+    );
     const planned = unwrapOk(plan(party(55, foreignSelf), [cartSeat(at(14))]));
     expect(planned.replaced.map((s) => s.seatId)).toEqual(['seat-father']);
     expect(planned.carried.map((line) => SeatOccupant.of(line.seat))).toEqual([
@@ -967,6 +989,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
         startUtcMs: utcMs('2026-09-28T14:00:00+03:00'),
         nextId: () => `seat-${counter++}`,
         ownerUserId: OWNER,
+        customerIds: resolvedCustomerIds([OWNER, SON]),
         termsOverrides: planned.carried.map((line) =>
           StaffTermsOverride.of(SeatKeyText.of(line.lineId), line.terms),
         ),
@@ -980,7 +1003,11 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
   it('seats that foreign `SELF` BESIDE the owner at the new time — two accounts, two chairs, not one person twice', () => {
     // Side by side with Petar. The rebuilt owner seat and the carried one
     // both said `SELF`; the person is the ACCOUNT, so they are two people.
-    const foreignSelf = SeatOccupant.account(SON, SubjectRelationship.Self);
+    const foreignSelf = SeatOccupant.account(
+      SON,
+      customerOf(SON),
+      SubjectRelationship.Self,
+    );
     const planned = unwrapOk(plan(party(0, foreignSelf), [cartSeat(at(14))]));
     const carriedSon = planned.carried[0];
     expect(

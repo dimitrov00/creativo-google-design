@@ -1,4 +1,4 @@
-import { CalendarDay, DateRange } from '@creativo/application/booking';
+import { CalendarDay } from '@creativo/application/booking';
 import { LocalDate, defect } from '@core/primitives';
 import { CalendarGridSystem } from '@core/systems';
 
@@ -150,22 +150,4 @@ export function buildAvailabilityMonths(input: {
     cursor = cursor.endOfMonth().next();
   }
   return months;
-}
-
-/**
- * The range the capacity query should cover — today through the horizon.
- *
- * One range for the WHOLE run rather than one per visible month: the scroller
- * renders every month at once, so a per-month query would fire a handful of
- * overlapping listeners for a span the reader can answer in one. It is
- * clipped to the horizon because the projection is one document read per
- * barber per day, and a day nobody may book can only ever answer "no".
- */
-export function horizonQueryRange(
-  today: CalendarDay,
-  horizonEnd: CalendarDay,
-): DateRange | null {
-  if (horizonEnd.isBefore(today)) return null;
-  const range = DateRange.create(today, horizonEnd);
-  return range.isSuccess() ? range.value : null;
 }

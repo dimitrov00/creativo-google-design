@@ -1,25 +1,28 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { BarberId, ServiceId } from '@creativo/application/catalog';
-import { InMemoryClientHistoryReader } from '@creativo/application/booking/testing';
+import type { ClientStatsRecord } from '@core/entities';
+import type { ClientStatsReadPorts } from '@core/ports';
+import { BarberId, ServiceId } from '@core/primitives';
+import { memoryAppointmentReadPorts } from '@core/testing';
 import {
   InMemoryLoyaltyCatalogReader,
   InMemoryLoyaltyReader,
   loyaltyFixtures,
 } from '@creativo/application/engagement/testing';
-import type { ClientStatsRecord, Result } from '@creativo/application/booking';
 import {
   GEORGI,
   MARTIN,
-  InMemoryStatsReader,
   georgiContext,
   georgiHistory,
+  historyPortsOf,
   martinContext,
   martinHistory,
   must,
   statsOf,
+  statsPortsOf,
   subjectOf,
+  wallOf,
 } from '../../testing/client-card.fixtures';
 import {
   HeldCatalogReader,
@@ -40,19 +43,14 @@ import { ClientRecordsPage } from './client-records';
  * (`records.presenter.spec.ts`).
  */
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error(JSON.stringify(result.error));
-  return result.value;
-}
-
 /** Георги's stats with one edit: what the book names and the seed does not. */
-function statsWith(overrides: Partial<ClientStatsRecord>): InMemoryStatsReader {
-  return new InMemoryStatsReader(
-    new Map([
-      [GEORGI, { ...statsOf(GEORGI, georgiHistory()), ...overrides }],
-      [MARTIN, statsOf(MARTIN, martinHistory())],
-    ]),
-  );
+function statsWith(
+  overrides: Partial<ClientStatsRecord>,
+): ClientStatsReadPorts {
+  return statsPortsOf([
+    { ...statsOf(GEORGI, georgiHistory()), ...overrides },
+    statsOf(MARTIN, martinHistory()),
+  ]);
 }
 
 /** A client with an account and no record yet, no visit, no rhythm. */
@@ -68,9 +66,23 @@ function nobodyYet(): Pick<MountOptions, 'rig'> {
           seasonProgress: {},
         } as typeof georgi,
       }),
-      stats: new InMemoryStatsReader(new Map()),
-      history: new InMemoryClientHistoryReader([]),
+      stats: statsPortsOf([]),
+      history: historyPortsOf([]),
     },
+  };
+}
+
+/** The two books, read ten at a time — older pages remain after the first. */
+function pagesOfTen() {
+  const inner = memoryAppointmentReadPorts([
+    ...georgiHistory(),
+    ...martinHistory(),
+  ]);
+  return {
+    ...inner,
+    pageClientHistory: (
+      ...[subject, before]: Parameters<typeof inner.pageClientHistory>
+    ) => inner.pageClientHistory(subject, before, 10),
   };
 }
 
@@ -289,10 +301,10 @@ describe('ClientRecordsPage — Георги', () => {
     const { row, groups } = await mount({
       rig: {
         stats: statsWith({
-          preferredBarberId: unwrap(BarberId.create('ivan')),
+          preferredBarberId: BarberId.of('ivan'),
           usualServiceIds: [
-            unwrap(ServiceId.create('svc-fade')),
-            unwrap(ServiceId.create('svc-beard')),
+            ServiceId.of('svc-fade'),
+            ServiceId.of('svc-beard'),
           ],
         }),
       },
@@ -377,7 +389,8 @@ describe('ClientRecordsPage — Георги', () => {
           } as typeof georgi,
         }),
         stats: statsWith({
-          firstVisitAtMs: Date.parse('2025-05-14T10:00:00+03:00'),
+          firstVisitLocalDate: wallOf('2025-05-14T10:00:00').localDate,
+          firstVisitStartMinutes: wallOf('2025-05-14T10:00:00').minute,
         }),
       },
     });
@@ -614,14 +627,7 @@ describe('ClientRecordsPage — states', () => {
   it('leaves «По години» out while older pages of the history are still to be read, so a year is never under-counted', async () => {
     const { byId, store } = await mount({
       rig: {
-        history: new (class extends InMemoryClientHistoryReader {
-          override pageForSubject(
-            userId: string,
-            page: { readonly beforeIso: string | null; readonly limit: number },
-          ) {
-            return super.pageForSubject(userId, { ...page, limit: 10 });
-          }
-        })([...georgiHistory(), ...martinHistory()]),
+        history: pagesOfTen(),
       },
     });
     expect(store.historyComplete()).toBe(false);

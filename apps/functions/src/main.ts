@@ -4,9 +4,30 @@ import {
   onDocumentWrittenWithAuthContext,
 } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { UtcEpochMs } from '@core/primitives';
+import { type Result, UtcEpochMs } from '@core/primitives';
 import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
-import { Callables, type NowUtcMs } from '@core/ports';
+import { type CallableName, Callables, type NowUtcMs } from '@core/ports';
+import {
+  auditProfileChange,
+  bookAppointment,
+  cancelAppointment as cancelAppointmentPipeline,
+  cancelWaitlist as cancelWaitlistPipeline,
+  continuePolicyRecompute,
+  editAppointment,
+  markArrival,
+  matchWaitlist,
+  projectClientStats,
+  rebuildBusy,
+  rebuildCapacity,
+  recordSeatTip as recordSeatTipPipeline,
+  requestWaitlist as requestWaitlistPipeline,
+  rescheduleAppointment as rescheduleAppointmentPipeline,
+  runBackfill as runBackfillPipeline,
+  sampleLeadTime,
+  startPolicyRecompute,
+  sweepPolicyRecompute,
+  transitionAppointment as transitionAppointmentPipeline,
+} from '@core/pipelines';
 import { authClaimsPorts } from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
 import { consoleTelemetry } from './adapters/console-telemetry.adapter';
@@ -16,52 +37,104 @@ import {
   fixedCodeOtpCrypto,
   nodeOtpCrypto,
 } from './adapters/otp-crypto.adapter';
-import { legacyCallable } from './edge';
+import {
+  callableEdge,
+  type EdgeCode,
+  type EdgeError,
+  type EdgePorts,
+  LegacyWireCode,
+  legacyCallable,
+  retryingTrigger,
+  WIRE_ZONE,
+} from './edge';
 import { adminAuth, adminFirestore } from './lib/firebase-admin';
 // Every schedule runs on the tenant's wall clock (flatten-spec F-4: the zone
 // left TenantConfig; the functions say it in one place).
 import { TENANT_ZONE } from './lib/booking/tenant-zone';
-// Today's handlers. Phase 3a: every export below still runs one of these;
-// each 3b flip replaces its rows with an edge over its pipelines and
-// deletes the handler (blueprint §6 Phase 3, deletion rule).
+import {
+  arrivalRefusal,
+  cancelAppointmentRefusal,
+  commitBookingRefusal,
+  decodeCancelAppointment,
+  decodeClearArrival,
+  decodeCommitBooking,
+  decodeMarkArrived,
+  decodeRecordSeatTip,
+  decodeRescheduleAppointment,
+  decodeStaffEditAppointment,
+  decodeTransitionAppointment,
+  encodeCancelAppointmentAnswer,
+  encodeClearArrivalAnswer,
+  encodeCommitBookingAnswer,
+  encodeMarkArrivedAnswer,
+  encodeRecordSeatTipAnswer,
+  encodeRescheduleAppointmentAnswer,
+  encodeStaffEditAppointmentAnswer,
+  encodeTransitionAppointmentAnswer,
+  recordSeatTipRefusal,
+  rescheduleAppointmentRefusal,
+  settle,
+  staffEditAppointmentRefusal,
+  transitionAppointmentRefusal,
+  type WireRequest,
+} from './wire/booking.wire';
+import {
+  decodeRunBackfill,
+  encodeRunBackfillAnswer,
+  RUN_BACKFILL_TIMEOUT_SECONDS,
+} from './wire/ops.wire';
+import {
+  CapacitySource,
+  decodeCapacityEvent,
+  decodeDispatchProjectionsEvent,
+  decodeLeadTimeRun,
+  decodeMatchWaitlistEvent,
+  decodePolicyRecomputeEvent,
+  decodePolicyStepEvent,
+  decodePolicySweepRun,
+  decodeProfileChangeEvent,
+  decodeRebuildBusyEvent,
+  failOnRefusal,
+  POLICY_STEP_TIMEOUT_SECONDS,
+  profileAuditReport,
+  projectionReport,
+  settleAttempt,
+} from './wire/triggers.wire';
+import {
+  decodeCancelWaitlist,
+  decodeRequestWaitlist,
+  encodeCancelWaitlistAnswer,
+  encodeRequestWaitlistAnswer,
+} from './wire/waitlist.wire';
+// The handlers no flip has reached yet — identity's OTP trio (flip 4) and
+// the streak publish (flip 5) — still run today's `lib/**` code.
 import * as requestOtp from './lib/otp/request-otp';
 import * as verifyOtp from './lib/otp/verify-otp';
 import * as completeRegistrationHandler from './lib/otp/complete-registration';
-import * as commitBookingHandler from './lib/booking/commit-booking';
-import * as cancelAppointmentHandler from './lib/booking/cancel-appointment';
-import * as rescheduleAppointmentHandler from './lib/booking/reschedule-appointment';
-import * as auditProfile from './lib/booking/audit-profile-changes';
-import * as transitionAppointmentHandler from './lib/booking/transition-appointment';
-import * as markArrivedHandler from './lib/booking/mark-arrived';
-import * as clearArrivalHandler from './lib/booking/clear-arrival';
-import * as recordSeatTipHandler from './lib/booking/record-seat-tip';
-import * as staffEditAppointmentHandler from './lib/booking/staff-edit-appointment';
-import * as rebuildBusy from './lib/booking/rebuild-busy';
-import * as rebuildCapacity from './lib/booking/rebuild-capacity';
-import * as sampleLeadTime from './lib/booking/sample-lead-time';
-import * as requestWaitlistHandler from './lib/booking/request-waitlist';
-import * as cancelWaitlistHandler from './lib/booking/cancel-waitlist';
-import * as matchWaitlist from './lib/booking/match-waitlist';
-import * as dispatchProjections from './lib/clients/dispatch-client-projections';
-import * as policyRecompute from './lib/clients/recompute-on-policy-change';
-import * as runBackfillHandler from './lib/ops/run-backfill';
 import * as publishStreak from './lib/loyalty/publish-streak-definition';
 
 /**
  * THE COMPOSITION ROOT (blueprint §4.3, D1(a)) — the only place in the
  * backend that constructs ports. It builds the adapters once per cold start,
- * assembles the port bundles, and wraps each use case in `onCall` /
- * `onDocument*` / `onSchedule` through the edge (`edge.ts`), where a
- * `Result.err` becomes an `HttpsError`. A handler here holds no logic.
+ * assembles the port bundles, and wraps each pipeline in `onCall` /
+ * `onDocument*` / `onSchedule` through the edge (`edge.ts`) and the frozen
+ * wire (`wire/*.wire.ts`): a decoder turns today's JSON or event into the
+ * pipeline's command, an encoder turns its answer into today's JSON, and a
+ * `Result.err` becomes an `HttpsError` (callables) or an attempt line
+ * (triggers). A handler here holds no logic.
  *
  * The 29 exports keep their names, trigger paths and options exactly — the
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
  * `verify:p0` exercises; the options (retry, memory, timeouts, schedules)
- * are copied from today's `lib/**` definitions, which no export sets a
- * region, secret or App Check on. `main.spec.ts` proves every endpoint
- * equals the one its legacy definition declares, that each export runs
- * exactly its own handler (and no other), and that each callable reports
- * an unexpected throw under its own name.
+ * are the ones the legacy definitions declared, which no export sets a
+ * region, secret or App Check on. `main.spec.ts` pins every endpoint as a
+ * literal table, proves each flip-1 export runs exactly its own pipeline
+ * (and no other), and that each callable reports an unexpected throw under
+ * its own name.
+ *
+ * Flip 1 (booking core) moved the 25 booking, capacity, waitlist,
+ * projection, audit and backfill exports onto their pipelines; the four
+ * handlers above are the remaining Phase 3a rows.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -92,19 +165,33 @@ const nowUtcMs: NowUtcMs = () => {
 /** The clock and the two digests every pipeline hands its systems. */
 const primitives = { nowUtcMs, ...cryptoPorts() };
 
+/** What the edge itself reads: telemetry and the clock. */
+const edge: EdgePorts = { ...telemetry, nowUtcMs };
+
 /**
- * The port bundles. Body-free ones need no SDK client and are built now;
- * the Firestore, Auth and OTP bundles are built on their first use, as
- * today's handlers reach `adminFirestore()`, `adminAuth()` and the emulator
- * gate only when invoked — so loading this module (a deploy's discovery, a
- * spec) never initialises the Admin SDK. Phase 3a reads only `telemetry`:
- * every export still delegates to today's handler, and each 3b flip wires
- * its pipelines to these bundles.
+ * The server's ports, in one bundle: every Firestore-backed port, the
+ * telemetry, and the tenant's zone (`WIRE_ZONE`, the one place the
+ * functions say it). Built on first use, as today's handlers reached
+ * `adminFirestore()` only when invoked — loading this module (a deploy's
+ * discovery, a spec) never initialises the Admin SDK.
+ */
+const serverPorts = once(() => ({
+  ...firestorePorts(adminFirestore(), primitives, telemetry),
+  ...telemetry,
+  tenantTimeZone: WIRE_ZONE,
+}));
+
+type ServerPorts = ReturnType<typeof serverPorts>;
+
+/**
+ * The port bundles. The Auth and OTP bundles wait for the identity flip;
+ * they are built on first use for the same reason as the server ports.
  */
 const root = {
   telemetry,
   primitives,
-  firestore: once(() => firestorePorts(adminFirestore(), primitives)),
+  edge,
+  ports: serverPorts,
   auth: once(() => authClaimsPorts(adminAuth())),
   otp: once(() => ({
     // The login-OTP sender identity — never a campaign sender.
@@ -117,6 +204,37 @@ const root = {
         : nodeOtpCrypto(),
   })),
 } as const;
+
+/**
+ * One booking callable: today's JSON decoded into the command (or refused
+ * as today), the pipeline run over the server ports, its answer encoded
+ * and its refusal spelt in the callable's own words. `failureCode` is what
+ * an infrastructure failure answers with — today's coded
+ * `booking.commit.store_failed` where the legacy handler coded it, else the
+ * platform's bare INTERNAL.
+ */
+function bookingCallable<C, A, E, Out>(
+  callable: CallableName,
+  failureCode: EdgeCode | null,
+  decode: (request: WireRequest) => Result<C, EdgeError>,
+  run: (ports: ServerPorts, cmd: C) => Promise<Result<A, E>>,
+  encode: (answer: A) => Out,
+  refuse: (error: E, cmd: C) => EdgeError,
+) {
+  return onCall(
+    callableEdge<unknown, Out>(
+      { callable, failureCode, timeoutSeconds: null, answer: null },
+      root.edge,
+      async (request) => {
+        const cmd = decode(request);
+        if (!cmd.ok) return cmd;
+        return settle(await run(root.ports(), cmd.value), encode, (error) =>
+          refuse(error, cmd.value),
+        );
+      },
+    ),
+  );
+}
 
 // ── Trigger paths, spelled through the collection registry ────────────────
 
@@ -132,15 +250,12 @@ const POLICY_RECOMPUTE_JOB_DOC =
 
 /**
  * The two handlers whose input is the size of the book take a long timeout
- * and the larger instance, as today — the timeouts read from the handlers
- * that budget their own work by them, so the two can never disagree.
+ * and the larger instance, as today — the timeouts read from the wire that
+ * budgets their work by them, so the two can never disagree.
  */
-const RUN_BACKFILL_TIMEOUT_SECONDS =
-  runBackfillHandler.RUN_BACKFILL_TIMEOUT_SECONDS;
-const POLICY_STEP_TIMEOUT_SECONDS = policyRecompute.POLICY_STEP_TIMEOUT_SECONDS;
 const LARGE_MEMORY = '512MiB';
 
-// ── Identity ──────────────────────────────────────────────────────────────
+// ── Identity (Phase 3a rows) ──────────────────────────────────────────────
 
 export const requestOtpChallenge = onCall(
   legacyCallable(Callables.RequestOtpChallenge, root.telemetry, (request) =>
@@ -160,135 +275,252 @@ export const completeRegistration = onCall(
   ),
 );
 
+const AUDIT_PROFILE_FN = 'auditProfileChanges';
+
+/** Every profile change becomes an audit row — whatever wrote it, named by the auth context. */
 export const auditProfileChanges = onDocumentWrittenWithAuthContext(
   { document: USER_DOC, retry: true },
-  (event) => auditProfile.auditProfileChanges.run(event),
+  retryingTrigger(
+    { fn: AUDIT_PROFILE_FN, timeoutSeconds: null },
+    root.edge,
+    async (event: Parameters<typeof decodeProfileChangeEvent>[0]) => {
+      const answer = await auditProfileChange(root.ports())(
+        decodeProfileChangeEvent(event),
+      );
+      settleAttempt(
+        AUDIT_PROFILE_FN,
+        event,
+        profileAuditReport(answer),
+        root.edge,
+      );
+    },
+  ),
 );
 
 // ── Booking ───────────────────────────────────────────────────────────────
 
-export const commitBooking = onCall(
-  legacyCallable(Callables.CommitBooking, root.telemetry, (request) =>
-    commitBookingHandler.commitBooking.run(request),
-  ),
+export const commitBooking = bookingCallable(
+  Callables.CommitBooking,
+  LegacyWireCode.CommitStoreFailed,
+  decodeCommitBooking,
+  (ports, cmd) => bookAppointment(ports)(cmd),
+  encodeCommitBookingAnswer,
+  commitBookingRefusal,
 );
 
-export const cancelAppointment = onCall(
-  legacyCallable(Callables.CancelAppointment, root.telemetry, (request) =>
-    cancelAppointmentHandler.cancelAppointment.run(request),
-  ),
+export const cancelAppointment = bookingCallable(
+  Callables.CancelAppointment,
+  null,
+  decodeCancelAppointment,
+  (ports, cmd) => cancelAppointmentPipeline(ports)(cmd),
+  encodeCancelAppointmentAnswer,
+  cancelAppointmentRefusal,
 );
 
-export const rescheduleAppointment = onCall(
-  legacyCallable(Callables.RescheduleAppointment, root.telemetry, (request) =>
-    rescheduleAppointmentHandler.rescheduleAppointment.run(request),
-  ),
+export const rescheduleAppointment = bookingCallable(
+  Callables.RescheduleAppointment,
+  LegacyWireCode.CommitStoreFailed,
+  decodeRescheduleAppointment,
+  (ports, cmd) => rescheduleAppointmentPipeline(ports)(cmd),
+  encodeRescheduleAppointmentAnswer,
+  rescheduleAppointmentRefusal,
 );
 
-export const transitionAppointment = onCall(
-  legacyCallable(Callables.TransitionAppointment, root.telemetry, (request) =>
-    transitionAppointmentHandler.transitionAppointment.run(request),
-  ),
+export const transitionAppointment = bookingCallable(
+  Callables.TransitionAppointment,
+  null,
+  decodeTransitionAppointment,
+  (ports, cmd) => transitionAppointmentPipeline(ports)(cmd),
+  encodeTransitionAppointmentAnswer,
+  transitionAppointmentRefusal,
 );
 
-export const markArrived = onCall(
-  legacyCallable(Callables.MarkArrived, root.telemetry, (request) =>
-    markArrivedHandler.markArrived.run(request),
-  ),
+export const markArrived = bookingCallable(
+  Callables.MarkArrived,
+  null,
+  decodeMarkArrived,
+  (ports, cmd) => markArrival(ports)(cmd),
+  encodeMarkArrivedAnswer,
+  (error) => arrivalRefusal(error, 'arrived'),
 );
 
-export const clearArrival = onCall(
-  legacyCallable(Callables.ClearArrival, root.telemetry, (request) =>
-    clearArrivalHandler.clearArrival.run(request),
-  ),
+export const clearArrival = bookingCallable(
+  Callables.ClearArrival,
+  null,
+  decodeClearArrival,
+  (ports, cmd) => markArrival(ports)(cmd),
+  encodeClearArrivalAnswer,
+  (error) => arrivalRefusal(error, 'unarrived'),
 );
 
-export const recordSeatTip = onCall(
-  legacyCallable(Callables.RecordSeatTip, root.telemetry, (request) =>
-    recordSeatTipHandler.recordSeatTip.run(request),
-  ),
+export const recordSeatTip = bookingCallable(
+  Callables.RecordSeatTip,
+  null,
+  decodeRecordSeatTip,
+  (ports, cmd) => recordSeatTipPipeline(ports)(cmd),
+  encodeRecordSeatTipAnswer,
+  recordSeatTipRefusal,
 );
 
-export const staffEditAppointment = onCall(
-  legacyCallable(Callables.StaffEditAppointment, root.telemetry, (request) =>
-    staffEditAppointmentHandler.staffEditAppointment.run(request),
-  ),
+export const staffEditAppointment = bookingCallable(
+  Callables.StaffEditAppointment,
+  LegacyWireCode.CommitStoreFailed,
+  decodeStaffEditAppointment,
+  (ports, cmd) => editAppointment(ports)(cmd),
+  encodeStaffEditAppointmentAnswer,
+  staffEditAppointmentRefusal,
 );
 
+/** Both sides of an appointment write re-derive the busy days they touch (a reschedule frees one, fills another). */
 export const rebuildBusyOnAppointmentChange = onDocumentWritten(
   APPOINTMENT_DOC,
-  (event) => rebuildBusy.rebuildBusyOnAppointmentChange.run(event),
+  async (event) => {
+    failOnRefusal(
+      await rebuildBusy(root.ports())(decodeRebuildBusyEvent(event)),
+    );
+  },
 );
 
 // ── Capacity (one projection, five triggers and a sweep) ──────────────────
 
+/** One capacity entry point: its write decoded to the rebuild's scope (none: nothing to do). */
+async function rebuildCapacityFrom(
+  source: CapacitySource,
+  params?: { readonly docId?: string; readonly barberId?: string },
+): Promise<void> {
+  const cmd = decodeCapacityEvent(source, params);
+  if (cmd === null) return;
+  failOnRefusal(await rebuildCapacity(root.ports())(cmd));
+}
+
 export const rebuildCapacityOnBusyChange = onDocumentWritten(
   BUSY_DOC,
-  (event) => rebuildCapacity.rebuildCapacityOnBusyChange.run(event),
+  (event) => rebuildCapacityFrom(CapacitySource.BusyDay, event.params),
 );
 
 export const rebuildCapacityOnExceptionChange = onDocumentWritten(
   EXCEPTION_DOC,
-  (event) => rebuildCapacity.rebuildCapacityOnExceptionChange.run(event),
+  (event) => rebuildCapacityFrom(CapacitySource.Exception, event.params),
 );
 
 export const rebuildCapacityOnRosterChange = onDocumentWritten(
   SCHEDULE_DOC,
-  (event) => rebuildCapacity.rebuildCapacityOnRosterChange.run(event),
+  (event) => rebuildCapacityFrom(CapacitySource.Roster, event.params),
 );
 
+/** Hours clamp every window: a shop's edit re-sweeps rather than wait for 03:00. */
 export const rebuildCapacityOnLocationChange = onDocumentWritten(
   LOCATION_DOC,
-  (event) => rebuildCapacity.rebuildCapacityOnLocationChange.run(event),
+  () => rebuildCapacityFrom(CapacitySource.Location),
 );
 
+/** The policy IS the horizon: its edit re-sweeps too. */
 export const rebuildCapacityOnSettingsChange = onDocumentWritten(
   SETTINGS_DOC,
-  (event) => rebuildCapacity.rebuildCapacityOnSettingsChange.run(event),
+  () => rebuildCapacityFrom(CapacitySource.Settings),
 );
 
 /** 03:00 on the tenant's clock — after the shop's day, before anyone books breakfast. */
 export const sweepCapacityDaily = onSchedule(
   { schedule: 'every day 03:00', timeZone: TENANT_ZONE, retryCount: 3 },
-  (event) => rebuildCapacity.sweepCapacityDaily.run(event),
+  () => rebuildCapacityFrom(CapacitySource.Sweep),
 );
 
 /** 04:00 — an hour after the capacity sweep, so it samples a repaired rollup. */
 export const sampleBarberLeadTimeDaily = onSchedule(
   { schedule: 'every day 04:00', timeZone: TENANT_ZONE, retryCount: 3 },
-  (event) => sampleLeadTime.sampleBarberLeadTimeDaily.run(event),
+  async () => {
+    failOnRefusal(await sampleLeadTime(root.ports())(decodeLeadTimeRun()));
+  },
 );
 
 // ── Waitlist ──────────────────────────────────────────────────────────────
 
 export const requestWaitlist = onCall(
-  legacyCallable(Callables.RequestWaitlist, root.telemetry, (request) =>
-    requestWaitlistHandler.requestWaitlist.run(request),
+  callableEdge(
+    {
+      callable: Callables.RequestWaitlist,
+      failureCode: null,
+      timeoutSeconds: null,
+      answer: null,
+    },
+    root.edge,
+    async (request) =>
+      encodeRequestWaitlistAnswer(
+        await requestWaitlistPipeline(root.ports())(
+          decodeRequestWaitlist(request),
+        ),
+      ),
   ),
 );
 
 export const cancelWaitlist = onCall(
-  legacyCallable(Callables.CancelWaitlist, root.telemetry, (request) =>
-    cancelWaitlistHandler.cancelWaitlist.run(request),
+  callableEdge(
+    {
+      callable: Callables.CancelWaitlist,
+      failureCode: null,
+      timeoutSeconds: null,
+      answer: null,
+    },
+    root.edge,
+    async (request) =>
+      encodeCancelWaitlistAnswer(
+        await cancelWaitlistPipeline(root.ports())(
+          decodeCancelWaitlist(request),
+        ),
+      ),
   ),
 );
 
-export const matchWaitlistOnBusyChange = onDocumentWritten(BUSY_DOC, (event) =>
-  matchWaitlist.matchWaitlistOnBusyChange.run(event),
+/** A busy day freed (or deleted — the strongest freeing) wakes the people watching it. */
+export const matchWaitlistOnBusyChange = onDocumentWritten(
+  BUSY_DOC,
+  async (event) => {
+    const cmd = decodeMatchWaitlistEvent(event);
+    if (cmd === null) return;
+    failOnRefusal(await matchWaitlist(root.ports())(cmd));
+  },
 );
 
 // ── Client projections ────────────────────────────────────────────────────
 
+const DISPATCH_FN = 'dispatchClientProjections';
+const POLICY_START_FN = 'recomputeClientStatsOnPolicyChange';
+const POLICY_STEP_FN = 'continueClientStatsPolicyRecompute';
+const POLICY_SWEEP_FN = 'sweepClientStatsPolicyDaily';
+
+/** The client records follow the appointments: everybody a write moved, re-projected. */
 export const dispatchClientProjections = onDocumentWritten(
   { document: APPOINTMENT_DOC, retry: true },
-  (event) => dispatchProjections.dispatchClientProjections.run(event),
+  retryingTrigger(
+    { fn: DISPATCH_FN, timeoutSeconds: null },
+    root.edge,
+    async (event: Parameters<typeof decodeDispatchProjectionsEvent>[0]) => {
+      const answer = await projectClientStats(root.ports())(
+        decodeDispatchProjectionsEvent(event),
+      );
+      settleAttempt(DISPATCH_FN, event, projectionReport(answer), root.edge);
+    },
+  ),
 );
 
+/** A settings write that moved the late line (re)starts the policy pass — one transaction. */
 export const recomputeClientStatsOnPolicyChange = onDocumentWritten(
   { document: SETTINGS_DOC, retry: true },
-  (event) => policyRecompute.recomputeClientStatsOnPolicyChange.run(event),
+  retryingTrigger(
+    { fn: POLICY_START_FN, timeoutSeconds: null },
+    root.edge,
+    async (event: Parameters<typeof decodePolicyRecomputeEvent>[0]) => {
+      failOnRefusal(
+        await startPolicyRecompute(root.ports())(
+          decodePolicyRecomputeEvent(event),
+        ),
+      );
+    },
+  ),
 );
 
+/** The pass itself, a budgeted step per write of its job document. */
 export const continueClientStatsPolicyRecompute = onDocumentWritten(
   {
     document: POLICY_RECOMPUTE_JOB_DOC,
@@ -296,21 +528,53 @@ export const continueClientStatsPolicyRecompute = onDocumentWritten(
     timeoutSeconds: POLICY_STEP_TIMEOUT_SECONDS,
     memory: LARGE_MEMORY,
   },
-  (event) => policyRecompute.continueClientStatsPolicyRecompute.run(event),
+  retryingTrigger(
+    { fn: POLICY_STEP_FN, timeoutSeconds: POLICY_STEP_TIMEOUT_SECONDS },
+    root.edge,
+    async (event: Parameters<typeof decodePolicyStepEvent>[0], budget) => {
+      const step = await continuePolicyRecompute(root.ports())(
+        decodePolicyStepEvent(event),
+        budget,
+      );
+      if (step.ok) settleAttempt(POLICY_STEP_FN, event, step.value, root.edge);
+    },
+  ),
 );
 
-/** 03:30 — between the capacity sweep and the lead-time sample. */
+/** 03:30 — between the capacity sweep and the lead-time sample: a dropped start started, a stalled pass nudged. */
 export const sweepClientStatsPolicyDaily = onSchedule(
   { schedule: 'every day 03:30', timeZone: TENANT_ZONE, retryCount: 3 },
-  (event) => policyRecompute.sweepClientStatsPolicyDaily.run(event),
+  (tick) =>
+    retryingTrigger(
+      { fn: POLICY_SWEEP_FN, timeoutSeconds: null },
+      root.edge,
+      async (run) => {
+        const swept = await sweepPolicyRecompute(root.ports())();
+        if (swept.ok)
+          settleAttempt(POLICY_SWEEP_FN, run, swept.value, root.edge);
+      },
+    )(decodePolicySweepRun(tick, POLICY_SWEEP_FN)),
 );
 
 // ── Operations and loyalty ────────────────────────────────────────────────
 
 export const runBackfill = onCall(
   { timeoutSeconds: RUN_BACKFILL_TIMEOUT_SECONDS, memory: LARGE_MEMORY },
-  legacyCallable(Callables.RunBackfill, root.telemetry, (request) =>
-    runBackfillHandler.runBackfill.run(request),
+  callableEdge(
+    {
+      callable: Callables.RunBackfill,
+      failureCode: null,
+      timeoutSeconds: RUN_BACKFILL_TIMEOUT_SECONDS,
+      answer: null,
+    },
+    root.edge,
+    async (request, budget) =>
+      encodeRunBackfillAnswer(
+        await runBackfillPipeline(root.ports())(
+          decodeRunBackfill(request),
+          budget,
+        ),
+      ),
   ),
 );
 

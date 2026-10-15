@@ -3,6 +3,7 @@ import type {
   AppointmentId,
   AppointmentPhotoId,
   BarberId,
+  CustomerId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
@@ -18,8 +19,12 @@ export type AppointmentPhoto = {
   readonly id: AppointmentPhotoId;
   readonly appointmentId: AppointmentId;
   readonly barberId: BarberId;
-  /** The client the photo shows — a uid until the appointment flip (1) adds `clientCustomerId` (D29). */
-  readonly clientUserId: UserId | null;
+  /**
+   * The client record the photo shows (D29, flatten-spec §5.4) — the client
+   * card's photo strip (`clientCustomerId ==`, `takenAtUtcMs desc`, index
+   * #22); `null` for a guest seat with no record.
+   */
+  readonly clientCustomerId: CustomerId | null;
   readonly clientLabel: string;
   /** Was `takenByUid` (N11) — who took it, an account. */
   readonly takenByUserId: UserId | null;

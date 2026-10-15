@@ -9,6 +9,7 @@ import {
   SeatOutcome,
   Seat,
   SeatOccupant,
+  SeatSubject,
   SubjectRelationship,
   ServiceTerms,
   WallTime,
@@ -43,6 +44,8 @@ import {
   appointmentFixture,
   seatFixture,
   type SeatFixtureOverrides,
+  resolvedCustomerIds,
+  customerOf,
 } from '@core/testing';
 import {
   AppointmentEditSystem,
@@ -105,6 +108,9 @@ function stored(
 
 const guest = SeatOccupant.anonymous(unwrapOk(SeatLabel.parse('Гост')));
 
+/** The client records the pipeline resolves for an added account seat (D29). */
+const RESOLVED = resolvedCustomerIds([FIXTURE_IDS.client]);
+
 function fold(
   commands: EditCommandRequest | readonly EditCommandRequest[],
   appointment: Appointment = stored(),
@@ -112,6 +118,7 @@ function fold(
   return AppointmentEditSystem.fold(
     appointment,
     Array.isArray(commands) ? commands : [commands as EditCommandRequest],
+    RESOLVED,
   );
 }
 
@@ -181,7 +188,10 @@ const addSeat = (
   startMinutes,
   durationMinutes: unwrapOk(DurationMinutes.of(minutes)),
   workedAtUtcMs,
-  ...SeatOccupant.account(FIXTURE_IDS.client, SubjectRelationship.Self),
+  // The request names the account; its client record is the fold's (D29).
+  seatSubject: SeatSubject.Account,
+  subjectUserId: FIXTURE_IDS.client,
+  subjectRelationship: SubjectRelationship.Self,
 });
 const removeSeat = (seatId: string): EditCommandRequest => ({
   editCommand: EditCommand.RemoveSeat,
@@ -683,6 +693,56 @@ describe('AppointmentEditSystem.fold — services added and removed', () => {
     expect(outcome.freshSeatIds).toEqual(['seat-2']);
   });
 
+  it('gives an added account seat the client record the pipeline resolved, beside its account (D29)', () => {
+    const added = unwrapOk(fold([addSeat('seat-2', at(10, 45), 30)])).seats[1];
+    expect(added).toMatchObject({
+      seatSubject: 'ACCOUNT',
+      subjectUserId: FIXTURE_IDS.client,
+      subjectCustomerId: customerOf(FIXTURE_IDS.client),
+    });
+  });
+
+  it('adds a guest as the guest it names — no record to resolve', () => {
+    const added = unwrapOk(
+      fold([
+        {
+          ...addSeat('seat-2', at(10, 45), 30),
+          ...SeatOccupant.anonymous(SeatLabel.of('Гост 2')),
+        } as EditCommandRequest,
+      ]),
+    ).seats[1];
+    expect(added).toMatchObject({
+      seatSubject: 'ANONYMOUS',
+      guestLabel: 'Гост 2',
+    });
+    expect(added).not.toHaveProperty('subjectUserId');
+  });
+
+  it('refuses to invent a record: an unresolved account is the caller’s defect', () => {
+    expect(() =>
+      AppointmentEditSystem.fold(
+        stored(),
+        [addSeat('seat-2', at(10, 45), 30)],
+        new Map(),
+      ),
+    ).toThrow(/client record/);
+  });
+
+  it('names the accounts a batch adds — distinct, in batch order, guests and other commands aside', () => {
+    expect(
+      AppointmentEditSystem.accountSubjects([
+        move(at(12)),
+        addSeat('seat-2', at(10, 45), 30),
+        addSeat('seat-3', at(11, 15), 30),
+        {
+          ...addSeat('seat-4', at(11, 45), 30),
+          ...SeatOccupant.anonymous(SeatLabel.of('Гост')),
+        } as EditCommandRequest,
+      ]),
+    ).toEqual([FIXTURE_IDS.client]);
+    expect(AppointmentEditSystem.accountSubjects([])).toEqual([]);
+  });
+
   it('marks a seat added to a FINISHED visit as worked, not scheduled', () => {
     const done = stored([seat('seat-1')], {
       lifecycle: BookingLifecycle.complete(utcMs('2026-09-28T11:00:00+03:00')),
@@ -886,8 +946,8 @@ describe('AppointmentEditSystem — purity', () => {
       resizeEnd(endAt(14)),
       addSeat('seat-3', at(14), 30),
     ]);
-    const once = AppointmentEditSystem.fold(appointment, commands);
-    const twice = AppointmentEditSystem.fold(appointment, commands);
+    const once = AppointmentEditSystem.fold(appointment, commands, RESOLVED);
+    const twice = AppointmentEditSystem.fold(appointment, commands, RESOLVED);
     expect(twice).toEqual(once);
     expect(appointment.seats.map((s) => s.startMinutes)).toEqual([
       at(10),

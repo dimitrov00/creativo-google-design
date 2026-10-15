@@ -79,7 +79,7 @@ describe('visit row view model', () => {
     expectTypeOf<VisitWords['rowName']>().returns.toEqualTypeOf<string>();
     expectTypeOf<VisitWaitlistWords['daypart']>()
       .parameter(0)
-      .toEqualTypeOf<'morning' | 'afternoon' | 'evening'>();
+      .toEqualTypeOf<'MORNING' | 'AFTERNOON' | 'EVENING'>();
   });
 
   it('adds the confirmed status word without asking a host for it yet', () => {

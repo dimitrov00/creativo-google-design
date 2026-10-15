@@ -8,11 +8,15 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { Money, formatMoney } from '@creativo/application/booking';
-import { Latitude, LocalDate, Longitude } from '@core/primitives';
-import { CalendarGridSystem, ShopReachSystem } from '@core/systems';
+import { BarberId, LocalDate, ServiceVariantId } from '@core/primitives';
+import { Money, ServiceTerms } from '@core/components';
+import {
+  CalendarGridSystem,
+  OfferingPriceSystem,
+  ShopReachSystem,
+} from '@core/systems';
 import { PhoneNumber } from '@creativo/application/identity';
-import { BarberId } from '@creativo/application/catalog';
+import { formatCents, formatMinute } from '@creativo/features/shared/visits';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
@@ -192,7 +196,8 @@ export class BookingReviewStep {
     return (
       this.catalog
         .locations()
-        .find((candidate) => candidate.id.equals(selection.locationId)) ?? null
+        .find((candidate) => candidate.id === selection.locationId.value) ??
+      null
     );
   });
 
@@ -217,17 +222,15 @@ export class BookingReviewStep {
     if (!shop) return [];
     return [
       {
-        id: shop.id.value,
-        lat: shop.geo.lat,
-        lng: shop.geo.lng,
+        id: shop.id,
+        lat: shop.latitude,
+        lng: shop.longitude,
         label: this.content.text({ en: shop.name.en, bg: shop.name.bg }),
       },
     ];
   });
 
-  protected readonly selectedPinId = computed(
-    () => this.shop()?.id.value ?? null,
-  );
+  protected readonly selectedPinId = computed(() => this.shop()?.id ?? null);
 
   protected readonly colorScheme = computed(() => this.theme.theme());
 
@@ -235,16 +238,8 @@ export class BookingReviewStep {
    *  URL, so iOS offers Apple Maps and everything else opens Google Maps. */
   protected readonly directionsHref = computed(() => {
     const shop = this.shop();
-    if (!shop) return null;
-    const latitude = Latitude.of(shop.geo.lat);
-    const longitude = Longitude.of(shop.geo.lng);
-    // The catalogue validated its pin; an unreadable one has no destination.
-    return latitude.ok && longitude.ok
-      ? ShopReachSystem.directionsHref({
-          latitude: latitude.value,
-          longitude: longitude.value,
-        })
-      : null;
+    // The shop's pin is its own root fields, already branded.
+    return shop ? ShopReachSystem.directionsHref(shop) : null;
   });
 
   /** The day, spelled out — "Monday, 3 August". */
@@ -492,12 +487,19 @@ export class BookingReviewStep {
       // same resolution the server will redo. A summary quoting the catalog
       // base while the server charges the barber's rate is a summary that
       // lies.
-      const terms = service.termsFor(assignment.barberId, found.line.variantId);
-      const variant = found.line.variantId
-        ? (service.variants.find((candidate) =>
-            candidate.id.equals(found.line.variantId as never),
-          ) ?? null)
-        : null;
+      const variantId = found.line.variantId?.value ?? null;
+      const terms = OfferingPriceSystem.termsFor(
+        service,
+        BarberId.of(assignment.barberId.value),
+        variantId === null ? null : ServiceVariantId.of(variantId),
+      );
+      const price = ServiceTerms.price(terms);
+      const variant =
+        variantId === null
+          ? null
+          : (service.variants.find(
+              (candidate) => candidate.variantId === variantId,
+            ) ?? null);
       const vm = this.catalog.toServiceVm(service);
 
       const entry = bySeat.get(found.seatKey) ?? {
@@ -515,19 +517,19 @@ export class BookingReviewStep {
         variantName: variant
           ? this.content.text({ en: variant.name.en, bg: variant.name.bg })
           : null,
-        barberName: this.barberName(assignment.barberId),
-        barberAvatarSrc: this.barberAvatarSrc(assignment.barberId),
+        barberName: this.barberName(assignment.barberId.value),
+        barberAvatarSrc: this.barberAvatarSrc(assignment.barberId.value),
         // Filled below, once the total line count is known — a lone service
         // does not repeat the window stated under the calendar.
         timeLabel: this.time(assignment.slot.start.toMillis()),
-        priceLabel: formatMoney(terms.price, this.content.locale()),
+        priceLabel: this.money(price),
       });
       if (!entry.broken) {
         if (entry.total === null) {
-          entry.total = terms.price;
+          entry.total = price;
         } else {
-          const sum = entry.total.add(terms.price);
-          if (sum.isFailure()) {
+          const sum = Money.add(entry.total, price);
+          if (!sum.ok) {
             entry.broken = true;
             entry.total = null;
           } else {
@@ -566,10 +568,7 @@ export class BookingReviewStep {
         lines: (entry?.lines ?? []).map((line) =>
           lineCount > 1 ? line : { ...line, timeLabel: null },
         ),
-        subtotalLabel:
-          entry?.total != null
-            ? formatMoney(entry.total, this.content.locale())
-            : null,
+        subtotalLabel: entry?.total != null ? this.money(entry.total) : null,
       };
     });
   });
@@ -590,40 +589,43 @@ export class BookingReviewStep {
    */
   protected readonly riderLines = computed<readonly RiderLineVm[]>(() => {
     const selection = this.store.selection();
-    const riders = this.store.riders();
+    const riders = this.store.moveRiders();
     if (!selection || riders.length === 0) return [];
 
-    return placeRiders(selection, riders).map(({ rider, startMs }, index) => {
-      const service = this.catalog.findService(rider.serviceId);
-      const variant =
-        service && rider.variantId !== null
-          ? (service.variants.find(
-              (candidate) => candidate.id.value === rider.variantId,
-            ) ?? null)
-          : null;
-      const barberId = BarberId.create(rider.barberId);
-      return {
-        key: `rider-${index}`,
-        coverSrc: service
-          ? (this.catalog.toServiceVm(service).coverSrc ?? null)
-          : null,
-        // A service the catalogue no longer lists still names a PERSON who
-        // is moving — the line stays, under a neutral name.
-        serviceName: service
-          ? this.content.text({ en: service.name.en, bg: service.name.bg })
-          : this.transloco.translate('booking.review.riderService'),
-        variantName: variant
-          ? this.content.text({ en: variant.name.en, bg: variant.name.bg })
-          : null,
-        barberName: barberId.isSuccess()
-          ? this.barberName(barberId.value)
-          : rider.barberId,
-        barberAvatarSrc: barberId.isSuccess()
-          ? this.barberAvatarSrc(barberId.value)
-          : null,
-        timeLabel: this.time(startMs),
-      };
-    });
+    return placeRiders(selection, riders).map(
+      ({ rider, startMinutes }, index) => {
+        const service = this.catalog.findService(rider.serviceId);
+        const variant =
+          service && rider.variantId !== null
+            ? (service.variants.find(
+                (candidate) => candidate.variantId === rider.variantId,
+              ) ?? null)
+            : null;
+        return {
+          key: `rider-${index}`,
+          coverSrc: service
+            ? (this.catalog.toServiceVm(service).coverSrc ?? null)
+            : null,
+          // A service the catalogue no longer lists still names a PERSON who
+          // is moving — the line stays, under a neutral name.
+          serviceName: service
+            ? this.content.text({ en: service.name.en, bg: service.name.bg })
+            : this.transloco.translate('booking.review.riderService'),
+          variantName: variant
+            ? this.content.text({ en: variant.name.en, bg: variant.name.bg })
+            : null,
+          barberName: this.barberName(rider.barberId),
+          barberAvatarSrc: this.barberAvatarSrc(rider.barberId),
+          // The minute on the shop's wall clock the server seats them at; a
+          // distance that would leave the day is a seat the server refuses,
+          // and the grid never offers a start that strands one.
+          timeLabel:
+            startMinutes === null
+              ? ''
+              : formatMinute(startMinutes, this.content.locale()),
+        };
+      },
+    );
   });
 
   /**
@@ -653,18 +655,26 @@ export class BookingReviewStep {
       if (!line) continue;
       const service = this.catalog.findService(line.serviceId.value);
       if (!service) continue;
-      const price = service.termsFor(assignment.barberId, line.variantId).price;
+      const price = ServiceTerms.price(
+        OfferingPriceSystem.termsFor(
+          service,
+          BarberId.of(assignment.barberId.value),
+          line.variantId === null
+            ? null
+            : ServiceVariantId.of(line.variantId.value),
+        ),
+      );
       if (total === null) {
         total = price;
         continue;
       }
-      const sum = total.add(price);
-      // Mixed currencies are a data error the aggregate also refuses; showing
+      const sum = Money.add(total, price);
+      // Mixed currencies are a data error the entity also refuses; showing
       // a partial total would be worse than showing none.
-      if (sum.isFailure()) return null;
+      if (!sum.ok) return null;
       total = sum.value;
     }
-    return total ? formatMoney(total, this.content.locale()) : null;
+    return total ? this.money(total) : null;
   });
 
   /**
@@ -681,7 +691,7 @@ export class BookingReviewStep {
 
   /** `tel:` for the shop beside a refused move — see `callHrefForRefusal`. */
   protected readonly refusalCallHref = computed(() =>
-    callHrefForRefusal(this.store.error(), this.shop()?.phone.e164 ?? null),
+    callHrefForRefusal(this.store.error(), this.shop()?.phoneE164 ?? null),
   );
 
   /**
@@ -716,20 +726,29 @@ export class BookingReviewStep {
     }).format(new Date(millis));
   }
 
-  private barberName(barberId: BarberId): string {
+  /** «28,00 €» — the currency's own exponent and fraction digits. */
+  private money(money: Money): string {
+    return formatCents(
+      money.amountCents,
+      money.currency,
+      this.content.locale(),
+    );
+  }
+
+  private barberName(barberId: string): string {
     const barber = this.catalog
       .barbers()
-      .find((candidate) => candidate.id.equals(barberId));
+      .find((candidate) => candidate.id === barberId);
     return barber
       ? this.content.text({ en: barber.name.en, bg: barber.name.bg })
-      : barberId.value;
+      : barberId;
   }
 
   /** The portrait the team cards already show — one source, not a second copy. */
-  private barberAvatarSrc(barberId: BarberId): string | null {
+  private barberAvatarSrc(barberId: string): string | null {
     return (
-      this.catalog.barberVms().find((vm) => vm.id === barberId.value)
-        ?.avatarSrc ?? null
+      this.catalog.barberVms().find((vm) => vm.id === barberId)?.avatarSrc ??
+      null
     );
   }
 

@@ -22,7 +22,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import type { CouponGrant } from '@core/entities';
-import { deepFreeze, unwrapOk, utcMs } from '@core/testing';
+import { deepFreeze, unwrapOk, utcMs, customerOf } from '@core/testing';
 import { type DiscountInput, DiscountSystem } from './discount.system';
 
 /*
@@ -321,7 +321,8 @@ function grant(
 ): CouponGrant {
   return {
     id: CouponGrantId.of(id),
-    userId: USER,
+    customerId: customerOf(USER),
+    holderUserId: USER,
     couponId: CouponId.of(`coupon_${id}`),
     grantedAtUtcMs: NOW,
     ...value,

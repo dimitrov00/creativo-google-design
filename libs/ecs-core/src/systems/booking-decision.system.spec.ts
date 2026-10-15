@@ -34,6 +34,7 @@ import {
   ServiceId,
   ServiceVariantId,
   UserId,
+  type CustomerId,
   LocalDate,
   EndMinute,
   MinuteOfDay,
@@ -54,6 +55,8 @@ import {
   serviceFixture,
   termsFixture,
   until,
+  resolvedCustomerIds,
+  customerOf,
 } from '@core/testing';
 import type { ChairTime } from './availability.system';
 import {
@@ -282,6 +285,19 @@ const parsePhone = (raw: string) => {
   return parsed.ok ? parsed.value.e164 : null;
 };
 
+/**
+ * The client records a pipeline resolves before it decides (D29): each
+ * account the cart names, `CustomerId.forUser(uid, hash)`.
+ */
+function resolved(
+  req: DecideBookingInput,
+  owner: UserId | null,
+): ReadonlyMap<UserId, CustomerId> {
+  return resolvedCustomerIds(
+    BookingDecisionSystem.accountSubjects(req.seats, owner),
+  );
+}
+
 /** The legacy `decideBooking(request, snapshot, deps)`, over the system. */
 function decideBooking(
   req: DecideBookingInput,
@@ -306,6 +322,7 @@ function decideBooking(
       startUtcMs: edgeStartUtcMs(req),
       nextId: () => `id-${counter++}`,
       ownerUserId: given.ownerUserId,
+      customerIds: resolved(req, given.ownerUserId),
       termsOverrides: [],
       standing: given.standing ?? [],
       stood: [],
@@ -780,6 +797,86 @@ describe('decide — the shop places its own book', () => {
         companion.subjectRelationship,
       ],
     ).toEqual(['son-1', 'COMPANION']);
+  });
+
+  it('gives every account seat the client record the pipeline resolved, beside its account (D29)', () => {
+    const decision = unwrap(
+      decideBooking(
+        request([
+          seat(),
+          seat({
+            lineId: 'line-2',
+            startMinutes: at(13),
+            subject: companionOf('son-1'),
+          }),
+          seat({
+            lineId: 'line-3',
+            startMinutes: at(14),
+            subject: guestOf('Гост'),
+          }),
+        ]),
+        snapshot(),
+        { ...deps(), allowOutsideWindow: true },
+      ),
+    );
+    const [booker, companion, guest] = decision.appointment.seats;
+    expect(
+      booker?.seatSubject === SeatSubject.Account && booker.subjectCustomerId,
+    ).toBe(customerOf(OWNER));
+    expect(
+      companion?.seatSubject === SeatSubject.Account &&
+        companion.subjectCustomerId,
+    ).toBe(customerOf(UserId.of('son-1')));
+    expect(guest).not.toHaveProperty('subjectCustomerId');
+    expect(decision.appointment.subjectCustomerIds).toEqual(
+      [customerOf(OWNER), customerOf(UserId.of('son-1'))].sort(),
+    );
+  });
+
+  it('names the accounts a cart needs resolved — the owner for a self seat, each parsed companion, distinct, in seat order', () => {
+    const seats = [
+      seat({ subject: companionOf('son-1') }),
+      seat(),
+      seat({ subject: guestOf('Гост') }),
+      seat({ subject: companionOf('son-1') }),
+      seat({ subject: companionOf('') }),
+      seat(),
+    ];
+    expect(BookingDecisionSystem.accountSubjects(seats, OWNER)).toEqual([
+      UserId.of('son-1'),
+      OWNER,
+    ]);
+    // No owner, no self account to resolve; a blank owner is none either.
+    expect(BookingDecisionSystem.accountSubjects(seats, null)).toEqual([
+      UserId.of('son-1'),
+    ]);
+    expect(
+      BookingDecisionSystem.accountSubjects([seat()], UserId.of(' ')),
+    ).toEqual([]);
+  });
+
+  it('never invents a record: an account the caller did not resolve is a defect', () => {
+    let counter = 0;
+    expect(() =>
+      BookingDecisionSystem.decide(
+        request(),
+        snapshot(),
+        POLICY,
+        PlacementPolicy.staffWalkIn(),
+        [],
+        {
+          now: nowAt(8),
+          startUtcMs: edgeStartUtcMs(request()),
+          nextId: () => `id-${counter++}`,
+          ownerUserId: OWNER,
+          customerIds: new Map(),
+          termsOverrides: [],
+          standing: [],
+          stood: [],
+          parsePhone,
+        },
+      ),
+    ).toThrow(/client record/);
   });
 
   it('refuses a carried companion whose id is not a user id', () => {
@@ -1293,6 +1390,9 @@ describe('BookingDecisionSystem — the draft and purity', () => {
     expect(appointment.id).toBe('attempt-7');
     expect(appointment.ownerUserId).toBe(OWNER);
     expect(appointment.subjectUserIds).toEqual([OWNER]);
+    // D29: the client record beside the account, on the mirrors and the seat.
+    expect(appointment.ownerCustomerId).toBe(customerOf(OWNER));
+    expect(appointment.subjectCustomerIds).toEqual([customerOf(OWNER)]);
     expect(appointment.barberIds).toEqual(['ivan']);
     expect(appointment.busyKeys).toEqual([BusyKey.of(ivan, AUG_3)]);
     // The envelope: the shop day, the sold minutes, and the edge's instant.
@@ -1342,6 +1442,7 @@ describe('BookingDecisionSystem — the draft and purity', () => {
         startUtcMs: edgeStartUtcMs(request()),
         nextId: () => `id-${counter++}`,
         ownerUserId: OWNER,
+        customerIds: resolved(request(), OWNER),
         termsOverrides: [],
         standing: [],
         stood: [],
@@ -1366,6 +1467,7 @@ describe('BookingDecisionSystem — the draft and purity', () => {
         startUtcMs: edgeStartUtcMs(request()),
         nextId: () => `id-${counter++}`,
         ownerUserId: OWNER,
+        customerIds: resolved(request(), OWNER),
         termsOverrides: [
           {
             seatKey: SeatKeyText.of('line-1'),
@@ -1414,6 +1516,7 @@ describe('BookingDecisionSystem — the draft and purity', () => {
           startUtcMs: edgeStartUtcMs(req),
           nextId: () => `id-${counter++}`,
           ownerUserId: OWNER,
+          customerIds: resolved(req, OWNER),
           termsOverrides: [],
           standing: [],
           stood: [],
@@ -1450,6 +1553,7 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
       startUtcMs: edgeStartUtcMs(req),
       nextId: () => `id-${counter++}`,
       ownerUserId: OWNER,
+      customerIds: resolved(req, overrides.ownerUserId ?? OWNER),
       termsOverrides: [],
       standing: [],
       stood: [],

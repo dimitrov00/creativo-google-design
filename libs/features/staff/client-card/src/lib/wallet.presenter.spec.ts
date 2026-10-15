@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import type { GiftVoucher } from '@core/entities';
 import {
   type ActivityEntry,
-  type GiftVoucher,
+  type GiftVoucherFields,
   type LoyaltyAccount,
   type StreakDefinitionProps,
   type StreakPhase,
   type StreakState,
   StreakDefinition,
   activityEntryFromDocument,
-  giftVoucherFromDocument,
 } from '@creativo/application/engagement';
 import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import type { ClientCardGrant } from './client-card.contracts';
@@ -34,7 +34,10 @@ import {
   MARTIN,
   TODAY,
   achievementsDataOf,
+  factMs,
+  fixtureVouchers,
   georgiHistory,
+  giftVoucherOf,
   loyaltyCatalogWith,
   martinHistory,
   must,
@@ -83,26 +86,18 @@ const euro = (amount: string) => `${amount}${NBSP}€`;
 
 /** The vouchers issued to one person, as the reader answers them. */
 function vouchersOf(uid: string): readonly GiftVoucher[] {
-  return Object.entries(loyaltyFixtures.vouchers).flatMap(([id, document]) => {
-    const voucher = giftVoucherFromDocument(id, document);
-    return voucher !== null && voucher.issuedToUserId?.value === uid
-      ? [voucher]
-      : [];
-  });
+  return fixtureVouchers().filter((voucher) => voucher.holderUserId === uid);
 }
 
 /** One more voucher of Георги's, from a document of his own with some fields changed. */
 function voucherWith(
   id: string,
-  fields: Readonly<Record<string, unknown>>,
+  fields: Partial<GiftVoucherFields>,
 ): GiftVoucher {
-  return must(
-    giftVoucherFromDocument(id, {
-      ...loyaltyFixtures.vouchers['voucher-dev-georgi'],
-      ...fields,
-    }),
-    `voucher ${id}`,
-  );
+  return giftVoucherOf(id, {
+    ...must(loyaltyFixtures.vouchers['voucher-dev-georgi'], 'Георги’s voucher'),
+    ...fields,
+  });
 }
 
 /** The newest rows of a holder's journal, as the wallet's one read answers them. */
@@ -133,15 +128,15 @@ function walletInput(overrides: Partial<WalletInput> = {}): WalletInput {
     paused: false,
     usableGrants: [GEORGI_GRANT],
     usableGrantsOnBill: [],
-    visitsMs: GEORGI_STATS.last365.visitsCompleted.map((fact) => fact.atMs),
-    lifetimeVisits: GEORGI_STATS.lifetime.visitsCompleted,
+    visitsMs: GEORGI_STATS.last365VisitsCompleted.map(factMs),
+    lifetimeVisits: GEORGI_STATS.lifetimeVisitsCompleted,
     visitTitles: new Map([['appt-dev-1', 'Фейд']]),
     visitBarbers: new Map([['appt-dev-1', 'Иван']]),
     inChairToday: false,
     today: TODAY,
     words: WORDS,
     holder: 'Георги Петров',
-    sinceMs: GEORGI_STATS.firstVisitAtMs,
+    sinceDay: GEORGI_STATS.firstVisitLocalDate,
     vouchers: { status: 'ready', data: vouchersOf(GEORGI) },
     activity: { status: 'ready', data: journalOf('georgi') },
     ruleInForce: RULE,
@@ -160,13 +155,13 @@ function martinInput(overrides: Partial<WalletInput> = {}): WalletInput {
   return walletInput({
     account: MARTIN_ACCOUNT,
     usableGrants: [],
-    visitsMs: MARTIN_STATS.last365.visitsCompleted.map((fact) => fact.atMs),
-    lifetimeVisits: MARTIN_STATS.lifetime.visitsCompleted,
+    visitsMs: MARTIN_STATS.last365VisitsCompleted.map(factMs),
+    lifetimeVisits: MARTIN_STATS.lifetimeVisitsCompleted,
     visitTitles: new Map(),
     visitBarbers: undefined,
     inChairToday: true,
     holder: 'Мартин Илиев',
-    sinceMs: MARTIN_STATS.firstVisitAtMs,
+    sinceDay: MARTIN_STATS.firstVisitLocalDate,
     vouchers: { status: 'ready', data: vouchersOf(MARTIN) },
     activity: { status: 'ready', data: journalOf('martin') },
     ...overrides,
@@ -364,11 +359,13 @@ describe('passVm', () => {
   });
 
   it('leaves out a holder it does not know and a tenure that has not begun', () => {
-    expect(passVm(walletInput({ holder: null, sinceMs: null }))).toMatchObject({
-      holder: null,
-      since: null,
-      accessibleName: 'Карта за лоялност: Злато, 358 точки за размяна',
-    });
+    expect(passVm(walletInput({ holder: null, sinceDay: null }))).toMatchObject(
+      {
+        holder: null,
+        since: null,
+        accessibleName: 'Карта за лоялност: Злато, 358 точки за размяна',
+      },
+    );
     expect(passVm(walletInput({ holder: '  ' })).holder).toBeNull();
   });
 

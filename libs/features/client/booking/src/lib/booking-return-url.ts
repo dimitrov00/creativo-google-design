@@ -1,5 +1,5 @@
 import { PRIMARY_OUTLET, type Router, type UrlTree } from '@angular/router';
-import { AppointmentId } from '@creativo/application/booking';
+import { AppointmentId } from '@core/primitives';
 import { RedirectPath } from '@creativo/application/identity';
 
 /** The one route a booking sign-in round trip may come back to. */
@@ -49,7 +49,7 @@ export function bookingSignInReturnUrl(
       ? []
       : BOOKING_SOURCE_PARAMS.flatMap((key) => {
           const value = tree.queryParamMap.get(key);
-          return value !== null && AppointmentId.create(value).isSuccess()
+          return value !== null && AppointmentId.parse(value).ok
             ? [[key, value] as const]
             : [];
         });

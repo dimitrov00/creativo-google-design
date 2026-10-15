@@ -1,11 +1,9 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { expectTypeOf } from 'vitest';
 import { Result, UtcEpochMs } from '@core/primitives';
 import { WriteOp } from '@core/components';
-import { type TxPorts } from '@core/ports';
+import { recordingTelemetry } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { type FirestorePorts, firestorePorts } from './firestore-ports';
-import { firestoreCommitPlan } from './firestore-tx.adapter';
 
 describe('firestorePorts — the assembler', () => {
   const primitives = {
@@ -18,24 +16,63 @@ describe('firestorePorts — the assembler', () => {
     hash: (input: string) => `h(${input})`,
   };
 
-  it('assembles the transaction bundle: one commit port and the three primitives, as given', () => {
+  const assemble = (): {
+    readonly fake: ReturnType<typeof createProjectionFirestore>;
+    readonly ports: FirestorePorts;
+  } => {
     const fake = createProjectionFirestore();
-    const ports = firestorePorts(fake.db as unknown as Firestore, primitives);
-    expect(Object.keys(ports).sort()).toEqual([
-      'commit',
-      'hash',
-      'nextId',
-      'nowUtcMs',
-    ]);
+    return {
+      fake,
+      ports: firestorePorts(
+        fake.db as unknown as Firestore,
+        primitives,
+        recordingTelemetry(),
+      ),
+    };
+  };
+
+  it('hands the three primitives through as given', () => {
+    const { ports } = assemble();
     expect(ports.nowUtcMs).toBe(primitives.nowUtcMs);
     expect(ports.nowUtcMs()).toBe(1_760_000_000_000);
     expect(ports.nextId).toBe(primitives.nextId);
     expect(ports.hash).toBe(primitives.hash);
   });
 
-  it('commits over the db it was given', async () => {
-    const fake = createProjectionFirestore();
-    const ports = firestorePorts(fake.db as unknown as Firestore, primitives);
+  it('builds every port the booking flip’s pipelines read or write outside a transaction, each a function', () => {
+    const { ports } = assemble();
+    for (const member of [
+      'commit',
+      'loadPolicy',
+      'findCouponByCode',
+      'loadAccountContacts',
+      'appendAudit',
+      'createAuditRows',
+      'auditActionsFor',
+      'loadCatalog',
+      'loadSchedule',
+      'loadBusyDay',
+      'listBarbers',
+      'loadScheduleException',
+      'loadCapacityMonths',
+      'writeLeadTimeSample',
+      'loadOpenWaitlist',
+      'loadWaitlistRequest',
+      'hasRecentNotification',
+      'pageClients',
+      'loadPolicyRecomputeJob',
+      'loadBackfillJob',
+      'writeBackfillJob',
+      'pageAppointments',
+    ] as const) {
+      expect(typeof (ports as Record<string, unknown>)[member], member).toBe(
+        'function',
+      );
+    }
+  });
+
+  it('commits over the db it was given — the purgeAt stamp included', async () => {
+    const { fake, ports } = assemble();
     const result = await ports.commit(
       async () => null,
       () =>
@@ -50,22 +87,10 @@ describe('firestorePorts — the assembler', () => {
     expect(fake.docs.get('barberBusy/h(k)')).toEqual({ blocks: [] });
   });
 
-  it('is typed as exactly the bundle it builds, and an unbuilt member does not compile', () => {
-    // Compile-time, enforced by `nx typecheck functions` over this spec: the
-    // assembler returns `FirestorePorts` (today `TxPorts`) and nothing wider.
-    expectTypeOf(firestorePorts).returns.toEqualTypeOf<FirestorePorts>();
-    expectTypeOf<FirestorePorts>().toEqualTypeOf<TxPorts>();
-
-    // The extension point's promise: a member declared on `FirestorePorts`
-    // that the assembler leaves out is a type error, not a runtime hole.
-    const fake = createProjectionFirestore();
-    const withoutHash = {
-      commit: firestoreCommitPlan(fake.db as unknown as Firestore),
-      nowUtcMs: primitives.nowUtcMs,
-      nextId: primitives.nextId,
-    };
-    // @ts-expect-error — `hash` is declared on FirestorePorts and not built
-    const unbuilt: FirestorePorts = withoutHash;
-    expect(Object.keys(unbuilt)).not.toContain('hash');
+  it('reads the settings through the same db', async () => {
+    const { fake, ports } = assemble();
+    fake.docs.set('settings/bookingPolicy', { cancellationWindowHours: 6 });
+    const policy = await ports.loadPolicy();
+    expect(policy.ok && policy.value.cancellationWindowHours).toBe(6);
   });
 });

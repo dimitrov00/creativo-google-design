@@ -2,6 +2,7 @@ import {
   FieldPath,
   FieldValue,
   type Firestore,
+  Timestamp,
 } from 'firebase-admin/firestore';
 import { RepositoryError, RepositoryErrorCode, Result } from '@core/primitives';
 import { type DocPath, WriteOp } from '@core/components';
@@ -70,32 +71,32 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
       });
     });
 
-    it('queries as data — where (dotted fields too), orderBy either way, limit', async () => {
+    it('queries as data — where on root keys, orderBy either way, limit', async () => {
       const { commit } = store({
         'appointments/a1': {
           busyKeys: ['k'],
-          status: { kind: 'pending' },
-          startMs: 3,
+          bookingStatus: 'PENDING',
+          utcEpochMs: 3,
         },
         'appointments/a2': {
           busyKeys: ['k'],
-          status: { kind: 'confirmed' },
-          startMs: 1,
+          bookingStatus: 'CONFIRMED',
+          utcEpochMs: 1,
         },
         'appointments/a3': {
           busyKeys: ['k'],
-          status: { kind: 'cancelled' },
-          startMs: 2,
+          bookingStatus: 'CANCELLED',
+          utcEpochMs: 2,
         },
         'appointments/a4': {
           busyKeys: ['other'],
-          status: { kind: 'pending' },
-          startMs: 0,
+          bookingStatus: 'PENDING',
+          utcEpochMs: 0,
         },
         'appointments/a5': {
           busyKeys: ['k'],
-          status: { kind: 'pending' },
-          startMs: 9,
+          bookingStatus: 'PENDING',
+          utcEpochMs: 9,
         },
       });
       const result = await commit(
@@ -105,12 +106,12 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
             where: [
               { field: 'busyKeys', op: QueryOp.ArrayContains, value: 'k' },
               {
-                field: 'status.kind',
+                field: 'bookingStatus',
                 op: QueryOp.In,
-                value: ['pending', 'confirmed'],
+                value: ['PENDING', 'CONFIRMED'],
               },
             ],
-            orderBy: [{ field: 'startMs', descending: true }],
+            orderBy: [{ field: 'utcEpochMs', descending: true }],
             limit: 2,
           }),
         (rows) => Result.ok({ ids: rows.map((row) => row.id), writes: [] }),
@@ -156,6 +157,40 @@ describe('firestore-tx adapter (CommitPlan over the Admin SDK)', () => {
         action: 'booking.confirmed',
       });
       expect(fake.docs.has('barberBusy/old')).toBe(false);
+    });
+
+    it('stamps the TTL purgeAt on every Set and Create of a TTL group, beside the entity body (F1-7)', async () => {
+      const { fake, commit } = store();
+      await commit(
+        async () => null,
+        () =>
+          Result.ok({
+            writes: [
+              WriteOp.set(['barberBusy', 'b_ivan__2026-10-07'], {
+                barberId: 'b_ivan',
+                localDate: '2026-10-07',
+                blocks: [],
+              }),
+              WriteOp.create(['users', 'u1', 'notifications', 'n1'], {
+                sentAtUtcMs: 1_000,
+              }),
+              WriteOp.set(['appointments', 'a9'], { localDate: '2026-10-07' }),
+            ],
+          }),
+      );
+      const busy = fake.docs.get('barberBusy/b_ivan__2026-10-07');
+      expect(busy?.['purgeAt']).toBeInstanceOf(Timestamp);
+      expect((busy?.['purgeAt'] as Timestamp).toMillis()).toBe(
+        Date.UTC(2026, 9, 7) + 30 * 86_400_000,
+      );
+      const note = fake.docs.get('users/u1/notifications/n1');
+      expect((note?.['purgeAt'] as Timestamp).toMillis()).toBe(
+        1_000 + 90 * 86_400_000,
+      );
+      // No TTL group, no stamp: the body is written exactly as planned.
+      expect(fake.docs.get('appointments/a9')).toEqual({
+        localDate: '2026-10-07',
+      });
     });
 
     it('Set replaces the whole document — never a merge', async () => {

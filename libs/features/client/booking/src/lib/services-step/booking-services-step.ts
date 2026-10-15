@@ -16,11 +16,11 @@ import {
 } from '@creativo/application/booking';
 import {
   BarberId,
-  Service,
   ServiceId,
   ServiceVariantId,
-  selectabilityFor,
 } from '@creativo/application/catalog';
+import type { Service } from '@core/entities';
+import { Selectability, ServiceConflictSystem } from '@core/systems';
 import {
   CatalogContentService,
   CatalogPresenter,
@@ -186,7 +186,7 @@ export class BookingServicesStep {
     );
   });
 
-  /** The domain services the active seat already holds — the conflict input. */
+  /** The catalogue services the active seat already holds — the conflict input. */
   private readonly selectedServices = computed<readonly Service[]>(() => {
     const cart = this.store.cart();
     if (!cart) return [];
@@ -212,14 +212,14 @@ export class BookingServicesStep {
     // The full catalog is passed so a bundle's members resolve and their
     // conflicts are inherited — otherwise a second haircut could be
     // smuggled in inside a bundle.
-    const selectability = selectabilityFor(
+    const selectability = ServiceConflictSystem.selectabilityFor(
       this.selectedServices(),
       candidate,
       this.catalog.services(),
     );
-    if (selectability.kind === 'selectable') return [];
+    if (selectability.selectability === Selectability.Selectable) return [];
     return selectability.by.flatMap((id) => {
-      const blocker = this.catalog.findService(id.value);
+      const blocker = this.catalog.findService(id);
       return blocker
         ? [this.content.text(this.catalog.toServiceVm(blocker).name)]
         : [];
@@ -235,19 +235,23 @@ export class BookingServicesStep {
    */
   private readonly blockedIds = computed<ReadonlySet<string>>(() => {
     const all = this.catalog.services();
-    const known = new Set(all.map((service) => service.id.value));
+    const known = new Set<string>(all.map((service) => service.id));
     const selected = this.selectedServices();
-    return new Set(
+    return new Set<string>(
       all
         .filter((candidate) => {
-          const selectability = selectabilityFor(selected, candidate, all);
+          const selectability = ServiceConflictSystem.selectabilityFor(
+            selected,
+            candidate,
+            all,
+          );
           // `blockersFor` names only blockers the catalogue knows.
           return (
-            selectability.kind !== 'selectable' &&
-            selectability.by.some((id) => known.has(id.value))
+            selectability.selectability === Selectability.Blocked &&
+            selectability.by.some((id) => known.has(id))
           );
         })
-        .map((candidate) => candidate.id.value),
+        .map((candidate) => candidate.id),
     );
   });
 

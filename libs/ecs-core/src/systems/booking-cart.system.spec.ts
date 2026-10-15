@@ -50,6 +50,7 @@ import {
   minuteCount,
   minuteDelta,
   termsFixture,
+  customerOf,
 } from '@core/testing';
 import {
   type AvailabilityLine,
@@ -1081,7 +1082,11 @@ describe('BookingCartSystem.optionsForDay — a shop that cannot serve somebody 
 const guestLabel = (ordinal: number): string => `Guest ${ordinal}`;
 const CLIENT = UserId.of('client-1');
 const account = (userId: string, relationship: SubjectRelationship) =>
-  SeatOccupant.account(UserId.of(userId), relationship);
+  SeatOccupant.account(
+    UserId.of(userId),
+    customerOf(UserId.of(userId)),
+    relationship,
+  );
 const anonymous = (label: string) =>
   SeatOccupant.anonymous(SeatLabel.of(label));
 

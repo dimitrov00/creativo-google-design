@@ -1,4 +1,5 @@
 import {
+  type AccountSeat,
   type BarberPreference,
   BookingLifecycle,
   SeatOutcome,
@@ -210,12 +211,12 @@ function carriedStartMinutes(
 }
 
 function anchorOf(
-  appointment: Pick<Appointment, 'seats'>,
+  appointment: { readonly seats: readonly AccountSeat[] },
   ownerUserId: UserId | null,
 ): MinuteOfDay | null {
   let anchor: MinuteOfDay | null = null;
   for (let i = 0; i < appointment.seats.length; i++) {
-    const seat = appointment.seats[i] as Seat;
+    const seat = appointment.seats[i] as AccountSeat;
     if (!Seat.isMovableByBooker(seat, ownerUserId)) continue;
     if (anchor === null || seat.startMinutes < anchor) {
       anchor = seat.startMinutes;
@@ -295,14 +296,18 @@ export const MoveSystem = {
    */
   carriedStartMinutes,
 
-  /** The seats the booker's own cart can name, in seat order (`Seat.isMovableByBooker`). */
-  seatsTheBookerCanMove(
-    appointment: Pick<Appointment, 'seats'>,
+  /**
+   * The seats the booker's own cart can name, in seat order
+   * (`Seat.isMovableByBooker`) — an account rule, so it reads the seats'
+   * accounts alone (D29) and hands back the input's own structs.
+   */
+  seatsTheBookerCanMove<S extends AccountSeat>(
+    appointment: { readonly seats: readonly S[] },
     ownerUserId: UserId | null,
-  ): readonly Seat[] {
-    const movable: Seat[] = [];
+  ): readonly S[] {
+    const movable: S[] = [];
     for (let i = 0; i < appointment.seats.length; i++) {
-      const seat = appointment.seats[i] as Seat;
+      const seat = appointment.seats[i] as S;
       if (Seat.isMovableByBooker(seat, ownerUserId)) movable.push(seat);
     }
     return movable;
@@ -310,11 +315,13 @@ export const MoveSystem = {
 
   /** Can the booker move this visit at all? `false` when nothing on it is theirs to name. */
   hasSeatTheBookerCanMove(
-    appointment: Pick<Appointment, 'seats'>,
+    appointment: { readonly seats: readonly AccountSeat[] },
     ownerUserId: UserId | null,
   ): boolean {
     for (let i = 0; i < appointment.seats.length; i++) {
-      if (Seat.isMovableByBooker(appointment.seats[i] as Seat, ownerUserId)) {
+      if (
+        Seat.isMovableByBooker(appointment.seats[i] as AccountSeat, ownerUserId)
+      ) {
         return true;
       }
     }

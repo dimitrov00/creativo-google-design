@@ -5,6 +5,7 @@ import {
   SystemSource,
   AuditAction,
   AuditContext,
+  AuditTarget,
   AuditTargetRef,
   Role,
   SeatLabel,
@@ -18,6 +19,7 @@ import {
   AppointmentId,
   AuditResourceId,
   BarberId,
+  type CustomerId,
   OperationId,
   PublishRequestId,
   SeatId,
@@ -35,6 +37,7 @@ import {
   utcMs,
   appointmentFixture,
   seatFixture,
+  customerOf,
 } from '@core/testing';
 import { EditCommand } from './appointment-edit.system';
 import { type AuditFact, type AuditSubject, AuditSystem } from './audit.system';
@@ -52,9 +55,11 @@ import { RequestedSubjectRole } from './guest-label.system';
  */
 
 const ivan = Actor.admin(UserId.of('dev-staff-ivan'));
+/** The client record of the account `uid` — what a booking act's row targets (D29). */
+const cus = (uid: string): CustomerId => customerOf(UserId.of(uid));
 const account = (uid: string): AuditSubject => ({
   seatSubject: SeatSubject.Account,
-  userId: UserId.of(uid),
+  customerId: cus(uid),
 });
 const guest: AuditSubject = { seatSubject: SeatSubject.Anonymous };
 const AT = utcMs('2026-09-25T08:00:00Z');
@@ -72,7 +77,7 @@ function fact(overrides: Partial<AuditFact> = {}): AuditFact {
 }
 
 describe('AuditSystem.targets', () => {
-  it('names each account once, in seat order, and skips guests', () => {
+  it('names each client record once, in seat order, and skips guests', () => {
     expect(
       AuditSystem.targets([
         account('maria'),
@@ -80,7 +85,7 @@ describe('AuditSystem.targets', () => {
         account('stefan'),
         account('maria'),
       ]),
-    ).toEqual(['maria', 'stefan']);
+    ).toEqual([cus('maria'), cus('stefan')]);
   });
 
   it('keeps one untargeted row when nobody on the visit has an account', () => {
@@ -98,7 +103,7 @@ describe('AuditSystem.targets', () => {
         const targets = AuditSystem.targets(subjects);
         const people = new Set(
           subjects.flatMap((s) =>
-            s.seatSubject === SeatSubject.Account ? [s.userId] : [],
+            s.seatSubject === SeatSubject.Account ? [s.customerId] : [],
           ),
         );
         expect(targets.length).toBe(Math.max(1, people.size));
@@ -109,7 +114,7 @@ describe('AuditSystem.targets', () => {
 });
 
 describe('AuditSystem.plan — one row per person', () => {
-  it('writes one row per account on a party of two, each naming that person', () => {
+  it('writes one row per client record on a party of two, each naming that person (D29)', () => {
     const rows = unwrapOk(
       AuditSystem.plan(
         [fact({ subjects: [account('maria'), account('stefan')] })],
@@ -117,10 +122,16 @@ describe('AuditSystem.plan — one row per person', () => {
         AT,
       ),
     );
-    expect(rows.map((r) => AuditTargetRef.targetUserIdOf(r.row))).toEqual([
-      'maria',
-      'stefan',
-    ]);
+    expect(
+      rows.map((r) =>
+        r.row.auditTarget === AuditTarget.Customer
+          ? r.row.targetCustomerId
+          : null,
+      ),
+    ).toEqual([cus('maria'), cus('stefan')]);
+    for (const { row } of rows) {
+      expect(AuditTargetRef.targetUserIdOf(row)).toBeNull();
+    }
     for (const { row } of rows) {
       expect(row).toMatchObject({
         actorRole: 'ADMIN',
@@ -129,7 +140,7 @@ describe('AuditSystem.plan — one row per person', () => {
         editRevision: 3,
         resourceId: 'appt-1',
         recordedAtUtcMs: AT,
-        auditTarget: 'USER',
+        auditTarget: 'CUSTOMER',
       });
     }
   });
@@ -144,8 +155,8 @@ describe('AuditSystem.plan — one row per person', () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.row).toMatchObject({
-      auditTarget: 'USER',
-      targetUserId: 'maria',
+      auditTarget: 'CUSTOMER',
+      targetCustomerId: cus('maria'),
     });
   });
 
@@ -175,13 +186,13 @@ describe('AuditSystem.plan — one row per person', () => {
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
         'appt-1',
-        'maria',
+        cus('maria'),
         'revision:4',
       ),
       AuditSystem.rowBasis(
         'BOOKING_STAFF_MOVE',
         'appt-1',
-        'stefan',
+        cus('stefan'),
         'revision:4',
       ),
     ]);
@@ -221,6 +232,7 @@ describe('AuditSystem.subjectsOfSeats — the people on a stored visit', () => {
         seatId: SeatId.of('s1'),
         occupant: SeatOccupant.account(
           UserId.of('maria'),
+          customerOf(UserId.of('maria')),
           SubjectRelationship.Self,
         ),
       }),
@@ -232,13 +244,14 @@ describe('AuditSystem.subjectsOfSeats — the people on a stored visit', () => {
         seatId: SeatId.of('s3'),
         occupant: SeatOccupant.account(
           UserId.of('stefan'),
+          customerOf(UserId.of('stefan')),
           SubjectRelationship.Companion,
         ),
       }),
     ],
   });
 
-  it('reads every seat: accounts by uid, guests as anonymous', () => {
+  it('reads every seat: accounts by their client record, guests as anonymous', () => {
     expect(AuditSystem.subjectsOf(visit)).toEqual([
       account('maria'),
       guest,
@@ -262,30 +275,31 @@ describe('AuditSystem.subjectsOfSeats — the people on a stored visit', () => {
 describe('AuditSystem.requestedSubjects — the people on a requested cart', () => {
   const self = {
     requestedSubjectRole: RequestedSubjectRole.Self,
-    userId: null,
+    customerId: null,
   };
   const son = {
     requestedSubjectRole: RequestedSubjectRole.Guest,
-    userId: null,
+    customerId: null,
   };
 
-  it('binds every self seat to the owner and every guest to nobody', () => {
-    expect(
-      AuditSystem.requestedSubjects([self, son], UserId.of('maria')),
-    ).toEqual([account('maria'), guest]);
+  it("binds every self seat to the owner's record and every guest to nobody", () => {
+    expect(AuditSystem.requestedSubjects([self, son], cus('maria'))).toEqual([
+      account('maria'),
+      guest,
+    ]);
   });
 
-  it('names a carried companion by their own account', () => {
+  it('names a carried companion by their own record', () => {
     expect(
       AuditSystem.requestedSubjects(
         [
           self,
           {
             requestedSubjectRole: RequestedSubjectRole.Companion,
-            userId: UserId.of('son'),
+            customerId: cus('son'),
           },
         ],
-        UserId.of('maria'),
+        cus('maria'),
       ),
     ).toEqual([account('maria'), account('son')]);
   });
@@ -300,7 +314,7 @@ describe('AuditSystem.staffEditSubjects', () => {
     expect(
       AuditSystem.staffEditSubjects(
         [account('maria'), account('stefan')],
-        UserId.of('maria'),
+        cus('maria'),
         [{ editCommand: EditCommand.RemoveSeat, seatId: SeatId.of('s3') }],
       ),
     ).toEqual([account('maria'), account('stefan')]);
@@ -308,7 +322,7 @@ describe('AuditSystem.staffEditSubjects', () => {
 
   it('adds the owner when an ADD_SEAT gives them a seat', () => {
     expect(
-      AuditSystem.staffEditSubjects([guest], UserId.of('maria'), [
+      AuditSystem.staffEditSubjects([guest], cus('maria'), [
         {
           editCommand: EditCommand.AddSeat,
           seatId: SeatId.of('new'),
@@ -318,7 +332,9 @@ describe('AuditSystem.staffEditSubjects', () => {
           startMinutes: minute(600),
           durationMinutes: unwrapOk(DurationMinutes.of(30)),
           workedAtUtcMs: utcMs('2026-09-28T10:30:00+03:00'),
-          ...SeatOccupant.account(UserId.of('maria'), SubjectRelationship.Self),
+          seatSubject: SeatSubject.Account,
+          subjectUserId: UserId.of('maria'),
+          subjectRelationship: SubjectRelationship.Self,
         },
       ]),
     ).toEqual([guest, account('maria')]);

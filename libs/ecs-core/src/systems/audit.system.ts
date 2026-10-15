@@ -14,6 +14,7 @@ import {
   Result,
   type AppointmentId,
   AuditResourceId,
+  type CustomerId,
   type OperationId,
   type PublishRequestId,
   type SeatId,
@@ -29,17 +30,19 @@ import {
 import { RequestedSubjectRole } from './guest-label.system';
 
 /**
- * A seat's person as the audit log sees them (`audit.ts:19-25`): an account
- * gets a row of its own, a guest does not — a label typed at the desk is not
- * somebody a per-client history can ever be asked about. Discriminated by
- * the seat's own `seatSubject` (`CUSTOMER` joins in the appointment flip (1),
- * D29).
+ * A seat's person as the audit log sees them (`audit.ts:19-25`): a client
+ * with a record gets a row of its own, targeted at that RECORD (D29: a
+ * booking act is done to whom the shop serves — `AuditTargetRef.Customer`,
+ * flip (1)); a guest does not — a label typed at the desk is not somebody a
+ * per-client history can ever be asked about. Discriminated by the seat's
+ * own `seatSubject`.
  */
 export type AuditSubject = AuditAccountSubject | AuditAnonymousSubject;
 
 export type AuditAccountSubject = {
   readonly seatSubject: typeof SeatSubject.Account;
-  readonly userId: UserId;
+  /** The seat's client record — the row's `targetCustomerId`. */
+  readonly customerId: CustomerId;
 };
 
 export type AuditAnonymousSubject = {
@@ -50,8 +53,8 @@ const ANONYMOUS: AuditAnonymousSubject = {
   seatSubject: SeatSubject.Anonymous,
 };
 
-function account(userId: UserId): AuditAccountSubject {
-  return { seatSubject: SeatSubject.Account, userId };
+function account(customerId: CustomerId): AuditAccountSubject {
+  return { seatSubject: SeatSubject.Account, customerId };
 }
 
 /**
@@ -97,13 +100,14 @@ export type AuditRowPlan = {
 };
 
 /**
- * A requested seat's subject, every field present (`userId` only for a
- * companion) — who a seat of the cart a commit or a move decides is for
+ * A requested seat's subject, every field present (`customerId` only for a
+ * companion — the client record the pipeline resolved for the companion's
+ * account, D29) — who a seat of the cart a commit or a move decides is for
  * (`decide-booking.ts` `RequestedSeat['subject']`).
  */
 export type AuditRequestedSubject = {
   readonly requestedSubjectRole: RequestedSubjectRole;
-  readonly userId: UserId | null;
+  readonly customerId: CustomerId | null;
 };
 
 /**
@@ -184,40 +188,44 @@ function comparable(value: unknown): string {
 
 /**
  * The basis of one person's row id for one logical change — TEXT in, text
- * out (the brands' text is what is hashed; the action is the verb as the row
- * stores it, so a legacy writer passing its stored verb keeps its ids).
+ * out (the brands' text is what is hashed: a booking act's client record, a
+ * profile act's account; the action is the verb as the row stores it).
  */
 function rowBasis(
   action: string,
   resourceId: string,
-  targetUserId: string | null,
+  targetId: string | null,
   changeKey: string,
 ): string {
   return JSON.stringify([
     ROW_BASIS_TAG,
     action,
     resourceId,
-    targetUserId,
+    targetId,
     changeKey,
   ]);
 }
 
 /**
- * Who gets a row: each distinct account among the subjects, in seat order —
- * a client with two services on one visit is one person, not two rows. An
- * act that touched no account still happened, so it keeps ONE untargeted row.
+ * Who gets a row: each distinct client record among the subjects, in seat
+ * order — a client with two services on one visit is one person, not two
+ * rows. An act that touched no record still happened, so it keeps ONE
+ * untargeted row.
  */
 function targets(
   subjects: readonly AuditSubject[],
-): readonly (UserId | null)[] {
-  const people: UserId[] = [];
+): readonly (CustomerId | null)[] {
+  const people: CustomerId[] = [];
   for (let i = 0; i < subjects.length; i++) {
     const subject = subjects[i] as AuditSubject;
     if (subject.seatSubject !== SeatSubject.Account) continue;
-    if (subject.userId.length === 0 || people.includes(subject.userId)) {
+    if (
+      subject.customerId.length === 0 ||
+      people.includes(subject.customerId)
+    ) {
       continue;
     }
-    people.push(subject.userId);
+    people.push(subject.customerId);
   }
   return people.length > 0 ? people : [null];
 }
@@ -233,8 +241,10 @@ export const AuditSystem = {
   /**
    * The basis of one person's row id for one logical change — today's
    * `auditEntryIdFor` minus the SHA-256: `JSON.stringify(['audit-row/v1',
-   * action, resourceId, targetUserId, changeKey])`. The JSON array keeps the
-   * parts unambiguous (`("a:b","c")` and `("a","b:c")` never collide).
+   * action, resourceId, targetId, changeKey])` (the target's id text: a
+   * client record for a booking act, an account for a profile act). The JSON
+   * array keeps the parts unambiguous (`("a:b","c")` and `("a","b:c")` never
+   * collide).
    */
   rowBasis,
 
@@ -243,8 +253,8 @@ export const AuditSystem = {
   /**
    * The rows the facts write, one per person per fact: every row of one fact
    * shares the actor, the verb, the instant and the context; only the target
-   * slice differs — which is what makes "everything done to Maria" one
-   * `targetUserId` query. A fact whose verb is not an audited one is refused
+   * slice differs — `AuditTargetRef.Customer` (D29), which is what makes
+   * "everything done to Maria" one `targetCustomerId` query. A fact whose verb is not an audited one is refused
    * whole rather than written half-formed (`AuditEntry.create`'s
    * empty-action guard).
    */
@@ -269,7 +279,9 @@ export const AuditSystem = {
             resourceId: fact.resourceId,
             ...actor,
             ...fact.context,
-            ...AuditTargetRef.forUser(target),
+            ...(target === null
+              ? AuditTargetRef.none()
+              : AuditTargetRef.customer(target)),
           },
           idBasis:
             fact.changeKey === null
@@ -282,9 +294,9 @@ export const AuditSystem = {
   },
 
   /**
-   * The people on a visit's seats — accounts by uid, guests as anonymous —
-   * narrowed to ONE seat for a per-seat act (a companion's no-show is
-   * theirs, not the booker's). `null` is every seat.
+   * The people on a visit's seats — accounts by their client record (D29),
+   * guests as anonymous — narrowed to ONE seat for a per-seat act (a
+   * companion's no-show is theirs, not the booker's). `null` is every seat.
    */
   subjectsOfSeats(
     seats: readonly Seat[],
@@ -296,7 +308,7 @@ export const AuditSystem = {
       if (seatId !== null && seat.seatId !== seatId) continue;
       subjects.push(
         seat.seatSubject === SeatSubject.Account
-          ? account(seat.subjectUserId)
+          ? account(seat.subjectCustomerId)
           : ANONYMOUS,
       );
     }
@@ -309,28 +321,28 @@ export const AuditSystem = {
   },
 
   /**
-   * The people on a REQUESTED cart: every `SELF` seat binds to the owner, a
-   * carried companion keeps their own account, every guest is anonymous —
-   * and a `SELF` seat on an owner-less walk-in names nobody.
+   * The people on a REQUESTED cart: every `SELF` seat binds to the owner's
+   * client record, a carried companion keeps their own record, every guest
+   * is anonymous — and a `SELF` seat on an owner-less walk-in names nobody.
    */
   requestedSubjects(
     subjects: readonly AuditRequestedSubject[],
-    ownerUserId: UserId | null,
+    ownerCustomerId: CustomerId | null,
   ): readonly AuditSubject[] {
     const out: AuditSubject[] = [];
     for (let i = 0; i < subjects.length; i++) {
       const subject = subjects[i] as AuditRequestedSubject;
       if (
         subject.requestedSubjectRole === RequestedSubjectRole.Companion &&
-        subject.userId !== null
+        subject.customerId !== null
       ) {
-        out.push(account(subject.userId));
+        out.push(account(subject.customerId));
       } else if (
         subject.requestedSubjectRole === RequestedSubjectRole.Self &&
-        ownerUserId !== null &&
-        ownerUserId.length > 0
+        ownerCustomerId !== null &&
+        ownerCustomerId.length > 0
       ) {
-        out.push(account(ownerUserId));
+        out.push(account(ownerCustomerId));
       } else {
         out.push(ANONYMOUS);
       }
@@ -341,12 +353,13 @@ export const AuditSystem = {
   /**
    * Who a staff edit's rows name (`staffEditSubjects`): everyone the visit
    * had BEFORE the edit — a removed seat's person included, the edit was
-   * done to them too — plus the owner when the batch gives them a seat of
-   * their own (an added `SELF` seat). Nobody else can join through an edit.
+   * done to them too — plus the owner's client record when the batch gives
+   * them a seat of their own (an added `SELF` seat). Nobody else can join
+   * through an edit.
    */
   staffEditSubjects(
     before: readonly AuditSubject[],
-    ownerUserId: UserId | null,
+    ownerCustomerId: CustomerId | null,
     commands: readonly EditCommandRequest[],
   ): readonly AuditSubject[] {
     let addsOwner = false;
@@ -357,8 +370,8 @@ export const AuditSystem = {
         command.seatSubject === SeatSubject.Account &&
         command.subjectRelationship === SubjectRelationship.Self;
     }
-    return addsOwner && ownerUserId !== null && ownerUserId.length > 0
-      ? [...before, account(ownerUserId)]
+    return addsOwner && ownerCustomerId !== null && ownerCustomerId.length > 0
+      ? [...before, account(ownerCustomerId)]
       : before;
   },
 
