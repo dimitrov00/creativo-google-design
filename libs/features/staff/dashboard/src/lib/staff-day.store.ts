@@ -699,7 +699,7 @@ function gapsOn(
 }
 
 /** One chair's day as the roster, the exceptions and the busy projection draw it. */
-interface LaneGeometry {
+export interface LaneGeometry {
   /** The BOOKABLE windows — roster ∩ shop hours − blocks, at the shops the day offers. */
   readonly rostered: readonly MinuteRange[];
   /** The carve-outs — a break, an admin hour — clipped to worked time. */
@@ -728,9 +728,10 @@ const NO_GEOMETRY: LaneGeometry = { rostered: [], blocks: [], busy: [] };
  *   on purpose: a barber booked at the other shop is not free here either.
  *
  * A barber with no schedule, or no window that day, has no geometry at all
- * — not rostered, and nothing of theirs to draw.
+ * — not rostered, and nothing of theirs to draw. Exported for its spec
+ * (`lane-geometry.spec.ts`).
  */
-function laneGeometryOf(
+export function laneGeometryOf(
   barberId: BarberId,
   localDate: LocalDate,
   schedule: BarberSchedule | null,

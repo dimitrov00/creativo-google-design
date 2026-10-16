@@ -1,7 +1,9 @@
 # Flip 1 — booking core (Phase 3b)
 
-**Date:** 2026-10-11 · **Status:** execution plan, the contract the parallel
-packages build against. · **Law:** `CLAUDE.md` Laws 1–8 and the seven
+**Date:** 2026-10-11 · **Status:** integrated on `main` 2026-10-16 — every
+package built, §11 complete; `verify:p0` and `e2e:web` still to run
+(`docs/architecture/HANDOFF.md` §3.1). It was the contract the parallel
+packages built against. · **Law:** `CLAUDE.md` Laws 1–8 and the seven
 `.claude/rules/*.md`; this plan never overrides them. · **Sources:**
 `docs/architecture/ecs-migration.md` §3, §4.1, §4.2, §5, §6 Phase 3, §7, §8;
 `docs/architecture/flatten-spec.md` (names, §2.3 T1–T9, §5 D29, §6 writes);
@@ -777,7 +779,12 @@ with the scanner after the deletions; the floors equal the measured counts.
 
 ---
 
-## 11. The P1 case ledger (§5.4)
+## 11. The case ledgers (§5.4)
+
+P1, P2 and P3 deleted 52 specs holding 698 cases; every case has a successor
+or a `dead:` reason.
+
+### 11.1 The P1 case ledger
 
 Every case of the 18 specs P1 deleted (§5.1, §5.2: 334 cases, read off
 `c0e5d73`), each against the successor case that holds it on the flip tree
@@ -1179,3 +1186,510 @@ the mapping back (F1-3).
 - covers in order, after the discounts, and stops at the bill → `systems/billing.system.spec.ts` › covers in order, after the discounts, and stops at the bill
 - re-settles a saved draw when the bill shrinks, and gives everything back when the voucher is dropped → `systems/billing.system.spec.ts` › re-settles a saved draw when the bill shrinks, and gives everything back when the voucher is dropped
 - refuses a code that opens nothing, and a voucher spent, expired, void, or named twice → `systems/billing.system.spec.ts` › refuses a code that opens nothing, and a voucher spent, expired or void
+
+### 11.2 The P2 case ledger
+
+Every case of the 17 specs P2 deleted (§5.1, §5.2: 246 cases, read off
+`c0e5d73`), each against the successor case that holds it on the flip tree
+(`successor file` › its `it` title, describe path left out) or `dead:` with
+the reason its subject no longer exists. 244 cases have a successor, 2 are
+dead; none has neither. Prefixes: `fn:` = `apps/functions/src/`, `pl:` =
+`libs/ecs-core/src/pipelines/`, `systems/` and `components/` =
+`libs/ecs-core/src/…`. A `[each]` title is one table-driven case; its rows
+moved with it. Three headers count more than §5.1 does —
+`request-waitlist.spec.ts` (18), `load-day-availability.spec.ts` (9),
+`decide-waitlist.spec.ts` (18): §5.1 counted their plain `it(` lines and
+left out their `it.each` cases. The retry tail every trigger handler carried
+(the one attempt line, then a rethrow or a drop) is written once now, in
+`edge.ts`'s `retryingTrigger` and the attempt reports of `triggers.wire.ts`,
+so those cases point at `fn:edge.spec.ts` and `fn:wire/triggers.wire.spec.ts`;
+an export's deployed `__endpoint` is pinned by `fn:main.spec.ts` › deploys
+%s as exactly the endpoint its legacy definition declared [each].
+
+**`fn:lib/booking/audit-profile-changes.spec.ts`** (20)
+
+- lists the audited fields whose value changed, in a fixed order → `systems/audit.system.spec.ts` › lists the audited fields whose value changed, in a fixed order
+- treats absent, null and empty as the same "no value" → `systems/audit.system.spec.ts` › treats absent, null and empty as the same "no value"
+- ignores fields other writers own — roles and status are audited by their callables → `systems/audit.system.spec.ts` › ignores fields other writers own — roles and status are audited by their callables
+- never lets a value into the row context, whatever the profile held → `systems/audit.system.spec.ts` › never lets a value into the row context, whatever the profile held
+- names creation, update and deletion apart → `systems/audit.system.spec.ts` › names creation, update and deletion apart
+- credits the end user a client-SDK write came from → `systems/audit.system.spec.ts` › credits the end user a client-SDK write came from
+- credits the uid, not the profile owner, when somebody else wrote it → `systems/audit.system.spec.ts` › credits the uid, not the profile owner, when somebody else wrote it
+- attributes an Admin SDK write to the process, whatever the id says → `systems/audit.system.spec.ts` › attributes an Admin SDK write to the process, whatever the id says
+- attributes a platform write to the platform → `systems/audit.system.spec.ts` › attributes a platform write to the platform
+- does not guess when the id is missing or not a uid (the emulator reports a fake e-mail) → `systems/audit.system.spec.ts` › does not guess when the id is missing or not a uid (the emulator reports a fake e-mail)
+- keys the row by the event id, so a redelivery lands on the same document → `systems/audit.system.spec.ts` › keys the row by the event id, so a redelivery lands on the same document
+- names the profile owner as the target and the fields as the only context → `systems/audit.system.spec.ts` › names the profile owner as the target and the fields as the only context
+- stamps the event's own instant, not the delivery's → `systems/audit.system.spec.ts` › stamps the event's own instant, not the delivery's
+- refuses an event with no id rather than minting one → `systems/audit.system.spec.ts` › refuses an event with no id rather than minting one
+- writes one row keyed by the event, naming the writer and the fields only → `pl:audit-profile-change.pipeline.spec.ts` › writes ONE row keyed by the event — the writer, the field names and the event’s own instant
+- treats a redelivery as done — no second row, no error, no failure line → `fn:adapters/firestore-audit.adapter.spec.ts` › creates the rows; an existing row is a success, not a rewrite
+- writes nothing when no audited field changed → `pl:audit-profile-change.pipeline.spec.ts` › writes nothing when no audited field changed
+- rethrows a transient failure for the platform to redeliver, after one structured line → `fn:wire/triggers.wire.spec.ts` › reads the profile audit’s refusal as permanent, a failed write by its reason
+- swallows a permanent failure — a retry would fail the same way all day → `fn:wire/triggers.wire.spec.ts` › redelivers a transient answer and drops a permanent one, after its line, through `retryingTrigger`
+- logs and drops an event the domain refuses, without writing → `pl:audit-profile-change.pipeline.spec.ts` › refuses an event with no id rather than minting one — permanent, nothing written
+
+**`fn:lib/booking/capacity-plan.spec.ts`** (14)
+
+- yields the full rostered minutes on an empty day → `systems/capacity.system.spec.ts` › yields the full rostered minutes on an empty day
+- pads busy with the turnaround on both sides before subtracting → `systems/capacity.system.spec.ts` › pads busy with the turnaround on both sides before subtracting
+- clamps rostered time to the shop published hours → `systems/capacity.system.spec.ts` › clamps rostered time to the shop published hours
+- splits a two-shop day per location → `systems/capacity.system.spec.ts` › splits a two-shop day per location
+- drops segments at locations outside the active set entirely → `systems/capacity.system.spec.ts` › drops segments at locations outside the active set entirely
+- deletes the entry for a day a published exception closes → `systems/capacity.system.spec.ts` › deletes the entry for a day a published exception closes
+- replaces the roster with an hours exception → `systems/capacity.system.spec.ts` › replaces the roster with an hours exception
+- deletes every entry when the barber has no roster at all → `systems/capacity.system.spec.ts` › deletes every entry when the barber has no roster at all
+- deletes the entry for a fully booked day rather than keeping zeros → `systems/capacity.system.spec.ts` › deletes the entry for a fully booked day rather than keeping zeros
+- deletes the entry on the shop rest day → `systems/capacity.system.spec.ts` › deletes the entry on the shop rest day
+- groups a month-straddling span into sorted month plans → `systems/capacity.system.spec.ts` › groups a month-straddling span into sorted month plans
+- walks the range inclusively → `systems/capacity.system.spec.ts` › walks the range inclusively
+- flags truncation at 500 days instead of walking forever → `systems/capacity.system.spec.ts` › flags truncation at 500 days instead of walking forever
+- lands on the true last day of the following month → `systems/capacity.system.spec.ts` › lands on the true last day of the following month
+
+**`fn:lib/booking/load-day-availability.spec.ts`** (9)
+
+- runs the contract’s cases that hand nothing back → **dead:** by construction — it pinned the release-free filter this loader ran the contract through (a waitlist request releases nothing); that filter is gone, and `loadBusyDay` runs every case of `schedulingPortsContract` unfiltered (`fn:adapters/firestore-schedules.adapter.spec.ts` › %s [each])
+- %s [each] → `fn:adapters/firestore-schedules.adapter.spec.ts` › %s [each]
+- pads each barber by their OWN turnaround, and merges what padding joins → `pl:match-waitlist.pipeline.spec.ts` › pads each barber by their OWN turnaround before searching
+- leaves a barber with no turnaround on the roster unpadded → `pl:match-waitlist.pipeline.spec.ts` › pads each barber by their OWN turnaround before searching
+- keeps a split day’s hours at the listed shop and drops the hidden one’s → `pl:match-waitlist.pipeline.spec.ts` › drops a split day’s hours at a hidden shop and keeps the listed one’s
+- leaves out a barber who works only at a hidden shop that day → `pl:match-waitlist.pipeline.spec.ts` › leaves out a barber who works only at a hidden shop that day, and a roster naming a shop that is not there
+- leaves out a roster naming a shop that is not there, rather than searching it unclamped → `pl:match-waitlist.pipeline.spec.ts` › leaves out a barber who works only at a hidden shop that day, and a roster naming a shop that is not there
+- reads a day whose every shop is hidden as an empty day, never `null` → `pl:match-waitlist.pipeline.spec.ts` › reads a day whose every shop is hidden as an empty day — nothing sent, the lapses still read
+- reads a day nobody is rostered on as an empty day too → `pl:match-waitlist.pipeline.spec.ts` › reads a day nobody is rostered on as an empty day too
+
+**`fn:lib/booking/rebuild-capacity.integration.spec.ts`** (3)
+
+- materializes a month from geometry, pruning empty days → `fn:integration/rebuild-capacity.integration.spec.ts` › materializes a month from the geometry — busy padded out, Saturday and Sunday off the roster pruned
+- REPLACES a stale contribution — a ghost location key does not survive → `fn:integration/rebuild-capacity.integration.spec.ts` › REPLACES a stale contribution — a ghost shop entry of the day does not survive — and keeps other barbers
+- deletes the entry when the day empties, and keeps absent-day semantics → `fn:integration/rebuild-capacity.integration.spec.ts` › deletes the entry when the day empties, keeping absent-day semantics for the rest of the month
+
+**`fn:lib/booking/request-waitlist.spec.ts`** (18)
+
+- records a request the commit could book → `pl:request-waitlist.pipeline.spec.ts` › records a request the commit could book: one Create under its deterministic id, read first in the transaction
+- refuses %s, and records nothing [each] → `pl:request-waitlist.pipeline.spec.ts` › refuses %s with the commit’s own code, and records nothing [each]
+- refuses a party past the cap as the commit does, without reading the catalogue → `pl:request-waitlist.pipeline.spec.ts` › refuses a party past the cap as the commit does, without reading the catalogue
+- refuses a cart naming more services than the party could ask for, without reading → `pl:request-waitlist.pipeline.spec.ts` › refuses a cart naming more services than the party could ask for, without reading a service
+- still reads, once, for a cart inside the bounds → `pl:request-waitlist.pipeline.spec.ts` › reads each named service once, inside the bounds, in one read
+- draws the bound at the cap and at the per-person service count → `systems/waitlist.system.spec.ts` › draws the bound at the cap and at the per-person service count
+- reads each named service once, and only the active ones → `pl:request-waitlist.pipeline.spec.ts` › reads each named service once, inside the bounds, in one read
+- refuses %s, and records nothing [each] → `pl:request-waitlist.pipeline.spec.ts` › refuses %s as the stable field `locationId`, and records nothing [each]
+- records a request for any shop — none named, none read → `pl:request-waitlist.pipeline.spec.ts` › records a request for any shop — none named, none read
+- records a request for a listed shop → `pl:request-waitlist.pipeline.spec.ts` › records a request the commit could book: one Create under its deterministic id, read first in the transaction
+- reads nothing for a visitor who is not signed in → `pl:request-waitlist.pipeline.spec.ts` › refuses a visitor who is not signed in before reading anything
+- reads a listed shop as active, with its own zone and hours → `fn:adapters/firestore-catalog.adapter.spec.ts` › reads the named services in ONE getAll, positions preserved, and the named shop — as stored
+- reads a hidden shop as there, but not active → `fn:adapters/firestore-catalog.adapter.spec.ts` › reads a hidden shop as there, but not active — and a shop that is not there as nothing
+- reads a shop that is not there as nothing → `fn:adapters/firestore-catalog.adapter.spec.ts` › reads a hidden shop as there, but not active — and a shop that is not there as nothing
+- does not read an id that names no document → `fn:adapters/firestore-catalog.adapter.spec.ts` › never reads an id that could not name a document, and answers it absent
+- keeps watching while its day is ahead: asked, nothing to search, nothing sent → `pl:match-waitlist.pipeline.spec.ts` › reads a day whose every shop is hidden as an empty day — nothing sent, the lapses still read
+- expires once its last day has passed, though its shop is still hidden → `pl:match-waitlist.pipeline.spec.ts` › retires the requests whose every day has passed, re-read in their own transaction — no policy read, no snapshot
+- expires the same way on a day nobody is rostered, shop listed → `pl:match-waitlist.pipeline.spec.ts` › retires the requests whose every day has passed, re-read in their own transaction — no policy read, no snapshot
+
+**`fn:lib/booking/sample-lead-time.spec.ts`** (7)
+
+- reports zero lead time when the barber is free today → `systems/lead-time.system.spec.ts` › reports zero lead time when the barber is free today
+- counts the days to the first opening → `systems/lead-time.system.spec.ts` › counts the days to the first opening
+- records null when nothing is free inside the horizon → `systems/lead-time.system.spec.ts` › records null when nothing is free inside the horizon
+- ignores free time below one slot step → `systems/lead-time.system.spec.ts` › ignores free time below one slot step
+- sums a barber working two shops on one day → `systems/lead-time.system.spec.ts` › sums a barber working two shops on one day
+- samples every rostered barber independently → `systems/lead-time.system.spec.ts` › samples every rostered barber independently
+- stamps the sample with the day it was taken → `systems/lead-time.system.spec.ts` › stamps the sample with the day it was taken
+
+**`fn:lib/clients/client-projections.integration.spec.ts`** (10)
+
+- trigger and backfill agree on every fixture → `fn:integration/project-client-stats.integration.spec.ts` › trigger and backfill agree on every fixture
+- a second backfill changes no byte but updatedAt → `fn:integration/project-client-stats.integration.spec.ts` › a second backfill changes no byte but updatedAtUtcMs
+- writes the spend to restricted/money alone, at the stats version → `fn:integration/project-client-stats.integration.spec.ts` › writes the spend to restricted/money alone, at the stats version
+- stamps the mirrors on legacy rows, then lands on the same stats but the preferred barber → `fn:integration/project-client-stats.integration.spec.ts` › stamps both mirrors on legacy rows, then lands on the same stats but the preferred barber
+- resumes from its progress document when called without a cursor → `fn:integration/project-client-stats.integration.spec.ts` › resumes from its progress document when called without a cursor
+- a budget-bound backfill lands where an unhurried one does → `fn:integration/project-client-stats.integration.spec.ts` › a budget-bound backfill lands where an unhurried one does
+- a policy change re-judges every stored client through the job, a budgeted step at a time → `fn:integration/project-client-stats.integration.spec.ts` › a policy change re-judges every stored client through the job, a budgeted step at a time
+- a policy change leaves a stamped cancellation where the rule of its day put it → `fn:integration/project-client-stats.integration.spec.ts` › a policy change leaves a stamped cancellation where the rule of its day put it
+- a pass that stalls says so on its job, rests, and the daily sweep carries it on → `fn:integration/project-client-stats.integration.spec.ts` › a pass that stalls says so on its job, rests, and the daily sweep carries it on
+- the daily sweep starts the pass a dropped start owed, ordered by the policy document’s own update time → `fn:integration/project-client-stats.integration.spec.ts` › the daily sweep starts the pass a dropped start owed, ordered by the policy document’s own update time
+
+**`fn:lib/clients/client-stats-projection.spec.ts`** (19)
+
+- ignores what no stat reads: a tip, an arrival, a contact, a revision → `systems/client-stats.system.spec.ts` › ignores what no stat reads: a tip, an arrival, a contact, a revision
+- wakes on a placement stamped or changed → `systems/client-stats.system.spec.ts` › wakes on a placement stamped or changed
+- sleeps through an inferred placement → `systems/client-stats.system.spec.ts` › sleeps through an inferred placement
+- wakes on an outcome, a subject, a time or a price → `systems/client-stats.system.spec.ts` › wakes on an outcome, a subject, a time or a price
+- wakes on a create and a delete → `systems/client-stats.system.spec.ts` › wakes on a create and a delete
+- does not mistake a reordered map for a change → `systems/client-stats.system.spec.ts` › does not mistake a reordered map for a change
+- is everyone on the visit before and after, once, guests left out → `systems/client-stats.system.spec.ts` › is everyone on the visit before and after, once, sorted
+- never runs behind the stored answer → `systems/client-stats.system.spec.ts` › never runs behind the stored answer
+- writes nothing for a person with no history and nothing stored → `systems/client-stats.system.spec.ts` › writes nothing for a person with no history and nothing stored
+- writes both documents at version 1 the first time → `systems/client-stats.system.spec.ts` › writes both documents at version 1 the first time
+- leaves an unchanged answer alone — a redelivery bumps nothing → `systems/client-stats.system.spec.ts` › leaves an unchanged answer alone — a redelivery bumps nothing
+- bumps both documents when only the spend moved → `systems/client-stats.system.spec.ts` › bumps both documents when only the spend moved
+- rewrites a pair whose versions disagree → `systems/client-stats.system.spec.ts` › rewrites a pair whose versions disagree
+- empties the stats of somebody who left every visit, rather than keeping stale numbers → `systems/client-stats.system.spec.ts` › empties the stats of somebody who left every visit, rather than keeping stale numbers
+- names each stored placement and leaves a legacy row out → `systems/client-stats.system.spec.ts` › names each stored placement and leaves a legacy row out
+- never passes an inferred placement on as evidence → `systems/client-stats.system.spec.ts` › never passes an inferred placement on as evidence
+- refuses a pass older than the stamp, and only that → `systems/policy-recompute-job.system.spec.ts` › refuses a pass older than the stamp, and only that
+- orders passes to the microsecond → `systems/policy-recompute-job.system.spec.ts` › orders passes to the microsecond
+- stamps a first judgement, carries the stamp for a writer that is not a pass, and never skips on an unreadable instant → `systems/policy-recompute-job.system.spec.ts` › stamps a first judgement, carries the stamp for a writer that is not a pass, and never skips on an unreadable instant
+
+**`fn:lib/clients/dispatch-client-projections.spec.ts`** (8)
+
+- recomputes every person on a new visit, each from their own seats → `pl:project-client-stats.pipeline.spec.ts` › recomputes every client record on a visit, each in its own transaction, both documents at version 1
+- writes nothing on a redelivery → `pl:project-client-stats.pipeline.spec.ts` › writes nothing on a redelivery — the same answer bumps nothing
+- exits before any read when nothing a stat reads changed → `pl:project-client-stats.pipeline.spec.ts` › exits before any read when the write moved nobody’s stats
+- rethrows a transient failure after one structured line → `fn:wire/triggers.wire.spec.ts` › reads the projection’s answer — the policy read is every client’s failure
+- recomputes the rest of the party after one person’s permanent failure → `pl:project-client-stats.pipeline.spec.ts` › recomputes the rest of the party after %s failure, and reports it for the edge [each]
+- still recomputes everyone before rethrowing a transient failure → `pl:project-client-stats.pipeline.spec.ts` › recomputes the rest of the party after %s failure, and reports it for the edge [each]
+- names the barber asked for only on visits whose placement is known → `pl:project-client-stats.pipeline.spec.ts` › names the barber asked for only on visits whose COMMIT stamped its placement — never an inference
+- drops a permanent failure, which would fail the same way all day → `fn:wire/triggers.wire.spec.ts` › redelivers a transient answer and drops a permanent one, after its line, through `retryingTrigger`
+
+**`fn:lib/clients/policy-recompute-plan.spec.ts`** (23)
+
+- lives beside runBackfill’s jobs → `systems/policy-recompute-job.system.spec.ts` › lives beside runBackfill’s jobs, under its fixed id
+- round-trips, and reads a broken one as none → **dead:** `policyJobToDocument`/`policyJobFromDocument` are gone — the job document is the flat entity (zero-mapper), so there is no round-trip and no broken body to parse; stored = read is `policy-recompute-job.system` › is plain data through every step — what is stored is what is read
+- starts from the top with nothing counted → `systems/policy-recompute-job.system.spec.ts` › starts from the top with nothing counted
+- leaves the job to a redelivery of its own change and to an older one → `systems/policy-recompute-job.system.spec.ts` › leaves the job to a redelivery of its own change and to an older one
+- restarts for a newer change, or one at the same instant, even mid-pass or after it → `systems/policy-recompute-job.system.spec.ts` › restarts for a newer change, or one at the same instant, even mid-pass or after it
+- orders changes to the microsecond, not the millisecond → `systems/policy-recompute-job.system.spec.ts` › orders changes to the microsecond, not the millisecond
+- hands the job to the newest change, whatever the delivery order → `systems/policy-recompute-job.system.spec.ts` › hands the job to the newest change, whatever the delivery order
+- reads microseconds Date.parse drops, offsets, and refuses what is not an instant → `systems/policy-recompute-job.system.spec.ts` › reads microseconds epoch ms drops, and refuses what is not an instant
+- orders any two instants as their microseconds do, however they are written → `systems/policy-recompute-job.system.spec.ts` › orders any two instants as their microseconds do
+- records the stall and its code, keeping the cursor and when the pass last moved → `systems/policy-recompute-job.system.spec.ts` › records the stall and its code, keeping the cursor and when the pass last moved
+- nudges an unfinished pass only once it has not moved for an hour → `systems/policy-recompute-job.system.spec.ts` › nudges an unfinished pass only once it has not moved for an hour
+- clears a stall so the fired step takes it, keeping the step and the last code → `systems/policy-recompute-job.system.spec.ts` › clears a stall so the fired step takes it, keeping the step and the last code
+- leaves no job, a finished one, and a freshly nudged one alone — so the sweep is idempotent → `systems/policy-recompute-job.system.spec.ts` › leaves no job, a finished one, and a freshly nudged one alone — so the sweep is idempotent
+- moves the step key on every advance, so a stale delivery fails the compare-and-set → `systems/policy-recompute-job.system.spec.ts` › moves the step key on every advance, so a stale delivery fails the compare-and-set
+- adds the step’s counts and stamps the end → `systems/policy-recompute-job.system.spec.ts` › adds the step’s counts and stamps the end
+- is recorded from the change, round-trips, and reads as unknown on an older job → `systems/policy-recompute-job.system.spec.ts` › is recorded from the change, kept by every step, and unknown when the change did not say
+- keeps a document update time at its full precision, in the order the store kept it → `systems/policy-recompute-job.system.spec.ts` › keeps a document update time at its full precision, in the order the store kept it
+- starts one from the top when the policy is newer and draws another line → `systems/policy-recompute-job.system.spec.ts` › starts one from the top when the policy is newer and draws another line
+- owes nothing when the job already answers the document, or the document moved no line → `systems/policy-recompute-job.system.spec.ts` › owes nothing when the job already answers the document, or the document moved no line
+- does not see a line moved and moved back with both starts dropped — the manual backfill repairs it → `systems/policy-recompute-job.system.spec.ts` › does not see a line moved and moved back with both starts dropped — the manual backfill repairs it
+- owes a job that cannot say its line one pass, once → `systems/policy-recompute-job.system.spec.ts` › owes a job that cannot say its line one pass, once
+- with no job at all, owes a pass only when the window left the default → `systems/policy-recompute-job.system.spec.ts` › with no job at all, owes a pass only when the window left the default
+- reads a deleted policy document as the defaults, owed when the job drew another line → `systems/policy-recompute-job.system.spec.ts` › reads a deleted policy document as the defaults, owed when the job drew another line
+
+**`fn:lib/clients/recompute-on-policy-change.spec.ts`** (30)
+
+- wakes on the booking policy’s cancellation window and nothing else → `pl:start-policy-recompute.pipeline.spec.ts` › wakes on the booking policy’s cancellation window and nothing else
+- starts a pass from the top and recomputes nobody itself → `pl:start-policy-recompute.pipeline.spec.ts` › starts a pass from the top and recomputes nobody itself — ONE Set of the job
+- writes nothing when the write moved no late line → `pl:start-policy-recompute.pipeline.spec.ts` › wakes on the booking policy’s cancellation window and nothing else
+- keeps its place on a redelivery, and against an older change delivered late → `pl:start-policy-recompute.pipeline.spec.ts` › keeps its place on a redelivery, and against an older change delivered late
+- drops a start that failed permanently: logged, the job untouched, left to the backfill → `pl:start-policy-recompute.pipeline.spec.ts` › lets a failed transaction go on to the edge — a transient one is redelivered, a permanent one left to the sweep
+- logs the attempt and rethrows a transient failure for redelivery → `fn:main.spec.ts` › fails a non-retrying trigger on a store failure, and lets a retrying one log its one attempt line and rethrow a transient
+- re-judges EVERY stored client, not only the next one written → `pl:continue-policy-recompute.pipeline.spec.ts` › re-judges EVERY stored client, not only the next one written, and rests once finished
+- re-judges only what was stored before the stamp: a stamped cancel keeps its verdict → `pl:continue-policy-recompute.pipeline.spec.ts` › re-judges only what was stored before the stamp: a stamped cancel keeps its verdict
+- stops taking pages once a slow step spends its budget, and resumes from the cursor → `pl:continue-policy-recompute.pipeline.spec.ts` › stops taking pages once a slow step spends its budget, and resumes from the cursor
+- lets a newer policy change supersede a running pass — the last word wins → `pl:continue-policy-recompute.pipeline.spec.ts` › lets a newer policy change supersede a running pass
+- stops a superseded step before its next page: at most the page in hand is judged by the old line → `pl:continue-policy-recompute.pipeline.spec.ts` › stops a superseded step before its next page: at most the page in hand is judged by the old line
+- keeps the last word when the newer pass overtakes a running step between its pages → `pl:continue-policy-recompute.pipeline.spec.ts` › keeps the last word when the newer pass overtakes a running step between its pages
+- keeps the last word when the newer pass judges the page the old step has in hand → `pl:continue-policy-recompute.pipeline.spec.ts` › keeps the last word when the newer pass judges the page the old step has in hand
+- stamps every client a pass judges — an unchanged answer too — and the appointment trigger carries the stamp forward → `pl:continue-policy-recompute.pipeline.spec.ts` › stamps every client a pass judges — an unchanged answer too — and the appointment trigger carries the stamp forward
+- records a permanent stall on the job — stalled, not slow — and rests on that write → `pl:continue-policy-recompute.pipeline.spec.ts` › records a permanent stall on the job — stalled, not slow — and rests on that write
+- records a stall when the advance itself fails permanently, and rethrows a transient one → `pl:continue-policy-recompute.pipeline.spec.ts` › records a stall when the advance itself fails permanently, and answers a transient one for redelivery
+- advances once however often the same step is delivered → `pl:continue-policy-recompute.pipeline.spec.ts` › advances once however often the same step is delivered
+- rethrows a transient failure with no page finished, and keeps the cursor → `pl:continue-policy-recompute.pipeline.spec.ts` › answers a transient failure with no page finished, and keeps the cursor — the page is retried whole
+- counts a permanent failure and walks on, leaving it to the backfill → `pl:continue-policy-recompute.pipeline.spec.ts` › counts a permanent failure and walks on, leaving it to the backfill — the line survives, never rethrown
+- does nothing for a deleted or unreadable job → `pl:continue-policy-recompute.pipeline.spec.ts` › does nothing for a deleted job
+- nudges an unfinished pass that has not moved for an hour, and the fired step carries it on → `pl:sweep-policy-recompute.pipeline.spec.ts` › nudges an unfinished pass that has not moved for an hour — the write that fires its step again
+- retries a stalled pass once a day, and the step that moves it clears the stall → `pl:sweep-policy-recompute.pipeline.spec.ts` › retries a stalled pass once a day, clearing the stall so the fired step takes it
+- leaves no job and a finished one alone → `pl:sweep-policy-recompute.pipeline.spec.ts` › leaves %s alone [each]
+- starts the pass a dropped start owed: the policy is newer than the job and draws another line → `pl:sweep-policy-recompute.pipeline.spec.ts` › starts the pass a dropped start owed: the policy is newer than the job and draws another line
+- owes nothing for a newer policy that moved no line — a horizon edit is not a walk over the book → `pl:sweep-policy-recompute.pipeline.spec.ts` › owes nothing for a newer policy that moved no line — a horizon edit is not a walk over the book
+- owes the first change a pass when there is no job and the window left the default → `pl:sweep-policy-recompute.pipeline.spec.ts` › owes the first change a pass when there is no job and the window left the default
+- fails the sweep through the attempt line when the policy cannot be read → `pl:sweep-policy-recompute.pipeline.spec.ts` › answers a policy it cannot read through the attempt verdict, reading the job not at all
+- logs the attempt line, rethrowing a transient failure for the scheduler’s retry → `pl:sweep-policy-recompute.pipeline.spec.ts` › lets a failed transaction go on to the edge, for the scheduler’s retry
+- sweep once a day at night, retrying → `fn:main.spec.ts` › deploys %s as exactly the endpoint its legacy definition declared [each]
+- start on settings writes, and step on the job document, retrying, inside a budgeted timeout → `fn:main.spec.ts` › deploys %s as exactly the endpoint its legacy definition declared [each]
+
+**`fn:lib/ops/backfill-plan.spec.ts`** (16)
+
+- takes a known job, with a cursor to resume after, null to restart, or none → `systems/backfill-plan.system.spec.ts` › takes a known job, with a cursor to resume after, null to restart, or none
+- refuses an unknown job and a cursor that is not a document id → `systems/backfill-plan.system.spec.ts` › refuses an unknown job and a cursor that is not a document id
+- takes a stored-client cursor for the stats job only → `systems/backfill-plan.system.spec.ts` › takes a stored-client cursor for the stats job only
+- round-trips both phases, and an appointment id stays what it was → `systems/backfill-plan.system.spec.ts` › round-trips both phases, and an appointment id stays what it was
+- believes the commit row when there is one → `systems/backfill-plan.system.spec.ts` › believes the commit row when there is one
+- infers nothing without a commit row, owner or not → `systems/backfill-plan.system.spec.ts` › infers nothing without a commit row, owner or not
+- fills in both mirrors on a row written before them, the placement as an inference → `systems/backfill-plan.system.spec.ts` › fills in both mirrors on a row written before them, the placement as an inference
+- never writes the commit’s own placement stamp → `systems/backfill-plan.system.spec.ts` › never writes the commit’s own placement stamp
+- leaves an unknown placement unwritten, so a rerun stays a no-op → `systems/backfill-plan.system.spec.ts` › leaves an unknown placement unwritten, so a rerun stays a no-op
+- corrects a subject mirror that disagrees with the seats → `systems/backfill-plan.system.spec.ts` › corrects a subject mirror that disagrees with the seats
+- infers nothing over a placement the commit stamped → `systems/backfill-plan.system.spec.ts` › infers nothing over a placement the commit stamped
+- never overwrites an inference it already made → `systems/backfill-plan.system.spec.ts` › never overwrites an inference it already made
+- is null on a complete row, which is what makes a second run a no-op → `systems/backfill-plan.system.spec.ts` › is null on a complete row, which is what makes a second run a no-op
+- is idempotent: a patched row needs no second patch → `systems/backfill-plan.system.spec.ts` › is idempotent: a patched row needs no second patch
+- never writes `placement`, and never changes a stamped one → `systems/backfill-plan.system.spec.ts` › never writes `placement`, and never changes a stamped one
+- flags a row whose subjects disagree or which has no placement of either kind → `systems/backfill-plan.system.spec.ts` › flags a row whose subjects disagree or which has no placement of either kind
+
+**`fn:lib/ops/run-backfill.spec.ts`** (16)
+
+- repairs a client no appointment names any more → `pl:run-backfill.pipeline.spec.ts` › repairs a client no appointment names any more — rewritten to the empty answer
+- walks the appointments, then the stored clients, before it is done → `pl:run-backfill.pipeline.spec.ts` › walks the appointments, then the stored clients, before it is done — and closes with the sample
+- ends the mirror job with the appointments → `pl:run-backfill.pipeline.spec.ts` › stamps both mirrors on a row written before them, the placement as an inference from the commit row alone, and ends with the appointments
+- records what a commit row says as an inference, and a legacy row without one → `pl:run-backfill.pipeline.spec.ts` › stamps both mirrors on a row written before them, the placement as an inference from the commit row alone, and ends with the appointments
+- never turns a pre-P0 phone booking’s defaulted preference into a preferred barber → `fn:integration/project-client-stats.integration.spec.ts` › stamps both mirrors on legacy rows, then lands on the same stats but the preferred barber
+- still names the barber the P0 commit recorded a request for → `systems/client-stats.system.spec.ts` › counts a staff placement only where the form recorded the request
+- stops taking chunks once the budget is spent: partial, with a cursor, audited → `pl:run-backfill.pipeline.spec.ts` › stops taking chunks once the budget is spent: partial, with a cursor, audited
+- resumes from its progress document, and lands where an unhurried run does → `pl:run-backfill.pipeline.spec.ts` › resumes from its progress document without a cursor, and lands where an unhurried run does
+- always takes the first chunk, so a spent budget still moves the walk → `pl:run-backfill.pipeline.spec.ts` › always takes the first chunk, so a spent budget still moves the walk
+- defers the sample past a spent budget, then takes it → `pl:run-backfill.pipeline.spec.ts` › defers the closing sample past a spent budget, then takes it on the next call
+- names the job and how the page went → `pl:run-backfill.pipeline.spec.ts` › names the job and how the page went, untargeted, by the caller
+- says partial, and where to go on, when the page runs out first → `pl:run-backfill.pipeline.spec.ts` › says partial, and where to go on, when the page runs out first
+- keys a returned page as one change: a replayed call logs once, every other call on its own → `pl:run-backfill.pipeline.spec.ts` › keys a returned page as one change: a replayed call logs once, another stretch on its own
+- writes the row for a page that failed after writing, then rethrows → `pl:run-backfill.pipeline.spec.ts` › writes the row for a page that failed after writing, then lets the failure go on
+- takes new work for 49 s, leaving 21 s of the SDK’s wait for the chunk in hand → `fn:wire/ops.wire.spec.ts` › takes new work for 49 s — the edge’s callable budget over that timeout — leaving the SDK’s 70 s wait the chunk in hand
+- keeps the long platform timeout as the reserve the call is never killed inside → `fn:wire/ops.wire.spec.ts` › keeps the long platform timeout as the reserve the call is never killed inside
+
+**`fn:lib/ops/work-budget.spec.ts`** (7)
+
+- leaves the last 30 % of the timeout for the unit in hand and the bookkeeping → `systems/work-budget.system.spec.ts` › leaves the last 30 % of the timeout for the unit in hand and the bookkeeping
+- answers inside the client SDK’s 70 s wait, however long the platform allows → `systems/work-budget.system.spec.ts` › answers inside the client SDK’s 70 s wait, however long the platform allows
+- never outlasts either bound → `systems/work-budget.system.spec.ts` › never outlasts either bound
+- is spent once the injected clock has moved past the limit → `systems/work-budget.system.spec.ts` › is spent once the injected clock has moved past the limit
+- walks everything in chunks while the budget lasts → `systems/work-budget.system.spec.ts` › walks everything in chunks while the budget lasts
+- takes no new chunk once a slow run spends the budget, but always the first → `systems/work-budget.system.spec.ts` › takes no new chunk once a slow run spends the budget, but always the first
+- handles a prefix, never skipping an item, whatever the budget does → `systems/work-budget.system.spec.ts` › handles a prefix, never skipping an item, whatever the budget does
+
+**`fn:lib/trigger-attempts.spec.ts`** (10)
+
+- reads numeric gRPC codes as the Admin SDK reports them → `systems/trigger-attempt.system.spec.ts` › reads numeric gRPC codes as the Admin SDK reports them
+- reads string codes in any common spelling → `systems/trigger-attempt.system.spec.ts` › reads string codes in any common spelling
+- retries only what a later attempt could change → `systems/trigger-attempt.system.spec.ts` › retries only what a later attempt could change
+- measures how far into the retry window a delivery is → `systems/trigger-attempt.system.spec.ts` › measures how far into the retry window a delivery is
+- is transient when any one failure is, so the redelivery retries them all → `systems/trigger-attempt.system.spec.ts` › is transient when any one failure is, so the redelivery retries them all
+- is the first permanent failure when none is transient, and null for none → `systems/trigger-attempt.system.spec.ts` › is the first permanent failure when none is transient, and null for none
+- judges one failure by its code, or by a code it is given → `systems/trigger-attempt.system.spec.ts` › judges one failure by its code, or by a code it is given
+- logs the line and rethrows a transient failure for redelivery → `fn:edge.spec.ts` › logs the one attempt line and rethrows what a redelivery could fix
+- logs the line and returns on a permanent one → `fn:edge.spec.ts` › logs and drops what would fail the same way for the whole window
+- only logs, whatever the outcome, when asked to log → `fn:wire/triggers.wire.spec.ts` › logs a survived failure as today’s ONE line — ids and codes, and how deep into the retry window
+
+**`fn:use-cases/decide-waitlist.spec.ts`** (18)
+
+- accepts a party the commit would admit → `systems/waitlist.system.spec.ts` › accepts a party the commit would admit
+- refuses more people than the policy seats → `systems/waitlist.system.spec.ts` › refuses more people than the policy seats
+- refuses a service the catalogue does not offer — unknown or retired → `systems/waitlist.system.spec.ts` › refuses a service the catalogue does not offer — unknown or retired
+- refuses a service with variants and none chosen, or one it does not declare → `systems/waitlist.system.spec.ts` › refuses a service with variants and none chosen, or one it does not declare
+- refuses two services one person may not have together — and allows them for two people → `systems/waitlist.system.spec.ts` › refuses two services one person may not have together — and allows them for two people
+- refuses a service the named shop does not offer — and watches any shop for it → `systems/waitlist.system.spec.ts` › refuses a service the named shop does not offer — and watches any shop for it
+- refuses a cart line that does not read, rather than watching for the rest of the party → `systems/waitlist.system.spec.ts` › refuses a cart line that does not read, rather than watching for the rest of the party
+- asks who is waiting before anything about the cart → `systems/waitlist.system.spec.ts` › asks who is waiting before anything about the cart
+- refuses a shop the commit would not find, as the stable field `locationId` → `systems/waitlist.system.spec.ts` › refuses a shop the commit would not find, as the stable field `locationId`
+- refuses a shop the public surface no longer lists → `systems/waitlist.system.spec.ts` › refuses a shop the public surface no longer lists
+- accepts a listed shop → `systems/waitlist.system.spec.ts` › accepts a listed shop
+- never asks about a shop for an any-shop request — nothing was read → `systems/waitlist.system.spec.ts` › never asks about a shop for an any-shop request — nothing was read
+- asks about the shop before the party, in the commit’s order → `systems/waitlist.system.spec.ts` › asks about the shop before the party, in the commit’s order
+- refuses %s as the one field `locationId` [each] → `systems/waitlist.system.spec.ts` › refuses %s as the one field `locationId` [each]
+- refuses an empty id whatever shop it is handed — the spelling alone names none → `systems/waitlist.system.spec.ts` › refuses an empty id whatever shop it is handed — the spelling alone names none
+- answers %s as the commit’s door answers it — the one field [each] → `systems/waitlist.system.spec.ts` › answers %s as the commit’s door answers it — the one field [each]
+- is refused by the commit’s decision too, should an empty id ever get past the store → `systems/booking-decision.system.spec.ts` › is refused by the commit’s decision too, should an empty id ever get past the store
+- asks about the shop before the days it watches → `systems/waitlist.system.spec.ts` › asks about the shop before the days it watches
+
+**`fn:use-cases/match-waitlist.spec.ts`** (18)
+
+- sends a start the commit accepts, at the shop the request named → `systems/waitlist.system.spec.ts` › sends a start the commit accepts, at the shop the request named
+- sends nothing at a shop that does not offer the service → `systems/waitlist.system.spec.ts` › sends nothing at a shop that does not offer the service
+- still sends it once the shop that offers it frees up → `systems/waitlist.system.spec.ts` › still sends it once the shop that offers it frees up
+- sends nothing at a shop the request did not name → `systems/waitlist.system.spec.ts` › sends nothing at a shop the request did not name
+- sends the other shop’s time when the request named that shop, or none → `systems/waitlist.system.spec.ts` › sends the other shop’s time when the request named that shop, or none
+- sends nothing that splits a party across two shops → `systems/waitlist.system.spec.ts` › sends nothing that splits a party across two shops
+- sends the party side by side at one shop with two free chairs → `systems/waitlist.system.spec.ts` › sends the party side by side at one shop with two free chairs
+- sends nothing inside the barber’s turnaround → `systems/waitlist.system.spec.ts` › sends nothing inside the barber’s turnaround
+- sends the first start after the turnaround → `systems/waitlist.system.spec.ts` › sends the first start after the turnaround
+- keeps to the barber the request asked for → `systems/waitlist.system.spec.ts` › keeps to the barber the request asked for
+- sends nothing for part of a party whose other service left the catalog → `systems/waitlist.system.spec.ts` › sends nothing for part of a party whose other service left the catalog
+- sends nothing past the booking horizon → `systems/waitlist.system.spec.ts` › sends nothing past the booking horizon
+- sends nothing once a service the request names gained variants → `systems/waitlist.system.spec.ts` › sends nothing once a service the request names gained variants
+- sends nothing once two services one person asked for conflict → `systems/waitlist.system.spec.ts` › sends nothing once two services one person asked for conflict
+- sends nothing to a party over a cap the owner lowered → `systems/waitlist.system.spec.ts` › sends nothing to a party over a cap the owner lowered
+- skips a request whose shop was hidden since — and matches it again once the shop is back → `systems/waitlist.system.spec.ts` › skips a request whose shop was hidden since — and matches it again once the shop is back
+- never tells an any-shop request of a slot at a hidden shop → `systems/waitlist.system.spec.ts` › never tells an any-shop request of a slot at a hidden shop
+- holds over random rosters, turnarounds, busy days and requests → `systems/waitlist.system.spec.ts` › holds over random rosters, turnarounds, busy days and requests
+
+### 11.3 The P3 case ledger
+
+Every case of the 17 specs P3 deleted (§5.1, §5.2: 118 cases, read off
+`c0e5d73`), each against the successor case that holds it on the flip tree
+(`successor file` › its `it` title, describe path left out) or `dead:` with
+the reason its subject no longer exists. 94 cases have a successor, 24 are
+dead; none has neither. Two cases had no successor when the ledger was first
+read (a hidden shop's blocks dropped from the staff day, and no capacity read
+for an empty barber pool): their behaviour had survived the move unasserted,
+so the flip commit adds the two successor cases named below. Prefixes: `wa:` = `libs/infrastructure/firestore/src/lib/`,
+`ws:` = `libs/infrastructure/storage/src/lib/`, `ft:` = `libs/features/`,
+`systems/`, `components/`, `entities/` and `primitives/` = `libs/ecs-core/src/…`.
+A `[each]` title is one table-driven case; its rows moved with it — where the
+successor is the `%s` runner of the `schedulingPortsContract` cases, the row
+that holds the deleted case is named after it. Availability left the adapter
+(F1-10): its derived-view cases are held by the systems and by
+`ft:client/booking/src/lib/schedule-step/day-availability.spec.ts`, the
+composition the `/book` step runs in a `computed()`. Mapper-only cases (a
+`*ToDocument`/`*Persistence` round trip, a malformed-document parse, a blank
+uid the `CustomerId` brand now refuses at its edge) are dead, pointing at the
+entity type-spec or the case that holds what survives.
+
+**`wa:appointment-repository.adapter.integration.spec.ts`** (6)
+
+- a client reads back their own server-written appointment → `wa:appointments.adapter.integration.spec.ts` › a client reads back their own server-written appointment
+- RULES: a client cannot create an appointment at all — not even their own → `wa:appointments.adapter.integration.spec.ts` › a client cannot create an appointment at all — not even their own
+- RULES: a client cannot forge an appointment owned by someone else → `wa:appointments.adapter.integration.spec.ts` › a client cannot forge an appointment owned by someone else
+- RULES: nobody creates appointments directly — staff included → `wa:appointments.adapter.integration.spec.ts` › nobody creates appointments directly — staff included
+- observeUpcomingFor emits only the requesting user’s own appointments → `wa:appointments.adapter.integration.spec.ts` › observeUpcoming emits only the requesting account’s own live appointments, by start — index #6
+- lets staff READ any appointment, but never write its lifecycle directly → `wa:appointments.adapter.integration.spec.ts` › lets staff READ any appointment, but never write its lifecycle directly
+
+**`wa:appointment-repository.adapter.spec.ts`** (11)
+
+- REFUSES to save from the browser — appointments are committed server-side → `wa:appointments.adapter.integration.spec.ts` › nobody creates appointments directly — staff included
+- reads back a document written in the canonical persisted shape → `wa:appointments.adapter.spec.ts` › reads one visit as its entity, and null when there is none
+- findById returns null when the document does not exist → `wa:appointments.adapter.spec.ts` › reads one visit as its entity, and null when there is none
+- derives the denormalized ownerUserId from the self seat → `systems/appointment-index.system.spec.ts` › names the first self seat as owner, the barbers in seat order, the busy keys sorted
+- mirrors barberIds and the envelope for querying, without reading them back → **dead:** `appointmentToDocument` and the read-side recompute are gone — the mirrors are the entity's own root fields (zero-mapper), derived once at the write: `systems/appointment-index.system.spec.ts` › names the first self seat as owner, the barbers in seat order, the busy keys sorted
+- fails the read as a malformed seat, never as a thrown TypeError → **dead:** no seat parse — the stored seat is the typed `Seat` slice of the entity, read as is (zero-mapper)
+- costs the history only that visit, not the whole snapshot → **dead:** no per-document parse that can fail — the history is the query's bodies as entities; the read is `wa:appointments.adapter.spec.ts` › answers the newest visits of one account, newest first and bounded — index #18
+- surfaces a failed upcoming list the page can show, instead of a listener that never emits → **dead:** the legacy seat shape that threw in the mapper no longer exists (document = entity, no backfill); a failed stream still reaches the page as a value — `wa:observe.spec.ts` › answers a refused listen with the flat RepositoryError naming the path
+- costs the staff day only that booking, not the whole day → **dead:** no per-document parse — the staff day is the query's bodies as entities: `wa:appointments.adapter.spec.ts` › asks by the busyKeys mirror alone and answers every status, by start
+- reads the seat pads the canonical shape stores → **dead:** no adapter mapper to drop them — `setupMinutes`/`cleanupMinutes` are fields of the stored `Seat` slice, read as is; the chair they hold is `components/seat.data.spec.ts` › sells the slot alone — the chair is held for setup and cleanup around it
+- observeUpcomingFor filters out terminal-status appointments from the live snapshot → `wa:appointments.adapter.spec.ts` › answers the live bookings of one account by start — index #6
+
+**`wa:availability-reader.adapter.integration.spec.ts`** (7)
+
+- answers a month-straddling range from the rollup, anonymously, first emission → `wa:scheduling.adapter.integration.spec.ts` › lets an anonymous visitor read every stream /book needs, on the first emission
+- narrows to the chosen shop → `ft:client/booking/src/lib/schedule-step/day-availability.spec.ts` › sums the free minutes of the barbers asked about, at the one shop asked about
+- counts only the barbers the catalog names → `ft:client/booking/src/lib/schedule-step/day-availability.spec.ts` › sums the free minutes of the barbers asked about, at the one shop asked about
+- returns an empty map for an empty barber set without touching the network → `ft:client/booking/src/lib/schedule-step/booking-schedule-step.spec.ts` › reads no capacity month for a visit no barber can take, and marks no day
+- RULES: capacity is world-readable and client-write-closed → `wa:scheduling.adapter.integration.spec.ts` › RULES: the busy projection and the capacity rollup are world-readable and client-write-closed
+- hands the visit’s own chair back before padding — the neighbour keeps its turnaround → `wa:scheduling.adapter.spec.ts` › %s [each] — row “the moved visit’s own chair is released BEFORE padding, and the neighbour keeps its turnaround”
+- pads the whole stored span when nothing is handed back → `wa:scheduling.adapter.spec.ts` › %s [each] — row “nothing handed back: every span padded by the turnaround”
+
+**`wa:availability-reader.adapter.spec.ts`** (12)
+
+- %s [each] → `wa:scheduling.adapter.spec.ts` › %s [each]
+- hands back each barber’s own share of a party’s chairs, and only theirs → `wa:scheduling.adapter.spec.ts` › %s [each] — row “every chair of a party is released, one barber’s share at a time”
+- offers "any shop" only the windows at a listed shop → `ft:client/booking/src/lib/schedule-step/day-availability.spec.ts` › clamps every segment to its shop’s hours, and offers nothing at a shop that is not listed
+- offers nothing at a hidden shop or a shop nobody authored, even named outright → `ft:client/booking/src/lib/schedule-step/day-availability.spec.ts` › clamps every segment to its shop’s hours, and offers nothing at a shop that is not listed
+- judges a status nobody modelled — or none — as not listed → `systems/party-admission.system.spec.ts` › %s → listed: %s [each]
+- offers the shop again once it is listed — clamped to its own hours → `systems/roster.system.spec.ts` › clips each segment to ITS OWN shop’s hours, not the other’s
+- drops what a hidden shop’s day had blocked out too, with its windows → `ft:staff/dashboard/src/lib/lane-geometry.spec.ts` › drops what a hidden shop’s day had blocked out too, with its windows
+- is offered its own shop — clamped to that shop’s own hours → `ft:client/booking/src/lib/schedule-step/day-availability.spec.ts` › offers a MOVE its own shop, listed or not — still clamped to that shop’s hours
+- is offered nothing at a shop nobody authored → `ft:client/booking/src/lib/schedule-step/day-availability.spec.ts` › clamps every segment to its shop’s hours, and offers nothing at a shop that is not listed
+- still sees listed shops only when it asks for "any shop" → `ft:client/booking/src/lib/schedule-step/day-availability.spec.ts` › clamps every segment to its shop’s hours, and offers nothing at a shop that is not listed
+- is the ordinary booking when nothing is handed back → `ft:client/booking/src/lib/schedule-step/day-availability.spec.ts` › reads a shop by id only for a move — a chosen shop alone reads nothing more
+- offers a short move over the visit’s own old chair — and keeps the neighbour’s turnaround → `systems/availability.system.spec.ts` › hands a moved visit’s own chair back BEFORE padding, so a neighbour keeps its turnaround
+
+**`wa:catalog-reader.adapter.integration.spec.ts`** (3)
+
+- lets an anonymous (unauthenticated) client read catalog data → `wa:catalog.adapter.integration.spec.ts` › lets an anonymous (unauthenticated) visitor read the catalogue, the body as stored
+- excludes archived services and filters by category through listActiveServices → `wa:catalog.adapter.integration.spec.ts` › excludes archived services and filters by category — indexes #1 and #2
+- denies writes through the rules (public read, staff/content-manager write only) → `wa:catalog.adapter.integration.spec.ts` › denies writes through the rules (public read, catalogue-manager write only)
+
+**`wa:catalog-reader.adapter.spec.ts`** (6)
+
+- findServiceById maps a valid document into a Service → **dead:** `findServiceById` and its document→`Service` mapper are gone — the web reads services only as the catalogue stream's stored bodies, `wa:catalog.adapter.spec.ts` › answers a service as its whole stored body beside its id (the shape: `entities/booking-core-entities.type-spec.ts`)
+- findServiceById returns null when the document does not exist → **dead:** `CATALOG_PORTS` has no one-service read (four list streams, §3.4); an absent document reads as null in the shared helper, `wa:observe.spec.ts` › reads a document as its entity, or null
+- findServiceById surfaces a failure for a malformed document → **dead:** no document parse — the stored body is the `Service` entity (zero-mapper)
+- listActiveServices(categoryId) filters by category and status, ordered by sortOrder → `wa:catalog.adapter.spec.ts` › narrows the services to one category — index #1, the archived one left out
+- listActiveServices() with no category still filters status and orders → `wa:catalog.adapter.spec.ts` › lists every ACTIVE service by sortOrder — index #2
+- listActiveServices emits mapped services on snapshot → `wa:catalog.adapter.spec.ts` › answers a service as its whole stored body beside its id
+
+**`wa:client-history-reader.adapter.integration.spec.ts`** (5)
+
+- reads every visit with a seat for the person — as company too — newest first → `wa:appointments.adapter.integration.spec.ts` › reads every visit with a seat for the client record — as company too — newest first
+- pages on the stored start until nothing older is left → `wa:appointments.adapter.integration.spec.ts` › pages on the stored start until nothing older is left
+- keeps visits starting at the same instant on one page, and says when nothing is older → `wa:appointments.adapter.integration.spec.ts` › keeps visits starting at the same instant on one page, and says when nothing is older
+- drops a document that does not parse, never the page → **dead:** no document parse — each history row is the stored body as the `Appointment` entity (zero-mapper)
+- is the book’s: a content manager is refused → `wa:appointments.adapter.integration.spec.ts` › is the book’s: a content manager is refused
+
+**`wa:client-stats-directory.adapter.integration.spec.ts`** (5)
+
+- walks everybody in the order of their ids, a cursor only while somebody is left → `wa:client-stats.adapter.integration.spec.ts` › walks everybody in the order of their ids, a cursor only while somebody is left
+- hands over the visits the preview folds, parsed → `wa:client-stats.adapter.integration.spec.ts` › hands over the stored projection, the body beside its id
+- leaves out a document that does not parse, and walks on past it → **dead:** no document parse — a page is the stored projections as `ClientStatsRecord`s (zero-mapper; the shape: `entities/stats-ops-entities.type-spec.ts`)
+- lets a %s walk them too: whoever reads one client’s statistics reads them all [each] → `wa:client-stats.adapter.integration.spec.ts` › lets a %s walk the clients [each]
+- is refused to a client, a content manager and an anonymous visitor → `wa:client-stats.adapter.integration.spec.ts` › is refused to a client, a content manager and an anonymous visitor
+
+**`wa:client-stats-directory.adapter.spec.ts`** (12)
+
+- reads the collection in the order of its document ids, one document more than asked → `wa:client-stats.adapter.spec.ts` › reads the collection in the order of its document ids, one document more than asked
+- starts after the cursor on a later page → `wa:client-stats.adapter.spec.ts` › starts after the cursor on a later page
+- hands over a page of the shop’s clients, parsed, and where the next one starts → `wa:client-stats.adapter.spec.ts` › hands over a page of the shop’s clients, and where the next one starts
+- walks everybody through its cursors: each client once, in order → `wa:client-stats.adapter.spec.ts` › walks everybody through its cursors: each client once, in order
+- gives no cursor when the clients end exactly where the page does → `wa:client-stats.adapter.spec.ts` › gives no cursor when the clients end exactly where the page does
+- answers as the port’s reference does, page for page (pages of %s) [each] → `wa:client-stats.adapter.spec.ts` › hands every client over exactly once, in id order, in pages of %s [each]
+- never reads the spend: `restricted/money` is no client of the shop → `wa:client-stats.adapter.spec.ts` › never reads the spend: `restricted/money` is no client of the shop
+- leaves out a document that does not parse, and neither ends the walk there nor stalls on it → **dead:** no document parse — every document read is a record, so the cursor is simply the page's last id (`wa:client-stats.adapter.spec.ts` › walks everybody through its cursors: each client once, in order)
+- is an empty page, never an error, for a shop with no clients yet → `wa:client-stats.adapter.spec.ts` › is an empty page, never an error, for a shop with no clients yet
+- asks for a whole page of at least one client, whatever was asked (%s) [each] → `wa:client-stats.adapter.spec.ts` › asks for a whole page of at least one client, whatever was asked (%s) [each]
+- reads a blank cursor as none → **dead:** the cursor is a `CustomerId | null` — `null` is the one "none", and a blank text is no `CustomerId` (`primitives/ids.primitive.spec.ts` › parse refuses a blank id and a path separator as flat PrimitiveErrors)
+- turns a refused read into a failed Result → `wa:client-stats.adapter.spec.ts` › turns a refused read into a failed Result
+
+**`wa:client-stats-reader.adapter.spec.ts`** (5)
+
+- reads clientStats/{uid} once and parses it through the port mapper → `wa:client-stats.adapter.spec.ts` › reads clientStats/{customerId} as its entity
+- answers null for a client with no stats yet → `wa:client-stats.adapter.spec.ts` › answers null for a client with no projection yet
+- never reads for a blank id → **dead:** the blank-uid guard went with the uid key — the read takes a `CustomerId` (D29), and a blank one is refused where foreign input becomes one (`primitives/ids.primitive.spec.ts` › parse refuses a blank id and a path separator as flat PrimitiveErrors)
+- turns a refused read into a failed Result → `wa:client-stats.adapter.spec.ts` › turns a refused read into a failed Result
+- reads the spend from the restricted sub-document → `wa:client-stats.adapter.spec.ts` › reads the spend from the restricted sub-document
+
+**`wa:client-vouchers-reader.adapter.integration.spec.ts`** (5)
+
+- hands a barber what the client holds, whatever its state → `wa:coupons-vouchers.adapter.integration.spec.ts` › hands a barber what the client record holds, whatever its state — never another’s, never a paper one
+- never hands over another client’s voucher, nor a paper one → `wa:coupons-vouchers.adapter.integration.spec.ts` › hands a barber what the client record holds, whatever its state — never another’s, never a paper one
+- is an empty list for a client who holds none → `wa:coupons-vouchers.adapter.integration.spec.ts` › is an empty list for a client record that holds none
+- lets a client read their own, and refuses them somebody else’s → `wa:coupons-vouchers.adapter.integration.spec.ts` › RULES: a client reads their own voucher, never another’s
+- is refused to an anonymous visitor → `wa:coupons-vouchers.adapter.integration.spec.ts` › is refused to an anonymous visitor
+
+**`wa:client-vouchers-reader.adapter.spec.ts`** (8)
+
+- asks for the holder’s vouchers by one equality, which needs no index → `wa:coupons-vouchers.adapter.spec.ts` › lists what a client holds, whatever its state — never another’s, never a paper one
+- hands over what the person holds, whatever its state: the spent and the voided too → `wa:coupons-vouchers.adapter.spec.ts` › lists what a client holds, whatever its state — never another’s, never a paper one
+- never hands one person another’s voucher, nor anyone a paper one → `wa:coupons-vouchers.adapter.spec.ts` › lists what a client holds, whatever its state — never another’s, never a paper one
+- answers as the port’s reference does, voucher for voucher → `wa:coupons-vouchers.adapter.spec.ts` › lists what a client holds, whatever its state — never another’s, never a paper one
+- is an empty list, never an error, for a client who holds none → `wa:coupons-vouchers.adapter.spec.ts` › is an empty list, never an error, for a client who holds none
+- reads nothing for no one: a blank id would ask for the paper vouchers → **dead:** the blank-uid guard went with the uid key — the holder is a `CustomerId` (D29), refused blank at its edge (`primitives/ids.primitive.spec.ts` › parse refuses a blank id and a path separator as flat PrimitiveErrors), and a paper voucher's `issuedToCustomerId` is `null`, which no string equality matches (`wa:coupons-vouchers.adapter.spec.ts` › lists what a client holds, whatever its state — never another’s, never a paper one)
+- leaves out a document that is no voucher rather than cost the person the rest → **dead:** no document parse — the stored body is the `GiftVoucher` entity (zero-mapper; the shape: `entities/appointment-entities.type-spec.ts`)
+- turns a refused read into a failed Result → `wa:coupons-vouchers.adapter.spec.ts` › turns a refused read into a failed Result
+
+**`wa:coupon-grant-repository.adapter.integration.spec.ts`** (4)
+
+- saves and finds a grant round-trip → `wa:coupons-vouchers.adapter.integration.spec.ts` › loads one grant by id
+- findUsableForUser returns only active grants, joined with their coupon → `wa:coupons-vouchers.adapter.integration.spec.ts` › lists a client record’s ACTIVE grants for the book, by two equalities
+- denies a grant update that changes anything other than `state` (rules) → `wa:coupons-vouchers.adapter.integration.spec.ts` › RULES: no client updates a grant — the owner’s used → active flip included
+- denies reading another user grant, by get and by list (rules) → `wa:coupons-vouchers.adapter.integration.spec.ts` › RULES: a client may read their own grant, never another’s
+
+**`wa:coupon-grant-repository.adapter.spec.ts`** (4)
+
+- save() writes the grant to top-level couponGrants/{grantId} → **dead:** the web writes no grant — `couponVoucherPorts` has no write member (a burn is an entry of the server's commit plan, F1-2), and the rules refuse every client update: `wa:coupons-vouchers.adapter.integration.spec.ts` › RULES: no client updates a grant — the owner’s used → active flip included
+- findById() returns null when no matching grant exists → `wa:coupons-vouchers.adapter.spec.ts` › loads one grant by id, and null when there is none
+- findById() reconstitutes the grant from a point get → `wa:coupons-vouchers.adapter.spec.ts` › loads one grant by id, and null when there is none
+- findUsableForUser() filters expired grants and joins the coupon definition → `systems/coupon-grant.system.spec.ts` › is usable while active and not past expiry
+
+**`wa:coupon-persistence.spec.ts`** (11)
+
+- reads what the coupon is given for → `ft:staff/dashboard/src/lib/staff-dashboard/staff-dashboard.spec.ts` › offers the booker's coupons with their occasion: a birthday grant reaches the sheet as `occasion: 'birthday'`, a plain one as `null`
+- knows the occasion «%s» [each] → `components/coupon-occasion.data.spec.ts` › takes every known occasion
+- reads a coupon written before occasions existed as tied to none → `components/coupon-occasion.data.spec.ts` › reads %s as no occasion [each]
+- reads a written «none» as none → `components/coupon-occasion.data.spec.ts` › reads %s as no occasion [each]
+- refuses %s rather than pass it as «none» and undress the gift [each] → `components/coupon-occasion.data.spec.ts` › refuses %j: a word the card does not know is never "no occasion" [each]
+- leaves every other field of the coupon as it read before → **dead:** `couponFromPersistence` is gone — the document is the `Coupon` entity read as is (zero-mapper), its flat shape the `Coupon` proofs of `entities/appointment-entities.type-spec.ts`
+- writes the occasion with every other field, the ones that say «none» included → **dead:** `couponToPersistence` is gone and nothing on the web writes a coupon (D28: a rules-guarded admin write, seeded by `tools/seed`); the stored body is `Omit<Coupon, 'id'>`
+- writes «none» as null, never as a missing field → **dead:** no coupon writer and no mapper — `couponOccasion: CouponOccasion | null` is a required field of the `Coupon` entity, so "none" is `null` by type
+- never writes the id: it is the document’s → **dead:** no mapper to leave it out — a document is the entity minus its id, read back as `{ id, ...data }`: `wa:observe.spec.ts` › spreads the body beside its id, and nothing else
+- %s reads back as the coupon that was saved [each] → **dead:** no mapper round trip — document = entity (zero-mapper), the shape pinned by `entities/appointment-entities.type-spec.ts`
+- an edit of the birthday coupon keeps what it is given for → **dead:** no web coupon editor or writer in this flip (D28), and no mapper left to drop the field
+
+**`wa:schedule-exception-writer.adapter.spec.ts`** (6)
+
+- merges the range into every day, reading in parallel and writing in ONE batch → `wa:scheduling.adapter.spec.ts` › reads every key’s stored day and writes the merge’s answer, the body without its id
+- stands whole days down without reading them — a day off replaces the day → `ft:staff/dashboard/src/lib/staff-dashboard/staff-dashboard.spec.ts` › stands the whole day down when the switch is on
+- splits a long series at Firestore's 500 writes a batch → **dead:** batches are gone — a series is ONE read–merge–write transaction (`writeScheduleException`), and it holds at most `RecurrenceRule.MAX_OCCURRENCES` (366) days, under Firestore's 500 writes: `systems/recurrence.system.spec.ts` › never materialises more than MAX_OCCURRENCES days, however wide the window
+- refuses a day that is not one, before anything is read or written → `primitives/local-date.primitive.spec.ts` › refuses %j as a flat PrimitiveError [each]
+- still merges one range into the day it reads → `systems/schedule-exception.system.spec.ts` › adds a range to a blocked day, a day of other hours and an empty day
+- leaves a whole day off alone → `systems/schedule-exception.system.spec.ts` › leaves a whole day off alone — the ranges add nothing to it
+
+**`ws:client-photos-reader.adapter.spec.ts`** (8)
+
+- asks for the client’s newest photos, ordered so the limit keeps the newest → `ws:appointment-photos.adapter.spec.ts` › asks for the client record’s newest photos, ordered so the limit keeps the newest
+- sets the shop’s own pictures and unreadable documents aside, keeps a legacy shot → `ws:appointment-photos.adapter.spec.ts` › sets the shop’s own pictures aside
+- reads nothing for no client or no room → `ws:appointment-photos.adapter.spec.ts` › reads nothing for no room
+- answers a failed read with a failed Result → `ws:appointment-photos.adapter.spec.ts` › answers a failed read with a failed Result
+- counts each visit’s own photos, every asked id a key → `ws:appointment-photos.adapter.spec.ts` › counts each visit’s own photos, every asked id answered in its place
+- asks thirty ids at a time — Firestore’s cap on one `in` → `ws:appointment-photos.adapter.spec.ts` › asks thirty ids at a time — Firestore’s cap on one `in`
+- reads nothing for no ids, and asks for an id once however often it is listed → `ws:appointment-photos.adapter.spec.ts` › reads nothing for no ids, and asks for an id once however often it is listed
+- answers a failed read with a failed Result → `ws:appointment-photos.adapter.spec.ts` › answers a failed read with a failed Result

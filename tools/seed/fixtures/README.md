@@ -1,15 +1,31 @@
 # tools/seed/fixtures
 
 The home of the dev seed's document bodies as TypeScript (ECS migration,
-`docs/architecture/ecs-migration.md` §6 Phase 3, Risk 1, Risk 8). It is empty
-on purpose until the Phase 3b flips fill it: each flip moves the bodies of the
-collections it reshapes here, in the same commit that changes their shape.
+`docs/architecture/ecs-migration.md` §6 Phase 3, Risk 1, Risk 8). Each Phase
+3b flip moves the bodies of the collections it reshapes here, in the same
+commit that changes their shape.
+
+## What is here (flip 1 — booking core)
+
+| File                       | Collections                                             | Exports                                                                                      |
+| -------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `catalog.fixtures.ts`      | `serviceCategories`, `locations`, `barbers`, `services` | the catalogue as `Seeded<Id, X>[]` rows, the brand helpers and `Body<X>` the others share    |
+| `schedules.fixtures.ts`    | `barberSchedules`, `scheduleExceptions`, `barberBusy`   | `SCHEDULES`; `closedDayBody`, `busyDayBody`, `busyKeyOf`                                     |
+| `appointments.fixtures.ts` | `appointments`, `appointmentPhotos`                     | `appointmentBody(plan)`, `appointmentPhotoBody(plan)` and their plan types                   |
+| `promotions.fixtures.ts`   | `coupons`, `couponGrants`, `giftVouchers`               | `COUPONS`; `couponGrantBody`, `giftVoucherBodies`                                            |
+| `waitlist.fixtures.ts`     | `waitlistRequests`                                      | `waitlistRequestBody(plan)`                                                                  |
+| `customers.fixtures.ts`    | `customers` (D29)                                       | `customerIdOf(uid)` (`CustomerId.forUser` over sha256), `seededCustomerBody` (`SEED` origin) |
+
+The plan logic that decides WHO, WHAT and WHEN stays in the `.mjs` modules
+(`catalog.mjs`, `fixtures.mjs`, `appointments.mjs`, `promotions.mjs`,
+`waitlist.mjs`, `loyalty.mjs`); it resolves a symbolic fixture against the
+shop's calendar and hands these builders a plan, and the builders return the
+document.
 
 ## The rule for every file here
 
-- One file per collection family, named after it (`appointments.ts`,
-  `loyalty.ts`, …). A file exports plain bodies — the entity minus its `id`,
-  never a mapper's input (Law 5).
+- One file per collection family, named after it. A file exports plain
+  bodies — the entity minus its `id`, never a mapper's input (Law 5).
 - Every exported body is checked against its entity:
 
   ```ts
@@ -17,35 +33,50 @@ collections it reshapes here, in the same commit that changes their shape.
 
   export const classicCut = {
     // …every field of the entity but `id`
-  } satisfies Omit<Service, 'id'>;
+  } satisfies Body<Service>;
   ```
 
-  `satisfies` does not exist in the `.mjs` the seed is written in, which is
-  why the bodies live here: `pnpm nx typecheck seed-tools` (inferred from
-  `tools/seed/tsconfig.json`, over `tsconfig.fixtures.json`, which references
-  `libs/ecs-core`) fails on a stale shape instead of a query returning a
-  partial set against the emulator.
+  `Body<X>` (`catalog.fixtures.ts`) is `Omit<X, 'id'>` taken per variant:
+  TypeScript's `Omit` is not distributive, so a plain `Omit` of an
+  archetype with a variant slice (a lifecycle, a coupon's value) would keep
+  only the keys every variant shares. `satisfies` does not exist in the
+  `.mjs` the seed is written in, which is why the bodies live here:
+  `pnpm nx typecheck seed-tools` (inferred from `tools/seed/tsconfig.json`,
+  over `tsconfig.fixtures.json`, which references `libs/ecs-core`) fails on
+  a stale shape instead of a query returning a partial set against the
+  emulator.
 
-- Every field is spelled exactly as the entity names it today (after the
-  Law 6 flatten pass: flat root fields, `*UtcMs` instants, `localDate` days).
-  Instants are literal epoch-ms numbers and days literal `YYYY-MM-DD`
-  strings — no `Date.now()`, no `new Date()`, no date library in a body (the
-  fixtures' day is `FIXTURE_TODAY`, 2026-09-28, in
-  `@core/testing`).
-- Ids that a key is built from (`BusyKey.of`, `StreakDefinitionVersionId.forVersion`)
-  are built by their companion, never spelled by hand.
-- The `.mjs` writers (`tools/seed/*.mjs`, `tools/seed-dev-catalog.mjs`) import
-  these bodies through the esbuild path of `load-domain.mjs`, which already
-  bundles TypeScript across the `@creativo/*` aliases.
+- Every field is spelled exactly as the entity names it (Laws 6 and 7: flat
+  root fields, `*UtcMs` instants, `localDate` days, `*Minutes` times of day,
+  `*Cents` beside a `currency`). Instants are computed from the shop's
+  `timeZone` once, at the builder, through `ZonedTimeSystem`; days are
+  literal `YYYY-MM-DD` strings — no `Date.now()`, no `new Date()`, no date
+  library in a body (the fixtures' day is `FIXTURE_TODAY`, 2026-09-28, in
+  `@core/testing`). No temporal body carries a zone (Law 7.2).
+- Every value is a branded primitive built by its companion (Law 7.4); a
+  fixture literal the companion refuses is a defect (`sure`, `present`).
+- Ids that a key is built from (`BusyKey.of`, `CustomerId.forUser`,
+  `StreakDefinitionVersionId.forVersion`) are built by their companion,
+  never spelled by hand.
+- The TTL `purgeAt` is never part of a body: the writer stamps it through
+  `purgeAtFor` (`apps/functions/src/adapters/firestore-ttl.adapter.ts`,
+  flip-1 plan F1-7), the same function the server's `firestoreCommitPlan`
+  calls.
+- The `.mjs` writers (`tools/seed/*.mjs`, `tools/seed-dev-catalog.mjs`)
+  reach these bodies through the esbuild bundle of `load-domain.mjs`
+  (`SEED_PLAN_MODULES`), which resolves the `@core/*` and `@creativo/*`
+  aliases; the specs import them directly (vitest resolves both).
 
 `seed-tools` is tagged `type:tooling`, whose row in the root
 `eslint.config.mjs` lets it depend on `type:tooling`, `type:util` and
-`type:domain` — so `import type { X } from '@core/entities'` (the archetype noun, no `Entity` suffix — flatten-spec N1) is
-legal here, and nothing of `type:application`/`type:infrastructure` is.
+`type:domain` — so `import type { X } from '@core/entities'` (the archetype
+noun, no `Entity` suffix — flatten-spec N1) is legal here, and nothing of
+`type:application`/`type:infrastructure` is.
 
 ## Not here
 
 The loyalty catalogue and the gift vouchers the seed reads BY PATH
 (`catalog.json`, `vouchers.json`) are test fixtures shared with the specs:
 they live in `libs/ecs-core/src/testing/fixtures/loyalty/` and are exported
-from `@core/testing`.
+from `@core/testing`. The loyalty documents (`loyaltyAccounts`,
+`clientJournal`, the streak definitions) move here with flip 3.

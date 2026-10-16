@@ -31,7 +31,7 @@
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
-      "path": "../../../ecs-core/tsconfig.lib.json"
+      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
@@ -49,13 +49,10 @@
       "path": "../../../application/engagement/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/catalog/tsconfig.lib.json"
+      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../../application/booking/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     }
   ]
 }

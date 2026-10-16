@@ -223,10 +223,19 @@ async function renderShell(
     readonly locations?: readonly ShopLocation[] | 'pending' | 'failed';
     /** The projection. No free minutes anywhere by default. */
     readonly capacity?: CapacityRoom;
+    /** Collects every `capacity/{YYYY-MM}` month the step opens a listener on. */
+    readonly capacityReads?: string[];
   } = {},
 ): Promise<ComponentFixture<ClientBooking>> {
   const unavailable = Result.err(RepositoryError.unavailable());
   const shops = Array.isArray(options.locations) ? options.locations : [];
+  const scheduling = memorySchedulingReadPorts({
+    capacityMonths: capacityMonths(
+      options.capacity,
+      options.barbers ?? [],
+      shops,
+    ),
+  });
   await TestBed.configureTestingModule({
     imports: [ClientBooking],
     providers: [
@@ -243,13 +252,13 @@ async function renderShell(
       {
         // No roster, the default policy, and the projection's months.
         provide: SCHEDULING_READ_PORTS,
-        useValue: memorySchedulingReadPorts({
-          capacityMonths: capacityMonths(
-            options.capacity,
-            options.barbers ?? [],
-            shops,
-          ),
-        }),
+        useValue: {
+          ...scheduling,
+          observeCapacityMonth: (month: CapacityMonthId) => {
+            options.capacityReads?.push(month);
+            return scheduling.observeCapacityMonth(month);
+          },
+        },
       },
       {
         provide: BOOKING_GATEWAY,
@@ -757,13 +766,40 @@ describe('BookingScheduleStep — a visit that asks for its barber', () => {
   });
 
   it('still asks about every barber when the line takes anyone', async () => {
+    const capacityReads: string[] = [];
     const fixture = await toSchedule({
       barbers: BARBERS,
       locations: SHOPS,
       shopId: 'loc-center',
       capacity: roomForNikoOnly,
+      capacityReads,
     });
 
     expect(day(fixture, '2026-08-04')?.disabled).toBe(false);
+    expect(capacityReads).toContain('2026-08');
+  });
+
+  // A projection asked about no chair can only answer "no room", so the run
+  // asks nothing: no `capacity/{YYYY-MM}` listener opens for a visit no
+  // barber on the list can take, and no day is live.
+  it('reads no capacity month for a visit no barber can take, and marks no day', async () => {
+    const capacityReads: string[] = [];
+    const fixture = await toSchedule({
+      barbers: [],
+      locations: SHOPS,
+      shopId: 'loc-center',
+      capacity: roomEveryDay,
+      capacityReads,
+    });
+
+    expect(host(fixture).getAttribute('data-state')).toBe('schedule');
+    expect(capacityReads).toEqual([]);
+    const days = [
+      ...host(fixture).querySelectorAll<HTMLButtonElement>(
+        '[data-testid="booking-day"]',
+      ),
+    ];
+    expect(days.length).toBeGreaterThan(0);
+    expect(days.every((each) => each.disabled)).toBe(true);
   });
 });

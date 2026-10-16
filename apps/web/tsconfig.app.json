@@ -25,13 +25,7 @@
       "path": "../../libs/domain/identity/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/domain/kernel/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/features/admin/programs/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/features/admin/loyalty/tsconfig.lib.json"
     },
     {
       "path": "../../libs/features/admin/impersonation/tsconfig.lib.json"
@@ -70,7 +64,7 @@
       "path": "../../libs/features/marketing/landing/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/domain/accounts/tsconfig.lib.json"
+      "path": "../../libs/features/admin/loyalty/tsconfig.lib.json"
     },
     {
       "path": "../../libs/infrastructure/clock/tsconfig.lib.json"
@@ -97,12 +91,6 @@
       "path": "../../libs/application/accounts/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/application/engagement/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/application/notifications/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/application/catalog/tsconfig.lib.json"
     },
     {
@@ -110,6 +98,9 @@
     },
     {
       "path": "../../libs/application/identity/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/domain/kernel/tsconfig.lib.json"
     },
     {
       "path": "../../libs/infrastructure/i18n/tsconfig.lib.json"
@@ -121,7 +112,13 @@
       "path": "../../libs/infrastructure/firebase-app/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/domain/scheduling/tsconfig.lib.json"
+      "path": "../../libs/domain/accounts/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/ecs-core/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/application/engagement/tsconfig.lib.json"
     }
   ]
 }
