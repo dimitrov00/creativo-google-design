@@ -43,8 +43,9 @@ function targetToPayload(
 
 /** Thin `httpsCallable` wrapper for `ContactChangePort` — a change of an
  * already-authenticated user's email/phone needs the same server-side
- * confirmation-code verification OTP does, so (unlike `ProfilePort`) this
- * can't be a direct Firestore read/write. */
+ * confirmation-code verification OTP does, so (unlike the owner's name and
+ * birth-date edit, `ProfilePorts.writeOwnProfile`) this can't be a direct
+ * Firestore read/write. */
 @Injectable()
 export class CallableContactChangeAdapter implements ContactChangePort {
   private readonly functions = inject(FIREBASE_FUNCTIONS);

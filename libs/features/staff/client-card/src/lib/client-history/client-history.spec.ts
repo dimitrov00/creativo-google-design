@@ -9,6 +9,7 @@ import {
   NBSP_EURO,
   georgiContext,
   georgiHistory,
+  heldProfilePortsOf,
   historyPortsOf,
   martinContext,
   martinHistory,
@@ -16,7 +17,6 @@ import {
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
-  HeldProfilePort,
   type MountOptions,
   PAGE_TITLE_ID,
   mountAchievementsPage,
@@ -457,7 +457,7 @@ describe('lib-client-history — its states', () => {
   });
 
   it('loading · waits for the profile like the whole card (the D-9 gate)', async () => {
-    const profiles = new HeldProfilePort();
+    const profiles = heldProfilePortsOf();
     const { byId, render } = await mount({ rig: { profiles } });
     expect(byId('history-skeleton')).not.toBeNull();
     profiles.answer();

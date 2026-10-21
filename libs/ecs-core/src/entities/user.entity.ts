@@ -15,7 +15,7 @@ import type { UserId } from '@core/primitives';
  * names, and the roles. Every field at the root, `null` where a provisioned
  * stub has nothing yet (`phone`/`email` hold only the login channel; names
  * and birth date `null`; roles `[]`). `phone` is a plain E.164 string (the
- * `findByDestination` query key) and `birthDate` a plain `'YYYY-MM-DD'`
+ * `findUserByDestination` query key) and `birthDate` a plain `'YYYY-MM-DD'`
  * (the rules' regex). No `createdAtUtcMs`: no writer stores one. No link
  * to a customer — the link lives on the `Customer` (D29).
  */
@@ -45,12 +45,29 @@ export type AccountContact = {
  * account lifecycle (`accountStatus`, and a block's `blockReason` /
  * `blockedUntilUtcMs`, at the root) and the clientele search keys. One type
  * for both stored states: the `PROVISIONED` stub (`verifyOtp`'s first
- * sign-in) is written with EVERY key present and the `REGISTERED` body
- * `completeRegistration` writes over it. The document body is this type
- * minus `id`; until the identity flip the stored bytes are today's (the
- * shims convert).
+ * sign-in, `RegistrationSystem.provision`) is created with EVERY key
+ * present and the `REGISTERED` body `completeRegistration` sets over it
+ * (`RegistrationSystem.register`). The document body is this type minus
+ * `id`, byte for byte — the server's `WriteOp` plans and the web's
+ * `snap.data()` read and write it as is, with no mapper.
  */
 export type User = UserMeta & AccountContact & AccountLifecycle & SearchFields;
+
+/**
+ * The owner-editable keys of `users/{uid}` — the rules' owner allowlist,
+ * verbatim (`firstName`, `lastName`, `birthDate`, `searchName`,
+ * `searchPrefixes`). The answer of `ProfileEditSystem.decide` and the
+ * argument shape of the `WriteOwnProfile` port (F2-17): a named record, not
+ * a `Pick<User, …>`, so a rename is one compiler-checked change. A
+ * REGISTERED owner's names are never `null`, so neither are these; the
+ * search keys are recomputed from the STORED contact channels on every
+ * edit (the owner cannot change `phone` or `email`).
+ */
+export type OwnerProfileFields = {
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly birthDate: BirthDate | null;
+} & SearchFields;
 
 /**
  * The profile helpers a user's names need — a companion, not a nested

@@ -1,4 +1,6 @@
+import type { AccountsError } from './accounts-errors.data';
 import type { IdentifierChannel } from './identifier-channel.data';
+import type { PhoneError } from './phone-errors.data';
 
 /**
  * The identity context's error codes — the codes of
@@ -13,9 +15,16 @@ import type { IdentifierChannel } from './identifier-channel.data';
  * The first four are the OTP verdicts (`IdentityError.Otp`): payload-free on
  * purpose — a `wrong_code` never smuggles the next entity state into an
  * error value; the incremented attempt is `OtpSystem.recordAttempt(otp)`, a
- * separate pure step. The rest are raised at the identity edge guards
- * (`ParsedIdentifier.parse`, `OtpCode.parse`, `AuthClaims.active`,
- * `AuthStrategy.parse`) and by AgeSystem and the two flow machines.
+ * separate pure step. The edge-guard codes are raised by
+ * `ParsedIdentifier.parse`, `OtpCode.parse`, `AuthClaims.active`,
+ * `AuthStrategy.parse`, AgeSystem and the two flow machines. The last nine
+ * (identity flip (2), F2-4) are the refusals of the `requestOtp`,
+ * `verifyOtp` and `completeRegistration` pipelines that no dictionary
+ * spelled before; their edge rows carry NEW dotted wire codes, and the three
+ * OTP callables translate them back to today's undotted codes before the
+ * wire. Their context fields are scalars: the primitives tier imports no
+ * component (Law 8), so a component value (`IdentifierChannel` aside,
+ * which lives here) rides as its plain string.
  */
 export const IdentityErrorCode = {
   /** The challenge was already used — a code is good for one sign-in. */
@@ -52,6 +61,28 @@ export const IdentityErrorCode = {
   /** An event the onboarding flow does not accept in its current step. */
   OnboardingFlowInvalidTransition:
     'IDENTITY_ONBOARDING_FLOW_INVALID_TRANSITION',
+  /** The deployment's strategy challenges another channel than the one asked for. */
+  OtpChannelMismatch: 'IDENTITY_OTP_CHANNEL_MISMATCH',
+  /** An open challenge for the destination is younger than the resend window. */
+  OtpRateLimited: 'IDENTITY_OTP_RATE_LIMITED',
+  /** No `otps/{id}` — an unknown or purged challenge. */
+  OtpNotFound: 'IDENTITY_OTP_NOT_FOUND',
+  /** The stored `destination` no longer parses as its `otpDestinationType`. */
+  OtpDestinationCorrupted: 'IDENTITY_OTP_DESTINATION_CORRUPTED',
+  /**
+   * The uid Auth answered for the destination owns a `users` document that
+   * is registered, or carries another contact — never adopted, never signed
+   * into (F2-9).
+   */
+  OtpAccountConflict: 'IDENTITY_OTP_ACCOUNT_CONFLICT',
+  /** `completeRegistration` called without a signed-in session. */
+  RegistrationUnauthenticated: 'IDENTITY_REGISTRATION_UNAUTHENTICATED',
+  /** The identifier's account is not the caller's own. */
+  RegistrationForbidden: 'IDENTITY_REGISTRATION_FORBIDDEN',
+  /** No account holds the identifier — there is nothing to register. */
+  RegistrationUserNotFound: 'IDENTITY_REGISTRATION_USER_NOT_FOUND',
+  /** A field the deployment's strategy requires is absent or blank (`field` names it). */
+  RegistrationFieldMissing: 'IDENTITY_REGISTRATION_FIELD_MISSING',
 } as const;
 export type IdentityErrorCode =
   (typeof IdentityErrorCode)[keyof typeof IdentityErrorCode];
@@ -80,7 +111,16 @@ export type IdentityError =
   | IdentityError.AuthStrategyPhoneMissing
   | IdentityError.AuthStrategyInvalidPolicy
   | IdentityError.AuthFlowInvalidTransition
-  | IdentityError.OnboardingFlowInvalidTransition;
+  | IdentityError.OnboardingFlowInvalidTransition
+  | IdentityError.OtpChannelMismatch
+  | IdentityError.OtpRateLimited
+  | IdentityError.OtpNotFound
+  | IdentityError.OtpDestinationCorrupted
+  | IdentityError.OtpAccountConflict
+  | IdentityError.RegistrationUnauthenticated
+  | IdentityError.RegistrationForbidden
+  | IdentityError.RegistrationUserNotFound
+  | IdentityError.RegistrationFieldMissing;
 
 /** Shared, payload-free OTP verdicts: one struct per code, never rebuilt. */
 const OTP_ALREADY_CONSUMED: IdentityError.OtpAlreadyConsumed = {
@@ -181,6 +221,48 @@ export const IdentityError = {
       event,
     };
   },
+  /**
+   * `requested` is the channel the caller asked for; `authStrategyKind` the
+   * deployment strategy's kind, as its plain string (an `AuthStrategyKind`
+   * value — a component dictionary this tier never imports).
+   */
+  otpChannelMismatch(
+    requested: IdentifierChannel,
+    authStrategyKind: string,
+  ): IdentityError.OtpChannelMismatch {
+    return {
+      errorCode: IdentityErrorCode.OtpChannelMismatch,
+      requested,
+      authStrategyKind,
+    };
+  },
+  otpRateLimited(): IdentityError.OtpRateLimited {
+    return { errorCode: IdentityErrorCode.OtpRateLimited };
+  },
+  otpNotFound(): IdentityError.OtpNotFound {
+    return { errorCode: IdentityErrorCode.OtpNotFound };
+  },
+  otpDestinationCorrupted(): IdentityError.OtpDestinationCorrupted {
+    return { errorCode: IdentityErrorCode.OtpDestinationCorrupted };
+  },
+  otpAccountConflict(): IdentityError.OtpAccountConflict {
+    return { errorCode: IdentityErrorCode.OtpAccountConflict };
+  },
+  registrationUnauthenticated(): IdentityError.RegistrationUnauthenticated {
+    return { errorCode: IdentityErrorCode.RegistrationUnauthenticated };
+  },
+  registrationForbidden(): IdentityError.RegistrationForbidden {
+    return { errorCode: IdentityErrorCode.RegistrationForbidden };
+  },
+  registrationUserNotFound(): IdentityError.RegistrationUserNotFound {
+    return { errorCode: IdentityErrorCode.RegistrationUserNotFound };
+  },
+  /** `field` is the missing `RegistrationField` value, as its plain string. */
+  registrationFieldMissing(
+    field: string,
+  ): IdentityError.RegistrationFieldMissing {
+    return { errorCode: IdentityErrorCode.RegistrationFieldMissing, field };
+  },
 
   /** Narrows an error to one code — `IdentityError.is(e, IdentityErrorCode.OtpExpired)`. */
   is<C extends IdentityErrorCode>(
@@ -277,4 +359,58 @@ export namespace IdentityError {
     readonly from: string;
     readonly event: string;
   };
+  export type OtpChannelMismatch = {
+    readonly errorCode: typeof IdentityErrorCode.OtpChannelMismatch;
+    readonly requested: IdentifierChannel;
+    /** The deployment strategy's `AuthStrategyKind`, as its plain string. */
+    readonly authStrategyKind: string;
+  };
+  export type OtpRateLimited = {
+    readonly errorCode: typeof IdentityErrorCode.OtpRateLimited;
+  };
+  export type OtpNotFound = {
+    readonly errorCode: typeof IdentityErrorCode.OtpNotFound;
+  };
+  export type OtpDestinationCorrupted = {
+    readonly errorCode: typeof IdentityErrorCode.OtpDestinationCorrupted;
+  };
+  export type OtpAccountConflict = {
+    readonly errorCode: typeof IdentityErrorCode.OtpAccountConflict;
+  };
+  export type RegistrationUnauthenticated = {
+    readonly errorCode: typeof IdentityErrorCode.RegistrationUnauthenticated;
+  };
+  export type RegistrationForbidden = {
+    readonly errorCode: typeof IdentityErrorCode.RegistrationForbidden;
+  };
+  export type RegistrationUserNotFound = {
+    readonly errorCode: typeof IdentityErrorCode.RegistrationUserNotFound;
+  };
+  export type RegistrationFieldMissing = {
+    readonly errorCode: typeof IdentityErrorCode.RegistrationFieldMissing;
+    /** The `RegistrationField` value, as its plain string. */
+    readonly field: string;
+  };
 }
+
+/** Every refusal a registration profile can collect, in today's order. */
+export type RegistrationProfileError =
+  AccountsError | PhoneError | IdentityError;
+
+/** Why a registration's profile was refused — the ONLY source of these strings, the field `errorCode`. */
+export const CompleteRegistrationRefusalCode = {
+  /** The settled profile failed its checks — every refusal collected, in today's order. */
+  ProfileInvalid: 'IDENTITY_REGISTRATION_PROFILE_INVALID',
+} as const;
+export type CompleteRegistrationRefusalCode =
+  (typeof CompleteRegistrationRefusalCode)[keyof typeof CompleteRegistrationRefusalCode];
+
+/**
+ * The aggregate refusal of the registered profile (today's
+ * `user_validation_failed`): a flat struct whose one 1-to-N field is the
+ * list of the profile's refusals, which the edge words one by one.
+ */
+export type CompleteRegistrationRefusal = {
+  readonly errorCode: typeof CompleteRegistrationRefusalCode.ProfileInvalid;
+  readonly errors: readonly RegistrationProfileError[];
+};

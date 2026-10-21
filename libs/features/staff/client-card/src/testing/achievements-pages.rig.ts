@@ -27,9 +27,6 @@ import { type Observable, firstValueFrom, of } from 'rxjs';
 import {
   AVATAR_UPLOADER,
   type AvatarUploader,
-  PROFILE_PORT,
-  type ProfilePort,
-  type User,
   ZonedDateTime,
 } from '@creativo/application/accounts';
 import type { Result } from '@creativo/application/booking';
@@ -39,6 +36,7 @@ import type {
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
@@ -47,6 +45,7 @@ import {
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  PROFILE_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
@@ -76,19 +75,17 @@ import {
   GEORGI,
   GEORGI_MONEY,
   InMemoryAvatars,
-  InMemoryProfilePort,
   MARTIN,
   NOW_MS,
   catalogueOf,
   customerPortsOf,
   georgiHistory,
   georgiPhotos,
-  georgiUser,
   historyPortsOf,
   martinHistory,
-  martinUser,
   martinWaitlist,
   photoPortsOf,
+  profilePortsOf,
   statsOf,
   statsPortsOf,
   waitlistPortsOf,
@@ -136,38 +133,6 @@ export class HeldCatalogReader implements LoyaltyCatalogReader {
 }
 
 /**
- * `users/{uid}` answering only when the spec says so: the D-9 gate held
- * shut, the whole page in its first state (S1).
- */
-export class HeldProfilePort extends InMemoryProfilePort {
-  private release: (() => void) | null = null;
-  private readonly gate = new Promise<void>((resolve) => {
-    this.release = resolve;
-  });
-
-  constructor(
-    users: ReadonlyMap<string, User | null> = new Map([
-      [GEORGI, georgiUser()],
-      [MARTIN, martinUser()],
-    ]),
-  ) {
-    super(users);
-  }
-
-  override async getProfile(
-    ...args: Parameters<InMemoryProfilePort['getProfile']>
-  ): ReturnType<InMemoryProfilePort['getProfile']> {
-    await this.gate;
-    return super.getProfile(...args);
-  }
-
-  /** Lets the held read answer. */
-  answer(): void {
-    this.release?.();
-  }
-}
-
-/**
  * What a spec changes about the card's world; everything else is the dev
  * seed's. The glance and the history pages mount through the same rig, so
  * each port can be swapped for a failing, held or empty one.
@@ -178,7 +143,7 @@ export interface AchievementsRig {
   readonly flags?: Readonly<Record<string, boolean>>;
   /** «Now» for the shop's clock (Monday 28 September 2026, 12:40 by default). */
   readonly nowMs?: number;
-  readonly profiles?: ProfilePort;
+  readonly profiles?: ProfilePorts;
   readonly stats?: ClientStatsReadPorts;
   readonly history?: AppointmentReadPorts;
   readonly photos?: AppointmentPhotoPorts;
@@ -219,15 +184,8 @@ export function achievementsPageProviders(
       },
     },
     {
-      provide: PROFILE_PORT,
-      useValue:
-        rig.profiles ??
-        new InMemoryProfilePort(
-          new Map([
-            [GEORGI, georgiUser()],
-            [MARTIN, martinUser()],
-          ]),
-        ),
+      provide: PROFILE_PORTS,
+      useValue: rig.profiles ?? profilePortsOf(),
     },
     {
       provide: CUSTOMER_PORTS,

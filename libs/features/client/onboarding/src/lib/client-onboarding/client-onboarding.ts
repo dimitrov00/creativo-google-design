@@ -12,14 +12,14 @@ import { firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslocoService, TranslocoDirective } from '@jsverse/transloco';
-import {
-  FirstName,
-  LastName,
-  MAX_AVATAR_BYTES,
-} from '@creativo/application/accounts';
+import { MAX_AVATAR_BYTES } from '@creativo/application/accounts';
 import type { Service } from '@core/entities';
-import type { ServiceId } from '@core/primitives';
-import { OfferingPriceSystem } from '@core/systems';
+import {
+  type IdentityError,
+  IdentityErrorCode,
+  type ServiceId,
+} from '@core/primitives';
+import { AgeSystem, OfferingPriceSystem } from '@core/systems';
 import { formatCents } from '@creativo/features/shared/visits';
 import {
   CatalogContentService,
@@ -29,14 +29,11 @@ import {
   formatServiceMeta,
 } from '@creativo/features/shared/catalog';
 import {
-  BirthDate,
-  BirthDateError,
   CountryIso2,
   PhoneNumber,
   PhoneNumberInvalidReason,
   RedirectPath,
   RegistrationField,
-  ZonedDateTime,
   authStrategyRequires,
   examplePhoneNumber,
   identifierKindForStrategy,
@@ -67,6 +64,10 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
+import {
+  ageDayOf,
+  nameRefusalCodes,
+} from '@creativo/features/client/account-state';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import {
   OnboardingFlowStore,
@@ -182,7 +183,7 @@ export class ClientOnboarding {
 
   protected readonly firstName = signal('');
   protected readonly lastName = signal('');
-  /** VO error codes from `FirstName`/`LastName` — set on blur/submit, cleared live once the draft turns valid (reward early, punish late; the SAME validators `RegisterUserUseCase` and the server apply, so a submit can never be rejected for a reason the form didn't already show). */
+  /** Name-rule error codes (`ProfileEditSystem.nameRefusals`, through `nameRefusalCodes`) — set on blur/submit, cleared live once the draft turns valid (reward early, punish late; the SAME rule the server's registration applies, so a submit can never be rejected for a reason the form didn't already show). */
   protected readonly firstNameErrorCode = signal<string | null>(null);
   protected readonly lastNameErrorCode = signal<string | null>(null);
   /** Selected picker country (two-way with `ui-phone-field`). */
@@ -197,16 +198,13 @@ export class ClientOnboarding {
   /* ── Optional birthday step (personalization phase — rewards may offer
         birthday presents) ────────────────────────────────────────────── */
 
-  /** "Today" for the age window — sourced from the Clock port (§7.1: never a raw `Date`), UTC like the server's own check. `null` only if the hardcoded zone were ever invalid (unreachable); validation then falls through to the use-case backstop. */
-  private readonly today: ZonedDateTime | null = (() => {
-    const result = inject(CLOCK).now('UTC');
-    return result.isSuccess() ? result.value : null;
-  })();
+  /** The day the age window is judged on — the UTC civil date, from the Clock port (§7.1: never a raw `Date`), like the server's own check. `null` only if the hardcoded zone were ever invalid (unreachable); validation then falls through to the store's backstop. */
+  private readonly ageDay = ageDayOf(inject(CLOCK));
 
   /** Complete segments from `ui-date-field` — null while empty/unfinished. */
   protected readonly birthValue = signal<UiDateFieldParts | null>(null);
-  /** Domain error from `BirthDate.create` — set on blur/submit, cleared live once the date turns valid (same reward-early grammar as the phone). `'partial'` marks an unfinished group left behind. */
-  private readonly birthErrorState = signal<BirthDateError | 'partial' | null>(
+  /** The refusal from `AgeSystem.fromParts` — set on blur/submit, cleared live once the date turns valid (same reward-early grammar as the phone). `'partial'` marks an unfinished group left behind. */
+  private readonly birthErrorState = signal<IdentityError | 'partial' | null>(
     null,
   );
 
@@ -215,18 +213,24 @@ export class ClientOnboarding {
     const parts = this.birthValue();
     return (
       parts !== null &&
-      this.today !== null &&
-      BirthDate.create(parts, this.today).isSuccess()
+      this.ageDay !== null &&
+      AgeSystem.fromParts(parts, this.ageDay).ok
     );
   });
 
-  protected readonly canSubmitAbout = computed(
-    () =>
-      (!this.needsFirstName ||
-        FirstName.create(this.firstName()).isSuccess()) &&
-      (!this.needsLastName || LastName.create(this.lastName()).isSuccess()) &&
-      (!this.needsPhone || this.phoneValue() !== null),
+  /** The two name drafts through the ONE name rule the write enforces. */
+  private readonly nameRefusals = computed(() =>
+    nameRefusalCodes(this.firstName(), this.lastName()),
   );
+
+  protected readonly canSubmitAbout = computed(() => {
+    const refused = this.nameRefusals();
+    return (
+      (!this.needsFirstName || refused.firstName === null) &&
+      (!this.needsLastName || refused.lastName === null) &&
+      (!this.needsPhone || this.phoneValue() !== null)
+    );
+  });
 
   protected readonly services = this.catalog.services;
   protected readonly selectedServiceIds = signal<readonly ServiceId[]>([]);
@@ -303,14 +307,14 @@ export class ClientOnboarding {
         this.phoneErrorReason.set(null);
       }
     });
-    // Same grammar for the names — one effect per field, keyed on its VO.
+    // Same grammar for the names — one effect per field, keyed on its rule.
     effect(() => {
-      if (FirstName.create(this.firstName()).isSuccess()) {
+      if (this.nameRefusals().firstName === null) {
         this.firstNameErrorCode.set(null);
       }
     });
     effect(() => {
-      if (LastName.create(this.lastName()).isSuccess()) {
+      if (this.nameRefusals().lastName === null) {
         this.lastNameErrorCode.set(null);
       }
     });
@@ -320,8 +324,8 @@ export class ClientOnboarding {
       const parts = this.birthValue();
       if (
         parts !== null &&
-        this.today !== null &&
-        BirthDate.create(parts, this.today).isSuccess()
+        this.ageDay !== null &&
+        AgeSystem.fromParts(parts, this.ageDay).ok
       ) {
         this.birthErrorState.set(null);
       }
@@ -448,14 +452,12 @@ export class ClientOnboarding {
   /** Name validate-on-blur — an untouched (empty) field stays silent; the disabled CTA already says "not done", a red line would say "wrong" (punish late). */
   protected onFirstNameBlur(): void {
     if (this.firstName().trim() === '') return;
-    const result = FirstName.create(this.firstName());
-    this.firstNameErrorCode.set(result.isFailure() ? result.error.code : null);
+    this.firstNameErrorCode.set(this.nameRefusals().firstName);
   }
 
   protected onLastNameBlur(): void {
     if (this.lastName().trim() === '') return;
-    const result = LastName.create(this.lastName());
-    this.lastNameErrorCode.set(result.isFailure() ? result.error.code : null);
+    this.lastNameErrorCode.set(this.nameRefusals().lastName);
   }
 
   /** `ui-phone-field` validate-on-blur — never on keystroke (design §2.5). */
@@ -469,22 +471,19 @@ export class ClientOnboarding {
   }
 
   /**
-   * Quiet, reason-mapped birthday copy — the `BirthDate` VO's stable codes
-   * (`identity.birth_date.*`) map straight onto the error catalog; an
-   * unfinished group reads as the generic `invalid`.
+   * Quiet, reason-mapped birthday copy — `AgeSystem`'s stable error structs
+   * (`IDENTITY_BIRTH_DATE_*`, their own fields the params) map straight onto
+   * the error catalog; an unfinished group reads as the generic `invalid`.
    */
   protected birthError(): string | null {
     const state = this.birthErrorState();
     if (state === null) return null;
     if (state === 'partial') {
       return translateDomainError(this.transloco, {
-        code: 'identity.birth_date.invalid',
+        code: IdentityErrorCode.BirthDateInvalid,
       });
     }
-    return translateDomainError(this.transloco, {
-      code: state.code,
-      params: state.params,
-    });
+    return translateDomainError(this.transloco, state);
   }
 
   /** `ui-date-field` validate-on-blur — never on keystroke; an untouched (empty) optional field stays silent. */
@@ -497,9 +496,9 @@ export class ClientOnboarding {
       this.birthErrorState.set('partial');
       return;
     }
-    if (this.today === null) return;
-    const result = BirthDate.create(event.parts, this.today);
-    this.birthErrorState.set(result.isFailure() ? result.error : null);
+    if (this.ageDay === null) return;
+    const result = AgeSystem.fromParts(event.parts, this.ageDay);
+    this.birthErrorState.set(result.ok ? null : result.error);
   }
 
   protected submitAbout(): void {
@@ -525,12 +524,12 @@ export class ClientOnboarding {
     return state.kind === 'birthday' ? state.error : undefined;
   }
 
-  /** Birthday-step Save — the CTA gates on `canSubmitBirthday`, the VO check here is the honest validate-on-submit backstop (same grammar as the phone). */
+  /** Birthday-step Save — the CTA gates on `canSubmitBirthday`, the age check here is the honest validate-on-submit backstop (same grammar as the phone). */
   protected submitBirthdayNow(): void {
     const parts = this.birthValue();
-    if (parts === null || this.today === null) return;
-    const result = BirthDate.create(parts, this.today);
-    if (result.isFailure()) {
+    if (parts === null || this.ageDay === null) return;
+    const result = AgeSystem.fromParts(parts, this.ageDay);
+    if (!result.ok) {
       this.birthErrorState.set(result.error);
       return;
     }

@@ -170,3 +170,15 @@ export namespace GovernanceError {
     readonly minLength: number;
   };
 }
+
+/** Why the operator backfill (`runBackfill`) refused a call — the ONLY source of these strings, the field `errorCode`. */
+export const RunBackfillRefusalCode = {
+  /** The stored roles hold no `sysadmin`. */
+  Forbidden: 'OPS_BACKFILL_FORBIDDEN',
+  /** The payload named no job, or a cursor that is not a document id. */
+  InvalidInput: 'OPS_BACKFILL_INVALID_INPUT',
+} as const;
+export type RunBackfillRefusalCode =
+  (typeof RunBackfillRefusalCode)[keyof typeof RunBackfillRefusalCode];
+
+export type RunBackfillRefusal = { readonly errorCode: RunBackfillRefusalCode };

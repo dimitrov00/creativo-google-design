@@ -19,12 +19,6 @@
   ],
   "references": [
     {
-      "path": "../../application/governance/tsconfig.lib.json"
-    },
-    {
-      "path": "../../domain/governance/tsconfig.lib.json"
-    },
-    {
       "path": "../../application/engagement/tsconfig.lib.json"
     },
     {

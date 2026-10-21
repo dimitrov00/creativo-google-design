@@ -13,14 +13,16 @@
  * Only callables the server exports TODAY are listed: a name here that no
  * function exports would type-check a call that can only fail at run time
  * (the `contact-change.adapter.ts` defect, §1.4). The Phase 3 pipelines that
- * add a callable (`updateProfile`, `startImpersonation`, `endImpersonation`,
- * `redeemInvitation`) add its name in the same change as its export.
+ * add a callable add its name in the same change as its export —
+ * `updateProfile` with the identity flip (2); `startImpersonation`,
+ * `endImpersonation` and `redeemInvitation` with theirs.
  * Triggers and schedules are never dialled, so they are not here.
  */
 export const Callables = {
   RequestOtpChallenge: 'requestOtpChallenge',
   VerifyOtpChallenge: 'verifyOtpChallenge',
   CompleteRegistration: 'completeRegistration',
+  UpdateProfile: 'updateProfile',
   CommitBooking: 'commitBooking',
   CancelAppointment: 'cancelAppointment',
   RescheduleAppointment: 'rescheduleAppointment',

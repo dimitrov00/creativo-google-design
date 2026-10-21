@@ -15,9 +15,6 @@
   "references": [
     {
       "path": "../../ecs-core/tsconfig.lib.json"
-    },
-    {
-      "path": "../../domain/models/tsconfig.lib.json"
     }
   ]
 }

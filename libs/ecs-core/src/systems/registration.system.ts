@@ -14,6 +14,8 @@ import {
 } from '@core/components';
 import {
   IdentifierChannel,
+  IdentityError,
+  Result,
   type TenantId,
   type UserId,
 } from '@core/primitives';
@@ -22,12 +24,13 @@ import { SearchFieldsSystem } from './search-fields.system';
 
 /**
  * RegistrationSystem — how a provisioned account becomes a registered one
- * (blueprint §2.8: `settle`, `missingField`), the math of
- * `apps/functions/src/use-cases/complete-registration.use-case.ts` and its
- * client twin `RegisterUserUseCase`
+ * (blueprint §2.8: `settle`, `missingField`), the math of the
+ * `completeRegistration` pipeline (`complete-registration.pipeline.ts`) and
+ * of its client twin `RegisterUserUseCase`
  * (`libs/application/identity/src/lib/use-cases/register-user.use-case.ts`),
- * the claims `verifyOtp` mints (`verify-otp.use-case.ts:174-180`) and the
- * contact-channel stub it provisions (`:190-215`).
+ * the claims the `verifyOtp` pipeline mints (`verify-otp.pipeline.ts`), the
+ * contact-channel stub it provisions and its in-transaction decision over a
+ * stored account ({@link RegistrationSystem.adoptStub}, F2-9).
  *
  * The deployment's `AuthStrategy.required` is the single source of which
  * fields gate submission; the login channel always satisfies its own field.
@@ -60,7 +63,10 @@ export type RegistrationSettlement = {
   readonly roles: readonly Role[];
 };
 
-/** The parsed profile a registered body is written from. */
+/**
+ * The parsed profile a registered body is written from —
+ * `ProfileEditSystem.registrationProfile`'s answer.
+ */
 export type RegisteredProfile = {
   readonly firstName: string;
   readonly lastName: string;
@@ -70,8 +76,23 @@ export type RegisteredProfile = {
   readonly roles: readonly Role[];
 };
 
+/**
+ * `verifyOtp`'s tx-2 decision (F2-9): the account the session signs into,
+ * and whether the stub must be created (`WriteOp.create`) — `false` when the
+ * transaction read an adoptable stub, which is minted from as read.
+ */
+export type StubAdoption = {
+  readonly user: User;
+  readonly createStub: boolean;
+};
+
 /** The self-registration default: a stub or a pre-roles document grants plain `client`, never nothing. */
 const DEFAULT_ROLES: readonly Role[] = [Role.Client];
+
+/** The same text — two brands over one stored string (an `E164`/`Email` beside an `Identifier`). */
+function sameText(held: string | null, identifier: string): boolean {
+  return held === identifier;
+}
 
 /** Trimmed text, or `null` for an absent or blank field. */
 function trimmedOrNull(value: string | null): string | null {
@@ -191,6 +212,45 @@ export const RegistrationSystem = {
       searchName: null,
       searchPrefixes: [],
     };
+  },
+
+  /**
+   * `verifyOtp`'s tx-2 decision for the uid Auth answered (F2-9), on the
+   * transaction's own read of `users/{uid}`:
+   *
+   * - **absent** → the stub ({@link provision}) to create, and sign into;
+   * - **`PROVISIONED`, its login-channel contact (`phone` for a phone,
+   *   `email` for an e-mail) equal to the parsed identifier** → that stub
+   *   as read, nothing to write (the first-verification race's winner, or a
+   *   re-run that lost its `Create`);
+   * - **`REGISTERED`, or a contact mismatch** → `IDENTITY_OTP_ACCOUNT_CONFLICT`:
+   *   an orphan Auth uid is adopted only when its document is a stub of
+   *   THIS destination, never signed into otherwise.
+   *
+   * The claims and the session kind are then read off the answered `user`,
+   * never off a stub built outside the transaction.
+   */
+  adoptStub(
+    stored: User | null,
+    uid: UserId,
+    parsed: ParsedIdentifier,
+  ): Result<StubAdoption, IdentityError> {
+    if (stored === null) {
+      return Result.ok({
+        user: RegistrationSystem.provision(uid, parsed),
+        createStub: true,
+      });
+    }
+    if (Registration.isRegistered(stored)) {
+      return Result.err(IdentityError.otpAccountConflict());
+    }
+    const held =
+      parsed.identifierChannel === IdentifierChannel.Phone
+        ? stored.phone
+        : stored.email;
+    return sameText(held, parsed.identifier)
+      ? Result.ok({ user: stored, createStub: false })
+      : Result.err(IdentityError.otpAccountConflict());
   },
 
   /**

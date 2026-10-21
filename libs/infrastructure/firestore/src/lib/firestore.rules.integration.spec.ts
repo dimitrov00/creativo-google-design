@@ -31,10 +31,13 @@ import {
   loyaltyFixtures,
 } from '@creativo/application/engagement/testing';
 import {
+  AccountLifecycle,
+  AccountStatus,
   AuditAction,
   Actor,
   AuditContext,
   AuditTargetRef,
+  BlockReason,
   Combinability,
   CouponExpiryRule,
   CouponOccasion,
@@ -42,6 +45,8 @@ import {
   CouponValue,
   CustomerOrigin,
   DayWindows,
+  E164,
+  Email,
   ExceptionEffectRule,
   GrantCapacityTerms,
   GrantExpiryTerms,
@@ -49,7 +54,10 @@ import {
   MinuteRange,
   NotificationPayload,
   NotificationTopic,
+  ParsedIdentifier,
   PhotoOrigin,
+  RegistrationState,
+  Role,
   SystemSource,
   VoucherCode,
   VoucherLifecycle,
@@ -67,6 +75,7 @@ import type {
   GiftVoucher,
   InboxNotification,
   ScheduleException,
+  User,
   WaitlistRequest,
 } from '@core/entities';
 import {
@@ -79,6 +88,7 @@ import {
   UserId,
   WaitlistRequestId,
 } from '@core/primitives';
+import { RegistrationSystem, SearchFieldsSystem } from '@core/systems';
 import {
   cents,
   customerOf,
@@ -91,28 +101,61 @@ import {
 } from '@core/testing';
 import { createEmulatorTestEnv } from '../testing/emulator-test-env';
 
+/** The login phone and the e-mail of the accounts below. */
+const IVAN_PHONE = E164.of('+359888123456');
+const IVAN_EMAIL = Email.of('ivan@example.com');
+
 /**
- * A registered `users/{uid}` document, field for field what the functions'
- * user repository writes on `completeRegistration` — so a rule that admits
- * an edit of this shape admits the real save, and a refusal is about the
- * field under test, not a fixture that drifted.
+ * A registered `users/{uid}` document — the flat `User` (`@core/entities`)
+ * minus its `id`, field for field what `completeRegistration` sets
+ * (`REGISTERED`, `ACTIVE`, the search keys `SearchFieldsSystem` derives) —
+ * so a rule that admits an edit of this shape admits the real save, and a
+ * refusal is about the field under test, not a fixture that drifted.
+ * `overrides` replace root keys verbatim (a block passes its variant keys).
  */
 function registeredUser(
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  return {
-    phone: '+359888123456',
+  const body = {
+    registrationState: RegistrationState.Registered,
+    phone: IVAN_PHONE,
     firstName: 'Ivan',
     lastName: 'Petrov',
-    roles: ['client'],
-    status: { kind: 'active' },
-    email: 'ivan@example.com',
+    roles: [Role.Client],
+    ...AccountLifecycle.active(),
+    email: IVAN_EMAIL,
     birthDate: null,
-    searchName: 'ivan petrov',
-    searchPrefixes: ['i', 'iv', 'iva', 'ivan', 'p', 'pe', 'pet', 'petr'],
-    ...overrides,
-  };
+    ...SearchFieldsSystem.searchFields(
+      'Ivan',
+      'Petrov',
+      IVAN_PHONE,
+      IVAN_EMAIL,
+    ),
+  } satisfies Omit<User, 'id'>;
+  return { ...body, ...overrides };
 }
+
+/**
+ * The `PROVISIONED` stub `verifyOtp` creates on a first phone sign-in —
+ * `RegistrationSystem.provision`'s entity, as its document: the path its id
+ * names and the body minus `id` (every key present, the login phone only,
+ * names and birth date `null`, `roles: []`, no search keys). Its
+ * `firstName: null` fails the rules' registered test exactly as an absent
+ * key would.
+ */
+function provisionedStub(uid: string): {
+  readonly path: string;
+  readonly body: Omit<User, 'id'>;
+} {
+  const { id, ...body } = RegistrationSystem.provision(
+    UserId.of(uid),
+    ParsedIdentifier.phone(IVAN_PHONE),
+  );
+  return { path: `users/${id}`, body };
+}
+
+/** A block the server wrote — `AccountLifecycle`'s variant keys, at the root. */
+const SERVER_BLOCK = AccountLifecycle.block(BlockReason.Manual, null);
 
 /** The client record of an account, derived as the pipelines derive it (D29). */
 const recordOf = (uid: string) => customerOf(UserId.of(uid));
@@ -223,9 +266,7 @@ describe('firestore.rules', () => {
     it('lets a signed-in user read their own doc', async () => {
       const uid = 'user-1';
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(doc(ctx.firestore(), 'users', uid), {
-          roles: ['client'],
-        });
+        await setDoc(doc(ctx.firestore(), 'users', uid), registeredUser());
       });
       const alice = testEnv.authenticatedContext(uid);
       await assertSucceeds(getDoc(doc(alice.firestore(), 'users', uid)));
@@ -233,9 +274,7 @@ describe('firestore.rules', () => {
 
     it('denies a signed-in user reading someone else’s doc', async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(doc(ctx.firestore(), 'users', 'user-1'), {
-          roles: ['client'],
-        });
+        await setDoc(doc(ctx.firestore(), 'users', 'user-1'), registeredUser());
       });
       const bob = testEnv.authenticatedContext('user-2');
       await assertFails(getDoc(doc(bob.firestore(), 'users', 'user-1')));
@@ -243,9 +282,7 @@ describe('firestore.rules', () => {
 
     it('denies an anonymous (unauthenticated) read', async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(doc(ctx.firestore(), 'users', 'user-1'), {
-          roles: ['client'],
-        });
+        await setDoc(doc(ctx.firestore(), 'users', 'user-1'), registeredUser());
       });
       const anon = testEnv.unauthenticatedContext();
       await assertFails(getDoc(doc(anon.firestore(), 'users', 'user-1')));
@@ -253,9 +290,7 @@ describe('firestore.rules', () => {
 
     it('lets the front desk read any client profile', async () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(doc(ctx.firestore(), 'users', 'user-1'), {
-          roles: ['client'],
-        });
+        await setDoc(doc(ctx.firestore(), 'users', 'user-1'), registeredUser());
       });
       const receptionist = testEnv.authenticatedContext('staff-1', {
         roles: ['receptionist'],
@@ -276,10 +311,10 @@ describe('firestore.rules', () => {
     it('denies a client self-granting an extra role via update', async () => {
       const uid = 'user-5';
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
-        await setDoc(doc(ctx.firestore(), 'users', uid), {
-          roles: ['client'],
-          firstName: 'Alice',
-        });
+        await setDoc(
+          doc(ctx.firestore(), 'users', uid),
+          registeredUser({ firstName: 'Alice' }),
+        );
       });
       const alice = testEnv.authenticatedContext(uid);
       await assertFails(
@@ -367,7 +402,7 @@ describe('firestore.rules', () => {
 
     it.each<[string, unknown]>([
       ['roles', ['client', 'admin']],
-      ['status', { kind: 'blocked', reason: 'manual', untilIso: null }],
+      ['accountStatus', AccountStatus.Blocked],
       ['phone', '+359888000000'],
       ['email', 'someone-else@example.com'],
       // A key no one has allowlisted yet — the field a later phase adds is
@@ -391,26 +426,23 @@ describe('firestore.rules', () => {
     });
 
     it('refuses the owner lifting a status the server wrote', async () => {
-      await seed(
-        `users/${uid}`,
-        registeredUser({
-          status: { kind: 'blocked', reason: 'manual', untilIso: null },
-        }),
-      );
+      await seed(`users/${uid}`, registeredUser(SERVER_BLOCK));
+      // The whole transition: the active tag, the block's keys deleted.
       await assertFails(
         updateDoc(doc(signedIn(uid).firestore(), 'users', uid), {
-          status: { kind: 'active' },
+          ...AccountLifecycle.unblock(),
+          blockReason: deleteField(),
+          blockedUntilUtcMs: deleteField(),
         }),
       );
     });
 
     it("lets the owner's name save through, leaving a server-written status untouched", async () => {
-      const serverStatus = {
-        kind: 'blocked',
-        reason: 'manual',
-        untilIso: '2026-10-12T00:00:00.000+03:00',
-      };
-      await seed(`users/${uid}`, registeredUser({ status: serverStatus }));
+      const serverBlock = AccountLifecycle.block(
+        BlockReason.Manual,
+        utcMs('2026-10-12T00:00:00.000+03:00'),
+      );
+      await seed(`users/${uid}`, registeredUser(serverBlock));
 
       await assertSucceeds(
         updateDoc(doc(signedIn(uid).firestore(), 'users', uid), {
@@ -422,23 +454,18 @@ describe('firestore.rules', () => {
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         const snapshot = await getDoc(doc(ctx.firestore(), 'users', uid));
         expect(snapshot.data()?.['firstName']).toBe('Ivo');
-        expect(snapshot.data()?.['status']).toEqual(serverStatus);
+        expect(snapshot.data()).toMatchObject(serverBlock);
       });
     });
 
     /**
-     * Why `saveProfile` moves from a whole-document `setDoc` to an
-     * `updateDoc` of the edited fields: a full save re-sends every field the
-     * mapper knows, so the moment the server holds a value the mapper would
-     * write differently, the client's own name save is refused.
+     * Why `ProfilePorts.writeOwnProfile` updates the five owner keys and
+     * never sets the document: a full save re-sends every key of the body,
+     * so the moment the server holds a value the client's copy does not (a
+     * block), the client's own name save is refused.
      */
     it('refuses a whole-document save that would rewrite a server-written field', async () => {
-      await seed(
-        `users/${uid}`,
-        registeredUser({
-          status: { kind: 'blocked', reason: 'manual', untilIso: null },
-        }),
-      );
+      await seed(`users/${uid}`, registeredUser(SERVER_BLOCK));
       await assertFails(
         setDoc(
           doc(signedIn(uid).firestore(), 'users', uid),
@@ -459,11 +486,7 @@ describe('firestore.rules', () => {
         const actor = signedIn('staff-1', role);
         const target = doc(actor.firestore(), 'users', 'client-1');
         await assertFails(updateDoc(target, { roles: ['client', 'barber'] }));
-        await assertFails(
-          updateDoc(target, {
-            status: { kind: 'blocked', reason: 'manual', untilIso: null },
-          }),
-        );
+        await assertFails(updateDoc(target, { ...SERVER_BLOCK }));
         await assertFails(updateDoc(target, { firstName: 'Forged' }));
       },
     );
@@ -483,17 +506,14 @@ describe('firestore.rules', () => {
 
   /**
    * Registration is the `completeRegistration` callable on the Admin SDK,
-   * and `verifyOtp` writes the contact-only stub before it — no client
+   * and `verifyOtp` creates the provisioned stub before it — no client
    * creates this document, not even the plainest active `client` profile.
    */
   describe('users/{uid} — no client creates a profile', () => {
     it.each<[string, Record<string, unknown>]>([
       ['the full profile document', registeredUser()],
       ['a bare client role', { roles: ['client'] }],
-      [
-        'the contact-only stub',
-        { email: 'ivan@example.com', phone: '+359888123456' },
-      ],
+      ['the contact-only stub', provisionedStub('user-10').body],
     ])('refuses the owner creating %s', async (_, data) => {
       await assertFails(
         setDoc(doc(signedIn('user-10').firestore(), 'users', 'user-10'), data),
@@ -513,17 +533,17 @@ describe('firestore.rules', () => {
   });
 
   /**
-   * The owner's name edit needs a STORED first name. The server reads a
+   * The owner's name edit needs a STORED first name. The rules read a
    * non-blank `firstName` as "registration completed", so an onboarding
-   * user writing one onto `verifyOtp`'s stub would register themselves
-   * past `completeRegistration`.
+   * user writing one onto `verifyOtp`'s stub (`firstName: null`) would
+   * register themselves past `completeRegistration`.
    */
   describe('users/{uid} — only a registered owner edits their names', () => {
     const uid = 'client-2';
-    const stub = { email: 'ivan@example.com', phone: '+359888123456' };
+    const stub = provisionedStub(uid);
 
     it('refuses the owner of a contact-only stub adding a first and last name', async () => {
-      await seed(`users/${uid}`, stub);
+      await seed(stub.path, stub.body);
       const owner = doc(signedIn(uid).firestore(), 'users', uid);
 
       await assertFails(
@@ -539,7 +559,7 @@ describe('firestore.rules', () => {
     });
 
     it('refuses the owner filling in a blank stored first name', async () => {
-      await seed(`users/${uid}`, { ...stub, firstName: '  ', lastName: '' });
+      await seed(stub.path, { ...stub.body, firstName: '  ', lastName: '' });
       await assertFails(
         updateDoc(doc(signedIn(uid).firestore(), 'users', uid), {
           firstName: 'Ivan',
@@ -548,7 +568,7 @@ describe('firestore.rules', () => {
     });
 
     it('leaves the stub exactly as the server wrote it', async () => {
-      await seed(`users/${uid}`, stub);
+      await seed(stub.path, stub.body);
       await assertFails(
         updateDoc(doc(signedIn(uid).firestore(), 'users', uid), {
           firstName: 'Ivan',
@@ -557,7 +577,7 @@ describe('firestore.rules', () => {
 
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         const snapshot = await getDoc(doc(ctx.firestore(), 'users', uid));
-        expect(snapshot.data()).toEqual(stub);
+        expect(snapshot.data()).toEqual(stub.body);
       });
     });
 

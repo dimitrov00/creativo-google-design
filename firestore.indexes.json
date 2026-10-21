@@ -133,7 +133,7 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "status.kind",
+          "fieldPath": "impersonationStatus",
           "order": "ASCENDING"
         }
       ]
@@ -147,11 +147,11 @@
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "consumedAt",
+          "fieldPath": "consumedAtUtcMs",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "createdAt",
+          "fieldPath": "createdAtUtcMs",
           "order": "ASCENDING"
         }
       ]
@@ -507,6 +507,11 @@
     {
       "collectionGroup": "customers",
       "fieldPath": "searchPrefixes",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "users",
+      "fieldPath": "roles",
       "indexes": []
     }
   ]

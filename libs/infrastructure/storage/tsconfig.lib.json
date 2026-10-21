@@ -32,9 +32,6 @@
       "path": "../../domain/kernel/tsconfig.lib.json"
     },
     {
-      "path": "../../domain/accounts/tsconfig.lib.json"
-    },
-    {
       "path": "../firestore/tsconfig.lib.json"
     },
     {

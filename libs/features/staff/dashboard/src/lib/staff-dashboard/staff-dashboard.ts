@@ -41,16 +41,19 @@ import {
   type CommitBookingSeatRequest,
   wordError,
 } from '@creativo/application/booking';
-import type {
-  Appointment,
-  AppointmentPhoto,
-  ServiceCategory,
+import {
+  type Appointment,
+  type AppointmentPhoto,
+  Profile,
+  type ServiceCategory,
+  type User,
 } from '@core/entities';
 import {
   AttendanceState,
   BookingStatus,
   EndMinute,
   MinuteOfDay,
+  UserId,
   UtcEpochMs,
   defect,
 } from '@core/primitives';
@@ -64,6 +67,7 @@ import {
   DiscountSource,
   MinuteRange,
   PhotoOrigin,
+  Registration,
   Seat,
   SeatOutcome,
   SeatSubject,
@@ -71,8 +75,12 @@ import {
   VoucherCode,
   VoucherRedemption,
 } from '@core/components';
-import { BillingSystem, PhoneSystem } from '@core/systems';
-import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import { BillingSystem, PhoneSystem, SearchFieldsSystem } from '@core/systems';
+import {
+  CATALOG_PORTS,
+  PROFILE_PORTS,
+  USER_SEARCH_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { AGENDA_FIELDS, AgendaFields } from '../agenda-fields';
 import {
   StaffVisitEditor,
@@ -189,21 +197,15 @@ import {
   type BlockEditorVm,
   StaffBlockEditor,
 } from '../block-editor/staff-block-editor';
-import { USER_SEARCH_PORT } from '@creativo/application/governance';
 import {
   clientLookupKeys,
   parseClientQuery,
   rankClients,
 } from '../visit-editor/client-query';
-import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  UserId,
-} from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import type { ClientCardCatalog } from '@creativo/features/staff/client-card';
 import {
   AUTH_DEPLOYMENT,
-  PhoneNumber,
   countryCallingCode,
 } from '@creativo/application/identity';
 
@@ -357,8 +359,20 @@ function streetOf(address: string): string {
 
 /** One question per typed name, not one per keystroke. */
 const CLIENT_SEARCH_DEBOUNCE_MS = 220;
+/** The most accounts one lookup key answers with (index #8's `limit`). */
+const CLIENT_SEARCH_LIMIT = 20;
 /** How many of the book's matches get their portrait looked up per query. */
 const BOOK_FACES_PER_QUERY = 12;
+
+/**
+ * An account the client search found, as its option names it: the name AS
+ * WRITTEN — `searchName` is the lower-cased index key, and it read «мартин
+ * илиев» on the desk's rows (2026-09-18) — else that key, else nothing.
+ */
+function searchLabelOf(user: User): string {
+  const written = Profile.fullName(user);
+  return written.length > 0 ? written : (user.searchName ?? '');
+}
 
 interface DayRowVm {
   readonly kind: 'visit';
@@ -5194,7 +5208,7 @@ export class StaffDashboard {
   // `commitBooking` placed by the shop — for a named client, or for nobody
   // (a walk-in of guest seats).
 
-  private readonly userSearch = inject(USER_SEARCH_PORT);
+  private readonly userSearch = inject(USER_SEARCH_PORTS);
 
   protected readonly createVisit = signal<{
     readonly barberId: string;
@@ -5437,10 +5451,10 @@ export class StaffDashboard {
   private resolveAvatars(ids: readonly string[]): void {
     for (const id of ids) {
       if (id.startsWith('guest-') || this.avatarLookups.has(id)) continue;
-      const userId = UserId.create(id);
-      if (userId.isFailure()) continue;
+      const owner = UserId.parse(id);
+      if (!owner.ok) continue;
       this.avatarLookups.add(id);
-      void this.avatarUploader.find(userId.value).then((found) => {
+      void this.avatarUploader.find(owner.value).then((found) => {
         const url = found.isSuccess() ? (found.value?.url ?? null) : null;
         this.avatarUrls.update((urls) => ({ ...urls, [id]: url }));
       });
@@ -5453,10 +5467,12 @@ export class StaffDashboard {
    * profile, never the booker's contact. Looked up once per session for
    * every companion in the loaded days, as the book loads, so the sheet
    * usually seeds with his name; until it lands his row reads «Клиент без
-   * име» and his card names him from `users/{uid}` itself. Without a
+   * име» and his card names him from `users/{uid}` itself. A `PROVISIONED`
+   * stub (signed in, never registered) names nobody: the port answers the
+   * stored body, and a stub is no profile (flip-2 plan §3.5). Without a
    * profile port (a test bed) nobody is looked up.
    */
-  private readonly profiles = inject(PROFILE_PORT, { optional: true });
+  private readonly profiles = inject(PROFILE_PORTS, { optional: true });
   protected readonly companionNames = signal<Readonly<Record<string, string>>>(
     {},
   );
@@ -5488,13 +5504,17 @@ export class StaffDashboard {
     if (profiles === null) return;
     for (const id of ids) {
       if (this.companionLookups.has(id)) continue;
-      const userId = UserId.create(id);
-      if (userId.isFailure()) continue;
+      const userId = UserId.parse(id);
+      if (!userId.ok) continue;
       this.companionLookups.add(id);
-      void profiles.getProfile(userId.value).then((found) => {
+      void profiles.loadProfile(userId.value).then((found) => {
         // A failed read is asked again when the book next changes.
-        if (found.isFailure()) this.companionLookups.delete(id);
-        const name = found.isSuccess() ? (found.value?.fullName() ?? '') : '';
+        if (!found.ok) this.companionLookups.delete(id);
+        const user = found.ok ? found.value : null;
+        const name =
+          user !== null && Registration.isRegistered(user)
+            ? Profile.fullName(user)
+            : '';
         if (name.length === 0) return;
         this.companionNames.update((names) => ({ ...names, [id]: name }));
       });
@@ -5651,30 +5671,35 @@ export class StaffDashboard {
     seq: number,
   ): Promise<void> {
     const answers = await Promise.all(
-      keys.map((key) => this.userSearch.search(key)),
+      keys.map((key) => {
+        // The index's own form of the key; one it could never match is
+        // asked nothing (no account holds an empty prefix).
+        const prefix = SearchFieldsSystem.normalizeQuery(key);
+        return prefix.length === 0
+          ? null
+          : this.userSearch.searchUsers(prefix, CLIENT_SEARCH_LIMIT);
+      }),
     );
     // A newer query owns the list now.
     if (seq !== this.clientSearchSeq) return;
     const seen = new Set<string>();
     const options: VisitEditorClientOption[] = [];
     for (const answer of answers) {
-      if (answer.isFailure()) continue;
+      if (answer === null || !answer.ok) continue;
       for (const hit of answer.value) {
-        const id = hit.userId.value;
-        if (seen.has(id)) continue;
-        seen.add(id);
-        const email = hit.email?.value ?? null;
+        if (seen.has(hit.id)) continue;
+        seen.add(hit.id);
         options.push({
-          id,
-          label: hit.displayName,
+          id: hit.id,
+          label: searchLabelOf(hit),
           // Read as the profile prints it — «+359 88 765 4321», not the E.164.
           phone:
             hit.phone === null
               ? null
-              : PhoneNumber.fromPrimitive(hit.phone).formatInternational(),
+              : PhoneSystem.formatInternational(hit.phone),
           phoneHref: hit.phone,
-          meta: email,
-          email,
+          meta: hit.email,
+          email: hit.email,
         });
       }
     }

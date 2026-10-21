@@ -39,6 +39,7 @@ import {
   customerIdOf,
   seededCustomerBody,
 } from './fixtures/customers.fixtures.ts';
+import { clientUserBody } from './fixtures/users.fixtures.ts';
 import {
   cadence,
   createChairBook,
@@ -147,51 +148,24 @@ export const contactOf = (uid, note = null) => {
   };
 };
 
-/**
- * The same prefixes `FirestoreProfileAdapter` / the functions' user repository
- * write: every prefix of every name token, phone digits (E.164 without the
- * plus, and the national `0…` form) and the email from the 3rd character.
- * Kept in lockstep by hand — neither exports its helper.
- */
-export function searchFields(firstName, lastName, phone, email) {
-  const searchName = `${firstName} ${lastName}`.trim().toLowerCase();
-  const out = new Set();
-  const prefixes = (token, from = 1) => {
-    for (let i = from; i <= token.length; i += 1) out.add(token.slice(0, i));
-  };
-  for (const token of searchName.split(/\s+/).filter(Boolean)) prefixes(token);
-  const digits = phone.replace(/\D/g, '');
-  prefixes(digits, 3);
-  if (digits.startsWith('359')) prefixes('0' + digits.slice(3), 3);
-  if (email) {
-    const lower = email.toLowerCase();
-    prefixes(lower, 3);
-    prefixes(lower.split('@')[0], 3);
-  }
-  return { searchName, searchPrefixes: [...out] };
-}
+/** What the seed registered a client with — the contact `users` and `customers` both copy. */
+const seedContactOf = (client) => ({
+  firstName: client.firstName,
+  lastName: client.lastName,
+  phone: client.phone,
+  email: client.email,
+});
 
-/** `users/{uid}` as registration writes it. */
-export function userDocumentOf(client, calendar) {
+/**
+ * WHEN a client was born, as the fixture places it: a client born on the
+ * shop's today (`birthdayTodayIn`, the birthday state) has today's month and
+ * day in that year, `'YYYY-MM-DD'`; everyone else has no birth date.
+ */
+function birthDateOf(client, calendar) {
+  if (!client.birthdayTodayIn) return null;
   const { today } = calendar;
   const pad = (n) => String(n).padStart(2, '0');
-  return {
-    phone: client.phone,
-    firstName: client.firstName,
-    lastName: client.lastName,
-    roles: ['client'],
-    status: { kind: 'active' },
-    email: client.email,
-    birthDate: client.birthdayTodayIn
-      ? `${client.birthdayTodayIn}-${pad(today.month)}-${pad(today.day)}`
-      : null,
-    ...searchFields(
-      client.firstName,
-      client.lastName,
-      client.phone,
-      client.email,
-    ),
-  };
+  return `${client.birthdayTodayIn}-${pad(today.month)}-${pad(today.day)}`;
 }
 
 const WORKED = { kind: 'worked' };
@@ -902,12 +876,7 @@ function customerRecordOf(client, appointments, calendar) {
     id: customerIdOf(client.uid),
     body: seededCustomerBody(
       client.uid,
-      {
-        firstName: client.firstName,
-        lastName: client.lastName,
-        phone: client.phone,
-        email: client.email,
-      },
+      seedContactOf(client),
       opened.length === 0 ? calendar.msAt(0, 0, 0) : Math.min(...opened),
     ),
   };
@@ -915,7 +884,7 @@ function customerRecordOf(client, appointments, calendar) {
 
 /**
  * Everything the seed writes about clients, as of `nowMs`: their `users`
- * docs, their client records (`customers`, D29) and every appointment, past
+ * docs (the flat registered `User` body, `clientUserBody`), their client records (`customers`, D29) and every appointment, past
  * and coming, as the flat `Appointment` body. Pure — the same `nowMs` day
  * gives the same documents.
  *
@@ -953,7 +922,7 @@ export function buildClientBook(nowMs) {
     calendar,
     users: CLIENTS.map((client) => ({
       uid: client.uid,
-      doc: userDocumentOf(client, calendar),
+      doc: clientUserBody(seedContactOf(client), birthDateOf(client, calendar)),
     })),
     customers: CLIENTS.map((client) =>
       customerRecordOf(client, appointments, calendar),

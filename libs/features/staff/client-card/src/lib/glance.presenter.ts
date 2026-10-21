@@ -1,5 +1,9 @@
-import type { User } from '@creativo/application/accounts';
-import type { Appointment, GiftVoucher, WaitlistRequest } from '@core/entities';
+import type {
+  Appointment,
+  GiftVoucher,
+  User,
+  WaitlistRequest,
+} from '@core/entities';
 import {
   type LoyaltyAccount,
   type LoyaltyCatalog,
@@ -24,7 +28,11 @@ import {
   UtcEpochMs,
   defect,
 } from '@core/primitives';
-import { BirthDate, CouponOccasion, WaitlistLifecycle } from '@core/components';
+import {
+  type BirthDate,
+  CouponOccasion,
+  WaitlistLifecycle,
+} from '@core/components';
 import {
   AgeSystem,
   ClientGlanceSystem,
@@ -335,11 +343,9 @@ function isBirthdayGrant(grant: ClientCardGrant): boolean {
  * less the year of birth. `null` where the record holds no year a person
  * can have been born in — the band then says the day without a figure.
  */
-function ageOn(day: string, birth: string): number | null {
+function ageOn(day: string, birth: BirthDate): number | null {
   const shopDay = LocalDate.parse(day);
-  return shopDay.ok
-    ? AgeSystem.ageReachedOn(BirthDate.of(birth), shopDay.value)
-    : null;
+  return shopDay.ok ? AgeSystem.ageReachedOn(birth, shopDay.value) : null;
 }
 
 /**
@@ -358,8 +364,8 @@ function ageOn(day: string, birth: string): number | null {
  */
 export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
   const { today, words } = input;
-  const birth = input.user?.birthDate?.toISODate();
-  if (birth === undefined) return null;
+  const birth = input.user?.birthDate ?? null;
+  if (birth === null) return null;
 
   if (isBirthdayToday(input.user, today)) {
     const age = ageOn(today, birth);
@@ -390,7 +396,7 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
   // own is the band above, so the card's window starts at tomorrow).
   const shopToday = LocalDate.parse(today);
   if (!shopToday.ok) return null;
-  const next = AgeSystem.nextBirthday(BirthDate.of(birth), shopToday.value);
+  const next = AgeSystem.nextBirthday(birth, shopToday.value);
   if (next.inDays < 1 || next.inDays > BIRTHDAY_NOTICE_DAYS) return null;
   const title = words.birthday.upcoming(
     weekdayLong(next.localDate, words.lang),

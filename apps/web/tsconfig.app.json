@@ -85,9 +85,6 @@
       "path": "../../libs/application/programs/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/application/governance/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/application/accounts/tsconfig.lib.json"
     },
     {

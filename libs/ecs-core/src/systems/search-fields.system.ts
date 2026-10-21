@@ -3,14 +3,15 @@ import { Profile } from '@core/entities';
 import { PhoneSystem } from './phone.system';
 
 /**
- * SearchFieldsSystem — the clientele search keys of `users/{uid}` (blueprint
- * §2.7, §2.8), computed in ONE place for the web, the functions and the
- * seed. Ported from the two hand-kept copies of `computeSearchFields`
- * (`libs/infrastructure/firestore/src/lib/profile.adapter.ts:41-75`,
- * `apps/functions/src/adapters/firestore-user-repository.ts:37-73`), which
- * both now call it, and the query side of the same index
- * (`normalizeSearchQuery`/`looksLikePhone`,
- * `libs/application/governance/src/lib/ports/user-search.port.ts:31-46`).
+ * SearchFieldsSystem — the clientele search keys of `users/{uid}` and
+ * `customers/{id}` (blueprint §2.7, §2.8), computed in ONE place for the
+ * web, the functions and the seed: `RegistrationSystem.register` (the
+ * registered body), `ProfileEditSystem.decide` (an owner's edit, from the
+ * STORED contact channels), `CustomerRecordSystem.createsFor` (a client
+ * record) — the two hand-kept copies of `computeSearchFields` it replaced
+ * are gone — and the query side of the same index (`normalizeQuery`,
+ * `looksLikePhone`), which the staff client search calls before
+ * `searchUsers`.
  *
  * `searchName` is the trimmed, lower-cased full name (the list's order
  * key). `searchPrefixes` is every prefix of every whitespace-split name

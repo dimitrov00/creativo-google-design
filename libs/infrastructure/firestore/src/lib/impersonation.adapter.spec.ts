@@ -1,161 +1,162 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { TestBed } from '@angular/core/testing';
+import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
-import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
-import { ZonedDateTime } from '@creativo/domain/kernel';
 import {
-  ImpersonationSession,
+  EndReasonFields,
+  ImpersonationScope,
+  ImpersonationStatus,
+} from '@core/components';
+import {
   ImpersonationSessionId,
-} from '@creativo/domain/governance';
-import { UserId } from '@creativo/domain/accounts';
-import { FirestoreImpersonationAdapter } from './impersonation.adapter';
+  RepositoryErrorCode,
+  Result,
+  UserId,
+  type UtcEpochMs,
+} from '@core/primitives';
+import type { ImpersonationSession } from '@core/entities';
+import { impersonationSessionFixture, utcMs } from '@core/testing';
+import { FakeFirestore } from '../testing/fake-firestore';
 
-const setDocMock = vi.fn().mockResolvedValue(undefined);
-const writeBatchMock = vi.fn();
-const getDocMock = vi.fn();
-const getDocsMock = vi.fn();
+vi.mock('firebase/firestore', async () =>
+  (await import('../testing/fake-firestore')).fakeFirestoreModule(),
+);
 
-vi.mock('firebase/firestore', () => ({
-  collection: vi.fn((_db, ...segments: string[]) => ({
-    path: segments.join('/'),
-  })),
-  doc: vi.fn((_db, ...segments: string[]) => ({ path: segments.join('/') })),
-  getDoc: (...args: unknown[]) => getDocMock(...args),
-  getDocs: (...args: unknown[]) => getDocsMock(...args),
-  query: vi.fn((ref) => ref),
-  where: vi.fn((field, op, value) => ({ field, op, value })),
-  limit: vi.fn((n) => ({ limit: n })),
-  setDoc: (...args: unknown[]) => setDocMock(...args),
-  writeBatch: (...args: unknown[]) => writeBatchMock(...args),
-}));
+const { impersonationReadPorts } = await import('./impersonation.adapter');
 
-function buildSession(): ImpersonationSession {
-  const now = ZonedDateTime.now('UTC');
-  if (now.isFailure()) throw new Error('bad now');
-  const result = ImpersonationSession.start({
-    id: ImpersonationSessionId.generate().value,
-    adminUserId: UserId.generate().value,
-    targetUserId: UserId.generate().value,
-    scope: 'write',
-    reason: 'support ticket #123',
-    startedAtIso: now.value.toISO(),
-    expiresAtIso: now.value.plusMinutes(30).toISO(),
-    adminRoles: ['admin'],
-  });
-  if (result.isFailure()) {
-    throw new Error(`fixture build failed: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
+const asDb = (fake: FakeFirestore) => fake as unknown as Firestore;
+
+/** Everything a stream said, in order. */
+function recorded<T>(stream: {
+  subscribe: (next: (value: T) => void) => { unsubscribe(): void };
+}) {
+  const seen: T[] = [];
+  const subscription = stream.subscribe((value) => seen.push(value));
+  return { seen, stop: () => subscription.unsubscribe() };
 }
 
-function createAdapter(fakeDb: Firestore): FirestoreImpersonationAdapter {
-  TestBed.configureTestingModule({
-    providers: [
-      { provide: FIREBASE_FIRESTORE, useValue: fakeDb },
-      FirestoreImpersonationAdapter,
-    ],
-  });
-  return TestBed.inject(FirestoreImpersonationAdapter);
+/** A session's document body: the entity minus its id (Law 5). */
+function bodyOf(session: ImpersonationSession): object {
+  const { id, ...body } = session;
+  expect(typeof id).toBe('string');
+  return body;
 }
 
-describe('FirestoreImpersonationAdapter', () => {
-  const fakeDb = {} as Firestore;
+const pathOf = (session: ImpersonationSession) =>
+  `impersonationSessions/${session.id}`;
 
-  beforeEach(() => {
-    setDocMock.mockClear();
-    writeBatchMock.mockClear();
-    getDocMock.mockReset();
-    getDocsMock.mockReset();
-  });
+/** The fake holding `sessions` as stored. */
+function storeOf(...sessions: readonly ImpersonationSession[]): FakeFirestore {
+  return new FakeFirestore(
+    new Map(sessions.map((session) => [pathOf(session), bodyOf(session)])),
+  );
+}
 
-  it('save() writes the session document and nothing else', async () => {
-    const adapter = createAdapter(fakeDb);
-    const session = buildSession();
+const ADMIN = UserId.of('u-admin');
+const ACTIVE = impersonationSessionFixture();
 
-    const result = await adapter.save(session);
+/** `session`, ended at `at` for `reason` — the `ENDED` variant's keys flat at the root. */
+function ended(
+  session: ImpersonationSession,
+  at: UtcEpochMs,
+  reason: EndReasonFields,
+): ImpersonationSession {
+  return {
+    ...session,
+    impersonationStatus: ImpersonationStatus.Ended,
+    endedAtUtcMs: at,
+    ...reason,
+  };
+}
 
-    expect(result.isSuccess()).toBe(true);
-    expect(setDocMock).toHaveBeenCalledTimes(1);
-    const [ref, sessionDoc] = setDocMock.mock.calls[0] ?? [];
-    expect(ref).toEqual({ path: `impersonationSessions/${session.id.value}` });
-    expect(sessionDoc).toMatchObject({
-      adminUserId: session.adminUserId.value,
-      targetUserId: session.targetUserId.value,
-      scope: 'write',
-      status: { kind: 'active' },
-    });
-  });
+/** The admin's earlier session, ended by the admin a minute in. */
+const ENDED = ended(
+  impersonationSessionFixture({ id: ImpersonationSessionId.of('imp-ended') }),
+  utcMs('2026-09-28T06:01:00+00:00'),
+  EndReasonFields.adminEnded(ADMIN),
+);
 
-  // FIX 1: no client creates audit rows — the rules refuse every one, so a
-  // batch carrying one would fail the session write with it.
-  it('save() writes no audit row from the browser', async () => {
-    const adapter = createAdapter(fakeDb);
+describe('impersonationReadPorts.observeActiveImpersonation — index #9, live', () => {
+  it('asks adminUserId ==, impersonationStatus == ACTIVE, limit 1 — and answers the flat body as stored', () => {
+    const fake = storeOf(ACTIVE);
 
-    await adapter.save(buildSession());
-
-    expect(writeBatchMock).not.toHaveBeenCalled();
-    const paths = setDocMock.mock.calls.map(
-      ([ref]) => (ref as { path: string }).path,
+    const active = recorded(
+      impersonationReadPorts(asDb(fake)).observeActiveImpersonation(ADMIN),
     );
-    expect(paths.some((path) => path.startsWith('auditLog'))).toBe(false);
+
+    expect(active.seen).toEqual([Result.ok(ACTIVE)]);
+    expect(fake.reads).toEqual([
+      {
+        kind: 'listen',
+        path: 'impersonationSessions',
+        constraints: [
+          'adminUserId == "u-admin"',
+          'impersonationStatus == "ACTIVE"',
+          'limit 1',
+        ],
+      },
+    ]);
+    active.stop();
   });
 
-  it('findById() returns null for a missing document', async () => {
-    getDocMock.mockResolvedValue({ exists: () => false });
-    const adapter = createAdapter(fakeDb);
-
-    const result = await adapter.findById(ImpersonationSessionId.generate());
-
-    expect(result.isSuccess()).toBe(true);
-    if (result.isSuccess()) {
-      expect(result.value).toBeNull();
-    }
-  });
-
-  it('findById() reconstitutes a found document', async () => {
-    const session = buildSession();
-    getDocMock.mockResolvedValue({
-      exists: () => true,
-      id: session.id.value,
-      data: () => ({
-        adminUserId: session.adminUserId.value,
-        targetUserId: session.targetUserId.value,
-        scope: session.scope,
-        reason: session.reason,
-        startedAt: session.startedAt.toISO(),
-        expiresAt: session.expiresAt.toISO(),
-        status: { kind: 'active' },
-      }),
+  it('answers null when the admin has no ACTIVE session — an ended one and another admin’s are not it', () => {
+    const othersSession = impersonationSessionFixture({
+      id: ImpersonationSessionId.of('imp-other'),
+      adminUserId: UserId.of('u-other-admin'),
+      impersonationScope: ImpersonationScope.Write,
     });
-    const adapter = createAdapter(fakeDb);
+    const fake = storeOf(ENDED, othersSession);
 
-    const result = await adapter.findById(session.id);
+    const active = recorded(
+      impersonationReadPorts(asDb(fake)).observeActiveImpersonation(ADMIN),
+    );
 
-    expect(result.isSuccess()).toBe(true);
-    if (result.isSuccess()) {
-      expect(result.value?.id.value).toBe(session.id.value);
-      expect(result.value?.isActive()).toBe(true);
-    }
+    expect(active.seen).toEqual([Result.ok(null)]);
+    active.stop();
   });
 
-  it('findActiveForAdmin() returns null when no active session exists', async () => {
-    getDocsMock.mockResolvedValue({ empty: true, docs: [] });
-    const adapter = createAdapter(fakeDb);
+  it('a session ending arrives live: the ACTIVE body, then null', () => {
+    const fake = storeOf(ACTIVE);
+    const active = recorded(
+      impersonationReadPorts(asDb(fake)).observeActiveImpersonation(ADMIN),
+    );
 
-    const result = await adapter.findActiveForAdmin(UserId.generate());
+    fake.set(
+      pathOf(ACTIVE),
+      bodyOf(
+        ended(
+          ACTIVE,
+          utcMs('2026-09-28T06:10:00+00:00'),
+          EndReasonFields.expired(),
+        ),
+      ),
+    );
 
-    expect(result.isSuccess()).toBe(true);
-    if (result.isSuccess()) {
-      expect(result.value).toBeNull();
-    }
+    expect(active.seen).toEqual([Result.ok(ACTIVE), Result.ok(null)]);
+    active.stop();
   });
 
-  it('surfaces a RepositoryError when the session write rejects', async () => {
-    setDocMock.mockRejectedValueOnce(new Error('offline'));
-    const adapter = createAdapter(fakeDb);
+  it('writes nothing from the browser — the bundle’s one member is a read, no session and no audit row', () => {
+    const fake = storeOf(ACTIVE);
+    const ports = impersonationReadPorts(asDb(fake));
 
-    const result = await adapter.save(buildSession());
+    recorded(ports.observeActiveImpersonation(ADMIN)).stop();
 
-    expect(result.isFailure()).toBe(true);
+    expect(Object.keys(ports)).toEqual(['observeActiveImpersonation']);
+    expect(fake.writes).toEqual([]);
+  });
+
+  it('answers a refused read as the port’s RepositoryError', () => {
+    const fake = new FakeFirestore().failWith({ code: 'permission-denied' });
+
+    const active = recorded(
+      impersonationReadPorts(asDb(fake)).observeActiveImpersonation(ADMIN),
+    );
+
+    expect(active.seen).toEqual([
+      Result.err({
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'impersonationSessions',
+        reason: 'permission-denied',
+      }),
+    ]);
   });
 });

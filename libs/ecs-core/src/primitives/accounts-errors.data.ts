@@ -29,6 +29,8 @@ export const AccountsErrorCode = {
   UpdateProfileNotFound: 'ACCOUNTS_UPDATE_PROFILE_NOT_FOUND',
   /** The edited profile failed a field rule. */
   UpdateProfileValidationFailed: 'ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED',
+  /** `updateProfile` called without a signed-in session (identity flip (2), F2-4). */
+  UpdateProfileUnauthenticated: 'ACCOUNTS_UPDATE_PROFILE_UNAUTHENTICATED',
   /** The picked avatar file is not an image. */
   UploadAvatarNotAnImage: 'ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE',
   /** The picked avatar file is over `maxBytes`. */
@@ -46,6 +48,7 @@ export type AccountsError =
   | AccountsError.EmailInvalid
   | AccountsError.UpdateProfileNotFound
   | AccountsError.UpdateProfileValidationFailed
+  | AccountsError.UpdateProfileUnauthenticated
   | AccountsError.UploadAvatarNotAnImage
   | AccountsError.UploadAvatarTooLarge;
 
@@ -87,6 +90,9 @@ export const AccountsError = {
   },
   updateProfileValidationFailed(): AccountsError.UpdateProfileValidationFailed {
     return { errorCode: AccountsErrorCode.UpdateProfileValidationFailed };
+  },
+  updateProfileUnauthenticated(): AccountsError.UpdateProfileUnauthenticated {
+    return { errorCode: AccountsErrorCode.UpdateProfileUnauthenticated };
   },
   uploadAvatarNotAnImage(): AccountsError.UploadAvatarNotAnImage {
     return { errorCode: AccountsErrorCode.UploadAvatarNotAnImage };
@@ -135,6 +141,9 @@ export namespace AccountsError {
   };
   export type UpdateProfileValidationFailed = {
     readonly errorCode: typeof AccountsErrorCode.UpdateProfileValidationFailed;
+  };
+  export type UpdateProfileUnauthenticated = {
+    readonly errorCode: typeof AccountsErrorCode.UpdateProfileUnauthenticated;
   };
   export type UploadAvatarNotAnImage = {
     readonly errorCode: typeof AccountsErrorCode.UploadAvatarNotAnImage;

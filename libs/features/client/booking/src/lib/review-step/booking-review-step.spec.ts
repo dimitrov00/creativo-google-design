@@ -19,7 +19,7 @@ import {
   activePrincipal,
   roleFromPrimitive,
 } from '@creativo/application/identity';
-import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import {
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
@@ -40,6 +40,7 @@ import { CLOCK } from '@creativo/application/shared';
 import {
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
+  PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import type { AppointmentReadPorts } from '@core/ports';
 import type { Appointment, ShopLocation } from '@core/entities';
@@ -69,6 +70,7 @@ import {
   locationFixture,
   memoryAppointmentReadPorts,
   memoryCatalogReadPorts,
+  memoryProfilePorts,
   seatFixture,
   termsFixture,
   unwrapOk,
@@ -322,13 +324,7 @@ async function render(
           currentIdentifier: () => null,
         },
       },
-      {
-        provide: PROFILE_PORT,
-        useValue: {
-          getProfile: () => Promise.resolve(ok(null)),
-          observeProfile: () => of(ok(null)),
-        },
-      },
+      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
       {
         provide: AVATAR_UPLOADER,
         useValue: {

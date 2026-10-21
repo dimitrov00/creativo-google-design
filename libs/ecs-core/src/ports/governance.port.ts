@@ -55,9 +55,12 @@ export type AuditActionsFor = (
 // ── Impersonation ─────────────────────────────────────────────────────────
 
 /**
- * The admin's live session, if any — `adminUserId ==`, the stored status
- * active (index #9, `impersonation.adapter.ts:207-208`; re-keyed on
- * `impersonationStatus` by the governance flip); `null` when none.
+ * The admin's live session, if any — `adminUserId ==`,
+ * `impersonationStatus == 'ACTIVE'`, limit 1 (index #9: `adminUserId,
+ * impersonationStatus`; `impersonation.adapter.ts`'s
+ * `impersonationReadPorts`); the flat body as stored, `null` when none.
+ * A lapsed session still reads `ACTIVE` — `ImpersonationSystem.isExpired`
+ * is the rule an authorization reads, never this stream alone.
  */
 export type ObserveActiveImpersonation = (
   adminUserId: UserId,
@@ -105,7 +108,7 @@ export type AuditQueryPorts = {
 /** The audit trail — `firestore-audit.adapter.ts`. */
 export type AuditPorts = AuditAppendPorts & AuditRowsPorts & AuditQueryPorts;
 
-/** The admin's live impersonation session (web). */
+/** The admin's live impersonation session (web, `IMPERSONATION_READ_PORTS`). */
 export type ImpersonationReadPorts = {
   readonly observeActiveImpersonation: ObserveActiveImpersonation;
 };

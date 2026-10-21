@@ -2,11 +2,11 @@ import {
   AuthStrategy,
   AuthStrategyKind,
   type Identifier,
-  OtpDestinationType,
+  type OtpDestinationType,
   type OtpPurpose,
+  ParsedIdentifier,
 } from '@core/components';
 import {
-  IdentifierChannel,
   IdentityError,
   IdentityErrorCode,
   Result,
@@ -88,13 +88,6 @@ export type OtpAttempt<O extends OtpCounters = Otp> = {
   readonly result: Result<O, IdentityError.Otp>;
   readonly write: O | null;
 };
-
-/** The identifier channel a stored destination type is delivered over. */
-function channelOf(otpDestinationType: OtpDestinationType): IdentifierChannel {
-  return otpDestinationType === OtpDestinationType.Sms
-    ? IdentifierChannel.Phone
-    : IdentifierChannel.Email;
-}
 
 export const OtpSystem = {
   /**
@@ -225,7 +218,8 @@ export const OtpSystem = {
   ): boolean {
     return (
       strategy.authStrategyKind !== AuthStrategyKind.EmailLink &&
-      channelOf(otpDestinationType) === AuthStrategy.identifierKind(strategy)
+      ParsedIdentifier.channelOfDestination(otpDestinationType) ===
+        AuthStrategy.identifierKind(strategy)
     );
   },
 } as const;

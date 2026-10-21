@@ -1,12 +1,17 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import { type Firestore, Timestamp } from 'firebase-admin/firestore';
 import { Result, UtcEpochMs } from '@core/primitives';
-import { WriteOp } from '@core/components';
-import { recordingTelemetry } from '@core/testing';
+import { Email, ParsedIdentifier, WriteOp } from '@core/components';
+import type { ClockPorts, HashPorts, IdPorts } from '@core/ports';
+import {
+  otpFixture,
+  recordingTelemetry,
+  registeredUserFixture,
+} from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { type FirestorePorts, firestorePorts } from './firestore-ports';
 
 describe('firestorePorts — the assembler', () => {
-  const primitives = {
+  const primitives: ClockPorts & HashPorts & IdPorts = {
     nowUtcMs: () => {
       const at = UtcEpochMs.of(1_760_000_000_000);
       if (!at.ok) throw new Error('a broken fixture');
@@ -64,6 +69,11 @@ describe('firestorePorts — the assembler', () => {
       'loadBackfillJob',
       'writeBackfillJob',
       'pageAppointments',
+      // flip 2 (identity): the `otps` store and the account lookup
+      'loadOpenOtps',
+      'loadOtp',
+      'saveOtp',
+      'findUserByDestination',
     ] as const) {
       expect(typeof (ports as Record<string, unknown>)[member], member).toBe(
         'function',
@@ -85,6 +95,22 @@ describe('firestorePorts — the assembler', () => {
     );
     expect(result).toEqual({ ok: true, value: { id: 'id-1' } });
     expect(fake.docs.get('barberBusy/h(k)')).toEqual({ blocks: [] });
+  });
+
+  it('saves a challenge and finds an account through the same db — the otps purgeAt stamped', async () => {
+    const { fake, ports } = assemble();
+    const otp = otpFixture();
+    expect((await ports.saveOtp(otp)).ok).toBe(true);
+    expect(fake.docs.get('otps/otp-1')).toMatchObject({
+      purgeAt: Timestamp.fromMillis(otp.expiresAtUtcMs + 86_400_000),
+    });
+    const mail = Email.of('maria@example.com');
+    const { id, ...body } = registeredUserFixture({ email: mail });
+    fake.docs.set(`users/${id}`, body);
+    const found = await ports.findUserByDestination(
+      ParsedIdentifier.email(mail),
+    );
+    expect(found.ok && found.value?.id).toBe(id);
   });
 
   it('reads the settings through the same db', async () => {

@@ -6,7 +6,7 @@ import {
   uploadBytes,
 } from 'firebase/storage';
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { UserId } from '@creativo/domain/accounts';
+import type { UserId } from '@core/primitives';
 import {
   AvatarRef,
   AvatarUploader,
@@ -45,7 +45,7 @@ export class FirebaseStorageAvatarUploader implements AvatarUploader {
       );
     }
 
-    const path = `avatars/${userId.value}/original`;
+    const path = `avatars/${userId}/original`;
     try {
       const objectRef = ref(this.storage, path);
       await uploadBytes(objectRef, data, { contentType: data.type });
@@ -59,7 +59,7 @@ export class FirebaseStorageAvatarUploader implements AvatarUploader {
   async find(
     userId: UserId,
   ): Promise<Result<AvatarRef | null, AvatarUploadError>> {
-    const path = `avatars/${userId.value}/original`;
+    const path = `avatars/${userId}/original`;
     try {
       const url = await getDownloadURL(ref(this.storage, path));
       return ok({ url, path });
@@ -74,7 +74,7 @@ export class FirebaseStorageAvatarUploader implements AvatarUploader {
   }
 
   async remove(userId: UserId): Promise<Result<void, AvatarUploadError>> {
-    const path = `avatars/${userId.value}/original`;
+    const path = `avatars/${userId}/original`;
     try {
       await deleteObject(ref(this.storage, path));
       return ok(undefined);

@@ -10,8 +10,6 @@ import { NEVER, Observable, of } from 'rxjs';
 import {
   AVATAR_UPLOADER,
   AvatarUploader,
-  User,
-  ZonedDateTime,
 } from '@creativo/application/accounts';
 import {
   AUTH_GATEWAY,
@@ -26,14 +24,15 @@ import {
   INBOX_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import type { AppointmentReadPorts } from '@core/ports';
-import type { Appointment } from '@core/entities';
-import { Seat } from '@core/components';
+import type { Appointment, User } from '@core/entities';
+import { BirthDate, Seat } from '@core/components';
 import {
   AppointmentId,
   BusyKey,
   LocalDate,
   RepositoryError,
   Result as EcsResult,
+  UserId,
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import {
@@ -41,6 +40,7 @@ import {
   memoryAppointmentReadPorts,
   memoryInboxPorts,
   minute,
+  registeredUserFixture,
   seatFixture,
   unwrapOk,
 } from '@core/testing';
@@ -53,27 +53,19 @@ function unwrap<T, E>(result: Result<T, E>): T {
   return result.value;
 }
 
-const TODAY = unwrap(ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'));
 const PRINCIPAL_ID = unwrap(PrincipalId.create('user_1'));
 const PRINCIPAL = unwrap(
   activePrincipal(PRINCIPAL_ID, [roleFromPrimitive('client')]),
 );
 
+/** Jane Doe, registered — her `users/{uid}` body as stored. */
 function user(birthDate?: string): User {
-  return unwrap(
-    User.create(
-      {
-        id: 'user_1',
-        phone: '+359881234567',
-        firstName: 'Jane',
-        lastName: 'Doe',
-        roles: ['client'],
-        status: { kind: 'active' },
-        ...(birthDate === undefined ? {} : { birthDate }),
-      },
-      TODAY,
-    ),
-  );
+  return registeredUserFixture({
+    id: UserId.of('user_1'),
+    firstName: 'Jane',
+    lastName: 'Doe',
+    birthDate: birthDate === undefined ? null : BirthDate.of(birthDate),
+  });
 }
 
 /**

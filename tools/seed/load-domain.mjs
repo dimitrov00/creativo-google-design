@@ -3,11 +3,13 @@
  * every document the seed writes is TypeScript now (flip 1, booking core):
  *
  * - THE SEED ITSELF. The catalogue, the rosters, the appointments, the
- *   promotions, the waitlist request and the client records are bodies in
- *   `tools/seed/fixtures/*.fixtures.ts`, each `satisfies Omit<X, 'id'>` of
- *   its `@core/entities` archetype, and the plan modules that place them
- *   (`catalog.mjs`, `fixtures.mjs`, `appointments.mjs`, `loyalty.mjs`,
- *   `promotions.mjs`, `waitlist.mjs`) import those bodies. Plain Node can
+ *   promotions, the waitlist request, the client records and the accounts
+ *   (`users`, flip 2) are bodies in `tools/seed/fixtures/*.fixtures.ts`,
+ *   each `satisfies Omit<X, 'id'>` of its `@core/entities` archetype, and
+ *   the plan modules that place them (`catalog.mjs`, `fixtures.mjs`,
+ *   `appointments.mjs`, `loyalty.mjs`, `promotions.mjs`, `waitlist.mjs`)
+ *   import those bodies; `seed-dev-catalog.mjs` takes the staff account's
+ *   body straight from `users`. Plain Node can
  *   neither strip their types nor resolve their `@core/*` aliases, so
  *   `seed-dev-catalog.mjs` reaches every one of them through this bundle
  *   (`SEED_PLAN_MODULES`), in every mode. The specs import them directly:
@@ -61,6 +63,7 @@ export const SEED_PLAN_MODULES = Object.freeze({
   promotions: 'tools/seed/promotions.mjs',
   waitlist: 'tools/seed/waitlist.mjs',
   customers: 'tools/seed/fixtures/customers.fixtures.ts',
+  users: 'tools/seed/fixtures/users.fixtures.ts',
 });
 
 /** The server modules the seed runs by path, relative to the workspace root. */

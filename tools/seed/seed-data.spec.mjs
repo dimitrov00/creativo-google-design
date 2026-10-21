@@ -11,19 +11,23 @@
  * "Now" is pinned. A sweep of anchor days (DST changes, 29 February, every
  * weekday) proves the counts hold whatever day the seed runs on.
  */
-import { AccountStatus, User } from '@creativo/domain/accounts';
-import { ZonedDateTime } from '@creativo/domain/kernel';
 import {
+  AccountStatus,
   BookingLifecycle,
   BookingPolicy,
   ClientStatsPolicy,
   CustomerOrigin,
+  ParsedIdentifier,
+  RegistrationState,
   Seat,
 } from '@core/components';
-import { clientStatsOf } from '@core/pipelines';
+import { UTC_ZONE, clientStatsOf } from '@core/pipelines';
+import { UserId } from '@core/primitives';
 import {
   AppointmentIndexSystem,
   ClientStatsSystem,
+  ProfileEditSystem,
+  RegistrationSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import fc from 'fast-check';
@@ -519,29 +523,31 @@ describe('the dev seed client book', () => {
 
   it('every account on a seat has a profile registration would accept', () => {
     const book = buildClientBook(MORNING);
-    // `users/{uid}` is flip 2's body: held to the account domain it still is.
-    const today = ZonedDateTime.fromMillis(MORNING, ZONE);
-    if (today.isFailure()) throw today.error;
+    // `users/{uid}` is the flat registered `User` (flip 2), held to the
+    // registration rule on the UTC age day the boundary derives (F2-7) —
+    // and to the very body `completeRegistration` writes over the
+    // provisioned stub of the client's login phone.
+    const ageDay = ZonedTimeSystem.toLocal(MORNING, UTC_ZONE).localDate;
     const uids = book.users.map(({ uid }) => uid);
     expect(book.subjects.every((uid) => uids.includes(uid))).toBe(true);
     expect(uids).toEqual(
       expect.arrayContaining(['dev-client-5', 'dev-client-6', 'dev-client-8']),
     );
     for (const { uid, doc } of book.users) {
-      const user = User.create(
-        {
-          id: uid,
-          phone: doc.phone,
-          firstName: doc.firstName,
-          lastName: doc.lastName,
-          roles: doc.roles,
-          status: AccountStatus.active(),
-          email: doc.email ?? undefined,
-          birthDate: doc.birthDate ?? undefined,
-        },
-        today.value,
+      expect(doc.registrationState, uid).toBe(RegistrationState.Registered);
+      expect(doc.accountStatus, uid).toBe(AccountStatus.Active);
+      const profile = ProfileEditSystem.registrationProfile(doc, ageDay);
+      expect(profile.ok, uid).toBe(true);
+      const stub = RegistrationSystem.provision(
+        UserId.of(uid),
+        ParsedIdentifier.phone(doc.phone),
       );
-      expect(user.isSuccess(), uid).toBe(true);
+      const { id, ...registered } = RegistrationSystem.register(
+        stub,
+        profile.value,
+      );
+      expect(id, uid).toBe(uid);
+      expect(registered, uid).toEqual(doc);
     }
     expect(CLIENTS.some((client) => client.lastName.length > 20)).toBe(true);
   });
@@ -601,9 +607,9 @@ describe('the dev seed client book', () => {
 
     // Tips on some worked seats and nowhere else; no fact from the future.
     const seats = docs.flatMap((doc) => doc.seats);
-    expect(seats.filter((seat) => seat.tipCents !== null).length).toBeGreaterThan(
-      10,
-    );
+    expect(
+      seats.filter((seat) => seat.tipCents !== null).length,
+    ).toBeGreaterThan(10);
     for (const seat of seats) {
       if (seat.tipCents !== null) expect(seat.attendanceState).toBe(WORKED);
       if (seat.attendanceState !== SCHEDULED) {
@@ -786,7 +792,9 @@ describe('the dev seed client book', () => {
       '12:25',
     );
     expect(
-      shopClockOf(docById(buildClientBook(EVENING), 'appt-dev-1').arrivedAtUtcMs),
+      shopClockOf(
+        docById(buildClientBook(EVENING), 'appt-dev-1').arrivedAtUtcMs,
+      ),
     ).toBe('09:56');
   });
 });
@@ -878,7 +886,10 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
       own.every((seat) => seat.attendanceState === CANCELLED),
     );
     expect(
-      calledOff.map(({ own }) => [own[0].cancelledBy, own[0].cancellationReason]),
+      calledOff.map(({ own }) => [
+        own[0].cancelledBy,
+        own[0].cancellationReason,
+      ]),
     ).toEqual([['STAFF', 'STAFF_BARBER_ABSENCE']]);
     // The visit ahead that holds his period: `StreakState.heldBy` names it.
     const held = docById(book, 'appt-dev-2');

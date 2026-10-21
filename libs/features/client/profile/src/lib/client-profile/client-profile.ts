@@ -8,15 +8,16 @@ import {
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
-  FirstName,
-  LastName,
-  User,
-  profileCompletion,
-} from '@creativo/application/accounts';
-import { BirthDate } from '@creativo/application/identity';
+import { profileCompletion } from '@creativo/application/accounts';
 import { CLOCK } from '@creativo/application/shared';
-import { AccountStateService } from '@creativo/features/client/account-state';
+import {
+  AccountStateService,
+  ageDayOf,
+  nameRefusalCodes,
+} from '@creativo/features/client/account-state';
+import { BirthDate } from '@core/components';
+import { Profile, type User } from '@core/entities';
+import { AgeSystem, PhoneSystem } from '@core/systems';
 import {
   SessionIdentityService,
   SiteHeaderComponent,
@@ -105,7 +106,6 @@ type ProfileEdit = { readonly kind: 'name' } | { readonly kind: 'birthday' };
 export class ClientProfile {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly transloco = inject(TranslocoService);
-  private readonly clock = inject(CLOCK);
 
   protected readonly store = inject(ProfileStore);
   protected readonly accountState = inject(AccountStateService);
@@ -117,10 +117,12 @@ export class ClientProfile {
     return this.account() ? 'ready' : 'empty';
   });
 
-  private readonly today = (() => {
-    const result = this.clock.now('UTC');
-    return result.isSuccess() ? result.value : null;
-  })();
+  /**
+   * The day the birth-date window is judged on — the UTC civil date, taken
+   * once from the CLOCK port (the store's write and the server's check
+   * judge the same day).
+   */
+  private readonly ageDay = ageDayOf(inject(CLOCK));
 
   /* ── Portrait ─────────────────────────────────────────────────────── */
 
@@ -139,9 +141,10 @@ export class ClientProfile {
     if (this.photoRemoved()) return null;
     return this.photoPreviewUrl() ?? this.identity.avatarUrl();
   });
-  protected readonly fullName = computed(
-    () => this.account()?.fullName() ?? this.identity.displayName(),
-  );
+  protected readonly fullName = computed(() => {
+    const user = this.account();
+    return user === null ? this.identity.displayName() : Profile.fullName(user);
+  });
 
   /* ── Rows ─────────────────────────────────────────────────────────── */
 
@@ -154,15 +157,14 @@ export class ClientProfile {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
-    }).format(new Date(`${birthDate.toISODate()}T00:00:00`));
+    }).format(new Date(`${birthDate}T00:00:00`));
   });
 
-  protected readonly phoneLabel = computed(
-    () => this.account()?.phone.formatInternational() ?? null,
-  );
-  protected readonly emailLabel = computed(
-    () => this.account()?.email?.value ?? null,
-  );
+  protected readonly phoneLabel = computed(() => {
+    const phone = this.account()?.phone ?? null;
+    return phone === null ? null : PhoneSystem.formatInternational(phone);
+  });
+  protected readonly emailLabel = computed(() => this.account()?.email ?? null);
 
   /* ── Sheet ────────────────────────────────────────────────────────── */
 
@@ -206,19 +208,19 @@ export class ClientProfile {
     const user = this.account();
     if (!edit || !user) return false;
     if (edit.kind === 'name') {
-      const first = FirstName.create(this.firstNameDraft());
-      const last = LastName.create(this.lastNameDraft());
-      if (first.isFailure() || last.isFailure()) return false;
-      return (
-        first.value.value !== user.firstName.value ||
-        last.value.value !== user.lastName.value
-      );
+      const first = this.firstNameDraft();
+      const last = this.lastNameDraft();
+      const refused = nameRefusalCodes(first, last);
+      if (refused.firstName !== null || refused.lastName !== null) {
+        return false;
+      }
+      return first.trim() !== user.firstName || last.trim() !== user.lastName;
     }
     const parts = this.birthDraft();
-    if (!parts || !this.today) return false;
-    const result = BirthDate.create(parts, this.today);
-    if (result.isFailure()) return false;
-    return result.value.toISODate() !== (user.birthDate?.toISODate() ?? null);
+    if (!parts || !this.ageDay) return false;
+    const result = AgeSystem.fromParts(parts, this.ageDay);
+    if (!result.ok) return false;
+    return result.value !== user.birthDate;
   });
 
   constructor() {
@@ -235,8 +237,8 @@ export class ClientProfile {
     if (!user) return;
     // Seed eagerly rather than lazily so one editor's abandoned draft can
     // never bleed into the next one's fields.
-    this.firstNameDraft.set(user.firstName.value);
-    this.lastNameDraft.set(user.lastName.value);
+    this.firstNameDraft.set(user.firstName ?? '');
+    this.lastNameDraft.set(user.lastName ?? '');
     this.birthDraft.set(toDateFieldParts(user));
     this.firstNameErrorCode.set(null);
     this.lastNameErrorCode.set(null);
@@ -267,38 +269,41 @@ export class ClientProfile {
   /* ── Validation (reward early, punish late — onboarding's grammar) ─── */
 
   protected onFirstNameBlur(): void {
-    const result = FirstName.create(this.firstNameDraft());
-    this.firstNameErrorCode.set(result.isFailure() ? result.error.code : null);
+    this.firstNameErrorCode.set(this.nameRefusals().firstName);
   }
 
   protected onLastNameBlur(): void {
-    const result = LastName.create(this.lastNameDraft());
-    this.lastNameErrorCode.set(result.isFailure() ? result.error.code : null);
+    this.lastNameErrorCode.set(this.nameRefusals().lastName);
   }
 
   protected onFirstNameInput(value: string): void {
     this.firstNameDraft.set(value);
-    if (this.firstNameErrorCode() && FirstName.create(value).isSuccess()) {
+    if (this.firstNameErrorCode() && this.nameRefusals().firstName === null) {
       this.firstNameErrorCode.set(null);
     }
   }
 
   protected onLastNameInput(value: string): void {
     this.lastNameDraft.set(value);
-    if (this.lastNameErrorCode() && LastName.create(value).isSuccess()) {
+    if (this.lastNameErrorCode() && this.nameRefusals().lastName === null) {
       this.lastNameErrorCode.set(null);
     }
   }
 
+  /** The two drafts through the ONE name rule the write enforces. */
+  private nameRefusals() {
+    return nameRefusalCodes(this.firstNameDraft(), this.lastNameDraft());
+  }
+
   protected onBirthBlur(event: UiDateFieldBlurEvent): void {
-    if (event.kind !== 'complete' || !this.today) {
+    if (event.kind !== 'complete' || !this.ageDay) {
       // An empty field is the untouched state, not an error; a partial one
       // is mid-typing. Neither deserves a red line.
       this.birthErrorCode.set(null);
       return;
     }
-    const result = BirthDate.create(event.parts, this.today);
-    this.birthErrorCode.set(result.isFailure() ? result.error.code : null);
+    const result = AgeSystem.fromParts(event.parts, this.ageDay);
+    this.birthErrorCode.set(result.ok ? null : result.error.errorCode);
   }
 
   protected translateError(code: string | null): string | null {
@@ -314,19 +319,21 @@ export class ClientProfile {
 
     let code: string | null;
     if (edit.kind === 'name') {
-      const first = FirstName.create(this.firstNameDraft());
-      const last = LastName.create(this.lastNameDraft());
-      if (first.isFailure() || last.isFailure()) return;
-      code = await this.store.saveName(first.value, last.value);
+      const refused = this.nameRefusals();
+      if (refused.firstName !== null || refused.lastName !== null) return;
+      code = await this.store.saveName(
+        this.firstNameDraft().trim(),
+        this.lastNameDraft().trim(),
+      );
     } else {
       const parts = this.birthDraft();
-      if (!parts || !this.today) return;
-      const birthDate = BirthDate.create(parts, this.today);
-      if (birthDate.isFailure()) {
-        this.birthErrorCode.set(birthDate.error.code);
+      if (!parts || !this.ageDay) return;
+      const birthDate = AgeSystem.fromParts(parts, this.ageDay);
+      if (!birthDate.ok) {
+        this.birthErrorCode.set(birthDate.error.errorCode);
         return;
       }
-      code = await this.store.saveBirthDate(birthDate.value.toISODate());
+      code = await this.store.saveBirthDate(birthDate.value);
     }
 
     if (code) {
@@ -380,9 +387,5 @@ export class ClientProfile {
 
 /** `User.birthDate` → the date field's three segments, or null when unset. */
 function toDateFieldParts(user: User): UiDateFieldParts | null {
-  const iso = user.birthDate?.toISODate();
-  if (!iso) return null;
-  const [year, month, day] = iso.split('-');
-  if (!year || !month || !day) return null;
-  return { day: Number(day), month: Number(month), year: Number(year) };
+  return user.birthDate === null ? null : BirthDate.partsOf(user.birthDate);
 }

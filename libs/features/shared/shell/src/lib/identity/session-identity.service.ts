@@ -4,12 +4,13 @@ import { Observable, from, of, startWith, switchMap } from 'rxjs';
 import { AUTH_GATEWAY, type Role } from '@creativo/application/identity';
 import {
   AVATAR_UPLOADER,
-  UserId,
   type UserRole,
   profileCompletion,
   STAFF_ROLES,
 } from '@creativo/application/accounts';
 import { AccountStateService } from '@creativo/features/client/account-state';
+import { Profile } from '@core/entities';
+import { UserId } from '@core/primitives';
 
 /** An avatar answer that has ARRIVED — `undefined` is reserved for "still looking". */
 function settled(url: string | null): Observable<string | null | undefined> {
@@ -108,7 +109,8 @@ export class SessionIdentityService {
    */
   readonly displayName = computed(() => {
     if (!this.isAuthed()) return '';
-    const fullName = this.accountState.account()?.fullName();
+    const account = this.accountState.account();
+    const fullName = account === null ? '' : Profile.fullName(account);
     if (fullName) return fullName;
     const displayName = this.authGateway.currentDisplayName();
     if (displayName) return displayName;
@@ -173,19 +175,20 @@ export class SessionIdentityService {
       switchMap(({ principal }) => {
         // The explicit widening is what lets `undefined` (in flight) live
         // alongside `null` (settled: no photo) in this signal's type.
-        const userIdResult =
+        const userId =
           principal.kind === 'active'
-            ? UserId.create(principal.uid.value)
+            ? UserId.parse(principal.uid.value)
             : null;
-        if (userIdResult === null || userIdResult.isFailure()) {
+        if (userId === null || !userId.ok) {
           this.avatarOwner = null;
           return settled(null);
         }
-        const samePerson = this.avatarOwner === userIdResult.value.value;
-        this.avatarOwner = userIdResult.value.value;
+        const owner = userId.value;
+        const samePerson = this.avatarOwner === userId.value;
+        this.avatarOwner = userId.value;
         const answer = from(
           this.avatarUploader
-            .find(userIdResult.value)
+            .find(owner)
             .then((result) =>
               result.isSuccess() ? (result.value?.url ?? null) : null,
             ),

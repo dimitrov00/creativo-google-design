@@ -5,22 +5,27 @@ The home of the dev seed's document bodies as TypeScript (ECS migration,
 3b flip moves the bodies of the collections it reshapes here, in the same
 commit that changes their shape.
 
-## What is here (flip 1 — booking core)
+## What is here (flip 1 — booking core; flip 2 — identity and accounts)
 
-| File                       | Collections                                             | Exports                                                                                      |
-| -------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `catalog.fixtures.ts`      | `serviceCategories`, `locations`, `barbers`, `services` | the catalogue as `Seeded<Id, X>[]` rows, the brand helpers and `Body<X>` the others share    |
-| `schedules.fixtures.ts`    | `barberSchedules`, `scheduleExceptions`, `barberBusy`   | `SCHEDULES`; `closedDayBody`, `busyDayBody`, `busyKeyOf`                                     |
-| `appointments.fixtures.ts` | `appointments`, `appointmentPhotos`                     | `appointmentBody(plan)`, `appointmentPhotoBody(plan)` and their plan types                   |
-| `promotions.fixtures.ts`   | `coupons`, `couponGrants`, `giftVouchers`               | `COUPONS`; `couponGrantBody`, `giftVoucherBodies`                                            |
-| `waitlist.fixtures.ts`     | `waitlistRequests`                                      | `waitlistRequestBody(plan)`                                                                  |
-| `customers.fixtures.ts`    | `customers` (D29)                                       | `customerIdOf(uid)` (`CustomerId.forUser` over sha256), `seededCustomerBody` (`SEED` origin) |
+| File                       | Collections                                             | Exports                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog.fixtures.ts`      | `serviceCategories`, `locations`, `barbers`, `services` | the catalogue as `Seeded<Id, X>[]` rows, the brand helpers and `Body<X>` the others share                                                         |
+| `schedules.fixtures.ts`    | `barberSchedules`, `scheduleExceptions`, `barberBusy`   | `SCHEDULES`; `closedDayBody`, `busyDayBody`, `busyKeyOf`                                                                                          |
+| `appointments.fixtures.ts` | `appointments`, `appointmentPhotos`                     | `appointmentBody(plan)`, `appointmentPhotoBody(plan)` and their plan types                                                                        |
+| `promotions.fixtures.ts`   | `coupons`, `couponGrants`, `giftVouchers`               | `COUPONS`; `couponGrantBody`, `giftVoucherBodies`                                                                                                 |
+| `waitlist.fixtures.ts`     | `waitlistRequests`                                      | `waitlistRequestBody(plan)`                                                                                                                       |
+| `customers.fixtures.ts`    | `customers` (D29)                                       | `customerIdOf(uid)` (`CustomerId.forUser` over sha256), `seededCustomerBody` (`SEED` origin)                                                      |
+| `users.fixtures.ts`        | `users` (flip 2)                                        | `clientUserBody(contact, birthDate)`, `staffAccountBody`, `registeredAccountBody` (`REGISTERED`, `ACTIVE`, search keys from `SearchFieldsSystem`) |
 
 The plan logic that decides WHO, WHAT and WHEN stays in the `.mjs` modules
 (`catalog.mjs`, `fixtures.mjs`, `appointments.mjs`, `promotions.mjs`,
 `waitlist.mjs`, `loyalty.mjs`); it resolves a symbolic fixture against the
 shop's calendar and hands these builders a plan, and the builders return the
-document.
+document. (The accounts: `fixtures.mjs` hands `clientUserBody` each client's
+contact and the birth date its fixture places; `seed-dev-catalog.mjs` writes
+`staffAccountBody`; `tools/verify/p0/verify-p0.mjs` builds its sysadmin with
+`registeredAccountBody`. There is no second copy of the search-prefix rule:
+every body's keys are `SearchFieldsSystem.searchFields`'.)
 
 ## The rule for every file here
 

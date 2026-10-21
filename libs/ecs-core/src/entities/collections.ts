@@ -43,20 +43,25 @@ export const Collections = {
   ServiceCategories: 'serviceCategories',
   Barbers: 'barbers',
   Locations: 'locations',
-  /** `User`, keyed by the Firebase Auth uid. */
+  /**
+   * `User`, keyed by the Firebase Auth uid — the flat body, created as the
+   * `PROVISIONED` stub by `verifyOtp` and set as the `REGISTERED` body by
+   * `completeRegistration`; the owner writes only the profile allowlist.
+   */
   Users: 'users',
   /**
    * `Customer` — the client RECORD (D29), keyed by a `CustomerId`
    * (`CustomerId.forUser(uid, hash)` for an account holder, a random `cus_…`
-   * for a walk-in). Live from the booking flip (1): the booking and edit
-   * transactions create an account holder's record (`FIRST_BOOKING`) in
-   * their phase-one read; the web resolves a signed-in account's record by
+   * for a walk-in). The booking and edit transactions create an account
+   * holder's record (`FIRST_BOOKING`) in their phase-one read, and
+   * `completeRegistration` creates it beside the registered account
+   * (`REGISTRATION`); the web resolves a signed-in account's record by
    * `userId ==` (single-field).
    */
   Customers: 'customers',
-  /** `Otp`; TTL `purgeAt`. */
+  /** `Otp`; TTL `purgeAt` (`expiresAtUtcMs` + 24 h). */
   Otps: 'otps',
-  /** `ImpersonationSession`; TTL `purgeAt`. */
+  /** `ImpersonationSession`; TTL `purgeAt` (stamped by Phase 4's writers). */
   ImpersonationSessions: 'impersonationSessions',
   /** `AuditEntry`, id `hash(rowBasis)`. */
   AuditLog: 'auditLog',

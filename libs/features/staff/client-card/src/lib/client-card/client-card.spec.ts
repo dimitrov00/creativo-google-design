@@ -7,13 +7,13 @@ import {
   GEORGI_GRANT,
   GEORGI_NOTE,
   GUEST,
-  InMemoryProfilePort,
   MARTIN,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
   georgiPhotos,
   georgiUser,
+  heldProfilePortsOf,
   historyPortsOf,
   martinContext,
   martinHistory,
@@ -21,10 +21,10 @@ import {
   must,
   pausedUntilOctober,
   photoPortsOf,
+  profilePortsOf,
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
-  HeldProfilePort,
   type MountOptions,
   PAGE_TITLE_ID,
   mountAchievementsPage,
@@ -808,7 +808,7 @@ describe('lib-client-card — Мартин, in the chair on his birthday', () =>
 
 describe('lib-client-card — its states', () => {
   it('S1 · renders the head from the seat at once — no ring, no plate yet — and a placeholder shaped like each module until the profile answers', async () => {
-    const profiles = new HeldProfilePort();
+    const profiles = heldProfilePortsOf();
     const { byId, text, all, render } = await mount({
       rig: { profiles },
       settle: false,
@@ -940,9 +940,7 @@ describe('lib-client-card — its states', () => {
   });
 
   it('S7 · a profile that did not load leaves the head, one notice, the verbs and the exits', async () => {
-    const profiles = new InMemoryProfilePort(
-      new Map([[GEORGI, georgiUser()]]),
-    ).failWith();
+    const profiles = profilePortsOf([georgiUser()]).failWith();
     const { byId, headings, click } = await mount({ rig: { profiles } });
     expect(must(byId('client-failed-profile')).getAttribute('aria-label')).toBe(
       'Данните за клиента не се заредиха.',
@@ -994,9 +992,7 @@ describe('lib-client-card — its states', () => {
   });
 
   it('paused · the warning ring takes the tier ring’s place, the plate stays, the line says it; no ticket, no rhythm fact', async () => {
-    const profiles = new InMemoryProfilePort(
-      new Map([[GEORGI, georgiUser(pausedUntilOctober())]]),
-    );
+    const profiles = profilePortsOf([georgiUser(pausedUntilOctober())]);
     const { byId, text } = await mount({ rig: { profiles } });
     const head = must(byId('client-head'));
     expect(head.getAttribute('data-media-tone')).toBe('warning');
@@ -1017,9 +1013,7 @@ describe('lib-client-card — its states', () => {
   });
 
   it('paused · Мартин’s waiting card goes with the pause, his visits stay, the band stands alone', async () => {
-    const profiles = new InMemoryProfilePort(
-      new Map([[MARTIN, martinUser(pausedUntilOctober())]]),
-    );
+    const profiles = profilePortsOf([martinUser(pausedUntilOctober())]);
     const { byId } = await mount({
       subject: subjectOf(MARTIN),
       context: martinWithGift(),

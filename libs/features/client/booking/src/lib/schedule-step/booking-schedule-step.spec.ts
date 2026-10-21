@@ -12,7 +12,7 @@ import {
   ANONYMOUS_PRINCIPAL,
   AUTH_GATEWAY,
 } from '@creativo/application/identity';
-import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import { MEDIA_READER } from '@creativo/application/catalog';
 import {
   BOOKING_DRAFT_STORE,
@@ -26,6 +26,7 @@ import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
 import {
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
+  PROFILE_PORTS,
   SCHEDULING_READ_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -53,6 +54,7 @@ import {
   locationFixture,
   memoryAppointmentReadPorts,
   memoryCatalogReadPorts,
+  memoryProfilePorts,
   memorySchedulingReadPorts,
   memoryWaitlistReadPorts,
   serviceFixture,
@@ -294,13 +296,7 @@ async function renderShell(
           currentIdentifier: () => null,
         },
       },
-      {
-        provide: PROFILE_PORT,
-        useValue: {
-          getProfile: () => Promise.resolve(ok(null)),
-          observeProfile: () => of(ok(null)),
-        },
-      },
+      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
       {
         provide: AVATAR_UPLOADER,
         useValue: {

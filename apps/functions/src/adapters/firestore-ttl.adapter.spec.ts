@@ -71,12 +71,32 @@ describe('purgeAtFor — the one purgeAt stamp (F1-7)', () => {
     ).toBe(utcMidnight('2026-10-07') + 400 * DAY);
   });
 
+  it('otps: expiresAtUtcMs + 24 hours (the pre-flip OTP repository’s formula, F2-11)', () => {
+    const expiresAtUtcMs = Date.UTC(2026, 9, 7, 9, 5);
+    expect(
+      millisOf(
+        purgeAtFor(['otps', 'otp-1'], {
+          destination: 'client@example.com',
+          expiresAtUtcMs,
+          consumedAtUtcMs: null,
+        }),
+      ),
+    ).toBe(expiresAtUtcMs + DAY);
+    expect(
+      purgeAtFor(['otps', 'otp-1'], { expiresAtUtcMs: 'soon' }),
+    ).toBeNull();
+  });
+
   it('answers null for any other group — an appointment, the users document above a notification, a customer', () => {
     expect(
       purgeAtFor(['appointments', 'a1'], { localDate: '2026-10-07' }),
     ).toBeNull();
     expect(purgeAtFor(['users', 'u1'], { sentAtUtcMs: 1 })).toBeNull();
+    expect(
+      purgeAtFor(['users', 'u1'], { expiresAtUtcMs: 1, sentAtUtcMs: 1 }),
+    ).toBeNull();
     expect(purgeAtFor(['customers', 'cus_1'], {})).toBeNull();
+    expect(purgeAtFor(['impersonationSessions', 'imp-1'], {})).toBeNull();
   });
 
   it('never invents a day: a TTL body missing the field its formula reads is not stamped', () => {

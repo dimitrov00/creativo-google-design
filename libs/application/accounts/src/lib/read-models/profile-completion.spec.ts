@@ -1,32 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { Result, ZonedDateTime } from '@creativo/domain/kernel';
-import { User } from '@creativo/domain/accounts';
+import { BirthDate } from '@core/components';
+import type { User } from '@core/entities';
+import { registeredUserFixture } from '@core/testing';
 import { profileCompletion } from './profile-completion';
 
-function requiredValue<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
-}
-
-const TODAY = requiredValue(
-  ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'),
-);
-
+/** A fresh registration — names and phone, optionally a birth date. */
 function user(birthDate?: string): User {
-  return requiredValue(
-    User.create(
-      {
-        id: 'user_1',
-        phone: '+359881234567',
-        firstName: 'Jane',
-        lastName: 'Doe',
-        roles: ['client'],
-        status: { kind: 'active' },
-        birthDate,
-      },
-      TODAY,
-    ),
-  );
+  return registeredUserFixture({
+    birthDate: birthDate === undefined ? null : BirthDate.of(birthDate),
+  });
 }
 
 describe('profileCompletion', () => {
@@ -49,5 +31,14 @@ describe('profileCompletion', () => {
     const completion = profileCompletion(user('2000-05-05'), true);
     expect(completion.done).toBe(4);
     expect(completion.complete).toBe(true);
+  });
+
+  it('keeps the lowercase keys the test ids, the i18n keys and the e2e selectors read', () => {
+    expect(profileCompletion(user(), false).items.map((i) => i.key)).toEqual([
+      'name',
+      'phone',
+      'birthday',
+      'photo',
+    ]);
   });
 });

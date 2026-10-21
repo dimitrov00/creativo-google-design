@@ -1,6 +1,6 @@
 import { logger } from 'firebase-functions';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
-import { BookingError, RepositoryError } from '@core/primitives';
+import { BookingError, IdentityError, RepositoryError } from '@core/primitives';
 import { Callables } from '@core/ports';
 
 /**
@@ -15,6 +15,7 @@ const seam = vi.hoisted(() => {
     'bookAppointment',
     'cancelAppointment',
     'cancelWaitlist',
+    'completeRegistration',
     'continuePolicyRecompute',
     'editAppointment',
     'markArrival',
@@ -23,6 +24,7 @@ const seam = vi.hoisted(() => {
     'rebuildBusy',
     'rebuildCapacity',
     'recordSeatTip',
+    'requestOtp',
     'requestWaitlist',
     'rescheduleAppointment',
     'runBackfill',
@@ -30,6 +32,8 @@ const seam = vi.hoisted(() => {
     'startPolicyRecompute',
     'sweepPolicyRecompute',
     'transitionAppointment',
+    'updateProfile',
+    'verifyOtp',
   ] as const;
   type Call = {
     readonly pipeline: string;
@@ -82,9 +86,6 @@ vi.mock('@core/pipelines', async (importOriginal) => ({
 }));
 
 import * as main from './main';
-import * as requestOtp from './lib/otp/request-otp';
-import * as verifyOtp from './lib/otp/verify-otp';
-import * as completeRegistration from './lib/otp/complete-registration';
 import * as publishStreak from './lib/loyalty/publish-streak-definition';
 
 type PipelineName = (typeof seam.PIPELINES)[number];
@@ -130,13 +131,17 @@ const daily = (schedule: string) => ({
 /**
  * THE DEPLOYED ENDPOINTS, as the Phase 3a definitions declared them —
  * captured from each export's `__endpoint` before flip 1 deleted the
- * handlers (2026-10-11). A literal: what `firebase deploy` reads, so a
- * changed path, retry flag, timeout, memory or schedule fails here.
+ * handlers (2026-10-11); the OTP trio's plain `onCall` definitions are
+ * pinned the same, now that flip 2 deleted their handlers, and
+ * `updateProfile` (flip 2's new callable) declares no option either. A
+ * literal: what `firebase deploy` reads, so a changed path, retry flag,
+ * timeout, memory or schedule fails here.
  */
 const ENDPOINTS = {
   requestOtpChallenge: callable,
   verifyOtpChallenge: callable,
   completeRegistration: callable,
+  updateProfile: callable,
   auditProfileChanges: {
     ...PLATFORM,
     eventTrigger: {
@@ -251,7 +256,54 @@ type Case = {
   readonly expected: unknown;
 };
 
-const FLIP_1: { readonly [name: string]: Case } = {
+const FLIPPED: { readonly [name: string]: Case } = {
+  // ── flip 2: identity ──
+  requestOtpChallenge: {
+    pipeline: 'requestOtp',
+    input: request(
+      { channelKey: 'email:a@b.com', kind: 'email', value: 'a@b.com' },
+      null,
+    ),
+    command: { otpDestinationType: 'EMAIL', rawDestination: 'a@b.com' },
+    answer: ok({ otpId: 'otp-1', rawCode: '123456' }),
+    expected: { challengeId: 'otp-1' },
+  },
+  verifyOtpChallenge: {
+    pipeline: 'verifyOtp',
+    input: request({ challengeId: 'otp-1', code: '123456' }, null),
+    command: { otpId: 'otp-1', code: '123456' },
+    answer: ok({ customToken: 'token-1', sessionKind: 'NEW' }),
+    expected: { sessionKind: 'new', customToken: 'token-1' },
+  },
+  completeRegistration: {
+    pipeline: 'completeRegistration',
+    input: request(
+      {
+        kind: 'phone',
+        value: '+359888123456',
+        fields: { firstName: 'Ada', lastName: 'Lovelace' },
+      },
+      CLIENT,
+    ),
+    command: {
+      callerUserId: 'u-client',
+      identifierChannel: 'PHONE',
+      rawIdentifier: '+359888123456',
+    },
+    answer: ok({ customToken: 'token-2' }),
+    expected: { customToken: 'token-2' },
+  },
+  updateProfile: {
+    pipeline: 'updateProfile',
+    input: request({ firstName: 'Ada' }, CLIENT),
+    command: {
+      callerUserId: 'u-client',
+      edits: { firstName: 'Ada', lastName: null, birthDate: null },
+    },
+    answer: ok({ changed: true }),
+    expected: { changed: true },
+  },
+  // ── flip 1: booking core ──
   commitBooking: {
     pipeline: 'bookAppointment',
     input: request({ locationId: 'loc-1', seats: [] }, CLIENT),
@@ -495,18 +547,21 @@ const FLIP_1: { readonly [name: string]: Case } = {
   },
 };
 
-const FLIP_1_EXPORTS = Object.keys(FLIP_1).sort();
-/** Today's handlers of the four, as the platform runs them. */
+const FLIPPED_EXPORTS = Object.keys(FLIPPED).sort();
+/** The identity flip's callables — the ones that build the identity ports. */
+const IDENTITY_EXPORTS = [
+  'completeRegistration',
+  'requestOtpChallenge',
+  'verifyOtpChallenge',
+] as const;
+/** Today's handler of the one unflipped export, as the platform runs it. */
 const LEGACY: { readonly [name: string]: Runnable } = {
-  requestOtpChallenge: runnable(requestOtp.requestOtpChallenge),
-  verifyOtpChallenge: runnable(verifyOtp.verifyOtpChallenge),
-  completeRegistration: runnable(completeRegistration.completeRegistration),
   publishStreakDefinition: runnable(publishStreak.publishStreakDefinition),
 };
 const CALLABLE_NAMES: ReadonlySet<string> = new Set(Object.values(Callables));
 
 function caseOf(name: string): Case {
-  const found = new Map(Object.entries(FLIP_1)).get(name);
+  const found = new Map(Object.entries(FLIPPED)).get(name);
   if (found === undefined) throw new Error(`no case for ${name}`);
   return found;
 }
@@ -534,13 +589,14 @@ afterEach(() => {
 describe('main.ts — the composition root', () => {
   it('loads without building a port: the Admin SDK and the Firestore bundle wait for the first invocation', () => {
     expect(seam.adminFirestore).not.toHaveBeenCalled();
+    expect(seam.adminAuth).not.toHaveBeenCalled();
     expect(seam.firestorePorts).not.toHaveBeenCalled();
     for (const name of seam.PIPELINES) {
       expect(seam.pipelines[name], name).not.toHaveBeenCalled();
     }
   });
 
-  it('exports exactly the 29 functions, by today’s names', () => {
+  it('exports exactly the 30 functions, by today’s names', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -558,15 +614,15 @@ describe('main.ts — the composition root', () => {
     expect([...callables].sort()).toEqual(Object.values(Callables).sort());
   });
 
-  it('covers every flip-1 export with a pipeline case and leaves the other four on their handlers', () => {
-    expect([...FLIP_1_EXPORTS, ...Object.keys(LEGACY)].sort()).toEqual([
+  it('covers every flipped export with a pipeline case and leaves the streak publish on its handler', () => {
+    expect([...FLIPPED_EXPORTS, ...Object.keys(LEGACY)].sort()).toEqual([
       ...EXPORTS,
     ]);
-    expect(FLIP_1_EXPORTS).toHaveLength(25);
+    expect(FLIPPED_EXPORTS).toHaveLength(29);
   });
 
-  describe('flip 1 — every export runs exactly its own pipeline', () => {
-    it.each(FLIP_1_EXPORTS)(
+  describe('flips 1 and 2 — every export runs exactly its own pipeline', () => {
+    it.each(FLIPPED_EXPORTS)(
       '%s decodes its input, runs its own pipeline over the server ports — and no other — and answers today’s JSON',
       async (name) => {
         const own = caseOf(name);
@@ -708,7 +764,119 @@ describe('main.ts — the composition root', () => {
     });
   });
 
-  describe('the four exports no flip has reached — still today’s handlers', () => {
+  describe('flip 2 — the identity ports', () => {
+    it('builds the identity ports once, for the identity callables only — a booking or profile callable never sees Admin Auth', async () => {
+      for (const name of [...IDENTITY_EXPORTS, ...IDENTITY_EXPORTS]) {
+        await run(name, caseOf(name).input);
+      }
+      await run('cancelAppointment', caseOf('cancelAppointment').input);
+      await run('updateProfile', caseOf('updateProfile').input);
+      const portsOf = (pipeline: string): readonly unknown[] =>
+        seam.calls
+          .filter((call) => call.pipeline === pipeline)
+          .map((call) => call.ports);
+      const identity = [
+        ...portsOf('completeRegistration'),
+        ...portsOf('requestOtp'),
+        ...portsOf('verifyOtp'),
+      ];
+      expect(identity).toHaveLength(6);
+      for (const ports of identity) {
+        expect(ports).toBe(identity[0]);
+        expect(ports).toHaveProperty('provisionAuthUser');
+      }
+      for (const ports of [
+        ...portsOf('cancelAppointment'),
+        ...portsOf('updateProfile'),
+      ]) {
+        expect(ports).not.toHaveProperty('provisionAuthUser');
+        expect(ports).toMatchObject({ ...seam.BUNDLE });
+      }
+      expect(seam.adminAuth.mock.calls.length).toBeLessThanOrEqual(1);
+      expect(seam.built).toHaveLength(1);
+    });
+
+    it('hands each identity pipeline the server ports, Admin Auth, the login-OTP sender, the OTP crypto, the tenant and the deployment', async () => {
+      await run('requestOtpChallenge', caseOf('requestOtpChallenge').input);
+      const ports = seam.calls[0]?.ports as Record<string, unknown>;
+      for (const member of [
+        'provisionAuthUser',
+        'mintCustomToken',
+        'setClaims',
+        'setDisplayName',
+        'findAuthUserByDestination',
+        'sendOtp',
+        'otpCrypto',
+        'loadTenant',
+        'authDeployment',
+      ]) {
+        expect(ports, member).toHaveProperty(member);
+      }
+      const loadTenant = ports['loadTenant'] as () => Promise<unknown>;
+      expect(await loadTenant()).toEqual({ ok: true, value: 'creativo' });
+    });
+
+    it('answers devCode only under the emulator', async () => {
+      const own = caseOf('requestOtpChallenge');
+      seam.answers.set(own.pipeline, own.answer);
+      vi.stubEnv('FUNCTIONS_EMULATOR', 'true');
+      try {
+        expect(await run('requestOtpChallenge', own.input)).toEqual({
+          challengeId: 'otp-1',
+          devCode: '123456',
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+      expect(await run('requestOtpChallenge', own.input)).toEqual({
+        challengeId: 'otp-1',
+      });
+    });
+
+    it('answers today’s refusals: a decoder’s before any pipeline runs, a pipeline’s in today’s words, a store failure as today’s repository_failure', async () => {
+      const code = await rejection(
+        run('verifyOtpChallenge', request({ challengeId: 'otp-1' }, null)),
+      );
+      expect(code.code).toBe('invalid-argument');
+      expect(code.details).toEqual({
+        code: 'invalid_input',
+        params: { reason: 'code must be a 6-digit string' },
+      });
+      const signedOut = await rejection(
+        run('completeRegistration', request({}, null)),
+      );
+      expect(signedOut.code).toBe('unauthenticated');
+      expect(signedOut.details).toEqual({
+        code: 'registration_unauthenticated',
+        params: {},
+      });
+      expect(seam.calls).toEqual([]);
+
+      seam.answers.set('requestOtp', () => ({
+        ok: false,
+        error: IdentityError.otpRateLimited(),
+      }));
+      const limited = await rejection(
+        run('requestOtpChallenge', caseOf('requestOtpChallenge').input),
+      );
+      expect(limited.code).toBe('resource-exhausted');
+      expect(limited.details).toEqual({ code: 'otp_rate_limited', params: {} });
+
+      vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      seam.answers.set('verifyOtp', () => ({
+        ok: false,
+        error: RepositoryError.readFailed('otps/otp-1', 'unavailable'),
+      }));
+      const down = await rejection(
+        run('verifyOtpChallenge', caseOf('verifyOtpChallenge').input),
+      );
+      expect(down.code).toBe('internal');
+      expect(down.details).toEqual({ code: 'repository_failure', params: {} });
+      expect(logger.error).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('the one export no flip has reached — still today’s handler', () => {
     it.each(Object.keys(LEGACY))(
       '%s hands its input to its own handler — and to no other — and answers what it answers',
       async (name) => {

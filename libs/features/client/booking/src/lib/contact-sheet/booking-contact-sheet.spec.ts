@@ -12,19 +12,20 @@ import {
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  PROFILE_PORT,
-  User,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
+import { ZonedDateTime } from '@creativo/application/accounts';
 import {
   type BookingContactProps,
   type Result,
-  fail,
   ok,
 } from '@creativo/application/booking';
 import { CLOCK } from '@creativo/application/shared';
 import { AccountStateService } from '@creativo/features/client/account-state';
+import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
+import { BirthDate, E164, Email } from '@core/components';
+import type { User } from '@core/entities';
+import type { ProfilePorts } from '@core/ports';
+import { RepositoryError, Result as EcsResult, UserId } from '@core/primitives';
+import { memoryProfilePorts, registeredUserFixture } from '@core/testing';
 import { BookingContactSheet } from './booking-contact-sheet';
 
 function unwrap<T>(result: Result<T, unknown>): T {
@@ -34,21 +35,15 @@ function unwrap<T>(result: Result<T, unknown>): T {
 
 const TODAY = unwrap(ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'));
 
-const PROFILE = unwrap(
-  User.create(
-    {
-      id: 'user_1',
-      phone: '+359881234567',
-      firstName: 'Ада',
-      lastName: 'Тестова',
-      roles: ['client'],
-      status: { kind: 'active' },
-      email: 'ada@example.com',
-      birthDate: '1990-05-01',
-    },
-    TODAY,
-  ),
-);
+/** Ада Тестова, registered — her `users/{uid}` body as stored. */
+const PROFILE: User = registeredUserFixture({
+  id: UserId.of('user_1'),
+  phone: E164.of('+359881234567'),
+  firstName: 'Ада',
+  lastName: 'Тестова',
+  email: Email.of('ada@example.com'),
+  birthDate: BirthDate.of('1990-05-01'),
+});
 
 @Injectable()
 class TestTranslationLoader implements TranslocoLoader {
@@ -86,12 +81,16 @@ interface Harness {
 
 async function render(options?: {
   profile?: User | null;
-  saveResult?: () => Result<void, { code: string }>;
+  /** The owner write fails in the store (a rule denial), writing nothing. */
+  writeFails?: boolean;
 }): Promise<Harness> {
   const written: User[] = [];
   const emitted: BookingContactProps[] = [];
   const refresh = vi.fn();
   const profile = options?.profile === undefined ? PROFILE : options.profile;
+  const users = new Map<UserId, User>();
+  if (profile !== null) users.set(profile.id, profile);
+  const memory = memoryProfilePorts(users);
 
   await TestBed.configureTestingModule({
     imports: [BookingContactSheet],
@@ -102,15 +101,22 @@ async function render(options?: {
         useValue: { account: signal(profile), refresh },
       },
       {
-        provide: PROFILE_PORT,
+        provide: PROFILE_PORTS,
         useValue: {
-          getProfile: () => Promise.resolve(ok(profile)),
-          observeProfile: () => of(ok(profile)),
-          saveProfile: (next: User) => {
-            written.push(next);
-            return Promise.resolve(options?.saveResult?.() ?? ok(undefined));
+          ...memory,
+          writeOwnProfile: async (userId, decide) => {
+            if (options?.writeFails) {
+              return EcsResult.err(
+                RepositoryError.writeFailed(`users/${userId}`, 'denied'),
+              );
+            }
+            const before = users.get(userId);
+            const result = await memory.writeOwnProfile(userId, decide);
+            const after = users.get(userId);
+            if (after !== undefined && after !== before) written.push(after);
+            return result;
           },
-        },
+        } satisfies ProfilePorts,
       },
       { provide: CLOCK, useValue: { now: () => ok(TODAY) } },
     ],
@@ -214,8 +220,8 @@ describe('BookingContactSheet — the profile save is the name only (FIX 2)', ()
     await click(harness, 'booking-contact-save');
 
     expect(harness.written).toHaveLength(1);
-    expect(harness.written[0]?.firstName.value).toBe('Адела');
-    expect(harness.written[0]?.lastName.value).toBe('Тестова');
+    expect(harness.written[0]?.firstName).toBe('Адела');
+    expect(harness.written[0]?.lastName).toBe('Тестова');
   });
 
   it('counts a change of case as a name to save', async () => {
@@ -262,11 +268,13 @@ describe('BookingContactSheet — the profile save is the name only (FIX 2)', ()
 
     expect(harness.written).toHaveLength(1);
     const [written] = harness.written;
-    expect(written?.firstName.value).toBe('Ада');
-    expect(written?.lastName.value).toBe('Иванова');
-    expect(written?.phone.value).toBe('+359881234567');
-    expect(written?.email?.value).toBe('ada@example.com');
-    expect(written?.birthDate?.toISODate()).toBe('1990-05-01');
+    expect(written?.firstName).toBe('Ада');
+    expect(written?.lastName).toBe('Иванова');
+    expect(written?.phone).toBe('+359881234567');
+    expect(written?.email).toBe('ada@example.com');
+    expect(written?.birthDate).toBe('1990-05-01');
+    // The search keys index the STORED contact, the new names.
+    expect(written?.searchName).toBe('ада иванова');
 
     expect(harness.emitted).toEqual([
       {
@@ -312,9 +320,7 @@ describe('BookingContactSheet — the profile save is the name only (FIX 2)', ()
   });
 
   it('stays put and says so when the profile write fails', async () => {
-    const harness = await render({
-      saveResult: () => fail({ code: 'repository.failed' }),
-    });
+    const harness = await render({ writeFails: true });
     await type(harness, 'booking-contact-name', 'Ада Иванова');
     await click(harness, SWITCH);
 

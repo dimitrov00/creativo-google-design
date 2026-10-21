@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TestBed } from '@angular/core/testing';
-import { UserId } from '@creativo/domain/accounts';
+import { UserId } from '@core/primitives';
 import { FIREBASE_STORAGE } from './storage.provider';
 
 const { refMock, uploadBytesMock, getDownloadURLMock, deleteObjectMock } =
@@ -21,9 +21,7 @@ vi.mock('firebase/storage', () => ({
 import { FirebaseStorageAvatarUploader } from './avatar-uploader.adapter';
 
 function makeUserId(): UserId {
-  const result = UserId.create('user-1');
-  if (result.isFailure()) throw new Error('unreachable');
-  return result.value;
+  return UserId.of('user-1');
 }
 
 function makeBlob(type: string, size: number): Blob {

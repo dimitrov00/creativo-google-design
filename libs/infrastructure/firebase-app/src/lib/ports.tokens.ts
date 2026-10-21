@@ -7,9 +7,12 @@ import type {
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  ImpersonationReadPorts,
   InboxPorts,
+  ProfilePorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
+  UserSearchPorts,
   WaitlistReadPorts,
 } from '@core/ports';
 
@@ -74,3 +77,15 @@ export const APPOINTMENT_PHOTO_PORTS =
 export const CUSTOMER_PORTS = new InjectionToken<CustomerPorts>(
   'CUSTOMER_PORTS',
 );
+
+/** An account's own profile — live, once, and the owner's edit (`ProfilePorts`). */
+export const PROFILE_PORTS = new InjectionToken<ProfilePorts>('PROFILE_PORTS');
+
+/** The staff client search over `users` (`UserSearchPorts`). */
+export const USER_SEARCH_PORTS = new InjectionToken<UserSearchPorts>(
+  'USER_SEARCH_PORTS',
+);
+
+/** The admin's live impersonation session (`ImpersonationReadPorts`). */
+export const IMPERSONATION_READ_PORTS =
+  new InjectionToken<ImpersonationReadPorts>('IMPERSONATION_READ_PORTS');

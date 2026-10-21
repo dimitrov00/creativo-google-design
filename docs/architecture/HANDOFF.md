@@ -4,7 +4,7 @@ Read this first if you are an agent (Claude Code, Codex, Cursor, Gemini, …) or
 a developer picking up the ECS / data-oriented migration. It says where the
 work stands, what to do next in which order, and how to prove each step.
 Last updated 2026-10-21 (flip 1 complete; Law 9 port-composition pass;
-flip 2 next).
+flip 2 integrated; flip 3 next).
 
 ## 1. Read these, in this order
 
@@ -35,14 +35,14 @@ flip 2 next).
 | Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                        | done                                                                                                                                                                      | 3458349, ab6d266, c0e5d73                                    |
 | **Phase 3b flip 1 — booking core**                                                    | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
 | Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)         | done — 2026-10-21, full gate green                                                                                                                                        | the "Law 9" commit                                           |
-| Phase 3b flip 2 — identity and accounts                                               | not started                                                                                                                                                               |                                                              |
+| **Phase 3b flip 2 — identity and accounts**                                           | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                    | the "flip 2 commit"                                          |
 | Phase 3b flip 3 — loyalty and invitations                                             | not started                                                                                                                                                               |                                                              |
 | Phase 3b flip 4 — programs                                                            | not started                                                                                                                                                               |                                                              |
 | Phase 4 — web integration and legacy deletion                                         | not started                                                                                                                                                               |                                                              |
 
-`main` carries the whole flip-1 reshape and the Law 9 port pass, and the
-FULL gate of §4 is green on it (baseline reds only). The last fully green
-commit is the "Law 9" commit; check `git log` for anything newer.
+`main` carries the flip-1 and flip-2 reshapes and the Law 9 port pass, and
+the FULL gate of §4 is green on it (baseline reds only). The last fully
+green commit is the "flip 2" commit; check `git log` for anything newer.
 
 ## 3. What to do next, in order
 
@@ -87,18 +87,64 @@ Same recipe as flip 1 (blueprint §6 Phase 3; closures in the runbook):
 3. Review: Firestore (indexes on top-level keys, TTL, rules, transaction read
    sets), surviving old-shape readers, behaviour vs the replaced handler, laws.
 
-- **Flip 2 — identity and accounts:** `users`, `otps`, `impersonationSessions`;
-  its ports are already split bottom-up (Law 9) — `CustomerPorts`,
-  `AccountContactPorts`, `TenantPorts`, `OtpStorePorts`, `OtpDeliveryPorts`,
-  `OtpCryptoPorts`, `UserDirectoryPorts`, `AuthAdminPorts` (identity),
-  `AccountReadPorts`, `CallerRolesPorts` (accounts), `ImpersonationReadPorts`
-  (governance); a new adapter returns the bundle(s) it implements, and a
-  missing subset is a new bundle in the port file, never a `Pick`. (A draft
-  plan written before Law 9 may sit untracked on the owner's machine —
-  rewrite its bundle names before using it.)
-  all twelve `libs/domain/models` importers move to the ecs-core brands; the
-  D29 customer record links (`CustomerId` = client record, `UserId` = auth
-  account, explicit nullable link); `verify-p0` check (e) via `updateProfile`.
+- **Flip 2 — identity and accounts: integrated 2026-10-21** (plan
+  `docs/architecture/flips/flip-2-identity.md`, its §11 ledgers: 14 deleted
+  specs / 99 cases plus 9 re-targeted impersonation cases, each with a
+  successor or a `dead:` reason). `users`, `otps`, `impersonationSessions`
+  are the flat `User` / `Otp` / `ImpersonationSession` bodies; the OTP trio
+  and the new `updateProfile` callable are `@core/pipelines`
+  (`request-otp`, `verify-otp`, `complete-registration`, `update-profile`)
+  behind `apps/functions/src/wire/identity.wire.ts` (the wire frozen,
+  F2-3); `completeRegistration` creates the D29 `REGISTRATION` client
+  record; the web reads `PROFILE_PORTS`, `USER_SEARCH_PORTS`,
+  `IMPERSONATION_READ_PORTS` (`accounts.adapter.ts`,
+  `impersonation.adapter.ts`), and owner edits run
+  `ProfileEditSystem.decide` in the browser transaction;
+  `libs/domain/models` has no importer left; indexes #9/#10 re-keyed,
+  `users.roles` override; the six server-only `libs/application/identity`
+  ports, the legacy handlers, use cases, repositories and
+  `AuthStateService` deleted. Gate: §4 all green but the baseline reds
+  (unit 6, typecheck 3 projects, e2e 19 failed / 41 passed),
+  `verify:p0` all proved, `test:emulator` 58 + 243, the §6 grep gate (runbook
+  §4.2) 28 gates ok. Integrator decisions: `AVATAR_UPLOADER`
+  (`AvatarUploader`, the avatar use cases, the Storage adapter) now takes
+  the `@core/primitives` `UserId` — no legacy id bridge remains in the
+  P3/P4 directories; `verify:p0` (e) asserts the row's actor by the
+  event's auth context — the Emulator Suite delivers none (authtype
+  `unknown`), so there both rows read `SYSTEM`/`UNATTRIBUTED_UNKNOWN`, as
+  before the flip, and the production pair (`USER` for the owner write,
+  `ADMIN_SDK` for `updateProfile`) is pinned by `audit.system.spec.ts`
+  and `triggers.wire.spec.ts`; the plan's §10 open questions stand on their
+  defaults (UTC age day, impersonation writes and rules tightenings in
+  Phase 4, lowercase `Role`/`AuthStage`, no customer-record sync, re-run
+  re-settles, adoption only of an absent/same-contact stub).
+  Smoke (plan §8 step 3) run 2026-10-21 against `pnpm run dev` with
+  custom-token sign-in: a client's own profile name and birth-date edits
+  (the flat body, `searchName`/`searchPrefixes` re-derived, restored after),
+  the booking contact sheet's «save to profile», the staff client search
+  (`searchPrefixes` array-contains, by name and phone prefix) and the client
+  card and companion names — all pass, no flip-2 console error; the OTP
+  screens themselves are covered by `auth-onboarding.spec.ts`. One
+  deliberate departure is recorded in the plan's §0 F2-1 and pinned
+  (§11.3): the three OTP callables now judge an e-mail with ecs-core's ONE
+  `Email.parse` rule, which wants a top-level label of two characters or
+  more (`a@b.c` is refused); the shipping client already enforced it. The
+  three pipeline refusal dictionaries (`CompleteRegistrationRefusalCode`,
+  `CancelWaitlistRefusalCode`, `RunBackfillRefusalCode`) now live in
+  primitives (Law 7.5) with edge rows on NEW dotted codes, their callables
+  still answering today's legacy codes. Carried forward, not blocking:
+  `CancellationRefusalCode`, `MoveErrorCode` and `StaffEditErrorCode` are
+  still declared in the systems tier — a small pass moves them to
+  primitives (Law 7.5 / `ecs-layering.md`); the unused
+  `LegacyWireCode` rows whose handlers are gone (`OtpValidationFailed`,
+  `OtpDestinationEmpty`, `InvalidOtpMaxAttempts`, `EmptyId`,
+  `InvalidDateTime`, `AccountsIdEmpty`, `InvalidTimeZone`) stay pinned by
+  `edge.spec.ts` until Phase 4; `OtpStorePorts.loadOtp` and
+  `AuthAdminPorts.setClaims` have no caller (§10.13); a store failure of an
+  owner write still answers the legacy
+  `accounts.update_profile.repository_failure` (no `errors.REPOSITORY_*`
+  i18n keys yet); `§10.15` (profile-row attribution once Phase 4 routes
+  client edits through `updateProfile`) is the owner's before Phase 4.
 - **Flip 3 — loyalty and invitations:** `invitations`, `loyaltyAccounts`
   (streaks as an array), `clientJournal`, `streakDefinitions` + versions,
   badge/season/tier/reward catalogue.

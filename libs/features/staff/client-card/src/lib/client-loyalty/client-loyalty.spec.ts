@@ -10,14 +10,15 @@ import {
   GEORGI,
   GEORGI_GRANT,
   GUEST,
-  InMemoryProfilePort,
   MARTIN,
   georgiContext,
   georgiOpenContext,
   georgiUser,
+  heldProfilePortsOf,
   martinContext,
   must,
   pausedUntilOctober,
+  profilePortsOf,
   subjectOf,
   voucherPortsOf,
 } from '../../testing/client-card.fixtures';
@@ -25,7 +26,6 @@ import {
   ALL_LOYALTY_FLAGS,
   type AchievementsRig,
   HeldCatalogReader,
-  HeldProfilePort,
   PAGE_TITLE_ID,
   mountAchievementsPage,
 } from '../../testing/achievements-pages.rig';
@@ -737,7 +737,7 @@ describe('lib-client-loyalty — anchors', () => {
 
 describe('lib-client-loyalty — its states', () => {
   it('loading · stands the pass as one block of its shape, four discs, two tickets and a block under each later heading until the account answers', async () => {
-    const profiles = new HeldProfilePort();
+    const profiles = heldProfilePortsOf();
     const { byId, text, render } = await mount({ rig: { profiles } });
     const skeleton = must(byId('rewards-skeleton'));
     expect(skeleton.getAttribute('aria-busy')).toBe('true');
@@ -866,9 +866,7 @@ describe('lib-client-loyalty — its states', () => {
   });
 
   it('paused · freezes the pass and says why, keeps the voucher and the stamps, drops the ticket and the two verbs that write; nothing is zeroed', async () => {
-    const profiles = new InMemoryProfilePort(
-      new Map([[GEORGI, georgiUser(pausedUntilOctober())]]),
-    );
+    const profiles = profilePortsOf([georgiUser(pausedUntilOctober())]);
     const { byId, text, wallet } = await mount({ rig: { profiles } });
     const model = wallet();
     expect(model.frozen).toBe(true);

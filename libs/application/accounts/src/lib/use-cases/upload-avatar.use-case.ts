@@ -1,5 +1,5 @@
 import { Result, fail, ok } from '@creativo/domain/kernel';
-import { UserId } from '@creativo/domain/accounts';
+import type { UserId } from '@core/primitives';
 import { AvatarRef, AvatarUploader } from '../ports/avatar-uploader.port';
 import {
   AvatarTooLargeError,

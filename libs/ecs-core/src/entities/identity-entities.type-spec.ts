@@ -21,6 +21,7 @@ import {
   type SearchFields,
 } from '@core/components';
 import type { CustomerId, UserId } from '@core/primitives';
+import type { RegistrationSystem } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { AuditEntry, AuditEntryMeta } from './audit-entry.entity';
 import type { Customer } from './customer.entity';
@@ -29,9 +30,14 @@ import type {
   ImpersonationSessionMeta,
 } from './impersonation-session.entity';
 import type { Otp } from './otp.entity';
-import type { User, UserMeta } from './user.entity';
+import type { OwnerProfileFields, User, UserMeta } from './user.entity';
 
 type IsNever<T> = [T] extends [never] ? true : false;
+/** `true` only when `A` and `B` are the same type (not merely mutually assignable). */
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+    ? true
+    : false;
 /** `true` when EVERY variant of the union is flat (distributes over `E`). */
 type EveryVariantFlat<E> = E extends unknown ? AllTrue<NoNested<E>> : never;
 
@@ -60,6 +66,44 @@ void user.accountStatus.kind;
 void user.registration;
 // @ts-expect-error — no link to a customer on the account (D29: the link lives on the customer)
 void user.customerId;
+
+/* ── The provisioned stub is a User (F2-9) ─────────────────────────────── */
+
+/** `RegistrationSystem.provision` answers the archetype itself — every key present, no second shape. */
+export const stubIsUser: Equals<
+  ReturnType<typeof RegistrationSystem.provision>,
+  User
+> = true;
+declare const stub: ReturnType<typeof RegistrationSystem.provision>;
+export const stubAsUser: User = stub;
+
+/* ── OwnerProfileFields — the rules' owner allowlist (F2-17) ───────────── */
+
+/** Exactly the five keys of the `users` owner-update allowlist — no more, no fewer. */
+export const ownerKeysAreTheAllowlist: Equals<
+  keyof OwnerProfileFields,
+  'firstName' | 'lastName' | 'birthDate' | 'searchName' | 'searchPrefixes'
+> = true;
+/** Each owner key fits the `User` key of the same name, so the patch is a valid root-key `Update`. */
+export const ownerKeysFitUser: {
+  readonly [
+    K in keyof OwnerProfileFields
+  ]: OwnerProfileFields[K] extends User[K] ? true : false;
+} = {
+  firstName: true,
+  lastName: true,
+  birthDate: true,
+  searchName: true,
+  searchPrefixes: true,
+};
+export const ownerFieldsFlat: AllTrue<NoNested<OwnerProfileFields>> = true;
+declare const ownerFields: OwnerProfileFields;
+// @ts-expect-error — the owner can never write roles (the Admin SDK's)
+void ownerFields.roles;
+// @ts-expect-error — nor a contact channel (the OTP contact change's)
+void ownerFields.phone;
+// @ts-expect-error — nor the account lifecycle
+void ownerFields.accountStatus;
 
 /* ── Otp — one flat archetype ───────────────────────────────────────────── */
 

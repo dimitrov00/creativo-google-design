@@ -14,7 +14,6 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { BehaviorSubject, Observable, ReplaySubject, map, of } from 'rxjs';
-import { USER_SEARCH_PORT } from '@creativo/application/governance';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Router, provideRouter } from '@angular/router';
 import {
@@ -28,13 +27,7 @@ import {
   BookingGatewayError,
 } from '@creativo/application/booking';
 import { MEDIA_READER } from '@creativo/application/catalog';
-import {
-  AVATAR_UPLOADER,
-  AccountStatus,
-  PROFILE_PORT,
-  User,
-  UserId,
-} from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import { CLOCK, ID_GENERATOR } from '@creativo/application/shared';
 import {
   APPOINTMENT_NOTE_PORTS,
@@ -42,8 +35,10 @@ import {
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
   COUPON_VOUCHER_PORTS,
+  PROFILE_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
+  USER_SEARCH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
   AppliedOperation,
@@ -59,6 +54,7 @@ import {
   CouponValue,
   DayHours,
   E164,
+  Email,
   ExceptionEffectRule,
   GrantCapacityTerms,
   GrantExpiryTerms,
@@ -81,6 +77,7 @@ import type {
   CouponGrant,
   ScheduleException,
   Service,
+  User,
 } from '@core/entities';
 import {
   AppointmentId,
@@ -125,8 +122,12 @@ import {
   memoryAppointmentPhotoPorts,
   memoryCatalogReadPorts,
   memoryCouponVoucherPorts,
+  memoryProfilePorts,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
+  memoryUserSearchPorts,
+  provisionedUserFixture,
+  registeredUserFixture,
   seatFixture,
   serviceFixture,
   termsFixture,
@@ -519,8 +520,8 @@ describe('StaffDashboard', () => {
     memoryScheduleExceptionPorts(exceptions).writeScheduleException,
   );
 
-  /** The profiles `PROFILE_PORT` answers with, by uid (a companion's name). */
-  const profiles = new Map<string, User>();
+  /** The accounts `PROFILE_PORTS` answers with, AS STORED, by uid (a companion's name). */
+  const profiles = new Map<AccountId, User>();
 
   /**
    * The coupons `COUPON_VOUCHER_PORTS` answers with, for whichever client
@@ -658,8 +659,8 @@ describe('StaffDashboard', () => {
           },
         },
         {
-          provide: USER_SEARCH_PORT,
-          useValue: { search: async () => ok([]) },
+          provide: USER_SEARCH_PORTS,
+          useValue: memoryUserSearchPorts([]),
         },
         {
           provide: APPOINTMENT_NOTE_PORTS,
@@ -714,11 +715,8 @@ describe('StaffDashboard', () => {
         {
           // `users/{uid}` — only a companion's name is ever asked of it
           // here; nobody has a profile unless a case puts one in.
-          provide: PROFILE_PORT,
-          useValue: {
-            getProfile: async (userId: UserId) =>
-              ok(profiles.get(userId.value) ?? null),
-          },
+          provide: PROFILE_PORTS,
+          useValue: memoryProfilePorts(profiles),
         },
       ],
     }).compileComponents();
@@ -3579,28 +3577,21 @@ describe('StaffDashboard', () => {
         email?: string | null;
       }[];
       visitClientSearching: () => boolean;
-      userSearch: { search: (key: string) => Promise<unknown> };
+      userSearch: {
+        searchUsers: (prefix: string, limit: number) => Promise<unknown>;
+      };
     };
-    const asked: string[] = [];
-    const userId = (id: string) => {
-      const created = UserId.create(id);
-      if (created.isFailure()) throw new Error('fixture: bad user id');
-      return created.value;
-    };
-    const hit = (id: string, name: string, phone: string) => ({
-      userId: userId(id),
-      displayName: name,
-      email: null,
-      phone,
+    const asked: (readonly [string, number])[] = [];
+    const martin = registeredUserFixture({
+      id: AccountId.of('u-martin'),
+      firstName: 'Мартин',
+      lastName: 'Илиев',
+      phone: E164.of('+359887654321'),
     });
-    component.userSearch.search = async (key: string) => {
-      asked.push(key);
+    component.userSearch.searchUsers = async (prefix, limit) => {
+      asked.push([prefix, limit]);
       // Only the national form finds him; the other two forms find nobody.
-      return ok(
-        key === '0887654321'
-          ? [hit('u-martin', 'Мартин Илиев', '+359887654321')]
-          : [],
-      );
+      return PortResult.ok(prefix === '0887654321' ? [martin] : []);
     };
     vi.useFakeTimers();
     try {
@@ -3613,8 +3604,13 @@ describe('StaffDashboard', () => {
     } finally {
       vi.useRealTimers();
     }
-    // One pause, one question — asked in all three forms the index holds.
-    expect(asked).toEqual(['887654321', '0887654321', '359887654321']);
+    // One pause, one question — asked in all three forms the index holds,
+    // twenty accounts at most each.
+    expect(asked).toEqual([
+      ['887654321', 20],
+      ['0887654321', 20],
+      ['359887654321', 20],
+    ]);
     expect(component.visitClientSearching()).toBe(false);
     expect(component.visitClientOptions()).toEqual([
       expect.objectContaining({
@@ -3627,6 +3623,99 @@ describe('StaffDashboard', () => {
     component.searchClients('');
     expect(component.visitClientOptions()).toEqual([]);
     expect(component.visitClientSearching()).toBe(false);
+  });
+
+  it('asks the index nothing for a blank query — not even after the pause (F2-15)', async () => {
+    const component = fixture.componentInstance as unknown as {
+      searchClients: (query: string) => void;
+      visitClientOptions: () => readonly unknown[];
+      visitClientSearching: () => boolean;
+      userSearch: {
+        searchUsers: (prefix: string, limit: number) => Promise<unknown>;
+      };
+    };
+    const asked: string[] = [];
+    component.userSearch.searchUsers = async (prefix) => {
+      asked.push(prefix);
+      return PortResult.ok([]);
+    };
+    vi.useFakeTimers();
+    try {
+      component.searchClients('');
+      component.searchClients('   ');
+      expect(component.visitClientSearching()).toBe(false);
+      await vi.advanceTimersByTimeAsync(250);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(asked).toEqual([]);
+    expect(component.visitClientOptions()).toEqual([]);
+    expect(component.visitClientSearching()).toBe(false);
+  });
+
+  it('labels a found account by its name as written, else by its search key, and reads its contact off the account', async () => {
+    const component = fixture.componentInstance as unknown as {
+      searchClients: (query: string) => void;
+      visitClientOptions: () => readonly {
+        id: string;
+        label: string;
+        phone: string | null;
+        phoneHref: string | null;
+        meta: string | null;
+        email?: string | null;
+      }[];
+      userSearch: {
+        searchUsers: (prefix: string, limit: number) => Promise<unknown>;
+      };
+    };
+    const written = registeredUserFixture({
+      id: AccountId.of('u-martin'),
+      firstName: 'Мартин',
+      lastName: 'Илиев',
+      phone: E164.of('+359887654321'),
+      email: Email.of('martin@example.test'),
+      searchName: 'мартин илиев',
+    });
+    // No name written — only the index's lower-cased key to go by.
+    const keyed = registeredUserFixture({
+      id: AccountId.of('u-keyed'),
+      firstName: null,
+      lastName: null,
+      phone: null,
+      searchName: 'мартин петров',
+    });
+    const asked: string[] = [];
+    component.userSearch.searchUsers = async (prefix) => {
+      asked.push(prefix);
+      return PortResult.ok([written, keyed]);
+    };
+    vi.useFakeTimers();
+    try {
+      component.searchClients('  Мартин ');
+      await vi.advanceTimersByTimeAsync(250);
+    } finally {
+      vi.useRealTimers();
+    }
+    // The index's own form: trimmed and lower-cased.
+    expect(asked).toEqual(['мартин']);
+    expect(component.visitClientOptions()).toEqual([
+      expect.objectContaining({
+        id: 'u-martin',
+        label: 'Мартин Илиев',
+        phone: '+359 88 765 4321',
+        phoneHref: '+359887654321',
+        meta: 'martin@example.test',
+        email: 'martin@example.test',
+      }),
+      expect.objectContaining({
+        id: 'u-keyed',
+        label: 'мартин петров',
+        phone: null,
+        phoneHref: null,
+        meta: null,
+        email: null,
+      }),
+    ]);
   });
 
   it("builds the add-client page's one section — recent visitors from the window, never today's book", async () => {
@@ -5872,20 +5961,13 @@ describe('StaffDashboard', () => {
       { contact: contactOf('Стоян Колев', '+359 88 765 4321') },
     );
     profiles.set(
-      'user-son',
-      value(
-        User.reconstitute(
-          {
-            id: 'user-son',
-            phone: '+359887000111',
-            firstName: 'Иво',
-            lastName: 'Колев',
-            roles: ['client'],
-            status: AccountStatus.active(),
-          },
-          at('2026-08-05T08:00:00'),
-        ),
-      ),
+      AccountId.of('user-son'),
+      registeredUserFixture({
+        id: AccountId.of('user-son'),
+        phone: E164.of('+359887000111'),
+        firstName: 'Иво',
+        lastName: 'Колев',
+      }),
     );
     observeBarberDay.mockImplementation((barberId: string) =>
       of(
@@ -5927,6 +6009,73 @@ describe('StaffDashboard', () => {
       expect(father?.id).toBe('user-father');
       expect(father?.label).toBe('Стоян Колев');
       expect(father?.phoneHref).toBe('+359887654321');
+    } finally {
+      if (visits) observeBarberDay.mockImplementation(visits);
+      profiles.clear();
+    }
+  });
+
+  it('names no companion by a provisioned stub: a sign-in that never registered is no profile', async () => {
+    const visits = observeBarberDay.getMockImplementation();
+    const seat = (
+      chair: string,
+      uid: string,
+      relationship: SubjectRelationship,
+    ) =>
+      seatAt({
+        chair,
+        startIso: '2026-08-05T10:00:00',
+        occupant: accountOf(uid, relationship),
+      });
+    const family = visitOf(
+      'appointment-family',
+      [
+        seat('ivan', 'user-father', SubjectRelationship.Self),
+        seat('niko', 'user-son', SubjectRelationship.Companion),
+      ],
+      { contact: contactOf('Стоян Колев', '+359 88 765 4321') },
+    );
+    // The son signed in once and stopped there: `PROFILE_PORTS` answers
+    // his stub as stored. Whatever names a stub might hold, it is no
+    // profile — the registration state decides, never the names.
+    profiles.set(
+      AccountId.of('user-son'),
+      provisionedUserFixture({
+        id: AccountId.of('user-son'),
+        phone: E164.of('+359887000111'),
+        firstName: 'Иво',
+        lastName: 'Колев',
+      }),
+    );
+    observeBarberDay.mockImplementation((barberId: string) =>
+      of(
+        PortResult.ok(
+          barberId === 'ivan' || barberId === 'niko' ? [family] : [],
+        ),
+      ),
+    );
+    try {
+      TestBed.resetTestingModule();
+      await build();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      (
+        host().querySelector(
+          '[data-row-id="appointment-family#niko"]',
+        ) as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      const editor = fixture.debugElement.query(By.directive(StaffVisitEditor))
+        .componentInstance as StaffVisitEditor;
+      // Unnamed, as before the read — never the stub's empty name, never
+      // the booker's.
+      expect(editor.vm().people?.[0]).toEqual({
+        id: 'user-son',
+        label: 'staff.day.unnamedClient',
+        phone: null,
+        phoneHref: null,
+        meta: null,
+      });
     } finally {
       if (visits) observeBarberDay.mockImplementation(visits);
       profiles.clear();

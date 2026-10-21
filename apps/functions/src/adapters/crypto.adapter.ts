@@ -6,7 +6,7 @@ import {
   scryptSync,
   timingSafeEqual,
 } from 'node:crypto';
-import type { Hash, NextId } from '@core/ports';
+import type { Hash, HashPorts, IdPorts, NextId } from '@core/ports';
 
 /**
  * The server's randomness and digests — the ONE `node:crypto` import of the
@@ -16,9 +16,7 @@ import type { Hash, NextId } from '@core/ports';
  * `hash`/`nextId` from here and a system never meets `crypto` (Law 3).
  *
  * Plain functions over the SDK, no decisions: what a hash is FOR (an audit
- * row id, a waitlist id basis) is the system's, never this file's. The
- * legacy `crypto-id-generator.ts` / `node-otp-crypto.ts` keep their own
- * imports until their last importer goes (the identity flip).
+ * row id, a waitlist id basis) is the system's, never this file's.
  */
 
 /** The `hash` port: sha256 of the UTF-8 input, lower-case hex (64 characters). */
@@ -54,13 +52,11 @@ export const hexEqualInConstantTime = (a: string, b: string): boolean => {
   return left.length === right.length && timingSafeEqual(left, right);
 };
 
-/** The two primitives every pipeline receives (`TxPorts`), as the root builds them. */
-export type CryptoPorts = {
-  readonly hash: Hash;
-  readonly nextId: NextId;
-};
-
-export const cryptoPorts = (): CryptoPorts => ({
+/**
+ * The two primitives every pipeline receives (`TxPorts`), as the root builds
+ * them — the intersection of the two bundles this factory serves (Law 9).
+ */
+export const cryptoPorts = (): HashPorts & IdPorts => ({
   hash: sha256Hex,
   nextId: randomUuid,
 });

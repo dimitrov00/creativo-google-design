@@ -3,7 +3,8 @@
  * client-stats projection and agree with the same code imported the
  * ordinary way — the whole point is that the seed's stats ARE the
  * trigger's. Likewise the one TTL stamp (`purgeAtFor`, F1-7), the seed's
- * own plan modules (whose bodies are TypeScript since flip 1) and the
+ * own plan modules (whose bodies are TypeScript since flip 1, the
+ * accounts' `users` bodies since flip 2) and the
  * loyalty engine's readers the seed reads its loyalty documents back with:
  * each must answer what the ordinary import answers.
  *
@@ -32,6 +33,7 @@ import {
 } from '../../libs/domain/engagement/src/lib/loyalty/streak-projector';
 import { busyDayBody, busyKeyOf } from './catalog.mjs';
 import { buildClientBook } from './fixtures.mjs';
+import { staffAccountBody } from './fixtures/users.fixtures.ts';
 import {
   SEED_DOMAIN_MODULES,
   SEED_PLAN_MODULES,
@@ -171,6 +173,16 @@ describe('loadSeedDomain', () => {
     })) {
       expect(existsSync(join(WORKSPACE_ROOT, `${module}.ts`)), name).toBe(true);
     }
+    expect(Object.keys(SEED_PLAN_MODULES).sort()).toEqual([
+      'appointments',
+      'book',
+      'catalog',
+      'customers',
+      'loyalty',
+      'promotions',
+      'users',
+      'waitlist',
+    ]);
     for (const [name, file] of Object.entries(SEED_PLAN_MODULES)) {
       expect(existsSync(join(WORKSPACE_ROOT, file)), name).toBe(true);
       expect(domain[name], name).toBeDefined();
@@ -213,6 +225,11 @@ describe('loadSeedDomain', () => {
     expect(written(bundled)).toEqual(written(ordinary));
     expect(plain(domain.waitlist.waitlistRequestWriteOf(bundled))).toEqual(
       plain(waitlistRequestWriteOf(ordinary)),
+    );
+    // The accounts (flip 2): the staff account `seed-dev-catalog.mjs` takes
+    // from the bundle is the body the ordinary import builds.
+    expect(plain(domain.users.staffAccountBody)).toEqual(
+      plain(staffAccountBody),
     );
   });
 

@@ -2,6 +2,7 @@ import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
   BarberId,
   BookingErrorCode,
+  CancelWaitlistRefusalCode,
   CartLineId,
   RepositoryError,
   Result,
@@ -12,10 +13,7 @@ import {
   WaitlistError,
   WaitlistRequestId,
 } from '@core/primitives';
-import {
-  CancelWaitlistRefusalCode,
-  type RequestWaitlistCommand,
-} from '@core/pipelines';
+import { type RequestWaitlistCommand } from '@core/pipelines';
 import { toHttpsError, WIRE_ZONE } from '../edge';
 import {
   decodeCancelWaitlist,

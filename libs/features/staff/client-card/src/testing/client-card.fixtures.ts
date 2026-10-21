@@ -17,17 +17,13 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { type Observable, isObservable, of } from 'rxjs';
+import { isObservable, of } from 'rxjs';
 import {
-  AccountStatus,
   type AvatarRef,
   type AvatarUploader,
-  type ProfilePort,
-  User,
-  type UserId as AccountUserId,
   ZonedDateTime,
 } from '@creativo/application/accounts';
-import { type Result, fail, ok } from '@creativo/application/booking';
+import { type Result, ok } from '@creativo/application/booking';
 import {
   type BadgeProgress,
   type GiftVoucherFields,
@@ -42,7 +38,6 @@ import {
   type LoyaltyCatalogFixture,
   loyaltyFixtures,
 } from '@creativo/application/engagement/testing';
-import { RepositoryError } from '@creativo/application/shared';
 import {
   AppointmentId,
   AppointmentPhotoId,
@@ -71,6 +66,9 @@ import {
   WaitlistStatus,
 } from '@core/primitives';
 import {
+  AccountLifecycle,
+  BirthDate,
+  BlockReason,
   BookingContact,
   BookingLifecycle,
   CancellationReason,
@@ -103,6 +101,7 @@ import type {
   ClientStatsRecord,
   Customer,
   GiftVoucher,
+  User,
   WaitlistRequest,
 } from '@core/entities';
 import type {
@@ -111,9 +110,14 @@ import type {
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
-import { ClientStatsSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  ClientStatsSystem,
+  SearchFieldsSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   appointmentFixture,
   cents,
@@ -123,7 +127,10 @@ import {
   memoryClientStatsReadPorts,
   memoryCouponVoucherPorts,
   memoryCustomerPorts,
+  memoryProfilePorts,
   memoryWaitlistReadPorts,
+  provisionedUserFixture,
+  registeredUserFixture,
   seatFixture,
   termsFixture,
   unwrapOk,
@@ -898,54 +905,82 @@ export function fixtureCustomers(): readonly Customer[] {
 
 // ── The people ─────────────────────────────────────────────────────────
 
-const TODAY_AT = at('2026-09-28T12:40:00');
+/**
+ * A registered client of the dev shop as `users/{uid}` stores him — the
+ * flat ACCOUNT (D29), his search keys the ones registration computes, his
+ * lifecycle slice at the root (`ACTIVE` unless a case pauses him).
+ */
+function clientAccount(
+  uid: string,
+  names: { readonly firstName: string; readonly lastName: string },
+  contact: { readonly phone: string; readonly email: string },
+  birthDate: string,
+  lifecycle: AccountLifecycle,
+): User {
+  const phone = E164.of(contact.phone);
+  return registeredUserFixture({
+    id: UserId.of(uid),
+    ...names,
+    phone,
+    email: Email.of(contact.email),
+    birthDate: BirthDate.of(birthDate),
+    ...SearchFieldsSystem.searchFields(
+      names.firstName,
+      names.lastName,
+      phone,
+      contact.email,
+    ),
+    ...lifecycle,
+  });
+}
 
 export function georgiUser(
-  status: AccountStatus = AccountStatus.active(),
+  lifecycle: AccountLifecycle = AccountLifecycle.active(),
 ): User {
-  return unwrap(
-    User.reconstitute(
-      {
-        id: GEORGI,
-        phone: '+359881234567',
-        firstName: 'Георги',
-        lastName: 'Петров',
-        roles: ['client'],
-        status,
-        email: 'georgi@example.test',
-        birthDate: '1990-04-14',
-      },
-      TODAY_AT,
-    ),
+  return clientAccount(
+    GEORGI,
+    { firstName: 'Георги', lastName: 'Петров' },
+    { phone: '+359881234567', email: 'georgi@example.test' },
+    '1990-04-14',
+    lifecycle,
   );
 }
 
 /** Мартин — his birthday is today. */
 export function martinUser(
-  status: AccountStatus = AccountStatus.active(),
+  lifecycle: AccountLifecycle = AccountLifecycle.active(),
 ): User {
-  return unwrap(
-    User.reconstitute(
-      {
-        id: MARTIN,
-        phone: '+359887654321',
-        firstName: 'Мартин',
-        lastName: 'Илиев',
-        roles: ['client'],
-        status,
-        email: 'martin@example.test',
-        birthDate: '1992-09-28',
-      },
-      TODAY_AT,
-    ),
+  return clientAccount(
+    MARTIN,
+    { firstName: 'Мартин', lastName: 'Илиев' },
+    { phone: '+359887654321', email: 'martin@example.test' },
+    '1992-09-28',
+    lifecycle,
   );
 }
 
-/** Online booking paused until 12 October. */
-export function pausedUntilOctober(): AccountStatus {
-  return AccountStatus.blocked({
-    reason: 'manual',
-    until: at('2026-10-12T23:59:00'),
+/** Online booking paused until 12 October (23:59 in Sofia). */
+export function pausedUntilOctober(): AccountLifecycle {
+  return AccountLifecycle.block(
+    BlockReason.Manual,
+    sofia('2026-10-12T23:59:00'),
+  );
+}
+
+/**
+ * The account `verifyOtp` leaves for a holder's phone before he registers
+ * — a `PROVISIONED` stub: no names, no roles, no date of birth, the login
+ * phone alone (`RegistrationSystem.provision`). `PROFILE_PORTS` answers it
+ * as stored; the card must read it as no profile at all.
+ */
+export function stubOf(
+  uid: string,
+  lifecycle: AccountLifecycle = AccountLifecycle.active(),
+): User {
+  return provisionedUserFixture({
+    id: UserId.of(uid),
+    phone: E164.of(uid === GEORGI ? '+359881234567' : '+359887654321'),
+    ...lifecycle,
   });
 }
 
@@ -1146,36 +1181,6 @@ export function achievementsContextOf(
 
 // ── Ports, in memory ───────────────────────────────────────────────────
 
-/** `PROFILE_PORT` over a map of users; `failWith` makes every read fail. */
-export class InMemoryProfilePort implements ProfilePort {
-  readonly calls: string[] = [];
-  private failure: RepositoryError | null = null;
-  constructor(private readonly users: ReadonlyMap<string, User | null>) {}
-  failWith(error = new RepositoryError('users/{uid} unavailable')): this {
-    this.failure = error;
-    return this;
-  }
-  recover(): this {
-    this.failure = null;
-    return this;
-  }
-  async getProfile(
-    userId: AccountUserId,
-  ): Promise<Result<User | null, RepositoryError>> {
-    this.calls.push(userId.value);
-    if (this.failure !== null) return fail(this.failure);
-    return ok(this.users.get(userId.value) ?? null);
-  }
-  observeProfile(
-    userId: AccountUserId,
-  ): Observable<Result<User | null, RepositoryError>> {
-    return of(ok(this.users.get(userId.value) ?? null));
-  }
-  async saveProfile(): Promise<Result<void, RepositoryError>> {
-    return fail(new RepositoryError('the card never writes a profile'));
-  }
-}
-
 /** `AVATAR_UPLOADER` that knows one picture per person. */
 export class InMemoryAvatars implements AvatarUploader {
   constructor(
@@ -1184,11 +1189,9 @@ export class InMemoryAvatars implements AvatarUploader {
   async upload(): Promise<Result<AvatarRef, never>> {
     throw new Error('the card never uploads');
   }
-  async find(userId: AccountUserId): Promise<Result<AvatarRef | null, never>> {
-    const url = this.avatars.get(userId.value);
-    return ok(
-      url === undefined ? null : { url, path: `avatars/${userId.value}` },
-    );
+  async find(userId: UserId): Promise<Result<AvatarRef | null, never>> {
+    const url = this.avatars.get(userId);
+    return ok(url === undefined ? null : { url, path: `avatars/${userId}` });
   }
   async remove(): Promise<Result<void, never>> {
     throw new Error('the card never removes an avatar');
@@ -1286,6 +1289,48 @@ export function voucherPortsOf(
   vouchers: readonly GiftVoucher[] = fixtureVouchers(),
 ): PortDouble<CouponVoucherPorts> {
   return portDouble(memoryCouponVoucherPorts({ vouchers }));
+}
+
+/**
+ * `PROFILE_PORTS` over the accounts — Георги's and Мартин's unless said —
+ * answered AS STORED (a `PROVISIONED` stub included; the card judges).
+ */
+export function profilePortsOf(
+  users: readonly User[] = [georgiUser(), martinUser()],
+): PortDouble<ProfilePorts> {
+  return portDouble(
+    memoryProfilePorts(new Map(users.map((user) => [user.id, user]))),
+  );
+}
+
+/** {@link profilePortsOf} with its `loadProfile` held until {@link HeldProfileReads.answer}. */
+export type HeldProfileReads = PortDouble<ProfilePorts> & {
+  /** Lets every held read answer (and every later one at once): the D-9 gate opens. */
+  readonly answer: () => void;
+};
+
+/**
+ * `users/{uid}` answering only when the spec says so: the D-9 gate held
+ * shut, the whole card in its first state (S1).
+ */
+export function heldProfilePortsOf(
+  users: readonly User[] = [georgiUser(), martinUser()],
+): HeldProfileReads {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const memory = memoryProfilePorts(
+    new Map(users.map((user) => [user.id, user])),
+  );
+  const held: ProfilePorts = {
+    ...memory,
+    loadProfile: async (userId) => {
+      await gate;
+      return memory.loadProfile(userId);
+    },
+  };
+  return Object.assign(portDouble(held), { answer: () => release() });
 }
 
 /** `CUSTOMER_PORTS` over the client records — Георги's and Мартин's unless said. */

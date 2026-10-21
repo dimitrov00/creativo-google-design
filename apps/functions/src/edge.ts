@@ -7,7 +7,10 @@ import {
   AccountsErrorCode,
   BookingErrorCode,
   BookingFlowErrorCode,
+  CancelWaitlistRefusalCode,
   CatalogErrorCode,
+  CompleteRegistrationRefusalCode,
+  defect,
   EngagementErrorCode,
   GovernanceErrorCode,
   IdentityErrorCode,
@@ -20,6 +23,7 @@ import {
   PrimitiveErrorCode,
   RepositoryErrorCode,
   type Result,
+  RunBackfillRefusalCode,
   SchedulingErrorCode,
   StreakPublishErrorCode,
   TimeErrorCode,
@@ -27,10 +31,10 @@ import {
   TriggerEventId,
   UtcEpochMs,
   WaitlistErrorCode,
-  defect,
 } from '@core/primitives';
 import {
   type CallableName,
+  type ClockPorts,
   type NowUtcMs,
   type TelemetryPorts,
 } from '@core/ports';
@@ -184,7 +188,9 @@ export const EDGE_DICTIONARIES = {
   BookingErrorCode,
   BookingFlowErrorCode,
   CancellationRefusalCode,
+  CancelWaitlistRefusalCode,
   CatalogErrorCode,
+  CompleteRegistrationRefusalCode,
   EngagementErrorCode,
   GovernanceErrorCode,
   IdentityErrorCode,
@@ -194,6 +200,7 @@ export const EDGE_DICTIONARIES = {
   PhoneErrorCode,
   PipelineErrorCode,
   RepositoryErrorCode,
+  RunBackfillRefusalCode,
   SchedulingErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
@@ -209,7 +216,9 @@ export type EdgeCode =
   | BookingErrorCode
   | BookingFlowErrorCode
   | CancellationRefusalCode
+  | CancelWaitlistRefusalCode
   | CatalogErrorCode
+  | CompleteRegistrationRefusalCode
   | EngagementErrorCode
   | GovernanceErrorCode
   | IdentityErrorCode
@@ -219,6 +228,7 @@ export type EdgeCode =
   | PhoneErrorCode
   | PipelineErrorCode
   | RepositoryErrorCode
+  | RunBackfillRefusalCode
   | SchedulingErrorCode
   | StaffEditErrorCode
   | StreakPublishErrorCode
@@ -522,6 +532,27 @@ const CANCELLATION_WIRE: WireTable<CancellationRefusalCode> = {
 };
 
 /**
+ * The three pipeline refusals whose callables translate them to today's
+ * legacy codes before the wire (`waitlist.wire.ts`, `ops.wire.ts`,
+ * `identity.wire.ts`): their dictionaries live in primitives (Law 7.5), so
+ * the table covers them — with NEW dotted codes, never a second rule for a
+ * legacy one (F2-4's rule).
+ */
+const CANCEL_WAITLIST_WIRE: WireTable<CancelWaitlistRefusalCode> = {
+  [CancelWaitlistRefusalCode.NotFound]: params(S.NotFound),
+  [CancelWaitlistRefusalCode.NotCancellable]: params(S.FailedPrecondition),
+};
+
+const RUN_BACKFILL_WIRE: WireTable<RunBackfillRefusalCode> = {
+  [RunBackfillRefusalCode.Forbidden]: params(S.PermissionDenied),
+  [RunBackfillRefusalCode.InvalidInput]: params(S.InvalidArgument),
+};
+
+const COMPLETE_REGISTRATION_WIRE: WireTable<CompleteRegistrationRefusalCode> = {
+  [CompleteRegistrationRefusalCode.ProfileInvalid]: params(S.InvalidArgument),
+};
+
+/**
  * requestWaitlist's shapes. cancelWaitlist throws the first two codes as
  * `{ code }` alone today; one code has one rule, so when it flips onto
  * WaitlistError (3b, booking core) its details gain `params` — `{}` and
@@ -580,6 +611,27 @@ const IDENTITY_WIRE: WireTable<IdentityErrorCode> = {
   [IdentityErrorCode.OnboardingFlowInvalidTransition]: params(
     S.FailedPrecondition,
   ),
+  // The identity flip's pipeline refusals (F2-4). The three OTP callables
+  // translate them back to today's undotted codes before the wire; these
+  // rows answer them where an ecs-core code reaches the edge as itself.
+  // NOT `permission-denied` for a forbidden registration: the OTP client
+  // reads that as the lockout.
+  [IdentityErrorCode.OtpChannelMismatch]: params(
+    S.FailedPrecondition,
+    raw('requested'),
+    rawAs('strategyKind', 'authStrategyKind'),
+  ),
+  [IdentityErrorCode.OtpRateLimited]: params(S.ResourceExhausted),
+  [IdentityErrorCode.OtpNotFound]: params(S.NotFound),
+  [IdentityErrorCode.OtpDestinationCorrupted]: params(S.Internal),
+  [IdentityErrorCode.OtpAccountConflict]: params(S.Internal),
+  [IdentityErrorCode.RegistrationUnauthenticated]: params(S.Unauthenticated),
+  [IdentityErrorCode.RegistrationForbidden]: params(S.FailedPrecondition),
+  [IdentityErrorCode.RegistrationUserNotFound]: params(S.FailedPrecondition),
+  [IdentityErrorCode.RegistrationFieldMissing]: params(
+    S.InvalidArgument,
+    raw('field'),
+  ),
 };
 
 const ACCOUNTS_WIRE: WireTable<AccountsErrorCode> = {
@@ -605,6 +657,7 @@ const ACCOUNTS_WIRE: WireTable<AccountsErrorCode> = {
   [AccountsErrorCode.EmailInvalid]: params(S.InvalidArgument, raw('attempted')),
   [AccountsErrorCode.UpdateProfileNotFound]: params(S.NotFound),
   [AccountsErrorCode.UpdateProfileValidationFailed]: params(S.InvalidArgument),
+  [AccountsErrorCode.UpdateProfileUnauthenticated]: params(S.Unauthenticated),
   [AccountsErrorCode.UploadAvatarNotAnImage]: params(S.InvalidArgument),
   [AccountsErrorCode.UploadAvatarTooLarge]: params(S.InvalidArgument),
 };
@@ -1213,6 +1266,30 @@ export const LEGACY_WIRE_CODE: { readonly [errorCode: string]: string } = {
     'identity.auth_flow.invalid_transition',
   [IdentityErrorCode.OnboardingFlowInvalidTransition]:
     'identity.onboarding_flow.invalid_transition',
+  // the identity flip's pipeline refusals (F2-4) — NEW dotted codes, never a
+  // legacy undotted one (one rule per wire code)
+  [IdentityErrorCode.OtpChannelMismatch]: 'identity.otp.channel_mismatch',
+  [IdentityErrorCode.OtpRateLimited]: 'identity.otp.rate_limited',
+  [IdentityErrorCode.OtpNotFound]: 'identity.otp.not_found',
+  [IdentityErrorCode.OtpDestinationCorrupted]:
+    'identity.otp.destination_corrupted',
+  [IdentityErrorCode.OtpAccountConflict]: 'identity.otp.account_conflict',
+  [IdentityErrorCode.RegistrationUnauthenticated]:
+    'identity.registration.unauthenticated',
+  [IdentityErrorCode.RegistrationForbidden]: 'identity.registration.forbidden',
+  [IdentityErrorCode.RegistrationUserNotFound]:
+    'identity.registration.user_not_found',
+  [IdentityErrorCode.RegistrationFieldMissing]:
+    'identity.registration.field_missing',
+  // the pipeline refusals moved to primitives (Law 7.5) — NEW dotted codes;
+  // their callables still answer today's legacy codes
+  [CompleteRegistrationRefusalCode.ProfileInvalid]:
+    'identity.registration.profile_invalid',
+  [CancelWaitlistRefusalCode.NotFound]: 'booking.waitlist.cancel.not_found',
+  [CancelWaitlistRefusalCode.NotCancellable]:
+    'booking.waitlist.cancel.not_cancellable',
+  [RunBackfillRefusalCode.Forbidden]: 'ops.backfill.refusal.forbidden',
+  [RunBackfillRefusalCode.InvalidInput]: 'ops.backfill.refusal.invalid_input',
   // AccountsErrorCode
   [AccountsErrorCode.BlockReasonInvalid]: 'accounts.block_reason.invalid',
   [AccountsErrorCode.UserRoleInvalid]: 'accounts.user_role.invalid',
@@ -1224,6 +1301,8 @@ export const LEGACY_WIRE_CODE: { readonly [errorCode: string]: string } = {
     'accounts.update_profile.not_found',
   [AccountsErrorCode.UpdateProfileValidationFailed]:
     'accounts.update_profile.validation_failed',
+  [AccountsErrorCode.UpdateProfileUnauthenticated]:
+    'accounts.update_profile.unauthenticated',
   [AccountsErrorCode.UploadAvatarNotAnImage]:
     'accounts.upload_avatar.not_an_image',
   [AccountsErrorCode.UploadAvatarTooLarge]: 'accounts.upload_avatar.too_large',
@@ -1289,7 +1368,9 @@ export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
     ...BOOKING_WIRE,
     ...BOOKING_FLOW_WIRE,
     ...CANCELLATION_WIRE,
+    ...CANCEL_WAITLIST_WIRE,
     ...CATALOG_WIRE,
+    ...COMPLETE_REGISTRATION_WIRE,
     ...ENGAGEMENT_WIRE,
     ...GOVERNANCE_WIRE,
     ...IDENTITY_WIRE,
@@ -1299,6 +1380,7 @@ export const EDGE_WIRE: { readonly [K in EdgeCode]: WireRule } =
     ...PHONE_WIRE,
     ...PIPELINE_WIRE,
     ...REPOSITORY_WIRE,
+    ...RUN_BACKFILL_WIRE,
     ...SCHEDULING_WIRE,
     ...STAFF_EDIT_WIRE,
     ...STREAK_PUBLISH_WIRE,
@@ -1517,8 +1599,8 @@ export const workBudget = (nowUtcMs: NowUtcMs, limitMs: number): WorkBudget => {
 
 // ── The wrappers ───────────────────────────────────────────────────────────
 
-/** What the edge itself reads: telemetry and the clock (`NowUtcMs`, flatten-spec T4). */
-export type EdgePorts = TelemetryPorts & { readonly nowUtcMs: NowUtcMs };
+/** What the edge itself reads: telemetry and the clock (`ClockPorts`, flatten-spec T4). */
+export type EdgePorts = TelemetryPorts & ClockPorts;
 
 /** The platform's own answer to an uncaught throw: `internal`, `INTERNAL`, no details. */
 const PLATFORM_INTERNAL_MESSAGE = 'INTERNAL';

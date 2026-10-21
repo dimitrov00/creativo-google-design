@@ -7,12 +7,7 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  User,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
+import { AVATAR_UPLOADER, ZonedDateTime } from '@creativo/application/accounts';
 import {
   AUTH_GATEWAY,
   PrincipalId,
@@ -25,8 +20,18 @@ import {
 import {
   APPOINTMENT_READ_PORTS,
   INBOX_PORTS,
+  PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { memoryAppointmentReadPorts, memoryInboxPorts } from '@core/testing';
+import { BirthDate, Email } from '@core/components';
+import type { User } from '@core/entities';
+import type { ProfilePorts } from '@core/ports';
+import { RepositoryError, Result as EcsResult, UserId } from '@core/primitives';
+import {
+  memoryAppointmentReadPorts,
+  memoryInboxPorts,
+  memoryProfilePorts,
+  registeredUserFixture,
+} from '@core/testing';
 import { CLOCK } from '@creativo/application/shared';
 import { ClientProfile } from './client-profile';
 
@@ -42,22 +47,20 @@ const PRINCIPAL = unwrap(
   ]),
 );
 
+const USER_ID = UserId.of('user_1');
+
+/** Ада Тестова, registered — her `users/{uid}` body as stored. */
 function user(overrides?: { birthDate?: string; email?: string }): User {
-  return unwrap(
-    User.create(
-      {
-        id: 'user_1',
-        phone: '+359881234567',
-        firstName: 'Ада',
-        lastName: 'Тестова',
-        roles: ['client'],
-        status: { kind: 'active' },
-        ...(overrides?.birthDate && { birthDate: overrides.birthDate }),
-        ...(overrides?.email && { email: overrides.email }),
-      },
-      TODAY,
-    ),
-  );
+  return registeredUserFixture({
+    id: USER_ID,
+    firstName: 'Ада',
+    lastName: 'Тестова',
+    birthDate:
+      overrides?.birthDate === undefined
+        ? null
+        : BirthDate.of(overrides.birthDate),
+    email: overrides?.email === undefined ? null : Email.parse(overrides.email),
+  });
 }
 
 @Injectable()
@@ -82,6 +85,7 @@ function provideTestI18n(): EnvironmentProviders[] {
 interface Harness {
   fixture: ComponentFixture<ClientProfile>;
   host: HTMLElement;
+  /** Every `users/{uid}` body an owner write left, in order. */
   saved: User[];
   uploads: Blob[];
   removals: string[];
@@ -90,7 +94,8 @@ interface Harness {
 
 async function render(options?: {
   profile?: User | null;
-  saveResult?: () => Result<void, { code: string }>;
+  /** The owner write fails in the store (a rule denial), writing nothing. */
+  writeFails?: boolean;
   uploadResult?: () => Result<{ url: string; path: string }, { code: string }>;
   photoUrl?: string | null;
   removeResult?: () => Result<void, { code: string }>;
@@ -99,6 +104,9 @@ async function render(options?: {
   const uploads: Blob[] = [];
   const removals: string[] = [];
   const profile = options?.profile === undefined ? user() : options.profile;
+  const users = new Map<UserId, User>();
+  if (profile !== null) users.set(profile.id, profile);
+  const memory = memoryProfilePorts(users);
 
   await TestBed.configureTestingModule({
     imports: [ClientProfile],
@@ -115,15 +123,25 @@ async function render(options?: {
         },
       },
       {
-        provide: PROFILE_PORT,
+        provide: PROFILE_PORTS,
         useValue: {
-          getProfile: () => Promise.resolve(ok(profile)),
-          observeProfile: () => of(ok(profile)),
-          saveProfile: (next: User) => {
-            saved.push(next);
-            return Promise.resolve(options?.saveResult?.() ?? ok(undefined));
+          ...memory,
+          writeOwnProfile: async (userId, decide) => {
+            if (options?.writeFails) {
+              return EcsResult.err(
+                RepositoryError.writeFailed(
+                  `users/${userId}`,
+                  'permission-denied',
+                ),
+              );
+            }
+            const before = users.get(userId);
+            const written = await memory.writeOwnProfile(userId, decide);
+            const after = users.get(userId);
+            if (after !== undefined && after !== before) saved.push(after);
+            return written;
           },
-        },
+        } satisfies ProfilePorts,
       },
       {
         provide: AVATAR_UPLOADER,
@@ -143,8 +161,8 @@ async function render(options?: {
                 ok({ url: 'http://avatar/user_1', path: 'avatars/user_1' }),
             );
           },
-          remove: (id: { value: string }) => {
-            removals.push(id.value);
+          remove: (id: string) => {
+            removals.push(id);
             return Promise.resolve(options?.removeResult?.() ?? ok(undefined));
           },
         },
@@ -341,19 +359,16 @@ describe('ClientProfile', () => {
     await settle();
 
     expect(saved.length).toBe(1);
-    expect(saved[0]?.firstName.value).toBe('Ана');
-    // Untouched fields survive the rebuild.
-    expect(saved[0]?.lastName.value).toBe('Тестова');
+    expect(saved[0]?.firstName).toBe('Ана');
+    // Untouched fields survive the edit.
+    expect(saved[0]?.lastName).toBe('Тестова');
     expect(
       host.querySelector('[data-testid="profile-sheet-error"]'),
     ).toBeNull();
   });
 
   it('keeps the sheet open with the draft intact when the write fails', async () => {
-    const { host, fixture, settle } = await render({
-      saveResult: () =>
-        fail({ code: 'accounts.update_profile.repository_failure' }),
-    });
+    const { host, fixture, settle } = await render({ writeFails: true });
     click(host, 'profile-row-name');
     fixture.detectChanges();
 

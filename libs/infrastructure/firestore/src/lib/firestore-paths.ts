@@ -9,6 +9,7 @@ import {
   doc,
 } from 'firebase/firestore';
 import { UserId } from '@creativo/domain/accounts';
+import { Collections as EntityCollections } from '@core/entities';
 import { InvitationId, RewardProgramId } from '@creativo/domain/engagement';
 import {
   BADGE_CATEGORIES_COLLECTION,
@@ -22,7 +23,6 @@ import {
   STREAK_DEFINITIONS_COLLECTION,
   TIER_DEFINITIONS_COLLECTION,
 } from '@creativo/application/engagement';
-import { ImpersonationSessionId } from '@creativo/domain/governance';
 import { CourseId, PositionId, ShopEventId } from '@creativo/domain/programs';
 
 /**
@@ -41,20 +41,19 @@ import { CourseId, PositionId, ShopEventId } from '@creativo/domain/programs';
  * rebuild with.
  *
  * Flip 1 (booking core, 2026-10-11) removed every booking-core collection
- * from this file: their one spelling is the `Collections` registry of
- * `@core/entities`, which the `(db) => bundle` adapters name directly. What
- * is left belongs to flips 2-4 and goes with them.
+ * from this file, and flip 2 (identity and accounts) removed `users`,
+ * `otps` and `impersonationSessions`: their one spelling is the
+ * `Collections` registry of `@core/entities`, which the `(db) => bundle`
+ * adapters name directly (the `users/{uid}/rewardProgress` paths below
+ * spell their parent through it too). What is left belongs to flips 3-4
+ * and goes with them.
  */
 export const Collections = {
-  Users: 'users',
   RewardPrograms: 'rewardPrograms',
   Invitations: 'invitations',
-  ImpersonationSessions: 'impersonationSessions',
   Positions: 'positions',
   Courses: 'courses',
   Events: 'events',
-  /** Server-only (Admin SDK, `apps/functions`) — closed to every client SDK by rule. */
-  Otps: 'otps',
   // ── The loyalty read model (client-card-redesign §4.5). The names are
   // the port module's, shared with the functions and the dev seed. The
   // catalogue is any signed-in person's to read; accounts and the journal
@@ -86,19 +85,6 @@ export const Subcollections = {
 
 // ── Top-level collections ──────────────────────────────────────────────
 
-export function usersCollection(
-  db: Firestore,
-): CollectionReference<DocumentData> {
-  return collection(db, Collections.Users);
-}
-
-export function userDocRef(
-  db: Firestore,
-  userId: UserId,
-): DocumentReference<DocumentData> {
-  return doc(db, Collections.Users, userId.value);
-}
-
 export function rewardProgramsCollection(
   db: Firestore,
 ): CollectionReference<DocumentData> {
@@ -123,19 +109,6 @@ export function invitationDocRef(
   id: InvitationId,
 ): DocumentReference<DocumentData> {
   return doc(db, Collections.Invitations, id.value);
-}
-
-export function impersonationSessionsCollection(
-  db: Firestore,
-): CollectionReference<DocumentData> {
-  return collection(db, Collections.ImpersonationSessions);
-}
-
-export function impersonationSessionDocRef(
-  db: Firestore,
-  id: ImpersonationSessionId,
-): DocumentReference<DocumentData> {
-  return doc(db, Collections.ImpersonationSessions, id.value);
 }
 
 export function positionsCollection(
@@ -185,7 +158,7 @@ export function rewardProgressCollection(
 ): CollectionReference<DocumentData> {
   return collection(
     db,
-    Collections.Users,
+    EntityCollections.Users,
     userId.value,
     Subcollections.RewardProgress,
   );
@@ -198,7 +171,7 @@ export function rewardProgressDocRef(
 ): DocumentReference<DocumentData> {
   return doc(
     db,
-    Collections.Users,
+    EntityCollections.Users,
     userId.value,
     Subcollections.RewardProgress,
     programId.value,

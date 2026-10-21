@@ -4,8 +4,6 @@ import {
   ANONYMOUS_PRINCIPAL,
   AUTH_DEPLOYMENT,
   AUTH_GATEWAY,
-  BirthDate,
-  BirthDateParts,
   EnsureSessionReadyUseCase,
   Identifier,
   MissingRegistrationFieldError,
@@ -27,15 +25,19 @@ import {
 } from '@creativo/application/identity';
 import {
   AVATAR_UPLOADER,
-  PROFILE_PORT,
-  UpdateProfileUseCase,
   UploadAvatarUseCase,
-  UserId,
 } from '@creativo/application/accounts';
 import { CLOCK } from '@creativo/application/shared';
+import {
+  ageDayOf,
+  saveOwnProfile,
+} from '@creativo/features/client/account-state';
+import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
 import { Observable, map } from 'rxjs';
 import { ServiceId as FlowServiceId } from '@creativo/application/catalog';
-import type { ServiceId } from '@core/primitives';
+import type { BirthDate } from '@core/components';
+import { IdentityErrorCode, type ServiceId, UserId } from '@core/primitives';
+import { AgeSystem } from '@core/systems';
 
 /**
  * The optional phase's steps, in the order the flow machine walks them — the
@@ -71,9 +73,7 @@ export class OnboardingFlowStore {
     this.authGateway,
   );
   private readonly signOutUseCase = new SignOutUseCase(this.authGateway);
-  private readonly updateProfileUseCase = new UpdateProfileUseCase(
-    inject(PROFILE_PORT),
-  );
+  private readonly profilePorts = inject(PROFILE_PORTS);
   private readonly uploadAvatarUseCase = new UploadAvatarUseCase(
     inject(AVATAR_UPLOADER),
   );
@@ -224,56 +224,63 @@ export class OnboardingFlowStore {
   }
 
   /**
-   * The optional birthday step's save — validates the segments through the
-   * identity `BirthDate` VO (the same door the step's own blur validation
-   * uses), then persists via `UpdateProfileUseCase` (which re-validates
-   * through the accounts domain before the port sees anything). Dispatches
-   * `submit_birthday` only once the save settles successfully; every
-   * failure stays on the step as a quiet, reason-coded inline error.
+   * The optional birthday step's save — judges the segments through
+   * `AgeSystem.fromParts` on the UTC age day (the same rule the step's own
+   * blur validation uses), then writes them through
+   * `PROFILE_PORTS.writeOwnProfile`, whose `ProfileEditSystem.decide`
+   * re-judges the edit against the stored profile inside the transaction
+   * (identity flip (2), F2-6). Dispatches `submit_birthday` only once the
+   * save settles successfully; every failure stays on the step as a quiet,
+   * reason-coded inline error (`errors.<errorCode>`, today's words).
    */
-  async submitBirthday(parts: BirthDateParts): Promise<void> {
-    const todayResult = this.clock.now('UTC');
-    if (todayResult.isFailure()) {
+  async submitBirthday(parts: BirthDate.Parts): Promise<void> {
+    // The day the age window is judged on, from this save's one CLOCK reading.
+    const ageDay = ageDayOf(this.clock);
+    if (ageDay === null) {
       // Unreachable ('UTC' is always valid) — kept as an honest backstop.
       this.dispatch({
         type: 'birthday_failed',
-        message: 'identity.birth_date.invalid',
+        message: IdentityErrorCode.BirthDateInvalid,
       });
       return;
     }
-    const birthResult = BirthDate.create(parts, todayResult.value);
-    if (birthResult.isFailure()) {
+    const birthDate = AgeSystem.fromParts(parts, ageDay);
+    if (!birthDate.ok) {
       this.dispatch({
         type: 'birthday_failed',
-        message: birthResult.error.code,
+        message: birthDate.error.errorCode,
       });
       return;
     }
 
-    const principal = this.principal();
-    if (principal.kind === 'anonymous') {
-      this.dispatch({ type: 'birthday_failed', message: 'identifier_missing' });
-      return;
-    }
-    const userIdResult = UserId.create(principal.uid.value);
-    if (userIdResult.isFailure()) {
+    const userId = this.currentUserId();
+    if (userId === null) {
       this.dispatch({ type: 'birthday_failed', message: 'identifier_missing' });
       return;
     }
 
     this._pending.set(true);
-    const result = await this.updateProfileUseCase.execute({
-      userId: userIdResult.value,
-      birthDate: birthResult.value.toISODate(),
-      today: todayResult.value,
-    });
+    const code = await saveOwnProfile(
+      this.profilePorts,
+      userId,
+      { firstName: null, lastName: null, birthDate: birthDate.value },
+      ageDay,
+    );
     this._pending.set(false);
 
-    if (result.isFailure()) {
-      this.dispatch({ type: 'birthday_failed', message: result.error.code });
+    if (code !== null) {
+      this.dispatch({ type: 'birthday_failed', message: code });
       return;
     }
     this.dispatch({ type: 'submit_birthday' });
+  }
+
+  /** The signed-in account's id — `null` before a session or for a uid no id parses from. */
+  private currentUserId(): UserId | null {
+    const principal = this.principal();
+    if (principal.kind === 'anonymous') return null;
+    const userId = UserId.parse(principal.uid.value);
+    return userId.ok ? userId.value : null;
   }
 
   skipBirthday(): void {
@@ -293,16 +300,11 @@ export class OnboardingFlowStore {
    * decides what a failure means.
    */
   async uploadAvatar(data: Blob): Promise<string | null> {
-    const principal = this.principal();
-    if (principal.kind === 'anonymous') return 'identifier_missing';
-    const userIdResult = UserId.create(principal.uid.value);
-    if (userIdResult.isFailure()) return 'identifier_missing';
+    const owner = this.currentUserId();
+    if (owner === null) return 'identifier_missing';
 
     this._pending.set(true);
-    const result = await this.uploadAvatarUseCase.execute(
-      userIdResult.value,
-      data,
-    );
+    const result = await this.uploadAvatarUseCase.execute(owner, data);
     this._pending.set(false);
     return result.isFailure() ? result.error.code : null;
   }

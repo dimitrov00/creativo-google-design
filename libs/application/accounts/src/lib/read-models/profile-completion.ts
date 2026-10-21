@@ -1,12 +1,12 @@
-import { User } from '@creativo/domain/accounts';
-import { BirthDate } from '@core/components';
+import type { User } from '@core/entities';
 import {
   ProfileCompletionKey as CompletionKey,
   ProfileCompletionSystem,
 } from '@core/systems';
 
 /**
- * Profile-completion model — a pure projection of the `User` aggregate
+ * Profile-completion model — a pure projection of the flat `User` of
+ * `@core/entities` (identity flip (2): the `users/{uid}` body as stored)
  * plus the storage-side avatar answer (ported from v2's
  * `components/account/profile-completion.ts`, `photo` item restored
  * 2026-07-27 now that `AvatarUploader.find` can answer it). `name` and
@@ -39,10 +39,7 @@ export function profileCompletion(
 ): ProfileCompletion {
   // Same items, same order — the system's; each key back in this file's
   // lowercase spelling.
-  const completion = ProfileCompletionSystem.completion(
-    profileOf(user),
-    hasPhoto,
-  );
+  const completion = ProfileCompletionSystem.completion(user, hasPhoto);
   return {
     items: completion.items.map((item) => ({
       key: LEGACY_PROFILE_COMPLETION_KEY[item.profileCompletionKey],
@@ -54,19 +51,16 @@ export function profileCompletion(
   };
 }
 
-// ── The bridge: the legacy aggregate → ecs-core's slice (Phase 4 deletes it) ─
+// ── The bridge: the system's keys → this file's (Phase 4 deletes it) ────────
 
-/** The system's SCREAMING key → this file's lowercase key (flatten-spec §8.9). */
+/**
+ * The system's SCREAMING key → this file's lowercase key (flatten-spec §8.9)
+ * — kept lowercase on purpose: the `account-completion-<key>` test ids, the
+ * `account.completion.items.<key>` i18n keys and the e2e selectors read it.
+ */
 const LEGACY_PROFILE_COMPLETION_KEY = {
   [CompletionKey.Name]: 'name',
   [CompletionKey.Phone]: 'phone',
   [CompletionKey.Birthday]: 'birthday',
   [CompletionKey.Photo]: 'photo',
 } as const satisfies { readonly [K in CompletionKey]: ProfileCompletionKey };
-
-function profileOf(user: User): { readonly birthDate: BirthDate | null } {
-  return {
-    birthDate:
-      user.birthDate === null ? null : BirthDate.of(user.birthDate.toISODate()),
-  };
-}

@@ -1,51 +1,35 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { TestBed } from '@angular/core/testing';
-import { RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import type { Firestore } from 'firebase/firestore';
-import { FIREBASE_FIRESTORE } from '@creativo/infrastructure/firebase-app';
-import { ZonedDateTime } from '@creativo/domain/kernel';
+import type {
+  RulesTestContext,
+  RulesTestEnvironment,
+} from '@firebase/rules-unit-testing';
+import { firstValueFrom } from 'rxjs';
+import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
+import { EndReasonFields, ImpersonationStatus, Role } from '@core/components';
 import {
-  ImpersonationSession,
   ImpersonationSessionId,
-} from '@creativo/domain/governance';
-import { UserId } from '@creativo/domain/accounts';
-import { createEmulatorTestEnv } from '../testing/emulator-test-env';
-import { FirestoreImpersonationAdapter } from './impersonation.adapter';
+  RepositoryErrorCode,
+  Result,
+  UserId,
+} from '@core/primitives';
+import type { ImpersonationSession } from '@core/entities';
+import { impersonationSessionFixture, utcMs } from '@core/testing';
+import {
+  createEmulatorTestEnv,
+  modularFirestore,
+} from '../testing/emulator-test-env';
+import { impersonationReadPorts } from './impersonation.adapter';
 
-function createAdapter(db: Firestore): FirestoreImpersonationAdapter {
-  TestBed.resetTestingModule();
-  TestBed.configureTestingModule({
-    providers: [
-      { provide: FIREBASE_FIRESTORE, useValue: db },
-      FirestoreImpersonationAdapter,
-    ],
-  });
-  return TestBed.inject(FirestoreImpersonationAdapter);
+const ADMIN = UserId.of('u-admin');
+
+/** A session's document body: the entity minus its id (Law 5). */
+function bodyOf(session: ImpersonationSession): object {
+  const { id, ...body } = session;
+  expect(typeof id).toBe('string');
+  return body;
 }
 
-function buildSession(
-  adminUserId: UserId,
-  targetUserId: UserId,
-): ImpersonationSession {
-  const now = ZonedDateTime.now('UTC');
-  if (now.isFailure()) throw new Error('bad now');
-  const result = ImpersonationSession.start({
-    id: ImpersonationSessionId.generate().value,
-    adminUserId: adminUserId.value,
-    targetUserId: targetUserId.value,
-    scope: 'write',
-    reason: 'support ticket #42',
-    startedAtIso: now.value.toISO(),
-    expiresAtIso: now.value.plusMinutes(30).toISO(),
-    adminRoles: ['admin'],
-  });
-  if (result.isFailure()) {
-    throw new Error(`fixture build failed: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
-}
-
-describe('FirestoreImpersonationAdapter (emulator)', () => {
+describe('impersonationReadPorts (emulator)', () => {
   let testEnv: RulesTestEnvironment;
 
   beforeAll(async () => {
@@ -60,74 +44,77 @@ describe('FirestoreImpersonationAdapter (emulator)', () => {
     await testEnv.clearFirestore();
   });
 
-  it('saves a session, writes no audit row from the browser, then finds it by id', async () => {
-    const adminUserId = UserId.generate();
-    const targetUserId = UserId.generate();
-    const session = buildSession(adminUserId, targetUserId);
-
-    const adminDb = testEnv
-      .authenticatedContext(adminUserId.value, { roles: ['admin'] })
-      .firestore() as unknown as Firestore;
-    const adapter = createAdapter(adminDb);
-
-    const saveResult = await adapter.save(session);
-    expect(saveResult.isSuccess()).toBe(true);
-
-    const findResult = await adapter.findById(session.id);
-    expect(findResult.isSuccess()).toBe(true);
-    if (findResult.isSuccess()) {
-      expect(findResult.value?.id.value).toBe(session.id.value);
-    }
-
-    // FIX 1: the rules refuse every client audit create, so the row moves
-    // server-side with the impersonation callable — none is written here.
+  /** Seeds the flat bodies as Phase 4's callables will write them (rules off). */
+  async function seed(...sessions: readonly ImpersonationSession[]) {
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      const auditDocs = await ctx.firestore().collection('auditLog').get();
-      expect(auditDocs.empty).toBe(true);
+      for (const session of sessions) {
+        await setDoc(
+          doc(modularFirestore(ctx), 'impersonationSessions', session.id),
+          bodyOf(session),
+        );
+      }
     });
-  });
+  }
 
-  it('finds the one active session for an admin', async () => {
-    const adminUserId = UserId.generate();
-    const targetUserId = UserId.generate();
-    const session = buildSession(adminUserId, targetUserId);
+  const readsFor = (context: RulesTestContext) =>
+    impersonationReadPorts(modularFirestore(context));
 
-    const adminDb = testEnv
-      .authenticatedContext(adminUserId.value, { roles: ['admin'] })
-      .firestore() as unknown as Firestore;
-    const adapter = createAdapter(adminDb);
-    await adapter.save(session);
+  it('finds the one ACTIVE session for an admin — the flat body as stored — and writes no audit row', async () => {
+    const active = impersonationSessionFixture();
+    const ended: ImpersonationSession = {
+      ...impersonationSessionFixture({
+        id: ImpersonationSessionId.of('imp-ended'),
+      }),
+      impersonationStatus: ImpersonationStatus.Ended,
+      endedAtUtcMs: utcMs('2026-09-28T06:01:00+00:00'),
+      ...EndReasonFields.adminEnded(ADMIN),
+    };
+    await seed(active, ended);
+    const admin = testEnv.authenticatedContext(ADMIN, { roles: [Role.Admin] });
 
-    const result = await adapter.findActiveForAdmin(adminUserId);
-    expect(result.isSuccess()).toBe(true);
-    if (result.isSuccess()) {
-      expect(result.value?.id.value).toBe(session.id.value);
-    }
-  });
+    const answer = await firstValueFrom(
+      readsFor(admin).observeActiveImpersonation(ADMIN),
+    );
 
-  it('denies a non-admin from reading or writing impersonation sessions', async () => {
-    const adminUserId = UserId.generate();
-    const targetUserId = UserId.generate();
-    const session = buildSession(adminUserId, targetUserId);
-
+    expect(answer).toEqual(Result.ok(active));
+    // FIX 1: no client creates audit rows — the browser binds no write here.
     await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      const { setDoc, doc } = await import('firebase/firestore');
-      await setDoc(
-        doc(
-          ctx.firestore() as unknown as Firestore,
-          'impersonationSessions',
-          session.id.value,
-        ),
-        { adminUserId: adminUserId.value },
+      const audit = await getDocs(
+        collection(modularFirestore(ctx), 'auditLog'),
       );
+      expect(audit.empty).toBe(true);
+    });
+  });
+
+  it('answers null for an admin with no ACTIVE session', async () => {
+    await seed(
+      impersonationSessionFixture({ adminUserId: UserId.of('u-other-admin') }),
+    );
+    const admin = testEnv.authenticatedContext(ADMIN, { roles: [Role.Admin] });
+
+    const answer = await firstValueFrom(
+      readsFor(admin).observeActiveImpersonation(ADMIN),
+    );
+
+    expect(answer).toEqual(Result.ok(null));
+  });
+
+  it('denies a non-admin the read', async () => {
+    await seed(impersonationSessionFixture());
+    const client = testEnv.authenticatedContext('some-client', {
+      roles: [Role.Client],
     });
 
-    const clientDb = testEnv
-      .authenticatedContext('some-client', { roles: ['client'] })
-      .firestore() as unknown as Firestore;
-    const adapter = createAdapter(clientDb);
+    const answer = await firstValueFrom(
+      readsFor(client).observeActiveImpersonation(ADMIN),
+    );
 
-    const result = await adapter.findById(session.id);
-    expect(result.isFailure()).toBe(true);
+    expect(answer).toEqual(
+      Result.err({
+        errorCode: RepositoryErrorCode.ReadFailed,
+        path: 'impersonationSessions',
+        reason: 'permission-denied',
+      }),
+    );
   });
 });

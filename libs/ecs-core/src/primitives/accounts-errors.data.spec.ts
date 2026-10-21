@@ -34,6 +34,9 @@ describe('AccountsError', () => {
     expect(AccountsError.updateProfileValidationFailed()).toEqual({
       errorCode: 'ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED',
     });
+    expect(AccountsError.updateProfileUnauthenticated()).toEqual({
+      errorCode: 'ACCOUNTS_UPDATE_PROFILE_UNAUTHENTICATED',
+    });
     expect(AccountsError.uploadAvatarNotAnImage()).toEqual({
       errorCode: 'ACCOUNTS_UPLOAD_AVATAR_NOT_AN_IMAGE',
     });

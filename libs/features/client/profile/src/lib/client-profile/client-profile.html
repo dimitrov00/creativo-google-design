@@ -22,7 +22,7 @@
       <ui-skeleton uiFrame uiFrameHeight="7rem" />
       <ui-skeleton uiFrame uiFrameHeight="9rem" />
     </ui-stack>
-    } @else if (account(); as user) {
+    } @else if (account()) {
     <!-- Portrait — NOT a row: picking a photo IS the commit (Apple's
            grammar for a profile picture), so it needs no sheet and no
            Save. The control under it is a QUIET plain button, not a filled
@@ -155,9 +155,7 @@
               uiSpacing="tight"
               uiAlignment="center"
             >
-              <span data-testid="profile-row-name-value"
-                >{{ user.fullName() }}</span
-              >
+              <span data-testid="profile-row-name-value">{{ fullName() }}</span>
               <ui-icon uiName="nav.disclosure" />
             </ui-stack>
           </ng-container>

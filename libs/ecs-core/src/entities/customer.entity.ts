@@ -15,9 +15,12 @@ import type { CustomerId, UserId, UtcEpochMs } from '@core/primitives';
  * contact stays on `users/{uid}` (OQ-5). The document body is this type
  * minus `id`.
  *
- * Vocabulary only in the flatten pass (§5.5): no shim reads or writes a
- * customer; the booking flip (1) creates them (`FIRST_BOOKING`), the
- * identity flip (2) at registration (`REGISTRATION`).
+ * Created by `CustomerRecordSystem.createsFor` in exactly two
+ * transactions — a first booking or edit seating the account
+ * (`FIRST_BOOKING`, booking flip (1)) and `completeRegistration`
+ * (`REGISTRATION`, identity flip (2)) — each only when its read found the
+ * record absent; the dev seed writes `SEED` records. Never synchronised with
+ * later profile edits (OQ-5).
  */
 export type Customer = {
   readonly id: CustomerId;

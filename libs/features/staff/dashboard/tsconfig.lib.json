@@ -55,9 +55,6 @@
       "path": "../../../application/engagement/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/governance/tsconfig.lib.json"
-    },
-    {
       "path": "../../../application/identity/tsconfig.lib.json"
     },
     {

@@ -8,14 +8,9 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  type User,
-  type UserId,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
+import { AVATAR_UPLOADER, ZonedDateTime } from '@creativo/application/accounts';
 import { type Result, fail } from '@creativo/application/booking';
+import { BirthDate } from '@core/components';
 import type { Appointment } from '@core/entities';
 import type {
   AppointmentPhotoPorts,
@@ -23,6 +18,7 @@ import type {
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
@@ -36,6 +32,7 @@ import {
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  PROFILE_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
@@ -76,7 +73,6 @@ import {
   GEORGI_PREVIOUS_MS,
   GUEST,
   InMemoryAvatars,
-  InMemoryProfilePort,
   MARTIN,
   NBSP_EURO,
   NOW_MS,
@@ -88,6 +84,7 @@ import {
   georgiOpenContext,
   georgiPhotos,
   georgiUser,
+  heldProfilePortsOf,
   historyPortsOf,
   martinContext,
   martinHistory,
@@ -96,8 +93,10 @@ import {
   must,
   pausedUntilOctober,
   photoPortsOf,
+  profilePortsOf,
   statsOf,
   statsPortsOf,
+  stubOf,
   subjectOf,
   voucherPortsOf,
   waitlistPortsOf,
@@ -175,23 +174,6 @@ function heldHistory(inner: AppointmentReadPorts): AppointmentReadPorts & {
   };
 }
 
-/** A profile port whose answer waits for the spec. */
-class HeldProfiles extends InMemoryProfilePort {
-  private releaseAll: (() => void) | null = null;
-  private readonly gate = new Promise<void>((resolve) => {
-    this.releaseAll = resolve;
-  });
-  override async getProfile(
-    userId: UserId,
-  ): Promise<Result<User | null, RepositoryError>> {
-    await this.gate;
-    return super.getProfile(userId);
-  }
-  release(): void {
-    this.releaseAll?.();
-  }
-}
-
 /** An activity reader serving small pages, so the ledger pages on the fixture's journal. */
 class PagedActivity implements LoyaltyActivityReader {
   readonly calls: (LoyaltyActivityQuery & { readonly userId: string })[] = [];
@@ -241,7 +223,7 @@ class HeldActivity implements LoyaltyActivityReader {
 
 interface RigOptions {
   readonly flags?: Readonly<Record<string, boolean>>;
-  readonly profiles?: InMemoryProfilePort | null;
+  readonly profiles?: PortDouble<ProfilePorts> | null;
   readonly customers?: CustomerPorts | null;
   readonly stats?: PortDouble<ClientStatsReadPorts> | null;
   readonly history?: AppointmentReadPorts | null;
@@ -258,12 +240,7 @@ const BOOK: readonly Appointment[] = [...georgiHistory(), ...martinHistory()];
 
 function defaults() {
   return {
-    profiles: new InMemoryProfilePort(
-      new Map([
-        [GEORGI, georgiUser()],
-        [MARTIN, martinUser()],
-      ]),
-    ),
+    profiles: profilePortsOf(),
     customers: customerPortsOf(),
     stats: statsPortsOf(
       [statsOf(GEORGI, georgiHistory()), statsOf(MARTIN, martinHistory())],
@@ -305,7 +282,7 @@ function rig(options: RigOptions = {}) {
           now: (zone: string) => ZonedDateTime.fromMillis(NOW_MS, zone),
         },
       },
-      ...bind(PROFILE_PORT, ports.profiles),
+      ...bind(PROFILE_PORTS, ports.profiles),
       ...bind(CUSTOMER_PORTS, ports.customers),
       ...bind(CLIENT_STATS_READ_PORTS, ports.stats),
       ...bind(APPOINTMENT_READ_PORTS, ports.history),
@@ -354,7 +331,7 @@ const textOf = (parts: readonly { readonly text: string }[]) =>
 describe('ClientCardStore — a guest', () => {
   it('reads nothing, and draws the hero, the phone and the exit', async () => {
     const history = historyPortsOf(BOOK);
-    const profiles = new InMemoryProfilePort(new Map());
+    const profiles = profilePortsOf([]);
     const loyalty = InMemoryLoyaltyReader.seeded();
     const photos = photoPortsOf(georgiPhotos());
     const { store } = rig({ history, profiles, loyalty, photos });
@@ -618,9 +595,7 @@ describe('ClientCardStore — Мартин, in the chair', () => {
 
 describe('ClientCardStore — the D-9 gate', () => {
   it('paints nothing under the hero until users/{uid} answers, and reads nothing else before it', async () => {
-    const profiles = new HeldProfiles(
-      new Map([[GEORGI, georgiUser(pausedUntilOctober())]]),
-    );
+    const profiles = heldProfilePortsOf([georgiUser(pausedUntilOctober())]);
     const history = historyPortsOf(BOOK);
     const { store } = rig({ profiles, history });
     open(store, subjectOf(GEORGI), georgiOpenContext());
@@ -640,7 +615,7 @@ describe('ClientCardStore — the D-9 gate', () => {
     expect(overview.birthday).toBeUndefined();
     expect(history.calls).toEqual([]);
 
-    profiles.release();
+    profiles.answer();
     await settle();
     const hero = store.hero();
     expect(hero.paused).toBe(true);
@@ -653,9 +628,7 @@ describe('ClientCardStore — the D-9 gate', () => {
   });
 
   it('fails the whole card when the profile fails, reads nothing else, and recovers on retry', async () => {
-    const profiles = new InMemoryProfilePort(
-      new Map([[GEORGI, georgiUser()]]),
-    ).failWith();
+    const profiles = profilePortsOf([georgiUser()]).failWith();
     const history = historyPortsOf(BOOK);
     const loyalty = InMemoryLoyaltyReader.seeded();
     const { store } = rig({ profiles, history, loyalty });
@@ -684,9 +657,7 @@ describe('ClientCardStore — the D-9 gate', () => {
   });
 
   it('reads the whole card again whichever notice is retried behind a failed gate', async () => {
-    const profiles = new InMemoryProfilePort(
-      new Map([[GEORGI, georgiUser()]]),
-    ).failWith();
+    const profiles = profilePortsOf([georgiUser()]).failWith();
     const history = historyPortsOf(BOOK);
     const { store } = rig({ profiles, history });
     open(store, subjectOf(GEORGI), georgiContext());
@@ -809,7 +780,7 @@ describe('ClientCardStore — flags, ports and accounts', () => {
   });
 
   it('draws no loyalty module for a client without an account', async () => {
-    const profiles = new InMemoryProfilePort(new Map([[MARTIN, martinUser()]]));
+    const profiles = profilePortsOf([martinUser()]);
     const { store } = rig({ profiles, loyalty: new InMemoryLoyaltyReader() });
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
@@ -820,6 +791,28 @@ describe('ClientCardStore — flags, ports and accounts', () => {
     // His birthday is still a card of its own; the plate has no tier to say.
     expect(overview.birthday?.kind).toBe('today');
     expect(store.hero().tier).toBeNull();
+  });
+
+  it('reads a provisioned stub as no profile: the seat names him, and no pause or birthday is said', async () => {
+    // Мартин signed in once and never registered, and the stub was paused:
+    // `PROFILE_PORTS` answers it as stored, the card reads no profile —
+    // the registration state decides, whatever else the stub holds.
+    const stub = {
+      ...stubOf(MARTIN, pausedUntilOctober()),
+      firstName: 'Мартин',
+      lastName: 'Илиев',
+      birthDate: BirthDate.of('1992-09-28'),
+    };
+    const profiles = profilePortsOf([stub]);
+    const { store } = rig({ profiles, loyalty: new InMemoryLoyaltyReader() });
+    open(store, subjectOf(MARTIN), martinContext());
+    await settle();
+    expect(profiles.callsTo('loadProfile')).toEqual([[MARTIN]]);
+    expect(store.displayName()).toBe('Мартин И.');
+    expect(store.hero()).toMatchObject({ name: 'Мартин И.', paused: false });
+    const overview = store.overview();
+    expect(overview.failed).toEqual([]);
+    expect(overview.birthday).toBeUndefined();
   });
 
   it('treats an unbound port as an absent module, never a failure', async () => {
@@ -1492,9 +1485,7 @@ describe('ClientCardStore — revision 3: Мартин, in the chair', () => {
 
 describe('ClientCardStore — revision 3: a paused client', () => {
   it('rings the face with the warning, freezes the pass, and offers no verb', async () => {
-    const profiles = new InMemoryProfilePort(
-      new Map([[GEORGI, georgiUser(pausedUntilOctober())]]),
-    );
+    const profiles = profilePortsOf([georgiUser(pausedUntilOctober())]);
     const { store } = rig({ profiles });
     open(store, subjectOf(GEORGI), georgiOpenContext());
     await settle();

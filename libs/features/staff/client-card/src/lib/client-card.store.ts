@@ -13,18 +13,14 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoService } from '@jsverse/transloco';
 import type { Subscription } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
-import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  type User,
-  UserId,
-} from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import type {
   Appointment,
   AppointmentPhoto,
   ClientMoneyRecord,
   ClientStatsRecord,
   GiftVoucher,
+  User,
   WaitlistRequest,
 } from '@core/entities';
 import {
@@ -34,10 +30,10 @@ import {
   Result,
   type TimeZone,
   type UtcEpochMs,
-  UserId as UserRef,
+  UserId,
   defect,
 } from '@core/primitives';
-import type { VisitFact } from '@core/components';
+import { Registration, type VisitFact } from '@core/components';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   APPOINTMENT_PHOTO_PORTS,
@@ -45,6 +41,7 @@ import {
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  PROFILE_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
@@ -294,6 +291,16 @@ function dataOf<T>(slice: Slice<T> | null): T | null {
 }
 
 /**
+ * `users/{uid}` as the card reads it: `PROFILE_PORTS.loadProfile` answers
+ * the STORED body, and a `PROVISIONED` stub (an account that signed in
+ * but never registered) is no profile — the card names no stub and dials
+ * no stub's number, as before the identity flip (flip-2 plan §3.5).
+ */
+function registeredOnly(user: User | null): User | null {
+  return user !== null && Registration.isRegistered(user) ? user : null;
+}
+
+/**
  * THE CLIENT CARD'S DATA (client-card-redesign §5.2.1) — everything the
  * visit sheet's client stack shows about one person: their profile, their
  * visits and photos, their loyalty. Provided by the visit editor and
@@ -315,7 +322,7 @@ function dataOf<T>(slice: Slice<T> | null): T | null {
  */
 @Injectable()
 export class ClientCardStore {
-  private readonly profiles = inject(PROFILE_PORT, { optional: true });
+  private readonly profiles = inject(PROFILE_PORTS, { optional: true });
   private readonly avatars = inject(AVATAR_UPLOADER, { optional: true });
   /**
    * The client RECORD of the account (D29) — read once per person; stats,
@@ -1611,7 +1618,7 @@ export class ClientCardStore {
       this._customerId.set(null);
       return null;
     }
-    const userId = UserRef.parse(uid);
+    const userId = UserId.parse(uid);
     if (!userId.ok) return 'failed';
     const result = await this.timed(() =>
       customers.loadCustomerForUser(userId.value),
@@ -1693,17 +1700,17 @@ export class ClientCardStore {
    * of its own.
    */
   private async loadAll(generation: number, uid: string): Promise<void> {
-    const userId = UserId.create(uid);
+    const userId = UserId.parse(uid);
     // Asked for at once, beside the gate: every keyed read below waits on it.
     void this.recordOf(generation, uid);
     const profiles = this.profiles;
     if (profiles !== null) {
-      if (userId.isFailure()) {
+      if (!userId.ok) {
         this._profile.set(FAILED);
         return;
       }
-      const ok = await this.read(generation, this._profile, () =>
-        profiles.getProfile(userId.value),
+      const ok = await this.read(generation, this._profile, async () =>
+        Result.map(await profiles.loadProfile(userId.value), registeredOnly),
       );
       if (!ok) return;
     }
@@ -1727,7 +1734,7 @@ export class ClientCardStore {
         );
       }
     }
-    if (this.avatars !== null && userId.isSuccess()) {
+    if (this.avatars !== null && userId.ok) {
       void this.loadAvatar(generation, userId.value);
     }
     void this.withRecord(
@@ -1969,7 +1976,7 @@ export class ClientCardStore {
   private watchWaitlist(generation: number, uid: string): void {
     const reader = this.waitlistReader;
     if (reader === null) return;
-    const userId = UserRef.parse(uid);
+    const userId = UserId.parse(uid);
     if (!userId.ok) {
       this._waitlist.set(FAILED);
       return;

@@ -115,6 +115,44 @@ describe('IdentityError', () => {
     });
   });
 
+  it('builds the nine pipeline refusals of the identity flip — scalar context only (F2-4)', () => {
+    expect(
+      IdentityError.otpChannelMismatch(IdentifierChannel.Phone, 'EMAIL_OTP'),
+    ).toEqual({
+      errorCode: 'IDENTITY_OTP_CHANNEL_MISMATCH',
+      requested: 'PHONE',
+      authStrategyKind: 'EMAIL_OTP',
+    });
+    expect(IdentityError.otpRateLimited()).toEqual({
+      errorCode: 'IDENTITY_OTP_RATE_LIMITED',
+    });
+    expect(IdentityError.otpNotFound()).toEqual({
+      errorCode: 'IDENTITY_OTP_NOT_FOUND',
+    });
+    expect(IdentityError.otpDestinationCorrupted()).toEqual({
+      errorCode: 'IDENTITY_OTP_DESTINATION_CORRUPTED',
+    });
+    expect(IdentityError.otpAccountConflict()).toEqual({
+      errorCode: 'IDENTITY_OTP_ACCOUNT_CONFLICT',
+    });
+    expect(IdentityError.registrationUnauthenticated()).toEqual({
+      errorCode: 'IDENTITY_REGISTRATION_UNAUTHENTICATED',
+    });
+    expect(IdentityError.registrationForbidden()).toEqual({
+      errorCode: 'IDENTITY_REGISTRATION_FORBIDDEN',
+    });
+    expect(IdentityError.registrationUserNotFound()).toEqual({
+      errorCode: 'IDENTITY_REGISTRATION_USER_NOT_FOUND',
+    });
+    expect(IdentityError.registrationFieldMissing('firstName')).toEqual({
+      errorCode: 'IDENTITY_REGISTRATION_FIELD_MISSING',
+      field: 'firstName',
+    });
+    // None of them is an OTP verdict — `OtpSystem.verify` never answers one.
+    expect(IdentityError.isOtp(IdentityError.otpNotFound())).toBe(false);
+    expect(IdentityError.isOtp(IdentityError.otpAccountConflict())).toBe(false);
+  });
+
   it('is() narrows by errorCode; isOtp() picks out the four verdicts', () => {
     const error: IdentityError = IdentityError.birthDateTooYoung(12, 16);
     expect(IdentityError.is(error, IdentityErrorCode.BirthDateTooYoung)).toBe(

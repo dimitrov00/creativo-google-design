@@ -88,6 +88,20 @@ export const ParsedIdentifier = {
   },
 
   /**
+   * The identifier channel a stored `otpDestinationType` is challenged and
+   * delivered over — an SMS goes to a phone, an e-mail to an address. The
+   * one home of this table; {@link ParsedIdentifier.destinationTypeOf} is
+   * its inverse.
+   */
+  channelOfDestination(
+    otpDestinationType: OtpDestinationType,
+  ): IdentifierChannel {
+    return otpDestinationType === OtpDestinationType.Sms
+      ? IdentifierChannel.Phone
+      : IdentifierChannel.Email;
+  },
+
+  /**
    * The channel an OTP's destination names — its value and the stored
    * `otpDestinationType` it is delivered over (the values were validated on
    * the way in).
@@ -96,9 +110,11 @@ export const ParsedIdentifier = {
     destination: Identifier,
     otpDestinationType: OtpDestinationType,
   ): ParsedIdentifier {
-    return otpDestinationType === OtpDestinationType.Sms
-      ? { identifierChannel: IdentifierChannel.Phone, identifier: destination }
-      : { identifierChannel: IdentifierChannel.Email, identifier: destination };
+    return {
+      identifierChannel:
+        ParsedIdentifier.channelOfDestination(otpDestinationType),
+      identifier: destination,
+    };
   },
 
   /** The stored channel tag a parsed identifier is delivered over. */

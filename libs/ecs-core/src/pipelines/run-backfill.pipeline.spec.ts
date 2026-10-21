@@ -25,6 +25,7 @@ import {
   CustomerId as CustomerIds,
   RepositoryError,
   Result,
+  RunBackfillRefusalCode,
   SeatId,
   UserId,
   UtcEpochMs,
@@ -56,7 +57,6 @@ import { clientStatsPaths } from './project-client-stats.pipeline';
 import {
   BACKFILL_JOB_DOC,
   runBackfill,
-  RunBackfillRefusalCode,
   type RunBackfillSizes,
 } from './run-backfill.pipeline';
 

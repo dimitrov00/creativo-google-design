@@ -1,4 +1,6 @@
 import {
+  type CancelWaitlistRefusal,
+  CancelWaitlistRefusalCode,
   type RepositoryError,
   Result,
   type UserId,
@@ -24,21 +26,6 @@ import type { ClockPorts, CommitPorts } from '@core/ports';
  * (`waitlist.wire.ts`, F1-3): this pipeline only ever sees a verified owner
  * and a request id.
  */
-
-/** Why a withdrawal was refused — the ONLY source of these strings, the field `errorCode`. */
-export const CancelWaitlistRefusalCode = {
-  /** No such request, or not the caller's. */
-  NotFound: 'BOOKING_WAITLIST_NOT_FOUND',
-  /** The request already concluded (`BOOKED`, `EXPIRED`). */
-  NotCancellable: 'BOOKING_WAITLIST_NOT_CANCELLABLE',
-} as const;
-export type CancelWaitlistRefusalCode =
-  (typeof CancelWaitlistRefusalCode)[keyof typeof CancelWaitlistRefusalCode];
-
-/** A refused withdrawal — a flat struct the edge translates by `errorCode`. */
-export type CancelWaitlistRefusal = {
-  readonly errorCode: CancelWaitlistRefusalCode;
-};
 
 export type CancelWaitlistCommand = {
   /** The verified caller — only the owner may withdraw. */

@@ -8,12 +8,17 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import {
   APPOINTMENT_READ_PORTS,
   INBOX_PORTS,
+  PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { memoryAppointmentReadPorts, memoryInboxPorts } from '@core/testing';
+import {
+  memoryAppointmentReadPorts,
+  memoryInboxPorts,
+  memoryProfilePorts,
+} from '@core/testing';
 import {
   ANONYMOUS_PRINCIPAL,
   AUTH_GATEWAY,
@@ -121,11 +126,8 @@ async function configure(
         useValue: { find: () => Promise.resolve(ok(null)) },
       },
       {
-        provide: PROFILE_PORT,
-        useValue: {
-          getProfile: () => Promise.resolve(ok(null)),
-          observeProfile: () => of(ok(null)),
-        },
+        provide: PROFILE_PORTS,
+        useValue: memoryProfilePorts(new Map()),
       },
       // The menu's bookings row counts upcoming visits, and its
       // notifications row counts unread ones.

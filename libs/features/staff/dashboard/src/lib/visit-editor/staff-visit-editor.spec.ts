@@ -13,17 +13,13 @@ import {
 } from '@jsverse/transloco';
 import { Observable, firstValueFrom, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  AVATAR_UPLOADER,
-  AccountStatus,
-  PROFILE_PORT,
-  User,
-  UserId,
-} from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import { type Result, ZonedDateTime, ok } from '@creativo/application/booking';
 import {
+  BirthDate,
   BookingLifecycle,
   CustomerOrigin,
+  E164,
   PhotoOrigin,
   Seat,
   SeatOccupant,
@@ -31,7 +27,12 @@ import {
   SubjectRelationship,
   type VisitLeg,
 } from '@core/components';
-import type { Appointment, AppointmentPhoto, Customer } from '@core/entities';
+import type {
+  Appointment,
+  AppointmentPhoto,
+  Customer,
+  User,
+} from '@core/entities';
 import {
   AppointmentId,
   AppointmentPhotoId,
@@ -55,6 +56,8 @@ import {
   memoryAppointmentReadPorts,
   memoryCouponVoucherPorts,
   memoryCustomerPorts,
+  memoryProfilePorts,
+  registeredUserFixture,
   seatFixture,
   termsFixture,
   unwrapOk,
@@ -65,6 +68,7 @@ import {
   APPOINTMENT_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
   LOYALTY_ACTIVITY_READER,
@@ -6737,24 +6741,17 @@ const GEORGI_BIRTHDAY_GRANT = {
 
 /** Георги's profile with his birthday TODAY (the fixtures' 28 September), 34 this year. */
 function georgiBornToday(): User {
-  return must(
-    User.reconstitute(
-      {
-        id: GEORGI,
-        phone: '+359881234567',
-        firstName: 'Георги',
-        lastName: 'Петров',
-        roles: ['client'],
-        status: AccountStatus.active(),
-        birthDate: '1992-09-28',
-      },
-      must(ZonedDateTime.fromMillis(CARD_NOW_MS, CARD_ZONE)),
-    ),
-  );
+  return registeredUserFixture({
+    id: CoreUserId.of(GEORGI),
+    phone: E164.of('+359881234567'),
+    firstName: 'Георги',
+    lastName: 'Петров',
+    birthDate: BirthDate.of('1992-09-28'),
+  });
 }
 
-/** The profiles the card's port answers with — empty, as the live seat without a profile read. */
-const profiles = new Map<string, User>();
+/** The accounts the card's port answers with — empty, as the live seat without a profile read. */
+const profiles = new Map<CoreUserId, User>();
 
 /** Георги's portrait, as the card's avatar read answers it. */
 const GEORGI_FACE = 'https://example.test/avatars/georgi.jpg';
@@ -6835,23 +6832,17 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
         {
           // The profile the birthday card reads a date of birth from: a
           // case puts one in `profiles`; everyone else has none.
-          provide: PROFILE_PORT,
-          useValue: {
-            getProfile: async (userId: UserId) =>
-              ok(profiles.get(userId.value) ?? null),
-            observeProfile: (userId: UserId) =>
-              of(ok(profiles.get(userId.value) ?? null)),
-            saveProfile: async () => ok(undefined),
-          },
+          provide: PROFILE_PORTS,
+          useValue: memoryProfilePorts(profiles),
         },
         {
           // Георги's portrait, found by the card — his seat carries no face,
           // as in the live seed, so the head's is the only one there is.
           provide: AVATAR_UPLOADER,
           useValue: {
-            find: async (userId: UserId) =>
+            find: async (userId: string) =>
               ok(
-                userId.value === GEORGI
+                userId === GEORGI
                   ? { url: GEORGI_FACE, path: `avatars/${GEORGI}` }
                   : null,
               ),
@@ -7790,7 +7781,7 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
   });
 
   it('carries the birthday gift ONCE: the birthday card prints it with its figure and validity, the glance ticket keeps the other reward, the wallet lists each grant once (R2-D, §2.1.2 c)', async () => {
-    profiles.set(GEORGI, georgiBornToday());
+    profiles.set(CoreUserId.of(GEORGI), georgiBornToday());
     render();
     fixture.componentRef.setInput('uiGrants', [
       { ...GEORGI_GRANT, expiresOn: '2026-12-31' },

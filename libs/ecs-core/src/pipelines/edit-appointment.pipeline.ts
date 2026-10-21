@@ -6,6 +6,7 @@ import {
   type BookingPolicy,
   Combinability,
   CouponValue,
+  CustomerOrigin,
   DiscountMethod,
   DiscountSource,
   type PlacementPolicy,
@@ -74,6 +75,7 @@ import {
   BillPending,
   BookingDecisionSystem,
   CouponGrantSystem,
+  CustomerRecordSystem,
   type DecideBookingInput,
   type DecisionStandingSeat,
   EditCommand,
@@ -120,7 +122,6 @@ import {
   zoneOf,
 } from './booking-read-set.pipeline';
 import {
-  customerCreates,
   customerIdsFor,
   customerIdsOf,
   runWithCustomerRetry,
@@ -1230,10 +1231,11 @@ function decideEdit(
       }),
       ...busyMergeWrites(loaded.placement, decided.value.busyWrites, zone),
       ...voucherWrites,
-      ...customerCreates(
+      ...CustomerRecordSystem.createsFor(
         added,
         loaded.placement.customers,
         context.contacts,
+        CustomerOrigin.FirstBooking,
         nowUtcMs,
       ),
     ],

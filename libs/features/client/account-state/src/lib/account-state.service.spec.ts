@@ -5,33 +5,33 @@ import {
   AUTH_GATEWAY,
   Principal,
   PrincipalId,
-  Result,
+  Result as LegacyResult,
   activePrincipal,
-  fail,
-  ok,
   onboardingPrincipal,
   roleFromPrimitive,
 } from '@creativo/application/identity';
+import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
+import { AccountStatus } from '@core/components';
+import { Profile, type User } from '@core/entities';
+import type { ProfilePorts } from '@core/ports';
+import { RepositoryError, Result, UserId } from '@core/primitives';
 import {
-  AccountStatus,
-  PROFILE_PORT,
-  User,
-  UserId,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
+  blockedUserFixture,
+  memoryProfilePorts,
+  provisionedUserFixture,
+  registeredUserFixture,
+} from '@core/testing';
 import { AccountStateService } from './account-state.service';
 
-/** The port fails with a `RepositoryError`; the service never inspects it, so
- * a plain `Error` stands in and this lib stays off `application/shared`. */
-type ProfileResult = Result<User | null, Error>;
-const LIVE_QUERY_FAILED: ProfileResult = fail(new Error('Live query failed'));
+type ProfileResult = Result<User | null, RepositoryError>;
+const LIVE_QUERY_FAILED: ProfileResult = Result.err(
+  RepositoryError.readFailed('users/user_1', 'Live query failed'),
+);
 
-function unwrap<T, E>(result: Result<T, E>): T {
+function unwrap<T, E>(result: LegacyResult<T, E>): T {
   if (result.isFailure()) throw new Error('unexpected failure in test fixture');
   return result.value;
 }
-
-const TODAY = unwrap(ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'));
 
 function active(uid: string): Principal {
   return unwrap(
@@ -41,23 +41,27 @@ function active(uid: string): Principal {
   );
 }
 
-function user(
-  uid = 'user_1',
-  status: AccountStatus = AccountStatus.active(),
-): User {
-  return unwrap(
-    User.create(
-      {
-        id: uid,
-        phone: '+359881234567',
-        firstName: 'Jane',
-        lastName: 'Doe',
-        roles: ['client'],
-        status,
-      },
-      TODAY,
-    ),
-  );
+/** Jane Doe, registered — the flat `users/{uid}` body as stored. */
+function user(uid = 'user_1'): User {
+  return registeredUserFixture({
+    id: UserId.of(uid),
+    firstName: 'Jane',
+    lastName: 'Doe',
+  });
+}
+
+/** The name a test reads off the account, `null` while there is none. */
+function fullName(account: User | null): string | null {
+  return account === null ? null : Profile.fullName(account);
+}
+
+/** Jane Doe, blocked by the shop — the lifecycle's variant keys at the root. */
+function blocked(uid = 'user_1'): User {
+  return blockedUserFixture({
+    id: UserId.of(uid),
+    firstName: 'Jane',
+    lastName: 'Doe',
+  });
 }
 
 /**
@@ -76,7 +80,7 @@ function harness(initial: Principal) {
     (userId: UserId) =>
       new Observable<ProfileResult>((subscriber) => {
         const listener = {
-          uid: userId.value,
+          uid: userId,
           snapshots: new Subject<ProfileResult>(),
           detached: false,
         };
@@ -96,12 +100,11 @@ function harness(initial: Principal) {
         useValue: { observePrincipal: () => principal.asObservable() },
       },
       {
-        provide: PROFILE_PORT,
+        provide: PROFILE_PORTS,
         useValue: {
-          getProfile: vi.fn(),
-          saveProfile: vi.fn(),
+          ...memoryProfilePorts(new Map()),
           observeProfile,
-        },
+        } satisfies ProfilePorts,
       },
     ],
   });
@@ -141,31 +144,45 @@ describe('AccountStateService', () => {
     expect(service.account()).toBeNull();
     expect(live().uid).toBe('user_1');
 
-    live().snapshots.next(ok(user()));
+    live().snapshots.next(Result.ok(user()));
 
     expect(service.accountLoading()).toBe(false);
-    expect(service.account()?.fullName()).toBe('Jane Doe');
+    expect(fullName(service.account())).toBe('Jane Doe');
   });
 
   it('reads "no registered profile yet" as a settled null account', () => {
     const { service, live } = harness(active('user_1'));
 
-    live().snapshots.next(ok(null));
+    live().snapshots.next(Result.ok(null));
 
     expect(service.accountLoading()).toBe(false);
     expect(service.account()).toBeNull();
   });
 
-  it('reflects a status change on the document live, without refresh()', () => {
-    const { service, live, observeProfile } = harness(active('user_1'));
-    live().snapshots.next(ok(user()));
-    expect(service.account()?.status.kind).toBe('active');
+  it('reads a provisioned stub as no profile, and the registered body once it lands', () => {
+    const { service, live } = harness(active('user_1'));
 
+    // `observeProfile` answers the stored body — the stub included; the
+    // service, not the port, says a stub is "no registered profile yet".
     live().snapshots.next(
-      ok(user('user_1', AccountStatus.blocked({ reason: 'manual' }))),
+      Result.ok(provisionedUserFixture({ id: UserId.of('user_1') })),
     );
 
-    expect(service.account()?.status.kind).toBe('blocked');
+    expect(service.accountLoading()).toBe(false);
+    expect(service.account()).toBeNull();
+
+    live().snapshots.next(Result.ok(user()));
+    expect(fullName(service.account())).toBe('Jane Doe');
+  });
+
+  it('reflects a status change on the document live, without refresh()', () => {
+    const { service, live, observeProfile } = harness(active('user_1'));
+    live().snapshots.next(Result.ok(user()));
+    expect(service.account()?.accountStatus).toBe(AccountStatus.Active);
+
+    live().snapshots.next(Result.ok(blocked()));
+
+    expect(service.account()?.accountStatus).toBe(AccountStatus.Blocked);
     expect(observeProfile).toHaveBeenCalledTimes(1);
   });
 
@@ -173,21 +190,21 @@ describe('AccountStateService', () => {
     const { service, live, observeProfile, signIn } = harness(
       onboardingPrincipal(unwrap(PrincipalId.create('user_1'))),
     );
-    live().snapshots.next(ok(null));
+    live().snapshots.next(Result.ok(null));
 
     signIn(active('user_1'));
     signIn(active('user_1'));
     // Registration completing is a snapshot on the SAME listener.
-    live().snapshots.next(ok(user()));
+    live().snapshots.next(Result.ok(user()));
 
     expect(observeProfile).toHaveBeenCalledTimes(1);
     expect(live().detached).toBe(false);
-    expect(service.account()?.fullName()).toBe('Jane Doe');
+    expect(fullName(service.account())).toBe('Jane Doe');
   });
 
   it('detaches and clears at once when the person changes, then listens to the new uid', () => {
     const { service, listeners, live, signIn } = harness(active('user_1'));
-    live().snapshots.next(ok(user()));
+    live().snapshots.next(Result.ok(user()));
 
     signIn(active('user_2'));
 
@@ -196,13 +213,13 @@ describe('AccountStateService', () => {
     expect(service.accountLoading()).toBe(true);
     expect(live().uid).toBe('user_2');
 
-    live().snapshots.next(ok(user('user_2')));
-    expect(service.account()?.id.value).toBe('user_2');
+    live().snapshots.next(Result.ok(user('user_2')));
+    expect(service.account()?.id).toBe('user_2');
   });
 
   it('detaches and clears on sign-out', () => {
     const { service, live, signIn } = harness(active('user_1'));
-    live().snapshots.next(ok(user()));
+    live().snapshots.next(Result.ok(user()));
 
     signIn(ANONYMOUS_PRINCIPAL);
 
@@ -213,11 +230,11 @@ describe('AccountStateService', () => {
 
   it('keeps the last account on screen when the listener fails mid-stream', () => {
     const { service, live } = harness(active('user_1'));
-    live().snapshots.next(ok(user()));
+    live().snapshots.next(Result.ok(user()));
 
     live().snapshots.next(LIVE_QUERY_FAILED);
 
-    expect(service.account()?.fullName()).toBe('Jane Doe');
+    expect(fullName(service.account())).toBe('Jane Doe');
     expect(service.accountLoading()).toBe(false);
   });
 
@@ -232,7 +249,7 @@ describe('AccountStateService', () => {
 
   it('refresh() is a no-op while the listener is healthy', () => {
     const { service, live, observeProfile } = harness(active('user_1'));
-    live().snapshots.next(ok(user()));
+    live().snapshots.next(Result.ok(user()));
 
     service.refresh();
     TestBed.tick();
@@ -245,7 +262,7 @@ describe('AccountStateService', () => {
     const { service, listeners, live, observeProfile } = harness(
       active('user_1'),
     );
-    live().snapshots.next(ok(user()));
+    live().snapshots.next(Result.ok(user()));
     live().snapshots.next(LIVE_QUERY_FAILED);
 
     service.refresh();
@@ -253,12 +270,10 @@ describe('AccountStateService', () => {
 
     expect(observeProfile).toHaveBeenCalledTimes(2);
     expect(listeners[0]?.detached).toBe(true);
-    expect(service.account()?.fullName()).toBe('Jane Doe');
+    expect(fullName(service.account())).toBe('Jane Doe');
     expect(service.accountLoading()).toBe(false);
 
-    live().snapshots.next(
-      ok(user('user_1', AccountStatus.blocked({ reason: 'manual' }))),
-    );
-    expect(service.account()?.status.kind).toBe('blocked');
+    live().snapshots.next(Result.ok(blocked()));
+    expect(service.account()?.accountStatus).toBe(AccountStatus.Blocked);
   });
 });

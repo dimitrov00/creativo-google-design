@@ -6,6 +6,7 @@ import {
   WriteOp,
 } from '@core/components';
 import {
+  CancelWaitlistRefusalCode,
   UserId,
   UtcEpochMs,
   WaitlistRequestId,
@@ -23,10 +24,7 @@ import {
   memoryTxPorts,
   minute,
 } from '@core/testing';
-import {
-  cancelWaitlist,
-  CancelWaitlistRefusalCode,
-} from './cancel-waitlist.pipeline';
+import { cancelWaitlist } from './cancel-waitlist.pipeline';
 
 /*
  * Withdrawing a waitlist request (`cancel-waitlist.ts`): one transaction,

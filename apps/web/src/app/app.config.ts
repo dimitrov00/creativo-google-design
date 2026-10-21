@@ -26,11 +26,14 @@ import {
   CUSTOMER_PORTS,
   FIREBASE_FIRESTORE,
   type FactoryPicker,
+  IMPERSONATION_READ_PORTS,
   INBOX_PORTS,
   LazyAdapterScope,
   LazyPortLoadError,
+  PROFILE_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
+  USER_SEARCH_PORTS,
   WAITLIST_READ_PORTS,
   provideFirebaseApp,
   provideFirebaseAuth,
@@ -73,15 +76,10 @@ import {
   StreakPublishFailedError,
 } from '@creativo/application/engagement';
 import {
-  PROFILE_PORT,
   CONTACT_CHANGE_PORT,
   AVATAR_UPLOADER,
   AvatarUploadError,
 } from '@creativo/application/accounts';
-import {
-  IMPERSONATION_PORT,
-  USER_SEARCH_PORT,
-} from '@creativo/application/governance';
 import {
   COURSE_REPOSITORY,
   POSITION_REPOSITORY,
@@ -468,8 +466,35 @@ export const appConfig: ApplicationConfig = {
       onLoadError: ecsDataUnavailable,
     }),
 
-    // The flip-2/3/4 adapters: classes, bound with the class form until
-    // their flips move them.
+    // Identity and accounts (flip 2): an account's own profile — the stored
+    // `users/{uid}` body, live and once, and the owner's edit of its five
+    // allowlisted keys in one transaction — the staff client search over
+    // index #8, and an admin's live impersonation session (index #9).
+    provideLazyPort(PROFILE_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.profilePorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        observeProfile: 'observable',
+        loadProfile: 'promise',
+        writeOwnProfile: 'promise',
+      },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(USER_SEARCH_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.userSearchPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { searchUsers: 'promise' },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(IMPERSONATION_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.impersonationReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { observeActiveImpersonation: 'observable' },
+      onLoadError: ecsDataUnavailable,
+    }),
+
+    // The flip-3/4 adapters (and the avatar uploader): classes, bound with
+    // the class form until their flips move them.
     // The staff client card (client-card-redesign §6.2): a person's loyalty
     // with the catalogue it is read against.
     provideLazyPort(LOYALTY_READER, firebaseData, {
@@ -527,33 +552,10 @@ export const appConfig: ApplicationConfig = {
       },
       onLoadError: dataUnavailable,
     }),
-    provideLazyPort(PROFILE_PORT, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreProfileAdapter,
-      methods: {
-        getProfile: 'promise',
-        observeProfile: 'observable',
-        saveProfile: 'promise',
-      },
-      onLoadError: dataUnavailable,
-    }),
     provideLazyPort(AVATAR_UPLOADER, firebaseData, {
       adapter: (m) => m.storage.FirebaseStorageAvatarUploader,
       methods: { upload: 'promise', find: 'promise', remove: 'promise' },
       onLoadError: avatarStorageUnavailable,
-    }),
-    provideLazyPort(IMPERSONATION_PORT, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreImpersonationAdapter,
-      methods: {
-        save: 'promise',
-        findById: 'promise',
-        findActiveForAdmin: 'promise',
-      },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(USER_SEARCH_PORT, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreUserSearchAdapter,
-      methods: { search: 'promise' },
-      onLoadError: dataUnavailable,
     }),
     provideLazyPort(POSITION_REPOSITORY, firebaseData, {
       adapter: (m) => m.firestore.FirestorePositionRepository,

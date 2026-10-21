@@ -1,4 +1,3 @@
-import { type User } from '@creativo/application/accounts';
 import {
   LocalDate,
   ServiceId,
@@ -7,20 +6,21 @@ import {
   UtcEpochMs,
   defect,
 } from '@core/primitives';
+import type { VisitLeg, WallTime } from '@core/components';
 import {
-  AccountLifecycle,
-  BirthDate,
-  BlockReason,
-  type WallTime,
-} from '@core/components';
-import { AgeSystem, ClientGlanceSystem, ZonedTimeSystem } from '@core/systems';
-import type {
-  Appointment,
-  AppointmentPhoto,
-  ClientStatsRecord,
-  WaitlistRequest,
+  AgeSystem,
+  ClientGlanceSystem,
+  PhoneSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
+import {
+  type Appointment,
+  type AppointmentPhoto,
+  type ClientStatsRecord,
+  Profile,
+  type User,
+  type WaitlistRequest,
 } from '@core/entities';
-import type { VisitLeg } from '@core/components';
 import {
   type BadgeSeries,
   type LoyaltyAccount,
@@ -88,8 +88,9 @@ const PHOTO_RAIL_LIMIT = 6;
 
 /**
  * Online booking paused AS OF now — a temporary pause that has run out is
- * no pause (`AccountStatus.isBlocked`). `until` is the Sofia day it ends,
- * `null` for a permanent pause.
+ * no pause (`AccountLifecycle.isBlockedAt`, read off the user's own
+ * lifecycle slice). `until` is the Sofia day it ends, `null` for a
+ * permanent pause.
  */
 export function pauseOf(
   user: User | null,
@@ -98,7 +99,7 @@ export function pauseOf(
   const now = UtcEpochMs.of(nowMs);
   // No instant to judge by: nothing can be shown paused at it.
   if (!now.ok) return null;
-  const pause = ClientGlanceSystem.pauseOf(statusOf(user), now.value);
+  const pause = ClientGlanceSystem.pauseOf(user, now.value);
   if (pause === null) return null;
   return {
     until: pause.untilUtcMs === null ? null : shopDayOf(pause.untilUtcMs),
@@ -107,10 +108,10 @@ export function pauseOf(
 
 /** Today is the person's birthday (a 29 February one is kept on the 28th in other years). */
 export function isBirthdayToday(user: User | null, today: string): boolean {
-  const birth = user?.birthDate?.toISODate();
-  if (birth === undefined) return false;
+  const birth = user?.birthDate ?? null;
+  if (birth === null) return false;
   const day = LocalDate.parse(today);
-  return day.ok && AgeSystem.isBirthdayOn(BirthDate.of(birth), day.value);
+  return day.ok && AgeSystem.isBirthdayOn(birth, day.value);
 }
 
 /** The name the card shows: `users/{uid}`'s once read, the seat's until then (and for good, for a guest). */
@@ -118,7 +119,7 @@ export function displayNameOf(
   subject: ClientCardSubject,
   user: User | null,
 ): string {
-  const name = user?.fullName() ?? '';
+  const name = user === null ? '' : Profile.fullName(user);
   return name.length > 0 ? name : subject.label;
 }
 
@@ -221,10 +222,11 @@ export function phoneOf(
   subject: ClientCardSubject,
   user: User | null,
 ): { readonly e164: string; readonly display: string } | null {
-  if (user !== null) {
+  // A registered account always holds a phone; a stub never reaches here.
+  if (user !== null && user.phone !== null) {
     return {
-      e164: user.phone.value,
-      display: user.phone.formatInternational(),
+      e164: user.phone,
+      display: PhoneSystem.formatInternational(user.phone),
     };
   }
   const raw = (subject.phoneHref ?? subject.phone ?? '')
@@ -575,35 +577,5 @@ export function isInChairToday(
     context.appointmentId !== null && !context.settled,
     legs,
     ZonedTimeSystem.shopNow(now.value, SHOP_ZONE),
-  );
-}
-
-// ── The bridge: legacy class → ecs-core struct (Phase 4 deletes it) ──────
-
-/** The legacy block reasons ↔ `BlockReason` — the ONE table. */
-const BLOCK_REASON_OF = {
-  excessive_failed_attempts: BlockReason.ExcessiveFailedAttempts,
-  terms_violation: BlockReason.TermsViolation,
-  fraud_suspect: BlockReason.FraudSuspect,
-  manual: BlockReason.Manual,
-} as const satisfies Record<
-  Extract<User['status'], { kind: 'blocked' }>['reason'],
-  BlockReason
->;
-
-/**
- * The account's status as `ClientGlanceSystem` reads it: the pause's end as
- * an instant. An end that is no instant cannot be shown, so the pause reads
- * as one for good — the legacy reading of an end that never comes.
- */
-function statusOf(user: User | null): AccountLifecycle | null {
-  if (user === null) return null;
-  const { status } = user;
-  if (status.kind !== 'blocked') return AccountLifecycle.active();
-  const until =
-    status.until === undefined ? null : UtcEpochMs.of(status.until.toMillis());
-  return AccountLifecycle.block(
-    BLOCK_REASON_OF[status.reason],
-    until === null || !until.ok ? null : until.value,
   );
 }

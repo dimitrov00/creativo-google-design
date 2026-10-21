@@ -478,8 +478,24 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
   it('ignores fields other writers own — roles and status are audited by their callables', () => {
     expect(
       AuditSystem.changedProfileFields(
-        { roles: ['client'], status: { kind: 'active' }, searchName: 'a' },
-        { roles: ['barber'], status: { kind: 'blocked' }, searchName: 'b' },
+        // A provisioned stub's server-owned keys, flat at the root…
+        {
+          registrationState: 'PROVISIONED',
+          roles: [],
+          accountStatus: 'ACTIVE',
+          searchName: null,
+          searchPrefixes: [],
+        },
+        // …set over by a registered, blocked body: no audited field among them.
+        {
+          registrationState: 'REGISTERED',
+          roles: ['barber'],
+          accountStatus: 'BLOCKED',
+          blockReason: 'MANUAL',
+          blockedUntilUtcMs: 1_798_761_600_000,
+          searchName: 'b',
+          searchPrefixes: ['b'],
+        },
       ),
     ).toEqual([]);
   });

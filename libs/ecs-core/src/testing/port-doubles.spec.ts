@@ -18,6 +18,11 @@ import {
   CustomerOrigin,
   Email,
   E164,
+  AuthClaims,
+  EndReasonFields,
+  ImpersonationLifecycle,
+  ParsedIdentifier,
+  WriteOp,
 } from '@core/components';
 import {
   AppointmentId,
@@ -35,8 +40,10 @@ import {
   LocationId,
   NotificationId,
   PriceCents,
+  OtpId,
   type Result,
   ScheduleExceptionId,
+  TenantId,
   ServiceCategoryId,
   ServiceId,
   UserId,
@@ -56,8 +63,11 @@ import type {
   InboxNotification,
   ScheduleException,
   ServiceCategory,
+  User,
   WaitlistRequest,
 } from '@core/entities';
+import { Collections } from '@core/entities';
+import { ProfileEditSystem } from '@core/systems';
 import { appointmentFixture } from './appointment.fixtures';
 import {
   barberBusyDayFixture,
@@ -77,18 +87,39 @@ import {
   utcMs,
 } from './test-support';
 import {
+  fixedOtpCryptoPorts,
+  fixedTenantPorts,
   memoryAppointmentNotePorts,
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  memoryAuthAdminPorts,
+  memoryAuthUserLookupPorts,
   memoryCatalogReadPorts,
   memoryClientStatsReadPorts,
   memoryCouponVoucherPorts,
   memoryCustomerPorts,
+  memoryIdentityWorld,
+  memoryImpersonationReadPorts,
   memoryInboxPorts,
+  memoryOtpStorePorts,
+  memoryProfilePorts,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
+  memoryUserLookupPorts,
+  memoryUserSearchPorts,
   memoryWaitlistReadPorts,
+  recordingOtpDeliveryPorts,
 } from './port-doubles';
+import {
+  FIXTURE_OTP_CODE,
+  FIXTURE_OTP_SALT,
+  FIXTURE_TENANT_ID,
+  impersonationSessionFixture,
+  otpFixture,
+  provisionedUserFixture,
+  registeredUserFixture,
+} from './identity.fixtures';
+import { applyWrites } from './test-support';
 
 /** The one value a stream double emits. */
 async function first<T, E>(stream: Observable<Result<T, E>>): Promise<T> {
@@ -719,5 +750,256 @@ describe('memoryCustomerPorts — the signed-in account’s client record', () =
     const ports = memoryCustomerPorts([record]);
     expect(unwrapOk(await ports.loadCustomerForUser(ANA))).toBe(record);
     expect(unwrapOk(await ports.loadCustomerForUser(BOB))).toBeNull();
+  });
+});
+
+/** An owner edit that keeps every field — override the ones a case changes. */
+const KEEP = { firstName: null, lastName: null, birthDate: null } as const;
+
+describe('memoryProfilePorts — an account’s own profile', () => {
+  it('observes and loads the entry AS STORED — a provisioned stub included, null only when absent', async () => {
+    const stub = provisionedUserFixture();
+    const ports = memoryProfilePorts(new Map([[stub.id, stub]]));
+    expect(await first(ports.observeProfile(stub.id))).toBe(stub);
+    expect(unwrapOk(await ports.loadProfile(stub.id))).toBe(stub);
+    expect(unwrapOk(await ports.loadProfile(BOB))).toBeNull();
+    expect(await first(ports.observeProfile(BOB))).toBeNull();
+  });
+
+  it('writes the five keys the decide answers, IN PLACE; a null answer and a refusal write nothing', async () => {
+    const maria = registeredUserFixture();
+    const users = new Map<UserId, User>([[maria.id, maria]]);
+    const ports = memoryProfilePorts(users);
+    const day = FIXTURE_TODAY;
+
+    expect(
+      await ports.writeOwnProfile(maria.id, (stored) =>
+        ProfileEditSystem.decide(stored, { ...KEEP, firstName: 'Mila' }, day),
+      ),
+    ).toEqual({ ok: true, value: undefined });
+    expect(users.get(maria.id)).toMatchObject({
+      firstName: 'Mila',
+      lastName: 'Petrova',
+      searchName: 'mila petrova',
+      registrationState: 'REGISTERED',
+    });
+
+    const written = users.get(maria.id);
+    expect(
+      await ports.writeOwnProfile(maria.id, (stored) =>
+        ProfileEditSystem.decide(stored, { ...KEEP, firstName: 'Mila' }, day),
+      ),
+    ).toEqual({ ok: true, value: undefined });
+    expect(users.get(maria.id)).toBe(written);
+
+    expect(
+      await ports.writeOwnProfile(BOB, (stored) =>
+        ProfileEditSystem.decide(stored, { ...KEEP, firstName: 'Bob' }, day),
+      ),
+    ).toEqual({
+      ok: false,
+      error: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_NOT_FOUND' },
+    });
+    expect(users.has(BOB)).toBe(false);
+  });
+});
+
+describe('memoryUserSearchPorts — the staff client search', () => {
+  it('answers the users whose prefixes contain the query, by searchName, cut at the limit', async () => {
+    const zara = registeredUserFixture({
+      id: UserId.of('u-zara'),
+      searchName: 'zara petrova',
+      searchPrefixes: ['z', 'p', 'pe'],
+    });
+    const anna = registeredUserFixture({
+      id: UserId.of('u-anna'),
+      searchName: 'anna petrova',
+      searchPrefixes: ['a', 'p', 'pe'],
+    });
+    const stub = provisionedUserFixture({ id: UserId.of('u-stub') });
+    const ports = memoryUserSearchPorts([zara, stub, anna]);
+    expect(unwrapOk(await ports.searchUsers('pe', 20))).toEqual([anna, zara]);
+    expect(unwrapOk(await ports.searchUsers('pe', 1))).toEqual([anna]);
+    expect(unwrapOk(await ports.searchUsers('x', 20))).toEqual([]);
+  });
+});
+
+describe('memoryImpersonationReadPorts — the admin’s live session', () => {
+  it('answers the admin’s ACTIVE session, null when it ended or is another admin’s', async () => {
+    const active = impersonationSessionFixture();
+    const ended = impersonationSessionFixture({
+      id: impersonationSessionFixture().id,
+      adminUserId: UserId.of('u-other-admin'),
+      ...ImpersonationLifecycle.end(
+        ImpersonationLifecycle.active(),
+        active.expiresAtUtcMs,
+        EndReasonFields.expired(),
+      ),
+    });
+    const ports = memoryImpersonationReadPorts([ended, active]);
+    expect(
+      await first(ports.observeActiveImpersonation(active.adminUserId)),
+    ).toBe(active);
+    expect(
+      await first(ports.observeActiveImpersonation(UserId.of('u-other-admin'))),
+    ).toBeNull();
+  });
+});
+
+describe('memoryIdentityWorld — the one state the identity doubles share', () => {
+  const PHONE = ParsedIdentifier.phone(E164.of('+359888123456'));
+  const EMAIL = ParsedIdentifier.email(Email.of('maria@example.com'));
+
+  it('loads open challenges by destination, unconsumed and recent, oldest first; saves a Set', async () => {
+    const recent = otpFixture({ id: OtpId.of('otp-2') });
+    const older = otpFixture({
+      id: OtpId.of('otp-1'),
+      createdAtUtcMs: utcMs('2026-09-28T05:59:30Z'),
+    });
+    const consumed = otpFixture({
+      id: OtpId.of('otp-3'),
+      consumedAtUtcMs: recent.createdAtUtcMs,
+    });
+    const stale = otpFixture({
+      id: OtpId.of('otp-4'),
+      createdAtUtcMs: utcMs('2026-09-28T05:00:00Z'),
+    });
+    const world = memoryIdentityWorld({
+      otps: [recent, older, consumed, stale],
+    });
+    const ports = memoryOtpStorePorts(world);
+    expect(
+      unwrapOk(
+        await ports.loadOpenOtps(
+          recent.destination,
+          utcMs('2026-09-28T05:59:00Z'),
+        ),
+      ),
+    ).toEqual([older, recent]);
+    expect(unwrapOk(await ports.loadOtp(OtpId.of('otp-3')))).toEqual(consumed);
+    expect(unwrapOk(await ports.loadOtp(OtpId.of('otp-9')))).toBeNull();
+
+    const saved = otpFixture({ id: OtpId.of('otp-9'), attemptCount: 1 });
+    expect(await ports.saveOtp(saved)).toEqual({ ok: true, value: undefined });
+    expect(unwrapOk(await ports.loadOtp(saved.id))).toEqual(saved);
+    // The SAME table a transaction reads — the body, no id.
+    expect(world.store.get(`otps/${saved.id}`)).toMatchObject({
+      attemptCount: 1,
+      destination: saved.destination,
+    });
+    expect(world.store.get(`otps/${saved.id}`)).not.toHaveProperty('id');
+  });
+
+  it('finds the account by the destination’s own field, a stub included — and sees a stub a transaction created', async () => {
+    const maria = registeredUserFixture({
+      email: Email.of('maria@example.com'),
+    });
+    const world = memoryIdentityWorld({ users: [maria] });
+    const lookup = memoryUserLookupPorts(world);
+    expect(unwrapOk(await lookup.findUserByDestination(PHONE))).toEqual(maria);
+    expect(unwrapOk(await lookup.findUserByDestination(EMAIL))).toEqual(maria);
+    expect(
+      unwrapOk(
+        await lookup.findUserByDestination(
+          ParsedIdentifier.phone(E164.of('+359888000000')),
+        ),
+      ),
+    ).toBeNull();
+
+    const other = ParsedIdentifier.phone(E164.of('+359888999999'));
+    const stub = provisionedUserFixture({
+      id: UserId.of('u-new'),
+      phone: E164.of('+359888999999'),
+    });
+    const { id, ...stubBody } = stub;
+    expect(
+      applyWrites(world.store, [
+        WriteOp.create([Collections.Users, id], stubBody),
+      ]).ok,
+    ).toBe(true);
+    expect(unwrapOk(await lookup.findUserByDestination(other))).toEqual(stub);
+  });
+
+  it('provisions an Auth user once per destination — the second answers null and the lookup finds the first', async () => {
+    const world = memoryIdentityWorld();
+    const admin = memoryAuthAdminPorts(world);
+    const authLookup = memoryAuthUserLookupPorts(world);
+    expect(
+      unwrapOk(await authLookup.findAuthUserByDestination(PHONE)),
+    ).toBeNull();
+    const uid = unwrapOk(await admin.provisionAuthUser(PHONE));
+    expect(uid).toBe('auth-uid-1');
+    expect(unwrapOk(await admin.provisionAuthUser(PHONE))).toBeNull();
+    expect(unwrapOk(await authLookup.findAuthUserByDestination(PHONE))).toBe(
+      uid,
+    );
+    expect(unwrapOk(await admin.provisionAuthUser(EMAIL))).toBe('auth-uid-2');
+  });
+
+  it('an orphan Auth user seeded without a users document blocks the provision', async () => {
+    const orphan = UserId.of('u-orphan');
+    const world = memoryIdentityWorld({
+      authUsers: [{ uid: orphan, destination: PHONE }],
+    });
+    expect(
+      unwrapOk(await memoryAuthAdminPorts(world).provisionAuthUser(PHONE)),
+    ).toBeNull();
+    expect(
+      unwrapOk(
+        await memoryAuthUserLookupPorts(world).findAuthUserByDestination(PHONE),
+      ),
+    ).toBe(orphan);
+  });
+
+  it('records minted claims, claims set and display names', async () => {
+    const world = memoryIdentityWorld();
+    const admin = memoryAuthAdminPorts(world);
+    const claims = AuthClaims.onboarding(FIXTURE_TENANT_ID);
+    expect(unwrapOk(await admin.mintCustomToken(ANA, claims))).toBe(
+      'token:ana:1',
+    );
+    await admin.setClaims(ANA, claims);
+    await admin.setDisplayName(ANA, 'Ана Петрова');
+    expect(world.minted).toEqual([{ uid: ANA, claims, token: 'token:ana:1' }]);
+    expect(world.claims.get(ANA)).toBe(claims);
+    expect(world.displayNames.get(ANA)).toBe('Ана Петрова');
+  });
+});
+
+describe('the pinned OTP side channels', () => {
+  it('records every delivery; a failing sender answers PIPELINE_UNAVAILABLE', async () => {
+    const PHONE = ParsedIdentifier.phone(E164.of('+359888123456'));
+    const ok = recordingOtpDeliveryPorts();
+    expect(await ok.ports.sendOtp(PHONE, '123456')).toEqual({
+      ok: true,
+      value: undefined,
+    });
+    expect(ok.sent).toEqual([{ destination: PHONE, code: '123456' }]);
+    const failing = recordingOtpDeliveryPorts({ failing: true });
+    const answer = await failing.ports.sendOtp(PHONE, '654321');
+    expect(answer.ok).toBe(false);
+    if (!answer.ok) expect(answer.error.errorCode).toBe('PIPELINE_UNAVAILABLE');
+    expect(failing.sent).toHaveLength(1);
+  });
+
+  it('draws the fixed code and salt, and matches otpFixture’s hash with the fixed code only', () => {
+    const { otpCrypto } = fixedOtpCryptoPorts();
+    expect(otpCrypto.nextCode()).toBe(FIXTURE_OTP_CODE);
+    expect(otpCrypto.nextSalt()).toBe(FIXTURE_OTP_SALT);
+    const otp = otpFixture();
+    expect(otpCrypto.hashCode(FIXTURE_OTP_CODE, otp.salt)).toBe(otp.codeHash);
+    expect(
+      otpCrypto.codeMatches(FIXTURE_OTP_CODE, otp.salt, otp.codeHash),
+    ).toBe(true);
+    expect(otpCrypto.codeMatches('000000', otp.salt, otp.codeHash)).toBe(false);
+    expect(fixedOtpCryptoPorts('999999').otpCrypto.nextCode()).toBe('999999');
+  });
+
+  it('answers the fixture tenant, or the one given', async () => {
+    expect(unwrapOk(await fixedTenantPorts().loadTenant())).toBe(
+      FIXTURE_TENANT_ID,
+    );
+    const other = TenantId.of('other-shop');
+    expect(unwrapOk(await fixedTenantPorts(other).loadTenant())).toBe(other);
   });
 });

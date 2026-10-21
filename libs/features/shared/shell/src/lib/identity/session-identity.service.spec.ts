@@ -4,8 +4,6 @@ import {
   AVATAR_UPLOADER,
   AvatarRef,
   AvatarUploadError,
-  User,
-  ZonedDateTime,
 } from '@creativo/application/accounts';
 import {
   ANONYMOUS_PRINCIPAL,
@@ -19,6 +17,10 @@ import {
   roleFromPrimitive,
 } from '@creativo/application/identity';
 import { AccountStateService } from '@creativo/features/client/account-state';
+import { BirthDate } from '@core/components';
+import type { User } from '@core/entities';
+import { UserId } from '@core/primitives';
+import { registeredUserFixture } from '@core/testing';
 import { SessionIdentityService } from './session-identity.service';
 
 type FindResult = Result<AvatarRef | null, AvatarUploadError>;
@@ -27,8 +29,6 @@ function unwrap<T, E>(result: Result<T, E>): T {
   if (result.isFailure()) throw new Error('unexpected failure in test fixture');
   return result.value;
 }
-
-const TODAY = unwrap(ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'));
 
 /** An active principal with these claims — a plain client unless said otherwise. */
 function active(uid: string, roles: readonly string[] = ['client']): Principal {
@@ -42,20 +42,12 @@ function active(uid: string, roles: readonly string[] = ['client']): Principal {
 
 /** A finished profile but for the photo — the photo alone decides `complete`. */
 function user(uid: string): User {
-  return unwrap(
-    User.create(
-      {
-        id: uid,
-        phone: '+359881234567',
-        firstName: 'Jane',
-        lastName: 'Doe',
-        roles: ['client'],
-        status: { kind: 'active' },
-        birthDate: '1990-05-05',
-      },
-      TODAY,
-    ),
-  );
+  return registeredUserFixture({
+    id: UserId.of(uid),
+    firstName: 'Jane',
+    lastName: 'Doe',
+    birthDate: BirthDate.of('1990-05-05'),
+  });
 }
 
 function photoOf(uid: string): FindResult {

@@ -31,19 +31,29 @@ import {
   type MediaVariant,
   type Result,
 } from '@creativo/application/catalog';
-import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
-import type { Service } from '@core/entities';
-import { MediaRefId, ServiceId } from '@core/primitives';
+import {
+  CATALOG_PORTS,
+  PROFILE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { BirthDate } from '@core/components';
+import type { Service, User } from '@core/entities';
+import type { LoadProfile, ProfilePorts } from '@core/ports';
+import {
+  IdentityErrorCode,
+  MediaRefId,
+  Result as EcsResult,
+  RepositoryError as EcsRepositoryError,
+  ServiceId,
+  UserId,
+} from '@core/primitives';
 import {
   memoryCatalogReadPorts,
+  memoryProfilePorts,
+  registeredUserFixture,
   serviceFixture,
   termsFixture,
 } from '@core/testing';
-import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  User,
-} from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import { fail } from '@creativo/application/identity';
 import { AvatarUploadError } from '@creativo/application/accounts';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
@@ -89,23 +99,15 @@ const PHONE_IDENTIFIER = reconstituteIdentifier({
   value: '+359888123456',
 });
 
-/** The just-registered profile the birthday step's `UpdateProfileUseCase` loads and rebuilds. */
+const UID = UserId.of('uid_1');
+
+/** The just-registered profile the birthday step's owner write reads and edits. */
 function seededProfile(): User {
-  const todayResult = ZonedDateTime.fromISO('2026-07-25T12:00:00', 'UTC');
-  if (todayResult.isFailure()) throw new Error('fixture clock invalid');
-  const userResult = User.create(
-    {
-      id: 'uid_1',
-      phone: '+359881234567',
-      firstName: 'Ada',
-      lastName: 'Lovelace',
-      roles: ['client'],
-      status: { kind: 'active' },
-    },
-    todayResult.value,
-  );
-  if (userResult.isFailure()) throw new Error('fixture profile invalid');
-  return userResult.value;
+  return registeredUserFixture({
+    id: UID,
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+  });
 }
 
 type MediaAnswer = Result<readonly MediaVariant[], MediaReadError>;
@@ -160,8 +162,14 @@ const FIRST_BACKOFF_CEILING_MS = 2_000;
 describe('ClientOnboarding', () => {
   const completeRegistration = vi.fn();
   const signOut = vi.fn();
-  const getProfile = vi.fn();
-  const saveProfile = vi.fn();
+  /** `users/{uid}` as the memory port holds it — what a write leaves. */
+  let users: Map<UserId, User>;
+  /** One-shot profile reads; the session model listens instead. */
+  const loadProfile = vi.fn<LoadProfile>();
+  /** How many owner writes reached the port. */
+  let writes: number;
+  /** A spec sets it to make the owner write fail in the store. */
+  let writeFails: boolean;
   const uploadAvatarFile = vi.fn();
   let fixture: ComponentFixture<ClientOnboarding>;
 
@@ -175,8 +183,11 @@ describe('ClientOnboarding', () => {
   ): Promise<void> {
     completeRegistration.mockReset().mockResolvedValue(ok(undefined));
     signOut.mockReset().mockResolvedValue(ok(undefined));
-    getProfile.mockReset().mockResolvedValue(ok(seededProfile()));
-    saveProfile.mockReset().mockResolvedValue(ok(undefined));
+    users = new Map([[UID, seededProfile()]]);
+    const memory = memoryProfilePorts(users);
+    loadProfile.mockReset().mockImplementation(memory.loadProfile);
+    writes = 0;
+    writeFails = false;
     uploadAvatarFile
       .mockReset()
       .mockResolvedValue(ok({ url: 'http://avatar', path: 'avatars/x' }));
@@ -217,12 +228,19 @@ describe('ClientOnboarding', () => {
           },
         },
         {
-          provide: PROFILE_PORT,
+          provide: PROFILE_PORTS,
           useValue: {
-            getProfile,
-            observeProfile: () => of(ok(seededProfile())),
-            saveProfile,
-          },
+            ...memory,
+            loadProfile,
+            writeOwnProfile: async (userId, decide) => {
+              writes += 1;
+              return writeFails
+                ? EcsResult.err(
+                    EcsRepositoryError.writeFailed(`users/${userId}`, 'down'),
+                  )
+                : memory.writeOwnProfile(userId, decide);
+            },
+          } satisfies ProfilePorts,
         },
         {
           provide: AVATAR_UPLOADER,
@@ -452,11 +470,10 @@ describe('ClientOnboarding', () => {
       save()?.click();
       await settle();
 
-      expect(saveProfile).toHaveBeenCalledTimes(1);
-      const [savedUser] = saveProfile.mock.calls[0] as [User];
-      expect(savedUser.birthDate?.toISODate()).toBe('1990-07-03');
-      // Names ride along untouched from the loaded profile.
-      expect(savedUser.firstName.value).toBe('Ada');
+      expect(writes).toBe(1);
+      expect(users.get(UID)?.birthDate).toBe(BirthDate.of('1990-07-03'));
+      // Names ride along untouched from the stored profile.
+      expect(users.get(UID)?.firstName).toBe('Ada');
       expect(query('onboarding-avatar')).not.toBeNull();
     });
 
@@ -522,13 +539,13 @@ describe('ClientOnboarding', () => {
       // The shared session model reads the profile on its own (it backs
       // the app-wide chrome), so the invariant is that SKIPPING adds no
       // reads and no writes of its own — not that nothing ever read.
-      const readsBefore = getProfile.mock.calls.length;
+      const readsBefore = loadProfile.mock.calls.length;
 
       query<HTMLButtonElement>('onboarding-skip-birthday')?.click();
       await settle();
 
-      expect(getProfile.mock.calls.length).toBe(readsBefore);
-      expect(saveProfile).not.toHaveBeenCalled();
+      expect(loadProfile.mock.calls.length).toBe(readsBefore);
+      expect(writes).toBe(0);
       expect(query('onboarding-avatar')).not.toBeNull();
     });
 
@@ -545,7 +562,7 @@ describe('ClientOnboarding', () => {
       // Empty test catalog → the raw stable code proves the reason-mapping.
       expect(
         host().querySelector('.ui-date-field__error')?.textContent,
-      ).toContain('identity.birth_date.invalid');
+      ).toContain(IdentityErrorCode.BirthDateInvalid);
 
       // Reward early: a valid date clears the error live.
       typeBirth('month', '07');
@@ -554,9 +571,7 @@ describe('ClientOnboarding', () => {
     });
 
     it('a failed save stays on the step with quiet, code-mapped inline copy', async () => {
-      saveProfile.mockResolvedValue(
-        fail(new RepositoryError('firestore down')),
-      );
+      writeFails = true;
       await walkToBirthday();
 
       typeBirth('day', '03');

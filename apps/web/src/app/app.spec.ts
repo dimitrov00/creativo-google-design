@@ -8,8 +8,11 @@ import {
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
 import { AUTH_GATEWAY } from '@creativo/application/identity';
-import { PROFILE_PORT } from '@creativo/application/accounts';
-import { FIREBASE_AUTH } from '@creativo/infrastructure/firebase-app';
+import {
+  FIREBASE_AUTH,
+  PROFILE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { memoryProfilePorts } from '@core/testing';
 import { ok } from '@creativo/domain/kernel';
 import { ANONYMOUS_PRINCIPAL } from '@creativo/domain/identity';
 import { App } from './app';
@@ -48,14 +51,8 @@ describe('App', () => {
             signOut: () => Promise.resolve(ok(undefined)),
           },
         },
-        {
-          provide: PROFILE_PORT,
-          useValue: {
-            getProfile: () => Promise.resolve(ok(null)),
-            observeProfile: () => of(ok(null)),
-            saveProfile: () => Promise.resolve(ok(undefined)),
-          },
-        },
+        // No account signed in: an empty profile store.
+        { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
         // E2eSignInHookService (only wired in dev mode, which TestBed runs
         // under) injects FIREBASE_AUTH just to stash a window hook — never
         // called in this spec, so an opaque stand-in is enough.

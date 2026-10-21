@@ -2,9 +2,9 @@ import { GovernanceError, Result } from '@core/primitives';
 
 /**
  * What an impersonator may DO inside a session — the session's field
- * `impersonationScope` (today's stored `impersonationSessions.scope`
- * strings `read`/`write`, upper-snaked; the stored bytes stay lowercase
- * until the governance flip, the shims converting). Closed, not a boolean:
+ * `impersonationScope`, stored as these SCREAMING_SNAKE values at the root
+ * of `impersonationSessions/{id}` (the identity flip retired the lowercase
+ * `scope` key and its converting shims). Closed, not a boolean:
  * `Actor.canMutate` and the session start switch on it exhaustively.
  */
 export const ImpersonationScope = {

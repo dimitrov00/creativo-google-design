@@ -7,23 +7,18 @@ import {
   UserId,
 } from '@core/primitives';
 import { AuthClaims } from '@core/components';
-import {
-  type FindAuthUserByDestination,
-  type MintCustomToken,
-  type ProvisionAuthUser,
-  type SetClaims,
-  type SetDisplayName,
-} from '@core/ports';
+import type { AuthAdminPorts, AuthUserLookupPorts } from '@core/ports';
 import { AttemptOutcome, TriggerAttemptSystem } from '@core/systems';
 
 /**
- * The Admin-Auth ports of `identity.port.ts` over `firebase-admin/auth`:
- * custom-token minting, custom claims, the Auth user's display name, and
- * the two Auth-user calls of the first-verification race
- * (`provisionAuthUser`, `findAuthUserByDestination`, blueprint §4.1
- * `verifyOtp`). Today's `FirebaseAuthTokenAdapter`
- * (`firebase-auth-token-adapter.ts`) keeps serving the `lib/otp/*` handlers
- * until the identity flip.
+ * The Admin-Auth bundles of `identity.port.ts` over `firebase-admin/auth`
+ * (Law 9 — the factory returns the `&` of the two bundles it serves, never
+ * a local record): `AuthAdminPorts` — the Auth user of a first
+ * verification (`provisionAuthUser`), custom-token minting, custom claims
+ * and the Auth user's display name — and `AuthUserLookupPorts` — the Auth
+ * user holding a destination (`findAuthUserByDestination`), which resolves
+ * the first-verification race's winner or an orphan Auth user (blueprint
+ * §4.1 `verifyOtp`, F2-9).
  *
  * The claims bag written on the token is the component's own stored shape,
  * `AuthClaims.toToken` — the adapter maps nothing, and the token shape has
@@ -63,15 +58,9 @@ function authFailure(error: unknown): PipelineError {
   return PipelineError.of(code, null, authCodeOf(error), null);
 }
 
-export type AuthClaimsPorts = {
-  readonly mintCustomToken: MintCustomToken;
-  readonly setClaims: SetClaims;
-  readonly setDisplayName: SetDisplayName;
-  readonly provisionAuthUser: ProvisionAuthUser;
-  readonly findAuthUserByDestination: FindAuthUserByDestination;
-};
-
-export const authClaimsPorts = (auth: Auth): AuthClaimsPorts => ({
+export const authClaimsPorts = (
+  auth: Auth,
+): AuthAdminPorts & AuthUserLookupPorts => ({
   mintCustomToken: async (uid, claims) => {
     try {
       return Result.ok(

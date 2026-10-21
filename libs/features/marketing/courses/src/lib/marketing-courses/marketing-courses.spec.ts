@@ -7,12 +7,17 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import {
   APPOINTMENT_READ_PORTS,
   INBOX_PORTS,
+  PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { memoryAppointmentReadPorts, memoryInboxPorts } from '@core/testing';
+import {
+  memoryAppointmentReadPorts,
+  memoryInboxPorts,
+  memoryProfilePorts,
+} from '@core/testing';
 import { AUTH_GATEWAY } from '@creativo/application/identity';
 import {
   COURSE_REPOSITORY,
@@ -89,13 +94,7 @@ async function configure(
         useValue: { find: () => Promise.resolve(ok(null)) },
       },
       // The shared session model behind that chrome reads the profile.
-      {
-        provide: PROFILE_PORT,
-        useValue: {
-          getProfile: () => Promise.resolve(ok(null)),
-          observeProfile: () => of(ok(null)),
-        },
-      },
+      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
       // …and its menu counts upcoming visits.
       {
         // The shell menu's notifications row reads the inbox.

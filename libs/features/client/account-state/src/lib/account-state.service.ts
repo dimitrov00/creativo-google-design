@@ -14,7 +14,10 @@ import {
   ANONYMOUS_PRINCIPAL,
   Principal,
 } from '@creativo/application/identity';
-import { PROFILE_PORT, User, UserId } from '@creativo/application/accounts';
+import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
+import { Registration } from '@core/components';
+import type { User } from '@core/entities';
+import { UserId } from '@core/primitives';
 
 /**
  * Root-provided, single `onIdTokenChanged` listener for the whole shell
@@ -34,12 +37,16 @@ import { PROFILE_PORT, User, UserId } from '@creativo/application/accounts';
  * `account` is the single live `users/{uid}` snapshot (`observeProfile`):
  * one listener per signed-in uid, so a write from anywhere — this tab's own
  * profile save, registration completing, a pause the shop applies — reaches
- * every screen without a re-fetch.
+ * every screen without a re-fetch. It is the flat `User` of `@core/entities`
+ * as stored, and `null` while the document is absent OR still the
+ * `PROVISIONED` stub a first sign-in writes: the port answers the stored
+ * body, and "a stub is no profile yet" is this consumer's rule
+ * (`Registration.isRegistered`, identity flip (2) §3.5).
  */
 @Injectable({ providedIn: 'root' })
 export class AccountStateService {
   private readonly authGateway = inject(AUTH_GATEWAY);
-  private readonly profilePort = inject(PROFILE_PORT);
+  private readonly profilePorts = inject(PROFILE_PORTS);
 
   readonly principal: Signal<Principal> = toSignal(
     this.authGateway.observePrincipal(),
@@ -104,18 +111,18 @@ export class AccountStateService {
       this.listenedUid = uid;
     }
     this.listenerFailed = false;
-    const userIdResult = uid === null ? null : UserId.create(uid);
-    if (userIdResult === null || userIdResult.isFailure()) {
+    const userId = uid === null ? null : UserId.parse(uid);
+    if (userId === null || !userId.ok) {
       this._account.set(null);
       this._accountLoading.set(false);
       return null;
     }
     this._accountLoading.set(this._account() === null);
-    return this.profilePort
-      .observeProfile(userIdResult.value)
+    return this.profilePorts
+      .observeProfile(userId.value)
       .subscribe((result) => {
-        if (result.isSuccess()) {
-          this._account.set(result.value);
+        if (result.ok) {
+          this._account.set(registeredOrNull(result.value));
           this.listenerFailed = false;
         } else {
           // Keep what is on screen: dated data beats a blank account while a
@@ -126,4 +133,9 @@ export class AccountStateService {
         this._accountLoading.set(false);
       });
   }
+}
+
+/** The stored body as an account: a `PROVISIONED` stub reads as no profile yet. */
+function registeredOrNull(user: User | null): User | null {
+  return user !== null && Registration.isRegistered(user) ? user : null;
 }

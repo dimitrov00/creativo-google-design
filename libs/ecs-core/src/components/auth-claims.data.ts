@@ -27,7 +27,8 @@ export type AuthStage = (typeof AuthStage)[keyof typeof AuthStage];
  *
  * **The bag stored on the token** is spelled once, by
  * {@link AuthClaims.toToken} (and read back by {@link AuthClaims.fromToken}),
- * unchanged from today (`firebase-auth-token-adapter.ts:12-19`):
+ * the bytes every token minted before the identity flip carries (the
+ * `auth-claims.adapter.ts` mint writes them):
  * `{ tenantId, stage: 'active', roles }` when active and
  * `{ tenantId, stage: 'onboarding' }` — NO `roles` key — while onboarding,
  * which the rules' `'roles' in request.auth.token ? … : []` read as no

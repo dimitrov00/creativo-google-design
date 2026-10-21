@@ -29,8 +29,10 @@ export type ImpersonationSessionMeta = {
  * a target user — `impersonationSessions/{id}`, flat (Law 6): the meta slice
  * and the lifecycle (`impersonationStatus`; an ended session's
  * `endedAtUtcMs` and end-reason fields at the root). The document body is
- * this type minus `id`; until the governance flip the stored bytes are
- * today's (the shims convert).
+ * this type minus `id`, byte for byte — the web reads it as is
+ * (`observeActiveImpersonation`, `adminUserId ==` and
+ * `impersonationStatus == 'ACTIVE'`, index #9); the start and end writes
+ * arrive with Phase 4's callables.
  *
  * A session that lapses at `expiresAtUtcMs` without anyone calling end
  * keeps `impersonationStatus: 'ACTIVE'` — `ImpersonationSystem.isExpired`

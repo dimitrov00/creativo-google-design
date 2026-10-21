@@ -1,63 +1,94 @@
 import { defer, of, type Observable } from 'rxjs';
 import {
+  type AuthClaims,
   BookingLifecycle,
   BookingPolicy,
   CouponStatus,
   BarberStatus,
+  ImpersonationStatus,
   LocationStatus,
+  ParsedIdentifier,
   ServiceStatus,
   type VoucherCode,
 } from '@core/components';
 import {
   BusyKey,
   GrantStatus,
+  IdentifierChannel,
+  PipelineError,
+  PipelineErrorCode,
   Result,
   type AppointmentId,
   type CustomerId,
-  type UserId,
+  type OtpId,
+  type TenantId,
+  UserId,
   type UtcEpochMs,
 } from '@core/primitives';
-import type {
-  Appointment,
-  AppointmentNote,
-  AppointmentPhoto,
-  BarberBusyDay,
-  BarberSchedule,
-  Barber,
-  CapacityMonth,
-  ClientMoneyRecord,
-  ClientStatsRecord,
-  Coupon,
-  CouponGrant,
-  Customer,
-  GiftVoucher,
-  InboxNotification,
-  ScheduleException,
-  ServiceCategory,
-  Service,
-  ShopLocation,
-  WaitlistRequest,
+import {
+  Collections,
+  type Appointment,
+  type AppointmentNote,
+  type AppointmentPhoto,
+  type BarberBusyDay,
+  type BarberSchedule,
+  type Barber,
+  type CapacityMonth,
+  type ClientMoneyRecord,
+  type ClientStatsRecord,
+  type Coupon,
+  type CouponGrant,
+  type Customer,
+  type GiftVoucher,
+  type ImpersonationSession,
+  type InboxNotification,
+  type Otp,
+  type ScheduleException,
+  type ServiceCategory,
+  type Service,
+  type ShopLocation,
+  type User,
+  type WaitlistRequest,
 } from '@core/entities';
 import type {
   AppointmentNotePorts,
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  AuthAdminPorts,
+  AuthUserLookupPorts,
   CatalogReadPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  ImpersonationReadPorts,
   InboxPorts,
+  OtpCryptoPorts,
+  OtpDeliveryPorts,
+  OtpStorePorts,
+  ProfilePorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
+  TenantPorts,
+  UserLookupPorts,
+  UserSearchPorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import { PageStep, PagingSystem } from '@core/systems';
+import {
+  FIXTURE_OTP_CODE,
+  FIXTURE_OTP_SALT,
+  FIXTURE_TENANT_ID,
+  fixtureCodeHash,
+} from './identity.fixtures';
+import { type MemoryStore, memoryStore } from './test-support';
 
 /**
- * The in-memory doubles of the web's named port bundles (flip-1 plan §3.1)
- * — one per `InjectionToken` of `ports.tokens.ts`, each over plain arrays
- * and maps, each returning EXACTLY its bundle type. Store and component
- * specs bind these; nobody re-implements a double.
+ * The in-memory doubles of the named port bundles (flip-1 plan §3.1,
+ * flip-2 plan §3.1.1) — one per `InjectionToken` of `ports.tokens.ts` and
+ * one per identity bundle a pipeline names, each over plain arrays and maps,
+ * each returning EXACTLY its bundle type. Store, component and pipeline
+ * specs bind these; nobody re-implements a double. A spec that scripts a
+ * member spreads the double and overrides it (`Partial<TheBundle>`).
  *
  * The rules every double keeps, so a spec reads them once:
  *
@@ -564,5 +595,306 @@ export function memoryCustomerPorts(
   return {
     loadCustomerForUser: async (userId) =>
       Result.ok(customers.find((entry) => entry.userId === userId) ?? null),
+  };
+}
+
+// ── Accounts ─────────────────────────────────────────────────────────────
+
+/**
+ * `PROFILE_PORTS` — `users/{uid}` in `users`, written IN PLACE.
+ * `observeProfile`/`loadProfile` answer the entry AS STORED — a
+ * `PROVISIONED` stub included, as the adapter does (the consumer judges),
+ * `null` only when absent; `writeOwnProfile` runs the given decide against
+ * the entry (`null` when absent) and applies the five keys it answers, and
+ * writes nothing on a `null` answer or a refusal (answered as is).
+ */
+export function memoryProfilePorts(users: Map<UserId, User>): ProfilePorts {
+  return {
+    observeProfile: (userId) => stream(() => users.get(userId) ?? null),
+    loadProfile: async (userId) => Result.ok(users.get(userId) ?? null),
+    writeOwnProfile: async (userId, decide) => {
+      const stored = users.get(userId) ?? null;
+      const decided = decide(stored);
+      if (!decided.ok) return Result.err(decided.error);
+      if (decided.value !== null && stored !== null) {
+        users.set(userId, { ...stored, ...decided.value } as User);
+      }
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/**
+ * `USER_SEARCH_PORTS` — the staff client search over `users`: every user
+ * whose `searchPrefixes` contains the (already normalised) prefix, by
+ * `searchName` (ties by id), at most `limit` — index #8's query.
+ */
+export function memoryUserSearchPorts(users: readonly User[]): UserSearchPorts {
+  return {
+    searchUsers: async (prefix, limit) =>
+      Result.ok(
+        users
+          .filter((entry) => entry.searchPrefixes.includes(prefix))
+          .sort(
+            (a, b) =>
+              byString(a.searchName ?? '', b.searchName ?? '') ||
+              byString(a.id, b.id),
+          )
+          .slice(0, limit),
+      ),
+  };
+}
+
+/** `IMPERSONATION_READ_PORTS` — the admin's `ACTIVE` session in `sessions` (the first one), or `null`. */
+export function memoryImpersonationReadPorts(
+  sessions: readonly ImpersonationSession[],
+): ImpersonationReadPorts {
+  return {
+    observeActiveImpersonation: (adminUserId) =>
+      stream(
+        () =>
+          sessions.find(
+            (entry) =>
+              entry.adminUserId === adminUserId &&
+              entry.impersonationStatus === ImpersonationStatus.Active,
+          ) ?? null,
+      ),
+  };
+}
+
+// ── Identity: the shared world and its doubles ───────────────────────────
+
+/** A Firebase Auth user of the world — its uid and the one destination it holds. */
+export type MemoryAuthUser = {
+  readonly uid: UserId;
+  readonly destination: ParsedIdentifier;
+};
+
+/** A custom token `mintCustomToken` answered, and the claims it carries. */
+export type MintedToken = {
+  readonly uid: UserId;
+  readonly claims: AuthClaims;
+  readonly token: string;
+};
+
+/**
+ * The ONE state the identity doubles share, data only (never a port
+ * member): the document table — `otps/{id}` and `users/{uid}` bodies, the
+ * entity minus `id`, the SAME store a spec hands `memoryTxPorts`, so a stub
+ * a transaction creates is found by the next `findUserByDestination` and an
+ * `saveOtp`'d challenge is read by the next transaction — the Auth users
+ * (a provision is visible to the next lookup), the minted tokens, the
+ * claims set and the display names, all mutated IN PLACE.
+ */
+export type IdentityWorld = {
+  readonly store: MemoryStore;
+  readonly authUsers: MemoryAuthUser[];
+  readonly minted: MintedToken[];
+  readonly claims: Map<UserId, AuthClaims>;
+  readonly displayNames: Map<UserId, string>;
+};
+
+/** What a world starts with — every part empty when omitted. */
+export type IdentityWorldSeed = {
+  readonly otps?: readonly Otp[];
+  readonly users?: readonly User[];
+  readonly authUsers?: readonly MemoryAuthUser[];
+};
+
+/** A world seeded with challenges, accounts and Auth users. */
+export function memoryIdentityWorld(
+  seed: IdentityWorldSeed = {},
+): IdentityWorld {
+  const store = memoryStore();
+  for (const { id, ...body } of seed.otps ?? []) {
+    store.set(`${Collections.Otps}/${id}`, body);
+  }
+  for (const { id, ...body } of seed.users ?? []) {
+    store.set(`${Collections.Users}/${id}`, body);
+  }
+  return {
+    store,
+    authUsers: [...(seed.authUsers ?? [])],
+    minted: [],
+    claims: new Map(),
+    displayNames: new Map(),
+  };
+}
+
+/** Every entity of one collection in the world's store, by id. */
+function entitiesOf<E>(store: MemoryStore, collection: string): readonly E[] {
+  const prefix = `${collection}/`;
+  const found: { readonly id: string; readonly entity: E }[] = [];
+  for (const [key, body] of store) {
+    if (!key.startsWith(prefix)) continue;
+    const id = key.slice(prefix.length);
+    if (id.includes('/')) continue;
+    found.push({ id, entity: { id, ...body } as E });
+  }
+  return found
+    .sort((a, b) => byString(a.id, b.id))
+    .map((entry) => entry.entity);
+}
+
+/**
+ * The `otps` store over the world: `loadOpenOtps` — `destination ==`,
+ * `consumedAtUtcMs == null`, `createdAtUtcMs >=` (index #10), oldest first;
+ * `loadOtp` — the challenge or `null`; `saveOtp` — a `Set` of the body.
+ */
+export function memoryOtpStorePorts(world: IdentityWorld): OtpStorePorts {
+  return {
+    loadOpenOtps: async (destination, sinceUtcMs) =>
+      Result.ok(
+        entitiesOf<Otp>(world.store, Collections.Otps)
+          .filter(
+            (otp) =>
+              otp.destination === destination &&
+              otp.consumedAtUtcMs === null &&
+              otp.createdAtUtcMs >= sinceUtcMs,
+          )
+          .sort((a, b) => a.createdAtUtcMs - b.createdAtUtcMs),
+      ),
+    loadOtp: async (id: OtpId) =>
+      Result.ok(
+        entitiesOf<Otp>(world.store, Collections.Otps).find(
+          (otp) => otp.id === id,
+        ) ?? null,
+      ),
+    saveOtp: async ({ id, ...body }) => {
+      world.store.set(`${Collections.Otps}/${id}`, body);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** The same text — a stored `E164`/`Email` beside an `Identifier`. */
+function sameText(held: string | null, identifier: string): boolean {
+  return held === identifier;
+}
+
+/**
+ * The account holding a destination, over the world's `users` — the field
+ * by the parsed destination's `identifierChannel` (`phone` / `email`),
+ * `limit 1` (the lowest id), as stored (a stub included), `null` when none.
+ */
+export function memoryUserLookupPorts(world: IdentityWorld): UserLookupPorts {
+  return {
+    findUserByDestination: async (destination) =>
+      Result.ok(
+        entitiesOf<User>(world.store, Collections.Users).find((user) =>
+          sameText(
+            destination.identifierChannel === IdentifierChannel.Phone
+              ? user.phone
+              : user.email,
+            destination.identifier,
+          ),
+        ) ?? null,
+      ),
+  };
+}
+
+/** The Auth user holding a destination, over the world's Auth users — its uid or `null`. */
+export function memoryAuthUserLookupPorts(
+  world: IdentityWorld,
+): AuthUserLookupPorts {
+  return {
+    findAuthUserByDestination: async (destination) =>
+      Result.ok(
+        world.authUsers.find((entry) =>
+          ParsedIdentifier.equals(entry.destination, destination),
+        )?.uid ?? null,
+      ),
+  };
+}
+
+/**
+ * Firebase Auth's admin writes over the world: `provisionAuthUser` creates
+ * an Auth user (uid `auth-uid-<n>`) — or answers `null` when one already
+ * holds the destination (the race's loser, or an orphan Auth user);
+ * `mintCustomToken` records the claims and answers `token:<uid>:<n>`;
+ * `setClaims` and `setDisplayName` record theirs.
+ */
+export function memoryAuthAdminPorts(world: IdentityWorld): AuthAdminPorts {
+  return {
+    provisionAuthUser: async (destination) => {
+      const held = world.authUsers.some((entry) =>
+        ParsedIdentifier.equals(entry.destination, destination),
+      );
+      if (held) return Result.ok(null);
+      const uid = UserId.of(`auth-uid-${world.authUsers.length + 1}`);
+      world.authUsers.push({ uid, destination });
+      return Result.ok(uid);
+    },
+    mintCustomToken: async (uid, claims) => {
+      const token = `token:${uid}:${world.minted.length + 1}`;
+      world.minted.push({ uid, claims, token });
+      return Result.ok(token);
+    },
+    setClaims: async (uid, claims) => {
+      world.claims.set(uid, claims);
+      return Result.ok(undefined);
+    },
+    setDisplayName: async (uid, displayName) => {
+      world.displayNames.set(uid, displayName);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** One delivery the recording sender was asked for. */
+export type SentOtp = {
+  readonly destination: ParsedIdentifier;
+  readonly code: string;
+};
+
+/**
+ * The login-OTP sender, recording every delivery it is asked for (failed
+ * ones too) in `sent`; with `failing`, each answers
+ * `PIPELINE_UNAVAILABLE` — a delivery the same call later may fix.
+ */
+export function recordingOtpDeliveryPorts(
+  options: { readonly failing?: boolean } = {},
+): { readonly ports: OtpDeliveryPorts; readonly sent: readonly SentOtp[] } {
+  const sent: SentOtp[] = [];
+  return {
+    sent,
+    ports: {
+      sendOtp: async (destination, code) => {
+        sent.push({ destination, code });
+        return options.failing === true
+          ? Result.err(PipelineError.bare(PipelineErrorCode.Unavailable))
+          : Result.ok(undefined);
+      },
+    },
+  };
+}
+
+/**
+ * The OTP randomness, pinned: every code is `code`
+ * (`FIXTURE_OTP_CODE`, the emulator's fixed code), every salt
+ * `FIXTURE_OTP_SALT`, the hash the readable `fixtureCodeHash`, and
+ * `codeMatches` that hash compared by equality — so `otpFixture()`
+ * verifies with the fixed code.
+ */
+export function fixedOtpCryptoPorts(
+  code: string = FIXTURE_OTP_CODE,
+): OtpCryptoPorts {
+  return {
+    otpCrypto: {
+      nextCode: () => code,
+      nextSalt: () => FIXTURE_OTP_SALT,
+      hashCode: fixtureCodeHash,
+      codeMatches: (typed, salt, expectedHash) =>
+        fixtureCodeHash(typed, salt) === expectedHash,
+    },
+  };
+}
+
+/** The deployment's tenant, pinned — `FIXTURE_TENANT_ID` unless given. */
+export function fixedTenantPorts(
+  tenantId: TenantId = FIXTURE_TENANT_ID,
+): TenantPorts {
+  return {
+    loadTenant: async () => Result.ok(tenantId),
   };
 }

@@ -13,8 +13,10 @@ import { Money, ServiceTerms } from '@core/components';
 import {
   CalendarGridSystem,
   OfferingPriceSystem,
+  PhoneSystem,
   ShopReachSystem,
 } from '@core/systems';
+import { Profile } from '@core/entities';
 import { PhoneNumber } from '@creativo/application/identity';
 import { formatCents, formatMinute } from '@creativo/features/shared/visits';
 import { AccountStateService } from '@creativo/features/client/account-state';
@@ -350,7 +352,7 @@ export class BookingReviewStep {
    * neither truncates.
    */
   protected readonly contactEmail = computed(
-    () => this.store.contact()?.email ?? this.account()?.email?.value ?? null,
+    () => this.store.contact()?.email ?? this.account()?.email ?? null,
   );
 
   /**
@@ -367,7 +369,8 @@ export class BookingReviewStep {
         ? parsed.value.formatInternational()
         : overridden;
     }
-    return this.account()?.phone.formatInternational() ?? null;
+    const phone = this.account()?.phone ?? null;
+    return phone === null ? null : PhoneSystem.formatInternational(phone);
   });
 
   /** The name on the booking — the override wins over the account's. */
@@ -405,13 +408,16 @@ export class BookingReviewStep {
     // sheet: the shop needs a number for THIS appointment, and the account's
     // own details are the honest default. Runs once — an override the user
     // typed is never overwritten by the profile it was overriding.
+    // (A registered account always holds a phone; the flat body types it
+    // nullable for the stub, which `account` never is.)
     effect(() => {
       const user = this.account();
-      if (!user || untracked(() => this.store.contact()) !== null) return;
+      if (!user || user.phone === null) return;
+      if (untracked(() => this.store.contact()) !== null) return;
       this.store.setContact({
-        name: user.fullName(),
-        phone: user.phone.value,
-        email: user.email?.value ?? null,
+        name: Profile.fullName(user),
+        phone: user.phone,
+        email: user.email,
         note: null,
       });
     });

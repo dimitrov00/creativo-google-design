@@ -1,6 +1,8 @@
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
   BarberId,
+  type CancelWaitlistRefusal,
+  CancelWaitlistRefusalCode,
   CartLineId,
   type RepositoryError,
   Result,
@@ -21,8 +23,6 @@ import type { WaitlistAskDayInput } from '@core/systems';
 import {
   type CancelWaitlistAnswer,
   type CancelWaitlistCommand,
-  type CancelWaitlistRefusal,
-  CancelWaitlistRefusalCode,
   type RequestWaitlistAnswer,
   type RequestWaitlistCommand,
 } from '@core/pipelines';

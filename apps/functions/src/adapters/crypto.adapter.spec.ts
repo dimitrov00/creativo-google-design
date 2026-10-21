@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Hash, NextId } from '@core/ports';
-import { NodeOtpCrypto } from './node-otp-crypto';
+import type { HashPorts, IdPorts } from '@core/ports';
 import {
   cryptoPorts,
   hexEqualInConstantTime,
@@ -67,10 +66,12 @@ describe('crypto adapter', () => {
       expect(randomHex(16)).not.toBe(randomHex(16));
     });
 
-    it('scryptHex is the legacy NodeOtpCrypto hash, byte for byte', () => {
-      const legacy = new NodeOtpCrypto();
+    it('scryptHex is the pre-flip node OTP hash, byte for byte — the vector recorded from it', () => {
+      // Recorded from the deleted node OTP crypto class (`hash('123456',
+      // 'salt-1')`) before the identity flip removed it.
       expect(scryptHex('123456', 'salt-1', 64)).toBe(
-        legacy.hash('123456', 'salt-1'),
+        'd2e8edcbea8ce981fb58140a58cbdc3b51a984b499b411299b1446a3373a53fb' +
+          '44d50d0a518d67bc25407fade0fe494088d40545b1bf7973c182ec91e905f88d',
       );
       expect(scryptHex('123456', 'salt-1', 64)).toMatch(/^[0-9a-f]{128}$/);
     });
@@ -84,11 +85,10 @@ describe('crypto adapter', () => {
     });
   });
 
-  it('cryptoPorts hands the root the two primitives', () => {
-    const ports = cryptoPorts();
-    const hash: Hash = ports.hash;
-    const nextId: NextId = ports.nextId;
-    expect(hash).toBe(sha256Hex);
-    expect(nextId).toBe(randomUuid);
+  it('cryptoPorts hands the root the two primitives — the HashPorts & IdPorts bundles', () => {
+    const ports: HashPorts & IdPorts = cryptoPorts();
+    expect(ports.hash).toBe(sha256Hex);
+    expect(ports.nextId).toBe(randomUuid);
+    expect(Object.keys(ports).sort()).toEqual(['hash', 'nextId']);
   });
 });

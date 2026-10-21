@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { AccountStatus, User } from '@creativo/application/accounts';
-import { AppointmentId, AppointmentPhotoId } from '@core/primitives';
+import {
+  AccountLifecycle,
+  BirthDate,
+  BlockReason,
+  E164,
+} from '@core/components';
+import { AppointmentId, AppointmentPhotoId, UserId } from '@core/primitives';
+import { registeredUserFixture } from '@core/testing';
 import {
   capsulesRun,
   clientHeadVm,
@@ -118,17 +124,17 @@ describe('the head (A)', () => {
       stateLine: 'Онлайн записването е спряно до 12.10',
       paused: true,
     });
-    const permanent = AccountStatus.blocked({ reason: 'manual' });
+    const permanent = AccountLifecycle.block(BlockReason.Manual, null);
     expect(headOf({ user: georgiUser(permanent) }).stateLine).toBe(
       'Онлайн записването е спряно за постоянно',
     );
   });
 
   it('treats a pause that has run out as none', () => {
-    const lapsed = AccountStatus.blocked({
-      reason: 'manual',
-      until: at('2026-09-01T00:00:00'),
-    });
+    const lapsed = AccountLifecycle.block(
+      BlockReason.Manual,
+      sofia('2026-09-01T00:00:00'),
+    );
     expect(headOf({ user: georgiUser(lapsed) })).toMatchObject({
       paused: false,
       stateLine: 'Клиент от март 2025 г.',
@@ -174,22 +180,16 @@ describe('pauseOf, isBirthdayToday, isInChairToday', () => {
   it('knows a birthday by month and day, a 29 February one on the 28th in other years', () => {
     expect(isBirthdayToday(martinUser(), TODAY)).toBe(true);
     expect(isBirthdayToday(georgiUser(), TODAY)).toBe(false);
-    const leapling = User.reconstitute(
-      {
-        id: 'leap',
-        phone: '+359881112233',
-        firstName: 'Лили',
-        lastName: 'Високосна',
-        roles: ['client'],
-        status: AccountStatus.active(),
-        birthDate: '2000-02-29',
-      },
-      at('2027-02-28T09:00:00'),
-    );
-    if (leapling.isFailure()) throw new Error('bad user');
-    expect(isBirthdayToday(leapling.value, '2027-02-28')).toBe(true);
-    expect(isBirthdayToday(leapling.value, '2028-02-28')).toBe(false);
-    expect(isBirthdayToday(leapling.value, '2028-02-29')).toBe(true);
+    const leapling = registeredUserFixture({
+      id: UserId.of('leap'),
+      phone: E164.of('+359881112233'),
+      firstName: 'Лили',
+      lastName: 'Високосна',
+      birthDate: BirthDate.of('2000-02-29'),
+    });
+    expect(isBirthdayToday(leapling, '2027-02-28')).toBe(true);
+    expect(isBirthdayToday(leapling, '2028-02-28')).toBe(false);
+    expect(isBirthdayToday(leapling, '2028-02-29')).toBe(true);
   });
 
   it('puts the client in the chair only on an open visit today', () => {

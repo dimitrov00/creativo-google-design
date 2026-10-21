@@ -8,12 +8,7 @@ import {
   ParsedIdentifier,
   Role,
 } from '@core/components';
-import {
-  TenantId as LegacyTenantId,
-  UserId as LegacyUserId,
-} from '@creativo/domain/models';
-import { roleFromPrimitive } from '@creativo/domain/identity';
-import { FirebaseAuthTokenAdapter } from './firebase-auth-token-adapter';
+import type { AuthAdminPorts, AuthUserLookupPorts } from '@core/ports';
 import { authClaimsPorts } from './auth-claims.adapter';
 
 type FakeAuth = {
@@ -47,13 +42,30 @@ const UID = UserId.of('u-1');
 const PHONE = ParsedIdentifier.phone(E164.of('+359888123456'));
 const EMAIL = ParsedIdentifier.email(Email.of('ana@example.com'));
 
-function activeClaims(): AuthClaims {
-  const claims = AuthClaims.active(TENANT, [Role.Barber, Role.Admin]);
+function unwrapActive(roles: readonly Role[]): AuthClaims {
+  const claims = AuthClaims.active(TENANT, roles);
   if (!claims.ok) throw new Error('fixture');
   return claims.value;
 }
 
+function activeClaims(): AuthClaims {
+  return unwrapActive([Role.Barber, Role.Admin]);
+}
+
 describe('auth-claims adapter', () => {
+  it('is the intersection of the two bundles it serves — AuthAdminPorts & AuthUserLookupPorts', () => {
+    const ports: AuthAdminPorts & AuthUserLookupPorts = authClaimsPorts(
+      asAuth(fakeAuth()),
+    );
+    expect(Object.keys(ports).sort()).toEqual([
+      'findAuthUserByDestination',
+      'mintCustomToken',
+      'provisionAuthUser',
+      'setClaims',
+      'setDisplayName',
+    ]);
+  });
+
   describe('the claims on the token — today’s shape', () => {
     it('mints an active token with { tenantId, stage, roles }', async () => {
       const auth = fakeAuth();
@@ -80,31 +92,36 @@ describe('auth-claims adapter', () => {
       expect(claims).not.toHaveProperty('roles');
     });
 
-    it('writes exactly what the legacy FirebaseAuthTokenAdapter writes', async () => {
-      const ours = fakeAuth();
-      const theirs = fakeAuth();
-      const tenant = LegacyTenantId.create('creativo');
-      const uid = LegacyUserId.create('u-1');
-      if (!tenant.isSuccess() || !uid.isSuccess()) throw new Error('fixture');
-      const legacy = new FirebaseAuthTokenAdapter(asAuth(theirs));
-      const ports = authClaimsPorts(asAuth(ours));
-
-      await legacy.createCustomToken(uid.value, tenant.value, {
-        stage: 'active',
-        roles: [roleFromPrimitive('barber'), roleFromPrimitive('admin')],
-      });
+    it('writes exactly what the pre-flip token adapter wrote — its recorded calls, pinned', async () => {
+      // Recorded from the deleted Admin-Auth token adapter before the
+      // identity flip removed it: a mint and a claims-set, byte for byte.
+      const auth = fakeAuth();
+      const ports = authClaimsPorts(asAuth(auth));
       await ports.mintCustomToken(UID, activeClaims());
-      await legacy.setUserClaims(uid.value, tenant.value, {
-        stage: 'onboarding',
-      });
       await ports.setClaims(UID, AuthClaims.onboarding(TENANT));
+      expect(auth.createCustomToken.mock.calls).toEqual([
+        [
+          'u-1',
+          { tenantId: 'creativo', stage: 'active', roles: ['barber', 'admin'] },
+        ],
+      ]);
+      expect(auth.setCustomUserClaims.mock.calls).toEqual([
+        ['u-1', { tenantId: 'creativo', stage: 'onboarding' }],
+      ]);
+    });
 
-      expect(ours.createCustomToken.mock.calls).toEqual(
-        theirs.createCustomToken.mock.calls,
+    it('sets custom claims for an already-signed-in user — the active claims with roles', async () => {
+      const auth = fakeAuth();
+      const result = await authClaimsPorts(asAuth(auth)).setClaims(
+        UserId.of('uid_3'),
+        unwrapActive([Role.Client]),
       );
-      expect(ours.setCustomUserClaims.mock.calls).toEqual(
-        theirs.setCustomUserClaims.mock.calls,
-      );
+      expect(result).toEqual({ ok: true, value: undefined });
+      expect(auth.setCustomUserClaims).toHaveBeenCalledWith('uid_3', {
+        tenantId: 'creativo',
+        stage: 'active',
+        roles: ['client'],
+      });
     });
 
     it('leaves out a tenant the claims do not carry', async () => {
@@ -138,24 +155,16 @@ describe('auth-claims adapter', () => {
   });
 
   describe('the Auth user’s display name', () => {
-    it('sets it with updateUser — what the legacy setDisplayName does', async () => {
-      const ours = fakeAuth();
-      const theirs = fakeAuth();
-      const uid = LegacyUserId.create('u-1');
-      if (!uid.isSuccess()) throw new Error('fixture');
-      await new FirebaseAuthTokenAdapter(asAuth(theirs)).setDisplayName(
-        uid.value,
-        'Ана Петрова',
-      );
-      const result = await authClaimsPorts(asAuth(ours)).setDisplayName(
+    it('sets it with updateUser — the one call the pre-flip setDisplayName made', async () => {
+      const auth = fakeAuth();
+      const result = await authClaimsPorts(asAuth(auth)).setDisplayName(
         UID,
         'Ана Петрова',
       );
       expect(result).toEqual({ ok: true, value: undefined });
-      expect(ours.updateUser).toHaveBeenCalledWith('u-1', {
-        displayName: 'Ана Петрова',
-      });
-      expect(ours.updateUser.mock.calls).toEqual(theirs.updateUser.mock.calls);
+      expect(auth.updateUser.mock.calls).toEqual([
+        ['u-1', { displayName: 'Ана Петрова' }],
+      ]);
     });
 
     it('answers a failure as a value — the caller ignores it, as today', async () => {

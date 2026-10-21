@@ -22,9 +22,17 @@
  *     as `ADMIN`. The party is re-read on its flat keys (`utcEpochMs`,
  *     `localDate`, `startMinutes`); the callable's move payload keeps its
  *     frozen wire (`startIso`, flip-1 plan F1-3).
- * (e) A client renaming themselves (a rules-checked owner write) leaves a
- *     `PROFILE_UPDATED` row whose `profileFields` name the field and that
- *     holds no value.
+ * (e) A profile name change is audited by field name only, BOTH ways
+ *     (flip-2 plan F2-5): a client renaming themselves (a rules-checked
+ *     owner write) and the `updateProfile` callable putting the name back
+ *     each leave exactly one `PROFILE_UPDATED` row whose `profileFields`
+ *     name the field and that holds no value — the rename credited to the
+ *     client (`USER`), the callable's Admin SDK write to
+ *     `SYSTEM`/`ADMIN_SDK` (the plan's §10.15 default) where the event
+ *     carries its writer; the Emulator Suite delivers none, so there both
+ *     rows must read `SYSTEM`/`UNATTRIBUTED_UNKNOWN` — and the restore
+ *     re-derives the search keys from the stored contact, so the profile
+ *     ends exactly as the seed wrote it.
  * (f) The functions build's generated `dist/apps/functions/package.json`
  *     lists exactly the runtime dependencies of
  *     `functions-deps.baseline.json` (ECS migration §6 Phase 1 gate). It
@@ -47,6 +55,7 @@ import http from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import admin from 'firebase-admin';
+import { loadSeedDomain } from '../../seed/load-domain.mjs';
 import { settleTriggers } from '../../seed/settle.mjs';
 import { readCallableAnswer } from './callable-answer.mjs';
 import { checkFunctionsDeps } from './functions-deps.mjs';
@@ -491,15 +500,26 @@ if (seedStats === null) {
   process.exit(1);
 }
 
-await db.doc(`users/${SYSADMIN_UID}`).set({
-  firstName: 'P0',
-  lastName: 'Verifier',
-  phone: '+359888000000',
-  email: 'p0-verify@test.local',
-  roles: ['sysadmin'],
-  status: { kind: 'active' },
-  birthDate: null,
-});
+/*
+ * The sysadmin the backfill runs as: the flat registered `User` body
+ * (`REGISTERED`, `ACTIVE`, the search keys `SearchFieldsSystem` derives),
+ * built by the seed's own `registeredAccountBody`
+ * (`tools/seed/fixtures/users.fixtures.ts`, `satisfies Body<User>`) — so
+ * this account is held to the archetype like every seeded one.
+ */
+const { users: seedUsers } = await loadSeedDomain();
+await db.doc(`users/${SYSADMIN_UID}`).set(
+  seedUsers.registeredAccountBody(
+    {
+      firstName: 'P0',
+      lastName: 'Verifier',
+      phone: '+359888000000',
+      email: 'p0-verify@test.local',
+    },
+    ['sysadmin'],
+    null,
+  ),
+);
 const sysadmin = await idTokenFor(SYSADMIN_UID, {
   stage: 'active',
   roles: ['sysadmin'],
@@ -679,52 +699,118 @@ await check(
   },
 );
 
+/** The actor slice of an audit row: its `actor*` root keys (`Actor`, flat). */
+const actorOf = (row) =>
+  Object.fromEntries(
+    Object.entries(row).filter(([key]) => key.startsWith('actor')),
+  );
+
 await check(
-  '(e) a profile name change is audited by field name, never by value',
+  '(e) a profile name change is audited by field name, never by value — the owner write and updateProfile',
   async () => {
     const client = await idTokenFor(RENAMED_UID, {
       stage: 'active',
       roles: ['client'],
     });
     const profile = (await db.doc(`users/${RENAMED_UID}`).get()).data();
+    assert(
+      profile?.registrationState === 'REGISTERED',
+      `users/${RENAMED_UID} is not a registered account: ${canonical(profile)}`,
+    );
     const original = profile.firstName;
     const renamed = `${original}-P0`;
+    const searchKeysOf = (body) =>
+      canonical({
+        searchName: body.searchName,
+        searchPrefixes: body.searchPrefixes,
+      });
 
-    // A profile act stays an ACCOUNT act (flip 2's): its row targets the user.
+    // A profile act stays an ACCOUNT act: its row targets the user.
     const rowsFor = async (seen) =>
       (await newAuditRows(seen, 'targetUserId', RENAMED_UID)).filter(
         (row) => row.auditAction === 'PROFILE_UPDATED',
       );
-    const proveRow = (rows, values) => {
+    const proveRow = (rows, values, actor, how) => {
       assert(
         rows.length === 1,
-        `${rows.length} rows, expected 1: ${canonical(rows)}`,
+        `${how}: ${rows.length} rows, expected 1: ${canonical(rows)}`,
       );
       const [row] = rows;
       assert(
         canonical(row.profileFields) === canonical(['firstName']),
-        `profileFields ${canonical(row.profileFields)}`,
+        `${how}: profileFields ${canonical(row.profileFields)}`,
       );
       const bytes = canonical(row);
       const leaked = values.filter((value) => bytes.includes(value));
-      assert(leaked.length === 0, `the row holds values: ${leaked.join(', ')}`);
+      assert(
+        leaked.length === 0,
+        `${how}: the row holds values: ${leaked.join(', ')}`,
+      );
+      assert(
+        canonical(actorOf(row)) === canonical(actor),
+        `${how}: actor ${canonical(actorOf(row))}, expected ${canonical(actor)}`,
+      );
       return row;
     };
 
+    // Who each row credits is the writer the EVENT's auth context names
+    // (`AuditSystem.profileWriter`): in production the client for the owner
+    // write and `SYSTEM`/`ADMIN_SDK` for the callable's Admin SDK write
+    // (§10.15's default, pinned by `audit.system.spec.ts` and
+    // `triggers.wire.spec.ts`). The Emulator Suite (firebase-tools 15.11)
+    // delivers Firestore events with no writer context — authtype
+    // `unknown`, a fake e-mail id — so there BOTH rows read
+    // `SYSTEM`/`UNATTRIBUTED_UNKNOWN`, as they did before the identity flip.
+    // The rename row says which world this is; the restore row must then
+    // match that world's pair exactly — never a mix.
+    const UNATTRIBUTED = {
+      actorRole: 'SYSTEM',
+      actorSystemSource: 'UNATTRIBUTED_UNKNOWN',
+    };
+    const ATTRIBUTED = {
+      rename: { actorRole: 'USER', actorUserId: RENAMED_UID },
+      restore: { actorRole: 'SYSTEM', actorSystemSource: 'ADMIN_SDK' },
+    };
+
+    // The rename: the owner's own write, which the rules still allow — the
+    // trigger credits the writer the event names, the client.
     let seen = await auditRowIds();
     await ownerUpdate(`users/${RENAMED_UID}`, { firstName: renamed }, client);
-    const row = proveRow(
-      await waitFor(() => rowsFor(seen), 1, 'the rename row'),
+    const renameRows = await waitFor(() => rowsFor(seen), 1, 'the rename row');
+    const attributed =
+      renameRows.length === 1 &&
+      canonical(actorOf(renameRows[0])) !== canonical(UNATTRIBUTED);
+    const rename = proveRow(
+      renameRows,
       [original, renamed],
+      attributed ? ATTRIBUTED.rename : UNATTRIBUTED,
+      'the owner rename',
     );
 
+    // The restore: the `updateProfile` callable (an Admin SDK write) —
+    // credited to the system (§10.15's default), its search keys
+    // re-derived from the STORED contact.
     seen = await auditRowIds();
-    await ownerUpdate(`users/${RENAMED_UID}`, { firstName: original }, client);
-    proveRow(await waitFor(() => rowsFor(seen), 1, 'the restore row'), [
-      original,
-      renamed,
-    ]);
-    return `profileFields ${canonical(row.profileFields)}, actorRole ${row.actorRole}, resourceId ${row.resourceId}`;
+    const answer = await callable('updateProfile', client, {
+      firstName: original,
+    });
+    assert(
+      answer?.changed === true,
+      `updateProfile answered ${canonical(answer)}, expected { changed: true }`,
+    );
+    const restore = proveRow(
+      await waitFor(() => rowsFor(seen), 1, 'the restore row'),
+      [original, renamed],
+      attributed ? ATTRIBUTED.restore : UNATTRIBUTED,
+      'the updateProfile restore',
+    );
+    const restored = (await db.doc(`users/${RENAMED_UID}`).get()).data();
+    assert(
+      restored.firstName === original &&
+        searchKeysOf(restored) === searchKeysOf(profile),
+      `the profile did not end as the seed wrote it: ${canonical(restored)}`,
+    );
+    return `profileFields ${canonical(rename.profileFields)}; ${attributed ? 'attributed' : 'emulator, no auth context'}: rename actor ${canonical(actorOf(rename))}, restore actor ${canonical(actorOf(restore))}; resourceId ${rename.resourceId}`;
   },
 );
 

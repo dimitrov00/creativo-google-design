@@ -15,11 +15,17 @@ import {
   type BookingContactProps,
   MAX_BOOKING_NOTE_LENGTH,
 } from '@creativo/application/booking';
-import { PROFILE_PORT, User } from '@creativo/application/accounts';
 import { CLOCK } from '@creativo/application/shared';
-import type { CountryIso2 } from '@creativo/application/identity';
-import { AccountStateService } from '@creativo/features/client/account-state';
+import { type CountryIso2, PhoneNumber } from '@creativo/application/identity';
+import {
+  AccountStateService,
+  ageDayOf,
+  saveOwnProfile,
+} from '@creativo/features/client/account-state';
+import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
+import type { E164 } from '@core/components';
+import { Profile, type User } from '@core/entities';
 import {
   UiButton,
   UiModalSheet,
@@ -94,7 +100,7 @@ import {
 export class BookingContactSheet {
   private readonly transloco = inject(TranslocoService);
   private readonly accountState = inject(AccountStateService);
-  private readonly profile = inject(PROFILE_PORT);
+  private readonly profilePorts = inject(PROFILE_PORTS);
   private readonly clock = inject(CLOCK);
 
   /** What the booking already carries, or `null` before anything is captured. */
@@ -122,10 +128,12 @@ export class BookingContactSheet {
     effect(() => {
       const carried = this.uiContact();
       const user = this.accountState.account();
-      this.name.set(carried?.name ?? user?.fullName() ?? '');
-      this.email.set(carried?.email ?? user?.email?.value ?? '');
-      this.phone.set(carried?.phone ?? user?.phone.value ?? null);
-      this.phoneCountry.set(user?.phone.country);
+      this.name.set(
+        carried?.name ?? (user === null ? '' : Profile.fullName(user)),
+      );
+      this.email.set(carried?.email ?? user?.email ?? '');
+      this.phone.set(carried?.phone ?? user?.phone ?? null);
+      this.phoneCountry.set(phoneCountryOf(user?.phone ?? null));
     });
   }
 
@@ -146,8 +154,7 @@ export class BookingContactSheet {
     const next = profileNameFrom(this.name(), user);
     return (
       next !== null &&
-      (next.firstName !== user.firstName.value ||
-        next.lastName !== user.lastName.value)
+      (next.firstName !== user.firstName || next.lastName !== user.lastName)
     );
   });
 
@@ -160,10 +167,7 @@ export class BookingContactSheet {
     const user = this.accountState.account();
     if (!user) return false;
     const typedEmail = this.email().trim().toLowerCase();
-    return (
-      this.phone() !== user.phone.value ||
-      typedEmail !== (user.email?.value ?? '')
-    );
+    return this.phone() !== user.phone || typedEmail !== (user.email ?? '');
   });
 
   /**
@@ -212,13 +216,15 @@ export class BookingContactSheet {
   /**
    * `true` once the profile carries the typed NAME.
    *
-   * Rebuilt through `User.reconstitute`, the domain's own validating door,
-   * so a value the profile would refuse never reaches the port. Phone and
-   * e-mail are the STORED ones, never the typed: the profile save writes
-   * only the owner's allowlist, and the search keys it derives must index
-   * the contact details the document actually holds. No refresh afterwards:
-   * `account` is the live `users/{uid}` listener, so the review row behind
-   * the sheet shows the new name as soon as the write lands.
+   * The owner write (`PROFILE_PORTS.writeOwnProfile`) judges the edit with
+   * `ProfileEditSystem.decide` against the stored profile inside its
+   * transaction — the one rule the server's `updateProfile` runs too — so a
+   * value the profile would refuse never reaches the document. Phone and
+   * e-mail are the STORED ones, never the typed: the write touches only the
+   * owner's allowlist, and the search keys it derives index the contact
+   * details the document actually holds. No refresh afterwards: `account`
+   * is the live `users/{uid}` listener, so the review row behind the sheet
+   * shows the new name as soon as the write lands.
    */
   private async writeProfile(contact: BookingContactProps): Promise<boolean> {
     const user = this.accountState.account();
@@ -226,28 +232,18 @@ export class BookingContactSheet {
     const name = profileNameFrom(contact.name, user);
     if (name === null) return false;
 
-    // The birth-date age window is checked against an explicit instant — the
-    // Clock port, never a raw Date (§7.1).
-    const today = this.clock.now('UTC');
-    if (today.isFailure()) return false;
+    // The birth-date age window (the stored date is re-judged) is checked
+    // on the UTC day of the Clock port, never a raw Date (§7.1).
+    const ageDay = ageDayOf(this.clock);
+    if (ageDay === null) return false;
 
-    const updated = User.reconstitute(
-      {
-        id: user.id.value,
-        phone: user.phone.value,
-        firstName: name.firstName,
-        lastName: name.lastName,
-        roles: [...user.roles],
-        status: user.status,
-        email: user.email?.value,
-        birthDate: user.birthDate?.toISODate(),
-      },
-      today.value,
+    const code = await saveOwnProfile(
+      this.profilePorts,
+      user.id,
+      { firstName: name.firstName, lastName: name.lastName, birthDate: null },
+      ageDay,
     );
-    if (updated.isFailure()) return false;
-
-    const saved = await this.profile.saveProfile(updated.value);
-    return saved.isSuccess();
+    return code === null;
   }
 }
 
@@ -270,6 +266,13 @@ function profileNameFrom(
   if (first === undefined || first.length === 0) return null;
   return {
     firstName: first,
-    lastName: rest.length > 0 ? rest.join(' ') : user.lastName.value,
+    lastName: rest.length > 0 ? rest.join(' ') : (user.lastName ?? ''),
   };
+}
+
+/** The stored E.164's country, as the phone field names it (`undefined` when it cannot be placed). */
+function phoneCountryOf(phone: E164 | null): CountryIso2 | undefined {
+  if (phone === null) return undefined;
+  const parsed = PhoneNumber.create(phone);
+  return parsed.isSuccess() ? parsed.value.country : undefined;
 }

@@ -477,6 +477,74 @@ describe('RegistrationSystem.provision (firestore-user-repository.spec.ts)', () 
   });
 });
 
+describe('RegistrationSystem.adoptStub — verifyOtp’s tx-2 decision (F2-9)', () => {
+  const UID = UserId.of('uid_auth');
+  const PHONE = ParsedIdentifier.phone(E164.of('+359888123456'));
+  const EMAIL = ParsedIdentifier.email(Email.of('client@example.com'));
+
+  it('absent → the stub of the login channel, to create', () => {
+    expect(RegistrationSystem.adoptStub(null, UID, PHONE)).toEqual({
+      ok: true,
+      value: {
+        user: RegistrationSystem.provision(UID, PHONE),
+        createStub: true,
+      },
+    });
+  });
+
+  it('a PROVISIONED stub of THIS destination → adopted as read, nothing to write (the race’s winner, or an orphan Auth user’s stub)', () => {
+    const phoneStub = RegistrationSystem.provision(UID, PHONE);
+    expect(RegistrationSystem.adoptStub(phoneStub, UID, PHONE)).toEqual({
+      ok: true,
+      value: { user: phoneStub, createStub: false },
+    });
+    const emailStub = RegistrationSystem.provision(UID, EMAIL);
+    const adopted = unwrapOk(
+      RegistrationSystem.adoptStub(emailStub, UID, EMAIL),
+    );
+    expect(adopted.user).toBe(emailStub);
+    expect(adopted.createStub).toBe(false);
+  });
+
+  it('a REGISTERED account → IDENTITY_OTP_ACCOUNT_CONFLICT, never signed into — whatever its contact', () => {
+    const registeredUser: User = {
+      ...RegistrationSystem.provision(UID, PHONE),
+      registrationState: RegistrationState.Registered,
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      roles: [Role.Client],
+    };
+    expect(RegistrationSystem.adoptStub(registeredUser, UID, PHONE)).toEqual({
+      ok: false,
+      error: { errorCode: 'IDENTITY_OTP_ACCOUNT_CONFLICT' },
+    });
+  });
+
+  it('a stub carrying another contact → IDENTITY_OTP_ACCOUNT_CONFLICT: another phone, or the e-mail channel where the phone was asked', () => {
+    const otherPhone = RegistrationSystem.provision(
+      UID,
+      ParsedIdentifier.phone(E164.of('+359888000000')),
+    );
+    expect(RegistrationSystem.adoptStub(otherPhone, UID, PHONE)).toEqual({
+      ok: false,
+      error: { errorCode: 'IDENTITY_OTP_ACCOUNT_CONFLICT' },
+    });
+    const emailOnly = RegistrationSystem.provision(UID, EMAIL);
+    expect(RegistrationSystem.adoptStub(emailOnly, UID, PHONE).ok).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const stub = deepFreeze(RegistrationSystem.provision(UID, PHONE));
+    const parsed = deepFreeze({ ...PHONE });
+    const once = RegistrationSystem.adoptStub(stub, UID, parsed);
+    expect(RegistrationSystem.adoptStub(stub, UID, parsed)).toEqual(once);
+    expect(RegistrationSystem.adoptStub(null, UID, parsed)).toEqual(
+      RegistrationSystem.adoptStub(null, UID, parsed),
+    );
+    expect(stub).toEqual(RegistrationSystem.provision(UID, PHONE));
+  });
+});
+
 describe('RegistrationField vocabulary (registration-field.spec.ts)', () => {
   it('accepts every known field', () => {
     for (const field of [

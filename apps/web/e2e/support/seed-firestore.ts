@@ -9,6 +9,8 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import type { LoyaltyAccountFixture } from '@creativo/application/engagement/testing';
 import {
+  AccountLifecycle,
+  BirthDate,
   type ClientStats,
   Combinability,
   CouponExpiryRule,
@@ -23,6 +25,8 @@ import {
   NotificationPayload,
   PhotoOrigin,
   PolicyPassStamp,
+  RegistrationState,
+  Role,
 } from '@core/components';
 import {
   type AppointmentPhoto,
@@ -34,6 +38,7 @@ import {
   type InboxNotification,
   Profile,
   Subcollections,
+  type User,
 } from '@core/entities';
 import {
   AppointmentId,
@@ -78,10 +83,11 @@ function adminApp() {
 
 /**
  * Seeds a `users/{uid}` doc directly via the Admin SDK (bypasses Firestore
- * Security Rules), matching `FirestoreProfileAdapter`'s persisted shape
- * (`libs/infrastructure/firestore/src/lib/profile.adapter.ts`). No seeding
- * helper existed yet for E2E — this is the first one, following
- * `mint-custom-token.ts`'s app-reuse pattern.
+ * Security Rules): the flat REGISTERED `User` of `@core/entities` minus its
+ * `id`, as `completeRegistration` leaves it — `client`, `ACTIVE`, the phone
+ * as E.164, and the search keys `SearchFieldsSystem` derives — so the web's
+ * profile reads (`ProfilePorts`) and the staff search see exactly what
+ * production stores. A refused phone or birth date is a broken spec seed.
  */
 export async function seedUserProfile(
   uid: string,
@@ -92,20 +98,31 @@ export async function seedUserProfile(
     birthDate?: string | null;
   } = {},
 ): Promise<void> {
+  const firstName = overrides.firstName ?? 'Ada';
+  const lastName = overrides.lastName ?? 'Lovelace';
+  const rawPhone = overrides.phone ?? '+14155550100';
+  const phone = sure(PhoneSystem.parse(rawPhone, null), rawPhone).e164;
+  const rawBirthDate = overrides.birthDate ?? null;
+  const birthDate =
+    rawBirthDate === null ? null : BirthDate.parse(rawBirthDate);
+  if (rawBirthDate !== null && birthDate === null) {
+    throw new Error(`e2e seed: ${rawBirthDate} is not valid`);
+  }
+  const body = {
+    registrationState: RegistrationState.Registered,
+    phone,
+    firstName,
+    lastName,
+    roles: [Role.Client],
+    ...AccountLifecycle.active(),
+    email: null,
+    birthDate,
+    ...SearchFieldsSystem.searchFields(firstName, lastName, phone, null),
+  } satisfies Omit<User, 'id'>;
   await getFirestore(adminApp())
-    .collection('users')
+    .collection(Collections.Users)
     .doc(uid)
-    .set({
-      phone: overrides.phone ?? '+14155550100',
-      firstName: overrides.firstName ?? 'Ada',
-      lastName: overrides.lastName ?? 'Lovelace',
-      roles: ['client'],
-      status: { kind: 'active' },
-      email: null,
-      birthDate: overrides.birthDate ?? null,
-      searchName: `${(overrides.firstName ?? 'Ada').toLowerCase()} ${(overrides.lastName ?? 'Lovelace').toLowerCase()}`,
-      searchPrefixes: [],
-    });
+    .set(body);
 }
 
 /** A 1×1 PNG: the smallest image the avatar lookup can find. */

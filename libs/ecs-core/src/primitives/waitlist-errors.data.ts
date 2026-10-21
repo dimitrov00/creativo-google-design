@@ -57,3 +57,18 @@ export namespace WaitlistError {
     readonly errorCode: typeof WaitlistErrorCode.AlreadyWatching;
   };
 }
+
+/** Why a withdrawal was refused — the ONLY source of these strings, the field `errorCode`. */
+export const CancelWaitlistRefusalCode = {
+  /** No such request, or not the caller's. */
+  NotFound: 'BOOKING_WAITLIST_NOT_FOUND',
+  /** The request already concluded (`BOOKED`, `EXPIRED`). */
+  NotCancellable: 'BOOKING_WAITLIST_NOT_CANCELLABLE',
+} as const;
+export type CancelWaitlistRefusalCode =
+  (typeof CancelWaitlistRefusalCode)[keyof typeof CancelWaitlistRefusalCode];
+
+/** A refused withdrawal — a flat struct the edge translates by `errorCode`. */
+export type CancelWaitlistRefusal = {
+  readonly errorCode: CancelWaitlistRefusalCode;
+};

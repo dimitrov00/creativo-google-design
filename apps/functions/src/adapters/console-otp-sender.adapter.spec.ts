@@ -1,5 +1,5 @@
 import { E164, Email, ParsedIdentifier } from '@core/components';
-import { type Log, type SendOtp } from '@core/ports';
+import type { Log, OtpDeliveryPorts } from '@core/ports';
 import { consoleOtpSender } from './console-otp-sender.adapter';
 
 type Line = {
@@ -19,14 +19,15 @@ function recordingLog(): { readonly log: Log; readonly lines: Line[] } {
 }
 
 describe('console-otp-sender adapter (the login-OTP sender)', () => {
-  it('is the SendOtp port', () => {
-    const port: SendOtp = consoleOtpSender(recordingLog().log);
-    expect(typeof port).toBe('function');
+  it('is the OtpDeliveryPorts bundle', () => {
+    const ports: OtpDeliveryPorts = consoleOtpSender(recordingLog().log);
+    expect(Object.keys(ports)).toEqual(['sendOtp']);
+    expect(typeof ports.sendOtp).toBe('function');
   });
 
   it('logs the legacy line for a phone — one info line, word for word', async () => {
     const { log, lines } = recordingLog();
-    const result = await consoleOtpSender(log)(
+    const result = await consoleOtpSender(log).sendOtp(
       ParsedIdentifier.phone(E164.of('+359888123456')),
       '042917',
     );
@@ -42,7 +43,7 @@ describe('console-otp-sender adapter (the login-OTP sender)', () => {
 
   it('names the e-mail channel for an e-mail destination', async () => {
     const { log, lines } = recordingLog();
-    await consoleOtpSender(log)(
+    await consoleOtpSender(log).sendOtp(
       ParsedIdentifier.email(Email.of('ana@example.com')),
       '123456',
     );
@@ -52,7 +53,7 @@ describe('console-otp-sender adapter (the login-OTP sender)', () => {
   });
 
   it('never fails — there is no delivery to fail yet', async () => {
-    const send = consoleOtpSender(() => undefined);
+    const { sendOtp: send } = consoleOtpSender(() => undefined);
     await expect(
       send(ParsedIdentifier.phone(E164.of('+359888000000')), '000000'),
     ).resolves.toEqual({ ok: true, value: undefined });

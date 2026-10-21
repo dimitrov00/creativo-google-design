@@ -5,6 +5,7 @@ import {
   type BarberPreference,
   type BookingContact,
   type BookingPolicy,
+  CustomerOrigin,
   Placement,
   type PlacementPolicy,
   WriteOp,
@@ -35,6 +36,7 @@ import {
   type AuditFact,
   AuditSystem,
   BookingDecisionSystem,
+  CustomerRecordSystem,
   type DecideBookingInput,
   PartyAdmissionSystem,
   type RequestedSubjectInput,
@@ -59,7 +61,6 @@ import {
   zoneOf,
 } from './booking-read-set.pipeline';
 import {
-  customerCreates,
   customerIdsFor,
   customerIdsOf,
   runWithCustomerRetry,
@@ -385,7 +386,13 @@ function decideBooking(
     writes: [
       WriteOp.create(appointmentPath(id), body),
       ...busyMergeWrites(placement, decided.value.busyWrites, zone),
-      ...customerCreates(customerIds, set.customers, contacts, nowUtcMs),
+      ...CustomerRecordSystem.createsFor(
+        customerIds,
+        set.customers,
+        contacts,
+        CustomerOrigin.FirstBooking,
+        nowUtcMs,
+      ),
     ],
   });
 }

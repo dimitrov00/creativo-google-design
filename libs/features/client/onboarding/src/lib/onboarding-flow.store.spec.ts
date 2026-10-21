@@ -4,60 +4,57 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AUTH_GATEWAY,
   OTP_CLIENT,
-  Result,
   ZonedDateTime,
-  fail,
   ok,
   reconstituteIdentifier,
 } from '@creativo/application/identity';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
+import { CLOCK } from '@creativo/application/shared';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
+import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
+import { BirthDate } from '@core/components';
+import type { User } from '@core/entities';
+import type { ProfilePorts } from '@core/ports';
 import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  User,
-} from '@creativo/application/accounts';
+  IdentityErrorCode,
+  RepositoryError,
+  Result as EcsResult,
+  UserId,
+} from '@core/primitives';
+import { memoryProfilePorts, registeredUserFixture } from '@core/testing';
 import { OnboardingFlowStore } from './onboarding-flow.store';
-
-function requiredValue<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
-}
 
 const EMAIL_IDENTIFIER = reconstituteIdentifier({
   kind: 'email',
   value: 'client@example.com',
 });
 
-/** The just-registered profile `UpdateProfileUseCase` loads and rebuilds. */
+const UID = UserId.of('uid_1');
+
+/** The just-registered profile the owner write reads and edits. */
 function seededProfile(): User {
-  const today = requiredValue(
-    ZonedDateTime.fromISO('2026-07-25T12:00:00', 'UTC'),
-  );
-  return requiredValue(
-    User.create(
-      {
-        id: 'uid_1',
-        phone: '+359881234567',
-        firstName: 'Ada',
-        lastName: 'Lovelace',
-        roles: ['client'],
-        status: { kind: 'active' },
-      },
-      today,
-    ),
-  );
+  return registeredUserFixture({
+    id: UID,
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+  });
 }
 
 describe('OnboardingFlowStore — birthday step', () => {
   const completeRegistration = vi.fn();
-  const getProfile = vi.fn();
-  const saveProfile = vi.fn();
+  /** `users/{uid}` as the memory port holds it — what a write leaves. */
+  let users: Map<UserId, User>;
+  /** How many owner writes reached the port. */
+  let writes: number;
+  /** A spec sets it to make the owner write fail in the store. */
+  let writeFails: boolean;
   let store: OnboardingFlowStore;
 
   beforeEach(() => {
     completeRegistration.mockReset().mockResolvedValue(ok(undefined));
-    getProfile.mockReset().mockResolvedValue(ok(seededProfile()));
-    saveProfile.mockReset().mockResolvedValue(ok(undefined));
+    users = new Map([[UID, seededProfile()]]);
+    writes = 0;
+    writeFails = false;
+    const memory = memoryProfilePorts(users);
 
     TestBed.configureTestingModule({
       providers: [
@@ -90,12 +87,18 @@ describe('OnboardingFlowStore — birthday step', () => {
           },
         },
         {
-          provide: PROFILE_PORT,
+          provide: PROFILE_PORTS,
           useValue: {
-            getProfile,
-            observeProfile: () => of(ok(seededProfile())),
-            saveProfile,
-          },
+            ...memory,
+            writeOwnProfile: async (userId, decide) => {
+              writes += 1;
+              return writeFails
+                ? EcsResult.err(
+                    RepositoryError.writeFailed(`users/${userId}`, 'down'),
+                  )
+                : memory.writeOwnProfile(userId, decide);
+            },
+          } satisfies ProfilePorts,
         },
         {
           provide: AVATAR_UPLOADER,
@@ -173,14 +176,15 @@ describe('OnboardingFlowStore — birthday step', () => {
     expect(store.state().kind).toBe('entering');
   });
 
-  it('submitBirthday persists the ISO date through UpdateProfileUseCase, then advances to avatar', async () => {
+  it('submitBirthday persists the ISO date through the owner profile write, then advances to avatar', async () => {
     await walkToBirthday();
 
     await store.submitBirthday({ day: 3, month: 7, year: 1990 });
 
-    expect(saveProfile).toHaveBeenCalledTimes(1);
-    const [savedUser] = saveProfile.mock.calls[0] as [User];
-    expect(savedUser.birthDate?.toISODate()).toBe('1990-07-03');
+    expect(writes).toBe(1);
+    expect(users.get(UID)?.birthDate).toBe(BirthDate.of('1990-07-03'));
+    // A birthday-only save keeps the names the registration wrote.
+    expect(users.get(UID)?.firstName).toBe('Ada');
     expect(store.state().kind).toBe('avatar');
   });
 
@@ -189,8 +193,7 @@ describe('OnboardingFlowStore — birthday step', () => {
 
     store.skipBirthday();
 
-    expect(getProfile).not.toHaveBeenCalled();
-    expect(saveProfile).not.toHaveBeenCalled();
+    expect(writes).toBe(0);
     expect(store.state().kind).toBe('avatar');
   });
 
@@ -199,17 +202,16 @@ describe('OnboardingFlowStore — birthday step', () => {
 
     await store.submitBirthday({ day: 30, month: 2, year: 1990 });
 
-    expect(getProfile).not.toHaveBeenCalled();
-    expect(saveProfile).not.toHaveBeenCalled();
+    expect(writes).toBe(0);
     const state = store.state();
     expect(state.kind).toBe('birthday');
     if (state.kind === 'birthday') {
-      expect(state.error).toBe('identity.birth_date.invalid');
+      expect(state.error).toBe(IdentityErrorCode.BirthDateInvalid);
     }
   });
 
   it('a failed save stays on the birthday step, carrying the stable error code', async () => {
-    saveProfile.mockResolvedValue(fail(new RepositoryError('firestore down')));
+    writeFails = true;
     await walkToBirthday();
 
     await store.submitBirthday({ day: 3, month: 7, year: 1990 });

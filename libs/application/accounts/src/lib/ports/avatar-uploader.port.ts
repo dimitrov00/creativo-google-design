@@ -1,6 +1,6 @@
 import { InjectionToken } from '@angular/core';
 import { Result } from '@creativo/domain/kernel';
-import { UserId } from '@creativo/domain/accounts';
+import type { UserId } from '@core/primitives';
 import { AvatarUploadError } from './avatar-uploader.errors';
 
 /** Where the uploaded avatar can be read back from. Storage-agnostic on purpose — the concrete Firebase Storage adapter lands in Goal 04. */

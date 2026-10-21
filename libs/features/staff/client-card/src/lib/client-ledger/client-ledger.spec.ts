@@ -7,11 +7,12 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PROFILE_PORT, ZonedDateTime } from '@creativo/application/accounts';
+import { ZonedDateTime } from '@creativo/application/accounts';
 import {
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
   LOYALTY_ACTIVITY_READER,
@@ -27,17 +28,15 @@ import {
 import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import {
   GEORGI,
-  InMemoryProfilePort,
   MARTIN,
   NOW_MS,
   catalogueOf,
   customerPortsOf,
   georgiHistory,
   georgiOpenContext,
-  georgiUser,
   martinHistory,
-  martinUser,
   must,
+  profilePortsOf,
   statsOf,
   statsPortsOf,
   subjectOf,
@@ -104,15 +103,7 @@ async function mount(options: MountOptions = {}) {
           now: (zone: string) => ZonedDateTime.fromMillis(NOW_MS, zone),
         },
       },
-      {
-        provide: PROFILE_PORT,
-        useValue: new InMemoryProfilePort(
-          new Map([
-            [GEORGI, georgiUser()],
-            [MARTIN, martinUser()],
-          ]),
-        ),
-      },
+      { provide: PROFILE_PORTS, useValue: profilePortsOf() },
       { provide: CUSTOMER_PORTS, useValue: customerPortsOf() },
       {
         provide: CLIENT_STATS_READ_PORTS,

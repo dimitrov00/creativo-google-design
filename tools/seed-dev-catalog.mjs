@@ -149,7 +149,8 @@ const {
   scheduleExceptionsFor,
 } = seed.catalog;
 const { CANCELLATION_WINDOW_HOURS, appointmentPhotoBody } = seed.appointments;
-const { buildClientBook, searchFields } = seed.book;
+const { buildClientBook } = seed.book;
+const { staffAccountBody } = seed.users;
 const {
   BADGE_PROGRESS_COLLECTION,
   CLIENT_JOURNAL_COLLECTION,
@@ -498,20 +499,12 @@ if (CATALOG_ONLY) {
  * email, reads `roles` off the doc (rules make that field Admin-SDK-only),
  * and mints them into the token — `signInWithCustomToken` then creates the
  * Auth user on first sign-in by itself. Sign in as staff@test.local; the
- * OTP prints to the emulator log like every dev sign-in.
+ * OTP prints to the emulator log like every dev sign-in. The body is the
+ * flat registered `User` of `tools/seed/fixtures/users.fixtures.ts`
+ * (`staffAccountBody`), its search keys `SearchFieldsSystem`'s.
  */
 const STAFF_UID = 'dev-staff-ivan';
-// `searchFields` is `tools/seed/fixtures.mjs`'s: one copy of the prefix rule.
-await db.doc(`users/${STAFF_UID}`).set({
-  phone: '+35943012399',
-  firstName: 'Иван',
-  lastName: 'Колев',
-  roles: ['barber', 'admin'],
-  status: { kind: 'active' },
-  email: 'staff@test.local',
-  birthDate: null,
-  ...searchFields('Иван', 'Колев', '+35943012399', 'staff@test.local'),
-});
+await db.doc(`users/${STAFF_UID}`).set(staffAccountBody);
 console.log('seeded staff account: staff@test.local (barber+admin)');
 
 /*
@@ -520,7 +513,9 @@ console.log('seeded staff account: staff@test.local (barber+admin)');
  * Names and numbers are the same ones their seeded bookings carry, and
  * EVERY account on a seat has one: `dev-client-5/6/8` owned bookings for
  * months with no profile behind them, which no client page can render.
- * Мартин's `birthDate` is today's month and day — the birthday state.
+ * Мартин's `birthDate` is today's month and day — the birthday state. Each
+ * body is the flat registered `User` (`clientUserBody`, flip 2), written
+ * whole, so a re-run replaces whatever an earlier shape left.
  */
 {
   const batch = db.batch();

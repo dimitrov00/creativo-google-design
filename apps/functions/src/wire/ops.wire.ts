@@ -2,6 +2,8 @@ import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
   type RepositoryError,
   Result,
+  type RunBackfillRefusal,
+  RunBackfillRefusalCode,
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -10,8 +12,6 @@ import { BackfillPlanSystem, ZonedTimeSystem } from '@core/systems';
 import {
   type BackfillPageResult,
   type RunBackfillCommand,
-  type RunBackfillRefusal,
-  RunBackfillRefusalCode,
 } from '@core/pipelines';
 import { type EdgeError, LegacyWireCode } from '../edge';
 import { callerRoles } from '../lib/booking/caller-roles';

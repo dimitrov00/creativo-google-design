@@ -1,5 +1,6 @@
 import type {
   AuthClaims,
+  AuthDeployment,
   Identifier,
   ParsedIdentifier,
 } from '@core/components';
@@ -18,8 +19,9 @@ import type { AccountContact, Customer, Otp, User } from '@core/entities';
  * The identity context's server ports (blueprint §4.1 `requestOtp`,
  * `verifyOtp`, `completeRegistration`): the `otps` reads and write, the
  * users lookup by destination, the customer record of an account (D29), the
- * Admin-Auth calls, the login-OTP sender and the OTP randomness. Outbound side channels (Auth, the sender) answer
- * `PipelineError`; storage reads answer `RepositoryError`.
+ * Admin-Auth calls, the login-OTP sender, the OTP randomness and the
+ * deployment's auth configuration. Outbound side channels (Auth, the
+ * sender) answer `PipelineError`; storage reads answer `RepositoryError`.
  *
  * No `RequestContactChange`/`ConfirmContactChange`: §9 D12(b) — contact
  * change is not shipped, its adapter, port and use case are deleted in
@@ -30,18 +32,19 @@ import type { AccountContact, Customer, Otp, User } from '@core/entities';
 
 /**
  * The tenant a new challenge belongs to (`Otp.tenantId`, the token
- * claims) — today the single deployment's `DEFAULT_TENANT_ID`
- * (`lib/otp/tenant.ts`), a port so a second tenant changes the root, not the
+ * claims) — the single deployment's `DEFAULT_TENANT`, declared once in the
+ * functions composition root and answered by `singleTenantPorts(tenantId)`
+ * (`tenant.adapter.ts`): a port so a second tenant changes the root, not the
  * pipeline.
  */
 export type LoadTenant = () => Promise<Result<TenantId, RepositoryError>>;
 
 /**
  * Every still-open challenge for one destination created at or after
- * `sinceUtcMs` — `destination ==`, not consumed, created at or after
- * (index #10; `findRecentUnconsumedByDestination`,
- * `otp-repository.port.ts`). OtpSystem decides from them whether a new
- * code may be issued; the port only reads.
+ * `sinceUtcMs` — `destination ==`, `consumedAtUtcMs == null`,
+ * `createdAtUtcMs >=` (index #10: `destination, consumedAtUtcMs,
+ * createdAtUtcMs`; `firestore-otps.adapter.ts`). OtpSystem decides from
+ * them whether a new code may be issued; the port only reads.
  */
 export type LoadOpenOtps = (
   destination: Identifier,
@@ -61,8 +64,9 @@ export type SaveOtp = (otp: Otp) => Promise<Result<void, RepositoryError>>;
 
 /**
  * Deliver a login code — the LOGIN-OTP sender identity, never shared with
- * a campaign sender (`console-otp-sender.adapter.ts` writes it through `Log`
- * today, as `console-otp-sender.ts` does). The destination arrives parsed —
+ * a campaign sender (`console-otp-sender.adapter.ts`'s `consoleOtpSender`
+ * writes it through `Log` until a real SMS/e-mail sender lands). The
+ * destination arrives parsed —
  * its channel is the `identifierChannel` the edge parse or the stored
  * `otpDestinationType` named (`ParsedIdentifier.ofDestination`) — so no
  * adapter ever infers an SMS from an e-mail by sniffing the string.
@@ -77,10 +81,10 @@ export type SendOtp = (
  * code and a salt, hashes, and hands `OtpSystem.issue` the hash; on verify,
  * `codeMatches` answers the boolean `OtpSystem.verify` takes — the typed
  * code hashed with the stored salt and compared with the stored hash in
- * CONSTANT time (`timingSafeEqual`, as today's `NodeOtpCrypto.verify`), so
- * no pipeline ever compares two hashes with `===`. Implemented by
- * `otp-crypto.adapter.ts` — node, and the fixed-code variant for the
- * emulator (today's `NodeOtpCrypto`/`FixedCodeOtpCrypto`).
+ * CONSTANT time (`timingSafeEqual`), so no pipeline ever compares two
+ * hashes with `===`. Implemented by `otp-crypto.adapter.ts` — the node
+ * factory (a CSPRNG code, scrypt), and the fixed-code factory for the
+ * emulator.
  */
 export type OtpCrypto = {
   readonly nextCode: () => string;
@@ -97,9 +101,10 @@ export type OtpCrypto = {
 
 /**
  * The account holding a phone or e-mail — the single-field users query
- * `where('phone' | 'email', '==', value)` (`firestore-user-repository.ts:175`,
- * no composite), the field picked by the parsed destination's
- * `identifierChannel`; `null` when none does.
+ * `where('phone' | 'email', '==', value).limit(1)`
+ * (`firestore-users.adapter.ts`, no composite), the field picked by the
+ * parsed destination's `identifierChannel`; `null` when none does. The
+ * account answers as stored, a `PROVISIONED` stub included.
  */
 export type FindUserByDestination = (
   destination: ParsedIdentifier,
@@ -109,11 +114,12 @@ export type FindUserByDestination = (
  * The client record of an account, OUTSIDE any transaction — `customers
  * where userId == uid limit 1` (the single-field index on `userId`, D29,
  * flatten-spec §5.5): what the web reads to learn the signed-in account's
- * `CustomerId`; `null` when the account has no record yet (every account
- * registered before the identity flip (2) that never booked). Inside a
- * booking or edit transaction the server reads `customers/{CustomerId.forUser
+ * `CustomerId`; `null` when the account has no record yet (a provisioned
+ * account that never registered nor booked). Inside a booking, edit or
+ * registration transaction the server reads `customers/{CustomerId.forUser
  * (uid, hash)}` by its derivable path through `ReadTx` instead, and creates
- * a missing one (`FIRST_BOOKING`) in that commit (F1-5).
+ * a missing one (`FIRST_BOOKING`, `REGISTRATION`) in that commit
+ * (`CustomerRecordSystem.createsFor`, F1-5, F2-7b).
  */
 export type LoadCustomerForUser = (
   userId: UserId,
@@ -133,9 +139,11 @@ export type LoadAccountContacts = (
 /**
  * The Firebase Auth user holding a phone or e-mail
  * (`auth.getUserByPhoneNumber` / `getUserByEmail`); `null` when none does.
- * The first-verification race's resolver: after `ProvisionAuthUser` is
- * refused, the winner's uid is read HERE — the users query alone can be
- * `null` while the winner's stub is not written yet.
+ * The resolver after `ProvisionAuthUser` is refused — the first-verification
+ * race's winner, or an orphan Auth user no `users` document carries: the
+ * users query alone can be `null` while that uid's stub is not written.
+ * `verifyOtp` then adopts the uid only through
+ * `RegistrationSystem.adoptStub` (F2-9).
  */
 export type FindAuthUserByDestination = (
   destination: ParsedIdentifier,
@@ -160,7 +168,12 @@ export type MintCustomToken = (
   claims: AuthClaims,
 ) => Promise<Result<string, PipelineError>>;
 
-/** Replace the user's custom claims — `completeRegistration`'s flip to active. */
+/**
+ * Replace the user's custom claims. No pipeline calls it after the identity
+ * flip: `completeRegistration` MINTS a token carrying the active claims
+ * instead (a claims-set beside a mint for one uid breaks the Auth
+ * emulator's next sign-in). Kept for Phase 4's role grants.
+ */
 export type SetClaims = (
   uid: UserId,
   claims: AuthClaims,
@@ -169,11 +182,10 @@ export type SetClaims = (
 /**
  * The Auth user's display name — what the header/menu account monogram reads
  * through `AuthGateway.currentDisplayName()` (session-cached, no Firestore
- * read). `completeRegistration` calls it after the registered `Update` with
- * `"<firstName> <lastName>"` and IGNORES its Result — best-effort identity
- * chrome that must never fail a complete registration (the monogram falls
- * back to the identifier's initial), as today
- * (`complete-registration.use-case.ts:266-274`).
+ * read). `completeRegistration` calls it after the registered `Set` with
+ * `Profile.fullName` and IGNORES its Result — best-effort identity chrome
+ * that must never fail a complete registration (the monogram falls back to
+ * the identifier's initial).
  */
 export type SetDisplayName = (
   uid: UserId,
@@ -214,11 +226,18 @@ export type OtpCryptoPorts = {
   readonly otpCrypto: OtpCrypto;
 };
 
-/** An account by its sign-in destination, in Firestore and in Auth. */
-export type UserDirectoryPorts = {
+/** The account (`users`) holding a sign-in destination — `firestore-users.adapter.ts`. */
+export type UserLookupPorts = {
   readonly findUserByDestination: FindUserByDestination;
+};
+
+/** The Firebase Auth user holding a sign-in destination — `auth-claims.adapter.ts`, beside {@link AuthAdminPorts}. */
+export type AuthUserLookupPorts = {
   readonly findAuthUserByDestination: FindAuthUserByDestination;
 };
+
+/** An account by its sign-in destination, in Firestore and in Auth — two adapters, one suite. */
+export type UserDirectoryPorts = UserLookupPorts & AuthUserLookupPorts;
 
 /** Firebase Auth's admin writes — provision, token, claims, display name. */
 export type AuthAdminPorts = {
@@ -229,10 +248,21 @@ export type AuthAdminPorts = {
 };
 
 /**
+ * The deployment's authentication configuration — which strategy runs (the
+ * channel `requestOtp` accepts, the OTP policy, the fields registration
+ * requires): a value the composition root says in one place
+ * (`AuthDeployment.DEFAULT` today), not a read — configuration as a bundle,
+ * as `TenantZonePorts` is.
+ */
+export type AuthDeploymentPorts = {
+  readonly authDeployment: AuthDeployment;
+};
+
+/**
  * The identity context's whole port suite — an intersection of its
- * bundles. The users stub `Create` and the registered body `Update` are
+ * bundles. The users stub `Create` and the registered body `Set` are
  * entries of a `CommitPlan` (`tx.port.ts`), never a port of their own; so
- * is a `FIRST_BOOKING` customer `Create` (F1-5).
+ * is a `FIRST_BOOKING` or `REGISTRATION` customer `Create` (F1-5, F2-7b).
  */
 export type IdentityPorts = CustomerPorts &
   AccountContactPorts &
@@ -241,4 +271,5 @@ export type IdentityPorts = CustomerPorts &
   OtpDeliveryPorts &
   OtpCryptoPorts &
   UserDirectoryPorts &
-  AuthAdminPorts;
+  AuthAdminPorts &
+  AuthDeploymentPorts;

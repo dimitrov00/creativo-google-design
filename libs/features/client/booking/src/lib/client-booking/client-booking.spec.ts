@@ -16,7 +16,7 @@ import {
   activePrincipal,
   roleFromPrimitive,
 } from '@creativo/application/identity';
-import { AVATAR_UPLOADER, PROFILE_PORT } from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import {
   BOOKING_DRAFT_STORE,
   BOOKING_GATEWAY,
@@ -37,6 +37,7 @@ import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
 import {
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
+  PROFILE_PORTS,
   SCHEDULING_READ_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -79,6 +80,7 @@ import {
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
+  memoryProfilePorts,
   type SchedulingReadState,
   appointmentFixture,
   at,
@@ -257,13 +259,7 @@ async function renderShell(
           currentIdentifier: () => null,
         },
       },
-      {
-        provide: PROFILE_PORT,
-        useValue: {
-          getProfile: () => Promise.resolve(ok(null)),
-          observeProfile: () => of(ok(null)),
-        },
-      },
+      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
       {
         provide: AVATAR_UPLOADER,
         useValue: {

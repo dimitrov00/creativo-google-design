@@ -4,14 +4,23 @@ import {
   onDocumentWrittenWithAuthContext,
 } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { type Result, UtcEpochMs } from '@core/primitives';
+import { type Result, TenantId, UtcEpochMs, defect } from '@core/primitives';
+import { AuthDeployment } from '@core/components';
 import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
-import { type CallableName, Callables, type NowUtcMs } from '@core/ports';
+import {
+  type CallableName,
+  Callables,
+  type ClockPorts,
+  type HashPorts,
+  type IdPorts,
+  type NowUtcMs,
+} from '@core/ports';
 import {
   auditProfileChange,
   bookAppointment,
   cancelAppointment as cancelAppointmentPipeline,
   cancelWaitlist as cancelWaitlistPipeline,
+  completeRegistration as completeRegistrationPipeline,
   continuePolicyRecompute,
   editAppointment,
   markArrival,
@@ -20,6 +29,7 @@ import {
   rebuildBusy,
   rebuildCapacity,
   recordSeatTip as recordSeatTipPipeline,
+  requestOtp,
   requestWaitlist as requestWaitlistPipeline,
   rescheduleAppointment as rescheduleAppointmentPipeline,
   runBackfill as runBackfillPipeline,
@@ -27,6 +37,8 @@ import {
   startPolicyRecompute,
   sweepPolicyRecompute,
   transitionAppointment as transitionAppointmentPipeline,
+  updateProfile as updateProfilePipeline,
+  verifyOtp,
 } from '@core/pipelines';
 import { authClaimsPorts } from './adapters/auth-claims.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
@@ -34,9 +46,10 @@ import { consoleTelemetry } from './adapters/console-telemetry.adapter';
 import { cryptoPorts } from './adapters/crypto.adapter';
 import { firestorePorts } from './adapters/firestore-ports';
 import {
-  fixedCodeOtpCrypto,
-  nodeOtpCrypto,
+  fixedCodeOtpCryptoPorts,
+  nodeOtpCryptoPorts,
 } from './adapters/otp-crypto.adapter';
+import { singleTenantPorts } from './adapters/tenant.adapter';
 import {
   callableEdge,
   type EdgeCode,
@@ -106,11 +119,22 @@ import {
   encodeCancelWaitlistAnswer,
   encodeRequestWaitlistAnswer,
 } from './wire/waitlist.wire';
-// The handlers no flip has reached yet — identity's OTP trio (flip 4) and
-// the streak publish (flip 5) — still run today's `lib/**` code.
-import * as requestOtp from './lib/otp/request-otp';
-import * as verifyOtp from './lib/otp/verify-otp';
-import * as completeRegistrationHandler from './lib/otp/complete-registration';
+import {
+  completeRegistrationRefusal,
+  decodeCompleteRegistration,
+  decodeRequestOtp,
+  decodeUpdateProfile,
+  decodeVerifyOtp,
+  encodeCompleteRegistrationAnswer,
+  encodeRequestOtpAnswer,
+  encodeUpdateProfileAnswer,
+  encodeVerifyOtpAnswer,
+  requestOtpRefusal,
+  updateProfileRefusal,
+  verifyOtpRefusal,
+} from './wire/identity.wire';
+// The one handler no flip has reached yet — the streak publish (flip 3) —
+// still runs today's `lib/**` code.
 import * as publishStreak from './lib/loyalty/publish-streak-definition';
 
 /**
@@ -123,18 +147,19 @@ import * as publishStreak from './lib/loyalty/publish-streak-definition';
  * `Result.err` becomes an `HttpsError` (callables) or an attempt line
  * (triggers). A handler here holds no logic.
  *
- * The 29 exports keep their names, trigger paths and options exactly — the
+ * The 30 exports keep their names, trigger paths and options exactly — the
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
  * `verify:p0` exercises; the options (retry, memory, timeouts, schedules)
  * are the ones the legacy definitions declared, which no export sets a
  * region, secret or App Check on. `main.spec.ts` pins every endpoint as a
- * literal table, proves each flip-1 export runs exactly its own pipeline
+ * literal table, proves each flipped export runs exactly its own pipeline
  * (and no other), and that each callable reports an unexpected throw under
  * its own name.
  *
  * Flip 1 (booking core) moved the 25 booking, capacity, waitlist,
- * projection, audit and backfill exports onto their pipelines; the four
- * handlers above are the remaining Phase 3a rows.
+ * projection, audit and backfill exports onto their pipelines; flip 2
+ * (identity) moved the OTP trio and added `updateProfile`. The streak
+ * publish is the one remaining Phase 3a row.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -163,7 +188,24 @@ const nowUtcMs: NowUtcMs = () => {
 };
 
 /** The clock and the two digests every pipeline hands its systems. */
-const primitives = { nowUtcMs, ...cryptoPorts() };
+const primitives: ClockPorts & HashPorts & IdPorts = {
+  nowUtcMs,
+  ...cryptoPorts(),
+};
+
+/**
+ * The single deployment's tenant — the challenge's `tenantId` and every
+ * minted token's claim. A real multi-tenant deployment resolves it from the
+ * request's origin instead (`singleTenantPorts` is the seam). The literal
+ * is a known-good id, so a refusal is a defect, as the unreadable clock is.
+ */
+const DEFAULT_TENANT: TenantId = ((): TenantId => {
+  const tenant = TenantId.parse('creativo');
+  return tenant.ok ? tenant.value : defect('the default tenant is no id');
+})();
+
+/** Under the emulator every OTP code is the fixed one and `devCode` is answered; a deployment never is. */
+const onEmulator = (): boolean => process.env['FUNCTIONS_EMULATOR'] === 'true';
 
 /** What the edge itself reads: telemetry and the clock. */
 const edge: EdgePorts = { ...telemetry, nowUtcMs };
@@ -184,25 +226,33 @@ const serverPorts = once(() => ({
 type ServerPorts = ReturnType<typeof serverPorts>;
 
 /**
- * The port bundles. The Auth and OTP bundles wait for the identity flip;
- * they are built on first use for the same reason as the server ports.
+ * The identity callables' ports: the server ports, Admin Auth, the
+ * login-OTP sender, the OTP crypto, the tenant and the deployment's auth
+ * configuration — each callable's pipeline names the bundles it reads
+ * (`RequestOtpPorts`, …), and that intersection is what type-checks it.
+ * Built on first use, separately from the server ports, so a booking callable
+ * never initialises Admin Auth.
  */
+const identityPorts = once(() => ({
+  ...serverPorts(),
+  ...authClaimsPorts(adminAuth()),
+  // The login-OTP sender identity — never a campaign sender.
+  ...consoleOtpSender(telemetry.log),
+  // Under the emulator every code is the fixed one (manual QA never fishes
+  // logs); a deployed environment can only construct the real generator.
+  ...(onEmulator() ? fixedCodeOtpCryptoPorts() : nodeOtpCryptoPorts()),
+  ...singleTenantPorts(DEFAULT_TENANT),
+  // The SAME deployment const the web app provides through `AUTH_DEPLOYMENT`.
+  authDeployment: AuthDeployment.DEFAULT,
+}));
+
+/** The port bundles. */
 const root = {
   telemetry,
   primitives,
   edge,
   ports: serverPorts,
-  auth: once(() => authClaimsPorts(adminAuth())),
-  otp: once(() => ({
-    // The login-OTP sender identity — never a campaign sender.
-    sendOtp: consoleOtpSender(telemetry.log),
-    // Under the emulator every code is the fixed one (manual QA never fishes
-    // logs); a deployed environment can only construct the real generator.
-    otpCrypto:
-      process.env['FUNCTIONS_EMULATOR'] === 'true'
-        ? fixedCodeOtpCrypto()
-        : nodeOtpCrypto(),
-  })),
+  identity: identityPorts,
 } as const;
 
 /**
@@ -236,6 +286,35 @@ function bookingCallable<C, A, E, Out>(
   );
 }
 
+/**
+ * One identity callable: today's JSON decoded into the command (or refused
+ * as today), the pipeline run over its ports, its answer encoded and its
+ * refusal spelt in the callable's own words. A store failure answers the
+ * callable's `failureCode` — today's coded `repository_failure` for the OTP
+ * trio, whose handlers coded every store failure so.
+ */
+function identityCallable<P, C, A, E, Out>(
+  callable: CallableName,
+  failureCode: EdgeCode | null,
+  ports: () => P,
+  decode: (request: WireRequest) => Result<C, EdgeError>,
+  run: (ports: P, cmd: C) => Promise<Result<A, E>>,
+  encode: (answer: A) => Out,
+  refuse: (error: E) => EdgeError,
+) {
+  return onCall(
+    callableEdge<unknown, Out>(
+      { callable, failureCode, timeoutSeconds: null, answer: null },
+      root.edge,
+      async (request) => {
+        const cmd = decode(request);
+        if (!cmd.ok) return cmd;
+        return settle(await run(ports(), cmd.value), encode, refuse);
+      },
+    ),
+  );
+}
+
 // ── Trigger paths, spelled through the collection registry ────────────────
 
 const APPOINTMENT_DOC = `${Collections.Appointments}/{appointmentId}` as const;
@@ -255,24 +334,48 @@ const POLICY_RECOMPUTE_JOB_DOC =
  */
 const LARGE_MEMORY = '512MiB';
 
-// ── Identity (Phase 3a rows) ──────────────────────────────────────────────
+// ── Identity ──────────────────────────────────────────────────────────────
 
-export const requestOtpChallenge = onCall(
-  legacyCallable(Callables.RequestOtpChallenge, root.telemetry, (request) =>
-    requestOtp.requestOtpChallenge.run(request),
-  ),
+export const requestOtpChallenge = identityCallable(
+  Callables.RequestOtpChallenge,
+  LegacyWireCode.RepositoryFailure,
+  root.identity,
+  decodeRequestOtp,
+  (ports, cmd) => requestOtp(ports)(cmd),
+  // `devCode` only ever leaves the emulator: E2E has no inbox to read from.
+  (answer) => encodeRequestOtpAnswer(answer, onEmulator()),
+  requestOtpRefusal,
 );
 
-export const verifyOtpChallenge = onCall(
-  legacyCallable(Callables.VerifyOtpChallenge, root.telemetry, (request) =>
-    verifyOtp.verifyOtpChallenge.run(request),
-  ),
+export const verifyOtpChallenge = identityCallable(
+  Callables.VerifyOtpChallenge,
+  LegacyWireCode.RepositoryFailure,
+  root.identity,
+  decodeVerifyOtp,
+  (ports, cmd) => verifyOtp(ports)(cmd),
+  encodeVerifyOtpAnswer,
+  verifyOtpRefusal,
 );
 
-export const completeRegistration = onCall(
-  legacyCallable(Callables.CompleteRegistration, root.telemetry, (request) =>
-    completeRegistrationHandler.completeRegistration.run(request),
-  ),
+export const completeRegistration = identityCallable(
+  Callables.CompleteRegistration,
+  LegacyWireCode.RepositoryFailure,
+  root.identity,
+  decodeCompleteRegistration,
+  (ports, cmd) => completeRegistrationPipeline(ports)(cmd),
+  encodeCompleteRegistrationAnswer,
+  completeRegistrationRefusal,
+);
+
+/** The owner's own profile edit — over the server ports: it never needs Admin Auth. */
+export const updateProfile = identityCallable(
+  Callables.UpdateProfile,
+  null,
+  root.ports,
+  decodeUpdateProfile,
+  (ports, cmd) => updateProfilePipeline(ports)(cmd),
+  encodeUpdateProfileAnswer,
+  updateProfileRefusal,
 );
 
 const AUDIT_PROFILE_FN = 'auditProfileChanges';

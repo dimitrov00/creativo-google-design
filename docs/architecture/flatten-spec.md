@@ -592,6 +592,15 @@ MinuteDelta.between(appointment.startMinutes, seat.startMinutes))` via
   straddle a 03:00/04:00 transition (none can: the shop is closed then).
   Under G-1(b) the follow-up commit deletes it and judges the seat on
   `(appointment.localDate, seat.startMinutes)`.
+- **Exception (owner-acknowledged, flip 2) — the age check's day is the UTC
+  civil date**, not a shop day: `completeRegistration`, `updateProfile` and
+  the web's profile and onboarding stores judge the 16–120 window on
+  `ageDay: LocalDate = ZonedTimeSystem.toLocal(now, UTC_ZONE).localDate`,
+  derived ONCE at the boundary (`UTC_ZONE` of `@core/pipelines`), as every
+  writer does today; `ProfileEditSystem` and `AgeSystem` take only that
+  `LocalDate`, never an instant, and no document stores a zone (Law 7.2).
+  Kept until the owner rules on `docs/architecture/flips/flip-2-identity.md`
+  §10.1 (F2-7): the UTC day, or the default shop's wall-clock day.
 
 ### 2.4 Every system — time inputs before → after
 

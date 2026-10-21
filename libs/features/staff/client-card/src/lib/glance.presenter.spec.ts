@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { AccountStatus, User } from '@creativo/application/accounts';
-import { BookingLifecycle } from '@core/components';
+import {
+  AccountLifecycle,
+  BirthDate,
+  BlockReason,
+  BookingLifecycle,
+  E164,
+} from '@core/components';
 import type {
   Appointment,
   ClientStatsRecord,
   GiftVoucher,
+  User,
 } from '@core/entities';
-import { AppointmentId, AppointmentPhotoId } from '@core/primitives';
+import { AppointmentId, AppointmentPhotoId, UserId } from '@core/primitives';
+import { registeredUserFixture } from '@core/testing';
 import {
   type GiftVoucherFields,
   type LoyaltyAccount,
@@ -307,7 +314,7 @@ describe('the hero (A)', () => {
     });
     // A sentence of its own keeps its plain spaces: it wraps where it must.
     expect(paused.tier?.name).toBe('Злато');
-    const permanent = AccountStatus.blocked({ reason: 'manual' });
+    const permanent = AccountLifecycle.block(BlockReason.Manual, null);
     expect(heroOf({ user: georgiUser(permanent) }).line).toEqual([
       { text: 'Онлайн записването е спряно за постоянно', fact: false },
     ]);
@@ -324,10 +331,10 @@ describe('the hero (A)', () => {
   });
 
   it('treats a pause that has run out as none', () => {
-    const lapsed = AccountStatus.blocked({
-      reason: 'manual',
-      until: at('2026-09-01T00:00:00'),
-    });
+    const lapsed = AccountLifecycle.block(
+      BlockReason.Manual,
+      sofia('2026-09-01T00:00:00'),
+    );
     const hero = heroOf({ user: georgiUser(lapsed) });
     expect(hero.paused).toBe(false);
     expect(read(hero.line)?.facts).toEqual([
@@ -522,22 +529,20 @@ const BIRTHDAY_GRANT: ClientCardGrant = {
   occasion: 'birthday',
 };
 
-/** A client born on `birthDate`, read on `today`. */
-function born(birthDate: string, today: string = TODAY): User {
-  const user = User.reconstitute(
-    {
-      id: 'dev-client-9',
-      phone: '+359881112233',
-      firstName: 'Лили',
-      lastName: 'Тодорова',
-      roles: ['client'],
-      status: AccountStatus.active(),
-      birthDate,
-    },
-    at(`${today}T09:00:00`),
-  );
-  if (user.isFailure()) throw new Error('bad user');
-  return user.value;
+/** Лили, a registered client — born on `birthDate`, or with no date of birth given. */
+function lili(birthDate: string | null): User {
+  return registeredUserFixture({
+    id: UserId.of('dev-client-9'),
+    phone: E164.of('+359881112233'),
+    firstName: 'Лили',
+    lastName: 'Тодорова',
+    birthDate: birthDate === null ? null : BirthDate.of(birthDate),
+  });
+}
+
+/** A client born on `birthDate` — the card reads it on the `today` it is handed. */
+function born(birthDate: string): User {
+  return lili(birthDate);
 }
 
 function birthdayOf(overrides: Partial<Parameters<typeof birthdayVm>[0]> = {}) {
@@ -640,19 +645,7 @@ describe('the birthday card (BD)', () => {
   it('is absent on any other day, for a guest and without a date of birth', () => {
     expect(birthdayOf({ user: georgiUser() })).toBeNull();
     expect(birthdayOf({ user: null })).toBeNull();
-    const undated = User.reconstitute(
-      {
-        id: 'dev-client-9',
-        phone: '+359881112233',
-        firstName: 'Лили',
-        lastName: 'Тодорова',
-        roles: ['client'],
-        status: AccountStatus.active(),
-      },
-      at('2026-09-28T09:00:00'),
-    );
-    if (undated.isFailure()) throw new Error('bad user');
-    expect(birthdayOf({ user: undated.value })).toBeNull();
+    expect(birthdayOf({ user: lili(null) })).toBeNull();
     // Yesterday's is over; it comes again in a year.
     expect(birthdayOf({ user: born('1992-09-27') })).toBeNull();
   });
@@ -682,7 +675,7 @@ describe('the birthday card (BD)', () => {
   it('looks across the year’s end, and names the year the day falls in', () => {
     expect(
       birthdayOf({
-        user: born('1990-01-02', '2026-12-29'),
+        user: born('1990-01-02'),
         today: '2026-12-29',
       }),
     ).toMatchObject({
@@ -692,7 +685,7 @@ describe('the birthday card (BD)', () => {
   });
 
   it('keeps a 29 February birthday on the 28th outside a leap year', () => {
-    const leapling = born('2000-02-29', '2027-02-25');
+    const leapling = born('2000-02-29');
     expect(birthdayOf({ user: leapling, today: '2027-02-25' })?.title).toBe(
       'Рожден ден · неделя, 28.02 · 27 г.',
     );

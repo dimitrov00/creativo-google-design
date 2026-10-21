@@ -8,20 +8,22 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import {
-  AVATAR_UPLOADER,
-  PROFILE_PORT,
-  User,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
+import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import {
   APPOINTMENT_READ_PORTS,
   INBOX_PORTS,
+  PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import type { AppointmentReadPorts, InboxPorts } from '@core/ports';
-import type { Appointment, InboxNotification } from '@core/entities';
-import { Result as EcsResult } from '@core/primitives';
-import { memoryAppointmentReadPorts, memoryInboxPorts } from '@core/testing';
+import { BirthDate } from '@core/components';
+import type { Appointment, InboxNotification, User } from '@core/entities';
+import { Result as EcsResult, UserId } from '@core/primitives';
+import {
+  memoryAppointmentReadPorts,
+  memoryInboxPorts,
+  memoryProfilePorts,
+  registeredUserFixture,
+} from '@core/testing';
 import {
   ANONYMOUS_PRINCIPAL,
   AUTH_GATEWAY,
@@ -45,23 +47,14 @@ const ACTIVE_PRINCIPAL = unwrap(
   ]),
 );
 
-const TODAY = unwrap(ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'));
-
+/** Ада Тестова, registered — a birth date closes that item. */
 function user(birthDate?: string): User {
-  return unwrap(
-    User.create(
-      {
-        id: 'user_1',
-        phone: '+359881234567',
-        firstName: 'Ада',
-        lastName: 'Тестова',
-        roles: ['client'],
-        status: { kind: 'active' },
-        ...(birthDate && { birthDate }),
-      },
-      TODAY,
-    ),
-  );
+  return registeredUserFixture({
+    id: UserId.of('user_1'),
+    firstName: 'Ада',
+    lastName: 'Тестова',
+    birthDate: birthDate === undefined ? null : BirthDate.of(birthDate),
+  });
 }
 
 /** Local fixture — kept independent of `landing`'s shared test-i18n
@@ -157,11 +150,12 @@ describe('SiteMenuComponent', () => {
           },
         },
         {
-          provide: PROFILE_PORT,
-          useValue: {
-            getProfile: () => Promise.resolve(ok(inputs.profile ?? null)),
-            observeProfile: () => of(ok(inputs.profile ?? null)),
-          },
+          provide: PROFILE_PORTS,
+          useValue: memoryProfilePorts(
+            new Map(
+              inputs.profile ? [[inputs.profile.id, inputs.profile]] : [],
+            ),
+          ),
         },
         {
           provide: APPOINTMENT_READ_PORTS,

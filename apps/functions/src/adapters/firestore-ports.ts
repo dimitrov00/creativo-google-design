@@ -1,8 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type {
-  Hash,
-  NextId,
-  NowUtcMs,
+  ClockPorts,
+  HashPorts,
+  IdPorts,
   TelemetryPorts,
   TxPorts,
 } from '@core/ports';
@@ -15,9 +15,11 @@ import { firestoreCouponPorts } from './firestore-coupons.adapter';
 import { firestoreJobPorts } from './firestore-jobs.adapter';
 import { firestoreLeadTimePorts } from './firestore-lead-time.adapter';
 import { firestoreNotificationPorts } from './firestore-notifications.adapter';
+import { firestoreOtpPorts } from './firestore-otps.adapter';
 import { firestoreSchedulePorts } from './firestore-schedules.adapter';
 import { firestoreSettingsPorts } from './firestore-settings.adapter';
 import { firestoreCommitPlan } from './firestore-tx.adapter';
+import { firestoreUserPorts } from './firestore-users.adapter';
 import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
 
 /**
@@ -32,7 +34,10 @@ import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
  * family the flip's pipelines read or write outside a transaction (F1-6:
  * a transactional read is `ReadTx`, a transactional write an entry of the
  * one plan — no per-collection adapter holds nothing). The audit bundle
- * logs its never-fatal failures through the telemetry it is given.
+ * logs its never-fatal failures through the telemetry it is given. Flip 2
+ * (identity) adds the `otps` store and the account lookup by destination.
+ * The impure primitives arrive as the three bundles they are
+ * (`ClockPorts & HashPorts & IdPorts`, Law 9 — no local record).
  *
  * Extension point, by type: a flip adds its collections' server bundle as
  * one more member of the {@link FirestorePorts} intersection and spreads its
@@ -40,13 +45,6 @@ import { firestoreWaitlistPorts } from './firestore-waitlist.adapter';
  * there the root does not compile, so a bundle can never be declared and
  * left unbuilt.
  */
-
-/** The impure primitives the root draws once per cold start — `TxPorts` minus `commit`. */
-export type Primitives = {
-  readonly nowUtcMs: NowUtcMs;
-  readonly nextId: NextId;
-  readonly hash: Hash;
-};
 
 /** Every Firestore-backed bundle, intersected — one member per adapter factory. */
 export type FirestorePorts = TxPorts &
@@ -61,11 +59,13 @@ export type FirestorePorts = TxPorts &
   ReturnType<typeof firestoreWaitlistPorts> &
   ReturnType<typeof firestoreNotificationPorts> &
   ReturnType<typeof firestoreClientStatsPorts> &
-  ReturnType<typeof firestoreJobPorts>;
+  ReturnType<typeof firestoreJobPorts> &
+  ReturnType<typeof firestoreOtpPorts> &
+  ReturnType<typeof firestoreUserPorts>;
 
 export const firestorePorts = (
   db: Firestore,
-  primitives: Primitives,
+  primitives: ClockPorts & HashPorts & IdPorts,
   telemetry: TelemetryPorts,
 ): FirestorePorts => ({
   commit: firestoreCommitPlan(db),
@@ -84,4 +84,6 @@ export const firestorePorts = (
   ...firestoreNotificationPorts(db),
   ...firestoreClientStatsPorts(db),
   ...firestoreJobPorts(db),
+  ...firestoreOtpPorts(db),
+  ...firestoreUserPorts(db),
 });

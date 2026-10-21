@@ -6,6 +6,8 @@ import {
   CustomerId,
   type RepositoryError,
   Result,
+  type RunBackfillRefusal,
+  RunBackfillRefusalCode,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -83,18 +85,6 @@ import {
  * (`appendAudit`, never fatal): `COMPLETE`/`PARTIAL` with a change key that
  * makes a replayed call log once, `FAILED` with the failure's code.
  */
-
-/** Why a call was refused — the ONLY source of these strings, the field `errorCode`. */
-export const RunBackfillRefusalCode = {
-  /** The stored roles hold no `sysadmin`. */
-  Forbidden: 'OPS_BACKFILL_FORBIDDEN',
-  /** The payload named no job, or a cursor that is not a document id. */
-  InvalidInput: 'OPS_BACKFILL_INVALID_INPUT',
-} as const;
-export type RunBackfillRefusalCode =
-  (typeof RunBackfillRefusalCode)[keyof typeof RunBackfillRefusalCode];
-
-export type RunBackfillRefusal = { readonly errorCode: RunBackfillRefusalCode };
 
 export type RunBackfillCommand = {
   /** The verified caller whose STORED roles must hold `sysadmin`. */
