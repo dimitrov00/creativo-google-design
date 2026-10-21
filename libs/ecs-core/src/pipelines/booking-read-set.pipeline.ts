@@ -39,11 +39,11 @@ import {
   Collections,
 } from '@core/entities';
 import type {
-  AppendAudit,
-  Hash,
-  Log,
-  NextId,
-  NowUtcMs,
+  AuditAppendPorts,
+  ClockPorts,
+  HashPorts,
+  IdPorts,
+  LogPorts,
   ReadTx,
 } from '@core/ports';
 import {
@@ -445,13 +445,11 @@ export function localDateOrNull(raw: string): LocalDate | null {
 }
 
 /** What the after-commit audit write needs: the write port, the id mints, the clock and the log. */
-export type AuditWritePorts = {
-  readonly appendAudit: AppendAudit;
-  readonly hash: Hash;
-  readonly nextId: NextId;
-  readonly nowUtcMs: NowUtcMs;
-  readonly log: Log;
-};
+export type AuditWritePorts = AuditAppendPorts &
+  HashPorts &
+  IdPorts &
+  ClockPorts &
+  LogPorts;
 
 /**
  * The act's audit rows, AFTER the commit and never inside it (blueprint §4):

@@ -1,5 +1,5 @@
 import type { MediaError, Result, UserId } from '@core/primitives';
-import type { AppointmentPhoto } from '@core/entities';
+import type { AppointmentPhotoFacts } from '@core/entities';
 
 /**
  * The web's Cloud Storage ports (blueprint §4.2): avatars, catalogue media
@@ -58,15 +58,28 @@ export type ResolveMedia = (
  * facts plus that answer.
  */
 export type UploadPhotoBytes = (
-  photo: Omit<AppointmentPhoto, 'path' | 'url'>,
+  photo: AppointmentPhotoFacts,
   image: Blob,
 ) => Promise<Result<StoredFile, MediaError>>;
 
-/** The Storage bundle the web binds. */
-export type MediaPorts = {
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** A person's avatar — upload, find, remove. */
+export type AvatarPorts = {
   readonly uploadAvatar: UploadAvatar;
   readonly findAvatar: FindAvatar;
   readonly removeAvatar: RemoveAvatar;
+};
+
+/** A catalogue image's renditions. */
+export type MediaResolvePorts = {
   readonly resolveMedia: ResolveMedia;
+};
+
+/** A visit photo's bytes — the Storage half of `AppointmentPhotoPorts`. */
+export type PhotoUploadPorts = {
   readonly uploadPhotoBytes: UploadPhotoBytes;
 };
+
+/** The Storage bundle the web binds — an intersection of its bundles. */
+export type MediaPorts = AvatarPorts & MediaResolvePorts & PhotoUploadPorts;

@@ -22,9 +22,9 @@ import {
   QueryOp,
 } from '@core/entities';
 import type {
-  GovernancePorts,
+  AuditAppendPorts,
+  PolicyReadPorts,
   ReadTx,
-  SchedulingPorts,
   TelemetryPorts,
   TxPorts,
 } from '@core/ports';
@@ -100,8 +100,8 @@ export type TransitionAppointmentError =
   | RepositoryError;
 
 export type TransitionAppointmentPorts = TxPorts &
-  Pick<SchedulingPorts, 'loadPolicy'> &
-  Pick<GovernancePorts, 'appendAudit'> &
+  PolicyReadPorts &
+  AuditAppendPorts &
   TelemetryPorts;
 
 /** The live statuses a reinstated chair can be taken by (index #7). */

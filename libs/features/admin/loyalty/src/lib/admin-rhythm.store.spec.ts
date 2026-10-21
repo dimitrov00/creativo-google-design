@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import type { ClientStatsPagePorts } from '@core/ports';
 import { resolve } from 'node:path';
 import { Injectable } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -57,7 +58,6 @@ import {
   patchedRhythmDraft,
   rhythmBoundsOf,
 } from './admin-rhythm.store';
-import type { RhythmStatsReader } from './admin-rhythm.preview';
 
 // ── The app's own words ──────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ function statsReader(records: readonly ClientStatsRecord[] = []) {
       return failure === null
         ? memory.pageClientStats(after, limit)
         : PlainResult.err(failure);
-    }) satisfies RhythmStatsReader['pageClientStats'],
+    }) satisfies ClientStatsPagePorts['pageClientStats'],
     failWith(error: StatsReadError = StatsReadError.unavailable()) {
       failure = error;
       return reader;
@@ -295,7 +295,7 @@ interface RigOptions {
   /** What is bound in place of `rules`; `null` binds no port at all. */
   readonly port?: StreakDefinitionRepository | null;
   /** What is bound in place of the three clients' statistics; `null` binds none. */
-  readonly directory?: RhythmStatsReader | null;
+  readonly directory?: ClientStatsPagePorts | null;
 }
 
 function rig(options: RigOptions = {}) {
@@ -2030,7 +2030,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
   it('drops an answer that arrives for an older draft', async () => {
     const held: (() => void)[] = [];
     const inner = statsReader(shop());
-    const directory: RhythmStatsReader = {
+    const directory: ClientStatsPagePorts = {
       pageClientStats: (after, limit) =>
         new Promise((answer) => {
           held.push(

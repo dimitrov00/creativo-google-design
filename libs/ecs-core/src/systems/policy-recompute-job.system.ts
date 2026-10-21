@@ -1,5 +1,6 @@
 import {
   BookingPolicy,
+  type LivePolicyLine,
   type PolicyPass,
   PreciseInstant,
 } from '@core/components';
@@ -59,14 +60,6 @@ export type PolicyStep = {
   readonly visited: number;
   readonly recomputed: number;
   readonly failed: number;
-};
-
-/** The booking policy as the daily sweep reads it: its line, and when it last changed. */
-export type LivePolicyLine = {
-  /** The policy document's update time; `null` when there is no document. */
-  readonly updatedAt: PreciseInstant | null;
-  /** The free-cancellation window in force — the defaults' when there is no document. */
-  readonly windowHours: number;
 };
 
 /** The pass-guard verdict tags — the ONLY source of these strings, the field `policyPassVerdict`. */

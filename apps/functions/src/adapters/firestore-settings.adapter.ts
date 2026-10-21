@@ -2,7 +2,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { RepositoryError, Result } from '@core/primitives';
 import { BookingPolicy } from '@core/components';
 import { BOOKING_POLICY_DOC, Collections } from '@core/entities';
-import type { SchedulingPorts } from '@core/ports';
+import type { PolicyReadPorts } from '@core/ports';
 
 /**
  * `settings/bookingPolicy`, read OUTSIDE any transaction on purpose
@@ -14,12 +14,9 @@ import type { SchedulingPorts } from '@core/ports';
  * `RepositoryError` value, never a rejection.
  */
 
-/** The bundle main.ts spreads into the Firestore ports. */
-export type SettingsPorts = Pick<SchedulingPorts, 'loadPolicy'>;
-
 const POLICY_PATH = `${Collections.Settings}/${BOOKING_POLICY_DOC}`;
 
-export const firestoreSettingsPorts = (db: Firestore): SettingsPorts => ({
+export const firestoreSettingsPorts = (db: Firestore): PolicyReadPorts => ({
   loadPolicy: async () => {
     try {
       const snap = await db.doc(POLICY_PATH).get();

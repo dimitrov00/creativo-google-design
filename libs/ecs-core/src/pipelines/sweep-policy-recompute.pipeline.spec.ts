@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BookingPolicy, type DocBody, PreciseInstant } from '@core/components';
+import {
+  BookingPolicy,
+  type DocBody,
+  type LivePolicyLine,
+  PreciseInstant,
+} from '@core/components';
 import {
   CustomerId,
   PolicyRecomputeJobId,
@@ -8,11 +13,7 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { type PolicyRecomputeJob, RecomputeJobName } from '@core/entities';
-import {
-  AttemptOutcome,
-  type LivePolicyLine,
-  PolicyRecomputeJobSystem,
-} from '@core/systems';
+import { AttemptOutcome, PolicyRecomputeJobSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,
   memoryStore,

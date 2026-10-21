@@ -24,8 +24,15 @@ export type TrackError = (
   context?: Record<string, unknown>,
 ) => void;
 
-/** The telemetry bundle the composition root builds once per cold start. */
-export type TelemetryPorts = {
+/** The structured log alone — what most pipelines report through. */
+export type LogPorts = {
   readonly log: Log;
+};
+
+/** The error tracker. */
+export type ErrorTrackingPorts = {
   readonly trackError: TrackError;
 };
+
+/** The telemetry bundle the composition root builds once per cold start. */
+export type TelemetryPorts = LogPorts & ErrorTrackingPorts;

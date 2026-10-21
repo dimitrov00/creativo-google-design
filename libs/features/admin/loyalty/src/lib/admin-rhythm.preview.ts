@@ -1,5 +1,5 @@
 import type { ClientStatsRecord } from '@core/entities';
-import type { ClientStatsReadPorts } from '@core/ports';
+import type { ClientStatsPagePorts } from '@core/ports';
 import {
   type IsoDate,
   type StreakDefinition,
@@ -85,9 +85,6 @@ export function streakFactsOf(record: ClientStatsRecord): StreakFacts {
   };
 }
 
-/** The statistics reader the walk pages through (`CLIENT_STATS_READ_PORTS`). */
-export type RhythmStatsReader = Pick<ClientStatsReadPorts, 'pageClientStats'>;
-
 /**
  * The walk: `clientStats` in the order of its ids (client records, D29), a
  * page after a page, until nobody is left or the fifth page is read. A page
@@ -95,12 +92,12 @@ export type RhythmStatsReader = Pick<ClientStatsReadPorts, 'pageClientStats'>;
  * number, not an estimate.
  */
 export async function readRhythmPreviewFacts(
-  stats: RhythmStatsReader,
+  stats: ClientStatsPagePorts,
 ): Promise<Result<RhythmPreviewFacts, RepositoryError>> {
   const clients: StreakFacts[] = [];
   let after: CustomerId | null = null;
   for (let page = 0; page < RHYTHM_PREVIEW_PAGES; page += 1) {
-    let read: Awaited<ReturnType<RhythmStatsReader['pageClientStats']>>;
+    let read: Awaited<ReturnType<ClientStatsPagePorts['pageClientStats']>>;
     try {
       read = await stats.pageClientStats(after, RHYTHM_PREVIEW_PAGE_SIZE);
     } catch {
@@ -128,7 +125,7 @@ export class RhythmPreviewSource {
     null;
   private walkFailed = false;
 
-  constructor(private readonly stats: RhythmStatsReader) {}
+  constructor(private readonly stats: ClientStatsPagePorts) {}
 
   /** The walk was made and failed: there is nothing to wait for until `forget()`. */
   get failed(): boolean {

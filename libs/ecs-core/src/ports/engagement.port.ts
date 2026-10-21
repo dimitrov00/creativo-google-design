@@ -172,22 +172,29 @@ export type ListStreakDefinitionVersions = (
   limit: number,
 ) => Promise<Result<readonly StreakDefinitionVersion[], RepositoryError>>;
 
-/** The engagement context's port catalogue; each root binds the `Pick` it implements. */
-export type EngagementPorts = {
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** A coupon by its typed code — the visit edit's discount check (server and web). */
+export type CouponLookupPorts = {
   readonly findCouponByCode: FindCouponByCode;
+};
+
+/** The shop's open coupons and a set of coupons by id. */
+export type CouponCatalogPorts = {
   readonly listOpenCoupons: ListOpenCoupons;
   readonly loadCoupons: LoadCoupons;
-  readonly findGiftVoucherByCode: FindGiftVoucherByCode;
-  readonly listGiftVouchersForHolder: ListGiftVouchersForHolder;
+};
+
+/** A client record's coupon grants. */
+export type CouponGrantPorts = {
   readonly loadCouponGrant: LoadCouponGrant;
   readonly listUsableCouponGrants: ListUsableCouponGrants;
-  readonly loadLoyaltyAccount: LoadLoyaltyAccount;
-  readonly listBadgeProgress: ListBadgeProgress;
-  readonly listSeasonProgress: ListSeasonProgress;
-  readonly loadLoyaltyCatalog: LoadLoyaltyCatalog;
-  readonly pageClientJournal: PageClientJournal;
-  readonly observeStreakDefinitionHead: ObserveStreakDefinitionHead;
-  readonly listStreakDefinitionVersions: ListStreakDefinitionVersions;
+};
+
+/** Gift vouchers by code and by holder. */
+export type GiftVoucherPorts = {
+  readonly findGiftVoucherByCode: FindGiftVoucherByCode;
+  readonly listGiftVouchersForHolder: ListGiftVouchersForHolder;
 };
 
 /**
@@ -195,13 +202,32 @@ export type EngagementPorts = {
  * `COUPON_VOUCHER_PORTS` token binds (the visit editor's «Отстъпка» menu,
  * the client card's wallet).
  */
-export type CouponVoucherPorts = Pick<
-  EngagementPorts,
-  | 'findCouponByCode'
-  | 'listOpenCoupons'
-  | 'loadCouponGrant'
-  | 'listUsableCouponGrants'
-  | 'findGiftVoucherByCode'
-  | 'listGiftVouchersForHolder'
-  | 'loadCoupons'
->;
+export type CouponVoucherPorts = CouponLookupPorts &
+  CouponCatalogPorts &
+  CouponGrantPorts &
+  GiftVoucherPorts;
+
+/** A client record's loyalty account, badges, seasons and the loyalty catalogue. */
+export type LoyaltyReadPorts = {
+  readonly loadLoyaltyAccount: LoadLoyaltyAccount;
+  readonly listBadgeProgress: ListBadgeProgress;
+  readonly listSeasonProgress: ListSeasonProgress;
+  readonly loadLoyaltyCatalog: LoadLoyaltyCatalog;
+};
+
+/** A client record's journal pages. */
+export type ClientJournalPorts = {
+  readonly pageClientJournal: PageClientJournal;
+};
+
+/** A streak definition's live head and its published versions. */
+export type StreakDefinitionPorts = {
+  readonly observeStreakDefinitionHead: ObserveStreakDefinitionHead;
+  readonly listStreakDefinitionVersions: ListStreakDefinitionVersions;
+};
+
+/** The engagement context's whole port suite — an intersection of its bundles. */
+export type EngagementPorts = CouponVoucherPorts &
+  LoyaltyReadPorts &
+  ClientJournalPorts &
+  StreakDefinitionPorts;

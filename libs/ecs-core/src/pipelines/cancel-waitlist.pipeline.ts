@@ -7,7 +7,7 @@ import {
 } from '@core/primitives';
 import { WaitlistLifecycle, WriteOp } from '@core/components';
 import { Collections, type WaitlistRequest } from '@core/entities';
-import type { TxPorts } from '@core/ports';
+import type { ClockPorts, CommitPorts } from '@core/ports';
 
 /**
  * `cancelWaitlist` — withdraw a waitlist request (`cancel-waitlist.ts`,
@@ -50,7 +50,7 @@ export type CancelWaitlistAnswer = {
   readonly requestId: WaitlistRequestId;
 };
 
-export type CancelWaitlistPorts = Pick<TxPorts, 'commit' | 'nowUtcMs'>;
+export type CancelWaitlistPorts = CommitPorts & ClockPorts;
 
 export const cancelWaitlist =
   (ports: CancelWaitlistPorts) =>

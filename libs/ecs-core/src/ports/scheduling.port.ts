@@ -1,19 +1,20 @@
 import type { Observable } from 'rxjs';
-import type { BookingPolicy } from '@core/components';
+import type { BookingPolicy, LivePolicyLine } from '@core/components';
 import type {
+  AppointmentId,
+  BarberId,
+  BusyKey,
+  CapacityMonthId,
+  CustomerId,
+  LocalDate,
+  LocationId,
   PipelineError,
   RepositoryError,
   Result,
-  BusyKey,
-  AppointmentId,
-  BarberId,
-  CapacityMonthId,
-  CustomerId,
-  LocationId,
+  TimeZone,
   UserId,
-  WaitlistRequestId,
-  LocalDate,
   UtcEpochMs,
+  WaitlistRequestId,
 } from '@core/primitives';
 import type {
   Appointment,
@@ -339,44 +340,43 @@ export type WriteLeadTimeSample = (
 ) => Promise<Result<void, RepositoryError>>;
 
 /**
- * The scheduling context's port catalogue. Each composition root binds the
- * `Pick` its runtime implements — the web its streams, readers, command and
- * `callableClient`; the functions the server reads.
+ * The booking policy's line and when it last changed — `settings/bookingPolicy`
+ * (its `cancellationWindowHours` through `BookingPolicy.withDefaults`, and
+ * the document's `updateTime`; `null` with no document).
  */
-export type SchedulingPorts = {
+export type LoadPolicyLine = () => Promise<
+  Result<LivePolicyLine, RepositoryError>
+>;
+
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+//
+// Each bundle is a concrete record, 1:1 with a web `InjectionToken`
+// (`ports.tokens.ts`) or a functions adapter factory; a consumer that needs
+// several takes their intersection. A subset no bundle names is a missing
+// bundle — split it here, never `Pick` it at the use site.
+
+// The web's bundles (one `InjectionToken` each, `ports.tokens.ts`).
+
+/**
+ * A shop day's raw streams — per barber the roster, the busy day and the
+ * schedule exception, and the named shop: the booking sheet's day.
+ */
+export type ShopDayStreamPorts = {
   readonly observeBusyDay: ObserveBusyDay;
   readonly observeExceptions: ObserveExceptions;
   readonly observeSchedule: ObserveSchedule;
   readonly observeLocation: ObserveLocation;
-  readonly observePolicy: ObservePolicy;
-  readonly observeCapacityMonth: ObserveCapacityMonth;
-  readonly observeAppointment: ObserveAppointment;
-  readonly observeBarberDay: ObserveBarberDay;
-  readonly observeUpcoming: ObserveUpcoming;
-  readonly observeHistory: ObserveHistory;
-  readonly pageClientHistory: PageClientHistory;
-  readonly searchAppointmentWindow: SearchAppointmentWindow;
-  readonly observeMyWaitlistRequests: ObserveMyWaitlistRequests;
-  readonly loadClientStats: LoadClientStats;
-  readonly loadClientMoney: LoadClientMoney;
-  readonly pageClientStats: PageClientStats;
-  readonly pageClients: PageClients;
-  readonly loadPolicyRecomputeJob: LoadPolicyRecomputeJob;
-  readonly writeScheduleException: WriteScheduleException;
-  readonly callableClient: CallableClient;
-  readonly loadPolicy: LoadPolicy;
-  readonly loadAppointment: LoadAppointment;
-  readonly loadBusyDay: LoadBusyDay;
-  readonly loadScheduleException: LoadScheduleException;
-  readonly loadSchedule: LoadSchedule;
-  readonly loadWaitlistRequest: LoadWaitlistRequest;
-  readonly loadOpenWaitlist: LoadOpenWaitlist;
-  readonly loadCapacityMonths: LoadCapacityMonths;
-  readonly listBarbers: ListBarbers;
-  readonly writeLeadTimeSample: WriteLeadTimeSample;
 };
 
-// ── The web's named bundles (one `InjectionToken` each, `ports.tokens.ts`) ──
+/** The booking policy, live. */
+export type PolicyStreamPorts = {
+  readonly observePolicy: ObservePolicy;
+};
+
+/** A month's capacity document, live — the calendar's markers. */
+export type CapacityStreamPorts = {
+  readonly observeCapacityMonth: ObserveCapacityMonth;
+};
 
 /**
  * The booking store's raw entity streams — the bundle the web's
@@ -385,45 +385,153 @@ export type SchedulingPorts = {
  * `computed()` over these (`RosterSystem` + `AvailabilitySystem`, and
  * `CapacitySystem` over the month for the calendar's markers).
  */
-export type SchedulingReadPorts = Pick<
-  SchedulingPorts,
-  | 'observeBusyDay'
-  | 'observeExceptions'
-  | 'observeSchedule'
-  | 'observeLocation'
-  | 'observePolicy'
-  | 'observeCapacityMonth'
->;
+export type SchedulingReadPorts = ShopDayStreamPorts &
+  PolicyStreamPorts &
+  CapacityStreamPorts;
 
 /** The staff schedule-exception command — `SCHEDULE_EXCEPTION_PORTS`. */
-export type ScheduleExceptionPorts = Pick<
-  SchedulingPorts,
-  'writeScheduleException'
->;
+export type ScheduleExceptionPorts = {
+  readonly writeScheduleException: WriteScheduleException;
+};
 
-/**
- * The appointment readers — `APPOINTMENT_READ_PORTS`: one visit, a barber's
- * day, an account's upcoming and history (`ownerUserId`, the account's own),
- * a client record's history pages, and the staff search window.
- */
-export type AppointmentReadPorts = Pick<
-  SchedulingPorts,
-  | 'observeAppointment'
-  | 'observeBarberDay'
-  | 'observeUpcoming'
-  | 'observeHistory'
-  | 'pageClientHistory'
-  | 'searchAppointmentWindow'
->;
+/** One visit, a barber's day and the staff search window. */
+export type StaffAppointmentReadPorts = {
+  readonly observeAppointment: ObserveAppointment;
+  readonly observeBarberDay: ObserveBarberDay;
+  readonly searchAppointmentWindow: SearchAppointmentWindow;
+};
+
+/** An account's upcoming visits and history (`ownerUserId`, the account's own). */
+export type AccountAppointmentReadPorts = {
+  readonly observeUpcoming: ObserveUpcoming;
+  readonly observeHistory: ObserveHistory;
+};
+
+/** A client record's history pages. */
+export type ClientHistoryReadPorts = {
+  readonly pageClientHistory: PageClientHistory;
+};
+
+/** The appointment readers — `APPOINTMENT_READ_PORTS`. */
+export type AppointmentReadPorts = StaffAppointmentReadPorts &
+  AccountAppointmentReadPorts &
+  ClientHistoryReadPorts;
 
 /** An account's own waitlist requests — `WAITLIST_READ_PORTS`. */
-export type WaitlistReadPorts = Pick<
-  SchedulingPorts,
-  'observeMyWaitlistRequests'
->;
+export type WaitlistReadPorts = {
+  readonly observeMyWaitlistRequests: ObserveMyWaitlistRequests;
+};
+
+/** One client record's statistics and money. */
+export type ClientStatsLoadPorts = {
+  readonly loadClientStats: LoadClientStats;
+  readonly loadClientMoney: LoadClientMoney;
+};
+
+/** The client statistics in pages — the rhythm preview's walk. */
+export type ClientStatsPagePorts = {
+  readonly pageClientStats: PageClientStats;
+};
 
 /** The client-stats readers, keyed by the client record (D29) — `CLIENT_STATS_READ_PORTS`. */
-export type ClientStatsReadPorts = Pick<
-  SchedulingPorts,
-  'loadClientStats' | 'loadClientMoney' | 'pageClientStats'
->;
+export type ClientStatsReadPorts = ClientStatsLoadPorts & ClientStatsPagePorts;
+
+/** The callable RPC gateway. */
+export type GatewayPorts = {
+  readonly callableClient: CallableClient;
+};
+
+// The functions' bundles (one adapter factory each, `apps/functions/src/adapters`).
+
+/** The booking policy — `firestore-settings.adapter.ts`. */
+export type PolicyReadPorts = {
+  readonly loadPolicy: LoadPolicy;
+};
+
+/** One appointment by id. */
+export type AppointmentLoadPorts = {
+  readonly loadAppointment: LoadAppointment;
+};
+
+/** A barber's roster, busy day and schedule exception for a shop day. */
+export type ShopDayReadPorts = {
+  readonly loadBusyDay: LoadBusyDay;
+  readonly loadScheduleException: LoadScheduleException;
+  readonly loadSchedule: LoadSchedule;
+};
+
+/** The tenant's barbers. */
+export type BarberListPorts = {
+  readonly listBarbers: ListBarbers;
+};
+
+/** One waitlist request by id. */
+export type WaitlistRequestReadPorts = {
+  readonly loadWaitlistRequest: LoadWaitlistRequest;
+};
+
+/** The open waitlist requests a freed time may match. */
+export type OpenWaitlistReadPorts = {
+  readonly loadOpenWaitlist: LoadOpenWaitlist;
+};
+
+/** The capacity months — `firestore-capacity.adapter.ts`. */
+export type CapacityReadPorts = {
+  readonly loadCapacityMonths: LoadCapacityMonths;
+};
+
+/** The daily lead-time sample — `firestore-lead-time.adapter.ts`. */
+export type LeadTimeWritePorts = {
+  readonly writeLeadTimeSample: WriteLeadTimeSample;
+};
+
+/** The server and background pipelines' scheduling reads. */
+export type ServerSchedulingReadPorts = PolicyReadPorts &
+  AppointmentLoadPorts &
+  ShopDayReadPorts &
+  BarberListPorts &
+  WaitlistRequestReadPorts &
+  OpenWaitlistReadPorts &
+  CapacityReadPorts &
+  LeadTimeWritePorts;
+
+/**
+ * The shop's clock a client recompute judges windows and the next visit on —
+ * the tenant zone the composition root says in one place (`TENANT_ZONE`,
+ * flatten-spec F-4); a value of configuration, not a read.
+ */
+export type TenantZonePorts = {
+  readonly tenantTimeZone: TimeZone;
+};
+
+/** The client records in pages — the recompute and the backfill walk them. */
+export type ClientPagePorts = {
+  readonly pageClients: PageClients;
+};
+
+/** The policy-recompute job's progress. */
+export type PolicyRecomputeJobPorts = {
+  readonly loadPolicyRecomputeJob: LoadPolicyRecomputeJob;
+};
+
+/** The administrative batch reads. */
+export type AdminBatchPorts = ClientPagePorts & PolicyRecomputeJobPorts;
+
+/** The policy's live line for the daily sweep. */
+export type PolicyLinePorts = {
+  readonly loadPolicyLine: LoadPolicyLine;
+};
+
+/**
+ * The scheduling context's whole port suite — assembled by intersection of
+ * its bundles, never sliced back apart (Law 9).
+ */
+export type SchedulingPorts = SchedulingReadPorts &
+  ScheduleExceptionPorts &
+  AppointmentReadPorts &
+  WaitlistReadPorts &
+  ClientStatsReadPorts &
+  ServerSchedulingReadPorts &
+  AdminBatchPorts &
+  PolicyLinePorts &
+  GatewayPorts;

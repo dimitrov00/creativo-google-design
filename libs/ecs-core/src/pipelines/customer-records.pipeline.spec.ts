@@ -1,7 +1,12 @@
 import { CustomerOrigin, WriteOp } from '@core/components';
 import { CustomerId, RepositoryError, Result, UserId } from '@core/primitives';
-import { type Customer, Collections, Profile } from '@core/entities';
-import type { AccountContact } from '@core/ports';
+import {
+  type AccountContact,
+  Collections,
+  type Customer,
+  Profile,
+} from '@core/entities';
+
 import { SearchFieldsSystem } from '@core/systems';
 import {
   FIXTURE_IDS,

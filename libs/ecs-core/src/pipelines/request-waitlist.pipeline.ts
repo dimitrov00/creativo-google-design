@@ -22,10 +22,12 @@ import {
   type WaitlistRequest,
 } from '@core/entities';
 import type {
-  CatalogPorts,
-  SchedulingPorts,
-  TelemetryPorts,
-  TxPorts,
+  CatalogLoadPorts,
+  ClockPorts,
+  CommitPorts,
+  HashPorts,
+  LogPorts,
+  PolicyReadPorts,
 } from '@core/ports';
 import {
   PartyAdmissionSystem,
@@ -62,13 +64,12 @@ export type RequestWaitlistAnswer = {
   readonly requestId: WaitlistRequestId;
 };
 
-export type RequestWaitlistPorts = Pick<
-  TxPorts,
-  'commit' | 'nowUtcMs' | 'hash'
-> &
-  Pick<CatalogPorts, 'loadCatalog'> &
-  Pick<SchedulingPorts, 'loadPolicy'> &
-  Pick<TelemetryPorts, 'log'>;
+export type RequestWaitlistPorts = CommitPorts &
+  HashPorts &
+  ClockPorts &
+  CatalogLoadPorts &
+  PolicyReadPorts &
+  LogPorts;
 
 /** How many hex digits of the digest the request id keeps (`wl_` + 40). */
 const ID_DIGEST_LENGTH = 40;

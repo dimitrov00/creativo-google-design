@@ -73,23 +73,40 @@ export type LoadCatalog = (
 ) => Promise<Result<CatalogSnapshot, RepositoryError>>;
 
 /**
- * The catalogue context's port catalogue. Each composition root binds the
- * `Pick` its runtime implements: the web the four live streams, the
- * functions `loadCatalog`.
+ * The listed catalogue a freed day is searched with — every ACTIVE service,
+ * shop and barber (three single-field `== 'ACTIVE'` queries, bodies straight
+ * from `snap.data()`).
  */
-export type CatalogPorts = {
+export type ListedCatalog = {
+  readonly services: readonly Service[];
+  readonly locations: readonly ShopLocation[];
+  readonly barbers: readonly Barber[];
+};
+export type LoadListedCatalog = () => Promise<
+  Result<ListedCatalog, RepositoryError>
+>;
+
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** The catalogue's four live streams — the bundle the web's `CATALOG_PORTS` token binds. */
+export type CatalogReadPorts = {
   readonly observeServices: ObserveServices;
   readonly observeBarbers: ObserveBarbers;
   readonly observeCategories: ObserveCategories;
   readonly observeLocations: ObserveLocations;
+};
+
+/** The cart's services and named shop in one read — the functions' `firestore-catalog.adapter.ts`. */
+export type CatalogLoadPorts = {
   readonly loadCatalog: LoadCatalog;
 };
 
-/** The catalogue's four live streams — the bundle the web's `CATALOG_PORTS` token binds. */
-export type CatalogReadPorts = Pick<
-  CatalogPorts,
-  | 'observeServices'
-  | 'observeBarbers'
-  | 'observeCategories'
-  | 'observeLocations'
->;
+/** Every listed service, shop and barber — the waitlist matcher's day read. */
+export type ListedCatalogPorts = {
+  readonly loadListedCatalog: LoadListedCatalog;
+};
+
+/** The catalogue context's whole port suite — an intersection of its bundles. */
+export type CatalogPorts = CatalogReadPorts &
+  CatalogLoadPorts &
+  ListedCatalogPorts;

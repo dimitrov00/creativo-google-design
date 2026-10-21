@@ -383,6 +383,15 @@ export default [
   // move here in Phase 4 with the legacy files. Selectors live in
   // tools/lint-rules/ecs-syntax.mjs and are tested there.
   ...ecsSyntaxBlocks(ECS_ROOT_SUFFIXES),
+  // Law 9 — bottom-up port composition: no `Pick`/`Omit` slice of a `*Ports`
+  // bundle anywhere (pipelines, adapters, composition roots, features,
+  // specs). libs/ecs-core's own config adds the ports tier's strict mode
+  // (no `Pick`/`Omit` at all). Tested in tools/lint-rules/no-sliced-ports.spec.mjs.
+  {
+    files: ['**/*.ts'],
+    plugins: { creativo },
+    rules: { 'creativo/no-sliced-ports': 'error' },
+  },
   {
     files: ['**/*.html'],
     plugins: { creativo },

@@ -24,12 +24,13 @@ import {
   UserId,
 } from '@core/primitives';
 import {
+  type AccountContact,
   type AuditEntry,
-  type Customer,
   Collections,
+  type Customer,
   Profile,
 } from '@core/entities';
-import type { AccountContact, CommitPlan } from '@core/ports';
+import type { CommitPlan } from '@core/ports';
 import {
   AuditSystem,
   RequestedSubjectRole,

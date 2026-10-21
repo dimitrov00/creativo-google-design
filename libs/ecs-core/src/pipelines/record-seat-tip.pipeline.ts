@@ -15,7 +15,7 @@ import {
   type PriceCents,
   type SeatId,
 } from '@core/primitives';
-import type { GovernancePorts, TelemetryPorts, TxPorts } from '@core/ports';
+import type { AuditAppendPorts, TelemetryPorts, TxPorts } from '@core/ports';
 import { type AuditFact, AuditSystem } from '@core/systems';
 import {
   appendAuditFacts,
@@ -59,9 +59,7 @@ export type RecordSeatTipError =
   | SchedulingError.AppointmentUnknownSeat
   | RepositoryError;
 
-export type RecordSeatTipPorts = TxPorts &
-  Pick<GovernancePorts, 'appendAudit'> &
-  TelemetryPorts;
+export type RecordSeatTipPorts = TxPorts & AuditAppendPorts & TelemetryPorts;
 
 /** The decision: its facts and whether anything changes, with the plan beside it. */
 type Decided = {

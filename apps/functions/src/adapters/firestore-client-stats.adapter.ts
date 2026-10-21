@@ -7,8 +7,7 @@ import {
   POLICY_RECOMPUTE_DOC,
   type PolicyRecomputeJob,
 } from '@core/entities';
-import type { SchedulingPorts } from '@core/ports';
-import type { LoadPolicyLine } from '@core/pipelines';
+import type { AdminBatchPorts, PolicyLinePorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -33,13 +32,6 @@ import { TriggerAttemptSystem } from '@core/systems';
  * edge judges a redelivery by.
  */
 
-export type ClientStatsServerPorts = Pick<
-  SchedulingPorts,
-  'pageClients' | 'loadPolicyRecomputeJob'
-> & {
-  readonly loadPolicyLine: LoadPolicyLine;
-};
-
 const JOB_PATH = `${Collections.BackfillJobs}/${POLICY_RECOMPUTE_DOC}`;
 const POLICY_PATH = `${Collections.Settings}/${BOOKING_POLICY_DOC}`;
 
@@ -52,7 +44,7 @@ function readFailed(path: string, error: unknown): RepositoryError {
 
 export const firestoreClientStatsPorts = (
   db: Firestore,
-): ClientStatsServerPorts => ({
+): AdminBatchPorts & PolicyLinePorts => ({
   pageClients: async (afterCustomerId, limit) => {
     try {
       let query = db

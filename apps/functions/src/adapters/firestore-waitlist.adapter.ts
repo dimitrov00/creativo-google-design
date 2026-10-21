@@ -1,7 +1,10 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { RepositoryError, Result, WaitlistStatus } from '@core/primitives';
 import { Collections, type WaitlistRequest } from '@core/entities';
-import type { SchedulingPorts } from '@core/ports';
+import type {
+  OpenWaitlistReadPorts,
+  WaitlistRequestReadPorts,
+} from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -18,11 +21,6 @@ import { TriggerAttemptSystem } from '@core/systems';
  * failure's canonical code.
  */
 
-export type WaitlistPorts = Pick<
-  SchedulingPorts,
-  'loadOpenWaitlist' | 'loadWaitlistRequest'
->;
-
 function readFailed(path: string, error: unknown): RepositoryError {
   return RepositoryError.readFailed(
     path,
@@ -30,7 +28,9 @@ function readFailed(path: string, error: unknown): RepositoryError {
   );
 }
 
-export const firestoreWaitlistPorts = (db: Firestore): WaitlistPorts => ({
+export const firestoreWaitlistPorts = (
+  db: Firestore,
+): OpenWaitlistReadPorts & WaitlistRequestReadPorts => ({
   loadOpenWaitlist: async (localDate) => {
     try {
       const snap = await db

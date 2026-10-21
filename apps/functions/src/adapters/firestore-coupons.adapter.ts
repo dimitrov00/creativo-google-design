@@ -2,7 +2,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { RepositoryError, Result } from '@core/primitives';
 import { CouponStatus } from '@core/components';
 import { type Coupon, Collections, QueryOp } from '@core/entities';
-import type { EngagementPorts } from '@core/ports';
+import type { CouponLookupPorts } from '@core/ports';
 
 /**
  * The staff edit's out-of-transaction code lookup (blueprint §4.1, flip 1
@@ -14,10 +14,7 @@ import type { EngagementPorts } from '@core/ports';
  * `RepositoryError` value.
  */
 
-/** The bundle main.ts spreads into the Firestore ports. */
-export type CouponPorts = Pick<EngagementPorts, 'findCouponByCode'>;
-
-export const firestoreCouponPorts = (db: Firestore): CouponPorts => ({
+export const firestoreCouponPorts = (db: Firestore): CouponLookupPorts => ({
   findCouponByCode: async (code) => {
     try {
       const snap = await db

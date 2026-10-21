@@ -30,11 +30,11 @@ import {
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
 import type {
-  GovernancePorts,
-  Hash,
-  NextId,
+  AuditAppendPorts,
+  HashPorts,
+  IdPorts,
+  PolicyReadPorts,
   ReadTx,
-  SchedulingPorts,
   TelemetryPorts,
   TxPorts,
 } from '@core/ports';
@@ -152,8 +152,8 @@ export type RescheduleAppointmentError =
   BookingError | MoveError | RepositoryError;
 
 export type RescheduleAppointmentPorts = TxPorts &
-  Pick<SchedulingPorts, 'loadPolicy'> &
-  Pick<GovernancePorts, 'appendAudit'> &
+  PolicyReadPorts &
+  AuditAppendPorts &
   TelemetryPorts;
 
 /** The ledger name of a client's move — one ledger with the staff edits. */
@@ -490,7 +490,7 @@ function carriedLine(line: CarriedLine): RequestedSeatInput {
   };
 }
 
-type DecidePorts = { readonly nextId: NextId; readonly hash: Hash };
+type DecidePorts = IdPorts & HashPorts;
 
 /** The decision over one set of lines — the cart alone, or the cart with the carried seats. */
 function decideLines(

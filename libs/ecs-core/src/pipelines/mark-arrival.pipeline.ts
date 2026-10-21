@@ -6,7 +6,7 @@ import {
   type SchedulingError,
   type AppointmentId,
 } from '@core/primitives';
-import type { GovernancePorts, TelemetryPorts, TxPorts } from '@core/ports';
+import type { AuditAppendPorts, TelemetryPorts, TxPorts } from '@core/ports';
 import {
   type AuditFact,
   AppointmentLifecycleSystem,
@@ -54,9 +54,7 @@ export type MarkArrivalAnswer = {
 export type MarkArrivalError =
   BookingError.InvalidInput | SchedulingError | RepositoryError;
 
-export type MarkArrivalPorts = TxPorts &
-  Pick<GovernancePorts, 'appendAudit'> &
-  TelemetryPorts;
+export type MarkArrivalPorts = TxPorts & AuditAppendPorts & TelemetryPorts;
 
 type Decided = {
   readonly auditFacts: readonly AuditFact[];

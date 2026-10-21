@@ -9,6 +9,7 @@
  */
 import { iconRegistryOnly } from './icon-registry-only.mjs';
 import { noRestrictedImportExpressions } from './restricted-import-expressions.mjs';
+import { noSlicedPorts } from './no-sliced-ports.mjs';
 
 export {
   ICON_SPEC_SYNTAX_RESTRICTIONS,
@@ -41,6 +42,7 @@ const plugin = {
   rules: {
     'icon-registry-only': iconRegistryOnly,
     'no-restricted-import-expressions': noRestrictedImportExpressions,
+    'no-sliced-ports': noSlicedPorts,
   },
 };
 

@@ -23,12 +23,11 @@ import {
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
-import type { Appointment } from '@core/entities';
+import type { AccountContact, Appointment } from '@core/entities';
 import type {
-  AccountContact,
-  GovernancePorts,
-  IdentityPorts,
-  SchedulingPorts,
+  AccountContactPorts,
+  AuditAppendPorts,
+  PolicyReadPorts,
   TelemetryPorts,
   TxPorts,
 } from '@core/ports';
@@ -140,9 +139,9 @@ export type BookAppointmentAnswer = {
 export type BookAppointmentError = BookingError | RepositoryError;
 
 export type BookAppointmentPorts = TxPorts &
-  Pick<SchedulingPorts, 'loadPolicy'> &
-  Pick<IdentityPorts, 'loadAccountContacts'> &
-  Pick<GovernancePorts, 'appendAudit'> &
+  PolicyReadPorts &
+  AccountContactPorts &
+  AuditAppendPorts &
   TelemetryPorts;
 
 type Snapshot =

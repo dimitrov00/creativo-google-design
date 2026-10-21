@@ -44,7 +44,11 @@ import {
   RepositoryError as PortRepositoryError,
   Result,
 } from '@core/primitives';
-import type { AppointmentPhotoPorts } from '@core/ports';
+import type {
+  AppointmentPhotoPorts,
+  AppointmentPhotoRecordPorts,
+  PhotoUploadPorts,
+} from '@core/ports';
 
 // Ports (application layer)
 import {
@@ -226,12 +230,13 @@ const appointmentPhotoBundle: FactoryPicker<
  * `APPOINTMENT_PHOTO_PORTS` is the two put back together. These tokens are
  * this file's alone; features inject `APPOINTMENT_PHOTO_PORTS`.
  */
-const APPOINTMENT_PHOTO_DOCUMENTS = new InjectionToken<
-  Omit<AppointmentPhotoPorts, 'uploadPhotoBytes'>
->('APPOINTMENT_PHOTO_PORTS · documents');
-const APPOINTMENT_PHOTO_BYTES = new InjectionToken<
-  Pick<AppointmentPhotoPorts, 'uploadPhotoBytes'>
->('APPOINTMENT_PHOTO_PORTS · bytes');
+const APPOINTMENT_PHOTO_DOCUMENTS =
+  new InjectionToken<AppointmentPhotoRecordPorts>(
+    'APPOINTMENT_PHOTO_PORTS · documents',
+  );
+const APPOINTMENT_PHOTO_BYTES = new InjectionToken<PhotoUploadPorts>(
+  'APPOINTMENT_PHOTO_PORTS · bytes',
+);
 
 /**
  * The bytes' half failing to load: Storage's transient answer for the

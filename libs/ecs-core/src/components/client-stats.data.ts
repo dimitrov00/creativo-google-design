@@ -92,6 +92,14 @@ export const PreciseInstant = {
   },
 } as const;
 
+/** The booking policy as the daily sweep reads it: its line, and when it last changed. */
+export type LivePolicyLine = {
+  /** The policy document's update time; `null` when there is no document. */
+  readonly updatedAt: PreciseInstant | null;
+  /** The free-cancellation window in force — the defaults' when there is no document. */
+  readonly windowHours: number;
+};
+
 /**
  * One VISIT — a person's seats in one appointment, counted once (R33) — at
  * the appointment's start on the shop's wall clock (Law 7: windows are

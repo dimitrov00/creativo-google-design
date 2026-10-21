@@ -51,8 +51,12 @@ export type TrackError = (
 ```
 
 No interfaces with methods, no abstract classes, no `InjectionToken`s here.
-A port bundle is a plain object type: `export type BookingPorts = { load: …;
-commit: …; log: Log; nowUtcMs: () => UtcEpochMs; nextId: () => string }`.
+Port functions are grouped in focused bundle records declared in the ports
+tier and composed bottom-up with `&` (Law 9, `ecs-ports.md`); a pipeline's
+dependency type is an intersection of named bundles —
+`export type BookAppointmentPorts = TxPorts & PolicyReadPorts &
+AccountContactPorts & AuditAppendPorts & TelemetryPorts` — never a
+`Pick`/`Omit` of a larger catalogue.
 The sandwich derives the shop's `ShopNow` ONCE from `ports.nowUtcMs()` and
 the location's `timeZone` (`ZonedTimeSystem.shopNow`) and hands that to the
 systems.

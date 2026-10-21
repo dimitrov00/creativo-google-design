@@ -13,7 +13,10 @@ import {
   APPOINTMENT_READ_PORTS,
   INBOX_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { AppointmentReadPorts } from '@core/ports';
+import type {
+  AccountAppointmentReadPorts,
+  AppointmentReadPorts,
+} from '@core/ports';
 import type { Appointment } from '@core/entities';
 import {
   BookingLifecycle,
@@ -73,9 +76,7 @@ function appointmentAt(
  * answer an empty book.
  */
 function appointmentReads(
-  reads: Partial<
-    Pick<AppointmentReadPorts, 'observeUpcoming' | 'observeHistory'>
-  >,
+  reads: Partial<AccountAppointmentReadPorts>,
 ): AppointmentReadPorts {
   return {
     ...memoryAppointmentReadPorts([]),

@@ -6,7 +6,7 @@ import {
   type BackfillJob,
   Collections,
 } from '@core/entities';
-import type { AccountsPorts, GovernancePorts } from '@core/ports';
+import type { BackfillJobPorts, CallerRolesPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -29,17 +29,13 @@ import { TriggerAttemptSystem } from '@core/systems';
  * `RepositoryError` value whose `reason` is the failure's canonical code.
  */
 
-export type JobPorts = Pick<
-  GovernancePorts,
-  'loadBackfillJob' | 'writeBackfillJob' | 'pageAppointments'
-> &
-  Pick<AccountsPorts, 'loadCallerRoles'>;
-
 function code(error: unknown): string {
   return TriggerAttemptSystem.failureCode(error);
 }
 
-export const firestoreJobPorts = (db: Firestore): JobPorts => ({
+export const firestoreJobPorts = (
+  db: Firestore,
+): BackfillJobPorts & CallerRolesPorts => ({
   loadBackfillJob: async (id) => {
     const path = `${Collections.BackfillJobs}/${id}`;
     try {

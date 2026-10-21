@@ -41,14 +41,15 @@ import {
   UserId,
 } from '@core/primitives';
 import {
+  type AccountContact,
   type Appointment,
   type AuditEntry,
+  Collections,
   type Coupon,
   type CouponGrant,
   type GiftVoucher,
-  Collections,
 } from '@core/entities';
-import type { AccountContact } from '@core/ports';
+
 import {
   AppointmentEditSystem,
   AuditSystem,

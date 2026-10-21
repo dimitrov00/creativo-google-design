@@ -1,12 +1,13 @@
-import { type RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
 import { PreciseInstant, type WriteOp } from '@core/components';
 import type { PolicyRecomputeJob } from '@core/entities';
-import type { TelemetryPorts, TxPorts } from '@core/ports';
-import {
-  type AttemptFailure,
-  type LivePolicyLine,
-  PolicyRecomputeJobSystem,
-} from '@core/systems';
+import type {
+  ClockPorts,
+  CommitPorts,
+  LogPorts,
+  PolicyLinePorts,
+} from '@core/ports';
+import { type AttemptFailure, PolicyRecomputeJobSystem } from '@core/systems';
 import { repositoryFailure } from './project-client-stats.pipeline';
 import {
   POLICY_RECOMPUTE_JOB_PATH,
@@ -31,17 +32,6 @@ import {
  * change, and a nudge keeps the step's key.
  */
 
-/**
- * The booking policy's line and when it last changed — `settings/bookingPolicy`
- * (its `cancellationWindowHours` through `BookingPolicy.withDefaults`, and
- * the document's `updateTime`; `null` with no document). A port the
- * booking-core flip adds for the sweep; its home is `scheduling.port.ts`
- * (reported to the integrator).
- */
-export type LoadPolicyLine = () => Promise<
-  Result<LivePolicyLine, RepositoryError>
->;
-
 /** What the daily sweep did to the job — the ONLY source of these strings, the field `policySweepOutcome`. */
 export const PolicySweepOutcome = {
   /** No job, a finished one, or one that moved within the hour — and no dropped change. */
@@ -63,10 +53,10 @@ export type PolicySweepReport = {
   readonly survivedFailure: AttemptFailure | null;
 };
 
-export type SweepPolicyRecomputePorts = Pick<TxPorts, 'commit' | 'nowUtcMs'> &
-  Pick<TelemetryPorts, 'log'> & {
-    readonly loadPolicyLine: LoadPolicyLine;
-  };
+export type SweepPolicyRecomputePorts = CommitPorts &
+  ClockPorts &
+  LogPorts &
+  PolicyLinePorts;
 
 /** A change instant as the label of the generation it starts — whole seconds, then the nine nanosecond digits. */
 function instantLabel(instant: PreciseInstant): string {

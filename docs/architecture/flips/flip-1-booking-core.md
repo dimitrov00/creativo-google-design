@@ -285,6 +285,15 @@ entry is added by P1/P2.
 Server adapters (`apps/functions/src/adapters/`), each a plain `(db) =>
 bundle`, each with a spec over `FakeProjectionFirestore`:
 
+> **Superseded by Law 9 (2026-10-21).** The `Pick<…Ports, …>` return types
+> below are the plan as written. Each adapter now returns the named ecs-core
+> bundle it implements — `PolicyReadPorts`, `CouponLookupPorts`,
+> `AccountContactPorts`, `AuditPorts`, `CatalogLoadPorts & ListedCatalogPorts`,
+> `BarberListPorts & ShopDayReadPorts`, `CapacityReadPorts`,
+> `LeadTimeWritePorts`, `OpenWaitlistReadPorts & WaitlistRequestReadPorts`,
+> `RecentNotificationPorts`, `AdminBatchPorts & PolicyLinePorts`,
+> `BackfillJobPorts & CallerRolesPorts` — with no adapter-local alias.
+
 | File                                 | Owner | Export → bundle                                                                                                                                                               |
 | ------------------------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `firestore-ttl.adapter.ts`           | P1    | `purgeAtFor(path, body): Timestamp \| null` (F1-7; the five groups of §1.1, matched by the path's last collection segment, today's five formulas; `null` for any other group) |

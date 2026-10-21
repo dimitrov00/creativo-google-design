@@ -1,7 +1,7 @@
 import { type CustomerId, Result } from '@core/primitives';
 import { ClientStatsPolicy, PolicyPass, type WriteOp } from '@core/components';
 import type { PolicyRecomputeJob } from '@core/entities';
-import type { SchedulingPorts, TelemetryPorts } from '@core/ports';
+import type { AdminBatchPorts, LogPorts, PolicyReadPorts } from '@core/ports';
 import {
   type AttemptFailure,
   AttemptOutcome,
@@ -79,11 +79,9 @@ export type PolicyStepReport = {
 export type StepBudget = { readonly spent: () => boolean };
 
 export type ContinuePolicyRecomputePorts = ClientStatsRecomputePorts &
-  Pick<
-    SchedulingPorts,
-    'loadPolicy' | 'pageClients' | 'loadPolicyRecomputeJob'
-  > &
-  Pick<TelemetryPorts, 'log'>;
+  PolicyReadPorts &
+  AdminBatchPorts &
+  LogPorts;
 
 /** Stored clients per page. */
 export const POLICY_PAGE_SIZE = 100;

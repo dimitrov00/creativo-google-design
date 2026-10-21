@@ -56,15 +56,18 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import type {
-  Log,
-  TrackError,
+  ClockPorts,
   CommitPlan,
   Hash,
+  HashPorts,
+  IdPorts,
+  Log,
   NextId,
   NowUtcMs,
   QueryFilter,
   QuerySpec,
   ReadTx,
+  TrackError,
   TxPorts,
 } from '@core/ports';
 import { QueryOp } from '@core/entities';
@@ -624,7 +627,7 @@ export function memoryCommitPlan(store: MemoryStore): MemoryCommit {
 /** The pinned transaction bundle over a store, plus the commit record. */
 export function memoryTxPorts(
   store: MemoryStore,
-  options: Partial<Pick<TxPorts, 'nowUtcMs' | 'nextId' | 'hash'>> = {},
+  options: Partial<HashPorts & IdPorts & ClockPorts> = {},
 ): TxPorts & Pick<MemoryCommit, 'plans' | 'transactions'> {
   const { commit, plans, transactions } = memoryCommitPlan(store);
   return {

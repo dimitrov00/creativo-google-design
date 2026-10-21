@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { RepositoryError, Result } from '@core/primitives';
 import { Collections, Subcollections } from '@core/entities';
-import type { NotificationsPorts } from '@core/ports';
+import type { RecentNotificationPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -14,14 +14,9 @@ import { TriggerAttemptSystem } from '@core/systems';
  * `RepositoryError` value whose `reason` is the failure's canonical code.
  */
 
-export type NotificationPorts = Pick<
-  NotificationsPorts,
-  'hasRecentNotification'
->;
-
 export const firestoreNotificationPorts = (
   db: Firestore,
-): NotificationPorts => ({
+): RecentNotificationPorts => ({
   hasRecentNotification: async (
     userId,
     topic,

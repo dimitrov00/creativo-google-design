@@ -48,20 +48,20 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import {
+  type AccountContact,
   type Appointment,
+  Collections,
   type Coupon,
   type CouponGrant,
   type GiftVoucher,
-  Collections,
   QueryOp,
 } from '@core/entities';
 import type {
-  AccountContact,
-  EngagementPorts,
-  GovernancePorts,
-  IdentityPorts,
+  AccountContactPorts,
+  AuditAppendPorts,
+  CouponLookupPorts,
+  PolicyReadPorts,
   ReadTx,
-  SchedulingPorts,
   TelemetryPorts,
   TxPorts,
 } from '@core/ports';
@@ -297,10 +297,10 @@ export type EditAppointmentError =
   | RepositoryError;
 
 export type EditAppointmentPorts = TxPorts &
-  Pick<SchedulingPorts, 'loadPolicy'> &
-  Pick<EngagementPorts, 'findCouponByCode'> &
-  Pick<IdentityPorts, 'loadAccountContacts'> &
-  Pick<GovernancePorts, 'appendAudit'> &
+  PolicyReadPorts &
+  CouponLookupPorts &
+  AccountContactPorts &
+  AuditAppendPorts &
   TelemetryPorts;
 
 /** The staff verb each lone command is audited under. */

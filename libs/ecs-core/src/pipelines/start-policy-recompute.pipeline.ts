@@ -10,7 +10,7 @@ import {
   POLICY_RECOMPUTE_DOC,
   type PolicyRecomputeJob,
 } from '@core/entities';
-import type { TxPorts } from '@core/ports';
+import type { ClockPorts, CommitPorts } from '@core/ports';
 import { PolicyRecomputeJobSystem } from '@core/systems';
 
 /**
@@ -58,7 +58,7 @@ export type StartPolicyRecomputeAnswer = {
   readonly policyStartOutcome: PolicyStartOutcome;
 };
 
-export type StartPolicyRecomputePorts = Pick<TxPorts, 'commit' | 'nowUtcMs'>;
+export type StartPolicyRecomputePorts = CommitPorts & ClockPorts;
 
 /** `backfillJobs/clientStatsPolicy` — the pass's one document. */
 export const POLICY_RECOMPUTE_JOB_PATH: readonly string[] = [

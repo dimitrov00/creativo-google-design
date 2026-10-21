@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ClientStatsPagePorts } from '@core/ports';
 import { ClientStats, PolicyPassStamp } from '@core/components';
 import type { ClientStatsRecord } from '@core/entities';
 import {
@@ -28,7 +29,6 @@ import {
   RHYTHM_PREVIEW_PAGES,
   RHYTHM_PREVIEW_PAGE_SIZE,
   RhythmPreviewSource,
-  type RhythmStatsReader,
   readRhythmPreviewFacts,
   rhythmPreviewOf,
   rhythmPreviewReadsFacts,
@@ -103,7 +103,7 @@ function statsReader(records: readonly ClientStatsRecord[] = []) {
       return failure === null
         ? memory.pageClientStats(after, limit)
         : Result.err(failure);
-    }) satisfies RhythmStatsReader['pageClientStats'],
+    }) satisfies ClientStatsPagePorts['pageClientStats'],
     failWith(error: RepositoryError = RepositoryError.unavailable()) {
       failure = error;
       return reader;
@@ -233,7 +233,7 @@ describe('readRhythmPreviewFacts', () => {
     const inner = statsReader(shopOf(450));
     const pageTwo = RepositoryError.readFailed('clientStats', 'page two');
     let pages = 0;
-    const directory: RhythmStatsReader = {
+    const directory: ClientStatsPagePorts = {
       pageClientStats: (after, limit) => {
         pages += 1;
         if (pages === 2) inner.failWith(pageTwo);
@@ -248,7 +248,7 @@ describe('readRhythmPreviewFacts', () => {
   });
 
   it('answers a directory that throws as a failure', async () => {
-    const directory: RhythmStatsReader = {
+    const directory: ClientStatsPagePorts = {
       pageClientStats: () =>
         Promise.reject(new Error('the adapter did not load')),
     };

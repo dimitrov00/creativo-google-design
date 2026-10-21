@@ -11,7 +11,7 @@ import {
   Collections,
   type ScheduleException,
 } from '@core/entities';
-import type { SchedulingPorts } from '@core/ports';
+import type { BarberListPorts, ShopDayReadPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -29,11 +29,6 @@ import { TriggerAttemptSystem } from '@core/systems';
  * a read that throws answers a `RepositoryError` value whose `reason` is the
  * failure's canonical code.
  */
-
-export type SchedulePorts = Pick<
-  SchedulingPorts,
-  'loadSchedule' | 'loadBusyDay' | 'listBarbers' | 'loadScheduleException'
->;
 
 function readFailed(path: string, error: unknown): RepositoryError {
   return RepositoryError.readFailed(
@@ -59,7 +54,9 @@ async function loadOne<E>(
   }
 }
 
-export const firestoreSchedulePorts = (db: Firestore): SchedulePorts => ({
+export const firestoreSchedulePorts = (
+  db: Firestore,
+): BarberListPorts & ShopDayReadPorts => ({
   loadSchedule: (barberId) =>
     loadOne<BarberSchedule>(db, Collections.BarberSchedules, barberId),
 

@@ -1,5 +1,5 @@
 import { type Observable, combineLatest, map, of } from 'rxjs';
-import type { SchedulingReadPorts } from '@core/ports';
+import type { CapacityStreamPorts, ShopDayStreamPorts } from '@core/ports';
 import type {
   BarberBusyDay,
   BarberSchedule,
@@ -154,11 +154,6 @@ export function sameDayDocsKey(
   );
 }
 
-type DayPorts = Pick<
-  SchedulingReadPorts,
-  'observeSchedule' | 'observeBusyDay' | 'observeExceptions' | 'observeLocation'
->;
-
 /**
  * The day's raw documents, live: per barber the roster, the busy day and the
  * schedule exception (a day off has to grey the sheet, not just the commit),
@@ -167,7 +162,7 @@ type DayPorts = Pick<
  * hiding someone's free time.
  */
 export function observeDayDocs(
-  ports: DayPorts,
+  ports: ShopDayStreamPorts,
   key: DayDocsKey,
 ): Observable<Result<DayDocs, RepositoryError>> {
   const perBarber: Observable<Result<BarberDayDocs, RepositoryError>>[] =
@@ -379,7 +374,7 @@ export function capacityMonthsOf(
 
 /** The month documents' entries, live, in one list — `null` months (never rebuilt) hold nothing. */
 export function observeCapacityEntries(
-  ports: Pick<SchedulingReadPorts, 'observeCapacityMonth'>,
+  ports: CapacityStreamPorts,
   months: readonly CapacityMonthId[],
 ): Observable<Result<readonly CapacityEntry[], RepositoryError>> {
   if (months.length === 0) return of(Result.ok([]));

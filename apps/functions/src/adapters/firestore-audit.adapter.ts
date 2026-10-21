@@ -10,7 +10,7 @@ import {
   AuditResourceId,
 } from '@core/primitives';
 import { type AuditEntry, Collections, QueryOp } from '@core/entities';
-import type { GovernancePorts, TelemetryPorts } from '@core/ports';
+import type { AuditPorts, TelemetryPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -39,12 +39,6 @@ import { TriggerAttemptSystem } from '@core/systems';
  *   streak publish's (F1-8): the reference and body the store's own
  *   transaction stages with `tx.create`.
  */
-
-/** The bundle main.ts spreads into the Firestore ports. */
-export type AuditPorts = Pick<
-  GovernancePorts,
-  'appendAudit' | 'createAuditRows' | 'auditActionsFor'
->;
 
 /** Firestore's `in` takes at most 30 values per query. */
 const IN_CHUNK = 30;

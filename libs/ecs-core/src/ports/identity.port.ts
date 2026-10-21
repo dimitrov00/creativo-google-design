@@ -12,7 +12,7 @@ import type {
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import type { Customer, Otp, User } from '@core/entities';
+import type { AccountContact, Customer, Otp, User } from '@core/entities';
 
 /**
  * The identity context's server ports (blueprint §4.1 `requestOtp`,
@@ -120,15 +120,6 @@ export type LoadCustomerForUser = (
 ) => Promise<Result<Customer | null, RepositoryError>>;
 
 /**
- * The account fields a first-booking client record copies (F1-5): the
- * names and the sign-in contact of `users/{uid}`, their kept key names.
- */
-export type AccountContact = Pick<
-  User,
-  'firstName' | 'lastName' | 'phone' | 'email'
->;
-
-/**
  * The FIRST_BOOKING contact snapshot (F1-5) — one NON-transactional
  * `getAll` of `users/{uid}` for the given accounts, read BEFORE the booking
  * or edit transaction opens, so `users/{uid}` never enters its conflict set
@@ -189,28 +180,65 @@ export type SetDisplayName = (
   displayName: string,
 ) => Promise<Result<void, PipelineError>>;
 
-/**
- * The identity context's port catalogue. The users stub `Create` and the
- * registered body `Update` are entries of a `CommitPlan` (`tx.port.ts`),
- * never a port of their own; so is a `FIRST_BOOKING` customer `Create`
- * (F1-5).
- */
-export type IdentityPorts = {
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** The signed-in account's client record — the bundle the web's `CUSTOMER_PORTS` token binds. */
+export type CustomerPorts = {
   readonly loadCustomerForUser: LoadCustomerForUser;
+};
+
+/** The first-booking contact snapshot (F1-5) — `firestore-accounts.adapter.ts`. */
+export type AccountContactPorts = {
   readonly loadAccountContacts: LoadAccountContacts;
+};
+
+/** The tenant's configuration. */
+export type TenantPorts = {
   readonly loadTenant: LoadTenant;
+};
+
+/** The OTP challenges' store. */
+export type OtpStorePorts = {
   readonly loadOpenOtps: LoadOpenOtps;
   readonly loadOtp: LoadOtp;
   readonly saveOtp: SaveOtp;
+};
+
+/** The login-OTP sender — never a campaign sender. */
+export type OtpDeliveryPorts = {
   readonly sendOtp: SendOtp;
+};
+
+/** The OTP code's digest and comparison. */
+export type OtpCryptoPorts = {
   readonly otpCrypto: OtpCrypto;
+};
+
+/** An account by its sign-in destination, in Firestore and in Auth. */
+export type UserDirectoryPorts = {
   readonly findUserByDestination: FindUserByDestination;
   readonly findAuthUserByDestination: FindAuthUserByDestination;
+};
+
+/** Firebase Auth's admin writes — provision, token, claims, display name. */
+export type AuthAdminPorts = {
   readonly provisionAuthUser: ProvisionAuthUser;
   readonly mintCustomToken: MintCustomToken;
   readonly setClaims: SetClaims;
   readonly setDisplayName: SetDisplayName;
 };
 
-/** The signed-in account's client record — the bundle the web's `CUSTOMER_PORTS` token binds. */
-export type CustomerPorts = Pick<IdentityPorts, 'loadCustomerForUser'>;
+/**
+ * The identity context's whole port suite — an intersection of its
+ * bundles. The users stub `Create` and the registered body `Update` are
+ * entries of a `CommitPlan` (`tx.port.ts`), never a port of their own; so
+ * is a `FIRST_BOOKING` customer `Create` (F1-5).
+ */
+export type IdentityPorts = CustomerPorts &
+  AccountContactPorts &
+  TenantPorts &
+  OtpStorePorts &
+  OtpDeliveryPorts &
+  OtpCryptoPorts &
+  UserDirectoryPorts &
+  AuthAdminPorts;

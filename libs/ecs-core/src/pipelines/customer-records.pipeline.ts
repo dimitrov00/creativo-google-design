@@ -6,8 +6,13 @@ import {
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
-import { type Customer, Collections, Profile } from '@core/entities';
-import type { AccountContact, Hash, ReadTx } from '@core/ports';
+import {
+  type AccountContact,
+  Collections,
+  type Customer,
+  Profile,
+} from '@core/entities';
+import type { Hash, ReadTx } from '@core/ports';
 import { SearchFieldsSystem } from '@core/systems';
 import { customerPath } from './booking-read-set.pipeline';
 

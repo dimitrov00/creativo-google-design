@@ -6,7 +6,14 @@ import {
   type TimeZone,
 } from '@core/primitives';
 import { BookingPolicy, type CapacityEntry } from '@core/components';
-import type { SchedulingPorts, TelemetryPorts, TxPorts } from '@core/ports';
+import type {
+  BarberListPorts,
+  CapacityReadPorts,
+  ClockPorts,
+  LeadTimeWritePorts,
+  LogPorts,
+  PolicyReadPorts,
+} from '@core/ports';
 import { LeadTimeSystem, ZonedTimeSystem } from '@core/systems';
 
 /**
@@ -34,12 +41,12 @@ export type SampleLeadTimeAnswer = {
   readonly sampledBarberIds: readonly BarberId[];
 };
 
-export type SampleLeadTimePorts = Pick<TxPorts, 'nowUtcMs'> &
-  Pick<
-    SchedulingPorts,
-    'loadCapacityMonths' | 'listBarbers' | 'writeLeadTimeSample' | 'loadPolicy'
-  > &
-  Pick<TelemetryPorts, 'log'>;
+export type SampleLeadTimePorts = ClockPorts &
+  BarberListPorts &
+  CapacityReadPorts &
+  PolicyReadPorts &
+  LeadTimeWritePorts &
+  LogPorts;
 
 export const sampleLeadTime =
   (ports: SampleLeadTimePorts) =>

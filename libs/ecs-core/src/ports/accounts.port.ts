@@ -38,9 +38,18 @@ export type LoadCallerRoles = (
   userId: UserId,
 ) => Promise<Result<readonly Role[], RepositoryError>>;
 
-/** The accounts context's port catalogue; each root binds the `Pick` it implements. */
-export type AccountsPorts = {
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** The staff user search and an account's live profile (web). */
+export type AccountReadPorts = {
   readonly searchUsers: SearchUsers;
   readonly observeProfile: ObserveProfile;
+};
+
+/** The stored roles behind a token claim (server). */
+export type CallerRolesPorts = {
   readonly loadCallerRoles: LoadCallerRoles;
 };
+
+/** The accounts context's whole port suite — an intersection of its bundles. */
+export type AccountsPorts = AccountReadPorts & CallerRolesPorts;

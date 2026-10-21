@@ -141,14 +141,31 @@ export type NowUtcMs = () => UtcEpochMs;
 /** A fresh document id — a port so specs can pin it. */
 export type NextId = () => string;
 
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** The commit port alone — a pipeline that only writes a plan. */
+export type CommitPorts = {
+  readonly commit: CommitPlan;
+};
+
+/** The digest for deterministic ids. */
+export type HashPorts = {
+  readonly hash: Hash;
+};
+
+/** The clock — the one absolute instant a request reads. */
+export type ClockPorts = {
+  readonly nowUtcMs: NowUtcMs;
+};
+
+/** The id source. */
+export type IdPorts = {
+  readonly nextId: NextId;
+};
+
 /**
  * The transaction bundle: the commit port plus the three impure
  * primitives every pipeline hands its systems as parameters (a system never
  * reads a clock, draws an id or hashes on its own — Law 3).
  */
-export type TxPorts = {
-  readonly commit: CommitPlan;
-  readonly hash: Hash;
-  readonly nowUtcMs: NowUtcMs;
-  readonly nextId: NextId;
-};
+export type TxPorts = CommitPorts & HashPorts & ClockPorts & IdPorts;

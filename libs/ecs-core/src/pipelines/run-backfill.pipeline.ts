@@ -26,10 +26,13 @@ import {
   Collections,
 } from '@core/entities';
 import type {
-  AccountsPorts,
-  GovernancePorts,
-  SchedulingPorts,
-  TelemetryPorts,
+  AuditAppendPorts,
+  AuditQueryPorts,
+  BackfillJobPorts,
+  CallerRolesPorts,
+  ClientPagePorts,
+  LogPorts,
+  PolicyReadPorts,
   TxPorts,
 } from '@core/ports';
 import {
@@ -128,18 +131,14 @@ export type BackfillPageResult = {
 };
 
 export type RunBackfillPorts = ClientStatsRecomputePorts &
-  Pick<TxPorts, 'commit' | 'nowUtcMs' | 'nextId' | 'hash'> &
-  Pick<
-    GovernancePorts,
-    | 'loadBackfillJob'
-    | 'writeBackfillJob'
-    | 'pageAppointments'
-    | 'auditActionsFor'
-    | 'appendAudit'
-  > &
-  Pick<SchedulingPorts, 'pageClients' | 'loadPolicy'> &
-  Pick<AccountsPorts, 'loadCallerRoles'> &
-  Pick<TelemetryPorts, 'log'>;
+  TxPorts &
+  AuditAppendPorts &
+  AuditQueryPorts &
+  BackfillJobPorts &
+  PolicyReadPorts &
+  ClientPagePorts &
+  CallerRolesPorts &
+  LogPorts;
 
 /**
  * Each job's progress document id — the job's legacy name, kept as the

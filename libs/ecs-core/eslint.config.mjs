@@ -227,6 +227,12 @@ export default [
   // The local plugin, for `creativo/no-restricted-import-expressions` (the
   // root installs it for templates only).
   { files: ['**/*.ts'], plugins: { creativo } },
+  // Law 9: the ports tier names its shapes — no `Pick`/`Omit` at all there
+  // (the root reports a slice of a `*Ports` bundle everywhere else).
+  {
+    files: ['src/ports/**/*.ts'],
+    rules: { 'creativo/no-sliced-ports': ['error', { anyType: true }] },
+  },
   // Law 8: the tier hierarchy, the own-barrel ban and the `../` ban, one
   // block per tier and file kind — static imports through
   // `no-restricted-imports`, `import()` / `import('…')` type queries /

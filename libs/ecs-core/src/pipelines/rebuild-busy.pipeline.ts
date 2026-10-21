@@ -7,7 +7,7 @@ import {
   type TimeZone,
 } from '@core/primitives';
 import { type Appointment, Collections, QueryOp } from '@core/entities';
-import type { QuerySpec, TelemetryPorts, TxPorts } from '@core/ports';
+import type { CommitPorts, LogPorts, QuerySpec } from '@core/ports';
 import { BusySystem, ZonedTimeSystem } from '@core/systems';
 
 /**
@@ -37,8 +37,7 @@ export type RebuildBusyAnswer = {
   readonly rebuiltKeys: readonly BusyKey[];
 };
 
-export type RebuildBusyPorts = Pick<TxPorts, 'commit'> &
-  Pick<TelemetryPorts, 'log'>;
+export type RebuildBusyPorts = CommitPorts & LogPorts;
 
 /** The live appointments on one busy day — the rebuild's whole read set. */
 export function liveOnBusyDay(key: BusyKey): QuerySpec {

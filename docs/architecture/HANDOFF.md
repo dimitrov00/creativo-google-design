@@ -3,20 +3,23 @@
 Read this first if you are an agent (Claude Code, Codex, Cursor, Gemini, …) or
 a developer picking up the ECS / data-oriented migration. It says where the
 work stands, what to do next in which order, and how to prove each step.
-Last updated 2026-10-21 (flip 1 complete; flip 2 next).
+Last updated 2026-10-21 (flip 1 complete; Law 9 port-composition pass;
+flip 2 next).
 
 ## 1. Read these, in this order
 
-1. `CLAUDE.md` (= `AGENTS.md`) — the constitution, **Laws 1–8**. Non-negotiable.
+1. `CLAUDE.md` (= `AGENTS.md`) — the constitution, **Laws 1–9**. Non-negotiable.
 2. `.claude/rules/*.md` — compiled templates per file kind (components,
-   primitives, systems, pipelines, Firestore layout, layering, Angular UI).
+   primitives, systems, pipelines, ports, Firestore layout, layering,
+   Angular UI).
 3. `docs/architecture/ecs-migration.md` — the blueprint: §6 phase plan,
    §9 decisions D1–D29 (the notes at its top say where Laws 6–8 override it).
 4. `docs/architecture/flatten-spec.md` — every name, shape and time rule of
    the flat archetypes (Laws 6–7); §2.3 T1–T9 are the time rules.
 5. `docs/architecture/firestore-runbook.md` — the reader/writer matrix of every
    collection, the flip closures, TTL steps, per-flip grep gates.
-6. `docs/architecture/flips/flip-1-booking-core.md` — the flip in progress.
+6. `docs/architecture/flips/flip-1-booking-core.md` — the worked example of a
+   flip (its adapter table predates Law 9; the note above it says so).
 
 ## 2. Where the work stands
 
@@ -31,14 +34,15 @@ Last updated 2026-10-21 (flip 1 complete; flip 2 next).
 | Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`) | done                                                                                                                                                                      | 268aa0e, dbd39d4                                             |
 | Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                        | done                                                                                                                                                                      | 3458349, ab6d266, c0e5d73                                    |
 | **Phase 3b flip 1 — booking core**                                                    | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
+| Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)         | done — 2026-10-21, full gate green                                                                                                                                        | the "Law 9" commit                                           |
 | Phase 3b flip 2 — identity and accounts                                               | not started                                                                                                                                                               |                                                              |
 | Phase 3b flip 3 — loyalty and invitations                                             | not started                                                                                                                                                               |                                                              |
 | Phase 3b flip 4 — programs                                                            | not started                                                                                                                                                               |                                                              |
 | Phase 4 — web integration and legacy deletion                                         | not started                                                                                                                                                               |                                                              |
 
-`main` carries the whole flip-1 reshape and the FULL gate of §4 is green on it
-(baseline reds only). The last fully green commit is the "flip 1 complete"
-commit; check `git log` for anything newer.
+`main` carries the whole flip-1 reshape and the Law 9 port pass, and the
+FULL gate of §4 is green on it (baseline reds only). The last fully green
+commit is the "Law 9" commit; check `git log` for anything newer.
 
 ## 3. What to do next, in order
 
@@ -84,6 +88,14 @@ Same recipe as flip 1 (blueprint §6 Phase 3; closures in the runbook):
    sets), surviving old-shape readers, behaviour vs the replaced handler, laws.
 
 - **Flip 2 — identity and accounts:** `users`, `otps`, `impersonationSessions`;
+  its ports are already split bottom-up (Law 9) — `CustomerPorts`,
+  `AccountContactPorts`, `TenantPorts`, `OtpStorePorts`, `OtpDeliveryPorts`,
+  `OtpCryptoPorts`, `UserDirectoryPorts`, `AuthAdminPorts` (identity),
+  `AccountReadPorts`, `CallerRolesPorts` (accounts), `ImpersonationReadPorts`
+  (governance); a new adapter returns the bundle(s) it implements, and a
+  missing subset is a new bundle in the port file, never a `Pick`. (A draft
+  plan written before Law 9 may sit untracked on the owner's machine —
+  rewrite its bundle names before using it.)
   all twelve `libs/domain/models` importers move to the ecs-core brands; the
   D29 customer record links (`CustomerId` = client record, `UserId` = auth
   account, explicit nullable link); `verify-p0` check (e) via `updateProfile`.
@@ -144,6 +156,10 @@ e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:120`
 - Never `git checkout`/`stash`/`reset` a dirty path to undo your own edit;
   apply the inverse edit.
 - Parallel agents need disjoint file ownership; one integrator owns the gate.
+- Ports (Law 9, `.claude/rules/ecs-ports.md`): declare focused bundle records
+  in `libs/ecs-core/src/ports/`, compose with `&`, type each InjectionToken
+  and adapter factory against a bundle; `Pick`/`Omit` of a `*Ports` type is a
+  lint error everywhere (`creativo/no-sliced-ports`).
 
 ## 6. Open questions for the owner
 

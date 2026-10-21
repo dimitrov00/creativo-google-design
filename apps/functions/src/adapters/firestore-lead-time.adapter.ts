@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { RepositoryError, Result } from '@core/primitives';
 import { Collections } from '@core/entities';
-import type { SchedulingPorts } from '@core/ports';
+import type { LeadTimeWritePorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 import { withPurgeAt } from './firestore-ttl.adapter';
 
@@ -14,9 +14,7 @@ import { withPurgeAt } from './firestore-ttl.adapter';
  * canonical code; the pipeline logs it and samples the next barber.
  */
 
-export type LeadTimePorts = Pick<SchedulingPorts, 'writeLeadTimeSample'>;
-
-export const firestoreLeadTimePorts = (db: Firestore): LeadTimePorts => ({
+export const firestoreLeadTimePorts = (db: Firestore): LeadTimeWritePorts => ({
   writeLeadTimeSample: async (sample) => {
     const { id, ...body } = sample;
     const path = [Collections.BarberLeadTimeSamples, id];

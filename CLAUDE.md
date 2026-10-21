@@ -26,7 +26,7 @@ edit both together.
   `apps/functions`) all violate the laws below. Convert what you touch; never
   add to it.
 
-## 1. The eight laws
+## 1. The nine laws
 
 Laws 6 (flat archetypes, domain-prefixed discriminators) and 7 (branded
 primitives, shop-anchored time, error structs) were added by the owner on
@@ -107,9 +107,11 @@ BookingLifecycle & PaymentRecord;` where `AppointmentMeta` holds the id
 - When atomicity needs a Firestore transaction, the transaction _is_ the
   sandwich: the port takes the pure decision function as a parameter and runs
   reads → decide → writes inside one `runTransaction`.
-- Ports are plain function types (`*.port.ts`). Dependencies arrive as closure
-  parameters: `export const bookAppointment = (ports: BookingPorts) =>
-async (cmd) => …`. No IoC container, no abstract classes, no `InjectionToken`
+- Ports are plain function types (`*.port.ts`), grouped in focused bundles
+  composed bottom-up with `&` (Law 9). Dependencies arrive as closure
+  parameters: `export const bookAppointment = (ports: BookAppointmentPorts) =>
+async (cmd) => …`, where `BookAppointmentPorts` is an intersection of
+  named bundles. No IoC container, no abstract classes, no `InjectionToken`
   outside Angular UI wiring.
 - Adapters (`*.adapter.ts`) implement ports over an SDK and contain no
   business logic. Telemetry adapters (console today; Pino and Sentry when
@@ -313,6 +315,41 @@ string> = T & { readonly [BrandSymbol]: B };` — nominal per tag, zero
    of code repo-wide), and Nx `allowCircularSelfDependency` so the library
    may import its own tier aliases.
 
+### Law 9 — Bottom-up port composition (no god-catalogs, no `Pick`/`Omit` slicing)
+
+Added by the owner on 2026-10-21. Ports honour the Interface Segregation
+Principle from the bottom up and map 1:1 to dependency-injection tokens and
+adapter boundaries.
+
+1. **Focused bundles first.** Every port bundle in `libs/ecs-core/src/ports/`
+   is a concrete record of named function types, declared directly:
+   `export type SchedulingReadPorts = ShopDayStreamPorts & PolicyStreamPorts
+& CapacityStreamPorts;` over `export type ShopDayStreamPorts = { readonly
+observeBusyDay: ObserveBusyDay; … };`. Each bundle is cohesive and
+   domain-bounded, and is what ONE web `InjectionToken`
+   (`InjectionToken<SchedulingReadPorts>`) or ONE functions adapter factory
+   (`firestoreSettingsPorts(db): PolicyReadPorts`) is typed against — an
+   adapter that serves several returns their intersection.
+2. **Aggregates by intersection only.** A context's whole suite
+   (`SchedulingPorts`, `GovernancePorts`, `TxPorts`, …) is the `&` of its
+   bundles, never a record that bundles are carved back out of.
+3. **No floating string keys.** `Pick<SomePorts, '…'>` and
+   `Omit<SomePorts, '…'>` are banned everywhere — ports, pipelines,
+   adapters, composition roots, features, specs and fixtures. A pipeline
+   declares its dependencies as an intersection of named bundles
+   (`CommitPorts & ClockPorts & PolicyReadPorts & LogPorts`). A subset no
+   bundle names is a missing bundle: split it in its port file. Inside the
+   ports tier no `Pick`/`Omit` appears at all — an argument shape is a named
+   type (`AppointmentPhotoFacts`, `AccountContact` as entity slices), and
+   a port function type is never declared in a pipeline or an adapter.
+4. **Enforced, not trusted.** `creativo/no-sliced-ports`
+   (`tools/lint-rules/no-sliced-ports.mjs`, tested beside it) runs on every
+   `.ts` file from the root config, and in strict mode (`anyType`) on
+   `libs/ecs-core/src/ports/**`.
+
+The file suffix stays `*.port.ts` (one family per file, singular like every
+other kind); the owner's example `scheduling.ports.ts` names the same file.
+
 ## 2. File kinds at a glance
 
 | Kind      | Suffix                                                                | Contains                                                                  | Never contains                                       |
@@ -321,7 +358,7 @@ string> = T & { readonly [BrandSymbol]: B };` — nominal per tag, zero
 | Component | `*.data.ts`                                                           | root type + `as const` companion + type-only namespace                    | `class`, `new`, I/O, imports of systems or pipelines |
 | Entity    | `*.entity.ts`                                                         | branded id + id companion + flat slice intersection                       | logic, `assemble()`, `Object.freeze`                 |
 | System    | `*.system.ts`                                                         | pure functions over components and entities                               | I/O, clock, randomness, mutation, SDK imports        |
-| Port      | `*.port.ts`                                                           | plain function types                                                      | implementations                                      |
+| Port      | `*.port.ts`                                                           | plain function types + focused bundle records, aggregates by `&` (Law 9)  | implementations, `Pick`/`Omit` slices                |
 | Pipeline  | `*.pipeline.ts` in `libs/ecs-core/src/pipelines/` (`@core/pipelines`) | a factory taking ports, returning the use-case function                   | business math (call a system), SDK imports           |
 | Adapter   | `*.adapter.ts`                                                        | port implementations over one SDK                                         | business logic                                       |
 | Angular   | `*.component.ts` `*.directive.ts` `*.pipe.ts` `*.store.ts`            | framework classes, signals, templates                                     | domain math (call a system), view-model mappers      |

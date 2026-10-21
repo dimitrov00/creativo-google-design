@@ -5,7 +5,7 @@ import {
   Result,
 } from '@core/primitives';
 import type { AuditEntry } from '@core/entities';
-import type { GovernancePorts, TxPorts } from '@core/ports';
+import type { AuditRowsPorts, ClockPorts, HashPorts } from '@core/ports';
 import { AuditSystem, type ProfileChange } from '@core/systems';
 
 /**
@@ -32,8 +32,7 @@ export type AuditProfileChangeAnswer = {
   readonly rows: number;
 };
 
-export type AuditProfileChangePorts = Pick<GovernancePorts, 'createAuditRows'> &
-  Pick<TxPorts, 'nowUtcMs' | 'hash'>;
+export type AuditProfileChangePorts = AuditRowsPorts & HashPorts & ClockPorts;
 
 export const auditProfileChange =
   (ports: AuditProfileChangePorts) =>

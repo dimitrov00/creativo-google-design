@@ -25,11 +25,13 @@ import {
   Subcollections,
 } from '@core/entities';
 import type {
+  ClockPorts,
+  CommitPorts,
+  LogPorts,
+  PolicyReadPorts,
   QuerySpec,
   ReadTx,
-  SchedulingPorts,
-  TelemetryPorts,
-  TxPorts,
+  TenantZonePorts,
 } from '@core/ports';
 import {
   type AttemptFailure,
@@ -90,13 +92,13 @@ export type ClientStatsProjection = {
  * composition root says in one place (`TENANT_ZONE`, flatten-spec F-4); a
  * value of configuration, not a read.
  */
-export type ClientStatsRecomputePorts = Pick<TxPorts, 'commit' | 'nowUtcMs'> & {
-  readonly tenantTimeZone: TimeZone;
-};
+export type ClientStatsRecomputePorts = CommitPorts &
+  ClockPorts &
+  TenantZonePorts;
 
 export type ProjectClientStatsPorts = ClientStatsRecomputePorts &
-  Pick<SchedulingPorts, 'loadPolicy'> &
-  Pick<TelemetryPorts, 'log'>;
+  PolicyReadPorts &
+  LogPorts;
 
 /** How one client's recompute ended — the ONLY source of these strings, the field `statsOutcome`. */
 export const ClientStatsOutcome = {

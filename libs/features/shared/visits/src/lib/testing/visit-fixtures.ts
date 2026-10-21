@@ -62,7 +62,10 @@ import {
   WaitlistRequestId,
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
-import type { AppointmentPhotoPorts, AppointmentReadPorts } from '@core/ports';
+import type {
+  AppointmentPhotoRecordPorts,
+  ClientHistoryReadPorts,
+} from '@core/ports';
 import {
   appointmentFixture,
   customerOf,
@@ -584,8 +587,8 @@ export function georgiWaitlistRequest(): WaitlistRequest {
  */
 export async function georgiStaffRows(
   readers: {
-    readonly history: Pick<AppointmentReadPorts, 'pageClientHistory'>;
-    readonly photos: Pick<AppointmentPhotoPorts, 'countPhotosByAppointment'>;
+    readonly history: ClientHistoryReadPorts;
+    readonly photos: AppointmentPhotoRecordPorts;
   },
   options: Pick<VisitRowOptions, 'words' | 'nowMs'> &
     Partial<Pick<VisitRowOptions, 'grain' | 'currentAppointmentId'>>,

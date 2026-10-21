@@ -85,13 +85,39 @@ export type PageAppointments = (
   limit: number,
 ) => Promise<Result<readonly Appointment[], RepositoryError>>;
 
-/** The governance context's port catalogue; each root binds the `Pick` it implements. */
-export type GovernancePorts = {
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** The after-commit audit write — every booking pipeline's audit step. */
+export type AuditAppendPorts = {
   readonly appendAudit: AppendAudit;
+};
+
+/** The profile-change trigger's reported audit write. */
+export type AuditRowsPorts = {
   readonly createAuditRows: CreateAuditRows;
+};
+
+/** The audit rows filed against appointments — the backfill's author lookup. */
+export type AuditQueryPorts = {
   readonly auditActionsFor: AuditActionsFor;
+};
+
+/** The audit trail — `firestore-audit.adapter.ts`. */
+export type AuditPorts = AuditAppendPorts & AuditRowsPorts & AuditQueryPorts;
+
+/** The admin's live impersonation session (web). */
+export type ImpersonationReadPorts = {
   readonly observeActiveImpersonation: ObserveActiveImpersonation;
+};
+
+/** The operator backfill's job progress and appointment pages — `firestore-jobs.adapter.ts`. */
+export type BackfillJobPorts = {
   readonly loadBackfillJob: LoadBackfillJob;
   readonly writeBackfillJob: WriteBackfillJob;
   readonly pageAppointments: PageAppointments;
 };
+
+/** The governance context's whole port suite — an intersection of its bundles. */
+export type GovernancePorts = AuditPorts &
+  ImpersonationReadPorts &
+  BackfillJobPorts;

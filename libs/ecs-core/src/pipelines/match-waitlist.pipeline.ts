@@ -20,19 +20,22 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  type Barber,
   type BarberSchedule,
   Collections,
   type ScheduleException,
   type Service,
-  type ShopLocation,
   type WaitlistRequest,
 } from '@core/entities';
 import type {
-  NotificationsPorts,
-  SchedulingPorts,
-  TelemetryPorts,
-  TxPorts,
+  ClockPorts,
+  CommitPorts,
+  HashPorts,
+  ListedCatalogPorts,
+  LogPorts,
+  OpenWaitlistReadPorts,
+  PolicyReadPorts,
+  RecentNotificationPorts,
+  ShopDayReadPorts,
 } from '@core/ports';
 import {
   AvailabilitySystem,
@@ -75,21 +78,6 @@ import {
  * the only authority, and its words are the inbox's (facts only, §9 D20).
  */
 
-/**
- * The listed catalogue a freed day is searched with — every ACTIVE service,
- * shop and barber (three single-field `== 'ACTIVE'` queries, bodies straight
- * from `snap.data()`). A port the booking-core flip adds for the matcher;
- * its home is `catalog.port.ts` (reported to the integrator).
- */
-export type ListedCatalog = {
-  readonly services: readonly Service[];
-  readonly locations: readonly ShopLocation[];
-  readonly barbers: readonly Barber[];
-};
-export type LoadListedCatalog = () => Promise<
-  Result<ListedCatalog, RepositoryError>
->;
-
 export type MatchWaitlistCommand = {
   /** The shop day the busy write touched. */
   readonly localDate: LocalDate;
@@ -104,19 +92,15 @@ export type MatchWaitlistAnswer = {
   readonly expiredRequestIds: readonly WaitlistRequestId[];
 };
 
-export type MatchWaitlistPorts = Pick<TxPorts, 'commit' | 'nowUtcMs' | 'hash'> &
-  Pick<
-    SchedulingPorts,
-    | 'loadOpenWaitlist'
-    | 'loadBusyDay'
-    | 'loadSchedule'
-    | 'loadScheduleException'
-    | 'loadPolicy'
-  > &
-  Pick<NotificationsPorts, 'hasRecentNotification'> &
-  Pick<TelemetryPorts, 'log'> & {
-    readonly loadListedCatalog: LoadListedCatalog;
-  };
+export type MatchWaitlistPorts = CommitPorts &
+  HashPorts &
+  ClockPorts &
+  ShopDayReadPorts &
+  OpenWaitlistReadPorts &
+  PolicyReadPorts &
+  RecentNotificationPorts &
+  LogPorts &
+  ListedCatalogPorts;
 
 /** What a freed day offers every request watching it, read once. */
 type MatchDay = {

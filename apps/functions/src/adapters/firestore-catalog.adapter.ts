@@ -7,8 +7,7 @@ import {
   type Service,
   type ShopLocation,
 } from '@core/entities';
-import type { CatalogPorts } from '@core/ports';
-import type { LoadListedCatalog } from '@core/pipelines';
+import type { CatalogLoadPorts, ListedCatalogPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -28,10 +27,6 @@ import { TriggerAttemptSystem } from '@core/systems';
  * failure's canonical code (`unavailable`, `aborted`, …) — codes only, and
  * what the retrying edge judges a redelivery by.
  */
-
-export type CatalogServerPorts = Pick<CatalogPorts, 'loadCatalog'> & {
-  readonly loadListedCatalog: LoadListedCatalog;
-};
 
 /** Could `id` name a document? (Firestore's own path rules.) */
 function isDocumentId(id: string): boolean {
@@ -67,7 +62,9 @@ async function active<E>(
   return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as E);
 }
 
-export const firestoreCatalogPorts = (db: Firestore): CatalogServerPorts => ({
+export const firestoreCatalogPorts = (
+  db: Firestore,
+): CatalogLoadPorts & ListedCatalogPorts => ({
   loadCatalog: async (serviceIds, locationId) => {
     try {
       const readable = serviceIds.filter(isDocumentId);

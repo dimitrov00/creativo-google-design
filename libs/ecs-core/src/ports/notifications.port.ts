@@ -56,16 +56,19 @@ export type HasRecentNotification = (
   sinceUtcMs: UtcEpochMs,
 ) => Promise<Result<boolean, RepositoryError>>;
 
-/** The notifications context's port catalogue; each root binds the `Pick` it implements. */
-export type NotificationsPorts = {
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** The signed-in account's inbox — the bundle the web's `INBOX_PORTS` token binds. */
+export type InboxPorts = {
   readonly observeInbox: ObserveInbox;
   readonly markNotificationRead: MarkNotificationRead;
   readonly markAllNotificationsRead: MarkAllNotificationsRead;
+};
+
+/** The notification cooldown check — the waitlist matcher (server). */
+export type RecentNotificationPorts = {
   readonly hasRecentNotification: HasRecentNotification;
 };
 
-/** The signed-in account's inbox — the bundle the web's `INBOX_PORTS` token binds. */
-export type InboxPorts = Pick<
-  NotificationsPorts,
-  'observeInbox' | 'markNotificationRead' | 'markAllNotificationsRead'
->;
+/** The notifications context's whole port suite — an intersection of its bundles. */
+export type NotificationsPorts = InboxPorts & RecentNotificationPorts;

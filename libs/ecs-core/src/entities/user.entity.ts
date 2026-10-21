@@ -22,15 +22,22 @@ import type { UserId } from '@core/primitives';
 export type UserMeta = {
   readonly id: UserId;
   readonly registrationState: RegistrationState;
+  /** `[]` while provisioned. */
+  readonly roles: readonly Role[];
+  readonly birthDate: BirthDate | null;
+};
+
+/**
+ * The account's names and sign-in contact — the fields a first-booking
+ * client record copies (F1-5), under their kept key names.
+ */
+export type AccountContact = {
   readonly phone: E164 | null;
   /** `null` only while provisioned. */
   readonly firstName: string | null;
   /** `null` only while provisioned. */
   readonly lastName: string | null;
-  /** `[]` while provisioned. */
-  readonly roles: readonly Role[];
   readonly email: Email | null;
-  readonly birthDate: BirthDate | null;
 };
 
 /**
@@ -43,7 +50,7 @@ export type UserMeta = {
  * minus `id`; until the identity flip the stored bytes are today's (the
  * shims convert).
  */
-export type User = UserMeta & AccountLifecycle & SearchFields;
+export type User = UserMeta & AccountContact & AccountLifecycle & SearchFields;
 
 /**
  * The profile helpers a user's names need — a companion, not a nested

@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { RepositoryError, Result } from '@core/primitives';
 import { type CapacityMonth, Collections } from '@core/entities';
-import type { SchedulingPorts } from '@core/ports';
+import type { CapacityReadPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -15,9 +15,7 @@ import { TriggerAttemptSystem } from '@core/systems';
  * through here.
  */
 
-export type CapacityPorts = Pick<SchedulingPorts, 'loadCapacityMonths'>;
-
-export const firestoreCapacityPorts = (db: Firestore): CapacityPorts => ({
+export const firestoreCapacityPorts = (db: Firestore): CapacityReadPorts => ({
   loadCapacityMonths: async (months) => {
     // The Admin SDK refuses an empty `getAll`: nothing asked, nothing read.
     if (months.length === 0) return Result.ok([]);

@@ -1,7 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { RepositoryError, Result, type UserId } from '@core/primitives';
-import { Collections } from '@core/entities';
-import type { AccountContact, IdentityPorts } from '@core/ports';
+import { type AccountContact, Collections } from '@core/entities';
+import type { AccountContactPorts } from '@core/ports';
 
 /**
  * The FIRST_BOOKING contact snapshot (flip 1, F1-5): `users/{uid}` of every
@@ -14,10 +14,7 @@ import type { AccountContact, IdentityPorts } from '@core/ports';
  * map; a read that throws answers a `RepositoryError` value.
  */
 
-/** The bundle main.ts spreads into the Firestore ports. */
-export type AccountPorts = Pick<IdentityPorts, 'loadAccountContacts'>;
-
-export const firestoreAccountPorts = (db: Firestore): AccountPorts => ({
+export const firestoreAccountPorts = (db: Firestore): AccountContactPorts => ({
   loadAccountContacts: async (userIds) => {
     const contacts = new Map<UserId, AccountContact>();
     const distinct = [...new Set(userIds)];

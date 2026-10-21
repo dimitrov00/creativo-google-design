@@ -22,11 +22,13 @@ import {
   type ShopLocation,
 } from '@core/entities';
 import type {
+  BarberListPorts,
+  ClockPorts,
+  CommitPorts,
+  LogPorts,
+  PolicyReadPorts,
   QuerySpec,
   ReadTx,
-  SchedulingPorts,
-  TelemetryPorts,
-  TxPorts,
 } from '@core/ports';
 import {
   type CapacityBusyDay,
@@ -93,9 +95,11 @@ export type RebuildCapacityAnswer = {
   readonly rebuiltBarberIds: readonly BarberId[];
 };
 
-export type RebuildCapacityPorts = Pick<TxPorts, 'commit' | 'nowUtcMs'> &
-  Pick<SchedulingPorts, 'loadPolicy' | 'listBarbers'> &
-  Pick<TelemetryPorts, 'log'>;
+export type RebuildCapacityPorts = CommitPorts &
+  ClockPorts &
+  BarberListPorts &
+  PolicyReadPorts &
+  LogPorts;
 
 /** What one barber's rebuild reads inside its transaction. */
 type CapacitySnapshot = {

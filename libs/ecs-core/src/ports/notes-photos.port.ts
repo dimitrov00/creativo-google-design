@@ -6,7 +6,7 @@ import type {
   CustomerId,
 } from '@core/primitives';
 import type { AppointmentNote, AppointmentPhoto } from '@core/entities';
-import type { UploadPhotoBytes } from './media.port';
+import type { PhotoUploadPorts } from './media.port';
 
 /**
  * The visit's staff-only notes and photos (blueprint §4.2) —
@@ -73,36 +73,31 @@ export type SaveAppointmentNote = (
   note: AppointmentNote | null,
 ) => Promise<Result<void, RepositoryError>>;
 
-/** The notes-and-photos port catalogue; each web bundle below is a `Pick` of it. */
-export type NotesPhotosPorts = {
+// ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
+
+/** A visit's note — the bundle the web's `APPOINTMENT_NOTE_PORTS` token binds. */
+export type AppointmentNotePorts = {
+  readonly observeAppointmentNote: ObserveAppointmentNote;
+  readonly saveAppointmentNote: SaveAppointmentNote;
+};
+
+/** A visit's photo documents and a client record's strip — Firestore's half. */
+export type AppointmentPhotoRecordPorts = {
   readonly observeAppointmentPhotos: ObserveAppointmentPhotos;
   readonly saveAppointmentPhoto: SaveAppointmentPhoto;
   readonly deleteAppointmentPhoto: DeleteAppointmentPhoto;
   readonly listClientPhotos: ListClientPhotos;
   readonly countPhotosByAppointment: CountPhotosByAppointment;
-  readonly uploadPhotoBytes: UploadPhotoBytes;
-  readonly observeAppointmentNote: ObserveAppointmentNote;
-  readonly saveAppointmentNote: SaveAppointmentNote;
 };
 
-/** A visit's note — the bundle the web's `APPOINTMENT_NOTE_PORTS` token binds. */
-export type AppointmentNotePorts = Pick<
-  NotesPhotosPorts,
-  'observeAppointmentNote' | 'saveAppointmentNote'
->;
-
 /**
- * A visit's photos and a client record's strip — the bundle the web's
- * `APPOINTMENT_PHOTO_PORTS` token binds. `uploadPhotoBytes` (`media.port.ts`)
- * rides here: the staff camera/attach flow uploads the bytes through it,
- * then saves the document.
+ * A visit's photos — the bundle the web's `APPOINTMENT_PHOTO_PORTS` token
+ * binds: the documents plus `uploadPhotoBytes` (`media.port.ts`), which the
+ * staff camera/attach flow uploads the bytes through before it saves the
+ * document.
  */
-export type AppointmentPhotoPorts = Pick<
-  NotesPhotosPorts,
-  | 'observeAppointmentPhotos'
-  | 'saveAppointmentPhoto'
-  | 'deleteAppointmentPhoto'
-  | 'listClientPhotos'
-  | 'countPhotosByAppointment'
-  | 'uploadPhotoBytes'
->;
+export type AppointmentPhotoPorts = AppointmentPhotoRecordPorts &
+  PhotoUploadPorts;
+
+/** The notes-and-photos whole port suite — an intersection of its bundles. */
+export type NotesPhotosPorts = AppointmentNotePorts & AppointmentPhotoPorts;

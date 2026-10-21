@@ -9,8 +9,8 @@ import {
 } from '@core/primitives';
 import type { Appointment, GiftVoucher } from '@core/entities';
 import type {
-  GovernancePorts,
-  SchedulingPorts,
+  AuditAppendPorts,
+  PolicyReadPorts,
   TelemetryPorts,
   TxPorts,
 } from '@core/ports';
@@ -74,8 +74,8 @@ export type CancelAppointmentError =
   | RepositoryError;
 
 export type CancelAppointmentPorts = TxPorts &
-  Pick<SchedulingPorts, 'loadPolicy'> &
-  Pick<GovernancePorts, 'appendAudit'> &
+  PolicyReadPorts &
+  AuditAppendPorts &
   TelemetryPorts;
 
 type Snapshot = {
