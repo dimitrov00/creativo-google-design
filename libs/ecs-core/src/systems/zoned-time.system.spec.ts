@@ -352,6 +352,8 @@ describe('both sides of the switch minute — toUtc / toLocal', () => {
     ).toEqual({ localDate: '2026-07-30', minute: 15 });
   });
 
+  // ~105k Intl round trips: about 2 s alone, but past Vitest's 5 s default
+  // when `run-many -t test --parallel=3` shares the CPU — its own budget.
   it('round-trips every existing wall minute of every Sofia day of 2026', () => {
     const mismatches: string[] = [];
     for (const day of LocalDate.range(
@@ -376,7 +378,7 @@ describe('both sides of the switch minute — toUtc / toLocal', () => {
       }
     }
     expect(mismatches).toEqual([]);
-  });
+  }, 30_000);
 
   it('agrees with the zone itself (Intl) for any instant', () => {
     const zones = [SOFIA_TZ, KOLKATA_TZ, SAO_PAULO_TZ];
