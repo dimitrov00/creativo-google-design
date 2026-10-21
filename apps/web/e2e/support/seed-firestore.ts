@@ -20,6 +20,7 @@ import {
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
+  NotificationPayload,
   PhotoOrigin,
   PolicyPassStamp,
 } from '@core/components';
@@ -30,7 +31,9 @@ import {
   type Coupon,
   type CouponGrant,
   type Customer,
+  type InboxNotification,
   Profile,
+  Subcollections,
 } from '@core/entities';
 import {
   AppointmentId,
@@ -543,4 +546,70 @@ export async function seedAppointmentPhoto(
     .doc(photoId)
     .set(body);
   return photoId;
+}
+
+// ── The booking core's projections and the inbox (flip 1) ────────────────
+
+/**
+ * `barberBusy/{barberId}__{localDate}` raw, or `null` while it is absent —
+ * the busy day the `rebuildBusyOnAppointmentChange` trigger projects from
+ * the appointments: what the SERVER filed, which no client screen shows
+ * as such.
+ */
+export async function readBarberBusyDay(
+  barberId: string,
+  localDate: string,
+): Promise<Record<string, unknown> | null> {
+  const snapshot = await getFirestore(adminApp())
+    .collection(Collections.BarberBusy)
+    .doc(`${barberId}__${localDate}`)
+    .get();
+  return snapshot.data() ?? null;
+}
+
+/**
+ * `scheduleExceptions/{barberId}__{localDate}` raw, or `null` while it is
+ * absent — the sanitized public effect a staff block writes.
+ */
+export async function readScheduleException(
+  barberId: string,
+  localDate: string,
+): Promise<Record<string, unknown> | null> {
+  const snapshot = await getFirestore(adminApp())
+    .collection(Collections.ScheduleExceptions)
+    .doc(`${barberId}__${localDate}`)
+    .get();
+  return snapshot.data() ?? null;
+}
+
+/**
+ * Seeds `users/{uid}/notifications/*`: `unread` announcements nobody has
+ * opened (`readAtUtcMs: null`) and `read` ones already receipted — the flat
+ * `InboxNotification` body (minus its `id`), stamped at the seed's fixed
+ * instant. Delivery is the matcher's server plan in the product; the inbox
+ * the shell's badge counts is only READ by the web, so the e2e writes it.
+ */
+export async function seedInbox(
+  uid: string,
+  counts: { readonly unread: number; readonly read: number },
+): Promise<void> {
+  const db = getFirestore(adminApp());
+  const inbox = db
+    .collection(Collections.Users)
+    .doc(uid)
+    .collection(Subcollections.Notifications);
+  const batch = db.batch();
+  const total = counts.unread + counts.read;
+  for (let index = 0; index < total; index++) {
+    const body = {
+      sentAtUtcMs: SEEDED_AT_UTC_MS,
+      readAtUtcMs: index < counts.unread ? null : SEEDED_AT_UTC_MS,
+      ...NotificationPayload.announcement(
+        { bg: `Съобщение ${index + 1}`, en: `Announcement ${index + 1}` },
+        null,
+      ),
+    } satisfies Omit<InboxNotification, 'id'>;
+    batch.set(inbox.doc(`${uid}-note-${index}`), body);
+  }
+  await batch.commit();
 }

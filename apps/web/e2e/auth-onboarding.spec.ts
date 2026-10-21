@@ -92,7 +92,12 @@ test.describe('auth + onboarding (email OTP)', () => {
     await expect(page.getByTestId('onboarding-submit-about')).toBeEnabled();
     await page.getByTestId('onboarding-submit-about').click();
 
-    await expect(page.getByTestId('onboarding-reward')).toBeVisible();
+    // The reward waits on the completeRegistration callable, whose first call
+    // is a Functions-emulator cold start — under a full parallel run that
+    // alone outlasts the default 5 s (the other callable-gated waits use 20 s).
+    await expect(page.getByTestId('onboarding-reward')).toBeVisible({
+      timeout: 20_000,
+    });
     await page.getByTestId('onboarding-enter-app').click();
 
     await expect(page).toHaveURL(/\/account$/, { timeout: 15_000 });

@@ -3,7 +3,7 @@
 Read this first if you are an agent (Claude Code, Codex, Cursor, Gemini, …) or
 a developer picking up the ECS / data-oriented migration. It says where the
 work stands, what to do next in which order, and how to prove each step.
-Last updated 2026-10-16 (flip 1 integrated; two emulator journeys still to run).
+Last updated 2026-10-21 (flip 1 complete; flip 2 next).
 
 ## 1. Read these, in this order
 
@@ -20,80 +20,54 @@ Last updated 2026-10-16 (flip 1 integrated; two emulator journeys still to run).
 
 ## 2. Where the work stands
 
-| Step                                                                                  | State                                                                                                                                                 | Commit(s)                                                          |
-| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Constitution + blueprint                                                              | done                                                                                                                                                  | 81ac087                                                            |
-| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                           | done                                                                                                                                                  | defb4da                                                            |
-| Phase 1 — `libs/ecs-core` foundation                                                  | done                                                                                                                                                  | 056ae43                                                            |
-| Phase 2 — all business math in pure systems, legacy classes shimmed                   | done                                                                                                                                                  | 0416587                                                            |
-| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)             | done                                                                                                                                                  | a6c7253                                                            |
-| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support    | done                                                                                                                                                  | 291d3f9                                                            |
-| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`) | done                                                                                                                                                  | 268aa0e, dbd39d4                                                   |
-| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                        | done                                                                                                                                                  | 3458349, ab6d266, c0e5d73                                          |
-| **Phase 3b flip 1 — booking core**                                                    | **INTEGRATED** — every package done, the plan's §11 case ledgers complete, the gate green except `verify:p0` and `e2e:web`, which have not run (§3.1) | bafdbdd, 32b870d, then the "flip 1 integrated" commit on top of it |
-| Phase 3b flip 2 — identity and accounts                                               | not started                                                                                                                                           |                                                                    |
-| Phase 3b flip 3 — loyalty and invitations                                             | not started                                                                                                                                           |                                                                    |
-| Phase 3b flip 4 — programs                                                            | not started                                                                                                                                           |                                                                    |
-| Phase 4 — web integration and legacy deletion                                         | not started                                                                                                                                           |                                                                    |
+| Step                                                                                  | State                                                                                                                                                                     | Commit(s)                                                    |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Constitution + blueprint                                                              | done                                                                                                                                                                      | 81ac087                                                      |
+| Tooling (ECS lint guards, functions-deps check, Analog 2.8)                           | done                                                                                                                                                                      | defb4da                                                      |
+| Phase 1 — `libs/ecs-core` foundation                                                  | done                                                                                                                                                                      | 056ae43                                                      |
+| Phase 2 — all business math in pure systems, legacy classes shimmed                   | done                                                                                                                                                                      | 0416587                                                      |
+| Laws 6–7 (flat archetypes, primitives, shop-anchored time, error structs)             | done                                                                                                                                                                      | a6c7253                                                      |
+| Phase 3a — functions composition root, `edge.ts`, body-free adapters, test support    | done                                                                                                                                                                      | 291d3f9                                                      |
+| Flatten pass (Laws 6–7 applied) + owner rulings (Law 7.3 amendment, `TimeCoordinate`) | done                                                                                                                                                                      | 268aa0e, dbd39d4                                             |
+| Law 8 + layering pass (`@core/*` tier barrels, no root barrel)                        | done                                                                                                                                                                      | 3458349, ab6d266, c0e5d73                                    |
+| **Phase 3b flip 1 — booking core**                                                    | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
+| Phase 3b flip 2 — identity and accounts                                               | not started                                                                                                                                                               |                                                              |
+| Phase 3b flip 3 — loyalty and invitations                                             | not started                                                                                                                                                               |                                                              |
+| Phase 3b flip 4 — programs                                                            | not started                                                                                                                                                               |                                                              |
+| Phase 4 — web integration and legacy deletion                                         | not started                                                                                                                                                               |                                                              |
 
-`main` carries the whole flip-1 reshape. Every gate step of §4 passes on it
-except the two journeys that need the Functions emulator (`verify:p0`,
-`e2e:web`), which have not been run on it yet (§3.1). The last commit with the
-FULL gate green is still `c0e5d73`. If a later commit on `main` says "flip 1
-complete" with both journeys green, this row is stale — check `git log`.
+`main` carries the whole flip-1 reshape and the FULL gate of §4 is green on it
+(baseline reds only). The last fully green commit is the "flip 1 complete"
+commit; check `git log` for anything newer.
 
 ## 3. What to do next, in order
 
-### 3.1 Finish flip 1 (booking core) — exact remaining work
+### 3.1 Flip 1 (booking core) — complete
 
-The 2026-10-16 session integrated the flip. What it found and did:
+Integrated 2026-10-16 (the plan's §11 case ledgers: 52 specs, 698 cases,
+each with a successor or a `dead:` reason). Closed 2026-10-21 on a machine
+where the Functions emulator works: `verify:p0` green, `test:emulator`
+green, `e2e:web` = the baseline only. The live paths no journey covered are
+now a permanent spec, `apps/web/e2e/booking-core.spec.ts` (chromium): a
+`/book` day with bookable times (needs the capacity/busy triggers), a
+signed-in client booking stored as the FLAT body with its `barberBusy` block
+and shown on `/account/appointments`, a staff block stored as the flat
+public effect, and the shell's unread-notification count. Support helpers
+moved to `apps/web/e2e/support/booking-days.ts`; `seed-firestore.ts` gained
+`readBarberBusyDay`, `readScheduleException`, `seedInbox`.
+`auth-onboarding.spec.ts`'s reward wait now allows 20 s like every other
+callable-gated wait (the `completeRegistration` cold start outlasted 5 s in a
+full parallel run).
 
-- **Already done on `32b870d`** (the 2026-10-15 list was stale): P4's
-  `staff-dashboard.spec.ts` (it typechecks and passes), every P6 seed spec
-  (`seed-tools` 530/530), the `clientUserId` seed key, the e2e seed documents,
-  the `verify-p0` readers, the rules spec's retired read-stamp case (spelled
-  `['readAt', 'Iso'].join('')` so the grep gate stays a hard gate), every §4
-  delete list, the `edge.spec` floors (18/33).
-- **Done in the integration commit:** `pnpm nx sync` (five stale tsconfig
-  reference lists); `tools/seed/fixtures/README.md`; the runbook
-  (`firestore-runbook.md` §1.1 flip-1 rows re-derived without anchors, §2.1
-  TTL rows on `purgeAtFor`, §4.0/§4.1 = the plan's §6 gate with the scoped
-  `WIRE_FILES` allowlist of §4.6, §4.5 updated); the plan's §11 now holds the
-  P1, P2 and P3 case ledgers (52 specs, 698 cases, none without a successor
-  or a `dead:` reason). Two P3 cases had lost their assertion in the move and
-  got successors: `ft:staff/dashboard/src/lib/lane-geometry.spec.ts` (a
-  hidden shop's blocks leave the staff day with its windows; `laneGeometryOf`
-  is exported for it) and a `booking-schedule-step.spec.ts` case (no capacity
-  month is read for a visit no barber can take).
-- **Gate, 2026-10-16:** `sync:check`, layering, typecheck (only the
-  pre-existing spec reds below), lint, unit tests (only the six pre-existing
-  failures), `ecs-core --coverage`, `typecheck seed-tools`, `build web`,
-  `verify:bundle`, `build functions` + `check-functions-deps`,
-  `test:emulator` (functions 46/46, firestore 241/241), `seed:dev` against a
-  wiped emulator, and the plan's §6 grep gate: **all green**. A read-only
-  browser smoke over seeded Firestore/Auth/Storage emulators (no Functions)
-  rendered `/book` (shops, the repeat flow to WHEN), `/account`,
-  `/account/appointments`, the staff day, the visit editor and the client
-  card (stats, history, photo, held grant) with no flip-1 console error.
-- **Left — run these two on a machine where the Functions emulator works,
-  one at a time:** `pnpm run verify:p0`, then `pnpm run e2e:web` (baseline
-  reds in §4). The cloud container could not: firebase-tools sends its
-  emulator-to-emulator calls (`POST http://127.0.0.1:8080/emulator/v1/…/eventarcTrigger`)
-  through `HTTPS_PROXY` and ignores `NO_PROXY`, and that session's egress
-  proxy refuses `127.0.0.1`, so the Functions emulator never registers its
-  Firestore triggers. With them green, also smoke the parts the read-only
-  smoke could not reach: a `/book` day with times (needs the capacity
-  trigger), a booking, a visit-editor save, a block, the inbox count. A red
-  journey is a flip-1 regression: fix it on `main`, then mark the flip
-  complete here.
-- **Noted, not blocking:** `libs/application/**` still exports the 17
-  retired flip-1 tokens and the flip-1 `*_COLLECTION` constants, unbound and
-  unimported (Phase 4 deletes the layer); `markNotificationRead` /
-  `markAllNotificationsRead`, `loadWaitlistRequest`, `loadCouponGrant`,
-  `readCustomers` and `CouponGrantSystem.transitionWrite` have no caller yet
-  (the web never marked notifications read before the flip either; grant
-  burn/restore is deferred by F1-2); the web catalogue's #1 (`categoryId`) and
-  #3 (`locationId`) queries exist but every caller passes `null`.
+Carried forward, not blocking (from the integration): `libs/application/**`
+still exports the retired flip-1 tokens and `*_COLLECTION` constants
+(Phase 4 deletes the layer); `markNotificationRead`,
+`loadWaitlistRequest`, `loadCouponGrant`, `readCustomers`,
+`CouponGrantSystem.transitionWrite` have no caller yet (grant
+burn/restore deferred, F1-2); a notification produced by the waitlist
+matcher itself is not covered end to end; optional spec hardening —
+assert `ownerCustomerId` equals the seeded record and that no offered time
+starts in Ivan's 13:00–14:00 break.
 
 ### 3.2 Flips 2–4
 
@@ -154,7 +128,7 @@ green since flip 1);
 unit tests `gauge.spec.ts` (4), `visit-pills.spec.ts` (1),
 `visits-page.presenter.spec.ts` "strikes an hour that did not happen" (1);
 e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:120`
-(MapLibre), 12 `client-card-glance.spec.ts` runs at `:321`/`:664`; and
+(MapLibre), 12 `client-card-glance.spec.ts` runs at `:341`/`:684`; and
 `appointments.spec.ts:152` flakes under load (passes alone with
 `--repeat-each=3`). Anything else red is a regression.
 
