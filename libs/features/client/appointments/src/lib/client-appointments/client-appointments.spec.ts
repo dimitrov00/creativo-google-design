@@ -1212,8 +1212,13 @@ describe('ClientAppointments', () => {
     const now = ZonedDateTime.now('Europe/Sofia');
     if (now.isFailure()) throw new Error('unreachable');
     // Two years back — well outside the six months the calendar opens with,
-    // and therefore unreachable unless the window stretches to hold it.
-    const longAgo = now.value.plusMinutes(-60 * 24 * 730).toISO();
+    // and therefore unreachable unless the window stretches to hold it. At
+    // noon, not now's time of day: a run after 23:30 put the 30-minute seat
+    // past its shop day's midnight (F-6).
+    const longAgo = `${now.value
+      .plusMinutes(-60 * 24 * 730)
+      .toISO()
+      .slice(0, 10)}T12:00:00`;
 
     const fixture = await configure([], undefined, [
       appointment('appt_ancient', longAgo, COMPLETED),
