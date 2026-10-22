@@ -43,19 +43,19 @@
       "path": "../../shared/shell/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/programs/tsconfig.lib.json"
+      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
       "path": "../../../application/identity/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/accounts/tsconfig.lib.json"
+      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     },
     {
-      "path": "../../../ecs-core/tsconfig.lib.json"
+      "path": "../../../application/accounts/tsconfig.lib.json"
     }
   ]
 }

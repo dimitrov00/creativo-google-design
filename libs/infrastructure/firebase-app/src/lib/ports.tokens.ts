@@ -6,15 +6,23 @@ import type {
   CatalogReadPorts,
   ClientJournalPorts,
   ClientStatsReadPorts,
+  ClockPorts,
   CouponVoucherPorts,
+  CourseReadPorts,
   CustomerPorts,
+  DefaultLocationPorts,
+  IdPorts,
   ImpersonationReadPorts,
   InboxPorts,
+  LocationLoadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalogReadPorts,
+  PositionReadPorts,
   ProfilePorts,
+  ProgramsPorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
+  ShopEventReadPorts,
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
   UserSearchPorts,
@@ -115,3 +123,39 @@ export const STREAK_DEFINITION_PORTS =
 /** The rhythm's publish and withdrawal, through the callable (`StreakPublishGatewayPorts`). */
 export const STREAK_PUBLISH_PORTS =
   new InjectionToken<StreakPublishGatewayPorts>('STREAK_PUBLISH_PORTS');
+
+/** The admin programs page's suite — roles, courses, events, live and saved (`ProgramsPorts`). */
+export const PROGRAMS_PORTS = new InjectionToken<ProgramsPorts>(
+  'PROGRAMS_PORTS',
+);
+
+/** The careers page's roles, live (`PositionReadPorts`). */
+export const POSITION_READ_PORTS = new InjectionToken<PositionReadPorts>(
+  'POSITION_READ_PORTS',
+);
+
+/** The courses page's courses, live (`CourseReadPorts`). */
+export const COURSE_READ_PORTS = new InjectionToken<CourseReadPorts>(
+  'COURSE_READ_PORTS',
+);
+
+/** The events page's events on one side of now, live (`ShopEventReadPorts`). */
+export const SHOP_EVENT_READ_PORTS = new InjectionToken<ShopEventReadPorts>(
+  'SHOP_EVENT_READ_PORTS',
+);
+
+/** One shop by id — an event save's zone (`LocationLoadPorts`). */
+export const LOCATION_LOAD_PORTS = new InjectionToken<LocationLoadPorts>(
+  'LOCATION_LOAD_PORTS',
+);
+
+/** The deployment's main shop, configuration bound from `TenantConfig.DEFAULT` (`DefaultLocationPorts`). */
+export const DEFAULT_LOCATION_PORTS = new InjectionToken<DefaultLocationPorts>(
+  'DEFAULT_LOCATION_PORTS',
+);
+
+/** The browser's clock, as an absolute instant (`ClockPorts`). */
+export const CLOCK_PORTS = new InjectionToken<ClockPorts>('CLOCK_PORTS');
+
+/** The browser's fresh document ids (`IdPorts`). */
+export const ID_PORTS = new InjectionToken<IdPorts>('ID_PORTS');

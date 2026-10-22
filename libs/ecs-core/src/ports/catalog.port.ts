@@ -86,6 +86,11 @@ export type LoadListedCatalog = () => Promise<
   Result<ListedCatalog, RepositoryError>
 >;
 
+/** `locations/{id}`, once — `null` when absent (an event save's zone, F-4). */
+export type LoadLocation = (
+  id: LocationId,
+) => Promise<Result<ShopLocation | null, RepositoryError>>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The catalogue's four live streams — the bundle the web's `CATALOG_PORTS` token binds. */
@@ -104,6 +109,20 @@ export type CatalogLoadPorts = {
 /** Every listed service, shop and barber — the waitlist matcher's day read. */
 export type ListedCatalogPorts = {
   readonly loadListedCatalog: LoadListedCatalog;
+};
+
+/** One shop by id — `LOCATION_LOAD_PORTS` (an event save's zone, F-4). */
+export type LocationLoadPorts = {
+  readonly loadLocation: LoadLocation;
+};
+
+/**
+ * The deployment's main shop — configuration, not a read (F-4): a boundary
+ * with no location in scope places its wall clock on this shop's zone.
+ * `DEFAULT_LOCATION_PORTS`, bound from `TenantConfig.DEFAULT`.
+ */
+export type DefaultLocationPorts = {
+  readonly defaultLocationId: LocationId;
 };
 
 /** The catalogue context's whole port suite — an intersection of its bundles. */

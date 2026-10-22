@@ -3,6 +3,10 @@ import { Currency } from './currency.primitive';
 import {
   BadgeCategoryId,
   BadgeSeriesId,
+  CourseId,
+  EventId,
+  LocationId,
+  PositionId,
   RewardId,
   SeasonId,
   TierId,
@@ -281,6 +285,56 @@ describe('EngagementError factories', () => {
       errorCode: 'ENGAGEMENT_POSITION_INVALID_SORT_ORDER',
       rawValue: -1,
     });
+  });
+
+  it('build the programs save refusals with branded ids (flip 4, F4-6)', () => {
+    expect(
+      EngagementError.programNotFound(
+        EngagementErrorCode.PositionNotFound,
+        PositionId.of('pos-1'),
+      ),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_POSITION_NOT_FOUND',
+      programId: 'pos-1',
+    });
+    expect(
+      EngagementError.programNotFound(
+        EngagementErrorCode.CourseNotFound,
+        CourseId.of('course-1'),
+      ),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_COURSE_NOT_FOUND',
+      programId: 'course-1',
+    });
+    expect(
+      EngagementError.programNotFound(
+        EngagementErrorCode.ShopEventNotFound,
+        EventId.of('evt-1'),
+      ),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_SHOP_EVENT_NOT_FOUND',
+      programId: 'evt-1',
+    });
+    expect(
+      EngagementError.shopEventZoneUnknown(LocationId.of('loc-center')),
+    ).toEqual({
+      errorCode: 'ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN',
+      locationId: 'loc-center',
+    });
+  });
+
+  it('keeps the four programs save codes after the six field codes', () => {
+    const codes = ENGAGEMENT_ERROR_CODES;
+    const at = (code: EngagementErrorCode) => codes.indexOf(code);
+    expect(at(EngagementErrorCode.PositionNotFound)).toBe(
+      at(EngagementErrorCode.ShopEventApplyUrlInvalid) + 1,
+    );
+    expect(codes.slice(at(EngagementErrorCode.PositionNotFound))).toEqual([
+      'ENGAGEMENT_POSITION_NOT_FOUND',
+      'ENGAGEMENT_COURSE_NOT_FOUND',
+      'ENGAGEMENT_SHOP_EVENT_NOT_FOUND',
+      'ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN',
+    ]);
   });
 
   it('flatten any rule value to an i18n-safe scalar', () => {

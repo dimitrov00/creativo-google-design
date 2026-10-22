@@ -4,49 +4,56 @@ import { EnvironmentProviders, Injectable } from '@angular/core';
 import {
   Translation,
   TranslocoLoader,
+  TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
 import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import {
   APPOINTMENT_READ_PORTS,
+  CLOCK_PORTS,
   INBOX_PORTS,
   PROFILE_PORTS,
+  SHOP_EVENT_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import type { ShopEvent } from '@core/entities';
+import type { EventsQuery, ShopEventReadPorts } from '@core/ports';
+import { LocalDate } from '@core/primitives';
 import {
+  FIXTURE_EVENT_DAY,
+  FIXTURE_NOW_UTC_MS,
+  FIXTURE_TODAY,
+  at,
   memoryAppointmentReadPorts,
+  memoryClockPorts,
   memoryInboxPorts,
   memoryProfilePorts,
+  memoryProgramsWorld,
+  memoryShopEventReadPorts,
+  shopEventOf,
 } from '@core/testing';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
-import {
-  Result,
-  SHOP_EVENT_REPOSITORY,
-  ShopEvent,
-  ShopEventRepository,
-  ok,
-} from '@creativo/application/programs';
+import { AUTH_GATEWAY, ok } from '@creativo/application/identity';
+import { LanguageService } from '@creativo/features/shared/shell';
 import { MarketingEvents } from './marketing-events';
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
+/*
+ * Time is pinned: the page's clock is `CLOCK_PORTS` at `FIXTURE_NOW_UTC_MS`
+ * (2026-09-28 09:00 in Sofia), and every event sits on a fixed shop day —
+ * `FIXTURE_EVENT_DAY` (Monday 2026-10-05) and after for upcoming, a week
+ * before `FIXTURE_TODAY` for past. Nothing reads the wall clock.
+ */
+
+/** An upcoming event on `FIXTURE_EVENT_DAY` (+ `dayOffset`) at `hh:mm` shop time. */
+function event(id: string, dayOffset = 0, hours = 19, minutes = 0): ShopEvent {
+  return shopEventOf(id, {
+    localDate: LocalDate.addDays(FIXTURE_EVENT_DAY, dayOffset),
+    startMinutes: at(hours, minutes),
+  });
 }
 
-function event(id: string, startDateIso: string): ShopEvent {
-  return unwrap(
-    ShopEvent.create({
-      id,
-      title: { en: 'Open Chair Day', bg: 'Ден на отворените столове' },
-      description: {
-        en: 'Walk-in trims, no booking needed',
-        bg: 'Подстригвания без резервация',
-      },
-      startDateIso,
-      timezone: 'Europe/Sofia',
-      sortOrder: 0,
-    }),
-  );
+/** A past event — a week before `FIXTURE_TODAY`, 19:00 shop time. */
+function pastEvent(id: string): ShopEvent {
+  return shopEventOf(id, { localDate: LocalDate.addDays(FIXTURE_TODAY, -7) });
 }
 
 @Injectable()
@@ -68,21 +75,28 @@ function provideTestI18n(): EnvironmentProviders[] {
   });
 }
 
-function repositoryStub(
-  upcoming: readonly ShopEvent[],
-  past: readonly ShopEvent[],
-): ShopEventRepository {
+/**
+ * The page's read over the memory double (which splits the seeded events on
+ * the query's instant, as the adapter's `utcEpochMs` range does), every
+ * query it makes recorded in `asked`.
+ */
+function recordedEventReads(
+  events: readonly ShopEvent[],
+  asked: EventsQuery[],
+): ShopEventReadPorts {
+  const reads = memoryShopEventReadPorts(memoryProgramsWorld({ events }));
   return {
-    findById: async () => ok(upcoming[0] ?? past[0] ?? null),
-    save: async () => ok(undefined),
-    observeUpcoming: () => of(ok(upcoming)),
-    observePast: () => of(ok(past)),
+    observeEvents: (query) => {
+      asked.push(query);
+      return reads.observeEvents(query);
+    },
   };
 }
 
 async function configure(
   upcoming: readonly ShopEvent[],
   past: readonly ShopEvent[] = [],
+  asked: EventsQuery[] = [],
 ): Promise<ComponentFixture<MarketingEvents>> {
   await TestBed.configureTestingModule({
     imports: [MarketingEvents],
@@ -90,9 +104,10 @@ async function configure(
       provideRouter([]),
       ...provideTestI18n(),
       {
-        provide: SHOP_EVENT_REPOSITORY,
-        useValue: repositoryStub(upcoming, past),
+        provide: SHOP_EVENT_READ_PORTS,
+        useValue: recordedEventReads([...upcoming, ...past], asked),
       },
+      { provide: CLOCK_PORTS, useValue: memoryClockPorts(FIXTURE_NOW_UTC_MS) },
       {
         provide: AUTH_GATEWAY,
         useValue: { observePrincipal: () => of({ kind: 'anonymous' }) },
@@ -136,7 +151,7 @@ describe('MarketingEvents', () => {
   });
 
   it('lists upcoming events on the default tab', async () => {
-    const fixture = await configure([event('event_1', '2030-06-01T10:00:00')]);
+    const fixture = await configure([event('event_1')]);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -147,7 +162,8 @@ describe('MarketingEvents', () => {
   });
 
   it('switches to the Past tab and re-queries, with no Instagram fallback in its empty state', async () => {
-    const fixture = await configure([], []);
+    const asked: EventsQuery[] = [];
+    const fixture = await configure([], [], asked);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -164,5 +180,77 @@ describe('MarketingEvents', () => {
     expect(
       host.querySelector('[data-testid="events-empty"] a[href*="instagram"]'),
     ).toBeNull();
+    // The past tab re-queries the other side of the same pinned now.
+    expect(asked).toEqual([
+      { nowUtcMs: FIXTURE_NOW_UTC_MS, upcoming: true },
+      { nowUtcMs: FIXTURE_NOW_UTC_MS, upcoming: false },
+    ]);
+  });
+
+  it('lists past events on the Past tab, split on the pinned now', async () => {
+    const fixture = await configure([event('event_1')], [pastEvent('event_0')]);
+    const host = await render(fixture, 'en');
+    expect(rowDates(host)).toEqual(['Mon, Oct 5, 07:00 PM']);
+    (
+      host.querySelector('[data-testid="events-tab-past"]') as HTMLButtonElement
+    ).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(rowDates(host)).toEqual(['Mon, Sep 21, 07:00 PM']);
+  });
+
+  // Flip 4, F4-11: a row's date is the shop's wall clock as stored, in the
+  // active language. The expected strings are the legacy formatter's own
+  // output for the same events (its zoned `toLocaleString` with these
+  // options, run once before the flip), so the pins prove fidelity.
+  it("formats each row's date from the shop wall clock in en", async () => {
+    const host = await render(
+      await configure([event('event_1'), event('event_2', 1, 9, 5)]),
+      'en',
+    );
+
+    expect(rowDates(host)).toEqual([
+      'Mon, Oct 5, 07:00 PM',
+      'Tue, Oct 6, 09:05 AM',
+    ]);
+  });
+
+  it("formats each row's date from the shop wall clock in bg", async () => {
+    const host = await render(
+      await configure([event('event_1'), event('event_2', 1, 9, 5)]),
+      'bg',
+    );
+
+    expect(rowDates(host)).toEqual(['пн, 5.10, 19:00', 'вт, 6.10, 09:05']);
   });
 });
+
+/**
+ * Renders in `lang`. The shell's language service applies its own default
+ * (`bg`) when the chrome first creates it — in the app, long before a row
+ * arrives; here the memory read answers in the same pass — so it is booted
+ * first and the visitor's language is applied after it.
+ */
+async function render(
+  fixture: ComponentFixture<MarketingEvents>,
+  lang: 'en' | 'bg',
+): Promise<HTMLElement> {
+  TestBed.inject(LanguageService);
+  TestBed.inject(TranslocoService).setActiveLang(lang);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
+  return fixture.nativeElement;
+}
+
+/** Each listed row's formatted date, in order. */
+function rowDates(host: HTMLElement): string[] {
+  return Array.from(
+    host.querySelectorAll(
+      '[data-testid="events-list"] a[uilistrow] [uifont="footnote"]',
+    ),
+    (cell) => cell.textContent?.trim() ?? '',
+  );
+}

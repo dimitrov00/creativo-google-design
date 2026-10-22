@@ -85,16 +85,16 @@
               <button
                 type="button"
                 uiChip
-                [uiSelected]="positionStatus() === 'open'"
-                (click)="positionStatus.set('open')"
+                [uiSelected]="positionStatus() === PositionStatus.Open"
+                (click)="positionStatus.set(PositionStatus.Open)"
               >
                 Open
               </button>
               <button
                 type="button"
                 uiChip
-                [uiSelected]="positionStatus() === 'closed'"
-                (click)="positionStatus.set('closed')"
+                [uiSelected]="positionStatus() === PositionStatus.Closed"
+                (click)="positionStatus.set(PositionStatus.Closed)"
               >
                 Closed
               </button>
@@ -123,6 +123,7 @@
               Title (EN)
               <input
                 uiTextField
+                data-testid="admin-course-title-en"
                 [value]="courseTitleEn()"
                 (input)="courseTitleEn.set(inputValue($event))"
               />
@@ -131,6 +132,7 @@
               Title (BG)
               <input
                 uiTextField
+                data-testid="admin-course-title-bg"
                 [value]="courseTitleBg()"
                 (input)="courseTitleBg.set(inputValue($event))"
               />
@@ -139,6 +141,7 @@
               Description (EN)
               <textarea
                 uiTextField
+                data-testid="admin-course-description-en"
                 [value]="courseDescriptionEn()"
                 (input)="courseDescriptionEn.set(inputValue($event))"
               ></textarea>
@@ -147,6 +150,7 @@
               Description (BG)
               <textarea
                 uiTextField
+                data-testid="admin-course-description-bg"
                 [value]="courseDescriptionBg()"
                 (input)="courseDescriptionBg.set(inputValue($event))"
               ></textarea>
@@ -155,24 +159,24 @@
               <button
                 type="button"
                 uiChip
-                [uiSelected]="courseEnrollmentStatus() === 'open'"
-                (click)="courseEnrollmentStatus.set('open')"
+                [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Open"
+                (click)="courseEnrollmentStatus.set(EnrollmentStatus.Open)"
               >
                 Open
               </button>
               <button
                 type="button"
                 uiChip
-                [uiSelected]="courseEnrollmentStatus() === 'upcoming'"
-                (click)="courseEnrollmentStatus.set('upcoming')"
+                [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Upcoming"
+                (click)="courseEnrollmentStatus.set(EnrollmentStatus.Upcoming)"
               >
                 Upcoming
               </button>
               <button
                 type="button"
                 uiChip
-                [uiSelected]="courseEnrollmentStatus() === 'closed'"
-                (click)="courseEnrollmentStatus.set('closed')"
+                [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Closed"
+                (click)="courseEnrollmentStatus.set(EnrollmentStatus.Closed)"
               >
                 Closed
               </button>
@@ -181,6 +185,7 @@
               Starts label (EN) — e.g. "Spring 2026"
               <input
                 uiTextField
+                data-testid="admin-course-starts-label-en"
                 [value]="courseStartsLabelEn()"
                 (input)="courseStartsLabelEn.set(inputValue($event))"
               />
@@ -189,6 +194,7 @@
               Starts label (BG)
               <input
                 uiTextField
+                data-testid="admin-course-starts-label-bg"
                 [value]="courseStartsLabelBg()"
                 (input)="courseStartsLabelBg.set(inputValue($event))"
               />
@@ -217,6 +223,7 @@
               Title (EN)
               <input
                 uiTextField
+                data-testid="admin-event-title-en"
                 [value]="eventTitleEn()"
                 (input)="eventTitleEn.set(inputValue($event))"
               />
@@ -225,6 +232,7 @@
               Title (BG)
               <input
                 uiTextField
+                data-testid="admin-event-title-bg"
                 [value]="eventTitleBg()"
                 (input)="eventTitleBg.set(inputValue($event))"
               />
@@ -233,6 +241,7 @@
               Description (EN)
               <textarea
                 uiTextField
+                data-testid="admin-event-description-en"
                 [value]="eventDescriptionEn()"
                 (input)="eventDescriptionEn.set(inputValue($event))"
               ></textarea>
@@ -241,6 +250,7 @@
               Description (BG)
               <textarea
                 uiTextField
+                data-testid="admin-event-description-bg"
                 [value]="eventDescriptionBg()"
                 (input)="eventDescriptionBg.set(inputValue($event))"
               ></textarea>
@@ -250,14 +260,16 @@
               <input
                 uiTextField
                 type="datetime-local"
-                [value]="eventStartDateIso()"
-                (input)="eventStartDateIso.set(inputValue($event))"
+                data-testid="admin-event-starts-at"
+                [value]="eventStartsAt()"
+                (input)="eventStartsAt.set(inputValue($event))"
               />
             </label>
             <label>
               Location id (optional)
               <input
                 uiTextField
+                data-testid="admin-event-location-id"
                 [value]="eventLocationId()"
                 (input)="eventLocationId.set(inputValue($event))"
               />
@@ -327,7 +339,7 @@
 
           @switch (tab()) { @case ('positions') {
           <ui-list-group data-testid="admin-positions-list">
-            @for (position of store.positions(); track position.id.value) {
+            @for (position of store.positions(); track position.id) {
             <button
               type="button"
               uiListRow
@@ -335,13 +347,15 @@
               (click)="startEditPosition(position)"
             >
               <span>{{ position.title.en }}</span>
-              <span uiTrailing>{{ position.status }}</span>
+              <span uiTrailing
+                >{{ positionStatusWords[position.positionStatus] }}</span
+              >
             </button>
             }
           </ui-list-group>
           } @case ('courses') {
           <ui-list-group data-testid="admin-courses-list">
-            @for (course of store.courses(); track course.id.value) {
+            @for (course of store.courses(); track course.id) {
             <button
               type="button"
               uiListRow
@@ -349,13 +363,15 @@
               (click)="startEditCourse(course)"
             >
               <span>{{ course.title.en }}</span>
-              <span uiTrailing>{{ course.enrollmentStatus }}</span>
+              <span uiTrailing
+                >{{ enrollmentStatusWords[course.enrollmentStatus] }}</span
+              >
             </button>
             }
           </ui-list-group>
           } @case ('events') {
           <ui-list-group data-testid="admin-events-list">
-            @for (event of store.events(); track event.id.value) {
+            @for (event of store.events(); track event.id) {
             <button
               type="button"
               uiListRow

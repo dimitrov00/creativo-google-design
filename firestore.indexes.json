@@ -175,7 +175,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "positionStatus",
           "order": "ASCENDING"
         },
         {
@@ -582,6 +582,11 @@
     {
       "collectionGroup": "users",
       "fieldPath": "roles",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "positions",
+      "fieldPath": "locationIds",
       "indexes": []
     }
   ]

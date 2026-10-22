@@ -10,6 +10,7 @@ import {
   LocationStatus,
   ParsedIdentifier,
   ServiceStatus,
+  TenantConfig,
   type VoucherCode,
 } from '@core/components';
 import {
@@ -21,8 +22,12 @@ import {
   RepositoryError,
   Result,
   type AppointmentId,
+  type CourseId,
   type CustomerId,
+  type EventId,
+  type LocationId,
   type OtpId,
+  type PositionId,
   type StreakDefinitionId,
   type TenantId,
   UserId,
@@ -43,6 +48,7 @@ import {
   type ClientMoneyRecord,
   type ClientStatsRecord,
   type Coupon,
+  type Course,
   type CouponGrant,
   type Customer,
   type GiftVoucher,
@@ -51,10 +57,12 @@ import {
   type JournalEntry,
   type LoyaltyAccount,
   type Otp,
+  type Position,
   type ScheduleException,
   type SeasonProgress,
   type ServiceCategory,
   type Service,
+  type ShopEvent,
   type ShopLocation,
   type StreakDefinition,
   type StreakDefinitionVersion,
@@ -70,19 +78,30 @@ import type {
   CatalogReadPorts,
   ClientJournalPorts,
   ClientStatsReadPorts,
+  ClockPorts,
   CouponVoucherPorts,
+  CourseReadPorts,
+  CourseWritePorts,
   CustomerPorts,
+  DefaultLocationPorts,
+  IdPorts,
   ImpersonationReadPorts,
   InboxPorts,
+  LocationLoadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalog,
   LoyaltyCatalogReadPorts,
   OtpCryptoPorts,
   OtpDeliveryPorts,
   OtpStorePorts,
+  PositionReadPorts,
+  PositionWritePorts,
   ProfilePorts,
+  ProgramsPorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
+  ShopEventReadPorts,
+  ShopEventWritePorts,
   StreakDefinitionPorts,
   TenantPorts,
   UserLookupPorts,
@@ -100,11 +119,17 @@ import {
   type LoyaltyClientFixture,
   loyaltyCatalogFixture,
 } from './loyalty.fixtures';
-import { type MemoryStore, memoryStore } from './test-support';
+import {
+  FIXTURE_NOW_UTC_MS,
+  type MemoryStore,
+  memoryStore,
+  pinnedNowUtcMs,
+  sequentialIds,
+} from './test-support';
 
 /**
  * The in-memory doubles of the named port bundles (flip-1 plan §3.1,
- * flip-2 plan §3.1.1, flip-3 plan §3.1) — one per `InjectionToken` of `ports.tokens.ts` and
+ * flip-2 plan §3.1.1, flip-3 plan §3.1, flip-4 plan §3.5) — one per `InjectionToken` of `ports.tokens.ts` and
  * one per identity bundle a pipeline names, each over plain arrays and maps,
  * each returning EXACTLY its bundle type. Store, component and pipeline
  * specs bind these; nobody re-implements a double. A spec that scripts a
@@ -1127,4 +1152,208 @@ export function memoryStreakDefinitionPorts(
           .slice(0, Math.max(1, Math.floor(limit))),
       ),
   };
+}
+
+// ── The clock and the id source (`tx.port.ts`) ───────────────────────────
+
+/** `CLOCK_PORTS` — the pinned instant, `FIXTURE_NOW_UTC_MS` unless given. */
+export function memoryClockPorts(
+  nowUtcMs: UtcEpochMs = FIXTURE_NOW_UTC_MS,
+): ClockPorts {
+  return { nowUtcMs: pinnedNowUtcMs(nowUtcMs) };
+}
+
+/** `ID_PORTS` — `prefix-1`, `prefix-2`, … in call order (`sequentialIds`). */
+export function memoryIdPorts(prefix?: string): IdPorts {
+  return { nextId: sequentialIds(prefix) };
+}
+
+// ── Programs (positions, courses, shop events) ───────────────────────────
+
+/**
+ * The ONE state the programs doubles share: each collection's entities by
+ * id, read BY REFERENCE (a spec that sets a key is read at the next call),
+ * plus the shops an event save reads its zone from. A save replaces the
+ * whole entry (a full-document set, never a merge).
+ */
+export type ProgramsWorld = {
+  readonly positions: Map<PositionId, Position>;
+  readonly courses: Map<CourseId, Course>;
+  readonly events: Map<EventId, ShopEvent>;
+  readonly locations: Map<LocationId, ShopLocation>;
+};
+
+/** What a {@link ProgramsWorld} starts with — every collection empty when omitted. */
+export type ProgramsWorldSeed = {
+  readonly positions?: readonly Position[];
+  readonly courses?: readonly Course[];
+  readonly events?: readonly ShopEvent[];
+  readonly locations?: readonly ShopLocation[];
+};
+
+/** A world seeded with programs content and shops. */
+export function memoryProgramsWorld(
+  seed: ProgramsWorldSeed = {},
+): ProgramsWorld {
+  const world: ProgramsWorld = {
+    positions: new Map(),
+    courses: new Map(),
+    events: new Map(),
+    locations: new Map(),
+  };
+  for (const position of seed.positions ?? []) {
+    world.positions.set(position.id, position);
+  }
+  for (const course of seed.courses ?? []) world.courses.set(course.id, course);
+  for (const event of seed.events ?? []) world.events.set(event.id, event);
+  for (const location of seed.locations ?? []) {
+    world.locations.set(location.id, location);
+  }
+  return world;
+}
+
+/** How many past events one read answers — the adapter's `limit(24)`. */
+const PAST_EVENTS_PAGE = 24;
+
+/**
+ * Firestore's order on `orderBy(field)`: the field, then — on a tie — the
+ * document id in the direction of the LAST `orderBy` (`__name__`).
+ */
+function byFieldThenId<E extends { readonly id: string }>(
+  field: (entry: E) => number,
+  direction: 1 | -1,
+): (a: E, b: E) => number {
+  return (a, b) => direction * (field(a) - field(b) || byString(a.id, b.id));
+}
+
+/**
+ * `POSITION_READ_PORTS` over a {@link ProgramsWorld}: `positionStatus ==`
+ * the given status (every role when `null`), `sortOrder` ascending, ties by
+ * id ascending.
+ */
+export function memoryPositionReadPorts(
+  world: ProgramsWorld,
+): PositionReadPorts {
+  return {
+    observePositions: (positionStatus) =>
+      stream(() =>
+        [...world.positions.values()]
+          .filter(
+            (entry) =>
+              positionStatus === null ||
+              entry.positionStatus === positionStatus,
+          )
+          .sort(byFieldThenId((entry) => entry.sortOrder, 1)),
+      ),
+  };
+}
+
+/** A role by id (`null` when absent) and its full-document save. */
+export function memoryPositionWritePorts(
+  world: ProgramsWorld,
+): PositionWritePorts {
+  return {
+    loadPosition: async (id) => Result.ok(world.positions.get(id) ?? null),
+    savePosition: async (position) => {
+      world.positions.set(position.id, position);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/**
+ * `COURSE_READ_PORTS` over a {@link ProgramsWorld}: `enrollmentStatus in`
+ * the given statuses (every course when `null`), `sortOrder` ascending,
+ * ties by id ascending.
+ */
+export function memoryCourseReadPorts(world: ProgramsWorld): CourseReadPorts {
+  return {
+    observeCourses: (statuses) =>
+      stream(() =>
+        [...world.courses.values()]
+          .filter(
+            (entry) =>
+              statuses === null || statuses.includes(entry.enrollmentStatus),
+          )
+          .sort(byFieldThenId((entry) => entry.sortOrder, 1)),
+      ),
+  };
+}
+
+/** A course by id (`null` when absent) and its full-document save. */
+export function memoryCourseWritePorts(world: ProgramsWorld): CourseWritePorts {
+  return {
+    loadCourse: async (id) => Result.ok(world.courses.get(id) ?? null),
+    saveCourse: async (course) => {
+      world.courses.set(course.id, course);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/**
+ * `SHOP_EVENT_READ_PORTS` over a {@link ProgramsWorld}: upcoming =
+ * `utcEpochMs >= nowUtcMs`, `utcEpochMs` ascending then id ascending, every
+ * one; past = `utcEpochMs < nowUtcMs`, `utcEpochMs` DESCENDING then id
+ * DESCENDING, the first 24 — so on a tie at the cap the double keeps the
+ * document Firestore keeps.
+ */
+export function memoryShopEventReadPorts(
+  world: ProgramsWorld,
+): ShopEventReadPorts {
+  return {
+    observeEvents: ({ nowUtcMs, upcoming }) =>
+      stream(() => {
+        const events = [...world.events.values()];
+        return upcoming
+          ? events
+              .filter((entry) => entry.utcEpochMs >= nowUtcMs)
+              .sort(byFieldThenId((entry) => entry.utcEpochMs, 1))
+          : events
+              .filter((entry) => entry.utcEpochMs < nowUtcMs)
+              .sort(byFieldThenId((entry) => entry.utcEpochMs, -1))
+              .slice(0, PAST_EVENTS_PAGE);
+      }),
+  };
+}
+
+/** An event by id (`null` when absent) and its full-document save. */
+export function memoryShopEventWritePorts(
+  world: ProgramsWorld,
+): ShopEventWritePorts {
+  return {
+    loadEvent: async (id) => Result.ok(world.events.get(id) ?? null),
+    saveEvent: async (event) => {
+      world.events.set(event.id, event);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** `PROGRAMS_PORTS` — the admin page's suite: the six bundles over one world. */
+export function memoryProgramsPorts(world: ProgramsWorld): ProgramsPorts {
+  return {
+    ...memoryPositionReadPorts(world),
+    ...memoryPositionWritePorts(world),
+    ...memoryCourseReadPorts(world),
+    ...memoryCourseWritePorts(world),
+    ...memoryShopEventReadPorts(world),
+    ...memoryShopEventWritePorts(world),
+  };
+}
+
+/** `LOCATION_LOAD_PORTS` — a shop of the world by id, `null` when absent. */
+export function memoryLocationLoadPorts(
+  world: ProgramsWorld,
+): LocationLoadPorts {
+  return {
+    loadLocation: async (id) => Result.ok(world.locations.get(id) ?? null),
+  };
+}
+
+/** `DEFAULT_LOCATION_PORTS` — the deployment's main shop, `TenantConfig.DEFAULT`'s unless given. */
+export function memoryDefaultLocationPorts(
+  defaultLocationId: LocationId = TenantConfig.DEFAULT.defaultLocationId,
+): DefaultLocationPorts {
+  return { defaultLocationId };
 }

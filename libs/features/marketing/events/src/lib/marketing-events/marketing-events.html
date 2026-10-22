@@ -74,7 +74,7 @@
         </ui-card>
         } @else {
         <ui-list-group data-testid="events-list">
-          @for (event of current.events; track event.id.value) {
+          @for (event of current.events; track event.id) {
           <a
             uiListRow
             [uiInteractive]="true"

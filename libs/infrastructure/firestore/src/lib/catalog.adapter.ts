@@ -2,6 +2,7 @@ import {
   type Firestore,
   type QueryConstraint,
   collection,
+  doc,
   orderBy,
   query,
   where,
@@ -14,8 +15,8 @@ import {
   type ServiceCategory,
   type ShopLocation,
 } from '@core/entities';
-import type { CatalogReadPorts } from '@core/ports';
-import { observeQuery } from './observe';
+import type { CatalogReadPorts, LocationLoadPorts } from '@core/ports';
+import { observeQuery, readDoc } from './observe';
 
 /**
  * The catalogue, live (flip 1, plan §3.4) — the successor of
@@ -73,3 +74,14 @@ export const catalogReadPorts = (db: Firestore): CatalogReadPorts => {
       ),
   };
 };
+
+/**
+ * One shop by id, once — `null` when there is no such document (flip 4,
+ * plan §3.7): the shop an event save reads its zone from (F-4), whatever
+ * its `locationStatus` (a hidden shop still has a clock). The body as
+ * stored, beside its id.
+ */
+export const locationLoadPorts = (db: Firestore): LocationLoadPorts => ({
+  loadLocation: (id) =>
+    readDoc<ShopLocation>(doc(db, Collections.Locations, id)),
+});

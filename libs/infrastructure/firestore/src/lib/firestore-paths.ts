@@ -11,7 +11,6 @@ import {
 import { UserId } from '@creativo/domain/accounts';
 import { Collections as EntityCollections } from '@core/entities';
 import { RewardProgramId } from '@creativo/domain/engagement';
-import { CourseId, PositionId, ShopEventId } from '@creativo/domain/programs';
 
 /**
  * Fresh, greenfield Firestore schema (migration-blueprint.md §0.4) — the
@@ -30,20 +29,18 @@ import { CourseId, PositionId, ShopEventId } from '@creativo/domain/programs';
  *
  * Flip 1 (booking core, 2026-10-11) removed every booking-core collection
  * from this file, flip 2 (identity and accounts) removed `users`, `otps`
- * and `impersonationSessions`, and flip 3 (loyalty and invitations)
- * removed `invitations` (+ `redemptions`), the loyalty catalogue,
+ * and `impersonationSessions`, flip 3 (loyalty and invitations) removed
+ * `invitations` (+ `redemptions`), the loyalty catalogue,
  * `loyaltyAccounts` (+ `badgeProgress`, `seasonProgress`) and
- * `clientJournal` with their path helpers: their one spelling is the
+ * `clientJournal`, and flip 4 (programs) removed `positions`, `courses` and
+ * `events`, each with its path helpers: their one spelling is the
  * `Collections`/`Subcollections` registry of `@core/entities`, which the
  * `(db) => bundle` adapters name directly (the `users/{uid}/rewardProgress`
  * paths below spell their parent through it too). What is left belongs to
- * flip 4 and the dormant reward progress, and goes with them.
+ * the dormant reward progress, and goes with it.
  */
 export const Collections = {
   RewardPrograms: 'rewardPrograms',
-  Positions: 'positions',
-  Courses: 'courses',
-  Events: 'events',
 } as const;
 
 export const Subcollections = {
@@ -64,45 +61,6 @@ export function rewardProgramDocRef(
   id: RewardProgramId,
 ): DocumentReference<DocumentData> {
   return doc(db, Collections.RewardPrograms, id.value);
-}
-
-export function positionsCollection(
-  db: Firestore,
-): CollectionReference<DocumentData> {
-  return collection(db, Collections.Positions);
-}
-
-export function positionDocRef(
-  db: Firestore,
-  id: PositionId,
-): DocumentReference<DocumentData> {
-  return doc(db, Collections.Positions, id.value);
-}
-
-export function coursesCollection(
-  db: Firestore,
-): CollectionReference<DocumentData> {
-  return collection(db, Collections.Courses);
-}
-
-export function courseDocRef(
-  db: Firestore,
-  id: CourseId,
-): DocumentReference<DocumentData> {
-  return doc(db, Collections.Courses, id.value);
-}
-
-export function eventsCollection(
-  db: Firestore,
-): CollectionReference<DocumentData> {
-  return collection(db, Collections.Events);
-}
-
-export function eventDocRef(
-  db: Firestore,
-  id: ShopEventId,
-): DocumentReference<DocumentData> {
-  return doc(db, Collections.Events, id.value);
 }
 
 // ── Subcollections ──────────────────────────────────────────────────────

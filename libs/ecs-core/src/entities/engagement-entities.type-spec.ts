@@ -10,7 +10,10 @@
  * the account and the journal key by the client RECORD (`CustomerId`, D29),
  * never by an account's `UserId`, and the ports tier's `LoyaltyCatalog`
  * passes to `LoyaltyCatalogSystem` unmapped (its part names, the rhythm's
- * heads included). `tsc` failing — on a `false` constant or an unused
+ * heads included); and the programs flip's (4): `ShopEvent` is the
+ * intersection of two disjoint slices, and `ProgramsPorts` is the
+ * intersection of six non-empty bundles holding exactly nine ports (Law 9).
+ * `tsc` failing — on a `false` constant or an unused
  * `@ts-expect-error` — IS the test; nothing here runs.
  */
 import {
@@ -55,14 +58,27 @@ import type {
   TierId,
   UserId,
 } from '@core/primitives';
-import type { LoyaltyCatalog } from '@core/ports';
+import type {
+  CourseReadPorts,
+  CourseWritePorts,
+  LoyaltyCatalog,
+  PositionReadPorts,
+  PositionWritePorts,
+  ProgramsPorts,
+  ShopEventReadPorts,
+  ShopEventWritePorts,
+} from '@core/ports';
 import type { LoyaltyCatalogParts } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { BadgeCategory } from './badge-category.entity';
 import type { BadgeProgress } from './badge-progress.entity';
 import type { BadgeSeries, BadgeSeriesMeta } from './badge-series.entity';
 import type { Course } from './course.entity';
-import type { ShopEvent } from './event.entity';
+import type {
+  ShopEvent,
+  ShopEventContent,
+  ShopEventMeta,
+} from './event.entity';
 import type { InvitationRedemption } from './invitation-redemption.entity';
 import type { Invitation } from './invitation.entity';
 import type { JournalEntry, JournalEntryMeta } from './journal-entry.entity';
@@ -368,3 +384,62 @@ export const catalogKeysAreTheParts: Equals<
   keyof LoyaltyCatalog,
   keyof LoyaltyCatalogParts
 > = true;
+
+/* ── ShopEvent = Meta (id, instant) & Content (what the admin typed) ────── */
+
+export const shopEventNotNever: [
+  IsNever<ShopEventMeta>,
+  IsNever<ShopEventContent>,
+] = [false, false];
+export const shopEventSlicesFlat: [
+  EveryVariantFlat<ShopEventMeta>,
+  EveryVariantFlat<ShopEventContent>,
+] = [true, true];
+export const shopEventDisjoint: Disjoint<ShopEventMeta, ShopEventContent> =
+  true;
+export const shopEventIsItsSlices: Equals<
+  keyof ShopEvent,
+  keyof ShopEventMeta | keyof ShopEventContent
+> = true;
+
+declare const shopEvent: ShopEvent;
+// @ts-expect-error — the zone is the location's, never an event field (Law 7.2)
+void shopEvent.timeZone;
+
+/* ── ProgramsPorts = six focused bundles, nine ports (Law 9) ────────────── */
+
+export const programBundlesNotNever: [
+  IsNever<PositionReadPorts>,
+  IsNever<PositionWritePorts>,
+  IsNever<CourseReadPorts>,
+  IsNever<CourseWritePorts>,
+  IsNever<ShopEventReadPorts>,
+  IsNever<ShopEventWritePorts>,
+  IsNever<ProgramsPorts>,
+] = [false, false, false, false, false, false, false];
+export const programsPortsAreTheNine: Equals<
+  keyof ProgramsPorts,
+  | 'observePositions'
+  | 'loadPosition'
+  | 'savePosition'
+  | 'observeCourses'
+  | 'loadCourse'
+  | 'saveCourse'
+  | 'observeEvents'
+  | 'loadEvent'
+  | 'saveEvent'
+> = true;
+export const programsPortsAreTheBundles: Equals<
+  keyof ProgramsPorts,
+  | keyof PositionReadPorts
+  | keyof PositionWritePorts
+  | keyof CourseReadPorts
+  | keyof CourseWritePorts
+  | keyof ShopEventReadPorts
+  | keyof ShopEventWritePorts
+> = true;
+export const programBundlesDisjoint: [
+  Disjoint<PositionReadPorts, PositionWritePorts>,
+  Disjoint<CourseReadPorts, CourseWritePorts>,
+  Disjoint<ShopEventReadPorts, ShopEventWritePorts>,
+] = [true, true, true];

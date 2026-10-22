@@ -44,7 +44,7 @@
         </ui-card>
         } @else {
         <ui-list-group data-testid="careers-list">
-          @for (position of current.positions; track position.id.value) {
+          @for (position of current.positions; track position.id) {
           <a
             uiListRow
             [uiInteractive]="true"
@@ -64,8 +64,8 @@
               uiAlignment="center"
               uiSpacing="compact"
             >
-              <span uiBadge [uiTone]="statusTone(position.status)">
-                {{ position.status }}
+              <span uiBadge [uiTone]="statusTone(position.positionStatus)">
+                {{ statusWord(position.positionStatus) }}
               </span>
               <ui-icon uiName="link.external" />
             </ui-stack>

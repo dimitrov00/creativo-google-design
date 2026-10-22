@@ -19,19 +19,13 @@
   ],
   "references": [
     {
+      "path": "../../application/shared/tsconfig.lib.json"
+    },
+    {
       "path": "../../application/engagement/tsconfig.lib.json"
     },
     {
       "path": "../../domain/engagement/tsconfig.lib.json"
-    },
-    {
-      "path": "../../application/shared/tsconfig.lib.json"
-    },
-    {
-      "path": "../../application/programs/tsconfig.lib.json"
-    },
-    {
-      "path": "../../domain/programs/tsconfig.lib.json"
     },
     {
       "path": "../../application/accounts/tsconfig.lib.json"

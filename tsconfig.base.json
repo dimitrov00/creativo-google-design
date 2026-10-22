@@ -126,12 +126,8 @@
       "@creativo/domain/notifications": [
         "./libs/domain/notifications/src/index.ts"
       ],
-      "@creativo/domain/programs": ["./libs/domain/programs/src/index.ts"],
       "@creativo/application/notifications": [
         "./libs/application/notifications/src/index.ts"
-      ],
-      "@creativo/application/programs": [
-        "./libs/application/programs/src/index.ts"
       ],
       "@creativo/features/marketing/careers": [
         "./libs/features/marketing/careers/src/index.ts"

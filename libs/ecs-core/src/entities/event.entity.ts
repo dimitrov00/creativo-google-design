@@ -8,27 +8,39 @@ import type {
 } from '@core/primitives';
 
 /**
- * A community or marketing event — `events/{id}` (the stored body of
- * `event-repository.adapter.ts:24-34`), **every optional present**. Named
- * `ShopEvent` because `Event` shadows the DOM global (F-17).
- *
- * Its start is the shop's wall clock — `localDate` + `startMinutes` — and
- * ONE absolute instant, `utcEpochMs`, computed at ingestion with the zone of
- * `locationId ?? TenantConfig.defaultLocationId` (F-4: an event with no
- * location is placed on the default shop's clock); the instant is what the
- * "upcoming" range query reads (Law 7.3). No zone field: the zone is the
- * location's. No status field: upcoming vs past is that range filter.
- * `locationId` `null` is not tied to one shop; `applyUrl` (the RSVP link)
- * `null` falls back to the shop's shared contact link.
+ * The two fields of an event an admin never types: its id and the absolute
+ * instant of its start, `utcEpochMs`, computed ONCE at ingestion (the save
+ * pipeline, Law 7.3) with the zone of `locationId ?? the default shop`
+ * (F-4: an event with no location is placed on the default shop's clock).
+ * The instant is what the upcoming/past range query reads — a range on a
+ * stamp, never placement math.
  */
-export type ShopEvent = {
+export type ShopEventMeta = {
   readonly id: EventId;
+  readonly utcEpochMs: UtcEpochMs;
+};
+
+/**
+ * What an event says, as the admin set it: its texts, its start on the
+ * shop's wall clock — `localDate` + `startMinutes` — and where it is.
+ * `locationId` `null` is not tied to one shop; `applyUrl` (the RSVP link)
+ * `null` falls back to the shop's shared contact link. Every optional is
+ * present (`null` is written, never a conditional spread).
+ */
+export type ShopEventContent = {
   readonly title: LocalizedText;
   readonly description: LocalizedText;
   readonly localDate: LocalDate;
   readonly startMinutes: MinuteOfDay;
-  readonly utcEpochMs: UtcEpochMs;
   readonly locationId: LocationId | null;
   readonly applyUrl: string | null;
   readonly sortOrder: number;
 };
+
+/**
+ * A community or marketing event — `events/{id}`, the body this type minus
+ * `id` (Law 5). Named `ShopEvent` because `Event` shadows the DOM global
+ * (F-17). No zone field: the zone is the location's (Law 7.2). No status
+ * field: upcoming vs past is the range filter on `utcEpochMs`.
+ */
+export type ShopEvent = ShopEventMeta & ShopEventContent;

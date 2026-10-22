@@ -82,10 +82,10 @@
       "path": "../../libs/application/shared/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/application/programs/tsconfig.lib.json"
+      "path": "../../libs/application/accounts/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/application/accounts/tsconfig.lib.json"
+      "path": "../../libs/application/engagement/tsconfig.lib.json"
     },
     {
       "path": "../../libs/application/catalog/tsconfig.lib.json"
@@ -113,9 +113,6 @@
     },
     {
       "path": "../../libs/ecs-core/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/application/engagement/tsconfig.lib.json"
     }
   ]
 }

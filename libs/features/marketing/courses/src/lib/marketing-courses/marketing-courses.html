@@ -29,18 +29,18 @@
           <button
             type="button"
             uiChip
-            [uiSelected]="tab() === 'open'"
+            [uiSelected]="tab() === EnrollmentStatus.Open"
             data-testid="courses-tab-open"
-            (click)="setTab('open')"
+            (click)="setTab(EnrollmentStatus.Open)"
           >
             {{ t('programs.courses.tabOpen') }}
           </button>
           <button
             type="button"
             uiChip
-            [uiSelected]="tab() === 'upcoming'"
+            [uiSelected]="tab() === EnrollmentStatus.Upcoming"
             data-testid="courses-tab-upcoming"
-            (click)="setTab('upcoming')"
+            (click)="setTab(EnrollmentStatus.Upcoming)"
           >
             {{ t('programs.courses.tabUpcoming') }}
           </button>
@@ -68,7 +68,7 @@
         </ui-card>
         } @else {
         <ui-list-group data-testid="courses-list">
-          @for (course of visibleCourses(); track course.id.value) {
+          @for (course of visibleCourses(); track course.id) {
           <a
             uiListRow
             [uiInteractive]="true"
@@ -90,7 +90,7 @@
               uiSpacing="compact"
             >
               <span uiBadge [uiTone]="statusTone(course.enrollmentStatus)">
-                {{ course.enrollmentStatus }}
+                {{ statusWord(course.enrollmentStatus) }}
               </span>
               <ui-icon uiName="link.external" />
             </ui-stack>

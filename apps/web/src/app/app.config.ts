@@ -23,21 +23,29 @@ import {
   CATALOG_PORTS,
   CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
+  CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
+  COURSE_READ_PORTS,
   CUSTOMER_PORTS,
+  DEFAULT_LOCATION_PORTS,
   FIREBASE_FIRESTORE,
   FIREBASE_FUNCTIONS,
   type FactoryPicker,
+  ID_PORTS,
   IMPERSONATION_READ_PORTS,
   INBOX_PORTS,
+  LOCATION_LOAD_PORTS,
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_MEMO,
   LOYALTY_CATALOG_READ_PORTS,
   LazyAdapterScope,
   LazyPortLoadError,
+  POSITION_READ_PORTS,
   PROFILE_PORTS,
+  PROGRAMS_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
+  SHOP_EVENT_READ_PORTS,
   STREAK_DEFINITION_PORTS,
   STREAK_PUBLISH_PORTS,
   USER_SEARCH_PORTS,
@@ -56,10 +64,12 @@ import {
   Result,
   UtcEpochMs,
 } from '@core/primitives';
+import { TenantConfig } from '@core/components';
 import { ZonedTimeSystem } from '@core/systems';
 import type {
   AppointmentPhotoPorts,
   AppointmentPhotoRecordPorts,
+  DefaultLocationPorts,
   PhotoUploadPorts,
 } from '@core/ports';
 
@@ -82,11 +92,6 @@ import {
   AVATAR_UPLOADER,
   AvatarUploadError,
 } from '@creativo/application/accounts';
-import {
-  COURSE_REPOSITORY,
-  POSITION_REPOSITORY,
-  SHOP_EVENT_REPOSITORY,
-} from '@creativo/application/programs';
 import {
   CLOCK,
   ID_GENERATOR,
@@ -113,7 +118,12 @@ import {
   LocalStorageKeyValueStore,
   SessionStorageDraftStore,
 } from '@creativo/infrastructure/web-storage';
-import { CryptoIdGenerator, SystemClock } from '@creativo/infrastructure/clock';
+import {
+  CryptoIdGenerator,
+  SystemClock,
+  browserClockPorts,
+  browserIdPorts,
+} from '@creativo/infrastructure/clock';
 
 import { appRoutes } from './app.routes';
 import { environment } from '../environments/environment';
@@ -327,6 +337,20 @@ export const appConfig: ApplicationConfig = {
     // ── Port → Adapter map (the hexagon's outer wiring, blueprint §1.3) ──
     { provide: CLOCK, useClass: SystemClock },
     { provide: ID_GENERATOR, useClass: CryptoIdGenerator },
+    // The same two as ECS bundles (flip 4, F4-9): what the flipped features
+    // read "now" and draw ids through; the two above stay for the features
+    // that still inject `CLOCK`/`ID_GENERATOR` until Phase 4.
+    { provide: CLOCK_PORTS, useFactory: browserClockPorts },
+    { provide: ID_PORTS, useFactory: browserIdPorts },
+    // The deployment's main shop — configuration, not a read (F-4): an event
+    // with no location of its own is placed on this shop's clock. The one
+    // place the web names it, as `main.ts` names `tenantTimeZone`.
+    {
+      provide: DEFAULT_LOCATION_PORTS,
+      useValue: {
+        defaultLocationId: TenantConfig.DEFAULT.defaultLocationId,
+      } satisfies DefaultLocationPorts,
+    },
     { provide: AUTH_GATEWAY, useClass: FirebaseAuthGateway },
     { provide: OTP_CLIENT, useClass: CallableOtpClient },
     { provide: BOOKING_GATEWAY, useClass: CallableBookingGateway },
@@ -553,8 +577,53 @@ export const appConfig: ApplicationConfig = {
       onLoadError: ecsDataUnavailable,
     }),
 
+    // Programs (flip 4): the careers, courses and events pages' live lists,
+    // and the admin page's suite — the three lists unfiltered, each item
+    // loaded and saved whole (a rules-guarded admin write, D9(b)) — with the
+    // one shop an event save reads its zone from.
+    provideLazyPort(PROGRAMS_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.programsPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: {
+        observePositions: 'observable',
+        loadPosition: 'promise',
+        savePosition: 'promise',
+        observeCourses: 'observable',
+        loadCourse: 'promise',
+        saveCourse: 'promise',
+        observeEvents: 'observable',
+        loadEvent: 'promise',
+        saveEvent: 'promise',
+      },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(POSITION_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.positionReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { observePositions: 'observable' },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(COURSE_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.courseReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { observeCourses: 'observable' },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(SHOP_EVENT_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.shopEventReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { observeEvents: 'observable' },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(LOCATION_LOAD_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.locationLoadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { loadLocation: 'promise' },
+      onLoadError: ecsDataUnavailable,
+    }),
+
     // The class adapters still bound with the class form: the media reader,
-    // the dormant reward progress, the avatar uploader and flip 4's programs.
+    // the dormant reward progress and the avatar uploader.
     provideLazyPort(MEDIA_READER, firebaseData, {
       adapter: (m) => m.storage.StorageMediaReader,
       methods: { resolve: 'promise' },
@@ -569,36 +638,6 @@ export const appConfig: ApplicationConfig = {
       adapter: (m) => m.storage.FirebaseStorageAvatarUploader,
       methods: { upload: 'promise', find: 'promise', remove: 'promise' },
       onLoadError: avatarStorageUnavailable,
-    }),
-    provideLazyPort(POSITION_REPOSITORY, firebaseData, {
-      adapter: (m) => m.firestore.FirestorePositionRepository,
-      methods: {
-        findById: 'promise',
-        save: 'promise',
-        observeOpen: 'observable',
-        observeAll: 'observable',
-      },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(COURSE_REPOSITORY, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreCourseRepository,
-      methods: {
-        findById: 'promise',
-        save: 'promise',
-        observeOpenAndUpcoming: 'observable',
-        observeAll: 'observable',
-      },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(SHOP_EVENT_REPOSITORY, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreEventRepository,
-      methods: {
-        findById: 'promise',
-        save: 'promise',
-        observeUpcoming: 'observable',
-        observePast: 'observable',
-      },
-      onLoadError: dataUnavailable,
     }),
 
     // ── Icons and the logo ──

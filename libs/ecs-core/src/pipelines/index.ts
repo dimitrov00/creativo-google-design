@@ -9,6 +9,7 @@ export * from './customer-records.pipeline';
 export * from './edit-appointment.pipeline';
 export * from './mark-arrival.pipeline';
 export * from './match-waitlist.pipeline';
+export * from './program-content.pipeline';
 export * from './project-client-stats.pipeline';
 export * from './publish-streak-definition.pipeline';
 export * from './rebuild-busy.pipeline';

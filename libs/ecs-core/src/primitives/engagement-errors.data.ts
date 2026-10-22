@@ -1,13 +1,21 @@
+import type { CatalogError } from './catalog-errors.data';
 import type { Currency } from './currency.primitive';
 import type {
   BadgeCategoryId,
   BadgeSeriesId,
+  CourseId,
+  EventId,
+  LocationId,
+  PositionId,
   RewardId,
   SeasonId,
   TierId,
 } from './ids.primitive';
 import type { LocalDate } from './local-date.primitive';
 import type { PriceCents } from './price-cents.primitive';
+import type { PrimitiveError } from './primitive-errors.data';
+import type { RepositoryError } from './repository-errors.data';
+import type { TimeError } from './time-errors.data';
 import type { UtcEpochMs } from './utc-epoch-ms.primitive';
 import type { AwardKind } from './award-kind.data';
 import type { GrantStatus } from './grant-status.data';
@@ -18,8 +26,9 @@ import type { VoucherRefusal } from './voucher-refusal.data';
  * The engagement context's error codes — coupons, grants, gift vouchers,
  * points, invitations, the loyalty catalogue, the rhythm's rule,
  * notifications and the programs pages (blueprint §2.3). The legacy
- * `DomainError` subclasses of `libs/domain/engagement`, `libs/domain/
- * notifications` and `libs/domain/programs`, collapsed into ONE dictionary
+ * `DomainError` subclasses of `libs/domain/engagement` and `libs/domain/
+ * notifications`, and the programs classes (deleted by flip 4), collapsed
+ * into ONE dictionary
  * of flat `{ errorCode, … }` structs (Law 7.5): SCREAMING_SNAKE codes under
  * the `ENGAGEMENT_` prefix (flatten-spec §4.2), the UI's lookup key
  * `errors.<errorCode>` — no i18n table holds any of them yet. The legacy
@@ -196,6 +205,17 @@ export const EngagementErrorCode = {
   CourseApplyUrlInvalid: 'ENGAGEMENT_COURSE_INVALID_APPLY_URL',
   ShopEventSortOrderInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_SORT_ORDER',
   ShopEventApplyUrlInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_APPLY_URL',
+  /** An admin update of a role that is no longer stored — nothing is written. */
+  PositionNotFound: 'ENGAGEMENT_POSITION_NOT_FOUND',
+  /** An admin update of a course that is no longer stored — nothing is written. */
+  CourseNotFound: 'ENGAGEMENT_COURSE_NOT_FOUND',
+  /** An admin update of an event that is no longer stored — nothing is written. */
+  ShopEventNotFound: 'ENGAGEMENT_SHOP_EVENT_NOT_FOUND',
+  /**
+   * No shop's zone can place the event's wall clock: neither its own
+   * location nor the deployment's default shop is stored (F-4).
+   */
+  ShopEventZoneUnknown: 'ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN',
 } as const;
 export type EngagementErrorCode =
   (typeof EngagementErrorCode)[keyof typeof EngagementErrorCode];
@@ -251,7 +271,27 @@ export type EngagementError =
   | EngagementError.StreakScheduleVersionNotRising
   | EngagementError.StreakScheduleNotAfterCurrent
   | EngagementError.NotificationReadBeforeSent
-  | EngagementError.ProgramError;
+  | EngagementError.ProgramError
+  | EngagementError.ProgramNotFound
+  | EngagementError.ShopEventZoneUnknown;
+
+/**
+ * Any refusal of a programs field the admin typed (`ProgramsSystem`): a sort
+ * order or apply URL, a blank locale, a location id, the start's form or date.
+ */
+export type ProgramFieldError =
+  EngagementError.ProgramError | CatalogError | PrimitiveError | TimeError;
+
+/**
+ * Any refusal of an admin programs save (`program-content.pipeline.ts`): the
+ * field refusals, an update of a document that is gone, an event no shop's
+ * zone can place, or a failed read or write.
+ */
+export type ProgramSaveError =
+  | ProgramFieldError
+  | EngagementError.ProgramNotFound
+  | EngagementError.ShopEventZoneUnknown
+  | RepositoryError;
 
 /**
  * An i18n-safe parameter: a missing value is `null`, a list is joined with
@@ -700,6 +740,19 @@ export const EngagementError = {
   ): EngagementError.ProgramError {
     return { errorCode, rawValue: scalarOf(rawValue) };
   },
+  /** An update of a role, course or event that is no longer stored. */
+  programNotFound(
+    errorCode: EngagementError.ProgramNotFoundCode,
+    programId: PositionId | CourseId | EventId,
+  ): EngagementError.ProgramNotFound {
+    return { errorCode, programId };
+  },
+  /** No zone can place the event: its location and the default shop are both absent. */
+  shopEventZoneUnknown(
+    locationId: LocationId,
+  ): EngagementError.ShopEventZoneUnknown {
+    return { errorCode: EngagementErrorCode.ShopEventZoneUnknown, locationId };
+  },
 
   /** Narrows an error to one code — `EngagementError.is(e, EngagementErrorCode.PointsInsufficient)`. */
   is<C extends EngagementErrorCode>(
@@ -1004,5 +1057,18 @@ export namespace EngagementError {
   export type ProgramError = {
     readonly errorCode: ProgramCode;
     readonly rawValue: Scalar;
+  };
+  export type ProgramNotFoundCode =
+    | typeof EngagementErrorCode.PositionNotFound
+    | typeof EngagementErrorCode.CourseNotFound
+    | typeof EngagementErrorCode.ShopEventNotFound;
+  export type ProgramNotFound = {
+    readonly errorCode: ProgramNotFoundCode;
+    readonly programId: PositionId | CourseId | EventId;
+  };
+  export type ShopEventZoneUnknown = {
+    readonly errorCode: typeof EngagementErrorCode.ShopEventZoneUnknown;
+    /** The default shop the save fell back to and found absent. */
+    readonly locationId: LocationId;
   };
 }

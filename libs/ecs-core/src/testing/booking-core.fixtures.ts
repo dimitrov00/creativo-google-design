@@ -92,13 +92,13 @@ export function minuteDelta(raw: number): MinuteDelta {
 }
 
 /** `hh:mm` on the wall clock → a `MinuteOfDay` — `at(10, 30)` is 630. */
-export function at(hours: number, minutes = 0): MinuteOfDay {
-  return sure(MinuteOfDay.of(hours * 60 + minutes), 'at');
+export function at(hour: number, minutes = 0): MinuteOfDay {
+  return sure(MinuteOfDay.of(hour * 60 + minutes), 'at');
 }
 
 /** `hh:mm` as an exclusive end → an `EndMinute` — `until(24)` is the closing midnight. */
-export function until(hours: number, minutes = 0): EndMinute {
-  return sure(EndMinute.of(hours * 60 + minutes), 'until');
+export function until(hour: number, minutes = 0): EndMinute {
+  return sure(EndMinute.of(hour * 60 + minutes), 'until');
 }
 
 /** The `EUR` brand — every new amount's currency. */

@@ -2,17 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
 import {
   LocationId,
+  RepositoryError,
   RepositoryErrorCode,
   Result,
   ServiceCategoryId,
 } from '@core/primitives';
+import { locationFixture } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
 
 vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
 );
 
-const { catalogReadPorts } = await import('./catalog.adapter');
+const { catalogReadPorts, locationLoadPorts } =
+  await import('./catalog.adapter');
 
 const asDb = (fake: FakeFirestore) => fake as unknown as Firestore;
 
@@ -186,5 +189,58 @@ describe('catalogReadPorts — what /book may list, live', () => {
         reason: 'unavailable-forever',
       }),
     ]);
+  });
+});
+
+describe('locationLoadPorts — one shop by id, once (an event save’s zone)', () => {
+  it('loads a shop as its whole stored body beside its id, in one document read', async () => {
+    const shop = locationFixture({ id: LocationId.of('loc-center') });
+    const { id, ...body } = shop;
+    const fake = new FakeFirestore({ [`locations/${id}`]: body });
+
+    const loaded = await locationLoadPorts(asDb(fake)).loadLocation(id);
+
+    expect(loaded).toEqual(Result.ok(shop));
+    expect(fake.reads).toEqual([
+      { kind: 'document', path: 'locations/loc-center', constraints: [] },
+    ]);
+  });
+
+  it('loads a hidden shop too — a shop’s clock does not depend on its listing', async () => {
+    const fake = catalog();
+
+    const loaded = await locationLoadPorts(asDb(fake)).loadLocation(
+      LocationId.of('loc-hidden'),
+    );
+
+    expect(loaded).toEqual(
+      Result.ok({
+        id: 'loc-hidden',
+        locationStatus: 'HIDDEN',
+        sortOrder: 0,
+      }),
+    );
+  });
+
+  it('answers null for an id that names no shop', async () => {
+    const loaded = await locationLoadPorts(asDb(catalog())).loadLocation(
+      LocationId.of('loc-nowhere'),
+    );
+
+    expect(loaded).toEqual(Result.ok(null));
+  });
+
+  it('answers a failed read as the port’s RepositoryError, naming the document', async () => {
+    const fake = catalog().failWith({ code: 'unavailable' });
+
+    const loaded = await locationLoadPorts(asDb(fake)).loadLocation(
+      LocationId.of('loc-center'),
+    );
+
+    expect(loaded).toEqual(
+      Result.err(
+        RepositoryError.readFailed('locations/loc-center', 'unavailable'),
+      ),
+    );
   });
 });

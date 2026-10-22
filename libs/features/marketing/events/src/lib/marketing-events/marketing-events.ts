@@ -9,16 +9,18 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { switchMap } from 'rxjs';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
+import { LocalizedText } from '@core/components';
+import type { ShopEvent } from '@core/entities';
+import { Locale } from '@core/primitives';
 import {
-  ObservePastShopEventsUseCase,
-  ObserveUpcomingShopEventsUseCase,
-  SHOP_EVENT_REPOSITORY,
-  ShopEvent,
-} from '@creativo/application/programs';
+  CLOCK_PORTS,
+  SHOP_EVENT_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import {
   SiteFooterComponent,
   SiteHeaderComponent,
 } from '@creativo/features/shared/shell';
+import { formatWallClock } from '@creativo/features/shared/visits';
 import { UiButton, UiChip, UiIcon, UiSkeleton } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -38,13 +40,24 @@ type EventsListState =
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 
+/** A row's date — «Mon, Oct 5, 07:00 PM» / «пн, 5.10, 19:00». */
+const EVENT_DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+};
+
 /** `/events` — public browse page for shop events, Upcoming/Past. Unlike
  *  `MarketingCourses`' single query split client-side by tab, upcoming and
- *  past are two distinct repository queries (`observeUpcoming`/
- *  `observePast`) — switching tabs re-subscribes via `toObservable(tab)
- *  .pipe(switchMap(...))`, the same pattern `AppointmentsStore` uses for
- *  its `userId` cursor. Chrome is the real site header/footer, solid
- *  (`uiOverHero=false`). */
+ *  past are two distinct reads of `SHOP_EVENT_READ_PORTS` (`observeEvents`
+ *  with `upcoming: true | false`, split on the instant the clock answers
+ *  once per tab subscription) — switching tabs re-subscribes via
+ *  `toObservable(tab).pipe(switchMap(...))`, the same pattern
+ *  `AppointmentsStore` uses for its `userId` cursor. A row's date is the
+ *  shop's wall clock as stored (`formatWallClock`, flip-4 F4-11). Chrome is
+ *  the real site header/footer, solid (`uiOverHero=false`). */
 @Component({
   selector: 'cr-marketing-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -69,12 +82,8 @@ const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
   host: { 'data-testid': 'events-page' },
 })
 export class MarketingEvents {
-  private readonly eventRepository = inject(SHOP_EVENT_REPOSITORY);
-  private readonly observeUpcomingUseCase =
-    new ObserveUpcomingShopEventsUseCase(this.eventRepository);
-  private readonly observePastUseCase = new ObservePastShopEventsUseCase(
-    this.eventRepository,
-  );
+  private readonly events = inject(SHOP_EVENT_READ_PORTS);
+  private readonly clock = inject(CLOCK_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly title = inject(Title);
 
@@ -84,9 +93,10 @@ export class MarketingEvents {
   private readonly result = toSignal(
     toObservable(this.tab).pipe(
       switchMap((tab) =>
-        tab === 'upcoming'
-          ? this.observeUpcomingUseCase.execute()
-          : this.observePastUseCase.execute(),
+        this.events.observeEvents({
+          nowUtcMs: this.clock.nowUtcMs(),
+          upcoming: tab === 'upcoming',
+        }),
       ),
     ),
     { initialValue: undefined },
@@ -95,7 +105,7 @@ export class MarketingEvents {
   protected readonly state = computed<EventsListState>(() => {
     const result = this.result();
     if (result === undefined) return { kind: 'loading' };
-    if (result.isFailure()) return { kind: 'error' };
+    if (!result.ok) return { kind: 'error' };
     return { kind: 'ready', events: result.value };
   });
 
@@ -107,21 +117,25 @@ export class MarketingEvents {
     this.tab.set(next);
   }
 
-  protected text(localized: { get(locale: 'en' | 'bg'): string }): string {
-    return localized.get(this.transloco.getActiveLang() as 'en' | 'bg');
+  /** The active language's string — `bg` for every language but `en`. */
+  protected text(localized: LocalizedText): string {
+    return LocalizedText.pick(
+      localized,
+      this.transloco.getActiveLang() === Locale.En ? Locale.En : Locale.Bg,
+    );
   }
 
   protected applyHref(event: ShopEvent): string {
     return event.applyUrl ?? this.instagramUrl;
   }
 
+  /** The event's day and time on the shop's wall clock, in the active language. */
   protected formatDate(event: ShopEvent): string {
-    return event.startDate.toLocaleString(this.transloco.getActiveLang(), {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatWallClock(
+      event.localDate,
+      event.startMinutes,
+      this.transloco.getActiveLang(),
+      EVENT_DATE_FORMAT,
+    );
   }
 }

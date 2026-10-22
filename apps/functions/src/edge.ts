@@ -785,6 +785,14 @@ const ENGAGEMENT_WIRE = uniform(
     [EngagementErrorCode.StreakScheduleNotAfterCurrent]: params(
       S.FailedPrecondition,
     ),
+    // The programs refusals (flip 4, F4-6): no callable returns them today
+    // (D9(b) — the admin write is a rules-guarded browser pipeline), but a
+    // missing program reads as every other missing document does, and an
+    // event whose shop has no zone as a precondition the deployment owes.
+    [EngagementErrorCode.PositionNotFound]: params(S.NotFound),
+    [EngagementErrorCode.CourseNotFound]: params(S.NotFound),
+    [EngagementErrorCode.ShopEventNotFound]: params(S.NotFound),
+    [EngagementErrorCode.ShopEventZoneUnknown]: params(S.FailedPrecondition),
   },
 );
 
@@ -1221,6 +1229,11 @@ export const LEGACY_WIRE_CODE: { readonly [errorCode: string]: string } = {
     'engagement.shop_event.invalid_sort_order',
   [EngagementErrorCode.ShopEventApplyUrlInvalid]:
     'engagement.shop_event.invalid_apply_url',
+  [EngagementErrorCode.PositionNotFound]: 'engagement.position.not_found',
+  [EngagementErrorCode.CourseNotFound]: 'engagement.course.not_found',
+  [EngagementErrorCode.ShopEventNotFound]: 'engagement.shop_event.not_found',
+  [EngagementErrorCode.ShopEventZoneUnknown]:
+    'engagement.shop_event.zone_unknown',
   // StreakPublishErrorCode — the two caller codes are the loyalty flip's
   // (F3-4): NEW dotted codes, never the legacy `unauthenticated`/`not_admin`
   [StreakPublishErrorCode.CallerUnauthenticated]:

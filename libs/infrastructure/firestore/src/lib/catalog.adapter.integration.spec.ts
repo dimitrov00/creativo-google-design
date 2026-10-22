@@ -2,12 +2,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, setDoc } from 'firebase/firestore';
 import { firstValueFrom } from 'rxjs';
-import { LocationId, ServiceCategoryId } from '@core/primitives';
+import { LocationId, Result, ServiceCategoryId } from '@core/primitives';
 import {
   createEmulatorTestEnv,
   modularFirestore,
 } from '../testing/emulator-test-env';
-import { catalogReadPorts } from './catalog.adapter';
+import { catalogReadPorts, locationLoadPorts } from './catalog.adapter';
 
 /** Enough of a stored catalogue body for every query here. */
 const service = (
@@ -129,6 +129,24 @@ describe('catalogReadPorts (emulator)', () => {
       'cat-2',
     ]);
     expect(shops.ok && shops.value.map((l) => l.id)).toEqual(['loc-center']);
+  });
+
+  it('loads one shop by id once, the body as stored, a hidden one too — and null for an id naming no shop', async () => {
+    const ports = locationLoadPorts(
+      modularFirestore(testEnv.unauthenticatedContext()),
+    );
+
+    const center = await ports.loadLocation(LocationId.of('loc-center'));
+    const hidden = await ports.loadLocation(LocationId.of('loc-hidden'));
+    const nowhere = await ports.loadLocation(LocationId.of('loc-nowhere'));
+
+    expect(center).toEqual(
+      Result.ok({ id: 'loc-center', locationStatus: 'ACTIVE', sortOrder: 1 }),
+    );
+    expect(hidden).toEqual(
+      Result.ok({ id: 'loc-hidden', locationStatus: 'HIDDEN', sortOrder: 0 }),
+    );
+    expect(nowhere).toEqual(Result.ok(null));
   });
 
   it('denies writes through the rules (public read, catalogue-manager write only)', async () => {

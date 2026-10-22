@@ -8,7 +8,6 @@ libs/application/engagement/src/package.json
 libs/application/governance/src/package.json
 libs/application/identity/src/package.json
 libs/application/notifications/src/package.json
-libs/application/programs/src/package.json
 libs/application/shared/src/package.json
 libs/domain/accounts/src/package.json
 libs/domain/catalog/src/package.json
@@ -18,7 +17,6 @@ libs/domain/identity/src/package.json
 libs/domain/kernel/src/package.json
 libs/domain/models/src/package.json
 libs/domain/notifications/src/package.json
-libs/domain/programs/src/package.json
 libs/domain/scheduling/src/package.json
 libs/ecs-core/src/package.json
 libs/infrastructure/clock/src/package.json

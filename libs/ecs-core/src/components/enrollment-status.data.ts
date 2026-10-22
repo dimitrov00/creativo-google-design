@@ -2,8 +2,8 @@
  * A course's enrollment, set by the admin — the course's field
  * `enrollmentStatus`, the single source of truth for the Open/Upcoming
  * split on the public page (a course's timing "runs hot/cold"), not a date
- * derived from a start field. (Stored bytes stay today's lowercase
- * `CourseEnrollmentStatus` until the programs flip; the shims map.)
+ * derived from a start field. Stored SCREAMING since flip 4; the pages
+ * still print today's lowercase word through their words tables.
  */
 export const EnrollmentStatus = {
   Open: 'OPEN',
@@ -24,7 +24,10 @@ export function isEnrollmentStatus(raw: unknown): raw is EnrollmentStatus {
   return false;
 }
 
-/** Shown on the public page: open now, or opening (`Course.isOpenOrUpcoming`). */
+/**
+ * Shown on the public page: open now, or opening — `MarketingCourses`'
+ * `LISTED_STATUSES`, the values of index #11's `in` filter.
+ */
 export function isEnrollmentOpenOrUpcoming(status: EnrollmentStatus): boolean {
   return status !== EnrollmentStatus.Closed;
 }

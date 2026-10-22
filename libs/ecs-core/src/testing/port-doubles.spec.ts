@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   BarberStatus,
   BookingLifecycle,
+  EnrollmentStatus,
+  PositionStatus,
+  TenantConfig,
   BookingPolicy,
   CancellationReason,
   CancellationReasonSet,
@@ -40,13 +43,16 @@ import {
   Currency,
   CouponGrantId,
   CouponId,
+  CourseId,
   CustomerId,
+  EventId,
   GiftVoucherId,
   GrantStatus,
   LocationId,
   NotificationId,
   PriceCents,
   OtpId,
+  PositionId,
   RepositoryError,
   type Result,
   ScheduleExceptionId,
@@ -115,18 +121,30 @@ import {
   memoryCatalogReadPorts,
   memoryClientJournalPorts,
   memoryClientStatsReadPorts,
+  memoryClockPorts,
   memoryCouponVoucherPorts,
+  memoryCourseReadPorts,
+  memoryCourseWritePorts,
   memoryCustomerPorts,
+  memoryDefaultLocationPorts,
+  memoryIdPorts,
   memoryIdentityWorld,
   memoryImpersonationReadPorts,
   memoryInboxPorts,
+  memoryLocationLoadPorts,
   memoryLoyaltyAccountReadPorts,
   memoryLoyaltyCatalogReadPorts,
   memoryLoyaltyWorld,
   memoryOtpStorePorts,
+  memoryPositionReadPorts,
+  memoryPositionWritePorts,
   memoryProfilePorts,
+  memoryProgramsPorts,
+  memoryProgramsWorld,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
+  memoryShopEventReadPorts,
+  memoryShopEventWritePorts,
   memoryStreakDefinitionPorts,
   memoryStreakWorld,
   memoryUserLookupPorts,
@@ -143,7 +161,8 @@ import {
   provisionedUserFixture,
   registeredUserFixture,
 } from './identity.fixtures';
-import { applyWrites } from './test-support';
+import { FIXTURE_NOW_UTC_MS, applyWrites } from './test-support';
+import { courseOf, positionOf, shopEventOf } from './programs.fixtures';
 
 /** The one value a stream double emits. */
 async function first<T, E>(stream: Observable<Result<T, E>>): Promise<T> {
@@ -1270,5 +1289,224 @@ describe('memoryStreakWorld — the one state the rhythm doubles share', () => {
     expect(both.map((version) => version.id)).toEqual(['000002', '000001']);
     const one = unwrapOk(await ports.listStreakDefinitionVersions(CADENCE, 0));
     expect(one).toEqual([second]);
+  });
+});
+
+describe('memoryClockPorts / memoryIdPorts — the pinned clock and id source', () => {
+  it('answers the fixture instant, or the one given, on every read', () => {
+    const clock = memoryClockPorts();
+    expect(clock.nowUtcMs()).toBe(FIXTURE_NOW_UTC_MS);
+    expect(clock.nowUtcMs()).toBe(FIXTURE_NOW_UTC_MS);
+    const later = utcMs('2026-12-01T10:00:00.000+02:00');
+    expect(memoryClockPorts(later).nowUtcMs()).toBe(later);
+  });
+
+  it('issues prefix-1, prefix-2, … in call order', () => {
+    const ids = memoryIdPorts('evt');
+    expect([ids.nextId(), ids.nextId()]).toEqual(['evt-1', 'evt-2']);
+    expect(memoryIdPorts().nextId()).toBe('id-1');
+  });
+});
+
+describe('memoryProgramsWorld — the one state the programs doubles share', () => {
+  it('orders roles by sortOrder, ties by id ascending; filters on positionStatus or answers all', async () => {
+    const world = memoryProgramsWorld({
+      positions: [
+        positionOf('pos-b', { sortOrder: 1 }),
+        positionOf('pos-c', {
+          sortOrder: 0,
+          positionStatus: PositionStatus.Closed,
+        }),
+        positionOf('pos-a', { sortOrder: 1 }),
+      ],
+    });
+    const ports = memoryPositionReadPorts(world);
+    const ids = (rows: readonly { readonly id: string }[]) =>
+      rows.map((row) => row.id);
+
+    expect(ids(await first(ports.observePositions(null)))).toEqual([
+      'pos-c',
+      'pos-a',
+      'pos-b',
+    ]);
+    expect(
+      ids(await first(ports.observePositions(PositionStatus.Open))),
+    ).toEqual(['pos-a', 'pos-b']);
+  });
+
+  it('orders courses by sortOrder; filters on enrollmentStatus membership or answers all', async () => {
+    const world = memoryProgramsWorld({
+      courses: [
+        courseOf('c-closed', { enrollmentStatus: EnrollmentStatus.Closed }),
+        courseOf('c-up', {
+          enrollmentStatus: EnrollmentStatus.Upcoming,
+          sortOrder: 2,
+        }),
+        courseOf('c-open', { sortOrder: 1 }),
+      ],
+    });
+    const ports = memoryCourseReadPorts(world);
+
+    expect(
+      (
+        await first(
+          ports.observeCourses([
+            EnrollmentStatus.Open,
+            EnrollmentStatus.Upcoming,
+          ]),
+        )
+      ).map((row) => row.id),
+    ).toEqual(['c-open', 'c-up']);
+    expect(
+      (await first(ports.observeCourses(null))).map((row) => row.id),
+    ).toEqual(['c-closed', 'c-open', 'c-up']);
+  });
+
+  it('splits events on the instant: upcoming >= now ascending, past < now descending', async () => {
+    const now = FIXTURE_NOW_UTC_MS;
+    const world = memoryProgramsWorld({
+      events: [
+        shopEventOf('e-later', {
+          utcEpochMs: UtcEpochMs.plusMs(now, 7_200_000),
+        }),
+        shopEventOf('e-now', { utcEpochMs: now }),
+        shopEventOf('e-old', {
+          utcEpochMs: UtcEpochMs.plusMs(now, -7_200_000),
+        }),
+        shopEventOf('e-older', {
+          utcEpochMs: UtcEpochMs.plusMs(now, -14_400_000),
+        }),
+      ],
+    });
+    const ports = memoryShopEventReadPorts(world);
+
+    expect(
+      (await first(ports.observeEvents({ nowUtcMs: now, upcoming: true }))).map(
+        (row) => row.id,
+      ),
+    ).toEqual(['e-now', 'e-later']);
+    expect(
+      (
+        await first(ports.observeEvents({ nowUtcMs: now, upcoming: false }))
+      ).map((row) => row.id),
+    ).toEqual(['e-old', 'e-older']);
+  });
+
+  it('breaks a tie on the instant by id — ascending upcoming, DESCENDING past (Firestore’s __name__ rule)', async () => {
+    const now = FIXTURE_NOW_UTC_MS;
+    const past = UtcEpochMs.plusMs(now, -60_000);
+    const soon = UtcEpochMs.plusMs(now, 60_000);
+    const world = memoryProgramsWorld({
+      events: [
+        shopEventOf('e-a', { utcEpochMs: past }),
+        shopEventOf('e-b', { utcEpochMs: past }),
+        shopEventOf('u-b', { utcEpochMs: soon }),
+        shopEventOf('u-a', { utcEpochMs: soon }),
+      ],
+    });
+    const ports = memoryShopEventReadPorts(world);
+
+    expect(
+      (
+        await first(ports.observeEvents({ nowUtcMs: now, upcoming: false }))
+      ).map((row) => row.id),
+    ).toEqual(['e-b', 'e-a']);
+    expect(
+      (await first(ports.observeEvents({ nowUtcMs: now, upcoming: true }))).map(
+        (row) => row.id,
+      ),
+    ).toEqual(['u-a', 'u-b']);
+  });
+
+  it('caps the past at the latest 24 — on a tie at the cap, keeping the document Firestore keeps', async () => {
+    const now = FIXTURE_NOW_UTC_MS;
+    const tied = UtcEpochMs.plusMs(now, -24 * 3_600_000);
+    const events: ReturnType<typeof shopEventOf>[] = [];
+    for (let hour = 1; hour <= 23; hour++) {
+      events.push(
+        shopEventOf(`p-${String(hour).padStart(2, '0')}`, {
+          utcEpochMs: UtcEpochMs.plusMs(now, -hour * 3_600_000),
+        }),
+      );
+    }
+    events.push(shopEventOf('p-tie-a', { utcEpochMs: tied }));
+    events.push(shopEventOf('p-tie-b', { utcEpochMs: tied }));
+    const ports = memoryShopEventReadPorts(memoryProgramsWorld({ events }));
+
+    const rows = await first(
+      ports.observeEvents({ nowUtcMs: now, upcoming: false }),
+    );
+
+    expect(rows).toHaveLength(24);
+    expect(rows[0]?.id).toBe('p-01');
+    expect(rows[22]?.id).toBe('p-23');
+    expect(rows[23]?.id).toBe('p-tie-b');
+    expect(rows.some((row) => row.id === 'p-tie-a')).toBe(false);
+  });
+
+  it('loads by id (null when absent) and saves a full replace, seen by the next read', async () => {
+    const world = memoryProgramsWorld();
+    const positions = memoryPositionWritePorts(world);
+    const courses = memoryCourseWritePorts(world);
+    const events = memoryShopEventWritePorts(world);
+
+    expect(
+      unwrapOk(await positions.loadPosition(PositionId.of('p'))),
+    ).toBeNull();
+    expect(unwrapOk(await courses.loadCourse(CourseId.of('c')))).toBeNull();
+    expect(unwrapOk(await events.loadEvent(EventId.of('e')))).toBeNull();
+
+    unwrapOk(await positions.savePosition(positionOf('p', { sortOrder: 3 })));
+    unwrapOk(await positions.savePosition(positionOf('p')));
+    unwrapOk(await courses.saveCourse(courseOf('c')));
+    unwrapOk(await events.saveEvent(shopEventOf('e')));
+
+    expect(unwrapOk(await positions.loadPosition(PositionId.of('p')))).toEqual(
+      positionOf('p'),
+    );
+    expect(unwrapOk(await courses.loadCourse(CourseId.of('c')))).toEqual(
+      courseOf('c'),
+    );
+    expect(unwrapOk(await events.loadEvent(EventId.of('e')))).toEqual(
+      shopEventOf('e'),
+    );
+    expect(
+      await first(memoryPositionReadPorts(world).observePositions(null)),
+    ).toEqual([positionOf('p')]);
+  });
+
+  it('binds the admin suite over the one world — every member of the six bundles', () => {
+    expect(
+      Object.keys(memoryProgramsPorts(memoryProgramsWorld())).sort(),
+    ).toEqual([
+      'loadCourse',
+      'loadEvent',
+      'loadPosition',
+      'observeCourses',
+      'observeEvents',
+      'observePositions',
+      'saveCourse',
+      'saveEvent',
+      'savePosition',
+    ]);
+  });
+
+  it('loads a shop of the world by id, null when absent; the default shop is TenantConfig’s unless given', async () => {
+    const ports = memoryLocationLoadPorts(
+      memoryProgramsWorld({ locations: [locationFixture()] }),
+    );
+    expect(unwrapOk(await ports.loadLocation(FIXTURE_IDS.location))).toEqual(
+      locationFixture(),
+    );
+    expect(
+      unwrapOk(await ports.loadLocation(LocationId.of('loc-nowhere'))),
+    ).toBeNull();
+
+    expect(memoryDefaultLocationPorts().defaultLocationId).toBe(
+      TenantConfig.DEFAULT.defaultLocationId,
+    );
+    expect(
+      memoryDefaultLocationPorts(LocationId.of('loc-north')).defaultLocationId,
+    ).toBe('loc-north');
   });
 });

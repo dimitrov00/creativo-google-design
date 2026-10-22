@@ -1,3 +1,4 @@
+import { enrollmentStatusWords } from '@creativo/infrastructure/i18n';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -9,11 +10,14 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
-  Course,
-  CourseEnrollmentStatus,
-  COURSE_REPOSITORY,
-  ObserveCoursesUseCase,
-} from '@creativo/application/programs';
+  ENROLLMENT_STATUSES,
+  EnrollmentStatus,
+  LocalizedText,
+  isEnrollmentOpenOrUpcoming,
+} from '@core/components';
+import type { Course } from '@core/entities';
+import { Locale } from '@core/primitives';
+import { COURSE_READ_PORTS } from '@creativo/infrastructure/firebase-app';
 import {
   SiteFooterComponent,
   SiteHeaderComponent,
@@ -40,22 +44,30 @@ type CoursesListState =
   | { readonly kind: 'error' }
   | { readonly kind: 'ready'; readonly courses: readonly Course[] };
 
-type CoursesTab = Extract<CourseEnrollmentStatus, 'open' | 'upcoming'>;
+type CoursesTab =
+  typeof EnrollmentStatus.Open | typeof EnrollmentStatus.Upcoming;
+
+/** What the page lists — every course but a closed one (index #11's `in` filter). */
+const LISTED_STATUSES: readonly EnrollmentStatus[] = ENROLLMENT_STATUSES.filter(
+  isEnrollmentOpenOrUpcoming,
+);
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 
-const STATUS_TONES: Record<CourseEnrollmentStatus, UiBadgeTone> = {
-  open: 'accent',
-  upcoming: 'warning',
-  closed: 'neutral',
-};
+const STATUS_TONES = {
+  [EnrollmentStatus.Open]: 'accent',
+  [EnrollmentStatus.Upcoming]: 'warning',
+  [EnrollmentStatus.Closed]: 'neutral',
+} as const satisfies Record<EnrollmentStatus, UiBadgeTone>;
 
 /** `/courses` — public browse page for open/upcoming courses, replacing
  *  the landing courses teaser's Instagram-only CTA. Same shape as
- *  `MarketingCareers` plus a tab split (Open/Upcoming), hand-rolled with
- *  `ui-chip` exactly like `client-appointments`' list/calendar toggle —
- *  no dedicated tabs primitive exists in the design system yet. Chrome is
- *  the real site header/footer, solid (`uiOverHero=false`). */
+ *  `MarketingCareers` (one live read, `COURSE_READ_PORTS`, open and
+ *  upcoming courses) plus a client-side tab split (Open/Upcoming),
+ *  hand-rolled with `ui-chip` exactly like `client-appointments`'
+ *  list/calendar toggle — no dedicated tabs primitive exists in the design
+ *  system yet. Chrome is the real site header/footer, solid
+ *  (`uiOverHero=false`). */
 @Component({
   selector: 'cr-marketing-courses',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -81,24 +93,24 @@ const STATUS_TONES: Record<CourseEnrollmentStatus, UiBadgeTone> = {
   host: { 'data-testid': 'courses-page' },
 })
 export class MarketingCourses {
-  private readonly courseRepository = inject(COURSE_REPOSITORY);
-  private readonly observeCoursesUseCase = new ObserveCoursesUseCase(
-    this.courseRepository,
-  );
+  private readonly courses = inject(COURSE_READ_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly title = inject(Title);
 
   protected readonly instagramUrl = INSTAGRAM_URL;
-  protected readonly tab = signal<CoursesTab>('open');
+  /** The dictionary, for the template's tab chips (never bare literals). */
+  protected readonly EnrollmentStatus = EnrollmentStatus;
+  protected readonly tab = signal<CoursesTab>(EnrollmentStatus.Open);
 
-  private readonly result = toSignal(this.observeCoursesUseCase.execute(), {
-    initialValue: undefined,
-  });
+  private readonly result = toSignal(
+    this.courses.observeCourses(LISTED_STATUSES),
+    { initialValue: undefined },
+  );
 
   protected readonly state = computed<CoursesListState>(() => {
     const result = this.result();
     if (result === undefined) return { kind: 'loading' };
-    if (result.isFailure()) return { kind: 'error' };
+    if (!result.ok) return { kind: 'error' };
     return { kind: 'ready', courses: result.value };
   });
 
@@ -118,15 +130,25 @@ export class MarketingCourses {
     this.tab.set(next);
   }
 
-  protected text(localized: { get(locale: 'en' | 'bg'): string }): string {
-    return localized.get(this.transloco.getActiveLang() as 'en' | 'bg');
+  /** The active language's string — `bg` for every language but `en`. */
+  protected text(localized: LocalizedText): string {
+    return LocalizedText.pick(
+      localized,
+      this.transloco.getActiveLang() === Locale.En ? Locale.En : Locale.Bg,
+    );
   }
 
   protected applyHref(course: Course): string {
     return course.applyUrl ?? this.instagramUrl;
   }
 
-  protected statusTone(status: CourseEnrollmentStatus): UiBadgeTone {
-    return STATUS_TONES[status];
+  protected statusTone(enrollmentStatus: EnrollmentStatus): UiBadgeTone {
+    // eslint-disable-next-line security/detect-object-injection -- closed union.
+    return STATUS_TONES[enrollmentStatus];
+  }
+
+  protected statusWord(enrollmentStatus: EnrollmentStatus): string {
+    // eslint-disable-next-line security/detect-object-injection -- closed union.
+    return enrollmentStatusWords[enrollmentStatus];
   }
 }

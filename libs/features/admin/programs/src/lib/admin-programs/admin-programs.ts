@@ -7,12 +7,15 @@ import {
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective } from '@jsverse/transloco';
 import {
-  Course,
-  CourseEnrollmentStatus,
-  Position,
+  type CourseInput,
+  EnrollmentStatus,
+  type PositionInput,
   PositionStatus,
-  ShopEvent,
-} from '@creativo/application/programs';
+  ProgramInput,
+  type ShopEventInput,
+} from '@core/components';
+import type { Course, Position, ShopEvent } from '@core/entities';
+import type { LocalDate, MinuteOfDay } from '@core/primitives';
 import { UiButton, UiChip, UiTextField } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
@@ -23,6 +26,10 @@ import {
 } from '@creativo/ui/patterns';
 import { UiFrameDirective } from '@creativo/ui/modifiers';
 import { AdminProgramsStore, ProgramsTab } from '../admin-programs.store';
+import {
+  enrollmentStatusWords,
+  positionStatusWords,
+} from '@creativo/infrastructure/i18n';
 
 type PositionEditing = {
   readonly kind: 'position';
@@ -37,6 +44,21 @@ type EventEditing = {
   readonly source: ShopEvent | null;
 };
 type Editing = PositionEditing | CourseEditing | EventEditing | null;
+
+const twoDigits = (value: number): string => String(value).padStart(2, '0');
+
+/**
+ * An event's shop wall clock as `<input type="datetime-local">` reads it
+ * (`YYYY-MM-DDTHH:mm`, zero-padded) — the edit form's prefill (F4-11).
+ * Formatting is the page's (Law 5); parsing it back is `ProgramsSystem`'s.
+ */
+function datetimeLocalOf(
+  localDate: LocalDate,
+  startMinutes: MinuteOfDay,
+): string {
+  const hours = Math.floor(startMinutes / 60);
+  return `${localDate}T${twoDigits(hours)}:${twoDigits(startMinutes % 60)}`;
+}
 
 /**
  * `/admin/programs` — the one place staff manage Positions/Courses/Events.
@@ -72,6 +94,13 @@ export class AdminPrograms {
   protected readonly store = inject(AdminProgramsStore);
   private readonly title = inject(Title);
 
+  /** The status dictionaries, for the chips — the template never spells a stored tag. */
+  protected readonly PositionStatus = PositionStatus;
+  protected readonly EnrollmentStatus = EnrollmentStatus;
+  /** The rows' trailing status text — today's lowercase word (F4-7). */
+  protected readonly positionStatusWords = positionStatusWords;
+  protected readonly enrollmentStatusWords = enrollmentStatusWords;
+
   protected readonly tab = signal<ProgramsTab>('positions');
   protected readonly editing = signal<Editing>(null);
   protected readonly saving = signal(false);
@@ -82,7 +111,9 @@ export class AdminPrograms {
   protected readonly positionTitleBg = signal('');
   protected readonly positionSummaryEn = signal('');
   protected readonly positionSummaryBg = signal('');
-  protected readonly positionStatus = signal<PositionStatus>('open');
+  protected readonly positionStatus = signal<PositionStatus>(
+    PositionStatus.Open,
+  );
   protected readonly positionApplyUrl = signal('');
   protected readonly positionSortOrder = signal(0);
 
@@ -91,8 +122,9 @@ export class AdminPrograms {
   protected readonly courseTitleBg = signal('');
   protected readonly courseDescriptionEn = signal('');
   protected readonly courseDescriptionBg = signal('');
-  protected readonly courseEnrollmentStatus =
-    signal<CourseEnrollmentStatus>('open');
+  protected readonly courseEnrollmentStatus = signal<EnrollmentStatus>(
+    EnrollmentStatus.Open,
+  );
   protected readonly courseStartsLabelEn = signal('');
   protected readonly courseStartsLabelBg = signal('');
   protected readonly courseApplyUrl = signal('');
@@ -103,7 +135,8 @@ export class AdminPrograms {
   protected readonly eventTitleBg = signal('');
   protected readonly eventDescriptionEn = signal('');
   protected readonly eventDescriptionBg = signal('');
-  protected readonly eventStartDateIso = signal('');
+  /** The shop wall clock as typed, `YYYY-MM-DDTHH:mm`. */
+  protected readonly eventStartsAt = signal('');
   protected readonly eventLocationId = signal('');
   protected readonly eventApplyUrl = signal('');
   protected readonly eventSortOrder = signal(0);
@@ -120,74 +153,41 @@ export class AdminPrograms {
   protected startCreate(): void {
     const tab = this.tab();
     if (tab === 'positions') {
-      this.positionTitleEn.set('');
-      this.positionTitleBg.set('');
-      this.positionSummaryEn.set('');
-      this.positionSummaryBg.set('');
-      this.positionStatus.set('open');
-      this.positionApplyUrl.set('');
-      this.positionSortOrder.set(0);
+      this.fillPosition(ProgramInput.blankPosition());
       this.editing.set({ kind: 'position', source: null });
     } else if (tab === 'courses') {
-      this.courseTitleEn.set('');
-      this.courseTitleBg.set('');
-      this.courseDescriptionEn.set('');
-      this.courseDescriptionBg.set('');
-      this.courseEnrollmentStatus.set('open');
-      this.courseStartsLabelEn.set('');
-      this.courseStartsLabelBg.set('');
-      this.courseApplyUrl.set('');
-      this.courseSortOrder.set(0);
+      this.fillCourse(ProgramInput.blankCourse());
       this.editing.set({ kind: 'course', source: null });
     } else {
-      this.eventTitleEn.set('');
-      this.eventTitleBg.set('');
-      this.eventDescriptionEn.set('');
-      this.eventDescriptionBg.set('');
-      this.eventStartDateIso.set('');
-      this.eventLocationId.set('');
-      this.eventApplyUrl.set('');
-      this.eventSortOrder.set(0);
+      this.fillEvent(ProgramInput.blankShopEvent());
       this.editing.set({ kind: 'event', source: null });
     }
     this.saveFailed.set(false);
   }
 
   protected startEditPosition(position: Position): void {
-    this.positionTitleEn.set(position.title.en);
-    this.positionTitleBg.set(position.title.bg);
-    this.positionSummaryEn.set(position.summary.en);
-    this.positionSummaryBg.set(position.summary.bg);
-    this.positionStatus.set(position.status);
-    this.positionApplyUrl.set(position.applyUrl ?? '');
-    this.positionSortOrder.set(position.sortOrder);
+    this.fillPosition({ ...position, applyUrl: position.applyUrl ?? '' });
     this.editing.set({ kind: 'position', source: position });
     this.saveFailed.set(false);
   }
 
   protected startEditCourse(course: Course): void {
-    this.courseTitleEn.set(course.title.en);
-    this.courseTitleBg.set(course.title.bg);
-    this.courseDescriptionEn.set(course.description.en);
-    this.courseDescriptionBg.set(course.description.bg);
-    this.courseEnrollmentStatus.set(course.enrollmentStatus);
-    this.courseStartsLabelEn.set(course.startsLabel?.en ?? '');
-    this.courseStartsLabelBg.set(course.startsLabel?.bg ?? '');
-    this.courseApplyUrl.set(course.applyUrl ?? '');
-    this.courseSortOrder.set(course.sortOrder);
+    this.fillCourse({
+      ...course,
+      startsLabel: course.startsLabel ?? ProgramInput.blankCourse().startsLabel,
+      applyUrl: course.applyUrl ?? '',
+    });
     this.editing.set({ kind: 'course', source: course });
     this.saveFailed.set(false);
   }
 
   protected startEditEvent(event: ShopEvent): void {
-    this.eventTitleEn.set(event.title.en);
-    this.eventTitleBg.set(event.title.bg);
-    this.eventDescriptionEn.set(event.description.en);
-    this.eventDescriptionBg.set(event.description.bg);
-    this.eventStartDateIso.set(event.startDate.toISO().slice(0, 16));
-    this.eventLocationId.set(event.locationId?.value ?? '');
-    this.eventApplyUrl.set(event.applyUrl ?? '');
-    this.eventSortOrder.set(event.sortOrder);
+    this.fillEvent({
+      ...event,
+      startsAt: datetimeLocalOf(event.localDate, event.startMinutes),
+      locationId: event.locationId ?? '',
+      applyUrl: event.applyUrl ?? '',
+    });
     this.editing.set({ kind: 'event', source: event });
     this.saveFailed.set(false);
   }
@@ -207,40 +207,17 @@ export class AdminPrograms {
     if (editing.kind === 'position') {
       succeeded = await this.store.submitPosition({
         id: editing.source?.id ?? null,
-        title: { en: this.positionTitleEn(), bg: this.positionTitleBg() },
-        summary: { en: this.positionSummaryEn(), bg: this.positionSummaryBg() },
-        status: this.positionStatus(),
-        applyUrl: this.positionApplyUrl(),
-        sortOrder: this.positionSortOrder(),
+        input: this.positionInput(),
       });
     } else if (editing.kind === 'course') {
       succeeded = await this.store.submitCourse({
         id: editing.source?.id ?? null,
-        title: { en: this.courseTitleEn(), bg: this.courseTitleBg() },
-        description: {
-          en: this.courseDescriptionEn(),
-          bg: this.courseDescriptionBg(),
-        },
-        enrollmentStatus: this.courseEnrollmentStatus(),
-        startsLabel: {
-          en: this.courseStartsLabelEn(),
-          bg: this.courseStartsLabelBg(),
-        },
-        applyUrl: this.courseApplyUrl(),
-        sortOrder: this.courseSortOrder(),
+        input: this.courseInput(),
       });
     } else {
       succeeded = await this.store.submitEvent({
         id: editing.source?.id ?? null,
-        title: { en: this.eventTitleEn(), bg: this.eventTitleBg() },
-        description: {
-          en: this.eventDescriptionEn(),
-          bg: this.eventDescriptionBg(),
-        },
-        startDateIso: this.eventStartDateIso(),
-        locationId: this.eventLocationId(),
-        applyUrl: this.eventApplyUrl(),
-        sortOrder: this.eventSortOrder(),
+        input: this.eventInput(),
       });
     }
 
@@ -258,5 +235,85 @@ export class AdminPrograms {
 
   protected numberValue(event: Event): number {
     return Number((event.target as HTMLInputElement).value) || 0;
+  }
+
+  /** Loads a form — a blank one to create, a stored one (absent optionals blank) to edit. */
+  private fillPosition(input: PositionInput): void {
+    this.positionTitleEn.set(input.title.en);
+    this.positionTitleBg.set(input.title.bg);
+    this.positionSummaryEn.set(input.summary.en);
+    this.positionSummaryBg.set(input.summary.bg);
+    this.positionStatus.set(input.positionStatus);
+    this.positionApplyUrl.set(input.applyUrl);
+    this.positionSortOrder.set(input.sortOrder);
+  }
+
+  private fillCourse(input: CourseInput): void {
+    this.courseTitleEn.set(input.title.en);
+    this.courseTitleBg.set(input.title.bg);
+    this.courseDescriptionEn.set(input.description.en);
+    this.courseDescriptionBg.set(input.description.bg);
+    this.courseEnrollmentStatus.set(input.enrollmentStatus);
+    this.courseStartsLabelEn.set(input.startsLabel.en);
+    this.courseStartsLabelBg.set(input.startsLabel.bg);
+    this.courseApplyUrl.set(input.applyUrl);
+    this.courseSortOrder.set(input.sortOrder);
+  }
+
+  private fillEvent(input: ShopEventInput): void {
+    this.eventTitleEn.set(input.title.en);
+    this.eventTitleBg.set(input.title.bg);
+    this.eventDescriptionEn.set(input.description.en);
+    this.eventDescriptionBg.set(input.description.bg);
+    this.eventStartsAt.set(input.startsAt);
+    this.eventLocationId.set(input.locationId);
+    this.eventApplyUrl.set(input.applyUrl);
+    this.eventSortOrder.set(input.sortOrder);
+  }
+
+  /**
+   * The role form as typed. The form has no location field, so every save
+   * sends `locationIds: []` — an edit wipes stored ones, as before (F4-8).
+   */
+  private positionInput(): PositionInput {
+    return {
+      title: { en: this.positionTitleEn(), bg: this.positionTitleBg() },
+      summary: { en: this.positionSummaryEn(), bg: this.positionSummaryBg() },
+      locationIds: [],
+      positionStatus: this.positionStatus(),
+      applyUrl: this.positionApplyUrl(),
+      sortOrder: this.positionSortOrder(),
+    };
+  }
+
+  private courseInput(): CourseInput {
+    return {
+      title: { en: this.courseTitleEn(), bg: this.courseTitleBg() },
+      description: {
+        en: this.courseDescriptionEn(),
+        bg: this.courseDescriptionBg(),
+      },
+      enrollmentStatus: this.courseEnrollmentStatus(),
+      startsLabel: {
+        en: this.courseStartsLabelEn(),
+        bg: this.courseStartsLabelBg(),
+      },
+      applyUrl: this.courseApplyUrl(),
+      sortOrder: this.courseSortOrder(),
+    };
+  }
+
+  private eventInput(): ShopEventInput {
+    return {
+      title: { en: this.eventTitleEn(), bg: this.eventTitleBg() },
+      description: {
+        en: this.eventDescriptionEn(),
+        bg: this.eventDescriptionBg(),
+      },
+      startsAt: this.eventStartsAt(),
+      locationId: this.eventLocationId(),
+      applyUrl: this.eventApplyUrl(),
+      sortOrder: this.eventSortOrder(),
+    };
   }
 }

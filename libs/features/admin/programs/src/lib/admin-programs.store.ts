@@ -1,219 +1,114 @@
-import { Injectable, computed, inject } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { combineLatest, map } from 'rxjs';
+import type {
+  CourseInput,
+  PositionInput,
+  ShopEventInput,
+} from '@core/components';
+import type { Course, Position, ShopEvent } from '@core/entities';
 import {
-  COURSE_REPOSITORY,
-  Course,
-  CourseEnrollmentStatus,
-  CourseId,
-  CreateCourseUseCase,
-  CreatePositionUseCase,
-  CreateShopEventUseCase,
-  ObserveAllCoursesUseCase,
-  ObserveAllPositionsUseCase,
-  ObservePastShopEventsUseCase,
-  ObserveUpcomingShopEventsUseCase,
-  POSITION_REPOSITORY,
-  Position,
-  PositionId,
-  PositionStatus,
-  Result,
-  SHOP_EVENT_REPOSITORY,
-  ShopEvent,
-  ShopEventId,
-  UpdateCourseUseCase,
-  UpdatePositionUseCase,
-  UpdateShopEventUseCase,
-  combine,
-  fail,
-  ok,
-} from '@creativo/application/programs';
-import { ID_GENERATOR, RepositoryError } from '@creativo/application/shared';
+  type WriteProgramCommand,
+  writeCourse,
+  writePosition,
+  writeShopEvent,
+} from '@core/pipelines';
+import type { CourseId, EventId, PositionId } from '@core/primitives';
+import {
+  CLOCK_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  ID_PORTS,
+  LOCATION_LOAD_PORTS,
+  PROGRAMS_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 
 export type ProgramsTab = 'positions' | 'courses' | 'events';
 
-export interface LocalizedInput {
-  readonly en: string;
-  readonly bg: string;
-}
-
-export interface PositionFormInput {
-  readonly id: PositionId | null;
-  readonly title: LocalizedInput;
-  readonly summary: LocalizedInput;
-  readonly status: PositionStatus;
-  readonly applyUrl: string;
-  readonly sortOrder: number;
-}
-
-export interface CourseFormInput {
-  readonly id: CourseId | null;
-  readonly title: LocalizedInput;
-  readonly description: LocalizedInput;
-  readonly enrollmentStatus: CourseEnrollmentStatus;
-  readonly startsLabel: LocalizedInput;
-  readonly applyUrl: string;
-  readonly sortOrder: number;
-}
-
-export interface ShopEventFormInput {
-  readonly id: ShopEventId | null;
-  readonly title: LocalizedInput;
-  readonly description: LocalizedInput;
-  readonly startDateIso: string;
-  readonly locationId: string;
-  readonly applyUrl: string;
-  readonly sortOrder: number;
-}
-
-/** The zone every shop event/course/position on this product is scheduled in — matches `SCHEDULING_ZONE` in `CreateBookingUseCase` and the Firestore event adapter. */
-const PROGRAMS_ZONE = 'Europe/Sofia';
-
-function toResultUndefinedIfEmpty(value: string): string | undefined {
-  return value.trim().length > 0 ? value.trim() : undefined;
-}
-
 /**
- * Page-scoped store for `/admin/programs` — mirrors `AppointmentsStore`'s
- * shape (live lists via `toSignal(useCase.execute())`), plus one
- * create/update pair per entity. Component-provided, not root: nothing
- * outside this screen needs admin content-management state.
+ * Page-scoped store for `/admin/programs` — the three live lists and one
+ * save per kind. Component-provided, not root: nothing outside this screen
+ * needs admin content-management state.
+ *
+ * Programs content stays a rules-guarded admin write (D9(b)), so each save
+ * is a browser pipeline of `@core/pipelines` over the programs suite: it
+ * reads the stored document on an update (and, for an event, the shop
+ * whose zone places it), lets `ProgramsSystem` judge the form, and writes
+ * the flat entity whole. The page reads only whether it saved.
  */
 @Injectable()
 export class AdminProgramsStore {
-  private readonly positionRepository = inject(POSITION_REPOSITORY);
-  private readonly courseRepository = inject(COURSE_REPOSITORY);
-  private readonly eventRepository = inject(SHOP_EVENT_REPOSITORY);
-  private readonly idGenerator = inject(ID_GENERATOR);
+  private readonly programs = inject(PROGRAMS_PORTS);
+  private readonly locations = inject(LOCATION_LOAD_PORTS);
+  private readonly defaultLocation = inject(DEFAULT_LOCATION_PORTS);
+  private readonly ids = inject(ID_PORTS);
 
-  private readonly observeAllPositions = new ObserveAllPositionsUseCase(
-    this.positionRepository,
-  );
-  private readonly observeAllCourses = new ObserveAllCoursesUseCase(
-    this.courseRepository,
-  );
-  private readonly observeUpcomingEvents = new ObserveUpcomingShopEventsUseCase(
-    this.eventRepository,
-  );
-  private readonly observePastEvents = new ObservePastShopEventsUseCase(
-    this.eventRepository,
-  );
+  /** The instant splitting upcoming from past events — read ONCE, at construction, never rolling (F4-8). */
+  private readonly nowUtcMs = inject(CLOCK_PORTS).nowUtcMs();
 
-  private readonly createPositionUseCase = new CreatePositionUseCase(
-    this.positionRepository,
-    this.idGenerator,
-  );
-  private readonly updatePositionUseCase = new UpdatePositionUseCase(
-    this.positionRepository,
-  );
-  private readonly createCourseUseCase = new CreateCourseUseCase(
-    this.courseRepository,
-    this.idGenerator,
-  );
-  private readonly updateCourseUseCase = new UpdateCourseUseCase(
-    this.courseRepository,
-  );
-  private readonly createEventUseCase = new CreateShopEventUseCase(
-    this.eventRepository,
-    this.idGenerator,
-  );
-  private readonly updateEventUseCase = new UpdateShopEventUseCase(
-    this.eventRepository,
-  );
-
-  private readonly positionsResult = toSignal(
-    this.observeAllPositions.execute(),
-    {
-      initialValue: undefined,
-    },
-  );
-  readonly positions = computed<readonly Position[]>(() => {
-    const result = this.positionsResult();
-    return result?.isSuccess() ? result.value : [];
+  private readonly savePosition = writePosition({
+    ...this.programs,
+    ...this.ids,
+  });
+  private readonly saveCourse = writeCourse({ ...this.programs, ...this.ids });
+  private readonly saveEvent = writeShopEvent({
+    ...this.programs,
+    ...this.locations,
+    ...this.defaultLocation,
+    ...this.ids,
   });
 
-  private readonly coursesResult = toSignal(this.observeAllCourses.execute(), {
-    initialValue: undefined,
-  });
-  readonly courses = computed<readonly Course[]>(() => {
-    const result = this.coursesResult();
-    return result?.isSuccess() ? result.value : [];
-  });
+  /** Every role, `sortOrder` order; empty until the first answer and on a failed read. */
+  readonly positions = toSignal(
+    this.programs
+      .observePositions(null)
+      .pipe(
+        map((result): readonly Position[] => (result.ok ? result.value : [])),
+      ),
+    { initialValue: [] },
+  );
 
-  private readonly eventsResult = toSignal(
+  /** Every course, `sortOrder` order; empty until the first answer and on a failed read. */
+  readonly courses = toSignal(
+    this.programs
+      .observeCourses(null)
+      .pipe(
+        map((result): readonly Course[] => (result.ok ? result.value : [])),
+      ),
+    { initialValue: [] },
+  );
+
+  /**
+   * The upcoming events (soonest first, every one) followed by the past
+   * ones (latest first, the latest 24) — empty when EITHER side fails to
+   * read (F4-8).
+   */
+  readonly events = toSignal(
     combineLatest([
-      this.observeUpcomingEvents.execute(),
-      this.observePastEvents.execute(),
+      this.programs.observeEvents({ nowUtcMs: this.nowUtcMs, upcoming: true }),
+      this.programs.observeEvents({ nowUtcMs: this.nowUtcMs, upcoming: false }),
     ]).pipe(
-      map(([upcoming, past]): Result<readonly ShopEvent[], RepositoryError> =>
-        combineEventPages(upcoming, past),
+      map(([upcoming, past]): readonly ShopEvent[] =>
+        upcoming.ok && past.ok ? [...upcoming.value, ...past.value] : [],
       ),
     ),
-    { initialValue: undefined },
+    { initialValue: [] },
   );
-  readonly events = computed<readonly ShopEvent[]>(() => {
-    const result = this.eventsResult();
-    return result?.isSuccess() ? result.value : [];
-  });
 
-  async submitPosition(input: PositionFormInput): Promise<boolean> {
-    const props = {
-      title: input.title,
-      summary: input.summary,
-      locationIds: [],
-      status: input.status,
-      applyUrl: toResultUndefinedIfEmpty(input.applyUrl),
-      sortOrder: input.sortOrder,
-    };
-    const result = input.id
-      ? await this.updatePositionUseCase.execute({ id: input.id, ...props })
-      : await this.createPositionUseCase.execute(props);
-    return result.isSuccess();
+  async submitPosition(
+    command: WriteProgramCommand<PositionId, PositionInput>,
+  ): Promise<boolean> {
+    return (await this.savePosition(command)).ok;
   }
 
-  async submitCourse(input: CourseFormInput): Promise<boolean> {
-    const props = {
-      title: input.title,
-      description: input.description,
-      enrollmentStatus: input.enrollmentStatus,
-      startsLabel:
-        toResultUndefinedIfEmpty(input.startsLabel.en) !== undefined ||
-        toResultUndefinedIfEmpty(input.startsLabel.bg) !== undefined
-          ? input.startsLabel
-          : undefined,
-      applyUrl: toResultUndefinedIfEmpty(input.applyUrl),
-      sortOrder: input.sortOrder,
-    };
-    const result = input.id
-      ? await this.updateCourseUseCase.execute({ id: input.id, ...props })
-      : await this.createCourseUseCase.execute(props);
-    return result.isSuccess();
+  async submitCourse(
+    command: WriteProgramCommand<CourseId, CourseInput>,
+  ): Promise<boolean> {
+    return (await this.saveCourse(command)).ok;
   }
 
-  async submitEvent(input: ShopEventFormInput): Promise<boolean> {
-    const props = {
-      title: input.title,
-      description: input.description,
-      startDateIso: input.startDateIso,
-      timezone: PROGRAMS_ZONE,
-      locationId: toResultUndefinedIfEmpty(input.locationId),
-      applyUrl: toResultUndefinedIfEmpty(input.applyUrl),
-      sortOrder: input.sortOrder,
-    };
-    const result = input.id
-      ? await this.updateEventUseCase.execute({ id: input.id, ...props })
-      : await this.createEventUseCase.execute(props);
-    return result.isSuccess();
+  async submitEvent(
+    command: WriteProgramCommand<EventId, ShopEventInput>,
+  ): Promise<boolean> {
+    return (await this.saveEvent(command)).ok;
   }
-}
-
-function combineEventPages(
-  upcoming: Result<readonly ShopEvent[], RepositoryError>,
-  past: Result<readonly ShopEvent[], RepositoryError>,
-): Result<readonly ShopEvent[], RepositoryError> {
-  const combined = combine([upcoming, past]);
-  if (combined.isFailure()) {
-    return fail(combined.error[0] as RepositoryError);
-  }
-  return ok(combined.value.flat());
 }

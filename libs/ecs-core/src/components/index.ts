@@ -65,6 +65,7 @@ export * from './placement-policy.data';
 export * from './points-expiry.data';
 export * from './points.data';
 export * from './principal.data';
+export * from './program-input.data';
 export * from './program-status.data';
 export * from './punch-card.data';
 export * from './recurrence-rule.data';

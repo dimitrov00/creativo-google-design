@@ -4,7 +4,8 @@ Read this first if you are an agent (Claude Code, Codex, Cursor, Gemini, …) or
 a developer picking up the ECS / data-oriented migration. It says where the
 work stands, what to do next in which order, and how to prove each step.
 Last updated 2026-10-22 (flip 1 complete; Law 9 port-composition pass;
-flips 2 and 3 integrated; flip 4 next).
+flips 2, 3 and 4 integrated — the Phase 3b flips are complete; Phase 4
+next).
 
 ## 1. Read these, in this order
 
@@ -37,13 +38,14 @@ flips 2 and 3 integrated; flip 4 next).
 | Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)         | done — 2026-10-21, full gate green                                                                                                                                        | the "Law 9" commit                                           |
 | **Phase 3b flip 2 — identity and accounts**                                           | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                    | the "flip 2 commit"                                          |
 | **Phase 3b flip 3 — loyalty and invitations**                                         | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                             | the "flip 3 commit"                                          |
-| Phase 3b flip 4 — programs                                                            | not started                                                                                                                                                               |                                                              |
+| **Phase 3b flip 4 — programs**                                                        | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                              | the "flip 4 commit"                                          |
 | Phase 4 — web integration and legacy deletion                                         | not started                                                                                                                                                               |                                                              |
 
-`main` carries the flip-1, flip-2 and flip-3 reshapes and the Law 9 port
-pass, and the FULL gate of §4 is green on it (baseline reds only). The last
-fully green commit is the "flip 3" commit; check `git log` for anything
-newer.
+`main` carries the flip-1 to flip-4 reshapes and the Law 9 port pass, and
+the FULL gate of §4 is green on it (baseline reds only). The Phase 3b flips
+are complete; the blueprint's end-of-3b graph/bundle assertion is open
+(Phase 4, flip-4 plan F4-2). The last fully green commit is the "flip 4"
+commit; check `git log` for anything newer.
 
 ## 3. What to do next, in order
 
@@ -202,8 +204,66 @@ Same recipe as flip 1 (blueprint §6 Phase 3; closures in the runbook):
   `redeemInvitation` pipeline and the invitations rules tightening are
   Phase 4's (F3-2); the plan's §10 open questions stand on their
   defaults.
-- **Flip 4 — programs:** `positions`, `courses`, `events` (admin writes stay
-  rules-guarded, D9(b)).
+- **Flip 4 — programs: integrated 2026-10-22** (plan
+  `docs/architecture/flips/flip-4-programs.md`; its §8.1 is the integration
+  record, its §11 ledgers prove every case: web adapters 3 deleted specs /
+  12 cases, domain 3 / 29, application 4 / 8, each with a successor or a
+  `dead:` reason; no re-targeted case lost). `positions`
+  (`positionStatus: 'OPEN' | 'CLOSED'`, index #12 re-keyed to
+  `positionStatus, sortOrder`, a `positions.locationIds` `indexes: []`
+  override), `courses` (`enrollmentStatus` SCREAMING, #11 unchanged) and
+  `events` (`localDate` + `startMinutes` + `utcEpochMs`, no `startDateIso`,
+  no `timezone`) are the flat ecs-core bodies, every optional present as
+  `null`. Admin writes stay rules-guarded browser writes (D9(b), no rules
+  edit): `@core/pipelines` `program-content` (`writePosition`,
+  `writeCourse`, `writeShopEvent`) over `ProgramsSystem` — the event's
+  instant computed once at ingestion on its location's zone, else the
+  default shop's (`DefaultLocationPorts`, bound from
+  `TenantConfig.DEFAULT` in `cfg`; flip 4 is its first runtime reader). The
+  web binds `PROGRAMS_PORTS`, `POSITION_READ_PORTS`, `COURSE_READ_PORTS`,
+  `SHOP_EVENT_READ_PORTS`, `LOCATION_LOAD_PORTS` (`programs.adapter.ts`,
+  `catalog.adapter.ts` `locationLoadPorts`), `DEFAULT_LOCATION_PORTS`, and
+  the new `CLOCK_PORTS`/`ID_PORTS` (`browser-runtime.adapter.ts`; the
+  legacy `CLOCK`/`ID_GENERATOR` stay for the features of flips 1–3). The
+  status words stay today's lowercase through words tables (F4-7); the
+  `/events` date is formatted from the wall clock with `formatWallClock`
+  (equal to the legacy Luxon output in en and bg, F4-11).
+  `libs/application/programs`, `libs/domain/programs` and the three class
+  adapters are deleted. Six departures, each pinned (plan §11.4): a
+  spring-forward gap start refused `DST_GAP_INVALID_TIME` (a); stored bodies
+  answered as stored (b); the zone from the location with the default
+  shop's fallback, refused `ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN` only when
+  neither is stored (c); a `/` in a location id refused (d); the
+  upcoming/past split on the instant (e); only the `datetime-local` form
+  accepted (f). **Deploy precondition (runbook §3):** before the web
+  carrying flip 4 deploys, `locations/<TenantConfig.DEFAULT.defaultLocationId>`
+  (`loc-center` in the seed; the production id is flatten-spec OQ-2's, not
+  yet confirmed) must exist in the target project with a valid IANA
+  `timeZone` — otherwise an event save that names no location, or one with
+  no document, is refused; deploy index #12's new key before the web.
+  Integrator rulings (§8.1): the four new codes leave the edge as
+  `not-found` / `failed-precondition` (no callable returns them); the
+  end-of-3b gate's three false hits fixed (two scoped exclusions with
+  reasons, the `@core/testing` helpers' `hours` parameter renamed); an
+  emulator spec's cache-first first snapshot fixed by one client per read.
+  Gate: §4 all green but the baseline reds (unit 6, typecheck 3 projects,
+  e2e 19 failed / 41 passed), `verify:p0` all proved, `test:emulator`
+  62 + 251, the §6 grep gate (runbook §4.4) 17 ok, §4.2 28 ok, §4.3 22 ok,
+  the end-of-3b gate (§4.5) PASS; the smoke 58 checks pass. Carried
+  forward, not blocking: the end-of-3b graph/bundle half (seven
+  `apps/functions` files still import `@creativo/(application|domain)/*`,
+  the functions dist still lists `@angular/*`, `rxjs`, `luxon`,
+  `dinero.js`; `functions-deps.baseline.json` not re-recorded) is Phase 4's
+  (F4-2); the admin view-state `kind` unions are a flatten-pass candidate;
+  rules tightenings for the programs collections, a location picker, i18n of
+  the status words and a programs e2e journey are follow-ups (F4-2,
+  §10); pre-existing and outside the flip, seen in the smoke: an
+  intermittent dev-mode Angular assertion in the shared
+  `SiteFooterComponent` on `/careers`, `/courses`, `/events` (the footer's
+  locale toggle constructs `LanguageService`, whose constructor re-renders
+  the footer's `*transloco` view inside its first create pass) and a stored
+  `ui-lang = 'en'` not restored on a fresh load; the plan's §10 open
+  questions stand on their defaults.
 
 ### 3.3 Phase 4 — client integration and legacy deletion (blueprint §6 Phase 4)
 
@@ -214,6 +274,11 @@ adapter (D12(b)); remove `luxon`, `@types/luxon`, `dinero.js` from
 `package.json`; the rules tightenings (impersonationSessions write false,
 invitation redemption via callable, users allowlist) each with its web switch;
 rewrite `module-boundaries.md`, delete `domain-model.md` (D6).
+It also closes the blueprint's end-of-3b graph/bundle assertion that flip 4
+deferred (flip-4 plan F4-2, runbook §4.5's measured state): no `functions →
+libs/application/*` edge, no `@angular/*` or `rxjs` in
+`dist/apps/functions/package.json`, `functions-deps.baseline.json`
+re-recorded.
 
 ## 4. The gate — every step must pass it before landing on `main`
 

@@ -7,9 +7,15 @@ import {
   BarberId,
   BookingError,
   BookingStatus,
+  CourseId,
   EndMinute,
+  EngagementError,
+  EngagementErrorCode,
+  EventId,
   IdentityError,
+  LocationId,
   MinuteCount,
+  PositionId,
   PrimitiveErrorCode,
   Result,
   SchedulingErrorCode,
@@ -723,6 +729,44 @@ describe('edge — the wire table', () => {
         wire({ code: LegacyWireCode.InvalidInput, reason: 'challengeId' })
           .details,
       ).toEqual({ code: 'invalid_input', params: { reason: 'challengeId' } });
+    });
+
+    it('the programs refusals no callable returns yet (flip 4, D9(b)) leave by their kind — a missing program `not-found`, an event no zone places `failed-precondition`', () => {
+      expect(
+        wire(
+          EngagementError.programNotFound(
+            EngagementErrorCode.PositionNotFound,
+            PositionId.of('p-1'),
+          ),
+        ),
+      ).toEqual({
+        status: 'not-found',
+        message: 'engagement.position.not_found',
+        details: { code: 'engagement.position.not_found', params: {} },
+      });
+      expect(
+        wire(
+          EngagementError.programNotFound(
+            EngagementErrorCode.CourseNotFound,
+            CourseId.of('c-1'),
+          ),
+        ).status,
+      ).toBe('not-found');
+      expect(
+        wire(
+          EngagementError.programNotFound(
+            EngagementErrorCode.ShopEventNotFound,
+            EventId.of('e-1'),
+          ),
+        ).status,
+      ).toBe('not-found');
+      expect(
+        wire(EngagementError.shopEventZoneUnknown(LocationId.of('loc-center'))),
+      ).toEqual({
+        status: 'failed-precondition',
+        message: 'engagement.shop_event.zone_unknown',
+        details: { code: 'engagement.shop_event.zone_unknown', params: {} },
+      });
     });
 
     it('`{ errors: [...] }` for an aggregate, each nested refusal by its own rule', () => {
