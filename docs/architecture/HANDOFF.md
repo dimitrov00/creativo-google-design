@@ -328,9 +328,16 @@ e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:120`
 
 ## 6. Open questions for the owner
 
-- **F6 (before Phase 4):** the phone field lazily loads phone parsing; under
-  Law 8 that would import all of `@core/systems` lazily — add a sanctioned
-  lazy-only `@core/phone` alias, or accept the larger lazy chunk?
+- **Ruled 2026-10-22 — F6:** no `@core/phone` alias; the phone field lazily
+  imports `@core/systems` and the owner accepts the larger lazy chunk
+  (`.claude/rules/ecs-layering.md`).
+- **Ruled 2026-10-22 — flip-2 §10.15:** once the web's profile edits go
+  through `updateProfile`, the pipeline writes the profile-change audit row
+  itself, inside its transaction, credited to the calling user; the
+  `auditProfileChanges` trigger skips an edit the callable already audited.
+- **Before the flip-4 web deploys (flip-4 OQ-11):** confirm the production
+  default location id and that its document holds a valid `timeZone`
+  (runbook §3).
 - `flatten-spec.md` §10 OQ-2…OQ-12 proceed on their documented defaults
   (cron zone home, Role/AuthStage claim casing, `LocalizedText` nested,
   D29 contact sync/merge, `EndMinute`, one shop day per appointment,

@@ -53,9 +53,11 @@ import { IntervalSetSystem } from './interval-set.system';
   import them in their composition roots and wire adapters there.
 - The seven aliases are the whole list: no lazy secondary entry
   (`@core/phone` or the like) and no deep `@core/<tier>/…` subpath without
-  an owner ruling. One is owed before Phase 4 — whether `libphonenumber-js`
-  leaves the initial chunk (`docs/architecture/ecs-migration.md` §6 Phase 4,
-  re-point (a)); until then it stays where it is.
+  an owner ruling. Ruled 2026-10-22 (F6): there is no `@core/phone` — the
+  phone field keeps parsing out of the initial chunk by lazily importing
+  `@core/systems`, and the owner accepts that its lazy chunk carries the
+  whole systems tier (`docs/architecture/ecs-migration.md` §6 Phase 4,
+  re-point (a)).
 - A tier barrel re-exports its files with `export *` / named re-exports only
   — no logic, no side effects (`"sideEffects": false`) — and a file never
   re-exports another tier's name: every exported name, value or type, has
