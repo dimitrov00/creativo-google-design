@@ -705,6 +705,13 @@ describe('StreakRule.DEFAULT', () => {
   });
 });
 
+describe('StreakRule.RULE_CHANGE_NOTICE_DAYS', () => {
+  it('owes the clients who see the rhythm thirty days’ notice of a stricter rule (R29)', () => {
+    expect(StreakRule.RULE_CHANGE_NOTICE_DAYS).toBe(30);
+    expect(Number.isInteger(StreakRule.RULE_CHANGE_NOTICE_DAYS)).toBe(true);
+  });
+});
+
 describe('the head’s guards', () => {
   it('takes an id as given and refuses a blank one', () => {
     expect(StreakRule.parseDefinitionId('cadence')).toEqual({

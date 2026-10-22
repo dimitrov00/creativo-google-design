@@ -21,18 +21,25 @@ import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
+  CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
   FIREBASE_FIRESTORE,
+  FIREBASE_FUNCTIONS,
   type FactoryPicker,
   IMPERSONATION_READ_PORTS,
   INBOX_PORTS,
+  LOYALTY_ACCOUNT_READ_PORTS,
+  LOYALTY_CATALOG_MEMO,
+  LOYALTY_CATALOG_READ_PORTS,
   LazyAdapterScope,
   LazyPortLoadError,
   PROFILE_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
+  STREAK_DEFINITION_PORTS,
+  STREAK_PUBLISH_PORTS,
   USER_SEARCH_PORTS,
   WAITLIST_READ_PORTS,
   provideFirebaseApp,
@@ -43,10 +50,13 @@ import {
 import { provideI18n } from '@creativo/infrastructure/i18n';
 import { fail } from '@creativo/domain/kernel';
 import {
+  type LocalDate,
   MediaError,
   RepositoryError as PortRepositoryError,
   Result,
+  UtcEpochMs,
 } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import type {
   AppointmentPhotoPorts,
   AppointmentPhotoRecordPorts,
@@ -66,15 +76,7 @@ import {
   WAITLIST_GATEWAY,
 } from '@creativo/application/booking';
 import { MEDIA_READER } from '@creativo/application/catalog';
-import {
-  REWARD_PROGRESS_READER,
-  INVITATION_PORT,
-  LOYALTY_ACTIVITY_READER,
-  LOYALTY_CATALOG_READER,
-  LOYALTY_READER,
-  STREAK_DEFINITION_REPOSITORY,
-  StreakPublishFailedError,
-} from '@creativo/application/engagement';
+import { REWARD_PROGRESS_READER } from '@creativo/application/engagement';
 import {
   CONTACT_CHANGE_PORT,
   AVATAR_UPLOADER,
@@ -179,27 +181,33 @@ const avatarStorageUnavailable = (error: LazyPortLoadError) =>
   fail(new AvatarUploadError('Storage failed to load', error));
 
 /**
- * The rhythm rule's port fails in its own vocabulary: `publish` and
- * `withdraw` answer a `PublishStreakDefinitionError`, whose "could not be
- * sent" half wraps a `RepositoryError` — and is one in shape, so the ONE
- * answer is valid for `observe` and `listVersions` too (the per-method check
- * holds it to that; client-card revision 3 §4.4, R3-3).
- */
-const rhythmRuleUnavailable = (error: LazyPortLoadError) =>
-  fail(
-    new StreakPublishFailedError(
-      new RepositoryError('The data layer failed to load', error),
-    ),
-  );
-
-/**
  * The same answer for a factory-form row over an ECS bundle: the flat
  * `RepositoryError.unavailable()` struct (`REPOSITORY_UNAVAILABLE`) inside
  * the port's `Result` — valid for every member of a bundle whose members all
  * name `RepositoryError`. A store reading the scheduling streams keeps the
- * policy's defaults on it, as on any other failed read.
+ * policy's defaults on it, as on any other failed read; the admin rhythm
+ * page words it on a publish as the rule that could not be sent.
  */
 const ecsDataUnavailable = () => Result.err(PortRepositoryError.unavailable());
+
+/** The shop's zone the loyalty catalogue's day is read in — today's loyalty zone. */
+const LOYALTY_SHOP_ZONE = 'Europe/Sofia';
+
+/**
+ * The shop's day NOW, read on every call (`Date.now()` in the shop's zone):
+ * the key of the session's catalogue memo (flip-3 plan F3-10), so a tab
+ * left open past the shop's midnight reads the catalogue again. The one
+ * clock-and-zone reading of the loyalty rows — the adapter that keys by it
+ * holds none. Read on the first catalogue call, never at boot.
+ */
+const loyaltyCatalogToday = (): LocalDate => {
+  const zone = ZonedTimeSystem.checkZone(LOYALTY_SHOP_ZONE);
+  const now = UtcEpochMs.of(Date.now());
+  if (!zone.ok || !now.ok) {
+    throw new Error('unreachable: an IANA zone and a safe-integer clock');
+  }
+  return ZonedTimeSystem.toLocal(now.value, zone.value).localDate;
+};
 
 /** What `firebaseData` loads: the Firestore and the Storage adapter modules. */
 type FirebaseDataModule =
@@ -493,46 +501,60 @@ export const appConfig: ApplicationConfig = {
       onLoadError: ecsDataUnavailable,
     }),
 
-    // The flip-3/4 adapters (and the avatar uploader): classes, bound with
-    // the class form until their flips move them.
-    // The staff client card (client-card-redesign §6.2): a person's loyalty
-    // with the catalogue it is read against.
-    provideLazyPort(LOYALTY_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreLoyaltyReader,
+    // Loyalty and the rhythm's rule (flip 3): a client RECORD's account,
+    // badge and season progress and its journal pages (the staff client
+    // card, client-card-redesign §6.2, revision 3 §4.7); the published
+    // catalogue with the rhythm's heads, memoised for the session and the
+    // shop's day in the root `LOYALTY_CATALOG_MEMO`; the head, live, and its
+    // versions (the card and the admin page «Ритъм»); and the publish
+    // callable, which drops that same memo once a write lands (§4.4).
+    provideLazyPort(LOYALTY_ACCOUNT_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.loyaltyAccountReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        getAccount: 'promise',
+        loadLoyaltyAccount: 'promise',
         listBadgeProgress: 'promise',
         listSeasonProgress: 'promise',
-        listLedgerTail: 'promise',
       },
-      onLoadError: dataUnavailable,
+      onLoadError: ecsDataUnavailable,
     }),
-    provideLazyPort(LOYALTY_CATALOG_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreLoyaltyCatalogReader,
-      methods: { getCatalog: 'promise' },
-      onLoadError: dataUnavailable,
+    provideLazyPort(LOYALTY_CATALOG_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.loyaltyCatalogReadPorts(
+          inj.get(FIREBASE_FIRESTORE),
+          inj.get(LOYALTY_CATALOG_MEMO),
+          loyaltyCatalogToday,
+        ),
+      methods: { loadLoyaltyCatalog: 'promise' },
+      onLoadError: ecsDataUnavailable,
     }),
-    // The rhythm's rule (client-card revision 3 §4.4): the head and its
-    // versions, read by the card and by the admin page «Ритъм»; written
-    // through the `publishStreakDefinition` callable the adapter calls, which
-    // also drops the session's copy of the catalogue once a write lands.
-    provideLazyPort(STREAK_DEFINITION_REPOSITORY, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreStreakDefinitionRepository,
+    provideLazyPort(CLIENT_JOURNAL_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.clientJournalPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { pageClientJournal: 'promise' },
+      onLoadError: ecsDataUnavailable,
+    }),
+    provideLazyPort(STREAK_DEFINITION_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.streakDefinitionPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
-        observe: 'observable',
-        listVersions: 'promise',
-        publish: 'promise',
-        withdraw: 'promise',
+        observeStreakDefinitionHead: 'observable',
+        listStreakDefinitionVersions: 'promise',
       },
-      onLoadError: rhythmRuleUnavailable,
+      onLoadError: ecsDataUnavailable,
     }),
-    // The wallet's loyalty activity by kind, a page at a time (§4.7); its
-    // gift vouchers read through `COUPON_VOUCHER_PORTS`.
-    provideLazyPort(LOYALTY_ACTIVITY_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreLoyaltyActivityReader,
-      methods: { page: 'promise' },
-      onLoadError: dataUnavailable,
+    provideLazyPort(STREAK_PUBLISH_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.streakPublishGatewayPorts(
+          inj.get(FIREBASE_FUNCTIONS),
+          inj.get(LOYALTY_CATALOG_MEMO),
+        ),
+      methods: { publishStreakRule: 'promise', withdrawStreakRule: 'promise' },
+      onLoadError: ecsDataUnavailable,
     }),
+
+    // The class adapters still bound with the class form: the media reader,
+    // the dormant reward progress, the avatar uploader and flip 4's programs.
     provideLazyPort(MEDIA_READER, firebaseData, {
       adapter: (m) => m.storage.StorageMediaReader,
       methods: { resolve: 'promise' },
@@ -541,15 +563,6 @@ export const appConfig: ApplicationConfig = {
     provideLazyPort(REWARD_PROGRESS_READER, firebaseData, {
       adapter: (m) => m.firestore.FirestoreRewardProgressReader,
       methods: { observeForUser: 'observable' },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(INVITATION_PORT, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreInvitationAdapter,
-      methods: {
-        save: 'promise',
-        findById: 'promise',
-        saveRedemption: 'promise',
-      },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(AVATAR_UPLOADER, firebaseData, {

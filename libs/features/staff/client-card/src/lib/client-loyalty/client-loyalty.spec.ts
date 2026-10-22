@@ -2,19 +2,17 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CouponVoucherPorts } from '@core/ports';
 import {
-  InMemoryLoyaltyActivityReader,
-  InMemoryLoyaltyCatalogReader,
-  InMemoryLoyaltyReader,
-} from '@creativo/application/engagement/testing';
-import {
   GEORGI,
   GEORGI_GRANT,
   GUEST,
   MARTIN,
+  catalogPortsOf,
   georgiContext,
   georgiOpenContext,
   georgiUser,
   heldProfilePortsOf,
+  journalPortsOf,
+  loyaltyPortsOf,
   martinContext,
   must,
   pausedUntilOctober,
@@ -25,7 +23,7 @@ import {
 import {
   ALL_LOYALTY_FLAGS,
   type AchievementsRig,
-  HeldCatalogReader,
+  heldCatalogPorts,
   PAGE_TITLE_ID,
   mountAchievementsPage,
 } from '../../testing/achievements-pages.rig';
@@ -94,7 +92,7 @@ function holdingId(holding: WalletHoldingVm): string {
 async function mount(options: WalletMountOptions = {}) {
   const {
     vouchers = voucherPortsOf(),
-    activity = InMemoryLoyaltyActivityReader.seeded(),
+    activity = journalPortsOf(),
     ...rig
   } = options.rig ?? {};
   // A case may mount twice (two states side by side): a fresh module each
@@ -711,7 +709,7 @@ describe('lib-client-loyalty — anchors', () => {
     expect(held.byId('rewards-wallet-skeleton')).toBeNull();
     expect(document.activeElement).toBe(status);
 
-    const catalog = new HeldCatalogReader();
+    const catalog = heldCatalogPorts();
     const waiting = await mount({ anchor: 'catalog', rig: { catalog } });
     const heading = must(
       waiting.byId('rewards-catalog-module')?.querySelector('h3'),
@@ -762,7 +760,7 @@ describe('lib-client-loyalty — its states', () => {
   });
 
   it('failed · says once when the account did not load, and reads it again on «Опитай пак»', async () => {
-    const loyalty = InMemoryLoyaltyReader.seeded().failWith();
+    const loyalty = loyaltyPortsOf().failWith();
     const { byId, text, render } = await mount({ rig: { loyalty } });
     const notice = must(byId('rewards-failed'));
     expect(notice.tagName).toBe('UI-NOTICE');
@@ -814,7 +812,7 @@ describe('lib-client-loyalty — its states', () => {
   });
 
   it('failed catalogue · keeps «Статус» and «Награди за точки» over their retries, the «Награди» disc with somewhere to land', async () => {
-    const catalog = new InMemoryLoyaltyCatalogReader().failWith();
+    const catalog = catalogPortsOf().failWith();
     const { byId, text, render, wallet } = await mount({ rig: { catalog } });
     expect(byId('rewards-failed-tier')).not.toBeNull();
     expect(byId('rewards-failed-catalog')).not.toBeNull();
@@ -838,7 +836,7 @@ describe('lib-client-loyalty — its states', () => {
   });
 
   it('failed activity · keeps «Движение» and its «Всички» over one retry, and reads the feed again', async () => {
-    const activity = InMemoryLoyaltyActivityReader.seeded().failWith();
+    const activity = journalPortsOf().failWith();
     const { byId, text, render } = await mount({ rig: { activity } });
     const section = must(byId('rewards-ledger'));
     expect(text(section.querySelector('h3'))).toBe('Движение');
@@ -855,8 +853,10 @@ describe('lib-client-loyalty — its states', () => {
   });
 
   it('a feed on its way · three placeholder rows under «Движение», the rest of the page drawn', async () => {
-    const activity = InMemoryLoyaltyActivityReader.seeded();
-    vi.spyOn(activity, 'page').mockReturnValue(new Promise(() => undefined));
+    const activity = journalPortsOf();
+    vi.spyOn(activity, 'pageClientJournal').mockReturnValue(
+      new Promise(() => undefined),
+    );
     const { byId } = await mount({ rig: { activity } });
     const skeleton = must(byId('rewards-ledger-skeleton'));
     expect(skeleton.getAttribute('aria-busy')).toBe('true');

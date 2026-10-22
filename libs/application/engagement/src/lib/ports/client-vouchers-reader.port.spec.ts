@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { ZonedDateTime } from '@creativo/domain/kernel';
 import { RepositoryError } from '@creativo/application/shared';
-import { InMemoryClientVouchersReader, loyaltyFixtures } from '../../testing';
+import { FIXTURE_TODAY } from '@core/testing';
+import {
+  InMemoryClientVouchersReader,
+  giftVoucherFixtures,
+} from '../../testing';
 import { CLIENT_VOUCHERS_READER } from './client-vouchers-reader.port';
 
 const GEORGI = 'dev-client-1';
@@ -10,7 +14,7 @@ const MARTIN = 'dev-client-2';
 /** The fixtures' day at noon, in the shop's zone. */
 const NOW = (() => {
   const parsed = ZonedDateTime.fromISO(
-    `${loyaltyFixtures.today}T12:00:00.000+03:00`,
+    `${FIXTURE_TODAY}T12:00:00.000+03:00`,
     'Europe/Sofia',
   );
   if (parsed.isFailure()) throw parsed.error;
@@ -94,7 +98,7 @@ describe('ClientVouchersReader — the in-memory reference', () => {
   });
 
   it('issues a voucher, and replaces one under its id', async () => {
-    const gift = loyaltyFixtures.vouchers['voucher-dev-georgi'];
+    const gift = giftVoucherFixtures['voucher-dev-georgi'];
     if (gift === undefined) throw new Error('fixture: no voucher');
     const reader = InMemoryClientVouchersReader.seeded()
       .put('voucher-new', { ...gift, code: 'NEW10', issuedToUserId: MARTIN })
@@ -116,7 +120,7 @@ describe('ClientVouchersReader — the in-memory reference', () => {
     const reader = InMemoryClientVouchersReader.seeded()
       .put('voucher-broken', { issuedToUserId: GEORGI, code: 'BROKEN' })
       .put('voucher-worthless', {
-        ...loyaltyFixtures.vouchers['voucher-dev-georgi'],
+        ...giftVoucherFixtures['voucher-dev-georgi'],
         code: 'ZERO',
         initialValueMinorUnits: 0,
       });

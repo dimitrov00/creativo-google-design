@@ -31,8 +31,8 @@ import { ZonedTimeSystem } from './zoned-time.system';
 const instant = (ms: number): UtcEpochMs => unwrapOk(UtcEpochMs.of(ms));
 
 /*
- * The cases of libs/application/engagement/src/lib/use-cases/preview-streak-definition.use-case.spec.ts,
- * COPIED (the legacy spec keeps running against the use case) and
+ * The cases of the legacy preview use case's spec (flip 3 deleted it and
+ * its use case; this file is their one home), COPIED in Phase 2 and
  * re-targeted: the rules are `StreakRule` structs (`revised` is the
  * recommended rule's next version, parsed), the facts are written as the
  * legacy spec wrote them and made strict by `strict`, and `preview.execute`
@@ -219,7 +219,7 @@ function estimate(
   return result;
 }
 
-describe('PreviewStreakDefinitionUseCase', () => {
+describe('StreakPreviewSystem.estimate — the admin preview', () => {
   it('stands on the domain’s projector: the people below are where it says they are', () => {
     const phases = SHOP.map(
       (facts) => projectStreak(SIX_WEEKS, facts, TODAY)?.streakPhase,

@@ -1,12 +1,37 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { StreakDefinitionVersion } from '@core/entities';
 import {
-  type StreakDefinitionVersion,
-  StreakDefinition,
-  type StreakPreview,
+  FreezeReason,
+  StreakExcuse,
+  StreakIntervalRule,
+  StreakOnBreak,
+  StreakPeriodMark,
+  StreakPhaseState,
+  StreakQualifierRule,
+  StreakRule,
+  type StreakRuleInput,
+  StreakRuleDirection,
+  StreakRuleParameter,
   type StreakState,
-} from '@creativo/application/engagement';
+  StreakTransition,
+} from '@core/components';
+import {
+  LocalDate,
+  PublishRequestId,
+  StreakDefinitionId,
+  StreakDefinitionVersionId,
+  StreakRuleField,
+  UserId,
+} from '@core/primitives';
+import {
+  type StreakPreview,
+  StreakPreviewOutcome,
+  StreakPreviewUnavailable,
+  StreakRuleSystem,
+} from '@core/systems';
+import { unwrapOk, utcMs } from '@core/testing';
 import {
   type VisitTranslate,
   rhythmRuleWords,
@@ -112,38 +137,58 @@ const TODAY = '2026-09-28';
 function contextOf(lang: Lang = 'bg'): AdminRhythmContext {
   const translate = translateOf(lang);
   const rule = rhythmRuleWords(
-    StreakDefinition.default().summary(),
+    StreakRuleSystem.summary(StreakRule.DEFAULT),
     translate,
     lang,
   );
   return { translate, lang, today: TODAY, rule };
 }
 
-const RECOMMENDED = StreakDefinition.default().toProps();
+/** The recommended rule, as the form holds it. */
+const RECOMMENDED: StreakRuleInput = StreakRule.DEFAULT;
 
-function revised(
-  patch: Partial<ReturnType<StreakDefinition['toProps']>>,
-  effectiveFrom = '2026-09-01',
-): StreakDefinition {
-  const next = StreakDefinition.default().revise(patch, effectiveFrom);
-  if (next.isFailure()) throw new Error('the fixture is no rule');
+/** A revision of the recommended rule: any option figure, or the interval whole. */
+type RulePatch = Partial<
+  Omit<StreakRule.Options, 'version' | 'effectiveFromLocalDate'>
+> & { readonly interval?: StreakIntervalRule };
+
+/** The recommended rule revised: the next version (2), from the day given. */
+function revised(patch: RulePatch, effectiveFrom = '2026-09-01'): StreakRule {
+  const { interval, ...options } = patch;
+  const next = StreakRule.parse({
+    ...StreakRule.DEFAULT,
+    ...options,
+    ...(interval ?? StreakIntervalRule.of(StreakRule.DEFAULT)),
+    ...StreakQualifierRule.of(StreakRule.DEFAULT),
+    version: StreakRule.DEFAULT.version + 1,
+    effectiveFromLocalDate: effectiveFrom,
+  });
+  if (!next.ok) throw new Error('the fixture is no rule');
   return next.value;
 }
 
+/** The provenance a version document carries beside its flat rule. */
+type VersionFacts = Omit<StreakDefinitionVersion, keyof StreakRule | 'id'>;
+
+/** A version document: the flat rule at its root, published by Иван on 28 August unless said. */
 function versionOf(
-  definition: StreakDefinition,
-  extra: Partial<StreakDefinitionVersion> = {},
+  rule: StreakRule,
+  extra: Partial<VersionFacts> = {},
 ): StreakDefinitionVersion {
-  return {
-    definition,
-    publishedAt: new Date('2026-08-28T07:00:00.000Z'),
-    publishedBy: 'dev-staff-ivan',
-    transition: 'grandfather',
-    direction: 'looser',
-    changed: ['interval'],
-    requestId: 'request-1',
-    withdrawnAt: null,
+  const facts: VersionFacts = {
+    publishedAtUtcMs: utcMs('2026-08-28T07:00:00.000Z'),
+    publishedByUserId: UserId.of('dev-staff-ivan'),
+    streakTransition: StreakTransition.Grandfather,
+    streakRuleDirection: StreakRuleDirection.Looser,
+    changed: [StreakRuleParameter.Interval],
+    requestId: PublishRequestId.of('request-1'),
+    withdrawnAtUtcMs: null,
     ...extra,
+  };
+  return {
+    ...rule,
+    id: StreakDefinitionVersionId.forVersion(rule.version),
+    ...facts,
   };
 }
 
@@ -322,10 +367,7 @@ describe('the value rows', () => {
   it('read the protections, on and off', () => {
     expect(protectionsRow(context, RECOMMENDED)).toBe('До 2 в запас');
     expect(
-      protectionsRow(context, {
-        ...RECOMMENDED,
-        protections: { ...RECOMMENDED.protections, enabled: false },
-      }),
+      protectionsRow(context, { ...RECOMMENDED, protectionsEnabled: false }),
     ).toBe('Изключени');
   });
 
@@ -334,16 +376,17 @@ describe('the value rows', () => {
     expect(
       excusesRow(context, {
         ...RECOMMENDED,
-        clientPause: { enabled: true, maxDaysPerYear: 90 },
+        clientPauseEnabled: true,
+        clientPauseMaxDaysPerYear: 90,
       }),
     ).toBe('3 от 4 · пауза до 90 дни');
   });
 
   it('read what a miss does', () => {
     expect(afterMissRow(context, RECOMMENDED)).toBe('Започва отначало');
-    expect(afterMissRow(context, { ...RECOMMENDED, onBreak: 'hold' })).toBe(
-      'Продължава оттам',
-    );
+    expect(
+      afterMissRow(context, { ...RECOMMENDED, onBreak: StreakOnBreak.Hold }),
+    ).toBe('Продължава оттам');
   });
 });
 
@@ -363,7 +406,7 @@ describe('the rule card’s digest', () => {
       ruleDigest(context, {
         ...RECOMMENDED,
         graceDays: 0,
-        protections: { ...RECOMMENDED.protections, enabled: false },
+        protectionsEnabled: false,
       }),
     ).toBe('без гратис\u00a0· без защити\u00a0· извинения 3 от 4');
   });
@@ -373,21 +416,15 @@ describe('the rule card’s digest', () => {
   });
 
   it('read the tolerance and explain it on one habit', () => {
-    const personal = {
-      kind: 'personal' as const,
-      tolerancePct: 50,
-      minDays: 21,
-      maxDays: 70,
-      fallbackDays: 42,
-    };
+    const personal = StreakIntervalRule.personal(50, 21, 70, 42);
     expect(toleranceReadout(context, 50)).toBe('+50 %');
     expect(toleranceExample(context, personal)).toBe(
       'Клиент, който идва на 4 седмици, има срок 6 седмици.',
     );
     // The clamp holds the example too.
-    expect(toleranceExample(context, { ...personal, maxDays: 35 })).toBe(
-      'Клиент, който идва на 4 седмици, има срок 5 седмици.',
-    );
+    expect(
+      toleranceExample(context, { ...personal, intervalMaxDays: 35 }),
+    ).toBe('Клиент, който идва на 4 седмици, има срок 5 седмици.');
   });
 
   it('word the capsule and the waiting version’s line', () => {
@@ -406,49 +443,47 @@ describe('changeWord', () => {
 
   it('words every parameter, lower case, no stop', () => {
     const on = RECOMMENDED;
-    expect(changeWord(context, 'enabled', on)).toBe('ритъмът е включен');
-    expect(changeWord(context, 'enabled', { ...on, enabled: false })).toBe(
+    const P = StreakRuleParameter;
+    expect(changeWord(context, P.Enabled, on)).toBe('ритъмът е включен');
+    expect(changeWord(context, P.Enabled, { ...on, enabled: false })).toBe(
       'ритъмът е изключен',
     );
-    expect(changeWord(context, 'qualifier', on)).toBe(
+    expect(changeWord(context, P.Qualifier, on)).toBe(
       'брои се всяко посещение',
     );
-    expect(changeWord(context, 'minGapDays', on)).toBe(
+    expect(changeWord(context, P.MinGapDays, on)).toBe(
       'близки посещения 7 дни',
     );
-    expect(changeWord(context, 'bookingHold', on)).toBe(
+    expect(changeWord(context, P.BookingHold, on)).toBe(
       'записан час пази 14 дни',
     );
-    expect(changeWord(context, 'interval', on)).toBe('интервал 6 седмици');
+    expect(changeWord(context, P.Interval, on)).toBe('интервал 6 седмици');
     expect(
-      changeWord(context, 'interval', {
+      changeWord(context, P.Interval, {
         ...on,
-        interval: {
-          kind: 'personal',
-          tolerancePct: 50,
-          minDays: 21,
-          maxDays: 70,
-          fallbackDays: 42,
-        },
+        ...StreakIntervalRule.personal(50, 21, 70, 42),
       }),
     ).toBe('интервал по навика');
-    expect(changeWord(context, 'graceDays', on)).toBe('гратис 7 дни');
-    expect(changeWord(context, 'graceDays', { ...on, graceDays: 0 })).toBe(
+    expect(changeWord(context, P.GraceDays, on)).toBe('гратис 7 дни');
+    expect(changeWord(context, P.GraceDays, { ...on, graceDays: 0 })).toBe(
       'без гратис',
     );
-    expect(changeWord(context, 'riskLeadDays', on)).toBe('подсещане 7 дни');
-    expect(changeWord(context, 'protections', on)).toBe('защити до 2 в запас');
-    expect(changeWord(context, 'excuses', on)).toBe('извинения 3 от 4');
-    expect(changeWord(context, 'clientPause', on)).toBe('без пауза');
-    expect(changeWord(context, 'repair', on)).toBe('връщане до 14 дни');
-    expect(changeWord(context, 'onBreak', on)).toBe('пропускът нулира броя');
-    expect(changeWord(context, 'name', on)).toBe('ново име');
+    expect(changeWord(context, P.RiskLeadDays, on)).toBe('подсещане 7 дни');
+    expect(changeWord(context, P.Protections, on)).toBe('защити до 2 в запас');
+    expect(changeWord(context, P.Excuses, on)).toBe('извинения 3 от 4');
+    expect(changeWord(context, P.ClientPause, on)).toBe('без пауза');
+    expect(changeWord(context, P.Repair, on)).toBe('връщане до 14 дни');
+    expect(changeWord(context, P.OnBreak, on)).toBe('пропускът нулира броя');
+    expect(changeWord(context, P.Name, on)).toBe('ново име');
   });
 
   it('says nothing for a version’s identity', () => {
+    // No `StreakRuleParameter` names one; a stored list that did is read as no change.
     expect(changeWord(context, 'id', RECOMMENDED)).toBeNull();
     expect(changeWord(context, 'version', RECOMMENDED)).toBeNull();
-    expect(changeWord(context, 'effectiveFrom', RECOMMENDED)).toBeNull();
+    expect(
+      changeWord(context, 'effectiveFromLocalDate', RECOMMENDED),
+    ).toBeNull();
   });
 });
 
@@ -459,12 +494,12 @@ describe('historyRow', () => {
     const row = historyRow(
       context,
       versionOf(revised({}, '2025-03-01'), {
-        publishedBy: 'system',
-        publishedAt: new Date('2025-03-01T07:00:00.000Z'),
+        publishedByUserId: UserId.of('system'),
+        publishedAtUtcMs: utcMs('2025-03-01T07:00:00.000Z'),
         changed: [],
       }),
     );
-    // `revise` numbers the next version: the recommended rule's successor is 2.
+    // `revised` numbers the next version: the recommended rule's successor is 2.
     expect(row).toEqual({
       version: 2,
       title: 'От 1.03.2025 г.\u00a0· първо правило',
@@ -477,7 +512,7 @@ describe('historyRow', () => {
   it('names one change, and counts the rest in the rule’s order', () => {
     const one = historyRow(
       context,
-      versionOf(revised({ interval: { kind: 'fixed', days: 42 } })),
+      versionOf(revised({ interval: StreakIntervalRule.fixed(42) })),
     );
     expect(one.title).toBe('От 1.09\u00a0· интервал 6 седмици');
     expect(one.by).toBe('dev-staff-ivan · 28.08');
@@ -485,8 +520,8 @@ describe('historyRow', () => {
     // A rule scheduled and published on one day says that day once.
     const sameDay = historyRow(
       context,
-      versionOf(revised({ interval: { kind: 'fixed', days: 42 } }), {
-        publishedAt: new Date('2026-09-01T07:00:00.000Z'),
+      versionOf(revised({ interval: StreakIntervalRule.fixed(42) }), {
+        publishedAtUtcMs: utcMs('2026-09-01T07:00:00.000Z'),
       }),
     );
     expect(sameDay.title).toBe(one.title);
@@ -495,9 +530,12 @@ describe('historyRow', () => {
     const several = historyRow(
       context,
       versionOf(
-        revised({ graceDays: 10, interval: { kind: 'fixed', days: 35 } }),
+        revised({ graceDays: 10, interval: StreakIntervalRule.fixed(35) }),
         {
-          changed: ['graceDays', 'interval', 'effectiveFrom'],
+          changed: [
+            StreakRuleParameter.GraceDays,
+            StreakRuleParameter.Interval,
+          ],
         },
       ),
     );
@@ -509,7 +547,7 @@ describe('historyRow', () => {
       historyRow(
         context,
         versionOf(revised({}), {
-          withdrawnAt: new Date('2026-09-02T07:00:00Z'),
+          withdrawnAtUtcMs: utcMs('2026-09-02T07:00:00Z'),
         }),
       ).withdrawn,
     ).toBe(true);
@@ -521,7 +559,7 @@ describe('historyRow', () => {
 describe('previewWords', () => {
   const context = contextOf();
   const estimate: StreakPreview = {
-    kind: 'estimate',
+    streakPreviewOutcome: StreakPreviewOutcome.Estimate,
     clients: 214,
     before: { inRhythm: 131, inGrace: 12, broken: 71 },
     after: { inRhythm: 148, inGrace: 9, broken: 57 },
@@ -591,7 +629,10 @@ describe('previewWords', () => {
     expect(
       previewWords(
         context,
-        { kind: 'unavailable', reason: 'qualifier' },
+        {
+          streakPreviewOutcome: StreakPreviewOutcome.Unavailable,
+          reason: StreakPreviewUnavailable.Qualifier,
+        },
         false,
         1000,
       ),
@@ -608,7 +649,7 @@ describe('samplePeriods', () => {
   const context = contextOf();
 
   it('draws the projector’s run: kept visits, the miss, the visit after it and the open period', () => {
-    const state = sampleRhythmRun(StreakDefinition.default(), TODAY);
+    const state = sampleRhythmRun(StreakRule.DEFAULT, TODAY);
     if (state === null) throw new Error('the sample has no run');
     const periods = samplePeriods(context, state);
     const marks = periods.map((p) => p.mark);
@@ -627,24 +668,45 @@ describe('samplePeriods', () => {
   });
 
   it('describes each closed mark in its month, and a frozen open period as covered', () => {
+    const day = (raw: string): LocalDate => unwrapOk(LocalDate.parse(raw));
     const state: StreakState = {
-      streakId: 'cadence',
+      streakId: StreakDefinitionId.of('cadence'),
       definitionVersion: 1,
-      phase: { kind: 'frozen', until: '2026-10-10', reason: 'freeze' },
+      ...StreakPhaseState.frozen(day('2026-10-10'), FreezeReason.Freeze),
       current: 3,
       best: 5,
-      lastQualifiedAt: null,
-      dueBy: '2026-10-10',
+      lastQualifiedAtUtcMs: null,
+      dueBy: day('2026-10-10'),
       freezesBanked: 1,
-      period: null,
+      periodIntervalDays: null,
+      periodGraceDays: null,
+      periodSource: null,
+      periodHabitDays: null,
       periods: [
-        { mark: 'kept', on: '2026-07-04', reason: null },
-        { mark: 'protected', on: '2026-08-15', reason: 'staffCancelled' },
-        { mark: 'missed', on: '2026-09-01', reason: null },
-        { mark: 'repaired', on: '2026-09-10', reason: null },
+        {
+          streakPeriodMark: StreakPeriodMark.Kept,
+          on: day('2026-07-04'),
+          periodReason: null,
+        },
+        {
+          streakPeriodMark: StreakPeriodMark.Protected,
+          on: day('2026-08-15'),
+          periodReason: StreakExcuse.StaffCancelled,
+        },
+        {
+          streakPeriodMark: StreakPeriodMark.Missed,
+          on: day('2026-09-01'),
+          periodReason: null,
+        },
+        {
+          streakPeriodMark: StreakPeriodMark.Repaired,
+          on: day('2026-09-10'),
+          periodReason: null,
+        },
       ],
-      heldBy: null,
-      runStartedOn: '2026-07-04',
+      heldByAppointmentId: null,
+      heldOn: null,
+      runStartedOn: day('2026-07-04'),
     };
     const periods = samplePeriods(context, state);
     expect(periods.map((p) => [p.mark, p.description])).toEqual([
@@ -663,22 +725,28 @@ describe('a refused field', () => {
   const context = contextOf();
 
   it('is named by its control’s label', () => {
-    expect(fieldName(context, 'graceDays')).toBe('Гратисен период');
-    expect(fieldName(context, 'interval.days')).toBe('Срок');
-    expect(fieldName(context, 'protections.maxBanked')).toBe(
+    expect(fieldName(context, StreakRuleField.GraceDays)).toBe(
+      'Гратисен период',
+    );
+    expect(fieldName(context, StreakRuleField.IntervalDays)).toBe('Срок');
+    expect(fieldName(context, StreakRuleField.ProtectionsMaxBanked)).toBe(
       'В запас най-много',
     );
-    expect(fieldName(context, 'qualifier.serviceIds')).toBe(
+    expect(fieldName(context, StreakRuleField.QualifierServiceIds)).toBe(
       'Услуги, които се броят',
     );
-    expect(fieldName(context, 'scheduled.transition')).toBe(
-      'scheduled.transition',
+    expect(fieldName(context, StreakRuleField.ScheduledTransition)).toBe(
+      'scheduledStreakTransition',
     );
   });
 
   it('is said once per field, as a list', () => {
     expect(
-      invalidNotice(context, ['graceDays', 'interval.days', 'graceDays']),
+      invalidNotice(context, [
+        StreakRuleField.GraceDays,
+        StreakRuleField.IntervalDays,
+        StreakRuleField.GraceDays,
+      ]),
     ).toBe('Поправи: Гратисен период и Срок.');
   });
 });

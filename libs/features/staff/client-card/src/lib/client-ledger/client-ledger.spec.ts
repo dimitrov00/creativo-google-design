@@ -8,32 +8,30 @@ import {
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ZonedDateTime } from '@creativo/application/accounts';
+import { JournalFeed } from '@core/components';
+import type { ClientJournalPorts } from '@core/ports';
 import {
+  CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  LOYALTY_ACCOUNT_READ_PORTS,
+  LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import {
-  LOYALTY_ACTIVITY_READER,
-  LOYALTY_CATALOG_READER,
-  LOYALTY_READER,
-  type LoyaltyActivityReader,
-} from '@creativo/application/engagement';
-import {
-  InMemoryLoyaltyActivityReader,
-  InMemoryLoyaltyCatalogReader,
-  InMemoryLoyaltyReader,
-} from '@creativo/application/engagement/testing';
 import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import {
   GEORGI,
   MARTIN,
   NOW_MS,
+  type PortDouble,
+  catalogPortsOf,
   catalogueOf,
   customerPortsOf,
   georgiHistory,
   georgiOpenContext,
+  journalPortsOf,
+  loyaltyPortsOf,
   martinHistory,
   must,
   profilePortsOf,
@@ -70,7 +68,7 @@ const ALL_FLAGS = {
 class Host {}
 
 interface MountOptions {
-  readonly activity?: LoyaltyActivityReader;
+  readonly activity?: ClientJournalPorts;
   readonly flags?: Readonly<Record<string, boolean>>;
 }
 
@@ -82,7 +80,7 @@ async function settle(): Promise<void> {
 }
 
 async function mount(options: MountOptions = {}) {
-  const activity = options.activity ?? InMemoryLoyaltyActivityReader.seeded();
+  const activity = options.activity ?? journalPortsOf();
   TestBed.configureTestingModule({
     imports: [Host],
     providers: [
@@ -112,13 +110,10 @@ async function mount(options: MountOptions = {}) {
           statsOf(MARTIN, martinHistory()),
         ]),
       },
-      { provide: LOYALTY_READER, useValue: InMemoryLoyaltyReader.seeded() },
-      {
-        provide: LOYALTY_CATALOG_READER,
-        useValue: new InMemoryLoyaltyCatalogReader(),
-      },
+      { provide: LOYALTY_ACCOUNT_READ_PORTS, useValue: loyaltyPortsOf() },
+      { provide: LOYALTY_CATALOG_READ_PORTS, useValue: catalogPortsOf() },
       { provide: COUPON_VOUCHER_PORTS, useValue: voucherPortsOf() },
-      { provide: LOYALTY_ACTIVITY_READER, useValue: activity },
+      { provide: CLIENT_JOURNAL_PORTS, useValue: activity },
     ],
     errorOnUnknownElements: true,
     errorOnUnknownProperties: true,
@@ -199,13 +194,16 @@ describe('lib-client-ledger — «Движение», Георги’s journal',
 
     must(byId<HTMLButtonElement>('ledger-filter-status')).click();
     await rerender();
-    expect(store.ledger().filter).toBe('status');
+    expect(store.ledger().filter).toBe(JournalFeed.Status);
     expect(byId('ledger-filter-status')?.hasAttribute('data-selected')).toBe(
       true,
     );
     expect(all.hasAttribute('data-selected')).toBe(false);
-    const calls = (activity as InMemoryLoyaltyActivityReader).calls;
-    expect(calls.some((call) => call.kind === 'status')).toBe(true);
+    const calls = (activity as PortDouble<ClientJournalPorts>).callsTo(
+      'pageClientJournal',
+    );
+    const status = JournalFeed.effectsOf(JournalFeed.Status).join();
+    expect(calls.some(([, effects]) => String(effects) === status)).toBe(true);
   });
 
   it('lists the journal by month under h3 headings through the shared statement, and reads more until «Това е всичко.»', async () => {
@@ -229,8 +227,11 @@ describe('lib-client-ledger — «Движение», Георги’s journal',
 
     more.click();
     await rerender();
-    const calls = (activity as InMemoryLoyaltyActivityReader).calls;
-    expect(calls.some((call) => call.after !== null)).toBe(true);
+    const calls = (activity as PortDouble<ClientJournalPorts>).callsTo(
+      'pageClientJournal',
+    );
+    // A later page reads below the oldest row's `seq`.
+    expect(calls.some(([, , beforeSeq]) => beforeSeq !== null)).toBe(true);
     expect(host.querySelectorAll('li').length).toBeGreaterThanOrEqual(before);
 
     for (let i = 0; i < 6 && byId('ledger-more') !== null; i += 1) {
@@ -246,7 +247,7 @@ describe('lib-client-ledger — «Движение», Георги’s journal',
 
   it('says «Още няма движение.» for a journal with no entry, and «Няма записи от този вид.» with the way back under a kind', async () => {
     const { byId, text, store, rerender } = await mount({
-      activity: new InMemoryLoyaltyActivityReader({}),
+      activity: journalPortsOf([]),
     });
     const empty = must(byId('ledger-empty'));
     expect(empty.tagName).toBe('UI-EMPTY-STATE');
@@ -263,12 +264,12 @@ describe('lib-client-ledger — «Движение», Георги’s journal',
     expect(text(clear)).toBe('Покажи всички');
     clear.click();
     await rerender();
-    expect(store.ledger().filter).toBe('all');
+    expect(store.ledger().filter).toBe(JournalFeed.All);
     expect(byId('ledger-empty')).not.toBeNull();
   });
 
   it('says once when the first page did not come, and reads it again on «Опитай пак»', async () => {
-    const activity = InMemoryLoyaltyActivityReader.seeded().failWith();
+    const activity = journalPortsOf().failWith();
     const { host, byId, text, rerender } = await mount({ activity });
     const notice = must(byId('ledger-error'));
     expect(notice.tagName).toBe('UI-NOTICE');
@@ -285,8 +286,10 @@ describe('lib-client-ledger — «Движение», Георги’s journal',
   });
 
   it('stands three months of two rows in while the first page reads, the head and the chips already there', async () => {
-    const activity = InMemoryLoyaltyActivityReader.seeded();
-    vi.spyOn(activity, 'page').mockReturnValue(new Promise(() => undefined));
+    const activity = journalPortsOf();
+    vi.spyOn(activity, 'pageClientJournal').mockReturnValue(
+      new Promise(() => undefined),
+    );
     const { byId, text } = await mount({ activity });
     const skeleton = must(byId('ledger-skeleton'));
     expect(skeleton.getAttribute('aria-busy')).toBe('true');

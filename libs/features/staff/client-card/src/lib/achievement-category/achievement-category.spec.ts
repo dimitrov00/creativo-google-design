@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { InMemoryLoyaltyCatalogReader } from '@creativo/application/engagement/testing';
 import type { AchievementScope } from '../client-card.contracts';
 import {
   GEORGI,
+  catalogPortsOf,
   georgiContext,
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
-  HeldCatalogReader,
+  heldCatalogPorts,
   type MountOptions,
   PAGE_TITLE_ID,
   mountAchievementsPage,
@@ -489,7 +489,7 @@ describe('AchievementCategoryPage — the archive and a day', () => {
 
 describe('AchievementCategoryPage — states', () => {
   it('titles the archive at once and holds six discs on a white card while the catalogue is on its way', async () => {
-    const catalog = new HeldCatalogReader();
+    const catalog = heldCatalogPorts();
     const { byId, text, render } = await mount(
       { kind: 'archive' },
       { rig: { catalog } },
@@ -513,14 +513,14 @@ describe('AchievementCategoryPage — states', () => {
 
   it('keeps the collection’s name on a category until its data lands', async () => {
     const { byId, text } = await mount(MASTERY, {
-      rig: { catalog: new HeldCatalogReader() },
+      rig: { catalog: heldCatalogPorts() },
     });
     expect(text(byId('achievements-scope-title'))).toBe('Постижения');
     expect(text(byId('achievements-scope-subline'))).toBe('Георги Петров');
   });
 
   it('says the achievements did not load, and reads them again', async () => {
-    const catalog = new InMemoryLoyaltyCatalogReader().failWith();
+    const catalog = catalogPortsOf().failWith();
     const { byId, render, text } = await mount(MASTERY, { rig: { catalog } });
     expect(byId('achievements-error')?.getAttribute('aria-label')).toBe(
       'Постиженията не се заредиха.',

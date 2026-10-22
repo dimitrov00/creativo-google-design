@@ -13,12 +13,15 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { map, switchMap } from 'rxjs/operators';
-import { LocalizedText } from '@core/components';
-import type { RhythmServiceGroup } from '../admin-rhythm/rhythm-service-groups';
 import {
+  LocalizedText,
   STREAK_EXCUSES,
-  type StreakExcuse,
-} from '@creativo/application/engagement';
+  StreakExcuse,
+  StreakQualifier,
+  StreakQualifierRule,
+} from '@core/components';
+import { ServiceId } from '@core/primitives';
+import type { RhythmServiceGroup } from '../admin-rhythm/rhythm-service-groups';
 import { rhythmRuleUnits } from '@creativo/features/shared/visits';
 import {
   UI_SHEET_HEADLINE,
@@ -47,6 +50,9 @@ import { AdminRhythmStore } from '../admin-rhythm.store';
 import {
   type AdminRhythmContext,
   earnEveryOptions,
+  excuseKey,
+  onBreakKey,
+  onBreakOf,
   onBreakOptions,
   pauseDaysOptions,
   repairPerYearOptions,
@@ -57,11 +63,11 @@ import {
 export type AdminRhythmSheetKind =
   'services' | 'protections' | 'excuses' | 'afterMiss' | 'day';
 
-/** The three excuses that are the shop's: switching one off is said. */
+/** The three excuses that are the shop's, in P9's order: switching one off is said. */
 const SHOP_EXCUSES: readonly StreakExcuse[] = [
-  'staffCancelled',
-  'barberAbsence',
-  'shopClosure',
+  StreakExcuse.StaffCancelled,
+  StreakExcuse.BarberAbsence,
+  StreakExcuse.ShopClosure,
 ];
 
 /** One service as the services sheet lists it. */
@@ -220,10 +226,17 @@ export class AdminRhythmSheet {
 
   // ── Services ────────────────────────────────────────────────────────────
 
-  protected readonly chosenServices = computed((): ReadonlySet<string> => {
-    const qualifier = this.draft().qualifier;
-    return new Set(qualifier.kind === 'services' ? qualifier.serviceIds : []);
+  /** The services the draft counts, by id. */
+  private readonly chosen = computed((): readonly ServiceId[] => {
+    const draft = this.draft();
+    return draft.streakQualifier === StreakQualifier.Services
+      ? draft.qualifierServiceIds
+      : [];
   });
+
+  protected readonly chosenServices = computed(
+    (): ReadonlySet<string> => new Set(this.chosen()),
+  );
 
   /** The catalogue's groups in the language, the search applied; a group with no match is left out. */
   protected readonly serviceGroups = computed(
@@ -252,15 +265,15 @@ export class AdminRhythmSheet {
   );
 
   /** A service in or out of the list; the last one chosen stays. */
-  protected toggleService(id: string): void {
-    const qualifier = this.draft().qualifier;
-    const chosen = qualifier.kind === 'services' ? qualifier.serviceIds : [];
+  protected toggleService(raw: string): void {
+    const id = ServiceId.of(raw);
+    const chosen = this.chosen();
     const next = chosen.includes(id)
       ? chosen.length === 1
         ? chosen
         : chosen.filter((other) => other !== id)
       : [...chosen, id];
-    this.store.patch({ qualifier: { kind: 'services', serviceIds: next } });
+    this.store.patch({ qualifier: StreakQualifierRule.services(next) });
   }
 
   // ── Protections ─────────────────────────────────────────────────────────
@@ -271,7 +284,7 @@ export class AdminRhythmSheet {
   protected readonly earnEveryLabel = computed(
     () =>
       this.earnEveryOptions().find(
-        (option) => option.id === String(this.draft().protections.earnEvery),
+        (option) => option.id === String(this.draft().protectionsEarnEvery),
       )?.label ?? '',
   );
 
@@ -285,6 +298,11 @@ export class AdminRhythmSheet {
 
   protected excused(excuse: StreakExcuse): boolean {
     return this.draft().excuses.includes(excuse);
+  }
+
+  /** «shopClosure» — an excuse's key and test-id word. */
+  protected excuseKey(excuse: StreakExcuse): string {
+    return excuseKey(excuse);
   }
 
   /** One of the shop's three excuses is off: the client will lose the rhythm through the shop's fault. */
@@ -306,7 +324,7 @@ export class AdminRhythmSheet {
   );
   protected readonly pauseDaysLabel = computed(
     () =>
-      this.context()?.rule.days(this.draft().clientPause.maxDaysPerYear) ?? '',
+      this.context()?.rule.days(this.draft().clientPauseMaxDaysPerYear) ?? '',
   );
 
   // ── After a miss ────────────────────────────────────────────────────────
@@ -314,16 +332,24 @@ export class AdminRhythmSheet {
   protected readonly onBreakOptions = computed(() =>
     this.withContext((context) => onBreakOptions(context), []),
   );
+  /** The menu's id for what a miss does. */
+  protected readonly onBreakChoice = computed(() =>
+    onBreakKey(this.draft().onBreak),
+  );
   protected readonly onBreakLabel = computed(
     () =>
-      this.onBreakOptions().find((option) => option.id === this.draft().onBreak)
+      this.onBreakOptions().find((option) => option.id === this.onBreakChoice())
         ?.label ?? '',
   );
+
+  protected pickOnBreak(id: string): void {
+    this.store.patch({ onBreak: onBreakOf(id) });
+  }
   protected readonly repairWindowOptions = computed(() =>
     this.withContext((context) => repairWindowOptions(context), []),
   );
   protected readonly repairWindowLabel = computed(
-    () => this.context()?.rule.days(this.draft().repair.windowDays) ?? '',
+    () => this.context()?.rule.days(this.draft().repairWindowDays) ?? '',
   );
   protected readonly repairPerYearOptions = computed(() =>
     this.withContext((context) => repairPerYearOptions(context), []),
@@ -331,7 +357,7 @@ export class AdminRhythmSheet {
   protected readonly repairPerYearLabel = computed(
     () =>
       this.repairPerYearOptions().find(
-        (option) => option.id === String(this.draft().repair.perYear),
+        (option) => option.id === String(this.draft().repairPerYear),
       )?.label ?? '',
   );
 

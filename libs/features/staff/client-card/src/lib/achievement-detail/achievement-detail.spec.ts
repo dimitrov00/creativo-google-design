@@ -2,17 +2,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  InMemoryLoyaltyCatalogReader,
-  InMemoryLoyaltyReader,
-} from '@creativo/application/engagement/testing';
-import {
   GEORGI,
+  catalogPortsOf,
   georgiContext,
   georgiOpenContext,
+  loyaltyPortsOf,
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
-  HeldCatalogReader,
+  heldCatalogPorts,
   type MountOptions,
   PAGE_TITLE_ID,
   mountAchievementsPage,
@@ -447,7 +445,7 @@ describe('AchievementDetailPage — other families', () => {
 
 describe('AchievementDetailPage — states', () => {
   it('holds the stage with a disc, a line and two blocks while the family is on its way', async () => {
-    const catalog = new HeldCatalogReader();
+    const catalog = heldCatalogPorts();
     const { byId, text, render } = await mount('series-svc-fade', {
       rig: { catalog },
     });
@@ -478,7 +476,7 @@ describe('AchievementDetailPage — states', () => {
   });
 
   it('says the achievements did not load, and reads them again', async () => {
-    const catalog = new InMemoryLoyaltyCatalogReader().failWith();
+    const catalog = catalogPortsOf().failWith();
     const { byId, text, render } = await mount('series-svc-fade', {
       rig: { catalog },
     });
@@ -510,7 +508,7 @@ describe('AchievementDetailPage — states', () => {
 
   it('is absent for a person with no loyalty account', async () => {
     const { byId, text } = await mount('series-svc-fade', {
-      rig: { loyalty: new InMemoryLoyaltyReader() },
+      rig: { loyalty: loyaltyPortsOf([]) },
     });
     expect(text(byId('achievements-empty'))).toBe(
       'Първото постижение идва с първото посещение.',

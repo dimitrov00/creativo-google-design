@@ -1,14 +1,28 @@
-import {
-  type LoyaltyAccount,
-  type LoyaltyCatalog,
-  type RewardCatalogItem,
-  type StreakState,
-  sofiaDayOf,
-} from '@creativo/application/engagement';
+import type {
+  LoyaltyAccount,
+  RewardCatalogItem,
+  StreakDefinition,
+} from '@core/entities';
 import { CouponGrantId, LocalDate, defect } from '@core/primitives';
-import { type GrantTicketRef, RewardSystem } from '@core/systems';
+import {
+  FreezeReason,
+  type StreakHeadRule,
+  StreakPhase,
+  StreakState,
+} from '@core/components';
+import {
+  type GrantTicketRef,
+  RewardSystem,
+  StreakRuleSystem,
+  type ValidLoyaltyCatalog,
+} from '@core/systems';
 import type { ClientCardGrant } from './client-card.contracts';
-import { dayLong, dayShort, daysBetweenDays } from './client-card.format';
+import {
+  dayLong,
+  dayShort,
+  daysBetweenDays,
+  shopDayOf,
+} from './client-card.format';
 import type { RewardReadyVm, Slice } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
 
@@ -105,6 +119,41 @@ export function glanceReward(
     : ticketOf(first, groups.length - 1, today, words);
 }
 
+// ── The rhythm (§4.1, §4.2) ─────────────────────────────────────────────
+
+/**
+ * The rule the rhythm is judged by on the card's today
+ * (`StreakRuleSystem.inForceOn`); `null` without a rhythm. A rule that is
+ * switched OFF is still the rule in force: whoever draws the rhythm asks it
+ * whether it is `enabled`.
+ */
+export function ruleInForceOf(
+  rhythm: StreakDefinition | null,
+  today: string,
+): StreakHeadRule | null {
+  return rhythm === null
+    ? null
+    : StreakRuleSystem.inForceOn(rhythm, dayOf(today));
+}
+
+/** The rule that waits for its day (`StreakRuleSystem.upcomingOn`); `null` with nothing waiting, or without a rhythm. */
+export function ruleUpcomingOf(
+  rhythm: StreakDefinition | null,
+  today: string,
+): StreakHeadRule | null {
+  return rhythm === null
+    ? null
+    : StreakRuleSystem.upcomingOn(rhythm, dayOf(today));
+}
+
+/** The account's state of the rhythm (`StreakState.find`, a linear scan); `null` without a rhythm or a state. */
+export function rhythmStateOf(
+  account: Pick<LoyaltyAccount, 'streaks'>,
+  rhythm: Pick<StreakDefinition, 'id'> | null,
+): StreakState | null {
+  return rhythm === null ? null : StreakState.find(account.streaks, rhythm.id);
+}
+
 /** The track's one sentence: «24 посещения в ритъм, най-много 26, следващото до 9 ноември». */
 export function rhythmLabel(
   state: StreakState,
@@ -146,57 +195,56 @@ export function rhythmStateLine(
   if (paused) return none(rhythm.frozen);
   // The visit in the chair keeps the rhythm: say when the next one is due.
   if (inChairDue !== null) return naming(rhythm.stateActive, inChairDue);
-  if (state.current === 0 && state.lastQualifiedAt === null) {
+  if (state.current === 0 && state.lastQualifiedAtUtcMs === null) {
     return none(rhythm.stateNone);
   }
-  const phase = state.phase;
-  switch (phase.kind) {
-    case 'active':
+  switch (state.streakPhase) {
+    case StreakPhase.Active:
       return state.dueBy === null
         ? none(rhythm.stateNone)
         : naming(rhythm.stateActive, state.dueBy);
-    case 'atRisk': {
+    case StreakPhase.AtRisk: {
+      // The last counted visit's day, read on the shop's calendar (UI
+      // formatting of the stamp; the state stores no day beside it).
       const last =
-        state.lastQualifiedAt === null
+        state.lastQualifiedAtUtcMs === null
           ? null
-          : sofiaDayOf(state.lastQualifiedAt);
+          : shopDayOf(state.lastQualifiedAtUtcMs);
       const weeks =
         last === null
           ? 0
           : Math.max(1, Math.round(daysBetweenDays(last, today) / 7));
-      return naming((date) => rhythm.stateAtRisk(weeks, date), phase.dueBy);
-    }
-    case 'inGrace':
-      return naming(rhythm.stateInGrace, phase.graceUntil);
-    case 'frozen':
-      return none(
-        phase.reason === 'freeze' ? rhythm.stateFrozenFreeze : rhythm.frozen,
+      return naming(
+        (date) => rhythm.stateAtRisk(weeks, date),
+        state.phaseDueBy,
       );
-    case 'broken':
-      return naming(rhythm.stateBroken, phase.repairableUntil);
+    }
+    case StreakPhase.InGrace:
+      return naming(rhythm.stateInGrace, state.phaseGraceUntil);
+    case StreakPhase.Frozen:
+      return none(
+        state.phaseFreezeReason === FreezeReason.Freeze
+          ? rhythm.stateFrozenFreeze
+          : rhythm.frozen,
+      );
+    case StreakPhase.Broken:
+      return naming(rhythm.stateBroken, state.phaseRepairableUntil);
   }
 }
 
-/** The rewards a catalogue offers today: enabled, not ended. */
+/** The rewards a catalogue offers today: enabled, not ended — in the catalogue's order. */
 export function offered(
-  catalog: LoyaltyCatalog,
+  catalog: ValidLoyaltyCatalog,
   today: string,
 ): readonly RewardCatalogItem[] {
-  return RewardSystem.offered(
-    catalog.rewards.map((reward) => ({
-      enabled: reward.enabled,
-      availableUntil:
-        reward.available.until === null ? null : dayOf(reward.available.until),
-      source: reward,
-    })),
-    dayOf(today),
-  ).map((ref) => ref.source);
+  return RewardSystem.offered(catalog.rewards, dayOf(today));
 }
 
 export interface LoyaltyPageInput {
+  /** `loyaltyAccounts/{customerId}` as stored. */
   readonly account: LoyaltyAccount;
   /** `null` = no catalogue reader bound: the sections that need it are absent. */
-  readonly catalog: Slice<LoyaltyCatalog> | null;
+  readonly catalog: Slice<ValidLoyaltyCatalog> | null;
   readonly flags: LoyaltyFlags;
   readonly paused: boolean;
   /**
@@ -235,7 +283,7 @@ export function sliceMap<T, U>(
   return data === null ? undefined : { status: 'ready', data };
 }
 
-// ── The bridge: the card's grant → ecs-core struct (Phase 4 deletes it) ──
+// ── The card's own values → ecs-core structs ──────────────────────────────
 
 /** A shop day the card holds: a guarded document day, a clock's «today». */
 function dayOf(raw: string): LocalDate {

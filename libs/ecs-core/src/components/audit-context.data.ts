@@ -19,7 +19,7 @@ import type {
  * `staff-edit-appointment.ts:210`, `transition-appointment.ts:499-506`,
  * `mark-arrived.ts:112`, `clear-arrival.ts:82`, `record-seat-tip.ts:148`,
  * `reschedule-appointment.ts:172`, `cancel-appointment.ts:226`,
- * `publish-streak-definition.use-case.ts:32-35`, `run-backfill.ts:693`,
+ * `publish-streak-definition.pipeline.ts`, `run-backfill.ts:693`,
  * `audit-profile-changes.ts:60-65`) upper-snaked, dots and camel humps to
  * `_` (flatten-spec §3.7); the stored bytes stay the dotted strings until
  * the governance flip, the shims converting. A new audited act is a

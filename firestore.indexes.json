@@ -291,15 +291,15 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "userId",
+          "fieldPath": "customerId",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "visibility",
+          "fieldPath": "journalVisibility",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "effect.kind",
+          "fieldPath": "journalEffect",
           "order": "ASCENDING"
         },
         {
@@ -442,6 +442,76 @@
     {
       "collectionGroup": "auditLog",
       "fieldPath": "streakChanged",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "loyaltyAccounts",
+      "fieldPath": "streaks",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "loyaltyAccounts",
+      "fieldPath": "punchCards",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "loyaltyAccounts",
+      "fieldPath": "records",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "badgeProgress",
+      "fieldPath": "earned",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientJournal",
+      "fieldPath": "labelParams",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "clientJournal",
+      "fieldPath": "actorRoles",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "streakDefinitions",
+      "fieldPath": "rules",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "versions",
+      "fieldPath": "changed",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "versions",
+      "fieldPath": "excuses",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "versions",
+      "fieldPath": "qualifierServiceIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "versions",
+      "fieldPath": "qualifierCategoryIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "badgeSeries",
+      "fieldPath": "levels",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "seasons",
+      "fieldPath": "seriesIds",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "tierDefinitions",
+      "fieldPath": "benefits",
       "indexes": []
     },
     {

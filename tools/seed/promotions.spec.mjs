@@ -14,26 +14,20 @@
  * no type can say.
  */
 import {
-  streakScheduleFromDocument,
-  streakStateToDocument,
-} from '@creativo/application/engagement';
-import { ServiceCategoryId, ServiceId } from '@creativo/domain/catalog';
-import {
   Combinability,
   CouponExpiry,
   CouponOccasion,
   CouponStatus,
   DiscountMethod,
+  PublicLabel,
+  StreakRule,
   VoucherStatus,
 } from '@core/components';
 import { Collections } from '@core/entities';
 import { GrantStatus, LocalDate } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import { StreakRuleSystem, StreakSystem, ZonedTimeSystem } from '@core/systems';
 import { FIXTURE_TODAY, giftVouchersJson } from '@core/testing';
 import { describe, expect, it } from 'vitest';
-// The projector by its own path: the domain's barrel does not carry its
-// line yet (contract delta R2b-1), and the seed's bundle names it so too.
-import { traceStreak } from '../../libs/domain/engagement/src/lib/loyalty/streak-projector';
 import { SHOP_ZONE, createShopCalendar, wallTimeMovedBy } from './calendar.mjs';
 import { buildClientBook } from './fixtures.mjs';
 import { customerIdOf } from './fixtures/customers.fixtures.ts';
@@ -82,13 +76,11 @@ const ANCHORS = [
   Date.parse('2028-02-29T07:30:00+02:00'), // a leap day
 ];
 
-/** What the loyalty fold is handed, imported the ordinary way (flip 3's engine). */
+/** What the loyalty fold is handed, imported the ordinary way (the domain the seed's bundle holds). */
 const DOMAIN = {
-  ServiceCategoryId,
-  ServiceId,
-  streakScheduleFromDocument,
-  streakStateToDocument,
-  traceStreak,
+  StreakSystem,
+  StreakRuleSystem,
+  StreakRule,
 };
 
 const idOf = ({ path }) => path.split('/').at(-1);
@@ -131,8 +123,8 @@ function promotionsOn(nowMs) {
 
 /**
  * The facts of one voucher of the shared fixture (`vouchers.json` under
- * `@core/testing`), in the flat body's words. The file keeps TODAY's wire
- * until the loyalty flip (3) reshapes it — ISO instants, a holder uid and
+ * `@core/testing`), in the flat body's words. The file keeps the legacy
+ * wire (the application's vouchers reader parses it until Phase 4) — ISO instants, a holder uid and
  * minor units under names flip 1 removed from every document — so its
  * values are read by POSITION, in the file's fixed key order, rather than
  * by names this flip's grep gate refuses under `tools/seed`.
@@ -318,14 +310,14 @@ describe('the grants', () => {
           },
         );
         const named = Object.values(clientJournal).flatMap((row) =>
-          row.effect.kind === 'reward'
-            ? [[row.effect.ref.id, row, row.publicLabel.params.coupon]]
-            : row.effect.kind === 'redemption'
+          row.journalEffect === 'REWARD'
+            ? [[row.rewardCouponGrantId, row, PublicLabel.param(row, 'coupon')]]
+            : row.journalEffect === 'REDEMPTION'
               ? [
                   [
-                    row.effect.grant.id,
+                    row.grantCouponGrantId,
                     row,
-                    catalog.rewardsCatalog[row.effect.rewardId].grants.couponId,
+                    catalog.rewardsCatalog[row.redeemedRewardId].grantCouponId,
                   ],
                 ]
               : [],
@@ -336,9 +328,11 @@ describe('the grants', () => {
             customerId: customerIdOf(holder.uid),
             holderUserId: holder.uid,
             couponId,
-            // The journal keeps the loyalty wire (flip 3): an ISO instant.
-            grantedAtUtcMs: Date.parse(row.at),
+            // The row and the grant name one instant, to the millisecond.
+            grantedAtUtcMs: row.utcEpochMs,
           });
+          // …and one client record (D29): the row's, the grant's.
+          expect(row.customerId, grantId).toBe(customerIdOf(holder.uid));
         }
         // And the seed writes no grant of the engine's the journal does not name.
         expect(

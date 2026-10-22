@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { workspaceRoot } from '@nx/devkit';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import type { LoyaltyAccountFixture } from '@creativo/application/engagement/testing';
 import { ClientStats, type VisitFact } from '@core/components';
 import {
   AppointmentId,
@@ -13,6 +12,8 @@ import {
   SeatId,
   ServiceId,
 } from '@core/primitives';
+// Types only (erased): the testing entry's runtime half is not Playwright's to load.
+import type { LoyaltyClientJson } from '@core/testing';
 import { SHOP_ZONE } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
 import { expectNoAxeViolations } from './support/axe';
@@ -56,19 +57,20 @@ function shopToday(): string {
 }
 
 /**
- * Георги's A0 fixture, read as JSON: the testing entry itself cannot be
- * loaded here (Playwright's transform rejects the domain libs it imports).
+ * Георги's shared loyalty fixture (`@core/testing`'s `account-georgi.json`,
+ * the flat documents as stored), read as JSON: the testing entry itself
+ * cannot be loaded here (its runtime half is the specs').
  */
-function georgiLoyalty(): LoyaltyAccountFixture {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the engagement lib's own fixture.
+function georgiLoyalty(): LoyaltyClientJson {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to ecs-core's own fixture.
   const json = readFileSync(
     join(
       workspaceRoot,
-      'libs/application/engagement/src/testing/fixtures/loyalty/account-georgi.json',
+      'libs/ecs-core/src/testing/fixtures/loyalty/account-georgi.json',
     ),
     'utf8',
   );
-  return JSON.parse(json) as LoyaltyAccountFixture;
+  return JSON.parse(json) as LoyaltyClientJson;
 }
 
 /** One visit on the stats: the appointment at 10:00 on the shop's clock that day. */

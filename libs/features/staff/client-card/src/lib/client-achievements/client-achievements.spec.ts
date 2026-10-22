@@ -3,33 +3,26 @@ import { TranslocoService } from '@jsverse/transloco';
 import { firstValueFrom } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cssRule } from '../../testing/css-rule';
-import {
-  type BadgeProgress,
-  type LedgerEntry,
-  type LoyaltyAccount,
-  type LoyaltyReader,
-  type SeasonProgress,
-} from '@creativo/application/engagement';
-import {
-  InMemoryLoyaltyCatalogReader,
-  InMemoryLoyaltyReader,
-  type LoyaltyCatalogFixture,
-  loyaltyFixtures,
-} from '@creativo/application/engagement/testing';
-import { type Result, fail } from '@creativo/application/booking';
-import { RepositoryError } from '@creativo/application/shared';
+import { PersonalRecordKind } from '@core/components';
+import type { LoyaltyAccountReadPorts, LoyaltyCatalog } from '@core/ports';
+import { BadgeSeriesId, RepositoryError, Result } from '@core/primitives';
+import { loyaltyCatalogFixture, localDate } from '@core/testing';
 import type { AchievementScope } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
 import {
   GEORGI,
+  GEORGI_LOYALTY,
   MARTIN,
   at,
+  catalogPortsOf,
   georgiContext,
+  loyaltyPortsOf,
   martinContext,
+  must,
   subjectOf,
 } from '../../testing/client-card.fixtures';
 import {
-  HeldCatalogReader,
+  heldCatalogPorts,
   type MountOptions,
   PAGE_TITLE_ID,
   achievementsPageProviders,
@@ -114,78 +107,64 @@ async function mount(options: Partial<MountOptions> = {}) {
   };
 }
 
-/** A reader whose family progress fails until it recovers: the catalogue loads, the progress does not. */
-class ProgressFails implements LoyaltyReader {
-  private failing = true;
-  constructor(private readonly inner = InMemoryLoyaltyReader.seeded()) {}
-  recover(): void {
-    this.failing = false;
-  }
-  getAccount(
-    userId: string,
-  ): Promise<Result<LoyaltyAccount | null, RepositoryError>> {
-    return this.inner.getAccount(userId);
-  }
-  async listBadgeProgress(
-    userId: string,
-  ): Promise<Result<readonly BadgeProgress[], RepositoryError>> {
-    return this.failing
-      ? fail(new RepositoryError('badgeProgress unavailable'))
-      : this.inner.listBadgeProgress(userId);
-  }
-  listSeasonProgress(
-    userId: string,
-  ): Promise<Result<readonly SeasonProgress[], RepositoryError>> {
-    return this.inner.listSeasonProgress(userId);
-  }
-  listLedgerTail(
-    userId: string,
-    limit: number,
-  ): Promise<Result<readonly LedgerEntry[], RepositoryError>> {
-    return this.inner.listLedgerTail(userId, limit);
-  }
+/** A loyalty port whose family progress fails until it recovers: the catalogue loads, the progress does not. */
+function progressFails(): LoyaltyAccountReadPorts & {
+  readonly recover: () => void;
+} {
+  const inner = loyaltyPortsOf();
+  let failing = true;
+  return {
+    loadLoyaltyAccount: (customerId) => inner.loadLoyaltyAccount(customerId),
+    listBadgeProgress: async (customerId) =>
+      failing
+        ? Result.err(RepositoryError.unavailable())
+        : inner.listBadgeProgress(customerId),
+    listSeasonProgress: (customerId) => inner.listSeasonProgress(customerId),
+    recover: () => {
+      failing = false;
+    },
+  };
 }
 
 /** Георги's book with nothing earned and nothing under way: the first visit is all it knows. */
-function nothingEarned(): InMemoryLoyaltyReader {
-  const georgi = loyaltyFixtures.georgi;
-  return new InMemoryLoyaltyReader({
-    [GEORGI]: {
+function nothingEarned(): LoyaltyAccountReadPorts {
+  const georgi = GEORGI_LOYALTY;
+  return loyaltyPortsOf([
+    {
       ...georgi,
       account: {
         ...georgi.account,
         records: [
           {
-            kind: 'firstVisit',
+            personalRecordKind: PersonalRecordKind.FirstVisit,
             value: 1,
-            on: '2026-09-21',
+            on: localDate('2026-09-21'),
             year: null,
             serviceId: null,
           },
         ],
-        streaks: {},
+        streaks: [],
       },
-      badgeProgress: {},
-      seasonProgress: {},
-    } as typeof georgi,
-  });
+      badgeProgress: [],
+      seasonProgress: [],
+    },
+  ]);
 }
 
 /** The published catalogue with «Специални» grown past nine families: the fold. */
-function specialGrown(by: number): LoyaltyCatalogFixture {
-  const copy = JSON.parse(
-    JSON.stringify(loyaltyFixtures.catalog),
-  ) as LoyaltyCatalogFixture;
-  const series = copy.badgeSeries as Record<string, unknown>;
-  const party = series['series-party'] as Record<string, unknown>;
-  for (let i = 1; i <= by; i += 1) {
-    series[`series-extra-${i}`] = {
-      ...party,
-      title: { bg: `Допълнителен ${i}`, en: `Extra ${i}` },
-      order: 10 + i,
-    };
-  }
-  return copy;
+function specialGrown(by: number): LoyaltyCatalog {
+  const catalog = loyaltyCatalogFixture();
+  const party = must(
+    catalog.series.find((series) => series.id === 'series-party'),
+    'the party family',
+  );
+  const extras = Array.from({ length: by }, (_, index) => ({
+    ...party,
+    id: BadgeSeriesId.of(`series-extra-${index + 1}`),
+    title: { bg: `Допълнителен ${index + 1}`, en: `Extra ${index + 1}` },
+    order: 10 + index + 1,
+  }));
+  return { ...catalog, series: [...catalog.series, ...extras] };
 }
 
 /**
@@ -740,7 +719,7 @@ describe('ClientAchievementsPage — the overview (AF–AM, AJ)', () => {
     const scrolling = stubScrolling();
     try {
       const { byId, text, store, render, shelves, pressed } = await mount({
-        rig: { catalog: new InMemoryLoyaltyCatalogReader(specialGrown(3)) },
+        rig: { catalog: catalogPortsOf(specialGrown(3)) },
       });
       expect(
         shelves().find(
@@ -1019,7 +998,7 @@ describe('ClientAchievementsPage — Мартин in the chair on his birthday',
 
 describe('ClientAchievementsPage — states (§2.3.5)', () => {
   it('holds shaped placeholders — four record blocks, two rows of chips, one grid of six discs — while the catalogue is on its way, then lands', async () => {
-    const catalog = new HeldCatalogReader();
+    const catalog = heldCatalogPorts();
     const { byId, all, render, text } = await mount({ rig: { catalog } });
     const skeleton = byId('achievements-skeleton');
     expect(skeleton?.getAttribute('aria-busy')).toBe('true');
@@ -1053,7 +1032,7 @@ describe('ClientAchievementsPage — states (§2.3.5)', () => {
   });
 
   it('says the catalogue did not load, and reads it again on «Опитай пак»', async () => {
-    const catalog = new InMemoryLoyaltyCatalogReader().failWith();
+    const catalog = catalogPortsOf().failWith();
     const { byId, render, text } = await mount({ rig: { catalog } });
     const notice = byId('achievements-error');
     expect(notice?.tagName).toBe('UI-NOTICE');
@@ -1077,7 +1056,7 @@ describe('ClientAchievementsPage — states (§2.3.5)', () => {
   });
 
   it('never draws a fake zero: failed progress under a loaded catalogue is the same notice', async () => {
-    const loyalty = new ProgressFails();
+    const loyalty = progressFails();
     const { byId, render } = await mount({ rig: { loyalty } });
     expect(byId('achievements-error')).not.toBeNull();
     expect(byId('achievements-close')).toBeNull();
@@ -1155,7 +1134,7 @@ describe('ClientAchievementsPage — states (§2.3.5)', () => {
 
   it('is absent for a person with no loyalty account: it says how the first achievement comes', async () => {
     const { byId, text } = await mount({
-      rig: { loyalty: new InMemoryLoyaltyReader() },
+      rig: { loyalty: loyaltyPortsOf([]) },
     });
     expect(byId('achievements-records')).toBeNull();
     expect(byId('achievements-chips')).toBeNull();

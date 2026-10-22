@@ -1,5 +1,4 @@
-import { Daypart } from '@core/components';
-import type { Metric } from '@creativo/application/engagement';
+import { Daypart, type Metric } from '@core/components';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { describe, expect, it } from 'vitest';
 import {

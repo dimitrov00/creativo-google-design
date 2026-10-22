@@ -14,8 +14,8 @@ import {
 import {
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  FIXTURE_TODAY,
 } from '@core/testing';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { UiButton } from '@creativo/ui/controls';
 import { appCatalogue } from '../testing/app-catalogue';
@@ -59,7 +59,7 @@ import { VisitsBrowser, type VisitsBrowserBleed } from './visits-browser';
 
 const CATALOGUES = { bg: appCatalogue('bg'), en: appCatalogue('en') };
 const BG = catalogueTranslator(CATALOGUES.bg);
-const NOW_MS = visitsNowMs(loyaltyFixtures.today);
+const NOW_MS = visitsNowMs(FIXTURE_TODAY);
 
 // ── The observer's stand-in ─────────────────────────────────────────────
 

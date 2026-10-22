@@ -178,9 +178,9 @@ export type AchievementScope =
 /**
  * A read the card retries as one: `profile` is `users/{uid}` (the gate the
  * rest waits for), the others are a module's data and its page's.
- * `vouchers` is the gift vouchers issued to the person
- * (`CLIENT_VOUCHERS_READER`) and `activity` the journal's feed
- * (`LOYALTY_ACTIVITY_READER`), the wallet's two reads of revision 3
+ * `vouchers` is the gift vouchers issued to the client record
+ * (`COUPON_VOUCHER_PORTS`) and `activity` the record's journal feed
+ * (`CLIENT_JOURNAL_PORTS`), the wallet's two reads of revision 3
  * (§4.5, §4.7).
  */
 export type ClientCardRegion =

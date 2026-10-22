@@ -21,12 +21,18 @@ import {
   AuthClaims,
   EndReasonFields,
   ImpersonationLifecycle,
+  JournalEffect,
+  JournalFeed,
+  JournalVisibility,
   ParsedIdentifier,
+  StreakRule,
+  TierOp,
   WriteOp,
 } from '@core/components';
 import {
   AppointmentId,
   AppointmentPhotoId,
+  AuditEntryId,
   BarberId,
   BusyKey,
   CapacityMonthId,
@@ -41,11 +47,15 @@ import {
   NotificationId,
   PriceCents,
   OtpId,
+  RepositoryError,
   type Result,
   ScheduleExceptionId,
   TenantId,
   ServiceCategoryId,
   ServiceId,
+  StreakDefinitionId,
+  StreakDefinitionVersionId,
+  TierId,
   UserId,
   UtcEpochMs,
   WaitlistRequestId,
@@ -53,6 +63,7 @@ import {
 import type {
   Appointment,
   AppointmentPhoto,
+  AuditEntry,
   CapacityMonth,
   ClientMoneyRecord,
   ClientStatsRecord,
@@ -61,12 +72,13 @@ import type {
   Customer,
   GiftVoucher,
   InboxNotification,
+  JournalEntry,
   ScheduleException,
   ServiceCategory,
   User,
   WaitlistRequest,
 } from '@core/entities';
-import { Collections } from '@core/entities';
+import { Collections, Subcollections } from '@core/entities';
 import { ProfileEditSystem } from '@core/systems';
 import { appointmentFixture } from './appointment.fixtures';
 import {
@@ -77,6 +89,12 @@ import {
   serviceFixture,
 } from './booking-core.fixtures';
 import { scheduleExceptionFixture } from './booking-flow.fixtures';
+import {
+  loyaltyAccountFixtures,
+  loyaltyCatalogFixture,
+  streakDefinitionFixture,
+  streakDefinitionVersionFixture,
+} from './loyalty.fixtures';
 import {
   FIXTURE_IDS,
   FIXTURE_TODAY,
@@ -95,16 +113,22 @@ import {
   memoryAuthAdminPorts,
   memoryAuthUserLookupPorts,
   memoryCatalogReadPorts,
+  memoryClientJournalPorts,
   memoryClientStatsReadPorts,
   memoryCouponVoucherPorts,
   memoryCustomerPorts,
   memoryIdentityWorld,
   memoryImpersonationReadPorts,
   memoryInboxPorts,
+  memoryLoyaltyAccountReadPorts,
+  memoryLoyaltyCatalogReadPorts,
+  memoryLoyaltyWorld,
   memoryOtpStorePorts,
   memoryProfilePorts,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
+  memoryStreakDefinitionPorts,
+  memoryStreakWorld,
   memoryUserLookupPorts,
   memoryUserSearchPorts,
   memoryWaitlistReadPorts,
@@ -1001,5 +1025,250 @@ describe('the pinned OTP side channels', () => {
     );
     const other = TenantId.of('other-shop');
     expect(unwrapOk(await fixedTenantPorts(other).loadTenant())).toBe(other);
+  });
+});
+
+describe('memoryLoyaltyAccountReadPorts — keyed by the client record (D29)', () => {
+  const { georgi, martin } = loyaltyAccountFixtures;
+
+  it('reads a record’s account and its whole progress, as stored', async () => {
+    const ports = memoryLoyaltyAccountReadPorts(
+      memoryLoyaltyWorld([georgi, martin]),
+    );
+    expect(unwrapOk(await ports.loadLoyaltyAccount(georgi.customerId))).toBe(
+      georgi.account,
+    );
+    expect(unwrapOk(await ports.listBadgeProgress(martin.customerId))).toBe(
+      martin.badgeProgress,
+    );
+    expect(unwrapOk(await ports.listSeasonProgress(georgi.customerId))).toBe(
+      georgi.seasonProgress,
+    );
+  });
+
+  it('answers no account and no progress for a record without loyalty', async () => {
+    const ports = memoryLoyaltyAccountReadPorts(memoryLoyaltyWorld([georgi]));
+    expect(unwrapOk(await ports.loadLoyaltyAccount(ANA_RECORD))).toBeNull();
+    expect(unwrapOk(await ports.listBadgeProgress(ANA_RECORD))).toEqual([]);
+    expect(unwrapOk(await ports.listSeasonProgress(ANA_RECORD))).toEqual([]);
+  });
+
+  it('records each call, in order, by the record it asked for', async () => {
+    const world = memoryLoyaltyWorld([georgi]);
+    const ports = memoryLoyaltyAccountReadPorts(world);
+    await ports.loadLoyaltyAccount(georgi.customerId);
+    await ports.listSeasonProgress(BOB_RECORD);
+    expect(world.calls).toEqual([
+      { port: 'loadLoyaltyAccount', customerId: georgi.customerId },
+      { port: 'listSeasonProgress', customerId: BOB_RECORD },
+    ]);
+  });
+
+  it('reads the world by reference: an account set later is read at the next call', async () => {
+    const world = memoryLoyaltyWorld();
+    const ports = memoryLoyaltyAccountReadPorts(world);
+    expect(unwrapOk(await ports.loadLoyaltyAccount(martin.customerId))).toBe(
+      null,
+    );
+    world.accounts.set(martin.customerId, martin.account);
+    expect(unwrapOk(await ports.loadLoyaltyAccount(martin.customerId))).toBe(
+      martin.account,
+    );
+  });
+});
+
+describe('memoryLoyaltyCatalogReadPorts — the published catalogue', () => {
+  it('answers the dev shop’s catalogue under the system’s part names', async () => {
+    const catalog = unwrapOk(
+      await memoryLoyaltyCatalogReadPorts().loadLoyaltyCatalog(),
+    );
+    expect(catalog).toBe(loyaltyCatalogFixture());
+    expect(Object.keys(catalog)).toEqual([
+      'categories',
+      'series',
+      'seasons',
+      'tiers',
+      'rewards',
+      'streaks',
+    ]);
+  });
+
+  it('answers the catalogue it is given, or fails as unavailable', async () => {
+    const empty = {
+      categories: [],
+      series: [],
+      seasons: [],
+      tiers: [],
+      rewards: [],
+      streaks: [],
+    };
+    expect(
+      unwrapOk(await memoryLoyaltyCatalogReadPorts(empty).loadLoyaltyCatalog()),
+    ).toBe(empty);
+    expect(
+      await memoryLoyaltyCatalogReadPorts(undefined, {
+        failing: true,
+      }).loadLoyaltyCatalog(),
+    ).toEqual({ ok: false, error: RepositoryError.unavailable() });
+  });
+});
+
+describe('memoryClientJournalPorts — the feed and ledger query', () => {
+  const { georgi, martin } = loyaltyAccountFixtures;
+  const POINTS = JournalFeed.effectsOf(JournalFeed.Points);
+  const ALL = JournalFeed.effectsOf(JournalFeed.All);
+  const newest = georgi.clientJournal.at(-1) as JournalEntry;
+  /** A staff-only row and a tier row on Георги's journal, past his last seq. */
+  const staffOnly: JournalEntry = {
+    ...newest,
+    seq: newest.seq + 1,
+    journalVisibility: JournalVisibility.Staff,
+  };
+  const tierRow: JournalEntry = {
+    ...newest,
+    seq: newest.seq + 2,
+    journalEffect: JournalEffect.Tier,
+    tierOp: TierOp.Changed,
+    tierFrom: TierId.of('silver'),
+    tierTo: TierId.of('gold'),
+    tierUntil: null,
+  };
+  const rows = [
+    ...martin.clientJournal,
+    ...georgi.clientJournal,
+    staffOnly,
+    tierRow,
+  ];
+
+  it('reads one record’s client-visible rows of the pill’s effects, newest first', async () => {
+    const page = unwrapOk(
+      await memoryClientJournalPorts(rows).pageClientJournal(
+        georgi.customerId,
+        POINTS,
+        null,
+        100,
+      ),
+    );
+    expect(page.entries.map((entry) => entry.seq)).toEqual(
+      georgi.clientJournal.map((entry) => entry.seq).reverse(),
+    );
+    expect(page.nextBeforeSeq).toBeNull();
+    const all = unwrapOk(
+      await memoryClientJournalPorts(rows).pageClientJournal(
+        georgi.customerId,
+        ALL,
+        null,
+        1,
+      ),
+    );
+    // The tier row is «Всички»'s; the staff row is nobody's feed.
+    expect(all.entries).toEqual([tierRow]);
+  });
+
+  it('pages by seq: the page’s oldest seq is the cursor while anything older is left', async () => {
+    const ports = memoryClientJournalPorts(rows);
+    const first = unwrapOk(
+      await ports.pageClientJournal(georgi.customerId, POINTS, null, 30),
+    );
+    expect(first.entries).toHaveLength(30);
+    expect(first.entries[0]?.seq).toBe(35);
+    expect(first.nextBeforeSeq).toBe(6);
+    const second = unwrapOk(
+      await ports.pageClientJournal(
+        georgi.customerId,
+        POINTS,
+        first.nextBeforeSeq,
+        30,
+      ),
+    );
+    expect(second.entries.map((entry) => entry.seq)).toEqual([5, 4, 3, 2, 1]);
+    expect(second.nextBeforeSeq).toBeNull();
+  });
+
+  it('reads a page of at least one row, and nothing for a pill with no rows', async () => {
+    const ports = memoryClientJournalPorts(rows);
+    const one = unwrapOk(
+      await ports.pageClientJournal(martin.customerId, POINTS, null, 0),
+    );
+    expect(one.entries.map((entry) => entry.seq)).toEqual([18]);
+    expect(one.nextBeforeSeq).toBe(18);
+    const status = unwrapOk(
+      await ports.pageClientJournal(
+        martin.customerId,
+        JournalFeed.effectsOf(JournalFeed.Status),
+        null,
+        12,
+      ),
+    );
+    expect(status).toEqual({ entries: [], nextBeforeSeq: null });
+  });
+});
+
+describe('memoryStreakWorld — the one state the rhythm doubles share', () => {
+  const CADENCE = StreakRule.DEFAULT_DEFINITION_ID;
+  const row = partial<AuditEntry>({ id: AuditEntryId.of('row-1') });
+
+  it('seeds the head, its versions and the audit rows at their flat paths, minus their ids', () => {
+    const world = memoryStreakWorld({
+      heads: [streakDefinitionFixture()],
+      versions: [
+        { streakId: CADENCE, version: streakDefinitionVersionFixture() },
+      ],
+      audit: [row],
+    });
+    expect([...world.store.keys()]).toEqual([
+      `${Collections.StreakDefinitions}/cadence`,
+      `${Collections.StreakDefinitions}/cadence/${Subcollections.Versions}/000001`,
+      `${Collections.AuditLog}/row-1`,
+    ]);
+    const head = world.store.get('streakDefinitions/cadence');
+    const version = world.store.get(
+      'streakDefinitions/cadence/versions/000001',
+    );
+    // The body is the entity minus `id` (`toEqual` reads `id: undefined` as absent).
+    expect(head).toEqual({ ...streakDefinitionFixture(), id: undefined });
+    expect(version).toEqual({
+      ...streakDefinitionVersionFixture(),
+      id: undefined,
+    });
+    expect(head !== undefined && 'id' in head).toBe(false);
+    expect(version !== undefined && 'id' in version).toBe(false);
+    expect(memoryStreakWorld().store.size).toBe(0);
+  });
+
+  it('streams the head live: at subscription, and again on every changed()', () => {
+    const world = memoryStreakWorld({ heads: [streakDefinitionFixture()] });
+    const seen: unknown[] = [];
+    const subscription = memoryStreakDefinitionPorts(world)
+      .observeStreakDefinitionHead(CADENCE)
+      .subscribe((result) => seen.push(result.ok ? result.value : result));
+    expect(seen).toEqual([streakDefinitionFixture()]);
+    world.store.delete('streakDefinitions/cadence');
+    expect(seen).toHaveLength(1);
+    world.changed();
+    expect(seen).toEqual([streakDefinitionFixture(), null]);
+    subscription.unsubscribe();
+  });
+
+  it('lists the newest versions first, at least one', async () => {
+    const second = streakDefinitionVersionFixture({
+      id: StreakDefinitionVersionId.forVersion(2),
+      version: 2,
+    });
+    const world = memoryStreakWorld({
+      versions: [
+        { streakId: CADENCE, version: streakDefinitionVersionFixture() },
+        { streakId: CADENCE, version: second },
+        {
+          streakId: StreakDefinitionId.of('other'),
+          version: streakDefinitionVersionFixture(),
+        },
+      ],
+    });
+    const ports = memoryStreakDefinitionPorts(world);
+    const both = unwrapOk(await ports.listStreakDefinitionVersions(CADENCE, 5));
+    expect(both.map((version) => version.id)).toEqual(['000002', '000001']);
+    const one = unwrapOk(await ports.listStreakDefinitionVersions(CADENCE, 0));
+    expect(one).toEqual([second]);
   });
 });

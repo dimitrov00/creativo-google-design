@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import type {
-  BadgeProgress,
-  PersonalRecord,
-} from '@creativo/application/engagement';
+import {
+  type EarnedLevel,
+  EarnedVia,
+  HeadRole,
+  type PersonalRecord,
+} from '@core/components';
+import type { BadgeProgress } from '@core/entities';
+import {
+  AchievementRuleId,
+  BadgeCategoryId,
+  BadgeSeriesId,
+  ServiceId,
+  UtcEpochMs,
+} from '@core/primitives';
+import { BadgeSystem, LoyaltyCatalogSystem } from '@core/systems';
+import { localDate } from '@core/testing';
 import { isUiIconName } from '@creativo/ui/controls';
+import { RECORD_KIND_WORDS, type RecordKindWord } from './client-card.words';
 import { PENDING_RING, isSingleLevel, medalVm } from './achievements.presenter';
 import type { AchievementsData, MedalVm } from './client-pages.vm';
 import {
@@ -56,8 +69,28 @@ const ENGLISH = achievementsContextOf(
 );
 
 function series(data: AchievementsData, id: string) {
-  return must(data.catalog.series(id), id);
+  return must(
+    LoyaltyCatalogSystem.series(data.catalog, BadgeSeriesId.of(id)),
+    id,
+  );
 }
+
+/** A level earned at a Sofia wall-clock time, filed under that shop day (T5). */
+function earnedLevel(level: number, sofiaIso: string): EarnedLevel {
+  const at_ = UtcEpochMs.of(at(sofiaIso).toMillis());
+  if (!at_.ok) throw new Error(`bad fixture instant ${sofiaIso}`);
+  return {
+    level,
+    earnedAtUtcMs: at_.value,
+    earnedLocalDate: localDate(sofiaIso.slice(0, 10)),
+    earnedVia: EarnedVia.Rule,
+    count: 1,
+  };
+}
+
+/** A record's kind as the card words it. */
+const kindOf = (record: PersonalRecord): RecordKindWord =>
+  RECORD_KIND_WORDS[record.personalRecordKind];
 
 function ring(
   data: AchievementsData,
@@ -75,14 +108,9 @@ function withProgress(
   earned: readonly (readonly [level: number, on: string])[],
 ): AchievementsData {
   const progress: BadgeProgress = {
-    seriesId,
+    id: BadgeSeriesId.of(seriesId),
     value,
-    earned: earned.map(([level, on]) => ({
-      level,
-      earnedAt: new Date(at(`${on}T11:00:00`).toMillis()),
-      via: 'rule',
-      count: 1,
-    })),
+    earned: earned.map(([level, on]) => earnedLevel(level, `${on}T11:00:00`)),
   };
   return {
     ...GEORGI,
@@ -94,14 +122,16 @@ function withProgress(
 function rhythmOff(data: AchievementsData = GEORGI): AchievementsData {
   return {
     ...data,
-    catalog: loyaltyCatalogWith((documents) => ({
-      ...documents,
-      streakDefinitions: Object.fromEntries(
-        Object.entries(documents.streakDefinitions).map(([id, head]) => [
-          id,
-          { ...head, current: { ...head.current, enabled: false } },
-        ]),
-      ),
+    catalog: loyaltyCatalogWith((catalog) => ({
+      ...catalog,
+      streaks: catalog.streaks.map((head) => ({
+        ...head,
+        rules: head.rules.map((rule) =>
+          rule.headRole === HeadRole.Current
+            ? { ...rule, enabled: false }
+            : rule,
+        ),
+      })),
     })),
   };
 }
@@ -114,49 +144,64 @@ function withMoreFamilies(
 ): AchievementsData {
   return {
     ...GEORGI,
-    catalog: loyaltyCatalogWith((documents) => {
+    catalog: loyaltyCatalogWith((catalog) => {
       const template = must(
-        new Map(Object.entries(documents.badgeSeries)).get(from),
+        catalog.series.find((family) => family.id === from),
         from,
       );
       return {
-        ...documents,
-        badgeSeries: {
-          ...documents.badgeSeries,
-          ...Object.fromEntries(
-            Array.from({ length: extra }, (_, index) => [
-              `${from}-extra-${index + 1}`,
-              {
-                ...template,
-                categoryId,
-                title: {
-                  bg: `Предизвикателство ${index + 1}`,
-                  en: `Challenge ${index + 1}`,
-                },
-                levels: template.levels.map((level) => ({
-                  ...level,
-                  ruleId: `${level.ruleId}-extra-${index + 1}`,
-                })),
-                order: 900 + index,
-              },
-            ]),
-          ),
-        },
+        ...catalog,
+        series: [
+          ...catalog.series,
+          ...Array.from({ length: extra }, (_, index) => ({
+            ...template,
+            id: BadgeSeriesId.of(`${from}-extra-${index + 1}`),
+            categoryId: BadgeCategoryId.of(categoryId),
+            title: {
+              bg: `Предизвикателство ${index + 1}`,
+              en: `Challenge ${index + 1}`,
+            },
+            levels: template.levels.map((level) => ({
+              ...level,
+              ruleId: AchievementRuleId.of(
+                `${level.ruleId}-extra-${index + 1}`,
+              ),
+            })),
+            order: 900 + index,
+          })),
+        ],
       };
     }),
   };
 }
 
-function record(
-  kind: PersonalRecord['kind'],
-  overrides: Partial<PersonalRecord> = {},
-): PersonalRecord {
+/** What a case changes on a record, days and ids as the spec writes them. */
+type RecordEdit = {
+  readonly value?: number;
+  readonly on?: string | null;
+  readonly year?: number | null;
+  readonly serviceId?: string | null;
+};
+
+/** One of Георги's records, by the card's word for its kind, with some fields changed. */
+function record(kind: RecordKindWord, edit: RecordEdit = {}): PersonalRecord {
+  const held = must(
+    GEORGI.account.records.find((r) => kindOf(r) === kind),
+    kind,
+  );
   return {
-    ...must(
-      GEORGI.account.records.find((r) => r.kind === kind),
-      kind,
-    ),
-    ...overrides,
+    ...held,
+    ...(edit.value === undefined ? {} : { value: edit.value }),
+    ...(edit.on === undefined
+      ? {}
+      : { on: edit.on === null ? null : localDate(edit.on) }),
+    ...(edit.year === undefined ? {} : { year: edit.year }),
+    ...(edit.serviceId === undefined
+      ? {}
+      : {
+          serviceId:
+            edit.serviceId === null ? null : ServiceId.of(edit.serviceId),
+        }),
   };
 }
 
@@ -171,7 +216,10 @@ describe('ringValueOf', () => {
     expect(
       ringValueOf(
         fade,
-        fade.standing(GEORGI.progress.get('series-svc-fade') ?? null),
+        BadgeSystem.standing(
+          fade,
+          GEORGI.progress.get('series-svc-fade') ?? null,
+        ),
       ),
     ).toBeCloseTo(14 / 15);
     // The spec's own sum: 23 draws 13 of 15, 87 %.
@@ -182,7 +230,10 @@ describe('ringValueOf', () => {
     expect(
       ringValueOf(
         fade,
-        fade.standing(at23.progress.get('series-svc-fade') ?? null),
+        BadgeSystem.standing(
+          fade,
+          at23.progress.get('series-svc-fade') ?? null,
+        ),
       ),
     ).toBeCloseTo(13 / 15);
   });
@@ -192,7 +243,10 @@ describe('ringValueOf', () => {
     expect(
       ringValueOf(
         weekend,
-        weekend.standing(GEORGI.progress.get('series-weekend') ?? null),
+        BadgeSystem.standing(
+          weekend,
+          GEORGI.progress.get('series-weekend') ?? null,
+        ),
       ),
     ).toBeCloseTo(2 / 3);
   });
@@ -203,7 +257,10 @@ describe('ringValueOf', () => {
     expect(
       ringValueOf(
         explorer,
-        explorer.standing(GEORGI.progress.get('series-explorer') ?? null),
+        BadgeSystem.standing(
+          explorer,
+          GEORGI.progress.get('series-explorer') ?? null,
+        ),
       ),
     ).toBe(0);
     // «Цяла година» counts the last 365 days: II = 8 won, six months left in the window.
@@ -215,7 +272,10 @@ describe('ringValueOf', () => {
     expect(
       ringValueOf(
         year,
-        year.standing(fallen.progress.get('series-twelve-months') ?? null),
+        BadgeSystem.standing(
+          year,
+          fallen.progress.get('series-twelve-months') ?? null,
+        ),
       ),
     ).toBe(0);
   });
@@ -230,7 +290,10 @@ describe('ringValueOf', () => {
     expect(
       ringValueOf(
         fade,
-        fade.standing(over.progress.get('series-svc-fade') ?? null),
+        BadgeSystem.standing(
+          fade,
+          over.progress.get('series-svc-fade') ?? null,
+        ),
       ),
     ).toBe(1);
   });
@@ -240,11 +303,16 @@ describe('ringValueOf', () => {
     expect(
       ringValueOf(
         rhythm,
-        rhythm.standing(GEORGI.progress.get('series-rhythm') ?? null),
+        BadgeSystem.standing(
+          rhythm,
+          GEORGI.progress.get('series-rhythm') ?? null,
+        ),
       ),
     ).toBeNull();
     const birthday = series(GEORGI, 'series-birthday');
-    expect(ringValueOf(birthday, birthday.standing(null))).toBeNull();
+    expect(
+      ringValueOf(birthday, BadgeSystem.standing(birthday, null)),
+    ).toBeNull();
   });
 });
 
@@ -271,8 +339,8 @@ describe('medalRingVm', () => {
     for (const family of GEORGI.catalog.families) {
       const built = medalVm(family, GEORGI, SETTLED);
       const drawn = medalRingVm(family, GEORGI, SETTLED, 'large');
-      expect([family.id.value, drawn.seriesId, drawn.icon, drawn.src]).toEqual([
-        family.id.value,
+      expect([family.id, drawn.seriesId, drawn.icon, drawn.src]).toEqual([
+        family.id,
         built.seriesId,
         built.icon,
         built.src,
@@ -365,9 +433,9 @@ describe('medalRingVm', () => {
       if (!act) continue;
       for (const ctx of [SETTLED, BIRTHDAY]) {
         expect([
-          family.id.value,
+          family.id,
           medalRingVm(family, MARTIN, ctx, 'large').level,
-        ]).toEqual([family.id.value, null]);
+        ]).toEqual([family.id, null]);
       }
     }
   });
@@ -400,16 +468,9 @@ describe('medalRingVm', () => {
         [
           'series-birthday',
           {
-            seriesId: 'series-birthday',
+            id: BadgeSeriesId.of('series-birthday'),
             value: 1,
-            earned: [
-              {
-                level: 1,
-                earnedAt: new Date(at('2025-09-28T12:30:00').toMillis()),
-                via: 'rule',
-                count: 1,
-              },
-            ],
+            earned: [earnedLevel(1, '2025-09-28T12:30:00')],
           },
         ],
       ]),
@@ -516,17 +577,9 @@ describe('medalRingVm', () => {
           ['regular', 'large', 'extraLarge'] as const
         ).map((size) => medalRingVm(family, GEORGI, OPEN, size));
         for (const medal of [regular, extraLarge]) {
-          expect([
-            family.id.value,
-            medal?.state,
-            medal?.value,
-            medal?.level,
-          ]).toEqual([
-            family.id.value,
-            large?.state,
-            large?.value,
-            large?.level,
-          ]);
+          expect([family.id, medal?.state, medal?.value, medal?.level]).toEqual(
+            [family.id, large?.state, large?.value, large?.level],
+          );
           expect(medal?.accessibleName).toBe(large?.accessibleName);
         }
       }
@@ -555,7 +608,10 @@ describe('records', () => {
       expect(isUiIconName(icon)).toBe(true);
     }
     expect(new Set(Object.values(RECORD_ICONS)).size).toBe(RECORD_ORDER.length);
-    expect([...RECORD_ORDER].sort()).toEqual(Object.keys(RECORD_ICONS).sort());
+    // Every kind of the order has its glyph, under the card's word for it.
+    expect(RECORD_ORDER.map((kind) => RECORD_KIND_WORDS[kind]).sort()).toEqual(
+      Object.keys(RECORD_ICONS).sort(),
+    );
   });
 
   it('words the longest run: the count, the month it was set, new while it is', () => {
@@ -741,7 +797,7 @@ describe('records', () => {
   describe('recordsOf', () => {
     it('keeps the cards’ order whatever the account’s', () => {
       const shuffled = withRecords([...GEORGI.account.records].reverse());
-      expect(recordsOf(shuffled, true).map((r) => r.kind)).toEqual([
+      expect(recordsOf(shuffled, true).map(kindOf)).toEqual([
         'longestRhythm',
         'mostVisitsInYear',
         'favouriteService',
@@ -750,7 +806,7 @@ describe('records', () => {
     });
 
     it('leaves the longest run out while the shop runs no rhythm', () => {
-      expect(recordsOf(GEORGI, false).map((r) => r.kind)).toEqual([
+      expect(recordsOf(GEORGI, false).map(kindOf)).toEqual([
         'mostVisitsInYear',
         'favouriteService',
         'firstVisit',
@@ -759,7 +815,7 @@ describe('records', () => {
 
     it('holds only what the account holds', () => {
       expect(
-        recordsOf(withRecords([record('firstVisit')]), true).map((r) => r.kind),
+        recordsOf(withRecords([record('firstVisit')]), true).map(kindOf),
       ).toEqual(['firstVisit']);
       expect(recordsOf(withRecords([]), true)).toEqual([]);
     });
@@ -775,9 +831,9 @@ describe('rhythmLiveOf', () => {
   it('is off in a shop without a rhythm', () => {
     const none: AchievementsData = {
       ...GEORGI,
-      catalog: loyaltyCatalogWith((documents) => ({
-        ...documents,
-        streakDefinitions: {},
+      catalog: loyaltyCatalogWith((catalog) => ({
+        ...catalog,
+        streaks: [],
       })),
     };
     expect(rhythmLiveOf(none)).toBe(false);
@@ -861,14 +917,10 @@ describe('medalsPageVm', () => {
     it('has no «Сезони» where no season runs, none is announced and none was taken part in', () => {
       const none: AchievementsData = {
         ...GEORGI,
-        catalog: loyaltyCatalogWith((documents) => ({
-          ...documents,
-          seasons: {},
-          badgeSeries: Object.fromEntries(
-            Object.entries(documents.badgeSeries).filter(
-              ([, family]) => family.seasonId === null,
-            ),
-          ),
+        catalog: loyaltyCatalogWith((catalog) => ({
+          ...catalog,
+          seasons: [],
+          series: catalog.series.filter((family) => family.seasonId === null),
         })),
       };
       const vm = medalsPageVm(none, SETTLED, CHIP_ALL);
@@ -903,9 +955,7 @@ describe('medalsPageVm', () => {
     });
 
     it('never offers one shelf twice, nor the clones one visit completes', () => {
-      const shelves = page.close.map(
-        (t) => series(GEORGI, t.key).categoryId?.value,
-      );
+      const shelves = page.close.map((t) => series(GEORGI, t.key).categoryId);
       expect(new Set(shelves).size).toBe(shelves.length);
     });
 
@@ -986,14 +1036,13 @@ describe('medalsPageVm', () => {
       // Every ladder climbed: nothing is left to be near.
       const done: AchievementsData = {
         ...GEORGI,
-        catalog: loyaltyCatalogWith((documents) => ({
-          ...documents,
-          badgeSeries: Object.fromEntries(
-            Object.entries(documents.badgeSeries).filter(
-              ([id]) => id === 'series-rhythm' || id === 'series-welcome',
-            ),
+        catalog: loyaltyCatalogWith((catalog) => ({
+          ...catalog,
+          series: catalog.series.filter(
+            (family) =>
+              family.id === 'series-rhythm' || family.id === 'series-welcome',
           ),
-          seasons: {},
+          seasons: [],
         })),
       };
       expect(medalsPageVm(done, SETTLED, CHIP_ALL).close).toEqual([]);
@@ -1190,10 +1239,10 @@ describe('medalsPageVm', () => {
       const bare: AchievementsData = {
         ...GEORGI,
         progress: new Map(),
-        catalog: loyaltyCatalogWith((documents) => ({
-          ...documents,
-          badgeSeries: {},
-          seasons: {},
+        catalog: loyaltyCatalogWith((catalog) => ({
+          ...catalog,
+          series: [],
+          seasons: [],
         })),
       };
       expect(
@@ -1317,12 +1366,10 @@ describe('medalsPageVm', () => {
       const vm = medalsPageVm(
         {
           ...GEORGI,
-          catalog: loyaltyCatalogWith((documents) => ({
-            ...documents,
-            badgeSeries: Object.fromEntries(
-              Object.entries(documents.badgeSeries).filter(
-                ([, family]) => family.categoryId !== 'cat-barbers',
-              ),
+          catalog: loyaltyCatalogWith((catalog) => ({
+            ...catalog,
+            series: catalog.series.filter(
+              (family) => family.categoryId !== 'cat-barbers',
             ),
           })),
         },

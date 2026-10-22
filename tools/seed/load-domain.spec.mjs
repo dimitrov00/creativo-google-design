@@ -4,38 +4,40 @@
  * ordinary way — the whole point is that the seed's stats ARE the
  * trigger's. Likewise the one TTL stamp (`purgeAtFor`, F1-7), the seed's
  * own plan modules (whose bodies are TypeScript since flip 1, the
- * accounts' `users` bodies since flip 2) and the
- * loyalty engine's readers the seed reads its loyalty documents back with:
- * each must answer what the ordinary import answers.
+ * accounts' `users` bodies since flip 2, the loyalty bodies since flip 3)
+ * and the loyalty domain the seed folds and reads its loyalty documents
+ * back with: each must answer what the ordinary import answers.
  *
- * And since revision 3 of the client card (client-card-revision-3.md §4):
- * the rhythm's projector and the rule's readers and writers. The seed's
- * rhythm IS the domain's projection only if the bundle folds a book into
- * the very documents the ordinary imports fold it into.
+ * The rhythm (client-card-revision-3.md §4, flip 3): the seed's rhythm IS
+ * the domain's projection (`StreakSystem.trace` under the rule
+ * `StreakRuleSystem.inForceOn` reads off the head) only if the bundle folds
+ * a book into the very documents the ordinary imports fold it into.
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import * as engagement from '@creativo/application/engagement';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
-import { ServiceCategoryId, ServiceId } from '@creativo/domain/catalog';
-import { BookingPolicy } from '@core/components';
+import { BookingPolicy, StreakRule } from '@core/components';
 import { Collections } from '@core/entities';
 import { clientStatsPaths, projectClientStats } from '@core/pipelines';
 import { Result } from '@core/primitives';
-import { memoryStore, memoryTxPorts, recordingTelemetry } from '@core/testing';
-// By their own paths, as the bundle's entry names them: the server's TTL
-// stamp lives in the functions app, and the domain's barrel does not carry
-// the projector's line yet (contract delta R2b-1).
-import { purgeAtFor } from '../../apps/functions/src/adapters/firestore-ttl.adapter';
 import {
-  projectStreak,
-  traceStreak,
-} from '../../libs/domain/engagement/src/lib/loyalty/streak-projector';
+  LoyaltyCatalogSystem,
+  StreakRuleSystem,
+  StreakSystem,
+} from '@core/systems';
+import {
+  loyaltyAccountJson,
+  loyaltyCatalogJson,
+  memoryStore,
+  memoryTxPorts,
+  recordingTelemetry,
+} from '@core/testing';
+// By its own path, as the bundle's entry names it: the server's TTL stamp
+// lives in the functions app.
+import { purgeAtFor } from '../../apps/functions/src/adapters/firestore-ttl.adapter';
 import { busyDayBody, busyKeyOf } from './catalog.mjs';
 import { buildClientBook } from './fixtures.mjs';
 import { staffAccountBody } from './fixtures/users.fixtures.ts';
 import {
-  SEED_DOMAIN_MODULES,
   SEED_PLAN_MODULES,
   SEED_SERVER_MODULES,
   WORKSPACE_ROOT,
@@ -59,32 +61,22 @@ import { waitlistRequestWriteOf } from './waitlist.mjs';
 
 const NOW = Date.parse('2026-09-25T15:00:00+03:00');
 
-/** What the entry takes from `loyalty-document.ts`, which the application's barrel hands out by star. */
-const LOYALTY_DOCUMENT_NAMES = [
-  'activityEntryFromDocument',
-  'badgeProgressFromDocument',
-  'ledgerEntryFromDocument',
-  'loyaltyAccountFromDocument',
-  'loyaltyCatalogFromDocuments',
-  'seasonProgressFromDocument',
-  'streakDefinitionVersionFromDocument',
-  'streakDefinitionVersionToDocument',
-  'streakScheduleFromDocument',
-  'streakScheduleToDocument',
-  'streakStateToDocument',
-];
+/** What the fold and the read-back are handed of the loyalty domain: each companion, by the members they call. */
+const LOYALTY_DOMAIN_MEMBERS = {
+  StreakSystem: ['trace'],
+  StreakRuleSystem: ['inForceOn'],
+  StreakRule: ['parse'],
+  LoyaltyCatalogSystem: ['validate'],
+};
 
 /** The same names, imported the ordinary way. */
 const direct = {
-  ...Object.fromEntries(
-    LOYALTY_DOCUMENT_NAMES.map((name) => [name, engagement[name]]),
-  ),
-  ServiceCategoryId,
-  ServiceId,
   projectClientStats,
   purgeAtFor,
-  projectStreak,
-  traceStreak,
+  StreakSystem,
+  StreakRuleSystem,
+  StreakRule,
+  LoyaltyCatalogSystem,
 };
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -149,28 +141,32 @@ describe('loadSeedDomain', () => {
   });
 
   it('holds every name the fold, the read-back and the writes are handed, each a function', () => {
-    for (const name of Object.keys(direct)) {
+    for (const name of ['projectClientStats', 'purgeAtFor']) {
       expect(typeof domain[name], name).toBe('function');
       expect(typeof direct[name], `${name}, imported the ordinary way`).toBe(
         'function',
       );
     }
+    for (const [name, members] of Object.entries(LOYALTY_DOMAIN_MEMBERS)) {
+      for (const member of members) {
+        expect(typeof domain[name]?.[member], `${name}.${member}`).toBe(
+          'function',
+        );
+        expect(
+          typeof direct[name][member],
+          `${name}.${member}, imported the ordinary way`,
+        ).toBe('function');
+      }
+    }
   });
 
   it('names its modules by their files, and each is there', () => {
-    expect(Object.keys(SEED_DOMAIN_MODULES).sort()).toEqual([
-      'loyaltyDocument',
-      'streakProjector',
-    ]);
     expect(Object.keys(SEED_SERVER_MODULES).sort()).toEqual([
       'commitPlan',
       'settings',
       'ttl',
     ]);
-    for (const [name, module] of Object.entries({
-      ...SEED_DOMAIN_MODULES,
-      ...SEED_SERVER_MODULES,
-    })) {
+    for (const [name, module] of Object.entries(SEED_SERVER_MODULES)) {
       expect(existsSync(join(WORKSPACE_ROOT, `${module}.ts`)), name).toBe(true);
     }
     expect(Object.keys(SEED_PLAN_MODULES).sort()).toEqual([
@@ -233,13 +229,13 @@ describe('loadSeedDomain', () => {
     );
   });
 
-  it('bundles the client card’s readers, and they read what the card’s own import reads', () => {
+  it('bundles the read-back’s two checks, and they judge what the ordinary import judges', () => {
     // The fixtures the card's specs render: the catalogue with the rule's
-    // first version, and both accounts.
+    // first version, and both accounts — the flat documents as stored.
     const writes = [
-      ...loyaltyCatalogWritesOf(loyaltyFixtures.catalog),
-      ...loyaltyWritesOf('dev-client-1', loyaltyFixtures.georgi),
-      ...loyaltyWritesOf('dev-client-2', loyaltyFixtures.martin),
+      ...loyaltyCatalogWritesOf(loyaltyCatalogJson),
+      ...loyaltyWritesOf('dev-client-1', loyaltyAccountJson.georgi),
+      ...loyaltyWritesOf('dev-client-2', loyaltyAccountJson.martin),
     ];
     const bundled = readLoyaltyWrites(domain, writes);
     expect(bundled.problems).toEqual([]);
@@ -247,6 +243,22 @@ describe('loadSeedDomain', () => {
     expect(bundled.ruleVersions).toHaveLength(1);
     expect(bundled.accounts).toHaveLength(2);
     expect(plain(bundled)).toEqual(plain(readLoyaltyWrites(direct, writes)));
+    // And both refuse alike: a rule whose grace outlasts its interval.
+    const [head] = writes.filter(
+      ({ path }) => path === 'streakDefinitions/cadence',
+    );
+    const graceless = {
+      ...head,
+      data: {
+        ...head.data,
+        rules: head.data.rules.map((rule) => ({ ...rule, graceDays: 42 })),
+      },
+    };
+    const refused = readLoyaltyWrites(domain, [graceless]);
+    expect(refused.problems).toHaveLength(1);
+    expect(refused.problems).toEqual(
+      readLoyaltyWrites(direct, [graceless]).problems,
+    );
   });
 
   it('bundles the rhythm’s projector: the seed’s book folds into the documents the ordinary imports fold it into', () => {
@@ -273,43 +285,45 @@ describe('loadSeedDomain', () => {
           },
         );
       const bundled = fold(domain);
-      expect(bundled.account.streaks.cadence, holder.uid).toBeDefined();
+      expect(
+        bundled.account.streaks.map((state) => state.streakId),
+        holder.uid,
+      ).toEqual(['cadence']);
       expect(bundled).toEqual(fold(direct));
       // Every kind of row, read back by the bundle as by the barrel.
       const writes = loyaltyWritesOf(holder.uid, bundled);
       const read = readLoyaltyWrites(domain, writes);
       expect(read.problems).toEqual([]);
-      expect(read.activity).toHaveLength(bundled.account.seq);
+      expect(read.journal).toHaveLength(bundled.account.seq);
       expect(plain(read)).toEqual(plain(readLoyaltyWrites(direct, writes)));
     }
   });
 
   it('answers the state a rule and its facts give, as the ordinary import does', () => {
-    const head = loyaltyFixtures.catalog.streakDefinitions.cadence;
+    const head = loyaltyCatalogJson.streakDefinitions.cadence;
     const facts = {
-      visits: ['2026-05-04', '2026-06-10', '2026-08-20'].map((day) => ({
-        day,
+      visits: ['2026-05-04', '2026-06-10', '2026-08-20'].map((localDate) => ({
+        localDate,
         counted: true,
+        // 10:00 on the shop's clock (UTC+3 in summer).
+        utcEpochMs: Date.parse(`${localDate}T10:00:00+03:00`),
       })),
-      excused: [{ day: '2026-07-15', reason: 'barberAbsence' }],
+      excused: [{ localDate: '2026-07-15', reason: 'BARBER_ABSENCE' }],
       bookings: [
-        { placedOn: '2026-09-20', day: '2026-10-08', appointmentId: 'appt-x' },
+        {
+          placedOn: '2026-09-20',
+          localDate: '2026-10-08',
+          appointmentId: 'appt-x',
+        },
       ],
       pauses: [],
-      grants: [{ day: '2026-06-10', count: 1 }],
+      grants: [{ localDate: '2026-06-10', count: 1 }],
     };
     const answers = [domain, direct].map((handed) => {
-      const rule = handed
-        .streakScheduleFromDocument('cadence', head)
-        .value.inForceOn('2026-09-28');
-      const trace = handed.traceStreak(rule, facts, '2026-09-28');
-      expect(handed.projectStreak(rule, facts, '2026-09-28')).toEqual(
-        trace.state,
+      const rule = handed.StreakRuleSystem.inForceOn(head, '2026-09-28');
+      return plain(
+        handed.StreakSystem.trace('cadence', rule, facts, '2026-09-28'),
       );
-      return plain({
-        ...trace,
-        state: handed.streakStateToDocument(trace.state),
-      });
     });
     expect(answers[0]).toEqual(answers[1]);
     expect(answers[0].state).toMatchObject({ streakId: 'cadence', current: 3 });

@@ -115,8 +115,19 @@ describe('the id companions (decision F-3)', () => {
 
   it('builds the derived ids byte-identical to today', () => {
     expect(StreakDefinitionVersionId.forVersion(7)).toBe('000007');
-    expect(JournalEntryId.forEntry(UserId.of('u_42'), 3)).toBe('u_42_000003');
+    expect(
+      JournalEntryId.forEntry(CustomerId.of('cus_0123456789abcdef0123'), 3),
+    ).toBe('cus_0123456789abcdef0123_000003');
     expect(CartLineId.forSequence(4)).toBe('line-4');
+  });
+
+  it('keys a journal entry by the client RECORD an account holder derives (D29)', () => {
+    const customerId = CustomerId.forUser(UserId.of('u_42'), fixtureHash);
+    expect(JournalEntryId.forEntry(customerId, 7)).toBe(`${customerId}_000007`);
+    // The record's id, never the account's uid, leads the entry id.
+    expect(JournalEntryId.forEntry(customerId, 7).startsWith('u_42')).toBe(
+      false,
+    );
   });
 });
 

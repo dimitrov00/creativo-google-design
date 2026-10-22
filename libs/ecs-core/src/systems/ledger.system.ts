@@ -1,7 +1,7 @@
-import { JournalEffect, RedemptionOp } from '@core/components';
+import { JournalEffect, PublicLabel, RedemptionOp } from '@core/components';
+import type { JournalEntry } from '@core/entities';
 import {
-  type BadgeSeriesId,
-  type CorrelationId,
+  BadgeSeriesId,
   type JournalEntryId,
   LocalDate,
   type UtcEpochMs,
@@ -18,48 +18,24 @@ import {
  * sums and balances only — the rows' words, glyphs and lines stay in the
  * presenter (a system that reshapes an entity for a template is the
  * `toViewModel()` mapper `angular-ui.md` bans).
+ *
+ * The rows are the `clientJournal` entries themselves, as the journal port
+ * answers them (zero inbound mapping, Law 3): the visit an entry is about is
+ * its root `appointmentId`, what it moved its effect's own fields, and a
+ * level's family and number its label's `seriesId` / `level` parameters
+ * (`LedgerSystem.levelOf`).
  */
 
-/** The effects a feed row is about — the five the activity feed reads, a subset of `JournalEffect`. */
-export type LedgerEffectKind =
-  | typeof JournalEffect.Points
-  | typeof JournalEffect.Achievement
-  | typeof JournalEffect.Tier
-  | typeof JournalEffect.Reward
-  | typeof JournalEffect.Redemption;
-
-/**
- * One client-visible journal row, as the feed folds it. Every field is
- * present; the ones an effect does not carry are `null`. It carries its
- * instant AND its shop day (T5): the month a row falls in is read off
- * `localDate`, never computed from the instant here.
- */
-export type LedgerEntryRef = {
-  readonly id: JournalEntryId;
-  readonly seq: number;
-  readonly utcEpochMs: UtcEpochMs;
-  readonly localDate: LocalDate;
-  /** Entries of one event share it: `appt:{appointmentId}[:seat:{seatId}]` for a visit. */
-  readonly correlationId: CorrelationId;
-  /** The entry this row compensates. */
-  readonly reverses: JournalEntryId | null;
-  /** A level's family (the label's `seriesId`); `null` on other rows. */
+/** A level's family and number, as an entry's label names them; either is `null` where the label does not. */
+export type LedgerLevel = {
+  /** The label's `seriesId`: a family only when it is text that is not blank. */
   readonly badgeSeriesId: BadgeSeriesId | null;
-  /** A level's number (the label's `level`); `null` on other rows. */
+  /** The label's `level`: a level only when it is a whole number. */
   readonly level: number | null;
-  readonly journalEffect: LedgerEffectKind;
-  /** A point row's signed delta; `null` on other rows. */
-  readonly pointsDelta: number | null;
-  /** The balance once a point row was folded in; `null` on other rows. */
-  readonly balanceAfter: number | null;
-  /** A redemption row's op; `null` on other rows. */
-  readonly redemptionOp: RedemptionOp | null;
-  /** A redemption row's cost; `null` on other rows. */
-  readonly cost: number | null;
 };
 
 /** One EVENT of the journal: the entries that share it, newest first. */
-export type LedgerEvent<E extends LedgerEntryRef = LedgerEntryRef> = {
+export type LedgerEvent<E extends JournalEntry = JournalEntry> = {
   /** The event's newest entry. */
   readonly id: JournalEntryId;
   /** The newest entry's instant. */
@@ -86,81 +62,76 @@ export type LedgerMonth<V extends LedgerEvent = LedgerEvent> = {
   readonly net: number | null;
 };
 
-/** The effects by rank: the highest one an event holds is what the row is about. */
-const EFFECT_RANK = {
+/**
+ * The effects by rank: the highest one an event holds is what the row is
+ * about. The feed reads five effects (`JournalFeed.effectsOf`); the others
+ * rank after them, so they never word an event that holds one of the five.
+ */
+const EFFECT_RANK: Readonly<Record<JournalEffect, number>> = {
   [JournalEffect.Redemption]: 0,
   [JournalEffect.Reward]: 1,
   [JournalEffect.Tier]: 2,
   [JournalEffect.Achievement]: 3,
   [JournalEffect.Points]: 4,
-} as const;
-
-/**
- * The visit a correlation id names: `appt:{appointmentId}` as the seed and
- * the engine write it, `appt:{appointmentId}:seat:{seatId}` as the first
- * round's journals do. `null` for an event that is no visit.
- */
-function appointmentIdOf(correlationId: string): string | null {
-  const [root, appointmentId] = correlationId.split(':');
-  return root === 'appt' && appointmentId !== undefined && appointmentId !== ''
-    ? appointmentId
-    : null;
-}
+  [JournalEffect.Streak]: 5,
+  [JournalEffect.Freeze]: 6,
+  [JournalEffect.Pause]: 7,
+  [JournalEffect.VisitOutcome]: 8,
+};
 
 /** The ids a loaded row compensates: the rows that are struck. */
-function voidedIds(entries: readonly LedgerEntryRef[]): Set<string> {
+function voidedIds(entries: readonly JournalEntry[]): Set<string> {
   const voided = new Set<string>();
   for (let i = 0; i < entries.length; i++) {
-    const reverses = (entries[i] as LedgerEntryRef).reverses;
+    const reverses = (entries[i] as JournalEntry).reverses;
     if (reverses !== null) voided.add(reverses);
   }
   return voided;
 }
 
 /**
- * What an entry folds with. A visit folds by its APPOINTMENT, so its seats
- * are one row under either spelling of the id. A LEVEL is an event of its
- * own, the medal and the points it paid. A row that compensates another,
- * and a row that was compensated, never fold with the event they belong
- * to: each keeps a row of its own.
+ * What an entry folds with. A visit folds by its APPOINTMENT (the entry's
+ * root `appointmentId`), so its seats are one row whatever correlation id
+ * each carries. A LEVEL is an event of its own, the medal and the points
+ * it paid. A row that compensates another, and a row that was compensated,
+ * never fold with the event they belong to: each keeps a row of its own.
  */
-function eventKeyOf(
-  entry: LedgerEntryRef,
-  voided: ReadonlySet<string>,
-): string {
-  const appointmentId = appointmentIdOf(entry.correlationId);
+function eventKeyOf(entry: JournalEntry, voided: ReadonlySet<string>): string {
   let event =
-    appointmentId === null ? entry.correlationId : `appt:${appointmentId}`;
-  if (entry.badgeSeriesId !== null) {
-    event += `\u0000${entry.badgeSeriesId}\u0000${entry.level === null ? '' : String(entry.level)}`;
+    entry.appointmentId === null
+      ? entry.correlationId
+      : `appt:${entry.appointmentId}`;
+  const level = LedgerSystem.levelOf(entry);
+  if (level.badgeSeriesId !== null) {
+    event += `\u0000${level.badgeSeriesId}\u0000${level.level === null ? '' : String(level.level)}`;
   }
   if (entry.reverses !== null) return `reversal\u0000${event}`;
   return voided.has(entry.id) ? `voided\u0000${event}` : `event\u0000${event}`;
 }
 
 /** What a folded event moved, and the balance it left. */
-function movementOf(entries: readonly LedgerEntryRef[]): {
+function movementOf(entries: readonly JournalEntry[]): {
   readonly delta: number | null;
   readonly balanceAfter: number | null;
 } {
   let delta: number | null = null;
   let balanceAfter: number | null = null;
   for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i] as LedgerEntryRef;
+    const entry = entries[i] as JournalEntry;
     if (entry.journalEffect !== JournalEffect.Points) continue;
-    delta = (delta ?? 0) + (entry.pointsDelta ?? 0);
+    delta = (delta ?? 0) + entry.pointsDelta;
     // Newest first: the first point row met is the one the event ends on.
     if (balanceAfter === null) balanceAfter = entry.balanceAfter;
   }
   if (delta !== null) return { delta, balanceAfter };
   for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i] as LedgerEntryRef;
+    const entry = entries[i] as JournalEntry;
     if (entry.journalEffect !== JournalEffect.Redemption) continue;
     if (entry.redemptionOp === RedemptionOp.Redeemed) {
-      return { delta: -(entry.cost ?? 0), balanceAfter };
+      return { delta: -entry.redemptionCost, balanceAfter };
     }
     if (entry.redemptionOp === RedemptionOp.Reversed) {
-      return { delta: entry.cost ?? 0, balanceAfter };
+      return { delta: entry.redemptionCost, balanceAfter };
     }
   }
   return { delta: null, balanceAfter };
@@ -168,13 +139,33 @@ function movementOf(entries: readonly LedgerEntryRef[]): {
 
 export const LedgerSystem = {
   /**
+   * A level's family and number, read off the entry's label
+   * (`PublicLabel.param`): the family is a `BadgeSeriesId` only when the
+   * `seriesId` parameter is text that is not blank, the level only when the
+   * `level` parameter is a whole number — a stored row is answered as
+   * stored, so whatever else it holds names no level.
+   */
+  levelOf(entry: Pick<JournalEntry, 'labelParams'>): LedgerLevel {
+    const series = PublicLabel.param(entry, 'seriesId');
+    const level = PublicLabel.param(entry, 'level');
+    return {
+      badgeSeriesId:
+        typeof series === 'string' && series.trim() !== ''
+          ? BadgeSeriesId.of(series)
+          : null,
+      level:
+        typeof level === 'number' && Number.isInteger(level) ? level : null,
+    };
+  },
+
+  /**
    * The entries as events, newest first. `whole` says the entries are
    * everything there is under the pill (no cursor is left); when they are
    * NOT, the page boundary may have cut the oldest event, so it is held
    * back until the next page, or the end, confirms it. An event that is the
    * only one read is kept: a page never reads as empty while it holds a row.
    */
-  fold<E extends LedgerEntryRef>(
+  fold<E extends JournalEntry>(
     entries: readonly E[],
     whole: boolean,
   ): readonly LedgerEvent<E>[] {
@@ -216,13 +207,15 @@ export const LedgerSystem = {
    * and a month in doubt prints no net.
    */
   wholeMonths(
-    entries: readonly LedgerEntryRef[],
+    entries: readonly Pick<JournalEntry, 'localDate'>[],
     whole: boolean,
   ): readonly string[] {
     const months = new Set<string>();
     for (let i = 0; i < entries.length; i++) {
       months.add(
-        LedgerSystem.monthOf((entries[i] as LedgerEntryRef).localDate),
+        LedgerSystem.monthOf(
+          (entries[i] as Pick<JournalEntry, 'localDate'>).localDate,
+        ),
       );
     }
     const sorted = [...months].sort();
@@ -280,7 +273,7 @@ export const LedgerSystem = {
   },
 
   /** The entry a row is worded by: the event's highest-ranked effect, its newest row first; `null` for no entry. */
-  leading<E extends LedgerEntryRef>(event: LedgerEvent<E>): E | null {
+  leading<E extends JournalEntry>(event: LedgerEvent<E>): E | null {
     let leading: E | null = null;
     for (let i = 0; i < event.entries.length; i++) {
       const entry = event.entries[i] as E;

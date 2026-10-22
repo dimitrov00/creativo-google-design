@@ -53,9 +53,6 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/engagement/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     }
   ]

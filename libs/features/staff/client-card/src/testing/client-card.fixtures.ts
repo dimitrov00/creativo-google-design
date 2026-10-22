@@ -3,15 +3,18 @@
  * (`tsconfig.lib.json` excludes `src/testing/**`), imported by specs only.
  *
  * The dev shop's two loyalty holders, Георги Петров (`dev-client-1`) and
- * Мартин Илиев (`dev-client-2`), rebuilt from the A0 loyalty fixtures
- * (`@creativo/application/engagement/testing`): every worked visit their
- * point journal records becomes the appointment that earned it — the same
- * day, seats, prices and barbers — so the history, the stats, the loyalty
- * and the achievements a spec renders all tell one story. The catalogue is
- * the dev seed's; the words are the app's own catalogue, so a key a
- * presenter names and the catalogue lacks fails in a spec.
+ * Мартин Илиев (`dev-client-2`), rebuilt from the loyalty fixtures of
+ * `@core/testing` (`loyaltyAccountFixtures`, the flat stored bodies): every
+ * worked visit their point journal records becomes the appointment that
+ * earned it — the same day, seats, prices and barbers — so the history,
+ * the stats, the loyalty and the achievements a spec renders all tell one
+ * story. The card resolves each holder's client RECORD as
+ * `customerOf(uid)` (the fixture hash, D29), so the loyalty documents are
+ * keyed by that record here (`GEORGI_LOYALTY`, `MARTIN_LOYALTY`). The
+ * catalogue is the dev seed's; the words are the app's own catalogue, so a
+ * key a presenter names and the catalogue lacks fails in a spec.
  *
- * «Now» is Monday 28 September 2026, 12:40 in Sofia (`loyaltyFixtures.today`):
+ * «Now» is Monday 28 September 2026, 12:40 in Sofia (`FIXTURE_TODAY`):
  * Георги's 10:00 fade is done (he is the settled card), Мартин is in the
  * chair for his 12:30 classic cut on his birthday (the open card).
  */
@@ -24,20 +27,6 @@ import {
   ZonedDateTime,
 } from '@creativo/application/accounts';
 import { type Result, ok } from '@creativo/application/booking';
-import {
-  type BadgeProgress,
-  type GiftVoucherFields,
-  type SeasonProgress,
-  badgeProgressFromDocument,
-  loyaltyAccountFromDocument,
-  loyaltyCatalogFromDocuments,
-  seasonProgressFromDocument,
-} from '@creativo/application/engagement';
-import {
-  type LoyaltyAccountFixture,
-  type LoyaltyCatalogFixture,
-  loyaltyFixtures,
-} from '@creativo/application/engagement/testing';
 import {
   AppointmentId,
   AppointmentPhotoId,
@@ -84,6 +73,9 @@ import {
   PhotoOrigin,
   Placement,
   PolicyPassStamp,
+  PublicLabel,
+  type ScheduledStreakRule,
+  StreakRule,
   Seat,
   SeatOccupant,
   SeatOutcome,
@@ -97,36 +89,56 @@ import {
 import type {
   Appointment,
   AppointmentPhoto,
+  BadgeProgress,
   ClientMoneyRecord,
   ClientStatsRecord,
   Customer,
   GiftVoucher,
+  JournalEntry,
+  SeasonProgress,
+  StreakDefinition,
   User,
   WaitlistRequest,
 } from '@core/entities';
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  LoyaltyAccountReadPorts,
+  LoyaltyCatalog,
+  LoyaltyCatalogReadPorts,
   ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
   ClientStatsSystem,
+  LoyaltyCatalogSystem,
   SearchFieldsSystem,
+  StreakRuleSystem,
+  type ValidLoyaltyCatalog,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  FIXTURE_TODAY,
+  type LoyaltyClientFixture,
   appointmentFixture,
   cents,
   customerOf,
+  giftVouchersJson,
+  loyaltyAccountFixtures,
+  loyaltyCatalogFixture,
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  memoryClientJournalPorts,
   memoryClientStatsReadPorts,
   memoryCouponVoucherPorts,
   memoryCustomerPorts,
+  memoryLoyaltyAccountReadPorts,
+  memoryLoyaltyCatalogReadPorts,
+  memoryLoyaltyWorld,
   memoryProfilePorts,
   memoryWaitlistReadPorts,
   provisionedUserFixture,
@@ -152,7 +164,7 @@ import {
 export const ZONE = 'Europe/Sofia';
 export const GEORGI = 'dev-client-1';
 export const MARTIN = 'dev-client-2';
-export const TODAY = loyaltyFixtures.today;
+export const TODAY: string = FIXTURE_TODAY;
 
 /** A value a fixture guarantees; a spec that finds it missing has a broken fixture. */
 export function must<T>(
@@ -171,9 +183,10 @@ function unwrap<T, E>(result: Result<T, E>): T {
 }
 
 /**
- * A Sofia wall-clock time as the legacy instant — what the accounts and
- * loyalty readers (flip 3) still take. The booking fixtures below read
- * the shop's clock through {@link sofia} and {@link wallOf} instead.
+ * A Sofia wall-clock time as the legacy instant — what the card's
+ * contracts (`ClientCardLeg.startsAtIso`) and the `CLOCK` still take. The
+ * booking fixtures below read the shop's clock through {@link sofia} and
+ * {@link wallOf} instead.
  */
 export function at(iso: string): ZonedDateTime {
   return unwrap(ZonedDateTime.fromISO(iso, ZONE));
@@ -372,12 +385,11 @@ interface WorkedSeat {
 }
 
 /** Every worked seat the journal paid points for, oldest first. */
-function workedSeatsOf(fixture: LoyaltyAccountFixture): readonly WorkedSeat[] {
-  return Object.values(fixture.clientJournal)
+function workedSeatsOf(fixture: LoyaltyClientFixture): readonly WorkedSeat[] {
+  return fixture.clientJournal
     .flatMap((entry): WorkedSeat[] => {
-      const spend = new Map(Object.entries(entry.publicLabel.params)).get(
-        'spendMinor',
-      );
+      const spend = PublicLabel.param(entry, 'spendMinor');
+      // The seat the points paid for, as the engine's correlation id names it.
       const [, appointmentId, , seatId] = entry.correlationId.split(':');
       const seat =
         typeof spend === 'number' ? SEAT_BY_SPEND.get(spend) : undefined;
@@ -392,7 +404,7 @@ function workedSeatsOf(fixture: LoyaltyAccountFixture): readonly WorkedSeat[] {
         {
           appointmentId,
           seatId,
-          workedAtMs: unwrapOk(ZonedTimeSystem.parseOffsetIso(entry.at)),
+          workedAtMs: entry.utcEpochMs,
           serviceId: seat.serviceId,
           minutes: seat.minutes,
           priceMinor: typeof spend === 'number' ? spend : 0,
@@ -549,7 +561,7 @@ const DAY_MS = 86_400_000;
 
 /** The journal's worked visits as completed appointments at Център, each seat after the one before. */
 function workedHistory(
-  fixture: LoyaltyAccountFixture,
+  fixture: LoyaltyClientFixture,
   plan: HistoryPlan,
 ): readonly Appointment[] {
   const byVisit = new Map<string, WorkedSeat[]>();
@@ -607,7 +619,7 @@ export const GEORGI_NEXT_ID = 'appt-dev-georgi-next';
  * one visit ahead.
  */
 export function georgiHistory(): readonly Appointment[] {
-  const worked = workedHistory(loyaltyFixtures.georgi, {
+  const worked = workedHistory(loyaltyAccountFixtures.georgi, {
     uid: GEORGI,
     name: 'Георги Петров',
     phone: '+359881234567',
@@ -662,7 +674,7 @@ export function martinHistory(): readonly Appointment[] {
     'niko',
     'niko',
   ];
-  const worked = workedHistory(loyaltyFixtures.martin, {
+  const worked = workedHistory(loyaltyAccountFixtures.martin, {
     uid: MARTIN,
     name: 'Мартин Илиев',
     phone: '+359887654321',
@@ -836,14 +848,57 @@ function instantOf(document: { readonly iso: string }): UtcEpochMs {
 }
 
 /**
- * One of the fixture's gift vouchers (`loyaltyFixtures.vouchers`, the wire
+ * One document of `@core/testing`'s `vouchers.json` (`giftVouchersJson`),
+ * the shape a spec may edit field by field before it becomes the flat body.
+ */
+export type VoucherFixtureFields = {
+  readonly code: string;
+  readonly initialValueMinorUnits: number;
+  readonly balanceMinorUnits: number;
+  readonly currencyCode: string;
+  readonly issuedAt: VoucherFixtureInstant;
+  /** `null` = it does not lapse. */
+  readonly expiresAt: VoucherFixtureInstant | null;
+  /** The account it was issued to, or `null` for a paper voucher. */
+  readonly issuedToUserId: string | null;
+  readonly state:
+    | { readonly kind: 'active' }
+    | {
+        readonly kind: 'void';
+        readonly voidedAt: VoucherFixtureInstant;
+        readonly reason: string;
+      };
+};
+
+/** An instant of `vouchers.json`: the ISO text with its offset, and the zone it was read in. */
+export type VoucherFixtureInstant = {
+  readonly iso: string;
+  readonly zone: string;
+};
+
+/** The fixture's vouchers as documents, by id (`vouchers.json`). */
+export function voucherFixtureFields(): ReadonlyMap<
+  string,
+  VoucherFixtureFields
+> {
+  return new Map(
+    Object.entries(
+      giftVouchersJson.giftVouchers as Readonly<
+        Record<string, VoucherFixtureFields>
+      >,
+    ),
+  );
+}
+
+/**
+ * One of the fixture's gift vouchers (`voucherFixtureFields`, the document
  * shape a spec may edit) as the flat `giftVouchers/{id}` body: the holder's
  * client record beside their uid, the lapse as an instant and the shop day
  * it falls on.
  */
 export function giftVoucherOf(
   id: string,
-  fields: GiftVoucherFields,
+  fields: VoucherFixtureFields,
 ): GiftVoucher {
   const holder =
     fields.issuedToUserId === null ? null : UserId.of(fields.issuedToUserId);
@@ -874,7 +929,7 @@ export function giftVoucherOf(
 
 /** The fixture's five gift vouchers: three of Георги's, Мартин's one, one on paper. */
 export function fixtureVouchers(): readonly GiftVoucher[] {
-  return Object.entries(loyaltyFixtures.vouchers).map(([id, fields]) =>
+  return [...voucherFixtureFields()].map(([id, fields]) =>
     giftVoucherOf(id, fields),
   );
 }
@@ -1098,43 +1153,80 @@ export function martinContext(
   };
 }
 
-// ── Loyalty, parsed ────────────────────────────────────────────────────
+// ── Loyalty, as stored ─────────────────────────────────────────────────
 
-/** The published catalogue, parsed as production parses it. */
-export function loyaltyCatalog() {
-  return unwrap(loyaltyCatalogFromDocuments(loyaltyFixtures.catalog));
+/**
+ * A holder's loyalty (`loyaltyAccountFixtures`) keyed by the client record
+ * the CARD resolves for him: `customerOf(uid)`, the fixture hash (the
+ * fixtures' own key is the production sha256's). Only the record id moves
+ * — every figure, day, label and journal id is the stored one.
+ */
+function keyedByCardRecord(holder: LoyaltyClientFixture): LoyaltyClientFixture {
+  const customerId = customerOf(holder.uid);
+  return {
+    ...holder,
+    customerId,
+    account: { ...holder.account, id: customerId, customerId },
+    clientJournal: holder.clientJournal.map((entry): JournalEntry => ({
+      ...entry,
+      customerId,
+    })),
+  };
 }
 
-/** The published catalogue with one edit to its documents, parsed as production parses it. */
+/** Георги's loyalty, keyed by his card record ({@link GEORGI_CUSTOMER_ID}). */
+export const GEORGI_LOYALTY: LoyaltyClientFixture = keyedByCardRecord(
+  loyaltyAccountFixtures.georgi,
+);
+
+/** Мартин's loyalty, keyed by his card record ({@link MARTIN_CUSTOMER_ID}). */
+export const MARTIN_LOYALTY: LoyaltyClientFixture = keyedByCardRecord(
+  loyaltyAccountFixtures.martin,
+);
+
+/** One holder's loyalty, by first name. */
+export function loyaltyOf(who: 'georgi' | 'martin'): LoyaltyClientFixture {
+  return who === 'georgi' ? GEORGI_LOYALTY : MARTIN_LOYALTY;
+}
+
+/** The published catalogue as the port answers it, judged as the store judges it (`LoyaltyCatalogSystem.validate`). */
+export function loyaltyCatalog(): ValidLoyaltyCatalog {
+  return unwrapOk(LoyaltyCatalogSystem.validate(loyaltyCatalogFixture()));
+}
+
+/** The published catalogue with one edit to its documents, judged as the store judges it. */
 export function loyaltyCatalogWith(
-  edit: (documents: LoyaltyCatalogFixture) => LoyaltyCatalogFixture,
-) {
-  const copy = JSON.parse(
-    JSON.stringify(loyaltyFixtures.catalog),
-  ) as LoyaltyCatalogFixture;
-  return unwrap(loyaltyCatalogFromDocuments(edit(copy)));
+  edit: (catalog: LoyaltyCatalog) => LoyaltyCatalog,
+): ValidLoyaltyCatalog {
+  return unwrapOk(LoyaltyCatalogSystem.validate(edit(loyaltyCatalogFixture())));
 }
 
-function progressOf(
-  fixture: LoyaltyAccountFixture,
-): ReadonlyMap<string, BadgeProgress> {
-  return new Map(
-    Object.entries(fixture.badgeProgress).map(([id, doc]) => [
-      id,
-      unwrap(badgeProgressFromDocument(id, doc)),
-    ]),
+/** The rhythm's head as the published catalogue holds it (`cadence`): one rule in force since 1.03.2025. */
+export function rhythmHead(): StreakDefinition {
+  return must(
+    LoyaltyCatalogSystem.streak(
+      loyaltyCatalog(),
+      StreakRule.DEFAULT_DEFINITION_ID,
+    ),
+    'the rhythm’s head',
   );
 }
 
-function seasonsOf(
-  fixture: LoyaltyAccountFixture,
-): ReadonlyMap<string, SeasonProgress> {
-  return new Map(
-    Object.entries(fixture.seasonProgress).map(([id, doc]) => [
-      id,
-      unwrap(seasonProgressFromDocument(id, doc)),
-    ]),
+/**
+ * The rhythm's head with its rule in force edited — a field or a variant
+ * (`{ ...rule, enabled: false }`) — and, when given, a rule that waits for
+ * its day beside it (`StreakRuleSystem.schedule` judges the pair, as the
+ * publish does).
+ */
+export function rhythmHeadWith(
+  edit: (rule: StreakRule) => StreakRule = (rule) => rule,
+  scheduled: ScheduledStreakRule | null = null,
+): StreakDefinition {
+  const head = rhythmHead();
+  const { rules } = unwrapOk(
+    StreakRuleSystem.schedule(edit(StreakRuleSystem.current(head)), scheduled),
   );
+  return { ...head, rules };
 }
 
 /** One holder's `AchievementsData`, as the store assembles it. */
@@ -1142,15 +1234,16 @@ export function achievementsDataOf(
   who: 'georgi' | 'martin',
   previousVisitAtMs: number | null,
 ): AchievementsData {
-  const fixture =
-    who === 'georgi' ? loyaltyFixtures.georgi : loyaltyFixtures.martin;
+  const holder = loyaltyOf(who);
   return {
     catalog: loyaltyCatalog(),
-    account: unwrap(
-      loyaltyAccountFromDocument(fixture.account.userId, fixture.account),
+    account: holder.account,
+    progress: new Map<string, BadgeProgress>(
+      holder.badgeProgress.map((progress) => [progress.id, progress]),
     ),
-    progress: progressOf(fixture),
-    seasonProgress: seasonsOf(fixture),
+    seasonProgress: new Map<string, SeasonProgress>(
+      holder.seasonProgress.map((progress) => [progress.id, progress]),
+    ),
     today: TODAY,
     previousVisitAtMs,
   };
@@ -1338,4 +1431,32 @@ export function customerPortsOf(
   customers: readonly Customer[] = fixtureCustomers(),
 ): PortDouble<CustomerPorts> {
   return portDouble(memoryCustomerPorts(customers));
+}
+
+/**
+ * `LOYALTY_ACCOUNT_READ_PORTS` over the two holders' loyalty, keyed by the
+ * card's records (`GEORGI_LOYALTY`, `MARTIN_LOYALTY`) unless said — the
+ * `@core/testing` double, recording every read and failing on demand.
+ */
+export function loyaltyPortsOf(
+  holders: readonly LoyaltyClientFixture[] = [GEORGI_LOYALTY, MARTIN_LOYALTY],
+): PortDouble<LoyaltyAccountReadPorts> {
+  return portDouble(memoryLoyaltyAccountReadPorts(memoryLoyaltyWorld(holders)));
+}
+
+/** `LOYALTY_CATALOG_READ_PORTS` answering the published catalogue (or the one given), as the port answers it. */
+export function catalogPortsOf(
+  catalog: LoyaltyCatalog = loyaltyCatalogFixture(),
+): PortDouble<LoyaltyCatalogReadPorts> {
+  return portDouble(memoryLoyaltyCatalogReadPorts(catalog));
+}
+
+/** `CLIENT_JOURNAL_PORTS` over the two holders' journals (or the rows given). */
+export function journalPortsOf(
+  entries: readonly JournalEntry[] = [
+    ...GEORGI_LOYALTY.clientJournal,
+    ...MARTIN_LOYALTY.clientJournal,
+  ],
+): PortDouble<ClientJournalPorts> {
+  return portDouble(memoryClientJournalPorts(entries));
 }

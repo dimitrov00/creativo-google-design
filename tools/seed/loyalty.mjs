@@ -1,20 +1,26 @@
 /**
  * The loyalty ENGINE'S OUTPUT for the dev seed (client-card-redesign.md
  * §4.6): the published catalogue, and for each account holder the account,
- * the family progress, the season progress and the point rows — DERIVED from
+ * the family progress, the season progress and the journal — DERIVED from
  * the same appointments the seed writes, by one pure fold, so «Посещения»
  * cannot disagree with `clientStats` and the balance is the sum of its rows
  * by construction rather than by a comment.
  *
+ * ### The documents are the flat archetypes (flip 3)
+ * Every body is the `@core/entities` archetype minus its `id`, built by
+ * `fixtures/loyalty.fixtures.ts` (each builder `satisfies` its entity,
+ * `pnpm nx typecheck seed-tools`): this module decides WHAT the engine
+ * would hold and WHEN; the builders spell the document. D29: an account,
+ * its progress and its journal are keyed by the client RECORD
+ * (`customerIdOf(uid)`); who acted on a row stays the account's `UserId`.
+ *
  * ### The catalogue IS the fixture file
- * `catalog.json` under `@core/testing` (moved there from
- * `@creativo/application/engagement/testing` in the ECS migration's Phase
- * 3a; that entry still re-exports it) is §4.6's catalogue: WP3's mapper
- * specs parse it, the e2e seeds it, and this module writes it — one file,
- * so the wire cannot drift between the three. Only the
- * season windows move, by whole days from the fixtures' day to the shop's
- * today (as the day fixtures move), so every run shows one open season, one
- * open event and one ended season.
+ * `catalog.json` under `@core/testing` is §4.6's catalogue: the specs read
+ * it, the e2e seeds it, and this module writes it — one file, so the
+ * documents cannot drift between the three. Only the season windows move,
+ * by whole days from the fixtures' day to the shop's today (as the day
+ * fixtures move), so every run shows one open season, one open event and
+ * one ended season.
  *
  * ### What the fold counts
  * The client's own seats, read as `computeClientStats` reads them: an
@@ -27,44 +33,87 @@
  * redemptions) comes in as `facts`.
  *
  * ### The rhythm is the DOMAIN's (client-card-revision-3.md §4.1, §4.2)
- * The rule «Посещения в ритъм» is a managed one: a head document that holds
- * the version in force and the one that waits, and an immutable document
- * per version. The seed writes the FIRST version and never again writes
- * over a rule the shop has published since (`rulesPublishedOver`). The
- * projection is no longer a copy of the rule's clock: each holder's visits,
- * called-off visits, bookings and earned protections are handed as facts to
- * the domain's `traceStreak`, under the rule in force on the shop's today.
- * Publish another interval, run the seed again, and both cards move.
+ * The rule «Посещения в ритъм» is a managed one: a head document whose
+ * `rules` hold the rule in force (`CURRENT`) and the one that waits
+ * (`SCHEDULED`), and an immutable document per version. The seed writes the
+ * FIRST version and never again writes over a rule the shop has published
+ * since (`rulesPublishedOver`). Each holder's visits, called-off visits,
+ * bookings and earned protections are handed as facts to the domain's
+ * `StreakSystem.trace`, under the rule `StreakRuleSystem.inForceOn` reads
+ * off the head for the shop's today. Publish another interval, run the seed
+ * again, and both cards move.
  *
  * ### The journal holds every kind the feed shows (§4.7, §4.10)
- * Point rows, and beside them a row for each level earned (`achievement`),
- * each change of tier (`tier`), each coupon the stamp card minted
- * (`reward`) and each reward bought with points (`redemption`). Rows of
+ * Point rows, and beside them a row for each level earned (`ACHIEVEMENT`),
+ * each change of tier (`TIER`), each coupon the stamp card minted
+ * (`REWARD`) and each reward bought with points (`REDEMPTION`). Rows of
  * ONE event share a `correlationId`, which is how «Движение» folds them
  * into one row: a visit's seats, a level and its bonus, a redemption and
  * its points (`CORRELATION`, below).
  *
- * Plain values in, plain documents out — `loyalty-document.ts`'s shapes,
- * held to the fixtures' by `loyalty.spec.mjs`. Nothing here touches
- * Firebase, and nothing here imports the domain: the fold is HANDED it
- * (`loadSeedDomain()`'s bundle in the seed, the ordinary imports in a spec).
+ * Plain values in, flat documents out. Nothing here touches Firebase, and
+ * nothing here imports a system: the fold and the read-back are HANDED the
+ * domain (`loadSeedDomain()`'s bundle in the seed, the ordinary imports in
+ * a spec) — `StreakSystem`, `StreakRuleSystem`, `StreakRule`,
+ * `LoyaltyCatalogSystem`.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SHOP_ZONE, createShopCalendar } from './calendar.mjs';
 import { CATEGORY, HAIRCUTS, SERVICES } from './catalog.mjs';
+import { customerIdOf } from './fixtures/customers.fixtures.ts';
+import {
+  DESK_ADMIN,
+  DESK_STAFF,
+  ENGINE_ACTOR,
+  SEED_RULE_PUBLISHER,
+  achievementEffect,
+  badgeCategoryBody,
+  badgeProgressBody,
+  badgeSeriesBody,
+  favouriteServiceRecord,
+  firstVisitRecord,
+  journalEntryBody,
+  journalRowIdOf,
+  longestRhythmRecord,
+  loyaltyAccountBody,
+  mostVisitsInYearRecord,
+  pointsEffect,
+  qualifierCounts,
+  redemptionEffect,
+  redemptionSource,
+  rewardCatalogItemBody,
+  rewardEffect,
+  ruleSource,
+  ruleVersionIdOf,
+  seasonBody,
+  seasonProgressBody,
+  seedRuleRequestIdOf,
+  seedRuleVersionBody,
+  streakDefinitionBody,
+  tierDefinitionBody,
+  tierEffect,
+  tierJobSource,
+} from './fixtures/loyalty.fixtures.ts';
 import { WORKSPACE_ROOT } from './load-domain.mjs';
 
-// ── The wire (loyalty-document.ts's constants; the spec holds them equal) ──
+export { SEED_RULE_PUBLISHER };
 
-/** The six catalogue collections, in the order a reader loads them. */
-export const LOYALTY_CATALOG_COLLECTIONS = Object.freeze([
-  'badgeCategories',
-  'badgeSeries',
-  'seasons',
-  'tierDefinitions',
-  'rewardsCatalog',
-  'streakDefinitions',
+// ── The collections (`Collections`/`Subcollections` of `@core/entities`; the spec holds them equal) ──
+
+/**
+ * The six catalogue collections, in the order the seed writes them, each
+ * beside the part of `LoyaltyCatalogParts` it is read into: the catalogue
+ * the client card validates is these collections, whole, under the system's
+ * keys (flip-3 plan F3-10).
+ */
+export const LOYALTY_CATALOG_PARTS = Object.freeze([
+  Object.freeze(['badgeCategories', 'categories']),
+  Object.freeze(['badgeSeries', 'series']),
+  Object.freeze(['seasons', 'seasons']),
+  Object.freeze(['tierDefinitions', 'tiers']),
+  Object.freeze(['rewardsCatalog', 'rewards']),
+  Object.freeze(['streakDefinitions', 'streaks']),
 ]);
 export const STREAK_DEFINITIONS_COLLECTION = 'streakDefinitions';
 /** A rule's history, under its head: `streakDefinitions/{id}/versions/{version:06}`. */
@@ -74,23 +123,18 @@ export const BADGE_PROGRESS_COLLECTION = 'badgeProgress';
 export const SEASON_PROGRESS_COLLECTION = 'seasonProgress';
 export const CLIENT_JOURNAL_COLLECTION = 'clientJournal';
 
-/** `{uid}_{seq:06}` — ids sort as the ledger does. */
-export const clientJournalEntryId = (userId, seq) =>
-  `${userId}_${String(seq).padStart(6, '0')}`;
+/** The builder of each catalogue collection's bodies (`fixtures/loyalty.fixtures.ts`). */
+const CATALOG_BODY = Object.freeze({
+  badgeCategories: badgeCategoryBody,
+  badgeSeries: badgeSeriesBody,
+  tierDefinitions: tierDefinitionBody,
+  rewardsCatalog: rewardCatalogItemBody,
+  streakDefinitions: streakDefinitionBody,
+});
 
-/** `000001` — a version's document id sorts as the versions do. */
-export const streakDefinitionVersionId = (version) =>
-  String(version).padStart(6, '0');
-
-/**
- * Who published the seed's first version of a rule, and the intent behind
- * it. No person did: the in-memory reference (`InMemoryStreakDefinition
- * Repository.seeded()`) says the same two words, so a spec over the
- * reference and a page over the emulator list one history.
- */
-export const SEED_RULE_PUBLISHER = 'system';
-export const seedRuleRequestId = (streakId, version) =>
-  `seed-${streakId}-${streakDefinitionVersionId(version)}`;
+/** `HeadRole` tags, as a head's `rules` store them. */
+const CURRENT = 'CURRENT';
+const SCHEDULED = 'SCHEDULED';
 
 // ── The engine's own rules (not catalogue data) ────────────────────────────
 
@@ -108,10 +152,16 @@ export const PUNCH_CARD = Object.freeze({
   couponId: 'coupon-punch-free-cut',
 });
 
-/** The streak the «В ритъм» family counts and a `freeze` award banks into. */
+/** The streak the «В ритъм» family counts and a `FREEZE` award banks into. */
 const RHYTHM_STREAK_ID = 'cadence';
 
-const ENGINE = Object.freeze({ kind: 'system', source: 'loyalty_engine' });
+/** `AwardKind` tags, as a level's `awards` store them. */
+const POINTS_AWARD = 'POINTS';
+const FREEZE_AWARD = 'FREEZE';
+/** `RewardGrant` tag of a reward that mints a coupon. */
+const COUPON_GRANT = 'COUPON';
+/** `JournalSource` tag of a row a redemption wrote. */
+const REDEMPTION_SOURCE = 'REDEMPTION';
 
 /**
  * What ties the rows of one event together (client-card-revision-3.md
@@ -121,14 +171,15 @@ const ENGINE = Object.freeze({ kind: 'system', source: 'loyalty_engine' });
  *
  * - `appt:{appointmentId}` — a VISIT: every seat of theirs in it («Фейд ·
  *   Оформяне на брада», +27 т. for the two seats together). The award key
- *   and the idempotency key stay the seat's own: a seat is paid once;
+ *   and the idempotency key stay the seat's own: a seat is paid once; the
+ *   row's root `appointmentId` names the visit;
  * - `award:{awardKey}` — a LEVEL, or a coupon a rule minted: the
- *   `achievement` row and the points it paid («Посещения II», +20 т.); the
- *   stamp card's `reward` row. A level earned BY a visit is its own event,
+ *   `ACHIEVEMENT` row and the points it paid («Посещения II», +20 т.); the
+ *   stamp card's `REWARD` row. A level earned BY a visit is its own event,
  *   or the visit's row would be titled by the medal and lose its services;
  * - `tier:{uid}:{to}:{day}` — a change of tier («Статус: Злато»);
  * - the redemption's id — a reward bought: the points it cost and the
- *   `redemption` row that names the coupon it granted.
+ *   `REDEMPTION` row that names the coupon it granted.
  */
 const CORRELATION = Object.freeze({
   visit: (appointmentId) => `appt:${appointmentId}`,
@@ -136,23 +187,14 @@ const CORRELATION = Object.freeze({
   tier: (uid, to, day) => `tier:${uid}:${to}:${day}`,
 });
 
-/** Who redeemed at the desk: the seeded staff account (`dev-staff-ivan`, barber + admin). */
-const DESK_ADMIN = Object.freeze({
-  kind: 'admin',
-  adminUserId: 'dev-staff-ivan',
-});
-const DESK_STAFF = Object.freeze({
-  kind: 'staff',
-  userId: 'dev-staff-ivan',
-  roles: Object.freeze(['barber', 'admin']),
-});
-
 /**
  * The seed's two account holders (§4.6: nobody else has an account) and
  * what no appointment says about them: the rewards they bought, each at the
  * counter two minutes after the chair freed on their `afterVisit`-th worked
- * visit. Георги's 250-point cut falls in March 2026, Мартин's beard in
- * February; both are refused if the balance could not have paid for them.
+ * visit, by the desk (`DESK_ADMIN`, `DESK_STAFF`: the seeded staff account
+ * `dev-staff-ivan`). Георги's 250-point cut falls in March 2026, Мартин's
+ * beard in February; both are refused if the balance could not have paid
+ * for them.
  *
  * `stampGrants` names the coupons their stamp card minted
  * (`stampGrantIdOf`): Георги still HOLDS his newest, under the id the card
@@ -206,7 +248,6 @@ const addDays = (day, days) =>
   new Date((dayNumber(day) + days) * DAY_MS).toISOString().slice(0, 10);
 const daysBetween = (from, to) => dayNumber(to) - dayNumber(from);
 const weekdayOf = (day) => new Date(`${day}T12:00:00Z`).getUTCDay();
-const isoOf = (ms) => new Date(ms).toISOString();
 
 const SOFIA_WALL = new Intl.DateTimeFormat('en-CA', {
   timeZone: SHOP_ZONE,
@@ -251,25 +292,33 @@ const CATALOG_FILE = join(
   'libs/ecs-core/src/testing/fixtures/loyalty/catalog.json',
 );
 
-/** The Europe/Sofia day `catalog.json`'s season windows are dated for — the fixtures' `today`. */
+/** The Europe/Sofia day `catalog.json`'s season windows are dated for — the fixtures' `FIXTURE_TODAY`. */
 export const LOYALTY_CATALOG_TODAY = '2026-09-28';
 
 /**
- * The published catalogue as of the shop's `today`: `catalog.json`, with
+ * The published catalogue as of the shop's `today`: `catalog.json`
+ * (`{ [collection]: { [id]: body } }`), every body rebuilt by its builder,
  * every season's window and announcement moved by the whole days between
  * the fixtures' day and `today`. A fresh copy per call.
  */
 export function loyaltyCatalogFor(today) {
-  const catalog = JSON.parse(readFileSync(CATALOG_FILE, 'utf8'));
+  const stored = JSON.parse(readFileSync(CATALOG_FILE, 'utf8'));
   const shift = daysBetween(LOYALTY_CATALOG_TODAY, today);
-  for (const season of Object.values(catalog.seasons)) {
-    season.window = {
-      from: addDays(season.window.from, shift),
-      until: addDays(season.window.until, shift),
-    };
-    season.announcedAt = isoOf(Date.parse(season.announcedAt) + shift * DAY_MS);
-  }
-  return catalog;
+  const bodyOf = (collection, body) =>
+    collection === 'seasons'
+      ? seasonBody(body, shift)
+      : CATALOG_BODY[collection](body);
+  return Object.fromEntries(
+    LOYALTY_CATALOG_PARTS.map(([collection]) => [
+      collection,
+      Object.fromEntries(
+        Object.entries(stored[collection]).map(([id, body]) => [
+          id,
+          bodyOf(collection, body),
+        ]),
+      ),
+    ]),
+  );
 }
 
 /**
@@ -281,7 +330,7 @@ export function loyaltyCatalogFor(today) {
  */
 export function loyaltyCatalogWritesOf(catalog) {
   return [
-    ...LOYALTY_CATALOG_COLLECTIONS.flatMap((collection) =>
+    ...LOYALTY_CATALOG_PARTS.flatMap(([collection]) =>
       Object.entries(catalog[collection]).map(([id, data]) => ({
         path: `${collection}/${id}`,
         data,
@@ -296,44 +345,51 @@ export function loyaltyCatalogWritesOf(catalog) {
 const ruleHeadPath = (streakId) =>
   `${STREAK_DEFINITIONS_COLLECTION}/${streakId}`;
 const ruleVersionPath = (streakId, version) =>
-  `${ruleHeadPath(streakId)}/${STREAK_DEFINITION_VERSIONS_COLLECTION}/${streakDefinitionVersionId(version)}`;
+  `${ruleHeadPath(streakId)}/${STREAK_DEFINITION_VERSIONS_COLLECTION}/${ruleVersionIdOf(version)}`;
+
+const isMap = (value) =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** A head's element in one role, or `undefined`; nothing for a head that holds no `rules` list. */
+const ruleInRole = (head, role) =>
+  isMap(head) && Array.isArray(head.rules)
+    ? head.rules.find((rule) => isMap(rule) && rule.headRole === role)
+    : undefined;
 
 /**
  * The version document behind a head the SEED wrote: the rule in force as
- * its body (a version document starts with the very fields `head.current`
- * holds), published by nobody (`SEED_RULE_PUBLISHER`) at the instant the
- * head says it was written, changing nothing (there was no rule before
- * it), under an intent of the seed's own so a second run writes the same
- * document. Plain fields: the catalogue mode holds no bundle, and
- * `loyalty.spec.mjs` holds this equal to the domain's own write half.
+ * its body (the rule alone — a version holds no `headRole`), published by
+ * nobody (`SEED_RULE_PUBLISHER`) at the instant the head says it was
+ * written, changing nothing (there was no rule before it), under an intent
+ * of the seed's own so a second run writes the same document
+ * (`seedRuleVersionBody`).
  *
- * A head that holds a version in waiting is not the seed's to describe:
- * only the shop schedules one.
+ * A head that holds a rule in waiting is not the seed's to describe: only
+ * the shop schedules one.
  */
 export function seedRuleVersionWriteOf(streakId, head) {
-  if (head.scheduled !== null) {
+  if (ruleInRole(head, SCHEDULED) !== undefined) {
     throw new Error(
       `seed: the ${streakId} rhythm holds a scheduled version, which only a publish writes`,
     );
   }
-  const { version } = head.current;
+  const current = ruleInRole(head, CURRENT);
+  if (current === undefined) {
+    throw new Error(`seed: the ${streakId} rhythm holds no rule in force`);
+  }
   return {
-    path: ruleVersionPath(streakId, version),
-    data: {
-      ...head.current,
-      publishedAt: head.updatedAt,
-      publishedBy: SEED_RULE_PUBLISHER,
-      transition: 'grandfather',
-      direction: 'neutral',
-      changed: [],
-      requestId: seedRuleRequestId(streakId, version),
-      withdrawnAt: null,
-    },
+    path: ruleVersionPath(streakId, current.version),
+    data: seedRuleVersionBody(streakId, current, head.updatedAtUtcMs),
   };
 }
 
-const isMap = (value) =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
+/** The newest version a stored head names — the one that waits, else the one in force — or `null`. */
+function newestVersionOf(held) {
+  const current = ruleInRole(held, CURRENT);
+  if (current === undefined) return null;
+  const { version } = ruleInRole(held, SCHEDULED) ?? current;
+  return Number.isInteger(version) ? version : null;
+}
 
 /**
  * The rhythm rules the SHOP has published over the seed's: the streak ids
@@ -349,9 +405,9 @@ const isMap = (value) =>
  * first rule into an empty emulator). The seed leaves such a rule, head
  * and history, exactly as it is, and projects every account under it.
  *
- * Still the seed's to write: no document, the flat document an emulator
- * seeded before revision 3 holds, a head that holds nothing a reader could
- * take for a version, and the seed's own head.
+ * Still the seed's to write: no document, the head an emulator seeded
+ * before flip 3 holds (no `rules` list), a head that holds nothing a
+ * reader could take for a version, and the seed's own head.
  */
 export function rulesPublishedOver(writes, stored) {
   const published = [];
@@ -360,16 +416,12 @@ export function rulesPublishedOver(writes, stored) {
     if (collection !== STREAK_DEFINITIONS_COLLECTION || rest.length > 0) {
       continue;
     }
-    const held = stored.get(path);
-    if (!isMap(held) || !isMap(held.current)) continue;
-    const newest = isMap(held.scheduled)
-      ? held.scheduled.version
-      : held.current.version;
-    const seeded = data.current.version;
-    if (!Number.isInteger(newest) || newest < seeded) continue;
+    const newest = newestVersionOf(stored.get(path));
+    const seeded = ruleInRole(data, CURRENT).version;
+    if (newest === null || newest < seeded) continue;
     const first = stored.get(ruleVersionPath(streakId, seeded));
     const othersIntent =
-      isMap(first) && first.requestId !== seedRuleRequestId(streakId, seeded);
+      isMap(first) && first.requestId !== seedRuleRequestIdOf(streakId, seeded);
     if (newest > seeded || othersIntent) published.push(streakId);
   }
   return published;
@@ -415,7 +467,12 @@ export function catalogAsHeld(catalog, published, stored) {
  * A season's fields `loyaltyCatalogFor` moves to the shop's today: a
  * catalogue seeded on another day holds other values here, and only here.
  */
-const MOVED_SEASON_FIELDS = Object.freeze(['window', 'announcedAt']);
+const MOVED_SEASON_FIELDS = Object.freeze([
+  'windowFrom',
+  'windowUntil',
+  'announcedAtUtcMs',
+  'announcedLocalDate',
+]);
 
 /** Plain JSON values alike, a map's keys in any order. */
 function sameValue(a, b) {
@@ -444,15 +501,15 @@ const shown = (value) =>
  * shot the families' old faces from a seed that ran minutes before their
  * emblems changed (Critique 3). So `seed-dev-catalog.mjs --check` reads the
  * emulator through this, and a capture refuses to start on any line. A
- * season's window is the seed day's and never counts; nor does a document
- * only the emulator holds, which a re-seed would not remove either (it
- * deletes nothing).
+ * season's window and announcement are the seed day's and never count; nor
+ * does a document only the emulator holds, which a re-seed would not
+ * remove either (it deletes nothing).
  *
  * Nor does a rhythm rule the shop has published (`rulesPublishedOver`):
  * its head and its first version are not `catalog.json`'s any more, by
  * somebody's decision and not by a seed gone stale, and a re-seed would
- * not write them. The flat rule of an emulator seeded before revision 3
- * does count, field by field, and so does its missing first version.
+ * not write them. The head of an emulator seeded before flip 3 does count,
+ * field by field, and so does its missing first version.
  */
 export function loyaltyCatalogDriftOf(writes, stored) {
   const drift = [];
@@ -585,20 +642,20 @@ function firstBookingMsOf(uid, appointments) {
 }
 
 /**
- * The streak excuse a called-off seat carries, as `clientCaused` reads its
- * decisive cancellation: the shop's own reasons, or the staff calling it
- * off with none. `null` for the client's, and for a converted no-show,
- * which nobody is held to.
+ * The streak excuse (`StreakExcuse`) a called-off seat carries, as
+ * `clientCaused` reads its decisive cancellation: the shop's own reasons,
+ * or the staff calling it off with none. `null` for the client's, and for
+ * a converted no-show, which nobody is held to.
  */
 function excuseOf(seat) {
   switch (seat.cancellationReason) {
     case 'STAFF_BARBER_ABSENCE':
-      return 'barberAbsence';
+      return 'BARBER_ABSENCE';
     case 'STAFF_SHOP_CLOSURE':
-      return 'shopClosure';
+      return 'SHOP_CLOSURE';
     case 'UNSPECIFIED':
     case 'OTHER':
-      return seat.cancelledBy === BY_CLIENT ? null : 'staffCancelled';
+      return seat.cancelledBy === BY_CLIENT ? null : 'STAFF_CANCELLED';
     default:
       return null;
   }
@@ -607,8 +664,8 @@ function excuseOf(seat) {
 /**
  * Every visit of `uid` that was called off for a reason the shop owns, by
  * the day it was to be — whether or not the rule in force accepts that
- * reason: the rule decides (`StreakDefinition.isExcused`), the book only
- * says what happened.
+ * reason: the rule decides (`StreakRule.isExcused`), the book only says
+ * what happened.
  */
 function calledOffVisitsOf(uid, appointments) {
   const seen = new Set();
@@ -665,68 +722,91 @@ function bookingsOf(uid, appointments) {
 
 // ── The rhythm: the domain's projector, handed the book as facts ───────────
 
+/** A refusal's lines: each error struct by its `errorCode` and its context. */
+const errorsText = (errors) =>
+  errors
+    .map(
+      ({ errorCode, ...context }) => `${errorCode} ${JSON.stringify(context)}`,
+    )
+    .join('; ');
+
 /**
- * The rule in force on `today`, read off a head document by the wire's own
- * reader: the version that waits takes over on its own day, with nothing
- * to flip it. A head the reader refuses stops the seed.
+ * What a stored head's rules lack, as the read-back and the fold judge it:
+ * a `rules` list with a rule in force, and every rule one `StreakRule.parse`
+ * accepts. `[]` for a sound head.
+ */
+function headProblemsOf(domain, head) {
+  if (!isMap(head) || !Array.isArray(head.rules)) {
+    return ['it holds no rules list'];
+  }
+  const problems =
+    ruleInRole(head, CURRENT) === undefined
+      ? ['it holds no rule in force']
+      : [];
+  for (const rule of head.rules) {
+    const parsed = domain.StreakRule.parse(rule);
+    if (!parsed.ok) problems.push(errorsText(parsed.error));
+  }
+  return problems;
+}
+
+/**
+ * The rule in force on `today`, read off a head document by the domain:
+ * the rule that waits takes over on its own day, with nothing to flip it
+ * (`StreakRuleSystem.inForceOn`). A head whose rules `StreakRule.parse`
+ * refuses stops the seed.
  */
 function ruleInForce(domain, streakId, head, today) {
-  const schedule = domain.streakScheduleFromDocument(streakId, head);
-  if (schedule.isFailure()) {
+  const problems = headProblemsOf(domain, head);
+  if (problems.length > 0) {
     throw new Error(
-      `seed: the ${streakId} rhythm does not read: ${schedule.error.message}`,
+      `seed: the ${streakId} rhythm does not read: ${problems.join('; ')}`,
     );
   }
-  return schedule.value.inForceOn(today);
-}
-
-/** A seeded id as the domain's value object; the seed's ids are never blank. */
-function idOf(factory, raw) {
-  const id = factory.create(raw);
-  if (id.isFailure()) throw new Error(`seed: ${raw} is no id`);
-  return id.value;
+  return domain.StreakRuleSystem.inForceOn(head, today);
 }
 
 /**
- * One streak's facts, for `traceStreak` (client-card-revision-3.md §4.2):
- * the visits with the rule's qualifier already applied, each by the instant
- * it began (so `lastQualifiedAt` stays the visit's start); what the shop
- * called off; what is on the book. `grants` fills as the fold goes: a
- * family's `freeze` award is a protection given on the day of the visit
- * that earned it. The seeded holders are paused by nobody.
+ * One streak's facts, for `StreakSystem.trace` (client-card-revision-3.md
+ * §4.2): the visits with the rule's qualifier already applied, each by the
+ * instant it began (so `lastQualifiedAtUtcMs` stays the visit's start);
+ * what the shop called off; what is on the book. `grants` fills as the fold
+ * goes: a family's `FREEZE` award is a protection given on the day of the
+ * visit that earned it. The seeded holders are paused by nobody.
  *
  * The projector is a BATCH (a booking is read ahead of its day), so the
  * fold asks it again after every visit (`on(day)`), as of that day: what
  * the count was, whether the visit was a comeback. A fact dated after the
  * day asked about is left out by the projector itself.
  */
-function rhythmOf(domain, rule, { visits, calledOff, bookings }) {
+function rhythmOf(domain, streakId, rule, { visits, calledOff, bookings }) {
   // Every seeded service sits in the one category, and none only rides
   // along with another (`seed-dev-catalog.mjs` writes both so).
-  const categoryIds = [idOf(domain.ServiceCategoryId, CATEGORY.id)];
+  const categoryIds = [CATEGORY.id];
   const counts = (visit) =>
-    rule.qualifier.counts({
+    qualifierCounts(
+      rule,
       // A bundle's members count as its services, as for the families.
-      serviceIds: distinct([
-        ...visit.serviceIds,
-        ...servicesOf(visit.serviceIds),
-      ]).map((serviceId) => idOf(domain.ServiceId, serviceId)),
+      distinct([...visit.serviceIds, ...servicesOf(visit.serviceIds)]),
       categoryIds,
-      upsellOnlyIds: [],
-    });
+    );
   const facts = {
     visits: visits.map((visit) => ({
-      day: visit.day,
+      localDate: visit.day,
       counted: counts(visit),
-      at: new Date(visit.startMs),
+      utcEpochMs: visit.startMs,
     })),
-    excused: calledOff.map(({ day, reason }) => ({ day, reason })),
-    bookings,
+    excused: calledOff.map(({ day, reason }) => ({ localDate: day, reason })),
+    bookings: bookings.map(({ appointmentId, placedOn, day }) => ({
+      placedOn,
+      localDate: day,
+      appointmentId,
+    })),
     pauses: [],
     grants: [],
   };
   const traceOn = (day, excused = facts.excused) =>
-    domain.traceStreak(rule, { ...facts, excused }, day);
+    domain.StreakSystem.trace(streakId, rule, { ...facts, excused }, day);
   return {
     rule,
     /** The longest run so far: what «В ритъм» counts. */
@@ -734,40 +814,35 @@ function rhythmOf(domain, rule, { visits, calledOff, bookings }) {
     on: traceOn,
     /** Protections an award gives, banked after that day's visits. */
     grant(day, count) {
-      facts.grants.push({ day, count });
+      facts.grants.push({ localDate: day, count });
     },
     /** Whether the visit the shop called off on `day` moved anything: the engine writes only then. */
     movedBy(calledOffVisit) {
       const without = facts.excused.filter(
         (excused) =>
-          excused.day !== calledOffVisit.day ||
+          excused.localDate !== calledOffVisit.day ||
           excused.reason !== calledOffVisit.reason,
       );
       return !sameValue(
-        stateDocumentOf(domain, traceOn(calledOffVisit.day)),
-        stateDocumentOf(domain, traceOn(calledOffVisit.day, without)),
+        traceOn(calledOffVisit.day).state,
+        traceOn(calledOffVisit.day, without).state,
       );
     },
   };
 }
 
-/**
- * The projection's write: the state as the account holds it, every field
- * of it through the wire's own write half, the day the run in progress
- * began (`runStartedOn`) among them. «Ритъм сега · от март 2025 г.» reads
- * that day: the track keeps twelve periods, and a regular's run is longer.
- */
-const stateDocumentOf = (domain, trace) =>
-  trace.state === null ? null : domain.streakStateToDocument(trace.state);
-
 // ── What a family counts ───────────────────────────────────────────────────
 
 const HAIR_SERVICE_IDS = new Set(HAIRCUTS);
+/** `CompositionKind` of a service that bundles others. */
+const BUNDLE = 'BUNDLE';
 /** A bundle's members count as its services: «Пълна грижа» is a cut and a beard. */
 const servicesOf = (serviceIds) =>
   serviceIds.flatMap((serviceId) => {
     const service = SERVICES.find((entry) => entry.id === serviceId);
-    return service?.kind === 'bundle' ? service.includes : [serviceId];
+    return service?.body.compositionKind === BUNDLE
+      ? service.body.bundleServiceIds
+      : [serviceId];
   });
 const hairAndBeard = (visit) => {
   const services = servicesOf(visit.serviceIds);
@@ -777,42 +852,47 @@ const hairAndBeard = (visit) => {
   );
 };
 
-const inWindow = (window, day) =>
-  window === null || (day >= window.from && day <= window.until);
+/** Inside a season's window (`windowFrom`…`windowUntil`, both days), or anywhere for a family no season holds. */
+const inSeason = (season, day) =>
+  season === null || (day >= season.windowFrom && day <= season.windowUntil);
 
-function matchesWhere(visit, where) {
-  if (where === undefined) return true;
+/** The family's scope (`metricScope*Id`): a visit of that service, with that barber, at that shop. */
+function inScope(visit, series) {
   if (
-    where.serviceId !== undefined &&
-    !visit.serviceIds.includes(where.serviceId)
+    series.metricScopeServiceId !== null &&
+    !visit.serviceIds.includes(series.metricScopeServiceId)
   )
     return false;
-  if (where.barberId !== undefined && !visit.barberIds.includes(where.barberId))
+  if (
+    series.metricScopeBarberId !== null &&
+    !visit.barberIds.includes(series.metricScopeBarberId)
+  )
     return false;
   return (
-    where.locationId === undefined || visit.locationId === where.locationId
+    series.metricScopeLocationId === null ||
+    visit.locationId === series.metricScopeLocationId
   );
 }
 
 /**
  * A family's metric as of `day`, over the facts folded so far — inside its
- * season's window when it has one, inside its own `lastDays` when it names
- * them. The seed books no referrals and no waitlist catches, so those count
- * nothing: an honest zero, not a guess.
+ * season's window when it has one, inside its own `metricWindowDays` when
+ * it names them. The seed books no referrals and no waitlist catches, so
+ * those count nothing: an honest zero, not a guess.
  */
-function metricValue(metric, window, folded, day) {
+function metricValue(series, season, folded, day) {
   const visits = folded.visits.filter(
     (visit) =>
-      inWindow(window, visit.day) &&
-      (metric.window === undefined ||
-        daysBetween(visit.day, day) < metric.window.lastDays) &&
-      matchesWhere(visit, metric.where),
+      inSeason(season, visit.day) &&
+      (series.metricWindowDays === null ||
+        daysBetween(visit.day, day) < series.metricWindowDays) &&
+      inScope(visit, series),
   );
-  switch (metric.metric) {
+  switch (series.metric) {
     case 'client.visits.completed':
       return visits.length;
     case 'client.bookings.selfService':
-      return folded.bookings.filter((booking) => inWindow(window, booking.day))
+      return folded.bookings.filter((booking) => inSeason(season, booking.day))
         .length;
     case 'client.referrals.completed':
     case 'client.waitlist.booked':
@@ -841,7 +921,7 @@ function metricValue(metric, window, folded, day) {
         ? 0
         : daysBetween(folded.visits[0].day, day);
     default:
-      throw new Error(`seed: the ${metric.metric} metric is not projected`);
+      throw new Error(`seed: the ${series.metric} metric is not projected`);
   }
 }
 
@@ -880,18 +960,18 @@ const ACTS = {
     met: (folded, fact) => fact.kind === 'profile',
   },
   'series-2026-beard-week-full': {
-    met: (folded, fact, window) =>
+    met: (folded, fact, season) =>
       fact.kind === 'visit' &&
-      inWindow(window, fact.visit.day) &&
+      inSeason(season, fact.visit.day) &&
       hairAndBeard(fact.visit),
   },
   'series-2026-summer-before-leave': {
-    met: (folded, fact, window) => {
-      if (fact.kind !== 'visit' || !inWindow(window, fact.visit.day))
+    met: (folded, fact, season) => {
+      if (fact.kind !== 'visit' || !inSeason(season, fact.visit.day))
         return false;
       const before = folded.visits
         .slice(0, -1)
-        .filter((visit) => inWindow(window, visit.day))
+        .filter((visit) => inSeason(season, visit.day))
         .at(-1);
       return (
         before !== undefined &&
@@ -917,18 +997,18 @@ const RANK = {
 
 /**
  * `uid`'s loyalty documents as the engine would hold them on the shop's
- * `today`, from every appointment in the book: `{ account, badgeProgress,
- * seasonProgress, clientJournal }` — the shape of the fixtures'
- * `LoyaltyAccountFixture`, progress keyed by family, the journal by
- * `clientJournalEntryId` and holding every row the activity feed shows:
- * the points, the levels, the tiers, the stamp card's coupons and the
- * redemptions. `null` for somebody the engine never saw (no visit, no
+ * `today`, from every appointment in the book — the layout of the fixtures'
+ * `account-*.json` (`LoyaltyClientJson` of `@core/testing`): `{ uid,
+ * customerId, account, badgeProgress, seasonProgress, clientJournal }`,
+ * each a flat body, progress keyed by family and season, the journal by
+ * `journalRowIdOf(customerId, seq)` and holding every row the activity feed
+ * shows: the points, the levels, the tiers, the stamp card's coupons and
+ * the redemptions. `null` for somebody the engine never saw (no visit, no
  * booking).
  *
  * `domain` is the production code the fold is handed, never imports:
- * `streakScheduleFromDocument`, `traceStreak`, `streakStateToDocument` and
- * the catalogue's two id factories — `loadSeedDomain()`'s bundle in the
- * seed, the ordinary imports in a spec.
+ * `StreakSystem`, `StreakRuleSystem` and `StreakRule` — `loadSeedDomain()`'s
+ * bundle in the seed, the ordinary imports in a spec.
  *
  * `catalog` is `loyaltyCatalogFor(today)`'s, under the rhythm rules the
  * emulator holds where the shop has published its own (`catalogAsHeld`).
@@ -959,6 +1039,9 @@ export function projectLoyaltyFor(
   const tiers = tierLadderOf(catalog);
   const calledOff = calledOffVisitsOf(uid, appointments);
   const newestStamp = visits.length - (visits.length % PUNCH_CARD.size);
+  /** The season a family belongs to, or `null` for a perennial one. */
+  const seasonOf = (series) =>
+    series.seasonId === null ? null : catalog.seasons[series.seasonId];
 
   // ── The facts, in time order ──
   const timeline = [];
@@ -987,7 +1070,7 @@ export function projectLoyaltyFor(
     const firstDay = visits[0].day;
     const anniversaries = new Set(
       families.flatMap(([, series]) =>
-        series.metric?.metric === 'client.tenure.days'
+        series.metric === 'client.tenure.days'
           ? series.levels.map((level) => addDays(firstDay, level.target))
           : [],
       ),
@@ -1037,6 +1120,7 @@ export function projectLoyaltyFor(
   let balance = 0;
   let earnedPoints = 0;
   let spentPoints = 0;
+  /** Each family's levels as the fold earns them: `{ level, atUtcMs, count }`. */
   const progress = new Map();
   const progressOf = (seriesId) => {
     let entry = progress.get(seriesId);
@@ -1051,7 +1135,7 @@ export function projectLoyaltyFor(
     Object.entries(catalog[STREAK_DEFINITIONS_COLLECTION]).map(
       ([streakId, head]) => [
         streakId,
-        rhythmOf(domain, ruleInForce(domain, streakId, head, today), {
+        rhythmOf(domain, streakId, ruleInForce(domain, streakId, head, today), {
           visits,
           calledOff,
           bookings: onTheBook,
@@ -1065,28 +1149,30 @@ export function projectLoyaltyFor(
   /** One row of the journal, as of the balance it leaves. */
   const append = (fact, entry) => {
     writes.add(fact.atMs);
-    rows.push({
-      userId: uid,
-      seq: rows.length + 1,
-      at: isoOf(fact.atMs),
-      effect: entry.effect,
-      source: entry.source,
-      actor: entry.actor,
-      reverses: null,
-      correlationId: entry.correlationId,
-      idempotencyKey: entry.idempotencyKey,
-      visibility: 'client',
-      publicLabel: entry.label,
-      balanceAfter: balance,
-    });
+    rows.push(
+      journalEntryBody({
+        uid,
+        seq: rows.length + 1,
+        atUtcMs: fact.atMs,
+        correlationId: entry.correlationId,
+        idempotencyKey: entry.idempotencyKey,
+        labelCode: entry.labelCode,
+        labelParams: entry.labelParams,
+        balanceAfter: balance,
+        appointmentId: entry.appointmentId ?? null,
+        actor: entry.actor,
+        source: entry.source,
+        effect: entry.effect,
+      }),
+    );
   };
 
   /** A row that moves the balance: the only effect that does. */
   const pay = (fact, delta, entry) => {
     balance += delta;
-    if (entry.source.kind === 'redemption') spentPoints -= delta;
+    if (entry.source.journalSource === REDEMPTION_SOURCE) spentPoints -= delta;
     else earnedPoints += delta;
-    append(fact, { ...entry, effect: { kind: 'points', delta } });
+    append(fact, { ...entry, effect: pointsEffect(delta) });
   };
 
   const earn = (seriesId, series, level, fact) => {
@@ -1096,64 +1182,46 @@ export function projectLoyaltyFor(
       : undefined;
     if (repeat) {
       repeat.count += 1;
-      repeat.earnedAt = isoOf(fact.atMs);
+      repeat.atUtcMs = fact.atMs;
     } else {
-      entry.earned.push({
-        level: level.level,
-        earnedAt: isoOf(fact.atMs),
-        via: 'rule',
-        count: 1,
-      });
+      entry.earned.push({ level: level.level, atUtcMs: fact.atMs, count: 1 });
     }
     const occurrence = series.repeatable ? fact.day.slice(0, 4) : 'once';
     const awardKey = `${level.ruleId}:${uid}:${occurrence}`;
-    const sourceOf = () => ({
-      kind: 'rule',
-      rule: { ruleId: level.ruleId, version: series.version },
-      awardKey,
-      eventId: fact.eventId,
-    });
+    const sourceOf = () =>
+      ruleSource(level.ruleId, series.version, awardKey, fact.eventId);
     // The level itself, then what it pays: one event, the level's own.
     append(fact, {
-      effect: {
-        kind: 'achievement',
-        rule: { ruleId: level.ruleId, version: series.version },
-        awardKey,
-        op: 'granted',
-      },
+      effect: achievementEffect(level.ruleId, series.version, awardKey),
       source: sourceOf(),
-      actor: ENGINE,
+      actor: ENGINE_ACTOR,
       correlationId: CORRELATION.award(awardKey),
       idempotencyKey: `award:${awardKey}#badge`,
-      label: {
-        code: 'achievement.earned',
-        params: { rule: level.ruleId, seriesId, level: level.level },
-      },
+      labelCode: 'achievement.earned',
+      labelParams: { rule: level.ruleId, seriesId, level: level.level },
     });
     let paid = 0;
     for (const award of level.awards) {
-      if (award.kind === 'freeze') {
-        rhythms.get(RHYTHM_STREAK_ID)?.grant(fact.day, award.count);
+      if (award.awardKind === FREEZE_AWARD) {
+        rhythms.get(RHYTHM_STREAK_ID)?.grant(fact.day, award.awardFreezeCount);
         continue;
       }
-      if (award.kind !== 'points') {
+      if (award.awardKind !== POINTS_AWARD) {
         throw new Error(
-          `seed: ${seriesId} ${level.level} pays a ${award.kind}, which is not projected`,
+          `seed: ${seriesId} ${level.level} pays a ${award.awardKind}, which is not projected`,
         );
       }
-      pay(fact, award.points, {
+      pay(fact, award.awardPoints, {
         source: sourceOf(),
-        actor: ENGINE,
+        actor: ENGINE_ACTOR,
         correlationId: CORRELATION.award(awardKey),
         idempotencyKey: `award:${awardKey}#${paid}`,
-        label: {
-          code: 'points.rule',
-          params: {
-            rule: level.ruleId,
-            points: award.points,
-            seriesId,
-            level: level.level,
-          },
+        labelCode: 'points.rule',
+        labelParams: {
+          rule: level.ruleId,
+          points: award.awardPoints,
+          seriesId,
+          level: level.level,
         },
       });
       paid += 1;
@@ -1163,26 +1231,23 @@ export function projectLoyaltyFor(
   const evaluateFamilies = (fact) => {
     for (const [seriesId, series] of families) {
       if (
-        series.retiredAt !== null &&
-        Date.parse(series.retiredAt) <= fact.atMs
+        series.retiredAtUtcMs !== null &&
+        series.retiredAtUtcMs <= fact.atMs
       ) {
         continue;
       }
-      const window =
-        series.seasonId === null
-          ? null
-          : catalog.seasons[series.seasonId].window;
+      const season = seasonOf(series);
       const act = ACTS[seriesId];
       if (series.metric === null && act === undefined) {
         throw new Error(`seed: no rule projects the ${seriesId} family`);
       }
       if (act?.met) {
-        if (!act.met(folded, fact, window)) continue;
+        if (!act.met(folded, fact, season)) continue;
         const entry = progress.get(seriesId);
         const [level] = series.levels;
         const earnedThisYear = entry?.earned.some(
           (earned) =>
-            sofiaWallOf(Date.parse(earned.earnedAt)).day.slice(0, 4) ===
+            sofiaWallOf(earned.atUtcMs).day.slice(0, 4) ===
             fact.day.slice(0, 4),
         );
         if (entry && (!series.repeatable || earnedThisYear)) continue;
@@ -1191,7 +1256,7 @@ export function projectLoyaltyFor(
       }
       const value = act
         ? act.count(folded)
-        : metricValue(series.metric, window, folded, fact.day);
+        : metricValue(series, season, folded, fact.day);
       const entry = progress.get(seriesId);
       for (const level of series.levels.slice(entry?.earned.length ?? 0)) {
         if (level.target === null || value < level.target) break;
@@ -1207,34 +1272,27 @@ export function projectLoyaltyFor(
     if (stamp % PUNCH_CARD.size !== 0) return;
     const awardKey = `${PUNCH_CARD.ruleId}:${uid}:client.visits.completed:${stamp}`;
     append(fact, {
-      effect: {
-        kind: 'reward',
-        op: 'granted',
-        ref: {
-          kind: 'couponGrant',
-          id: stampGrantIdOf(uid, stamp, {
-            naming: facts.stampGrants ?? null,
-            newest: newestStamp,
-          }),
-        },
-      },
-      source: {
-        kind: 'rule',
-        rule: { ruleId: PUNCH_CARD.ruleId, version: PUNCH_CARD.version },
+      effect: rewardEffect(
+        stampGrantIdOf(uid, stamp, {
+          naming: facts.stampGrants ?? null,
+          newest: newestStamp,
+        }),
+      ),
+      source: ruleSource(
+        PUNCH_CARD.ruleId,
+        PUNCH_CARD.version,
         awardKey,
-        eventId: fact.eventId,
-      },
-      actor: ENGINE,
+        fact.eventId,
+      ),
+      actor: ENGINE_ACTOR,
       correlationId: CORRELATION.award(awardKey),
       idempotencyKey: `award:${awardKey}#0`,
-      label: {
-        code: 'reward.granted',
-        params: {
-          rule: PUNCH_CARD.ruleId,
-          reward: stampReward.id,
-          coupon: PUNCH_CARD.couponId,
-          stamp,
-        },
+      labelCode: 'reward.granted',
+      labelParams: {
+        rule: PUNCH_CARD.ruleId,
+        reward: stampReward.id,
+        coupon: PUNCH_CARD.couponId,
+        stamp,
       },
     });
   };
@@ -1244,23 +1302,18 @@ export function projectLoyaltyFor(
     const reached = tiers.reachedBy(qualifying);
     if (tier !== null && tier.id === reached.id) return;
     const from = tier?.id ?? null;
-    tier = { id: reached.id, since: fact.atMs };
+    tier = { id: reached.id, sinceMs: fact.atMs };
     writes.add(fact.atMs);
     // The tier an account opens on is no change: nothing was left behind.
     if (from === null) return;
     append(fact, {
-      effect: {
-        kind: 'tier',
-        op: 'changed',
-        from,
-        to: reached.id,
-        until: null,
-      },
-      source: { kind: 'system', job: 'tier' },
-      actor: ENGINE,
+      effect: tierEffect(from, reached.id),
+      source: tierJobSource(),
+      actor: ENGINE_ACTOR,
       correlationId: CORRELATION.tier(uid, reached.id, fact.day),
       idempotencyKey: `tier:${uid}:${reached.id}:${fact.day}`,
-      label: { code: 'tier.changed', params: { from, to: reached.id } },
+      labelCode: 'tier.changed',
+      labelParams: { from, to: reached.id },
     });
   };
 
@@ -1291,23 +1344,24 @@ export function projectLoyaltyFor(
           );
           const awardKey = `${EARN_RULE.ruleId}:${uid}:${factKey}`;
           pay(fact, points, {
-            source: {
-              kind: 'rule',
-              rule: { ...EARN_RULE },
+            source: ruleSource(
+              EARN_RULE.ruleId,
+              EARN_RULE.version,
               awardKey,
-              eventId: seatEventId(fact.visit.appointmentId, fact.seat.seatId),
-            },
-            actor: ENGINE,
+              seatEventId(fact.visit.appointmentId, fact.seat.seatId),
+            ),
+            actor: ENGINE_ACTOR,
             correlationId: CORRELATION.visit(fact.visit.appointmentId),
             idempotencyKey: `award:${awardKey}#0`,
-            label: {
-              code: 'points.rule',
-              params: {
-                rule: EARN_RULE.ruleId,
-                points,
-                spendMinor: fact.seat.priceMinor,
-              },
+            labelCode: 'points.rule',
+            labelParams: {
+              rule: EARN_RULE.ruleId,
+              points,
+              spendMinor: fact.seat.priceMinor,
             },
+            // The visit the seat's points were paid for (F3-11: the root
+            // field the ledger folds a visit by).
+            appointmentId: fact.visit.appointmentId,
           });
         }
         evaluateTier(fact);
@@ -1340,35 +1394,26 @@ export function projectLoyaltyFor(
         }
         // What it cost, then what it bought: one event, the redemption's.
         pay(fact, -reward.cost, {
-          source: { kind: 'redemption', redemptionId: redemption.id },
+          source: redemptionSource(redemption.id),
           actor: redemption.actor,
           correlationId: redemption.id,
           idempotencyKey: `rdm:${redemption.id}#0`,
-          label: {
-            code: 'points.redeemed',
-            params: { reward: redemption.rewardId, points: reward.cost },
-          },
+          labelCode: 'points.redeemed',
+          labelParams: { reward: redemption.rewardId, points: reward.cost },
         });
         append(fact, {
-          effect: {
-            kind: 'redemption',
-            op: 'redeemed',
-            redemptionId: redemption.id,
-            rewardId: redemption.rewardId,
-            cost: reward.cost,
-            grant: {
-              kind: 'couponGrant',
-              id: redemptionGrantIdOf(redemption.id),
-            },
-          },
-          source: { kind: 'redemption', redemptionId: redemption.id },
+          effect: redemptionEffect(
+            redemption.id,
+            redemption.rewardId,
+            reward.cost,
+            redemptionGrantIdOf(redemption.id),
+          ),
+          source: redemptionSource(redemption.id),
           actor: redemption.actor,
           correlationId: redemption.id,
           idempotencyKey: `rdm:${redemption.id}#1`,
-          label: {
-            code: 'redemption.changed',
-            params: { op: 'redeemed', reward: redemption.rewardId },
-          },
+          labelCode: 'redemption.changed',
+          labelParams: { op: 'redeemed', reward: redemption.rewardId },
         });
         break;
       }
@@ -1376,13 +1421,12 @@ export function projectLoyaltyFor(
   }
 
   // ── The rhythm as of today, and the nights its phase moved ──
-  const streaks = {};
+  const streaks = [];
   let longest = null;
   for (const [streakId, rhythm] of rhythms) {
     const trace = rhythm.on(today);
     for (const day of trace.judgedOn) writes.add(jobInstantOn(day));
-    const state = stateDocumentOf(domain, trace);
-    if (state !== null) streaks[streakId] = state;
+    if (trace.state !== null) streaks.push(trace.state);
     if (streakId === RHYTHM_STREAK_ID) longest = trace.record;
   }
 
@@ -1390,68 +1434,63 @@ export function projectLoyaltyFor(
   const badgeProgress = {};
   for (const [seriesId, series] of families) {
     const entry = progress.get(seriesId);
-    const window =
-      series.seasonId === null ? null : catalog.seasons[series.seasonId].window;
     const act = ACTS[seriesId];
     const value = act?.met
       ? (entry?.earned.reduce((sum, earned) => sum + earned.count, 0) ?? 0)
       : act
         ? act.count(folded)
-        : metricValue(series.metric, window, folded, today);
+        : metricValue(series, seasonOf(series), folded, today);
     if (value === 0 && entry === undefined) continue;
-    badgeProgress[seriesId] = { value, earned: entry?.earned ?? [] };
+    badgeProgress[seriesId] = badgeProgressBody(value, entry?.earned ?? []);
   }
   const seasonProgress = {};
   for (const [seasonId, season] of Object.entries(catalog.seasons)) {
     const track = season.trackSeriesId && badgeProgress[season.trackSeriesId];
     if (!track) continue;
-    seasonProgress[seasonId] = {
-      trackValue: track.value,
-      trackLevel: track.earned.at(-1)?.level ?? 0,
-    };
+    seasonProgress[seasonId] = seasonProgressBody(
+      track.value,
+      track.earned.at(-1)?.level ?? 0,
+    );
   }
 
   const qualifying = qualifyingOn(visits, today, tiers.lastDays);
   const current = tiers.reachedBy(qualifying);
   const next = tiers.after(current);
-  const account = {
-    userId: uid,
+  const account = loyaltyAccountBody({
+    uid,
     balance,
     lifetimeEarned: earnedPoints,
-    lifetimeAdjusted: 0,
     lifetimeSpent: spentPoints,
     tier: {
-      current: current.id,
+      tierId: current.id,
       definitionVersion: current.definition.version,
-      since: isoOf(tier?.since ?? timeline[0].atMs),
+      sinceUtcMs: tier?.sinceMs ?? timeline[0].atMs,
       qualifying,
-      next: next?.id ?? null,
+      nextTierId: next?.id ?? null,
       remaining:
-        next === null ? null : next.definition.qualify.atLeast - qualifying,
-      override: null,
+        next === null ? null : next.definition.qualifyAtLeast - qualifying,
     },
     streaks,
-    punchCards: [
-      {
-        ruleId: PUNCH_CARD.ruleId,
-        filled: visits.length % PUNCH_CARD.size,
-        size: PUNCH_CARD.size,
-        title: stampReward.name,
-      },
-    ],
+    punchCard: {
+      ruleId: PUNCH_CARD.ruleId,
+      filled: visits.length % PUNCH_CARD.size,
+      size: PUNCH_CARD.size,
+      title: stampReward.name,
+    },
     records: recordsOf(visits, longest),
-    // Expiry is off (`DEFAULT_LOYALTY_POLICY.expiry.enabled`), so nothing lapses.
-    pointsExpiry: null,
     seq: rows.length,
     version: writes.size,
-    updatedAt: isoOf(Math.max(...writes, timeline[0].atMs)),
-  };
+    updatedAtUtcMs: Math.max(...writes, timeline[0].atMs),
+  });
+  const customerId = customerIdOf(uid);
   return {
+    uid,
+    customerId,
     account,
     badgeProgress,
     seasonProgress,
     clientJournal: Object.fromEntries(
-      rows.map((row) => [clientJournalEntryId(uid, row.seq), row]),
+      rows.map((row) => [journalRowIdOf(customerId, row.seq), row]),
     ),
   };
 }
@@ -1475,11 +1514,11 @@ function tierLadderOf(catalog) {
     .map(([id, definition]) => ({ id, definition }))
     .sort((a, b) => a.definition.rank - b.definition.rank);
   if (ladder.length === 0) throw new Error('seed: the catalogue has no tiers');
-  const lastDays = ladder[0].definition.qualify.window.lastDays;
+  const lastDays = ladder[0].definition.qualifyWindowDays;
   for (const { id, definition } of ladder) {
     if (
-      definition.qualify.metric !== 'client.visits.completed' ||
-      definition.qualify.window.lastDays !== lastDays
+      definition.qualifyMetric !== 'client.visits.completed' ||
+      definition.qualifyWindowDays !== lastDays
     ) {
       throw new Error(`seed: the ${id} tier's qualification is not projected`);
     }
@@ -1488,7 +1527,7 @@ function tierLadderOf(catalog) {
     lastDays,
     reachedBy: (visits) =>
       ladder
-        .filter((entry) => visits >= entry.definition.qualify.atLeast)
+        .filter((entry) => visits >= entry.definition.qualifyAtLeast)
         .at(-1),
     after: (entry) => ladder[ladder.indexOf(entry) + 1] ?? null,
   };
@@ -1498,10 +1537,10 @@ function tierLadderOf(catalog) {
 function redeemRefusal(reward, balance, day) {
   if (reward === undefined) return 'no such reward';
   if (!reward.enabled) return 'the reward is off';
-  if (reward.grants.kind !== 'coupon') {
-    return `a reward that grants a ${reward.grants.kind} is not projected`;
+  if (reward.rewardGrant !== COUPON_GRANT) {
+    return `a reward that grants a ${reward.rewardGrant} is not projected`;
   }
-  const { from, until } = reward.available;
+  const { availableFrom: from, availableUntil: until } = reward;
   if ((from !== null && day < from) || (until !== null && day > until)) {
     return 'the reward is not on offer that day';
   }
@@ -1517,8 +1556,8 @@ function redeemRefusal(reward, balance, day) {
 function punchRewardOf(catalog) {
   const found = Object.entries(catalog.rewardsCatalog).find(
     ([, item]) =>
-      item.grants.kind === 'coupon' &&
-      item.grants.couponId === PUNCH_CARD.couponId,
+      item.rewardGrant === COUPON_GRANT &&
+      item.grantCouponId === PUNCH_CARD.couponId,
   );
   if (!found) {
     throw new Error(`seed: no reward names the ${PUNCH_CARD.couponId} coupon`);
@@ -1536,13 +1575,7 @@ function recordsOf(visits, longest) {
   if (visits.length === 0) return [];
   const records = [];
   if (longest !== null) {
-    records.push({
-      kind: 'longestRhythm',
-      value: longest.value,
-      on: longest.on,
-      year: null,
-      serviceId: null,
-    });
+    records.push(longestRhythmRecord(longest.value, longest.on));
   }
   const years = new Map();
   for (const visit of visits) {
@@ -1552,13 +1585,7 @@ function recordsOf(visits, longest) {
   const [year, inYear] = [...years].sort(
     (a, b) => b[1] - a[1] || a[0] - b[0],
   )[0];
-  records.push({
-    kind: 'mostVisitsInYear',
-    value: inYear,
-    on: null,
-    year,
-    serviceId: null,
-  });
+  records.push(mostVisitsInYearRecord(inYear, year));
   // Most visits, then the most recently worked.
   const services = new Map();
   visits.forEach((visit, index) => {
@@ -1570,20 +1597,8 @@ function recordsOf(visits, longest) {
   const [serviceId, favourite] = [...services].sort(
     (a, b) => b[1].count - a[1].count || b[1].latest - a[1].latest,
   )[0];
-  records.push({
-    kind: 'favouriteService',
-    value: favourite.count,
-    on: null,
-    year: null,
-    serviceId,
-  });
-  records.push({
-    kind: 'firstVisit',
-    value: 1,
-    on: visits[0].day,
-    year: null,
-    serviceId: null,
-  });
+  records.push(favouriteServiceRecord(favourite.count, serviceId));
+  records.push(firstVisitRecord(visits[0].day));
   return records;
 }
 
@@ -1615,7 +1630,7 @@ const usedAfter = (visits, index) =>
 /**
  * The stamp card's coupons: one at every `PUNCH_CARD.size`-th worked visit
  * up to `today`, granted as that visit's chair freed — each with the id its
- * `reward` row names (`stampGrantIdOf`) and when it was used: on the visit
+ * `REWARD` row names (`stampGrantIdOf`) and when it was used: on the visit
  * after, but for the newest a holder still holds (`usedAtUtcMs: null`).
  * Instants are epoch ms, as `couponGrantBody` stores them.
  */
@@ -1643,7 +1658,7 @@ export function punchCardGrantsOf(uid, appointments, today, naming = null) {
 
 /**
  * The coupons a holder bought with points (`LOYALTY_HOLDERS[].redemptions`):
- * each granted at the counter, the instant its `redemption` row is
+ * each granted at the counter, the instant its `REDEMPTION` row is
  * written, under the id that row names, and used on the visit after.
  */
 export function redemptionGrantsOf(
@@ -1660,12 +1675,12 @@ export function redemptionGrantsOf(
     const index = redemption.afterVisit - 1;
     const visit = visits[index];
     const reward = catalog.rewardsCatalog[redemption.rewardId];
-    if (visit === undefined || reward?.grants.kind !== 'coupon') return [];
+    if (visit === undefined || reward?.rewardGrant !== COUPON_GRANT) return [];
     return [
       {
         redemptionId: redemption.id,
         grantId: redemptionGrantIdOf(redemption.id),
-        couponId: reward.grants.couponId,
+        couponId: reward.grantCouponId,
         grantedAtUtcMs: visit.doneMs + 2 * MINUTE_MS,
         usedAtUtcMs: usedAfter(visits, index),
       },
@@ -1673,9 +1688,13 @@ export function redemptionGrantsOf(
   });
 }
 
-/** A projection's documents as `{ path, data }`: the account, its two subcollections, the journal. */
+/**
+ * A projection's documents as `{ path, data }`: the account, its two
+ * subcollections, the journal — under `loyaltyAccounts/{customerIdOf(uid)}`
+ * (D29), the journal at its rows' own ids.
+ */
 export function loyaltyWritesOf(uid, projection) {
-  const home = `${LOYALTY_ACCOUNTS_COLLECTION}/${uid}`;
+  const home = `${LOYALTY_ACCOUNTS_COLLECTION}/${customerIdOf(uid)}`;
   return [
     { path: home, data: projection.account },
     ...Object.entries(projection.badgeProgress).map(([id, data]) => ({
@@ -1693,63 +1712,56 @@ export function loyaltyWritesOf(uid, projection) {
   ];
 }
 
-// ── Read back, as the client card reads ────────────────────────────────────
+// ── Read back, before writing ──────────────────────────────────────────────
 
 /**
- * Reads `{ path, data }` writes back through the production readers —
- * `readers` is `loadSeedDomain()`, whose loyalty mappers are the ones the
- * client card's adapters run — each document by where it is written: the
- * six catalogue collections as ONE catalogue (`loyaltyCatalogFromDocuments`:
- * a family naming a missing shelf, or a season announced too late, fails it
- * whole, as it fails the reader), a rhythm rule's versions each beside the
- * head that names them, and an account, its family progress, its season
- * tracks and its journal one by one.
+ * Reads `{ path, data }` writes back as the documents they will be — each
+ * the entity, `{ id, ...data }` (Law 5: no mapper) — and holds them to the
+ * two checks the seed keeps at run time (flip-3 plan F3-1 (b)); `domain`
+ * is `loadSeedDomain()` (the ordinary imports in a spec):
  *
- * A journal row is read as the activity feed reads it
- * (`activityEntryFromDocument`: every kind the feed shows), and a row that
- * moves points ALSO as the ledger does (`ledgerEntryFromDocument`), which
- * the built wallet reads until the feed replaces it.
+ * - the six catalogue collections as ONE catalogue,
+ *   `LoyaltyCatalogSystem.validate` over them under the system's part names
+ *   (`LOYALTY_CATALOG_PARTS`): a family naming a missing shelf or a missing
+ *   season, two entries under one id, tiers that do not rise or a reward
+ *   that costs nothing fail it whole, as they fail the client card's read;
+ * - `StreakRule.parse` over every rule a head holds (and a head must hold
+ *   one in force), and over every version — each version beside the head
+ *   that names its rule, under the id its number gives it.
  *
- * Answers what the readers read, and a `problems` line for each document
- * they refused and each path no loyalty reader reads; the seed writes
- * nothing while there is one.
+ * The account, its progress and its journal have no run-time check: their
+ * bodies are the builders' (`fixtures/loyalty.fixtures.ts`), held to their
+ * entities by the type checker. Each is still routed by where it is
+ * written, and a path no loyalty document is written at is a problem.
+ *
+ * Answers the validated catalogue, the documents by kind, and a `problems`
+ * line for each refusal; the seed writes nothing while there is one.
  */
-export function readLoyaltyWrites(readers, writes) {
+export function readLoyaltyWrites(domain, writes) {
   const read = {
     catalog: null,
+    heads: [],
     ruleVersions: [],
     accounts: [],
     badgeProgress: [],
     seasonProgress: [],
-    ledger: [],
-    activity: [],
+    journal: [],
     problems: [],
   };
-  const keep = (into, path, result) => {
-    if (result.isSuccess()) into.push(result.value);
-    else read.problems.push(`${path}: ${result.error.message}`);
-    return result.isSuccess();
-  };
-  // An account document's reader, by its collection with the ids starred.
+  const parts = Object.fromEntries(
+    LOYALTY_CATALOG_PARTS.map(([, part]) => [part, []]),
+  );
+  const partOf = new Map(LOYALTY_CATALOG_PARTS);
+  // An account document's kind, by its collection with the ids starred.
   const home = `${LOYALTY_ACCOUNTS_COLLECTION}/*`;
-  const accountReaders = new Map([
-    [
-      LOYALTY_ACCOUNTS_COLLECTION,
-      [read.accounts, readers.loyaltyAccountFromDocument],
-    ],
-    [
-      `${home}/${BADGE_PROGRESS_COLLECTION}`,
-      [read.badgeProgress, readers.badgeProgressFromDocument],
-    ],
-    [
-      `${home}/${SEASON_PROGRESS_COLLECTION}`,
-      [read.seasonProgress, readers.seasonProgressFromDocument],
-    ],
+  const accountKinds = new Map([
+    [LOYALTY_ACCOUNTS_COLLECTION, read.accounts],
+    [`${home}/${BADGE_PROGRESS_COLLECTION}`, read.badgeProgress],
+    [`${home}/${SEASON_PROGRESS_COLLECTION}`, read.seasonProgress],
+    [CLIENT_JOURNAL_COLLECTION, read.journal],
   ]);
   const ruleVersions = `${STREAK_DEFINITIONS_COLLECTION}/*/${STREAK_DEFINITION_VERSIONS_COLLECTION}`;
-  const catalogDocuments = Object.fromEntries(
-    LOYALTY_CATALOG_COLLECTIONS.map((collection) => [collection, {}]),
-  );
+  const heads = new Map();
   let catalogued = false;
   const versions = [];
 
@@ -1761,51 +1773,49 @@ export function readLoyaltyWrites(readers, writes) {
       .slice(0, -1)
       .map((segment, i) => (i % 2 === 1 ? '*' : segment))
       .join('/');
-    const accountReader = accountReaders.get(collection);
-    if (LOYALTY_CATALOG_COLLECTIONS.includes(collection)) {
-      catalogDocuments[collection][id] = data;
+    const entity = { id, ...data };
+    if (partOf.has(collection)) {
+      parts[partOf.get(collection)].push(entity);
       catalogued = true;
-    } else if (collection === ruleVersions) {
-      // Read once every head is in: a version holds no name of its own.
-      versions.push({ path, streakId: segments[1], versionId: id, data });
-    } else if (collection === CLIENT_JOURNAL_COLLECTION) {
-      const shown = keep(
-        read.activity,
-        path,
-        readers.activityEntryFromDocument(id, data),
-      );
-      if (shown && data.effect.kind === 'points') {
-        keep(read.ledger, path, readers.ledgerEntryFromDocument(id, data));
+      if (collection === STREAK_DEFINITIONS_COLLECTION) {
+        heads.set(id, data);
+        read.heads.push(entity);
+        for (const problem of headProblemsOf(domain, data)) {
+          read.problems.push(`${path}: ${problem}`);
+        }
       }
-    } else if (accountReader) {
-      const [into, reader] = accountReader;
-      keep(into, path, reader(id, data));
+    } else if (collection === ruleVersions) {
+      // Read once every head is in: a version is the history of a head's rule.
+      versions.push({ path, streakId: segments[1], versionId: id, data });
+    } else if (accountKinds.has(collection)) {
+      accountKinds.get(collection).push(entity);
     } else {
       read.problems.push(`${path}: no loyalty reader reads this path`);
     }
   }
 
   if (catalogued) {
-    const catalog = readers.loyaltyCatalogFromDocuments(catalogDocuments);
-    if (catalog.isSuccess()) read.catalog = catalog.value;
-    else read.problems.push(`the catalogue: ${catalog.error.message}`);
+    const catalog = domain.LoyaltyCatalogSystem.validate(parts);
+    if (catalog.ok) read.catalog = catalog.value;
+    else read.problems.push(`the catalogue: ${errorsText(catalog.error)}`);
   }
   for (const { path, streakId, versionId, data } of versions) {
-    const head = catalogDocuments[STREAK_DEFINITIONS_COLLECTION][streakId];
-    if (!isMap(head)) {
+    if (!isMap(heads.get(streakId))) {
       read.problems.push(`${path}: a version of a rule with no head`);
       continue;
     }
-    keep(
-      read.ruleVersions,
-      path,
-      readers.streakDefinitionVersionFromDocument(
-        streakId,
-        versionId,
-        data,
-        head.name,
-      ),
-    );
+    if (versionId !== ruleVersionIdOf(data.version)) {
+      read.problems.push(
+        `${path}: .version ${shown(data.version)} is not the version ${versionId} names`,
+      );
+      continue;
+    }
+    const rule = domain.StreakRule.parse(data);
+    if (!rule.ok) {
+      read.problems.push(`${path}: ${errorsText(rule.error)}`);
+      continue;
+    }
+    read.ruleVersions.push({ id: versionId, ...data });
   }
   return read;
 }

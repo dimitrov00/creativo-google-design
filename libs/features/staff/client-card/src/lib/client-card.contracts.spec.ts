@@ -79,7 +79,8 @@ describe('the built helpers the new presenters import (§7.3)', () => {
         // Exported in W0.
         'localeOf',
         'progressOf',
-        'earnedAtOf',
+        // `earnedAtOf` read an instant; the stored shop day is the fact (T5).
+        'earnedOnOf',
         'latestEarned',
         'isOneOff',
         'isSingleLevel',

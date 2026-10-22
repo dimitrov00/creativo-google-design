@@ -15,16 +15,18 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { combineLatest, of } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
 import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
-import { LocalizedText } from '@core/components';
+import {
+  LocalizedText,
+  StreakInterval,
+  StreakQualifier,
+  StreakQualifierRule,
+  StreakRuleDirection,
+} from '@core/components';
+import { StreakPublishErrorCode } from '@core/primitives';
 import {
   type RhythmServiceGroup,
   rhythmServiceGroupsOf,
 } from './rhythm-service-groups';
-import {
-  type PublishOutcome,
-  type StreakRuleDirection,
-  type WithdrawOutcome,
-} from '@creativo/application/engagement';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import {
   type RhythmRuleUnits,
@@ -67,7 +69,11 @@ import { RHYTHM_PREVIEW_CAP } from '../admin-rhythm.preview';
 import {
   type AdminRhythmPatch,
   type AdminRhythmRefusal,
+  type AdminRhythmSaveOutcome,
   AdminRhythmStore,
+  fixedInterval,
+  isPublishRefusal,
+  personalInterval,
 } from '../admin-rhythm.store';
 import {
   AdminRhythmSheet,
@@ -269,9 +275,11 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   /** The interval as the ruler holds it, in weeks. */
   protected readonly weeks = computed(() => {
-    const interval = this.draft().interval;
+    const draft = this.draft();
     return weeksOf(
-      interval.kind === 'fixed' ? interval.days : interval.fallbackDays,
+      draft.streakInterval === StreakInterval.Fixed
+        ? draft.intervalDays
+        : draft.intervalFallbackDays,
     );
   });
 
@@ -294,8 +302,8 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   /** The personal interval, when the draft holds one. */
   protected readonly personal = computed(() => {
-    const interval = this.draft().interval;
-    return interval.kind === 'personal' ? interval : null;
+    const draft = this.draft();
+    return draft.streakInterval === StreakInterval.Personal ? draft : null;
   });
 
   protected readonly toleranceText = computed(() => {
@@ -303,7 +311,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const personal = this.personal();
     return context === null || personal === null
       ? ''
-      : toleranceReadout(context, personal.tolerancePct);
+      : toleranceReadout(context, personal.intervalTolerancePct);
   });
 
   protected readonly toleranceExample = computed(() => {
@@ -318,21 +326,26 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly qualifierOptions = computed(() =>
     this.withContext((context) => qualifierOptions(context), []),
   );
-  protected readonly qualifierLabel = computed(() => {
-    const kind = this.draft().qualifier.kind;
-    const id = kind === 'anyVisit' ? 'anyVisit' : 'services';
-    return (
-      this.qualifierOptions().find((option) => option.id === id)?.label ?? ''
-    );
-  });
+  /** P2's menu id for what the draft counts: every visit, or a list. */
+  protected readonly qualifierChoice = computed(() =>
+    this.draft().streakQualifier === StreakQualifier.AnyVisit
+      ? 'anyVisit'
+      : 'services',
+  );
+  protected readonly qualifierLabel = computed(
+    () =>
+      this.qualifierOptions().find(
+        (option) => option.id === this.qualifierChoice(),
+      )?.label ?? '',
+  );
   /** «3 услуги» — the services row's value. */
   protected readonly servicesValue = computed(() => {
-    const qualifier = this.draft().qualifier;
+    const draft = this.draft();
     const count =
-      qualifier.kind === 'services'
-        ? qualifier.serviceIds.length
-        : qualifier.kind === 'categories'
-          ? qualifier.categoryIds.length
+      draft.streakQualifier === StreakQualifier.Services
+        ? draft.qualifierServiceIds.length
+        : draft.streakQualifier === StreakQualifier.Categories
+          ? draft.qualifierCategoryIds.length
           : 0;
     return this.withContext((context) => servicesCount(context, count), '');
   });
@@ -340,10 +353,16 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly intervalOptions = computed(() =>
     this.withContext((context) => intervalOptions(context), []),
   );
+  /** P5's menu id for the draft's interval. */
+  protected readonly intervalChoice = computed(() =>
+    this.draft().streakInterval === StreakInterval.Personal
+      ? 'personal'
+      : 'fixed',
+  );
   protected readonly intervalLabel = computed(
     () =>
       this.intervalOptions().find(
-        (option) => option.id === this.draft().interval.kind,
+        (option) => option.id === this.intervalChoice(),
       )?.label ?? '',
   );
 
@@ -392,12 +411,12 @@ export class AdminRhythm implements AdminRhythmLeaving {
     if (context === null || !this.store.published()) return null;
     const upcoming = this.store.upcoming();
     if (upcoming !== null) {
-      return inForceCapsule(context, upcoming.definition.effectiveFrom, true);
+      return inForceCapsule(context, upcoming.effectiveFromLocalDate, true);
     }
     const inForce = this.store.inForce();
     return inForce === null
       ? null
-      : inForceCapsule(context, inForce.effectiveFrom, false);
+      : inForceCapsule(context, inForce.effectiveFromLocalDate, false);
   });
 
   /** «От 1.10: на всеки 5 седмици» — the waiting version's second sentence. */
@@ -406,11 +425,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const upcoming = this.store.upcoming();
     const words = this.store.upcomingRule();
     if (context === null || upcoming === null || words === null) return null;
-    return upcomingLine(
-      context,
-      upcoming.definition.effectiveFrom,
-      words.short,
-    );
+    return upcomingLine(context, upcoming.effectiveFromLocalDate, words.short);
   });
 
   /** The sample run under the draft, as the track draws it; `null` under a rule that is off. */
@@ -448,7 +463,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       const versions = this.store.versions();
       if (context === null || versions.status !== 'ready') return [];
       return [...versions.data]
-        .sort((a, b) => b.definition.version - a.definition.version)
+        .sort((a, b) => b.version - a.version)
         .map((version) => historyRow(context, version));
     },
   );
@@ -614,47 +629,48 @@ export class AdminRhythm implements AdminRhythmLeaving {
 
   protected pickQualifier(id: string): void {
     if (id === 'services') {
-      const qualifier = this.draft().qualifier;
+      const draft = this.draft();
       this.patch({
         qualifier:
-          qualifier.kind === 'services'
-            ? qualifier
-            : { kind: 'services', serviceIds: [] },
+          draft.streakQualifier === StreakQualifier.Services
+            ? StreakQualifierRule.of(draft)
+            : StreakQualifierRule.services([]),
       });
       // A list with nothing chosen is no rule: the sheet opens on the choice.
       this.openSheet('services');
       return;
     }
-    this.patch({ qualifier: { kind: 'anyVisit' } });
+    this.patch({ qualifier: StreakQualifierRule.anyVisit() });
   }
 
   protected pickInterval(id: string): void {
     this.patch({
-      interval: { kind: id === 'personal' ? 'personal' : 'fixed' },
+      interval: id === 'personal' ? personalInterval() : fixedInterval(),
     });
   }
 
   protected setWeeks(weeks: number): void {
-    this.patch({ interval: { kind: 'fixed', days: daysOf(weeks) } });
+    this.patch({ interval: fixedInterval(daysOf(weeks)) });
   }
 
   protected setTolerance(percent: number): void {
-    this.patch({ interval: { kind: 'personal', tolerancePct: percent } });
+    this.patch({
+      interval: personalInterval({ intervalTolerancePct: percent }),
+    });
   }
 
   protected setClamp(
-    part: 'minDays' | 'maxDays' | 'fallbackDays',
+    part: 'intervalMinDays' | 'intervalMaxDays' | 'intervalFallbackDays',
     value: string,
   ): void {
     const weeks = this.typed(value);
     if (weeks === undefined) return;
-    this.patch({ interval: { kind: 'personal', [part]: daysOf(weeks) } });
+    this.patch({ interval: personalInterval({ [part]: daysOf(weeks) }) });
   }
 
   protected setHoldDays(value: string): void {
     const days = this.typed(value);
-    if (days !== undefined)
-      this.patch({ bookingHold: { maxDaysPastDue: days } });
+    if (days !== undefined) this.patch({ bookingHoldMaxDaysPastDue: days });
   }
 
   protected setMinGap(value: string): void {
@@ -707,11 +723,14 @@ export class AdminRhythm implements AdminRhythmLeaving {
     const change = this.store.change();
     if (change === null || !this.store.canSave()) return;
     const direction = change.direction;
-    if (direction === 'switch') {
+    if (direction === StreakRuleDirection.Switch) {
       this.confirm.set(this.draft().enabled ? 'switchOn' : 'switchOff');
       return;
     }
-    if (direction === 'stricter' || direction === 'mixed') {
+    if (
+      direction === StreakRuleDirection.Stricter ||
+      direction === StreakRuleDirection.Mixed
+    ) {
       this.confirm.set('stricter');
       return;
     }
@@ -719,46 +738,54 @@ export class AdminRhythm implements AdminRhythmLeaving {
   }
 
   private async publish(direction: StreakRuleDirection): Promise<void> {
-    this.undoOffered = direction === 'looser' || direction === 'neutral';
+    this.undoOffered =
+      direction === StreakRuleDirection.Looser ||
+      direction === StreakRuleDirection.Neutral;
     const outcome = await this.store.save();
     this.told(outcome);
   }
 
-  /** The receipt («Правилото е запазено · от 30.09»), or a refusal said in passing. */
-  private told(outcome: PublishOutcome): void {
+  /** The receipt («Правилото е запазено · от 30.09»), or a refusal said in passing — by its `errorCode`. */
+  private told(outcome: AdminRhythmSaveOutcome): void {
     const context = this.context();
     if (context === null) return;
     const t = context.translate;
-    switch (outcome.kind) {
-      case 'published':
-        this.toast.set({
-          label: t('admin.rhythm.receipt', {
-            date: shortDay(outcome.effectiveFrom, context.today, context.lang),
-          }),
-          undo: outcome.waits && this.undoOffered,
-        });
-        return;
-      case 'refused':
-        if (outcome.refusal === 'notAdmin') {
-          this.toast.set({
-            label: translateDomainError(this.transloco, {
-              code: 'booking.staffEdit.forbidden',
-            }),
-            undo: false,
-          });
-        }
-        return;
-      case 'failed':
+    if (outcome.ok) {
+      // `null`: nothing to publish, said by nothing.
+      if (outcome.value === null) return;
+      this.toast.set({
+        label: t('admin.rhythm.receipt', {
+          date: shortDay(
+            outcome.value.effectiveFromLocalDate,
+            context.today,
+            context.lang,
+          ),
+        }),
+        undo: outcome.value.waits && this.undoOffered,
+      });
+      return;
+    }
+    const refusal = outcome.error;
+    if (!isPublishRefusal(refusal)) {
+      this.toast.set({
+        label: translateDomainError(this.transloco, {
+          code: 'repository_failure',
+        }),
+        undo: false,
+      });
+      return;
+    }
+    switch (refusal.errorCode) {
+      case StreakPublishErrorCode.CallerNotAdmin:
+      case StreakPublishErrorCode.CallerUnauthenticated:
         this.toast.set({
           label: translateDomainError(this.transloco, {
-            code: 'repository_failure',
+            code: 'booking.staffEdit.forbidden',
           }),
           undo: false,
         });
         return;
-      case 'unchanged':
-      case 'invalid':
-      case 'tooEarly':
+      default:
         // Said by the notice under the head (`refusalNotice`).
         return;
     }
@@ -780,8 +807,8 @@ export class AdminRhythm implements AdminRhythmLeaving {
   }
 
   private async withdraw(): Promise<void> {
-    const outcome: WithdrawOutcome = await this.store.undo();
-    if (outcome.kind === 'failed') {
+    const outcome = await this.store.undo();
+    if (!outcome.ok && !isPublishRefusal(outcome.error)) {
       this.toast.set({
         label: translateDomainError(this.transloco, {
           code: 'repository_failure',
@@ -808,7 +835,11 @@ export class AdminRhythm implements AdminRhythmLeaving {
       return;
     }
     if (confirm === null || id !== 'save') return;
-    void this.publish(confirm === 'stricter' ? 'stricter' : 'switch');
+    void this.publish(
+      confirm === 'stricter'
+        ? StreakRuleDirection.Stricter
+        : StreakRuleDirection.Switch,
+    );
   }
 
   protected onConfirmDismiss(): void {
@@ -830,26 +861,28 @@ export class AdminRhythm implements AdminRhythmLeaving {
     return context === null ? fallback : read(context);
   }
 
+  /** A refusal, worded by its `errorCode`; the ones said in passing (the toast) or by nothing are `null` here. */
   private wordRefusal(
     context: AdminRhythmContext,
     refusal: AdminRhythmRefusal,
   ): string | null {
     const t = context.translate;
-    switch (refusal.kind) {
-      case 'refused':
-        return refusal.refusal === 'stale'
-          ? t('admin.rhythm.refused.stale')
-          : null;
-      case 'invalid':
+    if (!isPublishRefusal(refusal)) {
+      return translateDomainError(this.transloco, {
+        code: 'repository_failure',
+      });
+    }
+    switch (refusal.errorCode) {
+      case StreakPublishErrorCode.Stale:
+        return t('admin.rhythm.refused.stale');
+      case StreakPublishErrorCode.Invalid:
         return invalidNotice(context, refusal.fields);
-      case 'tooEarly':
+      case StreakPublishErrorCode.TooEarly:
         return t('admin.rhythm.refused.tooEarly', {
           date: shortDay(refusal.earliest, context.today, context.lang),
         });
-      case 'failed':
-        return translateDomainError(this.transloco, {
-          code: 'repository_failure',
-        });
+      default:
+        return null;
     }
   }
 }

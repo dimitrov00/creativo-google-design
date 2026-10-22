@@ -7,7 +7,6 @@ import { workspaceRoot } from '@nx/devkit';
 import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
-import type { LoyaltyAccountFixture } from '@creativo/application/engagement/testing';
 import {
   AccountLifecycle,
   BirthDate,
@@ -45,6 +44,7 @@ import {
   BarberId,
   CouponId,
   CustomerId,
+  JournalEntryId,
   LocalDate,
   MinuteOfDay,
   type Result,
@@ -57,6 +57,9 @@ import {
   SearchFieldsSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+// Types only (erased): the testing entry's runtime half — its doubles, its
+// spec contracts — is not Playwright's to load.
+import type { LoyaltyClientJson } from '@core/testing';
 import {
   SHOP_ZONE,
   upcomingAppointmentBody,
@@ -414,39 +417,55 @@ export async function seedBirthdayGift(uid: string): Promise<string> {
 }
 
 /**
- * Seeds a client's loyalty as the engine holds it — `loyaltyAccounts/{uid}`
- * with its `badgeProgress` and `seasonProgress`, and the point rows in
- * `clientJournal` — from one of the A0 fixtures
- * (`libs/application/engagement/src/testing/fixtures/loyalty/account-*.json`,
- * read by the spec as JSON: Playwright cannot load the domain libs the
- * testing entry imports). The fixture is deep-frozen upstream, so it is
- * copied; the account's `userId`, every row's `userId` and every row's id
- * (`{uid}_{seq:06}`, the fixture's own key with its uid swapped) are
- * rewritten to `uid`. Award and idempotency keys keep the fixture's uid:
- * nothing reads them back. The loyalty CATALOGUE is the dev seed's, which
- * `global-setup.ts` writes (`--catalog-only`).
+ * Seeds a client's loyalty as the engine holds it — the flat
+ * `loyaltyAccounts/{customerId}` body with its `badgeProgress` and
+ * `seasonProgress`, and the point rows in `clientJournal` — from one of the
+ * shared fixtures (`libs/ecs-core/src/testing/fixtures/loyalty/account-*.json`
+ * of `@core/testing`, read by the spec as JSON: Playwright cannot load the
+ * testing entry's runtime half). Keyed by `uid`'s client RECORD
+ * (`customerIdFor(uid)`, D29, flip 3), as the client card resolves it: the
+ * account's and every row's `customerId`, and every row's id
+ * (`JournalEntryId.forEntry(customerId, seq)`), are rewritten to it. WHO
+ * acted on a row (`actor*`) and the award and idempotency keys keep the
+ * fixture's text: nothing reads them back as this client. The fixture is
+ * deep-frozen upstream, so it is copied. The loyalty CATALOGUE is the dev
+ * seed's, which `global-setup.ts` writes (`--catalog-only`).
  */
 export async function seedLoyalty(
   uid: string,
-  fixture: LoyaltyAccountFixture,
+  fixture: LoyaltyClientJson,
 ): Promise<void> {
   const copy = structuredClone(fixture);
-  const from = copy.account.userId;
+  const customerId = customerIdFor(uid);
   const db = getFirestore(adminApp());
   const batch = db.batch();
-  const account = db.collection('loyaltyAccounts').doc(uid);
-  batch.set(account, { ...copy.account, userId: uid });
+  const account = db.collection(Collections.LoyaltyAccounts).doc(customerId);
+  batch.set(account, {
+    ...copy.account,
+    customerId,
+  } satisfies LoyaltyClientJson['account']);
   for (const [seriesId, progress] of Object.entries(copy.badgeProgress)) {
-    batch.set(account.collection('badgeProgress').doc(seriesId), progress);
+    batch.set(
+      account.collection(Subcollections.BadgeProgress).doc(seriesId),
+      progress,
+    );
   }
   for (const [seasonId, progress] of Object.entries(copy.seasonProgress)) {
-    batch.set(account.collection('seasonProgress').doc(seasonId), progress);
+    batch.set(
+      account.collection(Subcollections.SeasonProgress).doc(seasonId),
+      progress,
+    );
   }
-  for (const [rowId, row] of Object.entries(copy.clientJournal)) {
-    const id = rowId.startsWith(`${from}_`)
-      ? `${uid}${rowId.slice(from.length)}`
-      : rowId;
-    batch.set(db.collection('clientJournal').doc(id), { ...row, userId: uid });
+  for (const row of Object.values(copy.clientJournal)) {
+    batch.set(
+      db
+        .collection(Collections.ClientJournal)
+        .doc(JournalEntryId.forEntry(customerId, row.seq)),
+      {
+        ...row,
+        customerId,
+      } satisfies LoyaltyClientJson['clientJournal'][string],
+    );
   }
   await batch.commit();
 }

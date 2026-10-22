@@ -1,7 +1,4 @@
-import type {
-  ActivityKind,
-  PersonalRecordKind,
-} from '@creativo/application/engagement';
+import type { JournalFeed, PersonalRecordKind } from '@core/components';
 import type {
   VisitCardVm,
   VisitLinePart,
@@ -58,6 +55,7 @@ import type {
   WalletHoldingVm,
   WalletVm,
 } from './client-pages.vm';
+import type { RECORD_KIND_WORDS, RecordKindWord } from './client-card.words';
 
 /*
  * THE PAGES' VIEW MODELS (client-card-revision-3 §4.9). The file is types
@@ -168,14 +166,19 @@ describe('the pages’ view models: the shapes', () => {
   });
 
   it('filters the ledger by the journal’s own kinds', () => {
-    expectTypeOf<LedgerPageVm['filter']>().toEqualTypeOf<ActivityKind>();
+    expectTypeOf<LedgerPageVm['filter']>().toEqualTypeOf<JournalFeed>();
     expectTypeOf<NonNullable<LedgerPageVm['paging']>['kind']>().toEqualTypeOf<
       'more' | 'loading' | 'failed' | 'end'
     >();
   });
 
   it('keeps a record’s kind the domain’s and a row’s id the card’s own', () => {
-    expectTypeOf<RecordCardVm['kind']>().toEqualTypeOf<PersonalRecordKind>();
+    // The domain's kind (`PersonalRecordKind`) reaches the card as its word:
+    // every kind has one, and the word is the test id's and the key's.
+    expectTypeOf<RecordCardVm['kind']>().toEqualTypeOf<RecordKindWord>();
+    expectTypeOf<
+      keyof typeof RECORD_KIND_WORDS
+    >().toEqualTypeOf<PersonalRecordKind>();
     expectTypeOf<RecordRowVm['id']>().toEqualTypeOf<string>();
     expectTypeOf<RecordRowVm['theme']>().toEqualTypeOf<
       'rhythm' | 'visits' | 'favourites'

@@ -7,8 +7,8 @@
  * the way the visit editor opens it, with every port bound to its
  * in-memory reader and the app's own catalogue for words: what a spec
  * renders is what the store and the presenters make of Георги's and
- * Мартин's books — the A0 loyalty fixtures, parsed by the production
- * mappers — never a hand-written VM.
+ * Мартин's books — the loyalty fixtures of `@core/testing`, answered as
+ * stored by the `@core/testing` doubles — never a hand-written VM.
  */
 import {
   type EnvironmentProviders,
@@ -29,43 +29,31 @@ import {
   type AvatarUploader,
   ZonedDateTime,
 } from '@creativo/application/accounts';
-import type { Result } from '@creativo/application/booking';
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  LoyaltyAccountReadPorts,
+  LoyaltyCatalogReadPorts,
   ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  LOYALTY_ACCOUNT_READ_PORTS,
+  LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import {
-  LOYALTY_ACTIVITY_READER,
-  LOYALTY_CATALOG_READER,
-  LOYALTY_READER,
-  type LoyaltyActivityReader,
-  type LoyaltyCatalog,
-  type LoyaltyCatalogReader,
-  type LoyaltyReader,
-} from '@creativo/application/engagement';
-import {
-  InMemoryLoyaltyCatalogReader,
-  InMemoryLoyaltyReader,
-} from '@creativo/application/engagement/testing';
-import {
-  CLOCK,
-  type RepositoryError,
-  provideFeatureFlags,
-} from '@creativo/application/shared';
+import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import type {
   ClientCardContext,
   ClientCardSubject,
@@ -77,11 +65,13 @@ import {
   InMemoryAvatars,
   MARTIN,
   NOW_MS,
+  catalogPortsOf,
   catalogueOf,
   customerPortsOf,
   georgiHistory,
   georgiPhotos,
   historyPortsOf,
+  loyaltyPortsOf,
   martinHistory,
   martinWaitlist,
   photoPortsOf,
@@ -110,26 +100,33 @@ class CatalogueLoader implements TranslocoLoader {
   }
 }
 
-/** A catalogue reader that answers only when the spec says so: the pages' loading state. */
-export class HeldCatalogReader implements LoyaltyCatalogReader {
-  private release: (() => void) | null = null;
-  private readonly gate = new Promise<void>((resolve) => {
-    this.release = resolve;
-  });
-
-  constructor(
-    private readonly inner: LoyaltyCatalogReader = new InMemoryLoyaltyCatalogReader(),
-  ) {}
-
-  async getCatalog(): Promise<Result<LoyaltyCatalog, RepositoryError>> {
-    await this.gate;
-    return this.inner.getCatalog();
-  }
-
+/**
+ * A test handle, not a bundle: the `LOYALTY_CATALOG_READ_PORTS` double held
+ * until the spec says so, beside the switch that lets it answer.
+ */
+export type HeldCatalog = LoyaltyCatalogReadPorts & {
   /** Lets the held read answer. */
-  answer(): void {
-    this.release?.();
-  }
+  readonly answer: () => void;
+};
+
+/**
+ * A catalogue port that answers only when the spec says so — the pages'
+ * loading state: the published catalogue (or `inner`'s) once released.
+ */
+export function heldCatalogPorts(
+  inner: LoyaltyCatalogReadPorts = catalogPortsOf(),
+): HeldCatalog {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return {
+    loadLoyaltyCatalog: async () => {
+      await gate;
+      return inner.loadLoyaltyCatalog();
+    },
+    answer: () => release(),
+  };
 }
 
 /**
@@ -138,8 +135,8 @@ export class HeldCatalogReader implements LoyaltyCatalogReader {
  * each port can be swapped for a failing, held or empty one.
  */
 export interface AchievementsRig {
-  readonly loyalty?: LoyaltyReader;
-  readonly catalog?: LoyaltyCatalogReader;
+  readonly loyalty?: LoyaltyAccountReadPorts;
+  readonly catalog?: LoyaltyCatalogReadPorts;
   readonly flags?: Readonly<Record<string, boolean>>;
   /** «Now» for the shop's clock (Monday 28 September 2026, 12:40 by default). */
   readonly nowMs?: number;
@@ -157,7 +154,7 @@ export interface AchievementsRig {
    * them, so no holdings line or feed appears where a case never asked.
    */
   readonly vouchers?: CouponVoucherPorts;
-  readonly activity?: LoyaltyActivityReader;
+  readonly activity?: ClientJournalPorts;
 }
 
 /** The store, its ports and the words, bound as the visit editor's injector binds them. */
@@ -210,12 +207,12 @@ export function achievementsPageProviders(
       useValue: rig.photos ?? photoPortsOf(georgiPhotos()),
     },
     {
-      provide: LOYALTY_READER,
-      useValue: rig.loyalty ?? InMemoryLoyaltyReader.seeded(),
+      provide: LOYALTY_ACCOUNT_READ_PORTS,
+      useValue: rig.loyalty ?? loyaltyPortsOf(),
     },
     {
-      provide: LOYALTY_CATALOG_READER,
-      useValue: rig.catalog ?? new InMemoryLoyaltyCatalogReader(),
+      provide: LOYALTY_CATALOG_READ_PORTS,
+      useValue: rig.catalog ?? catalogPortsOf(),
     },
     {
       provide: WAITLIST_READ_PORTS,
@@ -234,7 +231,7 @@ export function achievementsPageProviders(
       : [{ provide: COUPON_VOUCHER_PORTS, useValue: rig.vouchers }]),
     ...(rig.activity === undefined
       ? []
-      : [{ provide: LOYALTY_ACTIVITY_READER, useValue: rig.activity }]),
+      : [{ provide: CLIENT_JOURNAL_PORTS, useValue: rig.activity }]),
   ];
 }
 

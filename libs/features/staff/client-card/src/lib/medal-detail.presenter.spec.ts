@@ -1,12 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { BookingLifecycle, SeatOutcome } from '@core/components';
-import type { Appointment } from '@core/entities';
-import { LocationId, UserId, UtcEpochMs } from '@core/primitives';
-import { customerOf } from '@core/testing';
+import {
+  AwardKind,
+  BadgeSeriesId,
+  LocationId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import {
+  BookingLifecycle,
+  type EarnedLevel,
+  EarnedVia,
+  type MetricRef,
+  PerkId,
+  SeatOutcome,
+} from '@core/components';
 import type {
+  Appointment,
   BadgeProgress,
   BadgeSeries,
-} from '@creativo/application/engagement';
+  BadgeSeriesMeta,
+} from '@core/entities';
+import { LoyaltyCatalogSystem, ZonedTimeSystem } from '@core/systems';
+import { customerOf, localDate, utcMs } from '@core/testing';
 import type { RhythmRuleWords } from '@creativo/features/shared/visits';
 import type { AchievementsContext } from './achievements.presenter';
 import type {
@@ -35,6 +50,7 @@ import {
   MARTIN_TODAY_ID,
   NOW_MS,
   SHOP_CATALOG,
+  SHOP_TIME_ZONE,
   achievementsContextOf,
   achievementsDataOf,
   at,
@@ -83,8 +99,29 @@ function recordOf(uid: string): string {
 }
 
 function family(data: AchievementsData, id: string): BadgeSeries {
-  return must(data.catalog.series(id), id);
+  return must(
+    LoyaltyCatalogSystem.series(data.catalog, BadgeSeriesId.of(id)),
+    id,
+  );
 }
+
+/** A level earned at an instant, filed under its shop day as the engine writes it (T5). */
+function earnedLevel(level: number, iso: string, count = 1): EarnedLevel {
+  const at = utcMs(iso);
+  return {
+    level,
+    earnedAtUtcMs: at,
+    earnedLocalDate: ZonedTimeSystem.toLocal(at, SHOP_TIME_ZONE).localDate,
+    earnedVia: EarnedVia.Rule,
+    count,
+  };
+}
+
+/** A family withdrawn from the catalogue on 1 September 2026 (3:00 in Sofia), its stamp beside its day. */
+const RETIRED: FamilyEdit = {
+  retiredAtUtcMs: utcMs('2026-09-01T00:00:00Z'),
+  retiredLocalDate: localDate('2026-09-01'),
+};
 
 function rowsOf(
   appointments: readonly Appointment[],
@@ -158,35 +195,32 @@ const facts = (line: readonly LinePart[]): readonly string[] =>
 function withProgress(
   data: AchievementsData,
   seriesId: string,
-  progress: Omit<BadgeProgress, 'seriesId'> | null,
+  progress: Omit<BadgeProgress, 'id'> | null,
 ): AchievementsData {
   const all = new Map(data.progress);
   if (progress === null) all.delete(seriesId);
-  else all.set(seriesId, { seriesId, ...progress });
+  else all.set(seriesId, { ...progress, id: BadgeSeriesId.of(seriesId) });
   return { ...data, progress: all };
 }
+
+/** What a case changes on a family: any field of its own or of its metric, never its id or subject. */
+type FamilyEdit = Partial<Omit<BadgeSeriesMeta, 'id'> & MetricRef>;
 
 /** The same data with one family changed in the catalogue. */
 function withFamily(
   data: AchievementsData,
   seriesId: string,
-  change: Partial<BadgeSeries>,
+  change: FamilyEdit,
 ): AchievementsData {
-  const original = family(data, seriesId);
-  const changed: BadgeSeries = Object.assign(
-    Object.create(Object.getPrototypeOf(original)),
-    original,
-    change,
-  );
-  const catalog: AchievementsData['catalog'] = Object.assign(
-    Object.create(Object.getPrototypeOf(data.catalog)),
-    data.catalog,
-    {
-      series: (id: string) =>
-        id === seriesId ? changed : data.catalog.series(id),
+  return {
+    ...data,
+    catalog: {
+      ...data.catalog,
+      families: data.catalog.families.map((series): BadgeSeries =>
+        series.id === seriesId ? { ...series, ...change } : series,
+      ),
     },
-  );
-  return { ...data, catalog };
+  };
 }
 
 interface SeatPlan {
@@ -565,9 +599,7 @@ describe('detailActionOf', () => {
   });
 
   it('is absent for a family that is no longer awarded, or names a service the shop no longer has', () => {
-    const retired = withFamily(MARTIN_DATA, 'series-svc-fade', {
-      retiredAt: new Date('2026-09-01T00:00:00Z'),
-    });
+    const retired = withFamily(MARTIN_DATA, 'series-svc-fade', RETIRED);
     expect(
       detailActionOf(
         family(retired, 'series-svc-fade'),
@@ -586,12 +618,9 @@ describe('detailActionOf', () => {
   it('is absent for a family with nothing left to earn, once it is handed the data', () => {
     const complete = withProgress(MARTIN_DATA, 'series-svc-fade', {
       value: 100,
-      earned: fade.levels.map((level) => ({
-        level: level.level,
-        earnedAt: new Date('2026-06-03T08:00:00Z'),
-        via: 'rule',
-        count: 1,
-      })),
+      earned: fade.levels.map((level) =>
+        earnedLevel(level.level, '2026-06-03T08:00:00Z'),
+      ),
     });
     expect(detailActionOf(fade, IN_CHAIR, EDITABLE, complete)).toBeNull();
     // A season's family, once the season has ended.
@@ -802,17 +831,17 @@ describe('medalDetailVm', () => {
     });
 
     it('counts a yearly act’s times, and dates the last', () => {
-      const earnedAt = new Date('2025-09-28T09:30:00Z');
+      const at = '2025-09-28T09:30:00Z';
       const once = withProgress(MARTIN_DATA, 'series-birthday', {
         value: 1,
-        earned: [{ level: 1, earnedAt, via: 'rule', count: 1 }],
+        earned: [earnedLevel(1, at)],
       });
       expect(
         joined(martinPage('series-birthday', martinExtra(), once).stateLine),
       ).toBe('Специални · Спечелено на 28.09.2025\u00a0г.');
       const thrice = withProgress(MARTIN_DATA, 'series-birthday', {
         value: 3,
-        earned: [{ level: 1, earnedAt, via: 'rule', count: 3 }],
+        earned: [earnedLevel(1, at, 3)],
       });
       const line = martinPage(
         'series-birthday',
@@ -838,9 +867,7 @@ describe('medalDetailVm', () => {
     });
 
     it('says only that a retired family is no longer awarded', () => {
-      const retired = withFamily(GEORGI_DATA, 'series-svc-fade', {
-        retiredAt: new Date('2026-09-01T00:00:00Z'),
-      });
+      const retired = withFamily(GEORGI_DATA, 'series-svc-fade', RETIRED);
       expect(
         georgiPage('series-svc-fade', SETTLED, georgiExtra(), retired)
           .stateLine,
@@ -1066,27 +1093,16 @@ describe('medalDetailVm', () => {
       });
       // Every figure is a figure: none is a sentence.
       for (const series of GEORGI_DATA.catalog.families) {
-        expect([
-          series.id.value,
-          georgiPage(series.id.value, OPEN).progress.value,
-        ]).toEqual([
-          series.id.value,
-          expect.stringMatching(/^\d[\d\s.]*(\u00a0г\.)?$/u),
-        ]);
+        expect([series.id, georgiPage(series.id, OPEN).progress.value]).toEqual(
+          [series.id, expect.stringMatching(/^\d[\d\s.]*(\u00a0г\.)?$/u)],
+        );
       }
     });
 
     it('says again «С това посещение» for a yearly act earned before, on the day', () => {
       const lastYear = withProgress(MARTIN_DATA, 'series-birthday', {
         value: 1,
-        earned: [
-          {
-            level: 1,
-            earnedAt: new Date('2025-09-28T09:30:00Z'),
-            via: 'rule',
-            count: 1,
-          },
-        ],
+        earned: [earnedLevel(1, '2025-09-28T09:30:00Z')],
       });
       expect(
         martinPage('series-birthday', martinExtra(), lastYear).progress,
@@ -1119,9 +1135,7 @@ describe('medalDetailVm', () => {
         remaining: null,
         thisVisit: null,
       });
-      const retired = withFamily(GEORGI_DATA, 'series-svc-fade', {
-        retiredAt: new Date('2026-09-01T00:00:00Z'),
-      });
+      const retired = withFamily(GEORGI_DATA, 'series-svc-fade', RETIRED);
       expect(
         georgiPage(
           'series-svc-fade',
@@ -1367,14 +1381,12 @@ describe('medalDetailVm', () => {
     });
 
     it('is absent for a family that is no longer awarded, and holds no steps in this round', () => {
-      const retired = withFamily(GEORGI_DATA, 'series-svc-fade', {
-        retiredAt: new Date('2026-09-01T00:00:00Z'),
-      });
+      const retired = withFamily(GEORGI_DATA, 'series-svc-fade', RETIRED);
       expect(
         georgiPage('series-svc-fade', SETTLED, georgiExtra(), retired).how,
       ).toBeNull();
       for (const series of GEORGI_DATA.catalog.families) {
-        expect(georgiPage(series.id.value).how?.steps).toEqual([]);
+        expect(georgiPage(series.id).how?.steps).toEqual([]);
       }
     });
   });
@@ -1527,12 +1539,12 @@ describe('medalDetailVm', () => {
             ? {
                 ...level,
                 awards: [
-                  { kind: 'points', points: 1 },
-                  { kind: 'coupon', title },
+                  { awardKind: AwardKind.Points, awardPoints: 1 },
+                  { awardKind: AwardKind.Coupon, awardCouponTitle: title },
                   {
-                    kind: 'perk',
-                    perkId: 'perk.priorityWaitlist',
-                    forDays: null,
+                    awardKind: AwardKind.Perk,
+                    awardPerkId: PerkId.PriorityWaitlist,
+                    awardPerkForDays: null,
                   },
                 ],
               }
@@ -1626,9 +1638,7 @@ describe('medalDetailVm', () => {
     });
 
     it('marks nothing next on a family that is no longer awarded', () => {
-      const retired = withFamily(GEORGI_DATA, 'series-svc-fade', {
-        retiredAt: new Date('2026-09-01T00:00:00Z'),
-      });
+      const retired = withFamily(GEORGI_DATA, 'series-svc-fade', RETIRED);
       expect(
         georgiPage(
           'series-svc-fade',
@@ -1641,7 +1651,7 @@ describe('medalDetailVm', () => {
 
     it('satisfies the contract’s own rules', () => {
       for (const series of GEORGI_DATA.catalog.families) {
-        const page = georgiPage(series.id.value, OPEN);
+        const page = georgiPage(series.id, OPEN);
         const levels = page.ladder.map((level) => level.level);
         expect(levels).toEqual([...levels].sort((a, b) => a - b));
         for (const level of page.ladder) {
@@ -1765,7 +1775,7 @@ describe('medalDetailVm', () => {
 
     it('keeps a metric with a window of its own to it', () => {
       const windowed = withFamily(GEORGI_DATA, 'series-visits', {
-        metric: { metric: 'client.visits.completed', window: { lastDays: 30 } },
+        metricWindowDays: 30,
       });
       // 28 September back to 30 August: today's and the one on 3 September.
       expect(
@@ -1861,9 +1871,7 @@ describe('medalDetailVm', () => {
     });
 
     it('carries none for a family that cannot move: retired, complete, its season ended', () => {
-      const retired = withFamily(MARTIN_DATA, 'series-svc-fade', {
-        retiredAt: new Date('2026-09-01T00:00:00Z'),
-      });
+      const retired = withFamily(MARTIN_DATA, 'series-svc-fade', RETIRED);
       expect(
         martinPage('series-svc-fade', martinExtra({ action }), retired).action,
       ).toBeNull();

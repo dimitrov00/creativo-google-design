@@ -5,21 +5,32 @@ import {
   BlockReason,
   BookingLifecycle,
   E164,
+  PersonalRecordKind,
+  StreakState,
+  TierOverride,
+  type TierStanding,
 } from '@core/components';
 import type {
   Appointment,
   ClientStatsRecord,
   GiftVoucher,
-  User,
-} from '@core/entities';
-import { AppointmentId, AppointmentPhotoId, UserId } from '@core/primitives';
-import { registeredUserFixture } from '@core/testing';
-import {
-  type GiftVoucherFields,
-  type LoyaltyAccount,
+  LoyaltyAccount,
   StreakDefinition,
-} from '@creativo/application/engagement';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
+} from '@core/entities';
+import type { User } from '@core/entities';
+import {
+  AdjustmentId,
+  AppointmentId,
+  AppointmentPhotoId,
+  BadgeSeriesId,
+  RewardId,
+  ServiceId,
+  StreakDefinitionId,
+  TierId,
+  UserId,
+} from '@core/primitives';
+import { LoyaltyCatalogSystem } from '@core/systems';
+import { registeredUserFixture } from '@core/testing';
 import {
   type AchievementsContext,
   PENDING_RING,
@@ -80,6 +91,7 @@ import {
   georgiPhotos,
   georgiUser,
   giftVoucherOf,
+  type VoucherFixtureFields,
   loyaltyCatalogWith,
   martinContext,
   martinHistory,
@@ -87,11 +99,14 @@ import {
   martinWaitlist,
   must,
   pausedUntilOctober,
+  rhythmHead,
+  rhythmHeadWith,
   seatOf,
   sofia,
   statsOf,
   subjectOf,
   visitOf,
+  voucherFixtureFields,
   wallOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
@@ -147,7 +162,7 @@ const CONTRACT = {
 type Added<New extends Built, Built> = Exclude<keyof New, keyof Built>;
 const ADDED = {
   hero: ['tier'],
-  loyalty: ['vouchers', 'ruleInForce'],
+  loyalty: ['vouchers', 'rhythm'],
 } satisfies {
   readonly hero: readonly Added<HeroInput, HeadInput>[];
   readonly loyalty: readonly Added<LoyaltyGlanceInput, LoyaltyTilesInput>[];
@@ -170,7 +185,7 @@ describe('the contract (§7.3)', () => {
     ]);
     expect(ADDED).toEqual({
       hero: ['tier'],
-      loyalty: ['vouchers', 'ruleInForce'],
+      loyalty: ['vouchers', 'rhythm'],
     });
   });
 });
@@ -209,10 +224,13 @@ function heroOf(overrides: Partial<Parameters<typeof clientHeroVm>[0]> = {}) {
   });
 }
 
-/** Георги's account with another standing on the tier track. */
-function tierOf(tier: Partial<LoyaltyAccount['tier']>) {
+/** Георги's account with another standing on the tier track, and an override when given. */
+function tierOf(
+  standing: Partial<TierStanding>,
+  override: TierOverride = TierOverride.none(),
+) {
   return {
-    account: { ...LOYALTY.account, tier: { ...LOYALTY.account.tier, ...tier } },
+    account: { ...LOYALTY.account, ...standing, ...override },
     catalog: LOYALTY.catalog,
   };
 }
@@ -389,17 +407,19 @@ describe('the hero (A)', () => {
 
   it('draws no tier without `loyalty.tiers`, and none the catalogue does not know', () => {
     expect(heroOf({ tier: null }).tier).toBeNull();
-    expect(heroOf({ tier: tierOf({ current: 'diamond' }) }).tier).toBeNull();
+    expect(
+      heroOf({ tier: tierOf({ tierId: TierId.of('diamond') }) }).tier,
+    ).toBeNull();
   });
 
   it('fills the ring at the top of the track and says so', () => {
     expect(
       heroOf({
         tier: tierOf({
-          current: 'platinum',
-          qualifying: 23,
-          next: null,
-          remaining: null,
+          tierId: TierId.of('platinum'),
+          tierQualifying: 23,
+          nextTierId: null,
+          tierRemaining: null,
         }),
       }).tier,
     ).toEqual({
@@ -413,10 +433,10 @@ describe('the hero (A)', () => {
     expect(
       heroOf({
         tier: tierOf({
-          current: 'bronze',
-          qualifying: 0,
-          next: 'silver',
-          remaining: 6,
+          tierId: TierId.of('bronze'),
+          tierQualifying: 0,
+          nextTierId: TierId.of('silver'),
+          tierRemaining: 6,
         }),
       }).tier,
     ).toEqual({
@@ -426,7 +446,7 @@ describe('the hero (A)', () => {
     });
     expect(
       heroOf({
-        tier: tierOf({ qualifying: 19, remaining: 1 }),
+        tier: tierOf({ tierQualifying: 19, tierRemaining: 1 }),
       }).tier,
     ).toEqual({
       name: 'Злато',
@@ -436,13 +456,14 @@ describe('the hero (A)', () => {
   });
 
   it('draws the plate alone for a tier held above what the visits reached: nothing is promised', () => {
-    const granted = {
-      tierId: 'platinum',
-      until: null,
-      source: { kind: 'adjustment', adjustmentId: 'adj-1' },
-    } as const;
+    const granted = (tierId: string) =>
+      TierOverride.adjustment(
+        TierId.of(tierId),
+        null,
+        AdjustmentId.of('adj-1'),
+      );
     // Granted the top tier: the top of the track, whatever the visits say.
-    expect(heroOf({ tier: tierOf({ override: granted }) }).tier).toEqual({
+    expect(heroOf({ tier: tierOf({}, granted('platinum')) }).tier).toEqual({
       name: 'Платина',
       progress: 1,
       accessibleName: 'Платина, най-високият статус',
@@ -450,13 +471,15 @@ describe('the hero (A)', () => {
     // Granted Gold on Silver's visits: the account's next IS Gold.
     expect(
       heroOf({
-        tier: tierOf({
-          current: 'silver',
-          qualifying: 9,
-          next: 'gold',
-          remaining: 3,
-          override: { ...granted, tierId: 'gold' },
-        }),
+        tier: tierOf(
+          {
+            tierId: TierId.of('silver'),
+            tierQualifying: 9,
+            nextTierId: TierId.of('gold'),
+            tierRemaining: 3,
+          },
+          granted('gold'),
+        ),
       }).tier,
     ).toEqual({ name: 'Злато', progress: null, accessibleName: 'Злато' });
   });
@@ -981,29 +1004,15 @@ describe('«Посещения» (H)', () => {
 
 // ── F · «Лоялност» ──────────────────────────────────────────────────────
 
-const RULE = must(
-  LOYALTY.catalog.streakInForce('cadence', TODAY),
-  'the rule in force',
-);
-
-/** The rule in force with some of its parts changed. */
-function ruleWith(
-  patch: Partial<ReturnType<StreakDefinition['toProps']>>,
-): StreakDefinition {
-  const rule = StreakDefinition.create({ ...RULE.toProps(), ...patch });
-  if (rule.isFailure()) throw new Error('bad rule');
-  return rule.value;
-}
+/** The rhythm's head as the catalogue holds it: its rule in force since 1.03.2025. */
+const RHYTHM = rhythmHead();
 
 /** The fixture's vouchers, one field of a document edited, as flat bodies. */
 function voucherOf(
   id: string,
-  edit: Partial<GiftVoucherFields> = {},
+  edit: Partial<VoucherFixtureFields> = {},
 ): GiftVoucher {
-  const document = must(
-    new Map(Object.entries(loyaltyFixtures.vouchers)).get(id),
-    `the voucher ${id}`,
-  );
+  const document = must(voucherFixtureFields().get(id), `the voucher ${id}`);
   return giftVoucherOf(id, { ...document, ...edit });
 }
 
@@ -1035,12 +1044,15 @@ function loyaltyOf(
     words: WORDS,
     heldRewards: [GEORGI_GRANT.title],
     vouchers: GEORGI_VOUCHERS,
-    ruleInForce: RULE,
+    rhythm: RHYTHM,
     ...overrides,
   });
 }
 
-const accountWith = (edit: Partial<LoyaltyAccount>): LoyaltyAccount => ({
+/** What a spec changes on an account: any of its fields but the override's. */
+const accountWith = (
+  edit: Partial<Omit<LoyaltyAccount, 'tierOverrideSource'>>,
+): LoyaltyAccount => ({
   ...LOYALTY.account,
   ...edit,
 });
@@ -1089,15 +1101,12 @@ describe('«Лоялност» (F1)', () => {
 
   it('leaves a Latin name and an acronym as written inside the sentence', () => {
     const renamed = (bg: string) =>
-      loyaltyCatalogWith((documents) => ({
-        ...documents,
-        rewardsCatalog: Object.fromEntries(
-          Object.entries(documents.rewardsCatalog).map(([id, reward]) => [
-            id,
-            id === 'reward-cut'
-              ? { ...reward, name: { ...reward.name, bg } }
-              : reward,
-          ]),
+      loyaltyCatalogWith((catalog) => ({
+        ...catalog,
+        rewards: catalog.rewards.map((reward) =>
+          reward.id === RewardId.of('reward-cut')
+            ? { ...reward, name: { ...reward.name, bg } }
+            : reward,
         ),
       }));
     const sentenceOf = (bg: string) =>
@@ -1205,30 +1214,32 @@ describe('«Лоялност» (F1)', () => {
       'voucher',
       'rhythm',
     ]);
-    expect(ids({ account: accountWith({ streaks: {} }) })).toEqual([
+    expect(ids({ account: accountWith({ streaks: [] }) })).toEqual([
       'voucher',
       'stamps',
     ]);
   });
 
   it('says no rhythm under a rule that is off, unknown, or another rhythm’s', () => {
-    const rhythm = (ruleInForce: StreakDefinition | null) =>
-      loyaltyOf({ ruleInForce })?.holdings.some(
+    const rhythm = (head: StreakDefinition | null) =>
+      loyaltyOf({ rhythm: head })?.holdings.some(
         (holding) => holding.id === 'rhythm',
       );
-    expect(rhythm(RULE)).toBe(true);
-    expect(rhythm(ruleWith({ enabled: false }))).toBe(false);
+    expect(rhythm(RHYTHM)).toBe(true);
+    expect(
+      rhythm(rhythmHeadWith((rule) => ({ ...rule, enabled: false }))),
+    ).toBe(false);
     expect(rhythm(null)).toBe(false);
-    expect(rhythm(ruleWith({ id: 'seasonal' }))).toBe(false);
+    expect(rhythm({ ...RHYTHM, id: StreakDefinitionId.of('seasonal') })).toBe(
+      false,
+    );
   });
 
   it('says no rhythm for a run that was lost, and agrees a run of one', () => {
-    const cadence = must(
-      new Map(Object.entries(LOYALTY.account.streaks)).get('cadence'),
-    );
+    const cadence = must(StreakState.find(LOYALTY.account.streaks, RHYTHM.id));
     const run = (current: number) =>
       loyaltyOf({
-        account: accountWith({ streaks: { cadence: { ...cadence, current } } }),
+        account: accountWith({ streaks: [{ ...cadence, current }] }),
       });
     expect(run(0)?.holdings.map((holding) => holding.id)).toEqual([
       'voucher',
@@ -1290,7 +1301,7 @@ describe('«Лоялност» (F1)', () => {
     expect(
       loyaltyOf({
         flags: { ...ALL_FLAGS, points: false },
-        account: accountWith({ punchCards: [], streaks: {} }),
+        account: accountWith({ punchCards: [], streaks: [] }),
         vouchers: [],
       }),
     ).toBeNull();
@@ -1344,7 +1355,9 @@ describe('«Постижения» (G)', () => {
       const vm = must(medalsGlanceVm(data, ctx));
       expect(vm.tiles).toHaveLength(3);
       for (const tile of vm.tiles) {
-        const series = must(data.catalog.series(tile.key));
+        const series = must(
+          LoyaltyCatalogSystem.series(data.catalog, BadgeSeriesId.of(tile.key)),
+        );
         expect(tile.medal).toEqual({
           ...medalRingVm(series, data, ctx, 'large'),
           caption: null,
@@ -1490,7 +1503,10 @@ describe('«Постижения» (G)', () => {
   });
 
   it('lets the first visit step in, skips a favourite it cannot name, and has no line without a record', () => {
-    const recordsOf = (keep: (kind: string) => boolean, serviceId?: string) =>
+    const recordsOf = (
+      keep: (kind: PersonalRecordKind) => boolean,
+      serviceId?: string,
+    ) =>
       must(
         medalsGlanceVm(
           {
@@ -1498,10 +1514,12 @@ describe('«Постижения» (G)', () => {
             account: {
               ...LOYALTY.account,
               records: LOYALTY.account.records
-                .filter((record) => keep(record.kind))
+                .filter((record) => keep(record.personalRecordKind))
                 .map((record) =>
-                  record.kind === 'favouriteService' && serviceId !== undefined
-                    ? { ...record, serviceId }
+                  record.personalRecordKind ===
+                    PersonalRecordKind.FavouriteService &&
+                  serviceId !== undefined
+                    ? { ...record, serviceId: ServiceId.of(serviceId) }
                     : record,
                 ),
             },
@@ -1509,7 +1527,9 @@ describe('«Постижения» (G)', () => {
           settled,
         ),
       );
-    expect(recordsOf((kind) => kind !== 'mostVisitsInYear')).toMatchObject({
+    expect(
+      recordsOf((kind) => kind !== PersonalRecordKind.MostVisitsInYear),
+    ).toMatchObject({
       records: [
         { kind: 'favouriteService', label: 'Любима услуга', value: 'Фейд' },
         {
@@ -1523,7 +1543,9 @@ describe('«Постижения» (G)', () => {
     expect(
       recordsOf(() => true, 'svc-gone').records.map((record) => record.kind),
     ).toEqual(['mostVisitsInYear', 'firstVisit']);
-    expect(recordsOf((kind) => kind === 'longestRhythm')).toMatchObject({
+    expect(
+      recordsOf((kind) => kind === PersonalRecordKind.LongestRhythm),
+    ).toMatchObject({
       records: [],
       recordsName: null,
     });

@@ -9,51 +9,43 @@ import {
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AVATAR_UPLOADER, ZonedDateTime } from '@creativo/application/accounts';
-import { type Result, fail } from '@creativo/application/booking';
-import { BirthDate } from '@core/components';
-import type { Appointment } from '@core/entities';
+import { BirthDate, JournalEffect, JournalFeed } from '@core/components';
+import type { Appointment, JournalEntry } from '@core/entities';
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  JournalPage,
+  LoyaltyAccountReadPorts,
+  LoyaltyCatalogReadPorts,
   ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
 import {
+  type CustomerId,
   RepositoryError as CoreRepositoryError,
   Result as CoreResult,
 } from '@core/primitives';
-import { memoryAppointmentReadPorts } from '@core/testing';
+import {
+  loyaltyCatalogFixture,
+  memoryAppointmentReadPorts,
+} from '@core/testing';
 import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  LOYALTY_ACCOUNT_READ_PORTS,
+  LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import {
-  type ActivityEntry,
-  LOYALTY_ACTIVITY_READER,
-  LOYALTY_CATALOG_READER,
-  LOYALTY_READER,
-  type LoyaltyActivityPage,
-  type LoyaltyActivityQuery,
-  type LoyaltyActivityReader,
-} from '@creativo/application/engagement';
-import {
-  InMemoryLoyaltyActivityReader,
-  InMemoryLoyaltyCatalogReader,
-  InMemoryLoyaltyReader,
-} from '@creativo/application/engagement/testing';
-import {
-  CLOCK,
-  RepositoryError,
-  provideFeatureFlags,
-} from '@creativo/application/shared';
+import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import type {
   ClientCardContext,
   ClientCardSubject,
@@ -69,6 +61,7 @@ import {
   GEORGI,
   GEORGI_CUSTOMER_ID,
   GEORGI_GRANT,
+  GEORGI_LOYALTY,
   GEORGI_MONEY,
   GEORGI_PREVIOUS_MS,
   GUEST,
@@ -77,6 +70,7 @@ import {
   NBSP_EURO,
   NOW_MS,
   type PortDouble,
+  catalogPortsOf,
   catalogueOf,
   customerPortsOf,
   georgiContext,
@@ -86,6 +80,8 @@ import {
   georgiUser,
   heldProfilePortsOf,
   historyPortsOf,
+  journalPortsOf,
+  loyaltyPortsOf,
   martinContext,
   martinHistory,
   martinUser,
@@ -174,51 +170,66 @@ function heldHistory(inner: AppointmentReadPorts): AppointmentReadPorts & {
   };
 }
 
-/** An activity reader serving small pages, so the ledger pages on the fixture's journal. */
-class PagedActivity implements LoyaltyActivityReader {
-  readonly calls: (LoyaltyActivityQuery & { readonly userId: string })[] = [];
-  private failNext = false;
-  constructor(
-    private readonly inner: LoyaltyActivityReader,
-    private readonly size: number,
-  ) {}
-  failOnce(): this {
-    this.failNext = true;
-    return this;
-  }
-  async page(
-    userId: string,
-    query: LoyaltyActivityQuery,
-  ): Promise<Result<LoyaltyActivityPage, RepositoryError>> {
-    this.calls.push({ userId, ...query });
-    if (this.failNext) {
-      this.failNext = false;
-      return fail(new RepositoryError('page unavailable'));
-    }
-    return this.inner.page(userId, { ...query, limit: this.size });
-  }
+/** One read of the journal: whose, under which effects, from which cursor, how many. */
+interface JournalRead {
+  readonly customerId: CustomerId;
+  readonly effects: readonly JournalEffect[];
+  readonly beforeSeq: number | null;
+  readonly limit: number;
 }
 
-/** An activity reader whose pages answer only when the spec says so. */
-class HeldActivity implements LoyaltyActivityReader {
-  readonly calls: LoyaltyActivityQuery[] = [];
-  private readonly answers: (() => void)[] = [];
-  constructor(private readonly inner: LoyaltyActivityReader) {}
-  page(
-    userId: string,
-    query: LoyaltyActivityQuery,
-  ): Promise<Result<LoyaltyActivityPage, RepositoryError>> {
-    this.calls.push(query);
-    return new Promise((resolve) => {
-      void this.inner.page(userId, query).then((result) => {
-        this.answers.push(() => resolve(result));
-      });
-    });
-  }
-  /** Every answer held so far, in the order asked. */
-  release(): void {
-    for (const answer of this.answers.splice(0)) answer();
-  }
+/** A journal serving small pages, so the ledger pages on the fixture's journal; each read recorded. */
+function pagedJournal(
+  inner: ClientJournalPorts,
+  size: number,
+): ClientJournalPorts & {
+  readonly calls: JournalRead[];
+  failOnce(): void;
+} {
+  const calls: JournalRead[] = [];
+  let failNext = false;
+  return {
+    calls,
+    failOnce: () => {
+      failNext = true;
+    },
+    pageClientJournal: async (customerId, effects, beforeSeq, limit) => {
+      calls.push({ customerId, effects, beforeSeq, limit });
+      if (failNext) {
+        failNext = false;
+        return CoreResult.err(CoreRepositoryError.unavailable());
+      }
+      return inner.pageClientJournal(customerId, effects, beforeSeq, size);
+    },
+  };
+}
+
+/** A journal whose pages answer only when the spec says so. */
+function heldJournal(inner: ClientJournalPorts): ClientJournalPorts & {
+  readonly calls: JournalRead[];
+  release(): void;
+} {
+  const calls: JournalRead[] = [];
+  const answers: (() => void)[] = [];
+  return {
+    calls,
+    pageClientJournal: (customerId, effects, beforeSeq, limit) => {
+      calls.push({ customerId, effects, beforeSeq, limit });
+      return new Promise<CoreResult<JournalPage, CoreRepositoryError>>(
+        (resolve) => {
+          void inner
+            .pageClientJournal(customerId, effects, beforeSeq, limit)
+            .then((result) => {
+              answers.push(() => resolve(result));
+            });
+        },
+      );
+    },
+    /** Every answer held so far, in the order asked. */
+    release: () => {
+      for (const answer of answers.splice(0)) answer();
+    },
+  };
 }
 
 interface RigOptions {
@@ -228,12 +239,12 @@ interface RigOptions {
   readonly stats?: PortDouble<ClientStatsReadPorts> | null;
   readonly history?: AppointmentReadPorts | null;
   readonly photos?: PortDouble<AppointmentPhotoPorts> | null;
-  readonly loyalty?: InMemoryLoyaltyReader | null;
-  readonly catalog?: InMemoryLoyaltyCatalogReader | null;
+  readonly loyalty?: PortDouble<LoyaltyAccountReadPorts> | null;
+  readonly catalog?: PortDouble<LoyaltyCatalogReadPorts> | null;
   readonly waitlist?: WaitlistReadPorts | null;
   readonly avatars?: InMemoryAvatars | null;
   readonly vouchers?: PortDouble<CouponVoucherPorts> | null;
-  readonly activity?: LoyaltyActivityReader | null;
+  readonly activity?: ClientJournalPorts | null;
 }
 
 const BOOK: readonly Appointment[] = [...georgiHistory(), ...martinHistory()];
@@ -248,14 +259,14 @@ function defaults() {
     ),
     history: historyPortsOf(BOOK) as AppointmentReadPorts,
     photos: photoPortsOf(georgiPhotos()),
-    loyalty: InMemoryLoyaltyReader.seeded(),
-    catalog: new InMemoryLoyaltyCatalogReader(),
+    loyalty: loyaltyPortsOf(),
+    catalog: catalogPortsOf(),
     waitlist: waitlistPortsOf([martinWaitlist()]) as WaitlistReadPorts,
     avatars: new InMemoryAvatars(
       new Map([[GEORGI, 'https://example.test/avatars/georgi.jpg']]),
     ),
     vouchers: voucherPortsOf(),
-    activity: InMemoryLoyaltyActivityReader.seeded() as LoyaltyActivityReader,
+    activity: journalPortsOf() as ClientJournalPorts,
   };
 }
 
@@ -287,12 +298,12 @@ function rig(options: RigOptions = {}) {
       ...bind(CLIENT_STATS_READ_PORTS, ports.stats),
       ...bind(APPOINTMENT_READ_PORTS, ports.history),
       ...bind(APPOINTMENT_PHOTO_PORTS, ports.photos),
-      ...bind(LOYALTY_READER, ports.loyalty),
-      ...bind(LOYALTY_CATALOG_READER, ports.catalog),
+      ...bind(LOYALTY_ACCOUNT_READ_PORTS, ports.loyalty),
+      ...bind(LOYALTY_CATALOG_READ_PORTS, ports.catalog),
       ...bind(WAITLIST_READ_PORTS, ports.waitlist),
       ...bind(AVATAR_UPLOADER, ports.avatars),
       ...bind(COUPON_VOUCHER_PORTS, ports.vouchers),
-      ...bind(LOYALTY_ACTIVITY_READER, ports.activity),
+      ...bind(CLIENT_JOURNAL_PORTS, ports.activity),
     ],
   });
   return { store: TestBed.inject(ClientCardStore), ...ports };
@@ -332,7 +343,7 @@ describe('ClientCardStore — a guest', () => {
   it('reads nothing, and draws the hero, the phone and the exit', async () => {
     const history = historyPortsOf(BOOK);
     const profiles = profilePortsOf([]);
-    const loyalty = InMemoryLoyaltyReader.seeded();
+    const loyalty = loyaltyPortsOf();
     const photos = photoPortsOf(georgiPhotos());
     const { store } = rig({ history, profiles, loyalty, photos });
     open(
@@ -630,7 +641,7 @@ describe('ClientCardStore — the D-9 gate', () => {
   it('fails the whole card when the profile fails, reads nothing else, and recovers on retry', async () => {
     const profiles = profilePortsOf([georgiUser()]).failWith();
     const history = historyPortsOf(BOOK);
-    const loyalty = InMemoryLoyaltyReader.seeded();
+    const loyalty = loyaltyPortsOf();
     const { store } = rig({ profiles, history, loyalty });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -721,7 +732,7 @@ describe('ClientCardStore — module failures', () => {
   });
 
   it('fails loyalty and achievements together when the account cannot be read, and retries them', async () => {
-    const loyalty = InMemoryLoyaltyReader.seeded().failWith();
+    const loyalty = loyaltyPortsOf().failWith();
     const { store } = rig({ loyalty });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -762,6 +773,137 @@ describe('ClientCardStore — module failures', () => {
   });
 });
 
+describe('ClientCardStore — the client record (D29, flip-3 F3-1 (a))', () => {
+  /*
+   * Loyalty is keyed by the client RECORD: the card resolves it once per
+   * open (`customers where userId == uid`) and reads the account, the
+   * families, the seasons and the journal under it. No record is no
+   * loyalty (today's "no account" view); a record that could not be read
+   * fails the loyalty slices, and a retry resolves the record again.
+   */
+
+  it('reads no loyalty for an account with no client record — and fails nothing', async () => {
+    const customers = customerPortsOf([]);
+    const loyalty = loyaltyPortsOf();
+    const activity = journalPortsOf();
+    const { store } = rig({ customers, loyalty, activity });
+    open(store, subjectOf(GEORGI), georgiContext());
+    await settle();
+    expect(customers.callsTo('loadCustomerForUser')).toHaveLength(1);
+    const overview = store.overview();
+    expect('loyalty' in overview || 'medals' in overview).toBe(false);
+    expect(overview.failed).toEqual([]);
+    expect(store.wallet()).toBeNull();
+    expect(store.achievementsData()).toBeNull();
+    expect(store.hero().tier).toBeNull();
+    expect(loyalty.calls).toEqual([]);
+    expect(activity.calls).toEqual([]);
+  });
+
+  it('reads no loyalty with no record port bound — an absent module, never a failure', async () => {
+    const loyalty = loyaltyPortsOf();
+    const { store } = rig({ customers: null, loyalty });
+    open(store, subjectOf(GEORGI), georgiContext());
+    await settle();
+    const overview = store.overview();
+    expect('loyalty' in overview || 'medals' in overview).toBe(false);
+    expect(overview.failed).toEqual([]);
+    expect(store.wallet()).toBeNull();
+    expect(store.achievementsData()).toBeNull();
+    expect(loyalty.calls).toEqual([]);
+  });
+
+  it('fails the loyalty slices when the record cannot be read, and a retry resolves it again', async () => {
+    const customers = customerPortsOf().failWith();
+    const loyalty = loyaltyPortsOf();
+    // Only loyalty waits on the record here: the other keyed reads are
+    // unbound, so the notice is loyalty's own.
+    const { store } = rig({
+      customers,
+      loyalty,
+      stats: null,
+      history: null,
+      photos: null,
+      vouchers: null,
+      activity: null,
+    });
+    open(store, subjectOf(GEORGI), georgiContext());
+    await settle();
+    expect(store.overview().failed).toEqual(['loyalty', 'achievements']);
+    expect(store.wallet()).toEqual({ status: 'failed' });
+    expect(store.achievementsData()).toEqual({ status: 'failed' });
+    expect(loyalty.calls).toEqual([]);
+
+    const recordReads = customers.callsTo('loadCustomerForUser').length;
+    customers.recover();
+    store.retry('loyalty');
+    await settle();
+    // The failed answer was never kept: the retry asks for the record again.
+    expect(customers.callsTo('loadCustomerForUser').length).toBe(
+      recordReads + 1,
+    );
+    expect(store.overview().failed).toEqual([]);
+    expect(store.wallet()?.status).toBe('ready');
+    expect(store.achievementsData()?.status).toBe('ready');
+    expect(loyalty.callsTo('loadLoyaltyAccount')).toEqual([
+      [GEORGI_LOYALTY.customerId],
+    ]);
+  });
+
+  it('fails the wallet’s feed with the record, and reads the journal under it once it resolves', async () => {
+    const customers = customerPortsOf().failWith();
+    const activity = journalPortsOf();
+    const { store } = rig({
+      customers,
+      activity,
+      stats: null,
+      history: null,
+      photos: null,
+      vouchers: null,
+    });
+    open(store, subjectOf(GEORGI), georgiContext());
+    await settle();
+    expect(store.wallet()).toEqual({ status: 'failed' });
+    expect(activity.calls).toEqual([]);
+
+    customers.recover();
+    store.retry('loyalty');
+    store.retry('activity');
+    await settle();
+    expect(store.wallet()?.status).toBe('ready');
+    expect(
+      activity
+        .callsTo('pageClientJournal')
+        .every(([customerId]) => customerId === GEORGI_LOYALTY.customerId),
+    ).toBe(true);
+    expect(activity.calls.length).toBeGreaterThan(0);
+  });
+});
+
+describe('ClientCardStore — the catalogue', () => {
+  it('fails the catalogue slice when the system refuses the answer, and never keeps it', async () => {
+    // Two rewards under one id: `LoyaltyCatalogSystem.validate` refuses
+    // the catalogue whole (F3-10), so nothing is shown off it.
+    const published = loyaltyCatalogFixture();
+    const first = must(published.rewards[0]);
+    const catalog = catalogPortsOf({
+      ...published,
+      rewards: [...published.rewards, first],
+    });
+    const { store } = rig({ catalog });
+    open(store, subjectOf(GEORGI), georgiContext());
+    await settle();
+    expect(store.overview().failed).toEqual(['loyalty', 'achievements']);
+    expect(store.achievementsData()).toEqual({ status: 'failed' });
+
+    // A refused catalogue is not cached: a retry reads it again.
+    store.retry('achievements');
+    await settle();
+    expect(catalog.callsTo('loadLoyaltyCatalog')).toHaveLength(2);
+    expect(store.achievementsData()).toEqual({ status: 'failed' });
+  });
+});
+
 describe('ClientCardStore — flags, ports and accounts', () => {
   it('reads no loyalty with every loyalty flag off', async () => {
     const { store, loyalty, catalog } = rig({
@@ -776,12 +918,12 @@ describe('ClientCardStore — flags, ports and accounts', () => {
       'loyalty' in overview || 'medals' in overview || 'capsules' in overview,
     ).toBe(false);
     expect(loyalty?.calls).toEqual([]);
-    expect(catalog?.reads).toBe(0);
+    expect(catalog?.calls).toEqual([]);
   });
 
   it('draws no loyalty module for a client without an account', async () => {
     const profiles = profilePortsOf([martinUser()]);
-    const { store } = rig({ profiles, loyalty: new InMemoryLoyaltyReader() });
+    const { store } = rig({ profiles, loyalty: loyaltyPortsOf([]) });
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
     const overview = store.overview();
@@ -804,7 +946,7 @@ describe('ClientCardStore — flags, ports and accounts', () => {
       birthDate: BirthDate.of('1992-09-28'),
     };
     const profiles = profilePortsOf([stub]);
-    const { store } = rig({ profiles, loyalty: new InMemoryLoyaltyReader() });
+    const { store } = rig({ profiles, loyalty: loyaltyPortsOf([]) });
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
     expect(profiles.callsTo('loadProfile')).toEqual([[MARTIN]]);
@@ -852,7 +994,7 @@ describe('ClientCardStore — flags, ports and accounts', () => {
     await settle();
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
-    expect(catalog?.reads).toBe(1);
+    expect(catalog?.callsTo('loadLoyaltyCatalog')).toHaveLength(1);
     expect(store.achievementsData()?.status).toBe('ready');
   });
 });
@@ -1006,20 +1148,38 @@ const GEORGI_STATS = statsOf(GEORGI, georgiHistory());
 
 /** The balance the seeded account holds (never the wireframe's figure, LR7). */
 async function georgiBalance(): Promise<number> {
-  const account = await InMemoryLoyaltyReader.seeded().getAccount(GEORGI);
-  return must(account.isSuccess() ? account.value : null, 'Георги’s account')
-    .balance;
+  return GEORGI_LOYALTY.account.balance;
 }
 
-/** Every client-visible row of a holder's journal, as the seeded reader holds them. */
-async function journalOf(uid: string): Promise<readonly ActivityEntry[]> {
-  const page = await InMemoryLoyaltyActivityReader.seeded().page(uid, {
-    kind: 'all',
-    limit: 1_000,
-    after: null,
-  });
-  return page.isSuccess() ? page.value.entries : [];
+/** Every client-visible row of Георги's journal under «Всички», as the seeded journal holds them. */
+async function journalOf(): Promise<readonly JournalEntry[]> {
+  const page = await journalPortsOf().pageClientJournal(
+    GEORGI_CUSTOMER_ID,
+    JournalFeed.effectsOf(JournalFeed.All),
+    null,
+    1_000,
+  );
+  return page.ok ? page.value.entries : [];
 }
+
+/** The pills, in the toolbar's order. */
+const PILLS = [
+  JournalFeed.All,
+  JournalFeed.Points,
+  JournalFeed.Rewards,
+  JournalFeed.Status,
+] as const;
+
+/** The pill a journal read was made under, by the effects it asked for. */
+function pillOf(effects: readonly JournalEffect[]): JournalFeed | undefined {
+  return PILLS.find(
+    (pill) => JournalFeed.effectsOf(pill).join() === [...effects].join(),
+  );
+}
+
+/** The seeded journal double's reads (`journalPortsOf`, a port double). */
+const journalCalls = (activity: ClientJournalPorts | null | undefined) =>
+  (activity as PortDouble<ClientJournalPorts>).callsTo('pageClientJournal');
 
 const bgFigure = (value: number) => new Intl.NumberFormat('bg').format(value);
 
@@ -1105,16 +1265,13 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     expect(vouchers?.callsTo('listGiftVouchersForHolder')).toEqual([
       [GEORGI_CUSTOMER_ID],
     ]);
-    // Two reads of the journal: the wallet's feed and the ledger's first page.
-    expect((activity as InMemoryLoyaltyActivityReader).calls).toEqual(
+    // Two reads of the record's journal: the wallet's feed and the ledger's
+    // first page, both under «Всички».
+    const all = JournalFeed.effectsOf(JournalFeed.All);
+    expect(journalCalls(activity)).toEqual(
       expect.arrayContaining([
-        {
-          userId: GEORGI,
-          kind: 'all',
-          limit: WALLET_ACTIVITY_READ,
-          after: null,
-        },
-        { userId: GEORGI, kind: 'all', limit: LEDGER_PAGE_READ, after: null },
+        [GEORGI_CUSTOMER_ID, all, null, WALLET_ACTIVITY_READ],
+        [GEORGI_CUSTOMER_ID, all, null, LEDGER_PAGE_READ],
       ]),
     );
 
@@ -1156,7 +1313,7 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
 
     const ledger = store.ledger();
     expect(ledger.status).toBe('ready');
-    expect(ledger.filter).toBe('all');
+    expect(ledger.filter).toBe(JournalFeed.All);
     expect(textOf(ledger.subline)).toBe(
       WORDS.ledgerPage.subline(
         'Георги Петров',
@@ -1166,7 +1323,7 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     expect(ledger.groups.length).toBeGreaterThan(0);
     for (const group of ledger.groups)
       expect(group.key).toMatch(/^\d{4}-\d{2}$/u);
-    const journal = await journalOf(GEORGI);
+    const journal = await journalOf();
     expect(ledger.paging).toEqual({
       kind: journal.length > LEDGER_PAGE_READ ? 'more' : 'end',
     });
@@ -1213,31 +1370,41 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
 describe('ClientCardStore — revision 3: the ledger’s pills and pages', () => {
   it('reads the first page again under a pill, once per pill, and nets only under «Всички» and «Точки»', async () => {
     const { store, activity } = rig();
-    const reader = activity as InMemoryLoyaltyActivityReader;
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
-    const before = reader.calls.length;
+    const before = journalCalls(activity).length;
 
-    store.setLedgerFilter('points');
+    store.setLedgerFilter(JournalFeed.Points);
     expect(store.ledger()).toMatchObject({
       status: 'loading',
-      filter: 'points',
+      filter: JournalFeed.Points,
     });
     await settle();
-    expect(reader.calls.slice(before)).toEqual([
-      { userId: GEORGI, kind: 'points', limit: LEDGER_PAGE_READ, after: null },
+    expect(journalCalls(activity).slice(before)).toEqual([
+      [
+        GEORGI_CUSTOMER_ID,
+        JournalFeed.effectsOf(JournalFeed.Points),
+        null,
+        LEDGER_PAGE_READ,
+      ],
     ]);
-    expect(store.ledger()).toMatchObject({ status: 'ready', filter: 'points' });
+    expect(store.ledger()).toMatchObject({
+      status: 'ready',
+      filter: JournalFeed.Points,
+    });
 
     // The pill in force again: nothing is read.
-    store.setLedgerFilter('points');
+    store.setLedgerFilter(JournalFeed.Points);
     await settle();
-    expect(reader.calls).toHaveLength(before + 1);
+    expect(journalCalls(activity)).toHaveLength(before + 1);
 
-    store.setLedgerFilter('rewards');
+    store.setLedgerFilter(JournalFeed.Rewards);
     await settle();
     const rewards = store.ledger();
-    expect(rewards).toMatchObject({ status: 'ready', filter: 'rewards' });
+    expect(rewards).toMatchObject({
+      status: 'ready',
+      filter: JournalFeed.Rewards,
+    });
     // The sum of what the reward rows moved is nobody's net.
     expect(rewards.groups.every((group) => group.net === null)).toBe(true);
     // The wallet's own feed is untouched by the pills.
@@ -1248,28 +1415,31 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
   });
 
   it('drops an older pill’s answer when the pills change faster than the reads', async () => {
-    const held = new HeldActivity(InMemoryLoyaltyActivityReader.seeded());
+    const held = heldJournal(journalPortsOf());
     const { store } = rig({ activity: held });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     expect(store.ledger().status).toBe('loading');
-    store.setLedgerFilter('points');
-    store.setLedgerFilter('status');
+    store.setLedgerFilter(JournalFeed.Points);
+    store.setLedgerFilter(JournalFeed.Status);
     // Every read is on its way; they answer in the order asked.
     await settle();
     held.release();
     await settle();
-    expect(store.ledger()).toMatchObject({ status: 'ready', filter: 'status' });
-    expect(held.calls.map((call) => call.kind)).toEqual([
-      'all',
-      'all',
-      'points',
-      'status',
+    expect(store.ledger()).toMatchObject({
+      status: 'ready',
+      filter: JournalFeed.Status,
+    });
+    expect(held.calls.map((call) => pillOf(call.effects))).toEqual([
+      JournalFeed.All,
+      JournalFeed.All,
+      JournalFeed.Points,
+      JournalFeed.Status,
     ]);
   });
 
   it('pages older rows in on «Покажи още», and ends on the journal’s oldest event', async () => {
-    const paged = new PagedActivity(InMemoryLoyaltyActivityReader.seeded(), 3);
+    const paged = pagedJournal(journalPortsOf(), 3);
     const { store } = rig({ activity: paged });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -1285,18 +1455,20 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
     }
     const ledger = store.ledger();
     expect(ledger.paging).toEqual({ kind: 'end' });
-    const journal = await journalOf(GEORGI);
+    const journal = await journalOf();
     expect(
       ledger.groups.reduce((rows, group) => rows + group.rows.length, 0),
     ).toBe(foldByEvent(journal, true).length);
     const pages = paged.calls.filter((call) => call.limit === LEDGER_PAGE_READ);
-    expect(pages[0]?.after).toBeNull();
-    for (const call of pages.slice(1)) expect(typeof call.after).toBe('number');
+    expect(pages[0]?.beforeSeq).toBeNull();
+    for (const call of pages.slice(1)) {
+      expect(typeof call.beforeSeq).toBe('number');
+    }
     expect(pages.length).toBe(Math.ceil(journal.length / 3));
   });
 
   it('keeps a failed page’s rows, says so in the foot, and retries the page', async () => {
-    const paged = new PagedActivity(InMemoryLoyaltyActivityReader.seeded(), 3);
+    const paged = pagedJournal(journalPortsOf(), 3);
     const { store } = rig({ activity: paged });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -1315,7 +1487,7 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
   });
 
   it('fails the feed and the page under their headings, never the glance, and retries them as one region', async () => {
-    const activity = InMemoryLoyaltyActivityReader.seeded().failWith();
+    const activity = journalPortsOf().failWith();
     const { store } = rig({ activity });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
@@ -1539,7 +1711,7 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
     expect(store.historyComplete()).toBe(false);
     expect(store.visitRowsInput()).toBeNull();
     expect(vouchers?.calls).toEqual([]);
-    expect((activity as InMemoryLoyaltyActivityReader).calls).toEqual([]);
+    expect(journalCalls(activity)).toEqual([]);
   });
 
   it('reads no voucher and no feed with every loyalty flag off, and no feed with the points off', async () => {
@@ -1553,16 +1725,14 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
     expect(off.store.overview().medals).toBeUndefined();
     expect(off.store.ledger().status).toBe('failed');
     expect(off.vouchers?.calls).toEqual([]);
-    expect((off.activity as InMemoryLoyaltyActivityReader).calls).toEqual([]);
+    expect(journalCalls(off.activity)).toEqual([]);
     TestBed.resetTestingModule();
 
     const noPoints = rig({ flags: { ...ALL_FLAGS, 'loyalty.points': false } });
     open(noPoints.store, subjectOf(GEORGI), georgiContext());
     await settle();
     expect(noPoints.vouchers?.calls).toHaveLength(1);
-    expect((noPoints.activity as InMemoryLoyaltyActivityReader).calls).toEqual(
-      [],
-    );
+    expect(journalCalls(noPoints.activity)).toEqual([]);
     const wallet = noPoints.store.wallet();
     expect(wallet?.status).toBe('ready');
     if (wallet?.status === 'ready') {

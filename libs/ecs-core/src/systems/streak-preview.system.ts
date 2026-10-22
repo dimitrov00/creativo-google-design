@@ -12,7 +12,7 @@ import {
 
 /*
  * «КАКВО ЩЕ СЕ ПРОМЕНИ» (client-card-revision-3.md §4.4,
- * `preview-streak-definition.use-case.ts`): every person folded through
+ * the admin page's `admin-rhythm.preview.ts`): every person folded through
  * the projector twice, once per rule, and the two answers counted. Pure:
  * it reads nothing and keeps nothing, so the page runs it again on every
  * change of the draft over facts it read once.

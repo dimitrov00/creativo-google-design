@@ -14,10 +14,9 @@ import type {
 import type { PerkId } from './gamification.data';
 
 /**
- * What a journal entry changed — the entry's discriminator `journalEffect`.
- * `POINTS` is the ONLY effect that moves the balance. (Stored bytes are
- * today's lowercase `effect.kind` until the loyalty flip (3); the legacy
- * shims map.)
+ * What a journal entry changed — the entry's discriminator `journalEffect`,
+ * a root key of every `clientJournal` row (the ledger's index #21 queries
+ * it). `POINTS` is the ONLY effect that moves the balance.
  */
 export const JournalEffect = {
   Points: 'POINTS',
@@ -31,6 +30,52 @@ export const JournalEffect = {
   VisitOutcome: 'VISIT_OUTCOME',
 } as const;
 export type JournalEffect = (typeof JournalEffect)[keyof typeof JournalEffect];
+
+/** The pills' values — the ONLY source of these strings (the companion below spreads them). */
+const JOURNAL_FEED_VALUES = {
+  All: 'ALL',
+  Points: 'POINTS',
+  Rewards: 'REWARDS',
+  Status: 'STATUS',
+} as const;
+
+/**
+ * The activity feed's pills — «Всички», «Точки», «Награди», «Статус».
+ * The words on screen (and their lowercase test ids and i18n keys) are the
+ * feature's, keyed by this dictionary.
+ */
+export type JournalFeed =
+  (typeof JOURNAL_FEED_VALUES)[keyof typeof JOURNAL_FEED_VALUES];
+
+/**
+ * The pills (`JournalFeed.All` …) and the journal effects each one reads:
+ * `JournalFeed.effectsOf(feed)` is the `journalEffect in […]` filter of a
+ * feed page (`PageClientJournal`). The feed shows five effects; a streak,
+ * freeze, pause or visit-outcome row is never one of its rows.
+ */
+export const JournalFeed = {
+  ...JOURNAL_FEED_VALUES,
+
+  /** The effects a pill reads, in the feed's order — a fresh array each call. */
+  effectsOf(feed: JournalFeed): readonly JournalEffect[] {
+    switch (feed) {
+      case JOURNAL_FEED_VALUES.All:
+        return [
+          JournalEffect.Points,
+          JournalEffect.Achievement,
+          JournalEffect.Tier,
+          JournalEffect.Reward,
+          JournalEffect.Redemption,
+        ];
+      case JOURNAL_FEED_VALUES.Points:
+        return [JournalEffect.Points];
+      case JOURNAL_FEED_VALUES.Rewards:
+        return [JournalEffect.Reward, JournalEffect.Redemption];
+      case JOURNAL_FEED_VALUES.Status:
+        return [JournalEffect.Tier];
+    }
+  },
+} as const;
 
 /** What happened to a run — the STREAK effect's field `streakOp`. */
 export const StreakOp = {
@@ -137,10 +182,9 @@ export type JournalVisibility =
   (typeof JournalVisibility)[keyof typeof JournalVisibility];
 
 /**
- * The client-visible copy keys of a journal row — today the tuple
- * `PUBLIC_LABEL_CODES` (`loyalty-document.ts:153-180`); i18n resolves each
- * with the row's `labelParams`. i18n message keys, so the stored strings are
- * unchanged (flatten-spec §0.4).
+ * The client-visible copy keys of a journal row (the row's `labelCode`);
+ * i18n resolves each with the row's `labelParams`. i18n message keys, so
+ * the stored strings stay dotted lower camel case (flatten-spec §0.4).
  */
 export const LabelCode = {
   PointsOpening: 'points.opening',
@@ -244,7 +288,7 @@ export type LabelParam = {
 
 /**
  * A row's client-visible copy, flat at the entry's root (Law 6.1): a key
- * and its parameters (today's nested `publicLabel { code; params }`).
+ * and its parameters — two root fields, never a nested label object.
  */
 export type PublicLabel = {
   readonly labelCode: LabelCode;
@@ -270,11 +314,11 @@ export const PublicLabel = {
 } as const;
 
 /**
- * What a journal entry changed (`loyalty-document.ts:648-717`) — a union of
- * FLAT variant slices at the entry's root, discriminated by
- * `journalEffect`; every variant-only field carries its effect's prefix so
- * the slice never collides with the entry's other slices. Dates are
- * shop-calendar days (`streakDueBy`, `tierUntil`, `pauseUntil`).
+ * What a journal entry changed — a union of FLAT variant slices at the
+ * entry's root, discriminated by `journalEffect`; every variant-only field
+ * carries its effect's prefix so the slice never collides with the entry's
+ * other slices. Dates are shop-calendar days (`streakDueBy`, `tierUntil`,
+ * `pauseUntil`).
  */
 export type JournalEffectRecord =
   | JournalEffectRecord.Points

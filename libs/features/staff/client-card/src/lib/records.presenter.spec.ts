@@ -6,14 +6,12 @@ import {
   CancelledBy,
   SeatOutcome,
 } from '@core/components';
+import { PersonalRecord, StreakState } from '@core/components';
 import type { Appointment, ClientStatsRecord } from '@core/entities';
 import { BarberId, ServiceId, UtcEpochMs } from '@core/primitives';
-import type {
-  PersonalRecord,
-  StreakDefinition,
-  StreakState,
-} from '@creativo/application/engagement';
+import { localDate } from '@core/testing';
 import { isUiIconName } from '@creativo/ui/controls';
+import { RECORD_KIND_WORDS, type RecordKindWord } from './client-card.words';
 import type { AchievementsData, RecordRowVm } from './client-pages.vm';
 import { medalsPageVm } from './medals.presenter';
 import {
@@ -31,10 +29,11 @@ import {
   contactOf,
   georgiContext,
   georgiHistory,
-  loyaltyCatalogWith,
   martinContext,
   martinHistory,
   must,
+  rhythmHead,
+  rhythmHeadWith,
   seatOf,
   sofia,
   statsOf,
@@ -45,7 +44,8 @@ import {
 
 const DATA = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 const SETTLED = achievementsContextOf(georgiContext(), 'Георги Петров');
-const RULE = must(DATA.catalog.streakInForce('cadence', DATA.today), 'rule');
+/** The rhythm's head as the catalogue holds it: its rule in force since 1.03.2025. */
+const RHYTHM = rhythmHead();
 
 /** Георги's page as the store hands it over: the whole history loaded. */
 function georgi(overrides: Partial<RecordsPageInput> = {}): RecordsPageInput {
@@ -54,7 +54,7 @@ function georgi(overrides: Partial<RecordsPageInput> = {}): RecordsPageInput {
     data: DATA,
     ctx: SETTLED,
     stats: statsOf(GEORGI, visits),
-    ruleInForce: RULE,
+    rhythm: RHYTHM,
     visits,
     historyComplete: true,
     ...overrides,
@@ -67,7 +67,7 @@ function martin(overrides: Partial<RecordsPageInput> = {}): RecordsPageInput {
     data: achievementsDataOf('martin', MARTIN_PREVIOUS_MS),
     ctx: achievementsContextOf(martinContext(), 'Мартин Илиев', true),
     stats: statsOf(MARTIN, visits),
-    ruleInForce: RULE,
+    rhythm: RHYTHM,
     visits,
     historyComplete: true,
     ...overrides,
@@ -78,43 +78,74 @@ function withRecords(records: readonly PersonalRecord[]): AchievementsData {
   return { ...DATA, account: { ...DATA.account, records } };
 }
 
-function record(
-  kind: PersonalRecord['kind'],
-  overrides: Partial<PersonalRecord> = {},
-): PersonalRecord {
-  return {
-    ...must(
-      DATA.account.records.find((r) => r.kind === kind),
-      kind,
+/** What a case changes on a record, days and ids as the spec writes them. */
+type RecordEdit = {
+  readonly value?: number;
+  readonly on?: string | null;
+  readonly year?: number | null;
+  readonly serviceId?: string | null;
+};
+
+/** One of Георги's records, by the card's word for its kind, with some fields changed. */
+function record(kind: RecordKindWord, edit: RecordEdit = {}): PersonalRecord {
+  const held = must(
+    DATA.account.records.find(
+      (r) => RECORD_KIND_WORDS[r.personalRecordKind] === kind,
     ),
-    ...overrides,
+    kind,
+  );
+  return {
+    ...held,
+    ...(edit.value === undefined ? {} : { value: edit.value }),
+    ...(edit.on === undefined
+      ? {}
+      : { on: edit.on === null ? null : localDate(edit.on) }),
+    ...(edit.year === undefined ? {} : { year: edit.year }),
+    ...(edit.serviceId === undefined
+      ? {}
+      : {
+          serviceId:
+            edit.serviceId === null ? null : ServiceId.of(edit.serviceId),
+        }),
   };
 }
 
-/** Георги's book with his rhythm's state changed. */
-function withRhythm(overrides: Partial<StreakState>): AchievementsData {
-  const state = must(DATA.account.streaks['cadence'], 'cadence');
+/** Георги's rhythm as the account holds it. */
+const CADENCE = must(
+  StreakState.find(DATA.account.streaks, RHYTHM.id),
+  'cadence',
+);
+
+/** Георги's book with his rhythm's count and first day changed. */
+function withRhythm(edit: {
+  readonly current?: number;
+  readonly runStartedOn?: string | null;
+}): AchievementsData {
   return {
     ...DATA,
     account: {
       ...DATA.account,
-      streaks: { cadence: { ...state, ...overrides } },
+      streaks: [
+        {
+          ...CADENCE,
+          ...(edit.current === undefined ? {} : { current: edit.current }),
+          ...(edit.runStartedOn === undefined
+            ? {}
+            : {
+                runStartedOn:
+                  edit.runStartedOn === null
+                    ? null
+                    : localDate(edit.runStartedOn),
+              }),
+        },
+      ],
     },
   };
 }
 
-/** The rule in force, switched off by the admin. */
-function ruleOff(): StreakDefinition {
-  const catalog = loyaltyCatalogWith((documents) => ({
-    ...documents,
-    streakDefinitions: Object.fromEntries(
-      Object.entries(documents.streakDefinitions).map(([id, head]) => [
-        id,
-        { ...head, current: { ...head.current, enabled: false } },
-      ]),
-    ),
-  }));
-  return must(catalog.streakInForce('cadence', DATA.today), 'rule off');
+/** The rhythm's head with its rule in force switched off by the admin. */
+function ruleOff() {
+  return rhythmHeadWith((rule) => ({ ...rule, enabled: false }));
 }
 
 const DAY_MS = 86_400_000;
@@ -394,7 +425,7 @@ describe('recordsPageVm', () => {
         georgi({
           data: withRecords([record('firstVisit')]),
           stats: null,
-          ruleInForce: null,
+          rhythm: null,
         }),
       );
       // The first visit is featured, and nothing else is known.
@@ -420,7 +451,7 @@ describe('recordsPageVm', () => {
 
     it('reads the day the run began from the state, never off the track of twelve', () => {
       // The track's oldest period is December 2025; the run is older.
-      const state = must(DATA.account.streaks['cadence'], 'cadence');
+      const state = CADENCE;
       expect(state.periods[0]?.on).toBe('2025-12-08');
       expect(state.runStartedOn).toBe('2025-03-06');
       const restarted = withRhythm({ current: 9, runStartedOn: '2026-06-15' });
@@ -452,7 +483,7 @@ describe('recordsPageVm', () => {
     it('is absent for an account without the rule’s rhythm', () => {
       const none: AchievementsData = {
         ...DATA,
-        account: { ...DATA.account, streaks: {} },
+        account: { ...DATA.account, streaks: [] },
       };
       expect(row(georgi({ data: none }), 'currentRhythm')).toBeNull();
     });
@@ -462,8 +493,8 @@ describe('recordsPageVm', () => {
     it.each([
       ['the flag is off, or the shop has no rhythm', null],
       ['the rule in force is switched off', ruleOff()],
-    ])('has no «Ритъм» group when %s', (_, ruleInForce) => {
-      const vm = recordsPageVm(georgi({ ruleInForce }));
+    ])('has no «Ритъм» group when %s', (_, rhythm) => {
+      const vm = recordsPageVm(georgi({ rhythm }));
       expect(vm.groups.map((g) => g.theme)).toEqual(['visits', 'favourites']);
       expect(vm.groups.flatMap((g) => g.rows.map((r) => r.id))).not.toContain(
         'longestRhythm',
@@ -471,7 +502,7 @@ describe('recordsPageVm', () => {
     });
 
     it('never features the longest run: the newest of the others leads', () => {
-      const vm = recordsPageVm(georgi({ ruleInForce: ruleOff() }));
+      const vm = recordsPageVm(georgi({ rhythm: ruleOff() }));
       expect(vm.featured).toMatchObject({
         id: 'mostVisitsInYear',
         value: '13',
@@ -487,7 +518,7 @@ describe('recordsPageVm', () => {
     it('agrees with «Постижения», whose 2 × 2 hides the same card', () => {
       const flagged = medalsPageVm(DATA, SETTLED, 'all', { rhythm: false });
       expect(flagged.records.map((r) => r.id)).not.toContain('longestRhythm');
-      expect(recordsPageVm(georgi({ ruleInForce: null })).featured?.id).toBe(
+      expect(recordsPageVm(georgi({ rhythm: null })).featured?.id).toBe(
         flagged.records[0]?.id,
       );
     });
@@ -932,14 +963,14 @@ describe('recordsPageVm', () => {
       const fresh: AchievementsData = {
         ...DATA,
         progress: new Map(),
-        account: { ...DATA.account, records: [], streaks: {} },
+        account: { ...DATA.account, records: [], streaks: [] },
       };
       expect(
         recordsPageVm({
           data: fresh,
           ctx: achievementsContextOf(georgiContext(), 'Калоян Димов'),
           stats: null,
-          ruleInForce: RULE,
+          rhythm: RHYTHM,
           visits: [],
           historyComplete: true,
         }),

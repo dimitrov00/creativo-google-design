@@ -10,16 +10,27 @@ import {
 } from '@jsverse/transloco';
 import { NEVER, type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type Result, ZonedDateTime } from '@creativo/application/booking';
+import { ZonedDateTime } from '@creativo/application/booking';
 import {
   CATALOG_PORTS,
   CLIENT_STATS_READ_PORTS,
+  STREAK_DEFINITION_PORTS,
+  STREAK_PUBLISH_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
   ClientStats,
   CompositionKind,
   PolicyPassStamp,
+  StreakInterval,
+  StreakIntervalRule,
+  StreakQualifierRule,
+  StreakRule,
+  StreakTransition,
 } from '@core/components';
+import type {
+  StreakDefinitionPorts,
+  StreakPublishGatewayPorts,
+} from '@core/ports';
 import type {
   ClientStatsRecord,
   Service,
@@ -30,31 +41,40 @@ import {
   CustomerId,
   LocalDate,
   type MinuteOfDay,
+  PublishRequestId,
   ServiceCategoryId,
   ServiceId,
+  StreakPublishError,
 } from '@core/primitives';
 import {
+  type StreakWorld,
   memoryCatalogReadPorts,
   memoryClientStatsReadPorts,
+  memoryStreakDefinitionPorts,
+  memoryStreakPublishGatewayPorts,
+  memoryStreakWorld,
   minute,
   serviceFixture,
+  streakDefinitionFixture,
+  streakDefinitionVersionFixture,
   termsFixture,
   textFixture,
   unwrapOk,
   utcMs,
 } from '@core/testing';
 import {
-  STREAK_DEFINITION_REPOSITORY,
-  StreakDefinition,
-  type StreakDefinitionRepository,
-} from '@creativo/application/engagement';
-import { InMemoryStreakDefinitionRepository } from '@creativo/application/engagement/testing';
-import {
   CLOCK,
   ID_GENERATOR,
   provideFeatureFlags,
 } from '@creativo/application/shared';
-import { AdminRhythmStore } from '../admin-rhythm.store';
+import {
+  ADMIN_RHYTHM_STREAK_ID,
+  AdminRhythmStore,
+} from '../admin-rhythm.store';
+import {
+  type RhythmRecorder,
+  rhythmRecorder,
+} from '../testing/rhythm-recorder';
 import { AdminRhythm } from './admin-rhythm';
 
 // ── The app's own words ──────────────────────────────────────────────────
@@ -84,12 +104,6 @@ class CatalogueLoader implements TranslocoLoader {
 /** Monday 28 September 2026, 12:40 in Sofia. */
 const NOW = '2026-09-28T12:40:00';
 const TODAY = '2026-09-28';
-
-/** A legacy (flip-3) engagement answer, unwrapped. */
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (!result.isSuccess()) throw new Error('the fixture is no good');
-  return result.value;
-}
 
 /** A visit on the shop's wall clock — the day and minute the statistics hold (Law 7.3). */
 interface Reading {
@@ -160,17 +174,46 @@ const CATEGORIES: readonly ServiceCategory[] = [
 
 // ── The rig ──────────────────────────────────────────────────────────────
 
+/** The rule's two bundles over one world, recorded; `gateway` publishes as somebody else. */
+type Rules = RhythmRecorder & { readonly gateway: StreakPublishGatewayPorts };
+
+/** The head stream and the gateway over the real publish pipeline (the server's clock on the fixtures' day). */
+function rulesOver(world: StreakWorld): Rules {
+  const gateway = memoryStreakPublishGatewayPorts(world);
+  return Object.assign(
+    rhythmRecorder(memoryStreakDefinitionPorts(world), gateway),
+    { gateway },
+  );
+}
+
+/** The fixtures' rule, with the history the seed gives it. */
+const seeded = (): Rules =>
+  rulesOver(
+    memoryStreakWorld({
+      heads: [streakDefinitionFixture()],
+      versions: [
+        {
+          streakId: StreakRule.DEFAULT_DEFINITION_ID,
+          version: streakDefinitionVersionFixture(),
+        },
+      ],
+    }),
+  );
+
+/** A shop that has published no rule yet. */
+const unpublished = (): Rules => rulesOver(memoryStreakWorld());
+
 interface RigOptions {
-  readonly rules?: StreakDefinitionRepository;
+  readonly rules?: Rules;
+  /** What is bound to both rule tokens in place of `rules`. */
+  readonly port?: StreakDefinitionPorts & StreakPublishGatewayPorts;
   readonly flags?: Readonly<Record<string, boolean>>;
   readonly catalog?: boolean;
 }
 
-const seeded = () =>
-  InMemoryStreakDefinitionRepository.seeded({ today: TODAY });
-
 async function rig(options: RigOptions = {}) {
   let issued = 0;
+  const rulePorts = options.port ?? (options.rules ?? seeded()).ports;
   TestBed.configureTestingModule({
     imports: [AdminRhythm],
     providers: [
@@ -196,8 +239,12 @@ async function rig(options: RigOptions = {}) {
         },
       },
       {
-        provide: STREAK_DEFINITION_REPOSITORY,
-        useValue: options.rules ?? seeded(),
+        provide: STREAK_DEFINITION_PORTS,
+        useValue: rulePorts,
+      },
+      {
+        provide: STREAK_PUBLISH_PORTS,
+        useValue: rulePorts,
       },
       {
         provide: CLIENT_STATS_READ_PORTS,
@@ -405,11 +452,11 @@ describe('«Ритъм», at rest', () => {
 describe('«Ритъм», its states', () => {
   it('shows the skeleton while the rule has not answered', async () => {
     const { host } = await rig({
-      rules: {
-        observe: () => NEVER,
-        listVersions: () => new Promise(() => undefined),
-        publish: () => new Promise(() => undefined),
-        withdraw: () => new Promise(() => undefined),
+      port: {
+        observeStreakDefinitionHead: () => NEVER,
+        listStreakDefinitionVersions: () => new Promise(() => undefined),
+        publishStreakRule: () => new Promise(() => undefined),
+        withdrawStreakRule: () => new Promise(() => undefined),
       },
     });
     expect(
@@ -422,25 +469,22 @@ describe('«Ритъм», its states', () => {
   });
 
   it('says the rule did not load, and asks again on «Опитай пак»', async () => {
-    const rules = seeded().failWith();
+    const rules = seeded();
+    rules.failWith();
     const { host, fixture } = await rig({ rules });
     expect(text(host, 'admin-rhythm-failed')).toContain(
       'Правилото не се зареди.',
     );
-    const observed = rules.calls.filter((c) => c.method === 'observe').length;
+    const heard = rules.heard.length;
     rules.recover();
     click(host, 'admin-rhythm-retry');
     await settle(fixture);
-    expect(
-      rules.calls.filter((c) => c.method === 'observe').length,
-    ).toBeGreaterThan(observed);
+    expect(rules.heard.length).toBeGreaterThan(heard);
     expect(byId(host, 'admin-rhythm-rule')).not.toBeNull();
   });
 
   it('opens on the recommended rule where none is published, and offers «Запази»', async () => {
-    const { host } = await rig({
-      rules: new InMemoryStreakDefinitionRepository({}, { today: TODAY }),
-    });
+    const { host } = await rig({ rules: unpublished() });
     expect(text(host, 'admin-rhythm-empty')).toBe(
       'Още няма правило. Това са препоръчаните стойности.',
     );
@@ -472,18 +516,22 @@ describe('«Ритъм», its states', () => {
 
   it('shows the waiting version: its capsule, its line and the row that calls it off', async () => {
     const rules = seeded();
-    const next = unwrap(
-      StreakDefinition.default().revise(
-        { interval: { kind: 'fixed', days: 35 } },
-        '2026-10-10',
-      ),
+    const next = unwrapOk(
+      StreakRule.parse({
+        ...StreakRule.DEFAULT,
+        ...StreakIntervalRule.fixed(35),
+        ...StreakQualifierRule.of(StreakRule.DEFAULT),
+        version: 2,
+        effectiveFromLocalDate: '2026-10-10',
+      }),
     );
-    unwrap(
-      await rules.publish({
-        requestId: 'elsewhere',
+    unwrapOk(
+      await rules.gateway.publishStreakRule({
+        requestId: PublishRequestId.of('elsewhere'),
+        streakId: ADMIN_RHYTHM_STREAK_ID,
         baseVersion: 1,
-        definition: next,
-        transition: 'grandfather',
+        rule: next,
+        streakTransition: StreakTransition.Grandfather,
         previewHash: null,
       }),
     );
@@ -514,7 +562,9 @@ describe('«Ритъм», the draft', () => {
     const { host, fixture, store } = await rig();
     slide(host, 'admin-rhythm-interval-weeks', 8);
     await settle(fixture);
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 56 });
+    expect(StreakIntervalRule.of(store.draft())).toEqual(
+      StreakIntervalRule.fixed(56),
+    );
     expect(text(host, 'admin-rhythm-interval-readout')).toBe('8 седмици');
     expect(text(host, 'admin-rhythm-sentence')).toBe(
       'Посещение на всеки 8 седмици пази ритъма.',
@@ -539,7 +589,7 @@ describe('«Ритъм», the draft', () => {
     );
     type(host, 'admin-rhythm-hold-days', 'abc');
     await settle(fixture);
-    expect(store.draft().bookingHold.maxDaysPastDue).toBe(14);
+    expect(store.draft().bookingHoldMaxDaysPastDue).toBe(14);
   });
 
   it('collapses what counts, the interval, the grace and the more rules when the rule is off', async () => {
@@ -562,7 +612,7 @@ describe('«Ритъм», the draft', () => {
     await settle(fixture);
     click(host, 'admin-rhythm-option-interval-personal');
     await settle(fixture);
-    expect(store.draft().interval.kind).toBe('personal');
+    expect(store.draft().streakInterval).toBe(StreakInterval.Personal);
     expect(text(host, 'admin-rhythm-tolerance-readout')).toBe('+50 %');
     expect(
       (byId(host, 'admin-rhythm-clamp-min') as HTMLInputElement).value,
@@ -575,8 +625,11 @@ describe('«Ритъм», the draft', () => {
     ).toBe('6');
     type(host, 'admin-rhythm-fallback', '12');
     await settle(fixture);
-    const interval = store.draft().interval;
-    expect(interval.kind === 'personal' && interval.fallbackDays).toBe(70);
+    const draft = store.draft();
+    expect(
+      draft.streakInterval === StreakInterval.Personal &&
+        draft.intervalFallbackDays,
+    ).toBe(70);
   });
 
   it('opens the services sheet when «избрани услуги» is picked, and lists the row', async () => {
@@ -652,7 +705,7 @@ describe('«Запази»', () => {
     click(host, 'admin-rhythm-save');
     await settle(fixture);
     expect(alertOpen()).toBe(false);
-    expect(rules.calls.some((c) => c.method === 'publish')).toBe(true);
+    expect(rules.published.length).toBeGreaterThan(0);
     expect(text(host, 'admin-rhythm-toast')).toMatch(
       /^Правилото е запазено · от 29\.09/,
     );
@@ -685,14 +738,14 @@ describe('«Запази»', () => {
       /клиент/,
     );
     expect(alertActions()).toEqual(['Запази', 'Продължи редакцията']);
-    expect(rules.calls.some((c) => c.method === 'publish')).toBe(false);
+    expect(rules.published).toEqual([]);
     (
       document.querySelector(
         '[data-testid="admin-rhythm-confirm-save"]',
       ) as HTMLElement
     ).click();
     await settle(fixture);
-    expect(rules.calls.some((c) => c.method === 'publish')).toBe(true);
+    expect(rules.published.length).toBeGreaterThan(0);
     // The receipt, without undo.
     expect(text(host, 'admin-rhythm-toast')).toMatch(/^Правилото е запазено/);
     expect(
@@ -722,7 +775,7 @@ describe('«Запази»', () => {
     ).click();
     await settle(fixture);
     expect(alertOpen()).toBe(false);
-    expect(rules.calls.some((c) => c.method === 'publish')).toBe(false);
+    expect(rules.published).toEqual([]);
     expect(store.draft().enabled).toBe(false);
   });
 
@@ -731,7 +784,7 @@ describe('«Запази»', () => {
     const { host, fixture } = await rig({ rules });
     slide(host, 'admin-rhythm-interval-weeks', 8);
     await settle(fixture);
-    rules.refuseWith('stale');
+    rules.refuseWith(StreakPublishError.stale(1, 2));
     click(host, 'admin-rhythm-save');
     await settle(fixture);
     expect(text(host, 'admin-rhythm-refusal')).toBe(

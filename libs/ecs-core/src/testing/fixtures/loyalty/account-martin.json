@@ -1,0 +1,1096 @@
+{
+  "uid": "dev-client-2",
+  "customerId": "cus_64f1b6925a19e579d85b",
+  "account": {
+    "customerId": "cus_64f1b6925a19e579d85b",
+    "balance": 215,
+    "lifetimeEarned": 335,
+    "lifetimeAdjusted": 0,
+    "lifetimeSpent": 120,
+    "streaks": [
+      {
+        "streakId": "cadence",
+        "definitionVersion": 1,
+        "current": 13,
+        "best": 13,
+        "lastQualifiedAtUtcMs": 1787131800000,
+        "dueBy": "2026-09-30",
+        "freezesBanked": 2,
+        "periodIntervalDays": 42,
+        "periodGraceDays": 7,
+        "periodSource": "FIXED",
+        "periodHabitDays": null,
+        "periods": [
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2025-06-16",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2025-07-24",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2025-09-01",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2025-10-10",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2025-11-18",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2025-12-27",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2026-02-04",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2026-03-14",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2026-04-22",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2026-05-29",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2026-07-10",
+            "periodReason": null
+          },
+          {
+            "streakPeriodMark": "KEPT",
+            "on": "2026-08-19",
+            "periodReason": null
+          }
+        ],
+        "heldByAppointmentId": "appt-dev-2",
+        "heldOn": "2026-09-28",
+        "runStartedOn": "2025-05-08",
+        "streakPhase": "AT_RISK",
+        "phaseDueBy": "2026-09-30"
+      }
+    ],
+    "punchCards": [
+      {
+        "ruleId": "rule-every-10th-visit",
+        "filled": 3,
+        "size": 10,
+        "title": {
+          "bg": "Безплатно подстригване",
+          "en": "Free haircut"
+        }
+      }
+    ],
+    "records": [
+      {
+        "personalRecordKind": "LONGEST_RHYTHM",
+        "value": 13,
+        "on": "2026-08-19",
+        "year": null,
+        "serviceId": null
+      },
+      {
+        "personalRecordKind": "MOST_VISITS_IN_YEAR",
+        "value": 7,
+        "on": null,
+        "year": 2025,
+        "serviceId": null
+      },
+      {
+        "personalRecordKind": "FAVOURITE_SERVICE",
+        "value": 13,
+        "on": null,
+        "year": null,
+        "serviceId": "svc-classic-cut"
+      },
+      {
+        "personalRecordKind": "FIRST_VISIT",
+        "value": 1,
+        "on": "2025-05-08",
+        "year": null,
+        "serviceId": null
+      }
+    ],
+    "seq": 18,
+    "version": 16,
+    "updatedAtUtcMs": 1790132400000,
+    "tierId": "silver",
+    "tierDefinitionVersion": 1,
+    "tierSinceUtcMs": 1763463600000,
+    "tierQualifying": 9,
+    "nextTierId": "gold",
+    "tierRemaining": 3,
+    "tierOverrideSource": null,
+    "pointsExpireOn": null,
+    "pointsExpiryNoticeFrom": null
+  },
+  "badgeProgress": {
+    "series-visits": {
+      "value": 13,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1746698400000,
+          "earnedLocalDate": "2025-05-08",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1760090400000,
+          "earnedLocalDate": "2025-10-10",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAtUtcMs": 1776852000000,
+          "earnedLocalDate": "2026-04-22",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-tenure": {
+      "value": 508,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1778209200000,
+          "earnedLocalDate": "2026-05-08",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-self-service": {
+      "value": 10,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1749749700000,
+          "earnedLocalDate": "2025-06-12",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1766514900000,
+          "earnedLocalDate": "2025-12-23",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAtUtcMs": 1786815300000,
+          "earnedLocalDate": "2026-08-15",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-svc-classic-cut": {
+      "value": 13,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1753351200000,
+          "earnedLocalDate": "2025-07-24",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1776852000000,
+          "earnedLocalDate": "2026-04-22",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-explorer": {
+      "value": 1,
+      "earned": []
+    },
+    "series-barber-ivan": {
+      "value": 7,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1746698400000,
+          "earnedLocalDate": "2025-05-08",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1763463600000,
+          "earnedLocalDate": "2025-11-18",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-barber-niko": {
+      "value": 6,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1760090400000,
+          "earnedLocalDate": "2025-10-10",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1783677600000,
+          "earnedLocalDate": "2026-07-10",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-shop-center": {
+      "value": 13,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1746698400000,
+          "earnedLocalDate": "2025-05-08",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1760090400000,
+          "earnedLocalDate": "2025-10-10",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAtUtcMs": 1776852000000,
+          "earnedLocalDate": "2026-04-22",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-all-barbers": {
+      "value": 2,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1760090400000,
+          "earnedLocalDate": "2025-10-10",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-both-shops": {
+      "value": 1,
+      "earned": []
+    },
+    "series-rhythm": {
+      "value": 13,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1753351200000,
+          "earnedLocalDate": "2025-07-24",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1763463600000,
+          "earnedLocalDate": "2025-11-18",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 3,
+          "earnedAtUtcMs": 1783677600000,
+          "earnedLocalDate": "2026-07-10",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-twelve-months": {
+      "value": 9,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1756720800000,
+          "earnedLocalDate": "2025-09-01",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1770202800000,
+          "earnedLocalDate": "2026-02-04",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-welcome": {
+      "value": 1,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1746698400000,
+          "earnedLocalDate": "2025-05-08",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-weekend": {
+      "value": 2,
+      "earned": []
+    },
+    "series-on-time": {
+      "value": 13,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1760090400000,
+          "earnedLocalDate": "2025-10-10",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1776852000000,
+          "earnedLocalDate": "2026-04-22",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-profile": {
+      "value": 1,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1746897600000,
+          "earnedLocalDate": "2025-05-10",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-2026-summer-track": {
+      "value": 2,
+      "earned": [
+        {
+          "level": 1,
+          "earnedAtUtcMs": 1783677600000,
+          "earnedLocalDate": "2026-07-10",
+          "earnedVia": "RULE",
+          "count": 1
+        },
+        {
+          "level": 2,
+          "earnedAtUtcMs": 1787133600000,
+          "earnedLocalDate": "2026-08-19",
+          "earnedVia": "RULE",
+          "count": 1
+        }
+      ]
+    },
+    "series-2026-summer-each-month": {
+      "value": 2,
+      "earned": []
+    }
+  },
+  "seasonProgress": {
+    "season-2026-summer": {
+      "trackValue": 2,
+      "trackLevel": 2
+    }
+  },
+  "clientJournal": {
+    "cus_64f1b6925a19e579d85b_000001": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 1,
+      "utcEpochMs": 1746698400000,
+      "localDate": "2025-05-08",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-01:seat:appt-hist-c2-01-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-01:seat:appt-hist-c2-01-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 15,
+      "appointmentId": "appt-hist-c2-01",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-01:seat:appt-hist-c2-01-s1",
+      "sourceEventId": "appt_appt-hist-c2-01_seat_appt-hist-c2-01-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000002": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 2,
+      "utcEpochMs": 1746698400000,
+      "localDate": "2025-05-08",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-01:seat:appt-hist-c2-01-s1",
+      "idempotencyKey": "award:rule-welcome-1:dev-client-2:once#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-welcome-1"
+        },
+        {
+          "name": "points",
+          "value": 20
+        },
+        {
+          "name": "seriesId",
+          "value": "series-welcome"
+        },
+        {
+          "name": "level",
+          "value": 1
+        }
+      ],
+      "balanceAfter": 35,
+      "appointmentId": "appt-hist-c2-01",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-welcome-1",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-welcome-1:dev-client-2:once",
+      "sourceEventId": "appt_appt-hist-c2-01_seat_appt-hist-c2-01-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 20
+    },
+    "cus_64f1b6925a19e579d85b_000003": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 3,
+      "utcEpochMs": 1750068000000,
+      "localDate": "2025-06-16",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-02:seat:appt-hist-c2-02-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-02:seat:appt-hist-c2-02-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 50,
+      "appointmentId": "appt-hist-c2-02",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-02:seat:appt-hist-c2-02-s1",
+      "sourceEventId": "appt_appt-hist-c2-02_seat_appt-hist-c2-02-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000004": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 4,
+      "utcEpochMs": 1753351200000,
+      "localDate": "2025-07-24",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-03:seat:appt-hist-c2-03-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-03:seat:appt-hist-c2-03-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 65,
+      "appointmentId": "appt-hist-c2-03",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-03:seat:appt-hist-c2-03-s1",
+      "sourceEventId": "appt_appt-hist-c2-03_seat_appt-hist-c2-03-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000005": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 5,
+      "utcEpochMs": 1756720800000,
+      "localDate": "2025-09-01",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-04:seat:appt-hist-c2-04-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-04:seat:appt-hist-c2-04-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 80,
+      "appointmentId": "appt-hist-c2-04",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-04:seat:appt-hist-c2-04-s1",
+      "sourceEventId": "appt_appt-hist-c2-04_seat_appt-hist-c2-04-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000006": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 6,
+      "utcEpochMs": 1760090400000,
+      "localDate": "2025-10-10",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-05:seat:appt-hist-c2-05-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-05:seat:appt-hist-c2-05-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 95,
+      "appointmentId": "appt-hist-c2-05",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-05:seat:appt-hist-c2-05-s1",
+      "sourceEventId": "appt_appt-hist-c2-05_seat_appt-hist-c2-05-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000007": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 7,
+      "utcEpochMs": 1760090400000,
+      "localDate": "2025-10-10",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-05:seat:appt-hist-c2-05-s1",
+      "idempotencyKey": "award:rule-visits-2:dev-client-2:once#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-visits-2"
+        },
+        {
+          "name": "points",
+          "value": 20
+        },
+        {
+          "name": "seriesId",
+          "value": "series-visits"
+        },
+        {
+          "name": "level",
+          "value": 2
+        }
+      ],
+      "balanceAfter": 115,
+      "appointmentId": "appt-hist-c2-05",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-visits-2",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-visits-2:dev-client-2:once",
+      "sourceEventId": "appt_appt-hist-c2-05_seat_appt-hist-c2-05-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 20
+    },
+    "cus_64f1b6925a19e579d85b_000008": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 8,
+      "utcEpochMs": 1763463600000,
+      "localDate": "2025-11-18",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-06:seat:appt-hist-c2-06-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-06:seat:appt-hist-c2-06-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 130,
+      "appointmentId": "appt-hist-c2-06",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-06:seat:appt-hist-c2-06-s1",
+      "sourceEventId": "appt_appt-hist-c2-06_seat_appt-hist-c2-06-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000009": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 9,
+      "utcEpochMs": 1766833200000,
+      "localDate": "2025-12-27",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-07:seat:appt-hist-c2-07-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-07:seat:appt-hist-c2-07-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 145,
+      "appointmentId": "appt-hist-c2-07",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-07:seat:appt-hist-c2-07-s1",
+      "sourceEventId": "appt_appt-hist-c2-07_seat_appt-hist-c2-07-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000010": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 10,
+      "utcEpochMs": 1770202800000,
+      "localDate": "2026-02-04",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-08:seat:appt-hist-c2-08-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-08:seat:appt-hist-c2-08-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 160,
+      "appointmentId": "appt-hist-c2-08",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-08:seat:appt-hist-c2-08-s1",
+      "sourceEventId": "appt_appt-hist-c2-08_seat_appt-hist-c2-08-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000011": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 11,
+      "utcEpochMs": 1770202920000,
+      "localDate": "2026-02-04",
+      "reverses": null,
+      "correlationId": "rdm-dev-martin-beard",
+      "idempotencyKey": "rdm:rdm-dev-martin-beard#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.redeemed",
+      "labelParams": [
+        {
+          "name": "reward",
+          "value": "reward-beard"
+        },
+        {
+          "name": "points",
+          "value": 120
+        }
+      ],
+      "balanceAfter": 40,
+      "appointmentId": null,
+      "actorRole": "STAFF",
+      "actorUserId": "dev-staff-niko",
+      "actorRoles": ["barber"],
+      "journalSource": "REDEMPTION",
+      "sourceRedemptionId": "rdm-dev-martin-beard",
+      "journalEffect": "POINTS",
+      "pointsDelta": -120
+    },
+    "cus_64f1b6925a19e579d85b_000012": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 12,
+      "utcEpochMs": 1773486000000,
+      "localDate": "2026-03-14",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-09:seat:appt-hist-c2-09-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-09:seat:appt-hist-c2-09-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 55,
+      "appointmentId": "appt-hist-c2-09",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-09:seat:appt-hist-c2-09-s1",
+      "sourceEventId": "appt_appt-hist-c2-09_seat_appt-hist-c2-09-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000013": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 13,
+      "utcEpochMs": 1776852000000,
+      "localDate": "2026-04-22",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-10:seat:appt-hist-c2-10-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-10:seat:appt-hist-c2-10-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 70,
+      "appointmentId": "appt-hist-c2-10",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-10:seat:appt-hist-c2-10-s1",
+      "sourceEventId": "appt_appt-hist-c2-10_seat_appt-hist-c2-10-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000014": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 14,
+      "utcEpochMs": 1776852000000,
+      "localDate": "2026-04-22",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-10:seat:appt-hist-c2-10-s1",
+      "idempotencyKey": "award:rule-visits-3:dev-client-2:once#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-visits-3"
+        },
+        {
+          "name": "points",
+          "value": 50
+        },
+        {
+          "name": "seriesId",
+          "value": "series-visits"
+        },
+        {
+          "name": "level",
+          "value": 3
+        }
+      ],
+      "balanceAfter": 120,
+      "appointmentId": "appt-hist-c2-10",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-visits-3",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-visits-3:dev-client-2:once",
+      "sourceEventId": "appt_appt-hist-c2-10_seat_appt-hist-c2-10-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 50
+    },
+    "cus_64f1b6925a19e579d85b_000015": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 15,
+      "utcEpochMs": 1778209200000,
+      "localDate": "2026-05-08",
+      "reverses": null,
+      "correlationId": "cal:2026-05-08:dev-client-2",
+      "idempotencyKey": "award:rule-tenure-1:dev-client-2:once#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-tenure-1"
+        },
+        {
+          "name": "points",
+          "value": 50
+        },
+        {
+          "name": "seriesId",
+          "value": "series-tenure"
+        },
+        {
+          "name": "level",
+          "value": 1
+        }
+      ],
+      "balanceAfter": 170,
+      "appointmentId": null,
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-tenure-1",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-tenure-1:dev-client-2:once",
+      "sourceEventId": "cal:2026-05-08:dev-client-2",
+      "journalEffect": "POINTS",
+      "pointsDelta": 50
+    },
+    "cus_64f1b6925a19e579d85b_000016": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 16,
+      "utcEpochMs": 1780048800000,
+      "localDate": "2026-05-29",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-12:seat:appt-hist-c2-12-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-12:seat:appt-hist-c2-12-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 185,
+      "appointmentId": "appt-hist-c2-12",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-12:seat:appt-hist-c2-12-s1",
+      "sourceEventId": "appt_appt-hist-c2-12_seat_appt-hist-c2-12-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000017": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 17,
+      "utcEpochMs": 1783677600000,
+      "localDate": "2026-07-10",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-13:seat:appt-hist-c2-13-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-13:seat:appt-hist-c2-13-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 200,
+      "appointmentId": "appt-hist-c2-13",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-13:seat:appt-hist-c2-13-s1",
+      "sourceEventId": "appt_appt-hist-c2-13_seat_appt-hist-c2-13-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    },
+    "cus_64f1b6925a19e579d85b_000018": {
+      "customerId": "cus_64f1b6925a19e579d85b",
+      "seq": 18,
+      "utcEpochMs": 1787133600000,
+      "localDate": "2026-08-19",
+      "reverses": null,
+      "correlationId": "appt:appt-hist-c2-14:seat:appt-hist-c2-14-s1",
+      "idempotencyKey": "award:rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-14:seat:appt-hist-c2-14-s1#0",
+      "journalVisibility": "CLIENT",
+      "labelCode": "points.rule",
+      "labelParams": [
+        {
+          "name": "rule",
+          "value": "rule-earn-per-euro"
+        },
+        {
+          "name": "points",
+          "value": 15
+        },
+        {
+          "name": "spendMinor",
+          "value": 1500
+        }
+      ],
+      "balanceAfter": 215,
+      "appointmentId": "appt-hist-c2-14",
+      "actorRole": "SYSTEM",
+      "actorSystemSource": "LOYALTY_ENGINE",
+      "journalSource": "RULE",
+      "sourceRuleId": "rule-earn-per-euro",
+      "sourceRuleVersion": 1,
+      "sourceAwardKey": "rule-earn-per-euro:dev-client-2:appt:appt-hist-c2-14:seat:appt-hist-c2-14-s1",
+      "sourceEventId": "appt_appt-hist-c2-14_seat_appt-hist-c2-14-s1_worked_r1",
+      "journalEffect": "POINTS",
+      "pointsDelta": 15
+    }
+  }
+}

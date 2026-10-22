@@ -68,9 +68,9 @@ export const Collections = {
   Coupons: 'coupons',
   CouponGrants: 'couponGrants',
   GiftVouchers: 'giftVouchers',
-  /** `LoyaltyAccount`, keyed by the uid. */
+  /** `LoyaltyAccount`, keyed by the client record's `CustomerId` (D29, flip (3)). */
   LoyaltyAccounts: 'loyaltyAccounts',
-  /** `JournalEntry`, id `{userId}_{seq:6}`. */
+  /** `JournalEntry`, id `{customerId}_{seq:6}` (`JournalEntryId.forEntry`). */
   ClientJournal: 'clientJournal',
   /** `StreakDefinition` (the head). */
   StreakDefinitions: 'streakDefinitions',
@@ -103,9 +103,9 @@ export const Subcollections = {
   Versions: 'versions',
   /** `invitations/{id}/redemptions/{refereeUserId}` — the id is the idempotency guard. */
   Redemptions: 'redemptions',
-  /** `loyaltyAccounts/{uid}/badgeProgress/{seriesId}`. */
+  /** `loyaltyAccounts/{customerId}/badgeProgress/{seriesId}`. */
   BadgeProgress: 'badgeProgress',
-  /** `loyaltyAccounts/{uid}/seasonProgress/{seasonId}`. */
+  /** `loyaltyAccounts/{customerId}/seasonProgress/{seasonId}`. */
   SeasonProgress: 'seasonProgress',
 } as const;
 export type SubcollectionName =

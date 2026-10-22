@@ -20,10 +20,12 @@
  * birthday. «Today» is Monday 28 September 2026, the lib's fixture day.
  * Every string is final copy in Bulgarian, as the catalogue words it.
  *
- * Plain data, no imports but types: a spec may spread a fixture and
+ * Plain data, no imports but types and the one dictionary a field is
+ * spelled with (`JournalFeed`): a spec may spread a fixture and
  * change one field to reach a state (`{ ...PASS.georgi, frozen: true }`),
  * and the builders at the top do the same for the shapes that repeat.
  */
+import { JournalFeed } from '@core/components';
 import type {
   VisitCardVm,
   VisitRowVm,
@@ -1529,7 +1531,7 @@ export const LEDGER_PAGE = {
   first: {
     status: 'ready',
     subline: LEDGER_SUBLINE,
-    filter: 'all',
+    filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
     paging: { kind: 'more' },
   },
@@ -1537,7 +1539,7 @@ export const LEDGER_PAGE = {
   whole: {
     status: 'ready',
     subline: LEDGER_SUBLINE,
-    filter: 'all',
+    filter: JournalFeed.All,
     groups: [...ACTIVITY_GROUPS.newestFive, ...ACTIVITY_GROUPS.everyKind],
     paging: { kind: 'end' },
   },
@@ -1545,14 +1547,14 @@ export const LEDGER_PAGE = {
   loadingMore: {
     status: 'ready',
     subline: LEDGER_SUBLINE,
-    filter: 'all',
+    filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
     paging: { kind: 'loading' },
   },
   failedMore: {
     status: 'ready',
     subline: LEDGER_SUBLINE,
-    filter: 'all',
+    filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
     paging: { kind: 'failed' },
   },
@@ -1560,7 +1562,7 @@ export const LEDGER_PAGE = {
   status: {
     status: 'ready',
     subline: LEDGER_SUBLINE,
-    filter: 'status',
+    filter: JournalFeed.Status,
     groups: ACTIVITY_GROUPS.statusOnly,
     paging: { kind: 'end' },
   },
@@ -1568,7 +1570,7 @@ export const LEDGER_PAGE = {
   filteredEmpty: {
     status: 'ready',
     subline: LEDGER_SUBLINE,
-    filter: 'rewards',
+    filter: JournalFeed.Rewards,
     groups: [],
     paging: { kind: 'end' },
   },
@@ -1579,21 +1581,21 @@ export const LEDGER_PAGE = {
       { text: 'Калоян Димов · ', fact: false },
       { text: '0 т.', fact: true },
     ],
-    filter: 'all',
+    filter: JournalFeed.All,
     groups: [],
     paging: { kind: 'end' },
   },
   loading: {
     status: 'loading',
     subline: LEDGER_SUBLINE,
-    filter: 'all',
+    filter: JournalFeed.All,
     groups: [],
     paging: null,
   },
   failed: {
     status: 'failed',
     subline: LEDGER_SUBLINE,
-    filter: 'all',
+    filter: JournalFeed.All,
     groups: [],
     paging: null,
   },

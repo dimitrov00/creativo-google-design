@@ -4,14 +4,19 @@ import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
   CatalogReadPorts,
+  ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
   ImpersonationReadPorts,
   InboxPorts,
+  LoyaltyAccountReadPorts,
+  LoyaltyCatalogReadPorts,
   ProfilePorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
+  StreakDefinitionPorts,
+  StreakPublishGatewayPorts,
   UserSearchPorts,
   WaitlistReadPorts,
 } from '@core/ports';
@@ -89,3 +94,24 @@ export const USER_SEARCH_PORTS = new InjectionToken<UserSearchPorts>(
 /** The admin's live impersonation session (`ImpersonationReadPorts`). */
 export const IMPERSONATION_READ_PORTS =
   new InjectionToken<ImpersonationReadPorts>('IMPERSONATION_READ_PORTS');
+
+/** A client record's loyalty account, badge and season progress (`LoyaltyAccountReadPorts`). */
+export const LOYALTY_ACCOUNT_READ_PORTS =
+  new InjectionToken<LoyaltyAccountReadPorts>('LOYALTY_ACCOUNT_READ_PORTS');
+
+/** The published loyalty catalogue, the rhythm's heads included (`LoyaltyCatalogReadPorts`). */
+export const LOYALTY_CATALOG_READ_PORTS =
+  new InjectionToken<LoyaltyCatalogReadPorts>('LOYALTY_CATALOG_READ_PORTS');
+
+/** A client record's journal pages — the activity feed and the ledger (`ClientJournalPorts`). */
+export const CLIENT_JOURNAL_PORTS = new InjectionToken<ClientJournalPorts>(
+  'CLIENT_JOURNAL_PORTS',
+);
+
+/** The rhythm's live head and its published versions (`StreakDefinitionPorts`). */
+export const STREAK_DEFINITION_PORTS =
+  new InjectionToken<StreakDefinitionPorts>('STREAK_DEFINITION_PORTS');
+
+/** The rhythm's publish and withdrawal, through the callable (`StreakPublishGatewayPorts`). */
+export const STREAK_PUBLISH_PORTS =
+  new InjectionToken<StreakPublishGatewayPorts>('STREAK_PUBLISH_PORTS');

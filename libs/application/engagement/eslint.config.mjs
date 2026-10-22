@@ -23,9 +23,9 @@ export default [
   {
     // `src/testing.ts` is this lib's testing entry point
     // (`@creativo/application/engagement/testing`) — test support,
-    // imported by specs only. Since the ECS migration's Phase 3a it
-    // re-exports the loyalty catalogue and vouchers from
-    // `@core/testing`, until Phase 4 deletes it.
+    // imported by specs only. Since flip 3 it hands out only the
+    // gift vouchers (`giftVoucherFixtures`, read from `@core/testing`)
+    // and their in-memory reader, until Phase 4 deletes it.
     files: ['**/src/testing.ts'],
     rules: {
       'no-restricted-imports': specImports,

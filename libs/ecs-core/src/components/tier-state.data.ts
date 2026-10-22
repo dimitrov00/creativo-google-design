@@ -17,7 +17,7 @@ export type TierOverrideSource =
 
 /**
  * The account's computed tier — from VISITS in the qualifying window, never
- * points (`loyalty-document.ts:456-470`), a flat slice at the account's
+ * points (the legacy `loyalty-document.ts`, deleted in flip 3), a flat slice at the account's
  * root, every field prefixed `tier` (`tierSinceUtcMs` was `tier.since`).
  * `nextTierId`/`tierRemaining` are `null` at the top. TierSystem does the
  * math.

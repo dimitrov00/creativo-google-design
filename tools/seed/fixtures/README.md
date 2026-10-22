@@ -5,23 +5,28 @@ The home of the dev seed's document bodies as TypeScript (ECS migration,
 3b flip moves the bodies of the collections it reshapes here, in the same
 commit that changes their shape.
 
-## What is here (flip 1 — booking core; flip 2 — identity and accounts)
+## What is here (flip 1 — booking core; flip 2 — identity and accounts; flip 3 — loyalty)
 
-| File                       | Collections                                             | Exports                                                                                                                                           |
-| -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `catalog.fixtures.ts`      | `serviceCategories`, `locations`, `barbers`, `services` | the catalogue as `Seeded<Id, X>[]` rows, the brand helpers and `Body<X>` the others share                                                         |
-| `schedules.fixtures.ts`    | `barberSchedules`, `scheduleExceptions`, `barberBusy`   | `SCHEDULES`; `closedDayBody`, `busyDayBody`, `busyKeyOf`                                                                                          |
-| `appointments.fixtures.ts` | `appointments`, `appointmentPhotos`                     | `appointmentBody(plan)`, `appointmentPhotoBody(plan)` and their plan types                                                                        |
-| `promotions.fixtures.ts`   | `coupons`, `couponGrants`, `giftVouchers`               | `COUPONS`; `couponGrantBody`, `giftVoucherBodies`                                                                                                 |
-| `waitlist.fixtures.ts`     | `waitlistRequests`                                      | `waitlistRequestBody(plan)`                                                                                                                       |
-| `customers.fixtures.ts`    | `customers` (D29)                                       | `customerIdOf(uid)` (`CustomerId.forUser` over sha256), `seededCustomerBody` (`SEED` origin)                                                      |
-| `users.fixtures.ts`        | `users` (flip 2)                                        | `clientUserBody(contact, birthDate)`, `staffAccountBody`, `registeredAccountBody` (`REGISTERED`, `ACTIVE`, search keys from `SearchFieldsSystem`) |
+| File                       | Collections                                                                                                                                                                                             | Exports                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `catalog.fixtures.ts`      | `serviceCategories`, `locations`, `barbers`, `services`                                                                                                                                                 | the catalogue as `Seeded<Id, X>[]` rows, the brand helpers and `Body<X>` the others share                                                                                                                                                                                                                                                                         |
+| `schedules.fixtures.ts`    | `barberSchedules`, `scheduleExceptions`, `barberBusy`                                                                                                                                                   | `SCHEDULES`; `closedDayBody`, `busyDayBody`, `busyKeyOf`                                                                                                                                                                                                                                                                                                          |
+| `appointments.fixtures.ts` | `appointments`, `appointmentPhotos`                                                                                                                                                                     | `appointmentBody(plan)`, `appointmentPhotoBody(plan)` and their plan types                                                                                                                                                                                                                                                                                        |
+| `promotions.fixtures.ts`   | `coupons`, `couponGrants`, `giftVouchers`                                                                                                                                                               | `COUPONS`; `couponGrantBody`, `giftVoucherBodies`                                                                                                                                                                                                                                                                                                                 |
+| `waitlist.fixtures.ts`     | `waitlistRequests`                                                                                                                                                                                      | `waitlistRequestBody(plan)`                                                                                                                                                                                                                                                                                                                                       |
+| `customers.fixtures.ts`    | `customers` (D29)                                                                                                                                                                                       | `customerIdOf(uid)` (`CustomerId.forUser` over sha256), `seededCustomerBody` (`SEED` origin)                                                                                                                                                                                                                                                                      |
+| `users.fixtures.ts`        | `users` (flip 2)                                                                                                                                                                                        | `clientUserBody(contact, birthDate)`, `staffAccountBody`, `registeredAccountBody` (`REGISTERED`, `ACTIVE`, search keys from `SearchFieldsSystem`)                                                                                                                                                                                                                 |
+| `loyalty.fixtures.ts`      | `badgeCategories`, `badgeSeries`, `seasons`, `tierDefinitions`, `rewardsCatalog`, `streakDefinitions` (+ `versions`), `loyaltyAccounts` (+ `badgeProgress`, `seasonProgress`), `clientJournal` (flip 3) | one builder per catalogue body (`seasonBody` moves a window and its announcement by whole days), `seedRuleVersionBody`, `loyaltyAccountBody`, `badgeProgressBody`, `seasonProgressBody`, `journalEntryBody` and the journal's slice builders (`ENGINE_ACTOR`, `DESK_ADMIN`/`DESK_STAFF`, `ruleSource`, `pointsEffect`, …), the record builders, `qualifierCounts` |
 
 The plan logic that decides WHO, WHAT and WHEN stays in the `.mjs` modules
 (`catalog.mjs`, `fixtures.mjs`, `appointments.mjs`, `promotions.mjs`,
 `waitlist.mjs`, `loyalty.mjs`); it resolves a symbolic fixture against the
 shop's calendar and hands these builders a plan, and the builders return the
-document. (The accounts: `fixtures.mjs` hands `clientUserBody` each client's
+document. (The loyalty: `loyalty.mjs` folds the book — the visits, the
+levels, the tiers, the rhythm `StreakSystem.trace` projects — and hands each
+builder plain values; an account, its progress and its journal are keyed by
+the client RECORD, `customerIdOf(uid)` (D29), and every instant beside its
+shop day is one reading of the shop's clock (T5).) (The accounts: `fixtures.mjs` hands `clientUserBody` each client's
 contact and the birth date its fixture places; `seed-dev-catalog.mjs` writes
 `staffAccountBody`; `tools/verify/p0/verify-p0.mjs` builds its sysadmin with
 `registeredAccountBody`. There is no second copy of the search-prefix rule:
@@ -83,5 +88,10 @@ noun, no `Entity` suffix — flatten-spec N1) is legal here, and nothing of
 The loyalty catalogue and the gift vouchers the seed reads BY PATH
 (`catalog.json`, `vouchers.json`) are test fixtures shared with the specs:
 they live in `libs/ecs-core/src/testing/fixtures/loyalty/` and are exported
-from `@core/testing`. The loyalty documents (`loyaltyAccounts`,
-`clientJournal`, the streak definitions) move here with flip 3.
+from `@core/testing` (with the two account holders' documents,
+`account-georgi.json` / `account-martin.json`, which the e2e seeds and
+`loyalty.spec.mjs` holds the projection's shape to). `catalog.json` is
+already the flat bodies; `loyalty.fixtures.ts` rebuilds each one field by
+field (so a field the entity no longer has never reaches the emulator), and
+the seed reads its documents back through the two run-time checks it keeps
+(`readLoyaltyWrites`: `LoyaltyCatalogSystem.validate`, `StreakRule.parse`).

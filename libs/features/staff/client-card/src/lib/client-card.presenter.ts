@@ -9,25 +9,24 @@ import {
 import type { VisitLeg, WallTime } from '@core/components';
 import {
   AgeSystem,
+  BadgeSystem,
   ClientGlanceSystem,
+  LoyaltyCatalogSystem,
   PhoneSystem,
+  StandingSystem,
+  type ValidLoyaltyCatalog,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
   type Appointment,
   type AppointmentPhoto,
+  type BadgeSeries,
   type ClientStatsRecord,
+  type LoyaltyAccount,
   Profile,
   type User,
   type WaitlistRequest,
 } from '@core/entities';
-import {
-  type BadgeSeries,
-  type LoyaltyAccount,
-  type LoyaltyCatalog,
-  isNewSince,
-  levelNumeral,
-} from '@creativo/application/engagement';
 import { type VisitRowVm } from '@creativo/features/shared/visits';
 import {
   type AchievementsContext,
@@ -35,6 +34,9 @@ import {
   isOneOff,
   medalVm,
   newestFaceLevel,
+  previousVisitOf,
+  progressOf,
+  seriesById,
   soonSeriesIds,
 } from './achievements.presenter';
 import type {
@@ -45,6 +47,7 @@ import {
   cardLocaleOf,
   dayLong,
   dayShort,
+  levelNumeral,
   monthYearLong,
   shopDayOf,
 } from './client-card.format';
@@ -191,7 +194,7 @@ export interface CapsulesInput {
   /** The account and the catalogue when the tier capsule may show (`loyalty.tiers`), else `null`. */
   readonly tier: {
     readonly account: LoyaltyAccount;
-    readonly catalog: LoyaltyCatalog;
+    readonly catalog: ValidLoyaltyCatalog;
   } | null;
   readonly nowMs: number;
   readonly words: ClientCardWords;
@@ -420,9 +423,10 @@ export function photoRailVm(
 // ── Loyalty and achievements on the glance ──────────────────────────────
 
 export interface LoyaltyTilesInput {
+  /** `loyaltyAccounts/{customerId}` as stored. */
   readonly account: LoyaltyAccount;
   /** Needed by the points tile; `null` = not loaded (the tile waits, the store says how). */
-  readonly catalog: LoyaltyCatalog | null;
+  readonly catalog: ValidLoyaltyCatalog | null;
   readonly flags: LoyaltyFlags;
   readonly visitsMs: readonly number[];
   /** `clientStats.lifetime.visitsCompleted`: the rhythm fact says «Винаги» for a run that long. */
@@ -445,8 +449,8 @@ export function cueOrder(data: AchievementsData) {
   const shelf = (series: BadgeSeries) =>
     series.categoryId === null
       ? Number.POSITIVE_INFINITY
-      : (data.catalog.category(series.categoryId.value)?.order ??
-        Number.POSITIVE_INFINITY);
+      : (LoyaltyCatalogSystem.category(data.catalog, series.categoryId)
+          ?.order ?? Number.POSITIVE_INFINITY);
   return (a: BadgeSeries, b: BadgeSeries) =>
     shelf(a) - shelf(b) || a.order - b.order;
 }
@@ -475,10 +479,12 @@ export function medalStripVm(
   // The newest day as «Последни» draws it — the same face, one push away.
   const newest = newestFaceLevel(data, ctx);
   const newestSeries =
-    newest === null ? null : data.catalog.series(newest.seriesId);
+    newest === null
+      ? null
+      : LoyaltyCatalogSystem.series(data.catalog, newest.badgeSeriesId);
   const soon = soonSeriesIds(data, ctx, 3)
-    .filter((id) => id !== newestSeries?.id.value)
-    .map((id) => data.catalog.series(id))
+    .filter((id) => id !== newestSeries?.id)
+    .map((id) => seriesById(data, id))
     .filter((series): series is BadgeSeries => series !== null);
   const completing = data.catalog.families
     .filter((series) => completesWithThisVisit(series, data, ctx))
@@ -490,15 +496,15 @@ export function medalStripVm(
     ...soon,
   ]
     .filter((series) => {
-      if (seen.has(series.id.value)) return false;
-      seen.add(series.id.value);
+      if (seen.has(series.id)) return false;
+      seen.add(series.id);
       return true;
     })
     .slice(0, 3);
 
   let cue: string | null = null;
   if (completing !== undefined) {
-    const title = completing.title.get(locale);
+    const title = completing.title[locale];
     // A single act has no levels (its tile wears no numeral, no «ниво I»
     // is heard, medals.presenter): «Рожден ден в салона с това посещение»,
     // the suffix the pending tile's caption already says (review 3, F9).
@@ -506,8 +512,9 @@ export function medalStripVm(
     if (isOneOff(completing)) {
       cue = `${title} ${words.achievements.withThisVisit}`;
     } else {
-      const standing = completing.standing(
-        data.progress.get(completing.id.value) ?? null,
+      const standing = BadgeSystem.standing(
+        completing,
+        progressOf(data, completing),
       );
       cue = words.achievements.cueWithThisVisit(
         title,
@@ -517,24 +524,25 @@ export function medalStripVm(
   } else if (
     newest !== null &&
     newestSeries !== null &&
-    isNewSince(newest.earnedAt, data.previousVisitAtMs)
+    StandingSystem.isNewSince(newest.earnedAtUtcMs, previousVisitOf(data))
   ) {
     cue = words.achievements.cueNew(
-      newestSeries.title.get(locale),
+      newestSeries.title[locale],
       levelNumeral(newest.level),
     );
   } else {
     const closest = soon[0];
-    const standing = closest?.standing(
-      data.progress.get(closest.id.value) ?? null,
-    );
+    const standing =
+      closest === undefined
+        ? undefined
+        : BadgeSystem.standing(closest, progressOf(data, closest));
     if (
       closest !== undefined &&
       standing?.next != null &&
       standing.target !== null
     ) {
       cue = words.achievements.cueClose(
-        closest.title.get(locale),
+        closest.title[locale],
         standing.value,
         standing.target,
         levelNumeral(standing.next.level),

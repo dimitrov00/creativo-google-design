@@ -1,49 +1,59 @@
 import { describe, expect, it } from 'vitest';
-import { JournalEffect, RedemptionOp } from '@core/components';
-import { BadgeSeriesId, CorrelationId, JournalEntryId } from '@core/primitives';
-import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '@core/testing';
 import {
-  LedgerSystem,
-  type LedgerEffectKind,
-  type LedgerEntryRef,
-} from './ledger.system';
+  AchievementOp,
+  Actor,
+  GrantRefFields,
+  JournalEffect,
+  JournalEffectRecord,
+  JournalSourceRecord,
+  JournalSystemJob,
+  JournalVisibility,
+  LabelCode,
+  type LabelParam,
+  RedemptionOp,
+  RewardOp,
+  RewardRefFields,
+  SystemSource,
+  TierOp,
+} from '@core/components';
+import type { JournalEntry } from '@core/entities';
+import {
+  AchievementRuleId,
+  AppointmentId,
+  CorrelationId,
+  CouponGrantId,
+  CustomerId,
+  JournalEntryId,
+  RedemptionId,
+  RewardId,
+  TierId,
+} from '@core/primitives';
+import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '@core/testing';
+import { LedgerSystem } from './ledger.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
  * The `foldByEvent`, `wholeMonthsOf` and «the months» cases of
  * libs/features/staff/client-card/src/lib/ledger.presenter.spec.ts, COPIED
- * (the presenter's spec keeps running against its shim) and re-targeted to
- * the numbers they assert: the events, what each moved and the balance it
- * left, the months held whole, each month's events and net. The rows'
- * words stay with the presenter's spec. An entry is the flat
- * `LedgerEntryRef` the feed folds (a label's `seriesId`/`level` and an
- * effect's figures lifted onto it); each entry carries its instant AND its
- * shop day (T5), so the month is read off the day and no zone reaches the
- * system.
+ * and re-targeted to the numbers they assert: the events, what each moved
+ * and the balance it left, the months held whole, each month's events and
+ * net. The rows' words stay with the presenter's spec. An entry is a
+ * `clientJournal` row as the journal port answers it (zero inbound mapping,
+ * Law 3): its effect's own fields, its label's `seriesId` / `level`, its
+ * root `appointmentId`, its instant AND its shop day (T5) — so the month is
+ * read off the day and no zone reaches the system.
  */
 
-type Effect =
-  | {
-      readonly effect: typeof JournalEffect.Points;
-      readonly delta: number;
-      readonly balanceAfter: number;
-    }
-  | {
-      readonly effect: Exclude<
-        LedgerEffectKind,
-        typeof JournalEffect.Points | typeof JournalEffect.Redemption
-      >;
-    }
-  | {
-      readonly effect: typeof JournalEffect.Redemption;
-      readonly op: RedemptionOp;
-      readonly cost: number;
-    };
+const CUSTOMER = CustomerId.of('cus_0123456789abcdef0123');
+
+/** What an entry changed, and the balance once it was folded in (every row carries one). */
+type Effect = {
+  readonly record: JournalEffectRecord;
+  readonly balanceAfter: number;
+};
 
 /** An entry's stamp: its instant and the shop day the boundary filed it under (Sofia). */
-function stamped(
-  iso: string,
-): Pick<LedgerEntryRef, 'utcEpochMs' | 'localDate'> {
+function stamped(iso: string): Pick<JournalEntry, 'utcEpochMs' | 'localDate'> {
   const utcEpochMs = utcMs(iso);
   return {
     utcEpochMs,
@@ -51,7 +61,24 @@ function stamped(
   };
 }
 
-/** A journal entry as the feed folds one. */
+/** The visit a correlation id names (`appt:{id}…`), as the fixtures stamp `appointmentId`. */
+function visitOf(correlationId: string): AppointmentId | null {
+  const [root, id] = correlationId.split(':');
+  return root === 'appt' && id !== undefined && id !== ''
+    ? AppointmentId.of(id)
+    : null;
+}
+
+/** The copy key each effect's rows carry — the fold never reads it. */
+const LABEL = {
+  [JournalEffect.Points]: LabelCode.PointsRule,
+  [JournalEffect.Achievement]: LabelCode.AchievementEarned,
+  [JournalEffect.Tier]: LabelCode.TierChanged,
+  [JournalEffect.Reward]: LabelCode.RewardGranted,
+  [JournalEffect.Redemption]: LabelCode.RedemptionChanged,
+} as const;
+
+/** A `clientJournal` row as the feed reads one. */
 function entry(
   seq: number,
   day: string,
@@ -59,48 +86,112 @@ function entry(
   effect: Effect,
   family: { readonly seriesId: string; readonly level: number } | null = null,
   reverses: string | null = null,
-): LedgerEntryRef {
+  appointmentId: AppointmentId | null = visitOf(correlationId),
+): JournalEntry {
+  const labelParams: LabelParam[] =
+    family === null
+      ? []
+      : [
+          { name: 'seriesId', value: family.seriesId },
+          { name: 'level', value: family.level },
+        ];
+  const effectKind = effect.record.journalEffect;
   return {
     id: JournalEntryId.of(`e-${seq}`),
+    customerId: CUSTOMER,
     seq,
     // 10:45 in Sofia: the day is the same on the shop's calendar.
     ...stamped(`${day}T07:45:00.000Z`),
-    correlationId: CorrelationId.of(correlationId),
     reverses: reverses === null ? null : JournalEntryId.of(reverses),
-    badgeSeriesId: family === null ? null : BadgeSeriesId.of(family.seriesId),
-    level: family?.level ?? null,
-    journalEffect: effect.effect,
-    pointsDelta: effect.effect === JournalEffect.Points ? effect.delta : null,
-    balanceAfter:
-      effect.effect === JournalEffect.Points ? effect.balanceAfter : null,
-    redemptionOp: effect.effect === JournalEffect.Redemption ? effect.op : null,
-    cost: effect.effect === JournalEffect.Redemption ? effect.cost : null,
+    correlationId: CorrelationId.of(correlationId),
+    idempotencyKey: `key-${seq}`,
+    journalVisibility: JournalVisibility.Client,
+    labelCode:
+      effectKind in LABEL
+        ? LABEL[effectKind as keyof typeof LABEL]
+        : LabelCode.PointsCorrection,
+    labelParams,
+    balanceAfter: effect.balanceAfter,
+    appointmentId,
+    ...Actor.system(SystemSource.Fixture),
+    ...JournalSourceRecord.system(JournalSystemJob.Tier),
+    ...effect.record,
   };
 }
 
 const points = (delta: number, balanceAfter: number): Effect => ({
-  effect: JournalEffect.Points,
-  delta,
+  record: JournalEffectRecord.points(delta),
+  balanceAfter,
+});
+
+const tier = (balanceAfter: number): Effect => ({
+  record: {
+    journalEffect: JournalEffect.Tier,
+    tierOp: TierOp.Changed,
+    tierFrom: TierId.of('silver'),
+    tierTo: TierId.of('gold'),
+    tierUntil: null,
+  },
+  balanceAfter,
+});
+
+const achievement = (balanceAfter: number): Effect => ({
+  record: {
+    journalEffect: JournalEffect.Achievement,
+    achievementRuleId: AchievementRuleId.of('rule-tenure-1'),
+    achievementRuleVersion: 1,
+    achievementAwardKey: 'award',
+    achievementOp: AchievementOp.Granted,
+  },
+  balanceAfter,
+});
+
+const reward = (balanceAfter: number): Effect => ({
+  record: {
+    journalEffect: JournalEffect.Reward,
+    rewardOp: RewardOp.Granted,
+    ...RewardRefFields.couponGrant(CouponGrantId.of('grant-1')),
+  },
+  balanceAfter,
+});
+
+const redemption = (
+  redemptionOp: RedemptionOp,
+  redemptionCost: number,
+  balanceAfter: number,
+): Effect => ({
+  record: {
+    journalEffect: JournalEffect.Redemption,
+    redemptionOp,
+    redemptionId: RedemptionId.of('rdm-1'),
+    redeemedRewardId: RewardId.of('reward-beard'),
+    redemptionCost,
+    ...GrantRefFields.none(),
+  },
   balanceAfter,
 });
 
 /** One journal that holds every kind of §2.2.5, a reversal and the row it struck among them. */
 const VISIT_FADE = entry(50, '2026-09-05', 'appt:appt-a', points(17, 361));
 const VISIT_BEARD = entry(51, '2026-09-05', 'appt:appt-a', points(10, 371));
-const TIER = entry(49, '2026-09-02', 'tier:dev-client-1:gold:2026-09-02', {
-  effect: JournalEffect.Tier,
-});
+const TIER = entry(
+  49,
+  '2026-09-02',
+  'tier:dev-client-1:gold:2026-09-02',
+  tier(344),
+);
 const REDEEMED_POINTS = entry(45, '2026-06-20', 'rdm-1', points(-250, 94));
-const REDEEMED = entry(46, '2026-06-20', 'rdm-1', {
-  effect: JournalEffect.Redemption,
-  op: RedemptionOp.Redeemed,
-  cost: 250,
-});
+const REDEEMED = entry(
+  46,
+  '2026-06-20',
+  'rdm-1',
+  redemption(RedemptionOp.Redeemed, 250, 94),
+);
 const GRANTED = entry(
   44,
   '2026-05-16',
   'award:rule-every-10th-visit:dev-client-1:10',
-  { effect: JournalEffect.Reward },
+  reward(344),
 );
 const GOODWILL = entry(43, '2026-04-18', 'adj-1', points(30, 344));
 const REVERSAL = entry(
@@ -112,13 +203,10 @@ const REVERSAL = entry(
   'e-41',
 );
 const REVERSED = entry(41, '2026-04-04', 'appt:appt-b', points(17, 331));
-const LEVEL = entry(
-  39,
-  '2026-03-06',
-  'award:rule-tenure-1',
-  { effect: JournalEffect.Achievement },
-  { seriesId: 'series-tenure', level: 1 },
-);
+const LEVEL = entry(39, '2026-03-06', 'award:rule-tenure-1', achievement(314), {
+  seriesId: 'series-tenure',
+  level: 1,
+});
 const LEVEL_POINTS = entry(
   40,
   '2026-03-06',
@@ -131,11 +219,11 @@ const LEVEL_BARE = entry(
   30,
   '2025-09-24',
   'award:rule-fade-2',
-  { effect: JournalEffect.Achievement },
+  achievement(304),
   { seriesId: 'series-svc-fade', level: 2 },
 );
 
-const JOURNAL: readonly LedgerEntryRef[] = [
+const JOURNAL: readonly JournalEntry[] = [
   VISIT_BEARD,
   VISIT_FADE,
   TIER,
@@ -152,7 +240,7 @@ const JOURNAL: readonly LedgerEntryRef[] = [
 ];
 
 const foldByEvent = LedgerSystem.fold;
-const wholeMonthsOf = (entries: readonly LedgerEntryRef[], whole: boolean) =>
+const wholeMonthsOf = (entries: readonly JournalEntry[], whole: boolean) =>
   LedgerSystem.wholeMonths(entries, whole);
 
 describe('LedgerSystem.fold (`foldByEvent`)', () => {
@@ -176,11 +264,11 @@ describe('LedgerSystem.fold (`foldByEvent`)', () => {
   });
 
   it('sums what an event moved and keeps the balance its newest point row left', () => {
-    const [visit, tier, redemption] = foldByEvent(JOURNAL, true);
+    const [visit, tierEvent, redeemed] = foldByEvent(JOURNAL, true);
     expect(visit).toMatchObject({ delta: 27, balanceAfter: 371 });
-    // No points moved: no amount, no balance.
-    expect(tier).toMatchObject({ delta: null, balanceAfter: null });
-    expect(redemption).toMatchObject({ delta: -250, balanceAfter: 94 });
+    // No points moved: no amount, no balance — whatever balance the row carries.
+    expect(tierEvent).toMatchObject({ delta: null, balanceAfter: null });
+    expect(redeemed).toMatchObject({ delta: -250, balanceAfter: 94 });
   });
 
   it('folds a visit’s seats under either spelling of its id', () => {
@@ -198,6 +286,39 @@ describe('LedgerSystem.fold (`foldByEvent`)', () => {
         balanceAfter: 307,
       },
     ]);
+  });
+
+  it('folds a visit by the entry’s own appointment, never by parsing its correlation id', () => {
+    const visit = AppointmentId.of('appt-e');
+    const seats = [
+      entry(4, '2026-07-14', 'seat-2-of-e', points(10, 50), null, null, visit),
+      entry(3, '2026-07-14', 'seat-1-of-e', points(17, 40), null, null, visit),
+    ];
+    expect(
+      foldByEvent(seats, true).map((event) => [event.id, event.delta]),
+    ).toEqual([['e-4', 27]]);
+    // A correlation id that spells a visit names none the entry does not.
+    const unlinked = [
+      entry(
+        6,
+        '2026-07-15',
+        'appt:appt-g:seat:s2',
+        points(10, 70),
+        null,
+        null,
+        null,
+      ),
+      entry(
+        5,
+        '2026-07-15',
+        'appt:appt-g:seat:s1',
+        points(10, 60),
+        null,
+        null,
+        null,
+      ),
+    ];
+    expect(foldByEvent(unlinked, true)).toHaveLength(2);
   });
 
   it('keeps a level an event of its own where its bonus rode the visit’s id', () => {
@@ -229,17 +350,19 @@ describe('LedgerSystem.fold (`foldByEvent`)', () => {
         balanceAfter: null,
       },
     ]);
-    const back = entry(47, '2026-06-21', 'rdm-1-back', {
-      effect: JournalEffect.Redemption,
-      op: RedemptionOp.Reversed,
-      cost: 250,
-    });
+    const back = entry(
+      47,
+      '2026-06-21',
+      'rdm-1-back',
+      redemption(RedemptionOp.Reversed, 250, 344),
+    );
     expect(foldByEvent([back], true)[0]?.delta).toBe(250);
-    const lapsed = entry(48, '2026-09-20', 'rdm-1-lapsed', {
-      effect: JournalEffect.Redemption,
-      op: RedemptionOp.Expired,
-      cost: 250,
-    });
+    const lapsed = entry(
+      48,
+      '2026-09-20',
+      'rdm-1-lapsed',
+      redemption(RedemptionOp.Expired, 250, 344),
+    );
     // The points were spent when it was taken: nothing moves a second time.
     expect(foldByEvent([lapsed], true)[0]?.delta).toBeNull();
   });
@@ -268,6 +391,39 @@ describe('LedgerSystem.fold (`foldByEvent`)', () => {
   });
 });
 
+describe('LedgerSystem.levelOf', () => {
+  it('reads a level’s family and number off the label, as stored', () => {
+    expect(LedgerSystem.levelOf(LEVEL)).toEqual({
+      badgeSeriesId: 'series-tenure',
+      level: 1,
+    });
+    expect(LedgerSystem.levelOf(VISIT_FADE)).toEqual({
+      badgeSeriesId: null,
+      level: null,
+    });
+  });
+
+  it('names no family for blank or numeric text, and no level for a fraction or text', () => {
+    const label = (params: readonly LabelParam[]) => ({ labelParams: params });
+    expect(
+      LedgerSystem.levelOf(
+        label([
+          { name: 'seriesId', value: '  ' },
+          { name: 'level', value: 1.5 },
+        ]),
+      ),
+    ).toEqual({ badgeSeriesId: null, level: null });
+    expect(
+      LedgerSystem.levelOf(
+        label([
+          { name: 'seriesId', value: 7 },
+          { name: 'level', value: '2' },
+        ]),
+      ),
+    ).toEqual({ badgeSeriesId: null, level: null });
+  });
+});
+
 describe('LedgerSystem.wholeMonths (`wholeMonthsOf`)', () => {
   it('holds every month whole once nothing older is left', () => {
     expect(
@@ -286,7 +442,7 @@ describe('LedgerSystem.wholeMonths (`wholeMonthsOf`)', () => {
 
 describe('LedgerSystem.months (`activityGroups`: the months)', () => {
   const months = (
-    entries: readonly LedgerEntryRef[],
+    entries: readonly JournalEntry[],
     whole: boolean,
     limit: number | null = null,
   ) =>
@@ -323,7 +479,10 @@ describe('LedgerSystem.months (`activityGroups`: the months)', () => {
   it('files an instant under the month it falls in on the shop’s calendar', () => {
     // 22:30 UTC on 31 August is 1:30 on 1 September in Sofia: the boundary
     // files the entry under that day, and the month is read off the day.
-    const late = { ...VISIT_FADE, ...stamped('2026-08-31T22:30:00.000Z') };
+    const late: JournalEntry = {
+      ...VISIT_FADE,
+      ...stamped('2026-08-31T22:30:00.000Z'),
+    };
     expect(late.localDate).toBe('2026-09-01');
     expect(months([late], true)[0]?.key).toBe('2026-09');
     expect(LedgerSystem.monthOf(localDate('2026-09-01'))).toBe('2026-09');
@@ -358,8 +517,8 @@ describe('LedgerSystem.months (`activityGroups`: the months)', () => {
 
 describe('LedgerSystem.leading', () => {
   it('words an event by its highest-ranked effect, the redemption over its points', () => {
-    const [, , redemption, , , , , level] = foldByEvent(JOURNAL, true);
-    expect(redemption && LedgerSystem.leading(redemption)?.id).toBe('e-46');
+    const [, , redeemed, , , , , level] = foldByEvent(JOURNAL, true);
+    expect(redeemed && LedgerSystem.leading(redeemed)?.id).toBe('e-46');
     expect(level && LedgerSystem.leading(level)?.id).toBe('e-39');
     expect(
       LedgerSystem.leading({
@@ -382,6 +541,7 @@ describe('LedgerSystem purity', () => {
         events,
         LedgerSystem.wholeMonths(journal, true),
         LedgerSystem.months(events, 5, ['2026-09']),
+        journal.map((row) => LedgerSystem.levelOf(row)),
       ];
     };
     expect(run()).toEqual(run());

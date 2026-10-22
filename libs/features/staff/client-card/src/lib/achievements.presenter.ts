@@ -1,22 +1,35 @@
 import {
-  type BadgeCategoryKind,
-  type BadgeEmblem,
-  type BadgeProgress,
-  type BadgeSeries,
+  BadgeCategoryKind,
+  BadgeEmblem,
+  BadgeSubject,
   type EarnedDay,
   type EarnedLevel,
-  type Season,
+  FamilyScopeFilter,
+  MedalState,
+  Metric,
+  PersonalRecord,
+  PersonalRecordKind,
+  SeasonKind,
+  SeasonPhase,
   type SeriesStanding,
-  closestLevels,
-  familiesIn,
-  familyCounts,
-  isNewSince,
-  levelNumeral,
-  recentLevelsByDay,
-  sofiaDayOf,
-} from '@creativo/application/engagement';
+} from '@core/components';
+import type { BadgeProgress, BadgeSeries, Season } from '@core/entities';
+import {
+  BadgeCategoryId,
+  BadgeSeriesId,
+  LocalDate,
+  SeasonId,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  BadgeSystem,
+  LoyaltyCatalogSystem,
+  SeasonSystem,
+  StandingSystem,
+} from '@core/systems';
 import { ZonedDateTime } from '@creativo/application/booking';
-import type { UiIconName, UiMark } from '@creativo/ui/controls';
+import type { UiIconName, UiMark, UiMedalState } from '@creativo/ui/controls';
 import type {
   AchievementScope,
   ClientCardCatalog,
@@ -29,6 +42,7 @@ import {
   dayRange,
   dayShort,
   figure,
+  levelNumeral,
   monogramOf,
 } from './client-card.format';
 import type {
@@ -49,9 +63,10 @@ import type { ClientCardWords } from './client-card.words';
 /*
  * «ПОСТИЖЕНИЯ» — the collection, a scope, a medal (client-card-redesign
  * §3.3–§3.5), as pure functions of the store's `AchievementsData` and the
- * page's own input. The domain decides standing (`series.standing`,
- * `closestLevels`, `recentLevelsByDay`, `familiesIn`, `familyCounts`); this
- * file only words and draws it, so the glance strip, the collection and a
+ * page's own input. The systems decide standing (`BadgeSystem.standing`,
+ * `StandingSystem.closestLevels`, `.recentLevelsByDay`, `.familiesIn`,
+ * `.familyCounts`) over the catalogue and the progress AS READ; this file
+ * only words and draws it, so the glance strip, the collection and a
  * detail page can never tell one family two ways.
  *
  * The numeral rule holds everywhere: a medal's rim is its highest EARNED
@@ -65,50 +80,57 @@ import type { ClientCardWords } from './client-card.words';
  * the compiler holds this map to it — there is no fallback glyph.
  */
 export const BADGE_EMBLEM_ICONS: Readonly<Record<BadgeEmblem, UiIconName>> = {
-  visits: 'loyalty.badge.visits',
-  streak: 'loyalty.badge.streak',
-  referral: 'loyalty.badge.referral',
-  selfService: 'loyalty.badge.selfService',
-  birthday: 'loyalty.badge.birthday',
-  welcome: 'loyalty.badge.welcome',
-  service: 'loyalty.badge.service',
-  barber: 'loyalty.badge.barber',
-  shop: 'loyalty.badge.shop',
-  anniversary: 'loyalty.badge.anniversary',
-  earlyBird: 'loyalty.badge.earlyBird',
-  weekend: 'loyalty.badge.weekend',
-  onTime: 'loyalty.badge.onTime',
-  waitlist: 'loyalty.badge.waitlist',
-  profile: 'loyalty.badge.profile',
-  party: 'loyalty.badge.party',
-  explorer: 'loyalty.badge.explorer',
-  yearRound: 'loyalty.badge.yearRound',
-  comeback: 'loyalty.badge.comeback',
-  event: 'loyalty.badge.event',
-  summer: 'loyalty.badge.summer',
-  autumn: 'loyalty.badge.autumn',
-  vacation: 'loyalty.badge.vacation',
-  sailing: 'loyalty.badge.sailing',
-  icecream: 'loyalty.badge.icecream',
-  umbrella: 'loyalty.badge.umbrella',
-  fog: 'loyalty.badge.fog',
-  handshake: 'loyalty.badge.handshake',
-  grooming: 'loyalty.badge.grooming',
-  beardOil: 'loyalty.badge.beardOil',
-  spa: 'loyalty.badge.spa',
+  [BadgeEmblem.Visits]: 'loyalty.badge.visits',
+  [BadgeEmblem.Streak]: 'loyalty.badge.streak',
+  [BadgeEmblem.Referral]: 'loyalty.badge.referral',
+  [BadgeEmblem.SelfService]: 'loyalty.badge.selfService',
+  [BadgeEmblem.Birthday]: 'loyalty.badge.birthday',
+  [BadgeEmblem.Welcome]: 'loyalty.badge.welcome',
+  [BadgeEmblem.Service]: 'loyalty.badge.service',
+  [BadgeEmblem.Barber]: 'loyalty.badge.barber',
+  [BadgeEmblem.Shop]: 'loyalty.badge.shop',
+  [BadgeEmblem.Anniversary]: 'loyalty.badge.anniversary',
+  [BadgeEmblem.EarlyBird]: 'loyalty.badge.earlyBird',
+  [BadgeEmblem.Weekend]: 'loyalty.badge.weekend',
+  [BadgeEmblem.OnTime]: 'loyalty.badge.onTime',
+  [BadgeEmblem.Waitlist]: 'loyalty.badge.waitlist',
+  [BadgeEmblem.Profile]: 'loyalty.badge.profile',
+  [BadgeEmblem.Party]: 'loyalty.badge.party',
+  [BadgeEmblem.Explorer]: 'loyalty.badge.explorer',
+  [BadgeEmblem.YearRound]: 'loyalty.badge.yearRound',
+  [BadgeEmblem.Comeback]: 'loyalty.badge.comeback',
+  [BadgeEmblem.Event]: 'loyalty.badge.event',
+  [BadgeEmblem.Summer]: 'loyalty.badge.summer',
+  [BadgeEmblem.Autumn]: 'loyalty.badge.autumn',
+  [BadgeEmblem.Vacation]: 'loyalty.badge.vacation',
+  [BadgeEmblem.Sailing]: 'loyalty.badge.sailing',
+  [BadgeEmblem.Icecream]: 'loyalty.badge.icecream',
+  [BadgeEmblem.Umbrella]: 'loyalty.badge.umbrella',
+  [BadgeEmblem.Fog]: 'loyalty.badge.fog',
+  [BadgeEmblem.Handshake]: 'loyalty.badge.handshake',
+  [BadgeEmblem.Grooming]: 'loyalty.badge.grooming',
+  [BadgeEmblem.BeardOil]: 'loyalty.badge.beardOil',
+  [BadgeEmblem.Spa]: 'loyalty.badge.spa',
 };
 
 /** A shelf's heading glyph (§4.6's table). */
 export const BADGE_CATEGORY_ICONS: Readonly<
   Record<BadgeCategoryKind, UiIconName>
 > = {
-  milestones: 'loyalty.category.milestones',
-  mastery: 'loyalty.category.mastery',
-  barbers: 'loyalty.category.barbers',
-  rhythm: 'loyalty.category.rhythm',
-  special: 'loyalty.category.special',
-  records: 'loyalty.category.records',
+  [BadgeCategoryKind.Milestones]: 'loyalty.category.milestones',
+  [BadgeCategoryKind.Mastery]: 'loyalty.category.mastery',
+  [BadgeCategoryKind.Barbers]: 'loyalty.category.barbers',
+  [BadgeCategoryKind.Rhythm]: 'loyalty.category.rhythm',
+  [BadgeCategoryKind.Special]: 'loyalty.category.special',
+  [BadgeCategoryKind.Records]: 'loyalty.category.records',
 };
+
+/** A family's standing as `ui-medal` draws its state; the fourth state, `complete`, is the ring's (`medals.presenter`). */
+export const MEDAL_STATES = {
+  [MedalState.NotStarted]: 'notStarted',
+  [MedalState.InProgress]: 'inProgress',
+  [MedalState.Earned]: 'earned',
+} as const satisfies Record<MedalState, UiMedalState>;
 
 /** How many tiles a rail or a shelf shows; past that, the shelf's action is the way on. */
 const RAIL_LIMIT = 8;
@@ -209,17 +231,38 @@ export function localeOf(ctx: AchievementsContext) {
 
 export function progressOf(
   data: AchievementsData,
-  series: BadgeSeries,
+  series: Pick<BadgeSeries, 'id'>,
 ): BadgeProgress | null {
-  return data.progress.get(series.id.value) ?? null;
+  return data.progress.get(series.id) ?? null;
 }
 
-/** The latest time a level was earned (a yearly one keeps its latest). */
-export function earnedAtOf(
+/** Every started family's progress, as the standing systems read it. */
+export function progressList(data: AchievementsData): readonly BadgeProgress[] {
+  return [...data.progress.values()];
+}
+
+/** A shop day the card holds — the clock's «today», a scope's day: always a day. */
+export function cardDayOf(raw: string): LocalDate {
+  const day = LocalDate.parse(raw);
+  return day.ok ? day.value : defect(`${raw} is no calendar day`);
+}
+
+/** The card's «Ново» mark: the start of the previous visit, as the stamp it is; `null` before a first one. */
+export function previousVisitOf(data: AchievementsData): UtcEpochMs | null {
+  const at = data.previousVisitAtMs;
+  if (at === null) return null;
+  const utc = UtcEpochMs.of(at);
+  return utc.ok ? utc.value : defect(`${at} is not an instant`);
+}
+
+/** The shop day a level was earned on (a yearly one keeps its latest) — the stored day (T5), never re-bucketed. */
+export function earnedOnOf(
   progress: BadgeProgress | null,
   level: number,
-): Date | null {
-  return progress?.earned.find((e) => e.level === level)?.earnedAt ?? null;
+): LocalDate | null {
+  return (
+    progress?.earned.find((e) => e.level === level)?.earnedLocalDate ?? null
+  );
 }
 
 export function latestEarned(
@@ -227,9 +270,92 @@ export function latestEarned(
 ): EarnedLevel | null {
   let latest: EarnedLevel | null = null;
   for (const earned of progress?.earned ?? []) {
-    if (latest === null || earned.earnedAt > latest.earnedAt) latest = earned;
+    if (
+      latest === null ||
+      UtcEpochMs.compare(earned.earnedAtUtcMs, latest.earnedAtUtcMs) > 0
+    ) {
+      latest = earned;
+    }
   }
   return latest;
+}
+
+/** The season or event a family belongs to, or `null`. */
+export function seasonOfSeries(
+  series: Pick<BadgeSeries, 'seasonId'>,
+  data: AchievementsData,
+): Season | null {
+  return series.seasonId === null
+    ? null
+    : LoyaltyCatalogSystem.season(data.catalog, series.seasonId);
+}
+
+/** Where a season's window stands on the card's today. */
+export function seasonPhaseOf(
+  season: Season,
+  data: AchievementsData,
+): SeasonPhase {
+  return SeasonSystem.phaseOn(season, cardDayOf(data.today));
+}
+
+/** A family by its id (a VM's `seriesId`, a route's), or `null`. */
+export function seriesById(
+  data: AchievementsData,
+  seriesId: string,
+): BadgeSeries | null {
+  return LoyaltyCatalogSystem.series(data.catalog, BadgeSeriesId.of(seriesId));
+}
+
+/** Where a family stands for this client. */
+export function standingOf(
+  series: BadgeSeries,
+  data: AchievementsData,
+): SeriesStanding {
+  return BadgeSystem.standing(series, progressOf(data, series));
+}
+
+/** The families a scope page draws, by the systems' scope filter. */
+export function familyScopeOf(scope: AchievementScope): FamilyScopeFilter {
+  switch (scope.kind) {
+    case 'category':
+      return FamilyScopeFilter.category(BadgeCategoryId.of(scope.categoryId));
+    case 'season':
+      return FamilyScopeFilter.season(SeasonId.of(scope.seasonId));
+    case 'archive':
+      return FamilyScopeFilter.archive();
+    case 'day':
+      return FamilyScopeFilter.day(cardDayOf(scope.day));
+  }
+}
+
+/** The families a scope draws, in catalogue order (`StandingSystem.familiesIn`). */
+export function familiesOf(
+  data: AchievementsData,
+  scope: FamilyScopeFilter,
+): readonly BadgeSeries[] {
+  return StandingSystem.familiesIn(
+    data.catalog,
+    progressList(data),
+    scope,
+    cardDayOf(data.today),
+  );
+}
+
+/** A scope's families counted: earned, started, drawn (`StandingSystem.familyCounts`). */
+export function familyCountsOf(
+  data: AchievementsData,
+  scope: FamilyScopeFilter,
+): {
+  readonly started: number;
+  readonly earned: number;
+  readonly total: number;
+} {
+  return StandingSystem.familyCounts(
+    data.catalog,
+    progressList(data),
+    scope,
+    cardDayOf(data.today),
+  );
 }
 
 /**
@@ -265,10 +391,8 @@ export function inEndedSeason(
   series: BadgeSeries,
   data: AchievementsData,
 ): boolean {
-  if (series.seasonId === null) return false;
-  return (
-    data.catalog.season(series.seasonId.value)?.phaseOn(data.today) === 'ended'
-  );
+  const season = seasonOfSeries(series, data);
+  return season !== null && seasonPhaseOf(season, data) === SeasonPhase.Ended;
 }
 
 /**
@@ -285,10 +409,12 @@ export function landsOn(
   standing: SeriesStanding,
   data: AchievementsData,
 ): string | null {
-  if (!series.isCalendarDriven() || standing.target === null) return null;
+  if (!BadgeSystem.isCalendarDriven(series) || standing.target === null) {
+    return null;
+  }
   const first =
-    data.account.records.find((record) => record.kind === 'firstVisit')?.on ??
-    null;
+    PersonalRecord.find(data.account.records, PersonalRecordKind.FirstVisit)
+      ?.on ?? null;
   const day =
     first === null
       ? dayPlus(data.today, Math.max(0, standing.target - standing.value))
@@ -322,44 +448,48 @@ export function completesWithThisVisit(
   ctx: AchievementsContext,
 ): boolean {
   const visit = ctx.visit;
-  if (visit === null || series.isRetired() || series.isCalendarDriven()) {
+  if (
+    visit === null ||
+    BadgeSystem.isRetired(series) ||
+    BadgeSystem.isCalendarDriven(series)
+  ) {
     return false;
   }
   if (series.seasonId !== null) {
-    const season = data.catalog.season(series.seasonId.value);
-    if (season === null || season.phaseOn(data.today) !== 'open') return false;
+    const season = seasonOfSeries(series, data);
+    if (season === null || seasonPhaseOf(season, data) !== SeasonPhase.Open) {
+      return false;
+    }
   }
   const progress = progressOf(data, series);
-  if (series.repeatable && series.emblem === 'birthday') {
+  if (series.repeatable && series.emblem === BadgeEmblem.Birthday) {
     const last = latestEarned(progress);
+    // The year it was last earned is its stored shop day's (T5).
     return (
       visit.birthdayToday &&
       (last === null ||
-        sofiaDayOf(last.earnedAt).slice(0, 4) < data.today.slice(0, 4))
+        last.earnedLocalDate.slice(0, 4) < data.today.slice(0, 4))
     );
   }
-  const standing = series.standing(progress);
+  const standing = BadgeSystem.standing(series, progress);
   if (standing.next === null || standing.target === null) return false;
   if (standing.target - standing.value > 1) return false;
-  const metric = series.metric;
-  if (metric === null) return false;
-  switch (metric.metric) {
-    case 'client.visits.completed': {
-      const where = metric.where;
-      if (where?.serviceId !== undefined) {
-        const id = where.serviceId.value;
-        return visit.legs.some((leg) => leg.serviceId === id);
+  switch (series.metric) {
+    case Metric.VisitsCompleted: {
+      const serviceId = series.metricScopeServiceId;
+      if (serviceId !== null) {
+        return visit.legs.some((leg) => leg.serviceId === serviceId);
       }
-      if (where?.barberId !== undefined) {
-        const id = where.barberId.value;
-        return visit.legs.some((leg) => leg.barberId === id);
+      const barberId = series.metricScopeBarberId;
+      if (barberId !== null) {
+        return visit.legs.some((leg) => leg.barberId === barberId);
       }
-      if (where?.locationId !== undefined) {
-        return visit.locationId === where.locationId.value;
+      if (series.metricScopeLocationId !== null) {
+        return visit.locationId === series.metricScopeLocationId;
       }
       return true;
     }
-    case 'client.visits.earlyBird': {
+    case Metric.VisitsEarlyBird: {
       const minute = earliestStartMinute(visit.legs);
       return minute !== null && minute <= EARLY_BIRD_LAST_MINUTE;
     }
@@ -389,13 +519,13 @@ function artOf(
   data: AchievementsData,
   ctx: AchievementsContext,
 ): string | null {
-  if (series.art !== null) {
-    const owner = ctx.catalog.badgeArtSrc?.(series.art.path) ?? null;
+  if (series.artPath !== null) {
+    const owner = ctx.catalog.badgeArtSrc?.(series.artPath) ?? null;
     if (owner !== null) return owner;
   }
   if (series.seasonId !== null) return null;
   const src = subjectArtOf(series, ctx);
-  return src !== null && artOwnersOf(data, ctx).get(src) === series.id.value
+  return src !== null && artOwnersOf(data, ctx).get(src) === series.id
     ? src
     : null;
 }
@@ -424,16 +554,16 @@ function artOwnersOf(
   const known = byShop.get(ctx.catalog);
   if (known !== undefined) return known;
   const shelved = data.catalog.categories.flatMap((category) =>
-    data.catalog.seriesIn(category.id.value),
+    LoyaltyCatalogSystem.seriesIn(data.catalog, category.id),
   );
   const owners = new Map<string, string>();
   for (const series of [
-    ...shelved.filter((s) => !s.isRetired()),
-    ...shelved.filter((s) => s.isRetired()),
+    ...shelved.filter((s) => !BadgeSystem.isRetired(s)),
+    ...shelved.filter((s) => BadgeSystem.isRetired(s)),
   ]) {
     if (series.seasonId !== null) continue;
     const src = subjectArtOf(series, ctx);
-    if (src !== null && !owners.has(src)) owners.set(src, series.id.value);
+    if (src !== null && !owners.has(src)) owners.set(src, series.id);
   }
   byShop.set(ctx.catalog, owners);
   return owners;
@@ -444,15 +574,15 @@ function subjectArtOf(
   series: BadgeSeries,
   ctx: AchievementsContext,
 ): string | null {
-  const subject = series.subject;
-  if (subject === null) return null;
-  switch (subject.kind) {
-    case 'barber':
-      return ctx.catalog.barberAvatarSrc(subject.barberId.value);
-    case 'service':
-      return ctx.catalog.serviceCoverSrc(subject.serviceId.value);
-    case 'location':
-      return ctx.catalog.locationCoverSrc(subject.locationId.value);
+  switch (series.badgeSubject) {
+    case null:
+      return null;
+    case BadgeSubject.Barber:
+      return ctx.catalog.barberAvatarSrc(series.subjectBarberId);
+    case BadgeSubject.Service:
+      return ctx.catalog.serviceCoverSrc(series.subjectServiceId);
+    case BadgeSubject.Location:
+      return ctx.catalog.locationCoverSrc(series.subjectLocationId);
   }
 }
 
@@ -474,18 +604,19 @@ function monogramFor(
   series: BadgeSeries,
   ctx: AchievementsContext,
 ): string | null {
-  const subject = series.subject;
-  if (subject === null || series.seasonId !== null) return null;
+  if (series.seasonId !== null) return null;
   let name: string | null;
-  switch (subject.kind) {
-    case 'service':
-      name = series.title.get(localeOf(ctx));
+  switch (series.badgeSubject) {
+    case null:
+      return null;
+    case BadgeSubject.Service:
+      name = series.title[localeOf(ctx)];
       break;
-    case 'barber':
-      name = ctx.catalog.barberName(subject.barberId.value);
+    case BadgeSubject.Barber:
+      name = ctx.catalog.barberName(series.subjectBarberId);
       break;
-    case 'location':
-      name = ctx.catalog.locationName(subject.locationId.value);
+    case BadgeSubject.Location:
+      name = ctx.catalog.locationName(series.subjectLocationId);
       break;
   }
   return name === null ? null : monogramOf(name, ctx.words.lang);
@@ -529,7 +660,7 @@ function captionOf(
         );
   }
   if ((isSingleLevel(series) || series.repeatable) && last !== null) {
-    return dayShort(sofiaDayOf(last.earnedAt), data.today, ctx.words.lang);
+    return dayShort(last.earnedLocalDate, data.today, ctx.words.lang);
   }
   return words.complete;
 }
@@ -549,17 +680,17 @@ export function medalVm(
   const lang = ctx.words.lang;
   const locale = localeOf(ctx);
   const progress = progressOf(data, series);
-  const standing = series.standing(progress);
+  const standing = BadgeSystem.standing(series, progress);
   const withThisVisit = completesWithThisVisit(series, data, ctx);
-  const title = options.title ?? series.title.get(locale);
+  const title = options.title ?? series.title[locale];
   const src = artOf(series, data, ctx);
   const monogram = src === null ? monogramFor(series, ctx) : null;
   const latest = latestEarned(progress);
   const isNew =
     (options.markNew ?? false) &&
-    standing.state === 'earned' &&
+    standing.medalState === MedalState.Earned &&
     latest !== null &&
-    isNewSince(latest.earnedAt, data.previousVisitAtMs);
+    StandingSystem.isNewSince(latest.earnedAtUtcMs, previousVisitOf(data));
   // An ended season's family has no next level to be drawn towards (CF).
   const toNext =
     standing.next !== null &&
@@ -592,7 +723,7 @@ export function medalVm(
           text: ctx.words.achievements.nextWithThisVisit(nextLevel),
         }
       : (options.meter ?? true) &&
-          standing.state !== 'notStarted' &&
+          standing.medalState !== MedalState.NotStarted &&
           toNext !== null
         ? {
             value: Math.min(1, Math.max(0, toNext.value / toNext.target)),
@@ -620,15 +751,13 @@ export function medalVm(
     ? `, ${ctx.words.achievements.withThisVisit}`
     : '';
   let accessibleName: string;
-  if (standing.state === 'earned') {
-    const earnedAt = earnedAtOf(progress, standing.highestLevel);
+  if (standing.medalState === MedalState.Earned) {
+    const earnedOn = earnedOnOf(progress, standing.highestLevel);
     accessibleName =
       achievement.medalEarnedName(
         title,
         levelNumeral(standing.highestLevel),
-        earnedAt === null
-          ? ''
-          : dayLong(sofiaDayOf(earnedAt), data.today, lang),
+        earnedOn === null ? '' : dayLong(earnedOn, data.today, lang),
         toNext === null
           ? ''
           : on !== null
@@ -639,7 +768,7 @@ export function medalVm(
             : achievement.nextSuffix(toNext.value, toNext.target, toNext.level),
         isNew ? achievement.newSuffix : '',
       ) + withVisitSuffix;
-  } else if (standing.state === 'inProgress' && toNext !== null) {
+  } else if (standing.medalState === MedalState.InProgress && toNext !== null) {
     accessibleName =
       (on !== null
         ? `${title}${achievement.nextOnSuffix(
@@ -652,23 +781,22 @@ export function medalVm(
             toNext.target,
             toNext.level,
           )) + withVisitSuffix;
-  } else if (standing.state === 'inProgress') {
+  } else if (standing.medalState === MedalState.InProgress) {
     accessibleName = `${title}, ${achievement.oneOffNotYet}${withVisitSuffix}`;
   } else {
     accessibleName =
       achievement.medalNotStartedName(
         title,
-        series.levels[0]?.requirement.get(locale) ??
-          series.requirement.get(locale),
+        series.levels[0]?.requirement[locale] ?? series.requirement[locale],
       ) + withVisitSuffix;
   }
 
   return {
-    seriesId: series.id.value,
+    seriesId: series.id,
     state:
-      withThisVisit && standing.state === 'notStarted'
-        ? 'inProgress'
-        : standing.state,
+      withThisVisit && standing.medalState === MedalState.NotStarted
+        ? MEDAL_STATES[MedalState.InProgress]
+        : MEDAL_STATES[standing.medalState],
     icon: BADGE_EMBLEM_ICONS[series.emblem],
     src,
     monogram,
@@ -691,7 +819,7 @@ export function familyTile(
   options: MedalOptions = {},
 ): AchievementTileVm {
   return {
-    key: series.id.value,
+    key: series.id,
     medal: medalVm(series, data, ctx, options),
     opens: null,
   };
@@ -748,13 +876,18 @@ export function shelfOrdered(
   data: AchievementsData,
 ): readonly BadgeSeries[] {
   const rank = (series: BadgeSeries) => {
-    const standing = series.standing(progressOf(data, series));
+    const standing = standingOf(series, data);
     const band =
-      standing.state === 'earned' ? 0 : standing.state === 'inProgress' ? 1 : 2;
+      standing.medalState === MedalState.Earned
+        ? 0
+        : standing.medalState === MedalState.InProgress
+          ? 1
+          : 2;
     const within =
-      standing.state === 'earned'
+      standing.medalState === MedalState.Earned
         ? -standing.highestLevel
-        : standing.state === 'inProgress' && standing.target !== null
+        : standing.medalState === MedalState.InProgress &&
+            standing.target !== null
           ? -(standing.value / standing.target)
           : 0;
     return { band, within };
@@ -786,13 +919,13 @@ export function soonSeriesIds(
         series.levels.every((level) => level.target === null) &&
         completesWithThisVisit(series, data, ctx),
     )
-    .map((series) => series.id.value);
-  const closest = closestLevels(
+    .map((series): string => series.id);
+  const closest = StandingSystem.closestLevels(
     data.catalog,
-    data.progress,
-    data.today,
+    progressList(data),
+    cardDayOf(data.today),
     limit,
-  ).map((level) => level.seriesId);
+  ).map((level): string => level.badgeSeriesId);
   return [...new Set([...acts, ...closest])].slice(0, Math.max(0, limit));
 }
 
@@ -842,15 +975,21 @@ export function latestTiles(
     tiles.push(tile);
     faces.add(faceOf(tile.medal));
   };
-  for (const day of recentLevelsByDay(data.progress, Number.MAX_SAFE_INTEGER)) {
+  for (const day of StandingSystem.recentLevelsByDay(
+    progressList(data),
+    Number.MAX_SAFE_INTEGER,
+  )) {
     if (tiles.length >= RAIL_LIMIT) break;
-    const fresh = day.levels.filter((level) => !shown.has(level.seriesId));
-    for (const level of day.levels) shown.add(level.seriesId);
+    const fresh = day.levels.filter((level) => !shown.has(level.badgeSeriesId));
+    for (const level of day.levels) shown.add(level.badgeSeriesId);
     const newest = fresh[0];
     if (newest === undefined) continue;
-    const short = dayShort(day.day, data.today, words.lang);
+    const short = dayShort(day.localDate, data.today, words.lang);
     if (day.levels.length === 1) {
-      const series = data.catalog.series(newest.seriesId);
+      const series = LoyaltyCatalogSystem.series(
+        data.catalog,
+        newest.badgeSeriesId,
+      );
       if (series === null) continue;
       push(
         familyTile(series, data, ctx, {
@@ -863,7 +1002,10 @@ export function latestTiles(
     }
     const series = fresh
       .flatMap((level, index) => {
-        const family = data.catalog.series(level.seriesId);
+        const family = LoyaltyCatalogSystem.series(
+          data.catalog,
+          level.badgeSeriesId,
+        );
         if (family === null) return [];
         const face = familyFace(family, data, ctx);
         const clash =
@@ -882,26 +1024,29 @@ export function latestTiles(
     // +2», the count bound to the name), over «28.09».
     const count = day.levels.length;
     const medal = medalVm(series, data, ctx, {
-      title: `${series.title.get(localeOf(ctx))}\u00a0+${figure(
+      title: `${series.title[localeOf(ctx)]}\u00a0+${figure(
         count - 1,
         words.lang,
       )}`,
       caption: short,
       meter: false,
     });
-    const isNew = isNewSince(newest.earnedAt, data.previousVisitAtMs);
+    const isNew = StandingSystem.isNewSince(
+      newest.earnedAtUtcMs,
+      previousVisitOf(data),
+    );
     push({
-      key: day.day,
+      key: day.localDate,
       medal: {
         ...medal,
         isNew,
         accessibleName:
           words.achievements.dayGroupName(
-            dayLong(day.day, data.today, words.lang),
+            dayLong(day.localDate, data.today, words.lang),
             count,
           ) + (isNew ? words.achievement.newSuffix : ''),
       },
-      opens: { kind: 'day', day: day.day },
+      opens: { kind: 'day', day: day.localDate },
     });
   }
   return tiles;
@@ -929,16 +1074,18 @@ function facesBesideCard(card: SeasonCardVm | null): FacesBeside {
 export function newestFaceLevel(
   data: AchievementsData,
   ctx: AchievementsContext,
-): EarnedDay['levels'][number] | null {
-  const day = recentLevelsByDay(data.progress, 1)[0];
+): EarnedDay.Level | null {
+  const day = StandingSystem.recentLevelsByDay(progressList(data), 1)[0];
   if (day === undefined) return null;
-  const season = data.catalog
-    .seasonsIn('open', data.today)
-    .find((s) => s.kind === 'season');
+  const season = LoyaltyCatalogSystem.seasonsIn(
+    data.catalog,
+    SeasonPhase.Open,
+    cardDayOf(data.today),
+  ).find((s) => s.seasonKind === SeasonKind.Season);
   const card = season === undefined ? null : seasonCardVm(season, data, ctx);
   const lead = latestTiles(data, ctx, facesBesideCard(card))[0];
   return (
-    day.levels.find((level) => level.seriesId === lead?.medal.seriesId) ??
+    day.levels.find((level) => level.badgeSeriesId === lead?.medal.seriesId) ??
     day.levels[0] ??
     null
   );
@@ -954,15 +1101,15 @@ function seasonTrack(
   const track =
     season.trackSeriesId === null
       ? null
-      : data.catalog.series(season.trackSeriesId.value);
+      : LoyaltyCatalogSystem.series(data.catalog, season.trackSeriesId);
   if (track === null) return null;
   const words = ctx.words.achievements;
-  const standing = track.standing(progressOf(data, track));
+  const standing = standingOf(track, data);
   const value =
-    data.seasonProgress.get(season.id.value)?.trackValue ?? standing.value;
+    data.seasonProgress.get(season.id)?.trackValue ?? standing.value;
   // An ended season can reach nothing more: its track is the levels it
   // reached, the last one current and none ringed next.
-  const ended = season.phaseOn(data.today) === 'ended';
+  const ended = seasonPhaseOf(season, data) === SeasonPhase.Ended;
   const levels = ended
     ? track.levels.filter((level) => level.level <= standing.highestLevel)
     : track.levels;
@@ -997,7 +1144,7 @@ function seasonTrack(
     min: 0,
     max,
     marks,
-    label: season.title.get(localeOf(ctx)),
+    label: season.title[localeOf(ctx)],
     valueText:
       sentence ?? words.seasonEndedAt(levelNumeral(standing.highestLevel)),
   };
@@ -1013,7 +1160,7 @@ function seasonTrack(
   // one place the level is drawn. The medal's sentence keeps the level.
   const finished = !pending && drawn >= max;
   return {
-    seasonId: season.id.value,
+    seasonId: season.id,
     medal: finished ? medal : { ...medal, level: null },
     gauge,
     sentence,
@@ -1029,20 +1176,20 @@ export function seasonCardVm(
   const track = seasonTrack(season, data, ctx);
   if (track === null) return null;
   const words = ctx.words;
-  const title = season.title.get(localeOf(ctx));
-  const scope = { kind: 'season', seasonId: season.id.value } as const;
-  const counts = familyCounts(data.catalog, data.progress, scope, data.today);
-  const families = familiesIn(data.catalog, data.progress, scope, data.today);
-  const level = data.seasonProgress.get(season.id.value)?.trackLevel ?? 0;
+  const title = season.title[localeOf(ctx)];
+  const scope = FamilyScopeFilter.season(season.id);
+  const counts = familyCountsOf(data, scope);
+  const families = familiesOf(data, scope);
+  const level = data.seasonProgress.get(season.id)?.trackLevel ?? 0;
   const until = words.achievements.eventUntil(
-    dayLong(season.window.until, data.today, words.lang),
+    dayLong(season.windowUntil, data.today, words.lang),
   );
   return {
     ...track,
     title,
     dates: dayRange(
-      season.window.from,
-      season.window.until,
+      season.windowFrom,
+      season.windowUntil,
       data.today,
       words.lang,
     ),
@@ -1073,36 +1220,33 @@ export function eventCardVm(
   ctx: AchievementsContext,
 ): EventCardVm {
   const words = ctx.words;
-  const title = season.title.get(localeOf(ctx));
-  const scope = { kind: 'season', seasonId: season.id.value } as const;
-  const announced = season.phaseOn(data.today) === 'announced';
-  const counts = familyCounts(data.catalog, data.progress, scope, data.today);
+  const title = season.title[localeOf(ctx)];
+  const scope = FamilyScopeFilter.season(season.id);
+  const announced = seasonPhaseOf(season, data) === SeasonPhase.Announced;
+  const counts = familyCountsOf(data, scope);
   const count = announced
     ? null
     : words.achievements.familyCount(counts.earned, counts.total);
   const when = announced
     ? words.achievements.eventAnnounced(
-        dayShort(season.window.from, data.today, words.lang),
+        dayShort(season.windowFrom, data.today, words.lang),
       )
     : words.achievements.eventUntil(
-        dayShort(season.window.until, data.today, words.lang),
+        dayShort(season.windowUntil, data.today, words.lang),
       );
   const spoken = announced
     ? words.achievements.eventAnnounced(
-        dayLong(season.window.from, data.today, words.lang),
+        dayLong(season.windowFrom, data.today, words.lang),
       )
     : words.achievements.eventUntil(
-        dayLong(season.window.until, data.today, words.lang),
+        dayLong(season.windowUntil, data.today, words.lang),
       );
   return {
-    seasonId: season.id.value,
+    seasonId: season.id,
     title,
     when,
     // A preview in shelf order, as the season card's.
-    medals: shelfOrdered(
-      familiesIn(data.catalog, data.progress, scope, data.today),
-      data,
-    ).map((series) =>
+    medals: shelfOrdered(familiesOf(data, scope), data).map((series) =>
       medalVm(series, data, ctx, {
         titled: false,
         captioned: false,
@@ -1118,13 +1262,15 @@ export function eventCardVm(
 
 /** The ended seasons and events the client took part in, newest first. */
 function archivedSeasons(data: AchievementsData): readonly Season[] {
-  return data.catalog
-    .seasonsIn('ended', data.today)
-    .filter(
-      (season) =>
-        data.seasonProgress.has(season.id.value) ||
-        season.familyIds().some((id) => data.progress.has(id.value)),
-    );
+  return LoyaltyCatalogSystem.seasonsIn(
+    data.catalog,
+    SeasonPhase.Ended,
+    cardDayOf(data.today),
+  ).filter(
+    (season) =>
+      data.seasonProgress.has(season.id) ||
+      SeasonSystem.familyIds(season).some((id) => data.progress.has(id)),
+  );
 }
 
 export function archiveRowOf(
@@ -1151,9 +1297,17 @@ export function scopeTitleOf(
   const locale = cardLocaleOf(words.lang);
   switch (scope.kind) {
     case 'category':
-      return data.catalog.category(scope.categoryId)?.title.get(locale) ?? null;
+      return (
+        LoyaltyCatalogSystem.category(
+          data.catalog,
+          BadgeCategoryId.of(scope.categoryId),
+        )?.title[locale] ?? null
+      );
     case 'season':
-      return data.catalog.season(scope.seasonId)?.title.get(locale) ?? null;
+      return (
+        LoyaltyCatalogSystem.season(data.catalog, SeasonId.of(scope.seasonId))
+          ?.title[locale] ?? null
+      );
     case 'archive':
       return words.achievements.archive;
     case 'day':
@@ -1174,7 +1328,7 @@ function sectionOf(
   // Earned, the filled discs under it: «Общи · 1 от 1» over a hollow ring
   // read as earned (wave D r6).
   const earned = families.filter(
-    (s) => s.standing(progressOf(data, s)).state === 'earned',
+    (s) => standingOf(s, data).medalState === MedalState.Earned,
   ).length;
   return {
     key,
@@ -1194,7 +1348,7 @@ function sectionOf(
  * «Бръснари», «Салони», «Общи»; any other shelf one unlabelled grid.
  */
 function categorySections(
-  kind: string,
+  kind: BadgeCategoryKind,
   categoryId: string,
   families: readonly BadgeSeries[],
   data: AchievementsData,
@@ -1207,30 +1361,30 @@ function categorySections(
     if (group) group.families.push(series);
     else groups.set(key, { title, families: [series] });
   };
-  if (kind === 'mastery') {
+  if (kind === BadgeCategoryKind.Mastery) {
     const general: BadgeSeries[] = [];
     for (const series of families) {
-      const subject = series.subject;
       const category =
-        subject?.kind === 'service'
-          ? ctx.catalog.serviceCategory(subject.serviceId.value)
+        series.badgeSubject === BadgeSubject.Service
+          ? ctx.catalog.serviceCategory(series.subjectServiceId)
           : null;
       if (category === null) general.push(series);
       else add(category.id, category.name, series);
     }
     for (const series of general) add('general', words.sectionGeneral, series);
-  } else if (kind === 'barbers') {
+  } else if (kind === BadgeCategoryKind.Barbers) {
     const ordered = [
-      ...families.filter((s) => s.subject?.kind === 'barber'),
-      ...families.filter((s) => s.subject?.kind === 'location'),
+      ...families.filter((s) => s.badgeSubject === BadgeSubject.Barber),
+      ...families.filter((s) => s.badgeSubject === BadgeSubject.Location),
       ...families.filter(
-        (s) => s.subject === null || s.subject.kind === 'service',
+        (s) =>
+          s.badgeSubject === null || s.badgeSubject === BadgeSubject.Service,
       ),
     ];
     for (const series of ordered) {
-      if (series.subject?.kind === 'barber') {
+      if (series.badgeSubject === BadgeSubject.Barber) {
         add('barbers', words.sectionBarbers, series);
-      } else if (series.subject?.kind === 'location') {
+      } else if (series.badgeSubject === BadgeSubject.Location) {
         add('shops', words.sectionShops, series);
       } else {
         add('general', words.sectionGeneral, series);
@@ -1252,21 +1406,21 @@ function archivedSeasonTile(
 ): AchievementTileVm {
   const words = ctx.words;
   const locale = localeOf(ctx);
-  const title = season.title.get(locale);
+  const title = season.title[locale];
   const range = dayRange(
-    season.window.from,
-    season.window.until,
+    season.windowFrom,
+    season.windowUntil,
     data.today,
     words.lang,
   );
   const track =
     season.trackSeriesId === null
       ? null
-      : data.catalog.series(season.trackSeriesId.value);
-  const opens: AchievementScope = { kind: 'season', seasonId: season.id.value };
+      : LoyaltyCatalogSystem.series(data.catalog, season.trackSeriesId);
+  const opens: AchievementScope = { kind: 'season', seasonId: season.id };
   if (track !== null) {
     return {
-      key: season.id.value,
+      key: season.id,
       medal: medalVm(track, data, ctx, {
         title,
         caption: range,
@@ -1275,16 +1429,15 @@ function archivedSeasonTile(
       opens,
     };
   }
-  const scope = { kind: 'season', seasonId: season.id.value } as const;
-  const counts = familyCounts(data.catalog, data.progress, scope, data.today);
+  const counts = familyCountsOf(data, FamilyScopeFilter.season(season.id));
   const familyCount = words.achievements.familyCount(
     counts.earned,
     counts.total,
   );
   return {
-    key: season.id.value,
+    key: season.id,
     medal: {
-      seriesId: season.id.value,
+      seriesId: season.id,
       state:
         counts.earned > 0
           ? 'earned'
@@ -1317,20 +1470,14 @@ export function scopePageVm(
   if (title === null) return null;
   switch (scope.kind) {
     case 'category': {
-      const category = data.catalog.category(scope.categoryId);
+      const category = LoyaltyCatalogSystem.category(
+        data.catalog,
+        BadgeCategoryId.of(scope.categoryId),
+      );
       if (category === null) return null;
-      const families = familiesIn(
-        data.catalog,
-        data.progress,
-        scope,
-        data.today,
-      );
-      const counts = familyCounts(
-        data.catalog,
-        data.progress,
-        scope,
-        data.today,
-      );
+      const filter = familyScopeOf(scope);
+      const families = familiesOf(data, filter);
+      const counts = familyCountsOf(data, filter);
       return {
         title,
         subline: words.achievements.scopeSubline(
@@ -1341,7 +1488,7 @@ export function scopePageVm(
         track: null,
         ended: null,
         sections: categorySections(
-          category.kind,
+          category.badgeCategoryKind,
           scope.categoryId,
           families,
           data,
@@ -1350,22 +1497,20 @@ export function scopePageVm(
       };
     }
     case 'season': {
-      const season = data.catalog.season(scope.seasonId);
-      if (season === null) return null;
-      const ended = season.phaseOn(data.today) === 'ended';
-      const families = familiesIn(
+      const season = LoyaltyCatalogSystem.season(
         data.catalog,
-        data.progress,
-        scope,
-        data.today,
-      ).filter(
-        (s) => !ended || s.standing(progressOf(data, s)).state === 'earned',
+        SeasonId.of(scope.seasonId),
+      );
+      if (season === null) return null;
+      const ended = seasonPhaseOf(season, data) === SeasonPhase.Ended;
+      const families = familiesOf(data, familyScopeOf(scope)).filter(
+        (s) => !ended || standingOf(s, data).medalState === MedalState.Earned,
       );
       return {
         title,
         subline: dayRange(
-          season.window.from,
-          season.window.until,
+          season.windowFrom,
+          season.windowUntil,
           data.today,
           words.lang,
         ),
@@ -1377,13 +1522,13 @@ export function scopePageVm(
         sections:
           families.length === 0
             ? []
-            : [sectionOf(season.id.value, null, families, data, ctx, false)],
+            : [sectionOf(season.id, null, families, data, ctx, false)],
       };
     }
     case 'archive': {
       const byYear = new Map<string, Season[]>();
       for (const season of archivedSeasons(data)) {
-        const year = season.window.until.slice(0, 4);
+        const year = season.windowUntil.slice(0, 4);
         byYear.set(year, [...(byYear.get(year) ?? []), season]);
       }
       return {
@@ -1404,12 +1549,7 @@ export function scopePageVm(
       };
     }
     case 'day': {
-      const families = familiesIn(
-        data.catalog,
-        data.progress,
-        scope,
-        data.today,
-      );
+      const families = familiesOf(data, familyScopeOf(scope));
       return {
         title,
         subline: ctx.subjectName,
@@ -1435,38 +1575,38 @@ export function relatedOf(
   let icon: UiIconName | null = null;
   let neighbours: readonly BadgeSeries[] = [];
   if (series.categoryId !== null) {
-    const category = data.catalog.category(series.categoryId.value);
+    const category = LoyaltyCatalogSystem.category(
+      data.catalog,
+      series.categoryId,
+    );
     if (category !== null) {
-      scopeTitle = category.title.get(locale);
-      icon = BADGE_CATEGORY_ICONS[category.kind];
-      neighbours = familiesIn(
-        data.catalog,
-        data.progress,
-        { kind: 'category', categoryId: category.id.value },
-        data.today,
-      );
+      scopeTitle = category.title[locale];
+      icon = BADGE_CATEGORY_ICONS[category.badgeCategoryKind];
+      neighbours = familiesOf(data, FamilyScopeFilter.category(category.id));
     }
   } else if (series.seasonId !== null) {
-    const season = data.catalog.season(series.seasonId.value);
+    const season = LoyaltyCatalogSystem.season(data.catalog, series.seasonId);
     if (season !== null) {
-      scopeTitle = season.title.get(locale);
-      icon = season.kind === 'event' ? 'loyalty.event' : 'loyalty.season';
+      scopeTitle = season.title[locale];
+      icon =
+        season.seasonKind === SeasonKind.Event
+          ? 'loyalty.event'
+          : 'loyalty.season';
       // An ended season lists only what was earned (CF), as its scope page
       // does; the tiles then carry no meter and no target (`medalVm`).
-      const ended = season.phaseOn(data.today) === 'ended';
-      neighbours = season
-        .familyIds()
-        .map((id) => data.catalog.series(id.value))
+      const ended = seasonPhaseOf(season, data) === SeasonPhase.Ended;
+      neighbours = SeasonSystem.familyIds(season)
+        .map((id) => LoyaltyCatalogSystem.series(data.catalog, id))
         .filter(
           (s): s is BadgeSeries =>
             s !== null &&
-            (!s.isRetired() || data.progress.has(s.id.value)) &&
-            (!ended || s.standing(progressOf(data, s)).state === 'earned'),
+            (!BadgeSystem.isRetired(s) || data.progress.has(s.id)) &&
+            (!ended || standingOf(s, data).medalState === MedalState.Earned),
         );
     }
   }
   const tiles = shelfOrdered(
-    neighbours.filter((s) => s.id.value !== series.id.value),
+    neighbours.filter((s) => s.id !== series.id),
     data,
   )
     .slice(0, RAIL_LIMIT)

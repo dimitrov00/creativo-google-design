@@ -5,7 +5,7 @@ import { TestBed } from '@angular/core/testing';
 import { TranslocoService } from '@jsverse/transloco';
 import { describe, expect, it } from 'vitest';
 import { UiButton, type UiControlSize } from '@creativo/ui/controls';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
+import { FIXTURE_TODAY } from '@core/testing';
 import {
   GEORGI_UID,
   GEORGI_VISITS,
@@ -25,7 +25,7 @@ import { VisitFilterMenu } from './visit-filter-menu';
 
 const CATALOGUES = { bg: appCatalogue('bg'), en: appCatalogue('en') };
 const BG = catalogueTranslator(CATALOGUES.bg);
-const NOW_MS = visitsNowMs(loyaltyFixtures.today);
+const NOW_MS = visitsNowMs(FIXTURE_TODAY);
 
 @Component({
   imports: [VisitFilterMenu],

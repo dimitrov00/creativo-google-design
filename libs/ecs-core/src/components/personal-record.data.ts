@@ -22,8 +22,8 @@ export const PERSONAL_RECORD_KINDS: readonly PersonalRecordKind[] =
   Object.values(PersonalRecordKind);
 
 /**
- * A personal best — an element of `loyaltyAccounts/{uid}.records[]`
- * (`loyalty-document.ts:557-563`). Every field is present on every kind;
+ * A personal best — an element of `loyaltyAccounts/{customerId}.records[]`
+ * (the legacy `loyalty-document.ts`, deleted in flip 3). Every field is present on every kind;
  * the ones a kind does not use are `null`.
  */
 export type PersonalRecord = {

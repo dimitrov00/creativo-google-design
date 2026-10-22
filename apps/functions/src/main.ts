@@ -4,13 +4,20 @@ import {
   onDocumentWrittenWithAuthContext,
 } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { type Result, TenantId, UtcEpochMs, defect } from '@core/primitives';
+import {
+  RepositoryError,
+  Result,
+  TenantId,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
 import { AuthDeployment } from '@core/components';
 import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
 import {
   type CallableName,
   Callables,
   type ClockPorts,
+  type CommitPlan,
   type HashPorts,
   type IdPorts,
   type NowUtcMs,
@@ -45,6 +52,7 @@ import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
 import { consoleTelemetry } from './adapters/console-telemetry.adapter';
 import { cryptoPorts } from './adapters/crypto.adapter';
 import { firestorePorts } from './adapters/firestore-ports';
+import { paramFlagsPorts } from './adapters/flags.adapter';
 import {
   fixedCodeOtpCryptoPorts,
   nodeOtpCryptoPorts,
@@ -56,7 +64,6 @@ import {
   type EdgeError,
   type EdgePorts,
   LegacyWireCode,
-  legacyCallable,
   retryingTrigger,
   WIRE_ZONE,
 } from './edge';
@@ -133,9 +140,10 @@ import {
   updateProfileRefusal,
   verifyOtpRefusal,
 } from './wire/identity.wire';
-// The one handler no flip has reached yet — the streak publish (flip 3) —
-// still runs today's `lib/**` code.
-import * as publishStreak from './lib/loyalty/publish-streak-definition';
+import {
+  answerStreakPublish,
+  type StreakPublishAnswer,
+} from './wire/loyalty.wire';
 
 /**
  * THE COMPOSITION ROOT (blueprint §4.3, D1(a)) — the only place in the
@@ -158,8 +166,8 @@ import * as publishStreak from './lib/loyalty/publish-streak-definition';
  *
  * Flip 1 (booking core) moved the 25 booking, capacity, waitlist,
  * projection, audit and backfill exports onto their pipelines; flip 2
- * (identity) moved the OTP trio and added `updateProfile`. The streak
- * publish is the one remaining Phase 3a row.
+ * (identity) moved the OTP trio and added `updateProfile`; flip 3 (loyalty)
+ * moved the streak publish — no export runs a Phase 3a handler any more.
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -246,6 +254,36 @@ const identityPorts = once(() => ({
   authDeployment: AuthDeployment.DEFAULT,
 }));
 
+/**
+ * The commit port as the streak publish has always failed: a commit that
+ * REJECTS — contention retries exhausted, a deadline or network fault, a
+ * defect thrown inside the decision — answers
+ * `RepositoryError.writeFailed(null, String(cause))`, the value the
+ * callable logs (`'rhythm rule write failed'`, the cause's text) and
+ * answers as its `store_failed`; today's store caught every throw inside
+ * `runTransaction` the same way (flip-3 plan §3.3).
+ */
+function settledCommit(commit: CommitPlan): CommitPlan {
+  return (read, decide) =>
+    commit(read, decide).catch((cause: unknown) =>
+      Result.err(RepositoryError.writeFailed(null, String(cause))),
+    );
+}
+
+/**
+ * The streak publish's ports: the server ports, the build-time flags
+ * (`loyalty.selfView` decides the notice a stricter rule owes) and the
+ * commit settled as above. Built on first use.
+ */
+const streakPorts = once(() => {
+  const server = serverPorts();
+  return {
+    ...server,
+    ...paramFlagsPorts(),
+    commit: settledCommit(server.commit),
+  };
+});
+
 /** The port bundles. */
 const root = {
   telemetry,
@@ -253,6 +291,7 @@ const root = {
   edge,
   ports: serverPorts,
   identity: identityPorts,
+  streak: streakPorts,
 } as const;
 
 /**
@@ -681,8 +720,22 @@ export const runBackfill = onCall(
   ),
 );
 
+/**
+ * The rhythm's rule, published or called off (loyalty flip (3)): the request
+ * read in today's order (the caller, then the envelope), the act's pipeline
+ * (`publishStreakDefinition` / `withdrawStreakDefinition`) run over the
+ * streak ports, its answer or refusal in today's words — `loyalty.wire.ts`.
+ * Behind no feature flag of its own.
+ */
 export const publishStreakDefinition = onCall(
-  legacyCallable(Callables.PublishStreakDefinition, root.telemetry, (request) =>
-    publishStreak.publishStreakDefinition.run(request),
+  callableEdge<unknown, StreakPublishAnswer>(
+    {
+      callable: Callables.PublishStreakDefinition,
+      failureCode: LegacyWireCode.StreakPublishStoreFailed,
+      timeoutSeconds: null,
+      answer: null,
+    },
+    root.edge,
+    (request) => answerStreakPublish(request, root.streak, root.telemetry),
   ),
 );

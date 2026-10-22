@@ -1,16 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import type { GiftVoucher } from '@core/entities';
-import {
-  type ActivityEntry,
-  type GiftVoucherFields,
-  type LoyaltyAccount,
-  type StreakDefinitionProps,
-  type StreakPhase,
-  type StreakState,
+import type {
+  GiftVoucher,
+  JournalEntry,
+  LoyaltyAccount,
   StreakDefinition,
-  activityEntryFromDocument,
-} from '@creativo/application/engagement';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
+} from '@core/entities';
+import {
+  FreezeReason,
+  StreakExcuse,
+  StreakInterval,
+  StreakIntervalSource,
+  StreakPeriodMark,
+  StreakPhaseState,
+  StreakQualifier,
+  type StreakRule,
+  StreakState,
+  StreakTransition,
+  TierOverride,
+} from '@core/components';
+import {
+  AdjustmentId,
+  AppointmentId,
+  type LocalDate,
+  RewardId,
+  ServiceId,
+  TierId,
+} from '@core/primitives';
+import { StreakRuleSystem } from '@core/systems';
+import { localDate } from '@core/testing';
 import type { ClientCardGrant } from './client-card.contracts';
 import type { LoyaltyFlags } from './loyalty.presenter';
 import {
@@ -33,16 +50,21 @@ import {
   GEORGI_GRANT,
   MARTIN,
   TODAY,
+  type VoucherFixtureFields,
   achievementsDataOf,
   factMs,
   fixtureVouchers,
   georgiHistory,
   giftVoucherOf,
   loyaltyCatalogWith,
+  loyaltyOf,
   martinHistory,
   must,
+  rhythmHead,
+  rhythmHeadWith,
   statsOf,
   translatorOf,
+  voucherFixtureFields,
   wordsOf,
 } from '../testing/client-card.fixtures';
 
@@ -62,13 +84,14 @@ const GEORGI_ACCOUNT = GEORGI_DATA.account;
 const MARTIN_ACCOUNT = achievementsDataOf('martin', null).account;
 const GEORGI_STATS = statsOf(GEORGI, georgiHistory());
 const MARTIN_STATS = statsOf(MARTIN, martinHistory());
-const RULE = must(CATALOG.streakInForce('cadence', TODAY), 'the rule in force');
+/** The rhythm's head as the catalogue holds it: the rule in force since 1.03.2025, nothing waiting. */
+const RHYTHM = rhythmHead();
 const GEORGI_RHYTHM = must(
-  GEORGI_ACCOUNT.streaks['cadence'],
+  StreakState.find(GEORGI_ACCOUNT.streaks, RHYTHM.id),
   'Георги’s rhythm',
 );
 const MARTIN_RHYTHM = must(
-  MARTIN_ACCOUNT.streaks['cadence'],
+  StreakState.find(MARTIN_ACCOUNT.streaks, RHYTHM.id),
   'Мартин’s rhythm',
 );
 
@@ -92,32 +115,35 @@ function vouchersOf(uid: string): readonly GiftVoucher[] {
 /** One more voucher of Георги's, from a document of his own with some fields changed. */
 function voucherWith(
   id: string,
-  fields: Partial<GiftVoucherFields>,
+  fields: Partial<VoucherFixtureFields>,
 ): GiftVoucher {
   return giftVoucherOf(id, {
-    ...must(loyaltyFixtures.vouchers['voucher-dev-georgi'], 'Георги’s voucher'),
+    ...must(
+      voucherFixtureFields().get('voucher-dev-georgi'),
+      'Георги’s voucher',
+    ),
     ...fields,
   });
 }
 
 /** The newest rows of a holder's journal, as the wallet's one read answers them. */
-function journalOf(who: 'georgi' | 'martin'): readonly ActivityEntry[] {
-  const fixture =
-    who === 'georgi' ? loyaltyFixtures.georgi : loyaltyFixtures.martin;
-  return Object.entries(fixture.clientJournal)
-    .map(([id, document]) => {
-      const parsed = activityEntryFromDocument(id, document);
-      if (parsed.isFailure()) throw new Error(`bad row ${id}`);
-      return parsed.value;
-    })
+function journalOf(who: 'georgi' | 'martin'): readonly JournalEntry[] {
+  return [...loyaltyOf(who).clientJournal]
     .sort((a, b) => b.seq - a.seq)
     .slice(0, WALLET_ACTIVITY_READ);
 }
 
-function ruleWith(patch: Partial<StreakDefinitionProps>): StreakDefinition {
-  const made = StreakDefinition.create({ ...RULE.toProps(), ...patch });
-  if (made.isFailure()) throw new Error('bad rule');
-  return made.value;
+/** The stored id of Георги's journal row `seq`. */
+function georgiEntryId(seq: number): string {
+  return must(
+    loyaltyOf('georgi').clientJournal.find((row) => row.seq === seq),
+    `Георги’s row ${seq}`,
+  ).id;
+}
+
+/** The rhythm's head with its rule in force edited. */
+function ruleWith(edit: (rule: StreakRule) => StreakRule): StreakDefinition {
+  return rhythmHeadWith(edit);
 }
 
 function walletInput(overrides: Partial<WalletInput> = {}): WalletInput {
@@ -139,8 +165,7 @@ function walletInput(overrides: Partial<WalletInput> = {}): WalletInput {
     sinceDay: GEORGI_STATS.firstVisitLocalDate,
     vouchers: { status: 'ready', data: vouchersOf(GEORGI) },
     activity: { status: 'ready', data: journalOf('georgi') },
-    ruleInForce: RULE,
-    ruleUpcoming: null,
+    rhythm: RHYTHM,
     online: true,
     isOwner: true,
     visitGone: false,
@@ -168,27 +193,67 @@ function martinInput(overrides: Partial<WalletInput> = {}): WalletInput {
   });
 }
 
-function account(overrides: Partial<LoyaltyAccount>): LoyaltyAccount {
-  return { ...GEORGI_ACCOUNT, ...overrides };
+/** What a spec changes on an account: any of its fields but the override's (`TierOverride` is a slice of its own). */
+type AccountEdit = Partial<Omit<LoyaltyAccount, 'tierOverrideSource'>>;
+
+function account(
+  overrides: AccountEdit,
+  override: TierOverride | null = null,
+): LoyaltyAccount {
+  return { ...GEORGI_ACCOUNT, ...overrides, ...(override ?? {}) };
 }
 
+/** What a spec changes on a rhythm's state: any field but the phase (a slice of its own). */
+type RhythmEdit = Partial<Omit<StreakState, 'streakPhase'>>;
+
 /** Георги's account with his rhythm in another state. */
-function withRhythm(overrides: Partial<StreakState>): LoyaltyAccount {
-  return account({ streaks: { cadence: { ...GEORGI_RHYTHM, ...overrides } } });
+function withRhythm(
+  overrides: RhythmEdit,
+  phase: StreakPhaseState = StreakPhaseState.active(),
+): LoyaltyAccount {
+  return account({ streaks: [{ ...GEORGI_RHYTHM, ...overrides, ...phase }] });
 }
 
 function rhythmIn(
-  phase: StreakPhase,
-  overrides: Partial<StreakState> = {},
+  phase: StreakPhaseState,
+  overrides: RhythmEdit = {},
   input: Partial<WalletInput> = {},
 ) {
   return must(
     walletRhythmVm(
-      walletInput({ account: withRhythm({ phase, ...overrides }), ...input }),
+      walletInput({ account: withRhythm(overrides, phase), ...input }),
     ),
     'the rhythm',
   );
 }
+
+/** The pinned period terms of a rhythm, flat (`period*`). */
+function periodOf(
+  intervalDays: number,
+  graceDays: number,
+  source: StreakIntervalSource,
+  habitDays: number | null,
+): RhythmEdit {
+  return {
+    periodIntervalDays: intervalDays,
+    periodGraceDays: graceDays,
+    periodSource: source,
+    periodHabitDays: habitDays,
+  };
+}
+
+/** No period is open: the four terms `null` together. */
+const NO_PERIOD: RhythmEdit = {
+  periodIntervalDays: null,
+  periodGraceDays: null,
+  periodSource: null,
+  periodHabitDays: null,
+};
+
+/** The visit on the book that holds the period: none. */
+const NOT_HELD: RhythmEdit = { heldByAppointmentId: null, heldOn: null };
+
+const day = (raw: string): LocalDate => localDate(raw);
 
 /** Every string of a model, by the path that holds it. */
 function strings(
@@ -253,7 +318,8 @@ describe('passVm', () => {
         walletInput({
           today,
           account: account({
-            pointsExpiry: { expiresOn: '2026-12-31', noticeFrom: '2026-09-15' },
+            pointsExpireOn: day('2026-12-31'),
+            pointsExpiryNoticeFrom: day('2026-09-15'),
           }),
         }),
       ).state;
@@ -267,7 +333,8 @@ describe('passVm', () => {
         walletInput({
           account: account({
             balance: 0,
-            pointsExpiry: { expiresOn: '2026-12-31', noticeFrom: '2026-09-15' },
+            pointsExpireOn: day('2026-12-31'),
+            pointsExpiryNoticeFrom: day('2026-09-15'),
           }),
         }),
       ).state,
@@ -280,7 +347,8 @@ describe('passVm', () => {
         walletInput({
           paused: true,
           account: account({
-            pointsExpiry: { expiresOn: '2026-12-31', noticeFrom: '2026-09-15' },
+            pointsExpireOn: day('2026-12-31'),
+            pointsExpiryNoticeFrom: day('2026-09-15'),
           }),
         }),
       ),
@@ -343,16 +411,14 @@ describe('passVm', () => {
     expect(
       passVm(
         walletInput({
-          account: account({
-            tier: {
-              ...GEORGI_ACCOUNT.tier,
-              override: {
-                tierId: 'platinum',
-                until: null,
-                source: { kind: 'adjustment', adjustmentId: 'adj-1' },
-              },
-            },
-          }),
+          account: account(
+            {},
+            TierOverride.adjustment(
+              TierId.of('platinum'),
+              null,
+              AdjustmentId.of('adj-1'),
+            ),
+          ),
         }),
       ).tier,
     ).toBe('Платина');
@@ -674,9 +740,9 @@ describe('walletActions', () => {
     expect(ids({ catalog: { status: 'loading' } })).toContain('catalog');
     expect(ids({ catalog: { status: 'failed' } })).toContain('catalog');
     expect(ids({ catalog: null })).not.toContain('catalog');
-    const empty = loyaltyCatalogWith((documents) => ({
-      ...documents,
-      rewardsCatalog: {},
+    const empty = loyaltyCatalogWith((catalog) => ({
+      ...catalog,
+      rewards: [],
     }));
     expect(ids({ catalog: { status: 'ready', data: empty } })).toEqual([
       'use',
@@ -828,12 +894,10 @@ describe('walletRhythmVm', () => {
     });
     // Beside a healthy figure the line says it and nothing stands beside it.
     expect(
-      rhythmIn(
-        { kind: 'active' },
-        {
-          heldBy: { appointmentId: 'appt-next', on: '2026-10-29' },
-        },
-      ),
+      rhythmIn(StreakPhaseState.active(), {
+        heldByAppointmentId: AppointmentId.of('appt-next'),
+        heldOn: day('2026-10-29'),
+      }),
     ).toMatchObject({
       phase: null,
       stateLine: 'Записан е за 29.10 · срокът се пази.',
@@ -847,7 +911,7 @@ describe('walletRhythmVm', () => {
           inChairToday: false,
           account: {
             ...MARTIN_ACCOUNT,
-            streaks: { cadence: { ...MARTIN_RHYTHM, heldBy: null } },
+            streaks: [{ ...MARTIN_RHYTHM, ...NOT_HELD }],
           },
         }),
       ),
@@ -862,10 +926,10 @@ describe('walletRhythmVm', () => {
       caption: '',
     });
 
-    const inGrace = rhythmIn(
-      { kind: 'inGrace', graceUntil: '2026-10-05' },
-      { dueBy: '2026-09-28', heldBy: null },
-    );
+    const inGrace = rhythmIn(StreakPhaseState.inGrace(day('2026-10-05')), {
+      dueBy: day('2026-09-28'),
+      ...NOT_HELD,
+    });
     expect(inGrace).toMatchObject({
       phase: { text: 'Гратис до 5.10', tone: 'warning' },
       stateLine: 'В гратисния период до 5.10.',
@@ -877,36 +941,35 @@ describe('walletRhythmVm', () => {
   });
 
   it('draws a covered period as protected, and says what covers it', () => {
-    const covered = (reason: 'freeze' | 'pause' | 'clientPause' | 'excuse') =>
-      rhythmIn(
-        { kind: 'frozen', until: '2026-11-16', reason },
-        { dueBy: '2026-11-16' },
-      );
-    expect(covered('freeze')).toMatchObject({
+    const covered = (reason: FreezeReason) =>
+      rhythmIn(StreakPhaseState.frozen(day('2026-11-16'), reason), {
+        dueBy: day('2026-11-16'),
+      });
+    expect(covered(FreezeReason.Freeze)).toMatchObject({
       phase: { text: 'Защитен', tone: 'neutral' },
       stateLine: 'Пропускът е покрит автоматично.',
       trackName: '24 посещения в ритъм',
     });
-    expect(covered('freeze').periods.at(-1)).toEqual({
+    expect(covered(FreezeReason.Freeze).periods.at(-1)).toEqual({
       id: 'current',
       mark: 'protected',
       caption: 'до 16.11',
       description: 'ноември · защита: използвана защита',
     });
-    expect(covered('excuse')).toMatchObject({
+    expect(covered(FreezeReason.Excuse)).toMatchObject({
       phase: { text: 'Защитен', tone: 'neutral' },
       stateLine: 'Пропускът е за сметка на салона.',
     });
-    expect(covered('excuse').periods.at(-1)?.description).toBe(
+    expect(covered(FreezeReason.Excuse).periods.at(-1)?.description).toBe(
       'текущ период · до 16 ноември',
     );
-    expect(covered('pause').stateLine).toBe(
+    expect(covered(FreezeReason.Pause).stateLine).toBe(
       'Замразено, докато записването е спряно',
     );
-    expect(covered('clientPause').stateLine).toBe(
+    expect(covered(FreezeReason.ClientPause).stateLine).toBe(
       'Пауза по желание на клиента',
     );
-    expect(covered('clientPause').periods.at(-1)?.description).toBe(
+    expect(covered(FreezeReason.ClientPause).periods.at(-1)?.description).toBe(
       'ноември · защита: пауза по желание на клиента',
     );
   });
@@ -914,8 +977,8 @@ describe('walletRhythmVm', () => {
   it('coaches a broken run back while a visit can still restore it, and never after', () => {
     const broken = (repairableUntil: string) =>
       rhythmIn(
-        { kind: 'broken', brokenAt: '2026-09-20', repairableUntil },
-        { current: 0, dueBy: null, period: null },
+        StreakPhaseState.broken(day('2026-09-20'), day(repairableUntil)),
+        { current: 0, dueBy: null, ...NO_PERIOD },
       );
     const repairable = broken('2026-10-04');
     expect(repairable).toMatchObject({
@@ -939,19 +1002,40 @@ describe('walletRhythmVm', () => {
   });
 
   it('draws what became of each closed period, captioning the visits alone', () => {
-    const rhythm = rhythmIn(
-      { kind: 'active' },
-      {
-        periods: [
-          { mark: 'kept', on: '2026-04-22', reason: null },
-          { mark: 'missed', on: '2026-06-10', reason: null },
-          { mark: 'repaired', on: '2026-06-20', reason: null },
-          { mark: 'protected', on: '2026-08-08', reason: 'staffCancelled' },
-          { mark: 'protected', on: '2026-08-20', reason: 'freeze' },
-          { mark: 'kept', on: '2026-09-28', reason: null },
-        ],
-      },
-    );
+    const rhythm = rhythmIn(StreakPhaseState.active(), {
+      periods: [
+        {
+          streakPeriodMark: StreakPeriodMark.Kept,
+          on: day('2026-04-22'),
+          periodReason: null,
+        },
+        {
+          streakPeriodMark: StreakPeriodMark.Missed,
+          on: day('2026-06-10'),
+          periodReason: null,
+        },
+        {
+          streakPeriodMark: StreakPeriodMark.Repaired,
+          on: day('2026-06-20'),
+          periodReason: null,
+        },
+        {
+          streakPeriodMark: StreakPeriodMark.Protected,
+          on: day('2026-08-08'),
+          periodReason: StreakExcuse.StaffCancelled,
+        },
+        {
+          streakPeriodMark: StreakPeriodMark.Protected,
+          on: day('2026-08-20'),
+          periodReason: FreezeReason.Freeze,
+        },
+        {
+          streakPeriodMark: StreakPeriodMark.Kept,
+          on: day('2026-09-28'),
+          periodReason: null,
+        },
+      ],
+    });
     expect(rhythm.periods).toEqual([
       {
         id: 'kept-2026-04-22',
@@ -1014,17 +1098,14 @@ describe('walletRhythmVm', () => {
 
   it('starts a rhythm nobody has begun, and agrees a run of one', () => {
     expect(
-      rhythmIn(
-        { kind: 'active' },
-        {
-          current: 0,
-          best: 0,
-          lastQualifiedAt: null,
-          dueBy: null,
-          periods: [],
-          period: null,
-        },
-      ),
+      rhythmIn(StreakPhaseState.active(), {
+        current: 0,
+        best: 0,
+        lastQualifiedAtUtcMs: null,
+        dueBy: null,
+        periods: [],
+        ...NO_PERIOD,
+      }),
     ).toMatchObject({
       figure: '0',
       phase: null,
@@ -1034,10 +1115,11 @@ describe('walletRhythmVm', () => {
       best: null,
     });
     expect(
-      rhythmIn(
-        { kind: 'active' },
-        { current: 1, best: 1, periods: GEORGI_RHYTHM.periods.slice(-1) },
-      ),
+      rhythmIn(StreakPhaseState.active(), {
+        current: 1,
+        best: 1,
+        periods: GEORGI_RHYTHM.periods.slice(-1),
+      }),
     ).toMatchObject({
       figure: '1',
       unit: 'посещение в ритъм',
@@ -1062,7 +1144,7 @@ describe('walletRhythmVm', () => {
 
   it('says the best run only while the run in progress is shorter', () => {
     expect(
-      rhythmIn({ kind: 'active' }, { current: 9, best: 23 }),
+      rhythmIn(StreakPhaseState.active(), { current: 9, best: 23 }),
     ).toMatchObject({
       figure: '9',
       best: 'Най-много: 23',
@@ -1072,12 +1154,16 @@ describe('walletRhythmVm', () => {
 
   it('counts the protections in reserve only where the rule grants them', () => {
     expect(
-      rhythmIn({ kind: 'active' }, { freezesBanked: 0 }).protections,
+      rhythmIn(StreakPhaseState.active(), { freezesBanked: 0 }).protections,
     ).toBeNull();
-    const without = ruleWith({
-      protections: { enabled: false, maxBanked: 2, earnEvery: 5, startWith: 0 },
-    });
-    const rhythm = must(walletRhythmVm(walletInput({ ruleInForce: without })));
+    const without = ruleWith((rule) => ({
+      ...rule,
+      protectionsEnabled: false,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 0,
+    }));
+    const rhythm = must(walletRhythmVm(walletInput({ rhythm: without })));
     expect(rhythm.protections).toBeNull();
     expect(rhythm.ruleFull).toEqual(
       RULE_FULL.filter((_, index) => index !== 2),
@@ -1085,45 +1171,45 @@ describe('walletRhythmVm', () => {
   });
 
   it('words the rule in force, short on its line and whole under it', () => {
-    const lean = ruleWith({
-      interval: { kind: 'fixed', days: 35 },
+    const lean = ruleWith((rule) => ({
+      ...rule,
+      streakInterval: StreakInterval.Fixed,
+      intervalDays: 35,
       graceDays: 0,
       riskLeadDays: 0,
-      protections: { enabled: false, maxBanked: 0, earnEvery: 5, startWith: 0 },
+      protectionsEnabled: false,
+      protectionsMaxBanked: 0,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 0,
       excuses: [],
-      bookingHold: { enabled: false, maxDaysPastDue: 0 },
-      repair: { enabled: false, windowDays: 14, perYear: 1 },
-    });
-    expect(
-      must(walletRhythmVm(walletInput({ ruleInForce: lean }))),
-    ).toMatchObject({
+      bookingHoldEnabled: false,
+      bookingHoldMaxDaysPastDue: 0,
+      repairEnabled: false,
+      repairWindowDays: 14,
+      repairPerYear: 1,
+    }));
+    expect(must(walletRhythmVm(walletInput({ rhythm: lean })))).toMatchObject({
       ruleLine: 'На всеки 5 седмици',
       ruleFull: ['Посещение на всеки 5 седмици пази ритъма.'],
     });
   });
 
   it('words a personal interval from the period the projection pinned', () => {
-    const personal = ruleWith({
-      interval: {
-        kind: 'personal',
-        tolerancePct: 50,
-        minDays: 21,
-        maxDays: 84,
-        fallbackDays: 42,
-      },
-    });
+    const personal = ruleWith((rule) => ({
+      ...rule,
+      streakInterval: StreakInterval.Personal,
+      intervalTolerancePct: 50,
+      intervalMinDays: 21,
+      intervalMaxDays: 84,
+      intervalFallbackDays: 42,
+    }));
     const known = must(
       walletRhythmVm(
         walletInput({
-          ruleInForce: personal,
-          account: withRhythm({
-            period: {
-              intervalDays: 39,
-              graceDays: 7,
-              source: 'personal',
-              habitDays: 26,
-            },
-          }),
+          rhythm: personal,
+          account: withRhythm(
+            periodOf(39, 7, StreakIntervalSource.Personal, 26),
+          ),
         }),
       ),
     );
@@ -1133,14 +1219,19 @@ describe('walletRhythmVm', () => {
     );
     // The period the fixed rule opened knows no habit: the newcomer's words.
     expect(
-      must(walletRhythmVm(walletInput({ ruleInForce: personal }))).ruleFull[0],
+      must(walletRhythmVm(walletInput({ rhythm: personal }))).ruleFull[0],
     ).toBe('Срокът е 6 седмици, докато опознаем навика му.');
   });
 
   it('names the services a rule counts, when the host can name them', () => {
-    const counted = ruleWith({
-      qualifier: { kind: 'services', serviceIds: ['svc-fade', 'svc-beard'] },
-    });
+    const counted = ruleWith((rule) => ({
+      ...rule,
+      streakQualifier: StreakQualifier.Services,
+      qualifierServiceIds: [
+        ServiceId.of('svc-fade'),
+        ServiceId.of('svc-beard'),
+      ],
+    }));
     const names = new Map([
       ['svc-fade', 'Фейд'],
       ['svc-beard', 'Оформяне на брада'],
@@ -1149,33 +1240,34 @@ describe('walletRhythmVm', () => {
       must(
         walletRhythmVm(
           walletInput({
-            ruleInForce: counted,
+            rhythm: counted,
             nameOf: (id) => names.get(id) ?? null,
           }),
         ),
       ).ruleFull.at(-1),
     ).toBe('Броят се посещения с: Фейд и Оформяне на брада.');
     expect(
-      must(walletRhythmVm(walletInput({ ruleInForce: counted }))).ruleFull,
+      must(walletRhythmVm(walletInput({ rhythm: counted }))).ruleFull,
     ).toEqual(RULE_FULL);
   });
 
   it('announces the rule that waits, from its day, in the running case', () => {
-    const next = ruleWith({
+    const current = StreakRuleSystem.current(RHYTHM);
+    const next = rhythmHeadWith(undefined, {
+      ...current,
       version: 2,
-      effectiveFrom: '2026-10-01',
-      interval: { kind: 'fixed', days: 35 },
+      effectiveFromLocalDate: day('2026-10-01'),
+      streakInterval: StreakInterval.Fixed,
+      intervalDays: 35,
+      streakTransition: StreakTransition.Grandfather,
     });
     expect(
-      must(walletRhythmVm(walletInput({ ruleUpcoming: next }))).ruleUpcoming,
+      must(walletRhythmVm(walletInput({ rhythm: next }))).ruleUpcoming,
     ).toBe('От 1.10: на всеки 5 седмици · 7 дни гратис');
     // Its day has come: it is the rule in force, and nothing waits.
     expect(
-      must(
-        walletRhythmVm(
-          walletInput({ ruleUpcoming: next, today: '2026-10-01' }),
-        ),
-      ).ruleUpcoming,
+      must(walletRhythmVm(walletInput({ rhythm: next, today: '2026-10-01' })))
+        .ruleUpcoming,
     ).toBeNull();
   });
 
@@ -1185,12 +1277,14 @@ describe('walletRhythmVm', () => {
     ).toBeNull();
     expect(
       walletRhythmVm(
-        walletInput({ ruleInForce: ruleWith({ enabled: false }) }),
+        walletInput({
+          rhythm: ruleWith((rule) => ({ ...rule, enabled: false })),
+        }),
       ),
     ).toBeNull();
-    expect(walletRhythmVm(walletInput({ ruleInForce: null }))).toBeNull();
+    expect(walletRhythmVm(walletInput({ rhythm: null }))).toBeNull();
     expect(
-      walletRhythmVm(walletInput({ account: account({ streaks: {} }) })),
+      walletRhythmVm(walletInput({ account: account({ streaks: [] }) })),
     ).toBeNull();
   });
 });
@@ -1234,13 +1328,10 @@ describe('walletTierVm', () => {
       walletTierVm(
         walletInput({
           account: account({
-            tier: {
-              ...GEORGI_ACCOUNT.tier,
-              current: 'platinum',
-              qualifying: 24,
-              next: null,
-              remaining: null,
-            },
+            tierId: TierId.of('platinum'),
+            tierQualifying: 24,
+            nextTierId: null,
+            tierRemaining: null,
           }),
         }),
       ),
@@ -1262,13 +1353,10 @@ describe('walletTierVm', () => {
       walletTierVm(
         walletInput({
           account: account({
-            tier: {
-              ...GEORGI_ACCOUNT.tier,
-              current: 'bronze',
-              qualifying: 1,
-              next: 'silver',
-              remaining: 5,
-            },
+            tierId: TierId.of('bronze'),
+            tierQualifying: 1,
+            nextTierId: TierId.of('silver'),
+            tierRemaining: 5,
           }),
         }),
       ),
@@ -1285,20 +1373,19 @@ describe('walletTierVm', () => {
     const tier = must(
       walletTierVm(
         walletInput({
-          account: account({
-            tier: {
-              ...GEORGI_ACCOUNT.tier,
-              current: 'silver',
-              qualifying: 7,
-              next: 'platinum',
-              remaining: 13,
-              override: {
-                tierId: 'gold',
-                until: null,
-                source: { kind: 'adjustment', adjustmentId: 'adj-1' },
-              },
+          account: account(
+            {
+              tierId: TierId.of('silver'),
+              tierQualifying: 7,
+              nextTierId: TierId.of('platinum'),
+              tierRemaining: 13,
             },
-          }),
+            TierOverride.adjustment(
+              TierId.of('gold'),
+              null,
+              AdjustmentId.of('adj-1'),
+            ),
+          ),
         }),
       ),
     );
@@ -1319,9 +1406,9 @@ describe('walletTierVm', () => {
         walletInput({
           catalog: {
             status: 'ready',
-            data: loyaltyCatalogWith((documents) => ({
-              ...documents,
-              tierDefinitions: {},
+            data: loyaltyCatalogWith((catalog) => ({
+              ...catalog,
+              tiers: [],
             })),
           },
         }),
@@ -1433,24 +1520,26 @@ describe('rewardTiles', () => {
   });
 
   it('draws no tile for a reward nobody can take today', () => {
-    const catalog = loyaltyCatalogWith((documents) => {
-      const rewards = documents.rewardsCatalog;
-      return {
-        ...documents,
-        rewardsCatalog: {
-          ...rewards,
-          'reward-beard': { ...must(rewards['reward-beard']), enabled: false },
-          'reward-cut': {
-            ...must(rewards['reward-cut']),
-            available: { from: '2026-11-01', until: null },
-          },
-          'reward-product': {
-            ...must(rewards['reward-product']),
-            available: { from: null, until: '2026-09-27' },
-          },
-        },
-      };
-    });
+    const catalog = loyaltyCatalogWith((published) => ({
+      ...published,
+      rewards: published.rewards.map((reward) =>
+        reward.id === RewardId.of('reward-beard')
+          ? { ...reward, enabled: false }
+          : reward.id === RewardId.of('reward-cut')
+            ? {
+                ...reward,
+                availableFrom: day('2026-11-01'),
+                availableUntil: null,
+              }
+            : reward.id === RewardId.of('reward-product')
+              ? {
+                  ...reward,
+                  availableFrom: null,
+                  availableUntil: day('2026-09-27'),
+                }
+              : reward,
+      ),
+    }));
     expect(
       rewardTiles(walletInput({ catalog: { status: 'ready', data: catalog } })),
     ).toEqual([]);
@@ -1525,7 +1614,7 @@ describe('walletVm', () => {
       ['2026-06', '+17 т.', [['Посещение', '+17 т.', '280 т.']]],
     ]);
     expect(groups[0]?.rows[0]).toMatchObject({
-      entryId: 'dev-client-1_000035',
+      entryId: georgiEntryId(35),
       lines: [{ text: `28.09${NBSP}· Иван` }],
     });
   });
@@ -1697,9 +1786,9 @@ describe('walletVm', () => {
   });
 
   it('drops the catalogue’s section once it is known to offer nothing', () => {
-    const empty = loyaltyCatalogWith((documents) => ({
-      ...documents,
-      rewardsCatalog: {},
+    const empty = loyaltyCatalogWith((catalog) => ({
+      ...catalog,
+      rewards: [],
     }));
     const wallet = walletVm(
       walletInput({ catalog: { status: 'ready', data: empty } }),

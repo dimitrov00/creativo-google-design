@@ -46,9 +46,6 @@
       "path": "../../../application/shared/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/engagement/tsconfig.lib.json"
-    },
-    {
       "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {

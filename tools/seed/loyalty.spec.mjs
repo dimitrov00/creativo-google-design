@@ -1,58 +1,59 @@
 /**
- * The seed's loyalty documents, held to the wire contract WP3's fixtures pin
- * (client-card-redesign.md §4.4) and to the production code that reads the
- * same book: the projection has the fixtures' SHAPE (not their numbers),
- * «Посещения» is what `computeClientStats` counts, the balance is the sum of
- * the rows, and every level was earned by a count that reached it — on the
- * fixtures' own day and on days spread over two years (§7.5 «Seed»). Every
- * document the seed writes for the client card — the catalogue, both
- * accounts, Мартин's waitlist request — reads back through the card's own
- * readers, as the seed's bundle holds them.
+ * The seed's loyalty documents, held to the flat archetypes the client card
+ * reads them as (flip 3: `@core/entities`, the fixtures of `@core/testing`)
+ * and to the production code that reads the same book: the projection has
+ * the fixtures' SHAPE (not their numbers), «Посещения» is what
+ * `computeClientStats` counts, the balance is the sum of the rows, every
+ * level was earned by a count that reached it, and every instant beside its
+ * shop day is one reading of the shop's clock (T5) — on the fixtures' own
+ * day and on days spread over two years (§7.5 «Seed»). Every document the
+ * seed writes for the client card — the catalogue, both accounts, Мартин's
+ * waitlist request — goes through the two run-time checks the seed keeps
+ * (`readLoyaltyWrites`: `LoyaltyCatalogSystem.validate`, `StreakRule.parse`)
+ * as the seed's bundle holds them; a body's shape is the type checker's
+ * (`fixtures/loyalty.fixtures.ts`, `pnpm nx typecheck seed-tools`).
  *
  * The fold's rules — the tier's rolling window, the refusals — are pinned on
  * small hand-built books. The rhythm's clock is the DOMAIN's
- * (client-card-revision-3.md §4.2): the fold hands `traceStreak` the book as
- * facts, so the rhythm's cases here hold the seed to the books the old copy
- * of the clock was pinned on, and to the rule the shop has in force.
+ * (client-card-revision-3.md §4.2): the fold hands `StreakSystem.trace` the
+ * book as facts, so the rhythm's cases here hold the seed to the books the
+ * old copy of the clock was pinned on, and to the rule the shop has in
+ * force. Every case pins its own clock (`NOW`, the `ANCHORS`): none reads
+ * the wall clock.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  ACTIVITY_EFFECT_KINDS,
-  BADGE_PROGRESS_COLLECTION as WIRE_BADGE_PROGRESS,
-  CLIENT_JOURNAL_COLLECTION as WIRE_CLIENT_JOURNAL,
-  LOYALTY_ACCOUNTS_COLLECTION as WIRE_LOYALTY_ACCOUNTS,
-  LOYALTY_CATALOG_COLLECTIONS as WIRE_CATALOG_COLLECTIONS,
-  SEASON_PROGRESS_COLLECTION as WIRE_SEASON_PROGRESS,
-  STREAK_DEFINITIONS_COLLECTION as WIRE_STREAK_DEFINITIONS,
-  STREAK_DEFINITION_VERSIONS_COLLECTION as WIRE_STREAK_VERSIONS,
-  activityEntryFromDocument,
-  badgeProgressFromDocument,
-  clientJournalEntryId as wireJournalEntryId,
-  ledgerEntryFromDocument,
-  loyaltyAccountFromDocument,
-  loyaltyCatalogFromDocuments,
-  seasonProgressFromDocument,
-  streakDefinitionVersionFromDocument,
-  streakDefinitionVersionId as wireVersionId,
-  streakDefinitionVersionToDocument,
-  streakScheduleFromDocument,
-  streakScheduleToDocument,
-  streakStateToDocument,
-} from '@creativo/application/engagement';
-import {
-  InMemoryStreakDefinitionRepository,
-  loyaltyFixtures,
-} from '@creativo/application/engagement/testing';
-import { ServiceCategoryId, ServiceId } from '@creativo/domain/catalog';
-import { ClientStatsPolicy, WaitlistLifecycle } from '@core/components';
-import { Collections } from '@core/entities';
+  ClientStatsPolicy,
+  HeadRole,
+  JournalFeed,
+  LABEL_CODES,
+  PublicLabel,
+  SeasonPhase,
+  StreakRule,
+  StreakState,
+  WaitlistLifecycle,
+} from '@core/components';
+import { Collections, Subcollections } from '@core/entities';
 import { clientStatsOf } from '@core/pipelines';
-import { WaitlistSystem, ZonedTimeSystem } from '@core/systems';
+import { JournalEntryId, StreakDefinitionVersionId } from '@core/primitives';
+import {
+  LoyaltyCatalogSystem,
+  StreakRuleSystem,
+  StreakSystem,
+  WaitlistSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
+import {
+  FIXTURE_TODAY,
+  loyaltyAccountJson,
+  loyaltyCatalogJson,
+  memoryStreakDefinitionPorts,
+  memoryStreakWorld,
+  streakDefinitionFixture,
+  streakDefinitionVersionFixture,
+} from '@core/testing';
 import { beforeAll, describe, expect, it } from 'vitest';
-// The projector by its own path: the domain's barrel does not carry its
-// line yet (contract delta R2b-1), and the seed's bundle names it so too.
-import { traceStreak } from '../../libs/domain/engagement/src/lib/loyalty/streak-projector';
 import { account, appointmentDocumentOf } from './appointments.mjs';
 import { createShopCalendar } from './calendar.mjs';
 import { buildClientBook } from './fixtures.mjs';
@@ -62,7 +63,7 @@ import {
   BADGE_PROGRESS_COLLECTION,
   CLIENT_JOURNAL_COLLECTION,
   LOYALTY_ACCOUNTS_COLLECTION,
-  LOYALTY_CATALOG_COLLECTIONS,
+  LOYALTY_CATALOG_PARTS,
   LOYALTY_CATALOG_TODAY,
   LOYALTY_HOLDERS,
   PUNCH_CARD,
@@ -71,7 +72,6 @@ import {
   STREAK_DEFINITIONS_COLLECTION,
   STREAK_DEFINITION_VERSIONS_COLLECTION,
   catalogAsHeld,
-  clientJournalEntryId,
   loyaltyCatalogDriftOf,
   loyaltyCatalogFor,
   loyaltyCatalogWritesOf,
@@ -82,13 +82,16 @@ import {
   redemptionGrantIdOf,
   redemptionGrantsOf,
   rulesPublishedOver,
-  seedRuleRequestId,
   seedRuleVersionWriteOf,
   stampGrantIdOf,
-  streakDefinitionVersionId,
   withoutPublishedRules,
   workedVisitsOf,
 } from './loyalty.mjs';
+import {
+  journalRowIdOf,
+  ruleVersionIdOf,
+  seedRuleRequestIdOf,
+} from './fixtures/loyalty.fixtures.ts';
 import {
   SEEDED_WAITLIST_REQUEST,
   WAITLIST_REQUESTS_COLLECTION,
@@ -99,12 +102,11 @@ const ZONE = 'Europe/Sofia';
 const DAY_MS = 86_400_000;
 const dayNumber = (day) => Math.round(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
 const weekdayOf = (day) => new Date(`${day}T12:00:00Z`).getUTCDay();
+/** The shop day of an instant (epoch ms), read independently of the seed. */
 const sofiaDay = (instant) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Sofia' }).format(
     new Date(instant),
   );
-const phaseOn = (window, day) =>
-  day < window.from ? 'announced' : day > window.until ? 'ended' : 'open';
 
 /** The fixtures' day, in the evening: Георги's 10:00 cut is done, Мартин is still due. */
 const NOW = Date.parse('2026-09-28T20:00:00+03:00');
@@ -121,24 +123,20 @@ const ANCHORS = [
 ];
 
 /**
- * What the fold is handed, imported the ordinary way: the production code
- * the seed's bundle holds (`load-domain.spec.mjs` holds the two equal), so
- * every case below folds through the domain's own projector.
+ * What the fold and the read-back are handed, imported the ordinary way:
+ * the production code the seed's bundle holds (`load-domain.spec.mjs`
+ * holds the two equal), so every case below folds through the domain's own
+ * projector and reads back through the domain's own checks.
  */
 const DOMAIN = {
-  ServiceCategoryId,
-  ServiceId,
-  activityEntryFromDocument,
-  badgeProgressFromDocument,
-  ledgerEntryFromDocument,
-  loyaltyAccountFromDocument,
-  loyaltyCatalogFromDocuments,
-  seasonProgressFromDocument,
-  streakDefinitionVersionFromDocument,
-  streakScheduleFromDocument,
-  streakStateToDocument,
-  traceStreak,
+  StreakSystem,
+  StreakRuleSystem,
+  StreakRule,
+  LoyaltyCatalogSystem,
 };
+
+/** The feed's pills, all of them: the effects a row the feed shows may have (`JournalFeed`). */
+const FEED = JournalFeed.effectsOf(JournalFeed.All);
 
 /** What no appointment says about a holder: the seed's own `facts`. */
 function factsOf(book, holder) {
@@ -183,17 +181,37 @@ const catalogUnder = (revise) => (today) => {
   return catalog;
 };
 
+/** A head's element in one role. */
+const inRole = (head, role) =>
+  head.rules.find((rule) => rule.headRole === role);
+
+/**
+ * A flat rule patched as an admin's change would leave it — a PERSONAL
+ * interval drops the FIXED one's `intervalDays` (one variant per rule).
+ */
+const revised = (rule, patch) => {
+  const next = { ...rule, ...patch };
+  if (next.streakInterval === 'PERSONAL') delete next.intervalDays;
+  return next;
+};
+
 /** Version 2 of the seed's rule, in force: what a publish leaves in the head. */
 const published = (patch) => (head) => ({
   ...head,
-  current: { ...head.current, version: 2, ...patch },
-  updatedAt: '2026-06-01T09:00:00.000Z',
+  rules: [revised({ ...inRole(head, HeadRole.Current), version: 2 }, patch)],
+  updatedAtUtcMs: Date.parse('2026-06-01T09:00:00.000Z'),
 });
 
+/** The rhythm's state of an account under the `cadence` rule, or `null`. */
+const cadenceOf = (acc) => StreakState.find(acc.streaks, 'cadence');
+
+/** A label's parameter (`PublicLabel.param`), or `null`. */
+const param = (row, name) => PublicLabel.param(row, name);
+
 const pointsOf = (journal) =>
-  Object.values(journal).filter((row) => row.effect.kind === 'points');
-const rowsOf = (journal, kind) =>
-  Object.values(journal).filter((row) => row.effect.kind === kind);
+  Object.values(journal).filter((row) => row.journalEffect === 'POINTS');
+const rowsOf = (journal, effect) =>
+  Object.values(journal).filter((row) => row.journalEffect === effect);
 
 /**
  * `uid`'s client stats as the trigger projects them — `clientStatsOf` of
@@ -229,10 +247,6 @@ function shapeOf(value) {
 }
 const shapesOf = (values) =>
   [...new Set(values.map((value) => JSON.stringify(shapeOf(value))))].sort();
-const accountShapeOf = (accountDoc) => ({
-  ...shapeOf({ ...accountDoc, streaks: null }),
-  streaks: shapesOf(Object.values(accountDoc.streaks)),
-});
 
 /** Every invariant a reader leans on, for one holder's projection. */
 function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
@@ -245,6 +259,12 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
   const rows = Object.entries(clientJournal);
   const entries = rows.map(([, row]) => row);
   const points = pointsOf(clientJournal);
+  const customerId = customerIdOf(uid);
+
+  // Keyed by the client RECORD (D29), never by the account.
+  expect(projection.uid).toBe(uid);
+  expect(projection.customerId).toBe(customerId);
+  expect(acc.customerId).toBe(customerId);
 
   // «Посещения» is clientStats' completed visits.
   const stats = statsOf(book, uid, nowMs);
@@ -256,16 +276,25 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
   // point rows alone, and every row says what it leaves.
   let running = 0;
   rows.forEach(([id, row], i) => {
-    expect(row.userId).toBe(uid);
+    expect(row.customerId).toBe(customerId);
     expect(row.seq).toBe(i + 1);
-    expect(id).toBe(clientJournalEntryId(uid, row.seq));
-    if (i > 0) expect(row.at >= entries[i - 1].at).toBe(true);
-    if (row.effect.kind === 'points') running += row.effect.delta;
+    expect(id).toBe(JournalEntryId.forEntry(customerId, row.seq));
+    if (i > 0) expect(row.utcEpochMs >= entries[i - 1].utcEpochMs).toBe(true);
+    // T5: the row's shop day is the day of its instant, read once.
+    expect(row.localDate, id).toBe(sofiaDay(row.utcEpochMs));
+    if (row.journalEffect === 'POINTS') running += row.pointsDelta;
     expect(row.balanceAfter, id).toBe(running);
-    expect(row.visibility).toBe('client');
+    expect(row.journalVisibility).toBe('CLIENT');
     expect(row.reverses).toBeNull();
+    expect(LABEL_CODES, id).toContain(row.labelCode);
     // The feed shows these five and no other (§4.7).
-    expect(ACTIVITY_EFFECT_KINDS.all, id).toContain(row.effect.kind);
+    expect(FEED, id).toContain(row.journalEffect);
+    // A visit's points name the visit at the root; no other event does.
+    expect(row.appointmentId, id).toBe(
+      row.correlationId.startsWith('appt:')
+        ? row.correlationId.slice('appt:'.length)
+        : null,
+    );
   });
   expect(acc.seq).toBe(entries.length);
   expect(acc.balance).toBe(running);
@@ -274,12 +303,12 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
   );
   expect(acc.lifetimeSpent).toBe(
     -points
-      .filter((row) => row.source.kind === 'redemption')
-      .reduce((sum, row) => sum + row.effect.delta, 0),
+      .filter((row) => row.journalSource === 'REDEMPTION')
+      .reduce((sum, row) => sum + row.pointsDelta, 0),
   );
-  expect(acc.updatedAt >= (entries.at(-1)?.at ?? '')).toBe(true);
+  expect(acc.updatedAtUtcMs >= (entries.at(-1)?.utcEpochMs ?? 0)).toBe(true);
   expect(acc.version).toBeGreaterThanOrEqual(
-    new Set(entries.map((row) => row.at)).size,
+    new Set(entries.map((row) => row.utcEpochMs)).size,
   );
   // A row is written once: no two share an idempotency key.
   expect(new Set(entries.map((row) => row.idempotencyKey)).size).toBe(
@@ -310,11 +339,19 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
     );
     progress.earned.forEach((earned, i) => {
       if (i > 0) {
-        expect(earned.earnedAt >= progress.earned[i - 1].earnedAt).toBe(true);
+        expect(
+          earned.earnedAtUtcMs >= progress.earned[i - 1].earnedAtUtcMs,
+        ).toBe(true);
       }
-      expect(sofiaDay(earned.earnedAt) <= today, seriesId).toBe(true);
+      // T5: the level's shop day is the day of its instant, read once.
+      expect(earned.earnedLocalDate, seriesId).toBe(
+        sofiaDay(earned.earnedAtUtcMs),
+      );
+      expect(earned.earnedLocalDate <= today, seriesId).toBe(true);
+      expect(earned.earnedVia, seriesId).toBe('RULE');
     });
-    const monotonic = series.metric !== null && !series.metric.window;
+    const monotonic =
+      series.metric !== null && series.metricWindowDays === null;
     if (!monotonic) continue;
     for (const earned of progress.earned) {
       expect(progress.value, seriesId).toBeGreaterThanOrEqual(
@@ -329,38 +366,34 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
 
   // A seat pays a point per whole euro; a level what the catalogue says, as it is earned.
   for (const row of points) {
-    const { source, publicLabel } = row;
-    if (source.kind === 'redemption') {
-      expect(-row.effect.delta).toBe(
-        catalog.rewardsCatalog[publicLabel.params.reward].cost,
+    if (row.journalSource === 'REDEMPTION') {
+      expect(-row.pointsDelta).toBe(
+        catalog.rewardsCatalog[param(row, 'reward')].cost,
       );
       continue;
     }
-    expect(row.idempotencyKey).toBe(`award:${source.awardKey}#0`);
-    const { seriesId } = publicLabel.params;
-    if (seriesId === undefined) {
-      expect(row.effect.delta).toBe(
-        Math.floor(publicLabel.params.spendMinor / 100),
-      );
+    expect(row.idempotencyKey).toBe(`award:${row.sourceAwardKey}#0`);
+    const seriesId = param(row, 'seriesId');
+    if (seriesId === null) {
+      expect(row.pointsDelta).toBe(Math.floor(param(row, 'spendMinor') / 100));
       continue;
     }
-    const level =
-      catalog.badgeSeries[seriesId].levels[publicLabel.params.level - 1];
-    expect(source.rule.ruleId).toBe(level.ruleId);
+    const level = catalog.badgeSeries[seriesId].levels[param(row, 'level') - 1];
+    expect(row.sourceRuleId).toBe(level.ruleId);
     expect(level.awards).toContainEqual({
-      kind: 'points',
-      points: row.effect.delta,
+      awardKind: 'POINTS',
+      awardPoints: row.pointsDelta,
     });
     expect(
       badgeProgress[seriesId].earned.find(
         (earned) => earned.level === level.level,
-      )?.earnedAt,
-    ).toBe(row.at);
+      )?.earnedAtUtcMs,
+    ).toBe(row.utcEpochMs);
   }
 
   // A level earned is a row of its own: as many rows as times earned, the
   // newest at the instant the progress says; what it pays is in ITS event.
-  const levelRows = rowsOf(clientJournal, 'achievement');
+  const levelRows = rowsOf(clientJournal, 'ACHIEVEMENT');
   expect(levelRows).toHaveLength(
     Object.values(badgeProgress).reduce(
       (sum, progress) =>
@@ -369,32 +402,35 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
     ),
   );
   for (const row of levelRows) {
-    const { seriesId, level, rule } = row.publicLabel.params;
+    const seriesId = param(row, 'seriesId');
+    const level = param(row, 'level');
+    const rule = param(row, 'rule');
     const catalogued = catalog.badgeSeries[seriesId].levels[level - 1];
-    expect(row.publicLabel.code).toBe('achievement.earned');
-    expect(row.effect).toEqual({
-      kind: 'achievement',
-      rule: { ruleId: rule, version: catalog.badgeSeries[seriesId].version },
-      awardKey: row.source.awardKey,
-      op: 'granted',
+    expect(row.labelCode).toBe('achievement.earned');
+    expect(row).toMatchObject({
+      journalEffect: 'ACHIEVEMENT',
+      achievementRuleId: rule,
+      achievementRuleVersion: catalog.badgeSeries[seriesId].version,
+      achievementAwardKey: row.sourceAwardKey,
+      achievementOp: 'GRANTED',
     });
     expect(rule).toBe(catalogued.ruleId);
-    expect(row.correlationId).toBe(`award:${row.source.awardKey}`);
-    expect(row.idempotencyKey).toBe(`award:${row.source.awardKey}#badge`);
+    expect(row.correlationId).toBe(`award:${row.sourceAwardKey}`);
+    expect(row.idempotencyKey).toBe(`award:${row.sourceAwardKey}#badge`);
     const earned = badgeProgress[seriesId].earned.find(
       (entry) => entry.level === level,
     );
     expect(earned, `${seriesId} ${level}`).toBeDefined();
-    expect(row.at <= earned.earnedAt).toBe(true);
+    expect(row.utcEpochMs <= earned.earnedAtUtcMs).toBe(true);
     const paid = points.filter(
       (other) => other.correlationId === row.correlationId,
     );
-    expect(paid.map((other) => other.effect.delta)).toEqual(
+    expect(paid.map((other) => other.pointsDelta)).toEqual(
       catalogued.awards
-        .filter((award) => award.kind === 'points')
-        .map((award) => award.points),
+        .filter((award) => award.awardKind === 'POINTS')
+        .map((award) => award.awardPoints),
     );
-    for (const other of paid) expect(other.at).toBe(row.at);
+    for (const other of paid) expect(other.utcEpochMs).toBe(row.utcEpochMs);
   }
 
   // A visit is ONE event: every seat of theirs in it shares its id.
@@ -404,14 +440,15 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
     const earned = points.filter(
       (row) => row.correlationId === `appt:${visit.appointmentId}`,
     );
-    expect(
-      earned.map((row) => row.publicLabel.params.spendMinor).sort(),
-    ).toEqual(
+    expect(earned.map((row) => param(row, 'spendMinor')).sort()).toEqual(
       visit.seats
         .map((seat) => seat.priceMinor)
         .filter((price) => price >= 100)
         .sort(),
     );
+    for (const row of earned) {
+      expect(row.appointmentId).toBe(visit.appointmentId);
+    }
   }
 
   // Each season's track, mirrored.
@@ -427,39 +464,44 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
     });
   }
 
-  // The tier its visits in a year reach.
+  // The tier its visits in a year reach — at the root, no override.
   const tiers = Object.entries(catalog.tierDefinitions).sort(
     ([, a], [, b]) => a.rank - b.rank,
   );
   const reached = tiers.filter(
-    ([, tier]) => acc.tier.qualifying >= tier.qualify.atLeast,
+    ([, tier]) => acc.tierQualifying >= tier.qualifyAtLeast,
   );
-  expect(acc.tier.current).toBe(reached.at(-1)[0]);
-  expect(acc.tier.next).toBe(tiers[reached.length]?.[0] ?? null);
-  expect(acc.tier.qualifying).toBe(
+  expect(acc.tierId).toBe(reached.at(-1)[0]);
+  expect(acc.nextTierId).toBe(tiers[reached.length]?.[0] ?? null);
+  expect(acc.tierQualifying).toBe(
     workedVisitsOf(uid, book.appointments).filter(
       (visit) =>
         visit.day <= today && dayNumber(today) - dayNumber(visit.day) < 365,
     ).length,
   );
+  expect(acc.tierOverrideSource).toBeNull();
 
   // The tier's rows are a chain from the tier the account opened on to the
   // one it holds, each step to another tier, the last dated as the account says.
-  const tierRows = rowsOf(clientJournal, 'tier');
+  const tierRows = rowsOf(clientJournal, 'TIER');
   tierRows.forEach((row, i) => {
-    expect(row.effect.op).toBe('changed');
-    expect(row.effect.to).not.toBe(row.effect.from);
-    expect(row.effect.from).toBe(
-      i === 0 ? tiers[0][0] : tierRows[i - 1].effect.to,
-    );
-    expect(row.publicLabel).toEqual({
-      code: 'tier.changed',
-      params: { from: row.effect.from, to: row.effect.to },
+    expect(row.tierOp).toBe('CHANGED');
+    expect(row.tierTo).not.toBe(row.tierFrom);
+    expect(row.tierFrom).toBe(i === 0 ? tiers[0][0] : tierRows[i - 1].tierTo);
+    expect(row.labelCode).toBe('tier.changed');
+    expect(row.labelParams).toEqual([
+      { name: 'from', value: row.tierFrom },
+      { name: 'to', value: row.tierTo },
+    ]);
+    expect(row).toMatchObject({
+      journalSource: 'SYSTEM',
+      sourceSystemJob: 'TIER',
     });
-    expect(row.source).toEqual({ kind: 'system', job: 'tier' });
   });
-  expect(tierRows.at(-1)?.effect.to ?? tiers[0][0]).toBe(acc.tier.current);
-  if (tierRows.length > 0) expect(acc.tier.since).toBe(tierRows.at(-1).at);
+  expect(tierRows.at(-1)?.tierTo ?? tiers[0][0]).toBe(acc.tierId);
+  if (tierRows.length > 0) {
+    expect(acc.tierSinceUtcMs).toBe(tierRows.at(-1).utcEpochMs);
+  }
 
   // The stamp card counts every visit, and mints a coupon at every tenth.
   expect(acc.punchCards).toEqual([
@@ -478,50 +520,55 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
     holder?.stampGrants ?? null,
   );
   expect(
-    rowsOf(clientJournal, 'reward').map((row) => [
-      row.effect.ref,
-      row.at,
-      row.publicLabel.params.stamp,
+    rowsOf(clientJournal, 'REWARD').map((row) => [
+      row.rewardRef,
+      row.rewardCouponGrantId,
+      row.utcEpochMs,
+      param(row, 'stamp'),
     ]),
   ).toEqual(
     minted.map((granted) => [
-      { kind: 'couponGrant', id: granted.grantId },
-      // The journal keeps the loyalty wire (flip 3): an ISO instant.
-      new Date(granted.grantedAtUtcMs).toISOString(),
+      'COUPON_GRANT',
+      granted.grantId,
+      granted.grantedAtUtcMs,
       granted.stamp,
     ]),
   );
 
   // A reward bought: what it cost and what it bought, one event.
-  for (const row of rowsOf(clientJournal, 'redemption')) {
-    const { redemptionId, rewardId, cost, grant } = row.effect;
-    expect(cost).toBe(catalog.rewardsCatalog[rewardId].cost);
-    expect(grant).toEqual({
-      kind: 'couponGrant',
-      id: redemptionGrantIdOf(redemptionId),
-    });
-    expect(row.correlationId).toBe(redemptionId);
-    const paid = entries.filter(
-      (other) => other !== row && other.correlationId === redemptionId,
+  for (const row of rowsOf(clientJournal, 'REDEMPTION')) {
+    expect(row.redemptionCost).toBe(
+      catalog.rewardsCatalog[row.redeemedRewardId].cost,
     );
-    expect(paid.map((other) => other.effect)).toEqual([
-      { kind: 'points', delta: -cost },
-    ]);
+    expect(row).toMatchObject({
+      grantRef: 'COUPON_GRANT',
+      grantCouponGrantId: redemptionGrantIdOf(row.redemptionId),
+    });
+    expect(row.correlationId).toBe(row.redemptionId);
+    const paid = entries.filter(
+      (other) => other !== row && other.correlationId === row.redemptionId,
+    );
+    expect(
+      paid.map((other) => [other.journalEffect, other.pointsDelta]),
+    ).toEqual([['POINTS', -row.redemptionCost]]);
     expect(paid[0].seq).toBe(row.seq - 1);
   }
 
-  // A rhythm's run began on a day while one is in progress, and only
-  // then: a visit of theirs, no later than the last that counted.
+  // The rhythm's states are an array (one per rule that is on, Law 5); a
+  // run began on a day while one is in progress, and only then: a visit of
+  // theirs, no later than the last that counted.
+  expect(Array.isArray(acc.streaks)).toBe(true);
   const visitDays = workedVisitsOf(uid, book.appointments).map(
     (visit) => visit.day,
   );
-  for (const [streakId, state] of Object.entries(acc.streaks)) {
+  for (const state of acc.streaks) {
+    const { streakId } = state;
     expect(Object.keys(state), streakId).toContain('runStartedOn');
     expect(state.runStartedOn === null, streakId).toBe(state.current === 0);
     if (state.runStartedOn === null) continue;
     expect(visitDays, streakId).toContain(state.runStartedOn);
     expect(
-      state.runStartedOn <= sofiaDay(state.lastQualifiedAt),
+      state.runStartedOn <= sofiaDay(state.lastQualifiedAtUtcMs),
       streakId,
     ).toBe(true);
   }
@@ -529,25 +576,39 @@ function expectConsistent(projection, { uid, book, catalog, today, nowMs }) {
 
 describe('the loyalty catalogue', () => {
   it('is the fixtures’ catalogue, verbatim, on the fixtures’ day', () => {
-    expect(LOYALTY_CATALOG_TODAY).toBe(loyaltyFixtures.today);
+    expect(LOYALTY_CATALOG_TODAY).toBe(FIXTURE_TODAY);
     expect(loyaltyCatalogFor(LOYALTY_CATALOG_TODAY)).toEqual(
-      loyaltyFixtures.catalog,
+      loyaltyCatalogJson,
     );
   });
 
   it('writes to the wire’s collections, under the wire’s journal ids', () => {
-    expect(LOYALTY_CATALOG_COLLECTIONS).toEqual([...WIRE_CATALOG_COLLECTIONS]);
-    expect(LOYALTY_ACCOUNTS_COLLECTION).toBe(WIRE_LOYALTY_ACCOUNTS);
-    expect(BADGE_PROGRESS_COLLECTION).toBe(WIRE_BADGE_PROGRESS);
-    expect(SEASON_PROGRESS_COLLECTION).toBe(WIRE_SEASON_PROGRESS);
-    expect(CLIENT_JOURNAL_COLLECTION).toBe(WIRE_CLIENT_JOURNAL);
-    expect(STREAK_DEFINITIONS_COLLECTION).toBe(WIRE_STREAK_DEFINITIONS);
-    expect(STREAK_DEFINITION_VERSIONS_COLLECTION).toBe(WIRE_STREAK_VERSIONS);
+    // The six catalogue collections, under `LoyaltyCatalogSystem`'s parts.
+    expect(LOYALTY_CATALOG_PARTS).toEqual([
+      [Collections.BadgeCategories, 'categories'],
+      [Collections.BadgeSeries, 'series'],
+      [Collections.Seasons, 'seasons'],
+      [Collections.TierDefinitions, 'tiers'],
+      [Collections.RewardsCatalog, 'rewards'],
+      [Collections.StreakDefinitions, 'streaks'],
+    ]);
+    expect(Object.keys(loyaltyCatalogJson)).toEqual(
+      LOYALTY_CATALOG_PARTS.map(([collection]) => collection),
+    );
+    expect(LOYALTY_ACCOUNTS_COLLECTION).toBe(Collections.LoyaltyAccounts);
+    expect(BADGE_PROGRESS_COLLECTION).toBe(Subcollections.BadgeProgress);
+    expect(SEASON_PROGRESS_COLLECTION).toBe(Subcollections.SeasonProgress);
+    expect(CLIENT_JOURNAL_COLLECTION).toBe(Collections.ClientJournal);
+    expect(STREAK_DEFINITIONS_COLLECTION).toBe(Collections.StreakDefinitions);
+    expect(STREAK_DEFINITION_VERSIONS_COLLECTION).toBe(Subcollections.Versions);
+    const customerId = customerIdOf('dev-client-1');
     for (const seq of [1, 42, 123456]) {
-      expect(clientJournalEntryId('dev-client-1', seq)).toBe(
-        wireJournalEntryId('dev-client-1', seq),
+      expect(journalRowIdOf(customerId, seq)).toBe(
+        JournalEntryId.forEntry(customerId, seq),
       );
-      expect(streakDefinitionVersionId(seq)).toBe(wireVersionId(seq));
+      expect(ruleVersionIdOf(seq)).toBe(
+        StreakDefinitionVersionId.forVersion(seq),
+      );
     }
   });
 
@@ -555,7 +616,7 @@ describe('the loyalty catalogue', () => {
     const catalog = loyaltyCatalogFor(LOYALTY_CATALOG_TODAY);
     const writes = loyaltyCatalogWritesOf(catalog);
     expect(writes.map(({ path }) => path)).toEqual([
-      ...LOYALTY_CATALOG_COLLECTIONS.flatMap((collection) =>
+      ...LOYALTY_CATALOG_PARTS.flatMap(([collection]) =>
         Object.keys(catalog[collection]).map((id) => `${collection}/${id}`),
       ),
       'streakDefinitions/cadence/versions/000001',
@@ -639,26 +700,34 @@ describe('the loyalty catalogue', () => {
     (_label, nowMs) => {
       const today = createShopCalendar(nowMs).dayKeyAt(0);
       const catalog = loyaltyCatalogFor(today);
+      const phaseOn = (season) =>
+        today < season.windowFrom
+          ? 'announced'
+          : today > season.windowUntil
+            ? 'ended'
+            : 'open';
       const phases = Object.values(catalog.seasons).map(
-        (season) => `${season.kind}:${phaseOn(season.window, today)}`,
+        (season) => `${season.seasonKind}:${phaseOn(season)}`,
       );
       expect(phases.sort()).toEqual([
-        'event:open',
-        'season:ended',
-        'season:open',
+        'EVENT:open',
+        'SEASON:ended',
+        'SEASON:open',
       ]);
       for (const [id, season] of Object.entries(catalog.seasons)) {
-        const fixture = loyaltyFixtures.catalog.seasons[id];
+        const fixture = loyaltyCatalogJson.seasons[id];
         const length = (window) =>
-          dayNumber(window.until) - dayNumber(window.from);
-        expect(length(season.window), id).toBe(length(fixture.window));
+          dayNumber(window.windowUntil) - dayNumber(window.windowFrom);
+        expect(length(season), id).toBe(length(fixture));
+        // T5: the announcement's day is the day of its instant, read once.
+        expect(season.announcedLocalDate, id).toBe(
+          sofiaDay(season.announcedAtUtcMs),
+        );
         expect(
-          dayNumber(season.window.from) -
-            dayNumber(sofiaDay(season.announcedAt)),
+          dayNumber(season.windowFrom) - dayNumber(season.announcedLocalDate),
           id,
         ).toBe(
-          dayNumber(fixture.window.from) -
-            dayNumber(sofiaDay(fixture.announcedAt)),
+          dayNumber(fixture.windowFrom) - dayNumber(fixture.announcedLocalDate),
         );
       }
     },
@@ -670,78 +739,98 @@ describe('the loyalty catalogue', () => {
 describe('the rhythm’s rule, as the seed writes it (revision 3 §4.3)', () => {
   const head = () =>
     loyaltyCatalogFor(LOYALTY_CATALOG_TODAY).streakDefinitions.cadence;
-  const scheduleOf = (document) => {
-    const schedule = streakScheduleFromDocument('cadence', document);
-    if (schedule.isFailure()) throw schedule.error;
-    return schedule.value;
+  /** An entity as the store holds it: the body, its `id` left out. */
+  const bodyOf = (entity) => {
+    const body = { ...entity };
+    delete body.id;
+    return body;
   };
 
   it('writes the head the domain’s own write half would: the rule round-trips through its factories', () => {
-    const schedule = scheduleOf(head());
-    expect(schedule.current.version).toBe(1);
-    expect(schedule.scheduled).toBeNull();
-    expect(
-      streakScheduleToDocument(schedule, new Date(head().updatedAt)),
-    ).toEqual(head());
+    const [current] = head().rules;
+    const parsed = StreakRule.parse(current);
+    expect(parsed.ok).toBe(true);
+    // The domain's own head over that rule, nothing waiting: the very list.
+    const schedule = StreakRuleSystem.schedule(parsed.value, null);
+    expect(schedule.ok).toBe(true);
+    expect(schedule.value.rules).toEqual(head().rules);
+    expect(StreakRuleSystem.current(schedule.value).version).toBe(1);
+    expect(StreakRuleSystem.scheduled(schedule.value)).toBeNull();
+    // …and the head the publish pipeline's specs start from.
+    expect(head()).toEqual(bodyOf(streakDefinitionFixture()));
   });
 
   it('writes the first version as the domain’s write half would, published by nobody, changing nothing', () => {
-    const { current } = scheduleOf(head());
     expect(seedRuleVersionWriteOf('cadence', head())).toEqual({
-      path: `${WIRE_STREAK_DEFINITIONS}/cadence/${WIRE_STREAK_VERSIONS}/${wireVersionId(1)}`,
-      data: streakDefinitionVersionToDocument({
-        definition: current,
-        publishedAt: new Date(head().updatedAt),
-        publishedBy: SEED_RULE_PUBLISHER,
-        transition: 'grandfather',
-        direction: 'neutral',
-        changed: [],
-        requestId: seedRuleRequestId('cadence', 1),
-        withdrawnAt: null,
-      }),
+      path: `${Collections.StreakDefinitions}/cadence/${Subcollections.Versions}/${StreakDefinitionVersionId.forVersion(1)}`,
+      data: bodyOf(streakDefinitionVersionFixture()),
     });
-    expect(seedRuleRequestId('cadence', 1)).toBe('seed-cadence-000001');
+    expect(seedRuleVersionWriteOf('cadence', head()).data).toMatchObject({
+      publishedByUserId: SEED_RULE_PUBLISHER,
+      publishedAtUtcMs: head().updatedAtUtcMs,
+      streakTransition: 'GRANDFATHER',
+      streakRuleDirection: 'NEUTRAL',
+      changed: [],
+      withdrawnAtUtcMs: null,
+    });
+    expect(seedRuleRequestIdOf('cadence', 1)).toBe('seed-cadence-000001');
   });
 
   it('is the history the in-memory reference lists, so a spec and the emulator show one', async () => {
-    const listed =
-      await InMemoryStreakDefinitionRepository.seeded().listVersions(
-        'cadence',
-        10,
-      );
-    expect(listed.isSuccess()).toBe(true);
-    expect(listed.value.map(streakDefinitionVersionToDocument)).toEqual([
+    const world = memoryStreakWorld({
+      heads: [streakDefinitionFixture()],
+      versions: [
+        { streakId: 'cadence', version: streakDefinitionVersionFixture() },
+      ],
+    });
+    const listed = await memoryStreakDefinitionPorts(
+      world,
+    ).listStreakDefinitionVersions('cadence', 10);
+    expect(listed.ok).toBe(true);
+    expect(listed.value.map(bodyOf)).toEqual([
       seedRuleVersionWriteOf('cadence', head()).data,
     ]);
   });
 
   it('reads back as the version it is, under the head’s name', () => {
     const { path, data } = seedRuleVersionWriteOf('cadence', head());
-    const version = streakDefinitionVersionFromDocument(
-      'cadence',
-      path.split('/').at(-1),
-      data,
-      head().name,
-    );
-    expect(version.isSuccess()).toBe(true);
-    expect(version.value.definition.equals(scheduleOf(head()).current)).toBe(
-      true,
-    );
-    expect(version.value.definition.name.bg).toBe('Посещения в ритъм');
+    expect(path.split('/').at(-1)).toBe(ruleVersionIdOf(data.version));
+    const version = StreakRule.parse(data);
+    expect(version.ok).toBe(true);
+    expect(
+      StreakRuleSystem.equals(
+        version.value,
+        StreakRuleSystem.inForceOn(head(), LOYALTY_CATALOG_TODAY),
+      ),
+    ).toBe(true);
+    // The name is the head's: a version holds the rule alone.
+    expect(data).not.toHaveProperty('name');
+    expect(head().name.bg).toBe('Посещения в ритъм');
   });
 
   it('refuses to describe a head that holds a version in waiting: only a publish writes one', () => {
+    const [current] = head().rules;
     const waiting = {
       ...head(),
-      scheduled: {
-        ...head().current,
-        version: 2,
-        effectiveFrom: '2026-10-05',
-        transition: 'grandfather',
-      },
+      rules: [
+        current,
+        {
+          ...current,
+          version: 2,
+          effectiveFromLocalDate: '2026-10-05',
+          headRole: 'SCHEDULED',
+          streakTransition: 'GRANDFATHER',
+        },
+      ],
     };
     // The head itself is a sound one…
-    expect(scheduleOf(waiting).scheduled?.definition.version).toBe(2);
+    const scheduled = inRole(waiting, HeadRole.Scheduled);
+    expect(
+      StreakRuleSystem.schedule(StreakRule.parse(current).value, {
+        ...StreakRule.parse(scheduled).value,
+        streakTransition: scheduled.streakTransition,
+      }).ok,
+    ).toBe(true);
     // …and not the seed's to write.
     expect(() => seedRuleVersionWriteOf('cadence', waiting)).toThrow(
       /only a publish writes/,
@@ -756,30 +845,25 @@ describe('rulesPublishedOver — the first version is seeded, every later one is
   const FIRST = 'streakDefinitions/cadence/versions/000001';
   const seededHead = catalog.streakDefinitions.cadence;
   const seededFirst = writes.at(-1).data;
+  const [seededRule] = seededHead.rules;
   const secondVersion = {
-    ...seededHead.current,
+    ...seededRule,
     version: 2,
-    effectiveFrom: '2026-10-05',
-    interval: { kind: 'fixed', days: 35 },
+    effectiveFromLocalDate: '2026-10-05',
+    intervalDays: 35,
   };
   /** The emulator, holding `documents` at their paths and nothing else. */
   const holding = (documents) => new Map(Object.entries(documents));
-  /** The rule before revision 3: flat, its first day an instant. */
-  const FLAT = {
+  /** The head before flip 3: nested, its rule in force and its waiting one as two maps. */
+  const NESTED = {
     name: seededHead.name,
-    version: 1,
-    effectiveFrom: '2025-03-01T07:00:00.000Z',
-    cadence: { kind: 'rollingDays', days: 42 },
-    graceDays: 7,
-    riskLeadDays: 7,
-    freezes: { maxBanked: 2, earnEvery: 5, autoApply: true },
-    repair: { windowDays: 14, perYear: 1 },
-    excused: ['shopClosure', 'barberAbsence', 'staffCancelled'],
+    current: { version: 1, effectiveFrom: '2025-03-01', graceDays: 7 },
+    scheduled: null,
   };
 
   it.each([
     ['an empty emulator', {}],
-    ['the flat rule of an emulator seeded before revision 3', { [HEAD]: FLAT }],
+    ['the nested head of an emulator seeded before flip 3', { [HEAD]: NESTED }],
     [
       'the seed’s own head and first version',
       {
@@ -791,7 +875,7 @@ describe('rulesPublishedOver — the first version is seeded, every later one is
     [
       'a head that holds nothing a reader could take for a version',
       {
-        [HEAD]: { name: seededHead.name, current: 'soon', scheduled: null },
+        [HEAD]: { name: seededHead.name, rules: 'soon' },
       },
     ],
     [
@@ -799,7 +883,7 @@ describe('rulesPublishedOver — the first version is seeded, every later one is
       {
         [HEAD]: {
           ...seededHead,
-          current: { ...seededHead.current, version: 0 },
+          rules: [{ ...seededRule, version: 0 }],
         },
       },
     ],
@@ -812,7 +896,7 @@ describe('rulesPublishedOver — the first version is seeded, every later one is
     [
       'a second version in force',
       {
-        [HEAD]: { ...seededHead, current: secondVersion },
+        [HEAD]: { ...seededHead, rules: [secondVersion] },
         [FIRST]: seededFirst,
       },
     ],
@@ -821,7 +905,14 @@ describe('rulesPublishedOver — the first version is seeded, every later one is
       {
         [HEAD]: {
           ...seededHead,
-          scheduled: { ...secondVersion, transition: 'grandfather' },
+          rules: [
+            seededRule,
+            {
+              ...secondVersion,
+              headRole: 'SCHEDULED',
+              streakTransition: 'GRANDFATHER',
+            },
+          ],
         },
         [FIRST]: seededFirst,
       },
@@ -831,12 +922,12 @@ describe('rulesPublishedOver — the first version is seeded, every later one is
       {
         [HEAD]: {
           ...seededHead,
-          current: { ...seededHead.current, graceDays: 3 },
+          rules: [{ ...seededRule, graceDays: 3 }],
         },
         [FIRST]: {
           ...seededFirst,
           graceDays: 3,
-          publishedBy: 'dev-staff-ivan',
+          publishedByUserId: 'dev-staff-ivan',
           requestId: '0f8f2b7e-5d0a-4c7e-9a55-2f4f6f1f3a10',
         },
       },
@@ -870,37 +961,39 @@ describe('rulesPublishedOver — the first version is seeded, every later one is
   );
 
   it('holds the catalogue as it is while nothing is published', () => {
-    const held = catalogAsHeld(catalog, [], holding({ [HEAD]: FLAT }));
+    const held = catalogAsHeld(catalog, [], holding({ [HEAD]: NESTED }));
     expect(held.streakDefinitions.cadence).toBe(seededHead);
   });
 
-  it('counts the flat rule of an older seed as a stale catalogue, and its missing history', () => {
+  it('counts the nested head of an emulator seeded before flip 3 as a stale catalogue, and its missing history', () => {
     const stored = new Map([
       ...writes.map(({ path, data }) => [path, data]),
-      [HEAD, FLAT],
+      [HEAD, NESTED],
     ]);
     stored.delete(FIRST);
     const drift = loyaltyCatalogDriftOf(writes, stored);
     expect(drift).toHaveLength(2);
     expect(drift[0].startsWith(`${HEAD}: `)).toBe(true);
-    expect(drift[0]).toContain('cadence');
     expect(drift[0]).toContain('current');
+    expect(drift[0]).toContain('rules');
     expect(drift[1]).toBe(`${FIRST}: missing`);
   });
 });
 
 describe.each([
-  ['Георги', LOYALTY_HOLDERS[0], loyaltyFixtures.georgi],
-  ['Мартин', LOYALTY_HOLDERS[1], loyaltyFixtures.martin],
+  ['Георги', LOYALTY_HOLDERS[0], loyaltyAccountJson.georgi],
+  ['Мартин', LOYALTY_HOLDERS[1], loyaltyAccountJson.martin],
 ])('%s’s projection on the fixtures’ day', (_name, holder, fixture) => {
   const { book, today, catalog, project } = seeded(NOW);
   const projection = project(holder);
 
   it('has the fixture’s shape, document by document', () => {
     expect(Object.keys(projection)).toEqual(Object.keys(fixture));
-    expect(accountShapeOf(projection.account)).toEqual(
-      accountShapeOf(fixture.account),
-    );
+    // The fixture is keyed by the record the seed derives for the account.
+    expect(fixture.uid).toBe(holder.uid);
+    expect(fixture.customerId).toBe(customerIdOf(holder.uid));
+    expect(projection.customerId).toBe(fixture.customerId);
+    expect(shapeOf(projection.account)).toEqual(shapeOf(fixture.account));
     expect(shapesOf(Object.values(projection.badgeProgress))).toEqual(
       shapesOf(Object.values(fixture.badgeProgress)),
     );
@@ -909,7 +1002,7 @@ describe.each([
     );
     // The fixtures' journals hold point rows only (contract delta R2a-6):
     // the seed's point rows have their shape, and its other rows are held
-    // to the feed's reader below, not to a fixture.
+    // to the feed's vocabulary by `expectConsistent`, not to a fixture.
     expect(shapesOf(pointsOf(projection.clientJournal))).toEqual(
       shapesOf(Object.values(fixture.clientJournal)),
     );
@@ -930,7 +1023,7 @@ describe.each([
 
   it('writes the account, its two subcollections and its rows, and nothing else', () => {
     const writes = loyaltyWritesOf(holder.uid, projection);
-    const home = `loyaltyAccounts/${holder.uid}`;
+    const home = `loyaltyAccounts/${customerIdOf(holder.uid)}`;
     expect(writes[0]).toEqual({ path: home, data: projection.account });
     expect(writes.map(({ path }) => path).sort()).toEqual(
       [
@@ -968,23 +1061,23 @@ describe('the seeded story (§4.6)', () => {
     expect(badgeProgress['series-svc-fade'].value).toBe(24);
     expect(badgeProgress['series-barber-ivan'].value).toBe(24);
     expect(badgeProgress['series-welcome'].earned).toHaveLength(1);
-    expect(acc.tier).toMatchObject({
-      current: 'gold',
-      next: 'platinum',
+    expect(acc).toMatchObject({
+      tierId: 'gold',
+      nextTierId: 'platinum',
     });
-    expect(acc.streaks.cadence).toMatchObject({
+    expect(cadenceOf(acc)).toMatchObject({
       current: 24,
       best: 24,
-      phase: { kind: 'active' },
+      streakPhase: 'ACTIVE',
     });
     expect(badgeProgress['series-rhythm'].earned).toHaveLength(5);
     expect(acc.punchCards[0].filled).toBe(4);
     expect(acc.lifetimeSpent).toBe(250);
-    expect(acc.records.map((record) => record.kind)).toEqual([
-      'longestRhythm',
-      'mostVisitsInYear',
-      'favouriteService',
-      'firstVisit',
+    expect(acc.records.map((record) => record.personalRecordKind)).toEqual([
+      'LONGEST_RHYTHM',
+      'MOST_VISITS_IN_YEAR',
+      'FAVOURITE_SERVICE',
+      'FIRST_VISIT',
     ]);
     expect(acc.records[2]).toMatchObject({ serviceId: 'svc-fade', value: 24 });
     // No birthday on the profile: the profile is not complete.
@@ -1004,10 +1097,10 @@ describe('the seeded story (§4.6)', () => {
       seasonProgress,
     } = project(LOYALTY_HOLDERS[1]);
     expect(badgeProgress['series-visits'].value).toBe(13);
-    expect(acc.tier).toMatchObject({ current: 'silver', next: 'gold' });
-    expect(acc.streaks.cadence).toMatchObject({
+    expect(acc).toMatchObject({ tierId: 'silver', nextTierId: 'gold' });
+    expect(cadenceOf(acc)).toMatchObject({
       current: 13,
-      phase: { kind: 'atRisk' },
+      streakPhase: 'AT_RISK',
     });
     expect(acc.punchCards[0].filled).toBe(3);
     expect(acc.lifetimeSpent).toBe(120);
@@ -1049,21 +1142,23 @@ describe('across the calendar', () => {
   );
 });
 
-// ── Read back, as the client card reads (§7.5 «Seed») ─────────────────────
+// ── Read back, as the seed checks before it writes (§7.5 «Seed») ───────────
 
 /**
- * Every document the seed writes for the client card, read back through the
- * readers the SEED holds — `loadSeedDomain()`'s bundle of the production
- * mappers, the one `seed-dev-catalog.mjs` reads with before it writes — in
- * the card's order: the catalogue as one model, each account document by
- * where it is written, Мартин's waitlist request.
+ * Every document the seed writes for the client card, read back through
+ * the checks the SEED holds — `loadSeedDomain()`'s bundle of the domain,
+ * the one `seed-dev-catalog.mjs` reads with before it writes — in the
+ * card's order: the catalogue as one model (`LoyaltyCatalogSystem.validate`),
+ * the rhythm's rules (`StreakRule.parse`), each account document routed by
+ * where it is written and answered as stored (flip-3 plan F3-1 (b)),
+ * Мартин's waitlist request.
  */
 describe('read back by the client card’s readers', () => {
   let domain;
-  /** The fixtures' day, read back once the readers are in. */
+  /** The fixtures' day, read back once the bundle is in. */
   let onFixturesDay;
 
-  /** The catalogue and each holder's documents on the book of `nowMs`, as the readers read them. */
+  /** The catalogue and each holder's documents on the book of `nowMs`, as the checks read them. */
   function readBack(nowMs) {
     const { today, catalog, project } = seeded(nowMs);
     return {
@@ -1089,9 +1184,8 @@ describe('read back by the client card’s readers', () => {
     onFixturesDay = readBack(NOW);
   });
 
-  const idOf = (entry) =>
-    typeof entry.id === 'string' ? entry.id : entry.id.value;
   const sorted = (values) => [...values].sort();
+  const idsOf = (entries) => sorted(entries.map((entry) => entry.id));
 
   it('reads the catalogue as one catalogue: every shelf, family, season, tier, reward and the rhythm', () => {
     const { catalogue, catalogDocuments } = onFixturesDay;
@@ -1103,9 +1197,9 @@ describe('read back by the client card’s readers', () => {
       ['seasons', catalog.seasons],
       ['tierDefinitions', catalog.tiers],
       ['rewardsCatalog', catalog.rewards],
-      ['streakDefinitions', catalog.streakSchedules],
+      ['streakDefinitions', catalog.streaks],
     ]) {
-      expect(sorted(entries.map(idOf)), collection).toEqual(
+      expect(idsOf(entries), collection).toEqual(
         sorted(Object.keys(catalogDocuments[collection])),
       );
     }
@@ -1113,18 +1207,24 @@ describe('read back by the client card’s readers', () => {
 
   it('reads the rhythm as a rule in force, and its first version beside the head that names it', () => {
     const { today, catalogue } = onFixturesDay;
-    const rule = catalogue.catalog.streakInForce('cadence', today);
-    expect(rule).toMatchObject({ id: 'cadence', version: 1, enabled: true });
+    const rule = LoyaltyCatalogSystem.streakInForce(
+      catalogue.catalog,
+      'cadence',
+      today,
+    );
+    expect(rule).toMatchObject({ version: 1, enabled: true });
+    expect(catalogue.heads.map((head) => head.id)).toEqual(['cadence']);
     expect(catalogue.ruleVersions).toHaveLength(1);
     const [version] = catalogue.ruleVersions;
-    expect(version.definition.equals(rule)).toBe(true);
+    expect(StreakRuleSystem.equals(version, rule)).toBe(true);
     expect(version).toMatchObject({
-      publishedBy: SEED_RULE_PUBLISHER,
+      id: '000001',
+      publishedByUserId: SEED_RULE_PUBLISHER,
       requestId: 'seed-cadence-000001',
-      transition: 'grandfather',
-      direction: 'neutral',
+      streakTransition: 'GRANDFATHER',
+      streakRuleDirection: 'NEUTRAL',
       changed: [],
-      withdrawnAt: null,
+      withdrawnAtUtcMs: null,
     });
   });
 
@@ -1136,16 +1236,15 @@ describe('read back by the client card’s readers', () => {
       for (const { uid, read } of holders) {
         expect(read.problems, uid).toEqual([]);
       }
-      // The domain's own phases, the notice rule behind them: one season
-      // and one event running, one season behind, nothing announced.
+      // The domain's own phases: one season and one event running, one
+      // season behind, nothing announced.
       const kinds = (phase) =>
-        catalogue.catalog
-          .seasonsIn(phase, today)
-          .map((season) => season.kind)
+        LoyaltyCatalogSystem.seasonsIn(catalogue.catalog, phase, today)
+          .map((season) => season.seasonKind)
           .sort();
-      expect(kinds('open')).toEqual(['event', 'season']);
-      expect(kinds('ended')).toEqual(['season']);
-      expect(kinds('announced')).toEqual([]);
+      expect(kinds(SeasonPhase.Open)).toEqual(['EVENT', 'SEASON']);
+      expect(kinds(SeasonPhase.Ended)).toEqual(['SEASON']);
+      expect(kinds(SeasonPhase.Announced)).toEqual([]);
     },
   );
 
@@ -1160,19 +1259,24 @@ describe('read back by the client card’s readers', () => {
       expect(read.problems).toEqual([]);
       expect(read.catalog).toBeNull();
       expect(read.accounts).toHaveLength(1);
-      expect(read.badgeProgress.map((progress) => progress.seriesId)).toEqual(
+      expect(read.accounts[0].id).toBe(customerIdOf(holder().uid));
+      expect(read.badgeProgress.map((progress) => progress.id)).toEqual(
         Object.keys(projection.badgeProgress),
       );
-      expect(read.seasonProgress.map((track) => track.seasonId)).toEqual(
+      expect(read.seasonProgress.map((track) => track.id)).toEqual(
         Object.keys(projection.seasonProgress),
       );
       // The feed reads every row; the ledger the rows that move points.
-      expect(read.activity.map((entry) => entry.id)).toEqual(
+      expect(read.journal.map((entry) => entry.id)).toEqual(
         Object.keys(projection.clientJournal),
       );
-      expect(read.ledger.map((entry) => entry.id)).toEqual(
+      expect(
+        read.journal
+          .filter((entry) => entry.journalEffect === 'POINTS')
+          .map((entry) => entry.id),
+      ).toEqual(
         Object.entries(projection.clientJournal)
-          .filter(([, row]) => row.effect.kind === 'points')
+          .filter(([, row]) => row.journalEffect === 'POINTS')
           .map(([id]) => id),
       );
     });
@@ -1180,50 +1284,50 @@ describe('read back by the client card’s readers', () => {
     it('reads what the fold wrote: a balance its rows sum to, the rows in order', () => {
       const { uid, projection, read } = holder();
       const [acc] = read.accounts;
-      expect(acc.userId).toBe(uid);
+      const customerId = customerIdOf(uid);
+      expect(acc.customerId).toBe(customerId);
       expect(acc.balance).toBe(projection.account.balance);
+      const moved = read.journal.filter(
+        (entry) => entry.journalEffect === 'POINTS',
+      );
       expect(acc.balance).toBe(
-        read.ledger.reduce((sum, entry) => sum + entry.delta, 0),
+        moved.reduce((sum, entry) => sum + entry.pointsDelta, 0),
       );
-      expect(read.activity.map((entry) => entry.seq)).toEqual(
-        read.activity.map((_, i) => i + 1),
+      expect(read.journal.map((entry) => entry.seq)).toEqual(
+        read.journal.map((_, i) => i + 1),
       );
-      expect(acc.seq).toBe(read.activity.length);
-      read.activity.forEach((entry, i) => {
-        expect(entry.id).toBe(clientJournalEntryId(uid, entry.seq));
-        if (i > 0) expect(entry.at >= read.activity[i - 1].at).toBe(true);
+      expect(acc.seq).toBe(read.journal.length);
+      read.journal.forEach((entry, i) => {
+        expect(entry.id).toBe(JournalEntryId.forEntry(customerId, entry.seq));
+        if (i > 0) {
+          expect(entry.utcEpochMs >= read.journal[i - 1].utcEpochMs).toBe(true);
+        }
       });
-      expect(acc.updatedAt >= read.activity.at(-1).at).toBe(true);
-      // A point row of the feed carries the balance it left: the newest is the account's.
-      const moved = read.activity.filter(
-        (entry) => entry.effect.kind === 'points',
-      );
-      expect(moved.map((entry) => entry.effect.delta)).toEqual(
-        read.ledger.map((entry) => entry.delta),
-      );
-      expect(moved.at(-1).effect.balanceAfter).toBe(acc.balance);
+      expect(acc.updatedAtUtcMs >= read.journal.at(-1).utcEpochMs).toBe(true);
+      // A point row carries the balance it left: the newest is the account's.
+      expect(moved.at(-1).balanceAfter).toBe(acc.balance);
     });
 
     it('reads the rhythm the domain projected: its terms, its twelve periods, the visit that holds it', () => {
       const { projection, read } = holder();
-      const state = read.accounts[0].streaks['cadence'];
-      expect(streakStateToDocument(state)).toEqual(
-        projection.account.streaks.cadence,
-      );
-      expect(state.period).toEqual({
+      const state = cadenceOf(read.accounts[0]);
+      expect(state).toEqual(cadenceOf(projection.account));
+      expect(StreakState.periodTerms(state)).toEqual({
         intervalDays: 42,
         graceDays: 7,
-        source: 'fixed',
+        source: 'FIXED',
         habitDays: null,
       });
       expect(state.periods).toHaveLength(12);
-      expect(state.periods.at(-1).on).toBe(sofiaDay(state.lastQualifiedAt));
+      expect(state.periods.at(-1).on).toBe(
+        sofiaDay(state.lastQualifiedAtUtcMs),
+      );
     });
 
     it('reads the day the run began: the holder’s first visit, further back than the track reaches', () => {
       const { uid, projection, read } = holder();
-      const written = projection.account.streaks.cadence;
-      const state = read.accounts[0].streaks['cadence'];
+      const written = cadenceOf(projection.account);
+      const state = cadenceOf(read.accounts[0]);
       expect(written.runStartedOn).toBe(
         index === 0 ? '2025-03-01' : '2025-05-06',
       );
@@ -1233,7 +1337,7 @@ describe('read back by the client card’s readers', () => {
       expect(state.runStartedOn).toBe(first.day);
       expect(state.runStartedOn).toBe(
         projection.account.records.find(
-          (record) => record.kind === 'firstVisit',
+          (record) => record.personalRecordKind === 'FIRST_VISIT',
         ).on,
       );
       expect(state.current).toBeGreaterThan(state.periods.length);
@@ -1245,37 +1349,49 @@ describe('read back by the client card’s readers', () => {
       const { catalog } = onFixturesDay.catalogue;
       const [acc] = read.accounts;
       for (const progress of read.badgeProgress) {
-        const family = catalog.series(progress.seriesId);
-        expect(family, progress.seriesId).not.toBeNull();
+        const family = LoyaltyCatalogSystem.series(catalog, progress.id);
+        expect(family, progress.id).not.toBeNull();
         for (const { level } of progress.earned) {
           expect(
-            family.levelAt(level),
-            `${progress.seriesId} ${level}`,
-          ).not.toBeNull();
+            family.levels.some((entry) => entry.level === level),
+            `${progress.id} ${level}`,
+          ).toBe(true);
         }
       }
-      for (const { seasonId } of read.seasonProgress) {
+      for (const { id } of read.seasonProgress) {
         expect(
-          catalog.season(seasonId)?.trackSeriesId ?? null,
-          seasonId,
+          LoyaltyCatalogSystem.season(catalog, id)?.trackSeriesId ?? null,
+          id,
         ).not.toBeNull();
       }
-      expect(catalog.tier(acc.tier.current)).not.toBeNull();
+      expect(LoyaltyCatalogSystem.tier(catalog, acc.tierId)).not.toBeNull();
       expect(
-        acc.tier.next === null || catalog.tier(acc.tier.next) !== null,
+        acc.nextTierId === null ||
+          LoyaltyCatalogSystem.tier(catalog, acc.nextTierId) !== null,
       ).toBe(true);
-      for (const [streakId, state] of Object.entries(acc.streaks)) {
-        const rule = catalog.streakInForce(streakId, onFixturesDay.today);
-        expect(rule, streakId).not.toBeNull();
+      for (const state of acc.streaks) {
+        const rule = LoyaltyCatalogSystem.streakInForce(
+          catalog,
+          state.streakId,
+          onFixturesDay.today,
+        );
+        expect(rule, state.streakId).not.toBeNull();
         expect(state.definitionVersion).toBe(rule.version);
       }
-      for (const { id, label } of read.activity) {
-        const { reward, seriesId } = label.params;
-        if (reward !== undefined) {
-          expect(catalog.rewards.map(idOf), id).toContain(reward);
+      for (const row of read.journal) {
+        const reward = param(row, 'reward');
+        const seriesId = param(row, 'seriesId');
+        if (reward !== null) {
+          expect(
+            catalog.rewards.map((entry) => entry.id),
+            row.id,
+          ).toContain(reward);
         }
-        if (seriesId !== undefined) {
-          expect(catalog.series(String(seriesId)), id).not.toBeNull();
+        if (seriesId !== null) {
+          expect(
+            LoyaltyCatalogSystem.series(catalog, String(seriesId)),
+            row.id,
+          ).not.toBeNull();
         }
       }
     });
@@ -1362,7 +1478,7 @@ describe('read back by the client card’s readers', () => {
   });
 
   describe('readLoyaltyWrites — what it refuses', () => {
-    it('names each document a reader refused, and each path no loyalty reader reads', () => {
+    it('names each path no loyalty document is written at, and a version with no head — and answers every account document as stored', () => {
       const [{ uid, projection }] = onFixturesDay.holders;
       const writes = loyaltyWritesOf(uid, projection);
       const [home] = writes;
@@ -1372,47 +1488,39 @@ describe('read back by the client card’s readers', () => {
           data.earned.length > 1,
       );
       const row = writes.at(-1);
-      const earned = writes.find(
-        ({ data }) => data.effect?.kind === 'achievement',
-      );
-      const paid = writes.find(({ data }) => data.effect?.kind === 'points');
       const [, version] = loyaltyCatalogWritesOf(
         loyaltyCatalogFor(LOYALTY_CATALOG_TODAY),
       ).slice(-2);
-      const read = readLoyaltyWrites(domain, [
-        { path: home.path, data: { ...home.data, userId: 'dev-client-2' } },
+      // What a legacy reader refused, no check reads now (F3-1 (b)): an
+      // account, a family's progress and a row are answered as stored —
+      // their shapes are the builders', held by the type checker.
+      const asStored = [
+        { path: home.path, data: { ...home.data, balance: -1 } },
         {
           path: levels.path,
           data: { ...levels.data, earned: [...levels.data.earned].reverse() },
         },
-        { path: row.path, data: { ...row.data, visibility: 'staff' } },
-        // A row the feed never shows: the rhythm's own are the card's to tell.
-        {
-          path: earned.path,
-          data: { ...earned.data, effect: { kind: 'streak' } },
-        },
-        // The feed reads it, the ledger does not: a point row with no figure.
-        {
-          path: paid.path,
-          data: { ...paid.data, effect: { kind: 'points' } },
-        },
+        { path: row.path, data: { ...row.data, journalVisibility: 'STAFF' } },
+      ];
+      const read = readLoyaltyWrites(domain, [
+        ...asStored,
         { path: `${home.path}/visits/appt-1`, data: {} },
         { path: 'coupons/coupon-free-beard', data: {} },
         // A version handed over without the head that names its rule.
         version,
       ]);
-      expect(read.accounts).toEqual([]);
-      expect(read.badgeProgress).toEqual([]);
-      expect(read.ledger).toEqual([]);
-      expect(read.activity).toEqual([]);
+      expect(read.accounts).toEqual([
+        { id: home.path.split('/').at(-1), ...asStored[0].data },
+      ]);
+      expect(read.badgeProgress).toEqual([
+        { id: levels.path.split('/').at(-1), ...asStored[1].data },
+      ]);
+      expect(read.journal).toEqual([
+        { id: row.path.split('/').at(-1), ...asStored[2].data },
+      ]);
       expect(read.ruleVersions).toEqual([]);
-      // Each line: the path, then why — the field the reader refused.
+      // Each line: the path, then why.
       const expected = [
-        [home.path, '.userId'],
-        [levels.path, '.earned'],
-        [row.path, '.visibility'],
-        [earned.path, '.effect.kind'],
-        [paid.path, '.effect.delta'],
         [`${home.path}/visits/appt-1`, 'no loyalty reader reads this path'],
         ['coupons/coupon-free-beard', 'no loyalty reader reads this path'],
         [version.path, 'a version of a rule with no head'],
@@ -1427,16 +1535,30 @@ describe('read back by the client card’s readers', () => {
     it('refuses a rule the domain refuses, by the rule’s own code, and a version numbered otherwise than its id', () => {
       const catalog = loyaltyCatalogFor(LOYALTY_CATALOG_TODAY);
       // A grace as long as the interval: nobody could ever be late.
-      catalog.streakDefinitions.cadence.current.graceDays = 42;
+      const [current] = catalog.streakDefinitions.cadence.rules;
+      current.graceDays = 21;
+      current.intervalDays = 21;
       const graceless = readLoyaltyWrites(
         domain,
         loyaltyCatalogWritesOf(catalog),
       );
-      expect(graceless.catalog).toBeNull();
+      // The catalogue is sound as a catalogue; the rule is not, on the head
+      // and on the version written from it.
+      expect(graceless.catalog).not.toBeNull();
       expect(graceless.ruleVersions).toEqual([]);
       expect(graceless.problems).toHaveLength(2);
+      expect(
+        graceless.problems[0].startsWith('streakDefinitions/cadence: '),
+      ).toBe(true);
+      expect(
+        graceless.problems[1].startsWith(
+          'streakDefinitions/cadence/versions/000001: ',
+        ),
+      ).toBe(true);
       for (const problem of graceless.problems) {
-        expect(problem).toContain('streakDefinitions/cadence');
+        expect(problem).toContain(
+          'ENGAGEMENT_STREAK_DEFINITION_GRACE_NOT_SHORTER_THAN_INTERVAL',
+        );
       }
 
       const writes = loyaltyCatalogWritesOf(
@@ -1455,18 +1577,16 @@ describe('read back by the client card’s readers', () => {
 
     it('fails the catalogue whole on one document the domain refuses', () => {
       const catalog = loyaltyCatalogFor(LOYALTY_CATALOG_TODAY);
-      const [[seasonId, season]] = Object.entries(catalog.seasons);
-      // Announced on its opening day: under the notice every season gives.
-      season.announcedAt = new Date(
-        Date.parse(`${season.window.from}T09:00:00+03:00`),
-      ).toISOString();
+      // A family on a shelf the catalogue does not hold.
+      catalog.badgeSeries['series-svc-fade'].categoryId = 'cat-gone';
       const read = readLoyaltyWrites(domain, loyaltyCatalogWritesOf(catalog));
       expect(read.catalog).toBeNull();
       expect(read.problems).toHaveLength(1);
       const [problem] = read.problems;
       expect(problem.startsWith('the catalogue: ')).toBe(true);
-      expect(problem).toContain(`seasons/${seasonId}`);
-      expect(problem).toContain('announced_late');
+      expect(problem).toContain('ENGAGEMENT_LOYALTY_CATALOG_DANGLING_CATEGORY');
+      expect(problem).toContain('series-svc-fade');
+      expect(problem).toContain('cat-gone');
     });
   });
 
@@ -1497,11 +1617,13 @@ describe('read back by the client card’s readers', () => {
     expect(at('projectLoyaltyFor(\n    seed,')).toBeLessThan(
       at('loyaltyWritesOf(uid, projection)'),
     );
+    // The account and its rows are swept by the client RECORD (D29).
+    expect(at(".where('customerId', '==', customerId)")).toBeGreaterThan(
+      at('const customerId = customerIdOf(uid);'),
+    );
     // The waitlist request is the flat body, written with its TTL stamp.
     const waitlist = at('waitlistRequestWriteOf(clientBook)');
-    expect(at('.set(stamped(path, data))', waitlist)).toBeGreaterThan(
-      waitlist,
-    );
+    expect(at('.set(stamped(path, data))', waitlist)).toBeGreaterThan(waitlist);
   });
 });
 
@@ -1587,9 +1709,16 @@ const project = (appointments, facts = {}, today = TODAY, catalog = null) =>
     facts,
   );
 const rhythm = (appointments, today = TODAY, catalog = null) =>
-  project(appointments, {}, today, catalog).account.streaks.cadence;
+  cadenceOf(project(appointments, {}, today, catalog).account);
 /** Five days after the last of `offsets`: the run as it stood then. */
 const soonAfter = (offsets) => CAL.dayKeyAt(Math.max(...offsets) + 5);
+/** A state's phase alone: its `streakPhase` and the `phase*` fields of that variant. */
+const phaseOf = (state) =>
+  Object.fromEntries(
+    Object.entries(state).filter(
+      ([key]) => key === 'streakPhase' || key.startsWith('phase'),
+    ),
+  );
 
 describe('projectLoyaltyFor — the rhythm', () => {
   it('stays in rhythm inside the cadence and its grace, at risk a week before it is due', () => {
@@ -1597,14 +1726,17 @@ describe('projectLoyaltyFor — the rhythm', () => {
     expect(rhythm(visitsAt([-80, -40]))).toMatchObject({
       current: 2,
       best: 2,
-      phase: { kind: 'atRisk', dueBy: CAL.dayKeyAt(2) },
+      streakPhase: 'AT_RISK',
+      phaseDueBy: CAL.dayKeyAt(2),
       dueBy: CAL.dayKeyAt(2),
     });
-    expect(rhythm(visitsAt([-80, -30])).phase).toEqual({ kind: 'active' });
+    expect(phaseOf(rhythm(visitsAt([-80, -30])))).toEqual({
+      streakPhase: 'ACTIVE',
+    });
     // Past due, inside the grace: still the same run.
-    expect(rhythm(visitsAt([-80, -45])).phase).toEqual({
-      kind: 'inGrace',
-      graceUntil: CAL.dayKeyAt(4),
+    expect(phaseOf(rhythm(visitsAt([-80, -45])))).toEqual({
+      streakPhase: 'IN_GRACE',
+      phaseGraceUntil: CAL.dayKeyAt(4),
     });
     // A visit 49 days on (42 + 7 grace) keeps the run.
     expect(rhythm(visitsAt([-60, -11])).current).toBe(2);
@@ -1613,21 +1745,19 @@ describe('projectLoyaltyFor — the rhythm', () => {
   it('breaks the run a day past the grace, and earns «Завръщане» on the next run’s second visit', () => {
     const offsets = [-300, -270, -240, -150, -120, -90, -60, -30];
     const projection = project(visitsAt(offsets));
-    const state = projection.account.streaks.cadence;
+    const state = cadenceOf(projection.account);
     expect(state).toMatchObject({ current: 5, best: 5 });
     const comeback = projection.badgeProgress['series-comeback'];
     expect(comeback.earned).toHaveLength(1);
-    expect(sofiaDay(comeback.earned[0].earnedAt)).toBe(CAL.dayKeyAt(-120));
+    expect(comeback.earned[0].earnedLocalDate).toBe(CAL.dayKeyAt(-120));
     // Long gone since: broken on the day after the grace, repairable for 14 days.
     expect(rhythm(visitsAt([-300, -270, -240]))).toMatchObject({
       current: 0,
       best: 3,
       dueBy: null,
-      phase: {
-        kind: 'broken',
-        brokenAt: CAL.dayKeyAt(-240 + 50),
-        repairableUntil: CAL.dayKeyAt(-240 + 64),
-      },
+      streakPhase: 'BROKEN',
+      phaseBrokenOn: CAL.dayKeyAt(-240 + 50),
+      phaseRepairableUntil: CAL.dayKeyAt(-240 + 64),
     });
   });
 
@@ -1635,12 +1765,12 @@ describe('projectLoyaltyFor — the rhythm', () => {
     // Broken on day −190; back five days later.
     const offsets = [-300, -270, -240, -185];
     const repaired = project(visitsAt(offsets), {}, soonAfter(offsets));
-    expect(repaired.account.streaks.cadence.current).toBe(4);
+    expect(cadenceOf(repaired.account).current).toBe(4);
     expect(repaired.badgeProgress['series-comeback']).toBeUndefined();
     // Broken again on day −135 and back in five days: not a second time in a year.
     const later = [...offsets, -130, -100];
     const again = project(visitsAt(later), {}, soonAfter(later));
-    expect(again.account.streaks.cadence.current).toBe(2);
+    expect(cadenceOf(again.account).current).toBe(2);
     expect(again.badgeProgress['series-comeback'].earned).toHaveLength(1);
   });
 
@@ -1711,13 +1841,13 @@ describe('projectLoyaltyFor — the rhythm', () => {
       [CAL.dayKeyAt(-115), CAL.dayKeyAt(-150)],
     ]) {
       const projection = project(appointments, {}, today);
-      expect(projection.account.streaks.cadence).toHaveProperty(
+      expect(cadenceOf(projection.account)).toHaveProperty(
         'runStartedOn',
         began,
       );
       const read = readLoyaltyWrites(DOMAIN, loyaltyWritesOf(UID, projection));
       expect(read.problems).toEqual([]);
-      expect(read.accounts[0].streaks['cadence'].runStartedOn).toBe(began);
+      expect(cadenceOf(read.accounts[0]).runStartedOn).toBe(began);
     }
   });
 });
@@ -1725,7 +1855,7 @@ describe('projectLoyaltyFor — the rhythm', () => {
 // ── The journal, as «Движение» folds it (revision 3 §2.2.5, §4.7) ─────────
 
 /** The feed's order of precedence: an event is titled by the first of these it holds. */
-const LEADING = ['redemption', 'reward', 'tier', 'achievement', 'points'];
+const LEADING = ['REDEMPTION', 'REWARD', 'TIER', 'ACHIEVEMENT', 'POINTS'];
 
 /**
  * A journal folded as the feed folds it: rows that share a `correlationId`
@@ -1742,9 +1872,12 @@ function eventsOf(journal) {
   return [...events].map(([id, rows]) => ({
     id,
     rows,
-    kind: LEADING.find((kind) => rows.some((row) => row.effect.kind === kind)),
+    kind: LEADING.find((kind) =>
+      rows.some((row) => row.journalEffect === kind),
+    ),
     amount: rows.reduce(
-      (sum, row) => sum + (row.effect.kind === 'points' ? row.effect.delta : 0),
+      (sum, row) =>
+        sum + (row.journalEffect === 'POINTS' ? row.pointsDelta : 0),
       0,
     ),
   }));
@@ -1763,29 +1896,26 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
   it('holds every kind of row the feed shows, for both holders', () => {
     for (const { holder, projection } of projections) {
       const kinds = new Set(
-        Object.values(projection.clientJournal).map((row) => row.effect.kind),
+        Object.values(projection.clientJournal).map((row) => row.journalEffect),
       );
-      expect([...kinds].sort(), holder.uid).toEqual(
-        [...ACTIVITY_EFFECT_KINDS.all].sort(),
-      );
+      expect([...kinds].sort(), holder.uid).toEqual([...FEED].sort());
     }
   });
 
   it('reads every row as the feed’s reader reads it, and every point row as the ledger’s', () => {
     for (const { holder, projection } of projections) {
       for (const [id, row] of Object.entries(projection.clientJournal)) {
-        const entry = activityEntryFromDocument(id, row);
-        expect(entry.isSuccess(), `${holder.uid} ${id}`).toBe(true);
-        expect(entry.value).toMatchObject({
-          id,
-          seq: row.seq,
-          correlationId: row.correlationId,
-          effect: { kind: row.effect.kind },
-          label: row.publicLabel,
+        // The feed's query: the record, the client-visible rows, a pill's effects.
+        expect(row, `${holder.uid} ${id}`).toMatchObject({
+          customerId: customerIdOf(holder.uid),
+          journalVisibility: 'CLIENT',
           reverses: null,
         });
-        expect(ledgerEntryFromDocument(id, row).isSuccess()).toBe(
-          row.effect.kind === 'points',
+        expect(FEED).toContain(row.journalEffect);
+        expect(LABEL_CODES).toContain(row.labelCode);
+        // The ledger's: a point row moves the balance by its figure, and no other row has one.
+        expect(Number.isInteger(row.pointsDelta), `${holder.uid} ${id}`).toBe(
+          row.journalEffect === 'POINTS',
         );
       }
     }
@@ -1797,26 +1927,30 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
       const count = (kind) =>
         events.filter((event) => event.kind === kind).length;
       const rows = (kind) => rowsOf(projection.clientJournal, kind).length;
-      expect(count('points'), holder.uid).toBe(visits.length);
-      expect(count('achievement'), holder.uid).toBe(rows('achievement'));
-      expect(count('tier')).toBe(rows('tier'));
-      expect(count('reward')).toBe(rows('reward'));
-      expect(count('redemption')).toBe(holder.redemptions.length);
+      expect(count('POINTS'), holder.uid).toBe(visits.length);
+      expect(count('ACHIEVEMENT'), holder.uid).toBe(rows('ACHIEVEMENT'));
+      expect(count('TIER')).toBe(rows('TIER'));
+      expect(count('REWARD')).toBe(rows('REWARD'));
+      expect(count('REDEMPTION')).toBe(holder.redemptions.length);
       for (const event of events) {
         // One event, one instant, and rows that follow each other: a page
         // of the feed can cut the LAST event it holds, never one inside.
-        expect(new Set(event.rows.map((row) => row.at)).size <= 2).toBe(true);
+        expect(new Set(event.rows.map((row) => row.utcEpochMs)).size <= 2).toBe(
+          true,
+        );
         event.rows.forEach((row, i) => {
           if (i > 0) expect(row.seq).toBe(event.rows[i - 1].seq + 1);
         });
         // What leads it is there once; the rest of it is what it paid or cost.
         const others = event.rows.filter(
-          (row) => row.effect.kind !== event.kind,
+          (row) => row.journalEffect !== event.kind,
         );
         expect(event.rows.length - others.length >= 1).toBe(true);
-        if (event.kind !== 'points') {
+        if (event.kind !== 'POINTS') {
           expect(event.rows.length - others.length, event.id).toBe(1);
-          for (const other of others) expect(other.effect.kind).toBe('points');
+          for (const other of others) {
+            expect(other.journalEffect).toBe('POINTS');
+          }
         }
       }
     }
@@ -1831,19 +1965,16 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
       const event = events.find(
         ({ id }) => id === `appt:${visit.appointmentId}`,
       );
-      expect(event.kind).toBe('points');
-      expect(event.rows.map((row) => row.effect.delta).sort()).toEqual([
-        10, 17,
-      ]);
+      expect(event.kind).toBe('POINTS');
+      expect(event.rows.map((row) => row.pointsDelta).sort()).toEqual([10, 17]);
       expect(event.amount).toBe(27);
-      // Each seat is still paid once, under its own key.
-      expect(new Set(event.rows.map((row) => row.source.awardKey)).size).toBe(
-        2,
-      );
+      // Each seat is still paid once, under its own key, for the one visit.
+      expect(new Set(event.rows.map((row) => row.sourceAwardKey)).size).toBe(2);
       for (const row of event.rows) {
-        expect(row.source.awardKey).toMatch(
+        expect(row.sourceAwardKey).toMatch(
           /^rule-earn-per-euro:dev-client-1:appt:[^:]+:seat:[^:]+$/,
         );
+        expect(row.appointmentId).toBe(visit.appointmentId);
       }
     }
   });
@@ -1852,59 +1983,65 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
     const [{ projection }] = projections;
     const journal = projection.clientJournal;
     expect(
-      rowsOf(journal, 'tier').map((row) => [row.effect.from, row.effect.to]),
+      rowsOf(journal, 'TIER').map((row) => [row.tierFrom, row.tierTo]),
     ).toEqual([
       ['bronze', 'silver'],
       ['silver', 'gold'],
     ]);
     expect(
-      rowsOf(journal, 'reward').map((row) => [
-        row.publicLabel.params.stamp,
-        row.effect.ref.id,
-        row.publicLabel.params.reward,
-        row.publicLabel.params.coupon,
+      rowsOf(journal, 'REWARD').map((row) => [
+        param(row, 'stamp'),
+        row.rewardCouponGrantId,
+        param(row, 'reward'),
+        param(row, 'coupon'),
       ]),
     ).toEqual([
       [10, 'grant-dev-georgi-punch-10', 'reward-cut', PUNCH_CARD.couponId],
       [20, 'grant-dev-georgi-punch', 'reward-cut', PUNCH_CARD.couponId],
     ]);
-    const [bought] = rowsOf(journal, 'redemption');
-    expect(bought.effect).toEqual({
-      kind: 'redemption',
-      op: 'redeemed',
+    const [bought] = rowsOf(journal, 'REDEMPTION');
+    expect(bought).toMatchObject({
+      journalEffect: 'REDEMPTION',
+      redemptionOp: 'REDEEMED',
       redemptionId: 'rdm-dev-georgi-cut',
-      rewardId: 'reward-cut',
-      cost: 250,
-      grant: { kind: 'couponGrant', id: 'grant-rdm-dev-georgi-cut' },
+      redeemedRewardId: 'reward-cut',
+      redemptionCost: 250,
+      grantRef: 'COUPON_GRANT',
+      grantCouponGrantId: 'grant-rdm-dev-georgi-cut',
     });
-    expect(bought.actor).toEqual({
-      kind: 'admin',
-      adminUserId: 'dev-staff-ivan',
+    expect(bought).toMatchObject({
+      actorRole: 'ADMIN',
+      actorAdminUserId: 'dev-staff-ivan',
     });
     expect(
       eventsOf(journal).find(({ id }) => id === 'rdm-dev-georgi-cut'),
-    ).toMatchObject({ kind: 'redemption', amount: -250 });
+    ).toMatchObject({ kind: 'REDEMPTION', amount: -250 });
   });
 
   it('Мартин: Бронз to Сребро, a coupon at the tenth stamp, a beard bought at the desk', () => {
     const [, { projection }] = projections;
     const journal = projection.clientJournal;
     expect(
-      rowsOf(journal, 'tier').map((row) => [row.effect.from, row.effect.to]),
+      rowsOf(journal, 'TIER').map((row) => [row.tierFrom, row.tierTo]),
     ).toEqual([['bronze', 'silver']]);
-    expect(rowsOf(journal, 'reward').map((row) => row.effect.ref.id)).toEqual([
-      'grant-dev-martin-punch-10',
-    ]);
-    expect(rowsOf(journal, 'redemption')).toHaveLength(1);
+    expect(
+      rowsOf(journal, 'REWARD').map((row) => row.rewardCouponGrantId),
+    ).toEqual(['grant-dev-martin-punch-10']);
+    const [bought] = rowsOf(journal, 'REDEMPTION');
+    expect(bought).toMatchObject({
+      actorRole: 'STAFF',
+      actorUserId: 'dev-staff-ivan',
+      actorRoles: ['barber', 'admin'],
+    });
     expect(
       eventsOf(journal).find(({ id }) => id === 'rdm-dev-martin-beard'),
-    ).toMatchObject({ kind: 'redemption', amount: -120 });
+    ).toMatchObject({ kind: 'REDEMPTION', amount: -120 });
   });
 
   it('a level is its own event: the row that names it, then what it paid', () => {
     const [{ projection }] = projections;
     const events = eventsOf(projection.clientJournal).filter(
-      (event) => event.kind === 'achievement',
+      (event) => event.kind === 'ACHIEVEMENT',
     );
     const paying = events.filter((event) => event.amount > 0);
     const free = events.filter((event) => event.amount === 0);
@@ -1913,11 +2050,12 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
     expect(free.length).toBeGreaterThan(0);
     for (const event of events) {
       const [level, ...paid] = event.rows;
-      expect(level.effect.kind).toBe('achievement');
-      const { seriesId, level: rank } = level.publicLabel.params;
+      expect(level.journalEffect).toBe('ACHIEVEMENT');
+      const seriesId = param(level, 'seriesId');
+      const rank = param(level, 'level');
       expect(catalog.badgeSeries[seriesId].levels[rank - 1]).toBeDefined();
       expect(event.amount).toBe(
-        paid.reduce((sum, row) => sum + row.effect.delta, 0),
+        paid.reduce((sum, row) => sum + row.pointsDelta, 0),
       );
     }
   });
@@ -1926,14 +2064,15 @@ describe('the journal, as «Движение» folds it (§4.7)', () => {
     // Six visits (Сребро), long ago: the sixth makes it, the first leaving takes it.
     const offsets = [-460, -450, -440, -430, -420, -410];
     const journal = project(visitsAt(offsets)).clientJournal;
-    const changes = rowsOf(journal, 'tier');
-    expect(changes.map((row) => [row.effect.from, row.effect.to])).toEqual([
+    const changes = rowsOf(journal, 'TIER');
+    expect(changes.map((row) => [row.tierFrom, row.tierTo])).toEqual([
       ['bronze', 'silver'],
       ['silver', 'bronze'],
     ]);
     const [up, down] = changes;
-    expect(sofiaDay(up.at)).toBe(CAL.dayKeyAt(-410));
-    expect(down.at).toBe(new Date(CAL.msAt(-460 + 365, 0, 0)).toISOString());
+    expect(up.localDate).toBe(CAL.dayKeyAt(-410));
+    expect(down.utcEpochMs).toBe(CAL.msAt(-460 + 365, 0, 0));
+    expect(down.localDate).toBe(CAL.dayKeyAt(-460 + 365));
     expect(down.correlationId).toBe(
       `tier:${UID}:bronze:${CAL.dayKeyAt(-460 + 365)}`,
     );
@@ -1949,11 +2088,10 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
 
   it('is the domain’s own projection of the book: the state the projector answers, written by its write half', () => {
     const { book, catalog, project } = seedsOwn;
-    const schedule = streakScheduleFromDocument(
-      'cadence',
+    const rule = StreakRuleSystem.inForceOn(
       catalog.streakDefinitions.cadence,
+      today,
     );
-    const rule = schedule.value.inForceOn(today);
     for (const holder of LOYALTY_HOLDERS) {
       const projection = project(holder);
       const visits = workedVisitsOf(holder.uid, book.appointments).filter(
@@ -1965,19 +2103,20 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
       const grants = projection.badgeProgress['series-rhythm'].earned.flatMap(
         (earned) =>
           levels[earned.level - 1].awards
-            .filter((award) => award.kind === 'freeze')
+            .filter((award) => award.awardKind === 'FREEZE')
             .map((award) => ({
-              day: sofiaDay(earned.earnedAt),
-              count: award.count,
+              localDate: earned.earnedLocalDate,
+              count: award.awardFreezeCount,
             })),
       );
-      const trace = traceStreak(
+      const trace = StreakSystem.trace(
+        'cadence',
         rule,
         {
           visits: visits.map((visit) => ({
-            day: visit.day,
+            localDate: visit.day,
             counted: true,
-            at: new Date(visit.startMs),
+            utcEpochMs: visit.startMs,
           })),
           excused: [],
           bookings: [],
@@ -1986,16 +2125,16 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
         },
         today,
       );
-      const state = projection.account.streaks.cadence;
+      const state = cadenceOf(projection.account);
       // Nothing but the visit ahead is the book's to add here: neither
       // holder needed an excuse or a hold to stay in rhythm.
-      expect({ ...state, heldBy: null }).toEqual(
-        streakStateToDocument(trace.state),
+      expect({ ...state, heldByAppointmentId: null, heldOn: null }).toEqual(
+        trace.state,
       );
       expect(state.runStartedOn).toBe(trace.runStartedOn);
       expect(state.runStartedOn).toBe(visits[0].day);
       expect(projection.account.records[0]).toEqual({
-        kind: 'longestRhythm',
+        personalRecordKind: 'LONGEST_RHYTHM',
         value: trace.record.value,
         on: trace.record.on,
         year: null,
@@ -2006,78 +2145,85 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
 
   it('names the visit on the book that holds the period: Мартин’s chair today, nobody’s for Георги this evening', () => {
     const { project } = seedsOwn;
-    expect(project(georgi).account.streaks.cadence.heldBy).toBeNull();
-    expect(project(martin).account.streaks.cadence.heldBy).toEqual({
-      appointmentId: 'appt-dev-2',
-      on: today,
+    expect(cadenceOf(project(georgi).account)).toMatchObject({
+      heldByAppointmentId: null,
+      heldOn: null,
+    });
+    expect(cadenceOf(project(martin).account)).toMatchObject({
+      heldByAppointmentId: 'appt-dev-2',
+      heldOn: today,
     });
     // In the morning Георги's own cut is still ahead of him.
     const morning = seeded(Date.parse('2026-09-28T07:30:00+03:00'));
-    expect(morning.project(georgi).account.streaks.cadence.heldBy).toEqual({
-      appointmentId: 'appt-dev-1',
-      on: today,
+    expect(cadenceOf(morning.project(georgi).account)).toMatchObject({
+      heldByAppointmentId: 'appt-dev-1',
+      heldOn: today,
     });
   });
 
   it('moves both cards when the shop publishes another interval', () => {
-    const { project } = under(
-      published({ interval: { kind: 'fixed', days: 28 } }),
-    );
+    const { project } = under(published({ intervalDays: 28 }));
     const was = seedsOwn.project(martin);
     const is = project(martin);
     // Георги comes every three to four weeks: only his due date moves.
-    expect(project(georgi).account.streaks.cadence).toMatchObject({
+    expect(cadenceOf(project(georgi).account)).toMatchObject({
       definitionVersion: 2,
       current: 24,
       best: 24,
-      phase: { kind: 'active' },
+      streakPhase: 'ACTIVE',
       dueBy: '2026-10-26',
-      period: { intervalDays: 28, graceDays: 7, source: 'fixed' },
+      periodIntervalDays: 28,
+      periodGraceDays: 7,
+      periodSource: 'FIXED',
     });
-    expect(seedsOwn.project(georgi).account.streaks.cadence.dueBy).toBe(
+    expect(cadenceOf(seedsOwn.project(georgi).account).dueBy).toBe(
       '2026-11-09',
     );
     // Мартин comes every five to six: under four weeks he has missed some.
-    const state = is.account.streaks.cadence;
-    expect(was.account.streaks.cadence).toMatchObject({
+    const state = cadenceOf(is.account);
+    expect(cadenceOf(was.account)).toMatchObject({
       definitionVersion: 1,
       current: 13,
       best: 13,
     });
     expect(state).toMatchObject({
       definitionVersion: 2,
-      period: { intervalDays: 28 },
+      periodIntervalDays: 28,
       // Past its grace, and held by the chair he sits in today.
-      phase: { kind: 'inGrace', graceUntil: today },
-      heldBy: { appointmentId: 'appt-dev-2', on: today },
+      streakPhase: 'IN_GRACE',
+      phaseGraceUntil: today,
+      heldByAppointmentId: 'appt-dev-2',
+      heldOn: today,
     });
     expect(state.current).toBeLessThan(13);
     expect(state.best).toBeLessThan(13);
     // The run he is on began with the visit after his last miss; Георги's
     // with his first, as before.
-    expect(was.account.streaks.cadence.runStartedOn).toBe('2025-05-06');
+    expect(cadenceOf(was.account).runStartedOn).toBe('2025-05-06');
     expect(state.runStartedOn).toBe('2026-03-21');
     expect(
-      state.periods.map(({ mark, on }) => `${mark} ${on}`).slice(5, 7),
-    ).toEqual(['missed 2026-03-07', 'kept 2026-03-21']);
-    expect(project(georgi).account.streaks.cadence.runStartedOn).toBe(
-      seedsOwn.project(georgi).account.streaks.cadence.runStartedOn,
+      state.periods
+        .map(({ streakPeriodMark, on }) => `${streakPeriodMark} ${on}`)
+        .slice(5, 7),
+    ).toEqual(['MISSED 2026-03-07', 'KEPT 2026-03-21']);
+    expect(cadenceOf(project(georgi).account).runStartedOn).toBe(
+      cadenceOf(seedsOwn.project(georgi).account).runStartedOn,
     );
-    const marks = state.periods.map((period) => period.mark);
-    expect(marks).toContain('missed');
-    expect(marks).toContain('repaired');
+    const marks = state.periods.map((period) => period.streakPeriodMark);
+    expect(marks).toContain('MISSED');
+    expect(marks).toContain('REPAIRED');
     expect(
       state.periods
-        .filter((period) => period.mark === 'protected')
-        .map((period) => period.reason),
-    ).toEqual(['freeze', 'barberAbsence']);
+        .filter((period) => period.streakPeriodMark === 'PROTECTED')
+        .map((period) => period.periodReason),
+    ).toEqual(['FREEZE', 'BARBER_ABSENCE']);
     // What counts the rhythm follows it: the family, the record, «Завръщане».
     expect(is.badgeProgress['series-rhythm'].value).toBe(state.best);
     expect(is.badgeProgress['series-rhythm'].earned.length).toBeLessThan(
       was.badgeProgress['series-rhythm'].earned.length,
     );
     expect(is.account.records[0]).toMatchObject({
-      kind: 'longestRhythm',
+      personalRecordKind: 'LONGEST_RHYTHM',
       value: state.best,
     });
     expect(was.badgeProgress['series-comeback']).toBeUndefined();
@@ -2086,34 +2232,38 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
     expect(is.badgeProgress['series-visits']).toEqual(
       was.badgeProgress['series-visits'],
     );
-    expect(is.account.tier).toEqual(was.account.tier);
+    const tierOf = (acc) =>
+      Object.fromEntries(
+        Object.entries(acc).filter(
+          ([key]) => key.startsWith('tier') || key === 'nextTierId',
+        ),
+      );
+    expect(tierOf(is.account)).toEqual(tierOf(was.account));
   });
 
   it('keeps every invariant under a published rule, whatever it is', () => {
     for (const patch of [
-      { interval: { kind: 'fixed', days: 28 } },
-      { interval: { kind: 'fixed', days: 84 }, graceDays: 0 },
+      { intervalDays: 28 },
+      { intervalDays: 84, graceDays: 0 },
       {
-        interval: {
-          kind: 'personal',
-          tolerancePct: 25,
-          minDays: 21,
-          maxDays: 70,
-          fallbackDays: 42,
-        },
+        streakInterval: 'PERSONAL',
+        intervalTolerancePct: 25,
+        intervalMinDays: 21,
+        intervalMaxDays: 70,
+        intervalFallbackDays: 42,
       },
-      { excuses: [], bookingHold: { enabled: false, maxDaysPastDue: 14 } },
+      { excuses: [], bookingHoldEnabled: false, bookingHoldMaxDaysPastDue: 14 },
       {
-        onBreak: 'hold',
-        repair: { enabled: false, windowDays: 14, perYear: 1 },
+        onBreak: 'HOLD',
+        repairEnabled: false,
+        repairWindowDays: 14,
+        repairPerYear: 1,
       },
       {
-        protections: {
-          enabled: false,
-          maxBanked: 2,
-          earnEvery: 5,
-          startWith: 0,
-        },
+        protectionsEnabled: false,
+        protectionsMaxBanked: 2,
+        protectionsEarnEvery: 5,
+        protectionsStartWith: 0,
       },
     ]) {
       const { book, catalog, project } = under(published(patch));
@@ -2131,7 +2281,7 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
           loyaltyWritesOf(holder.uid, projection),
         );
         expect(read.problems, JSON.stringify(patch)).toEqual([]);
-        expect(read.accounts[0].streaks['cadence'].definitionVersion).toBe(2);
+        expect(cadenceOf(read.accounts[0]).definitionVersion).toBe(2);
       }
     }
   });
@@ -2139,50 +2289,50 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
   it('knows the person’s own habit under a personal interval', () => {
     const { project } = under(
       published({
-        interval: {
-          kind: 'personal',
-          tolerancePct: 25,
-          minDays: 21,
-          maxDays: 70,
-          fallbackDays: 42,
-        },
+        streakInterval: 'PERSONAL',
+        intervalTolerancePct: 25,
+        intervalMinDays: 21,
+        intervalMaxDays: 70,
+        intervalFallbackDays: 42,
       }),
     );
     for (const holder of LOYALTY_HOLDERS) {
-      const { period } = project(holder).account.streaks.cadence;
-      expect(period.source).toBe('personal');
-      expect(period.habitDays).toBeGreaterThan(20);
-      expect(period.intervalDays).toBeGreaterThanOrEqual(
-        Math.floor(period.habitDays),
+      const state = cadenceOf(project(holder).account);
+      expect(state.periodSource).toBe('PERSONAL');
+      expect(state.periodHabitDays).toBeGreaterThan(20);
+      expect(state.periodIntervalDays).toBeGreaterThanOrEqual(
+        Math.floor(state.periodHabitDays),
       );
     }
     // Георги's habit is the shorter: he comes more often.
-    expect(
-      project(georgi).account.streaks.cadence.period.habitDays,
-    ).toBeLessThan(project(martin).account.streaks.cadence.period.habitDays);
+    expect(cadenceOf(project(georgi).account).periodHabitDays).toBeLessThan(
+      cadenceOf(project(martin).account).periodHabitDays,
+    );
   });
 
   it('projects under the version that waits from its own day on, and not a day sooner', () => {
     const waitingFrom = (day) => (head) => ({
       ...head,
-      scheduled: {
-        ...head.current,
-        version: 2,
-        effectiveFrom: day,
-        interval: { kind: 'fixed', days: 28 },
-        transition: 'grandfather',
-      },
+      rules: [
+        inRole(head, HeadRole.Current),
+        {
+          ...inRole(head, HeadRole.Current),
+          version: 2,
+          effectiveFromLocalDate: day,
+          intervalDays: 28,
+          headRole: 'SCHEDULED',
+          streakTransition: 'GRANDFATHER',
+        },
+      ],
     });
     const tomorrow = CAL.dayKeyAt(1);
     expect(
-      under(waitingFrom(tomorrow)).project(martin).account.streaks.cadence,
-    ).toEqual(seedsOwn.project(martin).account.streaks.cadence);
+      cadenceOf(under(waitingFrom(tomorrow)).project(martin).account),
+    ).toEqual(cadenceOf(seedsOwn.project(martin).account));
     expect(
-      under(waitingFrom(today)).project(martin).account.streaks.cadence,
+      cadenceOf(under(waitingFrom(today)).project(martin).account),
     ).toEqual(
-      under(published({ interval: { kind: 'fixed', days: 28 } })).project(
-        martin,
-      ).account.streaks.cadence,
+      cadenceOf(under(published({ intervalDays: 28 })).project(martin).account),
     );
   });
 
@@ -2191,15 +2341,14 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
     for (const holder of LOYALTY_HOLDERS) {
       const was = seedsOwn.project(holder);
       const is = project(holder);
-      expect(is.account.streaks).toEqual({});
+      expect(is.account.streaks).toEqual([]);
       expect(is.badgeProgress['series-rhythm']).toBeUndefined();
       expect(is.badgeProgress['series-comeback']).toBeUndefined();
-      expect(is.account.records.map((record) => record.kind)).toEqual([
-        'mostVisitsInYear',
-        'favouriteService',
-        'firstVisit',
-      ]);
-      expect(is.account.tier).toEqual(was.account.tier);
+      expect(
+        is.account.records.map((record) => record.personalRecordKind),
+      ).toEqual(['MOST_VISITS_IN_YEAR', 'FAVOURITE_SERVICE', 'FIRST_VISIT']);
+      expect(is.account.tierId).toBe(was.account.tierId);
+      expect(is.account.tierSinceUtcMs).toBe(was.account.tierSinceUtcMs);
       expect(is.badgeProgress['series-visits']).toEqual(
         was.badgeProgress['series-visits'],
       );
@@ -2218,21 +2367,25 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
 
   it('counts the visits the rule’s qualifier counts: a rule about the beard is not about Мартин’s cut', () => {
     const { project } = under(
-      published({ qualifier: { kind: 'services', serviceIds: ['svc-beard'] } }),
+      published({
+        streakQualifier: 'SERVICES',
+        qualifierServiceIds: ['svc-beard'],
+      }),
     );
-    expect(project(martin).account.streaks).toEqual({});
-    const state = project(georgi).account.streaks.cadence;
+    expect(project(martin).account.streaks).toEqual([]);
+    const state = cadenceOf(project(georgi).account);
     expect(state.best).toBeLessThan(24);
     expect(state.best).toBeGreaterThan(0);
     // A category holds every seeded service: it counts as «всяко посещение» does.
     const byCategory = under(
       published({
-        qualifier: { kind: 'categories', categoryIds: ['cat-hair'] },
+        streakQualifier: 'CATEGORIES',
+        qualifierCategoryIds: ['cat-hair'],
       }),
     );
     for (const holder of LOYALTY_HOLDERS) {
-      expect(byCategory.project(holder).account.streaks.cadence).toEqual({
-        ...seedsOwn.project(holder).account.streaks.cadence,
+      expect(cadenceOf(byCategory.project(holder).account)).toEqual({
+        ...cadenceOf(seedsOwn.project(holder).account),
         definitionVersion: 2,
       });
     }
@@ -2247,7 +2400,7 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
     ];
     const then = CAL.dayKeyAt(-115);
     const without = catalogUnder(
-      published({ excuses: ['shopClosure', 'closedDays'] }),
+      published({ excuses: ['SHOP_CLOSURE', 'CLOSED_DAYS'] }),
     )(then);
     expect(rhythm(book, then).current).toBe(2);
     expect(rhythm(book, then, without).current).toBe(1);
@@ -2256,11 +2409,16 @@ describe('projectLoyaltyFor — the rhythm under the rule the shop has in force 
   it('stops on a rule the wire’s reader refuses, naming it', () => {
     const broken = catalogUnder((head) => ({
       ...head,
-      current: { ...head.current, graceDays: 42 },
+      rules: [{ ...inRole(head, HeadRole.Current), graceDays: 42 }],
     }))(today);
     expect(() =>
       projectLoyaltyFor(DOMAIN, UID, visitsAt([-10]), broken, today),
     ).toThrow(/the cadence rhythm does not read/);
+    // And a head that holds no rule in force at all.
+    const headless = catalogUnder((head) => ({ ...head, rules: [] }))(today);
+    expect(() =>
+      projectLoyaltyFor(DOMAIN, UID, visitsAt([-10]), headless, today),
+    ).toThrow(/the cadence rhythm does not read: it holds no rule in force/);
   });
 });
 
@@ -2358,14 +2516,13 @@ describe('the coupons the engine granted', () => {
         granted.map(({ grantId, couponId, grantedAtUtcMs }) => [
           grantId,
           couponId,
-          // The journal keeps the loyalty wire (flip 3): an ISO instant.
-          new Date(grantedAtUtcMs).toISOString(),
+          grantedAtUtcMs,
         ]),
       ).toEqual(
-        rowsOf(projection.clientJournal, 'redemption').map((row) => [
-          row.effect.grant.id,
-          catalog.rewardsCatalog[row.effect.rewardId].grants.couponId,
-          row.at,
+        rowsOf(projection.clientJournal, 'REDEMPTION').map((row) => [
+          row.grantCouponGrantId,
+          catalog.rewardsCatalog[row.redeemedRewardId].grantCouponId,
+          row.utcEpochMs,
         ]),
       );
       for (const { grantedAtUtcMs, usedAtUtcMs } of granted) {
@@ -2387,22 +2544,20 @@ describe('projectLoyaltyFor — the tier', () => {
     // 365-day window at 00:00 on its anniversary.
     const offsets = [-460, -450, -440, -430, -420, -410];
     const projection = project(visitsAt(offsets));
-    expect(projection.account.tier).toMatchObject({
-      current: 'bronze',
-      qualifying: 0,
-      next: 'silver',
-      remaining: 6,
+    expect(projection.account).toMatchObject({
+      tierId: 'bronze',
+      tierQualifying: 0,
+      nextTierId: 'silver',
+      tierRemaining: 6,
     });
     const demoted = CAL.dayKeyAt(-460 + 365);
-    expect(projection.account.tier.since).toBe(
-      new Date(CAL.msAt(-460 + 365, 0, 0)).toISOString(),
-    );
-    expect(sofiaDay(projection.account.tier.since)).toBe(demoted);
+    expect(projection.account.tierSinceUtcMs).toBe(CAL.msAt(-460 + 365, 0, 0));
+    expect(sofiaDay(projection.account.tierSinceUtcMs)).toBe(demoted);
   });
 
   it('counts the visits of the last 365 days', () => {
     const projection = project(visitsAt([-400, -300, -200, -100, -10]));
-    expect(projection.account.tier.qualifying).toBe(4);
+    expect(projection.account.tierQualifying).toBe(4);
   });
 });
 
@@ -2415,8 +2570,10 @@ describe('projectLoyaltyFor — facts no appointment carries', () => {
       hasAvatar: true,
     };
     const complete = project(appointments, { profile });
-    expect(complete.badgeProgress['series-profile'].earned[0].earnedAt).toBe(
-      new Date(appointments[0].doc.bookedAtUtcMs).toISOString(),
+    const [earned] = complete.badgeProgress['series-profile'].earned;
+    expect(earned.earnedAtUtcMs).toBe(appointments[0].doc.bookedAtUtcMs);
+    expect(earned.earnedLocalDate).toBe(
+      sofiaDay(appointments[0].doc.bookedAtUtcMs),
     );
     for (const missing of [
       { ...profile, email: null },
@@ -2453,46 +2610,52 @@ describe('projectLoyaltyFor — facts no appointment carries', () => {
     const appointments = visitsAt(
       Array.from({ length: 8 }, (_, i) => -300 + i * 30),
     );
+    const desk = { actorRole: 'ADMIN', actorAdminUserId: 'dev-staff-ivan' };
     const projection = project(appointments, {
       redemptions: [
         {
           id: 'rdm-test',
           rewardId: 'reward-beard',
           afterVisit: 8,
-          actor: { kind: 'admin', adminUserId: 'dev-staff-ivan' },
+          actor: desk,
         },
       ],
     });
     const [cost, bought] = Object.values(projection.clientJournal).slice(-2);
     expect(cost).toMatchObject({
-      effect: { kind: 'points', delta: -120 },
-      source: { kind: 'redemption', redemptionId: 'rdm-test' },
+      journalEffect: 'POINTS',
+      pointsDelta: -120,
+      journalSource: 'REDEMPTION',
+      sourceRedemptionId: 'rdm-test',
       correlationId: 'rdm-test',
       idempotencyKey: 'rdm:rdm-test#0',
-      publicLabel: {
-        code: 'points.redeemed',
-        params: { reward: 'reward-beard', points: 120 },
-      },
+      labelCode: 'points.redeemed',
+      labelParams: [
+        { name: 'reward', value: 'reward-beard' },
+        { name: 'points', value: 120 },
+      ],
+      ...desk,
     });
     // What it bought, in the same event: the feed folds the two into one row.
     expect(bought).toMatchObject({
-      at: cost.at,
-      effect: {
-        kind: 'redemption',
-        op: 'redeemed',
-        redemptionId: 'rdm-test',
-        rewardId: 'reward-beard',
-        cost: 120,
-        grant: { kind: 'couponGrant', id: 'grant-rdm-test' },
-      },
-      source: { kind: 'redemption', redemptionId: 'rdm-test' },
-      actor: { kind: 'admin', adminUserId: 'dev-staff-ivan' },
+      utcEpochMs: cost.utcEpochMs,
+      journalEffect: 'REDEMPTION',
+      redemptionOp: 'REDEEMED',
+      redemptionId: 'rdm-test',
+      redeemedRewardId: 'reward-beard',
+      redemptionCost: 120,
+      grantRef: 'COUPON_GRANT',
+      grantCouponGrantId: 'grant-rdm-test',
+      journalSource: 'REDEMPTION',
+      sourceRedemptionId: 'rdm-test',
+      ...desk,
       correlationId: 'rdm-test',
       idempotencyKey: 'rdm:rdm-test#1',
-      publicLabel: {
-        code: 'redemption.changed',
-        params: { op: 'redeemed', reward: 'reward-beard' },
-      },
+      labelCode: 'redemption.changed',
+      labelParams: [
+        { name: 'op', value: 'redeemed' },
+        { name: 'reward', value: 'reward-beard' },
+      ],
       balanceAfter: cost.balanceAfter,
     });
     expect(projection.account.lifetimeSpent).toBe(120);
@@ -2514,6 +2677,7 @@ describe('projectLoyaltyFor — what it refuses', () => {
   });
 
   it('refuses a redemption the balance could not have paid', () => {
+    const desk = { actorRole: 'ADMIN', actorAdminUserId: 'dev-staff-ivan' };
     expect(() =>
       project(visitsAt([-100]), {
         redemptions: [
@@ -2521,7 +2685,7 @@ describe('projectLoyaltyFor — what it refuses', () => {
             id: 'rdm-test',
             rewardId: 'reward-product',
             afterVisit: 1,
-            actor: { kind: 'admin', adminUserId: 'dev-staff-ivan' },
+            actor: desk,
           },
         ],
       }),
@@ -2533,7 +2697,7 @@ describe('projectLoyaltyFor — what it refuses', () => {
             id: 'rdm-test',
             rewardId: 'reward-cut',
             afterVisit: 2,
-            actor: { kind: 'admin', adminUserId: 'dev-staff-ivan' },
+            actor: desk,
           },
         ],
       }),
@@ -2544,7 +2708,7 @@ describe('projectLoyaltyFor — what it refuses', () => {
     const [visit] = visitsAt([-100]);
     const discounted = {
       ...visit,
-      doc: { ...visit.doc, discounts: [{ kind: 'coupon' }] },
+      doc: { ...visit.doc, discounts: [{ discountMethod: 'PERCENT_OFF' }] },
     };
     expect(() => project([discounted])).toThrow(/cannot price/);
   });
@@ -2639,13 +2803,13 @@ describe('loyaltyCatalogDriftOf — an emulator seeded before catalog.json chang
   it('names a missing document, a changed map by its field, and a field only one side holds', () => {
     const before = loyaltyCatalogFor(LOYALTY_CATALOG_TODAY);
     before.badgeSeries['series-comeback'].title.bg = 'Отново тук';
-    delete before.badgeSeries['series-comeback'].retiredAt;
+    delete before.badgeSeries['series-comeback'].retiredAtUtcMs;
     before.badgeSeries['series-comeback'].legacy = true;
     const stored = storedAfterSeedOf(before);
     stored.delete('seasons/season-2026-autumn');
 
     expect(loyaltyCatalogDriftOf(writes, stored)).toEqual([
-      'badgeSeries/series-comeback: legacy true (catalog.json: absent), retiredAt absent (catalog.json: null), title',
+      'badgeSeries/series-comeback: legacy true (catalog.json: absent), retiredAtUtcMs absent (catalog.json: null), title',
       'seasons/season-2026-autumn: missing',
     ]);
   });

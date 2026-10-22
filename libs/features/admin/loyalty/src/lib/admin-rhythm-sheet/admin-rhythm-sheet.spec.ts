@@ -10,14 +10,32 @@ import {
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ZonedDateTime } from '@creativo/application/booking';
-import { CompositionKind } from '@core/components';
+import {
+  CompositionKind,
+  StreakExcuse,
+  StreakOnBreak,
+  StreakQualifierRule,
+  StreakRule,
+} from '@core/components';
 import type { Service, ServiceCategory } from '@core/entities';
 import { ServiceCategoryId, ServiceId } from '@core/primitives';
-import { serviceFixture, termsFixture, textFixture } from '@core/testing';
-import { STREAK_DEFINITION_REPOSITORY } from '@creativo/application/engagement';
-import { InMemoryStreakDefinitionRepository } from '@creativo/application/engagement/testing';
+import {
+  memoryStreakDefinitionPorts,
+  memoryStreakPublishGatewayPorts,
+  memoryStreakWorld,
+  serviceFixture,
+  streakDefinitionFixture,
+  streakDefinitionVersionFixture,
+  termsFixture,
+  textFixture,
+} from '@core/testing';
 import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
+import {
+  STREAK_DEFINITION_PORTS,
+  STREAK_PUBLISH_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { AdminRhythmStore } from '../admin-rhythm.store';
+import { rhythmRecorder } from '../testing/rhythm-recorder';
 import type { RhythmServiceGroup } from '../admin-rhythm/rhythm-service-groups';
 import {
   AdminRhythmSheet,
@@ -49,7 +67,26 @@ class CatalogueLoader implements TranslocoLoader {
 // ── The shop ─────────────────────────────────────────────────────────────
 
 const NOW = '2026-09-28T12:40:00';
-const TODAY = '2026-09-28';
+
+/** The fixtures' rule, with the history the seed gives it, over the real publish pipeline. */
+function seededRules() {
+  const world = memoryStreakWorld({
+    heads: [streakDefinitionFixture()],
+    versions: [
+      {
+        streakId: StreakRule.DEFAULT_DEFINITION_ID,
+        version: streakDefinitionVersionFixture(),
+      },
+    ],
+  });
+  return rhythmRecorder(
+    memoryStreakDefinitionPorts(world),
+    memoryStreakPublishGatewayPorts(world),
+  );
+}
+
+const services = (...ids: readonly string[]) =>
+  StreakQualifierRule.services(ids.map((id) => ServiceId.of(id)));
 
 /** A catalogue service as stored (`services/{id}`), the flat entity (Law 5). */
 function service(
@@ -99,7 +136,8 @@ const GROUPS: readonly RhythmServiceGroup[] = [
 
 // ── The rig ──────────────────────────────────────────────────────────────
 
-async function rig(kind: AdminRhythmSheetKind | null, services = GROUPS) {
+async function rig(kind: AdminRhythmSheetKind | null, groups = GROUPS) {
+  const rules = seededRules();
   TestBed.configureTestingModule({
     imports: [AdminRhythmSheet],
     providers: [
@@ -118,16 +156,14 @@ async function rig(kind: AdminRhythmSheetKind | null, services = GROUPS) {
         provide: CLOCK,
         useValue: { now: (zone: string) => ZonedDateTime.fromISO(NOW, zone) },
       },
-      {
-        provide: STREAK_DEFINITION_REPOSITORY,
-        useValue: InMemoryStreakDefinitionRepository.seeded({ today: TODAY }),
-      },
+      { provide: STREAK_DEFINITION_PORTS, useValue: rules.ports },
+      { provide: STREAK_PUBLISH_PORTS, useValue: rules.ports },
     ],
   });
   const store = TestBed.inject(AdminRhythmStore);
   store.load();
   const fixture = TestBed.createComponent(AdminRhythmSheet);
-  fixture.componentRef.setInput('services', services);
+  fixture.componentRef.setInput('services', groups);
   fixture.componentRef.setInput('kind', kind);
   const closed: number[] = [];
   fixture.componentInstance.closed.subscribe(() => closed.push(1));
@@ -233,7 +269,7 @@ describe('«Защити»', () => {
     ).toBe('false');
     click(host, 'admin-rhythm-protections');
     await settle(fixture, 2);
-    expect(store.draft().protections.enabled).toBe(false);
+    expect(store.draft().protectionsEnabled).toBe(false);
     expect(byId(host, 'admin-rhythm-protections-max')).toBeNull();
     expect(byId(host, 'admin-rhythm-protections-every')).toBeNull();
   });
@@ -246,15 +282,15 @@ describe('«Защити»', () => {
       ) as HTMLElement
     ).click();
     await settle(fixture, 2);
-    expect(store.draft().protections.maxBanked).toBe(3);
+    expect(store.draft().protectionsMaxBanked).toBe(3);
     click(host, 'admin-rhythm-protections-every');
     await settle(fixture, 2);
     click(host, 'admin-rhythm-option-protections-every-8');
     await settle(fixture, 2);
-    expect(store.draft().protections.earnEvery).toBe(8);
+    expect(store.draft().protectionsEarnEvery).toBe(8);
     click(host, 'admin-rhythm-protections-start');
     await settle(fixture, 2);
-    expect(store.draft().protections.startWith).toBe(1);
+    expect(store.draft().protectionsStartWith).toBe(1);
   });
 });
 
@@ -269,7 +305,7 @@ describe('«Извинени пропуски»', () => {
     expect(byId(host, 'admin-rhythm-excuses-warning')).toBeNull();
     click(host, 'admin-rhythm-excuse-staffCancelled');
     await settle(fixture, 2);
-    expect(store.draft().excuses).not.toContain('staffCancelled');
+    expect(store.draft().excuses).not.toContain(StreakExcuse.StaffCancelled);
     expect(
       byId(host, 'admin-rhythm-excuses-warning')?.textContent?.trim(),
     ).toBe('Клиентът ще губи ритъм по вина на салона.');
@@ -279,7 +315,7 @@ describe('«Извинени пропуски»', () => {
     // The fourth excuse is not the shop's: no warning for it.
     click(host, 'admin-rhythm-excuse-closedDays');
     await settle(fixture, 2);
-    expect(store.draft().excuses).toContain('closedDays');
+    expect(store.draft().excuses).toContain(StreakExcuse.ClosedDays);
     expect(byId(host, 'admin-rhythm-excuses-warning')).toBeNull();
   });
 
@@ -288,7 +324,7 @@ describe('«Извинени пропуски»', () => {
     expect(byId(host, 'admin-rhythm-pause-days')).toBeNull();
     click(host, 'admin-rhythm-pause');
     await settle(fixture, 2);
-    expect(store.draft().clientPause.enabled).toBe(true);
+    expect(store.draft().clientPauseEnabled).toBe(true);
     expect(byId(host, 'admin-rhythm-pause-days')?.textContent?.trim()).toBe(
       '90 дни',
     );
@@ -296,7 +332,7 @@ describe('«Извинени пропуски»', () => {
     await settle(fixture, 2);
     click(host, 'admin-rhythm-option-pause-days-30');
     await settle(fixture, 2);
-    expect(store.draft().clientPause.maxDaysPerYear).toBe(30);
+    expect(store.draft().clientPauseMaxDaysPerYear).toBe(30);
   });
 });
 
@@ -312,7 +348,7 @@ describe('«След пропуск»', () => {
     await settle(fixture, 2);
     click(host, 'admin-rhythm-option-on-break-hold');
     await settle(fixture, 2);
-    expect(store.draft().onBreak).toBe('hold');
+    expect(store.draft().onBreak).toBe(StreakOnBreak.Hold);
     expect(byId(host, 'admin-rhythm-repair-window')?.textContent?.trim()).toBe(
       '14 дни',
     );
@@ -320,10 +356,10 @@ describe('«След пропуск»', () => {
     await settle(fixture, 2);
     click(host, 'admin-rhythm-option-repair-per-year-3');
     await settle(fixture, 2);
-    expect(store.draft().repair.perYear).toBe(3);
+    expect(store.draft().repairPerYear).toBe(3);
     click(host, 'admin-rhythm-repair');
     await settle(fixture, 2);
-    expect(store.draft().repair.enabled).toBe(false);
+    expect(store.draft().repairEnabled).toBe(false);
     expect(byId(host, 'admin-rhythm-repair-window')).toBeNull();
   });
 });
@@ -342,32 +378,22 @@ describe('«Услуги»', () => {
     ).toHaveLength(3);
     click(host, 'admin-rhythm-service-fade');
     await settle(fixture, 2);
-    expect(store.draft().qualifier).toEqual({
-      kind: 'services',
-      serviceIds: ['fade'],
-    });
+    expect(StreakQualifierRule.of(store.draft())).toEqual(services('fade'));
     expect(
       byId(host, 'admin-rhythm-service-fade')?.getAttribute('aria-pressed'),
     ).toBe('true');
     click(host, 'admin-rhythm-service-beard');
     await settle(fixture, 2);
-    expect(store.draft().qualifier).toEqual({
-      kind: 'services',
-      serviceIds: ['fade', 'beard'],
-    });
+    expect(StreakQualifierRule.of(store.draft())).toEqual(
+      services('fade', 'beard'),
+    );
     click(host, 'admin-rhythm-service-fade');
     await settle(fixture, 2);
-    expect(store.draft().qualifier).toEqual({
-      kind: 'services',
-      serviceIds: ['beard'],
-    });
+    expect(StreakQualifierRule.of(store.draft())).toEqual(services('beard'));
     // The last one chosen stays.
     click(host, 'admin-rhythm-service-beard');
     await settle(fixture, 2);
-    expect(store.draft().qualifier).toEqual({
-      kind: 'services',
-      serviceIds: ['beard'],
-    });
+    expect(StreakQualifierRule.of(store.draft())).toEqual(services('beard'));
   });
 
   it('filters by the search', async () => {

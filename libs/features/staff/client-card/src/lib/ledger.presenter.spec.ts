@@ -1,9 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import {
-  type ActivityEntry,
-  activityEntryFromDocument,
-} from '@creativo/application/engagement';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
+  AchievementOp,
+  Actor,
+  GrantRefFields,
+  JournalEffect,
+  JournalEffectRecord,
+  JournalFeed,
+  JournalSourceRecord,
+  JournalSystemJob,
+  JournalVisibility,
+  type LabelCode,
+  RedemptionOp,
+  RewardOp,
+  RewardRefFields,
+  SystemSource,
+  TierOp,
+} from '@core/components';
+import type { JournalEntry } from '@core/entities';
+import {
+  AchievementRuleId,
+  AppointmentId,
+  CorrelationId,
+  CouponGrantId,
+  JournalEntryId,
+  RedemptionId,
+  RewardId,
+  TierId,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
+import { utcMs } from '@core/testing';
 import type { ActivityRowVm, LinePart } from './client-pages.vm';
 import {
   type ActivityInput,
@@ -15,18 +40,22 @@ import {
   wholeMonthsOf,
 } from './ledger.presenter';
 import {
+  GEORGI_CUSTOMER_ID,
+  GEORGI_LOYALTY,
+  SHOP_TIME_ZONE,
   TODAY,
   loyaltyCatalog,
+  must,
   wordsOf,
 } from '../testing/client-card.fixtures';
 
 /*
  * «ДВИЖЕНИЕ» (client-card-revision-3 §2.2.5, §2.2.6, §4.7). The rows are
- * built from journal entries as the reader hands them over: Георги's own
- * journal through the wire's mapper, and entries made here for the kinds
- * the account fixtures do not hold (they keep point rows only). The words
- * are the app's catalogue, so a key the presenter names and the catalogue
- * lacks fails here.
+ * built from journal entries as the journal port hands them over — the
+ * stored `clientJournal` bodies: Георги's own journal as stored, and
+ * entries made here for the kinds the account fixtures do not hold (they
+ * keep point rows only). The words are the app's catalogue, so a key the
+ * presenter names and the catalogue lacks fails here.
  */
 
 const WORDS = wordsOf('bg');
@@ -43,36 +72,128 @@ const heading = (month: string) => `${month}${String.fromCharCode(0x202f)}г.`;
 const joined = (line: readonly LinePart[]) =>
   line.map((part) => part.text).join('');
 
-type Effect = ActivityEntry['effect'];
+/** What an entry changed, and the balance once it was folded in (every stored row carries one). */
+type Effect = {
+  readonly record: JournalEffectRecord;
+  readonly balanceAfter: number;
+};
 
-/** A journal entry as the reader answers one. */
+/** A row's client-visible label: its key and its named parameters, in the order written. */
+type Label = {
+  readonly code: LabelCode;
+  readonly params: Readonly<Record<string, string | number>>;
+};
+
+/** An instant and the shop day the boundary files it under (T5: written together). */
+function stamped(iso: string): Pick<JournalEntry, 'utcEpochMs' | 'localDate'> {
+  const at = utcMs(iso);
+  return {
+    utcEpochMs: at,
+    localDate: ZonedTimeSystem.toLocal(at, SHOP_TIME_ZONE).localDate,
+  };
+}
+
+/** The visit a correlation id names (`appt:{id}…`), as the stored rows carry it in `appointmentId`. */
+function visitOf(correlationId: string): AppointmentId | null {
+  const [root, id] = correlationId.split(':');
+  return root === 'appt' && id !== undefined && id !== ''
+    ? AppointmentId.of(id)
+    : null;
+}
+
+/** A `clientJournal` row as the journal port answers one. */
 function entry(
   seq: number,
   day: string,
   correlationId: string,
   effect: Effect,
-  label: ActivityEntry['label'],
+  label: Label,
   reverses: string | null = null,
-): ActivityEntry {
+): JournalEntry {
   return {
-    id: `e-${seq}`,
+    id: JournalEntryId.of(`e-${seq}`),
+    customerId: GEORGI_CUSTOMER_ID,
     seq,
     // 10:45 in Sofia: the day is the same on the shop's calendar.
-    at: new Date(`${day}T07:45:00.000Z`),
-    correlationId,
-    effect,
-    label,
-    reverses,
+    ...stamped(`${day}T07:45:00.000Z`),
+    reverses: reverses === null ? null : JournalEntryId.of(reverses),
+    correlationId: CorrelationId.of(correlationId),
+    idempotencyKey: `key-${seq}`,
+    journalVisibility: JournalVisibility.Client,
+    labelCode: label.code,
+    labelParams: Object.entries(label.params).map(([name, value]) => ({
+      name,
+      value,
+    })),
+    balanceAfter: effect.balanceAfter,
+    appointmentId: visitOf(correlationId),
+    ...Actor.system(SystemSource.LoyaltyEngine),
+    ...JournalSourceRecord.system(JournalSystemJob.Tier),
+    ...effect.record,
   };
 }
 
 const points = (delta: number, balanceAfter: number): Effect => ({
-  kind: 'points',
-  delta,
+  record: JournalEffectRecord.points(delta),
   balanceAfter,
 });
 
-const earned = (amount: number) => ({
+const tierChanged = (
+  from: string,
+  to: string,
+  balanceAfter: number,
+): Effect => ({
+  record: {
+    journalEffect: JournalEffect.Tier,
+    tierOp: TierOp.Changed,
+    tierFrom: TierId.of(from),
+    tierTo: TierId.of(to),
+    tierUntil: null,
+  },
+  balanceAfter,
+});
+
+const redemption = (
+  redemptionOp: RedemptionOp,
+  redemptionCost: number,
+  balanceAfter: number,
+): Effect => ({
+  record: {
+    journalEffect: JournalEffect.Redemption,
+    redemptionOp,
+    redemptionId: RedemptionId.of('rdm-1'),
+    redeemedRewardId: RewardId.of('reward-cut'),
+    redemptionCost,
+    ...GrantRefFields.none(),
+  },
+  balanceAfter,
+});
+
+const reward = (rewardOp: RewardOp, balanceAfter: number): Effect => ({
+  record: {
+    journalEffect: JournalEffect.Reward,
+    rewardOp,
+    ...RewardRefFields.couponGrant(CouponGrantId.of('grant-punch-10')),
+  },
+  balanceAfter,
+});
+
+const achievement = (
+  ruleId: string,
+  achievementOp: AchievementOp,
+  balanceAfter: number,
+): Effect => ({
+  record: {
+    journalEffect: JournalEffect.Achievement,
+    achievementRuleId: AchievementRuleId.of(ruleId),
+    achievementRuleVersion: 1,
+    achievementAwardKey: `${ruleId}:dev-client-1`,
+    achievementOp,
+  },
+  balanceAfter,
+});
+
+const earned = (amount: number): Label => ({
   code: 'points.rule',
   params: { rule: 'rule-earn-per-euro', points: amount },
 });
@@ -96,7 +217,7 @@ const TIER = entry(
   49,
   '2026-09-02',
   'tier:dev-client-1:gold:2026-09-02',
-  { kind: 'tier', from: 'silver', to: 'gold' },
+  tierChanged('silver', 'gold', 344),
   { code: 'tier.changed', params: { from: 'silver', to: 'gold' } },
 );
 const REDEEMED_POINTS = entry(45, '2026-06-20', 'rdm-1', points(-250, 94), {
@@ -107,21 +228,22 @@ const REDEEMED = entry(
   46,
   '2026-06-20',
   'rdm-1',
-  { kind: 'redemption', op: 'redeemed', cost: 250 },
+  redemption(RedemptionOp.Redeemed, 250, 94),
   {
     code: 'redemption.changed',
     params: { op: 'redeemed', reward: 'reward-cut' },
   },
 );
+const GRANTED_LABEL: Label = {
+  code: 'reward.granted',
+  params: { rule: 'rule-every-10th-visit', reward: 'reward-cut', stamp: 10 },
+};
 const GRANTED = entry(
   44,
   '2026-05-16',
   'award:rule-every-10th-visit:dev-client-1:10',
-  { kind: 'reward', op: 'granted' },
-  {
-    code: 'reward.granted',
-    params: { rule: 'rule-every-10th-visit', reward: 'reward-cut', stamp: 10 },
-  },
+  reward(RewardOp.Granted, 344),
+  GRANTED_LABEL,
 );
 const GOODWILL = entry(43, '2026-04-18', 'adj-1', points(30, 344), {
   code: 'points.goodwill',
@@ -146,7 +268,7 @@ const LEVEL = entry(
   39,
   '2026-03-06',
   'award:rule-tenure-1',
-  { kind: 'achievement', op: 'granted' },
+  achievement('rule-tenure-1', AchievementOp.Granted, 314),
   {
     code: 'achievement.earned',
     params: { rule: 'rule-tenure-1', seriesId: 'series-tenure', level: 1 },
@@ -175,14 +297,14 @@ const LEVEL_BARE = entry(
   30,
   '2025-09-24',
   'award:rule-fade-2',
-  { kind: 'achievement', op: 'granted' },
+  achievement('rule-fade-2', AchievementOp.Granted, 304),
   {
     code: 'achievement.earned',
     params: { rule: 'rule-fade-2', seriesId: 'series-svc-fade', level: 2 },
   },
 );
 
-const JOURNAL: readonly ActivityEntry[] = [
+const JOURNAL: readonly JournalEntry[] = [
   VISIT_BEARD,
   VISIT_FADE,
   TIER,
@@ -218,7 +340,7 @@ function activityInput(overrides: Partial<ActivityInput> = {}): ActivityInput {
 
 /** Every row of a journal, by the id of its event's newest entry. */
 function rowsOf(
-  entries: readonly ActivityEntry[],
+  entries: readonly JournalEntry[],
   overrides: Partial<ActivityInput> = {},
 ): ReadonlyMap<string, ActivityRowVm> {
   return new Map(
@@ -234,15 +356,17 @@ function rowsOf(
   );
 }
 
-/** Георги's journal as the feed reads it: every row through the wire's mapper. */
-function georgiJournal(): readonly ActivityEntry[] {
-  return Object.entries(loyaltyFixtures.georgi.clientJournal).map(
-    ([id, document]) => {
-      const parsed = activityEntryFromDocument(id, document);
-      if (parsed.isFailure()) throw new Error(`bad row ${id}`);
-      return parsed.value;
-    },
-  );
+/** Георги's journal as the feed reads it: every row as stored. */
+function georgiJournal(): readonly JournalEntry[] {
+  return GEORGI_LOYALTY.clientJournal;
+}
+
+/** The stored id of Георги's row `seq`. */
+function georgiEntryId(seq: number): string {
+  return must(
+    GEORGI_LOYALTY.clientJournal.find((row) => row.seq === seq),
+    `Георги’s row ${seq}`,
+  ).id;
 }
 
 describe('foldByEvent', () => {
@@ -261,7 +385,8 @@ describe('foldByEvent', () => {
       'e-30',
     ]);
     expect(events[0]?.entries.map((row) => row.id)).toEqual(['e-51', 'e-50']);
-    expect(events[0]?.at).toEqual(VISIT_BEARD.at);
+    expect(events[0]?.utcEpochMs).toEqual(VISIT_BEARD.utcEpochMs);
+    expect(events[0]?.localDate).toEqual(VISIT_BEARD.localDate);
   });
 
   it('sums what an event moved and keeps the balance its newest point row left', () => {
@@ -292,7 +417,8 @@ describe('foldByEvent', () => {
     expect(foldByEvent(seats, true)).toEqual([
       {
         id: 'e-2',
-        at: seats[0]?.at,
+        utcEpochMs: seats[0]?.utcEpochMs,
+        localDate: seats[0]?.localDate,
         entries: seats,
         delta: 27,
         balanceAfter: 307,
@@ -333,7 +459,8 @@ describe('foldByEvent', () => {
     expect(foldByEvent([REDEEMED], true)).toEqual([
       {
         id: 'e-46',
-        at: REDEEMED.at,
+        utcEpochMs: REDEEMED.utcEpochMs,
+        localDate: REDEEMED.localDate,
         entries: [REDEEMED],
         delta: -250,
         balanceAfter: null,
@@ -343,7 +470,7 @@ describe('foldByEvent', () => {
       47,
       '2026-06-21',
       'rdm-1-back',
-      { kind: 'redemption', op: 'reversed', cost: 250 },
+      redemption(RedemptionOp.Reversed, 250, 344),
       {
         code: 'redemption.changed',
         params: { op: 'reversed', reward: 'reward-cut' },
@@ -354,7 +481,7 @@ describe('foldByEvent', () => {
       48,
       '2026-09-20',
       'rdm-1-lapsed',
-      { kind: 'redemption', op: 'expired', cost: 250 },
+      redemption(RedemptionOp.Expired, 250, 344),
       {
         code: 'redemption.changed',
         params: { op: 'expired', reward: 'reward-cut' },
@@ -498,11 +625,13 @@ describe('activityGroups: a row by its kind (§2.2.5)', () => {
       balanceAfter: null,
       accessibleName: 'Получена награда, Безплатно подстригване, 16 май',
     });
-    const revoked: ActivityEntry = {
-      ...GRANTED,
-      effect: { kind: 'reward', op: 'revoked' },
-      label: { code: 'reward.revoked', params: GRANTED.label.params },
-    };
+    const revoked = entry(
+      44,
+      '2026-05-16',
+      'award:rule-every-10th-visit:dev-client-1:10',
+      reward(RewardOp.Revoked, 344),
+      { code: 'reward.revoked', params: GRANTED_LABEL.params },
+    );
     expect(rowsOf([revoked]).get('e-44')).toMatchObject({
       lines: [{ text: `16.05${JOINT}отнета награда` }],
       accessibleName: 'Отнета награда, Безплатно подстригване, 16 май',
@@ -535,14 +664,16 @@ describe('activityGroups: a row by its kind (§2.2.5)', () => {
       balanceAfter: '344 т.',
       accessibleName: 'Корекция, Бонус от салона, 18 април, +30 т.',
     });
-    const issue: ActivityEntry = {
+    const issue: JournalEntry = {
       ...GOODWILL,
-      label: { code: 'points.serviceIssue', params: {} },
+      labelCode: 'points.serviceIssue',
+      labelParams: [],
     };
     expect(rowsOf([issue]).get('e-43')?.title).toBe('Компенсация от салона');
-    const correction: ActivityEntry = {
+    const correction: JournalEntry = {
       ...GOODWILL,
-      label: { code: 'points.correction', params: {} },
+      labelCode: 'points.correction',
+      labelParams: [],
     };
     expect(rowsOf([correction]).get('e-43')?.title).toBe('Корекция от салона');
   });
@@ -566,7 +697,7 @@ describe('activityGroups: a row by its kind (§2.2.5)', () => {
       48,
       '2026-09-20',
       'rdm-1-lapsed',
-      { kind: 'redemption', op: 'expired', cost: 250 },
+      redemption(RedemptionOp.Expired, 250, 344),
       {
         code: 'redemption.changed',
         params: { op: 'expired', reward: 'reward-cut' },
@@ -680,10 +811,11 @@ describe('activityGroups: the months', () => {
   });
 
   it('files an instant under the month it falls in on the shop’s calendar', () => {
-    // 22:30 UTC on 31 August is 1:30 on 1 September in Sofia.
-    const late: ActivityEntry = {
+    // 22:30 UTC on 31 August is 1:30 on 1 September in Sofia: the
+    // boundary files the row under that day, and the month is the day's.
+    const late: JournalEntry = {
       ...VISIT_FADE,
-      at: new Date('2026-08-31T22:30:00.000Z'),
+      ...stamped('2026-08-31T22:30:00.000Z'),
     };
     const [group] = activityGroups(
       foldByEvent([late], true),
@@ -758,7 +890,7 @@ describe('Георги’s own journal', () => {
       net: '+27 т.',
       rows: [
         {
-          entryId: 'dev-client-1_000032',
+          entryId: georgiEntryId(32),
           title: 'Фейд · Оформяне на брада',
           lines: [{ text: '13.07' }],
           amount: '+27 т.',
@@ -798,7 +930,7 @@ describe('ledgerPageVm', () => {
       next: null,
       loadingMore: false,
       failedMore: false,
-      filter: 'all',
+      filter: JournalFeed.All,
       holder: 'Георги Петров',
       balance: 371,
       online: true,
@@ -826,7 +958,7 @@ describe('ledgerPageVm', () => {
   it('draws every page read so far, and ends the list when no cursor is left', () => {
     const page = ledgerPageVm(pageInput());
     expect(page.status).toBe('ready');
-    expect(page.filter).toBe('all');
+    expect(page.filter).toBe(JournalFeed.All);
     expect(page.groups.flatMap((group) => group.rows)).toHaveLength(10);
     expect(page.paging).toEqual({ kind: 'end' });
   });
@@ -868,15 +1000,17 @@ describe('ledgerPageVm', () => {
       paging: { kind: 'end' },
     });
     expect(
-      ledgerPageVm(pageInput({ entries: [], filter: 'rewards' })),
-    ).toMatchObject({ filter: 'rewards', groups: [] });
+      ledgerPageVm(pageInput({ entries: [], filter: JournalFeed.Rewards })),
+    ).toMatchObject({ filter: JournalFeed.Rewards, groups: [] });
   });
 
   it('nets a month under «Точки», and under no pill that reads other rows', () => {
-    const pointRows = JOURNAL.filter((row) => row.effect.kind === 'points');
+    const pointRows = JOURNAL.filter(
+      (row) => row.journalEffect === JournalEffect.Points,
+    );
     const underPoints = ledgerPageVm(
       pageInput({
-        filter: 'points',
+        filter: JournalFeed.Points,
         entries: pointRows,
         wholeMonths: wholeMonthsOf(pointRows, true),
       }),
@@ -897,7 +1031,7 @@ describe('ledgerPageVm', () => {
     const rewardRows = [REDEEMED, GRANTED];
     const underRewards = ledgerPageVm(
       pageInput({
-        filter: 'rewards',
+        filter: JournalFeed.Rewards,
         entries: rewardRows,
         wholeMonths: wholeMonthsOf(rewardRows, true),
       }),
@@ -915,7 +1049,7 @@ describe('ledgerPageVm', () => {
 
     const underStatus = ledgerPageVm(
       pageInput({
-        filter: 'status',
+        filter: JournalFeed.Status,
         entries: [TIER],
         wholeMonths: wholeMonthsOf([TIER], true),
       }),

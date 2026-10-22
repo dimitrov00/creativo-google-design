@@ -1,8 +1,11 @@
-import type {
-  StreakPeriodTerms,
-  StreakQualifierProps,
-  StreakRuleSummary,
-} from '@creativo/application/engagement';
+import {
+  StreakInterval,
+  StreakIntervalSource,
+  type StreakPeriodTerms,
+  StreakQualifier,
+  type StreakQualifierRule,
+} from '@core/components';
+import type { StreakRuleSummary } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import type { VisitTranslate } from '../visit-row.presenter';
 
@@ -15,16 +18,17 @@ import type { VisitTranslate } from '../visit-row.presenter';
  * admin page (the live rule sentence), and neither feature imports the
  * other. The keys are `rhythmRule.*` (§6.1), their own root.
  *
- * The domain hands over STRUCTURE (`StreakDefinition.summary()`), in which
+ * The domain hands over STRUCTURE (`StreakRuleSystem.summary`,
+ * `@core/systems`), in which
  * a part is `null` when the rule has nothing to say about it. This file
  * says one sentence for every part that holds and none for a part that
  * does not, in the rule's own order, so the card and the editor can never
  * word one rule apart.
  *
  * It holds NO rule arithmetic. A person's interval arrives computed (the
- * open period's pinned terms, `StreakState.period`); nothing here derives
- * a due date from a habit, so there is no second copy of the rule to
- * drift from the projector's.
+ * open period's pinned terms, `StreakState.periodTerms`); nothing here
+ * derives a due date from a habit, so there is no second copy of the rule
+ * to drift from the projector's.
  */
 
 /** The rule in force, worded once for every place that prints it. */
@@ -49,15 +53,12 @@ export interface RhythmRuleWords {
 export interface RhythmRuleContext {
   /**
    * The person's open period as the projection pinned it
-   * (`StreakState.period`). Read under a PERSONAL interval only, where it
+   * (`StreakState.periodTerms`). Read under a PERSONAL interval only, where it
    * turns «Срокът е 6 седмици, докато опознаем навика му.» into «Идва на
    * около 4 седмици, срокът му е 5½ седмици.». A fixed rule is the same
    * sentence for everyone, whatever an older period still holds.
    */
-  readonly period?: Pick<
-    StreakPeriodTerms,
-    'intervalDays' | 'source' | 'habitDays'
-  > | null;
+  readonly period?: StreakPeriodTerms | null;
   /**
    * A counted service's name by its id (a category's, when the rule counts
    * by category), for «Броят се посещения с: …». An id it cannot name is
@@ -128,12 +129,14 @@ function intervalSaid(
   period: RhythmRuleContext['period'],
 ): IntervalSaid {
   const interval = summary.interval;
-  if (interval.kind === 'fixed') return { key: 'fixed', days: interval.days };
+  if (interval.streakInterval === StreakInterval.Fixed) {
+    return { key: 'fixed', days: interval.intervalDays };
+  }
   // The habit is known only where the period's length CAME from it. A
   // newcomer, a period an older fixed rule opened and a draft on the admin
   // page all read the rule's own figure for someone it does not know yet.
   if (
-    period?.source === 'personal' &&
+    period?.source === StreakIntervalSource.Personal &&
     period.habitDays !== null &&
     period.habitDays > 0
   ) {
@@ -143,20 +146,22 @@ function intervalSaid(
       habitDays: period.habitDays,
     };
   }
-  return { key: 'fallback', days: interval.fallbackDays };
+  return { key: 'fallback', days: interval.intervalFallbackDays };
 }
 
 /** «Фейд и Оформяне на брада» — the chosen list by name, in the admin's order; `null` when nothing can be named. */
 function countedNames(
-  qualifier: StreakQualifierProps,
+  qualifier: StreakQualifierRule,
   nameOf: RhythmRuleContext['nameOf'],
   lang: string,
 ): string | null {
-  if (qualifier.kind === 'anyVisit' || !nameOf) return null;
-  const ids =
-    qualifier.kind === 'services'
-      ? qualifier.serviceIds
-      : qualifier.categoryIds;
+  if (qualifier.streakQualifier === StreakQualifier.AnyVisit || !nameOf) {
+    return null;
+  }
+  const ids: readonly string[] =
+    qualifier.streakQualifier === StreakQualifier.Services
+      ? qualifier.qualifierServiceIds
+      : qualifier.qualifierCategoryIds;
   const names = ids
     .map((id) => nameOf(id)?.trim() ?? '')
     .filter((name, index, all) => name !== '' && all.indexOf(name) === index);

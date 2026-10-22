@@ -10,7 +10,7 @@ import { ReferralSystem } from './referral.system';
  * the `recordRedemption` and `isSelfInvitation` cases of
  * libs/domain/engagement/src/lib/invitation.spec.ts, the `forInvitation`
  * cases of invitation-redemption.spec.ts, and the decision half of
- * libs/application/engagement/src/lib/use-cases/redeem-invitation.use-case.spec.ts
+ * the legacy redeem-invitation use case spec (deleted in flip 3, F3-12)
  * (the counter bump and the self-redemption refusal; «not found» is the
  * pipeline's read, not the system's). Re-targeted to the flat
  * `Invitation`. Not copied: the factories' blank-id and blank-name cases —

@@ -1,7 +1,7 @@
 {
   "badgeCategories": {
     "cat-milestones": {
-      "kind": "milestones",
+      "badgeCategoryKind": "MILESTONES",
       "title": {
         "bg": "Етапи",
         "en": "Milestones"
@@ -9,7 +9,7 @@
       "order": 1
     },
     "cat-mastery": {
-      "kind": "mastery",
+      "badgeCategoryKind": "MASTERY",
       "title": {
         "bg": "Майсторство",
         "en": "Mastery"
@@ -17,7 +17,7 @@
       "order": 2
     },
     "cat-barbers": {
-      "kind": "barbers",
+      "badgeCategoryKind": "BARBERS",
       "title": {
         "bg": "Бръснари и салони",
         "en": "Barbers & shops"
@@ -25,7 +25,7 @@
       "order": 3
     },
     "cat-rhythm": {
-      "kind": "rhythm",
+      "badgeCategoryKind": "RHYTHM",
       "title": {
         "bg": "Ритъм",
         "en": "Rhythm"
@@ -33,7 +33,7 @@
       "order": 4
     },
     "cat-special": {
-      "kind": "special",
+      "badgeCategoryKind": "SPECIAL",
       "title": {
         "bg": "Специални",
         "en": "Special"
@@ -41,7 +41,7 @@
       "order": 5
     },
     "cat-records": {
-      "kind": "records",
+      "badgeCategoryKind": "RECORDS",
       "title": {
         "bg": "Рекорди",
         "en": "Records"
@@ -62,11 +62,7 @@
         "en": "Completed visits"
       },
       "emblem": "visits",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.completed"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -88,8 +84,8 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 20
+              "awardKind": "POINTS",
+              "awardPoints": 20
             }
           ]
         },
@@ -103,8 +99,8 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 50
+              "awardKind": "POINTS",
+              "awardPoints": 50
             }
           ]
         },
@@ -118,8 +114,8 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 100
+              "awardKind": "POINTS",
+              "awardPoints": 100
             }
           ]
         },
@@ -133,16 +129,23 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 200
+              "awardKind": "POINTS",
+              "awardPoints": 200
             }
           ]
         }
       ],
       "repeatable": false,
       "order": 1,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-tenure": {
       "categoryId": "cat-milestones",
@@ -156,11 +159,7 @@
         "en": "Years with us"
       },
       "emblem": "anniversary",
-      "subject": null,
-      "metric": {
-        "metric": "client.tenure.days"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -172,8 +171,8 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 50
+              "awardKind": "POINTS",
+              "awardPoints": 50
             }
           ]
         },
@@ -187,8 +186,8 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 50
+              "awardKind": "POINTS",
+              "awardPoints": 50
             }
           ]
         },
@@ -202,8 +201,8 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 50
+              "awardKind": "POINTS",
+              "awardPoints": 50
             }
           ]
         },
@@ -217,8 +216,8 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 50
+              "awardKind": "POINTS",
+              "awardPoints": 50
             }
           ]
         },
@@ -232,16 +231,23 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 50
+              "awardKind": "POINTS",
+              "awardPoints": 50
             }
           ]
         }
       ],
       "repeatable": false,
       "order": 2,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.tenure.days",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-self-service": {
       "categoryId": "cat-milestones",
@@ -255,11 +261,7 @@
         "en": "Visits booked online"
       },
       "emblem": "selfService",
-      "subject": null,
-      "metric": {
-        "metric": "client.bookings.selfService"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -314,8 +316,15 @@
       ],
       "repeatable": false,
       "order": 3,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.bookings.selfService",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-referrals": {
       "categoryId": "cat-milestones",
@@ -329,11 +338,7 @@
         "en": "Friends you brought"
       },
       "emblem": "referral",
-      "subject": null,
-      "metric": {
-        "metric": "client.referrals.completed"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -345,8 +350,8 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 30
+              "awardKind": "POINTS",
+              "awardPoints": 30
             }
           ]
         },
@@ -393,8 +398,15 @@
       ],
       "repeatable": false,
       "order": 4,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.referrals.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-waitlist": {
       "categoryId": "cat-milestones",
@@ -408,11 +420,7 @@
         "en": "Slots from the waitlist"
       },
       "emblem": "waitlist",
-      "subject": null,
-      "metric": {
-        "metric": "client.waitlist.booked"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -447,8 +455,15 @@
       ],
       "repeatable": false,
       "order": 5,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.waitlist.booked",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-svc-classic-cut": {
       "categoryId": "cat-mastery",
@@ -462,17 +477,7 @@
         "en": "Visits with a classic cut"
       },
       "emblem": "service",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-classic-cut"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-classic-cut"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -527,8 +532,16 @@
       ],
       "repeatable": false,
       "order": 1,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-classic-cut",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-classic-cut"
     },
     "series-svc-fade": {
       "categoryId": "cat-mastery",
@@ -542,17 +555,7 @@
         "en": "Visits with a skin fade"
       },
       "emblem": "service",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-fade"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-fade"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -607,8 +610,16 @@
       ],
       "repeatable": false,
       "order": 2,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-fade",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-fade"
     },
     "series-svc-beard": {
       "categoryId": "cat-mastery",
@@ -622,17 +633,7 @@
         "en": "Visits with a beard trim"
       },
       "emblem": "service",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-beard"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-beard"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -687,8 +688,16 @@
       ],
       "repeatable": false,
       "order": 3,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-beard",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-beard"
     },
     "series-svc-scissor-trim": {
       "categoryId": "cat-mastery",
@@ -702,17 +711,7 @@
         "en": "Visits with a scissor trim"
       },
       "emblem": "service",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-scissor-trim"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-scissor-trim"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -767,8 +766,16 @@
       ],
       "repeatable": false,
       "order": 4,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-scissor-trim",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-scissor-trim"
     },
     "series-svc-modern-cut": {
       "categoryId": "cat-mastery",
@@ -782,17 +789,7 @@
         "en": "Visits with a modern restyle"
       },
       "emblem": "service",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-modern-cut"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-modern-cut"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -847,8 +844,16 @@
       ],
       "repeatable": false,
       "order": 5,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-modern-cut",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-modern-cut"
     },
     "series-svc-finish": {
       "categoryId": "cat-mastery",
@@ -862,17 +867,7 @@
         "en": "Visits with a finishing touch"
       },
       "emblem": "service",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-finish"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-finish"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -927,8 +922,16 @@
       ],
       "repeatable": false,
       "order": 6,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-finish",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-finish"
     },
     "series-svc-full-care": {
       "categoryId": "cat-mastery",
@@ -942,17 +945,7 @@
         "en": "Visits with full care"
       },
       "emblem": "service",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-full-care"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-full-care"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1007,8 +1000,16 @@
       ],
       "repeatable": false,
       "order": 7,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-full-care",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-full-care"
     },
     "series-svc-father-son": {
       "categoryId": "cat-mastery",
@@ -1022,17 +1023,7 @@
         "en": "Visits with Father & son"
       },
       "emblem": "service",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-father-son"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-father-son"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1087,8 +1078,16 @@
       ],
       "repeatable": false,
       "order": 8,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-father-son",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-father-son"
     },
     "series-explorer": {
       "categoryId": "cat-mastery",
@@ -1102,11 +1101,7 @@
         "en": "Different services"
       },
       "emblem": "explorer",
-      "subject": null,
-      "metric": {
-        "metric": "client.services.distinct"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1151,8 +1146,15 @@
       ],
       "repeatable": false,
       "order": 9,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.services.distinct",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-barber-ivan": {
       "categoryId": "cat-barbers",
@@ -1166,17 +1168,7 @@
         "en": "Visits with Ivan"
       },
       "emblem": "barber",
-      "subject": {
-        "kind": "barber",
-        "barberId": "ivan"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "barberId": "ivan"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1231,8 +1223,16 @@
       ],
       "repeatable": false,
       "order": 1,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": "ivan",
+      "metricScopeLocationId": null,
+      "badgeSubject": "BARBER",
+      "subjectBarberId": "ivan"
     },
     "series-barber-niko": {
       "categoryId": "cat-barbers",
@@ -1246,17 +1246,7 @@
         "en": "Visits with Niko"
       },
       "emblem": "barber",
-      "subject": {
-        "kind": "barber",
-        "barberId": "niko"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "barberId": "niko"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1311,8 +1301,16 @@
       ],
       "repeatable": false,
       "order": 2,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": "niko",
+      "metricScopeLocationId": null,
+      "badgeSubject": "BARBER",
+      "subjectBarberId": "niko"
     },
     "series-barber-stefan": {
       "categoryId": "cat-barbers",
@@ -1326,17 +1324,7 @@
         "en": "Visits with Stefan"
       },
       "emblem": "barber",
-      "subject": {
-        "kind": "barber",
-        "barberId": "stefan"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "barberId": "stefan"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1391,8 +1379,16 @@
       ],
       "repeatable": false,
       "order": 3,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": "stefan",
+      "metricScopeLocationId": null,
+      "badgeSubject": "BARBER",
+      "subjectBarberId": "stefan"
     },
     "series-shop-center": {
       "categoryId": "cat-barbers",
@@ -1406,17 +1402,7 @@
         "en": "Visits at Center"
       },
       "emblem": "shop",
-      "subject": {
-        "kind": "location",
-        "locationId": "loc-center"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "locationId": "loc-center"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1471,8 +1457,16 @@
       ],
       "repeatable": false,
       "order": 4,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": "loc-center",
+      "badgeSubject": "LOCATION",
+      "subjectLocationId": "loc-center"
     },
     "series-shop-mladost": {
       "categoryId": "cat-barbers",
@@ -1486,17 +1480,7 @@
         "en": "Visits at Mladost"
       },
       "emblem": "shop",
-      "subject": {
-        "kind": "location",
-        "locationId": "loc-mladost"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "locationId": "loc-mladost"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1551,8 +1535,16 @@
       ],
       "repeatable": false,
       "order": 5,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": "loc-mladost",
+      "badgeSubject": "LOCATION",
+      "subjectLocationId": "loc-mladost"
     },
     "series-all-barbers": {
       "categoryId": "cat-barbers",
@@ -1566,11 +1558,7 @@
         "en": "Visits with different barbers"
       },
       "emblem": "barber",
-      "subject": null,
-      "metric": {
-        "metric": "client.barbers.distinct"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1595,8 +1583,15 @@
       ],
       "repeatable": false,
       "order": 6,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.barbers.distinct",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-both-shops": {
       "categoryId": "cat-barbers",
@@ -1610,11 +1605,7 @@
         "en": "Visits at both shops"
       },
       "emblem": "shop",
-      "subject": null,
-      "metric": {
-        "metric": "client.locations.distinct"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1629,8 +1620,15 @@
       ],
       "repeatable": false,
       "order": 7,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.locations.distinct",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-rhythm": {
       "categoryId": "cat-rhythm",
@@ -1644,9 +1642,7 @@
         "en": "Visits in rhythm"
       },
       "emblem": "streak",
-      "subject": null,
-      "metric": null,
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1668,8 +1664,8 @@
           },
           "awards": [
             {
-              "kind": "freeze",
-              "count": 1
+              "awardKind": "FREEZE",
+              "awardFreezeCount": 1
             }
           ]
         },
@@ -1706,8 +1702,15 @@
       ],
       "repeatable": false,
       "order": 1,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": null,
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-twelve-months": {
       "categoryId": "cat-rhythm",
@@ -1721,14 +1724,7 @@
         "en": "Months with a visit within a year"
       },
       "emblem": "yearRound",
-      "subject": null,
-      "metric": {
-        "metric": "client.months.distinct",
-        "window": {
-          "lastDays": 365
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1763,8 +1759,15 @@
       ],
       "repeatable": false,
       "order": 2,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.months.distinct",
+      "metricWindowDays": 365,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-comeback": {
       "categoryId": "cat-rhythm",
@@ -1778,9 +1781,7 @@
         "en": "Back in rhythm after a break"
       },
       "emblem": "comeback",
-      "subject": null,
-      "metric": null,
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1795,8 +1796,15 @@
       ],
       "repeatable": false,
       "order": 3,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": null,
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-welcome": {
       "categoryId": "cat-special",
@@ -1810,9 +1818,7 @@
         "en": "Your first visit"
       },
       "emblem": "welcome",
-      "subject": null,
-      "metric": null,
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1824,16 +1830,23 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 20
+              "awardKind": "POINTS",
+              "awardPoints": 20
             }
           ]
         }
       ],
       "repeatable": false,
       "order": 1,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": null,
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-birthday": {
       "categoryId": "cat-special",
@@ -1847,9 +1860,7 @@
         "en": "A visit on your birthday"
       },
       "emblem": "birthday",
-      "subject": null,
-      "metric": null,
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1864,8 +1875,15 @@
       ],
       "repeatable": true,
       "order": 2,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": null,
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-early-bird": {
       "categoryId": "cat-special",
@@ -1879,11 +1897,7 @@
         "en": "Visits starting by 10:00"
       },
       "emblem": "earlyBird",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.earlyBird"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1928,8 +1942,15 @@
       ],
       "repeatable": false,
       "order": 3,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.earlyBird",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-weekend": {
       "categoryId": "cat-special",
@@ -1943,11 +1964,7 @@
         "en": "Saturday visits"
       },
       "emblem": "weekend",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.weekend"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -1982,8 +1999,15 @@
       ],
       "repeatable": false,
       "order": 4,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.weekend",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-on-time": {
       "categoryId": "cat-special",
@@ -1997,11 +2021,7 @@
         "en": "Visits you arrived on time for"
       },
       "emblem": "onTime",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.onTime"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2036,8 +2056,15 @@
       ],
       "repeatable": false,
       "order": 5,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.onTime",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-profile": {
       "categoryId": "cat-special",
@@ -2051,9 +2078,7 @@
         "en": "Email, birthday and photo in your profile"
       },
       "emblem": "profile",
-      "subject": null,
-      "metric": null,
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2068,8 +2093,15 @@
       ],
       "repeatable": false,
       "order": 6,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": null,
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-party": {
       "categoryId": "cat-special",
@@ -2083,11 +2115,7 @@
         "en": "Visits with company"
       },
       "emblem": "party",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.party"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2122,8 +2150,15 @@
       ],
       "repeatable": false,
       "order": 7,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.party",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-autumn-track": {
       "categoryId": null,
@@ -2137,11 +2172,7 @@
         "en": "Visits during the season"
       },
       "emblem": "autumn",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.completed"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2193,16 +2224,23 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 100
+              "awardKind": "POINTS",
+              "awardPoints": 100
             }
           ]
         }
       ],
       "repeatable": false,
       "order": 1,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-autumn-each-month": {
       "categoryId": null,
@@ -2216,11 +2254,7 @@
         "en": "A visit in every autumn month"
       },
       "emblem": "umbrella",
-      "subject": null,
-      "metric": {
-        "metric": "client.months.distinct"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2235,8 +2269,15 @@
       ],
       "repeatable": false,
       "order": 2,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.months.distinct",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-autumn-beard": {
       "categoryId": null,
@@ -2250,17 +2291,7 @@
         "en": "Beard trims this autumn"
       },
       "emblem": "grooming",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-beard"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-beard"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2275,8 +2306,16 @@
       ],
       "repeatable": false,
       "order": 3,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-beard",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-beard"
     },
     "series-2026-autumn-referral": {
       "categoryId": null,
@@ -2290,11 +2329,7 @@
         "en": "A friend brought this autumn"
       },
       "emblem": "handshake",
-      "subject": null,
-      "metric": {
-        "metric": "client.referrals.completed"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2309,8 +2344,15 @@
       ],
       "repeatable": false,
       "order": 4,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.referrals.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-autumn-early": {
       "categoryId": null,
@@ -2324,11 +2366,7 @@
         "en": "Autumn visits starting by 10:00"
       },
       "emblem": "fog",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.earlyBird"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2343,8 +2381,15 @@
       ],
       "repeatable": false,
       "order": 5,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.earlyBird",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-beard-week-beard": {
       "categoryId": null,
@@ -2358,17 +2403,7 @@
         "en": "A beard trim during the week"
       },
       "emblem": "beardOil",
-      "subject": {
-        "kind": "service",
-        "serviceId": "svc-beard"
-      },
-      "metric": {
-        "metric": "client.visits.completed",
-        "where": {
-          "serviceId": "svc-beard"
-        }
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2383,8 +2418,16 @@
       ],
       "repeatable": false,
       "order": 1,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": "svc-beard",
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": "SERVICE",
+      "subjectServiceId": "svc-beard"
     },
     "series-2026-beard-week-full": {
       "categoryId": null,
@@ -2398,9 +2441,7 @@
         "en": "Hair and beard in one visit during the week"
       },
       "emblem": "spa",
-      "subject": null,
-      "metric": null,
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2415,8 +2456,15 @@
       ],
       "repeatable": false,
       "order": 2,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": null,
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-summer-track": {
       "categoryId": null,
@@ -2430,11 +2478,7 @@
         "en": "Visits during the season"
       },
       "emblem": "summer",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.completed"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2486,16 +2530,23 @@
           },
           "awards": [
             {
-              "kind": "points",
-              "points": 100
+              "awardKind": "POINTS",
+              "awardPoints": 100
             }
           ]
         }
       ],
       "repeatable": false,
       "order": 1,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.completed",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-summer-each-month": {
       "categoryId": null,
@@ -2509,11 +2560,7 @@
         "en": "A visit in every summer month"
       },
       "emblem": "sailing",
-      "subject": null,
-      "metric": {
-        "metric": "client.months.distinct"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2528,8 +2575,15 @@
       ],
       "repeatable": false,
       "order": 2,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.months.distinct",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-summer-saturday": {
       "categoryId": null,
@@ -2543,11 +2597,7 @@
         "en": "A Saturday visit in summer"
       },
       "emblem": "icecream",
-      "subject": null,
-      "metric": {
-        "metric": "client.visits.weekend"
-      },
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2562,8 +2612,15 @@
       ],
       "repeatable": false,
       "order": 3,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": "client.visits.weekend",
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     },
     "series-2026-summer-before-leave": {
       "categoryId": null,
@@ -2577,9 +2634,7 @@
         "en": "2 visits within 21 days in summer"
       },
       "emblem": "vacation",
-      "subject": null,
-      "metric": null,
-      "art": null,
+      "artPath": null,
       "levels": [
         {
           "level": 1,
@@ -2594,42 +2649,44 @@
       ],
       "repeatable": false,
       "order": 4,
-      "retiredAt": null,
-      "version": 1
+      "retiredAtUtcMs": null,
+      "retiredLocalDate": null,
+      "version": 1,
+      "metric": null,
+      "metricWindowDays": null,
+      "metricScopeServiceId": null,
+      "metricScopeBarberId": null,
+      "metricScopeLocationId": null,
+      "badgeSubject": null
     }
   },
   "seasons": {
     "season-2026-summer": {
-      "kind": "season",
+      "seasonKind": "SEASON",
       "title": {
         "bg": "Лято 2026",
         "en": "Summer 2026"
       },
       "emblem": "summer",
-      "window": {
-        "from": "2026-06-01",
-        "until": "2026-08-31"
-      },
       "trackSeriesId": "series-2026-summer-track",
       "seriesIds": [
         "series-2026-summer-each-month",
         "series-2026-summer-saturday",
         "series-2026-summer-before-leave"
       ],
-      "announcedAt": "2026-05-01T06:00:00.000Z",
-      "version": 1
+      "announcedAtUtcMs": 1777615200000,
+      "announcedLocalDate": "2026-05-01",
+      "version": 1,
+      "windowFrom": "2026-06-01",
+      "windowUntil": "2026-08-31"
     },
     "season-2026-autumn": {
-      "kind": "season",
+      "seasonKind": "SEASON",
       "title": {
         "bg": "Есен 2026",
         "en": "Autumn 2026"
       },
       "emblem": "autumn",
-      "window": {
-        "from": "2026-09-01",
-        "until": "2026-11-30"
-      },
       "trackSeriesId": "series-2026-autumn-track",
       "seriesIds": [
         "series-2026-autumn-each-month",
@@ -2637,27 +2694,29 @@
         "series-2026-autumn-referral",
         "series-2026-autumn-early"
       ],
-      "announcedAt": "2026-08-01T06:00:00.000Z",
-      "version": 1
+      "announcedAtUtcMs": 1785564000000,
+      "announcedLocalDate": "2026-08-01",
+      "version": 1,
+      "windowFrom": "2026-09-01",
+      "windowUntil": "2026-11-30"
     },
     "event-2026-beard-week": {
-      "kind": "event",
+      "seasonKind": "EVENT",
       "title": {
         "bg": "Седмица на брадата",
         "en": "Beard Week"
       },
       "emblem": "event",
-      "window": {
-        "from": "2026-09-22",
-        "until": "2026-10-05"
-      },
       "trackSeriesId": null,
       "seriesIds": [
         "series-2026-beard-week-beard",
         "series-2026-beard-week-full"
       ],
-      "announcedAt": "2026-08-22T06:00:00.000Z",
-      "version": 1
+      "announcedAtUtcMs": 1787378400000,
+      "announcedLocalDate": "2026-08-22",
+      "version": 1,
+      "windowFrom": "2026-09-22",
+      "windowUntil": "2026-10-05"
     }
   },
   "tierDefinitions": {
@@ -2669,14 +2728,10 @@
       "rank": 0,
       "benefits": [],
       "version": 1,
-      "effectiveFrom": "2025-03-01T07:00:00.000Z",
-      "qualify": {
-        "metric": "client.visits.completed",
-        "atLeast": 0,
-        "window": {
-          "lastDays": 365
-        }
-      }
+      "effectiveFromLocalDate": "2025-03-01",
+      "qualifyMetric": "client.visits.completed",
+      "qualifyAtLeast": 0,
+      "qualifyWindowDays": 365
     },
     "silver": {
       "name": {
@@ -2686,14 +2741,10 @@
       "rank": 1,
       "benefits": [],
       "version": 1,
-      "effectiveFrom": "2025-03-01T07:00:00.000Z",
-      "qualify": {
-        "metric": "client.visits.completed",
-        "atLeast": 6,
-        "window": {
-          "lastDays": 365
-        }
-      }
+      "effectiveFromLocalDate": "2025-03-01",
+      "qualifyMetric": "client.visits.completed",
+      "qualifyAtLeast": 6,
+      "qualifyWindowDays": 365
     },
     "gold": {
       "name": {
@@ -2703,14 +2754,10 @@
       "rank": 2,
       "benefits": ["perk.priorityWaitlist"],
       "version": 1,
-      "effectiveFrom": "2025-03-01T07:00:00.000Z",
-      "qualify": {
-        "metric": "client.visits.completed",
-        "atLeast": 12,
-        "window": {
-          "lastDays": 365
-        }
-      }
+      "effectiveFromLocalDate": "2025-03-01",
+      "qualifyMetric": "client.visits.completed",
+      "qualifyAtLeast": 12,
+      "qualifyWindowDays": 365
     },
     "platinum": {
       "name": {
@@ -2724,14 +2771,10 @@
         "perk.freeReschedule"
       ],
       "version": 1,
-      "effectiveFrom": "2025-03-01T07:00:00.000Z",
-      "qualify": {
-        "metric": "client.visits.completed",
-        "atLeast": 20,
-        "window": {
-          "lastDays": 365
-        }
-      }
+      "effectiveFromLocalDate": "2025-03-01",
+      "qualifyMetric": "client.visits.completed",
+      "qualifyAtLeast": 20,
+      "qualifyWindowDays": 365
     }
   },
   "rewardsCatalog": {
@@ -2743,22 +2786,14 @@
       "cost": 120,
       "enabled": true,
       "order": 1,
-      "grants": {
-        "kind": "coupon",
-        "couponId": "coupon-free-beard"
-      },
-      "available": {
-        "from": null,
-        "until": null
-      },
-      "limits": {
-        "perClient": {
-          "count": 1,
-          "windowDays": 30
-        },
-        "total": null
-      },
-      "redeemedCount": 1
+      "availableFrom": null,
+      "availableUntil": null,
+      "perClientLimitCount": 1,
+      "perClientLimitWindowDays": 30,
+      "totalLimit": null,
+      "redeemedCount": 1,
+      "rewardGrant": "COUPON",
+      "grantCouponId": "coupon-free-beard"
     },
     "reward-cut": {
       "name": {
@@ -2768,22 +2803,14 @@
       "cost": 250,
       "enabled": true,
       "order": 2,
-      "grants": {
-        "kind": "coupon",
-        "couponId": "coupon-punch-free-cut"
-      },
-      "available": {
-        "from": null,
-        "until": null
-      },
-      "limits": {
-        "perClient": {
-          "count": 1,
-          "windowDays": 30
-        },
-        "total": null
-      },
-      "redeemedCount": 1
+      "availableFrom": null,
+      "availableUntil": null,
+      "perClientLimitCount": 1,
+      "perClientLimitWindowDays": 30,
+      "totalLimit": null,
+      "redeemedCount": 1,
+      "rewardGrant": "COUPON",
+      "grantCouponId": "coupon-punch-free-cut"
     },
     "reward-product": {
       "name": {
@@ -2793,23 +2820,16 @@
       "cost": 400,
       "enabled": true,
       "order": 3,
-      "grants": {
-        "kind": "voucher",
-        "amountMinor": 2000,
-        "expiresInDays": 90
-      },
-      "available": {
-        "from": null,
-        "until": null
-      },
-      "limits": {
-        "perClient": {
-          "count": 1,
-          "windowDays": 90
-        },
-        "total": null
-      },
-      "redeemedCount": 0
+      "availableFrom": null,
+      "availableUntil": null,
+      "perClientLimitCount": 1,
+      "perClientLimitWindowDays": 90,
+      "totalLimit": null,
+      "redeemedCount": 0,
+      "rewardGrant": "VOUCHER",
+      "grantVoucherCents": 2000,
+      "grantVoucherCurrency": "EUR",
+      "grantVoucherExpiresInDays": 90
     }
   },
   "streakDefinitions": {
@@ -2818,44 +2838,35 @@
         "bg": "Посещения в ритъм",
         "en": "Visits in rhythm"
       },
-      "current": {
-        "version": 1,
-        "effectiveFrom": "2025-03-01",
-        "enabled": true,
-        "qualifier": {
-          "kind": "anyVisit"
-        },
-        "minGapDays": 7,
-        "bookingHold": {
+      "rules": [
+        {
+          "version": 1,
+          "effectiveFromLocalDate": "2025-03-01",
           "enabled": true,
-          "maxDaysPastDue": 14
-        },
-        "interval": {
-          "kind": "fixed",
-          "days": 42
-        },
-        "graceDays": 7,
-        "riskLeadDays": 7,
-        "protections": {
-          "enabled": true,
-          "maxBanked": 2,
-          "earnEvery": 5,
-          "startWith": 0
-        },
-        "excuses": ["shopClosure", "barberAbsence", "staffCancelled"],
-        "clientPause": {
-          "enabled": false,
-          "maxDaysPerYear": 90
-        },
-        "repair": {
-          "enabled": true,
-          "windowDays": 14,
-          "perYear": 1
-        },
-        "onBreak": "restart"
-      },
-      "scheduled": null,
-      "updatedAt": "2025-03-01T07:00:00.000Z"
+          "streakQualifier": "ANY_VISIT",
+          "minGapDays": 7,
+          "bookingHoldEnabled": true,
+          "bookingHoldMaxDaysPastDue": 14,
+          "streakInterval": "FIXED",
+          "intervalDays": 42,
+          "graceDays": 7,
+          "riskLeadDays": 7,
+          "protectionsEnabled": true,
+          "protectionsMaxBanked": 2,
+          "protectionsEarnEvery": 5,
+          "protectionsStartWith": 0,
+          "excuses": ["SHOP_CLOSURE", "BARBER_ABSENCE", "STAFF_CANCELLED"],
+          "clientPauseEnabled": false,
+          "clientPauseMaxDaysPerYear": 90,
+          "repairEnabled": true,
+          "repairWindowDays": 14,
+          "repairPerYear": 1,
+          "onBreak": "RESTART",
+          "headRole": "CURRENT",
+          "streakTransition": null
+        }
+      ],
+      "updatedAtUtcMs": 1740812400000
     }
   }
 }

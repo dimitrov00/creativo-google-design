@@ -8,6 +8,8 @@ import {
 describe('StreakPublishError', () => {
   it('keeps the callable’s codes SCREAMING under the LOYALTY_STREAK_PUBLISH_ prefix', () => {
     expect(Object.values(StreakPublishErrorCode).sort()).toEqual([
+      'LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN',
+      'LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED',
       'LOYALTY_STREAK_PUBLISH_INVALID',
       'LOYALTY_STREAK_PUBLISH_PREVIEW_STALE',
       'LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE',
@@ -18,6 +20,8 @@ describe('StreakPublishError', () => {
 
   it('builds one plain struct per errorCode', () => {
     const errors: readonly StreakPublishError[] = [
+      StreakPublishError.callerUnauthenticated(),
+      StreakPublishError.callerNotAdmin(),
       StreakPublishError.stale(3, 4),
       StreakPublishError.invalid(['intervalDays']),
       StreakPublishError.tooEarly(
@@ -45,5 +49,17 @@ describe('StreakPublishError', () => {
       effectiveFromLocalDate: '2026-10-11',
       earliest: '2026-10-17',
     });
+  });
+
+  it('judges the caller with payload-free structs: who asks, never what was sent', () => {
+    expect(StreakPublishError.callerUnauthenticated()).toEqual({
+      errorCode: 'LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED',
+    });
+    expect(StreakPublishError.callerNotAdmin()).toEqual({
+      errorCode: 'LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN',
+    });
+    expect(Object.keys(StreakPublishError.callerNotAdmin())).toEqual([
+      'errorCode',
+    ]);
   });
 });

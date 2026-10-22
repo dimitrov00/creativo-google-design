@@ -6,8 +6,17 @@ import type { LocalDate } from './local-date.primitive';
  * SCREAMING_SNAKE under the `LOYALTY_STREAK_PUBLISH_` prefix (flatten-spec
  * §4.2); the callable's answer keeps the legacy dotted code on the wire
  * until Phase 4. Every non-`errorCode` field is an i18n parameter.
+ *
+ * The two `CALLER_*` codes judge WHO asks (the verified token, never the
+ * payload) before anything is read; the callable never lets either reach
+ * the wire as itself — it answers today's `unauthenticated` fault and the
+ * `notAdmin` refusal (flip-3 plan F3-4).
  */
 export const StreakPublishErrorCode = {
+  /** The request carries no signed-in account. */
+  CallerUnauthenticated: 'LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED',
+  /** The signed-in account manages no shop: only an admin publishes the rule. */
+  CallerNotAdmin: 'LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN',
   /** The head moved since the draft was made, or what is to be called off no longer waits. */
   Stale: 'LOYALTY_STREAK_PUBLISH_STALE',
   /** The draft is no rule, or the head it would make would not stand. */
@@ -23,6 +32,8 @@ export type StreakPublishErrorCode =
   (typeof StreakPublishErrorCode)[keyof typeof StreakPublishErrorCode];
 
 export type StreakPublishError =
+  | StreakPublishError.CallerUnauthenticated
+  | StreakPublishError.CallerNotAdmin
   | StreakPublishError.Stale
   | StreakPublishError.Invalid
   | StreakPublishError.TooEarly
@@ -30,6 +41,12 @@ export type StreakPublishError =
   | StreakPublishError.PreviewStale;
 
 export const StreakPublishError = {
+  callerUnauthenticated(): StreakPublishError.CallerUnauthenticated {
+    return { errorCode: StreakPublishErrorCode.CallerUnauthenticated };
+  },
+  callerNotAdmin(): StreakPublishError.CallerNotAdmin {
+    return { errorCode: StreakPublishErrorCode.CallerNotAdmin };
+  },
   stale(expected: number, actual: number): StreakPublishError.Stale {
     return { errorCode: StreakPublishErrorCode.Stale, expected, actual };
   },
@@ -55,6 +72,12 @@ export const StreakPublishError = {
 } as const;
 
 export namespace StreakPublishError {
+  export type CallerUnauthenticated = {
+    readonly errorCode: typeof StreakPublishErrorCode.CallerUnauthenticated;
+  };
+  export type CallerNotAdmin = {
+    readonly errorCode: typeof StreakPublishErrorCode.CallerNotAdmin;
+  };
   export type Stale = {
     readonly errorCode: typeof StreakPublishErrorCode.Stale;
     /** The version the request names. */

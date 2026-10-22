@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { BadgeCategoryKind, BadgeEmblem, EarnedVia } from '@core/components';
+import { BadgeCategoryId, BadgeSeriesId } from '@core/primitives';
+import { LoyaltyCatalogSystem } from '@core/systems';
+import { localDate, utcMs } from '@core/testing';
 import { isUiIconName } from '@creativo/ui/controls';
 import {
   BADGE_CATEGORY_ICONS,
@@ -34,7 +38,7 @@ const OPEN = achievementsContextOf(georgiOpenContext(), 'Георги Петро
 const BIRTHDAY = achievementsContextOf(martinContext(), 'Мартин Илиев', true);
 
 function series(data: AchievementsData, id: string) {
-  const found = data.catalog.series(id);
+  const found = LoyaltyCatalogSystem.series(data.catalog, BadgeSeriesId.of(id));
   if (found === null) throw new Error(`no family ${id}`);
   return found;
 }
@@ -47,8 +51,10 @@ describe('the registry maps', () => {
     ]) {
       expect(isUiIconName(icon)).toBe(true);
     }
-    expect(BADGE_EMBLEM_ICONS.visits).toBe('loyalty.badge.visits');
-    expect(BADGE_CATEGORY_ICONS.mastery).toBe('loyalty.category.mastery');
+    expect(BADGE_EMBLEM_ICONS[BadgeEmblem.Visits]).toBe('loyalty.badge.visits');
+    expect(BADGE_CATEGORY_ICONS[BadgeCategoryKind.Mastery]).toBe(
+      'loyalty.category.mastery',
+    );
     expect(new Set(Object.values(BADGE_EMBLEM_ICONS)).size).toBe(
       Object.keys(BADGE_EMBLEM_ICONS).length,
     );
@@ -153,13 +159,7 @@ describe('medalVm', () => {
 
   it('lets owner art win over the subject’s art, where the dashboard resolves it', () => {
     const family = series(GEORGI, 'series-svc-fade');
-    const withArt = Object.assign(
-      Object.create(Object.getPrototypeOf(family)),
-      family,
-      {
-        art: { path: 'badgeArt/fade.png' },
-      },
-    );
+    const withArt = { ...family, artPath: 'badgeArt/fade.png' };
     const ctx = {
       ...SETTLED,
       catalog: {
@@ -298,12 +298,12 @@ describe('one face per family', () => {
   it('never draws two art-less families of one shelf with one emblem', () => {
     const clones = GEORGI.catalog.categories
       .map((category) => ({
-        shelf: category.id.value,
+        shelf: category.id,
         repeated: repeated(
           emblemsOf(
-            GEORGI.catalog
-              .seriesIn(category.id.value)
-              .map((family) => medalVm(family, GEORGI, ARTLESS)),
+            LoyaltyCatalogSystem.seriesIn(GEORGI.catalog, category.id).map(
+              (family) => medalVm(family, GEORGI, ARTLESS),
+            ),
           ),
         ),
       }))
@@ -314,14 +314,12 @@ describe('one face per family', () => {
   it('never draws a season’s family with its track’s emblem, nor two of them with one', () => {
     const clones = GEORGI.catalog.seasons
       .map((season) => {
-        const ids = new Set([
-          ...(season.trackSeriesId === null
-            ? []
-            : [season.trackSeriesId.value]),
-          ...season.seriesIds.map((id) => id.value),
+        const ids = new Set<string>([
+          ...(season.trackSeriesId === null ? [] : [season.trackSeriesId]),
+          ...season.seriesIds,
         ]);
         return {
-          season: season.id.value,
+          season: season.id,
           repeated: repeated(
             emblemsOf(
               [...ids].map((id) =>
@@ -433,7 +431,7 @@ describe('completesWithThisVisit («с това посещение»)', () => {
   const completes = (data: AchievementsData, ctx = OPEN) =>
     data.catalog.families
       .filter((family) => completesWithThisVisit(family, data, ctx))
-      .map((family) => family.id.value)
+      .map((family): string => family.id)
       .sort();
 
   it('names every family one short on a count the open visit moves', () => {
@@ -498,9 +496,12 @@ describe('completesWithThisVisit («с това посещение»)', () => {
 
 describe('shelfOrdered', () => {
   it('puts earned families first (highest level first), then the closest in progress, then the rest in catalogue order', () => {
-    const families = GEORGI.catalog.seriesIn('cat-barbers');
+    const families = LoyaltyCatalogSystem.seriesIn(
+      GEORGI.catalog,
+      BadgeCategoryId.of('cat-barbers'),
+    );
     expect(
-      shelfOrdered(families, GEORGI).map((family) => family.id.value),
+      shelfOrdered(families, GEORGI).map((family): string => family.id),
     ).toEqual([
       'series-barber-ivan',
       'series-shop-center',
@@ -663,13 +664,15 @@ describe('scopePageVm', () => {
 
     const progress = new Map(later.progress);
     progress.set('series-2026-beard-week-beard', {
-      seriesId: 'series-2026-beard-week-beard',
+      id: BadgeSeriesId.of('series-2026-beard-week-beard'),
       value: 1,
       earned: [
         {
           level: 1,
-          earnedAt: new Date('2026-09-30T08:00:00.000Z'),
-          via: 'rule',
+          // 11:00 in Sofia, written with its shop day (T5).
+          earnedAtUtcMs: utcMs('2026-09-30T08:00:00.000Z'),
+          earnedLocalDate: localDate('2026-09-30'),
+          earnedVia: EarnedVia.Rule,
           count: 1,
         },
       ],

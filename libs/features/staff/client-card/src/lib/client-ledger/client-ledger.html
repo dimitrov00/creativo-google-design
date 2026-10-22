@@ -53,10 +53,10 @@
     uiChip
     uiControlSize="small"
     [uiSelected]="vm.filter === kind"
-    [attr.data-testid]="'ledger-filter-' + kind"
+    [attr.data-testid]="'ledger-filter-' + filterWords[kind]"
     (click)="setFilter(kind)"
   >
-    {{ w.ledgerPage.filter(kind) }}
+    {{ w.ledgerPage.filter(filterWords[kind]) }}
   </button>
   }
 </ui-flow>
@@ -127,7 +127,7 @@
     {{ w.visitsModule.retry }}
   </button>
 </ui-notice>
-} @case ('ready') { @if (vm.groups.length === 0) { @if (vm.filter === 'all') {
+} @case ('ready') { @if (vm.groups.length === 0) { @if (vm.filter === all) {
 <!-- No entry yet. -->
 <ui-empty-state data-testid="ledger-empty">
   <p uiText uiFont="callout" uiForegroundStyle="secondary">
@@ -148,7 +148,7 @@
     uiTint="neutral"
     uiControlSize="regular"
     data-testid="ledger-filter-clear"
-    (click)="setFilter('all')"
+    (click)="setFilter(all)"
   >
     {{ w.visitsModule.filterClear }}
   </button>

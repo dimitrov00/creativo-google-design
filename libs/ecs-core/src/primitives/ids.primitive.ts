@@ -285,17 +285,19 @@ export const StreakDefinitionVersionId = {
   },
 } as const;
 
-/** A journal entry (`clientJournal/{id}`, id `{userId}_{seq:06}`). */
+/**
+ * A journal entry (`clientJournal/{id}`, id `{customerId}_{seq:06}`) — keyed
+ * by the client RECORD it rewarded (D29), never by an account.
+ */
 export type JournalEntryId = Brand<string, 'JournalEntryId'>;
 export const JournalEntryId = {
   ...idCompanion('JournalEntryId'),
   /**
-   * The id of a client's `seq`-th entry: `${userId}_${seq:06}` — the zero
-   * padding makes document ids sort as the ledger does. Re-typed to
-   * `CustomerId` by the loyalty flip (3), §5.5.
+   * The id of a client record's `seq`-th entry: `${customerId}_${seq:06}` —
+   * the zero padding makes document ids sort as the ledger does.
    */
-  forEntry(userId: UserId, seq: number): JournalEntryId {
-    return `${userId}_${String(seq).padStart(6, '0')}` as JournalEntryId;
+  forEntry(customerId: CustomerId, seq: number): JournalEntryId {
+    return `${customerId}_${String(seq).padStart(6, '0')}` as JournalEntryId;
   },
 } as const;
 

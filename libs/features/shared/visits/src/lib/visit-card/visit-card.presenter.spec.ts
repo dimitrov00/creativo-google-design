@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Appointment } from '@core/entities';
 import { type Seat, SeatOutcome } from '@core/components';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
+import { FIXTURE_TODAY } from '@core/testing';
 import { appCatalogue } from '../testing/app-catalogue';
 import {
   GEORGI_PHOTOS,
@@ -64,7 +64,7 @@ function cardWordsOf(translate: typeof BG): VisitCardWords {
 const STAFF_WORDS = wordsOf(BG, 'bg', 'staff');
 const CLIENT_WORDS = wordsOf(BG, 'bg', 'client');
 const CARD_WORDS = cardWordsOf(BG);
-const NOW_MS = visitsNowMs(loyaltyFixtures.today);
+const NOW_MS = visitsNowMs(FIXTURE_TODAY);
 
 /** `formatMoney`'s bg form keeps the sign on the figure's line: a no-break space. */
 const EURO = (text: string) => text.replaceAll(' €', ' €');
@@ -534,7 +534,7 @@ describe('waitlistCardOf', () => {
       georgiWaitlistRequest(),
       {
         words: WAITLIST_WORDS,
-        today: loyaltyFixtures.today,
+        today: FIXTURE_TODAY,
         locale: 'bg',
         otherRequests,
         testId: 'client-visit-waitlist',
@@ -573,7 +573,7 @@ describe('waitlistCardOf', () => {
       georgiWaitlistRequest(),
       {
         words: WAITLIST_WORDS,
-        today: loyaltyFixtures.today,
+        today: FIXTURE_TODAY,
         locale: 'bg',
         otherRequests: 1,
       },

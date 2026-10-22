@@ -4,18 +4,17 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ClientStatsRecord } from '@core/entities';
 import type { ClientStatsReadPorts } from '@core/ports';
 import { BarberId, ServiceId } from '@core/primitives';
+import { PersonalRecordKind } from '@core/components';
 import { memoryAppointmentReadPorts } from '@core/testing';
 import {
-  InMemoryLoyaltyCatalogReader,
-  InMemoryLoyaltyReader,
-  loyaltyFixtures,
-} from '@creativo/application/engagement/testing';
-import {
   GEORGI,
+  GEORGI_LOYALTY,
   MARTIN,
+  catalogPortsOf,
   georgiContext,
   georgiHistory,
   historyPortsOf,
+  loyaltyPortsOf,
   martinContext,
   martinHistory,
   must,
@@ -25,7 +24,7 @@ import {
   wallOf,
 } from '../../testing/client-card.fixtures';
 import {
-  HeldCatalogReader,
+  heldCatalogPorts,
   type MountOptions,
   PAGE_TITLE_ID,
   mountAchievementsPage,
@@ -55,17 +54,17 @@ function statsWith(
 
 /** A client with an account and no record yet, no visit, no rhythm. */
 function nobodyYet(): Pick<MountOptions, 'rig'> {
-  const georgi = loyaltyFixtures.georgi;
+  const georgi = GEORGI_LOYALTY;
   return {
     rig: {
-      loyalty: new InMemoryLoyaltyReader({
-        [GEORGI]: {
+      loyalty: loyaltyPortsOf([
+        {
           ...georgi,
-          account: { ...georgi.account, records: [], streaks: {} },
-          badgeProgress: {},
-          seasonProgress: {},
-        } as typeof georgi,
-      }),
+          account: { ...georgi.account, records: [], streaks: [] },
+          badgeProgress: [],
+          seasonProgress: [],
+        },
+      ]),
       stats: statsPortsOf([]),
       history: historyPortsOf([]),
     },
@@ -374,20 +373,21 @@ describe('ClientRecordsPage — Георги', () => {
 
   it('puts a two-digit-day date under its title on a PHONE’s column too: «14.05.2025 г.» beside «Първо посещение» broke the title at 390', async () => {
     // No first-visit record on the account: the row reads the stats' day.
-    const georgi = loyaltyFixtures.georgi;
+    const georgi = GEORGI_LOYALTY;
     const { row } = await mount({
       rig: {
-        loyalty: new InMemoryLoyaltyReader({
-          [GEORGI]: {
+        loyalty: loyaltyPortsOf([
+          {
             ...georgi,
             account: {
               ...georgi.account,
               records: georgi.account.records.filter(
-                (record) => record.kind !== 'firstVisit',
+                (record) =>
+                  record.personalRecordKind !== PersonalRecordKind.FirstVisit,
               ),
             },
-          } as typeof georgi,
-        }),
+          },
+        ]),
         stats: statsWith({
           firstVisitLocalDate: wallOf('2025-05-14T10:00:00').localDate,
           firstVisitStartMinutes: wallOf('2025-05-14T10:00:00').minute,
@@ -540,7 +540,7 @@ describe('ClientRecordsPage — Мартин in the chair', () => {
 
 describe('ClientRecordsPage — states', () => {
   it('holds a shaped placeholder — one block, two groups of two rows — while the reads are on their way, then lands', async () => {
-    const catalog = new HeldCatalogReader();
+    const catalog = heldCatalogPorts();
     const { byId, text, render } = await mount({ rig: { catalog } });
     expect(text(byId('records-title'))).toBe('Рекорди');
     expect(text(byId('records-subline'))).toBe('Георги Петров');
@@ -556,7 +556,7 @@ describe('ClientRecordsPage — states', () => {
   });
 
   it('says the loyalty did not load, and reads it again on «Опитай пак» (the records ride the account’s read)', async () => {
-    const catalog = new InMemoryLoyaltyCatalogReader().failWith();
+    const catalog = catalogPortsOf().failWith();
     const { byId, text, render } = await mount({ rig: { catalog } });
     const notice = byId('records-error');
     expect(notice?.tagName).toBe('UI-NOTICE');
@@ -583,7 +583,7 @@ describe('ClientRecordsPage — states', () => {
 
   it('is the empty page for a person with no loyalty account', async () => {
     const { byId } = await mount({
-      rig: { loyalty: new InMemoryLoyaltyReader() },
+      rig: { loyalty: loyaltyPortsOf([]) },
     });
     expect(byId('records-empty')).not.toBeNull();
     expect(byId('records-error')).toBeNull();

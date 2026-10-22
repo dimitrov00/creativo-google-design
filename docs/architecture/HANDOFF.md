@@ -3,8 +3,8 @@
 Read this first if you are an agent (Claude Code, Codex, Cursor, Gemini, …) or
 a developer picking up the ECS / data-oriented migration. It says where the
 work stands, what to do next in which order, and how to prove each step.
-Last updated 2026-10-21 (flip 1 complete; Law 9 port-composition pass;
-flip 2 integrated; flip 3 next).
+Last updated 2026-10-22 (flip 1 complete; Law 9 port-composition pass;
+flips 2 and 3 integrated; flip 4 next).
 
 ## 1. Read these, in this order
 
@@ -36,13 +36,14 @@ flip 2 integrated; flip 3 next).
 | **Phase 3b flip 1 — booking core**                                                    | **done** — integrated 2026-10-16; on 2026-10-21 `verify:p0` and `e2e:web` ran green locally (baseline only) and `apps/web/e2e/booking-core.spec.ts` proves the live paths | bafdbdd, 32b870d, 4ba5d87, then the "flip 1 complete" commit |
 | Law 9 + port-composition pass (bottom-up bundles, `creativo/no-sliced-ports`)         | done — 2026-10-21, full gate green                                                                                                                                        | the "Law 9" commit                                           |
 | **Phase 3b flip 2 — identity and accounts**                                           | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                    | the "flip 2 commit"                                          |
-| Phase 3b flip 3 — loyalty and invitations                                             | not started                                                                                                                                                               |                                                              |
+| **Phase 3b flip 3 — loyalty and invitations**                                         | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                             | the "flip 3 commit"                                          |
 | Phase 3b flip 4 — programs                                                            | not started                                                                                                                                                               |                                                              |
 | Phase 4 — web integration and legacy deletion                                         | not started                                                                                                                                                               |                                                              |
 
-`main` carries the flip-1 and flip-2 reshapes and the Law 9 port pass, and
-the FULL gate of §4 is green on it (baseline reds only). The last fully
-green commit is the "flip 2" commit; check `git log` for anything newer.
+`main` carries the flip-1, flip-2 and flip-3 reshapes and the Law 9 port
+pass, and the FULL gate of §4 is green on it (baseline reds only). The last
+fully green commit is the "flip 3" commit; check `git log` for anything
+newer.
 
 ## 3. What to do next, in order
 
@@ -145,9 +146,57 @@ Same recipe as flip 1 (blueprint §6 Phase 3; closures in the runbook):
   `accounts.update_profile.repository_failure` (no `errors.REPOSITORY_*`
   i18n keys yet); `§10.15` (profile-row attribution once Phase 4 routes
   client edits through `updateProfile`) is the owner's before Phase 4.
-- **Flip 3 — loyalty and invitations:** `invitations`, `loyaltyAccounts`
-  (streaks as an array), `clientJournal`, `streakDefinitions` + versions,
-  badge/season/tier/reward catalogue.
+- **Flip 3 — loyalty and invitations: integrated 2026-10-22** (plan
+  `docs/architecture/flips/flip-3-loyalty.md`; its §8.1 is the integration
+  record, its §11 ledgers prove every case: server 4 deleted specs / 100
+  cases + 7 re-targeted, web 9 / 104, application 10 / 202 plus the loyalty
+  half of `testing.spec.ts` and 4 type-spec cases, each with a successor or
+  a `dead:` reason; the data plane deleted none). `loyaltyAccounts`
+  (re-keyed `{customerId}`, D29; `streaks` an array), `badgeProgress`,
+  `seasonProgress`, `clientJournal` (`{customerId}_{seq:06}`, index #21
+  re-keyed to `customerId, journalVisibility, journalEffect, seq DESC`),
+  `streakDefinitions` + `versions` and the six-collection catalogue are the
+  flat ecs-core entity bodies; the never-queried arrays have `indexes: []`
+  overrides; the journal rule reads `journalVisibility == 'CLIENT'`. The
+  publish callable is `@core/pipelines` `publish-streak-definition`
+  behind `apps/functions/src/wire/loyalty.wire.ts` (the wire frozen both
+  ways, F3-3; `legacyCallable` is gone with its last row) with the new
+  `paramFlagsPorts`; the web reads `LOYALTY_ACCOUNT_READ_PORTS`,
+  `LOYALTY_CATALOG_READ_PORTS` (the per-day session memo is the closure
+  `loyaltyCatalogMemo` behind `LOYALTY_CATALOG_MEMO`), `CLIENT_JOURNAL_PORTS`,
+  `STREAK_DEFINITION_PORTS` and `STREAK_PUBLISH_PORTS` (the frozen-wire
+  gateway); the client card and the admin rhythm page consume
+  `@core/*` directly (`LedgerSystem` folds `JournalEntry` rows, the
+  catalogue reaches every system unmapped through the store's
+  `LoyaltyCatalogSystem.validate`); the seed builds every loyalty body in
+  `tools/seed/fixtures/loyalty.fixtures.ts` (`satisfies` the entities). The
+  dead invitation web surface, `listLedgerTail`, the legacy loyalty half of
+  `libs/application/engagement` (mappers, ports, use cases, in-memory
+  references, the uid-keyed account fixtures), the functions clock and the
+  five legacy web adapters are deleted. Three departures, each pinned
+  (§11.4): the card's loyalty rides the client-record read (F3-1 (a));
+  stored bodies are answered as stored, the catalogue keeping its check as
+  the store's (F3-1 (b) — with two writer-defect-only consequences recorded
+  at integration: the memo keeps a refused catalogue for the day, and an
+  unreadable head leaves the publish as `store_failed`); the log line's
+  `error` text for a taken version number (F3-1 (c)). Integrator rulings
+  (§8.1): `PublishStreakDefinitionPorts` holds no `TelemetryPorts`; the
+  caller's uid is branded by `UserId.parse` as on every flipped wire; the
+  four fixture-coverage checks run over the flat fixture again. Gate:
+  §4 all green but the baseline reds (unit 6, typecheck 3 projects, e2e
+  19 failed / 41 passed), `verify:p0` all proved, `test:emulator` 62 +
+  241, the §6 grep gate (runbook §4.3) 22 gates ok, runbook §4.2 28 ok.
+  Carried forward, not blocking: `libs/domain/engagement` (the loyalty and
+  invitation classes, now importer-free in apps/features/infrastructure/
+  tools) and the kept vouchers/coupons/reward-progress half of
+  `libs/application/engagement` go with Phase 4; `AchievementScope`'s
+  `kind` (a view-model contract) is a flatten-pass candidate;
+  `ClientCardStore`'s `AVATAR_UPLOADER`/`ZonedDateTime` imports and its
+  `Date.now()` fallback are Phase 4's; `@core/testing`'s `vouchers.json`
+  is still nested (vouchers are no flip-3 collection); the
+  `redeemInvitation` pipeline and the invitations rules tightening are
+  Phase 4's (F3-2); the plan's §10 open questions stand on their
+  defaults.
 - **Flip 4 — programs:** `positions`, `courses`, `events` (admin writes stay
   rules-guarded, D9(b)).
 
@@ -186,7 +235,7 @@ green since flip 1);
 unit tests `gauge.spec.ts` (4), `visit-pills.spec.ts` (1),
 `visits-page.presenter.spec.ts` "strikes an hour that did not happen" (1);
 e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:120`
-(MapLibre), 12 `client-card-glance.spec.ts` runs at `:341`/`:684`; and
+(MapLibre), 12 `client-card-glance.spec.ts` runs at `:343`/`:686` (`:341`/`:684` before flip 3); and
 `appointments.spec.ts:152` flakes under load (passes alone with
 `--repeat-each=3`). Anything else red is a regression.
 

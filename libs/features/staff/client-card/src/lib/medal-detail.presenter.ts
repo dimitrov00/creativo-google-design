@@ -1,16 +1,8 @@
 import { ZonedDateTime } from '@creativo/application/booking';
-import type { Appointment } from '@core/entities';
-import {
-  type BadgeLevel,
-  type BadgeProgress,
-  type BadgeSeries,
-  type EarnedLevel,
-  type SeriesStanding,
-  levelNumeral,
-  sofiaDayOf,
-} from '@creativo/application/engagement';
+import type { Appointment, BadgeProgress, BadgeSeries } from '@core/entities';
 import {
   AttendanceState,
+  AwardKind,
   BarberId as BarberRefId,
   CustomerId,
   LocalDate,
@@ -22,10 +14,21 @@ import {
   type Weekday,
   defect,
 } from '@core/primitives';
-import { type MetricRef, type Seat } from '@core/components';
+import {
+  type BadgeLevel,
+  BadgeSubject,
+  type EarnedLevel,
+  MedalState,
+  Metric,
+  type Seat,
+  SeasonPhase,
+  type SeriesStanding,
+} from '@core/components';
 import {
   AchievementsSystem,
+  BadgeSystem,
   ClientStatsSystem,
+  LoyaltyCatalogSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -44,6 +47,10 @@ import {
   localeOf,
   progressOf,
   relatedOf,
+  seasonOfSeries,
+  seasonPhaseOf,
+  seriesById,
+  standingOf,
 } from './achievements.presenter';
 import type { ClientCardCatalog } from './client-card.contracts';
 import {
@@ -52,6 +59,7 @@ import {
   dayWithYear,
   figure,
   inSentence,
+  levelNumeral,
 } from './client-card.format';
 import {
   type AchievementWhoWord,
@@ -84,8 +92,8 @@ import { visitsRows } from './visits-page.presenter';
  * day), the visits that counted, the family's neighbours.
  *
  * Pure functions of the store's `AchievementsData` and the page's context,
- * as every presenter of the card. The domain decides standing
- * (`series.standing`); `medalRingVm` decides how a family's medal is drawn,
+ * as every presenter of the card. The systems decide standing
+ * (`BadgeSystem.standing`); `medalRingVm` decides how a family's medal is drawn,
  * here as on every grid, so the hero, a neighbour's tile and a tile of
  * «Постижения» never tell one family two ways. This file words the rest.
  *
@@ -177,9 +185,9 @@ function topEarned(progress: BadgeProgress | null): EarnedLevel | null {
   return top;
 }
 
-/** A medal's day always names its year: a ladder spans years («24.09.2025 г.»). */
-function medalDay(at: Date, lang: string): string {
-  return asOneUnit(dayWithYear(sofiaDayOf(at), lang));
+/** A medal's day — the stored shop day it was earned on (T5) — always names its year: a ladder spans years («24.09.2025 г.»). */
+function medalDay(earned: EarnedLevel, lang: string): string {
+  return asOneUnit(dayWithYear(earned.earnedLocalDate, lang));
 }
 
 /**
@@ -193,7 +201,7 @@ function canStillMove(
   data: AchievementsData,
 ): boolean {
   return (
-    !series.isRetired() &&
+    !BadgeSystem.isRetired(series) &&
     standing.next !== null &&
     !inEndedSeason(series, data)
   );
@@ -271,8 +279,7 @@ export function countsToward(
   visit: Appointment,
   subjectCustomerId: string | null,
 ): boolean {
-  const metric = series.metric;
-  if (metric === null) return false;
+  if (series.metric === null) return false;
   const worked = workedVisitOf(visit, subjectCustomerId);
   if (worked === null) return false;
   // The worked start's instant — the punctuality rule compares it with the
@@ -282,7 +289,7 @@ export function countsToward(
     worked.startMinutes,
     SHOP_TIME_ZONE,
   );
-  return AchievementsSystem.countsToward(metricRefOf(metric), {
+  return AchievementsSystem.countsToward(series, {
     serviceIds: worked.seats.map((seat) => seat.serviceId),
     barberIds: worked.seats.map((seat) => seat.barberId),
     locationId: visit.locationId,
@@ -307,19 +314,11 @@ function insideWindows(
   data: AchievementsData,
 ): boolean {
   const day = visit.localDate;
-  const season =
-    series.seasonId === null
-      ? null
-      : data.catalog.season(series.seasonId.value);
+  const season = seasonOfSeries(series, data);
   return AchievementsSystem.insideWindows(
-    season === null
-      ? null
-      : {
-          windowFrom: dayOf(season.window.from),
-          windowUntil: dayOf(season.window.until),
-        },
+    season,
     series.seasonId !== null,
-    series.metric?.window?.lastDays ?? null,
+    series.metricWindowDays,
     day,
     dayOf(data.today),
   );
@@ -355,24 +354,25 @@ function thisVisitCounts(
   ctx: AchievementsContext,
 ): boolean {
   const visit = ctx.visit;
-  const metric = series.metric;
   if (
     visit === null ||
-    metric === null ||
+    series.metric === null ||
     standing.target === null ||
     !canStillMove(series, standing, data)
   ) {
     return false;
   }
   if (series.seasonId !== null) {
-    const season = data.catalog.season(series.seasonId.value);
-    if (season === null || season.phaseOn(data.today) !== 'open') return false;
+    const season = seasonOfSeries(series, data);
+    if (season === null || seasonPhaseOf(season, data) !== SeasonPhase.Open) {
+      return false;
+    }
   }
   // The draft as a visit the system can judge: what the day itself
   // decides (an arrival, company) is not promised, and a draft with no
   // start yet is neither early nor on a weekend.
   const start = draftStart(visit);
-  return AchievementsSystem.countsToward(metricRefOf(metric), {
+  return AchievementsSystem.countsToward(series, {
     serviceIds: visit.legs.flatMap((leg) =>
       leg.serviceId === null ? [] : [ServiceRefId.of(leg.serviceId)],
     ),
@@ -421,16 +421,12 @@ export function detailActionOf(
   data: AchievementsData | null = null,
 ): DetailActionVm | null {
   if (!gate.online || gate.visitGone || gate.paused) return null;
-  if (series.isRetired() || ctx.visit === null) return null;
-  const subject = series.subject;
-  if (subject === null || subject.kind !== 'service') return null;
-  if (
-    data !== null &&
-    !canStillMove(series, series.standing(progressOf(data, series)), data)
-  ) {
+  if (BadgeSystem.isRetired(series) || ctx.visit === null) return null;
+  if (series.badgeSubject !== BadgeSubject.Service) return null;
+  if (data !== null && !canStillMove(series, standingOf(series, data), data)) {
     return null;
   }
-  const serviceId = subject.serviceId.value;
+  const serviceId: string = series.subjectServiceId;
   if (ctx.visit.legs.some((leg) => leg.serviceId === serviceId)) return null;
   const service = ctx.catalog.serviceName(serviceId);
   if (service === null) return null;
@@ -461,7 +457,7 @@ function stateOf(
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
   const last = latestEarned(progress);
-  const lastDay = last === null ? null : medalDay(last.earnedAt, lang);
+  const lastDay = last === null ? null : medalDay(last, lang);
   // A yearly act: how many times, and when last.
   if (series.repeatable && last !== null && lastDay !== null) {
     return {
@@ -483,7 +479,7 @@ function stateOf(
       ? { text: words.oneOffNotYet, fact: null }
       : { text: words.oneOffEarned(lastDay), fact: lastDay };
   }
-  if (standing.state === 'notStarted') {
+  if (standing.medalState === MedalState.NotStarted) {
     return { text: words.stateNotStarted, fact: null };
   }
   const top = topEarned(progress);
@@ -494,7 +490,7 @@ function stateOf(
       ? { text: ctx.words.achievements.complete, fact: null }
       : { text: words.completeSince(lastDay), fact: lastDay };
   }
-  const since = medalDay(top.earnedAt, lang);
+  const since = medalDay(top, lang);
   return {
     text: words.levelSince(levelNumeral(top.level), since),
     fact: since,
@@ -510,13 +506,13 @@ function scopeNameOf(
   const locale = localeOf(ctx);
   if (series.categoryId !== null) {
     return (
-      data.catalog.category(series.categoryId.value)?.title.get(locale) ?? null
+      LoyaltyCatalogSystem.category(data.catalog, series.categoryId)?.title[
+        locale
+      ] ?? null
     );
   }
   if (series.seasonId !== null) {
-    return (
-      data.catalog.season(series.seasonId.value)?.title.get(locale) ?? null
-    );
+    return seasonOfSeries(series, data)?.title[locale] ?? null;
   }
   return null;
 }
@@ -534,7 +530,7 @@ function stateLineOf(
   data: AchievementsData,
   ctx: AchievementsContext,
 ): readonly LinePart[] {
-  if (series.isRetired()) {
+  if (BadgeSystem.isRetired(series)) {
     return lineAround(ctx.words.achievement.retired, null);
   }
   const state = stateOf(series, standing, progress, data, ctx);
@@ -562,27 +558,26 @@ function whatOf(
 ): string {
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
-  const own = inSentence(series.requirement.get(localeOf(ctx)), lang);
+  const own = inSentence(series.requirement[localeOf(ctx)], lang);
   const metric = series.metric;
   if (metric === null) return isOneOff(series) ? own : words.whatRhythm(count);
-  if (metric.metric !== 'client.visits.completed') {
-    return words.what(achievementMetricWord(metric.metric), count);
+  if (metric !== Metric.VisitsCompleted) {
+    return words.what(achievementMetricWord(metric), count);
   }
-  const where = metric.where;
-  if (where?.serviceId !== undefined) {
-    const service = ctx.catalog.serviceName(where.serviceId.value);
+  if (series.metricScopeServiceId !== null) {
+    const service = ctx.catalog.serviceName(series.metricScopeServiceId);
     return service === null
       ? own
       : words.whatService(inSentence(service, lang), count);
   }
-  if (where?.barberId !== undefined) {
+  if (series.metricScopeBarberId !== null) {
     // A barber in a sentence goes by first name, as every line of the card
     // names him («при Иван»); the whole name is the faces' (DF), a list.
-    const barber = ctx.catalog.barberName(where.barberId.value);
+    const barber = ctx.catalog.barberName(series.metricScopeBarberId);
     return barber === null ? own : words.whatBarber(firstNameOf(barber), count);
   }
-  if (where?.locationId !== undefined) {
-    const shop = ctx.catalog.locationName(where.locationId.value);
+  if (series.metricScopeLocationId !== null) {
+    const shop = ctx.catalog.locationName(series.metricScopeLocationId);
     return shop === null ? own : words.whatShop(shop, count);
   }
   return words.what('visits', count);
@@ -617,7 +612,7 @@ function progressCardOf(
   if (isOneOff(series)) {
     const last = latestEarned(progress);
     return {
-      value: last === null ? figure(0, lang) : medalDay(last.earnedAt, lang),
+      value: last === null ? figure(0, lang) : medalDay(last, lang),
       unit:
         last === null && canStillMove(series, standing, data)
           ? words.progressOf(1)
@@ -675,16 +670,16 @@ function progressCardOf(
 
 /** The metrics that count VISITS: their block ends on the exclusion, once. */
 function countsVisits(series: BadgeSeries): boolean {
-  switch (series.metric?.metric) {
-    case 'client.visits.completed':
-    case 'client.visits.earlyBird':
-    case 'client.visits.weekend':
-    case 'client.visits.onTime':
-    case 'client.visits.party':
-    case 'client.services.distinct':
-    case 'client.barbers.distinct':
-    case 'client.locations.distinct':
-    case 'client.months.distinct':
+  switch (series.metric) {
+    case Metric.VisitsCompleted:
+    case Metric.VisitsEarlyBird:
+    case Metric.VisitsWeekend:
+    case Metric.VisitsOnTime:
+    case Metric.VisitsParty:
+    case Metric.ServicesDistinct:
+    case Metric.BarbersDistinct:
+    case Metric.LocationsDistinct:
+    case Metric.MonthsDistinct:
       return true;
     default:
       return false;
@@ -704,25 +699,24 @@ function howSentenceOf(
 ): string {
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
-  const own = oneStop(series.requirement.get(localeOf(ctx)));
+  const own = oneStop(series.requirement[localeOf(ctx)]);
   const metric = series.metric;
   if (metric === null) {
     return isOneOff(series) ? own : (rule?.sentence ?? own);
   }
-  if (metric.metric !== 'client.visits.completed') {
-    return words.how(achievementMetricWord(metric.metric));
+  if (metric !== Metric.VisitsCompleted) {
+    return words.how(achievementMetricWord(metric));
   }
-  const where = metric.where;
-  if (where?.serviceId !== undefined) {
-    const service = ctx.catalog.serviceName(where.serviceId.value);
+  if (series.metricScopeServiceId !== null) {
+    const service = ctx.catalog.serviceName(series.metricScopeServiceId);
     return service === null ? own : words.howService(inSentence(service, lang));
   }
-  if (where?.barberId !== undefined) {
-    const barber = ctx.catalog.barberName(where.barberId.value);
+  if (series.metricScopeBarberId !== null) {
+    const barber = ctx.catalog.barberName(series.metricScopeBarberId);
     return barber === null ? own : words.howBarber(firstNameOf(barber));
   }
-  if (where?.locationId !== undefined) {
-    const shop = ctx.catalog.locationName(where.locationId.value);
+  if (series.metricScopeLocationId !== null) {
+    const shop = ctx.catalog.locationName(series.metricScopeLocationId);
     return shop === null ? own : words.howShop(shop);
   }
   return words.how('visits');
@@ -766,9 +760,10 @@ function barberFacesOf(
   const catalog: ClientCardCatalog = ctx.catalog;
   const ids =
     catalog.barberIds?.() ??
-    data.catalog.families.flatMap((family) =>
-      family.subject?.kind === 'barber' && !family.isRetired()
-        ? [family.subject.barberId.value]
+    data.catalog.families.flatMap((family): string[] =>
+      family.badgeSubject === BadgeSubject.Barber &&
+      !BadgeSystem.isRetired(family)
+        ? [family.subjectBarberId]
         : [],
     );
   return [...new Set(ids)].flatMap((id) => {
@@ -791,7 +786,6 @@ function subjectShownOf(
   ctx: AchievementsContext,
 ): SubjectShown {
   const catalog: ClientCardCatalog = ctx.catalog;
-  const subject = series.subject;
   const cover = (
     key: string,
     title: string | null,
@@ -799,9 +793,9 @@ function subjectShownOf(
     src: string | null,
   ): readonly DetailPictureVm[] =>
     title === null ? [] : [{ key, title, caption, src, more: null }];
-  switch (subject?.kind) {
-    case 'service': {
-      const id = subject.serviceId.value;
+  switch (series.badgeSubject) {
+    case BadgeSubject.Service: {
+      const id: string = series.subjectServiceId;
       return {
         covers: cover(
           id,
@@ -814,8 +808,8 @@ function subjectShownOf(
         faces: true,
       };
     }
-    case 'barber': {
-      const id = subject.barberId.value;
+    case BadgeSubject.Barber: {
+      const id: string = series.subjectBarberId;
       return {
         covers: cover(
           id,
@@ -828,8 +822,8 @@ function subjectShownOf(
         faces: false,
       };
     }
-    case 'location': {
-      const id = subject.locationId.value;
+    case BadgeSubject.Location: {
+      const id: string = series.subjectLocationId;
       return {
         covers: cover(
           id,
@@ -859,7 +853,7 @@ function howOf(
   ctx: AchievementsContext,
   rule: RhythmRuleWords | null,
 ): DetailHowVm | null {
-  if (series.isRetired()) return null;
+  if (BadgeSystem.isRetired(series)) return null;
   const shown = subjectShownOf(series, ctx);
   return {
     sentence: howSentenceOf(series, ctx, rule),
@@ -881,14 +875,14 @@ function howOf(
 function rewardOf(level: BadgeLevel, ctx: AchievementsContext): string {
   const locale = localeOf(ctx);
   const given = level.awards.flatMap((award) => {
-    switch (award.kind) {
-      case 'points':
-        return [ctx.words.achievement.awardPoints(award.points)];
-      case 'coupon':
-        return [award.title.get(locale)];
-      case 'freeze':
-        return [ctx.words.rhythm.protections(award.count)];
-      case 'perk':
+    switch (award.awardKind) {
+      case AwardKind.Points:
+        return [ctx.words.achievement.awardPoints(award.awardPoints)];
+      case AwardKind.Coupon:
+        return [award.awardCouponTitle[locale]];
+      case AwardKind.Freeze:
+        return [ctx.words.rhythm.protections(award.awardFreezeCount)];
+      case AwardKind.Perk:
         return [];
     }
   });
@@ -899,14 +893,14 @@ function rewardOf(level: BadgeLevel, ctx: AchievementsContext): string {
 
 /** The family's count is a count of VISITS: a kind of visit, or the rhythm's run (`metric: null`, with targets). */
 function countedInVisits(series: BadgeSeries): boolean {
-  switch (series.metric?.metric) {
-    case undefined:
+  switch (series.metric) {
+    case null:
       return !isOneOff(series);
-    case 'client.visits.completed':
-    case 'client.visits.earlyBird':
-    case 'client.visits.weekend':
-    case 'client.visits.onTime':
-    case 'client.visits.party':
+    case Metric.VisitsCompleted:
+    case Metric.VisitsEarlyBird:
+    case Metric.VisitsWeekend:
+    case Metric.VisitsOnTime:
+    case Metric.VisitsParty:
       return true;
     default:
       return false;
@@ -926,7 +920,7 @@ function thresholdOf(
 ): string {
   return level.target !== null && countedInVisits(series)
     ? asOneUnit(ctx.words.visitsModule.sectionVisits(level.target))
-    : level.requirement.get(localeOf(ctx));
+    : level.requirement[localeOf(ctx)];
 }
 
 /**
@@ -959,11 +953,11 @@ function ladderOf(
     const reward = rewardOf(level, ctx);
     const accessibleName = words.levelRowName(
       numeral,
-      oneOff ? level.requirement.get(locale) : thresholdOf(series, level, ctx),
+      oneOff ? level.requirement[locale] : thresholdOf(series, level, ctx),
       reward,
       earned === null
         ? null
-        : dayLong(sofiaDayOf(earned.earnedAt), data.today, lang),
+        : dayLong(earned.earnedLocalDate, data.today, lang),
     );
     return {
       level: level.level,
@@ -986,7 +980,7 @@ function ladderOf(
         ? words.awardOneOff
         : words.levelRow(numeral, thresholdOf(series, level, ctx)),
       reward,
-      earnedOn: earned === null ? null : medalDay(earned.earnedAt, lang),
+      earnedOn: earned === null ? null : medalDay(earned, lang),
       tone: passed
         ? 'passed'
         : open && standing.next?.level === level.level
@@ -1046,7 +1040,7 @@ function neighboursOf(
   return {
     ...related,
     tiles: related.tiles.slice(0, RELATED_LIMIT).map((tile) => {
-      const family = data.catalog.series(tile.medal.seriesId);
+      const family = seriesById(data, tile.medal.seriesId);
       return family === null
         ? tile
         : { ...tile, medal: medalRingVm(family, data, ctx, 'large') };
@@ -1077,10 +1071,10 @@ export function medalDetailVm(
   ctx: AchievementsContext,
   extra: MedalDetailExtra,
 ): MedalDetailVm | null {
-  const series = data.catalog.series(seriesId);
+  const series = seriesById(data, seriesId);
   if (series === null) return null;
   const progress = progressOf(data, series);
-  const standing = series.standing(progress);
+  const standing = BadgeSystem.standing(series, progress);
   // The hero stands alone on its stage: the title and the state line say it.
   const medal: MedalVm = {
     ...medalRingVm(series, data, ctx, 'extraLarge'),
@@ -1088,9 +1082,9 @@ export function medalDetailVm(
     caption: null,
   };
   return {
-    seriesId: series.id.value,
-    categoryId: series.categoryId?.value ?? null,
-    title: series.title.get(localeOf(ctx)),
+    seriesId: series.id,
+    categoryId: series.categoryId,
+    title: series.title[localeOf(ctx)],
     medal,
     stateLine: stateLineOf(series, standing, progress, data, ctx),
     progress: progressCardOf(series, standing, progress, data, ctx),
@@ -1103,7 +1097,7 @@ export function medalDetailVm(
   };
 }
 
-// ── The bridge: legacy shapes → ecs-core structs (Phase 4 deletes it) ────
+// ── The card's own values → ecs-core structs ──────────────────────────────
 
 /** The last minute of a shop day: what a visit with no start yet is held to. */
 const LAST_MINUTE_OF_DAY = 1439;
@@ -1124,25 +1118,4 @@ function minuteOf(raw: number): MinuteOfDay {
 function utcOf(epochMs: number): UtcEpochMs {
   const utc = UtcEpochMs.of(epochMs);
   return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
-}
-
-/** A family's metric as `AchievementsSystem` reads it: flat, every part present, absent is `null`. */
-function metricRefOf(metric: NonNullable<BadgeSeries['metric']>): MetricRef {
-  const where = metric.where;
-  return {
-    metric: metric.metric as MetricRef['metric'],
-    metricWindowDays: metric.window?.lastDays ?? null,
-    metricScopeServiceId:
-      where?.serviceId === undefined
-        ? null
-        : ServiceRefId.of(where.serviceId.value),
-    metricScopeBarberId:
-      where?.barberId === undefined
-        ? null
-        : BarberRefId.of(where.barberId.value),
-    metricScopeLocationId:
-      where?.locationId === undefined
-        ? null
-        : LocationRefId.of(where.locationId.value),
-  };
 }

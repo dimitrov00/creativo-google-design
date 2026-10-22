@@ -110,25 +110,25 @@
               <button
                 uiSwitch
                 uiTrailing
-                [uiOn]="draft.protections.enabled"
+                [uiOn]="draft.protectionsEnabled"
                 [attr.aria-label]="t('admin.rhythm.protections.enabled')"
                 data-testid="admin-rhythm-protections"
-                (uiOnChange)="store.patch({ protections: { enabled: $event } })"
+                (uiOnChange)="store.patch({ protectionsEnabled: $event })"
               ></button>
             </li>
-            @if (draft.protections.enabled) {
+            @if (draft.protectionsEnabled) {
             <!-- P8a -->
             <li uiListRow uiSize="regular" uiLabelWraps>
               {{ t('admin.rhythm.protections.max') }}
               <ui-count-stepper
                 uiTrailing
-                [uiValue]="draft.protections.maxBanked"
+                [uiValue]="draft.protectionsMaxBanked"
                 [uiMax]="5"
                 [uiLabel]="t('admin.rhythm.protections.max')"
                 [uiAddLabel]="t('staff.visit.serviceMore')"
                 [uiRemoveLabel]="t('staff.visit.serviceLess')"
                 data-testid="admin-rhythm-protections-max"
-                (uiValueChange)="store.patch({ protections: { maxBanked: $event } })"
+                (uiValueChange)="store.patch({ protectionsMaxBanked: $event })"
               />
             </li>
             <!-- P8b -->
@@ -138,11 +138,11 @@
                 <ui-choice-menu
                   uiAlignment="trailing"
                   [uiOptions]="earnEveryOptions()"
-                  [uiSelectedId]="text(draft.protections.earnEvery)"
+                  [uiSelectedId]="text(draft.protectionsEarnEvery)"
                   [uiLabel]="t('admin.rhythm.protections.every')"
                   [uiPresented]="earnEveryMenu()"
                   (uiPresentedChange)="earnEveryMenu.set($event)"
-                  (uiPicked)="store.patch({ protections: { earnEvery: +$event } })"
+                  (uiPicked)="store.patch({ protectionsEarnEvery: +$event })"
                 >
                   <button
                     type="button"
@@ -168,11 +168,11 @@
               <button
                 uiSwitch
                 uiTrailing
-                [uiOn]="draft.protections.startWith > 0"
-                [uiDisabled]="draft.protections.maxBanked === 0"
+                [uiOn]="draft.protectionsStartWith > 0"
+                [uiDisabled]="draft.protectionsMaxBanked === 0"
                 [attr.aria-label]="t('admin.rhythm.protections.first')"
                 data-testid="admin-rhythm-protections-start"
-                (uiOnChange)="store.patch({ protections: { startWith: $event ? 1 : 0 } })"
+                (uiOnChange)="store.patch({ protectionsStartWith: $event ? 1 : 0 })"
               ></button>
             </li>
             }
@@ -202,15 +202,15 @@
           <ul uiListGroup>
             @for (excuse of excuses; track excuse) {
             <li uiListRow uiSize="regular" uiLabelWraps>
-              <span [id]="titleId + '-' + excuse"
-                >{{ t('admin.rhythm.excuses.' + excuse) }}</span
+              <span [id]="titleId + '-' + excuseKey(excuse)"
+                >{{ t('admin.rhythm.excuses.' + excuseKey(excuse)) }}</span
               >
               <button
                 uiSwitch
                 uiTrailing
                 [uiOn]="excused(excuse)"
-                [attr.aria-label]="t('admin.rhythm.excuses.' + excuse)"
-                [attr.data-testid]="'admin-rhythm-excuse-' + excuse"
+                [attr.aria-label]="t('admin.rhythm.excuses.' + excuseKey(excuse))"
+                [attr.data-testid]="'admin-rhythm-excuse-' + excuseKey(excuse)"
                 (uiOnChange)="setExcuse(excuse, $event)"
               ></button>
             </li>
@@ -235,24 +235,24 @@
             <button
               uiSwitch
               uiTrailing
-              [uiOn]="draft.clientPause.enabled"
+              [uiOn]="draft.clientPauseEnabled"
               [attr.aria-label]="t('admin.rhythm.pause.enabled')"
               data-testid="admin-rhythm-pause"
-              (uiOnChange)="store.patch({ clientPause: { enabled: $event } })"
+              (uiOnChange)="store.patch({ clientPauseEnabled: $event })"
             ></button>
           </li>
-          @if (draft.clientPause.enabled) {
+          @if (draft.clientPauseEnabled) {
           <li uiListRow uiSize="regular" class="admin-rhythm-sheet__row">
             <span>{{ t('admin.rhythm.pause.days') }}</span>
             <span uiTrailing>
               <ui-choice-menu
                 uiAlignment="trailing"
                 [uiOptions]="pauseDaysOptions()"
-                [uiSelectedId]="text(draft.clientPause.maxDaysPerYear)"
+                [uiSelectedId]="text(draft.clientPauseMaxDaysPerYear)"
                 [uiLabel]="t('admin.rhythm.pause.days')"
                 [uiPresented]="pauseDaysMenu()"
                 (uiPresentedChange)="pauseDaysMenu.set($event)"
-                (uiPicked)="store.patch({ clientPause: { maxDaysPerYear: +$event } })"
+                (uiPicked)="store.patch({ clientPauseMaxDaysPerYear: +$event })"
               >
                 <button
                   type="button"
@@ -291,11 +291,11 @@
               <ui-choice-menu
                 uiAlignment="trailing"
                 [uiOptions]="onBreakOptions()"
-                [uiSelectedId]="draft.onBreak"
+                [uiSelectedId]="onBreakChoice()"
                 [uiLabel]="t('admin.rhythm.onBreak.label')"
                 [uiPresented]="onBreakMenu()"
                 (uiPresentedChange)="onBreakMenu.set($event)"
-                (uiPicked)="store.patch({ onBreak: $event === 'hold' ? 'hold' : 'restart' })"
+                (uiPicked)="pickOnBreak($event)"
               >
                 <button
                   type="button"
@@ -323,24 +323,24 @@
             <button
               uiSwitch
               uiTrailing
-              [uiOn]="draft.repair.enabled"
+              [uiOn]="draft.repairEnabled"
               [attr.aria-label]="t('admin.rhythm.repair.enabled')"
               data-testid="admin-rhythm-repair"
-              (uiOnChange)="store.patch({ repair: { enabled: $event } })"
+              (uiOnChange)="store.patch({ repairEnabled: $event })"
             ></button>
           </li>
-          @if (draft.repair.enabled) {
+          @if (draft.repairEnabled) {
           <li uiListRow uiSize="regular" class="admin-rhythm-sheet__row">
             <span>{{ t('admin.rhythm.repair.window') }}</span>
             <span uiTrailing>
               <ui-choice-menu
                 uiAlignment="trailing"
                 [uiOptions]="repairWindowOptions()"
-                [uiSelectedId]="text(draft.repair.windowDays)"
+                [uiSelectedId]="text(draft.repairWindowDays)"
                 [uiLabel]="t('admin.rhythm.repair.window')"
                 [uiPresented]="repairWindowMenu()"
                 (uiPresentedChange)="repairWindowMenu.set($event)"
-                (uiPicked)="store.patch({ repair: { windowDays: +$event } })"
+                (uiPicked)="store.patch({ repairWindowDays: +$event })"
               >
                 <button
                   type="button"
@@ -364,11 +364,11 @@
               <ui-choice-menu
                 uiAlignment="trailing"
                 [uiOptions]="repairPerYearOptions()"
-                [uiSelectedId]="text(draft.repair.perYear)"
+                [uiSelectedId]="text(draft.repairPerYear)"
                 [uiLabel]="t('admin.rhythm.repair.perYear')"
                 [uiPresented]="repairPerYearMenu()"
                 (uiPresentedChange)="repairPerYearMenu.set($event)"
-                (uiPicked)="store.patch({ repair: { perYear: +$event } })"
+                (uiPicked)="store.patch({ repairPerYear: +$event })"
               >
                 <button
                   type="button"

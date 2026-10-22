@@ -1,12 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import {
+  Actor,
+  AuditAction,
   HeadRole,
+  type StreakPublishCall,
   StreakRule,
+  StreakRuleDirection,
+  StreakRuleParameter,
   StreakTransition,
   type StreakHeadRule,
 } from '@core/components';
-import { StreakDefinitionId, type LocalDate } from '@core/primitives';
-import { deepFreeze, localDate } from '@core/testing';
+import {
+  AuditResourceId,
+  PublishRequestId,
+  StreakDefinitionId,
+  StreakDefinitionVersionId,
+  StreakPublishError,
+  StreakRuleField,
+  UserId,
+  type LocalDate,
+} from '@core/primitives';
+import {
+  deepFreeze,
+  localDate,
+  streakDefinitionVersionFixture,
+  utcMs,
+} from '@core/testing';
+import { AuditSystem } from './audit.system';
 import {
   DraftAssessment,
   StreakPublishSystem,
@@ -15,23 +35,20 @@ import {
 import { StreakRuleSystem, type StreakSchedule } from './streak-rule.system';
 
 /*
- * COPIED, never moved (the legacy specs keep running against their shims):
+ * The decision of the rhythm's publish (client-card revision 3 §4.4) — the
+ * cases of the page's assessment (`assess`) and of the server's decision
+ * (`admit`, `decide`, `withdraw`, `nameOf`), first copied from the legacy
+ * use-case specs and the rules of the legacy in-memory repository they
+ * shared, and since the loyalty flip (3) the ONE decision both the
+ * `publishStreakDefinition` pipeline and the admin page's gateway double
+ * (`memoryStreakPublishGatewayPorts`, which runs that pipeline) make.
+ * The flip's decision structs — who may ask (`admitCaller`), the numbered
+ * draft (`proposal`), a retry's answer (`replayReceipt`) and what an act
+ * writes (`publishPlan`, `withdrawPlan`) — are pinned at the bottom. The
+ * pipeline's own behaviour (the read set, the `WriteOp[]`, the replay, the
+ * order of the refusals) is `publish-streak-definition.pipeline.spec.ts`'s.
  *
- * - the `assess` cases of
- *   libs/application/engagement/src/lib/use-cases/publish-streak-definition.use-case.spec.ts
- *   (→ `StreakPublishSystem.assess`), over a head struct instead of the
- *   observed repository;
- * - the decision cases of
- *   apps/functions/src/use-cases/publish-streak-definition.use-case.spec.ts
- *   — publish, the version's number, what it refuses, withdraw — and the
- *   rules of `InMemoryStreakDefinitionRepository.publish/withdraw`
- *   (libs/application/engagement/src/testing.ts) that they share
- *   (→ `admit`, `decide`, `withdraw`, `nameOf`). The use cases' own
- *   behaviour (who may ask, the audit row, the store, the clock, a retry's
- *   replay, the port's answer in the page's terms) stays in their specs:
- *   it is the pipeline's, not the decision's.
- *
- * Re-targeted: the rule is FLAT (`intervalDays`, `protectionsMaxBanked`,
+ * The rule is FLAT (`intervalDays`, `protectionsMaxBanked`,
  * `effectiveFromLocalDate`), the head is its `rules` list (F-9) — read
  * through `StreakRuleSystem.current`/`scheduled` — every tag is SCREAMING,
  * a field at fault is the flat field's name and an error is
@@ -649,6 +666,336 @@ describe('StreakPublishSystem purity', () => {
         QUIET,
       ),
       StreakPublishSystem.withdraw(2, head, TODAY),
+    ];
+    expect(run()).toEqual(run());
+  });
+});
+
+// ── The flip-3 decision structs (the pipeline's) ─────────────────────────
+
+const NOW = utcMs('2026-09-28T09:00:00.000+03:00');
+const OWNER = UserId.of('dev-staff-ivan');
+const OWNER_ACTOR = Actor.forCaller(OWNER, ['admin']);
+const REQUEST = PublishRequestId.of('request-000000000001');
+
+/** The row the audit planner makes of a streak act — what a plan must carry. */
+const rowsOf = (
+  context: Parameters<typeof AuditSystem.plan>[0][number]['context'],
+) => {
+  const planned = AuditSystem.plan(
+    [
+      {
+        resourceId: AuditResourceId.forStreakDefinition(CADENCE),
+        subjects: [],
+        changeKey: REQUEST,
+        context,
+      },
+    ],
+    OWNER_ACTOR,
+    NOW,
+  );
+  if (!planned.ok) throw new Error('a broken fixture row');
+  return planned.value;
+};
+
+describe('StreakPublishSystem.admitCaller — who may ask', () => {
+  it('admits the admin pair, answering the account that signs the version', () => {
+    expect(StreakPublishSystem.admitCaller(OWNER, true)).toEqual({
+      ok: true,
+      value: OWNER,
+    });
+  });
+
+  it('refuses nobody, and a blank uid, as CALLER_UNAUTHENTICATED — whatever the claim says', () => {
+    for (const uid of [null, UserId.of(''), UserId.of('   ')]) {
+      expect(StreakPublishSystem.admitCaller(uid, true)).toEqual({
+        ok: false,
+        error: StreakPublishError.callerUnauthenticated(),
+      });
+    }
+  });
+
+  it('refuses anyone else as CALLER_NOT_ADMIN', () => {
+    expect(StreakPublishSystem.admitCaller(OWNER, false)).toEqual({
+      ok: false,
+      error: StreakPublishError.callerNotAdmin(),
+    });
+  });
+});
+
+describe('StreakPublishSystem.proposal — the draft as the version it proposes', () => {
+  it('numbers the draft and dates it on the day asked, whatever the draft says', () => {
+    const proposed = StreakPublishSystem.proposal(
+      { ...StreakRule.DEFAULT, version: 41, graceDays: 10 },
+      3,
+      '2026-10-05',
+    );
+    expect(proposed).toEqual({
+      ok: true,
+      value: rule({
+        version: 3,
+        effectiveFromLocalDate: NEXT_WEEK,
+        graceDays: 10,
+      }),
+    });
+  });
+
+  it('names every flat field at fault, each once, in the rule’s order', () => {
+    expect(
+      StreakPublishSystem.proposal(
+        {
+          ...StreakRule.DEFAULT,
+          graceDays: 60,
+          protectionsStartWith: 4,
+          repairWindowDays: 0,
+          repairPerYear: 9,
+        },
+        2,
+        'next week',
+      ),
+    ).toEqual({
+      ok: false,
+      error: StreakPublishError.invalid([
+        StreakRuleField.EffectiveFromLocalDate,
+        StreakRuleField.GraceDays,
+        StreakRuleField.ProtectionsStartWith,
+        StreakRuleField.RepairWindowDays,
+        StreakRuleField.RepairPerYear,
+      ]),
+    });
+  });
+});
+
+describe('StreakPublishSystem.replayReceipt — a retry’s answer', () => {
+  it('answers the ORIGINAL receipt off the version the first attempt wrote', () => {
+    const stored = streakDefinitionVersionFixture({
+      ...rule({ version: 2, effectiveFromLocalDate: NEXT_WEEK, graceDays: 10 }),
+      id: StreakDefinitionVersionId.forVersion(2),
+      streakRuleDirection: StreakRuleDirection.Looser,
+    });
+    expect(StreakPublishSystem.replayReceipt(stored)).toEqual({
+      version: 2,
+      effectiveFromLocalDate: NEXT_WEEK,
+      streakRuleDirection: StreakRuleDirection.Looser,
+    });
+  });
+});
+
+describe('StreakPublishSystem.publishPlan — what one publish writes', () => {
+  const v2 = rule({
+    version: 2,
+    effectiveFromLocalDate: NEXT_WEEK,
+    graceDays: 10,
+  });
+  const v3 = rule({
+    version: 3,
+    effectiveFromLocalDate: NEXT_MONTH,
+    graceDays: 14,
+  });
+  const callOf = (r: StreakRule): StreakPublishCall => ({
+    requestId: REQUEST,
+    streakId: CADENCE,
+    baseVersion: r.version - 1,
+    rule: r,
+    streakTransition: StreakTransition.Grandfather,
+    previewHash: null,
+  });
+  const decided = (r: StreakRule, head: StreakSchedule) => {
+    const decision = StreakPublishSystem.decide(
+      r,
+      StreakTransition.Grandfather,
+      head,
+      TODAY,
+      QUIET,
+    );
+    if (!decision.ok) throw new Error('a broken fixture decision');
+    return decision.value;
+  };
+
+  it('makes the version (the flat rule, signed and stamped, never withdrawn), the head whole and ONE row', () => {
+    const plan = StreakPublishSystem.publishPlan(
+      callOf(v2),
+      StreakRule.DEFAULT_NAME,
+      decided(v2, RECOMMENDED),
+      [],
+      OWNER,
+      OWNER_ACTOR,
+      NOW,
+    );
+    expect(plan).toEqual({
+      receipt: {
+        version: 2,
+        effectiveFromLocalDate: NEXT_WEEK,
+        streakRuleDirection: StreakRuleDirection.Looser,
+      },
+      versionBody: {
+        ...StreakRule.of(v2),
+        publishedAtUtcMs: NOW,
+        publishedByUserId: OWNER,
+        streakTransition: StreakTransition.Grandfather,
+        streakRuleDirection: StreakRuleDirection.Looser,
+        changed: [StreakRuleParameter.GraceDays],
+        requestId: REQUEST,
+        withdrawnAtUtcMs: null,
+      },
+      stampVersions: [],
+      headBody: {
+        name: StreakRule.DEFAULT_NAME,
+        rules: [asCurrent(rule()), asScheduled(v2)],
+        updatedAtUtcMs: NOW,
+      },
+      audit: rowsOf({
+        auditAction: AuditAction.LoyaltyStreakDefinitionPublished,
+        streakFromVersion: 1,
+        streakToVersion: 2,
+        streakEffectiveFrom: NEXT_WEEK,
+        streakTransition: StreakTransition.Grandfather,
+        streakRuleDirection: StreakRuleDirection.Looser,
+        streakChanged: [StreakRuleParameter.GraceDays],
+        streakReplacedVersion: null,
+      }),
+    });
+    expect(plan.audit).toHaveLength(1);
+    expect(plan.audit[0]?.row).toMatchObject({ auditTarget: 'NONE' });
+  });
+
+  it('stamps a called-off version only when the read found its document, and names it replaced either way', () => {
+    const decision = decided(v3, WAITING);
+    expect(decision.calledOff).toEqual([2]);
+    const found = StreakPublishSystem.publishPlan(
+      callOf(v3),
+      StreakRule.DEFAULT_NAME,
+      decision,
+      [2],
+      OWNER,
+      OWNER_ACTOR,
+      NOW,
+    );
+    const absent = StreakPublishSystem.publishPlan(
+      callOf(v3),
+      StreakRule.DEFAULT_NAME,
+      decision,
+      [],
+      OWNER,
+      OWNER_ACTOR,
+      NOW,
+    );
+    expect(found.stampVersions).toEqual([2]);
+    expect(absent.stampVersions).toEqual([]);
+    for (const plan of [found, absent]) {
+      expect(plan.audit[0]?.row).toMatchObject({
+        streakFromVersion: 1,
+        streakToVersion: 3,
+        streakReplacedVersion: 2,
+      });
+    }
+  });
+
+  it('never stamps a document no decision called off', () => {
+    const plan = StreakPublishSystem.publishPlan(
+      callOf(v2),
+      StreakRule.DEFAULT_NAME,
+      decided(v2, RECOMMENDED),
+      [1, 2],
+      OWNER,
+      OWNER_ACTOR,
+      NOW,
+    );
+    expect(plan.stampVersions).toEqual([]);
+  });
+});
+
+describe('StreakPublishSystem.withdrawPlan — what one withdrawal writes', () => {
+  const withdrawal = () => {
+    const decided = StreakPublishSystem.withdraw(2, WAITING, TODAY);
+    if (!decided.ok) throw new Error('a broken fixture withdrawal');
+    return decided.value;
+  };
+
+  it('stamps what waited, holds the rule in force alone (its role re-stated) and writes ONE row', () => {
+    expect(
+      StreakPublishSystem.withdrawPlan(
+        { requestId: REQUEST, streakId: CADENCE, version: 2 },
+        StreakRule.DEFAULT_NAME,
+        withdrawal(),
+        [2],
+        OWNER_ACTOR,
+        NOW,
+      ),
+    ).toEqual({
+      stampVersions: [2],
+      headBody: {
+        name: StreakRule.DEFAULT_NAME,
+        rules: [asCurrent(rule())],
+        updatedAtUtcMs: NOW,
+      },
+      audit: rowsOf({
+        auditAction: AuditAction.LoyaltyStreakDefinitionWithdrawn,
+        streakFromVersion: 2,
+        streakToVersion: 1,
+        streakEffectiveFrom: NEXT_WEEK,
+        streakTransition: StreakTransition.Grandfather,
+      }),
+    });
+  });
+
+  it('has nothing to stamp when what waited has no document', () => {
+    expect(
+      StreakPublishSystem.withdrawPlan(
+        { requestId: REQUEST, streakId: CADENCE, version: 2 },
+        StreakRule.DEFAULT_NAME,
+        withdrawal(),
+        [],
+        OWNER_ACTOR,
+        NOW,
+      ).stampVersions,
+    ).toEqual([]);
+  });
+});
+
+describe('StreakPublishSystem — the flip-3 structs are pure', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const head = deepFreeze(WAITING);
+    const draft = deepFreeze(rule({ graceDays: 14, version: 3 }));
+    const withdrawn = StreakPublishSystem.withdraw(2, head, TODAY);
+    const decision = StreakPublishSystem.decide(
+      { ...draft, effectiveFromLocalDate: NEXT_MONTH },
+      StreakTransition.Grandfather,
+      head,
+      TODAY,
+      QUIET,
+    );
+    if (!withdrawn.ok || !decision.ok) throw new Error('a broken fixture');
+    const frozenDecision = deepFreeze(decision.value);
+    const frozenWithdrawal = deepFreeze(withdrawn.value);
+    const call = deepFreeze({
+      requestId: REQUEST,
+      streakId: CADENCE,
+      baseVersion: 2,
+      rule: { ...draft, effectiveFromLocalDate: NEXT_MONTH },
+      streakTransition: StreakTransition.Grandfather,
+      previewHash: null,
+    });
+    const run = () => [
+      StreakPublishSystem.admitCaller(OWNER, true),
+      StreakPublishSystem.proposal(draft, 3, NEXT_MONTH),
+      StreakPublishSystem.publishPlan(
+        call,
+        StreakRule.DEFAULT_NAME,
+        frozenDecision,
+        [2],
+        OWNER,
+        OWNER_ACTOR,
+        NOW,
+      ),
+      StreakPublishSystem.withdrawPlan(
+        { requestId: REQUEST, streakId: CADENCE, version: 2 },
+        StreakRule.DEFAULT_NAME,
+        frozenWithdrawal,
+        [2],
+        OWNER_ACTOR,
+        NOW,
+      ),
     ];
     expect(run()).toEqual(run());
   });

@@ -1,5 +1,4 @@
 import type { VisitLeg } from '@core/components';
-import { InMemoryLoyaltyReader } from '@creativo/application/engagement/testing';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WalletAnchor } from '../client-card.contracts';
 import {
@@ -15,6 +14,7 @@ import {
   georgiUser,
   heldProfilePortsOf,
   historyPortsOf,
+  loyaltyPortsOf,
   martinContext,
   martinHistory,
   martinUser,
@@ -1076,7 +1076,7 @@ describe('lib-client-card — its states', () => {
 
   it('no loyalty account · the loyalty and achievements modules are absent, never zeros; no plate', async () => {
     const { byId, headings } = await mount({
-      rig: { loyalty: new InMemoryLoyaltyReader() },
+      rig: { loyalty: loyaltyPortsOf([]) },
     });
     expect(headings()).toEqual(['Посещения', 'Снимки']);
     expect(byId('client-head-tier')).toBeNull();

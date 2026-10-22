@@ -7,8 +7,8 @@ import { UiButton } from '@creativo/ui/controls';
 import {
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  FIXTURE_TODAY,
 } from '@core/testing';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import {
   GEORGI_SHOTS,
@@ -42,7 +42,7 @@ import {
 
 const CATALOGUES = { bg: appCatalogue('bg'), en: appCatalogue('en') };
 const BG = catalogueTranslator(CATALOGUES.bg);
-const NOW_MS = visitsNowMs(loyaltyFixtures.today);
+const NOW_MS = visitsNowMs(FIXTURE_TODAY);
 
 @Component({
   imports: [VisitList, UiButton],

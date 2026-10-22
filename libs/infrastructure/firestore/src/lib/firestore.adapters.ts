@@ -6,9 +6,10 @@
 // tools/verify/bundle/check-initial-bundle.mjs fails a build where it leaks.
 export * from './firestore-db.provider';
 export * from './firestore-paths';
-// The flip-1 (booking core) and flip-2 (identity and accounts) bundles:
-// `(db) => bundle` factories, each bound in app.config.ts with
-// `provideLazyPort`'s factory form.
+// The flip-1 (booking core), flip-2 (identity and accounts) and flip-3
+// (loyalty) bundles: `(db) => bundle` factories, each bound in
+// app.config.ts with `provideLazyPort`'s factory form. The rhythm's
+// publish gateway is the one over the callable (`(functions, memo)`).
 export * from './accounts.adapter';
 export * from './appointment-notes.adapter';
 export * from './appointments.adapter';
@@ -17,15 +18,15 @@ export * from './client-stats.adapter';
 export * from './coupons-vouchers.adapter';
 export * from './customers.adapter';
 export * from './impersonation.adapter';
+export * from './loyalty.adapter';
+export * from './loyalty-catalog.adapter';
 export * from './notifications.adapter';
 export * from './scheduling.adapter';
+export * from './streak-definitions.adapter';
+export * from './streak-publish-gateway.adapter';
 export * from './waitlist.adapter';
-// The flip-3/4 class adapters, still bound with the class form.
-export * from './loyalty-reader.adapter';
-export * from './loyalty-catalog-reader.adapter';
-export * from './loyalty-activity-reader.adapter';
-export * from './streak-definition-repository.adapter';
-export * from './invitation.adapter';
+// The class adapters still bound with the class form (dormant reward
+// progress, flip 4's programs).
 export * from './reward-progress-reader.adapter';
 export * from './position-repository.adapter';
 export * from './course-repository.adapter';

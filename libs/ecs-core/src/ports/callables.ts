@@ -8,7 +8,7 @@
  * Firebase deploys and the browser SDK resolves — so the Phase 3b flips
  * delete the string literals of today's gateway adapters
  * (`booking-gateway.adapter.ts`, `otp-client.adapter.ts`,
- * `waitlist-gateway.adapter.ts`, `PUBLISH_STREAK_DEFINITION_CALLABLE`).
+ * `waitlist-gateway.adapter.ts`, `streak-publish-gateway.adapter.ts`).
  *
  * Only callables the server exports TODAY are listed: a name here that no
  * function exports would type-check a call that can only fail at run time

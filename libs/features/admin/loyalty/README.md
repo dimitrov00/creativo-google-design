@@ -23,14 +23,22 @@ the lib.
 ## What it may import
 
 `@creativo/ui/*` (controls, patterns, layout, modifiers, icons),
-`@creativo/features/shared/visits` (the rule's words),
-`@creativo/application/engagement`, `@creativo/application/booking`,
-`@creativo/application/shared`, `@creativo/infrastructure/i18n`. Each is a
-project reference in `tsconfig.lib.json` and `tsconfig.spec.json`; a new edge
-needs its reference there.
+`@creativo/features/shared/visits` (the rule's words), the ecs-core tiers
+(`@core/primitives`, `@core/components`, `@core/entities`, `@core/ports`,
+`@core/systems`; `@core/testing` from specs only),
+`@creativo/infrastructure/firebase-app` (the port tokens),
+`@creativo/application/shared` (the clock, the flags, the ids) and
+`@creativo/infrastructure/i18n`; the specs also read
+`@creativo/application/booking` (the clock's reading). Each is a project
+reference in `tsconfig.lib.json` and `tsconfig.spec.json`; a new edge needs its
+reference there.
 
-A feature never imports a domain lib: what the page needs of the rule's domain
-it takes from the application barrel, re-exported by name.
+A feature never imports a domain lib: the rule is the flat ecs-core
+`StreakRule` (the draft a `StreakRuleInput`), read through
+`STREAK_DEFINITION_PORTS` and published as a `StreakPublishCall` through
+`STREAK_PUBLISH_PORTS` (flip 3); the math is the ecs-core systems'
+(`RhythmDraftSystem`, `StreakPublishSystem`, `StreakRuleSystem`,
+`StreakPreviewSystem`, `StreakSystem`).
 
 The page is built only from DS controls: no native inputs, no chips as pickers,
 no hard-coded strings.

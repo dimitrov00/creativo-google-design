@@ -1,4 +1,4 @@
-import { defer, of, type Observable } from 'rxjs';
+import { BehaviorSubject, defer, map, of, type Observable } from 'rxjs';
 import {
   type AuthClaims,
   BookingLifecycle,
@@ -6,6 +6,7 @@ import {
   CouponStatus,
   BarberStatus,
   ImpersonationStatus,
+  JournalVisibility,
   LocationStatus,
   ParsedIdentifier,
   ServiceStatus,
@@ -17,19 +18,24 @@ import {
   IdentifierChannel,
   PipelineError,
   PipelineErrorCode,
+  RepositoryError,
   Result,
   type AppointmentId,
   type CustomerId,
   type OtpId,
+  type StreakDefinitionId,
   type TenantId,
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
 import {
   Collections,
+  Subcollections,
   type Appointment,
   type AppointmentNote,
   type AppointmentPhoto,
+  type AuditEntry,
+  type BadgeProgress,
   type BarberBusyDay,
   type BarberSchedule,
   type Barber,
@@ -42,11 +48,16 @@ import {
   type GiftVoucher,
   type ImpersonationSession,
   type InboxNotification,
+  type JournalEntry,
+  type LoyaltyAccount,
   type Otp,
   type ScheduleException,
+  type SeasonProgress,
   type ServiceCategory,
   type Service,
   type ShopLocation,
+  type StreakDefinition,
+  type StreakDefinitionVersion,
   type User,
   type WaitlistRequest,
 } from '@core/entities';
@@ -57,17 +68,22 @@ import type {
   AuthAdminPorts,
   AuthUserLookupPorts,
   CatalogReadPorts,
+  ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
   ImpersonationReadPorts,
   InboxPorts,
+  LoyaltyAccountReadPorts,
+  LoyaltyCatalog,
+  LoyaltyCatalogReadPorts,
   OtpCryptoPorts,
   OtpDeliveryPorts,
   OtpStorePorts,
   ProfilePorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
+  StreakDefinitionPorts,
   TenantPorts,
   UserLookupPorts,
   UserSearchPorts,
@@ -80,11 +96,15 @@ import {
   FIXTURE_TENANT_ID,
   fixtureCodeHash,
 } from './identity.fixtures';
+import {
+  type LoyaltyClientFixture,
+  loyaltyCatalogFixture,
+} from './loyalty.fixtures';
 import { type MemoryStore, memoryStore } from './test-support';
 
 /**
  * The in-memory doubles of the named port bundles (flip-1 plan §3.1,
- * flip-2 plan §3.1.1) — one per `InjectionToken` of `ports.tokens.ts` and
+ * flip-2 plan §3.1.1, flip-3 plan §3.1) — one per `InjectionToken` of `ports.tokens.ts` and
  * one per identity bundle a pipeline names, each over plain arrays and maps,
  * each returning EXACTLY its bundle type. Store, component and pipeline
  * specs bind these; nobody re-implements a double. A spec that scripts a
@@ -896,5 +916,215 @@ export function fixedTenantPorts(
 ): TenantPorts {
   return {
     loadTenant: async () => Result.ok(tenantId),
+  };
+}
+
+// ── Loyalty (keyed by the client record, D29) ────────────────────────────
+
+/** One read `memoryLoyaltyAccountReadPorts` served — what a store spec asserts was (or was not) asked. */
+export type LoyaltyAccountReadCall = {
+  readonly port: keyof LoyaltyAccountReadPorts;
+  readonly customerId: CustomerId;
+};
+
+/**
+ * What `memoryLoyaltyAccountReadPorts` reads, data only: each client
+ * record's `loyaltyAccounts/{customerId}` body and its two subcollections,
+ * read BY REFERENCE (a spec that sets a key is read at the next call), and
+ * every call served, in order (`calls`, pushed in place).
+ */
+export type LoyaltyWorld = {
+  readonly accounts: Map<CustomerId, LoyaltyAccount>;
+  readonly badgeProgress: Map<CustomerId, readonly BadgeProgress[]>;
+  readonly seasonProgress: Map<CustomerId, readonly SeasonProgress[]>;
+  readonly calls: LoyaltyAccountReadCall[];
+};
+
+/** A world holding the given account holders' loyalty (`loyaltyAccountFixtures.georgi` …), none when omitted. */
+export function memoryLoyaltyWorld(
+  holders: readonly LoyaltyClientFixture[] = [],
+): LoyaltyWorld {
+  const world: LoyaltyWorld = {
+    accounts: new Map(),
+    badgeProgress: new Map(),
+    seasonProgress: new Map(),
+    calls: [],
+  };
+  for (const holder of holders) {
+    world.accounts.set(holder.customerId, holder.account);
+    world.badgeProgress.set(holder.customerId, holder.badgeProgress);
+    world.seasonProgress.set(holder.customerId, holder.seasonProgress);
+  }
+  return world;
+}
+
+/**
+ * `LOYALTY_ACCOUNT_READ_PORTS` over a {@link LoyaltyWorld}: a client
+ * record's account (`null` when it has none) and its whole badge and season
+ * progress (`[]` when none), every body as stored; each call recorded.
+ */
+export function memoryLoyaltyAccountReadPorts(
+  world: LoyaltyWorld,
+): LoyaltyAccountReadPorts {
+  return {
+    loadLoyaltyAccount: async (customerId) => {
+      world.calls.push({ port: 'loadLoyaltyAccount', customerId });
+      return Result.ok(world.accounts.get(customerId) ?? null);
+    },
+    listBadgeProgress: async (customerId) => {
+      world.calls.push({ port: 'listBadgeProgress', customerId });
+      return Result.ok(world.badgeProgress.get(customerId) ?? []);
+    },
+    listSeasonProgress: async (customerId) => {
+      world.calls.push({ port: 'listSeasonProgress', customerId });
+      return Result.ok(world.seasonProgress.get(customerId) ?? []);
+    },
+  };
+}
+
+/** How {@link memoryLoyaltyCatalogReadPorts} answers. */
+export type LoyaltyCatalogDoubleOptions = {
+  /** Every read fails with `RepositoryError.unavailable()` — the catalogue slice's failed state. */
+  readonly failing: boolean;
+};
+
+/**
+ * `LOYALTY_CATALOG_READ_PORTS` — the published catalogue under the system's
+ * part names: `loyaltyCatalogFixture()` (the dev shop's, in Firestore's id
+ * order) unless one is given; with `failing`, a `RepositoryError`.
+ */
+export function memoryLoyaltyCatalogReadPorts(
+  catalog: LoyaltyCatalog = loyaltyCatalogFixture(),
+  options: Partial<LoyaltyCatalogDoubleOptions> = {},
+): LoyaltyCatalogReadPorts {
+  return {
+    loadLoyaltyCatalog: async () =>
+      options.failing === true
+        ? Result.err(RepositoryError.unavailable())
+        : Result.ok(catalog),
+  };
+}
+
+/**
+ * `CLIENT_JOURNAL_PORTS` over `entries` (read BY REFERENCE): the adapter's
+ * contract — `customerId ==`, `journalVisibility == CLIENT`, `journalEffect
+ * in effects`, `seq <` the cursor when given, `seq` desc, `limit + 1` rows
+ * read and trimmed by `PagingSystem` (`seq` is unique per record, so a page
+ * never ends inside a tie); `nextBeforeSeq` the page's oldest `seq` while
+ * anything older is left.
+ */
+export function memoryClientJournalPorts(
+  entries: readonly JournalEntry[],
+): ClientJournalPorts {
+  return {
+    pageClientJournal: async (customerId, effects, beforeSeq, limit) => {
+      const size = PagingSystem.pageSize(limit);
+      const read = entries
+        .filter(
+          (entry) =>
+            entry.customerId === customerId &&
+            entry.journalVisibility === JournalVisibility.Client &&
+            effects.includes(entry.journalEffect) &&
+            (beforeSeq === null || entry.seq < beforeSeq),
+        )
+        .sort((a, b) => b.seq - a.seq)
+        .slice(0, size + 1);
+      const step = PagingSystem.nextCursor(read, size, (entry) => entry.seq);
+      const page =
+        step.pageStep === PageStep.Page ? step.rows : read.slice(0, size);
+      const oldest = page.at(-1);
+      return Result.ok({
+        entries: page,
+        nextBeforeSeq:
+          read.length > size && oldest !== undefined ? oldest.seq : null,
+      });
+    },
+  };
+}
+
+// ── The rhythm's rule ────────────────────────────────────────────────────
+
+/** A published version and the head it was published under. */
+export type StreakVersionSeed = {
+  readonly streakId: StreakDefinitionId;
+  readonly version: StreakDefinitionVersion;
+};
+
+/** What a {@link StreakWorld} starts with — every part empty when omitted. */
+export type StreakWorldSeed = {
+  readonly heads?: readonly StreakDefinition[];
+  readonly versions?: readonly StreakVersionSeed[];
+  readonly audit?: readonly AuditEntry[];
+};
+
+/**
+ * The ONE state the rhythm doubles share: the document table — the heads
+ * (`streakDefinitions/{id}`), their versions
+ * (`streakDefinitions/{id}/versions/{version:06}`) and the audit rows
+ * (`auditLog/{id}`), each the entity minus `id` at its flat path — the SAME
+ * store a spec hands `memoryTxPorts`, so the publish pipeline's commit lands
+ * where the head stream reads. `changed()` tells every live head stream the
+ * store moved (the publish-gateway double calls it after a commit);
+ * `revisions` is that signal as a stream, starting at 0.
+ */
+export type StreakWorld = {
+  readonly store: MemoryStore;
+  readonly changed: () => void;
+  readonly revisions: Observable<number>;
+};
+
+/** The path of a rhythm's head. */
+function headPath(id: StreakDefinitionId): string {
+  return `${Collections.StreakDefinitions}/${id}`;
+}
+
+/** A world seeded with heads, versions and audit rows. */
+export function memoryStreakWorld(seed: StreakWorldSeed = {}): StreakWorld {
+  const store = memoryStore();
+  for (const { id, ...body } of seed.heads ?? []) {
+    store.set(headPath(id), body);
+  }
+  for (const { streakId, version } of seed.versions ?? []) {
+    const { id, ...body } = version;
+    store.set(`${headPath(streakId)}/${Subcollections.Versions}/${id}`, body);
+  }
+  for (const { id, ...body } of seed.audit ?? []) {
+    store.set(`${Collections.AuditLog}/${id}`, body);
+  }
+  const revision = new BehaviorSubject(0);
+  return {
+    store,
+    changed: () => revision.next(revision.value + 1),
+    revisions: revision.asObservable(),
+  };
+}
+
+/**
+ * `STREAK_DEFINITION_PORTS` over a {@link StreakWorld}: the head, live —
+ * emitted at subscription and again on every `world.changed()` (`null`
+ * while absent; the stream never completes, as `onSnapshot`); the newest
+ * `limit` versions (at least one), `version` desc.
+ */
+export function memoryStreakDefinitionPorts(
+  world: StreakWorld,
+): StreakDefinitionPorts {
+  const headOf = (id: StreakDefinitionId): StreakDefinition | null => {
+    const body = world.store.get(headPath(id));
+    return body === undefined ? null : ({ id, ...body } as StreakDefinition);
+  };
+  return {
+    observeStreakDefinitionHead: (id) =>
+      world.revisions.pipe(map(() => Result.ok(headOf(id)))),
+    listStreakDefinitionVersions: async (id, limit) =>
+      Result.ok(
+        [
+          ...entitiesOf<StreakDefinitionVersion>(
+            world.store,
+            `${headPath(id)}/${Subcollections.Versions}`,
+          ),
+        ]
+          .sort((a, b) => b.version - a.version)
+          .slice(0, Math.max(1, Math.floor(limit))),
+      ),
   };
 }

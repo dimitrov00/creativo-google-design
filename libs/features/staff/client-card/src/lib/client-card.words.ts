@@ -5,6 +5,13 @@ import {
   visitWaitlistWordsOf,
   visitWordsOf,
 } from '@creativo/features/shared/visits';
+import {
+  FreezeReason,
+  JournalFeed,
+  PersonalRecordKind,
+  StreakExcuse,
+  type StreakPeriodReason,
+} from '@core/components';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import { figure, inSentence } from './client-card.format';
 
@@ -39,8 +46,11 @@ import { figure, inSentence } from './client-card.format';
  * - an absent fact is `null`: the words drop its slot WITH its joint («, »,
  *   « · »), so no sentence is assembled by hand and none ends on a comma;
  * - a member that takes one of a closed set takes it as a literal union
- *   (the application's own unions are assignable to them: a feature names
- *   no domain lib).
+ *   of the card's own words: a dictionary value of ecs-core
+ *   (`PersonalRecordKind.FirstVisit`, `JournalFeed.All`, …) reaches it
+ *   through ONE table keyed by that dictionary (`RECORD_KIND_WORDS`,
+ *   `LEDGER_FILTER_WORDS`, `RHYTHM_REASON_WORDS`), so the words and the
+ *   test ids keep their spelling.
  */
 
 /** Transloco's `translate`, or anything shaped like it. */
@@ -64,12 +74,39 @@ export type RhythmReasonWord =
   | 'closedDays'
   | 'clientPause';
 
-/** The ledger page's kind filter (`ActivityKind`). */
+/** The ledger page's pill, as its i18n key and its test id spell it (`JournalFeed`). */
 export type LedgerFilterWord = 'all' | 'points' | 'rewards' | 'status';
 
-/** The account's four records (`PersonalRecordKind`). */
+/** Each pill of the ledger (`JournalFeed`) as the card words it: the SAME words and test ids as before the flip. */
+export const LEDGER_FILTER_WORDS = {
+  [JournalFeed.All]: 'all',
+  [JournalFeed.Points]: 'points',
+  [JournalFeed.Rewards]: 'rewards',
+  [JournalFeed.Status]: 'status',
+} as const satisfies Record<JournalFeed, LedgerFilterWord>;
+
+/** The account's four records, as the card's keys and test ids spell them (`PersonalRecordKind`). */
 export type RecordKindWord =
   'longestRhythm' | 'mostVisitsInYear' | 'favouriteService' | 'firstVisit';
+
+/** Each record kind (`PersonalRecordKind`) as the card words it: its i18n keys and test ids. */
+export const RECORD_KIND_WORDS = {
+  [PersonalRecordKind.LongestRhythm]: 'longestRhythm',
+  [PersonalRecordKind.MostVisitsInYear]: 'mostVisitsInYear',
+  [PersonalRecordKind.FavouriteService]: 'favouriteService',
+  [PersonalRecordKind.FirstVisit]: 'firstVisit',
+} as const satisfies Record<PersonalRecordKind, RecordKindWord>;
+
+/** What covered a protected period (`StreakPeriodReason`), as the rhythm's words name it. */
+export const RHYTHM_REASON_WORDS = {
+  [FreezeReason.Freeze]: 'freeze',
+  [FreezeReason.Pause]: 'pause',
+  [FreezeReason.ClientPause]: 'clientPause',
+  [StreakExcuse.StaffCancelled]: 'staffCancelled',
+  [StreakExcuse.BarberAbsence]: 'barberAbsence',
+  [StreakExcuse.ShopClosure]: 'shopClosure',
+  [StreakExcuse.ClosedDays]: 'closedDays',
+} as const satisfies Record<StreakPeriodReason, RhythmReasonWord>;
 
 /** The records page's five rows that are not a record of the account's. */
 export type RecordRowWord =
@@ -106,7 +143,7 @@ export type AchievementWhoWord =
   'anyBarberAnyShop' | 'anyServiceAnyShop' | 'anyBarberAnyService';
 
 /**
- * A family's metric by its id in the loyalty catalogue: the application's
+ * A family's metric by its id in the loyalty catalogue: ecs-core's
  * `Metric` is assignable to it, member for member.
  */
 export type AchievementMetricWord =

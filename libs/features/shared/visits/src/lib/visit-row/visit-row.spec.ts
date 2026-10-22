@@ -6,8 +6,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  FIXTURE_TODAY,
 } from '@core/testing';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
 import {
   CURRENT_APPOINTMENT_ID,
   GEORGI_SHOTS,
@@ -33,7 +33,7 @@ import { VisitRow } from './visit-row';
 const BG = catalogueTranslator(appCatalogue('bg'));
 const STAFF_WORDS = visitWordsOf(BG, 'bg', 'staff');
 const CLIENT_WORDS = visitWordsOf(BG, 'bg', 'client');
-const NOW_MS = visitsNowMs(loyaltyFixtures.today);
+const NOW_MS = visitsNowMs(FIXTURE_TODAY);
 
 /** `formatMoney`'s bg form keeps the sign on the figure's line: a no-break space. */
 const EURO = (text: string) => text.replaceAll(' €', '\u00a0€');
@@ -451,7 +451,7 @@ describe('VisitRow · the staff row’s face', () => {
       georgiWaitlistRequest(),
       {
         words: visitWaitlistWordsOf(BG),
-        today: loyaltyFixtures.today,
+        today: FIXTURE_TODAY,
         locale: 'bg',
       },
       VISITS_LOOKUP,
@@ -618,7 +618,7 @@ describe('VisitRow · a waiting request', () => {
       georgiWaitlistRequest(),
       {
         words: visitWaitlistWordsOf(BG),
-        today: loyaltyFixtures.today,
+        today: FIXTURE_TODAY,
         locale: 'bg',
       },
       VISITS_LOOKUP,

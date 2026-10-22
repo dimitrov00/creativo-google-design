@@ -102,7 +102,7 @@ export const VISITS_ZONE = 'Europe/Sofia';
 export const VISITS_TIME_ZONE: TimeZone = unwrapOk(
   ZonedTimeSystem.checkZone(VISITS_ZONE),
 );
-/** Георги Петров — `InMemoryLoyaltyReader.seeded()`'s uid for him. */
+/** Георги Петров — the loyalty fixtures' uid for him (`loyaltyAccountFixtures.georgi`, `@core/testing`). */
 export const GEORGI_UID = 'dev-client-1';
 /** Георги's client record (D29), derived the way the pipelines derive it. */
 export const GEORGI_CUSTOMER_ID: CustomerId = customerOf(UserId.of(GEORGI_UID));
@@ -156,7 +156,7 @@ export function sofiaWall(iso: string): {
   };
 }
 
-/** The loyalty fixtures' day (`loyaltyFixtures.today`), 09:00 in Sofia — before the 10:00 visit. */
+/** The fixtures' day (`FIXTURE_TODAY`, `@core/testing`), 09:00 in Sofia — before the 10:00 visit. */
 export function visitsNowMs(today: string): number {
   return sofia(`${today}T09:00:00`);
 }

@@ -66,9 +66,9 @@ import { TENANT_ZONE } from './lib/booking/tenant-zone';
  * their collections flip; the codes that move into an ecs-core dictionary
  * leave {@link LegacyWireCode} in the same flip.
  *
- * Phase 3a: every export still delegates to its `lib/**` handler, which
- * throws its own `HttpsError`s; {@link legacyCallable} passes those through
- * untouched and gives an unexpected throw the platform's own answer.
+ * Since flip 3 every callable answers through its wire (`wire/*.wire.ts`)
+ * and {@link callableEdge}; a decoder that throws today's own `HttpsError`
+ * (an ops refusal) passes through it untouched.
  *
  * **The flatten pass (flatten-spec §4.3, F-10): the wire is frozen.** The
  * table is keyed by the ecs-core `errorCode` (an ecs-core struct carries it
@@ -101,12 +101,12 @@ export const HttpsStatus = {
 export type HttpsStatus = (typeof HttpsStatus)[keyof typeof HttpsStatus];
 
 /**
- * The codes today's handlers put on the wire that no ecs-core dictionary
- * spells yet — the inline throws of `lib/**` and the `use-cases/*.errors.ts`
- * classes the OTP, registration and streak-publish callables answer with,
- * plus the nested codes their aggregates carry in `details.errors[]`. Each
- * 3b flip moves its codes into an ecs-core dictionary (or retires them with
- * their handler) and deletes them here.
+ * The codes the frozen wires put on the wire that no ecs-core dictionary
+ * spells — the legacy handlers' inline throws and error classes the
+ * booking, ops, OTP, registration and streak-publish callables still
+ * answer with (their handlers deleted by flips 1–3, their wire codes kept),
+ * plus the nested codes their aggregates carry in `details.errors[]`.
+ * Phase 4 flips the wire with the client and deletes them here.
  */
 export const LegacyWireCode = {
   // booking — inline throws
@@ -569,12 +569,23 @@ const WAITLIST_WIRE: WireTable<WaitlistErrorCode> = {
   [WaitlistErrorCode.AlreadyWatching]: params(S.AlreadyExists),
 };
 
-/** The streak publish's refusals are ANSWERED — `{ kind: 'refused', code, fields }` — never thrown. */
-const STREAK_PUBLISH_WIRE: WireTable<StreakPublishErrorCode> = uniform(
-  StreakPublishErrorCode,
-  ANSWERED,
-  {},
-);
+/**
+ * The streak publish's refusals are ANSWERED — `{ kind: 'refused', code,
+ * fields }` — never thrown, but for a caller without a session, whom today's
+ * callable throws `unauthenticated`. The two caller codes leave on NEW
+ * dotted codes (F2-4's rule, flip-3 plan F3-4): the callable itself
+ * translates them to today's `loyalty.streak_publish.unauthenticated` fault
+ * and `notAdmin` refusal before the wire.
+ */
+const STREAK_PUBLISH_WIRE: WireTable<StreakPublishErrorCode> = {
+  [StreakPublishErrorCode.CallerUnauthenticated]: params(S.Unauthenticated),
+  [StreakPublishErrorCode.CallerNotAdmin]: ANSWERED,
+  [StreakPublishErrorCode.Stale]: ANSWERED,
+  [StreakPublishErrorCode.Invalid]: ANSWERED,
+  [StreakPublishErrorCode.TooEarly]: ANSWERED,
+  [StreakPublishErrorCode.RecomputeNeedsEngine]: ANSWERED,
+  [StreakPublishErrorCode.PreviewStale]: ANSWERED,
+};
 
 const IDENTITY_WIRE: WireTable<IdentityErrorCode> = {
   [IdentityErrorCode.OtpAlreadyConsumed]: params(S.FailedPrecondition),
@@ -1210,7 +1221,12 @@ export const LEGACY_WIRE_CODE: { readonly [errorCode: string]: string } = {
     'engagement.shop_event.invalid_sort_order',
   [EngagementErrorCode.ShopEventApplyUrlInvalid]:
     'engagement.shop_event.invalid_apply_url',
-  // StreakPublishErrorCode
+  // StreakPublishErrorCode — the two caller codes are the loyalty flip's
+  // (F3-4): NEW dotted codes, never the legacy `unauthenticated`/`not_admin`
+  [StreakPublishErrorCode.CallerUnauthenticated]:
+    'loyalty.streak_publish.caller_unauthenticated',
+  [StreakPublishErrorCode.CallerNotAdmin]:
+    'loyalty.streak_publish.caller_not_admin',
   [StreakPublishErrorCode.Stale]: 'loyalty.streak_publish.stale',
   [StreakPublishErrorCode.Invalid]: 'loyalty.streak_publish.invalid',
   [StreakPublishErrorCode.TooEarly]: 'loyalty.streak_publish.too_early',
@@ -1674,27 +1690,6 @@ export const callableEdge =
       return spec.answer(result.error);
     }
     throw toHttpsError(result.error);
-  };
-
-/**
- * Phase 3a: a callable whose handler is still today's `lib/**` code. Its
- * own `HttpsError`s pass through untouched — same status, message and
- * details — and an unexpected throw is tracked through telemetry and
- * answered exactly as the platform answers it today. Deleted with the last
- * legacy row.
- */
-export const legacyCallable =
-  <In, Out>(
-    callable: CallableName,
-    ports: TelemetryPorts,
-    run: (request: CallableRequest<In>) => Out | Promise<Out>,
-  ) =>
-  async (request: CallableRequest<In>): Promise<Out> => {
-    try {
-      return await run(request);
-    } catch (thrown) {
-      throw unexpected(callable, null, ports, thrown);
-    }
   };
 
 /** How one retrying trigger meets the platform. */

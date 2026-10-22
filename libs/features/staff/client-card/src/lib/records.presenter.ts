@@ -1,23 +1,18 @@
 import { firstNameOf } from '@creativo/features/shared/visits';
 import type { Appointment, ClientStatsRecord } from '@core/entities';
-import type {
-  PersonalRecord,
-  StreakDefinition,
-  StreakState,
-} from '@creativo/application/engagement';
 import {
   LocalDate,
   MinuteOfDay,
-  ServiceId as ServiceRefId,
   type TimeZone,
-  UserId,
   defect,
 } from '@core/primitives';
 import {
-  type PersonalRecord as SystemRecord,
-  PersonalRecordKind as SystemRecordKind,
+  type PersonalRecord,
+  PersonalRecordKind,
   type ShopNow,
+  type StreakState,
 } from '@core/components';
+import type { StreakDefinition } from '@core/entities';
 import {
   ClientStatsSystem,
   type RecordVisit,
@@ -43,7 +38,8 @@ import type {
   RecordYearVm,
   RecordsPageVm,
 } from './client-pages.vm';
-import type { RecordRowWord } from './client-card.words';
+import { RECORD_KIND_WORDS, type RecordRowWord } from './client-card.words';
+import { ruleInForceOf, rhythmStateOf } from './loyalty.presenter';
 import { RECORD_ICONS, recordCardVm, recordsOf } from './medals.presenter';
 
 /*
@@ -66,11 +62,12 @@ export interface RecordsPageInput {
   /** `clientStats/{customerId}`, read for the head; `null` until it answers, and for a client without one. */
   readonly stats: ClientStatsRecord | null;
   /**
-   * The rhythm's rule in force; `null` with `loyalty.streaks` off and in a
-   * shop without a rhythm. A rule that is switched off is still handed
-   * over: the page asks it whether it is `enabled`.
+   * The rhythm the account is judged by (its head); `null` with
+   * `loyalty.streaks` off and in a shop without a rhythm. A rule in force
+   * that is switched off is still read: the page asks it whether it is
+   * `enabled`.
    */
-  readonly ruleInForce: StreakDefinition | null;
+  readonly rhythm: StreakDefinition | null;
   /** The history's loaded pages (`ClientCardStore.loadedVisits`). */
   readonly visits: readonly Appointment[];
   /** No cursor left: the loaded pages are the client's WHOLE history. */
@@ -119,18 +116,14 @@ function themeOf(id: string): RecordTheme {
 
 /** Whether the page draws the rhythm: the rule in force is there, and on. */
 function rhythmOn(input: RecordsPageInput): boolean {
-  return input.ruleInForce !== null && input.ruleInForce.enabled;
+  return ruleInForceOf(input.rhythm, input.data.today)?.enabled ?? false;
 }
 
 /** The rhythm the rule in force projects, as the account holds it. */
-function rhythmStateOf(input: RecordsPageInput): StreakState | null {
-  const rule = input.ruleInForce;
-  if (rule === null || !rule.enabled) return null;
-  return (
-    Object.values(input.data.account.streaks).find(
-      (state) => state.streakId === rule.id,
-    ) ?? null
-  );
+function rhythmOf(input: RecordsPageInput): StreakState | null {
+  return rhythmOn(input)
+    ? rhythmStateOf(input.data.account, input.rhythm)
+    : null;
 }
 
 // ── RC · the featured record ────────────────────────────────────────────
@@ -157,7 +150,7 @@ function featuredOf(
   // The record set most recently: `RecordsSystem.newest`, the cards' order
   // breaking a tie.
   const index = RecordsSystem.newest(
-    shown.map(({ record }) => recordOf(record)),
+    shown.map(({ record }) => record),
     dayOf(data.today),
   );
   const newest = index === null ? undefined : shown.at(index);
@@ -166,8 +159,8 @@ function featuredOf(
   let value = card.value;
   let detail = card.detail;
   let sentence: string;
-  switch (record.kind) {
-    case 'favouriteService':
+  switch (record.personalRecordKind) {
+    case PersonalRecordKind.FavouriteService:
       value = figure(record.value, lang);
       detail = null;
       sentence = words.records.sentenceFavourite(
@@ -175,12 +168,15 @@ function featuredOf(
         record.value,
       );
       break;
-    case 'firstVisit':
+    case PersonalRecordKind.FirstVisit:
       sentence = words.records.sentence('firstVisit');
       break;
-    case 'longestRhythm':
-    case 'mostVisitsInYear':
-      sentence = words.records.sentence(record.kind, record.value);
+    case PersonalRecordKind.LongestRhythm:
+    case PersonalRecordKind.MostVisitsInYear:
+      sentence = words.records.sentence(
+        RECORD_KIND_WORDS[record.personalRecordKind],
+        record.value,
+      );
       break;
   }
   return {
@@ -191,7 +187,9 @@ function featuredOf(
     accessibleName: words.achievements.recordName(
       card.label,
       // A date says itself; a count is heard with what it counts.
-      record.kind === 'firstVisit' ? value : `${value} ${sentence}`,
+      record.personalRecordKind === PersonalRecordKind.FirstVisit
+        ? value
+        : `${value} ${sentence}`,
       detail,
       card.isNew,
     ),
@@ -210,15 +208,15 @@ function recordRow(
   const card = recordCardVm(record, data, ctx);
   if (card === null) return null;
   const base = {
-    id: record.kind,
-    theme: themeOf(record.kind),
+    id: card.kind,
+    theme: themeOf(card.kind),
     title: card.label,
     faceName: null,
   };
-  switch (record.kind) {
-    case 'firstVisit':
+  switch (record.personalRecordKind) {
+    case PersonalRecordKind.FirstVisit:
       return record.on === null ? null : firstVisitRow(record.on, input);
-    case 'favouriteService':
+    case PersonalRecordKind.FavouriteService:
       return {
         ...base,
         figure: card.value,
@@ -233,8 +231,8 @@ function recordRow(
           false,
         ),
       };
-    case 'longestRhythm':
-    case 'mostVisitsInYear':
+    case PersonalRecordKind.LongestRhythm:
+    case PersonalRecordKind.MostVisitsInYear:
       return {
         ...base,
         figure: card.value,
@@ -342,7 +340,7 @@ function rowsOf(
   // «Ритъм сега»: the run in progress and the day it began. The day is
   // the state's own (`runStartedOn`): the track keeps twelve periods, a
   // run can be longer, so it is never read off the track.
-  const rhythm = rhythmStateOf(input);
+  const rhythm = rhythmOf(input);
   if (rhythm !== null && rhythm.current > 0) {
     add(
       countRow(
@@ -416,8 +414,10 @@ function rowsOf(
 
   // «Обичайни услуги», when it holds more than the favourite alone.
   const favourite =
-    records.find((record) => record.kind === 'favouriteService')?.serviceId ??
-    null;
+    records.find(
+      (record) =>
+        record.personalRecordKind === PersonalRecordKind.FavouriteService,
+    )?.serviceId ?? null;
   const usual = (stats?.usualServiceIds ?? []).flatMap((id) => {
     const name = ctx.catalog.serviceName(id);
     return name === null ? [] : [{ id: id as string, name }];
@@ -464,15 +464,16 @@ function yearsOf(
   if (!input.historyComplete) return null;
   const { data, ctx } = input;
   const words = ctx.words;
-  const subject = UserId.parse(data.account.userId);
-  if (!subject.ok) return null;
 
-  // The worked visits of this person — the account's own seats, the
-  // loyalty account being an account's — by the shop's day; the counting
-  // is `RecordsSystem.years`.
+  // The worked visits of this person — the client RECORD's own seats, the
+  // loyalty account being the record's (D29) — by the shop's day; the
+  // counting is `RecordsSystem.years`.
   const worked: RecordVisit[] = [];
   for (const appointment of input.visits) {
-    const visit = ClientStatsSystem.accountVisitOf(subject.value, appointment);
+    const visit = ClientStatsSystem.subjectVisitOf(
+      data.account.customerId,
+      appointment,
+    );
     if (
       visit === null ||
       visit.outcome.subjectVisitOutcome !== SubjectVisitOutcome.Worked
@@ -485,7 +486,10 @@ function yearsOf(
     });
   }
   const stamped =
-    records.find((record) => record.kind === 'mostVisitsInYear')?.year ?? null;
+    records.find(
+      (record) =>
+        record.personalRecordKind === PersonalRecordKind.MostVisitsInYear,
+    )?.year ?? null;
   const counted = RecordsSystem.years(worked, stamped);
   if (counted === null) return null;
 
@@ -539,30 +543,10 @@ export function recordsPageVm(input: RecordsPageInput): RecordsPageVm {
   };
 }
 
-// ── The bridge: legacy record → ecs-core struct (Phase 4 deletes it) ─────
+// ── The card's own values → ecs-core structs ──────────────────────────────
 
-/** A record's kind, in the system's words. */
-const RECORD_KIND = {
-  longestRhythm: SystemRecordKind.LongestRhythm,
-  mostVisitsInYear: SystemRecordKind.MostVisitsInYear,
-  favouriteService: SystemRecordKind.FavouriteService,
-  firstVisit: SystemRecordKind.FirstVisit,
-} as const satisfies Record<PersonalRecord['kind'], SystemRecordKind>;
-
-/** A shop day the card holds: a guarded document day, a clock's «today». */
+/** A shop day the card holds: a clock's «today». */
 function dayOf(raw: string): LocalDate {
   const day = LocalDate.parse(raw);
   return day.ok ? day.value : defect(`${raw} is no calendar day`);
-}
-
-/** A personal record as `RecordsSystem` reads it: the same figures, the kind the dictionary's, days and ids as brands. */
-function recordOf(record: PersonalRecord): SystemRecord {
-  return {
-    personalRecordKind: RECORD_KIND[record.kind],
-    value: record.value,
-    on: record.on === null ? null : dayOf(record.on),
-    year: record.year,
-    serviceId:
-      record.serviceId === null ? null : ServiceRefId.of(record.serviceId),
-  };
 }

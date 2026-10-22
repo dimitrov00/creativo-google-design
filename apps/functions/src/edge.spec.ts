@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
@@ -50,7 +50,6 @@ import {
   WireShape,
   callableEdge,
   isAnswered,
-  legacyCallable,
   retryingTrigger,
   toHttpsError,
   wallIso,
@@ -107,6 +106,9 @@ function wire(error: EdgeError) {
 // ── Today's handlers, read from their source ──────────────────────────────
 
 function tsFiles(dir: string): string[] {
+  // A handler directory a flip deleted whole (`use-cases/`, flip 3) holds nothing.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- this workspace's own sources, found by listing them.
+  if (!existsSync(dir)) return [];
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- this workspace's own sources, found by listing them.
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
@@ -273,16 +275,22 @@ function ecsErrorDictionaryNames(): readonly string[] {
   return [...names].sort();
 }
 
-/** Codes the callables RETURN today (`{ kind: 'refused', … }`) — never thrown. */
+/**
+ * Codes the callables RETURN today (`{ kind: 'refused', … }`) — never
+ * thrown: the streak publish's refusals, its legacy `notAdmin`, and the
+ * caller refusal the loyalty flip names on a new dotted code
+ * (`loyalty.streak_publish.caller_not_admin`, F3-4). A caller without a
+ * session is THROWN `unauthenticated` (`CallerUnauthenticated` is not here).
+ */
 const ANSWERED_TODAY: ReadonlySet<string> = new Set([
-  ...Object.values(StreakPublishErrorCode),
+  StreakPublishErrorCode.Stale,
+  StreakPublishErrorCode.Invalid,
+  StreakPublishErrorCode.TooEarly,
+  StreakPublishErrorCode.RecomputeNeedsEngine,
+  StreakPublishErrorCode.PreviewStale,
+  StreakPublishErrorCode.CallerNotAdmin,
   LegacyWireCode.StreakPublishNotAdmin,
 ]);
-
-/** The same, as the WIRE codes today's error classes carry. */
-const ANSWERED_TODAY_ON_THE_WIRE: ReadonlySet<string> = new Set(
-  [...ANSWERED_TODAY].map((code) => wireRuleOf(code).wireCode),
-);
 
 describe('edge — the wire table', () => {
   describe('totality', () => {
@@ -319,51 +327,17 @@ describe('edge — the wire table', () => {
   });
 
   describe('today’s statuses, read from today’s handlers', () => {
-    it('gives every code a handler throws the status that handler throws it with', () => {
-      const sites = todaysThrowSites();
-      // The scanner itself must see the handlers — 80 sites on 2026-10-10
-      // (the inline throws with literal details, and every mapper case) —
-      // so a broken scan can never pass by finding nothing. Each 3b flip
-      // deletes handlers and lowers this floor in the same commit.
-      // 2 sites after flip 2, 2026-10-21: the streak publish is all that
-      // still throws its own HttpsErrors.
-      expect(sites.length).toBeGreaterThanOrEqual(2);
-      for (const site of sites) {
-        const rule = RULE_BY_WIRE_CODE.get(site.code);
-        expect(rule, site.at).toBeDefined();
-        if (rule === undefined) continue;
-        expect(rule.wireShape, `${site.code} at ${site.at}`).not.toBe(
-          WireShape.Answered,
-        );
-        if (rule.wireShape !== WireShape.Answered) {
-          expect(rule.httpsStatus, `${site.code} at ${site.at}`).toBe(
-            site.status,
-          );
-        }
-      }
+    // 0 after flip 3 — every callable answers through its wire. The last
+    // handler read here (the streak publish's handler and its use case)
+    // threw from 2 sites with 9 error classes on 6d43e1c; their statuses
+    // are pinned in `wire/loyalty.wire.spec.ts` (`the deleted handler’s
+    // statuses`). A handler that throws its own HttpsError again fails here.
+    it('finds no handler that throws its own HttpsError — every callable answers through its wire', () => {
+      expect(todaysThrowSites()).toEqual([]);
     });
 
-    it('maps every use-case error class code; one no mapper names keeps its mapper’s `default:` internal', () => {
-      const named = new Set(todaysThrowSites().map((site) => site.code));
-      const classes = todaysErrorClassCodes();
-      // 9 classes after flip 2, 2026-10-21 (33 after flip 1): the streak
-      // publish's error file is the survivor.
-      expect(classes.length).toBeGreaterThanOrEqual(9);
-      // Every survivor is named by a mapper; none answers outside a switch.
-      const outsideASwitch = new Map<string, string>();
-      for (const { code, at } of classes) {
-        const rule = RULE_BY_WIRE_CODE.get(code);
-        expect(rule, `${code} (${at})`).toBeDefined();
-        if (rule === undefined || named.has(code)) continue;
-        if (ANSWERED_TODAY_ON_THE_WIRE.has(code)) {
-          expect(rule.wireShape, code).toBe(WireShape.Answered);
-          continue;
-        }
-        expect(
-          rule.wireShape === WireShape.Answered ? null : rule.httpsStatus,
-          code,
-        ).toBe(outsideASwitch.get(code) ?? HttpsStatus.Internal);
-      }
+    it('finds no use-case error class — every refusal is an ecs-core struct or a legacy wire code', () => {
+      expect(todaysErrorClassCodes()).toEqual([]);
     });
   });
 
@@ -866,53 +840,6 @@ async function rejection(promise: Promise<unknown>): Promise<HttpsError> {
 }
 
 describe('edge — the wrappers', () => {
-  describe('legacyCallable (Phase 3a)', () => {
-    it('answers what today’s handler answers', async () => {
-      const { ports, tracked } = edgePorts();
-      const handler = legacyCallable(
-        Callables.CancelWaitlist,
-        ports,
-        async () => ({
-          requestId: 'r1',
-        }),
-      );
-      await expect(handler(request({}))).resolves.toEqual({ requestId: 'r1' });
-      expect(tracked).toEqual([]);
-    });
-
-    it('passes the handler’s own HttpsError through untouched, untracked', async () => {
-      const { ports, tracked } = edgePorts();
-      const own = new HttpsError('not-found', 'No such waitlist request', {
-        code: 'booking.waitlist.not_found',
-      });
-      const handler = legacyCallable(Callables.CancelWaitlist, ports, () => {
-        throw own;
-      });
-      expect(await rejection(handler(request({})))).toBe(own);
-      expect(tracked).toEqual([]);
-    });
-
-    it('tracks an unexpected throw and answers it as the platform does today', async () => {
-      const { ports, tracked } = edgePorts();
-      const boom = new Error('firestore unreachable');
-      const handler = legacyCallable(
-        Callables.CommitBooking,
-        ports,
-        async () => {
-          throw boom;
-        },
-      );
-      const thrown = await rejection(handler(request({})));
-      expect(thrown.toJSON()).toEqual({
-        message: 'INTERNAL',
-        status: 'INTERNAL',
-      });
-      expect(tracked).toEqual([
-        { error: boom, context: { callable: 'commitBooking' } },
-      ]);
-    });
-  });
-
   describe('callableEdge', () => {
     const spec = {
       callable: Callables.CommitBooking,
@@ -967,6 +894,18 @@ describe('edge — the wrappers', () => {
       });
     });
 
+    it('passes a decoder’s own HttpsError through untouched, untracked', async () => {
+      const { ports, tracked } = edgePorts();
+      const own = new HttpsError('permission-denied', 'Sysadmin only', {
+        code: 'ops.backfill.forbidden',
+      });
+      const handler = callableEdge(spec, ports, async () => {
+        throw own;
+      });
+      expect(await rejection(handler(request({})))).toBe(own);
+      expect(tracked).toEqual([]);
+    });
+
     it('answers an infrastructure throw with the callable’s coded failure, tracked once', async () => {
       const { ports, tracked } = edgePorts();
       const boom = Object.assign(new Error('deadline'), { code: 4 });
@@ -985,12 +924,13 @@ describe('edge — the wrappers', () => {
     });
 
     it('answers it with the platform’s bare INTERNAL when the callable names no failure code', async () => {
-      const { ports } = edgePorts();
+      const { ports, tracked } = edgePorts();
+      const boom = new Error('boom');
       const handler = callableEdge(
         { ...spec, failureCode: null },
         ports,
         async () => {
-          throw new Error('boom');
+          throw boom;
         },
       );
       const thrown = await rejection(handler(request({})));
@@ -998,6 +938,9 @@ describe('edge — the wrappers', () => {
         message: 'INTERNAL',
         status: 'INTERNAL',
       });
+      expect(tracked).toEqual([
+        { error: boom, context: { callable: 'commitBooking' } },
+      ]);
     });
 
     it('hands the handler a budget: a share of the platform timeout or the client’s wait, whichever is shorter', async () => {

@@ -31,6 +31,7 @@ import type {
   Appointment,
   AppointmentPhoto,
   Customer,
+  JournalEntry,
   User,
 } from '@core/entities';
 import {
@@ -50,12 +51,18 @@ import {
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
+  type LoyaltyClientFixture,
   appointmentFixture,
   customerOf,
+  loyaltyAccountFixtures,
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  memoryClientJournalPorts,
   memoryCouponVoucherPorts,
   memoryCustomerPorts,
+  memoryLoyaltyAccountReadPorts,
+  memoryLoyaltyCatalogReadPorts,
+  memoryLoyaltyWorld,
   memoryProfilePorts,
   registeredUserFixture,
   seatFixture,
@@ -66,20 +73,13 @@ import {
 import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  CLIENT_JOURNAL_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  LOYALTY_ACCOUNT_READ_PORTS,
+  LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import {
-  LOYALTY_ACTIVITY_READER,
-  LOYALTY_CATALOG_READER,
-  LOYALTY_READER,
-} from '@creativo/application/engagement';
-import {
-  InMemoryLoyaltyActivityReader,
-  InMemoryLoyaltyCatalogReader,
-  InMemoryLoyaltyReader,
-} from '@creativo/application/engagement/testing';
 import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import {
   AchievementCategoryPage,
@@ -6660,6 +6660,42 @@ const GEORGI_RECORD: Customer = {
   customerOrigin: CustomerOrigin.Registration,
 };
 
+/** Мартин's client record (D29): the card resolves every account holder's loyalty through his record. */
+const MARTIN_RECORD: Customer = {
+  ...GEORGI_RECORD,
+  id: customerOf(CoreUserId.of(MARTIN)),
+  userId: CoreUserId.of(MARTIN),
+  displayName: 'Мартин Илиев',
+  searchName: 'мартин илиев',
+};
+
+/**
+ * A holder's loyalty (`loyaltyAccountFixtures`), keyed by the record the
+ * card resolves for him here (`customerOf`, the fixture hash): only the
+ * record id moves, every figure and row is the stored one.
+ */
+function cardLoyaltyOf(
+  holder: LoyaltyClientFixture,
+  record: Customer,
+): LoyaltyClientFixture {
+  const customerId = record.id;
+  return {
+    ...holder,
+    customerId,
+    account: { ...holder.account, id: customerId, customerId },
+    clientJournal: holder.clientJournal.map((entry): JournalEntry => ({
+      ...entry,
+      customerId,
+    })),
+  };
+}
+
+/** The two holders' loyalty, as the card reads it (the legacy seeded readers held both). */
+const CARD_LOYALTY: readonly LoyaltyClientFixture[] = [
+  cardLoyaltyOf(loyaltyAccountFixtures.georgi, GEORGI_RECORD),
+  cardLoyaltyOf(loyaltyAccountFixtures.martin, MARTIN_RECORD),
+];
+
 /** Георги's last worked visit: a fade with Нико on 4 September — what «Повтори» repeats. */
 function georgiLastVisit(): Appointment {
   const day = unwrapOk(LocalDate.parse('2026-09-04'));
@@ -6805,21 +6841,30 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
             now: (zone: string) => ZonedDateTime.fromMillis(CARD_NOW_MS, zone),
           },
         },
-        { provide: LOYALTY_READER, useValue: InMemoryLoyaltyReader.seeded() },
         {
-          provide: LOYALTY_CATALOG_READER,
-          useValue: new InMemoryLoyaltyCatalogReader(),
+          provide: LOYALTY_ACCOUNT_READ_PORTS,
+          useValue: memoryLoyaltyAccountReadPorts(
+            memoryLoyaltyWorld(CARD_LOYALTY),
+          ),
+        },
+        {
+          provide: LOYALTY_CATALOG_READ_PORTS,
+          useValue: memoryLoyaltyCatalogReadPorts(),
         },
         // Revision 3's two reads: the wallet's holdings and its feed, the
         // ledger page's rows (the same fixtures' voucher and journals).
         { provide: COUPON_VOUCHER_PORTS, useValue: memoryCouponVoucherPorts() },
         {
-          provide: LOYALTY_ACTIVITY_READER,
-          useValue: InMemoryLoyaltyActivityReader.seeded(),
+          provide: CLIENT_JOURNAL_PORTS,
+          useValue: memoryClientJournalPorts(
+            CARD_LOYALTY.flatMap((holder) => holder.clientJournal),
+          ),
         },
         {
+          // Every account holder's client record (D29): the card reads the
+          // loyalty, as every other read, through it.
           provide: CUSTOMER_PORTS,
-          useValue: memoryCustomerPorts([GEORGI_RECORD]),
+          useValue: memoryCustomerPorts([GEORGI_RECORD, MARTIN_RECORD]),
         },
         {
           provide: APPOINTMENT_READ_PORTS,

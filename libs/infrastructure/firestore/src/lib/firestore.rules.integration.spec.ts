@@ -21,15 +21,6 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { StreakDefinition } from '@creativo/domain/engagement';
-import {
-  ACTIVITY_EFFECT_KINDS,
-  streakDefinitionVersionId,
-} from '@creativo/application/engagement';
-import {
-  InMemoryStreakDefinitionRepository,
-  loyaltyFixtures,
-} from '@creativo/application/engagement/testing';
 import {
   AccountLifecycle,
   AccountStatus,
@@ -37,6 +28,7 @@ import {
   Actor,
   AuditContext,
   AuditTargetRef,
+  BadgeCategoryKind,
   BlockReason,
   Combinability,
   CouponExpiryRule,
@@ -51,6 +43,10 @@ import {
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
+  HeadRole,
+  JournalEffect,
+  JournalFeed,
+  JournalVisibility,
   MinuteRange,
   NotificationPayload,
   NotificationTopic,
@@ -58,6 +54,11 @@ import {
   PhotoOrigin,
   RegistrationState,
   Role,
+  SeasonKind,
+  StreakRule,
+  StreakRuleDirection,
+  StreakRuleParameter,
+  StreakTransition,
   SystemSource,
   VoucherCode,
   VoucherLifecycle,
@@ -74,7 +75,11 @@ import type {
   Customer,
   GiftVoucher,
   InboxNotification,
+  JournalEntry,
+  LoyaltyAccount,
   ScheduleException,
+  StreakDefinition,
+  StreakDefinitionVersion,
   User,
   WaitlistRequest,
 } from '@core/entities';
@@ -84,7 +89,10 @@ import {
   BarberId,
   CouponId,
   Currency,
+  JournalEntryId,
   LocationId,
+  PublishRequestId,
+  StreakDefinitionVersionId,
   UserId,
   WaitlistRequestId,
 } from '@core/primitives';
@@ -96,6 +104,8 @@ import {
   localDate,
   minute,
   minuteCount,
+  streakDefinitionFixture,
+  streakDefinitionVersionFixture,
   unwrapOk,
   utcMs,
 } from '@core/testing';
@@ -1444,14 +1454,20 @@ describe('firestore.rules', () => {
   });
 
   describe('the loyalty catalogue — anyone signed in reads, nobody writes (2026-09-28)', () => {
-    // Trimmed documents: rules check who, never the shape.
+    // Trimmed documents (flat root keys, flip 3): rules check who, never the shape.
     const catalogue = [
-      ['badgeCategories/cat-mastery', { kind: 'mastery', order: 2 }],
+      [
+        'badgeCategories/cat-mastery',
+        { badgeCategoryKind: BadgeCategoryKind.Mastery, order: 2 },
+      ],
       ['badgeSeries/series-svc-fade', { categoryId: 'cat-mastery', order: 7 }],
-      ['seasons/season-2026-autumn', { kind: 'season', version: 1 }],
+      [
+        'seasons/season-2026-autumn',
+        { seasonKind: SeasonKind.Season, version: 1 },
+      ],
       ['tierDefinitions/gold', { rank: 2, version: 1 }],
       ['rewardsCatalog/reward-beard', { cost: 120, enabled: true }],
-      ['streakDefinitions/cadence', { graceDays: 7, version: 1 }],
+      ['streakDefinitions/cadence', { rules: [], updatedAtUtcMs: 0 }],
     ] as const;
 
     beforeEach(async () => {
@@ -1497,12 +1513,17 @@ describe('firestore.rules', () => {
   });
 
   describe('loyaltyAccounts — the book reads a client’s loyalty, only the server writes it (2026-09-28)', () => {
-    const accountPath = 'loyaltyAccounts/client-1';
+    // Keyed by the client RECORD (D29, flip 3): `loyaltyAccounts/{customerId}`.
+    const accountPath = `loyaltyAccounts/${recordOf('client-1')}`;
     const progressPath = `${accountPath}/badgeProgress/series-svc-fade`;
     const trackPath = `${accountPath}/seasonProgress/season-2026-autumn`;
 
     beforeEach(async () => {
-      await seed(accountPath, { userId: 'client-1', balance: 358, seq: 35 });
+      await seed(accountPath, {
+        customerId: recordOf('client-1'),
+        balance: 358,
+        seq: 35,
+      } satisfies Partial<Omit<LoyaltyAccount, 'id'>>);
       await seed(progressPath, { value: 24, earned: [] });
       await seed(trackPath, { trackValue: 2, trackLevel: 2 });
     });
@@ -1550,28 +1571,34 @@ describe('firestore.rules', () => {
   });
 
   describe('clientJournal — the book reads client-visible rows only (2026-09-28)', () => {
+    // Keyed by the client RECORD (D29, flip 3): `{customerId}_{seq:06}`, the
+    // flat root keys the rule and the ledger query read.
+    const record = recordOf('client-1');
+    const rowPath = (seq: number) =>
+      `clientJournal/${JournalEntryId.forEntry(record, seq)}`;
     const pointRow = {
-      userId: 'client-1',
+      customerId: record,
       seq: 1,
-      visibility: 'client',
-      effect: { kind: 'points', delta: 17 },
-    };
+      journalVisibility: JournalVisibility.Client,
+      journalEffect: JournalEffect.Points,
+      pointsDelta: 17,
+    } satisfies Partial<JournalEntry>;
     const staffRow = {
-      userId: 'client-1',
+      customerId: record,
       seq: 2,
-      visibility: 'staff',
-      effect: { kind: 'pause', op: 'applied' },
-    };
+      journalVisibility: JournalVisibility.Staff,
+      journalEffect: JournalEffect.Pause,
+    } satisfies Partial<JournalEntry>;
 
     beforeEach(async () => {
-      await seed('clientJournal/client-1_000001', pointRow);
-      await seed('clientJournal/client-1_000002', staffRow);
+      await seed(rowPath(1), pointRow);
+      await seed(rowPath(2), staffRow);
     });
 
     it('lets the book read a client-visible row, and never a staff row', async () => {
       const db = signedIn('staff-1', 'barber').firestore();
-      await assertSucceeds(getDoc(doc(db, 'clientJournal/client-1_000001')));
-      await assertFails(getDoc(doc(db, 'clientJournal/client-1_000002')));
+      await assertSucceeds(getDoc(doc(db, rowPath(1))));
+      await assertFails(getDoc(doc(db, rowPath(2))));
     });
 
     it('lets the ledger query through only with its visibility filter', async () => {
@@ -1580,9 +1607,17 @@ describe('firestore.rules', () => {
         getDocs(
           query(
             collection(db, 'clientJournal'),
-            where('userId', '==', 'client-1'),
-            where('visibility', '==', 'client'),
-            where('effect.kind', '==', 'points'),
+            where('customerId' satisfies keyof JournalEntry, '==', record),
+            where(
+              'journalVisibility' satisfies keyof JournalEntry,
+              '==',
+              JournalVisibility.Client,
+            ),
+            where(
+              'journalEffect' satisfies keyof JournalEntry,
+              '==',
+              JournalEffect.Points,
+            ),
           ),
         ),
       );
@@ -1590,7 +1625,7 @@ describe('firestore.rules', () => {
         getDocs(
           query(
             collection(db, 'clientJournal'),
-            where('userId', '==', 'client-1'),
+            where('customerId' satisfies keyof JournalEntry, '==', record),
           ),
         ),
       );
@@ -1602,7 +1637,7 @@ describe('firestore.rules', () => {
         signedIn('copy-1', 'content_manager').firestore(),
         testEnv.unauthenticatedContext().firestore(),
       ]) {
-        await assertFails(getDoc(doc(db, 'clientJournal/client-1_000001')));
+        await assertFails(getDoc(doc(db, rowPath(1))));
       }
     });
 
@@ -1610,12 +1645,12 @@ describe('firestore.rules', () => {
       for (const role of ['barber', 'admin', 'sysadmin']) {
         const db = signedIn('staff-1', role).firestore();
         await assertFails(
-          setDoc(doc(db, 'clientJournal/client-1_000003'), {
+          setDoc(doc(db, rowPath(3)), {
             ...pointRow,
             seq: 3,
           }),
         );
-        await assertFails(deleteDoc(doc(db, 'clientJournal/client-1_000001')));
+        await assertFails(deleteDoc(doc(db, rowPath(1))));
       }
     });
   });
@@ -1623,38 +1658,57 @@ describe('firestore.rules', () => {
   describe('streakDefinitions — staff read the rule, the admin pair reads its history, the server publishes (2026-09-29)', () => {
     const headPath = 'streakDefinitions/cadence';
     const versionsPath = `${headPath}/versions`;
-    const firstPath = `${versionsPath}/${streakDefinitionVersionId(1)}`;
-    const secondPath = `${versionsPath}/${streakDefinitionVersionId(2)}`;
+    const firstPath = `${versionsPath}/${StreakDefinitionVersionId.forVersion(1)}`;
+    const secondPath = `${versionsPath}/${StreakDefinitionVersionId.forVersion(2)}`;
 
     /**
      * The rule's documents as the callable leaves them: the seeded head
      * and its first version, then one publish that waits (grace from 7
-     * days to 10, from 5.10). Written by the port's reference, so the
-     * rules are held to the documents the server writes.
+     * days to 10, from 5.10) — the flat bodies (`StreakDefinition`,
+     * `StreakDefinitionVersion` minus `id`, flip 3), built from the shared
+     * rhythm fixtures of `@core/testing`, so the rules are held to the
+     * documents the server writes.
      */
     async function published(): Promise<{
-      head: object;
+      head: Omit<StreakDefinition, 'id'>;
       versions: Readonly<Record<string, object>>;
     }> {
-      const revised = StreakDefinition.default().revise(
-        { graceDays: 10 },
-        '2026-10-05',
-      );
-      if (revised.isFailure()) throw new Error('bad fixture rule');
-      const reference = InMemoryStreakDefinitionRepository.seeded({
-        today: loyaltyFixtures.today,
+      const publishedAtUtcMs = utcMs('2026-09-29T10:00:00+03:00');
+      const wider = {
+        ...StreakRule.DEFAULT,
+        version: 2,
+        effectiveFromLocalDate: localDate('2026-10-05'),
+        graceDays: 10,
+      };
+      const { id: headId, ...head } = streakDefinitionFixture({
+        rules: [
+          {
+            ...StreakRule.DEFAULT,
+            headRole: HeadRole.Current,
+            streakTransition: null,
+          },
+          {
+            ...wider,
+            headRole: HeadRole.Scheduled,
+            streakTransition: StreakTransition.Grandfather,
+          },
+        ],
+        updatedAtUtcMs: publishedAtUtcMs,
       });
-      const written = await reference.publish({
-        requestId: 'req-wider-grace',
-        baseVersion: 1,
-        definition: revised.value,
-        transition: 'grandfather',
-        previewHash: null,
-      });
-      if (written.isFailure()) throw written.error;
-      const documents = reference.documentsOf('cadence');
-      if (documents === null) throw new Error('the reference holds no rule');
-      return documents;
+      const { id: firstId, ...first } = streakDefinitionVersionFixture();
+      const { id: secondId, ...second } = streakDefinitionVersionFixture({
+        ...wider,
+        id: StreakDefinitionVersionId.forVersion(2),
+        publishedAtUtcMs,
+        publishedByUserId: UserId.of('staff-2'),
+        streakTransition: StreakTransition.Grandfather,
+        streakRuleDirection: StreakRuleDirection.Looser,
+        changed: [StreakRuleParameter.GraceDays],
+        requestId: PublishRequestId.of('req-wider-grace'),
+        withdrawnAtUtcMs: null,
+      } satisfies Partial<StreakDefinitionVersion>);
+      expect(headId).toBe('cadence');
+      return { head, versions: { [firstId]: first, [secondId]: second } };
     }
 
     /** The newest versions first, as the repository asks for the history. */
@@ -1700,9 +1754,9 @@ describe('firestore.rules', () => {
         expect(listed.docs[0]?.data()).toMatchObject({
           version: 2,
           graceDays: 10,
-          effectiveFrom: '2026-10-05',
+          effectiveFromLocalDate: '2026-10-05',
           requestId: 'req-wider-grace',
-          withdrawnAt: null,
+          withdrawnAtUtcMs: null,
         });
       },
     );
@@ -1714,7 +1768,7 @@ describe('firestore.rules', () => {
         const db = signedIn('staff-2', role).firestore();
         const { head, versions } = await published();
         await assertFails(setDoc(doc(db, headPath), { ...head }));
-        await assertFails(updateDoc(doc(db, headPath), { scheduled: null }));
+        await assertFails(updateDoc(doc(db, headPath), { rules: [] }));
         await assertFails(deleteDoc(doc(db, headPath)));
         await assertFails(
           setDoc(doc(db, 'streakDefinitions/another'), { ...head }),
@@ -1728,7 +1782,7 @@ describe('firestore.rules', () => {
         // The one field of a version that is ever set later is the server's too.
         await assertFails(
           updateDoc(doc(db, secondPath), {
-            withdrawnAt: '2026-09-29T08:00:00.000Z',
+            withdrawnAtUtcMs: utcMs('2026-09-29T11:00:00+03:00'),
           }),
         );
         await assertFails(deleteDoc(doc(db, firstPath)));
@@ -1763,8 +1817,10 @@ describe('firestore.rules', () => {
         ['client-1', 'client'],
       ] as const) {
         const db = signedIn(uid, role).firestore();
-        await assertFails(updateDoc(doc(db, headPath), { scheduled: null }));
-        await assertFails(updateDoc(doc(db, firstPath), { publishedBy: uid }));
+        await assertFails(updateDoc(doc(db, headPath), { rules: [] }));
+        await assertFails(
+          updateDoc(doc(db, firstPath), { publishedByUserId: uid }),
+        );
       }
     });
   });
@@ -1844,25 +1900,35 @@ describe('firestore.rules', () => {
   });
 
   describe('the card’s new reads: a holder’s vouchers, the activity, the shop’s statistics (2026-09-29)', () => {
+    /** A trimmed flat row (flip 3): the root keys the rule and the query read. */
+    const record = recordOf('client-1');
     const journalRow = (
       seq: number,
-      kind: string,
-      visibility: 'client' | 'staff' = 'client',
-    ) => ({ userId: 'client-1', seq, visibility, effect: { kind } });
+      journalEffect: JournalEffect,
+      journalVisibility: JournalVisibility = JournalVisibility.Client,
+    ) =>
+      ({
+        customerId: record,
+        seq,
+        journalVisibility,
+        journalEffect,
+      }) satisfies Partial<JournalEntry>;
+    const rowPath = (seq: number) =>
+      `clientJournal/${JournalEntryId.forEntry(record, seq)}`;
 
     beforeEach(async () => {
       await seed('giftVouchers/v-georgi', voucherBody('client-1', 'GIFT50'));
       await seed('giftVouchers/v-martin', voucherBody('client-2', 'GIFT2025'));
       await seed('giftVouchers/v-paper', voucherBody(null, 'GIFT5'));
-      await seed('clientJournal/client-1_000001', journalRow(1, 'points'));
-      await seed('clientJournal/client-1_000002', journalRow(2, 'tier'));
-      await seed('clientJournal/client-1_000003', journalRow(3, 'reward'));
-      await seed('clientJournal/client-1_000004', journalRow(4, 'redemption'));
-      await seed('clientJournal/client-1_000005', journalRow(5, 'achievement'));
-      await seed('clientJournal/client-1_000006', journalRow(6, 'streak'));
+      await seed(rowPath(1), journalRow(1, JournalEffect.Points));
+      await seed(rowPath(2), journalRow(2, JournalEffect.Tier));
+      await seed(rowPath(3), journalRow(3, JournalEffect.Reward));
+      await seed(rowPath(4), journalRow(4, JournalEffect.Redemption));
+      await seed(rowPath(5), journalRow(5, JournalEffect.Achievement));
+      await seed(rowPath(6), journalRow(6, JournalEffect.Streak));
       await seed(
-        'clientJournal/client-1_000007',
-        journalRow(7, 'pause', 'staff'),
+        rowPath(7),
+        journalRow(7, JournalEffect.Pause, JournalVisibility.Staff),
       );
       for (const uid of ['client-1', 'client-2', 'client-3']) {
         await seed(`clientStats/${recordOf(uid)}`, statsBody(uid));
@@ -1905,20 +1971,31 @@ describe('firestore.rules', () => {
       );
     });
 
-    /** The activity's query for one pill, given as the effects the pill holds. */
+    /**
+     * The activity's query for one pill, given as the effects the pill
+     * holds (`JournalFeed.effectsOf`) — the journal port's own query: the
+     * record, the client-visible rows, the pill's effects, newest first,
+     * older than the cursor's `seq`.
+     */
     const activity = (
       db: ReturnType<RulesTestContext['firestore']>,
-      effects: readonly string[],
-      after: number | null = null,
+      effects: readonly JournalEffect[],
+      beforeSeq: number | null = null,
     ) =>
       getDocs(
         query(
           collection(db, 'clientJournal'),
-          where('userId', '==', 'client-1'),
-          where('visibility', '==', 'client'),
-          where('effect.kind', 'in', [...effects]),
+          where('customerId' satisfies keyof JournalEntry, '==', record),
+          where(
+            'journalVisibility' satisfies keyof JournalEntry,
+            '==',
+            JournalVisibility.Client,
+          ),
+          where('journalEffect' satisfies keyof JournalEntry, 'in', [
+            ...effects,
+          ]),
+          ...(beforeSeq === null ? [] : [where('seq', '<', beforeSeq)]),
           orderBy('seq', 'desc'),
-          ...(after === null ? [] : [startAfter(after)]),
           limit(3),
         ),
       );
@@ -1926,7 +2003,9 @@ describe('firestore.rules', () => {
     it('lets the activity’s query through: every pill, newest first, older than the cursor', async () => {
       const db = signedIn('staff-1', 'barber').firestore();
 
-      const { all, rewards, status } = ACTIVITY_EFFECT_KINDS;
+      const all = JournalFeed.effectsOf(JournalFeed.All);
+      const rewards = JournalFeed.effectsOf(JournalFeed.Rewards);
+      const status = JournalFeed.effectsOf(JournalFeed.Status);
 
       const newest = await assertSucceeds(activity(db, all));
       expect(newest.docs.map((entry) => entry.data()['seq'])).toEqual([
@@ -1948,8 +2027,10 @@ describe('firestore.rules', () => {
               signedIn('staff-1', 'barber').firestore(),
               'clientJournal',
             ),
-            where('userId', '==', 'client-1'),
-            where('effect.kind', 'in', [...ACTIVITY_EFFECT_KINDS.all]),
+            where('customerId' satisfies keyof JournalEntry, '==', record),
+            where('journalEffect' satisfies keyof JournalEntry, 'in', [
+              ...JournalFeed.effectsOf(JournalFeed.All),
+            ]),
             orderBy('seq', 'desc'),
           ),
         ),
@@ -1957,7 +2038,7 @@ describe('firestore.rules', () => {
       await assertFails(
         activity(
           signedIn('client-1', 'client').firestore(),
-          ACTIVITY_EFFECT_KINDS.all,
+          JournalFeed.effectsOf(JournalFeed.All),
         ),
       );
     });

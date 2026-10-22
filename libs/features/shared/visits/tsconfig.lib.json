@@ -29,16 +29,13 @@
   ],
   "references": [
     {
-      "path": "../../../ecs-core/tsconfig.lib.json"
-    },
-    {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/engagement/tsconfig.lib.json"
+      "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/controls/tsconfig.lib.json"

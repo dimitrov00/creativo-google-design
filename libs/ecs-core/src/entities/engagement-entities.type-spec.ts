@@ -6,11 +6,16 @@
  * exactly its variant's fields — the variant slices of F-26
  * (`BadgeSubjectSlot`, `TierOverride`, `GrantRefFields`) included. Below,
  * the brand checks the engagement ids carried before they moved to
- * `primitives/ids.primitive.ts`. `tsc` failing — on a `false` constant or an
- * unused `@ts-expect-error` — IS the test; nothing here runs.
+ * `primitives/ids.primitive.ts`; then the loyalty flip's (3) contracts:
+ * the account and the journal key by the client RECORD (`CustomerId`, D29),
+ * never by an account's `UserId`, and the ports tier's `LoyaltyCatalog`
+ * passes to `LoyaltyCatalogSystem` unmapped (its part names, the rhythm's
+ * heads included). `tsc` failing — on a `false` constant or an unused
+ * `@ts-expect-error` — IS the test; nothing here runs.
  */
 import {
   type Actor,
+  ActorRole,
   BadgeSubject,
   type BadgeSubjectSlot,
   type MetricRef,
@@ -38,6 +43,7 @@ import type {
   BadgeSeriesId,
   CouponGrantId,
   CouponId,
+  CustomerId,
   GiftVoucherId,
   InvitationId,
   JournalEntryId,
@@ -47,7 +53,10 @@ import type {
   StreakDefinitionId,
   StreakDefinitionVersionId,
   TierId,
+  UserId,
 } from '@core/primitives';
+import type { LoyaltyCatalog } from '@core/ports';
+import type { LoyaltyCatalogParts } from '@core/systems';
 import type { AllTrue, Disjoint, NoNested } from '@core/testing';
 import type { BadgeCategory } from './badge-category.entity';
 import type { BadgeProgress } from './badge-progress.entity';
@@ -308,3 +317,54 @@ takes<string>(streakDefinitionId);
 takes<string>(invitationId);
 takes<string>(badgeCategoryId);
 takes<string>(tierId);
+
+/* ── D29: the account and the journal key by the client RECORD ──────────── */
+
+declare const customerId: CustomerId;
+declare const userId: UserId;
+
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+    ? true
+    : false;
+
+export const accountKeyedByRecord: [
+  Equals<LoyaltyAccount['id'], CustomerId>,
+  Equals<LoyaltyAccount['customerId'], CustomerId>,
+  Equals<JournalEntry['customerId'], CustomerId>,
+] = [true, true, true];
+
+takes<LoyaltyAccount['customerId']>(customerId);
+takes<JournalEntry['customerId']>(customerId);
+// @ts-expect-error — an account's uid never keys a loyalty account (D29)
+takes<LoyaltyAccount['customerId']>(userId);
+// @ts-expect-error — an account's uid is not a loyalty account's document id
+takes<LoyaltyAccount['id']>(userId);
+// @ts-expect-error — a journal row rewards a client record, never an account
+takes<JournalEntry['customerId']>(userId);
+// @ts-expect-error — the uid field is gone from the account body
+void account.userId;
+// @ts-expect-error — the uid field is gone from the journal row
+void entry.userId;
+
+// Who ACTED on a journal row stays an account (`actor*` is a `UserId`).
+if (entry.actorRole === ActorRole.User) {
+  takes<UserId>(entry.actorUserId);
+  // @ts-expect-error — the actor is an account, never a client record
+  takes<CustomerId>(entry.actorUserId);
+}
+
+/* ── LoyaltyCatalog (ports) passes to LoyaltyCatalogSystem unmapped ─────── */
+
+declare const catalog: LoyaltyCatalog;
+declare function takesParts(parts: LoyaltyCatalogParts): void;
+takesParts(catalog);
+
+export const catalogCarriesTheHeads: Equals<
+  LoyaltyCatalog['streaks'],
+  readonly StreakDefinition[]
+> = true;
+export const catalogKeysAreTheParts: Equals<
+  keyof LoyaltyCatalog,
+  keyof LoyaltyCatalogParts
+> = true;

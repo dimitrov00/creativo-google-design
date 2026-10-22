@@ -363,12 +363,13 @@ service cloud.firestore {
     }
 
     // THE RHYTHM'S RULE (client-card-revision-3 §4.3, 2026-09-29). The
-    // head holds the version in force and at most one that waits: staff
-    // read it now, clients will with their own loyalty view. Nobody writes
-    // it from a client, the admin included: a rule is published by the
-    // `publishStreakDefinition` callable, which checks the change, the day
-    // it may take effect and the caller, and writes the head, the version
-    // and the audit row in one transaction.
+    // head's flat `rules` list holds the rule in force (`CURRENT`) and at
+    // most one that waits (`SCHEDULED`): staff read it now, clients will
+    // with their own loyalty view. Nobody writes it from a client, the
+    // admin included: a rule is published by the `publishStreakDefinition`
+    // callable, which checks the change, the day it may take effect and the
+    // caller, and writes the head, the version and the audit row in one
+    // transaction.
     match /streakDefinitions/{streakId} {
       allow read: if isSignedIn();
       allow write: if false;
@@ -384,9 +385,11 @@ service cloud.firestore {
 
     // A client's account and progress: the book reads them, the server
     // writes them. The client they describe does not read them yet — that
-    // joins with their own loyalty view. Rules do not cascade, so each
-    // subcollection states its own allow.
-    match /loyaltyAccounts/{uid} {
+    // joins with their own loyalty view. Keyed by the client RECORD
+    // (`loyaltyAccounts/{customerId}`, D29, flip 3) — staff read it by the
+    // record they resolved, so the key changes nothing about who may. Rules
+    // do not cascade, so each subcollection states its own allow.
+    match /loyaltyAccounts/{customerId} {
       allow read: if worksTheBook();
       allow write: if false;
 
@@ -401,13 +404,14 @@ service cloud.firestore {
       }
     }
 
-    // `clientJournal/{uid}_{seq:06}` — append-only, server-written. The book
-    // reads the client-visible rows only; a staff row (a pause, an outcome
-    // correction) is the front desk's business elsewhere. Rules are not
-    // filters: a query that could return a staff row is refused whole, so
-    // the ledger query names `visibility == 'client'`.
+    // `clientJournal/{customerId}_{seq:06}` — append-only, server-written,
+    // keyed by the client RECORD (D29, flip 3). The book reads the
+    // client-visible rows only; a staff row (a pause, an outcome correction)
+    // is the front desk's business elsewhere. Rules are not filters: a query
+    // that could return a staff row is refused whole, so the ledger query
+    // names `journalVisibility == 'CLIENT'` (the flat root key, Law 6).
     match /clientJournal/{entryId} {
-      allow read: if worksTheBook() && resource.data.visibility == 'client';
+      allow read: if worksTheBook() && resource.data.journalVisibility == 'CLIENT';
       allow write: if false;
     }
 

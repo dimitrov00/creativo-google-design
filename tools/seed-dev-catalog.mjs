@@ -40,10 +40,12 @@
  * past midnight, a wall-clock start in a DST gap, a contact the booking
  * flow would not take — so a document the app could not read stops the
  * seed instead of half-seeding the emulator. The client card's loyalty
- * documents — the loyalty catalogue, each loyalty account — are read back
- * through the card's own readers from the same bundle just before each is
- * written (`readLoyaltyWrites`), and the grants are held to the coupons
- * they grant (`readPromotionWrites`).
+ * documents — the loyalty catalogue, each loyalty account — are flat
+ * bodies built by `tools/seed/fixtures/loyalty.fixtures.ts`, and are read
+ * back just before each is written (`readLoyaltyWrites`): the catalogue
+ * through `LoyaltyCatalogSystem.validate`, every rule of the rhythm through
+ * `StreakRule.parse`, from the same bundle; and the grants are held to the
+ * coupons they grant (`readPromotionWrites`).
  *
  * Emulator-only by construction: refuses to run unless
  * FIRESTORE_EMULATOR_HOST is set, so it can never touch a real project.
@@ -76,8 +78,8 @@
  *   node tools/seed-dev-catalog.mjs --check
  * Writes nothing: reads the emulator's loyalty catalogue and compares every
  * document with `catalog.json` (`loyaltyCatalogDriftOf` — each family's
- * `emblem` and every other field, a season's window excepted, which is the
- * seed day's). Exits 1, naming each document that differs, when the
+ * `emblem` and every other field, a season's window and announcement
+ * excepted, which are the seed day's). Exits 1, naming each document that differs, when the
  * emulator was seeded before `catalog.json` last changed. A capture runs it
  * first and refuses to shoot over a stale catalogue: wave D r3 rendered the
  * families' old faces that way. Re-seed with `--catalog-only` (or
@@ -89,13 +91,15 @@
  * seasons moved to the shop's today. The accounts of Георги and Мартин —
  * account, family and season progress, the journal — are the engine's
  * output over the same appointments (`tools/seed/loyalty.mjs`), never typed
- * in; beside them, for the client card: the coupons the engine granted
- * them (the stamp card's held one among them), Георги's gift voucher, three
- * photos of his last cuts, and Мартин's open waitlist request.
+ * in, keyed by each one's client RECORD (`loyaltyAccounts/{customerId}`,
+ * `clientJournal/{customerId}_{seq:06}`, D29); beside them, for the client
+ * card: the coupons the engine granted them (the stamp card's held one
+ * among them), Георги's gift voucher, three photos of his last cuts, and
+ * Мартин's open waitlist request.
  *
  * ### The rhythm's rule is the SHOP's once it has published one
- * `streakDefinitions/cadence` is a head (the version in force, the one that
- * waits) over a history of immutable versions. The seed writes the FIRST
+ * `streakDefinitions/cadence` is a head (its `rules`: the one in force, the
+ * one that waits) over a history of immutable versions. The seed writes the FIRST
  * version, head and history. Every later one is published for real, by the
  * admin, from `/admin/loyalty/rhythm`: from then on the seed writes neither
  * (`rulesPublishedOver`), in either mode, and projects the accounts under
@@ -151,6 +155,7 @@ const {
 const { CANCELLATION_WINDOW_HOURS, appointmentPhotoBody } = seed.appointments;
 const { buildClientBook } = seed.book;
 const { staffAccountBody } = seed.users;
+const { customerIdOf } = seed.customers;
 const {
   BADGE_PROGRESS_COLLECTION,
   CLIENT_JOURNAL_COLLECTION,
@@ -475,11 +480,13 @@ const loyaltyCatalog = catalogAsHeld(
     `seeded the loyalty catalogue: ${writes.length} documents, seasons as of ${loyaltyToday}`,
   );
   for (const streakId of publishedRules) {
-    const { current, scheduled } = loyaltyCatalog.streakDefinitions[streakId];
+    const { rules } = loyaltyCatalog.streakDefinitions[streakId];
+    const current = rules.find((rule) => rule.headRole === 'CURRENT');
+    const scheduled = rules.find((rule) => rule.headRole === 'SCHEDULED');
     console.log(
-      `kept the ${streakId} rhythm as the shop published it: version ${current.version} since ${current.effectiveFrom}` +
+      `kept the ${streakId} rhythm as the shop published it: version ${current.version} since ${current.effectiveFromLocalDate}` +
         (scheduled
-          ? `, version ${scheduled.version} from ${scheduled.effectiveFrom}`
+          ? `, version ${scheduled.version} from ${scheduled.effectiveFromLocalDate}`
           : ''),
     );
   }
@@ -709,16 +716,19 @@ console.log(
 /*
  * LOYALTY ACCOUNTS (client-card-redesign.md §4.6), as the engine would hold
  * them: Георги's and Мартин's account, family progress, season progress and
- * point rows, derived from the appointments above by `projectLoyaltyFor` —
+ * journal rows, derived from the appointments above by `projectLoyaltyFor` —
  * so «Посещения» is `clientStats`' completed visits and the balance is the
  * sum of the rows, by construction. What no appointment says comes from the
  * profile (the e-mail, the birthday, the portrait when Storage holds one) and from
- * `LOYALTY_HOLDERS` (the rewards they bought at the desk).
+ * `LOYALTY_HOLDERS` (the rewards they bought at the desk). Keyed by each
+ * holder's client RECORD (`customerIdOf(uid)`, D29): the account at
+ * `loyaltyAccounts/{customerId}`, the rows at `{customerId}_{seq:06}`.
  *
  * THE RHYTHM is the domain's own projection (client-card-revision-3.md
  * §4.2): the fold hands each holder's visits, called-off visits and
- * bookings to `traceStreak` from the bundle, under the rule in force today
- * — the seed's first version, or whatever the shop has published since.
+ * bookings to `StreakSystem.trace` from the bundle, under the rule in force
+ * today (`StreakRuleSystem.inForceOn`) — the seed's first version, or
+ * whatever the shop has published since.
  *
  * THE JOURNAL holds every kind of row «Движение» shows (§4.7): the points,
  * and a row for each level earned, each change of tier, each coupon the
@@ -752,7 +762,8 @@ for (const holder of LOYALTY_HOLDERS) {
   const writes = projection === null ? [] : loyaltyWritesOf(uid, projection);
   refuseUnreadable(readLoyaltyWrites(seed, writes));
   const keep = new Set(writes.map(({ path }) => path));
-  const account = db.collection(LOYALTY_ACCOUNTS_COLLECTION).doc(uid);
+  const customerId = customerIdOf(uid);
+  const account = db.collection(LOYALTY_ACCOUNTS_COLLECTION).doc(customerId);
   const earlier = [
     account,
     ...(await account.collection(BADGE_PROGRESS_COLLECTION).listDocuments()),
@@ -760,7 +771,7 @@ for (const holder of LOYALTY_HOLDERS) {
     ...(
       await db
         .collection(CLIENT_JOURNAL_COLLECTION)
-        .where('userId', '==', uid)
+        .where('customerId', '==', customerId)
         .get()
     ).docs.map((doc) => doc.ref),
   ];
@@ -776,12 +787,14 @@ for (const holder of LOYALTY_HOLDERS) {
     (sum, progress) => sum + progress.earned.length,
     0,
   );
-  const rhythm = projection.account.streaks.cadence;
+  const rhythm = projection.account.streaks.find(
+    (state) => state.streakId === 'cadence',
+  );
   console.log(
-    `seeded loyalty for ${uid}: ${projection.account.balance} points, ` +
-      `${projection.account.tier.current}, ${levels} levels, ${projection.account.seq} journal rows, ` +
+    `seeded loyalty for ${uid} (${customerId}): ${projection.account.balance} points, ` +
+      `${projection.account.tierId}, ${levels} levels, ${projection.account.seq} journal rows, ` +
       (rhythm
-        ? `${rhythm.current} in rhythm under version ${rhythm.definitionVersion} (${rhythm.phase.kind})`
+        ? `${rhythm.current} in rhythm under version ${rhythm.definitionVersion} (${rhythm.streakPhase})`
         : 'no rhythm (the rule is off)'),
   );
 }

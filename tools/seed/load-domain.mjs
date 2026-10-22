@@ -22,15 +22,14 @@
  *   the policy `firestoreSettingsPorts` reads; `purgeAtFor` is the ONE
  *   `purgeAt` stamp (F1-7) every busy day and waitlist request the seed
  *   writes carries.
- * - THE LOYALTY ENGINE'S READERS (flip 3's, until it lands): the
- *   catalogue as one validated model, the account, family progress, season
- *   tracks and point rows (`readLoyaltyWrites` in `loyalty.mjs` reads each
- *   document back through them before writing it), and the rhythm's
- *   projector, `traceStreak`, with the rule's head and version readers and
- *   the state's write half. Named by FILE, not barrel: the barrel
- *   `@creativo/application/engagement` also exports use cases that reach
- *   for lines the domain barrel does not carry (contract delta R2b-1).
- *   `load-domain.spec.mjs` holds each name equal to the barrel's.
+ * - THE LOYALTY DOMAIN the loyalty fold is HANDED (flip 3), from the
+ *   `@core/*` tier barrels: the rhythm's projector `StreakSystem` and the
+ *   rule in force `StreakRuleSystem` (`projectLoyaltyFor`), and the two
+ *   run-time checks the seed reads its loyalty documents back with before
+ *   writing them (`readLoyaltyWrites`): `LoyaltyCatalogSystem.validate`
+ *   over the catalogue and `StreakRule.parse` over every rule of a head
+ *   and every version. `load-domain.spec.mjs` holds each equal to the
+ *   ordinary import.
  *
  * `tools/icons/load-ts.mjs` transpiles file by file and follows relative
  * imports only; this graph crosses the `@creativo/*` and `@core/*` path
@@ -73,12 +72,6 @@ export const SEED_SERVER_MODULES = Object.freeze({
   settings: 'apps/functions/src/adapters/firestore-settings.adapter',
 });
 
-/** The loyalty engine's modules the entry names by path (flip 3's). */
-export const SEED_DOMAIN_MODULES = Object.freeze({
-  loyaltyDocument: 'libs/application/engagement/src/lib/ports/loyalty-document',
-  streakProjector: 'libs/domain/engagement/src/lib/loyalty/streak-projector',
-});
-
 const ENTRY = `
 export { projectClientStats } from '@core/pipelines';
 export { firestoreCommitPlan } from './${SEED_SERVER_MODULES.commitPlan}';
@@ -87,24 +80,12 @@ export { firestoreSettingsPorts } from './${SEED_SERVER_MODULES.settings}';
 ${Object.entries(SEED_PLAN_MODULES)
   .map(([name, path]) => `export * as ${name} from './${path}';`)
   .join('\n')}
+export { StreakRule } from '@core/components';
 export {
-  activityEntryFromDocument,
-  badgeProgressFromDocument,
-  ledgerEntryFromDocument,
-  loyaltyAccountFromDocument,
-  loyaltyCatalogFromDocuments,
-  seasonProgressFromDocument,
-  streakDefinitionVersionFromDocument,
-  streakDefinitionVersionToDocument,
-  streakScheduleFromDocument,
-  streakScheduleToDocument,
-  streakStateToDocument,
-} from './${SEED_DOMAIN_MODULES.loyaltyDocument}';
-export {
-  projectStreak,
-  traceStreak,
-} from './${SEED_DOMAIN_MODULES.streakProjector}';
-export { ServiceCategoryId, ServiceId } from '@creativo/domain/catalog';
+  LoyaltyCatalogSystem,
+  StreakRuleSystem,
+  StreakSystem,
+} from '@core/systems';
 `;
 
 /** This very module, imported by the bundle where it lies (see the head of the file). */

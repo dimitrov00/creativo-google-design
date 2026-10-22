@@ -87,6 +87,7 @@ export * from './shop-now.data';
 export * from './standing-seat.data';
 export * from './standing.data';
 export * from './streak-interval.data';
+export * from './streak-publish-call.data';
 export * from './streak-qualifier.data';
 export * from './streak-rule.data';
 export * from './streak-state.data';

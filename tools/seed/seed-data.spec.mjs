@@ -891,7 +891,7 @@ describe('what the rhythm and the feed read off the book (revision 3)', () => {
         own[0].cancellationReason,
       ]),
     ).toEqual([['STAFF', 'STAFF_BARBER_ABSENCE']]);
-    // The visit ahead that holds his period: `StreakState.heldBy` names it.
+    // The visit ahead that holds his period: `StreakState.heldByAppointmentId` names it.
     const held = docById(book, 'appt-dev-2');
     expect(held.localDate).toBe(today);
     expect(shopDayOf(held.bookedAtUtcMs) < today).toBe(true);

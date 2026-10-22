@@ -42,7 +42,7 @@ export type RuleRef = {
 
 /**
  * Why an entry was written: a rule paid, a person asked, a job ran, a
- * migration, a redemption (`loyalty-document.ts:719-736`) — a union of FLAT
+ * migration, a redemption (the legacy `loyalty-document.ts`, deleted in flip 3) — a union of FLAT
  * variant slices at the entry's root, every variant-only field prefixed
  * `source`. `sourceAwardKey` is the rule's once-key; `sourceEventId` the
  * fact that fired it.

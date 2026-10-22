@@ -4,7 +4,7 @@ import {
   inject,
   input,
 } from '@angular/core';
-import type { ActivityKind } from '@creativo/application/engagement';
+import { JournalFeed } from '@core/components';
 import {
   UI_SHEET_HEADLINE,
   UiButton,
@@ -25,9 +25,15 @@ import {
 } from '@creativo/ui/modifiers';
 import { ActivityList } from '../activity-list/activity-list';
 import { ClientCardStore } from '../client-card.store';
+import { LEDGER_FILTER_WORDS } from '../client-card.words';
 
 /** The four pills, in the toolbar's order. */
-const KINDS: readonly ActivityKind[] = ['all', 'points', 'rewards', 'status'];
+const KINDS: readonly JournalFeed[] = [
+  JournalFeed.All,
+  JournalFeed.Points,
+  JournalFeed.Rewards,
+  JournalFeed.Status,
+];
 
 /**
  * «ДВИЖЕНИЕ» — the ledger page (client-card-revision-3 §2.2.6, §3.16):
@@ -85,12 +91,16 @@ export class ClientLedgerPage {
   protected readonly ledger = this.store.ledger;
 
   protected readonly kinds = KINDS;
+  /** The pill «Всички»: its empty state is the page's own, not a filter's. */
+  protected readonly all = JournalFeed.All;
+  /** Each pill's word: its i18n key and its `ledger-filter-{word}` test id, as before the flip. */
+  protected readonly filterWords = LEDGER_FILTER_WORDS;
   /** Three month blocks of two rows, while the first page reads. */
   protected readonly placeholderMonths = [0, 1, 2] as const;
   protected readonly placeholderRows = [0, 1] as const;
 
   /** A pill: the first page under that kind, from the top. */
-  protected setFilter(kind: ActivityKind): void {
+  protected setFilter(kind: JournalFeed): void {
     this.store.setLedgerFilter(kind);
   }
 

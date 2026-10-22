@@ -17,9 +17,14 @@ import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import type {
   Appointment,
   AppointmentPhoto,
+  BadgeProgress,
   ClientMoneyRecord,
   ClientStatsRecord,
   GiftVoucher,
+  JournalEntry,
+  LoyaltyAccount,
+  SeasonProgress,
+  StreakDefinition,
   User,
   WaitlistRequest,
 } from '@core/entities';
@@ -33,31 +38,31 @@ import {
   UserId,
   defect,
 } from '@core/primitives';
-import { Registration, type VisitFact } from '@core/components';
-import { ZonedTimeSystem } from '@core/systems';
+import {
+  JournalFeed,
+  Registration,
+  StreakState,
+  type VisitFact,
+} from '@core/components';
+import {
+  LoyaltyCatalogSystem,
+  StreakRuleSystem,
+  type StreakRuleSummary,
+  type ValidLoyaltyCatalog,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  LOYALTY_ACCOUNT_READ_PORTS,
+  LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import {
-  type ActivityEntry,
-  type ActivityKind,
-  type BadgeProgress,
-  LOYALTY_ACTIVITY_READER,
-  LOYALTY_CATALOG_READER,
-  LOYALTY_READER,
-  type LoyaltyAccount,
-  type LoyaltyCatalog,
-  type SeasonProgress,
-  type StreakDefinition,
-  type StreakDefinitionSchedule,
-  type StreakRuleSummary,
-} from '@creativo/application/engagement';
 import { CLOCK, FEATURE_FLAGS } from '@creativo/application/shared';
 import {
   type VisitFilter,
@@ -69,6 +74,7 @@ import {
   type AchievementsContext,
   achievementScopeOf,
   scopeTitleOf,
+  seriesById,
 } from './achievements.presenter';
 import type {
   ClientCardContext,
@@ -130,7 +136,11 @@ import {
   ledgerPageVm,
   wholeMonthsOf,
 } from './ledger.presenter';
-import { type LoyaltyFlags, glanceReward } from './loyalty.presenter';
+import {
+  type LoyaltyFlags,
+  glanceReward,
+  ruleInForceOf,
+} from './loyalty.presenter';
 import { detailActionOf } from './medal-detail.presenter';
 import { CHIP_ALL } from './medals.presenter';
 import { recordsPageVm } from './records.presenter';
@@ -173,8 +183,9 @@ function factInstant(fact: VisitFact): number {
 
 /**
  * A read's answer as the store settles it — the ecs-core ports' plain
- * `Result`, or a loyalty reader's (flip 3) `Success`/`Failure` class, which
- * the store reads through `settled` until that flip re-types them.
+ * `Result`, or the avatar uploader's (`AVATAR_UPLOADER`, Phase 4)
+ * `Success`/`Failure` class, which the store reads through `settled` until
+ * that port is re-typed.
  */
 type ReadAnswer<T> =
   | Result<T, unknown>
@@ -232,11 +243,12 @@ const EMPTY_HEAD: ClientHeadVm = {
  * top; the pages of the pill before are not kept.
  */
 interface LedgerState {
-  readonly filter: ActivityKind;
+  /** The pill; its rows are `clientJournal` entries of `JournalFeed.effectsOf(filter)`. */
+  readonly filter: JournalFeed;
   /** The FIRST page's read under the pill: the skeleton, the rows, or the retry notice. */
   readonly status: SliceStatus;
   /** Every loaded entry, newest first, page after page. */
-  readonly entries: readonly ActivityEntry[];
+  readonly entries: readonly JournalEntry[];
   /** Where the next page starts (the oldest row's `seq`); `null` = nothing older. */
   readonly next: number | null;
   /** The «Покажи още» read. */
@@ -244,7 +256,7 @@ interface LedgerState {
 }
 
 const LOADING_LEDGER: LedgerState = {
-  filter: 'all',
+  filter: JournalFeed.All,
   status: 'loading',
   entries: [],
   next: null,
@@ -304,7 +316,10 @@ function registeredOnly(user: User | null): User | null {
  * THE CLIENT CARD'S DATA (client-card-redesign §5.2.1) — everything the
  * visit sheet's client stack shows about one person: their profile, their
  * visits and photos, their loyalty. Provided by the visit editor and
- * resolved lazily, so nothing constructs it until a card opens.
+ * resolved lazily, so nothing constructs it until a card opens. Every read
+ * of the record's — stats, history, photos, vouchers, and the loyalty
+ * (account, progress, journal: keyed by the client RECORD, D29) — waits on
+ * the record the card resolves (`withRecord`).
  *
  * Every port is optional (a missing port is an absent slice) and every read
  * is a `Result` with a 10 s timeout that settles as failed. `users/{uid}`
@@ -342,8 +357,12 @@ export class ClientCardStore {
   private readonly photosReader = inject(APPOINTMENT_PHOTO_PORTS, {
     optional: true,
   });
-  private readonly loyaltyReader = inject(LOYALTY_READER, { optional: true });
-  private readonly catalogReader = inject(LOYALTY_CATALOG_READER, {
+  /** The record's loyalty account and its badge and season progress. */
+  private readonly loyaltyPorts = inject(LOYALTY_ACCOUNT_READ_PORTS, {
+    optional: true,
+  });
+  /** The published catalogue, the rhythm's heads included. */
+  private readonly catalogPorts = inject(LOYALTY_CATALOG_READ_PORTS, {
     optional: true,
   });
   /** The gift vouchers a person holds (revision 3 §4.5): the wallet's holdings, the glance's voucher fact. */
@@ -351,7 +370,7 @@ export class ClientCardStore {
     optional: true,
   });
   /** The journal as a feed (§4.7): the wallet's «Движение» and the ledger page. */
-  private readonly activityReader = inject(LOYALTY_ACTIVITY_READER, {
+  private readonly journalPorts = inject(CLIENT_JOURNAL_PORTS, {
     optional: true,
   });
   private readonly clock = inject(CLOCK, { optional: true });
@@ -375,8 +394,8 @@ export class ClientCardStore {
   private ledgerSequence = 0;
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private waitlistSubscription: Subscription | null = null;
-  /** The catalogue, once read — kept for the store's life (§5.2.1). */
-  private catalogCache: LoyaltyCatalog | null = null;
+  /** The catalogue, once read and validated — kept for the store's life (§5.2.1). */
+  private catalogCache: ValidLoyaltyCatalog | null = null;
 
   private readonly _subject = signal<ClientCardSubject | null>(null);
   /**
@@ -407,7 +426,8 @@ export class ClientCardStore {
     null,
   );
   private readonly _account = signal<Slice<LoyaltyAccount | null> | null>(null);
-  private readonly _catalog = signal<Slice<LoyaltyCatalog> | null>(null);
+  /** The catalogue as `LoyaltyCatalogSystem.validate` answered it; a refused one is `failed`. */
+  private readonly _catalog = signal<Slice<ValidLoyaltyCatalog> | null>(null);
   private readonly _progress = signal<Slice<readonly BadgeProgress[]> | null>(
     null,
   );
@@ -421,7 +441,7 @@ export class ClientCardStore {
     null,
   );
   /** The wallet's feed: the journal's newest rows under «Всички»; `null` = not read. */
-  private readonly _activity = signal<Slice<readonly ActivityEntry[]> | null>(
+  private readonly _activity = signal<Slice<readonly JournalEntry[]> | null>(
     null,
   );
   /** The ledger page's pages under its pill; `null` = not read (`loyalty.points` off, no reader, a guest). */
@@ -597,7 +617,10 @@ export class ClientCardStore {
   /** The tier capsule's inputs: `null` = no capsule, `'loading'` = not known yet. */
   private readonly tierInputs = computed(
     ():
-      | { readonly account: LoyaltyAccount; readonly catalog: LoyaltyCatalog }
+      | {
+          readonly account: LoyaltyAccount;
+          readonly catalog: ValidLoyaltyCatalog;
+        }
       | null
       | 'loading' => {
       if (!this.flags.tiers) return null;
@@ -685,11 +708,9 @@ export class ClientCardStore {
         data: {
           catalog: loadedCatalog,
           account: loadedAccount,
-          progress: new Map(
-            (dataOf(progress) ?? []).map((p) => [p.seriesId, p]),
-          ),
+          progress: new Map((dataOf(progress) ?? []).map((p) => [p.id, p])),
           seasonProgress: new Map(
-            (dataOf(seasons) ?? []).map((p) => [p.seasonId, p]),
+            (dataOf(seasons) ?? []).map((p) => [p.id, p]),
           ),
           today: this.today(),
           previousVisitAtMs: this.previousVisitAtMs(),
@@ -1031,7 +1052,7 @@ export class ClientCardStore {
       words,
       heldRewards,
       vouchers: dataOf(vouchers),
-      ruleInForce: this.ruleInForce(),
+      rhythm: this.rhythm(),
     });
     return vm === null ? undefined : { status: 'ready', data: vm };
   }
@@ -1048,46 +1069,46 @@ export class ClientCardStore {
   }
 
   /**
-   * The catalogue's rhythm (§4.1): the first schedule the account holds a
-   * state for, else the catalogue's first — the built `defaultStreakOf`'s
-   * choice, over the schedules. `null` before the catalogue and in a shop
-   * without a rhythm.
+   * The catalogue's rhythm (§4.1): the first head the account holds a
+   * state for (`StreakState.find`, a linear scan), else the catalogue's
+   * first — the built `defaultStreakOf`'s choice, over the heads in the
+   * catalogue's order. `null` before the catalogue and in a shop without a
+   * rhythm.
    */
-  private readonly rhythmSchedule = computed(
-    (): StreakDefinitionSchedule | null => {
-      const catalog = dataOf(this._catalog());
-      if (catalog === null) return null;
-      const held = new Set(Object.keys(dataOf(this._account())?.streaks ?? {}));
-      return (
-        catalog.streakSchedules.find((schedule) => held.has(schedule.id)) ??
-        catalog.streakSchedules[0] ??
-        null
-      );
-    },
+  private readonly rhythmHead = computed((): StreakDefinition | null => {
+    const catalog = dataOf(this._catalog());
+    if (catalog === null) return null;
+    const states = dataOf(this._account())?.streaks ?? [];
+    for (let i = 0; i < catalog.streaks.length; i++) {
+      const head = catalog.streaks[i] as StreakDefinition;
+      if (StreakState.find(states, head.id) !== null) return head;
+    }
+    return catalog.streaks[0] ?? null;
+  });
+
+  /**
+   * The rhythm the presenters judge by — the head; its rule in force and
+   * the one that waits are `StreakRuleSystem.inForceOn` / `upcomingOn` on
+   * the shop's today. `null` with `loyalty.streaks` off, before the
+   * catalogue, and in a shop without a rhythm.
+   */
+  private readonly rhythm = computed((): StreakDefinition | null =>
+    this.flags.streaks ? this.rhythmHead() : null,
   );
 
   /**
-   * The rule the rhythm is judged by today; `null` with `loyalty.streaks`
-   * off, before the catalogue, and in a shop without a rhythm. A rule that
-   * is switched OFF is still handed over: every presenter asks it.
+   * The rule the rhythm is judged by today; `null` as `rhythm` is. A rule
+   * that is switched OFF is still handed over: every presenter asks it.
    */
-  private readonly ruleInForce = computed((): StreakDefinition | null =>
-    this.flags.streaks
-      ? (this.rhythmSchedule()?.inForceOn(this.today()) ?? null)
-      : null,
-  );
-
-  /** The rule that waits for its day (`scheduled`, while `effectiveFrom` is ahead); `null` with nothing scheduled. */
-  private readonly ruleUpcoming = computed((): StreakDefinition | null =>
-    this.flags.streaks
-      ? (this.rhythmSchedule()?.upcomingOn(this.today())?.definition ?? null)
-      : null,
+  private readonly ruleInForce = computed(() =>
+    ruleInForceOf(this.rhythm(), this.today()),
   );
 
   /** The rule in force, summarised, for the medal detail's rhythm family (`rhythmRuleWords`); `null` as `ruleInForce` is. */
-  readonly rhythmRule: Signal<StreakRuleSummary | null> = computed(
-    () => this.ruleInForce()?.summary() ?? null,
-  );
+  readonly rhythmRule: Signal<StreakRuleSummary | null> = computed(() => {
+    const rule = this.ruleInForce();
+    return rule === null ? null : StreakRuleSystem.summary(rule);
+  });
 
   /**
    * A worked visit's services by its APPOINTMENT id and by its shop day
@@ -1192,8 +1213,7 @@ export class ClientCardStore {
         sinceDay: stats?.firstVisitLocalDate ?? null,
         vouchers: this._vouchers(),
         activity: this._activity(),
-        ruleInForce: this.ruleInForce(),
-        ruleUpcoming: this.ruleUpcoming(),
+        rhythm: this.rhythm(),
         online: this._online(),
         isOwner: context.isOwner,
         visitGone: context.gone,
@@ -1218,7 +1238,7 @@ export class ClientCardStore {
     const words = this.words();
     const state = this._ledgerPage();
     const account = this._account();
-    const filter = state?.filter ?? 'all';
+    const filter = state?.filter ?? JournalFeed.All;
     const blank = (status: SliceStatus): LedgerPageVm => ({
       status,
       subline: [],
@@ -1275,7 +1295,7 @@ export class ClientCardStore {
         data: data.data,
         ctx,
         stats: this.stats(),
-        ruleInForce: this.ruleInForce(),
+        rhythm: this.rhythm(),
         visits: this.loadedVisits(),
         historyComplete: this.historyComplete(),
       }),
@@ -1394,7 +1414,7 @@ export class ClientCardStore {
    * force again does nothing — unless its first page failed, when it reads
    * again. A no-op before the page is read at all.
    */
-  setLedgerFilter(kind: ActivityKind): void {
+  setLedgerFilter(kind: JournalFeed): void {
     untracked(() => {
       const state = this._ledgerPage();
       const uid = this._subject()?.userId ?? null;
@@ -1427,7 +1447,7 @@ export class ClientCardStore {
     const ctx = this.achievementsContext();
     const context = this._context();
     if (data === null || ctx === null || context === null) return null;
-    const series = data.catalog.series(seriesId);
+    const series = seriesById(data, seriesId);
     if (series === null) return null;
     return detailActionOf(
       series,
@@ -1553,8 +1573,10 @@ export class ClientCardStore {
       case 'achievementDetail': {
         const data = dataOf(this.achievementsData());
         const series =
-          subjectId === null ? null : (data?.catalog.series(subjectId) ?? null);
-        return series?.title.get(cardLocaleOf(words.lang)) ?? null;
+          subjectId === null || data === null
+            ? null
+            : seriesById(data, subjectId);
+        return series?.title[cardLocaleOf(words.lang)] ?? null;
       }
       case 'photo':
         return subjectId === null
@@ -1662,7 +1684,7 @@ export class ClientCardStore {
     const flags = this.flags;
     const loyalty =
       account &&
-      this.loyaltyReader !== null &&
+      this.loyaltyPorts !== null &&
       (flags.points || flags.streaks || flags.achievements || flags.tiers);
     const when = <T>(read: boolean): Slice<T> | null => (read ? LOADING : null);
     this._profile.set(when(account && this.profiles !== null));
@@ -1676,7 +1698,7 @@ export class ClientCardStore {
     this._progress.set(when(loyalty && flags.achievements));
     this._seasonProgress.set(when(loyalty && flags.achievements));
     this._catalog.set(
-      loyalty && this.catalogReader !== null
+      loyalty && this.catalogPorts !== null
         ? this.catalogCache !== null
           ? { status: 'ready', data: this.catalogCache }
           : LOADING
@@ -1686,7 +1708,7 @@ export class ClientCardStore {
     // account (no wallet without one), the feed and the ledger page the
     // points' flag besides; the chip starts over with the person.
     this._vouchers.set(when(loyalty && this.vouchersReader !== null));
-    const feed = loyalty && flags.points && this.activityReader !== null;
+    const feed = loyalty && flags.points && this.journalPorts !== null;
     this._activity.set(when(feed));
     this._ledgerPage.set(feed ? LOADING_LEDGER : null);
     this.ledgerSequence += 1;
@@ -2034,48 +2056,93 @@ export class ClientCardStore {
   }
 
   /**
-   * The account and, by flag, the family progress, the season tracks and
-   * the ledger — all at once (an account that turns out absent makes the
-   * rest moot). `failedOnly` re-reads only what failed (a retry).
+   * The account and, by flag, the family progress and the season tracks —
+   * all at once (an account that turns out absent makes the rest moot),
+   * keyed by the client RECORD (D29): read through `withRecord`, so no
+   * record is no account (the account `null`, the progress empty: today's
+   * "no account" view) and a record that could not be read fails them all
+   * (flip-3 plan F3-1 (a)); a retry resolves the record again.
+   * `failedOnly` re-reads only what failed (a retry).
    */
   private loadLoyalty(
     generation: number,
     uid: string,
     failedOnly: boolean,
   ): void {
-    const reader = this.loyaltyReader;
-    if (reader === null) return;
+    const ports = this.loyaltyPorts;
+    if (ports === null) return;
     const due = (slice: Slice<unknown> | null) =>
       slice !== null && (!failedOnly || slice.status === 'failed');
-    if (due(this._account())) {
-      void this.read(generation, this._account, () => reader.getAccount(uid));
-    }
-    if (due(this._progress())) {
-      void this.read(generation, this._progress, () =>
-        reader.listBadgeProgress(uid),
-      );
-    }
-    if (due(this._seasonProgress())) {
-      void this.read(generation, this._seasonProgress, () =>
-        reader.listSeasonProgress(uid),
-      );
-    }
+    const account = due(this._account());
+    const progress = due(this._progress());
+    const seasons = due(this._seasonProgress());
+    if (!account && !progress && !seasons) return;
+    // Loading at once, as a read sets it, while the record is resolved.
+    const loading = <T>(target: WritableSignal<Slice<T> | null>) => {
+      if (target()?.status !== 'ready') target.set(LOADING);
+    };
+    if (account) loading(this._account);
+    if (progress) loading(this._progress);
+    if (seasons) loading(this._seasonProgress);
+    void this.withRecord(
+      generation,
+      uid,
+      async (customerId) => {
+        if (account) {
+          void this.read(generation, this._account, () =>
+            ports.loadLoyaltyAccount(customerId),
+          );
+        }
+        if (progress) {
+          void this.read(generation, this._progress, () =>
+            ports.listBadgeProgress(customerId),
+          );
+        }
+        if (seasons) {
+          void this.read(generation, this._seasonProgress, () =>
+            ports.listSeasonProgress(customerId),
+          );
+        }
+      },
+      // No record yet: no loyalty account either.
+      () => {
+        if (account) this._account.set({ status: 'ready', data: null });
+        if (progress) this._progress.set({ status: 'ready', data: [] });
+        if (seasons) this._seasonProgress.set({ status: 'ready', data: [] });
+      },
+      () => {
+        const fail = <T>(target: WritableSignal<Slice<T> | null>) => {
+          if (target()?.status !== 'ready') target.set(FAILED);
+        };
+        if (account) fail(this._account);
+        if (progress) fail(this._progress);
+        if (seasons) fail(this._seasonProgress);
+      },
+    );
   }
 
-  /** The catalogue, once per store: a good answer is kept, a failure never is. */
+  /**
+   * The catalogue, once per store: the port's answer as it is, judged
+   * whole by `LoyaltyCatalogSystem.validate` (display order, `families`).
+   * A good answer is kept; a failure — the read's, or a catalogue the
+   * system refuses — never is, and fails the slice (F3-10).
+   */
   private async loadCatalog(): Promise<void> {
-    const reader = this.catalogReader;
-    if (reader === null || this._catalog() === null) return;
+    const ports = this.catalogPorts;
+    if (ports === null || this._catalog() === null) return;
     if (this.catalogCache !== null) {
       this._catalog.set({ status: 'ready', data: this.catalogCache });
       return;
     }
     this._catalog.set(LOADING);
-    const result = await this.timed(() => reader.getCatalog());
-    if (result.ok) {
-      this.catalogCache = result.value;
+    const result = await this.timed(() => ports.loadLoyaltyCatalog());
+    const valid = result.ok
+      ? LoyaltyCatalogSystem.validate(result.value)
+      : null;
+    if (valid !== null && valid.ok) {
+      this.catalogCache = valid.value;
       if (this._catalog() !== null) {
-        this._catalog.set({ status: 'ready', data: result.value });
+        this._catalog.set({ status: 'ready', data: valid.value });
       }
     } else if (this._catalog()?.status !== 'ready') {
       this._catalog.set(FAILED);
@@ -2099,20 +2166,42 @@ export class ClientCardStore {
     );
   }
 
-  /** The wallet's feed: the journal's newest rows under «Всички», one per entry, unfolded (`WALLET_ACTIVITY_READ`). */
+  /**
+   * The wallet's feed: the record's journal, its newest rows under
+   * «Всички», one per entry, unfolded (`WALLET_ACTIVITY_READ`). No record
+   * is no row; a record that could not be read fails the feed.
+   */
   private async loadFeed(generation: number, uid: string): Promise<void> {
-    const reader = this.activityReader;
-    if (reader === null || this._activity() === null) return;
-    await this.read(generation, this._activity, async () => {
-      const page = await reader.page(uid, {
-        kind: 'all',
-        limit: WALLET_ACTIVITY_READ,
-        after: null,
-      });
-      return page.isSuccess()
-        ? Result.ok(page.value.entries)
-        : Result.err(page.error);
-    });
+    const ports = this.journalPorts;
+    if (ports === null || this._activity() === null) return;
+    if (this._activity()?.status !== 'ready') this._activity.set(LOADING);
+    await this.withRecord(
+      generation,
+      uid,
+      async (customerId) => {
+        await this.read(generation, this._activity, async () =>
+          Result.map(
+            await ports.pageClientJournal(
+              customerId,
+              JournalFeed.effectsOf(JournalFeed.All),
+              null,
+              WALLET_ACTIVITY_READ,
+            ),
+            (page) => page.entries,
+          ),
+        );
+      },
+      () => {
+        if (this._activity() !== null) {
+          this._activity.set({ status: 'ready', data: [] });
+        }
+      },
+      () => {
+        if (this._activity()?.status !== 'ready' && this._activity() !== null) {
+          this._activity.set(FAILED);
+        }
+      },
+    );
   }
 
   /**
@@ -2122,52 +2211,92 @@ export class ClientCardStore {
    */
   private loadLedgerFirst(generation: number, uid: string): void {
     const state = this._ledgerPage();
-    if (state === null || this.activityReader === null) return;
+    if (state === null || this.journalPorts === null) return;
     if (state.status !== 'ready') {
       this._ledgerPage.set({ ...state, status: 'loading' });
     }
     void this.readLedgerPage(generation, uid, state.filter);
   }
 
-  /** One first page under a pill (`LEDGER_PAGE_READ`); an answer for an older pill, or an older person, is dropped. */
+  /**
+   * One first page under a pill (`LEDGER_PAGE_READ`), of the record's
+   * journal (`withRecord`: no record is an empty page, a record that could
+   * not be read fails it); an answer for an older pill, or an older
+   * person, is dropped.
+   */
   private async readLedgerPage(
     generation: number,
     uid: string,
-    kind: ActivityKind,
+    kind: JournalFeed,
   ): Promise<void> {
-    const reader = this.activityReader;
-    if (reader === null) return;
+    const ports = this.journalPorts;
+    if (ports === null) return;
     const sequence = ++this.ledgerSequence;
-    const result = await this.timed(() =>
-      reader.page(uid, { kind, limit: LEDGER_PAGE_READ, after: null }),
-    );
-    if (generation !== this.generation || sequence !== this.ledgerSequence) {
-      return;
-    }
-    const now = this._ledgerPage();
-    if (now === null || now.filter !== kind) return;
-    if (!result.ok) {
-      if (now.status !== 'ready')
+    /** The page in force for this read: `null` once another pill or person took over. */
+    const current = (): LedgerState | null => {
+      if (generation !== this.generation || sequence !== this.ledgerSequence) {
+        return null;
+      }
+      const now = this._ledgerPage();
+      return now === null || now.filter !== kind ? null : now;
+    };
+    const fail = () => {
+      const now = current();
+      if (now !== null && now.status !== 'ready') {
         this._ledgerPage.set({ ...now, status: 'failed' });
-      return;
-    }
-    this._ledgerPage.set({
-      filter: kind,
-      status: 'ready',
-      entries: result.value.entries,
-      next: result.value.next,
-      more: 'idle',
-    });
+      }
+    };
+    await this.withRecord(
+      generation,
+      uid,
+      async (customerId) => {
+        const result = await this.timed(() =>
+          ports.pageClientJournal(
+            customerId,
+            JournalFeed.effectsOf(kind),
+            null,
+            LEDGER_PAGE_READ,
+          ),
+        );
+        if (current() === null) return;
+        if (!result.ok) {
+          fail();
+          return;
+        }
+        this._ledgerPage.set({
+          filter: kind,
+          status: 'ready',
+          entries: result.value.entries,
+          next: result.value.nextBeforeSeq,
+          more: 'idle',
+        });
+      },
+      () => {
+        if (current() === null) return;
+        this._ledgerPage.set({
+          filter: kind,
+          status: 'ready',
+          entries: [],
+          next: null,
+          more: 'idle',
+        });
+      },
+      fail,
+    );
   }
 
-  /** The next page under the pill, appended; a failure keeps the rows and says so in the foot. */
+  /**
+   * The next page under the pill, appended — of the record the store
+   * already resolved (a page was read, so the record is known); a failure
+   * keeps the rows and says so in the foot.
+   */
   private async fetchMoreLedger(): Promise<void> {
-    const reader = this.activityReader;
-    const uid = untracked(this._subject)?.userId ?? null;
+    const ports = this.journalPorts;
+    const customerId = untracked(this._customerId) ?? null;
     const state = untracked(this._ledgerPage);
     if (
-      reader === null ||
-      uid === null ||
+      ports === null ||
+      customerId === null ||
       state === null ||
       state.status !== 'ready' ||
       state.next === null ||
@@ -2181,7 +2310,12 @@ export class ClientCardStore {
     const after = state.next;
     this._ledgerPage.set({ ...state, more: 'loading' });
     const result = await this.timed(() =>
-      reader.page(uid, { kind: state.filter, limit: LEDGER_PAGE_READ, after }),
+      ports.pageClientJournal(
+        customerId,
+        JournalFeed.effectsOf(state.filter),
+        after,
+        LEDGER_PAGE_READ,
+      ),
     );
     if (generation !== this.generation || sequence !== this.ledgerSequence) {
       return;
@@ -2195,7 +2329,7 @@ export class ClientCardStore {
     this._ledgerPage.set({
       ...now,
       entries: [...now.entries, ...result.value.entries],
-      next: result.value.next,
+      next: result.value.nextBeforeSeq,
       more: 'idle',
     });
   }

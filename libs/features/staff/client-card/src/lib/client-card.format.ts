@@ -1,4 +1,10 @@
-import { sofiaDayOf } from '@creativo/application/engagement';
+import {
+  type LocalDate,
+  type TimeZone,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import type { LinePart } from './client-pages.vm';
 
 /*
@@ -9,7 +15,7 @@ import type { LinePart } from './client-pages.vm';
  * «12.08», with the year only outside the current one («6.03.2025 г.»); a
  * sentence someone hears says the month in words («4 септември»). Every
  * date is a day on the SHOP'S calendar (Europe/Sofia): an instant becomes
- * one through `sofiaDayOf`, and a day is formatted as itself — placed at
+ * one through `shopDayOf`, and a day is formatted as itself — placed at
  * UTC noon and read back in UTC — so no device zone can move it. `Intl`'s
  * output is never post-processed (its « г.» included).
  *
@@ -55,9 +61,21 @@ function formatDay(
   );
 }
 
-/** The shop day an instant falls on (`YYYY-MM-DD`, Europe/Sofia). */
-export function shopDayOf(ms: number): string {
-  return sofiaDayOf(new Date(ms));
+/** The shop's zone, branded: every instant on the card is read on its calendar. */
+export const CARD_SHOP_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
+  return zone.ok ? zone.value : defect('unreachable: the shop zone is a zone');
+})();
+
+/**
+ * The shop day an instant falls on (`YYYY-MM-DD`, Europe/Sofia) — UI
+ * formatting of a stamp, read on the feature's zone. Every instant the card
+ * holds is inside the brand's window: one outside it is a defect.
+ */
+export function shopDayOf(ms: number): LocalDate {
+  const instant = UtcEpochMs.of(ms);
+  if (!instant.ok) defect(`${ms} is not an instant`);
+  return ZonedTimeSystem.toLocal(instant.value, CARD_SHOP_ZONE).localDate;
 }
 
 /** «4.09» · «6.03.2025 г.» — a fact line's or a caption's date (R59). */
@@ -132,6 +150,41 @@ export function dayPlus(day: string, days: number): string {
 /** «12 450» — a count or a figure, grouped the locale's way. */
 export function figure(value: number, lang: string): string {
   return new Intl.NumberFormat(lang).format(value);
+}
+
+/** The Roman numerals, largest first. */
+const NUMERALS: readonly (readonly [number, string])[] = [
+  [1000, 'M'],
+  [900, 'CM'],
+  [500, 'D'],
+  [400, 'CD'],
+  [100, 'C'],
+  [90, 'XC'],
+  [50, 'L'],
+  [40, 'XL'],
+  [10, 'X'],
+  [9, 'IX'],
+  [5, 'V'],
+  [4, 'IV'],
+  [1, 'I'],
+];
+
+/**
+ * A level as its medal's numeral: 1 → «I» … 10 → «X»; `''` for no level.
+ * Levels are numerals, never Бронз / Сребро / Злато — those words are the
+ * client's TIERS. UI formatting: the systems hand over the level's number.
+ */
+export function levelNumeral(level: number): string {
+  if (!Number.isInteger(level) || level < 1) return '';
+  let rest = level;
+  let out = '';
+  for (const [value, glyph] of NUMERALS) {
+    while (rest >= value) {
+      out += glyph;
+      rest -= value;
+    }
+  }
+  return out;
 }
 
 /** «+17» · «−250» — a signed movement; zero carries no sign. */

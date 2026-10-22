@@ -1,25 +1,38 @@
+import type { StreakDefinitionVersion } from '@core/entities';
+import { StreakRuleField } from '@core/primitives';
 import {
-  type IsoDate,
+  FreezeReason,
   STREAK_EXCUSES,
-  type StreakDefinitionProps,
-  type StreakDefinitionVersion,
-  type StreakPreview,
-  type StreakRuleChange,
-  type StreakStandingCounts,
+  StreakExcuse,
+  StreakInterval,
+  type StreakIntervalRule,
+  StreakOnBreak,
+  StreakPeriodMark,
+  type StreakPeriodReason,
+  StreakPhase,
+  StreakQualifier,
+  StreakRuleParameter,
+  type StreakRuleInput,
   type StreakState,
-  sofiaDayOf,
-} from '@creativo/application/engagement';
+} from '@core/components';
+import {
+  RhythmDraftSystem,
+  type StreakPreview,
+  StreakPreviewOutcome,
+  type StreakStandingCounts,
+  ZonedTimeSystem,
+} from '@core/systems';
 import type {
   RhythmRuleWords,
   VisitTranslate,
 } from '@creativo/features/shared/visits';
-import { RhythmDraftSystem } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import type {
   UiChoiceOption,
   UiSliderMark,
   UiStreakPeriod,
 } from '@creativo/ui/controls';
+import { RHYTHM_SHOP_ZONE } from '../admin-rhythm.preview';
 import { ADMIN_RHYTHM_CHOICES } from '../admin-rhythm.store';
 
 /*
@@ -35,19 +48,84 @@ import { ADMIN_RHYTHM_CHOICES } from '../admin-rhythm.store';
  * is a string; an absent fact is `null`. The keys are `admin.rhythm.*`
  * (K1, K1b-5) plus the rule's units (`rhythmRule.*`, through the shared
  * words) and the track's descriptions (`clientCard.rhythm.*`, read by key).
+ *
+ * The rule is the FLAT `StreakRule` (a draft: `StreakRuleInput`), its tags
+ * SCREAMING (`@core/components`); the keys, the menus' ids and the test ids
+ * keep their lowercase spelling through the words tables below, each
+ * `satisfies Record<Dictionary, …>`, so the text on screen is unchanged.
  */
 
 /** What every function below reads: the catalogue, the day and the rule's units. */
 export interface AdminRhythmContext {
   readonly translate: VisitTranslate;
   readonly lang: string;
-  /** The shop's today: a date in another year says its year. */
-  readonly today: IsoDate;
+  /** The shop's today (`YYYY-MM-DD`): a date in another year says its year. */
+  readonly today: string;
   /** «7 дни» · «6 седмици» — the rule's own units (`rhythmRuleWords(...).days / .weeks`). */
   readonly rule: Pick<RhythmRuleWords, 'days' | 'weeks'>;
 }
 
 const DAYS_IN_WEEK = 7;
+
+// ── The words tables: a SCREAMING tag, its lowercase key ───────────────────
+
+/** What counts, as its key (`admin.rhythm.history.change.qualifier.*`). */
+const QUALIFIER_KEY = {
+  [StreakQualifier.AnyVisit]: 'anyVisit',
+  [StreakQualifier.Services]: 'services',
+  [StreakQualifier.Categories]: 'categories',
+} as const satisfies Record<StreakQualifier, string>;
+
+/** A closed period's mark, as the track draws it. */
+const PERIOD_MARK = {
+  [StreakPeriodMark.Kept]: 'kept',
+  [StreakPeriodMark.Protected]: 'protected',
+  [StreakPeriodMark.Repaired]: 'repaired',
+  [StreakPeriodMark.Missed]: 'missed',
+} as const satisfies Record<StreakPeriodMark, UiStreakPeriod['mark']>;
+
+/** What covered a period, as its key (`clientCard.rhythm.reason.*`). */
+const PERIOD_REASON_KEY = {
+  [FreezeReason.Freeze]: 'freeze',
+  [FreezeReason.Pause]: 'pause',
+  [FreezeReason.ClientPause]: 'clientPause',
+  [StreakExcuse.ShopClosure]: 'shopClosure',
+  [StreakExcuse.BarberAbsence]: 'barberAbsence',
+  [StreakExcuse.StaffCancelled]: 'staffCancelled',
+  [StreakExcuse.ClosedDays]: 'closedDays',
+} as const satisfies Record<StreakPeriodReason, string>;
+
+/** «shopClosure» — an excuse as its key and its test id (`admin.rhythm.excuses.*`). */
+export function excuseKey(excuse: StreakExcuse): string {
+  switch (excuse) {
+    case StreakExcuse.ShopClosure:
+      return 'shopClosure';
+    case StreakExcuse.BarberAbsence:
+      return 'barberAbsence';
+    case StreakExcuse.StaffCancelled:
+      return 'staffCancelled';
+    case StreakExcuse.ClosedDays:
+      return 'closedDays';
+  }
+}
+
+/** The menu's id and key for a miss that holds the count. */
+const HOLD = 'hold';
+
+/** «restart» · «hold» — what a miss does, as its key and its menu's id (`admin.rhythm.onBreak.*`). */
+export function onBreakKey(onBreak: StreakOnBreak): string {
+  switch (onBreak) {
+    case StreakOnBreak.Restart:
+      return 'restart';
+    case StreakOnBreak.Hold:
+      return HOLD;
+  }
+}
+
+/** The menu's id back to what a miss does: «hold» holds the count, anything else starts it over. */
+export function onBreakOf(id: string): StreakOnBreak {
+  return id === HOLD ? StreakOnBreak.Hold : StreakOnBreak.Restart;
+}
 
 /** The typographic minus, as the spec draws a signed figure. */
 const MINUS = '−';
@@ -79,7 +157,7 @@ const yearUnlessCurrent = (
   day.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' };
 
 /** «1.09» · «1.03.2025 г.» — a capsule's or a row's date, the year only outside today's. */
-export function shortDay(day: IsoDate, today: IsoDate, lang: string): string {
+export function shortDay(day: string, today: string, lang: string): string {
   return formatDay(day, lang, {
     day: 'numeric',
     month: '2-digit',
@@ -88,7 +166,7 @@ export function shortDay(day: IsoDate, today: IsoDate, lang: string): string {
 }
 
 /** «4 септември» — a date someone hears. */
-export function longDay(day: IsoDate, today: IsoDate, lang: string): string {
+export function longDay(day: string, today: string, lang: string): string {
   return formatDay(day, lang, {
     day: 'numeric',
     month: 'long',
@@ -97,7 +175,7 @@ export function longDay(day: IsoDate, today: IsoDate, lang: string): string {
 }
 
 /** «септември» — the month in words (a track mark's description). */
-export function monthWord(day: IsoDate, lang: string): string {
+export function monthWord(day: string, lang: string): string {
   return formatDay(day, lang, { month: 'long' });
 }
 
@@ -275,8 +353,8 @@ export function effectiveOptions(
  */
 export function effectiveReading(
   context: AdminRhythmContext,
-  day: IsoDate,
-  days: { readonly tomorrow: IsoDate; readonly firstOfMonth: IsoDate },
+  day: string,
+  days: { readonly tomorrow: string; readonly firstOfMonth: string },
 ): { readonly choice: EffectiveChoice; readonly label: string } {
   const t = context.translate;
   if (day === days.tomorrow) {
@@ -342,27 +420,27 @@ export function servicesCount(
 /** «До 2 в запас» · «Изключени» — the protections row. */
 export function protectionsRow(
   context: AdminRhythmContext,
-  draft: StreakDefinitionProps,
+  draft: StreakRuleInput,
 ): string {
   const t = context.translate;
-  return draft.protections.enabled
-    ? t('admin.rhythm.row.protections', { count: draft.protections.maxBanked })
+  return draft.protectionsEnabled
+    ? t('admin.rhythm.row.protections', { count: draft.protectionsMaxBanked })
     : t('admin.rhythm.row.protectionsOff');
 }
 
 /** «3 от 4» · «3 от 4 · пауза до 90 дни» — the excuses row. */
 export function excusesRow(
   context: AdminRhythmContext,
-  draft: StreakDefinitionProps,
+  draft: StreakRuleInput,
 ): string {
   const t = context.translate;
   const on = draft.excuses.length;
   const all = STREAK_EXCUSES.length;
-  return draft.clientPause.enabled
+  return draft.clientPauseEnabled
     ? t('admin.rhythm.row.excusesPause', {
         on,
         all,
-        days: context.rule.days(draft.clientPause.maxDaysPerYear),
+        days: context.rule.days(draft.clientPauseMaxDaysPerYear),
       })
     : t('admin.rhythm.row.excuses', { on, all });
 }
@@ -370,9 +448,9 @@ export function excusesRow(
 /** «Започва отначало» · «Продължава оттам» — the after-a-miss row. */
 export function afterMissRow(
   context: AdminRhythmContext,
-  draft: StreakDefinitionProps,
+  draft: StreakRuleInput,
 ): string {
-  return context.translate(`admin.rhythm.onBreak.${draft.onBreak}`);
+  return context.translate(`admin.rhythm.onBreak.${onBreakKey(draft.onBreak)}`);
 }
 
 /**
@@ -389,10 +467,10 @@ function jointed(text: string): string {
 }
 
 /** What the rule card digests under its sentence, in the rule's order (§2.6.1 MC). */
-const DIGEST_ORDER: readonly (keyof StreakDefinitionProps)[] = [
-  'graceDays',
-  'protections',
-  'excuses',
+const DIGEST_ORDER: readonly StreakRuleParameter[] = [
+  StreakRuleParameter.GraceDays,
+  StreakRuleParameter.Protections,
+  StreakRuleParameter.Excuses,
 ];
 
 /**
@@ -407,7 +485,7 @@ const DIGEST_ORDER: readonly (keyof StreakDefinitionProps)[] = [
  */
 export function ruleDigest(
   context: AdminRhythmContext,
-  draft: StreakDefinitionProps,
+  draft: StreakRuleInput,
 ): string | null {
   if (!draft.enabled) return null;
   return DIGEST_ORDER.map((parameter) => changeWord(context, parameter, draft))
@@ -426,11 +504,14 @@ export function toleranceReadout(
 /** «Клиент, който идва на 4 седмици, има срок 6 седмици.» — the tolerance explained on one habit. */
 export function toleranceExample(
   context: AdminRhythmContext,
-  interval: Extract<StreakDefinitionProps['interval'], { kind: 'personal' }>,
+  interval: StreakIntervalRule.Personal,
 ): string {
   const habitDays = 28;
-  const raw = Math.round(habitDays * (1 + interval.tolerancePct / 100));
-  const due = Math.min(interval.maxDays, Math.max(interval.minDays, raw));
+  const raw = Math.round(habitDays * (1 + interval.intervalTolerancePct / 100));
+  const due = Math.min(
+    interval.intervalMaxDays,
+    Math.max(interval.intervalMinDays, raw),
+  );
   return context.translate('admin.rhythm.interval.example', {
     habit: context.rule.weeks(weeksOf(habitDays)),
     interval: context.rule.weeks(weeksOf(due)),
@@ -440,7 +521,7 @@ export function toleranceExample(
 /** «В сила от 1.09» · «От 1.10» — the rule card's capsule. */
 export function inForceCapsule(
   context: AdminRhythmContext,
-  day: IsoDate,
+  day: string,
   scheduled: boolean,
 ): string {
   return context.translate(
@@ -452,7 +533,7 @@ export function inForceCapsule(
 /** «От 1.10: на всеки 5 седмици» — the waiting version's line under the rule. */
 export function upcomingLine(
   context: AdminRhythmContext,
-  day: IsoDate,
+  day: string,
   short: string,
 ): string {
   return context.translate('rhythmRule.upcoming', {
@@ -463,100 +544,100 @@ export function upcomingLine(
 
 // ── The history ──────────────────────────────────────────────────────────
 
-/** The rule's own order, in which a version's changes are named. */
-const CHANGE_ORDER: readonly (keyof StreakDefinitionProps)[] = [
-  'enabled',
-  'qualifier',
-  'minGapDays',
-  'bookingHold',
-  'interval',
-  'graceDays',
-  'riskLeadDays',
-  'protections',
-  'excuses',
-  'clientPause',
-  'repair',
-  'onBreak',
-  'name',
+/** The rule's own order, in which a version's changes are named; the name, the head's, last. */
+const CHANGE_ORDER: readonly StreakRuleParameter[] = [
+  StreakRuleParameter.Enabled,
+  StreakRuleParameter.Qualifier,
+  StreakRuleParameter.MinGapDays,
+  StreakRuleParameter.BookingHold,
+  StreakRuleParameter.Interval,
+  StreakRuleParameter.GraceDays,
+  StreakRuleParameter.RiskLeadDays,
+  StreakRuleParameter.Protections,
+  StreakRuleParameter.Excuses,
+  StreakRuleParameter.ClientPause,
+  StreakRuleParameter.Repair,
+  StreakRuleParameter.OnBreak,
+  StreakRuleParameter.Name,
 ];
 
 /**
- * One parameter's change, lower case, no stop (`admin.rhythm.history.change.*`);
- * `null` for a member that is a version's identity and not a change.
+ * One parameter's change, lower case, no stop (`admin.rhythm.history.change.*`).
+ * The parameter is read as a stored version lists it: anything that is no
+ * `StreakRuleParameter` (a version's identity — its number, its day) is no
+ * change and says nothing (`null`).
  */
 export function changeWord(
   context: AdminRhythmContext,
-  parameter: keyof StreakDefinitionProps,
-  props: StreakDefinitionProps,
+  parameter: string,
+  rule: StreakRuleInput,
 ): string | null {
   const t = context.translate;
   const { days, weeks } = context.rule;
   const key = 'admin.rhythm.history.change';
   switch (parameter) {
-    case 'name':
+    case StreakRuleParameter.Name:
       return t(`${key}.name`);
-    case 'enabled':
-      return t(`${key}.enabled.${props.enabled ? 'on' : 'off'}`);
-    case 'qualifier':
-      return t(`${key}.qualifier.${props.qualifier.kind}`);
-    case 'minGapDays':
-      return t(`${key}.minGapDays`, { days: days(props.minGapDays) });
-    case 'bookingHold':
-      return props.bookingHold.enabled
+    case StreakRuleParameter.Enabled:
+      return t(`${key}.enabled.${rule.enabled ? 'on' : 'off'}`);
+    case StreakRuleParameter.Qualifier:
+      return t(`${key}.qualifier.${QUALIFIER_KEY[rule.streakQualifier]}`);
+    case StreakRuleParameter.MinGapDays:
+      return t(`${key}.minGapDays`, { days: days(rule.minGapDays) });
+    case StreakRuleParameter.BookingHold:
+      return rule.bookingHoldEnabled
         ? t(`${key}.bookingHold.on`, {
-            days: days(props.bookingHold.maxDaysPastDue),
+            days: days(rule.bookingHoldMaxDaysPastDue),
           })
         : t(`${key}.bookingHold.off`);
-    case 'interval':
-      return props.interval.kind === 'fixed'
+    case StreakRuleParameter.Interval:
+      return rule.streakInterval === StreakInterval.Fixed
         ? t(`${key}.interval.fixed`, {
-            interval: weeks(props.interval.days / DAYS_IN_WEEK),
+            interval: weeks(rule.intervalDays / DAYS_IN_WEEK),
           })
         : t(`${key}.interval.personal`);
-    case 'graceDays':
-      return props.graceDays > 0
-        ? t(`${key}.graceDays.days`, { days: days(props.graceDays) })
+    case StreakRuleParameter.GraceDays:
+      return rule.graceDays > 0
+        ? t(`${key}.graceDays.days`, { days: days(rule.graceDays) })
         : t(`${key}.graceDays.none`);
-    case 'riskLeadDays':
-      return props.riskLeadDays > 0
-        ? t(`${key}.riskLeadDays.days`, { days: days(props.riskLeadDays) })
+    case StreakRuleParameter.RiskLeadDays:
+      return rule.riskLeadDays > 0
+        ? t(`${key}.riskLeadDays.days`, { days: days(rule.riskLeadDays) })
         : t(`${key}.riskLeadDays.none`);
-    case 'protections':
-      return props.protections.enabled
-        ? t(`${key}.protections.on`, { count: props.protections.maxBanked })
+    case StreakRuleParameter.Protections:
+      return rule.protectionsEnabled
+        ? t(`${key}.protections.on`, { count: rule.protectionsMaxBanked })
         : t(`${key}.protections.off`);
-    case 'excuses':
+    case StreakRuleParameter.Excuses:
       return t(`${key}.excuses`, {
-        on: props.excuses.length,
+        on: rule.excuses.length,
         all: STREAK_EXCUSES.length,
       });
-    case 'clientPause':
-      return props.clientPause.enabled
+    case StreakRuleParameter.ClientPause:
+      return rule.clientPauseEnabled
         ? t(`${key}.clientPause.on`, {
-            days: days(props.clientPause.maxDaysPerYear),
+            days: days(rule.clientPauseMaxDaysPerYear),
           })
         : t(`${key}.clientPause.off`);
-    case 'repair':
-      return props.repair.enabled
-        ? t(`${key}.repair.on`, { days: days(props.repair.windowDays) })
+    case StreakRuleParameter.Repair:
+      return rule.repairEnabled
+        ? t(`${key}.repair.on`, { days: days(rule.repairWindowDays) })
         : t(`${key}.repair.off`);
-    case 'onBreak':
-      return t(`${key}.onBreak.${props.onBreak}`);
-    case 'id':
-    case 'version':
-    case 'effectiveFrom':
+    case StreakRuleParameter.OnBreak:
+      return t(`${key}.onBreak.${onBreakKey(rule.onBreak)}`);
+    default:
       return null;
   }
 }
 
-/** The changes a version made, in the rule's order, each worded; the identity members left out. */
+/** The changes a version made, in the rule's order, each worded; what is no parameter left out. */
 function changeWords(
   context: AdminRhythmContext,
-  changed: StreakRuleChange['changed'],
-  props: StreakDefinitionProps,
+  changed: readonly string[],
+  rule: StreakRuleInput,
 ): readonly string[] {
   return CHANGE_ORDER.filter((parameter) => changed.includes(parameter))
-    .map((parameter) => changeWord(context, parameter, props))
+    .map((parameter) => changeWord(context, parameter, rule))
     .filter((word): word is string => word !== null);
 }
 
@@ -577,10 +658,10 @@ export interface AdminRhythmHistoryRow {
  * many more («… и още 2»); the first version says «първо правило». The
  * by-line names the publisher: «системата» for the seed, else the uid
  * the server wrote (the page knows no staff directory: a delta) — and
- * the day it was published ONLY when that is another day than the one
- * the title opens with (a rule saved on its own day, the seed's first
- * rule among them, would say the date twice: the wireframe's «системата»
- * stands alone).
+ * the day it was published (its Sofia day) ONLY when that is another day
+ * than the one the title opens with (a rule saved on its own day, the
+ * seed's first rule among them, would say the date twice: the
+ * wireframe's «системата» stands alone). The version IS the flat rule.
  */
 export function historyRow(
   context: AdminRhythmContext,
@@ -588,8 +669,7 @@ export function historyRow(
 ): AdminRhythmHistoryRow {
   const t = context.translate;
   const { today, lang } = context;
-  const props = version.definition.toProps();
-  const words = changeWords(context, version.changed, props);
+  const words = changeWords(context, version.changed, version);
   const [first] = words;
   const change =
     first === undefined
@@ -600,27 +680,30 @@ export function historyRow(
             count: words.length - 1,
           })
         : first;
-  const name =
-    version.publishedBy === 'system'
+  const name: string =
+    version.publishedByUserId === 'system'
       ? t('admin.rhythm.history.system')
-      : version.publishedBy;
-  const publishedOn = sofiaDayOf(version.publishedAt);
+      : version.publishedByUserId;
+  const publishedOn = ZonedTimeSystem.toLocal(
+    version.publishedAtUtcMs,
+    RHYTHM_SHOP_ZONE,
+  ).localDate;
   return {
-    version: props.version,
+    version: version.version,
     title: jointed(
       t('admin.rhythm.history.row', {
-        date: shortDay(props.effectiveFrom, today, lang),
+        date: shortDay(version.effectiveFromLocalDate, today, lang),
         change,
       }),
     ),
     by:
-      publishedOn === props.effectiveFrom
+      publishedOn === version.effectiveFromLocalDate
         ? name
         : t('admin.rhythm.history.by', {
             name,
             date: shortDay(publishedOn, today, lang),
           }),
-    withdrawn: version.withdrawnAt !== null,
+    withdrawn: version.withdrawnAtUtcMs !== null,
   };
 }
 
@@ -682,7 +765,7 @@ export function previewWords(
   cap: number,
 ): AdminRhythmPreviewWords {
   const t = context.translate;
-  if (preview.kind === 'unavailable') {
+  if (preview.streakPreviewOutcome === StreakPreviewOutcome.Unavailable) {
     return {
       kind: 'unavailable',
       reason: t('admin.rhythm.preview.unavailable'),
@@ -742,9 +825,10 @@ export function samplePeriods(
   const { today, lang } = context;
   const closed = state.periods.map((fact, index): UiStreakPeriod => {
     const period = monthWord(fact.on, lang);
-    const id = `${fact.mark}-${fact.on}-${index}`;
-    switch (fact.mark) {
-      case 'kept':
+    const mark = PERIOD_MARK[fact.streakPeriodMark];
+    const id = `${mark}-${fact.on}-${index}`;
+    switch (fact.streakPeriodMark) {
+      case StreakPeriodMark.Kept:
         return {
           id,
           mark: 'kept',
@@ -754,24 +838,26 @@ export function samplePeriods(
             date: shortDay(fact.on, today, lang),
           }),
         };
-      case 'repaired':
+      case StreakPeriodMark.Repaired:
         return {
           id,
           mark: 'repaired',
           caption: '',
           description: t('clientCard.rhythm.mark.repaired', { period }),
         };
-      case 'protected':
+      case StreakPeriodMark.Protected:
         return {
           id,
           mark: 'protected',
           caption: '',
           description: t('clientCard.rhythm.mark.protected', {
             period,
-            reason: t(`clientCard.rhythm.reason.${fact.reason ?? 'freeze'}`),
+            reason: t(
+              `clientCard.rhythm.reason.${PERIOD_REASON_KEY[fact.periodReason ?? FreezeReason.Freeze]}`,
+            ),
           }),
         };
-      case 'missed':
+      case StreakPeriodMark.Missed:
         return {
           id,
           mark: 'missed',
@@ -785,7 +871,7 @@ export function samplePeriods(
     ...closed,
     {
       id: 'current',
-      mark: state.phase.kind === 'frozen' ? 'protected' : 'current',
+      mark: state.streakPhase === StreakPhase.Frozen ? 'protected' : 'current',
       caption: '',
       description: t('clientCard.rhythm.mark.current', {
         date: longDay(state.dueBy, today, lang),
@@ -812,53 +898,57 @@ export function sampleUnit(context: AdminRhythmContext): string {
 
 // ── A refused field ──────────────────────────────────────────────────────
 
-/** The control's label for a field the domain or the server refused («Поправи: Гратисен период.»). */
+/**
+ * The control's label for a field the domain or the server refused
+ * («Поправи: Гратисен период.»), named by its flat `StreakRuleField`; a
+ * field the page does not know is said as written.
+ */
 export function fieldName(context: AdminRhythmContext, field: string): string {
   const t = context.translate;
   const key = 'admin.rhythm';
   switch (field) {
-    case 'qualifier.kind':
+    case StreakRuleField.QualifierKind:
       return t(`${key}.counts.label`);
-    case 'qualifier.serviceIds':
-    case 'qualifier.categoryIds':
+    case StreakRuleField.QualifierServiceIds:
+    case StreakRuleField.QualifierCategoryIds:
       return t(`${key}.counts.servicesRow`);
-    case 'minGapDays':
+    case StreakRuleField.MinGapDays:
       return t(`${key}.counts.minGap`);
-    case 'bookingHold.maxDaysPastDue':
+    case StreakRuleField.BookingHoldMaxDaysPastDue:
       return t(`${key}.counts.holdDays`);
-    case 'interval.kind':
-    case 'interval.days':
+    case StreakRuleField.IntervalKind:
+    case StreakRuleField.IntervalDays:
       return t(`${key}.interval.label`);
-    case 'interval.tolerancePct':
+    case StreakRuleField.IntervalTolerancePct:
       return t(`${key}.interval.personal`);
-    case 'interval.minDays':
+    case StreakRuleField.IntervalMinDays:
       return t(`${key}.interval.min`);
-    case 'interval.maxDays':
+    case StreakRuleField.IntervalMaxDays:
       return t(`${key}.interval.max`);
-    case 'interval.fallbackDays':
+    case StreakRuleField.IntervalFallbackDays:
       return t(`${key}.interval.fallback`);
-    case 'graceDays':
+    case StreakRuleField.GraceDays:
       return t(`${key}.grace.title`);
-    case 'riskLeadDays':
+    case StreakRuleField.RiskLeadDays:
       return t(`${key}.grace.lead`);
-    case 'protections.maxBanked':
+    case StreakRuleField.ProtectionsMaxBanked:
       return t(`${key}.protections.max`);
-    case 'protections.earnEvery':
+    case StreakRuleField.ProtectionsEarnEvery:
       return t(`${key}.protections.every`);
-    case 'protections.startWith':
+    case StreakRuleField.ProtectionsStartWith:
       return t(`${key}.protections.first`);
-    case 'excuses':
+    case StreakRuleField.Excuses:
       return t(`${key}.excuses.title`);
-    case 'clientPause.maxDaysPerYear':
+    case StreakRuleField.ClientPauseMaxDaysPerYear:
       return t(`${key}.pause.days`);
-    case 'repair.windowDays':
+    case StreakRuleField.RepairWindowDays:
       return t(`${key}.repair.window`);
-    case 'repair.perYear':
+    case StreakRuleField.RepairPerYear:
       return t(`${key}.repair.perYear`);
-    case 'onBreak':
+    case StreakRuleField.OnBreak:
       return t(`${key}.onBreak.label`);
-    case 'effectiveFrom':
-    case 'scheduled.effectiveFrom':
+    case StreakRuleField.EffectiveFromLocalDate:
+    case StreakRuleField.ScheduledEffectiveFromLocalDate:
       return t(`${key}.effective.from`);
     default:
       return field;

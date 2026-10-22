@@ -234,6 +234,14 @@ export const StreakRule = {
   LIMITS,
 
   /**
+   * The notice, in whole days, a stricter rule owes the clients who can see
+   * the rhythm (R29); while nobody can, a stricter rule may start tomorrow.
+   * The ONE figure the publish pipeline's notice policy and the admin
+   * page's assessment share.
+   */
+  RULE_CHANGE_NOTICE_DAYS: 30,
+
+  /**
    * The recommended rule (version 1) — what `StreakDefinition.default()`
    * serves today. A constant, so identity is irrelevant (engagement Q7);
    * `StreakPublishSystem.assess`/`decide` and the admin store read it.

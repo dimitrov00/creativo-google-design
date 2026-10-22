@@ -1,36 +1,23 @@
 import type {
   Appointment,
   GiftVoucher,
+  LoyaltyAccount,
+  StreakDefinition,
   User,
   WaitlistRequest,
 } from '@core/entities';
-import {
-  type LoyaltyAccount,
-  type LoyaltyCatalog,
-  type PersonalRecord,
-  type PersonalRecordKind,
-  type StreakDefinition,
-  bestAffordable,
-  earnedLevelCount,
-  nextAffordable,
-  tierSteps,
-} from '@creativo/application/engagement';
 import {
   formatCents,
   visitCardOf,
   visitRowOf,
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
-import {
-  AchievementRuleId,
-  LocalDate,
-  type TimeZone,
-  UtcEpochMs,
-  defect,
-} from '@core/primitives';
+import { LocalDate, type TimeZone, UtcEpochMs, defect } from '@core/primitives';
 import {
   type BirthDate,
   CouponOccasion,
+  PersonalRecord,
+  PersonalRecordKind,
   WaitlistLifecycle,
 } from '@core/components';
 import {
@@ -39,10 +26,19 @@ import {
   ClientStatsSystem,
   CouponGrantSystem,
   type GlanceHoldings,
+  RewardSystem,
+  StandingSystem,
+  TierSystem,
+  type ValidLoyaltyCatalog,
   WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
-import type { AchievementsContext } from './achievements.presenter';
+import {
+  type AchievementsContext,
+  cardDayOf,
+  progressList,
+  seriesById,
+} from './achievements.presenter';
 import type { ClientCardGrant } from './client-card.contracts';
 import {
   cardLocaleOf,
@@ -84,9 +80,14 @@ import type {
   RecordFactVm,
   VisitCardsVm,
 } from './client-pages.vm';
-import type { ClientCardWords } from './client-card.words';
+import { type ClientCardWords, RECORD_KIND_WORDS } from './client-card.words';
 import { cadenceWeeks } from './history.presenter';
-import { glanceReward, offered } from './loyalty.presenter';
+import {
+  glanceReward,
+  offered,
+  rhythmStateOf,
+  ruleInForceOf,
+} from './loyalty.presenter';
 import { medalRingVm } from './medals.presenter';
 
 /*
@@ -121,9 +122,9 @@ const BIRTHDAY_NOTICE_DAYS = 7;
 
 /** The records the medals card's line may name, in its order; two at most print. */
 const RECORD_LINE_ORDER: readonly PersonalRecordKind[] = [
-  'favouriteService',
-  'mostVisitsInYear',
-  'firstVisit',
+  PersonalRecordKind.FavouriteService,
+  PersonalRecordKind.MostVisitsInYear,
+  PersonalRecordKind.FirstVisit,
 ];
 const RECORD_LINE_LIMIT = 2;
 
@@ -168,7 +169,7 @@ export interface HeroInput extends HeadInput {
   /** The account and the catalogue when the tier may show (`loyalty.tiers`), else `null`. */
   readonly tier: {
     readonly account: LoyaltyAccount;
-    readonly catalog: LoyaltyCatalog;
+    readonly catalog: ValidLoyaltyCatalog;
   } | null;
 }
 
@@ -223,12 +224,12 @@ function heroTier(
   words: ClientCardWords,
 ): HeroTierVm | null {
   const locale = cardLocaleOf(words.lang);
-  const track = tierSteps(tier.account.tier, tier.catalog.tiers);
+  const track = TierSystem.steps(tier.account, tier.catalog.tiers);
   const current = track.steps.find(
     (step) => step.tierId === track.currentTierId,
   );
   if (current === undefined) return null;
-  const name = current.name.get(locale);
+  const name = current.name[locale];
   if (current === track.steps.at(-1)) {
     return {
       name,
@@ -248,7 +249,7 @@ function heroTier(
     accessibleName: words.head.tierName(
       name,
       words.visitsModule.sectionVisits(remaining),
-      next.name.get(locale),
+      next.name[locale],
     ),
   };
 }
@@ -562,11 +563,12 @@ export interface LoyaltyGlanceInput extends LoyaltyTilesInput {
    */
   readonly vouchers: readonly GiftVoucher[] | null;
   /**
-   * The rhythm's rule in force today (`LoyaltyCatalog.streakInForce`). The
-   * rhythm is a fact of the card only under a rule that is known and ON:
-   * `null`, or a rule switched off, prints none.
+   * The rhythm the account is judged by (its head); its rule in force today
+   * is `StreakRuleSystem.inForceOn`'s. The rhythm is a fact of the card
+   * only under a rule that is known and ON: `null`, or a rule switched off,
+   * prints none.
    */
-  readonly ruleInForce: StreakDefinition | null;
+  readonly rhythm: StreakDefinition | null;
 }
 
 /** One holding, and how a reader hears it after its label («9 посещения»). */
@@ -608,24 +610,16 @@ function voucherHolding(
  */
 function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
   const { account, flags, words } = input;
-  const rule = input.ruleInForce;
-  const state =
-    rule === null
-      ? undefined
-      : new Map(Object.entries(account.streaks)).get(rule.id);
+  const rule = ruleInForceOf(input.rhythm, input.today);
+  const state = rhythmStateOf(account, input.rhythm);
   const today = LocalDate.parse(input.today);
   const held = ClientGlanceSystem.holdings({
     // A today that is no shop day reads no voucher's last day: no voucher fact.
     vouchers: input.vouchers === null || !today.ok ? null : input.vouchers,
-    punchCards: account.punchCards.map((card) => ({
-      ruleId: AchievementRuleId.of(card.ruleId),
-      filled: card.filled,
-      size: card.size,
-      title: card.title,
-    })),
+    punchCards: account.punchCards,
     achievements: flags.achievements,
     rhythmOn: flags.streaks && rule !== null && rule.enabled,
-    rhythm: state === undefined ? null : { current: state.current },
+    rhythm: state,
     paused: input.paused,
     today: today.ok ? today.value : LocalDate.fromEpochDay(0),
   });
@@ -686,26 +680,27 @@ function holdingsSpoken(
  */
 function pointsSentence(
   input: LoyaltyGlanceInput,
-  catalog: LoyaltyCatalog,
+  catalog: ValidLoyaltyCatalog,
 ): string | null {
   const { account, today, words } = input;
   const locale = cardLocaleOf(words.lang);
+  const day = cardDayOf(today);
   const inHand = new Set(input.heldRewards ?? []);
   const beyond = offered(catalog, today).filter(
-    (reward) => !inHand.has(reward.name.get(locale)),
+    (reward) => !inHand.has(reward.name[locale]),
   );
-  const best = bestAffordable(beyond, account.balance, today);
+  const best = RewardSystem.bestAffordable(beyond, account.balance, day);
   if (best !== null) {
     return words.loyalty.enoughForPoints(
-      inSentence(best.name.get(locale), words.lang),
+      inSentence(best.name[locale], words.lang),
     );
   }
-  const next = nextAffordable(beyond, account.balance, today);
+  const next = RewardSystem.nextAffordable(beyond, account.balance, day);
   return next === null
     ? null
     : words.loyalty.moreTo(
         next.cost - account.balance,
-        inSentence(next.name.get(locale), words.lang),
+        inSentence(next.name[locale], words.lang),
       );
 }
 
@@ -769,30 +764,31 @@ function recordFact(
 ): (RecordFactVm & { readonly spoken: string }) | null {
   const words = ctx.words;
   let value: string | null;
-  switch (record.kind) {
-    case 'favouriteService':
+  switch (record.personalRecordKind) {
+    case PersonalRecordKind.FavouriteService:
       value =
         record.serviceId === null
           ? null
           : ctx.catalog.serviceName(record.serviceId);
       break;
-    case 'mostVisitsInYear':
+    case PersonalRecordKind.MostVisitsInYear:
       value = figure(record.value, words.lang);
       break;
-    case 'firstVisit':
+    case PersonalRecordKind.FirstVisit:
       value = record.on === null ? null : dayWithYear(record.on, words.lang);
       break;
-    case 'longestRhythm':
+    case PersonalRecordKind.LongestRhythm:
       // The rhythm's record is the wallet's and the records page's.
       value = null;
       break;
   }
   if (value === null) return null;
+  const kind = RECORD_KIND_WORDS[record.personalRecordKind];
   return {
-    kind: record.kind,
-    label: words.records.label(record.kind),
+    kind,
+    label: words.records.label(kind),
     value,
-    spoken: `${words.achievements.record(record.kind)} ${value}`,
+    spoken: `${words.achievements.record(kind)} ${value}`,
   };
 }
 
@@ -815,12 +811,12 @@ export function medalsGlanceVm(
   data: AchievementsData,
   ctx: AchievementsContext,
 ): MedalsGlanceVm | null {
-  const levelCount = earnedLevelCount(data.progress);
+  const levelCount = StandingSystem.earnedLevelCount(progressList(data));
   if (levelCount === 0) return null;
 
   const strip = medalStripVm(data, ctx);
   const tiles = strip.medals.flatMap((slot): AchievementTileVm[] => {
-    const series = data.catalog.series(slot.seriesId);
+    const series = seriesById(data, slot.seriesId);
     return series === null
       ? []
       : [
@@ -836,8 +832,8 @@ export function medalsGlanceVm(
   });
 
   const facts = RECORD_LINE_ORDER.flatMap((kind) => {
-    const record = data.account.records.find((held) => held.kind === kind);
-    const fact = record === undefined ? null : recordFact(record, ctx);
+    const record = PersonalRecord.find(data.account.records, kind);
+    const fact = record === null ? null : recordFact(record, ctx);
     return fact === null ? [] : [fact];
   }).slice(0, RECORD_LINE_LIMIT);
 

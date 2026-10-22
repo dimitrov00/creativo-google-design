@@ -329,7 +329,7 @@
                 <ui-choice-menu
                   uiAlignment="trailing"
                   [uiOptions]="qualifierOptions()"
-                  [uiSelectedId]="draft.qualifier.kind === 'anyVisit' ? 'anyVisit' : 'services'"
+                  [uiSelectedId]="qualifierChoice()"
                   [uiLabel]="t('admin.rhythm.counts.label')"
                   [uiPresented]="qualifierMenu()"
                   (uiPresentedChange)="qualifierMenu.set($event)"
@@ -352,7 +352,7 @@
               </span>
             </li>
             <!-- P2a, only with «избрани услуги» -->
-            @if (draft.qualifier.kind !== 'anyVisit') {
+            @if (qualifierChoice() !== 'anyVisit') {
             <button
               type="button"
               uiListRow
@@ -377,16 +377,16 @@
               <button
                 uiSwitch
                 uiTrailing
-                [uiOn]="draft.bookingHold.enabled"
+                [uiOn]="draft.bookingHoldEnabled"
                 [attr.aria-label]="t('admin.rhythm.counts.hold')"
                 data-testid="admin-rhythm-hold"
-                (uiOnChange)="patch({ bookingHold: { enabled: $event } })"
+                (uiOnChange)="patch({ bookingHoldEnabled: $event })"
               ></button>
             </li>
             <!-- P4a, only while the hold is on. A TYPED figure's row: the
                  label wraps beside the pill (the DS's own `uiLabelWraps`),
                  the pill keeps the trailing edge and the row's line. -->
-            @if (draft.bookingHold.enabled) {
+            @if (draft.bookingHoldEnabled) {
             <li uiListRow uiSize="regular" uiLabelWraps>
               <span [id]="id('hold-days')"
                 >{{ t('admin.rhythm.counts.holdDays') }}</span
@@ -399,8 +399,8 @@
                 <ui-unit-field
                   uiControlSize="small"
                   uiInputMode="numeric"
-                  [uiValue]="text(draft.bookingHold.maxDaysPastDue)"
-                  [uiUnit]="units()?.days(draft.bookingHold.maxDaysPastDue) ?? ''"
+                  [uiValue]="text(draft.bookingHoldMaxDaysPastDue)"
+                  [uiUnit]="units()?.days(draft.bookingHoldMaxDaysPastDue) ?? ''"
                   [uiMin]="0"
                   [uiLabel]="t('admin.rhythm.counts.holdDays')"
                   uiTestId="admin-rhythm-hold-days"
@@ -463,7 +463,7 @@
                 <ui-choice-menu
                   uiAlignment="trailing"
                   [uiOptions]="intervalOptions()"
-                  [uiSelectedId]="draft.interval.kind"
+                  [uiSelectedId]="intervalChoice()"
                   [uiLabel]="t('admin.rhythm.interval.label')"
                   [uiPresented]="intervalMenu()"
                   (uiPresentedChange)="intervalMenu.set($event)"
@@ -514,7 +514,7 @@
                 </p>
               </ui-stack>
               <ui-slider
-                [uiValue]="personal.tolerancePct"
+                [uiValue]="personal.intervalTolerancePct"
                 [uiMin]="0"
                 [uiMax]="100"
                 [uiStep]="5"
@@ -540,12 +540,12 @@
                 <ui-unit-field
                   uiControlSize="small"
                   uiInputMode="numeric"
-                  [uiValue]="text(weeksOf(personal.minDays))"
-                  [uiUnit]="units()?.weeks(weeksOf(personal.minDays)) ?? ''"
+                  [uiValue]="text(weeksOf(personal.intervalMinDays))"
+                  [uiUnit]="units()?.weeks(weeksOf(personal.intervalMinDays)) ?? ''"
                   [uiMin]="2"
                   [uiLabel]="t('admin.rhythm.interval.min')"
                   uiTestId="admin-rhythm-clamp-min"
-                  (uiValueChange)="setClamp('minDays', $event)"
+                  (uiValueChange)="setClamp('intervalMinDays', $event)"
                 />
               </span>
             </li>
@@ -559,12 +559,12 @@
                 <ui-unit-field
                   uiControlSize="small"
                   uiInputMode="numeric"
-                  [uiValue]="text(weeksOf(personal.maxDays))"
-                  [uiUnit]="units()?.weeks(weeksOf(personal.maxDays)) ?? ''"
+                  [uiValue]="text(weeksOf(personal.intervalMaxDays))"
+                  [uiUnit]="units()?.weeks(weeksOf(personal.intervalMaxDays)) ?? ''"
                   [uiMin]="2"
                   [uiLabel]="t('admin.rhythm.interval.max')"
                   uiTestId="admin-rhythm-clamp-max"
-                  (uiValueChange)="setClamp('maxDays', $event)"
+                  (uiValueChange)="setClamp('intervalMaxDays', $event)"
                 />
               </span>
             </li>
@@ -578,12 +578,12 @@
                 <ui-unit-field
                   uiControlSize="small"
                   uiInputMode="numeric"
-                  [uiValue]="text(weeksOf(personal.fallbackDays))"
-                  [uiUnit]="units()?.weeks(weeksOf(personal.fallbackDays)) ?? ''"
+                  [uiValue]="text(weeksOf(personal.intervalFallbackDays))"
+                  [uiUnit]="units()?.weeks(weeksOf(personal.intervalFallbackDays)) ?? ''"
                   [uiMin]="2"
                   [uiLabel]="t('admin.rhythm.interval.fallback')"
                   uiTestId="admin-rhythm-fallback"
-                  (uiValueChange)="setClamp('fallbackDays', $event)"
+                  (uiValueChange)="setClamp('intervalFallbackDays', $event)"
                 />
               </span>
             </li>

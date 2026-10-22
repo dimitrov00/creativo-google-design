@@ -5,8 +5,8 @@ import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
 export default defineConfig(() => ({
   root: __dirname,
   cacheDir: '../../node_modules/.vite/tools/seed',
-  // The specs check the seed's documents against the real mapper and the
-  // real `computeClientStats`, imported by their aliases.
+  // The specs check the seed's documents against the real ecs-core
+  // entities and systems (`@core/*`), imported by their aliases.
   plugins: [nxViteTsPaths()],
   test: {
     name: 'seed-tools',

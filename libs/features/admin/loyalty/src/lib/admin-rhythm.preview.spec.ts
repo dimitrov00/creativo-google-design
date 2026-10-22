@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ClientStatsPagePorts } from '@core/ports';
-import { ClientStats, PolicyPassStamp } from '@core/components';
+import {
+  ClientStats,
+  PolicyPassStamp,
+  StreakIntervalRule,
+  StreakOnBreak,
+  StreakPeriodMark,
+  StreakPhase,
+  FreezeReason,
+  StreakQualifierRule,
+  StreakRule,
+} from '@core/components';
 import type { ClientStatsRecord } from '@core/entities';
 import {
   AppointmentId,
@@ -10,8 +20,13 @@ import {
   RepositoryError,
   RepositoryErrorCode,
   Result,
+  ServiceId,
 } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import {
+  StreakPreviewOutcome,
+  StreakPreviewUnavailable,
+  ZonedTimeSystem,
+} from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
   memoryClientStatsReadPorts,
@@ -20,18 +35,15 @@ import {
   utcMs,
 } from '@core/testing';
 import {
-  StreakDefinition,
-  type StreakDefinitionProps,
-} from '@creativo/application/engagement';
-import {
   RHYTHM_PREVIEW_CAP,
   RHYTHM_PREVIEW_DELAY_MS,
   RHYTHM_PREVIEW_PAGES,
   RHYTHM_PREVIEW_PAGE_SIZE,
-  RhythmPreviewSource,
+  RHYTHM_SHOP_ZONE,
   readRhythmPreviewFacts,
   rhythmPreviewOf,
   rhythmPreviewReadsFacts,
+  rhythmPreviewSource,
   sampleRhythmFacts,
   sampleRhythmRun,
   streakFactsOf,
@@ -123,18 +135,47 @@ function shopOf(count: number): ClientStatsRecord[] {
   );
 }
 
-function ruleOf(patch: Partial<StreakDefinitionProps> = {}): StreakDefinition {
-  const revised = StreakDefinition.default().revise(patch, '2026-09-29');
-  if (revised.isFailure()) {
+/** A revision of the recommended rule: any option figure, the interval or the qualifier whole. */
+type RulePatch = Partial<
+  Omit<StreakRule.Options, 'version' | 'effectiveFromLocalDate'>
+> & {
+  readonly interval?: StreakIntervalRule;
+  readonly qualifier?: StreakQualifierRule;
+};
+
+/** The recommended rule, revised from 29 September and parsed: the next version, as a publish makes it. */
+function ruleOf(patch: RulePatch = {}): StreakRule {
+  const { interval, qualifier, ...options } = patch;
+  const revised = StreakRule.parse({
+    ...StreakRule.DEFAULT,
+    ...options,
+    ...(interval ?? StreakIntervalRule.of(StreakRule.DEFAULT)),
+    ...(qualifier ?? StreakQualifierRule.of(StreakRule.DEFAULT)),
+    version: StreakRule.DEFAULT.version + 1,
+    effectiveFromLocalDate: '2026-09-29',
+  });
+  if (!revised.ok) {
     throw new Error(
-      `the rule was refused: ${revised.error.map((error) => error.code).join(', ')}`,
+      `the rule was refused: ${revised.error.map((error) => error.errorCode).join(', ')}`,
     );
   }
   return revised.value;
 }
 
-const marksOf = (rule: StreakDefinition): readonly string[] =>
-  sampleRhythmRun(rule, TODAY)?.periods.map((period) => period.mark) ?? [];
+const fade = (): StreakQualifierRule =>
+  StreakQualifierRule.services([ServiceId.of('svc-fade')]);
+
+/** The first instant of a Sofia day: what a statistic's visit is stamped with. */
+const dayStart = (day: string): number =>
+  ZonedTimeSystem.startOfLocalDay(
+    unwrapOk(LocalDate.parse(day)),
+    RHYTHM_SHOP_ZONE,
+  );
+
+const marksOf = (rule: StreakRule): readonly string[] =>
+  sampleRhythmRun(rule, TODAY)?.periods.map(
+    (period) => period.streakPeriodMark,
+  ) ?? [];
 
 describe('the preview’s figures', () => {
   it('walks five pages of 200, and recomputes 600 ms after the last change', () => {
@@ -156,8 +197,16 @@ describe('streakFactsOf', () => {
     );
 
     expect(facts.visits).toEqual([
-      { day: '2026-06-10', counted: true },
-      { day: '2026-09-28', counted: true },
+      {
+        localDate: '2026-06-10',
+        counted: true,
+        utcEpochMs: dayStart('2026-06-10'),
+      },
+      {
+        localDate: '2026-09-28',
+        counted: true,
+        utcEpochMs: dayStart('2026-09-28'),
+      },
     ]);
   });
 
@@ -264,7 +313,7 @@ describe('readRhythmPreviewFacts', () => {
 describe('RhythmPreviewSource', () => {
   it('walks once, however often it is asked', async () => {
     const directory = statsReader(shopOf(450));
-    const source = new RhythmPreviewSource(directory);
+    const source = rhythmPreviewSource(directory);
 
     const first = await source.read();
     const second = await source.read();
@@ -275,7 +324,7 @@ describe('RhythmPreviewSource', () => {
 
   it('answers two readers of one walk with the same facts', async () => {
     const directory = statsReader(shopOf(3));
-    const source = new RhythmPreviewSource(directory);
+    const source = rhythmPreviewSource(directory);
 
     const [first, second] = await Promise.all([source.read(), source.read()]);
 
@@ -285,7 +334,7 @@ describe('RhythmPreviewSource', () => {
 
   it('answers a walk that failed as it failed, until it is told to forget it', async () => {
     const directory = statsReader(shopOf(3)).failWith();
-    const source = new RhythmPreviewSource(directory);
+    const source = rhythmPreviewSource(directory);
 
     const failed = await source.read();
     directory.recover();
@@ -293,33 +342,33 @@ describe('RhythmPreviewSource', () => {
 
     expect(failed.ok).toBe(false);
     expect(again).toBe(failed);
-    expect(source.failed).toBe(true);
+    expect(source.failed()).toBe(true);
     expect(directory.calls).toHaveLength(1);
 
     source.forget();
-    expect(source.failed).toBe(false);
+    expect(source.failed()).toBe(false);
     const read = await source.read();
 
     expect(read.ok && read.value.clients).toHaveLength(3);
-    expect(source.failed).toBe(false);
+    expect(source.failed()).toBe(false);
     expect(directory.calls).toHaveLength(2);
   });
 
   it('has not failed before it has walked, nor while it walks', async () => {
     const directory = statsReader(shopOf(3)).failWith();
-    const source = new RhythmPreviewSource(directory);
+    const source = rhythmPreviewSource(directory);
 
-    expect(source.failed).toBe(false);
+    expect(source.failed()).toBe(false);
     const walking = source.read();
-    expect(source.failed).toBe(false);
+    expect(source.failed()).toBe(false);
 
     await walking;
-    expect(source.failed).toBe(true);
+    expect(source.failed()).toBe(true);
   });
 
   it('is not failed by a walk it was told to forget', async () => {
     const directory = statsReader(shopOf(3)).failWith();
-    const source = new RhythmPreviewSource(directory);
+    const source = rhythmPreviewSource(directory);
 
     const forgotten = source.read();
     source.forget();
@@ -327,13 +376,13 @@ describe('RhythmPreviewSource', () => {
     const read = source.read();
     await forgotten;
 
-    expect(source.failed).toBe(false);
+    expect(source.failed()).toBe(false);
     expect((await read).ok).toBe(true);
   });
 
   it('walks again after `forget()`, even over facts it had', async () => {
     const directory = statsReader(shopOf(3));
-    const source = new RhythmPreviewSource(directory);
+    const source = rhythmPreviewSource(directory);
 
     const first = await source.read();
     source.forget();
@@ -353,9 +402,7 @@ describe('rhythmPreviewReadsFacts', () => {
   });
 
   it('reads nothing when either rule counts by a list', () => {
-    const listed = ruleOf({
-      qualifier: { kind: 'services', serviceIds: ['svc-fade'] },
-    });
+    const listed = ruleOf({ qualifier: fade() });
 
     expect(rhythmPreviewReadsFacts(ruleOf(), listed)).toBe(false);
     expect(rhythmPreviewReadsFacts(listed, ruleOf())).toBe(false);
@@ -383,13 +430,13 @@ describe('rhythmPreviewOf', () => {
   it('counts everybody with a visit under both rules, through the projector', () => {
     const preview = rhythmPreviewOf({
       inForce: ruleOf(),
-      draft: ruleOf({ interval: { kind: 'fixed', days: 28 } }),
+      draft: ruleOf({ interval: StreakIntervalRule.fixed(28) }),
       facts,
       today: TODAY,
     });
 
     expect(preview).toEqual({
-      kind: 'estimate',
+      streakPreviewOutcome: StreakPreviewOutcome.Estimate,
       clients: 3,
       before: { inRhythm: 2, inGrace: 0, broken: 1 },
       after: { inRhythm: 1, inGrace: 0, broken: 2 },
@@ -400,13 +447,17 @@ describe('rhythmPreviewOf', () => {
 
   it('counts who comes back under a looser rule', () => {
     const preview = rhythmPreviewOf({
-      inForce: ruleOf({ interval: { kind: 'fixed', days: 28 } }),
+      inForce: ruleOf({ interval: StreakIntervalRule.fixed(28) }),
       draft: ruleOf(),
       facts,
       today: TODAY,
     });
 
-    expect(preview).toMatchObject({ kind: 'estimate', back: 1, out: 0 });
+    expect(preview).toMatchObject({
+      streakPreviewOutcome: StreakPreviewOutcome.Estimate,
+      back: 1,
+      out: 0,
+    });
   });
 
   it('judges nobody under a rule that is switched off', () => {
@@ -418,7 +469,7 @@ describe('rhythmPreviewOf', () => {
     });
 
     expect(preview).toMatchObject({
-      kind: 'estimate',
+      streakPreviewOutcome: StreakPreviewOutcome.Estimate,
       clients: 3,
       before: { inRhythm: 2, inGrace: 0, broken: 1 },
       after: null,
@@ -430,14 +481,15 @@ describe('rhythmPreviewOf', () => {
   it('is unavailable for a rule that counts chosen services', () => {
     const preview = rhythmPreviewOf({
       inForce: ruleOf(),
-      draft: ruleOf({
-        qualifier: { kind: 'services', serviceIds: ['svc-fade'] },
-      }),
+      draft: ruleOf({ qualifier: fade() }),
       facts,
       today: TODAY,
     });
 
-    expect(preview).toEqual({ kind: 'unavailable', reason: 'qualifier' });
+    expect(preview).toEqual({
+      streakPreviewOutcome: StreakPreviewOutcome.Unavailable,
+      reason: StreakPreviewUnavailable.Qualifier,
+    });
   });
 });
 
@@ -446,20 +498,21 @@ describe('the sample run', () => {
     const { visits } = sampleRhythmFacts(ruleOf(), TODAY);
 
     expect(visits).toHaveLength(7);
-    expect(visits.at(-1)).toEqual({ day: '2026-09-27', counted: true });
+    expect(visits.at(-1)).toEqual({
+      localDate: '2026-09-27',
+      counted: true,
+      utcEpochMs: dayStart('2026-09-27'),
+    });
     expect(visits.every((visit) => visit.counted)).toBe(true);
   });
 
   it('comes on time six times, then misses one due date by a whole period', () => {
     const days = sampleRhythmFacts(ruleOf(), TODAY).visits.map(
-      (visit) => visit.day,
+      (visit) => visit.localDate,
     );
     const gaps = days
       .slice(1)
-      .map(
-        (day, index) =>
-          (Date.parse(day) - Date.parse(days.at(index) ?? day)) / 86_400_000,
-      );
+      .map((day, index) => LocalDate.daysBetween(days.at(index) ?? day, day));
 
     expect(gaps).toEqual([42, 42, 42, 42, 42, 84]);
   });
@@ -469,21 +522,21 @@ describe('the sample run', () => {
 
     // A mark per visit, and one for the due date nobody met.
     expect(marksOf(ruleOf())).toEqual([
-      'kept',
-      'kept',
-      'kept',
-      'kept',
-      'kept',
-      'kept',
-      'protected',
-      'kept',
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Protected,
+      StreakPeriodMark.Kept,
     ]);
     expect(run?.periods.at(-2)).toEqual({
-      mark: 'protected',
+      streakPeriodMark: StreakPeriodMark.Protected,
       on: '2026-08-16',
-      reason: 'freeze',
+      periodReason: FreezeReason.Freeze,
     });
-    expect(run?.phase.kind).toBe('active');
+    expect(run?.streakPhase).toBe(StreakPhase.Active);
     expect(run?.current).toBe(7);
     expect(run?.best).toBe(7);
     expect(run?.freezesBanked).toBe(0);
@@ -492,26 +545,29 @@ describe('the sample run', () => {
 
   it('ends on the track the rule card draws: three kept, the miss, a visit', () => {
     expect(marksOf(ruleOf()).slice(-5)).toEqual([
-      'kept',
-      'kept',
-      'kept',
-      'protected',
-      'kept',
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Protected,
+      StreakPeriodMark.Kept,
     ]);
   });
 
   it('shows the miss itself where nothing covers it, and the count starting over', () => {
     const bare = ruleOf({
-      protections: { enabled: false, maxBanked: 2, earnEvery: 5, startWith: 0 },
+      protectionsEnabled: false,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 0,
     });
     const run = sampleRhythmRun(bare, TODAY);
 
     expect(marksOf(bare).slice(-5)).toEqual([
-      'kept',
-      'kept',
-      'kept',
-      'missed',
-      'kept',
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Missed,
+      StreakPeriodMark.Kept,
     ]);
     expect(run?.current).toBe(1);
     expect(run?.best).toBe(6);
@@ -519,28 +575,29 @@ describe('the sample run', () => {
 
   it('keeps the count across the miss under a rule that holds it', () => {
     const holding = ruleOf({
-      protections: { enabled: false, maxBanked: 2, earnEvery: 5, startWith: 0 },
-      onBreak: 'hold',
+      protectionsEnabled: false,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 0,
+      onBreak: StreakOnBreak.Hold,
     });
 
-    expect(marksOf(holding)).toContain('missed');
+    expect(marksOf(holding)).toContain(StreakPeriodMark.Missed);
     expect(sampleRhythmRun(holding, TODAY)?.current).toBe(7);
   });
 
   it('is on time under a personal interval too: only the one due date is missed', () => {
     const personal = ruleOf({
-      interval: {
-        kind: 'personal',
-        tolerancePct: 50,
-        minDays: 21,
-        maxDays: 70,
-        fallbackDays: 42,
-      },
+      interval: StreakIntervalRule.personal(50, 21, 70, 42),
     });
     const marks = marksOf(personal);
 
-    expect(marks.filter((mark) => mark !== 'kept')).toEqual(['protected']);
-    expect(sampleRhythmRun(personal, TODAY)?.phase.kind).toBe('active');
+    expect(marks.filter((mark) => mark !== StreakPeriodMark.Kept)).toEqual([
+      StreakPeriodMark.Protected,
+    ]);
+    expect(sampleRhythmRun(personal, TODAY)?.streakPhase).toBe(
+      StreakPhase.Active,
+    );
   });
 
   it.each([14, 28, 42, 91, 182])(
@@ -548,14 +605,16 @@ describe('the sample run', () => {
     (days) => {
       const marks = marksOf(
         ruleOf({
-          interval: { kind: 'fixed', days },
+          interval: StreakIntervalRule.fixed(days),
           graceDays: Math.min(7, days - 1),
           riskLeadDays: Math.min(7, days - 1),
           minGapDays: Math.min(7, days - 1),
         }),
       );
 
-      expect(marks.filter((mark) => mark !== 'kept')).toEqual(['protected']);
+      expect(marks.filter((mark) => mark !== StreakPeriodMark.Kept)).toEqual([
+        StreakPeriodMark.Protected,
+      ]);
     },
   );
 

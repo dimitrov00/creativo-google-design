@@ -21,6 +21,7 @@ const seam = vi.hoisted(() => {
     'markArrival',
     'matchWaitlist',
     'projectClientStats',
+    'publishStreakDefinition',
     'rebuildBusy',
     'rebuildCapacity',
     'recordSeatTip',
@@ -34,6 +35,7 @@ const seam = vi.hoisted(() => {
     'transitionAppointment',
     'updateProfile',
     'verifyOtp',
+    'withdrawStreakDefinition',
   ] as const;
   type Call = {
     readonly pipeline: string;
@@ -41,9 +43,15 @@ const seam = vi.hoisted(() => {
     readonly args: readonly unknown[];
   };
   const calls: Call[] = [];
-  const answers = new Map<string, () => unknown>();
+  /** What a pipeline answers — handed the ports it was built over and its arguments. */
+  const answers = new Map<
+    string,
+    (ports: unknown, args: readonly unknown[]) => unknown
+  >();
   const DB = { sentinel: 'db' };
-  const BUNDLE = { sentinel: 'firestore ports' };
+  /** The Firestore bundle's commit port — a case scripts it (`mockImplementationOnce`). */
+  const commit = vi.fn(async (): Promise<unknown> => ({ ok: true, value: {} }));
+  const BUNDLE = { sentinel: 'firestore ports', commit };
   /** Every `firestorePorts(...)` call's arguments — never cleared, the cold-start-once proof. */
   const built: (readonly unknown[])[] = [];
   const pipelines = Object.fromEntries(
@@ -52,7 +60,9 @@ const seam = vi.hoisted(() => {
       vi.fn((ports: unknown) => async (...args: unknown[]) => {
         calls.push({ pipeline, ports, args });
         const answer = answers.get(pipeline);
-        return answer === undefined ? { ok: true, value: {} } : answer();
+        return answer === undefined
+          ? { ok: true, value: {} }
+          : answer(ports, args);
       }),
     ]),
   );
@@ -62,6 +72,7 @@ const seam = vi.hoisted(() => {
     answers,
     DB,
     BUNDLE,
+    commit,
     built,
     pipelines,
     adminFirestore: vi.fn(() => DB),
@@ -86,7 +97,6 @@ vi.mock('@core/pipelines', async (importOriginal) => ({
 }));
 
 import * as main from './main';
-import * as publishStreak from './lib/loyalty/publish-streak-definition';
 
 type PipelineName = (typeof seam.PIPELINES)[number];
 
@@ -133,9 +143,10 @@ const daily = (schedule: string) => ({
  * captured from each export's `__endpoint` before flip 1 deleted the
  * handlers (2026-10-11); the OTP trio's plain `onCall` definitions are
  * pinned the same, now that flip 2 deleted their handlers, and
- * `updateProfile` (flip 2's new callable) declares no option either. A
- * literal: what `firebase deploy` reads, so a changed path, retry flag,
- * timeout, memory or schedule fails here.
+ * `updateProfile` (flip 2's new callable) declares no option either; the
+ * streak publish's plain `onCall` stays as its Phase 3a row declared it
+ * (flip 3). A literal: what `firebase deploy` reads, so a changed path,
+ * retry flag, timeout, memory or schedule fails here.
  */
 const ENDPOINTS = {
   requestOtpChallenge: callable,
@@ -230,6 +241,18 @@ const request = (
 const CLIENT = { uid: 'u-client' } as const;
 const STAFF = { uid: 'u-staff', roles: ['barber'] } as const;
 const SYSADMIN = { uid: 'u-admin', roles: ['sysadmin'] } as const;
+const OWNER = { uid: 'u-owner', roles: ['barber', 'admin'] } as const;
+
+/** §4.4's request, as the admin page sends it — the draft's body is the pipeline's to judge. */
+const STREAK_PUBLISH = {
+  requestId: 'intent-000000000001',
+  streakId: 'cadence',
+  baseVersion: 1,
+  draft: {},
+  effectiveFrom: '2026-10-05',
+  transition: 'grandfather',
+  previewHash: null,
+} as const;
 
 /** A Firestore write event with nothing on either side. */
 const writeEvent = (params: Record<string, string>) => ({
@@ -243,6 +266,20 @@ const tick = { jobName: 'job', scheduleTime: '2026-10-11T00:00:00Z' };
 
 const ok = (value: unknown) => () => ({ ok: true, value });
 
+/** The streak ports' commit, run as the pipeline runs it: a read, a decision, a plan. */
+const commitThrough = (ports: unknown): Promise<unknown> =>
+  (
+    ports as {
+      readonly commit: (
+        read: () => Promise<null>,
+        decide: () => unknown,
+      ) => Promise<unknown>;
+    }
+  ).commit(
+    async () => null,
+    () => ({ ok: true, value: { writes: [] } }),
+  );
+
 const NO_ATTEMPT = { attemptFailure: null, survivedFailure: null } as const;
 
 /** One flip-1 export: what the platform hands it, the pipeline it must run, and the round trip. */
@@ -251,7 +288,7 @@ type Case = {
   readonly input: unknown;
   /** Matched against the pipeline's first argument (`undefined`: it takes none). */
   readonly command: unknown;
-  readonly answer: () => unknown;
+  readonly answer: (ports: unknown, args: readonly unknown[]) => unknown;
   /** What the export answers — `undefined` for a trigger. */
   readonly expected: unknown;
 };
@@ -292,6 +329,33 @@ const FLIPPED: { readonly [name: string]: Case } = {
     },
     answer: ok({ customToken: 'token-2' }),
     expected: { customToken: 'token-2' },
+  },
+  // ── flip 3: loyalty ──
+  publishStreakDefinition: {
+    pipeline: 'publishStreakDefinition',
+    input: request(STREAK_PUBLISH, OWNER),
+    command: {
+      callerUserId: 'u-owner',
+      callerIsAdmin: true,
+      callerActor: { actorRole: 'ADMIN', actorAdminUserId: 'u-owner' },
+      requestId: 'intent-000000000001',
+      streakId: 'cadence',
+      baseVersion: 1,
+      effectiveFrom: '2026-10-05',
+      streakTransition: 'GRANDFATHER',
+      previewHash: null,
+    },
+    answer: ok({
+      version: 2,
+      effectiveFromLocalDate: '2026-10-05',
+      streakRuleDirection: 'LOOSER',
+    }),
+    expected: {
+      kind: 'published',
+      version: 2,
+      effectiveFrom: '2026-10-05',
+      direction: 'looser',
+    },
   },
   updateProfile: {
     pipeline: 'updateProfile',
@@ -554,10 +618,6 @@ const IDENTITY_EXPORTS = [
   'requestOtpChallenge',
   'verifyOtpChallenge',
 ] as const;
-/** Today's handler of the one unflipped export, as the platform runs it. */
-const LEGACY: { readonly [name: string]: Runnable } = {
-  publishStreakDefinition: runnable(publishStreak.publishStreakDefinition),
-};
 const CALLABLE_NAMES: ReadonlySet<string> = new Set(Object.values(Callables));
 
 function caseOf(name: string): Case {
@@ -580,6 +640,7 @@ beforeEach(() => {
   seam.calls.length = 0;
   seam.answers.clear();
   for (const factory of Object.values(seam.pipelines)) factory.mockClear();
+  seam.commit.mockClear();
 });
 
 afterEach(() => {
@@ -614,14 +675,12 @@ describe('main.ts — the composition root', () => {
     expect([...callables].sort()).toEqual(Object.values(Callables).sort());
   });
 
-  it('covers every flipped export with a pipeline case and leaves the streak publish on its handler', () => {
-    expect([...FLIPPED_EXPORTS, ...Object.keys(LEGACY)].sort()).toEqual([
-      ...EXPORTS,
-    ]);
-    expect(FLIPPED_EXPORTS).toHaveLength(29);
+  it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
+    expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
+    expect(FLIPPED_EXPORTS).toHaveLength(30);
   });
 
-  describe('flips 1 and 2 — every export runs exactly its own pipeline', () => {
+  describe('flips 1–3 — every export runs exactly its own pipeline', () => {
     it.each(FLIPPED_EXPORTS)(
       '%s decodes its input, runs its own pipeline over the server ports — and no other — and answers today’s JSON',
       async (name) => {
@@ -632,7 +691,7 @@ describe('main.ts — the composition root', () => {
         expect(seam.calls.map((call) => call.pipeline)).toEqual([own.pipeline]);
         const call = seam.calls[0];
         expect(call?.ports).toMatchObject({
-          ...seam.BUNDLE,
+          sentinel: seam.BUNDLE.sentinel,
           tenantTimeZone: 'Europe/Sofia',
         });
         if (own.command === undefined) expect(call?.args).toEqual([]);
@@ -876,27 +935,129 @@ describe('main.ts — the composition root', () => {
     });
   });
 
-  describe('the one export no flip has reached — still today’s handler', () => {
-    it.each(Object.keys(LEGACY))(
-      '%s hands its input to its own handler — and to no other — and answers what it answers',
-      async (name) => {
-        const spies = new Map(
-          Object.entries(LEGACY).map(([other, handler]) => [
-            other,
-            vi.spyOn(handler, 'run').mockResolvedValue({ answeredBy: other }),
-          ]),
-        );
-        const input = request({ probe: name }, CLIENT);
-        expect(await run(name, input)).toEqual({ answeredBy: name });
-        for (const [other, spy] of spies) {
-          if (other === name) {
-            expect(spy).toHaveBeenCalledTimes(1);
-            expect(spy.mock.calls[0]?.[0]).toBe(input);
-          } else expect(spy, `${name} ran ${other}`).not.toHaveBeenCalled();
-        }
-        expect(seam.calls).toEqual([]);
-      },
-    );
+  describe('flip 3 — the streak publish', () => {
+    it('runs a withdrawal through its own pipeline — and no publish', async () => {
+      seam.answers.set('withdrawStreakDefinition', ok({ version: 2 }));
+      const answer = await run(
+        'publishStreakDefinition',
+        request(
+          {
+            op: 'withdraw',
+            requestId: 'intent-000000000002',
+            streakId: 'cadence',
+            version: 2,
+          },
+          OWNER,
+        ),
+      );
+      expect(answer).toEqual({ kind: 'withdrawn', version: 2 });
+      expect(seam.calls.map((call) => call.pipeline)).toEqual([
+        'withdrawStreakDefinition',
+      ]);
+      expect(seam.calls[0]?.args[0]).toEqual({
+        callerUserId: 'u-owner',
+        callerIsAdmin: true,
+        callerActor: { actorRole: 'ADMIN', actorAdminUserId: 'u-owner' },
+        requestId: 'intent-000000000002',
+        streakId: 'cadence',
+        version: 2,
+      });
+      expect(seam.pipelines['publishStreakDefinition']).not.toHaveBeenCalled();
+    });
+
+    it('hands both acts the server ports, the build-time flags and a settled commit', async () => {
+      await run(
+        'publishStreakDefinition',
+        caseOf('publishStreakDefinition').input,
+      );
+      const ports = seam.calls[0]?.ports as Record<string, unknown>;
+      expect(ports).toMatchObject({
+        sentinel: 'firestore ports',
+        tenantTimeZone: 'Europe/Sofia',
+      });
+      expect(typeof ports['flagOn']).toBe('function');
+      expect(ports['commit']).not.toBe(seam.commit);
+      expect(await commitThrough(ports)).toEqual({ ok: true, value: {} });
+      expect(seam.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers today’s refusals before any pipeline runs — the caller judged before the request is read', async () => {
+      const nobody = await rejection(
+        run('publishStreakDefinition', request(STREAK_PUBLISH, null)),
+      );
+      expect(nobody.code).toBe('unauthenticated');
+      expect(nobody.details).toEqual({
+        code: 'loyalty.streak_publish.unauthenticated',
+        params: {},
+      });
+      expect(
+        await run(
+          'publishStreakDefinition',
+          request({ nonsense: true }, STAFF),
+        ),
+      ).toEqual({ kind: 'refused', code: 'notAdmin', fields: [] });
+      const envelope = await rejection(
+        run(
+          'publishStreakDefinition',
+          request({ ...STREAK_PUBLISH, baseVersion: '1' }, OWNER),
+        ),
+      );
+      expect(envelope.code).toBe('invalid-argument');
+      expect(envelope.details).toEqual({
+        code: 'loyalty.streak_publish.invalid_input',
+        params: { field: 'baseVersion' },
+      });
+      expect(seam.calls).toEqual([]);
+    });
+
+    it('throws internal when the write falls over, and says why where alerting can find it', async () => {
+      const logged = vi
+        .spyOn(logger, 'error')
+        .mockImplementation(() => undefined);
+      seam.commit.mockImplementationOnce(async () => {
+        throw new Error('deadline exceeded');
+      });
+      seam.answers.set('publishStreakDefinition', commitThrough);
+      const refusal = await rejection(
+        run('publishStreakDefinition', caseOf('publishStreakDefinition').input),
+      );
+      expect(refusal.code).toBe('internal');
+      expect(refusal.details).toEqual({
+        code: 'loyalty.streak_publish.store_failed',
+        params: {},
+      });
+      // The cause stays on the server.
+      expect(JSON.stringify(refusal.details)).not.toContain('deadline');
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(logged).toHaveBeenCalledWith('rhythm rule write failed', {
+        error: 'Error: deadline exceeded',
+      });
+    });
+
+    it('logs a version number a concurrent writer took by its code and path (F3-1 (c)), and throws internal', async () => {
+      const logged = vi
+        .spyOn(logger, 'error')
+        .mockImplementation(() => undefined);
+      seam.commit.mockImplementationOnce(async () => ({
+        ok: false,
+        error: RepositoryError.alreadyExists(
+          'streakDefinitions/cadence/versions/000002',
+        ),
+      }));
+      seam.answers.set('publishStreakDefinition', commitThrough);
+      const refusal = await rejection(
+        run('publishStreakDefinition', caseOf('publishStreakDefinition').input),
+      );
+      expect(refusal.code).toBe('internal');
+      expect(refusal.details).toEqual({
+        code: 'loyalty.streak_publish.store_failed',
+        params: {},
+      });
+      expect(logged).toHaveBeenCalledWith('rhythm rule write failed', {
+        error:
+          'REPOSITORY_ALREADY_EXISTS streakDefinitions/cadence/versions/000002',
+      });
+    });
   });
 
   it.each(EXPORTS.filter((name) => CALLABLE_NAMES.has(name)))(
@@ -906,16 +1067,11 @@ describe('main.ts — the composition root', () => {
         .spyOn(logger, 'error')
         .mockImplementation(() => undefined);
       const thrown = new Error(`boom in ${name}`);
-      const legacy = new Map(Object.entries(LEGACY)).get(name);
-      let input: unknown = request({}, CLIENT);
-      if (legacy === undefined) {
-        const own = caseOf(name);
-        seam.answers.set(own.pipeline, () => {
-          throw thrown;
-        });
-        input = own.input;
-      } else vi.spyOn(legacy, 'run').mockRejectedValue(thrown);
-      const answer = await rejection(run(name, input));
+      const own = caseOf(name);
+      seam.answers.set(own.pipeline, () => {
+        throw thrown;
+      });
+      const answer = await rejection(run(name, own.input));
       expect(answer.code).toBe('internal');
       expect(trackError).toHaveBeenCalledTimes(1);
       expect(trackError).toHaveBeenCalledWith(thrown, { callable: name });

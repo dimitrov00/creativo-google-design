@@ -1,8 +1,4 @@
 import type {
-  ActivityKind,
-  PersonalRecordKind,
-} from '@creativo/application/engagement';
-import type {
   StaffEventLine,
   VisitCardVm,
   VisitFilter,
@@ -16,15 +12,16 @@ import type {
   UiStreakPeriod,
 } from '@creativo/ui/controls';
 import type { ClientCardRegion } from './client-card.contracts';
-import type { VisitLeg } from '@core/components';
+import type { JournalFeed, VisitLeg } from '@core/components';
 import type {
   BadgeProgress,
   LoyaltyAccount,
-  LoyaltyCatalog,
   SeasonProgress,
-} from '@creativo/application/engagement';
+} from '@core/entities';
+import type { ValidLoyaltyCatalog } from '@core/systems';
 import type { UiMark, UiMedalState } from '@creativo/ui/controls';
 import type { AchievementScope } from './client-card.contracts';
+import type { RecordKindWord } from './client-card.words';
 // ── The built pages’ view models that survive (moved here in W4 from
 // `client-card.vm.ts`, which is gone): what the new presenters and bodies
 // still read, under the names they always imported from here. ──────────
@@ -272,10 +269,12 @@ export interface StampCardVm {
  * What the three achievements pages compute from. The store holds it once;
  * each page derives its VM in a `computed` of this and its own inputs
  * (`medalsPageVm`, `medalScopeVm`, `medalDetailVm`). Progress is keyed
- * by id, the shape the domain's standing functions take.
+ * by id for the presenters' lookups; the standing systems read its values.
  */
 export interface AchievementsData {
-  readonly catalog: LoyaltyCatalog;
+  /** The published catalogue as `LoyaltyCatalogSystem.validate` answers it: every list in display order. */
+  readonly catalog: ValidLoyaltyCatalog;
+  /** `loyaltyAccounts/{customerId}` as stored (the client RECORD's, D29). */
   readonly account: LoyaltyAccount;
   /** `badgeProgress`, by series id; a family without an entry is not started. */
   readonly progress: ReadonlyMap<string, BadgeProgress>;
@@ -536,7 +535,7 @@ export interface LoyaltyGlanceVm {
 /** G1 — one record on the medals card's quiet line. */
 export interface RecordFactVm {
   /** The `client-record-{kind}` test id. */
-  readonly kind: PersonalRecordKind;
+  readonly kind: RecordKindWord;
   /** «Любима услуга» · «Най-много за година». */
   readonly label: string;
   /** «Фейд» · «13» — the run in primary ink. */
@@ -798,8 +797,8 @@ export interface LedgerPageVm {
   readonly status: SliceStatus;
   /** LB — «Георги Петров · **371 т.**». */
   readonly subline: readonly LinePart[];
-  /** LC — the chosen kind. */
-  readonly filter: ActivityKind;
+  /** LC — the chosen pill (its words and test id are the card's `LEDGER_FILTER_WORDS`). */
+  readonly filter: JournalFeed;
   /** LD, LE — empty under a filter is the filtered empty state. */
   readonly groups: readonly ActivityGroupVm[];
   /** `null` while the first page is loading or failed, and offline with a cursor left. */
@@ -822,7 +821,7 @@ export interface AchievementChipVm {
 export interface RecordCardVm {
   /** The `achievements-record-{id}` test id. */
   readonly id: string;
-  readonly kind: PersonalRecordKind;
+  readonly kind: RecordKindWord;
   /** «Най-дълъг ритъм», sentence case. */
   readonly label: string;
   /** «23» · «Фейд» · «1 март» — a favourite's figure is the SERVICE. */

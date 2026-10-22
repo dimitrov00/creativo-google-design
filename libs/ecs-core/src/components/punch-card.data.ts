@@ -3,7 +3,7 @@ import type { LocalizedText } from './localized-text.data';
 
 /**
  * A stamp card, «4 от 10», titled by what its last stamp pays — an element
- * of `loyaltyAccounts/{uid}.punchCards[]` (`loyalty-document.ts:545-550`).
+ * of `loyaltyAccounts/{customerId}.punchCards[]` (flip 3).
  * `ruleId` names the loyalty engine's rule that stamps it.
  */
 export type PunchCard = {

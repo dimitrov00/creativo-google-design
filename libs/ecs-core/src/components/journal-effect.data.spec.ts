@@ -7,6 +7,7 @@ import {
   GrantRefFields,
   JournalEffect,
   JournalEffectRecord,
+  JournalFeed,
   JournalVisibility,
   LABEL_CODES,
   LabelCode,
@@ -45,6 +46,60 @@ describe('the journal vocabularies', () => {
     expect(new Set(LABEL_CODES).size).toBe(26);
     expect(LABEL_CODES[0]).toBe('points.opening');
     expect(LABEL_CODES.at(-1)).toBe('choice.upcomingBooking');
+  });
+});
+
+describe('JournalFeed — the activity feed’s pills and the effects each reads', () => {
+  const PILLS: readonly JournalFeed[] = [
+    JournalFeed.All,
+    JournalFeed.Points,
+    JournalFeed.Rewards,
+    JournalFeed.Status,
+  ];
+
+  it('declares the four pills SCREAMING', () => {
+    expect(PILLS).toEqual(['ALL', 'POINTS', 'REWARDS', 'STATUS']);
+  });
+
+  it('reads today’s effects per pill, in the feed’s order', () => {
+    // Today's table, pill by pill (the lowercase `all`/`points`/`rewards`/
+    // `status` rows of the legacy activity reader), on the SCREAMING tags.
+    expect(JournalFeed.effectsOf(JournalFeed.All)).toEqual([
+      'POINTS',
+      'ACHIEVEMENT',
+      'TIER',
+      'REWARD',
+      'REDEMPTION',
+    ]);
+    expect(JournalFeed.effectsOf(JournalFeed.Points)).toEqual(['POINTS']);
+    expect(JournalFeed.effectsOf(JournalFeed.Rewards)).toEqual([
+      'REWARD',
+      'REDEMPTION',
+    ]);
+    expect(JournalFeed.effectsOf(JournalFeed.Status)).toEqual(['TIER']);
+  });
+
+  it('never reads a row the feed does not draw: every pill is a part of «Всички»', () => {
+    const all = JournalFeed.effectsOf(JournalFeed.All);
+    for (const pill of PILLS) {
+      for (const effect of JournalFeed.effectsOf(pill)) {
+        expect(all).toContain(effect);
+      }
+    }
+    for (const silent of [
+      JournalEffect.Streak,
+      JournalEffect.Freeze,
+      JournalEffect.Pause,
+      JournalEffect.VisitOutcome,
+    ]) {
+      expect(all).not.toContain(silent);
+    }
+  });
+
+  it('hands out a fresh list: a caller that edits its filter cannot rewrite the table', () => {
+    const first = JournalFeed.effectsOf(JournalFeed.Rewards);
+    expect(JournalFeed.effectsOf(JournalFeed.Rewards)).not.toBe(first);
+    expect(JournalFeed.effectsOf(JournalFeed.Rewards)).toEqual(first);
   });
 });
 

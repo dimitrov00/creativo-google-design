@@ -14,12 +14,15 @@ import type {
 /**
  * `streakDefinitions/{streakId}/versions/{version:06}` — ONE publish,
  * immutable: the FLAT rule at the document ROOT (there is no `rule` field,
- * §3.1) beside how it came to be. `publishedByUserId` is the account that
- * published (was `publishedBy`), `requestId` the intent that made it (a
- * retry writes nothing), `streakTransition` / `streakRuleDirection` were
- * `transition` / `direction` (N15), and `withdrawnAtUtcMs` the one field
- * ever set later — a scheduled version called off, or replaced, before its
- * day. The id IS the version: a body numbered otherwise is malformed.
+ * §3.1) beside how it came to be. `publishedByUserId` is the ACCOUNT that
+ * published (D29: an account act, never a client record), `requestId` the
+ * intent that made it (a retry writes nothing), `streakTransition` /
+ * `streakRuleDirection` what it does to the runs and whom it favoured, and
+ * `withdrawnAtUtcMs` the one field ever set later — a scheduled version
+ * called off, or replaced, before its day. The id IS the version
+ * (`StreakDefinitionVersionId.forVersion`): every writer keeps
+ * `id == forVersion(version)`, so the newest document by `version` is the
+ * highest number ever written.
  */
 export type StreakDefinitionVersion = StreakRule & {
   readonly id: StreakDefinitionVersionId;

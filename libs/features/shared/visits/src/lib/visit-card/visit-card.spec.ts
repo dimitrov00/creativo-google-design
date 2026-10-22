@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { loyaltyFixtures } from '@creativo/application/engagement/testing';
+import { FIXTURE_TODAY } from '@core/testing';
 import type { UiCardPadding, UiCardTone } from '@creativo/ui/controls';
 import { appCatalogue } from '../testing/app-catalogue';
 import { cssRule } from '../testing/css-rule';
@@ -49,7 +49,7 @@ const CARD_WORDS = {
   name: (label: string, sentence: string) =>
     BG('visits.card.name', { label, sentence }),
 };
-const NOW_MS = visitsNowMs(loyaltyFixtures.today);
+const NOW_MS = visitsNowMs(FIXTURE_TODAY);
 const CSS = readFileSync(resolve(__dirname, 'visit-card.css'), 'utf8');
 const NBSP = ' ';
 
@@ -107,7 +107,7 @@ function waitingRequest(): VisitCardVm {
     georgiWaitlistRequest(),
     {
       words: visitWaitlistWordsOf(BG),
-      today: loyaltyFixtures.today,
+      today: FIXTURE_TODAY,
       locale: 'bg',
       otherRequests: 1,
       testId: 'client-visit-waitlist',

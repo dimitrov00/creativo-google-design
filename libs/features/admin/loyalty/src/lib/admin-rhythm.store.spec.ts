@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import type { ClientStatsPagePorts } from '@core/ports';
 import { resolve } from 'node:path';
 import { Injectable } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
@@ -10,54 +9,88 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { NEVER, Observable, of } from 'rxjs';
+import { take } from 'rxjs/operators';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type Result, ZonedDateTime } from '@creativo/application/booking';
-import { CLIENT_STATS_READ_PORTS } from '@creativo/infrastructure/firebase-app';
-import { ClientStats, PolicyPassStamp } from '@core/components';
-import type { ClientStatsRecord } from '@core/entities';
+import { ZonedDateTime } from '@creativo/application/booking';
+import {
+  CLIENT_STATS_READ_PORTS,
+  STREAK_DEFINITION_PORTS,
+  STREAK_PUBLISH_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import {
+  ClientStats,
+  PolicyPassStamp,
+  StreakExcuse,
+  StreakIntervalRule,
+  StreakOnBreak,
+  StreakPeriodMark,
+  StreakPhase,
+  StreakPublishCall,
+  StreakQualifier,
+  StreakQualifierRule,
+  StreakRule,
+  type StreakRuleInput,
+  StreakRuleDirection,
+  StreakRuleParameter,
+  StreakTransition,
+} from '@core/components';
+import type { ClientStatsRecord, StreakDefinition } from '@core/entities';
+import type {
+  ClientStatsPagePorts,
+  StreakDefinitionPorts,
+  StreakPublishGatewayPorts,
+} from '@core/ports';
 import {
   AppointmentId,
   CustomerId,
   LocalDate,
   type MinuteOfDay,
-  RepositoryError as StatsReadError,
-  Result as PlainResult,
+  PublishRequestId,
+  RepositoryError,
+  RepositoryErrorCode,
+  Result,
+  ServiceId,
+  StreakPublishError,
+  StreakPublishErrorCode,
+  StreakRuleField,
 } from '@core/primitives';
 import {
+  type StreakNoticePolicy,
+  StreakPreviewOutcome,
+  StreakPreviewUnavailable,
+  StreakRuleSystem,
+} from '@core/systems';
+import {
+  type StreakWorld,
   memoryClientStatsReadPorts,
+  memoryStreakDefinitionPorts,
+  memoryStreakPublishGatewayPorts,
+  memoryStreakWorld,
   minute,
+  streakDefinitionFixture,
+  streakDefinitionVersionFixture,
   unwrapOk,
   utcMs,
 } from '@core/testing';
 import {
-  type PublishStreakDefinition,
-  type PublishStreakDefinitionError,
-  type PublishedStreakDefinition,
-  STREAK_DEFINITION_REPOSITORY,
-  STREAK_LIMITS,
-  StreakDefinition,
-  type StreakDefinitionProps,
-  type StreakDefinitionRepository,
-  type StreakDefinitionSchedule,
-  type StreakDefinitionVersion,
-} from '@creativo/application/engagement';
-import { InMemoryStreakDefinitionRepository } from '@creativo/application/engagement/testing';
-import {
   CLOCK,
   ID_GENERATOR,
-  RepositoryError,
   provideFeatureFlags,
 } from '@creativo/application/shared';
 import {
   ADMIN_RHYTHM_CHOICES,
+  ADMIN_RHYTHM_HISTORY_LIMIT,
   ADMIN_RHYTHM_NOTICE_DAYS,
   ADMIN_RHYTHM_READ_TIMEOUT_MS,
   ADMIN_RHYTHM_STREAK_ID,
   type AdminRhythmPatch,
   AdminRhythmStore,
+  fixedInterval,
   patchedRhythmDraft,
+  personalInterval,
   rhythmBoundsOf,
 } from './admin-rhythm.store';
+import { type RhythmRecorder, rhythmRecorder } from './testing/rhythm-recorder';
 
 // ── The app's own words ──────────────────────────────────────────────────
 
@@ -91,6 +124,9 @@ const TODAY = '2026-09-28';
 const TOMORROW = '2026-09-29';
 const FIRST_OF_MONTH = '2026-10-01';
 
+/** A shop day the fixtures name, branded. */
+const day = (raw: string): LocalDate => unwrapOk(LocalDate.parse(raw));
+
 /** A visit on the shop's wall clock — the day and minute the statistics hold (Law 7.3). */
 interface Reading {
   readonly localDate: LocalDate;
@@ -100,7 +136,7 @@ interface Reading {
 /** Noon in Sofia, that many days before today, as the statistics hold a visit. */
 function daysAgo(days: number): Reading {
   return {
-    localDate: LocalDate.addDays(unwrapOk(LocalDate.parse(TODAY)), -days),
+    localDate: LocalDate.addDays(day(TODAY), -days),
     startMinutes: minute(12 * 60),
   };
 }
@@ -135,16 +171,16 @@ function statsOf(id: string, visits: readonly Reading[]): ClientStatsRecord {
 function statsReader(records: readonly ClientStatsRecord[] = []) {
   const memory = memoryClientStatsReadPorts({ stats: records });
   const calls: { readonly limit: number; readonly after: string | null }[] = [];
-  let failure: StatsReadError | null = null;
+  let failure: RepositoryError | null = null;
   const reader = {
     calls,
     pageClientStats: (async (after, limit) => {
       calls.push({ limit, after });
       return failure === null
         ? memory.pageClientStats(after, limit)
-        : PlainResult.err(failure);
+        : Result.err(failure);
     }) satisfies ClientStatsPagePorts['pageClientStats'],
-    failWith(error: StatsReadError = StatsReadError.unavailable()) {
+    failWith(error: RepositoryError = RepositoryError.unavailable()) {
       failure = error;
       return reader;
     },
@@ -173,134 +209,140 @@ function shop(): ClientStatsRecord[] {
   ];
 }
 
-// ── The rule's port, recorded and held ───────────────────────────────────
-
-type Head = Result<StreakDefinitionSchedule | null, RepositoryError>;
+// ── The rule's ports, recorded and held ──────────────────────────────────
 
 /**
- * The reference repository behind a recorder: what was asked of the port,
- * and two holds a spec can set, so either order the real adapter answers
- * in (the head before the write's answer, or after it) can be played.
+ * The server's notice policy (the gateway double's pipeline judges by it):
+ * no client sees the rhythm yet, 30 days of notice once one does.
  */
-class Recorded implements StreakDefinitionRepository {
-  readonly published: PublishStreakDefinition[] = [];
-  readonly withdrawn: {
-    readonly version: number;
-    readonly requestId: string;
-  }[] = [];
-  observed = 0;
-  histories = 0;
-  private holdingHeads = false;
-  private readonly heads: (() => void)[] = [];
-  private gate: Promise<void> | null = null;
-  private open: (() => void) | null = null;
+const SERVER_POLICY: StreakNoticePolicy = {
+  clientsSeeRhythm: false,
+  noticeDays: 30,
+};
 
-  constructor(readonly inner: InMemoryStreakDefinitionRepository) {}
+/**
+ * The rule's two bundles over ONE world — the head stream
+ * (`memoryStreakDefinitionPorts`) and the gateway over the real publish
+ * pipeline (`memoryStreakPublishGatewayPorts`) — behind the recorder, and
+ * the server's clock, which a spec moves (`advanceTo`): a version that
+ * waited is in force from its own day on, with no write.
+ */
+type Rules = RhythmRecorder & {
+  readonly world: StreakWorld;
+  readonly gateway: StreakPublishGatewayPorts;
+  readonly advanceTo: (today: string) => void;
+};
 
-  /** Heads wait here until `tellHeads()`. */
-  holdHeads(): this {
-    this.holdingHeads = true;
-    return this;
-  }
-
-  tellHeads(): void {
-    this.holdingHeads = false;
-    for (const tell of this.heads.splice(0)) tell();
-  }
-
-  /** Writes wait here, unanswered, until `answerWrites()`. */
-  holdWrites(): this {
-    this.gate = new Promise((open) => {
-      this.open = open;
-    });
-    return this;
-  }
-
-  answerWrites(): void {
-    this.open?.();
-    this.gate = null;
-    this.open = null;
-  }
-
-  observe(streakId: string): Observable<Head> {
-    this.observed += 1;
-    return new Observable<Head>((subscriber) => {
-      const inner = this.inner.observe(streakId).subscribe((head) => {
-        if (this.holdingHeads) this.heads.push(() => subscriber.next(head));
-        else subscriber.next(head);
-      });
-      return () => inner.unsubscribe();
-    });
-  }
-
-  listVersions(
-    streakId: string,
-    limit: number,
-  ): Promise<Result<readonly StreakDefinitionVersion[], RepositoryError>> {
-    this.histories += 1;
-    return this.inner.listVersions(streakId, limit);
-  }
-
-  async publish(
-    request: PublishStreakDefinition,
-  ): Promise<Result<PublishedStreakDefinition, PublishStreakDefinitionError>> {
-    this.published.push(request);
-    if (this.gate !== null) await this.gate;
-    return this.inner.publish(request);
-  }
-
-  async withdraw(
-    streakId: string,
-    version: number,
-    requestId: string,
-  ): Promise<Result<void, PublishStreakDefinitionError>> {
-    this.withdrawn.push({ version, requestId });
-    if (this.gate !== null) await this.gate;
-    return this.inner.withdraw(streakId, version, requestId);
-  }
+function rulesOver(world: StreakWorld): Rules {
+  // 09:00 UTC on the shop's day: the instant of a write.
+  const server = { now: utcMs(`${TODAY}T09:00:00.000Z`) };
+  const gateway = memoryStreakPublishGatewayPorts(world, {
+    nowUtcMs: () => server.now,
+    policy: SERVER_POLICY,
+  });
+  const recorder = rhythmRecorder(memoryStreakDefinitionPorts(world), gateway);
+  return Object.assign(recorder, {
+    world,
+    gateway,
+    advanceTo: (today: string) => {
+      server.now = utcMs(`${today}T09:00:00.000Z`);
+      recorder.tell();
+    },
+  });
 }
 
-const seeded = (): Recorded =>
-  new Recorded(InMemoryStreakDefinitionRepository.seeded({ today: TODAY }));
+/** The fixtures' rule, with the history the seed gives it: version 1, which the shop opened with. */
+const seeded = (): Rules =>
+  rulesOver(
+    memoryStreakWorld({
+      heads: [streakDefinitionFixture()],
+      versions: [
+        {
+          streakId: StreakRule.DEFAULT_DEFINITION_ID,
+          version: streakDefinitionVersionFixture(),
+        },
+      ],
+    }),
+  );
 
 /** A shop that has published no rule yet. */
-const unpublished = (): Recorded =>
-  new Recorded(new InMemoryStreakDefinitionRepository({}, { today: TODAY }));
+const unpublished = (): Rules => rulesOver(memoryStreakWorld());
 
-/** Somebody else's publish: straight to the port, under their own intent. */
+/** Heads wait until `tellHeads()`. */
+const holdingHeads = (rules: Rules): Rules => {
+  rules.holdHeads();
+  return rules;
+};
+
+/** Writes wait, unanswered, until `answerWrites()`. */
+const holdingWrites = (rules: Rules): Rules => {
+  rules.holdWrites();
+  return rules;
+};
+
+/** The head as the world holds it now. */
+function headIn(world: StreakWorld): StreakDefinition | null {
+  let head: StreakDefinition | null = null;
+  memoryStreakDefinitionPorts(world)
+    .observeStreakDefinitionHead(ADMIN_RHYTHM_STREAK_ID)
+    .pipe(take(1))
+    .subscribe((read) => {
+      if (read.ok) head = read.value;
+    });
+  return head;
+}
+
+/** A revision of the recommended rule: any option figure, the interval or the qualifier whole. */
+type RulePatch = Partial<
+  Omit<StreakRule.Options, 'version' | 'effectiveFromLocalDate'>
+> & {
+  readonly interval?: StreakIntervalRule;
+  readonly qualifier?: StreakQualifierRule;
+};
+
+/** Somebody else's publish: the recommended rule revised, straight to the gateway, under their own intent. */
 async function elsewhere(
-  rules: Recorded,
-  patch: Partial<StreakDefinitionProps>,
+  rules: Rules,
+  patch: RulePatch,
   effectiveFrom: string,
   baseVersion: number,
 ): Promise<void> {
-  const next = StreakDefinition.default().revise(patch, effectiveFrom);
-  if (next.isFailure()) throw new Error('the other rule was refused');
-  const written = await rules.inner.publish({
-    requestId: `elsewhere-${baseVersion}-${effectiveFrom}`,
+  const { interval, qualifier, ...options } = patch;
+  const next = StreakRule.parse({
+    ...StreakRule.DEFAULT,
+    ...options,
+    ...(interval ?? StreakIntervalRule.of(StreakRule.DEFAULT)),
+    ...(qualifier ?? StreakQualifierRule.of(StreakRule.DEFAULT)),
+    version: baseVersion + 1,
+    effectiveFromLocalDate: effectiveFrom,
+  });
+  if (!next.ok) throw new Error('the other rule was refused');
+  const written = await rules.gateway.publishStreakRule({
+    requestId: PublishRequestId.of(`elsewhere-${baseVersion}-${effectiveFrom}`),
+    streakId: ADMIN_RHYTHM_STREAK_ID,
     baseVersion,
-    definition: next.value,
-    transition: 'grandfather',
+    rule: next.value,
+    streakTransition: StreakTransition.Grandfather,
     previewHash: null,
   });
-  if (written.isFailure()) throw written.error;
+  if (!written.ok) throw new Error(written.error.errorCode);
 }
 
 // ── The rig ──────────────────────────────────────────────────────────────
 
 interface RigOptions {
   readonly flags?: Readonly<Record<string, boolean>>;
-  /** The rule's port, recorded. The seeded rule unless said. */
-  readonly rules?: Recorded;
-  /** What is bound in place of `rules`; `null` binds no port at all. */
-  readonly port?: StreakDefinitionRepository | null;
+  /** The rule's ports, recorded. The seeded rule unless said. */
+  readonly rules?: Rules;
+  /** What is bound to both rule tokens in place of `rules`; `null` binds no port at all. */
+  readonly port?: (StreakDefinitionPorts & StreakPublishGatewayPorts) | null;
   /** What is bound in place of the three clients' statistics; `null` binds none. */
   readonly directory?: ClientStatsPagePorts | null;
 }
 
 function rig(options: RigOptions = {}) {
   const rules = options.rules ?? seeded();
-  const port = options.port === undefined ? rules : options.port;
+  const port = options.port === undefined ? rules.ports : options.port;
   const stats = statsReader(shop());
   const directory = options.directory === undefined ? stats : options.directory;
   const clock = { now: NOW };
@@ -335,7 +377,8 @@ function rig(options: RigOptions = {}) {
           },
         },
       },
-      ...bind(STREAK_DEFINITION_REPOSITORY, port),
+      ...bind(STREAK_DEFINITION_PORTS, port),
+      ...bind(STREAK_PUBLISH_PORTS, port),
       ...bind(CLIENT_STATS_READ_PORTS, directory),
     ],
   });
@@ -357,23 +400,33 @@ async function loaded(options: RigOptions = {}) {
   return made;
 }
 
-const fixed = (
-  days: number,
-): { readonly kind: 'fixed'; readonly days: number } => ({
-  kind: 'fixed',
-  days,
-});
+/** The interval a rule (or a draft, or a call's rule) holds, as a slice of its own. */
+const intervalOf = (rule: StreakIntervalRule | undefined) =>
+  rule === undefined ? undefined : StreakIntervalRule.of(rule);
 
-const RECOMMENDED = StreakDefinition.default().toProps();
+const fixed = (days: number) => fixedInterval(days);
+
+/** The recommended rule, as the form holds it. */
+const RECOMMENDED: StreakRuleInput = StreakRule.DEFAULT;
 const LOOSER: AdminRhythmPatch = { interval: fixed(49) };
 const STRICTER: AdminRhythmPatch = { interval: fixed(35) };
 const LONG: AdminRhythmPatch = { interval: fixed(84) };
 const NEUTRAL: AdminRhythmPatch = { riskLeadDays: 3 };
 
+/** «Посещение с избрани услуги», by id. */
+const services = (...ids: readonly string[]): StreakQualifierRule =>
+  StreakQualifierRule.services(ids.map((id) => ServiceId.of(id)));
+
+/** The rule moved under the draft — the refusal the page words as «променено от друг». */
+const STALE = { errorCode: StreakPublishErrorCode.Stale };
+
+/** A write that got no answer. */
+const UNANSWERED = { ok: false, error: RepositoryError.unavailable() };
+
 const numbersOf = (store: AdminRhythmStore): readonly number[] => {
   const versions = store.versions();
   return versions.status === 'ready'
-    ? versions.data.map((version) => version.definition.version)
+    ? versions.data.map((version) => version.version)
     : [];
 };
 
@@ -386,7 +439,7 @@ afterEach(() => {
 describe('patchedRhythmDraft', () => {
   const patched = (
     patch: AdminRhythmPatch,
-    draft: StreakDefinitionProps = RECOMMENDED,
+    draft: StreakRuleInput = RECOMMENDED,
   ) => patchedRhythmDraft(draft, patch);
 
   it('answers a new draft and leaves the one in hand as it was', () => {
@@ -409,10 +462,11 @@ describe('patchedRhythmDraft', () => {
   it('never moves a version’s identity', () => {
     const next = patched({ enabled: false, graceDays: 3 });
 
-    expect(next.id).toBe(RECOMMENDED.id);
-    expect(next.name).toEqual(RECOMMENDED.name);
+    // The id and the name are the head's: a draft carries neither.
     expect(next.version).toBe(RECOMMENDED.version);
-    expect(next.effectiveFrom).toBe(RECOMMENDED.effectiveFrom);
+    expect(next.effectiveFromLocalDate).toBe(
+      RECOMMENDED.effectiveFromLocalDate,
+    );
   });
 
   it.each([
@@ -421,7 +475,7 @@ describe('patchedRhythmDraft', () => {
     ['the interval, a fraction', { interval: fixed(42.4) }, 42],
     ['the interval, no number', { interval: fixed(Number.NaN) }, 42],
   ] as const)('clamps %s', (_, patch, days) => {
-    expect(patched(patch).interval).toEqual({ kind: 'fixed', days });
+    expect(intervalOf(patched(patch))).toEqual(StreakIntervalRule.fixed(days));
   });
 
   it.each([
@@ -441,41 +495,50 @@ describe('patchedRhythmDraft', () => {
   });
 
   it('clamps each part’s figures to the domain’s range', () => {
-    expect(
-      patched({ bookingHold: { maxDaysPastDue: 99 } }).bookingHold,
-    ).toEqual({ enabled: true, maxDaysPastDue: 28 });
-    expect(
-      patched({ bookingHold: { maxDaysPastDue: -5 } }).bookingHold,
-    ).toEqual({ enabled: true, maxDaysPastDue: 0 });
-    expect(
-      patched({ protections: { maxBanked: 9, earnEvery: 0 } }).protections,
-    ).toEqual({ enabled: true, maxBanked: 5, earnEvery: 1, startWith: 0 });
-    expect(patched({ protections: { earnEvery: 99 } }).protections).toEqual({
-      enabled: true,
-      maxBanked: 2,
-      earnEvery: 24,
-      startWith: 0,
+    expect(patched({ bookingHoldMaxDaysPastDue: 99 })).toMatchObject({
+      bookingHoldEnabled: true,
+      bookingHoldMaxDaysPastDue: 28,
+    });
+    expect(patched({ bookingHoldMaxDaysPastDue: -5 })).toMatchObject({
+      bookingHoldEnabled: true,
+      bookingHoldMaxDaysPastDue: 0,
     });
     expect(
-      patched({ clientPause: { enabled: true, maxDaysPerYear: 999 } })
-        .clientPause,
-    ).toEqual({ enabled: true, maxDaysPerYear: 180 });
-    expect(patched({ repair: { windowDays: 0, perYear: 9 } }).repair).toEqual({
-      enabled: true,
-      windowDays: 1,
-      perYear: 4,
+      patched({ protectionsMaxBanked: 9, protectionsEarnEvery: 0 }),
+    ).toMatchObject({
+      protectionsEnabled: true,
+      protectionsMaxBanked: 5,
+      protectionsEarnEvery: 1,
+      protectionsStartWith: 0,
+    });
+    expect(patched({ protectionsEarnEvery: 99 })).toMatchObject({
+      protectionsEnabled: true,
+      protectionsMaxBanked: 2,
+      protectionsEarnEvery: 24,
+      protectionsStartWith: 0,
+    });
+    expect(
+      patched({ clientPauseEnabled: true, clientPauseMaxDaysPerYear: 999 }),
+    ).toMatchObject({
+      clientPauseEnabled: true,
+      clientPauseMaxDaysPerYear: 180,
+    });
+    expect(patched({ repairWindowDays: 0, repairPerYear: 9 })).toMatchObject({
+      repairEnabled: true,
+      repairWindowDays: 1,
+      repairPerYear: 4,
     });
   });
 
   it('changes one figure of a part and keeps the rest of it', () => {
-    expect(patched({ bookingHold: { enabled: false } }).bookingHold).toEqual({
-      enabled: false,
-      maxDaysPastDue: 14,
+    expect(patched({ bookingHoldEnabled: false })).toMatchObject({
+      bookingHoldEnabled: false,
+      bookingHoldMaxDaysPastDue: 14,
     });
-    expect(patched({ repair: { windowDays: 21 } }).repair).toEqual({
-      enabled: true,
-      windowDays: 21,
-      perYear: 1,
+    expect(patched({ repairWindowDays: 21 })).toMatchObject({
+      repairEnabled: true,
+      repairWindowDays: 21,
+      repairPerYear: 1,
     });
   });
 
@@ -483,7 +546,7 @@ describe('patchedRhythmDraft', () => {
     const long = patched({ graceDays: 21, riskLeadDays: 14, minGapDays: 14 });
     const short = patched({ interval: fixed(14) }, long);
 
-    expect(short.interval).toEqual({ kind: 'fixed', days: 14 });
+    expect(intervalOf(short)).toEqual(StreakIntervalRule.fixed(14));
     expect(short.graceDays).toBe(13);
     expect(short.minGapDays).toBe(13);
     // The cue is a menu: the longest it offers that fits, never «13 дни».
@@ -500,75 +563,86 @@ describe('patchedRhythmDraft', () => {
   });
 
   it('holds what a run starts with to what the reserve holds', () => {
-    expect(
-      patched({ protections: { startWith: 4 } }).protections.startWith,
-    ).toBe(2);
-    const one = patched({ protections: { startWith: 1 } });
-    expect(one.protections.startWith).toBe(1);
-    expect(patched({ protections: { maxBanked: 0 } }, one).protections).toEqual(
-      { enabled: true, maxBanked: 0, earnEvery: 5, startWith: 0 },
-    );
+    expect(patched({ protectionsStartWith: 4 }).protectionsStartWith).toBe(2);
+    const one = patched({ protectionsStartWith: 1 });
+    expect(one.protectionsStartWith).toBe(1);
+    expect(patched({ protectionsMaxBanked: 0 }, one)).toMatchObject({
+      protectionsEnabled: true,
+      protectionsMaxBanked: 0,
+      protectionsEarnEvery: 5,
+      protectionsStartWith: 0,
+    });
   });
 
   it('opens a personal interval on the recommended figures, around the interval it had', () => {
-    expect(patched({ interval: { kind: 'personal' } }).interval).toEqual({
-      kind: 'personal',
-      tolerancePct: 50,
-      minDays: 21,
-      maxDays: 70,
-      fallbackDays: 42,
-    });
+    expect(intervalOf(patched({ interval: personalInterval() }))).toEqual(
+      StreakIntervalRule.personal(50, 21, 70, 42),
+    );
     // A fixed interval outside the recommended clamp lands on its edge.
     expect(
-      patched({ interval: { kind: 'personal' } }, patched(LONG)).interval,
-    ).toMatchObject({ minDays: 21, maxDays: 70, fallbackDays: 70 });
+      patched({ interval: personalInterval() }, patched(LONG)),
+    ).toMatchObject({
+      intervalMinDays: 21,
+      intervalMaxDays: 70,
+      intervalFallbackDays: 70,
+    });
   });
 
   it('lets the figure in hand win over the other end of the clamp', () => {
-    const personal = patched({ interval: { kind: 'personal' } });
+    const personal = patched({ interval: personalInterval() });
 
     expect(
-      patched({ interval: { kind: 'personal', minDays: 84 } }, personal)
-        .interval,
-    ).toEqual({
-      kind: 'personal',
-      tolerancePct: 50,
-      minDays: 84,
-      maxDays: 84,
-      fallbackDays: 84,
-    });
+      intervalOf(
+        patched(
+          { interval: personalInterval({ intervalMinDays: 84 }) },
+          personal,
+        ),
+      ),
+    ).toEqual(StreakIntervalRule.personal(50, 84, 84, 84));
     expect(
-      patched({ interval: { kind: 'personal', maxDays: 14 } }, personal)
-        .interval,
-    ).toEqual({
-      kind: 'personal',
-      tolerancePct: 50,
-      minDays: 14,
-      maxDays: 14,
-      fallbackDays: 14,
-    });
+      intervalOf(
+        patched(
+          { interval: personalInterval({ intervalMaxDays: 14 }) },
+          personal,
+        ),
+      ),
+    ).toEqual(StreakIntervalRule.personal(50, 14, 14, 14));
   });
 
   it('keeps the newcomer’s interval inside the clamp', () => {
-    const personal = patched({ interval: { kind: 'personal' } });
+    const personal = patched({ interval: personalInterval() });
 
     expect(
-      patched({ interval: { kind: 'personal', fallbackDays: 7 } }, personal)
-        .interval,
-    ).toMatchObject({ minDays: 21, maxDays: 70, fallbackDays: 21 });
+      patched(
+        { interval: personalInterval({ intervalFallbackDays: 7 }) },
+        personal,
+      ),
+    ).toMatchObject({
+      intervalMinDays: 21,
+      intervalMaxDays: 70,
+      intervalFallbackDays: 21,
+    });
     expect(
-      patched({ interval: { kind: 'personal', fallbackDays: 120 } }, personal)
-        .interval,
-    ).toMatchObject({ minDays: 21, maxDays: 70, fallbackDays: 70 });
+      patched(
+        { interval: personalInterval({ intervalFallbackDays: 120 }) },
+        personal,
+      ),
+    ).toMatchObject({
+      intervalMinDays: 21,
+      intervalMaxDays: 70,
+      intervalFallbackDays: 70,
+    });
     expect(
-      patched({ interval: { kind: 'personal', tolerancePct: 140 } }, personal)
-        .interval,
-    ).toMatchObject({ tolerancePct: 100 });
+      patched(
+        { interval: personalInterval({ intervalTolerancePct: 140 }) },
+        personal,
+      ),
+    ).toMatchObject({ intervalTolerancePct: 100 });
   });
 
   it('holds grace under the personal interval’s FLOOR, the shortest period it opens', () => {
     const personal = patched({
-      interval: { kind: 'personal', minDays: 14 },
+      interval: personalInterval({ intervalMinDays: 14 }),
       graceDays: 21,
     });
 
@@ -577,42 +651,49 @@ describe('patchedRhythmDraft', () => {
 
   it('goes back to a fixed interval on the newcomer’s, or on the one it remembers', () => {
     const personal = patched({
-      interval: { kind: 'personal', fallbackDays: 56 },
+      interval: personalInterval({ intervalFallbackDays: 56 }),
     });
 
-    expect(patched({ interval: { kind: 'fixed' } }, personal).interval).toEqual(
-      { kind: 'fixed', days: 56 },
-    );
     expect(
-      patchedRhythmDraft(
-        personal,
-        { interval: { kind: 'fixed' } },
-        { fixed: { kind: 'fixed', days: 35 } },
-      ).interval,
-    ).toEqual({ kind: 'fixed', days: 35 });
+      intervalOf(patched({ interval: fixedInterval() }, personal)),
+    ).toEqual(StreakIntervalRule.fixed(56));
+    expect(
+      intervalOf(
+        patchedRhythmDraft(
+          personal,
+          { interval: fixedInterval() },
+          { fixed: StreakIntervalRule.fixed(35), personal: null },
+        ),
+      ),
+    ).toEqual(StreakIntervalRule.fixed(35));
   });
 
   it('holds the excuses to the rule’s vocabulary, in its order, each once', () => {
     expect(
       patched({
         excuses: [
-          'closedDays',
-          'shopClosure',
-          'closedDays',
-          'holiday' as never,
+          StreakExcuse.ClosedDays,
+          StreakExcuse.ShopClosure,
+          StreakExcuse.ClosedDays,
+          'HOLIDAY' as never,
         ],
       }).excuses,
-    ).toEqual(['shopClosure', 'closedDays']);
+    ).toEqual([StreakExcuse.ShopClosure, StreakExcuse.ClosedDays]);
     expect(patched({ excuses: [] }).excuses).toEqual([]);
   });
 
   it('takes the choice of what counts as it is handed, in a list of its own', () => {
-    const serviceIds = ['svc-fade', 'svc-beard'];
-    const next = patched({ qualifier: { kind: 'services', serviceIds } });
+    const serviceIds = [ServiceId.of('svc-fade'), ServiceId.of('svc-beard')];
+    const next = patched({
+      qualifier: StreakQualifierRule.services(serviceIds),
+    });
 
-    expect(next.qualifier).toEqual({ kind: 'services', serviceIds });
+    expect(StreakQualifierRule.of(next)).toEqual(
+      StreakQualifierRule.services(serviceIds),
+    );
     expect(
-      next.qualifier.kind === 'services' && next.qualifier.serviceIds,
+      next.streakQualifier === StreakQualifier.Services &&
+        next.qualifierServiceIds,
     ).not.toBe(serviceIds);
   });
 
@@ -627,30 +708,39 @@ describe('patchedRhythmDraft', () => {
     const flip = (): boolean => random() < 0.5;
     const changes: (() => AdminRhythmPatch)[] = [
       () => ({ interval: fixed(wild()) }),
-      () => ({ interval: { kind: 'personal', minDays: wild() } }),
-      () => ({ interval: { kind: 'personal', maxDays: wild() } }),
-      () => ({ interval: { kind: 'personal', fallbackDays: wild() } }),
-      () => ({ interval: { kind: 'personal', tolerancePct: wild() } }),
-      () => ({ interval: { kind: flip() ? 'fixed' : 'personal' } }),
+      () => ({ interval: personalInterval({ intervalMinDays: wild() }) }),
+      () => ({ interval: personalInterval({ intervalMaxDays: wild() }) }),
+      () => ({ interval: personalInterval({ intervalFallbackDays: wild() }) }),
+      () => ({ interval: personalInterval({ intervalTolerancePct: wild() }) }),
+      () => ({ interval: flip() ? fixedInterval() : personalInterval() }),
       () => ({ graceDays: wild(), riskLeadDays: wild() }),
       () => ({ minGapDays: wild() }),
-      () => ({ bookingHold: { enabled: flip(), maxDaysPastDue: wild() } }),
-      () => ({ protections: { maxBanked: wild(), startWith: wild() } }),
-      () => ({ protections: { enabled: flip(), earnEvery: wild() } }),
-      () => ({ clientPause: { enabled: flip(), maxDaysPerYear: wild() } }),
-      () => ({ repair: { windowDays: wild(), perYear: wild() } }),
-      () => ({ onBreak: flip() ? 'hold' : 'restart', enabled: flip() }),
+      () => ({
+        bookingHoldEnabled: flip(),
+        bookingHoldMaxDaysPastDue: wild(),
+      }),
+      () => ({ protectionsMaxBanked: wild(), protectionsStartWith: wild() }),
+      () => ({ protectionsEnabled: flip(), protectionsEarnEvery: wild() }),
+      () => ({
+        clientPauseEnabled: flip(),
+        clientPauseMaxDaysPerYear: wild(),
+      }),
+      () => ({ repairWindowDays: wild(), repairPerYear: wild() }),
+      () => ({
+        onBreak: flip() ? StreakOnBreak.Hold : StreakOnBreak.Restart,
+        enabled: flip(),
+      }),
     ];
 
-    let draft = RECOMMENDED;
+    let draft: StreakRuleInput = RECOMMENDED;
     for (let step = 0; step < 600; step += 1) {
       const change = changes.at(Math.floor(random() * changes.length));
       if (change === undefined) continue;
       const patch = change();
       draft = patchedRhythmDraft(draft, patch);
-      const rule = StreakDefinition.create(draft);
+      const rule = StreakRule.parse(draft);
       expect(
-        rule.isFailure() ? rule.error.map((error) => error.code) : [],
+        rule.ok ? [] : rule.error.map((error) => error.errorCode),
         `step ${step}: ${JSON.stringify(patch)}`,
       ).toEqual([]);
     }
@@ -664,7 +754,7 @@ describe('rhythmBoundsOf', () => {
       riskLeadDays: { min: 0, max: 21 },
       minGapDays: { min: 0, max: 14 },
       startWith: { min: 0, max: 2 },
-      fallbackDays: STREAK_LIMITS.interval.days,
+      fallbackDays: StreakIntervalRule.LIMITS.intervalDays,
     });
     expect(
       rhythmBoundsOf(patchedRhythmDraft(RECOMMENDED, { interval: fixed(14) })),
@@ -678,7 +768,7 @@ describe('rhythmBoundsOf', () => {
   it('holds the newcomer’s interval inside a personal clamp', () => {
     expect(
       rhythmBoundsOf(
-        patchedRhythmDraft(RECOMMENDED, { interval: { kind: 'personal' } }),
+        patchedRhythmDraft(RECOMMENDED, { interval: personalInterval() }),
       ),
     ).toMatchObject({
       graceDays: { min: 0, max: 20 },
@@ -694,10 +784,11 @@ describe('AdminRhythmStore: opening', () => {
     expect(ADMIN_RHYTHM_STREAK_ID).toBe('cadence');
     expect(ADMIN_RHYTHM_NOTICE_DAYS).toBe(30);
     expect(ADMIN_RHYTHM_READ_TIMEOUT_MS).toBe(10_000);
+    expect(ADMIN_RHYTHM_HISTORY_LIMIT).toBe(20);
   });
 
   it('is loading until the rule answers, with nothing to save', async () => {
-    const rules = seeded().holdHeads();
+    const rules = holdingHeads(seeded());
     const { store } = rig({ rules });
     store.load();
 
@@ -721,19 +812,23 @@ describe('AdminRhythmStore: opening', () => {
 
     const schedule = store.schedule();
     expect(schedule.status).toBe('ready');
-    expect(schedule.status === 'ready' && schedule.data.current.version).toBe(
-      1,
-    );
+    expect(
+      schedule.status === 'ready' &&
+        StreakRuleSystem.current(schedule.data).version,
+    ).toBe(1);
     expect(store.published()).toBe(true);
     expect(store.inForce()?.version).toBe(1);
     expect(store.upcoming()).toBeNull();
     expect(store.draft()).toEqual(RECOMMENDED);
     expect(store.dirty()).toBe(false);
     expect(store.canSave()).toBe(false);
-    expect(store.change()).toEqual({ direction: 'neutral', changed: [] });
+    expect(store.change()).toEqual({
+      direction: StreakRuleDirection.Neutral,
+      changed: [],
+    });
     expect(numbersOf(store)).toEqual([1]);
-    expect(rules.observed).toBe(1);
-    expect(rules.histories).toBe(1);
+    expect(rules.observations).toHaveLength(1);
+    expect(rules.historyReads).toHaveLength(1);
   });
 
   it('knows the shop’s days', async () => {
@@ -745,7 +840,7 @@ describe('AdminRhythmStore: opening', () => {
       firstOfMonth: FIRST_OF_MONTH,
     });
     expect(store.effectiveFrom()).toBe(TOMORROW);
-    expect(store.transition).toBe('grandfather');
+    expect(store.transition).toBe(StreakTransition.Grandfather);
   });
 
   it('opens a shop with no rule on the recommended one, ready to be saved', async () => {
@@ -761,14 +856,14 @@ describe('AdminRhythmStore: opening', () => {
 
   it('fails when the rule cannot be read, and reads again on «Опитай пак»', async () => {
     const rules = seeded();
-    rules.inner.failWith();
+    rules.failWith();
     const { store } = await loaded({ rules });
 
     expect(store.schedule()).toEqual({ status: 'failed' });
     expect(store.versions()).toEqual({ status: 'failed' });
     expect(store.canSave()).toBe(false);
 
-    rules.inner.recover();
+    rules.recover();
     store.retry();
     await settle();
 
@@ -780,12 +875,8 @@ describe('AdminRhythmStore: opening', () => {
   it('reads the history again when only the history failed', async () => {
     const rules = seeded();
     const failing = vi
-      .spyOn(rules.inner, 'listVersions')
-      .mockResolvedValueOnce(
-        (await new InMemoryStreakDefinitionRepository()
-          .failWith()
-          .listVersions('cadence', 20)) as never,
-      );
+      .spyOn(rules.ports, 'listStreakDefinitionVersions')
+      .mockResolvedValueOnce(Result.err(RepositoryError.unavailable()));
     const { store } = await loaded({ rules });
 
     expect(store.schedule().status).toBe('ready');
@@ -795,7 +886,7 @@ describe('AdminRhythmStore: opening', () => {
     await settle();
 
     expect(numbersOf(store)).toEqual([1]);
-    expect(rules.observed).toBe(1);
+    expect(rules.observations).toHaveLength(1);
     failing.mockRestore();
   });
 
@@ -806,17 +897,17 @@ describe('AdminRhythmStore: opening', () => {
     expect(store.versions()).toEqual({ status: 'failed' });
     expect(store.patch(LOOSER)).toEqual(RECOMMENDED);
     expect(store.dirty()).toBe(false);
-    await expect(store.save()).resolves.toMatchObject({ kind: 'failed' });
-    await expect(store.undo()).resolves.toMatchObject({ kind: 'failed' });
+    await expect(store.save()).resolves.toEqual(UNANSWERED);
+    await expect(store.undo()).resolves.toEqual(UNANSWERED);
   });
 
   it('counts a rule that does not answer within ten seconds as failed', async () => {
     vi.useFakeTimers();
-    const silent: StreakDefinitionRepository = {
-      observe: () => NEVER,
-      listVersions: () => new Promise(() => undefined),
-      publish: () => new Promise(() => undefined),
-      withdraw: () => new Promise(() => undefined),
+    const silent: StreakDefinitionPorts & StreakPublishGatewayPorts = {
+      observeStreakDefinitionHead: () => NEVER,
+      listStreakDefinitionVersions: () => new Promise(() => undefined),
+      publishStreakRule: () => new Promise(() => undefined),
+      withdrawStreakRule: () => new Promise(() => undefined),
     };
     const { store } = rig({ port: silent });
     store.load();
@@ -833,7 +924,7 @@ describe('AdminRhythmStore: opening', () => {
   it('keeps the rule on screen when a later read fails', async () => {
     const { store, rules } = await loaded();
 
-    rules.inner.failWith();
+    rules.failWith();
     await settle();
 
     expect(store.schedule().status).toBe('ready');
@@ -841,7 +932,7 @@ describe('AdminRhythmStore: opening', () => {
   });
 
   it('ignores a change made before the rule has answered', () => {
-    const { store } = rig({ rules: seeded().holdHeads() });
+    const { store } = rig({ rules: holdingHeads(seeded()) });
     store.load();
 
     expect(store.patch(LOOSER)).toEqual(RECOMMENDED);
@@ -869,7 +960,7 @@ describe('AdminRhythmStore: opening', () => {
     expect(store.streaksOn).toBe(false);
     store.patch(LOOSER);
     expect(store.canSave()).toBe(true);
-    await expect(store.save()).resolves.toMatchObject({ kind: 'published' });
+    await expect(store.save()).resolves.toMatchObject({ ok: true });
   });
 });
 
@@ -879,25 +970,25 @@ describe('AdminRhythmStore: the draft', () => {
 
     const draft = store.patch(LOOSER);
 
-    expect(draft.interval).toEqual({ kind: 'fixed', days: 49 });
+    expect(intervalOf(draft)).toEqual(StreakIntervalRule.fixed(49));
     expect(store.draft()).toBe(draft);
     expect(store.dirty()).toBe(true);
     expect(store.canSave()).toBe(true);
     expect(store.validation()).toEqual([]);
     expect(store.change()).toEqual({
-      direction: 'looser',
-      changed: ['interval'],
+      direction: StreakRuleDirection.Looser,
+      changed: [StreakRuleParameter.Interval],
     });
   });
 
   it.each([
-    ['a shorter interval', STRICTER, 'stricter'],
-    ['the cue alone', NEUTRAL, 'neutral'],
-    ['the switch', { enabled: false }, 'switch'],
+    ['a shorter interval', STRICTER, StreakRuleDirection.Stricter],
+    ['the cue alone', NEUTRAL, StreakRuleDirection.Neutral],
+    ['the switch', { enabled: false }, StreakRuleDirection.Switch],
     [
       'a longer interval with less grace',
       { interval: fixed(49), graceDays: 3 },
-      'mixed',
+      StreakRuleDirection.Mixed,
     ],
   ] as const)('classes %s as the domain does', async (_, patch, direction) => {
     const { store } = await loaded();
@@ -911,9 +1002,10 @@ describe('AdminRhythmStore: the draft', () => {
     const { store } = await loaded();
 
     expect(store.patch({ graceDays: 60 }).graceDays).toBe(21);
-    expect(
-      store.patch({ bookingHold: { maxDaysPastDue: 99 } }).bookingHold,
-    ).toEqual({ enabled: true, maxDaysPastDue: 28 });
+    expect(store.patch({ bookingHoldMaxDaysPastDue: 99 })).toMatchObject({
+      bookingHoldEnabled: true,
+      bookingHoldMaxDaysPastDue: 28,
+    });
     expect(store.validation()).toEqual([]);
   });
 
@@ -950,41 +1042,39 @@ describe('AdminRhythmStore: the draft', () => {
     const { store } = await loaded();
 
     store.patch({ interval: fixed(35) });
-    store.patch({ interval: { kind: 'personal', tolerancePct: 25 } });
-    expect(store.draft().interval).toEqual({
-      kind: 'personal',
-      tolerancePct: 25,
-      minDays: 21,
-      maxDays: 70,
-      fallbackDays: 35,
+    store.patch({
+      interval: personalInterval({ intervalTolerancePct: 25 }),
     });
+    expect(intervalOf(store.draft())).toEqual(
+      StreakIntervalRule.personal(25, 21, 70, 35),
+    );
 
-    store.patch({ interval: { kind: 'fixed' } });
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 35 });
+    store.patch({ interval: fixedInterval() });
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(35));
 
-    store.patch({ interval: { kind: 'personal' } });
-    expect(store.draft().interval).toMatchObject({ tolerancePct: 25 });
+    store.patch({ interval: personalInterval() });
+    expect(store.draft()).toMatchObject({ intervalTolerancePct: 25 });
   });
 
   it('names the fault of a list with nothing chosen, and keeps the dock away', async () => {
     const { store } = await loaded();
 
-    store.patch({ qualifier: { kind: 'services', serviceIds: [] } });
+    store.patch({ qualifier: services() });
 
     expect(store.validation().map((error) => error.field)).toEqual([
-      'qualifier.serviceIds',
+      StreakRuleField.QualifierServiceIds,
     ]);
     expect(store.change()).toBeNull();
     expect(store.dirty()).toBe(true);
     expect(store.canSave()).toBe(false);
     expect(store.earliestDay()).toBe(TOMORROW);
 
-    store.patch({ qualifier: { kind: 'services', serviceIds: ['svc-fade'] } });
+    store.patch({ qualifier: services('svc-fade') });
 
     expect(store.validation()).toEqual([]);
     expect(store.change()).toEqual({
-      direction: 'stricter',
-      changed: ['qualifier'],
+      direction: StreakRuleDirection.Stricter,
+      changed: [StreakRuleParameter.Qualifier],
     });
     expect(store.canSave()).toBe(true);
   });
@@ -1063,7 +1153,7 @@ describe('AdminRhythmStore: the day a change starts', () => {
 
     expect(store.setEffectiveFrom(FIRST_OF_MONTH)).toBe(FIRST_OF_MONTH);
     expect(store.effectiveFrom()).toBe(FIRST_OF_MONTH);
-    expect(store.change()?.direction).toBe('looser');
+    expect(store.change()?.direction).toBe(StreakRuleDirection.Looser);
   });
 
   it('never goes under the first day the change may start', async () => {
@@ -1095,32 +1185,35 @@ describe('AdminRhythmStore: «Запази»', () => {
     const outcome = await store.save();
     await settle();
 
-    expect(outcome).toEqual({
-      kind: 'published',
-      version: 2,
-      effectiveFrom: TOMORROW,
-      direction: 'looser',
-      waits: true,
-    });
+    expect(outcome).toEqual(
+      Result.ok({
+        version: 2,
+        effectiveFromLocalDate: TOMORROW,
+        streakRuleDirection: StreakRuleDirection.Looser,
+        waits: true,
+      }),
+    );
     expect(rules.published).toHaveLength(1);
     expect(rules.published[0]).toMatchObject({
       requestId: 'request-000000000001',
+      streakId: ADMIN_RHYTHM_STREAK_ID,
       baseVersion: 1,
-      transition: 'grandfather',
+      streakTransition: StreakTransition.Grandfather,
       previewHash: null,
     });
-    expect(rules.published[0]?.definition.interval.toProps()).toEqual({
-      kind: 'fixed',
-      days: 49,
-    });
-    expect(rules.inner.documentsOf('cadence')?.head.scheduled).toMatchObject({
-      version: 2,
-      effectiveFrom: TOMORROW,
-    });
+    expect(intervalOf(rules.published[0]?.rule)).toEqual(
+      StreakIntervalRule.fixed(49),
+    );
+    const written = headIn(rules.world);
+    expect(
+      written === null ? null : StreakRuleSystem.scheduled(written),
+    ).toMatchObject({ version: 2, effectiveFromLocalDate: TOMORROW });
 
     expect(store.inForce()?.version).toBe(1);
-    expect(store.upcoming()?.definition.version).toBe(2);
-    expect(store.upcoming()?.transition).toBe('grandfather');
+    expect(store.upcoming()?.version).toBe(2);
+    expect(store.upcoming()?.streakTransition).toBe(
+      StreakTransition.Grandfather,
+    );
     expect(store.draft()).toEqual(RECOMMENDED);
     expect(store.dirty()).toBe(false);
     expect(store.canSave()).toBe(false);
@@ -1128,7 +1221,7 @@ describe('AdminRhythmStore: «Запази»', () => {
     expect(store.refusal()).toBeNull();
     expect(numbersOf(store)).toEqual([2, 1]);
     // The history is read once more, by the head that was heard.
-    expect(rules.histories).toBe(2);
+    expect(rules.historyReads).toHaveLength(2);
   });
 
   it('publishes for today what may start today, and the form stands on it', async () => {
@@ -1139,13 +1232,14 @@ describe('AdminRhythmStore: «Запази»', () => {
     const outcome = await store.save();
     await settle();
 
-    expect(outcome).toMatchObject({
-      kind: 'published',
-      version: 2,
-      effectiveFrom: TODAY,
-      direction: 'neutral',
-      waits: false,
-    });
+    expect(outcome).toEqual(
+      Result.ok({
+        version: 2,
+        effectiveFromLocalDate: TODAY,
+        streakRuleDirection: StreakRuleDirection.Neutral,
+        waits: false,
+      }),
+    );
     expect(store.inForce()?.version).toBe(2);
     expect(store.upcoming()).toBeNull();
     expect(store.draft().riskLeadDays).toBe(3);
@@ -1159,7 +1253,7 @@ describe('AdminRhythmStore: «Запази»', () => {
     const outcome = await store.save();
     await settle();
 
-    expect(outcome).toMatchObject({ kind: 'published', version: 1 });
+    expect(outcome).toMatchObject({ ok: true, value: { version: 1 } });
     expect(rules.published[0]).toMatchObject({ baseVersion: 0 });
     expect(store.published()).toBe(true);
     expect(store.inForce()?.version).toBe(1);
@@ -1176,12 +1270,14 @@ describe('AdminRhythmStore: «Запази»', () => {
     const outcome = await store.save();
 
     expect(outcome).toMatchObject({
-      kind: 'published',
-      effectiveFrom: '2026-10-12',
-      direction: 'stricter',
-      waits: true,
+      ok: true,
+      value: {
+        effectiveFromLocalDate: '2026-10-12',
+        streakRuleDirection: StreakRuleDirection.Stricter,
+        waits: true,
+      },
     });
-    expect(store.upcoming()?.definition.effectiveFrom).toBe('2026-10-12');
+    expect(store.upcoming()?.effectiveFromLocalDate).toBe('2026-10-12');
     // The day was this version's: the next change starts from «От утре».
     store.patch(LOOSER);
     expect(store.effectiveFrom()).toBe(TOMORROW);
@@ -1196,15 +1292,15 @@ describe('AdminRhythmStore: «Запази»', () => {
     const outcome = await store.save();
     await settle();
 
-    expect(outcome).toMatchObject({ kind: 'published', version: 3 });
-    expect(store.upcoming()?.definition.version).toBe(3);
+    expect(outcome).toMatchObject({ ok: true, value: { version: 3 } });
+    expect(store.upcoming()?.version).toBe(3);
     expect(store.inForce()?.version).toBe(1);
     const versions = store.versions();
     expect(
       versions.status === 'ready' &&
         versions.data.map((version) => [
-          version.definition.version,
-          version.withdrawnAt !== null,
+          version.version,
+          version.withdrawnAtUtcMs !== null,
         ]),
     ).toEqual([
       [3, false],
@@ -1214,7 +1310,7 @@ describe('AdminRhythmStore: «Запази»', () => {
   });
 
   it('is in flight until it is answered, and one call however often it is pressed', async () => {
-    const rules = seeded().holdWrites();
+    const rules = holdingWrites(seeded());
     const { store } = await loaded({ rules });
     store.patch(LOOSER);
 
@@ -1226,7 +1322,7 @@ describe('AdminRhythmStore: «Запази»', () => {
     expect(store.canSave()).toBe(false);
 
     rules.answerWrites();
-    await expect(first).resolves.toMatchObject({ kind: 'published' });
+    await expect(first).resolves.toMatchObject({ ok: true });
     expect(store.saving()).toBe(false);
     expect(rules.published).toHaveLength(1);
   });
@@ -1238,23 +1334,23 @@ describe('AdminRhythmStore: «Запази»', () => {
 
     await store.save();
 
-    expect(store.upcoming()?.definition.version).toBe(2);
-    expect(store.upcoming()?.definition.effectiveFrom).toBe(TOMORROW);
+    expect(store.upcoming()?.version).toBe(2);
+    expect(store.upcoming()?.effectiveFromLocalDate).toBe(TOMORROW);
     expect(store.inForce()?.version).toBe(1);
     expect(store.draft()).toEqual(RECOMMENDED);
     expect(store.dirty()).toBe(false);
     // No head was heard, so the answer reads the history itself.
     await settle();
     expect(numbersOf(store)).toEqual([2, 1]);
-    expect(rules.histories).toBe(2);
+    expect(rules.historyReads).toHaveLength(2);
 
     rules.tellHeads();
     await settle();
 
-    expect(store.upcoming()?.definition.version).toBe(2);
+    expect(store.upcoming()?.version).toBe(2);
     expect(store.dirty()).toBe(false);
     expect(store.refusal()).toBeNull();
-    expect(rules.histories).toBe(2);
+    expect(rules.historyReads).toHaveLength(2);
   });
 
   it('stands on the answer for a version in force at once, too', async () => {
@@ -1281,13 +1377,13 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('keeps the draft and says so when the server refuses the caller', async () => {
     const { store, rules } = await loaded();
     store.patch(LOOSER);
-    rules.inner.refuseWith('notAdmin');
+    rules.refuseWith(StreakPublishError.callerNotAdmin());
 
     const outcome = await store.save();
 
-    expect(outcome).toEqual({ kind: 'refused', refusal: 'notAdmin' });
-    expect(store.refusal()).toEqual(outcome);
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 49 });
+    expect(outcome).toEqual(Result.err(StreakPublishError.callerNotAdmin()));
+    expect(store.refusal()).toEqual(StreakPublishError.callerNotAdmin());
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(49));
     expect(store.dirty()).toBe(true);
     expect(store.canSave()).toBe(true);
   });
@@ -1295,36 +1391,41 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('names the fields the server found wrong', async () => {
     const { store, rules } = await loaded();
     store.patch(LOOSER);
-    rules.inner.refuseWith('invalid', ['graceDays']);
+    rules.refuseWith(StreakPublishError.invalid([StreakRuleField.GraceDays]));
 
     const outcome = await store.save();
 
-    expect(outcome).toEqual({
-      kind: 'invalid',
-      fields: ['graceDays'],
-      errors: [],
-    });
-    expect(store.refusal()).toEqual(outcome);
+    expect(outcome).toEqual(
+      Result.err(StreakPublishError.invalid([StreakRuleField.GraceDays])),
+    );
+    expect(store.refusal()).toEqual(
+      StreakPublishError.invalid([StreakRuleField.GraceDays]),
+    );
     expect(store.dirty()).toBe(true);
   });
 
   it('moves the day to the earliest the server allows, and publishes on the second «Запази»', async () => {
     const { store, rules } = await loaded();
     store.patch(STRICTER);
-    rules.inner.refuseWith('tooEarly', ['effectiveFrom']);
+    // The server's own day is not read: the page offers the strictest it knows.
+    rules.refuseWith(StreakPublishError.tooEarly(day(TOMORROW), day(TOMORROW)));
 
     const outcome = await store.save();
 
-    expect(outcome).toEqual({ kind: 'tooEarly', earliest: '2026-10-28' });
-    expect(store.refusal()).toEqual(outcome);
+    const refused = StreakPublishError.tooEarly(
+      day(TOMORROW),
+      day('2026-10-28'),
+    );
+    expect(outcome).toEqual(Result.err(refused));
+    expect(store.refusal()).toEqual(refused);
     expect(store.earliestDay()).toBe('2026-10-28');
     expect(store.effectiveFrom()).toBe('2026-10-28');
     expect(store.dirty()).toBe(true);
 
-    rules.inner.recover();
+    rules.recover();
     await expect(store.save()).resolves.toMatchObject({
-      kind: 'published',
-      effectiveFrom: '2026-10-28',
+      ok: true,
+      value: { effectiveFromLocalDate: '2026-10-28' },
     });
     expect(store.refusal()).toBeNull();
   });
@@ -1332,11 +1433,11 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('holds the server’s day only for a change of the same direction', async () => {
     const { store, rules } = await loaded();
     store.patch(STRICTER);
-    rules.inner.refuseWith('tooEarly', ['effectiveFrom']);
+    rules.refuseWith(StreakPublishError.tooEarly(day(TOMORROW), day(TOMORROW)));
     await store.save();
 
     store.patch({ interval: fixed(28) });
-    expect(store.change()?.direction).toBe('stricter');
+    expect(store.change()?.direction).toBe(StreakRuleDirection.Stricter);
     expect(store.earliestDay()).toBe('2026-10-28');
     expect(store.refusal()).toBeNull();
 
@@ -1348,17 +1449,17 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('keeps the intent’s id across a save that got no answer', async () => {
     const { store, rules } = await loaded();
     store.patch(LOOSER);
-    rules.inner.failWith();
+    rules.failWith();
 
     const failed = await store.save();
 
-    expect(failed).toMatchObject({ kind: 'failed' });
-    expect(store.refusal()).toEqual(failed);
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 49 });
+    expect(failed).toEqual(UNANSWERED);
+    expect(store.refusal()).toEqual(RepositoryError.unavailable());
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(49));
     expect(store.dirty()).toBe(true);
 
-    rules.inner.recover();
-    await expect(store.save()).resolves.toMatchObject({ kind: 'published' });
+    rules.recover();
+    await expect(store.save()).resolves.toMatchObject({ ok: true });
     expect(rules.published.map((request) => request.requestId)).toEqual([
       'request-000000000001',
       'request-000000000001',
@@ -1368,9 +1469,9 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('takes a changed draft for a new intent', async () => {
     const { store, rules } = await loaded();
     store.patch(LOOSER);
-    rules.inner.failWith();
+    rules.failWith();
     await store.save();
-    rules.inner.recover();
+    rules.recover();
 
     store.patch({ graceDays: 10 });
     expect(store.refusal()).toBeNull();
@@ -1385,9 +1486,9 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('takes another day for a new intent', async () => {
     const { store, rules } = await loaded();
     store.patch(LOOSER);
-    rules.inner.failWith();
+    rules.failWith();
     await store.save();
-    rules.inner.recover();
+    rules.recover();
 
     store.setEffectiveFrom(FIRST_OF_MONTH);
     expect(store.refusal()).toBeNull();
@@ -1401,15 +1502,17 @@ describe('AdminRhythmStore: «Запази»', () => {
 
   it('answers a port that throws as a save that failed', async () => {
     const rules = seeded();
-    vi.spyOn(rules, 'publish').mockRejectedValue(new Error('no adapter'));
+    vi.spyOn(rules.ports, 'publishStreakRule').mockRejectedValue(
+      new Error('no adapter'),
+    );
     const { store } = await loaded({ rules });
     store.patch(LOOSER);
 
     const outcome = await store.save();
 
-    expect(outcome.kind).toBe('failed');
-    expect(outcome.kind === 'failed' && outcome.error).toBeInstanceOf(
-      RepositoryError,
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.error.errorCode).toBe(
+      RepositoryErrorCode.WriteFailed,
     );
     expect(store.saving()).toBe(false);
     expect(store.dirty()).toBe(true);
@@ -1418,23 +1521,23 @@ describe('AdminRhythmStore: «Запази»', () => {
   it('publishes nothing for a form that was not touched', async () => {
     const { store, rules } = await loaded();
 
-    await expect(store.save()).resolves.toEqual({ kind: 'unchanged' });
+    await expect(store.save()).resolves.toEqual(Result.ok(null));
     expect(rules.published).toEqual([]);
     expect(store.refusal()).toBeNull();
   });
 
   it('sends nothing for a draft that is no rule', async () => {
     const { store, rules } = await loaded();
-    store.patch({ qualifier: { kind: 'services', serviceIds: [] } });
+    store.patch({ qualifier: services() });
 
     const outcome = await store.save();
 
-    expect(outcome).toMatchObject({
-      kind: 'invalid',
-      fields: ['qualifier.serviceIds'],
-    });
+    const invalid = StreakPublishError.invalid([
+      StreakRuleField.QualifierServiceIds,
+    ]);
+    expect(outcome).toEqual(Result.err(invalid));
     expect(rules.published).toEqual([]);
-    expect(store.refusal()).toEqual(outcome);
+    expect(store.refusal()).toEqual(invalid);
   });
 
   it('reads the clock when it saves: a tab left open overnight publishes for the new tomorrow', async () => {
@@ -1445,8 +1548,8 @@ describe('AdminRhythmStore: «Запази»', () => {
     const outcome = await store.save();
 
     expect(outcome).toMatchObject({
-      kind: 'published',
-      effectiveFrom: '2026-09-30',
+      ok: true,
+      value: { effectiveFromLocalDate: '2026-09-30' },
     });
     expect(store.days().today).toBe('2026-09-29');
   });
@@ -1472,7 +1575,7 @@ describe('AdminRhythmStore: a rule somebody else publishes', () => {
     await elsewhere(rules, { graceDays: 14 }, FIRST_OF_MONTH, 1);
     await settle();
 
-    expect(store.upcoming()?.definition.graceDays).toBe(14);
+    expect(store.upcoming()?.graceDays).toBe(14);
     expect(store.draft()).toEqual(RECOMMENDED);
     expect(store.dirty()).toBe(false);
     expect(store.refusal()).toBeNull();
@@ -1485,14 +1588,14 @@ describe('AdminRhythmStore: a rule somebody else publishes', () => {
     await elsewhere(rules, { riskLeadDays: 3 }, TODAY, 1);
     await settle();
 
-    expect(store.refusal()).toEqual({ kind: 'refused', refusal: 'stale' });
+    expect(store.refusal()).toMatchObject(STALE);
     expect(store.inForce()?.version).toBe(2);
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 49 });
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(49));
     expect(store.draft().riskLeadDays).toBe(3);
     expect(store.dirty()).toBe(true);
     expect(store.change()).toEqual({
-      direction: 'looser',
-      changed: ['interval'],
+      direction: StreakRuleDirection.Looser,
+      changed: [StreakRuleParameter.Interval],
     });
   });
 
@@ -1500,15 +1603,20 @@ describe('AdminRhythmStore: a rule somebody else publishes', () => {
     const { store, rules } = await loaded();
     store.patch({ graceDays: 21 });
 
-    await elsewhere(rules, { interval: fixed(14) }, TOMORROW, 1);
+    await elsewhere(
+      rules,
+      { interval: StreakIntervalRule.fixed(14) },
+      TOMORROW,
+      1,
+    );
     await settle();
 
-    expect(store.refusal()).toEqual({ kind: 'refused', refusal: 'stale' });
-    expect(store.upcoming()?.definition.version).toBe(2);
+    expect(store.refusal()).toMatchObject(STALE);
+    expect(store.upcoming()?.version).toBe(2);
     expect(store.draft()).toEqual({ ...RECOMMENDED, graceDays: 21 });
     expect(store.change()).toEqual({
-      direction: 'looser',
-      changed: ['graceDays'],
+      direction: StreakRuleDirection.Looser,
+      changed: [StreakRuleParameter.GraceDays],
     });
   });
 
@@ -1521,11 +1629,11 @@ describe('AdminRhythmStore: a rule somebody else publishes', () => {
     const outcome = await store.save();
     await settle();
 
-    expect(outcome).toMatchObject({ kind: 'published', version: 3 });
+    expect(outcome).toMatchObject({ ok: true, value: { version: 3 } });
     expect(rules.published[0]).toMatchObject({ baseVersion: 2 });
-    expect(rules.published[0]?.definition.riskLeadDays).toBe(3);
+    expect(rules.published[0]?.rule.riskLeadDays).toBe(3);
     expect(store.refusal()).toBeNull();
-    expect(store.upcoming()?.definition.version).toBe(3);
+    expect(store.upcoming()?.version).toBe(3);
   });
 
   it('refuses a save it overtook, keeps the draft, and the second «Запази» goes through', async () => {
@@ -1541,18 +1649,15 @@ describe('AdminRhythmStore: a rule somebody else publishes', () => {
     expect(store.refusal()).toBeNull();
     rules.answerWrites();
 
-    await expect(saving).resolves.toEqual({
-      kind: 'refused',
-      refusal: 'stale',
-    });
-    expect(store.refusal()).toEqual({ kind: 'refused', refusal: 'stale' });
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 49 });
+    await expect(saving).resolves.toMatchObject({ ok: false, error: STALE });
+    expect(store.refusal()).toMatchObject(STALE);
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(49));
     expect(store.draft().riskLeadDays).toBe(3);
     expect(store.dirty()).toBe(true);
 
     await expect(store.save()).resolves.toMatchObject({
-      kind: 'published',
-      version: 3,
+      ok: true,
+      value: { version: 3 },
     });
     expect(rules.published.map((request) => request.baseVersion)).toEqual([
       1, 2,
@@ -1578,7 +1683,7 @@ describe('AdminRhythmStore: a rule somebody else publishes', () => {
 
     store.discard();
 
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 42 });
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(42));
     expect(store.draft().riskLeadDays).toBe(3);
     expect(store.dirty()).toBe(false);
     expect(store.refusal()).toBeNull();
@@ -1588,12 +1693,12 @@ describe('AdminRhythmStore: a rule somebody else publishes', () => {
     const { store, rules } = await loaded();
     store.patch(LOOSER);
 
-    rules.inner.recover();
+    rules.recover();
     await settle();
 
     expect(store.refusal()).toBeNull();
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 49 });
-    expect(rules.histories).toBe(1);
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(49));
+    expect(rules.historyReads).toHaveLength(1);
   });
 });
 
@@ -1601,11 +1706,16 @@ describe('AdminRhythmStore: a version that comes into force overnight', () => {
   /** A stricter rule waits for tomorrow; the admin drafts today; the tab stays open. */
   async function overnight(patch: AdminRhythmPatch) {
     const made = await loaded();
-    await elsewhere(made.rules, { interval: fixed(14) }, TOMORROW, 1);
+    await elsewhere(
+      made.rules,
+      { interval: StreakIntervalRule.fixed(14) },
+      TOMORROW,
+      1,
+    );
     await settle();
     made.store.patch(patch);
     made.clock.now = '2026-09-29T08:05:00';
-    made.rules.inner.advanceTo(TOMORROW);
+    made.rules.advanceTo(TOMORROW);
     await settle();
     return made;
   }
@@ -1615,8 +1725,8 @@ describe('AdminRhythmStore: a version that comes into force overnight', () => {
 
     const outcome = await store.save();
 
-    expect(outcome).toEqual({ kind: 'refused', refusal: 'stale' });
-    expect(store.refusal()).toEqual(outcome);
+    expect(outcome).toMatchObject({ ok: false, error: STALE });
+    expect(store.refusal()).toMatchObject(STALE);
     expect(rules.published).toEqual([]);
     expect(store.days().today).toBe(TOMORROW);
     expect(store.inForce()?.version).toBe(2);
@@ -1628,12 +1738,12 @@ describe('AdminRhythmStore: a version that comes into force overnight', () => {
 
     await store.save();
 
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 14 });
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(14));
     expect(store.draft().graceDays).toBe(13);
     expect(store.validation()).toEqual([]);
     expect(store.change()).toEqual({
-      direction: 'looser',
-      changed: ['graceDays'],
+      direction: StreakRuleDirection.Looser,
+      changed: [StreakRuleParameter.GraceDays],
     });
   });
 
@@ -1644,16 +1754,14 @@ describe('AdminRhythmStore: a version that comes into force overnight', () => {
     const outcome = await store.save();
 
     expect(outcome).toMatchObject({
-      kind: 'published',
-      version: 3,
-      effectiveFrom: '2026-09-30',
+      ok: true,
+      value: { version: 3, effectiveFromLocalDate: '2026-09-30' },
     });
     expect(rules.published).toHaveLength(1);
     expect(rules.published[0]).toMatchObject({ baseVersion: 2 });
-    expect(rules.published[0]?.definition.interval.toProps()).toEqual({
-      kind: 'fixed',
-      days: 14,
-    });
+    expect(intervalOf(rules.published[0]?.rule)).toEqual(
+      StreakIntervalRule.fixed(14),
+    );
   });
 
   it('opens on the rule of today after «Отхвърли»', async () => {
@@ -1662,7 +1770,7 @@ describe('AdminRhythmStore: a version that comes into force overnight', () => {
     store.discard();
 
     expect(store.days().today).toBe(TOMORROW);
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 14 });
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(14));
     expect(store.dirty()).toBe(false);
   });
 });
@@ -1676,9 +1784,13 @@ describe('AdminRhythmStore: «Отмени»', () => {
     const outcome = await store.undo();
     await settle();
 
-    expect(outcome).toEqual({ kind: 'withdrawn', version: 2 });
+    expect(outcome).toEqual(Result.ok(2));
     expect(rules.withdrawn).toEqual([
-      { version: 2, requestId: 'request-000000000002' },
+      StreakPublishCall.withdraw(
+        PublishRequestId.of('request-000000000002'),
+        ADMIN_RHYTHM_STREAK_ID,
+        2,
+      ),
     ]);
     expect(store.upcoming()).toBeNull();
     expect(store.inForce()?.version).toBe(1);
@@ -1687,8 +1799,8 @@ describe('AdminRhythmStore: «Отмени»', () => {
     expect(
       versions.status === 'ready' &&
         versions.data.map((version) => [
-          version.definition.version,
-          version.withdrawnAt !== null,
+          version.version,
+          version.withdrawnAtUtcMs !== null,
         ]),
     ).toEqual([
       [2, true],
@@ -1704,15 +1816,15 @@ describe('AdminRhythmStore: «Отмени»', () => {
     store.patch(STRICTER);
 
     await expect(store.save()).resolves.toMatchObject({
-      kind: 'published',
-      version: 3,
+      ok: true,
+      value: { version: 3 },
     });
   });
 
   it('has nothing to call off when nothing waits', async () => {
     const { store, rules } = await loaded();
 
-    await expect(store.undo()).resolves.toEqual({ kind: 'nothingWaits' });
+    await expect(store.undo()).resolves.toEqual(Result.ok(null));
     expect(rules.withdrawn).toEqual([]);
   });
 
@@ -1726,7 +1838,7 @@ describe('AdminRhythmStore: «Отмени»', () => {
     await settle();
 
     expect(store.upcoming()).toBeNull();
-    expect(store.draft().interval).toEqual({ kind: 'fixed', days: 35 });
+    expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(35));
     expect(store.dirty()).toBe(true);
     expect(store.refusal()).toBeNull();
   });
@@ -1766,7 +1878,7 @@ describe('AdminRhythmStore: «Отмени»', () => {
     expect(store.canSave()).toBe(false);
 
     rules.answerWrites();
-    await expect(first).resolves.toMatchObject({ kind: 'withdrawn' });
+    await expect(first).resolves.toEqual(Result.ok(2));
     expect(store.withdrawing()).toBe(false);
     expect(store.canSave()).toBe(true);
     expect(rules.withdrawn).toHaveLength(1);
@@ -1776,13 +1888,13 @@ describe('AdminRhythmStore: «Отмени»', () => {
     const { store, rules } = await loaded();
     store.patch(LOOSER);
     await store.save();
-    rules.inner.failWith();
+    rules.failWith();
 
-    await expect(store.undo()).resolves.toMatchObject({ kind: 'failed' });
-    expect(store.upcoming()?.definition.version).toBe(2);
+    await expect(store.undo()).resolves.toEqual(UNANSWERED);
+    expect(store.upcoming()?.version).toBe(2);
 
-    rules.inner.recover();
-    await expect(store.undo()).resolves.toMatchObject({ kind: 'withdrawn' });
+    rules.recover();
+    await expect(store.undo()).resolves.toEqual(Result.ok(2));
     expect(rules.withdrawn.map((call) => call.requestId)).toEqual([
       'request-000000000002',
       'request-000000000002',
@@ -1793,13 +1905,12 @@ describe('AdminRhythmStore: «Отмени»', () => {
     const { store, rules } = await loaded();
     store.patch(LOOSER);
     await store.save();
-    rules.inner.refuseWith('notAdmin');
+    rules.refuseWith(StreakPublishError.callerNotAdmin());
 
-    await expect(store.undo()).resolves.toEqual({
-      kind: 'refused',
-      refusal: 'notAdmin',
-    });
-    expect(store.upcoming()?.definition.version).toBe(2);
+    await expect(store.undo()).resolves.toEqual(
+      Result.err(StreakPublishError.callerNotAdmin()),
+    );
+    expect(store.upcoming()?.version).toBe(2);
   });
 });
 
@@ -1836,7 +1947,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     expect(store.preview()).toEqual({
       status: 'ready',
       data: {
-        kind: 'estimate',
+        streakPreviewOutcome: StreakPreviewOutcome.Estimate,
         clients: 3,
         before: { inRhythm: 2, inGrace: 0, broken: 1 },
         after: { inRhythm: 1, inGrace: 0, broken: 2 },
@@ -1897,7 +2008,10 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
 
     expect(store.preview()).toMatchObject({
       status: 'ready',
-      data: { kind: 'estimate', clients: 1_000 },
+      data: {
+        streakPreviewOutcome: StreakPreviewOutcome.Estimate,
+        clients: 1_000,
+      },
     });
     expect(store.previewCapped()).toBe(true);
     expect(directory.calls).toHaveLength(5);
@@ -1906,14 +2020,15 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
   it('is unavailable for chosen services, and reads nothing to say so', async () => {
     const { store, stats } = await previewing();
 
-    store.patch({
-      qualifier: { kind: 'services', serviceIds: ['svc-fade'] },
-    });
+    store.patch({ qualifier: services('svc-fade') });
     await vi.advanceTimersByTimeAsync(600);
 
     expect(store.preview()).toEqual({
       status: 'ready',
-      data: { kind: 'unavailable', reason: 'qualifier' },
+      data: {
+        streakPreviewOutcome: StreakPreviewOutcome.Unavailable,
+        reason: StreakPreviewUnavailable.Qualifier,
+      },
     });
     expect(store.previewBusy()).toBe(false);
     expect(stats.calls).toEqual([]);
@@ -1925,7 +2040,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     store.patch({ interval: fixed(28) });
     await vi.advanceTimersByTimeAsync(600);
 
-    store.patch({ qualifier: { kind: 'services', serviceIds: [] } });
+    store.patch({ qualifier: services() });
 
     expect(store.preview()).toBeNull();
     expect(store.previewBusy()).toBe(false);
@@ -1940,7 +2055,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     expect(store.preview()).toMatchObject({
       status: 'ready',
       data: {
-        kind: 'estimate',
+        streakPreviewOutcome: StreakPreviewOutcome.Estimate,
         before: { inRhythm: 2, inGrace: 0, broken: 1 },
         after: null,
       },
@@ -1968,7 +2083,10 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
 
     expect(store.preview()).toMatchObject({
       status: 'ready',
-      data: { kind: 'estimate', clients: 3 },
+      data: {
+        streakPreviewOutcome: StreakPreviewOutcome.Estimate,
+        clients: 3,
+      },
     });
     expect(directory.calls).toHaveLength(2);
   });
@@ -2056,7 +2174,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     store.patch({ interval: fixed(28) });
     await store.save();
     await vi.advanceTimersByTimeAsync(0);
-    expect(store.upcoming()?.definition.version).toBe(2);
+    expect(store.upcoming()?.version).toBe(2);
 
     store.patch({ interval: fixed(28) });
     await vi.advanceTimersByTimeAsync(600);
@@ -2127,9 +2245,7 @@ describe('AdminRhythmStore: the rule, worded', () => {
 
   it('names the counted services once the page has handed over their names', async () => {
     const { store } = await loaded();
-    store.patch({
-      qualifier: { kind: 'services', serviceIds: ['svc-fade', 'svc-beard'] },
-    });
+    store.patch({ qualifier: services('svc-fade', 'svc-beard') });
     expect(store.rule()?.details.at(-1)).not.toContain('Броят се');
 
     store.nameServices(
@@ -2148,7 +2264,7 @@ describe('AdminRhythmStore: the rule, worded', () => {
     const { store } = await loaded();
     store.patch({ interval: fixed(35) });
 
-    store.patch({ qualifier: { kind: 'services', serviceIds: [] } });
+    store.patch({ qualifier: services() });
 
     expect(store.validation()).toHaveLength(1);
     expect(store.rule()?.sentence).toBe(
@@ -2192,22 +2308,34 @@ describe('AdminRhythmStore: the sample run', () => {
       store
         .sample()
         ?.periods.slice(-5)
-        .map((period) => period.mark),
-    ).toEqual(['kept', 'kept', 'kept', 'protected', 'kept']);
-    expect(store.sample()?.phase.kind).toBe('active');
+        .map((period) => period.streakPeriodMark),
+    ).toEqual([
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Protected,
+      StreakPeriodMark.Kept,
+    ]);
+    expect(store.sample()?.streakPhase).toBe(StreakPhase.Active);
   });
 
   it('redraws on every change', async () => {
     const { store } = await loaded();
 
-    store.patch({ protections: { enabled: false } });
+    store.patch({ protectionsEnabled: false });
 
     expect(
       store
         .sample()
         ?.periods.slice(-5)
-        .map((period) => period.mark),
-    ).toEqual(['kept', 'kept', 'kept', 'missed', 'kept']);
+        .map((period) => period.streakPeriodMark),
+    ).toEqual([
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Kept,
+      StreakPeriodMark.Missed,
+      StreakPeriodMark.Kept,
+    ]);
     expect(store.sample()?.current).toBe(1);
   });
 

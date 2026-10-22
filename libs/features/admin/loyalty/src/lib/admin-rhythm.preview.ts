@@ -1,52 +1,50 @@
 import type { ClientStatsRecord } from '@core/entities';
 import type { ClientStatsPagePorts } from '@core/ports';
 import {
-  type IsoDate,
-  type StreakDefinition,
-  type StreakDefinitionProps,
-  type StreakExcuse,
-  type StreakFacts,
-  type StreakPreview,
-  type StreakState,
-  projectStreak,
-  streakFactsReader,
-} from '@creativo/application/engagement';
-import {
   type CustomerId,
   LocalDate,
   RepositoryError,
   Result,
-  ServiceCategoryId,
-  ServiceId,
+  type TimeZone,
+  type UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
-  StreakExcuse as SystemExcuse,
   StreakIntervalRule,
-  StreakOnBreak as SystemOnBreak,
-  StreakQualifierRule,
-  type StreakRule,
+  StreakQualifier,
+  StreakRule,
+  type StreakState,
 } from '@core/components';
 import {
-  type StreakPreview as SystemPreview,
-  StreakPreviewOutcome,
+  type StreakFacts,
+  type StreakPreview,
   StreakPreviewSystem,
+  StreakSystem,
+  type StreakVisitFact,
+  ZonedTimeSystem,
 } from '@core/systems';
 
 /*
  * «КАКВО ЩЕ СЕ ПРОМЕНИ», THE FACTS (client-card revision 3 §2.6.4, §4.4).
  *
  * The preview is an ESTIMATE made in the browser: every client's visits of
- * the last year folded through the domain's projector twice, once per
- * rule. The fold is the application's (`PreviewStreakDefinitionUseCase`,
- * pure). What is this file's: where the facts come from (`clientStats`,
- * walked a page at a time), how far the walk goes, and that it is made
- * ONCE per visit to the page, so a recompute reads nothing.
+ * the last year folded through the projector twice, once per rule. The
+ * fold is `StreakPreviewSystem.estimate` (`@core/systems`, pure). What is
+ * this file's: where the facts come from (`clientStats`, walked a page at a
+ * time), how far the walk goes, and that it is made ONCE per visit to the
+ * page, so a recompute reads nothing.
  *
  * Beside it, the rule card's sample run: one invented client under the
- * draft, through the same projector, so the track on the card is what the
- * rule really does and never a drawing of it.
+ * draft, through the same projector (`StreakSystem.project`), so the track
+ * on the card is what the rule really does and never a drawing of it.
  */
+
+/** The shop's zone: the day a statistic's visit began in, and the day a version was published on. */
+export const RHYTHM_SHOP_ZONE: TimeZone = (() => {
+  const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
+  // Unreachable: a constant IANA name.
+  return zone.ok ? zone.value : defect('Europe/Sofia is no zone');
+})();
 
 /** A page of the walk, and how many pages it may take: five of 200. */
 export const RHYTHM_PREVIEW_PAGE_SIZE = 200;
@@ -65,24 +63,52 @@ export interface RhythmPreviewFacts {
   readonly capped: boolean;
 }
 
+/** A fold of nothing: no visit, no excuse, no booking, no pause, no grant. */
+const NO_FACTS: StreakFacts = {
+  visits: [],
+  excused: [],
+  bookings: [],
+  pauses: [],
+  grants: [],
+};
+
 /**
- * One client's statistics as the projector's facts. The statistics hold a
- * visit's shop day (and minute) and nothing else, so every worked visit
- * counts and nothing is known of what the shop called off, of a visit on
- * the book or of a pause: that is why the preview is labelled
- * «приблизително».
+ * Clients' statistics as the projector's facts, through ONE reader per
+ * walk: it places the first instant of each shop day once (a statistic
+ * holds a visit's day and minute, never its instant, so the visit is
+ * stamped with the first instant of its Sofia day — flatten-spec T3),
+ * however many people the walk reads. Every worked visit counts and
+ * nothing is known of what the shop called off, of a visit on the book or
+ * of a pause: that is why the preview is labelled «приблизително».
  */
-export function streakFactsOf(record: ClientStatsRecord): StreakFacts {
-  return {
-    visits: record.last365VisitsCompleted.map((fact) => ({
-      day: fact.localDate,
-      counted: true,
-    })),
-    excused: [],
-    bookings: [],
-    pauses: [],
-    grants: [],
+export function streakFactsReader(): (
+  record: ClientStatsRecord,
+) => StreakFacts {
+  const dayStarts = new Map<LocalDate, UtcEpochMs>();
+  const startOf = (day: LocalDate): UtcEpochMs => {
+    let start = dayStarts.get(day);
+    if (start === undefined) {
+      start = ZonedTimeSystem.startOfLocalDay(day, RHYTHM_SHOP_ZONE);
+      dayStarts.set(day, start);
+    }
+    return start;
   };
+  return (record) => {
+    const visits: StreakVisitFact[] = [];
+    for (const fact of record.last365VisitsCompleted) {
+      visits.push({
+        localDate: fact.localDate,
+        counted: true,
+        utcEpochMs: startOf(fact.localDate),
+      });
+    }
+    return { ...NO_FACTS, visits };
+  };
+}
+
+/** One client's statistics as the projector's facts (`streakFactsReader`, for one). */
+export function streakFactsOf(record: ClientStatsRecord): StreakFacts {
+  return streakFactsReader()(record);
 }
 
 /**
@@ -94,6 +120,7 @@ export function streakFactsOf(record: ClientStatsRecord): StreakFacts {
 export async function readRhythmPreviewFacts(
   stats: ClientStatsPagePorts,
 ): Promise<Result<RhythmPreviewFacts, RepositoryError>> {
+  const factsOf = streakFactsReader();
   const clients: StreakFacts[] = [];
   let after: CustomerId | null = null;
   for (let page = 0; page < RHYTHM_PREVIEW_PAGES; page += 1) {
@@ -105,7 +132,7 @@ export async function readRhythmPreviewFacts(
     }
     if (!read.ok) return read;
     for (const record of read.value.records) {
-      clients.push(streakFactsOf(record));
+      clients.push(factsOf(record));
     }
     after = read.value.nextAfterCustomerId;
     if (after === null) return Result.ok({ clients, capped: false });
@@ -114,40 +141,43 @@ export async function readRhythmPreviewFacts(
 }
 
 /**
- * The facts, read once and kept. The first `read()` starts the walk; every
- * later one answers what it read (or is still reading), a walk that
- * failed included: a failure is an answer, and asking it again by itself
- * would read the shop twice behind one notice. «Опитай пак» is `forget()`,
- * then `read()`.
+ * The facts, read once and kept: a record of closures over ONE walk. The
+ * first `read()` starts the walk; every later one answers what it read (or
+ * is still reading), a walk that failed included: a failure is an answer,
+ * and asking it again by itself would read the shop twice behind one
+ * notice. «Опитай пак» is `forget()`, then `read()`.
  */
-export class RhythmPreviewSource {
-  private walk: Promise<Result<RhythmPreviewFacts, RepositoryError>> | null =
-    null;
-  private walkFailed = false;
-
-  constructor(private readonly stats: ClientStatsPagePorts) {}
-
+export type RhythmPreviewSource = {
+  readonly read: () => Promise<Result<RhythmPreviewFacts, RepositoryError>>;
+  /** The next `read()` walks again. */
+  readonly forget: () => void;
   /** The walk was made and failed: there is nothing to wait for until `forget()`. */
-  get failed(): boolean {
-    return this.walkFailed;
-  }
+  readonly failed: () => boolean;
+};
 
-  read(): Promise<Result<RhythmPreviewFacts, RepositoryError>> {
-    if (this.walk !== null) return this.walk;
-    const walk = readRhythmPreviewFacts(this.stats).then((facts) => {
+export function rhythmPreviewSource(
+  stats: ClientStatsPagePorts,
+): RhythmPreviewSource {
+  let walk: Promise<Result<RhythmPreviewFacts, RepositoryError>> | null = null;
+  let walkFailed = false;
+  const read = (): Promise<Result<RhythmPreviewFacts, RepositoryError>> => {
+    if (walk !== null) return walk;
+    const started = readRhythmPreviewFacts(stats).then((facts) => {
       // A walk that was forgotten meanwhile says nothing of the one after it.
-      if (this.walk === walk) this.walkFailed = !facts.ok;
+      if (walk === started) walkFailed = !facts.ok;
       return facts;
     });
-    this.walk = walk;
-    return walk;
-  }
-
-  /** The next `read()` walks again. */
-  forget(): void {
-    this.walk = null;
-    this.walkFailed = false;
-  }
+    walk = started;
+    return started;
+  };
+  return {
+    read,
+    forget: () => {
+      walk = null;
+      walkFailed = false;
+    },
+    failed: () => walkFailed,
+  };
 }
 
 /**
@@ -157,30 +187,29 @@ export class RhythmPreviewSource {
  * know it.
  */
 export function rhythmPreviewReadsFacts(
-  inForce: StreakDefinition,
-  draft: StreakDefinition,
+  inForce: StreakRule,
+  draft: StreakRule,
 ): boolean {
   return (
-    inForce.qualifier.kind === 'anyVisit' && draft.qualifier.kind === 'anyVisit'
+    inForce.streakQualifier === StreakQualifier.AnyVisit &&
+    draft.streakQualifier === StreakQualifier.AnyVisit
   );
 }
 
 /** The fold: `StreakPreviewSystem.estimate` (`@core/systems`), over the facts the walk read. */
 export function rhythmPreviewOf(input: {
-  readonly inForce: StreakDefinition;
-  readonly draft: StreakDefinition;
+  readonly inForce: StreakRule;
+  readonly draft: StreakRule;
   readonly facts: RhythmPreviewFacts;
-  readonly today: IsoDate;
+  /** The shop's today, as written: on a day that is no day nobody is judged. */
+  readonly today: string;
 }): StreakPreview {
   const today = LocalDate.parse(input.today);
-  return legacyPreviewOf(
-    StreakPreviewSystem.estimate(
-      ruleOf(input.inForce),
-      ruleOf(input.draft),
-      input.facts.clients.map(streakFactsReader()),
-      // On a `today` that is no day nobody is judged.
-      today.ok ? today.value : null,
-    ),
+  return StreakPreviewSystem.estimate(
+    input.inForce,
+    input.draft,
+    input.facts.clients,
+    today.ok ? today.value : null,
   );
 }
 
@@ -200,25 +229,19 @@ const SAMPLE_VISITS_BEFORE_THE_MISS = 6;
  * On time is the newcomer's interval, which every later period of the same
  * rule is at least as long as. The late visit falls on the day the missed
  * due date would move to under a protection: past the grace, so the miss
- * is judged, and no later than a protection forgives.
+ * is judged, and no later than a protection forgives. Each visit is
+ * stamped with the first instant of its Sofia day, as the walk's are.
  */
 export function sampleRhythmFacts(
-  definition: StreakDefinition,
-  today: IsoDate,
+  rule: StreakRule,
+  today: string,
 ): StreakFacts {
-  const none: StreakFacts = {
-    visits: [],
-    excused: [],
-    bookings: [],
-    pauses: [],
-    grants: [],
-  };
   // Plain calendar arithmetic on the shop's day (no zone moves a civil date).
   const day = LocalDate.parse(today);
-  if (!day.ok) return none;
+  if (!day.ok) return NO_FACTS;
 
-  const onTime = definition.interval.daysFor(null).days;
-  const late = 2 * definition.interval.daysFor(onTime).days;
+  const onTime = StreakIntervalRule.daysFor(rule, null).days;
+  const late = 2 * StreakIntervalRule.daysFor(rule, onTime).days;
   const gaps = [
     ...Array.from({ length: SAMPLE_VISITS_BEFORE_THE_MISS - 1 }, () => onTime),
     late,
@@ -230,112 +253,33 @@ export function sampleRhythmFacts(
     daysAgo += gap;
     days.push(daysAgo);
   }
-  return {
-    ...none,
-    visits: days.reverse().map((ago) => ({
-      day: LocalDate.addDays(day.value, -ago),
+  const visits: StreakVisitFact[] = [];
+  for (const ago of days.reverse()) {
+    const localDate = LocalDate.addDays(day.value, -ago);
+    visits.push({
+      localDate,
       counted: true,
-    })),
-  };
+      utcEpochMs: ZonedTimeSystem.startOfLocalDay(localDate, RHYTHM_SHOP_ZONE),
+    });
+  }
+  return { ...NO_FACTS, visits };
 }
 
 /**
  * The sample client's rhythm under a rule: what the rule card's track
- * draws. `null` under a rule that is off (it judges nobody).
+ * draws. `null` under a rule that is off (it judges nobody), and on a day
+ * that is no day.
  */
 export function sampleRhythmRun(
-  definition: StreakDefinition,
-  today: IsoDate,
+  rule: StreakRule,
+  today: string,
 ): StreakState | null {
-  return projectStreak(definition, sampleRhythmFacts(definition, today), today);
-}
-
-// ── The bridge: legacy class/facts ↔ ecs-core struct (Phase 4 deletes it) ──
-
-const SYSTEM_EXCUSE = {
-  shopClosure: SystemExcuse.ShopClosure,
-  barberAbsence: SystemExcuse.BarberAbsence,
-  staffCancelled: SystemExcuse.StaffCancelled,
-  closedDays: SystemExcuse.ClosedDays,
-} as const satisfies Record<StreakExcuse, SystemExcuse>;
-
-const SYSTEM_ON_BREAK = {
-  restart: SystemOnBreak.Restart,
-  hold: SystemOnBreak.Hold,
-} as const satisfies Record<StreakDefinitionProps['onBreak'], SystemOnBreak>;
-
-/** A Sofia day this edge holds: a checked version day, a clock's «today». */
-function dayOf(raw: IsoDate): LocalDate {
-  const day = LocalDate.parse(raw);
-  return day.ok ? day.value : defect(`${raw} is no calendar day`);
-}
-
-/**
- * A version as the system reads it: the figures, flat (every part's
- * figures prefixed by the part), every tag the dictionary's; its day as
- * `effectiveFromLocalDate`.
- */
-function ruleOfProps(
-  props: StreakDefinitionProps,
-  effectiveFromLocalDate: LocalDate,
-): StreakRule {
-  const { qualifier, interval } = props;
-  return {
-    version: props.version,
-    effectiveFromLocalDate,
-    enabled: props.enabled,
-    ...(qualifier.kind === 'services'
-      ? StreakQualifierRule.services(
-          qualifier.serviceIds.map((id) => ServiceId.of(id)),
-        )
-      : qualifier.kind === 'categories'
-        ? StreakQualifierRule.categories(
-            qualifier.categoryIds.map((id) => ServiceCategoryId.of(id)),
-          )
-        : StreakQualifierRule.anyVisit()),
-    minGapDays: props.minGapDays,
-    bookingHoldEnabled: props.bookingHold.enabled,
-    bookingHoldMaxDaysPastDue: props.bookingHold.maxDaysPastDue,
-    ...(interval.kind === 'fixed'
-      ? StreakIntervalRule.fixed(interval.days)
-      : StreakIntervalRule.personal(
-          interval.tolerancePct,
-          interval.minDays,
-          interval.maxDays,
-          interval.fallbackDays,
-        )),
-    graceDays: props.graceDays,
-    riskLeadDays: props.riskLeadDays,
-    protectionsEnabled: props.protections.enabled,
-    protectionsMaxBanked: props.protections.maxBanked,
-    protectionsEarnEvery: props.protections.earnEvery,
-    protectionsStartWith: props.protections.startWith,
-    excuses: props.excuses.map((excuse) => SYSTEM_EXCUSE[excuse]),
-    clientPauseEnabled: props.clientPause.enabled,
-    clientPauseMaxDaysPerYear: props.clientPause.maxDaysPerYear,
-    repairEnabled: props.repair.enabled,
-    repairWindowDays: props.repair.windowDays,
-    repairPerYear: props.repair.perYear,
-    onBreak: SYSTEM_ON_BREAK[props.onBreak],
-  };
-}
-
-/** A published version as the system reads it — its day was checked by `StreakDefinition.create`. */
-function ruleOf(definition: StreakDefinition): StreakRule {
-  const props = definition.toProps();
-  return ruleOfProps(props, dayOf(props.effectiveFrom));
-}
-
-/** The system's answer in the legacy words: `kind`, lowercase. */
-function legacyPreviewOf(preview: SystemPreview): StreakPreview {
-  return preview.streakPreviewOutcome === StreakPreviewOutcome.Unavailable
-    ? { kind: 'unavailable', reason: 'qualifier' }
-    : {
-        kind: 'estimate',
-        clients: preview.clients,
-        before: preview.before,
-        after: preview.after,
-        back: preview.back,
-        out: preview.out,
-      };
+  const day = LocalDate.parse(today);
+  if (!day.ok) return null;
+  return StreakSystem.project(
+    StreakRule.DEFAULT_DEFINITION_ID,
+    rule,
+    sampleRhythmFacts(rule, day.value),
+    day.value,
+  );
 }

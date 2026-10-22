@@ -8,9 +8,9 @@
   // Deliberately NOT a runtime name (tsconfig.lib.json and friends): the
   // `@nx/js:typescript-sync` generator rewrites a runtime config's
   // `references` from the project graph, and this project's graph edges
-  // come from the `.mjs` seed bundling the legacy libraries by path — none
-  // of which this config compiles. The one reference here is the library
-  // the fixture bodies are held to.
+  // come from the `.mjs` seed bundling `@core/*` and the functions' sources
+  // by path — none of which this config compiles. The one reference here is
+  // the library the fixture bodies are held to.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "../../dist/out-tsc",

@@ -1,18 +1,28 @@
 import {
+  AuditResourceId,
+  defect,
   type EngagementError,
   Result,
   StreakPublishError,
   type StreakDefinitionId,
   type LocalDate,
+  type UserId,
+  type UtcEpochMs,
 } from '@core/primitives';
 import {
+  type Actor,
+  AuditContext,
+  HeadRole,
   type LocalizedText,
+  StreakPublishCall,
   StreakRule,
   StreakRuleDirection,
   type StreakRuleInput,
   StreakTransition,
   type StreakHeadRule,
 } from '@core/components';
+import type { StreakDefinition, StreakDefinitionVersion } from '@core/entities';
+import { AuditSystem, type AuditRowPlan } from './audit.system';
 import {
   StreakRuleSystem,
   type StreakNoticePolicy,
@@ -21,23 +31,25 @@ import {
 } from './streak-rule.system';
 
 /*
- * PUBLISHING THE RHYTHM'S RULE (client-card-revision-3 §4.4) — the refusal
- * logic of the `publishStreakDefinition` callable
- * (`apps/functions/src/use-cases/publish-streak-definition.use-case.ts`
- * `publish`/`callOff`), of the page's own assessment
- * (`libs/application/engagement/.../publish-streak-definition.use-case.ts`
- * `assess`) and of the in-memory repository the page's specs run against
- * (`InMemoryStreakDefinitionRepository`): one decision, three callers.
+ * PUBLISHING THE RHYTHM'S RULE (client-card-revision-3 §4.4) — the
+ * decision of the `publishStreakDefinition` pipeline (`@core/pipelines`
+ * `publish-streak-definition.pipeline.ts`, behind the admin-only callable;
+ * the admin page's specs run that same pipeline through the gateway double
+ * `memoryStreakPublishGatewayPorts` of `@core/testing`) and of the page's
+ * own assessment (`assess`): one decision, two callers.
  *
- * In order, a publish is: `admit` (no recompute before the engine exists,
- * no preview nobody can vouch for, a head that has not moved — and the
+ * In order, a publish is: `admitCaller` (a signed-in admin, judged before
+ * the request is read), `admit` (no recompute before the engine exists, no
+ * preview nobody can vouch for, a head that has not moved — and the
  * version's number, one above the highest ever written), the draft parsed
  * into that numbered version at the edge (`StreakRule.parse`), then
  * `decide` (no day earlier than the change may start; the new head, in
- * force at once or waiting; the version it replaces, called off). A
- * withdrawal is `withdraw`. The writer numbers the version: after a
- * withdrawal `baseVersion + 1` is the called-off version's number, and a
- * version document is never written twice.
+ * force at once or waiting; the version it replaces, called off) and
+ * `publishPlan` (what it writes). A withdrawal is `withdraw` and
+ * `withdrawPlan`; a retry of either answers its first receipt
+ * (`replayReceipt`). The writer numbers the version: after a withdrawal
+ * `baseVersion + 1` is the called-off version's number, and a version
+ * document is never written twice.
  */
 
 /** What a draft comes to — the assessment's discriminator `draftAssessment`, the ONLY source of these strings. */
@@ -106,6 +118,44 @@ export type StreakWithdrawal = {
   /** What waited, as it waited — the head's `SCHEDULED` element. */
   readonly waiting: StreakHeadRule;
   readonly calledOff: readonly number[];
+};
+
+/**
+ * A version document's body — `streakDefinitions/{id}/versions/{version:06}`,
+ * the entity minus `id` with every variant of the flat rule kept (a plain
+ * `Omit` of the union-typed archetype would keep only the keys its
+ * qualifier and interval variants share).
+ */
+export type StreakDefinitionVersionBody = BodyOf<StreakDefinitionVersion>;
+
+/** An entity minus its `id`, distributed over every variant of a union-typed archetype. */
+type BodyOf<E> = E extends unknown ? Omit<E, 'id'> : never;
+
+/** The head's body — `streakDefinitions/{id}`, written whole. */
+export type StreakDefinitionBody = Omit<StreakDefinition, 'id'>;
+
+/**
+ * Everything ONE publish writes, decided (Law 3/4: no `WriteOp`, no hash —
+ * the pipeline maps it to its plan and hashes each audit `idBasis`).
+ */
+export type StreakPublishPlan = {
+  /** What the publish answers — the number the writer gave the version, its day, its direction. */
+  readonly receipt: StreakPublishCall.Receipt;
+  /** The new version, created once at `versions/{forVersion(receipt.version)}`. */
+  readonly versionBody: StreakDefinitionVersionBody;
+  /** The called-off versions whose documents the read found — each stamped `withdrawnAtUtcMs`. */
+  readonly stampVersions: readonly number[];
+  /** The head after the act, written whole. */
+  readonly headBody: StreakDefinitionBody;
+  /** The act's ONE untargeted audit row (F1-8), id basis keyed by the `requestId`. */
+  readonly audit: readonly AuditRowPlan[];
+};
+
+/** Everything ONE withdrawal writes, decided — mapped by the pipeline as {@link StreakPublishPlan} is. */
+export type StreakWithdrawPlan = {
+  readonly stampVersions: readonly number[];
+  readonly headBody: StreakDefinitionBody;
+  readonly audit: readonly AuditRowPlan[];
 };
 
 /** A shop's first rule has nothing before it to be compared with, or to give notice of. */
@@ -301,4 +351,210 @@ export const StreakPublishSystem = {
       calledOff: [version],
     });
   },
+
+  /**
+   * May this caller change the rule at all? Asked of the VERIFIED caller
+   * (the wire's reading of the token, never the payload) BEFORE the request
+   * is read — a stranger is told they may not ask, never what was wrong
+   * with the asking — and again by the pipeline, so neither act can be
+   * reached around it. Nobody signed in (or a blank uid) is
+   * `CALLER_UNAUTHENTICATED`; anyone but the shop's admin pair is
+   * `CALLER_NOT_ADMIN`. The answer is the account that signs the version.
+   */
+  admitCaller(
+    callerUserId: UserId | null,
+    callerIsAdmin: boolean,
+  ): Result<UserId, StreakPublishError> {
+    if (callerUserId === null || callerUserId.trim().length === 0) {
+      return Result.err(StreakPublishError.callerUnauthenticated());
+    }
+    return callerIsAdmin
+      ? Result.ok(callerUserId)
+      : Result.err(StreakPublishError.callerNotAdmin());
+  },
+
+  /**
+   * The draft as the version it proposes: parsed into the rule numbered
+   * `version` on the day asked (`StreakRule.parse`, the rule's one door), or
+   * `INVALID` naming every flat field at fault, each once, in the rule's
+   * order.
+   */
+  proposal(
+    draft: StreakRuleInput,
+    version: number,
+    effectiveFromLocalDate: string,
+  ): Result<StreakRule, StreakPublishError> {
+    const built = StreakRule.parse({
+      ...draft,
+      version,
+      effectiveFromLocalDate,
+    });
+    if (built.ok) return built;
+    const fields: string[] = [];
+    for (let i = 0; i < built.error.length; i++) {
+      fields.push((built.error[i] as EngagementError.StreakRuleError).field);
+    }
+    return Result.err(StreakPublishError.invalid(unique(fields)));
+  },
+
+  /**
+   * A retried publish's answer: the ORIGINAL receipt, read off the version
+   * its first attempt wrote (found by its `requestId`) — never the head as
+   * it stands now, which the first attempt itself moved.
+   */
+  replayReceipt(stored: StreakDefinitionVersion): StreakPublishCall.Receipt {
+    return StreakPublishCall.receipt(
+      stored.version,
+      stored.effectiveFromLocalDate,
+      stored.streakRuleDirection,
+    );
+  },
+
+  /**
+   * What one publish writes, decided over what its transaction read: the
+   * new version (the flat rule at its root, signed by the admitted account,
+   * stamped `nowUtcMs`, never withdrawn), the `withdrawnAtUtcMs` stamp of
+   * each called-off version whose document `stored` lists (a head seeded
+   * without its history has nothing to stamp), the head written whole (its
+   * name kept, its `rules` the decided list) and the act's ONE untargeted
+   * audit row — compared with the rule IN FORCE, never with what waited.
+   * A row the audit planner refuses is a defect: the verb is a constant.
+   */
+  publishPlan(
+    call: StreakPublishCall,
+    name: LocalizedText,
+    decision: StreakPublishDecision,
+    stored: readonly number[],
+    publishedByUserId: UserId,
+    actor: Actor,
+    nowUtcMs: UtcEpochMs,
+  ): StreakPublishPlan {
+    const { rule } = call;
+    const { change } = decision;
+    return {
+      receipt: StreakPublishCall.receipt(
+        rule.version,
+        rule.effectiveFromLocalDate,
+        change.direction,
+      ),
+      versionBody: {
+        ...StreakRule.of(rule),
+        publishedAtUtcMs: nowUtcMs,
+        publishedByUserId,
+        streakTransition: call.streakTransition,
+        streakRuleDirection: change.direction,
+        changed: [...change.changed],
+        requestId: call.requestId,
+        withdrawnAtUtcMs: null,
+      },
+      stampVersions: stampable(decision.calledOff, stored),
+      headBody: { name, rules: decision.head.rules, updatedAtUtcMs: nowUtcMs },
+      audit: auditRows(
+        call.streakId,
+        call.requestId,
+        AuditContext.streakPublished({
+          streakFromVersion: decision.inForceVersion,
+          streakToVersion: rule.version,
+          streakEffectiveFrom: rule.effectiveFromLocalDate,
+          streakTransition: call.streakTransition,
+          streakRuleDirection: change.direction,
+          streakChanged: change.changed,
+          streakReplacedVersion: decision.calledOff[0] ?? null,
+        }),
+        actor,
+        nowUtcMs,
+      ),
+    };
+  },
+
+  /**
+   * What one withdrawal writes: the `withdrawnAtUtcMs` stamp of the
+   * called-off version when `stored` lists its document, the head holding
+   * the rule in force alone (written whole, its name kept) and the act's
+   * ONE untargeted audit row — what waited, and the version the shop stays
+   * under.
+   */
+  withdrawPlan(
+    call: StreakPublishCall.Withdraw,
+    name: LocalizedText,
+    withdrawal: StreakWithdrawal,
+    stored: readonly number[],
+    actor: Actor,
+    nowUtcMs: UtcEpochMs,
+  ): StreakWithdrawPlan {
+    const current = StreakRuleSystem.current(withdrawal.head);
+    const { waiting } = withdrawal;
+    return {
+      stampVersions: stampable(withdrawal.calledOff, stored),
+      headBody: {
+        name,
+        rules: [
+          {
+            ...StreakRule.of(current),
+            headRole: HeadRole.Current,
+            streakTransition: null,
+          },
+        ],
+        updatedAtUtcMs: nowUtcMs,
+      },
+      audit: auditRows(
+        call.streakId,
+        call.requestId,
+        AuditContext.streakWithdrawn({
+          streakFromVersion: waiting.version,
+          streakToVersion: current.version,
+          streakEffectiveFrom: waiting.effectiveFromLocalDate,
+          // What waits always names its transition (the head's SCHEDULED element).
+          streakTransition:
+            waiting.streakTransition ??
+            defect('a waiting rule names its transition'),
+        }),
+        actor,
+        nowUtcMs,
+      ),
+    };
+  },
 } as const;
+
+/** The called-off versions whose documents exist, in the decision's order. */
+function stampable(
+  calledOff: readonly number[],
+  stored: readonly number[],
+): readonly number[] {
+  const out: number[] = [];
+  for (let i = 0; i < calledOff.length; i++) {
+    const version = calledOff[i] as number;
+    if (stored.includes(version)) out.push(version);
+  }
+  return out;
+}
+
+/**
+ * The act's ONE row as the flat log stores it (F1-8): no subjects — a rule
+ * is about no one client — so one untargeted row, its id basis keyed by the
+ * intent's `requestId` (a retry derives the same id and writes nothing
+ * twice).
+ */
+function auditRows(
+  streakId: StreakDefinitionId,
+  requestId: string,
+  context: AuditContext.StreakPublished | AuditContext.StreakWithdrawn,
+  actor: Actor,
+  nowUtcMs: UtcEpochMs,
+): readonly AuditRowPlan[] {
+  const planned = AuditSystem.plan(
+    [
+      {
+        resourceId: AuditResourceId.forStreakDefinition(streakId),
+        subjects: [],
+        changeKey: requestId,
+        context,
+      },
+    ],
+    actor,
+    nowUtcMs,
+  );
+  return planned.ok
+    ? planned.value
+    : defect(`audit entry refused by domain: ${planned.error.errorCode}`);
+}

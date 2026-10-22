@@ -1,5 +1,9 @@
 import type { Observable } from 'rxjs';
-import type { JournalEffect, VoucherCode } from '@core/components';
+import type {
+  JournalEffect,
+  StreakPublishCall,
+  VoucherCode,
+} from '@core/components';
 import type {
   RepositoryError,
   Result,
@@ -7,7 +11,7 @@ import type {
   CouponId,
   CustomerId,
   StreakDefinitionId,
-  UserId,
+  StreakPublishError,
 } from '@core/primitives';
 import type {
   BadgeCategory,
@@ -27,15 +31,19 @@ import type {
 } from '@core/entities';
 
 /**
- * The engagement context's read ports (blueprint §4.2): coupons, grants and
- * gift vouchers, the loyalty account and its catalogue, the client journal
- * and the streak definitions. One function per query shape, entities
- * straight from `snap.data()`, every one naming `RepositoryError`.
+ * The engagement context's ports (blueprint §4.2): coupons, grants and gift
+ * vouchers, the loyalty account and its catalogue, the client journal, the
+ * streak definitions and the web's gateway to the rhythm's publish
+ * callable. One function per query shape, entities straight from
+ * `snap.data()` — every stored body answered as stored (Law 5, no
+ * read-side mapper) — every one naming `RepositoryError`.
  *
- * Writes are not here: a grant burn or restore, a voucher balance, a
+ * Server writes are not here: a grant burn or restore, a voucher balance, a
  * redemption counter and the streak publish are entries of one
- * `CommitPlan` (`tx.port.ts`) planned by their systems; coupons stay a
- * rules-guarded admin write until an admin surface lands (§9 D28).
+ * `CommitPlan` (`tx.port.ts`) planned by their systems and committed by
+ * their pipelines; the web reaches the publish only through the callable
+ * (`StreakPublishGatewayPorts`). Coupons stay a rules-guarded admin write
+ * until an admin surface lands (§9 D28).
  */
 
 // ── Coupons, grants, vouchers ─────────────────────────────────────────────
@@ -99,41 +107,56 @@ export type ListUsableCouponGrants = (
   customerId: CustomerId,
 ) => Promise<Result<readonly CouponGrant[], RepositoryError>>;
 
-// ── Loyalty ───────────────────────────────────────────────────────────────
+// ── Loyalty (keyed by the client record, D29) ─────────────────────────────
 
-/** `loyaltyAccounts/{uid}` — `null` before the person's first entry. */
+/**
+ * `loyaltyAccounts/{customerId}` — the client record's account as stored;
+ * `null` before its first entry.
+ */
 export type LoadLoyaltyAccount = (
-  userId: UserId,
+  customerId: CustomerId,
 ) => Promise<Result<LoyaltyAccount | null, RepositoryError>>;
 
-/** `loyaltyAccounts/{uid}/badgeProgress` — the whole subcollection. */
+/** `loyaltyAccounts/{customerId}/badgeProgress` — the whole subcollection, every document as stored. */
 export type ListBadgeProgress = (
-  userId: UserId,
+  customerId: CustomerId,
 ) => Promise<Result<readonly BadgeProgress[], RepositoryError>>;
 
-/** `loyaltyAccounts/{uid}/seasonProgress` — the whole subcollection. */
+/** `loyaltyAccounts/{customerId}/seasonProgress` — the whole subcollection, every document as stored. */
 export type ListSeasonProgress = (
-  userId: UserId,
+  customerId: CustomerId,
 ) => Promise<Result<readonly SeasonProgress[], RepositoryError>>;
 
-/** The five loyalty catalogue collections, each read whole. */
+/**
+ * The loyalty catalogue, under `LoyaltyCatalogSystem`'s part names
+ * (`LoyaltyCatalogParts`), so the answer passes to its `validate` UNMAPPED
+ * (Law 3): the shelves, the medal families, the seasons, the tiers, the
+ * rewards and the rhythm's heads (`streaks`). The ports tier may not import
+ * the systems tier, so the record is declared here and
+ * `engagement-entities.type-spec.ts` pins it assignable to
+ * `LoyaltyCatalogParts`.
+ */
 export type LoyaltyCatalog = {
-  readonly badgeCategories: readonly BadgeCategory[];
-  readonly badgeSeries: readonly BadgeSeries[];
+  readonly categories: readonly BadgeCategory[];
+  readonly series: readonly BadgeSeries[];
   readonly seasons: readonly Season[];
-  readonly tierDefinitions: readonly TierDefinition[];
+  readonly tiers: readonly TierDefinition[];
   readonly rewards: readonly RewardCatalogItem[];
+  readonly streaks: readonly StreakDefinition[];
 };
 
 /**
- * `badgeCategories`, `badgeSeries`, `seasons`, `tierDefinitions` and
- * `rewardsCatalog`, whole — static, admin-authored, read together.
+ * `badgeCategories`, `badgeSeries`, `seasons`, `tierDefinitions`,
+ * `rewardsCatalog` and `streakDefinitions`, each read whole, in Firestore's
+ * id order — static, admin-authored, read together, every document as
+ * stored. Whether the catalogue holds together (and its display order) is
+ * `LoyaltyCatalogSystem.validate`'s call, made by the reader.
  */
 export type LoadLoyaltyCatalog = () => Promise<
   Result<LoyaltyCatalog, RepositoryError>
 >;
 
-/** One page of a person's client-visible journal, newest first. */
+/** One page of a client record's client-visible journal, newest first. */
 export type JournalPage = {
   readonly entries: readonly JournalEntry[];
   /** The `seq` the next page reads strictly below; `null` at the end. */
@@ -141,16 +164,15 @@ export type JournalPage = {
 };
 
 /**
- * The activity feed «Движение» — `clientJournal` where `userId ==`,
- * `journalVisibility == CLIENT`, `journalEffect in effects`, `orderBy seq
- * desc` (index #21, re-declared by the loyalty flip (3);
- * `loyalty-activity-reader.adapter.ts:75-107`). `effects` is the pill's
- * list (the feed's `ACTIVITY_EFFECT_KINDS` table: points, rewards, status,
- * all); the paging trim is `PagingSystem`'s (§2.8). Keyed by `UserId` until
- * the loyalty flip (3) (D29, §5.5).
+ * The activity feed «Движение» and the ledger — `clientJournal` where
+ * `customerId ==`, `journalVisibility == CLIENT`, `journalEffect in
+ * effects` (a pill's `JournalFeed.effectsOf`), `orderBy seq desc`, `seq <
+ * beforeSeq` when one is given, `limit + 1` rows read and trimmed by
+ * `PagingSystem` (§2.8; index #21: `customerId`, `journalVisibility`,
+ * `journalEffect`, `seq` desc). Rows as stored.
  */
 export type PageClientJournal = (
-  userId: UserId,
+  customerId: CustomerId,
   effects: readonly JournalEffect[],
   beforeSeq: number | null,
   limit: number,
@@ -158,19 +180,48 @@ export type PageClientJournal = (
 
 // ── Streak definitions ────────────────────────────────────────────────────
 
-/** `streakDefinitions/{id}`, live — the head with its `rules` list (the rule in force and the one that waits). */
+/** `streakDefinitions/{id}`, live — the head with its `rules` list (the rule in force and the one that waits); `null` when absent. */
 export type ObserveStreakDefinitionHead = (
   id: StreakDefinitionId,
 ) => Observable<Result<StreakDefinition | null, RepositoryError>>;
 
 /**
  * The newest `limit` published versions — `streakDefinitions/{id}/versions`,
- * `orderBy version desc` (`streak-definition-repository.adapter.ts:194`).
+ * `orderBy version desc`, `limit` at least one.
  */
 export type ListStreakDefinitionVersions = (
   id: StreakDefinitionId,
   limit: number,
 ) => Promise<Result<readonly StreakDefinitionVersion[], RepositoryError>>;
+
+/**
+ * Publishes the rhythm's rule through the admin-only callable
+ * (`publishStreakDefinition`, its wire frozen): the receipt of the version
+ * it made — or, for a retry of the same `requestId`, of the version the
+ * first send made. A refusal is a `StreakPublishError`: `CALLER_NOT_ADMIN`
+ * for the callable's `notAdmin` answer and for a thrown
+ * `permission-denied`/`unauthenticated`; `INVALID` with the flat
+ * `StreakRuleField`s at fault (a locator the page does not know kept as
+ * written); `TOO_EARLY` with the `earliest` day (the request's own day when
+ * the answer names none); `STALE`, `RECOMPUTE_NEEDS_ENGINE`,
+ * `PREVIEW_STALE`. A request that got no answer, or an answer that is none
+ * of `published`/`withdrawn`/`refused` as the call expects, is a
+ * `RepositoryError`.
+ */
+export type PublishStreakRule = (
+  call: StreakPublishCall,
+) => Promise<
+  Result<StreakPublishCall.Receipt, StreakPublishError | RepositoryError>
+>;
+
+/**
+ * Withdraws the version that waits for its day, through the same callable
+ * (`op: 'withdraw'`). Refusals as {@link PublishStreakRule}'s; an answer for
+ * another version, a publish answer or none at all is a `RepositoryError`.
+ */
+export type WithdrawStreakRule = (
+  call: StreakPublishCall.Withdraw,
+) => Promise<Result<void, StreakPublishError | RepositoryError>>;
 
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
@@ -207,27 +258,49 @@ export type CouponVoucherPorts = CouponLookupPorts &
   CouponGrantPorts &
   GiftVoucherPorts;
 
-/** A client record's loyalty account, badges, seasons and the loyalty catalogue. */
-export type LoyaltyReadPorts = {
+/**
+ * A client record's loyalty account, badge progress and season progress —
+ * the bundle the web's `LOYALTY_ACCOUNT_READ_PORTS` token binds (the
+ * client card).
+ */
+export type LoyaltyAccountReadPorts = {
   readonly loadLoyaltyAccount: LoadLoyaltyAccount;
   readonly listBadgeProgress: ListBadgeProgress;
   readonly listSeasonProgress: ListSeasonProgress;
+};
+
+/** The loyalty catalogue — the bundle the web's `LOYALTY_CATALOG_READ_PORTS` token binds. */
+export type LoyaltyCatalogReadPorts = {
   readonly loadLoyaltyCatalog: LoadLoyaltyCatalog;
 };
 
-/** A client record's journal pages. */
+/** A client record's loyalty and the catalogue it is drawn by — a suite of the two. */
+export type LoyaltyReadPorts = LoyaltyAccountReadPorts &
+  LoyaltyCatalogReadPorts;
+
+/** A client record's journal pages — the web's `CLIENT_JOURNAL_PORTS`. */
 export type ClientJournalPorts = {
   readonly pageClientJournal: PageClientJournal;
 };
 
-/** A streak definition's live head and its published versions. */
+/** A streak definition's live head and its published versions — the web's `STREAK_DEFINITION_PORTS`. */
 export type StreakDefinitionPorts = {
   readonly observeStreakDefinitionHead: ObserveStreakDefinitionHead;
   readonly listStreakDefinitionVersions: ListStreakDefinitionVersions;
+};
+
+/**
+ * The rhythm's publish and withdrawal through the callable — the bundle the
+ * web's `STREAK_PUBLISH_PORTS` token binds (the admin rhythm page).
+ */
+export type StreakPublishGatewayPorts = {
+  readonly publishStreakRule: PublishStreakRule;
+  readonly withdrawStreakRule: WithdrawStreakRule;
 };
 
 /** The engagement context's whole port suite — an intersection of its bundles. */
 export type EngagementPorts = CouponVoucherPorts &
   LoyaltyReadPorts &
   ClientJournalPorts &
-  StreakDefinitionPorts;
+  StreakDefinitionPorts &
+  StreakPublishGatewayPorts;

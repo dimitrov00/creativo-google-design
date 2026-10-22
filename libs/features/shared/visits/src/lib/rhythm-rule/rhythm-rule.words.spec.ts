@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import { ServiceCategoryId, ServiceId } from '@core/primitives';
 import {
-  StreakDefinition,
-  type StreakDefinitionProps,
-  type StreakIntervalProps,
-  type StreakRuleSummary,
-} from '@creativo/application/engagement';
+  StreakExcuse,
+  StreakIntervalRule,
+  StreakIntervalSource,
+  StreakOnBreak,
+  type StreakPeriodTerms,
+  StreakQualifierRule,
+  StreakRule,
+} from '@core/components';
+import { StreakRuleSystem, type StreakRuleSummary } from '@core/systems';
 import { appCatalogue } from '../testing/app-catalogue';
 import { catalogueTranslator } from '../testing/visit-fixtures';
 import type { VisitTranslate } from '../visit-row.presenter';
@@ -32,33 +37,57 @@ const catalogueOf = (lang: Lang) =>
   lang === 'bg' ? CATALOGUE_BG : CATALOGUE_EN;
 const translatorOf = (lang: Lang): VisitTranslate => (lang === 'bg' ? BG : EN);
 
-// ── The rule, through the domain's own factory ───────────────────────────
+// ── The rule, through the domain's own guard ─────────────────────────────
 //
-// Every summary here is one `StreakDefinition.summary()` really returns:
-// the recommended rule, revised. A rule the domain refuses fails the spec.
+// Every summary here is one `StreakRuleSystem.summary` really returns: the
+// recommended rule (`StreakRule.DEFAULT`), revised and parsed. A rule the
+// domain refuses fails the spec.
 
-function summaryOf(
-  patch: Partial<StreakDefinitionProps> = {},
-): StreakRuleSummary {
-  const revised = StreakDefinition.default().revise(patch, '2026-10-01');
-  if (revised.isFailure()) {
-    throw new Error(
-      `the rule was refused: ${revised.error.map((error) => error.code).join(', ')}`,
-    );
-  }
-  return revised.value.summary();
-}
-
-const PERSONAL: StreakIntervalProps = {
-  kind: 'personal',
-  tolerancePct: 50,
-  minDays: 21,
-  maxDays: 70,
-  fallbackDays: 42,
+/** A revision of the recommended rule: any option figure, the interval or the qualifier whole. */
+type RulePatch = Partial<
+  Omit<StreakRule.Options, 'version' | 'effectiveFromLocalDate'>
+> & {
+  readonly interval?: StreakIntervalRule;
+  readonly qualifier?: StreakQualifierRule;
 };
 
+function summaryOf(patch: RulePatch = {}): StreakRuleSummary {
+  const { interval, qualifier, ...options } = patch;
+  const revised = StreakRule.parse({
+    ...StreakRule.DEFAULT,
+    ...options,
+    ...(interval ?? StreakIntervalRule.of(StreakRule.DEFAULT)),
+    ...(qualifier ?? StreakQualifierRule.of(StreakRule.DEFAULT)),
+    version: StreakRule.DEFAULT.version + 1,
+    effectiveFromLocalDate: '2026-10-01',
+  });
+  if (!revised.ok) {
+    throw new Error(
+      `the rule was refused: ${revised.error.map((error) => error.errorCode).join(', ')}`,
+    );
+  }
+  return StreakRuleSystem.summary(revised.value);
+}
+
+const PERSONAL: StreakIntervalRule = StreakIntervalRule.personal(
+  50,
+  21,
+  70,
+  42,
+);
+
+/** A person's open period, as `StreakState.periodTerms` answers it; the grace is never read here. */
+const periodOf = (
+  intervalDays: number,
+  source: StreakIntervalSource,
+  habitDays: number | null,
+): StreakPeriodTerms => ({ intervalDays, graceDays: 7, source, habitDays });
+
+const services = (...ids: readonly string[]): StreakQualifierRule =>
+  StreakQualifierRule.services(ids.map((id) => ServiceId.of(id)));
+
 function worded(
-  patch: Partial<StreakDefinitionProps> = {},
+  patch: RulePatch = {},
   context?: RhythmRuleContext,
   lang: Lang = 'bg',
 ): RhythmRuleWords {
@@ -127,37 +156,25 @@ describe('rhythmRuleWords', () => {
     const EXCUSES = 'Час, отменен от салона, не се брои за пропуск.';
     const HOLD = 'Записан час до 14 дни след срока пази ритъма.';
     const REPAIR = 'След прекъсване посещение до 14 дни връща ритъма.';
-    const RULE = StreakDefinition.default().toProps();
+    const RULE = StreakRule.DEFAULT;
 
-    it.each<[string, Partial<StreakDefinitionProps>, string]>([
+    it.each<[string, RulePatch, string]>([
       ['no grace', { graceDays: 0 }, GRACE],
-      [
-        'protections off',
-        { protections: { ...RULE.protections, enabled: false } },
-        PROTECTIONS,
-      ],
-      [
-        'a reserve that holds none',
-        { protections: { ...RULE.protections, maxBanked: 0 } },
-        PROTECTIONS,
-      ],
+      ['protections off', { protectionsEnabled: false }, PROTECTIONS],
+      ['a reserve that holds none', { protectionsMaxBanked: 0 }, PROTECTIONS],
       [
         'one of the shop’s excuses off',
-        { excuses: ['shopClosure', 'barberAbsence'] },
+        { excuses: [StreakExcuse.ShopClosure, StreakExcuse.BarberAbsence] },
         EXCUSES,
       ],
       ['no excuse at all', { excuses: [] }, EXCUSES],
-      [
-        'the hold off',
-        { bookingHold: { ...RULE.bookingHold, enabled: false } },
-        HOLD,
-      ],
+      ['the hold off', { bookingHoldEnabled: false }, HOLD],
       [
         'a hold of no days',
-        { bookingHold: { enabled: true, maxDaysPastDue: 0 } },
+        { bookingHoldEnabled: true, bookingHoldMaxDaysPastDue: 0 },
         HOLD,
       ],
-      ['no way back', { repair: { ...RULE.repair, enabled: false } }, REPAIR],
+      ['no way back', { repairEnabled: false }, REPAIR],
     ])(
       '%s: its sentence is not said, the rest stay in order',
       (_, patch, gone) => {
@@ -171,7 +188,7 @@ describe('rhythmRuleWords', () => {
 
     it('says the closed days nowhere: they are not the shop calling a visit off', () => {
       expect(
-        whole(worded({ excuses: [...RULE.excuses, 'closedDays'] })),
+        whole(worded({ excuses: [...RULE.excuses, StreakExcuse.ClosedDays] })),
       ).toEqual(whole(worded()));
     });
 
@@ -187,10 +204,10 @@ describe('rhythmRuleWords', () => {
     it('is one sentence when every part is off', () => {
       const words = worded({
         graceDays: 0,
-        protections: { ...RULE.protections, enabled: false },
+        protectionsEnabled: false,
         excuses: [],
-        bookingHold: { ...RULE.bookingHold, enabled: false },
-        repair: { ...RULE.repair, enabled: false },
+        bookingHoldEnabled: false,
+        repairEnabled: false,
       });
 
       expect(words.sentence).toBe('Посещение на всеки 6 седмици пази ритъма.');
@@ -201,16 +218,17 @@ describe('rhythmRuleWords', () => {
   describe('the figures', () => {
     it('words every figure of the rule in its own plural', () => {
       const words = worded({
-        interval: { kind: 'fixed', days: 56 },
+        interval: StreakIntervalRule.fixed(56),
         graceDays: 1,
-        protections: {
-          enabled: true,
-          maxBanked: 3,
-          earnEvery: 8,
-          startWith: 0,
-        },
-        bookingHold: { enabled: true, maxDaysPastDue: 1 },
-        repair: { enabled: true, windowDays: 30, perYear: 2 },
+        protectionsEnabled: true,
+        protectionsMaxBanked: 3,
+        protectionsEarnEvery: 8,
+        protectionsStartWith: 0,
+        bookingHoldEnabled: true,
+        bookingHoldMaxDaysPastDue: 1,
+        repairEnabled: true,
+        repairWindowDays: 30,
+        repairPerYear: 2,
       });
 
       expect(whole(words)).toEqual([
@@ -241,8 +259,8 @@ describe('rhythmRuleWords', () => {
       [57, '8 седмици', '8 weeks'],
       [16, '2½ седмици', '2½ weeks'],
     ])('an interval of %i days is «%s»', (days, bg, en) => {
-      const patch = {
-        interval: { kind: 'fixed', days } as const,
+      const patch: RulePatch = {
+        interval: StreakIntervalRule.fixed(days),
         graceDays: 0,
       };
 
@@ -253,7 +271,7 @@ describe('rhythmRuleWords', () => {
 
   describe('a miss that holds the count', () => {
     it('says so, and promises no way back: nothing was broken', () => {
-      const words = worded({ onBreak: 'hold' });
+      const words = worded({ onBreak: StreakOnBreak.Hold });
 
       expect(words.details).toEqual([
         '7 дни гратис след срока.',
@@ -262,9 +280,9 @@ describe('rhythmRuleWords', () => {
         'Записан час до 14 дни след срока пази ритъма.',
         'Пропускът не нулира броя.',
       ]);
-      expect(worded({ onBreak: 'hold' }, undefined, 'en').details.at(-1)).toBe(
-        'A miss does not reset the count.',
-      );
+      expect(
+        worded({ onBreak: StreakOnBreak.Hold }, undefined, 'en').details.at(-1),
+      ).toBe('A miss does not reset the count.');
     });
   });
 
@@ -295,11 +313,7 @@ describe('rhythmRuleWords', () => {
     const rule = { interval: PERSONAL };
 
     it('is the person’s own, once the habit is known', () => {
-      const period = {
-        intervalDays: 39,
-        source: 'personal',
-        habitDays: 28,
-      } as const;
+      const period = periodOf(39, StreakIntervalSource.Personal, 28);
 
       const words = worded(rule, { period });
 
@@ -313,11 +327,7 @@ describe('rhythmRuleWords', () => {
     });
 
     it('keeps every detail under the person’s sentence', () => {
-      const period = {
-        intervalDays: 57,
-        source: 'personal',
-        habitDays: 38,
-      } as const;
+      const period = periodOf(57, StreakIntervalSource.Personal, 38);
 
       expect(whole(worded(rule, { period }))).toEqual([
         'Идва на около 5½ седмици, срокът му е 8 седмици.',
@@ -326,11 +336,7 @@ describe('rhythmRuleWords', () => {
     });
 
     it('says a habit under two weeks in days', () => {
-      const period = {
-        intervalDays: 21,
-        source: 'personal',
-        habitDays: 10.4,
-      } as const;
+      const period = periodOf(21, StreakIntervalSource.Personal, 10.4);
 
       expect(worded(rule, { period }).sentence).toBe(
         'Идва на около 10 дни, срокът му е 3 седмици.',
@@ -342,19 +348,19 @@ describe('rhythmRuleWords', () => {
       ['no open period', { period: null }],
       [
         'a newcomer',
-        { period: { intervalDays: 42, source: 'fallback', habitDays: null } },
+        { period: periodOf(42, StreakIntervalSource.Fallback, null) },
       ],
       [
         'a period an older fixed rule opened',
-        { period: { intervalDays: 35, source: 'fixed', habitDays: null } },
+        { period: periodOf(35, StreakIntervalSource.Fixed, null) },
       ],
       [
         'a habit nobody measured',
-        { period: { intervalDays: 39, source: 'personal', habitDays: null } },
+        { period: periodOf(39, StreakIntervalSource.Personal, null) },
       ],
       [
         'a habit of no days',
-        { period: { intervalDays: 39, source: 'personal', habitDays: 0 } },
+        { period: periodOf(39, StreakIntervalSource.Personal, 0) },
       ],
     ])('is the rule’s own figure for %s', (_, context) => {
       const words = worded(rule, context);
@@ -370,8 +376,8 @@ describe('rhythmRuleWords', () => {
 
     it('reads the newcomer’s figure from the rule in force, not from an older period', () => {
       const words = worded(
-        { interval: { ...PERSONAL, fallbackDays: 35 } },
-        { period: { intervalDays: 42, source: 'fallback', habitDays: null } },
+        { interval: StreakIntervalRule.personal(50, 21, 70, 35) },
+        { period: periodOf(42, StreakIntervalSource.Fallback, null) },
       );
 
       expect(words.sentence).toBe(
@@ -384,7 +390,7 @@ describe('rhythmRuleWords', () => {
     it('is one sentence for everyone, whatever a person’s period still holds', () => {
       const words = worded(
         {},
-        { period: { intervalDays: 39, source: 'personal', habitDays: 26 } },
+        { period: periodOf(39, StreakIntervalSource.Personal, 26) },
       );
 
       expect(whole(words)).toEqual(whole(worded()));
@@ -393,33 +399,25 @@ describe('rhythmRuleWords', () => {
   });
 
   describe('a rule that counts a chosen list', () => {
-    const services = {
-      qualifier: {
-        kind: 'services',
-        serviceIds: ['svc-fade', 'svc-beard'],
-      },
-    } as const;
+    const fadeAndBeard: RulePatch = {
+      qualifier: services('svc-fade', 'svc-beard'),
+    };
 
     it('names the services last, in the order they were chosen', () => {
-      const words = worded(services, { nameOf });
+      const words = worded(fadeAndBeard, { nameOf });
 
       expect(words.details.at(-1)).toBe(
         'Броят се посещения с: Фейд и Оформяне на брада.',
       );
       expect(words.details.slice(0, -1)).toEqual(worded().details);
-      expect(worded(services, { nameOf }, 'en').details.at(-1)).toBe(
+      expect(worded(fadeAndBeard, { nameOf }, 'en').details.at(-1)).toBe(
         'Visits count with: Фейд and Оформяне на брада.',
       );
     });
 
     it('lists three and more the way the language does', () => {
       const words = worded(
-        {
-          qualifier: {
-            kind: 'services',
-            serviceIds: ['svc-shave', 'svc-fade', 'svc-beard'],
-          },
-        },
+        { qualifier: services('svc-shave', 'svc-fade', 'svc-beard') },
         { nameOf },
       );
 
@@ -430,7 +428,11 @@ describe('rhythmRuleWords', () => {
 
     it('names categories through the same lookup', () => {
       const words = worded(
-        { qualifier: { kind: 'categories', categoryIds: ['cat-hair'] } },
+        {
+          qualifier: StreakQualifierRule.categories([
+            ServiceCategoryId.of('cat-hair'),
+          ]),
+        },
         { nameOf: (id) => (id === 'cat-hair' ? 'Подстригване' : null) },
       );
 
@@ -439,12 +441,7 @@ describe('rhythmRuleWords', () => {
 
     it('leaves out what it cannot name, and a name said twice', () => {
       const words = worded(
-        {
-          qualifier: {
-            kind: 'services',
-            serviceIds: ['svc-gone', 'svc-fade', 'svc-fade-long'],
-          },
-        },
+        { qualifier: services('svc-gone', 'svc-fade', 'svc-fade-long') },
         // Two variants of one service carry one name, padded as a hand-typed
         // title can be.
         { nameOf: (id) => (id === 'svc-gone' ? null : ' Фейд ') },
@@ -458,7 +455,7 @@ describe('rhythmRuleWords', () => {
       ['a lookup that is null', { nameOf: null }],
       ['a lookup that names nothing', { nameOf: () => null }],
     ])('says nothing about services with %s', (_, context) => {
-      expect(worded(services, context).details).toEqual(worded().details);
+      expect(worded(fadeAndBeard, context).details).toEqual(worded().details);
     });
 
     it('says nothing about services when every visit counts', () => {
@@ -511,9 +508,7 @@ describe('rhythmRuleWords', () => {
 
   describe('the function itself', () => {
     it('is pure: the same rule gives the same words and the summary is untouched', () => {
-      const summary = summaryOf({
-        qualifier: { kind: 'services', serviceIds: ['svc-fade'] },
-      });
+      const summary = summaryOf({ qualifier: services('svc-fade') });
       const before = JSON.stringify(summary);
 
       const first = rhythmRuleWords(summary, BG, 'bg', { nameOf });
@@ -527,22 +522,18 @@ describe('rhythmRuleWords', () => {
     it.each(LANGS)(
       'leaves no placeholder unfilled and no doubled space (%s)',
       (lang) => {
-        const period = {
-          intervalDays: 39,
-          source: 'personal',
-          habitDays: 28,
-        } as const;
+        const period = periodOf(39, StreakIntervalSource.Personal, 28);
         const rules: readonly RhythmRuleWords[] = [
           worded({}, undefined, lang),
           worded({ enabled: false }, undefined, lang),
-          worded({ onBreak: 'hold', graceDays: 0 }, undefined, lang),
-          worded({ interval: PERSONAL }, { period }, lang),
-          worded({ interval: PERSONAL }, undefined, lang),
           worded(
-            { qualifier: { kind: 'services', serviceIds: ['svc-fade'] } },
-            { nameOf },
+            { onBreak: StreakOnBreak.Hold, graceDays: 0 },
+            undefined,
             lang,
           ),
+          worded({ interval: PERSONAL }, { period }, lang),
+          worded({ interval: PERSONAL }, undefined, lang),
+          worded({ qualifier: services('svc-fade') }, { nameOf }, lang),
         ];
 
         for (const words of rules) {
@@ -564,28 +555,19 @@ describe('rhythmRuleWords', () => {
           read.add(key);
           return translatorOf(lang)(key, params);
         };
-        const period = {
-          intervalDays: 39,
-          source: 'personal',
-          habitDays: 28,
-        } as const;
-        const say = (
-          patch: Partial<StreakDefinitionProps>,
-          context: RhythmRuleContext = {},
-        ) => rhythmRuleWords(summaryOf(patch), recording, lang, context);
+        const period = periodOf(39, StreakIntervalSource.Personal, 28);
+        const say = (patch: RulePatch, context: RhythmRuleContext = {}) =>
+          rhythmRuleWords(summaryOf(patch), recording, lang, context);
 
         const words = say({});
         words.days(1);
         words.weeks(1);
         words.weeks(5.5);
-        say({ graceDays: 0, onBreak: 'hold' });
+        say({ graceDays: 0, onBreak: StreakOnBreak.Hold });
         say({ enabled: false });
         say({ interval: PERSONAL });
         say({ interval: PERSONAL }, { period });
-        say(
-          { qualifier: { kind: 'services', serviceIds: ['svc-fade'] } },
-          { nameOf },
-        );
+        say({ qualifier: services('svc-fade') }, { nameOf });
 
         const leaves = (node: unknown, path: string): string[] =>
           node !== null && typeof node === 'object'

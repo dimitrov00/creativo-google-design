@@ -1605,7 +1605,7 @@ SHOP's copy (what the desk may edit); the account's sign-in contact stays on
 | `AppointmentPhoto.clientUserId`, `ListClientPhotos(clientUserId)`                                                                                                                                   | `clientCustomerId` (flip (1))                                                                                      | — (staff-only)                                                                                                                                                                                                                    |
 | `AuditEntry` booking-act target (`auditTarget: 'USER'`)                                                                                                                                             | `auditTarget: 'CUSTOMER'; targetCustomerId` (flip (1))                                                             | —                                                                                                                                                                                                                                 |
 | `BackfillJob.sampleMismatched`, `PolicyRecomputeJob.cursor`, the `PageClients`/`PageClientStats` cursors, `MirrorRow`/`MirrorPatch` subjects, `ResolvedGrant.userId`, `IssueVoucher.issuedToUserId` | `CustomerId` (flip (1))                                                                                            | —                                                                                                                                                                                                                                 |
-| `LoyaltyAccount` (`loyaltyAccounts/{uid}`, `userId`), `JournalEntry.userId` and its id `${uid}_${seq:06}`, the badge/season progress paths                                                          | the `customerId` keys and ids (flip (3))                                                                           | — (staff-only reads)                                                                                                                                                                                                              |
+| `LoyaltyAccount` (`loyaltyAccounts/{uid}`, `userId`), `JournalEntry.userId` and its id `${uid}_${seq:06}`, the badge/season progress paths                                                          | the `customerId` keys and ids (flip (3)) — **done** (flip 3, 2026-10-22)                                           | — (staff-only reads)                                                                                                                                                                                                              |
 
 Stay `UserId` for good (the account): `User.id`, roles, `AuthClaims`,
 `Principal.userId`, impersonation (`adminUserId`, `targetUserId`); the inbox
@@ -1666,7 +1666,8 @@ the access field is written at the boundary from the referenced
 - **Flip (3) loyalty** re-keys `loyaltyAccounts`, `clientJournal` (ids
   `${customerId}_${seq:06}`, and its read rule on
   `journalVisibility == 'CLIENT'`) and the progress subcollections
-  (staff-only reads: no access field).
+  (staff-only reads: no access field). **Done** (flip 3, 2026-10-22:
+  `docs/architecture/flips/flip-3-loyalty.md` F3-6).
 
 ---
 

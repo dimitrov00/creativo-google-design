@@ -1,23 +1,19 @@
+import type { JournalEntry } from '@core/entities';
+import { TierId } from '@core/primitives';
 import {
-  type ActivityEntry,
-  type ActivityKind,
-  type LoyaltyCatalog,
-  levelNumeral,
-  sofiaDayOf,
-} from '@creativo/application/engagement';
+  AchievementOp,
+  JournalEffect,
+  JournalFeed,
+  LabelCode,
+  PublicLabel,
+  RedemptionOp,
+  RewardOp,
+} from '@core/components';
 import {
-  BadgeSeriesId,
-  CorrelationId,
-  JournalEntryId,
-  LocalDate,
-  UtcEpochMs,
-  defect,
-} from '@core/primitives';
-import { JournalEffect, RedemptionOp } from '@core/components';
-import {
-  type LedgerEffectKind,
-  type LedgerEntryRef,
+  type LedgerEvent,
   LedgerSystem,
+  LoyaltyCatalogSystem,
+  type ValidLoyaltyCatalog,
 } from '@core/systems';
 import { visitSectionLabel } from '@creativo/features/shared/visits';
 import type { UiIconName } from '@creativo/ui/controls';
@@ -27,6 +23,7 @@ import {
   dayLong,
   dayMonth,
   dayShort,
+  levelNumeral,
   runningCase,
   runsOf,
 } from './client-card.format';
@@ -44,8 +41,8 @@ import type { ClientCardWords } from './client-card.words';
  * §2.2.6, §4.7), as pure functions: the wallet's newest five events and the
  * ledger page's every page are the SAME rows, built here once.
  *
- * The reader hands over one row per journal entry. Three steps make the
- * page of them:
+ * The journal port hands over one row per entry, as stored
+ * (`JournalEntry`). Three steps make the page of them:
  *
  * 1. `foldByEvent` — entries of one event become one: a visit's seats, a
  *    level and the points it paid, a redemption and what it cost;
@@ -66,50 +63,21 @@ const NUMERAL_JOINT = '\u00a0';
 
 // ── 1 · Folding ─────────────────────────────────────────────────────────
 
-/** One EVENT of the journal: the entries that share it, newest first. */
-export interface ActivityEvent {
-  /** The event's newest entry: the row's `…-entry-{id}` test id. */
-  readonly id: string;
-  /** The newest entry's instant. */
-  readonly at: Date;
-  /** Newest first. */
-  readonly entries: readonly ActivityEntry[];
-  /**
-   * What the event moved: the sum of its point rows. An event read without
-   * them (the pill «Награди» asks for `reward` and `redemption` rows alone)
-   * says what a redemption cost. `null` when no points moved.
-   */
-  readonly delta: number | null;
-  /** The balance once the event's newest point row was folded in; `null` without one. */
-  readonly balanceAfter: number | null;
-}
+/**
+ * One EVENT of the journal (`LedgerSystem.fold`): the entries that share
+ * it, newest first; the newest entry's id (the row's `…-entry-{id}` test
+ * id), instant and shop day; what it moved and the balance it left.
+ */
+export type ActivityEvent = LedgerEvent<JournalEntry>;
 
-/** A label's parameter as text, or `null`. */
-function textOf(entry: ActivityEntry, key: string): string | null {
-  const value = new Map(Object.entries(entry.label.params)).get(key);
+/** A label's parameter as text that is not blank, or `null` (`PublicLabel.param`). */
+function textOf(entry: JournalEntry, name: string): string | null {
+  const value = PublicLabel.param(entry, name);
   return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
-/** A label's parameter as a whole number, or `null`. */
-function countOf(entry: ActivityEntry, key: string): number | null {
-  const value = new Map(Object.entries(entry.label.params)).get(key);
-  return typeof value === 'number' && Number.isInteger(value) ? value : null;
-}
-
-/**
- * The visit a correlation id names: `appt:{appointmentId}` as the seed and
- * the engine write it, `appt:{appointmentId}:seat:{seatId}` as the first
- * round's journals do. `null` for an event that is no visit.
- */
-function appointmentIdOf(correlationId: string): string | null {
-  const [root, appointmentId] = correlationId.split(':');
-  return root === 'appt' && appointmentId !== undefined && appointmentId !== ''
-    ? appointmentId
-    : null;
-}
-
 /** The ids a loaded row compensates: the rows that are struck. */
-function voidedIds(entries: readonly ActivityEntry[]): ReadonlySet<string> {
+function voidedIds(entries: readonly JournalEntry[]): ReadonlySet<string> {
   return new Set(
     entries.flatMap((entry) =>
       entry.reverses === null ? [] : [entry.reverses],
@@ -126,19 +94,10 @@ function voidedIds(entries: readonly ActivityEntry[]): ReadonlySet<string> {
  * row.
  */
 export function foldByEvent(
-  entries: readonly ActivityEntry[],
+  entries: readonly JournalEntry[],
   whole: boolean,
 ): readonly ActivityEvent[] {
-  return LedgerSystem.fold(entries.map(ledgerRefOf), whole).map((event) => {
-    const rows = event.entries.map((ref) => ref.source);
-    return {
-      id: event.id,
-      at: (rows[0] as ActivityEntry).at,
-      entries: rows,
-      delta: event.delta,
-      balanceAfter: event.balanceAfter,
-    };
-  });
+  return LedgerSystem.fold(entries, whole);
 }
 
 /**
@@ -148,10 +107,10 @@ export function foldByEvent(
  * month in doubt prints no net.
  */
 export function wholeMonthsOf(
-  entries: readonly ActivityEntry[],
+  entries: readonly JournalEntry[],
   whole: boolean,
 ): ReadonlySet<string> {
-  return new Set(LedgerSystem.wholeMonths(entries.map(ledgerRefOf), whole));
+  return new Set(LedgerSystem.wholeMonths(entries, whole));
 }
 
 // ── 2 · Rows ────────────────────────────────────────────────────────────
@@ -174,7 +133,7 @@ export interface ActivityInput {
    * `null` until it is read: a row whose subject cannot be named is
    * titled by what happened («Бонус», «Използвани», «Нов статус»).
    */
-  readonly catalog: LoyaltyCatalog | null;
+  readonly catalog: ValidLoyaltyCatalog | null;
   readonly today: string;
   /** The months that are wholly loaded (`wholeMonthsOf`): only they print a net. */
   readonly wholeMonths: ReadonlySet<string>;
@@ -185,29 +144,6 @@ export interface ActivityInput {
    */
   readonly limit?: number;
   readonly words: ClientCardWords;
-}
-
-/** The effects by rank: the highest one an event holds is what the row is about. */
-const EFFECT_RANK = {
-  redemption: 0,
-  reward: 1,
-  tier: 2,
-  achievement: 3,
-  points: 4,
-} as const satisfies Record<ActivityEntry['effect']['kind'], number>;
-
-/** The entry a row is worded by: the event's highest-ranked effect, its newest row first. */
-function leadingOf(event: ActivityEvent): ActivityEntry | null {
-  let leading: ActivityEntry | null = null;
-  for (const entry of event.entries) {
-    if (
-      leading === null ||
-      EFFECT_RANK[entry.effect.kind] < EFFECT_RANK[leading.effect.kind]
-    ) {
-      leading = entry;
-    }
-  }
-  return leading;
 }
 
 /** A row before its date, its amount and its sentence are added. */
@@ -248,42 +184,43 @@ function capitalised(text: string, lang: string): string {
 }
 
 function rewardNameOf(
-  entry: ActivityEntry,
+  entry: JournalEntry,
   input: ActivityInput,
 ): string | null {
   const rewardId = textOf(entry, 'reward');
   if (rewardId === null) return null;
   return (
-    input.catalog?.rewards
-      .find((reward) => reward.id === rewardId)
-      ?.name.get(cardLocaleOf(input.words.lang)) ?? null
+    input.catalog?.rewards.find((reward) => reward.id === rewardId)?.name[
+      cardLocaleOf(input.words.lang)
+    ] ?? null
   );
 }
 
-function tierNameOf(tierId: string, input: ActivityInput): string | null {
-  return (
-    input.catalog?.tier(tierId)?.name.get(cardLocaleOf(input.words.lang)) ??
-    null
-  );
+function tierNameOf(tierId: TierId, input: ActivityInput): string | null {
+  return input.catalog === null
+    ? null
+    : (LoyaltyCatalogSystem.tier(input.catalog, tierId)?.name[
+        cardLocaleOf(input.words.lang)
+      ] ?? null);
 }
 
 /** A level earned, by its family and numeral: «Години с нас I». */
 function levelDraft(
-  entry: ActivityEntry,
+  entry: JournalEntry,
   paid: boolean,
   revoked: boolean,
   input: ActivityInput,
 ): RowDraft {
   const { words } = input;
   const ledger = words.ledger;
-  const seriesId = textOf(entry, 'seriesId');
-  const level = countOf(entry, 'level');
+  const { badgeSeriesId: seriesId, level } = LedgerSystem.levelOf(entry);
   const numeral = level === null ? '' : levelNumeral(level);
   const family =
-    seriesId === null
+    seriesId === null || input.catalog === null
       ? null
-      : (input.catalog?.series(seriesId)?.title.get(cardLocaleOf(words.lang)) ??
-        null);
+      : (LoyaltyCatalogSystem.series(input.catalog, seriesId)?.title[
+          cardLocaleOf(words.lang)
+        ] ?? null);
   const welcome = seriesId === 'series-welcome';
   const named = welcome
     ? ledger.welcome
@@ -321,14 +258,15 @@ function levelDraft(
 
 /** A row that compensates another: «Анулирано», and the row it takes back. */
 function reversalDraft(
-  entry: ActivityEntry,
-  originals: ReadonlyMap<string, ActivityEntry>,
+  entry: JournalEntry,
+  originals: ReadonlyMap<string, JournalEntry>,
   input: ActivityInput,
 ): RowDraft {
   const { words, today } = input;
   const original =
     entry.reverses === null ? undefined : originals.get(entry.reverses);
-  const day = original === undefined ? null : sofiaDayOf(original.at);
+  // The struck row's own shop day, as stored (T5).
+  const day = original === undefined ? null : original.localDate;
   return {
     ...DRAFT,
     icon: 'loyalty.activity.reversed',
@@ -349,7 +287,7 @@ function reversalDraft(
 /** A point row with no other effect beside it, by what its label says moved the points. */
 function pointsDraft(
   event: ActivityEvent,
-  entry: ActivityEntry,
+  entry: JournalEntry,
   input: ActivityInput,
 ): RowDraft {
   const { words } = input;
@@ -362,15 +300,15 @@ function pointsDraft(
     named: source,
     spoken: source,
   });
-  switch (entry.label.code) {
-    case 'points.rule': {
-      if (textOf(entry, 'seriesId') !== null) {
+  switch (entry.labelCode) {
+    case LabelCode.PointsRule: {
+      if (LedgerSystem.levelOf(entry).badgeSeriesId !== null) {
         return levelDraft(entry, true, false, input);
       }
-      const keys = [
-        appointmentIdOf(entry.correlationId),
-        sofiaDayOf(event.at),
-      ].filter((key): key is string => key !== null);
+      // The visit is the entry's own (`appointmentId`), then its event's day.
+      const keys = [entry.appointmentId, event.localDate].filter(
+        (key): key is NonNullable<typeof key> => key !== null,
+      );
       const found = (names: ReadonlyMap<string, string> | undefined) =>
         keys
           .map((key) => names?.get(key)?.trim() ?? '')
@@ -388,7 +326,7 @@ function pointsDraft(
         held: barbers !== null,
       };
     }
-    case 'points.redeemed': {
+    case LabelCode.PointsRedeemed: {
       const reward = rewardNameOf(entry, input);
       return {
         ...DRAFT,
@@ -400,18 +338,18 @@ function pointsDraft(
         after: ledger.redeemed,
       };
     }
-    case 'points.goodwill':
+    case LabelCode.PointsGoodwill:
       return adjusted(ledger.goodwill);
-    case 'points.serviceIssue':
+    case LabelCode.PointsServiceIssue:
       return adjusted(ledger.serviceIssue);
-    case 'points.expired':
+    case LabelCode.PointsExpired:
       return {
         ...DRAFT,
         icon: 'loyalty.activity.expired',
         tone: 'neutral',
         verb: ledger.verb('expired'),
       };
-    case 'points.debtCleared':
+    case LabelCode.PointsDebtCleared:
       return {
         ...DRAFT,
         icon: 'loyalty.activity.adjusted',
@@ -426,22 +364,21 @@ function pointsDraft(
 /** What a row is about, by its event's leading effect (§2.2.5). */
 function draftOf(
   event: ActivityEvent,
-  leading: ActivityEntry,
-  originals: ReadonlyMap<string, ActivityEntry>,
+  leading: JournalEntry,
+  originals: ReadonlyMap<string, JournalEntry>,
   input: ActivityInput,
 ): RowDraft {
   const { words } = input;
   const ledger = words.ledger;
   if (leading.reverses !== null)
     return reversalDraft(leading, originals, input);
-  const effect = leading.effect;
-  switch (effect.kind) {
-    case 'redemption': {
-      if (effect.op === 'reversed') {
+  switch (leading.journalEffect) {
+    case JournalEffect.Redemption: {
+      if (leading.redemptionOp === RedemptionOp.Reversed) {
         return reversalDraft(leading, originals, input);
       }
       const reward = rewardNameOf(leading, input);
-      if (effect.op === 'expired') {
+      if (leading.redemptionOp === RedemptionOp.Expired) {
         return {
           ...DRAFT,
           icon: 'loyalty.activity.expired',
@@ -466,9 +403,9 @@ function draftOf(
         after: ledger.redeemed,
       };
     }
-    case 'reward': {
+    case JournalEffect.Reward: {
       const reward = rewardNameOf(leading, input);
-      const revoked = effect.op === 'revoked';
+      const revoked = leading.rewardOp === RewardOp.Revoked;
       const happened = revoked ? ledger.rewardRevoked : ledger.rewardGranted;
       return {
         ...DRAFT,
@@ -483,9 +420,9 @@ function draftOf(
         after: reward === null ? null : happened,
       };
     }
-    case 'tier': {
-      const to = tierNameOf(effect.to, input);
-      const from = tierNameOf(effect.from, input);
+    case JournalEffect.Tier: {
+      const to = tierNameOf(leading.tierTo, input);
+      const from = tierNameOf(leading.tierFrom, input);
       const title = to === null ? null : ledger.tier(to);
       const origin = from === null ? null : ledger.tierFrom(from);
       return {
@@ -499,30 +436,35 @@ function draftOf(
         said: origin,
       };
     }
-    case 'achievement':
+    case JournalEffect.Achievement:
       return levelDraft(
         leading,
         event.delta !== null,
-        effect.op === 'revoked',
+        leading.achievementOp === AchievementOp.Revoked,
         input,
       );
-    case 'points':
+    case JournalEffect.Points:
+      return pointsDraft(event, leading, input);
+    default:
+      // The feed reads the five effects above (`JournalFeed.effectsOf`); a
+      // row of another, answered as stored, is worded by its label.
       return pointsDraft(event, leading, input);
   }
 }
 
 function rowOf(
   event: ActivityEvent,
-  originals: ReadonlyMap<string, ActivityEntry>,
+  originals: ReadonlyMap<string, JournalEntry>,
   voided: ReadonlySet<string>,
   input: ActivityInput,
 ): ActivityRowVm | null {
-  const leading = leadingOf(event);
+  const leading = LedgerSystem.leading(event);
   if (leading === null) return null;
   const { words, today } = input;
   const lang = words.lang;
   const draft = draftOf(event, leading, originals, input);
-  const day = sofiaDayOf(event.at);
+  // The event's own shop day, as stored (T5).
+  const day = event.localDate;
   const struck = event.entries.some((entry) => voided.has(entry.id));
   const cancelled = struck
     ? runningCase(words.ledger.verb('voided'), lang)
@@ -577,27 +519,19 @@ export function activityGroups(
 ): readonly ActivityGroupVm[] {
   const { words } = input;
   const loaded = events.flatMap((event) => event.entries);
-  const originals = new Map(loaded.map((entry) => [entry.id, entry]));
+  const originals = new Map<string, JournalEntry>(
+    loaded.map((entry) => [entry.id, entry]),
+  );
   const voided = voidedIds(loaded);
   // The months, the limit's cut and each month's net are
-  // `LedgerSystem.months`; the rows and the words are this file's.
-  const months = LedgerSystem.months(
-    events.map((event) => ({
-      id: JournalEntryId.of(event.id),
-      utcEpochMs: utcOf(event.at),
-      // The event's shop day, read on the shop's calendar here (T5).
-      localDate: dayOf(sofiaDayOf(event.at)),
-      entries: event.entries.map(ledgerRefOf),
-      delta: event.delta,
-      balanceAfter: event.balanceAfter,
-      source: event,
-    })),
-    input.limit ?? null,
-    [...input.wholeMonths],
-  );
+  // `LedgerSystem.months` (by each event's stored shop day, T5); the rows
+  // and the words are this file's.
+  const months = LedgerSystem.months(events, input.limit ?? null, [
+    ...input.wholeMonths,
+  ]);
   return months.flatMap((month): readonly ActivityGroupVm[] => {
-    const rows = month.events.flatMap(({ source }) => {
-      const row = rowOf(source, originals, voided, input);
+    const rows = month.events.flatMap((event) => {
+      const row = rowOf(event, originals, voided, input);
       return row === null ? [] : [row];
     });
     if (rows.length === 0) return [];
@@ -618,12 +552,12 @@ export interface LedgerPageInput extends ActivityInput {
   /** The first page's read. */
   readonly status: SliceStatus;
   /** Every entry loaded so far under the pill, in any order. */
-  readonly entries: readonly ActivityEntry[];
+  readonly entries: readonly JournalEntry[];
   /** The cursor of the next page; `null` = nothing older is left. */
   readonly next: number | null;
   readonly loadingMore: boolean;
   readonly failedMore: boolean;
-  readonly filter: ActivityKind;
+  readonly filter: JournalFeed;
   /** The head's name; `''` until it is known: the line is the balance alone. */
   readonly holder: string;
   readonly balance: number;
@@ -635,8 +569,8 @@ export interface LedgerPageInput extends ActivityInput {
  * month's net the month's. «Награди» and «Статус» read other rows, and the
  * sum of what THOSE moved is nobody's net.
  */
-function netsUnder(filter: ActivityKind): boolean {
-  return filter === 'all' || filter === 'points';
+function netsUnder(filter: JournalFeed): boolean {
+  return filter === JournalFeed.All || filter === JournalFeed.Points;
 }
 
 function pagingOf(input: LedgerPageInput): LedgerPagingVm | null {
@@ -670,65 +604,5 @@ export function ledgerPageVm(input: LedgerPageInput): LedgerPageVm {
         })
       : [],
     paging: pagingOf(input),
-  };
-}
-
-// ── The bridge: the reader's row → ecs-core struct (Phase 4 deletes it) ──
-
-/** A row's instant as the brand — every `Date` the reader hands over is inside its window. */
-function utcOf(at: Date): UtcEpochMs {
-  const epochMs = at.getTime();
-  const utc = UtcEpochMs.of(epochMs);
-  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
-}
-
-/** A Sofia day `sofiaDayOf` read: always a day. */
-function dayOf(raw: string): LocalDate {
-  const day = LocalDate.parse(raw);
-  return day.ok ? day.value : defect(`${raw} is no calendar day`);
-}
-
-/** A row's effect, in the journal's words. */
-const JOURNAL_EFFECT = {
-  points: JournalEffect.Points,
-  achievement: JournalEffect.Achievement,
-  tier: JournalEffect.Tier,
-  reward: JournalEffect.Reward,
-  redemption: JournalEffect.Redemption,
-} as const satisfies Record<ActivityEntry['effect']['kind'], LedgerEffectKind>;
-
-/** A redemption row's op, in the journal's words. */
-const REDEMPTION_OP = {
-  redeemed: RedemptionOp.Redeemed,
-  reversed: RedemptionOp.Reversed,
-  expired: RedemptionOp.Expired,
-} as const satisfies Record<
-  Extract<ActivityEntry['effect'], { kind: 'redemption' }>['op'],
-  RedemptionOp
->;
-
-/** A journal row as `LedgerSystem` folds it, the row riding along; its shop day read here (T5). */
-function ledgerRefOf(
-  entry: ActivityEntry,
-): LedgerEntryRef & { readonly source: ActivityEntry } {
-  const { effect } = entry;
-  const seriesId = textOf(entry, 'seriesId');
-  return {
-    id: JournalEntryId.of(entry.id),
-    seq: entry.seq,
-    utcEpochMs: utcOf(entry.at),
-    localDate: dayOf(sofiaDayOf(entry.at)),
-    correlationId: CorrelationId.of(entry.correlationId),
-    reverses:
-      entry.reverses === null ? null : JournalEntryId.of(entry.reverses),
-    badgeSeriesId: seriesId === null ? null : BadgeSeriesId.of(seriesId),
-    level: countOf(entry, 'level'),
-    journalEffect: JOURNAL_EFFECT[effect.kind],
-    pointsDelta: effect.kind === 'points' ? effect.delta : null,
-    balanceAfter: effect.kind === 'points' ? effect.balanceAfter : null,
-    redemptionOp:
-      effect.kind === 'redemption' ? REDEMPTION_OP[effect.op] : null,
-    cost: effect.kind === 'redemption' ? effect.cost : null,
-    source: entry,
   };
 }
