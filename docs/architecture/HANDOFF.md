@@ -135,8 +135,13 @@ Same recipe as flip 1 (blueprint §6 Phase 3; closures in the runbook):
   primitives (Law 7.5) with edge rows on NEW dotted codes, their callables
   still answering today's legacy codes. Carried forward, not blocking:
   `CancellationRefusalCode`, `MoveErrorCode` and `StaffEditErrorCode` are
-  still declared in the systems tier — a small pass moves them to
-  primitives (Law 7.5 / `ecs-layering.md`); the unused
+  still declared in the systems tier — a pass moves them to primitives
+  (Law 7.5 / `ecs-layering.md`); `MoveErrorCode` (with `CarriedSeatRefusal`)
+  and `StaffEditErrorCode` carry only primitives, but `CancellationRefusal`
+  carries `bookingStatus: BookingStatus` (a component), which primitives may
+  not import — it moves with scalar context, as flip 2's identity errors did
+  (F2-4), touching the cancel pipeline, the edge and the web's cancel sheet;
+  the unused
   `LegacyWireCode` rows whose handlers are gone (`OtpValidationFailed`,
   `OtpDestinationEmpty`, `InvalidOtpMaxAttempts`, `EmptyId`,
   `InvalidDateTime`, `AccountsIdEmpty`, `InvalidTimeZone`) stay pinned by
