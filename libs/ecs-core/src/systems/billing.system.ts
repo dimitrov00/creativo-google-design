@@ -21,13 +21,11 @@ import {
   type CustomerId,
   PriceCents,
   type UtcEpochMs,
-} from '@core/primitives';
-import type { Appointment, GiftVoucher } from '@core/entities';
-import {
   StaffEditError,
   type StaffEditForbidden,
   type StaffEditInvalidCommand,
-} from './appointment-edit.system';
+} from '@core/primitives';
+import type { Appointment, GiftVoucher } from '@core/entities';
 import { type DiscountBreakdown, DiscountSystem } from './discount.system';
 import { VoucherSystem } from './voucher.system';
 

@@ -47,6 +47,8 @@ function changeOf(overrides: Partial<ProfileChange> = {}): ProfileChange {
     beforeExists: true,
     afterExists: true,
     fields: ['phone'],
+    beforeProfileEditedAtUtcMs: null,
+    afterProfileEditedAtUtcMs: null,
     ...overrides,
   };
 }
@@ -138,6 +140,31 @@ describe('auditProfileChange', () => {
       value: { rows: 0 },
     });
     expect(written).toEqual([]);
+  });
+
+  it('writes nothing for an edit `updateProfile` already audited — its marker moved (4A-16)', async () => {
+    const { written, run } = rig();
+    const answer = await run(
+      changeOf({
+        fields: ['firstName'],
+        beforeProfileEditedAtUtcMs: null,
+        afterProfileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      }),
+    );
+    expect(answer).toEqual(Result.ok({ rows: 0 }));
+    expect(written).toEqual([]);
+  });
+
+  it('still audits a creation whatever its marker — the stub, registration, the seed', async () => {
+    const { written, run } = rig();
+    await run(
+      changeOf({
+        beforeExists: false,
+        fields: ['firstName'],
+        afterProfileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      }),
+    );
+    expect(written).toHaveLength(1);
   });
 
   it('refuses an event with no id rather than minting one — permanent, nothing written', async () => {

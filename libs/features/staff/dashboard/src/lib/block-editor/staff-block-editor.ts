@@ -15,23 +15,29 @@ import {
   ElementRef,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-// The domain's recurrence, through the application layer's facade — a
-// feature never reaches past it (`type:feature` → `type:application`).
 import {
-  CalendarDay,
-  type DomainError,
-  type MonthlyDay,
-  type RecurrenceFrequency,
+  LocalDate,
+  type Result,
+  type SchedulingError,
+  Weekday,
+} from '@core/primitives';
+import {
+  MonthlyAnchor,
+  RecurrenceEnd,
+  RecurrenceFrequency,
+  RecurrencePattern,
   RecurrenceRule,
-  RecurrenceSeries,
-  type Weekday,
-  isoOf,
-  weekdayFromIso,
-} from '@creativo/application/booking';
+  WeekOfMonth,
+} from '@core/components';
+import { RecurrenceSystem, RepeatPreset } from '@core/systems';
 import {
   pluralForm,
   translateDomainError,
 } from '@creativo/infrastructure/i18n';
+import {
+  formatWallClock,
+  formatWeekdayLabels,
+} from '@creativo/features/shared/visits';
 import {
   UiChoiceMenu,
   type UiChoiceOption,
@@ -64,17 +70,25 @@ import {
 import { FrameFullscreen } from '../shared/frame-fullscreen';
 import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.directive';
 import { StaffTimeline } from '../timeline/staff-timeline';
-import { STAFF_ZONE, addDays } from '../staff-day.store';
+import { addDays } from '../staff-day.store';
 import {
   MONDAY_TO_FRIDAY,
+  RECURRENCE_END_WORD,
+  RECURRENCE_FREQUENCY_WORD,
   REPEAT_PRESETS,
-  type RepeatPreset,
+  REPEAT_PRESET_WORD,
+  WEEKDAY_WORD,
   presetOf,
   ruleForCustom,
   ruleForEndKind,
   ruleForFrequency,
   ruleForPreset,
   ruleForStart,
+  withCount,
+  withInterval,
+  withMonthly,
+  withUntil,
+  withWeekdays,
 } from './block-repeat';
 import {
   type GridColumn,
@@ -192,24 +206,36 @@ const DAY_MINUTES = 24 * 60;
 const GRAIN_MINUTES = 5;
 
 const FREQUENCIES: readonly RecurrenceFrequency[] = [
-  'daily',
-  'weekly',
-  'monthly',
-  'yearly',
+  RecurrenceFrequency.Daily,
+  RecurrenceFrequency.Weekly,
+  RecurrenceFrequency.Monthly,
+  RecurrenceFrequency.Yearly,
 ];
 
-const PRESET_LABEL: Readonly<Record<RepeatPreset, string>> = {
-  never: 'staff.block.repeatNever',
-  daily: 'staff.block.repeatDaily',
-  weekdays: 'staff.block.repeatWeekdays',
-  weekly: 'staff.block.repeatWeekly',
-  monthly: 'staff.block.repeatMonthly',
-  yearly: 'staff.block.repeatYearly',
-};
+const PRESET_LABEL = {
+  [RepeatPreset.Never]: 'staff.block.repeatNever',
+  [RepeatPreset.Daily]: 'staff.block.repeatDaily',
+  [RepeatPreset.Weekdays]: 'staff.block.repeatWeekdays',
+  [RepeatPreset.Weekly]: 'staff.block.repeatWeekly',
+  [RepeatPreset.Monthly]: 'staff.block.repeatMonthly',
+  [RepeatPreset.Yearly]: 'staff.block.repeatYearly',
+} as const satisfies Record<RepeatPreset, string>;
+
+/** The page's own row after the shortcuts — «Персонализирано». */
+const CUSTOM_REPEAT = 'CUSTOM';
+type RepeatRowId = RepeatPreset | typeof CUSTOM_REPEAT;
+
+/** The two ways a series ends, in the menu's order. */
+const END_KINDS: readonly RecurrenceEnd[] = [
+  RecurrenceEnd.Until,
+  RecurrenceEnd.Count,
+];
 
 /** One row of the repeat page's shortcut list. */
 interface RepeatRow {
-  readonly id: RepeatPreset | 'custom';
+  readonly id: RepeatRowId;
+  /** `staff-block-repeat-<word>` — the row's lowercase name in the DOM. */
+  readonly testId: string;
   readonly label: string;
   /** What the shortcut means from THIS start — «в четвъртък», «на 24-то число». */
   readonly detail: string | null;
@@ -239,15 +265,31 @@ function snap(minute: number): number {
   return Math.round(minute / GRAIN_MINUTES) * GRAIN_MINUTES;
 }
 
-/** A draft day key as the domain's day, in the shop's zone. */
-function dayOf(dayKey: string): CalendarDay | null {
-  const day = CalendarDay.create(dayKey, STAFF_ZONE);
-  return day.isSuccess() ? day.value : null;
+/** A draft day key as the shop day, or `null` for one that names no day. */
+function dayOf(dayKey: string): LocalDate | null {
+  const day = LocalDate.parse(dayKey);
+  return day.ok ? day.value : null;
 }
 
 /** A monthly reading's stable id, for the menu that picks it. */
-function monthlyId(day: MonthlyDay): string {
-  return day.by === 'date' ? `date-${day.date}` : `${day.weekday}-${day.week}`;
+function monthlyId(day: RecurrencePattern.Monthly): string {
+  return day.monthlyAnchor === MonthlyAnchor.Date
+    ? `date-${day.monthlyDate}`
+    : `${WEEKDAY_WORD[day.monthlyWeekday]}-${day.monthlyWeek}`;
+}
+
+/** A monthly rule's own reading of its day, as the pattern the menu offers. */
+function monthlyOf(rule: RecurrencePattern.Monthly): RecurrencePattern.Monthly {
+  return rule.monthlyAnchor === MonthlyAnchor.Date
+    ? RecurrencePattern.monthlyByDate(rule.monthlyDate)
+    : RecurrencePattern.monthlyByWeekday(rule.monthlyWeek, rule.monthlyWeekday);
+}
+
+/** An ISO weekday number the picker handed back, or `null` for none. */
+function weekdayOf(iso: number): Weekday | null {
+  return Number.isInteger(iso) && iso >= Weekday.Mon && iso <= Weekday.Sun
+    ? (iso as Weekday)
+    : null;
 }
 
 /** First letter up, for a phrase that stands alone as a menu row. */
@@ -255,17 +297,20 @@ function capitalised(phrase: string, locale: string): string {
   return phrase.charAt(0).toLocaleUpperCase(locale) + phrase.slice(1);
 }
 
+/** 2026-08-03, a Monday: ISO n lands on the (n − 1)-th day after it. */
+const A_MONDAY = LocalDate.fromEpochDay(LocalDate.epochDayOf(2026, 8, 3));
+
 /** A named weekday in the locale — `short` for the circles and lists, `long` for a sentence. */
 function weekdayName(
   weekday: Weekday,
   locale: string,
   style: 'short' | 'long',
 ): string {
-  // 2026-08-03 is a Monday; ISO n lands on the n-th day from it.
-  return new Intl.DateTimeFormat(locale, {
-    weekday: style,
-    timeZone: 'UTC',
-  }).format(new Date(Date.UTC(2026, 7, 2 + isoOf(weekday))));
+  return style === 'short'
+    ? (formatWeekdayLabels(locale)[weekday - 1] ?? '')
+    : formatWallClock(LocalDate.addDays(A_MONDAY, weekday - 1), null, locale, {
+        weekday: 'long',
+      });
 }
 
 @Component({
@@ -486,7 +531,7 @@ export class StaffBlockEditor {
 
   /* ── The repeat ────────────────────────────────────────────────── */
 
-  /** The series' start as the domain's day — the frame's day, in the shop's zone. */
+  /** The series' start as the shop day — the frame's day. */
   protected readonly startDay = computed(() => dayOf(this.draft().dayKey));
 
   /** The days the draft would write, or the domain's refusal; `null` when nothing repeats. */
@@ -495,7 +540,7 @@ export class StaffBlockEditor {
     const start = this.startDay();
     return rule === null || start === null
       ? null
-      : RecurrenceSeries.create(start, rule);
+      : RecurrenceSystem.series(start, rule);
   });
 
   /**
@@ -503,14 +548,14 @@ export class StaffBlockEditor {
    * Never clamped (the typed-figure ruling): refused in the domain's words,
    * and «Запази» waits until it is fixed or the page is left.
    */
-  private readonly typedError = signal<DomainError | null>(null);
+  private readonly typedError = signal<SchedulingError | null>(null);
 
   /** What is wrong with the repeat, in words — the typed refusal first, then the series'. */
   protected readonly repeatError = computed<string | null>(() => {
     const typed = this.typedError();
     if (typed !== null) return translateDomainError(this.transloco, typed);
     const series = this.series();
-    return series !== null && series.isFailure()
+    return series !== null && !series.ok
       ? translateDomainError(this.transloco, series.error)
       : null;
   });
@@ -519,13 +564,13 @@ export class StaffBlockEditor {
   private readonly writeDays = computed<readonly string[]>(() => {
     const series = this.series();
     if (series === null) return [this.draft().dayKey];
-    return series.isSuccess() ? series.value.keys() : [];
+    return series.ok ? series.value.localDates : [];
   });
 
   /** The series' days, for the dots on its end's calendar. */
   protected readonly seriesDays = computed<readonly string[]>(() => {
     const series = this.series();
-    return series !== null && series.isSuccess() ? series.value.keys() : [];
+    return series !== null && series.ok ? series.value.localDates : [];
   });
 
   protected readonly saveable = computed(
@@ -557,12 +602,14 @@ export class StaffBlockEditor {
     return [
       ...REPEAT_PRESETS.map((id) => ({
         id,
+        testId: `staff-block-repeat-${REPEAT_PRESET_WORD[id]}`,
         label: this.rawCopy(PRESET_LABEL[id]),
         detail: start === null ? null : this.presetDetail(id, start),
         checked: id === checked,
       })),
       {
-        id: 'custom' as const,
+        id: CUSTOM_REPEAT,
+        testId: 'staff-block-repeat-custom',
         label: this.rawCopy('staff.block.repeatCustom'),
         detail: null,
         checked: custom,
@@ -570,13 +617,13 @@ export class StaffBlockEditor {
     ];
   });
 
-  protected pickRepeat(id: RepeatPreset | 'custom'): void {
+  protected pickRepeat(id: RepeatRowId): void {
     const start = this.startDay();
     if (start === null) return;
     this.typedError.set(null);
-    this.customOpen.set(id === 'custom');
+    this.customOpen.set(id === CUSTOM_REPEAT);
     this.setRule(
-      id === 'custom'
+      id === CUSTOM_REPEAT
         ? ruleForCustom(start, this.draft().repeat)
         : ruleForPreset(id, start, this.draft().repeat),
     );
@@ -584,7 +631,8 @@ export class StaffBlockEditor {
 
   private setRule(rule: RecurrenceRule | null): void {
     this.draft.update((current) =>
-      current.repeat === rule || (rule !== null && rule.equals(current.repeat))
+      current.repeat === rule ||
+      (rule !== null && RecurrenceRule.equals(rule, current.repeat))
         ? current
         : { ...current, repeat: rule },
     );
@@ -597,10 +645,20 @@ export class StaffBlockEditor {
     () =>
       FREQUENCIES.map((frequency) => ({
         id: frequency,
-        label: this.rawCopy(`staff.block.repeatFrequencies.${frequency}`),
-        testId: `staff-block-repeat-frequency-${frequency}`,
+        label: this.rawCopy(
+          `staff.block.repeatFrequencies.${RECURRENCE_FREQUENCY_WORD[frequency]}`,
+        ),
+        testId: `staff-block-repeat-frequency-${RECURRENCE_FREQUENCY_WORD[frequency]}`,
       })),
   );
+
+  /** The template's dictionary, for the rule's own controls. */
+  protected readonly Frequency = RecurrenceFrequency;
+
+  /** The rule's frequency as its `staff.block.repeatFrequencies.<word>` segment. */
+  protected frequencyWord(rule: RecurrenceRule): string {
+    return RECURRENCE_FREQUENCY_WORD[rule.recurrenceFrequency];
+  }
 
   protected setFrequency(id: string): void {
     this.frequencyMenu.set(false);
@@ -615,29 +673,37 @@ export class StaffBlockEditor {
   /** «седмици» after «2» — the interval field's unit, in the rule's own period. */
   protected intervalUnit(rule: RecurrenceRule): string {
     return this.rawCopy(
-      `staff.block.repeatUnit.${rule.frequency}.${this.pluralOf(rule.interval)}`,
+      `staff.block.repeatUnit.${this.frequencyWord(rule)}.${this.pluralOf(rule.recurrenceInterval)}`,
     );
   }
 
   protected commitInterval(value: string): void {
     const rule = this.draft().repeat;
     if (rule === null) return;
-    this.typed(rule.with({ interval: Number(value) }));
+    this.typed(withInterval(rule, Number(value)));
   }
 
   /** The weekly rule's days as ISO numbers, for the picker. */
   protected readonly weekdayIsos = computed<readonly number[]>(() => {
-    const pattern = this.draft().repeat?.pattern;
-    return pattern?.frequency === 'weekly' ? pattern.weekdays.map(isoOf) : [];
+    const rule = this.draft().repeat;
+    return rule?.recurrenceFrequency === RecurrenceFrequency.Weekly
+      ? rule.recurrenceWeekdays
+      : [];
   });
 
   protected setWeekdays(isos: readonly number[]): void {
     const rule = this.draft().repeat;
-    if (rule === null || rule.frequency !== 'weekly') return;
-    const next = rule.with({
-      pattern: { frequency: 'weekly', weekdays: isos.map(weekdayFromIso) },
+    if (
+      rule === null ||
+      rule.recurrenceFrequency !== RecurrenceFrequency.Weekly
+    )
+      return;
+    const weekdays = isos.flatMap((iso) => {
+      const weekday = weekdayOf(iso);
+      return weekday === null ? [] : [weekday];
     });
-    if (next.isSuccess()) this.setRule(next.value);
+    const next = withWeekdays(rule, weekdays);
+    if (next.ok) this.setRule(next.value);
   }
 
   protected readonly monthlyMenu = signal(false);
@@ -647,15 +713,23 @@ export class StaffBlockEditor {
    * its week, the last one — plus the rule's own, should it be none of
    * them (a start moved under a shaped rule).
    */
-  private readonly monthlyDays = computed<readonly MonthlyDay[]>(() => {
-    const start = this.startDay();
-    const pattern = this.draft().repeat?.pattern;
-    if (start === null || pattern?.frequency !== 'monthly') return [];
-    const offered = RecurrenceRule.monthlyDaysFor(start);
-    return offered.some((day) => monthlyId(day) === monthlyId(pattern.day))
-      ? offered
-      : [...offered, pattern.day];
-  });
+  private readonly monthlyDays = computed<readonly RecurrencePattern.Monthly[]>(
+    () => {
+      const start = this.startDay();
+      const rule = this.draft().repeat;
+      if (
+        start === null ||
+        rule?.recurrenceFrequency !== RecurrenceFrequency.Monthly
+      ) {
+        return [];
+      }
+      const own = monthlyOf(rule);
+      const offered = RecurrenceSystem.monthlyDaysFor(start);
+      return offered.some((day) => monthlyId(day) === monthlyId(own))
+        ? offered
+        : [...offered, own];
+    },
+  );
 
   protected readonly monthlyOptions = computed<readonly UiChoiceOption[]>(() =>
     this.monthlyDays().map((day) => ({
@@ -666,8 +740,10 @@ export class StaffBlockEditor {
   );
 
   protected readonly monthlySelectedId = computed(() => {
-    const pattern = this.draft().repeat?.pattern;
-    return pattern?.frequency === 'monthly' ? monthlyId(pattern.day) : null;
+    const rule = this.draft().repeat;
+    return rule?.recurrenceFrequency === RecurrenceFrequency.Monthly
+      ? monthlyId(rule)
+      : null;
   });
 
   protected readonly monthlyLabel = computed(
@@ -682,8 +758,8 @@ export class StaffBlockEditor {
     const rule = this.draft().repeat;
     const day = this.monthlyDays().find((entry) => monthlyId(entry) === id);
     if (rule === null || day === undefined) return;
-    const next = rule.with({ pattern: { frequency: 'monthly', day } });
-    if (next.isSuccess()) this.setRule(next.value);
+    const next = withMonthly(rule, day);
+    if (next.ok) this.setRule(next.value);
   }
 
   /* How it ends. */
@@ -691,23 +767,22 @@ export class StaffBlockEditor {
   protected readonly endMenu = signal(false);
   protected readonly untilOpen = signal(false);
 
-  protected readonly endOptions = computed<readonly UiChoiceOption[]>(() => [
-    {
-      id: 'until',
-      label: this.rawCopy('staff.block.repeatEndOn'),
-      testId: 'staff-block-repeat-end-until',
-    },
-    {
-      id: 'count',
-      label: this.rawCopy('staff.block.repeatEndAfter'),
-      testId: 'staff-block-repeat-end-count',
-    },
-  ]);
+  protected readonly endOptions = computed<readonly UiChoiceOption[]>(() =>
+    END_KINDS.map((kind) => ({
+      id: kind,
+      label: this.rawCopy(
+        kind === RecurrenceEnd.Until
+          ? 'staff.block.repeatEndOn'
+          : 'staff.block.repeatEndAfter',
+      ),
+      testId: `staff-block-repeat-end-${RECURRENCE_END_WORD[kind]}`,
+    })),
+  );
 
   protected readonly endKindLabel = computed(
     () =>
       this.endOptions().find(
-        (option) => option.id === this.draft().repeat?.end.kind,
+        (option) => option.id === this.draft().repeat?.recurrenceEnd,
       )?.label ?? '',
   );
 
@@ -715,15 +790,17 @@ export class StaffBlockEditor {
     this.endMenu.set(false);
     const rule = this.draft().repeat;
     const start = this.startDay();
-    if (rule === null || start === null) return;
-    if (id !== 'until' && id !== 'count') return;
+    const kind = END_KINDS.find((entry) => entry === id);
+    if (rule === null || start === null || kind === undefined) return;
     this.typedError.set(null);
-    this.setRule(ruleForEndKind(rule, id, start));
+    this.setRule(ruleForEndKind(rule, kind, start));
   }
 
   protected readonly untilKey = computed(() => {
-    const end = this.draft().repeat?.end;
-    return end?.kind === 'until' ? end.day.key() : null;
+    const rule = this.draft().repeat;
+    return rule?.recurrenceEnd === RecurrenceEnd.Until
+      ? rule.untilLocalDate
+      : null;
   });
 
   protected setUntil(dayKey: string): void {
@@ -731,29 +808,32 @@ export class StaffBlockEditor {
     const rule = this.draft().repeat;
     const day = dayOf(dayKey);
     if (rule === null || day === null) return;
-    this.typed(rule.with({ end: { kind: 'until', day } }));
+    this.typed(withUntil(rule, day));
   }
 
   protected readonly countFigure = computed(() => {
-    const end = this.draft().repeat?.end;
-    return end?.kind === 'count' ? String(end.count) : '';
+    const rule = this.draft().repeat;
+    return rule?.recurrenceEnd === RecurrenceEnd.Count
+      ? String(rule.occurrenceCount)
+      : '';
   });
 
   protected readonly countUnit = computed(() => {
-    const end = this.draft().repeat?.end;
-    const count = end?.kind === 'count' ? end.count : 0;
+    const rule = this.draft().repeat;
+    const count =
+      rule?.recurrenceEnd === RecurrenceEnd.Count ? rule.occurrenceCount : 0;
     return this.rawCopy(`staff.block.repeatTimesUnit.${this.pluralOf(count)}`);
   });
 
   protected commitCount(value: string): void {
     const rule = this.draft().repeat;
     if (rule === null) return;
-    this.typed(rule.with({ end: { kind: 'count', count: Number(value) } }));
+    this.typed(withCount(rule, Number(value)));
   }
 
   /** A typed change: taken when the domain holds it, said when it refuses. */
-  private typed(next: ReturnType<RecurrenceRule['with']>): void {
-    if (next.isFailure()) {
+  private typed(next: Result<RecurrenceRule, SchedulingError>): void {
+    if (!next.ok) {
       this.typedError.set(next.error);
       return;
     }
@@ -783,8 +863,11 @@ export class StaffBlockEditor {
     const error = this.repeatError();
     if (error !== null) return error;
     const series = this.series();
-    if (series === null || series.isFailure()) return null;
-    const { count, first, last } = series.value;
+    if (series === null || !series.ok) return null;
+    const days = series.value.localDates;
+    const count = days.length;
+    const first = days[0] ?? series.value.startLocalDate;
+    const last = days[count - 1] ?? first;
     const locale = this.locale();
     return [
       this.daysPhrase(rule),
@@ -793,8 +876,8 @@ export class StaffBlockEditor {
         { count },
       ),
       count === 1
-        ? formatDayPill(first.key(), locale)
-        : formatDayPillRange(first.key(), last.key(), locale),
+        ? formatDayPill(first, locale)
+        : formatDayPillRange(first, last, locale),
     ]
       .filter((part): part is string => part !== null)
       .join(' · ');
@@ -826,67 +909,72 @@ export class StaffBlockEditor {
   /** «Всяка седмица», «На всеки 2 седмици». */
   private everyPhrase(rule: RecurrenceRule): string {
     return this.transloco.translate(
-      `staff.block.repeatEvery.${rule.frequency}.${this.pluralOf(rule.interval)}`,
-      { count: rule.interval },
+      `staff.block.repeatEvery.${this.frequencyWord(rule)}.${this.pluralOf(rule.recurrenceInterval)}`,
+      { count: rule.recurrenceInterval },
     );
   }
 
   /** Which days of the period — `null` for every day. */
   private daysPhrase(rule: RecurrenceRule): string | null {
     const locale = this.locale();
-    const pattern = rule.pattern;
-    switch (pattern.frequency) {
-      case 'daily':
+    switch (rule.recurrenceFrequency) {
+      case RecurrenceFrequency.Daily:
         return null;
-      case 'weekly': {
-        const days = pattern.weekdays;
+      case RecurrenceFrequency.Weekly: {
+        const days = rule.recurrenceWeekdays;
         if (
           days.length === MONDAY_TO_FRIDAY.length &&
           days.every((day, index) => day === MONDAY_TO_FRIDAY[index])
         ) {
-          return `${weekdayName('monday', locale, 'short')} – ${weekdayName('friday', locale, 'short')}`;
+          return `${weekdayName(Weekday.Mon, locale, 'short')} – ${weekdayName(Weekday.Fri, locale, 'short')}`;
         }
         const only = days.length === 1 ? days[0] : undefined;
         if (only !== undefined) {
-          return this.rawCopy(`staff.block.repeatOnWeekday.${only}`);
+          return this.rawCopy(
+            `staff.block.repeatOnWeekday.${WEEKDAY_WORD[only]}`,
+          );
         }
         return new Intl.ListFormat(locale, {
           style: 'long',
           type: 'conjunction',
         }).format(days.map((day) => weekdayName(day, locale, 'short')));
       }
-      case 'monthly':
-        return this.monthlyPhrase(pattern.day);
-      case 'yearly':
+      case RecurrenceFrequency.Monthly:
+        return this.monthlyPhrase(rule);
+      case RecurrenceFrequency.Yearly:
         return this.transloco.translate('staff.block.repeatOnDayOfYear', {
           // A leap year, so 29 February has a date to be written as.
-          date: new Intl.DateTimeFormat(locale, {
-            day: 'numeric',
-            month: 'long',
-            timeZone: 'UTC',
-          }).format(new Date(Date.UTC(2000, pattern.month - 1, pattern.date))),
+          date: formatWallClock(
+            LocalDate.fromEpochDay(
+              LocalDate.epochDayOf(2000, rule.yearlyMonth, rule.yearlyDate),
+            ),
+            null,
+            locale,
+            { day: 'numeric', month: 'long' },
+          ),
         });
     }
   }
 
   /** «на 24-то число», «в последния четвъртък», «във втората сряда». */
-  private monthlyPhrase(day: MonthlyDay): string {
-    if (day.by === 'date') {
+  private monthlyPhrase(day: RecurrencePattern.Monthly): string {
+    if (day.monthlyAnchor === MonthlyAnchor.Date) {
       return this.transloco.translate('staff.block.repeatOnDate', {
-        date: this.ordinal(day.date),
+        date: this.ordinal(day.monthlyDate),
       });
     }
     // Bulgarian agrees the ordinal with the weekday's gender («първия
     // четвъртък», «първата сряда»), so the table is per gender and the
     // gender is the locale's own fact about each day.
     const gender =
-      this.rawCopy(`staff.block.repeatWeekdayGender.${day.weekday}`) ===
-      'feminine'
+      this.rawCopy(
+        `staff.block.repeatWeekdayGender.${WEEKDAY_WORD[day.monthlyWeekday]}`,
+      ) === 'feminine'
         ? 'feminine'
         : 'masculine';
     return this.transloco.translate(
-      `staff.block.repeatOnNth.${gender}.${day.week === -1 ? 'last' : day.week}`,
-      { weekday: weekdayName(day.weekday, this.locale(), 'long') },
+      `staff.block.repeatOnNth.${gender}.${day.monthlyWeek === WeekOfMonth.Last ? 'last' : day.monthlyWeek}`,
+      { weekday: weekdayName(day.monthlyWeekday, this.locale(), 'long') },
     );
   }
 
@@ -904,8 +992,8 @@ export class StaffBlockEditor {
   }
 
   /** What a shortcut means from this start, under its name. */
-  private presetDetail(id: RepeatPreset, start: CalendarDay): string | null {
-    if (id === 'never' || id === 'daily') return null;
+  private presetDetail(id: RepeatPreset, start: LocalDate): string | null {
+    if (id === RepeatPreset.Never || id === RepeatPreset.Daily) return null;
     const rule = ruleForPreset(id, start, null);
     return rule === null ? null : this.daysPhrase(rule);
   }
@@ -1172,7 +1260,9 @@ function sameDraft(a: BlockDraft, b: BlockDraft): boolean {
     a.endMinute === b.endMinute &&
     a.barberIds.length === b.barberIds.length &&
     a.barberIds.every((id, index) => b.barberIds[index] === id) &&
-    (a.repeat === null ? b.repeat === null : a.repeat.equals(b.repeat))
+    (a.repeat === null
+      ? b.repeat === null
+      : RecurrenceRule.equals(a.repeat, b.repeat))
   );
 }
 

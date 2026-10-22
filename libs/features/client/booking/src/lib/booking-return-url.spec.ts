@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import fc from 'fast-check';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { RedirectPath } from '@creativo/application/identity';
+import { RedirectPath } from '@core/primitives';
 import {
   BOOKING_SOURCE_PARAMS,
   bookingSignInReturnUrl,
@@ -105,7 +105,7 @@ describe('bookingSignInReturnUrl — where the sign-in round trip comes back to'
         ),
         (current) => {
           const url = back(current);
-          expect(RedirectPath.create(url).isSuccess()).toBe(true);
+          expect(RedirectPath.parse(url).ok).toBe(true);
           expect(url.startsWith('/book?step=schedule')).toBe(true);
           const parsed = router.parseUrl(url);
           expect(

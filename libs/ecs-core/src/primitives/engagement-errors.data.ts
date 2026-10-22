@@ -5,6 +5,7 @@ import type {
   BadgeSeriesId,
   CourseId,
   EventId,
+  InvitationId,
   LocationId,
   PositionId,
   RewardId,
@@ -132,6 +133,12 @@ export const EngagementErrorCode = {
   InvitationRedemptionCountInvalid:
     'ENGAGEMENT_INVITATION_INVALID_REDEMPTION_COUNT',
   InvitationSelfRedemption: 'ENGAGEMENT_INVITATION_SELF_REDEMPTION',
+  /** `redeemInvitation`: no `invitations/{id}` (Phase 4a, F3-2). */
+  InvitationNotFound: 'ENGAGEMENT_INVITATION_NOT_FOUND',
+  /** `redeemInvitation`: the caller's redemption exists — existence alone prevents a second one. */
+  InvitationAlreadyRedeemed: 'ENGAGEMENT_INVITATION_ALREADY_REDEEMED',
+  /** `redeemInvitation` called without a signed-in session. */
+  InvitationUnauthenticated: 'ENGAGEMENT_INVITATION_UNAUTHENTICATED',
 
   // ── The loyalty catalogue ─────────────────────────────────────────────
   BadgeCategoryOrderNegative: 'ENGAGEMENT_BADGE_CATEGORY_ORDER_NEGATIVE',
@@ -248,6 +255,9 @@ export type EngagementError =
   | EngagementError.InvitationInviterNameEmpty
   | EngagementError.InvitationRedemptionCountInvalid
   | EngagementError.InvitationSelfRedemption
+  | EngagementError.InvitationNotFound
+  | EngagementError.InvitationAlreadyRedeemed
+  | EngagementError.InvitationUnauthenticated
   | EngagementError.BadgeCategoryOrderNegative
   | EngagementError.BadgeSeriesNoLevels
   | EngagementError.BadgeSeriesLevelGap
@@ -459,6 +469,22 @@ export const EngagementError = {
   },
   invitationSelfRedemption(): EngagementError.InvitationSelfRedemption {
     return { errorCode: EngagementErrorCode.InvitationSelfRedemption };
+  },
+  invitationNotFound(
+    invitationId: InvitationId,
+  ): EngagementError.InvitationNotFound {
+    return { errorCode: EngagementErrorCode.InvitationNotFound, invitationId };
+  },
+  invitationAlreadyRedeemed(
+    invitationId: InvitationId,
+  ): EngagementError.InvitationAlreadyRedeemed {
+    return {
+      errorCode: EngagementErrorCode.InvitationAlreadyRedeemed,
+      invitationId,
+    };
+  },
+  invitationUnauthenticated(): EngagementError.InvitationUnauthenticated {
+    return { errorCode: EngagementErrorCode.InvitationUnauthenticated };
   },
 
   // ── The loyalty catalogue ─────────────────────────────────────────────
@@ -1071,4 +1097,15 @@ export namespace EngagementError {
     /** The default shop the save fell back to and found absent. */
     readonly locationId: LocationId;
   };
+  export type InvitationNotFound = {
+    readonly errorCode: typeof EngagementErrorCode.InvitationNotFound;
+    readonly invitationId: InvitationId;
+  };
+  export type InvitationAlreadyRedeemed = {
+    readonly errorCode: typeof EngagementErrorCode.InvitationAlreadyRedeemed;
+    readonly invitationId: InvitationId;
+  };
+  export type InvitationUnauthenticated = Bare<
+    typeof EngagementErrorCode.InvitationUnauthenticated
+  >;
 }

@@ -21,12 +21,14 @@ import {
   MARTIN_PREVIOUS_MS,
   achievementsContextOf,
   achievementsDataOf,
-  at,
+  sofia,
+  sofiaIso,
   georgiContext,
   georgiOpenContext,
   martinContext,
   must,
 } from '../testing/client-card.fixtures';
+import { AchievementScope } from './client-card.contracts';
 
 const GEORGI = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 const MARTIN = achievementsDataOf('martin', MARTIN_PREVIOUS_MS);
@@ -70,10 +72,16 @@ describe('the registry maps', () => {
 describe('scope keys', () => {
   it('round-trips every scope through the editor’s subject id', () => {
     const scopes = [
-      { kind: 'category', categoryId: 'cat-mastery' },
-      { kind: 'season', seasonId: 'season-2026-autumn' },
-      { kind: 'archive' },
-      { kind: 'day', day: '2026-09-04' },
+      {
+        achievementScope: AchievementScope.Category,
+        categoryId: 'cat-mastery',
+      },
+      {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'season-2026-autumn',
+      },
+      { achievementScope: AchievementScope.Archive },
+      { achievementScope: AchievementScope.Day, day: '2026-09-04' },
     ] as const;
     expect(scopes.map(achievementScopeKey)).toEqual([
       'category:cat-mastery',
@@ -198,7 +206,7 @@ describe('medalVm', () => {
     });
     const before = {
       ...GEORGI,
-      previousVisitAtMs: at('2026-09-28T11:00:00').toMillis(),
+      previousVisitAtMs: sofia('2026-09-28T11:00:00'),
     };
     expect(medalVm(rhythm, before, SETTLED, { markNew: true }).isNew).toBe(
       false,
@@ -461,7 +469,7 @@ describe('completesWithThisVisit («с това посещение»)', () => {
             variantId: null,
             minutes: 20,
             barberId: 'niko',
-            startsAtIso: at('2026-10-02T12:00:00').toISO(),
+            startsAtIso: sofiaIso('2026-10-02T12:00:00'),
           },
         ],
         locationId: 'loc-mladost',
@@ -518,7 +526,10 @@ describe('scopePageVm', () => {
   it('sections mastery by the service’s own category, then «Общи»', () => {
     const page = scopePageVm(
       GEORGI,
-      { kind: 'category', categoryId: 'cat-mastery' },
+      {
+        achievementScope: AchievementScope.Category,
+        categoryId: 'cat-mastery',
+      },
       SETTLED,
     );
     expect(page?.title).toBe('Майсторство');
@@ -553,7 +564,10 @@ describe('scopePageVm', () => {
   it('sections barbers and shops apart', () => {
     const page = scopePageVm(
       GEORGI,
-      { kind: 'category', categoryId: 'cat-barbers' },
+      {
+        achievementScope: AchievementScope.Category,
+        categoryId: 'cat-barbers',
+      },
       SETTLED,
     );
     expect(
@@ -576,7 +590,10 @@ describe('scopePageVm', () => {
   it('counts a group by its earned families, never by the started ones — Мартин’s «Общи» over «Изследовател» in progress', () => {
     const page = scopePageVm(
       MARTIN,
-      { kind: 'category', categoryId: 'cat-mastery' },
+      {
+        achievementScope: AchievementScope.Category,
+        categoryId: 'cat-mastery',
+      },
       BIRTHDAY,
     );
     const general = page?.sections.find((section) => section.key === 'general');
@@ -589,7 +606,10 @@ describe('scopePageVm', () => {
   it('draws any other shelf as one unlabelled grid', () => {
     const page = scopePageVm(
       GEORGI,
-      { kind: 'category', categoryId: 'cat-special' },
+      {
+        achievementScope: AchievementScope.Category,
+        categoryId: 'cat-special',
+      },
       SETTLED,
     );
     expect(page?.sections).toHaveLength(1);
@@ -603,7 +623,10 @@ describe('scopePageVm', () => {
   it('draws an ended season with the levels it reached and only what was earned; the level it closed on is drawn, not written', () => {
     const page = scopePageVm(
       GEORGI,
-      { kind: 'season', seasonId: 'season-2026-summer' },
+      {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'season-2026-summer',
+      },
       SETTLED,
     );
     expect(page).toMatchObject({
@@ -629,7 +652,11 @@ describe('scopePageVm', () => {
   });
 
   it('files the archive by the year each window closed, each season opening its own scope', () => {
-    const page = scopePageVm(GEORGI, { kind: 'archive' }, SETTLED);
+    const page = scopePageVm(
+      GEORGI,
+      { achievementScope: AchievementScope.Archive },
+      SETTLED,
+    );
     expect(page).toMatchObject({
       title: 'Минали сезони и събития',
       subline: 'Георги Петров',
@@ -642,7 +669,10 @@ describe('scopePageVm', () => {
         tiles: [
           expect.objectContaining({
             key: 'season-2026-summer',
-            opens: { kind: 'season', seasonId: 'season-2026-summer' },
+            opens: {
+              achievementScope: AchievementScope.Season,
+              seasonId: 'season-2026-summer',
+            },
             medal: expect.objectContaining({
               title: 'Лято 2026',
               caption: '1.06 – 31.08',
@@ -657,9 +687,11 @@ describe('scopePageVm', () => {
   it('draws an archived event without a track by its emblem and its count, and leaves out windows he never joined', () => {
     const later: AchievementsData = { ...GEORGI, today: '2027-01-15' };
     const keys = (data: AchievementsData) =>
-      scopePageVm(data, { kind: 'archive' }, SETTLED)?.sections.flatMap((s) =>
-        s.tiles.map((t) => t.key),
-      );
+      scopePageVm(
+        data,
+        { achievementScope: AchievementScope.Archive },
+        SETTLED,
+      )?.sections.flatMap((s) => s.tiles.map((t) => t.key));
     expect(keys(later)).toEqual(['season-2026-autumn', 'season-2026-summer']);
 
     const progress = new Map(later.progress);
@@ -680,7 +712,7 @@ describe('scopePageVm', () => {
     const joined: AchievementsData = { ...later, progress };
     const tiles = scopePageVm(
       joined,
-      { kind: 'archive' },
+      { achievementScope: AchievementScope.Archive },
       SETTLED,
     )?.sections.flatMap((s) => s.tiles);
     expect(tiles?.map((tile) => tile.key)).toEqual([
@@ -689,7 +721,10 @@ describe('scopePageVm', () => {
       'season-2026-summer',
     ]);
     expect(tiles?.[1]).toMatchObject({
-      opens: { kind: 'season', seasonId: 'event-2026-beard-week' },
+      opens: {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'event-2026-beard-week',
+      },
       medal: {
         icon: 'loyalty.badge.event',
         level: null,
@@ -706,7 +741,7 @@ describe('scopePageVm', () => {
   it('lists the families earned on one day', () => {
     const page = scopePageVm(
       GEORGI,
-      { kind: 'day', day: '2026-09-28' },
+      { achievementScope: AchievementScope.Day, day: '2026-09-28' },
       SETTLED,
     );
     expect(page?.title).toBe('Спечелени на 28.09');
@@ -721,17 +756,21 @@ describe('scopePageVm', () => {
     expect(
       scopePageVm(
         GEORGI,
-        { kind: 'category', categoryId: 'cat-gone' },
+        { achievementScope: AchievementScope.Category, categoryId: 'cat-gone' },
         SETTLED,
       ),
     ).toBeNull();
     expect(
-      scopePageVm(GEORGI, { kind: 'season', seasonId: 'season-gone' }, SETTLED),
+      scopePageVm(
+        GEORGI,
+        { achievementScope: AchievementScope.Season, seasonId: 'season-gone' },
+        SETTLED,
+      ),
     ).toBeNull();
     expect(
       scopeTitleOf(
         GEORGI,
-        { kind: 'category', categoryId: 'cat-gone' },
+        { achievementScope: AchievementScope.Category, categoryId: 'cat-gone' },
         SETTLED.words,
       ),
     ).toBeNull();

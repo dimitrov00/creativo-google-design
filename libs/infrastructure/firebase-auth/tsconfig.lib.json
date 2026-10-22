@@ -17,13 +17,7 @@
       "path": "../firebase-app/tsconfig.lib.json"
     },
     {
-      "path": "../../domain/identity/tsconfig.lib.json"
-    },
-    {
-      "path": "../../application/identity/tsconfig.lib.json"
-    },
-    {
-      "path": "../../domain/kernel/tsconfig.lib.json"
+      "path": "../../ecs-core/tsconfig.lib.json"
     }
   ]
 }

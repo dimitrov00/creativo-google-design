@@ -17,7 +17,13 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import type { CountryIso2, PhoneDraft } from '@creativo/domain/kernel';
+import type { CountryIso2 } from '@core/components';
+import type {
+  CountryNaming,
+  PhoneCountry,
+  PhoneDraft,
+  PhoneSystem,
+} from '@core/systems';
 import { UiListGroup, UiListRow } from '@creativo/ui/patterns';
 import { UiModalSheet } from '../modal-sheet/modal-sheet';
 import { UiVisuallyHiddenDirective } from '@creativo/ui/modifiers';
@@ -26,16 +32,44 @@ import { UiIcon } from '@creativo/ui/icons';
 import { UiTextField } from '../text-field/text-field';
 
 /**
- * The kernel's phone API rides `libphonenumber-js` (~170 kB of metadata) —
- * a DYNAMIC import keeps it out of every initial bundle that merely
- * imports the `@creativo/ui/controls` barrel; the chunk loads once, when
- * the first phone field constructs. Types are imported type-only above
- * (erased at compile time), so only the functions arrive late.
+ * `PhoneSystem` rides `libphonenumber-js` (~170 kB of metadata) — a DYNAMIC
+ * import of the component-local `./phone-field.lazy` keeps it out of every
+ * initial bundle that merely imports the `@creativo/ui/controls` barrel; the
+ * chunk loads once, when the first phone field constructs (owner ruling F6).
+ * The types above are `import type` (erased at compile time), so only the
+ * functions arrive late.
  */
-type PhoneKernel = Pick<
-  typeof import('@creativo/domain/kernel'),
-  'examplePhoneNumber' | 'formatPhoneDraft' | 'listPhoneCountries'
->;
+type PhoneApi = typeof PhoneSystem;
+
+/**
+ * How the picker names and orders countries in `locale` — the words half
+ * `PhoneSystem.listPhoneCountries` takes, because a system never builds an
+ * `Intl` object: `Intl.DisplayNames` (platform-provided — zero country-name
+ * payload shipped) and `Intl.Collator`.
+ */
+function countryNaming(locale: string): CountryNaming {
+  const displayNames = new Intl.DisplayNames([locale], { type: 'region' });
+  const collator = new Intl.Collator(locale);
+  return {
+    nameOf: (code) => displayNames.of(code) ?? null,
+    compare: (a, b) => collator.compare(a, b),
+  };
+}
+
+/** The picker's ~250 countries per locale — built once and shared by every
+ *  phone field; the list is pure, so the cache never invalidates. */
+const countriesByLocale = new Map<string, readonly PhoneCountry[]>();
+
+function phoneCountries(
+  phone: PhoneApi,
+  locale: string,
+): readonly PhoneCountry[] {
+  const cached = countriesByLocale.get(locale);
+  if (cached) return cached;
+  const countries = phone.listPhoneCountries(countryNaming(locale));
+  countriesByLocale.set(locale, countries);
+  return countries;
+}
 
 /** E.164 max is 15 digits — one digit of slack absorbs a stray trunk zero. */
 const MAX_DIGITS = 16;
@@ -110,7 +144,7 @@ function capDigits(raw: string, max: number): string {
  *
  * Value contract: `value` is canonical E.164 (`'+359888123456'`) or `null`
  * — it is non-null ONLY while the draft is a valid number; national
- * as-you-type formatting (kernel `formatPhoneDraft`, caret preserved) is
+ * as-you-type formatting (`PhoneSystem.formatDraft`, caret preserved) is
  * presentation. A typed/pasted/autofilled `+…` re-detects and switches the
  * `country` model (autofill's international value is never rejected);
  * changing country from the picker keeps the entered digits and refocuses
@@ -118,7 +152,7 @@ function capDigits(raw: string, max: number): string {
  *
  * Validation is the CONSUMER's: `error` is an input. Validate on blur
  * (`uiBlurred` emits the current field text) + on submit via
- * `PhoneNumber.create`, and clear the error live once `value` goes
+ * `PhoneSystem.parse`, and clear the error live once `value` goes
  * non-null (`draft.isValid` — reward early, punish late).
  *
  * The country picker adapts per viewport, resolved fresh at every open
@@ -167,11 +201,11 @@ function capDigits(raw: string, max: number): string {
 export class UiPhoneField {
   /** Selected country (two-way). Falls back to `defaultCountry` until the
    *  user picks or types one — the fallback never writes the model. */
-  readonly country = model<CountryIso2 | undefined>(undefined);
+  readonly country = model<CountryIso2 | null>(null);
   /** Canonical E.164 (two-way) — non-null ONLY while the draft is valid. */
   readonly value = model<string | null>(null);
   /** Tenant/deployment default (resolved by the feature layer, not here). */
-  readonly defaultCountry = input<CountryIso2 | undefined>(undefined);
+  readonly defaultCountry = input<CountryIso2 | null>(null);
   /** Visible label above the frame (footnote convention). */
   readonly label = input('');
   /** Secondary helper line under the frame (e.g. the priming hint). */
@@ -191,7 +225,7 @@ export class UiPhoneField {
   readonly noResultsLabel = input('No matches');
 
   /** Blur notification for the consumer's validate-on-blur; payload is the
-   *  current (national-formatted) field text for `PhoneNumber.create`. */
+   *  current (national-formatted) field text for `PhoneSystem.parse`. */
   readonly uiBlurred = output<string>();
 
   private readonly uniqueId = `ui-phone-field-${nextUniqueId++}`;
@@ -209,9 +243,9 @@ export class UiPhoneField {
     viewChild<ElementRef<HTMLButtonElement>>('triggerButton');
   private readonly hostRef = inject<ElementRef<HTMLElement>>(ElementRef);
 
-  /** The lazily-loaded kernel phone API — `null` for the few ms before the
+  /** The lazily-loaded `PhoneSystem` — `null` for the few ms before the
    *  chunk lands (typing degrades to raw text, then re-formats). */
-  private readonly kernel = signal<PhoneKernel | null>(null);
+  private readonly phone = signal<PhoneApi | null>(null);
 
   /** National-formatted presentation text currently in the input. */
   protected readonly inputText = signal('');
@@ -231,14 +265,14 @@ export class UiPhoneField {
   protected readonly effectiveCountry = computed(
     () => this.country() ?? this.defaultCountry(),
   );
-  protected readonly countries = computed(
-    () => this.kernel()?.listPhoneCountries(this.locale()) ?? [],
-  );
-  protected readonly selectedCountry = computed(() => {
+  protected readonly countries = computed(() => {
+    const phone = this.phone();
+    return phone ? phoneCountries(phone, this.locale()) : [];
+  });
+  protected readonly selectedCountry = computed((): PhoneCountry | null => {
     const code = this.effectiveCountry();
-    return code
-      ? this.countries().find((country) => country.code === code)
-      : undefined;
+    if (code === null) return null;
+    return this.countries().find((country) => country.code === code) ?? null;
   });
   protected readonly triggerDial = computed(() => {
     const selected = this.selectedCountry();
@@ -257,7 +291,7 @@ export class UiPhoneField {
   });
   protected readonly placeholder = computed(() => {
     const code = this.effectiveCountry();
-    return (code && this.kernel()?.examplePhoneNumber(code)) || '';
+    return (code && this.phone()?.example(code)) || '';
   });
   protected readonly describedBy = computed(() => {
     const ids = [
@@ -304,33 +338,28 @@ export class UiPhoneField {
       }),
     );
 
-    // Load the kernel chunk through PendingTasks so zoneless whenStable
+    // Load the phone chunk through PendingTasks so zoneless whenStable
     // (tests, hydration) waits for it.
     void inject(PendingTasks).run(async () => {
-      const { examplePhoneNumber, formatPhoneDraft, listPhoneCountries } =
-        await import('@creativo/domain/kernel');
-      this.kernel.set({
-        examplePhoneNumber,
-        formatPhoneDraft,
-        listPhoneCountries,
-      });
+      const { PhoneSystem } = await import('./phone-field.lazy');
+      this.phone.set(PhoneSystem);
     });
 
     // External `value` writes (prefill, autofill through the model) act
     // like a pasted international number: re-detect country, re-format.
-    // Also tracks `kernel` so a value set before the chunk landed is
+    // Also tracks `phone` so a value set before the chunk landed is
     // processed as soon as it does.
     effect(() => {
-      const kernel = this.kernel();
+      const phone = this.phone();
       const external = this.value();
-      if (external === this.lastSyncedValue || !kernel) return;
+      if (external === this.lastSyncedValue || !phone) return;
       this.lastSyncedValue = external;
       untracked(() => {
         if (!external) {
           this.inputText.set('');
           return;
         }
-        const draft = kernel.formatPhoneDraft(external);
+        const draft = phone.formatDraft(external, null);
         if (draft.country && draft.country !== this.country()) {
           this.country.set(draft.country);
         }
@@ -352,8 +381,8 @@ export class UiPhoneField {
   protected onInput(event: Event): void {
     const inputEl = event.target as HTMLInputElement;
     const raw = capDigits(inputEl.value, MAX_DIGITS);
-    const kernel = this.kernel();
-    if (!kernel) {
+    const phone = this.phone();
+    if (!phone) {
       // Chunk not landed yet (first ms) — keep the raw text; the next
       // keystroke re-formats the full value anyway.
       this.inputText.set(raw);
@@ -362,7 +391,7 @@ export class UiPhoneField {
     const significantBeforeCaret = countSignificantChars(
       inputEl.value.slice(0, inputEl.selectionStart ?? inputEl.value.length),
     );
-    const draft = kernel.formatPhoneDraft(raw, this.effectiveCountry());
+    const draft = phone.formatDraft(raw, this.effectiveCountry());
     // A `+<dial code>` carries its own country — switch the model (typed,
     // pasted or autofilled international values are all honored).
     if (
@@ -387,14 +416,14 @@ export class UiPhoneField {
   protected onInputBlur(): void {
     // Snap the DISPLAYED text to the canonical national grouping — a messy
     // paste ('08 88-12 34 56') or any text that slipped past the as-you-type
-    // path re-renders as the kernel's canonical format ('088 812 3456').
+    // path re-renders as `PhoneSystem`'s canonical format ('088 812 3456').
     // Reads the DOM value (not the signal) so even divergence the input
     // event never saw gets normalized.
-    const kernel = this.kernel();
+    const phone = this.phone();
     const inputEl = this.telInput()?.nativeElement;
     const text = inputEl?.value ?? this.inputText();
-    if (kernel && text.trim() !== '') {
-      const draft = kernel.formatPhoneDraft(text, this.effectiveCountry());
+    if (phone && text.trim() !== '') {
+      const draft = phone.formatDraft(text, this.effectiveCountry());
       this.inputText.set(draft.formatted);
       if (inputEl) inputEl.value = draft.formatted;
       this.syncValue(draft);
@@ -403,7 +432,7 @@ export class UiPhoneField {
   }
 
   private syncValue(draft: PhoneDraft): void {
-    const e164 = draft.isValid ? (draft.e164 ?? null) : null;
+    const e164 = draft.isValid ? draft.e164 : null;
     // Belt and braces on the value contract: emitted E.164 NEVER carries
     // whitespace or punctuation — `+` and digits only.
     const next = e164 === null ? null : e164.replace(/[^+\d]/g, '');
@@ -538,8 +567,8 @@ export class UiPhoneField {
   };
 
   protected selectCountry(code: CountryIso2): void {
-    const kernel = this.kernel();
-    if (!kernel) return; // options can't render before the chunk lands
+    const phone = this.phone();
+    if (!phone) return; // options can't render before the chunk lands
     // Keep the entered digits, re-interpreted against the new country
     // (never wipe on country change). If the text was international, strip
     // the OLD dial code first so only the national digits carry over.
@@ -554,7 +583,7 @@ export class UiPhoneField {
       digits = digits.slice(previous.dialCode.length);
     }
     this.country.set(code);
-    const draft = kernel.formatPhoneDraft(digits, code);
+    const draft = phone.formatDraft(digits, code);
     this.inputText.set(draft.formatted);
     this.syncValue(draft);
     this.closePicker(true);

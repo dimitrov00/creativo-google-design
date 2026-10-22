@@ -51,7 +51,10 @@ import {
   fixtureHash,
   localDate,
   locationFixture,
+  memoryDefaultLocationPorts,
   memoryLoadBusyDay,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStore,
   memoryTxPorts,
   minute,
@@ -188,6 +191,17 @@ type World = {
   ) => Result<boolean, RepositoryError>;
 };
 
+/**
+ * Whose "now" decides past days, lead times and lapses (Law 7.2, F-4): the
+ * default location's — the fixture shop, on `FIXTURE_TIME_ZONE`.
+ */
+const ZONE_PORTS = {
+  ...memoryLocationLoadPorts(
+    memoryProgramsWorld({ locations: [locationFixture()] }),
+  ),
+  ...memoryDefaultLocationPorts(),
+};
+
 function rig(world: World) {
   const store = memoryStore([
     ...(world.stored ?? world.watching).map((request) => ({
@@ -209,6 +223,7 @@ function rig(world: World) {
   const run = matchWaitlist({
     ...tx,
     ...telemetry,
+    ...ZONE_PORTS,
     loadPolicy: async () => {
       calls.policy += 1;
       return Result.ok(BookingPolicy.DEFAULT);
@@ -240,7 +255,7 @@ function rig(world: World) {
   return { store, tx, telemetry, calls, run };
 }
 
-const command = { localDate: DAY, timeZone: FIXTURE_TIME_ZONE };
+const command = { localDate: DAY };
 
 /** The plan a match on `DAY` at `startMinutes` writes for `request`. */
 function matchPlan(request: WaitlistRequest, startMinutes: number) {
@@ -398,6 +413,31 @@ describe('matchWaitlist — one plan per match', () => {
     ]);
   });
 
+  it('answers a zone it cannot read as its store failure, before reading anything else (4A-2 (e))', async () => {
+    const failed = RepositoryError.readFailed('locations/loc-center', 'down');
+    const tx = memoryTxPorts(memoryStore());
+    const run = matchWaitlist({
+      ...tx,
+      ...recordingTelemetry(),
+      ...memoryDefaultLocationPorts(),
+      loadLocation: async () => Result.err(failed),
+      loadPolicy: async () => {
+        throw new Error('nothing past the zone is read');
+      },
+      loadOpenWaitlist: async () => {
+        throw new Error('nothing past the zone is read');
+      },
+      loadListedCatalog: async () =>
+        Result.ok({ services: [], locations: [], barbers: [] }),
+      loadSchedule: async () => Result.ok(null),
+      loadScheduleException: async () => Result.ok(null),
+      loadBusyDay: async () => Result.ok(null),
+      hasRecentNotification: async () => Result.ok(false),
+    });
+    expect(await run(command)).toEqual(Result.err(failed));
+    expect(tx.transactions).toEqual([]);
+  });
+
   it('answers a policy it cannot read before loading anything else', async () => {
     const failure = RepositoryError.readFailed(
       'settings/bookingPolicy',
@@ -407,6 +447,7 @@ describe('matchWaitlist — one plan per match', () => {
     const run = matchWaitlist({
       ...tx,
       ...recordingTelemetry(),
+      ...ZONE_PORTS,
       loadPolicy: async () => Result.err(failure),
       loadOpenWaitlist: async () => {
         throw new Error('nothing past the policy is read');
@@ -543,7 +584,7 @@ describe('matchWaitlist — only the shops the public surface lists', () => {
 
 describe('matchWaitlist — a day gone by', () => {
   const PAST = localDate('2026-09-25');
-  const pastCommand = { localDate: PAST, timeZone: FIXTURE_TIME_ZONE };
+  const pastCommand = { localDate: PAST };
   const lapsed = requestFixture('wl_old', {
     localDates: [PAST],
     flexibleDays: [

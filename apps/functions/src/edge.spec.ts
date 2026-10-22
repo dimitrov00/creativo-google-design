@@ -4,63 +4,73 @@ import ts from 'typescript';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
   AccountsError,
+  AppointmentId,
   BarberId,
   BookingError,
+  BookingErrorCode,
   BookingStatus,
+  CancellationRefusal,
+  CarriedSeatRefusal,
+  CatalogError,
+  CompleteRegistrationRefusalCode,
   CourseId,
   EndMinute,
   EngagementError,
   EngagementErrorCode,
   EventId,
+  GovernanceError,
   IdentityError,
+  IdentityErrorCode,
+  InvitationId,
+  LocalDate,
   LocationId,
   MinuteCount,
+  MinuteOfDay,
+  type MoveCarriedSeatUnplaceable,
+  MoveErrorCode,
+  PhoneError,
+  PhoneInvalidReason,
   PositionId,
   PrimitiveErrorCode,
+  RepositoryError,
   Result,
   SchedulingErrorCode,
   SeatId,
   ShopUnavailableReason,
-  StreakPublishError,
-  StreakPublishErrorCode,
-  LocalDate,
-  MinuteOfDay,
-  TimeError,
-  TimeErrorCode,
-  UtcEpochMs,
-  WaitlistError,
-} from '@core/primitives';
-import { WallTime } from '@core/components';
-import { Callables, type TelemetryPorts } from '@core/ports';
-import {
-  type CancellationRefusal,
-  CancellationRefusalCode,
-  CarriedSeatRefusal,
-  type MoveCarriedSeatUnplaceable,
-  MoveErrorCode,
   StaffEditError,
   StaffEditErrorCode,
+  StreakPublishError,
+  StreakPublishErrorCode,
+  TimeError,
+  TimeErrorCode,
+  UserId,
+  UtcEpochMs,
+  WaitlistError,
+  WIRE_PARAM_ALLOWLIST,
+} from '@core/primitives';
+import { ResizeEdge } from '@core/components';
+import { Callables, type TelemetryPorts } from '@core/ports';
+import {
+  type AttemptLine,
+  AttemptOutcome,
   WorkBudgetSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  attemptLineFields,
   EDGE_DICTIONARIES,
   EDGE_WIRE,
   type EdgeError,
   HttpsStatus,
-  LEGACY_WIRE_CODE,
-  LegacyWireCode,
-  errorCodeOf,
+  NamedField,
   PLATFORM_TIMEOUT_SECONDS,
-  WIRE_ZONE,
   WireShape,
   callableEdge,
   isAnswered,
+  projected,
   retryingTrigger,
   toHttpsError,
-  wallIso,
   wireDetails,
-  wireParamsOf,
   wireRuleOf,
   workBudget,
 } from './edge';
@@ -83,20 +93,18 @@ const day = (raw: string): LocalDate => sure(LocalDate.parse(raw));
 const at = (minute: number): MinuteOfDay => sure(MinuteOfDay.of(minute));
 const until = (minute: number): EndMinute => sure(EndMinute.of(minute));
 const IVAN = BarberId.of('b_ivan');
+const FIXTURE_APPOINTMENT = AppointmentId.of('apt-1');
 
 const SRC = resolve(__dirname);
 const ECS_CORE = resolve(__dirname, '../../../libs/ecs-core/src');
 
-const ALL_CODES: readonly string[] = Object.values(EDGE_DICTIONARIES).flatMap(
-  (dictionary) => Object.values(dictionary),
+/** The shared allowlist, read by code — no dynamic index. */
+const ALLOWLIST = new Map<string, readonly string[]>(
+  Object.entries(WIRE_PARAM_ALLOWLIST),
 );
 
-/**
- * The rule a WIRE code leaves by — today's handlers name the dotted wire
- * code, the table is keyed by the ecs-core `errorCode` (F-10).
- */
-const RULE_BY_WIRE_CODE = new Map(
-  Object.values(EDGE_WIRE).map((rule) => [rule.wireCode, rule] as const),
+const ALL_CODES: readonly string[] = Object.values(EDGE_DICTIONARIES).flatMap(
+  (dictionary) => Object.values(dictionary),
 );
 
 /** The answer `toHttpsError` gives, as plain data. */
@@ -282,21 +290,47 @@ function ecsErrorDictionaryNames(): readonly string[] {
 }
 
 /**
- * Codes the callables RETURN today (`{ kind: 'refused', … }`) — never
- * thrown: the streak publish's refusals, its legacy `notAdmin`, and the
- * caller refusal the loyalty flip names on a new dotted code
- * (`loyalty.streak_publish.caller_not_admin`, F3-4). A caller without a
- * session is THROWN `unauthenticated` (`CallerUnauthenticated` is not here).
+ * Codes the callables RETURN — never thrown: the streak publish's rule
+ * refusals and its caller who is no admin. A caller without a session is
+ * THROWN `unauthenticated` (`CallerUnauthenticated` is not here).
  */
-const ANSWERED_TODAY: ReadonlySet<string> = new Set([
+const ANSWERED: ReadonlySet<string> = new Set([
   StreakPublishErrorCode.Stale,
   StreakPublishErrorCode.Invalid,
   StreakPublishErrorCode.TooEarly,
   StreakPublishErrorCode.RecomputeNeedsEngine,
   StreakPublishErrorCode.PreviewStale,
   StreakPublishErrorCode.CallerNotAdmin,
-  LegacyWireCode.StreakPublishNotAdmin,
 ]);
+
+/** What must stay on the server unless a code's own allowlist names it (R14). */
+const SERVER_ONLY = ['detail', 'reason', 'path', 'violations', 'junk'] as const;
+
+/**
+ * A struct of `code` holding EVERY field a row could name and every field
+ * that must never leave — what the projection is proved against.
+ */
+function everything(code: string): EdgeError {
+  const fields = new Map<string, unknown>([
+    ['errorCode', code],
+    ['field', 'f'],
+    ['refusal', 'r'],
+    ['detail', 'account:u-2'],
+    ['reason', 'internal-reason'],
+    ['path', 'appointments/a1'],
+    ['violations', [{ errorCode: 'x' }]],
+    ['junk', 1],
+  ]);
+  for (const name of ALLOWLIST.get(code) ?? []) {
+    if (!fields.has(name) || name === 'reason') fields.set(name, `v:${name}`);
+  }
+  return Object.fromEntries(fields) as EdgeError;
+}
+
+const THROWN_CODES = Object.entries(EDGE_WIRE)
+  .filter(([, rule]) => rule.wireShape === WireShape.Fields)
+  .map(([code]) => code)
+  .sort();
 
 describe('edge — the wire table', () => {
   describe('totality', () => {
@@ -307,190 +341,204 @@ describe('edge — the wire table', () => {
         const rule = wireRuleOf(code);
         if (rule.wireShape === WireShape.Answered) continue;
         expect(Object.values(HttpsStatus), code).toContain(rule.httpsStatus);
-        expect(() => toHttpsError({ code } as EdgeError)).not.toThrow();
+        expect(() =>
+          toHttpsError({ errorCode: code } as EdgeError),
+        ).not.toThrow();
       }
     });
 
-    it('holds exactly one rule per code — no code is spelled by two dictionaries, no wire code by two rules', () => {
+    it('holds exactly one rule per code — no code is spelled by two dictionaries', () => {
       expect(new Set(ALL_CODES).size).toBe(ALL_CODES.length);
       expect(Object.keys(EDGE_WIRE).sort()).toEqual([...ALL_CODES].sort());
-      expect(RULE_BY_WIRE_CODE.size).toBe(ALL_CODES.length);
     });
 
-    it('covers every error dictionary ecs-core declares', () => {
+    it('covers every error dictionary ecs-core declares — and no legacy one', () => {
       const declared = ecsErrorDictionaryNames();
       expect(declared.length).toBeGreaterThanOrEqual(19);
-      expect(Object.keys(EDGE_DICTIONARIES)).toEqual(
-        expect.arrayContaining([...declared]),
-      );
+      expect(Object.keys(EDGE_DICTIONARIES).sort()).toEqual([...declared]);
+      for (const code of ALL_CODES) {
+        // Every code on the wire is SCREAMING (Phase 4a 4A-4: the legacy
+        // dotted and undotted codes are gone with `LegacyWireCode`).
+        expect(code).toMatch(/^[A-Z][A-Z0-9_]+$/);
+      }
     });
 
     it('answers — never throws — exactly the streak publish’s refusals', () => {
       expect(Object.keys(EDGE_WIRE).filter(isAnswered).sort()).toEqual(
-        [...ANSWERED_TODAY].sort(),
+        [...ANSWERED].sort(),
       );
+    });
+
+    it('lists, per code, exactly its row’s named fields and its allowlist — the ONE table the web reads too', () => {
+      for (const [code, rule] of Object.entries(EDGE_WIRE)) {
+        if (rule.wireShape === WireShape.Answered) continue;
+        const named = rule.wireFields.filter(
+          (name) => name === NamedField.Field || name === NamedField.Refusal,
+        );
+        expect(rule.wireFields, code).toEqual([
+          ...named,
+          ...(ALLOWLIST.get(code) ?? []),
+        ]);
+      }
+      // `field` and `refusal` leave exactly where the legacy rows named them.
+      const namedBy = (name: string) =>
+        Object.entries(EDGE_WIRE)
+          .filter(
+            ([, rule]) =>
+              rule.wireShape !== WireShape.Answered &&
+              rule.wireFields.includes(name),
+          )
+          .map(([code]) => code)
+          .sort();
+      expect(namedBy(NamedField.Field)).toEqual(
+        [
+          BookingErrorCode.InvalidInput,
+          StaffEditErrorCode.InvalidCommand,
+          'BOOKING_WAITLIST_INVALID_REQUEST',
+          StreakPublishErrorCode.InvalidInput,
+          IdentityErrorCode.RegistrationFieldMissing,
+        ].sort(),
+      );
+      expect(namedBy(NamedField.Refusal)).toEqual([
+        MoveErrorCode.CarriedSeatUnplaceable,
+      ]);
     });
   });
 
   describe('today’s statuses, read from today’s handlers', () => {
-    // 0 after flip 3 — every callable answers through its wire. The last
-    // handler read here (the streak publish's handler and its use case)
-    // threw from 2 sites with 9 error classes on 6d43e1c; their statuses
-    // are pinned in `wire/loyalty.wire.spec.ts` (`the deleted handler’s
-    // statuses`). A handler that throws its own HttpsError again fails here.
+    // 0 since flip 3 — every callable answers through its wire. A handler
+    // that throws its own HttpsError again fails here.
     it('finds no handler that throws its own HttpsError — every callable answers through its wire', () => {
       expect(todaysThrowSites()).toEqual([]);
     });
 
-    it('finds no use-case error class — every refusal is an ecs-core struct or a legacy wire code', () => {
+    it('finds no use-case error class — every refusal is an ecs-core struct', () => {
       expect(todaysErrorClassCodes()).toEqual([]);
     });
   });
 
-  describe('details — today’s exact shapes', () => {
-    it('`{ code, params }` with today’s stringified figures', () => {
+  describe('details — the projected struct (Phase 4a 4A-4)', () => {
+    // One case per code (R14): with every field a struct could hold present,
+    // exactly `errorCode` and the code's listed fields leave — never a person
+    // key, an internal reason, a repository path or a violation list unless
+    // the code's own allowlist names it.
+    it.each(THROWN_CODES)(
+      '%s leaves as its errorCode and its listed fields alone',
+      (code) => {
+        const rule = wireRuleOf(code);
+        if (rule.wireShape === WireShape.Answered) return;
+        const details = wireDetails(everything(code));
+        expect(Object.keys(details).sort()).toEqual(
+          ['errorCode', ...rule.wireFields].sort(),
+        );
+        for (const name of SERVER_ONLY) {
+          if (!rule.wireFields.includes(name)) {
+            expect(details, `${code} leaked ${name}`).not.toHaveProperty(name);
+          }
+        }
+        const thrown = toHttpsError(everything(code));
+        expect(thrown.code).toBe(rule.httpsStatus);
+        expect(thrown.message).toBe(code);
+      },
+    );
+
+    it('carries the struct’s figures as it holds them — no stringified params', () => {
       expect(wire(BookingError.tooSoon(sure(MinuteCount.of(30))))).toEqual({
         status: 'failed-precondition',
-        message: 'booking.commit.too_soon',
-        details: {
-          code: 'booking.commit.too_soon',
-          params: { minLeadMinutes: '30' },
-        },
+        message: 'BOOKING_TOO_SOON',
+        details: { errorCode: 'BOOKING_TOO_SOON', minLeadMinutes: 30 },
       });
       expect(wireDetails(BookingError.partyTooLarge(4))).toEqual({
-        code: 'booking.commit.party_too_large',
-        params: { maxPartySize: '4' },
+        errorCode: 'BOOKING_PARTY_TOO_LARGE',
+        maxPartySize: 4,
       });
       expect(wire(WaitlistError.tooManyDays(7)).details).toEqual({
-        code: 'booking.waitlist.too_many_days',
-        params: { max: '7' },
+        errorCode: 'BOOKING_WAITLIST_TOO_MANY_DAYS',
+        max: 7,
       });
     });
 
-    it('`params: {}` for a refusal with nothing to say, as a DomainError sends it', () => {
+    it('a refusal with nothing to say leaves as its code alone', () => {
       expect(wire(BookingError.unauthenticated())).toEqual({
         status: 'unauthenticated',
-        message: 'booking.commit.unauthenticated',
-        details: { code: 'booking.commit.unauthenticated', params: {} },
+        message: 'BOOKING_UNAUTHENTICATED',
+        details: { errorCode: 'BOOKING_UNAUTHENTICATED' },
       });
-      expect(wire(WaitlistError.alreadyWatching())).toMatchObject({
+      expect(wire(WaitlistError.alreadyWatching())).toEqual({
         status: 'already-exists',
-        details: { code: 'booking.waitlist.already_watching', params: {} },
+        message: 'BOOKING_WAITLIST_ALREADY_WATCHING',
+        details: { errorCode: 'BOOKING_WAITLIST_ALREADY_WATCHING' },
       });
     });
 
-    it('keeps what must stay on the server off the wire', () => {
-      // A person key, a shop's reason, the violations, the seat index.
+    it('keeps what must stay on the server off the wire — a person key, a shop’s reason, the violations, a repository cause', () => {
       expect(
         wireDetails(BookingError.personDoubleBooked('account:u-2')),
       ).toEqual({
-        code: 'booking.commit.invalid_input',
-        params: { field: 'person_overlap' },
+        errorCode: 'BOOKING_INVALID_INPUT',
+        field: 'person_overlap',
       });
       expect(
         wireDetails(
           BookingError.shopUnavailable('loc-1', ShopUnavailableReason.Unlisted),
         ),
-      ).toEqual({
-        code: 'booking.commit.invalid_input',
-        params: { field: 'locationId' },
-      });
+      ).toEqual({ errorCode: 'BOOKING_INVALID_INPUT', field: 'locationId' });
       expect(
         wire(BookingError.invariantViolated([{ errorCode: 'x' } as never])),
-      ).toMatchObject({
+      ).toEqual({
         status: 'invalid-argument',
-        details: { code: 'booking.commit.invariant_violated', params: {} },
+        message: 'BOOKING_INVARIANT_VIOLATED',
+        details: { errorCode: 'BOOKING_INVARIANT_VIOLATED' },
+      });
+      expect(
+        wire(RepositoryError.writeFailed('appointments/a1', 'deadline')),
+      ).toEqual({
+        status: 'internal',
+        message: 'REPOSITORY_WRITE_FAILED',
+        details: { errorCode: 'REPOSITORY_WRITE_FAILED' },
       });
     });
 
-    it('a lost race is `aborted`, its wall clock as today’s shop-clock ISO param', () => {
-      // 10:00 on the shop's clock = 07:00Z, Sofia summer.
+    it('a lost race is `aborted`, its wall clock as the struct holds it — `localDate` + `startMinutes`, no rendered instant', () => {
       expect(
         wire(BookingError.slotUnavailable(IVAN, day('2026-10-07'), at(600), 1)),
       ).toEqual({
         status: 'aborted',
-        message: 'booking.commit.slot_unavailable',
+        message: 'BOOKING_SLOT_UNAVAILABLE',
         details: {
-          code: 'booking.commit.slot_unavailable',
-          params: {
-            barberId: 'b_ivan',
-            // 07:00Z on the shop’s clock — Sofia summer, as ZonedDateTime.toISO() spelled it.
-            startIso: '2026-10-07T10:00:00.000+03:00',
-          },
-        },
-      });
-    });
-
-    it('spells every `*Iso` param on the shop’s clock with its offset — winter too, never UTC', () => {
-      expect(WIRE_ZONE).toBe('Europe/Sofia');
-      // 10:30 on 2026-12-01 — EET, +02:00.
-      expect(
-        wireDetails(
-          BookingError.slotUnavailable(IVAN, day('2026-12-01'), at(630), 1),
-        ),
-      ).toEqual({
-        code: 'booking.commit.slot_unavailable',
-        params: {
+          errorCode: 'BOOKING_SLOT_UNAVAILABLE',
           barberId: 'b_ivan',
-          startIso: '2026-12-01T10:30:00.000+02:00',
-        },
-      });
-      // Not a shop day: left out, as an absent optional param is.
-      expect(
-        wireDetails({
-          errorCode: StaffEditErrorCode.Overlaps,
-          barberId: 'b_ivan',
-          localDate: '2026-02-30',
+          localDate: '2026-10-07',
           startMinutes: 600,
-          edge: null,
-        }),
+        },
+      });
+      // A barber not on the roster names its day by the struct's own name.
+      expect(
+        wireDetails(BookingError.barberNotRostered(IVAN, day('2026-10-07'))),
       ).toEqual({
-        code: 'booking.staffEdit.overlaps',
-        params: { barberId: 'b_ivan' },
+        errorCode: 'BOOKING_BARBER_NOT_ROSTERED',
+        barberId: 'b_ivan',
+        localDate: '2026-10-07',
       });
     });
 
-    it('keys the table by errorCode and leaves as the LEGACY wire code — the wire is frozen (F-10)', () => {
+    it('a refused time and a refused primitive leave as themselves — a gap is the owner-locked `DST_GAP_INVALID_TIME`', () => {
       const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
-      const day = LocalDate.parse('2026-03-29');
+      const gapDay = LocalDate.parse('2026-03-29');
       const minute = MinuteOfDay.of(210);
-      if (!zone.ok || !day.ok || !minute.ok) throw new Error('fixture');
-      // A flattened struct names `errorCode`; it leaves as today's dotted code.
+      if (!zone.ok || !gapDay.ok || !minute.ok) throw new Error('fixture');
       expect(
-        wire(TimeError.dstGap(day.value, minute.value, zone.value)),
+        wire(TimeError.dstGap(gapDay.value, minute.value, zone.value)),
       ).toEqual({
         status: 'invalid-argument',
-        message: 'time.nonexistent_local_time',
-        details: { code: 'time.nonexistent_local_time', params: {} },
+        message: TimeErrorCode.DstGap,
+        details: { errorCode: TimeErrorCode.DstGap },
       });
       expect(wire(TimeError.invalidTimeZone('Not/AZone'))).toEqual({
         status: 'internal',
-        message: 'time.invalid_time_zone',
-        details: { code: 'time.invalid_time_zone', params: {} },
+        message: TimeErrorCode.InvalidTimeZone,
+        details: { errorCode: TimeErrorCode.InvalidTimeZone },
       });
-      // Every flattened time code has a legacy wire code; every rule has one.
-      const legacy = new Map(Object.entries(LEGACY_WIRE_CODE));
-      for (const code of Object.values(TimeErrorCode)) {
-        expect(legacy.get(code), code).toMatch(/^time\./);
-        expect(wireRuleOf(code).wireCode).toBe(legacy.get(code));
-      }
-      for (const [code, rule] of Object.entries(EDGE_WIRE)) {
-        expect(rule.wireCode, code).toBe(legacy.get(code) ?? code);
-      }
-      // Every SCREAMING code but a primitive's has its legacy dotted (or
-      // undotted lowercase) wire code — so no SCREAMING code reaches a client.
-      for (const [name, dictionary] of Object.entries(EDGE_DICTIONARIES)) {
-        if (name === 'PrimitiveErrorCode' || name === 'LegacyWireCode') {
-          continue;
-        }
-        for (const code of Object.values(dictionary)) {
-          expect(code, name).toMatch(/^[A-Z][A-Z0-9_]+$/);
-          expect(legacy.get(code), code).toMatch(/^[a-z][a-zA-Z0-9_.]+$/);
-        }
-      }
-    });
-
-    it('a refused primitive leaves as invalid-argument under its own code (no legacy one)', () => {
       expect(
         wire({
           errorCode: PrimitiveErrorCode.IdEmpty,
@@ -500,235 +548,184 @@ describe('edge — the wire table', () => {
       ).toEqual({
         status: 'invalid-argument',
         message: 'PRIMITIVE_ID_EMPTY',
-        details: { code: 'PRIMITIVE_ID_EMPTY', params: {} },
+        details: { errorCode: 'PRIMITIVE_ID_EMPTY' },
       });
     });
 
-    it('a local-coordinate param renders the same shop-clock ISO through toUtc; a gap is left out', () => {
-      const param = wallIso('startIso', 'localDate', 'startMinutes');
-      expect(param).toEqual({
-        wireName: 'startIso',
-        field: 'localDate',
-        paramFormat: 'ZONED_WALL_ISO',
-        minuteField: 'startMinutes',
-      });
-      const render = (localDate: unknown, startMinutes: unknown) =>
-        wireParamsOf(
-          {
-            code: StaffEditErrorCode.Overlaps,
-            localDate,
-            startMinutes,
-          },
-          [param],
-        );
-      expect(render('2026-10-07', 600)).toEqual({
-        startIso: '2026-10-07T10:00:00.000+03:00',
-      });
-      // The fall-back repeat takes the earlier offset (locked 2026-10-10).
-      expect(render('2026-10-25', 210)).toEqual({
-        startIso: '2026-10-25T03:30:00.000+03:00',
-      });
-      // An exclusive end of 1440 is the next day's first instant.
-      expect(render('2026-10-07', 1440)).toEqual({
-        startIso: '2026-10-08T00:00:00.000+03:00',
-      });
-      // A gap time, a non-day and a non-minute are left out, as absent params are.
-      expect(render('2026-03-29', 210)).toEqual({});
-      expect(render('2026-02-30', 600)).toEqual({});
-      expect(render('2026-10-07', 1441)).toEqual({});
-      expect(render('2026-10-07', null)).toEqual({});
-    });
-
-    it('an Admin-Auth step’s failure keeps today’s coded internal — never the raw pipeline code', () => {
-      // verifyOtp: a mint / provision / find failure (the pipeline names it).
-      expect(wire({ code: LegacyWireCode.TokenMintingFailure })).toEqual({
+    it('the identity callables’ own faults keep the legacy statuses — internal, the reason for an invalid input', () => {
+      expect(wire(IdentityError.tokenMintingFailure())).toEqual({
         status: 'internal',
-        message: 'token_minting_failure',
-        details: { code: 'token_minting_failure', params: {} },
+        message: 'IDENTITY_TOKEN_MINTING_FAILURE',
+        details: { errorCode: 'IDENTITY_TOKEN_MINTING_FAILURE' },
       });
-      // completeRegistration: the active-claims mint failing.
-      expect(wire({ code: LegacyWireCode.ClaimsPromotionFailure })).toEqual({
-        status: 'internal',
-        message: 'claims_promotion_failure',
-        details: { code: 'claims_promotion_failure', params: {} },
+      expect(wire(IdentityError.claimsPromotionFailure()).status).toBe(
+        'internal',
+      );
+      expect(wire(IdentityError.invalidInput('challengeId')).details).toEqual({
+        errorCode: 'IDENTITY_INVALID_INPUT',
+        reason: 'challengeId',
       });
     });
 
-    it('cancelWaitlist: today `{ code }` alone; its 3b flip answers the shared WaitlistError shape — the accepted change', () => {
-      // Today (main.spec pins it): cancel-waitlist.ts throws `{ code }` with
-      // no params for both codes, while requestWaitlist sends `{ code, params }`.
-      // One code has one rule, so when cancelWaitlist flips onto WaitlistError
-      // its details GAIN `params` — `{}` and `{ field: 'requestId' }` — and
-      // that flip updates main.spec's expectation. The web reads only
-      // `details.code` for these two, so the added params change no screen.
+    it('the OTP codes keep their statuses — the lockout is `resource-exhausted`, a forbidden registration never `permission-denied`', () => {
+      expect(wire(IdentityError.otpExpired())).toEqual({
+        status: 'deadline-exceeded',
+        message: 'IDENTITY_OTP_EXPIRED',
+        details: { errorCode: 'IDENTITY_OTP_EXPIRED' },
+      });
+      expect(wire(IdentityError.otpLockedOut()).status).toBe(
+        'resource-exhausted',
+      );
+      expect(wire(IdentityError.registrationForbidden()).status).toBe(
+        'failed-precondition',
+      );
+    });
+
+    it('both waitlist doors answer the shared WaitlistError shape', () => {
       expect(wire(WaitlistError.unauthenticated())).toEqual({
         status: 'unauthenticated',
-        message: 'booking.waitlist.unauthenticated',
-        details: { code: 'booking.waitlist.unauthenticated', params: {} },
+        message: 'BOOKING_WAITLIST_UNAUTHENTICATED',
+        details: { errorCode: 'BOOKING_WAITLIST_UNAUTHENTICATED' },
       });
       expect(wire(WaitlistError.invalidRequest('requestId'))).toEqual({
         status: 'invalid-argument',
-        message: 'booking.waitlist.invalid_request',
+        message: 'BOOKING_WAITLIST_INVALID_REQUEST',
         details: {
-          code: 'booking.waitlist.invalid_request',
-          params: { field: 'requestId' },
+          errorCode: 'BOOKING_WAITLIST_INVALID_REQUEST',
+          field: 'requestId',
         },
       });
-    });
-
-    it('a `field` param leaves as the wire has always spelt it: a renamed field by its old name, a refusal by its legacy code', () => {
-      expect(wireDetails(WaitlistError.invalidRequest('localDate'))).toEqual({
-        code: 'booking.waitlist.invalid_request',
-        params: { field: 'dayKey' },
-      });
+      // A `field` names the payload field, or the refusal one level down, as
+      // the struct holds it — no legacy rename, no dotted code.
       expect(
         wireDetails(
           WaitlistError.invalidRequest(SchedulingErrorCode.WaitlistNoDays),
         ),
       ).toEqual({
-        code: 'booking.waitlist.invalid_request',
-        params: { field: 'scheduling.waitlist.no_days' },
+        errorCode: 'BOOKING_WAITLIST_INVALID_REQUEST',
+        field: SchedulingErrorCode.WaitlistNoDays,
+      });
+    });
+
+    it('the cancel callable’s refusals: a window carries its hours, its deadline stays on the server', () => {
+      expect(
+        wire(CancellationRefusal.notCancellable(BookingStatus.Completed)),
+      ).toEqual({
+        status: 'failed-precondition',
+        message: 'BOOKING_CANCEL_NOT_CANCELLABLE',
+        details: { errorCode: 'BOOKING_CANCEL_NOT_CANCELLABLE' },
+      });
+      expect(wire(CancellationRefusal.policyUnavailable()).status).toBe(
+        'unavailable',
+      );
+      expect(wireDetails(CancellationRefusal.windowClosed(24, utc(1)))).toEqual(
+        { errorCode: 'BOOKING_CANCEL_WINDOW_CLOSED', windowHours: 24 },
+      );
+      expect(wire(CancellationRefusal.notFound(FIXTURE_APPOINTMENT))).toEqual({
+        status: 'not-found',
+        message: 'BOOKING_CANCEL_NOT_FOUND',
+        details: { errorCode: 'BOOKING_CANCEL_NOT_FOUND' },
+      });
+    });
+
+    it('the booking callables’ own refusals keep the legacy statuses, the lifecycle’s two states SCREAMING', () => {
+      expect(wire(BookingError.bare(BookingErrorCode.CommitForbidden))).toEqual(
+        {
+          status: 'permission-denied',
+          message: 'BOOKING_COMMIT_FORBIDDEN',
+          details: { errorCode: 'BOOKING_COMMIT_FORBIDDEN' },
+        },
+      );
+      expect(
+        wire(BookingError.bare(BookingErrorCode.ArrivedForbidden)).status,
+      ).toBe('permission-denied');
+      expect(
+        wire(
+          BookingError.statusMove(
+            BookingErrorCode.TransitionNotAllowed,
+            BookingStatus.Completed,
+            BookingStatus.Cancelled,
+          ),
+        ),
+      ).toEqual({
+        status: 'failed-precondition',
+        message: 'BOOKING_TRANSITION_NOT_ALLOWED',
+        details: {
+          errorCode: 'BOOKING_TRANSITION_NOT_ALLOWED',
+          fromBookingStatus: 'COMPLETED',
+          toBookingStatus: 'CANCELLED',
+        },
       });
       expect(
         wireDetails(
-          WaitlistError.invalidRequest(SchedulingErrorCode.WaitlistEmptyCart),
+          BookingError.callNotFound(
+            BookingErrorCode.TipNotFound,
+            FIXTURE_APPOINTMENT,
+          ),
         ),
-      ).toEqual({
-        code: 'booking.waitlist.invalid_request',
-        params: { field: 'scheduling.waitlist.empty_cart' },
-      });
-      // A barber not on the roster names its day as today's `dayKey`.
+      ).toEqual({ errorCode: 'BOOKING_TIP_NOT_FOUND' });
       expect(
-        wireDetails(BookingError.barberNotRostered(IVAN, day('2026-10-07'))),
-      ).toEqual({
-        code: 'booking.commit.barber_not_rostered',
-        params: { barberId: 'b_ivan', dayKey: '2026-10-07' },
-      });
+        wire({ errorCode: 'OPS_BACKFILL_INVALID_INPUT' } as EdgeError),
+      ).toMatchObject({ status: 'invalid-argument' });
     });
 
-    it('`{ code }` alone where today’s handlers throw inline', () => {
-      const notCancellable: CancellationRefusal = {
-        errorCode: CancellationRefusalCode.NotCancellable,
-        bookingStatus: BookingStatus.Completed,
-      };
-      expect(wire(notCancellable)).toEqual({
-        status: 'failed-precondition',
-        message: 'booking.cancel.not_cancellable',
-        details: { code: 'booking.cancel.not_cancellable' },
-      });
-      expect(
-        wire({ errorCode: CancellationRefusalCode.PolicyUnavailable }),
-      ).toMatchObject({
-        status: 'unavailable',
-        details: { code: 'booking.cancel.policy_unavailable' },
-      });
-      expect(wire({ code: LegacyWireCode.ArrivedForbidden })).toMatchObject({
-        status: 'permission-denied',
-        details: { code: 'booking.arrived.forbidden' },
-      });
-      expect(wire({ code: LegacyWireCode.CommitForbidden }).details).toEqual({
-        code: 'booking.commit.forbidden',
-      });
-      expect(wire({ code: LegacyWireCode.BackfillInvalidInput })).toMatchObject(
-        {
-          status: 'invalid-argument',
-          details: { code: 'ops.backfill.invalid_input' },
-        },
-      );
-    });
-
-    it('the cancel window and the transition graph carry today’s params', () => {
-      const windowClosed: CancellationRefusal = {
-        errorCode: CancellationRefusalCode.WindowClosed,
-        windowHours: 24,
-        deadlineUtcMs: utc(1),
-      };
-      expect(wireDetails(windowClosed)).toEqual({
-        code: 'booking.cancel.window_closed',
-        params: { windowHours: '24' },
-      });
-      expect(
-        wire({
-          code: LegacyWireCode.TransitionNotAllowed,
-          from: 'completed',
-          to: 'cancelled',
-        }),
-      ).toMatchObject({
-        status: 'failed-precondition',
-        details: {
-          code: 'booking.transition.not_allowed',
-          params: { from: 'completed', to: 'cancelled' },
-        },
-      });
-    });
-
-    it('a move and a staff edit say what they said: seat ids joined, instants as ISO, absent fields left out', () => {
+    it('a move and a staff edit say what they said: seat ids as a list, wall clocks as the struct holds them', () => {
       const carried: MoveCarriedSeatUnplaceable = {
         errorCode: MoveErrorCode.CarriedSeatUnplaceable,
         refusal: CarriedSeatRefusal.BarberUnavailable,
         seatIds: [SeatId.of('s1'), SeatId.of('s2')],
       };
-      expect(wire(carried)).toMatchObject({
+      expect(wire(carried)).toEqual({
         status: 'failed-precondition',
+        message: MoveErrorCode.CarriedSeatUnplaceable,
         details: {
-          code: 'booking.reschedule.carried_seat_unplaceable',
-          params: { refusal: 'barber_unavailable', seatIds: 's1,s2' },
+          errorCode: MoveErrorCode.CarriedSeatUnplaceable,
+          refusal: CarriedSeatRefusal.BarberUnavailable,
+          seatIds: ['s1', 's2'],
         },
       });
       expect(
-        wireDetails({
-          errorCode: StaffEditErrorCode.Overlaps,
-          barberId: 'b_ivan',
-          localDate: '2026-10-07',
-          startMinutes: 660,
-          edge: null,
-        }),
+        wireDetails(
+          StaffEditError.overlaps(IVAN, day('2026-10-07'), at(660), null),
+        ),
       ).toEqual({
-        code: 'booking.staffEdit.overlaps',
-        params: {
-          barberId: 'b_ivan',
-          startIso: '2026-10-07T11:00:00.000+03:00',
-        },
+        errorCode: StaffEditErrorCode.Overlaps,
+        barberId: 'b_ivan',
+        localDate: '2026-10-07',
+        startMinutes: 660,
+        resizeEdge: null,
       });
+      expect(
+        wireDetails(
+          StaffEditError.overlaps(
+            IVAN,
+            day('2026-10-07'),
+            at(660),
+            ResizeEdge.End,
+          ),
+        ),
+      ).toMatchObject({ resizeEdge: 'END' });
       expect(
         wireDetails(
           StaffEditError.beforeArrival(
             day('2026-10-07'),
             until(720),
-            WallTime.of(day('2026-10-07'), at(780)),
+            day('2026-10-07'),
+            at(780),
           ),
         ),
       ).toEqual({
-        code: 'booking.staffEdit.before_arrival',
-        params: {
-          endIso: '2026-10-07T12:00:00.000+03:00',
-          arrivedAtIso: '2026-10-07T13:00:00.000+03:00',
-        },
+        errorCode: StaffEditErrorCode.BeforeArrival,
+        localDate: '2026-10-07',
+        finishMinutes: 720,
+        arrivalLocalDate: '2026-10-07',
+        arrivalMinutes: 780,
       });
       expect(wire(StaffEditError.stale(3, 4))).toMatchObject({
         status: 'failed-precondition',
-        details: { params: { expected: '3', actual: '4' } },
+        details: { expected: 3, actual: 4 },
       });
       expect(wire(StaffEditError.forbidden()).status).toBe('permission-denied');
-    });
-
-    it('the OTP codes keep their statuses — the lockout is `resource-exhausted`, a mismatch never `permission-denied`', () => {
-      expect(wire({ code: LegacyWireCode.OtpExpired })).toEqual({
-        status: 'deadline-exceeded',
-        message: 'otp_expired',
-        details: { code: 'otp_expired', params: {} },
-      });
-      expect(wire(IdentityError.otpLockedOut()).status).toBe(
-        'resource-exhausted',
-      );
-      expect(wire(IdentityError.otpExpired()).status).toBe('deadline-exceeded');
-      expect(wire({ code: LegacyWireCode.RegistrationForbidden }).status).toBe(
-        'failed-precondition',
-      );
-      expect(
-        wire({ code: LegacyWireCode.InvalidInput, reason: 'challengeId' })
-          .details,
-      ).toEqual({ code: 'invalid_input', params: { reason: 'challengeId' } });
     });
 
     it('the programs refusals no callable returns yet (flip 4, D9(b)) leave by their kind — a missing program `not-found`, an event no zone places `failed-precondition`', () => {
@@ -741,8 +738,8 @@ describe('edge — the wire table', () => {
         ),
       ).toEqual({
         status: 'not-found',
-        message: 'engagement.position.not_found',
-        details: { code: 'engagement.position.not_found', params: {} },
+        message: 'ENGAGEMENT_POSITION_NOT_FOUND',
+        details: { errorCode: 'ENGAGEMENT_POSITION_NOT_FOUND' },
       });
       expect(
         wire(
@@ -761,61 +758,84 @@ describe('edge — the wire table', () => {
         ).status,
       ).toBe('not-found');
       expect(
-        wire(EngagementError.shopEventZoneUnknown(LocationId.of('loc-center'))),
-      ).toEqual({
-        status: 'failed-precondition',
-        message: 'engagement.shop_event.zone_unknown',
-        details: { code: 'engagement.shop_event.zone_unknown', params: {} },
-      });
+        wire(EngagementError.shopEventZoneUnknown(LocationId.of('loc-center')))
+          .status,
+      ).toBe('failed-precondition');
+      expect(
+        wire(CatalogError.locationZoneUnknown(LocationId.of('loc-center')))
+          .status,
+      ).toBe('failed-precondition');
     });
 
-    it('`{ errors: [...] }` for an aggregate, each nested refusal by its own rule', () => {
+    it('the new callables’ refusals (Phase 4a 4A-3): the impersonation gate and the invitation’s', () => {
+      expect(wire(GovernanceError.impersonationUnauthenticated())).toEqual({
+        status: 'unauthenticated',
+        message: 'GOVERNANCE_IMPERSONATION_UNAUTHENTICATED',
+        details: { errorCode: 'GOVERNANCE_IMPERSONATION_UNAUTHENTICATED' },
+      });
+      // The caller's uid stays on the server.
+      expect(
+        wire(GovernanceError.impersonationForbidden(UserId.of('u-1'))),
+      ).toEqual({
+        status: 'permission-denied',
+        message: 'GOVERNANCE_IMPERSONATION_FORBIDDEN',
+        details: { errorCode: 'GOVERNANCE_IMPERSONATION_FORBIDDEN' },
+      });
+      const invitation = InvitationId.of('inv-1');
+      expect(wire(EngagementError.invitationNotFound(invitation)).status).toBe(
+        'not-found',
+      );
+      expect(
+        wire(EngagementError.invitationAlreadyRedeemed(invitation)).status,
+      ).toBe('already-exists');
+      expect(wire(EngagementError.invitationUnauthenticated()).status).toBe(
+        'unauthenticated',
+      );
+      expect(wire(EngagementError.invitationSelfRedemption()).status).toBe(
+        'failed-precondition',
+      );
+    });
+
+    it('`{ errors: [...] }` for an aggregate — no top-level code, each nested refusal projected by its own row', () => {
       expect(
         wire({
-          code: LegacyWireCode.OtpValidationFailed,
+          errorCode: CompleteRegistrationRefusalCode.ProfileInvalid,
           errors: [
-            { code: LegacyWireCode.OtpDestinationEmpty },
-            { code: LegacyWireCode.InvalidOtpMaxAttempts, rawValue: 0 },
+            AccountsError.firstNameTooShort('A', 2),
+            PhoneError.invalid('12', PhoneInvalidReason.TooShort),
           ],
         }),
       ).toEqual({
         status: 'invalid-argument',
-        message: 'otp_validation_failed',
+        message: CompleteRegistrationRefusalCode.ProfileInvalid,
         details: {
           errors: [
-            { code: 'otp_destination_empty', params: {} },
-            { code: 'invalid_otp_max_attempts', params: { rawValue: 0 } },
+            {
+              errorCode: 'ACCOUNTS_FIRST_NAME_TOO_SHORT',
+              attempted: 'A',
+              minLength: 2,
+            },
+            {
+              errorCode: 'PHONE_INVALID',
+              attempted: '12',
+              reason: 'too-short',
+            },
           ],
         },
       });
-      expect(
-        wireDetails({
-          code: LegacyWireCode.UserValidationFailed,
-          errors: [AccountsError.firstNameTooShort('A', 2)],
-        }),
-      ).toEqual({
-        errors: [
-          {
-            code: 'accounts.first_name.too_short',
-            params: { attempted: 'A', minLength: 2 },
-          },
-        ],
-      });
     });
 
-    it('`{ code, errors }` for a wrapper and its cause', () => {
+    it('`{ errorCode, errors }` for a wrapper and its cause', () => {
       expect(
-        wireDetails({
-          code: LegacyWireCode.RegistrationBirthDateInvalid,
-          errors: [IdentityError.birthDateTooYoung(14, 16)],
-        }),
+        wireDetails(
+          IdentityError.registrationBirthDateInvalid([
+            IdentityError.birthDateTooYoung(14, 16),
+          ]),
+        ),
       ).toEqual({
-        code: 'registration_birth_date_invalid',
+        errorCode: 'IDENTITY_REGISTRATION_BIRTH_DATE_INVALID',
         errors: [
-          {
-            code: 'identity.birth_date.too_young',
-            params: { age: 14, minAge: 16 },
-          },
+          { errorCode: 'IDENTITY_BIRTH_DATE_TOO_YOUNG', age: 14, minAge: 16 },
         ],
       });
     });
@@ -823,18 +843,59 @@ describe('edge — the wire table', () => {
     it('an answered refusal that reaches the throw path is `internal`, never a status to act on', () => {
       expect(wire(StreakPublishError.previewStale())).toEqual({
         status: 'internal',
-        message: 'loyalty.streak_publish.preview_stale',
-        details: { code: 'loyalty.streak_publish.preview_stale' },
+        message: 'LOYALTY_STREAK_PUBLISH_PREVIEW_STALE',
+        details: { errorCode: 'LOYALTY_STREAK_PUBLISH_PREVIEW_STALE' },
       });
     });
 
-    it('a code the table does not know is `internal`', () => {
-      expect(wireRuleOf('not.a.code')).toMatchObject({
+    it('a code the table does not know is `internal`, its code alone', () => {
+      expect(wireRuleOf('NOT_A_CODE')).toMatchObject({
         httpsStatus: 'internal',
+        wireFields: [],
       });
-      expect(wire({ code: 'not.a.code' } as unknown as EdgeError).status).toBe(
-        'internal',
-      );
+      expect(
+        wire({ errorCode: 'NOT_A_CODE', detail: 'x' } as unknown as EdgeError),
+      ).toEqual({
+        status: 'internal',
+        message: 'NOT_A_CODE',
+        details: { errorCode: 'NOT_A_CODE' },
+      });
+    });
+
+    it('projects a struct to a list — present fields as held, `null` kept, `undefined` left out', () => {
+      expect(
+        projected(
+          {
+            errorCode: StaffEditErrorCode.Overlaps,
+            barberId: 'b_ivan',
+            resizeEdge: null,
+          } as EdgeError,
+          ['barberId', 'resizeEdge', 'startMinutes'],
+        ),
+      ).toEqual({
+        errorCode: StaffEditErrorCode.Overlaps,
+        barberId: 'b_ivan',
+        resizeEdge: null,
+      });
+    });
+  });
+});
+
+describe('edge — the attempt line (Phase 4a 4A-2 (c))', () => {
+  it('speaks the flipped vocabulary: the SCREAMING outcome, the failure’s code as `errorCode`', () => {
+    const line: AttemptLine = {
+      fn: 'dispatchClientProjections',
+      eventId: 'evt-1' as AttemptLine['eventId'],
+      attemptOutcome: AttemptOutcome.Transient,
+      failureCode: 'unavailable',
+      ageMs: 1_500,
+    };
+    expect(attemptLineFields(line)).toEqual({
+      fn: 'dispatchClientProjections',
+      eventId: 'evt-1',
+      outcome: 'TRANSIENT',
+      errorCode: 'unavailable',
+      ageMs: 1_500,
     });
   });
 });
@@ -887,7 +948,7 @@ describe('edge — the wrappers', () => {
   describe('callableEdge', () => {
     const spec = {
       callable: Callables.CommitBooking,
-      failureCode: LegacyWireCode.CommitStoreFailed,
+      failureCode: BookingErrorCode.CommitStoreFailed,
       timeoutSeconds: null,
       answer: null,
     } as const;
@@ -910,8 +971,8 @@ describe('edge — the wrappers', () => {
       const thrown = await rejection(handler(request({})));
       expect(thrown.code).toBe('failed-precondition');
       expect(thrown.details).toEqual({
-        code: 'booking.commit.too_soon',
-        params: { minLeadMinutes: '30' },
+        errorCode: 'BOOKING_TOO_SOON',
+        minLeadMinutes: 30,
       });
       expect(tracked).toEqual([]);
     });
@@ -921,27 +982,26 @@ describe('edge — the wrappers', () => {
       const handler = callableEdge(
         {
           callable: Callables.PublishStreakDefinition,
-          failureCode: LegacyWireCode.StreakPublishStoreFailed,
+          failureCode: StreakPublishErrorCode.StoreFailed,
           timeoutSeconds: null,
-          // Today's answer names the refusal by its wire code.
           answer: (refusal) => ({
-            kind: 'refused',
-            code: wireRuleOf(errorCodeOf(refusal)).wireCode,
+            streakPublishOutcome: 'REFUSED',
+            errorCode: refusal.errorCode,
           }),
         },
         ports,
         async () => Result.err(StreakPublishError.stale(2, 3)),
       );
       await expect(handler(request({}))).resolves.toEqual({
-        kind: 'refused',
-        code: 'loyalty.streak_publish.stale',
+        streakPublishOutcome: 'REFUSED',
+        errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
       });
     });
 
     it('passes a decoder’s own HttpsError through untouched, untracked', async () => {
       const { ports, tracked } = edgePorts();
       const own = new HttpsError('permission-denied', 'Sysadmin only', {
-        code: 'ops.backfill.forbidden',
+        errorCode: 'OPS_BACKFILL_FORBIDDEN',
       });
       const handler = callableEdge(spec, ports, async () => {
         throw own;
@@ -958,9 +1018,9 @@ describe('edge — the wrappers', () => {
       });
       const thrown = await rejection(handler(request({})));
       expect(thrown.code).toBe('internal');
+      expect(thrown.message).toBe('BOOKING_COMMIT_STORE_FAILED');
       expect(thrown.details).toEqual({
-        code: 'booking.commit.store_failed',
-        params: {},
+        errorCode: 'BOOKING_COMMIT_STORE_FAILED',
       });
       expect(tracked).toEqual([
         { error: boom, context: { callable: 'commitBooking' } },
@@ -1051,8 +1111,8 @@ describe('edge — the wrappers', () => {
           fields: {
             fn: 'dispatchClientProjections',
             eventId: 'evt-1',
-            outcome: 'transient',
-            code: 'unavailable',
+            outcome: 'TRANSIENT',
+            errorCode: 'unavailable',
             ageMs: 1_500,
           },
         },
@@ -1072,8 +1132,8 @@ describe('edge — the wrappers', () => {
         trigger({ id: 'evt-2', time: 'not a time' }),
       ).resolves.toBeUndefined();
       expect(logged[0]?.fields).toMatchObject({
-        outcome: 'permanent',
-        code: 'invalid-argument',
+        outcome: 'PERMANENT',
+        errorCode: 'invalid-argument',
         ageMs: null,
       });
     });

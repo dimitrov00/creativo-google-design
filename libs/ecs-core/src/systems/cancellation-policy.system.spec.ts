@@ -13,6 +13,8 @@ import {
 } from '@core/components';
 import {
   BookingStatus,
+  type CancellationRefusal,
+  CancellationRefusalCode,
   type Result,
   type SchedulingError,
   SchedulingErrorCode,
@@ -41,11 +43,7 @@ import {
   AppointmentLifecycleSystem,
   type LifecycleStep,
 } from './appointment-lifecycle.system';
-import {
-  type CancellationRefusal,
-  CancellationPolicySystem,
-  CancellationRefusalCode,
-} from './cancellation-policy.system';
+import { CancellationPolicySystem } from './cancellation-policy.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*

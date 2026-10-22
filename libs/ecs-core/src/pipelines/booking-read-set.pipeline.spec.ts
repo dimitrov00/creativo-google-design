@@ -38,18 +38,15 @@ import {
   locationFixture,
   memoryReadTx,
   memoryStore,
-  minute,
   recordingTelemetry,
   sequentialIds,
   serviceFixture,
   until,
-  utcMs,
 } from '@core/testing';
 import {
   appendAuditFacts,
   bookingSnapshotOf,
   busyMergeWrites,
-  frameShopDay,
   isReadableId,
   placementFields,
   placementKeysOf,
@@ -217,24 +214,6 @@ describe('the booking read set', () => {
         ],
       }),
     ]);
-  });
-
-  it('frames wire instants on the shop’s ONE day — a start on another day, or none, places nothing', () => {
-    const frame = frameShopDay(
-      [
-        utcMs('2026-09-28T11:00:00.000+03:00'),
-        utcMs('2026-09-28T10:30:00.000+03:00'),
-        utcMs('2026-09-29T10:00:00.000+03:00'),
-        null,
-      ],
-      FIXTURE_TIME_ZONE,
-    );
-    expect(frame).toEqual({
-      localDate: FIXTURE_TODAY,
-      startMinutes: [minute(660), minute(630), null, null],
-      startUtcMs: utcMs('2026-09-28T10:30:00.000+03:00'),
-    });
-    expect(frameShopDay([null], FIXTURE_TIME_ZONE).localDate).toBeNull();
   });
 
   it('keys a placement by each barber that parses on its day', () => {

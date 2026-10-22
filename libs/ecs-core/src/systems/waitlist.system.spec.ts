@@ -14,6 +14,7 @@ import {
   type ShopNow,
   WaitlistLifecycle,
   WriteAction,
+  type WaitlistCall,
 } from '@core/components';
 import {
   SchedulingErrorCode,
@@ -43,11 +44,7 @@ import {
 } from '@core/testing';
 import { AvailabilitySystem } from './availability.system';
 import type { CartBarberDay, CartService } from './booking-cart.system';
-import {
-  type WaitlistAskInput,
-  type WaitlistDoor,
-  WaitlistSystem,
-} from './waitlist.system';
+import { type WaitlistDoor, WaitlistSystem } from './waitlist.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 const ZONE = FIXTURE_TIME_ZONE;
@@ -124,7 +121,7 @@ function cartOf(
 function ask(
   seats: Parameters<typeof cartOf>[0],
   locationId: string | null = CENTER,
-): WaitlistAskInput {
+): WaitlistCall.Input {
   return {
     locationId,
     days: [{ localDate: DAY, windows: [window('10:00', '12:00')] }],
@@ -147,7 +144,7 @@ function door(overrides: Partial<WaitlistDoor> = {}): WaitlistDoor {
 
 /** The refusal's field, as the client receives it — or `'accepted'`. */
 function answer(
-  request: WaitlistAskInput,
+  request: WaitlistCall.Input,
   overrides: Partial<WaitlistDoor> = {},
 ) {
   const decided = WaitlistSystem.decide(request, door(overrides));
@@ -320,7 +317,7 @@ describe('WaitlistSystem.decide — the shop it names, as the commit reads it', 
   );
 
   it('asks about the shop before the days it watches', () => {
-    const badDay: WaitlistAskInput = {
+    const badDay: WaitlistCall.Input = {
       ...ask(cut, ''),
       days: [{ localDate: 'not-a-day', windows: [window('10:00', '12:00')] }],
     };
@@ -330,7 +327,7 @@ describe('WaitlistSystem.decide — the shop it names, as the commit reads it', 
 
 describe('WaitlistSystem.decide — the days and the bag it stores', () => {
   it('drops past days and days past the horizon, refuses a day that is no day, and caps the rest', () => {
-    const days = (raws: readonly string[]): WaitlistAskInput => ({
+    const days = (raws: readonly string[]): WaitlistCall.Input => ({
       ...ask([[{ serviceId: 'svc-cut' }]]),
       days: raws.map((raw) => ({ localDate: raw, windows: [] })),
     });
@@ -353,7 +350,7 @@ describe('WaitlistSystem.decide — the days and the bag it stores', () => {
   });
 
   it('refuses a window that is no span, an empty bag, and stores the rest normalized', () => {
-    const backwards: WaitlistAskInput = {
+    const backwards: WaitlistCall.Input = {
       ...ask([[{ serviceId: 'svc-cut' }]]),
       // Foreign input: a span the window rule refuses, as it arrives.
       days: [
@@ -395,7 +392,7 @@ describe('WaitlistSystem.decide — the days and the bag it stores', () => {
 
 describe('WaitlistSystem.idBasis — a request is named by what it means', () => {
   it('collapses two phrasings of one ask to one basis, and tells different asks apart', () => {
-    const phrased = (windows: readonly MinuteRange[]): WaitlistAskInput => ({
+    const phrased = (windows: readonly MinuteRange[]): WaitlistCall.Input => ({
       ...ask([[{ serviceId: 'svc-cut' }]]),
       days: [
         { localDate: DAY, windows },

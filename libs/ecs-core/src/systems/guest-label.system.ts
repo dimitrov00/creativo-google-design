@@ -1,43 +1,10 @@
-import { Party, SeatLabel } from '@core/components';
+import {
+  type BookingCall,
+  Party,
+  RequestedSubjectRole,
+  SeatLabel,
+} from '@core/components';
 import { SeatKeyText } from '@core/primitives';
-
-/**
- * Who a requested seat is for — the ONLY source of these strings, named after
- * the field they type (`requestedSubjectRole`; was `RequestedSubjectKind`).
- * The one dictionary of the role: `audit.system.ts` reads it too
- * (flatten-spec §3.9).
- */
-export const RequestedSubjectRole = {
-  /** The booker, bound to the verified token — never to the payload. */
-  Self: 'SELF',
-  /** A person with an account of their own, carried by a staff edit or a move. */
-  Companion: 'COMPANION',
-  /** Somebody with no account: their label is their identity on the wire. */
-  Guest: 'GUEST',
-} as const;
-export type RequestedSubjectRole =
-  (typeof RequestedSubjectRole)[keyof typeof RequestedSubjectRole];
-
-/**
- * A requested seat's subject as the payload names it
- * (`RequestedSeatInput.subject`, `decide-booking.ts:76-99`) — foreign input,
- * the raw account id before `decide` parses it (the L3 `…Input` escape).
- * `guestKey` is the client's own name for a guest (the cart's seat key,
- * `guest-3`) so two DIFFERENT guests under one label can be told apart;
- * `null` (an older client, a staff path, a carried seat) reads one label as
- * one person. It is never stored.
- */
-export type RequestedSubjectInput =
-  | { readonly requestedSubjectRole: typeof RequestedSubjectRole.Self }
-  | {
-      readonly requestedSubjectRole: typeof RequestedSubjectRole.Companion;
-      readonly companionUserId: string;
-    }
-  | {
-      readonly requestedSubjectRole: typeof RequestedSubjectRole.Guest;
-      readonly label: string;
-      readonly guestKey: string | null;
-    };
 
 /** The person key of the booker's own seat. */
 const SELF_KEY = SeatKeyText.of('self');
@@ -60,7 +27,7 @@ export const GuestLabelSystem = {
    * « Иван» and «Иван» are the one person they will be on the appointment.
    * Only ever compared for equality.
    */
-  personKeyOf(subject: RequestedSubjectInput): SeatKeyText {
+  personKeyOf(subject: BookingCall.SubjectInput): SeatKeyText {
     switch (subject.requestedSubjectRole) {
       case RequestedSubjectRole.Self:
         return SELF_KEY;
@@ -79,11 +46,11 @@ export const GuestLabelSystem = {
    * nothing to share.
    */
   namedGuests(
-    subjects: readonly RequestedSubjectInput[],
+    subjects: readonly BookingCall.SubjectInput[],
   ): readonly Party.LabelledGuest[] {
     const guests: Party.LabelledGuest[] = [];
     for (let i = 0; i < subjects.length; i++) {
-      const subject = subjects[i] as RequestedSubjectInput;
+      const subject = subjects[i] as BookingCall.SubjectInput;
       if (subject.requestedSubjectRole !== RequestedSubjectRole.Guest) {
         continue;
       }
@@ -100,7 +67,7 @@ export const GuestLabelSystem = {
    * `null` — the party's own rule (`Party.labelSharedByTwoGuests`), never a
    * copy of it.
    */
-  sharedLabel(subjects: readonly RequestedSubjectInput[]): SeatLabel | null {
+  sharedLabel(subjects: readonly BookingCall.SubjectInput[]): SeatLabel | null {
     return Party.labelSharedByTwoGuests(GuestLabelSystem.namedGuests(subjects));
   },
 

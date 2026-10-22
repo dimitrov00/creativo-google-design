@@ -1,20 +1,29 @@
 import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  Identifier,
-  OTP_CLIENT,
-  createIdentifier,
-  ok,
-} from '@creativo/application/identity';
+  AuthFlowStep,
+  Email,
+  ParsedIdentifier,
+  SessionKind,
+} from '@core/components';
+import {
+  OtpId,
+  PipelineError,
+  PipelineErrorCode,
+  Result,
+} from '@core/primitives';
+import { memoryOtpChallengePorts } from '@core/testing';
+import { OTP_CHALLENGE_PORTS } from '@creativo/infrastructure/firebase-app';
 import { AuthFlowStore, RESEND_COOLDOWN_SECONDS } from './auth-flow.store';
 
-function requiredIdentifier(): Identifier {
-  const result = createIdentifier({
-    kind: 'email',
-    value: 'client@example.com',
-  });
-  if (result.isFailure()) throw new Error('unexpected failure in fixture');
-  return result.value;
+function emailIdentifier(raw: string): ParsedIdentifier {
+  const email = Email.parse(raw);
+  if (email === null) throw new Error('unexpected failure in fixture');
+  return ParsedIdentifier.email(email);
+}
+
+function requiredIdentifier(): ParsedIdentifier {
+  return emailIdentifier('client@example.com');
 }
 
 describe('AuthFlowStore', () => {
@@ -24,20 +33,22 @@ describe('AuthFlowStore', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    requestChallenge.mockReset().mockResolvedValue(ok('challenge_1'));
+    requestChallenge
+      .mockReset()
+      .mockResolvedValue(Result.ok(OtpId.of('challenge_1')));
     verifyChallenge
       .mockReset()
-      .mockResolvedValue(ok({ kind: 'returning' as const }));
+      .mockResolvedValue(Result.ok(SessionKind.Returning));
 
     TestBed.configureTestingModule({
       providers: [
         AuthFlowStore,
         {
-          provide: OTP_CLIENT,
+          provide: OTP_CHALLENGE_PORTS,
           useValue: {
-            requestChallenge,
-            verifyChallenge,
-            completeRegistration: () => Promise.resolve(ok(undefined)),
+            ...memoryOtpChallengePorts(),
+            requestOtpChallenge: requestChallenge,
+            verifyOtpChallenge: verifyChallenge,
           },
         },
       ],
@@ -50,13 +61,13 @@ describe('AuthFlowStore', () => {
   });
 
   it('opens on identify', () => {
-    expect(store.state().kind).toBe('identify');
+    expect(store.state().authFlowStep).toBe(AuthFlowStep.Identify);
   });
 
   it('starts the resend cooldown after a successful initial send', async () => {
     await store.submitIdentifier(requiredIdentifier());
 
-    expect(store.state().kind).toBe('otp');
+    expect(store.state().authFlowStep).toBe(AuthFlowStep.Otp);
     expect(store.sendCount()).toBe(1);
     expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS);
     expect(store.canResend()).toBe(false);
@@ -100,7 +111,7 @@ describe('AuthFlowStore', () => {
 
     store.changeIdentifier();
 
-    expect(store.state().kind).toBe('identify');
+    expect(store.state().authFlowStep).toBe(AuthFlowStep.Identify);
     // Cooldown and send count survive — the code is still in the inbox.
     expect(store.sendCount()).toBe(1);
     expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS - 5);
@@ -113,7 +124,7 @@ describe('AuthFlowStore', () => {
 
     await store.submitIdentifier(requiredIdentifier());
 
-    expect(store.state().kind).toBe('otp');
+    expect(store.state().authFlowStep).toBe(AuthFlowStep.Otp);
     expect(requestChallenge).toHaveBeenCalledTimes(1);
     expect(store.sendCount()).toBe(1);
     expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS - 3);
@@ -135,21 +146,104 @@ describe('AuthFlowStore', () => {
     await vi.advanceTimersByTimeAsync(5000);
     store.changeIdentifier();
 
-    requestChallenge.mockResolvedValue(ok('challenge_2'));
-    const other = createIdentifier({
-      kind: 'email',
-      value: 'other@example.com',
-    });
-    if (other.isFailure()) throw new Error('unexpected failure in fixture');
-    await store.submitIdentifier(other.value);
+    requestChallenge.mockResolvedValue(Result.ok(OtpId.of('challenge_2')));
+    await store.submitIdentifier(emailIdentifier('other@example.com'));
 
-    expect(store.state().kind).toBe('otp');
+    expect(store.state().authFlowStep).toBe(AuthFlowStep.Otp);
     expect(requestChallenge).toHaveBeenCalledTimes(2);
     expect(store.sendCount()).toBe(1);
     expect(store.resendSecondsLeft()).toBe(RESEND_COOLDOWN_SECONDS);
 
     await store.submitCode('123456');
     expect(verifyChallenge.mock.calls[0]![0]).toBe('challenge_2');
+  });
+
+  it('keeps the server code of a refused verify as the error on the otp step', async () => {
+    verifyChallenge.mockResolvedValue(
+      Result.err(
+        PipelineError.fromWire('invalid-argument', {
+          errorCode: 'IDENTITY_OTP_WRONG_CODE',
+        }),
+      ),
+    );
+    await store.submitIdentifier(requiredIdentifier());
+
+    const session = await store.submitCode('123456');
+
+    expect(session).toBeNull();
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Otp,
+      identifier: requiredIdentifier(),
+      error: 'IDENTITY_OTP_WRONG_CODE',
+    });
+  });
+
+  it('refuses a code that is not six digits as a wrong code, without dialling the server', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+
+    await store.submitCode('12a');
+
+    expect(verifyChallenge).not.toHaveBeenCalled();
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Otp,
+      identifier: requiredIdentifier(),
+      error: 'IDENTITY_OTP_WRONG_CODE',
+    });
+  });
+
+  it('ends the flow blocked when the verify fails on the permission-denied status — the lockout reads the wire status, whatever the code', async () => {
+    verifyChallenge.mockResolvedValue(
+      Result.err(PipelineError.fromWire('functions/permission-denied', null)),
+    );
+    await store.submitIdentifier(requiredIdentifier());
+
+    await store.submitCode('123456');
+
+    expect(store.state().authFlowStep).toBe(AuthFlowStep.Blocked);
+  });
+
+  it('is not blocked by the lockout code on its own status (resource-exhausted)', async () => {
+    verifyChallenge.mockResolvedValue(
+      Result.err(
+        PipelineError.fromWire('resource-exhausted', {
+          errorCode: 'IDENTITY_OTP_LOCKED_OUT',
+        }),
+      ),
+    );
+    await store.submitIdentifier(requiredIdentifier());
+
+    await store.submitCode('123456');
+
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Otp,
+      identifier: requiredIdentifier(),
+      error: 'IDENTITY_OTP_LOCKED_OUT',
+    });
+  });
+
+  it('returns to identify with the server code when the send fails, and the generic code when the server named none', async () => {
+    requestChallenge.mockResolvedValue(
+      Result.err(
+        PipelineError.fromWire('resource-exhausted', {
+          errorCode: 'IDENTITY_OTP_RATE_LIMITED',
+        }),
+      ),
+    );
+    await store.submitIdentifier(requiredIdentifier());
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Identify,
+      error: 'IDENTITY_OTP_RATE_LIMITED',
+    });
+    expect(store.sendCount()).toBe(0);
+
+    requestChallenge.mockResolvedValue(
+      Result.err(PipelineError.bare(PipelineErrorCode.Unavailable)),
+    );
+    await store.submitIdentifier(emailIdentifier('other@example.com'));
+    expect(store.state()).toEqual({
+      authFlowStep: AuthFlowStep.Identify,
+      error: 'unknown',
+    });
   });
 
   it('never verifies outside the otp step', async () => {

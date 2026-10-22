@@ -6,6 +6,8 @@ import {
   type SchedulingError,
   type AppointmentId,
   type UserId,
+  type CancellationRefusal,
+  CancellationRefusalCode,
 } from '@core/primitives';
 import type { Appointment, GiftVoucher } from '@core/entities';
 import type {
@@ -17,8 +19,6 @@ import type {
 import {
   type AuditFact,
   AppointmentLifecycleSystem,
-  type CancellationRefusal,
-  CancellationRefusalCode,
   CancellationPolicySystem,
 } from '@core/systems';
 import {

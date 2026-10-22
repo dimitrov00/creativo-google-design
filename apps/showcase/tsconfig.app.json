@@ -10,13 +10,13 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
     {
-      "path": "../../libs/domain/kernel/tsconfig.lib.json"
-    },
-    {
-      "path": "../../libs/ui/icons/tsconfig.lib.json"
+      "path": "../../libs/ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../libs/ui/patterns/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/ui/icons/tsconfig.lib.json"
     },
     {
       "path": "../../libs/ui/tokens/tsconfig.lib.json"

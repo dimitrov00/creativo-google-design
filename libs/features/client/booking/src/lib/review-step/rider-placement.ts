@@ -1,11 +1,5 @@
-import type { ScheduleSelection } from '@creativo/application/booking';
-import { type MinuteOfDay, UtcEpochMs } from '@core/primitives';
-import {
-  type MoveRider,
-  MoveSystem,
-  type PlacedRider,
-  ZonedTimeSystem,
-} from '@core/systems';
+import type { MoveRider, ScheduleSelection } from '@core/components';
+import { MoveSystem, type PlacedRider } from '@core/systems';
 
 export type { PlacedRider };
 
@@ -22,8 +16,7 @@ export type { PlacedRider };
  * stays sequential, side by side stays side by side, and the minute on the
  * review card is the minute the server writes.
  *
- * The selection's starts are read on the shop's wall clock — each slot
- * carries its shop's zone.
+ * The selection's starts ARE the shop's wall clock — minutes of its day.
  *
  * Empty when there is nothing to anchor to — no assignments, no placement.
  */
@@ -31,12 +24,8 @@ export function placeRiders(
   selection: ScheduleSelection,
   riders: readonly MoveRider[],
 ): readonly PlacedRider[] {
-  const starts: MinuteOfDay[] = [];
-  for (const assignment of selection.assignments) {
-    const zone = ZonedTimeSystem.checkZone(assignment.slot.start.zoneName);
-    const instant = UtcEpochMs.of(assignment.slot.start.toMillis());
-    if (!zone.ok || !instant.ok) continue;
-    starts.push(ZonedTimeSystem.toLocal(instant.value, zone.value).minute);
-  }
-  return MoveSystem.placeRiders(starts, riders);
+  return MoveSystem.placeRiders(
+    selection.assignments.map((assignment) => assignment.startMinutes),
+    riders,
+  );
 }

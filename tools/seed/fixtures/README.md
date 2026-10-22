@@ -85,13 +85,17 @@ noun, no `Entity` suffix — flatten-spec N1) is legal here, and nothing of
 
 ## Not here
 
-The loyalty catalogue and the gift vouchers the seed reads BY PATH
-(`catalog.json`, `vouchers.json`) are test fixtures shared with the specs:
-they live in `libs/ecs-core/src/testing/fixtures/loyalty/` and are exported
-from `@core/testing` (with the two account holders' documents,
-`account-georgi.json` / `account-martin.json`, which the e2e seeds and
-`loyalty.spec.mjs` holds the projection's shape to). `catalog.json` is
-already the flat bodies; `loyalty.fixtures.ts` rebuilds each one field by
-field (so a field the entity no longer has never reaches the emulator), and
-the seed reads its documents back through the two run-time checks it keeps
-(`readLoyaltyWrites`: `LoyaltyCatalogSystem.validate`, `StreakRule.parse`).
+The loyalty catalogue the seed reads BY PATH (`catalog.json`) and the gift
+vouchers its own bodies are held to (`vouchers.json`) are test fixtures
+shared with the specs: they live in `libs/ecs-core/src/testing/fixtures/loyalty/`
+and are exported from `@core/testing` (with the two account holders'
+documents, `account-georgi.json` / `account-martin.json`, which the e2e
+seeds and `loyalty.spec.mjs` holds the projection's shape to). Every one is
+the flat stored body (Law 5). `loyalty.fixtures.ts` rebuilds each catalogue
+document field by field (so a field the entity no longer has never reaches
+the emulator), and the seed reads its documents back through the two
+run-time checks it keeps (`readLoyaltyWrites`:
+`LoyaltyCatalogSystem.validate`, `StreakRule.parse`). The vouchers are
+authored here (`promotions.fixtures.ts`, each `satisfies GiftVoucher`), and
+`promotions.spec.mjs` holds what the seed writes on the fixtures' day to
+`vouchers.json`, document for document.

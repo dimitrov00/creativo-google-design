@@ -9,6 +9,7 @@ import {
   CompleteRegistrationRefusalCode,
   IdentifierChannel,
   IdentityError,
+  IdentityErrorCode,
   OtpId,
   PhoneError,
   PhoneInvalidReason,
@@ -17,7 +18,7 @@ import {
   RepositoryError,
 } from '@core/primitives';
 import { type EdgeError, toHttpsError } from '../edge';
-import type { WireRequest } from './booking.wire';
+import type { WireRequest } from './wire-read';
 import {
   completeRegistrationRefusal,
   decodeCompleteRegistration,
@@ -34,15 +35,17 @@ import {
 } from './identity.wire';
 
 /*
- * THE IDENTITY WIRE, pinned (identity flip (2), F2-3): the status and the
- * `details` every refusal of the three OTP callables leaves with, byte for
- * byte today's — written from the deleted handlers' `toHttpsError` switch
- * tables (`lib` request, verify and registration handlers) before they
- * went, every `reason` string included. The `HttpsError` MESSAGE is not
- * pinned: it is the wire code now, as for every flipped callable.
+ * THE IDENTITY WIRE, flipped (Phase 4a 4A-4): the requests are the call
+ * components of `IdentityCall` (`identifierChannel` + `identifier`, never
+ * the legacy `kind` + `value`), the answers theirs (`sessionKind`
+ * SCREAMING, `devCode: null` outside the emulator), every refusal the
+ * ecs-core struct projected by its code's allowlist — the status kept one
+ * for one (the OTP client's retry, lockout and blocked paths read it), the
+ * `reason` strings of `IDENTITY_INVALID_INPUT` as the legacy handlers wrote
+ * them, renamed fields by their new names.
  */
 
-/** What the client reads of a refusal: the status and the details. */
+/** What the client reads of a refusal: the status, the message and the details. */
 function wire(error: EdgeError): {
   readonly status: string;
   readonly details: unknown;
@@ -71,18 +74,20 @@ const request = (data: unknown, uid: string | null = null): WireRequest => ({
 
 const invalidInput = (reason: string) => ({
   status: 'invalid-argument',
-  details: { code: 'invalid_input', params: { reason } },
+  details: { errorCode: IdentityErrorCode.InvalidInput, reason },
 });
 
 const STORE_DOWN = RepositoryError.readFailed('otps', 'unavailable');
 
 describe('identity wire', () => {
   describe('requestOtpChallenge', () => {
-    it('maps a blank destination to invalid-argument and forwards code/params — `missing or empty destination`', () => {
+    it('refuses a blank identifier as invalid-argument — `missing or empty destination`', () => {
       for (const data of [
-        { kind: 'email', value: '   ' },
-        { kind: 'email' },
-        { kind: 'phone', value: 42 },
+        { identifierChannel: IdentifierChannel.Email, identifier: '   ' },
+        { identifierChannel: IdentifierChannel.Email },
+        { identifierChannel: IdentifierChannel.Phone, identifier: 42 },
+        // The legacy `{ kind, value }` is no request the flipped wire reads.
+        { kind: 'email', value: 'a@b.com' },
         null,
         'not an object',
       ]) {
@@ -92,27 +97,37 @@ describe('identity wire', () => {
       }
     });
 
-    it('never refuses `kind`: `phone` is an SMS, anything else — absent or garbage — an e-mail', () => {
-      const of = (kind: unknown) =>
-        decodeRequestOtp(request({ kind, value: 'a@b.com' }));
-      expect(of('phone')).toEqual({
+    it('never refuses `identifierChannel`: `PHONE` is an SMS, anything else — absent, legacy or garbage — an e-mail', () => {
+      const of = (identifierChannel: unknown) =>
+        decodeRequestOtp(request({ identifierChannel, identifier: 'a@b.com' }));
+      expect(of(IdentifierChannel.Phone)).toEqual({
         ok: true,
         value: {
           otpDestinationType: OtpDestinationType.Sms,
           rawDestination: 'a@b.com',
         },
       });
-      for (const kind of ['email', undefined, 'fax', 7, null]) {
-        expect(of(kind).ok && of(kind)).toMatchObject({
+      for (const channel of [
+        IdentifierChannel.Email,
+        'phone',
+        undefined,
+        'fax',
+        7,
+        null,
+      ]) {
+        expect(of(channel).ok && of(channel)).toMatchObject({
           value: { otpDestinationType: OtpDestinationType.Email },
         });
       }
     });
 
-    it('hands a padded value on UNTRIMMED, for the pipeline’s single trim (F2-10); channelKey is ignored', () => {
+    it('hands a padded identifier on UNTRIMMED, for the pipeline’s single trim (F2-10)', () => {
       expect(
         decodeRequestOtp(
-          request({ channelKey: 'email:x', kind: 'email', value: ' a@b.com ' }),
+          request({
+            identifierChannel: IdentifierChannel.Email,
+            identifier: ' a@b.com ',
+          }),
         ),
       ).toEqual({
         ok: true,
@@ -123,21 +138,19 @@ describe('identity wire', () => {
       });
     });
 
-    it('answers { challengeId } — with devCode only behind the emulator gate', () => {
+    it('answers { challengeId, devCode } — the code only behind the emulator gate, else `null`', () => {
       const answer = { otpId: OtpId.of('otp-1'), rawCode: '123456' };
       expect(encodeRequestOtpAnswer(answer, false)).toEqual({
         challengeId: 'otp-1',
+        devCode: null,
       });
-      expect(encodeRequestOtpAnswer(answer, false)).not.toHaveProperty(
-        'devCode',
-      );
       expect(encodeRequestOtpAnswer(answer, true)).toEqual({
         challengeId: 'otp-1',
         devCode: '123456',
       });
     });
 
-    it('maps the channel mismatch to failed-precondition with its stable code and today’s lowercase params', () => {
+    it('lets the channel mismatch leave as its struct: the channel asked for and the strategy, by their own names and values', () => {
       expect(
         wire(
           requestOtpRefusal(
@@ -150,36 +163,14 @@ describe('identity wire', () => {
       ).toEqual({
         status: 'failed-precondition',
         details: {
-          code: 'otp_channel_mismatch',
-          params: { requested: 'phone', strategyKind: 'email_otp' },
+          errorCode: IdentityErrorCode.OtpChannelMismatch,
+          requested: IdentifierChannel.Phone,
+          authStrategyKind: AuthStrategyKind.EmailOtp,
         },
       });
-      expect(
-        wire(
-          requestOtpRefusal(
-            IdentityError.otpChannelMismatch(
-              IdentifierChannel.Email,
-              AuthStrategyKind.PhoneOtp,
-            ),
-          ),
-        ).details,
-      ).toEqual({
-        code: 'otp_channel_mismatch',
-        params: { requested: 'email', strategyKind: 'phone_otp' },
-      });
-      expect(
-        wire(
-          requestOtpRefusal(
-            IdentityError.otpChannelMismatch(
-              IdentifierChannel.Email,
-              AuthStrategyKind.EmailLink,
-            ),
-          ),
-        ).details,
-      ).toMatchObject({ params: { strategyKind: 'email_link' } });
     });
 
-    it('maps an unparsable destination to invalid-argument with today’s per-channel reason', () => {
+    it('answers an unparsable destination as invalid-argument with the per-channel reason', () => {
       expect(
         wire(
           requestOtpRefusal(
@@ -196,41 +187,41 @@ describe('identity wire', () => {
       ).toEqual(invalidInput('invalid email destination'));
     });
 
-    it('maps the rate limit to resource-exhausted', () => {
+    it('lets the rate limit leave as `resource-exhausted`', () => {
       expect(wire(requestOtpRefusal(IdentityError.otpRateLimited()))).toEqual({
         status: 'resource-exhausted',
-        details: { code: 'otp_rate_limited', params: {} },
+        details: { errorCode: IdentityErrorCode.OtpRateLimited },
       });
     });
 
-    it('maps a failed delivery — any other refusal — to internal', () => {
+    it('answers a failed delivery as internal IDENTITY_OTP_SEND_FAILURE', () => {
       expect(
         wire(
           requestOtpRefusal(PipelineError.bare(PipelineErrorCode.Unavailable)),
         ),
       ).toEqual({
         status: 'internal',
-        details: { code: 'otp_send_failure', params: {} },
+        details: { errorCode: IdentityErrorCode.OtpSendFailure },
       });
     });
 
-    it('throws a store failure for the edge to track and answer as the callable’s repository_failure', () => {
+    it('throws a store failure for the edge to track and answer as the callable’s IDENTITY_REPOSITORY_FAILURE', () => {
       expect(() => requestOtpRefusal(STORE_DOWN)).toThrow(STORE_DOWN.errorCode);
-      expect(wire({ code: 'repository_failure' } as EdgeError)).toEqual({
+      expect(wire(IdentityError.repositoryFailure())).toEqual({
         status: 'internal',
-        details: { code: 'repository_failure', params: {} },
+        details: { errorCode: IdentityErrorCode.RepositoryFailure },
       });
     });
 
-    it('sends the wire code as the message, never a legacy human sentence', () => {
+    it('sends the errorCode as the message, never a legacy human sentence', () => {
       expect(
         toHttpsError(requestOtpRefusal(IdentityError.otpRateLimited())).message,
-      ).toBe('otp_rate_limited');
+      ).toBe(IdentityErrorCode.OtpRateLimited);
     });
   });
 
   describe('verifyOtpChallenge', () => {
-    it('maps a blank challenge id to invalid-argument and forwards code/params', () => {
+    it('refuses a blank challenge id', () => {
       for (const data of [
         { code: '123456' },
         { challengeId: '  ', code: '123456' },
@@ -271,46 +262,62 @@ describe('identity wire', () => {
       ).toEqual({ ok: true, value: { otpId: 'otp-1', code: '042917' } });
     });
 
-    it('answers { sessionKind, customToken } with today’s lowercase kinds', () => {
+    it('answers { sessionKind, customToken } with the SCREAMING kinds', () => {
       expect(
         encodeVerifyOtpAnswer({
           customToken: 't',
           sessionKind: SessionKind.New,
         }),
-      ).toEqual({ sessionKind: 'new', customToken: 't' });
+      ).toEqual({ sessionKind: 'NEW', customToken: 't' });
       expect(
         encodeVerifyOtpAnswer({
           customToken: 't',
           sessionKind: SessionKind.Returning,
         }),
-      ).toEqual({ sessionKind: 'returning', customToken: 't' });
+      ).toEqual({ sessionKind: 'RETURNING', customToken: 't' });
     });
 
     it.each([
-      [IdentityError.otpNotFound(), 'not-found', 'otp_not_found'],
+      [IdentityError.otpNotFound(), 'not-found', IdentityErrorCode.OtpNotFound],
       [
         IdentityError.otpAlreadyConsumed(),
         'failed-precondition',
-        'otp_already_consumed',
+        IdentityErrorCode.OtpAlreadyConsumed,
       ],
-      [IdentityError.otpExpired(), 'deadline-exceeded', 'otp_expired'],
-      [IdentityError.otpLockedOut(), 'resource-exhausted', 'otp_locked_out'],
-      [IdentityError.otpWrongCode(), 'invalid-argument', 'otp_incorrect_code'],
+      [
+        IdentityError.otpExpired(),
+        'deadline-exceeded',
+        IdentityErrorCode.OtpExpired,
+      ],
+      [
+        IdentityError.otpLockedOut(),
+        'resource-exhausted',
+        IdentityErrorCode.OtpLockedOut,
+      ],
+      [
+        IdentityError.otpWrongCode(),
+        'invalid-argument',
+        IdentityErrorCode.OtpWrongCode,
+      ],
       [
         IdentityError.otpDestinationCorrupted(),
         'internal',
-        'otp_destination_corrupted',
+        IdentityErrorCode.OtpDestinationCorrupted,
       ],
-      [IdentityError.otpAccountConflict(), 'internal', 'token_minting_failure'],
+      [
+        IdentityError.otpAccountConflict(),
+        'internal',
+        IdentityErrorCode.TokenMintingFailure,
+      ],
       [
         PipelineError.bare(PipelineErrorCode.Unknown),
         'internal',
-        'token_minting_failure',
+        IdentityErrorCode.TokenMintingFailure,
       ],
-    ] as const)('maps %o to %s / %s', (error, status, code) => {
+    ] as const)('answers %o as %s / %s', (error, status, errorCode) => {
       expect(wire(verifyOtpRefusal(error))).toEqual({
         status,
-        details: { code, params: {} },
+        details: { errorCode },
       });
     });
 
@@ -323,42 +330,57 @@ describe('identity wire', () => {
     it('refuses an unauthenticated caller before reading the payload', () => {
       for (const data of [
         null,
-        { kind: 'fax' },
-        { kind: 'phone', value: '+1', fields: {} },
+        { identifierChannel: 'FAX' },
+        {
+          identifierChannel: IdentifierChannel.Phone,
+          identifier: '+1',
+          fields: {},
+        },
       ]) {
         expect(refusalOf(decodeCompleteRegistration(request(data)))).toEqual({
           status: 'unauthenticated',
-          details: { code: 'registration_unauthenticated', params: {} },
+          details: {
+            errorCode: IdentityErrorCode.RegistrationUnauthenticated,
+          },
         });
       }
     });
 
-    it('answers today’s payload refusals in today’s order', () => {
+    it('answers the payload refusals in today’s order, each reason naming the field by its new name', () => {
       const of = (data: unknown) =>
         refusalOf(decodeCompleteRegistration(request(data, 'uid_1')));
       expect(of(null)).toEqual(invalidInput('payload must be an object'));
       expect(of('text')).toEqual(invalidInput('payload must be an object'));
-      expect(of({ kind: 'fax', value: '' })).toEqual(
-        invalidInput('kind must be "phone" or "email"'),
-      );
-      expect(of({ kind: 'phone', value: '  ' })).toEqual(
-        invalidInput('missing or empty value'),
-      );
-      expect(of({ kind: 'phone', value: '+14155552671' })).toEqual(
-        invalidInput('missing fields'),
-      );
+      for (const identifierChannel of ['FAX', 'phone', undefined]) {
+        expect(of({ identifierChannel, identifier: '' })).toEqual(
+          invalidInput('identifierChannel must be "PHONE" or "EMAIL"'),
+        );
+      }
       expect(
-        of({ kind: 'phone', value: '+14155552671', fields: null }),
+        of({ identifierChannel: IdentifierChannel.Phone, identifier: '  ' }),
+      ).toEqual(invalidInput('missing or empty identifier'));
+      expect(
+        of({
+          identifierChannel: IdentifierChannel.Phone,
+          identifier: '+14155552671',
+        }),
+      ).toEqual(invalidInput('missing fields'));
+      expect(
+        of({
+          identifierChannel: IdentifierChannel.Phone,
+          identifier: '+14155552671',
+          fields: null,
+        }),
       ).toEqual(invalidInput('missing fields'));
     });
 
-    it('decodes the command — the verified uid, the channel, the raw value, every field present', () => {
+    it('decodes the command — the verified uid, the channel, the raw identifier, every field present', () => {
       expect(
         decodeCompleteRegistration(
           request(
             {
-              kind: 'email',
-              value: ' Ada@Example.com ',
+              identifierChannel: IdentifierChannel.Email,
+              identifier: ' Ada@Example.com ',
               fields: { firstName: 'Ada', lastName: 'Lovelace', phone: 7 },
             },
             'uid_1',
@@ -387,7 +409,7 @@ describe('identity wire', () => {
       });
     });
 
-    it('maps a missing field to invalid-argument with the field', () => {
+    it('lets a missing field leave as invalid-argument naming the field', () => {
       expect(
         wire(
           completeRegistrationRefusal(
@@ -397,13 +419,13 @@ describe('identity wire', () => {
       ).toEqual({
         status: 'invalid-argument',
         details: {
-          code: 'registration_field_missing',
-          params: { field: 'lastName' },
+          errorCode: IdentityErrorCode.RegistrationFieldMissing,
+          field: 'lastName',
         },
       });
     });
 
-    it('wraps a birth-date refusal, forwarding its reason-specific code and params', () => {
+    it('wraps a birth-date refusal as `{ errorCode, errors }`, its cause projected by its own row — a date in the future the invalid one', () => {
       expect(
         wire(
           completeRegistrationRefusal(
@@ -413,11 +435,11 @@ describe('identity wire', () => {
       ).toEqual({
         status: 'invalid-argument',
         details: {
-          code: 'registration_birth_date_invalid',
+          errorCode: IdentityErrorCode.RegistrationBirthDateInvalid,
           errors: [
             {
-              code: 'identity.birth_date.in_future',
-              params: { attempted: '2030-01-01' },
+              errorCode: IdentityErrorCode.BirthDateInFuture,
+              attempted: '2030-01-01',
             },
           ],
         },
@@ -427,11 +449,12 @@ describe('identity wire', () => {
           completeRegistrationRefusal(IdentityError.birthDateTooYoung(6, 16)),
         ).details,
       ).toEqual({
-        code: 'registration_birth_date_invalid',
+        errorCode: IdentityErrorCode.RegistrationBirthDateInvalid,
         errors: [
           {
-            code: 'identity.birth_date.too_young',
-            params: { age: 6, minAge: 16 },
+            errorCode: IdentityErrorCode.BirthDateTooYoung,
+            age: 6,
+            minAge: 16,
           },
         ],
       });
@@ -444,14 +467,14 @@ describe('identity wire', () => {
       ).toMatchObject({
         errors: [
           {
-            code: 'identity.birth_date.invalid',
-            params: { attempted: '03.07.1990' },
+            errorCode: IdentityErrorCode.BirthDateInvalid,
+            attempted: '03.07.1990',
           },
         ],
       });
     });
 
-    it('maps an unparsable identifier to `invalid identifier value`', () => {
+    it('answers an unparsable identifier as `invalid identifier value`', () => {
       expect(
         wire(
           completeRegistrationRefusal(
@@ -461,14 +484,14 @@ describe('identity wire', () => {
       ).toEqual(invalidInput('invalid identifier value'));
     });
 
-    it('maps not-found and not-yours to failed-precondition — never permission-denied, the OTP client’s lockout', () => {
+    it('lets not-found and not-yours leave as failed-precondition — never permission-denied, the OTP client’s lockout', () => {
       expect(
         wire(
           completeRegistrationRefusal(IdentityError.registrationUserNotFound()),
         ),
       ).toEqual({
         status: 'failed-precondition',
-        details: { code: 'registration_user_not_found', params: {} },
+        details: { errorCode: IdentityErrorCode.RegistrationUserNotFound },
       });
       expect(
         wire(
@@ -476,22 +499,24 @@ describe('identity wire', () => {
         ),
       ).toEqual({
         status: 'failed-precondition',
-        details: { code: 'registration_forbidden', params: {} },
+        details: { errorCode: IdentityErrorCode.RegistrationForbidden },
       });
     });
 
-    it('maps the profile aggregate to invalid-argument with today’s nested accounts codes', () => {
+    it('answers the profile aggregate as `{ errors }`, each nested refusal projected — an unsupported country the invalid phone, a future birth date the invalid one', () => {
       expect(
         wire(
           completeRegistrationRefusal({
             errorCode: CompleteRegistrationRefusalCode.ProfileInvalid,
             errors: [
               PhoneError.invalid('12', PhoneInvalidReason.TooShort),
+              PhoneError.countryUnsupported('+999'),
               AccountsError.firstNameTooShort('A', 2),
               AccountsError.lastNameTooShort('B', 2),
               AccountsError.emailInvalid('x@'),
               AccountsError.userRoleInvalid('wizard'),
               AccountsError.userRolesEmpty(),
+              IdentityError.birthDateInFuture('2031-01-01'),
               IdentityError.birthDateTooYoung(15, 16),
               IdentityError.birthDateTooOld(121, 120),
             ],
@@ -502,37 +527,48 @@ describe('identity wire', () => {
         details: {
           errors: [
             {
-              code: 'phone_number_invalid',
-              params: { attempted: '12', reason: 'too-short' },
+              errorCode: 'PHONE_INVALID',
+              attempted: '12',
+              reason: 'too-short',
             },
             {
-              code: 'accounts.first_name.too_short',
-              params: { attempted: 'A', minLength: 2 },
+              errorCode: 'PHONE_INVALID',
+              attempted: '+999',
+              reason: PhoneInvalidReason.InvalidCountry,
             },
             {
-              code: 'accounts.last_name.too_short',
-              params: { attempted: 'B', minLength: 2 },
-            },
-            { code: 'accounts.email.invalid', params: { attempted: 'x@' } },
-            {
-              code: 'accounts.user_role.invalid',
-              params: { attempted: 'wizard' },
-            },
-            { code: 'accounts.user.roles_empty', params: {} },
-            {
-              code: 'accounts.birth_date.too_young',
-              params: { age: 15, minAge: 16 },
+              errorCode: 'ACCOUNTS_FIRST_NAME_TOO_SHORT',
+              attempted: 'A',
+              minLength: 2,
             },
             {
-              code: 'accounts.birth_date.too_old',
-              params: { age: 121, maxAge: 120 },
+              errorCode: 'ACCOUNTS_LAST_NAME_TOO_SHORT',
+              attempted: 'B',
+              minLength: 2,
+            },
+            { errorCode: 'ACCOUNTS_EMAIL_INVALID', attempted: 'x@' },
+            { errorCode: 'ACCOUNTS_USER_ROLE_INVALID', attempted: 'wizard' },
+            { errorCode: 'ACCOUNTS_USER_ROLES_EMPTY' },
+            {
+              errorCode: IdentityErrorCode.BirthDateInvalid,
+              attempted: '2031-01-01',
+            },
+            {
+              errorCode: IdentityErrorCode.BirthDateTooYoung,
+              age: 15,
+              minAge: 16,
+            },
+            {
+              errorCode: IdentityErrorCode.BirthDateTooOld,
+              age: 121,
+              maxAge: 120,
             },
           ],
         },
       });
     });
 
-    it('maps a failed mint to internal claims_promotion_failure, and throws a store failure', () => {
+    it('answers a failed mint as internal IDENTITY_CLAIMS_PROMOTION_FAILURE, and throws a store failure', () => {
       expect(
         wire(
           completeRegistrationRefusal(
@@ -541,26 +577,28 @@ describe('identity wire', () => {
         ),
       ).toEqual({
         status: 'internal',
-        details: { code: 'claims_promotion_failure', params: {} },
+        details: { errorCode: IdentityErrorCode.ClaimsPromotionFailure },
       });
       expect(() => completeRegistrationRefusal(STORE_DOWN)).toThrow();
     });
   });
 
-  describe('updateProfile (a new wire)', () => {
+  describe('updateProfile', () => {
     it('refuses an unauthenticated caller with its own code', () => {
       expect(refusalOf(decodeUpdateProfile(request({})))).toEqual({
         status: 'unauthenticated',
-        details: {
-          code: 'accounts.update_profile.unauthenticated',
-          params: {},
-        },
+        details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_UNAUTHENTICATED' },
       });
     });
 
-    it('reads each field as text or absent — anything else is a validation failure', () => {
+    it('reads each field as text, or `null`/absent as keep (an optional key is present with `null`, 4A-4) — anything else a validation failure', () => {
       expect(
-        decodeUpdateProfile(request({ firstName: ' Ada ' }, 'uid_1')),
+        decodeUpdateProfile(
+          request(
+            { firstName: ' Ada ', lastName: null, birthDate: null },
+            'uid_1',
+          ),
+        ),
       ).toEqual({
         ok: true,
         value: {
@@ -568,13 +606,13 @@ describe('identity wire', () => {
           edits: { firstName: ' Ada ', lastName: null, birthDate: null },
         },
       });
-      for (const data of [{ lastName: 7 }, { birthDate: null }]) {
+      expect(
+        decodeUpdateProfile(request({ firstName: 'Ada' }, 'uid_1')),
+      ).toMatchObject({ ok: true, value: { edits: { birthDate: null } } });
+      for (const data of [{ lastName: 7 }, { birthDate: {} }]) {
         expect(refusalOf(decodeUpdateProfile(request(data, 'uid_1')))).toEqual({
           status: 'invalid-argument',
-          details: {
-            code: 'accounts.update_profile.validation_failed',
-            params: {},
-          },
+          details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_VALIDATION_FAILED' },
         });
       }
     });
@@ -587,7 +625,7 @@ describe('identity wire', () => {
         wire(updateProfileRefusal(AccountsError.updateProfileNotFound())),
       ).toEqual({
         status: 'not-found',
-        details: { code: 'accounts.update_profile.not_found', params: {} },
+        details: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_NOT_FOUND' },
       });
       expect(() => updateProfileRefusal(STORE_DOWN)).toThrow();
     });

@@ -1,7 +1,11 @@
 import {
   type AccountSeat,
   type BarberPreference,
+  type BookingCall,
   BookingLifecycle,
+  type ChairTime,
+  type MoveRider,
+  RequestedSubjectRole,
   SeatOutcome,
   Seat,
   SeatSubject,
@@ -11,10 +15,10 @@ import {
   BookingStatus,
   BookingError,
   BookingErrorCode,
+  CarriedSeatRefusal,
+  MoveCarriedSeatUnplaceable,
   Result,
   SchedulingErrorCode,
-  type DurationMinutes,
-  type MinuteCount,
   MinuteDelta,
   type BarberId,
   CartLineId,
@@ -27,7 +31,7 @@ import {
   MinuteOfDay,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
-import type { ChairTime } from './availability.system';
+import type { CartRider } from './booking-cart.system';
 import { LocationScopeSystem } from './location-scope.system';
 
 /** The prefix the cart's re-keyed line ids live under. */
@@ -36,77 +40,12 @@ const CART_LINE = 'cart-';
 const CARRIED_LINE = 'carried-';
 
 /**
- * Why a seat CARRIED with a client's move cannot be placed — the ONLY
- * source of these strings (`CarriedSeatRefusal`,
- * `reschedule-booking.errors.ts`): the client is told to phone the shop.
- * The values are i18n key SEGMENTS and wire params
- * (`errors.BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE.shop_only`), so they
- * keep their spelling (flatten-spec §4.1).
- */
-export const CarriedSeatRefusal = {
-  /** The seat's barber is not free, or not working, at the shifted time. */
-  BarberUnavailable: 'barber_unavailable',
-  /** The seat's service — or the variant it was sold as — is retired or not offered there. */
-  ServiceUnavailable: 'service_unavailable',
-  /** The shifted time falls before the lead time or past the horizon. */
-  OutsideBookingWindow: 'outside_booking_window',
-  /** The seat collides with the rest of the party, or the party breaks a rule. */
-  PartyConflict: 'party_conflict',
-  /** Only seats the cart cannot name are left — the shop moves this visit. */
-  ShopOnly: 'shop_only',
-} as const;
-export type CarriedSeatRefusal =
-  (typeof CarriedSeatRefusal)[keyof typeof CarriedSeatRefusal];
-
-/** The move's own refusal code — the rest are the commit's (`BookingError`). */
-export const MoveErrorCode = {
-  CarriedSeatUnplaceable: 'BOOKING_RESCHEDULE_CARRIED_SEAT_UNPLACEABLE',
-} as const;
-export type MoveErrorCode = (typeof MoveErrorCode)[keyof typeof MoveErrorCode];
-
-/** Somebody the move carries cannot be placed — the client phones the shop. */
-export type MoveCarriedSeatUnplaceable = {
-  readonly errorCode: typeof MoveErrorCode.CarriedSeatUnplaceable;
-  readonly refusal: CarriedSeatRefusal;
-  readonly seatIds: readonly SeatId[];
-};
-
-/**
  * What a move plan refuses with: the commit's `BOOKING_INVALID_INPUT`
  * (`status`, `seats`, `subject`, `seat_resolved`), or a carried seat it
- * cannot place.
+ * cannot place. A system-tier union of primitives structs naming
+ * `MoveSystem`'s API (Phase 4a 4A-6).
  */
 export type MoveError = BookingError.InvalidInput | MoveCarriedSeatUnplaceable;
-
-/**
- * Who a cart seat is for — the field `moveSubjectRole`: the booker, or an
- * anonymous guest by label. A cart never names another account.
- */
-export const MoveSubjectRole = {
-  Self: 'SELF',
-  Guest: 'GUEST',
-  /** Never sent by an honest client — refused by the plan (`subject`). */
-  Companion: 'COMPANION',
-} as const;
-export type MoveSubjectRole =
-  (typeof MoveSubjectRole)[keyof typeof MoveSubjectRole];
-
-/**
- * One seat of the client's cart, as the move asks for it (foreign input the
- * edge already read: ids and the start on the request's day) — every field
- * present.
- */
-export type MoveCartSeatInput = {
-  readonly moveSubjectRole: MoveSubjectRole;
-  /** The guest's label (trimmed by the plan); `null` for the booker. */
-  readonly label: string | null;
-  readonly serviceId: ServiceId;
-  readonly variantId: ServiceVariantId | null;
-  readonly barberId: BarberId;
-  readonly barberPreference: BarberPreference | null;
-  /** On the request's `localDate`, the shop's wall clock. */
-  readonly startMinutes: MinuteOfDay;
-};
 
 /**
  * The client's move: the shop it goes to, the ONE shop day it lands on, and
@@ -115,13 +54,13 @@ export type MoveCartSeatInput = {
 export type MoveRequestInput = {
   readonly locationId: LocationId;
   readonly localDate: LocalDate;
-  readonly seats: readonly MoveCartSeatInput[];
+  readonly seats: readonly BookingCall.Seat[];
 };
 
 /** A cart seat re-keyed by the server — positional, so no cart line can borrow a carried seat's terms. */
 export type MovedCartLine = {
   readonly lineId: CartLineId;
-  readonly seat: MoveCartSeatInput;
+  readonly seat: BookingCall.Seat;
 };
 
 /**
@@ -152,21 +91,6 @@ export type MovePlan = {
   readonly unchanged: boolean;
   /** The visit's own chair time, handed back before it is placed again. */
   readonly release: readonly ChairTime[];
-};
-
-/**
- * One carried seat as the booking flow holds it while the client moves the
- * visit — what the review step shows and the grid keeps room for: its
- * wall-clock distance from the move anchor and the chair time it was SOLD at.
- */
-export type MoveRider = {
-  readonly serviceId: ServiceId;
-  readonly variantId: ServiceVariantId | null;
-  readonly barberId: BarberId;
-  readonly offsetMinutes: MinuteDelta;
-  readonly durationMinutes: DurationMinutes;
-  readonly setupMinutes: MinuteCount;
-  readonly cleanupMinutes: MinuteCount;
 };
 
 /** What a move is decided with, read off the visit: the riders and every chair it holds. */
@@ -398,6 +322,31 @@ export const MoveSystem = {
   },
 
   /**
+   * The riders as the day query takes them (`CartRider`): each carried seat
+   * on its own barber, at its distance from the party's start, on its SOLD
+   * chair time (setup before, cleanup after) and with the service it is
+   * served — what the engine's rider check and the shop check read. One
+   * rider out per rider in, in order.
+   */
+  cartRiders(riders: readonly MoveRider[]): readonly CartRider[] {
+    const out: CartRider[] = [];
+    for (let i = 0; i < riders.length; i++) {
+      const rider = riders[i] as MoveRider;
+      out.push({
+        serviceId: rider.serviceId,
+        barberId: rider.barberId,
+        offsetMinutes: rider.offsetMinutes,
+        terms: {
+          durationMinutes: rider.durationMinutes,
+          padBeforeMinutes: rider.setupMinutes,
+          padAfterMinutes: rider.cleanupMinutes,
+        },
+      });
+    }
+    return out;
+  },
+
+  /**
    * Can the live catalogue still serve every carried seat? Each rider's
    * barber must be on the active list, its service offered, and the variant
    * it was sold as (when it had one) still a variant of that service. The
@@ -550,8 +499,8 @@ export const MoveSystem = {
     }
     for (let i = 0; i < request.seats.length; i++) {
       if (
-        (request.seats[i] as MoveCartSeatInput).moveSubjectRole ===
-        MoveSubjectRole.Companion
+        (request.seats[i] as BookingCall.Seat).subject.requestedSubjectRole ===
+        RequestedSubjectRole.Companion
       ) {
         return Result.err(BookingError.invalidInput('subject'));
       }
@@ -570,17 +519,15 @@ export const MoveSystem = {
       for (let i = 0; i < carriedSeats.length; i++) {
         seatIds.push((carriedSeats[i] as Seat).seatId);
       }
-      return Result.err({
-        errorCode: MoveErrorCode.CarriedSeatUnplaceable,
-        refusal: CarriedSeatRefusal.ShopOnly,
-        seatIds,
-      });
+      return Result.err(
+        MoveCarriedSeatUnplaceable.of(CarriedSeatRefusal.ShopOnly, seatIds),
+      );
     }
 
-    let cartEarliest = (request.seats[0] as MoveCartSeatInput).startMinutes;
+    let cartEarliest = (request.seats[0] as BookingCall.Seat).startMinutes;
     const cart: MovedCartLine[] = [];
     for (let i = 0; i < request.seats.length; i++) {
-      const seat = request.seats[i] as MoveCartSeatInput;
+      const seat = request.seats[i] as BookingCall.Seat;
       if (seat.startMinutes < cartEarliest) cartEarliest = seat.startMinutes;
       cart.push({ lineId: CartLineId.of(`${CART_LINE}${i}`), seat });
     }
@@ -614,11 +561,12 @@ export const MoveSystem = {
       });
     }
     if (offDay.length > 0) {
-      return Result.err({
-        errorCode: MoveErrorCode.CarriedSeatUnplaceable,
-        refusal: CarriedSeatRefusal.BarberUnavailable,
-        seatIds: offDay,
-      });
+      return Result.err(
+        MoveCarriedSeatUnplaceable.of(
+          CarriedSeatRefusal.BarberUnavailable,
+          offDay,
+        ),
+      );
     }
 
     const storedKeys: string[] = [];
@@ -639,11 +587,11 @@ export const MoveSystem = {
     }
     const cartKeys: string[] = [];
     for (let i = 0; i < request.seats.length; i++) {
-      const seat = request.seats[i] as MoveCartSeatInput;
+      const seat = request.seats[i] as BookingCall.Seat;
       cartKeys.push(
         placementKey(
-          seat.moveSubjectRole === MoveSubjectRole.Guest
-            ? `guest:${(seat.label ?? '').trim()}`
+          seat.subject.requestedSubjectRole === RequestedSubjectRole.Guest
+            ? `guest:${seat.subject.label.trim()}`
             : 'self',
           seat.serviceId,
           seat.variantId,

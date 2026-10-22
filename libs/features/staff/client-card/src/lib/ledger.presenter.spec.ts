@@ -29,7 +29,11 @@ import {
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import { utcMs } from '@core/testing';
-import type { ActivityRowVm, LinePart } from './client-pages.vm';
+import {
+  type ActivityRowVm,
+  CardLoadState,
+  type LinePart,
+} from './client-pages.vm';
 import {
   type ActivityInput,
   LEDGER_PAGE_READ,
@@ -925,7 +929,7 @@ describe('ledgerPageVm', () => {
   ): LedgerPageInput {
     return {
       ...activityInput(),
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       entries: JOURNAL,
       next: null,
       loadingMore: false,
@@ -957,7 +961,7 @@ describe('ledgerPageVm', () => {
 
   it('draws every page read so far, and ends the list when no cursor is left', () => {
     const page = ledgerPageVm(pageInput());
-    expect(page.status).toBe('ready');
+    expect(page.cardLoadState).toBe(CardLoadState.Ready);
     expect(page.filter).toBe(JournalFeed.All);
     expect(page.groups.flatMap((group) => group.rows)).toHaveLength(10);
     expect(page.paging).toEqual({ kind: 'end' });
@@ -987,9 +991,12 @@ describe('ledgerPageVm', () => {
   });
 
   it('draws nothing under the headline until the first page is read', () => {
-    for (const status of ['loading', 'failed'] as const) {
-      const page = ledgerPageVm(pageInput({ status }));
-      expect(page).toMatchObject({ status, groups: [], paging: null });
+    for (const cardLoadState of [
+      CardLoadState.Loading,
+      CardLoadState.Failed,
+    ] as const) {
+      const page = ledgerPageVm(pageInput({ cardLoadState }));
+      expect(page).toMatchObject({ cardLoadState, groups: [], paging: null });
       expect(joined(page.subline)).toBe('Георги Петров · 371 т.');
     }
   });

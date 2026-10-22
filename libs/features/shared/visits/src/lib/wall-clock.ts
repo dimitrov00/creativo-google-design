@@ -44,6 +44,33 @@ function dateFormat(
   return format;
 }
 
+/** A Monday on the civil axis — 2025-01-06, the legacy `weekdayLabels`' reference. */
+const REFERENCE_MONDAY = LocalDate.fromEpochDay(20_094);
+const WEEKDAY_LABELS = new Map<string, readonly string[]>();
+
+/**
+ * The week's short day names in the locale, Monday first — «пн … нд»,
+ * «Mon … Sun» (Phase 4a; successor of `ZonedDateTime.weekdayLabels` and of
+ * the block editor's and booking steps' private copies). A weekday name is
+ * a property of the civil calendar, so no zone is consulted. Cached per
+ * locale.
+ */
+export function formatWeekdayLabels(locale: string): readonly string[] {
+  let labels = WEEKDAY_LABELS.get(locale);
+  if (labels === undefined) {
+    const format = dateFormat(locale, 'UTC', { weekday: 'short' });
+    const built: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      built.push(
+        format.format(civilMs(LocalDate.addDays(REFERENCE_MONDAY, i))),
+      );
+    }
+    labels = built;
+    WEEKDAY_LABELS.set(locale, labels);
+  }
+  return labels;
+}
+
 /**
  * A shop wall-clock reading as a number on the UTC axis — its civil fields,
  * not an instant. Only ever handed to a `timeZone: 'UTC'` formatter.

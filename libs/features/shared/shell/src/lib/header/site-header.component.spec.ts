@@ -7,44 +7,44 @@ import {
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
+import { BehaviorSubject, Observable, of } from 'rxjs';
 import {
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+  DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
+  LOCATION_LOAD_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import { AuthClaims, AuthStage, Principal } from '@core/components';
+import { UserId } from '@core/primitives';
 import {
+  locationFixture,
   memoryAppointmentReadPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
+  memoryDefaultLocationPorts,
   memoryInboxPorts,
+  memoryLocationLoadPorts,
   memoryProfilePorts,
+  memoryProgramsWorld,
 } from '@core/testing';
-import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-  Principal,
-  PrincipalId,
-  Result,
-  activePrincipal,
-  ok,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
 import { SiteMenuComponent } from '../menu/site-menu.component';
 import { SiteHeaderComponent } from './site-header.component';
 
-function unwrap<T>(result: Result<T, unknown>): T {
-  if (result.isFailure()) throw new Error('fixture failed');
-  return result.value;
-}
+const ANONYMOUS_PRINCIPAL = Principal.anonymous();
 
-/** An active session holding these claims. */
+/** An active session holding these claims — read as the session reads a token. */
 function active(roles: readonly string[]): Principal {
-  return unwrap(
-    activePrincipal(
-      unwrap(PrincipalId.create('user_1')),
-      roles.map((role) => roleFromPrimitive(role)),
-    ),
-  );
+  return Principal.fromClaims({
+    userId: UserId.of('user_1'),
+    claims: AuthClaims.fromToken({
+      tenantId: 'tenant_1',
+      stage: AuthStage.Active,
+      roles,
+    }),
+  });
 }
 
 const bg: Translation = {
@@ -109,22 +109,27 @@ async function configure(
     providers: [
       provideRouter([]),
       ...provideTestI18n(),
+      // The session (principal, name + channel for the identity portrait).
       {
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () => of(principal),
-          // The identity portrait reads name + channel off the gateway.
-          currentDisplayName: () => null,
-          currentIdentifier: () => null,
-          signOut: async () => undefined,
-        },
+        provide: AUTH_SESSION_PORTS,
+        useValue: memoryAuthSessionPorts({
+          principals$: new BehaviorSubject<Principal>(principal),
+        }),
+      },
+      // The menu's schedule row names the default location's shop day.
+      {
+        provide: LOCATION_LOAD_PORTS,
+        useValue: memoryLocationLoadPorts(
+          memoryProgramsWorld({ locations: [locationFixture()] }),
+        ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
       // The trigger's account circle reads its photo off the shared
-      // session identity (no avatar for an anonymous session).
-      {
-        provide: AVATAR_UPLOADER,
-        useValue: { find: () => Promise.resolve(ok(null)) },
-      },
+      // session identity (no avatar uploaded).
+      { provide: AVATAR_PORTS, useValue: memoryAvatarPorts() },
       {
         provide: PROFILE_PORTS,
         useValue: memoryProfilePorts(new Map()),

@@ -4,6 +4,7 @@ import {
   Registration,
   type Role,
   isRole,
+  type ProfileEdits,
 } from '@core/components';
 import {
   AccountsError,
@@ -37,24 +38,6 @@ import { SearchFieldsSystem } from './search-fields.system';
  * date the boundary derives ONCE from its clock (F2-7) — bucketing an
  * instant into a day here would be zone math inside a system.
  */
-
-/**
- * What an owner may change — every key present, `null` = keep the stored
- * value (no optional property: every edit shares one hidden class).
- */
-export type ProfileEdits = {
-  /** `null` = keep the stored first name. */
-  readonly firstName: string | null;
-  /** `null` = keep the stored last name. */
-  readonly lastName: string | null;
-  /**
-   * `'YYYY-MM-DD'`, raw: its smart constructor is `AgeSystem.parseIso`, run
-   * HERE beside the name rule (the stated Law 7.4 exception — its refusal
-   * needs `ageDay`). `null` = keep the stored one; there is no clearing, as
-   * today.
-   */
-  readonly birthDate: string | null;
-};
 
 /** The name rule of `FirstName.create` / `LastName.create`: at least two characters once trimmed. */
 export const NameRule = {

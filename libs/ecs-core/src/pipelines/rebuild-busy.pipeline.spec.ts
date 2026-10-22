@@ -13,6 +13,9 @@ import {
   BookingStatus,
   BusyKey,
   type LocalDate,
+  LocationId,
+  RepositoryError,
+  Result,
 } from '@core/primitives';
 import { type Appointment, Collections, QueryOp } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
@@ -24,6 +27,10 @@ import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   localDate,
+  locationFixture,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStore,
   memoryTxPorts,
   minute,
@@ -52,6 +59,30 @@ function bodyOf(entity: { readonly id: string }): DocBody {
   );
 }
 
+const LONDON = (() => {
+  const zone = ZonedTimeSystem.checkZone('Europe/London');
+  if (!zone.ok) throw new Error('a broken fixture zone');
+  return zone.value;
+})();
+const NORTH = LocationId.of('loc-north');
+
+/**
+ * The shops the zone is read from (Law 7.2): the fixture shop — the
+ * deployment's default location, on `FIXTURE_TIME_ZONE` — and a second shop
+ * on London's clock.
+ */
+const ZONE_PORTS = {
+  ...memoryLocationLoadPorts(
+    memoryProgramsWorld({
+      locations: [
+        locationFixture(),
+        locationFixture({ id: NORTH, timeZone: LONDON }),
+      ],
+    }),
+  ),
+  ...memoryDefaultLocationPorts(),
+};
+
 function rig(appointments: readonly Appointment[]) {
   const store = memoryStore(
     appointments.map((appointment) => ({
@@ -61,7 +92,7 @@ function rig(appointments: readonly Appointment[]) {
   );
   const tx = memoryTxPorts(store);
   const telemetry = recordingTelemetry();
-  const run = rebuildBusy({ ...tx, ...telemetry });
+  const run = rebuildBusy({ ...tx, ...telemetry, ...ZONE_PORTS });
   return { store, tx, telemetry, run };
 }
 
@@ -101,7 +132,6 @@ describe('rebuildBusy', () => {
     const answer = await run({
       before: null,
       after: booked,
-      timeZone: FIXTURE_TIME_ZONE,
     });
     expect(answer).toEqual({ ok: true, value: { rebuiltKeys: [TODAY_KEY] } });
     expect(tx.plans).toEqual([
@@ -117,7 +147,7 @@ describe('rebuildBusy', () => {
   it('reads the day as `busyKeys array-contains ∧ bookingStatus in [PENDING, CONFIRMED]` (index #7)', async () => {
     const booked = appointmentFixture();
     const { tx, run } = rig([booked]);
-    await run({ before: null, after: booked, timeZone: FIXTURE_TIME_ZONE });
+    await run({ before: null, after: booked });
     expect(tx.transactions[0]?.queries).toEqual([liveOnBusyDay(TODAY_KEY)]);
     expect(liveOnBusyDay(TODAY_KEY)).toEqual({
       collection: [Collections.Appointments],
@@ -146,7 +176,6 @@ describe('rebuildBusy', () => {
     await run({
       before: booked,
       after: cancelled,
-      timeZone: FIXTURE_TIME_ZONE,
     });
     expect(tx.plans).toEqual([
       [WriteOp.remove([Collections.BarberBusy, TODAY_KEY])],
@@ -160,7 +189,6 @@ describe('rebuildBusy', () => {
     const answer = await run({
       before: booked,
       after: moved,
-      timeZone: FIXTURE_TIME_ZONE,
     });
     expect(answer).toEqual({
       ok: true,
@@ -187,7 +215,7 @@ describe('rebuildBusy', () => {
       lifecycle: BookingLifecycle.pending(FIXTURE_NOW_UTC_MS),
     });
     const { tx, run } = rig([first, second]);
-    await run({ before: null, after: second, timeZone: FIXTURE_TIME_ZONE });
+    await run({ before: null, after: second });
     expect(tx.plans).toEqual([
       [
         WriteOp.set(
@@ -203,9 +231,38 @@ describe('rebuildBusy', () => {
     const answer = await run({
       before: null,
       after: null,
-      timeZone: FIXTURE_TIME_ZONE,
     });
     expect(answer).toEqual({ ok: true, value: { rebuiltKeys: [] } });
+    expect(tx.transactions).toEqual([]);
+  });
+
+  it('stamps a busy day’s first instant on the zone of the written visit’s shop (Law 7.2)', async () => {
+    const booked = appointmentFixture({ locationId: NORTH });
+    const { tx, run } = rig([booked]);
+    await run({ before: null, after: booked });
+    expect(tx.plans).toEqual([
+      [
+        WriteOp.set([Collections.BarberBusy, TODAY_KEY], {
+          ...busyBody(FIXTURE_TODAY, [block(600, 630)]),
+          utcEpochMs: ZonedTimeSystem.startOfLocalDay(FIXTURE_TODAY, LONDON),
+        }),
+      ],
+    ]);
+  });
+
+  it('answers a zone it cannot read as its store failure, rebuilding nothing (4A-2 (e))', async () => {
+    const booked = appointmentFixture();
+    const failed = RepositoryError.readFailed('locations/loc-center', 'down');
+    const tx = memoryTxPorts(memoryStore([]));
+    const run = rebuildBusy({
+      ...tx,
+      ...recordingTelemetry(),
+      ...memoryDefaultLocationPorts(),
+      loadLocation: async () => Result.err(failed),
+    });
+    expect(await run({ before: null, after: booked })).toEqual(
+      Result.err(failed),
+    );
     expect(tx.transactions).toEqual([]);
   });
 
@@ -215,13 +272,12 @@ describe('rebuildBusy', () => {
     const outage = Object.assign(new Error('14 UNAVAILABLE'), { code: 14 });
     const run = rebuildBusy({
       ...telemetry,
+      ...ZONE_PORTS,
       commit: async () => {
         throw outage;
       },
     });
-    await expect(
-      run({ before: null, after: booked, timeZone: FIXTURE_TIME_ZONE }),
-    ).rejects.toBe(outage);
+    await expect(run({ before: null, after: booked })).rejects.toBe(outage);
     expect(telemetry.lines).toEqual([
       {
         level: 'error',

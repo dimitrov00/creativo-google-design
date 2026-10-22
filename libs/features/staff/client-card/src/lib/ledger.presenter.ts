@@ -27,12 +27,12 @@ import {
   runningCase,
   runsOf,
 } from './client-card.format';
-import type {
-  ActivityGroupVm,
-  ActivityRowVm,
-  LedgerPageVm,
-  LedgerPagingVm,
-  SliceStatus,
+import {
+  type ActivityGroupVm,
+  type ActivityRowVm,
+  CardLoadState,
+  type LedgerPageVm,
+  type LedgerPagingVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
 
@@ -550,7 +550,7 @@ export function activityGroups(
 
 export interface LedgerPageInput extends ActivityInput {
   /** The first page's read. */
-  readonly status: SliceStatus;
+  readonly cardLoadState: CardLoadState;
   /** Every entry loaded so far under the pill, in any order. */
   readonly entries: readonly JournalEntry[];
   /** The cursor of the next page; `null` = nothing older is left. */
@@ -574,7 +574,7 @@ function netsUnder(filter: JournalFeed): boolean {
 }
 
 function pagingOf(input: LedgerPageInput): LedgerPagingVm | null {
-  if (input.status !== 'ready') return null;
+  if (input.cardLoadState !== CardLoadState.Ready) return null;
   if (input.loadingMore) return { kind: 'loading' };
   if (input.next === null) return { kind: 'end' };
   // Offline with a cursor left: nothing to offer, and nothing has ended.
@@ -587,9 +587,9 @@ export function ledgerPageVm(input: LedgerPageInput): LedgerPageVm {
   const { words } = input;
   const balance = words.ledgerPage.points(input.balance);
   const holder = input.holder.trim();
-  const ready = input.status === 'ready';
+  const ready = input.cardLoadState === CardLoadState.Ready;
   return {
-    status: input.status,
+    cardLoadState: input.cardLoadState,
     subline:
       holder === ''
         ? [{ text: balance, fact: true }]

@@ -148,13 +148,20 @@
          rendered at all. Three reasons (`MoveRefusal`): the visit holds only
          somebody the shop added, or somebody it carries can no longer be
          served here (only the shop can move them, so the call leads in both),
-         or it could not be read here. -->
+         or it could not be read here. Its words are the reason's lowercase
+         spelling (`MOVE_REFUSAL_WORDS`), the keys and `data-reason` as ever. -->
     @if (refusal(); as refused) {
     <lib-booking-step-layout>
       <ui-empty-state
-        [uiTitle]="t('booking.moveRefused.' + refused.reason + '.title')"
+        [uiTitle]="
+          t(
+            'booking.moveRefused.' +
+              refusalWords[refused.moveRefusalReason] +
+              '.title'
+          )
+        "
         data-testid="booking-move-refused"
-        [attr.data-reason]="refused.reason"
+        [attr.data-reason]="refusalWords[refused.moveRefusalReason]"
       >
         <!-- "Call" only when the call button below is there to press; with
              no number to dial it says to get in touch (`shopReachKey`). -->
@@ -164,8 +171,8 @@
           uiForegroundStyle="secondary"
           data-testid="booking-move-refused-body"
         >
-          {{ t('booking.moveRefused.' + refused.reason + '.body', { reach:
-          t(reachKey()) }) }}
+          {{ t('booking.moveRefused.' + refusalWords[refused.moveRefusalReason]
+          + '.body', { reach: t(reachKey()) }) }}
         </p>
         <ui-stack uiActions uiSpacing="compact">
           @if (refusalCallHref(); as href) {
@@ -196,24 +203,24 @@
     <!-- Each step owns its measure column, spacer and action bar through
          `lib-booking-step-layout`, which must be the growing flex child of
          THIS column for the bar to pin to the viewport floor. -->
-    @switch (store.step()) { @case ('location') {
+    @switch (store.step()) { @case (Step.Location) {
     <lib-booking-location-step />
-    } @case ('services') {
+    } @case (Step.Services) {
     <lib-booking-services-step />
-    } @case ('schedule') {
+    } @case (Step.Schedule) {
     <lib-booking-schedule-step />
-    } @case ('review') {
+    } @case (Step.Review) {
     <lib-booking-review-step />
-    } @case ('confirmed') {
+    } @case (Step.Confirmed) {
     <lib-booking-confirmed-step />
-    } @case ('waitlisted') {
+    } @case (Step.Waitlisted) {
     <lib-booking-waitlisted-step />
     } @default {
     <!-- The remaining steps land in their own phases; the shell, the
              machine and the history contract are already real. -->
     <lib-booking-step-layout>
       <p class="booking-step-pending" data-testid="booking-step-pending">
-        {{ t('booking.' + store.step() + '.title') }}
+        {{ t('booking.' + stepWord() + '.title') }}
       </p>
     </lib-booking-step-layout>
     } } }

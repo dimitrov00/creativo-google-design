@@ -8,17 +8,34 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { BarberId, LocalDate, ServiceVariantId } from '@core/primitives';
-import { Money, ServiceTerms } from '@core/components';
+import { type CartLineId, LocalDate } from '@core/primitives';
+import {
+  BookingContact,
+  BookingFlowStep,
+  type CartLine,
+  Money,
+  Principal,
+  SeatKey,
+  ServiceTerms,
+} from '@core/components';
 import {
   CalendarGridSystem,
   OfferingPriceSystem,
   PhoneSystem,
   ShopReachSystem,
+  ZonedTimeSystem,
 } from '@core/systems';
 import { Profile } from '@core/entities';
-import { PhoneNumber } from '@creativo/application/identity';
-import { formatCents, formatMinute } from '@creativo/features/shared/visits';
+import {
+  AUTH_DEPLOYMENT_PORTS,
+  CLOCK_PORTS,
+  ShopZoneService,
+} from '@creativo/infrastructure/firebase-app';
+import {
+  formatCents,
+  formatMinute,
+  formatWeekdayLabels,
+} from '@creativo/features/shared/visits';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
@@ -54,11 +71,13 @@ import {
   SessionIdentityService,
   ThemeService,
 } from '@creativo/features/shared/shell';
-import type { BookingContactProps } from '@creativo/application/booking';
-import { MAX_BOOKING_NOTE_LENGTH } from '@creativo/application/booking';
-import { AUTH_DEPLOYMENT } from '@creativo/application/identity';
 import { BookingFlowStore } from '../booking-flow.store';
 import { bookingSignInReturnUrl } from '../booking-return-url';
+import {
+  formatBookingDay,
+  formatBookingMonth,
+  formatBookingTime,
+} from '../booking-wall-clock';
 import {
   bookingErrorMessage,
   callHrefForRefusal,
@@ -176,18 +195,16 @@ export class BookingReviewStep {
   private readonly router = inject(Router);
   private readonly accountState = inject(AccountStateService);
   private readonly theme = inject(ThemeService);
+  private readonly clock = inject(CLOCK_PORTS);
+  private readonly shopZones = inject(ShopZoneService);
 
   protected readonly catalog = inject(CatalogContentService);
   protected readonly content = inject(CatalogPresenter);
   protected readonly store = inject(BookingFlowStore);
 
   /** The booker has an account. Until then Confirm asks them to sign in. */
-  protected readonly isSignedIn = computed(
-    () => this.accountState.principal().kind === 'active',
-  );
-
-  private readonly zone = computed(
-    () => this.store.selection()?.timeSlot.start.zoneName ?? 'Europe/Sofia',
+  protected readonly isSignedIn = computed(() =>
+    Principal.isActive(this.accountState.principal()),
   );
 
   /** The booked shop, as an entity — the map, name, address, and directions
@@ -198,15 +215,14 @@ export class BookingReviewStep {
     return (
       this.catalog
         .locations()
-        .find((candidate) => candidate.id === selection.locationId.value) ??
-      null
+        .find((candidate) => candidate.id === selection.locationId) ?? null
     );
   });
 
   protected readonly locationName = computed(() => {
     const shop = this.shop();
     if (shop) return this.content.text({ en: shop.name.en, bg: shop.name.bg });
-    return this.store.selection()?.locationId.value ?? '';
+    return this.store.selection()?.locationId ?? '';
   });
 
   protected readonly locationAddress = computed(() => {
@@ -247,34 +263,26 @@ export class BookingReviewStep {
   /** The day, spelled out — "Monday, 3 August". */
   protected readonly dayLabel = computed(() => {
     const selection = this.store.selection();
-    if (!selection) return '';
-    return new Intl.DateTimeFormat(this.content.locale(), {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      timeZone: this.zone(),
-    }).format(new Date(selection.timeSlot.start.toMillis()));
+    return selection
+      ? formatBookingDay(selection.localDate, this.content.locale())
+      : '';
   });
 
   /**
-   * The chosen day's calendar coordinates IN THE SHOP'S ZONE — `en-CA` is the
-   * one locale whose date format is literally `YYYY-MM-DD`, which makes Intl
-   * the zone-correct parser the Date object refuses to be.
+   * This year on the SHOP's calendar — the booked shop's zone, else the
+   * deployment's default location's; `null` until either answers. One clock
+   * reading (`CLOCK_PORTS`), never the device's calendar.
    */
-  private readonly selectedYmd = computed(() => {
-    const selection = this.store.selection();
-    if (!selection) return null;
-    const key = new Intl.DateTimeFormat('en-CA', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      timeZone: this.zone(),
-    }).format(new Date(selection.timeSlot.start.toMillis()));
-    return {
-      year: Number(key.slice(0, 4)),
-      month: Number(key.slice(5, 7)),
-      day: Number(key.slice(8, 10)),
-    };
+  private readonly defaultZone = this.shopZones.defaultZone();
+
+  private readonly thisYear = computed<number | null>(() => {
+    const zone = this.shop()?.timeZone ?? this.defaultZone();
+    if (zone === null) return null;
+    const today = ZonedTimeSystem.shopNow(
+      this.clock.nowUtcMs(),
+      zone,
+    ).localDate;
+    return LocalDate.parts(today).year;
   });
 
   /**
@@ -284,29 +292,21 @@ export class BookingReviewStep {
    * 2026-08-04).
    */
   protected readonly monthLabel = computed(() => {
-    const ymd = this.selectedYmd();
-    if (!ymd) return '';
-    const locale = this.content.locale();
-    const thisYear = new Date().getFullYear();
-    const label = new Intl.DateTimeFormat(locale, {
-      month: 'long',
-      ...(ymd.year === thisYear ? {} : { year: 'numeric' }),
-      timeZone: 'UTC',
-    }).format(new Date(Date.UTC(ymd.year, ymd.month - 1, 1)));
-    return label.charAt(0).toLocaleUpperCase(locale) + label.slice(1);
+    const selection = this.store.selection();
+    if (!selection) return '';
+    const thisYear = this.thisYear();
+    return formatBookingMonth(
+      selection.localDate,
+      thisYear !== null &&
+        LocalDate.parts(selection.localDate).year !== thisYear,
+      this.content.locale(),
+    );
   });
 
   /** Mon-first weekday initials, localized — labels are never modeled as data. */
-  protected readonly weekdayLabels = computed(() => {
-    const formatter = new Intl.DateTimeFormat(this.content.locale(), {
-      weekday: 'short',
-      timeZone: 'UTC',
-    });
-    // 2024-01-01 was a Monday; UTC keeps the walk zone-independent.
-    return Array.from({ length: 7 }, (_, index) =>
-      formatter.format(Date.UTC(2024, 0, 1 + index)),
-    );
-  });
+  protected readonly weekdayLabels = computed(() =>
+    formatWeekdayLabels(this.content.locale()),
+  );
 
   /**
    * The chosen day's month as a Monday-first grid of day-of-month numbers,
@@ -315,22 +315,22 @@ export class BookingReviewStep {
    * because this calendar ANSWERS a question rather than asking one.
    */
   protected readonly weeks = computed<readonly (number | null)[][]>(() => {
-    const ymd = this.selectedYmd();
-    if (!ymd) return [];
+    const selection = this.store.selection();
+    if (!selection) return [];
     // `CalendarGridSystem.monthGrid`: Monday-first, padded to whole weeks;
     // a weekday is civil arithmetic, so no day table is needed.
-    const month = LocalDate.parse(
-      `${String(ymd.year).padStart(4, '0')}-${String(ymd.month).padStart(2, '0')}-01`,
-    );
-    if (!month.ok) return [];
-    return CalendarGridSystem.monthGrid(month.value, []).map((week) =>
+    return CalendarGridSystem.monthGrid(
+      LocalDate.startOfMonth(selection.localDate),
+      [],
+    ).map((week) =>
       week.map((cell) => (cell.inMonth ? cell.dayOfMonth : null)),
     );
   });
 
-  protected readonly selectedDayOfMonth = computed(
-    () => this.selectedYmd()?.day ?? null,
-  );
+  protected readonly selectedDayOfMonth = computed(() => {
+    const selection = this.store.selection();
+    return selection ? LocalDate.parts(selection.localDate).day : null;
+  });
 
   /** The signed-in booker, for the contact row. `null` hides the row. */
   protected readonly account = this.accountState.account;
@@ -352,7 +352,7 @@ export class BookingReviewStep {
    * neither truncates.
    */
   protected readonly contactEmail = computed(
-    () => this.store.contact()?.email ?? this.account()?.email ?? null,
+    () => this.store.contact().contactEmail ?? this.account()?.email ?? null,
   );
 
   /**
@@ -362,30 +362,24 @@ export class BookingReviewStep {
    * inside the country and is not what is stored: storage is E.164.
    */
   protected readonly contactPhone = computed(() => {
-    const overridden = this.store.contact()?.phone;
-    if (overridden) {
-      const parsed = PhoneNumber.create(overridden);
-      return parsed.isSuccess()
-        ? parsed.value.formatInternational()
-        : overridden;
-    }
-    const phone = this.account()?.phone ?? null;
+    const phone =
+      this.store.contact().contactPhone ?? this.account()?.phone ?? null;
     return phone === null ? null : PhoneSystem.formatInternational(phone);
   });
 
   /** The name on the booking — the override wins over the account's. */
   protected readonly contactName = computed(
-    () => this.store.contact()?.name || this.bookerName(),
+    () => this.store.contact().contactName || this.bookerName(),
   );
 
   /** What the shop should know first. Shown only when there is one. */
   protected readonly contactNote = computed(
-    () => this.store.contact()?.note ?? null,
+    () => this.store.contact().contactNote,
   );
 
   /** The HIG Edit affordance: back to the step that owns the answer. */
   protected editServices(): void {
-    this.store.rewindTo('services');
+    this.store.rewindTo(BookingFlowStep.Services);
   }
 
   /**
@@ -400,7 +394,9 @@ export class BookingReviewStep {
     // edit never survives into the next one.
     effect(() => {
       if (this.noteSheetOpen()) {
-        this.noteDraft.set(untracked(() => this.store.contact()?.note ?? ''));
+        this.noteDraft.set(
+          untracked(() => this.store.contact().contactNote ?? ''),
+        );
       }
     });
 
@@ -413,20 +409,23 @@ export class BookingReviewStep {
     effect(() => {
       const user = this.account();
       if (!user || user.phone === null) return;
-      if (untracked(() => this.store.contact()) !== null) return;
+      if (BookingContact.isPresent(untracked(() => this.store.contact()))) {
+        return;
+      }
       this.store.setContact({
-        name: Profile.fullName(user),
-        phone: user.phone,
-        email: user.email,
-        note: null,
+        contactName: Profile.fullName(user),
+        contactPhone: user.phone,
+        contactEmail: user.email,
+        contactNote: null,
       });
     });
   }
 
-  /** The tenant's phone country, from the same token auth and onboarding read. */
-  protected readonly defaultCountry = inject(AUTH_DEPLOYMENT).defaultCountry;
+  /** The tenant's phone country, from the same bundle auth and onboarding read. */
+  protected readonly defaultCountry = inject(AUTH_DEPLOYMENT_PORTS)
+    .authDeployment.defaultCountry;
 
-  protected onContactSaved(contact: BookingContactProps): void {
+  protected onContactSaved(contact: BookingContact.Present): void {
     this.store.setContact(contact);
     this.contactSheetOpen.set(false);
   }
@@ -435,13 +434,13 @@ export class BookingReviewStep {
 
   protected readonly noteSheetOpen = signal(false);
   protected readonly noteDraft = signal('');
-  protected readonly noteLimit = MAX_BOOKING_NOTE_LENGTH;
+  protected readonly noteLimit = BookingContact.MAX_NOTE_LENGTH;
 
   protected saveNote(): void {
     const existing = this.store.contact();
-    if (!existing) return;
+    if (!BookingContact.isPresent(existing)) return;
     const note = this.noteDraft().trim().slice(0, this.noteLimit);
-    this.store.setContact({ ...existing, note: note || null });
+    this.store.setContact({ ...existing, contactNote: note || null });
     this.noteSheetOpen.set(false);
   }
 
@@ -449,9 +448,12 @@ export class BookingReviewStep {
   protected readonly windowLabel = computed(() => {
     const selection = this.store.selection();
     if (!selection) return '';
-    return `${this.time(selection.timeSlot.start.toMillis())} – ${this.time(
-      selection.timeSlot.end.toMillis(),
-    )}`;
+    const locale = this.content.locale();
+    return `${formatBookingTime(
+      selection.localDate,
+      selection.startMinutes,
+      locale,
+    )} – ${formatBookingTime(selection.localDate, selection.endMinutes, locale)}`;
   });
 
   /**
@@ -469,14 +471,17 @@ export class BookingReviewStep {
     const selection = this.store.selection();
     const cart = this.store.cart();
     if (!selection || !cart) return [];
+    const locale = this.content.locale();
 
-    const byLineId = new Map(
-      cart
-        .entries()
-        .flatMap(([seatKey, lines]) =>
-          lines.map((line) => [line.id.value, { seatKey, line }] as const),
-        ),
-    );
+    const byLineId = new Map<
+      CartLineId,
+      { readonly seatKey: string; readonly line: CartLine }
+    >();
+    for (const seat of cart.cartSeats) {
+      for (const line of seat.lines) {
+        byLineId.set(line.lineId, { seatKey: seat.seatKey, line });
+      }
+    }
 
     const bySeat = new Map<
       string,
@@ -484,20 +489,20 @@ export class BookingReviewStep {
     >();
 
     for (const assignment of selection.assignments) {
-      const found = byLineId.get(assignment.lineId.value);
+      const found = byLineId.get(assignment.lineId);
       if (!found) continue;
-      const service = this.catalog.findService(found.line.serviceId.value);
+      const service = this.catalog.findService(found.line.serviceId);
       if (!service) continue;
 
       // The price shown is `termsFor(the barber who actually got it)` — the
       // same resolution the server will redo. A summary quoting the catalog
       // base while the server charges the barber's rate is a summary that
       // lies.
-      const variantId = found.line.variantId?.value ?? null;
+      const variantId = found.line.variantId;
       const terms = OfferingPriceSystem.termsFor(
         service,
-        BarberId.of(assignment.barberId.value),
-        variantId === null ? null : ServiceVariantId.of(variantId),
+        assignment.barberId,
+        variantId,
       );
       const price = ServiceTerms.price(terms);
       const variant =
@@ -514,7 +519,7 @@ export class BookingReviewStep {
         broken: false,
       };
       entry.lines.push({
-        key: assignment.lineId.value,
+        key: assignment.lineId,
         coverSrc: vm.coverSrc ?? null,
         serviceName: this.content.text({
           en: service.name.en,
@@ -523,11 +528,15 @@ export class BookingReviewStep {
         variantName: variant
           ? this.content.text({ en: variant.name.en, bg: variant.name.bg })
           : null,
-        barberName: this.barberName(assignment.barberId.value),
-        barberAvatarSrc: this.barberAvatarSrc(assignment.barberId.value),
+        barberName: this.barberName(assignment.barberId),
+        barberAvatarSrc: this.barberAvatarSrc(assignment.barberId),
         // Filled below, once the total line count is known — a lone service
         // does not repeat the window stated under the calendar.
-        timeLabel: this.time(assignment.slot.start.toMillis()),
+        timeLabel: formatBookingTime(
+          selection.localDate,
+          assignment.startMinutes,
+          locale,
+        ),
         priceLabel: this.money(price),
       });
       if (!entry.broken) {
@@ -550,7 +559,7 @@ export class BookingReviewStep {
     // the order seats first held something, with `self` wherever it landed;
     // the summary pins the booker to the front regardless.
     const seatKeys = [...bySeat.keys()].sort((a, b) =>
-      a === 'self' ? -1 : b === 'self' ? 1 : 0,
+      a === SELF_SEAT ? -1 : b === SELF_SEAT ? 1 : 0,
     );
 
     // One line in the whole booking means the window under the calendar
@@ -562,15 +571,15 @@ export class BookingReviewStep {
 
     return seatKeys.map((seatKey) => {
       const entry = bySeat.get(seatKey);
-      const known = seatKey === 'self' ? this.identity.displayName() : null;
+      const known = seatKey === SELF_SEAT ? this.identity.displayName() : null;
       return {
         key: seatKey,
         personLabel: this.personLabel(seatKey),
         // Initials of the fallback "You" spell nothing — the avatar falls
         // back to its silhouette, the same rule the seat scope applies.
         monogramName:
-          seatKey === 'self' ? (known ?? '') : this.personLabel(seatKey),
-        avatarSrc: seatKey === 'self' ? this.identity.avatarUrl() : null,
+          seatKey === SELF_SEAT ? (known ?? '') : this.personLabel(seatKey),
+        avatarSrc: seatKey === SELF_SEAT ? this.identity.avatarUrl() : null,
         lines: (entry?.lines ?? []).map((line) =>
           lineCount > 1 ? line : { ...line, timeLabel: null },
         ),
@@ -647,27 +656,22 @@ export class BookingReviewStep {
     const cart = this.store.cart();
     if (!selection || !cart) return null;
 
-    const byLineId = new Map(
-      cart
-        .entries()
-        .flatMap(([, lines]) =>
-          lines.map((line) => [line.id.value, line] as const),
-        ),
-    );
+    const byLineId = new Map<CartLineId, CartLine>();
+    for (const seat of cart.cartSeats) {
+      for (const line of seat.lines) byLineId.set(line.lineId, line);
+    }
 
     let total: Money | null = null;
     for (const assignment of selection.assignments) {
-      const line = byLineId.get(assignment.lineId.value);
+      const line = byLineId.get(assignment.lineId);
       if (!line) continue;
-      const service = this.catalog.findService(line.serviceId.value);
+      const service = this.catalog.findService(line.serviceId);
       if (!service) continue;
       const price = ServiceTerms.price(
         OfferingPriceSystem.termsFor(
           service,
-          BarberId.of(assignment.barberId.value),
-          line.variantId === null
-            ? null
-            : ServiceVariantId.of(line.variantId.value),
+          assignment.barberId,
+          line.variantId,
         ),
       );
       if (total === null) {
@@ -723,15 +727,6 @@ export class BookingReviewStep {
     await this.store.commit();
   }
 
-  private time(millis: number): string {
-    return new Intl.DateTimeFormat(this.content.locale(), {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone: this.zone(),
-    }).format(new Date(millis));
-  }
-
   /** «28,00 €» — the currency's own exponent and fraction digits. */
   private money(money: Money): string {
     return formatCents(
@@ -758,19 +753,22 @@ export class BookingReviewStep {
     );
   }
 
-  /** `seatKeyValue` is `'self'` or the bare `GuestId`. */
+  /** A cart seat key (`SeatKey.text`) — `'self'`, or the bare guest id. */
   private personLabel(seatKey: string): string {
     // The booker by NAME once we know it — three steps said "You" to a
     // signed-in user whose name was sitting in the session the whole time
     // (owner ruling 2026-07-31). "You" is the fallback, not the rule.
-    if (seatKey === 'self')
+    if (seatKey === SELF_SEAT)
       return (
         this.identity.displayName() ||
         this.transloco.translate('booking.party.you')
       );
     const guest = this.store
       .guests()
-      .find((candidate) => candidate.id.value === seatKey);
-    return guest?.label.value ?? seatKey;
+      .find((candidate) => candidate.guestId === seatKey);
+    return guest?.guestLabel ?? seatKey;
   }
 }
+
+/** The booker's own cart seat key. */
+const SELF_SEAT: string = SeatKey.text(SeatKey.self());

@@ -8,10 +8,13 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import {
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+  DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
+  LOCATION_LOAD_PORTS,
   POSITION_READ_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -19,14 +22,18 @@ import { PositionStatus } from '@core/components';
 import type { Position } from '@core/entities';
 import type { PositionReadPorts } from '@core/ports';
 import {
+  locationFixture,
   memoryAppointmentReadPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
+  memoryDefaultLocationPorts,
   memoryInboxPorts,
+  memoryLocationLoadPorts,
   memoryPositionReadPorts,
   memoryProfilePorts,
   memoryProgramsWorld,
   positionOf,
 } from '@core/testing';
-import { AUTH_GATEWAY, ok } from '@creativo/application/identity';
 import { LanguageService } from '@creativo/features/shared/shell';
 import { MarketingCareers } from './marketing-careers';
 
@@ -82,16 +89,11 @@ async function configure(
         provide: POSITION_READ_PORTS,
         useValue: recordedPositionReads(open, asked),
       },
-      {
-        provide: AUTH_GATEWAY,
-        useValue: { observePrincipal: () => of({ kind: 'anonymous' }) },
-      },
+      // An anonymous visitor: the session double's default principal.
+      { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
       // The shared header's account circle reads its photo off the
       // session identity — no avatar for an anonymous visitor.
-      {
-        provide: AVATAR_UPLOADER,
-        useValue: { find: () => Promise.resolve(ok(null)) },
-      },
+      { provide: AVATAR_PORTS, useValue: memoryAvatarPorts() },
       // The shared session model behind that chrome reads the profile.
       { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
       // …and its menu counts upcoming visits.
@@ -103,6 +105,17 @@ async function configure(
       {
         provide: APPOINTMENT_READ_PORTS,
         useValue: memoryAppointmentReadPorts([]),
+      },
+      // …and its schedule row names the default location's shop day.
+      {
+        provide: LOCATION_LOAD_PORTS,
+        useValue: memoryLocationLoadPorts(
+          memoryProgramsWorld({ locations: [locationFixture()] }),
+        ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
     ],
   }).compileComponents();

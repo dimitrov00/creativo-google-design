@@ -9,6 +9,7 @@ import {
   ServiceStatus,
   WaitlistLifecycle,
   WriteOp,
+  type WaitlistCall,
 } from '@core/components';
 import {
   BookingErrorCode,
@@ -29,11 +30,7 @@ import {
   type WaitlistRequest,
 } from '@core/entities';
 import type { CatalogSnapshot, CommitPlan } from '@core/ports';
-import {
-  type WaitlistAskInput,
-  WaitlistSystem,
-  ZonedTimeSystem,
-} from '@core/systems';
+import { WaitlistSystem, ZonedTimeSystem } from '@core/systems';
 import {
   endMinute,
   FIXTURE_IDS,
@@ -42,6 +39,7 @@ import {
   fixtureHash,
   localDate,
   locationFixture,
+  memoryDefaultLocationPorts,
   memoryStore,
   memoryTxPorts,
   minute,
@@ -66,12 +64,27 @@ import {
 const CUT = FIXTURE_IDS.service;
 const RETIRED = ServiceId.of('svc-retired');
 const COLOUR = ServiceId.of('svc-colour');
+const NORTH_CUT = ServiceId.of('svc-north-cut');
 const CENTRE = FIXTURE_IDS.location;
 const HIDDEN = LocationId.of('loc-hidden');
+const NORTH = LocationId.of('loc-north');
 const DAY = localDate('2026-09-30');
+const LONDON = (() => {
+  const zone = ZonedTimeSystem.checkZone('Europe/London');
+  if (!zone.ok) throw new Error('a broken fixture zone');
+  return zone.value;
+})();
 
 const CATALOG: ReadonlyMap<string, Service> = new Map([
   [CUT, serviceFixture({ offerings: [] })],
+  [
+    NORTH_CUT,
+    serviceFixture({
+      id: NORTH_CUT,
+      offerings: [],
+      locationIds: [LocationId.of('loc-north')],
+    }),
+  ],
   [
     RETIRED,
     serviceFixture({ id: RETIRED, serviceStatus: ServiceStatus.Archived }),
@@ -96,7 +109,17 @@ const SHOPS: ReadonlyMap<string, ShopLocation> = new Map([
     HIDDEN,
     locationFixture({ id: HIDDEN, locationStatus: LocationStatus.Hidden }),
   ],
+  [NORTH, locationFixture({ id: NORTH, timeZone: LONDON })],
 ]);
+
+/**
+ * The shop's clock (Law 7.2): the named shop's zone, else the default
+ * location's — the centre, on `FIXTURE_TIME_ZONE` (F-4).
+ */
+const ZONE_PORTS = {
+  loadLocation: async (id: LocationId) => Result.ok(SHOPS.get(id) ?? null),
+  ...memoryDefaultLocationPorts(CENTRE),
+};
 
 /** One seat per service, the first the booker's own. */
 function cartOf(...serviceIds: readonly string[]): BookingCart {
@@ -124,7 +147,7 @@ function cartOf(...serviceIds: readonly string[]): BookingCart {
 function askOf(
   cart: BookingCart,
   locationId: string | null = CENTRE,
-): WaitlistAskInput {
+): WaitlistCall.Input {
   return {
     locationId,
     days: [
@@ -153,6 +176,7 @@ function rig(
     ...tx,
     ...(options.commit === undefined ? {} : { commit: options.commit }),
     ...recordingTelemetry(),
+    ...ZONE_PORTS,
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
     loadCatalog: async (serviceIds, locationId) => {
       reads.push({ serviceIds, locationId });
@@ -167,11 +191,7 @@ function rig(
 }
 
 const owner = FIXTURE_IDS.client;
-const command = (ask: WaitlistAskInput) => ({
-  ownerUserId: owner,
-  ask,
-  timeZone: FIXTURE_TIME_ZONE,
-});
+const command = (ask: WaitlistCall.Input) => ({ ownerUserId: owner, ask });
 
 /** The stored request a decided ask leaves, built by hand. */
 function storedRequest(
@@ -309,7 +329,7 @@ describe('requestWaitlist — the shop it names, as the commit reads it', () => 
     },
   );
 
-  it('records a request for any shop — none named, none read', async () => {
+  it('records a request for any shop — none named, none read, on the default location’s clock (F-4)', async () => {
     const cart = cartOf(CUT);
     const { tx, reads, run } = rig();
     await run(command(askOf(cart, null)));
@@ -406,6 +426,7 @@ describe('requestWaitlist — one request per meaning', () => {
     const run = requestWaitlist({
       ...tx,
       ...recordingTelemetry(),
+      ...ZONE_PORTS,
       loadPolicy: async () => Result.err(failure),
       loadCatalog: async () => {
         throw new Error('the catalogue must not be read');
@@ -415,5 +436,44 @@ describe('requestWaitlist — one request per meaning', () => {
       ok: false,
       error: failure,
     });
+  });
+
+  it('places the request’s first instant on the named shop’s clock (Law 7.2)', async () => {
+    const cart = cartOf(NORTH_CUT);
+    const { tx, run } = rig();
+    const answer = await run(command(askOf(cart, NORTH)));
+    expect(answer.ok).toBe(true);
+    const body = {
+      ...storedRequest(cart, NORTH),
+      utcEpochMs: ZonedTimeSystem.startOfLocalDay(DAY, LONDON),
+    };
+    expect(tx.plans).toEqual([
+      [
+        WriteOp.create(
+          [
+            Collections.WaitlistRequests,
+            waitlistRequestIdOf(body, fixtureHash),
+          ],
+          body,
+        ),
+      ],
+    ]);
+  });
+
+  it('answers a zone it cannot read as its store failure, writing nothing (4A-2 (e))', async () => {
+    const failed = RepositoryError.readFailed('locations/loc-center', 'down');
+    const tx = memoryTxPorts(memoryStore());
+    const run = requestWaitlist({
+      ...tx,
+      ...recordingTelemetry(),
+      ...memoryDefaultLocationPorts(CENTRE),
+      loadLocation: async () => Result.err(failed),
+      loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
+      loadCatalog: async () => {
+        throw new Error('the catalogue must not be read');
+      },
+    });
+    expect(await run(command(askOf(cartOf(CUT))))).toEqual(Result.err(failed));
+    expect(tx.transactions).toEqual([]);
   });
 });

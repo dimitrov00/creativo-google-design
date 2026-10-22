@@ -7,45 +7,47 @@ import {
   TranslocoService,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
+import { BehaviorSubject, Observable, of } from 'rxjs';
 import {
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+  DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
+  LOCATION_LOAD_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { AppointmentReadPorts, InboxPorts } from '@core/ports';
-import { BirthDate } from '@core/components';
+import type {
+  AppointmentReadPorts,
+  AvatarPorts,
+  InboxPorts,
+  LocationLoadPorts,
+} from '@core/ports';
+import { BirthDate, Principal } from '@core/components';
 import type { Appointment, InboxNotification, User } from '@core/entities';
-import { Result as EcsResult, UserId } from '@core/primitives';
+import { Result as EcsResult, RepositoryError, UserId } from '@core/primitives';
 import {
+  locationFixture,
   memoryAppointmentReadPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
+  memoryDefaultLocationPorts,
   memoryInboxPorts,
+  memoryLocationLoadPorts,
   memoryProfilePorts,
+  memoryProgramsWorld,
+  principalFixture,
   registeredUserFixture,
 } from '@core/testing';
-import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-  Principal,
-  PrincipalId,
-  Result,
-  activePrincipal,
-  ok,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
 import { SiteMenuComponent } from './site-menu.component';
 
-function unwrap<T>(result: Result<T, unknown>): T {
-  if (result.isFailure()) throw new Error('fixture failed');
-  return result.value;
-}
+const ANONYMOUS_PRINCIPAL = Principal.anonymous();
 
-const ACTIVE_PRINCIPAL = unwrap(
-  activePrincipal(unwrap(PrincipalId.create('user_1')), [
-    roleFromPrimitive('client'),
-  ]),
+/** The default location — the centre shop on the fixture zone (Europe/Sofia). */
+const SHOPS: LocationLoadPorts = memoryLocationLoadPorts(
+  memoryProgramsWorld({ locations: [locationFixture()] }),
 );
+const ACTIVE_PRINCIPAL = principalFixture.client(UserId.of('user_1'));
 
 /** Ада Тестова, registered — a birth date closes that item. */
 function user(birthDate?: string): User {
@@ -117,6 +119,8 @@ describe('SiteMenuComponent', () => {
     avatarUrl?: string | null;
     /** Omit for "no profile row yet"; pass a birth date to close that item. */
     profile?: User | null;
+    /** The shops the zone is read from — the centre shop unless given. */
+    locations?: LocationLoadPorts;
   }) {
     const principal: Principal = inputs.isAuthed
       ? ACTIVE_PRINCIPAL
@@ -127,27 +131,30 @@ describe('SiteMenuComponent', () => {
         provideRouter([]),
         ...provideTestI18n(),
         {
-          provide: AUTH_GATEWAY,
-          useValue: {
-            signOut: async () => undefined,
-            // The identity portrait reads name + channel off the gateway.
-            observePrincipal: () => of(principal),
-            currentDisplayName: () => inputs.displayName ?? null,
-            currentIdentifier: () => null,
-          },
+          // The identity portrait reads name + channel off the session.
+          provide: AUTH_SESSION_PORTS,
+          useValue: memoryAuthSessionPorts({
+            principals$: new BehaviorSubject<Principal>(principal),
+            displayName: inputs.displayName ?? null,
+          }),
+        },
+        // The schedule row's date reads the default location's zone.
+        { provide: LOCATION_LOAD_PORTS, useValue: inputs.locations ?? SHOPS },
+        {
+          provide: DEFAULT_LOCATION_PORTS,
+          useValue: memoryDefaultLocationPorts(),
         },
         {
-          provide: AVATAR_UPLOADER,
+          provide: AVATAR_PORTS,
           useValue: {
-            find: () =>
-              Promise.resolve(
-                ok(
-                  inputs.avatarUrl
-                    ? { url: inputs.avatarUrl, path: 'avatars/user_1' }
-                    : null,
-                ),
+            ...memoryAvatarPorts(),
+            findAvatar: async () =>
+              EcsResult.ok(
+                inputs.avatarUrl
+                  ? { url: inputs.avatarUrl, path: 'avatars/user_1' }
+                  : null,
               ),
-          },
+          } satisfies AvatarPorts,
         },
         {
           provide: PROFILE_PORTS,
@@ -642,6 +649,50 @@ describe('SiteMenuComponent', () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    /**
+     * The zone is the default location's (Law 7.2, F-4), read once per
+     * session: until that read answers there is no shop day to name, so the
+     * subtitle is absent — the chevron stays (Phase 4a 4A-2 (f)).
+     */
+    it('leaves the date out until the shop zone resolves', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        locations: { loadLocation: () => new Promise(() => undefined) },
+      });
+      const row = (fixture.nativeElement as HTMLElement).querySelector(
+        '[data-testid="menu-staff-day"]',
+      )!;
+
+      expect(row.querySelector('[data-testid="menu-staff-day-date"]')).toBe(
+        null,
+      );
+      expect(row.querySelector('.cr-menu__staff-detail ui-icon')).not.toBe(
+        null,
+      );
+    });
+
+    it('leaves the date out when the shop zone cannot be read', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        locations: {
+          loadLocation: async () =>
+            EcsResult.err(
+              RepositoryError.readFailed('locations/loc-center', 'down'),
+            ),
+        },
+      });
+
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector(
+          '[data-testid="menu-staff-day-date"]',
+        ),
+      ).toBeNull();
     });
 
     /**

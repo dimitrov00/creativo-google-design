@@ -1,23 +1,18 @@
 import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject, Observable, Subject } from 'rxjs';
 import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-  Principal,
-  PrincipalId,
-  Result as LegacyResult,
-  activePrincipal,
-  onboardingPrincipal,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
-import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
-import { AccountStatus } from '@core/components';
+  AUTH_SESSION_PORTS,
+  PROFILE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { AccountStatus, type Principal, Role } from '@core/components';
 import { Profile, type User } from '@core/entities';
 import type { ProfilePorts } from '@core/ports';
 import { RepositoryError, Result, UserId } from '@core/primitives';
 import {
   blockedUserFixture,
+  memoryAuthSessionPorts,
   memoryProfilePorts,
+  principalFixture,
   provisionedUserFixture,
   registeredUserFixture,
 } from '@core/testing';
@@ -28,18 +23,11 @@ const LIVE_QUERY_FAILED: ProfileResult = Result.err(
   RepositoryError.readFailed('users/user_1', 'Live query failed'),
 );
 
-function unwrap<T, E>(result: LegacyResult<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
+function active(uid: string): Principal {
+  return principalFixture.client(UserId.of(uid));
 }
 
-function active(uid: string): Principal {
-  return unwrap(
-    activePrincipal(unwrap(PrincipalId.create(uid)), [
-      roleFromPrimitive('client'),
-    ]),
-  );
-}
+const ANONYMOUS = principalFixture.anonymous();
 
 /** Jane Doe, registered — the flat `users/{uid}` body as stored. */
 function user(uid = 'user_1'): User {
@@ -96,8 +84,8 @@ function harness(initial: Principal) {
   TestBed.configureTestingModule({
     providers: [
       {
-        provide: AUTH_GATEWAY,
-        useValue: { observePrincipal: () => principal.asObservable() },
+        provide: AUTH_SESSION_PORTS,
+        useValue: memoryAuthSessionPorts({ principals$: principal }),
       },
       {
         provide: PROFILE_PORTS,
@@ -129,8 +117,22 @@ function harness(initial: Principal) {
 }
 
 describe('AccountStateService', () => {
+  it('reads the session’s ecs principal — its roles once onboarded, its account id once signed in', () => {
+    const { service, signIn } = harness(ANONYMOUS);
+    expect(service.principal()).toEqual(ANONYMOUS);
+    expect(service.roles()).toBeNull();
+    expect(service.userId()).toBeNull();
+
+    signIn(principalFixture.onboarding(UserId.of('user_1')));
+    expect(service.roles()).toBeNull();
+    expect(service.userId()).toBe('user_1');
+
+    signIn(principalFixture.staff(UserId.of('user_1'), [Role.Barber]));
+    expect(service.roles()).toEqual([Role.Barber]);
+  });
+
   it('clears the account and loading flag for an anonymous principal, and listens to nothing', () => {
-    const { service, observeProfile } = harness(ANONYMOUS_PRINCIPAL);
+    const { service, observeProfile } = harness(ANONYMOUS);
 
     expect(service.account()).toBeNull();
     expect(service.accountLoading()).toBe(false);
@@ -188,7 +190,7 @@ describe('AccountStateService', () => {
 
   it('keeps one listener across token refreshes and the onboarding → active flip', () => {
     const { service, live, observeProfile, signIn } = harness(
-      onboardingPrincipal(unwrap(PrincipalId.create('user_1'))),
+      principalFixture.onboarding(UserId.of('user_1')),
     );
     live().snapshots.next(Result.ok(null));
 
@@ -221,7 +223,7 @@ describe('AccountStateService', () => {
     const { service, live, signIn } = harness(active('user_1'));
     live().snapshots.next(Result.ok(user()));
 
-    signIn(ANONYMOUS_PRINCIPAL);
+    signIn(ANONYMOUS);
 
     expect(live().detached).toBe(true);
     expect(service.account()).toBeNull();

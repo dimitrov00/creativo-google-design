@@ -8,23 +8,22 @@ import {
   Seat,
   SeatOccupant,
   SubjectRelationship,
+  RequestedSubjectRole,
 } from '@core/components';
 import {
   BarberId,
   BusyKey,
+  ClientOperationId,
   CustomerId,
   OperationId,
   SeatId,
   ServiceId,
   UserId,
-} from '@core/primitives';
-import { type Appointment, Collections } from '@core/entities';
-import {
   CarriedSeatRefusal,
   MoveErrorCode,
-  MoveSubjectRole,
-  ZonedTimeSystem,
-} from '@core/systems';
+} from '@core/primitives';
+import { type Appointment, Collections } from '@core/entities';
+import { ZonedTimeSystem } from '@core/systems';
 import {
   type RescheduleAppointmentCommand,
   rescheduleAppointment,
@@ -79,7 +78,11 @@ const BEARD = ServiceId.of('svc-beard');
 const THURSDAY = localDate('2026-10-01');
 const FRIDAY = localDate('2026-10-02');
 const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
-const ATTEMPT = 'attempt-0123456789abcdef';
+const ATTEMPT = ((): ClientOperationId => {
+  const id = ClientOperationId.parse('attempt-0123456789abcdef');
+  if (!id.ok) throw new Error('a broken fixture');
+  return id.value;
+})();
 
 function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
   return Object.fromEntries(
@@ -122,15 +125,17 @@ const MOVE: RescheduleAppointmentCommand = {
   appointmentId: FIXTURE_IDS.appointment,
   callerUserId: FIXTURE_IDS.client,
   locationId: FIXTURE_IDS.location,
+  // The shop's wall clock — the pipeline places it on the location's zone (4A-4).
+  localDate: FRIDAY,
   seats: [
     {
+      lineId: 'line-1',
       serviceId: FIXTURE_IDS.service,
       variantId: null,
       barberId: FIXTURE_IDS.barber,
       barberPreference: null,
-      startUtcMs: utcMs('2026-10-02T14:00:00.000+03:00'),
-      moveSubjectRole: MoveSubjectRole.Self,
-      label: null,
+      startMinutes: 14 * 60,
+      subject: { requestedSubjectRole: RequestedSubjectRole.Self },
     },
   ],
   attemptId: null,

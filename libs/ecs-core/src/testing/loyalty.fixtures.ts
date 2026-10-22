@@ -8,6 +8,7 @@ import type {
   BadgeCategory,
   BadgeProgress,
   BadgeSeries,
+  GiftVoucher,
   JournalEntry,
   LoyaltyAccount,
   RewardCatalogItem,
@@ -38,9 +39,9 @@ import { deepFreeze } from './deep-freeze';
  * Three families, one story:
  *
  * - the loyalty JSON files the dev seed and the e2e seed read BY PATH or as
- *   JSON (`tools/seed/loyalty.mjs` the catalogue and the two accounts,
- *   `tools/seed/promotions.mjs` the vouchers): every document exactly as
- *   Firestore holds it — the FLAT entity body minus its id (Laws 5–7):
+ *   JSON (`tools/seed/loyalty.mjs` the catalogue and the two accounts;
+ *   `tools/seed/promotions.spec.mjs` holds the seed's vouchers to
+ *   `vouchers.json`): every document exactly as Firestore holds it — the FLAT entity body minus its id (Laws 5–7):
  *   SCREAMING tags, `*UtcMs` instants beside their Sofia `*LocalDate` days
  *   (T5: written together from one reading), the rhythm's states as the
  *   `streaks` array, the journal keyed by the client RECORD (D29). True on
@@ -49,8 +50,9 @@ import { deepFreeze } from './deep-freeze';
  *   a worker shares them, so none may write into them. `Json<…>` below
  *   holds each file to its entity's shape at compile time;
  * - the same documents as ENTITIES (`loyaltyCatalogFixture()`,
- *   `loyaltyAccountFixtures`), ids spread in — what the in-memory doubles
- *   answer and the store and presenter specs start from;
+ *   `loyaltyAccountFixtures`, `giftVoucherFixtures()`), ids spread in —
+ *   what the in-memory doubles answer and the store and presenter specs
+ *   start from;
  * - the rhythm's rule as entities — the head and its first version as the
  *   dev shop opened them, complete and overridable field by field, for the
  *   publish pipeline's specs.
@@ -128,12 +130,26 @@ export const loyaltyAccountJson = deepFreeze({
 });
 
 /**
- * `vouchers.json` — `{ giftVouchers: { [id]: body } }`. Георги
- * (`dev-client-1`) holds three (one to spend, one spent, one voided),
- * Мартин (`dev-client-2`) one, and one is paper: nobody's until its code is
- * presented.
+ * `vouchers.json`'s layout: `giftVouchers/{id}` → the flat `GiftVoucher`
+ * body (the `VoucherLifecycle` variant at the root, money in `*Cents` beside
+ * its `currency`, `*UtcMs` instants beside the Sofia `expiresLocalDate`, the
+ * holder's client record (`CustomerId.forUser(uid)` with the production
+ * sha256, D29) beside the account that reads it).
  */
-export const giftVouchersJson = deepFreeze(vouchersJson);
+export type GiftVouchersJson = {
+  readonly giftVouchers: JsonCollection<GiftVoucher>;
+};
+
+/**
+ * `vouchers.json` — `{ giftVouchers: { [id]: body } }`, true on
+ * `FIXTURE_TODAY`. Георги (`dev-client-1`) holds three (`GIFT50` with
+ * 25,00 € left of 50,00 € to the end of 31.12.2026, one spent, one the shop
+ * voided), Мартин (`dev-client-2`) `GIFT2025`, whole, and `GIFT5` is paper:
+ * nobody's until its code is presented.
+ */
+export const giftVouchersJson = deepFreeze(
+  vouchersJson satisfies GiftVouchersJson,
+);
 
 /**
  * A stored body as its entity, the id spread in — the ONE cast of these
@@ -232,6 +248,19 @@ export const loyaltyAccountFixtures: {
   georgi: holder(loyaltyAccountJson.georgi),
   martin: holder(loyaltyAccountJson.martin),
 };
+
+/**
+ * The five gift vouchers of `vouchers.json` as entities, ids spread in, in
+ * Firestore's id order — keyed by the production record ids the file holds
+ * (a spec that resolves records with `customerOf` re-keys them).
+ */
+export function giftVoucherFixtures(): readonly GiftVoucher[] {
+  return VOUCHERS;
+}
+
+const VOUCHERS: readonly GiftVoucher[] = deepFreeze(
+  collection<GiftVoucher>(giftVouchersJson.giftVouchers),
+);
 
 /** A fixture instant that is one by construction (a literal checked by the spec). */
 function instant(raw: number): UtcEpochMs {

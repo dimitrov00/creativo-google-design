@@ -7,7 +7,6 @@ import {
   Result,
   type TimeZone,
   type UtcEpochMs,
-  defect,
 } from '@core/primitives';
 import {
   StreakIntervalRule,
@@ -39,13 +38,6 @@ import {
  * on the card is what the rule really does and never a drawing of it.
  */
 
-/** The shop's zone: the day a statistic's visit began in, and the day a version was published on. */
-export const RHYTHM_SHOP_ZONE: TimeZone = (() => {
-  const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
-  // Unreachable: a constant IANA name.
-  return zone.ok ? zone.value : defect('Europe/Sofia is no zone');
-})();
-
 /** A page of the walk, and how many pages it may take: five of 200. */
 export const RHYTHM_PREVIEW_PAGE_SIZE = 200;
 export const RHYTHM_PREVIEW_PAGES = 5;
@@ -74,21 +66,22 @@ const NO_FACTS: StreakFacts = {
 
 /**
  * Clients' statistics as the projector's facts, through ONE reader per
- * walk: it places the first instant of each shop day once (a statistic
- * holds a visit's day and minute, never its instant, so the visit is
- * stamped with the first instant of its Sofia day — flatten-spec T3),
+ * walk: it places the first instant of each shop day once on the shop's
+ * `zone` (a statistic holds a visit's day and minute, never its instant,
+ * so the visit is stamped with the first instant of its shop day —
+ * flatten-spec T3),
  * however many people the walk reads. Every worked visit counts and
  * nothing is known of what the shop called off, of a visit on the book or
  * of a pause: that is why the preview is labelled «приблизително».
  */
-export function streakFactsReader(): (
-  record: ClientStatsRecord,
-) => StreakFacts {
+export function streakFactsReader(
+  zone: TimeZone,
+): (record: ClientStatsRecord) => StreakFacts {
   const dayStarts = new Map<LocalDate, UtcEpochMs>();
   const startOf = (day: LocalDate): UtcEpochMs => {
     let start = dayStarts.get(day);
     if (start === undefined) {
-      start = ZonedTimeSystem.startOfLocalDay(day, RHYTHM_SHOP_ZONE);
+      start = ZonedTimeSystem.startOfLocalDay(day, zone);
       dayStarts.set(day, start);
     }
     return start;
@@ -107,20 +100,24 @@ export function streakFactsReader(): (
 }
 
 /** One client's statistics as the projector's facts (`streakFactsReader`, for one). */
-export function streakFactsOf(record: ClientStatsRecord): StreakFacts {
-  return streakFactsReader()(record);
+export function streakFactsOf(
+  record: ClientStatsRecord,
+  zone: TimeZone,
+): StreakFacts {
+  return streakFactsReader(zone)(record);
 }
 
 /**
  * The walk: `clientStats` in the order of its ids (client records, D29), a
  * page after a page, until nobody is left or the fifth page is read. A page
  * that fails fails the walk: a preview over half the shop would be a wrong
- * number, not an estimate.
+ * number, not an estimate. The days are placed on the shop's `zone`.
  */
 export async function readRhythmPreviewFacts(
   stats: ClientStatsPagePorts,
+  zone: TimeZone,
 ): Promise<Result<RhythmPreviewFacts, RepositoryError>> {
-  const factsOf = streakFactsReader();
+  const factsOf = streakFactsReader(zone);
   const clients: StreakFacts[] = [];
   let after: CustomerId | null = null;
   for (let page = 0; page < RHYTHM_PREVIEW_PAGES; page += 1) {
@@ -142,13 +139,15 @@ export async function readRhythmPreviewFacts(
 
 /**
  * The facts, read once and kept: a record of closures over ONE walk. The
- * first `read()` starts the walk; every later one answers what it read (or
- * is still reading), a walk that failed included: a failure is an answer,
- * and asking it again by itself would read the shop twice behind one
- * notice. «Опитай пак» is `forget()`, then `read()`.
+ * first `read(zone)` starts the walk on the shop's zone; every later one
+ * answers what it read (or is still reading), a walk that failed included:
+ * a failure is an answer, and asking it again by itself would read the
+ * shop twice behind one notice. «Опитай пак» is `forget()`, then `read()`.
  */
 export type RhythmPreviewSource = {
-  readonly read: () => Promise<Result<RhythmPreviewFacts, RepositoryError>>;
+  readonly read: (
+    zone: TimeZone,
+  ) => Promise<Result<RhythmPreviewFacts, RepositoryError>>;
   /** The next `read()` walks again. */
   readonly forget: () => void;
   /** The walk was made and failed: there is nothing to wait for until `forget()`. */
@@ -160,9 +159,11 @@ export function rhythmPreviewSource(
 ): RhythmPreviewSource {
   let walk: Promise<Result<RhythmPreviewFacts, RepositoryError>> | null = null;
   let walkFailed = false;
-  const read = (): Promise<Result<RhythmPreviewFacts, RepositoryError>> => {
+  const read = (
+    zone: TimeZone,
+  ): Promise<Result<RhythmPreviewFacts, RepositoryError>> => {
     if (walk !== null) return walk;
-    const started = readRhythmPreviewFacts(stats).then((facts) => {
+    const started = readRhythmPreviewFacts(stats, zone).then((facts) => {
       // A walk that was forgotten meanwhile says nothing of the one after it.
       if (walk === started) walkFailed = !facts.ok;
       return facts;
@@ -230,11 +231,13 @@ const SAMPLE_VISITS_BEFORE_THE_MISS = 6;
  * rule is at least as long as. The late visit falls on the day the missed
  * due date would move to under a protection: past the grace, so the miss
  * is judged, and no later than a protection forgives. Each visit is
- * stamped with the first instant of its Sofia day, as the walk's are.
+ * stamped with the first instant of its shop day on `zone`, as the walk's
+ * are.
  */
 export function sampleRhythmFacts(
   rule: StreakRule,
   today: string,
+  zone: TimeZone,
 ): StreakFacts {
   // Plain calendar arithmetic on the shop's day (no zone moves a civil date).
   const day = LocalDate.parse(today);
@@ -259,7 +262,7 @@ export function sampleRhythmFacts(
     visits.push({
       localDate,
       counted: true,
-      utcEpochMs: ZonedTimeSystem.startOfLocalDay(localDate, RHYTHM_SHOP_ZONE),
+      utcEpochMs: ZonedTimeSystem.startOfLocalDay(localDate, zone),
     });
   }
   return { ...NO_FACTS, visits };
@@ -273,13 +276,14 @@ export function sampleRhythmFacts(
 export function sampleRhythmRun(
   rule: StreakRule,
   today: string,
+  zone: TimeZone,
 ): StreakState | null {
   const day = LocalDate.parse(today);
   if (!day.ok) return null;
   return StreakSystem.project(
     StreakRule.DEFAULT_DEFINITION_ID,
     rule,
-    sampleRhythmFacts(rule, day.value),
+    sampleRhythmFacts(rule, day.value, zone),
     day.value,
   );
 }

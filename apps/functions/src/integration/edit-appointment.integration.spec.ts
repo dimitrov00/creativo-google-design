@@ -10,29 +10,28 @@ import {
   SeatOccupant,
   VoucherCode,
   VoucherLifecycle,
+  EditCommand,
+  RequestedSubjectRole,
 } from '@core/components';
 import {
   AppointmentId,
   BarberId,
+  BookingErrorCode,
   BusyKey,
   Currency,
   GiftVoucherId,
   OperationId,
   SeatId,
+  StaffEditErrorCode,
 } from '@core/primitives';
 import {
   type Appointment,
   type GiftVoucher,
   Collections,
 } from '@core/entities';
-import {
-  EditCommand,
-  MoveSubjectRole,
-  RequestedSubjectRole,
-} from '@core/systems';
+import type { BookingCall } from '@core/components';
 import {
   type EditAppointmentCommand,
-  type EditCommandInput,
   editAppointment,
   rescheduleAppointment,
 } from '@core/pipelines';
@@ -58,9 +57,9 @@ import { sha256Hex } from '../adapters/crypto.adapter';
 import { toHttpsError } from '../edge';
 import {
   encodeStaffEditAppointmentAnswer,
-  settle,
   staffEditAppointmentRefusal,
 } from '../wire/booking.wire';
+import { settle } from '../wire/wire-read';
 import { firestoreAccountPorts } from '../adapters/firestore-accounts.adapter';
 import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
 import { firestoreCouponPorts } from '../adapters/firestore-coupons.adapter';
@@ -210,7 +209,8 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       commands: [
         {
           editCommand: EditCommand.Move,
-          startUtcMs: thursdayAt(startHour),
+          localDate: THURSDAY,
+          startMinutes: at(startHour),
           seatIds: null,
         },
       ],
@@ -269,15 +269,16 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       appointmentId: FIXTURE_IDS.appointment,
       callerUserId: FIXTURE_IDS.client,
       locationId: FIXTURE_IDS.location,
+      localDate: THURSDAY,
       seats: [
         {
+          lineId: 'line-1',
           serviceId: FIXTURE_IDS.service,
           variantId: null,
           barberId: FIXTURE_IDS.barber,
           barberPreference: null,
-          startUtcMs: thursdayAt(14),
-          moveSubjectRole: MoveSubjectRole.Self,
-          label: null,
+          startMinutes: 14 * 60,
+          subject: { requestedSubjectRole: RequestedSubjectRole.Self },
         },
       ],
       attemptId: null,
@@ -387,7 +388,8 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
    * strangers) still takes any save that makes it no worse — the pair left
    * where it stood, dragged whole, or one of its seats moved — and a batch
    * that puts a person in two chairs ANEW is refused on the wire as
-   * `booking.commit.invalid_input` naming the field. The commands are the
+   * `BOOKING_INVALID_INPUT` naming the field (the person key stays on the
+   * server, 4A-4). The commands are the
    * decoded ones (the payloads' decoding is `booking.wire.spec.ts`'s); the
    * answer and the refusal leave through the callable's own settle and
    * `toHttpsError`, as `main.ts` wires them.
@@ -433,7 +435,7 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
 
     /** One save from the desk, answered as the callable answers it (a refusal thrown). */
     async function call(
-      commands: EditCommandInput | readonly EditCommandInput[],
+      commands: BookingCall.EditCommand | readonly BookingCall.EditCommand[],
       expectedVersion: number | null = null,
     ): Promise<unknown> {
       const settled = settle(
@@ -453,12 +455,12 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       return settled.value;
     }
 
-    const repriceSeatA: EditCommandInput = {
+    const repriceSeatA: BookingCall.EditCommand = {
       editCommand: EditCommand.Reprice,
       seatId: SeatId.of('seat-a'),
       priceCents: cents(3000),
     };
-    const removeSeatB: EditCommandInput = {
+    const removeSeatB: BookingCall.EditCommand = {
       editCommand: EditCommand.RemoveSeat,
       seatId: SeatId.of('seat-b'),
     };
@@ -466,9 +468,10 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       hour: number,
       minute = 0,
       seatIds: readonly string[] | null = null,
-    ): EditCommandInput => ({
+    ): BookingCall.EditCommand => ({
       editCommand: EditCommand.Move,
-      startUtcMs: thursdayAt(hour, minute),
+      localDate: THURSDAY,
+      startMinutes: at(hour, minute),
       seatIds: seatIds === null ? null : seatIds.map((id) => SeatId.of(id)),
     });
     const addGuest = (
@@ -476,7 +479,7 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       barberId: BarberId,
       label: string,
       hour: number,
-    ): EditCommandInput => {
+    ): BookingCall.EditCommand => {
       const guest = SeatLabel.parse(label);
       if (!guest.ok) throw new Error('a broken guest label');
       return {
@@ -485,7 +488,8 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
         serviceId: FIXTURE_IDS.service,
         variantId: null,
         barberId,
-        startUtcMs: thursdayAt(hour),
+        localDate: THURSDAY,
+        startMinutes: at(hour),
         durationMinutes: duration(30),
         addedSubject: {
           requestedSubjectRole: RequestedSubjectRole.Guest,
@@ -527,8 +531,8 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       ).rejects.toMatchObject({
         code: 'invalid-argument',
         details: {
-          code: 'booking.commit.invalid_input',
-          params: { field: 'person_overlap' },
+          errorCode: BookingErrorCode.InvalidInput,
+          field: 'person_overlap',
         },
       });
       expect((await pair())['revision']).toBe(1);
@@ -599,8 +603,8 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       await expect(call(readdSeatB, 3)).rejects.toMatchObject({
         code: 'invalid-argument',
         details: {
-          code: 'booking.commit.invalid_input',
-          params: { field: 'person_overlap' },
+          errorCode: BookingErrorCode.InvalidInput,
+          field: 'person_overlap',
         },
       });
       expect((await pair())['revision']).toBe(3);
@@ -613,8 +617,9 @@ describe('editAppointment — one named intent, one change (emulator)', () => {
       await expect(call(moveTo(12), 1)).rejects.toMatchObject({
         code: 'failed-precondition',
         details: {
-          code: 'booking.staffEdit.stale',
-          params: { expected: '1', actual: '2' },
+          errorCode: StaffEditErrorCode.Stale,
+          expected: 1,
+          actual: 2,
         },
       });
       expect((await pair())['revision']).toBe(2);

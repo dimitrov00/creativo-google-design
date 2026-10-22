@@ -12,28 +12,20 @@ import {
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
-import { ZonedDateTime } from '@creativo/application/accounts';
-import {
-  type BookingContactProps,
-  type Result,
-  ok,
-} from '@creativo/application/booking';
-import { CLOCK } from '@creativo/application/shared';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
-import { BirthDate, E164, Email } from '@core/components';
+import { GATEWAY_PORTS } from '@creativo/infrastructure/firebase-app';
+import {
+  BirthDate,
+  BookingContact,
+  E164,
+  Email,
+  type ProfileEdits,
+} from '@core/components';
 import type { User } from '@core/entities';
-import type { ProfilePorts } from '@core/ports';
-import { RepositoryError, Result as EcsResult, UserId } from '@core/primitives';
-import { memoryProfilePorts, registeredUserFixture } from '@core/testing';
+import { Callables } from '@core/ports';
+import { PipelineError, Result, UserId } from '@core/primitives';
+import { registeredUserFixture, scriptedGatewayPorts } from '@core/testing';
 import { BookingContactSheet } from './booking-contact-sheet';
-
-function unwrap<T>(result: Result<T, unknown>): T {
-  if (result.isFailure()) throw new Error('fixture failed');
-  return result.value;
-}
-
-const TODAY = unwrap(ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'));
 
 /** Ада Тестова, registered — her `users/{uid}` body as stored. */
 const PROFILE: User = registeredUserFixture({
@@ -72,8 +64,9 @@ interface SheetInternals {
 interface Harness {
   fixture: ComponentFixture<BookingContactSheet>;
   host: HTMLElement;
-  written: User[];
-  emitted: BookingContactProps[];
+  /** Every profile edit the `updateProfile` callable was sent, in order. */
+  written: ProfileEdits[];
+  emitted: BookingContact.Present[];
   refresh: ReturnType<typeof vi.fn>;
   settle(): Promise<void>;
   typePhone(value: string | null): Promise<void>;
@@ -81,16 +74,13 @@ interface Harness {
 
 async function render(options?: {
   profile?: User | null;
-  /** The owner write fails in the store (a rule denial), writing nothing. */
+  /** The profile write fails on the server (its store, or the network). */
   writeFails?: boolean;
 }): Promise<Harness> {
-  const written: User[] = [];
-  const emitted: BookingContactProps[] = [];
+  const written: ProfileEdits[] = [];
+  const emitted: BookingContact.Present[] = [];
   const refresh = vi.fn();
   const profile = options?.profile === undefined ? PROFILE : options.profile;
-  const users = new Map<UserId, User>();
-  if (profile !== null) users.set(profile.id, profile);
-  const memory = memoryProfilePorts(users);
 
   await TestBed.configureTestingModule({
     imports: [BookingContactSheet],
@@ -101,33 +91,30 @@ async function render(options?: {
         useValue: { account: signal(profile), refresh },
       },
       {
-        provide: PROFILE_PORTS,
-        useValue: {
-          ...memory,
-          writeOwnProfile: async (userId, decide) => {
+        // The ONE profile write there is: the `updateProfile` callable.
+        provide: GATEWAY_PORTS,
+        useValue: scriptedGatewayPorts({
+          [Callables.UpdateProfile]: (edits) => {
             if (options?.writeFails) {
-              return EcsResult.err(
-                RepositoryError.writeFailed(`users/${userId}`, 'denied'),
-              );
+              return Result.err(PipelineError.fromWire('internal', null));
             }
-            const before = users.get(userId);
-            const result = await memory.writeOwnProfile(userId, decide);
-            const after = users.get(userId);
-            if (after !== undefined && after !== before) written.push(after);
-            return result;
+            written.push(edits);
+            return Result.ok({ changed: true });
           },
-        } satisfies ProfilePorts,
+        }),
       },
-      { provide: CLOCK, useValue: { now: () => ok(TODAY) } },
     ],
   }).compileComponents();
 
   const fixture = TestBed.createComponent(BookingContactSheet);
   fixture.componentInstance.saved.subscribe((contact) => emitted.push(contact));
+  // The phone rules arrive lazily (`phone.lazy.ts`): each pass lets a
+  // pending load land before the view is read.
   const settle = async () => {
     for (let pass = 0; pass < 4; pass++) {
       fixture.detectChanges();
       await fixture.whenStable();
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
   };
   await settle();
@@ -219,9 +206,9 @@ describe('BookingContactSheet — the profile save is the name only (FIX 2)', ()
 
     await click(harness, 'booking-contact-save');
 
-    expect(harness.written).toHaveLength(1);
-    expect(harness.written[0]?.firstName).toBe('Адела');
-    expect(harness.written[0]?.lastName).toBe('Тестова');
+    expect(harness.written).toEqual([
+      { firstName: 'Адела', lastName: 'Тестова', birthDate: null },
+    ]);
   });
 
   it('counts a change of case as a name to save', async () => {
@@ -257,7 +244,7 @@ describe('BookingContactSheet — the profile save is the name only (FIX 2)', ()
     expect(find(harness.host, FOOTNOTE)).toBeNull();
   });
 
-  it('writes the typed name with the STORED phone and e-mail, and books with the typed ones', async () => {
+  it('sends the profile the typed NAME alone, and books with the typed phone and e-mail', async () => {
     const harness = await render();
     await type(harness, 'booking-contact-name', 'Ада Иванова');
     await harness.typePhone('+359887654321');
@@ -266,24 +253,59 @@ describe('BookingContactSheet — the profile save is the name only (FIX 2)', ()
 
     await click(harness, 'booking-contact-save');
 
-    expect(harness.written).toHaveLength(1);
-    const [written] = harness.written;
-    expect(written?.firstName).toBe('Ада');
-    expect(written?.lastName).toBe('Иванова');
-    expect(written?.phone).toBe('+359881234567');
-    expect(written?.email).toBe('ada@example.com');
-    expect(written?.birthDate).toBe('1990-05-01');
-    // The search keys index the STORED contact, the new names.
-    expect(written?.searchName).toBe('ада иванова');
+    // Only the names travel: the birth date is kept (`null`), and the phone
+    // and e-mail are the account's, never part of the edit.
+    expect(harness.written).toEqual([
+      { firstName: 'Ада', lastName: 'Иванова', birthDate: null },
+    ]);
 
     expect(harness.emitted).toEqual([
       {
-        name: 'Ада Иванова',
-        phone: '+359887654321',
-        email: 'ada@work.example.com',
-        note: null,
+        contactName: 'Ада Иванова',
+        contactPhone: '+359887654321',
+        contactEmail: 'ada@work.example.com',
+        contactNote: null,
       },
     ]);
+  });
+
+  it('keeps the visit’s own note on the contact it saves', async () => {
+    const harness = await render();
+    harness.fixture.componentRef.setInput('uiContact', {
+      contactName: 'Ада Тестова',
+      contactPhone: E164.of('+359881234567'),
+      contactEmail: null,
+      contactNote: 'Allergic to lavender',
+    } satisfies BookingContact);
+    await harness.settle();
+
+    await click(harness, 'booking-contact-save');
+
+    expect(harness.emitted[0]?.contactNote).toBe('Allergic to lavender');
+  });
+
+  it('seeds the phone field’s country from the stored number', async () => {
+    const harness = await render();
+
+    expect(
+      (
+        harness.fixture.componentInstance as unknown as {
+          phoneCountry(): string | null;
+        }
+      ).phoneCountry(),
+    ).toBe('BG');
+  });
+
+  it('refuses a contact the domain refuses, in its own words — and saves nothing', async () => {
+    const harness = await render();
+    await type(harness, 'booking-contact-email', 'not-an-email');
+
+    await click(harness, 'booking-contact-save');
+
+    expect(harness.emitted).toEqual([]);
+    expect(
+      find(harness.host, 'booking-contact-error')?.textContent?.trim(),
+    ).toBe('SCHEDULING_BOOKING_CONTACT_INVALID_EMAIL');
   });
 
   it('leaves the refresh to the live profile listener', async () => {

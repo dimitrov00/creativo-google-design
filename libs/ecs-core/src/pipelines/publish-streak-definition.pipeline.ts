@@ -21,6 +21,7 @@ import {
   StreakDefinitionVersionId,
   StreakPublishError,
   StreakRuleField,
+  type TimeZone,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -34,10 +35,11 @@ import {
 import type {
   ClockPorts,
   CommitPorts,
+  DefaultLocationPorts,
   FlagsPorts,
   HashPorts,
+  LocationLoadPorts,
   ReadTx,
-  TenantZonePorts,
 } from '@core/ports';
 import {
   type AuditRowPlan,
@@ -47,6 +49,7 @@ import {
   StreakRuleSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import { readShopZone } from './shop-zone-read.pipeline';
 
 /**
  * `publishStreakDefinition` / `withdrawStreakDefinition` — the rhythm's
@@ -76,7 +79,9 @@ import {
  *   invariant `id == StreakDefinitionVersionId.forVersion(version)` every
  *   writer keeps.
  * - **The server's clock and calendar**, never the caller's: `nowUtcMs`
- *   once, the shop day on the tenant's zone (`ZonedTimeSystem`, T5), and
+ *   once, the shop day on the default location's zone (`ZonedTimeSystem`,
+ *   T5; F-4 — a rhythm names no shop; a zone that cannot be read is the
+ *   act's store failure, 4A-2 (e)), and
  *   the notice a stricter rule owes once clients can see their rhythm
  *   (`loyalty.selfView`, `StreakRule.RULE_CHANGE_NOTICE_DAYS`).
  *
@@ -90,7 +95,8 @@ export type PublishStreakDefinitionPorts = CommitPorts &
   ClockPorts &
   HashPorts &
   FlagsPorts &
-  TenantZonePorts;
+  LocationLoadPorts &
+  DefaultLocationPorts;
 
 /**
  * «Запази», decoded at the wire. The verified caller sits FLAT at the
@@ -179,8 +185,10 @@ export const publishStreakDefinition =
     const actor = cmd.callerActor;
     const publishedByUserId = admitted.value;
     // Read once, before the transaction: `decide` may run more than once.
+    const zone = await readShopZone(ports)(null);
+    if (!zone.ok) return zone;
     const nowUtcMs = ports.nowUtcMs();
-    const today = shopDay(nowUtcMs, ports);
+    const today = shopDay(nowUtcMs, zone.value);
     const policy: StreakNoticePolicy = {
       clientsSeeRhythm: ports.flagOn(FlagName.LoyaltySelfView),
       noticeDays: StreakRule.RULE_CHANGE_NOTICE_DAYS,
@@ -279,8 +287,10 @@ export const withdrawStreakDefinition =
       return Result.err(StreakPublishError.callerUnauthenticated());
     }
     const actor = cmd.callerActor;
+    const zone = await readShopZone(ports)(null);
+    if (!zone.ok) return zone;
     const nowUtcMs = ports.nowUtcMs();
-    const today = shopDay(nowUtcMs, ports);
+    const today = shopDay(nowUtcMs, zone.value);
     const call = StreakPublishCall.withdraw(
       cmd.requestId,
       cmd.streakId,
@@ -477,7 +487,7 @@ function auditPath(digest: string): DocPath {
   return [Collections.AuditLog, AuditEntryId.of(digest)];
 }
 
-/** The shop day the server's clock falls on, on the tenant's zone. */
-function shopDay(nowUtcMs: UtcEpochMs, ports: TenantZonePorts): LocalDate {
-  return ZonedTimeSystem.toLocal(nowUtcMs, ports.tenantTimeZone).localDate;
+/** The shop day the server's clock falls on, on the default location's zone. */
+function shopDay(nowUtcMs: UtcEpochMs, timeZone: TimeZone): LocalDate {
+  return ZonedTimeSystem.toLocal(nowUtcMs, timeZone).localDate;
 }

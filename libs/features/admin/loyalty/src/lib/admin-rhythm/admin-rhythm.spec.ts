@@ -10,12 +10,16 @@ import {
 } from '@jsverse/transloco';
 import { NEVER, type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ZonedDateTime } from '@creativo/application/booking';
 import {
   CATALOG_PORTS,
   CLIENT_STATS_READ_PORTS,
+  CLOCK_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  ID_PORTS,
+  LOCATION_LOAD_PORTS,
   STREAK_DEFINITION_PORTS,
   STREAK_PUBLISH_PORTS,
+  provideFlags,
 } from '@creativo/infrastructure/firebase-app';
 import {
   ClientStats,
@@ -46,10 +50,16 @@ import {
   ServiceId,
   StreakPublishError,
 } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import {
+  FIXTURE_TIME_ZONE,
   type StreakWorld,
+  locationFixture,
   memoryCatalogReadPorts,
   memoryClientStatsReadPorts,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStreakDefinitionPorts,
   memoryStreakPublishGatewayPorts,
   memoryStreakWorld,
@@ -62,11 +72,6 @@ import {
   unwrapOk,
   utcMs,
 } from '@core/testing';
-import {
-  CLOCK,
-  ID_GENERATOR,
-  provideFeatureFlags,
-} from '@creativo/application/shared';
 import {
   ADMIN_RHYTHM_STREAK_ID,
   AdminRhythmStore,
@@ -218,7 +223,7 @@ async function rig(options: RigOptions = {}) {
     imports: [AdminRhythm],
     providers: [
       provideRouter([]),
-      provideFeatureFlags(options.flags ?? { 'loyalty.streaks': true }),
+      provideFlags(options.flags ?? { 'loyalty.streaks': true }),
       ...provideTransloco({
         config: {
           availableLangs: ['bg', 'en'],
@@ -229,14 +234,28 @@ async function rig(options: RigOptions = {}) {
         loader: CatalogueLoader,
       }),
       {
-        provide: CLOCK,
-        useValue: { now: (zone: string) => ZonedDateTime.fromISO(NOW, zone) },
+        provide: CLOCK_PORTS,
+        useValue: {
+          nowUtcMs: () =>
+            unwrapOk(ZonedTimeSystem.parseIsoIn(NOW, FIXTURE_TIME_ZONE)),
+        },
       },
       {
-        provide: ID_GENERATOR,
+        provide: ID_PORTS,
         useValue: {
-          next: () => `request-${String((issued += 1)).padStart(6, '0')}`,
+          nextId: () => `request-${String((issued += 1)).padStart(6, '0')}`,
         },
+      },
+      // The shop's zone: the default location's, the fixture centre shop's.
+      {
+        provide: LOCATION_LOAD_PORTS,
+        useValue: memoryLocationLoadPorts(
+          memoryProgramsWorld({ locations: [locationFixture()] }),
+        ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
       {
         provide: STREAK_DEFINITION_PORTS,
@@ -790,6 +809,25 @@ describe('«Запази»', () => {
     expect(text(host, 'admin-rhythm-refusal')).toBe(
       'Правилото беше променено от друг. Виж новото.',
     );
+  });
+
+  it('toasts the not-allowed words, without «Отмени», when the server refuses a caller who is no admin', async () => {
+    const rules = seeded();
+    const { host, fixture } = await rig({ rules });
+    slide(host, 'admin-rhythm-interval-weeks', 8);
+    await settle(fixture);
+    rules.refuseWith(StreakPublishError.callerNotAdmin());
+    click(host, 'admin-rhythm-save');
+    await settle(fixture);
+    expect(text(host, 'admin-rhythm-toast')).toMatch(
+      /^Нямаш право за тази промяна\./,
+    );
+    expect(
+      host.querySelector(
+        '[data-testid="admin-rhythm-toast"] .ui-toast__action',
+      ),
+    ).toBeNull();
+    expect(byId(host, 'admin-rhythm-refusal')).toBeNull();
   });
 });
 

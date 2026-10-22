@@ -27,15 +27,17 @@ import {
 } from '@core/pipelines';
 import { AuditSystem } from '@core/systems';
 import {
+  FIXTURE_IDS,
   localDate,
+  locationFixture,
   pinnedNowUtcMs,
   streakDefinitionFixture,
   streakDefinitionVersionFixture,
   utcMs,
 } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
+import { firestoreCatalogPorts } from '../adapters/firestore-catalog.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
-import { WIRE_ZONE } from '../edge';
 
 /**
  * `publishStreakDefinition` / `withdrawStreakDefinition` against the REAL
@@ -142,7 +144,12 @@ describe('publishStreakDefinition (emulator)', () => {
       `http://${FIRESTORE_HOST}/emulator/v1/projects/${PROJECT_ID}/databases/(default)/documents`,
       { method: 'DELETE' },
     );
-    // The shop as the seed leaves it: the recommended rule in force, its one version.
+    // The shop as the seed leaves it: the recommended rule in force, its one
+    // version — and the default location whose zone names the shop's day
+    // (4A-11, no tenant zone).
+    await db
+      .doc(`${Collections.Locations}/${FIXTURE_IDS.location}`)
+      .set(bodyOf(locationFixture()));
     await db.doc(HEAD).set(bodyOf(streakDefinitionFixture()));
     await db.doc(versionDoc(1)).set(bodyOf(streakDefinitionVersionFixture()));
   });
@@ -152,7 +159,8 @@ describe('publishStreakDefinition (emulator)', () => {
     nowUtcMs: pinnedNowUtcMs(NOW),
     hash: sha256Hex,
     flagOn: () => false,
-    tenantTimeZone: WIRE_ZONE,
+    ...firestoreCatalogPorts(db),
+    defaultLocationId: FIXTURE_IDS.location,
   });
 
   it('writes the flat head, the flat version and the flat row in one transaction', async () => {

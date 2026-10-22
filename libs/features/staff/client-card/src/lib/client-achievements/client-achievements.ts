@@ -33,7 +33,7 @@ import {
 } from '@creativo/ui/modifiers';
 import { AchievementCategoryPage } from '../achievement-category/achievement-category';
 import { AchievementChips } from '../achievement-chips/achievement-chips';
-import type { AchievementScope } from '../client-card.contracts';
+import { AchievementScope } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
 import type {
   AchievementTileVm,
@@ -179,7 +179,7 @@ export class ClientAchievementsPage {
     const chosen = this.chosen();
     return chosen === CHIP_ALL || chosen === CHIP_SEASONS
       ? null
-      : { kind: 'category', categoryId: chosen };
+      : { achievementScope: AchievementScope.Category, categoryId: chosen };
   });
 
   /** Ids of the headings the grids are named by, unique per mounted page. */
@@ -241,11 +241,14 @@ export class ClientAchievementsPage {
   }
 
   protected openSeason(seasonId: string): void {
-    this.openScope.emit({ kind: 'season', seasonId });
+    this.openScope.emit({
+      achievementScope: AchievementScope.Season,
+      seasonId,
+    });
   }
 
   protected openArchive(): void {
-    this.openScope.emit({ kind: 'archive' });
+    this.openScope.emit({ achievementScope: AchievementScope.Archive });
   }
 
   /** AM — «Покажи всички N»: the category's chip is chosen, and the band scrolls under the bar. */

@@ -1,5 +1,6 @@
+import type { MoveRider } from '@core/components';
 import type { Barber, Service, ShopLocation } from '@core/entities';
-import { type MoveRider, MoveSystem } from '@core/systems';
+import { MoveSystem } from '@core/systems';
 
 /*
  * Whether the shop can still serve who a move carries — each rider's barber
@@ -19,7 +20,7 @@ import { type MoveRider, MoveSystem } from '@core/systems';
  * - its barber is off the active list, so the grid never reads their day and
  *   the rider check drops every start;
  * - its service is retired, which the server refuses outright
- *   (`RescheduleBookingUseCase`, `service_unavailable`);
+ *   (the `reschedule-appointment` pipeline, `service_unavailable`);
  * - its variant is retired while the service stays, which the server
  *   refuses the same way (`decideBooking` on `variantId`).
  *
@@ -34,7 +35,7 @@ import { type MoveRider, MoveSystem } from '@core/systems';
  * does.
  *
  * The honest answer is then the phone, not an empty grid to scroll through
- * (`MoveRefusal` `carried_out_of_reach`). WHICH shop the move goes to is
+ * (`MoveRefusalReason.CarriedOutOfReach`). WHICH shop the move goes to is
  * still the client's choice: a shop that cannot serve the party, while
  * another one can, is the schedule step's to say, with the way to that one.
  *

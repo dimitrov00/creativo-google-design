@@ -1,58 +1,37 @@
-import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import {
-  Translation,
-  TranslocoLoader,
-  provideTransloco,
-} from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
+import type { Translation } from '@jsverse/transloco';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-} from '@creativo/application/identity';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
+  CATALOG_PORTS,
+  MEDIA_RESOLVE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { MediaResolvePorts } from '@core/ports';
+import type { Service } from '@core/entities';
+import {
+  BookingCart,
+  BookingFlowStep,
+  PartyRole,
+  SeatKey,
+  ServiceComposition,
+} from '@core/components';
 import {
   BarberId,
-  MEDIA_READER,
-  type MediaReader,
-  ServiceId,
-} from '@creativo/application/catalog';
-import {
-  BOOKING_DRAFT_STORE,
-  BOOKING_GATEWAY,
-  BarberPref,
-  SeatKey,
-  WAITLIST_GATEWAY,
-  ZonedDateTime,
-  ok,
-} from '@creativo/application/booking';
-import {
-  APPOINTMENT_READ_PORTS,
-  CATALOG_PORTS,
-  PROFILE_PORTS,
-  WAITLIST_READ_PORTS,
-} from '@creativo/infrastructure/firebase-app';
-import type { Service } from '@core/entities';
-import { ServiceComposition } from '@core/components';
-import {
-  BarberId as BarberKey,
   MediaRefId,
-  ServiceId as ServiceKey,
+  Result,
+  ServiceId,
   ServiceVariantId,
 } from '@core/primitives';
 import {
-  memoryAppointmentReadPorts,
   memoryCatalogReadPorts,
-  memoryProfilePorts,
-  memoryWaitlistReadPorts,
   serviceFixture,
   termsFixture,
 } from '@core/testing';
-import { CLOCK } from '@creativo/application/shared';
-import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
+import {
+  bookingPortProviders,
+  provideBookingTestI18n,
+} from '../../testing/booking-shell.rig';
 import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from '../client-booking/client-booking';
 
@@ -62,29 +41,11 @@ import { ClientBooking } from '../client-booking/client-booking';
  */
 const COPY: Translation = {
   booking: { party: { guest: 'Guest {{number}}' } },
-  errors: {
-    scheduling: { booking_party: { duplicate_label: 'TAKEN:{{label}}' } },
-  },
+  errors: { SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL: 'TAKEN:{{label}}' },
 };
 
-@Injectable()
-class TestTranslationLoader implements TranslocoLoader {
-  getTranslation(): Observable<Translation> {
-    return of(COPY);
-  }
-}
-
-function provideTestI18n(): EnvironmentProviders[] {
-  return provideTransloco({
-    config: {
-      availableLangs: ['bg', 'en'],
-      defaultLang: 'bg',
-      fallbackLang: 'bg',
-      missingHandler: { logMissingKey: false },
-    },
-    loader: TestTranslationLoader,
-  });
-}
+/** The booker's own cart seat key. */
+const SELF = SeatKey.text(SeatKey.self());
 
 /** Mirrors the seeded shape: a haircut family plus a bundle that holds one. */
 function service(props: {
@@ -110,7 +71,7 @@ function service(props: {
           coverMediaWidth: 1200,
           coverMediaHeight: 1500,
         }),
-    id: ServiceKey.of(props.id),
+    id: ServiceId.of(props.id),
     name: { en: props.id, bg: props.id },
     description: { en: 'x', bg: 'x' },
     ...termsFixture(1500, 30),
@@ -121,14 +82,14 @@ function service(props: {
     offerings: (
       props.performers ?? [{ id: 'ivan', minor: 1450, minutes: 35 }]
     ).map((performer) => ({
-      barberId: BarberKey.of(performer.id),
+      barberId: BarberId.of(performer.id),
       overrides: [],
       ...termsFixture(performer.minor, performer.minutes),
     })),
     locationIds: [],
-    conflictsWith: (props.conflictsWith ?? []).map((id) => ServiceKey.of(id)),
+    conflictsWith: (props.conflictsWith ?? []).map((id) => ServiceId.of(id)),
     ...(props.includes
-      ? ServiceComposition.bundle(props.includes.map((id) => ServiceKey.of(id)))
+      ? ServiceComposition.bundle(props.includes.map((id) => ServiceId.of(id)))
       : ServiceComposition.single()),
     sortOrder: 0,
   });
@@ -154,7 +115,7 @@ interface ShellOptions {
   /** The live catalogue; `CATALOG` by default. */
   readonly catalog?: readonly Service[];
   /** How a cover resolves; to nothing by default. */
-  readonly media?: MediaReader;
+  readonly media?: MediaResolvePorts;
 }
 
 async function renderShell(
@@ -164,65 +125,10 @@ async function renderShell(
     imports: [ClientBooking],
     providers: [
       provideRouter([]),
-      ...provideTestI18n(),
-      { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
-      // The store reads the clock to prune a restored declaration's lapsed
-      // days. Fixed so these specs do not change meaning at midnight.
-      {
-        provide: CLOCK,
-        useValue: {
-          now: (zone: string) =>
-            ZonedDateTime.fromISO('2026-08-03T09:00:00.000+03:00', zone),
-        },
-      },
-      // The store holds the gateway because `commit()` is the only way an
-      // appointment is created; these specs never reach the review step, so a
-      // stub that would fail loudly if called is the honest double.
-      {
-        provide: BOOKING_GATEWAY,
-        useValue: {
-          commit: () => Promise.reject(new Error('not used in this spec')),
-        },
-      },
-      // The store injects the waitlist gateway too. This spec never reaches
-      // the schedule step, so a double that fails loudly if called is honest.
-      {
-        // `?repeat=` reads the visit it is repeating; the shell injects the
-        // reads whether or not a spec exercises that path.
-        provide: APPOINTMENT_READ_PORTS,
-        useValue: memoryAppointmentReadPorts([]),
-      },
-      {
-        // The deep-link read — never consulted without a ?waitlist param.
-        provide: WAITLIST_READ_PORTS,
-        useValue: memoryWaitlistReadPorts([]),
-      },
-      {
-        provide: WAITLIST_GATEWAY,
-        useValue: {
-          request: () => Promise.reject(new Error('not used in this spec')),
-          cancel: () => Promise.reject(new Error('not used in this spec')),
-        },
-      },
-      {
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () => of(ANONYMOUS_PRINCIPAL),
-          refreshToken: () => Promise.resolve(ok(undefined)),
-          signOut: () => Promise.resolve(ok(undefined)),
-          currentDisplayName: () => null,
-          currentIdentifier: () => null,
-        },
-      },
-      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
-      {
-        provide: AVATAR_UPLOADER,
-        useValue: {
-          upload: () => Promise.resolve(ok({ url: 'x', path: 'x' })),
-          find: () => Promise.resolve(ok(null)),
-          remove: () => Promise.resolve(ok(undefined)),
-        },
-      },
+      ...provideBookingTestI18n(COPY),
+      // These specs never reach the review step: every callable answers
+      // PIPELINE_UNKNOWN, the honest double for a commit nobody makes.
+      ...bookingPortProviders(),
       {
         provide: CATALOG_PORTS,
         useValue: memoryCatalogReadPorts({
@@ -230,9 +136,9 @@ async function renderShell(
         }),
       },
       {
-        provide: MEDIA_READER,
+        provide: MEDIA_RESOLVE_PORTS,
         useValue: options.media ?? {
-          resolve: () => Promise.resolve(ok([])),
+          resolveMedia: async () => Result.ok([]),
         },
       },
     ],
@@ -414,10 +320,13 @@ describe('BookingServicesStep', () => {
           service({ id: 'fade' }),
         ],
         media: {
-          resolve: (ref) =>
-            Promise.resolve(
-              ok([{ width: ref.width, url: `https://cdn.test/${ref.path}` }]),
-            ),
+          resolveMedia: async (ref) =>
+            Result.ok([
+              {
+                width: ref.mediaWidth,
+                url: `https://cdn.test/${ref.mediaPath}`,
+              },
+            ]),
         },
       });
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -481,7 +390,7 @@ describe('BookingServicesStep', () => {
     await settle();
     click(fixture, 'booking-add-guest');
     await settle();
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
+    expect(store.guests().map((guest) => guest.guestLabel)).toEqual([
       'Guest 1',
       'Guest 2',
     ]);
@@ -514,7 +423,7 @@ describe('BookingServicesStep', () => {
 
     // Refused: the name stays, the field stays open on what was typed, and
     // the reason is said beside it.
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
+    expect(store.guests().map((guest) => guest.guestLabel)).toEqual([
       'Guest 1',
       'Guest 2',
     ]);
@@ -527,7 +436,7 @@ describe('BookingServicesStep', () => {
     expect(refusal()).toBeNull();
     leave();
     expect(field()).toBeNull();
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
+    expect(store.guests().map((guest) => guest.guestLabel)).toEqual([
       'Guest 1',
       'Maria',
     ]);
@@ -545,16 +454,15 @@ describe('BookingServicesStep', () => {
     click(fixture, 'booking-add-guest');
     await settle();
     // Everybody holds something, so only the names can hold the step.
-    const fadeId = ServiceId.create('fade');
-    if (fadeId.isFailure()) throw new Error('bad fixture');
     const fade = {
-      serviceId: fadeId.value,
+      serviceId: ServiceId.of('fade'),
       variantId: null,
-      barberPref: BarberPref.any(),
+      barberId: null,
+      locationId: null,
     };
-    store.addLine(SeatKey.self(), fade);
+    store.addLine(SELF, fade);
     for (const guest of store.guests()) {
-      store.addLine(SeatKey.guest(guest.id), fade);
+      store.addLine(SeatKey.text(SeatKey.guest(guest.guestId)), fade);
     }
     await settle();
     const proceed = () =>
@@ -568,26 +476,29 @@ describe('BookingServicesStep', () => {
 
     // The same tab with a draft saved before the rule: both guests answer
     // to «Guest 1».
-    const KEY = 'creativo.booking-draft';
+    const KEY = 'creativo.booking-draft/v2';
     const stored = JSON.parse(sessionStorage.getItem(KEY) ?? 'null') as {
-      draft: { party: { guests: { id: string; label: string }[] } };
+      party: {
+        members: { partyRole: string; guestLabel?: string }[];
+      };
     };
-    stored.draft.party.guests = stored.draft.party.guests.map((guest) => ({
-      ...guest,
-      label: 'Guest 1',
-    }));
+    stored.party.members = stored.party.members.map((member) =>
+      member.partyRole === PartyRole.Guest
+        ? { ...member, guestLabel: 'Guest 1' }
+        : member,
+    );
     sessionStorage.setItem(KEY, JSON.stringify(stored));
     expect(store.restore()).toBe(true);
     await settle();
 
-    expect(store.step()).toBe('services');
+    expect(store.step()).toBe(BookingFlowStep.Services);
     expect(notice()?.textContent?.trim()).toBe('TAKEN:Guest 1');
     expect(proceed()?.disabled).toBe(true);
 
     // One rename, and the step lets the party go.
     const second = store.guests()[1];
     if (!second) throw new Error('bad fixture');
-    expect(store.renameGuest(second.id, 'Maria')).toBe(true);
+    expect(store.renameGuest(second.guestId, 'Maria')).toBe(true);
     await settle();
     expect(notice()).toBeNull();
     expect(proceed()?.disabled).toBe(false);
@@ -1034,14 +945,10 @@ describe('BookingServicesStep', () => {
       // from the shell's own injector rather than the TestBed's.
       const store = fixture.debugElement.injector.get(BookingFlowStore);
       const cart = store.cart();
-      const line = cart?.linesFor(SeatKey.self())[0];
-      const barberId = BarberId.create('niko');
-      if (!line || barberId.isFailure()) throw new Error('bad fixture');
-      store.setLineBarber(
-        SeatKey.self(),
-        line.id,
-        BarberPref.specific(barberId.value),
-      );
+      const line =
+        cart === null ? undefined : BookingCart.linesFor(cart, SELF)[0];
+      if (!line) throw new Error('bad fixture');
+      store.setLineBarber(SELF, line.lineId, BarberId.of('niko'));
       fixture.detectChanges();
 
       expect(bagPrices(fixture)[0]).toContain('13,00');

@@ -71,6 +71,7 @@ describe('identity fixtures', () => {
       accountStatus: 'ACTIVE',
       email: null,
       birthDate: null,
+      profileEditedAtUtcMs: null,
       searchName: null,
       searchPrefixes: [],
     });

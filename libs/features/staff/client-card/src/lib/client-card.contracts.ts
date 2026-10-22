@@ -165,15 +165,35 @@ export type WalletAnchor =
   'catalog' | 'stamps' | 'rhythm' | 'wallet' | 'status';
 
 /**
+ * Which page an `achievementCategory` scope is — the values of its
+ * discriminator `achievementScope` (Law 6, Phase 4a 4A-13).
+ */
+export const AchievementScope = {
+  Category: 'CATEGORY',
+  Season: 'SEASON',
+  Archive: 'ARCHIVE',
+  Day: 'DAY',
+} as const;
+
+/**
  * What one `achievementCategory` page shows: a category's families, a
  * season's, the archive of ended seasons and events, or the levels earned
- * on one day (`YYYY-MM-DD`, Europe/Sofia).
+ * on one day (`YYYY-MM-DD`, the shop's calendar).
  */
 export type AchievementScope =
-  | { readonly kind: 'category'; readonly categoryId: string }
-  | { readonly kind: 'season'; readonly seasonId: string }
-  | { readonly kind: 'archive' }
-  | { readonly kind: 'day'; readonly day: string };
+  | {
+      readonly achievementScope: typeof AchievementScope.Category;
+      readonly categoryId: string;
+    }
+  | {
+      readonly achievementScope: typeof AchievementScope.Season;
+      readonly seasonId: string;
+    }
+  | { readonly achievementScope: typeof AchievementScope.Archive }
+  | {
+      readonly achievementScope: typeof AchievementScope.Day;
+      readonly day: string;
+    };
 
 /**
  * A read the card retries as one: `profile` is `users/{uid}` (the gate the

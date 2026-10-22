@@ -37,25 +37,10 @@
       "path": "../client-card/tsconfig.lib.json"
     },
     {
-      "path": "../../shared/visits/tsconfig.lib.json"
-    },
-    {
       "path": "../../shared/catalog/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/shared/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/accounts/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/catalog/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/identity/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/patterns/tsconfig.lib.json"
@@ -70,10 +55,10 @@
       "path": "../../../ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
+      "path": "../../shared/visits/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/booking/tsconfig.lib.json"
+      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {
       "path": "../../../ecs-core/tsconfig.lib.json"

@@ -1,7 +1,13 @@
 import { BehaviorSubject, defer, map, of, type Observable } from 'rxjs';
 import {
   type AuthClaims,
+  type BookingDraft,
   BookingLifecycle,
+  type FlagName,
+  type OtpCode,
+  Principal,
+  type RegistrationFields,
+  SessionKind,
   BookingPolicy,
   CouponStatus,
   BarberStatus,
@@ -17,6 +23,8 @@ import {
   BusyKey,
   GrantStatus,
   IdentifierChannel,
+  MediaError,
+  OtpId,
   PipelineError,
   PipelineErrorCode,
   RepositoryError,
@@ -26,7 +34,6 @@ import {
   type CustomerId,
   type EventId,
   type LocationId,
-  type OtpId,
   type PositionId,
   type StreakDefinitionId,
   type TenantId,
@@ -74,7 +81,13 @@ import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
   AuthAdminPorts,
+  AuthSessionPorts,
   AuthUserLookupPorts,
+  AvatarPorts,
+  BookingDraftPorts,
+  CallableClient,
+  CallableName,
+  CallableWire,
   CatalogReadPorts,
   ClientJournalPorts,
   ClientStatsReadPorts,
@@ -84,13 +97,18 @@ import type {
   CourseWritePorts,
   CustomerPorts,
   DefaultLocationPorts,
+  FlagsPorts,
+  GatewayPorts,
   IdPorts,
   ImpersonationReadPorts,
   InboxPorts,
+  KeyValuePorts,
   LocationLoadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalog,
   LoyaltyCatalogReadPorts,
+  MediaResolvePorts,
+  OtpChallengePorts,
   OtpCryptoPorts,
   OtpDeliveryPorts,
   OtpStorePorts,
@@ -102,8 +120,10 @@ import type {
   SchedulingReadPorts,
   ShopEventReadPorts,
   ShopEventWritePorts,
+  StoredFile,
   StreakDefinitionPorts,
   TenantPorts,
+  TimerPorts,
   UserLookupPorts,
   UserSearchPorts,
   WaitlistReadPorts,
@@ -646,26 +666,15 @@ export function memoryCustomerPorts(
 // ── Accounts ─────────────────────────────────────────────────────────────
 
 /**
- * `PROFILE_PORTS` — `users/{uid}` in `users`, written IN PLACE.
- * `observeProfile`/`loadProfile` answer the entry AS STORED — a
- * `PROVISIONED` stub included, as the adapter does (the consumer judges),
- * `null` only when absent; `writeOwnProfile` runs the given decide against
- * the entry (`null` when absent) and applies the five keys it answers, and
- * writes nothing on a `null` answer or a refusal (answered as is).
+ * `PROFILE_PORTS` — `users/{uid}` in `users`. `observeProfile`/`loadProfile`
+ * answer the entry AS STORED — a `PROVISIONED` stub included, as the
+ * adapter does (the consumer judges), `null` only when absent. Profile
+ * writes are the `updateProfile` callable's (Phase 4a 4A-3 (2)).
  */
 export function memoryProfilePorts(users: Map<UserId, User>): ProfilePorts {
   return {
     observeProfile: (userId) => stream(() => users.get(userId) ?? null),
     loadProfile: async (userId) => Result.ok(users.get(userId) ?? null),
-    writeOwnProfile: async (userId, decide) => {
-      const stored = users.get(userId) ?? null;
-      const decided = decide(stored);
-      if (!decided.ok) return Result.err(decided.error);
-      if (decided.value !== null && stored !== null) {
-        users.set(userId, { ...stored, ...decided.value } as User);
-      }
-      return Result.ok(undefined);
-    },
   };
 }
 
@@ -728,14 +737,13 @@ export type MintedToken = {
  * entity minus `id`, the SAME store a spec hands `memoryTxPorts`, so a stub
  * a transaction creates is found by the next `findUserByDestination` and an
  * `saveOtp`'d challenge is read by the next transaction — the Auth users
- * (a provision is visible to the next lookup), the minted tokens, the
- * claims set and the display names, all mutated IN PLACE.
+ * (a provision is visible to the next lookup), the minted tokens and the
+ * display names, all mutated IN PLACE.
  */
 export type IdentityWorld = {
   readonly store: MemoryStore;
   readonly authUsers: MemoryAuthUser[];
   readonly minted: MintedToken[];
-  readonly claims: Map<UserId, AuthClaims>;
   readonly displayNames: Map<UserId, string>;
 };
 
@@ -761,7 +769,6 @@ export function memoryIdentityWorld(
     store,
     authUsers: [...(seed.authUsers ?? [])],
     minted: [],
-    claims: new Map(),
     displayNames: new Map(),
   };
 }
@@ -784,7 +791,7 @@ function entitiesOf<E>(store: MemoryStore, collection: string): readonly E[] {
 /**
  * The `otps` store over the world: `loadOpenOtps` — `destination ==`,
  * `consumedAtUtcMs == null`, `createdAtUtcMs >=` (index #10), oldest first;
- * `loadOtp` — the challenge or `null`; `saveOtp` — a `Set` of the body.
+ * `saveOtp` — a `Set` of the body.
  */
 export function memoryOtpStorePorts(world: IdentityWorld): OtpStorePorts {
   return {
@@ -798,12 +805,6 @@ export function memoryOtpStorePorts(world: IdentityWorld): OtpStorePorts {
               otp.createdAtUtcMs >= sinceUtcMs,
           )
           .sort((a, b) => a.createdAtUtcMs - b.createdAtUtcMs),
-      ),
-    loadOtp: async (id: OtpId) =>
-      Result.ok(
-        entitiesOf<Otp>(world.store, Collections.Otps).find(
-          (otp) => otp.id === id,
-        ) ?? null,
       ),
     saveOtp: async ({ id, ...body }) => {
       world.store.set(`${Collections.Otps}/${id}`, body);
@@ -857,7 +858,7 @@ export function memoryAuthUserLookupPorts(
  * an Auth user (uid `auth-uid-<n>`) — or answers `null` when one already
  * holds the destination (the race's loser, or an orphan Auth user);
  * `mintCustomToken` records the claims and answers `token:<uid>:<n>`;
- * `setClaims` and `setDisplayName` record theirs.
+ * `setDisplayName` records its name.
  */
 export function memoryAuthAdminPorts(world: IdentityWorld): AuthAdminPorts {
   return {
@@ -874,10 +875,6 @@ export function memoryAuthAdminPorts(world: IdentityWorld): AuthAdminPorts {
       const token = `token:${uid}:${world.minted.length + 1}`;
       world.minted.push({ uid, claims, token });
       return Result.ok(token);
-    },
-    setClaims: async (uid, claims) => {
-      world.claims.set(uid, claims);
-      return Result.ok(undefined);
     },
     setDisplayName: async (uid, displayName) => {
       world.displayNames.set(uid, displayName);
@@ -1356,4 +1353,248 @@ export function memoryDefaultLocationPorts(
   defaultLocationId: LocationId = TenantConfig.DEFAULT.defaultLocationId,
 ): DefaultLocationPorts {
   return { defaultLocationId };
+}
+
+// ── The web's wiring (Phase 4a §3.7) ──────────────────────────────────────
+
+/** How `memoryAuthSessionPorts` answers — every part optional. */
+export type AuthSessionScript = {
+  /** The live principal — shared with the spec, which `next`s it; anonymous unless given. */
+  readonly principals$?: BehaviorSubject<Principal>;
+  /** Each refresh's answer (`ok` unless given) — may `next` the principal it unlocks. */
+  readonly refresh?: () => Result<void, PipelineError>;
+  /** Each sign-out's answer; an `ok` sign-out emits the anonymous principal. */
+  readonly signOut?: () => Result<void, PipelineError>;
+  readonly identifier?: ParsedIdentifier | null;
+  readonly displayName?: string | null;
+};
+
+/**
+ * `AUTH_SESSION_PORTS` — the session over a `BehaviorSubject` of the ecs
+ * `Principal` the spec scripts: `observePrincipal` replays the current one
+ * and every later `next`; `refreshToken` and `signOut` answer the script
+ * (an `ok` sign-out drops to `Principal.anonymous()`).
+ */
+export function memoryAuthSessionPorts(
+  script: AuthSessionScript = {},
+): AuthSessionPorts {
+  const principals$ =
+    script.principals$ ?? new BehaviorSubject<Principal>(Principal.anonymous());
+  return {
+    observePrincipal: () => principals$.asObservable(),
+    refreshToken: async () => script.refresh?.() ?? Result.ok(undefined),
+    signOut: async () => {
+      const answer = script.signOut?.() ?? Result.ok(undefined);
+      if (answer.ok) principals$.next(Principal.anonymous());
+      return answer;
+    },
+    currentIdentifier: () => script.identifier ?? null,
+    currentDisplayName: () => script.displayName ?? null,
+  };
+}
+
+/** One call `memoryOtpChallengePorts` was asked, in order. */
+export type OtpChallengeCall =
+  | { readonly otpCall: 'REQUEST'; readonly identifier: ParsedIdentifier }
+  | {
+      readonly otpCall: 'VERIFY';
+      readonly challengeId: OtpId;
+      readonly code: OtpCode;
+    }
+  | {
+      readonly otpCall: 'COMPLETE';
+      readonly identifier: ParsedIdentifier;
+      readonly fields: RegistrationFields;
+    };
+
+/** How `memoryOtpChallengePorts` answers — every part optional. */
+export type OtpChallengeScript = {
+  /** Every call, recorded in order — the spec's own array. */
+  readonly calls?: OtpChallengeCall[];
+  /** The challenge a request answers (`otp-1` unless given), or its failure. */
+  readonly request?: Result<OtpId, PipelineError>;
+  /** The session a verify opens (`RETURNING` unless given), or its failure. */
+  readonly verify?: Result<SessionKind, PipelineError>;
+  /** A registration's answer (`ok` unless given). */
+  readonly complete?: Result<void, PipelineError>;
+};
+
+/** `OTP_CHALLENGE_PORTS` — the three OTP callables, scripted and recorded. */
+export function memoryOtpChallengePorts(
+  script: OtpChallengeScript = {},
+): OtpChallengePorts {
+  const calls = script.calls ?? [];
+  return {
+    requestOtpChallenge: async (identifier) => {
+      calls.push({ otpCall: 'REQUEST', identifier });
+      return script.request ?? Result.ok(OtpId.of('otp-1'));
+    },
+    verifyOtpChallenge: async (challengeId, code) => {
+      calls.push({ otpCall: 'VERIFY', challengeId, code });
+      return script.verify ?? Result.ok(SessionKind.Returning);
+    },
+    completeRegistration: async (identifier, fields) => {
+      calls.push({ otpCall: 'COMPLETE', identifier, fields });
+      return script.complete ?? Result.ok(undefined);
+    },
+  };
+}
+
+/**
+ * `BOOKING_DRAFT_PORTS` — one draft held in memory (`initial` unless saved
+ * over); a save stores the draft as given, a clear empties it.
+ */
+export function memoryBookingDraftPorts(
+  initial: BookingDraft | null = null,
+): BookingDraftPorts {
+  let held = initial;
+  return {
+    loadBookingDraft: () => Result.ok(held),
+    saveBookingDraft: (draft) => {
+      held = draft;
+      return Result.ok(undefined);
+    },
+    clearBookingDraft: () => {
+      held = null;
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** `KEY_VALUE_PORTS` — the spec's map, read and written in place. */
+export function memoryKeyValuePorts(
+  values: Map<string, string> = new Map(),
+): KeyValuePorts {
+  return {
+    kvGet: (key) => Result.ok(values.get(key) ?? null),
+    kvSet: (key, value) => {
+      values.set(key, value);
+      return Result.ok(undefined);
+    },
+    kvRemove: (key) => {
+      values.delete(key);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** One callable `scriptedGatewayPorts` was dialled with, in order. */
+export type GatewayCall = {
+  readonly callable: CallableName;
+  readonly input: unknown;
+};
+
+/** Per callable, its answer to an input — a callable the script names nothing for is `PIPELINE_UNKNOWN`. */
+export type GatewayScript = {
+  readonly [N in CallableName]?: (
+    input: CallableWire[N]['input'],
+  ) =>
+    | Result<CallableWire[N]['answer'], PipelineError>
+    | Promise<Result<CallableWire[N]['answer'], PipelineError>>;
+};
+
+/**
+ * `GATEWAY_PORTS` — the typed `callableClient` over a script, recording
+ * every call (name and input) in the spec's `calls` array. A callable the
+ * script does not answer fails `PIPELINE_UNKNOWN` (recorded too).
+ */
+export function scriptedGatewayPorts(
+  script: GatewayScript = {},
+  calls: GatewayCall[] = [],
+): GatewayPorts {
+  const answerOf = (
+    callable: CallableName,
+    input: unknown,
+  ): Promise<Result<unknown, PipelineError>> => {
+    calls.push({ callable, input });
+    const handler = script[callable] as
+      | ((
+          input: unknown,
+        ) =>
+          | Result<unknown, PipelineError>
+          | Promise<Result<unknown, PipelineError>>)
+      | undefined;
+    return handler === undefined
+      ? Promise.resolve(
+          Result.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+        )
+      : Promise.resolve(handler(input));
+  };
+  const callableClient = (<N extends CallableName>(name: N) =>
+    (input: CallableWire[N]['input']) =>
+      answerOf(name, input) as Promise<
+        Result<CallableWire[N]['answer'], PipelineError>
+      >) as CallableClient;
+  return { callableClient };
+}
+
+/**
+ * `AVATAR_PORTS` — one avatar per account in the spec's map
+ * (`avatars/{uid}/original`, a `https://avatars.test/…` URL), replaced on
+ * upload, `null` when none, removed in place.
+ */
+export function memoryAvatarPorts(
+  avatars: Map<UserId, StoredFile> = new Map(),
+): AvatarPorts {
+  return {
+    uploadAvatar: async (userId) => {
+      const path = `avatars/${userId}/original`;
+      const file = { path, url: `https://avatars.test/${path}` };
+      avatars.set(userId, file);
+      return Result.ok(file);
+    },
+    findAvatar: async (userId) => Result.ok(avatars.get(userId) ?? null),
+    removeAvatar: async (userId) => {
+      avatars.delete(userId);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** Which Storage paths `memoryMediaResolvePorts` refuses, and how. */
+export type MediaResolveScript = {
+  readonly forbidden?: readonly string[];
+  readonly notFound?: readonly string[];
+  readonly transient?: readonly string[];
+};
+
+/**
+ * `MEDIA_RESOLVE_PORTS` — one rendition per ref, `ref.mediaWidth` wide at
+ * `https://media.test/<path>`, unless the script names its path forbidden,
+ * not found or transient (the permanent and the retryable failures).
+ */
+export function memoryMediaResolvePorts(
+  script: MediaResolveScript = {},
+): MediaResolvePorts {
+  return {
+    resolveMedia: async (ref) => {
+      const path = ref.mediaPath;
+      if (script.forbidden?.includes(path)) {
+        return Result.err(MediaError.forbidden(path));
+      }
+      if (script.notFound?.includes(path)) {
+        return Result.err(MediaError.notFound(path));
+      }
+      if (script.transient?.includes(path)) {
+        return Result.err(MediaError.transient(path));
+      }
+      return Result.ok([
+        { width: ref.mediaWidth, url: `https://media.test/${path}` },
+      ]);
+    },
+  };
+}
+
+/** `FLAGS_PORTS` — the named flags on, every other off (all off unless given). */
+export function memoryFlagsPorts(on: readonly FlagName[] = []): FlagsPorts {
+  return { flagOn: (key) => on.includes(key) };
+}
+
+/** `TIMER_PORTS` — no waiting: each delay resolves at once, recorded in the spec's array. */
+export function immediateTimerPorts(delays: number[] = []): TimerPorts {
+  return {
+    delay: async (ms) => {
+      delays.push(ms);
+    },
+  };
 }

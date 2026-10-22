@@ -1,39 +1,33 @@
-import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
   type RepositoryError,
   Result,
   type RunBackfillRefusal,
   RunBackfillRefusalCode,
-  UserId,
-  type UtcEpochMs,
 } from '@core/primitives';
-import { Actor, BackfillJobName } from '@core/components';
-import { BackfillPlanSystem, ZonedTimeSystem } from '@core/systems';
-import {
-  type BackfillPageResult,
-  type RunBackfillCommand,
-} from '@core/pipelines';
-import { type EdgeError, LegacyWireCode } from '../edge';
-import { callerRoles } from '../lib/booking/caller-roles';
-import { storeFailure } from './waitlist.wire';
+import { Actor, type BackfillCall, Role } from '@core/components';
+import { BackfillPlanSystem } from '@core/systems';
+import type { RunBackfillCommand } from '@core/pipelines';
+import type { EdgeError } from '../edge';
+import { callerRoles, callerUserId } from '../lib/booking/caller-roles';
+import { field, payloadOf, refusalOf, type WireRequest } from './wire-read';
 
 /**
- * The `runBackfill` callable's FROZEN wire (flip 1, F1-3): today's
- * `{ job, cursor? }` in, today's page JSON out, byte for byte — the runners
- * that loop it (`verify:p0`) keep reading `cursor`, `done`, `total`,
- * `budgetSpent` and the rest until Phase 4.
+ * THE `runBackfill` CALLABLE'S WIRE (Phase 4a 4A-4) — flipped with the
+ * runners that loop it (`verify:p0`): the request is the call component
+ * `BackfillCall` `{ backfillJobName, backfillResume, cursor }`, the answer
+ * one page, `BackfillCall.Page` (`runStartedAtUtcMs`, never an ISO text).
  *
- * - The job is today's name (`subjectMirror`, `clientStats`); the cursor is
- *   absent (resume), `null` (from the top) or a cursor a previous call
- *   returned (`BackfillPlanSystem.requestOf` validates it). A payload that
- *   names no job decodes to `request: null`, which the pipeline refuses —
- *   AFTER the stored-roles check, as today.
- * - No caller, and a token without `sysadmin`, are answered HERE as today's
- *   `{ code }`-only `HttpsError`s, message and all (thrown for `callableEdge`
- *   to pass through untouched); the stored-roles refusal and a bad job leave
- *   as the table's legacy `{ code }` rows.
+ * - `backfillResume: true` continues wherever the job's progress document
+ *   says (the request names no cursor); otherwise `cursor` is the page to
+ *   start after, `null` = from the top (`BackfillPlanSystem.requestOf`
+ *   validates it). A payload that names no job decodes to `request: null`,
+ *   which the pipeline refuses — AFTER the stored-roles check, as today.
+ * - No caller → `OPS_BACKFILL_UNAUTHENTICATED`, a token without `sysadmin`
+ *   → `OPS_BACKFILL_FORBIDDEN`, answered here; the stored-roles refusal and
+ *   a bad job leave as the pipeline's own.
  *
- * A store failure is no refusal: it leaves as today's unexpected INTERNAL.
+ * A store failure is no refusal: it is thrown, for the edge to track and
+ * answer as the platform's bare INTERNAL.
  */
 
 /**
@@ -44,109 +38,43 @@ import { storeFailure } from './waitlist.wire';
  */
 export const RUN_BACKFILL_TIMEOUT_SECONDS = 540;
 
-/** Today's job names ↔ `BackfillJobName` — the ONE wire table. */
-const WIRE_JOB = {
-  [BackfillJobName.SubjectMirror]: 'subjectMirror',
-  [BackfillJobName.ClientStats]: 'clientStats',
-} as const satisfies Record<BackfillJobName, string>;
-
-const JOB_OF_WIRE: ReadonlyMap<unknown, BackfillJobName> = new Map([
-  [WIRE_JOB[BackfillJobName.SubjectMirror], BackfillJobName.SubjectMirror],
-  [WIRE_JOB[BackfillJobName.ClientStats], BackfillJobName.ClientStats],
-]);
-
-/** UTC, the zone today's `runStartedAt` was spelt in (`toISOString`). */
-const UTC = (() => {
-  const zone = ZonedTimeSystem.checkZone('UTC');
-  if (!zone.ok) throw new Error('the runtime has no UTC zone');
-  return zone.value;
-})();
-
-/** An instant as today's `toISOString()` text — milliseconds, `Z`. */
-function utcIso(utcEpochMs: UtcEpochMs): string {
-  return ZonedTimeSystem.toIso(utcEpochMs, UTC).replace(/\+00:00$/, 'Z');
-}
-
-/** Today's `{ job, cursor? }` as the payload the system parses, `{ backfillJobName, cursor? }`. */
+/** The call as the payload the system parses — `{ backfillJobName, cursor? }`, no cursor key to resume. */
 function requestStruct(raw: unknown): unknown {
   if (raw === null || typeof raw !== 'object') return raw;
-  const payload = new Map<string, unknown>(Object.entries(raw));
-  return {
-    backfillJobName: JOB_OF_WIRE.get(payload.get('job')),
-    ...(payload.has('cursor') ? { cursor: payload.get('cursor') } : {}),
-  };
+  const backfillJobName = field(raw, 'backfillJobName');
+  return field(raw, 'backfillResume') === true
+    ? { backfillJobName }
+    : { backfillJobName, cursor: field(raw, 'cursor') ?? null };
 }
 
 export function decodeRunBackfill(
-  request: CallableRequest<unknown>,
-): RunBackfillCommand {
-  const uid = UserId.parse(request.auth?.uid ?? '');
-  if (!uid.ok) {
-    throw new HttpsError('unauthenticated', 'Sign in first', {
-      code: 'ops.backfill.unauthenticated',
-    });
+  request: WireRequest,
+): Result<RunBackfillCommand, EdgeError> {
+  const uid = callerUserId(request);
+  if (uid === null) {
+    return Result.err({ errorCode: RunBackfillRefusalCode.Unauthenticated });
   }
   const roles = callerRoles(request);
-  if (!roles.includes('sysadmin')) {
-    throw new HttpsError('permission-denied', 'Sysadmin only', {
-      code: 'ops.backfill.forbidden',
-    });
+  if (!roles.includes(Role.Sysadmin)) {
+    return Result.err({ errorCode: RunBackfillRefusalCode.Forbidden });
   }
-  return {
-    callerUserId: uid.value,
-    actor: Actor.forCaller(uid.value, roles),
-    request: BackfillPlanSystem.requestOf(requestStruct(request.data)),
-  };
+  return Result.ok({
+    callerUserId: uid,
+    actor: Actor.forCaller(uid, roles),
+    request: BackfillPlanSystem.requestOf(requestStruct(payloadOf(request))),
+  });
 }
 
-/** Today's page answer, key for key. */
-export type BackfillPageAnswer = {
-  readonly job: string;
-  readonly cursor: string | null;
-  readonly done: boolean;
-  readonly processed: number;
-  readonly storedClients: number;
-  readonly stamped: number;
-  readonly recomputed: number;
-  readonly total: number;
-  readonly runStartedAt: string;
-  readonly startedFrom: string | null;
-  readonly sample: {
-    readonly checked: number;
-    readonly mismatched: readonly string[];
-  } | null;
-  readonly budgetSpent: boolean;
-};
-
+/** One page, as the pipeline answered it. */
 export function encodeRunBackfillAnswer(
-  result: Result<BackfillPageResult, RunBackfillRefusal | RepositoryError>,
-): Result<BackfillPageAnswer, EdgeError> {
-  if (!result.ok) {
-    const error = result.error;
-    if ('path' in error) throw storeFailure(error);
-    return Result.err({
-      code:
-        error.errorCode === RunBackfillRefusalCode.Forbidden
-          ? LegacyWireCode.BackfillForbidden
-          : LegacyWireCode.BackfillInvalidInput,
-    });
-  }
-  const page = result.value;
-  return Result.ok({
-    job: WIRE_JOB[page.backfillJobName],
-    cursor: page.cursor,
-    done: page.done,
-    processed: page.processed,
-    storedClients: page.storedClients,
-    stamped: page.stamped,
-    recomputed: page.recomputed,
-    total: page.total,
-    runStartedAt: utcIso(page.runStartedAtUtcMs),
-    startedFrom: page.startedFrom,
-    sample:
-      page.sampleChecked === null
-        ? null
-        : { checked: page.sampleChecked, mismatched: page.sampleMismatched },
-    budgetSpent: page.budgetSpent,
-  });
+  page: BackfillCall.Page,
+): BackfillCall.Page {
+  return page;
+}
+
+/** The stored-roles refusal and a bad job leave as themselves (a store failure thrown). */
+export function runBackfillRefusal(
+  error: RunBackfillRefusal | RepositoryError,
+): EdgeError {
+  return refusalOf(error);
 }

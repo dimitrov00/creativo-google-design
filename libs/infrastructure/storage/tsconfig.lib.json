@@ -17,21 +17,6 @@
       "path": "../firebase-app/tsconfig.lib.json"
     },
     {
-      "path": "../../application/shared/tsconfig.lib.json"
-    },
-    {
-      "path": "../../application/catalog/tsconfig.lib.json"
-    },
-    {
-      "path": "../../domain/catalog/tsconfig.lib.json"
-    },
-    {
-      "path": "../../application/accounts/tsconfig.lib.json"
-    },
-    {
-      "path": "../../domain/kernel/tsconfig.lib.json"
-    },
-    {
       "path": "../firestore/tsconfig.lib.json"
     },
     {

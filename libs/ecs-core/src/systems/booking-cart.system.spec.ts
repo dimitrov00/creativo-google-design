@@ -22,6 +22,8 @@ import {
   SeatOccupant,
   SubjectRelationship,
   type ShopNow,
+  RequestedSubjectRole,
+  type ChairTime,
 } from '@core/components';
 import {
   SchedulingErrorCode,
@@ -55,14 +57,12 @@ import {
 import {
   type AvailabilityLine,
   AvailabilitySystem,
-  type ChairTime,
 } from './availability.system';
 import {
   BookingCartSystem,
   type CartBarberDay,
   type CartRider,
   type CartService,
-  CommitSubjectRole,
   type PrefillSeat,
   PrefillCompanions,
 } from './booking-cart.system';
@@ -1204,9 +1204,9 @@ describe('BookingCartSystem.toCommitSeats — the commit request', () => {
     expect(seats).toHaveLength(2);
     // The guest's seat key rides beside the label.
     expect(seats?.map((entry) => entry.subject)).toEqual([
-      { commitSubjectRole: CommitSubjectRole.Self },
+      { requestedSubjectRole: RequestedSubjectRole.Self },
       {
-        commitSubjectRole: CommitSubjectRole.Guest,
+        requestedSubjectRole: RequestedSubjectRole.Guest,
         label: 'Maria',
         guestKey: 'guest-0',
       },
@@ -1214,13 +1214,12 @@ describe('BookingCartSystem.toCommitSeats — the commit request', () => {
     const first = seats?.[0] as unknown as Record<string, unknown>;
     // The server resolves terms.
     expect(first['priceCents']).toBeUndefined();
-    expect(first['priceMinorUnits']).toBeUndefined();
     expect(first['durationMinutes']).toBeUndefined();
     expect(first['barberId']).toBe('ivan');
     // Its start is a minute of the selection's shop day.
     expect(first['startMinutes']).toBe(mins(12));
     expect(first['subject']).toEqual({
-      commitSubjectRole: CommitSubjectRole.Self,
+      requestedSubjectRole: RequestedSubjectRole.Self,
     });
     expect(first['barberPreference']).toBe(BarberPreference.Any);
   });
@@ -1264,7 +1263,7 @@ describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
     );
     expect(
       (seats ?? []).flatMap((entry) =>
-        entry.subject.commitSubjectRole === CommitSubjectRole.Guest
+        entry.subject.requestedSubjectRole === RequestedSubjectRole.Guest
           ? [entry.subject.label]
           : [],
       ),
@@ -1303,7 +1302,7 @@ describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
     );
 
     expect(
-      seats?.map((entry) => entry.subject.commitSubjectRole).sort(),
+      seats?.map((entry) => entry.subject.requestedSubjectRole).sort(),
     ).toEqual(['GUEST', 'GUEST', 'SELF']);
   });
 
@@ -1338,7 +1337,7 @@ describe('BookingCartSystem.prefill — who a prefilled bag holds', () => {
       ) ?? []
     )
       .flatMap((entry) =>
-        entry.subject.commitSubjectRole === CommitSubjectRole.Guest
+        entry.subject.requestedSubjectRole === RequestedSubjectRole.Guest
           ? [entry.subject.label]
           : [],
       )

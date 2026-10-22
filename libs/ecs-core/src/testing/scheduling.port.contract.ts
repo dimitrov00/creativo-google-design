@@ -1,5 +1,10 @@
 import { firstValueFrom } from 'rxjs';
-import { BlockKind, MinuteBlock, type MinuteRange } from '@core/components';
+import {
+  BlockKind,
+  MinuteBlock,
+  type MinuteRange,
+  type ChairTime,
+} from '@core/components';
 import type { BarberBusyDay } from '@core/entities';
 import {
   BusyKey,
@@ -15,7 +20,6 @@ import {
 import type { LoadBusyDay, ObserveBusyDay } from '@core/ports';
 import {
   AvailabilitySystem,
-  type ChairTime,
   IntervalSetSystem,
   ZonedTimeSystem,
 } from '@core/systems';

@@ -6,7 +6,7 @@ import { InjectionToken } from '@angular/core';
  * an everything-checked one — the selection seeds recommendations, so
  * three strong signals outrank ten weak ones).
  *
- * Deployment-configurable the same way `AUTH_DEPLOYMENT` is: the
+ * Deployment-configurable the same way `AUTH_DEPLOYMENT_PORTS` is: the
  * composition root may re-provide the token; features only ever read it.
  */
 export const ONBOARDING_SERVICES_CAP = new InjectionToken<number>(

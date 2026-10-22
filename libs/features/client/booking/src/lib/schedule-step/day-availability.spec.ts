@@ -12,6 +12,7 @@ import {
   type BookingCart,
   BookingPolicy,
   CapacityEntry,
+  type ChairTime,
   LocationStatus,
   MinuteBlock,
 } from '@core/components';
@@ -46,7 +47,6 @@ import {
   type DayDocs,
   type DayDocsKey,
   type DayQuery,
-  type HeldChair,
   barberDays,
   capacityByDay,
   capacityMonthsOf,
@@ -103,11 +103,11 @@ function query(change: Partial<DayQuery> = {}): DayQuery {
     barberIds: [IVAN],
     locationId: null,
     localDate: TUESDAY,
-    timeZone: FIXTURE_TIME_ZONE,
     policy: BookingPolicy.DEFAULT,
     now: FIXTURE_NOW,
     riders: [],
     release: [],
+    releaseLocalDate: null,
     shops: [locationFixture()],
     ...change,
   };
@@ -149,22 +149,30 @@ function busyOn(...blocks: readonly [number, number][]): BarberBusyDay {
   });
 }
 
-/** A held chair of a moved visit, as the draft keeps it: two instants. */
+/** A held chair of a moved visit, as the draft keeps it: minutes of its shop day. */
 function heldChair(
-  day: string,
   startMinutes: number,
   endMinutes: number,
-  barberId: string = IVAN,
-): HeldChair {
-  const date = localDate(day);
-  const startMs = unwrapOk(
-    ZonedTimeSystem.toUtc(date, at(0, startMinutes), FIXTURE_TIME_ZONE),
-  );
+  barberId: BarberId = IVAN,
+): ChairTime {
   return {
     barberId,
-    startMs,
-    endMs: startMs + (endMinutes - startMinutes) * 60_000,
+    startMinutes: at(0, startMinutes),
+    endMinutes: until(0, endMinutes),
   };
+}
+
+/** A move whose visit holds `chairs` on the shop day `day`. */
+function moving(
+  day: string,
+  chairs: readonly ChairTime[],
+  change: Partial<DayQuery> = {},
+): DayQuery {
+  return query({
+    release: chairs,
+    releaseLocalDate: localDate(day),
+    ...change,
+  });
 }
 
 /** The distinct party starts of a day's options, in order. */
@@ -215,10 +223,10 @@ describe('dayOptions — one shop day, derived from its documents by the systems
   });
 
   it('hands a moved visit’s own chairs back before anything is placed', () => {
-    const moving = query({ release: [heldChair('2026-09-29', 600, 630)] });
+    const move = moving('2026-09-29', [heldChair(600, 630)]);
     const offered = starts(
-      moving,
-      docs({ key: dayDocsKey(moving), busy: busyOn([600, 630]) }),
+      move,
+      docs({ key: dayDocsKey(move), busy: busyOn([600, 630]) }),
     );
 
     expect(offered).toContain(10 * 60);
@@ -226,12 +234,9 @@ describe('dayOptions — one shop day, derived from its documents by the systems
   });
 
   it('hands back nothing a chair of another day holds', () => {
-    const moving = query({ release: [heldChair('2026-09-30', 600, 630)] });
+    const move = moving('2026-09-30', [heldChair(600, 630)]);
     expect(
-      starts(
-        moving,
-        docs({ key: dayDocsKey(moving), busy: busyOn([600, 630]) }),
-      ),
+      starts(move, docs({ key: dayDocsKey(move), busy: busyOn([600, 630]) })),
     ).not.toContain(10 * 60);
   });
 
@@ -253,15 +258,14 @@ describe('dayOptions — one shop day, derived from its documents by the systems
 
   it('offers a MOVE its own shop, listed or not — still clamped to that shop’s hours', () => {
     const hidden = locationFixture({ locationStatus: LocationStatus.Hidden });
-    const moving = query({
+    const move = moving('2026-09-29', [heldChair(600, 630)], {
       locationId: CENTER,
       shops: [],
-      release: [heldChair('2026-09-29', 600, 630)],
     });
-    const key = dayDocsKey(moving);
+    const key = dayDocsKey(move);
     expect(key.namedLocationId).toBe(CENTER);
 
-    const offered = starts(moving, docs({ key, namedLocation: hidden }));
+    const offered = starts(move, docs({ key, namedLocation: hidden }));
     expect(offered[0]).toBe(9 * 60);
     expect(offered.at(-1)).toBe(17 * 60 + 30);
   });
@@ -294,29 +298,25 @@ describe('dayOptions — one shop day, derived from its documents by the systems
 });
 
 describe('releaseOn — a held chair on the shop’s wall clock', () => {
-  it('reads a chair of the day as its minutes, and ignores another day’s', () => {
-    expect(
-      releaseOn(
-        [
-          heldChair('2026-09-29', 600, 645),
-          heldChair('2026-09-30', 600, 645, NIKO),
-        ],
-        TUESDAY,
-        FIXTURE_TIME_ZONE,
-      ),
-    ).toEqual([{ barberId: IVAN, startMinutes: 600, endMinutes: 645 }]);
+  it('hands back the chairs of the visit’s own day, as they are, and nothing on another day', () => {
+    const chairs = [heldChair(600, 645), heldChair(600, 645, NIKO)];
+    expect(releaseOn(chairs, TUESDAY, TUESDAY)).toEqual([
+      { barberId: IVAN, startMinutes: 600, endMinutes: 645 },
+      { barberId: NIKO, startMinutes: 600, endMinutes: 645 },
+    ]);
+    expect(releaseOn(chairs, TUESDAY, localDate('2026-09-30'))).toEqual([]);
   });
 
-  it('ends a chair running into the next day at midnight', () => {
+  it('keeps a chair ending at the closing midnight whole', () => {
     expect(
-      releaseOn(
-        [heldChair('2026-09-29', 23 * 60 + 30, 24 * 60 + 30)],
-        TUESDAY,
-        FIXTURE_TIME_ZONE,
-      ),
+      releaseOn([heldChair(23 * 60 + 30, 24 * 60)], TUESDAY, TUESDAY),
     ).toEqual([
       { barberId: IVAN, startMinutes: 23 * 60 + 30, endMinutes: 1440 },
     ]);
+  });
+
+  it('hands back nothing on a new booking — no visit, no day', () => {
+    expect(releaseOn([], null, TUESDAY)).toEqual([]);
   });
 });
 
@@ -334,7 +334,8 @@ describe('sameDayDocsKey — one structural identity for every day read', () => 
     barberIds: { barberIds: [IVAN, NIKO] },
     namedLocationId: {
       locationId: CENTER,
-      release: [heldChair('2026-09-29', 600, 630)],
+      release: [heldChair(600, 630)],
+      releaseLocalDate: TUESDAY,
     },
   };
 

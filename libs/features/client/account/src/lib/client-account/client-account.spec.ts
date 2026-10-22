@@ -6,26 +6,18 @@ import {
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { NEVER, Observable, of } from 'rxjs';
-import {
-  AVATAR_UPLOADER,
-  AvatarUploader,
-} from '@creativo/application/accounts';
-import {
-  AUTH_GATEWAY,
-  PrincipalId,
-  Result,
-  activePrincipal,
-  ok,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
+import { BehaviorSubject, NEVER, Observable, of } from 'rxjs';
 import {
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+  DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
+  LOCATION_LOAD_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { AppointmentReadPorts } from '@core/ports';
+import type { AppointmentReadPorts, FindAvatar } from '@core/ports';
 import type { Appointment, User } from '@core/entities';
-import { BirthDate, Seat } from '@core/components';
+import { BirthDate, type Principal, Seat } from '@core/components';
 import {
   AppointmentId,
   BusyKey,
@@ -37,9 +29,16 @@ import {
 import { ZonedTimeSystem } from '@core/systems';
 import {
   appointmentFixture,
+  locationFixture,
   memoryAppointmentReadPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
+  memoryDefaultLocationPorts,
   memoryInboxPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   minute,
+  principalFixture,
   registeredUserFixture,
   seatFixture,
   unwrapOk,
@@ -48,15 +47,7 @@ import { AccountStateService } from '@creativo/features/client/account-state';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { ClientAccount } from './client-account';
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
-}
-
-const PRINCIPAL_ID = unwrap(PrincipalId.create('user_1'));
-const PRINCIPAL = unwrap(
-  activePrincipal(PRINCIPAL_ID, [roleFromPrimitive('client')]),
-);
+const PRINCIPAL = principalFixture.client(UserId.of('user_1'));
 
 /** Jane Doe, registered — her `users/{uid}` body as stored. */
 function user(birthDate?: string): User {
@@ -129,7 +120,8 @@ function accountStateStub(options: {
 }): AccountStateService {
   return {
     principal: signal(PRINCIPAL),
-    claims: signal(PRINCIPAL.kind === 'active' ? PRINCIPAL.roles : null),
+    roles: signal(PRINCIPAL.roles),
+    userId: signal(PRINCIPAL.userId),
     account: signal(options.account),
     accountLoading: signal(options.accountLoading),
     refresh: () => undefined,
@@ -144,7 +136,7 @@ async function configure(
   options: {
     readonly hasPhoto?: boolean;
     /** Stands in for Storage outright — for the specs that count or sequence its answers. */
-    readonly find?: AvatarUploader['find'];
+    readonly find?: FindAvatar;
   } = {},
 ): Promise<ComponentFixture<ClientAccount>> {
   const upcoming$ = Array.isArray(upcoming)
@@ -159,16 +151,24 @@ async function configure(
       ...provideTestI18n(),
       { provide: AccountStateService, useValue: accountState },
       {
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () => of(PRINCIPAL),
-          refreshToken: () => Promise.resolve(ok(undefined)),
-          signOut: () => Promise.resolve(ok(undefined)),
+        provide: AUTH_SESSION_PORTS,
+        useValue: memoryAuthSessionPorts({
+          principals$: new BehaviorSubject<Principal>(PRINCIPAL),
           // The shared site header (rendered by this page now) reads the
-          // monogram identity off the gateway.
-          currentDisplayName: () => 'Ада Тестова',
-          currentIdentifier: () => null,
-        },
+          // monogram identity off the session.
+          displayName: 'Ада Тестова',
+        }),
+      },
+      // The shell menu's schedule row names the default location's day.
+      {
+        provide: LOCATION_LOAD_PORTS,
+        useValue: memoryLocationLoadPorts(
+          memoryProgramsWorld({ locations: [locationFixture()] }),
+        ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
       {
         // The shell menu's notifications row reads the inbox.
@@ -185,17 +185,16 @@ async function configure(
         } satisfies AppointmentReadPorts,
       },
       {
-        provide: AVATAR_UPLOADER,
+        provide: AVATAR_PORTS,
         useValue: {
-          upload: () =>
-            Promise.resolve(ok({ url: 'http://avatar', path: 'avatars/x' })),
+          ...memoryAvatarPorts(),
           // No photo unless a spec says so — keeps the completion card
           // visible for the others.
-          find:
+          findAvatar:
             options.find ??
             (() =>
               Promise.resolve(
-                ok(
+                EcsResult.ok(
                   options.hasPhoto
                     ? { url: 'http://avatar', path: 'avatars/user_1/original' }
                     : null,
@@ -258,7 +257,7 @@ describe('ClientAccount', () => {
     ).not.toBeNull();
 
     // The completion card waits for the avatar existence answer (a
-    // microtask off the stubbed AVATAR_UPLOADER.find) before rendering.
+    // microtask off the stubbed AVATAR_PORTS.findAvatar) before rendering.
     await Promise.resolve();
     fixture.detectChanges();
 
@@ -488,7 +487,7 @@ describe('ClientAccount', () => {
     ).toBe('open');
   });
   it('asks Storage for the photo once — the page and the header share one lookup', async () => {
-    const find = vi.fn<AvatarUploader['find']>(() => Promise.resolve(ok(null)));
+    const find = vi.fn<FindAvatar>(() => Promise.resolve(EcsResult.ok(null)));
     const fixture = await configure(
       accountStateStub({ accountLoading: false, account: user() }),
       [],
@@ -507,10 +506,10 @@ describe('ClientAccount', () => {
 
   it('follows the shared lookup — a photo uploaded this session closes its item once the lookup re-runs', async () => {
     const find = vi
-      .fn<AvatarUploader['find']>()
-      .mockResolvedValueOnce(ok(null))
+      .fn<FindAvatar>()
+      .mockResolvedValueOnce(EcsResult.ok(null))
       .mockResolvedValue(
-        ok({ url: 'http://avatar', path: 'avatars/user_1/original' }),
+        EcsResult.ok({ url: 'http://avatar', path: 'avatars/user_1/original' }),
       );
     const fixture = await configure(
       accountStateStub({

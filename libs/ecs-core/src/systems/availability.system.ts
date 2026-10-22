@@ -2,6 +2,7 @@ import {
   BarberPref,
   BarberPreference,
   type BookingPolicy,
+  type ChairTime,
   DayWindows,
   MinuteRange,
   type ShopNow,
@@ -87,18 +88,6 @@ export type BarberDayAvailability = {
   readonly windows: readonly MinuteRange[];
   readonly busy: readonly MinuteRange[];
   readonly blocks: readonly MinuteRange[];
-};
-
-/**
- * The chair time one barber is held for — a seat's setup, service and
- * cleanup on the shop day's wall clock: what a seat puts into the busy
- * projection and what a move hands back before it places the same visit
- * again.
- */
-export type ChairTime = {
-  readonly barberId: BarberId;
-  readonly startMinutes: MinuteOfDay;
-  readonly endMinutes: EndMinute;
 };
 
 /** {@link AvailabilitySystem.paddedBusy}'s input; `release` is `[]` unless a visit is being moved. */

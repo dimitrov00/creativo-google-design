@@ -225,7 +225,7 @@ const VALID_CASES = {
   'TSPropertySignature > TSTypeAnnotation > TSUnionType > TSTypeLiteral':
     'type A = { readonly latitude: Latitude | null };',
   [ECS_RAW_PRIMITIVE_RESTRICTIONS[0].selector]:
-    'type A = { readonly appointmentId: AppointmentId; readonly startMinutes: MinuteOfDay; readonly nextId: () => string }; type RequestedSeatInput = { readonly barberId: string; readonly startMinutes: number };',
+    'type A = { readonly appointmentId: AppointmentId; readonly startMinutes: MinuteOfDay; readonly nextId: () => string }; type SeatInput = { readonly barberId: string; readonly startMinutes: number };',
   "TSTypeReference[typeName.name='Date']": 'let at: UtcEpochMs | null = null;',
   "NewExpression[callee.name='Date']":
     'const seen = new Map<string, number>();',

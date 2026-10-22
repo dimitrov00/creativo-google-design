@@ -1,44 +1,45 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
-  AVATAR_UPLOADER,
-  AvatarRef,
-  AvatarUploadError,
-} from '@creativo/application/accounts';
-import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-  Principal,
-  PrincipalId,
-  Result,
-  activePrincipal,
-  fail,
-  ok,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { AccountStateService } from '@creativo/features/client/account-state';
-import { BirthDate } from '@core/components';
+import {
+  AuthClaims,
+  AuthStage,
+  BirthDate,
+  E164,
+  Email,
+  ParsedIdentifier,
+  Principal,
+} from '@core/components';
 import type { User } from '@core/entities';
-import { UserId } from '@core/primitives';
+import type { StoredFile } from '@core/ports';
+import { MediaError, Result, UserId } from '@core/primitives';
 import { registeredUserFixture } from '@core/testing';
+import { ProfileCompletionKey } from '@core/systems';
 import { SessionIdentityService } from './session-identity.service';
 
-type FindResult = Result<AvatarRef | null, AvatarUploadError>;
+type FindResult = Result<StoredFile | null, MediaError>;
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
-}
-
-/** An active principal with these claims — a plain client unless said otherwise. */
+/**
+ * The principal a token with these claims restores — through the SAME
+ * adapter-boundary parse the session uses, so an unknown role degrades
+ * exactly as it would live. A plain client unless said otherwise.
+ */
 function active(uid: string, roles: readonly string[] = ['client']): Principal {
-  return unwrap(
-    activePrincipal(
-      unwrap(PrincipalId.create(uid)),
-      roles.map((role) => roleFromPrimitive(role)),
-    ),
-  );
+  return Principal.fromClaims({
+    userId: UserId.of(uid),
+    claims: AuthClaims.fromToken({
+      tenantId: 'tenant_1',
+      stage: AuthStage.Active,
+      roles,
+    }),
+  });
 }
+
+const ANONYMOUS_PRINCIPAL = Principal.anonymous();
 
 /** A finished profile but for the photo — the photo alone decides `complete`. */
 function user(uid: string): User {
@@ -51,7 +52,10 @@ function user(uid: string): User {
 }
 
 function photoOf(uid: string): FindResult {
-  return ok({ url: `http://avatar/${uid}`, path: `avatars/${uid}/original` });
+  return Result.ok({
+    url: `http://avatar/${uid}`,
+    path: `avatars/${uid}/original`,
+  });
 }
 
 /** A Storage answer the test releases by hand — "still in flight" until then. */
@@ -80,11 +84,16 @@ async function settle(): Promise<void> {
  * `answers` are Storage's replies, in order — queued before the service
  * exists when the first lookup must see one (it runs on the first tick).
  */
-function harness(initial: Principal, answers: Promise<FindResult>[] = []) {
+function harness(
+  initial: Principal,
+  answers: Promise<FindResult>[] = [],
+  identifier: ParsedIdentifier | null = null,
+) {
   const principal = signal<Principal>(initial);
   const account = signal<User | null>(null);
   const find = vi.fn(
-    (): Promise<FindResult> => answers.shift() ?? Promise.resolve(ok(null)),
+    (): Promise<FindResult> =>
+      answers.shift() ?? Promise.resolve(Result.ok(null)),
   );
 
   TestBed.configureTestingModule({
@@ -99,13 +108,13 @@ function harness(initial: Principal, answers: Promise<FindResult>[] = []) {
         },
       },
       {
-        provide: AUTH_GATEWAY,
+        provide: AUTH_SESSION_PORTS,
         useValue: {
           currentDisplayName: () => null,
-          currentIdentifier: () => null,
+          currentIdentifier: () => identifier,
         },
       },
-      { provide: AVATAR_UPLOADER, useValue: { find } },
+      { provide: AVATAR_PORTS, useValue: { findAvatar: find } },
     ],
   });
   const service = TestBed.inject(SessionIdentityService);
@@ -166,11 +175,11 @@ describe('SessionIdentityService', () => {
     expect(service.avatarUrl()).toBeNull();
     expect(service.profileProgress()).toBeNull();
 
-    await storage.answer(ok(null));
+    await storage.answer(Result.ok(null));
 
     expect(service.avatarUrl()).toBeNull();
     expect(service.completion()?.items).toContainEqual({
-      key: 'photo',
+      profileCompletionKey: ProfileCompletionKey.Photo,
       done: false,
     });
   });
@@ -195,7 +204,7 @@ describe('SessionIdentityService', () => {
     expect(service.profileProgress()?.complete).toBe(true);
 
     // The photo was removed elsewhere — every reader follows.
-    await storage.answer(ok(null));
+    await storage.answer(Result.ok(null));
 
     expect(service.avatarUrl()).toBeNull();
     expect(service.completion()?.done).toBe(3);
@@ -203,14 +212,14 @@ describe('SessionIdentityService', () => {
 
   it('settles a failed lookup as "no photo", so nothing waiting for an answer waits forever', async () => {
     const { service, profileLands } = harness(active('user_1'), [
-      Promise.resolve(fail(new AvatarUploadError('storage down'))),
+      Promise.resolve(Result.err(MediaError.transient('avatars/user_1'))),
     ]);
     profileLands('user_1');
     await settle();
 
     expect(service.profileProgress()).not.toBeNull();
     expect(service.completion()?.items).toContainEqual({
-      key: 'photo',
+      profileCompletionKey: ProfileCompletionKey.Photo,
       done: false,
     });
   });
@@ -270,11 +279,58 @@ describe('SessionIdentityService', () => {
       expect(service.isAdmin()).toBe(true);
     });
 
-    it('ignores a claim outside the vocabulary rather than narrowing the claims first', () => {
+    it('grants nothing for a claim outside the vocabulary — the token degrades to onboarding', () => {
       const { service } = harness(active('user_1', ['superuser']));
 
       expect(service.isStaffMember()).toBe(false);
       expect(service.isAdmin()).toBe(false);
+    });
+  });
+
+  /**
+   * The secondary line under the portrait. An e-mail reads as itself; a
+   * phone reads in its international form once the lazily loaded formatter
+   * lands (F6 — `libphonenumber-js` stays out of the initial chunk), and as
+   * the raw E.164 until then (departure 4A-2 (g)).
+   */
+  describe('the identifier label', () => {
+    it('reads an e-mail session as the address, and names it by its local part', () => {
+      const { service } = harness(
+        active('user_1'),
+        [],
+        ParsedIdentifier.email(Email.of('jane@example.com')),
+      );
+
+      expect(service.identifierLabel()).toBe('jane@example.com');
+      expect(service.displayName()).toBe('jane');
+    });
+
+    it('reads a phone session as the raw E.164 until the formatter lands, then formats it internationally', async () => {
+      const { service } = harness(
+        active('user_1'),
+        [],
+        ParsedIdentifier.phone(E164.of('+359885550100')),
+      );
+
+      // Departure 4A-2 (g): the lazy chunk has not landed yet — the line
+      // still reads, ungrouped, never blank.
+      expect(service.identifierLabel()).toBe('+359885550100');
+
+      await vi.waitFor(() => {
+        TestBed.tick();
+        expect(service.identifierLabel()).toMatch(/^\+359 /);
+      });
+      expect(service.identifierLabel().replace(/\D/g, '')).toBe('359885550100');
+    });
+
+    it('shows nothing for a signed-out session', () => {
+      const { service } = harness(
+        ANONYMOUS_PRINCIPAL,
+        [],
+        ParsedIdentifier.phone(E164.of('+359885550100')),
+      );
+
+      expect(service.identifierLabel()).toBe('');
     });
   });
 });

@@ -31,6 +31,7 @@ import {
 } from '../../testing/achievements-pages.rig';
 import { cssRule } from '../../testing/css-rule';
 import { ClientCard } from './client-card';
+import { CardLoadState } from '../client-pages.vm';
 
 /*
  * THE GLANCE PAGE (client-card-revision-3 §2.1), mounted as the visit editor
@@ -472,7 +473,7 @@ describe('lib-client-card — Георги, every flag on, his next visit open',
     expect(all.getAttribute('aria-label')).toBe('Лоялност: всички подробности');
 
     const loyalty = overview().loyalty;
-    if (loyalty?.status !== 'ready')
+    if (loyalty?.cardLoadState !== CardLoadState.Ready)
       throw new Error('the loyalty card is not ready');
     const card = must(byId<HTMLButtonElement>('client-loyalty-points'));
     expect(card.closest('lib-loyalty-glance')).not.toBeNull();
@@ -505,7 +506,7 @@ describe('lib-client-card — Георги, every flag on, his next visit open',
   it('draws three named medals in a grid under the earned levels, the cue, and the records line that pushes «Рекорди»', async () => {
     const { byId, text, click, emitted, overview, all, host } = await mount();
     const medals = overview().medals;
-    if (medals?.status !== 'ready')
+    if (medals?.cardLoadState !== CardLoadState.Ready)
       throw new Error('the medals card is not ready');
     expect(medals.data.levelCount).toBeGreaterThan(0);
     const allButton = must(byId('client-achievements-all'));

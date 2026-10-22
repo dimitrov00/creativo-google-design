@@ -28,16 +28,10 @@
   ],
   "references": [
     {
-      "path": "../../../application/shared/tsconfig.lib.json"
-    },
-    {
       "path": "../../../ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/identity/tsconfig.lib.json"
     }
   ]
 }

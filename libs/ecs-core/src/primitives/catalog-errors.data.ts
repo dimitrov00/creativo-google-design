@@ -1,5 +1,5 @@
 import type { Currency } from './currency.primitive';
-import { BarberId, ServiceVariantId } from './ids.primitive';
+import { BarberId, type LocationId, ServiceVariantId } from './ids.primitive';
 import type { Locale } from './locale.data';
 
 /**
@@ -71,6 +71,11 @@ export const CatalogErrorCode = {
   LocationInvalidTimeOfDay: 'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
   /** An open day whose closing time is not after its opening time. */
   LocationInvalidHoursRange: 'CATALOG_LOCATION_INVALID_HOURS_RANGE',
+  /**
+   * No zone can be read for a boundary: neither the named location nor the
+   * deployment's default one is stored (`resolveShopZone`, Phase 4a 4A-11).
+   */
+  LocationZoneUnknown: 'CATALOG_LOCATION_ZONE_UNKNOWN',
 } as const;
 export type CatalogErrorCode =
   (typeof CatalogErrorCode)[keyof typeof CatalogErrorCode];
@@ -115,7 +120,8 @@ export type CatalogError =
   | CatalogError.LocationInvalidMapUrl
   | CatalogError.LocationInvalidHoursLength
   | CatalogError.LocationInvalidTimeOfDay
-  | CatalogError.LocationInvalidHoursRange;
+  | CatalogError.LocationInvalidHoursRange
+  | CatalogError.LocationZoneUnknown;
 
 export const CatalogError = {
   idEmpty(idType: string): CatalogError.IdEmpty {
@@ -273,6 +279,12 @@ export const CatalogError = {
   ): CatalogError.LocationInvalidHoursRange {
     return { errorCode: CatalogErrorCode.LocationInvalidHoursRange, dayIndex };
   },
+  /** `locationId` — the location last asked for (the default one when the named one was absent). */
+  locationZoneUnknown(
+    locationId: LocationId,
+  ): CatalogError.LocationZoneUnknown {
+    return { errorCode: CatalogErrorCode.LocationZoneUnknown, locationId };
+  },
 
   /** Narrows an error to one code — `CatalogError.is(e, CatalogErrorCode.IdEmpty)`. */
   is<C extends CatalogErrorCode>(
@@ -390,5 +402,9 @@ export namespace CatalogError {
     readonly errorCode: typeof CatalogErrorCode.LocationInvalidHoursRange;
     /** `0` = Monday … `6` = Sunday — the index into the seven `DayHours`. */
     readonly dayIndex: number;
+  };
+  export type LocationZoneUnknown = {
+    readonly errorCode: typeof CatalogErrorCode.LocationZoneUnknown;
+    readonly locationId: LocationId;
   };
 }

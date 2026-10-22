@@ -13,6 +13,7 @@ import {
 import {
   BarberPref as EcsBarberPref,
   type BookingPolicy as EcsBookingPolicy,
+  type ChairTime as EcsChairTime,
   type MinuteRange,
 } from '@core/components';
 import {
@@ -21,7 +22,6 @@ import {
   type AvailabilityQuery as EcsAvailabilityQuery,
   AvailabilitySystem,
   type BarberDayAvailability as EcsBarberDayAvailability,
-  type ChairTime as EcsChairTime,
   type LineTerms as EcsLineTerms,
 } from '@core/systems';
 import { BarberPref } from './barber-pref';

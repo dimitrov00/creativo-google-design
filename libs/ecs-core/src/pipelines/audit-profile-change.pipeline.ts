@@ -10,10 +10,13 @@ import { AuditSystem, type ProfileChange } from '@core/systems';
 
 /**
  * `auditProfileChange` — every profile write becomes ONE audit row, whatever
- * wrote it (`audit-profile-changes.ts`, blueprint §4.1): the only profile
- * auditor, a trigger rather than instrumentation in each writer, because one
- * of the writers is the browser and a client cannot be trusted to log its
- * own acts.
+ * wrote it (`audit-profile-changes.ts`, blueprint §4.1): a trigger rather
+ * than instrumentation in each writer, so no writer can forget to log. The
+ * one writer that audits itself is `updateProfile` (owner ruling flip-2
+ * §10.15, Phase 4a 4A-16): its transaction writes the owner's row and moves
+ * the user's `profileEditedAtUtcMs`, and an event whose stamp moved is
+ * planned as nothing here (`AuditSystem.auditedByCallable`) — a creation
+ * and a deletion never are.
  *
  * The row is `AuditSystem.planProfileChange`'s — the changed field NAMES only
  * (never from what to what), credited to the WRITER the event's auth context

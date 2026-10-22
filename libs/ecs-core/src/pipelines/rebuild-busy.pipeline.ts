@@ -4,11 +4,17 @@ import {
   type LocalDate,
   type RepositoryError,
   Result,
-  type TimeZone,
 } from '@core/primitives';
 import { type Appointment, Collections, QueryOp } from '@core/entities';
-import type { CommitPorts, LogPorts, QuerySpec } from '@core/ports';
+import type {
+  CommitPorts,
+  DefaultLocationPorts,
+  LocationLoadPorts,
+  LogPorts,
+  QuerySpec,
+} from '@core/ports';
 import { BusySystem, ZonedTimeSystem } from '@core/systems';
+import { readShopZone } from './shop-zone-read.pipeline';
 
 /**
  * `rebuildBusy` — keep `barberBusy` equal to what the appointments say
@@ -20,16 +26,19 @@ import { BusySystem, ZonedTimeSystem } from '@core/systems';
  * is what serialises the rebuild against a booking commit. A day nothing
  * live occupies is DELETED (`BusySystem.rebuild`).
  *
+ * A busy day's first instant (`utcEpochMs`) is stamped on the zone of the
+ * written appointment's shop (the side after the write, else before), read
+ * once and only when a day needs rebuilding — Law 7.2: the zone lives on the
+ * location (`readShopZone`; a zone that cannot be read is a store failure).
+ *
  * A failed day is logged and the failure goes on to the edge — the days
  * after it are repaired by the next write, as today.
  */
 
-/** What one appointment write asks of the projection — both sides of the write, and the tenant's clock zone. */
+/** What one appointment write asks of the projection — both sides of the write. */
 export type RebuildBusyCommand = {
   readonly before: Appointment | null;
   readonly after: Appointment | null;
-  /** The zone a busy day's first instant (`utcEpochMs`) is stamped in — the tenant's (`TENANT_ZONE`). */
-  readonly timeZone: TimeZone;
 };
 
 /** The busy days rebuilt, in key order. */
@@ -37,7 +46,10 @@ export type RebuildBusyAnswer = {
   readonly rebuiltKeys: readonly BusyKey[];
 };
 
-export type RebuildBusyPorts = CommitPorts & LogPorts;
+export type RebuildBusyPorts = CommitPorts &
+  LocationLoadPorts &
+  DefaultLocationPorts &
+  LogPorts;
 
 /** The live appointments on one busy day — the rebuild's whole read set. */
 export function liveOnBusyDay(key: BusyKey): QuerySpec {
@@ -61,9 +73,15 @@ export const rebuildBusy =
   async (
     cmd: RebuildBusyCommand,
   ): Promise<Result<RebuildBusyAnswer, RepositoryError>> => {
-    const dayStartUtcMs = (localDate: LocalDate) =>
-      ZonedTimeSystem.startOfLocalDay(localDate, cmd.timeZone);
     const keys = BusySystem.affectedKeys(cmd.before, cmd.after);
+    if (keys.length === 0) return Result.ok({ rebuiltKeys: [] });
+    const written = cmd.after ?? cmd.before;
+    const zone = await readShopZone(ports)(
+      written === null ? null : written.locationId,
+    );
+    if (!zone.ok) return zone;
+    const dayStartUtcMs = (localDate: LocalDate) =>
+      ZonedTimeSystem.startOfLocalDay(localDate, zone.value);
     const rebuiltKeys: BusyKey[] = [];
     for (const key of keys) {
       let committed: Result<unknown, RepositoryError>;

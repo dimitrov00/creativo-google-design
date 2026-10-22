@@ -3,7 +3,12 @@ import type {
   RewardCatalogItem,
   StreakDefinition,
 } from '@core/entities';
-import { CouponGrantId, LocalDate, defect } from '@core/primitives';
+import {
+  CouponGrantId,
+  LocalDate,
+  type TimeZone,
+  defect,
+} from '@core/primitives';
 import {
   FreezeReason,
   type StreakHeadRule,
@@ -23,7 +28,11 @@ import {
   daysBetweenDays,
   shopDayOf,
 } from './client-card.format';
-import type { RewardReadyVm, Slice } from './client-pages.vm';
+import {
+  CardLoadState,
+  type RewardReadyVm,
+  type Slice,
+} from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
 
 /*
@@ -183,6 +192,7 @@ export function rhythmStateLine(
   paused: boolean,
   inChairDue: string | null,
   today: string,
+  zone: TimeZone,
   words: ClientCardWords,
 ): RhythmStateLine {
   const rhythm = words.rhythm;
@@ -209,7 +219,7 @@ export function rhythmStateLine(
       const last =
         state.lastQualifiedAtUtcMs === null
           ? null
-          : shopDayOf(state.lastQualifiedAtUtcMs);
+          : shopDayOf(state.lastQualifiedAtUtcMs, zone);
       const weeks =
         last === null
           ? 0
@@ -270,6 +280,8 @@ export interface LoyaltyPageInput {
   readonly visitTitles?: ReadonlyMap<string, string>;
   readonly inChairToday: boolean;
   readonly today: string;
+  /** The shop's zone (Law 7.2): where a stamp's shop day is read. */
+  readonly zone: TimeZone;
   readonly words: ClientCardWords;
 }
 
@@ -278,9 +290,11 @@ export function sliceMap<T, U>(
   map: (data: T) => U | null,
 ): Slice<U> | undefined {
   if (slice === null) return undefined;
-  if (slice.status !== 'ready') return slice;
+  if (slice.cardLoadState !== CardLoadState.Ready) return slice;
   const data = map(slice.data);
-  return data === null ? undefined : { status: 'ready', data };
+  return data === null
+    ? undefined
+    : { cardLoadState: CardLoadState.Ready, data };
 }
 
 // ── The card's own values → ecs-core structs ──────────────────────────────

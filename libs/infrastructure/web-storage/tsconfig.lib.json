@@ -14,13 +14,7 @@
   "exclude": ["src/**/*.spec.ts", "src/**/*.test.ts"],
   "references": [
     {
-      "path": "../../application/booking/tsconfig.lib.json"
-    },
-    {
-      "path": "../../application/shared/tsconfig.lib.json"
-    },
-    {
-      "path": "../../domain/kernel/tsconfig.lib.json"
+      "path": "../../ecs-core/tsconfig.lib.json"
     }
   ]
 }

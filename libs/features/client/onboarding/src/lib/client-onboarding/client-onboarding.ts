@@ -12,14 +12,34 @@ import { firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslocoService, TranslocoDirective } from '@jsverse/transloco';
-import { MAX_AVATAR_BYTES } from '@creativo/application/accounts';
+import {
+  AuthStrategy,
+  type CountryIso2,
+  OnboardingFlowStep,
+  Principal,
+  RegistrationField,
+  type RegistrationFields,
+} from '@core/components';
 import type { Service } from '@core/entities';
 import {
   type IdentityError,
   IdentityErrorCode,
+  IdentifierChannel,
+  PhoneErrorCode,
+  PhoneInvalidReason,
+  RedirectPath,
   type ServiceId,
 } from '@core/primitives';
-import { AgeSystem, OfferingPriceSystem } from '@core/systems';
+import {
+  AgeSystem,
+  AvatarSystem,
+  OfferingPriceSystem,
+  PERSONALIZE_STEPS,
+  type PersonalizeStep,
+  PhoneSystem,
+  ProfileCompletionKey,
+  SettledVerdict,
+} from '@core/systems';
 import { formatCents } from '@creativo/features/shared/visits';
 import {
   CatalogContentService,
@@ -28,17 +48,6 @@ import {
   type ServiceVm,
   formatServiceMeta,
 } from '@creativo/features/shared/catalog';
-import {
-  CountryIso2,
-  PhoneNumber,
-  PhoneNumberInvalidReason,
-  RedirectPath,
-  RegistrationField,
-  authStrategyRequires,
-  examplePhoneNumber,
-  identifierKindForStrategy,
-} from '@creativo/application/identity';
-import { CLOCK } from '@creativo/application/shared';
 import {
   UiAvatar,
   UiButton,
@@ -68,13 +77,24 @@ import {
   ageDayOf,
   nameRefusalCodes,
 } from '@creativo/features/client/account-state';
+import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
-import {
-  OnboardingFlowStore,
-  PERSONALIZE_STEPS,
-  PersonalizeStep,
-} from '../onboarding-flow.store';
+import { OnboardingFlowStore } from '../onboarding-flow.store';
 import { ONBOARDING_SERVICES_CAP } from '../services-cap';
+
+/**
+ * The `data-state` word per flow step — the lowercase spelling the e2e
+ * suite and the stylesheet read (Phase 4a 4A-10: one table, the step's
+ * SCREAMING dictionary mapped once).
+ */
+const ONBOARDING_STEP_WORDS = {
+  [OnboardingFlowStep.About]: 'about',
+  [OnboardingFlowStep.Reward]: 'reward',
+  [OnboardingFlowStep.Services]: 'services',
+  [OnboardingFlowStep.Birthday]: 'birthday',
+  [OnboardingFlowStep.Avatar]: 'avatar',
+  [OnboardingFlowStep.Entering]: 'entering',
+} as const satisfies Record<OnboardingFlowStep, string>;
 
 /**
  * `/onboarding` — about → reward → services → birthday → avatar →
@@ -91,7 +111,7 @@ import { ONBOARDING_SERVICES_CAP } from '../services-cap';
  *
  * Strategy-driven about step: the fields rendered are exactly
  * `strategy.required` minus the identifier's own channel (which the login
- * already proved — `RegisterUserUseCase` applies the same fallback). Under
+ * already proved — `registerUser` applies the same fallback). Under
  * a phone-OTP deployment there is NO phone input here; under email-OTP the
  * composite `ui-phone-field` collects it, primed with the honest
  * "your salon may need to call you" hint. (An email input for a
@@ -129,7 +149,7 @@ import { ONBOARDING_SERVICES_CAP } from '../services-cap';
   styleUrl: './client-onboarding.css',
   host: {
     'data-testid': 'onboarding-page',
-    '[attr.data-state]': 'store.state().kind',
+    '[attr.data-state]': 'stepWord()',
   },
 })
 export class ClientOnboarding {
@@ -150,6 +170,12 @@ export class ClientOnboarding {
   private readonly identity = inject(SessionIdentityService);
 
   protected readonly store = inject(OnboardingFlowStore);
+  protected readonly OnboardingFlowStep = OnboardingFlowStep;
+
+  /** The flow step as its `data-state` word. */
+  protected readonly stepWord = computed(
+    () => ONBOARDING_STEP_WORDS[this.store.state().onboardingFlowStep],
+  );
 
   /** Country names in the picker follow the active UI language, not LOCALE_ID. */
   protected readonly activeLang = toSignal(this.transloco.langChanges$, {
@@ -163,21 +189,23 @@ export class ClientOnboarding {
   /* ── About step (fields from strategy.required, design §2.5) ────── */
 
   /** The login channel — subtracted from `strategy.required` below. */
-  private readonly identifierKind = identifierKindForStrategy(
+  private readonly identifierChannel = AuthStrategy.identifierKind(
     this.store.deployment.strategy,
   );
-  protected readonly needsFirstName = authStrategyRequires(
+  protected readonly needsFirstName = AuthStrategy.requires(
     this.store.deployment.strategy,
-    'firstName',
+    RegistrationField.FirstName,
   );
-  protected readonly needsLastName = authStrategyRequires(
+  protected readonly needsLastName = AuthStrategy.requires(
     this.store.deployment.strategy,
-    'lastName',
+    RegistrationField.LastName,
   );
   /** Phone renders ONLY when required and not already the login channel (email-OTP deployments). */
   protected readonly needsPhone =
-    authStrategyRequires(this.store.deployment.strategy, 'phone') &&
-    this.identifierKind !== 'phone';
+    AuthStrategy.requires(
+      this.store.deployment.strategy,
+      RegistrationField.Phone,
+    ) && this.identifierChannel !== IdentifierChannel.Phone;
 
   protected readonly defaultCountry = this.store.deployment.defaultCountry;
 
@@ -187,19 +215,17 @@ export class ClientOnboarding {
   protected readonly firstNameErrorCode = signal<string | null>(null);
   protected readonly lastNameErrorCode = signal<string | null>(null);
   /** Selected picker country (two-way with `ui-phone-field`). */
-  protected readonly phoneCountry = signal<CountryIso2 | undefined>(undefined);
+  protected readonly phoneCountry = signal<CountryIso2 | null>(null);
   /** Canonical E.164 from `ui-phone-field` — null while the draft is invalid. */
   protected readonly phoneValue = signal<string | null>(null);
-  /** Reason from `PhoneNumber.create` — set on blur/submit, cleared live once the draft turns valid (reward early, punish late). */
-  protected readonly phoneErrorReason = signal<PhoneNumberInvalidReason | null>(
-    null,
-  );
+  /** Reason from `PhoneSystem.parse` — set on blur/submit, cleared live once the draft turns valid (reward early, punish late). */
+  protected readonly phoneErrorReason = signal<PhoneInvalidReason | null>(null);
 
   /* ── Optional birthday step (personalization phase — rewards may offer
         birthday presents) ────────────────────────────────────────────── */
 
-  /** The day the age window is judged on — the UTC civil date, from the Clock port (§7.1: never a raw `Date`), like the server's own check. `null` only if the hardcoded zone were ever invalid (unreachable); validation then falls through to the store's backstop. */
-  private readonly ageDay = ageDayOf(inject(CLOCK));
+  /** The day the age window is judged on — the UTC civil date, from the clock port (§7.1: never a raw `Date`), like the server's own check. */
+  private readonly ageDay = ageDayOf(inject(CLOCK_PORTS));
 
   /** Complete segments from `ui-date-field` — null while empty/unfinished. */
   protected readonly birthValue = signal<UiDateFieldParts | null>(null);
@@ -211,11 +237,7 @@ export class ClientOnboarding {
   /** Save gates on a complete, VO-valid date — an empty group's exit is the Skip affordance, never a dead primary. */
   protected readonly canSubmitBirthday = computed(() => {
     const parts = this.birthValue();
-    return (
-      parts !== null &&
-      this.ageDay !== null &&
-      AgeSystem.fromParts(parts, this.ageDay).ok
-    );
+    return parts !== null && AgeSystem.fromParts(parts, this.ageDay).ok;
   });
 
   /** The two name drafts through the ONE name rule the write enforces. */
@@ -322,11 +344,7 @@ export class ClientOnboarding {
     // a valid date, any quiet error clears live.
     effect(() => {
       const parts = this.birthValue();
-      if (
-        parts !== null &&
-        this.ageDay !== null &&
-        AgeSystem.fromParts(parts, this.ageDay).ok
-      ) {
+      if (parts !== null && AgeSystem.fromParts(parts, this.ageDay).ok) {
         this.birthErrorState.set(null);
       }
     });
@@ -346,9 +364,16 @@ export class ClientOnboarding {
 
   private async bounceActiveAccount(): Promise<void> {
     const settled = await firstValueFrom(
-      this.store.observeSettled().pipe(filter((s) => s !== 'loading')),
+      this.store
+        .observeSettled()
+        .pipe(filter((verdict) => verdict !== SettledVerdict.Loading)),
     );
-    if (settled !== 'active' || this.store.state().kind !== 'about') return;
+    if (
+      settled !== SettledVerdict.Active ||
+      this.store.state().onboardingFlowStep !== OnboardingFlowStep.About
+    ) {
+      return;
+    }
 
     // `?phase=personalize` (the menu's finish-your-profile row): an ACTIVE
     // account re-enters the flow at the personalization phase instead of
@@ -362,14 +387,16 @@ export class ClientOnboarding {
         // Nothing left — the profile was finished elsewhere (or between
         // the tap and the arrival). Don't present an empty flow.
         await this.router.navigateByUrl(
-          this.redirect().authDestination().value,
+          RedirectPath.authDestination(this.redirect()),
         );
         return;
       }
       this.store.beginPersonalization(remaining);
       return;
     }
-    await this.router.navigateByUrl(this.redirect().authDestination().value);
+    await this.router.navigateByUrl(
+      RedirectPath.authDestination(this.redirect()),
+    );
   }
 
   /**
@@ -392,12 +419,16 @@ export class ClientOnboarding {
       }).pipe(filter((value) => value !== null)),
     );
     const open = new Set(
-      progress.items.filter((item) => !item.done).map((item) => item.key),
+      progress.items
+        .filter((item) => !item.done)
+        .map((item) => item.profileCompletionKey),
     );
     return PERSONALIZE_STEPS.filter(
       (step) =>
-        (step === 'birthday' && open.has('birthday')) ||
-        (step === 'avatar' && open.has('photo')),
+        (step === OnboardingFlowStep.Birthday &&
+          open.has(ProfileCompletionKey.Birthday)) ||
+        (step === OnboardingFlowStep.Avatar &&
+          open.has(ProfileCompletionKey.Photo)),
     );
   }
 
@@ -412,8 +443,10 @@ export class ClientOnboarding {
   private async finishEntering(): Promise<void> {
     this.enteringFailed.set(false);
     const principal = await this.store.pollActivation();
-    if (principal?.kind === 'active') {
-      await this.router.navigateByUrl(this.redirect().authDestination().value);
+    if (principal !== null && Principal.isActive(principal)) {
+      await this.router.navigateByUrl(
+        RedirectPath.authDestination(this.redirect()),
+      );
       return;
     }
     // Either a hard gateway failure (`null`) or the backoff exhausted
@@ -427,14 +460,16 @@ export class ClientOnboarding {
     return translateDomainError(this.transloco, { code });
   }
 
-  protected currentError(): string | undefined {
+  protected currentError(): string | null {
     const state = this.store.state();
-    return state.kind === 'about' ? state.error : undefined;
+    return state.onboardingFlowStep === OnboardingFlowStep.About
+      ? state.error
+      : null;
   }
 
   /**
-   * Reason-mapped, example-bearing phone copy (design §2.5): the kernel's
-   * stable `PhoneNumberInvalidReason` maps 1:1 onto
+   * Reason-mapped, example-bearing phone copy (design §2.5): the stable
+   * `PhoneInvalidReason` maps 1:1 onto
    * `errors.identity.phone.*` keys, each interpolating a REAL example
    * number for the effective country so the fix is shown, not described.
    */
@@ -442,7 +477,7 @@ export class ClientOnboarding {
     const reason = this.phoneErrorReason();
     if (!reason) return null;
     const example =
-      examplePhoneNumber(this.phoneCountry() ?? this.defaultCountry) ?? '';
+      PhoneSystem.example(this.phoneCountry() ?? this.defaultCountry) ?? '';
     return translateDomainError(this.transloco, {
       code: `identity.phone.${reason.replace(/-/g, '_')}`,
       params: { example },
@@ -463,11 +498,17 @@ export class ClientOnboarding {
   /** `ui-phone-field` validate-on-blur — never on keystroke (design §2.5). */
   protected onPhoneBlur(fieldText: string): void {
     if (fieldText.trim() === '' || this.phoneValue() !== null) return;
-    const result = PhoneNumber.create(
+    const result = PhoneSystem.parse(
       fieldText,
       this.phoneCountry() ?? this.defaultCountry,
     );
-    this.phoneErrorReason.set(result.isFailure() ? result.error.reason : null);
+    this.phoneErrorReason.set(
+      result.ok
+        ? null
+        : result.error.errorCode === PhoneErrorCode.Invalid
+          ? result.error.reason
+          : PhoneInvalidReason.InvalidCountry,
+    );
   }
 
   /**
@@ -480,7 +521,7 @@ export class ClientOnboarding {
     if (state === null) return null;
     if (state === 'partial') {
       return translateDomainError(this.transloco, {
-        code: IdentityErrorCode.BirthDateInvalid,
+        errorCode: IdentityErrorCode.BirthDateInvalid,
       });
     }
     return translateDomainError(this.transloco, state);
@@ -496,38 +537,46 @@ export class ClientOnboarding {
       this.birthErrorState.set('partial');
       return;
     }
-    if (this.ageDay === null) return;
     const result = AgeSystem.fromParts(event.parts, this.ageDay);
     this.birthErrorState.set(result.ok ? null : result.error);
   }
 
   protected submitAbout(): void {
-    const fields: Partial<Record<RegistrationField, string>> = {};
-    if (this.needsFirstName) fields.firstName = this.firstName();
-    if (this.needsLastName) fields.lastName = this.lastName();
+    let phone: string | null = null;
     if (this.needsPhone) {
-      const phone = this.phoneValue();
+      phone = this.phoneValue();
       if (phone === null) {
         // Unreachable through the UI (the CTA gates on `canSubmitAbout`),
         // kept as the honest validate-on-submit backstop.
-        this.phoneErrorReason.set('invalid');
+        this.phoneErrorReason.set(PhoneInvalidReason.Invalid);
         return;
       }
-      fields.phone = phone;
     }
+    // Every key present: a field the form did not collect is `null`.
+    const fields: RegistrationFields = {
+      [RegistrationField.Phone]: phone,
+      [RegistrationField.Email]: null,
+      [RegistrationField.FirstName]: this.needsFirstName
+        ? this.firstName()
+        : null,
+      [RegistrationField.LastName]: this.needsLastName ? this.lastName() : null,
+      [RegistrationField.BirthDate]: null,
+    };
     void this.store.submitAbout(fields);
   }
 
   /** Quiet inline copy for a failed birthday SAVE (use-case/port failure) — the flow state carries the stable code, `translateDomainError` maps it. */
-  protected birthdaySaveError(): string | undefined {
+  protected birthdaySaveError(): string | null {
     const state = this.store.state();
-    return state.kind === 'birthday' ? state.error : undefined;
+    return state.onboardingFlowStep === OnboardingFlowStep.Birthday
+      ? state.error
+      : null;
   }
 
   /** Birthday-step Save — the CTA gates on `canSubmitBirthday`, the age check here is the honest validate-on-submit backstop (same grammar as the phone). */
   protected submitBirthdayNow(): void {
     const parts = this.birthValue();
-    if (parts === null || this.ageDay === null) return;
+    if (parts === null) return;
     const result = AgeSystem.fromParts(parts, this.ageDay);
     if (!result.ok) {
       this.birthErrorState.set(result.error);
@@ -667,12 +716,12 @@ export class ClientOnboarding {
     input.value = '';
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      this.avatarErrorCode.set('accounts.upload_avatar.not_an_image');
-      return;
-    }
-    if (file.size > MAX_AVATAR_BYTES) {
-      this.avatarErrorCode.set('accounts.upload_avatar.too_large');
+    const checked = AvatarSystem.check({
+      contentType: file.type,
+      sizeBytes: file.size,
+    });
+    if (!checked.ok) {
+      this.avatarErrorCode.set(checked.error.errorCode);
       return;
     }
 

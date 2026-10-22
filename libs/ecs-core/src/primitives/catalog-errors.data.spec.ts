@@ -6,10 +6,11 @@ import {
   MediaDimension,
 } from './catalog-errors.data';
 import { Currency } from './currency.primitive';
+import { LocationId } from './ids.primitive';
 import { Locale } from './locale.data';
 
 describe('CatalogErrorCode', () => {
-  it('keeps the 25 catalog codes, SCREAMING with the CATALOG_ prefix (flatten-spec §4.2)', () => {
+  it('keeps the 26 catalog codes, SCREAMING with the CATALOG_ prefix (flatten-spec §4.2; Phase 4a adds the zone refusal)', () => {
     expect(Object.values(CatalogErrorCode).sort()).toEqual(
       [
         'CATALOG_ID_EMPTY',
@@ -37,6 +38,7 @@ describe('CatalogErrorCode', () => {
         'CATALOG_LOCATION_INVALID_HOURS_LENGTH',
         'CATALOG_LOCATION_INVALID_TIME_OF_DAY',
         'CATALOG_LOCATION_INVALID_HOURS_RANGE',
+        'CATALOG_LOCATION_ZONE_UNKNOWN',
       ].sort(),
     );
   });
@@ -186,6 +188,13 @@ describe('CatalogError factories', () => {
       [
         CatalogError.locationInvalidHoursRange(4),
         { errorCode: 'CATALOG_LOCATION_INVALID_HOURS_RANGE', dayIndex: 4 },
+      ],
+      [
+        CatalogError.locationZoneUnknown(LocationId.of('loc-center')),
+        {
+          errorCode: 'CATALOG_LOCATION_ZONE_UNKNOWN',
+          locationId: 'loc-center',
+        },
       ],
     ];
     expect(cases).toHaveLength(Object.keys(CatalogErrorCode).length);

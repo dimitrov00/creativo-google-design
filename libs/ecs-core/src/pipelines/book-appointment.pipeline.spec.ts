@@ -10,6 +10,8 @@ import {
   MinuteBlock,
   WriteAction,
   type WriteOp,
+  type BookingCall,
+  RequestedSubjectRole,
 } from '@core/components';
 import {
   AppointmentId,
@@ -21,6 +23,7 @@ import {
   RepositoryError as RepoError,
   RepositoryErrorCode,
   Result,
+  TimeErrorCode,
   UserId,
 } from '@core/primitives';
 import {
@@ -33,7 +36,6 @@ import {
 import type { CommitPlan } from '@core/ports';
 import {
   AuditSystem,
-  RequestedSubjectRole,
   SearchFieldsSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -57,8 +59,8 @@ import {
 } from '@core/testing';
 import {
   type BookAppointmentCommand,
-  type BookSeatRequest,
   bookAppointment,
+  frameWallClock,
 } from './book-appointment.pipeline';
 
 const TOMORROW = localDate('2026-09-29');
@@ -95,13 +97,14 @@ function catalogue(locationStatus: LocationStatus = LocationStatus.Active) {
   ];
 }
 
-const SEAT: BookSeatRequest = {
+/** One seat at 10:00 on tomorrow's wall clock — the call carries the minute, never an instant. */
+const SEAT: BookingCall.SeatInput = {
   lineId: 'line-1',
   serviceId: FIXTURE_IDS.service,
   variantId: null,
   barberId: FIXTURE_IDS.barber,
   barberPreference: null,
-  startUtcMs: TEN,
+  startMinutes: 600,
   subject: { requestedSubjectRole: RequestedSubjectRole.Self },
 };
 
@@ -110,6 +113,7 @@ function command(
 ): BookAppointmentCommand {
   return {
     locationId: FIXTURE_IDS.location,
+    localDate: TOMORROW,
     seats: [SEAT],
     attemptId: ATTEMPT,
     bookedFromAppointmentId: null,
@@ -438,12 +442,29 @@ describe('bookAppointment', () => {
   it('refuses a start that did not parse (the seat’s startMinutes)', async () => {
     const { run } = rig(catalogue());
     const answer = await run(
-      command({ seats: [{ ...SEAT, startUtcMs: null }] }),
+      command({ seats: [{ ...SEAT, startMinutes: null }] }),
     );
     expect(!answer.ok && answer.error).toMatchObject({
       errorCode: BookingErrorCode.InvalidInput,
       field: 'startMinutes',
     });
+  });
+
+  it('refuses a start inside the spring-forward gap DST_GAP_INVALID_TIME, never shifted, writing nothing (4A-2 (a))', async () => {
+    const { tx, run } = rig(catalogue());
+    // 2027-03-28 03:30 is never on Sofia's clock: 03:00 jumps to 04:00.
+    const answer = await run(
+      command({
+        localDate: localDate('2027-03-28'),
+        seats: [{ ...SEAT, startMinutes: 210 }],
+      }),
+    );
+    expect(!answer.ok && answer.error).toMatchObject({
+      errorCode: TimeErrorCode.DstGap,
+      localDate: '2027-03-28',
+      minute: 210,
+    });
+    expect(tx.plans).toEqual([]);
   });
 
   it('answers an unreadable policy as the store’s failure, before the transaction', async () => {
@@ -536,5 +557,35 @@ describe('bookAppointment', () => {
       FIXTURE_IDS.customer,
     );
     expect(FIXTURE_IDS.customer).not.toBe(FIXTURE_IDS.client as string);
+  });
+});
+
+describe('frameWallClock — the call’s wall clock on the shop’s zone (Law 7.3)', () => {
+  it('places each start on the day and the envelope at the EARLIEST start, computed once', () => {
+    expect(
+      frameWallClock(TOMORROW, [630, 600, null], FIXTURE_TIME_ZONE),
+    ).toEqual(
+      Result.ok({
+        localDate: TOMORROW,
+        startMinutes: [at(10, 30), at(10), null],
+        startUtcMs: TEN,
+      }),
+    );
+  });
+
+  it('reads a fall-back repeat on the EARLIER offset — no departure', () => {
+    const framed = frameWallClock('2026-10-25', [210], FIXTURE_TIME_ZONE);
+    expect(framed.ok && framed.value.startUtcMs).toBe(
+      utcMs('2026-10-25T03:30:00.000+03:00'),
+    );
+  });
+
+  it('refuses a gap start, and frames nothing for a day that is no day', () => {
+    expect(
+      frameWallClock('2027-03-28', [210], FIXTURE_TIME_ZONE),
+    ).toMatchObject({ ok: false, error: { errorCode: TimeErrorCode.DstGap } });
+    expect(frameWallClock('2026-02-30', [600], FIXTURE_TIME_ZONE)).toEqual(
+      Result.ok({ localDate: null, startMinutes: [null], startUtcMs: null }),
+    );
   });
 });

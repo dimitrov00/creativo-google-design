@@ -6,43 +6,13 @@ import {
 } from '@core/components';
 import {
   BookingStatus,
+  CancellationRefusal,
   Result,
   SchedulingError,
   UtcEpochMs,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
-
-/**
- * Why a client may not cancel (or move) a visit for free — the stable codes
- * of the cancel callable (`cancel-appointment.ts`), the ONLY source of these
- * strings. A move is refused on the same rule as a cancel
- * (`reschedule-booking.use-case.ts:280-292`), so it shares them.
- */
-export const CancellationRefusalCode = {
-  /** The policy could not be read: nobody can say whether it is still free. */
-  PolicyUnavailable: 'BOOKING_CANCEL_POLICY_UNAVAILABLE',
-  /** Completed, no-showed or already cancelled — the graph refuses. */
-  NotCancellable: 'BOOKING_CANCEL_NOT_CANCELLABLE',
-  /** Past the free-cancellation deadline — call the shop instead. */
-  WindowClosed: 'BOOKING_CANCEL_WINDOW_CLOSED',
-} as const;
-export type CancellationRefusalCode =
-  (typeof CancellationRefusalCode)[keyof typeof CancellationRefusalCode];
-
-/** Flat, serialisable refusals discriminated by `errorCode` (Law 7.5). */
-export type CancellationRefusal =
-  | { readonly errorCode: typeof CancellationRefusalCode.PolicyUnavailable }
-  | {
-      readonly errorCode: typeof CancellationRefusalCode.NotCancellable;
-      /** The state the visit is in (was `status`). */
-      readonly bookingStatus: BookingStatus;
-    }
-  | {
-      readonly errorCode: typeof CancellationRefusalCode.WindowClosed;
-      readonly windowHours: number;
-      readonly deadlineUtcMs: UtcEpochMs;
-    };
 
 /** A free cancel (or move): the window it was allowed under — the stamp its seats carry. */
 export type CancellationAllowance = { readonly windowHours: number };
@@ -158,15 +128,12 @@ export const CancellationPolicySystem = {
     nowUtcMs: UtcEpochMs,
   ): Result<CancellationAllowance, CancellationRefusal> {
     if (policy === null) {
-      return Result.err({
-        errorCode: CancellationRefusalCode.PolicyUnavailable,
-      });
+      return Result.err(CancellationRefusal.policyUnavailable());
     }
     if (!BookingLifecycle.canTransition(appointment, BookingStatus.Cancelled)) {
-      return Result.err({
-        errorCode: CancellationRefusalCode.NotCancellable,
-        bookingStatus: appointment.bookingStatus,
-      });
+      return Result.err(
+        CancellationRefusal.notCancellable(appointment.bookingStatus),
+      );
     }
     const windowHours = policy.cancellationWindowHours;
     const startUtcMs = startUtcMsOf(appointment);
@@ -174,11 +141,12 @@ export const CancellationPolicySystem = {
       Number.isFinite(startUtcMs) &&
       !allowsFreeCancelAt(windowHours, startUtcMs, nowUtcMs)
     ) {
-      return Result.err({
-        errorCode: CancellationRefusalCode.WindowClosed,
-        windowHours,
-        deadlineUtcMs: deadlineUtcMs(windowHours, startUtcMs),
-      });
+      return Result.err(
+        CancellationRefusal.windowClosed(
+          windowHours,
+          deadlineUtcMs(windowHours, startUtcMs),
+        ),
+      );
     }
     return Result.ok({ windowHours });
   },

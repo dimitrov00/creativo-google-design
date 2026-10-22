@@ -1,15 +1,10 @@
 import { Provider } from '@angular/core';
 import { of } from 'rxjs';
 import {
-  MEDIA_READER,
-  type MediaRef,
-  type MediaReader,
-  type MediaVariant,
-  ok,
-  type Result as KernelResult,
-} from '@creativo/application/catalog';
-import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
-import type { CatalogReadPorts } from '@core/ports';
+  CATALOG_PORTS,
+  MEDIA_RESOLVE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { CatalogReadPorts, MediaResolvePorts } from '@core/ports';
 import type { Barber, Service } from '@core/entities';
 import {
   BarberOffering,
@@ -194,17 +189,16 @@ function fixtureCatalogPorts(): CatalogReadPorts {
 }
 
 /** Echoes the ref's own path back as the URL — the fixture stores real `/work/*.jpg` paths. */
-class FixtureMediaReader implements MediaReader {
-  async resolve(
-    ref: MediaRef,
-  ): Promise<KernelResult<readonly MediaVariant[], never>> {
-    return ok([{ width: ref.width, url: ref.path }]);
-  }
+function fixtureMediaPorts(): MediaResolvePorts {
+  return {
+    resolveMedia: async (ref) =>
+      Result.ok([{ width: ref.mediaWidth, url: ref.mediaPath }]),
+  };
 }
 
 export function provideTestCatalog(): Provider[] {
   return [
     { provide: CATALOG_PORTS, useFactory: fixtureCatalogPorts },
-    { provide: MEDIA_READER, useClass: FixtureMediaReader },
+    { provide: MEDIA_RESOLVE_PORTS, useFactory: fixtureMediaPorts },
   ];
 }

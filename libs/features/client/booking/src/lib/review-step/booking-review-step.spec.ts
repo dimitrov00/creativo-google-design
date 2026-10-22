@@ -1,63 +1,36 @@
-import {
-  Component,
-  EnvironmentProviders,
-  Injectable,
-  input,
-} from '@angular/core';
+import { Component, input } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import {
-  Translation,
-  TranslocoLoader,
-  provideTransloco,
-} from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
+import type { Translation } from '@jsverse/transloco';
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  AUTH_GATEWAY,
-  PrincipalId,
-  activePrincipal,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
-import {
-  BOOKING_DRAFT_STORE,
-  BOOKING_GATEWAY,
-  BookingGatewayError,
-  type Result,
-  TimeSlot,
-  WAITLIST_GATEWAY,
-  ZonedDateTime,
-  fail,
-  ok,
-} from '@creativo/application/booking';
-import {
-  BarberId,
-  LocationId,
-  MEDIA_READER,
-} from '@creativo/application/catalog';
-import { CLOCK } from '@creativo/application/shared';
 import {
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
-  PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { AppointmentReadPorts } from '@core/ports';
+import { type AppointmentReadPorts, Callables } from '@core/ports';
 import type { Appointment, ShopLocation } from '@core/entities';
 import {
+  type BookingCall,
+  BookingFlowStep,
   DayHours,
   E164,
+  ScheduleSelection,
   Seat,
   SeatOccupant,
   SubjectRelationship,
 } from '@core/components';
 import {
   AppointmentId,
-  BarberId as BarberKey,
+  BarberId,
+  BookingErrorCode,
   BusyKey,
   CustomerId,
   LocalDate,
-  LocationId as LocationKey,
+  LocationId,
+  MoveErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+  Result,
   SeatId,
   ServiceId,
   UserId,
@@ -67,37 +40,29 @@ import {
   FIXTURE_TIME_ZONE,
   appointmentFixture,
   at as minuteAt,
+  endMinute,
+  localDate,
   locationFixture,
   memoryAppointmentReadPorts,
   memoryCatalogReadPorts,
-  memoryProfilePorts,
+  minute,
+  scriptedGatewayPorts,
   seatFixture,
   termsFixture,
   unwrapOk,
   until,
 } from '@core/testing';
 import { UiMap, type UiMapPin } from '@creativo/ui/controls';
+import {
+  bookingPortProviders,
+  provideBookingTestI18n,
+  signedIn,
+} from '../../testing/booking-shell.rig';
 import { BookingFlowStore } from '../booking-flow.store';
 import { BookingChromeService } from '../chrome/booking-chrome.service';
 import { BookingReviewStep } from './booking-review-step';
 
-const ZONE = 'Europe/Sofia';
-const CARRIED = 'booking.reschedule.carried_seat_unplaceable';
-
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) {
-    throw new Error(`fixture setup failed: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
-}
-
-const at = (hour: number) =>
-  unwrap(
-    ZonedDateTime.fromParts(
-      { year: 2026, month: 8, day: 20, hour, minute: 0 },
-      ZONE,
-    ),
-  );
+const CARRIED = MoveErrorCode.CarriedSeatUnplaceable;
 
 /**
  * Stand-in copy, one sentence per key the review step can choose between —
@@ -111,31 +76,12 @@ const COPY: Translation = {
   },
   errors: {
     'booking.gateway.failed': 'COPY:gateway-failed',
-    'booking.commit.invalid_input': 'COPY:invalid-input',
-    'booking.commit.invalid_input.person_overlap': 'COPY:person-overlap',
+    [BookingErrorCode.InvalidInput]: 'COPY:invalid-input',
+    [`${BookingErrorCode.InvalidInput}.person_overlap`]: 'COPY:person-overlap',
     [CARRIED]: 'COPY:carried-generic {{reach}}',
     [`${CARRIED}.barber_unavailable`]: 'COPY:carried-barber-busy {{reach}}',
   },
 };
-
-@Injectable()
-class InlineTranslationLoader implements TranslocoLoader {
-  getTranslation(): Observable<Translation> {
-    return of(COPY);
-  }
-}
-
-function provideTestI18n(): EnvironmentProviders[] {
-  return provideTransloco({
-    config: {
-      availableLangs: ['bg', 'en'],
-      defaultLang: 'bg',
-      fallbackLang: 'bg',
-      missingHandler: { logMissingKey: false },
-    },
-    loader: InlineTranslationLoader,
-  });
-}
 
 /**
  * The place card's map, inert. jsdom has no WebGL, so the real one only logs
@@ -154,7 +100,7 @@ class InertMap {
 function centerShop(): ShopLocation {
   const open = DayHours.open(minuteAt(9), until(20));
   return locationFixture({
-    id: LocationKey.of('loc-center'),
+    id: LocationId.of('loc-center'),
     name: { en: 'Creativo · Center', bg: 'Креативо · Център' },
     address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
     phoneE164: E164.of('+359881234567'),
@@ -190,7 +136,7 @@ function fatherAndSon(
     seatFixture({
       seatId: SeatId.of('seat-father'),
       serviceId: ServiceId.of('svc-fade'),
-      barberId: BarberKey.of('ivan'),
+      barberId: BarberId.of('ivan'),
       startMinutes: minuteAt(10),
       terms,
       occupant: account('client-1', SubjectRelationship.Self),
@@ -198,7 +144,7 @@ function fatherAndSon(
     seatFixture({
       seatId: SeatId.of('seat-son'),
       serviceId: ServiceId.of('svc-fade'),
-      barberId: BarberKey.of(son.barberId),
+      barberId: BarberId.of(son.barberId),
       startMinutes: minuteAt(0, son.startMinutes),
       terms,
       occupant: account('client-son', SubjectRelationship.Companion),
@@ -207,7 +153,7 @@ function fatherAndSon(
   const barberIds = [...new Set(seats.map((seat) => seat.barberId))];
   return appointmentFixture({
     id: AppointmentId.of('appt-moving'),
-    locationId: LocationKey.of('loc-center'),
+    locationId: LocationId.of('loc-center'),
     ownerUserId: UserId.of('client-1'),
     subjectUserIds: [UserId.of('client-1'), UserId.of('client-son')],
     barberIds,
@@ -226,45 +172,61 @@ function fatherAndSon(
 }
 
 /** The owner-scoped visit read a move is re-read through. */
-class StubAppointments {
-  /** What is stored — the double reads this array by reference. */
-  private readonly visits: Appointment[] = [fatherAndSon()];
-  reads = 0;
-
+interface Visits {
   /** Replace the stored visit (staff changed it since the landing). */
-  set stored(visit: Appointment) {
-    this.visits.splice(0, this.visits.length, visit);
-  }
+  store(visit: Appointment): void;
+  reads(): number;
+  ports(): AppointmentReadPorts;
+}
 
-  /** `APPOINTMENT_READ_PORTS` over the stored visit, its reads counted. */
-  ports(): AppointmentReadPorts {
-    const base = memoryAppointmentReadPorts(this.visits);
-    return {
-      ...base,
-      observeAppointment: (id) => {
-        this.reads += 1;
-        return base.observeAppointment(id);
-      },
-    };
-  }
+function visits(): Visits {
+  /** What is stored — the double reads this array by reference. */
+  const stored: Appointment[] = [fatherAndSon()];
+  let reads = 0;
+  return {
+    store: (visit) => {
+      stored.splice(0, stored.length, visit);
+    },
+    reads: () => reads,
+    ports: () => {
+      const base = memoryAppointmentReadPorts(stored);
+      return {
+        ...base,
+        observeAppointment: (id) => {
+          reads += 1;
+          return base.observeAppointment(id);
+        },
+      };
+    },
+  };
 }
 
 /** What the server answers the move with — the spec's to choose. */
-class StubGateway {
-  answer: Result<{ appointmentId: string }, BookingGatewayError> = ok({
-    appointmentId: 'appt-moving',
-  });
-  async reschedule(): Promise<
-    Result<{ appointmentId: string }, BookingGatewayError>
-  > {
-    return this.answer;
-  }
+interface Server {
+  answer: Result<BookingCall.Rescheduled, PipelineError>;
+}
+
+function server(): Server {
+  return {
+    answer: Result.ok({ appointmentId: AppointmentId.of('appt-moving') }),
+  };
+}
+
+/** A carried seat refused for `refusal`, as the wire classifies it. */
+function carried(refusal: string, status = 'failed-precondition') {
+  return Result.err(
+    PipelineError.fromWire(status, {
+      errorCode: CARRIED,
+      refusal,
+      seatIds: ['seat-son'],
+    }),
+  );
 }
 
 async function render(
-  gateway: StubGateway,
+  gateway: Server,
   locations: readonly ShopLocation[] = [centerShop()],
-  appointments: StubAppointments = new StubAppointments(),
+  appointments: Visits = visits(),
 ): Promise<{
   fixture: ComponentFixture<BookingReviewStep>;
   store: BookingFlowStore;
@@ -277,69 +239,22 @@ async function render(
     imports: [BookingReviewStep],
     providers: [
       provideRouter([]),
-      ...provideTestI18n(),
+      ...provideBookingTestI18n(COPY),
+      ...bookingPortProviders({
+        // Signed in: Confirm is a commit, not a sign-in round trip.
+        principal: signedIn('client-1'),
+        gateway: scriptedGatewayPorts({
+          [Callables.RescheduleAppointment]: () => gateway.answer,
+        }),
+      }),
       // Both are the shell's, component-scoped there; the step alone needs
       // them from somewhere.
       BookingFlowStore,
       BookingChromeService,
-      {
-        provide: BOOKING_DRAFT_STORE,
-        useValue: {
-          load: () => ok(null),
-          save: () => ok(undefined),
-          clear: () => ok(undefined),
-        },
-      },
-      { provide: BOOKING_GATEWAY, useValue: gateway },
       { provide: APPOINTMENT_READ_PORTS, useValue: appointments.ports() },
-      {
-        provide: WAITLIST_GATEWAY,
-        useValue: {
-          request: () => Promise.reject(new Error('not used in this spec')),
-          cancel: () => Promise.reject(new Error('not used in this spec')),
-        },
-      },
-      {
-        provide: CLOCK,
-        useValue: {
-          now: (zone: string) =>
-            ZonedDateTime.fromISO('2026-08-03T09:00:00.000+03:00', zone),
-        },
-      },
-      {
-        // Signed in: Confirm is a commit, not a sign-in round trip.
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () =>
-            of(
-              unwrap(
-                activePrincipal(unwrap(PrincipalId.create('client-1')), [
-                  roleFromPrimitive('client'),
-                ]),
-              ),
-            ),
-          refreshToken: () => Promise.resolve(ok(undefined)),
-          signOut: () => Promise.resolve(ok(undefined)),
-          currentDisplayName: () => null,
-          currentIdentifier: () => null,
-        },
-      },
-      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
-      {
-        provide: AVATAR_UPLOADER,
-        useValue: {
-          upload: () => Promise.resolve(ok({ url: 'x', path: 'x' })),
-          find: () => Promise.resolve(ok(null)),
-          remove: () => Promise.resolve(ok(undefined)),
-        },
-      },
       {
         provide: CATALOG_PORTS,
         useValue: memoryCatalogReadPorts({ locations }),
-      },
-      {
-        provide: MEDIA_READER,
-        useValue: { resolve: () => Promise.resolve(ok([])) },
       },
     ],
   }).compileComponents();
@@ -347,22 +262,26 @@ async function render(
   // The flow the way a move reaches review: the visit landed, a new time
   // armed — Ivan at 14:00 for the booker's one line.
   const store = TestBed.inject(BookingFlowStore);
-  store.claim('client-1');
+  store.claim(UserId.of('client-1'));
   store.rescheduleFrom(fatherAndSon(), (ordinal) => `Guest ${ordinal}`);
-  const slot = unwrap(TimeSlot.of(at(14), at(15)));
-  store.selectDay('2026-08-20', ZONE);
-  store.selectStart(at(14).toMillis(), 'loc-center');
-  store.selectSchedule({
-    locationId: unwrap(LocationId.create('loc-center')),
-    timeSlot: slot,
-    assignments: (store.cart()?.entries() ?? [])
-      .flatMap(([, lines]) => lines)
+  const day = localDate('2026-08-20');
+  const center = LocationId.of('loc-center');
+  store.selectDay(day);
+  store.selectStart(minute(14 * 60), center);
+  const selection = ScheduleSelection.of(
+    center,
+    day,
+    (store.cart()?.cartSeats ?? [])
+      .flatMap((seat) => seat.lines)
       .map((line) => ({
-        lineId: line.id,
-        barberId: unwrap(BarberId.create('ivan')),
-        slot,
+        lineId: line.lineId,
+        barberId: BarberId.of('ivan'),
+        startMinutes: minute(14 * 60),
+        endMinutes: endMinute(15 * 60),
       })),
-  });
+  );
+  if (selection === null) throw new Error('fixture setup failed');
+  store.selectSchedule(selection);
 
   const fixture = TestBed.createComponent(BookingReviewStep);
   fixture.detectChanges();
@@ -390,17 +309,17 @@ async function confirm(
 }
 
 describe('BookingReviewStep — a move somebody on the visit cannot follow', () => {
-  let gateway: StubGateway;
+  let gateway: Server;
 
   beforeEach(() => {
     TestBed.resetTestingModule();
-    gateway = new StubGateway();
+    gateway = server();
   });
 
   it('shows who the server carries with the visit — the son, on his own barber, at his new minute', async () => {
     const { fixture, store } = await render(gateway);
 
-    expect(store.step()).toBe('review');
+    expect(store.step()).toBe(BookingFlowStep.Review);
     const riders = (fixture.nativeElement as HTMLElement).querySelectorAll(
       '[data-testid="booking-review-rider"]',
     );
@@ -412,11 +331,16 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
   });
 
   it('says why in the refusal’s OWN words and puts the shop one tap away', async () => {
-    gateway.answer = fail(
-      new BookingGatewayError('unknown', 'refused', {
-        serverCode: CARRIED,
-        refusal: 'barber_unavailable',
-      }),
+    // Built by hand on purpose: on the wire a busy barber is a lost slot
+    // (`PipelineError.fromWire`, below), so only a refusal that STAYS on
+    // review can show how its own words read.
+    gateway.answer = Result.err(
+      PipelineError.of(
+        PipelineErrorCode.InvalidRequest,
+        CARRIED,
+        'barber_unavailable',
+        null,
+      ),
     );
     const { fixture, store } = await render(gateway);
 
@@ -424,7 +348,7 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
 
     // Still on review: another time is the chrome's back chevron, and the
     // copy says so before it offers the call.
-    expect(store.step()).toBe('review');
+    expect(store.step()).toBe(BookingFlowStep.Review);
     expect(query(fixture, 'booking-review-error')?.textContent?.trim()).toBe(
       'COPY:carried-barber-busy REACH:call',
     );
@@ -434,14 +358,10 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
   });
 
   it('sends a companion’s chair lost to a race back to a FRESH grid, like any lost slot', async () => {
-    // The gateway reads a carried seat's busy barber as `slot_unavailable`:
-    // the grid only offered chairs that were free, so somebody took it since.
-    gateway.answer = fail(
-      new BookingGatewayError('slot_unavailable', 'taken', {
-        serverCode: CARRIED,
-        refusal: 'barber_unavailable',
-      }),
-    );
+    // The wire reads a carried seat's busy barber as a lost slot
+    // (`PipelineError.fromWire`): the grid only offered chairs that were
+    // free, so somebody took it since.
+    gateway.answer = carried('barber_unavailable');
     const { fixture, store } = await render(gateway);
 
     await confirm(fixture);
@@ -449,40 +369,37 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
     // Back one step with the day kept and the time dropped, exactly as for
     // the client's own slot; the schedule step says it with the lost-slot
     // copy (`store.slotTaken`).
-    expect(store.step()).toBe('schedule');
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
     expect(store.slotTaken()).toBe(true);
-    expect(store.selectedStartMs()).toBeNull();
-    expect(store.selectedDayKey()).toBe('2026-08-20');
+    expect(store.selectedStartMinutes()).toBeNull();
+    expect(store.selectedLocalDate()).toBe('2026-08-20');
     expect(store.isRescheduling()).toBe(true);
   });
 
   it('re-reads the visit before that fresh grid — facts gone stale would offer the refused time straight back', async () => {
-    gateway.answer = fail(
-      new BookingGatewayError('slot_unavailable', 'taken', {
-        serverCode: CARRIED,
-        refusal: 'barber_unavailable',
-      }),
-    );
-    const appointments = new StubAppointments();
+    gateway.answer = carried('barber_unavailable');
+    const appointments = visits();
     const { fixture, store } = await render(
       gateway,
       [centerShop()],
       appointments,
     );
     // Since the landing, staff re-seated the son: Niko, at 10:30.
-    appointments.stored = fatherAndSon({
-      barberId: 'niko',
-      startMinutes: 10 * 60 + 30,
-    });
+    appointments.store(
+      fatherAndSon({
+        barberId: 'niko',
+        startMinutes: 10 * 60 + 30,
+      }),
+    );
 
     await confirm(fixture);
 
-    expect(appointments.reads).toBe(1);
-    expect(store.step()).toBe('schedule');
+    expect(appointments.reads()).toBe(1);
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
     // The grid it bounces to checks the son where he now sits, and no longer
     // hands back Petar's 10:00 chair, which is somebody else's now.
     expect(
-      store.riders().map((rider) => [rider.barberId, rider.offsetMinutes]),
+      store.moveRiders().map((rider) => [rider.barberId, rider.offsetMinutes]),
     ).toEqual([['niko', 30]]);
     expect(store.moveRelease().map((chair) => chair.barberId)).toEqual([
       'ivan',
@@ -491,13 +408,8 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
   });
 
   it('never re-reads for a refusal that stays on review', async () => {
-    gateway.answer = fail(
-      new BookingGatewayError('unknown', 'refused', {
-        serverCode: CARRIED,
-        refusal: 'service_unavailable',
-      }),
-    );
-    const appointments = new StubAppointments();
+    gateway.answer = carried('service_unavailable');
+    const appointments = visits();
     const { fixture, store } = await render(
       gateway,
       [centerShop()],
@@ -506,17 +418,12 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
 
     await confirm(fixture);
 
-    expect(store.step()).toBe('review');
-    expect(appointments.reads).toBe(0);
+    expect(store.step()).toBe(BookingFlowStep.Review);
+    expect(appointments.reads()).toBe(0);
   });
 
   it('falls back to the refusal’s general copy for a reason the catalogue does not know yet', async () => {
-    gateway.answer = fail(
-      new BookingGatewayError('unknown', 'refused', {
-        serverCode: CARRIED,
-        refusal: 'a_reason_from_a_newer_server',
-      }),
-    );
+    gateway.answer = carried('a_reason_from_a_newer_server');
     const { fixture } = await render(gateway);
 
     await confirm(fixture);
@@ -528,11 +435,13 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
   });
 
   it('offers no call it cannot place — the catalogue does not know the shop', async () => {
-    gateway.answer = fail(
-      new BookingGatewayError('unknown', 'refused', {
-        serverCode: CARRIED,
-        refusal: 'barber_unavailable',
-      }),
+    gateway.answer = Result.err(
+      PipelineError.of(
+        PipelineErrorCode.InvalidRequest,
+        CARRIED,
+        'barber_unavailable',
+        null,
+      ),
     );
     const { fixture } = await render(gateway, []);
 
@@ -547,9 +456,9 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
   });
 
   it('names one person in two chairs in its own words — the reason the server’s field carries', async () => {
-    gateway.answer = fail(
-      new BookingGatewayError('invalid_request', 'refused', {
-        serverCode: 'booking.commit.invalid_input',
+    gateway.answer = Result.err(
+      PipelineError.fromWire('invalid-argument', {
+        errorCode: BookingErrorCode.InvalidInput,
         field: 'person_overlap',
       }),
     );
@@ -557,7 +466,7 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
 
     await confirm(fixture);
 
-    expect(store.step()).toBe('review');
+    expect(store.step()).toBe(BookingFlowStep.Review);
     expect(query(fixture, 'booking-review-error')?.textContent?.trim()).toBe(
       'COPY:person-overlap',
     );
@@ -565,8 +474,8 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
   });
 
   it('offers no call for an ordinary failure — only a carried seat is the shop’s to sort out', async () => {
-    gateway.answer = fail(
-      new BookingGatewayError('invalid_request', 'The bag changed'),
+    gateway.answer = Result.err(
+      PipelineError.bare(PipelineErrorCode.InvalidRequest),
     );
     const { fixture } = await render(gateway);
 
@@ -576,5 +485,63 @@ describe('BookingReviewStep — a move somebody on the visit cannot follow', () 
       'COPY:gateway-failed',
     );
     expect(query(fixture, 'booking-review-call')).toBeNull();
+  });
+});
+
+/*
+ * THE TIME, ON THE SHOP'S WALL CLOCK. The review step formats the selection
+ * as it stands — the shop day and its minutes — and never reads a zone or
+ * the device's calendar to do it; "this year" is the shop's, from the
+ * pinned clock. The characters are today's (R7).
+ */
+describe('BookingReviewStep — the day and the window, on the shop’s wall clock', () => {
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  function text(
+    fixture: ComponentFixture<BookingReviewStep>,
+    testId: string,
+  ): string {
+    return (query(fixture, testId)?.textContent ?? '').replace(/\s+/g, ' ');
+  }
+
+  it('says the day and the window the party comes for', async () => {
+    const { fixture } = await render(server());
+
+    expect(text(fixture, 'booking-review-time')).toContain(
+      'четвъртък, 20 август',
+    );
+    expect(text(fixture, 'booking-review-time')).toContain('14:00 – 15:00');
+  });
+
+  it('names the month alone this year, and with its year in another', async () => {
+    const { fixture, store } = await render(server());
+    expect(text(fixture, 'booking-review-when')).toContain('Август');
+    expect(text(fixture, 'booking-review-when')).not.toContain('2026');
+
+    // Back to the grid, and a day next January instead.
+    store.back();
+    const day = localDate('2027-01-05');
+    const center = LocationId.of('loc-center');
+    store.selectDay(day);
+    store.selectStart(minute(14 * 60), center);
+    const selection = ScheduleSelection.of(
+      center,
+      day,
+      (store.cart()?.cartSeats ?? [])
+        .flatMap((seat) => seat.lines)
+        .map((line) => ({
+          lineId: line.lineId,
+          barberId: BarberId.of('ivan'),
+          startMinutes: minute(14 * 60),
+          endMinutes: endMinute(15 * 60),
+        })),
+    );
+    if (selection === null) throw new Error('fixture setup failed');
+    store.selectSchedule(selection);
+    fixture.detectChanges();
+
+    expect(text(fixture, 'booking-review-when')).toContain('Януари 2027 г.');
   });
 });

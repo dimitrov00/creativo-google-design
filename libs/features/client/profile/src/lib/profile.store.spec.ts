@@ -1,50 +1,33 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
-import {
-  AVATAR_UPLOADER,
-  MAX_AVATAR_BYTES,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
-import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-  Principal,
-  PrincipalId,
-  Result,
-  activePrincipal,
-  fail,
-  ok,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
-import { CLOCK } from '@creativo/application/shared';
-import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
+import { BehaviorSubject } from 'rxjs';
+import type { IdentityCall, Principal } from '@core/components';
+import type { User } from '@core/entities';
+import { Callables } from '@core/ports';
 import {
   AccountsErrorCode,
-  RepositoryError,
-  Result as EcsResult,
+  MediaError,
+  PipelineError,
+  Result,
   UserId,
 } from '@core/primitives';
-import { BirthDate } from '@core/components';
-import type { User } from '@core/entities';
-import type { ProfilePorts } from '@core/ports';
+import { AvatarSystem } from '@core/systems';
 import {
+  type GatewayCall,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
   memoryProfilePorts,
-  provisionedUserFixture,
+  principalFixture,
   registeredUserFixture,
+  scriptedGatewayPorts,
 } from '@core/testing';
+import {
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+  GATEWAY_PORTS,
+  PROFILE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { ProfileStore } from './profile.store';
 
-function unwrap<T>(result: Result<T, unknown>): T {
-  if (result.isFailure()) throw new Error('fixture failed');
-  return result.value;
-}
-
-const TODAY = unwrap(ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'));
-const ACTIVE = unwrap(
-  activePrincipal(unwrap(PrincipalId.create('user_1')), [
-    roleFromPrimitive('client'),
-  ]),
-);
 const USER_ID = UserId.of('user_1');
 
 /** Ада Тестова, registered — her `users/{uid}` body as stored. */
@@ -58,153 +41,167 @@ function user(): User {
 
 interface Harness {
   store: ProfileStore;
-  /** `users/{uid}` as the memory port holds it — what a write leaves. */
-  users: Map<UserId, User>;
-  /** How many owner writes reached the port. */
-  writes: () => number;
+  /** Every callable the store dialled — the profile saves — in order. */
+  calls: GatewayCall[];
   uploads: Blob[];
   removals: string[];
 }
 
+/** The `updateProfile` callable's answer to one edit. */
+type UpdateProfileAnswer = Result<
+  IdentityCall.UpdateProfileAnswer,
+  PipelineError
+>;
+
 function configure(options?: {
   principal?: Principal;
-  profile?: User | null;
-  /** A store failure the owner write answers instead of writing. */
-  writeFails?: boolean;
-  removeResult?: Result<void, { code: string }>;
+  /** How `updateProfile` answers (a change written, unless given). */
+  answer?: UpdateProfileAnswer;
+  removeResult?: Result<void, MediaError>;
 }): Harness {
-  const users = new Map<UserId, User>();
-  const profile = options?.profile === undefined ? user() : options.profile;
-  if (profile !== null) users.set(profile.id, profile);
-  const memory = memoryProfilePorts(users);
-  let writes = 0;
+  const calls: GatewayCall[] = [];
   const uploads: Blob[] = [];
   const removals: string[] = [];
+  const avatars = memoryAvatarPorts();
 
   TestBed.configureTestingModule({
     providers: [
       ProfileStore,
       {
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () => of(options?.principal ?? ACTIVE),
-          currentDisplayName: () => null,
-          currentIdentifier: () => null,
-        },
+        provide: AUTH_SESSION_PORTS,
+        useValue: memoryAuthSessionPorts({
+          principals$: new BehaviorSubject<Principal>(
+            options?.principal ?? principalFixture.client(USER_ID),
+          ),
+        }),
       },
       {
         provide: PROFILE_PORTS,
-        useValue: {
-          ...memory,
-          writeOwnProfile: async (userId, decide) => {
-            writes += 1;
-            return options?.writeFails
-              ? EcsResult.err(
-                  RepositoryError.writeFailed(
-                    `users/${userId}`,
-                    'permission-denied',
-                  ),
-                )
-              : memory.writeOwnProfile(userId, decide);
-          },
-        } satisfies ProfilePorts,
+        useValue: memoryProfilePorts(new Map([[USER_ID, user()]])),
       },
       {
-        provide: AVATAR_UPLOADER,
-        useValue: {
-          find: () => Promise.resolve(ok(null)),
-          upload: (_id: unknown, data: Blob) => {
-            uploads.push(data);
-            return Promise.resolve(ok({ url: 'http://a', path: 'avatars/a' }));
+        provide: GATEWAY_PORTS,
+        useValue: scriptedGatewayPorts(
+          {
+            [Callables.UpdateProfile]: () =>
+              options?.answer ?? Result.ok({ changed: true }),
           },
-          remove: (id: string) => {
-            removals.push(id);
-            return Promise.resolve(options?.removeResult ?? ok(undefined));
+          calls,
+        ),
+      },
+      {
+        provide: AVATAR_PORTS,
+        useValue: {
+          ...avatars,
+          uploadAvatar: (userId: UserId, image: Blob) => {
+            uploads.push(image);
+            return avatars.uploadAvatar(userId, image);
+          },
+          removeAvatar: async (userId: UserId) => {
+            removals.push(userId);
+            return options?.removeResult ?? avatars.removeAvatar(userId);
           },
         },
       },
-      { provide: CLOCK, useValue: { now: () => ok(TODAY) } },
     ],
   });
 
-  return {
-    store: TestBed.inject(ProfileStore),
-    users,
-    writes: () => writes,
-    uploads,
-    removals,
-  };
+  return { store: TestBed.inject(ProfileStore), calls, uploads, removals };
+}
+
+/** A refusal the edge answers for `errorCode` on `status`. */
+function refused(status: string, errorCode: string): UpdateProfileAnswer {
+  return Result.err(PipelineError.fromWire(status, { errorCode }));
 }
 
 const NAME = { first: 'Ана', last: 'Иванова' };
 
 describe('ProfileStore', () => {
-  it('persists a new name and answers null', async () => {
-    const { store, users, writes } = configure();
+  it('sends a new name through updateProfile and answers null', async () => {
+    const { store, calls } = configure();
 
     const code = await store.saveName(NAME.first, NAME.last);
 
     expect(code).toBeNull();
-    expect(writes()).toBe(1);
-    expect(users.get(USER_ID)?.firstName).toBe('Ана');
-    expect(users.get(USER_ID)?.lastName).toBe('Иванова');
-    // The search keys follow the new names (the stored contact kept).
-    expect(users.get(USER_ID)?.searchName).toBe('ана иванова');
+    // The server derives the search keys and judges the names (its
+    // `update-profile.pipeline.spec.ts`); the web sends the edit as typed.
+    expect(calls).toEqual([
+      {
+        callable: Callables.UpdateProfile,
+        input: { firstName: 'Ана', lastName: 'Иванова', birthDate: null },
+      },
+    ]);
   });
 
   it('forwards a birth date unchanged and leaves the names alone', async () => {
-    const { store, users } = configure();
+    const { store, calls } = configure();
 
     const code = await store.saveBirthDate('2000-05-05');
 
     expect(code).toBeNull();
-    expect(users.get(USER_ID)?.birthDate).toBe(BirthDate.of('2000-05-05'));
-    expect(users.get(USER_ID)?.firstName).toBe('Ада');
+    expect(calls).toEqual([
+      {
+        callable: Callables.UpdateProfile,
+        input: { firstName: null, lastName: null, birthDate: '2000-05-05' },
+      },
+    ]);
   });
 
-  it('answers the port failure code instead of throwing', async () => {
-    const { store } = configure({ writeFails: true });
+  it('answers the write-failed code for a store failure instead of throwing', async () => {
+    const { store } = configure({
+      answer: Result.err(PipelineError.fromWire('internal', null)),
+    });
 
     expect(await store.saveName(NAME.first, NAME.last)).toBe(
       'accounts.update_profile.repository_failure',
     );
   });
 
-  it('answers not-found when there is no profile to merge into', async () => {
-    const { store } = configure({ profile: null });
+  it('answers the write-failed code for an expired session too — today one copy for a denied write', async () => {
+    const { store } = configure({
+      answer: refused(
+        'unauthenticated',
+        'ACCOUNTS_UPDATE_PROFILE_UNAUTHENTICATED',
+      ),
+    });
 
     expect(await store.saveName(NAME.first, NAME.last)).toBe(
-      AccountsErrorCode.UpdateProfileNotFound,
+      'accounts.update_profile.repository_failure',
     );
   });
 
-  it('answers not-found for a provisioned stub — a stub is no profile to edit', async () => {
-    const { store, users } = configure({
-      profile: provisionedUserFixture({ id: USER_ID }),
+  it('answers not-found when the server has no profile to edit', async () => {
+    const { store } = configure({
+      answer: refused('not-found', AccountsErrorCode.UpdateProfileNotFound),
     });
 
     expect(await store.saveName(NAME.first, NAME.last)).toBe(
       AccountsErrorCode.UpdateProfileNotFound,
     );
-    expect(users.get(USER_ID)?.firstName).toBeNull();
   });
 
-  it('answers validation-failed for a name the rule refuses, and writes nothing', async () => {
-    const { store, users } = configure();
+  it('answers validation-failed for an edit the server refuses', async () => {
+    const { store } = configure({
+      answer: refused(
+        'invalid-argument',
+        AccountsErrorCode.UpdateProfileValidationFailed,
+      ),
+    });
 
     expect(await store.saveName('A', NAME.last)).toBe(
       AccountsErrorCode.UpdateProfileValidationFailed,
     );
-    expect(users.get(USER_ID)?.firstName).toBe('Ада');
   });
 
-  it('never touches the port without an active session', async () => {
-    const { store, writes } = configure({ principal: ANONYMOUS_PRINCIPAL });
+  it('never calls updateProfile without an active session', async () => {
+    const { store, calls } = configure({
+      principal: principalFixture.anonymous(),
+    });
 
     expect(await store.saveName(NAME.first, NAME.last)).toBe(
       'identifier_missing',
     );
-    expect(writes()).toBe(0);
+    expect(calls).toEqual([]);
   });
 
   it('rejects a non-image and an oversize photo before storage sees them', async () => {
@@ -212,14 +209,16 @@ describe('ProfileStore', () => {
 
     const notAnImage = new File(['x'], 'notes.txt', { type: 'text/plain' });
     expect(await store.uploadPhoto(notAnImage)).toBe(
-      'accounts.upload_avatar.not_an_image',
+      AccountsErrorCode.UploadAvatarNotAnImage,
     );
 
-    const huge = new File([new Uint8Array(MAX_AVATAR_BYTES + 1)], 'big.jpg', {
-      type: 'image/jpeg',
-    });
+    const huge = new File(
+      [new Uint8Array(AvatarSystem.MAX_BYTES + 1)],
+      'big.jpg',
+      { type: 'image/jpeg' },
+    );
     expect(await store.uploadPhoto(huge)).toBe(
-      'accounts.upload_avatar.too_large',
+      AccountsErrorCode.UploadAvatarTooLarge,
     );
     expect(uploads.length).toBe(0);
   });
@@ -243,16 +242,18 @@ describe('ProfileStore', () => {
   });
 
   it('removes the photo without touching the profile document', async () => {
-    const { store, removals, writes } = configure();
+    const { store, removals, calls } = configure();
 
     expect(await store.removePhoto()).toBeNull();
     expect(removals).toEqual(['user_1']);
     // The avatar is a storage object, not a User field.
-    expect(writes()).toBe(0);
+    expect(calls).toEqual([]);
   });
 
   it('answers the remove failure code', async () => {
-    const { store } = configure({ removeResult: fail({ code: 'boom' }) });
+    const { store } = configure({
+      removeResult: Result.err(MediaError.transient('avatars/user_1/original')),
+    });
 
     expect(await store.removePhoto()).toBe(
       'accounts.remove_avatar.remove_failed',

@@ -7,7 +7,11 @@ import {
   type Service,
   type ShopLocation,
 } from '@core/entities';
-import type { CatalogLoadPorts, ListedCatalogPorts } from '@core/ports';
+import type {
+  CatalogLoadPorts,
+  ListedCatalogPorts,
+  LocationLoadPorts,
+} from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';
 
 /**
@@ -22,6 +26,9 @@ import { TriggerAttemptSystem } from '@core/systems';
  * - `loadListedCatalog` — the waitlist matcher's day read: every ACTIVE
  *   service, shop and barber (three single-field `== 'ACTIVE'` queries on
  *   the root status keys, no composite).
+ * - `loadLocation` — one shop by id, `null` when absent: where every server
+ *   pipeline reads its wall clock's zone (`resolveShopZone`, Phase 4a
+ *   4A-11 — the named shop, else the default location).
  *
  * A read that throws answers a `RepositoryError` value whose `reason` is the
  * failure's canonical code (`unavailable`, `aborted`, …) — codes only, and
@@ -64,7 +71,7 @@ async function active<E>(
 
 export const firestoreCatalogPorts = (
   db: Firestore,
-): CatalogLoadPorts & ListedCatalogPorts => ({
+): CatalogLoadPorts & ListedCatalogPorts & LocationLoadPorts => ({
   loadCatalog: async (serviceIds, locationId) => {
     try {
       const readable = serviceIds.filter(isDocumentId);
@@ -120,6 +127,17 @@ export const firestoreCatalogPorts = (
       return Result.ok({ services, locations, barbers });
     } catch (error) {
       return Result.err(readFailed(Collections.Services, error));
+    }
+  },
+
+  loadLocation: async (id) => {
+    const path = `${Collections.Locations}/${id}`;
+    if (!isDocumentId(id)) return Result.ok(null);
+    try {
+      const snap = await db.collection(Collections.Locations).doc(id).get();
+      return Result.ok(entityOf<ShopLocation>(snap));
+    } catch (error) {
+      return Result.err(readFailed(path, error));
     }
   },
 });

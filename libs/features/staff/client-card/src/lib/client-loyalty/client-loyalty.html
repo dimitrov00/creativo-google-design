@@ -91,7 +91,8 @@
 >
   <p>{{ w.offline }}</p>
 </ui-notice>
-} @if (wallet(); as slice) { @switch (slice.status) { @case ('loading') {
+} @if (wallet(); as slice) { @switch (slice.cardLoadState) { @case
+(CardLoadState.Loading) {
 <!-- The account on its way: the pass as one block of its own shape, four
      discs, two tickets, then each later section its heading over a block. -->
 <div
@@ -143,7 +144,7 @@
     <ng-container *ngTemplateOutlet="rows" />
   </ui-stack>
 </div>
-} @case ('failed') {
+} @case (CardLoadState.Failed) {
 <!-- The account did not load: one notice, one retry. -->
 <ui-notice
   uiTone="neutral"
@@ -164,7 +165,7 @@
     {{ w.visitsModule.retry }}
   </button>
 </ui-notice>
-} @case ('ready') { @let vm = slice.data; @if (vm.frozen) {
+} @case (CardLoadState.Ready) { @let vm = slice.data; @if (vm.frozen) {
 <!-- Paused: the pass says «Замразено», this says why. Nothing is zeroed. -->
 <ui-notice
   uiTone="neutral"
@@ -259,7 +260,7 @@
     <span uiSectionDetail data-testid="rewards-wallet-count">{{ detail }}</span>
     }
   </ui-section-header>
-  @switch (vm.holdings.status) { @case ('loading') {
+  @switch (vm.holdings.cardLoadState) { @case (CardLoadState.Loading) {
   <div
     class="client-loyalty__tickets-skeleton"
     aria-busy="true"
@@ -271,7 +272,7 @@
     />
     }
   </div>
-  } @case ('failed') {
+  } @case (CardLoadState.Failed) {
   <ng-container
     *ngTemplateOutlet="
       sectionRetry;
@@ -282,7 +283,7 @@
       }
     "
   />
-  } @case ('ready') { @if (vm.holdings.data.length === 0) {
+  } @case (CardLoadState.Ready) { @if (vm.holdings.data.length === 0) {
   <!-- WC0 · nothing held. -->
   <ui-card
     uiTone="elevated"
@@ -348,20 +349,20 @@
       {{ w.loyaltyPage.tier }}
     </h3>
   </ui-section-header>
-  @switch (tier.status) { @case ('loading') {
+  @switch (tier.cardLoadState) { @case (CardLoadState.Loading) {
   <div aria-busy="true" data-testid="rewards-tier-skeleton">
     <ng-container
       *ngTemplateOutlet="block; context: { $implicit: heights.status }"
     />
   </div>
-  } @case ('failed') {
+  } @case (CardLoadState.Failed) {
   <ng-container
     *ngTemplateOutlet="
       sectionRetry;
       context: { $implicit: 'tier', region: 'loyalty', message: w.failed.loyalty }
     "
   />
-  } @case ('ready') { @let status = tier.data;
+  } @case (CardLoadState.Ready) { @let status = tier.data;
   <ui-card
     uiTone="elevated"
     uiPadding="comfortable"
@@ -439,7 +440,7 @@
       {{ w.loyaltyPage.catalogTitle }}
     </h3>
   </ui-section-header>
-  @switch (catalog.status) { @case ('loading') {
+  @switch (catalog.cardLoadState) { @case (CardLoadState.Loading) {
   <ui-grid
     [uiColumns]="wide() ? 3 : 2"
     uiSpacing="regular"
@@ -452,7 +453,7 @@
     />
     }
   </ui-grid>
-  } @case ('failed') {
+  } @case (CardLoadState.Failed) {
   <ng-container
     *ngTemplateOutlet="
       sectionRetry;
@@ -463,7 +464,7 @@
       }
     "
   />
-  } @case ('ready') {
+  } @case (CardLoadState.Ready) {
   <ui-grid
     [uiColumns]="wide() ? 3 : 2"
     uiSpacing="regular"
@@ -548,11 +549,11 @@
       <ui-icon uiName="nav.disclosure" />
     </button>
   </ui-section-header>
-  @switch (activity.status) { @case ('loading') {
+  @switch (activity.cardLoadState) { @case (CardLoadState.Loading) {
   <div aria-busy="true" data-testid="rewards-ledger-skeleton">
     <ng-container *ngTemplateOutlet="rows" />
   </div>
-  } @case ('failed') {
+  } @case (CardLoadState.Failed) {
   <ng-container
     *ngTemplateOutlet="
       sectionRetry;
@@ -563,7 +564,7 @@
       }
     "
   />
-  } @case ('ready') {
+  } @case (CardLoadState.Ready) {
   <lib-activity-list
     [groups]="activity.data"
     testIdPrefix="rewards-ledger"

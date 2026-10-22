@@ -20,19 +20,20 @@
  *     dev-staff-ivan) writes one audit row per account person, each naming
  *     that person's client record as `targetCustomerId`, attributed to Ivan
  *     as `ADMIN`. The party is re-read on its flat keys (`utcEpochMs`,
- *     `localDate`, `startMinutes`); the callable's move payload keeps its
- *     frozen wire (`startIso`, flip-1 plan F1-3).
- * (e) A profile name change is audited by field name only, BOTH ways
- *     (flip-2 plan F2-5): a client renaming themselves (a rules-checked
- *     owner write) and the `updateProfile` callable putting the name back
- *     each leave exactly one `PROFILE_UPDATED` row whose `profileFields`
- *     name the field and that holds no value — the rename credited to the
- *     client (`USER`), the callable's Admin SDK write to
- *     `SYSTEM`/`ADMIN_SDK` (the plan's §10.15 default) where the event
- *     carries its writer; the Emulator Suite delivers none, so there both
- *     rows must read `SYSTEM`/`UNATTRIBUTED_UNKNOWN` — and the restore
- *     re-derives the search keys from the stored contact, so the profile
- *     ends exactly as the seed wrote it.
+ *     `localDate`, `startMinutes`); the callable's move is the flipped
+ *     call component (Phase 4a 4A-4): `commands: [{ editCommand: 'MOVE',
+ *     localDate, startMinutes, seatIds: null }]`, the shop's wall clock.
+ * (e) A profile name change is audited by field name only (flip-2 plan
+ *     F2-5, Phase 4a 4A-3 (3) / 4A-16): a client's DIRECT write of their own
+ *     name is DENIED by the rules (every users write is the Admin SDK's
+ *     now), and the `updateProfile` callable — the rename, then the name put
+ *     back — leaves exactly ONE `PROFILE_UPDATED` row per call, written by
+ *     the callable in its own transaction and credited to the client
+ *     (`USER`, F-15 §10.15), whose `profileFields` name the field and that
+ *     holds no value; the profile trigger skips the event the
+ *     `profileEditedAtUtcMs` marker names, so no second row appears. The
+ *     restore re-derives the search keys from the stored contact, so the
+ *     profile ends with the seed's name and search keys.
  * (f) The functions build's generated `dist/apps/functions/package.json`
  *     lists exactly the runtime dependencies of
  *     `functions-deps.baseline.json` (ECS migration §6 Phase 1 gate). It
@@ -258,7 +259,11 @@ function callable(name, idToken, data, timeoutMs = CALL_TIMEOUT_MS) {
   });
 }
 
-/** A client-SDK-equivalent write: the REST API under the caller's token, so rules apply. */
+/**
+ * A client-SDK-equivalent write: the REST API under the caller's token, so
+ * rules apply. Answers whether the rules let it through — the caller says
+ * which it expects.
+ */
 async function ownerUpdate(path, fields, idToken) {
   const mask = Object.keys(fields)
     .map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`)
@@ -281,10 +286,7 @@ async function ownerUpdate(path, fields, idToken) {
       }),
     },
   );
-  assert(
-    response.ok,
-    `owner write to ${path} refused: ${await response.text()}`,
-  );
+  return { ok: response.ok, status: response.status };
 }
 
 function runSeed() {
@@ -385,7 +387,13 @@ const BACKFILL_LOST_ANSWERS = 3;
  * document at the end, so a lost answer costs no count.
  */
 async function backfillRun(idToken) {
-  let request = { job: 'clientStats', cursor: null };
+  // The flipped call component (Phase 4a 4A-4): `BackfillCall`.
+  const FROM_THE_TOP = {
+    backfillJobName: 'CLIENT_STATS',
+    backfillResume: false,
+    cursor: null,
+  };
+  let request = FROM_THE_TOP;
   let lost = 0;
   for (;;) {
     let page;
@@ -403,12 +411,12 @@ async function backfillRun(idToken) {
       console.warn(
         `      ${error.message}; resuming from the progress document`,
       );
-      request = { job: 'clientStats' };
+      request = { ...FROM_THE_TOP, backfillResume: true };
       continue;
     }
     lost = 0;
     if (page.done) break;
-    request = { job: 'clientStats', cursor: page.cursor };
+    request = { ...FROM_THE_TOP, cursor: page.cursor };
   }
   const progress = (await db.doc('backfillJobs/clientStats').get()).data();
   assert(
@@ -442,12 +450,17 @@ async function newAuditRows(seen, field, value) {
 }
 
 /**
- * The callable's frozen wire start (F1-3): an ISO instant WITH its offset,
- * which the edge reads with `ZonedTimeSystem.parseOffsetIso`. The stored
- * visit's one instant (`utcEpochMs`), moved by `minutes`, as UTC (`Z`).
+ * One staff move as the flipped wire carries it (Phase 4a 4A-4): the whole
+ * party to `startMinutes` on `localDate`, the shop's wall clock — the
+ * pipeline places it on the location's zone.
  */
-const wireStartOf = (utcEpochMs, minutes = 0) =>
-  new Date(utcEpochMs + minutes * 60_000).toISOString();
+const staffMove = (appointmentId, localDate, startMinutes) => ({
+  appointmentId,
+  commands: [{ editCommand: 'MOVE', localDate, startMinutes, seatIds: null }],
+  acknowledgedOverlap: true,
+  expectedVersion: null,
+  operationId: null,
+});
 
 // ── the proofs ──────────────────────────────────────────────────────────
 
@@ -520,7 +533,10 @@ await db.doc(`users/${SYSADMIN_UID}`).set(
     null,
   ),
 );
+/** The claims `verifyOtp` mints (`AuthClaims.toToken`): the tenant, the stage, the roles. */
+const TENANT = 'creativo';
 const sysadmin = await idTokenFor(SYSADMIN_UID, {
+  tenantId: TENANT,
   stage: 'active',
   roles: ['sysadmin'],
 });
@@ -598,6 +614,7 @@ await check(
   '(d) a staff edit of a party of two audits each person, Ivan as admin',
   async () => {
     const ivan = await idTokenFor(STAFF_UID, {
+      tenantId: TENANT,
       stage: 'active',
       roles: ['barber', 'admin'],
     });
@@ -657,11 +674,11 @@ await check(
     };
 
     let seen = await auditRowIds();
-    await callable('staffEditAppointment', ivan, {
-      appointmentId: PARTY_ID,
-      command: { kind: 'move', startIso: wireStartOf(original.utcEpochMs, 15) },
-      acknowledgedOverlap: true,
-    });
+    await callable(
+      'staffEditAppointment',
+      ivan,
+      staffMove(PARTY_ID, original.localDate, original.startMinutes + 15),
+    );
     proveRows(
       await waitFor(() => rowsFor(seen), 2, 'rows for the move'),
       'move',
@@ -675,11 +692,11 @@ await check(
 
     // …and back, which is a second edit of the same party.
     seen = await auditRowIds();
-    await callable('staffEditAppointment', ivan, {
-      appointmentId: PARTY_ID,
-      command: { kind: 'move', startIso: wireStartOf(original.utcEpochMs) },
-      acknowledgedOverlap: true,
-    });
+    await callable(
+      'staffEditAppointment',
+      ivan,
+      staffMove(PARTY_ID, original.localDate, original.startMinutes),
+    );
     const back = await waitFor(
       () => rowsFor(seen),
       2,
@@ -706,9 +723,10 @@ const actorOf = (row) =>
   );
 
 await check(
-  '(e) a profile name change is audited by field name, never by value — the owner write and updateProfile',
+  '(e) a profile name change is audited by field name, never by value — the owner write denied, updateProfile one USER row',
   async () => {
     const client = await idTokenFor(RENAMED_UID, {
+      tenantId: TENANT,
       stage: 'active',
       roles: ['client'],
     });
@@ -730,7 +748,11 @@ await check(
       (await newAuditRows(seen, 'targetUserId', RENAMED_UID)).filter(
         (row) => row.auditAction === 'PROFILE_UPDATED',
       );
-    const proveRow = (rows, values, actor, how) => {
+    // The callable writes its own row, credited to the client it verified
+    // (§10.15, 4A-16) — whatever writer context the Emulator Suite's events
+    // carry, because the trigger skips the event the marker names.
+    const USER = { actorRole: 'USER', actorUserId: RENAMED_UID };
+    const proveRow = (rows, values, how) => {
       assert(
         rows.length === 1,
         `${how}: ${rows.length} rows, expected 1: ${canonical(rows)}`,
@@ -747,70 +769,65 @@ await check(
         `${how}: the row holds values: ${leaked.join(', ')}`,
       );
       assert(
-        canonical(actorOf(row)) === canonical(actor),
-        `${how}: actor ${canonical(actorOf(row))}, expected ${canonical(actor)}`,
+        canonical(actorOf(row)) === canonical(USER),
+        `${how}: actor ${canonical(actorOf(row))}, expected ${canonical(USER)}`,
       );
       return row;
     };
 
-    // Who each row credits is the writer the EVENT's auth context names
-    // (`AuditSystem.profileWriter`): in production the client for the owner
-    // write and `SYSTEM`/`ADMIN_SDK` for the callable's Admin SDK write
-    // (§10.15's default, pinned by `audit.system.spec.ts` and
-    // `triggers.wire.spec.ts`). The Emulator Suite (firebase-tools 15.11)
-    // delivers Firestore events with no writer context — authtype
-    // `unknown`, a fake e-mail id — so there BOTH rows read
-    // `SYSTEM`/`UNATTRIBUTED_UNKNOWN`, as they did before the identity flip.
-    // The rename row says which world this is; the restore row must then
-    // match that world's pair exactly — never a mix.
-    const UNATTRIBUTED = {
-      actorRole: 'SYSTEM',
-      actorSystemSource: 'UNATTRIBUTED_UNKNOWN',
-    };
-    const ATTRIBUTED = {
-      rename: { actorRole: 'USER', actorUserId: RENAMED_UID },
-      restore: { actorRole: 'SYSTEM', actorSystemSource: 'ADMIN_SDK' },
-    };
-
-    // The rename: the owner's own write, which the rules still allow — the
-    // trigger credits the writer the event names, the client.
-    let seen = await auditRowIds();
-    await ownerUpdate(`users/${RENAMED_UID}`, { firstName: renamed }, client);
-    const renameRows = await waitFor(() => rowsFor(seen), 1, 'the rename row');
-    const attributed =
-      renameRows.length === 1 &&
-      canonical(actorOf(renameRows[0])) !== canonical(UNATTRIBUTED);
-    const rename = proveRow(
-      renameRows,
-      [original, renamed],
-      attributed ? ATTRIBUTED.rename : UNATTRIBUTED,
-      'the owner rename',
+    // The owner's own write: DENIED (4A-3 (3)), nothing written, no row.
+    const seen = await auditRowIds();
+    const direct = await ownerUpdate(
+      `users/${RENAMED_UID}`,
+      { firstName: renamed },
+      client,
     );
-
-    // The restore: the `updateProfile` callable (an Admin SDK write) —
-    // credited to the system (§10.15's default), its search keys
-    // re-derived from the STORED contact.
-    seen = await auditRowIds();
-    const answer = await callable('updateProfile', client, {
-      firstName: original,
-    });
     assert(
-      answer?.changed === true,
-      `updateProfile answered ${canonical(answer)}, expected { changed: true }`,
+      !direct.ok,
+      `the owner's direct write went through (HTTP ${direct.status})`,
     );
-    const restore = proveRow(
-      await waitFor(() => rowsFor(seen), 1, 'the restore row'),
-      [original, renamed],
-      attributed ? ATTRIBUTED.restore : UNATTRIBUTED,
-      'the updateProfile restore',
+    await sleep(1_500);
+    assert(
+      (await rowsFor(seen)).length === 0,
+      'a denied write left an audit row',
     );
+    assert(
+      (await db.doc(`users/${RENAMED_UID}`).get()).get('firstName') ===
+        original,
+      'the denied write changed the name',
+    );
+
+    // The rename through `updateProfile`: ONE row, the client's.
+    const rename = async (firstName, how) => {
+      const before = await auditRowIds();
+      const answer = await callable('updateProfile', client, {
+        firstName,
+        lastName: null,
+        birthDate: null,
+      });
+      assert(
+        answer?.changed === true,
+        `${how}: updateProfile answered ${canonical(answer)}, expected { changed: true }`,
+      );
+      return proveRow(
+        await waitFor(() => rowsFor(before), 1, `the ${how} row`),
+        [original, renamed],
+        how,
+      );
+    };
+    const renameRow = await rename(renamed, 'updateProfile rename');
+    const restoreRow = await rename(original, 'updateProfile restore');
     const restored = (await db.doc(`users/${RENAMED_UID}`).get()).data();
     assert(
       restored.firstName === original &&
         searchKeysOf(restored) === searchKeysOf(profile),
       `the profile did not end as the seed wrote it: ${canonical(restored)}`,
     );
-    return `profileFields ${canonical(rename.profileFields)}; ${attributed ? 'attributed' : 'emulator, no auth context'}: rename actor ${canonical(actorOf(rename))}, restore actor ${canonical(actorOf(restore))}; resourceId ${rename.resourceId}`;
+    assert(
+      typeof restored.profileEditedAtUtcMs === 'number',
+      `the callable left no profileEditedAtUtcMs marker: ${canonical(restored)}`,
+    );
+    return `owner write denied (HTTP ${direct.status}); profileFields ${canonical(renameRow.profileFields)}; one row per call, actor ${canonical(actorOf(restoreRow))}; resourceId ${renameRow.resourceId}`;
   },
 );
 

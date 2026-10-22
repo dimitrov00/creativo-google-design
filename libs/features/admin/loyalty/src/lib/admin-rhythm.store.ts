@@ -14,11 +14,18 @@ import type { Subscription } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
 import {
   CLIENT_STATS_READ_PORTS,
+  CLOCK_PORTS,
+  FLAGS_PORTS,
+  ID_PORTS,
   STREAK_DEFINITION_PORTS,
   STREAK_PUBLISH_PORTS,
+  ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
 import type { StreakDefinition, StreakDefinitionVersion } from '@core/entities';
-import type { StreakPublishGatewayPorts } from '@core/ports';
+import type {
+  StreakDefinitionPorts,
+  StreakPublishGatewayPorts,
+} from '@core/ports';
 import {
   type EngagementError,
   LocalDate,
@@ -27,10 +34,12 @@ import {
   Result,
   StreakPublishError,
   StreakPublishErrorCode,
-  UtcEpochMs,
+  type TimeZone,
+  type UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
+  FlagName,
   HeadRole,
   StreakInterval,
   type StreakHeadRule,
@@ -58,17 +67,11 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
-  CLOCK,
-  FEATURE_FLAGS,
-  ID_GENERATOR,
-} from '@creativo/application/shared';
-import {
   type RhythmRuleWords,
   rhythmRuleWords,
 } from '@creativo/features/shared/visits';
 import {
   RHYTHM_PREVIEW_DELAY_MS,
-  RHYTHM_SHOP_ZONE,
   rhythmPreviewOf,
   rhythmPreviewReadsFacts,
   rhythmPreviewSource,
@@ -78,14 +81,24 @@ import {
 // ── What the page reads ────────────────────────────────────────────────────
 
 /**
- * One read as the page draws it: a skeleton, the content, or «Опитай пак».
- * The client card's three states (`client-card.vm.ts`), which a feature
- * cannot import from another feature.
+ * Where one read stands: a skeleton, the content, or «Опитай пак» — the
+ * discriminator of {@link Slice}, named after its field (Law 6, Phase 4a
+ * 4A-13). The client card's three states, which a feature cannot import
+ * from another feature.
  */
+export const RhythmLoadState = {
+  Loading: 'LOADING',
+  Ready: 'READY',
+  Failed: 'FAILED',
+} as const;
+export type RhythmLoadState =
+  (typeof RhythmLoadState)[keyof typeof RhythmLoadState];
+
+/** One read as the page draws it — its {@link RhythmLoadState}, and the data once ready. */
 export type Slice<T> =
-  | { readonly status: 'loading' }
-  | { readonly status: 'ready'; readonly data: T }
-  | { readonly status: 'failed' };
+  | { readonly rhythmLoadState: typeof RhythmLoadState.Loading }
+  | { readonly rhythmLoadState: typeof RhythmLoadState.Ready; readonly data: T }
+  | { readonly rhythmLoadState: typeof RhythmLoadState.Failed };
 
 /** The business has ONE rhythm rule (§4.1): the recommended rule's id. */
 export const ADMIN_RHYTHM_STREAK_ID = StreakRule.DEFAULT_DEFINITION_ID;
@@ -327,11 +340,8 @@ function headAfterWithdrawal(head: AdminRhythmHead): AdminRhythmHead | null {
 
 const laterOf = (a: LocalDate, b: LocalDate): LocalDate => (a > b ? a : b);
 
-/** The shop's zone name, as the clock reads it. */
-const SHOP_ZONE = 'Europe/Sofia';
-
-const LOADING: Slice<never> = { status: 'loading' };
-const FAILED: Slice<never> = { status: 'failed' };
+const LOADING: Slice<never> = { rhythmLoadState: RhythmLoadState.Loading };
+const FAILED: Slice<never> = { rhythmLoadState: RhythmLoadState.Failed };
 
 /** The rule moved under the draft: what the draft was made on, against what the head now holds. */
 const staleAgainst = (
@@ -387,9 +397,13 @@ export class AdminRhythmStore {
   private readonly statsReader = inject(CLIENT_STATS_READ_PORTS, {
     optional: true,
   });
-  private readonly clock = inject(CLOCK, { optional: true });
-  private readonly ids = inject(ID_GENERATOR, { optional: true });
-  private readonly flags = inject(FEATURE_FLAGS, { optional: true });
+  /** The browser's clock (`CLOCK_PORTS`): read again with every act. */
+  private readonly clock = inject(CLOCK_PORTS);
+  /** A publish's request id, one per intent (`ID_PORTS`). */
+  private readonly ids = inject(ID_PORTS);
+  private readonly flags = inject(FLAGS_PORTS);
+  /** Where the shop's zone is read (Law 7.2, Phase 4a 4A-11). */
+  private readonly shopZones = inject(ShopZoneService);
   private readonly transloco = inject(TranslocoService);
   private readonly window = inject(DOCUMENT).defaultView;
 
@@ -397,11 +411,11 @@ export class AdminRhythmStore {
     this.statsReader === null ? null : rhythmPreviewSource(this.statsReader);
 
   /** `loyalty.streaks`: off, the page still works (the rule is prepared before the rollout) and says so. */
-  readonly streaksOn = this.flags?.isEnabled('loyalty.streaks') ?? false;
+  readonly streaksOn = this.flags.flagOn(FlagName.LoyaltyStreaks);
 
   /** When a change may start: the server's policy, read from the same flag. */
   readonly policy: StreakNoticePolicy = {
-    clientsSeeRhythm: this.flags?.isEnabled('loyalty.selfView') ?? false,
+    clientsSeeRhythm: this.flags.flagOn(FlagName.LoyaltySelfView),
     noticeDays: ADMIN_RHYTHM_NOTICE_DAYS,
   };
 
@@ -425,8 +439,22 @@ export class AdminRhythmStore {
   private remembered: RememberedIntervals =
     RhythmDraftSystem.NOTHING_REMEMBERED;
 
+  /** Bumped by every `load`: a zone read of an older one is dropped. */
+  private loadTicket = 0;
+
   private readonly _now = signal(this.readNow());
-  private readonly _status = signal<Slice<unknown>['status']>('loading');
+  /**
+   * The shop's zone (Law 7.2, F-4): the rule belongs to no location, so it
+   * is the deployment's default location's, read ONCE at the first `load`
+   * (`ShopZoneService`) — before the rule is listened to, so no rule is
+   * ever judged on a day the page cannot name. `null` until then.
+   */
+  private readonly _zone = signal<TimeZone | null>(null);
+  /** The shop's zone the page words a stamp's day in; `null` until the first `load` has read it. */
+  readonly zone: Signal<TimeZone | null> = this._zone.asReadonly();
+  private readonly _loadState = signal<RhythmLoadState>(
+    RhythmLoadState.Loading,
+  );
   /** The head as the stream last said it. */
   private readonly _live = signal<AdminRhythmHead | null>(null);
   /** The head the draft was made on. */
@@ -456,49 +484,53 @@ export class AdminRhythmStore {
 
   /** The head: the rule in force and the one that waits. Where the shop has published none, the recommended rule. */
   readonly schedule: Signal<Slice<StreakSchedule>> = computed(() => {
-    const status = this._status();
+    const loadState = this._loadState();
     const head = this._live();
-    if (head !== null) return { status: 'ready', data: head.schedule };
-    return status === 'failed' ? FAILED : LOADING;
+    if (head !== null) {
+      return { rhythmLoadState: RhythmLoadState.Ready, data: head.schedule };
+    }
+    return loadState === RhythmLoadState.Failed ? FAILED : LOADING;
   });
 
   /** `false`: the shop has published no rule yet and the form holds the recommended one («Още няма правило»). */
   readonly published = computed(() => this._live()?.published ?? false);
 
   /**
-   * Today, tomorrow and the first of next month, in the shop's zone. The
-   * clock is read again with every act; the days move only when the day
-   * does, so reading the clock re-judges nothing.
+   * Today, tomorrow and the first of next month, in the shop's zone; `null`
+   * until the zone is known (the page's skeleton). The clock is read again
+   * with every act; the days move only when the day does, so reading the
+   * clock re-judges nothing.
    */
-  readonly days: Signal<AdminRhythmDays> = computed(
+  readonly days: Signal<AdminRhythmDays | null> = computed(
     () => {
-      const today = ZonedTimeSystem.toLocal(
-        this._now(),
-        RHYTHM_SHOP_ZONE,
-      ).localDate;
+      const zone = this._zone();
+      if (zone === null) return null;
+      const today = ZonedTimeSystem.toLocal(this._now(), zone).localDate;
       return {
         today,
         tomorrow: LocalDate.addDays(today, 1),
         firstOfMonth: LocalDate.addMonths(LocalDate.startOfMonth(today), 1),
       };
     },
-    { equal: (a, b) => a.today === b.today },
+    { equal: (a, b) => a?.today === b?.today },
   );
 
   /** The rule clients live under today; `null` until the head has answered. */
   readonly inForce: Signal<StreakHeadRule | null> = computed(() => {
     const head = this._live();
-    return head === null
+    const days = this.days();
+    return head === null || days === null
       ? null
-      : StreakRuleSystem.inForceOn(head.schedule, this.days().today);
+      : StreakRuleSystem.inForceOn(head.schedule, days.today);
   });
 
   /** The version that waits for its day (with what it will do to the runs, `streakTransition`); `null` when nothing waits. */
   readonly upcoming: Signal<StreakHeadRule | null> = computed(() => {
     const head = this._live();
-    return head === null
+    const days = this.days();
+    return head === null || days === null
       ? null
-      : StreakRuleSystem.upcomingOn(head.schedule, this.days().today);
+      : StreakRuleSystem.upcomingOn(head.schedule, days.today);
   });
 
   /** «История»: the rule's versions, newest first, the withdrawn ones among them. */
@@ -512,8 +544,10 @@ export class AdminRhythmStore {
   /** What the draft comes to against the rule in force; `null` until the head has answered. */
   private readonly assessment = computed((): StreakDraftAssessment | null => {
     const base = this._base();
-    if (base === null || this.publishing === null) return null;
     const days = this.days();
+    if (base === null || this.publishing === null || days === null) {
+      return null;
+    }
     return StreakPublishSystem.assess(
       base.schedule,
       base.published,
@@ -551,11 +585,11 @@ export class AdminRhythmStore {
     );
   });
 
-  /** The first day this change may start: the day picker's minimum. */
-  readonly earliestDay: Signal<LocalDate> = computed(() => {
+  /** The first day this change may start: the day picker's minimum; `null` until the shop's days are known. */
+  readonly earliestDay: Signal<LocalDate | null> = computed(() => {
     const assessment = this.assessment();
     if (assessment?.draftAssessment !== DraftAssessment.Valid) {
-      return this.days().tomorrow;
+      return this.days()?.tomorrow ?? null;
     }
     const floor = this._floor();
     return floor !== null && floor.direction === assessment.change.direction
@@ -563,10 +597,14 @@ export class AdminRhythmStore {
       : assessment.earliest;
   });
 
-  /** The day the draft will be published for: the one chosen, never earlier than the change may start. */
-  readonly effectiveFrom: Signal<LocalDate> = computed(() =>
-    laterOf(this._picked() ?? this.days().tomorrow, this.earliestDay()),
-  );
+  /** The day the draft will be published for: the one chosen, never earlier than the change may start; `null` until the shop's days are known. */
+  readonly effectiveFrom: Signal<LocalDate | null> = computed(() => {
+    const chosen = this._picked() ?? this.days()?.tomorrow ?? null;
+    const earliest = this.earliestDay();
+    return chosen === null || earliest === null
+      ? null
+      : laterOf(chosen, earliest);
+  });
 
   /** The ranges that move with the draft. */
   readonly bounds = computed(() => rhythmBoundsOf(this._draft()));
@@ -637,9 +675,13 @@ export class AdminRhythmStore {
   });
 
   /** One invented client's run under the draft: what the rule card's track draws. `null` under a rule that is off. */
-  readonly sample: Signal<StreakState | null> = computed(() =>
-    sampleRhythmRun(this._worded(), this.days().today),
-  );
+  readonly sample: Signal<StreakState | null> = computed(() => {
+    const zone = this._zone();
+    const days = this.days();
+    return zone === null || days === null
+      ? null
+      : sampleRhythmRun(this._worded(), days.today, zone);
+  });
 
   // ── The preview ──────────────────────────────────────────────────────────
 
@@ -691,30 +733,20 @@ export class AdminRhythmStore {
       this.tick();
       const definitions = this.definitions;
       if (definitions === null) {
-        this._status.set('failed');
+        this._loadState.set(RhythmLoadState.Failed);
         this._versions.set(FAILED);
         return;
       }
-      if (this._live() === null) this._status.set('loading');
+      if (this._live() === null) this._loadState.set(RhythmLoadState.Loading);
       const generation = this.generation;
+      const ticket = (this.loadTicket += 1);
       this.headTimer = setTimeout(() => {
         this.headTimer = null;
         if (generation === this.generation && this._live() === null) {
-          this._status.set('failed');
+          this._loadState.set(RhythmLoadState.Failed);
         }
       }, ADMIN_RHYTHM_READ_TIMEOUT_MS);
-      this.subscription = definitions
-        .observeStreakDefinitionHead(ADMIN_RHYTHM_STREAK_ID)
-        .subscribe({
-          next: (head) =>
-            this.heard(head.ok ? Result.ok(headOf(head.value)) : head),
-          error: () =>
-            this.heard(
-              Result.err(
-                RepositoryError.readFailed(null, "The rule's stream ended"),
-              ),
-            ),
-        });
+      void this.listen(generation, ticket, definitions);
       void this.loadVersions();
     });
   }
@@ -728,10 +760,10 @@ export class AdminRhythmStore {
     untracked(() => {
       if (this._live() === null) {
         this.load();
-      } else if (this._versions().status === 'failed') {
+      } else if (this._versions().rhythmLoadState === RhythmLoadState.Failed) {
         void this.loadVersions();
       }
-      if (this._preview()?.status === 'failed') {
+      if (this._preview()?.rhythmLoadState === RhythmLoadState.Failed) {
         this.facts?.forget();
         this.previewSoon(0);
       }
@@ -772,10 +804,10 @@ export class AdminRhythmStore {
 
   /**
    * «От»: the day the draft is to start on. Answers the day that will be
-   * used, which is never earlier than the change may start. What is no
-   * day changes nothing.
+   * used, which is never earlier than the change may start (`null` until
+   * the shop's days are known). What is no day changes nothing.
    */
-  setEffectiveFrom(raw: string): LocalDate {
+  setEffectiveFrom(raw: string): LocalDate | null {
     return untracked(() => {
       const day = LocalDate.parse(raw);
       if (day.ok && day.value !== this._picked()) {
@@ -828,20 +860,64 @@ export class AdminRhythmStore {
 
   // ── The head ─────────────────────────────────────────────────────────────
 
+  /**
+   * The shop's zone first (read once, then kept), then the rule's stream.
+   * A zone that cannot be read is the rule's own failed read (Phase 4a
+   * 4A-2 (e)): «Опитай пак» asks for both again.
+   */
+  private async listen(
+    generation: number,
+    ticket: number,
+    definitions: StreakDefinitionPorts,
+  ): Promise<void> {
+    if (this._zone() === null) {
+      const zone = await this.shopZones.zoneOf(null);
+      if (generation !== this.generation || ticket !== this.loadTicket) return;
+      if (!zone.ok) {
+        if (this._live() === null) {
+          this.clearHeadTimer();
+          this._loadState.set(RhythmLoadState.Failed);
+        }
+        return;
+      }
+      this._zone.set(zone.value);
+    }
+    this.subscription = definitions
+      .observeStreakDefinitionHead(ADMIN_RHYTHM_STREAK_ID)
+      .subscribe({
+        next: (head) =>
+          this.heard(head.ok ? Result.ok(headOf(head.value)) : head),
+        error: () =>
+          this.heard(
+            Result.err(
+              RepositoryError.readFailed(null, "The rule's stream ended"),
+            ),
+          ),
+      });
+  }
+
+  /**
+   * The shop's days, once the zone is known — read only where a head was
+   * heard, which is only ever after the zone (`listen`).
+   */
+  private shopDays(): AdminRhythmDays {
+    return this.days() ?? defect('the shop’s days were read before its zone');
+  }
+
   private heard(head: Result<AdminRhythmHead, RepositoryError>): void {
     if (!head.ok) {
       // A read that fails over an answer keeps the answer: the stream
       // stays open and says the rule again when it can.
       if (this._live() === null) {
         this.clearHeadTimer();
-        this._status.set('failed');
+        this._loadState.set(RhythmLoadState.Failed);
       }
       return;
     }
     this.clearHeadTimer();
     const before = this._live();
     this._live.set(head.value);
-    this._status.set('ready');
+    this._loadState.set(RhythmLoadState.Ready);
     if (before !== null && versionsOf(before) !== versionsOf(head.value)) {
       void this.loadVersions();
     }
@@ -869,7 +945,7 @@ export class AdminRhythmStore {
   private adopt(head: AdminRhythmHead): void {
     this._base.set(head);
     this._draft.set(
-      draftOf(StreakRuleSystem.inForceOn(head.schedule, this.days().today)),
+      draftOf(StreakRuleSystem.inForceOn(head.schedule, this.shopDays().today)),
     );
     this._picked.set(null);
     this._floor.set(null);
@@ -887,7 +963,7 @@ export class AdminRhythmStore {
    */
   private rebase(head: AdminRhythmHead): void {
     const base = this._base();
-    const { today } = this.days();
+    const { today } = this.shopDays();
     if (base !== null) {
       this._draft.set(
         RhythmDraftSystem.clamp(
@@ -928,11 +1004,18 @@ export class AdminRhythmStore {
    * what the admin changed is carried over the rule of today.
    */
   private tick(): boolean {
-    const before = this.days().today;
+    const before = this.days()?.today ?? null;
     this._now.set(this.readNow());
-    const { today } = this.days();
+    const today = this.days()?.today ?? null;
     const base = this._base();
-    if (base === null || today === before) return false;
+    if (
+      base === null ||
+      before === null ||
+      today === null ||
+      today === before
+    ) {
+      return false;
+    }
     const was = StreakRuleSystem.inForceOn(base.schedule, before);
     const is = StreakRuleSystem.inForceOn(base.schedule, today);
     if (was === is) return false;
@@ -954,7 +1037,8 @@ export class AdminRhythmStore {
     if (definitions === null) return;
     const ticket = (this.versionsTicket += 1);
     const generation = this.generation;
-    if (this._versions().status !== 'ready') this._versions.set(LOADING);
+    if (this._versions().rhythmLoadState !== RhythmLoadState.Ready)
+      this._versions.set(LOADING);
     const read = await this.timed(() =>
       definitions.listStreakDefinitionVersions(
         ADMIN_RHYTHM_STREAK_ID,
@@ -965,8 +1049,11 @@ export class AdminRhythmStore {
       return;
     }
     if (read.ok) {
-      this._versions.set({ status: 'ready', data: read.value });
-    } else if (this._versions().status !== 'ready') {
+      this._versions.set({
+        rhythmLoadState: RhythmLoadState.Ready,
+        data: read.value,
+      });
+    } else if (this._versions().rhythmLoadState !== RhythmLoadState.Ready) {
       this._versions.set(FAILED);
     }
   }
@@ -987,8 +1074,9 @@ export class AdminRhythmStore {
       this._refusal.set(stale);
       return Result.err(stale);
     }
-    const { today } = this.days();
-    const effectiveFrom = this.effectiveFrom();
+    const { today } = this.shopDays();
+    const effectiveFrom =
+      this.effectiveFrom() ?? defect('a draft judged before its days');
     const assessed = StreakPublishSystem.assess(
       base.schedule,
       base.published,
@@ -1137,7 +1225,7 @@ export class AdminRhythmStore {
       return Result.err(RepositoryError.unavailable());
     }
     this.tick();
-    const today = this.days().today;
+    const { today } = this.shopDays();
     const requestId = (this.withdrawIntent ??= this.nextId());
     const generation = this.generation;
     this._withdrawing.set(true);
@@ -1222,10 +1310,8 @@ export class AdminRhythmStore {
       this._previewBusy.set(false);
       return;
     }
-    const inForce = StreakRuleSystem.inForceOn(
-      base.schedule,
-      this.days().today,
-    );
+    const { today } = this.shopDays();
+    const inForce = StreakRuleSystem.inForceOn(base.schedule, today);
     const reads = rhythmPreviewReadsFacts(inForce, assessment.rule);
     if (reads && facts.failed()) {
       // The walk failed and nobody asked for it again: the notice stays,
@@ -1234,9 +1320,10 @@ export class AdminRhythmStore {
       this._previewBusy.set(false);
       return;
     }
-    if (this._preview()?.status !== 'ready') this._preview.set(LOADING);
+    if (this._preview()?.rhythmLoadState !== RhythmLoadState.Ready)
+      this._preview.set(LOADING);
     this._previewBusy.set(true);
-    if (reads) void facts.read();
+    if (reads) void facts.read(this.shopZone());
     const ticket = this.previewTicket;
     const generation = this.generation;
     this.previewTimer = setTimeout(() => {
@@ -1253,13 +1340,14 @@ export class AdminRhythmStore {
     const assessment = this.assessment();
     if (stale() || facts === null || base === null) return;
     if (assessment?.draftAssessment !== DraftAssessment.Valid) return;
-    const { today } = this.days();
+    const { today } = this.shopDays();
     const inForce = StreakRuleSystem.inForceOn(base.schedule, today);
     const draft = assessment.rule;
+    const zone = this.shopZone();
 
     if (!rhythmPreviewReadsFacts(inForce, draft)) {
       this._preview.set({
-        status: 'ready',
+        rhythmLoadState: RhythmLoadState.Ready,
         data: rhythmPreviewOf({
           inForce,
           draft,
@@ -1271,7 +1359,7 @@ export class AdminRhythmStore {
       this._previewBusy.set(false);
       return;
     }
-    const read = await this.timed(() => facts.read());
+    const read = await this.timed(() => facts.read(zone));
     if (stale()) return;
     if (!read.ok) {
       // The answer on screen is about another draft: it goes.
@@ -1280,7 +1368,7 @@ export class AdminRhythmStore {
       return;
     }
     this._preview.set({
-      status: 'ready',
+      rhythmLoadState: RhythmLoadState.Ready,
       data: rhythmPreviewOf({ inForce, draft, facts: read.value, today }),
     });
     this._previewCapped.set(read.value.capped);
@@ -1301,18 +1389,20 @@ export class AdminRhythmStore {
     );
   }
 
-  /** The instant now, from the clock where one is bound; the days are read off it in the shop's zone (`days`). */
+  /** The instant now (`CLOCK_PORTS`); the days are read off it in the shop's zone (`days`). */
   private readNow(): UtcEpochMs {
-    const told = this.clock?.now(SHOP_ZONE);
-    const now = UtcEpochMs.of(
-      told?.isSuccess() ? told.value.toMillis() : Date.now(),
+    return this.clock.nowUtcMs();
+  }
+
+  /** The shop's zone, once known — read only where a head was heard (`listen`). */
+  private shopZone(): TimeZone {
+    return (
+      this._zone() ?? defect('the shop’s zone was read before it was known')
     );
-    // Unreachable: a clock reads a safe integer.
-    return now.ok ? now.value : defect('the clock read no instant');
   }
 
   private nextId(): PublishRequestId {
-    return PublishRequestId.of(this.ids?.next() ?? crypto.randomUUID());
+    return PublishRequestId.of(this.ids.nextId());
   }
 
   private stopListening(): void {

@@ -5,7 +5,7 @@ import type {
 } from '@firebase/rules-unit-testing';
 import { doc, setDoc } from 'firebase/firestore';
 import { loyaltyCatalogMemo } from '@creativo/infrastructure/firebase-app';
-import { EngagementErrorCode } from '@core/primitives';
+import { EngagementErrorCode, Result } from '@core/primitives';
 import { LoyaltyCatalogSystem } from '@core/systems';
 import {
   FIXTURE_TODAY,
@@ -25,7 +25,7 @@ const portsFor = (context: RulesTestContext) =>
   loyaltyCatalogReadPorts(
     modularFirestore(context),
     loyaltyCatalogMemo(),
-    () => FIXTURE_TODAY,
+    async () => Result.ok(FIXTURE_TODAY),
   );
 
 describe('loyaltyCatalogReadPorts (emulator)', () => {

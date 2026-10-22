@@ -38,6 +38,13 @@ export const GovernanceErrorCode = {
   EndImpersonationNotFound: 'GOVERNANCE_END_IMPERSONATION_NOT_FOUND',
   /** A user search shorter than `minLength`. */
   SearchUsersQueryTooShort: 'GOVERNANCE_SEARCH_USERS_QUERY_TOO_SHORT',
+  /** `startImpersonation` / `endImpersonation` called without a signed-in session. */
+  ImpersonationUnauthenticated: 'GOVERNANCE_IMPERSONATION_UNAUTHENTICATED',
+  /**
+   * The caller holds no admin role (`ADMIN_ROLES`) — today's rule
+   * `isAdmin()` on `impersonationSessions`; checked before any read.
+   */
+  ImpersonationForbidden: 'GOVERNANCE_IMPERSONATION_FORBIDDEN',
 } as const;
 export type GovernanceErrorCode =
   (typeof GovernanceErrorCode)[keyof typeof GovernanceErrorCode];
@@ -53,7 +60,9 @@ export type GovernanceError =
   | GovernanceError.ImpersonationAdminNotStaff
   | GovernanceError.ImpersonationAlreadyEnded
   | GovernanceError.EndImpersonationNotFound
-  | GovernanceError.SearchUsersQueryTooShort;
+  | GovernanceError.SearchUsersQueryTooShort
+  | GovernanceError.ImpersonationUnauthenticated
+  | GovernanceError.ImpersonationForbidden;
 
 export const GovernanceError = {
   auditEntryEmptyAction(): GovernanceError.AuditEntryEmptyAction {
@@ -118,6 +127,17 @@ export const GovernanceError = {
       minLength,
     };
   },
+  impersonationUnauthenticated(): GovernanceError.ImpersonationUnauthenticated {
+    return { errorCode: GovernanceErrorCode.ImpersonationUnauthenticated };
+  },
+  impersonationForbidden(
+    callerUserId: UserId,
+  ): GovernanceError.ImpersonationForbidden {
+    return {
+      errorCode: GovernanceErrorCode.ImpersonationForbidden,
+      callerUserId,
+    };
+  },
 
   /** Narrows an error to one code — `GovernanceError.is(e, GovernanceErrorCode.ImpersonationSelf)`. */
   is<C extends GovernanceErrorCode>(
@@ -169,10 +189,20 @@ export namespace GovernanceError {
     readonly errorCode: typeof GovernanceErrorCode.SearchUsersQueryTooShort;
     readonly minLength: number;
   };
+  export type ImpersonationUnauthenticated = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationUnauthenticated;
+  };
+  export type ImpersonationForbidden = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationForbidden;
+    /** The signed-in caller whose roles hold no admin role. */
+    readonly callerUserId: UserId;
+  };
 }
 
 /** Why the operator backfill (`runBackfill`) refused a call — the ONLY source of these strings, the field `errorCode`. */
 export const RunBackfillRefusalCode = {
+  /** No signed-in caller (was the wire's `ops.backfill.unauthenticated`). */
+  Unauthenticated: 'OPS_BACKFILL_UNAUTHENTICATED',
   /** The stored roles hold no `sysadmin`. */
   Forbidden: 'OPS_BACKFILL_FORBIDDEN',
   /** The payload named no job, or a cursor that is not a document id. */

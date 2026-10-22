@@ -1,4 +1,5 @@
-import { SeatKey } from '@creativo/application/booking';
+import type { SeatKey } from '@core/components';
+import type { SeatKeyText } from '@core/primitives';
 
 /**
  * One member of the party, as every surface that scopes BY PERSON reads them.
@@ -10,7 +11,8 @@ import { SeatKey } from '@creativo/application/booking';
  * a name.
  */
 export interface SeatScopeVm {
-  readonly key: string;
+  /** The cart's key for this seat (`SeatKey.text`) — `'self'`, `'guest-3'`. */
+  readonly key: SeatKeyText;
   readonly seatKey: SeatKey;
   /** How this person is NAMED — a subject. "Ти", "Гост 1", "Мария". */
   readonly label: string;

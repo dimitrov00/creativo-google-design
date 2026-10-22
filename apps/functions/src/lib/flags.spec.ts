@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FEATURE_FLAG_KEYS } from '@creativo/domain/governance';
+import { FLAG_NAMES, FlagName } from '@core/components';
 import { FLAG_PARAMS, flagOn } from './flags';
 
 // The §12.1 table, spelled out: the env writer (tools/flags) pins the same
@@ -22,9 +22,7 @@ const PARAM_NAMES = {
 
 describe('FLAG_PARAMS', () => {
   it('names one param per flag key, as §12.1 spells it', () => {
-    expect(Object.keys(FLAG_PARAMS).sort()).toEqual(
-      [...FEATURE_FLAG_KEYS].sort(),
-    );
+    expect(Object.keys(FLAG_PARAMS).sort()).toEqual([...FLAG_NAMES].sort());
     expect(
       Object.fromEntries(
         Object.entries(FLAG_PARAMS).map(([key, param]) => [key, param.name]),
@@ -45,17 +43,17 @@ describe('flagOn', () => {
   });
 
   it('is off when the env holds no value', () => {
-    expect(flagOn('client.pause')).toBe(false);
+    expect(flagOn(FlagName.ClientPause)).toBe(false);
   });
 
   it('reads the deployed value at call time', () => {
     process.env['CLIENT_PAUSE'] = 'true';
-    expect(flagOn('client.pause')).toBe(true);
-    expect(flagOn('client.profile')).toBe(false);
+    expect(flagOn(FlagName.ClientPause)).toBe(true);
+    expect(flagOn(FlagName.ClientProfile)).toBe(false);
   });
 
   it('treats anything but "true" as off', () => {
     process.env['CLIENT_PAUSE'] = 'TRUE';
-    expect(flagOn('client.pause')).toBe(false);
+    expect(flagOn(FlagName.ClientPause)).toBe(false);
   });
 });

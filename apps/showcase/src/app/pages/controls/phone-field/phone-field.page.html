@@ -2,7 +2,7 @@
   <ng-container scLede>
     <code>ui-phone-field</code> — the one genuinely composite field: country
     trigger (emoji flag + dial code) + tel input inside a single bordered frame,
-    with as-you-type national formatting (kernel <code>formatPhoneDraft</code>,
+    with as-you-type national formatting (<code>PhoneSystem.formatDraft</code>,
     snap-to-canonical on blur), a searchable country picker — anchored popover
     on regular widths, bottom sheet on compact — and an E.164-only
     <code>value</code> model that is non-null only while the draft is valid.
@@ -36,7 +36,7 @@
   <sc-demo scTitle="Invalid & disabled">
     <ng-container scAbout>
       Validation belongs to the CONSUMER — <code>error</code> is an input
-      (validate on blur/submit via <code>PhoneNumber.create</code>, clear once
+      (validate on blur/submit via <code>PhoneSystem.parse</code>, clear once
       <code>value</code> goes non-null). Disabled dims the whole frame.
     </ng-container>
     <ui-flow uiSpacing="comfortable" uiAlignment="trailing">

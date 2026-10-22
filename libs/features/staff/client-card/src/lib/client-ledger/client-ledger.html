@@ -61,7 +61,7 @@
   }
 </ui-flow>
 
-@switch (vm.status) { @case ('loading') {
+@switch (vm.cardLoadState) { @case (CardLoadState.Loading) {
 <!-- The first page on its way: three months of two rows. -->
 <div
   class="client-ledger__placeholders"
@@ -106,7 +106,7 @@
   </div>
   }
 </div>
-} @case ('failed') {
+} @case (CardLoadState.Failed) {
 <!-- The first page did not come: one notice, one retry. -->
 <ui-notice
   uiTone="neutral"
@@ -127,7 +127,8 @@
     {{ w.visitsModule.retry }}
   </button>
 </ui-notice>
-} @case ('ready') { @if (vm.groups.length === 0) { @if (vm.filter === all) {
+} @case (CardLoadState.Ready) { @if (vm.groups.length === 0) { @if (vm.filter
+=== all) {
 <!-- No entry yet. -->
 <ui-empty-state data-testid="ledger-empty">
   <p uiText uiFont="callout" uiForegroundStyle="secondary">

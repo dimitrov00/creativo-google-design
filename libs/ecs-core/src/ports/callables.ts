@@ -1,21 +1,25 @@
+import {
+  BackfillCall,
+  BookingCall,
+  GovernanceCall,
+  IdentityCall,
+  InvitationCall,
+  StreakPublishCall,
+  WaitlistCall,
+} from '@core/components';
+import type { PipelineError, Result } from '@core/primitives';
+
 /**
  * The callable registry (blueprint §4.1, §4.2) — the ONE spelling of every
- * server export the web dials through {@link CallableClient}
+ * server export the web dials through `CallableClient`
  * (`scheduling.port.ts`). A values file on purpose, like
- * `entities/collections.ts`: not a `*.data.ts` (it names deployed functions, not
- * a component) and not a `*.port.ts` (ports are function types). Each value
- * is the export name in `apps/functions/src/main.ts` verbatim — the name
- * Firebase deploys and the browser SDK resolves — so the Phase 3b flips
- * delete the string literals of today's gateway adapters
- * (`booking-gateway.adapter.ts`, `otp-client.adapter.ts`,
- * `waitlist-gateway.adapter.ts`, `streak-publish-gateway.adapter.ts`).
+ * `entities/collections.ts`: not a `*.data.ts` (it names deployed functions,
+ * not a component) and not a `*.port.ts` (ports are function types). Each
+ * value is the export name in `apps/functions/src/main.ts` verbatim — the
+ * name Firebase deploys and the browser SDK resolves.
  *
- * Only callables the server exports TODAY are listed: a name here that no
- * function exports would type-check a call that can only fail at run time
- * (the `contact-change.adapter.ts` defect, §1.4). The Phase 3 pipelines that
- * add a callable add its name in the same change as its export —
- * `updateProfile` with the identity flip (2); `startImpersonation`,
- * `endImpersonation` and `redeemInvitation` with theirs.
+ * Phase 4a adds `startImpersonation`, `endImpersonation` and
+ * `redeemInvitation` with their server pipelines (4A-3 (4), (5)).
  * Triggers and schedules are never dialled, so they are not here.
  */
 export const Callables = {
@@ -35,5 +39,129 @@ export const Callables = {
   CancelWaitlist: 'cancelWaitlist',
   RunBackfill: 'runBackfill',
   PublishStreakDefinition: 'publishStreakDefinition',
+  StartImpersonation: 'startImpersonation',
+  EndImpersonation: 'endImpersonation',
+  RedeemInvitation: 'redeemInvitation',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
+
+/**
+ * THE WIRE, BY NAME (Phase 4a 4A-4) — what each callable takes and answers:
+ * the flat call components of `@core/components`. The web's
+ * `callableClient` is typed through it; the server's decoders and encoders
+ * type against it too. Total over {@link CallableName}.
+ */
+export type CallableWire = {
+  readonly [Callables.RequestOtpChallenge]: {
+    readonly input: IdentityCall;
+    readonly answer: IdentityCall.RequestOtpAnswer;
+  };
+  readonly [Callables.VerifyOtpChallenge]: {
+    readonly input: IdentityCall.VerifyOtp;
+    readonly answer: IdentityCall.VerifyOtpAnswer;
+  };
+  readonly [Callables.CompleteRegistration]: {
+    readonly input: IdentityCall.CompleteRegistration;
+    readonly answer: IdentityCall.CompleteRegistrationAnswer;
+  };
+  readonly [Callables.UpdateProfile]: {
+    readonly input: IdentityCall.UpdateProfile;
+    readonly answer: IdentityCall.UpdateProfileAnswer;
+  };
+  readonly [Callables.CommitBooking]: {
+    readonly input: BookingCall;
+    readonly answer: BookingCall.Committed;
+  };
+  readonly [Callables.CancelAppointment]: {
+    readonly input: BookingCall.Cancel;
+    readonly answer: BookingCall.Cancelled;
+  };
+  readonly [Callables.RescheduleAppointment]: {
+    readonly input: BookingCall.Reschedule;
+    readonly answer: BookingCall.Rescheduled;
+  };
+  readonly [Callables.TransitionAppointment]: {
+    readonly input: BookingCall.Transition;
+    readonly answer: BookingCall.Transitioned;
+  };
+  readonly [Callables.MarkArrived]: {
+    readonly input: BookingCall.Arrival;
+    readonly answer: BookingCall.Arrived;
+  };
+  readonly [Callables.ClearArrival]: {
+    readonly input: BookingCall.Arrival;
+    readonly answer: BookingCall.Cleared;
+  };
+  readonly [Callables.RecordSeatTip]: {
+    readonly input: BookingCall.Tip;
+    readonly answer: BookingCall.TipRecorded;
+  };
+  readonly [Callables.StaffEditAppointment]: {
+    readonly input: BookingCall.StaffEdit;
+    readonly answer: BookingCall.StaffEdited;
+  };
+  readonly [Callables.RequestWaitlist]: {
+    readonly input: WaitlistCall;
+    readonly answer: WaitlistCall.Requested;
+  };
+  readonly [Callables.CancelWaitlist]: {
+    readonly input: WaitlistCall.Cancel;
+    readonly answer: WaitlistCall.Cancelled;
+  };
+  readonly [Callables.RunBackfill]: {
+    readonly input: BackfillCall;
+    readonly answer: BackfillCall.Page;
+  };
+  readonly [Callables.PublishStreakDefinition]: {
+    readonly input: StreakPublishCall | StreakPublishCall.Withdraw;
+    readonly answer: StreakPublishCall.Answer;
+  };
+  readonly [Callables.StartImpersonation]: {
+    readonly input: GovernanceCall;
+    readonly answer: GovernanceCall.Started;
+  };
+  readonly [Callables.EndImpersonation]: {
+    readonly input: GovernanceCall.End;
+    readonly answer: GovernanceCall.Ended;
+  };
+  readonly [Callables.RedeemInvitation]: {
+    readonly input: InvitationCall;
+    readonly answer: InvitationCall.Redeemed;
+  };
+};
+
+/** One callable's answer decoder — the only way its answer becomes branded data. */
+export type AnswerDecoder<N extends CallableName> = (
+  raw: unknown,
+) => Result<CallableWire[N]['answer'], PipelineError>;
+
+/**
+ * The runtime twin of {@link CallableWire}: each callable's answer decoder,
+ * the call component's own (§3.2). The web's `callableClient` adapter looks
+ * the decoder up here — a table lookup, no rule of its own; a failing
+ * decode is `PIPELINE_UNKNOWN`, today's "a 200 with nothing usable in it".
+ */
+export const CALLABLE_ANSWER_DECODERS: {
+  readonly [N in CallableName]: AnswerDecoder<N>;
+} = {
+  [Callables.RequestOtpChallenge]: IdentityCall.decodeRequestOtpAnswer,
+  [Callables.VerifyOtpChallenge]: IdentityCall.decodeVerifyOtpAnswer,
+  [Callables.CompleteRegistration]:
+    IdentityCall.decodeCompleteRegistrationAnswer,
+  [Callables.UpdateProfile]: IdentityCall.decodeUpdateProfileAnswer,
+  [Callables.CommitBooking]: BookingCall.decodeCommitted,
+  [Callables.CancelAppointment]: BookingCall.decodeCancelled,
+  [Callables.RescheduleAppointment]: BookingCall.decodeRescheduled,
+  [Callables.TransitionAppointment]: BookingCall.decodeTransitioned,
+  [Callables.MarkArrived]: BookingCall.decodeArrived,
+  [Callables.ClearArrival]: BookingCall.decodeCleared,
+  [Callables.RecordSeatTip]: BookingCall.decodeTipRecorded,
+  [Callables.StaffEditAppointment]: BookingCall.decodeStaffEdited,
+  [Callables.RequestWaitlist]: WaitlistCall.decodeRequested,
+  [Callables.CancelWaitlist]: WaitlistCall.decodeCancelled,
+  [Callables.RunBackfill]: BackfillCall.decodePage,
+  [Callables.PublishStreakDefinition]: StreakPublishCall.decodeAnswer,
+  [Callables.StartImpersonation]: GovernanceCall.decodeStarted,
+  [Callables.EndImpersonation]: GovernanceCall.decodeEnded,
+  [Callables.RedeemInvitation]: InvitationCall.decodeRedeemed,
+};

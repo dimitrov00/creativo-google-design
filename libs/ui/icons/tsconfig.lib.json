@@ -22,7 +22,7 @@
   ],
   "references": [
     {
-      "path": "../../domain/kernel/tsconfig.lib.json"
+      "path": "../../ecs-core/tsconfig.lib.json"
     }
   ]
 }

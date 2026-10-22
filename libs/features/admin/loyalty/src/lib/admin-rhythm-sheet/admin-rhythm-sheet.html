@@ -397,15 +397,17 @@
         <h2 uiSheetLargeTitle [id]="titleId" uiText uiFont="largeTitle">
           {{ title() }}
         </h2>
+        @if (store.effectiveFrom(); as selected) {
         <ui-month-picker
-          [uiSelected]="store.effectiveFrom()"
-          [uiToday]="store.days().today"
+          [uiSelected]="selected"
+          [uiToday]="store.days()?.today ?? null"
           [uiMin]="store.earliestDay()"
           [uiLocale]="lang()"
           uiSize="large"
           data-testid="admin-rhythm-day-picker"
           (uiPicked)="pickDay($event)"
         />
+        }
       </ui-stack>
     </div>
     } } @if (kind !== 'day') {

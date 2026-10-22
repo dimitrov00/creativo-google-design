@@ -27,6 +27,7 @@ import {
   type TimeZone,
   type UtcEpochMs,
 } from '@core/primitives';
+import { ShopZoneSystem } from './shop-zone.system';
 
 /**
  * The admin programs form, judged (flip 4, F4-5) — pure: the raw
@@ -305,9 +306,11 @@ export const ProgramsSystem = {
     fallback: ShopLocation | null,
     defaultLocationId: LocationId,
   ): Result<TimeZone, EngagementError.ShopEventZoneUnknown> {
-    if (named !== null) return Result.ok(named.timeZone);
-    if (fallback !== null) return Result.ok(fallback.timeZone);
-    return Result.err(EngagementError.shopEventZoneUnknown(defaultLocationId));
+    // The ONE named → default rule is ShopZoneSystem's; the event's refusal is its own.
+    const zone = ShopZoneSystem.zoneOf(named, fallback);
+    return zone === null
+      ? Result.err(EngagementError.shopEventZoneUnknown(defaultLocationId))
+      : Result.ok(zone);
   },
 
   /** The event with the instant the ingestion boundary computed — a pure assembler. */

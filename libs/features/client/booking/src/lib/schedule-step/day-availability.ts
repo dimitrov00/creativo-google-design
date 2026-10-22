@@ -11,20 +11,18 @@ import {
   type BookingCart,
   type BookingPolicy,
   CapacityEntry,
+  type ChairTime,
   type RosterWindow,
   type ShopNow,
 } from '@core/components';
 import {
-  BarberId,
+  type BarberId,
   BusyKey,
   type CapacityMonthId,
-  EndMinute,
   LocalDate,
   type LocationId,
   type RepositoryError,
   Result,
-  type TimeZone,
-  UtcEpochMs,
 } from '@core/primitives';
 import {
   AvailabilitySystem,
@@ -32,11 +30,9 @@ import {
   type CartBarberDay,
   type CartLocatedOption,
   type CartRider,
-  type ChairTime,
   PartyAdmissionSystem,
   RosterSystem,
   type ShopHours,
-  ZonedTimeSystem,
 } from '@core/systems';
 
 /*
@@ -57,13 +53,6 @@ import {
  * (which documents, as streams), {@link dayOptions} the pure half the
  * `computed()` calls.
  */
-
-/** A held chair of a visit being moved, as the booking draft keeps it — two instants (`BookingDraftChairTime`). */
-export interface HeldChair {
-  readonly barberId: string;
-  readonly startMs: number;
-  readonly endMs: number;
-}
 
 /** Which documents one shop day is read from. */
 export interface DayDocsKey {
@@ -104,15 +93,19 @@ export interface DayQuery {
   /** `null` ⇒ "any shop": every shop is a candidate and each option names its own. */
   readonly locationId: LocationId | null;
   readonly localDate: LocalDate;
-  /** The SHOP's zone — what a held chair's instants are read in. */
-  readonly timeZone: TimeZone;
   readonly policy: BookingPolicy;
   /** "Now" on the shop's wall clock, read once by the caller. */
   readonly now: ShopNow;
   /** Everybody a MOVE carries, pinned to the party's start; `[]` on a new booking. */
   readonly riders: readonly CartRider[];
-  /** The chair time of the visit being MOVED, handed back first; `[]` on a new booking. */
-  readonly release: readonly HeldChair[];
+  /**
+   * The chair time of the visit being MOVED, handed back first — minutes of
+   * {@link DayQuery.releaseLocalDate}, the visit's own shop day; `[]` on a
+   * new booking.
+   */
+  readonly release: readonly ChairTime[];
+  /** The shop day the moved visit stands on — `null` on a new booking. */
+  readonly releaseLocalDate: LocalDate | null;
   /** Every LISTED shop — the grid's whole set of shops, each clamping its own segments. */
   readonly shops: readonly ShopLocation[];
 }
@@ -219,35 +212,16 @@ export function observeDayDocs(
 }
 
 /**
- * A moved visit's held chairs ON `localDate`, on the shop's wall clock — the
- * release the engine hands back. A chair the draft holds as two instants is
- * read in the shop's zone (the draft's one boundary); a chair on another day
- * releases nothing here. A chair running into the next day ends at midnight.
+ * A moved visit's held chairs ON `localDate` — the release the engine hands
+ * back. The chairs are minutes of the visit's own shop day; on any other day
+ * they release nothing.
  */
 export function releaseOn(
-  release: readonly HeldChair[],
+  release: readonly ChairTime[],
+  releaseLocalDate: LocalDate | null,
   localDate: LocalDate,
-  timeZone: TimeZone,
 ): readonly ChairTime[] {
-  const chairs: ChairTime[] = [];
-  for (const chair of release) {
-    const startMs = UtcEpochMs.of(chair.startMs);
-    const endMs = UtcEpochMs.of(chair.endMs);
-    if (!startMs.ok || !endMs.ok) continue;
-    const start = ZonedTimeSystem.toLocal(startMs.value, timeZone);
-    if (start.localDate !== localDate) continue;
-    const end = ZonedTimeSystem.toLocal(endMs.value, timeZone);
-    const endMinutes = EndMinute.of(
-      end.localDate > localDate ? 1440 : end.minute,
-    );
-    if (!endMinutes.ok || endMinutes.value <= start.minute) continue;
-    chairs.push({
-      barberId: BarberId.of(chair.barberId),
-      startMinutes: start.minute,
-      endMinutes: endMinutes.value,
-    });
-  }
-  return chairs;
+  return releaseLocalDate === localDate ? release : [];
 }
 
 /**
@@ -298,7 +272,11 @@ export function barberDays(
 ): readonly CartBarberDay[] {
   const shopHours = offeredShopHours(query, docs.namedLocation);
   const offered = shopHours.map((entry) => entry.locationId);
-  const release = releaseOn(query.release, query.localDate, query.timeZone);
+  const release = releaseOn(
+    query.release,
+    query.releaseLocalDate,
+    query.localDate,
+  );
   const days: CartBarberDay[] = [];
   for (const barber of docs.barbers) {
     if (barber.schedule === null) continue;

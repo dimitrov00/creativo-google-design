@@ -1,6 +1,8 @@
 import {
-  type BarberPreference,
+  type BookingCall,
   BookingContact,
+  type ChairTime,
+  RequestedSubjectRole,
   BookingLifecycle,
   BookingPolicy,
   type ExceptionEffectRule,
@@ -45,12 +47,8 @@ import {
 } from '@core/primitives';
 import type { Appointment, ScheduleException, Service } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
-import { AvailabilitySystem, type ChairTime } from './availability.system';
-import {
-  GuestLabelSystem,
-  type RequestedSubjectInput,
-  RequestedSubjectRole,
-} from './guest-label.system';
+import { AvailabilitySystem } from './availability.system';
+import { GuestLabelSystem } from './guest-label.system';
 import { OfferingPriceSystem } from './offering-price.system';
 import {
   type AdmissionSeatInput,
@@ -59,27 +57,6 @@ import {
 } from './party-admission.system';
 import { RosterSystem } from './roster.system';
 import { type SeatedSpan, SeatingRuleSystem } from './seating-rule.system';
-
-/**
- * One seat as the client asked for it (`decide-booking.ts:60-100`) — foreign
- * input, parsed inside {@link BookingDecisionSystem.decide} (the L3 `…Input`
- * escape): the ids are the raw request strings; `startMinutes` is the
- * requested SOLD start on the request's `localDate` (the edge converts the
- * wire's `startIso` with `parseOffsetIso` → `toLocal` in the location's
- * zone), `null` when the payload's start did not parse — refused
- * (`BOOKING_INVALID_INPUT: startMinutes`, the wire's `startIso`) at the
- * point the commit always refused it. `barberPreference` is what the client
- * ASKED for; `null` is stored as unknown, never guessed.
- */
-export type RequestedSeatInput = {
-  readonly lineId: string;
-  readonly serviceId: string;
-  readonly variantId: string | null;
-  readonly barberId: string;
-  readonly barberPreference: BarberPreference | null;
-  readonly startMinutes: number | null;
-  readonly subject: RequestedSubjectInput;
-};
 
 /**
  * What a commit asks for (`decide-booking.ts:102-153`), every field present —
@@ -92,7 +69,7 @@ export type RequestedSeatInput = {
 export type DecideBookingInput = {
   readonly locationId: string;
   readonly localDate: string;
-  readonly seats: readonly RequestedSeatInput[];
+  readonly seats: readonly BookingCall.SeatInput[];
   readonly attemptId: string | null;
   readonly bookedFromAppointmentId: string | null;
   readonly contact: BookingContact.Input | null;
@@ -142,7 +119,7 @@ export type BookingSnapshot = {
  */
 export type DecisionStandingSeat = {
   readonly seatId: SeatId;
-  readonly subject: RequestedSubjectInput;
+  readonly subject: BookingCall.SubjectInput;
   readonly startMinutes: MinuteOfDay;
   readonly durationMinutes: DurationMinutes;
 };
@@ -151,10 +128,10 @@ export type DecisionStandingSeat = {
  * The decision's context (`DecideBookingDeps`): the shop's "now" (derived
  * once at the boundary from the location's zone — compared on `localDate` +
  * `currentMinute`, `utcEpochMs` only stamps), the envelope's start instant
- * as the edge read it off the wire with `ZonedTimeSystem.parseIsoIn` and the
- * location's zone — an offset start's own instant, a wall clock's through
- * `toUtc` (the appointment's one `utcEpochMs`) — the transaction's id
- * mint, the VERIFIED owner (`null`: a
+ * as the boundary computed it ONCE from the call's `localDate` +
+ * `startMinutes` on the location's zone (`ZonedTimeSystem.toUtc` — the
+ * appointment's one `utcEpochMs`; the wire carries no instant) — the
+ * transaction's id mint, the VERIFIED owner (`null`: a
  * walk-in the shop entered itself), the client record of every account on
  * the cart (D29 — resolved by the pipeline, `CustomerId.forUser(uid, hash)`
  * for each of {@link BookingDecisionSystem.accountSubjects}; the system is
@@ -285,7 +262,7 @@ function resolveTerms(
   // was.
   const stored = currency === null ? null : storedCurrencyOf(currency);
   if (stored === null || !Number.isInteger(cents) || cents < 0) {
-    return Result.err(BookingError.invalidInput('priceMinorUnits'));
+    return Result.err(BookingError.invalidInput('priceCents'));
   }
   // Padding is chair geometry, not a price: whichever answer the caller
   // carried forward is the one the busy projection was drawn from; with no
@@ -359,7 +336,7 @@ function customerOf(
  * guest is their label. An account carries its client record beside it.
  */
 function toOccupant(
-  subject: RequestedSubjectInput,
+  subject: BookingCall.SubjectInput,
   owner: UserId | null,
   customerIds: ReadonlyMap<UserId, CustomerId>,
 ): Result<SeatOccupant, BookingError> {
@@ -438,12 +415,13 @@ export const BookingDecisionSystem = {
    * read) before it calls `decide` with {@link DecideBookingContext.customerIds}.
    */
   accountSubjects(
-    seats: readonly Pick<RequestedSeatInput, 'subject'>[],
+    seats: readonly Pick<BookingCall.SeatInput, 'subject'>[],
     ownerUserId: UserId | null,
   ): readonly UserId[] {
     const out: UserId[] = [];
     for (let i = 0; i < seats.length; i++) {
-      const subject = (seats[i] as Pick<RequestedSeatInput, 'subject'>).subject;
+      const subject = (seats[i] as Pick<BookingCall.SeatInput, 'subject'>)
+        .subject;
       let userId: UserId | null = null;
       if (subject.requestedSubjectRole === RequestedSubjectRole.Self) {
         userId =
@@ -489,9 +467,9 @@ export const BookingDecisionSystem = {
 
     // Two guests the client tells apart must not share a label — asked
     // before anything counts people, by the party's own rule.
-    const subjects: RequestedSubjectInput[] = [];
+    const subjects: BookingCall.SubjectInput[] = [];
     for (let i = 0; i < request.seats.length; i++) {
-      subjects.push((request.seats[i] as RequestedSeatInput).subject);
+      subjects.push((request.seats[i] as BookingCall.SeatInput).subject);
     }
     const sharedLabel = GuestLabelSystem.sharedLabel(subjects);
     if (sharedLabel !== null) {
@@ -503,7 +481,7 @@ export const BookingDecisionSystem = {
     // or gaining variants since it was booked.
     const admissionSeats: AdmissionSeatInput[] = [];
     for (let i = 0; i < request.seats.length; i++) {
-      const seat = request.seats[i] as RequestedSeatInput;
+      const seat = request.seats[i] as BookingCall.SeatInput;
       admissionSeats.push({
         personKey: GuestLabelSystem.personKeyOf(seat.subject),
         serviceId: seat.serviceId,
@@ -551,7 +529,7 @@ export const BookingDecisionSystem = {
     const memo = new Map<string, PlacementFacts>();
 
     for (let index = 0; index < request.seats.length; index++) {
-      const requested = request.seats[index] as RequestedSeatInput;
+      const requested = request.seats[index] as BookingCall.SeatInput;
       const override = StaffTermsOverride.find(
         context.termsOverrides,
         requested.lineId,

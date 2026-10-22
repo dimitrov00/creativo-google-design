@@ -1,7 +1,8 @@
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { BarberId } from '@creativo/application/catalog';
+import { type BookingConfirmation, Party, SeatKey } from '@core/components';
+import type { BarberId, CartLineId } from '@core/primitives';
 import {
   CatalogContentService,
   CatalogPresenter,
@@ -22,6 +23,7 @@ import {
 } from '@creativo/ui/patterns';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { BookingFlowStore } from '../booking-flow.store';
+import { formatBookingDay, formatBookingTime } from '../booking-wall-clock';
 
 interface ConfirmedLineVm {
   readonly key: string;
@@ -75,24 +77,17 @@ export class BookingConfirmedStep {
   protected readonly content = inject(CatalogPresenter);
   protected readonly store = inject(BookingFlowStore);
 
-  private readonly zone = computed(
-    () =>
-      this.store.confirmation()?.selection.timeSlot.start.zoneName ??
-      'Europe/Sofia',
-  );
-
   /** "Monday, 3 August · 09:00" — the one line a person will re-read. */
   protected readonly whenLabel = computed(() => {
     const confirmation = this.store.confirmation();
     if (!confirmation) return '';
-    const start = confirmation.selection.timeSlot.start.toMillis();
-    const day = new Intl.DateTimeFormat(this.content.locale(), {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      timeZone: this.zone(),
-    }).format(new Date(start));
-    return `${day} · ${this.time(start)}`;
+    const { localDate, startMinutes } = confirmation.selection;
+    const locale = this.content.locale();
+    return `${formatBookingDay(localDate, locale)} · ${formatBookingTime(
+      localDate,
+      startMinutes,
+      locale,
+    )}`;
   });
 
   protected readonly locationName = computed(() => {
@@ -100,70 +95,66 @@ export class BookingConfirmedStep {
     if (!confirmation) return '';
     const shop = this.catalog
       .locations()
-      .find(
-        (candidate) => candidate.id === confirmation.selection.locationId.value,
-      );
+      .find((candidate) => candidate.id === confirmation.selection.locationId);
     return shop
       ? this.content.text({ en: shop.name.en, bg: shop.name.bg })
-      : confirmation.selection.locationId.value;
+      : confirmation.selection.locationId;
   });
 
   /** Who is with whom, and when — only for a party; one person is the line above. */
   protected readonly lines = computed<readonly ConfirmedLineVm[]>(() => {
     const confirmation = this.store.confirmation();
-    if (!confirmation || confirmation.party.guests.length === 0) return [];
+    if (!confirmation || Party.guests(confirmation.party).length === 0) {
+      return [];
+    }
 
-    const seatByLineId = new Map<string, string>();
-    for (const [seatKey, lines] of confirmation.cart.entries()) {
-      for (const line of lines) {
-        seatByLineId.set(line.id.value, seatKey);
+    const seatByLineId = new Map<CartLineId, string>();
+    for (const seat of confirmation.cart.cartSeats) {
+      for (const line of seat.lines) {
+        seatByLineId.set(line.lineId, seat.seatKey);
       }
     }
 
+    const { localDate } = confirmation.selection;
+    const locale = this.content.locale();
     return confirmation.selection.assignments.map((assignment) => ({
-      key: assignment.lineId.value,
+      key: assignment.lineId,
       personLabel: this.personLabel(
-        seatByLineId.get(assignment.lineId.value) ?? '',
+        seatByLineId.get(assignment.lineId) ?? '',
         confirmation,
       ),
       barberName: this.barberName(assignment.barberId),
-      timeLabel: this.time(assignment.slot.start.toMillis()),
+      timeLabel: formatBookingTime(localDate, assignment.startMinutes, locale),
     }));
   });
-
-  private time(millis: number): string {
-    return new Intl.DateTimeFormat(this.content.locale(), {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone: this.zone(),
-    }).format(new Date(millis));
-  }
 
   private barberName(barberId: BarberId): string {
     const barber = this.catalog
       .barbers()
-      .find((candidate) => candidate.id === barberId.value);
+      .find((candidate) => candidate.id === barberId);
     return barber
       ? this.content.text({ en: barber.name.en, bg: barber.name.bg })
-      : barberId.value;
+      : barberId;
   }
 
   private personLabel(
     seatKey: string,
-    confirmation: NonNullable<ReturnType<BookingFlowStore['confirmation']>>,
+    confirmation: BookingConfirmation,
   ): string {
     // The booker by NAME once we know it — three steps said "You" to a
     // signed-in user whose name was sitting in the session the whole time
     // (owner ruling 2026-07-31). "You" is the fallback, not the rule.
-    if (seatKey === 'self')
+    if (seatKey === SELF_SEAT)
       return (
         this.identity.displayName() ||
         this.transloco.translate('booking.party.you')
       );
-    const guest = confirmation.party.guests.find(
-      (candidate) => candidate.id.value === seatKey,
+    const guest = Party.guests(confirmation.party).find(
+      (candidate) => candidate.guestId === seatKey,
     );
-    return guest?.label.value ?? seatKey;
+    return guest?.guestLabel ?? seatKey;
   }
 }
+
+/** The booker's own cart seat key. */
+const SELF_SEAT: string = SeatKey.text(SeatKey.self());

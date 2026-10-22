@@ -26,12 +26,13 @@ the lib.
 `@creativo/features/shared/visits` (the rule's words), the ecs-core tiers
 (`@core/primitives`, `@core/components`, `@core/entities`, `@core/ports`,
 `@core/systems`; `@core/testing` from specs only),
-`@creativo/infrastructure/firebase-app` (the port tokens),
-`@creativo/application/shared` (the clock, the flags, the ids) and
-`@creativo/infrastructure/i18n`; the specs also read
-`@creativo/application/booking` (the clock's reading). Each is a project
-reference in `tsconfig.lib.json` and `tsconfig.spec.json`; a new edge needs its
-reference there.
+`@creativo/infrastructure/firebase-app` (the port tokens — the clock
+`CLOCK_PORTS`, the ids `ID_PORTS`, the flags `FLAGS_PORTS` — and
+`ShopZoneService`, where the shop's zone is read: the rule belongs to no
+location, so it is the default location's, Law 7.2) and
+`@creativo/infrastructure/i18n`. Each is a project reference in
+`tsconfig.lib.json` and `tsconfig.spec.json`; a new edge needs its reference
+there.
 
 A feature never imports a domain lib: the rule is the flat ecs-core
 `StreakRule` (the draft a `StreakRuleInput`), read through

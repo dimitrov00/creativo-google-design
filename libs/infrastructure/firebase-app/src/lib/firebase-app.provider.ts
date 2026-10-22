@@ -27,10 +27,10 @@ export const FIREBASE_AUTH = new InjectionToken<Auth>('FIREBASE_AUTH');
 /**
  * Provided only inside the lazy data scope's injector (see
  * `provideFirestoreDb()` in `@creativo/infrastructure/firestore`), never at
- * the root: only the Firestore adapters inject it, and each is created in
- * its own injector beneath that one. The scope creates the instance as it
- * loads (it is in the scope's `instances`), so a throw there fails the load
- * rather than an adapter (`./lazy-port.ts`).
+ * the root: only the Firestore bundles reach it, each built by its factory
+ * in that injector's context. The scope creates the instance as it loads
+ * (it is in the scope's `instances`), so a throw there fails the load
+ * rather than a bundle (`./lazy-port.ts`).
  */
 export const FIREBASE_FIRESTORE = new InjectionToken<Firestore>(
   'FIREBASE_FIRESTORE',

@@ -8,11 +8,14 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import {
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
   CLOCK_PORTS,
+  DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
+  LOCATION_LOAD_PORTS,
   PROFILE_PORTS,
   SHOP_EVENT_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
@@ -20,19 +23,23 @@ import type { ShopEvent } from '@core/entities';
 import type { EventsQuery, ShopEventReadPorts } from '@core/ports';
 import { LocalDate } from '@core/primitives';
 import {
+  at,
   FIXTURE_EVENT_DAY,
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TODAY,
-  at,
+  locationFixture,
   memoryAppointmentReadPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
   memoryClockPorts,
+  memoryDefaultLocationPorts,
   memoryInboxPorts,
+  memoryLocationLoadPorts,
   memoryProfilePorts,
   memoryProgramsWorld,
   memoryShopEventReadPorts,
   shopEventOf,
 } from '@core/testing';
-import { AUTH_GATEWAY, ok } from '@creativo/application/identity';
 import { LanguageService } from '@creativo/features/shared/shell';
 import { MarketingEvents } from './marketing-events';
 
@@ -108,16 +115,11 @@ async function configure(
         useValue: recordedEventReads([...upcoming, ...past], asked),
       },
       { provide: CLOCK_PORTS, useValue: memoryClockPorts(FIXTURE_NOW_UTC_MS) },
-      {
-        provide: AUTH_GATEWAY,
-        useValue: { observePrincipal: () => of({ kind: 'anonymous' }) },
-      },
+      // An anonymous visitor: the session double's default principal.
+      { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
       // The shared header's account circle reads its photo off the
       // session identity — no avatar for an anonymous visitor.
-      {
-        provide: AVATAR_UPLOADER,
-        useValue: { find: () => Promise.resolve(ok(null)) },
-      },
+      { provide: AVATAR_PORTS, useValue: memoryAvatarPorts() },
       // The shared session model behind that chrome reads the profile.
       { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
       // …and its menu counts upcoming visits.
@@ -129,6 +131,17 @@ async function configure(
       {
         provide: APPOINTMENT_READ_PORTS,
         useValue: memoryAppointmentReadPorts([]),
+      },
+      // …and its schedule row names the default location's shop day.
+      {
+        provide: LOCATION_LOAD_PORTS,
+        useValue: memoryLocationLoadPorts(
+          memoryProgramsWorld({ locations: [locationFixture()] }),
+        ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
     ],
   }).compileComponents();

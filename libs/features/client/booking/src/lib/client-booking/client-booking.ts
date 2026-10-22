@@ -12,7 +12,13 @@ import {
   APPOINTMENT_READ_PORTS,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { AppointmentId, UserId } from '@core/primitives';
+import { AppointmentId, type UserId } from '@core/primitives';
+import {
+  BookingFlowStep,
+  MoveRefusal,
+  MoveRefusalReason,
+  Principal,
+} from '@core/components';
 import { ShopReachSystem } from '@core/systems';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -27,7 +33,12 @@ import {
 import { UiEmptyState, UiStepper } from '@creativo/ui/patterns';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
-import { BookingFlowStore, type MoveRefusalState } from '../booking-flow.store';
+import { BookingFlowStore } from '../booking-flow.store';
+import {
+  BOOKING_STEP_WORDS,
+  MOVE_REFUSAL_WORDS,
+  bookingStepOfWord,
+} from '../booking-words';
 import { carriedSeatsInReach } from './carried-reach';
 import {
   BookingChromeHeight,
@@ -98,9 +109,10 @@ import { BookingStepLayout } from '../step-layout/booking-step-layout';
   providers: [BookingFlowStore, BookingChromeService],
   host: {
     // The v2 E2E selector contract, preserved verbatim (blueprint §5.3) —
-    // this overrides the house `*-page` testid convention on purpose.
+    // this overrides the house `*-page` testid convention on purpose. The
+    // state is the step's lowercase word (`BOOKING_STEP_WORDS`).
     'data-testid': 'booking-machine',
-    '[attr.data-state]': 'store.step()',
+    '[attr.data-state]': 'stepWord()',
   },
 })
 export class ClientBooking {
@@ -111,10 +123,21 @@ export class ClientBooking {
   protected readonly store = inject(BookingFlowStore);
   protected readonly chrome = inject(BookingChromeService);
 
+  /** The wizard's steps, as the template switches on them. */
+  protected readonly Step = BookingFlowStep;
+
+  /** The refusal panel's i18n keys and `data-reason`, one word per reason. */
+  protected readonly refusalWords = MOVE_REFUSAL_WORDS;
+
+  /** The step as the URL (`?step=`) and the DOM (`data-state`) spell it. */
+  protected readonly stepWord = computed(
+    () => BOOKING_STEP_WORDS[this.store.step()],
+  );
+
   /** Bound from `?step=` by `withComponentInputBinding()` (already enabled). */
   readonly step = input<string | undefined>(undefined);
 
-  /** `?waitlist={requestId}&day={dayKey}` — the match notification's deep link. */
+  /** `?waitlist={requestId}&day={YYYY-MM-DD}` — the match notification's deep link. */
   readonly waitlist = input<string | undefined>(undefined);
   readonly day = input<string | undefined>(undefined);
 
@@ -142,40 +165,22 @@ export class ClientBooking {
    */
   private async landWaitlistDeepLink(
     requestId: string,
-    ownerUid: string,
+    owner: UserId,
   ): Promise<void> {
-    const owner = UserId.parse(ownerUid);
-    if (!owner.ok) return;
     // The caller's OWN requests (`ownerUserId ==`, owner-readable), first
     // answer — a foreign id is simply not among them.
     const mine = await firstValueFrom(
-      this.waitlistReads.observeMyWaitlistRequests(owner.value).pipe(take(1)),
+      this.waitlistReads.observeMyWaitlistRequests(owner).pipe(take(1)),
     );
     if (!mine.ok) return;
     const found = mine.value.find((request) => request.id === requestId);
     if (found === undefined) return;
-    this.store.restoreFromWaitlist(
-      found,
-      this.day() ?? null,
-      (ordinal) =>
-        this.transloco.translate('booking.party.guest', {
-          number: ordinal,
-        }),
-      this.shopZone(found.locationId),
-    );
-  }
-
-  /**
-   * The zone a shop's days are in — its own `timeZone` (Law 7.2); under
-   * "any shop", or before the catalogue answers, the first listed shop's,
-   * and the tenant's one city otherwise (the schedule step's own rule).
-   */
-  private shopZone(locationId: string | null): string {
-    const shops = this.catalog.locations();
-    return (
-      shops.find((shop) => shop.id === locationId)?.timeZone ??
-      shops.at(0)?.timeZone ??
-      'Europe/Sofia'
+    // The day is a shop day as it stands; the zone it is judged in is the
+    // schedule step's (the location's, Law 7.2).
+    this.store.restoreFromWaitlist(found, this.day() ?? null, (ordinal) =>
+      this.transloco.translate('booking.party.guest', {
+        number: ordinal,
+      }),
     );
   }
 
@@ -242,7 +247,7 @@ export class ClientBooking {
     }
     const found = await this.readVisit(appointmentId);
     if (found === null) {
-      this.store.refuseMove('unavailable');
+      this.store.refuseMove(MoveRefusalReason.Unavailable);
       return;
     }
     // Refuses on its own when the visit cannot move here — see `MoveRefusal`.
@@ -266,7 +271,7 @@ export class ClientBooking {
    * latched refusal: it follows the live catalogue, so a barber put back on
    * the list reopens the move.
    */
-  private readonly carriedRefusal = computed<MoveRefusalState | null>(() => {
+  private readonly carriedRefusal = computed<MoveRefusal | null>(() => {
     const riders = this.store.moveRiders();
     if (riders.length === 0) return null;
     if (!this.catalog.servicesKnown() || !this.catalog.barbersKnown()) {
@@ -279,7 +284,10 @@ export class ClientBooking {
       this.catalog.locationsKnown() ? this.catalog.locations() : null,
     )
       ? null
-      : { reason: 'carried_out_of_reach', locationId: this.store.shopId() };
+      : MoveRefusal.of(
+          MoveRefusalReason.CarriedOutOfReach,
+          this.store.locationId(),
+        );
   });
 
   /**
@@ -291,9 +299,8 @@ export class ClientBooking {
    * and the live catalogue changing afterwards (the companion's barber taken
    * off the list, say) must not replace its confirmation with a refusal.
    */
-  protected readonly refusal = computed<MoveRefusalState | null>(() => {
-    const step = this.store.step();
-    if (step === 'confirmed' || step === 'waitlisted') return null;
+  protected readonly refusal = computed<MoveRefusal | null>(() => {
+    if (this.store.isTerminal()) return null;
     return this.store.moveRefusal() ?? this.carriedRefusal();
   });
 
@@ -317,7 +324,8 @@ export class ClientBooking {
   /**
    * How the refusal's copy sends the client to the shop: "call" beside the
    * call button, "get in touch" when there is no number to dial — a shop
-   * missing from the active catalogue, or locations still loading.
+   * missing from the active catalogue, or locations still loading
+   * (`ShopReach`).
    */
   protected readonly reachKey = computed(() => this.refusalReach().reach);
 
@@ -376,10 +384,10 @@ export class ClientBooking {
       const principal = this.accountState.principal();
       const waitlistId = this.waitlist();
       if (this.waitlistLanded || !waitlistId) return;
-      if (principal.kind !== 'active') return;
+      if (!Principal.isActive(principal)) return;
       this.waitlistLanded = true;
       untracked(
-        () => void this.landWaitlistDeepLink(waitlistId, principal.uid.value),
+        () => void this.landWaitlistDeepLink(waitlistId, principal.userId),
       );
     });
 
@@ -394,10 +402,10 @@ export class ClientBooking {
       const principal = this.accountState.principal();
       const repeatId = this.repeat();
       if (this.repeatLanded || !repeatId) return;
-      if (principal.kind !== 'active') return;
+      if (!Principal.isActive(principal)) return;
       this.repeatLanded = true;
       untracked(() => {
-        this.store.claim(principal.uid.value);
+        this.store.claim(principal.userId);
         void this.landRepeat(repeatId);
       });
     });
@@ -406,10 +414,10 @@ export class ClientBooking {
       const principal = this.accountState.principal();
       const moveId = this.reschedule();
       if (this.rescheduleLanded || !moveId) return;
-      if (principal.kind !== 'active') return;
+      if (!Principal.isActive(principal)) return;
       this.rescheduleLanded = true;
       untracked(() => {
-        this.store.claim(principal.uid.value);
+        this.store.claim(principal.userId);
         void this.landReschedule(moveId);
       });
     });
@@ -417,9 +425,9 @@ export class ClientBooking {
     // State → URL. Depends on the machine ONLY. `replaceUrl` stays false so
     // each step is its own history entry and Back walks the wizard.
     effect(() => {
-      const kind = this.store.step();
+      const word = this.stepWord();
       untracked(() => {
-        this.writeStepParam(kind);
+        this.writeStepParam(word);
         // A new step starts at ITS top. Same-route query navigation keeps
         // the scroll where the last step left it, so a step advanced from
         // halfway down arrived halfway down — with the sticky action bar
@@ -438,17 +446,19 @@ export class ClientBooking {
     effect(() => {
       const urlStep = this.step();
       untracked(() => {
-        if (!urlStep || urlStep === this.store.step()) return;
+        if (!urlStep || urlStep === this.stepWord()) return;
 
-        // A URL BEHIND the machine is a browser Back — rewind to it.
-        this.store.rewindTo(urlStep);
+        // A URL BEHIND the machine is a browser Back — rewind to it. A word
+        // that names no step rewinds nothing.
+        const target = bookingStepOfWord(urlStep);
+        if (target !== null) this.store.rewindTo(target);
 
         // Still out of step? Then the URL was AHEAD — a browser Forward or
         // a hand-typed param, which cannot satisfy a forward transition's
         // preconditions. The machine is the truth, so the URL is corrected
         // back to it rather than left describing a screen nobody is on.
-        if (this.store.step() !== urlStep) {
-          this.writeStepParam(this.store.step());
+        if (this.stepWord() !== urlStep) {
+          this.writeStepParam(this.stepWord());
         }
       });
     });
@@ -459,13 +469,13 @@ export class ClientBooking {
     // the party to itself (see `BookingFlowStore.claim`).
     effect(() => {
       const principal = this.accountState.principal();
-      if (principal.kind === 'active') {
-        this.store.claim(principal.uid.value);
+      if (Principal.isActive(principal)) {
+        this.store.claim(principal.userId);
       }
     });
   }
 
-  /** Put `step` in the query string, unless it is already there. */
+  /** Put the step's word in the query string, unless it is already there. */
   private writeStepParam(step: string): void {
     if (step === this.route.snapshot.queryParamMap.get('step')) return;
     void this.router.navigate([], {

@@ -1,7 +1,7 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
-import { ok, type Result } from '@creativo/domain/kernel';
+import { Result } from '@core/primitives';
 import { UiLogo, UiLogoScheme } from './logo';
 import { UI_LOGO } from '../manifest/icon-vocabulary';
 import { UI_ICON_MANIFEST_SOURCE } from '../registry/icon-registry.service';
@@ -54,7 +54,7 @@ describe('UiLogo', () => {
     const fixture = TestBed.createComponent(HostComponent);
     fixture.detectChanges();
     changes.next(
-      ok({
+      Result.ok({
         schemaVersion: 1,
         logo: {
           light: {

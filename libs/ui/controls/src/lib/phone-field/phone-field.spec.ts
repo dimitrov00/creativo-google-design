@@ -1,17 +1,14 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import type { CountryIso2 } from '@creativo/domain/kernel';
+import { CountryIso2 } from '@core/components';
+import { PhoneSystem } from '@core/systems';
 import { afterEach, vi } from 'vitest';
 import { UiPhoneField } from './phone-field';
 
-// The component lazy-loads the kernel chunk, so the boundary lint forbids a
-// STATIC kernel import anywhere in this project — the spec fetches the same
-// functions dynamically (resolved in beforeAll, before any test runs).
-type Kernel = typeof import('@creativo/domain/kernel');
-let formatPhoneDraft: Kernel['formatPhoneDraft'];
-let examplePhoneNumber: Kernel['examplePhoneNumber'];
-
-const BG = 'BG' as string as CountryIso2;
+// The component loads `PhoneSystem` lazily (`./phone-field.lazy`); the spec
+// reads the same system statically to compute its expectations.
+const BG = CountryIso2.of('BG');
+const DE = CountryIso2.of('DE');
 
 @Component({
   imports: [UiPhoneField],
@@ -25,24 +22,34 @@ const BG = 'BG' as string as CountryIso2;
 })
 class HostComponent {
   defaultCountry = BG;
-  readonly country = signal<CountryIso2 | undefined>(undefined);
+  readonly country = signal<CountryIso2 | null>(null);
   readonly value = signal<string | null>(null);
   readonly error = signal<string | null>(null);
+}
+
+/** The same field named for Bulgarian — the picker's per-locale naming. */
+@Component({
+  imports: [UiPhoneField],
+  template: `<ui-phone-field
+    [defaultCountry]="defaultCountry"
+    label="Телефон"
+    locale="bg"
+  />`,
+})
+class BulgarianHostComponent {
+  defaultCountry = BG;
 }
 
 describe('UiPhoneField', () => {
   let fixture: ComponentFixture<HostComponent>;
 
   /** A real, valid national number for the default country — sourced from
-   *  the kernel's own example data so validity is never a guess. */
+   *  `PhoneSystem`'s own example data so validity is never a guess. */
   let exampleNational: string;
   let exampleDigits: string;
 
-  beforeAll(async () => {
-    const kernel = await import('@creativo/domain/kernel');
-    formatPhoneDraft = kernel.formatPhoneDraft;
-    examplePhoneNumber = kernel.examplePhoneNumber;
-    exampleNational = examplePhoneNumber(BG) as string;
+  beforeAll(() => {
+    exampleNational = PhoneSystem.example(BG) as string;
     exampleDigits = exampleNational.replace(/\D/g, '');
   });
 
@@ -71,16 +78,16 @@ describe('UiPhoneField', () => {
     }).compileComponents();
     fixture = TestBed.createComponent(HostComponent);
     fixture.detectChanges();
-    // The kernel phone API is a lazy chunk behind PendingTasks —
+    // `PhoneSystem` is a lazy chunk behind PendingTasks —
     // whenStable resolves once it has landed.
     await fixture.whenStable();
     fixture.detectChanges();
   });
 
-  it('formats the draft nationally as the user types (kernel formatting)', () => {
+  it('formats the draft nationally as the user types (PhoneSystem formatting)', () => {
     type(exampleDigits);
     expect(telInput().value).toBe(
-      formatPhoneDraft(exampleDigits, BG).formatted,
+      PhoneSystem.formatDraft(exampleDigits, BG).formatted,
     );
   });
 
@@ -94,12 +101,20 @@ describe('UiPhoneField', () => {
 
     type(exampleDigits);
     expect(fixture.componentInstance.value()).toBe(
-      formatPhoneDraft(exampleDigits, BG).e164,
+      PhoneSystem.formatDraft(exampleDigits, BG).e164,
     );
 
     // Deleting digits invalidates again — value returns to null.
     type(exampleDigits.slice(0, 4));
     expect(fixture.componentInstance.value()).toBeNull();
+  });
+
+  it('never writes the default into the country model — null until typed or picked', () => {
+    expect(fixture.componentInstance.country()).toBeNull();
+    expect(trigger().getAttribute('aria-label')).toContain('+359');
+
+    type(exampleDigits);
+    expect(fixture.componentInstance.country()).toBeNull();
   });
 
   it('switches the country model when a +international value is typed', () => {
@@ -108,7 +123,7 @@ describe('UiPhoneField', () => {
   });
 
   it('prefilled +E.164 value populates the field and re-detects country', async () => {
-    const e164 = formatPhoneDraft(exampleDigits, BG).e164 as string;
+    const e164 = PhoneSystem.formatDraft(exampleDigits, BG).e164 as string;
     fixture.componentInstance.value.set(e164);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -130,7 +145,7 @@ describe('UiPhoneField', () => {
     expect(fixture.componentInstance.country()).toBe('DE');
     expect(telInput().value.replace(/\D/g, '')).toBe(exampleDigits);
     expect(telInput().value).toBe(
-      formatPhoneDraft(exampleDigits, 'DE' as string as CountryIso2).formatted,
+      PhoneSystem.formatDraft(exampleDigits, DE).formatted,
     );
   });
 
@@ -241,7 +256,7 @@ describe('UiPhoneField', () => {
     )}-${exampleDigits.slice(4, 6)} ${exampleDigits.slice(6)}`;
     type(messy);
     expect(telInput().value).toBe(
-      formatPhoneDraft(exampleDigits, BG).formatted,
+      PhoneSystem.formatDraft(exampleDigits, BG).formatted,
     );
   });
 
@@ -257,10 +272,12 @@ describe('UiPhoneField', () => {
     input.dispatchEvent(new Event('blur'));
     fixture.detectChanges();
 
-    expect(input.value).toBe(formatPhoneDraft(exampleDigits, BG).formatted);
+    expect(input.value).toBe(
+      PhoneSystem.formatDraft(exampleDigits, BG).formatted,
+    );
     // The blur snap also re-syncs the model — pure E.164.
     expect(fixture.componentInstance.value()).toBe(
-      formatPhoneDraft(exampleDigits, BG).e164,
+      PhoneSystem.formatDraft(exampleDigits, BG).e164,
     );
   });
 
@@ -397,5 +414,38 @@ describe('UiPhoneField', () => {
       fixture.detectChanges();
       expect(popover()).toBeNull();
     });
+  });
+
+  it('names and orders the picker countries in the field locale', async () => {
+    const bulgarian = TestBed.createComponent(BulgarianHostComponent);
+    bulgarian.detectChanges();
+    await bulgarian.whenStable();
+    bulgarian.detectChanges();
+
+    const bgTrigger: HTMLButtonElement = bulgarian.nativeElement.querySelector(
+      '[data-testid="phone-field-trigger"]',
+    );
+    bgTrigger.click();
+    bulgarian.detectChanges();
+    await bulgarian.whenStable();
+
+    const options: HTMLElement[] = Array.from(
+      bulgarian.nativeElement.querySelectorAll('[role="option"]'),
+    );
+    const bgRow = options.find(
+      (option) =>
+        option.getAttribute('data-testid') === 'phone-field-option-BG',
+    );
+    expect(bgRow?.textContent).toContain('България');
+
+    // Sorted by the locale's collator, every row named.
+    const names = options.map((option) => {
+      const name = option.cloneNode(true) as HTMLElement;
+      name.querySelector('.ui-phone-field__option-dial')?.remove();
+      return (name.textContent ?? '').trim();
+    });
+    expect(names.every((name) => name !== '')).toBe(true);
+    const collator = new Intl.Collator('bg');
+    expect([...names].sort((a, b) => collator.compare(a, b))).toEqual(names);
   });
 });

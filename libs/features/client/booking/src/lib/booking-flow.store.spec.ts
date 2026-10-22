@@ -1,33 +1,34 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import fc from 'fast-check';
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import {
-  BOOKING_DRAFT_STORE,
-  BOOKING_GATEWAY,
-  BarberPref,
-  type BookingDraft,
-  type BookingGateway,
-  BookingGatewayError,
-  type CommitBookingRequest,
-  type CommittedBooking,
-  type Result,
-  ScheduleSelection,
-  SeatKey,
-  TimeSlot,
-  WAITLIST_GATEWAY,
-  WaitlistGatewayError,
-  ZonedDateTime,
-  fail,
-  ok,
-} from '@creativo/application/booking';
-import { BarberId, LocationId, ServiceId } from '@creativo/application/catalog';
-import { CLOCK } from '@creativo/application/shared';
-import { APPOINTMENT_READ_PORTS } from '@creativo/infrastructure/firebase-app';
-import type { AppointmentReadPorts } from '@core/ports';
+  APPOINTMENT_READ_PORTS,
+  BOOKING_DRAFT_PORTS,
+  GATEWAY_PORTS,
+  ID_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import {
+  type AppointmentReadPorts,
+  type BookingDraftPorts,
+  Callables,
+  type GatewayPorts,
+  type IdPorts,
+} from '@core/ports';
 import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
+  BookingCall,
+  BookingDraft,
+  BookingFlowStep,
+  DayWindows,
+  FlexibleWhen,
+  MoveRefusalReason,
+  Party,
+  PartyRole,
+  Placement,
+  RequestedSubjectRole,
+  ScheduleSelection,
   Seat,
+  SeatKey,
   SeatLabel,
   SeatOccupant,
   SeatSubject,
@@ -36,175 +37,245 @@ import {
 } from '@core/components';
 import {
   AppointmentId,
-  BarberId as BarberKey,
+  BarberId,
   BusyKey,
   CartLineId,
   CustomerId,
-  LocalDate,
-  LocationId as LocationKey,
+  LocationId,
+  PipelineError,
+  PipelineErrorCode,
   RepositoryError,
-  Result as EcsResult,
+  Result,
   SeatId,
   SeatKeyText,
-  ServiceId as ServiceKey,
+  ServiceId,
   UserId,
   WaitlistRequestId,
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
+  type GatewayCall,
   appointmentFixture,
   at as minuteAt,
+  endMinute,
+  localDate,
   memoryAppointmentReadPorts,
+  minute,
+  scriptedGatewayPorts,
   seatFixture,
   termsFixture,
   unwrapOk,
   until,
   utcMs,
 } from '@core/testing';
-import { BookingFlowStore, firstUnusedLabel } from './booking-flow.store';
+import { BookingFlowStore } from './booking-flow.store';
 
-const ZONE = 'Europe/Sofia';
+/** The shop day every walk books on — the pinned day of the visits below. */
+const DAY = localDate('2026-08-03');
+const CENTER = LocationId.of('loc-center');
+const IVAN = BarberId.of('ivan');
+const SELF = SeatKey.text(SeatKey.self());
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) {
-    throw new Error(`fixture setup failed: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
+/** A guest's cart seat key. */
+function guestSeat(guestId: string): SeatKeyText {
+  return SeatKeyText.of(guestId);
 }
 
-const at = (hour: number) =>
-  unwrap(
-    ZonedDateTime.fromParts(
-      { year: 2026, month: 8, day: 3, hour, minute: 0 },
-      ZONE,
+/** A line for the bag: the service, anyone, any shop. */
+function line(serviceId: string) {
+  return {
+    serviceId: ServiceId.of(serviceId),
+    variantId: null,
+    barberId: null,
+    locationId: null,
+  };
+}
+
+/**
+ * The server, as these specs script it: what each callable answers next,
+ * and every call it was dialled with (`scriptedGatewayPorts`).
+ */
+interface Server {
+  readonly gateway: GatewayPorts;
+  readonly calls: GatewayCall[];
+  commitAnswer: Result<BookingCall.Committed, PipelineError>;
+  /** A move's answer, by its 1-based call count. */
+  moveAnswer: (call: number) => Result<BookingCall.Rescheduled, PipelineError>;
+  commits(): readonly BookingCall[];
+  moves(): readonly BookingCall.Reschedule[];
+}
+
+function server(): Server {
+  const calls: GatewayCall[] = [];
+  let moveCount = 0;
+  const answers: {
+    commit: Result<BookingCall.Committed, PipelineError>;
+    move: (call: number) => Result<BookingCall.Rescheduled, PipelineError>;
+  } = {
+    commit: Result.ok({ appointmentId: AppointmentId.of('appt-1') }),
+    move: () => Result.ok({ appointmentId: AppointmentId.of('appt-moving') }),
+  };
+  return {
+    gateway: scriptedGatewayPorts(
+      {
+        [Callables.CommitBooking]: () => answers.commit,
+        [Callables.RescheduleAppointment]: () => answers.move(++moveCount),
+        [Callables.RequestWaitlist]: () =>
+          Result.ok({ requestId: WaitlistRequestId.of('wl-1') }),
+      },
+      calls,
     ),
-  );
-
-/** A gateway whose answer this spec chooses. */
-class StubGateway implements BookingGateway {
-  answer: Result<CommittedBooking, BookingGatewayError> = ok({
-    appointmentId: 'appt-1',
-  });
-  calls: CommitBookingRequest[] = [];
-
-  async commit(
-    request: CommitBookingRequest,
-  ): Promise<Result<CommittedBooking, BookingGatewayError>> {
-    this.calls.push(request);
-    return this.answer;
-  }
-
-  // The flow store only ever commits; the rest of the port exists for the
-  // staff surfaces and is out of this double's reach on purpose — reaching
-  // one here means the test drifted into someone else's use case.
-  cancel(): never {
-    throw new Error('not under test');
-  }
-  reschedule(): never {
-    throw new Error('not under test');
-  }
-  transition(): never {
-    throw new Error('not under test');
-  }
-  markArrived(): never {
-    throw new Error('not under test');
-  }
-  clearArrival(): never {
-    throw new Error('not under test');
-  }
-  recordTip(): never {
-    throw new Error('not under test');
-  }
-
-  staffEdit(): never {
-    throw new Error('not under test');
-  }
+    calls,
+    get commitAnswer() {
+      return answers.commit;
+    },
+    set commitAnswer(answer) {
+      answers.commit = answer;
+    },
+    get moveAnswer() {
+      return answers.move;
+    },
+    set moveAnswer(answer) {
+      answers.move = answer;
+    },
+    commits: () =>
+      calls
+        .filter((call) => call.callable === Callables.CommitBooking)
+        .map((call) => call.input as BookingCall),
+    moves: () =>
+      calls
+        .filter((call) => call.callable === Callables.RescheduleAppointment)
+        .map((call) => call.input as BookingCall.Reschedule),
+  };
 }
 
 /** `sessionStorage` is not worth doubling here — the flow is what's under test. */
-const NULL_DRAFT_STORE = {
-  load: () => ok(null),
-  save: () => ok(undefined),
-  clear: () => ok(undefined),
-};
+function nullDrafts(): BookingDraftPorts {
+  return {
+    loadBookingDraft: () => Result.ok(null),
+    saveBookingDraft: () => Result.ok(undefined),
+    clearBookingDraft: () => Result.ok(undefined),
+  };
+}
 
-/** Records what the waitlist was asked to watch, and answers as told. */
-class StubWaitlistGateway {
-  answer: Result<{ requestId: string }, WaitlistGatewayError> = ok({
-    requestId: 'wl-1',
-  });
-  calls: unknown[] = [];
+/**
+ * A `sessionStorage` stand-in that keeps one draft, JSON round trip and all
+ * — read back through `BookingDraft.read`, the rule the adapter reads by,
+ * and cleared when that read refuses it.
+ */
+interface Drafts extends BookingDraftPorts {
+  /** The stored JSON, parsed — what a tab would find. */
+  raw(): Record<string, unknown> | null;
+  /** Store a hand-made value, the way a tampered or older tab left it. */
+  write(raw: object): void;
+}
 
-  async request(
-    input: unknown,
-  ): Promise<Result<{ requestId: string }, WaitlistGatewayError>> {
-    this.calls.push(input);
-    return this.answer;
-  }
-
-  async cancel(): Promise<Result<void, WaitlistGatewayError>> {
-    return ok(undefined);
-  }
+function jsonDrafts(): Drafts {
+  let stored: string | null = null;
+  return {
+    loadBookingDraft: () => {
+      if (stored === null) return Result.ok(null);
+      const draft = BookingDraft.read(JSON.parse(stored));
+      if (draft === null) {
+        stored = null;
+        return Result.err(RepositoryError.malformed('booking-draft', null));
+      }
+      return Result.ok(draft);
+    },
+    saveBookingDraft: (draft) => {
+      stored = JSON.stringify(draft);
+      return Result.ok(undefined);
+    },
+    clearBookingDraft: () => {
+      stored = null;
+      return Result.ok(undefined);
+    },
+    raw: () =>
+      stored === null ? null : (JSON.parse(stored) as Record<string, unknown>),
+    write: (raw) => {
+      stored = JSON.stringify(raw);
+    },
+  };
 }
 
 /** The owner-scoped visit read: answers as told, and counts the reads. */
-class StubAppointments {
-  answer: EcsResult<Appointment | null, RepositoryError> = EcsResult.ok(null);
-  reads = 0;
-
-  /** `APPOINTMENT_READ_PORTS`, its visit read — the one member wrapped — answering {@link answer}. */
-  ports(): AppointmentReadPorts {
-    return {
-      ...memoryAppointmentReadPorts([]),
-      observeAppointment: () => {
-        this.reads += 1;
-        return of(this.answer);
-      },
-    };
-  }
+interface Visits {
+  answer: Result<Appointment | null, RepositoryError>;
+  reads: number;
+  ports(): AppointmentReadPorts;
 }
 
-/** A `sessionStorage` stand-in that keeps one draft, JSON round trip and all. */
-class MemoryDraftStore {
-  private stored: string | null = null;
-  load = () => ok(this.stored === null ? null : JSON.parse(this.stored));
-  save = (draft: BookingDraft) => {
-    this.stored = JSON.stringify(draft);
-    return ok(undefined);
+function visits(): Visits {
+  const double: Visits = {
+    answer: Result.ok(null),
+    reads: 0,
+    ports: () => ({
+      ...memoryAppointmentReadPorts([]),
+      observeAppointment: () => {
+        double.reads += 1;
+        return of(double.answer);
+      },
+    }),
   };
-  clear = () => {
-    this.stored = null;
-    return ok(undefined);
+  return double;
+}
+
+/**
+ * Client operation ids the server's charset takes (`[A-Za-z0-9_-]{16,64}`),
+ * one per mint, in order.
+ */
+function attemptIds(): IdPorts {
+  let minted = 0;
+  return {
+    nextId: () => `attempt-${String(++minted).padStart(16, '0')}`,
   };
 }
 
 function createStore(
-  gateway: StubGateway,
-  waitlist: StubWaitlistGateway = new StubWaitlistGateway(),
-  draftStore: object = NULL_DRAFT_STORE,
-  appointments: StubAppointments = new StubAppointments(),
+  gateway: Server,
+  drafts: BookingDraftPorts = nullDrafts(),
+  appointments: Visits = visits(),
+  ids: IdPorts = attemptIds(),
 ): BookingFlowStore {
   TestBed.configureTestingModule({
     providers: [
-      { provide: BOOKING_DRAFT_STORE, useValue: draftStore },
-      { provide: BOOKING_GATEWAY, useValue: gateway },
-      { provide: WAITLIST_GATEWAY, useValue: waitlist },
+      { provide: BOOKING_DRAFT_PORTS, useValue: drafts },
+      { provide: GATEWAY_PORTS, useValue: gateway.gateway },
+      { provide: ID_PORTS, useValue: ids },
       { provide: APPOINTMENT_READ_PORTS, useValue: appointments.ports() },
-      // Fixed, not the system clock: the store reads it to prune a restored
-      // declaration's lapsed days, and a spec whose meaning changes at
-      // midnight is a spec that fails once a day.
-      {
-        provide: CLOCK,
-        useValue: {
-          now: (zone: string) =>
-            ZonedDateTime.fromISO('2026-08-03T09:00:00.000+03:00', zone),
-        },
-      },
       BookingFlowStore,
     ],
   });
   return TestBed.inject(BookingFlowStore);
+}
+
+/** Every line the bag holds, booker first, as the cart keeps them. */
+function cartLines(store: BookingFlowStore) {
+  return (store.cart()?.cartSeats ?? []).flatMap((seat) => seat.lines);
+}
+
+/**
+ * Every line, served by Ivan from `start` to `start + 60` on {@link DAY} at
+ * the Center — the arrangement a sheet hands the machine.
+ */
+function selectionFor(store: BookingFlowStore, start = 12 * 60) {
+  const selection = ScheduleSelection.of(
+    CENTER,
+    DAY,
+    cartLines(store).map((entry) => {
+      const lineId = store.cartLineId(entry.lineId);
+      if (!lineId) throw new Error('fixture setup failed: line went missing');
+      return {
+        lineId,
+        barberId: IVAN,
+        startMinutes: minute(start),
+        endMinutes: endMinute(start + 60),
+      };
+    }),
+  );
+  if (selection === null) throw new Error('fixture setup failed: no lines');
+  return selection;
 }
 
 /**
@@ -217,87 +288,77 @@ function createStore(
  */
 function walkToReview(store: BookingFlowStore): ScheduleSelection {
   // Step 1 is WHERE, and it is optional — this walk takes the explicit shop.
-  store.selectLocation(unwrap(LocationId.create('loc-center')));
+  store.selectLocation(CENTER);
   store.next();
 
   store.addGuest('Maria');
 
-  store.addLine(SeatKey.self(), {
-    serviceId: unwrap(ServiceId.create('svc-fade')),
-    variantId: null,
-    barberPref: BarberPref.any(),
-  });
+  store.addLine(SELF, line('svc-fade'));
   const guest = store.guests()[0];
   if (!guest) throw new Error('fixture setup failed: no guest');
-  store.addLine(SeatKey.guest(guest.id), {
-    serviceId: unwrap(ServiceId.create('svc-beard')),
-    variantId: null,
-    barberPref: BarberPref.any(),
-  });
+  store.addLine(guestSeat(guest.guestId), line('svc-beard'));
   store.next();
 
-  store.selectDay('2026-08-03', ZONE);
-  store.selectStart(at(12).toMillis(), 'loc-center');
+  store.selectDay(DAY);
+  store.selectStart(minute(12 * 60), CENTER);
 
-  const slot = unwrap(TimeSlot.of(at(12), at(13)));
   // Both seats, served in parallel — the envelope is the longer of the two,
   // which for one hour each is the hour.
-  const assignments = (store.cart()?.entries() ?? [])
-    .flatMap(([, lines]) => lines)
-    .map((line) => {
-      const lineId = store.cartLineId(line.id.value);
-      if (!lineId) throw new Error('fixture setup failed: line went missing');
-      return { lineId, barberId: unwrap(BarberId.create('ivan')), slot };
-    });
-
-  const selection: ScheduleSelection = {
-    locationId: unwrap(LocationId.create('loc-center')),
-    timeSlot: slot,
-    assignments,
-  };
+  const selection = selectionFor(store);
   store.selectSchedule(selection);
   return selection;
 }
 
 describe('BookingFlowStore — commit', () => {
-  let gateway: StubGateway;
+  let gateway: Server;
   let store: BookingFlowStore;
 
   beforeEach(() => {
-    gateway = new StubGateway();
+    gateway = server();
     store = createStore(gateway);
   });
 
-  it('sends WHAT and WHO, and never a price or a duration', async () => {
+  it('sends WHAT and WHO on the shop’s wall clock, and never a price or a duration', async () => {
     walkToReview(store);
     await store.commit();
 
-    const [request] = gateway.calls;
+    const [request] = gateway.commits();
     // One per seat — the guest travels too, as a LABEL, because that is all a
     // party member is until they have an account of their own.
     expect(request?.seats).toHaveLength(2);
     // The guest's seat key rides beside the label, so the server can tell
     // two DIFFERENT guests under one name from one guest with two services.
     expect(request?.seats.map((seat) => seat.subject)).toEqual([
-      { kind: 'self' },
-      { kind: 'guest', label: 'Maria', guestKey: 'guest-0' },
+      { requestedSubjectRole: RequestedSubjectRole.Self },
+      {
+        requestedSubjectRole: RequestedSubjectRole.Guest,
+        label: 'Maria',
+        guestKey: 'guest-0',
+      },
     ]);
+    // The placement is the shop day and its minutes — the pipeline places
+    // them on the absolute timeline once, with the location's zone.
+    expect(request?.localDate).toBe('2026-08-03');
+    expect(request?.locationId).toBe('loc-center');
     // Read as a loose bag on purpose: the assertion is that these keys do
     // not EXIST on the wire, which the typed shape cannot express.
     const seat = request?.seats[0] as unknown as Record<string, unknown>;
     // The server resolves terms. A client that could name its own price
     // would book a 40 € fade for nothing.
-    expect(seat['priceMinorUnits']).toBeUndefined();
+    expect(seat['priceCents']).toBeUndefined();
     expect(seat['durationMinutes']).toBeUndefined();
     expect(seat['barberId']).toBe('ivan');
-    expect(seat['subject']).toEqual({ kind: 'self' });
+    expect(seat['startMinutes']).toBe(12 * 60);
+    expect(seat['subject']).toEqual({
+      requestedSubjectRole: RequestedSubjectRole.Self,
+    });
   });
 
-  it('lands on `confirmed` with the server’s appointment id', async () => {
+  it('lands on `CONFIRMED` with the server’s appointment id', async () => {
     walkToReview(store);
     await store.commit();
 
-    expect(store.step()).toBe('confirmed');
+    expect(store.step()).toBe(BookingFlowStep.Confirmed);
     expect(store.confirmation()?.appointmentId).toBe('appt-1');
   });
 
@@ -305,15 +366,18 @@ describe('BookingFlowStore — commit', () => {
     // The one recoverable failure. The user should land on a fresh grid on
     // the day they already chose, not at the start of the wizard.
     walkToReview(store);
-    gateway.answer = fail(new BookingGatewayError('slot_unavailable', 'gone'));
+    gateway.commitAnswer = Result.err(
+      PipelineError.bare(PipelineErrorCode.SlotUnavailable),
+    );
 
     await store.commit();
 
-    expect(store.step()).toBe('schedule');
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
     expect(store.slotTaken()).toBe(true);
-    expect(store.selectedDayKey()).toBe('2026-08-03');
+    expect(store.selectedLocalDate()).toBe('2026-08-03');
     // …but NOT the time it can no longer honour.
-    expect(store.selectedStartMs()).toBeNull();
+    expect(store.selectedStartMinutes()).toBeNull();
+    expect(store.selectedLocationId()).toBeNull();
     // The bag and the party survive — nothing about a lost race invalidates them.
     expect(store.lineCount()).toBe(2);
     expect(store.guests()).toHaveLength(1);
@@ -321,13 +385,13 @@ describe('BookingFlowStore — commit', () => {
 
   it('STAYS on review for a failure re-picking a time cannot fix', async () => {
     walkToReview(store);
-    gateway.answer = fail(
-      new BookingGatewayError('catalog_changed', 'service withdrawn'),
+    gateway.commitAnswer = Result.err(
+      PipelineError.bare(PipelineErrorCode.CatalogChanged),
     );
 
     await store.commit();
 
-    expect(store.step()).toBe('review');
+    expect(store.step()).toBe(BookingFlowStep.Review);
     expect(store.slotTaken()).toBe(false);
     expect(store.error()).not.toBeNull();
   });
@@ -338,14 +402,14 @@ describe('BookingFlowStore — commit', () => {
     const second = store.commit();
     await Promise.all([first, second]);
 
-    expect(gateway.calls).toHaveLength(1);
+    expect(gateway.commits()).toHaveLength(1);
   });
 
   it('does nothing at all outside the review step', async () => {
     await store.commit();
 
     expect(gateway.calls).toHaveLength(0);
-    expect(store.step()).toBe('location');
+    expect(store.step()).toBe(BookingFlowStep.Location);
   });
 
   it('REFUSES the same service twice for one person', () => {
@@ -356,17 +420,14 @@ describe('BookingFlowStore — commit', () => {
     store.addGuest('Maria');
     store.next();
 
-    const cut = {
-      serviceId: unwrap(ServiceId.create('svc-fade')),
-      variantId: null,
-      barberPref: BarberPref.any(),
-    };
-    store.addLine({ kind: 'self' }, cut);
-    store.addLine({ kind: 'self' }, cut);
+    store.addLine(SELF, line('svc-fade'));
+    store.addLine(SELF, line('svc-fade'));
     expect(store.lineCount()).toBe(1);
 
     // …but the SAME service for the guest is the ordinary case.
-    store.addLine({ kind: 'guest', guestId: store.guests()[0]!.id }, cut);
+    const guest = store.guests()[0];
+    if (!guest) throw new Error('fixture setup failed: no guest');
+    store.addLine(guestSeat(guest.guestId), line('svc-fade'));
     expect(store.lineCount()).toBe(2);
   });
 
@@ -375,7 +436,7 @@ describe('BookingFlowStore — commit', () => {
     store.selectLocation(null);
     store.next();
 
-    expect(store.step()).toBe('services');
+    expect(store.step()).toBe(BookingFlowStep.Services);
     expect(store.locationId()).toBeNull();
   });
 });
@@ -406,13 +467,11 @@ interface StoredSeat {
 }
 
 /**
- * A visit at the Center on 2026-08-03 (the pinned clock's day), as stored:
- * the seats, and the envelope and its instant derived from them — the
- * shop's zone placing it once. Every seat sold at 28,00 € for 45 minutes
- * unless it says otherwise.
+ * A visit at the Center on 2026-08-03, as stored: the seats, and the
+ * envelope and its instant derived from them — the shop's zone placing it
+ * once. Every seat sold at 28,00 € for 45 minutes unless it says otherwise.
  */
 function storedVisit(id: string, seats: readonly StoredSeat[]): Appointment {
-  const day = unwrapOk(LocalDate.parse('2026-08-03'));
   const stored = seats.map((seat, index) => {
     const terms = termsFixture(
       seat.priceCents ?? 2800,
@@ -422,8 +481,8 @@ function storedVisit(id: string, seats: readonly StoredSeat[]): Appointment {
     );
     return seatFixture({
       seatId: SeatId.of(`${id}-seat-${index + 1}`),
-      serviceId: ServiceKey.of(seat.serviceId ?? 'svc-fade'),
-      barberId: BarberKey.of(seat.barberId),
+      serviceId: ServiceId.of(seat.serviceId ?? 'svc-fade'),
+      barberId: BarberId.of(seat.barberId),
       startMinutes: minuteAt(0, seat.startMinutes),
       terms: Seat.termsOf(terms, terms),
       occupant: seat.occupant,
@@ -436,7 +495,7 @@ function storedVisit(id: string, seats: readonly StoredSeat[]): Appointment {
   const barberIds = [...new Set(stored.map((seat) => seat.barberId))];
   return appointmentFixture({
     id: AppointmentId.of(id),
-    locationId: LocationKey.of('loc-center'),
+    locationId: CENTER,
     ownerUserId: UserId.of('client-1'),
     subjectUserIds: [
       ...new Set(
@@ -446,15 +505,15 @@ function storedVisit(id: string, seats: readonly StoredSeat[]): Appointment {
       ),
     ],
     barberIds,
-    busyKeys: barberIds.map((barberId) => BusyKey.of(barberId, day)),
+    busyKeys: barberIds.map((barberId) => BusyKey.of(barberId, DAY)),
     seats: stored,
-    localDate: day,
+    localDate: DAY,
     startMinutes: start,
     endMinutes: until(
       0,
       Math.max(...stored.map((seat) => Seat.endMinutes(seat))),
     ),
-    utcEpochMs: unwrapOk(ZonedTimeSystem.toUtc(day, start, FIXTURE_TIME_ZONE)),
+    utcEpochMs: unwrapOk(ZonedTimeSystem.toUtc(DAY, start, FIXTURE_TIME_ZONE)),
   });
 }
 
@@ -469,53 +528,46 @@ const guestLabel = (ordinal: number): string => `Guest ${ordinal}`;
 
 /** From the schedule step a repeat lands on, to review: Ivan at 12:00. */
 function armSchedule(store: BookingFlowStore): void {
-  store.selectDay('2026-08-03', ZONE);
-  store.selectStart(at(12).toMillis(), 'loc-center');
-  const slot = unwrap(TimeSlot.of(at(12), at(13)));
-  store.selectSchedule({
-    locationId: unwrap(LocationId.create('loc-center')),
-    timeSlot: slot,
-    assignments: (store.cart()?.entries() ?? [])
-      .flatMap(([, lines]) => lines)
-      .map((line) => ({
-        lineId: line.id,
-        barberId: unwrap(BarberId.create('ivan')),
-        slot,
-      })),
-  });
+  store.selectDay(DAY);
+  store.selectStart(minute(12 * 60), CENTER);
+  store.selectSchedule(selectionFor(store));
 }
 
 // Defect §2.3 #6: `/book?repeat=` rebuilt the bag and then dropped the visit
 // it came from, so every rebooking landed with `bookedFrom: null` — a fact
 // no backfill can recover.
 describe('BookingFlowStore — the rebooking edge', () => {
-  let gateway: StubGateway;
+  let gateway: Server;
   let store: BookingFlowStore;
 
   beforeEach(() => {
-    gateway = new StubGateway();
+    gateway = server();
     store = createStore(gateway);
   });
 
   it('sends the visit a repeat started from as `bookedFromAppointmentId`', async () => {
     expect(store.repeat(visit('appt-source'), guestLabel)).toBe(true);
-    expect(store.step()).toBe('schedule');
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
 
     armSchedule(store);
     await store.commit();
 
-    expect(gateway.calls).toHaveLength(1);
-    expect(gateway.calls[0]?.bookedFromAppointmentId).toBe('appt-source');
+    expect(gateway.commits()).toHaveLength(1);
+    expect(gateway.commits()[0]?.bookedFromAppointmentId).toBe('appt-source');
   });
 
-  it('sends no edge at all on a cold booking', async () => {
+  it('sends `null` for the edge on a cold booking — present on the wire, never guessed', async () => {
     walkToReview(store);
     await store.commit();
 
-    const [request] = gateway.calls;
+    const [request] = gateway.commits();
     if (!request) throw new Error('nothing was committed');
-    // Absent, not `null`: a cold booking says nothing about where it came from.
-    expect('bookedFromAppointmentId' in request).toBe(false);
+    // The flipped wire carries every key (4A-4): a cold booking says it
+    // knows nothing about where it came from with `null`.
+    expect(request.bookedFromAppointmentId).toBeNull();
+    expect(request.onBehalfOfUserId).toBeNull();
+    // `/book` is the client placing their own booking — whoever is signed in.
+    expect(request.placement).toBe(Placement.Self);
     expect(store.bookedFrom()).toBeNull();
   });
 
@@ -524,25 +576,25 @@ describe('BookingFlowStore — the rebooking edge', () => {
     // A beard added on the services step is still a booking made from that
     // visit.
     store.back();
-    store.addLine(SeatKey.self(), {
-      serviceId: unwrap(ServiceId.create('svc-beard')),
-      variantId: null,
-      barberPref: BarberPref.any(),
-    });
+    store.addLine(SELF, line('svc-beard'));
     store.next();
     expect(store.lineCount()).toBe(2);
 
     armSchedule(store);
-    gateway.answer = fail(new BookingGatewayError('slot_unavailable', 'gone'));
+    gateway.commitAnswer = Result.err(
+      PipelineError.bare(PipelineErrorCode.SlotUnavailable),
+    );
     await store.commit();
-    expect(store.step()).toBe('schedule');
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
 
-    gateway.answer = ok({ appointmentId: 'appt-2' });
+    gateway.commitAnswer = Result.ok({
+      appointmentId: AppointmentId.of('appt-2'),
+    });
     armSchedule(store);
     await store.commit();
 
     expect(
-      gateway.calls.map((request) => request.bookedFromAppointmentId),
+      gateway.commits().map((request) => request.bookedFromAppointmentId),
     ).toEqual(['appt-source', 'appt-source']);
   });
 
@@ -550,9 +602,9 @@ describe('BookingFlowStore — the rebooking edge', () => {
     // A reschedule keeps its own appointment; it is not a booking made from
     // one, and its request has no such field to carry.
     store.repeat(visit('appt-earlier'), guestLabel);
-    expect(
-      store.rescheduleFrom(visit('appt-moving'), guestLabel).isSuccess(),
-    ).toBe(true);
+    expect(store.rescheduleFrom(visit('appt-moving'), guestLabel).ok).toBe(
+      true,
+    );
 
     expect(store.isRescheduling()).toBe(true);
     expect(store.bookedFrom()).toBeNull();
@@ -700,22 +752,28 @@ function labelledGuestVisit(
 }
 
 function linesPerPerson(store: BookingFlowStore): number[] {
-  return (store.cart()?.entries() ?? []).map(([, lines]) => lines.length);
+  return (store.cart()?.cartSeats ?? []).map((seat) => seat.lines.length);
 }
 
+function guestLabels(store: BookingFlowStore): string[] {
+  return store.guests().map((member) => member.guestLabel);
+}
+
+const CLIENT = UserId.of('client-1');
+
 describe('BookingFlowStore — who a prefilled bag holds', () => {
-  let gateway: StubGateway;
+  let gateway: Server;
   let store: BookingFlowStore;
 
   beforeEach(() => {
-    gateway = new StubGateway();
+    gateway = server();
     store = createStore(gateway);
   });
 
   it('leaves a companion ACCOUNT out of a move — the server carries them, so no phantom guest', () => {
-    expect(
-      store.rescheduleFrom(partyVisit('appt-moving'), guestLabel).isSuccess(),
-    ).toBe(true);
+    expect(store.rescheduleFrom(partyVisit('appt-moving'), guestLabel).ok).toBe(
+      true,
+    );
 
     // The father and Maria; the son is NOT re-created as a nameless guest.
     expect(store.guests()).toHaveLength(1);
@@ -732,38 +790,29 @@ describe('BookingFlowStore — who a prefilled bag holds', () => {
   it('keeps a guest with two services ONE person, as the server counts them', () => {
     store.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
 
-    const [maria] = store.guests();
     // Under the name the visit stored for her, not a placeholder.
-    expect(maria?.label.value).toBe('Мария');
+    expect(guestLabels(store)).toEqual(['Мария']);
     expect(store.lineCount()).toBe(3);
   });
 
   it('keeps the name the SHOP gave a guest through a move, and sends it — never «Guest 1» over it', async () => {
-    const moves: { seats: { subject: { kind: string; label?: string } }[] }[] =
-      [];
-    Object.assign(gateway, {
-      reschedule: async (request: (typeof moves)[number]) => {
-        moves.push(request);
-        return ok({ appointmentId: 'appt-moving' });
-      },
-    });
-    store.claim('client-1');
+    store.claim(CLIENT);
     store.rescheduleFrom(
       labelledGuestVisit('appt-moving', 'Иван (син)'),
       guestLabel,
     );
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
-      'Иван (син)',
-    ]);
+    expect(guestLabels(store)).toEqual(['Иван (син)']);
 
     armSchedule(store);
     await store.commit();
     // The label the server matches its stored seat by (`personKey`, the
     // replay check) — the one it already holds.
     expect(
-      moves[0]?.seats
-        .map((seat) => seat.subject.label)
-        .filter((label) => label !== undefined),
+      (gateway.moves()[0]?.seats ?? []).flatMap((seat) =>
+        seat.subject.requestedSubjectRole === RequestedSubjectRole.Guest
+          ? [seat.subject.label]
+          : [],
+      ),
     ).toEqual(['Иван (син)']);
   });
 
@@ -775,10 +824,7 @@ describe('BookingFlowStore — who a prefilled bag holds', () => {
       guestLabel,
     );
 
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
-      'Guest 2',
-      'Guest 1',
-    ]);
+    expect(guestLabels(store)).toEqual(['Guest 2', 'Guest 1']);
   });
 
   it('never hands a guest added later a name a prefilled guest already has', () => {
@@ -792,29 +838,23 @@ describe('BookingFlowStore — who a prefilled bag holds', () => {
   });
 
   it('sends the move without the companion — only the seats the cart can express', async () => {
-    const moves: unknown[] = [];
-    Object.assign(gateway, {
-      reschedule: async (request: unknown) => {
-        moves.push(request);
-        return ok({ appointmentId: 'appt-moving' });
-      },
-    });
-    store.claim('client-1');
+    store.claim(CLIENT);
     store.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
     armSchedule(store);
     await store.commit();
 
-    expect(gateway.calls).toHaveLength(0);
-    expect(moves).toHaveLength(1);
-    const [move] = moves as {
-      appointmentId: string;
-      seats: { subject: { kind: string } }[];
-    }[];
+    expect(gateway.commits()).toHaveLength(0);
+    expect(gateway.moves()).toHaveLength(1);
+    const [move] = gateway.moves();
     expect(move?.appointmentId).toBe('appt-moving');
-    expect(move?.seats.map((seat) => seat.subject.kind).sort()).toEqual([
-      'guest',
-      'guest',
-      'self',
+    // The move's placement is the shop day too.
+    expect(move?.localDate).toBe('2026-08-03');
+    expect(
+      move?.seats.map((seat) => seat.subject.requestedSubjectRole).sort(),
+    ).toEqual([
+      RequestedSubjectRole.Guest,
+      RequestedSubjectRole.Guest,
+      RequestedSubjectRole.Self,
     ]);
   });
 
@@ -826,7 +866,7 @@ describe('BookingFlowStore — who a prefilled bag holds', () => {
   // instead.
   for (const arrangement of ['side_by_side', 'back_to_back'] as const) {
     it(`reads two guests under ONE label as one person with both services — ${arrangement}, move and repeat alike`, () => {
-      store.claim('client-1');
+      store.claim(CLIENT);
       store.rescheduleFrom(
         sharedLabelVisit('appt-moving', arrangement),
         guestLabel,
@@ -841,15 +881,7 @@ describe('BookingFlowStore — who a prefilled bag holds', () => {
   }
 
   it('sends both of that person’s seats under ONE label — the reading the server’s `personKey` agrees with', async () => {
-    const moves: { seats: { subject: { kind: string; label?: string } }[] }[] =
-      [];
-    Object.assign(gateway, {
-      reschedule: async (request: (typeof moves)[number]) => {
-        moves.push(request);
-        return ok({ appointmentId: 'appt-moving' });
-      },
-    });
-    store.claim('client-1');
+    store.claim(CLIENT);
     store.rescheduleFrom(
       sharedLabelVisit('appt-moving', 'side_by_side'),
       guestLabel,
@@ -857,9 +889,12 @@ describe('BookingFlowStore — who a prefilled bag holds', () => {
     armSchedule(store);
     await store.commit();
 
-    const labels = (moves[0]?.seats ?? [])
-      .map((seat) => seat.subject.label)
-      .filter((label): label is string => label !== undefined)
+    const labels = (gateway.moves()[0]?.seats ?? [])
+      .flatMap((seat) =>
+        seat.subject.requestedSubjectRole === RequestedSubjectRole.Guest
+          ? [seat.subject.label]
+          : [],
+      )
       .sort();
     // The walk-in holds both of their lines, under the one stored name.
     expect(labels).toEqual(['Walk-in', 'Walk-in', 'Мария']);
@@ -869,16 +904,13 @@ describe('BookingFlowStore — who a prefilled bag holds', () => {
     store.repeat(sharedLabelVisit('appt-source', 'back_to_back'), guestLabel);
 
     // The walk-in and Мария: two people, never merged by position or time.
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
-      'Walk-in',
-      'Мария',
-    ]);
+    expect(guestLabels(store)).toEqual(['Walk-in', 'Мария']);
   });
 });
 
 describe('BookingFlowStore — one label, one guest', () => {
   it('answers whether a rename was taken, and holds WHY it was not', () => {
-    const store = createStore(new StubGateway());
+    const store = createStore(server());
     store.selectLocation(null);
     store.next();
     store.addGuest('Maria');
@@ -886,21 +918,15 @@ describe('BookingFlowStore — one label, one guest', () => {
     const [maria, second] = store.guests();
     if (!maria || !second) throw new Error('fixture setup failed');
 
-    expect(store.renameGuest(second.id, 'Maria')).toBe(false);
-    expect(store.error()?.code).toBe(
-      'scheduling.booking_party.duplicate_label',
+    expect(store.renameGuest(second.guestId, 'Maria')).toBe(false);
+    expect(store.error()?.errorCode).toBe(
+      'SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL',
     );
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
-      'Maria',
-      'Guest 2',
-    ]);
+    expect(guestLabels(store)).toEqual(['Maria', 'Guest 2']);
 
-    expect(store.renameGuest(second.id, 'Ivan')).toBe(true);
+    expect(store.renameGuest(second.guestId, 'Ivan')).toBe(true);
     expect(store.error()).toBeNull();
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
-      'Maria',
-      'Ivan',
-    ]);
+    expect(guestLabels(store)).toEqual(['Maria', 'Ivan']);
   });
 });
 
@@ -910,37 +936,31 @@ describe('BookingFlowStore — one label, one guest', () => {
  * instead of logging nothing — which only works if the client sends it.
  */
 describe('BookingFlowStore — a move names its attempt, like a commit', () => {
-  let gateway: StubGateway;
+  let gateway: Server;
   let store: BookingFlowStore;
-  let moves: { attemptId?: string }[];
 
   beforeEach(() => {
-    gateway = new StubGateway();
+    gateway = server();
+    gateway.moveAnswer = (call) =>
+      call === 1
+        ? Result.err(PipelineError.bare(PipelineErrorCode.Unavailable))
+        : Result.ok({ appointmentId: AppointmentId.of('appt-moving') });
     store = createStore(gateway);
-    moves = [];
-    Object.assign(gateway, {
-      reschedule: async (request: { attemptId?: string }) => {
-        moves.push(request);
-        return moves.length === 1
-          ? fail(new BookingGatewayError('unavailable', 'offline'))
-          : ok({ appointmentId: 'appt-moving' });
-      },
-    });
-    store.claim('client-1');
+    store.claim(CLIENT);
     store.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
   });
 
   it('sends the armed selection’s attempt id with the move, and the SAME one on a retry', async () => {
     armSchedule(store);
     await store.commit(); // lost to the network — stays on review
-    expect(store.step()).toBe('review');
+    expect(store.step()).toBe(BookingFlowStep.Review);
     await store.commit(); // the retry of the same selection
 
-    expect(moves).toHaveLength(2);
-    const [first, retry] = moves;
+    const [first, retry] = gateway.moves();
+    expect(gateway.moves()).toHaveLength(2);
     expect(first?.attemptId).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
     expect(retry?.attemptId).toBe(first?.attemptId);
-    expect(gateway.calls).toHaveLength(0);
+    expect(gateway.commits()).toHaveLength(0);
   });
 
   it('mints a NEW attempt id for a new selection — a new pick is a new attempt', async () => {
@@ -950,9 +970,53 @@ describe('BookingFlowStore — a move names its attempt, like a commit', () => {
     armSchedule(store);
     await store.commit();
 
-    const [first, second] = moves;
+    const [first, second] = gateway.moves();
     expect(second?.attemptId).toBeDefined();
     expect(second?.attemptId).not.toBe(first?.attemptId);
+  });
+});
+
+/*
+ * THE ATTEMPT ID COMES FROM THE ID SOURCE (`ID_PORTS`, 4A-12), parsed as a
+ * `ClientOperationId`. An id the server's charset refuses never reaches the
+ * wire: a move travels without one (it names its audit rows only), and a
+ * new booking — whose attempt id IS the appointment's idempotency key — is
+ * refused before anything is sent.
+ */
+describe('BookingFlowStore — the attempt id is the id source’s', () => {
+  const unnamed: IdPorts = { nextId: () => 'short' };
+
+  it('sends the id source’s own id with a commit', async () => {
+    const gateway = server();
+    const store = createStore(gateway);
+    walkToReview(store);
+    await store.commit();
+
+    // Minted once at construction, then once per armed selection.
+    expect(gateway.commits()[0]?.attemptId).toBe('attempt-0000000000000002');
+  });
+
+  it('refuses a commit whose attempt the source could not name — nothing is sent', async () => {
+    const gateway = server();
+    const store = createStore(gateway, nullDrafts(), visits(), unnamed);
+    walkToReview(store);
+    await store.commit();
+
+    expect(gateway.calls).toHaveLength(0);
+    expect(store.step()).toBe(BookingFlowStep.Review);
+    expect(store.error()?.errorCode).toBe(PipelineErrorCode.InvalidRequest);
+  });
+
+  it('sends a move without an attempt id it could not name', async () => {
+    const gateway = server();
+    const store = createStore(gateway, nullDrafts(), visits(), unnamed);
+    store.claim(CLIENT);
+    store.rescheduleFrom(visit('appt-moving'), guestLabel);
+    armSchedule(store);
+    await store.commit();
+
+    expect(gateway.moves()).toHaveLength(1);
+    expect(gateway.moves()[0]?.attemptId).toBeNull();
   });
 });
 
@@ -961,19 +1025,11 @@ describe('BookingFlowStore — a move names its attempt, like a commit', () => {
  * become one is said, and none of them may end as a second booking.
  */
 describe('BookingFlowStore — a move the cart cannot make', () => {
-  let gateway: StubGateway;
+  let gateway: Server;
   let store: BookingFlowStore;
-  let moves: unknown[];
 
   beforeEach(() => {
-    gateway = new StubGateway();
-    moves = [];
-    Object.assign(gateway, {
-      reschedule: async (request: unknown) => {
-        moves.push(request);
-        return ok({ appointmentId: 'appt-moving' });
-      },
-    });
+    gateway = server();
     store = createStore(gateway);
   });
 
@@ -983,14 +1039,16 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
       guestLabel,
     );
 
-    expect(result.isFailure() && result.error).toBe('companions_only');
-    expect(store.moveRefusal()?.reason).toBe('companions_only');
+    expect(!result.ok && result.error).toBe(MoveRefusalReason.CompanionsOnly);
+    expect(store.moveRefusal()?.moveRefusalReason).toBe(
+      MoveRefusalReason.CompanionsOnly,
+    );
     // The shop it is at — what the refusal's call button dials.
     expect(store.moveRefusal()?.locationId).toBe('loc-center');
     expect(store.isRescheduling()).toBe(false);
     // Nothing was prefilled: the son is not turned into a guest to move.
     expect(store.lineCount()).toBe(0);
-    expect(store.step()).toBe('location');
+    expect(store.step()).toBe(BookingFlowStep.Location);
   });
 
   it('never commits a move link as a new booking — not while the visit loads, not once it is refused', async () => {
@@ -1000,33 +1058,31 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
     // Still loading: there is no move to send yet, and no new booking either.
     await store.commit();
     expect(gateway.calls).toHaveLength(0);
-    expect(moves).toHaveLength(0);
     expect(store.error()).not.toBeNull();
 
     // Refused: the same, for good.
     store.rescheduleFrom(companionOnlyVisit('appt-son'), guestLabel);
     await store.commit();
     expect(gateway.calls).toHaveLength(0);
-    expect(moves).toHaveLength(0);
   });
 
   it('commits the move once the visit it was opened for has landed', async () => {
-    store.claim('client-1');
+    store.claim(CLIENT);
     store.expectMove('appt-moving');
-    expect(
-      store.rescheduleFrom(visit('appt-moving'), guestLabel).isSuccess(),
-    ).toBe(true);
+    expect(store.rescheduleFrom(visit('appt-moving'), guestLabel).ok).toBe(
+      true,
+    );
     armSchedule(store);
     await store.commit();
 
-    expect(gateway.calls).toHaveLength(0);
-    expect(moves).toHaveLength(1);
+    expect(gateway.commits()).toHaveLength(0);
+    expect(gateway.moves()).toHaveLength(1);
     expect(store.moveRefusal()).toBeNull();
   });
 
   it('keeps who the server carries, at their distance from the booker — side by side, or straight after', () => {
     store.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
-    expect(store.riders()).toEqual([
+    expect(store.moveRiders()).toEqual([
       {
         serviceId: 'svc-fade',
         variantId: null,
@@ -1039,7 +1095,7 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
     ]);
 
     store.rescheduleFrom(sequentialVisit('appt-moving'), guestLabel);
-    expect(store.riders()).toEqual([
+    expect(store.moveRiders()).toEqual([
       {
         serviceId: 'svc-beard',
         variantId: null,
@@ -1075,21 +1131,21 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
   });
 
   it('carries a `self` seat bound to ANOTHER account, exactly like a companion — the server’s own rule', () => {
-    store.claim('client-1');
+    store.claim(CLIENT);
     expect(
-      store
-        .rescheduleFrom(foreignSelfVisit('appt-moving'), guestLabel)
-        .isSuccess(),
+      store.rescheduleFrom(foreignSelfVisit('appt-moving'), guestLabel).ok,
     ).toBe(true);
 
     // The booker alone in the bag; the foreign `self` rides along.
     expect(store.guests()).toHaveLength(0);
     expect(linesPerPerson(store)).toEqual([1]);
-    expect(store.riders().map((rider) => rider.barberId)).toEqual(['petar']);
+    expect(store.moveRiders().map((rider) => rider.barberId)).toEqual([
+      'petar',
+    ]);
   });
 
   it('offers a foreign `self` seat as a GUEST on a repeat — never as the booker a second time', () => {
-    store.claim('client-1');
+    store.claim(CLIENT);
     expect(store.repeat(foreignSelfVisit('appt-source'), guestLabel)).toBe(
       true,
     );
@@ -1102,37 +1158,30 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
     // Nothing to release on a new booking.
     store.repeat(padsVisit('appt-source'), guestLabel);
     expect(store.moveRelease()).toEqual([]);
+    expect(store.moveLocalDate()).toBeNull();
 
     store.rescheduleFrom(padsVisit('appt-moving'), guestLabel);
-    expect(
-      store.moveRelease().map((chair) => ({
-        barberId: chair.barberId,
-        startMs: chair.startMs,
-        endMs: chair.endMs,
-      })),
-    ).toEqual([
+    // On the visit's own shop day, its wall clock.
+    expect(store.moveLocalDate()).toBe('2026-08-03');
+    expect(store.moveRelease()).toEqual([
       // The booker's fade with Ivan, the seat the cart rebuilds…
-      {
-        barberId: 'ivan',
-        startMs: at(10).toMillis(),
-        endMs: at(10).plusMinutes(45).toMillis(),
-      },
+      { barberId: 'ivan', startMinutes: 10 * 60, endMinutes: 10 * 60 + 45 },
       // …and the son's beard the move carries, setup and cleanup included:
       // the server subtracts the whole visit before it re-places it.
       {
         barberId: 'petar',
-        startMs: at(10).plusMinutes(-20).toMillis(),
-        endMs: at(10).plusMinutes(25).toMillis(),
+        startMinutes: 9 * 60 + 40,
+        endMinutes: 10 * 60 + 25,
       },
     ]);
   });
 
   it('has no riders on a new booking, or on a move with nobody to carry', () => {
     store.repeat(partyVisit('appt-source'), guestLabel);
-    expect(store.riders()).toEqual([]);
+    expect(store.moveRiders()).toEqual([]);
 
     store.rescheduleFrom(visit('appt-moving'), guestLabel);
-    expect(store.riders()).toEqual([]);
+    expect(store.moveRiders()).toEqual([]);
   });
 });
 
@@ -1141,155 +1190,160 @@ describe('BookingFlowStore — a move the cart cannot make', () => {
 // draft. The edge must come back with it, for the account that read the
 // visit and for nobody else.
 describe('BookingFlowStore — the sources survive the sign-in round trip', () => {
-  let drafts: MemoryDraftStore;
+  let drafts: Drafts;
 
   beforeEach(() => {
-    drafts = new MemoryDraftStore();
+    drafts = jsonDrafts();
   });
 
   /** The same tab after the round trip: a fresh store over the same draft. */
-  function afterRoundTrip(gateway = new StubGateway()): BookingFlowStore {
+  function afterRoundTrip(gateway = server()): BookingFlowStore {
     TestBed.resetTestingModule();
-    const store = createStore(gateway, new StubWaitlistGateway(), drafts);
+    const store = createStore(gateway, drafts);
     store.restore();
     return store;
   }
 
+  /** The same tab after the round trip — and whether its draft came back. */
+  function restored(): { store: BookingFlowStore; came: boolean } {
+    TestBed.resetTestingModule();
+    const store = createStore(server(), drafts);
+    return { store, came: store.restore() };
+  }
+
   it('commits the restored rebooking edge for the same account', async () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.repeat(visit('appt-source'), guestLabel);
     armSchedule(before);
+    // The draft is FLAT: the edge rides at its root, on its origin.
+    expect(drafts.raw()?.['bookingDraftOrigin']).toBe('BOOKED_FROM');
+    expect(drafts.raw()?.['bookedFromAppointmentId']).toBe('appt-source');
 
-    const gateway = new StubGateway();
+    const gateway = server();
     const store = afterRoundTrip(gateway);
-    store.claim('client-1');
+    store.claim(CLIENT);
     armSchedule(store);
     await store.commit();
 
-    expect(gateway.calls[0]?.bookedFromAppointmentId).toBe('appt-source');
+    expect(gateway.commits()[0]?.bookedFromAppointmentId).toBe('appt-source');
   });
 
   it('drops the edge when a different account signs in', async () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.repeat(visit('appt-source'), guestLabel);
 
-    const gateway = new StubGateway();
+    const gateway = server();
     const store = afterRoundTrip(gateway);
-    store.claim('client-2');
+    store.claim(UserId.of('client-2'));
     armSchedule(store);
     await store.commit();
 
     expect(store.bookedFrom()).toBeNull();
-    expect(
-      gateway.calls[0] && 'bookedFromAppointmentId' in gateway.calls[0],
-    ).toBe(false);
+    expect(gateway.commits()[0]?.bookedFromAppointmentId).toBeNull();
   });
 
   /** Past WHERE, onto the services step, the way a person gets there. */
   function onServices(store: BookingFlowStore): void {
-    store.selectLocation(unwrap(LocationId.create('loc-center')));
+    store.selectLocation(CENTER);
     store.next();
   }
 
   it('says whether a draft came back — so a landing knows not to overwrite it', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
+    const before = createStore(server(), drafts);
     // Nothing stored yet: nothing to continue.
     expect(before.restore()).toBe(false);
     onServices(before);
     before.addGuest('Maria');
 
-    TestBed.resetTestingModule();
-    const store = createStore(
-      new StubGateway(),
-      new StubWaitlistGateway(),
-      drafts,
-    );
-    expect(store.restore()).toBe(true);
+    const { store, came } = restored();
+    expect(came).toBe(true);
     expect(store.guests()).toHaveLength(1);
   });
 
   it('resumes a draft holding two guests under one label on SERVICES, where one rename fixes it', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
+    const before = createStore(server(), drafts);
     onServices(before);
     before.addGuest('Maria');
     before.addGuest('Ani');
-    const cut = {
-      serviceId: unwrap(ServiceId.create('svc-fade')),
-      variantId: null,
-      barberPref: BarberPref.any(),
-    };
-    before.addLine(SeatKey.self(), cut);
-    for (const guest of before.guests()) {
-      before.addLine(SeatKey.guest(guest.id), cut);
+    before.addLine(SELF, line('svc-fade'));
+    for (const member of before.guests()) {
+      before.addLine(guestSeat(member.guestId), line('svc-fade'));
     }
     before.next();
-    expect(before.step()).toBe('schedule');
+    expect(before.step()).toBe(BookingFlowStep.Schedule);
 
     // A draft from before the rule: both guests answer to «Maria».
-    const saved = unwrap(drafts.load()) as BookingDraft;
-    drafts.save({
+    const saved = drafts.raw() as {
+      readonly party: Party;
+    } & Record<string, unknown>;
+    drafts.write({
       ...saved,
       party: {
         ...saved.party,
-        guests: saved.party.guests.map((guest) => ({
-          ...guest,
-          label: 'Maria',
-        })),
+        members: saved.party.members.map((member) =>
+          member.partyRole === PartyRole.Guest
+            ? { ...member, guestLabel: 'Maria' }
+            : member,
+        ),
       },
     });
 
     const { store, came } = restored();
     expect(came).toBe(true);
     // Not the grid: it would seat two people the server counts as one.
-    expect(store.step()).toBe('services');
+    expect(store.step()).toBe(BookingFlowStep.Services);
     store.next();
-    expect(store.step()).toBe('services');
-    expect(store.error()?.code).toBe(
-      'scheduling.booking_party.duplicate_label',
+    expect(store.step()).toBe(BookingFlowStep.Services);
+    expect(store.error()?.errorCode).toBe(
+      'SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL',
     );
 
     const second = store.guests()[1];
     if (!second) throw new Error('bad fixture');
-    expect(store.renameGuest(second.id, 'Ani')).toBe(true);
+    expect(store.renameGuest(second.guestId, 'Ani')).toBe(true);
     store.next();
-    expect(store.step()).toBe('schedule');
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
+  });
+
+  it('resumes a REVIEW draft on the schedule, never on the offer nobody re-checked — the day kept', () => {
+    const before = createStore(server(), drafts);
+    walkToReview(before);
+    expect(drafts.raw()?.['bookingFlowStep']).toBe('REVIEW');
+
+    const { store, came } = restored();
+    expect(came).toBe(true);
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
+    expect(store.selectedLocalDate()).toBe('2026-08-03');
+    expect(store.selection()).toBeNull();
   });
 
   it('attaches the visit a signed-out repeat started from, keeping the bag the person built', () => {
     // Signed out at `/book?repeat=`: the visit could not be read, so the
     // person built the bag by hand, then signed in at review.
-    const before = createStore(new StubGateway(), undefined, drafts);
+    const before = createStore(server(), drafts);
     onServices(before);
-    before.addLine(SeatKey.self(), {
-      serviceId: unwrap(ServiceId.create('svc-beard')),
-      variantId: null,
-      barberPref: BarberPref.any(),
-    });
+    before.addLine(SELF, line('svc-beard'));
 
-    const gateway = new StubGateway();
-    const store = afterRoundTrip(gateway);
-    store.claim('client-1');
+    const store = afterRoundTrip();
+    store.claim(CLIENT);
     store.attachRepeatSource(visit('appt-source'));
 
     // Their beard, not the old visit's fade — and the edge rides the commit.
-    expect(
-      store
-        .cart()
-        ?.entries()
-        .flatMap(([, lines]) => lines.map((line) => line.serviceId.value)),
-    ).toEqual(['svc-beard']);
+    expect(cartLines(store).map((entry) => entry.serviceId)).toEqual([
+      'svc-beard',
+    ]);
     expect(store.bookedFrom()).toBe('appt-source');
   });
 
   it('never attaches a rebooking edge to a move', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(visit('appt-moving'), guestLabel);
 
     const store = afterRoundTrip();
-    store.claim('client-1');
+    store.claim(CLIENT);
     store.attachRepeatSource(visit('appt-source'));
 
     expect(store.bookedFrom()).toBeNull();
@@ -1297,85 +1351,75 @@ describe('BookingFlowStore — the sources survive the sign-in round trip', () =
   });
 
   it('keeps a move a move, rather than committing a second booking', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(visit('appt-moving'), guestLabel);
 
     const store = afterRoundTrip();
-    store.claim('client-1');
+    store.claim(CLIENT);
 
     expect(store.isRescheduling()).toBe(true);
     expect(store.rescheduleOf()).toBe('appt-moving');
   });
 
   it('brings the riders back with the move — a restored move skips the landing that read them', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
-    const carried = before.riders();
+    const carried = before.moveRiders();
     expect(carried).toHaveLength(1);
 
     const store = afterRoundTrip();
-    store.claim('client-1');
+    store.claim(CLIENT);
 
-    expect(store.riders()).toEqual(carried);
+    expect(store.moveRiders()).toEqual(carried);
   });
 
-  it('brings the visit’s own chairs back with the move, so the restored grid still hands them back', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+  it('brings the visit’s own chairs back with the move, on its own day, so the restored grid still hands them back', () => {
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
     const released = before.moveRelease();
     expect(released).toHaveLength(4);
 
     const store = afterRoundTrip();
-    store.claim('client-1');
+    store.claim(CLIENT);
 
     expect(store.moveRelease()).toEqual(released);
+    expect(store.moveLocalDate()).toBe('2026-08-03');
   });
 
   /**
    * The draft `partyVisit`'s move writes, with its stored move replaced by
    * `move` — the way a tampered or older tab would have left it.
    */
-  function storedMove(move: object): void {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+  function storedMove(move: Readonly<Record<string, unknown>>): void {
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
-    const saved = unwrap(drafts.load()) as BookingDraft;
-    drafts.save({
-      ...saved,
-      rescheduleOf: {
-        appointmentId: 'appt-moving',
-        ownerId: 'client-1',
-        ...move,
-      } as unknown as BookingDraft['rescheduleOf'],
-    });
+    const saved = { ...drafts.raw() };
+    delete saved['rescheduleRiders'];
+    delete saved['rescheduleRelease'];
+    drafts.write({ ...saved, ...move });
   }
 
-  /** The same tab after the round trip — and whether its draft came back. */
-  function restored(): { store: BookingFlowStore; came: boolean } {
-    TestBed.resetTestingModule();
-    const store = createStore(new StubGateway(), undefined, drafts);
-    return { store, came: store.restore() };
-  }
+  const rider = {
+    serviceId: 'svc-fade',
+    variantId: null,
+    barberId: 'petar',
+    offsetMinutes: 0,
+    durationMinutes: 45,
+    setupMinutes: 0,
+    cleanupMinutes: 0,
+  };
 
   it('never restores a move with a malformed chair — the draft goes, and the link lands the move again', () => {
-    const rider = {
-      serviceId: 'svc-fade',
-      variantId: null,
-      barberId: 'petar',
-      offsetMinutes: 0,
-      durationMinutes: 45,
-      setupMinutes: 0,
-      cleanupMinutes: 0,
-    };
     storedMove({
-      riders: [rider],
-      chairTimes: [
+      rescheduleRiders: [rider],
+      rescheduleRelease: [
         // Backwards: no chair ends before it starts.
-        { barberId: 'ivan', startMs: 2_000, endMs: 1_000 },
-        { barberId: 'petar', startMs: 1_000, endMs: 2_000 },
+        { barberId: 'ivan', startMinutes: 700, endMinutes: 600 },
+        { barberId: 'petar', startMinutes: 600, endMinutes: 700 },
       ],
     });
 
@@ -1385,76 +1429,76 @@ describe('BookingFlowStore — the sources survive the sign-in round trip', () =
     expect(came).toBe(false);
     expect(store.isRescheduling()).toBe(false);
     expect(store.moveRelease()).toEqual([]);
-    expect(unwrap(drafts.load())).toBeNull();
+    expect(drafts.raw()).toBeNull();
   });
 
-  it('never restores a move written before its chairs were stored', () => {
-    storedMove({ riders: [] });
+  it('never restores a move written without its chairs', () => {
+    storedMove({ rescheduleRiders: [] });
 
     const { store, came } = restored();
 
     expect(came).toBe(false);
     expect(store.isRescheduling()).toBe(false);
-    expect(unwrap(drafts.load())).toBeNull();
+    expect(drafts.raw()).toBeNull();
   });
 
   it('drops the riders with the move when a different account signs in', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
 
     const store = afterRoundTrip();
-    store.claim('client-2');
+    store.claim(UserId.of('client-2'));
 
     expect(store.isRescheduling()).toBe(false);
-    expect(store.riders()).toEqual([]);
+    expect(store.moveRiders()).toEqual([]);
   });
 
   it('re-binds the party to a DIFFERENT account that signs in — and judges that person’s visit as theirs', () => {
     // A tab whose restored draft account A claimed, now opened by account B
-    // on a move link for B's own visit. Judged against A's uid, B's own seat
-    // read as a stranger's and the move was refused as the shop's.
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    // on a move link for B's own visit. Judged against A's account, B's own
+    // seat read as a stranger's and the move was refused as the shop's.
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     onServices(before);
     before.addGuest('Maria');
 
     const store = afterRoundTrip();
-    store.claim('client-2');
-    expect(store.party()?.ownerId?.value).toBe('client-2');
+    store.claim(UserId.of('client-2'));
+    expect(store.party()?.ownerUserId).toBe('client-2');
 
     const moved = store.rescheduleFrom(
       visit('appt-theirs', 'client-2'),
       guestLabel,
     );
-    expect(moved.isSuccess()).toBe(true);
+    expect(moved.ok).toBe(true);
     expect(store.moveRefusal()).toBeNull();
     expect(store.rescheduleOf()).toBe('appt-theirs');
     // Their own seat is the cart's `self`, not a rider carried beside it.
-    expect(store.riders()).toEqual([]);
+    expect(store.moveRiders()).toEqual([]);
     expect(linesPerPerson(store)).toEqual([1]);
     // …and the draft now names them, so the next round trip keeps the move.
-    expect((unwrap(drafts.load()) as BookingDraft).party.ownerId).toBe(
+    expect((drafts.raw() as { readonly party: Party }).party.ownerUserId).toBe(
       'client-2',
     );
   });
 
   it('keeps the party on the same account when that account claims again', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(visit('appt-moving'), guestLabel);
 
     const store = afterRoundTrip();
-    store.claim('client-1');
-    store.claim('client-1');
+    store.claim(CLIENT);
+    store.claim(CLIENT);
 
-    expect(store.party()?.ownerId?.value).toBe('client-1');
+    expect(store.party()?.ownerUserId).toBe('client-1');
     expect(store.rescheduleOf()).toBe('appt-moving');
   });
 
   it('never restores a move with a malformed rider — a dropped rider is a seat the grid stops checking', () => {
     storedMove({
-      riders: [
+      rescheduleRiders: [
         // Written before riders carried their terms: the grid could not
         // measure this one, and without it the grid would offer times the
         // server refuses for him.
@@ -1464,25 +1508,17 @@ describe('BookingFlowStore — the sources survive the sign-in round trip', () =
           barberId: 'petar',
           offsetMinutes: 0,
         },
-        {
-          serviceId: 'svc-fade',
-          variantId: null,
-          barberId: 'petar',
-          offsetMinutes: 0,
-          durationMinutes: 45,
-          setupMinutes: 0,
-          cleanupMinutes: 0,
-        },
+        rider,
       ],
-      chairTimes: [],
+      rescheduleRelease: [],
     });
 
     const { store, came } = restored();
 
     expect(came).toBe(false);
     expect(store.isRescheduling()).toBe(false);
-    expect(store.riders()).toEqual([]);
-    expect(unwrap(drafts.load())).toBeNull();
+    expect(store.moveRiders()).toEqual([]);
+    expect(drafts.raw()).toBeNull();
   });
 
   it.each([
@@ -1493,19 +1529,10 @@ describe('BookingFlowStore — the sources survive the sign-in round trip', () =
     'never restores a move whose rider has %s — the grid would drop him from its checks',
     (_what, broken) => {
       storedMove({
-        riders: [
-          {
-            serviceId: 'svc-fade',
-            variantId: null,
-            barberId: 'petar',
-            offsetMinutes: 0,
-            durationMinutes: 45,
-            setupMinutes: 0,
-            cleanupMinutes: 0,
-            ...broken,
-          },
+        rescheduleRiders: [{ ...rider, ...broken }],
+        rescheduleRelease: [
+          { barberId: 'petar', startMinutes: 600, endMinutes: 700 },
         ],
-        chairTimes: [{ barberId: 'petar', startMs: 1_000, endMs: 2_000 }],
       });
 
       const { store, came } = restored();
@@ -1515,16 +1542,16 @@ describe('BookingFlowStore — the sources survive the sign-in round trip', () =
       expect(came).toBe(false);
       expect(store.isRescheduling()).toBe(false);
       expect(store.availabilityRiders()).toEqual([]);
-      expect(unwrap(drafts.load())).toBeNull();
+      expect(drafts.raw()).toBeNull();
     },
   );
 
   it('never restores a move whose chair names no barber — the release would silently shrink', () => {
     storedMove({
-      riders: [],
-      chairTimes: [
-        { barberId: '', startMs: 1_000, endMs: 2_000 },
-        { barberId: 'petar', startMs: 1_000, endMs: 2_000 },
+      rescheduleRiders: [],
+      rescheduleRelease: [
+        { barberId: '', startMinutes: 600, endMinutes: 700 },
+        { barberId: 'petar', startMinutes: 600, endMinutes: 700 },
       ],
     });
 
@@ -1533,34 +1560,135 @@ describe('BookingFlowStore — the sources survive the sign-in round trip', () =
     expect(came).toBe(false);
     expect(store.isRescheduling()).toBe(false);
     expect(store.moveRelease()).toEqual([]);
-    expect(unwrap(drafts.load())).toBeNull();
+    expect(drafts.raw()).toBeNull();
   });
 
   it('hands the grid every rider and every chair a restored move holds — none dropped on the way', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
 
     const { store, came } = restored();
 
     expect(came).toBe(true);
-    expect(store.availabilityRiders()).toHaveLength(store.riders().length);
+    expect(store.availabilityRiders()).toHaveLength(store.moveRiders().length);
     expect(store.moveRelease()).toHaveLength(
-      (unwrap(drafts.load()) as BookingDraft).rescheduleOf?.chairTimes.length ??
-        -1,
+      (drafts.raw()?.['rescheduleRelease'] as readonly unknown[]).length,
     );
   });
 
   it('restores a whole move exactly as it was written', () => {
-    const before = createStore(new StubGateway(), undefined, drafts);
-    before.claim('client-1');
+    const before = createStore(server(), drafts);
+    before.claim(CLIENT);
     before.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
 
     const { store, came } = restored();
 
     expect(came).toBe(true);
-    expect(store.riders()).toEqual(before.riders());
+    expect(store.moveRiders()).toEqual(before.moveRiders());
     expect(store.moveRelease()).toEqual(before.moveRelease());
+  });
+
+  it('starts fresh, and says so, when the stored value is no draft at all', () => {
+    drafts.write({ step: 'schedule', party: { guests: [] } });
+
+    const { store, came } = restored();
+
+    expect(came).toBe(false);
+    expect(store.step()).toBe(BookingFlowStep.Location);
+    expect(drafts.raw()).toBeNull();
+  });
+});
+
+/*
+ * THE LAPSED DAYS OF A RESTORED DRAFT. The draft holds no zone (Law 7.2: the
+ * zone is the location's), so a restore cannot tell on its own whether a day
+ * has gone by; the schedule step settles it with the shop's TODAY
+ * (`settleLapsedDays`, `BookingCartSystem.restore`), once per restore.
+ */
+describe('BookingFlowStore — a restored draft’s days, judged against the shop’s today', () => {
+  let drafts: Drafts;
+
+  beforeEach(() => {
+    drafts = jsonDrafts();
+  });
+
+  /** A schedule draft with `picked` chosen and `declared` watched. */
+  function scheduleDraft(
+    picked: string | null,
+    declared: readonly string[],
+  ): BookingFlowStore {
+    const before = createStore(server(), drafts);
+    before.selectLocation(CENTER);
+    before.next();
+    before.addLine(SELF, line('svc-fade'));
+    before.next();
+    const saved = drafts.raw() ?? {};
+    drafts.write({
+      ...saved,
+      when: FlexibleWhen.of(
+        declared.map((day) => DayWindows.wholeDay(localDate(day))),
+      ),
+      draftLocalDate: picked,
+    });
+    TestBed.resetTestingModule();
+    const store = createStore(server(), drafts);
+    expect(store.restore()).toBe(true);
+    return store;
+  }
+
+  it('keeps every stored day until the shop’s today is known', () => {
+    const store = scheduleDraft('2026-08-01', ['2026-08-01', '2026-08-05']);
+
+    expect(store.selectedLocalDate()).toBe('2026-08-01');
+    expect(FlexibleWhen.localDates(store.when())).toEqual([
+      '2026-08-01',
+      '2026-08-05',
+    ]);
+  });
+
+  it('drops the picked day and the declared days that have gone by — once today is known', () => {
+    const store = scheduleDraft('2026-08-01', ['2026-08-01', '2026-08-05']);
+
+    store.settleLapsedDays(localDate('2026-08-03'));
+
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
+    expect(store.selectedLocalDate()).toBeNull();
+    expect(FlexibleWhen.localDates(store.when())).toEqual(['2026-08-05']);
+    // …and the draft says so too.
+    expect(drafts.raw()?.['draftLocalDate']).toBeNull();
+  });
+
+  it('keeps a day that has not gone by — today included', () => {
+    const store = scheduleDraft('2026-08-03', ['2026-08-03']);
+
+    store.settleLapsedDays(localDate('2026-08-03'));
+
+    expect(store.selectedLocalDate()).toBe('2026-08-03');
+    expect(FlexibleWhen.localDates(store.when())).toEqual(['2026-08-03']);
+  });
+
+  it('settles once per restore — a later day never prunes what the person picked since', () => {
+    const store = scheduleDraft(null, []);
+    store.settleLapsedDays(localDate('2026-08-03'));
+    store.selectDay(localDate('2026-08-04'));
+
+    store.settleLapsedDays(localDate('2026-08-10'));
+
+    expect(store.selectedLocalDate()).toBe('2026-08-04');
+  });
+
+  it('settles nothing on a flow nobody restored', () => {
+    const store = createStore(server(), drafts);
+    store.selectLocation(CENTER);
+    store.next();
+    store.addLine(SELF, line('svc-fade'));
+    store.next();
+    store.selectDay(localDate('2026-08-01'));
+
+    store.settleLapsedDays(localDate('2026-08-03'));
+
+    expect(store.selectedLocalDate()).toBe('2026-08-01');
   });
 });
 
@@ -1580,37 +1708,32 @@ function reseatedPartyVisit(id: string): Appointment {
 }
 
 describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
-  let appointments: StubAppointments;
+  let appointments: Visits;
   let store: BookingFlowStore;
 
   beforeEach(() => {
     TestBed.resetTestingModule();
-    appointments = new StubAppointments();
-    store = createStore(
-      new StubGateway(),
-      undefined,
-      NULL_DRAFT_STORE,
-      appointments,
-    );
-    store.claim('client-1');
+    appointments = visits();
+    store = createStore(server(), nullDrafts(), appointments);
+    store.claim(CLIENT);
     store.rescheduleFrom(partyVisit('appt-moving'), guestLabel);
   });
 
   function chairs(): string[] {
     return store
       .moveRelease()
-      .map((chair) => `${chair.barberId}@${chair.startMs}`);
+      .map((chair) => `${chair.barberId}@${chair.startMinutes}`);
   }
 
   it('brings who it carries and the chairs it holds in line with the STORED visit, and keeps the bag', async () => {
     const bag = store.cart();
-    appointments.answer = EcsResult.ok(reseatedPartyVisit('appt-moving'));
+    appointments.answer = Result.ok(reseatedPartyVisit('appt-moving'));
 
     await store.rereadMove();
 
     expect(appointments.reads).toBe(1);
     expect(
-      store.riders().map((rider) => [rider.barberId, rider.offsetMinutes]),
+      store.moveRiders().map((rider) => [rider.barberId, rider.offsetMinutes]),
     ).toEqual([['niko', 30]]);
     // Petar's old chair is somebody else's now: it is no longer handed back.
     expect(chairs().some((chair) => chair.startsWith('petar@'))).toBe(false);
@@ -1621,54 +1744,56 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
   });
 
   it('keeps what it holds when the read FAILS — the server stays the authority', async () => {
-    const before = { riders: store.riders(), release: store.moveRelease() };
-    appointments.answer = EcsResult.err(RepositoryError.unavailable());
+    const before = {
+      riders: store.moveRiders(),
+      release: store.moveRelease(),
+    };
+    appointments.answer = Result.err(RepositoryError.unavailable());
 
     await store.rereadMove();
 
-    expect(store.riders()).toBe(before.riders);
+    expect(store.moveRiders()).toBe(before.riders);
     expect(store.moveRelease()).toBe(before.release);
     expect(store.moveRefusal()).toBeNull();
   });
 
   it('refuses the move, as the landing would, once the visit is gone', async () => {
-    appointments.answer = EcsResult.ok(null);
+    appointments.answer = Result.ok(null);
 
     await store.rereadMove();
 
-    expect(store.moveRefusal()?.reason).toBe('unavailable');
+    expect(store.moveRefusal()?.moveRefusalReason).toBe(
+      MoveRefusalReason.Unavailable,
+    );
   });
 
   it('refuses the move as the shop’s once only a companion is left on it', async () => {
-    appointments.answer = EcsResult.ok(companionOnlyVisit('appt-moving'));
+    appointments.answer = Result.ok(companionOnlyVisit('appt-moving'));
 
     await store.rereadMove();
 
-    expect(store.moveRefusal()?.reason).toBe('companions_only');
+    expect(store.moveRefusal()?.moveRefusalReason).toBe(
+      MoveRefusalReason.CompanionsOnly,
+    );
   });
 
   it('ignores an answer about a move the flow let go of while the read was out', async () => {
-    appointments.answer = EcsResult.ok(reseatedPartyVisit('appt-moving'));
+    appointments.answer = Result.ok(reseatedPartyVisit('appt-moving'));
 
     const reading = store.rereadMove();
     // Somebody else signs in: the move they never read is released.
-    store.claim('client-2');
+    store.claim(UserId.of('client-2'));
     await reading;
 
     expect(store.isRescheduling()).toBe(false);
-    expect(store.riders()).toEqual([]);
+    expect(store.moveRiders()).toEqual([]);
     expect(store.moveRefusal()).toBeNull();
   });
 
   it('reads nothing when the flow is not a move', async () => {
     TestBed.resetTestingModule();
-    const reads = new StubAppointments();
-    const plain = createStore(
-      new StubGateway(),
-      undefined,
-      NULL_DRAFT_STORE,
-      reads,
-    );
+    const reads = visits();
+    const plain = createStore(server(), nullDrafts(), reads);
 
     await plain.rereadMove();
 
@@ -1679,33 +1804,33 @@ describe('BookingFlowStore — a move re-reads the visit it is moving', () => {
 // A waitlist match lands on the SCHEDULE step, past the rename that would
 // fix two guests under one name, so its placeholders must already differ.
 describe('BookingFlowStore.restoreFromWaitlist — one label, one guest', () => {
-  const line = (id: string, seatKey: string) => ({
+  const stored = (id: string, seatKey: string) => ({
     lineId: CartLineId.of(id),
     seatKey: SeatKeyText.of(seatKey),
-    serviceId: ServiceKey.of('svc-fade'),
+    serviceId: ServiceId.of('svc-fade'),
     variantId: null,
     barberId: null,
     locationId: null,
   });
-  const watched = unwrapOk(LocalDate.parse('2026-08-25'));
+  const watched = localDate('2026-08-25');
   const createdAtUtcMs = utcMs('2026-08-03T10:00:00.000+03:00');
   /** The stored request: the bag, the shop, the one watched day, open. */
   const request: WaitlistRequest = {
     id: WaitlistRequestId.of('wl-1'),
-    ownerUserId: UserId.of('client-1'),
-    locationId: LocationKey.of('loc-center'),
+    ownerUserId: CLIENT,
+    locationId: CENTER,
     localDates: [watched],
     utcEpochMs: ZonedTimeSystem.startOfLocalDay(watched, FIXTURE_TIME_ZONE),
     createdAtUtcMs,
     cartSeats: [
-      { seatKey: SeatKeyText.of('self'), lines: [line('line-0', 'self')] },
+      { seatKey: SeatKeyText.of('self'), lines: [stored('line-0', 'self')] },
       {
         seatKey: SeatKeyText.of('guest-0'),
-        lines: [line('line-1', 'guest-0')],
+        lines: [stored('line-1', 'guest-0')],
       },
       {
         seatKey: SeatKeyText.of('guest-1'),
-        lines: [line('line-2', 'guest-1')],
+        lines: [stored('line-2', 'guest-1')],
       },
     ],
     cartNextSequence: 3,
@@ -1716,89 +1841,29 @@ describe('BookingFlowStore.restoreFromWaitlist — one label, one guest', () => 
   beforeEach(() => TestBed.resetTestingModule());
 
   it('names the guests as the catalogue numbers them', () => {
-    const store = createStore(new StubGateway());
-    expect(store.restoreFromWaitlist(request, null, guestLabel, ZONE)).toBe(
-      true,
-    );
-    expect(store.guests().map((guest) => guest.label.value)).toEqual([
-      'Guest 1',
-      'Guest 2',
-    ]);
+    const store = createStore(server());
+    expect(store.restoreFromWaitlist(request, null, guestLabel)).toBe(true);
+    expect(guestLabels(store)).toEqual(['Guest 1', 'Guest 2']);
   });
 
   it('never hands two guests one placeholder, even from copy that drops the number', () => {
-    const store = createStore(new StubGateway());
-    expect(store.restoreFromWaitlist(request, null, () => 'Гост', ZONE)).toBe(
-      true,
-    );
-    expect(store.step()).toBe('schedule');
-    expect(store.party()?.sharedLabel()).toBeNull();
-  });
-});
-
-describe('firstUnusedLabel — the one placeholder rule', () => {
-  const guest = (ordinal: number): string => `Гост ${ordinal}`;
-
-  it('counts up from `from`, stepping past every name in use', () => {
-    expect(firstUnusedLabel(new Set(), guest)).toBe('Гост 1');
-    expect(firstUnusedLabel(new Set(['Гост 1', 'Гост 2']), guest)).toBe(
-      'Гост 3',
-    );
-    expect(firstUnusedLabel(new Set(['Гост 4']), guest, 4)).toBe('Гост 5');
-    // Names that are not placeholders block nothing.
-    expect(firstUnusedLabel(new Set(['Мария']), guest, 2)).toBe('Гост 2');
+    const store = createStore(server());
+    expect(store.restoreFromWaitlist(request, null, () => 'Гост')).toBe(true);
+    expect(store.step()).toBe(BookingFlowStep.Schedule);
+    const party = store.party();
+    expect(party === null ? null : Party.sharedLabel(party)).toBeNull();
   });
 
-  it('matches the label a guest is stored under — trimmed, as `SeatLabel` keeps it', () => {
-    expect(firstUnusedLabel(new Set(['Гост 1']), (n) => ` Гост ${n} `)).toBe(
-      'Гост 2',
-    );
-  });
+  it('lands on the day the link names, else the first day the request watches', () => {
+    const store = createStore(server());
+    store.restoreFromWaitlist(request, '2026-08-27', guestLabel);
+    expect(store.selectedLocalDate()).toBe('2026-08-27');
+    expect(store.consumeWaitlistArrival()).toBe(true);
+    expect(store.consumeWaitlistArrival()).toBe(false);
 
-  it('numbers the word itself when the catalogue ignores the number — never a taken label', () => {
-    // A translation missing its `{{number}}` answers the same for every n.
-    // The party refuses a label another guest holds, so handing that label
-    // back would be an add that silently does nothing.
-    expect(firstUnusedLabel(new Set(), () => 'Гост')).toBe('Гост');
-    expect(firstUnusedLabel(new Set(['Гост']), () => 'Гост')).toBe('Гост 1');
-    expect(firstUnusedLabel(new Set(['Гост', 'Гост 2']), () => 'Гост', 2)).toBe(
-      'Гост 3',
-    );
-  });
-
-  it('never answers a taken label, whatever the catalogue does with the number (property)', () => {
-    fc.assert(
-      fc.property(
-        fc.uniqueArray(fc.constantFrom('Гост', 'Гост 1', 'Гост 2', 'Гост 3'), {
-          maxLength: 4,
-        }),
-        fc.boolean(),
-        fc.integer({ min: 1, max: 4 }),
-        (takenLabels, ignoresNumber, from) => {
-          const taken: ReadonlySet<string> = new Set(takenLabels);
-          const label = ignoresNumber ? () => 'Гост' : guest;
-          expect(taken.has(firstUnusedLabel(taken, label, from))).toBe(false);
-        },
-      ),
-    );
-  });
-
-  it('is the SMALLEST free ordinal from `from`, and never a taken one (property)', () => {
-    fc.assert(
-      fc.property(
-        fc.uniqueArray(fc.integer({ min: 1, max: 12 }), { maxLength: 10 }),
-        fc.integer({ min: 1, max: 6 }),
-        (takenOrdinals, from) => {
-          const taken = new Set(takenOrdinals.map(guest));
-          const label = firstUnusedLabel(taken, guest, from);
-          expect(taken.has(label)).toBe(false);
-          const ordinal = Number(label.replace('Гост ', ''));
-          expect(ordinal).toBeGreaterThanOrEqual(from);
-          for (let earlier = from; earlier < ordinal; earlier++) {
-            expect(taken.has(guest(earlier))).toBe(true);
-          }
-        },
-      ),
-    );
+    TestBed.resetTestingModule();
+    const fallback = createStore(server());
+    fallback.restoreFromWaitlist(request, null, guestLabel);
+    expect(fallback.selectedLocalDate()).toBe('2026-08-25');
   });
 });

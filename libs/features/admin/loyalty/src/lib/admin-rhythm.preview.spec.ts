@@ -39,7 +39,6 @@ import {
   RHYTHM_PREVIEW_DELAY_MS,
   RHYTHM_PREVIEW_PAGES,
   RHYTHM_PREVIEW_PAGE_SIZE,
-  RHYTHM_SHOP_ZONE,
   readRhythmPreviewFacts,
   rhythmPreviewOf,
   rhythmPreviewReadsFacts,
@@ -169,11 +168,11 @@ const fade = (): StreakQualifierRule =>
 const dayStart = (day: string): number =>
   ZonedTimeSystem.startOfLocalDay(
     unwrapOk(LocalDate.parse(day)),
-    RHYTHM_SHOP_ZONE,
+    FIXTURE_TIME_ZONE,
   );
 
 const marksOf = (rule: StreakRule): readonly string[] =>
-  sampleRhythmRun(rule, TODAY)?.periods.map(
+  sampleRhythmRun(rule, TODAY, FIXTURE_TIME_ZONE)?.periods.map(
     (period) => period.streakPeriodMark,
   ) ?? [];
 
@@ -194,6 +193,7 @@ describe('streakFactsOf', () => {
         // 01:30 on the 28th in Sofia: the visit's day is the shop's, not UTC's.
         instant('2026-09-27T22:30:00+00:00'),
       ]),
+      FIXTURE_TIME_ZONE,
     );
 
     expect(facts.visits).toEqual([
@@ -211,7 +211,10 @@ describe('streakFactsOf', () => {
   });
 
   it('knows nothing the statistics do not hold', () => {
-    const facts = streakFactsOf(statsOf('client-1', [daysAgo(3)]));
+    const facts = streakFactsOf(
+      statsOf('client-1', [daysAgo(3)]),
+      FIXTURE_TIME_ZONE,
+    );
 
     expect(facts.excused).toEqual([]);
     expect(facts.bookings).toEqual([]);
@@ -220,7 +223,9 @@ describe('streakFactsOf', () => {
   });
 
   it('hands a client who never came no visit', () => {
-    expect(streakFactsOf(statsOf('client-1')).visits).toEqual([]);
+    expect(
+      streakFactsOf(statsOf('client-1'), FIXTURE_TIME_ZONE).visits,
+    ).toEqual([]);
   });
 });
 
@@ -228,7 +233,7 @@ describe('readRhythmPreviewFacts', () => {
   it('reads a small shop in one page', async () => {
     const directory = statsReader(shopOf(3));
 
-    const facts = await readRhythmPreviewFacts(directory);
+    const facts = await readRhythmPreviewFacts(directory, FIXTURE_TIME_ZONE);
 
     expect(facts.ok && facts.value.clients).toHaveLength(3);
     expect(facts.ok && facts.value.capped).toBe(false);
@@ -236,7 +241,10 @@ describe('readRhythmPreviewFacts', () => {
   });
 
   it('reads an empty shop as nobody', async () => {
-    const facts = await readRhythmPreviewFacts(statsReader());
+    const facts = await readRhythmPreviewFacts(
+      statsReader(),
+      FIXTURE_TIME_ZONE,
+    );
 
     expect(facts.ok && facts.value).toEqual({
       clients: [],
@@ -247,7 +255,7 @@ describe('readRhythmPreviewFacts', () => {
   it('walks page after page, each from where the last one stopped', async () => {
     const directory = statsReader(shopOf(450));
 
-    const facts = await readRhythmPreviewFacts(directory);
+    const facts = await readRhythmPreviewFacts(directory, FIXTURE_TIME_ZONE);
 
     expect(facts.ok && facts.value.clients).toHaveLength(450);
     expect(facts.ok && facts.value.capped).toBe(false);
@@ -261,7 +269,7 @@ describe('readRhythmPreviewFacts', () => {
   it('reads exactly 1 000 clients whole', async () => {
     const directory = statsReader(shopOf(1_000));
 
-    const facts = await readRhythmPreviewFacts(directory);
+    const facts = await readRhythmPreviewFacts(directory, FIXTURE_TIME_ZONE);
 
     expect(facts.ok && facts.value.clients).toHaveLength(1_000);
     expect(facts.ok && facts.value.capped).toBe(false);
@@ -271,7 +279,7 @@ describe('readRhythmPreviewFacts', () => {
   it('stops at the fifth page and says that clients are left', async () => {
     const directory = statsReader(shopOf(1_001));
 
-    const facts = await readRhythmPreviewFacts(directory);
+    const facts = await readRhythmPreviewFacts(directory, FIXTURE_TIME_ZONE);
 
     expect(facts.ok && facts.value.clients).toHaveLength(1_000);
     expect(facts.ok && facts.value.capped).toBe(true);
@@ -290,7 +298,7 @@ describe('readRhythmPreviewFacts', () => {
       },
     };
 
-    const facts = await readRhythmPreviewFacts(directory);
+    const facts = await readRhythmPreviewFacts(directory, FIXTURE_TIME_ZONE);
 
     expect(!facts.ok && facts.error).toEqual(pageTwo);
     expect(pages).toBe(2);
@@ -302,7 +310,7 @@ describe('readRhythmPreviewFacts', () => {
         Promise.reject(new Error('the adapter did not load')),
     };
 
-    const facts = await readRhythmPreviewFacts(directory);
+    const facts = await readRhythmPreviewFacts(directory, FIXTURE_TIME_ZONE);
 
     expect(!facts.ok && facts.error.errorCode).toBe(
       RepositoryErrorCode.ReadFailed,
@@ -315,8 +323,8 @@ describe('RhythmPreviewSource', () => {
     const directory = statsReader(shopOf(450));
     const source = rhythmPreviewSource(directory);
 
-    const first = await source.read();
-    const second = await source.read();
+    const first = await source.read(FIXTURE_TIME_ZONE);
+    const second = await source.read(FIXTURE_TIME_ZONE);
 
     expect(second).toBe(first);
     expect(directory.calls).toHaveLength(3);
@@ -326,7 +334,10 @@ describe('RhythmPreviewSource', () => {
     const directory = statsReader(shopOf(3));
     const source = rhythmPreviewSource(directory);
 
-    const [first, second] = await Promise.all([source.read(), source.read()]);
+    const [first, second] = await Promise.all([
+      source.read(FIXTURE_TIME_ZONE),
+      source.read(FIXTURE_TIME_ZONE),
+    ]);
 
     expect(second).toBe(first);
     expect(directory.calls).toHaveLength(1);
@@ -336,9 +347,9 @@ describe('RhythmPreviewSource', () => {
     const directory = statsReader(shopOf(3)).failWith();
     const source = rhythmPreviewSource(directory);
 
-    const failed = await source.read();
+    const failed = await source.read(FIXTURE_TIME_ZONE);
     directory.recover();
-    const again = await source.read();
+    const again = await source.read(FIXTURE_TIME_ZONE);
 
     expect(failed.ok).toBe(false);
     expect(again).toBe(failed);
@@ -347,7 +358,7 @@ describe('RhythmPreviewSource', () => {
 
     source.forget();
     expect(source.failed()).toBe(false);
-    const read = await source.read();
+    const read = await source.read(FIXTURE_TIME_ZONE);
 
     expect(read.ok && read.value.clients).toHaveLength(3);
     expect(source.failed()).toBe(false);
@@ -359,7 +370,7 @@ describe('RhythmPreviewSource', () => {
     const source = rhythmPreviewSource(directory);
 
     expect(source.failed()).toBe(false);
-    const walking = source.read();
+    const walking = source.read(FIXTURE_TIME_ZONE);
     expect(source.failed()).toBe(false);
 
     await walking;
@@ -370,10 +381,10 @@ describe('RhythmPreviewSource', () => {
     const directory = statsReader(shopOf(3)).failWith();
     const source = rhythmPreviewSource(directory);
 
-    const forgotten = source.read();
+    const forgotten = source.read(FIXTURE_TIME_ZONE);
     source.forget();
     directory.recover();
-    const read = source.read();
+    const read = source.read(FIXTURE_TIME_ZONE);
     await forgotten;
 
     expect(source.failed()).toBe(false);
@@ -384,9 +395,9 @@ describe('RhythmPreviewSource', () => {
     const directory = statsReader(shopOf(3));
     const source = rhythmPreviewSource(directory);
 
-    const first = await source.read();
+    const first = await source.read(FIXTURE_TIME_ZONE);
     source.forget();
-    const second = await source.read();
+    const second = await source.read(FIXTURE_TIME_ZONE);
 
     expect(second).not.toBe(first);
     expect(second.ok && second.value.clients).toHaveLength(3);
@@ -423,7 +434,9 @@ describe('rhythmPreviewOf', () => {
   const gone = statsOf('client-gone', [daysAgo(200)]);
   const never = statsOf('client-never');
   const facts = {
-    clients: [steady, sixWeeks, gone, never].map(streakFactsOf),
+    clients: [steady, sixWeeks, gone, never].map((record) =>
+      streakFactsOf(record, FIXTURE_TIME_ZONE),
+    ),
     capped: false,
   };
 
@@ -495,7 +508,7 @@ describe('rhythmPreviewOf', () => {
 
 describe('the sample run', () => {
   it('ends yesterday, seven visits long', () => {
-    const { visits } = sampleRhythmFacts(ruleOf(), TODAY);
+    const { visits } = sampleRhythmFacts(ruleOf(), TODAY, FIXTURE_TIME_ZONE);
 
     expect(visits).toHaveLength(7);
     expect(visits.at(-1)).toEqual({
@@ -507,9 +520,11 @@ describe('the sample run', () => {
   });
 
   it('comes on time six times, then misses one due date by a whole period', () => {
-    const days = sampleRhythmFacts(ruleOf(), TODAY).visits.map(
-      (visit) => visit.localDate,
-    );
+    const days = sampleRhythmFacts(
+      ruleOf(),
+      TODAY,
+      FIXTURE_TIME_ZONE,
+    ).visits.map((visit) => visit.localDate);
     const gaps = days
       .slice(1)
       .map((day, index) => LocalDate.daysBetween(days.at(index) ?? day, day));
@@ -518,7 +533,7 @@ describe('the sample run', () => {
   });
 
   it('shows the recommended rule covering the miss with a protection', () => {
-    const run = sampleRhythmRun(ruleOf(), TODAY);
+    const run = sampleRhythmRun(ruleOf(), TODAY, FIXTURE_TIME_ZONE);
 
     // A mark per visit, and one for the due date nobody met.
     expect(marksOf(ruleOf())).toEqual([
@@ -560,7 +575,7 @@ describe('the sample run', () => {
       protectionsEarnEvery: 5,
       protectionsStartWith: 0,
     });
-    const run = sampleRhythmRun(bare, TODAY);
+    const run = sampleRhythmRun(bare, TODAY, FIXTURE_TIME_ZONE);
 
     expect(marksOf(bare).slice(-5)).toEqual([
       StreakPeriodMark.Kept,
@@ -583,7 +598,7 @@ describe('the sample run', () => {
     });
 
     expect(marksOf(holding)).toContain(StreakPeriodMark.Missed);
-    expect(sampleRhythmRun(holding, TODAY)?.current).toBe(7);
+    expect(sampleRhythmRun(holding, TODAY, FIXTURE_TIME_ZONE)?.current).toBe(7);
   });
 
   it('is on time under a personal interval too: only the one due date is missed', () => {
@@ -595,9 +610,9 @@ describe('the sample run', () => {
     expect(marks.filter((mark) => mark !== StreakPeriodMark.Kept)).toEqual([
       StreakPeriodMark.Protected,
     ]);
-    expect(sampleRhythmRun(personal, TODAY)?.streakPhase).toBe(
-      StreakPhase.Active,
-    );
+    expect(
+      sampleRhythmRun(personal, TODAY, FIXTURE_TIME_ZONE)?.streakPhase,
+    ).toBe(StreakPhase.Active);
   });
 
   it.each([14, 28, 42, 91, 182])(
@@ -619,11 +634,15 @@ describe('the sample run', () => {
   );
 
   it('draws nothing under a rule that is off', () => {
-    expect(sampleRhythmRun(ruleOf({ enabled: false }), TODAY)).toBeNull();
+    expect(
+      sampleRhythmRun(ruleOf({ enabled: false }), TODAY, FIXTURE_TIME_ZONE),
+    ).toBeNull();
   });
 
   it('draws nothing on a day that is no day', () => {
-    expect(sampleRhythmFacts(ruleOf(), 'someday').visits).toEqual([]);
-    expect(sampleRhythmRun(ruleOf(), 'someday')).toBeNull();
+    expect(
+      sampleRhythmFacts(ruleOf(), 'someday', FIXTURE_TIME_ZONE).visits,
+    ).toEqual([]);
+    expect(sampleRhythmRun(ruleOf(), 'someday', FIXTURE_TIME_ZONE)).toBeNull();
   });
 });

@@ -670,8 +670,9 @@ for (let i = 0; i < clientBook.appointments.length; i += WRITE_BATCH) {
  * CLIENT STATS, as the trigger computes them — because it IS the trigger's
  * code (design §12.5.7, "the seed is engine output"): `projectClientStats`
  * from `@core/pipelines`, committed through the server's own
- * `firestoreCommitPlan` under the policy `firestoreSettingsPorts` reads,
- * bundled at start and run here in-process for every client RECORD on a
+ * `firestoreCommitPlan` under the policy `firestoreSettingsPorts` reads, on
+ * the default location's zone (`TenantConfig.DEFAULT`, read through the
+ * server's `firestoreCatalogPorts` from the shops written above), bundled at start and run here in-process for every client RECORD on a
  * seat (`clientStats/{customerId}`, D29). State-based under a revision
  * guard, so it writes only what differs from what is stored.
  *
@@ -685,8 +686,9 @@ for (let i = 0; i < clientBook.appointments.length; i += WRITE_BATCH) {
 const statsProjection = seed.projectClientStats({
   commit: seed.firestoreCommitPlan(db),
   nowUtcMs: () => Date.now(),
-  tenantTimeZone: LOCATIONS[0].body.timeZone,
   ...seed.firestoreSettingsPorts(db),
+  ...seed.firestoreCatalogPorts(db),
+  defaultLocationId: seed.TenantConfig.DEFAULT.defaultLocationId,
   log: () => {},
 });
 

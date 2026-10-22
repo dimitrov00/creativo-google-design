@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import type { Firestore } from 'firebase-admin/firestore';
-import { Actor, BarberPreference } from '@core/components';
+import {
+  Actor,
+  BarberPreference,
+  RequestedSubjectRole,
+} from '@core/components';
 import {
   AppointmentId,
   BusyKey,
@@ -9,7 +13,6 @@ import {
   UtcEpochMs,
 } from '@core/primitives';
 import { Collections } from '@core/entities';
-import { RequestedSubjectRole } from '@core/systems';
 import { type BookAppointmentCommand, bookAppointment } from '@core/pipelines';
 import {
   barberFixture,
@@ -57,12 +60,14 @@ function bodyOf(entity: { readonly id: string }): Record<string, unknown> {
   );
 }
 
+/** A booking on the shop's wall clock — the pipeline places it on the location's zone (4A-4). */
 function booking(
   attemptId: AppointmentId,
-  startUtcMs: UtcEpochMs,
+  startMinutes: number,
 ): BookAppointmentCommand {
   return {
     locationId: FIXTURE_IDS.location,
+    localDate: THURSDAY,
     seats: [
       {
         lineId: 'line-1',
@@ -70,7 +75,7 @@ function booking(
         variantId: null,
         barberId: FIXTURE_IDS.barber,
         barberPreference: BarberPreference.Specific,
-        startUtcMs,
+        startMinutes,
         subject: { requestedSubjectRole: RequestedSubjectRole.Self },
       },
     ],
@@ -149,9 +154,7 @@ describe('bookAppointment (emulator)', () => {
     (await db.collection(collection).get()).docs.map((doc) => doc.id).sort();
 
   it('books once, and answers a retried attempt with the original id, writing nothing more', async () => {
-    const first = await run(
-      booking(ATTEMPT, utcMs('2026-10-01T10:00:00.000+03:00')),
-    );
+    const first = await run(booking(ATTEMPT, 600));
     expect(first).toEqual({
       ok: true,
       value: { appointmentId: ATTEMPT, replayed: false },
@@ -179,9 +182,7 @@ describe('bookAppointment (emulator)', () => {
     ).toBeDefined();
     expect(await ids(Collections.AuditLog)).toHaveLength(1);
 
-    const replay = await run(
-      booking(ATTEMPT, utcMs('2026-10-01T10:00:00.000+03:00')),
-    );
+    const replay = await run(booking(ATTEMPT, 600));
 
     expect(replay).toEqual({
       ok: true,
@@ -197,8 +198,8 @@ describe('bookAppointment (emulator)', () => {
   it('creates the client record of a first booking — the account’s contact copied — and never twice when two first bookings race', async () => {
     const second = AppointmentId.of('attempt-fedcba9876543210');
     const [one, two] = await Promise.all([
-      run(booking(ATTEMPT, utcMs('2026-10-01T10:00:00.000+03:00'))),
-      run(booking(second, utcMs('2026-10-01T14:00:00.000+03:00'))),
+      run(booking(ATTEMPT, 600)),
+      run(booking(second, 840)),
     ]);
     expect(one.ok && two.ok).toBe(true);
 

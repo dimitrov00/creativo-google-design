@@ -32,6 +32,7 @@ import {
   recordingTelemetry,
   utcMs,
 } from '@core/testing';
+import { firestoreCatalogPorts } from '../adapters/firestore-catalog.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 
 /**
@@ -121,6 +122,9 @@ describe('rebuildCapacity (emulator) — the entries[] replace-not-merge oracle'
       ...recordingTelemetry(),
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
       listBarbers: async () => Result.ok([IVAN]),
+      // The horizon is the default location's days (4A-11): the seeded centre.
+      ...firestoreCatalogPorts(db),
+      defaultLocationId: CENTRE,
     });
   }
 
@@ -128,7 +132,6 @@ describe('rebuildCapacity (emulator) — the entries[] replace-not-merge oracle'
     capacityTrigger: CapacityTrigger.Day,
     barberId: IVAN,
     localDate: MONDAY,
-    timeZone: FIXTURE_TIME_ZONE,
   } as const;
 
   async function month(id: CapacityMonthId) {
@@ -144,7 +147,6 @@ describe('rebuildCapacity (emulator) — the entries[] replace-not-merge oracle'
       await run()({
         capacityTrigger: CapacityTrigger.Roster,
         barberId: IVAN,
-        timeZone: FIXTURE_TIME_ZONE,
       }),
     ).toEqual({ ok: true, value: { rebuiltBarberIds: [IVAN] } });
     const august = await month(AUGUST);
@@ -219,6 +221,8 @@ describe('rebuildCapacity (emulator) — the entries[] replace-not-merge oracle'
       ...recordingTelemetry(),
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
       listBarbers: async () => Result.ok([IVAN]),
+      ...firestoreCatalogPorts(db),
+      defaultLocationId: CENTRE,
     })(monday);
     expect(kinds).toEqual([WriteAction.Set]);
   });

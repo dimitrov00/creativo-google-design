@@ -240,9 +240,11 @@
                       uiFont="footnote"
                       class="cr-menu__staff-detail"
                     >
-                      <span data-testid="menu-staff-day-date">{{
-                        todayLabel()
-                      }}</span>
+                      @if (todayLabel(); as today) {
+                        <span data-testid="menu-staff-day-date">{{
+                          today
+                        }}</span>
+                      }
                       <!-- Unscaled on purpose: an inline glyph rides the
                            surrounding font (the fixed ladder is opt-in),
                            so it stays sized to the footnote it punctuates

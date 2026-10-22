@@ -15,7 +15,7 @@
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { BookingPolicy, StreakRule } from '@core/components';
+import { BookingPolicy, StreakRule, TenantConfig } from '@core/components';
 import { Collections } from '@core/entities';
 import { clientStatsPaths, projectClientStats } from '@core/pipelines';
 import { Result } from '@core/primitives';
@@ -25,8 +25,10 @@ import {
   StreakSystem,
 } from '@core/systems';
 import {
+  locationFixture,
   loyaltyAccountJson,
   loyaltyCatalogJson,
+  memoryDefaultLocationPorts,
   memoryStore,
   memoryTxPorts,
   recordingTelemetry,
@@ -95,7 +97,14 @@ async function projectedBy(project, book, customerIds) {
   const answer = await project({
     ...memoryTxPorts(store, { nowUtcMs: () => NOW }),
     ...recordingTelemetry(),
-    tenantTimeZone: book.calendar.zone,
+    // The default location (F-4) — the shop on the book's own clock.
+    ...memoryDefaultLocationPorts(),
+    loadLocation: async (id) =>
+      Result.ok(
+        id === TenantConfig.DEFAULT.defaultLocationId
+          ? locationFixture({ id, timeZone: book.calendar.zone })
+          : null,
+      ),
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
   })({ customerIds });
   expect(answer.ok).toBe(true);
@@ -119,6 +128,8 @@ describe('loadSeedDomain', () => {
     expect(typeof domain.projectClientStats).toBe('function');
     expect(typeof domain.firestoreCommitPlan).toBe('function');
     expect(typeof domain.firestoreSettingsPorts).toBe('function');
+    expect(typeof domain.firestoreCatalogPorts).toBe('function');
+    expect(domain.TenantConfig.DEFAULT).toEqual(TenantConfig.DEFAULT);
 
     const book = buildClientBook(NOW);
     const customerIds = book.customers
@@ -162,6 +173,7 @@ describe('loadSeedDomain', () => {
 
   it('names its modules by their files, and each is there', () => {
     expect(Object.keys(SEED_SERVER_MODULES).sort()).toEqual([
+      'catalog',
       'commitPlan',
       'settings',
       'ttl',

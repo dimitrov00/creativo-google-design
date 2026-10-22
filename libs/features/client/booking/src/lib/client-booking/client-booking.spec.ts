@@ -1,59 +1,35 @@
-import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import {
-  Translation,
-  TranslocoLoader,
-  provideTransloco,
-} from '@jsverse/transloco';
+import type { Translation } from '@jsverse/transloco';
 import { BehaviorSubject, NEVER, Observable, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-  type Principal,
-  PrincipalId,
-  activePrincipal,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
-import {
-  BOOKING_DRAFT_STORE,
-  BOOKING_GATEWAY,
-  TimeSlot,
-  WAITLIST_GATEWAY,
-  ZonedDateTime,
-  MAX_PARTY_SIZE,
-  type Result,
-  ok,
-} from '@creativo/application/booking';
-import {
-  BarberId,
-  LocationId,
-  MEDIA_READER,
-} from '@creativo/application/catalog';
-import { CLOCK } from '@creativo/application/shared';
-import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
-import {
-  APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
-  PROFILE_PORTS,
   SCHEDULING_READ_PORTS,
-  WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { CatalogReadPorts } from '@core/ports';
+import { Callables, type CatalogReadPorts } from '@core/ports';
 import type {
   Appointment,
   Barber,
   BarberBusyDay,
   Service,
   ShopLocation,
+  WaitlistRequest,
 } from '@core/entities';
 import {
   BlockKind,
+  BookingContact,
+  BookingDraft,
+  BookingFlowStep,
+  BookingPolicy,
+  FlexibleWhen,
+  Party,
+  WaitlistLifecycle,
   DayHours,
   E164,
   MinuteBlock,
+  type Principal,
+  ScheduleSelection,
   Seat,
   SeatOccupant,
   SeatSubject,
@@ -63,40 +39,50 @@ import {
 import {
   AppointmentId,
   BarberBusyDayId,
-  BarberId as BarberKey,
+  BarberId,
   BusyKey,
+  CartLineId,
   CustomerId,
   LocalDate,
-  LocationId as LocationKey,
+  LocationId,
   MinuteCount,
   RepositoryError,
-  Result as EcsResult,
+  Result,
   SeatId,
+  SeatKeyText,
   ServiceId,
   ServiceVariantId,
   UserId,
+  WaitlistRequestId,
   Weekday,
 } from '@core/primitives';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,
-  memoryProfilePorts,
   type SchedulingReadState,
   appointmentFixture,
   at,
   barberFixture,
   barberScheduleFixture,
+  endMinute,
+  localDate,
   locationFixture,
-  memoryAppointmentReadPorts,
   memoryCatalogReadPorts,
   memorySchedulingReadPorts,
-  memoryWaitlistReadPorts,
+  minute,
+  scriptedGatewayPorts,
   seatFixture,
   serviceFixture,
   termsFixture,
   unwrapOk,
   until,
+  utcMs,
 } from '@core/testing';
+import {
+  bookingPortProviders,
+  provideBookingTestI18n,
+  signedIn,
+} from '../../testing/booking-shell.rig';
 import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from './client-booking';
 
@@ -115,25 +101,6 @@ const COPY: Translation = {
   },
 };
 
-@Injectable()
-class TestTranslationLoader implements TranslocoLoader {
-  getTranslation(): Observable<Translation> {
-    return of(COPY);
-  }
-}
-
-function provideTestI18n(): EnvironmentProviders[] {
-  return provideTransloco({
-    config: {
-      availableLangs: ['bg', 'en'],
-      defaultLang: 'bg',
-      fallbackLang: 'bg',
-      missingHandler: { logMissingKey: false },
-    },
-    loader: TestTranslationLoader,
-  });
-}
-
 /**
  * The day documents of `/book` the grid reads (`memorySchedulingReadPorts`)
  * — none by default: no barber is rostered on any day, the policy is the
@@ -145,9 +112,9 @@ type SchedulingDocs = Partial<
 >;
 
 /**
- * The real `sessionStorage`-backed store, not a fake — the draft round-trip
- * IS one of the behaviours under test, and a fake would prove only that the
- * store calls a method.
+ * The shell over the booking ports' doubles — the draft a `sessionStorage`
+ * round trip, not a fake: the draft round-trip IS one of the behaviours
+ * under test, and a fake would prove only that the store calls a method.
  */
 async function renderShell(
   /**
@@ -165,6 +132,8 @@ async function renderShell(
   options: {
     readonly principal?: Principal;
     readonly visit?: Appointment | null;
+    /** The caller's own waitlist requests. None by default. */
+    readonly waitlists?: readonly WaitlistRequest[];
     /**
      * The live catalogue. Empty by default; `'pending'` barbers never
      * answer, the way a cold listener waits, and `'failed'` ones answer
@@ -176,98 +145,49 @@ async function renderShell(
         | readonly Barber[]
         | 'pending'
         | 'failed'
-        | Observable<EcsResult<readonly Barber[], RepositoryError>>;
+        | Observable<Result<readonly Barber[], RepositoryError>>;
       /** The same, for the shops: `'pending'` never answers, `'failed'` errs. */
       readonly locations?: readonly ShopLocation[] | 'pending' | 'failed';
     };
     /** The day documents the grid reads. No barber rostered by default. */
     readonly scheduling?: SchedulingDocs;
     /** The server's answer to a move. Never asked by default. */
-    readonly reschedule?: () => Promise<
-      Result<{ readonly appointmentId: string }, never>
+    readonly reschedule?: () => Result<
+      { readonly appointmentId: AppointmentId },
+      never
     >;
   } = {},
 ): Promise<ComponentFixture<ClientBooking>> {
   const catalog = options.catalog ?? {};
-  const unavailable = EcsResult.err(RepositoryError.unavailable());
+  const unavailable = Result.err(RepositoryError.unavailable());
   const barbersStream =
     catalog.barbers instanceof Observable ? catalog.barbers : null;
   await TestBed.configureTestingModule({
     imports: [ClientBooking],
     providers: [
       provideRouter([]),
-      ...provideTestI18n(),
-      { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
-      // The store reads the clock to prune a restored declaration's lapsed
-      // days. Fixed so these specs do not change meaning at midnight.
-      {
-        provide: CLOCK,
-        useValue: {
-          now: (zone: string) =>
-            ZonedDateTime.fromISO('2026-08-03T09:00:00.000+03:00', zone),
-        },
-      },
-      // The store holds the gateway because `commit()` is the only way an
-      // appointment is created; these specs never reach the review step, so a
-      // stub that would fail loudly if called is the honest double.
-      {
-        provide: BOOKING_GATEWAY,
-        useValue: {
-          commit: () => Promise.reject(new Error('not used in this spec')),
-          reschedule:
-            options.reschedule ??
-            (() => Promise.reject(new Error('not used in this spec'))),
-        },
-      },
-      {
+      ...provideBookingTestI18n(COPY),
+      ...bookingPortProviders({
+        principal: options.principal,
         // `?repeat=` / `?reschedule=` read the visit they land; the shell
         // injects the reads whether or not a spec exercises that path.
-        provide: APPOINTMENT_READ_PORTS,
-        useValue: memoryAppointmentReadPorts(
-          options.visit ? [options.visit] : [],
+        visits: options.visit ? [options.visit] : [],
+        waitlists: options.waitlists,
+        // The store holds the gateway because `commit()` is the only way an
+        // appointment is created; these specs never reach the review step,
+        // so every callable but a scripted move answers PIPELINE_UNKNOWN.
+        gateway: scriptedGatewayPorts(
+          options.reschedule === undefined
+            ? {}
+            : { [Callables.RescheduleAppointment]: options.reschedule },
         ),
-      },
-      {
-        // The deep-link read — never consulted without a ?waitlist param.
-        provide: WAITLIST_READ_PORTS,
-        useValue: memoryWaitlistReadPorts([]),
-      },
-      // Same posture for the waitlist: these specs never reach the schedule
-      // step's flexible fork, so a double that fails loudly if called is the
-      // honest stand-in.
-      {
-        provide: WAITLIST_GATEWAY,
-        useValue: {
-          request: () => Promise.reject(new Error('not used in this spec')),
-          cancel: () => Promise.reject(new Error('not used in this spec')),
-        },
-      },
+      }),
       {
         // A landed move opens on the schedule step, which reads the grid's
         // raw day documents. None by default: these specs are about the
         // shell, not the grid.
         provide: SCHEDULING_READ_PORTS,
         useValue: memorySchedulingReadPorts(options.scheduling),
-      },
-      {
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () => of(options.principal ?? ANONYMOUS_PRINCIPAL),
-          refreshToken: () => Promise.resolve(ok(undefined)),
-          signOut: () => Promise.resolve(ok(undefined)),
-          currentDisplayName: () => null,
-          currentIdentifier: () => null,
-        },
-      },
-      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
-      {
-        provide: AVATAR_UPLOADER,
-        useValue: {
-          upload: () =>
-            Promise.resolve(ok({ url: 'http://avatar', path: 'avatars/x' })),
-          find: () => Promise.resolve(ok(null)),
-          remove: () => Promise.resolve(ok(undefined)),
-        },
       },
       {
         // The services step reads the live catalog. These specs are about
@@ -297,10 +217,6 @@ async function renderShell(
               : {}),
         } satisfies CatalogReadPorts,
       },
-      {
-        provide: MEDIA_READER,
-        useValue: { resolve: () => Promise.resolve(ok([])) },
-      },
     ],
   }).compileComponents();
 
@@ -314,7 +230,7 @@ async function renderShell(
   // The app binds the deep-link params to inputs (`withComponentInputBinding`);
   // the harness does it by hand, for the ones a spec actually sends.
   const params = new Map(Object.entries(entryParams));
-  for (const name of ['repeat', 'reschedule'] as const) {
+  for (const name of ['repeat', 'reschedule', 'waitlist', 'day'] as const) {
     const value = params.get(name);
     if (value !== undefined) fixture.componentRef.setInput(name, value);
   }
@@ -374,22 +290,6 @@ function guestIds(fixture: ComponentFixture<ClientBooking>): string[] {
     .map((testId) => testId.replace('booking-seat-', ''));
 }
 
-/** Signed in as `uid` — the state every deep-link landing waits for. */
-function signedIn(uid: string): Principal {
-  return unwrap(
-    activePrincipal(unwrap(PrincipalId.create(uid)), [
-      roleFromPrimitive('client'),
-    ]),
-  );
-}
-
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) {
-    throw new Error(`fixture setup failed: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
-}
-
 /** An account seat's occupant — the uid and the client record beside it (D29). */
 function account(uid: string, relationship: SubjectRelationship): SeatOccupant {
   return SeatOccupant.account(
@@ -423,7 +323,7 @@ function visitOf(
     seatFixture({
       seatId: SeatId.of(`${id}-seat-${index + 1}`),
       serviceId: ServiceId.of(seat.serviceId ?? 'svc-fade'),
-      barberId: BarberKey.of(seat.barberId),
+      barberId: BarberId.of(seat.barberId),
       startMinutes: at(0, seat.startMinutes),
       terms: Seat.termsOf(termsFixture(2800, 45), termsFixture(2800, 45)),
       occupant: seat.occupant,
@@ -434,7 +334,7 @@ function visitOf(
   const barberIds = [...new Set(stored.map((seat) => seat.barberId))];
   return appointmentFixture({
     id: AppointmentId.of(id),
-    locationId: LocationKey.of('loc-center'),
+    locationId: LocationId.of('loc-center'),
     ownerUserId: UserId.of('client-1'),
     subjectUserIds: stored.flatMap((seat) =>
       seat.seatSubject === SeatSubject.Account ? [seat.subjectUserId] : [],
@@ -533,7 +433,7 @@ function catalogService(
     description: { bg: '—', en: '—' },
     ...termsFixture(2800, 45),
     offerings: [],
-    locationIds: locationIds.map((shopId) => LocationKey.of(shopId)),
+    locationIds: locationIds.map((shopId) => LocationId.of(shopId)),
     variants: variants.map((variant) => ({
       variantId: ServiceVariantId.of(variant.id),
       name: variant.name,
@@ -545,7 +445,7 @@ function catalogService(
 /** A barber on the ACTIVE list. */
 function activeBarber(id: string): Barber {
   return barberFixture({
-    id: BarberKey.of(id),
+    id: BarberId.of(id),
     name: { bg: id, en: id },
     handle: id,
     bio: { bg: '—', en: '—' },
@@ -578,7 +478,7 @@ function activeShop(
 ): ShopLocation {
   const open = DayHours.open(at(9), until(20));
   return locationFixture({
-    id: LocationKey.of(id),
+    id: LocationId.of(id),
     name,
     address: { en: '1 Vitosha Blvd', bg: 'бул. Витоша 1' },
     phoneE164: E164.of('+359881234567'),
@@ -699,10 +599,11 @@ describe('ClientBooking', () => {
   it('stops at the party cap and says why instead of leaving a dead control', async () => {
     const fixture = await render();
     // The booker holds one seat, so MAX - 1 taps fill the party.
-    for (let i = 0; i < MAX_PARTY_SIZE - 1; i++) {
+    const max = BookingPolicy.DEFAULT.maxPartySize;
+    for (let i = 0; i < max - 1; i++) {
       click(fixture, 'booking-add-guest');
     }
-    expect(guestIds(fixture)).toHaveLength(MAX_PARTY_SIZE - 1);
+    expect(guestIds(fixture)).toHaveLength(max - 1);
 
     // No disabled control left hanging — the button is simply gone.
     expect(
@@ -1015,7 +916,7 @@ describe('ClientBooking — a move link that cannot move', () => {
     expect(
       first.debugElement.injector
         .get(BookingFlowStore)
-        .riders()
+        .moveRiders()
         .map((rider) => rider.barberId),
     ).toEqual(['petar']);
 
@@ -1038,7 +939,7 @@ describe('ClientBooking — a move link that cannot move', () => {
     const store = fixture.debugElement.injector.get(BookingFlowStore);
     expect(store.rescheduleOf()).toBe('appt-moving');
     expect(
-      store.riders().map((rider) => [rider.barberId, rider.offsetMinutes]),
+      store.moveRiders().map((rider) => [rider.barberId, rider.offsetMinutes]),
     ).toEqual([['niko', 30]]);
     // The restored bag stands: the move's facts were re-read, not the bag
     // rebuilt over what the client had.
@@ -1116,20 +1017,16 @@ describe('ClientBooking — a move asks the grid to keep room for who it carries
   it('hands the visit’s own chairs back on every day query, so they never block its move', async () => {
     const fixture = await landMove();
 
-    const tenOClock = unwrap(
-      ZonedDateTime.fromParts(
-        { year: 2026, month: 8, day: 20, hour: 10, minute: 0 },
-        'Europe/Sofia',
-      ),
-    ).toMillis();
     // Both chairs — the father's the cart rebuilds AND the son's it carries:
-    // the server subtracts the whole visit before it re-places it.
+    // the server subtracts the whole visit before it re-places it. Minutes
+    // of the visit's own shop day.
     const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.moveLocalDate()).toBe('2026-08-20');
     expect(
-      store.moveRelease().map((chair) => [chair.barberId, chair.startMs]),
+      store.moveRelease().map((chair) => [chair.barberId, chair.startMinutes]),
     ).toEqual([
-      ['ivan', tenOClock],
-      ['petar', tenOClock],
+      ['ivan', 10 * 60],
+      ['petar', 10 * 60],
     ]);
   });
 });
@@ -1159,7 +1056,7 @@ describe('ClientBooking — the moved visit’s own day on the calendar', () => 
    */
   function visitDay(neighbour: boolean): SchedulingDocs {
     const visitDate = unwrapOk(LocalDate.parse('2026-08-20'));
-    const ids = ['ivan', 'petar'].map((id) => BarberKey.of(id));
+    const ids = ['ivan', 'petar'].map((id) => BarberId.of(id));
     return {
       schedules: ids.map((id) =>
         barberScheduleFixture({
@@ -1173,7 +1070,7 @@ describe('ClientBooking — the moved visit’s own day on the calendar', () => 
               segments: [
                 ShiftSegment.of(
                   Weekday.Thu,
-                  LocationKey.of('loc-center'),
+                  LocationId.of('loc-center'),
                   at(10),
                   until(10, 45),
                 ),
@@ -1485,8 +1382,8 @@ describe('ClientBooking — a companion the shop can no longer serve here', () =
 
   it('never replaces a confirmed move with the call panel when the catalogue changes afterwards', async () => {
     const barbers = new BehaviorSubject<
-      EcsResult<readonly Barber[], RepositoryError>
-    >(EcsResult.ok([activeBarber('ivan'), activeBarber('petar')]));
+      Result<readonly Barber[], RepositoryError>
+    >(Result.ok([activeBarber('ivan'), activeBarber('petar')]));
     const fixture = await renderShell(
       { reschedule: 'appt-moving' },
       {
@@ -1497,40 +1394,38 @@ describe('ClientBooking — a companion the shop can no longer serve here', () =
           barbers,
           locations: [centerShop()],
         },
-        reschedule: async () => ok({ appointmentId: 'appt-moving' }),
+        reschedule: () =>
+          Result.ok({ appointmentId: AppointmentId.of('appt-moving') }),
       },
     );
     await settle(fixture);
 
-    // The move goes through: Ivan at 14:00 for the father.
+    // The move goes through: Ivan at 14:00 for the father, on the 21st.
     const store = fixture.debugElement.injector.get(BookingFlowStore);
-    const at = (hour: number) =>
-      unwrap(
-        ZonedDateTime.fromParts(
-          { year: 2026, month: 8, day: 21, hour, minute: 0 },
-          'Europe/Sofia',
-        ),
-      );
-    const slot = unwrap(TimeSlot.of(at(14), at(15)));
-    store.selectDay('2026-08-21', 'Europe/Sofia');
-    store.selectStart(at(14).toMillis(), 'loc-center');
-    store.selectSchedule({
-      locationId: unwrap(LocationId.create('loc-center')),
-      timeSlot: slot,
-      assignments: (store.cart()?.entries() ?? [])
-        .flatMap(([, lines]) => lines)
+    const day = localDate('2026-08-21');
+    const center = LocationId.of('loc-center');
+    store.selectDay(day);
+    store.selectStart(minute(14 * 60), center);
+    const selection = ScheduleSelection.of(
+      center,
+      day,
+      (store.cart()?.cartSeats ?? [])
+        .flatMap((seat) => seat.lines)
         .map((line) => ({
-          lineId: line.id,
-          barberId: unwrap(BarberId.create('ivan')),
-          slot,
+          lineId: line.lineId,
+          barberId: BarberId.of('ivan'),
+          startMinutes: minute(14 * 60),
+          endMinutes: endMinute(15 * 60),
         })),
-    });
+    );
+    if (selection === null) throw new Error('fixture setup failed');
+    store.selectSchedule(selection);
     await store.commit();
     await settle(fixture);
     expect(host(fixture).getAttribute('data-state')).toBe('confirmed');
 
     // …and THEN Petar leaves the active list.
-    barbers.next(EcsResult.ok([activeBarber('ivan')]));
+    barbers.next(Result.ok([activeBarber('ivan')]));
     await settle(fixture);
 
     expect(refusal(fixture)).toBeNull();
@@ -1547,5 +1442,155 @@ describe('ClientBooking — a companion the shop can no longer serve here', () =
     expect(
       host(fixture).querySelector('[data-testid="booking-schedule-step"]'),
     ).not.toBeNull();
+  });
+});
+
+/** The bag a draft or a request holds: the booker's fade, with anyone. */
+const FADE_BAG = {
+  cartSeats: [
+    {
+      seatKey: SeatKeyText.of('self'),
+      lines: [
+        {
+          lineId: CartLineId.of('line-0'),
+          seatKey: SeatKeyText.of('self'),
+          serviceId: ServiceId.of('svc-fade'),
+          variantId: null,
+          barberId: null,
+          locationId: null,
+        },
+      ],
+    },
+  ],
+  cartNextSequence: 1,
+};
+
+// The draft holds no zone (Law 7.2), so a restore cannot tell on its own
+// whether its day has gone by: the schedule step settles it with the shop's
+// TODAY — the pinned clock, read in the default location's zone here.
+describe('ClientBooking — a restored day that has gone by', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  /** A tab's draft on the schedule step, with `day` picked. */
+  function storeDraft(day: string): void {
+    const draft = BookingDraft.fresh(
+      {
+        bookingFlowStep: BookingFlowStep.Schedule,
+        party: Party.anonymous(),
+        cart: FADE_BAG,
+        locationId: null,
+        when: FlexibleWhen.empty(),
+      },
+      BookingContact.NONE,
+      localDate(day),
+    );
+    sessionStorage.setItem('creativo.booking-draft/v2', JSON.stringify(draft));
+  }
+
+  it('drops the picked day once the schedule step knows the shop’s today', async () => {
+    storeDraft('2026-08-01');
+    const fixture = await renderShell({ step: 'schedule' });
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(host(fixture).getAttribute('data-state')).toBe('schedule');
+    expect(store.selectedLocalDate()).toBeNull();
+  });
+
+  // The step decides where it opens AFTER the settle: a resumed flow whose
+  // day has gone by has no day, so it opens on today — as one with no day
+  // picked does — rather than wherever the stale day left it.
+  it('opens on today when the settle drops the picked day', async () => {
+    storeDraft('2026-08-01');
+    const scrolled: { readonly key: string | null; readonly block: unknown }[] =
+      [];
+    const scrollIntoView = vi.fn(function (
+      this: Element,
+      options?: ScrollIntoViewOptions,
+    ) {
+      scrolled.push({
+        key: this.getAttribute('data-day-key'),
+        block: options?.block,
+      });
+    });
+    const original = Object.getOwnPropertyDescriptor(
+      Element.prototype,
+      'scrollIntoView',
+    );
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const fixture = await renderShell({ step: 'schedule' });
+      await settle(fixture);
+      await settle(fixture);
+
+      const store = fixture.debugElement.injector.get(BookingFlowStore);
+      expect(store.selectedLocalDate()).toBeNull();
+      // The pinned clock's shop today, the minimum scroll — once.
+      expect(scrolled).toEqual([{ key: '2026-08-03', block: 'nearest' }]);
+    } finally {
+      if (original === undefined) {
+        delete (Element.prototype as Partial<Element>).scrollIntoView;
+      } else {
+        Object.defineProperty(Element.prototype, 'scrollIntoView', original);
+      }
+    }
+  });
+
+  it('keeps a picked day that has not gone by', async () => {
+    storeDraft('2026-08-05');
+    const fixture = await renderShell({ step: 'schedule' });
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.selectedLocalDate()).toBe('2026-08-05');
+  });
+});
+
+describe('ClientBooking — a waitlist match’s deep link', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  const watched = localDate('2026-08-25');
+  const createdAtUtcMs = utcMs('2026-08-03T08:00:00.000+03:00');
+  /** `client-1`'s open request at the Center for the 25th, its fade frozen. */
+  const request: WaitlistRequest = {
+    id: WaitlistRequestId.of('wl-1'),
+    ownerUserId: UserId.of('client-1'),
+    locationId: LocationId.of('loc-center'),
+    localDates: [watched],
+    utcEpochMs: ZonedTimeSystem.startOfLocalDay(watched, FIXTURE_TIME_ZONE),
+    createdAtUtcMs,
+    ...FADE_BAG,
+    flexibleDays: [{ localDate: watched, windows: [] }],
+    ...WaitlistLifecycle.open(createdAtUtcMs),
+  };
+
+  it('lands on the freed day of the request it names, the bag and the shop rebuilt', async () => {
+    const fixture = await renderShell(
+      { waitlist: 'wl-1', day: '2026-08-25' },
+      { principal: signedIn('client-1'), waitlists: [request] },
+    );
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(host(fixture).getAttribute('data-state')).toBe('schedule');
+    expect(store.selectedLocalDate()).toBe('2026-08-25');
+    expect(store.locationId()).toBe('loc-center');
+    expect(store.lineCount()).toBe(1);
+  });
+
+  it('falls through to the ordinary entry for a request that is not the caller’s', async () => {
+    const fixture = await renderShell(
+      { waitlist: 'wl-other' },
+      { principal: signedIn('client-1'), waitlists: [request] },
+    );
+    await settle(fixture);
+
+    expect(host(fixture).getAttribute('data-state')).toBe('location');
   });
 });

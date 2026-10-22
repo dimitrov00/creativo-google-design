@@ -2,7 +2,6 @@ import {
   DestroyRef,
   EnvironmentInjector,
   ErrorHandler,
-  Injectable,
   InjectionToken,
   inject,
 } from '@angular/core';
@@ -18,48 +17,51 @@ import {
   vi,
 } from 'vitest';
 import {
-  FactoryPicker,
-  LazyAdapterModule,
-  LazyAdapterScope,
-  LazyPortLoadError,
+  type FactoryPicker,
+  LAZY_PORT_LOAD_ERROR,
+  type LazyAdapterModule,
+  lazyAdapterScope,
   provideLazyPort,
 } from './lazy-port';
 import { retryDelayMs } from './retry-schedule';
 
 /**
- * The two-form seam (blueprint §5.3, Phase 3 flip 0): one scope answering a
- * port through an adapter CLASS (`adapter`, today's 31 rows) and a port
- * BUNDLE through a plain-closure factory (`factory`, the rows the flips move
- * over one token at a time). `lazy-port.spec.ts` covers the class form in
- * depth; this spec covers the factory form, and both side by side.
+ * The bundle-factory binding in depth (blueprint §5.3; the one form since
+ * Phase 4a 4A-14 retired the class form): one scope answering several
+ * ports, each a BUNDLE built by a plain-closure factory. `lazy-port.spec.ts`
+ * covers the scope's load, failure and retry mechanics; this spec covers
+ * what is particular to the factories — shared and per-application
+ * bundles, the injection context, a bundle's own stream, a factory that
+ * throws.
  */
 
-// ── The ports: a bundle of plain function members, and a class-form port ──
+// ── The ports: two bundles of plain function members ──
+
+/** What `onLoadError` was handed: the scope's name and the real cause. */
+type LoadFailure = { readonly scopeName: string; readonly cause: unknown };
 
 type Answer<T> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: Error };
+  | { readonly ok: false; readonly error: LoadFailure };
 
 /** A port bundle in the shape the flips bind: plain function members. */
-interface DayReadPorts {
+type DayRead = {
   readonly loadDay: (dayKey: string) => Promise<Answer<string>>;
   readonly observeDay: (dayKey: string) => Observable<Answer<string>>;
-}
+};
 
-interface GreeterPort {
-  greet(name: string): Promise<Answer<string>>;
-}
+type Greeter = {
+  readonly greet: (name: string) => Promise<Answer<string>>;
+};
 
-const DAY_READ_PORTS = new InjectionToken<DayReadPorts>('DayReadPorts');
+const DAY_READ_PORTS = new InjectionToken<DayRead>('DayRead');
 /** A second row naming the same factory: it shares the one bundle. */
-const TWIN_DAY_READ_PORTS = new InjectionToken<DayReadPorts>(
-  'TwinDayReadPorts',
-);
-const GREETER = new InjectionToken<GreeterPort>('Greeter');
+const TWIN_DAY_READ_PORTS = new InjectionToken<DayRead>('TwinDayReadPorts');
+const GREETER = new InjectionToken<Greeter>('Greeter');
 
-interface Sdk {
+type Sdk = {
   readonly id: number;
-}
+};
 
 /** Stands in for the Firestore instance: created by the scope, once. */
 const SDK = new InjectionToken<Sdk>('Sdk');
@@ -68,15 +70,15 @@ const SALUTATION = new InjectionToken<string>('Salutation');
 
 /** What a bundle factory throwing looks like to the scope. */
 const bundleError = new Error('bundle factory failed');
-/** What an adapter constructor throwing looks like to the scope. */
-const constructorError = new Error('adapter constructor failed');
+/** What the second bundle's factory throwing looks like to the scope. */
+const greeterError = new Error('greeter factory failed');
 
 let sdkCreated = 0;
 let sdkDestroyed = 0;
 let bundleCalls = 0;
 let bundlesBuilt = 0;
 let bundlesDestroyed = 0;
-let greeterCreated = 0;
+let greeterBuilt = 0;
 let dayStreamsSubscribed = 0;
 let dayStreamsTornDown = 0;
 let failBundleCreation = false;
@@ -91,7 +93,7 @@ let dayStream: (dayKey: string) => Observable<Answer<string>>;
  * The closure export a flip lands beside its adapters: `(sdk handle) =>
  * bundle`, no class, no `this`, no injection.
  */
-function dayReadPorts(sdk: Sdk, salutation: string): DayReadPorts {
+function dayReadPorts(sdk: Sdk, salutation: string): DayRead {
   bundleCalls += 1;
   if (failBundleCreation) throw bundleError;
   bundlesBuilt += 1;
@@ -105,26 +107,20 @@ function dayReadPorts(sdk: Sdk, salutation: string): DayReadPorts {
   };
 }
 
-@Injectable()
-class FakeGreeterAdapter implements GreeterPort {
-  private readonly sdk = inject(SDK);
-  private readonly salutation = inject(SALUTATION);
-
-  constructor() {
-    if (failGreeterCreation) throw constructorError;
-    greeterCreated += 1;
-  }
-
-  // Reads `this`: the proxy must call it ON the adapter.
-  greet(name: string): Promise<Answer<string>> {
-    return Promise.resolve({
-      ok: true,
-      value: `${this.salutation}, ${name} (sdk ${this.sdk.id})`,
-    });
-  }
+/** A second bundle over the same SDK. */
+function greeterPorts(sdk: Sdk, salutation: string): Greeter {
+  if (failGreeterCreation) throw greeterError;
+  greeterBuilt += 1;
+  return {
+    greet: (name) =>
+      Promise.resolve({
+        ok: true,
+        value: `${salutation}, ${name} (sdk ${sdk.id})`,
+      }),
+  };
 }
 
-const fakeModule = { FakeGreeterAdapter, dayReadPorts };
+const fakeModule = { dayReadPorts, greeterPorts };
 type FakeModule = typeof fakeModule;
 
 /**
@@ -132,7 +128,7 @@ type FakeModule = typeof fakeModule;
  * `injector.get`, a root service by `inject()` — which throws NG0203 unless
  * the seam calls it inside an injection context.
  */
-const dayReadFactory: FactoryPicker<FakeModule, DayReadPorts> =
+const dayReadFactory: FactoryPicker<FakeModule, DayRead> =
   (m) => (injector) => {
     const ports = m.dayReadPorts(injector.get(SDK), inject(SALUTATION));
     factoryContexts.push({
@@ -143,9 +139,12 @@ const dayReadFactory: FactoryPicker<FakeModule, DayReadPorts> =
     return ports;
   };
 
-const unavailable = (error: LazyPortLoadError): Answer<never> => ({
+const greeterFactory: FactoryPicker<FakeModule, Greeter> = (m) => (injector) =>
+  m.greeterPorts(injector.get(SDK), inject(SALUTATION));
+
+const unavailable = (scopeName: string, cause: unknown): Answer<never> => ({
   ok: false,
-  error,
+  error: { scopeName, cause },
 });
 
 function loadedModule(): LazyAdapterModule<FakeModule> {
@@ -189,23 +188,23 @@ let errorHandler: { handleError: Mock<(error: unknown) => void> };
 
 /** Every error reported to the `ErrorHandler`, in order. */
 const reported = () =>
-  errorHandler.handleError.mock.calls.map(([e]) => e as LazyPortLoadError);
+  errorHandler.handleError.mock.calls.map(([e]) => e as Error);
 
 /** The original cause inside a failure answer (undefined for a success). */
 const causeOf = (answer: Answer<unknown>): unknown =>
-  answer.ok ? undefined : (answer.error as LazyPortLoadError).cause;
+  answer.ok ? undefined : answer.error.cause;
 
 const DAY_METHODS = { loadDay: 'promise', observeDay: 'observable' } as const;
 
 function setUp(load: Loader) {
-  const scope = new LazyAdapterScope<FakeModule>('test-data', load);
+  const scope = lazyAdapterScope<FakeModule>('test-data', load);
   errorHandler = { handleError: vi.fn() };
   TestBed.configureTestingModule({
     providers: [
       { provide: SALUTATION, useValue: 'Здравей' },
       { provide: ErrorHandler, useValue: errorHandler },
       provideLazyPort(GREETER, scope, {
-        adapter: (m) => m.FakeGreeterAdapter,
+        factory: greeterFactory,
         methods: { greet: 'promise' },
         onLoadError: unavailable,
       }),
@@ -235,7 +234,7 @@ beforeEach(() => {
   bundleCalls = 0;
   bundlesBuilt = 0;
   bundlesDestroyed = 0;
-  greeterCreated = 0;
+  greeterBuilt = 0;
   dayStreamsSubscribed = 0;
   dayStreamsTornDown = 0;
   failBundleCreation = false;
@@ -254,7 +253,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('provideLazyPort — the factory form beside the class form', () => {
+describe('provideLazyPort — bundle factories', () => {
   it('loads nothing and builds no bundle when a factory port is injected, or when its stream is only created', async () => {
     const gate = gatedLoader();
     const { days } = setUp(gate.load);
@@ -268,7 +267,7 @@ describe('provideLazyPort — the factory form beside the class form', () => {
     expect(bundleCalls).toBe(0);
   });
 
-  it('lists every port bound to the scope, whichever form binds it', () => {
+  it('lists every port bound to the scope, a twin row included', () => {
     const { scope } = setUp(gatedLoader().load);
 
     expect(TestBed.inject(scope.ports)).toEqual([
@@ -285,7 +284,7 @@ describe('provideLazyPort — the factory form beside the class form', () => {
     expect(Object.isFrozen(days)).toBe(true);
   });
 
-  it('imports once and creates the SDK, the class adapter and the bundle once each, however many calls race across both forms', async () => {
+  it('imports once and creates the SDK and each bundle once, however many calls race across two factories', async () => {
     const gate = gatedLoader();
     const { greeter, days } = setUp(gate.load);
 
@@ -308,7 +307,7 @@ describe('provideLazyPort — the factory form beside the class form', () => {
       { ok: true, value: 'Здравей, 2026-10-11 (sdk 1)' },
       { ok: true, value: 'Здравей, 2026-10-12 (sdk 1)' },
     ]);
-    // The same SDK instance behind the class-form port.
+    // The same SDK instance behind the other factory's port.
     expect(await greeted).toEqual({ ok: true, value: 'Здравей, Ана (sdk 1)' });
     await flush();
     expect(seen).toEqual([{ ok: true, value: '2026-10-10: first' }]);
@@ -318,7 +317,7 @@ describe('provideLazyPort — the factory form beside the class form', () => {
     await greeter.greet('Боб');
     expect(gate.load).toHaveBeenCalledTimes(1);
     expect(sdkCreated).toBe(1);
-    expect(greeterCreated).toBe(1);
+    expect(greeterBuilt).toBe(1);
     expect(bundleCalls).toBe(1);
     subscription.unsubscribe();
   });
@@ -485,7 +484,7 @@ describe('provideLazyPort — the factory form beside the class form', () => {
 
     expect(failed).toEqual({
       ok: false,
-      error: expect.any(LazyPortLoadError),
+      error: { scopeName: 'test-data', cause: chunkError },
     });
     expect(causeOf(failed)).toBe(chunkError);
     expect(bundleCalls).toBe(0);
@@ -528,9 +527,9 @@ describe('provideLazyPort — a bundle factory that throws', () => {
     expect(failed.ok).toBe(false);
     expect(causeOf(failed)).toBe(bundleError);
     expect(reported()).toHaveLength(1);
-    expect(reported()[0]).toBeInstanceOf(LazyPortLoadError);
+    expect(reported()[0]?.name).toBe(LAZY_PORT_LOAD_ERROR);
     expect(reported()[0]?.cause).toBe(bundleError);
-    // The scope loaded fine: the class-form port answers on the same SDK.
+    // The scope loaded fine: the other factory's port answers on the same SDK.
     await expect(greeter.greet('Ана')).resolves.toEqual({
       ok: true,
       value: 'Здравей, Ана (sdk 1)',
@@ -567,7 +566,7 @@ describe('provideLazyPort — a bundle factory that throws', () => {
     expect(reported()).toHaveLength(1);
   });
 
-  it('reports a failing factory and a failing adapter class apart, each once', async () => {
+  it('reports two failing factories apart, each once', async () => {
     failBundleCreation = true;
     failGreeterCreation = true;
     const { days, greeter } = setUp(loadsAtOnce());
@@ -577,10 +576,7 @@ describe('provideLazyPort — a bundle factory that throws', () => {
       expect((await greeter.greet('Ана')).ok).toBe(false);
     }
 
-    expect(reported().map((e) => e.cause)).toEqual([
-      bundleError,
-      constructorError,
-    ]);
+    expect(reported().map((e) => e.cause)).toEqual([bundleError, greeterError]);
   });
 });
 
@@ -611,7 +607,7 @@ describe('provideLazyPort — a factory stream that could not start', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(next).toHaveBeenLastCalledWith({
       ok: false,
-      error: expect.any(LazyPortLoadError),
+      error: { scopeName: 'test-data', cause: offline },
     });
 
     await vi.advanceTimersByTimeAsync(firstDelay);
@@ -655,9 +651,9 @@ describe('provideLazyPort — a factory stream that could not start', () => {
   });
 });
 
-describe('provideLazyPort — the binding’s form, at compile time', () => {
+describe('provideLazyPort — the binding, at compile time', () => {
   it('takes a factory written inline, as a composition root writes it', async () => {
-    const scope = new LazyAdapterScope<FakeModule>('inline', () =>
+    const scope = lazyAdapterScope<FakeModule>('inline', () =>
       Promise.resolve(loadedModule()),
     );
     errorHandler = { handleError: vi.fn() };
@@ -679,37 +675,31 @@ describe('provideLazyPort — the binding’s form, at compile time', () => {
     ).resolves.toEqual({ ok: true, value: 'Здравей, 2026-10-10 (sdk 1)' });
   });
 
-  it('refuses a binding naming neither form, both, or the wrong one', () => {
+  it('refuses a binding with no factory, a retired class-form key, or a factory that is no factory', () => {
     // Never executed: `nx typecheck` proves each line is a compile error
     // (an unused `@ts-expect-error` fails the typecheck).
-    const scope = new LazyAdapterScope<FakeModule>('types', () =>
+    const scope = lazyAdapterScope<FakeModule>('types', () =>
       Promise.resolve({ module: fakeModule, providers: [], instances: [] }),
     );
+    /** A class, as the retired class form named one. */
+    const pickClass = () => Object;
     const bind = () => {
-      // @ts-expect-error — neither an adapter class nor a factory
+      // @ts-expect-error — no factory: nothing answers the port
       provideLazyPort(DAY_READ_PORTS, scope, {
         methods: DAY_METHODS,
         onLoadError: unavailable,
       });
-      // @ts-expect-error — both forms at once
       provideLazyPort(GREETER, scope, {
-        adapter: (m) => m.FakeGreeterAdapter,
-        factory: () => () => ({
-          greet: () => Promise.resolve({ ok: true, value: '' }),
-        }),
+        factory: greeterFactory,
+        // @ts-expect-error — the class form is retired (4A-14): no `adapter` key
+        adapter: pickClass,
         methods: { greet: 'promise' },
         onLoadError: unavailable,
       });
       provideLazyPort(DAY_READ_PORTS, scope, {
-        // @ts-expect-error — a class through `factory`: a constructor is not `(injector) => bundle`
-        factory: (m) => m.FakeGreeterAdapter,
+        // @ts-expect-error — a module member through `factory`: it is not `(module) => (injector) => bundle`
+        factory: (m) => m.dayReadPorts,
         methods: DAY_METHODS,
-        onLoadError: unavailable,
-      });
-      provideLazyPort(GREETER, scope, {
-        // @ts-expect-error — a closure through `adapter`: it is not a class
-        adapter: (m) => () => m.dayReadPorts({ id: 0 }, ''),
-        methods: { greet: 'promise' },
         onLoadError: unavailable,
       });
       provideLazyPort(GREETER, scope, {
@@ -720,13 +710,13 @@ describe('provideLazyPort — the binding’s form, at compile time', () => {
       });
       provideLazyPort(DAY_READ_PORTS, scope, {
         factory: dayReadFactory,
-        // @ts-expect-error — a member left unclassified, in the factory form too
+        // @ts-expect-error — a member left unclassified
         methods: { loadDay: 'promise' },
         onLoadError: unavailable,
       });
       provideLazyPort(DAY_READ_PORTS, scope, {
         factory: dayReadFactory,
-        // @ts-expect-error — a stream classified as a promise, in the factory form too
+        // @ts-expect-error — a stream classified as a promise
         methods: { loadDay: 'promise', observeDay: 'promise' },
         onLoadError: unavailable,
       });

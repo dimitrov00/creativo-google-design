@@ -4,7 +4,6 @@ import {
   ServiceVariantId,
   type TimeZone,
   UtcEpochMs,
-  defect,
 } from '@core/primitives';
 import type { VisitLeg, WallTime } from '@core/components';
 import {
@@ -74,13 +73,6 @@ import type { ClientCardWords } from './client-card.words';
  * a port.
  */
 
-/** The shop's zone: pauses, birthdays and «днес» are read on its calendar. */
-const SHOP_ZONE: TimeZone = (() => {
-  const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
-  if (!zone.ok) defect('unreachable: the shop zone is a zone');
-  return zone.value;
-})();
-
 /** How many capsules show before «+N» stands for the rest. */
 const CAPSULE_LIMIT = 4;
 
@@ -92,12 +84,13 @@ const PHOTO_RAIL_LIMIT = 6;
 /**
  * Online booking paused AS OF now — a temporary pause that has run out is
  * no pause (`AccountLifecycle.isBlockedAt`, read off the user's own
- * lifecycle slice). `until` is the Sofia day it ends, `null` for a
- * permanent pause.
+ * lifecycle slice). `until` is the shop day it ends on `zone` (the shop's,
+ * Law 7.2), `null` for a permanent pause.
  */
 export function pauseOf(
   user: User | null,
   nowMs: number,
+  zone: TimeZone,
 ): { readonly until: string | null } | null {
   const now = UtcEpochMs.of(nowMs);
   // No instant to judge by: nothing can be shown paused at it.
@@ -105,7 +98,7 @@ export function pauseOf(
   const pause = ClientGlanceSystem.pauseOf(user, now.value);
   if (pause === null) return null;
   return {
-    until: pause.untilUtcMs === null ? null : shopDayOf(pause.untilUtcMs),
+    until: pause.untilUtcMs === null ? null : shopDayOf(pause.untilUtcMs, zone),
   };
 }
 
@@ -134,9 +127,14 @@ export interface HeadInput {
   readonly stats: ClientStatsRecord | null;
   /** The stats were read (a bound reader answered); without them the line claims no tenure. */
   readonly statsKnown: boolean;
-  /** `AVATAR_UPLOADER.find(uid)`, after the seat's own picture. */
+  /** `AVATAR_PORTS.findAvatar(uid)`, after the seat's own picture. */
   readonly avatarSrc: string | null;
   readonly nowMs: number;
+  /**
+   * The shop's zone (Law 7.2) — `null` until the store has resolved it: the
+   * head is the snapshot until then, without a pause or its line.
+   */
+  readonly zone: TimeZone | null;
   /** `null` while the catalogue is loading: the head is the snapshot, without its line. */
   readonly words: ClientCardWords | null;
 }
@@ -152,19 +150,21 @@ export interface HeadInput {
 export function clientHeadVm(input: HeadInput): ClientHeadVm {
   const { subject, user, stats, words } = input;
   const name = displayNameOf(subject, user);
-  const pause = pauseOf(user, input.nowMs);
-  const today = shopDayOf(input.nowMs);
+  const zone = input.zone;
+  const pause = zone === null ? null : pauseOf(user, input.nowMs, zone);
   let stateLine: string | null = null;
   if (words === null) {
     stateLine = null;
   } else if (subject.userId === null) {
     stateLine = words.head.guest;
-  } else if (input.settled) {
+  } else if (input.settled && zone !== null) {
     if (pause !== null) {
       stateLine =
         pause.until === null
           ? words.head.pausedPermanent
-          : words.head.pausedUntil(dayShort(pause.until, today, words.lang));
+          : words.head.pausedUntil(
+              dayShort(pause.until, shopDayOf(input.nowMs, zone), words.lang),
+            );
     } else if (!input.statsKnown) {
       stateLine = null;
     } else if (
@@ -197,6 +197,8 @@ export interface CapsulesInput {
     readonly catalog: ValidLoyaltyCatalog;
   } | null;
   readonly nowMs: number;
+  /** The shop's zone (Law 7.2): where «днес» and the windows are read. */
+  readonly zone: TimeZone;
   readonly words: ClientCardWords;
 }
 
@@ -261,6 +263,8 @@ export interface ActionsInput {
   readonly context: ClientCardContext;
   readonly online: boolean;
   readonly nowMs: number;
+  /** The shop's zone (Law 7.2): where «днес» is read. */
+  readonly zone: TimeZone;
   readonly words: ClientCardWords;
 }
 
@@ -320,7 +324,7 @@ export function quickActionsVm(input: ActionsInput): readonly QuickActionVm[] {
       ),
     ].filter((service): service is string => service !== null);
     if (services.length > 0) {
-      const today = shopDayOf(input.nowMs);
+      const today = shopDayOf(input.nowMs, input.zone);
       actions.push({
         id: 'same',
         icon: 'visit.repeat',
@@ -355,6 +359,8 @@ export interface VisitsModuleInput {
   readonly count: number;
   readonly clientWords: boolean;
   readonly nowMs: number;
+  /** The shop's zone (Law 7.2): where «днес» is read. */
+  readonly zone: TimeZone;
   readonly words: ClientCardWords;
 }
 
@@ -384,10 +390,11 @@ export function lastWorkedVisit(
 export function clientPhotoVm(
   photo: AppointmentPhoto,
   nowMs: number,
+  zone: TimeZone,
   words: ClientCardWords,
 ): ClientPhotoVm {
-  const today = shopDayOf(nowMs);
-  const day = shopDayOf(photo.takenAtUtcMs);
+  const today = shopDayOf(nowMs, zone);
+  const day = shopDayOf(photo.takenAtUtcMs, zone);
   return {
     photoId: photo.id,
     appointmentId: photo.appointmentId,
@@ -409,6 +416,7 @@ export function photoRailVm(
   photos: readonly AppointmentPhoto[],
   excludedAppointmentIds: readonly (string | null)[],
   nowMs: number,
+  zone: TimeZone,
   words: ClientCardWords,
 ): readonly ClientPhotoVm[] {
   const excluded = new Set(
@@ -417,7 +425,7 @@ export function photoRailVm(
   return photos
     .filter((photo) => !excluded.has(photo.appointmentId))
     .slice(0, PHOTO_RAIL_LIMIT)
-    .map((photo) => clientPhotoVm(photo, nowMs, words));
+    .map((photo) => clientPhotoVm(photo, nowMs, zone, words));
 }
 
 // ── Loyalty and achievements on the glance ──────────────────────────────
@@ -566,11 +574,13 @@ export function medalStripVm(
 
 /**
  * The client is in the chair today: the visit on screen is open and
- * starts on the shop's today — the rhythm's current mark reads «днес».
+ * starts on the shop's today (on `zone`, the shop's) — the rhythm's
+ * current mark reads «днес».
  */
 export function isInChairToday(
   context: ClientCardContext,
   nowMs: number,
+  zone: TimeZone,
 ): boolean {
   const now = UtcEpochMs.of(nowMs);
   // No "today" without a now to read it from.
@@ -578,12 +588,12 @@ export function isInChairToday(
   const legs: WallTime[] = [];
   for (const leg of context.legs) {
     // A leg whose start is no instant starts on no day.
-    const start = UtcEpochMs.of(Date.parse(leg.startsAtIso));
-    if (start.ok) legs.push(ZonedTimeSystem.toLocal(start.value, SHOP_ZONE));
+    const start = ZonedTimeSystem.parseIsoIn(leg.startsAtIso, zone);
+    if (start.ok) legs.push(ZonedTimeSystem.toLocal(start.value, zone));
   }
   return ClientGlanceSystem.isInChairToday(
     context.appointmentId !== null && !context.settled,
     legs,
-    ZonedTimeSystem.shopNow(now.value, SHOP_ZONE),
+    ZonedTimeSystem.shopNow(now.value, zone),
   );
 }

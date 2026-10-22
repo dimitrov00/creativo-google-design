@@ -1,5 +1,5 @@
 import type { StreakDefinitionVersion } from '@core/entities';
-import { StreakRuleField } from '@core/primitives';
+import { StreakRuleField, type TimeZone } from '@core/primitives';
 import {
   FreezeReason,
   STREAK_EXCUSES,
@@ -32,7 +32,6 @@ import type {
   UiSliderMark,
   UiStreakPeriod,
 } from '@creativo/ui/controls';
-import { RHYTHM_SHOP_ZONE } from '../admin-rhythm.preview';
 import { ADMIN_RHYTHM_CHOICES } from '../admin-rhythm.store';
 
 /*
@@ -61,6 +60,8 @@ export interface AdminRhythmContext {
   readonly lang: string;
   /** The shop's today (`YYYY-MM-DD`): a date in another year says its year. */
   readonly today: string;
+  /** The shop's zone (Law 7.2): the day a version was published on is read in it. */
+  readonly zone: TimeZone;
   /** «7 дни» · «6 седмици» — the rule's own units (`rhythmRuleWords(...).days / .weeks`). */
   readonly rule: Pick<RhythmRuleWords, 'days' | 'weeks'>;
 }
@@ -686,7 +687,7 @@ export function historyRow(
       : version.publishedByUserId;
   const publishedOn = ZonedTimeSystem.toLocal(
     version.publishedAtUtcMs,
-    RHYTHM_SHOP_ZONE,
+    context.zone,
   ).localDate;
   return {
     version: version.version,

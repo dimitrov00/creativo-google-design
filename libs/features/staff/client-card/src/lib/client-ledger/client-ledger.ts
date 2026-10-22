@@ -25,6 +25,7 @@ import {
 } from '@creativo/ui/modifiers';
 import { ActivityList } from '../activity-list/activity-list';
 import { ClientCardStore } from '../client-card.store';
+import { CardLoadState } from '../client-pages.vm';
 import { LEDGER_FILTER_WORDS } from '../client-card.words';
 
 /** The four pills, in the toolbar's order. */
@@ -89,6 +90,8 @@ export class ClientLedgerPage {
   protected readonly words = this.store.words;
   protected readonly online = this.store.online;
   protected readonly ledger = this.store.ledger;
+  /** Where the first page's read stands, for the template's switch. */
+  protected readonly CardLoadState = CardLoadState;
 
   protected readonly kinds = KINDS;
   /** The pill «Всички»: its empty state is the page's own, not a filter's. */

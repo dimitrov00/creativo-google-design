@@ -8,9 +8,12 @@ import {
   VoucherLifecycle,
   type VoucherRedemption,
 } from '@core/components';
-import { Currency, GiftVoucherId } from '@core/primitives';
+import {
+  Currency,
+  GiftVoucherId,
+  CancellationRefusalCode,
+} from '@core/primitives';
 import { type GiftVoucher, Collections } from '@core/entities';
-import { CancellationRefusalCode } from '@core/systems';
 import { cancelAppointment } from '@core/pipelines';
 import {
   appointmentFixture,

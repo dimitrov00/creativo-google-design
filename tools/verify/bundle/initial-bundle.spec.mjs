@@ -14,11 +14,15 @@ const STORAGE =
   'node_modules/.pnpm/@firebase+storage@0.14.3_@firebase+app@0.15.1/node_modules/@firebase/storage/dist/index.esm.js';
 const AUTH =
   'node_modules/.pnpm/@firebase+auth@1.12.0_@firebase+app@0.15.1/node_modules/@firebase/auth/dist/esm/index.js';
+const PHONE_METADATA =
+  'node_modules/.pnpm/libphonenumber-js@1.12.10/node_modules/libphonenumber-js/metadata.min.json.js';
+const PHONE_SYSTEM = 'libs/ecs-core/src/systems/phone.system.ts';
 
 /** A metafile shaped like the Angular builder's `stats.json`. */
 function metafile({
   firestoreIn = 'chunk-DATA.js',
   sharedEdge = 'dynamic-import',
+  phoneIn = 'chunk-PHONE.js',
 } = {}) {
   const inputs = (entries) =>
     Object.fromEntries(
@@ -32,6 +36,7 @@ function metafile({
         { path: 'chunk-SHARED.js', kind: 'import-statement' },
         { path: 'chunk-DATA.js', kind: 'dynamic-import' },
         { path: 'chunk-ROUTE.js', kind: 'dynamic-import' },
+        { path: 'chunk-PHONE.js', kind: 'dynamic-import' },
       ],
       inputs: inputs([
         ['apps/web/src/main.ts', 100],
@@ -45,7 +50,7 @@ function metafile({
     'chunk-SHARED.js': {
       bytes: 200,
       imports: [{ path: 'chunk-DATA.js', kind: sharedEdge }],
-      inputs: inputs([['libs/domain/kernel/src/lib/result.ts', 200]]),
+      inputs: inputs([['libs/ecs-core/src/primitives/result.data.ts', 200]]),
     },
     'chunk-DATA.js': {
       bytes: 5000,
@@ -62,6 +67,15 @@ function metafile({
       imports: [],
       inputs: inputs([['libs/features/x/src/index.ts', 700]]),
     },
+    'chunk-PHONE.js': {
+      bytes: 900,
+      imports: [],
+      inputs: inputs([
+        ['libs/ui/controls/src/lib/phone-field/phone-field.lazy.ts', 0],
+        [PHONE_SYSTEM, 100],
+        [PHONE_METADATA, 800],
+      ]),
+    },
     'styles-XYZ.css': {
       bytes: 300,
       imports: [],
@@ -70,6 +84,14 @@ function metafile({
   };
   if (firestoreIn === 'main') {
     outputs['main-ABC.js'].inputs[FIRESTORE] = { bytesInOutput: 4000 };
+  }
+  if (phoneIn === 'main') {
+    delete outputs['chunk-PHONE.js'];
+    outputs['main-ABC.js'].imports = outputs['main-ABC.js'].imports.filter(
+      (edge) => edge.path !== 'chunk-PHONE.js',
+    );
+    outputs['main-ABC.js'].inputs[PHONE_SYSTEM] = { bytesInOutput: 100 };
+    outputs['main-ABC.js'].inputs[PHONE_METADATA] = { bytesInOutput: 800 };
   }
   return { inputs: {}, outputs };
 }
@@ -116,6 +138,24 @@ describe('analyseInitial — size, contributors and forbidden inputs', () => {
     assert.deepEqual(
       report.forbidden.map(({ label, file }) => [label, file]),
       [['firebase/firestore', 'main-ABC.js']],
+    );
+  });
+});
+
+describe('analyseInitial — the phone metadata stays lazy (F6)', () => {
+  it('passes a build whose phone chunk only loads through import()', () => {
+    const report = analyseInitial(metafile());
+    assert.deepEqual(report.forbidden, []);
+    assert.ok(
+      !report.contributors.some((c) => c.owner === 'libphonenumber-js'),
+    );
+  });
+
+  it('flags libphonenumber-js bundled into main beside the systems barrel', () => {
+    const report = analyseInitial(metafile({ phoneIn: 'main' }));
+    assert.deepEqual(
+      report.forbidden.map(({ label, bytes, file }) => [label, bytes, file]),
+      [['libphonenumber-js (phone metadata, lazy — F6)', 800, 'main-ABC.js']],
     );
   });
 });

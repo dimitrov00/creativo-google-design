@@ -4,7 +4,6 @@ import {
   RepositoryErrorCode,
   Result,
   ServiceId,
-  type TimeZone,
   type UserId,
   WaitlistError,
   WaitlistRequestId,
@@ -14,6 +13,7 @@ import {
   type BookingCart,
   ServiceStatus,
   WriteOp,
+  type WaitlistCall,
 } from '@core/components';
 import {
   Collections,
@@ -25,23 +25,28 @@ import type {
   CatalogLoadPorts,
   ClockPorts,
   CommitPorts,
+  DefaultLocationPorts,
   HashPorts,
+  LocationLoadPorts,
   LogPorts,
   PolicyReadPorts,
 } from '@core/ports';
 import {
   PartyAdmissionSystem,
-  type WaitlistAskInput,
   WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import { readShopZone } from './shop-zone-read.pipeline';
 
 /**
  * `requestWaitlist` — record a standing request to be told when these days
  * open up (`request-waitlist.ts`, `decide-waitlist.ts`, blueprint §4.1). The
  * owner comes from the VERIFIED token, never the payload.
  *
- * Outside the transaction: the policy, then — only for a caller who can be
+ * Outside the transaction: the policy, the shop's clock — the zone of the
+ * shop the ask names, else the default location's (F-4: "any shop"; a zone
+ * that cannot be read is the store failure the edge already answers), then
+ * — only for a caller who can be
  * notified at all — the cart's ACTIVE services (unless the cart is past the
  * read bound, `WaitlistSystem.withinReadBounds`) and the named shop, in one
  * `loadCatalog`. The door is `WaitlistSystem.decide`, with the commit's own
@@ -55,9 +60,7 @@ import {
 export type RequestWaitlistCommand = {
   /** The verified caller; `null` for an anonymous visitor (refused by the door). */
   readonly ownerUserId: UserId | null;
-  readonly ask: WaitlistAskInput;
-  /** The tenant's zone — the shop's "today" and each request's first instant. */
-  readonly timeZone: TimeZone;
+  readonly ask: WaitlistCall.Input;
 };
 
 export type RequestWaitlistAnswer = {
@@ -69,6 +72,8 @@ export type RequestWaitlistPorts = CommitPorts &
   ClockPorts &
   CatalogLoadPorts &
   PolicyReadPorts &
+  LocationLoadPorts &
+  DefaultLocationPorts &
   LogPorts;
 
 /** How many hex digits of the digest the request id keeps (`wl_` + 40). */
@@ -112,12 +117,17 @@ export const requestWaitlist =
   > => {
     const policy = await ports.loadPolicy();
     if (!policy.ok) return policy;
-    const now = ZonedTimeSystem.shopNow(ports.nowUtcMs(), cmd.timeZone);
+    // The shop's "today" and each request's first instant: the named shop's
+    // clock, else the default location's.
+    const locationId = namedLocation(cmd.ask.locationId);
+    const zone = await readShopZone(ports)(locationId);
+    if (!zone.ok) return zone;
+    const timeZone = zone.value;
+    const now = ZonedTimeSystem.shopNow(ports.nowUtcMs(), timeZone);
 
     // Read for a caller who can be notified at all: an anonymous request is
-    // refused by the door and costs no reads, and a cart past the read bound
-    // costs none either — the admission refuses it.
-    const locationId = namedLocation(cmd.ask.locationId);
+    // refused by the door and costs no catalogue read, and a cart past the
+    // read bound costs none either — the admission refuses it.
     let services: readonly Service[] = [];
     let location: ShopLocation | null = null;
     if (cmd.ownerUserId !== null) {
@@ -177,7 +187,7 @@ export const requestWaitlist =
     }
     const stored: Omit<WaitlistRequest, 'id'> = {
       ...body,
-      utcEpochMs: ZonedTimeSystem.startOfLocalDay(firstDay, cmd.timeZone),
+      utcEpochMs: ZonedTimeSystem.startOfLocalDay(firstDay, timeZone),
     };
     const path = [Collections.WaitlistRequests, requestId];
     const committed = await ports.commit(

@@ -1,12 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import {
-  AUTH_GATEWAY,
-  type Principal,
-  PrincipalId,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
 import {
   Translation,
   TranslocoLoader,
@@ -17,24 +13,19 @@ import { BehaviorSubject, Observable, ReplaySubject, map, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Router, provideRouter } from '@angular/router';
 import {
-  BOOKING_GATEWAY,
-  CommitBookingRequest,
-  Result,
-  type StaffEditAppointmentRequest,
-  ZonedDateTime,
-  fail,
-  ok,
-  BookingGatewayError,
-} from '@creativo/application/booking';
-import { MEDIA_READER } from '@creativo/application/catalog';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
-import { CLOCK, ID_GENERATOR } from '@creativo/application/shared';
-import {
   APPOINTMENT_NOTE_PORTS,
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
   CATALOG_PORTS,
+  CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  GATEWAY_PORTS,
+  ID_PORTS,
+  LOCATION_LOAD_PORTS,
+  MEDIA_RESOLVE_PORTS,
   PROFILE_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
@@ -42,6 +33,7 @@ import {
 } from '@creativo/infrastructure/firebase-app';
 import {
   AppliedOperation,
+  BookingCall,
   BookingContact,
   BookingLifecycle,
   CancellationReason,
@@ -53,13 +45,20 @@ import {
   CouponStatus,
   CouponValue,
   DayHours,
+  DiscountMethod,
   E164,
+  EditCommand,
   Email,
   ExceptionEffectRule,
   GrantCapacityTerms,
   GrantExpiryTerms,
   GrantLifecycle,
   MinuteRange,
+  Placement,
+  type Principal,
+  RequestedSubjectRole,
+  ResizeEdge,
+  Role,
   Seat,
   SeatLabel,
   SeatOccupant,
@@ -77,13 +76,17 @@ import type {
   CouponGrant,
   ScheduleException,
   Service,
+  ShopLocation,
   User,
 } from '@core/entities';
 import {
   AppointmentId,
   BarberBusyDayId,
   BarberId,
+  BookingErrorCode,
+  BookingStatus,
   BusyKey,
+  ClientOperationId,
   CouponGrantId,
   CouponId,
   CustomerId,
@@ -92,22 +95,30 @@ import {
   LocationId,
   MinuteCount,
   MinuteOfDay,
+  PipelineError,
+  PipelineErrorCode,
   PriceCents,
-  type RepositoryError,
+  RepositoryError,
   Result as PortResult,
   ScheduleExceptionId,
   SeatId,
   ServiceCategoryId,
   ServiceId,
+  StaffEditErrorCode,
   UserId as AccountId,
   UtcEpochMs,
   Weekday,
 } from '@core/primitives';
-import type {
-  AppointmentNotePorts,
-  AppointmentReadPorts,
-  CouponVoucherPorts,
-  SchedulingReadPorts,
+import {
+  type AppointmentNotePorts,
+  type AppointmentReadPorts,
+  type CallableName,
+  type CallableWire,
+  Callables,
+  type CouponVoucherPorts,
+  type LocationLoadPorts,
+  type MediaResolvePorts,
+  type SchedulingReadPorts,
 } from '@core/ports';
 import { AppointmentIndexSystem, ZonedTimeSystem } from '@core/systems';
 import {
@@ -119,14 +130,23 @@ import {
   barberScheduleFixture,
   customerOf,
   locationFixture,
+  type GatewayCall,
   memoryAppointmentPhotoPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
   memoryCatalogReadPorts,
+  memoryClockPorts,
   memoryCouponVoucherPorts,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
   memoryProfilePorts,
+  memoryProgramsWorld,
   memoryScheduleExceptionPorts,
   memorySchedulingReadPorts,
   memoryUserSearchPorts,
+  principalFixture,
   provisionedUserFixture,
+  scriptedGatewayPorts,
   registeredUserFixture,
   seatFixture,
   serviceFixture,
@@ -144,17 +164,6 @@ import {
   type VisitEditorLeg,
   type VisitEditorVm,
 } from '../visit-editor/staff-visit-editor';
-
-const ZONE = 'Europe/Sofia';
-
-function value<T, E>(result: Result<T, E>): T {
-  if (!result.isSuccess()) throw new Error('bad fixture');
-  return result.value;
-}
-
-function at(iso: string): ZonedDateTime {
-  return value(ZonedDateTime.fromISO(iso, ZONE));
-}
 
 /** The shop the fixture's chairs work at — the one the catalogue lists. */
 const SHOP = LocationId.of('loc-center');
@@ -328,14 +337,14 @@ const seatDays = new Map<SeatId, LocalDate>();
 /** One seat of a fixture visit: who sits, in whose chair, for what, from when (Sofia wall clock). */
 function seatAt(options: {
   readonly chair: string;
-  readonly startIso: string;
+  readonly startsAt: string;
   readonly occupant: SeatOccupant;
   readonly serviceId?: string;
   readonly minutes?: number;
   readonly outcome?: SeatOutcome;
   readonly seatId?: string;
 }): Seat {
-  const start = wall(options.startIso);
+  const start = wall(options.startsAt);
   const seat = seatFixture({
     seatId: SeatId.of(options.seatId ?? freshId('seat')),
     serviceId: ServiceId.of(options.serviceId ?? freshId('svc-unknown')),
@@ -365,7 +374,7 @@ function contactOf(
 }
 
 /**
- * One booked visit in `ivan`'s chair, starting at `startIso`.
+ * One booked visit in `ivan`'s chair, starting at `startsAt`.
  *
  * `withParty` adds a SECOND seat in another chair — the split party, which
  * is the case the party mark exists for: `seatsHere` is 1 on both rows, so
@@ -375,7 +384,7 @@ function contactOf(
  */
 function appointment(
   id: string,
-  startIso: string,
+  startsAt: string,
   contact?: { name: string; phone: string },
   barberId = 'ivan',
   withParty = false,
@@ -387,7 +396,7 @@ function appointment(
   const makeSeat = (chair: string, relationship: SubjectRelationship) =>
     seatAt({
       chair,
-      startIso,
+      startsAt,
       occupant: accountOf(freshId('user'), relationship),
       ...(serviceId === undefined ? {} : { serviceId }),
     });
@@ -462,9 +471,79 @@ interface HeldGrant {
   readonly coupon: Coupon;
 }
 
+/**
+ * What the typed callable client answers, per callable — a MUTABLE table:
+ * a case scripts one callable by assigning it (the double reads the table
+ * at call time), and `build()` resets it to the defaults.
+ */
+type GatewayHandlers = {
+  -readonly [N in CallableName]?: (
+    input: CallableWire[N]['input'],
+  ) =>
+    | PortResult<CallableWire[N]['answer'], PipelineError>
+    | Promise<PortResult<CallableWire[N]['answer'], PipelineError>>;
+};
+
+/** The app's own catalogue, as shipped — read for the sentences a case pins byte for byte. */
+type CatalogueCopy = {
+  readonly errors: { readonly BOOKING_TRANSITION_NOT_ALLOWED: string };
+  readonly appointments: {
+    readonly status: {
+      readonly completed: string;
+      readonly confirmed: string;
+    };
+  };
+};
+
+function catalogueOf(lang: 'bg' | 'en'): CatalogueCopy {
+  const file = resolve(
+    __dirname,
+    `../../../../../../infrastructure/i18n/src/assets/i18n/${lang}.json`,
+  );
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
+  return JSON.parse(readFileSync(file, 'utf8')) as CatalogueCopy;
+}
+
+const bgCatalogue = catalogueOf('bg');
+const enCatalogue = catalogueOf('en');
+
+/** What a staff edit carried — the batch, as the store was handed it. */
+type SentEdit = { readonly commands: readonly BookingCall.EditCommand[] };
+
+/** The first command of one kind in a batch, narrowed to its own shape. */
+function commandOf<C extends BookingCall.EditCommand['editCommand']>(
+  commands: readonly BookingCall.EditCommand[],
+  editCommand: C,
+): Extract<BookingCall.EditCommand, { readonly editCommand: C }> | undefined {
+  return commands.find(
+    (
+      entry,
+    ): entry is Extract<BookingCall.EditCommand, { readonly editCommand: C }> =>
+      entry.editCommand === editCommand,
+  );
+}
+
+/** A refusal as the wire carries it — the server's code, its reason and its scalars. */
+function refusal(
+  errorCode: (typeof PipelineErrorCode)[keyof typeof PipelineErrorCode],
+  serverErrorCode: string,
+  params: Readonly<Record<string, string | number>> = {},
+  reason: { readonly refusal?: string; readonly field?: string } = {},
+): PipelineError {
+  return {
+    ...PipelineError.of(
+      errorCode,
+      serverErrorCode,
+      reason.refusal ?? null,
+      reason.field ?? null,
+    ),
+    serverParams: params,
+  };
+}
+
 describe('StaffDashboard', () => {
   let fixture: ComponentFixture<StaffDashboard>;
-  /** How many staff intents `ID_GENERATOR` has named — see the fixture. */
+  /** How many staff intents `ID_PORTS` has named — see the fixture. */
   let minted = 0;
 
   /**
@@ -531,18 +610,43 @@ describe('StaffDashboard', () => {
   const grantsAskedFor: string[] = [];
 
   /** Who is at the book. `next()` a plain barber to shut the money gate. */
-  const principal$ = new BehaviorSubject<Principal>({
-    kind: 'active',
-    uid: 'dev-staff-ivan' as unknown as PrincipalId,
-    roles: ['barber', 'admin'].map(roleFromPrimitive),
-  });
+  const principal$ = new BehaviorSubject<Principal>(
+    principalFixture.staff(AccountId.of('dev-staff-ivan'), [
+      Role.Barber,
+      Role.Admin,
+    ]),
+  );
 
   // Hoisted so the guards below can assert that a destructive write did NOT
   // happen on the tap that asked for it.
   const transition = vi.fn(
-    (_input: unknown): Promise<Result<undefined, BookingGatewayError>> =>
-      Promise.resolve(ok(undefined)),
+    async (
+      input: BookingCall.Transition,
+    ): Promise<PortResult<BookingCall.Transitioned, PipelineError>> =>
+      PortResult.ok({
+        appointmentId: input.appointmentId,
+        toBookingStatus: input.toBookingStatus,
+      }),
   );
+
+  /** The callable client's answers — `build()` resets them; a case scripts one. */
+  let gateway: GatewayHandlers = {};
+  /** Every callable dialled, in order (name and input). */
+  let gatewayCalls: GatewayCall[] = [];
+
+  /**
+   * THE SHOP'S ZONE, HELD BACK — a case that wants the page to come up
+   * before either source names the zone sets these: the catalogue's shops
+   * as a stream it answers later, and the default location's read as a
+   * promise it settles later. `null` answers at once, as the app usually
+   * finds them.
+   */
+  let catalogShops: Observable<
+    PortResult<readonly ShopLocation[], RepositoryError>
+  > | null = null;
+  let defaultShop: Promise<
+    PortResult<ShopLocation | null, RepositoryError>
+  > | null = null;
 
   /**
    * The whole fixture, with the CLOCK as the one dial worth turning.
@@ -565,6 +669,8 @@ describe('StaffDashboard', () => {
     writeScheduleException.mockClear();
     exceptions.length = 0;
     transition.mockClear();
+    gateway = { [Callables.TransitionAppointment]: transition };
+    gatewayCalls = [];
     await TestBed.configureTestingModule({
       imports: [StaffDashboard],
       providers: [
@@ -572,19 +678,30 @@ describe('StaffDashboard', () => {
         // The store publishes the shown day into `?day=` so it can be pasted
         // into a staff chat; without a router that write throws on first read.
         provideRouter([]),
-        {
-          provide: CLOCK,
-          useValue: {
-            now: (zone: string) => ZonedDateTime.fromISO(nowIso, zone),
-          },
-        },
+        { provide: CLOCK_PORTS, useValue: memoryClockPorts(utcMs(nowIso)) },
         {
           // Names each staff intent; counted, so a spec can tell a reused
           // name from a fresh one without comparing random strings.
-          provide: ID_GENERATOR,
+          provide: ID_PORTS,
           useValue: {
-            next: () => `operation-${String(++minted).padStart(12, '0')}`,
+            nextId: () => `operation-${String(++minted).padStart(12, '0')}`,
           },
+        },
+        {
+          // The shop's zone, when the catalogue has not named one yet: the
+          // deployment's default location — the fixture's own shop.
+          provide: LOCATION_LOAD_PORTS,
+          useValue: {
+            loadLocation: (id: LocationId) =>
+              defaultShop ??
+              memoryLocationLoadPorts(
+                memoryProgramsWorld({ locations: [SHOP_LOCATION] }),
+              ).loadLocation(id),
+          } satisfies LocationLoadPorts,
+        },
+        {
+          provide: DEFAULT_LOCATION_PORTS,
+          useValue: memoryDefaultLocationPorts(SHOP),
         },
         {
           provide: APPOINTMENT_READ_PORTS,
@@ -609,13 +726,10 @@ describe('StaffDashboard', () => {
           } satisfies AppointmentReadPorts,
         },
         {
-          provide: BOOKING_GATEWAY,
-          useValue: {
-            transition,
-            commit: () => Promise.reject(new Error('not under test')),
-            cancel: () => Promise.reject(new Error('not under test')),
-            reschedule: () => Promise.reject(new Error('not under test')),
-          },
+          // The typed callable client over the mutable table above: a
+          // callable nobody scripted answers `PIPELINE_UNKNOWN`.
+          provide: GATEWAY_PORTS,
+          useValue: scriptedGatewayPorts(gateway, gatewayCalls),
         },
         {
           // A REAL roster. The stub used to return no barbers, which meant
@@ -625,12 +739,17 @@ describe('StaffDashboard', () => {
           // the shop the chairs work at — a window is kept only at a shop
           // the day OFFERS.
           provide: CATALOG_PORTS,
-          useValue: memoryCatalogReadPorts({
-            services: [service('fade', 45)],
-            barbers: [barber('ivan', 'Иван'), barber('niko', 'Нико')],
-            categories: [],
-            locations: [SHOP_LOCATION],
-          }),
+          useValue: ((ports) =>
+            catalogShops === null
+              ? ports
+              : { ...ports, observeLocations: () => catalogShops ?? of() })(
+            memoryCatalogReadPorts({
+              services: [service('fade', 45)],
+              barbers: [barber('ivan', 'Иван'), barber('niko', 'Нико')],
+              categories: [],
+              locations: [SHOP_LOCATION],
+            }),
+          ),
         },
         {
           // The raw availability streams; the store folds them (F1-10).
@@ -651,12 +770,8 @@ describe('StaffDashboard', () => {
         {
           // The signed-in principal — a barber who also holds the keys, so
           // the money gate opens; a plain barber's case is asserted below.
-          provide: AUTH_GATEWAY,
-          useValue: {
-            observePrincipal: () => principal$,
-            refreshToken: () => Promise.resolve(ok(undefined)),
-            signOut: () => Promise.resolve(ok(undefined)),
-          },
+          provide: AUTH_SESSION_PORTS,
+          useValue: memoryAuthSessionPorts({ principals$: principal$ }),
         },
         {
           provide: USER_SEARCH_PORTS,
@@ -671,12 +786,8 @@ describe('StaffDashboard', () => {
         },
         {
           // Nobody has a portrait here; the lookup answers "none" at once.
-          provide: AVATAR_UPLOADER,
-          useValue: {
-            find: async () => ok(null),
-            upload: async () => ok({ url: '', path: '' }),
-            remove: async () => ok(undefined),
-          },
+          provide: AVATAR_PORTS,
+          useValue: memoryAvatarPorts(),
         },
         {
           // The shop's photos of a visit: none, and every shutter lands.
@@ -709,8 +820,11 @@ describe('StaffDashboard', () => {
           } satisfies CouponVoucherPorts,
         },
         {
-          provide: MEDIA_READER,
-          useValue: { resolve: () => Promise.resolve(ok([])) },
+          // No catalogue image resolves to anything here.
+          provide: MEDIA_RESOLVE_PORTS,
+          useValue: {
+            resolveMedia: async () => PortResult.ok([]),
+          } satisfies MediaResolvePorts,
         },
         {
           // `users/{uid}` — only a companion's name is ever asked of it
@@ -762,6 +876,103 @@ describe('StaffDashboard', () => {
     // 2026-08-05 is a Wednesday; bg locale spells it out.
     expect(label?.textContent).toContain('5');
     expect(host().querySelector('[data-testid="staff-day-today"]')).toBeNull();
+  });
+
+  /*
+   * THE ZONE IS THE SHOP'S, AND IT IS READ (Phase 4a 4A-11, R13): there is
+   * no tenant-zone constant to fall back on, so on a cold load the page
+   * waits for the first shop the catalogue names — or the deployment's
+   * default location — before it names a day. Until then it is in its
+   * loading state: nothing on it says a date, no lane is read.
+   */
+  it('names no day until the shop’s zone is known, then opens on today', async () => {
+    const shops = new ReplaySubject<
+      PortResult<readonly ShopLocation[], RepositoryError>
+    >(1);
+    let settleDefault: (
+      answer: PortResult<ShopLocation | null, RepositoryError>,
+    ) => void = () => undefined;
+    catalogShops = shops;
+    defaultShop = new Promise((resolve) => (settleDefault = resolve));
+    try {
+      TestBed.resetTestingModule();
+      observeBarberDay.mockClear();
+      await build();
+      expect(
+        host().querySelector('[data-testid="staff-day-label"]'),
+      ).toBeNull();
+      expect(observeBarberDay).not.toHaveBeenCalled();
+      // The chrome is drawn — the page, its toolbar, its pickers — and the
+      // lanes sit in their loading state: no new visible state, and no
+      // "nobody is on shift" said of a day that has not been read.
+      expect(host().querySelector('main.staff-day')).not.toBeNull();
+      expect(host().querySelector('.staff-toolbar')).not.toBeNull();
+      expect(
+        host().querySelector('[data-testid="staff-view-segments"]'),
+      ).not.toBeNull();
+      expect(host().textContent).not.toContain('staff.day.noRoster');
+
+      // The default location answers first: the day is today, on its clock.
+      settleDefault(PortResult.ok(SHOP_LOCATION));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(
+        host().querySelector('[data-testid="staff-day-label"]')?.textContent,
+      ).toContain('5.08');
+      expect(observeBarberDay.mock.calls.map((call) => call[1])).toContain(
+        '2026-08-05',
+      );
+    } finally {
+      shops.next(PortResult.ok([SHOP_LOCATION]));
+      catalogShops = null;
+      defaultShop = null;
+    }
+  });
+
+  /*
+   * A ZONE THAT CANNOT BE READ (4A-11, R13): the catalogue names no shop and
+   * the default location's read fails. The page keeps its chrome and says
+   * nothing false about the day — a failed read leaves the lanes empty and
+   * silent, as a failed lane read does — and the moments that already
+   * re-read "now" (here the tab's return) read the default location again.
+   */
+  it('reads the default location again when its zone could not be read', async () => {
+    catalogShops = of(PortResult.ok([]));
+    defaultShop = Promise.resolve(
+      PortResult.err(RepositoryError.readFailed('locations/loc-center', null)),
+    );
+    try {
+      TestBed.resetTestingModule();
+      observeBarberDay.mockClear();
+      await build();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(host().querySelector('.staff-toolbar')).not.toBeNull();
+      expect(
+        host().querySelector('[data-testid="staff-day-label"]'),
+      ).toBeNull();
+      expect(host().textContent).not.toContain('staff.day.noRoster');
+      expect(observeBarberDay).not.toHaveBeenCalled();
+
+      // The store answers again; the tab comes back and asks it.
+      defaultShop = null;
+      document.dispatchEvent(new Event('visibilitychange'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(
+        host().querySelector('[data-testid="staff-day-label"]')?.textContent,
+      ).toContain('5.08');
+      expect(observeBarberDay.mock.calls.map((call) => call[1])).toContain(
+        '2026-08-05',
+      );
+    } finally {
+      catalogShops = null;
+      defaultShop = null;
+    }
   });
 
   it("names the day the way the visit sheet does — the locale's compact date", () => {
@@ -1031,12 +1242,12 @@ describe('StaffDashboard', () => {
     // states are carried by the rail's form; the word fires only when
     // something went other than to plan.
     const component = fixture.componentInstance as unknown as {
-      statusWord: (status: string) => string | null;
+      statusWord: (status: BookingStatus) => string | null;
     };
-    expect(component.statusWord('confirmed')).toBeNull();
-    expect(component.statusWord('completed')).toBeNull();
-    expect(component.statusWord('no_show')).not.toBeNull();
-    expect(component.statusWord('cancelled')).not.toBeNull();
+    expect(component.statusWord(BookingStatus.Confirmed)).toBeNull();
+    expect(component.statusWord(BookingStatus.Completed)).toBeNull();
+    expect(component.statusWord(BookingStatus.NoShow)).not.toBeNull();
+    expect(component.statusWord(BookingStatus.Cancelled)).not.toBeNull();
   });
 
   it('puts the client at the head of the body row and the barber at its end', () => {
@@ -1170,10 +1381,10 @@ describe('StaffDashboard', () => {
     const card = host().querySelector('[data-testid="staff-visit-row"]');
     expect(card?.getAttribute('data-status')).toBe('pending');
     const component = fixture.componentInstance as unknown as {
-      statusWord: (status: string) => string | null;
+      statusWord: (status: BookingStatus) => string | null;
     };
-    expect(component.statusWord('cancelled')).not.toBe(
-      component.statusWord('no_show'),
+    expect(component.statusWord(BookingStatus.Cancelled)).not.toBe(
+      component.statusWord(BookingStatus.NoShow),
     );
   });
 
@@ -1188,12 +1399,12 @@ describe('StaffDashboard', () => {
       rowLabel: (e: {
         clientLabel: string;
         startLabel: string;
-        status: string;
+        status: BookingStatus;
         arrived: boolean;
         terminal: boolean;
       }) => string;
     };
-    const label = (status: string) =>
+    const label = (status: BookingStatus) =>
       component.rowLabel({
         clientLabel: 'Николай',
         startLabel: '10:00',
@@ -1202,14 +1413,19 @@ describe('StaffDashboard', () => {
         terminal: false,
       });
 
-    // The states the FORM speaks are all appended to the name.
-    for (const status of ['cancelled', 'no_show', 'pending']) {
-      expect(label(status)).toContain('staff.day.exception.' + status);
+    // The states the FORM speaks are all appended to the name — under the
+    // catalogue's lowercase word for each.
+    for (const [status, word] of [
+      [BookingStatus.Cancelled, 'cancelled'],
+      [BookingStatus.NoShow, 'no_show'],
+      [BookingStatus.Pending, 'pending'],
+    ] as const) {
+      expect(label(status)).toContain('staff.day.exception.' + word);
     }
     // ...and the two ordinary outcomes stay silent, exactly as they are
     // silent visually. A row that says "confirmed" on nine cards in ten is
     // the texture problem this card has now removed three times.
-    for (const status of ['confirmed', 'completed']) {
+    for (const status of [BookingStatus.Confirmed, BookingStatus.Completed]) {
       expect(label(status)).not.toContain('staff.day.exception');
     }
 
@@ -1401,7 +1617,7 @@ describe('StaffDashboard', () => {
         endMs: number;
       }) => string;
     };
-    const now = at('2026-08-05T09:00:00').toMillis();
+    const now: number = wall('2026-08-05T09:00:00').utcEpochMs;
     // A running cut reaches for the REMAINING-time phrase. (The suite's
     // loader returns no translations, so this asserts the key it reaches
     // for, not the rendered words.)
@@ -1580,28 +1796,32 @@ describe('StaffDashboard', () => {
     // translations, so this asserts the key it reaches for, not the word.)
     const component = fixture.componentInstance as unknown as {
       statusNote: (e: {
-        status: string;
+        status: BookingStatus;
         arrived: boolean;
         terminal: boolean;
       }) => string | null;
     };
-    const of = (status: string, arrived = false) =>
+    const of = (status: BookingStatus, arrived = false) =>
       component.statusNote({ status, arrived, terminal: false });
 
     // Arrival is NOT announced here — it is visible text in the trailing
     // gloss now (`whenLabel`), and saying it twice is a screen-reader bug.
-    expect(of('confirmed', true)).toBeNull();
+    expect(of(BookingStatus.Confirmed, true)).toBeNull();
     // Silent on the two ordinary outcomes — that is the whole point.
-    expect(of('confirmed')).toBeNull();
-    expect(of('completed')).toBeNull();
+    expect(of(BookingStatus.Confirmed)).toBeNull();
+    expect(of(BookingStatus.Completed)).toBeNull();
     // ...and distinct for each state worth interrupting a glance for.
-    const kinds = ['pending', 'cancelled', 'no_show'];
+    const kinds = [
+      BookingStatus.Pending,
+      BookingStatus.Cancelled,
+      BookingStatus.NoShow,
+    ];
     expect(kinds.every((k) => of(k))).toBe(true);
     expect(new Set(kinds.map((k) => of(k))).size).toBe(3);
 
     // ARRIVAL IS A WORD, not a dot — and only displaces `confirmed`, because
     // a pending visit that has arrived is still waiting on someone.
-    expect(of('pending', true)).toBe('staff.day.exception.pending');
+    expect(of(BookingStatus.Pending, true)).toBe('staff.day.exception.pending');
   });
 
   it('opens the visit itself, which the row could never do before', async () => {
@@ -1765,7 +1985,7 @@ describe('StaffDashboard', () => {
     ) =>
       seatAt({
         chair,
-        startIso: '2026-08-05T10:00:00',
+        startsAt: '2026-08-05T10:00:00',
         occupant: accountOf(freshId('user'), relationship),
         ...(cancelled
           ? {
@@ -1846,7 +2066,7 @@ describe('StaffDashboard', () => {
       cards.fields.isOn = (id: string) => (id === 'avatar' ? false : isOn(id));
       expect(
         cards.rowIcons({
-          status: 'cancelled',
+          status: BookingStatus.Cancelled,
           rebooked: false,
           hasNote: false,
         }),
@@ -1854,7 +2074,7 @@ describe('StaffDashboard', () => {
       cards.fields.isOn = isOn;
       expect(
         cards.rowIcons({
-          status: 'cancelled',
+          status: BookingStatus.Cancelled,
           rebooked: false,
           hasNote: false,
         }),
@@ -1943,17 +2163,17 @@ describe('StaffDashboard', () => {
       ) as HTMLElement
     ).click();
     fixture.detectChanges();
-    // The server's refusal rides in the gateway error's params; the sheet
-    // must reach for ITS line, not the gateway's "something went wrong".
+    // The server's refusal rides in the call's error (`serverErrorCode` and
+    // its scalars); the sheet must reach for ITS line, not the generic
+    // "something went wrong". A seat already resolved moves from no status.
     transition.mockResolvedValueOnce(
-      fail(
-        new BookingGatewayError(
-          'invalid_request',
-          'That seat is already resolved',
+      PortResult.err(
+        refusal(
+          PipelineErrorCode.InvalidRequest,
+          BookingErrorCode.TransitionNotAllowed,
           {
-            serverCode: 'booking.transition.not_allowed',
-            from: 'resolved',
-            to: 'cancelled',
+            fromBookingStatus: 'RESOLVED',
+            toBookingStatus: BookingStatus.Cancelled,
           },
         ),
       ),
@@ -2029,10 +2249,12 @@ describe('StaffDashboard', () => {
     fixture.detectChanges();
 
     expect(transition).toHaveBeenCalledTimes(1);
-    const request = transition.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(request['to']).toBe('cancelled');
-    expect(request).not.toHaveProperty('reasonCode');
-    expect(request).not.toHaveProperty('note');
+    const request = transition.mock.calls[0]?.[0];
+    expect(request?.toBookingStatus).toBe(BookingStatus.Cancelled);
+    // No reason picked and no note: the call says none (the server files
+    // the cancellation as unspecified).
+    expect(request?.cancellationReason).toBeNull();
+    expect(request?.note).toBeNull();
     // The sheet closed on success.
     expect(
       host().querySelector('[data-testid="staff-cancel-sheet"]'),
@@ -2413,7 +2635,7 @@ describe('StaffDashboard', () => {
     // nothing; it names the clock again — and opens the sentence — only
     // for a device abroad.
     chooseView('three-day');
-    deviceZone('Europe/Sofia');
+    deviceZone(FIXTURE_TIME_ZONE);
     await fixture.whenStable();
     fixture.detectChanges();
     const corner = host().querySelector('[data-testid="staff-grid-zone"]');
@@ -2430,7 +2652,7 @@ describe('StaffDashboard', () => {
     // One chair in scope and nothing to name: no head band at all — a
     // blank corner alone would be a band of nothing above the hours.
     chooseView('day');
-    deviceZone('Europe/Sofia');
+    deviceZone(FIXTURE_TIME_ZONE);
     await fixture.whenStable();
     fixture.detectChanges();
     (
@@ -3003,38 +3225,54 @@ describe('StaffDashboard', () => {
   });
 
   describe('every staff intent goes out named (2026-09-25)', () => {
-    const MOVE = {
-      kind: 'move',
-      startIso: '2026-08-05T11:00:00.000+03:00',
-    } as const;
+    const DAY = unwrapOk(LocalDate.parse('2026-08-05'));
+    /** A `MOVE` of the whole party to `minuteOfDay` on the fixture's day. */
+    const moveTo = (minuteOfDay: number): BookingCall.EditCommand =>
+      BookingCall.editMove(DAY, unwrapOk(MinuteOfDay.of(minuteOfDay)), null);
+    const MOVE = moveTo(11 * 60);
 
-    /** The gateway's `staffEdit`, answering from `answers` in order. */
+    /** One staff intent on `appointment-1` — a claim of nothing unless said. */
+    function intent(
+      command: BookingCall.EditCommand,
+      extra: Partial<BookingCall.StaffEdit> = {},
+    ): BookingCall.StaffEdit {
+      return {
+        appointmentId: AppointmentId.of('appointment-1'),
+        commands: [command],
+        acknowledgedOverlap: false,
+        expectedVersion: null,
+        operationId: null,
+        ...extra,
+      };
+    }
+
+    /** The callable's `staffEditAppointment`, answering from `answers` in order. */
     function sends(
       answers: readonly ('ok' | 'lost')[],
-    ): StaffEditAppointmentRequest[] {
-      const sent: StaffEditAppointmentRequest[] = [];
-      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
-      };
-      gateway.staffEdit = async (request) => {
+    ): BookingCall.StaffEdit[] {
+      const sent: BookingCall.StaffEdit[] = [];
+      gateway[Callables.StaffEditAppointment] = async (request) => {
         const answer = answers[sent.length] ?? 'ok';
         sent.push(request);
         return answer === 'ok'
-          ? ok({ appointmentId: request.appointmentId, revision: sent.length })
-          : fail(new BookingGatewayError('unknown', 'deadline exceeded'));
+          ? PortResult.ok({
+              appointmentId: request.appointmentId,
+              revision: sent.length,
+            })
+          : PortResult.err(PipelineError.bare(PipelineErrorCode.Unknown));
       };
       return sent;
     }
 
     function store(): {
-      staffEdit: (request: StaffEditAppointmentRequest) => Promise<boolean>;
+      staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
+      errorFor: (id: string) => PipelineError | null;
     } {
       return (
         fixture.componentInstance as unknown as {
           store: {
-            staffEdit: (
-              request: StaffEditAppointmentRequest,
-            ) => Promise<boolean>;
+            staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
+            errorFor: (id: string) => PipelineError | null;
           };
         }
       ).store;
@@ -3044,23 +3282,10 @@ describe('StaffDashboard', () => {
       const sent = sends(['lost', 'ok', 'ok']);
 
       // The answer is lost; the barber taps «Запази» again on the same draft.
-      expect(
-        await store().staffEdit({
-          appointmentId: 'appointment-1',
-          command: MOVE,
-        }),
-      ).toBe(false);
-      expect(
-        await store().staffEdit({
-          appointmentId: 'appointment-1',
-          command: MOVE,
-        }),
-      ).toBe(true);
+      expect(await store().staffEdit(intent(MOVE))).toBe(false);
+      expect(await store().staffEdit(intent(MOVE))).toBe(true);
       // Landed — so the same batch again is the barber doing it AGAIN.
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-      });
+      await store().staffEdit(intent(MOVE));
 
       const names = sent.map((request) => request.operationId);
       expect(names[0]).toMatch(/^[A-Za-z0-9_-]{16,64}$/);
@@ -3071,14 +3296,8 @@ describe('StaffDashboard', () => {
     it('names a changed draft afresh even after a failure', async () => {
       const sent = sends(['lost', 'ok']);
 
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-      });
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
-      });
+      await store().staffEdit(intent(MOVE));
+      await store().staffEdit(intent(moveTo(12 * 60)));
 
       expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
     });
@@ -3086,15 +3305,8 @@ describe('StaffDashboard', () => {
     it('treats an acknowledged overlap as a new decision, not a re-send', async () => {
       const sent = sends(['lost', 'ok']);
 
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-      });
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-        acknowledgedOverlap: true,
-      });
+      await store().staffEdit(intent(MOVE));
+      await store().staffEdit(intent(MOVE, { acknowledgedOverlap: true }));
 
       expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
     });
@@ -3102,38 +3314,53 @@ describe('StaffDashboard', () => {
     it('keeps a name the caller chose', async () => {
       const sent = sends(['ok']);
 
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-        operationId: 'operation-chosen-by-caller',
-      });
+      await store().staffEdit(
+        intent(MOVE, {
+          operationId: unwrapOk(
+            ClientOperationId.parse('operation-chosen-by-caller'),
+          ),
+        }),
+      );
 
       expect(sent[0]?.operationId).toBe('operation-chosen-by-caller');
     });
 
+    it('refuses an intent whose freshly minted name the call cannot carry — nothing goes out', async () => {
+      const sent = sends(['ok']);
+      // A name off the wire's charset or length — the server would refuse it.
+      minted = -1;
+      const ids = TestBed.inject(ID_PORTS) as { nextId: () => string };
+      const mint = ids.nextId;
+      ids.nextId = () => 'short';
+      try {
+        expect(await store().staffEdit(intent(MOVE))).toBe(false);
+      } finally {
+        ids.nextId = mint;
+      }
+      expect(sent).toHaveLength(0);
+      expect(store().errorFor('appointment-1')).toMatchObject({
+        serverErrorCode: StaffEditErrorCode.InvalidCommand,
+        field: 'operationId',
+      });
+    });
+
     it('names each queued drop as its own intent when it goes', async () => {
-      const sent: StaffEditAppointmentRequest[] = [];
+      const sent: BookingCall.StaffEdit[] = [];
       let release: () => void = () => undefined;
-      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
-      };
-      gateway.staffEdit = async (request) => {
+      gateway[Callables.StaffEditAppointment] = async (request) => {
         sent.push(request);
         if (sent.length === 1) {
           await new Promise<void>((resolve) => (release = resolve));
         }
-        return ok({ appointmentId: request.appointmentId, revision: 1 });
+        return PortResult.ok({
+          appointmentId: request.appointmentId,
+          revision: 1,
+        });
       };
 
-      const first = store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-      });
+      const first = store().staffEdit(intent(MOVE));
       // A newer drop while the first is in flight: queued, not sent.
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
-      });
+      await store().staffEdit(intent(moveTo(12 * 60)));
       expect(sent).toHaveLength(1);
       release();
       await first;
@@ -3148,31 +3375,25 @@ describe('StaffDashboard', () => {
     // success, so a lost-but-committed intent superseded by a queued drop
     // that landed went out afresh the next time — and applied twice.
     it('keeps a failed intent’s name across a queued drop that landed — the same intent sent again is still one change', async () => {
-      const sent: StaffEditAppointmentRequest[] = [];
+      const sent: BookingCall.StaffEdit[] = [];
       let release: (answer: 'ok' | 'lost') => void = () => undefined;
-      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
-      };
-      gateway.staffEdit = async (request) => {
+      gateway[Callables.StaffEditAppointment] = async (request) => {
         sent.push(request);
         const answer =
           sent.length === 1
             ? await new Promise<'ok' | 'lost'>((resolve) => (release = resolve))
             : 'ok';
         return answer === 'ok'
-          ? ok({ appointmentId: request.appointmentId, revision: sent.length })
-          : fail(new BookingGatewayError('unknown', 'deadline exceeded'));
+          ? PortResult.ok({
+              appointmentId: request.appointmentId,
+              revision: sent.length,
+            })
+          : PortResult.err(PipelineError.bare(PipelineErrorCode.Unknown));
       };
 
-      const first = store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-      });
+      const first = store().staffEdit(intent(MOVE));
       // A newer drop while the first is in flight: queued.
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
-      });
+      await store().staffEdit(intent(moveTo(12 * 60)));
       // The first answer is lost; the queued drop goes, and lands.
       release('lost');
       expect(await first).toBe(false);
@@ -3180,10 +3401,7 @@ describe('StaffDashboard', () => {
       expect(sent).toHaveLength(2);
 
       // The first intent, sent again: under its own name, whatever landed.
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-      });
+      await store().staffEdit(intent(MOVE));
       expect(sent).toHaveLength(3);
       expect(sent[1]?.operationId).not.toBe(sent[0]?.operationId);
       expect(sent[2]?.operationId).toBe(sent[0]?.operationId);
@@ -3194,25 +3412,25 @@ describe('StaffDashboard', () => {
      * Every intent claims the revision it was made on; the store carries
      * that claim forward across THIS device's own landed intents only.
      */
-    /** A gateway that stamps the next revision after the one claimed. */
+    /** A callable that stamps the next revision after the one claimed. */
     function stamps(
-      refuse: (request: StaffEditAppointmentRequest) => boolean = () => false,
-    ): StaffEditAppointmentRequest[] {
-      const sent: StaffEditAppointmentRequest[] = [];
-      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
-      };
-      gateway.staffEdit = async (request) => {
+      refuse: (request: BookingCall.StaffEdit) => boolean = () => false,
+    ): BookingCall.StaffEdit[] {
+      const sent: BookingCall.StaffEdit[] = [];
+      gateway[Callables.StaffEditAppointment] = async (request) => {
         sent.push(request);
         return refuse(request)
-          ? fail(
-              new BookingGatewayError('invalid_request', 'moved on', {
-                serverCode: 'booking.staffEdit.stale',
-                expected: String(request.expectedVersion),
-                actual: '9',
-              }),
+          ? PortResult.err(
+              refusal(
+                PipelineErrorCode.InvalidRequest,
+                StaffEditErrorCode.Stale,
+                {
+                  expected: request.expectedVersion ?? 0,
+                  actual: 9,
+                },
+              ),
             )
-          : ok({
+          : PortResult.ok({
               appointmentId: request.appointmentId,
               revision: (request.expectedVersion ?? 0) + 1,
             });
@@ -3222,16 +3440,13 @@ describe('StaffDashboard', () => {
 
     it('sends the revision the intent was made on, and a claim of nothing as nothing', async () => {
       const sent = stamps();
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-        expectedVersion: 3,
-      } as StaffEditAppointmentRequest);
-      await store().staffEdit({
-        appointmentId: 'appointment-2',
-        command: MOVE,
-        expectedVersion: null,
-      } as StaffEditAppointmentRequest);
+      await store().staffEdit(intent(MOVE, { expectedVersion: 3 }));
+      await store().staffEdit(
+        intent(MOVE, {
+          appointmentId: AppointmentId.of('appointment-2'),
+          expectedVersion: null,
+        }),
+      );
 
       expect(sent.map((request) => request.expectedVersion)).toEqual([3, null]);
     });
@@ -3239,53 +3454,30 @@ describe('StaffDashboard', () => {
     it('carries the claim across its OWN landed intents — a save’s undo is never stale against the save', async () => {
       const sent = stamps();
       // The save, drawn at 3, lands at 4; its undo was drawn at 3 too.
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-        expectedVersion: 3,
-      } as StaffEditAppointmentRequest);
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: { ...MOVE, startIso: '2026-08-05T10:00:00.000+03:00' },
-        expectedVersion: 3,
-      } as StaffEditAppointmentRequest);
+      await store().staffEdit(intent(MOVE, { expectedVersion: 3 }));
+      await store().staffEdit(intent(moveTo(10 * 60), { expectedVersion: 3 }));
       // …and a third save from the same sheet, still drawn at 3.
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
-        expectedVersion: 3,
-      } as StaffEditAppointmentRequest);
+      await store().staffEdit(intent(moveTo(12 * 60), { expectedVersion: 3 }));
 
       expect(sent.map((request) => request.expectedVersion)).toEqual([3, 4, 5]);
     });
 
     it('sends a drop queued behind its own in-flight save on the revision that save stamped', async () => {
-      const sent: StaffEditAppointmentRequest[] = [];
+      const sent: BookingCall.StaffEdit[] = [];
       let release: () => void = () => undefined;
-      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
-      };
-      gateway.staffEdit = async (request) => {
+      gateway[Callables.StaffEditAppointment] = async (request) => {
         sent.push(request);
         if (sent.length === 1) {
           await new Promise<void>((resolve) => (release = resolve));
         }
-        return ok({
+        return PortResult.ok({
           appointmentId: request.appointmentId,
           revision: (request.expectedVersion ?? 0) + 1,
         });
       };
 
-      const first = store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-        expectedVersion: 3,
-      } as StaffEditAppointmentRequest);
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
-        expectedVersion: 3,
-      } as StaffEditAppointmentRequest);
+      const first = store().staffEdit(intent(MOVE, { expectedVersion: 3 }));
+      await store().staffEdit(intent(moveTo(12 * 60), { expectedVersion: 3 }));
       release();
       await first;
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -3295,36 +3487,22 @@ describe('StaffDashboard', () => {
 
     it('never carries a claim across somebody else’s save — the stale refusal stands, and is the row’s', async () => {
       const sent = stamps((request) => request.expectedVersion === 3);
-      const refused = await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: MOVE,
-        expectedVersion: 3,
-      } as StaffEditAppointmentRequest);
+      const refused = await store().staffEdit(
+        intent(MOVE, { expectedVersion: 3 }),
+      );
 
       expect(refused).toBe(false);
-      const error = (
-        store() as unknown as {
-          errorFor: (id: string) => BookingGatewayError | null;
-        }
-      ).errorFor('appointment-1');
-      expect(error?.params?.['serverCode']).toBe('booking.staffEdit.stale');
+      const error = store().errorFor('appointment-1');
+      expect(error?.serverErrorCode).toBe(StaffEditErrorCode.Stale);
       // A refused intent stamped nothing: the next one drawn at 3 claims 3.
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
-        expectedVersion: 3,
-      } as StaffEditAppointmentRequest);
+      await store().staffEdit(intent(moveTo(12 * 60), { expectedVersion: 3 }));
       expect(sent[1]?.expectedVersion).toBe(3);
     });
 
     it('re-sends a lost intent under its name AND its claim, so the server answers it from the ledger', async () => {
       const sent = sends(['lost', 'ok']);
       for (let attempt = 0; attempt < 2; attempt += 1) {
-        await store().staffEdit({
-          appointmentId: 'appointment-1',
-          command: MOVE,
-          expectedVersion: 3,
-        } as StaffEditAppointmentRequest);
+        await store().staffEdit(intent(MOVE, { expectedVersion: 3 }));
       }
       expect(sent[1]?.operationId).toBe(sent[0]?.operationId);
       expect(sent[1]?.expectedVersion).toBe(3);
@@ -3334,32 +3512,20 @@ describe('StaffDashboard', () => {
     // names per visit. It cannot promise to keep a name no longer than the
     // server's ledger remembers it (that ledger counts every device's
     // applied intents); the batch's own shape is the backstop, pinned in
-    // staff-edit-appointment.use-case.spec.ts (round 4, 2026-09-25).
+    // the edit pipeline's spec (round 4, 2026-09-25).
     it('holds at most CAP failed names per visit, dropping the oldest', async () => {
       const cap = AppliedOperation.CAP;
       const sent = sends(Array.from({ length: cap + 2 }, () => 'lost'));
-      const at = (minute: number) => ({
-        ...MOVE,
-        startIso: `2026-08-05T11:${String(minute).padStart(2, '0')}:00.000+03:00`,
-      });
+      const at = (minute: number) => moveTo(11 * 60 + minute);
 
       // CAP + 1 different intents fail: the oldest name falls off.
       for (let minute = 0; minute <= cap; minute += 1) {
-        await store().staffEdit({
-          appointmentId: 'appointment-1',
-          command: at(minute),
-        });
+        await store().staffEdit(intent(at(minute)));
       }
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: at(0),
-      });
+      await store().staffEdit(intent(at(0)));
       expect(sent[cap + 1]?.operationId).not.toBe(sent[0]?.operationId);
       // The newest is still remembered.
-      await store().staffEdit({
-        appointmentId: 'appointment-1',
-        command: at(cap),
-      });
+      await store().staffEdit(intent(at(cap)));
       expect(sent[cap + 2]?.operationId).toBe(sent[cap]?.operationId);
     });
 
@@ -3398,15 +3564,11 @@ describe('StaffDashboard', () => {
     // Owner, 2026-09-17: "save doesn't work all the time … if there is an
     // error message it should appear as a toast". The row's own error line
     // lives on the agenda behind the sheet; the toast is what the eye gets.
-    const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-      staffEdit: (request: unknown) => Promise<unknown>;
-    };
-    gateway.staffEdit = async () =>
-      fail(
-        new BookingGatewayError(
-          'invalid_request',
-          'Services svc-classic-cut and svc-fade cannot be combined',
-          { serverCode: 'booking.commit.conflicting_services' },
+    gateway[Callables.StaffEditAppointment] = async () =>
+      PortResult.err(
+        refusal(
+          PipelineErrorCode.InvalidRequest,
+          BookingErrorCode.ConflictingServices,
         ),
       );
     const component = fixture.componentInstance as unknown as {
@@ -3440,9 +3602,10 @@ describe('StaffDashboard', () => {
     expect(toast()?.hasAttribute('data-presented')).toBe(true);
     // The toast carries the refusal as `describeError` words it. The loader
     // returns no translations here, so the server code's own line cannot
-    // be told from its key and the description falls back to the gateway's
-    // — the shop's sentence («Тези услуги не се комбинират.») is what the
-    // running app shows, verified live. No undo on offer, only the dismiss.
+    // be told from its key and the description falls back to the surface's
+    // own — the shop's sentence («Тези услуги не се комбинират.») is what
+    // the running app shows, verified live. No undo on offer, only the
+    // dismiss.
     expect(toast()?.querySelector('[role="status"]')?.textContent?.trim()).toBe(
       'booking.gateway.failed',
     );
@@ -3451,32 +3614,32 @@ describe('StaffDashboard', () => {
     expect(component.visitSheetRow()?.appointmentId).toBe(row.appointmentId);
   });
 
-  // Round 4 (2026-09-25): a refusal that names WHY (`params.field`) is
-  // worded one level deeper, the client's rule (`wordError`). A save that
-  // would seat one person in two chairs said only "invalid input".
-  it('words a refused save by the field it names, then by its code, then as the gateway', async () => {
+  // Round 4 (2026-09-25): a refusal that names WHY (`field`) is worded one
+  // level deeper, the client's rule (`wordPipelineError`). A save that would
+  // seat one person in two chairs said only "invalid input".
+  it('words a refused save by the field it names, then by its code, then as the surface', async () => {
     TestBed.inject(TranslocoService).setTranslation(
       {
-        'errors.booking.commit.invalid_input': 'Невалидни данни.',
-        'errors.booking.commit.invalid_input.person_overlap':
+        'errors.BOOKING_INVALID_INPUT': 'Невалидни данни.',
+        'errors.BOOKING_INVALID_INPUT.person_overlap':
           'Един човек не може да е на два стола.',
       },
       'bg',
       { merge: true },
     );
-    const refusal = (field: string | null) =>
-      new BookingGatewayError('invalid_request', 'refused', {
-        serverCode: 'booking.commit.invalid_input',
-        ...(field === null ? {} : { field }),
-      });
-    const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-      staffEdit: (request: unknown) => Promise<unknown>;
-    };
-    gateway.staffEdit = async () => fail(refusal('person_overlap'));
+    const invalid = (field: string | null) =>
+      refusal(
+        PipelineErrorCode.InvalidRequest,
+        BookingErrorCode.InvalidInput,
+        {},
+        field === null ? {} : { field },
+      );
+    gateway[Callables.StaffEditAppointment] = async () =>
+      PortResult.err(invalid('person_overlap'));
     const component = fixture.componentInstance as unknown as {
       commitFromEditor: (id: string, commit: unknown) => Promise<void>;
       visitSheetRow: () => { appointmentId: string } | null;
-      describeError: (error: BookingGatewayError) => string;
+      describeError: (error: PipelineError) => string;
     };
     (
       host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
@@ -3505,12 +3668,61 @@ describe('StaffDashboard', () => {
     ).toBe('Един човек не може да е на два стола.');
 
     // A field with no copy of its own falls back to the code's; no server
-    // code at all, to the gateway's own.
-    expect(component.describeError(refusal('seats'))).toBe('Невалидни данни.');
-    expect(component.describeError(refusal(null))).toBe('Невалидни данни.');
+    // code at all, to the surface's own.
+    expect(component.describeError(invalid('seats'))).toBe('Невалидни данни.');
+    expect(component.describeError(invalid(null))).toBe('Невалидни данни.');
     expect(
-      component.describeError(new BookingGatewayError('unknown', 'lost')),
+      component.describeError(PipelineError.bare(PipelineErrorCode.Unknown)),
     ).toBe('booking.gateway.failed');
+  });
+
+  /*
+   * THE TRANSITION REFUSAL, WORDED (Phase 4a, P6): the wire carries the two
+   * stored tags (`fromBookingStatus`, `toBookingStatus`); the sentence says
+   * them in the shop's words — the shared words table's segment, then the
+   * catalogue's label for it — exactly as the legacy wire's lowercase words
+   * were said. Pinned byte for byte in bg and en, on the real catalogues.
+   */
+  it('words a refused transition with its two statuses in the shop’s words — exact bg and en', () => {
+    const component = fixture.componentInstance as unknown as {
+      describeError: (error: PipelineError) => string;
+    };
+    const transloco = TestBed.inject(TranslocoService);
+    const refused = refusal(
+      PipelineErrorCode.InvalidRequest,
+      BookingErrorCode.TransitionNotAllowed,
+      {
+        fromBookingStatus: BookingStatus.Completed,
+        toBookingStatus: BookingStatus.Confirmed,
+      },
+    );
+    for (const [lang, catalogue] of [
+      ['bg', bgCatalogue],
+      ['en', enCatalogue],
+    ] as const) {
+      transloco.setTranslation(
+        {
+          'errors.BOOKING_TRANSITION_NOT_ALLOWED':
+            catalogue.errors.BOOKING_TRANSITION_NOT_ALLOWED,
+          'appointments.status.completed':
+            catalogue.appointments.status.completed,
+          'appointments.status.confirmed':
+            catalogue.appointments.status.confirmed,
+        },
+        lang,
+        { merge: true },
+      );
+      transloco.setActiveLang(lang);
+    }
+    transloco.setActiveLang('bg');
+    expect(component.describeError(refused)).toBe(
+      'Часът не може да мине от „Минал“ към „Потвърден“.',
+    );
+    transloco.setActiveLang('en');
+    expect(component.describeError(refused)).toBe(
+      'The appointment cannot move from "Past" to "Confirmed".',
+    );
+    transloco.setActiveLang('bg');
   });
 
   it("sends the editor's shutter up with the visit's facts, and a refusal as the page's toast", async () => {
@@ -3719,6 +3931,10 @@ describe('StaffDashboard', () => {
   });
 
   it("builds the add-client page's one section — recent visitors from the window, never today's book", async () => {
+    // The clock at noon, after the window's 10:00 visit (the page's clock
+    // port — never the device's).
+    TestBed.resetTestingModule();
+    await build('2026-08-05T12:00:00.000+03:00');
     const component = fixture.componentInstance as unknown as {
       browseClients: () => Promise<void>;
       visitClientSections: () => readonly {
@@ -3731,7 +3947,7 @@ describe('StaffDashboard', () => {
     // «Днес» is gone (owner, 2026-09-22): a person already in today's book
     // is not one a barbershop adds to another visit.
     expect(sections.map((section) => section.id)).toEqual(['recent']);
-    // The window's visit — dated 2026-08-05, behind any real clock — is
+    // The window's visit — 10:00 on 2026-08-05, behind the pinned noon — is
     // the one recent visitor.
     expect(sections[0]?.clients.map((client) => client.label)).toEqual([
       'Георги Петров',
@@ -3926,15 +4142,9 @@ describe('StaffDashboard', () => {
       undo: () => { message: string } | null;
       notice: () => string | null;
     };
-    const edits: {
-      command: readonly { kind: string; startIso?: string }[];
-    }[] = [];
+    const edits: SentEdit[] = [];
     component.store.staffEdit = async (request) => {
-      edits.push(
-        request as {
-          command: readonly { kind: string; startIso?: string }[];
-        },
-      );
+      edits.push(request as SentEdit);
       return true;
     };
     (
@@ -3973,10 +4183,10 @@ describe('StaffDashboard', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(edits).toHaveLength(1);
-    const move = edits[0]?.command.find((entry) => entry.kind === 'move');
-    expect(Date.parse(move?.startIso ?? '')).toBe(
-      Date.parse('2026-08-05T11:00:00+03:00'),
-    );
+    // The wall clock, as the call carries it: the shop's day and 11:00.
+    const move = commandOf(edits[0]?.commands ?? [], EditCommand.Move);
+    expect(move?.localDate).toBe('2026-08-05');
+    expect(move?.startMinutes).toBe(11 * 60);
     // The save's own receipt is the one toast a save raises.
     expect(component.undo()?.message).toBe('staff.day.undo.saved');
   });
@@ -3994,17 +4204,9 @@ describe('StaffDashboard', () => {
     // The store under test never delivers a write, so the waits on the
     // listener run to their ceiling — lowered to a tick here.
     component.rowWaitMs = 0;
-    type Sent = {
-      command: readonly {
-        kind: string;
-        startIso?: string;
-        atIso?: string;
-        edge?: string;
-      }[];
-    };
-    const edits: Sent[] = [];
+    const edits: SentEdit[] = [];
     component.store.staffEdit = async (request) => {
-      edits.push(request as Sent);
+      edits.push(request as SentEdit);
       return true;
     };
     (
@@ -4041,19 +4243,19 @@ describe('StaffDashboard', () => {
 
     await component.runUndo();
     expect(edits).toHaveLength(2);
-    const back = edits[1]?.command ?? [];
-    const move = back.find((entry) => entry.kind === 'move');
-    expect(Date.parse(move?.startIso ?? '')).toBe(
-      Date.parse('2026-08-05T10:00:00+03:00'),
-    );
-    const resize = back.find((entry) => entry.kind === 'resize');
-    expect(resize?.edge).toBe('end');
-    expect(Date.parse(resize?.atIso ?? '')).toBe(
-      Date.parse('2026-08-05T10:30:00+03:00'),
-    );
+    const back = edits[1]?.commands ?? [];
+    const move = commandOf(back, EditCommand.Move);
+    expect(move?.localDate).toBe('2026-08-05');
+    expect(move?.startMinutes).toBe(10 * 60);
+    const resize = commandOf(back, EditCommand.Resize);
+    expect(resize?.resizeEdge).toBe(ResizeEdge.End);
+    expect(resize?.localDate).toBe('2026-08-05');
+    expect(resize?.atMinutes).toBe(10 * 60 + 30);
     expect(
       back.some(
-        (entry) => entry.kind === 'addSeat' || entry.kind === 'removeSeat',
+        (entry) =>
+          entry.editCommand === EditCommand.AddSeat ||
+          entry.editCommand === EditCommand.RemoveSeat,
       ),
     ).toBe(false);
     expect(component.undo()).toBeNull();
@@ -4157,7 +4359,7 @@ describe('StaffDashboard', () => {
     it('reloads the visit and says so in one line when somebody else saved it first', async () => {
       TestBed.inject(TranslocoService).setTranslation(
         {
-          'errors.booking.staffEdit.stale':
+          'errors.BOOKING_STAFF_EDIT_STALE':
             'Някой друг току-що промени посещението — ето го, както е сега.',
         },
         'bg',
@@ -4166,7 +4368,7 @@ describe('StaffDashboard', () => {
       const component = fixture.componentInstance as unknown as {
         store: {
           staffEdit: (request: unknown) => Promise<boolean>;
-          errorFor: (id: string) => BookingGatewayError | null;
+          errorFor: (id: string) => PipelineError | null;
         };
         notice: () => string | null;
         undo: () => unknown;
@@ -4181,10 +4383,9 @@ describe('StaffDashboard', () => {
         return false;
       };
       component.store.errorFor = () =>
-        new BookingGatewayError('invalid_request', 'moved on', {
-          serverCode: 'booking.staffEdit.stale',
-          expected: '3',
-          actual: '4',
+        refusal(PipelineErrorCode.InvalidRequest, StaffEditErrorCode.Stale, {
+          expected: 3,
+          actual: 4,
         });
       const editor = openAndDrag();
       expect(editor.dirty()).toBe(true);
@@ -4215,21 +4416,15 @@ describe('StaffDashboard', () => {
      */
     function wire(
       answer: (
-        request: StaffEditAppointmentRequest,
-      ) => Result<
-        { appointmentId: string; revision: number },
-        BookingGatewayError
-      > = (request) =>
-        ok({
+        request: BookingCall.StaffEdit,
+      ) => PortResult<BookingCall.StaffEdited, PipelineError> = (request) =>
+        PortResult.ok({
           appointmentId: request.appointmentId,
           revision: (request.expectedVersion ?? 0) + 1,
         }),
-    ): StaffEditAppointmentRequest[] {
-      const sent: StaffEditAppointmentRequest[] = [];
-      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-        staffEdit: (request: StaffEditAppointmentRequest) => Promise<unknown>;
-      };
-      gateway.staffEdit = async (request) => {
+    ): BookingCall.StaffEdit[] {
+      const sent: BookingCall.StaffEdit[] = [];
+      gateway[Callables.StaffEditAppointment] = async (request) => {
         sent.push(request);
         return answer(request);
       };
@@ -4275,7 +4470,7 @@ describe('StaffDashboard', () => {
     it('is refused by the server when a colleague saved since, and reloads the visit', async () => {
       TestBed.inject(TranslocoService).setTranslation(
         {
-          'errors.booking.staffEdit.stale':
+          'errors.BOOKING_STAFF_EDIT_STALE':
             'Някой друг току-що промени посещението — ето го, както е сега.',
         },
         'bg',
@@ -4284,14 +4479,17 @@ describe('StaffDashboard', () => {
       // The server's own answer to a claim of 3 on a visit now at 4.
       const sent = wire((request) =>
         request.expectedVersion === 3
-          ? fail(
-              new BookingGatewayError('invalid_request', 'moved on', {
-                serverCode: 'booking.staffEdit.stale',
-                expected: '3',
-                actual: '4',
-              }),
+          ? PortResult.err(
+              refusal(
+                PipelineErrorCode.InvalidRequest,
+                StaffEditErrorCode.Stale,
+                { expected: 3, actual: 4 },
+              ),
             )
-          : ok({ appointmentId: request.appointmentId, revision: 99 }),
+          : PortResult.ok({
+              appointmentId: request.appointmentId,
+              revision: 99,
+            }),
       );
       const component = fixture.componentInstance as unknown as {
         notice: () => string | null;
@@ -4320,7 +4518,7 @@ describe('StaffDashboard', () => {
       const component = fixture.componentInstance as unknown as {
         store: {
           staffEdit: (request: unknown) => Promise<boolean>;
-          errorFor: (id: string) => BookingGatewayError | null;
+          errorFor: (id: string) => PipelineError | null;
         };
         visitReseedMark: () => { appointmentId: string; n: number };
         rowWaitMs: number;
@@ -4328,9 +4526,7 @@ describe('StaffDashboard', () => {
       component.rowWaitMs = 0;
       component.store.staffEdit = async () => false;
       component.store.errorFor = () =>
-        new BookingGatewayError('slot_unavailable', 'taken', {
-          serverCode: 'booking.staffEdit.overlaps',
-        });
+        refusal(PipelineErrorCode.SlotUnavailable, StaffEditErrorCode.Overlaps);
       const editor = openAndDrag();
       await save();
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -4408,7 +4604,7 @@ describe('StaffDashboard', () => {
         );
       TestBed.inject(TranslocoService).setTranslation(
         {
-          'errors.booking.staffEdit.stale':
+          'errors.BOOKING_STAFF_EDIT_STALE':
             'Някой друг току-що промени посещението — ето го, както е сега.',
         },
         'bg',
@@ -4436,9 +4632,9 @@ describe('StaffDashboard', () => {
           saveTeamNote: (id: string, text: string | null) => Promise<boolean>;
           recordTip: (request: {
             seatId: string;
-            amountMinorUnits: number | null;
+            amountCents: number | null;
           }) => Promise<boolean>;
-          errorFor: (id: string) => BookingGatewayError | null;
+          errorFor: (id: string) => PipelineError | null;
         };
         notice: () => string | null;
         undo: () => unknown;
@@ -4448,7 +4644,7 @@ describe('StaffDashboard', () => {
       };
       component.rowWaitMs = 0;
       const sent: string[] = [];
-      const tips: { seatId: string; amountMinorUnits: number | null }[] = [];
+      const tips: { seatId: string; amountCents: number | null }[] = [];
       const notes: (string | null)[] = [];
       component.store.staffEdit = async () => {
         sent.push('batch');
@@ -4509,7 +4705,7 @@ describe('StaffDashboard', () => {
 
       expect(sent).toEqual(['batch', 'note', 'tip']);
       expect(notes).toEqual(['дължи 5 €']);
-      expect(tips.map((tip) => tip.amountMinorUnits)).toEqual([200]);
+      expect(tips.map((tip) => tip.amountCents)).toEqual([200]);
     });
 
     it('writes neither the note nor the tip when the batch is refused as stale', async () => {
@@ -4519,10 +4715,9 @@ describe('StaffDashboard', () => {
         return false;
       };
       component.store.errorFor = () =>
-        new BookingGatewayError('invalid_request', 'moved on', {
-          serverCode: 'booking.staffEdit.stale',
-          expected: '3',
-          actual: '4',
+        refusal(PipelineErrorCode.InvalidRequest, StaffEditErrorCode.Stale, {
+          expected: 3,
+          actual: 4,
         });
       const editor = open();
       editor.setTip(200);
@@ -4615,17 +4810,17 @@ describe('StaffDashboard', () => {
 
       // The way back is refused before anything goes out.
       expect(sent).toEqual(['batch', 'tip']);
-      expect(tips.map((tip) => tip.amountMinorUnits)).toEqual([200]);
+      expect(tips.map((tip) => tip.amountCents)).toEqual([200]);
       expect(component.undo()).toBeNull();
       expect(component.visitReseedMark().n).toBe(1);
     });
 
     it('stamps the tip on a seat the batch KEPT, never on one it removed', async () => {
       const booker = freshId('user');
-      const seatOf = (startIso: string) =>
+      const seatOf = (startsAt: string) =>
         seatAt({
           chair: 'ivan',
-          startIso,
+          startsAt,
           occupant: accountOf(booker, SubjectRelationship.Self),
         });
       const first = seatOf('2026-08-05T10:00:00');
@@ -4646,7 +4841,7 @@ describe('StaffDashboard', () => {
       expect(tips).toEqual([
         expect.objectContaining({
           seatId: second.seatId,
-          amountMinorUnits: 200,
+          amountCents: 200,
         }),
       ]);
     });
@@ -4712,13 +4907,7 @@ describe('StaffDashboard', () => {
       commandsFor: (
         target: VisitEditorCommit,
         row: unknown,
-      ) => readonly {
-        kind: string;
-        seatIds?: readonly string[];
-        seatId?: string;
-        barberId?: string;
-        startIso?: string;
-      }[];
+      ) => PortResult<readonly BookingCall.EditCommand[], PipelineError>;
       rowFor: (
         rowId: string,
         seatIds?: readonly string[],
@@ -4761,25 +4950,26 @@ describe('StaffDashboard', () => {
       startMs: row.startMs + hour,
       endMs: row.endMs + hour,
     };
-    const back = component.commandsFor(twoLegs, later);
-    const moves = back.filter((entry) => entry.kind === 'move');
-    const pin = moves.find((entry) => entry.seatIds?.length === 1);
-    expect(pin).toEqual({
-      kind: 'move',
-      seatIds: [cut.seatId],
-      startIso: expect.any(String),
-    });
-    expect(Date.parse(pin?.startIso ?? '')).toBe(
-      Date.parse('2026-08-05T10:00:00+03:00'),
+    const back = unwrapOk(component.commandsFor(twoLegs, later));
+    const moves = back.filter(
+      (entry): entry is BookingCall.EditCommand.Move =>
+        entry.editCommand === EditCommand.Move,
     );
+    const pin = moves.find((entry) => entry.seatIds?.length === 1);
+    // On the shop's wall clock: the visit's day, 10:00.
+    expect(pin).toEqual({
+      editCommand: EditCommand.Move,
+      localDate: '2026-08-05',
+      startMinutes: 10 * 60,
+      seatIds: [cut.seatId],
+    });
     const wide = moves.find((entry) => entry !== pin);
     expect(back.indexOf(pin as (typeof back)[number])).toBeLessThan(
       back.indexOf(wide as (typeof back)[number]),
     );
-    const readd = back.find((entry) => entry.kind === 'addSeat');
-    expect(Date.parse(readd?.startIso ?? '')).toBe(
-      Date.parse('2026-08-05T10:30:00+03:00'),
-    );
+    const readd = commandOf(back, EditCommand.AddSeat);
+    expect(readd?.localDate).toBe('2026-08-05');
+    expect(readd?.startMinutes).toBe(10 * 60 + 30);
     // A chair's share names the seats the batch LEAVES — never a removed one.
     expect(wide?.seatIds).toEqual([cut.seatId, 'seat-beard']);
 
@@ -4793,23 +4983,29 @@ describe('StaffDashboard', () => {
     expect(component.rowFor('appointment-1#stefan', [cut.seatId])?.id).toBe(
       'appointment-1#ivan',
     );
-    expect(component.commandsFor(onStefan, row)).toContainEqual({
-      kind: 'restaff',
+    expect(unwrapOk(component.commandsFor(onStefan, row))).toContainEqual({
+      editCommand: EditCommand.Restaff,
       seatId: cut.seatId,
       barberId: 'stefan',
     });
   });
 
   it('withholds the way back only from a save that added a seat to a finished visit', () => {
-    const added = [{ kind: 'addSeat' }] as unknown as Parameters<
+    const added = [
+      { editCommand: EditCommand.AddSeat },
+    ] as unknown as Parameters<typeof reversibleSave>[1];
+    const moved = [{ editCommand: EditCommand.Move }] as unknown as Parameters<
       typeof reversibleSave
     >[1];
-    const moved = [{ kind: 'move' }] as unknown as Parameters<
-      typeof reversibleSave
-    >[1];
-    expect(reversibleSave({ status: 'completed' }, added)).toBe(false);
-    expect(reversibleSave({ status: 'completed' }, moved)).toBe(true);
-    expect(reversibleSave({ status: 'confirmed' }, added)).toBe(true);
+    expect(reversibleSave({ status: BookingStatus.Completed }, added)).toBe(
+      false,
+    );
+    expect(reversibleSave({ status: BookingStatus.Completed }, moved)).toBe(
+      true,
+    );
+    expect(reversibleSave({ status: BookingStatus.Confirmed }, added)).toBe(
+      true,
+    );
     expect(reversibleSave(null, added)).toBe(true);
     // A save that removed a seat keeps its «Отмени» — one half of a pair
     // the visit already held included: the server remembers the pairs a
@@ -4817,9 +5013,11 @@ describe('StaffDashboard', () => {
     // «Отмени» restores exactly what the save changed; pinned in
     // staff-edit-appointment.undo.spec.ts).
     const removed = [
-      { kind: 'removeSeat', seatId: 'seat-2' },
-    ] as unknown as Parameters<typeof reversibleSave>[1];
-    expect(reversibleSave({ status: 'confirmed' }, removed)).toBe(true);
+      BookingCall.editRemoveSeat(SeatId.of('seat-2')),
+    ] as Parameters<typeof reversibleSave>[1];
+    expect(reversibleSave({ status: BookingStatus.Confirmed }, removed)).toBe(
+      true,
+    );
   });
 
   it("undoes a save by the save's own arithmetic: the added seat goes, the removed one returns with its terms, the block and the bill go back", () => {
@@ -4829,7 +5027,7 @@ describe('StaffDashboard', () => {
       commandsFor: (
         target: VisitEditorCommit,
         row: unknown,
-      ) => readonly Record<string, unknown>[];
+      ) => PortResult<readonly BookingCall.EditCommand[], PipelineError>;
     };
     type DayRowShape = {
       startMs: number;
@@ -4873,7 +5071,7 @@ describe('StaffDashboard', () => {
         {
           source: 'code',
           label: 'FIRST10',
-          value: { kind: 'percent_off', percent: 10 },
+          value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
           grantId: null,
           code: 'FIRST10',
           exclusive: false,
@@ -4881,43 +5079,48 @@ describe('StaffDashboard', () => {
       ],
     };
 
-    const back = component.commandsFor(before, after);
-    const kinds = back.map((entry) => entry['kind']);
-    expect(kinds).toContain('removeSeat');
-    expect(back.find((entry) => entry['kind'] === 'removeSeat')).toEqual({
-      kind: 'removeSeat',
+    const back = unwrapOk(component.commandsFor(before, after));
+    const kinds = back.map((entry) => entry.editCommand);
+    expect(kinds).toContain(EditCommand.RemoveSeat);
+    expect(commandOf(back, EditCommand.RemoveSeat)).toEqual({
+      editCommand: EditCommand.RemoveSeat,
       seatId: 'seat-beard',
     });
-    const readd = back.find((entry) => entry['kind'] === 'addSeat');
+    const readd = commandOf(back, EditCommand.AddSeat);
     expect(readd).toEqual(
       expect.objectContaining({
         seatId: cut.seatId,
         serviceId: cut.serviceId,
         barberId: cut.barberId,
-        minutes: cut.minutes,
-        subject: { kind: 'self' },
+        durationMinutes: cut.minutes,
+        addedSubject: { requestedSubjectRole: RequestedSubjectRole.Self },
       }),
     );
-    expect(Date.parse(String(readd?.['startIso']))).toBe(
-      Date.parse('2026-08-05T10:00:00+03:00'),
-    );
+    // On the shop's wall clock: the visit's day, 10:00.
+    expect(readd?.localDate).toBe('2026-08-05');
+    expect(readd?.startMinutes).toBe(10 * 60);
     // Its stored price rides along, for a server that honours it.
     expect(back).toContainEqual({
-      kind: 'reprice',
+      editCommand: EditCommand.Reprice,
       seatId: cut.seatId,
-      priceMinorUnits: 2800,
+      priceCents: 2800,
     });
-    const move = back.find((entry) => entry['kind'] === 'move');
-    expect(Date.parse(String(move?.['startIso']))).toBe(
-      Date.parse('2026-08-05T10:00:00+03:00'),
-    );
+    const move = commandOf(back, EditCommand.Move);
+    expect(move?.startMinutes).toBe(10 * 60);
     // The bill's arm is sent EXPLICITLY, empty: omitting it would keep the
     // code the save applied.
-    expect(back).toContainEqual({ kind: 'discounts', discounts: [] });
+    expect(back).toContainEqual({
+      editCommand: EditCommand.Discounts,
+      discounts: [],
+    });
     // In the server's order: seats before the move, the bill last.
-    expect(kinds.indexOf('removeSeat')).toBeLessThan(kinds.indexOf('move'));
-    expect(kinds.indexOf('addSeat')).toBeLessThan(kinds.indexOf('move'));
-    expect(kinds.at(-1)).toBe('discounts');
+    expect(kinds.indexOf(EditCommand.RemoveSeat)).toBeLessThan(
+      kinds.indexOf(EditCommand.Move),
+    );
+    expect(kinds.indexOf(EditCommand.AddSeat)).toBeLessThan(
+      kinds.indexOf(EditCommand.Move),
+    );
+    expect(kinds.at(-1)).toBe(EditCommand.Discounts);
   });
 
   it('asks before a ✕ drops unsaved edits, and closes at once when the draft is clean', () => {
@@ -5023,14 +5226,13 @@ describe('StaffDashboard', () => {
       ],
     });
 
-    function capture(): CommitBookingRequest[] {
-      const requests: CommitBookingRequest[] = [];
-      const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-        commit: (request: CommitBookingRequest) => Promise<unknown>;
-      };
-      gateway.commit = async (request) => {
+    function capture(): BookingCall[] {
+      const requests: BookingCall[] = [];
+      gateway[Callables.CommitBooking] = async (request) => {
         requests.push(request);
-        return ok({ appointmentId: 'apt-rebooked' });
+        return PortResult.ok({
+          appointmentId: AppointmentId.of('apt-rebooked'),
+        });
       };
       return requests;
     }
@@ -5059,6 +5261,7 @@ describe('StaffDashboard', () => {
 
       expect(requests).toHaveLength(1);
       expect(requests[0]?.onBehalfOfUserId).toBe(clientUserId);
+      expect(requests[0]?.placement).toBe(Placement.Staff);
       expect(requests[0]?.bookedFromAppointmentId).toBe('appointment-1');
     });
 
@@ -5076,7 +5279,7 @@ describe('StaffDashboard', () => {
 
       expect(requests).toHaveLength(2);
       for (const request of requests) {
-        expect('bookedFromAppointmentId' in request).toBe(false);
+        expect(request.bookedFromAppointmentId).toBeNull();
       }
     });
   });
@@ -5096,9 +5299,9 @@ describe('StaffDashboard', () => {
         }[];
       } | null;
     };
-    const edits: { command: readonly { kind: string }[] }[] = [];
+    const edits: SentEdit[] = [];
     component.store.staffEdit = async (request) => {
-      edits.push(request as { command: readonly { kind: string }[] });
+      edits.push(request as SentEdit);
       return true;
     };
     (
@@ -5136,15 +5339,17 @@ describe('StaffDashboard', () => {
     });
     await component.commitFromEditor(row.appointmentId, save('loc-mladost'));
     expect(edits).toHaveLength(1);
-    expect(edits[0]?.command[0]).toEqual({
-      kind: 'relocate',
+    expect(edits[0]?.commands[0]).toEqual({
+      editCommand: EditCommand.Relocate,
       locationId: 'loc-mladost',
     });
     // The same shop: no relocate at all.
     await component.commitFromEditor(row.appointmentId, save(row.locationId));
     expect(edits).toHaveLength(2);
     expect(
-      edits[1]?.command.some((command) => command.kind === 'relocate'),
+      edits[1]?.commands.some(
+        (command) => command.editCommand === EditCommand.Relocate,
+      ),
     ).toBe(false);
   });
 
@@ -5168,9 +5373,9 @@ describe('StaffDashboard', () => {
     };
     expect(component.mayReprice()).toBe(true);
 
-    const edits: { command: readonly { kind: string }[] }[] = [];
+    const edits: SentEdit[] = [];
     component.store.staffEdit = async (request) => {
-      edits.push(request as { command: readonly { kind: string }[] });
+      edits.push(request as SentEdit);
       return true;
     };
     (
@@ -5198,7 +5403,7 @@ describe('StaffDashboard', () => {
           variantId: null,
           minutes: leg.minutes,
           priceLabel: '18,00 €',
-          priceMinorUnits: 1800,
+          priceCents: 1800,
           barberId: leg.barberId,
           clientId: 'user-martin',
         },
@@ -5210,44 +5415,45 @@ describe('StaffDashboard', () => {
           variantId: null,
           minutes: 10,
           priceLabel: '9,00 €',
-          priceMinorUnits: 900,
+          priceCents: 900,
           barberId: leg.barberId,
           clientId: 'user-martin',
         },
       ],
     });
-    const commands = edits.flatMap((edit) => edit.command);
+    const commands = edits.flatMap((edit) => edit.commands);
     expect(commands).toContainEqual({
-      kind: 'reprice',
+      editCommand: EditCommand.Reprice,
       seatId: leg.seatId,
-      priceMinorUnits: 1800,
+      priceCents: 1800,
     });
-    const seatOf = (command: { kind: string }) =>
+    const seatOf = (command: BookingCall.EditCommand) =>
       (command as { seatId?: string }).seatId;
     const added = commands.findIndex(
       (command) =>
-        command.kind === 'addSeat' && seatOf(command) === 'draft-wash-1',
+        command.editCommand === EditCommand.AddSeat &&
+        seatOf(command) === 'draft-wash-1',
     );
     const repriced = commands.findIndex(
       (command) =>
-        command.kind === 'reprice' && seatOf(command) === 'draft-wash-1',
+        command.editCommand === EditCommand.Reprice &&
+        seatOf(command) === 'draft-wash-1',
     );
     expect(added).toBeGreaterThanOrEqual(0);
     expect(repriced).toBeGreaterThan(added);
-    expect(commands[repriced]).toMatchObject({ priceMinorUnits: 900 });
+    expect(commands[repriced]).toMatchObject({ priceCents: 900 });
 
     // A plain barber: the gate shuts.
-    principal$.next({
-      kind: 'active',
-      uid: 'dev-staff-ivan' as unknown as PrincipalId,
-      roles: ['barber'].map(roleFromPrimitive),
-    });
+    principal$.next(
+      principalFixture.staff(AccountId.of('dev-staff-ivan'), [Role.Barber]),
+    );
     expect(component.mayReprice()).toBe(false);
-    principal$.next({
-      kind: 'active',
-      uid: 'dev-staff-ivan' as unknown as PrincipalId,
-      roles: ['barber', 'admin'].map(roleFromPrimitive),
-    });
+    principal$.next(
+      principalFixture.staff(AccountId.of('dev-staff-ivan'), [
+        Role.Barber,
+        Role.Admin,
+      ]),
+    );
   });
 
   it('opens ONE kind of new visit from the ＋, starting at the next tick', () => {
@@ -5274,13 +5480,10 @@ describe('StaffDashboard', () => {
     // an account is the appointment's owner (`self` seats, `onBehalfOfUserId`);
     // a walk-in placeholder or a minted guest rides as a `guest` seat under
     // their own name — the domain's one-owner shape, not a shortcut here.
-    const requests: CommitBookingRequest[] = [];
-    const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-      commit: (request: CommitBookingRequest) => Promise<unknown>;
-    };
-    gateway.commit = async (request) => {
+    const requests: BookingCall[] = [];
+    gateway[Callables.CommitBooking] = async (request) => {
       requests.push(request);
-      return ok({ appointmentId: 'apt-party', status: 'confirmed' });
+      return PortResult.ok({ appointmentId: AppointmentId.of('apt-party') });
     };
     const component = fixture.componentInstance as unknown as {
       openCreate: (kind: 'booking' | 'block') => void;
@@ -5323,15 +5526,20 @@ describe('StaffDashboard', () => {
     const request = requests[0];
     expect(request?.onBehalfOfUserId).toBe('user-martin');
     expect(request?.seats.map((seat) => seat.subject)).toEqual([
-      { kind: 'guest', label: 'Без запазен час' },
-      { kind: 'self' },
+      {
+        requestedSubjectRole: RequestedSubjectRole.Guest,
+        label: 'Без запазен час',
+        guestKey: null,
+      },
+      { requestedSubjectRole: RequestedSubjectRole.Self },
     ]);
     // The contact is the owner's, not the walk-in's.
     expect(request?.contact?.name).toBe('Мартин Илиев');
-    // Serial from the chosen minute, in ladder order.
-    const at = request?.seats.map((seat) => Date.parse(seat.startIso)) ?? [];
+    // ONE shop day, and serial from the chosen minute, in ladder order.
+    expect(request?.localDate).toBe('2026-09-03');
+    const at = request?.seats.map((seat) => seat.startMinutes) ?? [];
     // `NaN` if either seat is missing — which fails the assertion, as it should.
-    expect((at[1] ?? NaN) - (at[0] ?? NaN)).toBe(30 * 60_000);
+    expect((at[1] ?? NaN) - (at[0] ?? NaN)).toBe(30);
     expect(component.createVisit()).toBeNull();
   });
 
@@ -5339,13 +5547,12 @@ describe('StaffDashboard', () => {
   // «Случаен клиент», so two strangers on one visit shared a label — and the
   // client prefill and the server's party check read them as one person.
   it('names each stranger on one visit apart — the second is numbered, one person once', async () => {
-    const requests: CommitBookingRequest[] = [];
-    const gateway = TestBed.inject(BOOKING_GATEWAY) as {
-      commit: (request: CommitBookingRequest) => Promise<unknown>;
-    };
-    gateway.commit = async (request) => {
+    const requests: BookingCall[] = [];
+    gateway[Callables.CommitBooking] = async (request) => {
       requests.push(request);
-      return ok({ appointmentId: 'apt-strangers', status: 'confirmed' });
+      return PortResult.ok({
+        appointmentId: AppointmentId.of('apt-strangers'),
+      });
     };
     const component = fixture.componentInstance as unknown as {
       openCreate: (kind: 'booking' | 'block') => void;
@@ -5378,10 +5585,15 @@ describe('StaffDashboard', () => {
     // The test catalogue answers with keys: the first stranger keeps the
     // plain word, the second is the numbered one, and the first's two
     // services stay one person's.
+    const guest = (label: string) => ({
+      requestedSubjectRole: RequestedSubjectRole.Guest,
+      label,
+      guestKey: null,
+    });
     expect(requests[0]?.seats.map((seat) => seat.subject)).toEqual([
-      { kind: 'guest', label: 'staff.visit.walkIn' },
-      { kind: 'guest', label: 'staff.visit.walkInNumbered' },
-      { kind: 'guest', label: 'staff.visit.walkIn' },
+      guest('staff.visit.walkIn'),
+      guest('staff.visit.walkInNumbered'),
+      guest('staff.visit.walkIn'),
     ]);
   });
 
@@ -5396,7 +5608,7 @@ describe('StaffDashboard', () => {
     const seatFor = (chair: string, occupant: SeatOccupant) =>
       seatAt({
         chair,
-        startIso: '2026-08-05T10:00:00',
+        startsAt: '2026-08-05T10:00:00',
         occupant,
         serviceId: 'fade',
       });
@@ -5426,10 +5638,10 @@ describe('StaffDashboard', () => {
         'bg',
         { merge: true },
       );
-      const sent: StaffEditAppointmentRequest[] = [];
+      const sent: BookingCall.StaffEdit[] = [];
       const component = fixture.componentInstance as unknown as {
         store: {
-          staffEdit: (request: StaffEditAppointmentRequest) => Promise<boolean>;
+          staffEdit: (request: BookingCall.StaffEdit) => Promise<boolean>;
         };
         commitFromEditor: (
           id: string,
@@ -5467,14 +5679,12 @@ describe('StaffDashboard', () => {
       };
       await component.commitFromEditor('appointment-split', withStranger);
 
-      const commands = (sent[0]?.command ?? []) as readonly {
-        kind: string;
-        seatId?: string;
-        subject?: unknown;
-      }[];
       expect(
-        commands.find((command) => command.kind === 'addSeat')?.subject,
-      ).toEqual({ kind: 'guest', label: `${WALK_IN} 2` });
+        commandOf(sent[0]?.commands ?? [], EditCommand.AddSeat)?.addedSubject,
+      ).toEqual({
+        requestedSubjectRole: RequestedSubjectRole.Guest,
+        label: `${WALK_IN} 2`,
+      });
     } finally {
       if (visits) observeBarberDay.mockImplementation(visits);
     }
@@ -5785,11 +5995,12 @@ describe('StaffDashboard', () => {
    */
   it("binds the client card's inputs on the visit sheet: the booker, the viewer, the catalogue", () => {
     const original = principal$.value;
-    principal$.next({
-      kind: 'active',
-      uid: value(PrincipalId.create('dev-staff-ivan')),
-      roles: ['barber', 'admin'].map(roleFromPrimitive),
-    });
+    principal$.next(
+      principalFixture.staff(AccountId.of('dev-staff-ivan'), [
+        Role.Barber,
+        Role.Admin,
+      ]),
+    );
     try {
       (
         host().querySelector('[data-testid="staff-visit-row"]') as HTMLElement
@@ -5916,7 +6127,7 @@ describe('StaffDashboard', () => {
           grantId: 'grant-birthday',
           couponId: 'coupon-birthday',
           label: 'Рожден ден',
-          value: { kind: 'percent_off', percent: 20 },
+          value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
           exclusive: true,
           occasion: 'birthday',
           // The shop's day, not the UTC instant's (review 2, POLISH-editor).
@@ -5926,7 +6137,7 @@ describe('StaffDashboard', () => {
           grantId: 'grant-loyal',
           couponId: 'coupon-loyal',
           label: 'Постоянен клиент',
-          value: { kind: 'percent_off', percent: 5 },
+          value: { discountMethod: DiscountMethod.PercentOff, percent: 5 },
           exclusive: false,
           occasion: null,
           expiresOn: null,
@@ -5947,7 +6158,7 @@ describe('StaffDashboard', () => {
     ) =>
       seatAt({
         chair,
-        startIso: '2026-08-05T10:00:00',
+        startsAt: '2026-08-05T10:00:00',
         occupant: accountOf(uid, relationship),
       });
     // A father books himself with Ivan and his son — an account of his
@@ -6024,7 +6235,7 @@ describe('StaffDashboard', () => {
     ) =>
       seatAt({
         chair,
-        startIso: '2026-08-05T10:00:00',
+        startsAt: '2026-08-05T10:00:00',
         occupant: accountOf(uid, relationship),
       });
     const family = visitOf(

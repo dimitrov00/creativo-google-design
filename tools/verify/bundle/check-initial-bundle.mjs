@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Guard: the Firestore and Storage SDKs stay out of the initial web chunk.
+// Guard: the Firestore and Storage SDKs and the phone metadata
+// (libphonenumber-js) stay out of the initial web chunk.
 //
 //   pnpm nx build web -- --stats-json
 //   node tools/verify/bundle/check-initial-bundle.mjs [path/to/stats.json] [--top=N]
@@ -71,10 +72,12 @@ if (report.forbidden.length > 0) {
     '\nA static import reached it. Firestore/Storage adapters are bound with ' +
       'provideLazyPort in apps/web/src/app/app.config.ts and loaded through ' +
       'loadFirestoreAdapters()/loadStorageAdapters(); import neither SDK nor ' +
-      'an adapter module from eager code.',
+      'an adapter module from eager code. PhoneSystem loads through a ' +
+      "component-local named re-export (import('./phone-field.lazy')), never " +
+      'a dynamic import of the @core/systems namespace (phase-4a §9 R10).',
   );
   process.exit(1);
 }
 console.log(
-  '\nOK — firebase/firestore and firebase/storage are not in the initial chunk.',
+  '\nOK — firebase/firestore, firebase/storage and libphonenumber-js are not in the initial chunk.',
 );

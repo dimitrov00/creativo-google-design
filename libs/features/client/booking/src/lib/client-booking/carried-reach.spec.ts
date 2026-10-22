@@ -7,7 +7,7 @@ import {
   ServiceId,
   ServiceVariantId,
 } from '@core/primitives';
-import type { MoveRider } from '@core/systems';
+import type { MoveRider } from '@core/components';
 import {
   barberFixture,
   duration,

@@ -7,7 +7,7 @@ import type {
   Role,
   SearchFields,
 } from '@core/components';
-import type { UserId } from '@core/primitives';
+import type { UserId, UtcEpochMs } from '@core/primitives';
 
 /**
  * The identity slice of `users/{uid}` — the ACCOUNT (D29): the id (the
@@ -25,6 +25,14 @@ export type UserMeta = {
   /** `[]` while provisioned. */
   readonly roles: readonly Role[];
   readonly birthDate: BirthDate | null;
+  /**
+   * When the owner last edited their profile through `updateProfile` — a
+   * lifecycle stamp (Law 7.3 T2), `null` on the provisioned stub and on
+   * registration. The callable writes the audit row itself, inside its
+   * transaction; the `auditProfileChanges` trigger skips the event in which
+   * this stamp changed (owner ruling flip-2 §10.15, Phase 4a 4A-16).
+   */
+  readonly profileEditedAtUtcMs: UtcEpochMs | null;
 };
 
 /**
@@ -56,9 +64,9 @@ export type User = UserMeta & AccountContact & AccountLifecycle & SearchFields;
 /**
  * The owner-editable keys of `users/{uid}` — the rules' owner allowlist,
  * verbatim (`firstName`, `lastName`, `birthDate`, `searchName`,
- * `searchPrefixes`). The answer of `ProfileEditSystem.decide` and the
- * argument shape of the `WriteOwnProfile` port (F2-17): a named record, not
- * a `Pick<User, …>`, so a rename is one compiler-checked change. A
+ * `searchPrefixes`). The answer of `ProfileEditSystem.decide` (F2-17): a
+ * named record, not a `Pick<User, …>`, so a rename is one compiler-checked
+ * change. A
  * REGISTERED owner's names are never `null`, so neither are these; the
  * search keys are recomputed from the STORED contact channels on every
  * edit (the owner cannot change `phone` or `email`).

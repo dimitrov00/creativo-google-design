@@ -2,7 +2,7 @@ import {
   type Actor,
   AuditContext,
   AuditAction,
-  type BarberPreference,
+  type BookingCall,
   type BookingContact,
   type BookingPolicy,
   CustomerOrigin,
@@ -19,8 +19,12 @@ import {
   AuditResourceId,
   BarberId,
   type CustomerId,
+  LocalDate,
   LocationId,
+  MinuteOfDay,
   ServiceId,
+  type TimeError,
+  type TimeZone,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
@@ -39,7 +43,6 @@ import {
   CustomerRecordSystem,
   type DecideBookingInput,
   PartyAdmissionSystem,
-  type RequestedSubjectInput,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -48,7 +51,6 @@ import {
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
-  frameShopDay,
   isReadableId,
   type PlacementSet,
   placementKeysOf,
@@ -85,6 +87,11 @@ import {
  *   exceptions of every key in a second (read even when absent). A booking
  *   ARRIVES at its shop: a client's only at a shop `/book` lists, the
  *   shop's own placement at any.
+ * - **The wall clock, once (Law 7.3):** the call carries the shop day and
+ *   each seat's minute (`localDate` + `startMinutes`); having read the
+ *   shop, the pipeline places them on ITS zone with `ZonedTimeSystem.toUtc`
+ *   ({@link frameWallClock}) — a start the zone never shows (a
+ *   spring-forward gap) is refused `DST_GAP_INVALID_TIME`, never shifted.
  * - **One plan:** the appointment `Create`, the busy `Set`s merged onto the
  *   exact busy bodies this attempt read, and a `customers` `Create` for
  *   every record found absent (F1-5). A commit that meets a customer record
@@ -95,19 +102,12 @@ import {
  *   nothing is written twice.
  */
 
-/** One seat as the client asked for it — the decision's foreign input, its start an instant. */
-export type BookSeatRequest = {
-  readonly lineId: string;
-  readonly serviceId: string;
-  readonly variantId: string | null;
-  readonly barberId: string;
-  /** What the client ASKED for; `null` is stored as unknown, never guessed. */
-  readonly barberPreference: BarberPreference | null;
-  /** The wire start as its instant; `null` when it did not parse (refused as the seat's `startMinutes`). */
-  readonly startUtcMs: UtcEpochMs | null;
-  readonly subject: RequestedSubjectInput;
-};
-
+/**
+ * The commit as the edge decoded it — the call component `BookingCall` in
+ * its raw twin (`BookingCall.SeatInput`: the server parses what it reads,
+ * in the decision's order) & the fields the server derives (the verified
+ * owner, the placement, the actor).
+ */
 export type BookAppointmentCommand = {
   /**
    * The shop as SENT — parsed by the decision (an id that names no
@@ -115,7 +115,10 @@ export type BookAppointmentCommand = {
    * is answered before anything about the request is judged.
    */
   readonly locationId: string;
-  readonly seats: readonly BookSeatRequest[];
+  /** The ONE shop day every seat is on, as sent (`YYYY-MM-DD`). */
+  readonly localDate: string;
+  /** Each seat's start a minute of that day (`null`: not one). */
+  readonly seats: readonly BookingCall.SeatInput[];
   /** The client's idempotency key — the new appointment's id; `null` mints one. */
   readonly attemptId: AppointmentId | null;
   /** The rebooking edge — an analytics link, no authority. */
@@ -137,7 +140,7 @@ export type BookAppointmentAnswer = {
   readonly replayed: boolean;
 };
 
-export type BookAppointmentError = BookingError | RepositoryError;
+export type BookAppointmentError = BookingError | TimeError | RepositoryError;
 
 export type BookAppointmentPorts = TxPorts &
   PolicyReadPorts &
@@ -147,7 +150,7 @@ export type BookAppointmentPorts = TxPorts &
 
 type Snapshot =
   | { readonly snapshot: 'REPLAY'; readonly existing: Appointment }
-  | { readonly snapshot: 'REFUSED'; readonly error: BookingError }
+  | { readonly snapshot: 'REFUSED'; readonly error: BookingError | TimeError }
   | {
       readonly snapshot: 'LOADED';
       readonly set: BookingReadSet;
@@ -169,6 +172,47 @@ function placementPolicyOf(staffPlacement: boolean): PlacementPolicy {
     allowOverlap: false,
     allowConflictingServices: staffPlacement,
   };
+}
+
+/**
+ * The request's wall clock on the shop's zone — the ingestion boundary (Law
+ * 7.3, Phase 4a 4A-2 (a)), shared by the commit and the reschedule: the ONE
+ * shop day as sent, each start as its minute of that day (`null` for a
+ * start that is no minute — the decision refuses it), and the envelope's
+ * instant, the earliest placed start, computed ONCE with
+ * `ZonedTimeSystem.toUtc`. A start the zone never shows (a spring-forward
+ * gap) is refused `DST_GAP_INVALID_TIME`, never shifted; a fall-back repeat
+ * reads the earlier offset. A day that is no day frames nothing (the
+ * decision refuses it, as a start).
+ */
+export function frameWallClock(
+  localDate: string,
+  starts: readonly (number | null)[],
+  zone: TimeZone,
+): Result<ShopDayFrame, TimeError> {
+  const day = LocalDate.parse(localDate);
+  const minutes: (MinuteOfDay | null)[] = [];
+  let startUtcMs: UtcEpochMs | null = null;
+  let earliest: MinuteOfDay | null = null;
+  for (const start of starts) {
+    const minute = start === null ? null : MinuteOfDay.of(start);
+    if (minute === null || !minute.ok || !day.ok) {
+      minutes.push(null);
+      continue;
+    }
+    minutes.push(minute.value);
+    const instant = ZonedTimeSystem.toUtc(day.value, minute.value, zone);
+    if (!instant.ok) return instant;
+    if (earliest === null || minute.value < earliest) {
+      earliest = minute.value;
+      startUtcMs = instant.value;
+    }
+  }
+  return Result.ok({
+    localDate: day.ok ? day.value : null,
+    startMinutes: minutes,
+    startUtcMs,
+  });
 }
 
 /** The ids a request names that could be documents — read; the rest are refused by the decision. */
@@ -283,21 +327,23 @@ async function readBooking(
     };
   }
   const zone = zoneOf(set.location);
-  const starts = cmd.seats.map((seat) => seat.startUtcMs);
-  const frame: ShopDayFrame =
+  const starts = cmd.seats.map((seat) => seat.startMinutes);
+  const framed: Result<ShopDayFrame, TimeError> =
     zone === null
-      ? {
+      ? Result.ok({
           localDate: null,
           startMinutes: starts.map(() => null),
           startUtcMs: null,
-        }
-      : frameShopDay(starts, zone);
+        })
+      : frameWallClock(cmd.localDate, starts, zone);
+  if (!framed.ok) return { snapshot: 'REFUSED', error: framed.error };
+  const frame = framed.value;
   const placement = await readPlacementSet(
     tx,
     placementKeysOf(
       cmd.seats.map((seat, index) => ({
         barberId: seat.barberId,
-        startMinutes: frame.startMinutes[index] ?? null,
+        startMinutes: frame.startMinutes.at(index) ?? null,
       })),
       frame.localDate,
     ),
@@ -314,7 +360,7 @@ function decideBooking(
   contacts: ReadonlyMap<UserId, AccountContact>,
   nowUtcMs: UtcEpochMs,
   nextId: () => string,
-): Result<Decided, BookingError> {
+): Result<Decided, BookingError | TimeError> {
   if (snapshot.snapshot === 'REPLAY') {
     return Result.ok({
       appointment: snapshot.existing,
@@ -347,13 +393,8 @@ function decideBooking(
     locationId: cmd.locationId,
     localDate: frame.localDate ?? '',
     seats: cmd.seats.map((seat, index) => ({
-      lineId: seat.lineId,
-      serviceId: seat.serviceId,
-      variantId: seat.variantId,
-      barberId: seat.barberId,
-      barberPreference: seat.barberPreference,
-      startMinutes: frame.startMinutes[index] ?? null,
-      subject: seat.subject,
+      ...seat,
+      startMinutes: frame.startMinutes.at(index) ?? null,
     })),
     attemptId: cmd.attemptId,
     bookedFromAppointmentId: cmd.bookedFromAppointmentId,

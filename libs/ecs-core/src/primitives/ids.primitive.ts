@@ -138,6 +138,67 @@ export const AppliedDiscountId = idCompanion('AppliedDiscountId');
 export type OperationId = Brand<string, 'OperationId'>;
 export const OperationId = idCompanion('OperationId');
 
+/** The shape every client-minted idempotency key holds: a UUID-ish charset, a bounded length. */
+const CLIENT_OPERATION_ID = /^[A-Za-z0-9_-]{16,64}$/;
+/** The shape of a guest's key on the wire: the cart's seat key, bounded. */
+const GUEST_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * A client-minted idempotency key (4A-12) — a commit's and a move's
+ * `attemptId`, a staff intent's `operationId`, a streak publish's
+ * `requestId`: a UUID-ish charset and a bounded length, because the server
+ * uses it as a document id (a commit) and inside audit keys. ONE definition
+ * for the client that mints (`ID_PORTS.nextId` — a UUID passes) and the
+ * server that checks, so the two cannot drift (was the legacy
+ * `isClientOperationId`).
+ */
+export type ClientOperationId = Brand<string, 'ClientOperationId'>;
+export const ClientOperationId = {
+  /** Foreign input: `[A-Za-z0-9_-]`, 16 to 64 characters. */
+  parse(raw: string): Result<ClientOperationId, PrimitiveError> {
+    return CLIENT_OPERATION_ID.test(raw)
+      ? Result.ok(raw as ClientOperationId)
+      : Result.err(
+          PrimitiveError.of(
+            PrimitiveErrorCode.ClientOperationIdInvalid,
+            raw,
+            'ClientOperationId',
+          ),
+        );
+  },
+  /** The guard — anything, a string of the key's shape or not. */
+  is(raw: unknown): raw is ClientOperationId {
+    return typeof raw === 'string' && CLIENT_OPERATION_ID.test(raw);
+  },
+} as const;
+
+/**
+ * A guest's key on the wire (4A-12) — the cart's seat key (`guest-3`), so
+ * two DIFFERENT guests under one label can be told apart. Charset and
+ * length are bounded because the server reads it from an untrusted payload;
+ * a key that does not fit is dropped there (`null`), never refused (was the
+ * legacy `isGuestKey`).
+ */
+export type GuestKey = Brand<string, 'GuestKey'>;
+export const GuestKey = {
+  /** Foreign input: `[A-Za-z0-9_-]`, 1 to 64 characters. */
+  parse(raw: string): Result<GuestKey, PrimitiveError> {
+    return GUEST_KEY.test(raw)
+      ? Result.ok(raw as GuestKey)
+      : Result.err(
+          PrimitiveError.of(
+            PrimitiveErrorCode.GuestKeyInvalid,
+            raw,
+            'GuestKey',
+          ),
+        );
+  },
+  /** The guard — anything, a string of the key's shape or not. */
+  is(raw: unknown): raw is GuestKey {
+    return typeof raw === 'string' && GUEST_KEY.test(raw);
+  },
+} as const;
+
 /* ── Identity (D29) ─────────────────────────────────────────────────────── */
 
 /**

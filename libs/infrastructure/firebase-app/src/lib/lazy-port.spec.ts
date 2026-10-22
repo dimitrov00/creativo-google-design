@@ -1,7 +1,6 @@
 import {
   DestroyRef,
   ErrorHandler,
-  Injectable,
   InjectionToken,
   inject,
 } from '@angular/core';
@@ -17,107 +16,102 @@ import {
   vi,
 } from 'vitest';
 import {
-  LazyAdapterModule,
-  LazyAdapterScope,
-  LazyPortLoadError,
+  type FactoryPicker,
+  LAZY_PORT_LOAD_ERROR,
+  type LazyAdapterModule,
+  lazyAdapterScope,
   provideLazyPort,
 } from './lazy-port';
 import { DATA_RETRY_DELAYS_MS, retryDelayMs } from './retry-schedule';
 
 // ── A port in the house shape (a Result-like answer), and a second one ──
 
+/** What `onLoadError` was handed: the scope's name and the real cause. */
+type LoadFailure = { readonly scopeName: string; readonly cause: unknown };
+
 type Answer<T> =
   | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: Error };
+  | { readonly ok: false; readonly error: LoadFailure };
 
-interface GreeterPort {
-  greet(name: string): Promise<Answer<string>>;
-  watch(name: string): Observable<Answer<string>>;
-}
+type Greeter = {
+  readonly greet: (name: string) => Promise<Answer<string>>;
+  readonly watch: (name: string) => Observable<Answer<string>>;
+};
 
-interface CounterPort {
-  count(): Promise<Answer<number>>;
-}
+type Counter = {
+  readonly count: () => Promise<Answer<number>>;
+};
 
-const GREETER = new InjectionToken<GreeterPort>('Greeter');
-const COUNTER = new InjectionToken<CounterPort>('Counter');
+const GREETER = new InjectionToken<Greeter>('Greeter');
+const COUNTER = new InjectionToken<Counter>('Counter');
 
 /** Stands in for the Firestore instance: created by the scope, once. */
 const SDK = new InjectionToken<{ readonly id: number }>('Sdk');
 /** Stands in for the second SDK instance (Storage); it can be made to throw. */
 const CACHE = new InjectionToken<{ readonly ready: true }>('Cache');
-/** A root service the adapters also inject (Auth, the clock, …). */
+/** A root service the bundles also reach (Auth, the clock, …). */
 const SALUTATION = new InjectionToken<string>('Salutation');
 
 /** What `initializeFirestore` throwing looks like to the scope. */
 const cacheError = new Error('the cache could not be initialised');
-/** What an adapter constructor throwing looks like to the scope. */
-const constructorError = new Error('adapter constructor failed');
 
 let sdkCreated = 0;
 let sdkDestroyed = 0;
 let cacheFailuresLeft = 0;
-let greeterCreated = 0;
+let greeterBuilt = 0;
 let greeterDestroyed = 0;
-let counterCreated = 0;
+let counterBuilt = 0;
 let watchSubscribed = 0;
 let watchTornDown = 0;
-let failGreeterCreation = false;
 let watchSource: () => Observable<Answer<string>>;
 
-@Injectable()
-class FakeGreeterAdapter implements GreeterPort {
-  private readonly sdk = inject(SDK);
-  private readonly cache = inject(CACHE);
-  private readonly salutation = inject(SALUTATION);
-
-  constructor() {
-    // Registered before the throw: a half-built adapter's injector must
-    // still be torn down.
-    inject(DestroyRef).onDestroy(() => (greeterDestroyed += 1));
-    if (failGreeterCreation) throw constructorError;
-    greeterCreated += 1;
-  }
-
-  // Reads `this`: the proxy must call it ON the adapter.
-  greet(name: string): Promise<Answer<string>> {
-    return Promise.resolve({
-      ok: this.cache.ready,
-      value: `${this.salutation}, ${name} (sdk ${this.sdk.id})`,
-    });
-  }
-
-  watch(): Observable<Answer<string>> {
-    return watchSource();
-  }
+/** The greeter's `(sdk handles) => bundle` closure export — no class, no `this`. */
+function greeterPorts(
+  sdk: { readonly id: number },
+  cache: { readonly ready: true },
+  salutation: string,
+): Greeter {
+  greeterBuilt += 1;
+  return {
+    greet: (name) =>
+      Promise.resolve({
+        ok: cache.ready,
+        value: `${salutation}, ${name} (sdk ${sdk.id})`,
+      }),
+    watch: () => watchSource(),
+  };
 }
 
-@Injectable()
-class FakeCounterAdapter implements CounterPort {
-  private readonly sdk = inject(SDK);
-
-  constructor() {
-    counterCreated += 1;
-  }
-
-  count(): Promise<Answer<number>> {
-    return Promise.resolve({ ok: true, value: this.sdk.id });
-  }
+function counterPorts(sdk: { readonly id: number }): Counter {
+  counterBuilt += 1;
+  return { count: () => Promise.resolve({ ok: true, value: sdk.id }) };
 }
 
-/** A port with a synchronous method — which no lazy binding may accept. */
-class SyncAdapter {
-  now(): number {
-    return 0;
-  }
+/** A port with a synchronous member — which no lazy binding may accept. */
+function syncPorts(): { readonly now: () => number } {
+  return { now: () => 0 };
 }
 
-const fakeModule = { FakeGreeterAdapter, FakeCounterAdapter, SyncAdapter };
+const fakeModule = { greeterPorts, counterPorts, syncPorts };
 type FakeModule = typeof fakeModule;
 
-const unavailable = (error: LazyPortLoadError): Answer<never> => ({
+/** The rows as a composition root writes them: the SDK by `injector.get`, a root service by `inject()`. */
+const greeterFactory: FactoryPicker<FakeModule, Greeter> =
+  (m) => (injector) => {
+    // Registered on the scope's DestroyRef: torn down with the application.
+    inject(DestroyRef).onDestroy(() => (greeterDestroyed += 1));
+    return m.greeterPorts(
+      injector.get(SDK),
+      injector.get(CACHE),
+      inject(SALUTATION),
+    );
+  };
+const counterFactory: FactoryPicker<FakeModule, Counter> = (m) => (injector) =>
+  m.counterPorts(injector.get(SDK));
+
+const unavailable = (scopeName: string, cause: unknown): Answer<never> => ({
   ok: false,
-  error,
+  error: { scopeName, cause },
 });
 
 /** What a scope's loader resolves to: the module, the SDK providers, both instances. */
@@ -178,26 +172,27 @@ const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 let errorHandler: { handleError: Mock<(error: unknown) => void> };
 
 /** Every error reported to the `ErrorHandler`, in order. */
-const reported = () => errorHandler.handleError.mock.calls.map(([e]) => e);
+const reported = () =>
+  errorHandler.handleError.mock.calls.map(([e]) => e as Error);
 
 /** The original cause inside a failure answer (undefined for a success). */
 const causeOf = (answer: Answer<unknown>): unknown =>
-  answer.ok ? undefined : (answer.error as LazyPortLoadError).cause;
+  answer.ok ? undefined : answer.error.cause;
 
 function setUp(load: Loader) {
-  const scope = new LazyAdapterScope<FakeModule>('test-data', load);
+  const scope = lazyAdapterScope<FakeModule>('test-data', load);
   errorHandler = { handleError: vi.fn() };
   TestBed.configureTestingModule({
     providers: [
       { provide: SALUTATION, useValue: 'Здравей' },
       { provide: ErrorHandler, useValue: errorHandler },
       provideLazyPort(GREETER, scope, {
-        adapter: (m) => m.FakeGreeterAdapter,
+        factory: greeterFactory,
         methods: { greet: 'promise', watch: 'observable' },
         onLoadError: unavailable,
       }),
       provideLazyPort(COUNTER, scope, {
-        adapter: (m) => m.FakeCounterAdapter,
+        factory: counterFactory,
         methods: { count: 'promise' },
         onLoadError: unavailable,
       }),
@@ -214,12 +209,11 @@ beforeEach(() => {
   sdkCreated = 0;
   sdkDestroyed = 0;
   cacheFailuresLeft = 0;
-  greeterCreated = 0;
+  greeterBuilt = 0;
   greeterDestroyed = 0;
-  counterCreated = 0;
+  counterBuilt = 0;
   watchSubscribed = 0;
   watchTornDown = 0;
-  failGreeterCreation = false;
   watchSource = () =>
     new Observable<Answer<string>>((subscriber) => {
       watchSubscribed += 1;
@@ -244,7 +238,7 @@ describe('provideLazyPort', () => {
     expect(stream).toBeInstanceOf(Observable);
     expect(gate.load).not.toHaveBeenCalled();
     expect(sdkCreated).toBe(0);
-    expect(greeterCreated).toBe(0);
+    expect(greeterBuilt).toBe(0);
   });
 
   it('lists every port bound to its scope', () => {
@@ -253,7 +247,18 @@ describe('provideLazyPort', () => {
     expect(TestBed.inject(scope.ports)).toEqual([GREETER, COUNTER]);
   });
 
-  it('imports once and creates the SDK and each adapter once, however many calls and ports race', async () => {
+  it('is a plain record, its loader read at call time — a spec may watch it', async () => {
+    const { scope, greeter } = setUp(() => Promise.resolve(loadedModule()));
+    const watched = vi.spyOn(scope, 'load');
+
+    await greeter.greet('Ана');
+
+    expect(Object.getPrototypeOf(scope)).toBe(Object.prototype);
+    expect(scope.name).toBe('test-data');
+    expect(watched).toHaveBeenCalledTimes(1);
+  });
+
+  it('imports once and creates the SDK and each bundle once, however many calls and ports race', async () => {
     const gate = gatedLoader();
     const { greeter, counter } = setUp(gate.load);
 
@@ -284,23 +289,23 @@ describe('provideLazyPort', () => {
     await counter.count();
     expect(gate.load).toHaveBeenCalledTimes(1);
     expect(sdkCreated).toBe(1);
-    expect(greeterCreated).toBe(1);
-    expect(counterCreated).toBe(1);
+    expect(greeterBuilt).toBe(1);
+    expect(counterBuilt).toBe(1);
     subscription.unsubscribe();
   });
 
-  it('creates the scope’s instances as it loads, before any adapter asks for one', async () => {
+  it('creates the scope’s instances as it loads, before any bundle reaches one', async () => {
     const { counter } = setUp(() => Promise.resolve(loadedModule()));
     cacheFailuresLeft = 1;
 
-    // The counter never injects CACHE, yet its failure is the scope's.
+    // The counter never reaches CACHE, yet its failure is the scope's.
     const answer = await counter.count();
 
     expect(answer.ok).toBe(false);
-    expect(counterCreated).toBe(0);
+    expect(counterBuilt).toBe(0);
   });
 
-  it('answers a promise method with the adapter’s answer, called on the adapter', async () => {
+  it('answers a promise method with the bundle’s answer, the arguments forwarded', async () => {
     const { greeter } = setUp(() => Promise.resolve(loadedModule()));
 
     await expect(greeter.greet('Ана')).resolves.toEqual({
@@ -336,7 +341,7 @@ describe('provideLazyPort', () => {
     expect(watchTornDown).toBe(1);
   });
 
-  it('tears the adapter stream down when the consumer leaves on its first, synchronous value', async () => {
+  it('tears the bundle’s stream down when the consumer leaves on its first, synchronous value', async () => {
     const { greeter } = setUp(() => Promise.resolve(loadedModule()));
     const seen: Answer<string>[] = [];
 
@@ -351,7 +356,7 @@ describe('provideLazyPort', () => {
     expect(watchTornDown).toBe(1);
   });
 
-  it('never reaches the adapter for a stream unsubscribed before the load lands', async () => {
+  it('never reaches the bundle for a stream unsubscribed before the load lands', async () => {
     const gate = gatedLoader();
     const { greeter } = setUp(gate.load);
     const next = vi.fn();
@@ -393,11 +398,11 @@ describe('provideLazyPort', () => {
 
     const failed = await greeter.greet('Ана');
 
-    expect(failed.ok).toBe(false);
-    const error = failed.ok ? null : failed.error;
-    expect(error).toBeInstanceOf(LazyPortLoadError);
-    expect((error as LazyPortLoadError).cause).toBe(chunkError);
-    expect((error as LazyPortLoadError).scope).toBe('test-data');
+    // `onLoadError` is handed scalars: the scope's name and the real cause.
+    expect(failed).toEqual({
+      ok: false,
+      error: { scopeName: 'test-data', cause: chunkError },
+    });
     expect(errorHandler.handleError).toHaveBeenCalledTimes(1);
 
     await expect(greeter.greet('Ана')).resolves.toEqual({
@@ -407,14 +412,38 @@ describe('provideLazyPort', () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  it('reports a plain Error named LazyPortLoadError, today’s message, the real cause beside it', async () => {
+    const chunkError = new Error('Failed to fetch dynamically imported module');
+    const { greeter } = setUp(() => Promise.reject(chunkError));
+
+    await greeter.greet('Ана');
+
+    const [report] = reported();
+    expect(report).toBeInstanceOf(Error);
+    expect(Object.getPrototypeOf(report)).toBe(Error.prototype);
+    expect(report?.name).toBe(LAZY_PORT_LOAD_ERROR);
+    expect(report?.name).toBe('LazyPortLoadError');
+    expect(report?.message).toBe(
+      'test-data: the lazily loaded adapters could not be loaded',
+    );
+    expect(report?.cause).toBe(chunkError);
+    expect(String(report)).toBe(
+      'LazyPortLoadError: test-data: the lazily loaded adapters could not be loaded',
+    );
+  });
+
   it('answers a loader that throws synchronously like any failed load', async () => {
+    const refused = new Error('import() refused');
     const { greeter } = setUp(() => {
-      throw new Error('import() refused');
+      throw refused;
     });
 
     const answer = await greeter.greet('Ана');
 
-    expect(answer).toEqual({ ok: false, error: expect.any(LazyPortLoadError) });
+    expect(answer).toEqual({
+      ok: false,
+      error: { scopeName: 'test-data', cause: refused },
+    });
     expect(errorHandler.handleError).toHaveBeenCalledTimes(1);
   });
 
@@ -433,11 +462,12 @@ describe('provideLazyPort', () => {
     }
 
     expect(load).toHaveBeenCalledTimes(3);
-    expect(reported()).toEqual([expect.any(LazyPortLoadError)]);
+    expect(reported()).toHaveLength(1);
+    expect(reported()[0]?.name).toBe(LAZY_PORT_LOAD_ERROR);
     expect((await greeter.greet('Ана')).ok).toBe(true);
   });
 
-  it('passes the adapter’s own stream errors through untouched', async () => {
+  it('passes the bundle’s own stream errors through untouched', async () => {
     const boom = new Error('listener crashed');
     watchSource = () => throwError(() => boom);
     const { greeter } = setUp(() => Promise.resolve(loadedModule()));
@@ -451,7 +481,7 @@ describe('provideLazyPort', () => {
     expect(error).toHaveBeenCalledWith(boom);
   });
 
-  it('destroys the scope’s injectors, the adapters’ included, with the application', async () => {
+  it('destroys the scope’s injector, and what a bundle registered on it, with the application', async () => {
     const { greeter } = setUp(() => Promise.resolve(loadedModule()));
     await greeter.greet('Ана');
     expect(sdkDestroyed).toBe(0);
@@ -466,30 +496,30 @@ describe('provideLazyPort', () => {
   it('refuses unsafe bindings at compile time', () => {
     // Never executed: `nx typecheck` proves each line is a compile error
     // (an unused `@ts-expect-error` fails the typecheck).
-    const scope = new LazyAdapterScope<FakeModule>('types', () =>
+    const scope = lazyAdapterScope<FakeModule>('types', () =>
       Promise.resolve({ module: fakeModule, providers: [], instances: [] }),
     );
     const bind = () => {
       provideLazyPort(GREETER, scope, {
-        adapter: (m) => m.FakeGreeterAdapter,
+        factory: greeterFactory,
         // @ts-expect-error — a method left unclassified
         methods: { greet: 'promise' },
         onLoadError: unavailable,
       });
       provideLazyPort(GREETER, scope, {
-        adapter: (m) => m.FakeGreeterAdapter,
+        factory: greeterFactory,
         // @ts-expect-error — a stream classified as a promise
         methods: { greet: 'promise', watch: 'promise' },
         onLoadError: unavailable,
       });
       provideLazyPort(GREETER, scope, {
-        adapter: (m) => m.FakeGreeterAdapter,
+        factory: greeterFactory,
         // @ts-expect-error — a failure answer the port cannot give
         methods: { greet: 'promise', watch: 'observable' },
         onLoadError: () => 'offline',
       });
       provideLazyPort(GREETER, scope, {
-        adapter: (m) => m.FakeGreeterAdapter,
+        factory: greeterFactory,
         // @ts-expect-error — a handler that throws is the rejection again
         methods: { greet: 'promise', watch: 'observable' },
         onLoadError: () => {
@@ -497,14 +527,14 @@ describe('provideLazyPort', () => {
         },
       });
       provideLazyPort(GREETER, scope, {
-        // @ts-expect-error — the adapter does not implement the port
-        adapter: (m) => m.FakeCounterAdapter,
+        // @ts-expect-error — the bundle does not implement the port
+        factory: counterFactory,
         methods: { greet: 'promise', watch: 'observable' },
         onLoadError: unavailable,
       });
-      const SYNC = new InjectionToken<{ now(): number }>('Sync');
+      const SYNC = new InjectionToken<{ readonly now: () => number }>('Sync');
       provideLazyPort(SYNC, scope, {
-        adapter: (m) => m.SyncAdapter,
+        factory: (m) => () => m.syncPorts(),
         // @ts-expect-error — a synchronous method cannot be deferred
         methods: { now: 'promise' },
         onLoadError: unavailable,
@@ -530,8 +560,9 @@ describe('provideLazyPort — a creation that throws', () => {
 
     expect(failed.ok).toBe(false);
     expect(causeOf(failed)).toBe(cacheError);
-    expect(reported()).toEqual([expect.any(LazyPortLoadError)]);
-    expect((reported()[0] as LazyPortLoadError).cause).toBe(cacheError);
+    expect(reported()).toHaveLength(1);
+    expect(reported()[0]?.name).toBe(LAZY_PORT_LOAD_ERROR);
+    expect(reported()[0]?.cause).toBe(cacheError);
     // The instance created before the throw went with its injector.
     expect(sdkCreated).toBe(1);
     expect(sdkDestroyed).toBe(1);
@@ -544,34 +575,8 @@ describe('provideLazyPort — a creation that throws', () => {
     expect(reported()).toHaveLength(1);
   });
 
-  it('an adapter constructor that throws: reports the real cause once, keeps the scope, creates the adapter afresh next call', async () => {
-    failGreeterCreation = true;
-    const load = vi.fn<Loader>(() => Promise.resolve(loadedModule()));
-    const { greeter, counter } = setUp(load);
-
-    const failed = await greeter.greet('Ана');
-
-    expect(failed.ok).toBe(false);
-    expect(reported()).toEqual([expect.any(LazyPortLoadError)]);
-    expect((reported()[0] as LazyPortLoadError).cause).toBe(constructorError);
-    // Its half-built injector is gone …
-    expect(greeterDestroyed).toBe(1);
-    // … but the scope loaded fine: the other port answers on the same SDK.
-    await expect(counter.count()).resolves.toEqual({ ok: true, value: 1 });
-
-    failGreeterCreation = false;
-    await expect(greeter.greet('Ана')).resolves.toEqual({
-      ok: true,
-      value: 'Здравей, Ана (sdk 1)',
-    });
-    expect(load).toHaveBeenCalledTimes(1);
-    expect(sdkCreated).toBe(1);
-    expect(sdkDestroyed).toBe(0);
-    expect(reported()).toHaveLength(1);
-  });
-
-  it('answers a creation that keeps throwing with its real cause every time — never NG0200', async () => {
-    failGreeterCreation = true;
+  it('a scope instance that keeps throwing: answered with its real cause every time — never NG0200', async () => {
+    cacheFailuresLeft = 3;
     const { greeter } = setUp(() => Promise.resolve(loadedModule()));
 
     const answers = [
@@ -582,12 +587,10 @@ describe('provideLazyPort — a creation that throws', () => {
 
     for (const answer of answers) {
       expect(answer.ok).toBe(false);
-      expect(causeOf(answer)).toBe(constructorError);
+      expect(causeOf(answer)).toBe(cacheError);
     }
     expect(reported()).toHaveLength(1);
-    expect(String((reported()[0] as LazyPortLoadError).cause)).not.toMatch(
-      /NG0200/,
-    );
+    expect(String(reported()[0]?.cause)).not.toMatch(/NG0200/);
   });
 });
 
@@ -601,7 +604,7 @@ describe('provideLazyPort — a stream whose load failed', () => {
   /** Lets every settled promise run, without moving the clock. */
   const settle = () => vi.advanceTimersByTimeAsync(0);
 
-  it('emits the failure answer, retries on the backoff schedule, then forwards the adapter stream', async () => {
+  it('emits the failure answer, retries on the backoff schedule, then forwards the bundle’s stream', async () => {
     const chunkError = new Error('Failed to fetch dynamically imported module');
     const load = vi
       .fn<Loader>()
@@ -622,7 +625,7 @@ describe('provideLazyPort — a stream whose load failed', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(next).toHaveBeenLastCalledWith({
       ok: false,
-      error: expect.any(LazyPortLoadError),
+      error: { scopeName: 'test-data', cause: chunkError },
     });
     expect(load).toHaveBeenCalledTimes(1);
 
@@ -678,14 +681,15 @@ describe('provideLazyPort — a stream whose load failed', () => {
   });
 
   it('stops retrying when the consumer leaves on the failure answer itself', async () => {
-    const load = vi.fn<Loader>().mockRejectedValue(new Error('offline'));
+    const offline = new Error('offline');
+    const load = vi.fn<Loader>().mockRejectedValue(offline);
     const { greeter } = setUp(load);
 
     const answer = firstValueFrom(greeter.watch('Ана'));
     await settle();
     await expect(answer).resolves.toEqual({
       ok: false,
-      error: expect.any(LazyPortLoadError),
+      error: { scopeName: 'test-data', cause: offline },
     });
     await vi.advanceTimersByTimeAsync(60_000);
 
@@ -707,26 +711,6 @@ describe('provideLazyPort — a stream whose load failed', () => {
     expect(complete).toHaveBeenCalledTimes(1);
     expect(reported()).toHaveLength(1);
     expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('retries an adapter creation that threw too, without importing again', async () => {
-    failGreeterCreation = true;
-    const load = vi.fn<Loader>(() => Promise.resolve(loadedModule()));
-    const { greeter } = setUp(load);
-    const next = vi.fn();
-
-    const subscription = greeter.watch('Ана').subscribe({ next });
-    await settle();
-    expect(next).toHaveBeenCalledTimes(1);
-    expect((reported()[0] as LazyPortLoadError).cause).toBe(constructorError);
-
-    failGreeterCreation = false;
-    await vi.advanceTimersByTimeAsync(firstDelay);
-
-    expect(next).toHaveBeenLastCalledWith({ ok: true, value: 'first' });
-    expect(load).toHaveBeenCalledTimes(1);
-    expect(reported()).toHaveLength(1);
-    subscription.unsubscribe();
   });
 
   it('leaves a promise method failing fast: the caller retries, not the port', async () => {

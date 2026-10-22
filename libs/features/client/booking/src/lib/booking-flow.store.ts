@@ -1,118 +1,104 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { firstValueFrom, take } from 'rxjs';
 import {
-  BOOKING_DRAFT_STORE,
-  BOOKING_FLOW_STEPS,
-  BOOKING_GATEWAY,
-  BarberPref,
-  BookingCart,
-  BookingConfirmation,
-  BookingDraft,
-  type BookingDraftChairTime,
-  type BookingDraftMove,
-  type BookingDraftRider,
-  type BookingDraftSource,
-  BookingGatewayError,
-  BookingFlowError,
-  BookingFlowEvent,
-  BookingFlowState,
-  BookingFlowStep,
-  BookingParty,
-  CalendarDay,
-  CartLineId,
-  FlexibleWhen,
-  GuestId,
-  MAX_FLEXIBLE_DAYS,
-  MAX_PARTY_SIZE,
-  NewCartLine,
-  type CommitBookingSeatRequest,
-  type ReconstituteBookingCartProps,
-  type Result,
-  ScheduleSelection,
-  SeatKey,
-  WAITLIST_GATEWAY,
-  WaitlistGatewayError,
-  type WaitlistedSummary,
-  advanceBookingFlow,
-  fail,
-  initialBookingFlowState,
-  ok,
-  seatKeyValue,
-} from '@creativo/application/booking';
-import { LocationId, ServiceVariantId } from '@creativo/application/catalog';
-import type { BookingContactProps } from '@creativo/application/booking';
-import { CLOCK } from '@creativo/application/shared';
-import { APPOINTMENT_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+  APPOINTMENT_READ_PORTS,
+  BOOKING_DRAFT_PORTS,
+  GATEWAY_PORTS,
+  ID_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { Callables } from '@core/ports';
 import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
-  AppointmentId as AppointmentKey,
-  BarberId as BarberKey,
-  CartLineId as LineKey,
-  DurationMinutes,
-  EndMinute,
-  GuestId as GuestKey,
+  type BookingCall,
+  type BookingConfirmation,
+  BookingCart,
+  BookingContact,
+  BookingDraft,
+  BookingDraftOrigin,
+  BookingFlowState,
+  BookingFlowStep,
+  BookingPolicy,
+  type ChairTime,
+  FlexibleWhen,
+  type MoveRider,
+  MoveRefusal,
+  MoveRefusalReason,
+  Party,
+  type PartyMember,
+  Placement,
+  type ScheduleSelection,
+  type WaitlistedSummary,
+} from '@core/components';
+import {
+  type AppointmentId,
+  type BarberId,
+  type BookingFlowError,
+  type CartLineId,
+  ClientOperationId,
+  type GuestId,
   LocalDate,
-  LocationId as LocationKey,
-  MinuteCount,
-  MinuteDelta,
-  MinuteOfDay,
-  SeatKeyText,
-  ServiceId as ServiceKey,
-  ServiceVariantId as VariantKey,
-  UserId as UserKey,
-  UtcEpochMs,
+  type LocationId,
+  type MinuteOfDay,
+  PipelineError,
+  PipelineErrorCode,
+  Result,
+  type SeatKeyText,
+  type ServiceVariantId,
+  type UserId,
   defect,
 } from '@core/primitives';
 import {
-  type BookingCart as CartData,
-  BookingFlowStep as FlowStep,
-  type BarberPreference,
-  DayWindows as DayWindowsData,
-  FlexibleWhen as WhenData,
-  MinuteRange,
-  type Party as PartyData,
-  PartyMember as MemberData,
-  PartyRole,
-  type SeatAssignment,
-  SeatLabel as LabelData,
-  TimeCoordinate,
-} from '@core/components';
-import {
   BookingCartSystem,
+  type BookingFlowEvent,
+  BookingFlowEventKind,
   type BookingFlowLimits,
   BookingFlowSystem,
   type CartRider,
-  CommitSubjectRole,
   GuestLabelSystem,
-  type MoveRider,
   MoveSystem,
   PrefillCompanions,
-  ZonedTimeSystem,
 } from '@core/systems';
 
+/** What the flow can be refused with: the machine's own word, or a call's. */
+export type BookingFlowFailure = BookingFlowError | PipelineError;
+
+/** The wizard's two policy numbers — the booking policy's own defaults. */
+const FLOW_LIMITS: BookingFlowLimits = BookingPolicy.DEFAULT;
+
+/** Before every day a draft can name — prunes nothing. */
+const EARLIEST_DAY: LocalDate =
+  localDateOrNull('0001-01-01') ?? defect('unreachable: the earliest day');
+
+const NO_RIDERS: readonly MoveRider[] = [];
+const NO_CHAIRS: readonly ChairTime[] = [];
+
 /**
- * Wraps the pure `advanceBookingFlow` machine (blueprint §5.3) with the two
- * things the machine deliberately doesn't model: draft persistence and the
- * `?step=` history contract.
+ * Holds the booking wizard's state (`BookingFlowState`) and steps it with
+ * `BookingFlowSystem` — plus the two things the machine deliberately
+ * doesn't model: draft persistence (`BOOKING_DRAFT_PORTS`, the flat
+ * `BookingDraft`) and the server round trips (`GATEWAY_PORTS`, the
+ * `BookingCall` / `WaitlistCall` wire).
  *
  * One instance per `/book` visit — provided component-scoped on
  * `ClientBooking`, not root, so re-entering the route starts clean unless a
  * draft says otherwise.
  *
- * Translation-free by design, like `AuthFlowStore`: `error()` carries a
- * `DomainError` whose `code` the component resolves through
- * `translateDomainError` at render time, never a display string.
+ * Translation-free by design: `error()` carries a flat error struct whose
+ * `errorCode` the components word at render time (`errors.<errorCode>`),
+ * never a display string. The URL's lowercase step words are the shell's
+ * (`BOOKING_STEP_WORDS`); the store speaks the dictionary.
  */
 @Injectable()
 export class BookingFlowStore {
-  private readonly clock = inject(CLOCK);
-  private readonly draftStore = inject(BOOKING_DRAFT_STORE);
-  private readonly gateway = inject(BOOKING_GATEWAY);
-  private readonly waitlist = inject(WAITLIST_GATEWAY);
+  private readonly drafts = inject(BOOKING_DRAFT_PORTS);
+  private readonly gateway = inject(GATEWAY_PORTS);
+  private readonly ids = inject(ID_PORTS);
   /** The visit being moved, re-read when the flow's copy may be stale. */
   private readonly appointments = inject(APPOINTMENT_READ_PORTS);
 
-  private readonly _state = signal<BookingFlowState>(initialBookingFlowState());
+  private readonly _state = signal<BookingFlowState>(
+    BookingFlowState.initial(Party.anonymous()),
+  );
   readonly state = this._state.asReadonly();
 
   /**
@@ -120,9 +106,7 @@ export class BookingFlowStore {
    * an error that outlives the thing it was about is noise, and this is the
    * only place that can know the difference.
    */
-  private readonly _error = signal<
-    BookingFlowError | BookingGatewayError | WaitlistGatewayError | null
-  >(null);
+  private readonly _error = signal<BookingFlowFailure | null>(null);
   readonly error = this._error.asReadonly();
 
   /**
@@ -135,29 +119,32 @@ export class BookingFlowStore {
    * makes the `slot_unavailable` bounce land somewhere useful: the day stays,
    * only the time it can no longer honour is cleared.
    */
-  private readonly _selectedDayKey = signal<string | null>(null);
-  readonly selectedDayKey = this._selectedDayKey.asReadonly();
+  private readonly _selectedLocalDate = signal<LocalDate | null>(null);
+  readonly selectedLocalDate = this._selectedLocalDate.asReadonly();
 
-  private readonly _selectedStartMs = signal<number | null>(null);
-  readonly selectedStartMs = this._selectedStartMs.asReadonly();
+  /** The chosen start, a minute of the chosen shop day. */
+  private readonly _selectedStartMinutes = signal<MinuteOfDay | null>(null);
+  readonly selectedStartMinutes = this._selectedStartMinutes.asReadonly();
 
   /**
-   * Which shop's offer was tapped, as a `LocationId.value`.
+   * Which shop's offer was tapped.
    *
    * A start alone is ambiguous under "any shop": two shops can be free at
    * 14:00, and they are different appointments. The chip carries both.
    */
-  private readonly _selectedShopKey = signal<string | null>(null);
-  readonly selectedShopKey = this._selectedShopKey.asReadonly();
+  private readonly _selectedLocationId = signal<LocationId | null>(null);
+  readonly selectedLocationId = this._selectedLocationId.asReadonly();
 
   /**
-   * The shop zone every stored day key is expressed in.
+   * A restored day and declaration not yet judged against TODAY.
    *
-   * Held here rather than re-derived because the store has no catalog: a day
-   * key without its zone cannot be compared to "today" on restore, which is
-   * how a stale day survived into a calendar that no longer renders it.
+   * The draft holds no zone (Law 7.2: the zone is the location's), so a
+   * restore cannot tell on its own whether a stored day has gone by. The
+   * schedule step — the one screen that shows the day, and the one that
+   * knows the shop's "today" — settles it once it has a clock reading
+   * ({@link settleLapsedDays}).
    */
-  private readonly _zone = signal<string | null>(null);
+  private lapsedUnsettled = false;
 
   private readonly _pending = signal(false);
   /** A commit round-trip is in flight — presentational, not in the state union. */
@@ -165,201 +152,232 @@ export class BookingFlowStore {
 
   // ── Derived view of the machine ────────────────────────────────────
 
-  readonly step = computed<BookingFlowStep>(() => this._state().kind);
+  readonly step = computed<BookingFlowStep>(
+    () => this._state().bookingFlowStep,
+  );
 
   readonly confirmation = computed<BookingConfirmation | null>(() => {
     const state = this._state();
-    return state.kind === 'confirmed' ? state.confirmation : null;
+    return state.bookingFlowStep === BookingFlowStep.Confirmed
+      ? state.confirmation
+      : null;
   });
 
   readonly selection = computed<ScheduleSelection | null>(() => {
     const state = this._state();
-    if (state.kind === 'review') return state.selection;
-    if (state.kind === 'confirmed') return state.confirmation.selection;
+    if (state.bookingFlowStep === BookingFlowStep.Review) {
+      return state.selection;
+    }
+    if (state.bookingFlowStep === BookingFlowStep.Confirmed) {
+      return state.confirmation.selection;
+    }
     return null;
   });
 
   /** True when the last failure is one a fresh grid can fix. */
   readonly slotTaken = computed(() => {
     const error = this._error();
-    return error instanceof BookingGatewayError && error.isSlotTaken();
+    return (
+      error !== null &&
+      PipelineError.isPipelineError(error) &&
+      error.errorCode === PipelineErrorCode.SlotUnavailable
+    );
   });
 
-  /** The shop the client chose, or `null` for "any shop". */
+  /** The shop the client chose (`ShopLocation.id`), or `null` for "any shop". */
   readonly locationId = computed<LocationId | null>(() => {
     const state = this._state();
-    if (state.kind === 'confirmed')
-      return state.confirmation.selection.locationId;
-    if (state.kind === 'waitlisted') return state.summary.locationId;
-    if (state.kind === 'review') return state.selection.locationId;
-    return state.locationId;
-  });
-
-  /** {@link locationId} as the catalogue names the shop (`ShopLocation.id`). */
-  readonly shopId = computed<LocationKey | null>(() => {
-    const locationId = this.locationId();
-    return locationId === null ? null : LocationKey.of(locationId.value);
+    switch (state.bookingFlowStep) {
+      case BookingFlowStep.Confirmed:
+        return state.confirmation.selection.locationId;
+      case BookingFlowStep.Waitlisted:
+        return state.summary.locationId;
+      case BookingFlowStep.Review:
+        return state.selection.locationId;
+      default:
+        return state.locationId;
+    }
   });
 
   // Both terminal states hold their party and cart INSIDE their receipt, so
   // the screens that render them read the same signals every other step does
   // rather than reaching into a state-specific shape.
-  readonly party = computed<BookingParty | null>(() => {
+  readonly party = computed<Party | null>(() => {
     const state = this._state();
-    if (state.kind === 'confirmed') return null;
-    if (state.kind === 'waitlisted') return state.summary.party;
+    if (state.bookingFlowStep === BookingFlowStep.Confirmed) return null;
+    if (state.bookingFlowStep === BookingFlowStep.Waitlisted) {
+      return state.summary.party;
+    }
     return state.party;
   });
 
+  /** The bag — what every step hands the catalogue and availability systems. */
   readonly cart = computed<BookingCart | null>(() => {
     const state = this._state();
-    if (state.kind === 'confirmed') return null;
-    if (state.kind === 'waitlisted') return state.summary.cart;
+    if (state.bookingFlowStep === BookingFlowStep.Confirmed) return null;
+    if (state.bookingFlowStep === BookingFlowStep.Waitlisted) {
+      return state.summary.cart;
+    }
     return state.cart;
   });
 
-  /**
-   * The bag as the cart math reads it (`BookingCart` of `@core/components`)
-   * — what every step hands the catalogue and availability systems, built
-   * once here rather than once per step.
-   */
-  readonly cartData = computed<CartData | null>(() => {
-    const cart = this.cart();
-    return cart === null ? null : toCartData(cart);
+  readonly guests = computed<readonly PartyMember.Guest[]>(() => {
+    const party = this.party();
+    return party === null ? [] : Party.guests(party);
   });
-
-  readonly guests = computed(() => this.party()?.guests ?? []);
 
   /** The booker plus their guests — what "party size" means to a person. */
   readonly partySize = computed(() => this.guests().length + 1);
 
-  readonly maxPartySize = MAX_PARTY_SIZE;
+  readonly maxPartySize = FLOW_LIMITS.maxPartySize;
 
   readonly canAddGuest = computed(() => {
     const party = this.party();
-    return (
-      party === null ||
-      BookingFlowSystem.canAddGuest(toPartyData(party), FLOW_LIMITS)
-    );
+    return party === null || BookingFlowSystem.canAddGuest(party, FLOW_LIMITS);
   });
 
-  readonly isClaimed = computed(() => this.party()?.isClaimed() ?? true);
+  readonly isClaimed = computed(() => {
+    const party = this.party();
+    return party === null || Party.isClaimed(party);
+  });
 
-  readonly lineCount = computed(() => this.cart()?.lineCount() ?? 0);
+  readonly lineCount = computed(() => {
+    const cart = this.cart();
+    return cart === null ? 0 : BookingCart.lineCount(cart);
+  });
 
   /**
    * The flexible declaration, or an empty one everywhere it cannot exist.
    *
    * Empty rather than `null` off the schedule step so no template has to
    * null-check it — `FlexibleWhen.empty()` answers every question a populated
-   * one does, which is the whole reason it is a value object.
+   * one does.
    */
   readonly when = computed<FlexibleWhen>(() => {
     const state = this._state();
-    if (state.kind === 'schedule') return state.when;
-    if (state.kind === 'waitlisted') return state.summary.when;
+    if (state.bookingFlowStep === BookingFlowStep.Schedule) return state.when;
+    if (state.bookingFlowStep === BookingFlowStep.Waitlisted) {
+      return state.summary.when;
+    }
     return FlexibleWhen.empty();
   });
 
   readonly waitlisted = computed<WaitlistedSummary | null>(() => {
     const state = this._state();
-    return state.kind === 'waitlisted' ? state.summary : null;
+    return state.bookingFlowStep === BookingFlowStep.Waitlisted
+      ? state.summary
+      : null;
   });
 
-  readonly totalSteps = BOOKING_FLOW_STEPS.length;
+  readonly totalSteps = BookingFlowState.SPINE.length;
 
   /**
-   * The flow is OVER — `confirmed` or `waitlisted`, the states that are not
-   * on the wizard spine. The machine refuses `back` from here, so the shell
+   * The flow is OVER — confirmed or waitlisted, the states that are not on
+   * the wizard spine. The machine refuses `back` from here, so the shell
    * drops its whole navigation chrome rather than showing controls that
    * cannot do anything.
    */
   readonly isTerminal = computed(() =>
-    BookingFlowSystem.isTerminal(STEP_OF[this.step()]),
+    BookingFlowSystem.isTerminal(this.step()),
   );
 
   /** 1-based position on the wizard spine; terminal states report the end. */
   readonly currentStep = computed(() =>
-    BookingFlowSystem.currentStep(STEP_OF[this.step()]),
+    BookingFlowSystem.currentStep(this.step()),
   );
 
   // Terminal states report step 4 of 4, which used to light this up on the
   // confirmation screen — a back chevron the machine answers with a refusal.
-  readonly canGoBack = computed(() =>
-    BookingFlowSystem.canGoBack(STEP_OF[this.step()]),
-  );
+  readonly canGoBack = computed(() => BookingFlowSystem.canGoBack(this.step()));
 
   // ── Commands ───────────────────────────────────────────────────────
 
   addGuest(label: string): void {
-    this.dispatch({ type: 'add_guest', label });
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.AddGuest,
+      label,
+    });
   }
 
   /**
    * A placeholder name for a guest about to be added: `label(n)` for the
-   * first `n` from `from` that nobody in the party already answers to.
+   * first `n` from `from` that nobody in the party already answers to
+   * (`GuestLabelSystem.firstUnusedLabel`, the one placeholder rule).
    *
    * A guest's label is their identity on the wire — the server counts people
    * by it (`personKey`) — so a fresh «Гост 3» beside a prefilled guest the
    * visit stored as «Гост 3» would merge two people into one.
    */
   unusedGuestLabel(label: (ordinal: number) => string, from = 1): string {
-    return firstUnusedLabel(
-      new Set(this.guests().map((guest) => guest.label.value)),
+    return GuestLabelSystem.firstUnusedLabel(
+      this.guests().map((guest) => guest.guestLabel),
       label,
       from,
     );
   }
 
   removeGuest(guestId: GuestId): void {
-    this.dispatch({ type: 'remove_guest', guestId });
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.RemoveGuest,
+      guestId,
+    });
   }
 
   /**
    * Relabel a guest. Answers whether the party took it — a label another
-   * guest already answers to is refused (`DuplicateGuestLabelError`, held on
-   * {@link error}), and the services step keeps the field open to say so.
+   * guest already answers to is refused
+   * (`SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL`, held on {@link error}), and
+   * the services step keeps the field open to say so.
    */
   renameGuest(guestId: GuestId, label: string): boolean {
-    return this.dispatch({ type: 'rename_guest', guestId, label });
+    return this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.RenameGuest,
+      guestId,
+      label,
+    });
   }
 
-  addLine(seatKey: SeatKey, line: NewCartLine): void {
-    this.dispatch({ type: 'add_line', seatKey, line });
+  addLine(seatKey: SeatKeyText, line: BookingCart.NewLine): void {
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.AddLine,
+      seatKey,
+      line,
+    });
   }
 
-  removeLine(seatKey: SeatKey, lineId: CartLineId): void {
-    this.dispatch({ type: 'remove_line', seatKey, lineId });
+  removeLine(seatKey: SeatKeyText, lineId: CartLineId): void {
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.RemoveLine,
+      seatKey,
+      lineId,
+    });
   }
 
   setLineVariant(
-    seatKey: SeatKey,
+    seatKey: SeatKeyText,
     lineId: CartLineId,
     variantId: ServiceVariantId | null,
   ): void {
-    this.dispatch({ type: 'set_line_variant', seatKey, lineId, variantId });
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.SetLineVariant,
+      seatKey,
+      lineId,
+      variantId,
+    });
   }
 
+  /** Re-point a line to a barber, or back to anyone (`null`). */
   setLineBarber(
-    seatKey: SeatKey,
+    seatKey: SeatKeyText,
     lineId: CartLineId,
-    barberPref: BarberPref,
+    barberId: BarberId | null,
   ): void {
-    this.dispatch({ type: 'set_line_barber', seatKey, lineId, barberPref });
-  }
-
-  /**
-   * {@link selectLocation} by the shop's catalogue id (`ShopLocation.id`) —
-   * the steps read the catalogue's entities, the flow machine (Phase 4)
-   * still holds the kernel's id. `null` is "any shop".
-   */
-  selectShop(locationId: LocationKey | null): void {
-    if (locationId === null) {
-      this.selectLocation(null);
-      return;
-    }
-    const id = LocationId.create(locationId);
-    if (id.isSuccess()) this.selectLocation(id.value);
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.SetLineBarber,
+      seatKey,
+      lineId,
+      barberId,
+    });
   }
 
   /** `null` is the "any shop" answer — a choice, not the absence of one. */
@@ -367,15 +385,21 @@ export class BookingFlowStore {
     // A different shop has different barbers and different hours, so the day
     // and time below it are stale the moment it changes.
     this.clearSchedulePick();
-    this.dispatch({ type: 'select_location', locationId });
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.SelectLocation,
+      locationId,
+    });
   }
 
   selectSchedule(selection: ScheduleSelection): void {
     // A fresh idempotency key per ARMED selection: retries of this attempt
     // reuse it (a lost response replays as success server-side), while a new
     // selection after a bounce is honestly a new attempt.
-    this._attemptId = mintAttemptId();
-    this.dispatch({ type: 'select_schedule', selection });
+    this._attemptId = this.mintAttemptId();
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.SelectSchedule,
+      selection,
+    });
   }
 
   /**
@@ -391,95 +415,97 @@ export class BookingFlowStore {
    * restored draft's days would ride along on a request the user thinks is
    * about the single day in front of them.
    */
-  watchOnly(day: CalendarDay): void {
-    this.dispatch({ type: 'clear_flexible' });
-    this.dispatch({ type: 'toggle_flexible_day', day });
+  watchOnly(localDate: LocalDate): void {
+    this.dispatch({ bookingFlowEventKind: BookingFlowEventKind.ClearFlexible });
+    this.dispatch({
+      bookingFlowEventKind: BookingFlowEventKind.ToggleFlexibleDay,
+      localDate,
+    });
   }
 
-  /**
-   * The chosen day, and the shop zone its bare `YYYY-MM-DD` key means.
-   *
-   * The zone is not decoration: the key alone is ambiguous — the 26th in Sofia
-   * and the 26th in Lisbon are different days — and the draft has to be able
-   * to tell, on restore, whether a stored day has already gone by. Taking it
-   * here rather than guessing at restore time is what makes that check honest.
-   */
-  selectDay(dayKey: string, zone: string): void {
-    // A different day cannot keep the previous day's time.
-    this._selectedStartMs.set(null);
-    this._selectedShopKey.set(null);
-    this._selectedDayKey.set(dayKey);
-    this._zone.set(zone);
+  /** The chosen shop day. A different day cannot keep the previous day's time. */
+  selectDay(localDate: LocalDate): void {
+    this._selectedStartMinutes.set(null);
+    this._selectedLocationId.set(null);
+    this._selectedLocalDate.set(localDate);
   }
 
-  selectStart(startMs: number, shopKey: string): void {
-    this._selectedStartMs.set(startMs);
-    this._selectedShopKey.set(shopKey);
+  selectStart(startMinutes: MinuteOfDay, locationId: LocationId): void {
+    this._selectedStartMinutes.set(startMinutes);
+    this._selectedLocationId.set(locationId);
   }
 
   /** Forget all three — a different shop has different days AND different times. */
   clearSchedulePick(): void {
-    this._selectedDayKey.set(null);
-    this._selectedStartMs.set(null);
-    this._selectedShopKey.set(null);
+    this._selectedLocalDate.set(null);
+    this._selectedStartMinutes.set(null);
+    this._selectedLocationId.set(null);
   }
 
   /**
-   * Rebuild a `CartLineId` the cart itself minted, so the schedule step can
-   * hand assignments back keyed by the domain's own id rather than a raw
-   * string. Returns `null` for an id no line holds — an assignment naming a
-   * line that has since been removed must not reach the machine.
+   * The `CartLineId` of a line the cart itself holds, so the schedule step
+   * can hand assignments back keyed by a line that still exists. Returns
+   * `null` for an id no line holds — an assignment naming a line that has
+   * since been removed must not reach the machine.
    */
   cartLineId(raw: string): CartLineId | null {
     const cart = this.cart();
     if (!cart) return null;
-    const found = cart
-      .entries()
-      .flatMap(([, lines]) => lines)
-      .find((line) => line.id.value === raw);
-    return found?.id ?? null;
+    for (const seat of cart.cartSeats) {
+      for (const line of seat.lines) {
+        if (line.lineId === raw) return line.lineId;
+      }
+    }
+    return null;
   }
 
   next(): void {
-    this.dispatch({ type: 'next' });
+    this.dispatch({ bookingFlowEventKind: BookingFlowEventKind.Next });
   }
 
   back(): void {
-    this.dispatch({ type: 'back' });
+    this.dispatch({ bookingFlowEventKind: BookingFlowEventKind.Back });
   }
 
   /**
-   * Ask the server to watch these days for us.
+   * Ask the server to watch these days for us (`requestWaitlist`).
    *
    * The mirror of {@link commit}, and server-side for the same reason: the
    * request names an owner, and who you are is the one fact a caller must not
    * be able to choose. It is also the only place in the flow where signing in
    * is not a formality at the end — there is nobody to notify without an
-   * account, so `unauthenticated` is a normal, actionable outcome here rather
-   * than an error, and the caller surfaces the sign-in prompt on it.
+   * account, so `PIPELINE_UNAUTHENTICATED` is a normal, actionable outcome
+   * here rather than an error, and the caller surfaces the sign-in prompt on
+   * it.
    *
    * The declaration survives the round trip either way: it is persisted in the
    * draft, so a sign-in redirect costs the user nothing.
    */
   async submitWaitlist(): Promise<void> {
     const state = this._state();
-    if (state.kind !== 'schedule' || this._pending()) return;
-    if (state.when.isEmpty()) return;
+    if (state.bookingFlowStep !== BookingFlowStep.Schedule || this._pending()) {
+      return;
+    }
+    if (FlexibleWhen.isEmpty(state.when)) return;
 
     this._pending.set(true);
     try {
-      const result = await this.waitlist.request({
-        locationId: state.locationId?.value ?? null,
-        when: state.when.toProps(),
-        cart: this.cartProps(state.cart),
+      // ONE cart serialization in the client: the draft writes it and a
+      // waitlist request sends it — the `BookingCart` component itself.
+      const result = await this.gateway.callableClient(
+        Callables.RequestWaitlist,
+      )({
+        locationId: state.locationId,
+        days: state.when.flexibleDays,
+        cart: state.cart,
       });
 
-      if (result.isFailure()) {
+      if (!result.ok) {
         this._error.set(result.error);
         return;
       }
       this.dispatch({
-        type: 'waitlisted',
+        bookingFlowEventKind: BookingFlowEventKind.Waitlisted,
         requestId: result.value.requestId,
       });
     } finally {
@@ -487,29 +513,8 @@ export class BookingFlowStore {
     }
   }
 
-  /** True when the last failure is one that signing in would fix. */
-  readonly needsSignInForWaitlist = computed(() => {
-    const error = this._error();
-    return error instanceof WaitlistGatewayError && error.needsSignIn();
-  });
-
-  /**
-   * Ask the server to write the booking.
-   *
-   * The client sends WHAT it wants and WHO it wants it from; `commitBooking`
-   * re-derives the price, the roster and the collision set and is the only
-   * thing that can actually create an appointment. So the two outcomes here
-   * are not "success and error" — they are "written" and "the shop's answer
-   * changed", and the second one is a normal Tuesday.
-   *
-   * On `slot_unavailable` the flow steps BACK to the schedule and drops only
-   * the time: the day, the party and the bag all survive, and the grid the
-   * user lands on is recomputed from live data rather than the offer that just
-   * expired. Any other failure stays on review — nothing about re-picking a
-   * time would fix a withdrawn service or a lost connection.
-   */
   /** The armed selection's idempotency key — see {@link selectSchedule}. */
-  private _attemptId = mintAttemptId();
+  private _attemptId: ClientOperationId | null = this.mintAttemptId();
 
   /**
    * The appointment this flow is MOVING, if it is a reschedule rather than a
@@ -520,7 +525,7 @@ export class BookingFlowStore {
    * about what the last one does.
    */
   private readonly _rescheduleOf = signal<HeldMove | null>(null);
-  readonly rescheduleOf = computed(
+  readonly rescheduleOf = computed<AppointmentId | null>(
     () => this._rescheduleOf()?.appointmentId ?? null,
   );
   readonly isRescheduling = computed(() => this._rescheduleOf() !== null);
@@ -534,43 +539,27 @@ export class BookingFlowStore {
    * other or not. Held beside the machine like `_rescheduleOf`, and it
    * outlives edits to the bag: the booking still started from that visit.
    *
-   * Both are persisted with the draft — the review step's sign-in round trip
-   * comes back without the `?repeat=` / `?reschedule=` that set them — and
-   * both are BOUND to the account that read the visit: a different account
-   * claiming the flow drops them (`claim`), so one person's booking never
-   * names another person's visit.
+   * Both are persisted with the draft (its `bookingDraftOrigin`) — the review
+   * step's sign-in round trip comes back without the `?repeat=` /
+   * `?reschedule=` that set them — and both are BOUND to the account that
+   * read the visit: a different account claiming the flow drops them
+   * (`claim`), so one person's booking never names another person's visit.
    */
-  private readonly _bookedFrom = signal<HeldSource | null>(null);
-  readonly bookedFrom = computed(
+  private readonly _bookedFrom = signal<HeldVisit | null>(null);
+  readonly bookedFrom = computed<AppointmentId | null>(
     () => this._bookedFrom()?.appointmentId ?? null,
   );
 
   /**
    * Who moves WITH the visit without being in the cart — the seats the
-   * server carries (see `BookingDraftMove.riders`). Empty on a new booking.
+   * server carries (`MoveSystem.facts`): their service and the variant it was
+   * sold as, their barber, their wall-clock distance from the move anchor and
+   * the chair time they were SOLD at — what the shell asks the catalogue's
+   * reach about (`MoveSystem.carriedSeatsInReach`) and the review card places
+   * (`MoveSystem.placeRiders`). Empty on a new booking.
    */
-  readonly riders = computed<readonly BookingDraftRider[]>(
-    () => this._rescheduleOf()?.riders ?? [],
-  );
-
-  /**
-   * The riders as the move systems read them (`MoveRider`, `MoveSystem`):
-   * their service and the variant it was sold as, their barber, their
-   * wall-clock distance from the move anchor and the chair time they were
-   * SOLD at — what the shell asks the catalogue's reach about
-   * (`MoveSystem.carriedSeatsInReach`) and the review card places
-   * (`MoveSystem.placeRiders`).
-   *
-   * Total over what the flow holds: a rider is only ever held once
-   * `moveRiderOf` parses it (`moveFacts` builds them from the visit,
-   * `heldMove` refuses a stored move with one that does not parse), so none
-   * is dropped here — a dropped rider is a seat the grid stops checking.
-   */
-  readonly moveRiders = computed<readonly MoveRider[]>(() =>
-    this.riders().flatMap((rider): readonly MoveRider[] => {
-      const parsed = moveRiderOf(rider);
-      return parsed === null ? [] : [parsed];
-    }),
+  readonly moveRiders = computed<readonly MoveRider[]>(
+    () => this._rescheduleOf()?.riders ?? NO_RIDERS,
   );
 
   /**
@@ -582,19 +571,23 @@ export class BookingFlowStore {
    * service. The schedule step puts them on each day query.
    */
   readonly availabilityRiders = computed<readonly CartRider[]>(() =>
-    this.moveRiders().map(cartRiderOf),
+    MoveSystem.cartRiders(this.moveRiders()),
   );
 
   /**
    * The chair time the visit being moved holds now, handed back on every day
    * query of the move (`DayQuery.release`). Its own seats never block its
    * own move, because the server decides a move with the visit's
-   * contribution subtracted. Empty on a new booking. Held as the draft keeps
-   * it — two instants per chair — and read on the shop's wall clock by the
-   * day query, the one place the shop's zone is known.
+   * contribution subtracted. Empty on a new booking. Minutes of
+   * {@link moveLocalDate}, the visit's own shop day.
    */
-  readonly moveRelease = computed<readonly BookingDraftChairTime[]>(
-    () => this._rescheduleOf()?.chairTimes ?? [],
+  readonly moveRelease = computed<readonly ChairTime[]>(
+    () => this._rescheduleOf()?.release ?? NO_CHAIRS,
+  );
+
+  /** The shop day the visit being moved stands on now — its chairs' day. */
+  readonly moveLocalDate = computed<LocalDate | null>(
+    () => this._rescheduleOf()?.localDate ?? null,
   );
 
   /**
@@ -604,7 +597,7 @@ export class BookingFlowStore {
    */
   private readonly _moveAsked = signal<string | null>(null);
 
-  private readonly _moveRefusal = signal<MoveRefusalState | null>(null);
+  private readonly _moveRefusal = signal<MoveRefusal | null>(null);
   /**
    * Why the move this flow was opened for cannot happen here. The shell
    * shows it INSTEAD of the wizard: a blank bookable flow under a move link
@@ -623,8 +616,11 @@ export class BookingFlowStore {
   }
 
   /** The move cannot be made here — see {@link moveRefusal}. */
-  refuseMove(reason: MoveRefusal, locationId: LocationKey | null = null): void {
-    this._moveRefusal.set({ reason, locationId });
+  refuseMove(
+    reason: MoveRefusalReason,
+    locationId: LocationId | null = null,
+  ): void {
+    this._moveRefusal.set(MoveRefusal.of(reason, locationId));
   }
 
   /**
@@ -634,27 +630,38 @@ export class BookingFlowStore {
   rescheduleFrom(
     appointment: Appointment,
     guestLabel: (ordinal: number) => string,
-  ): Result<void, MoveRefusal> {
-    const facts = this.moveFacts(appointment);
+  ): Result<void, MoveRefusalReason> {
+    const facts = MoveSystem.facts(appointment, this.readerOf(appointment));
     if (facts === null) {
       // Nobody is left for the cart to stand in for (staff removed the
       // booker's own seat): only the shop can move the rest, and the server
       // refuses the same visit as `shop_only`. Said here, before a single
       // step is shown.
-      this.refuseMove('companions_only', appointment.locationId);
-      return fail('companions_only');
+      this.refuseMove(MoveRefusalReason.CompanionsOnly, appointment.locationId);
+      return Result.err(MoveRefusalReason.CompanionsOnly);
     }
-    if (!this.prefillFrom(appointment, guestLabel, 'carried_by_server')) {
-      this.refuseMove('unavailable', appointment.locationId);
-      return fail('unavailable');
+    if (
+      !this.prefillFrom(
+        appointment,
+        guestLabel,
+        PrefillCompanions.CarriedByServer,
+      )
+    ) {
+      this.refuseMove(MoveRefusalReason.Unavailable, appointment.locationId);
+      return Result.err(MoveRefusalReason.Unavailable);
     }
 
     this._moveRefusal.set(null);
     // A move keeps its own appointment; it is not a booking made from one.
     this._bookedFrom.set(null);
-    this._rescheduleOf.set({ ...this.sourceOf(appointment), ...facts });
+    this._rescheduleOf.set({
+      ...this.sourceOf(appointment),
+      localDate: appointment.localDate,
+      riders: facts.riders,
+      release: facts.release,
+    });
     this.persist();
-    return ok(undefined);
+    return Result.ok(undefined);
   }
 
   /**
@@ -679,152 +686,107 @@ export class BookingFlowStore {
   async rereadMove(): Promise<void> {
     const held = this._rescheduleOf();
     if (held === null) return;
-    const id = AppointmentKey.parse(held.appointmentId);
-    if (!id.ok) return;
 
     // One reading of the live visit: its first answer.
     const found = await firstValueFrom(
-      this.appointments.observeAppointment(id.value).pipe(take(1)),
+      this.appointments.observeAppointment(held.appointmentId).pipe(take(1)),
     );
     // The flow let go of this move while the read was out (a claim by
     // somebody else, another landing): the answer is about nothing it holds.
     if (this._rescheduleOf()?.appointmentId !== held.appointmentId) return;
     if (!found.ok) return;
     if (found.value === null) {
-      this.refuseMove('unavailable');
+      this.refuseMove(MoveRefusalReason.Unavailable);
       return;
     }
 
-    const facts = this.moveFacts(found.value);
+    const facts = MoveSystem.facts(found.value, this.readerOf(found.value));
     if (facts === null) {
-      this.refuseMove('companions_only', found.value.locationId);
+      this.refuseMove(MoveRefusalReason.CompanionsOnly, found.value.locationId);
       return;
     }
-    this._rescheduleOf.set({ ...held, ...facts });
+    this._rescheduleOf.set({
+      ...held,
+      localDate: found.value.localDate,
+      riders: facts.riders,
+      release: facts.release,
+    });
     this.persist();
   }
 
   /**
-   * What a move is decided with, read off the visit: the people the server
-   * carries, placed the way it will place them, and every chair the visit
-   * holds now. `null` when nobody is left for the cart to stand in for.
+   * Ask the server to write the booking (`commitBooking`) — or, on a move,
+   * to move the visit (`rescheduleAppointment`).
    *
-   * WHOSE seat is whose is the domain's one rule, the server's too
-   * (`Seat.isMovableByBooker`, `MoveSystem.facts`): the booker's own seat
-   * and anonymous guests are the cart's; anybody else — a companion ACCOUNT
-   * the shop seated, a `self` seat bound to another account — the server
-   * carries with the move. Turning them into a guest would put the same
-   * person on the visit twice.
+   * The client sends WHAT it wants and WHO it wants it from, on the shop's
+   * wall clock (`BookingCall.Seat`: the selection's day and each seat's
+   * start minute — the pipeline places them on the absolute timeline once,
+   * with the location's zone); the server re-derives the price, the roster
+   * and the collision set and is the only thing that can actually create an
+   * appointment. So the two outcomes here are not "success and error" — they
+   * are "written" and "the shop's answer changed", and the second one is a
+   * normal Tuesday.
+   *
+   * On `PIPELINE_SLOT_UNAVAILABLE` the flow steps BACK to the schedule and
+   * drops only the time: the day, the party and the bag all survive, and the
+   * grid the user lands on is recomputed from live data rather than the
+   * offer that just expired. Any other failure stays on review — nothing
+   * about re-picking a time would fix a withdrawn service or a lost
+   * connection.
    */
-  private moveFacts(
-    appointment: Appointment,
-  ): Pick<HeldMove, 'riders' | 'chairTimes'> | null {
-    const facts = MoveSystem.facts(appointment, this.readerOf(appointment));
-    if (facts === null) return null;
-
-    // Carried seats, by their wall-clock distance from the move anchor, on
-    // the terms they were sold at — as the draft keeps them.
-    const riders = facts.riders.map((rider): BookingDraftRider => ({
-      serviceId: rider.serviceId,
-      variantId: rider.variantId,
-      barberId: rider.barberId,
-      offsetMinutes: rider.offsetMinutes,
-      durationMinutes: rider.durationMinutes,
-      setupMinutes: rider.setupMinutes,
-      cleanupMinutes: rider.cleanupMinutes,
-    }));
-
-    // …and every chair the visit holds now, the carried seats' included: the
-    // server subtracts the whole visit before it re-places it. The draft
-    // keeps a chair as two instants: its start placed by its distance from
-    // the visit's own instant (T9, `TimeCoordinate.seatStartUtcMs`), its end
-    // its length later — read back on the shop's wall clock by the day query.
-    const chairTimes = facts.release.map((chair): BookingDraftChairTime => {
-      const startMs = TimeCoordinate.seatStartUtcMs(appointment, chair);
-      return {
-        barberId: chair.barberId,
-        startMs,
-        endMs: startMs + (chair.endMinutes - chair.startMinutes) * 60_000,
-      };
-    });
-
-    return { riders, chairTimes };
-  }
-
   async commit(): Promise<void> {
     const state = this._state();
-    if (state.kind !== 'review' || this._pending()) return;
+    if (state.bookingFlowStep !== BookingFlowStep.Review || this._pending()) {
+      return;
+    }
 
     // A flow opened to MOVE a visit ends as that move or not at all. Until
     // the visit is read and rebuilt — and for good once it is refused —
     // there is no move to send, and a commit here would book a SECOND visit
     // beside the one the person meant to move.
     const asked = this._moveAsked();
-    if (asked !== null && this._rescheduleOf()?.appointmentId !== asked) {
-      this._error.set(
-        new BookingGatewayError(
-          'unavailable',
-          'The visit being moved is not loaded',
-        ),
-      );
+    const moving = this._rescheduleOf();
+    if (asked !== null && moving?.appointmentId !== asked) {
+      this._error.set(PipelineError.bare(PipelineErrorCode.Unavailable));
       return;
     }
 
-    const seats = this.toCommitSeats(state.selection);
+    // One entry per assignment, WHAT and WHO, never a price or a duration; a
+    // guest travels as their LABEL plus their seat key. `null` when an
+    // assignment names a line the cart no longer holds — refusing here beats
+    // sending a request the server would reject for a reason the user cannot
+    // act on.
+    const seats = BookingCartSystem.toCommitSeats(
+      state.cart,
+      state.party,
+      state.selection.assignments,
+    );
     if (seats === null) {
-      // An assignment naming a line the cart no longer holds. Refusing here
-      // beats sending a request the server would reject for a reason the user
-      // cannot act on.
-      this._error.set(
-        new BookingGatewayError('invalid_request', 'The bag changed'),
-      );
+      this._error.set(PipelineError.bare(PipelineErrorCode.InvalidRequest));
       return;
     }
-
-    const contact = this._contact();
-    const bookedFrom = this._bookedFrom()?.appointmentId ?? null;
 
     this._pending.set(true);
     try {
-      const movingId = this._rescheduleOf()?.appointmentId ?? null;
-      const result = movingId
-        ? // A MOVE, not a second booking: the server keeps the appointment's
-          // id, its status and its contact, and refuses the same window a
-          // cancellation would be refused in.
-          await this.gateway.reschedule({
-            appointmentId: movingId,
-            locationId: state.selection.locationId.value,
-            seats,
-            // The same name as a commit's, and for the same reason: one per
-            // ARMED selection (`selectSchedule`), reused by every retry of
-            // it. The server keys the move's audit rows by it, so a retry
-            // whose first attempt landed fills a lost row instead of
-            // logging nothing — and never logs the move twice.
-            attemptId: this._attemptId,
-          })
-        : await this.gateway.commit({
-            locationId: state.selection.locationId.value,
-            seats,
-            attemptId: this._attemptId,
-            // Whatever the review step captured — the account's own details, or
-            // the one-time override the contact sheet set. Omitted entirely when
-            // there is none, so an anonymous-assembled draft still commits.
-            ...(contact ? { contact } : {}),
-            // Omitted on a cold booking, like the contact: absent is "we
-            // don't know", which is all a cold booking can say.
-            ...(bookedFrom ? { bookedFromAppointmentId: bookedFrom } : {}),
-          });
+      const result =
+        moving !== null
+          ? await this.sendMove(moving, state.selection, seats)
+          : await this.sendBooking(state.selection, seats);
 
-      if (result.isFailure()) {
+      if (!result.ok) {
         this._error.set(result.error);
-        if (result.error.isSlotTaken()) {
-          this._selectedStartMs.set(null);
-          this._selectedShopKey.set(null);
+        if (result.error.errorCode === PipelineErrorCode.SlotUnavailable) {
+          this._selectedStartMinutes.set(null);
+          this._selectedLocationId.set(null);
           // A move re-reads its visit BEFORE the grid is recomputed: facts
           // gone stale would offer the refused time straight back.
-          if (movingId !== null) await this.rereadMove();
-          const back = advanceBookingFlow(this._state(), { type: 'back' });
-          if (back.isSuccess()) {
+          if (moving !== null) await this.rereadMove();
+          const back = BookingFlowSystem.next(
+            this._state(),
+            { bookingFlowEventKind: BookingFlowEventKind.Back },
+            FLOW_LIMITS,
+          );
+          if (back.ok) {
             this._state.set(back.value);
             this.persist();
           }
@@ -833,7 +795,7 @@ export class BookingFlowStore {
       }
 
       this.dispatch({
-        type: 'confirmed',
+        bookingFlowEventKind: BookingFlowEventKind.Confirmed,
         appointmentId: result.value.appointmentId,
       });
     } finally {
@@ -842,44 +804,61 @@ export class BookingFlowStore {
   }
 
   /**
-   * The selection, as the wire wants it: one entry per assignment, carrying no
-   * price and no duration. The server resolves both — see `BookingGateway`.
-   *
-   * Returns `null` when an assignment names a line the cart no longer holds,
-   * which can only happen if the bag was edited after the schedule step ran.
+   * A MOVE, not a second booking (`rescheduleAppointment`): the server keeps
+   * the appointment's id, its status and its contact, and refuses the same
+   * window a cancellation would be refused in.
    */
-  private toCommitSeats(
+  private sendMove(
+    moving: HeldMove,
     selection: ScheduleSelection,
-  ): readonly CommitBookingSeatRequest[] | null {
-    const cart = this.cart();
-    const party = this.party();
-    if (!cart || !party) return null;
+    seats: readonly BookingCall.Seat[],
+  ): Promise<Result<BookingCall.Rescheduled, PipelineError>> {
+    return this.gateway.callableClient(Callables.RescheduleAppointment)({
+      appointmentId: moving.appointmentId,
+      locationId: selection.locationId,
+      localDate: selection.localDate,
+      seats,
+      // The same name as a commit's, and for the same reason: one per ARMED
+      // selection (`selectSchedule`), reused by every retry of it. The
+      // server keys the move's audit rows by it, so a retry whose first
+      // attempt landed fills a lost row instead of logging nothing — and
+      // never logs the move twice.
+      attemptId: this._attemptId,
+    });
+  }
 
-    // `BookingCartSystem.toCommitSeats`: one entry per assignment, WHAT and
-    // WHO, never a price or a duration; a guest travels as their LABEL plus
-    // their seat key. The wire keeps the slot's own zoned ISO start.
-    const seats = BookingCartSystem.toCommitSeats(
-      toCartData(cart),
-      toPartyData(party),
-      selection.assignments.map(toSeatAssignment),
-    );
-    if (seats === null) return null;
-    return seats.map((seat, index): CommitBookingSeatRequest => ({
-      lineId: seat.lineId,
-      serviceId: seat.serviceId,
-      variantId: seat.variantId,
-      barberId: seat.barberId,
-      barberPref: LEGACY_BARBER_PREF[seat.barberPreference],
-      startIso: selection.assignments.at(index)?.slot.start.toISO() ?? '',
-      subject:
-        seat.subject.commitSubjectRole === CommitSubjectRole.Self
-          ? { kind: 'self' }
-          : {
-              kind: 'guest',
-              label: seat.subject.label,
-              guestKey: seat.subject.guestKey,
-            },
-    }));
+  /**
+   * A new booking (`commitBooking`). Its attempt id IS the new
+   * appointment's idempotency key, so a selection the id source could not
+   * name is refused here, never sent.
+   */
+  private async sendBooking(
+    selection: ScheduleSelection,
+    seats: readonly BookingCall.Seat[],
+  ): Promise<Result<BookingCall.Committed, PipelineError>> {
+    const attemptId = this._attemptId;
+    if (attemptId === null) {
+      return Result.err(PipelineError.bare(PipelineErrorCode.InvalidRequest));
+    }
+    const contact = this._contact();
+    return this.gateway.callableClient(Callables.CommitBooking)({
+      locationId: selection.locationId,
+      localDate: selection.localDate,
+      seats,
+      attemptId,
+      // Whatever the review step captured — the account's own details, or
+      // the one-time override the contact sheet set. `null` when there is
+      // none, so an anonymous-assembled draft still commits.
+      contact: BookingContact.isPresent(contact)
+        ? BookingContact.inputOf(contact)
+        : null,
+      // `null` on a cold booking: "we don't know" is all a cold booking can
+      // say.
+      bookedFromAppointmentId: this._bookedFrom()?.appointmentId ?? null,
+      // The client places their own booking, whoever is signed in.
+      placement: Placement.Self,
+      onBehalfOfUserId: null,
+    });
   }
 
   /**
@@ -891,20 +870,23 @@ export class BookingFlowStore {
    * claimed (a restored tab whose session changed hands) is re-bound to this
    * one, exactly as its sources are released for this one. Leaving it on
    * the old account judged the new person's visit against somebody else's
-   * uid — their own seat read as a stranger's (`Seat.isMovableByBooker`),
+   * account — their own seat read as a stranger's (`Seat.isMovableByBooker`),
    * and a visit holding only that seat was refused as the shop's to move.
    * The same account again is a no-op.
    */
-  claim(ownerId: string): void {
+  claim(userId: UserId): void {
     const state = this._state();
     // Both terminal states are past claiming: the server already knows who
     // owns what it accepted.
-    if (state.kind === 'confirmed' || state.kind === 'waitlisted') return;
-    this.releaseSourcesNotReadBy(ownerId);
-    if (state.party.ownerId?.value === ownerId) return;
-    const result = state.party.claim(ownerId);
-    if (result.isFailure()) return;
-    this._state.set({ ...state, party: result.value });
+    if (
+      state.bookingFlowStep === BookingFlowStep.Confirmed ||
+      state.bookingFlowStep === BookingFlowStep.Waitlisted
+    ) {
+      return;
+    }
+    this.releaseSourcesNotReadBy(userId);
+    if (state.party.ownerUserId === userId) return;
+    this._state.set({ ...state, party: Party.claim(state.party, userId) });
     this.persist();
   }
 
@@ -912,26 +894,15 @@ export class BookingFlowStore {
 
   /**
    * Move BACKWARD to `step` if the URL says we're behind where the machine
-   * is — the browser-Back contract. Forward jumps are deliberately ignored:
-   * hand-editing `?step=review` must not skip the cart, and every forward
-   * move has a precondition (`next` checks them) that a URL cannot satisfy.
-   *
-   * Dispatches `back` repeatedly rather than reconstructing state, so the
-   * machine stays the only thing that knows how to step backwards.
+   * is — the browser-Back contract (`BookingFlowSystem.rewindTo`). Forward
+   * jumps are deliberately ignored: hand-editing `?step=review` must not skip
+   * the cart, and every forward move has a precondition (`next` checks them)
+   * that a URL cannot satisfy.
    */
-  rewindTo(step: string | undefined): void {
-    if (!step || step === this.step()) return;
-    const target = BOOKING_FLOW_STEPS.indexOf(step as BookingFlowStep);
-    if (target === -1 || target + 1 >= this.currentStep()) return;
-
-    // Bounded by the spine length — a machine that refuses `back` (a
-    // terminal state) must not spin here.
-    for (let guard = 0; guard < BOOKING_FLOW_STEPS.length; guard++) {
-      if (this.step() === step) return;
-      const result = advanceBookingFlow(this._state(), { type: 'back' });
-      if (result.isFailure()) return;
-      this._state.set(result.value);
-    }
+  rewindTo(step: BookingFlowStep): void {
+    const current = this._state();
+    const rewound = BookingFlowSystem.rewindTo(current, step, FLOW_LIMITS);
+    if (rewound !== current) this._state.set(rewound);
   }
 
   /**
@@ -949,7 +920,7 @@ export class BookingFlowStore {
 
   /**
    * Rebuild the flow around a waitlist request — the landing for
-   * `/book?waitlist={id}&day={dayKey}`.
+   * `/book?waitlist={id}&day={YYYY-MM-DD}`.
    *
    * The request froze the BAG and the SHOP at the moment it was made; the
    * party's guest LABELS were never persisted (a guest is only a label until
@@ -957,58 +928,48 @@ export class BookingFlowStore {
    * caller supplies — which is exactly what they are on a receipt this old.
    * The request is the stored entity (`waitlistRequests/{id}`): its
    * `cartSeats` are the bag, its `flexibleDays` the days it watches. The
-   * caller names the shop's zone the day is in (the entity holds none).
-   * The day lands as the single-day pick, and the arrival flag makes the
+   * day lands as the single-day pick, and the arrival flag makes the
    * schedule step open the times sheet unprompted: the notification promised
    * a live search, not a calendar to re-navigate.
    *
-   * Returns false when the frozen bag no longer reconstitutes (a service
-   * retired since); the caller falls back to a plain /book entry.
+   * Returns false when the frozen bag no longer reads back (a corrupt line
+   * counter); the caller falls back to a plain /book entry.
    */
   restoreFromWaitlist(
     request: WaitlistRequest,
-    dayKey: string | null,
+    day: string | null,
     guestLabel: (ordinal: number) => string,
-    zone: string,
   ): boolean {
-    const cartResult = BookingCart.reconstitute(
-      toCartProps({
-        cartSeats: request.cartSeats,
-        cartNextSequence: request.cartNextSequence,
-      }),
-    );
-    if (cartResult.isFailure()) return false;
+    // The stored bag, read back the forgiving way: a line with a blank id is
+    // dropped, a corrupt counter refused.
+    const cart = BookingCartSystem.salvage({
+      cartSeats: request.cartSeats,
+      cartNextSequence: request.cartNextSequence,
+    });
+    if (!cart.ok) return false;
 
     // Placeholders, each one no other guest holds
     // (`BookingCartSystem.partyForCart`): this party lands on the schedule
     // step, past the rename that would fix it.
     const party = BookingCartSystem.partyForCart(
-      toCartData(cartResult.value),
+      cart.value,
       request.ownerUserId,
       guestLabel,
     );
     if (party === null) return false;
-    const partyResult = BookingParty.reconstitute(toPartyProps(party));
-    if (partyResult.isFailure()) return false;
 
-    // A stored shop that no longer parses is "any shop", as on a restore.
-    const location =
-      request.locationId === null
-        ? null
-        : LocationId.create(request.locationId);
     this._state.set({
-      kind: 'schedule',
-      party: partyResult.value,
-      cart: cartResult.value,
-      locationId:
-        location !== null && location.isSuccess() ? location.value : null,
+      bookingFlowStep: BookingFlowStep.Schedule,
+      party,
+      cart: cart.value,
+      locationId: request.locationId,
       when: FlexibleWhen.empty(),
     });
 
-    // The request's own watched days (`FlexibleWhen` at its root).
-    const day =
-      dayKey ?? [...WhenData.localDates(request)].sort().at(0) ?? null;
-    if (day) this.selectDay(day, zone);
+    // The day the link names, else the earliest the request watches.
+    const watched = [...FlexibleWhen.localDates(request)].sort().at(0) ?? null;
+    const landed = day === null ? watched : localDateOrNull(day);
+    if (landed !== null) this.selectDay(landed);
     this._waitlistArrival.set(true);
     this.persist();
     return true;
@@ -1036,7 +997,11 @@ export class BookingFlowStore {
   ): boolean {
     // A NEW booking cannot seat another account, so a companion on the old
     // visit comes back as a guest seat the booker can keep or drop.
-    if (!this.prefillFrom(appointment, guestLabel, 'as_guests')) return false;
+    if (
+      !this.prefillFrom(appointment, guestLabel, PrefillCompanions.AsGuests)
+    ) {
+      return false;
+    }
     this._bookedFrom.set(this.sourceOf(appointment));
     this.persist();
     return true;
@@ -1061,30 +1026,25 @@ export class BookingFlowStore {
     this.persist();
   }
 
-  /**
-   * `appointment`, bound to the account that read it: the party's claimed
-   * owner — the signed-in principal — or, before any claim, the visit's own
-   * booker, which an owner-scoped read can only have been.
-   */
-  private sourceOf(appointment: Appointment): HeldSource {
+  /** `appointment`, bound to the account that read it ({@link readerOf}). */
+  private sourceOf(appointment: Appointment): HeldVisit {
     return {
       appointmentId: appointment.id,
-      ownerId: this.readerOf(appointment),
+      readerUserId: this.readerOf(appointment),
     };
   }
 
   /**
    * The account `appointment` was read FOR: the party's claimed owner — the
    * signed-in principal — or, before any claim, the visit's own booker,
-   * which an owner-scoped read can only have been. What a held source is
-   * bound to, and whose seats a move treats as the booker's own.
+   * which an owner-scoped read can only have been
+   * (`BookingCartSystem.readerOf`). What a held source is bound to, and
+   * whose seats a move treats as the booker's own.
    */
-  private readerOf(appointment: Appointment): UserKey | null {
-    const claimed = this.party()?.ownerId ?? null;
-    // The stored seats ARE what the rule reads (`PrefillSeat`).
+  private readerOf(appointment: Appointment): UserId | null {
     return BookingCartSystem.readerOf(
       appointment.seats,
-      claimed === null ? null : UserKey.of(claimed.value),
+      this.party()?.ownerUserId ?? null,
     );
   }
 
@@ -1093,26 +1053,30 @@ export class BookingFlowStore {
    * restored draft — or a tab whose session changed hands — never carries
    * one person's visit into another person's booking.
    */
-  private releaseSourcesNotReadBy(reader: string): void {
+  private releaseSourcesNotReadBy(reader: UserId): void {
     let released = false;
-    for (const held of [this._bookedFrom, this._rescheduleOf]) {
-      const source = held();
-      if (source !== null && source.ownerId !== reader) {
-        held.set(null);
-        released = true;
-      }
+    const bookedFrom = this._bookedFrom();
+    if (bookedFrom !== null && bookedFrom.readerUserId !== reader) {
+      this._bookedFrom.set(null);
+      released = true;
+    }
+    const moving = this._rescheduleOf();
+    if (moving !== null && moving.readerUserId !== reader) {
+      this._rescheduleOf.set(null);
+      released = true;
     }
     if (released) this.persist();
   }
 
   /**
-   * The bag, barbers and shop of `appointment`, on the schedule step.
+   * The bag, barbers and shop of `appointment`, on the schedule step
+   * (`BookingCartSystem.prefill`).
    *
    * `companions` says what becomes of a seat the booker cannot name
    * (`Seat.isMovableByBooker`) — an ACCOUNT staff seated beside them. A new
-   * booking has no way to seat another account, so it offers them
-   * `as_guests`; a move leaves them out of the cart because the server
-   * carries them (`carried_by_server`).
+   * booking has no way to seat another account, so it offers them as
+   * guests; a move leaves them out of the cart because the server carries
+   * them.
    *
    * A guest keeps the NAME the visit stored for them (2026-09-25) — the
    * label is who they are, to the shop and to the server's `personKey`. A
@@ -1125,215 +1089,130 @@ export class BookingFlowStore {
   private prefillFrom(
     appointment: Appointment,
     guestLabel: (ordinal: number) => string,
-    companions: 'as_guests' | 'carried_by_server',
+    companions: PrefillCompanions,
   ): boolean {
-    const owner = this.readerOf(appointment);
     // The party() accessor, not the raw state: a terminal state keeps its
     // party inside its receipt and has none at the top level.
-    const partyOwner = this.party()?.ownerId ?? null;
     const bag = BookingCartSystem.prefill(
       appointment.seats,
-      owner,
-      partyOwner === null ? null : UserKey.of(partyOwner.value),
-      companions === 'as_guests'
-        ? PrefillCompanions.AsGuests
-        : PrefillCompanions.CarriedByServer,
+      this.readerOf(appointment),
+      this.party()?.ownerUserId ?? null,
+      companions,
       guestLabel,
     );
     if (bag === null) return false;
 
-    const cartResult = BookingCart.reconstitute(toCartProps(bag.cart));
-    if (cartResult.isFailure()) return false;
-    const partyResult = BookingParty.reconstitute(toPartyProps(bag.party));
-    if (partyResult.isFailure()) return false;
-    const locationId = LocationId.create(appointment.locationId);
-    if (locationId.isFailure()) return false;
-
     this._state.set({
-      kind: 'schedule',
-      party: partyResult.value,
-      cart: cartResult.value,
-      locationId: locationId.value,
+      bookingFlowStep: BookingFlowStep.Schedule,
+      party: bag.party,
+      cart: bag.cart,
+      locationId: appointment.locationId,
       when: FlexibleWhen.empty(),
     });
-    // The visit's zone is its SHOP's (Law 7.2): the schedule step names it
-    // with the day the client picks (`selectDay`).
+    // The visit's zone is its SHOP's (Law 7.2): the schedule step reads it
+    // with the day the client picks.
     this.persist();
     return true;
   }
 
   /**
-   * Rebuild from a persisted draft. Silently starts fresh if there is none.
+   * Rebuild from a persisted draft. Silently starts fresh if there is none —
+   * or if the stored value is no draft the domain accepts (the adapter reads
+   * through `BookingDraft.read` and clears what it refuses, a half-readable
+   * move included: kept without its riders and chairs, the bag would commit
+   * as a second booking beside the visit; kept with half of them, the grid
+   * would decide on a visit that does not exist).
    *
    * Answers whether a draft WAS restored, so a continuation can tell "the
    * person's own flow is back" from "there was nothing to continue" — a
    * landing prefills the second and must not overwrite the first.
    */
   restore(): boolean {
-    const loaded = this.draftStore.load();
-    if (loaded.isFailure() || loaded.value === null) return false;
-
+    const loaded = this.drafts.loadBookingDraft();
+    if (!loaded.ok || loaded.value === null) return false;
     const draft = loaded.value;
-    const partyResult = BookingParty.reconstitute(draft.party);
-    const cartResult = BookingCart.reconstitute(draft.cart);
-    if (partyResult.isFailure() || cartResult.isFailure()) {
-      // A draft the domain refuses is worse than no draft — drop it rather
-      // than resuming into a party that failed its own invariants.
-      this.draftStore.clear();
-      return false;
-    }
-
-    // A `review` draft resumes on SCHEDULE, never on review itself. Review's
-    // state is an OFFER — specific barbers at specific minutes — and an offer
-    // restored from storage is an offer nobody re-checked. Resuming one step
-    // back re-computes it from live availability, which is also exactly what
-    // should happen after a sign-in round trip.
-    // A stored shop that no longer parses is dropped to "any shop" rather
-    // than failing the restore — the client can still book, just unfiltered.
-    const parsedLocation =
-      draft.locationId === null ? null : LocationId.create(draft.locationId);
-    const locationId =
-      parsedLocation !== null && parsedLocation.isSuccess()
-        ? parsedLocation.value
-        : null;
 
     // Whatever the booker captured or overrode, before the step branches —
     // it belongs to the booking, not to any one step of it. So do the visit
     // it was made from and the one it moves; `claim` re-checks their reader.
-    //
-    // A stored MOVE that does not come back whole drops the draft, like a
-    // party or a bag the domain refuses: kept without it, the bag would
-    // commit as a second booking beside the visit, and kept with half of it,
-    // the grid would decide on a visit that does not exist (`heldMove`). The
-    // move link lands it again from the live visit.
-    const move =
-      draft.rescheduleOf == null ? null : heldMove(draft.rescheduleOf);
-    if (draft.rescheduleOf != null && move === null) {
-      this.draftStore.clear();
-      return false;
-    }
-    this._contact.set(draft.contact ?? null);
-    this._bookedFrom.set(heldSource(draft.bookedFrom));
-    this._rescheduleOf.set(move);
-
-    if (draft.step === 'location') {
-      this._state.set({
-        kind: draft.step,
-        party: partyResult.value,
-        cart: cartResult.value,
-        locationId,
-      });
-      return true;
-    }
-
-    // A `review` draft resumes on SCHEDULE, never on review itself. Review's
-    // state is an OFFER — specific barbers at specific minutes — and an offer
-    // restored from storage is an offer nobody re-checked. Resuming one step
-    // back re-computes it from live availability, which is also exactly what
-    // should happen after a sign-in round trip.
-    // The per-seat rule is re-checked here, not just at `next`: a draft
-    // written before the rule existed — or one whose guest lost their only
-    // line to a catalog that moved under it — would otherwise resume PAST the
-    // step that enforces it, which is the one door a state machine can't
-    // guard on its own. So is "one label, one guest": a draft saved before
-    // that rule may hold two guests under one name, and it resumes on
-    // services, where `next` says so and one rename fixes it.
-    // `BookingCartSystem.restore` decides: schedule only for a bag every
-    // seat of which holds something and no two guests share a label, with
-    // the days and the picked day that have gone by dropped.
-    const declared = this.restoreWhen(draft);
-    const today = this.todayKeyOf(draft.zone);
-    const resumed = BookingCartSystem.restore(
-      {
-        state:
-          draft.step === 'schedule' || draft.step === 'review'
-            ? {
-                bookingFlowStep: FlowStep.Schedule,
-                party: toPartyData(partyResult.value),
-                cart: toCartData(cartResult.value),
-                locationId: toLocationKey(locationId),
-                when: toWhenData(declared),
-              }
-            : {
-                bookingFlowStep: FlowStep.Services,
-                party: toPartyData(partyResult.value),
-                cart: toCartData(cartResult.value),
-                locationId: toLocationKey(locationId),
-              },
-        selectedLocalDate:
-          draft.dayKey === null ? null : localDateOrNull(draft.dayKey),
-      },
-      today ?? EARLIEST_DAY,
+    this._contact.set(BookingContact.of(draft));
+    this._bookedFrom.set(
+      draft.bookingDraftOrigin === BookingDraftOrigin.BookedFrom
+        ? {
+            appointmentId: draft.bookedFromAppointmentId,
+            readerUserId: draft.bookedFromOwnerUserId,
+          }
+        : null,
     );
-    if (resumed.state.bookingFlowStep === FlowStep.Schedule) {
-      const kept: readonly string[] = WhenData.localDates(resumed.state.when);
-      this._zone.set(draft.zone);
-      this._selectedDayKey.set(this.restoredDayKey(draft, today, resumed));
+    this._rescheduleOf.set(
+      draft.bookingDraftOrigin === BookingDraftOrigin.Reschedule
+        ? {
+            appointmentId: draft.rescheduleAppointmentId,
+            readerUserId: draft.rescheduleOwnerUserId,
+            localDate: draft.rescheduleLocalDate,
+            riders: draft.rescheduleRiders,
+            release: draft.rescheduleRelease,
+          }
+        : null,
+    );
+
+    if (draft.bookingFlowStep === BookingFlowStep.Location) {
       this._state.set({
-        kind: 'schedule',
-        party: partyResult.value,
-        cart: cartResult.value,
-        locationId,
-        when: FlexibleWhen.of(
-          declared.days.filter((day) => kept.includes(day.dayKey)),
-        ),
+        bookingFlowStep: BookingFlowStep.Location,
+        party: draft.party,
+        cart: draft.cart,
+        locationId: draft.locationId,
       });
       return true;
     }
 
-    this._state.set({
-      kind: 'services',
-      party: partyResult.value,
-      cart: cartResult.value,
-      locationId,
-    });
+    // `BookingCartSystem.restore` decides the step: a `review` draft resumes
+    // on SCHEDULE, never on review itself — review's state is an OFFER, and
+    // an offer restored from storage is an offer nobody re-checked; schedule
+    // only for a bag every seat of which holds something and no two guests
+    // share a label (a draft from before either rule resumes on services,
+    // where `next` says so and one rename fixes it). The lapsed days wait for
+    // the shop's "today" — see {@link settleLapsedDays}.
+    const resumed = BookingCartSystem.restore(
+      { state: draft, selectedLocalDate: draft.draftLocalDate },
+      EARLIEST_DAY,
+    );
+    this._state.set(resumed.state);
+    if (resumed.state.bookingFlowStep === BookingFlowStep.Schedule) {
+      this._selectedLocalDate.set(resumed.selectedLocalDate);
+      this.lapsedUnsettled = true;
+    }
     return true;
   }
 
   /**
-   * The stored declaration, parsed in the draft's zone — or an empty one.
-   * Its lapsed days are dropped by `BookingCartSystem.restore`.
-   *
-   * A declaration that no longer parses is DROPPED rather than failing the
-   * restore: losing "I'm free Tuesday morning" costs a few taps; losing the
-   * party and the bag with it costs the whole session. No zone means no
-   * declaration worth restoring: the day keys would have to be resolved
-   * against a guess.
+   * Drop what a restored draft still holds of days that have GONE BY — the
+   * picked day and the declared ones (`BookingCartSystem.restore` against
+   * the shop's `today`). Once per restore: the schedule step calls it with
+   * its first clock reading, and a flow that has since left the schedule
+   * step keeps what it holds until it comes back.
    */
-  private restoreWhen(draft: BookingDraft): FlexibleWhen {
-    const props = draft.when;
-    if (!props || props.days.length === 0 || draft.zone === null) {
-      return FlexibleWhen.empty();
+  settleLapsedDays(today: LocalDate): void {
+    if (!this.lapsedUnsettled) return;
+    const state = this._state();
+    if (state.bookingFlowStep !== BookingFlowStep.Schedule) return;
+    this.lapsedUnsettled = false;
+    const settled = BookingCartSystem.restore(
+      { state, selectedLocalDate: this._selectedLocalDate() },
+      today,
+    );
+    if (
+      settled.state.bookingFlowStep === BookingFlowStep.Schedule &&
+      settled.state.when !== state.when
+    ) {
+      this._state.set(settled.state);
     }
-    const restored = FlexibleWhen.create(props, draft.zone);
-    return restored.isFailure() ? FlexibleWhen.empty() : restored.value;
-  }
-
-  /** Today's day in `zone`, or `null` without a zone or a clock reading. */
-  private todayKeyOf(zone: string | null): LocalDate | null {
-    if (zone === null) return null;
-    const now = this.clock.now(zone);
-    if (now.isFailure()) return null;
-    return localDateOrNull(CalendarDay.fromZonedDateTime(now.value).key());
-  }
-
-  /**
-   * The stored day, unless it has gone by (`BookingCartSystem.restore`). A
-   * key with no zone is kept as stored; one whose zone cannot say what today
-   * is, or that is no day at all, is dropped.
-   */
-  private restoredDayKey(
-    draft: BookingDraft,
-    today: LocalDate | null,
-    resumed: { readonly selectedLocalDate: LocalDate | null },
-  ): string | null {
-    if (draft.dayKey === null || draft.zone === null) return draft.dayKey;
-    if (today === null || localDateOrNull(draft.dayKey) === null) return null;
-    return resumed.selectedLocalDate;
+    this._selectedLocalDate.set(settled.selectedLocalDate);
+    this.persist();
   }
 
   clearDraft(): void {
-    this.draftStore.clear();
+    this.drafts.clearBookingDraft();
   }
 
   /**
@@ -1342,21 +1221,21 @@ export class BookingFlowStore {
    * Held beside the machine rather than inside a state, for the same reason
    * the selected day is: it survives every step transition, it is meaningful
    * from the moment the booker is known, and no transition is gated on it.
-   * `null` means "nothing captured" — the commit then carries no contact at
-   * all rather than an empty one the server would refuse.
+   * `BookingContact.NONE` means "nothing captured" — the commit then carries
+   * no contact at all rather than an empty one the server would refuse.
    */
-  private readonly _contact = signal<BookingContactProps | null>(null);
+  private readonly _contact = signal<BookingContact>(BookingContact.NONE);
   readonly contact = this._contact.asReadonly();
 
-  setContact(contact: BookingContactProps | null): void {
+  setContact(contact: BookingContact): void {
     this._contact.set(contact);
     this.persist();
   }
 
   /** Apply one event; answers whether the machine took it. */
   private dispatch(event: BookingFlowEvent): boolean {
-    const result = advanceBookingFlow(this._state(), event);
-    if (result.isFailure()) {
+    const result = BookingFlowSystem.next(this._state(), event, FLOW_LIMITS);
+    if (!result.ok) {
       this._error.set(result.error);
       return false;
     }
@@ -1367,519 +1246,90 @@ export class BookingFlowStore {
   }
 
   /**
-   * Snapshot the flow after every accepted event. Fire-and-forget: a full
-   * or disabled `sessionStorage` must never block the wizard, and the only
-   * cost of a failed write is that a reload starts over.
+   * Snapshot the flow after every accepted event — the flat `BookingDraft`:
+   * the flow state, the contact, the picked day and where the draft came
+   * from. Fire-and-forget: a full or disabled `sessionStorage` must never
+   * block the wizard, and the only cost of a failed write is that a reload
+   * starts over.
    */
   private persist(): void {
     const state = this._state();
     // Both terminal states end the draft's life: the receipt lives on the
     // server now, and a resumable draft pointing at a finished flow is how a
     // reload lands someone back inside a booking they already made.
-    if (state.kind === 'confirmed' || state.kind === 'waitlisted') {
-      this.draftStore.clear();
+    if (
+      state.bookingFlowStep === BookingFlowStep.Confirmed ||
+      state.bookingFlowStep === BookingFlowStep.Waitlisted
+    ) {
+      this.drafts.clearBookingDraft();
       return;
     }
 
-    const draft: BookingDraft = {
-      step: state.kind,
-      party: {
-        ownerId: state.party.ownerId?.value ?? null,
-        guests: state.party.guests.map((guest) => ({
-          id: guest.id.value,
-          label: guest.label.value,
-        })),
-        nextSequence: state.party.nextGuestSequence,
-      },
-      cart: this.cartProps(state.cart),
-      locationId: this.locationId()?.value ?? null,
-      dayKey: this._selectedDayKey(),
-      when: state.kind === 'schedule' ? state.when.toProps() : null,
-      // The zone EVERY stored day key is expressed in — the declaration's and
-      // the single-day pick's alike. See the field on `BookingDraft`. The
-      // declared days carry their own, which is the more authoritative of the
-      // two; the tracked one covers a draft with a day but no declaration.
-      zone: declaredZone(state) ?? this._zone(),
-      contact: this._contact(),
-      bookedFrom: draftSource(this._bookedFrom()),
-      rescheduleOf: draftMove(this._rescheduleOf()),
-      timeSlot:
-        state.kind === 'review'
-          ? {
-              startIso: state.selection.timeSlot.start.toISO(),
-              endIso: state.selection.timeSlot.end.toISO(),
-              zone: state.selection.timeSlot.start.zoneName,
-            }
-          : null,
-    };
-
-    this.draftStore.save(draft);
+    const contact = this._contact();
+    const day = this._selectedLocalDate();
+    // A visit bound to nobody lives in memory alone — the first claim
+    // releases it — so it never reaches the draft. A move wins over a
+    // rebooking edge: a move is never a rebooking.
+    const moving = this._rescheduleOf();
+    const source = this._bookedFrom();
+    const draft =
+      moving !== null && moving.readerUserId !== null
+        ? BookingDraft.reschedule(
+            state,
+            contact,
+            day,
+            BookingDraft.rescheduleOrigin(
+              moving.appointmentId,
+              moving.readerUserId,
+              moving.localDate,
+              moving.riders,
+              moving.release,
+            ),
+          )
+        : source !== null && source.readerUserId !== null
+          ? BookingDraft.bookedFrom(
+              state,
+              contact,
+              day,
+              BookingDraft.bookedFromOrigin(
+                source.appointmentId,
+                source.readerUserId,
+              ),
+            )
+          : BookingDraft.fresh(state, contact, day);
+    this.drafts.saveBookingDraft(draft);
   }
 
   /**
-   * The cart in its persistence shape.
-   *
-   * ONE cart serialization in the client: the draft writes it and a waitlist
-   * request sends it, and a request whose bag was spelled differently from
-   * the draft's is a request the matcher reads back as a different booking.
-   * `BookingCart.reconstitute` is the only reader of either.
+   * A client operation id from the id source (`ID_PORTS`) — `null` when the
+   * source answers something the server's charset refuses
+   * (`ClientOperationId.parse`).
    */
-  private cartProps(cart: BookingCart): ReconstituteBookingCartProps {
-    return {
-      seats: cart.entries().map(([seatKey, lines]) => ({
-        seatKey,
-        lines: lines.map((line) => ({
-          id: line.id.value,
-          serviceId: line.serviceId.value,
-          variantId: line.variantId?.value ?? null,
-          barberId:
-            line.barberPref.kind === 'specific'
-              ? line.barberPref.barberId.value
-              : null,
-        })),
-      })),
-      nextSequence: cart.nextLineSequence,
-    };
-  }
-
-  /** `SeatKey` → the map key the cart and the templates both use. */
-  seatKey(key: SeatKey): string {
-    return seatKeyValue(key);
+  private mintAttemptId(): ClientOperationId | null {
+    const minted = ClientOperationId.parse(this.ids.nextId());
+    return minted.ok ? minted.value : null;
   }
 }
 
 /**
- * The zone a state's declared days are expressed in, if it has any.
- *
- * A free function so the narrowing reads plainly: only the schedule state
- * carries a declaration, and only a non-empty one carries a zone.
+ * An appointment the flow points at, and the account that read it.
+ * `readerUserId` is `null` only when nobody could be named — such a source
+ * lives in memory alone, and the first claim releases it.
  */
-function declaredZone(state: BookingFlowState): string | null {
-  if (state.kind !== 'schedule') return null;
-  return state.when.days[0]?.day.zone ?? null;
+interface HeldVisit {
+  readonly appointmentId: AppointmentId;
+  readonly readerUserId: UserId | null;
 }
 
-/**
- * `label(n)` for the first `n` counting up from `from` that is not in
- * `taken` — the ONE placeholder rule, for a prefilled party and for a guest
- * added on the services step alike.
- *
- * NEVER a taken label: the party refuses a guest under a label another guest
- * holds (`DuplicateGuestLabelError` — the server would merge the two), so a
- * placeholder that collided would be an add that silently does nothing.
- * `taken` can block at most `taken.size` ordinals, so one more try always
- * lands — unless `label` ignores its ordinal (a catalogue missing its
- * `{{number}}`). No count can fix the word then, so the number is written
- * after it («Гост 2»), which the same pigeonhole bound lands too.
- */
-export function firstUnusedLabel(
-  taken: ReadonlySet<string>,
-  label: (ordinal: number) => string,
-  from = 1,
-): string {
-  return GuestLabelSystem.firstUnusedLabel([...taken], label, from);
+/** The visit being moved: its shop day, who the server carries with it, and its chairs. */
+interface HeldMove extends HeldVisit {
+  readonly localDate: LocalDate;
+  readonly riders: readonly MoveRider[];
+  readonly release: readonly ChairTime[];
 }
 
-/**
- * UUID-shaped, from the platform when it has one. The jsdom fallback stays
- * inside the server's accepted charset (`[A-Za-z0-9_-]{16,64}`), and a weak
- * fallback id costs only idempotency for that attempt — never correctness.
- */
-function mintAttemptId(): string {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  if (uuid) return uuid;
-  return `attempt_${Date.now().toString(36)}_${Math.random()
-    .toString(36)
-    .slice(2, 12)}`;
-}
-
-/**
- * An appointment the flow points at, and who read it. `ownerId` is `null`
- * only when nobody could be named — such a source lives in memory alone, and
- * the first claim releases it.
- */
-interface HeldSource {
-  readonly appointmentId: string;
-  readonly ownerId: string | null;
-}
-
-/** The visit being moved, who the server carries with it, and its chairs. */
-interface HeldMove extends HeldSource {
-  readonly riders: readonly BookingDraftRider[];
-  readonly chairTimes: readonly BookingDraftChairTime[];
-}
-
-/**
- * Why a `?reschedule=` link did not become a move. The shell says which,
- * instead of opening a bookable flow that would commit a second visit.
- */
-export type MoveRefusal =
-  /**
-   * Everyone on the visit is somebody only the shop can re-seat: the
-   * booker's own seat was removed and a companion the shop added is all that
-   * is left. The server refuses the same visit (`shop_only`).
-   */
-  | 'companions_only'
-  /**
-   * The visit could not be read for this account (gone, somebody else's, or
-   * the read failed), or it no longer rebuilds into a bag.
-   */
-  | 'unavailable'
-  /**
-   * Somebody the move carries can no longer be served here at all. Their
-   * barber is off the active list, their service (or the variant it was
-   * sold as) is retired, or no active shop offers their service any more.
-   * No time on any day at any shop would take them, and the server
-   * refuses the move whatever the client picks. Only the shop can re-seat
-   * them. Decided by the shell from the live catalogue (`carriedSeatsInReach`),
-   * not by the store, which holds no catalogue.
-   */
-  | 'carried_out_of_reach';
-
-/** A refused move, and its shop when known — the shell's call button. */
-export interface MoveRefusalState {
-  readonly reason: MoveRefusal;
-  readonly locationId: LocationKey | null;
-}
-
-/** A held source as the draft stores it; one bound to nobody is not stored. */
-function draftSource(held: HeldSource | null): BookingDraftSource | null {
-  return held !== null && held.ownerId !== null
-    ? { appointmentId: held.appointmentId, ownerId: held.ownerId }
-    : null;
-}
-
-/** A held move as the draft stores it — the source, its riders and chairs. */
-function draftMove(held: HeldMove | null): BookingDraftMove | null {
-  const source = draftSource(held);
-  return source !== null && held !== null
-    ? { ...source, riders: held.riders, chairTimes: held.chairTimes }
-    : null;
-}
-
-/**
- * A stored source, shape-checked — the draft adapter guards the flow's shape,
- * not these optional fields, and a malformed one is dropped, never guessed.
- */
-function heldSource(stored: unknown): HeldSource | null {
-  if (stored === null || typeof stored !== 'object') return null;
-  const fields = new Map(Object.entries(stored));
-  const appointmentId = fields.get('appointmentId');
-  const ownerId = fields.get('ownerId');
-  return typeof appointmentId === 'string' &&
-    appointmentId.length > 0 &&
-    typeof ownerId === 'string' &&
-    ownerId.length > 0
-    ? { appointmentId, ownerId }
-    : null;
-}
-
-/**
- * A stored move, or `null` when it does not parse.
- *
- * All or nothing. The riders drive the grid's rider check and the chairs its
- * release, so a move restored with one of them dropped is a grid deciding on
- * a visit that does not exist: a missing rider over-offers the times the
- * server refuses for that seat. A move that cannot come back whole does not
- * come back at all ({@link BookingFlowStore.restore}), and the link lands it
- * again from the live visit.
- */
-function heldMove(stored: unknown): HeldMove | null {
-  const source = heldSource(stored);
-  if (source === null || stored === null || typeof stored !== 'object') {
-    return null;
-  }
-  const fields = new Map(Object.entries(stored));
-  const riders: unknown = fields.get('riders');
-  const chairTimes: unknown = fields.get('chairTimes');
-  if (
-    !Array.isArray(riders) ||
-    !riders.every((rider: unknown) => isRider(rider)) ||
-    !Array.isArray(chairTimes) ||
-    !chairTimes.every((chair: unknown) => isChairTime(chair))
-  ) {
-    return null;
-  }
-  return {
-    ...source,
-    riders: riders as readonly BookingDraftRider[],
-    chairTimes: chairTimes as readonly BookingDraftChairTime[],
-  };
-}
-
-function isChairTime(value: unknown): value is BookingDraftChairTime {
-  if (value === null || typeof value !== 'object') return false;
-  const fields = new Map(Object.entries(value));
-  const startMs = fields.get('startMs');
-  const endMs = fields.get('endMs');
-  return (
-    typeof fields.get('barberId') === 'string' &&
-    typeof startMs === 'number' &&
-    typeof endMs === 'number' &&
-    Number.isFinite(startMs) &&
-    Number.isFinite(endMs) &&
-    startMs < endMs &&
-    // The grid's own reading of it, not a looser one: a chair it could not
-    // name a barber for is a chair it would silently stop handing back.
-    chairTimeOf(value as BookingDraftChairTime) !== null
-  );
-}
-
-/**
- * A held chair's barber, as a barber id — `null` when it is not one. The
- * restore guard's reading (`isChairTime`): a chair the grid could not name a
- * barber for is a chair it would silently stop handing back.
- */
-function chairTimeOf(chair: BookingDraftChairTime): BarberKey | null {
-  const barberId = BarberKey.parse(chair.barberId);
-  return barberId.ok ? barberId.value : null;
-}
-
-/**
- * A held rider → what the move systems read it as, or `null` when any of
- * its identities or figures does not parse. The one reading shared by the
- * restore guard (`isRider`) and the grid (`moveRiders`), so a rider the
- * guard lets through is always a rider the grid checks.
- */
-function moveRiderOf(rider: BookingDraftRider): MoveRider | null {
-  const barberId = BarberKey.parse(rider.barberId);
-  const serviceId = ServiceKey.parse(rider.serviceId);
-  const variantId =
-    rider.variantId === null ? null : VariantKey.parse(rider.variantId);
-  const offset = MinuteDelta.of(rider.offsetMinutes);
-  const duration = DurationMinutes.of(rider.durationMinutes);
-  const setup = MinuteCount.of(rider.setupMinutes);
-  const cleanup = MinuteCount.of(rider.cleanupMinutes);
-  if (
-    !barberId.ok ||
-    !serviceId.ok ||
-    (variantId !== null && !variantId.ok) ||
-    !offset.ok ||
-    !duration.ok ||
-    !setup.ok ||
-    !cleanup.ok
-  ) {
-    return null;
-  }
-  return {
-    serviceId: serviceId.value,
-    variantId: variantId === null ? null : variantId.value,
-    barberId: barberId.value,
-    offsetMinutes: offset.value,
-    durationMinutes: duration.value,
-    setupMinutes: setup.value,
-    cleanupMinutes: cleanup.value,
-  };
-}
-
-/** A carried seat as the engine's rider check reads it: its barber, distance, SOLD chair time, and service. */
-function cartRiderOf(rider: MoveRider): CartRider {
-  return {
-    serviceId: rider.serviceId,
-    barberId: rider.barberId,
-    offsetMinutes: rider.offsetMinutes,
-    terms: {
-      durationMinutes: rider.durationMinutes,
-      padBeforeMinutes: rider.setupMinutes,
-      padAfterMinutes: rider.cleanupMinutes,
-    },
-  };
-}
-
-function isRider(value: unknown): value is BookingDraftRider {
-  if (value === null || typeof value !== 'object') return false;
-  const fields = new Map(Object.entries(value));
-  const variantId = fields.get('variantId');
-  const offset = fields.get('offsetMinutes');
-  // Whole minutes, every one: the grid measures the rider's chair time by
-  // them, and a rider it cannot measure is one it could strand.
-  const minutes = (name: string, min: number): boolean => {
-    const raw = fields.get(name);
-    return typeof raw === 'number' && Number.isInteger(raw) && raw >= min;
-  };
-  return (
-    typeof fields.get('serviceId') === 'string' &&
-    typeof fields.get('barberId') === 'string' &&
-    (variantId === null || typeof variantId === 'string') &&
-    typeof offset === 'number' &&
-    Number.isInteger(offset) &&
-    minutes('durationMinutes', 1) &&
-    minutes('setupMinutes', 0) &&
-    minutes('cleanupMinutes', 0) &&
-    // Its identities as the grid reads them: an empty or malformed barber
-    // or service id passed the shape check above, restored, and was then
-    // dropped from the rider check — the one thing restoring whole exists
-    // to prevent.
-    moveRiderOf(value as BookingDraftRider) !== null
-  );
-}
-
-/* ── Legacy ↔ ECS converters (the store's math is BookingCartSystem's and
- * BookingFlowSystem's; these only change the shape) ─────────────────── */
-
-/** The wizard's two policy numbers, as the legacy machine reads them. */
-const FLOW_LIMITS: BookingFlowLimits = {
-  maxPartySize: MAX_PARTY_SIZE,
-  maxFlexibleDays: MAX_FLEXIBLE_DAYS,
-};
-
-/** A brand built from a value its own legacy class already validated. */
-function sure<T>(
-  result: { readonly ok: true; readonly value: T } | { readonly ok: false },
-  what: string,
-): T {
-  if (!result.ok) defect(`unreachable: ${what}`);
-  return result.value;
-}
-
-/** A stored day key as a shop day — `null` when it is no day at all. */
+/** A raw day as a shop day — `null` when it is no day at all. */
 function localDateOrNull(raw: string): LocalDate | null {
   const parsed = LocalDate.parse(raw);
   return parsed.ok ? parsed.value : null;
-}
-
-/** Before every day a draft can name — prunes nothing. */
-const EARLIEST_DAY = sure(LocalDate.parse('0001-01-01'), 'the earliest day');
-
-/** The legacy wizard step ↔ the flow's dictionary, one table each way. */
-const STEP_OF = {
-  location: FlowStep.Location,
-  services: FlowStep.Services,
-  schedule: FlowStep.Schedule,
-  review: FlowStep.Review,
-  confirmed: FlowStep.Confirmed,
-  waitlisted: FlowStep.Waitlisted,
-} as const satisfies Record<BookingFlowStep, FlowStep>;
-
-/** The wire's barber preference, as it has always been spelt. */
-const LEGACY_BARBER_PREF = {
-  ANY: 'any',
-  SPECIFIC: 'specific',
-} as const satisfies Record<BarberPreference, 'any' | 'specific'>;
-
-function toLocationKey(locationId: LocationId | null): LocationKey | null {
-  return locationId === null ? null : LocationKey.of(locationId.value);
-}
-
-function toPartyData(party: BookingParty): PartyData {
-  return {
-    ownerUserId:
-      party.ownerId === null ? null : UserKey.of(party.ownerId.value),
-    members: [
-      MemberData.owner(),
-      ...party.guests.map((guest) =>
-        MemberData.guest(
-          GuestKey.of(guest.id.value),
-          LabelData.of(guest.label.value),
-        ),
-      ),
-    ],
-    nextGuestSequence: party.nextGuestSequence,
-  };
-}
-
-function toPartyProps(party: PartyData) {
-  return {
-    ownerId: party.ownerUserId,
-    guests: party.members.flatMap((member) =>
-      member.partyRole === PartyRole.Guest
-        ? [{ id: member.guestId, label: member.guestLabel as string }]
-        : [],
-    ),
-    nextSequence: party.nextGuestSequence,
-  };
-}
-
-function toCartData(cart: BookingCart): CartData {
-  return {
-    cartSeats: cart.entries().map(([text, lines]) => {
-      const seatKey = SeatKeyText.of(text);
-      return {
-        seatKey,
-        lines: lines.map((line) => ({
-          lineId: LineKey.of(line.id.value),
-          seatKey,
-          serviceId: ServiceKey.of(line.serviceId.value),
-          variantId:
-            line.variantId === null
-              ? null
-              : VariantKey.of(line.variantId.value),
-          barberId:
-            line.barberPref.kind === 'specific'
-              ? BarberKey.of(line.barberPref.barberId.value)
-              : null,
-          locationId: null,
-        })),
-      };
-    }),
-    cartNextSequence: cart.nextLineSequence,
-  };
-}
-
-function toCartProps(cart: CartData): ReconstituteBookingCartProps {
-  return {
-    seats: cart.cartSeats.map((seat) => ({
-      seatKey: seat.seatKey,
-      lines: seat.lines.map((line) => ({
-        id: line.lineId,
-        serviceId: line.serviceId,
-        variantId: line.variantId,
-        barberId: line.barberId,
-      })),
-    })),
-    nextSequence: cart.cartNextSequence,
-  };
-}
-
-function toWhenData(when: FlexibleWhen): WhenData {
-  return WhenData.of(
-    when.days.map((day) =>
-      DayWindowsData.of(
-        sure(LocalDate.parse(day.dayKey), 'a declared day'),
-        // A LocalTimeRange is a valid span of one day by construction.
-        day.windows.map((window) =>
-          MinuteRange.of(
-            sure(
-              MinuteOfDay.of(window.start.minutesFromMidnight()),
-              'a window start',
-            ),
-            sure(
-              EndMinute.of(window.end.minutesFromMidnight()),
-              'a window end',
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-/**
- * An assignment on the shop day's wall clock (the slot's own zone): its
- * start's minute, and its end's — `1440` when it ends at the next midnight.
- */
-function toSeatAssignment(
-  assignment: ScheduleSelection['assignments'][number],
-): SeatAssignment {
-  const zone = sure(
-    ZonedTimeSystem.checkZone(assignment.slot.start.zoneName),
-    'the slot’s zone',
-  );
-  const start = ZonedTimeSystem.toLocal(
-    sure(UtcEpochMs.of(assignment.slot.start.toMillis()), 'a slot start'),
-    zone,
-  );
-  const end = ZonedTimeSystem.toLocal(
-    sure(UtcEpochMs.of(assignment.slot.end.toMillis()), 'a slot end'),
-    zone,
-  );
-  return {
-    lineId: LineKey.of(assignment.lineId.value),
-    barberId: BarberKey.of(assignment.barberId.value),
-    startMinutes: sure(MinuteOfDay.of(start.minute), 'a slot start minute'),
-    endMinutes: sure(
-      EndMinute.of(end.localDate > start.localDate ? 1440 : end.minute),
-      'a slot end minute',
-    ),
-  };
 }

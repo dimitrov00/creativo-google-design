@@ -7,7 +7,7 @@
     sheet cannot drift apart on the next change to either.
 
     Variant and performer differ only in which cart write a pick ends in,
-    which `pick()` resolves from the select's own `kind`. A second copy of
+    which `pick()` resolves from the select's own `bagSelect`. A second copy of
     this block to express that would be a copy.
   -->
   <ng-template #pulldown let-select let-line="line" let-seat="seat">
@@ -25,7 +25,9 @@
         uiControlSize="large"
         class="booking-pick"
         [attr.aria-label]="select.ariaLabel + ': ' + select.label"
-        [attr.data-testid]="'booking-bag-' + select.kind + '-' + line.key"
+        [attr.data-testid]="
+          'booking-bag-' + selectWord(select) + '-' + line.key
+        "
         (click)="toggleMenu(select.key)"
       >
         @if (select.showsFace) {
@@ -34,7 +36,7 @@
           [uiName]="select.label"
           uiControlSize="small"
         />
-        } @else if (select.kind === 'barber') {
+        } @else if (select.bagSelect === BagSelect.Barber) {
         <!-- "Anyone" is an answer like any other, so it gets a face-shaped
                mark like any other — the same control the menu row uses, at
                the trigger's small rung. Without it the trigger changed shape
@@ -57,7 +59,7 @@
           [uiSelected]="option.selected"
           [attr.data-testid]="
               'booking-bag-' +
-              select.kind +
+              selectWord(select) +
               '-option-' +
               line.key +
               '-' +
@@ -78,7 +80,7 @@
           <span
             uiLeading
             class="bag-option__lead"
-            [attr.data-empty]="select.kind === 'barber' ? null : ''"
+            [attr.data-empty]="select.bagSelect === BagSelect.Barber ? null : ''"
           >
             @if (option.id) {
             <ui-avatar

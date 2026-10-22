@@ -11,15 +11,17 @@ describe('StreakPublishError', () => {
       'LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN',
       'LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED',
       'LOYALTY_STREAK_PUBLISH_INVALID',
+      'LOYALTY_STREAK_PUBLISH_INVALID_INPUT',
       'LOYALTY_STREAK_PUBLISH_PREVIEW_STALE',
       'LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE',
       'LOYALTY_STREAK_PUBLISH_STALE',
+      'LOYALTY_STREAK_PUBLISH_STORE_FAILED',
       'LOYALTY_STREAK_PUBLISH_TOO_EARLY',
     ]);
   });
 
   it('builds one plain struct per errorCode', () => {
-    const errors: readonly StreakPublishError[] = [
+    const errors: readonly { readonly errorCode: string }[] = [
       StreakPublishError.callerUnauthenticated(),
       StreakPublishError.callerNotAdmin(),
       StreakPublishError.stale(3, 4),
@@ -30,10 +32,16 @@ describe('StreakPublishError', () => {
       ),
       StreakPublishError.recomputeNeedsEngine(),
       StreakPublishError.previewStale(),
+      StreakPublishError.invalidInput('requestId'),
+      StreakPublishError.storeFailed(),
     ];
     expect(errors.map((error) => error.errorCode).sort()).toEqual(
       Object.values(StreakPublishErrorCode).sort(),
     );
+    expect(StreakPublishError.invalidInput('requestId')).toEqual({
+      errorCode: 'LOYALTY_STREAK_PUBLISH_INVALID_INPUT',
+      field: 'requestId',
+    });
     expect(StreakPublishError.stale(3, 4)).toEqual({
       errorCode: 'LOYALTY_STREAK_PUBLISH_STALE',
       expected: 3,

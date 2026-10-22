@@ -1,6 +1,6 @@
 import { CanDeactivateFn, Route } from '@angular/router';
 import { firstValueFrom, isObservable } from 'rxjs';
-import { STAFF_ROLES } from '@creativo/domain/accounts';
+import { ADMIN_ROLES, Role, STAFF_ROLES } from '@core/components';
 import type { AdminRhythmLeaving } from '@creativo/features/admin/loyalty';
 import { activeGuard } from './guards/active.guard';
 import { anonGuard } from './guards/anon.guard';
@@ -113,7 +113,7 @@ export const appRoutes: Route[] = [
     // role named 'staff' exists and nothing ever minted one, so this guard
     // used to bounce every principal to /forbidden; the identity brand's
     // unvalidated Role string is what let it compile. The list is
-    // `STAFF_ROLES` from domain/accounts, the same grouping
+    // `STAFF_ROLES` from `@core/components`, the same grouping
     // firestore.rules' `isStaff()` enforces — the guard and the rules must
     // never disagree about who counts.
     //
@@ -144,7 +144,7 @@ export const appRoutes: Route[] = [
     // that denies what the rules allow strands a legitimate principal on
     // /forbidden over a screen the data layer would happily serve.
     path: 'admin',
-    canActivate: [activeGuard, rolesGuard('admin', 'sysadmin')],
+    canActivate: [activeGuard, rolesGuard(...ADMIN_ROLES)],
     loadComponent: () =>
       import('@creativo/features/admin/impersonation').then(
         (m) => m.AdminImpersonation,
@@ -154,10 +154,7 @@ export const appRoutes: Route[] = [
     // Matches `isCatalogManager()` in firestore.rules — content_manager's
     // own tier plus the admin pair the rules fold in.
     path: 'admin/programs',
-    canActivate: [
-      activeGuard,
-      rolesGuard('content_manager', 'admin', 'sysadmin'),
-    ],
+    canActivate: [activeGuard, rolesGuard(Role.ContentManager, ...ADMIN_ROLES)],
     loadComponent: () =>
       import('@creativo/features/admin/programs').then((m) => m.AdminPrograms),
   },
@@ -175,7 +172,7 @@ export const appRoutes: Route[] = [
     // above; and the app's first `canDeactivate`: leaving with an unsaved
     // draft asks first, whichever way the admin leaves.
     path: 'admin/loyalty/rhythm',
-    canActivate: [activeGuard, rolesGuard('admin', 'sysadmin')],
+    canActivate: [activeGuard, rolesGuard(...ADMIN_ROLES)],
     canDeactivate: [adminRhythmLeaveGuard],
     loadComponent: () =>
       import('@creativo/features/admin/loyalty').then((m) => m.AdminRhythm),

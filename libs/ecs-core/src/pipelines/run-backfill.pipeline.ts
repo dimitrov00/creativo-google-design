@@ -8,13 +8,14 @@ import {
   Result,
   type RunBackfillRefusal,
   RunBackfillRefusalCode,
+  type TimeZone,
   type UserId,
-  type UtcEpochMs,
 } from '@core/primitives';
 import {
   Actor,
   type AuditAction,
   AuditContext,
+  type BackfillCall,
   BackfillJobName,
   BackfillOutcome,
   ClientStatsPolicy,
@@ -33,6 +34,8 @@ import type {
   BackfillJobPorts,
   CallerRolesPorts,
   ClientPagePorts,
+  DefaultLocationPorts,
+  LocationLoadPorts,
   LogPorts,
   PolicyReadPorts,
   TxPorts,
@@ -59,6 +62,7 @@ import {
   recomputeClients,
   repositoryFailure,
 } from './project-client-stats.pipeline';
+import { readShopZone } from './shop-zone-read.pipeline';
 
 /**
  * `runBackfill` — one page of one ops backfill job, callable in a loop
@@ -95,32 +99,9 @@ export type RunBackfillCommand = {
   readonly request: BackfillRequest | null;
 };
 
-/** One page's answer — what the wire encoder spells as today's JSON. */
-export type BackfillPageResult = {
-  readonly backfillJobName: BackfillJobName;
-  /** Pass back to continue (opaque); `null` once the job is done. */
-  readonly cursor: string | null;
-  readonly done: boolean;
-  /** This call's page: appointments walked. */
-  readonly processed: number;
-  /** This call's page: stored `clientStats` documents walked. */
-  readonly storedClients: number;
-  readonly stamped: number;
-  readonly recomputed: number;
-  /** Appointments walked by the whole run so far. */
-  readonly total: number;
-  /** When the run this page belongs to started. */
-  readonly runStartedAtUtcMs: UtcEpochMs;
-  /** The cursor this page started after, as resolved. */
-  readonly startedFrom: string | null;
-  /** Stored clients the closing sample recomputed; `null` when none was taken. */
-  readonly sampleChecked: number | null;
-  readonly sampleMismatched: readonly CustomerId[];
-  /** The call stopped taking work because its budget ran out. */
-  readonly budgetSpent: boolean;
-};
-
 export type RunBackfillPorts = ClientStatsRecomputePorts &
+  LocationLoadPorts &
+  DefaultLocationPorts &
   TxPorts &
   AuditAppendPorts &
   AuditQueryPorts &
@@ -159,6 +140,16 @@ type PageOutcome = {
   readonly counts: BackfillCounts;
 };
 
+/**
+ * What a stats page recomputes against, loaded on first use, once per call:
+ * the policy, and the shop's clock — the default location's (F-4: a stats
+ * record names no shop).
+ */
+type StatsContext = {
+  readonly policy: ClientStatsPolicy;
+  readonly timeZone: TimeZone;
+};
+
 /** What the closing sample found. */
 type SampleDiff = {
   readonly checked: number;
@@ -175,7 +166,7 @@ const CallEnd = {
 type Ended =
   | {
       readonly callEnd: typeof CallEnd.Returned;
-      readonly result: BackfillPageResult;
+      readonly result: BackfillCall.Page;
     }
   | { readonly callEnd: typeof CallEnd.Failed; readonly failureCode: string };
 
@@ -202,7 +193,7 @@ function mirrorRowOf(appointment: Appointment): MirrorRow {
  * replayed call derives the same key and logs once; anything else is
  * another change. (A home in `AuditSystem.changeKey` is reported.)
  */
-function backfillChangeKey(result: BackfillPageResult, actor: Actor): string {
+function backfillChangeKey(result: BackfillCall.Page, actor: Actor): string {
   return JSON.stringify([
     'ops.backfill/v1',
     result.backfillJobName,
@@ -316,16 +307,17 @@ export const runBackfill = (
 
   /** `customerIds` recomputed, `RECOMPUTE_WIDTH` at a time; the first failure fails the chunk. */
   async function recomputeAll(
-    policy: ClientStatsPolicy,
+    context: StatsContext,
     customerIds: readonly CustomerId[],
   ): Promise<Result<number, unknown>> {
     if (customerIds.length === 0) return Result.ok(0);
     const report = await recomputeClients(
       ports,
-      policy,
+      context.policy,
       customerIds,
       null,
       RECOMPUTE_WIDTH,
+      context.timeZone,
     );
     const failure = report.failures[0];
     return failure === undefined
@@ -419,7 +411,7 @@ export const runBackfill = (
     backfillJobName: BackfillJobName,
     after: string | null,
     budget: StepBudget,
-    policy: () => Promise<Result<ClientStatsPolicy, RepositoryError>>,
+    stats: () => Promise<Result<StatsContext, RepositoryError>>,
   ): Promise<Result<PageOutcome, unknown>> {
     const page = await ports.pageAppointments(
       after === null ? null : AppointmentId.of(after),
@@ -447,7 +439,7 @@ export const runBackfill = (
       if (subjects.length === 0) {
         return Result.ok({ stamped: stamped.value, recomputed: 0 });
       }
-      const loaded = await policy();
+      const loaded = await stats();
       if (!loaded.ok) return loaded;
       const recomputed = await recomputeAll(loaded.value, subjects);
       return recomputed.ok
@@ -480,7 +472,7 @@ export const runBackfill = (
   async function storedClientsPage(
     after: string | null,
     budget: StepBudget,
-    policy: () => Promise<Result<ClientStatsPolicy, RepositoryError>>,
+    stats: () => Promise<Result<StatsContext, RepositoryError>>,
   ): Promise<Result<PageOutcome, unknown>> {
     const page = await ports.pageClients(
       after === null ? null : CustomerId.of(after),
@@ -488,7 +480,7 @@ export const runBackfill = (
     );
     if (!page.ok) return page;
     const walked = await walkWithin(page.value, budget, async (chunk) => {
-      const loaded = await policy();
+      const loaded = await stats();
       if (!loaded.ok) return loaded;
       const recomputed = await recomputeAll(loaded.value, chunk);
       return recomputed.ok
@@ -520,7 +512,7 @@ export const runBackfill = (
    * mismatch is a bug, reported, never silently repaired here.
    */
   async function sampleDiff(
-    policy: ClientStatsPolicy,
+    context: StatsContext,
     pivot: CustomerId,
   ): Promise<Result<SampleDiff, unknown>> {
     const first = await ports.pageClients(pivot, sizes.sampleSize);
@@ -547,10 +539,10 @@ export const runBackfill = (
           const fresh = clientStatsOf(
             customerId,
             snapshot.history,
-            policy,
+            context.policy,
             ZonedTimeSystem.shopNow(
               snapshot.stats.updatedAtUtcMs,
-              ports.tenantTimeZone,
+              context.timeZone,
             ),
           );
           return Result.ok({
@@ -568,11 +560,23 @@ export const runBackfill = (
     return Result.ok({ checked: ids.length, mismatched });
   }
 
+  /** The policy, then the default location's clock — what a stats page recomputes against. */
+  async function loadStats(): Promise<Result<StatsContext, RepositoryError>> {
+    const policy = await ports.loadPolicy();
+    if (!policy.ok) return policy;
+    const zone = await readShopZone(ports)(null);
+    if (!zone.ok) return zone;
+    return Result.ok({
+      policy: ClientStatsPolicy.forBooking(policy.value),
+      timeZone: zone.value,
+    });
+  }
+
   /** One page of one job, its progress written — the call's whole work. */
   async function page(
     request: BackfillRequest,
     budget: StepBudget,
-  ): Promise<Result<BackfillPageResult, unknown>> {
+  ): Promise<Result<BackfillCall.Page, unknown>> {
     const backfillJobName = request.backfillJobName;
     const jobId = BACKFILL_JOB_DOC[backfillJobName];
     const previous = await ports.loadBackfillJob(jobId);
@@ -584,32 +588,27 @@ export const runBackfill = (
       nowUtcMs,
     );
 
-    // Loaded on first use, once per call — a mirror-only page never reads it.
-    let loadedPolicy: Result<ClientStatsPolicy, RepositoryError> | null = null;
-    const policy = async (): Promise<
-      Result<ClientStatsPolicy, RepositoryError>
-    > => {
-      if (loadedPolicy === null) {
-        const raw = await ports.loadPolicy();
-        loadedPolicy = raw.ok
-          ? Result.ok(ClientStatsPolicy.forBooking(raw.value))
-          : raw;
-      }
-      return loadedPolicy;
+    // Loaded on first use, once per call — a mirror-only page never reads
+    // them: the policy, then the default location's clock (a zone that
+    // cannot be read is the call's store failure, 4A-2 (e)).
+    let loadedStats: Result<StatsContext, RepositoryError> | null = null;
+    const stats = async (): Promise<Result<StatsContext, RepositoryError>> => {
+      loadedStats ??= await loadStats();
+      return loadedStats;
     };
 
     const position = BackfillPlanSystem.positionOf(cursor);
     const outcome =
       position.backfillPhase === BackfillPhase.StoredClients &&
       backfillJobName === BackfillJobName.ClientStats
-        ? await storedClientsPage(position.after, budget, policy)
+        ? await storedClientsPage(position.after, budget, stats)
         : await appointmentsPage(
             backfillJobName,
             position.backfillPhase === BackfillPhase.Appointments
               ? position.after
               : null,
             budget,
-            policy,
+            stats,
           );
     if (!outcome.ok) return outcome;
 
@@ -624,7 +623,7 @@ export const runBackfill = (
     );
     let sample: SampleDiff | null = null;
     if (verdict.takeSample) {
-      const loaded = await policy();
+      const loaded = await stats();
       if (!loaded.ok) return loaded;
       const taken = await sampleDiff(
         loaded.value,
@@ -719,7 +718,7 @@ export const runBackfill = (
     cmd: RunBackfillCommand,
     budget: StepBudget,
   ): Promise<
-    Result<BackfillPageResult, RunBackfillRefusal | RepositoryError>
+    Result<BackfillCall.Page, RunBackfillRefusal | RepositoryError>
   > => {
     const roles = await ports.loadCallerRoles(cmd.callerUserId);
     if (!roles.ok) return roles;

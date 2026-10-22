@@ -22,12 +22,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isObservable, of } from 'rxjs';
 import {
-  type AvatarRef,
-  type AvatarUploader,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
-import { type Result, ok } from '@creativo/application/booking';
-import {
   AppointmentId,
   AppointmentPhotoId,
   AttendanceState,
@@ -38,7 +32,6 @@ import {
   Currency,
   type CustomerId,
   EndMinute,
-  GiftVoucherId,
   LocalDate,
   LocationId,
   MinuteOfDay,
@@ -82,8 +75,6 @@ import {
   SeatSubject,
   SubjectRelationship,
   type VisitFact,
-  VoucherCode,
-  VoucherLifecycle,
   WaitlistLifecycle,
 } from '@core/components';
 import type {
@@ -94,6 +85,7 @@ import type {
   ClientStatsRecord,
   Customer,
   GiftVoucher,
+  GiftVoucherMeta,
   JournalEntry,
   SeasonProgress,
   StreakDefinition,
@@ -103,10 +95,13 @@ import type {
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  AvatarPorts,
   ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
+  DefaultLocationPorts,
+  LocationLoadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalog,
   LoyaltyCatalogReadPorts,
@@ -122,24 +117,30 @@ import {
   ZonedTimeSystem,
 } from '@core/systems';
 import {
+  FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   type LoyaltyClientFixture,
   appointmentFixture,
   cents,
   customerOf,
-  giftVouchersJson,
+  giftVoucherFixtures,
   loyaltyAccountFixtures,
+  locationFixture,
   loyaltyCatalogFixture,
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  memoryAvatarPorts,
   memoryClientJournalPorts,
   memoryClientStatsReadPorts,
   memoryCouponVoucherPorts,
   memoryCustomerPorts,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
   memoryLoyaltyAccountReadPorts,
   memoryLoyaltyCatalogReadPorts,
   memoryLoyaltyWorld,
   memoryProfilePorts,
+  memoryProgramsWorld,
   memoryWaitlistReadPorts,
   provisionedUserFixture,
   registeredUserFixture,
@@ -161,7 +162,6 @@ import {
   clientCardWordsOf,
 } from '../lib/client-card.words';
 
-export const ZONE = 'Europe/Sofia';
 export const GEORGI = 'dev-client-1';
 export const MARTIN = 'dev-client-2';
 export const TODAY: string = FIXTURE_TODAY;
@@ -175,31 +175,25 @@ export function must<T>(
   return value;
 }
 
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) {
-    throw new Error(`bad fixture: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
-}
-
 /**
- * A Sofia wall-clock time as the legacy instant — what the card's
- * contracts (`ClientCardLeg.startsAtIso`) and the `CLOCK` still take. The
- * booking fixtures below read the shop's clock through {@link sofia} and
- * {@link wallOf} instead.
+ * The shops' zone — the fixture centre shop's `timeZone` (Europe/Sofia),
+ * the default location's the card's store resolves; every booking fixture
+ * is read in it.
  */
-export function at(iso: string): ZonedDateTime {
-  return unwrap(ZonedDateTime.fromISO(iso, ZONE));
-}
-
-/** The shops' zone, branded — every booking fixture is read in it. */
-export const SHOP_TIME_ZONE: TimeZone = unwrapOk(
-  ZonedTimeSystem.checkZone(ZONE),
-);
+export const SHOP_TIME_ZONE: TimeZone = FIXTURE_TIME_ZONE;
 
 /** A Sofia wall-clock reading (`YYYY-MM-DDTHH:mm:ss`) as the instant it names. */
 export function sofia(iso: string): UtcEpochMs {
   return unwrapOk(ZonedTimeSystem.parseIsoIn(iso, SHOP_TIME_ZONE));
+}
+
+/**
+ * A Sofia wall-clock reading as the ISO text WITH its offset
+ * (`2026-09-28T10:00:00.000+03:00`, `ZonedTimeSystem.toIso`) — what the
+ * card's contracts take (`ClientCardLeg.startsAtIso`).
+ */
+export function sofiaIso(iso: string): string {
+  return ZonedTimeSystem.toIso(sofia(iso), SHOP_TIME_ZONE);
 }
 
 /** A Sofia wall-clock reading as the shop day and minute it is stored as (Law 7.3). */
@@ -842,96 +836,55 @@ export function martinWaitlist(
   };
 }
 
-/** The fixture's ISO instant (`{ iso }`), read as the instant it is. */
-function instantOf(document: { readonly iso: string }): UtcEpochMs {
-  return unwrapOk(ZonedTimeSystem.parseOffsetIso(document.iso));
-}
-
 /**
- * One document of `@core/testing`'s `vouchers.json` (`giftVouchersJson`),
- * the shape a spec may edit field by field before it becomes the flat body.
+ * The fixture's five gift vouchers — `@core/testing`'s
+ * `giftVoucherFixtures()`, the flat `giftVouchers/{id}` bodies, in
+ * Firestore's id order — keyed by the client record the CARD resolves for
+ * each holder: `customerOf(uid)`, the fixture hash (the file's own key is
+ * the production sha256's). Every other field is the stored one. Three of
+ * Георги's, Мартин's one, one on paper.
  */
-export type VoucherFixtureFields = {
-  readonly code: string;
-  readonly initialValueMinorUnits: number;
-  readonly balanceMinorUnits: number;
-  readonly currencyCode: string;
-  readonly issuedAt: VoucherFixtureInstant;
-  /** `null` = it does not lapse. */
-  readonly expiresAt: VoucherFixtureInstant | null;
-  /** The account it was issued to, or `null` for a paper voucher. */
-  readonly issuedToUserId: string | null;
-  readonly state:
-    | { readonly kind: 'active' }
-    | {
-        readonly kind: 'void';
-        readonly voidedAt: VoucherFixtureInstant;
-        readonly reason: string;
-      };
-};
-
-/** An instant of `vouchers.json`: the ISO text with its offset, and the zone it was read in. */
-export type VoucherFixtureInstant = {
-  readonly iso: string;
-  readonly zone: string;
-};
-
-/** The fixture's vouchers as documents, by id (`vouchers.json`). */
-export function voucherFixtureFields(): ReadonlyMap<
-  string,
-  VoucherFixtureFields
-> {
-  return new Map(
-    Object.entries(
-      giftVouchersJson.giftVouchers as Readonly<
-        Record<string, VoucherFixtureFields>
-      >,
-    ),
-  );
-}
-
-/**
- * One of the fixture's gift vouchers (`voucherFixtureFields`, the document
- * shape a spec may edit) as the flat `giftVouchers/{id}` body: the holder's
- * client record beside their uid, the lapse as an instant and the shop day
- * it falls on.
- */
-export function giftVoucherOf(
-  id: string,
-  fields: VoucherFixtureFields,
-): GiftVoucher {
-  const holder =
-    fields.issuedToUserId === null ? null : UserId.of(fields.issuedToUserId);
-  const expires =
-    fields.expiresAt === null ? null : instantOf(fields.expiresAt);
-  return {
-    id: GiftVoucherId.of(id),
-    code: VoucherCode.of(fields.code),
-    initialValueCents: cents(fields.initialValueMinorUnits),
-    balanceCents: cents(fields.balanceMinorUnits),
-    currency: Currency.EUR,
-    issuedAtUtcMs: instantOf(fields.issuedAt),
-    expiresAtUtcMs: expires,
-    expiresLocalDate:
-      expires === null
-        ? null
-        : ZonedTimeSystem.toLocal(expires, SHOP_TIME_ZONE).localDate,
-    issuedToCustomerId: holder === null ? null : customerOf(holder),
-    holderUserId: holder,
-    ...(fields.state.kind === 'void'
-      ? VoucherLifecycle.voided(
-          instantOf(fields.state.voidedAt),
-          fields.state.reason,
-        )
-      : VoucherLifecycle.active()),
-  };
-}
-
-/** The fixture's five gift vouchers: three of Георги's, Мартин's one, one on paper. */
 export function fixtureVouchers(): readonly GiftVoucher[] {
-  return [...voucherFixtureFields()].map(([id, fields]) =>
-    giftVoucherOf(id, fields),
+  return giftVoucherFixtures().map((voucher) => ({
+    ...voucher,
+    issuedToCustomerId:
+      voucher.holderUserId === null ? null : customerOf(voucher.holderUserId),
+  }));
+}
+
+/**
+ * One of the fixture's vouchers by id, its identity fields edited
+ * (`{ balanceCents: cents(0) }`, `{ ...voucherExpiry(null) }`) — the state
+ * it was stored in kept.
+ */
+export function fixtureVoucher(
+  id: string,
+  edit: Partial<GiftVoucherMeta> = {},
+): GiftVoucher {
+  const voucher = must(
+    fixtureVouchers().find((each) => each.id === id),
+    `the voucher ${id}`,
   );
+  return { ...voucher, ...edit };
+}
+
+/**
+ * A voucher's lapse at an ISO instant WITH its offset: the instant and the
+ * shop day it falls on, written together from one reading (T5); `null` =
+ * it never lapses.
+ */
+export function voucherExpiry(
+  isoWithOffset: string | null,
+): Pick<GiftVoucherMeta, 'expiresAtUtcMs' | 'expiresLocalDate'> {
+  if (isoWithOffset === null) {
+    return { expiresAtUtcMs: null, expiresLocalDate: null };
+  }
+  const expires = unwrapOk(ZonedTimeSystem.parseOffsetIso(isoWithOffset));
+  return {
+    expiresAtUtcMs: expires,
+    expiresLocalDate: ZonedTimeSystem.toLocal(expires, SHOP_TIME_ZONE)
+      .localDate,
+  };
 }
 
 /** The client records the card resolves its people by (`CUSTOMER_PORTS`). */
@@ -1097,7 +1050,7 @@ export function georgiContext(
         variantId: null,
         minutes: 45,
         barberId: 'ivan',
-        startsAtIso: at('2026-09-28T10:00:00').toISO(),
+        startsAtIso: sofiaIso('2026-09-28T10:00:00'),
       },
     ],
     locationId: 'loc-center',
@@ -1119,7 +1072,7 @@ export function georgiOpenContext(): ClientCardContext {
         variantId: null,
         minutes: 45,
         barberId: 'ivan',
-        startsAtIso: at('2026-10-02T10:00:00').toISO(),
+        startsAtIso: sofiaIso('2026-10-02T10:00:00'),
       },
     ],
   });
@@ -1142,7 +1095,7 @@ export function martinContext(
         variantId: 'short',
         minutes: 30,
         barberId: 'ivan',
-        startsAtIso: at('2026-09-28T12:30:00').toISO(),
+        startsAtIso: sofiaIso('2026-09-28T12:30:00'),
       },
     ],
     locationId: 'loc-center',
@@ -1250,10 +1203,10 @@ export function achievementsDataOf(
 }
 
 /** Георги's previous worked visit before today's: Thursday 3 September, 10:00. */
-export const GEORGI_PREVIOUS_MS = at('2026-09-03T10:00:00').toMillis();
+export const GEORGI_PREVIOUS_MS: number = sofia('2026-09-03T10:00:00');
 
 /** Мартин's previous worked visit: Wednesday 19 August, 12:30. */
-export const MARTIN_PREVIOUS_MS = at('2026-08-19T12:30:00').toMillis();
+export const MARTIN_PREVIOUS_MS: number = sofia('2026-08-19T12:30:00');
 
 export function achievementsContextOf(
   context: ClientCardContext,
@@ -1269,26 +1222,40 @@ export function achievementsContextOf(
     visit: open
       ? { legs: context.legs, locationId: context.locationId, birthdayToday }
       : null,
+    zone: SHOP_TIME_ZONE,
   };
 }
 
 // ── Ports, in memory ───────────────────────────────────────────────────
 
-/** `AVATAR_UPLOADER` that knows one picture per person. */
-export class InMemoryAvatars implements AvatarUploader {
-  constructor(
-    private readonly avatars: ReadonlyMap<string, string> = new Map(),
-  ) {}
-  async upload(): Promise<Result<AvatarRef, never>> {
-    throw new Error('the card never uploads');
-  }
-  async find(userId: UserId): Promise<Result<AvatarRef | null, never>> {
-    const url = this.avatars.get(userId);
-    return ok(url === undefined ? null : { url, path: `avatars/${userId}` });
-  }
-  async remove(): Promise<Result<void, never>> {
-    throw new Error('the card never removes an avatar');
-  }
+/**
+ * The deployment's default location — the fixture centre shop, on
+ * {@link SHOP_TIME_ZONE} — as the card's `ShopZoneService` reads the shop's
+ * zone (`LOCATION_LOAD_PORTS` & `DEFAULT_LOCATION_PORTS`, Phase 4a 4A-11).
+ */
+export function shopZonePortsOf(): LocationLoadPorts & DefaultLocationPorts {
+  const shop = locationFixture({ timeZone: SHOP_TIME_ZONE });
+  return {
+    ...memoryLocationLoadPorts(memoryProgramsWorld({ locations: [shop] })),
+    ...memoryDefaultLocationPorts(shop.id),
+  };
+}
+
+/**
+ * `AVATAR_PORTS` that knows one picture per person — `@core/testing`'s
+ * `memoryAvatarPorts` over the given urls, by uid (`avatars/{uid}`).
+ */
+export function avatarPortsOf(
+  urls: ReadonlyMap<string, string> = new Map(),
+): AvatarPorts {
+  return memoryAvatarPorts(
+    new Map(
+      [...urls].map(([uid, url]) => [
+        UserId.of(uid),
+        { path: `avatars/${uid}`, url },
+      ]),
+    ),
+  );
 }
 
 // ── The booking ports: the `@core/testing` doubles, failing on demand ───

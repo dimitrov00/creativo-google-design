@@ -81,22 +81,6 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
-    // The owner-editable values of `users/{uid}`, checked on the document
-    // as it would be after the write (`ProfileEditSystem.nameRefusals`'
-    // minimums, `BirthDate`'s ISO shape; the search keys' types) — the keys
-    // of `OwnerProfileFields` (`@core/entities`).
-    function ownerProfileValuesValid(data) {
-      return data.get('firstName', null) is string
-        && data.firstName.trim().size() >= 2
-        && data.get('lastName', null) is string
-        && data.lastName.trim().size() >= 2
-        && (data.get('birthDate', null) == null
-          || (data.birthDate is string
-            && data.birthDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
-        && data.get('searchName', '') is string
-        && data.get('searchPrefixes', []) is list;
-    }
-
     // Default deny — every collection below must opt in explicitly.
     match /{document=**} {
       allow read, write: if false;
@@ -118,49 +102,21 @@ service cloud.firestore {
       // key at the root in both states — `registrationState`, the contact
       // and names, `roles`, `accountStatus` (+ `blockReason`,
       // `blockedUntilUtcMs` while BLOCKED) and the search keys.
-      // No client ever creates this document. `verifyOtp` creates the
-      // PROVISIONED stub (`RegistrationSystem.provision`: the login channel
-      // only, names `null`, `roles: []`) and `completeRegistration` sets the
-      // REGISTERED body over it, both with the Admin SDK (which bypasses
-      // these rules), and the web's `ProfilePorts.writeOwnProfile` only ever
-      // updates a document that already exists.
-      allow create: if false;
-
-      // FIX 2 (2026-09-25): an ALLOWLIST, not the old `roles`/account-status
-      // denylist — with a denylist every field a later phase adds to this
-      // document is self-editable the day it lands. The owner edits their
-      // names and birth date (and the search keys derived from the name);
-      // phone and email change only through the OTP contact-change
-      // callables, `roles`, `registrationState` and `accountStatus` (with a
-      // block's `blockReason`/`blockedUntilUtcMs`) only server-side.
-      // …and only once REGISTERED: the STORED document must already carry a
-      // first name. The provisioned stub stores `firstName: null`, which
-      // fails the `is string` test below exactly as an absent key would, so
-      // an onboarding user cannot write `firstName` onto `verifyOtp`'s stub
-      // themselves and pass for registered without ever passing
-      // `completeRegistration` (the rule keeps the non-blank `firstName`
-      // test; switching it to `registrationState` is Phase 4's rewrite).
-      // …and the VALUES must still be a registered profile: names as long
-      // as the accounts rule requires (`ProfileEditSystem.nameRefusals`,
-      // `NameRule.MinLength` = 2), an ISO calendar date or nothing for the
-      // birthday, a string and a list for the search keys. A blanked
-      // `firstName` would read as unregistered and send the owner back
-      // through `completeRegistration`.
-      allow update: if isOwner(uid)
-        && resource.data.get('firstName', null) is string
-        && resource.data.firstName.trim().size() > 0
-        && affectedKeys().hasOnly([
-          'firstName', 'lastName', 'birthDate', 'searchName', 'searchPrefixes'])
-        && ownerProfileValuesValid(request.resource.data);
-
-      // FIX 3 (2026-09-25): there is NO admin update here, on purpose.
-      // Overlapping allows are OR'd, so the blanket `allow update: if
-      // isAdmin()` that stood here skipped every field check above, and a
-      // client-side roles write would not even refresh the caller's claims.
-      // Roles and the account status are Admin-SDK writes; a staff
-      // correction of a client's names goes through a callable.
-
-      allow delete: if false;
+      // No client ever writes this document (Phase 4a 4A-3 (3)). Every
+      // write is the Admin SDK's (which bypasses these rules): `verifyOtp`
+      // creates the PROVISIONED stub (`RegistrationSystem.provision`: the
+      // login channel only, names `null`, `roles: []`),
+      // `completeRegistration` sets the REGISTERED body over it,
+      // `updateProfile` writes the owner's names and birth date (the search
+      // keys re-derived, the `profileEditedAtUtcMs` marker beside ONE audit
+      // row credited to the user, in one transaction), and the account
+      // blocks move `accountStatus`. The owner's direct update — FIX 2's
+      // allowlist with its value checks — closed with the callable that
+      // replaced it: a client write could neither audit itself nor keep the
+      // search keys honest. Roles and the account status were never a
+      // client's (FIX 3, 2026-09-25: no admin update either — overlapping
+      // allows are OR'd).
+      allow create, update, delete: if false;
 
       match /rewardProgress/{programId} {
         // Materialized by Cloud Functions only (reward-progress sweep,
@@ -569,16 +525,11 @@ service cloud.firestore {
       // fresh account enumerate every invitation and self-redeem it.
       allow get: if isSignedIn();
       allow list: if isStaff();
-      allow create: if isSignedIn()
-        && request.resource.data.inviterUserId == request.auth.uid
-        && request.resource.data.redemptionCount == 0;
-      // `redemptionCount` only ever moves forward by exactly one, driven by
-      // a redemption being recorded (see the `redemptions` rule below) — no
-      // other field on an invitation is ever mutated by a client.
-      allow update: if isSignedIn()
-        && affectedKeys().hasOnly(['redemptionCount'])
-        && request.resource.data.redemptionCount == resource.data.redemptionCount + 1;
-      allow delete: if false;
+      // No client writes an invitation (Phase 4a 4A-3 (5)): its count moves
+      // only inside the `redeemInvitation` callable's transaction, beside the
+      // redemption it records — a client `+1` could count a redemption that
+      // was never written, or skip the self-redemption check.
+      allow create, update, delete: if false;
 
       match /redemptions/{refereeUserId} {
         // Same split: doc ids ARE referee uids, so a listing is a referral
@@ -586,11 +537,10 @@ service cloud.firestore {
         allow get: if isSignedIn();
         allow list: if isStaff();
         // Doc id IS the referee's uid — existence alone prevents double
-        // redemption; self-redemption is rejected by requiring the doc id
-        // to differ from the parent invitation's inviter.
-        allow create: if isOwner(refereeUserId)
-          && get(/databases/$(database)/documents/invitations/$(invitationId)).data.inviterUserId != refereeUserId;
-        allow update, delete: if false;
+        // redemption. Written only by the `redeemInvitation` callable (Admin
+        // SDK), which refuses a self-redemption and moves the invitation's
+        // count in the same transaction (Phase 4a 4A-3 (5)).
+        allow create, update, delete: if false;
       }
     }
 
@@ -598,9 +548,12 @@ service cloud.firestore {
     match /impersonationSessions/{sessionId} {
       // The flat `ImpersonationSession` body (`impersonationStatus`,
       // `*UtcMs` stamps at the root); read by `impersonationReadPorts`
-      // (index #9: `adminUserId`, `impersonationStatus`). The write closes
-      // with Phase 4's `startImpersonation`/`endImpersonation` callables.
-      allow read, write: if isAdmin();
+      // (index #9: `adminUserId`, `impersonationStatus`). Written only by
+      // the `startImpersonation`/`endImpersonation` callables (Admin SDK,
+      // Phase 4a 4A-3 (4)) — which stamp the TTL's `purgeAt` a browser
+      // write never could.
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     match /auditLog/{entryId} {

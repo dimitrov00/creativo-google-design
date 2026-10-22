@@ -1,4 +1,3 @@
-import { ZonedDateTime } from '@creativo/application/booking';
 import type { Appointment, BadgeProgress, BadgeSeries } from '@core/entities';
 import {
   AttendanceState,
@@ -23,6 +22,7 @@ import {
   type Seat,
   SeasonPhase,
   type SeriesStanding,
+  type WallTime,
 } from '@core/components';
 import {
   AchievementsSystem,
@@ -101,15 +101,6 @@ import { visitsRows } from './visits-page.presenter';
  * (DV-C): `detailActionOf` answers it for the store, and the view model
  * only carries what it was handed.
  */
-
-/** Where the shop's hours are read: the zone of every visit on the card. */
-const SHOP_ZONE = 'Europe/Sofia';
-
-/** The shop's zone, branded — where a worked minute is read back as an instant. */
-const SHOP_TIME_ZONE: TimeZone = (() => {
-  const zone = ZonedTimeSystem.checkZone(SHOP_ZONE);
-  return zone.ok ? zone.value : defect('unreachable: the shop zone');
-})();
 
 /** A draft with no start yet: a weekday that is no weekend. */
 const WEEKDAY_MONDAY: Weekday = 1;
@@ -278,6 +269,7 @@ export function countsToward(
   series: BadgeSeries,
   visit: Appointment,
   subjectCustomerId: string | null,
+  zone: TimeZone,
 ): boolean {
   if (series.metric === null) return false;
   const worked = workedVisitOf(visit, subjectCustomerId);
@@ -287,7 +279,7 @@ export function countsToward(
   const start = ZonedTimeSystem.toUtc(
     visit.localDate,
     worked.startMinutes,
-    SHOP_TIME_ZONE,
+    zone,
   );
   return AchievementsSystem.countsToward(series, {
     serviceIds: worked.seats.map((seat) => seat.serviceId),
@@ -324,19 +316,25 @@ function insideWindows(
   );
 }
 
-/** The visit on screen, as its draft holds it: when its first service starts. */
+/**
+ * The visit on screen, as its draft holds it: when its first service
+ * starts — the instant, and the shop's wall clock on `zone` it reads.
+ */
 function draftStart(
   visit: NonNullable<AchievementsContext['visit']>,
-): ZonedDateTime | null {
-  let earliest: ZonedDateTime | null = null;
+  zone: TimeZone,
+): { readonly utcMs: UtcEpochMs; readonly wall: WallTime } | null {
+  let earliest: UtcEpochMs | null = null;
   for (const leg of visit.legs) {
-    const start = ZonedDateTime.fromISO(leg.startsAtIso, SHOP_ZONE);
-    if (start.isFailure()) continue;
-    if (earliest === null || start.value.isBefore(earliest)) {
+    const start = ZonedTimeSystem.parseIsoIn(leg.startsAtIso, zone);
+    if (!start.ok) continue;
+    if (earliest === null || UtcEpochMs.compare(start.value, earliest) < 0) {
       earliest = start.value;
     }
   }
-  return earliest;
+  return earliest === null
+    ? null
+    : { utcMs: earliest, wall: ZonedTimeSystem.toLocal(earliest, zone) };
 }
 
 /**
@@ -371,7 +369,7 @@ function thisVisitCounts(
   // The draft as a visit the system can judge: what the day itself
   // decides (an arrival, company) is not promised, and a draft with no
   // start yet is neither early nor on a weekend.
-  const start = draftStart(visit);
+  const start = draftStart(visit, ctx.zone);
   return AchievementsSystem.countsToward(series, {
     serviceIds: visit.legs.flatMap((leg) =>
       leg.serviceId === null ? [] : [ServiceRefId.of(leg.serviceId)],
@@ -383,14 +381,13 @@ function thisVisitCounts(
     locationId: LocationRefId.of(visit.locationId ?? ''),
     // No start yet: today, the day's last minute (never early) and a
     // Monday (never a weekend) — what the old `NaN`/`∞` start answered.
-    localDate: start === null ? dayOf(data.today) : dayOf(start.toISODate()),
+    localDate: start === null ? dayOf(data.today) : start.wall.localDate,
     startMinutes:
-      start === null
-        ? minuteOf(LAST_MINUTE_OF_DAY)
-        : minuteOf(start.hour * 60 + start.minute),
-    weekday: start === null ? WEEKDAY_MONDAY : (start.weekday as Weekday),
+      start === null ? minuteOf(LAST_MINUTE_OF_DAY) : start.wall.minute,
+    weekday:
+      start === null ? WEEKDAY_MONDAY : LocalDate.weekday(start.wall.localDate),
     // Never compared: a draft has no arrival.
-    startUtcMs: utcOf(start === null ? 0 : start.toMillis()),
+    startUtcMs: start === null ? utcOf(0) : start.utcMs,
     arrivedAtUtcMs: null,
     withCompany: false,
   });
@@ -1017,7 +1014,7 @@ function countedVisitsOf(
     .filter(
       (visit) =>
         (current !== null && visit.id === current) ||
-        (countsToward(series, visit, extra.subjectCustomerId) &&
+        (countsToward(series, visit, extra.subjectCustomerId, ctx.zone) &&
           insideWindows(series, visit, data)),
     )
     .sort((a, b) => UtcEpochMs.compare(b.utcEpochMs, a.utcEpochMs));
@@ -1108,13 +1105,13 @@ function dayOf(raw: string): LocalDate {
   return day.ok ? day.value : defect(`${raw} is no calendar day`);
 }
 
-/** A wall-clock minute a `ZonedDateTime` read: always inside the day. */
+/** A wall-clock minute the card names (the day's last): always inside the day. */
 function minuteOf(raw: number): MinuteOfDay {
   const minute = MinuteOfDay.of(raw);
   return minute.ok ? minute.value : defect(`${raw} is no minute of a day`);
 }
 
-/** An instant a `ZonedDateTime` held: always inside the brand's window. */
+/** An instant the card names (a draft's never-compared start): always inside the brand's window. */
 function utcOf(epochMs: number): UtcEpochMs {
   const utc = UtcEpochMs.of(epochMs);
   return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);

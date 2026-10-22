@@ -16,12 +16,8 @@
  *    `camelCase(Dictionary)`, and its type is exactly the dictionary.
  */
 import type { Barber, Service, ShopLocation } from '@core/entities';
-import {
-  type RequestedSubjectInput,
-  RequestedSubjectRole,
-  Selectability,
-  type ServiceSelectability,
-} from '@core/systems';
+import { Selectability, type ServiceSelectability } from '@core/systems';
+import { type BookingCall, RequestedSubjectRole } from './booking-call.data';
 import { type BarberPref, BarberPreference } from './barber-pref.data';
 import {
   BookingErrorCode,
@@ -107,7 +103,7 @@ export type BookingCoreDictionariesHold = [
   Expect<Holds<typeof OpeningState, OpeningState>>, // components/opening-hours.data.ts
   Expect<Holds<Pick<typeof Placement, 'Self' | 'Staff'>, Placement>>, // components/placement-kind.data.ts
   Expect<Holds<typeof CompositionKind, CompositionKind>>, // components/service-composition.data.ts
-  Expect<Holds<typeof RequestedSubjectRole, RequestedSubjectRole>>, // systems/guest-label.system.ts
+  Expect<Holds<typeof RequestedSubjectRole, RequestedSubjectRole>>, // components/booking-call.data.ts
   Expect<Holds<typeof Selectability, Selectability>>, // systems/service-conflict.system.ts
 ];
 
@@ -152,7 +148,10 @@ export type BookingCoreDictionaryFields = [
   Expect<Equals<ServiceComposition['compositionKind'], CompositionKind>>, // components/service-composition.data.ts
   Expect<Equals<Service['compositionKind'], CompositionKind>>, // entities/service.entity.ts
   Expect<
-    Equals<RequestedSubjectInput['requestedSubjectRole'], RequestedSubjectRole>
+    Equals<
+      BookingCall.SubjectInput['requestedSubjectRole'],
+      RequestedSubjectRole
+    >
   >, // systems/guest-label.system.ts
   Expect<Equals<ServiceSelectability['selectability'], Selectability>>, // systems/service-conflict.system.ts
   Expect<Equals<CatalogError.LocationInvalidGeoCoordinate['geoAxis'], GeoAxis>>, // primitives/catalog-errors.data.ts

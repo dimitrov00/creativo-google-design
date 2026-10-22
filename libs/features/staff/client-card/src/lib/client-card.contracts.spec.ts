@@ -154,9 +154,9 @@ describe('the built helpers the new presenters import (§7.3)', () => {
 
   it('keeps the signatures the new files call', () => {
     expectTypeOf(loyalty.sliceMap<number, string>).returns.toEqualTypeOf<
-      | { readonly status: 'loading' }
-      | { readonly status: 'ready'; readonly data: string }
-      | { readonly status: 'failed' }
+      | { readonly cardLoadState: 'LOADING' }
+      | { readonly cardLoadState: 'READY'; readonly data: string }
+      | { readonly cardLoadState: 'FAILED' }
       | undefined
     >();
     expectTypeOf(achievements.isOneOff).returns.toEqualTypeOf<boolean>();

@@ -12,12 +12,13 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { map, of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { AUTH_GATEWAY, SignOutUseCase } from '@creativo/application/identity';
 import {
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
   INBOX_PORTS,
+  ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
-import { UserId } from '@core/primitives';
+import { Principal } from '@core/components';
 import { NotificationSystem } from '@core/systems';
 import {
   UiAvatar,
@@ -95,7 +96,15 @@ export class SiteMenuComponent {
   protected readonly behavior = inject(UiSheetBehavior);
   private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
-  private readonly signOutUseCase = new SignOutUseCase(inject(AUTH_GATEWAY));
+  private readonly session = inject(AUTH_SESSION_PORTS);
+
+  /**
+   * The shop's zone — the default location's (Law 7.2, F-4: no zone
+   * constant), read ONCE per session through the root `ShopZoneService`.
+   * Asked here, at construction, because the header mounts this menu with
+   * the shell: the read starts at shell mount, long before the menu opens.
+   */
+  private readonly shopZone = inject(ShopZoneService).defaultZone();
 
   /** Name + photo for the identity portrait — the same shell-level read
    *  model backing the header's trigger circle. */
@@ -115,11 +124,9 @@ export class SiteMenuComponent {
   protected readonly upcomingCount = toSignal(
     toObservable(this.identity.principal).pipe(
       switchMap((principal) => {
-        if (principal.kind !== 'active') return of(0);
-        const userId = UserId.parse(principal.uid.value);
-        if (!userId.ok) return of(0);
+        if (!Principal.isActive(principal)) return of(0);
         return this.appointments
-          .observeUpcoming(userId.value)
+          .observeUpcoming(principal.userId)
           .pipe(map((result) => (result.ok ? result.value.length : 0)));
       }),
     ),
@@ -140,11 +147,9 @@ export class SiteMenuComponent {
   protected readonly unreadNotifications = toSignal(
     toObservable(this.identity.principal).pipe(
       switchMap((principal) => {
-        if (principal.kind !== 'active') return of(0);
-        const userId = UserId.parse(principal.uid.value);
-        if (!userId.ok) return of(0);
+        if (!Principal.isActive(principal)) return of(0);
         return this.inbox
-          .observeInbox(userId.value)
+          .observeInbox(principal.userId)
           .pipe(
             map((result) =>
               result.ok ? NotificationSystem.unreadCount(result.value) : 0,
@@ -174,16 +179,20 @@ export class SiteMenuComponent {
    *
    * Zone-pinned to the shop, like every other date in the product: a
    * barber checking the schedule from a phone set to another timezone must
-   * still see the shop's own calendar day.
+   * still see the shop's own calendar day. The zone is the default
+   * location's; until that one read resolves (or when it fails) there is
+   * no date to name, and the subtitle is absent (Phase 4a 4A-2 (f)).
    */
-  protected readonly todayLabel = computed(() =>
-    new Intl.DateTimeFormat(this.lang() === 'en' ? 'en-GB' : 'bg-BG', {
+  protected readonly todayLabel = computed(() => {
+    const zone = this.shopZone();
+    if (zone === null) return null;
+    return new Intl.DateTimeFormat(this.lang() === 'en' ? 'en-GB' : 'bg-BG', {
       weekday: 'short',
       day: 'numeric',
       month: 'long',
-      timeZone: 'Europe/Sofia',
-    }).format(new Date(this.openedAt())),
-  );
+      timeZone: zone,
+    }).format(new Date(this.openedAt()));
+  });
 
   /**
    * The active language as a SIGNAL.
@@ -260,7 +269,7 @@ export class SiteMenuComponent {
    * onboarding's escape hatch).
    */
   protected async signOut(): Promise<void> {
-    await this.signOutUseCase.execute();
+    await this.session.signOut();
     this.close();
     await this.router.navigateByUrl('/');
   }

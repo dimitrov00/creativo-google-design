@@ -1,6 +1,6 @@
 import {
   BarberPref,
-  type BarberPreference,
+  BookingCall,
   type BookingPolicy,
   BookingFlowStep,
   BookingFlowState,
@@ -33,7 +33,6 @@ import {
   type LocationId,
   SeatKeyText,
   type ServiceId,
-  type ServiceVariantId,
   type UserId,
   type LocalDate,
   type MinuteOfDay,
@@ -129,52 +128,6 @@ export type CartDayQuery = {
 export type CartLocatedOption = {
   readonly locationId: LocationId;
   readonly option: AvailabilityOption;
-};
-
-/**
- * Who a committed seat is for, as the commit request names them — the ONLY
- * source of these strings, named after the field it types
- * (`commitSubjectRole`, N15).
- */
-export const CommitSubjectRole = {
-  /** The booker's own seat. */
-  Self: 'SELF',
-  /** A guest, known by the label the party gave them. */
-  Guest: 'GUEST',
-} as const;
-export type CommitSubjectRole =
-  (typeof CommitSubjectRole)[keyof typeof CommitSubjectRole];
-
-/**
- * A seat's subject as the commit request names it
- * (`booking-flow.store.ts:833-844`): the booker, or a guest by LABEL — all a
- * party member is until they have an account — plus `guestKey`, the seat key
- * that tells two guests sharing a label apart from one guest with two
- * services.
- */
-export type CommitSubject =
-  | { readonly commitSubjectRole: typeof CommitSubjectRole.Self }
-  | {
-      readonly commitSubjectRole: typeof CommitSubjectRole.Guest;
-      readonly label: SeatLabel;
-      readonly guestKey: SeatKeyText;
-    };
-
-/**
- * One seat of a commit request: WHAT and from WHOM, never a price or a
- * duration — the server resolves both — and its start on the selection's
- * shop day (the request carries the one `localDate`). The line's barber
- * PREFERENCE rides along: «Ivan, by name» and «whoever is free» are
- * different bookings the morning Ivan calls in sick.
- */
-export type CommitSeatRequest = {
-  readonly lineId: CartLineId;
-  readonly serviceId: ServiceId;
-  readonly variantId: ServiceVariantId | null;
-  readonly barberId: BarberId;
-  readonly barberPreference: BarberPreference;
-  readonly startMinutes: MinuteOfDay;
-  readonly subject: CommitSubject;
 };
 
 /** What becomes of a seat the booker cannot name — the ONLY source of these strings. */
@@ -632,8 +585,9 @@ export const BookingCartSystem = {
    * The selection as the commit request wants it (`toCommitSeats`,
    * `booking-flow.store.ts:777-847`): one entry per assignment, in order,
    * carrying no price and no duration — its start in minutes of the
-   * selection's shop day. A guest travels as their LABEL plus their seat
-   * key. `null` when an assignment names a line the cart no longer holds, or
+   * selection's shop day — the ONE seat shape of the booking wire,
+   * `BookingCall.Seat` (Phase 4a). A guest travels as their LABEL plus their
+   * seat key (`GuestKey`; a key that is not one drops to `null`). `null` when an assignment names a line the cart no longer holds, or
    * a seat that is neither the booker's nor a guest's — the bag changed
    * after the schedule step, and the server would refuse for a reason the
    * user cannot act on.
@@ -642,8 +596,8 @@ export const BookingCartSystem = {
     cart: BookingCart,
     party: Party,
     assignments: readonly SeatAssignment[],
-  ): readonly CommitSeatRequest[] | null {
-    const seats: CommitSeatRequest[] = [];
+  ): readonly BookingCall.Seat[] | null {
+    const seats: BookingCall.Seat[] = [];
     for (let a = 0; a < assignments.length; a++) {
       const assignment = assignments[a] as SeatAssignment;
       let found: CartLine | null = null;
@@ -657,17 +611,13 @@ export const BookingCartSystem = {
         }
       }
       if (found === null) return null;
-      let subject: CommitSubject;
+      let subject: BookingCall.Subject;
       if (found.seatKey === SELF_KEY) {
-        subject = { commitSubjectRole: CommitSubjectRole.Self };
+        subject = BookingCall.selfSubject();
       } else {
         const guest = guestOf(party, found.seatKey);
         if (guest === null) return null;
-        subject = {
-          commitSubjectRole: CommitSubjectRole.Guest,
-          label: guest.guestLabel,
-          guestKey: found.seatKey,
-        };
+        subject = BookingCall.guestSubject(guest.guestLabel, found.seatKey);
       }
       seats.push({
         lineId: assignment.lineId,

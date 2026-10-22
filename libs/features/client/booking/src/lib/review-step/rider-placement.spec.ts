@@ -1,59 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
+import type { MoveRider, ScheduleSelection } from '@core/components';
+import { BarberId, CartLineId, LocationId, ServiceId } from '@core/primitives';
 import {
-  CartLineId,
-  type Result,
-  type ScheduleSelection,
-  TimeSlot,
-  ZonedDateTime,
-} from '@creativo/application/booking';
-import { BarberId, LocationId } from '@creativo/application/catalog';
-import {
-  BarberId as BarberKey,
-  ServiceId as ServiceKey,
-} from '@core/primitives';
-import type { MoveRider } from '@core/systems';
-import { duration, minuteCount, minuteDelta } from '@core/testing';
+  duration,
+  endMinute,
+  localDate,
+  minute,
+  minuteCount,
+  minuteDelta,
+} from '@core/testing';
 import { placeRiders } from './rider-placement';
 
-const ZONE = 'Europe/Sofia';
-
-function unwrap<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) {
-    throw new Error(`fixture setup failed: ${JSON.stringify(result.error)}`);
-  }
-  return result.value;
-}
-
-const at = (hour: number, minute = 0): ZonedDateTime =>
-  unwrap(
-    ZonedDateTime.fromParts(
-      { year: 2026, month: 8, day: 4, hour, minute },
-      ZONE,
-    ),
-  );
-
-/** A selection whose seats start at `starts` (45 minutes each, with Ivan). */
-function selection(starts: readonly ZonedDateTime[]): ScheduleSelection {
-  const assignments = starts.map((start, index) => ({
-    lineId: CartLineId.fromSequence(index + 1),
-    barberId: unwrap(BarberId.create('ivan')),
-    slot: unwrap(TimeSlot.of(start, start.plusMinutes(45))),
-  }));
-  // The envelope is not what riders are placed by — any valid slot will do.
-  const first = starts.at(0) ?? at(14);
+/**
+ * A selection whose seats start at `starts` — minutes of the shop day, 45
+ * minutes each, with Ivan. The envelope is not what riders are placed by —
+ * any valid one will do.
+ */
+function selection(starts: readonly number[]): ScheduleSelection {
+  const first = starts.at(0) ?? 14 * 60;
   return {
-    locationId: unwrap(LocationId.create('loc-center')),
-    timeSlot: unwrap(TimeSlot.of(first, first.plusMinutes(45))),
-    assignments,
+    locationId: LocationId.of('loc-center'),
+    localDate: localDate('2026-08-04'),
+    startMinutes: minute(first),
+    endMinutes: endMinute(first + 45),
+    assignments: starts.map((start, index) => ({
+      lineId: CartLineId.forSequence(index + 1),
+      barberId: BarberId.of('ivan'),
+      startMinutes: minute(start),
+      endMinutes: endMinute(start + 45),
+    })),
   };
 }
 
 function rider(offsetMinutes: number): MoveRider {
   return {
-    serviceId: ServiceKey.of('svc-beard'),
+    serviceId: ServiceId.of('svc-beard'),
     variantId: null,
-    barberId: BarberKey.of('petar'),
+    barberId: BarberId.of('petar'),
     offsetMinutes: minuteDelta(offsetMinutes),
     durationMinutes: duration(30),
     setupMinutes: minuteCount(0),
@@ -62,21 +46,23 @@ function rider(offsetMinutes: number): MoveRider {
 }
 
 /** `HH:MM` on the shop's wall clock, as minutes from its midnight. */
-const minuteOf = (hour: number, minute = 0) => hour * 60 + minute;
+const minuteOf = (hour: number, minutes = 0) => hour * 60 + minutes;
 
 describe('placeRiders — the server’s shift, on the shop’s wall clock, for the review card', () => {
   it('seats a side-by-side companion at the booker’s new start', () => {
-    const [placed] = placeRiders(selection([at(14)]), [rider(0)]);
+    const [placed] = placeRiders(selection([minuteOf(14)]), [rider(0)]);
     expect(placed?.startMinutes).toBe(minuteOf(14));
   });
 
   it('keeps a companion straight after the booker straight after them', () => {
-    const [placed] = placeRiders(selection([at(14)]), [rider(45)]);
+    const [placed] = placeRiders(selection([minuteOf(14)]), [rider(45)]);
     expect(placed?.startMinutes).toBe(minuteOf(14, 45));
   });
 
   it('anchors on the EARLIEST seat the cart holds, whatever order it lists them in', () => {
-    const [placed] = placeRiders(selection([at(15), at(14, 30)]), [rider(-30)]);
+    const [placed] = placeRiders(selection([minuteOf(15), minuteOf(14, 30)]), [
+      rider(-30),
+    ]);
     expect(placed?.startMinutes).toBe(minuteOf(14));
   });
 
@@ -97,8 +83,10 @@ describe('placeRiders — the server’s shift, on the shop’s wall clock, for 
           { maxLength: 4 },
         ),
         (startMinutes, offsets) => {
-          const start = at(0).plusMinutes(startMinutes);
-          const placed = placeRiders(selection([start]), offsets.map(rider));
+          const placed = placeRiders(
+            selection([startMinutes]),
+            offsets.map(rider),
+          );
           expect(
             placed.map((entry) => (entry.startMinutes ?? NaN) - startMinutes),
           ).toEqual(offsets);

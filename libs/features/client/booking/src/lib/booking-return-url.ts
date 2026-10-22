@@ -1,6 +1,7 @@
 import { PRIMARY_OUTLET, type Router, type UrlTree } from '@angular/router';
-import { AppointmentId } from '@core/primitives';
-import { RedirectPath } from '@creativo/application/identity';
+import { BookingFlowStep } from '@core/components';
+import { AppointmentId, RedirectPath } from '@core/primitives';
+import { BOOKING_STEP_WORDS } from './booking-words';
 
 /** The one route a booking sign-in round trip may come back to. */
 const BOOKING_SEGMENT = 'book';
@@ -55,19 +56,22 @@ export function bookingSignInReturnUrl(
         });
   return router.serializeUrl(
     router.createUrlTree([`/${BOOKING_SEGMENT}`], {
-      queryParams: { step: 'schedule', ...Object.fromEntries(sources) },
+      queryParams: {
+        step: BOOKING_STEP_WORDS[BookingFlowStep.Schedule],
+        ...Object.fromEntries(sources),
+      },
     }),
   );
 }
 
 /** `current` parsed, when it is a safe relative URL of the booking route. */
 function bookingTreeOf(router: Router, current: string): UrlTree | null {
-  const safe = RedirectPath.create(current);
-  if (safe.isFailure()) return null;
+  const safe = RedirectPath.parse(current);
+  if (!safe.ok) return null;
 
   let tree: UrlTree;
   try {
-    tree = router.parseUrl(safe.value.value);
+    tree = router.parseUrl(safe.value);
   } catch {
     // A malformed escape (`%E0%A4%A`) is not a URL the flow wrote.
     return null;

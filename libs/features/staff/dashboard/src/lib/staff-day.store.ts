@@ -16,6 +16,7 @@ import {
   AppointmentPhotoId,
   BarberId,
   BusyKey,
+  ClientOperationId,
   CouponId,
   CustomerId,
   EndMinute,
@@ -25,27 +26,33 @@ import {
   LocationId,
   MinuteOfDay,
   OperationId,
+  PipelineError,
+  PipelineErrorCode,
   type RepositoryError,
   Result,
   ScheduleExceptionId,
   SchedulingError,
+  StaffEditErrorCode,
   type TimeZone,
-  UserId,
+  type UserId,
   UtcEpochMs,
   VoucherRefusal,
   defect,
 } from '@core/primitives';
 import {
+  type BookingCall,
   Combinability,
   CouponOccasion,
   ExceptionEffectRule,
   GrantExpiry,
   MinuteRange,
   PhotoOrigin,
+  Principal,
   type ShopNow,
   VoucherCode,
   type WallTime,
 } from '@core/components';
+import { Callables } from '@core/ports';
 import type {
   Appointment,
   AppointmentNote,
@@ -72,34 +79,26 @@ import {
   VoucherSystem,
   ZonedTimeSystem,
 } from '@core/systems';
-import {
-  BOOKING_GATEWAY,
-  BookingGatewayError,
-  type CommitBookingRequest,
-  type RecordSeatTipRequest,
-  type StaffEditAppointmentRequest,
-  type TransitionAppointmentRequest,
-} from '@creativo/application/booking';
 import { downscaleImage } from '@creativo/infrastructure/storage';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
 import {
   APPOINTMENT_NOTE_PORTS,
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
+  CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
+  GATEWAY_PORTS,
+  ID_PORTS,
   SCHEDULE_EXCEPTION_PORTS,
   SCHEDULING_READ_PORTS,
+  ShopZoneService,
 } from '@creativo/infrastructure/firebase-app';
-import { CLOCK, ID_GENERATOR } from '@creativo/application/shared';
 import {
   type VisitEditorGrantOption,
   type VisitEditorPromoOption,
   discountValueOf,
 } from './visit-editor/staff-visit-editor';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
-
-/** The whole product is Europe/Sofia-only for now (blueprint §7.1). */
-export const STAFF_ZONE = 'Europe/Sofia';
 
 /**
  * The shop's day a held coupon lapses on (`YYYY-MM-DD`), or `null` for one
@@ -110,7 +109,7 @@ export const STAFF_ZONE = 'Europe/Sofia';
  */
 export function grantExpiresOn(
   grant: CouponGrant,
-  timeZone: TimeZone = STAFF_TIME_ZONE,
+  timeZone: TimeZone,
 ): string | null {
   if (grant.grantStatus !== GrantStatus.Active) return null;
   if (grant.grantExpiry !== GrantExpiry.ExpiresAt) return null;
@@ -126,24 +125,29 @@ export function grantExpiresOn(
  * `StaffDayStore.claimFor`), so a re-send is recognised by what the wire
  * carried.
  */
-function intentOf(request: StaffEditAppointmentRequest): string {
+function intentOf(request: BookingCall.StaffEdit): string {
   return StaffIntentSystem.intentBasis(
-    AppointmentId.of(request.appointmentId),
-    request.command,
-    request.acknowledgedOverlap === true,
-    request.expectedVersion ?? null,
+    request.appointmentId,
+    request.commands,
+    request.acknowledgedOverlap,
+    request.expectedVersion,
   );
 }
 
 /**
- * Every staff intent states the revision it was made on (round 5): the
- * visit's copy's `Appointment.revision`, or `null` where the reader did not
- * say — a claim of nothing, which the server never refuses. Required by the
- * store's one funnel, so no caller can forget it.
+ * The refusal a staff intent earns BEFORE it is sent — a field the wire
+ * cannot carry (a minted name that is no `ClientOperationId`, a minute off
+ * the shop's day): the server's own refusal of it, `field` named, said here
+ * so the row reads what the server would have answered.
  */
-export type StaffIntent = StaffEditAppointmentRequest & {
-  readonly expectedVersion: number | null;
-};
+export function invalidCommand(field: string): PipelineError {
+  return PipelineError.of(
+    PipelineErrorCode.InvalidRequest,
+    StaffEditErrorCode.InvalidCommand,
+    null,
+    field,
+  );
+}
 
 /**
  * How many appointments the search reads each side of now.
@@ -241,22 +245,19 @@ const DAY_SPAN: Record<StaffView, number> = {
   week: 7,
 };
 
-/** Calendar walk on a `YYYY-MM-DD` triple — DST-immune by construction. */
+/**
+ * Calendar walk on a `YYYY-MM-DD` day — civil arithmetic (`LocalDate`),
+ * DST-immune by construction. A key that names no day walks nowhere.
+ */
 export function addDays(dayKey: string, delta: number): string {
-  const [year, month, day] = dayKey.split('-').map(Number);
-  const shifted = new Date(
-    Date.UTC(year ?? 1970, (month ?? 1) - 1, (day ?? 1) + delta),
-  );
-  return shifted.toISOString().slice(0, 10);
+  const day = localDateOf(dayKey);
+  return day === null ? dayKey : LocalDate.addDays(day, delta);
 }
 
-/** Monday-first: Bulgaria's week, stated rather than derived (see caller). */
+/** Monday-first (ISO): Bulgaria's week, stated rather than derived (see caller). */
 export function startOfWeek(dayKey: string): string {
-  const [year, month, day] = dayKey.split('-').map(Number);
-  const at = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1));
-  // `getUTCDay` is 0=Sunday; shift so Monday is 0.
-  const weekday = (at.getUTCDay() + 6) % 7;
-  return addDays(dayKey, -weekday);
+  const day = localDateOf(dayKey);
+  return day === null ? dayKey : LocalDate.startOfWeek(day);
 }
 
 /**
@@ -356,8 +357,9 @@ export function occupiedIntervals(
   appointments: readonly Appointment[],
   barberId: string,
   busy: readonly LaneSpan[],
+  timeZone: TimeZone,
 ): readonly LaneSpan[] {
-  const day = dataDayOf(busy, appointments, barberId);
+  const day = dataDayOf(busy, appointments, barberId, timeZone);
   if (day === null) return [];
   return intervalsOn(
     day,
@@ -399,13 +401,14 @@ export function laneGaps(
   rostered: readonly LaneSpan[],
   occupied: readonly LaneSpan[],
   nowMs: number,
+  timeZone: TimeZone,
 ): readonly LaneGap[] {
   // SPLIT AT NOW, then floor — never the other way round
   // (`GridLayoutSystem.sellableAt`). The holes take no clock; the minute
   // tick re-splits them alone (`StaffDayStore.dayCells`).
   const first = rostered[0];
   if (first === undefined) return [];
-  const zone = STAFF_TIME_ZONE;
+  const zone = timeZone;
   const day = laneDayOf(
     wallTimeOf(first.startMs, zone).localDate,
     zone,
@@ -440,9 +443,6 @@ export function laneGaps(
  * leaves its day — one shop day per visit (F-6), and the busy projection
  * clips to it.
  */
-
-/** The tenant zone, branded — the fallback until the catalogue names a shop's. */
-const STAFF_TIME_ZONE: TimeZone = zoneOf(STAFF_ZONE);
 
 /** One lane's shop day, and the caller's instants its minutes were read from. */
 interface LaneDay {
@@ -496,13 +496,6 @@ function frameOf(localDate: LocalDate, timeZone: TimeZone): DayFrame {
 interface LaneCut {
   readonly minute: number;
   readonly ms: number;
-}
-
-/** An IANA zone the catalogue already accepted. */
-function zoneOf(raw: string): TimeZone {
-  const zone = ZonedTimeSystem.checkZone(raw);
-  if (!zone.ok) defect(`unreachable: an unknown zone ${raw}`);
-  return zone.value;
 }
 
 /** An instant as the brand (a stored or clock instant is a safe integer). */
@@ -586,8 +579,8 @@ function dataDayOf(
   busy: readonly LaneSpan[],
   appointments: readonly Appointment[],
   barberId: string,
+  zone: TimeZone,
 ): LaneDay | null {
-  const zone = STAFF_TIME_ZONE;
   const first = busy[0];
   if (first !== undefined) {
     return laneDayOf(wallTimeOf(first.startMs, zone).localDate, zone, busy);
@@ -661,7 +654,7 @@ function instantOn(day: LaneDay, minute: number, cut: LaneCut | null): number {
 export function wallClockInstant(
   localDate: LocalDate,
   minute: number,
-  timeZone: TimeZone = STAFF_TIME_ZONE,
+  timeZone: TimeZone,
 ): number {
   return instantOn(laneDayOf(localDate, timeZone), minute, null);
 }
@@ -858,11 +851,17 @@ export class StaffDayStore {
   /** The raw availability streams the lanes' geometry is derived from (F1-10). */
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
   private readonly exceptions = inject(SCHEDULE_EXCEPTION_PORTS);
-  private readonly gateway = inject(BOOKING_GATEWAY);
-  private readonly clock = inject(CLOCK);
+  /** The one typed callable client — every write of the day goes through it. */
+  private readonly gateway = inject(GATEWAY_PORTS);
+  private readonly clock = inject(CLOCK_PORTS);
   /** Mints each staff intent's `operationId` — see `staffEdit`. */
-  private readonly ids = inject(ID_GENERATOR);
+  private readonly ids = inject(ID_PORTS);
   private readonly catalog = inject(CatalogContentService);
+  private readonly shopZones = inject(ShopZoneService);
+  /** The default location's zone — the day's clock until the catalogue names a shop (4A-11). */
+  private readonly defaultZone = this.shopZones.defaultZone();
+  /** That read failed (or found no default location) — see {@link retryZone}. */
+  private readonly defaultZoneFailed = this.shopZones.defaultZoneFailed();
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
@@ -873,59 +872,106 @@ export class StaffDayStore {
    * is an onboarded one.
    */
   private readonly principal = toSignal(
-    inject(AUTH_GATEWAY).observePrincipal(),
+    inject(AUTH_SESSION_PORTS).observePrincipal(),
     { initialValue: null },
   );
 
   /** The signed-in account, or `null` — what a stamp's `*ByUserId` names. */
   private currentUserId(): UserId | null {
     const principal = untracked(this.principal);
-    return principal?.kind === 'active' ? UserId.of(principal.uid.value) : null;
+    return principal !== null && Principal.isActive(principal)
+      ? principal.userId
+      : null;
   }
 
   /**
    * The shop's zone — the LOCATION's (`ShopLocation.timeZone`, Law 7.2), read
    * off the catalogue's shops, never the browser's. Every shop of the tenant
    * keeps one clock (blueprint §7.1), so the first shop that names a zone
-   * answers; until the catalogue does, the tenant zone `STAFF_ZONE`. "Today",
-   * "now" and every lane's shop day are read in it.
+   * answers; until the catalogue does, the deployment's DEFAULT location's
+   * (`ShopZoneService.defaultZone`, F-4) — and `null` until either answers:
+   * there is no "today" before there is a zone, and the day waits on
+   * {@link ready} (its chrome drawn, its lanes {@link loading}). "Today",
+   * "now" on the wall clock and every lane's shop day are read in it.
    */
-  private readonly shopZone = computed<TimeZone>(
-    () => this.catalog.locations()[0]?.timeZone ?? STAFF_TIME_ZONE,
+  readonly zone = computed<TimeZone | null>(
+    () => this.catalog.locations()[0]?.timeZone ?? this.defaultZone(),
   );
 
   /**
-   * Today, RE-READ rather than frozen.
-   *
-   * This used to be resolved once in the constructor, on the assumption that
-   * "the store's whole life is one visit". A counter tab is open from
-   * open to close and routinely overnight — so at 09:00 the next morning the
-   * sheet was still showing yesterday, still calling it today, and hiding the
-   * "back to today" button precisely because it believed it was already
-   * there. The whole morning could be worked against the wrong day.
+   * The day has a clock: the shop's zone is known, so "today" and every
+   * lane's wall clock can be read (4A-11, R13). Until then the page draws
+   * its chrome and its lanes stay in their loading state ({@link loading})
+   * — nothing on it names a day, no new visible state.
    */
-  private readonly _todayKey = signal(this.resolveToday());
-  readonly todayKey = this._todayKey.asReadonly();
+  readonly ready = computed(() => this.zone() !== null);
 
   /**
-   * Now, on the same minute tick that re-reads today.
+   * A day with no clock asks again (4A-11, R13). When the catalogue names no
+   * shop and the default location's read failed, the page stays as a failed
+   * lane read leaves it — no lanes, no sentence about them — and the two
+   * moments that already re-read "now" (the minute tick, the tab's return)
+   * read the default location again through
+   * `ShopZoneService.retryDefaultZone`. A zone the catalogue names needs no
+   * retry; a resolved default stays cached.
+   */
+  private retryZone(): void {
+    if (untracked(this.zone) === null && untracked(this.defaultZoneFailed)) {
+      this.shopZones.retryDefaultZone();
+    }
+  }
+
+  /**
+   * Now, on the minute tick that re-reads today.
    *
    * The gaps read it: a hole shrinks as the morning passes, and one that has
-   * wholly elapsed stops being drawn at all.
+   * wholly elapsed stops being drawn at all. An INSTANT (`CLOCK_PORTS`,
+   * Law 7.3 T2): it needs no zone, so it is read from the first frame.
    */
-  private readonly _nowMs = signal(this.resolveNowMs());
+  private readonly _nowMs = signal<number>(this.clock.nowUtcMs());
   /**
    * The page's ONE clock.
    *
    * Exposed because the component used to keep a second one seeded from
-   * `Date.now()` — so the gaps answered to the injected `CLOCK` while every
+   * the device's own clock — so the gaps answered to the injected clock while every
    * verb gate and the now-line answered to the machine. Two clocks on one
    * screen will always drift; this is the one that goes through the port.
    */
   readonly nowMs = this._nowMs.asReadonly();
 
-  private readonly _dayKey = signal(this.resolveToday());
-  readonly dayKey = this._dayKey.asReadonly();
+  /**
+   * "Now" as the shop sees it — its day and its minute (`ShopNow`), derived
+   * from the one clock in the shop's zone; `null` until the zone is known.
+   */
+  readonly shopNow = computed<ShopNow | null>(() => {
+    const zone = this.zone();
+    return zone === null ? null : shopNowOf(this._nowMs(), zone);
+  });
+
+  /**
+   * Today on the SHOP's calendar — `''` (no day) until the zone is known;
+   * the page renders nothing that names a day before {@link ready}.
+   *
+   * RE-READ rather than frozen. This used to be resolved once in the
+   * constructor, on the assumption that "the store's whole life is one
+   * visit". A counter tab is open from open to close and routinely
+   * overnight — so at 09:00 the next morning the sheet was still showing
+   * yesterday, still calling it today, and hiding the "back to today" button
+   * precisely because it believed it was already there. It follows the
+   * minute tick now, and only a new DAY reaches its readers.
+   */
+  readonly todayKey = computed<string>(() => this.shopNow()?.localDate ?? '');
+
+  /** The day asked for — `''` until a day is (today, latched once it is known). */
+  private readonly _dayKey = signal<string>(untracked(this.todayKey));
+  /**
+   * The day on screen: the one asked for, or — before any day was, while
+   * the shop's zone resolved — today, the moment it is known.
+   */
+  readonly dayKey = computed(() => this._dayKey() || this.todayKey());
+
+  /** Set once today has been read on a known zone — see the constructor. */
+  private todayResolved = untracked(this.todayKey) !== '';
 
   /** Did the user ASK for this day, or are they just on the default? */
   private readonly _chosen = signal(false);
@@ -958,14 +1004,17 @@ export class StaffDayStore {
     // crossing midnight while the tab sits open, and the tab coming back
     // after the laptop was shut. A minute's granularity is finer than any
     // decision made off this value.
+    // NO auto-jump when today turns over: moving the day under someone
+    // mid-tap is its own trust failure — the sheet says it is stale and
+    // offers the way back instead (`showingStaleToday`).
     const tick = setInterval(() => {
-      this._nowMs.set(this.resolveNowMs());
-      this.refreshToday();
+      this._nowMs.set(this.clock.nowUtcMs());
+      this.retryZone();
     }, 60_000);
     const onVisible = () => {
       if (!document.hidden) {
-        this._nowMs.set(this.resolveNowMs());
-        this.refreshToday();
+        this._nowMs.set(this.clock.nowUtcMs());
+        this.retryZone();
       }
     };
     document.addEventListener('visibilitychange', onVisible);
@@ -976,6 +1025,26 @@ export class StaffDayStore {
       // page that is no longer showing.
       if (this.urlWrite !== null) clearTimeout(this.urlWrite);
       this.destroyed = true;
+    });
+
+    // THE FIRST TODAY (4A-11, R13): a cold load can construct the page before
+    // the catalogue or the default location names the shop's zone. The day
+    // then latches to today the moment the zone resolves — and a `?day=`
+    // that named today before today was known reads as today, not as a day
+    // somebody asked for.
+    effect(() => {
+      const today = this.todayKey();
+      if (today === '' || this.todayResolved) return;
+      this.todayResolved = true;
+      untracked(() => {
+        const day = this._dayKey();
+        if (day === '') {
+          this._dayKey.set(today);
+        } else if (day === today && this._chosen()) {
+          this._chosen.set(false);
+          this.publishQuery({ day: null });
+        }
+      });
     });
 
     // The reveal a jump asked for goes out when the asked day's lanes are
@@ -1005,43 +1074,14 @@ export class StaffDayStore {
   }
 
   /**
-   * Now, through the injected CLOCK — never `Date.now()`.
-   *
-   * The clock is injected precisely so time is substitutable, and reading the
-   * wall clock directly made the gap arithmetic answer to the machine instead
-   * of to the port. It also skipped the zone resolution every other instant
-   * on this surface goes through.
+   * Now as the brand, through the clock port — never the device's clock:
+   * what a stamp and an elapsed-time rule read (T2).
    */
-  private resolveNowMs(): number {
-    const now = this.clock.now(untracked(() => this.shopZone()));
-    return now.isSuccess() ? now.value.toMillis() : 0;
-  }
-
-  /** Now as the brand — what a stamp and an elapsed-time rule read (T2). */
   private nowUtcMs(): UtcEpochMs {
-    return utcMsOf(this.resolveNowMs());
+    return this.clock.nowUtcMs();
   }
 
-  /** Today on the SHOP's calendar — the clock read in the location's zone. */
-  private resolveToday(): string {
-    const now = this.clock.now(untracked(() => this.shopZone()));
-    return now.isSuccess()
-      ? shopNowOf(
-          now.value.toMillis(),
-          untracked(() => this.shopZone()),
-        ).localDate
-      : '1970-01-01';
-  }
-
-  private refreshToday(): void {
-    const today = this.resolveToday();
-    if (today === this._todayKey()) return;
-    this._todayKey.set(today);
-    // NO auto-jump. Moving the day under someone mid-tap is its own trust
-    // failure — the sheet says it is stale and offers the way back instead.
-  }
-
-  readonly isToday = computed(() => this._dayKey() === this._todayKey());
+  readonly isToday = computed(() => this.dayKey() === this.todayKey());
 
   /**
    * The sheet is showing a day the user never asked for, and it is no longer
@@ -1060,7 +1100,8 @@ export class StaffDayStore {
    * every calendar gets right and is jarring when it is wrong.
    */
   shiftDay(delta: number): void {
-    this.goToDay(addDays(this._dayKey(), delta * this.daySpan()));
+    if (localDateOf(this.dayKey()) === null) return;
+    this.goToDay(addDays(this.dayKey(), delta * this.daySpan()));
   }
 
   /**
@@ -1085,7 +1126,7 @@ export class StaffDayStore {
   private readonly _pendingReveal = signal(false);
 
   jumpToToday(): void {
-    this._dayKey.set(this._todayKey());
+    this._dayKey.set(this.todayKey());
     this._chosen.set(false);
     this.publishQuery({ day: null });
     this._pendingReveal.set(true);
@@ -1104,10 +1145,11 @@ export class StaffDayStore {
   goToDay(dayKey: string | null): void {
     const valid =
       dayKey !== null && /^\d{4}-\d{2}-\d{2}$/.test(dayKey) ? dayKey : null;
-    const next = valid ?? this._todayKey();
+    const today = this.todayKey();
+    const next = valid ?? today;
     this._dayKey.set(next);
-    this._chosen.set(next !== this._todayKey());
-    this.publishQuery({ day: next === this._todayKey() ? null : next });
+    this._chosen.set(next !== today);
+    this.publishQuery({ day: next === today ? null : next });
   }
 
   /**
@@ -1272,7 +1314,9 @@ export class StaffDayStore {
    * period" would move under the chevrons.
    */
   readonly visibleDays = computed<readonly string[]>(() => {
-    const anchor = this._dayKey();
+    const anchor = this.dayKey();
+    // No day yet (the zone is resolving): nothing on screen, nothing read.
+    if (localDateOf(anchor) === null) return [];
     const span = this.daySpan();
     const start = this._view() === 'week' ? startOfWeek(anchor) : anchor;
     return Array.from({ length: span }, (_, offset) => addDays(start, offset));
@@ -1439,7 +1483,7 @@ export class StaffDayStore {
       const sized = await downscaleImage(request.file);
       if (photoUploadRefusal(sized.image) !== null) return false;
       const facts: Omit<AppointmentPhoto, 'path' | 'url'> = {
-        id: AppointmentPhotoId.of(this.ids.next()),
+        id: AppointmentPhotoId.of(this.ids.nextId()),
         appointmentId: AppointmentId.of(request.appointmentId),
         barberId: BarberId.of(request.barberId),
         clientCustomerId:
@@ -1480,7 +1524,7 @@ export class StaffDayStore {
     this._photoWork.update((count) => count + 1);
     try {
       const result = await this.photos.saveAppointmentPhoto({
-        id: AppointmentPhotoId.of(this.ids.next()),
+        id: AppointmentPhotoId.of(this.ids.nextId()),
         appointmentId: AppointmentId.of(reference.appointmentId),
         barberId: BarberId.of(reference.barberId),
         clientCustomerId:
@@ -1579,7 +1623,7 @@ export class StaffDayStore {
   readonly grants = computed<readonly VisitEditorGrantOption[]>(() => {
     const result = this.grantsResult();
     if (result === undefined || !result.ok) return [];
-    const zone = this.shopZone();
+    const zone = this.zone();
     return result.value.map(({ grant, coupon }) => ({
       grantId: grant.id,
       couponId: coupon.id,
@@ -1594,7 +1638,7 @@ export class StaffDayStore {
       // When it lapses, on the shop's calendar: the card's tickets print
       // it as their chip («до 28.10») and put the soonest first; a grant
       // that never lapses prints none (review 2: every ticket was chipless).
-      expiresOn: grantExpiresOn(grant, zone),
+      expiresOn: zone === null ? null : grantExpiresOn(grant, zone),
     }));
   });
 
@@ -1723,7 +1767,7 @@ export class StaffDayStore {
   });
 
   private readonly laneInputs = computed(() => ({
-    dayKey: this._dayKey(),
+    dayKey: this.dayKey(),
     days: this.subscribedDays(),
     barbers: this.scopedBarbers().map((barber) => barber.id),
   }));
@@ -1813,7 +1857,14 @@ export class StaffDayStore {
     { initialValue: undefined },
   );
 
-  readonly loading = computed(() => this.lanesResult() === undefined);
+  /**
+   * The lanes have not answered — or there is no day to read them on yet:
+   * while the shop's zone resolves ({@link ready}) the page's existing
+   * loading state covers the wait, never "nobody is on shift" (4A-11, R13).
+   */
+  readonly loading = computed(
+    () => this.zone() === null || this.lanesResult() === undefined,
+  );
 
   /**
    * Do the lanes and the geometry on hand answer the days and chairs on
@@ -1856,7 +1907,9 @@ export class StaffDayStore {
     const geometry = this.geometryResult();
     const schedules = geometry?.schedules ?? [];
     const locations = this.catalog.locations();
-    const zone = this.shopZone();
+    const zone = this.zone();
+    // No zone, no wall clock to draw a lane on (the page is still loading).
+    if (zone === null) return [];
 
     return days.map((dayKey, dayIndex) => {
       const localDate = localDateOf(dayKey);
@@ -1922,7 +1975,8 @@ export class StaffDayStore {
    */
   readonly dayCells = computed<readonly StaffDayCell[]>(() => {
     const nowMs = this._nowMs();
-    const now = shopNowOf(nowMs, this.shopZone());
+    const now = this.shopNow();
+    if (now === null) return [];
     return this.dayGeometry().map((cell) => ({
       dayKey: cell.dayKey,
       lanes: cell.lanes.map(({ holes, day, ...lane }) => ({
@@ -1947,7 +2001,7 @@ export class StaffDayStore {
   /** The anchor day's lanes — what the single-day views draw. */
   readonly lanes = computed<readonly BarberDayLane[]>(() => {
     const cells = this.dayCells();
-    const anchor = this._dayKey();
+    const anchor = this.dayKey();
     return cells.find((cell) => cell.dayKey === anchor)?.lanes ?? [];
   });
 
@@ -1997,13 +2051,22 @@ export class StaffDayStore {
    * The last refusal, KEYED BY APPOINTMENT — it renders in the row that
    * earned it, never as a page banner three screens away from the tap.
    */
-  private readonly _errors = signal<ReadonlyMap<string, BookingGatewayError>>(
+  private readonly _errors = signal<ReadonlyMap<string, PipelineError>>(
     new Map(),
   );
   readonly errors = this._errors.asReadonly();
 
-  errorFor(appointmentId: string): BookingGatewayError | null {
+  errorFor(appointmentId: string): PipelineError | null {
     return this._errors().get(appointmentId) ?? null;
+  }
+
+  /**
+   * A refusal decided on THIS side of the wire — an intent the call cannot
+   * carry (`invalidCommand`) — filed on its row like the server's own, so
+   * the row and the toast say it the same way.
+   */
+  refuse(appointmentId: string, error: PipelineError): void {
+    this._errors.update((map) => new Map(map).set(appointmentId, error));
   }
 
   // ── Search ──────────────────────────────────────────────────────────
@@ -2056,12 +2119,10 @@ export class StaffDayStore {
    * instant (`searchAppointmentWindow`, the range `utcEpochMs` is for).
    */
   async reloadSearchPool(): Promise<void> {
-    const now = this.clock.now(untracked(() => this.shopZone()));
-    if (now.isFailure()) return;
     this._searchLoading.set(true);
     try {
       const result = await this.appointments.searchAppointmentWindow(
-        utcMsOf(now.value.toMillis()),
+        this.nowUtcMs(),
         SEARCH_WINDOW_PER_SIDE,
       );
       if (result.ok) this._pool.set(result.value);
@@ -2093,7 +2154,7 @@ export class StaffDayStore {
     // THE DAY IS A PARAMETER (2026-09-09): the block sheet steps its frame
     // off the shown day, and a series is written day by day. Defaults to
     // the day on screen, which is what every earlier caller meant.
-    dayKey: string = this._dayKey(),
+    dayKey: string = this.dayKey(),
   ): Promise<boolean> {
     if (this._absencePending()) return false;
     if (localDateOf(dayKey) === null || !barberId || !locationId) {
@@ -2145,11 +2206,16 @@ export class StaffDayStore {
       const day = localDateOf(dayKey);
       return day === null ? [] : [day];
     });
-    // The exception's day instant is read in ITS shop's zone (Law 7.2).
+    // The exception's day instant is read in ITS shop's zone (Law 7.2), the
+    // day's own until the catalogue lists that shop; none known, no write.
     const zone =
       untracked(() => this.catalog.locations()).find(
         (shop) => shop.id === locationId,
-      )?.timeZone ?? untracked(() => this.shopZone());
+      )?.timeZone ?? untracked(this.zone);
+    if (zone === null) {
+      this._absenceError.set('failed');
+      return false;
+    }
     this._absencePending.set(true);
     this._absenceError.set(null);
     try {
@@ -2196,7 +2262,7 @@ export class StaffDayStore {
   async clearBlock(
     barberId: string,
     range: MinuteRange | null = null,
-    dayKey: string = this._dayKey(),
+    dayKey: string = this.dayKey(),
   ): Promise<boolean> {
     if (this._absencePending()) return false;
     const day = localDateOf(dayKey);
@@ -2253,21 +2319,35 @@ export class StaffDayStore {
 
   private readonly _creating = signal(false);
   readonly creating = this._creating.asReadonly();
-  private readonly _createError = signal<BookingGatewayError | null>(null);
+  private readonly _createError = signal<PipelineError | null>(null);
   readonly createError = this._createError.asReadonly();
 
   /**
    * The shop placing its own book — `commitBooking` with `onBehalfOfUserId`
    * set (a client's id, or `null` for a walk-in). The lane's live listener
-   * draws the new visit; nothing is written locally.
+   * draws the new visit; nothing is written locally. `attemptId` is the
+   * store's own (`ID_PORTS`): the caller hands the call without one.
    */
-  async createBooking(request: CommitBookingRequest): Promise<boolean> {
+  async createBooking(
+    request: Omit<BookingCall, 'attemptId'>,
+  ): Promise<boolean> {
     if (this._creating()) return false;
+    const attemptId = ClientOperationId.parse(this.ids.nextId());
+    if (!attemptId.ok) {
+      // A minted name the wire cannot carry: refused as the server refuses a
+      // malformed booking, before anything goes out.
+      this._createError.set(
+        PipelineError.bare(PipelineErrorCode.InvalidRequest),
+      );
+      return false;
+    }
     this._creating.set(true);
     this._createError.set(null);
     try {
-      const result = await this.gateway.commit(request);
-      if (result.isFailure()) {
+      const result = await this.gateway.callableClient(Callables.CommitBooking)(
+        { ...request, attemptId: attemptId.value },
+      );
+      if (!result.ok) {
         this._createError.set(result.error);
         return false;
       }
@@ -2289,8 +2369,10 @@ export class StaffDayStore {
     });
 
     try {
-      const result = await this.gateway.markArrived(id);
-      if (result.isFailure()) {
+      const result = await this.gateway.callableClient(Callables.MarkArrived)({
+        appointmentId: AppointmentId.of(id),
+      });
+      if (!result.ok) {
         this._errors.update((map) => new Map(map).set(id, result.error));
         return false;
       }
@@ -2317,8 +2399,10 @@ export class StaffDayStore {
     });
 
     try {
-      const result = await this.gateway.clearArrival(id);
-      if (result.isFailure()) {
+      const result = await this.gateway.callableClient(Callables.ClearArrival)({
+        appointmentId: AppointmentId.of(id),
+      });
+      if (!result.ok) {
         this._errors.update((map) => new Map(map).set(id, result.error));
         return false;
       }
@@ -2340,8 +2424,8 @@ export class StaffDayStore {
    * block moves when the server says it moved and never before — which is the
    * only version of this that cannot show a barber a booking at a time it is
    * not at. The refusals matter more here than anywhere else on this surface:
-   * `slot_unavailable` carrying `serverCode: 'booking.staffEdit.overlaps'` is
-   * an OFFER (re-send with `acknowledgedOverlap`), and it is the row's error
+   * `PIPELINE_SLOT_UNAVAILABLE` naming `BOOKING_STAFF_EDIT_OVERLAPS` is an
+   * OFFER (re-send with `acknowledgedOverlap`), and it is the row's error
    * signal that carries it, so the offer renders in the visit that earned it
    * rather than as a banner three screens away.
    *
@@ -2356,9 +2440,9 @@ export class StaffDayStore {
    * intent keeps its name.
    *
    * ### Every send states the revision it was made on (round 5)
-   * `expectedVersion` is REQUIRED here (`StaffIntent`): the revision of the
-   * copy the sheet's draft was drawn from. A colleague's save since is
-   * refused by the server as `booking.staffEdit.stale`, and the sheet then
+   * `expectedVersion` is required by the call (`BookingCall.StaffEdit`): the
+   * revision of the copy the sheet's draft was drawn from. A colleague's save
+   * since is refused by the server as `BOOKING_STAFF_EDIT_STALE`, and the sheet then
    * reloads the visit and says so, instead of overwriting it with an older
    * screen. This device's OWN landed intents are not someone else's change:
    * the claim is rebased across them before it goes (`claimFor`), so a
@@ -2366,7 +2450,7 @@ export class StaffDayStore {
    * never refused by the save before them. A re-send under the same name is
    * still answered from the server's ledger ahead of the stale check.
    */
-  async staffEdit(intent: StaffIntent): Promise<boolean> {
+  async staffEdit(intent: BookingCall.StaffEdit): Promise<boolean> {
     const id = intent.appointmentId;
 
     /*
@@ -2402,15 +2486,25 @@ export class StaffDayStore {
       return next;
     });
 
-    const request: StaffIntent = {
+    const request: BookingCall.StaffEdit = {
       ...intent,
       expectedVersion: this.claimFor(id, intent.expectedVersion),
     };
     const key = intentOf(request);
     const operationId = this.operationIdFor(request, key);
     try {
-      const result = await this.gateway.staffEdit({ ...request, operationId });
-      if (result.isFailure()) {
+      if (operationId === null) {
+        // A minted name the wire cannot carry is refused as the server
+        // refuses one — before anything goes out, so nothing can land.
+        this._errors.update((map) =>
+          new Map(map).set(id, invalidCommand('operationId')),
+        );
+        return false;
+      }
+      const result = await this.gateway.callableClient(
+        Callables.StaffEditAppointment,
+      )({ ...request, operationId });
+      if (!result.ok) {
         // Refused, or LOST — the two look the same from here, so the same
         // intent sent again goes under the same name.
         this.rememberUnsettled(id, key, operationId);
@@ -2444,7 +2538,7 @@ export class StaffDayStore {
    * last is meaningful, so a newer request overwrites the queued one rather
    * than joining a line of stale ones behind it.
    */
-  private readonly queuedEdits = new Map<string, StaffIntent>();
+  private readonly queuedEdits = new Map<string, BookingCall.StaffEdit>();
 
   /**
    * THIS DEVICE'S OWN LANDED INTENTS, per visit: the revision each was made
@@ -2535,18 +2629,21 @@ export class StaffDayStore {
     readonly UnsettledName[]
   >();
 
-  /** The name this send goes out under — see `unsettledOperations`. */
+  /**
+   * The name this send goes out under — see `unsettledOperations` — or
+   * `null` for a freshly minted one the wire cannot carry.
+   */
   private operationIdFor(
-    request: StaffEditAppointmentRequest,
+    request: BookingCall.StaffEdit,
     intent: string,
-  ): string {
-    if (request.operationId !== undefined) return request.operationId;
-    return (
-      StaffIntentSystem.operationIdFor(
-        this.unsettledOperations.get(request.appointmentId) ?? [],
-        intent,
-      ) ?? this.ids.next()
+  ): ClientOperationId | null {
+    if (request.operationId !== null) return request.operationId;
+    const kept = StaffIntentSystem.operationIdFor(
+      this.unsettledOperations.get(request.appointmentId) ?? [],
+      intent,
     );
+    const name = ClientOperationId.parse(kept ?? this.ids.nextId());
+    return name.ok ? name.value : null;
   }
 
   /** A send that failed: its name kept under its intent, newest last. */
@@ -2582,15 +2679,17 @@ export class StaffDayStore {
    * and nothing racing it, so the request goes straight out and the error,
    * if any, lands on the row like every other write's.
    */
-  async recordTip(request: RecordSeatTipRequest): Promise<boolean> {
-    const id = request.appointmentId;
+  async recordTip(request: BookingCall.Tip): Promise<boolean> {
+    const id: string = request.appointmentId;
     this._errors.update((map) => {
       const next = new Map(map);
       next.delete(id);
       return next;
     });
-    const result = await this.gateway.recordTip(request);
-    if (result.isFailure()) {
+    const result = await this.gateway.callableClient(Callables.RecordSeatTip)(
+      request,
+    );
+    if (!result.ok) {
       this._errors.update((map) => new Map(map).set(id, result.error));
       return false;
     }
@@ -2598,8 +2697,8 @@ export class StaffDayStore {
   }
 
   /** `true` on success — the caller closes whatever asked for the reason. */
-  async transition(request: TransitionAppointmentRequest): Promise<boolean> {
-    const id = request.appointmentId;
+  async transition(request: BookingCall.Transition): Promise<boolean> {
+    const id: string = request.appointmentId;
     if (this._pending().has(id)) return false;
 
     this._pending.update((set) => new Set(set).add(id));
@@ -2610,8 +2709,10 @@ export class StaffDayStore {
     });
 
     try {
-      const result = await this.gateway.transition(request);
-      if (result.isFailure()) {
+      const result = await this.gateway.callableClient(
+        Callables.TransitionAppointment,
+      )(request);
+      if (!result.ok) {
         this._errors.update((map) => new Map(map).set(id, result.error));
         return false;
       }

@@ -53,7 +53,7 @@
           [uiSelected]="row.checked"
           [uiAlignment]="row.detail ? 'leading' : 'center'"
           [attr.aria-checked]="row.checked"
-          [attr.data-testid]="'staff-block-repeat-' + row.id"
+          [attr.data-testid]="row.testId"
           (click)="pickRepeat(row.id)"
         >
           <ui-stack uiSpacing="none">
@@ -96,7 +96,7 @@
           <ui-choice-menu
             uiAlignment="trailing"
             [uiOptions]="frequencyOptions()"
-            [uiSelectedId]="rule.frequency"
+            [uiSelectedId]="rule.recurrenceFrequency"
             [uiLabel]="t('staff.block.repeatFrequency')"
             [(uiPresented)]="frequencyMenu"
             (uiPicked)="setFrequency($event)"
@@ -111,13 +111,13 @@
               [attr.aria-label]="
                 t('staff.block.repeatFrequency') +
                 ': ' +
-                t('staff.block.repeatFrequencies.' + rule.frequency)
+                t('staff.block.repeatFrequencies.' + frequencyWord(rule))
               "
               data-testid="staff-block-repeat-frequency"
               (click)="frequencyMenu.set(true)"
             >
               <span
-                >{{ t('staff.block.repeatFrequencies.' + rule.frequency)
+                >{{ t('staff.block.repeatFrequencies.' + frequencyWord(rule))
                 }}</span
               >
               <ui-icon uiTrailing uiName="field.popUp" />
@@ -137,7 +137,7 @@
               uiInputMode="numeric"
               [uiMin]="1"
               [uiStep]="1"
-              [uiValue]="'' + rule.interval"
+              [uiValue]="'' + rule.recurrenceInterval"
               uiPlaceholder="1"
               [uiUnit]="intervalUnit(rule)"
               [uiLabel]="t('staff.block.repeatInterval')"
@@ -147,7 +147,7 @@
           </span>
         </span>
       </li>
-      @if (rule.frequency === 'weekly') {
+      @if (rule.recurrenceFrequency === Frequency.Weekly) {
       <li uiListRow uiSize="regular">
         <ui-weekday-picker
           [uiSelected]="weekdayIsos()"
@@ -157,7 +157,7 @@
           (uiSelectedChange)="setWeekdays($event)"
         />
       </li>
-      } @if (rule.frequency === 'monthly') {
+      } @if (rule.recurrenceFrequency === Frequency.Monthly) {
       <li uiListRow uiSize="regular">
         {{ t('staff.block.repeatMonthDay') }}
         <span uiTrailing>
@@ -209,7 +209,7 @@
           <ui-choice-menu
             uiAlignment="trailing"
             [uiOptions]="endOptions()"
-            [uiSelectedId]="rule.end.kind"
+            [uiSelectedId]="rule.recurrenceEnd"
             [uiLabel]="t('staff.block.repeatEnd')"
             [(uiPresented)]="endMenu"
             (uiPicked)="setEndKind($event)"

@@ -71,9 +71,9 @@ class TestTranslationLoader implements TranslocoLoader {
       'staff.block.repeatTimesUnit.one': 'път',
       'staff.block.repeatTimesUnit.other': 'пъти',
       'staff.block.repeatFix': 'Смени края',
-      'errors.scheduling.recurrence.invalid_count':
+      'errors.SCHEDULING_RECURRENCE_INVALID_COUNT':
         'Броят пъти е от 1 до {{max}}.',
-      'errors.scheduling.recurrence.never_occurs':
+      'errors.SCHEDULING_RECURRENCE_NEVER_OCCURS':
         'До края не се пада нито един ден.',
       'staff.visit.confirm': 'Потвърди',
       'staff.block.collisionsNamed': '{{count}} часа вътре: {{names}}',

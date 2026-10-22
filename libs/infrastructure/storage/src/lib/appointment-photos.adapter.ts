@@ -20,18 +20,17 @@ import {
   ref,
   uploadBytes,
 } from 'firebase/storage';
-import { type Observable, map } from 'rxjs';
+import type { Observable } from 'rxjs';
 import { subscribeWithRetry } from '@creativo/infrastructure/firestore';
 import { PhotoOrigin } from '@core/components';
-import {
-  type AppointmentId,
-  MediaError,
-  RepositoryError,
-  Result,
-} from '@core/primitives';
+import { type AppointmentId, RepositoryError, Result } from '@core/primitives';
 import { type AppointmentPhoto, Collections } from '@core/entities';
 import type { AppointmentPhotoPorts } from '@core/ports';
-import { storageErrorCode } from './storage-error-code';
+import {
+  OBJECT_NOT_FOUND,
+  mediaErrorOf,
+  storageErrorCode,
+} from './storage-error-code';
 
 /** Firestore's cap on the values of one `in` filter. */
 const IN_FILTER_MAX = 30;
@@ -55,22 +54,6 @@ function reasonOf(cause: unknown): string | null {
   const code = storageErrorCode(cause);
   if (code !== undefined) return code;
   return cause instanceof Error ? cause.message : null;
-}
-
-/**
- * A Storage failure as the media port's error: Storage's two permanent
- * answers (`object-not-found`, `unauthorized`) are permanent here too;
- * everything else is worth a bounded retry.
- */
-function mediaErrorOf(path: string, cause: unknown): MediaError {
-  switch (storageErrorCode(cause)) {
-    case 'storage/object-not-found':
-      return MediaError.notFound(path);
-    case 'storage/unauthorized':
-      return MediaError.forbidden(path);
-    default:
-      return MediaError.transient(path);
-  }
 }
 
 /** `ids`, each once, in chunks one `in` filter can carry. */
@@ -131,28 +114,19 @@ export const appointmentPhotoPorts = (
     observeAppointmentPhotos: (
       appointmentId,
     ): Observable<Result<readonly AppointmentPhoto[], RepositoryError>> =>
-      subscribeWithRetry<readonly AppointmentPhoto[]>((next, error) =>
-        onSnapshot(
-          query(photos, where('appointmentId', '==', appointmentId)),
-          (snap) =>
-            next(
-              snap.docs
-                .map((entry) => photoOf(entry.id, entry.data()))
-                .sort(byTaken),
-            ),
-          error,
-        ),
-      ).pipe(
-        map((answer) =>
-          answer.isSuccess()
-            ? Result.ok(answer.value)
-            : Result.err(
-                RepositoryError.readFailed(
-                  PHOTOS,
-                  reasonOf(answer.error.cause),
-                ),
+      subscribeWithRetry<readonly AppointmentPhoto[]>(
+        (next, error) =>
+          onSnapshot(
+            query(photos, where('appointmentId', '==', appointmentId)),
+            (snap) =>
+              next(
+                snap.docs
+                  .map((entry) => photoOf(entry.id, entry.data()))
+                  .sort(byTaken),
               ),
-        ),
+            error,
+          ),
+        (cause) => RepositoryError.readFailed(PHOTOS, reasonOf(cause)),
       ),
 
     saveAppointmentPhoto: async (photo) => {
@@ -187,7 +161,7 @@ export const appointmentPhotoPorts = (
         await deleteObject(ref(storage, photo.path));
         return Result.ok(undefined);
       } catch (cause) {
-        return storageErrorCode(cause) === 'storage/object-not-found'
+        return storageErrorCode(cause) === OBJECT_NOT_FOUND
           ? Result.ok(undefined)
           : Result.err(
               RepositoryError.writeFailed(photo.path, reasonOf(cause)),

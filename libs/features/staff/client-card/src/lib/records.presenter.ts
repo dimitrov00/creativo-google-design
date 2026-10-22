@@ -74,9 +74,6 @@ export interface RecordsPageInput {
   readonly historyComplete: boolean;
 }
 
-/** Where every visit of the card is read: the shop's zone. */
-const SHOP_ZONE = 'Europe/Sofia';
-
 /** The themes in the page's order, and the rows of each in theirs (§2.3.4). */
 const THEMES: readonly {
   readonly theme: RecordTheme;
@@ -301,22 +298,16 @@ function countRow(
   };
 }
 
-/** The shop's zone, branded — where the end of today is read. */
-const SHOP_TIME_ZONE: TimeZone = (() => {
-  const zone = ZonedTimeSystem.checkZone(SHOP_ZONE);
-  return zone.ok ? zone.value : defect('unreachable: the shop zone');
-})();
-
-/** The end of the shop's today, as the shop's "now" the windows are read at. */
-function endOfDay(today: string): ShopNow | null {
+/** The end of the shop's today on its `zone`, as the shop's "now" the windows are read at. */
+function endOfDay(today: string, zone: TimeZone): ShopNow | null {
   const day = LocalDate.parse(today);
   if (!day.ok) return null;
   const end = ZonedTimeSystem.toUtc(
     day.value,
     MinuteOfDay.ofProven(LAST_MINUTE),
-    SHOP_TIME_ZONE,
+    zone,
   );
-  return end.ok ? ZonedTimeSystem.shopNow(end.value, SHOP_TIME_ZONE) : null;
+  return end.ok ? ZonedTimeSystem.shopNow(end.value, zone) : null;
 }
 
 /** The day's last minute — 23:59. */
@@ -368,7 +359,7 @@ function rowsOf(
     // The window is read at the shop's today, as every counter's is
     // (`ClientStatsSystem.statWindows`): a visit of thirteen months ago has
     // left it without anything being rewritten.
-    const now = endOfDay(data.today);
+    const now = endOfDay(data.today, ctx.zone);
     if (now !== null) {
       add(
         countRow(

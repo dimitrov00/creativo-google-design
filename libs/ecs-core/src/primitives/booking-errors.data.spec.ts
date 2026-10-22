@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { localDate, minute, unwrapOk } from '@core/testing';
 import { MinuteCount } from './duration-minutes.primitive';
-import { BarberId, ServiceId } from './ids.primitive';
+import { AppointmentId, BarberId, ServiceId } from './ids.primitive';
 import {
+  type BookingCallRefusal,
   BookingError,
   BookingErrorCode,
   BookingErrorField,
@@ -12,24 +13,47 @@ import { SchedulingError } from './scheduling-errors.data';
 
 describe('BookingError', () => {
   it('keeps every booking commit code, SCREAMING with the BOOKING_ prefix (flatten-spec §4.2)', () => {
-    expect(Object.values(BookingErrorCode).sort()).toEqual([
-      'BOOKING_BARBER_NOT_ROSTERED',
-      'BOOKING_BEYOND_HORIZON',
-      'BOOKING_CONFLICTING_SERVICES',
-      'BOOKING_INVALID_INPUT',
-      'BOOKING_INVARIANT_VIOLATED',
-      'BOOKING_PARTY_TOO_LARGE',
-      'BOOKING_SERVICE_NOT_AT_LOCATION',
-      'BOOKING_SLOT_UNAVAILABLE',
-      'BOOKING_TOO_SOON',
-      'BOOKING_UNAUTHENTICATED',
-      'BOOKING_UNKNOWN_SERVICE',
-    ]);
+    expect(Object.values(BookingErrorCode).sort()).toEqual(
+      [
+        'BOOKING_BARBER_NOT_ROSTERED',
+        'BOOKING_BEYOND_HORIZON',
+        'BOOKING_CONFLICTING_SERVICES',
+        'BOOKING_INVALID_INPUT',
+        'BOOKING_INVARIANT_VIOLATED',
+        'BOOKING_PARTY_TOO_LARGE',
+        'BOOKING_SERVICE_NOT_AT_LOCATION',
+        'BOOKING_SLOT_UNAVAILABLE',
+        'BOOKING_TOO_SOON',
+        'BOOKING_UNAUTHENTICATED',
+        'BOOKING_UNKNOWN_SERVICE',
+        // Phase 4a: the booking callables' own refusals (the legacy dotted
+        // codes' successors, `legacy-wire-successors.spec.ts`).
+        'BOOKING_COMMIT_FORBIDDEN',
+        'BOOKING_COMMIT_STORE_FAILED',
+        'BOOKING_TRANSITION_UNAUTHENTICATED',
+        'BOOKING_TRANSITION_FORBIDDEN',
+        'BOOKING_TRANSITION_INVALID_INPUT',
+        'BOOKING_TRANSITION_NOT_FOUND',
+        'BOOKING_TRANSITION_NOT_ALLOWED',
+        'BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED',
+        'BOOKING_TRANSITION_SLOT_TAKEN',
+        'BOOKING_ARRIVED_UNAUTHENTICATED',
+        'BOOKING_ARRIVED_FORBIDDEN',
+        'BOOKING_ARRIVED_INVALID_INPUT',
+        'BOOKING_ARRIVED_NOT_FOUND',
+        'BOOKING_ARRIVED_NOT_ALLOWED',
+        'BOOKING_TIP_UNAUTHENTICATED',
+        'BOOKING_TIP_FORBIDDEN',
+        'BOOKING_TIP_INVALID_INPUT',
+        'BOOKING_TIP_NOT_FOUND',
+      ].sort(),
+    );
   });
 
   it('has one factory per code, each a plain struct', () => {
     const violation = SchedulingError.appointmentEmptySeats();
-    const errors: readonly BookingError[] = [
+    const visit = AppointmentId.of('apt-1');
+    const errors: readonly (BookingError | BookingCallRefusal)[] = [
       BookingError.invalidInput('seats'),
       BookingError.unauthenticated(),
       BookingError.unknownService('svc-1'),
@@ -52,6 +76,46 @@ describe('BookingError', () => {
       BookingError.beyondHorizon(3),
       BookingError.partyTooLarge(5),
       BookingError.invariantViolated([violation]),
+      BookingError.bare(BookingErrorCode.CommitForbidden),
+      BookingError.bare(BookingErrorCode.CommitStoreFailed),
+      BookingError.bare(BookingErrorCode.TransitionUnauthenticated),
+      BookingError.bare(BookingErrorCode.TransitionForbidden),
+      BookingError.callInvalidInput(
+        BookingErrorCode.TransitionInvalidInput,
+        'to',
+      ),
+      BookingError.callNotFound(BookingErrorCode.TransitionNotFound, visit),
+      BookingError.statusMove(
+        BookingErrorCode.TransitionNotAllowed,
+        'COMPLETED',
+        'CONFIRMED',
+      ),
+      BookingError.statusMove(
+        BookingErrorCode.TransitionReopenWindowClosed,
+        'CANCELLED',
+        'CONFIRMED',
+      ),
+      BookingError.statusMove(
+        BookingErrorCode.TransitionSlotTaken,
+        'CANCELLED',
+        'CONFIRMED',
+      ),
+      BookingError.bare(BookingErrorCode.ArrivedUnauthenticated),
+      BookingError.bare(BookingErrorCode.ArrivedForbidden),
+      BookingError.callInvalidInput(
+        BookingErrorCode.ArrivedInvalidInput,
+        'appointmentId',
+      ),
+      BookingError.callNotFound(BookingErrorCode.ArrivedNotFound, visit),
+      BookingError.statusMove(
+        BookingErrorCode.ArrivedNotAllowed,
+        'COMPLETED',
+        'arrived',
+      ),
+      BookingError.bare(BookingErrorCode.TipUnauthenticated),
+      BookingError.bare(BookingErrorCode.TipForbidden),
+      BookingError.callInvalidInput(BookingErrorCode.TipInvalidInput, 'seatId'),
+      BookingError.callNotFound(BookingErrorCode.TipNotFound, visit),
     ];
     expect(errors.map((error) => error.errorCode).sort()).toEqual(
       Object.values(BookingErrorCode).sort(),
@@ -60,6 +124,20 @@ describe('BookingError', () => {
       errorCode: 'BOOKING_INVARIANT_VIOLATED',
       violations: [violation],
     });
+    expect(
+      BookingError.statusMove(
+        BookingErrorCode.TransitionNotAllowed,
+        'COMPLETED',
+        'CONFIRMED',
+      ),
+    ).toEqual({
+      errorCode: 'BOOKING_TRANSITION_NOT_ALLOWED',
+      fromBookingStatus: 'COMPLETED',
+      toBookingStatus: 'CONFIRMED',
+    });
+    expect(
+      BookingError.callNotFound(BookingErrorCode.TipNotFound, visit),
+    ).toEqual({ errorCode: 'BOOKING_TIP_NOT_FOUND', appointmentId: 'apt-1' });
   });
 
   it('carries the slot refusal on the shop’s wall clock — the day and the minute, never an instant', () => {

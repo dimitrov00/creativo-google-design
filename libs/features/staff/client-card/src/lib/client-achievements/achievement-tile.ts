@@ -7,6 +7,7 @@ import {
 } from '@angular/core';
 import { UiBadge, UiMedal } from '@creativo/ui/controls';
 import { UiFrameDirective } from '@creativo/ui/modifiers';
+import { AchievementScope } from '../client-card.contracts';
 import type { AchievementTileVm } from '../client-pages.vm';
 
 /**
@@ -58,7 +59,7 @@ import type { AchievementTileVm } from '../client-pages.vm';
       [uiCaption]="caption() ? vm.medal.caption : null"
       [uiValue]="vm.medal.value"
       [uiValueText]="vm.medal.valueText"
-      [uiStacked]="vm.opens?.kind === 'day'"
+      [uiStacked]="vm.opens?.achievementScope === AchievementScope.Day"
       [uiLabel]="vm.medal.accessibleName"
       [attr.data-testid]="testId()"
       (click)="open.emit(vm)"
@@ -89,4 +90,6 @@ export class AchievementTile {
   readonly caption = input(true, { transform: booleanAttribute });
   /** A tap: the parent opens the family's detail, or the scope the tile names. */
   readonly open = output<AchievementTileVm>();
+
+  protected readonly AchievementScope = AchievementScope;
 }

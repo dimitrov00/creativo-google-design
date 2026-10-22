@@ -6,46 +6,44 @@ import {
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
-import { AVATAR_UPLOADER, ZonedDateTime } from '@creativo/application/accounts';
-import {
-  AUTH_GATEWAY,
-  PrincipalId,
-  Result,
-  activePrincipal,
-  ok,
-  fail,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
+import { BehaviorSubject, Observable, of } from 'rxjs';
 import {
   APPOINTMENT_READ_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+  CLOCK_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  GATEWAY_PORTS,
   INBOX_PORTS,
+  LOCATION_LOAD_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { BirthDate, Email } from '@core/components';
-import type { User } from '@core/entities';
-import type { ProfilePorts } from '@core/ports';
-import { RepositoryError, Result as EcsResult, UserId } from '@core/primitives';
 import {
+  BirthDate,
+  Email,
+  type IdentityCall,
+  type Principal,
+} from '@core/components';
+import type { User } from '@core/entities';
+import { Callables, type StoredFile } from '@core/ports';
+import { MediaError, PipelineError, Result, UserId } from '@core/primitives';
+import {
+  locationFixture,
   memoryAppointmentReadPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
+  memoryClockPorts,
+  memoryDefaultLocationPorts,
   memoryInboxPorts,
+  memoryLocationLoadPorts,
   memoryProfilePorts,
+  memoryProgramsWorld,
+  principalFixture,
   registeredUserFixture,
+  scriptedGatewayPorts,
+  utcMs,
 } from '@core/testing';
-import { CLOCK } from '@creativo/application/shared';
 import { ClientProfile } from './client-profile';
-
-function unwrap<T>(result: Result<T, unknown>): T {
-  if (result.isFailure()) throw new Error('fixture failed');
-  return result.value;
-}
-
-const TODAY = unwrap(ZonedDateTime.fromISO('2026-01-01T00:00:00.000Z', 'UTC'));
-const PRINCIPAL = unwrap(
-  activePrincipal(unwrap(PrincipalId.create('user_1')), [
-    roleFromPrimitive('client'),
-  ]),
-);
 
 const USER_ID = UserId.of('user_1');
 
@@ -85,8 +83,8 @@ function provideTestI18n(): EnvironmentProviders[] {
 interface Harness {
   fixture: ComponentFixture<ClientProfile>;
   host: HTMLElement;
-  /** Every `users/{uid}` body an owner write left, in order. */
-  saved: User[];
+  /** Every edit the page sent through `updateProfile`, in order. */
+  saved: IdentityCall.UpdateProfile[];
   uploads: Blob[];
   removals: string[];
   settle(): Promise<void>;
@@ -94,19 +92,19 @@ interface Harness {
 
 async function render(options?: {
   profile?: User | null;
-  /** The owner write fails in the store (a rule denial), writing nothing. */
+  /** The `updateProfile` call fails as a store failure, writing nothing. */
   writeFails?: boolean;
-  uploadResult?: () => Result<{ url: string; path: string }, { code: string }>;
+  uploadResult?: () => Result<StoredFile, MediaError>;
   photoUrl?: string | null;
-  removeResult?: () => Result<void, { code: string }>;
+  removeResult?: () => Result<void, MediaError>;
 }): Promise<Harness> {
-  const saved: User[] = [];
+  const saved: IdentityCall.UpdateProfile[] = [];
   const uploads: Blob[] = [];
   const removals: string[] = [];
   const profile = options?.profile === undefined ? user() : options.profile;
   const users = new Map<UserId, User>();
   if (profile !== null) users.set(profile.id, profile);
-  const memory = memoryProfilePorts(users);
+  const avatars = memoryAvatarPorts();
 
   await TestBed.configureTestingModule({
     imports: [ClientProfile],
@@ -114,60 +112,55 @@ async function render(options?: {
       provideRouter([]),
       ...provideTestI18n(),
       {
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () => of(PRINCIPAL),
-          currentDisplayName: () => 'Ада Тестова',
-          currentIdentifier: () => null,
-          signOut: async () => ok(undefined),
-        },
+        provide: AUTH_SESSION_PORTS,
+        useValue: memoryAuthSessionPorts({
+          principals$: new BehaviorSubject<Principal>(
+            principalFixture.client(USER_ID),
+          ),
+          displayName: 'Ада Тестова',
+        }),
       },
+      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(users) },
       {
-        provide: PROFILE_PORTS,
-        useValue: {
-          ...memory,
-          writeOwnProfile: async (userId, decide) => {
+        provide: GATEWAY_PORTS,
+        useValue: scriptedGatewayPorts({
+          [Callables.UpdateProfile]: (edits) => {
             if (options?.writeFails) {
-              return EcsResult.err(
-                RepositoryError.writeFailed(
-                  `users/${userId}`,
-                  'permission-denied',
-                ),
-              );
+              return Result.err(PipelineError.fromWire('internal', null));
             }
-            const before = users.get(userId);
-            const written = await memory.writeOwnProfile(userId, decide);
-            const after = users.get(userId);
-            if (after !== undefined && after !== before) saved.push(after);
-            return written;
+            saved.push(edits);
+            return Result.ok({ changed: true });
           },
-        } satisfies ProfilePorts,
+        }),
       },
       {
-        provide: AVATAR_UPLOADER,
+        provide: AVATAR_PORTS,
         useValue: {
-          find: () =>
-            Promise.resolve(
-              ok(
-                options?.photoUrl
-                  ? { url: options.photoUrl, path: 'avatars/user_1' }
-                  : null,
-              ),
+          ...avatars,
+          findAvatar: async () =>
+            Result.ok(
+              options?.photoUrl
+                ? { url: options.photoUrl, path: 'avatars/user_1' }
+                : null,
             ),
-          upload: (_id: unknown, data: Blob) => {
-            uploads.push(data);
-            return Promise.resolve(
+          uploadAvatar: async (userId: UserId, image: Blob) => {
+            uploads.push(image);
+            return (
               options?.uploadResult?.() ??
-                ok({ url: 'http://avatar/user_1', path: 'avatars/user_1' }),
+              Result.ok({ url: 'http://avatar/user_1', path: 'avatars/user_1' })
             );
           },
-          remove: (id: string) => {
-            removals.push(id);
-            return Promise.resolve(options?.removeResult?.() ?? ok(undefined));
+          removeAvatar: async (userId: UserId) => {
+            removals.push(userId);
+            return options?.removeResult?.() ?? Result.ok(undefined);
           },
         },
       },
-      { provide: CLOCK, useValue: { now: () => ok(TODAY) } },
+      // The birth-date window's age day, pinned.
+      {
+        provide: CLOCK_PORTS,
+        useValue: memoryClockPorts(utcMs('2026-01-01T00:00:00.000Z')),
+      },
       // The shared header renders the menu, whose bookings row counts
       // upcoming visits.
       {
@@ -178,6 +171,17 @@ async function render(options?: {
       {
         provide: APPOINTMENT_READ_PORTS,
         useValue: memoryAppointmentReadPorts([]),
+      },
+      // …and its schedule row names the default location's shop day.
+      {
+        provide: LOCATION_LOAD_PORTS,
+        useValue: memoryLocationLoadPorts(
+          memoryProgramsWorld({ locations: [locationFixture()] }),
+        ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
     ],
   }).compileComponents();
@@ -348,7 +352,7 @@ describe('ClientProfile', () => {
     ).toBeNull();
   });
 
-  it('saves a new name through the profile port and closes the sheet', async () => {
+  it('saves a new name through updateProfile and closes the sheet', async () => {
     const { host, fixture, saved, settle } = await render();
     click(host, 'profile-row-name');
     fixture.detectChanges();
@@ -360,8 +364,9 @@ describe('ClientProfile', () => {
 
     expect(saved.length).toBe(1);
     expect(saved[0]?.firstName).toBe('Ана');
-    // Untouched fields survive the edit.
+    // The last name travels as typed (untouched); the birth date is kept.
     expect(saved[0]?.lastName).toBe('Тестова');
+    expect(saved[0]?.birthDate).toBeNull();
     expect(
       host.querySelector('[data-testid="profile-sheet-error"]'),
     ).toBeNull();
@@ -464,7 +469,8 @@ describe('ClientProfile', () => {
   it('keeps the photo and reports the failure when removal fails', async () => {
     const { host, fixture, settle } = await render({
       photoUrl: 'http://avatar/user_1.jpg',
-      removeResult: () => fail({ code: 'remove_failed' }),
+      removeResult: () =>
+        Result.err(MediaError.transient('avatars/user_1/original')),
     });
 
     click(host, 'profile-photo-pick');

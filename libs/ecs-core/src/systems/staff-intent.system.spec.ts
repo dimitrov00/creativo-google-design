@@ -22,14 +22,19 @@ import {
  * in-flight drop, the sheet's «Запази» wiring) stay in the component spec.
  * Plus the list rules, a property of the claim and purity. Flatten pass:
  * the visit and the name are `AppointmentId` / `OperationId` brands (Law 7);
- * the batch stays the opaque wire command the store sends.
+ * the batch stays the opaque wire command the store sends — since Phase 4a
+ * the `BookingCall.EditCommand` shape (the basis hashes the command as
+ * sent, so the operation ids it keys move with the shape; R8).
  */
 
 const S = StaffIntentSystem;
 
+/** A `BookingCall.EditCommand` as the store sends it (Phase 4a: wall-clock placement). */
 const MOVE = {
-  kind: 'move',
-  startIso: '2026-08-05T11:00:00.000+03:00',
+  editCommand: 'MOVE',
+  localDate: '2026-08-05',
+  startMinutes: 660,
+  seatIds: null,
 } as const;
 
 type Intent = {
@@ -125,7 +130,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     d.send({ appointmentId: 'appointment-1', command: MOVE });
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+      command: { ...MOVE, startMinutes: 720 },
     });
     expect(d.sent[1]?.operationId).not.toBe(d.sent[0]?.operationId);
   });
@@ -162,7 +167,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     );
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+      command: { ...MOVE, startMinutes: 720 },
     });
     // The first intent, sent again: under its own name, whatever landed.
     d.send({ appointmentId: 'appointment-1', command: MOVE });
@@ -196,13 +201,13 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     });
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startIso: '2026-08-05T10:00:00.000+03:00' },
+      command: { ...MOVE, startMinutes: 600 },
       expectedVersion: 3,
     });
     // …and a third save from the same sheet, still drawn at 3.
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+      command: { ...MOVE, startMinutes: 720 },
       expectedVersion: 3,
     });
     expect(d.sent.map((request) => request.expectedVersion)).toEqual([3, 4, 5]);
@@ -218,7 +223,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     // The queued drop goes once the save has landed.
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+      command: { ...MOVE, startMinutes: 720 },
       expectedVersion: 3,
     });
     expect(d.sent.map((request) => request.expectedVersion)).toEqual([3, 4]);
@@ -236,7 +241,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     // A refused intent stamped nothing: the next one drawn at 3 claims 3.
     d.send({
       appointmentId: 'appointment-1',
-      command: { ...MOVE, startIso: '2026-08-05T12:00:00.000+03:00' },
+      command: { ...MOVE, startMinutes: 720 },
       expectedVersion: 3,
     });
     expect(d.sent[1]?.expectedVersion).toBe(3);
@@ -260,7 +265,7 @@ describe('every staff intent goes out named (2026-09-25)', () => {
     const d = device(scripted(Array.from({ length: cap + 2 }, () => 'lost')));
     const at = (minute: number) => ({
       ...MOVE,
-      startIso: `2026-08-05T11:${String(minute).padStart(2, '0')}:00.000+03:00`,
+      startMinutes: 660 + minute,
     });
     // CAP + 1 different intents fail: the oldest name falls off.
     for (let minute = 0; minute <= cap; minute += 1) {

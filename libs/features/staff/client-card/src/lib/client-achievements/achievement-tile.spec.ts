@@ -5,6 +5,7 @@ import { cssRule } from '../../testing/css-rule';
 import { MEDALS, tileOf } from '../../testing/client-pages.vm-fixtures';
 import type { AchievementTileVm } from '../client-pages.vm';
 import { AchievementTile } from './achievement-tile';
+import { AchievementScope } from '../client-card.contracts';
 
 /** Earned, in progress towards III, not new. */
 const FADE = tileOf(MEDALS.fade);
@@ -20,7 +21,7 @@ const NEW_FADE: AchievementTileVm = tileOf({ ...MEDALS.fade, isNew: true });
 const DAY: AchievementTileVm = {
   key: '2026-09-28',
   medal: { ...MEDALS.welcome, title: 'В ритъм +2', caption: '28.09' },
-  opens: { kind: 'day', day: '2026-09-28' },
+  opens: { achievementScope: AchievementScope.Day, day: '2026-09-28' },
 };
 
 @Component({

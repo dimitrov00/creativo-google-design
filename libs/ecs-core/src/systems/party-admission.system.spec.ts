@@ -14,6 +14,8 @@ import {
   type BookingCart,
   LocationStatus,
   PlacementPolicy,
+  RequestedSubjectRole,
+  type BookingCall,
 } from '@core/components';
 import type { Service } from '@core/entities';
 import {
@@ -29,11 +31,7 @@ import {
   termsFixture,
   resolvedCustomerIds,
 } from '@core/testing';
-import {
-  BookingDecisionSystem,
-  type RequestedSeatInput,
-} from './booking-decision.system';
-import { RequestedSubjectRole } from './guest-label.system';
+import { BookingDecisionSystem } from './booking-decision.system';
 import { PartyAdmissionSystem } from './party-admission.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -160,7 +158,7 @@ describe('admitCart — the waitlist and the commit admit a party by one rule', 
           );
 
           const requested = cart.cartSeats.flatMap((seat) =>
-            seat.lines.map((line): RequestedSeatInput => ({
+            seat.lines.map((line): BookingCall.SeatInput => ({
               lineId: line.lineId,
               serviceId: line.serviceId,
               variantId: line.variantId,

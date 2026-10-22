@@ -41,6 +41,6 @@ export const environment = {
     storagePort: 9199,
   },
   // Build-time flags (R41): the manifest's `development` map, parsed and
-  // validated by `provideFeatureFlags` at bootstrap.
+  // validated by `provideFlags` at bootstrap.
   featureFlags,
 };

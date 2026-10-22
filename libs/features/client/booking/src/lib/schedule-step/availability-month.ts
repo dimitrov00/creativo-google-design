@@ -1,10 +1,9 @@
-import { CalendarDay } from '@creativo/application/booking';
-import { LocalDate, defect } from '@core/primitives';
+import { LocalDate } from '@core/primitives';
 import { CalendarGridSystem } from '@core/systems';
 
 export interface AvailabilityDayCell {
-  readonly day: CalendarDay;
-  readonly dayKey: string;
+  /** The shop day — also the cell's `data-day-key`. */
+  readonly localDate: LocalDate;
   /** The number to render. */
   readonly dayOfMonth: number;
   readonly inCurrentMonth: boolean;
@@ -35,11 +34,10 @@ export type AvailabilityGridCell = AvailabilityDayCell | null;
  * Selection is deliberately absent: it is the one thing that changes on a tap,
  * and baking it in here would mean rebuilding every cell in the run each time
  * someone picks a day. The template answers selection with a string compare
- * against the chosen key instead. See the note on the step's `months()`.
+ * against the chosen day instead. See the note on the step's `months()`.
  */
 export interface ScheduleDayVm {
-  readonly day: CalendarDay;
-  readonly dayKey: string;
+  readonly localDate: LocalDate;
   readonly dayOfMonth: number;
   readonly isToday: boolean;
   readonly bookable: boolean;
@@ -49,77 +47,68 @@ export interface ScheduleDayVm {
 }
 
 export interface ScheduleMonthVm {
-  readonly anchor: CalendarDay;
+  /** The month's 1st. */
+  readonly anchor: LocalDate;
   readonly key: string;
   readonly weeks: readonly (readonly (ScheduleDayVm | null)[])[];
 }
 
 export interface AvailabilityMonth {
-  readonly anchor: CalendarDay;
+  /** The month's 1st. */
+  readonly anchor: LocalDate;
   /** `YYYY-MM` — stable across rebuilds, so `@for` never re-creates a month. */
   readonly key: string;
   readonly weeks: readonly (readonly AvailabilityGridCell[])[];
 }
 
 /**
- * A Monday-first month grid, each cell carrying the free minutes the capacity
- * projection reported for that day.
+ * A Monday-first month grid (`CalendarGridSystem.monthGrid`), each cell
+ * carrying the free minutes the capacity projection reported for that day.
  *
- * Separate from `client/appointments`' `buildCalendarMonth` on purpose: that
- * one counts the viewer's OWN appointments, this one measures a shop's spare
- * capacity. Same shape, opposite meaning — merging them would produce a cell
- * type where half the fields are always wrong.
+ * Separate from `client/appointments`' month on purpose: that one counts the
+ * viewer's OWN appointments, this one measures a shop's spare capacity. Same
+ * shape, opposite meaning — merging them would produce a cell type where
+ * half the fields are always wrong.
  *
  * ### A month holds ITS OWN days, and nothing else
  * A paged grid pads both ends with the neighbouring months' real dates,
  * because it shows one month at a time and those cells would otherwise be
  * holes. A scrolling run has the neighbours right there, so padding with real
  * dates renders the same week twice a few rows apart — and across the July/
- * August boundary that meant today appearing twice, dot and all. So: the
- * leading pad is BLANK (`null`) and there is no trailing pad. Every date on
- * screen appears exactly once, which is what a continuous calendar promises.
+ * August boundary that meant today appearing twice, dot and all. So: every
+ * padding column is BLANK (`null`). Every date on screen appears exactly
+ * once, which is what a continuous calendar promises.
  *
- * Everything walks `CalendarDay.next()`, never `+24h`: on a DST transition a
- * day is 23 or 25 hours, and a grid built on millisecond arithmetic silently
- * repeats or skips a date twice a year.
+ * Shop days and civil arithmetic only (Law 7.3): a DST transition has no say
+ * in which dates a month holds.
  */
 export function buildAvailabilityMonth(input: {
-  readonly anchor: CalendarDay;
-  readonly today: CalendarDay;
-  readonly horizonEnd: CalendarDay;
+  readonly anchor: LocalDate;
+  readonly today: LocalDate;
+  readonly horizonEnd: LocalDate;
   readonly capacityByDay: ReadonlyMap<string, number>;
 }): AvailabilityMonth {
-  const { anchor, today, horizonEnd, capacityByDay } = input;
-  const monthStart = anchor.startOfMonth();
-  const monthEnd = anchor.endOfMonth();
-
-  // The grid is `CalendarGridSystem.monthGrid`: Monday-first, padded to
-  // whole weeks — the padding is blanks, not the neighbouring months' days.
-  // The month's own days are walked in order beside it, as the legacy days
-  // this step renders.
-  let cursor = monthStart;
-  const first = LocalDate.parse(monthStart.key());
-  if (!first.ok) defect('unreachable: a calendar day is a day');
+  const { today, horizonEnd, capacityByDay } = input;
+  const monthStart = LocalDate.startOfMonth(input.anchor);
   const weeks: AvailabilityGridCell[][] = CalendarGridSystem.monthGrid(
-    first.value,
+    monthStart,
     [],
   ).map((week) =>
     week.map((cell): AvailabilityGridCell => {
-      if (!cell.inMonth || monthEnd.isBefore(cursor)) return null;
-      const day = cursor;
-      cursor = cursor.next();
+      if (!cell.inMonth) return null;
       return {
-        day,
-        dayKey: cell.localDate,
+        localDate: cell.localDate,
         dayOfMonth: cell.dayOfMonth,
         inCurrentMonth: true,
-        isToday: day.equals(today),
-        outOfRange: day.isBefore(today) || horizonEnd.isBefore(day),
+        isToday: cell.localDate === today,
+        outOfRange:
+          LocalDate.compare(cell.localDate, today) < 0 ||
+          LocalDate.compare(cell.localDate, horizonEnd) > 0,
         freeMinutes: capacityByDay.get(cell.localDate) ?? 0,
       };
     }),
   );
-  return { anchor: monthStart, key: monthStart.key().slice(0, 7), weeks };
+  return { anchor: monthStart, key: LocalDate.monthKey(monthStart), weeks };
 }
 
 /**
@@ -130,15 +119,15 @@ export function buildAvailabilityMonth(input: {
  * is deliberate rather than a virtualization gap.
  */
 export function buildAvailabilityMonths(input: {
-  readonly today: CalendarDay;
-  readonly horizonEnd: CalendarDay;
+  readonly today: LocalDate;
+  readonly horizonEnd: LocalDate;
   readonly capacityByDay: ReadonlyMap<string, number>;
 }): readonly AvailabilityMonth[] {
   const months: AvailabilityMonth[] = [];
-  let cursor = input.today.startOfMonth();
+  let cursor = LocalDate.startOfMonth(input.today);
   // `<=` on the horizon's own month: the horizon lands on a month's last day,
   // so the final month must be included, not stopped short of.
-  while (!input.horizonEnd.isBefore(cursor)) {
+  while (LocalDate.compare(cursor, input.horizonEnd) <= 0) {
     months.push(
       buildAvailabilityMonth({
         anchor: cursor,
@@ -147,7 +136,7 @@ export function buildAvailabilityMonths(input: {
         capacityByDay: input.capacityByDay,
       }),
     );
-    cursor = cursor.endOfMonth().next();
+    cursor = LocalDate.addMonths(cursor, 1);
   }
   return months;
 }

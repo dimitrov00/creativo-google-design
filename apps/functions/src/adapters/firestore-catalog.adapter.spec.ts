@@ -163,3 +163,52 @@ describe('firestoreCatalogPorts.loadListedCatalog', () => {
     });
   });
 });
+
+describe('firestoreCatalogPorts.loadLocation (Phase 4a 4A-11)', () => {
+  it('reads one shop by id as stored — a hidden one too — and a shop that is not there as nothing', async () => {
+    const ports = firestoreCatalogPorts(seeded().db as unknown as Firestore);
+    expect(await ports.loadLocation(FIXTURE_IDS.location)).toEqual({
+      ok: true,
+      value: locationFixture(),
+    });
+    expect(await ports.loadLocation(HIDDEN)).toEqual({
+      ok: true,
+      value: locationFixture({
+        id: HIDDEN,
+        locationStatus: LocationStatus.Hidden,
+      }),
+    });
+    expect(await ports.loadLocation(LocationId.of('loc-nowhere'))).toEqual({
+      ok: true,
+      value: null,
+    });
+  });
+
+  it('never reads an id that could not name a document, and answers it absent', async () => {
+    const fake = seeded();
+    const collection = vi.spyOn(fake.db, 'collection');
+    const ports = firestoreCatalogPorts(fake.db as unknown as Firestore);
+    for (const id of ['', 'a/b', '.', '..', '__reserved__']) {
+      expect(await ports.loadLocation(LocationId.of(id))).toEqual({
+        ok: true,
+        value: null,
+      });
+    }
+    expect(collection).not.toHaveBeenCalled();
+  });
+
+  it('answers a read that throws as a value naming the shop’s path, the canonical code its reason', async () => {
+    const fake = seeded();
+    vi.spyOn(fake.db, 'collection').mockImplementation(() => {
+      throw Object.assign(new Error('14 UNAVAILABLE'), { code: 14 });
+    });
+    const ports = firestoreCatalogPorts(fake.db as unknown as Firestore);
+    expect(await ports.loadLocation(FIXTURE_IDS.location)).toEqual({
+      ok: false,
+      error: RepositoryError.readFailed(
+        `${Collections.Locations}/${FIXTURE_IDS.location}`,
+        'unavailable',
+      ),
+    });
+  });
+});

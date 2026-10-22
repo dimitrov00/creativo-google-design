@@ -1,96 +1,115 @@
-import { UserId, worksTheBook } from '@creativo/domain/accounts';
-import { type Actor, actorForCaller } from '@creativo/domain/governance';
+import {
+  Actor,
+  isAdmin,
+  knownRoles,
+  mayBook,
+  type Role,
+} from '@core/components';
+import { UserId } from '@core/primitives';
 
 /**
- * The caller's roles, off the VERIFIED ID token.
+ * THE CALLER, off the VERIFIED ID token — the ONE home of every reading a
+ * callable makes of who is asking (Phase 4a §1.3: `booking.wire.ts`' private
+ * `rolesOf`/`actorOf` and this file's helpers folded together, reuse never
+ * copy). Every gate judges the token's `roles` claim and nothing else.
  *
  * `request.auth.token.roles` is a custom claim minted by `verifyOtp` from the
  * user document, and rules keep that document's `roles` field Admin-SDK-only
  * — so a client cannot grant itself one. Read defensively all the same: a
  * token with no claim, or a claim that is not an array, yields no roles
  * rather than throwing on a shape nobody promised.
+ *
+ * Two readings of the claim's ENTRIES live side by side, each pinned
+ * (§9 R6), because their callers always read them so:
+ * - {@link callerRoles} String-coerces every entry (the book, ops and
+ *   loyalty gates, and {@link callerActor}'s attribution);
+ * - {@link callerActorAsClaimed} hands the entries to `Actor.forCaller` as
+ *   they are (the booking callables' attribution).
+ * They part only on a claim nobody mints (`[['admin']]`, a number).
  */
-export function callerRoles(request: {
-  auth?: { token?: object };
-}): readonly string[] {
-  return claimedRoles(request).map((role) => String(role));
+
+/** A callable request, as far as the caller is read off it. */
+export type VerifiedRequest = {
+  readonly auth?: {
+    readonly uid?: string;
+    readonly token?: object;
+  } | null;
+};
+
+/** The verified caller's uid, or `null` — an empty uid is nobody. */
+export function callerUserId(request: VerifiedRequest): UserId | null {
+  const uid = UserId.parse(request.auth?.uid ?? '');
+  return uid.ok ? uid.value : null;
 }
 
 /** The `roles` claim as the token holds it: its entries untouched, none when it is no array. */
-function claimedRoles(request: {
-  auth?: { token?: object };
-}): readonly unknown[] {
-  const token = (request.auth?.token ?? {}) as Record<string, unknown>;
-  const roles = token['roles'];
+function claimedRoles(request: VerifiedRequest): readonly unknown[] {
+  const token = request.auth?.token;
+  const roles =
+    token === undefined
+      ? undefined
+      : Object.getOwnPropertyDescriptor(token, 'roles')?.value;
   return Array.isArray(roles) ? roles : [];
 }
 
-/**
- * May this caller work the book?
- *
- * The ONE gate every appointment callable uses, and deliberately not
- * `STAFF_ROLES`: see `worksTheBook` in `@creativo/domain/accounts` for why a
- * `content_manager` that `firestore.rules` refuses every appointment READ
- * must not be handed the writes.
- *
- * Lives here rather than being copied into each callable because it was
- * copied into each callable — `transitionAppointment` and `markArrived` both
- * carried their own `isStaffCaller`, and both were wrong in the same way.
- */
-export function callerWorksTheBook(request: {
-  auth?: { token?: object };
-}): boolean {
-  return worksTheBook(callerRoles(request));
+/** The claim's entries as strings, in the order given. */
+export function callerRoles(request: VerifiedRequest): readonly string[] {
+  return claimedRoles(request).map((role) => String(role));
 }
 
 /**
- * The pair that MANAGES THE SHOP: the TypeScript twin of `isAdmin()` in
- * `firestore.rules`. Two dialects of one rule, and the rules file cannot
- * import this one: keep the two lists equal (`caller-roles.spec.ts` reads
- * the rules and holds them so).
+ * The claim's KNOWN roles, each once — what a pipeline that names `Role[]`
+ * is handed (the impersonation callables' gate). Read off the entries AS
+ * THEY ARE, as {@link callerIsAdmin} and the rules' `hasAny` read them: a
+ * list inside the list is no role.
  */
-export const ADMIN_ROLES: readonly string[] = ['admin', 'sysadmin'];
+export function callerKnownRoles(request: VerifiedRequest): readonly Role[] {
+  return knownRoles(claimedRoles(request));
+}
 
 /**
- * May this caller change how the shop runs: publish the rhythm's rule, and
- * whatever else only the owner's pair decides?
- *
- * The same source as every other gate here, the VERIFIED token's claim, and
- * the same two roles `firestore.rules` admits with `isAdmin()`. Never a
- * second read of `users/{uid}`: a document read can disagree with the token
- * the rules just judged by, and then one caller is an admin to the callable
- * and nobody to the rules. A missing claim, or one that is not an array,
- * manages nothing.
+ * May this caller work the book? The ONE gate every appointment callable
+ * uses, and deliberately not `STAFF_ROLES`: a `content_manager` that
+ * `firestore.rules` refuses every appointment READ must not be handed the
+ * writes (`mayBook`, `BOOK_ROLES`).
+ */
+export function callerWorksTheBook(request: VerifiedRequest): boolean {
+  return mayBook(callerRoles(request));
+}
+
+/**
+ * May this caller change how the shop runs: publish the rhythm's rule,
+ * open or end an impersonation, and whatever else only the owner's pair
+ * decides? The same two roles `firestore.rules` admits with `isAdmin()`
+ * (`isAdmin`, `ADMIN_ROLES`; `caller-roles.spec.ts` reads the rules and
+ * holds them equal). Never a second read of `users/{uid}`: a document read can
+ * disagree with the token the rules just judged by.
  *
  * An entry counts only when it IS the role, a string spelled as the rules
- * spell it. `callerRoles` makes a string of whatever the claim holds, and
- * `String(['admin'])` is `'admin'`: a list inside the list would pass here
- * and fail `hasAny` in the rules, so this gate reads the entries as they
- * are.
- *
- * Access, not attribution: `callerActor` still records the vendor's
- * `sysadmin` as `staff`, so the log tells the owner's act from the vendor's.
+ * spell it: `String(['admin'])` is `'admin'`, so a list inside the list
+ * would pass a coerced reading and fail `hasAny` in the rules — this gate
+ * reads the entries as they are.
  */
-export function callerIsAdmin(request: { auth?: { token?: object } }): boolean {
-  return claimedRoles(request).some(
-    (role) => typeof role === 'string' && ADMIN_ROLES.includes(role),
-  );
+export function callerIsAdmin(request: VerifiedRequest): boolean {
+  return isAdmin(callerKnownRoles(request));
 }
 
 /**
- * Who the audit log says did this — the verified uid, attributed by its roles
- * (`actorForCaller`): an admin as `admin`, other staff as `staff` with a
- * snapshot of their roles, a client as `user`.
+ * Who the audit log says did this — the verified uid, attributed by its
+ * String-coerced roles (`Actor.forCaller`): an admin as `ADMIN`, other
+ * staff as `STAFF` with a snapshot of their roles, a client as `USER`.
+ * Access is not attribution: the vendor's `sysadmin` is `STAFF`.
  *
- * `null` when there is no verified caller: nobody to attribute, and inventing
- * one (the owner, a `system` source) would be the very misattribution this
- * exists to end.
+ * `null` when there is no verified caller: nobody to attribute, and
+ * inventing one would be the very misattribution this exists to end.
  */
-export function callerActor(request: {
-  auth?: { uid?: string; token?: object };
-}): Actor | null {
-  const uid = UserId.create(request.auth?.uid ?? '');
-  return uid.isSuccess()
-    ? actorForCaller(uid.value, callerRoles(request))
-    : null;
+export function callerActor(request: VerifiedRequest): Actor | null {
+  const uid = callerUserId(request);
+  return uid === null ? null : Actor.forCaller(uid, callerRoles(request));
+}
+
+/** {@link callerActor} over the claim's entries AS THEY ARE — the booking callables' reading. */
+export function callerActorAsClaimed(request: VerifiedRequest): Actor | null {
+  const uid = callerUserId(request);
+  return uid === null ? null : Actor.forCaller(uid, claimedRoles(request));
 }

@@ -13,7 +13,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoService } from '@jsverse/transloco';
 import type { Subscription } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
 import type {
   Appointment,
   AppointmentPhoto,
@@ -36,9 +35,9 @@ import {
   type TimeZone,
   type UtcEpochMs,
   UserId,
-  defect,
 } from '@core/primitives';
 import {
+  FlagName,
   JournalFeed,
   Registration,
   StreakState,
@@ -54,16 +53,19 @@ import {
 import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AVATAR_PORTS,
   CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
+  CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  FLAGS_PORTS,
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
+  ShopZoneService,
   WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { CLOCK, FEATURE_FLAGS } from '@creativo/application/shared';
 import {
   type VisitFilter,
   type VisitRowVm,
@@ -76,10 +78,11 @@ import {
   scopeTitleOf,
   seriesById,
 } from './achievements.presenter';
-import type {
-  ClientCardContext,
-  ClientCardRegion,
-  ClientCardSubject,
+import {
+  AchievementScope,
+  type ClientCardContext,
+  type ClientCardRegion,
+  type ClientCardSubject,
 } from './client-card.contracts';
 import { cardLocaleOf, dayShort, shopDayOf } from './client-card.format';
 import {
@@ -93,21 +96,22 @@ import {
   photoRailVm,
   quickActionsVm,
 } from './client-card.presenter';
-import type {
-  AchievementsData,
-  BirthdayVm,
-  ClientHeadVm,
-  ClientHeroVm,
-  ClientOverviewVm,
-  ClientPhotoVm,
-  DetailActionVm,
-  LedgerPageVm,
-  RecordsPageVm,
-  Slice,
-  SliceStatus,
-  VisitCardsVm,
-  VisitsPageVm,
-  WalletVm,
+import {
+  type AchievementsData,
+  type BirthdayVm,
+  CardLoadState,
+  type ClientHeadVm,
+  type ClientHeroVm,
+  type ClientOverviewVm,
+  type ClientPhotoVm,
+  type DetailActionVm,
+  type LedgerPageVm,
+  type RecordsPageVm,
+  type Slice,
+  type VisitCardsVm,
+  type VisitsPageStatus,
+  type VisitsPageVm,
+  type WalletVm,
 } from './client-pages.vm';
 import {
   type ClientCardTranslate,
@@ -157,51 +161,21 @@ export const CLIENT_CARD_READ_TIMEOUT_MS = 10_000;
 /** The past cuts one read asks for; the rail shows six of them (§3.1 I1). */
 const PHOTOS_LIMIT = 12;
 
-const SHOP_ZONE = 'Europe/Sofia';
-
-/** The shop's zone, branded — where a stored shop day and minute are read back as an instant. */
-const SHOP_TIME_ZONE: TimeZone = (() => {
-  const zone = ZonedTimeSystem.checkZone(SHOP_ZONE);
-  return zone.ok ? zone.value : defect('unreachable: the shop zone');
-})();
-
 /**
  * A worked visit's stored shop day and minute (Law 7.3) as the instant the
- * loyalty presenters (flip 3) still read — once, at this boundary, in the
- * shop's zone; a minute inside a spring-forward gap reads as the day's start.
+ * loyalty presenters (flip 3) still read — once, at this boundary, on the
+ * shop's `zone`; a minute inside a spring-forward gap reads as the day's
+ * start.
  */
-function factInstant(fact: VisitFact): number {
-  const at = ZonedTimeSystem.toUtc(
-    fact.localDate,
-    fact.startMinutes,
-    SHOP_TIME_ZONE,
-  );
+function factInstant(fact: VisitFact, zone: TimeZone): number {
+  const at = ZonedTimeSystem.toUtc(fact.localDate, fact.startMinutes, zone);
   return at.ok
     ? at.value
-    : ZonedTimeSystem.startOfLocalDay(fact.localDate, SHOP_TIME_ZONE);
+    : ZonedTimeSystem.startOfLocalDay(fact.localDate, zone);
 }
 
-/**
- * A read's answer as the store settles it — the ecs-core ports' plain
- * `Result`, or the avatar uploader's (`AVATAR_UPLOADER`, Phase 4)
- * `Success`/`Failure` class, which the store reads through `settled` until
- * that port is re-typed.
- */
-type ReadAnswer<T> =
-  | Result<T, unknown>
-  | {
-      isSuccess(): boolean;
-      readonly value?: T;
-      readonly error?: unknown;
-    };
-
-/** Either answer, as one plain `Result`. */
-function settled<T>(answer: ReadAnswer<T>): Result<T, unknown> {
-  if ('ok' in answer) return answer;
-  return answer.isSuccess()
-    ? Result.ok(answer.value as T)
-    : Result.err(answer.error);
-}
+/** A read's answer as the store settles it — the ports' plain `Result`. */
+type ReadAnswer<T> = Result<T, unknown>;
 
 /** A read that did not answer in time (`CLIENT_CARD_READ_TIMEOUT_MS`), or threw. */
 const READ_TIMED_OUT = RepositoryError.readFailed(null, 'timeout');
@@ -210,7 +184,7 @@ const READ_THREW = RepositoryError.readFailed(null, 'threw');
 /** The history's pages as the store holds them. */
 interface HistoryState {
   /** The FIRST page's read: the list's skeleton, its rows, or its retry notice. */
-  readonly status: Slice<unknown>['status'];
+  readonly cardLoadState: CardLoadState;
   /** Every loaded visit, newest first, page after page. */
   readonly appointments: readonly Appointment[];
   /** Where the next page starts — the start instant it reads before; `null` = nothing older. */
@@ -222,7 +196,7 @@ interface HistoryState {
 }
 
 const LOADING_HISTORY: HistoryState = {
-  status: 'loading',
+  cardLoadState: CardLoadState.Loading,
   appointments: [],
   cursor: null,
   more: 'idle',
@@ -246,7 +220,7 @@ interface LedgerState {
   /** The pill; its rows are `clientJournal` entries of `JournalFeed.effectsOf(filter)`. */
   readonly filter: JournalFeed;
   /** The FIRST page's read under the pill: the skeleton, the rows, or the retry notice. */
-  readonly status: SliceStatus;
+  readonly cardLoadState: CardLoadState;
   /** Every loaded entry, newest first, page after page. */
   readonly entries: readonly JournalEntry[];
   /** Where the next page starts (the oldest row's `seq`); `null` = nothing older. */
@@ -257,7 +231,7 @@ interface LedgerState {
 
 const LOADING_LEDGER: LedgerState = {
   filter: JournalFeed.All,
-  status: 'loading',
+  cardLoadState: CardLoadState.Loading,
   entries: [],
   next: null,
   more: 'idle',
@@ -289,17 +263,15 @@ const EMPTY_OVERVIEW: ClientOverviewVm = {
  */
 const NO_COVERS: ReadonlyMap<string, string> = new Map();
 
-const LOADING: Slice<never> = { status: 'loading' };
-const FAILED: Slice<never> = { status: 'failed' };
+const LOADING: Slice<never> = { cardLoadState: CardLoadState.Loading };
+const FAILED: Slice<never> = { cardLoadState: CardLoadState.Failed };
 
-function statusOf(
-  slice: Slice<unknown> | null,
-): Slice<unknown>['status'] | null {
-  return slice?.status ?? null;
+function loadStateOf(slice: Slice<unknown> | null): CardLoadState | null {
+  return slice?.cardLoadState ?? null;
 }
 
 function dataOf<T>(slice: Slice<T> | null): T | null {
-  return slice?.status === 'ready' ? slice.data : null;
+  return slice?.cardLoadState === CardLoadState.Ready ? slice.data : null;
 }
 
 /**
@@ -321,8 +293,12 @@ function registeredOnly(user: User | null): User | null {
  * (account, progress, journal: keyed by the client RECORD, D29) — waits on
  * the record the card resolves (`withRecord`).
  *
- * Every port is optional (a missing port is an absent slice) and every read
- * is a `Result` with a 10 s timeout that settles as failed. `users/{uid}`
+ * Every read port is optional (a missing port is an absent slice) — the
+ * clock (`CLOCK_PORTS`) and the shop's zone (`ShopZoneService`, the default
+ * location's: no location is in the card's scope, Law 7.2) are required —
+ * and every read is a `Result` with a 10 s timeout that settles as failed.
+ * The zone is folded into the card's loading state: until it resolves the
+ * head is the seat's snapshot and the gate stays shut. `users/{uid}`
  * is read first — the D-9 gate: nothing under the head paints before the
  * profile says whether the client is paused — then the rest in parallel.
  * The flags are read once; a flag off never reads its data. A re-open of
@@ -338,7 +314,7 @@ function registeredOnly(user: User | null): User | null {
 @Injectable()
 export class ClientCardStore {
   private readonly profiles = inject(PROFILE_PORTS, { optional: true });
-  private readonly avatars = inject(AVATAR_UPLOADER, { optional: true });
+  private readonly avatars = inject(AVATAR_PORTS, { optional: true });
   /**
    * The client RECORD of the account (D29) — read once per person; stats,
    * money, history, photos and vouchers are all keyed by it. Absent (no
@@ -373,18 +349,32 @@ export class ClientCardStore {
   private readonly journalPorts = inject(CLIENT_JOURNAL_PORTS, {
     optional: true,
   });
-  private readonly clock = inject(CLOCK, { optional: true });
+  /** The browser's clock (`CLOCK_PORTS`): «now» is read once per `open`. */
+  private readonly clock = inject(CLOCK_PORTS);
+  /**
+   * The shop's zone (Law 7.2, Phase 4a 4A-11): no location is in the card's
+   * scope, so it is the deployment's default location's — read once per
+   * session and cached. `null` until it resolves: the head is the seat's
+   * snapshot and everything under it its skeleton until then (the D-9
+   * gate waits for it, as for the profile). A zone that cannot be read is
+   * the whole card's S7, as a failed profile read is (4A-2 (e)), and its
+   * retry reads the zone again.
+   */
+  private readonly shopZones = inject(ShopZoneService);
+  private readonly zone: Signal<TimeZone | null> = this.shopZones.defaultZone();
+  private readonly zoneFailed: Signal<boolean> =
+    this.shopZones.defaultZoneFailed();
   private readonly transloco = inject(TranslocoService);
   private readonly window = inject(DOCUMENT).defaultView;
 
-  /** The loyalty flags, read once (`config/feature-flags.json`). */
+  /** The loyalty flags, read once (`config/feature-flags.json`, `FLAGS_PORTS`). */
   private readonly flags: LoyaltyFlags = (() => {
-    const flags = inject(FEATURE_FLAGS, { optional: true });
+    const flags = inject(FLAGS_PORTS);
     return {
-      points: flags?.isEnabled('loyalty.points') ?? false,
-      streaks: flags?.isEnabled('loyalty.streaks') ?? false,
-      achievements: flags?.isEnabled('loyalty.achievements') ?? false,
-      tiers: flags?.isEnabled('loyalty.tiers') ?? false,
+      points: flags.flagOn(FlagName.LoyaltyPoints),
+      streaks: flags.flagOn(FlagName.LoyaltyStreaks),
+      achievements: flags.flagOn(FlagName.LoyaltyAchievements),
+      tiers: flags.flagOn(FlagName.LoyaltyTiers),
     };
   })();
 
@@ -494,30 +484,37 @@ export class ClientCardStore {
 
   private readonly user = computed(() => dataOf(this._profile()));
   private readonly stats = computed(() => dataOf(this._stats()));
-  private readonly today = computed(() => shopDayOf(this._nowMs()));
-  private readonly paused = computed(
-    () => pauseOf(this.user(), this._nowMs()) !== null,
-  );
+  /** The shop calendar's today on the shop's zone; `null` until the zone resolves. */
+  private readonly today = computed((): string | null => {
+    const zone = this.zone();
+    return zone === null ? null : shopDayOf(this._nowMs(), zone);
+  });
+  private readonly paused = computed(() => {
+    const zone = this.zone();
+    return zone !== null && pauseOf(this.user(), this._nowMs(), zone) !== null;
+  });
 
-  /** `users/{uid}` or `clientStats/{uid}` failed: the whole card's S7. */
+  /** `users/{uid}`, `clientStats/{uid}` or the shop's zone failed: the whole card's S7. */
   private readonly profileFailed = computed(
     () =>
-      statusOf(this._profile()) === 'failed' ||
-      statusOf(this._stats()) === 'failed',
+      loadStateOf(this._profile()) === CardLoadState.Failed ||
+      loadStateOf(this._stats()) === CardLoadState.Failed ||
+      this.zoneFailed(),
   );
 
   /**
    * The D-9 gate: the profile and the stats have answered (a port that is
-   * not bound counts as answered with nothing). Every module under the head
-   * waits for it.
+   * not bound counts as answered with nothing), and the shop's zone is
+   * known. Every module under the head waits for it.
    */
   private readonly gateOpen = computed(() => {
-    const profile = statusOf(this._profile());
-    const stats = statusOf(this._stats());
+    const profile = loadStateOf(this._profile());
+    const stats = loadStateOf(this._stats());
     return (
       this._subject()?.userId != null &&
-      (profile === null || profile === 'ready') &&
-      (stats === null || stats === 'ready')
+      this.zone() !== null &&
+      (profile === null || profile === CardLoadState.Ready) &&
+      (stats === null || stats === CardLoadState.Ready)
     );
   });
 
@@ -548,6 +545,7 @@ export class ClientCardStore {
       statsKnown: this._stats() !== null,
       avatarSrc: this._avatar(),
       nowMs: this._nowMs(),
+      zone: this.zone(),
       words,
     });
   });
@@ -599,7 +597,7 @@ export class ClientCardStore {
     const words = this.words();
     if (
       context === null ||
-      history?.status !== 'ready' ||
+      history?.cardLoadState !== CardLoadState.Ready ||
       subject?.userId == null ||
       words === null
     ) {
@@ -627,7 +625,10 @@ export class ClientCardStore {
       const account = this._account();
       const catalog = this._catalog();
       if (account === null || catalog === null) return null;
-      if (account.status === 'loading' || catalog.status === 'loading') {
+      if (
+        account.cardLoadState === CardLoadState.Loading ||
+        catalog.cardLoadState === CardLoadState.Loading
+      ) {
         return 'loading';
       }
       const loaded = dataOf(account);
@@ -643,9 +644,15 @@ export class ClientCardStore {
    * each a shop day and minute (Law 7.3), read back as the instant the
    * loyalty presenters (flip 3) still take — once, here, in the shop's zone.
    */
-  private readonly visitsMs = computed(
-    () => this.stats()?.last365VisitsCompleted.map(factInstant) ?? [],
-  );
+  private readonly visitsMs = computed((): readonly number[] => {
+    const zone = this.zone();
+    if (zone === null) return [];
+    return (
+      this.stats()?.last365VisitsCompleted.map((fact) =>
+        factInstant(fact, zone),
+      ) ?? []
+    );
+  });
 
   /**
    * What each worked visit on the loaded history was, by its shop day —
@@ -655,9 +662,11 @@ export class ClientCardStore {
    */
   private readonly visitTitles = computed((): ReadonlyMap<string, string> => {
     const titles = new Map<string, string[]>();
+    const zone = this.zone();
+    if (zone === null) return new Map();
     for (const row of this.historyRowVms()) {
       if (row.kind !== 'visit' || row.outcome !== 'worked') continue;
-      const day = shopDayOf(row.startMs);
+      const day = shopDayOf(row.startMs, zone);
       titles.set(day, [...(titles.get(day) ?? []), row.title]);
     }
     return new Map(
@@ -667,7 +676,12 @@ export class ClientCardStore {
 
   private readonly inChairToday = computed(() => {
     const context = this._context();
-    return context !== null && isInChairToday(context, this._nowMs());
+    const zone = this.zone();
+    return (
+      context !== null &&
+      zone !== null &&
+      isInChairToday(context, this._nowMs(), zone)
+    );
   });
 
   /**
@@ -692,19 +706,25 @@ export class ClientCardStore {
       }
       if (this.profileFailed()) return FAILED;
       const parts = [account, catalog, progress, seasons];
-      if (parts.some((part) => part.status === 'failed')) {
-        return account.status === 'ready' && account.data === null
+      if (parts.some((part) => part.cardLoadState === CardLoadState.Failed)) {
+        return account.cardLoadState === CardLoadState.Ready &&
+          account.data === null
           ? null
           : FAILED;
       }
-      if (!this.gateOpen() || parts.some((part) => part.status === 'loading')) {
+      const today = this.today();
+      if (
+        !this.gateOpen() ||
+        today === null ||
+        parts.some((part) => part.cardLoadState === CardLoadState.Loading)
+      ) {
         return LOADING;
       }
       const loadedAccount = dataOf(account);
       const loadedCatalog = dataOf(catalog);
       if (loadedAccount === null || loadedCatalog === null) return null;
       return {
-        status: 'ready',
+        cardLoadState: CardLoadState.Ready,
         data: {
           catalog: loadedCatalog,
           account: loadedAccount,
@@ -712,7 +732,7 @@ export class ClientCardStore {
           seasonProgress: new Map(
             (dataOf(seasons) ?? []).map((p) => [p.id, p]),
           ),
-          today: this.today(),
+          today,
           previousVisitAtMs: this.previousVisitAtMs(),
         },
       };
@@ -722,12 +742,13 @@ export class ClientCardStore {
   /** The start of the client's last worked visit before the one on screen — what «Ново» is measured from. */
   private readonly previousVisitAtMs = computed(() => {
     const stats = this.stats();
+    const zone = this.zone();
     const current = this._context()?.appointmentId ?? null;
-    if (stats === null) return null;
+    if (stats === null || zone === null) return null;
     let latest: number | null = null;
     for (const fact of stats.last365VisitsCompleted) {
       if (fact.appointmentId === current) continue;
-      const at = factInstant(fact);
+      const at = factInstant(fact, zone);
       if (latest === null || at > latest) latest = at;
     }
     if (latest !== null) return latest;
@@ -735,11 +756,14 @@ export class ClientCardStore {
       stats.lastVisitAppointmentId !== current &&
       stats.lastVisitLocalDate !== null &&
       stats.lastVisitStartMinutes !== null
-      ? factInstant({
-          appointmentId: stats.lastVisitAppointmentId,
-          localDate: stats.lastVisitLocalDate,
-          startMinutes: stats.lastVisitStartMinutes,
-        })
+      ? factInstant(
+          {
+            appointmentId: stats.lastVisitAppointmentId,
+            localDate: stats.lastVisitLocalDate,
+            startMinutes: stats.lastVisitStartMinutes,
+          },
+          zone,
+        )
       : null;
   });
 
@@ -749,7 +773,17 @@ export class ClientCardStore {
       const context = this._context();
       const words = this.words();
       const name = this.displayName();
-      if (context === null || words === null || name === null) return null;
+      const zone = this.zone();
+      const today = this.today();
+      if (
+        context === null ||
+        words === null ||
+        name === null ||
+        zone === null ||
+        today === null
+      ) {
+        return null;
+      }
       const open = context.appointmentId !== null && !context.settled;
       return {
         words,
@@ -759,9 +793,10 @@ export class ClientCardStore {
           ? {
               legs: context.legs,
               locationId: context.locationId,
-              birthdayToday: isBirthdayToday(this.user(), this.today()),
+              birthdayToday: isBirthdayToday(this.user(), today),
             }
           : null,
+        zone,
       };
     },
   );
@@ -791,6 +826,7 @@ export class ClientCardStore {
       statsKnown: this._stats() !== null,
       avatarSrc: this._avatar(),
       nowMs: this._nowMs(),
+      zone: this.zone(),
       words: this.words(),
       tier: tier === 'loading' ? null : tier,
     });
@@ -822,9 +858,11 @@ export class ClientCardStore {
   private readonly birthday = computed((): BirthdayVm | null => {
     const context = this._context();
     const words = this.words();
+    const today = this.today();
     if (
       context === null ||
       words === null ||
+      today === null ||
       this._subject()?.userId == null ||
       !this.gateOpen()
     ) {
@@ -833,7 +871,7 @@ export class ClientCardStore {
     const usable = this.rewardsUsable();
     return birthdayVm({
       user: this.user(),
-      today: this.today(),
+      today,
       grants: usable ? context.grants : [],
       grantsOnBill: usable ? context.grantsOnBill : [],
       words,
@@ -844,11 +882,12 @@ export class ClientCardStore {
   private readonly rewardBesideBirthday = computed(() => {
     const context = this._context();
     const words = this.words();
-    if (context === null || words === null) return null;
+    const today = this.today();
+    if (context === null || words === null || today === null) return null;
     const birthday = this.birthday();
     return glanceReward(
       grantsBesideBirthday(context.grants, birthday),
-      this.today(),
+      today,
       words,
       grantsBesideBirthday(context.grantsOnBill, birthday),
     );
@@ -864,8 +903,22 @@ export class ClientCardStore {
     const subject = this._subject();
     const context = this._context();
     const words = this.words();
+    const zone = this.zone();
+    // The shop's zone is part of the card's wording: until it is known the
+    // glance is the bare head, as while the words load — and a zone that
+    // cannot be read is the whole card's S7, its retry the profile's
+    // (4A-2 (e)).
     if (subject === null || context === null || words === null) {
       return EMPTY_OVERVIEW;
+    }
+    if (zone === null) {
+      return subject.userId !== null && this.zoneFailed()
+        ? {
+            actions: [],
+            canRemove: this._online() && !context.gone,
+            failed: ['profile'],
+          }
+        : EMPTY_OVERVIEW;
     }
     const online = this._online();
     const nowMs = this._nowMs();
@@ -880,6 +933,7 @@ export class ClientCardStore {
       context,
       online,
       nowMs,
+      zone,
       words,
     });
     const canRemove = online && !context.gone;
@@ -898,9 +952,12 @@ export class ClientCardStore {
     if (!gate) {
       overview.capsules = LOADING;
     } else {
-      const capsules = overviewCapsulesVm({ user, stats, nowMs, words });
+      const capsules = overviewCapsulesVm({ user, stats, nowMs, zone, words });
       if (capsules.shown.length > 0) {
-        overview.capsules = { status: 'ready', data: capsules };
+        overview.capsules = {
+          cardLoadState: CardLoadState.Ready,
+          data: capsules,
+        };
       }
     }
 
@@ -920,7 +977,10 @@ export class ClientCardStore {
       } else if (!this.paused()) {
         const reward = this.rewardBesideBirthday();
         if (reward !== null) {
-          overview.reward = { status: 'ready', data: reward };
+          overview.reward = {
+            cardLoadState: CardLoadState.Ready,
+            data: reward,
+          };
         }
       }
     }
@@ -929,7 +989,7 @@ export class ClientCardStore {
     const visits = this.visitCardsSlice(gate);
     if (visits !== undefined) {
       overview.visits = visits;
-      if (visits.status === 'failed') failed.push('visits');
+      if (visits.cardLoadState === CardLoadState.Failed) failed.push('visits');
     }
 
     // F — one card: the points, what they buy, what else is held.
@@ -939,14 +999,16 @@ export class ClientCardStore {
     );
     if (loyalty !== undefined) {
       overview.loyalty = loyalty;
-      if (loyalty.status === 'failed') failed.push('loyalty');
+      if (loyalty.cardLoadState === CardLoadState.Failed)
+        failed.push('loyalty');
     }
 
     // G — the medals and the records' line
     const medals = this.medalsGlanceSlice(gate);
     if (medals !== undefined) {
       overview.medals = medals;
-      if (medals.status === 'failed') failed.push('achievements');
+      if (medals.cardLoadState === CardLoadState.Failed)
+        failed.push('achievements');
     }
 
     // I — as built: waits for the featured visit, whose photos it leaves out.
@@ -955,11 +1017,11 @@ export class ClientCardStore {
       const history = this._history();
       if (
         !gate ||
-        photos.status === 'loading' ||
-        history?.status === 'loading'
+        photos.cardLoadState === CardLoadState.Loading ||
+        history?.cardLoadState === CardLoadState.Loading
       ) {
         overview.photos = LOADING;
-      } else if (photos.status === 'failed') {
+      } else if (photos.cardLoadState === CardLoadState.Failed) {
         overview.photos = FAILED;
         failed.push('photos');
       } else {
@@ -967,9 +1029,11 @@ export class ClientCardStore {
           photos.data,
           [this.featuredVisitId(), context.appointmentId],
           nowMs,
+          zone,
           words,
         );
-        if (rail.length > 0) overview.photos = { status: 'ready', data: rail };
+        if (rail.length > 0)
+          overview.photos = { cardLoadState: CardLoadState.Ready, data: rail };
       }
     }
     return overview;
@@ -981,6 +1045,7 @@ export class ClientCardStore {
     const context = this._context();
     const words = this.words();
     const history = this._history();
+    const zone = this.zone();
     if (
       subject?.userId == null ||
       context === null ||
@@ -989,15 +1054,17 @@ export class ClientCardStore {
     ) {
       return undefined;
     }
-    if (!gate || history.status === 'loading') return LOADING;
-    if (history.status === 'failed') return FAILED;
+    if (zone === null) return LOADING;
+    if (!gate || history.cardLoadState === CardLoadState.Loading)
+      return LOADING;
+    if (history.cardLoadState === CardLoadState.Failed) return FAILED;
     const waitlist = this._waitlist();
     const photos = this._photos();
     const settled = (slice: Slice<unknown> | null) =>
-      slice === null || slice.status !== 'loading';
+      slice === null || slice.cardLoadState !== CardLoadState.Loading;
     if (!settled(waitlist) || !settled(photos)) return LOADING;
     return {
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: visitCardsVm({
         appointments: history.appointments,
         subjectUserId: subject.userId,
@@ -1009,6 +1076,7 @@ export class ClientCardStore {
         count: this.stats()?.lifetimeVisitsCompleted ?? 0,
         clientWords: !context.viewer.roles.includes('sysadmin'),
         nowMs: this._nowMs(),
+        zone,
         words,
       }),
     };
@@ -1033,13 +1101,23 @@ export class ClientCardStore {
     if (account === null || words === null) return undefined;
     const catalog = this._catalog();
     const vouchers = this._vouchers();
-    if (!gate || account.status === 'loading') return LOADING;
-    if (account.status === 'failed') return FAILED;
+    const today = this.today();
+    if (
+      !gate ||
+      today === null ||
+      account.cardLoadState === CardLoadState.Loading
+    ) {
+      return LOADING;
+    }
+    if (account.cardLoadState === CardLoadState.Failed) return FAILED;
     if (account.data === null) return undefined;
-    if (flags.points && catalog?.status === 'loading') return LOADING;
-    if (flags.points && catalog?.status === 'failed') return FAILED;
-    if (vouchers?.status === 'loading') return LOADING;
-    if (flags.streaks && catalog?.status === 'loading') return LOADING;
+    if (flags.points && catalog?.cardLoadState === CardLoadState.Loading)
+      return LOADING;
+    if (flags.points && catalog?.cardLoadState === CardLoadState.Failed)
+      return FAILED;
+    if (vouchers?.cardLoadState === CardLoadState.Loading) return LOADING;
+    if (flags.streaks && catalog?.cardLoadState === CardLoadState.Loading)
+      return LOADING;
     const vm = loyaltyGlanceVm({
       account: account.data,
       catalog: dataOf(catalog),
@@ -1048,13 +1126,15 @@ export class ClientCardStore {
       lifetimeVisits: this.stats()?.lifetimeVisitsCompleted ?? null,
       inChairToday: this.inChairToday(),
       paused: this.paused(),
-      today: this.today(),
+      today,
       words,
       heldRewards,
       vouchers: dataOf(vouchers),
       rhythm: this.rhythm(),
     });
-    return vm === null ? undefined : { status: 'ready', data: vm };
+    return vm === null
+      ? undefined
+      : { cardLoadState: CardLoadState.Ready, data: vm };
   }
 
   /** G — the built module's gates over the medals in their rings and the records' line. */
@@ -1062,10 +1142,12 @@ export class ClientCardStore {
     const data = this.achievementsData();
     const ctx = this.achievementsContext();
     if (data === null || ctx === null) return undefined;
-    if (!gate || data.status === 'loading') return LOADING;
-    if (data.status === 'failed') return FAILED;
+    if (!gate || data.cardLoadState === CardLoadState.Loading) return LOADING;
+    if (data.cardLoadState === CardLoadState.Failed) return FAILED;
     const vm = medalsGlanceVm(data.data, ctx);
-    return vm === null ? undefined : { status: 'ready', data: vm };
+    return vm === null
+      ? undefined
+      : { cardLoadState: CardLoadState.Ready, data: vm };
   }
 
   /**
@@ -1097,12 +1179,14 @@ export class ClientCardStore {
   );
 
   /**
-   * The rule the rhythm is judged by today; `null` as `rhythm` is. A rule
-   * that is switched OFF is still handed over: every presenter asks it.
+   * The rule the rhythm is judged by today; `null` as `rhythm` is, and
+   * before the shop's today is known. A rule that is switched OFF is still
+   * handed over: every presenter asks it.
    */
-  private readonly ruleInForce = computed(() =>
-    ruleInForceOf(this.rhythm(), this.today()),
-  );
+  private readonly ruleInForce = computed(() => {
+    const today = this.today();
+    return today === null ? null : ruleInForceOf(this.rhythm(), today);
+  });
 
   /** The rule in force, summarised, for the medal detail's rhythm family (`rhythmRuleWords`); `null` as `ruleInForce` is. */
   readonly rhythmRule: Signal<StreakRuleSummary | null> = computed(() => {
@@ -1136,6 +1220,8 @@ export class ClientCardStore {
   private readonly visitBarbers = computed((): ReadonlyMap<string, string> => {
     const barbers = new Map<string, string>();
     const byDay = new Map<string, string[]>();
+    const zone = this.zone();
+    if (zone === null) return barbers;
     for (const row of this.historyRowVms()) {
       if (
         row.kind !== 'visit' ||
@@ -1148,7 +1234,7 @@ export class ClientCardStore {
         ? row.trailing.name
         : firstNameOf(row.trailing.name);
       barbers.set(row.id, name);
-      const day = shopDayOf(row.startMs);
+      const day = shopDayOf(row.startMs, zone);
       byDay.set(day, [...(byDay.get(day) ?? []), name]);
     }
     for (const [day, names] of byDay) {
@@ -1187,14 +1273,23 @@ export class ClientCardStore {
       return null;
     }
     if (this.profileFailed()) return FAILED;
-    if (!this.gateOpen() || account.status === 'loading') return LOADING;
-    if (account.status === 'failed') return FAILED;
+    const zone = this.zone();
+    const today = this.today();
+    if (
+      !this.gateOpen() ||
+      zone === null ||
+      today === null ||
+      account.cardLoadState === CardLoadState.Loading
+    ) {
+      return LOADING;
+    }
+    if (account.cardLoadState === CardLoadState.Failed) return FAILED;
     if (account.data === null) return null;
     const usable = this.rewardsUsable();
     const catalog = context.catalog;
     const stats = this.stats();
     return {
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: walletVm({
         account: account.data,
         catalog: this._catalog(),
@@ -1207,7 +1302,8 @@ export class ClientCardStore {
         visitTitles: this.visitNames(),
         visitBarbers: this.visitBarbers(),
         inChairToday: this.inChairToday(),
-        today: this.today(),
+        today,
+        zone,
         words,
         holder: this.displayName(),
         sinceDay: stats?.firstVisitLocalDate ?? null,
@@ -1239,26 +1335,34 @@ export class ClientCardStore {
     const state = this._ledgerPage();
     const account = this._account();
     const filter = state?.filter ?? JournalFeed.All;
-    const blank = (status: SliceStatus): LedgerPageVm => ({
-      status,
+    const blank = (cardLoadState: CardLoadState): LedgerPageVm => ({
+      cardLoadState,
       subline: [],
       filter,
       groups: [],
       paging: null,
     });
     if (words === null || this._subject()?.userId == null) {
-      return blank('loading');
+      return blank(CardLoadState.Loading);
     }
-    if (state === null || account === null) return blank('failed');
-    if (this.profileFailed()) return blank('failed');
-    if (!this.gateOpen() || account.status === 'loading') {
-      return blank('loading');
+    if (state === null || account === null) return blank(CardLoadState.Failed);
+    if (this.profileFailed()) return blank(CardLoadState.Failed);
+    const today = this.today();
+    if (
+      !this.gateOpen() ||
+      today === null ||
+      account.cardLoadState === CardLoadState.Loading
+    ) {
+      return blank(CardLoadState.Loading);
     }
-    if (account.status === 'failed' || account.data === null) {
-      return blank('failed');
+    if (
+      account.cardLoadState === CardLoadState.Failed ||
+      account.data === null
+    ) {
+      return blank(CardLoadState.Failed);
     }
     return ledgerPageVm({
-      status: state.status,
+      cardLoadState: state.cardLoadState,
       entries: state.entries,
       next: state.next,
       loadingMore: state.more === 'loading',
@@ -1270,7 +1374,7 @@ export class ClientCardStore {
       visitTitles: this.visitNames(),
       visitBarbers: this.visitBarbers(),
       catalog: dataOf(this._catalog()),
-      today: this.today(),
+      today,
       wholeMonths: wholeMonthsOf(state.entries, state.next === null),
       words,
     });
@@ -1288,9 +1392,9 @@ export class ClientCardStore {
     const data = this.achievementsData();
     const ctx = this.achievementsContext();
     if (data === null || ctx === null) return null;
-    if (data.status !== 'ready') return data;
+    if (data.cardLoadState !== CardLoadState.Ready) return data;
     return {
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: recordsPageVm({
         data: data.data,
         ctx,
@@ -1319,10 +1423,10 @@ export class ClientCardStore {
     if (history === null || rows === null) {
       return visitsPageBlank('failed', filter);
     }
-    const status: SliceStatus =
-      this.profileFailed() || history.status === 'failed'
+    const status: VisitsPageStatus =
+      this.profileFailed() || history.cardLoadState === CardLoadState.Failed
         ? 'failed'
-        : !this.gateOpen() || history.status === 'loading'
+        : !this.gateOpen() || history.cardLoadState === CardLoadState.Loading
           ? 'loading'
           : 'ready';
     const stats = this.stats();
@@ -1350,7 +1454,9 @@ export class ClientCardStore {
   /** The loaded pages are the client's WHOLE history: read, and no cursor left. */
   readonly historyComplete: Signal<boolean> = computed(() => {
     const history = this._history();
-    return history?.status === 'ready' && history.cursor === null;
+    return (
+      history?.cardLoadState === CardLoadState.Ready && history.cursor === null
+    );
   });
 
   constructor() {
@@ -1419,7 +1525,8 @@ export class ClientCardStore {
       const state = this._ledgerPage();
       const uid = this._subject()?.userId ?? null;
       if (state === null || uid === null) return;
-      if (state.filter === kind && state.status !== 'failed') return;
+      if (state.filter === kind && state.cardLoadState !== CardLoadState.Failed)
+        return;
       this._ledgerPage.set({ ...LOADING_LEDGER, filter: kind });
       void this.readLedgerPage(this.generation, uid, kind);
     });
@@ -1468,12 +1575,13 @@ export class ClientCardStore {
       if (userId === null) return;
       const generation = this.generation;
       const failed = (slice: Slice<unknown> | null) =>
-        slice?.status === 'failed';
+        slice?.cardLoadState === CardLoadState.Failed;
       // Behind a failed gate nothing else was read: any retry is the
       // profile's (the pages' own notices land here too).
       const scope = this.profileFailed() ? 'profile' : region;
       switch (scope) {
         case 'profile':
+          this.shopZones.retryDefaultZone();
           this.generation += 1;
           if (failed(this._profile())) this._profile.set(LOADING);
           if (failed(this._stats())) this._stats.set(LOADING);
@@ -1481,7 +1589,7 @@ export class ClientCardStore {
           return;
         case 'visits':
         case 'history':
-          if (this._history()?.status === 'failed') {
+          if (this._history()?.cardLoadState === CardLoadState.Failed) {
             void this.withRecord(generation, userId, (record) =>
               this.loadFirstPage(generation, record),
             );
@@ -1514,7 +1622,7 @@ export class ClientCardStore {
           return;
         case 'activity':
           if (failed(this._activity())) void this.loadFeed(generation, userId);
-          if (this._ledgerPage()?.status === 'failed') {
+          if (this._ledgerPage()?.cardLoadState === CardLoadState.Failed) {
             this.loadLedgerFirst(generation, userId);
           } else if (this._ledgerPage()?.more === 'failed') {
             void this.fetchMoreLedger();
@@ -1528,10 +1636,11 @@ export class ClientCardStore {
   photoById(photoId: string): ClientPhotoVm | null {
     const photos = dataOf(this._photos());
     const words = this.words();
+    const zone = this.zone();
     const photo = photos?.find((p) => p.id === photoId);
-    return photo === undefined || words === null
+    return photo === undefined || words === null || zone === null
       ? null
-      : clientPhotoVm(photo, this._nowMs(), words);
+      : clientPhotoVm(photo, this._nowMs(), zone, words);
   }
 
   /**
@@ -1562,10 +1671,13 @@ export class ClientCardStore {
         if (scope === null) return null;
         const data = dataOf(this.achievementsData());
         if (data !== null) return scopeTitleOf(data, scope, words);
-        if (scope.kind === 'archive') return words.achievements.archive;
-        if (scope.kind === 'day') {
+        if (scope.achievementScope === AchievementScope.Archive) {
+          return words.achievements.archive;
+        }
+        const today = this.today();
+        if (scope.achievementScope === AchievementScope.Day && today !== null) {
           return words.achievements.dayTitle(
-            dayShort(scope.day, this.today(), words.lang),
+            dayShort(scope.day, today, words.lang),
           );
         }
         return null;
@@ -1590,8 +1702,7 @@ export class ClientCardStore {
   // ── Loading ─────────────────────────────────────────────────────────
 
   private readNow(): number {
-    const now = this.clock?.now(SHOP_ZONE);
-    return now?.isSuccess() ? now.value.toMillis() : Date.now();
+    return this.clock.nowUtcMs();
   }
 
   /**
@@ -1700,7 +1811,7 @@ export class ClientCardStore {
     this._catalog.set(
       loyalty && this.catalogPorts !== null
         ? this.catalogCache !== null
-          ? { status: 'ready', data: this.catalogCache }
+          ? { cardLoadState: CardLoadState.Ready, data: this.catalogCache }
           : LOADING
         : null,
     );
@@ -1747,7 +1858,8 @@ export class ClientCardStore {
           );
         },
         // No record yet: no projection either — the head's "first visit".
-        () => this._stats.set({ status: 'ready', data: null }),
+        () =>
+          this._stats.set({ cardLoadState: CardLoadState.Ready, data: null }),
         () => this._stats.set(FAILED),
       );
       if (this._context()?.viewer.roles.includes('admin') === true) {
@@ -1765,13 +1877,15 @@ export class ClientCardStore {
       (customerId) => this.loadFirstPage(generation, customerId),
       () =>
         this._history.update((history) =>
-          history === null ? null : { ...LOADING_HISTORY, status: 'ready' },
+          history === null
+            ? null
+            : { ...LOADING_HISTORY, cardLoadState: CardLoadState.Ready },
         ),
       () =>
         this._history.update((history) =>
-          history === null || history.status === 'ready'
+          history === null || history.cardLoadState === CardLoadState.Ready
             ? history
-            : { ...LOADING_HISTORY, status: 'failed' },
+            : { ...LOADING_HISTORY, cardLoadState: CardLoadState.Failed },
         ),
     );
     this.watchWaitlist(generation, uid);
@@ -1781,11 +1895,14 @@ export class ClientCardStore {
       (customerId) => this.loadPhotos(generation, customerId),
       () => {
         if (this._photos() !== null) {
-          this._photos.set({ status: 'ready', data: [] });
+          this._photos.set({ cardLoadState: CardLoadState.Ready, data: [] });
         }
       },
       () => {
-        if (this._photos()?.status !== 'ready' && this._photos() !== null) {
+        if (
+          this._photos()?.cardLoadState !== CardLoadState.Ready &&
+          this._photos() !== null
+        ) {
           this._photos.set(FAILED);
         }
       },
@@ -1798,11 +1915,14 @@ export class ClientCardStore {
       (customerId) => this.loadVouchers(generation, customerId),
       () => {
         if (this._vouchers() !== null) {
-          this._vouchers.set({ status: 'ready', data: [] });
+          this._vouchers.set({ cardLoadState: CardLoadState.Ready, data: [] });
         }
       },
       () => {
-        if (this._vouchers()?.status !== 'ready' && this._vouchers() !== null) {
+        if (
+          this._vouchers()?.cardLoadState !== CardLoadState.Ready &&
+          this._vouchers() !== null
+        ) {
           this._vouchers.set(FAILED);
         }
       },
@@ -1822,14 +1942,14 @@ export class ClientCardStore {
     target: WritableSignal<Slice<T> | null>,
     read: () => Promise<ReadAnswer<T>>,
   ): Promise<boolean> {
-    if (target()?.status !== 'ready') target.set(LOADING);
+    if (target()?.cardLoadState !== CardLoadState.Ready) target.set(LOADING);
     const result = await this.timed(read);
     if (generation !== this.generation) return false;
     if (result.ok) {
-      target.set({ status: 'ready', data: result.value });
+      target.set({ cardLoadState: CardLoadState.Ready, data: result.value });
       return true;
     }
-    if (target()?.status !== 'ready') {
+    if (target()?.cardLoadState !== CardLoadState.Ready) {
       target.set(FAILED);
       return false;
     }
@@ -1859,7 +1979,7 @@ export class ClientCardStore {
         return;
       }
       pending.then(
-        (answer) => settle(settled(answer)),
+        (answer) => settle(answer),
         () => settle(Result.err(READ_THREW)),
       );
     });
@@ -1868,7 +1988,7 @@ export class ClientCardStore {
   private async loadAvatar(generation: number, userId: UserId): Promise<void> {
     const avatars = this.avatars;
     if (avatars === null) return;
-    const result = await this.timed(() => avatars.find(userId));
+    const result = await this.timed(() => avatars.findAvatar(userId));
     if (generation !== this.generation) return;
     // A missing or unreadable picture is the monogram, never an error.
     this._avatar.set(result.ok ? (result.value?.url ?? null) : null);
@@ -1892,19 +2012,23 @@ export class ClientCardStore {
   ): Promise<void> {
     const reader = this.historyReader;
     if (reader === null) return;
-    if (this._history()?.status !== 'ready') this._history.set(LOADING_HISTORY);
+    if (this._history()?.cardLoadState !== CardLoadState.Ready)
+      this._history.set(LOADING_HISTORY);
     const result = await this.timed(() =>
       reader.pageClientHistory(customerId, null, HISTORY_PAGE_SIZE),
     );
     if (generation !== this.generation) return;
     if (!result.ok) {
-      if (this._history()?.status !== 'ready') {
-        this._history.set({ ...LOADING_HISTORY, status: 'failed' });
+      if (this._history()?.cardLoadState !== CardLoadState.Ready) {
+        this._history.set({
+          ...LOADING_HISTORY,
+          cardLoadState: CardLoadState.Failed,
+        });
       }
       return;
     }
     this._history.set({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       appointments: result.value.appointments,
       cursor: result.value.nextBeforeUtcMs,
       more: 'idle',
@@ -1949,7 +2073,7 @@ export class ClientCardStore {
       reader === null ||
       customerId === null ||
       history === null ||
-      history.status !== 'ready' ||
+      history.cardLoadState !== CardLoadState.Ready ||
       history.cursor === null ||
       history.more === 'loading' ||
       !untracked(this._online)
@@ -2004,12 +2128,13 @@ export class ClientCardStore {
       return;
     }
     this.waitlistSubscription?.unsubscribe();
-    if (this._waitlist()?.status !== 'ready') this._waitlist.set(LOADING);
+    if (this._waitlist()?.cardLoadState !== CardLoadState.Ready)
+      this._waitlist.set(LOADING);
     const timer = setTimeout(() => {
       this.timers.delete(timer);
       if (
         generation === this.generation &&
-        this._waitlist()?.status === 'loading'
+        this._waitlist()?.cardLoadState === CardLoadState.Loading
       ) {
         this._waitlist.set(FAILED);
       }
@@ -2026,8 +2151,11 @@ export class ClientCardStore {
           settle();
           if (generation !== this.generation) return;
           if (result.ok) {
-            this._waitlist.set({ status: 'ready', data: result.value });
-          } else if (this._waitlist()?.status !== 'ready') {
+            this._waitlist.set({
+              cardLoadState: CardLoadState.Ready,
+              data: result.value,
+            });
+          } else if (this._waitlist()?.cardLoadState !== CardLoadState.Ready) {
             this._waitlist.set(FAILED);
           }
         },
@@ -2035,7 +2163,7 @@ export class ClientCardStore {
           settle();
           if (
             generation === this.generation &&
-            this._waitlist()?.status !== 'ready'
+            this._waitlist()?.cardLoadState !== CardLoadState.Ready
           ) {
             this._waitlist.set(FAILED);
           }
@@ -2072,14 +2200,15 @@ export class ClientCardStore {
     const ports = this.loyaltyPorts;
     if (ports === null) return;
     const due = (slice: Slice<unknown> | null) =>
-      slice !== null && (!failedOnly || slice.status === 'failed');
+      slice !== null &&
+      (!failedOnly || slice.cardLoadState === CardLoadState.Failed);
     const account = due(this._account());
     const progress = due(this._progress());
     const seasons = due(this._seasonProgress());
     if (!account && !progress && !seasons) return;
     // Loading at once, as a read sets it, while the record is resolved.
     const loading = <T>(target: WritableSignal<Slice<T> | null>) => {
-      if (target()?.status !== 'ready') target.set(LOADING);
+      if (target()?.cardLoadState !== CardLoadState.Ready) target.set(LOADING);
     };
     if (account) loading(this._account);
     if (progress) loading(this._progress);
@@ -2106,13 +2235,20 @@ export class ClientCardStore {
       },
       // No record yet: no loyalty account either.
       () => {
-        if (account) this._account.set({ status: 'ready', data: null });
-        if (progress) this._progress.set({ status: 'ready', data: [] });
-        if (seasons) this._seasonProgress.set({ status: 'ready', data: [] });
+        if (account)
+          this._account.set({ cardLoadState: CardLoadState.Ready, data: null });
+        if (progress)
+          this._progress.set({ cardLoadState: CardLoadState.Ready, data: [] });
+        if (seasons)
+          this._seasonProgress.set({
+            cardLoadState: CardLoadState.Ready,
+            data: [],
+          });
       },
       () => {
         const fail = <T>(target: WritableSignal<Slice<T> | null>) => {
-          if (target()?.status !== 'ready') target.set(FAILED);
+          if (target()?.cardLoadState !== CardLoadState.Ready)
+            target.set(FAILED);
         };
         if (account) fail(this._account);
         if (progress) fail(this._progress);
@@ -2131,7 +2267,10 @@ export class ClientCardStore {
     const ports = this.catalogPorts;
     if (ports === null || this._catalog() === null) return;
     if (this.catalogCache !== null) {
-      this._catalog.set({ status: 'ready', data: this.catalogCache });
+      this._catalog.set({
+        cardLoadState: CardLoadState.Ready,
+        data: this.catalogCache,
+      });
       return;
     }
     this._catalog.set(LOADING);
@@ -2142,9 +2281,12 @@ export class ClientCardStore {
     if (valid !== null && valid.ok) {
       this.catalogCache = valid.value;
       if (this._catalog() !== null) {
-        this._catalog.set({ status: 'ready', data: valid.value });
+        this._catalog.set({
+          cardLoadState: CardLoadState.Ready,
+          data: valid.value,
+        });
       }
-    } else if (this._catalog()?.status !== 'ready') {
+    } else if (this._catalog()?.cardLoadState !== CardLoadState.Ready) {
       this._catalog.set(FAILED);
     }
   }
@@ -2174,7 +2316,8 @@ export class ClientCardStore {
   private async loadFeed(generation: number, uid: string): Promise<void> {
     const ports = this.journalPorts;
     if (ports === null || this._activity() === null) return;
-    if (this._activity()?.status !== 'ready') this._activity.set(LOADING);
+    if (this._activity()?.cardLoadState !== CardLoadState.Ready)
+      this._activity.set(LOADING);
     await this.withRecord(
       generation,
       uid,
@@ -2193,11 +2336,14 @@ export class ClientCardStore {
       },
       () => {
         if (this._activity() !== null) {
-          this._activity.set({ status: 'ready', data: [] });
+          this._activity.set({ cardLoadState: CardLoadState.Ready, data: [] });
         }
       },
       () => {
-        if (this._activity()?.status !== 'ready' && this._activity() !== null) {
+        if (
+          this._activity()?.cardLoadState !== CardLoadState.Ready &&
+          this._activity() !== null
+        ) {
           this._activity.set(FAILED);
         }
       },
@@ -2212,8 +2358,8 @@ export class ClientCardStore {
   private loadLedgerFirst(generation: number, uid: string): void {
     const state = this._ledgerPage();
     if (state === null || this.journalPorts === null) return;
-    if (state.status !== 'ready') {
-      this._ledgerPage.set({ ...state, status: 'loading' });
+    if (state.cardLoadState !== CardLoadState.Ready) {
+      this._ledgerPage.set({ ...state, cardLoadState: CardLoadState.Loading });
     }
     void this.readLedgerPage(generation, uid, state.filter);
   }
@@ -2242,8 +2388,8 @@ export class ClientCardStore {
     };
     const fail = () => {
       const now = current();
-      if (now !== null && now.status !== 'ready') {
-        this._ledgerPage.set({ ...now, status: 'failed' });
+      if (now !== null && now.cardLoadState !== CardLoadState.Ready) {
+        this._ledgerPage.set({ ...now, cardLoadState: CardLoadState.Failed });
       }
     };
     await this.withRecord(
@@ -2265,7 +2411,7 @@ export class ClientCardStore {
         }
         this._ledgerPage.set({
           filter: kind,
-          status: 'ready',
+          cardLoadState: CardLoadState.Ready,
           entries: result.value.entries,
           next: result.value.nextBeforeSeq,
           more: 'idle',
@@ -2275,7 +2421,7 @@ export class ClientCardStore {
         if (current() === null) return;
         this._ledgerPage.set({
           filter: kind,
-          status: 'ready',
+          cardLoadState: CardLoadState.Ready,
           entries: [],
           next: null,
           more: 'idle',
@@ -2298,7 +2444,7 @@ export class ClientCardStore {
       ports === null ||
       customerId === null ||
       state === null ||
-      state.status !== 'ready' ||
+      state.cardLoadState !== CardLoadState.Ready ||
       state.next === null ||
       state.more === 'loading' ||
       !untracked(this._online)

@@ -187,6 +187,7 @@ describe('completeRegistration', () => {
       accountStatus: AccountStatus.Active,
       email: null,
       birthDate: null,
+      profileEditedAtUtcMs: null,
       searchName: registered.searchName,
       searchPrefixes: registered.searchPrefixes,
     });

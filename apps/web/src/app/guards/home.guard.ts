@@ -1,8 +1,10 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
+import { RouteGate, SessionAccessSystem } from '@core/systems';
+import { AUTH_SESSION_PORTS } from '@creativo/infrastructure/firebase-app';
 import { firstValueFrom } from 'rxjs';
 import { isStandalone } from '../shell/is-standalone';
+import { routeFor } from './access';
 
 /**
  * Blueprint §1.4's `/` guard: an installed-PWA launch by an already-active
@@ -14,10 +16,15 @@ import { isStandalone } from '../shell/is-standalone';
 export const homeGuard: CanActivateFn = async () => {
   if (!isStandalone()) return true;
 
-  const authGateway = inject(AUTH_GATEWAY);
+  const session = inject(AUTH_SESSION_PORTS);
   const router = inject(Router);
-  const principal = await firstValueFrom(authGateway.observePrincipal());
-  return principal.kind === 'active'
-    ? router.createUrlTree(['/account'])
-    : true;
+  const principal = await firstValueFrom(session.observePrincipal());
+  return routeFor(
+    router,
+    SessionAccessSystem.decide(principal, {
+      routeGate: RouteGate.Home,
+      standalone: true,
+    }),
+    null,
+  );
 };

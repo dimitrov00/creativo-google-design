@@ -141,7 +141,11 @@ describe('matchWaitlist (emulator)', () => {
     for (const [path, body] of writes) await db.doc(path).set(body);
   });
 
-  /** The matcher over the production adapters, as the composition root wires it. */
+  /**
+   * The matcher over the production adapters, as the composition root wires
+   * it — the shop's zone read off the seeded default location (4A-11), the
+   * catalogue adapter's `loadLocation`.
+   */
   function run() {
     return matchWaitlist({
       commit: firestoreCommitPlan(db),
@@ -153,10 +157,11 @@ describe('matchWaitlist (emulator)', () => {
       nowUtcMs: pinnedNowUtcMs(),
       ...recordingTelemetry(),
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
+      defaultLocationId: FIXTURE_IDS.location,
     });
   }
 
-  const command = { localDate: DAY, timeZone: FIXTURE_TIME_ZONE };
+  const command = { localDate: DAY };
 
   async function inbox() {
     return (

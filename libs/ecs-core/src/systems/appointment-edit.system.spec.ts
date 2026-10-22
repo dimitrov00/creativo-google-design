@@ -13,6 +13,8 @@ import {
   SubjectRelationship,
   ServiceTerms,
   WallTime,
+  EditCommand,
+  ResizeEdge,
 } from '@core/components';
 import {
   BookingStatus,
@@ -28,6 +30,7 @@ import {
   type MinuteOfDay,
   PriceCents,
   type UtcEpochMs,
+  StaffEditErrorCode,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
 import {
@@ -49,11 +52,8 @@ import {
 } from '@core/testing';
 import {
   AppointmentEditSystem,
-  EditCommand,
   type EditCommandRequest,
   LedgerVerdict,
-  ResizeEdge,
-  StaffEditErrorCode,
 } from './appointment-edit.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -204,18 +204,25 @@ const invalid = (field: string) => ({
 });
 
 describe('AppointmentEditSystem.digestBasis — the fingerprint of one intent', () => {
-  const MOVE = { kind: 'move', startIso: '2026-08-03T11:00:00.000+03:00' };
+  const MOVE = {
+    editCommand: 'MOVE',
+    localDate: '2026-08-03',
+    startMinutes: 660,
+  };
 
   it('is the same for the same batch and different for a different one', () => {
     expect(AppointmentEditSystem.digestBasis([MOVE])).toBe(
       AppointmentEditSystem.digestBasis([{ ...MOVE }]),
     );
     expect(AppointmentEditSystem.digestBasis([MOVE])).not.toBe(
-      AppointmentEditSystem.digestBasis([
-        { ...MOVE, startIso: '2026-08-03T12:00:00.000+03:00' },
-      ]),
+      AppointmentEditSystem.digestBasis([{ ...MOVE, startMinutes: 720 }]),
     );
-    const resized = { kind: 'resize', edge: 'end', atIso: MOVE.startIso };
+    const resized = {
+      editCommand: 'RESIZE',
+      resizeEdge: 'END',
+      localDate: MOVE.localDate,
+      atMinutes: MOVE.startMinutes,
+    };
     expect(AppointmentEditSystem.digestBasis([MOVE, resized])).not.toBe(
       AppointmentEditSystem.digestBasis([resized, MOVE]),
     );
@@ -411,12 +418,12 @@ describe('AppointmentEditSystem.fold — move', () => {
       seat('seat-2', { barberId: PETAR, occupant: guest }),
     ]);
     expect(unwrapErr(fold(move(at(9), ['seat-2'], TOMORROW), party))).toEqual(
-      invalid('startIso'),
+      invalid('startMinutes'),
     );
   });
 
   it('refuses a move that would carry a seat past midnight', () => {
-    expect(unwrapErr(fold(move(at(23, 30))))).toEqual(invalid('startIso'));
+    expect(unwrapErr(fold(move(at(23, 30))))).toEqual(invalid('startMinutes'));
   });
 
   it('refuses a scope naming a seat this booking does not have', () => {
@@ -671,7 +678,9 @@ describe('AppointmentEditSystem.fold — resize', () => {
   });
 
   it('refuses a resize that drives the duration to zero — as a DURATION', () => {
-    expect(unwrapErr(fold(resizeEnd(endAt(10))))).toEqual(invalid('minutes'));
+    expect(unwrapErr(fold(resizeEnd(endAt(10))))).toEqual(
+      invalid('durationMinutes'),
+    );
   });
 });
 
@@ -905,7 +914,7 @@ describe('AppointmentEditSystem.fold — the batch', () => {
   });
 
   it('refuses an empty batch rather than writing nothing quietly', () => {
-    expect(unwrapErr(fold([]))).toEqual(invalid('command'));
+    expect(unwrapErr(fold([]))).toEqual(invalid('commands'));
   });
 
   it('carries the bill’s and the place’s arms past the seats', () => {

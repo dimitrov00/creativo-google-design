@@ -40,6 +40,13 @@
                2026-09-09): the same trigger, the same label grammar, the
                same calendar at the same size. The toolbar only says which
                day, and closes its other popovers when this one opens. -->
+          <!-- THE DAY HAS A CLOCK FIRST (Phase 4a 4A-11, R13): the shop's
+               zone is the LOCATION's, read off the catalogue or the default
+               location. A cold load can arrive before either answers; until
+               one does there is no "today" to name, so the pill and the week
+               strip wait on `store.ready()` while the rest of the chrome is
+               drawn and the lanes sit in their loading state. -->
+          @if (store.ready()) {
           <lib-staff-day-pill
             uiAlignment="leading"
             [uiDayKey]="store.dayKey()"
@@ -53,6 +60,7 @@
             (uiPresentedChange)="setDatePicker($event)"
             (uiPicked)="pickDay($event, true)"
           />
+          }
 
           <ui-stack uiSpacing="none" uiAlignment="center">
             <!-- Midnight rolled over under an open tab. The sheet says so
@@ -672,7 +680,7 @@
               uiInteractive
               tabindex="-1"
               [attr.data-row-id]="entry.id"
-              [attr.data-status]="entry.status"
+              [attr.data-status]="statusWords[entry.status]"
               [attr.data-terminal]="entry.terminal ? '' : null"
               [attr.data-past]="entry.past ? '' : null"
               [attr.data-next]="entry.isNext ? '' : null"
@@ -753,7 +761,7 @@
                   class="agenda-card__head"
                   size="regular"
                   [title]="entry.clientLabel"
-                  [struck]="hollowStatus(entry.status)"
+                  [struck]="hollowStatus(statusWords[entry.status])"
                   [receded]="entry.past"
                   [lines]="factLines(entry)"
                   [start]="fields.isOn('timeStart') ? entry.startLabel : null"
@@ -841,7 +849,7 @@
                     >{{ entry.partyLabel }}</span
                   >
                 </span>
-                } @if (entry.tag && !hollowStatus(entry.status)) {
+                } @if (entry.tag && !hollowStatus(statusWords[entry.status])) {
                 <!-- (Not on an hour that did not happen, 2026-09-24: how far
                      a run is from the catalogue's length means nothing for a
                      visit that will not run.)
@@ -1448,10 +1456,10 @@
             type="button"
             uiChip
             [uiSelected]="cancelReasonCode() === code"
-            [attr.data-testid]="'staff-cancel-reason-' + code"
+            [attr.data-testid]="'staff-cancel-reason-' + reasonWords[code]"
             (click)="toggleReason(code)"
           >
-            {{ t('staff.day.cancelReasonCode.' + code) }}
+            {{ t('staff.day.cancelReasonCode.' + reasonWords[code]) }}
           </button>
           }
         </ui-flow>
@@ -1463,7 +1471,7 @@
            above it stays, so the field is still named once it is full.
            Left empty, «Друго…» is the door that was opened and not walked
            through: the cancel still goes, filed as no reason given. -->
-      @if (cancelReasonCode() === 'other') {
+      @if (cancelReasonCode() === Reason.Other) {
       <label>
         <ui-stack uiSpacing="tight">
           <span uiText uiFont="footnote">

@@ -1,3 +1,4 @@
+import type { MediaRef } from '@core/components';
 import type { MediaError, Result, UserId } from '@core/primitives';
 import type { AppointmentPhotoFacts } from '@core/entities';
 
@@ -40,12 +41,14 @@ export type RemoveAvatar = (
 ) => Promise<Result<void, MediaError>>;
 
 /**
- * Every rendition of a catalogue image, narrowest first. Resolution reads
- * only the Storage path (flatten-spec §3.8), so a flattened `cover*` /
- * `avatar*` field set and a `photos[]` element both call it without mapping.
+ * Every rendition of a catalogue image, narrowest first — of the `MediaRef`
+ * the content service's `MediaRef.parse` guard produced (a named component,
+ * never loose scalars; a malformed stored ref never reaches Storage). The
+ * adapter reads `ref.mediaPath` and answers one rendition, `ref.mediaWidth`
+ * wide, as today's reader did.
  */
 export type ResolveMedia = (
-  mediaPath: string,
+  ref: MediaRef,
 ) => Promise<Result<readonly MediaVariant[], MediaError>>;
 
 /**

@@ -1,10 +1,11 @@
 import {
   type Actor,
   AuditContext,
-  type BarberPreference,
+  BookingCall,
   type BookingPolicy,
   Placement,
   PlacementPolicy,
+  RequestedSubjectRole,
   type Seat,
   SeatSubject,
   StaffTermsOverride,
@@ -18,14 +19,20 @@ import {
   type AppointmentId,
   AuditResourceId,
   BarberId,
+  CancellationRefusalCode,
+  CarriedSeatRefusal,
+  CartLineId,
+  type ClientOperationId,
+  type LocalDate,
   LocationId,
+  MoveErrorCode,
   OperationId,
   SeatKeyText,
   ServiceId,
   ServiceVariantId,
+  type TimeError,
   type TimeZone,
-  type UserId,
-  type LocalDate,
+  UserId,
   type UtcEpochMs,
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
@@ -46,22 +53,15 @@ import {
   BookingDecisionSystem,
   type BookingDecision,
   CancellationPolicySystem,
-  CancellationRefusalCode,
   type CarriedLine,
-  CarriedSeatRefusal,
   type DecideBookingInput,
   type DecisionStandingSeat,
   LedgerVerdict,
-  type MoveCartSeatInput,
   type MoveError,
-  MoveErrorCode,
   type MovedCartLine,
   type MovePlan,
-  MoveSubjectRole,
   MoveSystem,
   PartyAdmissionSystem,
-  type RequestedSeatInput,
-  RequestedSubjectRole,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -70,7 +70,6 @@ import {
   type BookingReadSet,
   bookingSnapshotOf,
   busyMergeWrites,
-  frameShopDay,
   isReadableId,
   type PlacementSet,
   placementFields,
@@ -82,6 +81,7 @@ import {
   type ShopDayFrame,
   zoneOf,
 } from './booking-read-set.pipeline';
+import { frameWallClock } from './book-appointment.pipeline';
 import { customerIdsFor } from './customer-records.pipeline';
 
 /**
@@ -99,6 +99,9 @@ import { customerIdsFor } from './customer-records.pipeline';
  *   written), then the booking read set of the NEW placement — the shop
  *   the request names, the services and schedules of every seat, and the
  *   busy days and exceptions of the new day's keys (read even when absent).
+ * - **The wall clock, once (Law 7.3):** the call carries the shop day and
+ *   each cart seat's minute; having read the shop, the pipeline places them
+ *   on ITS zone (`frameWallClock`) — a gap start is `DST_GAP_INVALID_TIME`.
  * - **The plan** (`MoveSystem.plan`): the cart stands in for the seats the
  *   booker can name; everybody else is CARRIED at their kept distance, on
  *   the terms they were sold at. A request for exactly where the visit
@@ -115,28 +118,24 @@ import { customerIdsFor } from './customer-records.pipeline';
  *   (`loggedOnRetry`), a request for where the visit already is logs none.
  */
 
-/** One cart seat as the client sent it — its start an instant. */
-export type RescheduleSeatRequest = {
-  readonly serviceId: string;
-  readonly variantId: string | null;
-  readonly barberId: string;
-  readonly barberPreference: BarberPreference | null;
-  /** `null` when the wire start did not parse (refused as `startUtcMs`). */
-  readonly startUtcMs: UtcEpochMs | null;
-  /** The booker, or a guest by label (`COMPANION` is refused — a cart never names another account). */
-  readonly moveSubjectRole: MoveSubjectRole;
-  readonly label: string | null;
-};
-
+/**
+ * The move as the edge decoded it — the call component
+ * `BookingCall.Reschedule` with its seats in their raw twin
+ * (`BookingCall.SeatInput`: each start a minute of the request's day, the
+ * booker or a guest by label — a `COMPANION` is refused, a cart never names
+ * another account) & the verified caller and actor.
+ */
 export type RescheduleAppointmentCommand = {
   readonly appointmentId: AppointmentId;
   /** The verified caller; only the visit's owner may move it. */
   readonly callerUserId: UserId | null;
   /** The shop as sent — a move may take the visit to another shop. */
   readonly locationId: string;
-  readonly seats: readonly RescheduleSeatRequest[];
-  /** The client's name for this move (`isClientOperationId`-shaped); `null` for an older client. */
-  readonly attemptId: string | null;
+  /** The ONE shop day the cart is on, as sent (`YYYY-MM-DD`). */
+  readonly localDate: string;
+  readonly seats: readonly BookingCall.SeatInput[];
+  /** The client's name for this move; `null` makes no claim. */
+  readonly attemptId: ClientOperationId | null;
   readonly actor: Actor | null;
 };
 
@@ -149,7 +148,7 @@ export type RescheduleAppointmentAnswer = {
 };
 
 export type RescheduleAppointmentError =
-  BookingError | MoveError | RepositoryError;
+  BookingError | MoveError | TimeError | RepositoryError;
 
 export type RescheduleAppointmentPorts = TxPorts &
   PolicyReadPorts &
@@ -215,12 +214,14 @@ export const rescheduleAppointment =
         ? null
         : {
             id: OperationId.of(`${MOVE_OPERATION}${cmd.attemptId}`),
-            // The shop and the seats, as sent — the staff edit's basis over
-            // one `{ move }` command, so both kinds of intent share a ledger.
+            // The shop, the day and the seats, as sent — the staff edit's
+            // basis over one `{ move }` command, so both kinds of intent
+            // share a ledger.
             digest: ports
               .hash(
                 MoveSystem.digestBasis({
                   locationId: cmd.locationId,
+                  localDate: cmd.localDate,
                   seats: cmd.seats,
                 }),
               )
@@ -264,21 +265,21 @@ export const rescheduleAppointment =
     });
   };
 
-/** The cart on the request's shop day — `null` when a start did not parse or lies off that day. */
+/** The cart on the request's shop day — `null` when a start or an id is none. */
 function cartOf(
   cmd: RescheduleAppointmentCommand,
   frame: ShopDayFrame,
-): readonly MoveCartSeatInput[] | null {
-  const cart: MoveCartSeatInput[] = [];
+): readonly BookingCall.Seat[] | null {
+  const cart: BookingCall.Seat[] = [];
   for (let i = 0; i < cmd.seats.length; i++) {
-    const seat = cmd.seats[i] as RescheduleSeatRequest;
-    const startMinutes = frame.startMinutes[i] ?? null;
+    const seat = cmd.seats[i] as BookingCall.SeatInput;
+    const startMinutes = frame.startMinutes.at(i) ?? null;
     const service = ServiceId.parse(seat.serviceId);
     const barber = BarberId.parse(seat.barberId);
     if (startMinutes === null || !service.ok || !barber.ok) return null;
     cart.push({
-      moveSubjectRole: seat.moveSubjectRole,
-      label: seat.label,
+      // Positional, like `MoveSystem.plan`'s own re-keying (`cart-<i>`).
+      lineId: CartLineId.of(`cart-${i}`),
       serviceId: service.value,
       // The variant as sent: the decision re-reads it (a blank one is refused there).
       variantId:
@@ -286,9 +287,28 @@ function cartOf(
       barberId: barber.value,
       barberPreference: seat.barberPreference,
       startMinutes,
+      subject: subjectOf(seat),
     });
   }
   return cart;
+}
+
+/**
+ * A sent seat's subject in the call's ONE subject shape. A guest is read by
+ * label alone, as the move always read it (its key never reaches the
+ * decision). A companion is never on a client cart: `MoveSystem.plan`
+ * refuses it (`subject`) before the account id is read.
+ */
+function subjectOf(seat: BookingCall.SeatInput): BookingCall.Subject {
+  const subject = seat.subject;
+  switch (subject.requestedSubjectRole) {
+    case RequestedSubjectRole.Guest:
+      return BookingCall.guestSubject(subject.label, null);
+    case RequestedSubjectRole.Companion:
+      return BookingCall.companionSubject(UserId.of(subject.companionUserId));
+    case RequestedSubjectRole.Self:
+      return BookingCall.selfSubject();
+  }
 }
 
 /** The transaction's read half — see {@link rescheduleAppointment}. */
@@ -354,13 +374,18 @@ async function readMove(
   });
   if (set.location === null) return notFound;
   const zone = zoneOf(set.location);
-  const frame =
+  const framed =
     zone === null
       ? null
-      : frameShopDay(
-          cmd.seats.map((seat) => seat.startUtcMs),
+      : frameWallClock(
+          cmd.localDate,
+          cmd.seats.map((seat) => seat.startMinutes),
           zone,
         );
+  if (framed !== null && !framed.ok) {
+    return { snapshot: 'REFUSED', error: framed.error };
+  }
+  const frame = framed === null ? null : framed.value;
   const cart = frame === null ? null : cartOf(cmd, frame);
   if (
     zone === null ||
@@ -371,7 +396,7 @@ async function readMove(
   ) {
     return {
       snapshot: 'REFUSED',
-      error: BookingError.invalidInput('startUtcMs'),
+      error: BookingError.invalidInput('startMinutes'),
     };
   }
   const plan = MoveSystem.plan(stored, owner, {
@@ -455,7 +480,7 @@ function standingOf(
 }
 
 /** A cart seat as the decision's request line. */
-function cartLine(line: MovedCartLine): RequestedSeatInput {
+function cartLine(line: MovedCartLine): BookingCall.SeatInput {
   return {
     lineId: line.lineId,
     serviceId: line.seat.serviceId,
@@ -464,10 +489,10 @@ function cartLine(line: MovedCartLine): RequestedSeatInput {
     barberPreference: line.seat.barberPreference,
     startMinutes: line.seat.startMinutes,
     subject:
-      line.seat.moveSubjectRole === MoveSubjectRole.Guest
+      line.seat.subject.requestedSubjectRole === RequestedSubjectRole.Guest
         ? {
             requestedSubjectRole: RequestedSubjectRole.Guest,
-            label: line.seat.label ?? '',
+            label: line.seat.subject.label,
             guestKey: null,
           }
         : { requestedSubjectRole: RequestedSubjectRole.Self },
@@ -475,7 +500,7 @@ function cartLine(line: MovedCartLine): RequestedSeatInput {
 }
 
 /** A carried seat as the decision's request line — a companion at its kept distance. */
-function carriedLine(line: CarriedLine): RequestedSeatInput {
+function carriedLine(line: CarriedLine): BookingCall.SeatInput {
   return {
     lineId: line.lineId,
     serviceId: line.seat.serviceId,
@@ -495,7 +520,7 @@ type DecidePorts = IdPorts & HashPorts;
 /** The decision over one set of lines — the cart alone, or the cart with the carried seats. */
 function decideLines(
   loaded: Loaded,
-  lines: readonly RequestedSeatInput[],
+  lines: readonly BookingCall.SeatInput[],
   carried: readonly CarriedLine[],
   owner: UserId,
   policy: BookingPolicy,

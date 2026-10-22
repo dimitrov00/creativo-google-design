@@ -204,7 +204,7 @@ describe('verifyOtp (emulator)', () => {
     expect(await usersIds()).toEqual([orphan.uid]);
   });
 
-  it('refuses an Auth user whose users doc carries another contact — token_minting_failure, nothing written', async () => {
+  it('refuses an Auth user whose users doc carries another contact — IDENTITY_TOKEN_MINTING_FAILURE on the wire, nothing written', async () => {
     const held = await auth.createUser({ phoneNumber: PHONE });
     const drifted = RegistrationSystem.provision(
       UserId.of(held.uid),
@@ -218,8 +218,10 @@ describe('verifyOtp (emulator)', () => {
       IdentityErrorCode.OtpAccountConflict,
     );
     if (!answer.ok) {
+      // The wire flip (Phase 4a 4A-4): the refusal leaves as its ecs-core
+      // struct, a refused adoption as a failed provisioning (F2-9).
       expect(verifyOtpRefusal(answer.error)).toEqual({
-        code: 'token_minting_failure',
+        errorCode: IdentityErrorCode.TokenMintingFailure,
       });
     }
     const after = await db.doc(`${Collections.Users}/${held.uid}`).get();

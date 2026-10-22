@@ -63,7 +63,7 @@
               [uiSelected]="isSelectedStart(start)"
               data-testid="booking-time"
               [attr.data-start]="start.startMs"
-              [attr.data-shop]="start.shopKey"
+              [attr.data-shop]="start.locationId"
               (click)="selectStart(start)"
             >
               <span uiText uiFont="body">{{ start.label }}</span>

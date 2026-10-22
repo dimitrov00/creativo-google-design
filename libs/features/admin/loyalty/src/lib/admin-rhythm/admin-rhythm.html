@@ -232,13 +232,14 @@
                   >{{ t('admin.rhythm.preview.estimate') }}</span
                 >
               </div>
-              @switch (previewSlice.status) { @case ('loading') {
+              @switch (previewSlice.rhythmLoadState) { @case
+              (RhythmLoadState.Loading) {
               <ui-skeleton
                 uiFrame
                 uiFrameHeight="5.5rem"
                 data-testid="admin-rhythm-preview-skeleton"
               />
-              } @case ('failed') {
+              } @case (RhythmLoadState.Failed) {
               <ui-notice
                 uiTone="destructive"
                 data-testid="admin-rhythm-preview-failed"
@@ -256,8 +257,8 @@
                   {{ t('visits.retry') }}
                 </button>
               </ui-notice>
-              } @case ('ready') { @if (preview(); as words) { @if (words.kind
-              === 'unavailable') {
+              } @case (RhythmLoadState.Ready) { @if (preview(); as words) { @if
+              (words.kind === 'unavailable') {
               <p
                 uiText
                 uiFont="callout"
@@ -866,13 +867,14 @@
             >
             }
           </button>
-          } @switch (store.versions().status) { @case ('loading') {
+          } @switch (store.versions().rhythmLoadState) { @case
+          (RhythmLoadState.Loading) {
           <ui-skeleton
             uiFrame
             uiFrameHeight="7.5rem"
             data-testid="admin-rhythm-history-skeleton"
           />
-          } @case ('failed') {
+          } @case (RhythmLoadState.Failed) {
           <ui-notice
             uiTone="destructive"
             data-testid="admin-rhythm-history-failed"
@@ -890,7 +892,7 @@
               {{ t('visits.retry') }}
             </button>
           </ui-notice>
-          } @case ('ready') { @if (history().length > 0) {
+          } @case (RhythmLoadState.Ready) { @if (history().length > 0) {
           <ul uiListGroup data-testid="admin-rhythm-history">
             @for (row of history(); track row.version) {
             <li

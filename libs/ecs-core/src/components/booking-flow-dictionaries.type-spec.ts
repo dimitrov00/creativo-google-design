@@ -18,8 +18,6 @@ import type { WaitlistRequest, ScheduleException } from '@core/entities';
 import {
   type BookingFlowEvent,
   BookingFlowEventKind,
-  type CommitSubject,
-  CommitSubjectRole,
   PrefillCompanions,
 } from '@core/systems';
 import {
@@ -95,7 +93,6 @@ dictionary(MonthlyAnchor satisfies Dictionary<MonthlyAnchor>);
 dictionary(RecurrenceEnd satisfies Dictionary<RecurrenceEnd>);
 dictionary(WaitlistStatus satisfies Dictionary<WaitlistStatus>);
 dictionary(BookingFlowEventKind satisfies Dictionary<BookingFlowEventKind>);
-dictionary(CommitSubjectRole satisfies Dictionary<CommitSubjectRole>);
 dictionary(PrefillCompanions satisfies Dictionary<PrefillCompanions>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
@@ -119,7 +116,6 @@ export type BookingFlowDictionariesHold = [
   Expect<Holds<typeof RecurrenceEnd, RecurrenceEnd>>, // components/recurrence-rule.data.ts
   Expect<Holds<typeof WaitlistStatus, WaitlistStatus>>, // primitives/waitlist-status.data.ts
   Expect<Holds<typeof BookingFlowEventKind, BookingFlowEventKind>>, // systems/booking-flow.system.ts
-  Expect<Holds<typeof CommitSubjectRole, CommitSubjectRole>>, // systems/booking-cart.system.ts
   Expect<Holds<typeof PrefillCompanions, PrefillCompanions>>, // systems/booking-cart.system.ts
 ];
 
@@ -140,7 +136,6 @@ export type BookingFlowScreamingChecks = [
   Expect<Screaming<RecurrenceEnd>>,
   Expect<Screaming<WaitlistStatus>>,
   Expect<Screaming<BookingFlowEventKind>>,
-  Expect<Screaming<CommitSubjectRole>>,
   Expect<Screaming<PrefillCompanions>>,
 ];
 
@@ -163,7 +158,6 @@ export type BookingFlowDictionaryFields = [
   Expect<
     Equals<BookingFlowEvent['bookingFlowEventKind'], BookingFlowEventKind>
   >, // systems/booking-flow.system.ts (N15: `BookingFlowEvent` is the union)
-  Expect<Equals<CommitSubject['commitSubjectRole'], CommitSubjectRole>>, // systems/booking-cart.system.ts
 ];
 
 // The checks are not vacuous.

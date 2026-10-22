@@ -120,6 +120,7 @@ export async function seedUserProfile(
     ...AccountLifecycle.active(),
     email: null,
     birthDate,
+    profileEditedAtUtcMs: null,
     ...SearchFieldsSystem.searchFields(firstName, lastName, phone, null),
   } satisfies Omit<User, 'id'>;
   await getFirestore(adminApp())

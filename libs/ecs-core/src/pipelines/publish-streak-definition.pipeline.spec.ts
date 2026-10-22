@@ -36,9 +36,12 @@ import {
 } from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {
-  FIXTURE_TIME_ZONE,
   fixtureHash,
   localDate,
+  locationFixture,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStreakWorld,
   memoryTxPorts,
   pinnedNowUtcMs,
@@ -169,6 +172,17 @@ function waiting(withDocument = true): StreakWorld {
   });
 }
 
+/**
+ * The shop day's clock (Law 7.2, F-4 — a rhythm names no shop): the
+ * default location's, the fixture shop on `FIXTURE_TIME_ZONE`.
+ */
+const ZONE_PORTS = {
+  ...memoryLocationLoadPorts(
+    memoryProgramsWorld({ locations: [locationFixture()] }),
+  ),
+  ...memoryDefaultLocationPorts(),
+};
+
 function rig(
   world: StreakWorld,
   options: {
@@ -184,7 +198,7 @@ function rig(
     ...tx,
     flagOn: (key) =>
       key === FlagName.LoyaltySelfView && options.clientsSeeRhythm === true,
-    tenantTimeZone: FIXTURE_TIME_ZONE,
+    ...ZONE_PORTS,
   };
   return {
     tx,
@@ -1026,7 +1040,7 @@ describe('the read set, and the shop’s calendar', () => {
       ...tx,
       commit: async () => Result.err(down),
       flagOn: () => false,
-      tenantTimeZone: FIXTURE_TIME_ZONE,
+      ...ZONE_PORTS,
     };
     expect(
       await publishStreakDefinition(ports)(
@@ -1036,5 +1050,26 @@ describe('the read set, and the shop’s calendar', () => {
     expect(await withdrawStreakDefinition(ports)(withdrawOf(2))).toEqual(
       Result.err(down),
     );
+  });
+
+  it('answers a shop day it cannot read as its store failure — after the caller, before any write (4A-2 (e))', async () => {
+    const world = seeded();
+    const { tx } = rig(world);
+    const failed = RepositoryError.readFailed('locations/loc-center', 'down');
+    const ports: PublishStreakDefinitionPorts = {
+      ...tx,
+      flagOn: () => false,
+      ...memoryDefaultLocationPorts(),
+      loadLocation: async () => Result.err(failed),
+    };
+    expect(
+      await publishStreakDefinition(ports)(
+        publishOf({ graceDays: 10 }, TOMORROW),
+      ),
+    ).toEqual(Result.err(failed));
+    expect(await withdrawStreakDefinition(ports)(withdrawOf(2))).toEqual(
+      Result.err(failed),
+    );
+    expect(tx.transactions).toEqual([]);
   });
 });

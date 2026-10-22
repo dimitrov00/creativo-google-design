@@ -60,6 +60,7 @@ export function registeredAccountBody(
       birthDate === null
         ? null
         : present(BirthDate.parse(birthDate), `birth date ${birthDate}`),
+    profileEditedAtUtcMs: null,
     ...SearchFieldsSystem.searchFields(
       contact.firstName,
       contact.lastName,

@@ -33,27 +33,29 @@ import {
   WALLET_RHYTHM,
   WALLET_TIER,
 } from '../testing/client-pages.vm-fixtures';
-import type {
-  ActivityGroupVm,
-  ClientHeroVm,
-  ClientOverviewVm,
-  DetailActionVm,
-  DetailHowVm,
-  FeaturedRecordVm,
-  LedgerPageVm,
-  LinePart,
-  MedalDetailVm,
-  MedalsPageVm,
-  RecordCardVm,
-  RecordRowVm,
-  RecordsPageVm,
-  Slice,
-  VisitCardsVm,
-  VisitsPageVm,
-  WalletActionId,
-  WalletActionVm,
-  WalletHoldingVm,
-  WalletVm,
+import {
+  type ActivityGroupVm,
+  CardLoadState,
+  type ClientHeroVm,
+  type ClientOverviewVm,
+  type DetailActionVm,
+  type DetailHowVm,
+  type FeaturedRecordVm,
+  type HistoryPagingVm,
+  type LedgerPageVm,
+  type LinePart,
+  type MedalDetailVm,
+  type MedalsPageVm,
+  type RecordCardVm,
+  type RecordRowVm,
+  type RecordsPageVm,
+  type Slice,
+  type VisitCardsVm,
+  type VisitsPageVm,
+  type WalletActionId,
+  type WalletActionVm,
+  type WalletHoldingVm,
+  type WalletVm,
 } from './client-pages.vm';
 import type { RECORD_KIND_WORDS, RecordKindWord } from './client-card.words';
 
@@ -210,7 +212,7 @@ describe('the pages’ view models: the shapes', () => {
     >();
     expectTypeOf<
       VisitsPageVm['paging']
-    >().toEqualTypeOf<built.HistoryPagingVm | null>();
+    >().toEqualTypeOf<HistoryPagingVm | null>();
   });
 });
 
@@ -322,7 +324,7 @@ describe('the hand-built fixtures: the glance', () => {
   });
 
   it('states a failed module’s region beside its failed slice', () => {
-    expect(OVERVIEW.oneFailed.loyalty.status).toBe('failed');
+    expect(OVERVIEW.oneFailed.loyalty.cardLoadState).toBe(CardLoadState.Failed);
     expect(OVERVIEW.oneFailed.failed).toEqual(['loyalty']);
     expect(OVERVIEW.twoFailed.failed.length).toBeGreaterThanOrEqual(2);
     expect(OVERVIEW.georgi.failed).toEqual([]);

@@ -4,35 +4,38 @@ import {
   DiscountMethod,
   DiscountSource,
   VoucherCode,
+  EditCommand,
+  Placement,
+  RequestedSubjectRole,
+  ResizeEdge,
 } from '@core/components';
 import {
   AppointmentId,
   BarberId,
   BookingError,
+  BookingErrorCode,
   BookingStatus,
+  CancellationRefusal,
   CouponGrantId,
   OperationId,
   RepositoryError,
   SchedulingError,
   SeatId,
   UserId,
-  UtcEpochMs,
   Result,
-} from '@core/primitives';
-import { MarkArrivalAction } from '@core/pipelines';
-import {
-  CancellationRefusalCode,
-  EditCommand,
-  MoveSubjectRole,
-  RequestedSubjectRole,
-  ResizeEdge,
   StaffEditError,
   StaffEditErrorCode,
-} from '@core/systems';
-import { localDate, minute, utcMs } from '@core/testing';
+} from '@core/primitives';
+import {
+  MarkArrivalAction,
+  type MarkArrivalCommand,
+  type RecordSeatTipCommand,
+} from '@core/pipelines';
+import { endMinute, localDate, minute, utcMs } from '@core/testing';
 import { type EdgeError, toHttpsError } from '../edge';
 import {
   arrivalRefusal,
+  CallStateWord,
   cancelAppointmentRefusal,
   commitBookingRefusal,
   decodeCancelAppointment,
@@ -48,22 +51,22 @@ import {
   encodeCommitBookingAnswer,
   encodeMarkArrivedAnswer,
   encodeRecordSeatTipAnswer,
+  encodeRescheduleAppointmentAnswer,
   encodeStaffEditAppointmentAnswer,
   encodeTransitionAppointmentAnswer,
   recordSeatTipRefusal,
   rescheduleAppointmentRefusal,
-  settle,
   staffEditAppointmentRefusal,
   transitionAppointmentRefusal,
 } from './booking.wire';
-
-const instant = (iso: string): UtcEpochMs => utcMs(iso);
+import { settle } from './wire-read';
 
 const signedIn = (uid: string, roles: readonly string[] = []) => ({
   auth: { uid, token: { roles } },
 });
 const staff = signedIn('u-staff', ['barber']);
 const ATTEMPT = 'attempt-0123456789abcdef';
+const A1 = AppointmentId.of('a1');
 
 /** A refusal as the client sees it on the wire. */
 function wire(error: EdgeError) {
@@ -82,28 +85,49 @@ function valueOf<T>(result: Result<T, EdgeError>): T {
   return result.value;
 }
 
-describe('booking.wire — the frozen callable wire (F1-3)', () => {
+const arrival = (markArrivalAction: MarkArrivalAction): MarkArrivalCommand => ({
+  markArrivalAction,
+  appointmentId: A1,
+  actor: null,
+});
+
+const TIP: RecordSeatTipCommand = {
+  appointmentId: A1,
+  seatId: SeatId.of('s1'),
+  tipCents: null,
+  actor: null,
+};
+
+describe('booking.wire — the flipped callable wire (Phase 4a 4A-4)', () => {
   describe('commitBooking', () => {
     const payload = {
       locationId: 'loc-center',
+      localDate: '2026-09-29',
       attemptId: ATTEMPT,
+      placement: Placement.Self,
+      onBehalfOfUserId: null,
+      bookedFromAppointmentId: null,
       seats: [
         {
           lineId: 'line-1',
           serviceId: 'svc-1',
           variantId: null,
           barberId: 'b-ivan',
-          barberPref: 'any',
-          startIso: '2026-09-29T10:00:00.000+03:00',
-          subject: { kind: 'self' },
+          barberPreference: BarberPreference.Any,
+          startMinutes: 600,
+          subject: { requestedSubjectRole: RequestedSubjectRole.Self },
         },
         {
           lineId: 'line-2',
           serviceId: 'svc-2',
           barberId: 'b-ivan',
-          barberPref: 'nonsense',
-          startIso: 'not a time',
-          subject: { kind: 'guest', label: 'Petar', guestKey: 'guest-1' },
+          barberPreference: 'nonsense',
+          startMinutes: 'ten',
+          subject: {
+            requestedSubjectRole: RequestedSubjectRole.Guest,
+            label: 'Petar',
+            guestKey: 'guest-1',
+          },
         },
       ],
       contact: {
@@ -114,12 +138,13 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       },
     };
 
-    it('decodes today’s payload: the owner off the token, the starts as instants, nothing defaulted into existence', () => {
+    it('decodes the call component: the owner off the token, the starts on the shop’s wall clock, nothing defaulted into existence', () => {
       const command = valueOf(
         decodeCommitBooking({ ...signedIn('u-client'), data: payload }),
       );
       expect(command).toMatchObject({
         locationId: 'loc-center',
+        localDate: '2026-09-29',
         attemptId: ATTEMPT,
         bookedFromAppointmentId: null,
         ownerUserId: 'u-client',
@@ -138,7 +163,7 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
           variantId: null,
           barberId: 'b-ivan',
           barberPreference: BarberPreference.Any,
-          startUtcMs: instant('2026-09-29T10:00:00.000+03:00'),
+          startMinutes: 600,
           subject: { requestedSubjectRole: RequestedSubjectRole.Self },
         },
         {
@@ -147,7 +172,7 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
           variantId: null,
           barberId: 'b-ivan',
           barberPreference: null,
-          startUtcMs: null,
+          startMinutes: null,
           subject: {
             requestedSubjectRole: RequestedSubjectRole.Guest,
             label: 'Petar',
@@ -166,7 +191,12 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
             bookedFromAppointmentId: 'has spaces',
             contact: { name: '', phone: '' },
             seats: [
-              { subject: { kind: 'guest', label: 'G', guestKey: 'bad key!' } },
+              {
+                subject: {
+                  requestedSubjectRole: RequestedSubjectRole.Self,
+                  guestKey: 'bad key!',
+                },
+              },
             ],
           },
         }),
@@ -175,10 +205,12 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       expect(command.bookedFromAppointmentId).toBeNull();
       expect(command.contact).toBeNull();
       expect(command.locationId).toBe('');
+      expect(command.localDate).toBe('');
       expect(command.seats[0]).toMatchObject({
         serviceId: '',
         barberId: '',
-        subject: { guestKey: null },
+        startMinutes: null,
+        subject: { requestedSubjectRole: RequestedSubjectRole.Self },
       });
     });
 
@@ -192,15 +224,22 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
 
     it('passes a well-formed guest key through beside the label, and never reads one off anybody but a guest', () => {
       expect(
-        guestSeat({ kind: 'guest', label: 'Мария', guestKey: 'guest-3' }),
+        guestSeat({
+          requestedSubjectRole: RequestedSubjectRole.Guest,
+          label: 'Мария',
+          guestKey: 'guest-3',
+        }),
       ).toEqual({
         requestedSubjectRole: RequestedSubjectRole.Guest,
         label: 'Мария',
         guestKey: 'guest-3',
       });
-      expect(guestSeat({ kind: 'self', guestKey: 'x' })).toEqual({
-        requestedSubjectRole: RequestedSubjectRole.Self,
-      });
+      expect(
+        guestSeat({
+          requestedSubjectRole: RequestedSubjectRole.Self,
+          guestKey: 'x',
+        }),
+      ).toEqual({ requestedSubjectRole: RequestedSubjectRole.Self });
     });
 
     it.each([
@@ -214,7 +253,7 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       (_what, guestKey) => {
         expect(
           guestSeat({
-            kind: 'guest',
+            requestedSubjectRole: RequestedSubjectRole.Guest,
             label: 'Мария',
             ...(guestKey === undefined ? {} : { guestKey }),
           }),
@@ -226,16 +265,33 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       },
     );
 
-    it('carries «Всеки» and a named barber through, and leaves an absent or unknown preference unknown', () => {
+    it('reads a companion by the id it names, and an unknown or legacy subject as the booker', () => {
+      expect(
+        guestSeat({
+          requestedSubjectRole: RequestedSubjectRole.Companion,
+          companionUserId: 'u-friend',
+        }),
+      ).toEqual({
+        requestedSubjectRole: RequestedSubjectRole.Companion,
+        companionUserId: 'u-friend',
+      });
+      // The legacy lowercase `kind` is no subject the flipped wire knows.
+      expect(guestSeat({ kind: 'guest', label: 'G' })).toEqual({
+        requestedSubjectRole: RequestedSubjectRole.Self,
+      });
+    });
+
+    it('carries «Всеки» and a named barber through, and leaves an absent, unknown or legacy preference unknown', () => {
       const preferences = valueOf(
         decodeCommitBooking({
           ...signedIn('u-client'),
           data: {
             seats: [
-              { barberPref: 'any' },
-              { barberPref: 'specific' },
+              { barberPreference: BarberPreference.Any },
+              { barberPreference: BarberPreference.Specific },
               {},
-              { barberPref: 'whoever' },
+              { barberPreference: 'whoever' },
+              { barberPreference: 'any' },
             ],
           },
         }),
@@ -245,82 +301,189 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         BarberPreference.Specific,
         null,
         null,
+        null,
       ]);
     });
 
-    it('a staff placement names its client — or nobody — and needs a role that works the book', () => {
+    it('a staff placement says so — or names its client — and needs a role that works the book', () => {
       expect(
         wire(
           refusalOf(
             decodeCommitBooking({
               ...signedIn('u-client'),
-              data: { onBehalfOfUserId: null },
+              data: { onBehalfOfUserId: 'u-other' },
             }),
           ),
         ),
       ).toEqual({
         code: 'permission-denied',
-        details: { code: 'booking.commit.forbidden' },
+        details: { errorCode: 'BOOKING_COMMIT_FORBIDDEN' },
       });
+      expect(
+        wire(
+          refusalOf(
+            decodeCommitBooking({
+              ...signedIn('u-client'),
+              data: { placement: Placement.Staff, onBehalfOfUserId: null },
+            }),
+          ),
+        ),
+      ).toEqual({
+        code: 'permission-denied',
+        details: { errorCode: 'BOOKING_COMMIT_FORBIDDEN' },
+      });
+      const guestsOnly = {
+        placement: Placement.Staff,
+        onBehalfOfUserId: null,
+        seats: [
+          {
+            subject: {
+              requestedSubjectRole: RequestedSubjectRole.Guest,
+              label: 'Walk-in',
+            },
+          },
+        ],
+      };
       const walkIn = valueOf(
-        decodeCommitBooking({ ...staff, data: { onBehalfOfUserId: null } }),
+        decodeCommitBooking({ ...staff, data: guestsOnly }),
       );
       expect(walkIn).toMatchObject({ staffPlacement: true, ownerUserId: null });
       const named = valueOf(
         decodeCommitBooking({
           ...staff,
-          data: { onBehalfOfUserId: 'u-client' },
+          data: { placement: Placement.Staff, onBehalfOfUserId: 'u-client' },
         }),
       );
-      expect(named.ownerUserId).toBe('u-client');
+      expect(named).toMatchObject({
+        staffPlacement: true,
+        ownerUserId: 'u-client',
+      });
       expect(named.actor).toMatchObject({
         actorRole: 'STAFF',
         actorUserId: 'u-staff',
       });
+      // A malformed client id names nobody — still the shop's placement.
+      expect(
+        valueOf(
+          decodeCommitBooking({
+            ...staff,
+            data: {
+              placement: Placement.Staff,
+              onBehalfOfUserId: 'has spaces',
+            },
+          }),
+        ).ownerUserId,
+      ).toBeNull();
     });
 
-    it('answers today’s JSON, and leaves the commit’s refusals in today’s words', () => {
+    it('a staff member booking their own seat is a client booking, and a client’s guests-only cart is the client’s', () => {
       expect(
-        encodeCommitBookingAnswer({
-          appointmentId: AppointmentId.of('a1'),
-          replayed: true,
-        }),
+        valueOf(
+          decodeCommitBooking({
+            ...staff,
+            data: {
+              placement: Placement.Self,
+              onBehalfOfUserId: null,
+              seats: [
+                {
+                  subject: { requestedSubjectRole: RequestedSubjectRole.Self },
+                },
+              ],
+            },
+          }),
+        ),
+      ).toMatchObject({ staffPlacement: false, ownerUserId: 'u-staff' });
+      // A staff member's guests-only cart from `/book` is theirs too: the
+      // call's own placement says who places it, never the seats.
+      expect(
+        valueOf(
+          decodeCommitBooking({
+            ...staff,
+            data: {
+              placement: Placement.Self,
+              onBehalfOfUserId: null,
+              seats: [
+                {
+                  subject: {
+                    requestedSubjectRole: RequestedSubjectRole.Guest,
+                    label: 'Kid',
+                  },
+                },
+              ],
+            },
+          }),
+        ),
+      ).toMatchObject({ staffPlacement: false, ownerUserId: 'u-staff' });
+      expect(
+        valueOf(
+          decodeCommitBooking({
+            ...signedIn('u-client'),
+            data: {
+              placement: Placement.Self,
+              onBehalfOfUserId: null,
+              seats: [
+                {
+                  subject: {
+                    requestedSubjectRole: RequestedSubjectRole.Guest,
+                    label: 'Kid',
+                  },
+                },
+              ],
+            },
+          }),
+        ),
+      ).toMatchObject({ staffPlacement: false, ownerUserId: 'u-client' });
+    });
+
+    it('answers the call component’s answer, and leaves the commit’s refusals as their structs projected', () => {
+      expect(
+        encodeCommitBookingAnswer({ appointmentId: A1, replayed: true }),
       ).toEqual({ appointmentId: 'a1' });
-      expect(wire(BookingError.unauthenticated())).toEqual({
+      expect(
+        wire(commitBookingRefusal(BookingError.unauthenticated())),
+      ).toEqual({
         code: 'unauthenticated',
-        details: { code: 'booking.commit.unauthenticated', params: {} },
+        details: { errorCode: 'BOOKING_UNAUTHENTICATED' },
       });
       expect(
         wire(
-          BookingError.slotUnavailable(
-            BarberId.of('b-ivan'),
-            localDate('2026-09-29'),
-            minute(600),
-            0,
+          commitBookingRefusal(
+            BookingError.slotUnavailable(
+              BarberId.of('b-ivan'),
+              localDate('2026-09-29'),
+              minute(600),
+              0,
+            ),
           ),
         ),
       ).toEqual({
         code: 'aborted',
         details: {
-          code: 'booking.commit.slot_unavailable',
-          params: {
-            barberId: 'b-ivan',
-            startIso: '2026-09-29T10:00:00.000+03:00',
-          },
+          errorCode: 'BOOKING_SLOT_UNAVAILABLE',
+          barberId: 'b-ivan',
+          localDate: '2026-09-29',
+          startMinutes: 600,
         },
       });
     });
   });
 
   describe('cancelAppointment', () => {
-    it('refuses an anonymous caller and a missing id as today', () => {
+    it('refuses an anonymous caller, a missing id and a reason that is no code', () => {
       expect(
         wire(
-          refusalOf(decodeCancelAppointment({ data: { appointmentId: 'a1' } })),
+          refusalOf(
+            decodeCancelAppointment({
+              data: {
+                appointmentId: 'a1',
+                reason: CancellationReason.ClientUnwell,
+              },
+            }),
+          ),
         ),
       ).toEqual({
         code: 'unauthenticated',
-        details: { code: 'booking.cancel.unauthenticated' },
+        details: { errorCode: 'BOOKING_CANCEL_UNAUTHENTICATED' },
       });
       expect(
         wire(
@@ -328,91 +491,119 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         ),
       ).toEqual({
         code: 'invalid-argument',
-        details: { code: 'booking.cancel.invalid_input' },
+        details: { errorCode: 'BOOKING_CANCEL_INVALID_INPUT' },
       });
+      // Code-only (D23): the client sends the code it files the cancel
+      // under — a typed sentence, a legacy lower-case word or nothing is no
+      // request (the web maps the typed text to its code itself).
+      for (const reason of [undefined, '  sick ', 'client_unwell', 7]) {
+        expect(
+          wire(
+            refusalOf(
+              decodeCancelAppointment({
+                ...signedIn('u1'),
+                data: { appointmentId: 'a1', reason },
+              }),
+            ),
+          ),
+        ).toEqual({
+          code: 'invalid-argument',
+          details: { errorCode: 'BOOKING_CANCEL_INVALID_INPUT' },
+        });
+      }
     });
 
-    it('files a typed sentence as OTHER and nothing as UNSPECIFIED', () => {
-      expect(
-        valueOf(
-          decodeCancelAppointment({
-            ...signedIn('u1'),
-            data: { appointmentId: 'a1', reason: '  sick ' },
-          }),
-        ),
-      ).toMatchObject({
-        appointmentId: 'a1',
-        callerUserId: 'u1',
-        reason: CancellationReason.Other,
-      });
-      expect(
-        valueOf(
-          decodeCancelAppointment({
-            ...signedIn('u1'),
-            data: { appointmentId: 'a1' },
-          }),
-        ).reason,
-      ).toBe(CancellationReason.Unspecified);
+    it('decodes the visit, the caller off the token and the code as sent', () => {
+      for (const reason of [
+        CancellationReason.Other,
+        CancellationReason.Unspecified,
+        CancellationReason.ClientUnwell,
+      ]) {
+        expect(
+          valueOf(
+            decodeCancelAppointment({
+              ...signedIn('u1'),
+              data: { appointmentId: 'a1', reason },
+            }),
+          ),
+        ).toMatchObject({ appointmentId: 'a1', callerUserId: 'u1', reason });
+      }
     });
 
-    it('answers a visit that is not there (or not theirs) as booking.cancel.not_found; the window as today', () => {
+    it('answers a visit that is not there (or not theirs) as BOOKING_CANCEL_NOT_FOUND; the window and the policy as their structs', () => {
+      const cmd = valueOf(
+        decodeCancelAppointment({
+          ...signedIn('u1'),
+          data: { appointmentId: 'a1', reason: CancellationReason.Other },
+        }),
+      );
       expect(
         wire(
-          cancelAppointmentRefusal(BookingError.invalidInput('appointmentId')),
+          cancelAppointmentRefusal(
+            BookingError.invalidInput('appointmentId'),
+            cmd,
+          ),
         ),
       ).toEqual({
         code: 'not-found',
-        details: { code: 'booking.cancel.not_found' },
+        details: { errorCode: 'BOOKING_CANCEL_NOT_FOUND' },
       });
       expect(
         wire(
-          cancelAppointmentRefusal({
-            errorCode: CancellationRefusalCode.WindowClosed,
-            windowHours: 24,
-            deadlineUtcMs: instant('2026-09-28T10:00:00.000+03:00'),
-          }),
+          cancelAppointmentRefusal(
+            CancellationRefusal.windowClosed(
+              24,
+              utcMs('2026-09-28T10:00:00.000+03:00'),
+            ),
+            cmd,
+          ),
         ),
       ).toEqual({
         code: 'failed-precondition',
-        details: {
-          code: 'booking.cancel.window_closed',
-          params: { windowHours: '24' },
-        },
+        details: { errorCode: 'BOOKING_CANCEL_WINDOW_CLOSED', windowHours: 24 },
       });
       expect(
         wire(
-          cancelAppointmentRefusal({
-            errorCode: CancellationRefusalCode.PolicyUnavailable,
-          }),
+          cancelAppointmentRefusal(
+            CancellationRefusal.policyUnavailable(),
+            cmd,
+          ),
         ),
       ).toEqual({
         code: 'unavailable',
-        details: { code: 'booking.cancel.policy_unavailable' },
+        details: { errorCode: 'BOOKING_CANCEL_POLICY_UNAVAILABLE' },
+      });
+      expect(encodeCancelAppointmentAnswer({ appointmentId: A1 })).toEqual({
+        appointmentId: 'a1',
       });
     });
   });
 
   describe('rescheduleAppointment', () => {
-    it('decodes the cart: the booker or a guest, never another account; the caller off the token', () => {
+    it('decodes the cart on the wall clock: the booker or a guest, never another account; the caller off the token', () => {
       const command = valueOf(
         decodeRescheduleAppointment({
           ...signedIn('u-client'),
           data: {
             appointmentId: 'a1',
             locationId: 'loc-center',
+            localDate: '2026-10-02',
             attemptId: ATTEMPT,
             seats: [
               {
                 serviceId: 's',
                 barberId: 'b',
-                startIso: '2026-10-02T11:00:00.000+03:00',
-                subject: { kind: 'self' },
+                startMinutes: 660,
+                subject: { requestedSubjectRole: RequestedSubjectRole.Self },
               },
               {
                 serviceId: 's',
                 barberId: 'b',
-                startIso: '2026-10-02T11:00:00.000+03:00',
-                subject: { kind: 'guest', label: 'G' },
+                startMinutes: 660,
+                subject: {
+                  requestedSubjectRole: RequestedSubjectRole.Guest,
+                  label: 'G',
+                },
               },
             ],
           },
@@ -421,18 +612,54 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       expect(command).toMatchObject({
         appointmentId: 'a1',
         callerUserId: 'u-client',
+        locationId: 'loc-center',
+        localDate: '2026-10-02',
         attemptId: ATTEMPT,
       });
       expect(
-        command.seats.map((seat) => [seat.moveSubjectRole, seat.label]),
+        command.seats.map((seat) => [
+          seat.subject.requestedSubjectRole,
+          seat.startMinutes,
+        ]),
       ).toEqual([
-        [MoveSubjectRole.Self, null],
-        [MoveSubjectRole.Guest, 'G'],
+        [RequestedSubjectRole.Self, 660],
+        [RequestedSubjectRole.Guest, 660],
       ]);
       expect(
-        valueOf(decodeRescheduleAppointment({ data: { appointmentId: 'a1' } }))
-          .callerUserId,
-      ).toBeNull();
+        valueOf(decodeRescheduleAppointment({ data: { appointmentId: 'a1' } })),
+      ).toMatchObject({ callerUserId: null, attemptId: null, seats: [] });
+    });
+
+    it('refuses a request that names no visit', () => {
+      expect(
+        wire(refusalOf(decodeRescheduleAppointment({ data: {} }))),
+      ).toEqual({
+        code: 'invalid-argument',
+        details: {
+          errorCode: 'BOOKING_INVALID_INPUT',
+          field: 'appointmentId',
+        },
+      });
+    });
+
+    it('answers the moved visit and leaves the move’s refusals as themselves', () => {
+      expect(
+        encodeRescheduleAppointmentAnswer({
+          appointmentId: A1,
+          revision: 3,
+          replayed: false,
+        }),
+      ).toEqual({ appointmentId: 'a1' });
+      expect(
+        wire(
+          rescheduleAppointmentRefusal(
+            BookingError.invalidInput('startMinutes'),
+          ),
+        ),
+      ).toEqual({
+        code: 'invalid-argument',
+        details: { errorCode: 'BOOKING_INVALID_INPUT', field: 'startMinutes' },
+      });
     });
   });
 
@@ -442,7 +669,7 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         wire(refusalOf(decodeTransitionAppointment({ data: {} }))),
       ).toEqual({
         code: 'unauthenticated',
-        details: { code: 'booking.transition.unauthenticated' },
+        details: { errorCode: 'BOOKING_TRANSITION_UNAUTHENTICATED' },
       });
       expect(
         wire(
@@ -455,25 +682,39 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         ),
       ).toEqual({
         code: 'permission-denied',
-        details: { code: 'booking.transition.forbidden' },
+        details: { errorCode: 'BOOKING_TRANSITION_FORBIDDEN' },
       });
       for (const data of [
-        { appointmentId: 'a1', to: 'pending' },
-        { appointmentId: '', to: 'confirmed' },
-        { appointmentId: 'a1', to: 'cancelled', reasonCode: 'nonsense' },
+        { appointmentId: 'a1', toBookingStatus: 'PENDING' },
+        { appointmentId: 'a1', toBookingStatus: 'cancelled' },
+        { appointmentId: '', toBookingStatus: BookingStatus.Confirmed },
         {
           appointmentId: 'a1',
-          to: 'cancelled',
-          reasonCode: 'other',
+          toBookingStatus: BookingStatus.Cancelled,
+          cancellationReason: 'nonsense',
+        },
+        {
+          appointmentId: 'a1',
+          toBookingStatus: BookingStatus.Cancelled,
+          cancellationReason: CancellationReason.Other,
           note: ' ',
         },
-        { appointmentId: 'a1', to: 'cancelled', reasonCode: 'CLIENT_UNWELL' },
+        {
+          appointmentId: 'a1',
+          toBookingStatus: BookingStatus.Cancelled,
+          cancellationReason: 'client_unwell',
+        },
+        {
+          appointmentId: 'a1',
+          toBookingStatus: BookingStatus.Completed,
+          seatId: 7,
+        },
       ]) {
         expect(
           wire(refusalOf(decodeTransitionAppointment({ ...staff, data }))),
         ).toEqual({
           code: 'invalid-argument',
-          details: { code: 'booking.transition.invalid_input' },
+          details: { errorCode: 'BOOKING_TRANSITION_INVALID_INPUT' },
         });
       }
     });
@@ -485,9 +726,10 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
             ...staff,
             data: {
               appointmentId: 'a1',
-              to: 'cancelled',
-              seatId: ' seat-2 ',
-              reasonCode: 'client_unwell',
+              toBookingStatus: BookingStatus.Cancelled,
+              seatId: 'seat-2',
+              cancellationReason: CancellationReason.ClientUnwell,
+              note: null,
             },
           }),
         ),
@@ -501,15 +743,45 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         valueOf(
           decodeTransitionAppointment({
             ...staff,
-            data: { appointmentId: 'a1', to: 'cancelled' },
+            data: {
+              appointmentId: 'a1',
+              toBookingStatus: BookingStatus.Cancelled,
+              cancellationReason: null,
+            },
           }),
         ).reason,
       ).toBe(CancellationReason.Unspecified);
+      expect(
+        valueOf(
+          decodeTransitionAppointment({
+            ...staff,
+            data: {
+              appointmentId: 'a1',
+              toBookingStatus: BookingStatus.Cancelled,
+              cancellationReason: CancellationReason.Other,
+              note: 'flooded',
+            },
+          }),
+        ).reason,
+      ).toBe(CancellationReason.Other);
+      // A verb that is no cancel carries no reason.
+      expect(
+        valueOf(
+          decodeTransitionAppointment({
+            ...staff,
+            data: {
+              appointmentId: 'a1',
+              toBookingStatus: BookingStatus.NoShow,
+              cancellationReason: CancellationReason.ClientUnwell,
+            },
+          }),
+        ),
+      ).toMatchObject({ to: BookingStatus.NoShow, seatId: null, reason: null });
     });
 
-    it('speaks the lifecycle’s refusals in the callable’s own frozen words', () => {
+    it('speaks the lifecycle’s refusals in the callable’s own codes, the states SCREAMING', () => {
       const party = {
-        appointmentId: AppointmentId.of('a1'),
+        appointmentId: A1,
         to: BookingStatus.Completed,
         seatId: null,
         reason: null,
@@ -524,7 +796,7 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         ),
       ).toEqual({
         code: 'not-found',
-        details: { code: 'booking.transition.not_found' },
+        details: { errorCode: 'BOOKING_TRANSITION_NOT_FOUND' },
       });
       expect(
         wire(
@@ -539,8 +811,9 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       ).toEqual({
         code: 'failed-precondition',
         details: {
-          code: 'booking.transition.not_allowed',
-          params: { from: 'no_show', to: 'completed' },
+          errorCode: 'BOOKING_TRANSITION_NOT_ALLOWED',
+          fromBookingStatus: 'NO_SHOW',
+          toBookingStatus: 'COMPLETED',
         },
       });
       expect(
@@ -555,7 +828,7 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         ),
       ).toEqual({
         code: 'invalid-argument',
-        details: { code: 'booking.transition.invalid_input' },
+        details: { errorCode: 'BOOKING_TRANSITION_INVALID_INPUT' },
       });
       expect(
         wire(
@@ -570,8 +843,9 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       ).toEqual({
         code: 'failed-precondition',
         details: {
-          code: 'booking.transition.not_allowed',
-          params: { from: 'resolved', to: 'no_show' },
+          errorCode: 'BOOKING_TRANSITION_NOT_ALLOWED',
+          fromBookingStatus: CallStateWord.Resolved,
+          toBookingStatus: 'NO_SHOW',
         },
       });
       expect(
@@ -583,7 +857,7 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         ),
       ).toEqual({
         code: 'not-found',
-        details: { code: 'booking.transition.not_found' },
+        details: { errorCode: 'BOOKING_TRANSITION_NOT_FOUND' },
       });
       expect(
         wire(
@@ -597,8 +871,9 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       ).toEqual({
         code: 'failed-precondition',
         details: {
-          code: 'booking.transition.reopen_window_closed',
-          params: { from: 'completed', to: 'confirmed' },
+          errorCode: 'BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED',
+          fromBookingStatus: 'COMPLETED',
+          toBookingStatus: 'CONFIRMED',
         },
       });
       expect(
@@ -616,36 +891,48 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       ).toEqual({
         code: 'failed-precondition',
         details: {
-          code: 'booking.transition.slot_taken',
-          params: { from: 'cancelled', to: 'confirmed' },
+          errorCode: 'BOOKING_TRANSITION_SLOT_TAKEN',
+          fromBookingStatus: 'CANCELLED',
+          toBookingStatus: 'CONFIRMED',
         },
       });
       expect(
+        wire(
+          transitionAppointmentRefusal(
+            SchedulingError.appointmentEmptyCancellationReason(),
+            { ...party, to: BookingStatus.Cancelled },
+          ),
+        ),
+      ).toEqual({
+        code: 'invalid-argument',
+        details: { errorCode: 'BOOKING_TRANSITION_INVALID_INPUT' },
+      });
+      expect(
         encodeTransitionAppointmentAnswer({
-          appointmentId: AppointmentId.of('a1'),
+          appointmentId: A1,
           to: BookingStatus.NoShow,
         }),
-      ).toEqual({ appointmentId: 'a1', to: 'no_show' });
+      ).toEqual({ appointmentId: 'a1', toBookingStatus: 'NO_SHOW' });
     });
   });
 
   describe('markArrived / clearArrival', () => {
-    it('refuses as today and answers today’s JSON', () => {
+    it('refuses as their own codes and answers the call component’s answers', () => {
       expect(wire(refusalOf(decodeMarkArrived({ data: {} })))).toEqual({
         code: 'unauthenticated',
-        details: { code: 'booking.arrived.unauthenticated' },
+        details: { errorCode: 'BOOKING_ARRIVED_UNAUTHENTICATED' },
       });
       expect(
         wire(refusalOf(decodeClearArrival({ ...signedIn('u1'), data: {} }))),
       ).toEqual({
         code: 'permission-denied',
-        details: { code: 'booking.arrived.forbidden' },
+        details: { errorCode: 'BOOKING_ARRIVED_FORBIDDEN' },
       });
       expect(
         wire(refusalOf(decodeMarkArrived({ ...staff, data: {} }))),
       ).toEqual({
         code: 'invalid-argument',
-        details: { code: 'booking.arrived.invalid_input' },
+        details: { errorCode: 'BOOKING_ARRIVED_INVALID_INPUT' },
       });
       expect(
         valueOf(
@@ -665,28 +952,37 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         wire(
           arrivalRefusal(
             SchedulingError.appointmentNotArrivable(BookingStatus.Completed),
-            'arrived',
+            arrival(MarkArrivalAction.Arrive),
           ),
         ),
       ).toEqual({
         code: 'failed-precondition',
         details: {
-          code: 'booking.arrived.not_allowed',
-          params: { from: 'completed', to: 'arrived' },
+          errorCode: 'BOOKING_ARRIVED_NOT_ALLOWED',
+          fromBookingStatus: 'COMPLETED',
+          toBookingStatus: CallStateWord.Arrived,
         },
       });
       expect(
         wire(
           arrivalRefusal(
+            SchedulingError.appointmentNotArrivable(BookingStatus.Cancelled),
+            arrival(MarkArrivalAction.Clear),
+          ),
+        ).details,
+      ).toMatchObject({ toBookingStatus: CallStateWord.Unarrived });
+      expect(
+        wire(
+          arrivalRefusal(
             BookingError.invalidInput('appointmentId'),
-            'unarrived',
+            arrival(MarkArrivalAction.Clear),
           ),
         ),
       ).toEqual({
         code: 'not-found',
-        details: { code: 'booking.arrived.not_found' },
+        details: { errorCode: 'BOOKING_ARRIVED_NOT_FOUND' },
       });
-      const answer = { appointmentId: AppointmentId.of('a1'), unchanged: true };
+      const answer = { appointmentId: A1, unchanged: true };
       expect(encodeMarkArrivedAnswer(answer)).toEqual({
         appointmentId: 'a1',
         alreadyArrived: true,
@@ -699,12 +995,12 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
   });
 
   describe('recordSeatTip', () => {
-    it('takes null to clear, a whole non-negative figure to record, and refuses anything else', () => {
+    it('takes null to clear, a whole non-negative figure in cents to record, and refuses anything else', () => {
       expect(
         valueOf(
           decodeRecordSeatTip({
             ...staff,
-            data: { appointmentId: 'a1', seatId: 's1', amountMinorUnits: 250 },
+            data: { appointmentId: 'a1', seatId: 's1', amountCents: 250 },
           }),
         ),
       ).toMatchObject({ tipCents: 250 });
@@ -712,45 +1008,66 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         valueOf(
           decodeRecordSeatTip({
             ...staff,
-            data: { appointmentId: 'a1', seatId: 's1' },
+            data: { appointmentId: 'a1', seatId: 's1', amountCents: null },
           }),
         ).tipCents,
       ).toBeNull();
-      for (const amountMinorUnits of [-1, 2.5, '3']) {
+      // The legacy `amountMinorUnits` is no field the flipped wire reads.
+      expect(
+        valueOf(
+          decodeRecordSeatTip({
+            ...staff,
+            data: { appointmentId: 'a1', seatId: 's1', amountMinorUnits: 250 },
+          }),
+        ).tipCents,
+      ).toBeNull();
+      for (const amountCents of [-1, 2.5, '3']) {
         expect(
           wire(
             refusalOf(
               decodeRecordSeatTip({
                 ...staff,
-                data: { appointmentId: 'a1', seatId: 's1', amountMinorUnits },
+                data: { appointmentId: 'a1', seatId: 's1', amountCents },
               }),
             ),
           ),
         ).toEqual({
           code: 'invalid-argument',
-          details: { code: 'booking.tip.invalid_input' },
+          details: { errorCode: 'BOOKING_TIP_INVALID_INPUT' },
         });
       }
       expect(wire(refusalOf(decodeRecordSeatTip({ data: {} })))).toEqual({
         code: 'unauthenticated',
-        details: { code: 'booking.tip.unauthenticated' },
+        details: { errorCode: 'BOOKING_TIP_UNAUTHENTICATED' },
+      });
+      expect(
+        wire(refusalOf(decodeRecordSeatTip({ ...signedIn('u1'), data: {} }))),
+      ).toEqual({
+        code: 'permission-denied',
+        details: { errorCode: 'BOOKING_TIP_FORBIDDEN' },
       });
     });
 
-    it('answers no visit or no seat as booking.tip.not_found, and today’s JSON', () => {
+    it('answers no visit or no seat as BOOKING_TIP_NOT_FOUND, and the call component’s answer', () => {
       expect(
         wire(
           recordSeatTipRefusal(
             SchedulingError.appointmentUnknownSeat(SeatId.of('s9')),
+            TIP,
           ),
         ),
       ).toEqual({
         code: 'not-found',
-        details: { code: 'booking.tip.not_found' },
+        details: { errorCode: 'BOOKING_TIP_NOT_FOUND' },
       });
       expect(
+        wire(
+          recordSeatTipRefusal(BookingError.invalidInput('appointmentId'), TIP),
+        ).details,
+      ).toEqual({ errorCode: 'BOOKING_TIP_NOT_FOUND' });
+      expect(
         encodeRecordSeatTipAnswer({
-          appointmentId: AppointmentId.of('a1'),
+          appointmentId: A1,
           seatId: SeatId.of('s1'),
           unchanged: false,
         }),
@@ -764,12 +1081,16 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         ...signedIn('u-desk', ['receptionist']),
         data,
       });
+    const one = (command: Record<string, unknown>) => ({
+      appointmentId: 'a1',
+      commands: [command],
+    });
 
     it('refuses before anything is read: anonymous, role-less, no visit, a malformed name or version', () => {
       expect(wire(refusalOf(decodeStaffEditAppointment({ data: {} })))).toEqual(
         {
           code: 'unauthenticated',
-          details: { code: 'booking.staffEdit.unauthenticated', params: {} },
+          details: { errorCode: StaffEditErrorCode.Unauthenticated },
         },
       );
       // `mayBook`, not `isStaff`: a role-less caller, a plain client and the
@@ -786,164 +1107,188 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
           ),
         ).toEqual({
           code: 'permission-denied',
-          details: { code: 'booking.staffEdit.forbidden', params: {} },
+          details: { errorCode: StaffEditErrorCode.Forbidden },
         });
       }
+      const move = {
+        editCommand: EditCommand.Move,
+        localDate: '2026-10-01',
+        startMinutes: 660,
+      };
       for (const [data, fieldName] of [
         [{}, 'appointmentId'],
-        [{ appointmentId: 'a1', operationId: 'short' }, 'operationId'],
-        [{ appointmentId: 'a1', operationId: 7 }, 'operationId'],
-        [{ appointmentId: 'a1', expectedVersion: -1 }, 'expectedVersion'],
-        [{ appointmentId: 'a1', expectedVersion: '2' }, 'expectedVersion'],
-        [{ appointmentId: 'a1', expectedVersion: 1.5 }, 'expectedVersion'],
-        [{ appointmentId: 'a1', expectedVersion: true }, 'expectedVersion'],
-        [{ appointmentId: 'a1', expectedVersion: {} }, 'expectedVersion'],
-        [{ appointmentId: 'a1', operationId: '' }, 'operationId'],
+        [{ ...one(move), operationId: 'short' }, 'operationId'],
+        [{ ...one(move), operationId: 7 }, 'operationId'],
+        [{ ...one(move), expectedVersion: -1 }, 'expectedVersion'],
+        [{ ...one(move), expectedVersion: '2' }, 'expectedVersion'],
+        [{ ...one(move), expectedVersion: 1.5 }, 'expectedVersion'],
+        [{ ...one(move), expectedVersion: true }, 'expectedVersion'],
+        [{ ...one(move), expectedVersion: {} }, 'expectedVersion'],
+        [{ ...one(move), operationId: '' }, 'operationId'],
         [
-          { appointmentId: 'a1', operationId: 'has spaces in it, sixteen+' },
+          { ...one(move), operationId: 'has spaces in it, sixteen+' },
           'operationId',
         ],
-        [{ appointmentId: 'a1', operationId: 'x'.repeat(65) }, 'operationId'],
+        [{ ...one(move), operationId: 'x'.repeat(65) }, 'operationId'],
         [
-          {
-            appointmentId: 'a1',
-            operationId: { id: 'operation-0123456789ab' },
-          },
+          { ...one(move), operationId: { id: 'operation-0123456789ab' } },
           'operationId',
         ],
-        [{ appointmentId: 'a1', command: {} }, 'kind'],
-        [{ appointmentId: 'a1', command: [] }, 'command'],
-        [{ appointmentId: 'a1', command: { kind: 'teleport' } }, 'kind'],
+        [{ appointmentId: 'a1' }, 'commands'],
+        [{ appointmentId: 'a1', commands: [] }, 'commands'],
+        // The legacy lone `command` is no request: always an array.
+        [{ appointmentId: 'a1', command: move }, 'commands'],
+        [{ appointmentId: 'a1', commands: move }, 'commands'],
+        [one({}), 'editCommand'],
+        [one({ editCommand: 'TELEPORT' }), 'editCommand'],
+        [one({ editCommand: 'move' }), 'editCommand'],
+        [one({ ...move, localDate: 'soon' }), 'localDate'],
+        [one({ ...move, startMinutes: 1440 }), 'startMinutes'],
+        [one({ ...move, startMinutes: 600.5 }), 'startMinutes'],
+        [one({ ...move, seatIds: [] }), 'seatIds'],
         [
-          { appointmentId: 'a1', command: { kind: 'move', startIso: 'soon' } },
-          'startIso',
+          one({
+            editCommand: EditCommand.Resize,
+            resizeEdge: 'top',
+            localDate: '2026-10-01',
+            atMinutes: 660,
+          }),
+          'resizeEdge',
         ],
         [
-          {
-            appointmentId: 'a1',
-            command: {
-              kind: 'move',
-              startIso: '2026-10-01T11:00:00+03:00',
-              seatIds: [],
-            },
-          },
-          'seatIds',
+          one({
+            editCommand: EditCommand.Resize,
+            resizeEdge: ResizeEdge.Start,
+            localDate: '2026-10-01',
+            atMinutes: 1440,
+          }),
+          'atMinutes',
         ],
         [
-          {
-            appointmentId: 'a1',
-            command: {
-              kind: 'resize',
-              edge: 'top',
-              atIso: '2026-10-01T11:00:00+03:00',
-            },
-          },
-          'edge',
+          one({
+            editCommand: EditCommand.Resize,
+            resizeEdge: ResizeEdge.End,
+            localDate: '2026-10-01',
+            atMinutes: 0,
+          }),
+          'atMinutes',
         ],
         [
-          {
-            appointmentId: 'a1',
-            command: { kind: 'reprice', seatId: 's1', priceMinorUnits: 1.5 },
-          },
-          'priceMinorUnits',
+          one({
+            editCommand: EditCommand.Reprice,
+            seatId: 's1',
+            priceCents: 1.5,
+          }),
+          'priceCents',
         ],
         [
-          {
-            appointmentId: 'a1',
-            command: { kind: 'redurate', seatId: 's1', minutes: 0 },
-          },
-          'minutes',
+          one({
+            editCommand: EditCommand.Redurate,
+            seatId: 's1',
+            durationMinutes: 0,
+          }),
+          'durationMinutes',
         ],
         [
-          {
-            appointmentId: 'a1',
-            command: { kind: 'restaff', seatId: 's1', barberId: ' ' },
-          },
+          one({
+            editCommand: EditCommand.Restaff,
+            seatId: 's1',
+            barberId: ' ',
+          }),
           'barberId',
         ],
-        [{ appointmentId: 'a1', command: { kind: 'removeSeat' } }, 'seatId'],
+        [one({ editCommand: EditCommand.RemoveSeat }), 'seatId'],
         [
-          {
-            appointmentId: 'a1',
-            command: { kind: 'relocate', locationId: '' },
-          },
+          one({ editCommand: EditCommand.Relocate, locationId: '' }),
           'locationId',
         ],
         [
-          {
-            appointmentId: 'a1',
-            command: {
-              kind: 'discounts',
-              discounts: [
-                {
-                  source: 'manual',
-                  value: { kind: 'percent_off', percent: 12.5 },
-                },
-              ],
-            },
-          },
+          one({
+            editCommand: EditCommand.Discounts,
+            discounts: [
+              {
+                discountSource: DiscountSource.Manual,
+                discountMethod: DiscountMethod.PercentOff,
+                discountPercent: 12.5,
+              },
+            ],
+          }),
           'discounts',
         ],
         [
-          {
-            appointmentId: 'a1',
-            command: { kind: 'vouchers', codes: ['GIFT50', ' gift50 '] },
-          },
-          'vouchers',
+          one({
+            editCommand: EditCommand.Vouchers,
+            codes: ['GIFT50', ' gift50 '],
+          }),
+          'codes',
         ],
         [
-          {
-            appointmentId: 'a1',
-            command: {
-              kind: 'addSeat',
-              seatId: 's9',
-              serviceId: 'svc',
-              barberId: 'b',
-              startIso: '2026-10-01T12:00:00+03:00',
-              minutes: 30,
-              subject: { kind: 'guest', label: '' },
+          one({
+            editCommand: EditCommand.AddSeat,
+            seatId: 's9',
+            serviceId: 'svc',
+            barberId: 'b',
+            localDate: '2026-10-01',
+            startMinutes: 720,
+            durationMinutes: 30,
+            addedSubject: {
+              requestedSubjectRole: RequestedSubjectRole.Guest,
+              label: '',
             },
-          },
-          'subject',
+          }),
+          'addedSubject',
         ],
       ] as const) {
         expect(wire(refusalOf(edit(data)))).toEqual({
           code: 'invalid-argument',
           details: {
-            code: 'booking.staffEdit.invalid_command',
-            params: { field: fieldName },
+            errorCode: StaffEditErrorCode.InvalidCommand,
+            field: fieldName,
           },
         });
       }
     });
 
-    it('decodes a batch: instants, a rounded resize, the discounts and the normalised voucher codes', () => {
+    it('decodes a batch on the wall clock: a move, a resize’s handle, the discounts and the normalised voucher codes', () => {
       const command = valueOf(
         edit({
           appointmentId: 'a1',
           operationId: 'operation-0123456789ab',
           expectedVersion: 3,
           acknowledgedOverlap: true,
-          command: [
-            { kind: 'move', startIso: '2026-10-01T11:00:00.000+03:00' },
+          commands: [
             {
-              kind: 'resize',
-              edge: 'end',
-              atIso: '2026-10-01T11:44:40.000+03:00',
+              editCommand: EditCommand.Move,
+              localDate: '2026-10-01',
+              startMinutes: 660,
+              seatIds: null,
+            },
+            {
+              editCommand: EditCommand.Resize,
+              resizeEdge: ResizeEdge.End,
+              localDate: '2026-10-01',
+              atMinutes: 705,
               seatIds: ['s1'],
             },
             {
-              kind: 'discounts',
+              editCommand: EditCommand.Resize,
+              resizeEdge: ResizeEdge.Start,
+              localDate: '2026-10-01',
+              atMinutes: 650,
+            },
+            {
+              editCommand: EditCommand.Discounts,
               discounts: [
-                { source: 'grant', grantId: 'g1' },
-                { source: 'code', code: ' autumn10 ' },
+                { discountSource: DiscountSource.Grant, grantId: 'g1' },
+                { discountSource: DiscountSource.Code, code: ' autumn10 ' },
                 {
-                  source: 'manual',
-                  value: { kind: 'fixed_amount', amountMinorUnits: 500 },
+                  discountSource: DiscountSource.Manual,
+                  discountMethod: DiscountMethod.FixedAmount,
+                  discountAmountCents: 500,
                 },
               ],
             },
-            { kind: 'vouchers', codes: [' gift50 '] },
+            { editCommand: EditCommand.Vouchers, codes: [' gift50 '] },
           ],
         }),
       );
@@ -957,14 +1302,23 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       expect(command.commands).toEqual([
         {
           editCommand: EditCommand.Move,
-          startUtcMs: instant('2026-10-01T11:00:00.000+03:00'),
+          localDate: localDate('2026-10-01'),
+          startMinutes: minute(660),
           seatIds: null,
         },
         {
           editCommand: EditCommand.Resize,
           resizeEdge: ResizeEdge.End,
-          atUtcMs: instant('2026-10-01T11:45:00.000+03:00'),
+          localDate: localDate('2026-10-01'),
+          atMinutes: endMinute(705),
           seatIds: [SeatId.of('s1')],
+        },
+        {
+          editCommand: EditCommand.Resize,
+          resizeEdge: ResizeEdge.Start,
+          localDate: localDate('2026-10-01'),
+          atMinutes: minute(650),
+          seatIds: null,
         },
         {
           editCommand: EditCommand.Discounts,
@@ -991,36 +1345,41 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       ]);
     });
 
-    it('a lone command needs no array; an added seat is the owner’s or a guest’s', () => {
+    it('an added seat is the owner’s or a guest’s; an absent claim and name are none', () => {
       const command = valueOf(
-        edit({
-          appointmentId: 'a1',
-          command: {
-            kind: 'addSeat',
+        edit(
+          one({
+            editCommand: EditCommand.AddSeat,
             seatId: 's9',
             serviceId: 'svc',
             barberId: 'b-ivan',
-            startIso: '2026-10-01T12:00:00.000+03:00',
-            minutes: 30,
-            subject: { kind: 'self' },
-          },
-        }),
+            localDate: '2026-10-01',
+            startMinutes: 720,
+            durationMinutes: 30,
+            addedSubject: { requestedSubjectRole: RequestedSubjectRole.Self },
+          }),
+        ),
       );
-      expect(command.commands[0]).toMatchObject({
+      expect(command.commands[0]).toEqual({
         editCommand: EditCommand.AddSeat,
         seatId: 's9',
+        serviceId: 'svc',
         variantId: null,
+        barberId: 'b-ivan',
+        localDate: '2026-10-01',
+        startMinutes: 720,
+        durationMinutes: 30,
         addedSubject: { requestedSubjectRole: RequestedSubjectRole.Self },
       });
       expect(command.operationId).toBeNull();
       expect(command.expectedVersion).toBeNull();
-      // An explicit `null` is no claim and no name either — an older client.
+      expect(command.acknowledgedOverlap).toBe(false);
+      // An explicit `null` is no claim and no name either.
       const unclaimed = valueOf(
         edit({
-          appointmentId: 'a1',
+          ...one({ editCommand: EditCommand.RemoveSeat, seatId: 's1' }),
           expectedVersion: null,
           operationId: null,
-          command: { kind: 'removeSeat', seatId: 's1' },
         }),
       );
       expect(unclaimed).toMatchObject({
@@ -1031,39 +1390,38 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
       expect(
         valueOf(
           edit({
-            appointmentId: 'a1',
+            ...one({ editCommand: EditCommand.RemoveSeat, seatId: 's1' }),
             expectedVersion: 0,
-            command: { kind: 'removeSeat', seatId: 's1' },
           }),
         ).expectedVersion,
       ).toBe(0);
     });
 
-    it('names an overlap’s handle in today’s words and answers today’s JSON', () => {
+    it('names an overlap’s handle as the struct holds it and answers the call component’s answer', () => {
       expect(
         wire(
-          staffEditAppointmentRefusal({
-            errorCode: StaffEditErrorCode.Overlaps,
-            barberId: BarberId.of('b-ivan'),
-            localDate: localDate('2026-10-01'),
-            startMinutes: minute(600),
-            edge: ResizeEdge.End,
-          }),
+          staffEditAppointmentRefusal(
+            StaffEditError.overlaps(
+              BarberId.of('b-ivan'),
+              localDate('2026-10-01'),
+              minute(600),
+              ResizeEdge.End,
+            ),
+          ),
         ),
       ).toEqual({
         code: 'failed-precondition',
         details: {
-          code: 'booking.staffEdit.overlaps',
-          params: {
-            barberId: 'b-ivan',
-            startIso: '2026-10-01T10:00:00.000+03:00',
-            edge: 'end',
-          },
+          errorCode: StaffEditErrorCode.Overlaps,
+          barberId: 'b-ivan',
+          localDate: '2026-10-01',
+          startMinutes: 600,
+          resizeEdge: 'END',
         },
       });
       expect(
         encodeStaffEditAppointmentAnswer({
-          appointmentId: AppointmentId.of('a1'),
+          appointmentId: A1,
           revision: 4,
           replayed: true,
         }),
@@ -1071,86 +1429,34 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
     });
   });
 
-  describe('a refused field in today’s words', () => {
-    const invalidInput = (field: string) => ({
-      code: 'invalid-argument',
-      details: { code: 'booking.commit.invalid_input', params: { field } },
-    });
-    const invalidCommand = (field: string) => ({
-      code: 'invalid-argument',
-      details: { code: 'booking.staffEdit.invalid_command', params: { field } },
-    });
-
-    it('answers the seat start (as a minute of the day or an instant) as startIso', () => {
-      expect(
-        wire(commitBookingRefusal(BookingError.invalidInput('startMinutes'))),
-      ).toEqual(invalidInput('startIso'));
-      expect(
-        wire(
-          rescheduleAppointmentRefusal(BookingError.invalidInput('startUtcMs')),
-        ),
-      ).toEqual(invalidInput('startIso'));
-      expect(
-        wire(
-          rescheduleAppointmentRefusal(
-            BookingError.invalidInput('startMinutes'),
+  describe('a refused field as the refusal names it (LEGACY_FIELD_OF deleted)', () => {
+    it('leaves every field — a start, a handle, the stored lifecycle — as the struct holds it, never renamed', () => {
+      for (const name of [
+        'startMinutes',
+        'bookingStatus',
+        'person_overlap',
+        'window_closed',
+      ]) {
+        expect(
+          wire(rescheduleAppointmentRefusal(BookingError.invalidInput(name))),
+        ).toEqual({
+          code: 'invalid-argument',
+          details: { errorCode: BookingErrorCode.InvalidInput, field: name },
+        });
+      }
+      for (const name of ['atMinutes', 'startMinutes', 'durationMinutes']) {
+        expect(
+          wire(
+            staffEditAppointmentRefusal(StaffEditError.invalidCommand(name)),
           ),
-        ),
-      ).toEqual(invalidInput('startIso'));
-      expect(
-        wire(
-          staffEditAppointmentRefusal(
-            StaffEditError.invalidCommand('startUtcMs'),
-          ),
-        ),
-      ).toEqual(invalidCommand('startIso'));
-      expect(
-        wire(
-          staffEditAppointmentRefusal(
-            BookingError.invalidInput('startMinutes'),
-          ),
-        ),
-      ).toEqual(invalidInput('startIso'));
-    });
-
-    it('answers a resize handle as atIso and the stored lifecycle as status', () => {
-      expect(
-        wire(
-          staffEditAppointmentRefusal(StaffEditError.invalidCommand('atUtcMs')),
-        ),
-      ).toEqual(invalidCommand('atIso'));
-      expect(
-        wire(
-          staffEditAppointmentRefusal(
-            BookingError.invalidInput('bookingStatus'),
-          ),
-        ),
-      ).toEqual(invalidInput('status'));
-      expect(
-        wire(
-          rescheduleAppointmentRefusal(
-            BookingError.invalidInput('bookingStatus'),
-          ),
-        ),
-      ).toEqual(invalidInput('status'));
-    });
-
-    it('leaves every other field as the refusal names it', () => {
-      expect(
-        wire(commitBookingRefusal(BookingError.invalidInput('person_overlap'))),
-      ).toEqual(invalidInput('person_overlap'));
-      expect(
-        wire(
-          rescheduleAppointmentRefusal(
-            BookingError.invalidInput('window_closed'),
-          ),
-        ),
-      ).toEqual(invalidInput('window_closed'));
-      expect(
-        wire(
-          staffEditAppointmentRefusal(StaffEditError.invalidCommand('minutes')),
-        ),
-      ).toEqual(invalidCommand('minutes'));
+        ).toEqual({
+          code: 'invalid-argument',
+          details: {
+            errorCode: StaffEditErrorCode.InvalidCommand,
+            field: name,
+          },
+        });
+      }
     });
   });
 
@@ -1158,19 +1464,25 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
     it('throws a store failure from every refusal — the edge answers it as an unexpected throw, never a refusal', () => {
       const down = RepositoryError.writeFailed('appointments/a1', 'aborted');
       const party = {
-        appointmentId: AppointmentId.of('a1'),
+        appointmentId: A1,
         to: BookingStatus.Cancelled,
         seatId: null,
         reason: CancellationReason.ClientUnwell,
         actor: null,
       };
+      const cancel = {
+        appointmentId: A1,
+        callerUserId: UserId.of('u1'),
+        reason: CancellationReason.Other,
+        actor: null,
+      };
       const refusals: readonly (() => EdgeError)[] = [
         () => commitBookingRefusal(down),
-        () => cancelAppointmentRefusal(down),
+        () => cancelAppointmentRefusal(down, cancel),
         () => rescheduleAppointmentRefusal(down),
         () => transitionAppointmentRefusal(down, party),
-        () => arrivalRefusal(down, 'arrived'),
-        () => recordSeatTipRefusal(down),
+        () => arrivalRefusal(down, arrival(MarkArrivalAction.Arrive)),
+        () => recordSeatTipRefusal(down, TIP),
         () => staffEditAppointmentRefusal(down),
       ];
       for (const refuse of refusals) {
@@ -1181,9 +1493,15 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
     });
 
     it('settles a pipeline result: the answer encoded, a refusal in the callable’s words', () => {
+      const cancel = {
+        appointmentId: A1,
+        callerUserId: UserId.of('u1'),
+        reason: CancellationReason.Other,
+        actor: null,
+      };
       expect(
         settle(
-          Result.ok({ appointmentId: AppointmentId.of('a1'), replayed: true }),
+          Result.ok({ appointmentId: A1, replayed: true }),
           encodeCommitBookingAnswer,
           commitBookingRefusal,
         ),
@@ -1192,9 +1510,12 @@ describe('booking.wire — the frozen callable wire (F1-3)', () => {
         settle(
           Result.err(BookingError.invalidInput('appointmentId')),
           encodeCancelAppointmentAnswer,
-          cancelAppointmentRefusal,
+          (error) => cancelAppointmentRefusal(error, cancel),
         ),
-      ).toEqual({ ok: false, error: { code: 'booking.cancel.not_found' } });
+      ).toEqual({
+        ok: false,
+        error: CancellationRefusal.notFound(A1),
+      });
     });
   });
 

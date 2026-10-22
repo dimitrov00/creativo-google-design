@@ -208,7 +208,8 @@
     }
 
     <!-- ── CALENDAR ──────────────────────────────────────────────────── -->
-    @else { @switch (store.upcoming().kind) { @case ('loading') {
+    @else { @switch (store.upcoming().appointmentsViewState) { @case
+    (ViewState.Loading) {
     <ui-stack
       uiSpacing="comfortable"
       class="appointments__status"
@@ -218,7 +219,7 @@
       <ui-skeleton uiFrame uiFrameHeight="8rem" />
       <ui-skeleton uiFrame uiFrameHeight="8rem" />
     </ui-stack>
-    } @case ('error') {
+    } @case (ViewState.Error) {
     <!-- The list's own failure grammar: what did not load, and the one
          retry word of the stack. -->
     <ui-notice

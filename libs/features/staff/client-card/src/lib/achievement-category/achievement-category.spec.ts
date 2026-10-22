@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { AchievementScope } from '../client-card.contracts';
+import { AchievementScope } from '../client-card.contracts';
 import {
   GEORGI,
   catalogPortsOf,
@@ -70,7 +70,7 @@ async function mount(
 }
 
 const MASTERY: AchievementScope = {
-  kind: 'category',
+  achievementScope: AchievementScope.Category,
   categoryId: 'cat-mastery',
 };
 
@@ -195,7 +195,7 @@ describe('AchievementCategoryPage — a category, pushed', () => {
 
   it('sections the barbers’ shelf into barbers, shops and the rest', async () => {
     const { sections, byId, text } = await mount({
-      kind: 'category',
+      achievementScope: AchievementScope.Category,
       categoryId: 'cat-barbers',
     });
     expect(text(byId('achievements-scope-subline'))).toBe(
@@ -212,7 +212,7 @@ describe('AchievementCategoryPage — a category, pushed', () => {
 
   it('draws a shelf with nothing to split as one grid named by the page’s title', async () => {
     const { byId, sections } = await mount({
-      kind: 'category',
+      achievementScope: AchievementScope.Category,
       categoryId: 'cat-special',
     });
     const [only] = sections();
@@ -312,7 +312,7 @@ describe('AchievementCategoryPage — a category, pushed', () => {
   it('follows its scope when the editor hands it another', async () => {
     const { fixture, byId, text, render } = await mount(MASTERY);
     fixture.componentRef.setInput('scope', {
-      kind: 'category',
+      achievementScope: AchievementScope.Category,
       categoryId: 'cat-rhythm',
     });
     await render();
@@ -365,7 +365,7 @@ describe('AchievementCategoryPage — a category, embedded under the chips (§2.
 describe('AchievementCategoryPage — a season', () => {
   it('puts the running season’s medal in its ring and its step track above its families on a white card: the ladder is drawn HERE', async () => {
     const { byId, text, sections } = await mount({
-      kind: 'season',
+      achievementScope: AchievementScope.Season,
       seasonId: 'season-2026-autumn',
     });
     expect(text(byId('achievements-scope-title'))).toBe('Есен 2026');
@@ -405,7 +405,7 @@ describe('AchievementCategoryPage — a season', () => {
 
   it('lists only what was earned in an ended season, its track the levels reached; the level it closed on is drawn, not written', async () => {
     const { byId, text, sections } = await mount({
-      kind: 'season',
+      achievementScope: AchievementScope.Season,
       seasonId: 'season-2026-summer',
     });
     expect(text(byId('achievements-scope-title'))).toBe('Лято 2026');
@@ -436,7 +436,7 @@ describe('AchievementCategoryPage — a season', () => {
 describe('AchievementCategoryPage — the archive and a day', () => {
   it('files the ended seasons by year, each opening its own season', async () => {
     const { byId, text, sections, scopes, medals } = await mount({
-      kind: 'archive',
+      achievementScope: AchievementScope.Archive,
     });
     expect(text(byId('achievements-scope-title'))).toBe(
       'Минали сезони и събития',
@@ -459,14 +459,17 @@ describe('AchievementCategoryPage — the archive and a day', () => {
     ).toBe('1.06 – 31.08');
     summer?.click();
     expect(scopes).toEqual([
-      { kind: 'season', seasonId: 'season-2026-summer' },
+      {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'season-2026-summer',
+      },
     ]);
     expect(medals).toEqual([]);
   });
 
   it('lists the families a day moved', async () => {
     const { byId, text, sections } = await mount({
-      kind: 'day',
+      achievementScope: AchievementScope.Day,
       day: '2026-09-28',
     });
     expect(text(byId('achievements-scope-title'))).toBe('Спечелени на 28.09');
@@ -478,7 +481,10 @@ describe('AchievementCategoryPage — the archive and a day', () => {
   });
 
   it('never marks a scope’s medal «Ново»: the overview is where a level is new', async () => {
-    const today = await mount({ kind: 'day', day: '2026-09-28' });
+    const today = await mount({
+      achievementScope: AchievementScope.Day,
+      day: '2026-09-28',
+    });
     const grids = today.all('.achievement-category__grid');
     expect(grids.length).toBeGreaterThan(0);
     expect(
@@ -491,7 +497,7 @@ describe('AchievementCategoryPage — states', () => {
   it('titles the archive at once and holds six discs on a white card while the catalogue is on its way', async () => {
     const catalog = heldCatalogPorts();
     const { byId, text, render } = await mount(
-      { kind: 'archive' },
+      { achievementScope: AchievementScope.Archive },
       { rig: { catalog } },
     );
     expect(text(byId('achievements-scope-title'))).toBe(
@@ -535,7 +541,7 @@ describe('AchievementCategoryPage — states', () => {
 
   it('draws nothing false for a scope the catalogue does not hold', async () => {
     const { byId, text, sections } = await mount({
-      kind: 'category',
+      achievementScope: AchievementScope.Category,
       categoryId: 'cat-gone',
     });
     expect(byId('achievements-error')).not.toBeNull();

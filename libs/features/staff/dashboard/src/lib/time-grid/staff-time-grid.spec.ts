@@ -1962,18 +1962,21 @@ describe("the all-day chip's ink", () => {
     const n = parseInt(hex ?? '000000', 16);
     return [n >> 16, (n >> 8) & 255, n & 255];
   };
-  const luminance = (rgb: readonly [number, number, number]): number => {
-    const [r, g, b] = rgb.map((channel) => {
+  const luminance = ([r, g, b]: readonly [number, number, number]): number => {
+    const linear = (channel: number): number => {
       const c = channel / 255;
       return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
   };
   const contrast = (
     a: readonly [number, number, number],
     b: readonly [number, number, number],
   ): number => {
-    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    const first = luminance(a);
+    const second = luminance(b);
+    const hi = Math.max(first, second);
+    const lo = Math.min(first, second);
     return (hi + 0.05) / (lo + 0.05);
   };
   const over = (

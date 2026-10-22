@@ -8,7 +8,6 @@ import type {
   PipelineError,
   RepositoryError,
   Result,
-  OtpId,
   TenantId,
   UserId,
   UtcEpochMs,
@@ -50,11 +49,6 @@ export type LoadOpenOtps = (
   destination: Identifier,
   sinceUtcMs: UtcEpochMs,
 ) => Promise<Result<readonly Otp[], RepositoryError>>;
-
-/** `otps/{id}` — `null` when absent (an unknown or purged challenge). */
-export type LoadOtp = (
-  id: OtpId,
-) => Promise<Result<Otp | null, RepositoryError>>;
 
 /**
  * `otps/{id}` `Set` — the issued or updated challenge; the adapter stamps
@@ -169,17 +163,6 @@ export type MintCustomToken = (
 ) => Promise<Result<string, PipelineError>>;
 
 /**
- * Replace the user's custom claims. No pipeline calls it after the identity
- * flip: `completeRegistration` MINTS a token carrying the active claims
- * instead (a claims-set beside a mint for one uid breaks the Auth
- * emulator's next sign-in). Kept for Phase 4's role grants.
- */
-export type SetClaims = (
-  uid: UserId,
-  claims: AuthClaims,
-) => Promise<Result<void, PipelineError>>;
-
-/**
  * The Auth user's display name — what the header/menu account monogram reads
  * through `AuthGateway.currentDisplayName()` (session-cached, no Firestore
  * read). `completeRegistration` calls it after the registered `Set` with
@@ -212,7 +195,6 @@ export type TenantPorts = {
 /** The OTP challenges' store. */
 export type OtpStorePorts = {
   readonly loadOpenOtps: LoadOpenOtps;
-  readonly loadOtp: LoadOtp;
   readonly saveOtp: SaveOtp;
 };
 
@@ -239,11 +221,10 @@ export type AuthUserLookupPorts = {
 /** An account by its sign-in destination, in Firestore and in Auth — two adapters, one suite. */
 export type UserDirectoryPorts = UserLookupPorts & AuthUserLookupPorts;
 
-/** Firebase Auth's admin writes — provision, token, claims, display name. */
+/** Firebase Auth's admin writes — provision, token, display name (no role grant in Phase 4, 4A-14). */
 export type AuthAdminPorts = {
   readonly provisionAuthUser: ProvisionAuthUser;
   readonly mintCustomToken: MintCustomToken;
-  readonly setClaims: SetClaims;
   readonly setDisplayName: SetDisplayName;
 };
 
@@ -252,7 +233,7 @@ export type AuthAdminPorts = {
  * channel `requestOtp` accepts, the OTP policy, the fields registration
  * requires): a value the composition root says in one place
  * (`AuthDeployment.DEFAULT` today), not a read — configuration as a bundle,
- * as `TenantZonePorts` is.
+ * as `DefaultLocationPorts` is.
  */
 export type AuthDeploymentPorts = {
   readonly authDeployment: AuthDeployment;

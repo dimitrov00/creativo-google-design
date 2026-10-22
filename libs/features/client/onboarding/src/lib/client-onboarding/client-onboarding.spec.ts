@@ -6,56 +6,66 @@ import {
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
+import { BehaviorSubject, Observable, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  AUTH_DEPLOYMENT,
-  AUTH_GATEWAY,
   AuthDeployment,
-  DEFAULT_AUTH_DEPLOYMENT,
-  Identifier,
-  OTP_CLIENT,
-  ZonedDateTime,
-  createAuthStrategy,
-  examplePhoneNumber,
-  ok,
-  reconstituteIdentifier,
-} from '@creativo/application/identity';
-import { CLOCK, RepositoryError } from '@creativo/application/shared';
-import {
-  MEDIA_READER,
+  AuthStrategy,
+  AuthStrategyKind,
+  type CountryIso2,
+  Email,
+  E164,
   type MediaRef,
-  MediaUnavailableError,
-  type MediaReadError,
-  type MediaReader,
-  type MediaVariant,
-  type Result,
-} from '@creativo/application/catalog';
-import {
-  CATALOG_PORTS,
-  PROFILE_PORTS,
-} from '@creativo/infrastructure/firebase-app';
-import { BirthDate } from '@core/components';
+  ParsedIdentifier,
+  type Principal,
+  RegistrationField,
+} from '@core/components';
 import type { Service, User } from '@core/entities';
-import type { LoadProfile, ProfilePorts } from '@core/ports';
+import {
+  Callables,
+  type LoadProfile,
+  type MediaResolvePorts,
+  type MediaVariant,
+} from '@core/ports';
 import {
   IdentityErrorCode,
+  MediaError,
   MediaRefId,
-  Result as EcsResult,
-  RepositoryError as EcsRepositoryError,
+  PipelineError,
+  Result,
   ServiceId,
-  UserId,
+  type UserId,
 } from '@core/primitives';
+import { PhoneSystem } from '@core/systems';
 import {
+  type GatewayCall,
+  type OtpChallengeCall,
+  immediateTimerPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
   memoryCatalogReadPorts,
+  memoryClockPorts,
+  memoryOtpChallengePorts,
   memoryProfilePorts,
+  principalFixture,
   registeredUserFixture,
+  scriptedGatewayPorts,
   serviceFixture,
   termsFixture,
+  utcMs,
 } from '@core/testing';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
-import { fail } from '@creativo/application/identity';
-import { AvatarUploadError } from '@creativo/application/accounts';
+import {
+  AUTH_DEPLOYMENT_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+  CATALOG_PORTS,
+  CLOCK_PORTS,
+  GATEWAY_PORTS,
+  MEDIA_RESOLVE_PORTS,
+  OTP_CHALLENGE_PORTS,
+  PROFILE_PORTS,
+  TIMER_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { SessionIdentityService } from '@creativo/features/shared/shell';
 import { CatalogContentService } from '@creativo/features/shared/catalog';
 import { ClientOnboarding } from './client-onboarding';
@@ -81,25 +91,29 @@ function provideTestI18n(): EnvironmentProviders[] {
 
 /** The phone_otp flavor — the identifier channel then supplies the phone, so the about step must NOT collect one (email_otp is the workspace default). */
 function phoneDeployment(): AuthDeployment {
-  const strategy = createAuthStrategy({
-    kind: 'phone_otp',
-    required: ['phone', 'firstName', 'lastName'],
+  const strategy = AuthStrategy.parse({
+    authStrategyKind: AuthStrategyKind.PhoneOtp,
+    required: [
+      RegistrationField.Phone,
+      RegistrationField.FirstName,
+      RegistrationField.LastName,
+    ],
     policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
   });
-  if (strategy.isFailure()) throw new Error('fixture strategy invalid');
-  return { ...DEFAULT_AUTH_DEPLOYMENT, strategy: strategy.value };
+  if (!strategy.ok) throw new Error('fixture strategy invalid');
+  return { ...AuthDeployment.DEFAULT, strategy: strategy.value };
 }
 
-const EMAIL_IDENTIFIER = reconstituteIdentifier({
-  kind: 'email',
-  value: 'client@example.com',
-});
-const PHONE_IDENTIFIER = reconstituteIdentifier({
-  kind: 'phone',
-  value: '+359888123456',
-});
+const EMAIL_IDENTIFIER: ParsedIdentifier = ((): ParsedIdentifier => {
+  const email = Email.parse('client@example.com');
+  if (email === null) throw new Error('fixture email invalid');
+  return ParsedIdentifier.email(email);
+})();
+const PHONE_IDENTIFIER: ParsedIdentifier = ParsedIdentifier.phone(
+  E164.of('+359888123456'),
+);
 
-const UID = UserId.of('uid_1');
+const UID = principalFixture.onboarding().userId;
 
 /** The just-registered profile the birthday step's owner write reads and edits. */
 function seededProfile(): User {
@@ -110,31 +124,39 @@ function seededProfile(): User {
   });
 }
 
-type MediaAnswer = Result<readonly MediaVariant[], MediaReadError>;
+type MediaAnswer = Result<readonly MediaVariant[], MediaError>;
 
 /** Answers every resolve with nothing — the default: no covers, no requests of interest. */
-const NO_MEDIA: MediaReader = { resolve: () => Promise.resolve(ok([])) };
+const NO_MEDIA: MediaResolvePorts = {
+  resolveMedia: () => Promise.resolve(Result.ok([])),
+};
 
 /**
  * Holds every resolve until the test answers it, so a failure can land
  * AFTER the test takes over the clock (the walk to the services grid runs
  * on real timers; the retry backoff is only steppable on fake ones).
  */
-class HeldMediaReader implements MediaReader {
-  readonly calls: string[] = [];
-  private readonly held: ((answer: MediaAnswer) => void)[] = [];
-
-  resolve(ref: MediaRef): Promise<MediaAnswer> {
-    this.calls.push(ref.path);
-    return new Promise((resolve) => this.held.push(resolve));
-  }
-
+type HeldMedia = MediaResolvePorts & {
+  readonly calls: readonly string[];
   /** Answers the oldest resolve still waiting. */
-  answer(answer: MediaAnswer): void {
-    const next = this.held.shift();
-    if (!next) throw new Error('no resolve is waiting for an answer');
-    next(answer);
-  }
+  answer(answer: MediaAnswer): void;
+};
+
+function heldMedia(): HeldMedia {
+  const calls: string[] = [];
+  const held: ((answer: MediaAnswer) => void)[] = [];
+  return {
+    calls,
+    resolveMedia: (ref: MediaRef) => {
+      calls.push(ref.mediaPath);
+      return new Promise<MediaAnswer>((resolve) => held.push(resolve));
+    },
+    answer: (answer) => {
+      const next = held.shift();
+      if (!next) throw new Error('no resolve is waiting for an answer');
+      next(answer);
+    },
+  };
 }
 
 /** The Storage object the fixture service's cover points at. */
@@ -156,109 +178,112 @@ const FADE: Service = serviceFixture({
   coverMediaHeight: 1500,
 });
 
+/** A real, valid national number for `country` — the phone metadata's own example, so validity is never a guess. */
+function exampleDigitsOf(country: CountryIso2): string {
+  return (PhoneSystem.example(country) ?? '').replace(/\D/g, '');
+}
+
 /** The longest wait the default retry policy can pick after the first failure. */
 const FIRST_BACKOFF_CEILING_MS = 2_000;
 
 describe('ClientOnboarding', () => {
-  const completeRegistration = vi.fn();
+  /** Every OTP callable the store dialled, in order. */
+  let otpCalls: OtpChallengeCall[];
+  /** Every gateway callable the store dialled (the profile save), in order. */
+  let gatewayCalls: GatewayCall[];
   const signOut = vi.fn();
-  /** `users/{uid}` as the memory port holds it — what a write leaves. */
+  /** `users/{uid}` as the memory port holds it — what the session model reads. */
   let users: Map<UserId, User>;
   /** One-shot profile reads; the session model listens instead. */
   const loadProfile = vi.fn<LoadProfile>();
-  /** How many owner writes reached the port. */
-  let writes: number;
-  /** A spec sets it to make the owner write fail in the store. */
+  /** A spec sets it to make the `updateProfile` call fail as a store failure. */
   let writeFails: boolean;
   const uploadAvatarFile = vi.fn();
   let fixture: ComponentFixture<ClientOnboarding>;
 
   async function setup(
-    identifier: Identifier,
+    identifier: ParsedIdentifier,
     deployment?: AuthDeployment,
     catalog: {
       readonly services: readonly Service[];
-      readonly media: MediaReader;
+      readonly media: MediaResolvePorts;
     } = { services: [], media: NO_MEDIA },
   ): Promise<void> {
-    completeRegistration.mockReset().mockResolvedValue(ok(undefined));
-    signOut.mockReset().mockResolvedValue(ok(undefined));
+    otpCalls = [];
+    gatewayCalls = [];
+    signOut.mockReset().mockReturnValue(Result.ok(undefined));
     users = new Map([[UID, seededProfile()]]);
     const memory = memoryProfilePorts(users);
     loadProfile.mockReset().mockImplementation(memory.loadProfile);
-    writes = 0;
     writeFails = false;
-    uploadAvatarFile
-      .mockReset()
-      .mockResolvedValue(ok({ url: 'http://avatar', path: 'avatars/x' }));
+    const avatars = memoryAvatarPorts();
+    uploadAvatarFile.mockReset().mockImplementation(avatars.uploadAvatar);
 
     await TestBed.configureTestingModule({
       imports: [ClientOnboarding],
       providers: [
         provideRouter([]),
         ...provideTestI18n(),
+        // Frozen clock — the birthday age window must never read real time.
         {
-          // Frozen clock — the birthday age window must never read real time.
-          provide: CLOCK,
-          useValue: {
-            now: (zone: string) =>
-              ZonedDateTime.fromISO('2026-07-25T12:00:00', zone),
-          },
+          provide: CLOCK_PORTS,
+          useValue: memoryClockPorts(utcMs('2026-07-25T12:00:00.000Z')),
         },
         ...(deployment
-          ? [{ provide: AUTH_DEPLOYMENT, useValue: deployment }]
+          ? [
+              {
+                provide: AUTH_DEPLOYMENT_PORTS,
+                useValue: { authDeployment: deployment },
+              },
+            ]
           : []),
         {
-          provide: AUTH_GATEWAY,
-          useValue: {
-            observePrincipal: () =>
-              of({ kind: 'onboarding', uid: { value: 'uid_1' } }),
-            currentIdentifier: () => identifier,
-            refreshToken: () => Promise.resolve(ok(undefined)),
+          provide: AUTH_SESSION_PORTS,
+          useValue: memoryAuthSessionPorts({
+            principals$: new BehaviorSubject<Principal>(
+              principalFixture.onboarding(UID),
+            ),
+            identifier,
             signOut,
-          },
+          }),
+        },
+        { provide: TIMER_PORTS, useValue: immediateTimerPorts() },
+        {
+          provide: OTP_CHALLENGE_PORTS,
+          useValue: memoryOtpChallengePorts({ calls: otpCalls }),
         },
         {
-          provide: OTP_CLIENT,
-          useValue: {
-            requestChallenge: () => Promise.resolve(ok('challenge_1')),
-            verifyChallenge: () =>
-              Promise.resolve(ok({ kind: 'returning' as const })),
-            completeRegistration,
-          },
-        },
-        {
-          provide: PROFILE_PORTS,
-          useValue: {
-            ...memory,
-            loadProfile,
-            writeOwnProfile: async (userId, decide) => {
-              writes += 1;
-              return writeFails
-                ? EcsResult.err(
-                    EcsRepositoryError.writeFailed(`users/${userId}`, 'down'),
-                  )
-                : memory.writeOwnProfile(userId, decide);
+          provide: GATEWAY_PORTS,
+          useValue: scriptedGatewayPorts(
+            {
+              [Callables.UpdateProfile]: () =>
+                writeFails
+                  ? Result.err(PipelineError.fromWire('internal', null))
+                  : Result.ok({ changed: true }),
             },
-          } satisfies ProfilePorts,
+            gatewayCalls,
+          ),
         },
+        { provide: PROFILE_PORTS, useValue: { ...memory, loadProfile } },
         {
-          provide: AVATAR_UPLOADER,
+          provide: AVATAR_PORTS,
           useValue: {
-            upload: (...args: unknown[]) => uploadAvatarFile(...args),
+            ...avatars,
+            uploadAvatar: (...args: Parameters<typeof avatars.uploadAvatar>) =>
+              uploadAvatarFile(...args),
           },
         },
         {
           provide: CATALOG_PORTS,
           useValue: memoryCatalogReadPorts({ services: catalog.services }),
         },
-        { provide: MEDIA_READER, useValue: catalog.media },
+        { provide: MEDIA_RESOLVE_PORTS, useValue: catalog.media },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(ClientOnboarding);
     fixture.detectChanges();
-    // `ui-phone-field` loads the kernel phone chunk behind PendingTasks —
+    // `ui-phone-field` loads the phone chunk behind PendingTasks —
     // whenStable resolves once it (and the initial render) has settled.
     await fixture.whenStable();
     fixture.detectChanges();
@@ -300,10 +325,10 @@ describe('ClientOnboarding', () => {
   }
 
   describe('email_otp deployment (the default — email identifier, phone must be collected)', () => {
-    /** A real, valid national number for the deployment's default country — sourced from the kernel's own example data so validity is never a guess. */
-    const exampleDigits = (
-      examplePhoneNumber(DEFAULT_AUTH_DEPLOYMENT.defaultCountry) as string
-    ).replace(/\D/g, '');
+    /** A real, valid national number for the deployment's default country — sourced from the phone metadata's own example data so validity is never a guess. */
+    const exampleDigits = exampleDigitsOf(
+      AuthDeployment.DEFAULT.defaultCountry,
+    );
 
     beforeEach(async () => {
       await setup(EMAIL_IDENTIFIER);
@@ -332,7 +357,7 @@ describe('ClientOnboarding', () => {
       expect(submit()?.disabled).toBe(false);
     });
 
-    it('passes the collected phone through RegisterUserUseCase — the missing-field error is unreachable when filled', async () => {
+    it('passes the collected phone through registerUser — the missing-field error is unreachable when filled', async () => {
       fillInput('onboarding-first-name', 'Ada');
       fillInput('onboarding-last-name', 'Lovelace');
       typePhone(exampleDigits);
@@ -344,12 +369,13 @@ describe('ClientOnboarding', () => {
       // The strategy's `phone` requirement was satisfied by the FORM field
       // (the email identifier can't supply it) — registration reached the
       // client and the flow advanced past about.
-      expect(completeRegistration).toHaveBeenCalledTimes(1);
-      const [identifier, fields] = completeRegistration.mock.calls[0]!;
-      expect(identifier).toBe(EMAIL_IDENTIFIER);
-      expect(fields.firstName).toBe('Ada');
-      expect(fields.lastName).toBe('Lovelace');
-      expect(fields.phone).toMatch(/^\+\d+$/);
+      expect(otpCalls).toHaveLength(1);
+      const call = otpCalls[0];
+      if (call?.otpCall !== 'COMPLETE') throw new Error('no registration');
+      expect(call.identifier).toEqual(EMAIL_IDENTIFIER);
+      expect(call.fields.firstName).toBe('Ada');
+      expect(call.fields.lastName).toBe('Lovelace');
+      expect(call.fields.phone).toMatch(/^\+\d+$/);
       expect(query('onboarding-about-error')).toBeNull();
       expect(query('onboarding-reward')).not.toBeNull();
     });
@@ -378,9 +404,9 @@ describe('ClientOnboarding', () => {
 
   describe('optional birthday step (personalization phase, email_otp deployment)', () => {
     /** A real, valid national number so the required fields never block. */
-    const exampleDigits = (
-      examplePhoneNumber(DEFAULT_AUTH_DEPLOYMENT.defaultCountry) as string
-    ).replace(/\D/g, '');
+    const exampleDigits = exampleDigitsOf(
+      AuthDeployment.DEFAULT.defaultCountry,
+    );
 
     beforeEach(async () => {
       await setup(EMAIL_IDENTIFIER);
@@ -438,9 +464,10 @@ describe('ClientOnboarding', () => {
       query<HTMLButtonElement>('onboarding-submit-about')?.click();
       await settle();
 
-      expect(completeRegistration).toHaveBeenCalledTimes(1);
-      const [, fields] = completeRegistration.mock.calls[0]!;
-      expect('birthDate' in fields).toBe(false);
+      expect(otpCalls).toHaveLength(1);
+      const call = otpCalls[0];
+      if (call?.otpCall !== 'COMPLETE') throw new Error('no registration');
+      expect(call.fields.birthDate).toBeNull();
       expect(query('onboarding-reward')).not.toBeNull();
     });
 
@@ -455,7 +482,7 @@ describe('ClientOnboarding', () => {
       expect(query('onboarding-skip-birthday')).not.toBeNull();
     });
 
-    it('keeps Save disabled until the segments form a valid date, then persists ISO via the profile port and advances to avatar', async () => {
+    it('keeps Save disabled until the segments form a valid date, then sends ISO through updateProfile and advances to avatar', async () => {
       await walkToBirthday();
       const save = () => query<HTMLButtonElement>('onboarding-submit-birthday');
       expect(save()?.disabled).toBe(true);
@@ -470,10 +497,13 @@ describe('ClientOnboarding', () => {
       save()?.click();
       await settle();
 
-      expect(writes).toBe(1);
-      expect(users.get(UID)?.birthDate).toBe(BirthDate.of('1990-07-03'));
-      // Names ride along untouched from the stored profile.
-      expect(users.get(UID)?.firstName).toBe('Ada');
+      // Names ride along untouched: `null` keeps the stored ones.
+      expect(gatewayCalls).toEqual([
+        {
+          callable: Callables.UpdateProfile,
+          input: { firstName: null, lastName: null, birthDate: '1990-07-03' },
+        },
+      ]);
       expect(query('onboarding-avatar')).not.toBeNull();
     });
 
@@ -515,7 +545,7 @@ describe('ClientOnboarding', () => {
         };
 
         uploadAvatarFile.mockResolvedValueOnce(
-          fail(new AvatarUploadError('storage down')),
+          Result.err(MediaError.transient('avatars/uid_1/original')),
         );
         await pick();
         query<HTMLButtonElement>('onboarding-avatar-enter-app')?.click();
@@ -534,7 +564,7 @@ describe('ClientOnboarding', () => {
       }
     });
 
-    it('skips straight to avatar without touching the profile port', async () => {
+    it('skips straight to avatar without reading or writing the profile', async () => {
       await walkToBirthday();
       // The shared session model reads the profile on its own (it backs
       // the app-wide chrome), so the invariant is that SKIPPING adds no
@@ -545,7 +575,7 @@ describe('ClientOnboarding', () => {
       await settle();
 
       expect(loadProfile.mock.calls.length).toBe(readsBefore);
-      expect(writes).toBe(0);
+      expect(gatewayCalls).toEqual([]);
       expect(query('onboarding-avatar')).not.toBeNull();
     });
 
@@ -590,9 +620,9 @@ describe('ClientOnboarding', () => {
   });
 
   describe('service covers (the shared catalogue media cache)', () => {
-    const exampleDigits = (
-      examplePhoneNumber(DEFAULT_AUTH_DEPLOYMENT.defaultCountry) as string
-    ).replace(/\D/g, '');
+    const exampleDigits = exampleDigitsOf(
+      AuthDeployment.DEFAULT.defaultCountry,
+    );
 
     afterEach(() => {
       vi.useRealTimers();
@@ -629,12 +659,12 @@ describe('ClientOnboarding', () => {
     }
 
     it('shows the resolved cover on the card', async () => {
-      const media = new HeldMediaReader();
+      const media = heldMedia();
       await setup(EMAIL_IDENTIFIER, undefined, { services: [FADE], media });
       await walkToServices();
       expect(coverSrc()).toBeNull();
 
-      media.answer(ok([{ width: COVER.width, url: COVER_URL }]));
+      media.answer(Result.ok([{ width: COVER.width, url: COVER_URL }]));
       await settle();
 
       expect(coverSrc()).toBe(COVER_URL);
@@ -642,7 +672,7 @@ describe('ClientOnboarding', () => {
     });
 
     it('reads each card’s cover off its own service, never by searching the catalogue', async () => {
-      const media = new HeldMediaReader();
+      const media = heldMedia();
       await setup(EMAIL_IDENTIFIER, undefined, { services: [FADE], media });
       await walkToServices();
       // Every card asks on every pass: a search per card was O(n²). The
@@ -652,7 +682,7 @@ describe('ClientOnboarding', () => {
         TestBed.inject(CatalogContentService),
         'findService',
       );
-      media.answer(ok([{ width: COVER.width, url: COVER_URL }]));
+      media.answer(Result.ok([{ width: COVER.width, url: COVER_URL }]));
       await settle();
 
       expect(coverSrc()).toBe(COVER_URL);
@@ -660,32 +690,35 @@ describe('ClientOnboarding', () => {
     });
 
     it('retries a cover whose first resolve failed transiently, then shows it', async () => {
-      const media = new HeldMediaReader();
+      const media = heldMedia();
       await setup(EMAIL_IDENTIFIER, undefined, { services: [FADE], media });
       await walkToServices();
 
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-      media.answer(fail(new RepositoryError('storage/retry-limit-exceeded')));
+      media.answer(Result.err(MediaError.transient(COVER.path)));
       await vi.advanceTimersByTimeAsync(0);
       expect(coverSrc()).toBeNull();
 
       await vi.advanceTimersByTimeAsync(FIRST_BACKOFF_CEILING_MS);
       expect(media.calls).toEqual([COVER.path, COVER.path]);
 
-      media.answer(ok([{ width: COVER.width, url: COVER_URL }]));
+      media.answer(Result.ok([{ width: COVER.width, url: COVER_URL }]));
       await elapseThenRealTime(100);
       expect(coverSrc()).toBe(COVER_URL);
     });
 
-    it.each(['not_found', 'forbidden'] as const)(
+    it.each([
+      ['not_found', MediaError.notFound(COVER.path)],
+      ['forbidden', MediaError.forbidden(COVER.path)],
+    ] as const)(
       'asks once about a permanently unavailable cover (%s) and keeps the card on its fallback',
-      async (reason) => {
-        const media = new HeldMediaReader();
+      async (_reason, refusal) => {
+        const media = heldMedia();
         await setup(EMAIL_IDENTIFIER, undefined, { services: [FADE], media });
         await walkToServices();
 
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-        media.answer(fail(new MediaUnavailableError(reason, COVER.path)));
+        media.answer(Result.err(refusal));
         await elapseThenRealTime(10 * 60_000);
 
         expect(media.calls).toEqual([COVER.path]);
@@ -714,10 +747,11 @@ describe('ClientOnboarding', () => {
       query<HTMLButtonElement>('onboarding-submit-about')?.click();
       await settle();
 
-      expect(completeRegistration).toHaveBeenCalledTimes(1);
-      const [, fields] = completeRegistration.mock.calls[0]!;
-      // The USE CASE (not the form) fills the channel fallback.
-      expect(fields.phone).toBe('+359888123456');
+      expect(otpCalls).toHaveLength(1);
+      const call = otpCalls[0];
+      if (call?.otpCall !== 'COMPLETE') throw new Error('no registration');
+      // The PIPELINE (not the form) fills the channel fallback.
+      expect(call.fields.phone).toBe('+359888123456');
       expect(query('onboarding-about-error')).toBeNull();
       expect(query('onboarding-reward')).not.toBeNull();
     });

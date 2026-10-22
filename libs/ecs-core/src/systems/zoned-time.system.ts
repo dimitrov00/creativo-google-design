@@ -549,9 +549,11 @@ export const ZonedTimeSystem = {
   },
 
   /**
-   * A WIRE start (ISO-8601) → its instant, on the shop's terms — the
-   * ingestion boundary's one reading of a client's `startIso` (flatten-spec
-   * §2.4). A string WITH an offset names its instant ({@link parseOffsetIso});
+   * An ISO-8601 start → its instant, on the shop's terms (flatten-spec
+   * §2.4) — for an ISO text a boundary still meets (a seed, a fixture, a
+   * legacy stored `*Iso` field); a callable's start arrives as `localDate` +
+   * `*Minutes` and goes straight to {@link toUtc}. A string WITH an offset
+   * names its instant ({@link parseOffsetIso});
    * a bare wall clock (`2026-03-29T10:00`, a date alone is its midnight) is
    * read on `timeZone`'s clock ({@link toUtc}): a time inside the
    * spring-forward gap is `DST_GAP_INVALID_TIME`, a fall-back repeat the

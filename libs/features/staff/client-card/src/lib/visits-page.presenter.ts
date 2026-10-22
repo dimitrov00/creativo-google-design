@@ -27,7 +27,7 @@ import type {
   HistoryPagingVm,
   HistorySpendVm,
   LinePart,
-  SliceStatus,
+  VisitsPageStatus,
   VisitsPageVm,
 } from './client-pages.vm';
 import type { ClientCardWords } from './client-card.words';
@@ -241,7 +241,7 @@ function factsOf(
 
 /** What `visitsPageVm` takes: the first page's read, the loaded pages, the choice, the record. */
 export interface VisitsPageInput {
-  readonly status: SliceStatus;
+  readonly status: VisitsPageStatus;
   readonly rows: HistoryRowsInput;
   readonly filter: VisitFilter;
   readonly stats: ClientStatsRecord | null;
@@ -274,7 +274,7 @@ function offeredOf(
  * still on its way.
  */
 export function visitsPageBlank(
-  status: SliceStatus,
+  status: VisitsPageStatus,
   filter: VisitFilter,
 ): VisitsPageVm {
   return {

@@ -19,6 +19,7 @@ import {
   BadgeSeriesId,
   LocalDate,
   SeasonId,
+  type TimeZone,
   UtcEpochMs,
   defect,
 } from '@core/primitives';
@@ -27,13 +28,13 @@ import {
   LoyaltyCatalogSystem,
   SeasonSystem,
   StandingSystem,
+  ZonedTimeSystem,
 } from '@core/systems';
-import { ZonedDateTime } from '@creativo/application/booking';
 import type { UiIconName, UiMark, UiMedalState } from '@creativo/ui/controls';
-import type {
+import {
   AchievementScope,
-  ClientCardCatalog,
-  ClientCardLeg,
+  type ClientCardCatalog,
+  type ClientCardLeg,
 } from './client-card.contracts';
 import {
   cardLocaleOf,
@@ -135,9 +136,6 @@ export const MEDAL_STATES = {
 /** How many tiles a rail or a shelf shows; past that, the shelf's action is the way on. */
 const RAIL_LIMIT = 8;
 
-/** Where the shop's hours are read: the zone of every visit on the card. */
-const SHOP_ZONE = 'Europe/Sofia';
-
 /** The last minute a visit may start and still count as an early bird (10:00, §4.6). */
 const EARLY_BIRD_LAST_MINUTE = 10 * 60;
 
@@ -164,37 +162,45 @@ export interface AchievementsContext {
     readonly locationId: string | null;
     readonly birthdayToday: boolean;
   } | null;
+  /**
+   * The shop's zone (Law 7.2: the location's — the default location's, as
+   * the card's store resolved it): where a leg's start and the end of today
+   * are read on the shop's clock.
+   */
+  readonly zone: TimeZone;
 }
 
 // ── Scope keys (the editor's `achievementCategory` subject id, §2.1) ────
 
 /** `category:{id}` · `season:{id}` · `archive` · `day:{YYYY-MM-DD}`. */
 export function achievementScopeKey(scope: AchievementScope): string {
-  switch (scope.kind) {
-    case 'category':
+  switch (scope.achievementScope) {
+    case AchievementScope.Category:
       return `category:${scope.categoryId}`;
-    case 'season':
+    case AchievementScope.Season:
       return `season:${scope.seasonId}`;
-    case 'archive':
+    case AchievementScope.Archive:
       return 'archive';
-    case 'day':
+    case AchievementScope.Day:
       return `day:${scope.day}`;
   }
 }
 
 /** The scope a key names, or `null` for a key that names none. */
 export function achievementScopeOf(key: string): AchievementScope | null {
-  if (key === 'archive') return { kind: 'archive' };
-  const [kind, ...rest] = key.split(':');
+  if (key === 'archive') return { achievementScope: AchievementScope.Archive };
+  const [prefix, ...rest] = key.split(':');
   const id = rest.join(':');
   if (id.length === 0) return null;
-  switch (kind) {
+  switch (prefix) {
     case 'category':
-      return { kind: 'category', categoryId: id };
+      return { achievementScope: AchievementScope.Category, categoryId: id };
     case 'season':
-      return { kind: 'season', seasonId: id };
+      return { achievementScope: AchievementScope.Season, seasonId: id };
     case 'day':
-      return /^\d{4}-\d{2}-\d{2}$/.test(id) ? { kind: 'day', day: id } : null;
+      return /^\d{4}-\d{2}-\d{2}$/.test(id)
+        ? { achievementScope: AchievementScope.Day, day: id }
+        : null;
     default:
       return null;
   }
@@ -316,14 +322,14 @@ export function standingOf(
 
 /** The families a scope page draws, by the systems' scope filter. */
 export function familyScopeOf(scope: AchievementScope): FamilyScopeFilter {
-  switch (scope.kind) {
-    case 'category':
+  switch (scope.achievementScope) {
+    case AchievementScope.Category:
       return FamilyScopeFilter.category(BadgeCategoryId.of(scope.categoryId));
-    case 'season':
+    case AchievementScope.Season:
       return FamilyScopeFilter.season(SeasonId.of(scope.seasonId));
-    case 'archive':
+    case AchievementScope.Archive:
       return FamilyScopeFilter.archive();
-    case 'day':
+    case AchievementScope.Day:
       return FamilyScopeFilter.day(cardDayOf(scope.day));
   }
 }
@@ -422,13 +428,16 @@ export function landsOn(
   return day < data.today ? data.today : day;
 }
 
-/** The start of the visit's first leg, in minutes from the shop's midnight. */
-function earliestStartMinute(legs: readonly ClientCardLeg[]): number | null {
+/** The start of the visit's first leg, in minutes from the shop's midnight on `zone`. */
+function earliestStartMinute(
+  legs: readonly ClientCardLeg[],
+  zone: TimeZone,
+): number | null {
   let earliest: number | null = null;
   for (const leg of legs) {
-    const start = ZonedDateTime.fromISO(leg.startsAtIso, SHOP_ZONE);
-    if (start.isFailure()) continue;
-    const minute = start.value.hour * 60 + start.value.minute;
+    const start = ZonedTimeSystem.parseIsoIn(leg.startsAtIso, zone);
+    if (!start.ok) continue;
+    const minute: number = ZonedTimeSystem.toLocal(start.value, zone).minute;
     if (earliest === null || minute < earliest) earliest = minute;
   }
   return earliest;
@@ -490,7 +499,7 @@ export function completesWithThisVisit(
       return true;
     }
     case Metric.VisitsEarlyBird: {
-      const minute = earliestStartMinute(visit.legs);
+      const minute = earliestStartMinute(visit.legs, ctx.zone);
       return minute !== null && minute <= EARLY_BIRD_LAST_MINUTE;
     }
     default:
@@ -1046,7 +1055,7 @@ export function latestTiles(
             count,
           ) + (isNew ? words.achievement.newSuffix : ''),
       },
-      opens: { kind: 'day', day: day.localDate },
+      opens: { achievementScope: AchievementScope.Day, day: day.localDate },
     });
   }
   return tiles;
@@ -1295,22 +1304,22 @@ export function scopeTitleOf(
   words: ClientCardWords,
 ): string | null {
   const locale = cardLocaleOf(words.lang);
-  switch (scope.kind) {
-    case 'category':
+  switch (scope.achievementScope) {
+    case AchievementScope.Category:
       return (
         LoyaltyCatalogSystem.category(
           data.catalog,
           BadgeCategoryId.of(scope.categoryId),
         )?.title[locale] ?? null
       );
-    case 'season':
+    case AchievementScope.Season:
       return (
         LoyaltyCatalogSystem.season(data.catalog, SeasonId.of(scope.seasonId))
           ?.title[locale] ?? null
       );
-    case 'archive':
+    case AchievementScope.Archive:
       return words.achievements.archive;
-    case 'day':
+    case AchievementScope.Day:
       return words.achievements.dayTitle(
         dayShort(scope.day, data.today, words.lang),
       );
@@ -1417,7 +1426,10 @@ function archivedSeasonTile(
     season.trackSeriesId === null
       ? null
       : LoyaltyCatalogSystem.series(data.catalog, season.trackSeriesId);
-  const opens: AchievementScope = { kind: 'season', seasonId: season.id };
+  const opens: AchievementScope = {
+    achievementScope: AchievementScope.Season,
+    seasonId: season.id,
+  };
   if (track !== null) {
     return {
       key: season.id,
@@ -1468,8 +1480,8 @@ export function scopePageVm(
   const words = ctx.words;
   const title = scopeTitleOf(data, scope, words);
   if (title === null) return null;
-  switch (scope.kind) {
-    case 'category': {
+  switch (scope.achievementScope) {
+    case AchievementScope.Category: {
       const category = LoyaltyCatalogSystem.category(
         data.catalog,
         BadgeCategoryId.of(scope.categoryId),
@@ -1496,7 +1508,7 @@ export function scopePageVm(
         ),
       };
     }
-    case 'season': {
+    case AchievementScope.Season: {
       const season = LoyaltyCatalogSystem.season(
         data.catalog,
         SeasonId.of(scope.seasonId),
@@ -1525,7 +1537,7 @@ export function scopePageVm(
             : [sectionOf(season.id, null, families, data, ctx, false)],
       };
     }
-    case 'archive': {
+    case AchievementScope.Archive: {
       const byYear = new Map<string, Season[]>();
       for (const season of archivedSeasons(data)) {
         const year = season.windowUntil.slice(0, 4);
@@ -1548,7 +1560,7 @@ export function scopePageVm(
           })),
       };
     }
-    case 'day': {
+    case AchievementScope.Day: {
       const families = familiesOf(data, familyScopeOf(scope));
       return {
         title,

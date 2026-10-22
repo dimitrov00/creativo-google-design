@@ -4,8 +4,10 @@ import {
   Injector,
   afterNextRender,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -19,11 +21,10 @@ import {
 } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
-  CalendarDay,
-  type ScheduleSelection,
-  ZonedDateTime,
-} from '@creativo/application/booking';
-import { SCHEDULING_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+  CLOCK_PORTS,
+  SCHEDULING_READ_PORTS,
+  ShopZoneService,
+} from '@creativo/infrastructure/firebase-app';
 import {
   type BarberId,
   LocalDate,
@@ -31,16 +32,17 @@ import {
   type RepositoryError,
   type Result,
   type TimeZone,
-  UtcEpochMs,
 } from '@core/primitives';
 import {
-  BookingCart as CartData,
+  BookingCart,
   BookingPolicy,
+  Principal,
+  type ScheduleSelection,
   type ShopNow,
 } from '@core/components';
 import { BookingCartSystem, ZonedTimeSystem } from '@core/systems';
-import { CLOCK } from '@creativo/application/shared';
 import { AccountStateService } from '@creativo/features/client/account-state';
+import { formatWeekdayLabels } from '@creativo/features/shared/visits';
 import {
   CatalogContentService,
   CatalogPresenter,
@@ -62,6 +64,11 @@ import {
 } from '@creativo/ui/patterns';
 import { BookingFlowStore } from '../booking-flow.store';
 import { bookingSignInReturnUrl } from '../booking-return-url';
+import {
+  formatBookingDay,
+  formatBookingMonth,
+  formatBookingTime,
+} from '../booking-wall-clock';
 import {
   BookingChromeAccessory,
   BookingStepTitle,
@@ -169,7 +176,8 @@ import {
 })
 export class BookingScheduleStep {
   private readonly transloco = inject(TranslocoService);
-  private readonly clock = inject(CLOCK);
+  private readonly clock = inject(CLOCK_PORTS);
+  private readonly shopZones = inject(ShopZoneService);
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -198,14 +206,15 @@ export class BookingScheduleStep {
     { initialValue: BookingPolicy.DEFAULT },
   );
 
-  protected readonly selectedDayKey = this.store.selectedDayKey;
+  /** The day the client picked — the calendar's selected cell, the sheet's day. */
+  protected readonly selectedDay = this.store.selectedLocalDate;
 
   // ── Where ───────────────────────────────────────────────────────────
 
   protected readonly locations = computed(() => this.catalog.locations());
 
   private readonly location = computed(() => {
-    const chosen = this.store.shopId();
+    const chosen = this.store.locationId();
     if (!chosen) return null;
     return (
       this.locations().find((candidate) => candidate.id === chosen) ?? null
@@ -213,24 +222,24 @@ export class BookingScheduleStep {
   });
 
   /**
-   * The SHOP's zone, never the device's (§7.1).
+   * The SHOP's zone, never the device's (Law 7.2) — what "now" and "today"
+   * are read in. The chosen shop's own; under "any shop", or before the
+   * catalogue answers, the first listed shop's; and the deployment's default
+   * location's otherwise (`ShopZoneService.defaultZone`). `null` only until
+   * that one read has answered.
    *
    * Under "any shop" the shops must agree, and in this tenant they do — a
    * single city. A chain spanning zones would have to render each option in
    * its own shop's clock, which is a different design and a different problem.
    */
-  protected readonly zone = computed<string>(
+  private readonly defaultZone = this.shopZones.defaultZone();
+
+  protected readonly timeZone = computed<TimeZone | null>(
     () =>
       this.location()?.timeZone ??
       this.locations().at(0)?.timeZone ??
-      'Europe/Sofia',
+      this.defaultZone(),
   );
-
-  /** The same zone as the brand the time systems read — `null` only for a zone `Intl` refuses. */
-  private readonly timeZone = computed<TimeZone | null>(() => {
-    const zone = ZonedTimeSystem.checkZone(this.zone());
-    return zone.ok ? zone.value : null;
-  });
 
   /**
    * EVERY active barber — the ROSTER decides who works where, not the barber's
@@ -251,9 +260,9 @@ export class BookingScheduleStep {
    * A chair no line accepts can never make a day bookable for this visit.
    */
   private readonly capacityBarberIds = computed<readonly BarberId[]>(() => {
-    const cart = this.store.cartData();
+    const cart = this.store.cart();
     const pool = this.barberIds();
-    return cart ? CartData.acceptedBarbers(cart, pool) : pool;
+    return cart ? BookingCart.acceptedBarbers(cart, pool) : pool;
   });
 
   // ── Which shops can serve this visit ────────────────────────────────
@@ -273,7 +282,7 @@ export class BookingScheduleStep {
    * send the client round a loop. That is a shop outage, not this notice's.
    */
   private readonly servingShops = computed<readonly LocationId[] | null>(() => {
-    const cart = this.store.cartData();
+    const cart = this.store.cart();
     if (
       !cart ||
       !this.catalog.servicesKnown() ||
@@ -315,7 +324,7 @@ export class BookingScheduleStep {
   protected readonly shopReach = computed<ShopReach>(() => {
     const serving = this.servingShops();
     if (serving === null) return SERVED;
-    const chosen = this.store.shopId();
+    const chosen = this.store.locationId();
     if (chosen === null) {
       return serving.length > 0 ? SERVED : { kind: 'nowhere' };
     }
@@ -357,49 +366,32 @@ export class BookingScheduleStep {
    * time are dropped with the shop, as on the location step.
    */
   protected switchShop(locationId: LocationId | null): void {
-    this.store.selectShop(locationId);
+    this.store.selectLocation(locationId);
   }
 
   // ── When ────────────────────────────────────────────────────────────
 
-  private readonly now = computed<ZonedDateTime | null>(() => {
-    const result = this.clock.now(this.zone());
-    return result.isSuccess() ? result.value : null;
-  });
-
-  protected readonly today = computed<CalendarDay | null>(() => {
-    const now = this.now();
-    return now ? CalendarDay.fromZonedDateTime(now) : null;
-  });
-
   /**
    * "Now" on the shop's wall clock (`ShopNow`) — what the day query's lead
-   * time floors against, read from the same clock reading as {@link today}.
+   * time floors against and what today is: one clock reading
+   * (`CLOCK_PORTS`), read in the shop's zone.
    */
   private readonly shopNow = computed<ShopNow | null>(() => {
-    const now = this.now();
     const zone = this.timeZone();
-    if (!now || !zone) return null;
-    const instant = UtcEpochMs.of(now.toMillis());
-    return instant.ok ? ZonedTimeSystem.shopNow(instant.value, zone) : null;
+    return zone === null
+      ? null
+      : ZonedTimeSystem.shopNow(this.clock.nowUtcMs(), zone);
   });
 
-  /** Today's shop day as the time systems read it. */
-  private readonly todayDate = computed<LocalDate | null>(
+  /** Today's shop day. */
+  protected readonly today = computed<LocalDate | null>(
     () => this.shopNow()?.localDate ?? null,
   );
 
   /** The last bookable day — the policy's own calendar walk, in months. */
-  private readonly horizonEndDate = computed<LocalDate | null>(() => {
-    const today = this.todayDate();
+  private readonly horizonEnd = computed<LocalDate | null>(() => {
+    const today = this.today();
     return today ? BookingPolicy.horizonEndFrom(this.policy(), today) : null;
-  });
-
-  private readonly horizonEnd = computed<CalendarDay | null>(() => {
-    const end = this.horizonEndDate();
-    if (!end) return null;
-    const day = CalendarDay.create(end, this.zone());
-    return day.isSuccess() ? day.value : null;
   });
 
   private readonly rawMonths = computed<readonly AvailabilityMonth[]>(() => {
@@ -441,12 +433,9 @@ export class BookingScheduleStep {
     // A shop that cannot serve the visit has no bookable day, whatever its
     // chairs say: the grid runs nothing there (`shopReach`).
     const bookable = this.shopServed() && this.isBookable(cell);
-    const date = this.dateAriaFormat().format(
-      new Date(cell.day.startOfDay().toMillis()),
-    );
+    const date = formatBookingDay(cell.localDate, this.content.locale());
     return {
-      day: cell.day,
-      dayKey: cell.dayKey,
+      localDate: cell.localDate,
       dayOfMonth: cell.dayOfMonth,
       isToday: cell.isToday,
       bookable,
@@ -465,93 +454,26 @@ export class BookingScheduleStep {
   }
 
   /**
-   * "Август", "Септември 2027".
-   *
-   * Capitalized deliberately, and worth a note: Bulgarian orthography writes
-   * month names in lower case in running prose, and `Intl` is right to return
-   * "август". This is not running prose — it is a heading that titles a block,
-   * where the typographic convention wins (owner ruling 2026-08-01).
-   *
-   * Done on the string rather than with `text-transform: capitalize`, which
-   * would also capitalize the second word of a two-word label and cannot be
-   * told which locales it should leave alone.
+   * "Август", "Септември 2027" (`formatBookingMonth`). The year is stated
+   * only when it is not this one — "August" needs no qualification in
+   * August, and "August 2026" on every heading is noise that the scroll
+   * position already answers. Takes the anchor structurally, so the raw
+   * month and its VM both fit.
    */
-  /**
-   * Formatters, built ONCE per locale/zone and reused.
-   *
-   * `Intl.DateTimeFormat` construction is the expensive half of the API, and
-   * these are called per CELL per change-detection cycle — constructing them
-   * inline meant every tap on a day paid for ~200 fresh formatters before the
-   * selection could paint, which is the stutter that read as a glitch.
-   */
-  private readonly monthFormat = computed(
-    () =>
-      new Intl.DateTimeFormat(this.content.locale(), {
-        month: 'long',
-        timeZone: this.zone(),
-      }),
-  );
-
-  private readonly monthWithYearFormat = computed(
-    () =>
-      new Intl.DateTimeFormat(this.content.locale(), {
-        month: 'long',
-        year: 'numeric',
-        timeZone: this.zone(),
-      }),
-  );
-
-  private readonly dateAriaFormat = computed(
-    () =>
-      new Intl.DateTimeFormat(this.content.locale(), {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        timeZone: this.zone(),
-      }),
-  );
-
-  private readonly timeFormat = computed(
-    () =>
-      new Intl.DateTimeFormat(this.content.locale(), {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-        timeZone: this.zone(),
-      }),
-  );
-
-  /** Takes the anchor structurally, so the raw month and its VM both fit. */
-  protected monthLabel(month: { readonly anchor: CalendarDay }): string {
-    const locale = this.content.locale();
-    // The year is stated only when it is not this one — "August" needs no
-    // qualification in August, and "August 2026" on every heading is noise
-    // that the scroll position already answers.
-    const format =
-      month.anchor.year === (this.today()?.year ?? month.anchor.year)
-        ? this.monthFormat()
-        : this.monthWithYearFormat();
-    const label = format.format(new Date(month.anchor.startOfDay().toMillis()));
-
-    // Capitalized on the string, deliberately: Bulgarian writes month names
-    // lower-case in prose and `Intl` is right to return "август" — but this
-    // is a heading, where the typographic convention wins (owner ruling
-    // 2026-08-01). Not `text-transform: capitalize`, which would also
-    // capitalize the year-bearing second word.
-    return label.charAt(0).toLocaleUpperCase(locale) + label.slice(1);
+  protected monthLabel(month: { readonly anchor: LocalDate }): string {
+    const today = this.today();
+    return formatBookingMonth(
+      month.anchor,
+      today !== null &&
+        LocalDate.parts(today).year !== LocalDate.parts(month.anchor).year,
+      this.content.locale(),
+    );
   }
 
   /** Mon-first weekday initials, localized — labels are never modeled as data. */
-  protected readonly weekdayLabels = computed(() => {
-    const formatter = new Intl.DateTimeFormat(this.content.locale(), {
-      weekday: 'short',
-      timeZone: 'UTC',
-    });
-    // 2024-01-01 was a Monday; UTC keeps the walk zone-independent.
-    return Array.from({ length: 7 }, (_, index) =>
-      formatter.format(Date.UTC(2024, 0, 1 + index)),
-    );
-  });
+  protected readonly weekdayLabels = computed(() =>
+    formatWeekdayLabels(this.content.locale()),
+  );
 
   // ── Live reads ──────────────────────────────────────────────────────
 
@@ -563,8 +485,8 @@ export class BookingScheduleStep {
    * depend on its own output.
    */
   private readonly capacityQuery = computed<CapacityQuery | null>(() => {
-    const from = this.todayDate();
-    const to = this.horizonEndDate();
+    const from = this.today();
+    const to = this.horizonEnd();
     const barberIds = this.capacityBarberIds();
     if (!from || !to || barberIds.length === 0) return null;
     // The run is today through the horizon; a horizon before today asks
@@ -585,7 +507,7 @@ export class BookingScheduleStep {
    * shop, and the sheet stays the authority.
    */
   private readonly capacityLocationId = computed<LocationId | null>(() => {
-    const chosen = this.store.shopId();
+    const chosen = this.store.locationId();
     if (chosen !== null) return chosen;
     const serving = this.servingShops();
     return serving !== null && serving.length === 1
@@ -650,7 +572,7 @@ export class BookingScheduleStep {
    */
   private isBookable(cell: AvailabilityDayCell): boolean {
     if (cell.outOfRange) return false;
-    const exact = this.exactAnswers()?.get(cell.dayKey);
+    const exact = this.exactAnswers()?.get(cell.localDate);
     if (exact !== undefined) return exact;
     return cell.isToday || cell.freeMinutes > 0;
   }
@@ -670,18 +592,18 @@ export class BookingScheduleStep {
    *   is empty whenever the release is not honoured.
    */
   private readonly exactDays = computed<readonly LocalDate[]>(() => {
-    const today = this.todayDate();
-    const zone = this.timeZone();
-    if (!today || !zone) return [];
+    const today = this.today();
+    if (!today) return [];
     const days: LocalDate[] = [today];
-    for (const chair of this.store.moveRelease()) {
-      const instant = UtcEpochMs.of(chair.startMs);
-      if (!instant.ok) continue;
-      const day = ZonedTimeSystem.toLocal(instant.value, zone).localDate;
-      // A day gone by has no cell to answer for.
-      if (LocalDate.compare(day, today) >= 0 && !days.includes(day)) {
-        days.push(day);
-      }
+    // The day the moved visit's chairs stand on, when it still has a cell.
+    const moving = this.store.moveLocalDate();
+    if (
+      moving !== null &&
+      this.store.moveRelease().length > 0 &&
+      LocalDate.compare(moving, today) >= 0 &&
+      !days.includes(moving)
+    ) {
+      days.push(moving);
     }
     return days;
   });
@@ -692,17 +614,15 @@ export class BookingScheduleStep {
    * it", and a move's own day is the one it most often lands back on.
    */
   private readonly exactQueries = computed<readonly DayQuery[] | null>(() => {
-    const cart = this.store.cartData();
+    const cart = this.store.cart();
     const now = this.shopNow();
-    const timeZone = this.timeZone();
-    if (!cart || !now || !timeZone) return null;
+    if (!cart || !now) return null;
     return this.exactDays().map((localDate) => ({
       cart,
       services: this.catalog.services(),
       barberIds: this.barberIds(),
-      locationId: this.store.shopId(),
+      locationId: this.store.locationId(),
       localDate,
-      timeZone,
       policy: this.policy(),
       now,
       // Everybody a MOVE carries, pinned to the party's start, for the
@@ -713,6 +633,7 @@ export class BookingScheduleStep {
       // …and the visit's own chairs, handed back: its own seats never block
       // its own move, for the cart's lines and the riders alike.
       release: this.store.moveRelease(),
+      releaseLocalDate: this.store.moveLocalDate(),
       shops: this.catalog.locations(),
     }));
   });
@@ -776,7 +697,7 @@ export class BookingScheduleStep {
 
   protected selectDay(cell: ScheduleDayVm): void {
     if (!cell.bookable) return;
-    this.store.selectDay(cell.dayKey, this.zone());
+    this.store.selectDay(cell.localDate);
   }
 
   /**
@@ -784,7 +705,7 @@ export class BookingScheduleStep {
    *
    * One day, because there is only ever one: the multi-date search was removed
    * as over-complication (owner ruling 2026-08-01). `submitWaitlist` sends
-   * `state.when`, and a single-day pick lives in `selectedDayKey`, so the day
+   * `state.when`, and a single-day pick lives in `selectedLocalDate`, so the day
    * has to be declared first — `watchOnly` does exactly that, replacing rather
    * than adding so a restored draft's days cannot ride along.
    *
@@ -800,7 +721,7 @@ export class BookingScheduleStep {
     if (!day) return;
     this.store.watchOnly(day);
 
-    if (this.accountState.principal().kind !== 'active') {
+    if (!Principal.isActive(this.accountState.principal())) {
       // The same return the review step builds, sources and all — see
       // `bookingSignInReturnUrl`.
       await this.router.navigate(['/auth'], {
@@ -830,9 +751,9 @@ export class BookingScheduleStep {
   ): void {
     afterNextRender(
       () => {
-        const key = this.today()?.key();
+        const today = this.today();
         const cell = this.host.nativeElement.querySelector(
-          `[data-day-key="${key}"]`,
+          `[data-day-key="${today}"]`,
         );
         // jsdom has no layout and no `scrollIntoView` — this is polish, and
         // polish never throws in an environment that cannot do it.
@@ -858,26 +779,46 @@ export class BookingScheduleStep {
    * unanimated: there is nothing on screen yet for an animation to explain.
    */
   constructor() {
-    if (this.selectedDayKey() === null) this.scrollToToday('auto', 'nearest');
+    if (this.selectedDay() === null) this.scrollToToday('auto', 'nearest');
 
     // A waitlist match landed here through its notification: the freed day
     // is already selected — open its times without another tap, because the
     // notification promised a live search, not homework.
-    if (this.store.consumeWaitlistArrival() && this.selectedDayKey() !== null) {
+    if (this.store.consumeWaitlistArrival() && this.selectedDay() !== null) {
       this.timeOpen.set(true);
     }
+
+    // A restored draft's days are judged against the shop's TODAY once this
+    // step has one — the draft holds no zone (Law 7.2), and this is the
+    // screen that reads it. Once per restore; the store keeps the rule. A
+    // picked day the settle has just dropped as gone by leaves the step with
+    // no day — so it opens on today, as a flow with none picked does above
+    // (the scroll decided AFTER the settle, not before it).
+    effect(() => {
+      const today = this.today();
+      if (today === null) return;
+      untracked(() => {
+        const before = this.selectedDay();
+        this.store.settleLapsedDays(today);
+        if (before !== null && this.selectedDay() === null) {
+          this.scrollToToday('auto', 'nearest');
+        }
+      });
+    });
   }
 
   // ── The sheet ───────────────────────────────────────────────────────
 
   protected readonly timeOpen = signal(false);
 
-  /** The day the time sheet is about in SINGLE mode, as a domain value. */
-  protected readonly selectedDay = computed<CalendarDay | null>(() => {
-    const key = this.selectedDayKey();
-    if (!key) return null;
-    const day = CalendarDay.create(key, this.zone());
-    return day.isSuccess() ? day.value : null;
+  /** What the time sheet is about: the chosen day, in the shop's zone. */
+  protected readonly sheet = computed<{
+    readonly day: LocalDate;
+    readonly zone: TimeZone;
+  } | null>(() => {
+    const day = this.selectedDay();
+    const zone = this.timeZone();
+    return day === null || zone === null ? null : { day, zone };
   });
 
   /**
@@ -893,7 +834,7 @@ export class BookingScheduleStep {
    * never have for this party.
    */
   protected readonly canOpenTimes = computed(
-    () => this.selectedDay() !== null && this.shopServed(),
+    () => this.sheet() !== null && this.shopServed(),
   );
 
   // ── The forward move ────────────────────────────────────────────────
@@ -913,9 +854,12 @@ export class BookingScheduleStep {
   /** The pending arrangement, IF it still describes the chosen start. */
   private readonly validSelection = computed<ScheduleSelection | null>(() => {
     const selection = this.pendingSelection();
-    const startMs = this.store.selectedStartMs();
-    if (!selection || startMs === null) return null;
-    return selection.timeSlot.start.toMillis() === startMs ? selection : null;
+    const day = this.store.selectedLocalDate();
+    const start = this.store.selectedStartMinutes();
+    if (!selection || day === null || start === null) return null;
+    return selection.localDate === day && selection.startMinutes === start
+      ? selection
+      : null;
   });
 
   /**
@@ -926,7 +870,11 @@ export class BookingScheduleStep {
   protected readonly timePickLabel = computed(() => {
     const selection = this.validSelection();
     return selection
-      ? this.formatTime(selection.timeSlot.start.toMillis())
+      ? formatBookingTime(
+          selection.localDate,
+          selection.startMinutes,
+          this.content.locale(),
+        )
       : this.transloco.translate('booking.schedule.chooseTime');
   });
 
@@ -956,10 +904,6 @@ export class BookingScheduleStep {
   protected onTimeConfirmed(selection: ScheduleSelection): void {
     this.pendingSelection.set(selection);
     this.timeOpen.set(false);
-  }
-
-  protected formatTime(millis: number): string {
-    return this.timeFormat().format(new Date(millis));
   }
 }
 

@@ -1,7 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
-import type { DayWindows } from '@creativo/application/booking';
+import { DayWindows } from '@core/components';
 import { CatalogPresenter } from '@creativo/features/shared/catalog';
 import { UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
@@ -18,6 +18,7 @@ import {
   UiStatusIndicator,
 } from '@creativo/ui/patterns';
 import { BookingFlowStore } from '../booking-flow.store';
+import { formatBookingDay } from '../booking-wall-clock';
 
 interface WatchedDayVm {
   readonly key: string;
@@ -72,24 +73,25 @@ export class BookingWaitlistedStep {
   protected readonly content = inject(CatalogPresenter);
   protected readonly store = inject(BookingFlowStore);
 
-  private readonly zone = computed(
-    () => this.store.when().days[0]?.day.zone ?? 'Europe/Sofia',
-  );
-
   protected readonly days = computed<readonly WatchedDayVm[]>(() =>
-    this.store.when().days.map((dayWindows: DayWindows) => ({
-      key: dayWindows.dayKey,
-      dateLabel: new Intl.DateTimeFormat(this.content.locale(), {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        timeZone: this.zone(),
-      }).format(new Date(dayWindows.day.startOfDay().toMillis())),
-      windowsLabel: dayWindows.isWholeDay()
+    this.store.when().flexibleDays.map((dayWindows) => ({
+      key: dayWindows.localDate,
+      // The shop day as it is — a wall-clock reading needs no zone.
+      dateLabel: formatBookingDay(dayWindows.localDate, this.content.locale()),
+      windowsLabel: DayWindows.isWholeDay(dayWindows)
         ? ''
         : dayWindows.windows
-            .map((window) => `${window.start} – ${window.end}`)
+            .map(
+              (window) =>
+                `${clockFace(window.startMinutes)} – ${clockFace(window.endMinutes)}`,
+            )
             .join(' · '),
     })),
   );
+}
+
+/** «09:30» — a minute of the shop day, as the watched windows have always read. */
+function clockFace(minutes: number): string {
+  const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+  return `${hours}:${String(minutes % 60).padStart(2, '0')}`;
 }

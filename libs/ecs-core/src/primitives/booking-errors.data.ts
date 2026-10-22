@@ -1,5 +1,10 @@
 import type { MinuteCount } from './duration-minutes.primitive';
-import { BarberId, LocationId, ServiceId } from './ids.primitive';
+import {
+  type AppointmentId,
+  BarberId,
+  LocationId,
+  ServiceId,
+} from './ids.primitive';
 import type { LocalDate } from './local-date.primitive';
 import type { MinuteOfDay } from './minute-of-day.primitive';
 import type { SchedulingError } from './scheduling-errors.data';
@@ -33,6 +38,35 @@ export const BookingErrorCode = {
   BeyondHorizon: 'BOOKING_BEYOND_HORIZON',
   PartyTooLarge: 'BOOKING_PARTY_TOO_LARGE',
   InvariantViolated: 'BOOKING_INVARIANT_VIOLATED',
+  /*
+   * The booking callables' own refusals before (or around) a pipeline — the
+   * successors of today's legacy dotted wire codes (Phase 4a 4A-4), the
+   * dotted code in SCREAMING. Their structs are `BookingCallRefusal`.
+   */
+  /** A placement on someone else's behalf by a caller who may not book (was `booking.commit.forbidden`). */
+  CommitForbidden: 'BOOKING_COMMIT_FORBIDDEN',
+  /** The commit's write fell over — the cause in the log only (was `booking.commit.store_failed`). */
+  CommitStoreFailed: 'BOOKING_COMMIT_STORE_FAILED',
+  TransitionUnauthenticated: 'BOOKING_TRANSITION_UNAUTHENTICATED',
+  TransitionForbidden: 'BOOKING_TRANSITION_FORBIDDEN',
+  TransitionInvalidInput: 'BOOKING_TRANSITION_INVALID_INPUT',
+  TransitionNotFound: 'BOOKING_TRANSITION_NOT_FOUND',
+  /** The lifecycle graph refuses `fromBookingStatus → toBookingStatus`. */
+  TransitionNotAllowed: 'BOOKING_TRANSITION_NOT_ALLOWED',
+  /** A reopen past its window. */
+  TransitionReopenWindowClosed: 'BOOKING_TRANSITION_REOPEN_WINDOW_CLOSED',
+  /** A reinstated chair taken since. */
+  TransitionSlotTaken: 'BOOKING_TRANSITION_SLOT_TAKEN',
+  ArrivedUnauthenticated: 'BOOKING_ARRIVED_UNAUTHENTICATED',
+  ArrivedForbidden: 'BOOKING_ARRIVED_FORBIDDEN',
+  ArrivedInvalidInput: 'BOOKING_ARRIVED_INVALID_INPUT',
+  ArrivedNotFound: 'BOOKING_ARRIVED_NOT_FOUND',
+  /** A settled visit cannot take (or lose) an arrival. */
+  ArrivedNotAllowed: 'BOOKING_ARRIVED_NOT_ALLOWED',
+  TipUnauthenticated: 'BOOKING_TIP_UNAUTHENTICATED',
+  TipForbidden: 'BOOKING_TIP_FORBIDDEN',
+  TipInvalidInput: 'BOOKING_TIP_INVALID_INPUT',
+  TipNotFound: 'BOOKING_TIP_NOT_FOUND',
 } as const;
 export type BookingErrorCode =
   (typeof BookingErrorCode)[keyof typeof BookingErrorCode];
@@ -170,7 +204,49 @@ export const BookingError = {
   ): BookingError.InvariantViolated {
     return { errorCode: E.InvariantViolated, violations };
   },
+  /** One of the call family's refusals that carries nothing but its code. */
+  bare<C extends BookingError.BareCallCode>(
+    errorCode: C,
+  ): BookingError.BareCall<C> {
+    return { errorCode };
+  },
+  /** One of the call family's `*_INVALID_INPUT` refusals — `field` names the payload field. */
+  callInvalidInput<C extends BookingError.CallInvalidInputCode>(
+    errorCode: C,
+    field: string,
+  ): BookingError.CallInvalidInput<C> {
+    return { errorCode, field };
+  },
+  /** One of the call family's `*_NOT_FOUND` refusals — not-yours answers as not-found. */
+  callNotFound<C extends BookingError.CallNotFoundCode>(
+    errorCode: C,
+    appointmentId: AppointmentId,
+  ): BookingError.CallNotFound<C> {
+    return { errorCode, appointmentId };
+  },
+  /**
+   * A lifecycle move the callable refuses, named by its two states — the
+   * SCREAMING `BookingStatus` values (or the callable's own word for a
+   * state the graph does not name), scalars the surface words.
+   */
+  statusMove<C extends BookingError.StatusMoveCode>(
+    errorCode: C,
+    fromBookingStatus: string,
+    toBookingStatus: string,
+  ): BookingError.StatusMove<C> {
+    return { errorCode, fromBookingStatus, toBookingStatus };
+  },
 } as const;
+
+/**
+ * Every refusal the booking callables answer with besides the commit's
+ * `BookingError` (Phase 4a 4A-4) — the successors of the legacy wire codes.
+ */
+export type BookingCallRefusal =
+  | BookingError.BareCall<BookingError.BareCallCode>
+  | BookingError.CallInvalidInput<BookingError.CallInvalidInputCode>
+  | BookingError.CallNotFound<BookingError.CallNotFoundCode>
+  | BookingError.StatusMove<BookingError.StatusMoveCode>;
 
 export namespace BookingError {
   /**
@@ -210,8 +286,8 @@ export namespace BookingError {
   };
   /**
    * `seatIndex` is the request seat the refusal is about; `localDate` +
-   * `startMinutes` its requested start on the shop's wall clock (the edge
-   * renders the legacy `startIso` param from them with the location's zone).
+   * `startMinutes` its requested start on the shop's wall clock — the wire
+   * carries them as they are (flat scalars, no rendered instant).
    */
   export type SlotUnavailable = {
     readonly errorCode: typeof BookingErrorCode.SlotUnavailable;
@@ -236,5 +312,47 @@ export namespace BookingError {
   export type InvariantViolated = {
     readonly errorCode: typeof BookingErrorCode.InvariantViolated;
     readonly violations: readonly SchedulingError[];
+  };
+
+  /** The call family's codes that carry nothing but themselves. */
+  export type BareCallCode =
+    | typeof BookingErrorCode.CommitForbidden
+    | typeof BookingErrorCode.CommitStoreFailed
+    | typeof BookingErrorCode.TransitionUnauthenticated
+    | typeof BookingErrorCode.TransitionForbidden
+    | typeof BookingErrorCode.ArrivedUnauthenticated
+    | typeof BookingErrorCode.ArrivedForbidden
+    | typeof BookingErrorCode.TipUnauthenticated
+    | typeof BookingErrorCode.TipForbidden;
+  export type BareCall<C extends BareCallCode> = { readonly errorCode: C };
+
+  export type CallInvalidInputCode =
+    | typeof BookingErrorCode.TransitionInvalidInput
+    | typeof BookingErrorCode.ArrivedInvalidInput
+    | typeof BookingErrorCode.TipInvalidInput;
+  export type CallInvalidInput<C extends CallInvalidInputCode> = {
+    readonly errorCode: C;
+    /** The payload field that was missing or malformed. */
+    readonly field: string;
+  };
+
+  export type CallNotFoundCode =
+    | typeof BookingErrorCode.TransitionNotFound
+    | typeof BookingErrorCode.ArrivedNotFound
+    | typeof BookingErrorCode.TipNotFound;
+  export type CallNotFound<C extends CallNotFoundCode> = {
+    readonly errorCode: C;
+    readonly appointmentId: AppointmentId;
+  };
+
+  export type StatusMoveCode =
+    | typeof BookingErrorCode.TransitionNotAllowed
+    | typeof BookingErrorCode.TransitionReopenWindowClosed
+    | typeof BookingErrorCode.TransitionSlotTaken
+    | typeof BookingErrorCode.ArrivedNotAllowed;
+  export type StatusMove<C extends StatusMoveCode> = {
+    readonly errorCode: C;
+    readonly fromBookingStatus: string;
+    readonly toBookingStatus: string;
   };
 }

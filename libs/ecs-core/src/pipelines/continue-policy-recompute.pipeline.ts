@@ -1,7 +1,13 @@
-import { type CustomerId, Result } from '@core/primitives';
+import { type CustomerId, Result, type TimeZone } from '@core/primitives';
 import { ClientStatsPolicy, PolicyPass, type WriteOp } from '@core/components';
 import type { PolicyRecomputeJob } from '@core/entities';
-import type { AdminBatchPorts, LogPorts, PolicyReadPorts } from '@core/ports';
+import type {
+  AdminBatchPorts,
+  DefaultLocationPorts,
+  LocationLoadPorts,
+  LogPorts,
+  PolicyReadPorts,
+} from '@core/ports';
 import {
   type AttemptFailure,
   AttemptOutcome,
@@ -16,6 +22,7 @@ import {
   recomputeClients,
   repositoryFailure,
 } from './project-client-stats.pipeline';
+import { readShopZone } from './shop-zone-read.pipeline';
 import {
   POLICY_RECOMPUTE_JOB_PATH,
   policyJobWrite,
@@ -80,6 +87,8 @@ export type StepBudget = { readonly spent: () => boolean };
 
 export type ContinuePolicyRecomputePorts = ClientStatsRecomputePorts &
   PolicyReadPorts &
+  LocationLoadPorts &
+  DefaultLocationPorts &
   AdminBatchPorts &
   LogPorts;
 
@@ -114,8 +123,9 @@ export const continuePolicyRecompute = (
   /**
    * The stored clients after the fired step's cursor, a page at a time until
    * the budget is spent, each recomputed under this pass's stamp against the
-   * policy as it is NOW (read once per step). Never rejects: a read every
-   * client depends on that fails ends the walk, and the pages before it count.
+   * policy as it is NOW and on the default location's clock (each read once
+   * per step, F-4). Never rejects: a read every client depends on that fails
+   * ends the walk, and the pages before it count.
    */
   async function walkStoredClients(
     fired: PolicyRecomputeJob,
@@ -135,6 +145,7 @@ export const continuePolicyRecompute = (
     let superseded = false;
     try {
       let policy: ClientStatsPolicy | null = null;
+      let timeZone: TimeZone | null = null;
       while (WorkBudgetSystem.takesChunk(pages, () => budget.spent())) {
         const live = await ports.loadPolicyRecomputeJob();
         if (!live.ok) {
@@ -156,6 +167,14 @@ export const continuePolicyRecompute = (
           }
           policy = ClientStatsPolicy.forBooking(loaded.value);
         }
+        if (timeZone === null) {
+          const zone = await readShopZone(ports)(null);
+          if (!zone.ok) {
+            errors.push(zone.error);
+            break;
+          }
+          timeZone = zone.value;
+        }
         const page = await ports.pageClients(cursor, pageSize);
         if (!page.ok) {
           errors.push(page.error);
@@ -168,6 +187,7 @@ export const continuePolicyRecompute = (
           ids,
           pass,
           POLICY_RECOMPUTE_WIDTH,
+          timeZone,
         );
         errors.push(...report.failures);
         if (

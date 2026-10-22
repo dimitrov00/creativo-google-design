@@ -65,6 +65,14 @@ export const MONEY_ROLES = [
   Role.Sysadmin,
 ] as const;
 
+/**
+ * Roles that grant the ADMIN area and its writes — `firestore.rules`'
+ * `isAdmin()` (an admin or the sysadmin). ONE home: the admin routes, the
+ * shell's admin entry and the impersonation callables' caller gate read it
+ * (Phase 4a §3.2).
+ */
+export const ADMIN_ROLES = [Role.Admin, Role.Sysadmin] as const;
+
 /** Linear scan of a short constant list — no allocation, no `includes` cast. */
 function listHas(list: readonly string[], value: unknown): boolean {
   for (let i = 0; i < list.length; i++) {
@@ -132,4 +140,14 @@ export function mayBook(roles: readonly string[]): boolean {
 /** Whether a role set may reprice a seat or invent a discount (`handlesMoney`). Claims-tolerant like `mayBook`. */
 export function seesMoney(roles: readonly string[]): boolean {
   return anyIn(MONEY_ROLES, roles);
+}
+
+/**
+ * Whether a role set holds the admin pair (`ADMIN_ROLES`, the rules'
+ * `isAdmin()`) — the impersonation callables' and the owner-only gates.
+ * Claims-tolerant like `mayBook`: an entry counts only when it IS one of
+ * the two roles.
+ */
+export function isAdmin(roles: readonly string[]): boolean {
+  return anyIn(ADMIN_ROLES, roles);
 }

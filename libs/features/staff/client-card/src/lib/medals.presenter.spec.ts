@@ -43,7 +43,7 @@ import {
   MARTIN_PREVIOUS_MS,
   achievementsContextOf,
   achievementsDataOf,
-  at,
+  sofia,
   georgiContext,
   georgiOpenContext,
   loyaltyCatalogWith,
@@ -51,6 +51,7 @@ import {
   must,
   wordsOf,
 } from '../testing/client-card.fixtures';
+import { AchievementScope } from './client-card.contracts';
 
 const GEORGI = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 const MARTIN = achievementsDataOf('martin', MARTIN_PREVIOUS_MS);
@@ -77,7 +78,7 @@ function series(data: AchievementsData, id: string) {
 
 /** A level earned at a Sofia wall-clock time, filed under that shop day (T5). */
 function earnedLevel(level: number, sofiaIso: string): EarnedLevel {
-  const at_ = UtcEpochMs.of(at(sofiaIso).toMillis());
+  const at_ = UtcEpochMs.of(sofia(sofiaIso));
   if (!at_.ok) throw new Error(`bad fixture instant ${sofiaIso}`);
   return {
     level,
@@ -1319,7 +1320,7 @@ describe('medalsPageVm', () => {
       // Earned before the previous visit began: not new.
       const before: AchievementsData = {
         ...GEORGI,
-        previousVisitAtMs: at('2026-09-28T11:30:00').toMillis(),
+        previousVisitAtMs: sofia('2026-09-28T11:30:00'),
       };
       expect(
         medalsPageVm(before, SETTLED, CHIP_ALL).sections.some((s) =>
@@ -1615,7 +1616,10 @@ describe('medalScopeVm', () => {
   it('is a category whole, in its sub-sections, every medal in its ring', () => {
     const vm = medalScopeVm(
       GEORGI,
-      { kind: 'category', categoryId: 'cat-mastery' },
+      {
+        achievementScope: AchievementScope.Category,
+        categoryId: 'cat-mastery',
+      },
       SETTLED,
     );
     expect(vm).toMatchObject({
@@ -1641,7 +1645,10 @@ describe('medalScopeVm', () => {
     for (const section of page.sections) {
       const scope = medalScopeVm(
         GEORGI,
-        { kind: 'category', categoryId: section.categoryId },
+        {
+          achievementScope: AchievementScope.Category,
+          categoryId: section.categoryId,
+        },
         SETTLED,
       );
       const drawn = new Map(
@@ -1658,14 +1665,20 @@ describe('medalScopeVm', () => {
     expect(
       medalScopeVm(
         GEORGI,
-        { kind: 'category', categoryId: 'cat-barbers' },
+        {
+          achievementScope: AchievementScope.Category,
+          categoryId: 'cat-barbers',
+        },
         SETTLED,
       )?.subline,
     ).toBe('Бръснари и салони · 2 от 7 спечелени');
   });
 
   it('cuts the rhythm’s shelf as the overview does while the shop runs none', () => {
-    const scope = { kind: 'category', categoryId: 'cat-rhythm' } as const;
+    const scope = {
+      achievementScope: AchievementScope.Category,
+      categoryId: 'cat-rhythm',
+    } as const;
     const vm = medalScopeVm(rhythmOff(), scope, SETTLED);
     expect(vm?.subline).toBe('Ритъм · 2 от 2 спечелени');
     expect(
@@ -1686,13 +1699,19 @@ describe('medalScopeVm', () => {
     expect(
       medalScopeVm(
         rhythmOff(),
-        { kind: 'category', categoryId: 'cat-mastery' },
+        {
+          achievementScope: AchievementScope.Category,
+          categoryId: 'cat-mastery',
+        },
         SETTLED,
       )?.sections,
     ).toEqual(
       medalScopeVm(
         GEORGI,
-        { kind: 'category', categoryId: 'cat-mastery' },
+        {
+          achievementScope: AchievementScope.Category,
+          categoryId: 'cat-mastery',
+        },
         SETTLED,
       )?.sections,
     );
@@ -1701,7 +1720,10 @@ describe('medalScopeVm', () => {
   it('draws a running season’s scope: the track’s medal in its ring beside its steps, the families under them', () => {
     const vm = medalScopeVm(
       GEORGI,
-      { kind: 'season', seasonId: 'season-2026-autumn' },
+      {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'season-2026-autumn',
+      },
       SETTLED,
     );
     expect(vm).toMatchObject({
@@ -1743,7 +1765,10 @@ describe('medalScopeVm', () => {
   it('draws an ended season as what was won: the rim says the level, no arc runs on', () => {
     const vm = medalScopeVm(
       GEORGI,
-      { kind: 'season', seasonId: 'season-2026-summer' },
+      {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'season-2026-summer',
+      },
       SETTLED,
     );
     expect(vm?.ended).toBe('Сезонът приключи.');
@@ -1762,7 +1787,11 @@ describe('medalScopeVm', () => {
   });
 
   it('draws the archive’s seasons under their own names and dates, each opening its scope', () => {
-    const vm = medalScopeVm(GEORGI, { kind: 'archive' }, SETTLED);
+    const vm = medalScopeVm(
+      GEORGI,
+      { achievementScope: AchievementScope.Archive },
+      SETTLED,
+    );
     expect(vm).toMatchObject({
       title: 'Минали сезони и събития',
       subline: 'Георги Петров',
@@ -1786,7 +1815,10 @@ describe('medalScopeVm', () => {
         [
           [
             'season-2026-summer',
-            { kind: 'season', seasonId: 'season-2026-summer' },
+            {
+              achievementScope: AchievementScope.Season,
+              seasonId: 'season-2026-summer',
+            },
             'Лято 2026',
             '1.06 – 31.08',
             'earned',
@@ -1801,7 +1833,7 @@ describe('medalScopeVm', () => {
   it('draws a day’s levels in rings, and marks none new: the day is the past', () => {
     const vm = medalScopeVm(
       GEORGI,
-      { kind: 'day', day: '2026-09-28' },
+      { achievementScope: AchievementScope.Day, day: '2026-09-28' },
       SETTLED,
     );
     expect(vm?.title).toBe('Спечелени на 28.09');
@@ -1818,14 +1850,14 @@ describe('medalScopeVm', () => {
     expect(
       medalScopeVm(
         GEORGI,
-        { kind: 'category', categoryId: 'cat-gone' },
+        { achievementScope: AchievementScope.Category, categoryId: 'cat-gone' },
         SETTLED,
       ),
     ).toBeNull();
     expect(
       medalScopeVm(
         GEORGI,
-        { kind: 'season', seasonId: 'season-gone' },
+        { achievementScope: AchievementScope.Season, seasonId: 'season-gone' },
         SETTLED,
       ),
     ).toBeNull();

@@ -16,6 +16,9 @@ import {
   type Seat,
   SeatSubject,
   type ShopNow,
+  type ChairTime,
+  RequestedSubjectRole,
+  type BookingCall,
 } from '@core/components';
 import {
   BookingError,
@@ -58,7 +61,6 @@ import {
   resolvedCustomerIds,
   customerOf,
 } from '@core/testing';
-import type { ChairTime } from './availability.system';
 import {
   type BookingDecision,
   BookingDecisionSystem,
@@ -68,12 +70,7 @@ import {
   type DecideBookingInput,
   type DecisionSchedule,
   type DecisionStandingSeat,
-  type RequestedSeatInput,
 } from './booking-decision.system';
-import {
-  type RequestedSubjectInput,
-  RequestedSubjectRole,
-} from './guest-label.system';
 import { PhoneSystem } from './phone.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -192,23 +189,25 @@ function snapshot(overrides: Partial<BookingSnapshot> = {}): BookingSnapshot {
   };
 }
 
-const SELF: RequestedSubjectInput = {
+const SELF: BookingCall.SubjectInput = {
   requestedSubjectRole: RequestedSubjectRole.Self,
 };
 const guestOf = (
   label: string,
   guestKey: string | null = null,
-): RequestedSubjectInput => ({
+): BookingCall.SubjectInput => ({
   requestedSubjectRole: RequestedSubjectRole.Guest,
   label,
   guestKey,
 });
-const companionOf = (userId: string): RequestedSubjectInput => ({
+const companionOf = (userId: string): BookingCall.SubjectInput => ({
   requestedSubjectRole: RequestedSubjectRole.Companion,
   companionUserId: userId,
 });
 
-function seat(overrides: Partial<RequestedSeatInput> = {}): RequestedSeatInput {
+function seat(
+  overrides: Partial<BookingCall.SeatInput> = {},
+): BookingCall.SeatInput {
   return {
     lineId: 'line-1',
     serviceId: 'svc-fade',
@@ -222,7 +221,7 @@ function seat(overrides: Partial<RequestedSeatInput> = {}): RequestedSeatInput {
 }
 
 function request(
-  seats: readonly RequestedSeatInput[] = [seat()],
+  seats: readonly BookingCall.SeatInput[] = [seat()],
   overrides: Partial<DecideBookingInput> = {},
 ): DecideBookingInput {
   return {
@@ -917,7 +916,7 @@ describe('decide — the shop places its own book', () => {
  * §11.2 #6: the preference is what somebody asked for, never a default.
  */
 describe('decide — the barber preference is recorded, never guessed', () => {
-  const prefOf = (requested: Partial<RequestedSeatInput>) =>
+  const prefOf = (requested: Partial<BookingCall.SeatInput>) =>
     unwrap(decideBooking(request([seat(requested)]), snapshot(), deps()))
       .appointment.seats[0]?.barberPreference ?? null;
 
@@ -1113,9 +1112,9 @@ describe('decide — a double seating the visit already held stands', () => {
       durationMinutes: duration(20),
     },
   ];
-  const fade = (overrides: Partial<RequestedSeatInput> = {}) =>
+  const fade = (overrides: Partial<BookingCall.SeatInput> = {}) =>
     seat({ subject: walkIn, ...overrides });
-  const beard = (overrides: Partial<RequestedSeatInput> = {}) =>
+  const beard = (overrides: Partial<BookingCall.SeatInput> = {}) =>
     seat({
       lineId: 'line-2',
       serviceId: 'svc-beard',
@@ -1233,7 +1232,7 @@ describe('decide — a double seating the visit already held stands', () => {
             wholeVisit
               ? (drafts.at(0)?.shift ?? 0)
               : (drafts.at(index)?.shift ?? 0);
-          const subjectOf = (person: string): RequestedSubjectInput =>
+          const subjectOf = (person: string): BookingCall.SubjectInput =>
             person === 'companion' ? companionOf('user-2') : guestOf(person);
           const startOf = (quarter: number) => at(12, quarter * 15);
           const standing = drafts.map((draft, index): DecisionStandingSeat => ({
@@ -1642,11 +1641,11 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
           durationMinutes: duration(30),
         }),
       ),
-    ).toBe('priceMinorUnits');
+    ).toBe('priceCents');
     // A price with no currency to read it in, and no catalogue row to lend one.
     expect(
       field(carried({ priceCents: cents(100), durationMinutes: duration(30) })),
-    ).toBe('priceMinorUnits');
+    ).toBe('priceCents');
     expect(
       field(
         carried({
@@ -1710,7 +1709,7 @@ describe('BookingDecisionSystem — every remaining refusal, by its field', () =
             PlacementPolicy.staffWalkIn(),
           ),
         ),
-      ).toBe('priceMinorUnits');
+      ).toBe('priceCents');
     }
   });
 

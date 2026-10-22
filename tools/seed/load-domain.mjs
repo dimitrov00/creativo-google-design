@@ -19,7 +19,9 @@
  *   engine output"), never a second copy: `projectClientStats` from
  *   `@core/pipelines` writes `clientStats/{customerId}` and its
  *   `restricted/money` through the server's `firestoreCommitPlan`, under
- *   the policy `firestoreSettingsPorts` reads; `purgeAtFor` is the ONE
+ *   the policy `firestoreSettingsPorts` reads, on the shop day of the
+ *   default location (`TenantConfig.DEFAULT`) that `firestoreCatalogPorts`
+ *   loads (F-4, Phase 4a 4A-11); `purgeAtFor` is the ONE
  *   `purgeAt` stamp (F1-7) every busy day and waitlist request the seed
  *   writes carries.
  * - THE LOYALTY DOMAIN the loyalty fold is HANDED (flip 3), from the
@@ -70,6 +72,7 @@ export const SEED_SERVER_MODULES = Object.freeze({
   commitPlan: 'apps/functions/src/adapters/firestore-tx.adapter',
   ttl: 'apps/functions/src/adapters/firestore-ttl.adapter',
   settings: 'apps/functions/src/adapters/firestore-settings.adapter',
+  catalog: 'apps/functions/src/adapters/firestore-catalog.adapter',
 });
 
 const ENTRY = `
@@ -77,10 +80,11 @@ export { projectClientStats } from '@core/pipelines';
 export { firestoreCommitPlan } from './${SEED_SERVER_MODULES.commitPlan}';
 export { purgeAtFor } from './${SEED_SERVER_MODULES.ttl}';
 export { firestoreSettingsPorts } from './${SEED_SERVER_MODULES.settings}';
+export { firestoreCatalogPorts } from './${SEED_SERVER_MODULES.catalog}';
 ${Object.entries(SEED_PLAN_MODULES)
   .map(([name, path]) => `export * as ${name} from './${path}';`)
   .join('\n')}
-export { StreakRule } from '@core/components';
+export { StreakRule, TenantConfig } from '@core/components';
 export {
   LoyaltyCatalogSystem,
   StreakRuleSystem,

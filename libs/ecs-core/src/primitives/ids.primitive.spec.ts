@@ -1,5 +1,6 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BackfillJobName } from '@core/components';
+import { BackfillJobName, Party, SeatKey } from '@core/components';
 import {
   RecomputeJobName,
   BOOKING_POLICY_DOC,
@@ -15,6 +16,8 @@ import {
   BookingPolicySettingsId,
   CartLineId,
   ClientMoneyStatsId,
+  ClientOperationId,
+  GuestKey,
   CustomerId,
   JournalEntryId,
   PolicyRecomputeJobId,
@@ -176,5 +179,80 @@ describe('SeatKeyText — the text of a cart seat key', () => {
       brand: 'SeatKeyText',
     });
     expect(SeatKeyText.of('self')).toBe('self');
+  });
+});
+
+/*
+ * The guards of `libs/application/booking/.../booking-gateway.port.spec.ts`
+ * (`isClientOperationId`, `isGuestKey`; deleted in 4b), ported onto the two
+ * primitives (Phase 4a 4A-12).
+ */
+describe('ClientOperationId — a client-minted idempotency key', () => {
+  it('takes a UUID and any 16–64 character id-shaped string', () => {
+    for (const raw of [
+      '6f1c2a9e-5b3d-4e7a-9c11-0a2b3c4d5e6f',
+      'a'.repeat(16),
+      'A_b-1'.repeat(12) + 'abcd',
+    ]) {
+      expect(unwrapOk(ClientOperationId.parse(raw))).toBe(raw);
+      expect(ClientOperationId.is(raw)).toBe(true);
+    }
+  });
+
+  it('turns away anything shorter, longer, or outside the charset', () => {
+    for (const raw of [
+      '',
+      'a'.repeat(15),
+      'a'.repeat(65),
+      'attempt 1234567890',
+      'a/b'.repeat(8),
+    ]) {
+      expect(unwrapErr(ClientOperationId.parse(raw))).toEqual({
+        errorCode: 'PRIMITIVE_CLIENT_OPERATION_ID_INVALID',
+        raw,
+        brand: 'ClientOperationId',
+      });
+      expect(ClientOperationId.is(raw)).toBe(false);
+    }
+    expect(ClientOperationId.is(1234567890123456)).toBe(false);
+    expect(ClientOperationId.is(null)).toBe(false);
+  });
+});
+
+describe('GuestKey — the guest key on the wire', () => {
+  it('holds every key the cart mints for a guest (property)', () => {
+    // The client sends the seat key text as `guestKey`; the server keeps only
+    // what `GuestKey` accepts. A key the cart can mint and the server drops
+    // would switch the duplicate-guest refusal off for that party.
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 12 }), (guests) => {
+        let party = Party.anonymous();
+        for (let i = 0; i < guests; i++) {
+          const added = Party.addGuest(party, `Гост ${i + 1}`);
+          if (!added.ok) return false;
+          party = added.value;
+        }
+        return Party.seatKeys(party).every((key) =>
+          GuestKey.is(SeatKey.text(key)),
+        );
+      }),
+    );
+  });
+
+  it('turns away anything that is not a bounded, id-shaped string', () => {
+    expect(GuestKey.is('guest-3')).toBe(true);
+    expect(unwrapOk(GuestKey.parse('guest-3'))).toBe('guest-3');
+    expect(GuestKey.is('')).toBe(false);
+    expect(GuestKey.is('guest 3')).toBe(false);
+    expect(GuestKey.is('guest/3')).toBe(false);
+    expect(GuestKey.is('g'.repeat(65))).toBe(false);
+    expect(GuestKey.is(3)).toBe(false);
+    expect(GuestKey.is(null)).toBe(false);
+    expect(GuestKey.is({ key: 'guest-3' })).toBe(false);
+    expect(unwrapErr(GuestKey.parse('guest 3'))).toEqual({
+      errorCode: 'PRIMITIVE_GUEST_KEY_INVALID',
+      raw: 'guest 3',
+      brand: 'GuestKey',
+    });
   });
 });

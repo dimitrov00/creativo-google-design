@@ -1,17 +1,20 @@
-import { onCall } from 'firebase-functions/v2/https';
+import { type CallableRequest, onCall } from 'firebase-functions/v2/https';
 import {
   onDocumentWritten,
   onDocumentWrittenWithAuthContext,
 } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import {
+  BookingErrorCode,
+  IdentityErrorCode,
   RepositoryError,
   Result,
+  StreakPublishErrorCode,
   TenantId,
   UtcEpochMs,
   defect,
 } from '@core/primitives';
-import { AuthDeployment } from '@core/components';
+import { AuthDeployment, TenantConfig } from '@core/components';
 import { Collections, POLICY_RECOMPUTE_DOC } from '@core/entities';
 import {
   type CallableName,
@@ -30,17 +33,20 @@ import {
   completeRegistration as completeRegistrationPipeline,
   continuePolicyRecompute,
   editAppointment,
+  endImpersonation as endImpersonationPipeline,
   markArrival,
   matchWaitlist,
   projectClientStats,
   rebuildBusy,
   rebuildCapacity,
   recordSeatTip as recordSeatTipPipeline,
+  redeemInvitation as redeemInvitationPipeline,
   requestOtp,
   requestWaitlist as requestWaitlistPipeline,
   rescheduleAppointment as rescheduleAppointmentPipeline,
   runBackfill as runBackfillPipeline,
   sampleLeadTime,
+  startImpersonation as startImpersonationPipeline,
   startPolicyRecompute,
   sweepPolicyRecompute,
   transitionAppointment as transitionAppointmentPipeline,
@@ -63,14 +69,11 @@ import {
   type EdgeCode,
   type EdgeError,
   type EdgePorts,
-  LegacyWireCode,
   retryingTrigger,
-  WIRE_ZONE,
+  type WorkBudget,
 } from './edge';
+import { CRON_TIME_ZONE } from './lib/cron-zone';
 import { adminAuth, adminFirestore } from './lib/firebase-admin';
-// Every schedule runs on the tenant's wall clock (flatten-spec F-4: the zone
-// left TenantConfig; the functions say it in one place).
-import { TENANT_ZONE } from './lib/booking/tenant-zone';
 import {
   arrivalRefusal,
   cancelAppointmentRefusal,
@@ -93,39 +96,17 @@ import {
   encodeTransitionAppointmentAnswer,
   recordSeatTipRefusal,
   rescheduleAppointmentRefusal,
-  settle,
   staffEditAppointmentRefusal,
   transitionAppointmentRefusal,
-  type WireRequest,
 } from './wire/booking.wire';
 import {
-  decodeRunBackfill,
-  encodeRunBackfillAnswer,
-  RUN_BACKFILL_TIMEOUT_SECONDS,
-} from './wire/ops.wire';
-import {
-  CapacitySource,
-  decodeCapacityEvent,
-  decodeDispatchProjectionsEvent,
-  decodeLeadTimeRun,
-  decodeMatchWaitlistEvent,
-  decodePolicyRecomputeEvent,
-  decodePolicyStepEvent,
-  decodePolicySweepRun,
-  decodeProfileChangeEvent,
-  decodeRebuildBusyEvent,
-  failOnRefusal,
-  POLICY_STEP_TIMEOUT_SECONDS,
-  profileAuditReport,
-  projectionReport,
-  settleAttempt,
-} from './wire/triggers.wire';
-import {
-  decodeCancelWaitlist,
-  decodeRequestWaitlist,
-  encodeCancelWaitlistAnswer,
-  encodeRequestWaitlistAnswer,
-} from './wire/waitlist.wire';
+  decodeEndImpersonation,
+  decodeStartImpersonation,
+  encodeEndImpersonationAnswer,
+  encodeStartImpersonationAnswer,
+  endImpersonationRefusal,
+  startImpersonationRefusal,
+} from './wire/governance.wire';
 import {
   completeRegistrationRefusal,
   decodeCompleteRegistration,
@@ -141,33 +122,68 @@ import {
   verifyOtpRefusal,
 } from './wire/identity.wire';
 import {
+  decodeRedeemInvitation,
+  encodeRedeemInvitationAnswer,
+  redeemInvitationRefusal,
+} from './wire/invitation.wire';
+import {
   answerStreakPublish,
   type StreakPublishAnswer,
 } from './wire/loyalty.wire';
+import {
+  decodeRunBackfill,
+  encodeRunBackfillAnswer,
+  RUN_BACKFILL_TIMEOUT_SECONDS,
+  runBackfillRefusal,
+} from './wire/ops.wire';
+import {
+  CapacitySource,
+  decodeCapacityEvent,
+  decodeDispatchProjectionsEvent,
+  decodeMatchWaitlistEvent,
+  decodePolicyRecomputeEvent,
+  decodePolicyStepEvent,
+  decodePolicySweepRun,
+  decodeProfileChangeEvent,
+  decodeRebuildBusyEvent,
+  failOnRefusal,
+  POLICY_STEP_TIMEOUT_SECONDS,
+  profileAuditReport,
+  projectionReport,
+  settleAttempt,
+} from './wire/triggers.wire';
+import {
+  cancelWaitlistRefusal,
+  decodeCancelWaitlist,
+  decodeRequestWaitlist,
+  encodeCancelWaitlistAnswer,
+  encodeRequestWaitlistAnswer,
+  requestWaitlistRefusal,
+} from './wire/waitlist.wire';
+import { settle, type WireRequest } from './wire/wire-read';
 
 /**
  * THE COMPOSITION ROOT (blueprint §4.3, D1(a)) — the only place in the
  * backend that constructs ports. It builds the adapters once per cold start,
  * assembles the port bundles, and wraps each pipeline in `onCall` /
- * `onDocument*` / `onSchedule` through the edge (`edge.ts`) and the frozen
- * wire (`wire/*.wire.ts`): a decoder turns today's JSON or event into the
- * pipeline's command, an encoder turns its answer into today's JSON, and a
- * `Result.err` becomes an `HttpsError` (callables) or an attempt line
- * (triggers). A handler here holds no logic.
+ * `onDocument*` / `onSchedule` through the edge (`edge.ts`) and the wire
+ * (`wire/*.wire.ts`): a decoder turns the call component or event into the
+ * pipeline's command, an encoder turns its answer into the call
+ * component's answer, and a `Result.err` becomes an `HttpsError`
+ * (callables) or an attempt line (triggers). A handler here holds no logic.
  *
- * The 30 exports keep their names, trigger paths and options exactly — the
+ * The exports keep their names, trigger paths and options exactly — the
  * names are what `firebase.json` deploys, the web dials (`Callables`) and
  * `verify:p0` exercises; the options (retry, memory, timeouts, schedules)
  * are the ones the legacy definitions declared, which no export sets a
  * region, secret or App Check on. `main.spec.ts` pins every endpoint as a
- * literal table, proves each flipped export runs exactly its own pipeline
- * (and no other), and that each callable reports an unexpected throw under
- * its own name.
+ * literal table, proves each export runs exactly its own pipeline (and no
+ * other), and that each callable reports an unexpected throw under its own
+ * name.
  *
- * Flip 1 (booking core) moved the 25 booking, capacity, waitlist,
- * projection, audit and backfill exports onto their pipelines; flip 2
- * (identity) moved the OTP trio and added `updateProfile`; flip 3 (loyalty)
- * moved the streak publish — no export runs a Phase 3a handler any more.
+ * Flips 1–3 moved every legacy export onto its pipeline; Phase 4a flipped
+ * the wire (4A-4) and added `startImpersonation`, `endImpersonation` and
+ * `redeemInvitation` with their rules tightenings (4A-3 (4), (5)).
  */
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
@@ -219,19 +235,18 @@ const onEmulator = (): boolean => process.env['FUNCTIONS_EMULATOR'] === 'true';
 const edge: EdgePorts = { ...telemetry, nowUtcMs };
 
 /**
- * The server's ports, in one bundle: every Firestore-backed port, the
- * telemetry, and the tenant's zone (`WIRE_ZONE`, the one place the
- * functions say it). Built on first use, as today's handlers reached
- * `adminFirestore()` only when invoked — loading this module (a deploy's
- * discovery, a spec) never initialises the Admin SDK.
+ * The server's ports, in one bundle: every Firestore-backed port (the
+ * locations among them — where every pipeline reads its wall clock's
+ * zone), the telemetry, and the deployment's default location
+ * (`TenantConfig.DEFAULT`, F-4: the shop a boundary with no location in
+ * scope reads its zone from). Built on first use — loading this module (a
+ * deploy's discovery, a spec) never initialises the Admin SDK.
  */
 const serverPorts = once(() => ({
   ...firestorePorts(adminFirestore(), primitives, telemetry),
   ...telemetry,
-  tenantTimeZone: WIRE_ZONE,
+  defaultLocationId: TenantConfig.DEFAULT.defaultLocationId,
 }));
-
-type ServerPorts = ReturnType<typeof serverPorts>;
 
 /**
  * The identity callables' ports: the server ports, Admin Auth, the
@@ -250,7 +265,7 @@ const identityPorts = once(() => ({
   // logs); a deployed environment can only construct the real generator.
   ...(onEmulator() ? fixedCodeOtpCryptoPorts() : nodeOtpCryptoPorts()),
   ...singleTenantPorts(DEFAULT_TENANT),
-  // The SAME deployment const the web app provides through `AUTH_DEPLOYMENT`.
+  // The SAME deployment const the web app provides through `AUTH_DEPLOYMENT_PORTS`.
   authDeployment: AuthDeployment.DEFAULT,
 }));
 
@@ -260,8 +275,7 @@ const identityPorts = once(() => ({
  * defect thrown inside the decision — answers
  * `RepositoryError.writeFailed(null, String(cause))`, the value the
  * callable logs (`'rhythm rule write failed'`, the cause's text) and
- * answers as its `store_failed`; today's store caught every throw inside
- * `runTransaction` the same way (flip-3 plan §3.3).
+ * answers as its store failure (flip-3 plan §3.3).
  */
 function settledCommit(commit: CommitPlan): CommitPlan {
   return (read, decide) =>
@@ -294,65 +308,54 @@ const root = {
   streak: streakPorts,
 } as const;
 
+/** How one callable is wired: its name, its coded failure, its timeout. */
+type Wiring = {
+  readonly callable: CallableName;
+  /**
+   * What an infrastructure failure answers with — the callable's coded
+   * `internal` (`BOOKING_COMMIT_STORE_FAILED`) — or `null` for the
+   * platform's bare INTERNAL.
+   */
+  readonly failureCode: EdgeCode | null;
+  readonly timeoutSeconds: number | null;
+};
+
 /**
- * One booking callable: today's JSON decoded into the command (or refused
- * as today), the pipeline run over the server ports, its answer encoded
- * and its refusal spelt in the callable's own words. `failureCode` is what
- * an infrastructure failure answers with — today's coded
- * `booking.commit.store_failed` where the legacy handler coded it, else the
- * platform's bare INTERNAL.
+ * One callable: the call component decoded into the command (or refused),
+ * the pipeline run over its ports, its answer encoded and its refusal in
+ * the callable's own words.
  */
-function bookingCallable<C, A, E, Out>(
-  callable: CallableName,
-  failureCode: EdgeCode | null,
+function wiredCallable<P, C, A, E, Out>(
+  wiring: Wiring,
+  ports: () => P,
   decode: (request: WireRequest) => Result<C, EdgeError>,
-  run: (ports: ServerPorts, cmd: C) => Promise<Result<A, E>>,
+  run: (ports: P, cmd: C, budget: WorkBudget) => Promise<Result<A, E>>,
   encode: (answer: A) => Out,
   refuse: (error: E, cmd: C) => EdgeError,
 ) {
-  return onCall(
-    callableEdge<unknown, Out>(
-      { callable, failureCode, timeoutSeconds: null, answer: null },
-      root.edge,
-      async (request) => {
-        const cmd = decode(request);
-        if (!cmd.ok) return cmd;
-        return settle(await run(root.ports(), cmd.value), encode, (error) =>
-          refuse(error, cmd.value),
-        );
-      },
-    ),
+  return callableEdge<unknown, Out>(
+    {
+      callable: wiring.callable,
+      failureCode: wiring.failureCode,
+      timeoutSeconds: wiring.timeoutSeconds,
+      answer: null,
+    },
+    root.edge,
+    async (request: CallableRequest<unknown>, budget) => {
+      const cmd = decode(request);
+      if (!cmd.ok) return cmd;
+      return settle(await run(ports(), cmd.value, budget), encode, (error) =>
+        refuse(error, cmd.value),
+      );
+    },
   );
 }
 
-/**
- * One identity callable: today's JSON decoded into the command (or refused
- * as today), the pipeline run over its ports, its answer encoded and its
- * refusal spelt in the callable's own words. A store failure answers the
- * callable's `failureCode` — today's coded `repository_failure` for the OTP
- * trio, whose handlers coded every store failure so.
- */
-function identityCallable<P, C, A, E, Out>(
+/** A callable with the platform's options and timeout. */
+const plain = (
   callable: CallableName,
   failureCode: EdgeCode | null,
-  ports: () => P,
-  decode: (request: WireRequest) => Result<C, EdgeError>,
-  run: (ports: P, cmd: C) => Promise<Result<A, E>>,
-  encode: (answer: A) => Out,
-  refuse: (error: E) => EdgeError,
-) {
-  return onCall(
-    callableEdge<unknown, Out>(
-      { callable, failureCode, timeoutSeconds: null, answer: null },
-      root.edge,
-      async (request) => {
-        const cmd = decode(request);
-        if (!cmd.ok) return cmd;
-        return settle(await run(ports(), cmd.value), encode, refuse);
-      },
-    ),
-  );
-}
+): Wiring => ({ callable, failureCode, timeoutSeconds: null });
 
 // ── Trigger paths, spelled through the collection registry ────────────────
 
@@ -375,51 +378,62 @@ const LARGE_MEMORY = '512MiB';
 
 // ── Identity ──────────────────────────────────────────────────────────────
 
-export const requestOtpChallenge = identityCallable(
-  Callables.RequestOtpChallenge,
-  LegacyWireCode.RepositoryFailure,
-  root.identity,
-  decodeRequestOtp,
-  (ports, cmd) => requestOtp(ports)(cmd),
-  // `devCode` only ever leaves the emulator: E2E has no inbox to read from.
-  (answer) => encodeRequestOtpAnswer(answer, onEmulator()),
-  requestOtpRefusal,
+export const requestOtpChallenge = onCall(
+  wiredCallable(
+    plain(Callables.RequestOtpChallenge, IdentityErrorCode.RepositoryFailure),
+    root.identity,
+    decodeRequestOtp,
+    (ports, cmd) => requestOtp(ports)(cmd),
+    // `devCode` only ever leaves the emulator: E2E has no inbox to read from.
+    (answer) => encodeRequestOtpAnswer(answer, onEmulator()),
+    requestOtpRefusal,
+  ),
 );
 
-export const verifyOtpChallenge = identityCallable(
-  Callables.VerifyOtpChallenge,
-  LegacyWireCode.RepositoryFailure,
-  root.identity,
-  decodeVerifyOtp,
-  (ports, cmd) => verifyOtp(ports)(cmd),
-  encodeVerifyOtpAnswer,
-  verifyOtpRefusal,
+export const verifyOtpChallenge = onCall(
+  wiredCallable(
+    plain(Callables.VerifyOtpChallenge, IdentityErrorCode.RepositoryFailure),
+    root.identity,
+    decodeVerifyOtp,
+    (ports, cmd) => verifyOtp(ports)(cmd),
+    encodeVerifyOtpAnswer,
+    verifyOtpRefusal,
+  ),
 );
 
-export const completeRegistration = identityCallable(
-  Callables.CompleteRegistration,
-  LegacyWireCode.RepositoryFailure,
-  root.identity,
-  decodeCompleteRegistration,
-  (ports, cmd) => completeRegistrationPipeline(ports)(cmd),
-  encodeCompleteRegistrationAnswer,
-  completeRegistrationRefusal,
+export const completeRegistration = onCall(
+  wiredCallable(
+    plain(Callables.CompleteRegistration, IdentityErrorCode.RepositoryFailure),
+    root.identity,
+    decodeCompleteRegistration,
+    (ports, cmd) => completeRegistrationPipeline(ports)(cmd),
+    encodeCompleteRegistrationAnswer,
+    completeRegistrationRefusal,
+  ),
 );
 
-/** The owner's own profile edit — over the server ports: it never needs Admin Auth. */
-export const updateProfile = identityCallable(
-  Callables.UpdateProfile,
-  null,
-  root.ports,
-  decodeUpdateProfile,
-  (ports, cmd) => updateProfilePipeline(ports)(cmd),
-  encodeUpdateProfileAnswer,
-  updateProfileRefusal,
+/**
+ * The owner's own profile edit — over the server ports: it never needs
+ * Admin Auth. Since Phase 4a the only owner write (`users/{uid}` refuses
+ * every client update) and its own auditor (4A-16).
+ */
+export const updateProfile = onCall(
+  wiredCallable(
+    plain(Callables.UpdateProfile, null),
+    root.ports,
+    decodeUpdateProfile,
+    (ports, cmd) => updateProfilePipeline(ports)(cmd),
+    encodeUpdateProfileAnswer,
+    updateProfileRefusal,
+  ),
 );
 
 const AUDIT_PROFILE_FN = 'auditProfileChanges';
 
-/** Every profile change becomes an audit row — whatever wrote it, named by the auth context. */
+/**
+ * Every profile change becomes an audit row — whatever wrote it, named by
+ * the auth context — but an owner's edit `updateProfile` already audited.
+ */
 export const auditProfileChanges = onDocumentWrittenWithAuthContext(
   { document: USER_DOC, retry: true },
   retryingTrigger(
@@ -441,76 +455,92 @@ export const auditProfileChanges = onDocumentWrittenWithAuthContext(
 
 // ── Booking ───────────────────────────────────────────────────────────────
 
-export const commitBooking = bookingCallable(
-  Callables.CommitBooking,
-  LegacyWireCode.CommitStoreFailed,
-  decodeCommitBooking,
-  (ports, cmd) => bookAppointment(ports)(cmd),
-  encodeCommitBookingAnswer,
-  commitBookingRefusal,
+export const commitBooking = onCall(
+  wiredCallable(
+    plain(Callables.CommitBooking, BookingErrorCode.CommitStoreFailed),
+    root.ports,
+    decodeCommitBooking,
+    (ports, cmd) => bookAppointment(ports)(cmd),
+    encodeCommitBookingAnswer,
+    commitBookingRefusal,
+  ),
 );
 
-export const cancelAppointment = bookingCallable(
-  Callables.CancelAppointment,
-  null,
-  decodeCancelAppointment,
-  (ports, cmd) => cancelAppointmentPipeline(ports)(cmd),
-  encodeCancelAppointmentAnswer,
-  cancelAppointmentRefusal,
+export const cancelAppointment = onCall(
+  wiredCallable(
+    plain(Callables.CancelAppointment, null),
+    root.ports,
+    decodeCancelAppointment,
+    (ports, cmd) => cancelAppointmentPipeline(ports)(cmd),
+    encodeCancelAppointmentAnswer,
+    cancelAppointmentRefusal,
+  ),
 );
 
-export const rescheduleAppointment = bookingCallable(
-  Callables.RescheduleAppointment,
-  LegacyWireCode.CommitStoreFailed,
-  decodeRescheduleAppointment,
-  (ports, cmd) => rescheduleAppointmentPipeline(ports)(cmd),
-  encodeRescheduleAppointmentAnswer,
-  rescheduleAppointmentRefusal,
+export const rescheduleAppointment = onCall(
+  wiredCallable(
+    plain(Callables.RescheduleAppointment, BookingErrorCode.CommitStoreFailed),
+    root.ports,
+    decodeRescheduleAppointment,
+    (ports, cmd) => rescheduleAppointmentPipeline(ports)(cmd),
+    encodeRescheduleAppointmentAnswer,
+    rescheduleAppointmentRefusal,
+  ),
 );
 
-export const transitionAppointment = bookingCallable(
-  Callables.TransitionAppointment,
-  null,
-  decodeTransitionAppointment,
-  (ports, cmd) => transitionAppointmentPipeline(ports)(cmd),
-  encodeTransitionAppointmentAnswer,
-  transitionAppointmentRefusal,
+export const transitionAppointment = onCall(
+  wiredCallable(
+    plain(Callables.TransitionAppointment, null),
+    root.ports,
+    decodeTransitionAppointment,
+    (ports, cmd) => transitionAppointmentPipeline(ports)(cmd),
+    encodeTransitionAppointmentAnswer,
+    transitionAppointmentRefusal,
+  ),
 );
 
-export const markArrived = bookingCallable(
-  Callables.MarkArrived,
-  null,
-  decodeMarkArrived,
-  (ports, cmd) => markArrival(ports)(cmd),
-  encodeMarkArrivedAnswer,
-  (error) => arrivalRefusal(error, 'arrived'),
+export const markArrived = onCall(
+  wiredCallable(
+    plain(Callables.MarkArrived, null),
+    root.ports,
+    decodeMarkArrived,
+    (ports, cmd) => markArrival(ports)(cmd),
+    encodeMarkArrivedAnswer,
+    arrivalRefusal,
+  ),
 );
 
-export const clearArrival = bookingCallable(
-  Callables.ClearArrival,
-  null,
-  decodeClearArrival,
-  (ports, cmd) => markArrival(ports)(cmd),
-  encodeClearArrivalAnswer,
-  (error) => arrivalRefusal(error, 'unarrived'),
+export const clearArrival = onCall(
+  wiredCallable(
+    plain(Callables.ClearArrival, null),
+    root.ports,
+    decodeClearArrival,
+    (ports, cmd) => markArrival(ports)(cmd),
+    encodeClearArrivalAnswer,
+    arrivalRefusal,
+  ),
 );
 
-export const recordSeatTip = bookingCallable(
-  Callables.RecordSeatTip,
-  null,
-  decodeRecordSeatTip,
-  (ports, cmd) => recordSeatTipPipeline(ports)(cmd),
-  encodeRecordSeatTipAnswer,
-  recordSeatTipRefusal,
+export const recordSeatTip = onCall(
+  wiredCallable(
+    plain(Callables.RecordSeatTip, null),
+    root.ports,
+    decodeRecordSeatTip,
+    (ports, cmd) => recordSeatTipPipeline(ports)(cmd),
+    encodeRecordSeatTipAnswer,
+    recordSeatTipRefusal,
+  ),
 );
 
-export const staffEditAppointment = bookingCallable(
-  Callables.StaffEditAppointment,
-  LegacyWireCode.CommitStoreFailed,
-  decodeStaffEditAppointment,
-  (ports, cmd) => editAppointment(ports)(cmd),
-  encodeStaffEditAppointmentAnswer,
-  staffEditAppointmentRefusal,
+export const staffEditAppointment = onCall(
+  wiredCallable(
+    plain(Callables.StaffEditAppointment, BookingErrorCode.CommitStoreFailed),
+    root.ports,
+    decodeStaffEditAppointment,
+    (ports, cmd) => editAppointment(ports)(cmd),
+    encodeStaffEditAppointmentAnswer,
+    staffEditAppointmentRefusal,
+  ),
 );
 
 /** Both sides of an appointment write re-derive the busy days they touch (a reschedule frees one, fills another). */
@@ -562,55 +592,41 @@ export const rebuildCapacityOnSettingsChange = onDocumentWritten(
   () => rebuildCapacityFrom(CapacitySource.Settings),
 );
 
-/** 03:00 on the tenant's clock — after the shop's day, before anyone books breakfast. */
+/** 03:00 on the schedules' clock (`CRON_TIME_ZONE`) — after the shop's day, before anyone books breakfast. */
 export const sweepCapacityDaily = onSchedule(
-  { schedule: 'every day 03:00', timeZone: TENANT_ZONE, retryCount: 3 },
+  { schedule: 'every day 03:00', timeZone: CRON_TIME_ZONE, retryCount: 3 },
   () => rebuildCapacityFrom(CapacitySource.Sweep),
 );
 
 /** 04:00 — an hour after the capacity sweep, so it samples a repaired rollup. */
 export const sampleBarberLeadTimeDaily = onSchedule(
-  { schedule: 'every day 04:00', timeZone: TENANT_ZONE, retryCount: 3 },
+  { schedule: 'every day 04:00', timeZone: CRON_TIME_ZONE, retryCount: 3 },
   async () => {
-    failOnRefusal(await sampleLeadTime(root.ports())(decodeLeadTimeRun()));
+    failOnRefusal(await sampleLeadTime(root.ports())());
   },
 );
 
 // ── Waitlist ──────────────────────────────────────────────────────────────
 
 export const requestWaitlist = onCall(
-  callableEdge(
-    {
-      callable: Callables.RequestWaitlist,
-      failureCode: null,
-      timeoutSeconds: null,
-      answer: null,
-    },
-    root.edge,
-    async (request) =>
-      encodeRequestWaitlistAnswer(
-        await requestWaitlistPipeline(root.ports())(
-          decodeRequestWaitlist(request),
-        ),
-      ),
+  wiredCallable(
+    plain(Callables.RequestWaitlist, null),
+    root.ports,
+    decodeRequestWaitlist,
+    (ports, cmd) => requestWaitlistPipeline(ports)(cmd),
+    encodeRequestWaitlistAnswer,
+    requestWaitlistRefusal,
   ),
 );
 
 export const cancelWaitlist = onCall(
-  callableEdge(
-    {
-      callable: Callables.CancelWaitlist,
-      failureCode: null,
-      timeoutSeconds: null,
-      answer: null,
-    },
-    root.edge,
-    async (request) =>
-      encodeCancelWaitlistAnswer(
-        await cancelWaitlistPipeline(root.ports())(
-          decodeCancelWaitlist(request),
-        ),
-      ),
+  wiredCallable(
+    plain(Callables.CancelWaitlist, null),
+    root.ports,
+    decodeCancelWaitlist,
+    (ports, cmd) => cancelWaitlistPipeline(ports)(cmd),
+    encodeCancelWaitlistAnswer,
+    cancelWaitlistRefusal,
   ),
 );
 
@@ -685,7 +701,7 @@ export const continueClientStatsPolicyRecompute = onDocumentWritten(
 
 /** 03:30 — between the capacity sweep and the lead-time sample: a dropped start started, a stalled pass nudged. */
 export const sweepClientStatsPolicyDaily = onSchedule(
-  { schedule: 'every day 03:30', timeZone: TENANT_ZONE, retryCount: 3 },
+  { schedule: 'every day 03:30', timeZone: CRON_TIME_ZONE, retryCount: 3 },
   (tick) =>
     retryingTrigger(
       { fn: POLICY_SWEEP_FN, timeoutSeconds: null },
@@ -698,44 +714,79 @@ export const sweepClientStatsPolicyDaily = onSchedule(
     )(decodePolicySweepRun(tick, POLICY_SWEEP_FN)),
 );
 
-// ── Operations and loyalty ────────────────────────────────────────────────
+// ── Operations, loyalty, governance and referrals ─────────────────────────
 
 export const runBackfill = onCall(
   { timeoutSeconds: RUN_BACKFILL_TIMEOUT_SECONDS, memory: LARGE_MEMORY },
-  callableEdge(
+  wiredCallable(
     {
       callable: Callables.RunBackfill,
       failureCode: null,
       timeoutSeconds: RUN_BACKFILL_TIMEOUT_SECONDS,
-      answer: null,
     },
-    root.edge,
-    async (request, budget) =>
-      encodeRunBackfillAnswer(
-        await runBackfillPipeline(root.ports())(
-          decodeRunBackfill(request),
-          budget,
-        ),
-      ),
+    root.ports,
+    decodeRunBackfill,
+    (ports, cmd, budget) => runBackfillPipeline(ports)(cmd, budget),
+    encodeRunBackfillAnswer,
+    runBackfillRefusal,
   ),
 );
 
 /**
- * The rhythm's rule, published or called off (loyalty flip (3)): the request
- * read in today's order (the caller, then the envelope), the act's pipeline
+ * The rhythm's rule, published or called off: the request read in order
+ * (the caller, then the envelope), the act's pipeline
  * (`publishStreakDefinition` / `withdrawStreakDefinition`) run over the
- * streak ports, its answer or refusal in today's words — `loyalty.wire.ts`.
+ * streak ports, its answer or refusal on the wire — `loyalty.wire.ts`.
  * Behind no feature flag of its own.
  */
 export const publishStreakDefinition = onCall(
   callableEdge<unknown, StreakPublishAnswer>(
     {
       callable: Callables.PublishStreakDefinition,
-      failureCode: LegacyWireCode.StreakPublishStoreFailed,
+      failureCode: StreakPublishErrorCode.StoreFailed,
       timeoutSeconds: null,
       answer: null,
     },
     root.edge,
     (request) => answerStreakPublish(request, root.streak, root.telemetry),
+  ),
+);
+
+/**
+ * An admin opens an impersonation (4A-3 (4)) — the only writer of
+ * `impersonationSessions` since the rules refused the direct write.
+ */
+export const startImpersonation = onCall(
+  wiredCallable(
+    plain(Callables.StartImpersonation, null),
+    root.ports,
+    decodeStartImpersonation,
+    (ports, cmd) => startImpersonationPipeline(ports)(cmd),
+    encodeStartImpersonationAnswer,
+    startImpersonationRefusal,
+  ),
+);
+
+/** An admin ends an impersonation — the same caller gate, ONE `Set` of the ended body (4A-3 (4)). */
+export const endImpersonation = onCall(
+  wiredCallable(
+    plain(Callables.EndImpersonation, null),
+    root.ports,
+    decodeEndImpersonation,
+    (ports, cmd) => endImpersonationPipeline(ports)(cmd),
+    encodeEndImpersonationAnswer,
+    endImpersonationRefusal,
+  ),
+);
+
+/** A signed-in user redeems an invitation (4A-3 (5)) — the only writer of its count and redemptions. */
+export const redeemInvitation = onCall(
+  wiredCallable(
+    plain(Callables.RedeemInvitation, null),
+    root.ports,
+    decodeRedeemInvitation,
+    (ports, cmd) => redeemInvitationPipeline(ports)(cmd),
+    encodeRedeemInvitationAnswer,
+    redeemInvitationRefusal,
   ),
 );

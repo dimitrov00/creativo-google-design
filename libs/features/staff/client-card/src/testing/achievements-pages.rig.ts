@@ -24,14 +24,12 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { type Observable, firstValueFrom, of } from 'rxjs';
-import {
-  AVATAR_UPLOADER,
-  type AvatarUploader,
-  ZonedDateTime,
-} from '@creativo/application/accounts';
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  AvatarPorts,
+  DefaultLocationPorts,
+  LocationLoadPorts,
   ClientJournalPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
@@ -41,19 +39,25 @@ import type {
   ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
+import { UtcEpochMs } from '@core/primitives';
+import { memoryClockPorts, unwrapOk } from '@core/testing';
 import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AVATAR_PORTS,
   CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
+  CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  LOCATION_LOAD_PORTS,
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
   WAITLIST_READ_PORTS,
+  provideFlags,
 } from '@creativo/infrastructure/firebase-app';
-import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import type {
   ClientCardContext,
   ClientCardSubject,
@@ -62,9 +66,9 @@ import { ClientCardStore } from '../lib/client-card.store';
 import {
   GEORGI,
   GEORGI_MONEY,
-  InMemoryAvatars,
   MARTIN,
   NOW_MS,
+  avatarPortsOf,
   catalogPortsOf,
   catalogueOf,
   customerPortsOf,
@@ -76,6 +80,7 @@ import {
   martinWaitlist,
   photoPortsOf,
   profilePortsOf,
+  shopZonePortsOf,
   statsOf,
   statsPortsOf,
   waitlistPortsOf,
@@ -147,7 +152,7 @@ export interface AchievementsRig {
   readonly waitlist?: WaitlistReadPorts;
   /** The client records the card resolves its person by (D29) — Георги's and Мартин's by default. */
   readonly customers?: CustomerPorts;
-  readonly avatars?: AvatarUploader;
+  readonly avatars?: AvatarPorts;
   /**
    * The wallet's two readers (revision 3 §4.5, §4.7). Bound ONLY when a
    * spec hands them (B2-6): the glance pages' world stays the one without
@@ -157,13 +162,33 @@ export interface AchievementsRig {
   readonly activity?: ClientJournalPorts;
 }
 
+/**
+ * What every `ClientCardStore` needs bound besides its read ports: the
+ * clock («now», Monday 28 September 2026, 12:40 by default) and the shop's
+ * zone — the default location's, the fixture centre shop's unless a spec
+ * hands its own locations (4A-11).
+ */
+export function cardRuntimeProviders(
+  nowMs: number = NOW_MS,
+  zone: LocationLoadPorts & DefaultLocationPorts = shopZonePortsOf(),
+): Provider[] {
+  return [
+    {
+      provide: CLOCK_PORTS,
+      useValue: memoryClockPorts(unwrapOk(UtcEpochMs.of(nowMs))),
+    },
+    { provide: LOCATION_LOAD_PORTS, useValue: zone },
+    { provide: DEFAULT_LOCATION_PORTS, useValue: zone },
+  ];
+}
+
 /** The store, its ports and the words, bound as the visit editor's injector binds them. */
 export function achievementsPageProviders(
   rig: AchievementsRig = {},
 ): (Provider | EnvironmentProviders)[] {
   return [
     ClientCardStore,
-    provideFeatureFlags(rig.flags ?? ALL_LOYALTY_FLAGS),
+    provideFlags(rig.flags ?? ALL_LOYALTY_FLAGS),
     ...provideTransloco({
       config: {
         availableLangs: ['bg', 'en'],
@@ -173,13 +198,7 @@ export function achievementsPageProviders(
       },
       loader: CatalogueLoader,
     }),
-    {
-      provide: CLOCK,
-      useValue: {
-        now: (zone: string) =>
-          ZonedDateTime.fromMillis(rig.nowMs ?? NOW_MS, zone),
-      },
-    },
+    ...cardRuntimeProviders(rig.nowMs),
     {
       provide: PROFILE_PORTS,
       useValue: rig.profiles ?? profilePortsOf(),
@@ -219,10 +238,10 @@ export function achievementsPageProviders(
       useValue: rig.waitlist ?? waitlistPortsOf([martinWaitlist()]),
     },
     {
-      provide: AVATAR_UPLOADER,
+      provide: AVATAR_PORTS,
       useValue:
         rig.avatars ??
-        new InMemoryAvatars(
+        avatarPortsOf(
           new Map([[GEORGI, 'https://example.test/avatars/georgi.jpg']]),
         ),
     },

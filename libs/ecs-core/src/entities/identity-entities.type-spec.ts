@@ -77,9 +77,13 @@ export const stubIsUser: Equals<
 declare const stub: ReturnType<typeof RegistrationSystem.provision>;
 export const stubAsUser: User = stub;
 
-/* ── OwnerProfileFields — the rules' owner allowlist (F2-17) ───────────── */
+/* ── OwnerProfileFields — the keys an owner's edit writes (F2-17) ──────── */
 
-/** Exactly the five keys of the `users` owner-update allowlist — no more, no fewer. */
+/**
+ * Exactly the five keys `updateProfile` writes for the owner — no more, no
+ * fewer (the rules' owner allowlist until Phase 4a closed `users` to every
+ * client write).
+ */
 export const ownerKeysAreTheAllowlist: Equals<
   keyof OwnerProfileFields,
   'firstName' | 'lastName' | 'birthDate' | 'searchName' | 'searchPrefixes'

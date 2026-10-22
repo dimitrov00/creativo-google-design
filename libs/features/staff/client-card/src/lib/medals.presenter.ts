@@ -39,7 +39,7 @@ import {
   shelfOrdered,
   standingOf,
 } from './achievements.presenter';
-import type { AchievementScope } from './client-card.contracts';
+import { AchievementScope } from './client-card.contracts';
 import {
   dayLong,
   dayShort,
@@ -865,7 +865,7 @@ export function medalScopeVm(
   if (built === null) return null;
   const rhythm = rhythmShown(data, options);
   const category =
-    scope.kind === 'category'
+    scope.achievementScope === AchievementScope.Category
       ? LoyaltyCatalogSystem.category(
           data.catalog,
           BadgeCategoryId.of(scope.categoryId),

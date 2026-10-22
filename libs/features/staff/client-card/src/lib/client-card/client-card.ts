@@ -41,7 +41,11 @@ import { BirthdayCard } from '../birthday-card/birthday-card';
 import type { ClientCardRegion, WalletAnchor } from '../client-card.contracts';
 import { figure, partedAtJoints } from '../client-card.format';
 import { ClientCardStore } from '../client-card.store';
-import type { ClientPhotoVm, LinePart } from '../client-pages.vm';
+import {
+  CardLoadState,
+  type ClientPhotoVm,
+  type LinePart,
+} from '../client-pages.vm';
 import { LoyaltyGlance } from '../loyalty-glance/loyalty-glance';
 import { MedalsGlance } from '../medals-glance/medals-glance';
 import { regularSheetWidth } from '../sheet-width';
@@ -157,6 +161,9 @@ export class ClientCard {
   /** The `h2`'s id: the sheet's page container is labelled by it. */
   readonly titleId = input.required<string>();
 
+  /** Where each module's read stands, for the template's switches. */
+  protected readonly CardLoadState = CardLoadState;
+
   /** The loyalty card and «Всички»: the wallet at its top (`null`). The anchors stay for the editor's binding. */
   readonly openLoyalty = output<WalletAnchor | null>();
   /** «38 ›»: the achievements collection. */
@@ -246,7 +253,9 @@ export class ClientCard {
   protected readonly visitsAction = computed(() => {
     const slice = this.overview().visits;
     const words = this.words();
-    if (slice?.status !== 'ready' || words === null) return null;
+    if (slice?.cardLoadState !== CardLoadState.Ready || words === null) {
+      return null;
+    }
     const count = slice.data.count;
     return {
       figure: figure(count, words.lang),
@@ -258,7 +267,9 @@ export class ClientCard {
   protected readonly achievementsAction = computed(() => {
     const slice = this.overview().medals;
     const words = this.words();
-    if (slice?.status !== 'ready' || words === null) return null;
+    if (slice?.cardLoadState !== CardLoadState.Ready || words === null) {
+      return null;
+    }
     const count = slice.data.levelCount;
     return {
       figure: figure(count, words.lang),
@@ -279,7 +290,7 @@ export class ClientCard {
   /** I1 — the newest cuts that fill the grid's rows: three on a phone, ten in the dialog. */
   protected readonly shownPhotos = computed((): readonly ClientPhotoVm[] => {
     const photos = this.overview().photos;
-    if (photos?.status !== 'ready') return [];
+    if (photos?.cardLoadState !== CardLoadState.Ready) return [];
     const rows = this.wide() ? PHOTO_ROWS.regular : PHOTO_ROWS.compact;
     return photos.data.slice(0, this.photoColumns() * rows);
   });

@@ -1,19 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import fc from 'fast-check';
 import type { Firestore } from 'firebase/firestore';
-import { E164, Email, Role } from '@core/components';
-import {
-  AccountsErrorCode,
-  RepositoryErrorCode,
-  Result,
-  UserId,
-} from '@core/primitives';
-import type { OwnerProfileFields, User } from '@core/entities';
-import { ProfileEditSystem, SearchFieldsSystem } from '@core/systems';
-import type { ProfileEdits } from '@core/systems';
+import { E164, Email } from '@core/components';
+import { RepositoryErrorCode, Result, UserId } from '@core/primitives';
+import type { User } from '@core/entities';
+import { SearchFieldsSystem } from '@core/systems';
 import {
   FIXTURE_PHONE,
-  FIXTURE_TODAY,
   blockedUserFixture,
   provisionedUserFixture,
   registeredUserFixture,
@@ -27,18 +19,6 @@ vi.mock('firebase/firestore', async () =>
 const { profilePorts, userSearchPorts } = await import('./accounts.adapter');
 
 const asDb = (fake: FakeFirestore) => fake as unknown as Firestore;
-
-/**
- * The FIX 2 owner allowlist (`firestore.rules`, `users` update), spelled out
- * here on purpose rather than imported: the spec pins the rule's list.
- */
-const OWNER_EDITABLE_KEYS = [
-  'birthDate',
-  'firstName',
-  'lastName',
-  'searchName',
-  'searchPrefixes',
-];
 
 /** Everything a stream said, in order. */
 function recorded<T>(stream: {
@@ -79,25 +59,6 @@ const MARIA = registeredUserFixture({
   ),
 });
 const MARIA_PATH = `users/${MARIA.id}`;
-
-/** `ProfileEditSystem.decide` bound to `edits` on the fixture day — what a store hands the port. */
-const decideWith = (edits: Partial<ProfileEdits>) => (stored: User | null) =>
-  ProfileEditSystem.decide(
-    stored,
-    { firstName: null, lastName: null, birthDate: null, ...edits },
-    FIXTURE_TODAY,
-  );
-
-/** The one write the fake applied, as `{ kind, path, keys }`. */
-function onlyWrite(fake: FakeFirestore) {
-  expect(fake.writes).toHaveLength(1);
-  const [write] = fake.writes;
-  return {
-    kind: write?.kind,
-    path: write?.path,
-    data: (write?.data ?? {}) as Record<string, unknown>,
-  };
-}
 
 describe('profilePorts.observeProfile — users/{uid}, live, as stored', () => {
   it('answers null while there is no document, then the body the server writes', () => {
@@ -211,244 +172,12 @@ describe('profilePorts.loadProfile — users/{uid}, once, as stored', () => {
   });
 });
 
-describe('profilePorts.writeOwnProfile — read, decide, update the five keys, in one transaction', () => {
-  it('updates only the owner-editable keys, never a whole-document set', async () => {
-    const fake = storeOf(MARIA);
-
-    const answer = await profilePorts(asDb(fake)).writeOwnProfile(
-      MARIA.id,
-      decideWith({ firstName: 'Georgi', birthDate: '1990-05-17' }),
-    );
-
-    expect(answer).toEqual(Result.ok(undefined));
-    const write = onlyWrite(fake);
-    expect(write.kind).toBe('update');
-    expect(write.path).toBe(MARIA_PATH);
-    expect(Object.keys(write.data).sort()).toEqual(OWNER_EDITABLE_KEYS);
-    expect(write.data).toMatchObject({
-      firstName: 'Georgi',
-      lastName: 'Petrova',
-      birthDate: '1990-05-17',
-      searchName: 'georgi petrova',
-    });
-  });
-
-  it('hands decide the transaction’s read: the stored body, or null when absent', async () => {
-    const seen: (User | null)[] = [];
-    const remember = (stored: User | null) => {
-      seen.push(stored);
-      return Result.ok(null);
-    };
-
-    await profilePorts(asDb(storeOf(MARIA))).writeOwnProfile(
-      MARIA.id,
-      remember,
-    );
-    await profilePorts(asDb(new FakeFirestore())).writeOwnProfile(
-      MARIA.id,
-      remember,
-    );
-
-    expect(seen).toEqual([MARIA, null]);
-  });
-
-  it('never sends roles, accountStatus, phone or email, whatever the answer carries', async () => {
-    const fake = storeOf(MARIA);
-    // An answer wider than its type: a whole other account under the cast.
-    const wider = {
-      ...blockedUserFixture({
-        roles: [Role.Client, Role.Admin],
-        phone: E164.of('+359877000111'),
-        email: Email.of('someone-else@example.com'),
-      }),
-      firstName: 'Georgi',
-      lastName: 'Petrova',
-    } as unknown as OwnerProfileFields;
-
-    const answer = await profilePorts(asDb(fake)).writeOwnProfile(
-      MARIA.id,
-      () => Result.ok(wider),
-    );
-
-    expect(answer).toEqual(Result.ok(undefined));
-    const { data } = onlyWrite(fake);
-    expect(Object.keys(data).sort()).toEqual(OWNER_EDITABLE_KEYS);
-    for (const key of [
-      'roles',
-      'accountStatus',
-      'blockReason',
-      'phone',
-      'email',
-    ]) {
-      expect(data).not.toHaveProperty(key);
-    }
-    expect(fake.documentAt(MARIA_PATH)).toMatchObject({
-      roles: [Role.Client],
-      accountStatus: 'ACTIVE',
-      phone: MARIA.phone,
-      email: 'mp@abv.bg',
-    });
-  });
-
-  it('writes the search keys the decide derived from the STORED contact channels', async () => {
-    const fake = storeOf(MARIA);
-
-    await profilePorts(asDb(fake)).writeOwnProfile(
-      MARIA.id,
-      decideWith({ firstName: 'Georgi' }),
-    );
-
-    const { data } = onlyWrite(fake);
-    expect(data['searchPrefixes']).toEqual(
-      SearchFieldsSystem.searchFields(
-        'Georgi',
-        'Petrova',
-        MARIA.phone,
-        MARIA.email,
-      ).searchPrefixes,
-    );
-    expect(data['searchPrefixes']).toEqual(
-      expect.arrayContaining([
-        'georgi',
-        '359888123456',
-        '0888123456',
-        'mp@abv.bg',
-      ]),
-    );
-    // The old first name is gone from the index.
-    expect(data['searchPrefixes']).not.toContain('maria');
-  });
-
-  it('sends the answer’s null birth date as null — a key of the five is never dropped', async () => {
-    const withBirthday = { ...MARIA, birthDate: '1990-05-17' } as User;
-    const fake = storeOf(withBirthday);
-    const cleared: OwnerProfileFields = {
-      firstName: 'Maria',
-      lastName: 'Petrova',
-      birthDate: null,
-      searchName: MARIA.searchName,
-      searchPrefixes: MARIA.searchPrefixes,
-    };
-
-    await profilePorts(asDb(fake)).writeOwnProfile(MARIA.id, () =>
-      Result.ok(cleared),
-    );
-
-    const { data } = onlyWrite(fake);
-    expect(data).toHaveProperty('birthDate', null);
-    expect(fake.documentAt(MARIA_PATH)).toHaveProperty('birthDate', null);
-  });
-
-  it('a null answer (nothing changed) writes nothing', async () => {
-    const fake = storeOf(MARIA);
-
-    const answer = await profilePorts(asDb(fake)).writeOwnProfile(
-      MARIA.id,
-      decideWith({ firstName: 'Maria' }),
-    );
-
-    expect(answer).toEqual(Result.ok(undefined));
-    expect(fake.writes).toEqual([]);
-  });
-
-  it('refuses to create: decide over a missing document answers not found, nothing written', async () => {
-    const fake = new FakeFirestore();
-
-    const answer = await profilePorts(asDb(fake)).writeOwnProfile(
-      MARIA.id,
-      decideWith({ firstName: 'Georgi' }),
-    );
-
-    expect(answer).toEqual(
-      Result.err({ errorCode: AccountsErrorCode.UpdateProfileNotFound }),
-    );
-    expect(fake.writes).toEqual([]);
-    expect(fake.documentAt(MARIA_PATH)).toBeUndefined();
-  });
-
-  it('refuses to register: decide over a PROVISIONED stub answers not found, nothing written', async () => {
-    const stub = provisionedUserFixture();
-    const fake = storeOf(stub);
-
-    const answer = await profilePorts(asDb(fake)).writeOwnProfile(
-      stub.id,
-      decideWith({ firstName: 'Maria', lastName: 'Petrova' }),
-    );
-
-    expect(answer).toEqual(
-      Result.err({ errorCode: AccountsErrorCode.UpdateProfileNotFound }),
-    );
-    expect(fake.writes).toEqual([]);
-    expect(fake.documentAt(`users/${stub.id}`)).toEqual(bodyOf(stub));
-  });
-
-  it('hands a refusal back as is, nothing written', async () => {
-    const fake = storeOf(MARIA);
-    const refusal = { errorCode: 'ANY_REFUSAL' } as const;
-
-    const answer = await profilePorts(asDb(fake)).writeOwnProfile(
-      MARIA.id,
-      () => Result.err(refusal),
-    );
-
-    expect(answer).toEqual(Result.err(refusal));
-    expect(fake.writes).toEqual([]);
-  });
-
-  it('turns a refused transaction (rules, offline) into REPOSITORY_WRITE_FAILED, nothing written', async () => {
-    const fake = storeOf(MARIA).failWith({ code: 'permission-denied' });
-
-    const answer = await profilePorts(asDb(fake)).writeOwnProfile(
-      MARIA.id,
-      decideWith({ firstName: 'Georgi' }),
-    );
-
-    expect(answer).toEqual(
-      Result.err({
-        errorCode: RepositoryErrorCode.WriteFailed,
-        path: MARIA_PATH,
-        reason: 'permission-denied',
-      }),
-    );
-    expect(fake.writes).toEqual([]);
-  });
-
-  it('property: the payload is always exactly the allowlist', async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.subarray([Role.Client, Role.Barber, Role.Receptionist, Role.Admin], {
-          minLength: 1,
-        }),
-        fc.boolean(),
-        fc.constantFrom('+359888123456', '+359877000111', '+359899555010'),
-        fc.option(fc.constantFrom('a@example.com', 'b.c@example.org'), {
-          nil: null,
-        }),
-        fc.constantFrom('Georgi', 'Ivan', 'Петър'),
-        fc.option(fc.constantFrom('1980-01-31', '2001-12-01'), { nil: null }),
-        async (roles, blocked, phone, email, firstName, birthDate) => {
-          const stored = (blocked ? blockedUserFixture : registeredUserFixture)(
-            {
-              roles,
-              phone: E164.of(phone),
-              email: email === null ? null : Email.of(email),
-            },
-          );
-          const fake = storeOf(stored);
-          const answer = await profilePorts(asDb(fake)).writeOwnProfile(
-            stored.id,
-            decideWith({ firstName, birthDate }),
-          );
-          expect(answer).toEqual(Result.ok(undefined));
-          expect(Object.keys(onlyWrite(fake).data).sort()).toEqual(
-            OWNER_EDITABLE_KEYS,
-          );
-        },
-      ),
-      { numRuns: 50 },
-    );
-  });
-});
+/*
+ * `profilePorts`' owner-write member died with 4A-3 (2): `users/{uid}` takes no
+ * client update, and every owner edit goes through the `updateProfile`
+ * callable (`saveOwnProfile`). Its eleven cases are `dead:` in the §11
+ * ledger — the five-key allowlist they pinned is the server pipeline's now.
+ */
 
 describe('userSearchPorts.searchUsers — index #8, the stored bodies in its order', () => {
   /** A registered client whose search keys are computed from the names, as registration writes them. */

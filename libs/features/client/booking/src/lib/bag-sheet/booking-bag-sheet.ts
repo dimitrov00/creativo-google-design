@@ -10,18 +10,18 @@ import {
 } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
-  BarberPref,
-  type CartLine,
-  CartLineId,
-} from '@creativo/application/booking';
-import { BarberId, ServiceVariantId } from '@creativo/application/catalog';
 import type { Service } from '@core/entities';
 import {
-  BarberId as BarberKey,
-  ServiceVariantId as VariantKey,
+  BarberId,
+  type CartLineId,
+  type SeatKeyText,
+  ServiceVariantId,
 } from '@core/primitives';
-import type { Money as MoneyData } from '@core/components';
+import {
+  BookingCart,
+  type CartLine,
+  type Money as MoneyData,
+} from '@core/components';
 import { type TermsSpan, TermsSpanSystem } from '@core/systems';
 import { formatCents } from '@creativo/features/shared/visits';
 import {
@@ -64,6 +64,26 @@ import type { SeatScopeVm } from '../seat-scope-vm';
  * span to a point, and every label below prints a single value when it does.
  */
 
+/**
+ * Which pull-down a row carries — the ONLY source of these strings, named
+ * after the field it types (`bagSelect`): the same block renders both, and a
+ * pick ends in the cart write its select names.
+ */
+export const BagSelect = {
+  Variant: 'VARIANT',
+  Barber: 'BARBER',
+} as const;
+export type BagSelect = (typeof BagSelect)[keyof typeof BagSelect];
+
+/**
+ * The lowercase word each select's test ids spell (`booking-bag-variant-…`,
+ * `booking-bag-barber-…`) — the DOM contract the e2e suite reads (4A-10).
+ */
+const BAG_SELECT_WORDS = {
+  [BagSelect.Variant]: 'variant',
+  [BagSelect.Barber]: 'barber',
+} as const satisfies Record<BagSelect, string>;
+
 /** One option on a line's variant or performer menu. */
 interface BagOptionVm {
   readonly key: string;
@@ -81,7 +101,7 @@ interface BagSelectVm {
   /** Menu identity — `<line>:variant` / `<line>:barber`. */
   readonly key: string;
   /** Which cart write a pick performs — the template renders both the same. */
-  readonly kind: 'variant' | 'barber';
+  readonly bagSelect: BagSelect;
   readonly label: string;
   readonly ariaLabel: string;
   /** A portrait when a person is pinned; the silhouette stands for "anyone". */
@@ -209,12 +229,20 @@ export class BookingBagSheet {
   readonly forwardBlocked = input.required<boolean>();
 
   /** Open this line in the full sheet, for the person who holds it. */
-  readonly editLine = output<{ seatKey: string; lineId: CartLineId }>();
+  readonly editLine = output<{ seatKey: SeatKeyText; lineId: CartLineId }>();
   readonly dismissed = output<void>();
   readonly proceed = output<void>();
 
   /** Which pull-down is down — at most one on the whole sheet, by select key. */
   protected readonly openMenu = signal<string | null>(null);
+
+  /** The template's name for the performer select. */
+  protected readonly BagSelect = BagSelect;
+
+  /** A select's word in its test ids — `variant`, `barber`. */
+  protected selectWord(select: BagSelectVm): string {
+    return BAG_SELECT_WORDS[select.bagSelect];
+  }
 
   protected readonly multiPerson = computed(() => this.seats().length > 1);
 
@@ -223,9 +251,9 @@ export class BookingBagSheet {
     if (!cart) return [];
     return this.seats()
       .map((seat) => {
-        const described = cart
-          .linesFor(seat.seatKey)
-          .flatMap((line) => this.describe(line));
+        const described = BookingCart.linesFor(cart, seat.key).flatMap((line) =>
+          this.describe(line),
+        );
         return {
           seat,
           lines: described.map((entry) => entry.vm),
@@ -242,7 +270,9 @@ export class BookingBagSheet {
     const cart = this.store.cart();
     if (!cart) return [];
     return this.seats().flatMap((seat) =>
-      cart.linesFor(seat.seatKey).flatMap((line) => this.describe(line)),
+      BookingCart.linesFor(cart, seat.key).flatMap((line) =>
+        this.describe(line),
+      ),
     );
   });
 
@@ -273,7 +303,7 @@ export class BookingBagSheet {
 
   protected remove(seat: SeatScopeVm, line: BagLineVm): void {
     this.openMenu.set(null);
-    this.store.removeLine(seat.seatKey, line.id);
+    this.store.removeLine(seat.key, line.id);
     // The bag is now empty and an empty bag is not a screen. Reading the count
     // straight after the dispatch is sound: the store sets a signal, so the
     // derived count is already the post-removal one here.
@@ -298,24 +328,21 @@ export class BookingBagSheet {
     option: BagOptionVm,
   ): void {
     this.openMenu.set(null);
-    if (select.kind === 'variant') {
+    if (select.bagSelect === BagSelect.Variant) {
       if (option.id === null) return;
-      const variantId = ServiceVariantId.create(option.id);
-      if (variantId.isFailure()) return;
-      this.store.setLineVariant(seat.seatKey, line.id, variantId.value);
+      const variantId = ServiceVariantId.parse(option.id);
+      if (!variantId.ok) return;
+      this.store.setLineVariant(seat.key, line.id, variantId.value);
       return;
     }
+    // "Anyone" is `null`; a named performer is a SPECIFIC preference.
     if (option.id === null) {
-      this.store.setLineBarber(seat.seatKey, line.id, BarberPref.any());
+      this.store.setLineBarber(seat.key, line.id, null);
       return;
     }
-    const barberId = BarberId.create(option.id);
-    if (barberId.isFailure()) return;
-    this.store.setLineBarber(
-      seat.seatKey,
-      line.id,
-      BarberPref.specific(barberId.value),
-    );
+    const barberId = BarberId.parse(option.id);
+    if (!barberId.ok) return;
+    this.store.setLineBarber(seat.key, line.id, barberId.value);
   }
 
   // ── Terms ───────────────────────────────────────────────────────────
@@ -334,11 +361,7 @@ export class BookingBagSheet {
     barberId: BarberId | null,
   ): TermsSpan {
     // The service IS its terms matrix: its own terms and its offerings.
-    return TermsSpanSystem.spanFor(
-      service,
-      variantId === null ? null : VariantKey.of(variantId.value),
-      barberId === null ? null : BarberKey.of(barberId.value),
-    );
+    return TermsSpanSystem.spanFor(service, variantId, barberId);
   }
 
   /**
@@ -390,23 +413,22 @@ export class BookingBagSheet {
   private describe(
     line: CartLine,
   ): readonly { vm: BagLineVm; span: TermsSpan }[] {
-    const service = this.catalog.findService(line.serviceId.value);
+    const service = this.catalog.findService(line.serviceId);
     if (!service) return [];
     const vm = this.catalog.toServiceVm(service);
 
-    const barberId =
-      line.barberPref.kind === 'specific' ? line.barberPref.barberId : null;
-    const variantId = line.variantId ?? null;
+    const barberId = line.barberId;
+    const variantId = line.variantId;
     const span = this.spanFor(service, variantId, barberId);
 
     const name = this.content.text(vm.name);
-    const key = line.id.value;
+    const key = line.lineId;
 
     return [
       {
         vm: {
           key,
-          id: line.id,
+          id: line.lineId,
           name,
           coverSrc: vm.coverSrc ?? null,
           durationLabel: this.content.durationRange(
@@ -443,12 +465,10 @@ export class BookingBagSheet {
     barberId: BarberId | null,
   ): BagSelectVm | null {
     if (vm.variants.length === 0) return null;
-    const chosen = vm.variants.find(
-      (candidate) => candidate.id === variantId?.value,
-    );
+    const chosen = vm.variants.find((candidate) => candidate.id === variantId);
     return {
       key: `${lineKey}:variant`,
-      kind: 'variant',
+      bagSelect: BagSelect.Variant,
       label: chosen
         ? this.content.text(chosen.name)
         : this.transloco.translate('booking.configure.variantPick'),
@@ -456,7 +476,7 @@ export class BookingBagSheet {
       avatarSrc: null,
       showsFace: false,
       options: vm.variants.map((variant) => {
-        const id = ServiceVariantId.create(variant.id);
+        const id = ServiceVariantId.parse(variant.id);
         return {
           key: variant.id,
           id: variant.id,
@@ -465,9 +485,9 @@ export class BookingBagSheet {
           // Priced on the CURRENT performer answer, so switching variant shows
           // what it would cost the way this line is actually set up.
           terms: this.termsLabel(
-            this.spanFor(service, id.isFailure() ? null : id.value, barberId),
+            this.spanFor(service, id.ok ? id.value : null, barberId),
           ),
-          selected: variant.id === variantId?.value,
+          selected: variant.id === variantId,
         };
       }),
     };
@@ -486,9 +506,7 @@ export class BookingBagSheet {
     barberId: BarberId | null,
   ): BagSelectVm {
     const barber = barberId
-      ? this.catalog
-          .barberVms()
-          .find((candidate) => candidate.id === barberId.value)
+      ? this.catalog.barberVms().find((candidate) => candidate.id === barberId)
       : undefined;
 
     const anyone: BagOptionVm = {
@@ -506,8 +524,8 @@ export class BookingBagSheet {
           .barberVms()
           .find((entry) => entry.id === offering.barberId);
         if (!candidate) return [];
-        const id = BarberId.create(candidate.id);
-        if (id.isFailure()) return [];
+        const id = BarberId.parse(candidate.id);
+        if (!id.ok) return [];
         return [
           {
             barber: candidate,
@@ -522,12 +540,12 @@ export class BookingBagSheet {
         name: this.content.text(entry.barber.name),
         avatarSrc: entry.barber.avatarSrc || null,
         terms: this.termsLabel(entry.span),
-        selected: barberId?.value === entry.barber.id,
+        selected: barberId === entry.barber.id,
       }));
 
     return {
       key: `${lineKey}:barber`,
-      kind: 'barber',
+      bagSelect: BagSelect.Barber,
       label: barber
         ? this.content.text(barber.name)
         : this.transloco.translate('booking.configure.anyBarber'),

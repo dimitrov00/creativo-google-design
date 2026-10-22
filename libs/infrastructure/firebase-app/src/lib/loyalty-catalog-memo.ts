@@ -14,10 +14,10 @@ export type LoyaltyCatalogRead = Promise<
  * wiring, so it is declared here and never in `@core/ports`.
  *
  * It lives behind the ROOT token {@link LOYALTY_CATALOG_MEMO} because two
- * lazily loaded bundles meet in it, each built in an injector of its own
+ * lazily loaded bundles meet in it, each built by a factory of its own
  * (`provideLazyPort`): the catalogue's read (`loyaltyCatalogReadPorts`),
- * which fills it, and the rhythm's publish gateway
- * (`streakPublishGatewayPorts`), which drops it after a write lands so the
+ * which fills it, and the rhythm's publish ports (`streakPublishPorts`,
+ * over the callable client), which drop it after a write lands so the
  * next card of the same session reads the rule that was just written
  * (client-card-revision-3.md §4.4). Eager and SDK-free, so `app.config.ts`
  * reaches it without pulling the Firestore chunk.

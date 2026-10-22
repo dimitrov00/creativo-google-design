@@ -3,18 +3,20 @@ import {
   MinuteCount,
   type RepositoryError,
   Result,
-  type TimeZone,
 } from '@core/primitives';
 import { BookingPolicy, type CapacityEntry } from '@core/components';
 import type {
   BarberListPorts,
   CapacityReadPorts,
   ClockPorts,
+  DefaultLocationPorts,
   LeadTimeWritePorts,
+  LocationLoadPorts,
   LogPorts,
   PolicyReadPorts,
 } from '@core/ports';
 import { LeadTimeSystem, ZonedTimeSystem } from '@core/systems';
+import { readShopZone } from './shop-zone-read.pipeline';
 
 /**
  * `sampleLeadTime` — how far out each rostered barber's first free day is,
@@ -29,12 +31,12 @@ import { LeadTimeSystem, ZonedTimeSystem } from '@core/systems';
  * one slot step of free time to count. One barber's failed write never
  * costs the others their sample; a missing row is honest. The writer stamps
  * the TTL (`writeLeadTimeSample`, F1-7). Runs daily, ungated (F1-2).
+ *
+ * Its "today" is the default location's (F-4: a barber's capacity spans
+ * every shop), read once — after the policy; a zone that cannot be read is
+ * the run's store failure. The run takes no command: the tick carries
+ * nothing the sample reads.
  */
-
-export type SampleLeadTimeCommand = {
-  /** The tenant's zone — whose "today" the sample is taken on. */
-  readonly timeZone: TimeZone;
-};
 
 /** The barbers sampled, in roster order. */
 export type SampleLeadTimeAnswer = {
@@ -45,21 +47,20 @@ export type SampleLeadTimePorts = ClockPorts &
   BarberListPorts &
   CapacityReadPorts &
   PolicyReadPorts &
+  LocationLoadPorts &
+  DefaultLocationPorts &
   LeadTimeWritePorts &
   LogPorts;
 
 export const sampleLeadTime =
   (ports: SampleLeadTimePorts) =>
-  async (
-    cmd: SampleLeadTimeCommand,
-  ): Promise<Result<SampleLeadTimeAnswer, RepositoryError>> => {
+  async (): Promise<Result<SampleLeadTimeAnswer, RepositoryError>> => {
     const policy = await ports.loadPolicy();
     if (!policy.ok) return policy;
+    const zone = await readShopZone(ports)(null);
+    if (!zone.ok) return zone;
     const sampledAtUtcMs = ports.nowUtcMs();
-    const from = ZonedTimeSystem.shopNow(
-      sampledAtUtcMs,
-      cmd.timeZone,
-    ).localDate;
+    const from = ZonedTimeSystem.shopNow(sampledAtUtcMs, zone.value).localDate;
     const to = BookingPolicy.horizonEndFrom(policy.value, from);
 
     // The month documents the horizon spans — read once, for every barber.

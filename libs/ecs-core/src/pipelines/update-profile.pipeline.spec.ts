@@ -1,9 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { E164, Email, WriteOp } from '@core/components';
-import { AccountsErrorCode, UserId } from '@core/primitives';
-import { Collections, type User } from '@core/entities';
-import { type ProfileEdits, SearchFieldsSystem } from '@core/systems';
 import {
+  ActorRole,
+  AuditAction,
+  E164,
+  Email,
+  WriteOp,
+  type ProfileEdits,
+} from '@core/components';
+import { AccountsErrorCode, AuditEntryId, UserId } from '@core/primitives';
+import { Collections, type User } from '@core/entities';
+import { AuditSystem, SearchFieldsSystem } from '@core/systems';
+import {
+  FIXTURE_NOW_UTC_MS,
+  fixtureHash,
   type IdentityWorld,
   memoryIdentityWorld,
   memoryTxPorts,
@@ -17,10 +26,12 @@ import {
 } from './update-profile.pipeline';
 
 /*
- * `updateProfile` (identity flip (2), F2-5): one transaction, the one
- * profile-edit rule (`ProfileEditSystem.decide`), one root-key `Update` of
- * the five owner keys — or none when nothing changes, so the same edit
- * twice writes once (and leaves the profile trigger one row, not two).
+ * `updateProfile` (identity flip (2), F2-5; owner ruling flip-2 §10.15,
+ * Phase 4a 4A-16): one transaction, the one profile-edit rule
+ * (`ProfileEditSystem.decide`), one root-key `Update` of the five owner
+ * keys with the `profileEditedAtUtcMs` marker, and the edit's ONE audit row
+ * `Create`d in the same plan, credited to the caller — or nothing when
+ * nothing changes, so the same edit twice writes once and leaves one row.
  */
 
 const UID = UserId.of('u-client');
@@ -40,14 +51,25 @@ function rig(users: readonly User[]) {
   const run = updateProfile({
     commit: tx.commit,
     nowUtcMs: tx.nowUtcMs,
+    hash: tx.hash,
     log: telemetry.log,
     trackError: telemetry.trackError,
   });
   return { world, tx, telemetry, run };
 }
 
+/** The edit's row as the plan `Create`s it: `AuditSystem.planOwnProfileEdit` over `fields`, under `hash(basis)`. */
+function rowWrite(fields: readonly string[]): WriteOp {
+  const plan = AuditSystem.planOwnProfileEdit(UID, fields, FIXTURE_NOW_UTC_MS);
+  if (plan === null || plan.idBasis === null) throw new Error('no row');
+  return WriteOp.create(
+    [Collections.AuditLog, AuditEntryId.of(fixtureHash(plan.idBasis))],
+    plan.row,
+  );
+}
+
 describe('updateProfile', () => {
-  it('writes the five owner keys in ONE root-key Update, the search keys from the STORED contact', async () => {
+  it('writes the five owner keys and the marker in ONE root-key Update, the search keys from the STORED contact, beside the edit’s row', async () => {
     const maria = registeredUserFixture({
       email: Email.of('maria@example.com'),
     });
@@ -70,13 +92,34 @@ describe('updateProfile', () => {
           birthDate: null,
           searchName: search.searchName,
           searchPrefixes: search.searchPrefixes,
+          profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
         }),
+        rowWrite(['firstName']),
       ],
     ]);
     expect(world.store.get(PATH.join('/'))).toMatchObject({
       firstName: 'Mariya',
       phone: maria.phone,
       email: 'maria@example.com',
+      profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+  });
+
+  it('credits the row to the caller — PROFILE_UPDATED, the changed field NAMES, the edit’s instant (4A-16)', async () => {
+    const { world, run } = rig([registeredUserFixture()]);
+    await run(edit({ firstName: 'Mariya', birthDate: '1990-07-03' }));
+    const rows = [...world.store.entries()].filter(([path]) =>
+      path.startsWith(`${Collections.AuditLog}/`),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.[1]).toMatchObject({
+      actorRole: ActorRole.User,
+      actorUserId: UID,
+      auditAction: AuditAction.ProfileUpdated,
+      recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+    });
+    expect(rowWrite(['firstName', 'birthDate'])).toMatchObject({
+      body: rows[0]?.[1],
     });
   });
 
@@ -99,6 +142,12 @@ describe('updateProfile', () => {
     });
     expect(tx.plans[1]).toEqual([]);
     expect(world.store.get(PATH.join('/'))).toEqual(after);
+    // ONE row for the one landed edit.
+    expect(
+      [...world.store.keys()].filter((path) =>
+        path.startsWith(`${Collections.AuditLog}/`),
+      ),
+    ).toHaveLength(1);
   });
 
   it('answers unchanged for an edit equal to the stored values', async () => {

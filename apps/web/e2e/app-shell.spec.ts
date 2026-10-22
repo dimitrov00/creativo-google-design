@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
-import { mintCustomToken } from './support/mint-custom-token';
+import { Role } from '@core/components';
 import { seedUserProfile } from './support/seed-firestore';
-import { signInAs } from './support/sign-in';
+import { mintActiveToken, signInAs } from './support/sign-in';
 
 declare global {
   interface Window {
@@ -36,10 +36,7 @@ test.describe('app shell', () => {
     page,
   }) => {
     const uid = `e2e-nonstaff-${test.info().testId}`;
-    const token = await mintCustomToken(uid, {
-      stage: 'active',
-      roles: ['client'],
-    });
+    const token = await mintActiveToken(uid, [Role.Client]);
 
     await page.goto('/');
     await page.waitForFunction(() => typeof window.__e2eSignIn === 'function');
@@ -65,7 +62,7 @@ test.describe('app shell', () => {
   }) => {
     const uid = `e2e-admin-${test.info().testId}`;
     await seedUserProfile(uid);
-    await signInAs(page, uid, ['admin']);
+    await signInAs(page, uid, [Role.Admin]);
 
     await page.goto('/account');
     await expect(page.getByTestId('account-page')).toHaveAttribute(
@@ -86,7 +83,7 @@ test.describe('app shell', () => {
   test('a client finds no admin entry in the menu', async ({ page }) => {
     const uid = `e2e-client-menu-${test.info().testId}`;
     await seedUserProfile(uid);
-    await signInAs(page, uid, ['client']);
+    await signInAs(page, uid, [Role.Client]);
 
     await page.goto('/account');
     await expect(page.getByTestId('account-page')).toHaveAttribute(

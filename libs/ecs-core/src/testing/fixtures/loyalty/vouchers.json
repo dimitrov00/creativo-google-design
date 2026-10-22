@@ -2,89 +2,65 @@
   "giftVouchers": {
     "voucher-dev-georgi": {
       "code": "GIFT50",
-      "initialValueMinorUnits": 5000,
-      "balanceMinorUnits": 2500,
-      "currencyCode": "EUR",
-      "issuedAt": {
-        "iso": "2026-06-13T10:45:00.000+03:00",
-        "zone": "Europe/Sofia"
-      },
-      "expiresAt": {
-        "iso": "2026-12-31T23:59:59.999+02:00",
-        "zone": "Europe/Sofia"
-      },
-      "issuedToUserId": "dev-client-1",
-      "state": {
-        "kind": "active"
-      }
+      "initialValueCents": 5000,
+      "balanceCents": 2500,
+      "currency": "EUR",
+      "issuedAtUtcMs": 1781336700000,
+      "expiresAtUtcMs": 1798754399999,
+      "expiresLocalDate": "2026-12-31",
+      "issuedToCustomerId": "cus_f4139a95b87f17ee035d",
+      "holderUserId": "dev-client-1",
+      "voucherStatus": "ACTIVE"
     },
     "voucher-dev-georgi-spent": {
       "code": "SPENT20",
-      "initialValueMinorUnits": 2000,
-      "balanceMinorUnits": 0,
-      "currencyCode": "EUR",
-      "issuedAt": {
-        "iso": "2025-12-08T10:45:00.000+02:00",
-        "zone": "Europe/Sofia"
-      },
-      "expiresAt": null,
-      "issuedToUserId": "dev-client-1",
-      "state": {
-        "kind": "active"
-      }
+      "initialValueCents": 2000,
+      "balanceCents": 0,
+      "currency": "EUR",
+      "issuedAtUtcMs": 1765183500000,
+      "expiresAtUtcMs": null,
+      "expiresLocalDate": null,
+      "issuedToCustomerId": "cus_f4139a95b87f17ee035d",
+      "holderUserId": "dev-client-1",
+      "voucherStatus": "ACTIVE"
     },
     "voucher-dev-georgi-void": {
       "code": "VOID30",
-      "initialValueMinorUnits": 3000,
-      "balanceMinorUnits": 3000,
-      "currencyCode": "EUR",
-      "issuedAt": {
-        "iso": "2026-06-13T10:40:00.000+03:00",
-        "zone": "Europe/Sofia"
-      },
-      "expiresAt": {
-        "iso": "2026-12-31T23:59:59.999+02:00",
-        "zone": "Europe/Sofia"
-      },
-      "issuedToUserId": "dev-client-1",
-      "state": {
-        "kind": "void",
-        "voidedAt": {
-          "iso": "2026-06-13T10:44:00.000+03:00",
-          "zone": "Europe/Sofia"
-        },
-        "reason": "Издаден с грешна стойност"
-      }
+      "initialValueCents": 3000,
+      "balanceCents": 3000,
+      "currency": "EUR",
+      "issuedAtUtcMs": 1781336400000,
+      "expiresAtUtcMs": 1798754399999,
+      "expiresLocalDate": "2026-12-31",
+      "issuedToCustomerId": "cus_f4139a95b87f17ee035d",
+      "holderUserId": "dev-client-1",
+      "voucherStatus": "VOID",
+      "voidedAtUtcMs": 1781336640000,
+      "voidReason": "Издаден с грешна стойност"
     },
     "voucher-dev-martin": {
       "code": "GIFT2025",
-      "initialValueMinorUnits": 2500,
-      "balanceMinorUnits": 2500,
-      "currencyCode": "EUR",
-      "issuedAt": {
-        "iso": "2026-08-19T13:00:00.000+03:00",
-        "zone": "Europe/Sofia"
-      },
-      "expiresAt": null,
-      "issuedToUserId": "dev-client-2",
-      "state": {
-        "kind": "active"
-      }
+      "initialValueCents": 2500,
+      "balanceCents": 2500,
+      "currency": "EUR",
+      "issuedAtUtcMs": 1787133600000,
+      "expiresAtUtcMs": null,
+      "expiresLocalDate": null,
+      "issuedToCustomerId": "cus_64f1b6925a19e579d85b",
+      "holderUserId": "dev-client-2",
+      "voucherStatus": "ACTIVE"
     },
     "voucher-dev-five": {
       "code": "GIFT5",
-      "initialValueMinorUnits": 500,
-      "balanceMinorUnits": 500,
-      "currencyCode": "EUR",
-      "issuedAt": {
-        "iso": "2026-08-19T13:00:00.000+03:00",
-        "zone": "Europe/Sofia"
-      },
-      "expiresAt": null,
-      "issuedToUserId": null,
-      "state": {
-        "kind": "active"
-      }
+      "initialValueCents": 500,
+      "balanceCents": 500,
+      "currency": "EUR",
+      "issuedAtUtcMs": 1787133600000,
+      "expiresAtUtcMs": null,
+      "expiresLocalDate": null,
+      "issuedToCustomerId": null,
+      "holderUserId": null,
+      "voucherStatus": "ACTIVE"
     }
   }
 }

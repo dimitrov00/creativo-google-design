@@ -8,6 +8,8 @@ import {
   OtpDestinationType,
   OtpPurpose,
   ParsedIdentifier,
+  Principal,
+  PrincipalKind,
   RegistrationState,
   Role,
 } from '@core/components';
@@ -82,6 +84,7 @@ export function userFixture(overrides: Partial<User> = {}): User {
     ...AccountLifecycle.active(),
     email: null,
     birthDate: null,
+    profileEditedAtUtcMs: null,
     searchName: 'maria petrova',
     searchPrefixes: ['m', 'ma', 'mar', 'p', 'pe', 'pet'],
   };
@@ -177,3 +180,40 @@ export function impersonationSessionFixture(
   // As for the user: an `ENDED` override brings its own variant keys.
   return { ...base, ...overrides } as ImpersonationSession;
 }
+
+/**
+ * The four routing principals (Phase 4a §3.7) — the ecs `Principal` a
+ * session double emits, on the fixture tenant: anonymous, onboarding (claims
+ * not yet active), a client and a staff member with the given roles.
+ */
+export const principalFixture = {
+  anonymous(): Principal.Anonymous {
+    return Principal.anonymous();
+  },
+  onboarding(userId: UserId = CLIENT_USER_ID): Principal.Onboarding {
+    return {
+      principalKind: PrincipalKind.Onboarding,
+      userId,
+      tenantId: FIXTURE_TENANT_ID,
+    };
+  },
+  client(userId: UserId = CLIENT_USER_ID): Principal.Client {
+    return {
+      principalKind: PrincipalKind.Client,
+      userId,
+      roles: [Role.Client],
+      tenantId: FIXTURE_TENANT_ID,
+    };
+  },
+  staff(
+    userId: UserId,
+    roles: readonly Role[] = [Role.Barber],
+  ): Principal.Staff {
+    return {
+      principalKind: PrincipalKind.Staff,
+      userId,
+      roles,
+      tenantId: FIXTURE_TENANT_ID,
+    };
+  },
+} as const;

@@ -20,6 +20,10 @@ import {
   APPOINTMENT_NOTE_PORTS,
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AUTH_DEPLOYMENT_PORTS,
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+  BOOKING_DRAFT_PORTS,
   CATALOG_PORTS,
   CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
@@ -28,18 +32,22 @@ import {
   COURSE_READ_PORTS,
   CUSTOMER_PORTS,
   DEFAULT_LOCATION_PORTS,
+  FIREBASE_AUTH,
   FIREBASE_FIRESTORE,
   FIREBASE_FUNCTIONS,
   type FactoryPicker,
+  GATEWAY_PORTS,
   ID_PORTS,
   IMPERSONATION_READ_PORTS,
   INBOX_PORTS,
+  KEY_VALUE_PORTS,
   LOCATION_LOAD_PORTS,
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_MEMO,
   LOYALTY_CATALOG_READ_PORTS,
-  LazyAdapterScope,
-  LazyPortLoadError,
+  type LazyAdapterScope,
+  MEDIA_RESOLVE_PORTS,
+  OTP_CHALLENGE_PORTS,
   POSITION_READ_PORTS,
   PROFILE_PORTS,
   PROGRAMS_PORTS,
@@ -48,81 +56,46 @@ import {
   SHOP_EVENT_READ_PORTS,
   STREAK_DEFINITION_PORTS,
   STREAK_PUBLISH_PORTS,
+  TIMER_PORTS,
   USER_SEARCH_PORTS,
   WAITLIST_READ_PORTS,
+  callableClientPorts,
+  lazyAdapterScope,
   provideFirebaseApp,
   provideFirebaseAuth,
   provideFirebaseFunctions,
+  provideFlags,
   provideLazyPort,
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
-import { fail } from '@creativo/domain/kernel';
-import {
-  type LocalDate,
-  MediaError,
-  RepositoryError as PortRepositoryError,
-  Result,
-  UtcEpochMs,
-} from '@core/primitives';
-import { TenantConfig } from '@core/components';
-import { ZonedTimeSystem } from '@core/systems';
+import { MediaError, RepositoryError, Result } from '@core/primitives';
+import { AuthDeployment, TenantConfig } from '@core/components';
 import type {
   AppointmentPhotoPorts,
   AppointmentPhotoRecordPorts,
+  AuthDeploymentPorts,
   DefaultLocationPorts,
   PhotoUploadPorts,
 } from '@core/ports';
 
-// Ports (application layer)
-import {
-  AUTH_DEPLOYMENT,
-  AUTH_GATEWAY,
-  DEFAULT_AUTH_DEPLOYMENT,
-  OTP_CLIENT,
-} from '@creativo/application/identity';
-import {
-  BOOKING_DRAFT_STORE,
-  BOOKING_GATEWAY,
-  WAITLIST_GATEWAY,
-} from '@creativo/application/booking';
-import { MEDIA_READER } from '@creativo/application/catalog';
-import { REWARD_PROGRESS_READER } from '@creativo/application/engagement';
-import {
-  CONTACT_CHANGE_PORT,
-  AVATAR_UPLOADER,
-  AvatarUploadError,
-} from '@creativo/application/accounts';
-import {
-  CLOCK,
-  ID_GENERATOR,
-  KEY_VALUE_STORE,
-  RepositoryError,
-  provideFeatureFlags,
-} from '@creativo/application/shared';
-
-// Adapters (infrastructure layer) — named ONLY here (blueprint §1.3)
-import {
-  FirebaseAuthGateway,
-  CallableOtpClient,
-} from '@creativo/infrastructure/firebase-auth';
-// The callables are eager (firebase/functions loads at boot anyway); every
+// Adapters (infrastructure layer) — named ONLY here (blueprint §1.3). The
+// session, the OTP callables and the callable client are eager
+// (firebase/auth and firebase/functions load at boot anyway); every
 // Firestore and Storage adapter is picked out of the lazy modules below.
 import {
-  CallableBookingGateway,
-  CallableContactChangeAdapter,
-  CallableWaitlistGateway,
-  loadFirestoreAdapters,
-} from '@creativo/infrastructure/firestore';
+  authSessionPorts,
+  otpChallengePorts,
+} from '@creativo/infrastructure/firebase-auth';
+import { loadFirestoreAdapters } from '@creativo/infrastructure/firestore';
 import { loadStorageAdapters } from '@creativo/infrastructure/storage';
 import {
-  LocalStorageKeyValueStore,
-  SessionStorageDraftStore,
+  localStorageKeyValuePorts,
+  sessionStorageBookingDraftPorts,
 } from '@creativo/infrastructure/web-storage';
 import {
-  CryptoIdGenerator,
-  SystemClock,
   browserClockPorts,
   browserIdPorts,
+  browserTimerPorts,
 } from '@creativo/infrastructure/clock';
 
 import { appRoutes } from './app.routes';
@@ -139,8 +112,8 @@ const emulators = environment.emulators.enabled
  * and persistent cache as ever) and every adapter over them are fetched as
  * two parallel chunks on the first call of any port bound to this scope;
  * the instances then live in ONE environment injector under the root, each
- * adapter in its own injector beneath it — one scope, not two, because the
- * visit photos adapter needs both instances. The two SDKs
+ * bundle built once by its factory in that injector's context — one scope,
+ * not two, because the visit photos adapter needs both instances. The two SDKs
  * (with re2js and webchannel-wrapper) were 565 kB of a 1.55 MB initial
  * chunk; it is ~955 kB without them (2026-09-26). Auth and Functions stay
  * eager because the session needs them at boot.
@@ -148,7 +121,7 @@ const emulators = environment.emulators.enabled
  * `node tools/verify/bundle/check-initial-bundle.mjs` (over the stats.json
  * of `nx build web -- --stats-json`) proves neither SDK is back in the
  * initial chunk; the `initial` budget in project.json fails a build past
- * 1 MB. The mechanism: `provideLazyPort` in
+ * 1 MB. The mechanism: `lazyAdapterScope` + `provideLazyPort` in
  * `@creativo/infrastructure/firebase-app` (lazy-port.ts); `app.config.spec.ts`
  * proves that injecting every port bound here loads nothing.
  *
@@ -159,7 +132,7 @@ const emulators = environment.emulators.enabled
  * succeeded throws `failed-precondition` (the persistent-cache settings
  * never compare equal), where `getStorage` just returns its instance.
  */
-export const firebaseData = new LazyAdapterScope('firebase-data', async () => {
+export const firebaseData = lazyAdapterScope('firebase-data', async () => {
   const [firestore, storage] = await Promise.all([
     loadFirestoreAdapters(),
     loadStorageAdapters(),
@@ -176,48 +149,22 @@ export const firebaseData = new LazyAdapterScope('firebase-data', async () => {
 
 /**
  * A data port whose chunk failed to load answers as its adapter answers any
- * other transient failure — a `RepositoryError` inside the port's `Result`
- * (`MediaReadError` counts it as transient too) — never as a rejection.
- *
- * Typed consts, not inline arrows: inside `onLoadError: (e) => fail(…)` the
- * call's success type is inferred from the binding's own type parameter
- * (`Result<unknown, E>`), which the per-method check rightly refuses.
- */
-const dataUnavailable = (error: LazyPortLoadError) =>
-  fail(new RepositoryError('The data layer failed to load', error));
-
-/** The avatar port's own failure shape, for the same reason. */
-const avatarStorageUnavailable = (error: LazyPortLoadError) =>
-  fail(new AvatarUploadError('Storage failed to load', error));
-
-/**
- * The same answer for a factory-form row over an ECS bundle: the flat
+ * other transient failure — never as a rejection: the flat
  * `RepositoryError.unavailable()` struct (`REPOSITORY_UNAVAILABLE`) inside
- * the port's `Result` — valid for every member of a bundle whose members all
+ * the port's `Result`, valid for every member of a bundle whose members all
  * name `RepositoryError`. A store reading the scheduling streams keeps the
  * policy's defaults on it, as on any other failed read; the admin rhythm
  * page words it on a publish as the rule that could not be sent.
  */
-const ecsDataUnavailable = () => Result.err(PortRepositoryError.unavailable());
-
-/** The shop's zone the loyalty catalogue's day is read in — today's loyalty zone. */
-const LOYALTY_SHOP_ZONE = 'Europe/Sofia';
+const dataUnavailable = () => Result.err(RepositoryError.unavailable());
 
 /**
- * The shop's day NOW, read on every call (`Date.now()` in the shop's zone):
- * the key of the session's catalogue memo (flip-3 plan F3-10), so a tab
- * left open past the shop's midnight reads the catalogue again. The one
- * clock-and-zone reading of the loyalty rows — the adapter that keys by it
- * holds none. Read on the first catalogue call, never at boot.
+ * A Storage port whose chunk failed to load: Storage's transient answer for
+ * the folder it serves — worth a bounded retry, as a failed chunk fetch is
+ * (never the permanent not-found/forbidden, which would stop the asking).
  */
-const loyaltyCatalogToday = (): LocalDate => {
-  const zone = ZonedTimeSystem.checkZone(LOYALTY_SHOP_ZONE);
-  const now = UtcEpochMs.of(Date.now());
-  if (!zone.ok || !now.ok) {
-    throw new Error('unreachable: an IANA zone and a safe-integer clock');
-  }
-  return ZonedTimeSystem.toLocal(now.value, zone.value).localDate;
-};
+const avatarsUnavailable = () => Result.err(MediaError.transient('avatars'));
+const mediaUnavailable = () => Result.err(MediaError.transient('media'));
 
 /** What `firebaseData` loads: the Firestore and the Storage adapter modules. */
 type FirebaseDataModule =
@@ -329,35 +276,56 @@ export const appConfig: ApplicationConfig = {
     // Explicit even though the token has a matching factory default: this
     // is THE per-deployment override point (auth strategy, entry
     // providers, default phone country) and it stays visible in the wiring.
-    { provide: AUTH_DEPLOYMENT, useValue: DEFAULT_AUTH_DEPLOYMENT },
+    {
+      provide: AUTH_DEPLOYMENT_PORTS,
+      useValue: {
+        authDeployment: AuthDeployment.DEFAULT,
+      } satisfies AuthDeploymentPorts,
+    },
     // Build-time flags from config/feature-flags.json (R41); a bad map
     // throws here, so the app refuses to boot rather than hide a feature.
-    provideFeatureFlags(environment.featureFlags),
+    provideFlags(environment.featureFlags),
 
-    // ── Port → Adapter map (the hexagon's outer wiring, blueprint §1.3) ──
-    { provide: CLOCK, useClass: SystemClock },
-    { provide: ID_GENERATOR, useClass: CryptoIdGenerator },
-    // The same two as ECS bundles (flip 4, F4-9): what the flipped features
-    // read "now" and draw ids through; the two above stay for the features
-    // that still inject `CLOCK`/`ID_GENERATOR` until Phase 4.
+    // ── Port bundle → adapter factory (the outer wiring, blueprint §1.3) ──
+    // The browser's clock, ids and timer: what the features read "now",
+    // draw ids and wait through (flip 4, F4-9; the timer Phase 4a 4A-7).
     { provide: CLOCK_PORTS, useFactory: browserClockPorts },
     { provide: ID_PORTS, useFactory: browserIdPorts },
-    // The deployment's main shop — configuration, not a read (F-4): an event
-    // with no location of its own is placed on this shop's clock. The one
-    // place the web names it, as `main.ts` names `tenantTimeZone`.
+    { provide: TIMER_PORTS, useFactory: browserTimerPorts },
+    // The deployment's main shop — configuration, not a read (F-4): a
+    // boundary with no location of its own reads this shop's zone
+    // (`resolveShopZone`, `ShopZoneService`). The one place the web names it.
     {
       provide: DEFAULT_LOCATION_PORTS,
       useValue: {
         defaultLocationId: TenantConfig.DEFAULT.defaultLocationId,
       } satisfies DefaultLocationPorts,
     },
-    { provide: AUTH_GATEWAY, useClass: FirebaseAuthGateway },
-    { provide: OTP_CLIENT, useClass: CallableOtpClient },
-    { provide: BOOKING_GATEWAY, useClass: CallableBookingGateway },
-    { provide: WAITLIST_GATEWAY, useClass: CallableWaitlistGateway },
-    { provide: CONTACT_CHANGE_PORT, useClass: CallableContactChangeAdapter },
-    { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
-    { provide: KEY_VALUE_STORE, useClass: LocalStorageKeyValueStore },
+    // The session and the callables, eager: the shell reads the session at
+    // boot, and every callable goes through the ONE typed client.
+    {
+      provide: AUTH_SESSION_PORTS,
+      useFactory: () => authSessionPorts(inject(FIREBASE_AUTH)),
+    },
+    {
+      provide: GATEWAY_PORTS,
+      useFactory: () => callableClientPorts(inject(FIREBASE_FUNCTIONS)),
+    },
+    {
+      provide: OTP_CHALLENGE_PORTS,
+      useFactory: () =>
+        otpChallengePorts(
+          inject(FIREBASE_AUTH),
+          inject(GATEWAY_PORTS),
+          inject(DOCUMENT),
+        ),
+    },
+    // The device's storage: the `/book` draft per tab, preferences per device.
+    {
+      provide: BOOKING_DRAFT_PORTS,
+      useFactory: sessionStorageBookingDraftPorts,
+    },
+    { provide: KEY_VALUE_PORTS, useFactory: localStorageKeyValuePorts },
 
     // ── Lazy ports: Firestore and Storage adapters (see `firebaseData`) ──
     // Each binding classifies every method of its port; the compiler
@@ -365,7 +333,7 @@ export const appConfig: ApplicationConfig = {
     // `onLoadError` answer that is not valid for every method.
 
     // The booking core (flip 1): plain port BUNDLES, each built once per
-    // scope by its `(db) => bundle` export — the factory form.
+    // scope by its `(db) => bundle` export.
     provideLazyPort(SCHEDULING_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.schedulingReadPorts(inj.get(FIREBASE_FIRESTORE)),
@@ -377,13 +345,13 @@ export const appConfig: ApplicationConfig = {
         observePolicy: 'observable',
         observeCapacityMonth: 'observable',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(SCHEDULE_EXCEPTION_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.scheduleExceptionPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { writeScheduleException: 'promise' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(APPOINTMENT_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
@@ -396,13 +364,13 @@ export const appConfig: ApplicationConfig = {
         pageClientHistory: 'promise',
         searchAppointmentWindow: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(WAITLIST_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.waitlistReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { observeMyWaitlistRequests: 'observable' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     // The staff client card (client-card-redesign §6.2) and the admin page's
     // preview of a rhythm rule, which walks every client's statistics a page
@@ -415,7 +383,7 @@ export const appConfig: ApplicationConfig = {
         loadClientMoney: 'promise',
         pageClientStats: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(CATALOG_PORTS, firebaseData, {
       factory: (m) => (inj) =>
@@ -426,7 +394,7 @@ export const appConfig: ApplicationConfig = {
         observeCategories: 'observable',
         observeLocations: 'observable',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     // The counter's code lookups (what a typed promo code opens), a client's
     // held grants and the coupons they name whatever their status, and the
@@ -443,7 +411,7 @@ export const appConfig: ApplicationConfig = {
         listGiftVouchersForHolder: 'promise',
         loadCoupons: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     // The waitlist matcher writes a match into the recipient's inbox; the
     // menu's unread count reads it live.
@@ -455,7 +423,7 @@ export const appConfig: ApplicationConfig = {
         markNotificationRead: 'promise',
         markAllNotificationsRead: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(APPOINTMENT_NOTE_PORTS, firebaseData, {
       factory: (m) => (inj) =>
@@ -464,7 +432,7 @@ export const appConfig: ApplicationConfig = {
         observeAppointmentNote: 'observable',
         saveAppointmentNote: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     // The one bundle over both instances (`appointmentPhotoBundle`), bound
     // as its two halves and handed to features whole.
@@ -477,7 +445,7 @@ export const appConfig: ApplicationConfig = {
         listClientPhotos: 'promise',
         countPhotosByAppointment: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(APPOINTMENT_PHOTO_BYTES, firebaseData, {
       factory: appointmentPhotoBundle,
@@ -495,34 +463,33 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.customerPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { loadCustomerForUser: 'promise' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
 
     // Identity and accounts (flip 2): an account's own profile — the stored
-    // `users/{uid}` body, live and once, and the owner's edit of its five
-    // allowlisted keys in one transaction — the staff client search over
-    // index #8, and an admin's live impersonation session (index #9).
+    // `users/{uid}` body, live and once (every write is the `updateProfile`
+    // callable's, Phase 4a 4A-3 (2)) — the staff client search over index
+    // #8, and an admin's live impersonation session (index #9).
     provideLazyPort(PROFILE_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.profilePorts(inj.get(FIREBASE_FIRESTORE)),
       methods: {
         observeProfile: 'observable',
         loadProfile: 'promise',
-        writeOwnProfile: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(USER_SEARCH_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.userSearchPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { searchUsers: 'promise' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(IMPERSONATION_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.impersonationReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { observeActiveImpersonation: 'observable' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
 
     // Loyalty and the rhythm's rule (flip 3): a client RECORD's account,
@@ -531,7 +498,10 @@ export const appConfig: ApplicationConfig = {
     // catalogue with the rhythm's heads, memoised for the session and the
     // shop's day in the root `LOYALTY_CATALOG_MEMO`; the head, live, and its
     // versions (the card and the admin page «Ритъм»); and the publish
-    // callable, which drops that same memo once a write lands (§4.4).
+    // callable, which drops that same memo once a write lands (§4.4). The
+    // catalogue's shop day is the clock on the DEFAULT location's wall clock
+    // (4A-11) — built here, inside the lazy scope, so `@core/pipelines` and
+    // `@core/systems` stay out of the initial chunk (plan §9 R10).
     provideLazyPort(LOYALTY_ACCOUNT_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.loyaltyAccountReadPorts(inj.get(FIREBASE_FIRESTORE)),
@@ -540,23 +510,29 @@ export const appConfig: ApplicationConfig = {
         listBadgeProgress: 'promise',
         listSeasonProgress: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(LOYALTY_CATALOG_READ_PORTS, firebaseData, {
-      factory: (m) => (inj) =>
-        m.firestore.loyaltyCatalogReadPorts(
-          inj.get(FIREBASE_FIRESTORE),
+      factory: (m) => (inj) => {
+        const db = inj.get(FIREBASE_FIRESTORE);
+        return m.firestore.loyaltyCatalogReadPorts(
+          db,
           inj.get(LOYALTY_CATALOG_MEMO),
-          loyaltyCatalogToday,
-        ),
+          m.firestore.shopToday({
+            ...inj.get(CLOCK_PORTS),
+            ...m.firestore.locationLoadPorts(db),
+            ...inj.get(DEFAULT_LOCATION_PORTS),
+          }),
+        );
+      },
       methods: { loadLoyaltyCatalog: 'promise' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(CLIENT_JOURNAL_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.clientJournalPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { pageClientJournal: 'promise' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(STREAK_DEFINITION_PORTS, firebaseData, {
       factory: (m) => (inj) =>
@@ -565,16 +541,16 @@ export const appConfig: ApplicationConfig = {
         observeStreakDefinitionHead: 'observable',
         listStreakDefinitionVersions: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(STREAK_PUBLISH_PORTS, firebaseData, {
       factory: (m) => (inj) =>
-        m.firestore.streakPublishGatewayPorts(
-          inj.get(FIREBASE_FUNCTIONS),
+        m.firestore.streakPublishPorts(
+          inj.get(GATEWAY_PORTS),
           inj.get(LOYALTY_CATALOG_MEMO),
         ),
       methods: { publishStreakRule: 'promise', withdrawStreakRule: 'promise' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
 
     // Programs (flip 4): the careers, courses and events pages' live lists,
@@ -595,49 +571,50 @@ export const appConfig: ApplicationConfig = {
         loadEvent: 'promise',
         saveEvent: 'promise',
       },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(POSITION_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.positionReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { observePositions: 'observable' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(COURSE_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.courseReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { observeCourses: 'observable' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(SHOP_EVENT_READ_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.shopEventReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { observeEvents: 'observable' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
     provideLazyPort(LOCATION_LOAD_PORTS, firebaseData, {
       factory: (m) => (inj) =>
         m.firestore.locationLoadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { loadLocation: 'promise' },
-      onLoadError: ecsDataUnavailable,
+      onLoadError: dataUnavailable,
     }),
 
-    // The class adapters still bound with the class form: the media reader,
-    // the dormant reward progress and the avatar uploader.
-    provideLazyPort(MEDIA_READER, firebaseData, {
-      adapter: (m) => m.storage.StorageMediaReader,
-      methods: { resolve: 'promise' },
-      onLoadError: dataUnavailable,
+    // Storage (Phase 4a 4A-7): a person's avatar, and a catalogue image's
+    // renditions — each failing to load as Storage's transient answer.
+    provideLazyPort(AVATAR_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.storage.avatarPorts(inj.get(m.storage.FIREBASE_STORAGE)),
+      methods: {
+        uploadAvatar: 'promise',
+        findAvatar: 'promise',
+        removeAvatar: 'promise',
+      },
+      onLoadError: avatarsUnavailable,
     }),
-    provideLazyPort(REWARD_PROGRESS_READER, firebaseData, {
-      adapter: (m) => m.firestore.FirestoreRewardProgressReader,
-      methods: { observeForUser: 'observable' },
-      onLoadError: dataUnavailable,
-    }),
-    provideLazyPort(AVATAR_UPLOADER, firebaseData, {
-      adapter: (m) => m.storage.FirebaseStorageAvatarUploader,
-      methods: { upload: 'promise', find: 'promise', remove: 'promise' },
-      onLoadError: avatarStorageUnavailable,
+    provideLazyPort(MEDIA_RESOLVE_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.storage.mediaResolvePorts(inj.get(m.storage.FIREBASE_STORAGE)),
+      methods: { resolveMedia: 'promise' },
+      onLoadError: mediaUnavailable,
     }),
 
     // ── Icons and the logo ──

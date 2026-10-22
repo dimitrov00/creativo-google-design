@@ -43,8 +43,9 @@ import {
   customerOf,
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
-  FIXTURE_TIME_ZONE,
   localDate,
+  locationFixture,
+  memoryDefaultLocationPorts,
   memoryStore,
   type MemoryStore,
   memoryTxPorts,
@@ -131,6 +132,8 @@ type Options = {
   readonly sizes?: RunBackfillSizes;
   readonly commit?: CommitPlan;
   readonly failJobRead?: boolean;
+  /** The default location's read fails (`unavailable`). */
+  readonly failZone?: boolean;
 };
 
 function rig(appointments: readonly Appointment[], options: Options = {}) {
@@ -143,7 +146,7 @@ function rig(appointments: readonly Appointment[], options: Options = {}) {
   const tx = memoryTxPorts(store);
   const telemetry = recordingTelemetry();
   const audit: AuditEntry[] = [];
-  const reads = { pages: 0, roles: 0 };
+  const reads = { pages: 0, roles: 0, locations: 0 };
   const idsUnder = (collection: string) =>
     [...store.keys()]
       .filter((key) => key.split('/').length === 2)
@@ -155,7 +158,16 @@ function rig(appointments: readonly Appointment[], options: Options = {}) {
     ...(options.commit === undefined ? {} : { commit: options.commit }),
     ...telemetry,
     nextId: sequentialIds('rnd'),
-    tenantTimeZone: FIXTURE_TIME_ZONE,
+    // The shop's clock: the default location's (F-4), the fixture shop.
+    ...memoryDefaultLocationPorts(),
+    loadLocation: async (id: string) => {
+      reads.locations += 1;
+      return options.failZone === true
+        ? Result.err(
+            RepositoryError.readFailed(`locations/${id}`, 'unavailable'),
+          )
+        : Result.ok(id === FIXTURE_IDS.location ? locationFixture() : null);
+    },
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
     loadCallerRoles: async () => {
       reads.roles += 1;
@@ -610,6 +622,32 @@ describe('runBackfill — one audit row per call', () => {
       unbounded,
     );
     expect(answer.ok).toBe(false);
+    expect(audit[0]).toMatchObject({
+      backfillOutcome: BackfillOutcome.Failed,
+      backfillFailureCode: 'unavailable',
+    });
+  });
+
+  it('reads no zone for a mirror-only page — the clock is a stats page’s, loaded on first use', async () => {
+    const { reads, run } = rig([visitOf('a1', ANA)]);
+    await run(command(resume(BackfillJobName.SubjectMirror)), unbounded);
+    expect(reads.locations).toBe(0);
+  });
+
+  it('writes a FAILED row when a stats page cannot read the zone, and answers the store failure (4A-2 (e))', async () => {
+    const { audit, run } = rig([visitOf('a1', ANA)], { failZone: true });
+    const answer = await run(
+      command(resume(BackfillJobName.ClientStats)),
+      unbounded,
+    );
+    expect(answer).toEqual(
+      Result.err(
+        RepositoryError.readFailed(
+          `locations/${FIXTURE_IDS.location}`,
+          'unavailable',
+        ),
+      ),
+    );
     expect(audit[0]).toMatchObject({
       backfillOutcome: BackfillOutcome.Failed,
       backfillFailureCode: 'unavailable',

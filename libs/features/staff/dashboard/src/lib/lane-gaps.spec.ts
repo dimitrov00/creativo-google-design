@@ -1,14 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import { Interval } from '@creativo/application/booking';
-import { laneGaps } from './staff-day.store';
+import { FIXTURE_TIME_ZONE } from '@core/testing';
+import { type LaneSpan, laneGaps as gapsIn } from './staff-day.store';
 
 const H = 3_600_000;
 /** A day that starts at an arbitrary epoch — only the arithmetic matters. */
 const DAY = 1_000_000_000_000;
 const at = (hours: number): number => DAY + hours * H;
 
+/** A span of the lane — the plain `LaneSpan` the store draws from. */
+const span = (startMs: number, endMs: number): LaneSpan => ({ startMs, endMs });
+
+/** The lane's gaps on the fixture shop's clock — the zone of the shop in scope. */
+const laneGaps = (
+  rostered: readonly LaneSpan[],
+  occupied: readonly LaneSpan[],
+  nowMs: number,
+) => gapsIn(rostered, occupied, nowMs, FIXTURE_TIME_ZONE);
+
 describe('laneGaps', () => {
-  const rostered = [Interval.of(at(9), at(18))];
+  const rostered = [span(at(9), at(18))];
 
   it('draws the ELAPSED hole, which used to be discarded entirely', () => {
     // A hole that has already passed is not sellable, but it is a fact: the
@@ -16,7 +26,7 @@ describe('laneGaps', () => {
     // and a fully booked one render identically. With a 10:00 cut done and
     // the clock at 17:00 the rest of the day is one elapsed hole and one
     // sellable hour.
-    const gaps = laneGaps(rostered, [Interval.of(at(9), at(10))], at(17));
+    const gaps = laneGaps(rostered, [span(at(9), at(10))], at(17));
     expect(gaps.length).toBe(2);
     expect(gaps[0]).toMatchObject({ sellable: false, startMs: at(10) });
     expect(gaps[1]).toMatchObject({ sellable: true, startMs: at(17) });
@@ -35,7 +45,7 @@ describe('laneGaps', () => {
     // Flooring BEFORE the split would let a 105-minute hole with five
     // minutes left on it advertise "5 мин свободни".
     const nearlyOver = at(17) + 55 * 60_000; // 17:55, hole runs to 18:00
-    const gaps = laneGaps(rostered, [Interval.of(at(9), at(10))], nearlyOver);
+    const gaps = laneGaps(rostered, [span(at(9), at(10))], nearlyOver);
     expect(gaps.every((gap) => gap.minutes >= 20)).toBe(true);
     expect(gaps.some((gap) => gap.sellable)).toBe(false);
   });
@@ -43,10 +53,7 @@ describe('laneGaps', () => {
   it('keeps the 20-minute floor on both sides of the clock', () => {
     // Below the floor a lane becomes a ladder of booking/gap/booking and the
     // three-second read is gone — the reason the floor exists at all.
-    const busy = [
-      Interval.of(at(9), at(12)),
-      Interval.of(at(12) + 600_000, at(18)),
-    ];
+    const busy = [span(at(9), at(12)), span(at(12) + 600_000, at(18))];
     expect(laneGaps(rostered, busy, at(9)).length).toBe(0);
   });
 

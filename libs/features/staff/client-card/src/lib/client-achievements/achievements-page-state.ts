@@ -1,5 +1,9 @@
 import type { AchievementsContext } from '../achievements.presenter';
-import type { AchievementsData, Slice } from '../client-pages.vm';
+import {
+  type AchievementsData,
+  CardLoadState,
+  type Slice,
+} from '../client-pages.vm';
 import type { ClientCardWords } from '../client-card.words';
 
 /**
@@ -45,8 +49,10 @@ export function achievementsPageState<T>(
   build: (data: AchievementsData, ctx: AchievementsContext) => T | null,
 ): AchievementsPageState<T> {
   if (data === null) return ABSENT;
-  if (ctx === null || data.status === 'loading') return LOADING;
-  if (data.status === 'failed') return FAILED;
+  if (ctx === null || data.cardLoadState === CardLoadState.Loading) {
+    return LOADING;
+  }
+  if (data.cardLoadState === CardLoadState.Failed) return FAILED;
   const vm = build(data.data, ctx);
   return vm === null ? FAILED : { kind: 'ready', vm, words: ctx.words };
 }

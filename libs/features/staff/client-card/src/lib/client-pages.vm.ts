@@ -43,17 +43,24 @@ import type { RecordKindWord } from './client-card.words';
  */
 
 /**
- * One region's read as the page draws it (old spec §7.9, reused): a
- * skeleton, the content, or the heading over «Опитай пак». A region that
- * cannot exist at all — a flag off, no account, a guest — is not a fourth
- * status: its slice is absent.
+ * Where one region's read stands (old spec §7.9, reused): a skeleton, the
+ * content, or the heading over «Опитай пак». The discriminator of
+ * {@link Slice}, named after its field (Law 6, Phase 4a 4A-13). A region
+ * that cannot exist at all — a flag off, no account, a guest — is not a
+ * fourth state: its slice is absent.
  */
-export type Slice<T> =
-  | { readonly status: 'loading' }
-  | { readonly status: 'ready'; readonly data: T }
-  | { readonly status: 'failed' };
+export const CardLoadState = {
+  Loading: 'LOADING',
+  Ready: 'READY',
+  Failed: 'FAILED',
+} as const;
+export type CardLoadState = (typeof CardLoadState)[keyof typeof CardLoadState];
 
-export type SliceStatus = Slice<unknown>['status'];
+/** One region's read as the page draws it — its {@link CardLoadState}, and the data once ready. */
+export type Slice<T> =
+  | { readonly cardLoadState: typeof CardLoadState.Loading }
+  | { readonly cardLoadState: typeof CardLoadState.Ready; readonly data: T }
+  | { readonly cardLoadState: typeof CardLoadState.Failed };
 
 /**
  * What a `ui-gauge` takes besides its style and size, which are the
@@ -86,7 +93,7 @@ export interface ClientHeadVm {
    * answers: a pause never pushes painted content (the D-9 gate).
    */
   readonly stateLine: string | null;
-  /** A3 — the seat's picture first, then `AVATAR_UPLOADER.find(uid)`. */
+  /** A3 — the seat's picture first, then `AVATAR_PORTS.findAvatar(uid)`. */
   readonly avatarSrc: string | null;
   /** The name the avatar's initials come from (`ui-avatar [uiName]`). */
   readonly initialsFrom: string;
@@ -280,7 +287,7 @@ export interface AchievementsData {
   readonly progress: ReadonlyMap<string, BadgeProgress>;
   /** `seasonProgress`, by season id. */
   readonly seasonProgress: ReadonlyMap<string, SeasonProgress>;
-  /** The shop calendar's today (`YYYY-MM-DD`, Europe/Sofia), read once from `CLOCK`: phases, closest levels. */
+  /** The shop calendar's today (`YYYY-MM-DD`, on the shop's zone), read once from `CLOCK_PORTS`: phases, closest levels. */
   readonly today: string;
   /** The start of the client's last worked visit before this one — what «Ново» is measured from. */
   readonly previousVisitAtMs: number | null;
@@ -470,7 +477,7 @@ export interface ClientHeroVm {
   readonly line: readonly LinePart[] | null;
   /** `null` without `loyalty.tiers`, for a guest, and until the account lands: no plate, no arc. */
   readonly tier: HeroTierVm | null;
-  /** A1 — the seat's picture first, then `AVATAR_UPLOADER.find(uid)`. */
+  /** A1 — the seat's picture first, then `AVATAR_PORTS.findAvatar(uid)`. */
   readonly avatarSrc: string | null;
   /** The name the avatar's initials come from (`ui-avatar [uiName]`). */
   readonly initialsFrom: string;
@@ -753,7 +760,7 @@ export interface ActivityRowVm {
 
 /** WG, LD — a month of the journal. */
 export interface ActivityGroupVm {
-  /** `YYYY-MM` (Europe/Sofia): the `…-month-{key}` test id. */
+  /** `YYYY-MM` (the shop's calendar): the `…-month-{key}` test id. */
   readonly key: string;
   /** «Септември 2026 г.». */
   readonly label: string;
@@ -794,7 +801,7 @@ export interface LedgerPagingVm {
 /** The ledger page «Движение» (§2.2.6). */
 export interface LedgerPageVm {
   /** The first page's read: skeletons, the rows, or «Движението не се зареди.» [Опитай пак]. */
-  readonly status: SliceStatus;
+  readonly cardLoadState: CardLoadState;
   /** LB — «Георги Петров · **371 т.**». */
   readonly subline: readonly LinePart[];
   /** LC — the chosen pill (its words and test id are the card's `LEDGER_FILTER_WORDS`). */
@@ -1065,10 +1072,17 @@ export interface MedalDetailVm {
 
 // ── «Посещения» (§2.5) ──────────────────────────────────────────────────
 
+/** Where the «Посещения» page's first read stands. */
+export type VisitsPageStatus = 'loading' | 'ready' | 'failed';
+
 /** The «Посещения» page: two quiet lines under the title, then the shared browser. */
 export interface VisitsPageVm {
-  /** The first page's read: skeletons, the list, or «Посещенията не се заредиха.» [Опитай пак]. */
-  readonly status: SliceStatus;
+  /**
+   * The first page's read: skeletons, the list, or «Посещенията не се
+   * заредиха.» [Опитай пак]. A view-model union the visit editor reads too
+   * (`visits().status`), deferred to the flatten pass (Phase 4a 4A-13).
+   */
+  readonly status: VisitsPageStatus;
   /** HB — «**23** посещения · през **4** седмици»; 0 visits: «Първо посещение». */
   readonly line: readonly LinePart[];
   /** HB as one sentence (`clientCard.history.statsName`). */

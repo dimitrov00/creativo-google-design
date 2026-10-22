@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
-import { fail, ok, type Result } from '@creativo/domain/kernel';
+import { Result } from '@core/primitives';
 import { UI_LOGO } from '../manifest/icon-vocabulary';
 import { MATERIAL_GLYPHS } from '../material/material-glyphs.generated';
 import {
@@ -73,7 +73,9 @@ describe('UiIconRegistry', () => {
     const { registry, changes, remembered } = setUp();
     expect(registry.resolve('sheet.close')?.paths[0]?.d).toBe(pathOf('close'));
 
-    changes.next(ok({ schemaVersion: 1, icons: { 'sheet.close': 'cancel' } }));
+    changes.next(
+      Result.ok({ schemaVersion: 1, icons: { 'sheet.close': 'cancel' } }),
+    );
     expect(registry.origin()).toBe('remote');
     expect(registry.resolve('sheet.close')?.paths[0]?.d).toBe(pathOf('cancel'));
     expect(remembered).toEqual([
@@ -88,7 +90,7 @@ describe('UiIconRegistry', () => {
     const { registry, changes, remembered, diagnostics } = setUp({
       cached: { schemaVersion: 1, icons: { 'sheet.close': 'cancel' } },
     });
-    changes.next(ok({ schemaVersion: 99 }));
+    changes.next(Result.ok({ schemaVersion: 99 }));
     expect(registry.origin()).toBe('cached');
     expect(registry.resolve('sheet.close')?.paths[0]?.d).toBe(pathOf('cancel'));
     expect(remembered).toEqual([]);
@@ -97,7 +99,7 @@ describe('UiIconRegistry', () => {
 
   it('reports a source failure and carries on', () => {
     const { registry, changes, diagnostics } = setUp();
-    changes.next(fail(new Error('offline')));
+    changes.next(Result.err(new Error('offline')));
     expect(diagnostics).toEqual([
       { code: 'source-failed', origin: 'source', detail: 'offline' },
     ]);
@@ -108,7 +110,7 @@ describe('UiIconRegistry', () => {
     const { registry, changes, remembered } = setUp({
       cached: { schemaVersion: 1, icons: { 'sheet.close': 'cancel' } },
     });
-    changes.next(ok(null));
+    changes.next(Result.ok(null));
     expect(registry.origin()).toBe('bundled');
     expect(registry.resolve('sheet.close')?.paths[0]?.d).toBe(pathOf('close'));
     expect(remembered).toEqual([null]);
@@ -117,7 +119,7 @@ describe('UiIconRegistry', () => {
   it('drops only the bad entries of a partly valid manifest', () => {
     const { registry, changes, diagnostics } = setUp();
     changes.next(
-      ok({
+      Result.ok({
         schemaVersion: 1,
         icons: {
           'sheet.close': 'cancel',
@@ -138,7 +140,9 @@ describe('UiIconRegistry', () => {
 
   it('lets DI overrides beat the remote manifest', () => {
     const { registry, changes } = setUp({ overrides: true });
-    changes.next(ok({ schemaVersion: 1, icons: { 'sheet.close': 'check' } }));
+    changes.next(
+      Result.ok({ schemaVersion: 1, icons: { 'sheet.close': 'check' } }),
+    );
     const overrides = TestBed.inject(UiIconRegistry) && [
       { 'sheet.close': 'cancel' as const },
     ];
@@ -164,9 +168,9 @@ describe('UiIconRegistry', () => {
       viewBox: '0 0 2 2',
       paths: [{ d: 'M0 0h2v2H0z' }],
     };
-    changes.next(ok({ schemaVersion: 1, logo: { light } }));
+    changes.next(Result.ok({ schemaVersion: 1, logo: { light } }));
     expect(registry.logo().light).toEqual(light);
-    changes.next(ok({ schemaVersion: 1, icons: {} }));
+    changes.next(Result.ok({ schemaVersion: 1, icons: {} }));
     expect(registry.logo()).toBe(UI_LOGO);
   });
 

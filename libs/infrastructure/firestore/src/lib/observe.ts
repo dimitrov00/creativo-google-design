@@ -6,7 +6,7 @@ import {
   getDocs,
   onSnapshot,
 } from 'firebase/firestore';
-import { type Observable, map } from 'rxjs';
+import type { Observable } from 'rxjs';
 import { RepositoryError, Result } from '@core/primitives';
 import { subscribeWithRetry } from './subscribe-with-retry';
 
@@ -57,18 +57,12 @@ export function writeFailed(path: string, cause: unknown): RepositoryError {
   return RepositoryError.writeFailed(path, reasonOf(cause));
 }
 
-/** `subscribeWithRetry`'s answer as the flat port `Result`, its failure naming `path`. */
+/** A live read through `subscribeWithRetry`, its failure naming `path`. */
 function live<T>(
   path: string,
   subscribe: Parameters<typeof subscribeWithRetry<T>>[0],
 ): Observable<Result<T, RepositoryError>> {
-  return subscribeWithRetry<T>(subscribe).pipe(
-    map((answer) =>
-      answer.isSuccess()
-        ? Result.ok(answer.value)
-        : Result.err(readFailed(path, answer.error.cause)),
-    ),
-  );
+  return subscribeWithRetry<T>(subscribe, (cause) => readFailed(path, cause));
 }
 
 /** One document, live — its entity, or `null` while there is no document. */

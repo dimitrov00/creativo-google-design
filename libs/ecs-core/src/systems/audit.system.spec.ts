@@ -12,6 +12,8 @@ import {
   SeatOccupant,
   SeatSubject,
   SubjectRelationship,
+  EditCommand,
+  RequestedSubjectRole,
 } from '@core/components';
 import {
   GovernanceErrorCode,
@@ -39,9 +41,7 @@ import {
   seatFixture,
   customerOf,
 } from '@core/testing';
-import { EditCommand } from './appointment-edit.system';
 import { type AuditFact, type AuditSubject, AuditSystem } from './audit.system';
-import { RequestedSubjectRole } from './guest-label.system';
 
 /*
  * The pure cases of apps/functions/src/lib/booking/audit.spec.ts (targets,
@@ -523,6 +523,8 @@ describe('AuditSystem.changedProfileFields — names, never values', () => {
               beforeExists: true,
               afterExists: true,
               fields,
+              beforeProfileEditedAtUtcMs: null,
+              afterProfileEditedAtUtcMs: null,
             },
             AT,
           ),
@@ -607,6 +609,8 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
     beforeExists: true,
     afterExists: true,
     fields: ['firstName', 'lastName'],
+    beforeProfileEditedAtUtcMs: null,
+    afterProfileEditedAtUtcMs: null,
   };
 
   it('keys the row by the event id, so a redelivery lands on the same document', () => {
@@ -655,6 +659,148 @@ describe('AuditSystem.planProfileChange — one row per event', () => {
         AT,
       ).ok,
     ).toBe(false);
+  });
+
+  /*
+   * Owner ruling flip-2 §10.15 (Phase 4a 4A-16): an edit `updateProfile`
+   * already audited — its stamp changed — plans nothing; everything else is
+   * audited as today.
+   */
+  describe('the edit the callable already audited (4A-16)', () => {
+    const BEFORE = utcMs('2026-09-24T08:00:00.000Z');
+    const AFTER = utcMs('2026-09-25T08:00:00.000Z');
+
+    it('plans nothing for an update whose profileEditedAtUtcMs stamp changed', () => {
+      expect(
+        unwrapOk(
+          AuditSystem.planProfileChange(
+            {
+              ...change,
+              beforeProfileEditedAtUtcMs: null,
+              afterProfileEditedAtUtcMs: AFTER,
+            },
+            AT,
+          ),
+        ),
+      ).toBeNull();
+      expect(
+        unwrapOk(
+          AuditSystem.planProfileChange(
+            {
+              ...change,
+              beforeProfileEditedAtUtcMs: BEFORE,
+              afterProfileEditedAtUtcMs: AFTER,
+            },
+            AT,
+          ),
+        ),
+      ).toBeNull();
+    });
+
+    it('audits an update that left the stamp as it was (a block, an admin write) as today', () => {
+      const plan = unwrapOk(
+        AuditSystem.planProfileChange(
+          {
+            ...change,
+            beforeProfileEditedAtUtcMs: BEFORE,
+            afterProfileEditedAtUtcMs: BEFORE,
+          },
+          AT,
+        ),
+      );
+      expect(plan?.row).toMatchObject({ auditAction: 'PROFILE_UPDATED' });
+    });
+
+    it("audits an update that reset the stamp to null (a whole-body seed set) — a reset is never the callable's", () => {
+      const plan = unwrapOk(
+        AuditSystem.planProfileChange(
+          {
+            ...change,
+            fields: ['firstName'],
+            beforeProfileEditedAtUtcMs: BEFORE,
+            afterProfileEditedAtUtcMs: null,
+          },
+          AT,
+        ),
+      );
+      expect(plan?.row).toMatchObject({
+        auditAction: 'PROFILE_UPDATED',
+        profileFields: ['firstName'],
+        actorRole: 'SYSTEM',
+        actorSystemSource: 'ADMIN_SDK',
+      });
+    });
+
+    it('never skips a creation — the stub, registration and the seed keep their ONE PROFILE_CREATED row', () => {
+      const plan = unwrapOk(
+        AuditSystem.planProfileChange(
+          {
+            ...change,
+            beforeExists: false,
+            beforeProfileEditedAtUtcMs: null,
+            afterProfileEditedAtUtcMs: AFTER,
+          },
+          AT,
+        ),
+      );
+      expect(plan?.row).toMatchObject({ auditAction: 'PROFILE_CREATED' });
+    });
+
+    it('never skips a deletion', () => {
+      const plan = unwrapOk(
+        AuditSystem.planProfileChange(
+          {
+            ...change,
+            afterExists: false,
+            beforeProfileEditedAtUtcMs: BEFORE,
+            afterProfileEditedAtUtcMs: null,
+          },
+          AT,
+        ),
+      );
+      expect(plan?.row).toMatchObject({ auditAction: 'PROFILE_DELETED' });
+    });
+  });
+});
+
+describe('AuditSystem.planOwnProfileEdit — the row updateProfile writes itself (4A-16)', () => {
+  const OWNER = UserId.of('maria');
+  const EDITED_AT = utcMs('2026-09-25T08:00:00.000Z');
+
+  it('credits the owner, names the changed fields and stamps the edit', () => {
+    const plan = AuditSystem.planOwnProfileEdit(
+      OWNER,
+      ['firstName', 'birthDate'],
+      EDITED_AT,
+    );
+    expect(plan?.row).toMatchObject({
+      recordedAtUtcMs: EDITED_AT,
+      resourceId: 'users/maria',
+      auditAction: 'PROFILE_UPDATED',
+      profileFields: ['firstName', 'birthDate'],
+      actorRole: 'USER',
+      actorUserId: 'maria',
+      auditTarget: 'USER',
+      targetUserId: 'maria',
+    });
+    expect(plan?.idBasis).toBe(
+      AuditSystem.rowBasis(
+        'PROFILE_UPDATED',
+        'users/maria',
+        'maria',
+        AuditSystem.changeKey.ownProfileEdit(OWNER, EDITED_AT),
+      ),
+    );
+  });
+
+  it('plans nothing for an edit that changed no audited field', () => {
+    expect(AuditSystem.planOwnProfileEdit(OWNER, [], EDITED_AT)).toBeNull();
+  });
+
+  it('keys each landed edit by its owner and instant', () => {
+    expect(AuditSystem.changeKey.ownProfileEdit(OWNER, EDITED_AT)).toBe(
+      `profile-edit:maria:${EDITED_AT}`,
+    );
   });
 });
 

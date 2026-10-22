@@ -1,28 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
-import type { Functions } from 'firebase/functions';
 import { loyaltyCatalogMemo } from '@creativo/infrastructure/firebase-app';
 import {
   HeadRole,
   StreakPublishCall,
   StreakRule,
+  StreakRuleDirection,
   StreakTransition,
 } from '@core/components';
 import type { StreakDefinition, StreakDefinitionVersion } from '@core/entities';
-import type { LoyaltyCatalog } from '@core/ports';
+import { Callables, type LoyaltyCatalog } from '@core/ports';
 import {
   EngagementErrorCode,
   type LocalDate,
+  PipelineError,
+  PipelineErrorCode,
   PublishRequestId,
+  RepositoryError,
   RepositoryErrorCode,
+  Result,
   StreakDefinitionVersionId,
+  StreakPublishError,
 } from '@core/primitives';
 import { LoyaltyCatalogSystem } from '@core/systems';
 import {
   FIXTURE_TODAY,
+  type GatewayScript,
   localDate,
   loyaltyCatalogFixture,
   loyaltyCatalogJson,
+  scriptedGatewayPorts,
   streakDefinitionFixture,
   streakDefinitionVersionFixture,
   unwrapErr,
@@ -31,24 +38,14 @@ import {
 } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
 
-const { callableMock } = vi.hoisted(() => ({ callableMock: vi.fn() }));
-
 vi.mock('firebase/firestore', async () =>
   (await import('../testing/fake-firestore')).fakeFirestoreModule(),
 );
-vi.mock('firebase/functions', async () => ({
-  ...(await vi.importActual<typeof import('firebase/functions')>(
-    'firebase/functions',
-  )),
-  httpsCallable: () => callableMock,
-}));
 
 const { loyaltyCatalogReadPorts } = await import('./loyalty-catalog.adapter');
-const { streakPublishGatewayPorts } =
-  await import('./streak-publish-gateway.adapter');
+const { streakPublishPorts } = await import('./streak-publish.adapter');
 
 const asDb = (fake: FakeFirestore) => fake as unknown as Firestore;
-const FUNCTIONS = {} as Functions;
 
 /** The six collections in the order the adapter reads them. */
 const COLLECTIONS = [
@@ -117,16 +114,26 @@ function withAVersionThatWaits(db: FakeFirestore): FakeFirestore {
     });
 }
 
-/** A `today` closure the spec moves by hand — `app.config.ts`'s is the clock read in the shop's zone. */
+/**
+ * A `today` closure the spec moves by hand — `shopToday`'s is the
+ * clock read on the default location's wall clock. It can also be made
+ * unreadable (the default location's zone, 4A-2 (e)).
+ */
 function aDay(start: LocalDate = FIXTURE_TODAY) {
-  let day = start;
+  let day: Result<LocalDate, RepositoryError> = Result.ok(start);
   return {
-    today: () => day,
+    today: async () => day,
     turnTo: (next: LocalDate) => {
-      day = next;
+      day = Result.ok(next);
+    },
+    failWith: (error: RepositoryError) => {
+      day = Result.err(error);
     },
   };
 }
+
+/** The publish callable as the server answers it, scripted per spec. */
+let publishScript: GatewayScript = {};
 
 function setUp(db: FakeFirestore = seeded(), start?: LocalDate) {
   const memo = loyaltyCatalogMemo();
@@ -136,8 +143,22 @@ function setUp(db: FakeFirestore = seeded(), start?: LocalDate) {
     memo,
     clock,
     ports: loyaltyCatalogReadPorts(asDb(db), memo, clock.today),
-    gateway: streakPublishGatewayPorts(FUNCTIONS, memo),
+    gateway: streakPublishPorts(
+      scriptedGatewayPorts({
+        [Callables.PublishStreakDefinition]: (input) =>
+          publishScript[Callables.PublishStreakDefinition]?.(input) ??
+          Result.err(PipelineError.bare(PipelineErrorCode.Unknown)),
+      }),
+      memo,
+    ),
   };
+}
+
+/** Lets microtasks run one at a time until the fake store has seen `count` reads. */
+async function untilReads(db: FakeFirestore, count: number): Promise<void> {
+  for (let i = 0; i < 100 && db.reads.length < count; i++) {
+    await Promise.resolve();
+  }
 }
 
 const read = async (ports: ReturnType<typeof setUp>['ports']) =>
@@ -151,7 +172,9 @@ const inForce = (catalog: LoyaltyCatalog, day: LocalDate) =>
   );
 
 describe('loyaltyCatalogReadPorts — the read', () => {
-  beforeEach(() => callableMock.mockReset());
+  beforeEach(() => {
+    publishScript = {};
+  });
 
   it('reads the six collections once, under the system’s part names, every document as stored', async () => {
     const { ports, db } = setUp();
@@ -259,7 +282,9 @@ describe('loyaltyCatalogReadPorts — the read', () => {
 });
 
 describe('loyaltyCatalogReadPorts — the memo: for the session, and the shop’s day', () => {
-  beforeEach(() => callableMock.mockReset());
+  beforeEach(() => {
+    publishScript = {};
+  });
 
   it('keeps a good answer: the second card reads nothing', async () => {
     const { ports, db } = setUp();
@@ -281,6 +306,22 @@ describe('loyaltyCatalogReadPorts — the memo: for the session, and the shop’
 
     expect(db.reads).toHaveLength(6);
     expect(unwrapOk(second)).toBe(unwrapOk(first));
+  });
+
+  it('answers a day that cannot be read with its RepositoryError, reading nothing (4A-2 (e))', async () => {
+    const { ports, db, clock } = setUp();
+    const unreadable = RepositoryError.readFailed(
+      'locations/loc-center',
+      'CATALOG_LOCATION_ZONE_UNKNOWN',
+    );
+    clock.failWith(unreadable);
+
+    expect(await ports.loadLoyaltyCatalog()).toEqual(Result.err(unreadable));
+    expect(db.reads).toHaveLength(0);
+
+    clock.turnTo(FIXTURE_TODAY);
+    expect((await ports.loadLoyaltyCatalog()).ok).toBe(true);
+    expect(db.reads).toHaveLength(6);
   });
 
   it('never keeps a failed read: the next call reads again', async () => {
@@ -335,7 +376,9 @@ describe('loyaltyCatalogReadPorts — the memo: for the session, and the shop’
 });
 
 describe('loyaltyCatalogReadPorts — invalidate', () => {
-  beforeEach(() => callableMock.mockReset());
+  beforeEach(() => {
+    publishScript = {};
+  });
 
   it('drops the session’s copy: the next call reads the collections again', async () => {
     const { ports, db, memo } = setUp();
@@ -352,6 +395,9 @@ describe('loyaltyCatalogReadPorts — invalidate', () => {
     const { ports, db, memo } = setUp();
 
     const inFlight = ports.loadLoyaltyCatalog();
+    // The day is read first (asynchronously); the collection reads are now
+    // on their way, their answer not yet in.
+    await untilReads(db, 6);
     memo.invalidate();
     const next = ports.loadLoyaltyCatalog();
 
@@ -366,7 +412,9 @@ describe('loyaltyCatalogReadPorts — invalidate', () => {
 });
 
 describe('loyaltyCatalogReadPorts — after a publish in this session (one memo)', () => {
-  beforeEach(() => callableMock.mockReset());
+  beforeEach(() => {
+    publishScript = {};
+  });
 
   it('the next card reads the rule that was just written', async () => {
     const { ports, gateway, db } = setUp();
@@ -375,14 +423,18 @@ describe('loyaltyCatalogReadPorts — after a publish in this session (one memo)
 
     // The server writes the head and answers; the gateway hears it.
     withAVersionThatWaits(db);
-    callableMock.mockResolvedValueOnce({
-      data: {
-        kind: 'published',
-        version: 2,
-        effectiveFrom: '2026-10-05',
-        direction: 'looser',
-      },
-    });
+    publishScript = {
+      [Callables.PublishStreakDefinition]: () =>
+        Result.ok(
+          StreakPublishCall.published(
+            StreakPublishCall.receipt(
+              2,
+              WAITS_FROM,
+              StreakRuleDirection.Looser,
+            ),
+          ),
+        ),
+    };
     const written = await gateway.publishStreakRule({
       requestId: PublishRequestId.of('req-wider-grace'),
       streakId: StreakRule.DEFAULT_DEFINITION_ID,
@@ -402,9 +454,10 @@ describe('loyaltyCatalogReadPorts — after a publish in this session (one memo)
   it('a withdrawal that was refused leaves the copy where it is', async () => {
     const { ports, gateway, db } = setUp();
     await read(ports);
-    callableMock.mockResolvedValueOnce({
-      data: { kind: 'refused', code: 'stale', fields: [] },
-    });
+    publishScript = {
+      [Callables.PublishStreakDefinition]: () =>
+        Result.ok(StreakPublishCall.refused(StreakPublishError.stale(2, 2))),
+    };
 
     await gateway.withdrawStreakRule(
       StreakPublishCall.withdraw(

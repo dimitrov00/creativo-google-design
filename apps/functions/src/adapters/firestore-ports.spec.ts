@@ -71,7 +71,6 @@ describe('firestorePorts — the assembler', () => {
       'pageAppointments',
       // flip 2 (identity): the `otps` store and the account lookup
       'loadOpenOtps',
-      'loadOtp',
       'saveOtp',
       'findUserByDestination',
     ] as const) {

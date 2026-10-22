@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mintCustomToken } from './support/mint-custom-token';
+import { Role } from '@core/components';
+import { mintActiveToken } from './support/sign-in';
 
 declare global {
   interface Window {
@@ -148,15 +149,12 @@ test.describe('marketing landing', () => {
     page,
   }) => {
     const uid = `e2e-standalone-${test.info().testId}`;
-    const token = await mintCustomToken(uid, {
-      stage: 'active',
-      roles: ['client'],
-    });
+    const token = await mintActiveToken(uid, [Role.Client]);
 
     // Chromium has no native "launch as installed PWA" affordance for
     // Playwright to drive, so `display-mode: standalone` is forced the same
     // way home.guard.spec.ts does at the unit level — this test's job is to
-    // prove the guard's real DI wiring (AUTH_GATEWAY, Router) behaves the
+    // prove the guard's real DI wiring (AUTH_SESSION_PORTS, Router) behaves the
     // same end-to-end, not to re-derive `isStandalone()`'s own logic.
     await page.addInitScript(() => {
       const original = window.matchMedia.bind(window);

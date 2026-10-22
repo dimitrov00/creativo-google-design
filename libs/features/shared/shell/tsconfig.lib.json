@@ -40,9 +40,6 @@
       "path": "../../../ui/icons/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/accounts/tsconfig.lib.json"
-    },
-    {
       "path": "../../../ui/modifiers/tsconfig.lib.json"
     },
     {
@@ -50,9 +47,6 @@
     },
     {
       "path": "../../../ui/controls/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/identity/tsconfig.lib.json"
     },
     {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"

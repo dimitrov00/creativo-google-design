@@ -31,7 +31,7 @@ import {
   StreakPreviewUnavailable,
   StreakRuleSystem,
 } from '@core/systems';
-import { unwrapOk, utcMs } from '@core/testing';
+import { FIXTURE_TIME_ZONE, unwrapOk, utcMs } from '@core/testing';
 import {
   type VisitTranslate,
   rhythmRuleWords,
@@ -141,7 +141,7 @@ function contextOf(lang: Lang = 'bg'): AdminRhythmContext {
     translate,
     lang,
   );
-  return { translate, lang, today: TODAY, rule };
+  return { translate, lang, today: TODAY, zone: FIXTURE_TIME_ZONE, rule };
 }
 
 /** The recommended rule, as the form holds it. */
@@ -649,7 +649,7 @@ describe('samplePeriods', () => {
   const context = contextOf();
 
   it('draws the projector’s run: kept visits, the miss, the visit after it and the open period', () => {
-    const state = sampleRhythmRun(StreakRule.DEFAULT, TODAY);
+    const state = sampleRhythmRun(StreakRule.DEFAULT, TODAY, FIXTURE_TIME_ZONE);
     if (state === null) throw new Error('the sample has no run');
     const periods = samplePeriods(context, state);
     const marks = periods.map((p) => p.mark);

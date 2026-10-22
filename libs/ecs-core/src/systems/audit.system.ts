@@ -8,6 +8,8 @@ import {
   type Seat,
   SeatSubject,
   SubjectRelationship,
+  EditCommand,
+  RequestedSubjectRole,
 } from '@core/components';
 import {
   GovernanceError,
@@ -23,11 +25,7 @@ import {
   type UtcEpochMs,
 } from '@core/primitives';
 import type { Appointment, AuditEntryMeta } from '@core/entities';
-import {
-  EditCommand,
-  type EditCommandRequest,
-} from './appointment-edit.system';
-import { RequestedSubjectRole } from './guest-label.system';
+import { type EditCommandRequest } from './appointment-edit.system';
 
 /**
  * A seat's person as the audit log sees them (`audit.ts:19-25`): a client
@@ -158,6 +156,13 @@ export type ProfileChange = {
   readonly beforeExists: boolean;
   readonly afterExists: boolean;
   readonly fields: readonly string[];
+  /**
+   * The two sides' raw `profileEditedAtUtcMs` stamps (4A-16) — `null` for an
+   * absent side or an absent key. The decoder only decodes; whether the
+   * callable already audited the event is {@link AuditSystem.planProfileChange}'s.
+   */
+  readonly beforeProfileEditedAtUtcMs: UtcEpochMs | null;
+  readonly afterProfileEditedAtUtcMs: UtcEpochMs | null;
 };
 
 /**
@@ -431,6 +436,14 @@ export const AuditSystem = {
     profile(eventId: TriggerEventId): string {
       return eventId;
     },
+    /**
+     * An owner's own edit through `updateProfile` (4A-16): the account and
+     * the instant its transaction stamped — a retried call that re-commits
+     * re-stamps, so each landed edit is its own change.
+     */
+    ownProfileEdit(ownerUserId: UserId, editedAtUtcMs: UtcEpochMs): string {
+      return `profile-edit:${ownerUserId}:${editedAtUtcMs}`;
+    },
   },
 
   /**
@@ -501,6 +514,7 @@ export const AuditSystem = {
     nowUtcMs: UtcEpochMs,
   ): Result<AuditRowPlan | null, GovernanceError.AuditEntryEmptyAction> {
     if (change.fields.length === 0) return Result.ok(null);
+    if (AuditSystem.auditedByCallable(change)) return Result.ok(null);
     if (change.eventId.trim().length === 0) {
       return Result.err(GovernanceError.auditEntryEmptyAction());
     }
@@ -524,5 +538,59 @@ export const AuditSystem = {
         AuditSystem.changeKey.profile(change.eventId),
       ),
     });
+  },
+
+  /**
+   * Whether `updateProfile` already wrote this event's row (owner ruling
+   * flip-2 §10.15, Phase 4a 4A-16): an UPDATE whose `profileEditedAtUtcMs`
+   * stamp changed to a new instant is the callable's own edit, audited
+   * inside its transaction, credited to the caller. The callable only ever
+   * writes an instant, so a reset to `null` (a whole-body Admin `set` — the
+   * dev seed, the e2e seed — over an account the callable already stamped)
+   * is never the callable's and is audited by the trigger. A creation (the
+   * provisioned stub, registration, the seed) and a deletion are never
+   * skipped; an edit that leaves the stamp as it was (an account block, an
+   * admin write) is the trigger's to audit, as today.
+   */
+  auditedByCallable(change: ProfileChange): boolean {
+    return (
+      change.beforeExists &&
+      change.afterExists &&
+      change.afterProfileEditedAtUtcMs !== null &&
+      change.beforeProfileEditedAtUtcMs !== change.afterProfileEditedAtUtcMs
+    );
+  },
+
+  /**
+   * The ONE row an owner's own profile edit writes inside `updateProfile`'s
+   * transaction (4A-16): `PROFILE_UPDATED`, credited to the owner
+   * (`Actor.user`), the changed field NAMES its only context, stamped with
+   * the edit's instant; its id basis keyed by
+   * {@link AuditSystem.changeKey.ownProfileEdit}. `null` when no audited
+   * field changed — an unchanged edit writes nothing.
+   */
+  planOwnProfileEdit(
+    ownerUserId: UserId,
+    fields: readonly string[],
+    nowUtcMs: UtcEpochMs,
+  ): AuditRowPlan | null {
+    if (fields.length === 0) return null;
+    const action = AuditAction.ProfileUpdated;
+    const resourceId = AuditResourceId.forUser(ownerUserId);
+    return {
+      row: {
+        recordedAtUtcMs: nowUtcMs,
+        resourceId,
+        ...Actor.user(ownerUserId),
+        ...AuditContext.profile(action, fields),
+        ...AuditTargetRef.user(ownerUserId),
+      },
+      idBasis: rowBasis(
+        action,
+        resourceId,
+        ownerUserId,
+        AuditSystem.changeKey.ownProfileEdit(ownerUserId, nowUtcMs),
+      ),
+    };
   },
 } as const;

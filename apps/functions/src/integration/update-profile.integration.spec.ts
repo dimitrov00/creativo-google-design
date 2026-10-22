@@ -1,25 +1,28 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import type { Firestore, Timestamp } from 'firebase-admin/firestore';
-import { Email } from '@core/components';
+import { AuditAction, Email } from '@core/components';
 import { AccountsErrorCode, UserId } from '@core/primitives';
 import { Collections } from '@core/entities';
 import { type UpdateProfileCommand, updateProfile } from '@core/pipelines';
 import { SearchFieldsSystem } from '@core/systems';
 import {
+  FIXTURE_NOW_UTC_MS,
   pinnedNowUtcMs,
   provisionedUserFixture,
   recordingTelemetry,
   registeredUserFixture,
 } from '@core/testing';
+import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
 
 /**
  * `updateProfile` against the REAL Firestore emulator (identity flip (2),
- * F2-5): ONE root-key update of the five owner keys, the search keys from
- * the STORED contact; an identical second call writes nothing (so the
- * profile trigger audits one change, not two); a provisioned stub is
- * refused, untouched.
+ * F2-5; Phase 4a 4A-16): ONE root-key update of the five owner keys, the
+ * search keys from the STORED contact and the `profileEditedAtUtcMs` marker,
+ * beside ONE audit row credited to the USER in the same transaction (the
+ * profile trigger skips the event the marker names); an identical second
+ * call writes nothing; a provisioned stub is refused, untouched.
  *
  * Emulator-only by construction, on a demo project of its own.
  */
@@ -83,11 +86,16 @@ describe('updateProfile (emulator)', () => {
     return updateProfile({
       commit: firestoreCommitPlan(db),
       nowUtcMs: pinnedNowUtcMs(),
+      hash: sha256Hex,
       ...telemetry,
     })(cmd);
   }
 
   const doc = () => db.doc(`${Collections.Users}/${UID}`).get();
+  const auditRows = async () =>
+    (await db.collection(Collections.AuditLog).get()).docs.map((row) =>
+      row.data(),
+    );
 
   it('writes once — the names and the search keys re-derived from the STORED contact, every other key kept', async () => {
     const maria = registeredUserFixture({ email: MAIL });
@@ -102,7 +110,17 @@ describe('updateProfile (emulator)', () => {
         maria.phone,
         maria.email,
       ),
+      profileEditedAtUtcMs: FIXTURE_NOW_UTC_MS,
     });
+    // ONE row, the user's own edit, written in the same transaction.
+    expect(await auditRows()).toEqual([
+      expect.objectContaining({
+        auditAction: AuditAction.ProfileUpdated,
+        actorRole: 'USER',
+        actorUserId: UID,
+        recordedAtUtcMs: FIXTURE_NOW_UTC_MS,
+      }),
+    ]);
   });
 
   it('writes nothing for an identical second call', async () => {
@@ -114,6 +132,7 @@ describe('updateProfile (emulator)', () => {
     expect(await run(rename)).toEqual({ ok: true, value: { changed: false } });
     const second = await doc();
     expect(sameUpdate(second, first)).toBe(true);
+    expect(await auditRows()).toHaveLength(1);
   });
 
   it('refuses a provisioned stub as not found, untouched', async () => {
@@ -125,5 +144,6 @@ describe('updateProfile (emulator)', () => {
       AccountsErrorCode.UpdateProfileNotFound,
     );
     expect(sameUpdate(await doc(), before)).toBe(true);
+    expect(await auditRows()).toEqual([]);
   });
 });

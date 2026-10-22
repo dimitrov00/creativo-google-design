@@ -83,6 +83,22 @@ export const IdentityErrorCode = {
   RegistrationUserNotFound: 'IDENTITY_REGISTRATION_USER_NOT_FOUND',
   /** A field the deployment's strategy requires is absent or blank (`field` names it). */
   RegistrationFieldMissing: 'IDENTITY_REGISTRATION_FIELD_MISSING',
+  /*
+   * The OTP and registration callables' own faults and payload refusals —
+   * the successors of today's undotted wire codes (Phase 4a 4A-4).
+   */
+  /** A payload the callable could not read — `reason` says what (was `invalid_input`). */
+  InvalidInput: 'IDENTITY_INVALID_INPUT',
+  /** A store failure of an identity callable (was `repository_failure`). */
+  RepositoryFailure: 'IDENTITY_REPOSITORY_FAILURE',
+  /** The challenge could not be delivered (was `otp_send_failure`). */
+  OtpSendFailure: 'IDENTITY_OTP_SEND_FAILURE',
+  /** Auth could not mint the sign-in token (was `token_minting_failure`). */
+  TokenMintingFailure: 'IDENTITY_TOKEN_MINTING_FAILURE',
+  /** Auth could not promote the registered session's claims (was `claims_promotion_failure`). */
+  ClaimsPromotionFailure: 'IDENTITY_CLAIMS_PROMOTION_FAILURE',
+  /** The registration's birth date was refused — its cause nested in `errors` (was `registration_birth_date_invalid`). */
+  RegistrationBirthDateInvalid: 'IDENTITY_REGISTRATION_BIRTH_DATE_INVALID',
 } as const;
 export type IdentityErrorCode =
   (typeof IdentityErrorCode)[keyof typeof IdentityErrorCode];
@@ -263,6 +279,29 @@ export const IdentityError = {
   ): IdentityError.RegistrationFieldMissing {
     return { errorCode: IdentityErrorCode.RegistrationFieldMissing, field };
   },
+  invalidInput(reason: string): IdentityError.InvalidInput {
+    return { errorCode: IdentityErrorCode.InvalidInput, reason };
+  },
+  repositoryFailure(): IdentityError.RepositoryFailure {
+    return { errorCode: IdentityErrorCode.RepositoryFailure };
+  },
+  otpSendFailure(): IdentityError.OtpSendFailure {
+    return { errorCode: IdentityErrorCode.OtpSendFailure };
+  },
+  tokenMintingFailure(): IdentityError.TokenMintingFailure {
+    return { errorCode: IdentityErrorCode.TokenMintingFailure };
+  },
+  claimsPromotionFailure(): IdentityError.ClaimsPromotionFailure {
+    return { errorCode: IdentityErrorCode.ClaimsPromotionFailure };
+  },
+  registrationBirthDateInvalid(
+    errors: readonly IdentityError.BirthDate[],
+  ): IdentityError.RegistrationBirthDateInvalid {
+    return {
+      errorCode: IdentityErrorCode.RegistrationBirthDateInvalid,
+      errors,
+    };
+  },
 
   /** Narrows an error to one code — `IdentityError.is(e, IdentityErrorCode.OtpExpired)`. */
   is<C extends IdentityErrorCode>(
@@ -390,6 +429,31 @@ export namespace IdentityError {
     readonly errorCode: typeof IdentityErrorCode.RegistrationFieldMissing;
     /** The `RegistrationField` value, as its plain string. */
     readonly field: string;
+  };
+  /** The four birth-date refusals — what a registration's wrapper nests. */
+  export type BirthDate =
+    BirthDateInvalid | BirthDateInFuture | BirthDateTooYoung | BirthDateTooOld;
+  export type InvalidInput = {
+    readonly errorCode: typeof IdentityErrorCode.InvalidInput;
+    /** What could not be read, in words for the log (`'missing or empty otpId'`). */
+    readonly reason: string;
+  };
+  export type RepositoryFailure = {
+    readonly errorCode: typeof IdentityErrorCode.RepositoryFailure;
+  };
+  export type OtpSendFailure = {
+    readonly errorCode: typeof IdentityErrorCode.OtpSendFailure;
+  };
+  export type TokenMintingFailure = {
+    readonly errorCode: typeof IdentityErrorCode.TokenMintingFailure;
+  };
+  export type ClaimsPromotionFailure = {
+    readonly errorCode: typeof IdentityErrorCode.ClaimsPromotionFailure;
+  };
+  export type RegistrationBirthDateInvalid = {
+    readonly errorCode: typeof IdentityErrorCode.RegistrationBirthDateInvalid;
+    /** The cause — the one birth-date refusal, as today's wrapper nested it. */
+    readonly errors: readonly BirthDate[];
   };
 }
 

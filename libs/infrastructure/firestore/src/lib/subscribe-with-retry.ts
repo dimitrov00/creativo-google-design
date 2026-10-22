@@ -1,16 +1,7 @@
 import { Observable } from 'rxjs';
 import type { Unsubscribe } from 'firebase/firestore';
-import { Result, ok, fail } from '@creativo/domain/kernel';
-import { RepositoryError } from '@creativo/application/shared';
-
-export interface SubscribeWithRetryOptions {
-  /** Backoff schedule; the last entry repeats once exhausted. */
-  readonly retryDelaysMs?: readonly number[];
-}
-
-const DEFAULT_RETRY_DELAYS_MS: readonly number[] = [
-  500, 1000, 2000, 5000, 10_000,
-];
+import { retryDelayMs } from '@creativo/infrastructure/firebase-app';
+import { type RepositoryError, Result } from '@core/primitives';
 
 /**
  * The only error codes a re-listen can actually heal.
@@ -47,25 +38,25 @@ function isRetryable(error: unknown): boolean {
 
 /**
  * Wraps a raw Firestore `onSnapshot`-style live subscription into an
- * `Observable<Result<T, RepositoryError>>` that never completes on error —
- * it surfaces the failure once (`Result.fail`) and, for the healable codes in
- * {@link RETRYABLE_CODES} only, retries the underlying subscription on a
- * backoff schedule, resetting the schedule as soon as a snapshot succeeds
+ * `Observable<Result<T, RepositoryError>>` — the flat port `Result` — that
+ * never completes on error: it surfaces the failure once (`onError(cause)`,
+ * the caller's `RepositoryError` naming what it read) and, for the healable
+ * codes in {@link RETRYABLE_CODES} only, retries the underlying subscription
+ * on the data layer's ONE backoff schedule (`retryDelayMs`,
+ * `DATA_RETRY_DELAYS_MS`), resetting it as soon as a snapshot succeeds
  * again. Everything else surfaces once and stops: retrying a rule denial, a
- * missing index or an unparseable document re-bills the same defect forever.
- * This is the one place every `observe*` repository/reader method in
- * `libs/infrastructure/firestore` goes through, so reconnect behavior
- * (offline blips, emulator restarts) is defined exactly once.
+ * missing index or an unparseable document re-bills the same defect
+ * forever. This is the one place every live read of the web data layer goes
+ * through (`observe.ts`, the visit photos), so reconnect behaviour (offline
+ * blips, emulator restarts) is defined exactly once.
  */
 export function subscribeWithRetry<T>(
   subscribe: (
     onNext: (value: T) => void,
     onError: (error: unknown) => void,
   ) => Unsubscribe,
-  options: SubscribeWithRetryOptions = {},
+  onError: (cause: unknown) => RepositoryError,
 ): Observable<Result<T, RepositoryError>> {
-  const retryDelaysMs = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
-
   return new Observable<Result<T, RepositoryError>>((subscriber) => {
     let unsubscribeSnapshot: Unsubscribe | null = null;
     let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -76,12 +67,10 @@ export function subscribeWithRetry<T>(
       unsubscribeSnapshot = subscribe(
         (value) => {
           attempt = 0;
-          subscriber.next(ok(value));
+          subscriber.next(Result.ok(value));
         },
         (error) => {
-          subscriber.next(
-            fail(new RepositoryError('Live query failed', error)),
-          );
+          subscriber.next(Result.err(onError(error)));
           if (isRetryable(error)) scheduleRetry();
         },
       );
@@ -89,8 +78,7 @@ export function subscribeWithRetry<T>(
 
     const scheduleRetry = (): void => {
       if (disposed) return;
-      const index = Math.min(attempt, retryDelaysMs.length - 1);
-      const delayMs = retryDelaysMs.at(index) ?? 0;
+      const delayMs = retryDelayMs(attempt);
       attempt += 1;
       retryTimeoutId = setTimeout(() => {
         unsubscribeSnapshot?.();

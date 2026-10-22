@@ -38,21 +38,22 @@ import {
   monthYearLong,
   runningCase,
 } from './client-card.format';
-import type {
-  GaugeVm,
-  PassVm,
-  RewardGridVm,
-  RewardReadyVm,
-  RewardTileVm,
-  RhythmPhaseVm,
-  Slice,
-  StampCardVm,
-  VoucherVm,
-  WalletActionVm,
-  WalletHoldingVm,
-  WalletRhythmVm,
-  WalletTierVm,
-  WalletVm,
+import {
+  CardLoadState,
+  type GaugeVm,
+  type PassVm,
+  type RewardGridVm,
+  type RewardReadyVm,
+  type RewardTileVm,
+  type RhythmPhaseVm,
+  type Slice,
+  type StampCardVm,
+  type VoucherVm,
+  type WalletActionVm,
+  type WalletHoldingVm,
+  type WalletRhythmVm,
+  type WalletTierVm,
+  type WalletVm,
 } from './client-pages.vm';
 import {
   type ClientCardTranslate,
@@ -153,7 +154,9 @@ export interface WalletInput extends LoyaltyPageInput {
 }
 
 function catalogOf(input: WalletInput): ValidLoyaltyCatalog | null {
-  return input.catalog?.status === 'ready' ? input.catalog.data : null;
+  return input.catalog?.cardLoadState === CardLoadState.Ready
+    ? input.catalog.data
+    : null;
 }
 
 /** A balance or a count as a display figure; one that owes wears the minus. */
@@ -418,7 +421,9 @@ function stampCards(input: WalletInput): readonly WalletHoldingVm[] {
 
 /** The vouchers the read answered; none while it is on its way, failed or not made. */
 function vouchersOf(input: WalletInput): readonly GiftVoucher[] {
-  return input.vouchers?.status === 'ready' ? input.vouchers.data : [];
+  return input.vouchers?.cardLoadState === CardLoadState.Ready
+    ? input.vouchers.data
+    : [];
 }
 
 /**
@@ -543,7 +548,10 @@ export function walletActions(input: WalletInput): readonly WalletActionVm[] {
 function catalogSectionStands(input: WalletInput): boolean {
   const catalog = input.catalog;
   if (catalog === null) return false;
-  return catalog.status !== 'ready' || tilesOf(input, catalog.data).length > 0;
+  return (
+    catalog.cardLoadState !== CardLoadState.Ready ||
+    tilesOf(input, catalog.data).length > 0
+  );
 }
 
 // ── WD · The rhythm ─────────────────────────────────────────────────────
@@ -577,11 +585,12 @@ function standingOf(
   inChairDue: string | null,
   input: WalletInput,
 ): RhythmStanding {
-  const { words, today } = input;
+  const { words, today, zone } = input;
   const rhythm = words.rhythm;
   const lang = words.lang;
   const short = (day: string) => dayShort(day, today, lang);
-  const built = () => rhythmStateLine(state, false, inChairDue, today, words);
+  const built = () =>
+    rhythmStateLine(state, false, inChairDue, today, zone, words);
   if (input.paused) {
     return { line: rhythm.frozen, day: null, phase: null, dueNamed: false };
   }
@@ -1073,10 +1082,10 @@ function walletActivity(entries: readonly JournalEntry[], input: WalletInput) {
  * stamp cards alone.
  */
 function holdingsSlice(input: WalletInput): Slice<readonly WalletHoldingVm[]> {
-  const status = input.vouchers?.status ?? 'ready';
-  return status === 'ready'
-    ? { status, data: walletHoldings(input) }
-    : { status };
+  const vouchers = input.vouchers;
+  return vouchers === null || vouchers.cardLoadState === CardLoadState.Ready
+    ? { cardLoadState: CardLoadState.Ready, data: walletHoldings(input) }
+    : vouchers;
 }
 
 /**
@@ -1102,7 +1111,7 @@ export function walletVm(input: WalletInput): WalletVm {
     actions: walletActions(input),
     holdings,
     holdingsDetail:
-      holdings.status === 'ready'
+      holdings.cardLoadState === CardLoadState.Ready
         ? holdingsDetailOf(input, holdings.data)
         : null,
     ...(rhythm === null ? {} : { rhythm }),

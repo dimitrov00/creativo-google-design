@@ -2,12 +2,6 @@ import { SwipeToDeleteDirective } from '../swipe-to-delete/swipe-to-delete.direc
 import { NgTemplateOutlet } from '@angular/common';
 import { StaffDayPill, formatDayPill } from '../day-pill/staff-day-pill';
 import {
-  AUTH_DEPLOYMENT,
-  countryCallingCode,
-  formatPhoneDraft,
-} from '@creativo/application/identity';
-import type { CountryIso2 } from '@creativo/application/identity';
-import {
   type ParsedClientQuery,
   type TextSegment,
   emailSegments,
@@ -31,8 +25,10 @@ import {
   defect,
 } from '@core/primitives';
 import {
+  type CountryIso2,
   CouponValue,
   DiscountMethod,
+  FlagName,
   type Money,
   type VisitLeg,
 } from '@core/components';
@@ -41,10 +37,15 @@ import {
   type DiscountInput,
   DiscountSystem,
   type DraftLegMinutes,
+  PhoneSystem,
   TipPreset,
   VisitDraftSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import {
+  AUTH_DEPLOYMENT_PORTS,
+  FLAGS_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import { ThemeService } from '@creativo/features/shared/shell';
 import {
@@ -66,7 +67,6 @@ import {
   viewChild,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { FEATURE_FLAGS } from '@creativo/application/shared';
 import {
   AchievementCategoryPage,
   AchievementDetailPage,
@@ -124,6 +124,7 @@ import {
   type StaffEventLine,
   type StaffEventRun,
   formatCents,
+  formatInstant,
 } from '@creativo/features/shared/visits';
 import { FrameFullscreen } from '../shared/frame-fullscreen';
 import { UiScrollColumn, UiStack } from '@creativo/ui/layout';
@@ -163,7 +164,7 @@ import {
  * THE INPUT CONTRACT
  *
  * A view model, not a domain object. The editor draws a visit and edits a
- * DRAFT of it; the mapping from `Appointment` (seats, terms, ZonedDateTime)
+ * DRAFT of it; the mapping from `Appointment` (seats, terms, wall clock)
  * to these flat, already-formatted fields belongs to the surface that owns
  * the store, and keeping it there is what lets this component be rendered
  * from a spec with a literal.
@@ -210,7 +211,7 @@ export interface VisitEditorLeg {
 
 /** One status transition the graph currently allows, already named. */
 export interface VisitEditorVerb {
-  /** The `AppointmentStatusKind` the callable is asked for. */
+  /** The verb's lowercase word — what the sheet emits back to its host (`acted`). */
   readonly kind: string;
   /** Translated — `Дойде`, `Готово`, `Не дойде`, `Откажи`. */
   readonly label: string;
@@ -254,10 +255,10 @@ export type VisitEditorCommit = {
     readonly minutes: number;
     readonly priceLabel: string | null;
     /**
-     * A price typed on the ladder, in minor units — the owner sends it
-     * as a `reprice`. Absent or `null` when nobody touched the money.
+     * A price typed on the ladder, in cents — the owner sends it as a
+     * `REPRICE`. Absent or `null` when nobody touched the money.
      */
-    readonly priceMinorUnits?: number | null;
+    readonly priceCents?: number | null;
     readonly barberId: string;
     /** Whose seat — one of `clients[].id`. */
     readonly clientId: string;
@@ -396,10 +397,10 @@ export interface VisitEditorVm {
   /** The visit subtotal, already through `formatMoney`. */
   readonly priceLabel: string | null;
   /**
-   * The same total in minor units — what a tip preset is a share of.
-   * `null` when the seats disagree on currency, or on a draft with none.
+   * The same total in cents — what a tip preset is a share of. `null` when
+   * the seats disagree on currency, or on a draft with none.
    */
-  readonly priceMinorUnits: number | null;
+  readonly priceCents: number | null;
   /**
    * What the client left THIS chair's barber, already formatted, or `null`
    * when nothing has been recorded.
@@ -444,6 +445,12 @@ export interface VisitEditorVm {
    * than inventing a shop.
    */
   readonly locationId: string | null;
+  /**
+   * THE VISIT'S SHOP's zone — its location's `timeZone` (Law 7.2), what
+   * every instant on the sheet (a photo's moment, the card's start) is read
+   * in. `null` only before the host knows it, when nothing is drawn.
+   */
+  readonly timeZone: TimeZone | null;
   /** The chair the frame draws — its id, for a leg added from this sheet. */
   readonly chairId: string;
   /** The chair the frame draws. */
@@ -608,9 +615,15 @@ export interface VisitEditorClientSection {
  * can compare it and a VM can carry it across the sheet's edge.
  */
 export type VisitEditorDiscountValue =
-  | { readonly kind: 'percent_off'; readonly percent: number }
-  | { readonly kind: 'fixed_amount'; readonly amountMinorUnits: number }
-  | { readonly kind: 'free_service' };
+  | {
+      readonly discountMethod: typeof DiscountMethod.PercentOff;
+      readonly percent: number;
+    }
+  | {
+      readonly discountMethod: typeof DiscountMethod.FixedAmount;
+      readonly amountCents: number;
+    }
+  | { readonly discountMethod: typeof DiscountMethod.FreeService };
 
 /**
  * A discount ON the visit — saved (on the VM) or drafted (in the draft).
@@ -704,14 +717,17 @@ export interface VisitEditorCodeResult {
 export function discountValueOf(value: CouponValue): VisitEditorDiscountValue {
   switch (value.discountMethod) {
     case DiscountMethod.PercentOff:
-      return { kind: 'percent_off', percent: value.discountPercent };
+      return {
+        discountMethod: DiscountMethod.PercentOff,
+        percent: value.discountPercent,
+      };
     case DiscountMethod.FixedAmount:
       return {
-        kind: 'fixed_amount',
-        amountMinorUnits: value.discountAmountCents,
+        discountMethod: DiscountMethod.FixedAmount,
+        amountCents: value.discountAmountCents,
       };
     case DiscountMethod.FreeService:
-      return { kind: 'free_service' };
+      return { discountMethod: DiscountMethod.FreeService };
   }
 }
 
@@ -735,18 +751,18 @@ function toCouponValue(
   value: VisitEditorDiscountValue,
   currency: Currency,
 ): CouponValue | null {
-  switch (value.kind) {
-    case 'percent_off': {
+  switch (value.discountMethod) {
+    case DiscountMethod.PercentOff: {
       const result = CouponValue.percentOff(value.percent);
       return result.ok ? result.value : null;
     }
-    case 'fixed_amount': {
-      const cents = PriceCents.of(value.amountMinorUnits);
+    case DiscountMethod.FixedAmount: {
+      const cents = PriceCents.of(value.amountCents);
       if (!cents.ok) return null;
       const result = CouponValue.fixedAmount(cents.value, currency);
       return result.ok ? result.value : null;
     }
-    case 'free_service':
+    case DiscountMethod.FreeService:
       return CouponValue.freeService();
   }
 }
@@ -768,11 +784,11 @@ type DraftLeg = VisitEditorLeg & {
    */
   readonly clientId: string;
   /**
-   * A price TYPED on the ladder's pill, in minor units — what the save sends
-   * as the seat's new terms. Absent until someone who may reprice does; the
+   * A price TYPED on the ladder's pill, in cents — what the save sends as
+   * the seat's new terms. Absent until someone who may reprice does; the
    * label beside it is the same number, formatted.
    */
-  readonly priceMinorUnits?: number | null;
+  readonly priceCents?: number | null;
 };
 
 interface DraftClient {
@@ -867,13 +883,6 @@ const MAX_PAGE_DEPTH = 4;
  * focuses once it has painted — the container only while it has not.
  */
 type PageArrival = 'container' | 'section';
-
-/**
- * The shop's zone — the one the card's store and presenters read the day
- * in (`client-card.store.ts`), so the visit's start the card is handed is
- * the instant the frame draws.
- */
-const SHOP_ZONE = 'Europe/Sofia';
 
 /**
  * Whether a landing may focus this element: a control, a link, or a box
@@ -1241,9 +1250,7 @@ function commitOf(draft: VisitDraft, endMinute: number): VisitEditorCommit {
       priceLabel: leg.priceLabel,
       // Only a TYPED price travels; an untouched leg's payload is what it
       // always was.
-      ...(leg.priceMinorUnits != null
-        ? { priceMinorUnits: leg.priceMinorUnits }
-        : {}),
+      ...(leg.priceCents != null ? { priceCents: leg.priceCents } : {}),
       barberId: leg.barberId,
       clientId: leg.clientId,
     })),
@@ -1263,7 +1270,7 @@ export function snapshotCommitOf(vm: VisitEditorVm): VisitEditorCommit {
     ...seed,
     legs: seed.legs.map((leg) => ({
       ...leg,
-      priceMinorUnits:
+      priceCents:
         leg.priceLabel === null ? null : parsePriceInput(leg.priceLabel),
     })),
   };
@@ -1825,7 +1832,7 @@ export class StaffVisitEditor {
         barberId: leg.barberId,
         // A typed price travels with the save (owner, 2026-09-10), so it
         // is part of the shape; the seed never carries one.
-        price: leg.priceMinorUnits ?? null,
+        price: leg.priceCents ?? null,
       })),
       // The team note saves now (its own staff-only document), so a typed
       // note is a change worth a `Запази`.
@@ -2744,10 +2751,11 @@ export class StaffVisitEditor {
    * the country a typed «088…» is read in — the trunk zero becomes «+359»
    * for the lookup, the ranking, the marks and the create row's reading.
    */
-  private readonly callingCode = computed(() =>
-    countryCallingCode(
-      this.newClientCountry() ?? this.deployment.defaultCountry,
-    ),
+  private readonly callingCode = computed(
+    () =>
+      PhoneSystem.countryCallingCode(
+        this.newClientCountry() ?? this.deployment.defaultCountry,
+      ) ?? undefined,
   );
 
   /**
@@ -3969,7 +3977,7 @@ export class StaffVisitEditor {
       this.callingCode(),
     );
     if (international === undefined) return parsed.phoneTyped;
-    return formatPhoneDraft(`+${international}`).formatted;
+    return PhoneSystem.formatDraft(`+${international}`, null).formatted;
   }
 
   /** The create row's facts: every detected part on its own line. */
@@ -4172,8 +4180,8 @@ export class StaffVisitEditor {
    * EVERY time the form opens: a country picked for one person is that
    * person's, not the next one's (found live: a form re-opened at +994).
    */
-  private readonly deployment = inject(AUTH_DEPLOYMENT);
-  protected readonly newClientCountry = signal<CountryIso2 | undefined>(
+  private readonly deployment = inject(AUTH_DEPLOYMENT_PORTS).authDeployment;
+  protected readonly newClientCountry = signal<CountryIso2 | null>(
     this.deployment.defaultCountry,
   );
   /** A person needs a name; the number and the mail are welcome. */
@@ -4190,7 +4198,8 @@ export class StaffVisitEditor {
     // not a number on its way anywhere.
     const [international] = phoneInternationalDigits(
       parsed,
-      countryCallingCode(this.deployment.defaultCountry),
+      PhoneSystem.countryCallingCode(this.deployment.defaultCountry) ??
+        undefined,
     );
     this.newClient.set({
       name: parsed.name,
@@ -4316,7 +4325,7 @@ export class StaffVisitEditor {
     // общо 15,00 €» (owner, 2026-09-16: «до 15,00 €» as the headline read
     // as "anything up to 15"). No share beneath a coin: the barber counts
     // money, not percentages, and a coin says all it means by itself.
-    BillingSystem.tipPresets(billCentsOf(this.vm().priceMinorUnits)).map(
+    BillingSystem.tipPresets(billCentsOf(this.vm().priceCents)).map(
       (preset) => ({
         id: `amt:${preset.amountCents}`,
         amount: preset.amountCents,
@@ -5141,43 +5150,42 @@ export class StaffVisitEditor {
 
   // Every word about a picture's moment reads the shop's own clock, so the
   // bar's day and the row's time can never straddle two midnights.
-  private readonly photoWhenFormat = new Intl.DateTimeFormat('bg-BG', {
-    timeZone: SHOP_ZONE,
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-
-  private readonly photoTimeFormat = new Intl.DateTimeFormat('bg-BG', {
-    timeZone: SHOP_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  private shopMoment(
+    atMs: number,
+    locale: string,
+    options: Intl.DateTimeFormatOptions,
+  ): string {
+    const zone = this.vm().timeZone;
+    return zone === null ? '' : formatInstant(atMs, zone, locale, options);
+  }
 
   /** «4.09, 16:21» — the whole moment, for the names assistive tech hears (a thumbnail's, the picture's alt). */
   protected photoWhen(photo: VisitEditorPhoto): string {
-    return this.photoWhenFormat.format(photo.takenAtUtcMs);
+    return this.shopMoment(photo.takenAtUtcMs, 'bg-BG', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   /** «4.09» (R59; «6.03.2025 г.» outside this year) — the photo page's bar title. */
   protected photoDay(photo: VisitEditorPhoto): string {
     const at = photo.takenAtUtcMs;
-    const year = new Intl.DateTimeFormat('en-CA', {
-      timeZone: SHOP_ZONE,
-      year: 'numeric',
-    }).format(at);
-    return new Intl.DateTimeFormat('bg-BG', {
-      timeZone: SHOP_ZONE,
+    const year = this.shopMoment(at, 'en-CA', { year: 'numeric' });
+    return this.shopMoment(at, 'bg-BG', {
       day: 'numeric',
       month: '2-digit',
       ...(year === this.vm().todayKey.slice(0, 4) ? {} : { year: 'numeric' }),
-    }).format(at);
+    });
   }
 
   /** «16:21» — the «Снимано» row: what the bar's day leaves unsaid. */
   protected photoTime(photo: VisitEditorPhoto): string {
-    return this.photoTimeFormat.format(photo.takenAtUtcMs);
+    return this.shopMoment(photo.takenAtUtcMs, 'bg-BG', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   /** The picture's own shape for its page; a photo that never said is drawn 4:3. */
@@ -5344,8 +5352,14 @@ export class StaffVisitEditor {
           label: 'manual',
           value:
             read.kind === 'percent'
-              ? { kind: 'percent_off', percent: read.percent }
-              : { kind: 'fixed_amount', amountMinorUnits: read.minor },
+              ? {
+                  discountMethod: DiscountMethod.PercentOff,
+                  percent: read.percent,
+                }
+              : {
+                  discountMethod: DiscountMethod.FixedAmount,
+                  amountCents: read.minor,
+                },
           grantId: null,
           code: null,
           exclusive: false,
@@ -5369,11 +5383,17 @@ export class StaffVisitEditor {
     );
     if (manual === undefined) return '';
     const kind = this.discountKind();
-    if (kind === 'percent' && manual.value.kind === 'percent_off') {
+    if (
+      kind === 'percent' &&
+      manual.value.discountMethod === DiscountMethod.PercentOff
+    ) {
       return String(manual.value.percent);
     }
-    if (kind === 'amount' && manual.value.kind === 'fixed_amount') {
-      return this.figureOf(manual.value.amountMinorUnits);
+    if (
+      kind === 'amount' &&
+      manual.value.discountMethod === DiscountMethod.FixedAmount
+    ) {
+      return this.figureOf(manual.value.amountCents);
     }
     return '';
   });
@@ -5538,7 +5558,7 @@ export class StaffVisitEditor {
 
   /** The saved subtotal as money — what every discount here is a share of. */
   private readonly subtotalMoney = computed<Money | null>(() => {
-    const minor = this.vm().priceMinorUnits;
+    const minor = this.vm().priceCents;
     if (minor === null || minor <= 0) return null;
     const cents = PriceCents.of(minor);
     return cents.ok ? { amountCents: cents.value, currency: MONEY_CODE } : null;
@@ -5581,8 +5601,14 @@ export class StaffVisitEditor {
       label: 'manual',
       value:
         read.kind === 'percent'
-          ? { kind: 'percent_off', percent: read.percent }
-          : { kind: 'fixed_amount', amountMinorUnits: read.minor },
+          ? {
+              discountMethod: DiscountMethod.PercentOff,
+              percent: read.percent,
+            }
+          : {
+              discountMethod: DiscountMethod.FixedAmount,
+              amountCents: read.minor,
+            },
       grantId: null,
       code: null,
       exclusive: false,
@@ -5652,7 +5678,7 @@ export class StaffVisitEditor {
       const took = `−${this.moneyLabel(line.amount)}`;
       const glyph: UiIconName =
         line.discount.source === 'manual'
-          ? line.discount.value.kind === 'percent_off'
+          ? line.discount.value.discountMethod === DiscountMethod.PercentOff
             ? 'promo.percent'
             : 'promo.sum'
           : 'promo.coupon';
@@ -5740,12 +5766,12 @@ export class StaffVisitEditor {
    * подстригване» over «Безплатно» said one word twice (WP7 review).
    */
   private valueLabel(value: VisitEditorDiscountValue): string {
-    switch (value.kind) {
-      case 'percent_off':
+    switch (value.discountMethod) {
+      case DiscountMethod.PercentOff:
         return percentOffLabel(value.percent);
-      case 'fixed_amount':
-        return `−${this.moneyLabel(value.amountMinorUnits)}`;
-      case 'free_service':
+      case DiscountMethod.FixedAmount:
+        return `−${this.moneyLabel(value.amountCents)}`;
+      case DiscountMethod.FreeService:
         return this.rawCopy('staff.visit.discountFree');
     }
   }
@@ -5769,7 +5795,7 @@ export class StaffVisitEditor {
     value: VisitEditorDiscountValue,
   ): string | null {
     const rule = this.valueLabel(value);
-    return value.kind === 'free_service' &&
+    return value.discountMethod === DiscountMethod.FreeService &&
       nameSaysRule(name, rule, this.transloco.getActiveLang())
       ? null
       : rule;
@@ -6254,7 +6280,7 @@ export class StaffVisitEditor {
     let sum = 0;
     for (const leg of legs) {
       const minor =
-        leg.priceMinorUnits ??
+        leg.priceCents ??
         (leg.priceLabel === null ? null : parsePriceInput(leg.priceLabel));
       if (minor === null) return null;
       sum += minor;
@@ -6348,8 +6374,9 @@ export class StaffVisitEditor {
    * stub it always was. */
 
   /** `client.profile`, read once (`config/feature-flags.json`). */
-  protected readonly profileOn =
-    inject(FEATURE_FLAGS).isEnabled('client.profile');
+  protected readonly profileOn = inject(FLAGS_PORTS).flagOn(
+    FlagName.ClientProfile,
+  );
 
   /** The card's store once a person's page has asked for it (`ensureCardStore`). */
   private readonly cardStoreRef = signal<ClientCardStore | null>(null);
@@ -6465,7 +6492,7 @@ export class StaffVisitEditor {
     const vm = this.vm();
     const draft = this.draft();
     const partyOfOne = draft.clients.length <= 1;
-    const startsAtIso = shopIsoOf(draft.dayKey, draft.startMinute);
+    const startsAtIso = shopIsoOf(draft.dayKey, draft.startMinute, vm.timeZone);
     const legs: ClientCardLeg[] = draft.legs
       .filter((leg) => partyOfOne || leg.clientId === client.id)
       .map((leg) => ({
@@ -6974,16 +7001,12 @@ export class StaffVisitEditor {
       if (lastMs === null || row.startMs > lastMs) lastMs = row.startMs;
     }
     if (lastMs === null) return null;
-    const year = new Intl.DateTimeFormat('en-CA', {
-      timeZone: SHOP_ZONE,
-      year: 'numeric',
-    }).format(lastMs);
-    return new Intl.DateTimeFormat(this.transloco.getActiveLang(), {
-      timeZone: SHOP_ZONE,
+    const year = this.shopMoment(lastMs, 'en-CA', { year: 'numeric' });
+    return this.shopMoment(lastMs, this.transloco.getActiveLang(), {
       day: 'numeric',
       month: 'long',
       ...(year === this.vm().todayKey.slice(0, 4) ? {} : { year: 'numeric' }),
-    }).format(lastMs);
+    });
   }
 
   /**
@@ -7007,24 +7030,22 @@ export class StaffVisitEditor {
 /** How long after the focus lands the polite region speaks (old §8.6). */
 const ANNOUNCE_DELAY_MS = 150;
 
-/** The shop's zone, branded — every drafted wall-clock time is read in it. */
-const SHOP_TIME_ZONE: TimeZone = (() => {
-  const zone = ZonedTimeSystem.checkZone(SHOP_ZONE);
-  return zone.ok ? zone.value : defect('unreachable: the shop zone');
-})();
-
 /**
  * A drafted start — its shop day and minute — as the instant's ISO in the
  * shop's zone (`2026-10-10T14:00:00.000+03:00`): the card's leg reads its
  * start in that form. `''` for a day or a minute that names no instant (a
- * spring-forward gap's minute included).
+ * spring-forward gap's minute included), or before the zone is known.
  */
-function shopIsoOf(dayKey: string, minute: number): string {
+function shopIsoOf(
+  dayKey: string,
+  minute: number,
+  zone: TimeZone | null,
+): string {
   const day = LocalDate.parse(dayKey);
   const start = MinuteOfDay.of(minute);
-  if (!day.ok || !start.ok) return '';
-  const instant = ZonedTimeSystem.toUtc(day.value, start.value, SHOP_TIME_ZONE);
-  return instant.ok ? ZonedTimeSystem.toIso(instant.value, SHOP_TIME_ZONE) : '';
+  if (zone === null || !day.ok || !start.ok) return '';
+  const instant = ZonedTimeSystem.toUtc(day.value, start.value, zone);
+  return instant.ok ? ZonedTimeSystem.toIso(instant.value, zone) : '';
 }
 
 /** The shop's one currency (see `project_currency_is_eur`). */

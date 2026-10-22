@@ -1,17 +1,18 @@
 import {
-  Actor,
-  StreakExcuse,
+  type Actor,
+  STREAK_EXCUSES,
+  type StreakExcuse,
   StreakInterval,
   StreakIntervalRule,
   StreakOnBreak,
-  type StreakPublishCall,
+  StreakPublishCall,
   StreakQualifier,
   StreakQualifierRule,
-  StreakRuleDirection,
   type StreakRuleInput,
   StreakTransition,
 } from '@core/components';
 import {
+  ClientOperationId,
   LocalDate,
   PublishRequestId,
   type RepositoryError,
@@ -22,7 +23,7 @@ import {
   StreakPublishError,
   StreakPublishErrorCode,
   StreakRuleField,
-  UserId,
+  type UserId,
 } from '@core/primitives';
 import type { LogPorts } from '@core/ports';
 import { StreakPublishSystem } from '@core/systems';
@@ -30,248 +31,96 @@ import {
   type PublishStreakDefinitionCommand,
   type PublishStreakDefinitionPorts,
   publishStreakDefinition,
-  type StreakWithdrawReceipt,
   type WithdrawStreakDefinitionCommand,
   withdrawStreakDefinition,
 } from '@core/pipelines';
-import { isClientOperationId } from '@creativo/application/booking';
-import { type EdgeError, LegacyWireCode } from '../edge';
-import { callerActor, callerIsAdmin } from '../lib/booking/caller-roles';
-import type { WireRequest } from './booking.wire';
+import type { EdgeError } from '../edge';
+import {
+  callerActor,
+  callerIsAdmin,
+  callerUserId,
+} from '../lib/booking/caller-roles';
+import {
+  field,
+  isRecord,
+  isStoreFailure,
+  type Payload,
+  type WireRequest,
+} from './wire-read';
 
 /**
- * THE STREAK PUBLISH'S WIRE (loyalty flip (3), F3-3) — frozen in both
- * directions until Phase 4 flips it with `callableClient`. The admin page's
- * request and every refusal word stay byte-identical:
+ * THE STREAK PUBLISH'S WIRE (Phase 4a 4A-4) — flipped with the admin page's
+ * gateway over `callableClient`: the request is the call component
+ * `StreakPublishCall` (a publish: `{ requestId, streakId, baseVersion,
+ * rule, streakTransition, previewHash }`, the rule FLAT) or
+ * `StreakPublishCall.Withdraw` (`{ requestId, streakId, version }` — a call
+ * that carries no `rule`); the answer `StreakPublishCall.Answer`.
  *
- * - **In:** `{ op?: 'publish' | 'withdraw', requestId, streakId,
- *   baseVersion, draft, effectiveFrom, transition, previewHash? }` or
- *   `{ op: 'withdraw', requestId, streakId, version }`. The caller is judged
- *   off the VERIFIED token BEFORE the request is read (a stranger is told
- *   `notAdmin`, never what was wrong with the asking); then the envelope,
- *   refused by name (`loyalty.streak_publish.invalid_input`, `{ field }`);
- *   the draft is today's NESTED legacy rule, read here field by field in the
- *   legacy reader's order — a value not of the wire's kind is the rule's
- *   `invalid` at its dotted locator — and judged by the pipeline only after
- *   the head is admitted.
- * - **Out:** `{ kind: 'published', version, effectiveFrom, direction }`,
- *   `{ kind: 'withdrawn', version }` or the ANSWERED refusal
- *   `{ kind: 'refused', code, fields, earliest? }` in the page's six words,
- *   every field at fault spelt as the legacy rule spells it
- *   (`interval.days`, `scheduled.effectiveFrom`). Nobody signed in is
- *   THROWN `unauthenticated`; a write that fell over is THROWN `internal`
- *   (`loyalty.streak_publish.store_failed`), its cause said in the log line
+ * - **In:** the caller is judged off the VERIFIED token BEFORE the request is
+ *   read (a stranger is told `CALLER_NOT_ADMIN`, never what was wrong with
+ *   the asking); then the envelope, refused by name
+ *   (`LOYALTY_STREAK_PUBLISH_INVALID_INPUT`, `{ field }`); the rule is read
+ *   field by field in the rule's order — a value not of the wire's kind is
+ *   the rule's `INVALID` at its flat field — and judged by the pipeline
+ *   only after the head is admitted.
+ * - **Out:** `{ streakPublishOutcome: 'PUBLISHED', version,
+ *   effectiveFromLocalDate, streakRuleDirection }`,
+ *   `{ streakPublishOutcome: 'WITHDRAWN', version }` or the ANSWERED refusal
+ *   `{ streakPublishOutcome: 'REFUSED', errorCode, fields, earliest,
+ *   effectiveFromLocalDate }` (`StreakPublishCall.refused`: the flat fields
+ *   at fault, a `TOO_EARLY`'s two days). Nobody signed in is THROWN
+ *   `unauthenticated`; a write that fell over is THROWN `internal`
+ *   (`LOYALTY_STREAK_PUBLISH_STORE_FAILED`), its cause said in the log line
  *   `'rhythm rule write failed'` where alerting can find it and never in
  *   `details`.
  */
 
-// ── The vocabulary, both ways ─────────────────────────────────────────────
-
-/** A wire word → its dictionary value — the ONE table each vocabulary the draft speaks has. */
-function wireTable<K extends string>(
-  pairs: readonly (readonly [K, string])[],
-): { readonly of: (word: unknown) => K | null } {
-  const values = new Map<unknown, K>(
-    pairs.map(([value, word]) => [word, value]),
-  );
-  return { of: (word) => values.get(word) ?? null };
-}
-
-const QUALIFIER_KIND = wireTable<StreakQualifier>([
-  [StreakQualifier.AnyVisit, 'anyVisit'],
-  [StreakQualifier.Services, 'services'],
-  [StreakQualifier.Categories, 'categories'],
-]);
-
-const INTERVAL_KIND = wireTable<StreakInterval>([
-  [StreakInterval.Fixed, 'fixed'],
-  [StreakInterval.Personal, 'personal'],
-]);
-
-const EXCUSE = wireTable<StreakExcuse>([
-  [StreakExcuse.ShopClosure, 'shopClosure'],
-  [StreakExcuse.BarberAbsence, 'barberAbsence'],
-  [StreakExcuse.StaffCancelled, 'staffCancelled'],
-  [StreakExcuse.ClosedDays, 'closedDays'],
-]);
-
-const ON_BREAK = wireTable<StreakOnBreak>([
-  [StreakOnBreak.Restart, 'restart'],
-  [StreakOnBreak.Hold, 'hold'],
-]);
-
-const TRANSITION = wireTable<StreakTransition>([
-  [StreakTransition.Grandfather, 'grandfather'],
-  [StreakTransition.Recompute, 'recompute'],
-]);
-
-/** Whom a change favours, in the words the answer has always carried. */
-const WIRE_DIRECTION = {
-  [StreakRuleDirection.Looser]: 'looser',
-  [StreakRuleDirection.Stricter]: 'stricter',
-  [StreakRuleDirection.Mixed]: 'mixed',
-  [StreakRuleDirection.Neutral]: 'neutral',
-  [StreakRuleDirection.Switch]: 'switch',
-} as const satisfies Record<StreakRuleDirection, string>;
-
-/**
- * A field at fault as the callable has always spelt it: the legacy rule's
- * dotted locator (`interval.days`, `scheduled.effectiveFrom`), never the
- * flat field the system names (`intervalDays`,
- * `scheduledEffectiveFromLocalDate`).
- */
-const LEGACY_FIELD = {
-  [StreakRuleField.Id]: 'id',
-  [StreakRuleField.NameBg]: 'name.bg',
-  [StreakRuleField.NameEn]: 'name.en',
-  [StreakRuleField.Version]: 'version',
-  [StreakRuleField.EffectiveFromLocalDate]: 'effectiveFrom',
-  [StreakRuleField.QualifierKind]: 'qualifier.kind',
-  [StreakRuleField.QualifierServiceIds]: 'qualifier.serviceIds',
-  [StreakRuleField.QualifierCategoryIds]: 'qualifier.categoryIds',
-  [StreakRuleField.MinGapDays]: 'minGapDays',
-  [StreakRuleField.BookingHoldMaxDaysPastDue]: 'bookingHold.maxDaysPastDue',
-  [StreakRuleField.IntervalKind]: 'interval.kind',
-  [StreakRuleField.IntervalDays]: 'interval.days',
-  [StreakRuleField.IntervalTolerancePct]: 'interval.tolerancePct',
-  [StreakRuleField.IntervalMinDays]: 'interval.minDays',
-  [StreakRuleField.IntervalMaxDays]: 'interval.maxDays',
-  [StreakRuleField.IntervalFallbackDays]: 'interval.fallbackDays',
-  [StreakRuleField.GraceDays]: 'graceDays',
-  [StreakRuleField.RiskLeadDays]: 'riskLeadDays',
-  [StreakRuleField.ProtectionsMaxBanked]: 'protections.maxBanked',
-  [StreakRuleField.ProtectionsEarnEvery]: 'protections.earnEvery',
-  [StreakRuleField.ProtectionsStartWith]: 'protections.startWith',
-  [StreakRuleField.Excuses]: 'excuses',
-  [StreakRuleField.ClientPauseMaxDaysPerYear]: 'clientPause.maxDaysPerYear',
-  [StreakRuleField.RepairWindowDays]: 'repair.windowDays',
-  [StreakRuleField.RepairPerYear]: 'repair.perYear',
-  [StreakRuleField.OnBreak]: 'onBreak',
-  [StreakRuleField.ScheduledVersion]: 'scheduled.version',
-  [StreakRuleField.ScheduledEffectiveFromLocalDate]: 'scheduled.effectiveFrom',
-  [StreakRuleField.ScheduledTransition]: 'scheduled.transition',
-} as const satisfies Record<StreakRuleField, string>;
-
-const LEGACY_FIELD_OF: ReadonlyMap<string, string> = new Map(
-  Object.entries(LEGACY_FIELD),
-);
-
-// ── The answers ───────────────────────────────────────────────────────────
-
-/** The six words of the page's refusals. */
-export type StreakWireRefusal =
-  | 'notAdmin'
-  | 'invalid'
-  | 'stale'
-  | 'tooEarly'
-  | 'recomputeNeedsEngine'
-  | 'previewStale';
-
-/** What the callable answers, key for key (F3-3). */
-export type StreakPublishAnswer =
-  | {
-      readonly kind: 'published';
-      readonly version: number;
-      readonly effectiveFrom: string;
-      readonly direction: (typeof WIRE_DIRECTION)[StreakRuleDirection];
-    }
-  | { readonly kind: 'withdrawn'; readonly version: number }
-  | {
-      readonly kind: 'refused';
-      readonly code: StreakWireRefusal;
-      readonly fields: readonly string[];
-      /** Only a day too early names the first day the change may start. */
-      readonly earliest?: string;
-    };
-
-export function encodeStreakPublishAnswer(
-  receipt: StreakPublishCall.Receipt,
-): StreakPublishAnswer {
-  return {
-    kind: 'published',
-    version: receipt.version,
-    effectiveFrom: receipt.effectiveFromLocalDate,
-    direction: WIRE_DIRECTION[receipt.streakRuleDirection],
-  };
-}
-
-export function encodeStreakWithdrawAnswer(
-  receipt: StreakWithdrawReceipt,
-): StreakPublishAnswer {
-  return { kind: 'withdrawn', version: receipt.version };
-}
-
-/** A part of the ENVELOPE that is missing or of the wrong kind — thrown, never answered. */
-export type StreakEnvelopeRefusal = {
-  readonly code: typeof LegacyWireCode.StreakPublishInvalidInput;
-  readonly field: string;
-};
+/** What the callable answers. */
+export type StreakPublishAnswer = StreakPublishCall.Answer;
 
 /** Every way a request is not written. */
 export type StreakPublishFailure =
-  StreakPublishError | RepositoryError | StreakEnvelopeRefusal;
+  StreakPublishError | StreakPublishError.InvalidInput | RepositoryError;
 
-function refused(
-  code: StreakWireRefusal,
-  fields: readonly string[],
-): StreakPublishAnswer {
-  return { kind: 'refused', code, fields };
-}
+/** The refusals the callable ANSWERS (its faults and a missing caller it throws). */
+const ANSWERED: ReadonlySet<string> = new Set([
+  StreakPublishErrorCode.CallerNotAdmin,
+  StreakPublishErrorCode.Stale,
+  StreakPublishErrorCode.Invalid,
+  StreakPublishErrorCode.TooEarly,
+  StreakPublishErrorCode.RecomputeNeedsEngine,
+  StreakPublishErrorCode.PreviewStale,
+]);
 
-/** The flat fields at fault → today's locators, each once (a field the table does not know kept as written). */
-function legacyFields(fields: readonly string[]): readonly string[] {
-  const out: string[] = [];
-  for (const field of fields) {
-    const locator = LEGACY_FIELD_OF.get(field) ?? field;
-    if (!out.includes(locator)) out.push(locator);
-  }
-  return out;
+function isAnsweredRefusal(
+  failure: StreakPublishFailure,
+): failure is StreakPublishCall.AnsweredError {
+  return ANSWERED.has(failure.errorCode);
 }
 
 /**
- * A refusal or a failure → today's answer (`Result.ok`, the page words it)
- * or today's fault (`Result.err`, the edge throws it), by F3-3's table:
- * the five rule refusals and `CALLER_NOT_ADMIN` are ANSWERED (a day too
- * early with `fields: ['effectiveFrom']` and its `earliest`, the others
- * with their fields or none); `CALLER_UNAUTHENTICATED` is today's thrown
- * `loyalty.streak_publish.unauthenticated`; an envelope refusal is thrown
- * as it is; ANY `RepositoryError` is logged — the struct's `reason` when it
- * has one (a rejected commit's `String(cause)`), else `errorCode path` (a
- * taken version number's `ALREADY_EXISTS`, F3-1 (c)) — and thrown as
- * `loyalty.streak_publish.store_failed`, the cause never in `details`.
+ * A refusal or a failure → the answer (`Result.ok`, the page words it) or
+ * the fault (`Result.err`, the edge throws it): the five rule refusals and
+ * `CALLER_NOT_ADMIN` are ANSWERED (`REFUSED`); `CALLER_UNAUTHENTICATED` and
+ * an envelope the callable cannot read are thrown as themselves; ANY
+ * `RepositoryError` is logged — the struct's `reason` when it has one (a
+ * rejected commit's `String(cause)`), else `errorCode path` (a taken
+ * version number's `ALREADY_EXISTS`, F3-1 (c)) — and thrown as
+ * `LOYALTY_STREAK_PUBLISH_STORE_FAILED`, the cause never in `details`.
  */
 export function publishStreakRefusal(
   failure: StreakPublishFailure,
   ports: LogPorts,
 ): Result<StreakPublishAnswer, EdgeError> {
-  if ('code' in failure) return Result.err(failure);
-  if ('path' in failure) {
+  if (isStoreFailure(failure)) {
     ports.log('error', 'rhythm rule write failed', {
       error: failure.reason ?? `${failure.errorCode} ${failure.path}`,
     });
-    return Result.err({ code: LegacyWireCode.StreakPublishStoreFailed });
+    return Result.err(StreakPublishError.storeFailed());
   }
-  switch (failure.errorCode) {
-    case StreakPublishErrorCode.CallerUnauthenticated:
-      return Result.err({ code: LegacyWireCode.StreakPublishUnauthenticated });
-    case StreakPublishErrorCode.CallerNotAdmin:
-      return Result.ok(refused('notAdmin', []));
-    case StreakPublishErrorCode.Invalid:
-      return Result.ok(refused('invalid', legacyFields(failure.fields)));
-    case StreakPublishErrorCode.TooEarly:
-      return Result.ok({
-        kind: 'refused',
-        code: 'tooEarly',
-        fields: ['effectiveFrom'],
-        earliest: failure.earliest,
-      });
-    case StreakPublishErrorCode.Stale:
-      return Result.ok(refused('stale', []));
-    case StreakPublishErrorCode.RecomputeNeedsEngine:
-      return Result.ok(refused('recomputeNeedsEngine', []));
-    case StreakPublishErrorCode.PreviewStale:
-      return Result.ok(refused('previewStale', []));
-  }
+  return isAnsweredRefusal(failure)
+    ? Result.ok(StreakPublishCall.refused(failure))
+    : Result.err(failure);
 }
 
 /** A pipeline's answer, as the wire carries it. */
@@ -286,10 +135,10 @@ function settleStreakAnswer<A>(
 }
 
 /**
- * The callable, end to end: the request read in today's order
+ * The callable, end to end: the request read in order
  * ({@link decodeStreakPublish} — the caller, then the envelope), the act's
- * pipeline run over the callable's ports, its answer or refusal in today's
- * words. `main.ts` hands it the streak ports (built on first use, so a
+ * pipeline run over the callable's ports, its answer or refusal on the
+ * wire. `main.ts` hands it the streak ports (built on first use, so a
  * request refused at the door builds none) and the telemetry.
  */
 export async function answerStreakPublish(
@@ -303,12 +152,12 @@ export async function answerStreakPublish(
   return ask.streakPublishOp === StreakPublishOp.Withdraw
     ? settleStreakAnswer(
         await withdrawStreakDefinition(ports())(ask.withdraw),
-        encodeStreakWithdrawAnswer,
+        (receipt) => StreakPublishCall.withdrawn(receipt.version),
         telemetry,
       )
     : settleStreakAnswer(
         await publishStreakDefinition(ports())(ask.publish),
-        encodeStreakPublishAnswer,
+        StreakPublishCall.published,
         telemetry,
       );
 }
@@ -322,43 +171,26 @@ export type StreakCaller = {
   readonly callerActor: Actor | null;
 };
 
-const NOBODY: StreakCaller = {
-  callerUserId: null,
-  callerIsAdmin: false,
-  callerActor: null,
-};
-
 /**
- * The caller as today's handler read it (`toCaller` + the use case's
- * `auditActorOf`): the uid; whether the claim holds one of the pair that
- * manages the shop (`callerIsAdmin` — access); and the actor the audit row
- * names — the legacy actor's kind (`callerActor`) as claims for
- * `Actor.forCaller`: the owner as `ADMIN`, the vendor's `sysadmin` and
- * every other staff role as `STAFF` with that snapshot, anyone else a
- * `USER`. No uid (or one no actor names) is nobody.
+ * The caller: the uid; whether the claim holds one of the pair that manages
+ * the shop (`callerIsAdmin` — access); and the actor the audit row names
+ * (`callerActor`: `Actor.forCaller` over the token's roles — the owner as
+ * `ADMIN`, the vendor's `sysadmin` and every other staff role as `STAFF`,
+ * anyone else a `USER`). No uid is nobody.
  */
 export function decodeStreakCaller(request: WireRequest): StreakCaller {
-  const token = request.auth ?? null;
-  const verified = token === null ? {} : { auth: token };
-  const uid = UserId.parse(token?.uid ?? '');
-  const legacy = callerActor(verified);
-  if (!uid.ok || legacy === null) return NOBODY;
-  const claims =
-    legacy.kind === 'admin'
-      ? ['admin']
-      : legacy.kind === 'staff'
-        ? legacy.roles
-        : [];
+  const uid = callerUserId(request);
   return {
-    callerUserId: uid.value,
-    callerIsAdmin: callerIsAdmin(verified),
-    callerActor: Actor.forCaller(uid.value, claims),
+    callerUserId: uid,
+    // Nobody is admin of nothing: a claim without a uid admits no one.
+    callerIsAdmin: uid !== null && callerIsAdmin(request),
+    callerActor: callerActor(request),
   };
 }
 
 // ── The request ───────────────────────────────────────────────────────────
 
-/** Which act a request asks for — the wire's `op`. */
+/** Which act a request asks for — a publish carries a rule, a withdrawal names a version. */
 export const StreakPublishOp = {
   Publish: 'PUBLISH',
   Withdraw: 'WITHDRAW',
@@ -377,37 +209,36 @@ export type StreakPublishAsk =
       readonly withdraw: WithdrawStreakDefinitionCommand;
     };
 
-type Payload = Readonly<Record<string, unknown>>;
-
 /** A rule's id is a document id: a bounded, path-safe name. */
 const STREAK_ID = /^[A-Za-z0-9_-]{1,64}$/;
 /** A rule is some six hundred bytes; a list of a shop's every service adds a few thousand. */
-const DRAFT_MAX_BYTES = 16_384;
+const RULE_MAX_BYTES = 16_384;
 const PREVIEW_HASH_MAX = 128;
-
-function isRecord(raw: unknown): raw is Payload {
-  return raw !== null && typeof raw === 'object' && !Array.isArray(raw);
-}
-
-/** A field of an untrusted object by name — no dynamic index. */
-function fieldOf(source: unknown, name: string): unknown {
-  return isRecord(source)
-    ? Object.getOwnPropertyDescriptor(source, name)?.value
-    : undefined;
-}
 
 const isWhole = (raw: unknown, min: number): raw is number =>
   typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= min;
 
-function malformed(field: string): Result<never, StreakEnvelopeRefusal> {
-  return Result.err({ code: LegacyWireCode.StreakPublishInvalidInput, field });
+function malformed(
+  name: string,
+): Result<never, StreakPublishError.InvalidInput> {
+  return Result.err(StreakPublishError.invalidInput(name));
 }
 
+/** A dictionary's value, or `null` for anything else. */
+function wordOf<K extends string>(
+  values: readonly K[],
+  raw: unknown,
+): K | null {
+  return values.find((value) => value === raw) ?? null;
+}
+
+const TRANSITIONS: readonly StreakTransition[] =
+  Object.values(StreakTransition);
+
 /**
- * The request in today's order: the caller first — somebody who may not
- * change the rule is told so (`CALLER_UNAUTHENTICATED` thrown,
- * `CALLER_NOT_ADMIN` answered), never what was wrong with their asking —
- * then the envelope.
+ * The request in order: the caller first — somebody who may not change the
+ * rule is told so (`CALLER_UNAUTHENTICATED` thrown, `CALLER_NOT_ADMIN`
+ * answered), never what was wrong with their asking — then the envelope.
  */
 export function decodeStreakPublish(
   request: WireRequest,
@@ -422,36 +253,34 @@ export function decodeStreakPublish(
 }
 
 /**
- * The ENVELOPE, read and refused by name (today's `toRequest`, field by
- * field): `request`, `op` (absent or `null` is a publish), `requestId`,
- * `streakId`, then a withdrawal's `version` (≥ 1) or a publish's
- * `baseVersion` (≥ 0), `draft` (a record of at most 16 384 JSON bytes),
- * `transition`, `previewHash` (absent is none; else non-empty, ≤ 128). The
- * RULE is not refused here: the draft is read into the rule's input (its
- * own faults the rule's `invalid`), and a day that is no text reads as
- * none (`''`), which no calendar holds.
+ * The ENVELOPE, read and refused by name, field by field: the request,
+ * `requestId`, `streakId`, then a withdrawal's `version` (≥ 1) — a call
+ * that carries no `rule` — or a publish's `baseVersion` (≥ 0), `rule` (a
+ * record of at most 16 384 JSON bytes), `streakTransition`, `previewHash`
+ * (`null` is none; else non-empty, ≤ 128). The RULE is not refused here:
+ * it is read into the rule's input (its own faults the rule's `INVALID`),
+ * and a day that is no text reads as none (`''`), which no calendar holds.
  */
 export function decodeStreakRequest(
   raw: unknown,
   caller: StreakCaller,
-): Result<StreakPublishAsk, StreakEnvelopeRefusal> {
+): Result<StreakPublishAsk, StreakPublishError.InvalidInput> {
   if (!isRecord(raw)) return malformed('request');
-  const op = fieldOf(raw, 'op') ?? 'publish';
-  if (op !== 'publish' && op !== 'withdraw') return malformed('op');
-  const rawRequestId = fieldOf(raw, 'requestId');
-  const requestId = isClientOperationId(rawRequestId)
+  const rawRequestId = field(raw, 'requestId');
+  const requestId = ClientOperationId.is(rawRequestId)
     ? PublishRequestId.parse(rawRequestId)
     : null;
   if (requestId === null || !requestId.ok) return malformed('requestId');
-  const rawStreakId = fieldOf(raw, 'streakId');
+  const rawStreakId = field(raw, 'streakId');
   const streakId =
     typeof rawStreakId === 'string' && STREAK_ID.test(rawStreakId)
       ? StreakDefinitionId.parse(rawStreakId)
       : null;
   if (streakId === null || !streakId.ok) return malformed('streakId');
 
-  if (op === 'withdraw') {
-    const version = fieldOf(raw, 'version');
+  const rule = field(raw, 'rule');
+  if (rule === undefined || rule === null) {
+    const version = field(raw, 'version');
     if (!isWhole(version, 1)) return malformed('version');
     return Result.ok({
       streakPublishOp: StreakPublishOp.Withdraw,
@@ -464,15 +293,14 @@ export function decodeStreakRequest(
     });
   }
 
-  const baseVersion = fieldOf(raw, 'baseVersion');
+  const baseVersion = field(raw, 'baseVersion');
   if (!isWhole(baseVersion, 0)) return malformed('baseVersion');
-  const draft = fieldOf(raw, 'draft');
-  if (!isRecord(draft) || JSON.stringify(draft).length > DRAFT_MAX_BYTES) {
-    return malformed('draft');
+  if (!isRecord(rule) || JSON.stringify(rule).length > RULE_MAX_BYTES) {
+    return malformed('rule');
   }
-  const streakTransition = TRANSITION.of(fieldOf(raw, 'transition'));
-  if (streakTransition === null) return malformed('transition');
-  const previewHash = fieldOf(raw, 'previewHash') ?? null;
+  const streakTransition = wordOf(TRANSITIONS, field(raw, 'streakTransition'));
+  if (streakTransition === null) return malformed('streakTransition');
+  const previewHash = field(raw, 'previewHash') ?? null;
   if (
     previewHash !== null &&
     (typeof previewHash !== 'string' ||
@@ -481,7 +309,7 @@ export function decodeStreakRequest(
   ) {
     return malformed('previewHash');
   }
-  const asked = fieldOf(raw, 'effectiveFrom');
+  const asked = field(rule, 'effectiveFromLocalDate');
   const effectiveFrom = typeof asked === 'string' ? asked : '';
 
   return Result.ok({
@@ -491,7 +319,7 @@ export function decodeStreakRequest(
       requestId: requestId.value,
       streakId: streakId.value,
       baseVersion,
-      draft: decodeDraft(draft, effectiveFrom),
+      draft: decodeRule(rule, effectiveFrom),
       effectiveFrom,
       streakTransition,
       previewHash,
@@ -499,105 +327,80 @@ export function decodeStreakRequest(
   });
 }
 
-// ── The draft ─────────────────────────────────────────────────────────────
+// ── The rule ──────────────────────────────────────────────────────────────
 
 /**
- * Reads the nested legacy draft in the legacy reader's order (the deleted
- * head reader over `{ ...draft, version, effectiveFrom }`)
- * and keeps the FIRST field that is not of the wire's kind — its dotted
- * locator, an entry's index dropped (`excuses[2]` is a fault of `excuses`:
- * the page keys a control, not an entry). Every read after a fault answers
- * a placeholder nobody sees.
+ * Reads the FLAT rule in the rule's order and keeps the FIRST field that is
+ * not of the wire's kind — its flat name (an entry's index dropped:
+ * `excuses[2]` is a fault of `excuses`, the page keys a control, not an
+ * entry). Every read after a fault answers a placeholder nobody sees.
  */
-type DraftReader = { fault: string | null };
+type RuleReader = { fault: string | null };
 
-function faultAt(reader: DraftReader, path: string): void {
-  reader.fault ??= path;
-}
-
-/** A part of the rule: an object, else the part's own fault. */
-function partAt(reader: DraftReader, source: unknown, key: string): Payload {
-  const part = fieldOf(source, key);
-  if (isRecord(part)) return part;
-  faultAt(reader, key);
-  return {};
+function faultAt(reader: RuleReader, name: string): void {
+  reader.fault ??= name;
 }
 
 /** A whole number, `0` or more. */
-function countAt(
-  reader: DraftReader,
-  source: unknown,
-  key: string,
-  path: string,
-): number {
-  const value = fieldOf(source, key);
+function countAt(reader: RuleReader, rule: Payload, name: string): number {
+  const value = field(rule, name);
   if (typeof value === 'number' && Number.isInteger(value) && value >= 0) {
     return value;
   }
-  faultAt(reader, path);
+  faultAt(reader, name);
   return 0;
 }
 
-function switchAt(
-  reader: DraftReader,
-  source: unknown,
-  key: string,
-  path: string,
-): boolean {
-  const value = fieldOf(source, key);
+function switchAt(reader: RuleReader, rule: Payload, name: string): boolean {
+  const value = field(rule, name);
   if (typeof value === 'boolean') return value;
-  faultAt(reader, path);
+  faultAt(reader, name);
   return false;
 }
 
 function wordAt<K extends string>(
-  reader: DraftReader,
-  source: unknown,
-  key: string,
-  path: string,
-  table: { readonly of: (word: unknown) => K | null },
+  reader: RuleReader,
+  rule: Payload,
+  name: string,
+  values: readonly K[],
   placeholder: K,
 ): K {
-  const value = table.of(fieldOf(source, key));
+  const value = wordOf(values, field(rule, name));
   if (value !== null) return value;
-  faultAt(reader, path);
+  faultAt(reader, name);
   return placeholder;
 }
 
 /** A list of non-blank texts. */
 function textsAt(
-  reader: DraftReader,
-  source: unknown,
-  key: string,
-  path: string,
+  reader: RuleReader,
+  rule: Payload,
+  name: string,
 ): readonly string[] {
-  const value = fieldOf(source, key);
+  const value = field(rule, name);
   if (
     !Array.isArray(value) ||
     !value.every(
       (entry: unknown) => typeof entry === 'string' && entry.trim().length > 0,
     )
   ) {
-    faultAt(reader, path);
+    faultAt(reader, name);
     return [];
   }
   return value as readonly string[];
 }
 
-function excusesAt(
-  reader: DraftReader,
-  source: unknown,
-): readonly StreakExcuse[] {
-  const value = fieldOf(source, 'excuses');
-  const excuses: StreakExcuse[] = [];
+function excusesAt(reader: RuleReader, rule: Payload): readonly StreakExcuse[] {
+  const value = field(rule, StreakRuleField.Excuses);
   if (!Array.isArray(value)) {
-    faultAt(reader, 'excuses');
-    return excuses;
+    faultAt(reader, StreakRuleField.Excuses);
+    return [];
   }
+  const excuses: StreakExcuse[] = [];
   for (const entry of value as readonly unknown[]) {
-    const excuse = EXCUSE.of(entry);
+    const excuse = wordOf(STREAK_EXCUSES, entry);
     if (excuse === null) {
-      faultAt(reader, 'excuses');
+      faultAt(reader, StreakRuleField.Excuses);
       return [];
     }
     excuses.push(excuse);
@@ -605,30 +408,32 @@ function excusesAt(
   return excuses;
 }
 
-function qualifierAt(reader: DraftReader, draft: Payload): StreakQualifierRule {
-  const part = partAt(reader, draft, 'qualifier');
+const QUALIFIERS: readonly StreakQualifier[] = Object.values(StreakQualifier);
+const INTERVALS: readonly StreakInterval[] = Object.values(StreakInterval);
+const ON_BREAKS: readonly StreakOnBreak[] = Object.values(StreakOnBreak);
+
+function qualifierAt(reader: RuleReader, rule: Payload): StreakQualifierRule {
   // A service or category the list names is a reference the rule's own door
-  // (`StreakRule.parse`) judges — non-blank and listed once, as today.
+  // (`StreakRule.parse`) judges — non-blank and listed once.
   switch (
     wordAt(
       reader,
-      part,
-      'kind',
-      'qualifier.kind',
-      QUALIFIER_KIND,
+      rule,
+      StreakRuleField.QualifierKind,
+      QUALIFIERS,
       StreakQualifier.AnyVisit,
     )
   ) {
     case StreakQualifier.Services:
       return StreakQualifierRule.services(
-        textsAt(reader, part, 'serviceIds', 'qualifier.serviceIds').map((id) =>
+        textsAt(reader, rule, StreakRuleField.QualifierServiceIds).map((id) =>
           ServiceId.of(id),
         ),
       );
     case StreakQualifier.Categories:
       return StreakQualifierRule.categories(
-        textsAt(reader, part, 'categoryIds', 'qualifier.categoryIds').map(
-          (id) => ServiceCategoryId.of(id),
+        textsAt(reader, rule, StreakRuleField.QualifierCategoryIds).map((id) =>
+          ServiceCategoryId.of(id),
         ),
       );
     case StreakQualifier.AnyVisit:
@@ -636,121 +441,93 @@ function qualifierAt(reader: DraftReader, draft: Payload): StreakQualifierRule {
   }
 }
 
-function intervalAt(reader: DraftReader, draft: Payload): StreakIntervalRule {
-  const part = partAt(reader, draft, 'interval');
+function intervalAt(reader: RuleReader, rule: Payload): StreakIntervalRule {
   const kind = wordAt(
     reader,
-    part,
-    'kind',
-    'interval.kind',
-    INTERVAL_KIND,
+    rule,
+    StreakRuleField.IntervalKind,
+    INTERVALS,
     StreakInterval.Fixed,
   );
   if (kind === StreakInterval.Fixed) {
     return StreakIntervalRule.fixed(
-      countAt(reader, part, 'days', 'interval.days'),
+      countAt(reader, rule, StreakRuleField.IntervalDays),
     );
   }
   return StreakIntervalRule.personal(
-    countAt(reader, part, 'tolerancePct', 'interval.tolerancePct'),
-    countAt(reader, part, 'minDays', 'interval.minDays'),
-    countAt(reader, part, 'maxDays', 'interval.maxDays'),
-    countAt(reader, part, 'fallbackDays', 'interval.fallbackDays'),
+    countAt(reader, rule, StreakRuleField.IntervalTolerancePct),
+    countAt(reader, rule, StreakRuleField.IntervalMinDays),
+    countAt(reader, rule, StreakRuleField.IntervalMaxDays),
+    countAt(reader, rule, StreakRuleField.IntervalFallbackDays),
   );
 }
 
 /**
- * The nested legacy draft → the flat rule input, or `INVALID` at the first
- * field that is not of the wire's kind (the legacy reader's type checks:
- * a whole number of 0 or more, a boolean, a known word, an object for a
- * part, a list of non-blank texts or known excuses). The day asked is read
- * where the legacy reader read it — second, after the version the writer
- * numbers — so a day that is no calendar day is `effectiveFrom`'s fault
- * before any part of the draft is. Its own `version` and `effectiveFrom`
- * are sent and never read; `version: 0` is the placeholder the pipeline
- * numbers (`StreakPublishSystem.proposal`). What is wrong with a rule of
- * the right kinds (a figure out of range, a grace longer than the interval)
- * is `StreakRule.parse`'s to say, every field at once.
+ * The flat rule → the rule's input, or `INVALID` at the first field that is
+ * not of the wire's kind (a whole number of 0 or more, a boolean, a known
+ * dictionary value, a list of non-blank texts or known excuses). The day
+ * asked is read first, so a day that is no calendar day is
+ * `effectiveFromLocalDate`'s fault before any other field's. Its own
+ * `version` is sent and never read (`version: 0` is the placeholder the
+ * pipeline numbers, `StreakPublishSystem.proposal`). What is wrong with a
+ * rule of the right kinds (a figure out of range, a grace longer than the
+ * interval) is `StreakRule.parse`'s to say, every field at once.
  */
-export function decodeDraft(
-  draft: Payload,
+export function decodeRule(
+  rule: Payload,
   effectiveFrom: string,
 ): Result<StreakRuleInput, StreakPublishError.Invalid> {
-  const reader: DraftReader = { fault: null };
-  if (!LocalDate.parse(effectiveFrom).ok) faultAt(reader, 'effectiveFrom');
-  const enabled = switchAt(reader, draft, 'enabled', 'enabled');
-  const qualifier = qualifierAt(reader, draft);
-  const minGapDays = countAt(reader, draft, 'minGapDays', 'minGapDays');
-  const hold = partAt(reader, draft, 'bookingHold');
-  const bookingHoldEnabled = switchAt(
-    reader,
-    hold,
-    'enabled',
-    'bookingHold.enabled',
-  );
+  const reader: RuleReader = { fault: null };
+  if (!LocalDate.parse(effectiveFrom).ok) {
+    faultAt(reader, StreakRuleField.EffectiveFromLocalDate);
+  }
+  const enabled = switchAt(reader, rule, 'enabled');
+  const qualifier = qualifierAt(reader, rule);
+  const minGapDays = countAt(reader, rule, StreakRuleField.MinGapDays);
+  const bookingHoldEnabled = switchAt(reader, rule, 'bookingHoldEnabled');
   const bookingHoldMaxDaysPastDue = countAt(
     reader,
-    hold,
-    'maxDaysPastDue',
-    'bookingHold.maxDaysPastDue',
+    rule,
+    StreakRuleField.BookingHoldMaxDaysPastDue,
   );
-  const interval = intervalAt(reader, draft);
-  const graceDays = countAt(reader, draft, 'graceDays', 'graceDays');
-  const riskLeadDays = countAt(reader, draft, 'riskLeadDays', 'riskLeadDays');
-  const reserve = partAt(reader, draft, 'protections');
-  const protectionsEnabled = switchAt(
-    reader,
-    reserve,
-    'enabled',
-    'protections.enabled',
-  );
+  const interval = intervalAt(reader, rule);
+  const graceDays = countAt(reader, rule, StreakRuleField.GraceDays);
+  const riskLeadDays = countAt(reader, rule, StreakRuleField.RiskLeadDays);
+  const protectionsEnabled = switchAt(reader, rule, 'protectionsEnabled');
   const protectionsMaxBanked = countAt(
     reader,
-    reserve,
-    'maxBanked',
-    'protections.maxBanked',
+    rule,
+    StreakRuleField.ProtectionsMaxBanked,
   );
   const protectionsEarnEvery = countAt(
     reader,
-    reserve,
-    'earnEvery',
-    'protections.earnEvery',
+    rule,
+    StreakRuleField.ProtectionsEarnEvery,
   );
   const protectionsStartWith = countAt(
     reader,
-    reserve,
-    'startWith',
-    'protections.startWith',
+    rule,
+    StreakRuleField.ProtectionsStartWith,
   );
-  const excuses = excusesAt(reader, draft);
-  const pause = partAt(reader, draft, 'clientPause');
-  const clientPauseEnabled = switchAt(
-    reader,
-    pause,
-    'enabled',
-    'clientPause.enabled',
-  );
+  const excuses = excusesAt(reader, rule);
+  const clientPauseEnabled = switchAt(reader, rule, 'clientPauseEnabled');
   const clientPauseMaxDaysPerYear = countAt(
     reader,
-    pause,
-    'maxDaysPerYear',
-    'clientPause.maxDaysPerYear',
+    rule,
+    StreakRuleField.ClientPauseMaxDaysPerYear,
   );
-  const repair = partAt(reader, draft, 'repair');
-  const repairEnabled = switchAt(reader, repair, 'enabled', 'repair.enabled');
+  const repairEnabled = switchAt(reader, rule, 'repairEnabled');
   const repairWindowDays = countAt(
     reader,
-    repair,
-    'windowDays',
-    'repair.windowDays',
+    rule,
+    StreakRuleField.RepairWindowDays,
   );
-  const repairPerYear = countAt(reader, repair, 'perYear', 'repair.perYear');
+  const repairPerYear = countAt(reader, rule, StreakRuleField.RepairPerYear);
   const onBreak = wordAt(
     reader,
-    draft,
-    'onBreak',
-    'onBreak',
-    ON_BREAK,
+    rule,
+    StreakRuleField.OnBreak,
+    ON_BREAKS,
     StreakOnBreak.Restart,
   );
 

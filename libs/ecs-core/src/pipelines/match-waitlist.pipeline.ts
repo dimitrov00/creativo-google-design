@@ -7,7 +7,6 @@ import {
   type RepositoryError,
   RepositoryErrorCode,
   Result,
-  type TimeZone,
   type WaitlistRequestId,
   WaitlistStatus,
 } from '@core/primitives';
@@ -29,8 +28,10 @@ import {
 import type {
   ClockPorts,
   CommitPorts,
+  DefaultLocationPorts,
   HashPorts,
   ListedCatalogPorts,
+  LocationLoadPorts,
   LogPorts,
   OpenWaitlistReadPorts,
   PolicyReadPorts,
@@ -47,6 +48,7 @@ import {
   WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import { readShopZone } from './shop-zone-read.pipeline';
 
 /**
  * `matchWaitlist` — watch the public busy projection; when a shop day frees
@@ -78,11 +80,14 @@ import {
  * the only authority, and its words are the inbox's (facts only, §9 D20).
  */
 
+/**
+ * The shop day a busy write touched. Whose "now" decides past days, lead
+ * times and lapses is the default location's (F-4: a busy day spans every
+ * shop its barber works at), read once per invocation; a zone that cannot
+ * be read is the match's store failure.
+ */
 export type MatchWaitlistCommand = {
-  /** The shop day the busy write touched. */
   readonly localDate: LocalDate;
-  /** The tenant's zone — whose "now" decides past days, lead times and lapses. */
-  readonly timeZone: TimeZone;
 };
 
 export type MatchWaitlistAnswer = {
@@ -100,7 +105,9 @@ export type MatchWaitlistPorts = CommitPorts &
   PolicyReadPorts &
   RecentNotificationPorts &
   LogPorts &
-  ListedCatalogPorts;
+  ListedCatalogPorts &
+  LocationLoadPorts &
+  DefaultLocationPorts;
 
 /** What a freed day offers every request watching it, read once. */
 type MatchDay = {
@@ -377,7 +384,9 @@ export const matchWaitlist = (ports: MatchWaitlistPorts) => {
   return async (
     cmd: MatchWaitlistCommand,
   ): Promise<Result<MatchWaitlistAnswer, RepositoryError>> => {
-    const now = ZonedTimeSystem.shopNow(ports.nowUtcMs(), cmd.timeZone);
+    const zone = await readShopZone(ports)(null);
+    if (!zone.ok) return zone;
+    const now = ZonedTimeSystem.shopNow(ports.nowUtcMs(), zone.value);
     const none: MatchWaitlistAnswer = {
       notifiedRequestIds: [],
       expiredRequestIds: [],

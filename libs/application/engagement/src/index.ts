@@ -1,9 +1,7 @@
 export * from './lib/ports/coupon-grant-repository.port';
 export * from './lib/ports/coupon-reader.port';
 export * from './lib/ports/gift-voucher-reader.port';
-export * from './lib/ports/gift-voucher-document';
 export * from './lib/ports/reward-progress-reader.port';
-export * from './lib/ports/client-vouchers-reader.port';
 export * from './lib/use-cases/apply-discounts.errors';
 export * from './lib/use-cases/apply-discounts.use-case';
 

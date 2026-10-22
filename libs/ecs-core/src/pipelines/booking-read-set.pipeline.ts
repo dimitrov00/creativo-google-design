@@ -80,9 +80,9 @@ import {
  * the decision's snapshot over the read set ({@link bookingSnapshotOf}),
  * the busy `Set`s merged onto the EXACT busy bodies this attempt read
  * ({@link busyMergeWrites} — merging onto anything else would drop every
- * other booking already in that document), the shop-day framing of wire
- * instants ({@link frameShopDay}, the ingestion boundary of Law 7.3) and
- * the contact phone parser the decision is handed.
+ * other booking already in that document) and the contact phone parser
+ * the decision is handed. (The call's wall clock is framed on the shop's
+ * zone by `frameWallClock`, `book-appointment.pipeline.ts`.)
  */
 
 /** Everything phase one reads by id (duplicates are read once). */
@@ -373,48 +373,16 @@ export function busyMergeWrites(
 }
 
 /**
- * Wire instants on the shop's clock (the ingestion boundary, Law 7.3): the
- * visit's ONE shop day is the day of the first start that parsed (T7); each
- * start becomes its minute of THAT day — `null` for a start that did not
- * parse or that falls on another day (the decision refuses that start) —
- * and the envelope's instant is the earliest start placed on
- * the day.
+ * A call's starts on the shop's clock (the ingestion boundary, Law 7.3, as
+ * `frameWallClock` frames them): the visit's ONE shop day; each start's
+ * minute of THAT day — `null` for a start the decision refuses — and the
+ * envelope's instant, the earliest start placed on the day.
  */
 export type ShopDayFrame = {
   readonly localDate: LocalDate | null;
   readonly startMinutes: readonly (MinuteOfDay | null)[];
   readonly startUtcMs: UtcEpochMs | null;
 };
-
-export function frameShopDay(
-  starts: readonly (UtcEpochMs | null)[],
-  timeZone: TimeZone,
-): ShopDayFrame {
-  let localDate: LocalDate | null = null;
-  for (const start of starts) {
-    if (start === null) continue;
-    localDate = ZonedTimeSystem.toLocal(start, timeZone).localDate;
-    break;
-  }
-  const minutes: (MinuteOfDay | null)[] = [];
-  let startUtcMs: UtcEpochMs | null = null;
-  for (const start of starts) {
-    if (start === null || localDate === null) {
-      minutes.push(null);
-      continue;
-    }
-    const wall = ZonedTimeSystem.toLocal(start, timeZone);
-    if (wall.localDate !== localDate) {
-      minutes.push(null);
-      continue;
-    }
-    minutes.push(wall.minute);
-    if (startUtcMs === null || UtcEpochMs.compare(start, startUtcMs) < 0) {
-      startUtcMs = start;
-    }
-  }
-  return { localDate, startMinutes: minutes, startUtcMs };
-}
 
 /** A contact phone as the decision validates it — E.164 or local text, no default country (the kernel's rule). */
 export function parseContactPhone(raw: string): E164 | null {

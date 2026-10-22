@@ -79,10 +79,10 @@ import {
   MARTIN_PREVIOUS_MS,
   NBSP_EURO,
   NOW_MS,
+  SHOP_TIME_ZONE,
   TODAY,
   achievementsContextOf,
   achievementsDataOf,
-  at,
   contactOf,
   factMs,
   georgiContext,
@@ -90,8 +90,7 @@ import {
   georgiOpenContext,
   georgiPhotos,
   georgiUser,
-  giftVoucherOf,
-  type VoucherFixtureFields,
+  fixtureVoucher,
   loyaltyCatalogWith,
   martinContext,
   martinHistory,
@@ -106,7 +105,7 @@ import {
   statsOf,
   subjectOf,
   visitOf,
-  voucherFixtureFields,
+  voucherExpiry,
   wallOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
@@ -218,6 +217,7 @@ function heroOf(overrides: Partial<Parameters<typeof clientHeroVm>[0]> = {}) {
     statsKnown: true,
     avatarSrc: null,
     nowMs: NOW_MS,
+    zone: SHOP_TIME_ZONE,
     words: WORDS,
     tier: { account: LOYALTY.account, catalog: LOYALTY.catalog },
     ...overrides,
@@ -513,6 +513,7 @@ describe('the capsules (B)', () => {
       user: martinUser(),
       stats,
       nowMs: NOW_MS,
+      zone: SHOP_TIME_ZONE,
       words: WORDS,
     });
 
@@ -799,6 +800,7 @@ describe('«Посещения» (H)', () => {
       count: 24,
       clientWords: true,
       nowMs: NOW_MS,
+      zone: SHOP_TIME_ZONE,
       words: WORDS,
       ...overrides,
     });
@@ -944,6 +946,7 @@ describe('«Посещения» (H)', () => {
       count: 13,
       clientWords: true,
       nowMs: NOW_MS,
+      zone: SHOP_TIME_ZONE,
       words: WORDS,
       ...overrides,
     });
@@ -994,9 +997,7 @@ describe('«Посещения» (H)', () => {
     expect(
       martin({ waitlist: [martinWaitlist({ status: 'booked' })] }).waitlist,
     ).toBeNull();
-    expect(
-      martin({ nowMs: at('2026-10-12T09:00:00').toMillis() }).waitlist,
-    ).toBeNull();
+    expect(martin({ nowMs: sofia('2026-10-12T09:00:00') }).waitlist).toBeNull();
     expect(georgi({ waitlist: [martinWaitlist()] }).waitlist).toBeNull();
     expect(martin({ waitlist: null }).waitlist).toBeNull();
   });
@@ -1007,20 +1008,11 @@ describe('«Посещения» (H)', () => {
 /** The rhythm's head as the catalogue holds it: its rule in force since 1.03.2025. */
 const RHYTHM = rhythmHead();
 
-/** The fixture's vouchers, one field of a document edited, as flat bodies. */
-function voucherOf(
-  id: string,
-  edit: Partial<VoucherFixtureFields> = {},
-): GiftVoucher {
-  const document = must(voucherFixtureFields().get(id), `the voucher ${id}`);
-  return giftVoucherOf(id, { ...document, ...edit });
-}
-
 /** Георги's three: 25,00 € left of 50,00 €, one spent, one void. */
 const GEORGI_VOUCHERS = [
-  voucherOf('voucher-dev-georgi'),
-  voucherOf('voucher-dev-georgi-spent'),
-  voucherOf('voucher-dev-georgi-void'),
+  fixtureVoucher('voucher-dev-georgi'),
+  fixtureVoucher('voucher-dev-georgi-spent'),
+  fixtureVoucher('voucher-dev-georgi-void'),
 ];
 
 const ALL_FLAGS = {
@@ -1175,20 +1167,18 @@ describe('«Лоялност» (F1)', () => {
     expect(
       voucherFact([
         ...GEORGI_VOUCHERS,
-        voucherOf('voucher-dev-martin'),
-        voucherOf('voucher-dev-five'),
+        fixtureVoucher('voucher-dev-martin'),
+        fixtureVoucher('voucher-dev-five'),
       ]),
     ).toBe(NBSP_EURO('55,00 €'));
     expect(
       voucherFact([
-        voucherOf('voucher-dev-georgi-spent'),
-        voucherOf('voucher-dev-georgi-void'),
+        fixtureVoucher('voucher-dev-georgi-spent'),
+        fixtureVoucher('voucher-dev-georgi-void'),
       ]),
     ).toBeUndefined();
     const lastDay = (iso: string) =>
-      voucherOf('voucher-dev-georgi', {
-        expiresAt: { iso, zone: 'Europe/Sofia' },
-      });
+      fixtureVoucher('voucher-dev-georgi', voucherExpiry(iso));
     expect(voucherFact([lastDay('2026-09-27T23:59:59.999+03:00')])).toBe(
       undefined,
     );

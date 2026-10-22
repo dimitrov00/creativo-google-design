@@ -31,10 +31,11 @@ import {
 } from '@creativo/ui/modifiers';
 import { achievementsIdPrefix } from '../client-achievements/achievements-page-state';
 import { ClientCardStore } from '../client-card.store';
-import type {
-  RecordRowVm,
-  RecordTheme,
-  RecordsPageVm,
+import {
+  CardLoadState,
+  type RecordRowVm,
+  type RecordTheme,
+  type RecordsPageVm,
 } from '../client-pages.vm';
 
 /** Where the page stands: the slice's status, the page's VM, or nothing to show. */
@@ -143,8 +144,13 @@ export class ClientRecordsPage {
   protected readonly state = computed((): RecordsState => {
     const slice = this.store.records();
     if (slice === null) return EMPTY;
-    if (this.words() === null || slice.status === 'loading') return LOADING;
-    if (slice.status === 'failed') return FAILED;
+    if (
+      this.words() === null ||
+      slice.cardLoadState === CardLoadState.Loading
+    ) {
+      return LOADING;
+    }
+    if (slice.cardLoadState === CardLoadState.Failed) return FAILED;
     const vm = slice.data;
     return vm.featured === null && vm.groups.length === 0
       ? EMPTY

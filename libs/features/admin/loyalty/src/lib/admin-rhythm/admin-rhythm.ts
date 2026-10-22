@@ -22,7 +22,7 @@ import {
   StreakQualifierRule,
   StreakRuleDirection,
 } from '@core/components';
-import { StreakPublishErrorCode } from '@core/primitives';
+import { StaffEditError, StreakPublishErrorCode } from '@core/primitives';
 import {
   type RhythmServiceGroup,
   rhythmServiceGroupsOf,
@@ -71,6 +71,7 @@ import {
   type AdminRhythmRefusal,
   type AdminRhythmSaveOutcome,
   AdminRhythmStore,
+  RhythmLoadState,
   fixedInterval,
   isPublishRefusal,
   personalInterval,
@@ -187,6 +188,8 @@ let sequence = 0;
 })
 export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly store = inject(AdminRhythmStore);
+  /** Where each read stands, for the template's switches. */
+  protected readonly RhythmLoadState = RhythmLoadState;
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CATALOG_PORTS, { optional: true });
 
@@ -247,11 +250,22 @@ export class AdminRhythm implements AdminRhythmLeaving {
     () => {
       const translate = this.translate();
       const rule = this.store.rule();
-      if (translate === null || rule === null) return null;
+      const days = this.store.days();
+      const zone = this.store.zone();
+      // Until the shop's days are known the page is its skeleton.
+      if (
+        translate === null ||
+        rule === null ||
+        days === null ||
+        zone === null
+      ) {
+        return null;
+      }
       return {
         translate,
         lang: this.lang(),
-        today: this.store.days().today,
+        today: days.today,
+        zone,
         rule,
       };
     },
@@ -262,9 +276,10 @@ export class AdminRhythm implements AdminRhythmLeaving {
   /** `loading` · `ready` · `failed`: what the page draws. */
   protected readonly state = computed(() => {
     const schedule = this.store.schedule();
-    return schedule.status === 'ready' && this.context() !== null
+    return schedule.rhythmLoadState === RhythmLoadState.Ready &&
+      this.context() !== null
       ? 'ready'
-      : schedule.status === 'failed'
+      : schedule.rhythmLoadState === RhythmLoadState.Failed
         ? 'failed'
         : 'loading';
   });
@@ -393,17 +408,17 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly effectiveOptions = computed(() =>
     this.withContext((context) => effectiveOptions(context), []),
   );
-  protected readonly effective = computed(() =>
-    this.withContext(
-      (context) =>
-        effectiveReading(
-          context,
-          this.store.effectiveFrom(),
-          this.store.days(),
-        ),
-      { choice: 'tomorrow' as const, label: '' },
-    ),
-  );
+  protected readonly effective = computed(() => {
+    const blank = { choice: 'tomorrow' as const, label: '' };
+    const day = this.store.effectiveFrom();
+    const days = this.store.days();
+    return day === null || days === null
+      ? blank
+      : this.withContext(
+          (context) => effectiveReading(context, day, days),
+          blank,
+        );
+  });
 
   /** The rule card's capsule: «В сила от 1.09», or «От 1.10» while a version waits. */
   protected readonly capsule = computed(() => {
@@ -445,7 +460,11 @@ export class AdminRhythm implements AdminRhythmLeaving {
   protected readonly preview = computed((): AdminRhythmPreviewWords | null => {
     const context = this.context();
     const preview = this.store.preview();
-    if (context === null || preview === null || preview.status !== 'ready') {
+    if (
+      context === null ||
+      preview === null ||
+      preview.rhythmLoadState !== RhythmLoadState.Ready
+    ) {
       return null;
     }
     return previewWords(
@@ -461,7 +480,12 @@ export class AdminRhythm implements AdminRhythmLeaving {
     (): readonly AdminRhythmHistoryRow[] => {
       const context = this.context();
       const versions = this.store.versions();
-      if (context === null || versions.status !== 'ready') return [];
+      if (
+        context === null ||
+        versions.rhythmLoadState !== RhythmLoadState.Ready
+      ) {
+        return [];
+      }
       return [...versions.data]
         .sort((a, b) => b.version - a.version)
         .map((version) => historyRow(context, version));
@@ -688,6 +712,7 @@ export class AdminRhythm implements AdminRhythmLeaving {
       this.openSheet('day');
       return;
     }
+    if (days === null) return;
     this.store.setEffectiveFrom(
       id === 'firstOfMonth' ? days.firstOfMonth : days.tomorrow,
     );
@@ -779,9 +804,12 @@ export class AdminRhythm implements AdminRhythmLeaving {
       case StreakPublishErrorCode.CallerNotAdmin:
       case StreakPublishErrorCode.CallerUnauthenticated:
         this.toast.set({
-          label: translateDomainError(this.transloco, {
-            code: 'booking.staffEdit.forbidden',
-          }),
+          // The staff edit's «not allowed» words — the same copy the
+          // retired dotted `booking.staffEdit.forbidden` key held.
+          label: translateDomainError(
+            this.transloco,
+            StaffEditError.forbidden(),
+          ),
           undo: false,
         });
         return;

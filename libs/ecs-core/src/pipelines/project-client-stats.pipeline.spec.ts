@@ -34,6 +34,10 @@ import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   localDate,
+  locationFixture,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStore,
   type MemoryStore,
   memoryTxPorts,
@@ -114,6 +118,18 @@ function storeOf(appointments: readonly Appointment[]): MemoryStore {
   );
 }
 
+/**
+ * The shop's clock a client is judged on (Law 7.2, F-4 — a stats record
+ * names no shop): the default location's, the fixture shop on
+ * `FIXTURE_TIME_ZONE`.
+ */
+const ZONE_PORTS = {
+  ...memoryLocationLoadPorts(
+    memoryProgramsWorld({ locations: [locationFixture()] }),
+  ),
+  ...memoryDefaultLocationPorts(),
+};
+
 function rig(store: MemoryStore, commit?: CommitPlan) {
   const tx = memoryTxPorts(store);
   const telemetry = recordingTelemetry();
@@ -122,7 +138,7 @@ function rig(store: MemoryStore, commit?: CommitPlan) {
     ...tx,
     ...(commit === undefined ? {} : { commit }),
     ...telemetry,
-    tenantTimeZone: FIXTURE_TIME_ZONE,
+    ...ZONE_PORTS,
     loadPolicy: async () => {
       policyReads += 1;
       return Result.ok(BookingPolicy.DEFAULT);
@@ -297,13 +313,27 @@ describe('projectClientStats', () => {
     const run = projectClientStats({
       ...tx,
       ...recordingTelemetry(),
-      tenantTimeZone: FIXTURE_TIME_ZONE,
+      ...ZONE_PORTS,
       loadPolicy: async () => Result.err(failure),
     });
     expect(await run({ customerIds: [CLIENT] })).toEqual({
       ok: false,
       error: failure,
     });
+    expect(tx.transactions).toEqual([]);
+  });
+
+  it('answers a zone it cannot read as its store failure, recomputing nobody (4A-2 (e))', async () => {
+    const failed = RepositoryError.readFailed('locations/loc-center', 'down');
+    const tx = memoryTxPorts(storeOf([partyVisit()]));
+    const run = projectClientStats({
+      ...tx,
+      ...recordingTelemetry(),
+      ...memoryDefaultLocationPorts(),
+      loadLocation: async () => Result.err(failed),
+      loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
+    });
+    expect(await run({ customerIds: [CLIENT] })).toEqual(Result.err(failed));
     expect(tx.transactions).toEqual([]);
   });
 });
@@ -321,13 +351,14 @@ describe('recomputeClientStats — under a policy pass', () => {
   it('lets a newer pass restamp an unchanged answer — the stamp’s root fields alone', async () => {
     const store = storeOf([partyVisit()]);
     const { ports } = rig(store);
-    await recomputeClientStats(ports, policy, CLIENT, null);
+    await recomputeClientStats(ports, policy, CLIENT, null, FIXTURE_TIME_ZONE);
     const tx = memoryTxPorts(store);
     const outcome = await recomputeClientStats(
       { ...ports, commit: tx.commit },
       policy,
       CLIENT,
       newer,
+      FIXTURE_TIME_ZONE,
     );
     expect(outcome).toEqual({ ok: true, value: ClientStatsOutcome.Unchanged });
     expect(tx.plans).toEqual([
@@ -344,13 +375,14 @@ describe('recomputeClientStats — under a policy pass', () => {
   it('writes nothing under an older pass than the stamp — the newer pass has the last word', async () => {
     const store = storeOf([partyVisit()]);
     const { ports } = rig(store);
-    await recomputeClientStats(ports, policy, CLIENT, newer);
+    await recomputeClientStats(ports, policy, CLIENT, newer, FIXTURE_TIME_ZONE);
     const tx = memoryTxPorts(store);
     const outcome = await recomputeClientStats(
       { ...ports, commit: tx.commit },
       policy,
       CLIENT,
       older,
+      FIXTURE_TIME_ZONE,
     );
     expect(outcome).toEqual({ ok: true, value: ClientStatsOutcome.Superseded });
     expect(tx.plans).toEqual([[]]);

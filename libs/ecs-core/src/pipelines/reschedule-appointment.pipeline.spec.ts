@@ -13,12 +13,15 @@ import {
   SubjectRelationship,
   WriteAction,
   type WriteOp,
+  type BookingCall,
+  RequestedSubjectRole,
 } from '@core/components';
 import {
   BarberBusyDayId,
   BarberId,
   BookingErrorCode,
   BusyKey,
+  ClientOperationId,
   CustomerId,
   LocationId,
   OperationId,
@@ -26,15 +29,12 @@ import {
   SeatId,
   ServiceId,
   UserId,
-} from '@core/primitives';
-import { type Appointment, type AuditEntry, Collections } from '@core/entities';
-import {
-  AuditSystem,
   CarriedSeatRefusal,
   MoveErrorCode,
-  MoveSubjectRole,
-  MoveSystem,
-} from '@core/systems';
+  TimeErrorCode,
+} from '@core/primitives';
+import { type Appointment, type AuditEntry, Collections } from '@core/entities';
+import { AuditSystem, MoveSystem } from '@core/systems';
 import {
   appointmentFixture,
   at,
@@ -54,13 +54,16 @@ import {
 } from '@core/testing';
 import {
   type RescheduleAppointmentCommand,
-  type RescheduleSeatRequest,
   rescheduleAppointment,
 } from './reschedule-appointment.pipeline';
 
 const THURSDAY = localDate('2026-10-01');
 const FRIDAY = localDate('2026-10-02');
-const ATTEMPT = 'move-attempt-0123456789';
+const ATTEMPT = ((): ClientOperationId => {
+  const id = ClientOperationId.parse('move-attempt-0123456789');
+  if (!id.ok) throw new Error('a broken fixture');
+  return id.value;
+})();
 const COMPANION = UserId.of('u-son');
 const COMPANION_SEAT = SeatId.of('seat-son');
 
@@ -104,14 +107,15 @@ function catalogue(
   ];
 }
 
-const CART_SEAT: RescheduleSeatRequest = {
+/** The booker's cut on Friday at 11:00 — the call carries the minute of the request's day. */
+const CART_SEAT: BookingCall.SeatInput = {
+  lineId: 'line-1',
   serviceId: FIXTURE_IDS.service,
   variantId: null,
   barberId: FIXTURE_IDS.barber,
   barberPreference: null,
-  startUtcMs: utcMs('2026-10-02T11:00:00.000+03:00'),
-  moveSubjectRole: MoveSubjectRole.Self,
-  label: null,
+  startMinutes: 660,
+  subject: { requestedSubjectRole: RequestedSubjectRole.Self },
 };
 
 function command(
@@ -121,6 +125,7 @@ function command(
     appointmentId: FIXTURE_IDS.appointment,
     callerUserId: FIXTURE_IDS.client,
     locationId: FIXTURE_IDS.location,
+    localDate: FRIDAY,
     seats: [CART_SEAT],
     attemptId: ATTEMPT,
     actor: Actor.user(FIXTURE_IDS.client),
@@ -156,7 +161,11 @@ const PATH = `${Collections.Appointments}/${FIXTURE_IDS.appointment}`;
 
 const digestOf = (cmd: RescheduleAppointmentCommand): string =>
   fixtureHash(
-    MoveSystem.digestBasis({ locationId: cmd.locationId, seats: cmd.seats }),
+    MoveSystem.digestBasis({
+      locationId: cmd.locationId,
+      localDate: cmd.localDate,
+      seats: cmd.seats,
+    }),
   ).slice(0, 16);
 
 describe('rescheduleAppointment — the client moving their own visit', () => {
@@ -241,9 +250,8 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     const { tx, rows, run } = rig([...catalogue(), stored(visit())]);
     const answer = await run(
       command({
-        seats: [
-          { ...CART_SEAT, startUtcMs: utcMs('2026-10-01T10:00:00.000+03:00') },
-        ],
+        localDate: THURSDAY,
+        seats: [{ ...CART_SEAT, startMinutes: 600 }],
       }),
     );
     expect(answer).toEqual({
@@ -417,19 +425,33 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
     });
   });
 
-  it('refuses a start that did not parse (startUtcMs), and a shop that is not there', async () => {
+  it('refuses a start that did not parse (startMinutes), and a shop that is not there', async () => {
     const { run } = rig([...catalogue(), stored(visit())]);
     const unparsed = await run(
-      command({ seats: [{ ...CART_SEAT, startUtcMs: null }] }),
+      command({ seats: [{ ...CART_SEAT, startMinutes: null }] }),
     );
     expect(!unparsed.ok && unparsed.error).toMatchObject({
-      field: 'startUtcMs',
+      field: 'startMinutes',
     });
     const missing = await run(command({ locationId: 'loc-gone' }));
     expect(!missing.ok && missing.error).toMatchObject({
       field: 'locationId',
       reason: 'not_found',
     });
+  });
+
+  it('refuses a cart start inside the spring-forward gap DST_GAP_INVALID_TIME, writing nothing (4A-2 (a))', async () => {
+    const { tx, run } = rig([...catalogue(), stored(visit())]);
+    const answer = await run(
+      command({
+        localDate: localDate('2027-03-28'),
+        seats: [{ ...CART_SEAT, startMinutes: 210 }],
+      }),
+    );
+    expect(!answer.ok && answer.error).toMatchObject({
+      errorCode: TimeErrorCode.DstGap,
+    });
+    expect(tx.plans).toEqual([]);
   });
 
   describe('the visit’s own chairs never block its move', () => {
@@ -449,12 +471,8 @@ describe('rescheduleAppointment — the client moving their own visit', () => {
       ]);
       const answer = await run(
         command({
-          seats: [
-            {
-              ...CART_SEAT,
-              startUtcMs: utcMs('2026-10-01T09:45:00.000+03:00'),
-            },
-          ],
+          localDate: THURSDAY,
+          seats: [{ ...CART_SEAT, startMinutes: 585 }],
         }),
       );
       expect(answer.ok).toBe(true);

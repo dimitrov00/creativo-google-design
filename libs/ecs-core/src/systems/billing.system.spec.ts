@@ -25,6 +25,7 @@ import {
   UserId,
   PriceCents,
   UtcEpochMs,
+  StaffEditErrorCode,
 } from '@core/primitives';
 import type { Appointment, GiftVoucher } from '@core/entities';
 import {
@@ -39,7 +40,6 @@ import {
   customerOf,
 } from '@core/testing';
 import { AppointmentLifecycleSystem } from './appointment-lifecycle.system';
-import { StaffEditErrorCode } from './appointment-edit.system';
 import {
   BillPending,
   BillingSystem,

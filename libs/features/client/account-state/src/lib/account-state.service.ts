@@ -10,20 +10,24 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import type { Subscription } from 'rxjs';
 import {
-  AUTH_GATEWAY,
-  ANONYMOUS_PRINCIPAL,
+  AUTH_SESSION_PORTS,
+  PROFILE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import {
   Principal,
-} from '@creativo/application/identity';
-import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
-import { Registration } from '@core/components';
+  PrincipalKind,
+  Registration,
+  type Role,
+} from '@core/components';
 import type { User } from '@core/entities';
-import { UserId } from '@core/primitives';
+import type { UserId } from '@core/primitives';
 
 /**
  * Root-provided, single `onIdTokenChanged` listener for the whole shell
- * (blueprint §1.4) — every route/guard/component reads `principal`/
- * `claims`/`account`/`accountLoading` from here rather than re-subscribing
- * to `AuthGateway` or re-fetching the profile themselves.
+ * (blueprint §1.4) — every route/guard/component reads `principal` (the
+ * ecs `Principal`, Phase 4a), `roles`/`userId`/`account`/`accountLoading`
+ * from here rather than re-subscribing to the session or re-fetching the
+ * profile themselves.
  *
  * Lives in its own lib (not `apps/web`, not the `client/account` dashboard
  * lib) for two reasons: Nx module boundaries forbid a `type:feature` lib
@@ -45,17 +49,26 @@ import { UserId } from '@core/primitives';
  */
 @Injectable({ providedIn: 'root' })
 export class AccountStateService {
-  private readonly authGateway = inject(AUTH_GATEWAY);
+  private readonly session = inject(AUTH_SESSION_PORTS);
   private readonly profilePorts = inject(PROFILE_PORTS);
 
   readonly principal: Signal<Principal> = toSignal(
-    this.authGateway.observePrincipal(),
-    { initialValue: ANONYMOUS_PRINCIPAL },
+    this.session.observePrincipal(),
+    { initialValue: Principal.anonymous() },
   );
 
-  readonly claims = computed(() => {
+  /** The onboarded principal's roles; `null` until onboarded (`Principal.isActive`). */
+  readonly roles: Signal<readonly Role[] | null> = computed(() => {
     const principal = this.principal();
-    return principal.kind === 'active' ? principal.roles : null;
+    return Principal.isActive(principal) ? principal.roles : null;
+  });
+
+  /** The signed-in account (onboarding included); `null` when anonymous. */
+  readonly userId: Signal<UserId | null> = computed(() => {
+    const principal = this.principal();
+    return principal.principalKind === PrincipalKind.Anonymous
+      ? null
+      : principal.userId;
   });
 
   private readonly _account = signal<User | null>(null);
@@ -66,20 +79,17 @@ export class AccountStateService {
   readonly accountLoading = this._accountLoading.asReadonly();
 
   /**
-   * The uid to listen to, as a string so the listener follows the PERSON:
-   * a token refresh or the onboarding → active claim flip re-emits the
-   * principal, and none of those is a reason to re-attach.
+   * The account to listen to — an id (a string) so the listener follows the
+   * PERSON: a token refresh or the onboarding → client claim flip re-emits
+   * the principal, and none of those is a reason to re-attach.
    */
-  private readonly uid = computed(() => {
-    const principal = this.principal();
-    return principal.kind === 'anonymous' ? null : principal.uid.value;
-  });
+  private readonly uid = this.userId;
 
   /** Bumped by `refresh()` to re-attach a listener that has stopped. */
   private readonly relistens = signal(0);
 
   /** Whose profile `_account` holds, so a re-attach for the same person keeps it on screen. */
-  private listenedUid: string | null = null;
+  private listenedUid: UserId | null = null;
   /** The listener's last answer was a failure; `subscribeWithRetry` stops on the unhealable ones. */
   private listenerFailed = false;
 
@@ -104,34 +114,31 @@ export class AccountStateService {
     }
   }
 
-  private listen(uid: string | null): Subscription | null {
+  private listen(uid: UserId | null): Subscription | null {
     if (uid !== this.listenedUid) {
       // Never show one person's profile to the next, not even for a frame.
       this._account.set(null);
       this.listenedUid = uid;
     }
     this.listenerFailed = false;
-    const userId = uid === null ? null : UserId.parse(uid);
-    if (userId === null || !userId.ok) {
+    if (uid === null) {
       this._account.set(null);
       this._accountLoading.set(false);
       return null;
     }
     this._accountLoading.set(this._account() === null);
-    return this.profilePorts
-      .observeProfile(userId.value)
-      .subscribe((result) => {
-        if (result.ok) {
-          this._account.set(registeredOrNull(result.value));
-          this.listenerFailed = false;
-        } else {
-          // Keep what is on screen: dated data beats a blank account while a
-          // transient failure retries, and a first answer that fails leaves
-          // it null anyway.
-          this.listenerFailed = true;
-        }
-        this._accountLoading.set(false);
-      });
+    return this.profilePorts.observeProfile(uid).subscribe((result) => {
+      if (result.ok) {
+        this._account.set(registeredOrNull(result.value));
+        this.listenerFailed = false;
+      } else {
+        // Keep what is on screen: dated data beats a blank account while a
+        // transient failure retries, and a first answer that fails leaves
+        // it null anyway.
+        this.listenerFailed = true;
+      }
+      this._accountLoading.set(false);
+    });
   }
 }
 

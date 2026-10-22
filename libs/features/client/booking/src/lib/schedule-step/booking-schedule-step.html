@@ -166,8 +166,8 @@
             uiInteractive
             uiRadius="capsule"
             data-testid="booking-day"
-            [attr.data-day-key]="cell.dayKey"
-            [attr.data-selected]="cell.dayKey === selectedDayKey() ? '' : null"
+            [attr.data-day-key]="cell.localDate"
+            [attr.data-selected]="cell.localDate === selectedDay() ? '' : null"
             [disabled]="!cell.bookable"
             [attr.aria-label]="cell.aria"
             (click)="selectDay(cell)"
@@ -175,7 +175,7 @@
             <ui-date-badge
               [uiDay]="cell.dayOfMonth"
               [uiState]="
-                cell.dayKey === selectedDayKey() ? 'selected' : cell.state
+                cell.localDate === selectedDay() ? 'selected' : cell.state
               "
               [uiToday]="cell.isToday"
             />
@@ -271,10 +271,10 @@
   <!-- ── The times ────────────────────────────────────────────────────
        The chosen day's starts, grouped by daypart. Its bar carries the bell,
        which watches this day. -->
-  @if (timeOpen() && canOpenTimes() && selectedDay(); as day) {
+  @if (timeOpen() && canOpenTimes() && sheet(); as about) {
   <lib-booking-time-sheet
-    [day]="day"
-    [zone]="zone()"
+    [day]="about.day"
+    [zone]="about.zone"
     [policy]="policy()"
     (confirmed)="onTimeConfirmed($event)"
     (watch)="watchSelectedDay()"

@@ -3,3 +3,6 @@ export * from './lib/lazy-port';
 export * from './lib/retry-schedule';
 export * from './lib/ports.tokens';
 export * from './lib/loyalty-catalog-memo';
+export * from './lib/flags.provider';
+export * from './lib/shop-zone.service';
+export * from './lib/callable-client.adapter';

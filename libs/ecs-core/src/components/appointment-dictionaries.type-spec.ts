@@ -54,23 +54,22 @@ import type {
   GiftVoucher,
 } from '@core/entities';
 import {
-  EditCommand,
   type EditCommandRequest,
   LedgerVerdict,
   type LedgerVerdictResult,
-  ResizeEdge,
-  StaffEditErrorCode,
   ProfileAuthType,
   BillPending,
   type PendingDiscounts,
   TipPreset,
   type TipPresetOption,
+} from '@core/systems';
+import {
   CancellationRefusalCode,
   CarriedSeatRefusal,
-  type MoveCartSeatInput,
   MoveErrorCode,
-  MoveSubjectRole,
-} from '@core/systems';
+  StaffEditErrorCode,
+} from '@core/primitives';
+import { EditCommand, ResizeEdge } from './edit-command.data';
 
 /** A tag dictionary whose every value is a `T`. */
 type Dictionary<T> = { readonly [key: string]: T };
@@ -132,7 +131,6 @@ dictionary(
 );
 dictionary(CarriedSeatRefusal satisfies Dictionary<CarriedSeatRefusal>);
 dictionary(MoveErrorCode satisfies Dictionary<MoveErrorCode>);
-dictionary(MoveSubjectRole satisfies Dictionary<MoveSubjectRole>);
 
 // (2) Holds — exact values, one key per value.
 export type AppointmentDictionariesHold = [
@@ -156,17 +154,16 @@ export type AppointmentDictionariesHold = [
   Expect<Holds<Pick<typeof PhotoOrigin, 'Shot' | 'Library'>, PhotoOrigin>>, // components/photo-origin.data.ts (PHOTO_ORIGIN)
   Expect<Holds<typeof VoucherStatus, VoucherStatus>>, // components/voucher-state.data.ts
   Expect<Holds<typeof VoucherRefusal, VoucherRefusal>>, // primitives/voucher-refusal.data.ts
-  Expect<Holds<typeof StaffEditErrorCode, StaffEditErrorCode>>, // systems/appointment-edit.system.ts
-  Expect<Holds<typeof EditCommand, EditCommand>>, // systems/appointment-edit.system.ts
-  Expect<Holds<typeof ResizeEdge, ResizeEdge>>, // systems/appointment-edit.system.ts
+  Expect<Holds<typeof StaffEditErrorCode, StaffEditErrorCode>>, // primitives/staff-edit-errors.data.ts
+  Expect<Holds<typeof EditCommand, EditCommand>>, // components/edit-command.data.ts
+  Expect<Holds<typeof ResizeEdge, ResizeEdge>>, // components/edit-command.data.ts
   Expect<Holds<typeof LedgerVerdict, LedgerVerdict>>, // systems/appointment-edit.system.ts
   Expect<Holds<typeof ProfileAuthType, ProfileAuthType>>, // systems/audit.system.ts
   Expect<Holds<typeof BillPending, BillPending>>, // systems/billing.system.ts
   Expect<Holds<typeof TipPreset, TipPreset>>, // systems/billing.system.ts
-  Expect<Holds<typeof CancellationRefusalCode, CancellationRefusalCode>>, // systems/cancellation-policy.system.ts
-  Expect<Holds<typeof CarriedSeatRefusal, CarriedSeatRefusal>>, // systems/move.system.ts
-  Expect<Holds<typeof MoveErrorCode, MoveErrorCode>>, // systems/move.system.ts
-  Expect<Holds<typeof MoveSubjectRole, MoveSubjectRole>>, // systems/move.system.ts
+  Expect<Holds<typeof CancellationRefusalCode, CancellationRefusalCode>>, // primitives/cancellation-errors.data.ts
+  Expect<Holds<typeof CarriedSeatRefusal, CarriedSeatRefusal>>, // primitives/move-errors.data.ts
+  Expect<Holds<typeof MoveErrorCode, MoveErrorCode>>, // primitives/move-errors.data.ts
 ];
 
 // (3) SCREAMING — every non-exempt value is upper-case (§0.4).
@@ -198,7 +195,6 @@ export type AppointmentDictionariesScream = [
   Expect<Screaming<TipPreset>>,
   Expect<Screaming<CancellationRefusalCode>>,
   Expect<Screaming<MoveErrorCode>>,
-  Expect<Screaming<MoveSubjectRole>>,
 ];
 
 type ActiveGrant = Extract<GrantLifecycle, { readonly grantStatus: 'ACTIVE' }>;
@@ -244,5 +240,4 @@ export type AppointmentDictionaryFields = [
   Expect<Equals<PendingDiscounts['billPending'], BillPending>>, // systems/billing.system.ts
   Expect<Equals<PendingSet['items'][number]['discountSource'], DiscountSource>>, // N15-exempt: a pending item's source, read through the set
   Expect<Equals<TipPresetOption['tipPreset'], TipPreset>>, // systems/billing.system.ts
-  Expect<Equals<MoveCartSeatInput['moveSubjectRole'], MoveSubjectRole>>, // systems/move.system.ts
 ];

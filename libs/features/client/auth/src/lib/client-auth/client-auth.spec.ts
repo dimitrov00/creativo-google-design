@@ -10,17 +10,19 @@ import {
 import { Observable, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_DEPLOYMENT,
-  AUTH_GATEWAY,
   AuthDeployment,
-  DEFAULT_AUTH_DEPLOYMENT,
-  OTP_CLIENT,
-  OtpClientError,
-  createAuthStrategy,
-  fail,
-  ok,
-} from '@creativo/application/identity';
+  AuthStrategy,
+  AuthStrategyKind,
+  RegistrationField,
+  SessionKind,
+} from '@core/components';
+import { OtpId, PipelineError, Result } from '@core/primitives';
+import { memoryAuthSessionPorts, memoryOtpChallengePorts } from '@core/testing';
+import {
+  AUTH_DEPLOYMENT_PORTS,
+  AUTH_SESSION_PORTS,
+  OTP_CHALLENGE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { UiOtpField } from '@creativo/ui/controls';
 import { ClientAuth } from './client-auth';
 
@@ -45,13 +47,22 @@ function provideTestI18n(): EnvironmentProviders[] {
 
 /** The phone_otp flavor of the deployment — exercises the phone branch of the strategy-driven identify screen (email_otp is the workspace default). */
 function phoneDeployment(): AuthDeployment {
-  const strategy = createAuthStrategy({
-    kind: 'phone_otp',
-    required: ['phone', 'firstName', 'lastName'],
+  const strategy = AuthStrategy.parse({
+    authStrategyKind: AuthStrategyKind.PhoneOtp,
+    required: [
+      RegistrationField.Phone,
+      RegistrationField.FirstName,
+      RegistrationField.LastName,
+    ],
     policy: { ttlMinutes: 5, maxAttempts: 5, sessionDays: 30 },
   });
-  if (strategy.isFailure()) throw new Error('fixture strategy invalid');
-  return { ...DEFAULT_AUTH_DEPLOYMENT, strategy: strategy.value };
+  if (!strategy.ok) throw new Error('fixture strategy invalid');
+  return { ...AuthDeployment.DEFAULT, strategy: strategy.value };
+}
+
+/** A failed verify as the wire answers it — the server's `errorCode` on its status. */
+function verifyRefused(status: string, errorCode: string) {
+  return Result.err(PipelineError.fromWire(status, { errorCode }));
 }
 
 describe('ClientAuth', () => {
@@ -60,10 +71,12 @@ describe('ClientAuth', () => {
   let fixture: ComponentFixture<ClientAuth>;
 
   async function setup(deployment?: AuthDeployment): Promise<void> {
-    requestChallenge.mockReset().mockResolvedValue(ok('challenge_1'));
+    requestChallenge
+      .mockReset()
+      .mockResolvedValue(Result.ok(OtpId.of('challenge_1')));
     verifyChallenge
       .mockReset()
-      .mockResolvedValue(ok({ kind: 'returning' as const }));
+      .mockResolvedValue(Result.ok(SessionKind.Returning));
 
     await TestBed.configureTestingModule({
       imports: [ClientAuth],
@@ -71,23 +84,21 @@ describe('ClientAuth', () => {
         provideRouter([]),
         ...provideTestI18n(),
         ...(deployment
-          ? [{ provide: AUTH_DEPLOYMENT, useValue: deployment }]
+          ? [
+              {
+                provide: AUTH_DEPLOYMENT_PORTS,
+                useValue: { authDeployment: deployment },
+              },
+            ]
           : []),
+        // Nobody signed in: the session double's anonymous principal.
+        { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
         {
-          provide: AUTH_GATEWAY,
+          provide: OTP_CHALLENGE_PORTS,
           useValue: {
-            observePrincipal: () => of(ANONYMOUS_PRINCIPAL),
-            currentIdentifier: () => null,
-            refreshToken: () => Promise.resolve(ok(undefined)),
-            signOut: () => Promise.resolve(ok(undefined)),
-          },
-        },
-        {
-          provide: OTP_CLIENT,
-          useValue: {
-            requestChallenge,
-            verifyChallenge,
-            completeRegistration: () => Promise.resolve(ok(undefined)),
+            ...memoryOtpChallengePorts(),
+            requestOtpChallenge: requestChallenge,
+            verifyOtpChallenge: verifyChallenge,
           },
         },
       ],
@@ -208,9 +219,7 @@ describe('ClientAuth', () => {
 
     it('clears the digits when the code is wrong and hides the error once typing resumes', async () => {
       verifyChallenge.mockResolvedValue(
-        fail(
-          new OtpClientError('wrong', false, undefined, 'otp_incorrect_code'),
-        ),
+        verifyRefused('invalid-argument', 'IDENTITY_OTP_WRONG_CODE'),
       );
       await fillEmailAndSubmit();
 
@@ -232,7 +241,7 @@ describe('ClientAuth', () => {
 
     it('clears the digits when the code is expired — a genuinely new code is coming', async () => {
       verifyChallenge.mockResolvedValue(
-        fail(new OtpClientError('expired', false, undefined, 'otp_expired')),
+        verifyRefused('deadline-exceeded', 'IDENTITY_OTP_EXPIRED'),
       );
       await fillEmailAndSubmit();
 
@@ -248,9 +257,7 @@ describe('ClientAuth', () => {
       // A failing verify keeps the flow on-page (no navigation continuation
       // to race the test) — the assertion is WHEN the call happens.
       verifyChallenge.mockResolvedValue(
-        fail(
-          new OtpClientError('wrong', false, undefined, 'otp_incorrect_code'),
-        ),
+        verifyRefused('invalid-argument', 'IDENTITY_OTP_WRONG_CODE'),
       );
       await fillEmailAndSubmit();
 
@@ -272,9 +279,7 @@ describe('ClientAuth', () => {
 
     it('suppresses auto-verify while a previous error is displayed, until the user edits', async () => {
       verifyChallenge.mockResolvedValue(
-        fail(
-          new OtpClientError('wrong', false, undefined, 'otp_incorrect_code'),
-        ),
+        verifyRefused('invalid-argument', 'IDENTITY_OTP_WRONG_CODE'),
       );
       await fillEmailAndSubmit();
 

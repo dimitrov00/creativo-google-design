@@ -14,10 +14,10 @@ import type { LinePart } from './client-pages.vm';
  * Dates are the house form (old spec R59): a fact line or a caption says
  * «12.08», with the year only outside the current one («6.03.2025 г.»); a
  * sentence someone hears says the month in words («4 септември»). Every
- * date is a day on the SHOP'S calendar (Europe/Sofia): an instant becomes
- * one through `shopDayOf`, and a day is formatted as itself — placed at
- * UTC noon and read back in UTC — so no device zone can move it. `Intl`'s
- * output is never post-processed (its « г.» included).
+ * date is a day on the SHOP'S calendar (its location's zone, Law 7.2): an
+ * instant becomes one through `shopDayOf`, and a day is formatted as
+ * itself — placed at UTC noon and read back in UTC — so no device zone can
+ * move it. `Intl`'s output is never post-processed (its « г.» included).
  *
  * The second half is THE CARD'S QUIET LINES: one grammar for cutting a
  * sentence into runs, binding a fact's words and hanging its joints, so
@@ -61,21 +61,16 @@ function formatDay(
   );
 }
 
-/** The shop's zone, branded: every instant on the card is read on its calendar. */
-export const CARD_SHOP_ZONE: TimeZone = (() => {
-  const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
-  return zone.ok ? zone.value : defect('unreachable: the shop zone is a zone');
-})();
-
 /**
- * The shop day an instant falls on (`YYYY-MM-DD`, Europe/Sofia) — UI
- * formatting of a stamp, read on the feature's zone. Every instant the card
- * holds is inside the brand's window: one outside it is a defect.
+ * The shop day an instant falls on (`YYYY-MM-DD`) on the shop's zone — the
+ * one the card's store resolved (Law 7.2: the location's, the default
+ * location's here) — UI formatting of a stamp. Every instant the card holds
+ * is inside the brand's window: one outside it is a defect.
  */
-export function shopDayOf(ms: number): LocalDate {
+export function shopDayOf(ms: number, zone: TimeZone): LocalDate {
   const instant = UtcEpochMs.of(ms);
   if (!instant.ok) defect(`${ms} is not an instant`);
-  return ZonedTimeSystem.toLocal(instant.value, CARD_SHOP_ZONE).localDate;
+  return ZonedTimeSystem.toLocal(instant.value, zone).localDate;
 }
 
 /** «4.09» · «6.03.2025 г.» — a fact line's or a caption's date (R59). */

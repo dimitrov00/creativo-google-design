@@ -191,15 +191,17 @@
              Settled rows stay inert — no hover promise on a dead surface
              (case-study §2.5). -->
         <ui-list-group role="list" data-testid="account-completion-items">
-          @for (item of progress.items; track item.key) { @if (item.done) {
+          @for (item of progress.items; track item.profileCompletionKey) { @if
+          (item.done) {
           <ui-list-row
             role="listitem"
             class="account-completion__item"
             data-done="true"
-            [attr.data-testid]="'account-completion-' + item.key"
+            [attr.data-testid]="'account-completion-' + keyWord(item.profileCompletionKey)"
           >
             <ui-icon uiLeading uiScale="medium" uiName="checklist.done" />
-            {{ t('account.completion.items.' + item.key) }}
+            {{ t('account.completion.items.' +
+            keyWord(item.profileCompletionKey)) }}
           </ui-list-row>
           } @else {
           <a
@@ -209,11 +211,12 @@
             class="account-completion__item"
             data-done="false"
             routerLink="/onboarding"
-            [queryParams]="{ phase: 'personalize', step: personalizeStep(item.key) }"
-            [attr.data-testid]="'account-completion-' + item.key"
+            [queryParams]="{ phase: 'personalize', step: personalizeStep(item.profileCompletionKey) }"
+            [attr.data-testid]="'account-completion-' + keyWord(item.profileCompletionKey)"
           >
             <ui-icon uiLeading uiScale="medium" uiName="checklist.pending" />
-            {{ t('account.completion.items.' + item.key) }}
+            {{ t('account.completion.items.' +
+            keyWord(item.profileCompletionKey)) }}
             <ng-container ngProjectAs="[uiTrailing]">
               <ui-icon uiTrailing uiName="nav.disclosure" />
             </ng-container>

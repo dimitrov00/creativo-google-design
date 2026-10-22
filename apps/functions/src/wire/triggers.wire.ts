@@ -7,7 +7,7 @@ import {
   type Result,
   TriggerEventId,
   UserId,
-  type UtcEpochMs,
+  UtcEpochMs,
 } from '@core/primitives';
 import { BookingPolicy, PreciseInstant } from '@core/components';
 import {
@@ -17,7 +17,6 @@ import {
 } from '@core/entities';
 import {
   type AttemptFailure,
-  AttemptOutcome,
   AuditSystem,
   ClientStatsSystem,
   type ProfileChange,
@@ -34,19 +33,22 @@ import {
   type RebuildBusyCommand,
   type RebuildCapacityCommand,
   repositoryFailure,
-  type SampleLeadTimeCommand,
   type StartPolicyRecomputeCommand,
 } from '@core/pipelines';
-import { type DeliveredEvent, type EdgePorts, WIRE_ZONE } from '../edge';
+import {
+  attemptLineFields,
+  type DeliveredEvent,
+  type EdgePorts,
+} from '../edge';
 
 /**
  * The flip-1 TRIGGERS' edge (blueprint §4.1, F1-3): a Firestore write or a
  * schedule tick in, a pipeline command out — and, for the retrying ones, how
  * a pipeline's answer becomes today's attempt line and redelivery. A decoder
  * reads the event as stored (the document body IS the entity minus `id`,
- * Law 5) and says the tenant's zone in one place (`WIRE_ZONE`, the
- * functions' `TENANT_ZONE`, flatten-spec F-4); it decides nothing a
- * pipeline decides.
+ * Law 5); it decides nothing a pipeline decides — no zone either: every
+ * pipeline reads its location's (or the default location's) `timeZone`
+ * itself (Law 7.2, flatten-spec F-4, Phase 4a 4A-11).
  *
  * - `decodeRebuildBusyEvent` — both sides of an `appointments` write;
  * - `decodeCapacityEvent` — a busy day, an exception, a roster, a shop, the
@@ -59,8 +61,7 @@ import { type DeliveredEvent, type EdgePorts, WIRE_ZONE } from '../edge';
  *   `decodePolicySweepRun` — the policy pass's settings write, job write and
  *   daily tick;
  * - `decodeProfileChangeEvent` — a `users/{uid}` write, its writer from the
- *   auth context;
- * - `decodeLeadTimeRun` — the daily sample's tick.
+ *   auth context and both sides' `profileEditedAtUtcMs` stamps.
  *
  * Triggers keep today's options (F1-2); attempts and budgets are
  * `edge.ts`'s (`retryingTrigger`, `workBudget`).
@@ -162,7 +163,6 @@ export function decodeRebuildBusyEvent(
       event.params.appointmentId,
     ),
     after: entityOf<Appointment>(event.data?.after, event.params.appointmentId),
-    timeZone: WIRE_ZONE,
   };
 }
 
@@ -192,27 +192,18 @@ export function decodeCapacityEvent(
       const key = BusyKey.parse(params.docId ?? '');
       if (key === null) return null;
       const { barberId, localDate } = BusyKey.split(key);
-      return {
-        capacityTrigger: CapacityTrigger.Day,
-        barberId,
-        localDate,
-        timeZone: WIRE_ZONE,
-      };
+      return { capacityTrigger: CapacityTrigger.Day, barberId, localDate };
     }
     case CapacitySource.Roster: {
       const barberId = BarberId.parse(params.barberId ?? '');
       return barberId.ok
-        ? {
-            capacityTrigger: CapacityTrigger.Roster,
-            barberId: barberId.value,
-            timeZone: WIRE_ZONE,
-          }
+        ? { capacityTrigger: CapacityTrigger.Roster, barberId: barberId.value }
         : null;
     }
     case CapacitySource.Location:
     case CapacitySource.Settings:
     case CapacitySource.Sweep:
-      return { capacityTrigger: CapacityTrigger.Sweep, timeZone: WIRE_ZONE };
+      return { capacityTrigger: CapacityTrigger.Sweep };
   }
 }
 
@@ -221,9 +212,7 @@ export function decodeMatchWaitlistEvent(
   event: DocumentWriteEvent<{ readonly docId: string }>,
 ): MatchWaitlistCommand | null {
   const key = BusyKey.parse(event.params.docId);
-  return key === null
-    ? null
-    : { localDate: BusyKey.split(key).localDate, timeZone: WIRE_ZONE };
+  return key === null ? null : { localDate: BusyKey.split(key).localDate };
 }
 
 /**
@@ -290,9 +279,22 @@ export function decodePolicySweepRun(
   };
 }
 
-/** The daily lead-time sample's command: the tenant's clock. */
-export function decodeLeadTimeRun(): SampleLeadTimeCommand {
-  return { timeZone: WIRE_ZONE };
+/**
+ * A side's raw `profileEditedAtUtcMs` stamp (Phase 4a 4A-16): the stored
+ * number as its brand; an absent side, an absent key or a value that is no
+ * instant reads `null`. Decoded only — whether the callable already audited
+ * the event is `AuditSystem.planProfileChange`'s.
+ */
+function profileEditedAtOf(
+  snapshot: StoredSnapshot | undefined,
+): UtcEpochMs | null {
+  if (snapshot?.exists !== true) return null;
+  const stamp = new Map<string, unknown>(Object.entries(bodyOf(snapshot))).get(
+    'profileEditedAtUtcMs',
+  );
+  if (typeof stamp !== 'number') return null;
+  const instant = UtcEpochMs.of(stamp);
+  return instant.ok ? instant.value : null;
 }
 
 /** A `users/{uid}` write as the profile change it audits — field NAMES only. */
@@ -309,6 +311,8 @@ export function decodeProfileChangeEvent(
     beforeExists: before?.exists === true,
     afterExists: after?.exists === true,
     fields: AuditSystem.changedProfileFields(bodyOf(before), bodyOf(after)),
+    beforeProfileEditedAtUtcMs: profileEditedAtOf(before),
+    afterProfileEditedAtUtcMs: profileEditedAtOf(after),
   };
 }
 
@@ -320,12 +324,6 @@ export type AttemptReport = {
   readonly attemptFailure: AttemptFailure | null;
   /** A failure the work got past — its line logged, never rethrown. */
   readonly survivedFailure: AttemptFailure | null;
-};
-
-/** Today's attempt-line outcome spelling (`lib/trigger-attempts.ts`). */
-const LEGACY_ATTEMPT_OUTCOME: { readonly [K in AttemptOutcome]: string } = {
-  [AttemptOutcome.Transient]: 'transient',
-  [AttemptOutcome.Permanent]: 'permanent',
 };
 
 /**
@@ -344,7 +342,7 @@ export function attemptThrowable(failure: AttemptFailure): unknown {
   });
 }
 
-/** ONE attempt line for a failure the work survived — today's keys and values. */
+/** ONE attempt line for a failure the work survived — the edge's one line (`attemptLineFields`). */
 export function logAttempt(
   fn: string,
   event: DeliveredEvent,
@@ -360,13 +358,7 @@ export function logAttempt(
     failure,
     ports.nowUtcMs(),
   );
-  ports.log('error', 'trigger attempt failed', {
-    fn: line.fn,
-    eventId: line.eventId,
-    outcome: LEGACY_ATTEMPT_OUTCOME[line.attemptOutcome],
-    code: line.failureCode,
-    ageMs: line.ageMs,
-  });
+  ports.log('error', 'trigger attempt failed', attemptLineFields(line));
 }
 
 /**

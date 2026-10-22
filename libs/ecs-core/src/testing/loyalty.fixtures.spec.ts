@@ -21,6 +21,7 @@ import {
   StreakRule,
   SystemSource,
   StreakState,
+  VoucherStatus,
   type StreakHeadRule,
 } from '@core/components';
 import type { LoyaltyAccount } from '@core/entities';
@@ -40,6 +41,7 @@ import {
 import {
   FIXTURE_STREAK_OPENED_AT_UTC_MS,
   type LoyaltyClientFixture,
+  giftVoucherFixtures,
   giftVouchersJson,
   loyaltyAccountFixtures,
   loyaltyAccountJson,
@@ -706,5 +708,42 @@ describe('streakDefinitionVersionFixture — the history the seed gives the head
     expect(
       streakDefinitionVersionFixture({ withdrawnAtUtcMs }).withdrawnAtUtcMs,
     ).toBe(1);
+  });
+});
+
+describe('giftVoucherFixtures — the five vouchers as the vouchers port answers them', () => {
+  const vouchers = giftVoucherFixtures();
+
+  it('spreads each document id in, in Firestore’s id order, the body as stored', () => {
+    const stored = Object.entries(giftVouchersJson.giftVouchers);
+    expect(vouchers.map((voucher) => voucher.id)).toEqual(
+      stored.map(([id]) => id).sort(),
+    );
+    for (const { id, ...body } of vouchers) {
+      expect(body, id).toEqual(new Map(stored).get(id));
+    }
+  });
+
+  it('holds five vouchers, each under its own code, never more left than was issued', () => {
+    expect(vouchers).toHaveLength(5);
+    expect(new Set(vouchers.map((voucher) => voucher.code)).size).toBe(5);
+    for (const voucher of vouchers) {
+      expect(Number.isInteger(voucher.balanceCents), voucher.id).toBe(true);
+      expect(voucher.balanceCents, voucher.id).toBeGreaterThanOrEqual(0);
+      expect(voucher.balanceCents, voucher.id).toBeLessThanOrEqual(
+        voucher.initialValueCents,
+      );
+      expect(Object.values(VoucherStatus), voucher.id).toContain(
+        voucher.voucherStatus,
+      );
+    }
+  });
+
+  it('hands them out frozen, all the way down', () => {
+    expect(Object.isFrozen(vouchers)).toBe(true);
+    for (const voucher of vouchers) {
+      expect(Object.isFrozen(voucher), voucher.id).toBe(true);
+    }
+    expect(giftVoucherFixtures()).toBe(vouchers);
   });
 });

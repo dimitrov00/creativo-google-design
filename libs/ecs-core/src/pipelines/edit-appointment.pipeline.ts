@@ -20,6 +20,10 @@ import {
   SubjectRelationship,
   VoucherCode,
   WriteOp,
+  EditCommand,
+  RequestedSubjectRole,
+  ResizeEdge,
+  type BookingCall,
 } from '@core/components';
 import {
   BookingError,
@@ -33,20 +37,24 @@ import {
   type CouponGrantId,
   type CouponId,
   type CustomerId,
-  type DurationMinutes,
   type LocationId,
-  OperationId,
-  type PriceCents,
+  type OperationId,
   type SeatId,
   SeatKeyText,
   type ServiceId,
-  type ServiceVariantId,
+  type TimeError,
   type TimeZone,
   type UserId,
   EndMinute,
   LocalDate,
-  type MinuteOfDay,
+  MinuteOfDay,
   UtcEpochMs,
+  StaffEditError,
+  type StaffEditBeforeArrival,
+  type StaffEditForbidden,
+  type StaffEditInvalidCommand,
+  type StaffEditStale,
+  type StaffEditOverlaps,
 } from '@core/primitives';
 import {
   type AccountContact,
@@ -78,7 +86,6 @@ import {
   CustomerRecordSystem,
   type DecideBookingInput,
   type DecisionStandingSeat,
-  EditCommand,
   type EditCommandRequest,
   type EditDraft,
   GuestLabelSystem,
@@ -87,20 +94,10 @@ import {
   type PendingDiscount,
   type PendingDiscounts,
   type PendingVouchers,
-  type RequestedSeatInput,
-  type RequestedSubjectInput,
-  RequestedSubjectRole,
-  ResizeEdge,
   type ResolvedCode,
   type ResolvedGrant,
   type SeatedSpan,
   SeatingRuleSystem,
-  StaffEditError,
-  StaffEditErrorCode,
-  type StaffEditBeforeArrival,
-  type StaffEditForbidden,
-  type StaffEditInvalidCommand,
-  type StaffEditStale,
   VoucherSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -167,101 +164,18 @@ import {
  *   `revision:<n>`) — a replay appends them again under the same key.
  */
 
-/** A requested discount as the batch names it. */
-export type StaffDiscountRequest =
-  | {
-      readonly discountSource: typeof DiscountSource.Grant;
-      readonly grantId: CouponGrantId;
-    }
-  | {
-      readonly discountSource: typeof DiscountSource.Code;
-      /** Normalised (trimmed, upper-case). */
-      readonly code: VoucherCode;
-    }
-  | {
-      readonly discountSource: typeof DiscountSource.Manual;
-      readonly discountMethod: typeof DiscountMethod.PercentOff;
-      readonly discountPercent: number;
-    }
-  | {
-      readonly discountSource: typeof DiscountSource.Manual;
-      readonly discountMethod: typeof DiscountMethod.FixedAmount;
-      readonly discountAmountCents: PriceCents;
-    };
-
-/** Who an added seat is for: the visit's owner, or a guest by label. */
-export type AddedSeatSubject =
-  | { readonly requestedSubjectRole: typeof RequestedSubjectRole.Self }
-  | {
-      readonly requestedSubjectRole: typeof RequestedSubjectRole.Guest;
-      readonly label: SeatLabel;
-    };
-
 /**
- * One staff command as the edge decoded it — its times INSTANTS (the
- * pipeline reads them on the shop's clock, Law 7.3), every field present.
+ * The staff edit as the edge decoded it — the call component
+ * `BookingCall.StaffEdit` (each command's placement on the shop's wall
+ * clock: a `MOVE`'s day and start, a `RESIZE`'s day and the minute its
+ * handle lands on, an `ADD_SEAT`'s day and start — the pipeline places them
+ * on the target shop's zone, Law 7.3) & the verified roles and actor.
  */
-export type EditCommandInput =
-  | {
-      readonly editCommand: typeof EditCommand.Move;
-      readonly startUtcMs: UtcEpochMs;
-      readonly seatIds: readonly SeatId[] | null;
-    }
-  | {
-      readonly editCommand: typeof EditCommand.Resize;
-      readonly resizeEdge: ResizeEdge;
-      /** Already rounded to the whole minute (the legacy fold's reading). */
-      readonly atUtcMs: UtcEpochMs;
-      readonly seatIds: readonly SeatId[] | null;
-    }
-  | {
-      readonly editCommand: typeof EditCommand.Reprice;
-      readonly seatId: SeatId;
-      readonly priceCents: PriceCents;
-    }
-  | {
-      readonly editCommand: typeof EditCommand.Redurate;
-      readonly seatId: SeatId;
-      readonly durationMinutes: DurationMinutes;
-    }
-  | {
-      readonly editCommand: typeof EditCommand.Restaff;
-      readonly seatId: SeatId;
-      readonly barberId: BarberId;
-    }
-  | {
-      readonly editCommand: typeof EditCommand.AddSeat;
-      readonly seatId: SeatId;
-      readonly serviceId: ServiceId;
-      readonly variantId: ServiceVariantId | null;
-      readonly barberId: BarberId;
-      readonly startUtcMs: UtcEpochMs;
-      readonly durationMinutes: DurationMinutes;
-      readonly addedSubject: AddedSeatSubject;
-    }
-  | {
-      readonly editCommand: typeof EditCommand.RemoveSeat;
-      readonly seatId: SeatId;
-    }
-  | {
-      readonly editCommand: typeof EditCommand.Relocate;
-      readonly locationId: LocationId;
-    }
-  | {
-      readonly editCommand: typeof EditCommand.Discounts;
-      readonly discounts: readonly StaffDiscountRequest[];
-    }
-  | {
-      readonly editCommand: typeof EditCommand.Vouchers;
-      /** Normalised, distinct. */
-      readonly codes: readonly VoucherCode[];
-    };
-
 export type EditAppointmentCommand = {
   readonly appointmentId: AppointmentId;
   /** The VERIFIED token's roles — a new manual discount needs one that handles money. */
   readonly actorRoles: readonly string[];
-  readonly commands: readonly EditCommandInput[];
+  readonly commands: readonly BookingCall.EditCommand[];
   /** «Запази въпреки застъпването» — the ONLY thing that turns the collision check off. */
   readonly acknowledgedOverlap: boolean;
   /** The revision the intent was drawn on; `null` makes no claim. */
@@ -279,15 +193,6 @@ export type EditAppointmentAnswer = {
   readonly replayed: boolean;
 };
 
-/** A collision the shop may acknowledge — the edge it names is the lone resize's handle. */
-export type StaffEditOverlaps = {
-  readonly errorCode: typeof StaffEditErrorCode.Overlaps;
-  readonly barberId: BarberId;
-  readonly localDate: LocalDate;
-  readonly startMinutes: MinuteOfDay;
-  readonly edge: ResizeEdge | null;
-};
-
 export type EditAppointmentError =
   | StaffEditInvalidCommand
   | StaffEditForbidden
@@ -295,6 +200,7 @@ export type EditAppointmentError =
   | StaffEditBeforeArrival
   | StaffEditOverlaps
   | BookingError
+  | TimeError
   | RepositoryError;
 
 export type EditAppointmentPorts = TxPorts &
@@ -319,7 +225,7 @@ const STAFF_VERB: { readonly [C in EditCommand]: StaffEditAction } = {
 };
 
 /** A batch's verb: its lone command's, or a save. */
-function verbOf(commands: readonly EditCommandInput[]): StaffEditAction {
+function verbOf(commands: readonly BookingCall.EditCommand[]): StaffEditAction {
   const only = commands.length === 1 ? commands[0] : undefined;
   return only === undefined
     ? AuditAction.BookingStaffSave
@@ -328,9 +234,9 @@ function verbOf(commands: readonly EditCommandInput[]): StaffEditAction {
 
 /** The batch's LAST word on the discounts, or `null` when it said nothing (keep). */
 function lastDiscounts(
-  commands: readonly EditCommandInput[],
-): readonly StaffDiscountRequest[] | null {
-  let last: readonly StaffDiscountRequest[] | null = null;
+  commands: readonly BookingCall.EditCommand[],
+): readonly BookingCall.StaffDiscount[] | null {
+  let last: readonly BookingCall.StaffDiscount[] | null = null;
   for (const command of commands) {
     if (command.editCommand === EditCommand.Discounts) last = command.discounts;
   }
@@ -339,7 +245,7 @@ function lastDiscounts(
 
 /** The batch's last word on the vouchers. */
 function pendingVouchersOf(
-  commands: readonly EditCommandInput[],
+  commands: readonly BookingCall.EditCommand[],
 ): PendingVouchers {
   let codes: readonly VoucherCode[] | null = null;
   for (const command of commands) {
@@ -351,7 +257,9 @@ function pendingVouchersOf(
 }
 
 /** The shop the batch moves the visit to — the last `RELOCATE` — or `null`. */
-function relocatedTo(commands: readonly EditCommandInput[]): LocationId | null {
+function relocatedTo(
+  commands: readonly BookingCall.EditCommand[],
+): LocationId | null {
   let target: LocationId | null = null;
   for (const command of commands) {
     if (command.editCommand === EditCommand.Relocate)
@@ -375,7 +283,7 @@ type Loaded = {
   readonly targetLocationId: LocationId;
   readonly freshSeatIds: readonly SeatId[];
   /** The decision's subject of each fresh `SELF` seat — the owner, whoever the fold placed. */
-  readonly freshSubjects: ReadonlyMap<SeatId, RequestedSubjectInput>;
+  readonly freshSubjects: ReadonlyMap<SeatId, BookingCall.SubjectInput>;
   readonly addedAccounts: readonly UserId[];
   readonly grants: readonly CouponGrant[];
   readonly coupons: ReadonlyMap<CouponId, Coupon | null>;
@@ -496,39 +404,61 @@ function wallOf(at: UtcEpochMs, zone: TimeZone) {
 }
 
 /**
+ * A wall-clock minute the shop's zone shows — the ingestion boundary's ONE
+ * check (Law 7.3, Phase 4a 4A-2 (a)): a time inside the spring-forward gap
+ * is refused `DST_GAP_INVALID_TIME`, never shifted; a fall-back repeat
+ * reads the earlier offset. An exclusive end of `1440` is the next day's
+ * first instant, which every zone shows.
+ */
+function onTheClock(
+  localDate: LocalDate,
+  minute: number,
+  zone: TimeZone,
+): Result<UtcEpochMs | null, TimeError> {
+  const start = MinuteOfDay.of(minute);
+  return start.ok
+    ? ZonedTimeSystem.toUtc(localDate, start.value, zone)
+    : Result.ok(null);
+}
+
+/**
  * ONE command on the running draft's clock (the boundary's reading, Law
  * 7.3): a move names the day it lands on; a resize start must stay on the
- * running day, a resize end may be its closing midnight (an end at or
- * before the day's start drives the duration to nothing: `minutes`; past
- * the midnight it leaves the day: `atUtcMs`); an added seat must start on the
- * running day.
+ * running day (`atMinutes`), a resize end may be its closing midnight (an
+ * end at or before the day's start drives the duration to nothing:
+ * `minutes`; past the midnight it leaves the day: `atMinutes`); an added
+ * seat must start on the running day (`startMinutes`). Every wall clock a
+ * command names must be one the shop's zone shows.
  */
 function requestOf(
-  command: EditCommandInput,
+  command: BookingCall.EditCommand,
   day: LocalDate,
   zone: TimeZone,
   owner: UserId | null,
-): Result<EditCommandRequest, StaffEditInvalidCommand> {
+): Result<EditCommandRequest, StaffEditInvalidCommand | TimeError> {
   switch (command.editCommand) {
     case EditCommand.Move: {
-      const wall = wallOf(command.startUtcMs, zone);
+      const shown = onTheClock(command.localDate, command.startMinutes, zone);
+      if (!shown.ok) return shown;
       return Result.ok({
         editCommand: EditCommand.Move,
-        localDate: wall.localDate,
-        startMinutes: wall.minute,
+        localDate: command.localDate,
+        startMinutes: command.startMinutes,
         seatIds: command.seatIds,
       });
     }
     case EditCommand.Resize: {
-      const wall = wallOf(command.atUtcMs, zone);
+      const shown = onTheClock(command.localDate, command.atMinutes, zone);
+      if (!shown.ok) return shown;
       if (command.resizeEdge === ResizeEdge.End) {
         const minutes =
-          LocalDate.daysBetween(day, wall.localDate) * 1440 + wall.minute;
+          LocalDate.daysBetween(day, command.localDate) * 1440 +
+          command.atMinutes;
         if (minutes <= 0)
           return Result.err(StaffEditError.invalidCommand('minutes'));
         const end = EndMinute.of(minutes);
         if (!end.ok)
-          return Result.err(StaffEditError.invalidCommand('atUtcMs'));
+          return Result.err(StaffEditError.invalidCommand('atMinutes'));
         return Result.ok({
           editCommand: EditCommand.Resize,
           resizeEdge: ResizeEdge.End,
@@ -536,21 +466,26 @@ function requestOf(
           seatIds: command.seatIds,
         });
       }
-      if (wall.localDate !== day) {
-        return Result.err(StaffEditError.invalidCommand('atUtcMs'));
+      if (command.localDate !== day) {
+        return Result.err(StaffEditError.invalidCommand('atMinutes'));
       }
       return Result.ok({
         editCommand: EditCommand.Resize,
         resizeEdge: ResizeEdge.Start,
-        atMinutes: wall.minute,
+        atMinutes: command.atMinutes,
         seatIds: command.seatIds,
       });
     }
     case EditCommand.AddSeat: {
-      const wall = wallOf(command.startUtcMs, zone);
-      if (wall.localDate !== day) {
-        return Result.err(StaffEditError.invalidCommand('startUtcMs'));
+      if (command.localDate !== day) {
+        return Result.err(StaffEditError.invalidCommand('startMinutes'));
       }
+      const shown = ZonedTimeSystem.toUtc(
+        command.localDate,
+        command.startMinutes,
+        zone,
+      );
+      if (!shown.ok) return shown;
       const occupant: AccountOccupant =
         command.addedSubject.requestedSubjectRole ===
           RequestedSubjectRole.Self && owner !== null
@@ -571,11 +506,11 @@ function requestOf(
         serviceId: command.serviceId,
         variantId: command.variantId,
         barberId: command.barberId,
-        startMinutes: wall.minute,
+        startMinutes: command.startMinutes,
         durationMinutes: command.durationMinutes,
         // The instant the seat ends, on the absolute timeline (its stamp on a finished visit).
         workedAtUtcMs: UtcEpochMs.plusMs(
-          command.startUtcMs,
+          shown.value,
           command.durationMinutes * 60_000,
         ),
         ...occupant,
@@ -602,7 +537,7 @@ function requestOf(
  */
 function foldOnClock(
   stored: Appointment,
-  commands: readonly EditCommandInput[],
+  commands: readonly BookingCall.EditCommand[],
   zone: TimeZone,
   customerIds: ReadonlyMap<UserId, CustomerId>,
 ): Result<
@@ -611,7 +546,7 @@ function foldOnClock(
     readonly fresh: readonly SeatId[];
     readonly requests: readonly EditCommandRequest[];
   },
-  StaffEditInvalidCommand
+  StaffEditInvalidCommand | TimeError
 > {
   if (commands.length === 0)
     return Result.err(StaffEditError.invalidCommand('command'));
@@ -648,7 +583,7 @@ function foldOnClock(
 
 /** The accounts the batch adds — an added `SELF` seat names the owner (nobody else can join through an edit). */
 function addedAccountsOf(
-  commands: readonly EditCommandInput[],
+  commands: readonly BookingCall.EditCommand[],
   owner: UserId | null,
 ): readonly UserId[] {
   if (owner === null) return [];
@@ -810,7 +745,7 @@ async function readEdit(
   const customerIds = customerIdsFor(addedAccounts, hash);
   const folded = foldOnClock(stored, cmd.commands, zone, customerIds);
   if (!folded.ok) return { snapshot: 'REFUSED', error: folded.error };
-  const freshSubjects = new Map<SeatId, RequestedSubjectInput>();
+  const freshSubjects = new Map<SeatId, BookingCall.SubjectInput>();
   for (const command of cmd.commands) {
     if (
       command.editCommand === EditCommand.AddSeat &&
@@ -845,7 +780,7 @@ async function readEdit(
 }
 
 /** A stored seat's person as the decision's request — a `CLIENT` account cannot be re-decided. */
-function subjectOfSeat(seat: Seat): RequestedSubjectInput | null {
+function subjectOfSeat(seat: Seat): BookingCall.SubjectInput | null {
   if (seat.seatSubject === SeatSubject.Anonymous) {
     return {
       requestedSubjectRole: RequestedSubjectRole.Guest,
@@ -867,7 +802,7 @@ function subjectOfSeat(seat: Seat): RequestedSubjectInput | null {
 }
 
 /** A seat as the "one person, one chair" rule counts it. */
-function spanOf(seat: Seat, subject: RequestedSubjectInput): SeatedSpan {
+function spanOf(seat: Seat, subject: BookingCall.SubjectInput): SeatedSpan {
   return {
     seatId: seat.seatId,
     personKey: GuestLabelSystem.personKeyOf(subject),
@@ -1028,7 +963,7 @@ function decideEdit(
   }
 
   // 4. The decision, under the shop's rules, with the stored ids and terms.
-  const lines: RequestedSeatInput[] = [];
+  const lines: BookingCall.SeatInput[] = [];
   const overrides: StaffTermsOverride[] = [];
   for (const seat of draft.seats) {
     const subject =
@@ -1107,13 +1042,14 @@ function decideEdit(
     // With the window off for staff, `slot_unavailable` can mean nothing but
     // a collision — the acknowledgeable overlap, naming the lone resize's handle.
     const only = cmd.commands.length === 1 ? cmd.commands[0] : undefined;
-    return Result.err({
-      errorCode: StaffEditErrorCode.Overlaps,
-      barberId: decided.error.barberId,
-      localDate: decided.error.localDate,
-      startMinutes: decided.error.startMinutes,
-      edge: only?.editCommand === EditCommand.Resize ? only.resizeEdge : null,
-    });
+    return Result.err(
+      StaffEditError.overlaps(
+        decided.error.barberId,
+        decided.error.localDate,
+        decided.error.startMinutes,
+        only?.editCommand === EditCommand.Resize ? only.resizeEdge : null,
+      ),
+    );
   }
 
   // 5. The decided seats with the stored outcomes and tips carried back.

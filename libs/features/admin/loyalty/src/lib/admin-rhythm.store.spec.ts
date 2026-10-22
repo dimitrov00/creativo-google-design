@@ -11,11 +11,15 @@ import {
 import { NEVER, Observable, of } from 'rxjs';
 import { take } from 'rxjs/operators';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ZonedDateTime } from '@creativo/application/booking';
 import {
   CLIENT_STATS_READ_PORTS,
+  CLOCK_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  ID_PORTS,
+  LOCATION_LOAD_PORTS,
   STREAK_DEFINITION_PORTS,
   STREAK_PUBLISH_PORTS,
+  provideFlags,
 } from '@creativo/infrastructure/firebase-app';
 import {
   ClientStats,
@@ -37,6 +41,7 @@ import {
 import type { ClientStatsRecord, StreakDefinition } from '@core/entities';
 import type {
   ClientStatsPagePorts,
+  LocationLoadPorts,
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
 } from '@core/ports';
@@ -59,10 +64,16 @@ import {
   StreakPreviewOutcome,
   StreakPreviewUnavailable,
   StreakRuleSystem,
+  ZonedTimeSystem,
 } from '@core/systems';
 import {
+  FIXTURE_TIME_ZONE,
   type StreakWorld,
+  locationFixture,
   memoryClientStatsReadPorts,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStreakDefinitionPorts,
   memoryStreakPublishGatewayPorts,
   memoryStreakWorld,
@@ -72,11 +83,6 @@ import {
   unwrapOk,
   utcMs,
 } from '@core/testing';
-import {
-  CLOCK,
-  ID_GENERATOR,
-  provideFeatureFlags,
-} from '@creativo/application/shared';
 import {
   ADMIN_RHYTHM_CHOICES,
   ADMIN_RHYTHM_HISTORY_LIMIT,
@@ -88,6 +94,7 @@ import {
   fixedInterval,
   patchedRhythmDraft,
   personalInterval,
+  RhythmLoadState,
   rhythmBoundsOf,
 } from './admin-rhythm.store';
 import { type RhythmRecorder, rhythmRecorder } from './testing/rhythm-recorder';
@@ -338,6 +345,8 @@ interface RigOptions {
   readonly port?: (StreakDefinitionPorts & StreakPublishGatewayPorts) | null;
   /** What is bound in place of the three clients' statistics; `null` binds none. */
   readonly directory?: ClientStatsPagePorts | null;
+  /** Where the shop's zone is read — the fixture centre shop as the default location unless said. */
+  readonly locations?: LocationLoadPorts;
 }
 
 function rig(options: RigOptions = {}) {
@@ -352,7 +361,7 @@ function rig(options: RigOptions = {}) {
   TestBed.configureTestingModule({
     providers: [
       AdminRhythmStore,
-      provideFeatureFlags(options.flags ?? { 'loyalty.streaks': true }),
+      provideFlags(options.flags ?? { 'loyalty.streaks': true }),
       ...provideTransloco({
         config: {
           availableLangs: ['bg', 'en'],
@@ -363,19 +372,34 @@ function rig(options: RigOptions = {}) {
         loader: CatalogueLoader,
       }),
       {
-        provide: CLOCK,
+        provide: CLOCK_PORTS,
         useValue: {
-          now: (zone: string) => ZonedDateTime.fromISO(clock.now, zone),
+          // The clock's reading is a Sofia wall-clock time, read in the shop's zone.
+          nowUtcMs: () =>
+            unwrapOk(ZonedTimeSystem.parseIsoIn(clock.now, FIXTURE_TIME_ZONE)),
         },
       },
       {
-        provide: ID_GENERATOR,
+        provide: ID_PORTS,
         useValue: {
-          next: () => {
+          nextId: () => {
             issued += 1;
             return `request-${String(issued).padStart(12, '0')}`;
           },
         },
+      },
+      // The shop's zone: the default location's, the fixture centre shop's.
+      {
+        provide: LOCATION_LOAD_PORTS,
+        useValue:
+          options.locations ??
+          memoryLocationLoadPorts(
+            memoryProgramsWorld({ locations: [locationFixture()] }),
+          ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
       ...bind(STREAK_DEFINITION_PORTS, port),
       ...bind(STREAK_PUBLISH_PORTS, port),
@@ -425,7 +449,7 @@ const UNANSWERED = { ok: false, error: RepositoryError.unavailable() };
 
 const numbersOf = (store: AdminRhythmStore): readonly number[] => {
   const versions = store.versions();
-  return versions.status === 'ready'
+  return versions.rhythmLoadState === RhythmLoadState.Ready
     ? versions.data.map((version) => version.version)
     : [];
 };
@@ -792,8 +816,10 @@ describe('AdminRhythmStore: opening', () => {
     const { store } = rig({ rules });
     store.load();
 
-    expect(store.schedule()).toEqual({ status: 'loading' });
-    expect(store.versions().status).toBe('loading');
+    expect(store.schedule()).toEqual({
+      rhythmLoadState: RhythmLoadState.Loading,
+    });
+    expect(store.versions().rhythmLoadState).toBe(RhythmLoadState.Loading);
     expect(store.inForce()).toBeNull();
     expect(store.upcoming()).toBeNull();
     expect(store.dirty()).toBe(false);
@@ -804,16 +830,16 @@ describe('AdminRhythmStore: opening', () => {
 
     rules.tellHeads();
     await settle();
-    expect(store.schedule().status).toBe('ready');
+    expect(store.schedule().rhythmLoadState).toBe(RhythmLoadState.Ready);
   });
 
   it('opens on the rule in force, with its history', async () => {
     const { store, rules } = await loaded();
 
     const schedule = store.schedule();
-    expect(schedule.status).toBe('ready');
+    expect(schedule.rhythmLoadState).toBe(RhythmLoadState.Ready);
     expect(
-      schedule.status === 'ready' &&
+      schedule.rhythmLoadState === RhythmLoadState.Ready &&
         StreakRuleSystem.current(schedule.data).version,
     ).toBe(1);
     expect(store.published()).toBe(true);
@@ -846,12 +872,15 @@ describe('AdminRhythmStore: opening', () => {
   it('opens a shop with no rule on the recommended one, ready to be saved', async () => {
     const { store } = await loaded({ rules: unpublished() });
 
-    expect(store.schedule().status).toBe('ready');
+    expect(store.schedule().rhythmLoadState).toBe(RhythmLoadState.Ready);
     expect(store.published()).toBe(false);
     expect(store.draft()).toEqual(RECOMMENDED);
     expect(store.dirty()).toBe(false);
     expect(store.canSave()).toBe(true);
-    expect(store.versions()).toEqual({ status: 'ready', data: [] });
+    expect(store.versions()).toEqual({
+      rhythmLoadState: RhythmLoadState.Ready,
+      data: [],
+    });
   });
 
   it('fails when the rule cannot be read, and reads again on «Опитай пак»', async () => {
@@ -859,17 +888,57 @@ describe('AdminRhythmStore: opening', () => {
     rules.failWith();
     const { store } = await loaded({ rules });
 
-    expect(store.schedule()).toEqual({ status: 'failed' });
-    expect(store.versions()).toEqual({ status: 'failed' });
+    expect(store.schedule()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
+    expect(store.versions()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
     expect(store.canSave()).toBe(false);
 
     rules.recover();
     store.retry();
     await settle();
 
-    expect(store.schedule().status).toBe('ready');
+    expect(store.schedule().rhythmLoadState).toBe(RhythmLoadState.Ready);
     expect(store.draft()).toEqual(RECOMMENDED);
     expect(numbersOf(store)).toEqual([1]);
+  });
+
+  it('reads the shop’s zone before the rule: a zone that cannot be read is the rule’s failed read, and «Опитай пак» reads both', async () => {
+    const rules = seeded();
+    const shops = memoryLocationLoadPorts(
+      memoryProgramsWorld({ locations: [locationFixture()] }),
+    );
+    let down = true;
+    const locations: LocationLoadPorts = {
+      loadLocation: (id) =>
+        down
+          ? Promise.resolve(
+              Result.err(RepositoryError.readFailed(null, 'down')),
+            )
+          : shops.loadLocation(id),
+    };
+    const { store } = await loaded({ rules, locations });
+
+    expect(store.schedule()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
+    // No rule is listened to on a day the page cannot name.
+    expect(rules.observations).toEqual([]);
+    expect(store.days()).toBeNull();
+    expect(store.effectiveFrom()).toBeNull();
+    expect(store.sample()).toBeNull();
+    expect(store.canSave()).toBe(false);
+
+    down = false;
+    store.retry();
+    await settle();
+
+    expect(store.schedule().rhythmLoadState).toBe(RhythmLoadState.Ready);
+    expect(rules.observations).toHaveLength(1);
+    expect(store.days()?.today).toBe(TODAY);
+    expect(store.draft()).toEqual(RECOMMENDED);
   });
 
   it('reads the history again when only the history failed', async () => {
@@ -879,8 +948,10 @@ describe('AdminRhythmStore: opening', () => {
       .mockResolvedValueOnce(Result.err(RepositoryError.unavailable()));
     const { store } = await loaded({ rules });
 
-    expect(store.schedule().status).toBe('ready');
-    expect(store.versions()).toEqual({ status: 'failed' });
+    expect(store.schedule().rhythmLoadState).toBe(RhythmLoadState.Ready);
+    expect(store.versions()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
 
     store.retry();
     await settle();
@@ -893,8 +964,12 @@ describe('AdminRhythmStore: opening', () => {
   it('fails without the rule’s port', async () => {
     const { store } = await loaded({ port: null });
 
-    expect(store.schedule()).toEqual({ status: 'failed' });
-    expect(store.versions()).toEqual({ status: 'failed' });
+    expect(store.schedule()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
+    expect(store.versions()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
     expect(store.patch(LOOSER)).toEqual(RECOMMENDED);
     expect(store.dirty()).toBe(false);
     await expect(store.save()).resolves.toEqual(UNANSWERED);
@@ -913,12 +988,20 @@ describe('AdminRhythmStore: opening', () => {
     store.load();
 
     await vi.advanceTimersByTimeAsync(ADMIN_RHYTHM_READ_TIMEOUT_MS - 1);
-    expect(store.schedule()).toEqual({ status: 'loading' });
-    expect(store.versions()).toEqual({ status: 'loading' });
+    expect(store.schedule()).toEqual({
+      rhythmLoadState: RhythmLoadState.Loading,
+    });
+    expect(store.versions()).toEqual({
+      rhythmLoadState: RhythmLoadState.Loading,
+    });
 
     await vi.advanceTimersByTimeAsync(1);
-    expect(store.schedule()).toEqual({ status: 'failed' });
-    expect(store.versions()).toEqual({ status: 'failed' });
+    expect(store.schedule()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
+    expect(store.versions()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
   });
 
   it('keeps the rule on screen when a later read fails', async () => {
@@ -927,7 +1010,7 @@ describe('AdminRhythmStore: opening', () => {
     rules.failWith();
     await settle();
 
-    expect(store.schedule().status).toBe('ready');
+    expect(store.schedule().rhythmLoadState).toBe(RhythmLoadState.Ready);
     expect(store.draft()).toEqual(RECOMMENDED);
   });
 
@@ -1297,7 +1380,7 @@ describe('AdminRhythmStore: «Запази»', () => {
     expect(store.inForce()?.version).toBe(1);
     const versions = store.versions();
     expect(
-      versions.status === 'ready' &&
+      versions.rhythmLoadState === RhythmLoadState.Ready &&
         versions.data.map((version) => [
           version.version,
           version.withdrawnAtUtcMs !== null,
@@ -1551,7 +1634,7 @@ describe('AdminRhythmStore: «Запази»', () => {
       ok: true,
       value: { effectiveFromLocalDate: '2026-09-30' },
     });
-    expect(store.days().today).toBe('2026-09-29');
+    expect(store.days()?.today).toBe('2026-09-29');
   });
 });
 
@@ -1728,7 +1811,7 @@ describe('AdminRhythmStore: a version that comes into force overnight', () => {
     expect(outcome).toMatchObject({ ok: false, error: STALE });
     expect(store.refusal()).toMatchObject(STALE);
     expect(rules.published).toEqual([]);
-    expect(store.days().today).toBe(TOMORROW);
+    expect(store.days()?.today).toBe(TOMORROW);
     expect(store.inForce()?.version).toBe(2);
     expect(store.upcoming()).toBeNull();
   });
@@ -1769,7 +1852,7 @@ describe('AdminRhythmStore: a version that comes into force overnight', () => {
 
     store.discard();
 
-    expect(store.days().today).toBe(TOMORROW);
+    expect(store.days()?.today).toBe(TOMORROW);
     expect(intervalOf(store.draft())).toEqual(StreakIntervalRule.fixed(14));
     expect(store.dirty()).toBe(false);
   });
@@ -1797,7 +1880,7 @@ describe('AdminRhythmStore: «Отмени»', () => {
     expect(store.withdrawing()).toBe(false);
     const versions = store.versions();
     expect(
-      versions.status === 'ready' &&
+      versions.rhythmLoadState === RhythmLoadState.Ready &&
         versions.data.map((version) => [
           version.version,
           version.withdrawnAtUtcMs !== null,
@@ -1937,15 +2020,19 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     const { store } = await previewing();
 
     store.patch({ interval: fixed(28) });
-    expect(store.preview()).toEqual({ status: 'loading' });
+    expect(store.preview()).toEqual({
+      rhythmLoadState: RhythmLoadState.Loading,
+    });
     expect(store.previewBusy()).toBe(true);
 
     await vi.advanceTimersByTimeAsync(599);
-    expect(store.preview()).toEqual({ status: 'loading' });
+    expect(store.preview()).toEqual({
+      rhythmLoadState: RhythmLoadState.Loading,
+    });
 
     await vi.advanceTimersByTimeAsync(1);
     expect(store.preview()).toEqual({
-      status: 'ready',
+      rhythmLoadState: RhythmLoadState.Ready,
       data: {
         streakPreviewOutcome: StreakPreviewOutcome.Estimate,
         clients: 3,
@@ -1966,11 +2053,13 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     await vi.advanceTimersByTimeAsync(400);
     store.patch({ interval: fixed(49) });
     await vi.advanceTimersByTimeAsync(400);
-    expect(store.preview()).toEqual({ status: 'loading' });
+    expect(store.preview()).toEqual({
+      rhythmLoadState: RhythmLoadState.Loading,
+    });
 
     await vi.advanceTimersByTimeAsync(200);
     expect(store.preview()).toMatchObject({
-      status: 'ready',
+      rhythmLoadState: RhythmLoadState.Ready,
       data: { after: { inRhythm: 2, inGrace: 0, broken: 1 }, out: 0 },
     });
   });
@@ -1991,7 +2080,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
 
     await vi.advanceTimersByTimeAsync(600);
     expect(store.preview()).not.toBe(first);
-    expect(store.preview()?.status).toBe('ready');
+    expect(store.preview()?.rhythmLoadState).toBe(RhythmLoadState.Ready);
     expect(store.previewBusy()).toBe(false);
     expect(calls).toHaveLength(1);
   });
@@ -2007,7 +2096,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     await vi.advanceTimersByTimeAsync(600);
 
     expect(store.preview()).toMatchObject({
-      status: 'ready',
+      rhythmLoadState: RhythmLoadState.Ready,
       data: {
         streakPreviewOutcome: StreakPreviewOutcome.Estimate,
         clients: 1_000,
@@ -2024,7 +2113,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     await vi.advanceTimersByTimeAsync(600);
 
     expect(store.preview()).toEqual({
-      status: 'ready',
+      rhythmLoadState: RhythmLoadState.Ready,
       data: {
         streakPreviewOutcome: StreakPreviewOutcome.Unavailable,
         reason: StreakPreviewUnavailable.Qualifier,
@@ -2053,7 +2142,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     await vi.advanceTimersByTimeAsync(600);
 
     expect(store.preview()).toMatchObject({
-      status: 'ready',
+      rhythmLoadState: RhythmLoadState.Ready,
       data: {
         streakPreviewOutcome: StreakPreviewOutcome.Estimate,
         before: { inRhythm: 2, inGrace: 0, broken: 1 },
@@ -2069,7 +2158,9 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     store.patch({ interval: fixed(28) });
     await vi.advanceTimersByTimeAsync(600);
 
-    expect(store.preview()).toEqual({ status: 'failed' });
+    expect(store.preview()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
     expect(store.previewBusy()).toBe(false);
     // The save does not wait for a preview.
     expect(store.canSave()).toBe(true);
@@ -2082,7 +2173,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(store.preview()).toMatchObject({
-      status: 'ready',
+      rhythmLoadState: RhythmLoadState.Ready,
       data: {
         streakPreviewOutcome: StreakPreviewOutcome.Estimate,
         clients: 3,
@@ -2100,11 +2191,15 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
 
     store.patch({ interval: fixed(35) });
     // No skeleton in between: there is nothing to wait for.
-    expect(store.preview()).toEqual({ status: 'failed' });
+    expect(store.preview()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
     expect(store.previewBusy()).toBe(false);
     await vi.advanceTimersByTimeAsync(600);
 
-    expect(store.preview()).toEqual({ status: 'failed' });
+    expect(store.preview()).toEqual({
+      rhythmLoadState: RhythmLoadState.Failed,
+    });
     expect(directory.calls).toHaveLength(1);
   });
 
@@ -2160,7 +2255,9 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
 
     store.patch({ interval: fixed(28) });
     await vi.advanceTimersByTimeAsync(600);
-    expect(store.preview()).toEqual({ status: 'loading' });
+    expect(store.preview()).toEqual({
+      rhythmLoadState: RhythmLoadState.Loading,
+    });
 
     store.discard();
     for (const answer of held.splice(0)) answer();
@@ -2180,7 +2277,7 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     await vi.advanceTimersByTimeAsync(600);
 
     expect(store.preview()).toMatchObject({
-      status: 'ready',
+      rhythmLoadState: RhythmLoadState.Ready,
       data: {
         before: { inRhythm: 2, inGrace: 0, broken: 1 },
         after: { inRhythm: 1, inGrace: 0, broken: 2 },
@@ -2196,7 +2293,9 @@ describe('AdminRhythmStore: «Какво ще се промени»', () => {
     await vi.advanceTimersByTimeAsync(ADMIN_RHYTHM_READ_TIMEOUT_MS);
 
     expect(vi.getTimerCount()).toBe(0);
-    expect(store.preview()).toEqual({ status: 'loading' });
+    expect(store.preview()).toEqual({
+      rhythmLoadState: RhythmLoadState.Loading,
+    });
   });
 });
 

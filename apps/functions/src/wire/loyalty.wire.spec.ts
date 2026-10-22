@@ -7,12 +7,14 @@ import {
   StreakExcuse,
   StreakInterval,
   StreakOnBreak,
+  StreakPublishOutcome,
   StreakQualifier,
   StreakRule,
   StreakRuleDirection,
   StreakTransition,
 } from '@core/components';
 import {
+  type LocalDate,
   RepositoryError,
   Result,
   ServiceId,
@@ -26,6 +28,10 @@ import type { PublishStreakDefinitionPorts } from '@core/pipelines';
 import {
   fixtureHash,
   localDate,
+  locationFixture,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStreakWorld,
   memoryTxPorts,
   pinnedNowUtcMs,
@@ -35,23 +41,13 @@ import {
   type StreakWorld,
   utcMs,
 } from '@core/testing';
-import {
-  type EdgeError,
-  isAnswered,
-  LegacyWireCode,
-  toHttpsError,
-  WIRE_ZONE,
-  WireShape,
-  wireRuleOf,
-} from '../edge';
+import { type EdgeError, isAnswered, toHttpsError, wireRuleOf } from '../edge';
 import {
   answerStreakPublish,
-  decodeDraft,
+  decodeRule,
   decodeStreakCaller,
   decodeStreakPublish,
   decodeStreakRequest,
-  encodeStreakPublishAnswer,
-  encodeStreakWithdrawAnswer,
   publishStreakRefusal,
   type StreakCaller,
   type StreakPublishAnswer,
@@ -59,14 +55,15 @@ import {
 } from './loyalty.wire';
 
 /*
- * THE STREAK PUBLISH'S FROZEN WIRE (loyalty flip (3), F3-3), written from
- * the deleted callable handler's spec ("the wire, and the whole behind it")
- * and the deleted use case's
- * caller, refusal and draft cases: every status, `details` and answered
- * field byte for byte, the order (the caller before the envelope), the
- * draft's legacy locators, and the whole callable over the REAL pipelines
- * on the in-memory commit. What a rejected commit answers is `main.spec.ts`'s
- * (the composition root settles it); the exact `WriteOp[]` is the
+ * THE STREAK PUBLISH'S FLIPPED WIRE (Phase 4a 4A-4): the request is the call
+ * component `StreakPublishCall` (the rule FLAT, its own
+ * `effectiveFromLocalDate` the day asked; a withdrawal is the call that
+ * carries no `rule`), the answer `StreakPublishCall.Answer`
+ * (`streakPublishOutcome: 'PUBLISHED' | 'WITHDRAWN' | 'REFUSED'`), the
+ * thrown faults the ecs-core structs projected by the shared table. The
+ * order (the caller before the envelope) and the whole callable over the
+ * REAL pipelines on the in-memory commit are pinned as before; what a
+ * rejected commit answers is `main.spec.ts`'s; the exact `WriteOp[]` is the
  * pipeline spec's.
  */
 
@@ -92,54 +89,79 @@ const NOBODY = null;
 const request = (data: unknown, auth: Auth | null = owner) =>
   auth === null ? { data } : { data, auth };
 
-/**
- * The recommended rule as today's admin page sends it — the NESTED legacy
- * body the legacy mapper wrote for the recommended rule (recorded before
- * the mapper was deleted).
- */
-const DEFAULT_DRAFT = {
-  version: 1,
-  effectiveFrom: '2025-03-01',
-  enabled: true,
-  qualifier: { kind: 'anyVisit' },
-  minGapDays: 7,
-  bookingHold: { enabled: true, maxDaysPastDue: 14 },
-  interval: { kind: 'fixed', days: 42 },
-  graceDays: 7,
-  riskLeadDays: 7,
-  protections: { enabled: true, maxBanked: 2, earnEvery: 5, startWith: 0 },
-  excuses: ['shopClosure', 'barberAbsence', 'staffCancelled'],
-  clientPause: { enabled: false, maxDaysPerYear: 90 },
-  repair: { enabled: true, windowDays: 14, perYear: 1 },
-  onBreak: 'restart',
-} as const;
-
-/** The recommended draft with `patch` over it (a part replaced whole). */
-const draftWith = (
+/** The recommended rule with `patch` over it — the FLAT body the admin page sends. */
+const ruleWith = (
   patch: Readonly<Record<string, unknown>> = {},
-): Record<string, unknown> => ({ ...DEFAULT_DRAFT, ...patch });
+): Record<string, unknown> => ({ ...StreakRule.DEFAULT, ...patch });
 
 let intents = 0;
 const nextIntent = (): string =>
   `intent-${String((intents += 1)).padStart(12, '0')}`;
 
-/** §4.4's request, as the browser's adapter makes it of the port's. */
+/** A publish, as the browser's gateway makes it of the call component. */
 function publishRequest(
   patch: Readonly<Record<string, unknown>>,
-  effectiveFrom: string,
+  effectiveFrom: unknown,
   over: Readonly<Record<string, unknown>> = {},
 ): Record<string, unknown> {
   return {
     requestId: nextIntent(),
     streakId: CADENCE,
     baseVersion: 1,
-    draft: draftWith({ ...patch, version: 2, effectiveFrom }),
-    effectiveFrom,
-    transition: 'grandfather',
+    rule: ruleWith({
+      ...patch,
+      version: 2,
+      effectiveFromLocalDate: effectiveFrom,
+    }),
+    streakTransition: StreakTransition.Grandfather,
     previewHash: null,
     ...over,
   };
 }
+
+/** A withdrawal: the call that carries no rule. */
+const withdrawRequest = (
+  version: number,
+  requestId: string = nextIntent(),
+) => ({
+  requestId,
+  streakId: CADENCE,
+  version,
+});
+
+/** The answered refusal, every field of `StreakPublishCall.Refused`. */
+const refused = (
+  errorCode: StreakPublishCall_AnsweredCode,
+  fields: readonly string[] = [],
+  earliest: LocalDate | null = null,
+  effectiveFromLocalDate: LocalDate | null = null,
+) => ({
+  streakPublishOutcome: StreakPublishOutcome.Refused,
+  errorCode,
+  fields,
+  earliest,
+  effectiveFromLocalDate,
+});
+type StreakPublishCall_AnsweredCode = Extract<
+  StreakPublishAnswer,
+  { readonly streakPublishOutcome: 'REFUSED' }
+>['errorCode'];
+
+const published = (
+  version: number,
+  effectiveFromLocalDate: LocalDate,
+  streakRuleDirection: StreakRuleDirection,
+) => ({
+  streakPublishOutcome: StreakPublishOutcome.Published,
+  version,
+  effectiveFromLocalDate,
+  streakRuleDirection,
+});
+
+const withdrawn = (version: number) => ({
+  streakPublishOutcome: StreakPublishOutcome.Withdrawn,
+  version,
+});
 
 /** The shop as the seed leaves it: the recommended rule in force, its one version. */
 function seeded(): StreakWorld {
@@ -168,7 +190,11 @@ function rig(
       ...tx,
       flagOn: (key) =>
         key === FlagName.LoyaltySelfView && options.clientsSeeRhythm === true,
-      tenantTimeZone: WIRE_ZONE,
+      // The shop's day is the default location's (4A-11) — the fixture shop.
+      ...memoryLocationLoadPorts(
+        memoryProgramsWorld({ locations: [locationFixture()] }),
+      ),
+      ...memoryDefaultLocationPorts(),
     };
   };
   /** What the callable answers — or the HttpsError it throws. */
@@ -218,9 +244,9 @@ describe('publishStreakDefinition — who may ask', () => {
       call(publishRequest({ graceDays: 10 }, TOMORROW), NOBODY),
     );
     expect(refusal?.code).toBe('unauthenticated');
+    expect(refusal?.message).toBe(StreakPublishErrorCode.CallerUnauthenticated);
     expect(refusal?.details).toEqual({
-      code: 'loyalty.streak_publish.unauthenticated',
-      params: {},
+      errorCode: StreakPublishErrorCode.CallerUnauthenticated,
     });
     expect(store).toEqual(before);
   });
@@ -231,35 +257,33 @@ describe('publishStreakDefinition — who may ask', () => {
     ['a content manager', ['content_manager']],
     ['a client', ['client']],
     ['a caller with no role', []],
-  ])('ANSWERS %s notAdmin, and writes nothing', async (_who, roles) => {
+  ])('ANSWERS %s CALLER_NOT_ADMIN, and writes nothing', async (_who, roles) => {
     const { call, store, built } = rig();
     const before = new Map(store);
     const answer = await call(publishRequest({ graceDays: 10 }, TOMORROW), {
       uid: 'somebody',
       token: { roles },
     });
-    expect(answer).toStrictEqual({
-      kind: 'refused',
-      code: 'notAdmin',
-      fields: [],
-    });
+    expect(answer).toStrictEqual(
+      refused(StreakPublishErrorCode.CallerNotAdmin),
+    );
     expect(store).toEqual(before);
     expect(built()).toBe(0);
   });
 
   it('judges the caller before it reads the request: a stranger never learns what was wrong with the asking', async () => {
     const { call } = rig();
-    expect(await call({ nonsense: true }, barber)).toStrictEqual({
-      kind: 'refused',
-      code: 'notAdmin',
-      fields: [],
+    expect(await call({ nonsense: true }, barber)).toStrictEqual(
+      refused(StreakPublishErrorCode.CallerNotAdmin),
+    );
+    expect(await call(null, barber)).toMatchObject({
+      errorCode: StreakPublishErrorCode.CallerNotAdmin,
     });
-    expect(await call(null, barber)).toMatchObject({ code: 'notAdmin' });
     expect((await thrownBy(call(null, NOBODY)))?.code).toBe('unauthenticated');
     // The admin pair is told what was wrong.
     expect((await thrownBy(call(null, owner)))?.details).toEqual({
-      code: 'loyalty.streak_publish.invalid_input',
-      params: { field: 'request' },
+      errorCode: StreakPublishErrorCode.InvalidInput,
+      field: 'request',
     });
   });
 
@@ -273,7 +297,10 @@ describe('publishStreakDefinition — who may ask', () => {
       },
       barber,
     );
-    expect(answer).toMatchObject({ kind: 'refused', code: 'notAdmin' });
+    expect(answer).toMatchObject({
+      streakPublishOutcome: StreakPublishOutcome.Refused,
+      errorCode: StreakPublishErrorCode.CallerNotAdmin,
+    });
   });
 
   it.each([
@@ -293,7 +320,10 @@ describe('publishStreakDefinition — who may ask', () => {
       publishRequest({ graceDays: 10 }, TOMORROW),
       auth,
     );
-    expect(answer).toMatchObject({ kind: 'published', version: 2 });
+    expect(answer).toMatchObject({
+      streakPublishOutcome: StreakPublishOutcome.Published,
+      version: 2,
+    });
     // The flat row's actor slice (F1-8): the owner's override told from the vendor's act.
     expect(auditRows(store)).toEqual([expect.objectContaining(actor)]);
     expect(store.get(`${HEAD}/versions/000002`)?.['publishedByUserId']).toBe(
@@ -379,20 +409,10 @@ describe('decodeStreakPublish — the caller, then the envelope', () => {
       Result.err(StreakPublishError.callerNotAdmin()),
     );
     expect(decodeStreakPublish(request('nonsense', owner))).toEqual(
-      Result.err({
-        code: LegacyWireCode.StreakPublishInvalidInput,
-        field: 'request',
-      }),
+      Result.err(StreakPublishError.invalidInput('request')),
     );
     expect(
-      decodeStreakPublish(
-        request({
-          op: 'withdraw',
-          requestId: 'intent-000000000001',
-          streakId: CADENCE,
-          version: 2,
-        }),
-      ),
+      decodeStreakPublish(request(withdrawRequest(2, 'intent-000000000001'))),
     ).toEqual(
       Result.ok({
         streakPublishOp: StreakPublishOp.Withdraw,
@@ -421,7 +441,7 @@ describe('decodeStreakRequest — the envelope', () => {
     return read.ok ? null : read.error.field;
   };
 
-  it('reads §4.4’s request into the publish’s command, the draft into the rule’s flat input', () => {
+  it('reads the call component into the publish’s command, the FLAT rule into the rule’s input, its own day the day asked', () => {
     const raw = sound();
     expect(decodeStreakRequest(raw, caller)).toEqual(
       Result.ok({
@@ -445,38 +465,30 @@ describe('decodeStreakRequest — the envelope', () => {
     );
   });
 
-  it('reads a withdrawal, and nothing of a publish off it', () => {
-    expect(
-      decodeStreakRequest(
-        {
-          op: 'withdraw',
-          requestId: 'intent-000000000001',
-          streakId: CADENCE,
-          version: 2,
-          draft: 'ignored',
-        },
-        caller,
-      ),
-    ).toEqual(
-      Result.ok({
-        streakPublishOp: StreakPublishOp.Withdraw,
-        withdraw: {
-          ...caller,
-          requestId: 'intent-000000000001',
-          streakId: CADENCE,
-          version: 2,
-        },
-      }),
-    );
-  });
-
-  it('takes a request that names no op — or a null one — for a publish, as §4.4 draws it', () => {
-    for (const op of [undefined, null, 'publish']) {
-      const read = decodeStreakRequest({ ...sound(), op }, caller);
-      expect(read.ok && read.value.streakPublishOp).toBe(
-        StreakPublishOp.Publish,
+  it('reads a call that carries no rule as a withdrawal — a `null` rule too', () => {
+    for (const rule of [undefined, null]) {
+      expect(
+        decodeStreakRequest(
+          { ...withdrawRequest(2, 'intent-000000000001'), rule },
+          caller,
+        ),
+      ).toEqual(
+        Result.ok({
+          streakPublishOp: StreakPublishOp.Withdraw,
+          withdraw: {
+            ...caller,
+            requestId: 'intent-000000000001',
+            streakId: CADENCE,
+            version: 2,
+          },
+        }),
       );
     }
+  });
+
+  it('reads the legacy `op` as nothing: a call with a rule is a publish, whatever it says', () => {
+    const read = decodeStreakRequest({ ...sound(), op: 'withdraw' }, caller);
+    expect(read.ok && read.value.streakPublishOp).toBe(StreakPublishOp.Publish);
   });
 
   it.each([
@@ -489,8 +501,6 @@ describe('decodeStreakRequest — the envelope', () => {
   });
 
   it.each([
-    ['an op nobody knows', { op: 'delete' }, 'op'],
-    ['an op that is no text', { op: 1 }, 'op'],
     ['no intent', { requestId: undefined }, 'requestId'],
     ['an intent too short to be one', { requestId: 'abc' }, 'requestId'],
     [
@@ -505,28 +515,32 @@ describe('decodeStreakRequest — the envelope', () => {
     ['a base below nothing', { baseVersion: -1 }, 'baseVersion'],
     ['a base that is a fraction', { baseVersion: 1.5 }, 'baseVersion'],
     ['no base', { baseVersion: undefined }, 'baseVersion'],
-    ['no draft', { draft: undefined }, 'draft'],
-    ['a draft that is a list', { draft: [] }, 'draft'],
-    ['a draft that is text', { draft: '{}' }, 'draft'],
+    ['a rule that is a list', { rule: [] }, 'rule'],
+    ['a rule that is text', { rule: '{}' }, 'rule'],
     [
-      'a draft nobody could call a rule for its size',
+      'a rule nobody could call one for its size',
       {
-        draft: {
-          qualifier: {
-            kind: 'services',
-            serviceIds: Array.from({ length: 2000 }, (_, i) => `svc-${i}`),
-          },
-        },
+        rule: ruleWith({
+          streakQualifier: StreakQualifier.Services,
+          qualifierServiceIds: Array.from(
+            { length: 2000 },
+            (_, i) => `svc-${i}`,
+          ),
+        }),
       },
-      'draft',
+      'rule',
     ],
-    ['a transition nobody knows', { transition: 'forget' }, 'transition'],
     [
-      'a transition in the system’s words',
-      { transition: 'GRANDFATHER' },
-      'transition',
+      'a transition nobody knows',
+      { streakTransition: 'FORGET' },
+      'streakTransition',
     ],
-    ['no transition', { transition: undefined }, 'transition'],
+    [
+      'a transition in the legacy words',
+      { streakTransition: 'grandfather' },
+      'streakTransition',
+    ],
+    ['no transition', { streakTransition: undefined }, 'streakTransition'],
     ['a preview that is no text', { previewHash: 7 }, 'previewHash'],
     ['a blank preview', { previewHash: '' }, 'previewHash'],
     [
@@ -546,7 +560,6 @@ describe('decodeStreakRequest — the envelope', () => {
   ])('refuses a withdrawal whose version is %s', (_what, version) => {
     expect(
       fieldOf({
-        op: 'withdraw',
         requestId: 'intent-000000000001',
         streakId: CADENCE,
         version,
@@ -554,12 +567,16 @@ describe('decodeStreakRequest — the envelope', () => {
     ).toBe('version');
   });
 
+  it('reads a publish whose rule is missing as a withdrawal with no version — refused by `version`', () => {
+    expect(fieldOf({ ...sound(), rule: undefined })).toBe('version');
+  });
+
   it('reads an absent preview as none, and a recompute as the system’s word', () => {
     const raw = Object.fromEntries(
       Object.entries(sound()).filter(([key]) => key !== 'previewHash'),
     );
     const read = decodeStreakRequest(
-      { ...raw, transition: 'recompute' },
+      { ...raw, streakTransition: StreakTransition.Recompute },
       caller,
     );
     expect(read).toMatchObject({
@@ -573,12 +590,11 @@ describe('decodeStreakRequest — the envelope', () => {
     });
   });
 
-  it('leaves the RULE to the pipeline: a draft of the wrong kinds is its `invalid`, a day that is no text reads as none', () => {
+  it('leaves the RULE to the pipeline: a rule of the wrong kinds is its `INVALID`, a day that is no text reads as none', () => {
     const read = decodeStreakRequest(
       {
         ...sound(),
-        draft: { graceDays: '7', anything: ['at', 'all'] },
-        effectiveFrom: 20261001,
+        rule: { graceDays: '7', effectiveFromLocalDate: 20261001 },
       },
       caller,
     );
@@ -586,7 +602,11 @@ describe('decodeStreakRequest — the envelope', () => {
       ok: true,
       value: {
         publish: {
-          draft: Result.err(StreakPublishError.invalid(['effectiveFrom'])),
+          draft: Result.err(
+            StreakPublishError.invalid([
+              StreakRuleField.EffectiveFromLocalDate,
+            ]),
+          ),
           effectiveFrom: '',
         },
       },
@@ -594,19 +614,19 @@ describe('decodeStreakRequest — the envelope', () => {
   });
 });
 
-describe('decodeDraft — the nested legacy draft, field by field', () => {
+describe('decodeRule — the FLAT rule, field by field', () => {
   const fieldsOf = (
     patch: Readonly<Record<string, unknown>>,
     effectiveFrom: string = TOMORROW,
   ) => {
-    const read = decodeDraft(draftWith(patch), effectiveFrom);
+    const read = decodeRule(ruleWith(patch), effectiveFrom);
     return read.ok ? null : read.error.fields;
   };
 
-  it('reads the recommended draft as the recommended rule’s flat input, its own number and day never read', () => {
+  it('reads the recommended rule as its own flat input, its own number and day never read', () => {
     expect(
-      decodeDraft(
-        draftWith({ version: 41, effectiveFrom: '2020-01-01' }),
+      decodeRule(
+        ruleWith({ version: 41, effectiveFromLocalDate: '2020-01-01' }),
         NEXT_WEEK,
       ),
     ).toEqual(
@@ -620,21 +640,17 @@ describe('decodeDraft — the nested legacy draft, field by field', () => {
 
   it('reads every part in the system’s words', () => {
     expect(
-      decodeDraft(
-        draftWith({
-          qualifier: {
-            kind: 'services',
-            serviceIds: ['svc-fade', 'svc-beard'],
-          },
-          interval: {
-            kind: 'personal',
-            tolerancePct: 25,
-            minDays: 28,
-            maxDays: 56,
-            fallbackDays: 42,
-          },
-          excuses: ['closedDays', 'shopClosure'],
-          onBreak: 'hold',
+      decodeRule(
+        ruleWith({
+          streakQualifier: StreakQualifier.Services,
+          qualifierServiceIds: ['svc-fade', 'svc-beard'],
+          streakInterval: StreakInterval.Personal,
+          intervalTolerancePct: 25,
+          intervalMinDays: 28,
+          intervalMaxDays: 56,
+          intervalFallbackDays: 42,
+          excuses: [StreakExcuse.ClosedDays, StreakExcuse.ShopClosure],
+          onBreak: StreakOnBreak.Hold,
         }),
         NEXT_WEEK,
       ),
@@ -656,9 +672,10 @@ describe('decodeDraft — the nested legacy draft, field by field', () => {
       },
     });
     expect(
-      decodeDraft(
-        draftWith({
-          qualifier: { kind: 'categories', categoryIds: ['cat-cuts'] },
+      decodeRule(
+        ruleWith({
+          streakQualifier: StreakQualifier.Categories,
+          qualifierCategoryIds: ['cat-cuts'],
         }),
         NEXT_WEEK,
       ),
@@ -671,94 +688,137 @@ describe('decodeDraft — the nested legacy draft, field by field', () => {
     });
   });
 
-  it('reads nothing a draft has no business saying: an id and a name of its own are not the rule’s', () => {
+  it('reads nothing a rule has no business saying: an id and a name of its own are not the rule’s', () => {
     expect(
-      decodeDraft(
-        draftWith({ id: 'other', name: { bg: 'Друго', en: 'Other' } }),
+      decodeRule(
+        ruleWith({ id: 'other', nameBg: 'Друго', nameEn: 'Other' }),
         TOMORROW,
       ),
-    ).toEqual(decodeDraft(draftWith(), TOMORROW));
+    ).toEqual(decodeRule(ruleWith(), TOMORROW));
   });
 
   it.each([
-    ['a figure sent as text', { graceDays: '7' }, 'graceDays'],
-    ['a fraction of a day', { minGapDays: 1.5 }, 'minGapDays'],
-    ['a figure below nothing', { riskLeadDays: -1 }, 'riskLeadDays'],
+    ['a figure sent as text', { graceDays: '7' }, StreakRuleField.GraceDays],
+    ['a fraction of a day', { minGapDays: 1.5 }, StreakRuleField.MinGapDays],
+    [
+      'a figure below nothing',
+      { riskLeadDays: -1 },
+      StreakRuleField.RiskLeadDays,
+    ],
     ['a switch that is no boolean', { enabled: 'yes' }, 'enabled'],
     [
       'an interval with no days',
-      { interval: { kind: 'fixed' } },
-      'interval.days',
+      { intervalDays: undefined },
+      StreakRuleField.IntervalDays,
     ],
-    ['an interval of no kind', { interval: { days: 42 } }, 'interval.kind'],
+    [
+      'an interval of no kind',
+      { streakInterval: undefined },
+      StreakRuleField.IntervalKind,
+    ],
+    [
+      'an interval in the legacy words',
+      { streakInterval: 'fixed' },
+      StreakRuleField.IntervalKind,
+    ],
     [
       'a personal interval with a floor of text',
       {
-        interval: {
-          kind: 'personal',
-          tolerancePct: 25,
-          minDays: '28',
-          maxDays: 56,
-          fallbackDays: 42,
-        },
+        streakInterval: StreakInterval.Personal,
+        intervalTolerancePct: 25,
+        intervalMinDays: '28',
+        intervalMaxDays: 56,
+        intervalFallbackDays: 42,
       },
-      'interval.minDays',
+      StreakRuleField.IntervalMinDays,
     ],
-    ['a part that is no object', { bookingHold: 14 }, 'bookingHold'],
     [
-      'a part with no switch',
-      { clientPause: { maxDaysPerYear: 90 } },
-      'clientPause.enabled',
+      'a hold switch that is a figure',
+      { bookingHoldEnabled: 14 },
+      'bookingHoldEnabled',
+    ],
+    [
+      'a pause with no switch',
+      { clientPauseEnabled: undefined },
+      'clientPauseEnabled',
     ],
     [
       'a reserve with no cap',
-      { protections: { enabled: true, earnEvery: 5, startWith: 0 } },
-      'protections.maxBanked',
+      { protectionsMaxBanked: undefined },
+      StreakRuleField.ProtectionsMaxBanked,
     ],
-    ['an excuse nobody knows', { excuses: ['shopClosure', 'rain'] }, 'excuses'],
     [
-      'an excuse in the system’s words',
-      { excuses: ['SHOP_CLOSURE'] },
-      'excuses',
+      'an excuse nobody knows',
+      { excuses: [StreakExcuse.ShopClosure, 'RAIN'] },
+      StreakRuleField.Excuses,
     ],
-    ['excuses that are no list', { excuses: 'shopClosure' }, 'excuses'],
+    [
+      'an excuse in the legacy words',
+      { excuses: ['shopClosure'] },
+      StreakRuleField.Excuses,
+    ],
+    [
+      'excuses that are no list',
+      { excuses: StreakExcuse.ShopClosure },
+      StreakRuleField.Excuses,
+    ],
     [
       'a list of services with a blank in it',
-      { qualifier: { kind: 'services', serviceIds: ['svc-fade', ' '] } },
-      'qualifier.serviceIds',
+      {
+        streakQualifier: StreakQualifier.Services,
+        qualifierServiceIds: ['svc-fade', ' '],
+      },
+      StreakRuleField.QualifierServiceIds,
     ],
-    ['a qualifier of no kind', { qualifier: {} }, 'qualifier.kind'],
-    ['a miss that does something unknown', { onBreak: 'forgive' }, 'onBreak'],
-    ['a part left out', { repair: undefined }, 'repair'],
-  ])('names the field of %s', (_what, patch, field) => {
+    [
+      'a qualifier of no kind',
+      { streakQualifier: undefined },
+      StreakRuleField.QualifierKind,
+    ],
+    [
+      'a miss that does something unknown',
+      { onBreak: 'FORGIVE' },
+      StreakRuleField.OnBreak,
+    ],
+    ['a part left out', { repairEnabled: undefined }, 'repairEnabled'],
+  ])('names the flat field of %s', (_what, patch, field) => {
     expect(fieldsOf(patch)).toEqual([field]);
   });
 
-  it('names the FIRST field the legacy reader stopped at, never a later one', () => {
+  it('names the FIRST field the reader stopped at, never a later one', () => {
     expect(
-      fieldsOf({ enabled: 'yes', graceDays: '7', onBreak: 'forgive' }),
+      fieldsOf({ enabled: 'yes', graceDays: '7', onBreak: 'FORGIVE' }),
     ).toEqual(['enabled']);
-    expect(fieldsOf({ interval: 7, repair: undefined })).toEqual(['interval']);
+    expect(fieldsOf({ streakInterval: 7, repairEnabled: undefined })).toEqual([
+      StreakRuleField.IntervalKind,
+    ]);
   });
 
-  it('refuses a draft that holds nothing at its first field', () => {
-    const read = decodeDraft({}, TOMORROW);
+  it('refuses a rule that holds nothing at its first field', () => {
+    const read = decodeRule({}, TOMORROW);
     expect(read.ok ? null : read.error.fields).toEqual(['enabled']);
   });
 
   it.each([['next week'], ['2026-02-30'], ['2026-9-29'], ['']])(
-    'refuses a day that is none, before any part of the draft: %j',
+    'refuses a day that is none, before any part of the rule: %j',
     (day) => {
-      expect(fieldsOf({}, day)).toEqual(['effectiveFrom']);
-      expect(fieldsOf({ enabled: 'yes' }, day)).toEqual(['effectiveFrom']);
+      expect(fieldsOf({}, day)).toEqual([
+        StreakRuleField.EffectiveFromLocalDate,
+      ]);
+      expect(fieldsOf({ enabled: 'yes' }, day)).toEqual([
+        StreakRuleField.EffectiveFromLocalDate,
+      ]);
     },
   );
 
   it('leaves a figure of the right kind to the rule: a grace of 60 days reads', () => {
-    expect(decodeDraft(draftWith({ graceDays: 60 }), TOMORROW).ok).toBe(true);
+    expect(decodeRule(ruleWith({ graceDays: 60 }), TOMORROW).ok).toBe(true);
     expect(
-      decodeDraft(
-        draftWith({ qualifier: { kind: 'services', serviceIds: [] } }),
+      decodeRule(
+        ruleWith({
+          streakQualifier: StreakQualifier.Services,
+          qualifierServiceIds: [],
+        }),
         TOMORROW,
       ).ok,
     ).toBe(true);
@@ -772,85 +832,74 @@ describe('publishStreakRefusal — the per-code table, literally', () => {
   const thrown = (result: Result<unknown, EdgeError>) => {
     if (result.ok) throw new Error('expected a fault');
     const error = toHttpsError(result.error);
-    return { status: error.code, details: error.details };
+    return {
+      status: error.code,
+      message: error.message,
+      details: error.details,
+    };
   };
 
-  it('answers INVALID with each flat field as its legacy locator, an unknown one as written, each once', () => {
+  it('answers INVALID with each flat field as the rule names it — no legacy locator', () => {
     expect(
       answered(
         StreakPublishError.invalid([
           StreakRuleField.IntervalDays,
           StreakRuleField.ScheduledEffectiveFromLocalDate,
-          'interval.days',
-          'bookingHold.enabled',
           StreakRuleField.GraceDays,
         ]),
       ),
     ).toStrictEqual(
-      Result.ok({
-        kind: 'refused',
-        code: 'invalid',
-        fields: [
-          'interval.days',
-          'scheduled.effectiveFrom',
-          'bookingHold.enabled',
+      Result.ok(
+        refused(StreakPublishErrorCode.Invalid, [
+          'intervalDays',
+          'scheduledEffectiveFromLocalDate',
           'graceDays',
-        ],
-      }),
+        ]),
+      ),
     );
   });
 
-  it('answers TOO_EARLY with today’s fields and the first day it may start', () => {
+  it('answers TOO_EARLY with the day asked and the first day it may start', () => {
     expect(
       answered(StreakPublishError.tooEarly(TODAY, TOMORROW)),
     ).toStrictEqual(
-      Result.ok({
-        kind: 'refused',
-        code: 'tooEarly',
-        fields: ['effectiveFrom'],
-        earliest: TOMORROW,
-      }),
+      Result.ok(refused(StreakPublishErrorCode.TooEarly, [], TOMORROW, TODAY)),
     );
   });
 
   it.each([
-    [StreakPublishError.stale(1, 2), 'stale'],
-    [StreakPublishError.recomputeNeedsEngine(), 'recomputeNeedsEngine'],
-    [StreakPublishError.previewStale(), 'previewStale'],
-    [StreakPublishError.callerNotAdmin(), 'notAdmin'],
-  ] as const)('answers %j as %s, with no field and no day', (error, code) => {
-    expect(answered(error)).toStrictEqual(
-      Result.ok({ kind: 'refused', code, fields: [] }),
-    );
+    [StreakPublishError.stale(1, 2)],
+    [StreakPublishError.recomputeNeedsEngine()],
+    [StreakPublishError.previewStale()],
+    [StreakPublishError.callerNotAdmin()],
+  ] as const)('answers %j with its code, no field and no day', (error) => {
+    expect(answered(error)).toStrictEqual(Result.ok(refused(error.errorCode)));
   });
 
-  it('throws CALLER_UNAUTHENTICATED as today’s unauthenticated fault', () => {
+  it('throws CALLER_UNAUTHENTICATED as itself, `unauthenticated`', () => {
     expect(
       thrown(answered(StreakPublishError.callerUnauthenticated())),
     ).toEqual({
       status: 'unauthenticated',
-      details: { code: 'loyalty.streak_publish.unauthenticated', params: {} },
+      message: StreakPublishErrorCode.CallerUnauthenticated,
+      details: { errorCode: StreakPublishErrorCode.CallerUnauthenticated },
     });
   });
 
-  it('throws an envelope refusal as today’s invalid_input, by field', () => {
+  it('throws an envelope refusal as LOYALTY_STREAK_PUBLISH_INVALID_INPUT, by field', () => {
     expect(
-      thrown(
-        answered({
-          code: LegacyWireCode.StreakPublishInvalidInput,
-          field: 'baseVersion',
-        }),
-      ),
+      thrown(answered(StreakPublishError.invalidInput('baseVersion'))),
     ).toEqual({
       status: 'invalid-argument',
+      message: StreakPublishErrorCode.InvalidInput,
       details: {
-        code: 'loyalty.streak_publish.invalid_input',
-        params: { field: 'baseVersion' },
+        errorCode: StreakPublishErrorCode.InvalidInput,
+        field: 'baseVersion',
       },
     });
   });
 
-  it('logs a failed write’s cause where alerting can find it, and throws store_failed without it', () => {
+  it('logs a failed write’s cause where alerting can find it, and throws STORE_FAILED without it', () => {
     const telemetry = log();
     const result = publishStreakRefusal(
       RepositoryError.writeFailed(null, 'Error: deadline exceeded'),
@@ -859,7 +908,8 @@ describe('publishStreakRefusal — the per-code table, literally', () => {
     const fault = thrown(result);
     expect(fault).toEqual({
       status: 'internal',
-      details: { code: 'loyalty.streak_publish.store_failed', params: {} },
+      message: StreakPublishErrorCode.StoreFailed,
+      details: { errorCode: StreakPublishErrorCode.StoreFailed },
     });
     expect(JSON.stringify(fault.details)).not.toContain('deadline');
     expect(telemetry.lines).toEqual([
@@ -894,99 +944,27 @@ describe('publishStreakRefusal — the per-code table, literally', () => {
   });
 });
 
-describe('the deleted handler’s statuses (the edge scanner’s table on 6d43e1c)', () => {
-  // 2 throw sites (`toHttpsError`'s switch) and 9 error classes
-  // (`use-cases/publish-streak-definition.errors.ts`): three thrown faults,
-  // six answered refusals. Their wire codes and statuses stand, now spelt by
-  // the codes the wire answers with.
+describe('the statuses (the deleted handler’s table on 6d43e1c, by successor code)', () => {
+  // Three thrown faults and six answered refusals; their statuses stand.
   it.each([
-    [
-      LegacyWireCode.StreakPublishUnauthenticated,
-      'loyalty.streak_publish.unauthenticated',
-      'unauthenticated',
-    ],
-    [
-      LegacyWireCode.StreakPublishInvalidInput,
-      'loyalty.streak_publish.invalid_input',
-      'invalid-argument',
-    ],
-    [
-      LegacyWireCode.StreakPublishStoreFailed,
-      'loyalty.streak_publish.store_failed',
-      'internal',
-    ],
-  ])('throws %s as %s, %s', (code, wireCode, status) => {
+    [StreakPublishErrorCode.CallerUnauthenticated, 'unauthenticated'],
+    [StreakPublishErrorCode.InvalidInput, 'invalid-argument'],
+    [StreakPublishErrorCode.StoreFailed, 'internal'],
+  ])('throws %s as %s', (code, status) => {
     const rule = wireRuleOf(code);
-    expect(rule.wireCode).toBe(wireCode);
-    expect(rule.wireShape).toBe(WireShape.CodeAndParams);
-    expect(
-      rule.wireShape === WireShape.Answered ? null : rule.httpsStatus,
-    ).toBe(status);
+    expect(isAnswered(code)).toBe(false);
+    expect('httpsStatus' in rule ? rule.httpsStatus : null).toBe(status);
   });
 
   it.each([
-    [LegacyWireCode.StreakPublishNotAdmin, 'loyalty.streak_publish.not_admin'],
-    [
-      StreakPublishErrorCode.CallerNotAdmin,
-      'loyalty.streak_publish.caller_not_admin',
-    ],
-    [StreakPublishErrorCode.Invalid, 'loyalty.streak_publish.invalid'],
-    [StreakPublishErrorCode.Stale, 'loyalty.streak_publish.stale'],
-    [StreakPublishErrorCode.TooEarly, 'loyalty.streak_publish.too_early'],
-    [
-      StreakPublishErrorCode.RecomputeNeedsEngine,
-      'loyalty.streak_publish.recompute_needs_engine',
-    ],
-    [
-      StreakPublishErrorCode.PreviewStale,
-      'loyalty.streak_publish.preview_stale',
-    ],
-  ])('answers %s (%s) — never thrown', (code, wireCode) => {
-    expect(wireRuleOf(code).wireCode).toBe(wireCode);
+    [StreakPublishErrorCode.CallerNotAdmin],
+    [StreakPublishErrorCode.Invalid],
+    [StreakPublishErrorCode.Stale],
+    [StreakPublishErrorCode.TooEarly],
+    [StreakPublishErrorCode.RecomputeNeedsEngine],
+    [StreakPublishErrorCode.PreviewStale],
+  ])('answers %s — never thrown', (code) => {
     expect(isAnswered(code)).toBe(true);
-  });
-
-  it('throws a caller without a session on its NEW dotted code only inside the edge — the wire answers today’s', () => {
-    expect(
-      wireRuleOf(StreakPublishErrorCode.CallerUnauthenticated).wireCode,
-    ).toBe('loyalty.streak_publish.caller_unauthenticated');
-    const fault = publishStreakRefusal(
-      StreakPublishError.callerUnauthenticated(),
-      recordingTelemetry(),
-    );
-    expect(fault).toEqual(
-      Result.err({ code: LegacyWireCode.StreakPublishUnauthenticated }),
-    );
-  });
-});
-
-describe('the encoders — today’s answer, key for key', () => {
-  it.each([
-    [StreakRuleDirection.Looser, 'looser'],
-    [StreakRuleDirection.Stricter, 'stricter'],
-    [StreakRuleDirection.Mixed, 'mixed'],
-    [StreakRuleDirection.Neutral, 'neutral'],
-    [StreakRuleDirection.Switch, 'switch'],
-  ] as const)('publishes %s as %s', (direction, word) => {
-    expect(
-      encodeStreakPublishAnswer({
-        version: 2,
-        effectiveFromLocalDate: NEXT_WEEK,
-        streakRuleDirection: direction,
-      }),
-    ).toStrictEqual({
-      kind: 'published',
-      version: 2,
-      effectiveFrom: NEXT_WEEK,
-      direction: word,
-    });
-  });
-
-  it('withdraws by the version called off', () => {
-    expect(encodeStreakWithdrawAnswer({ version: 2 })).toStrictEqual({
-      kind: 'withdrawn',
-      version: 2,
-    });
   });
 });
 
@@ -995,12 +973,7 @@ describe('publishStreakDefinition — the answers, end to end', () => {
     const { call, store } = rig();
     expect(
       await call(publishRequest({ graceDays: 10 }, NEXT_WEEK)),
-    ).toStrictEqual({
-      kind: 'published',
-      version: 2,
-      effectiveFrom: NEXT_WEEK,
-      direction: 'looser',
-    });
+    ).toStrictEqual(published(2, NEXT_WEEK, StreakRuleDirection.Looser));
     expect(store.get(HEAD)).toMatchObject({
       rules: [
         { version: 1, headRole: HeadRole.Current },
@@ -1029,31 +1002,25 @@ describe('publishStreakDefinition — the answers, end to end', () => {
     ]);
   });
 
-  it('takes a request that names no op for a publish, and one that says so', async () => {
+  it('publishes on the base it is told, one after the other', async () => {
     const { call } = rig();
-    const request = publishRequest({ graceDays: 10 }, TOMORROW);
-    expect(request).not.toHaveProperty('op');
-    expect(await call(request)).toMatchObject({ kind: 'published' });
     expect(
-      await call({
-        ...publishRequest({ graceDays: 14 }, NEXT_WEEK),
-        op: 'publish',
-        baseVersion: 2,
-      }),
-    ).toMatchObject({ kind: 'published', version: 3 });
+      await call(publishRequest({ graceDays: 10 }, TOMORROW)),
+    ).toMatchObject({ streakPublishOutcome: StreakPublishOutcome.Published });
+    expect(
+      await call(
+        publishRequest({ graceDays: 14 }, NEXT_WEEK, { baseVersion: 2 }),
+      ),
+    ).toMatchObject({
+      streakPublishOutcome: StreakPublishOutcome.Published,
+      version: 3,
+    });
   });
 
   it('withdraws: the version that waits is called off by its number', async () => {
     const { call, store } = rig();
     await call(publishRequest({ graceDays: 10 }, NEXT_WEEK));
-    expect(
-      await call({
-        op: 'withdraw',
-        requestId: nextIntent(),
-        streakId: CADENCE,
-        version: 2,
-      }),
-    ).toStrictEqual({ kind: 'withdrawn', version: 2 });
+    expect(await call(withdrawRequest(2))).toStrictEqual(withdrawn(2));
     expect(store.get(HEAD)).toMatchObject({
       rules: [{ version: 1, headRole: HeadRole.Current }],
     });
@@ -1072,65 +1039,68 @@ describe('publishStreakDefinition — the answers, end to end', () => {
   it.each([
     [
       'a grace longer than the rule allows, and a repair window of none',
-      { graceDays: 60, repair: { enabled: true, windowDays: 0, perYear: 1 } },
-      ['graceDays', 'repair.windowDays'],
-    ],
-    [
-      'every fault the rule names, at once, in today’s order',
       {
         graceDays: 60,
-        protections: {
-          enabled: true,
-          maxBanked: 2,
-          earnEvery: 5,
-          startWith: 4,
-        },
-        repair: { enabled: true, windowDays: 0, perYear: 9 },
+        repairEnabled: true,
+        repairWindowDays: 0,
+        repairPerYear: 1,
+      },
+      [StreakRuleField.GraceDays, StreakRuleField.RepairWindowDays],
+    ],
+    [
+      'every fault the rule names, at once, in the rule’s order',
+      {
+        graceDays: 60,
+        protectionsEnabled: true,
+        protectionsMaxBanked: 2,
+        protectionsEarnEvery: 5,
+        protectionsStartWith: 4,
+        repairEnabled: true,
+        repairWindowDays: 0,
+        repairPerYear: 9,
       },
       [
-        'graceDays',
-        'protections.startWith',
-        'repair.windowDays',
-        'repair.perYear',
+        StreakRuleField.GraceDays,
+        StreakRuleField.ProtectionsStartWith,
+        StreakRuleField.RepairWindowDays,
+        StreakRuleField.RepairPerYear,
       ],
     ],
     [
       'a grace no shorter than the interval',
-      { interval: { kind: 'fixed', days: 14 }, graceDays: 14 },
-      ['graceDays'],
+      {
+        streakInterval: StreakInterval.Fixed,
+        intervalDays: 14,
+        graceDays: 14,
+      },
+      [StreakRuleField.GraceDays],
     ],
     [
       'a list of no services',
-      { qualifier: { kind: 'services', serviceIds: [] } },
-      ['qualifier.serviceIds'],
+      { streakQualifier: StreakQualifier.Services, qualifierServiceIds: [] },
+      [StreakRuleField.QualifierServiceIds],
     ],
     [
       'a personal interval whose floor is above its ceiling',
       {
-        interval: {
-          kind: 'personal',
-          tolerancePct: 25,
-          minDays: 56,
-          maxDays: 28,
-          fallbackDays: 42,
-        },
+        streakInterval: StreakInterval.Personal,
+        intervalTolerancePct: 25,
+        intervalMinDays: 56,
+        intervalMaxDays: 28,
+        intervalFallbackDays: 42,
       },
-      ['interval.minDays'],
+      [StreakRuleField.IntervalMinDays],
     ],
-    ['a figure sent as text', { graceDays: '7' }, ['graceDays']],
-    ['a part left out', { repair: undefined }, ['repair']],
+    ['a figure sent as text', { graceDays: '7' }, [StreakRuleField.GraceDays]],
+    ['a part left out', { repairEnabled: undefined }, ['repairEnabled']],
   ])(
-    'answers a draft that is no rule — %s — with its fields',
+    'answers a rule that is no rule — %s — with its flat fields',
     async (_what, patch, fields) => {
       const { call, store } = rig();
       const before = new Map(store);
-      const request = publishRequest({}, TOMORROW);
-      expect(
-        await call({
-          ...request,
-          draft: { ...(request['draft'] as object), ...patch },
-        }),
-      ).toStrictEqual({ kind: 'refused', code: 'invalid', fields });
+      expect(await call(publishRequest(patch, TOMORROW))).toStrictEqual(
+        refused(StreakPublishErrorCode.Invalid, fields),
+      );
       expect(store).toEqual(before);
     },
   );
@@ -1138,15 +1108,12 @@ describe('publishStreakDefinition — the answers, end to end', () => {
   it('answers a rule that is wrong, and throws at an envelope that is: the page words one and not the other', async () => {
     const { call } = rig();
     expect(
-      await call({
-        ...publishRequest({ graceDays: 60 }, TOMORROW),
-        effectiveFrom: 20261001,
-      }),
-    ).toStrictEqual({
-      kind: 'refused',
-      code: 'invalid',
-      fields: ['effectiveFrom'],
-    });
+      await call(publishRequest({ graceDays: 60 }, 20261001)),
+    ).toStrictEqual(
+      refused(StreakPublishErrorCode.Invalid, [
+        StreakRuleField.EffectiveFromLocalDate,
+      ]),
+    );
     const envelope = await thrownBy(
       call({
         ...publishRequest({ graceDays: 10 }, TOMORROW),
@@ -1155,20 +1122,17 @@ describe('publishStreakDefinition — the answers, end to end', () => {
     );
     expect(envelope?.code).toBe('invalid-argument');
     expect(envelope?.details).toEqual({
-      code: 'loyalty.streak_publish.invalid_input',
-      params: { field: 'baseVersion' },
+      errorCode: StreakPublishErrorCode.InvalidInput,
+      field: 'baseVersion',
     });
   });
 
-  it('answers a day too early with the first day the change may start', async () => {
+  it('answers a day too early with the day asked and the first day the change may start', async () => {
     expect(
       await rig().call(publishRequest({ graceDays: 10 }, TODAY)),
-    ).toStrictEqual({
-      kind: 'refused',
-      code: 'tooEarly',
-      fields: ['effectiveFrom'],
-      earliest: TOMORROW,
-    });
+    ).toStrictEqual(
+      refused(StreakPublishErrorCode.TooEarly, [], TOMORROW, TODAY),
+    );
   });
 
   it('holds a stricter rule to thirty days of notice once clients see their rhythm', async () => {
@@ -1176,55 +1140,43 @@ describe('publishStreakDefinition — the answers, end to end', () => {
     expect(
       await quiet.call(publishRequest({ graceDays: 3 }, TOMORROW)),
     ).toMatchObject({
-      kind: 'published',
-      direction: 'stricter',
+      streakPublishOutcome: StreakPublishOutcome.Published,
+      streakRuleDirection: StreakRuleDirection.Stricter,
     });
     const seen = rig(seeded(), { clientsSeeRhythm: true });
     expect(
       await seen.call(publishRequest({ graceDays: 2 }, TOMORROW)),
-    ).toStrictEqual({
-      kind: 'refused',
-      code: 'tooEarly',
-      fields: ['effectiveFrom'],
-      earliest: NEXT_MONTH,
-    });
+    ).toStrictEqual(
+      refused(StreakPublishErrorCode.TooEarly, [], NEXT_MONTH, TOMORROW),
+    );
   });
 
-  it('answers the other refusals in the page’s words, with no field, and writes no row', async () => {
+  it('answers the other refusals with their codes, no field, and writes no row', async () => {
     const { call, store } = rig();
     expect(
       await call(
         publishRequest({ graceDays: 10 }, TOMORROW, { baseVersion: 4 }),
       ),
-    ).toStrictEqual({ kind: 'refused', code: 'stale', fields: [] });
+    ).toStrictEqual(refused(StreakPublishErrorCode.Stale));
     expect(
       await call(
         publishRequest({ graceDays: 10 }, TOMORROW, {
-          transition: 'recompute',
+          streakTransition: StreakTransition.Recompute,
         }),
       ),
-    ).toStrictEqual({
-      kind: 'refused',
-      code: 'recomputeNeedsEngine',
-      fields: [],
-    });
+    ).toStrictEqual(refused(StreakPublishErrorCode.RecomputeNeedsEngine));
     expect(
       await call(
         publishRequest({ graceDays: 10 }, TOMORROW, { previewHash: 'abc' }),
       ),
-    ).toStrictEqual({ kind: 'refused', code: 'previewStale', fields: [] });
-    expect(
-      await call({
-        op: 'withdraw',
-        requestId: nextIntent(),
-        streakId: CADENCE,
-        version: 2,
-      }),
-    ).toStrictEqual({ kind: 'refused', code: 'stale', fields: [] });
+    ).toStrictEqual(refused(StreakPublishErrorCode.PreviewStale));
+    expect(await call(withdrawRequest(2))).toStrictEqual(
+      refused(StreakPublishErrorCode.Stale),
+    );
     expect(auditRows(store)).toEqual([]);
   });
 
-  it('answers a scheduled version that would not start after the rule in force with today’s locator', async () => {
+  it('answers a scheduled version that would not start after the rule in force by its flat field', async () => {
     const ahead = memoryStreakWorld({
       heads: [
         streakDefinitionFixture({
@@ -1241,11 +1193,11 @@ describe('publishStreakDefinition — the answers, end to end', () => {
     });
     expect(
       await rig(ahead).call(publishRequest({ graceDays: 10 }, NEXT_WEEK)),
-    ).toStrictEqual({
-      kind: 'refused',
-      code: 'invalid',
-      fields: ['scheduled.effectiveFrom'],
-    });
+    ).toStrictEqual(
+      refused(StreakPublishErrorCode.Invalid, [
+        StreakRuleField.ScheduledEffectiveFromLocalDate,
+      ]),
+    );
   });
 
   it('opens no rule but the business’s one: another id names nothing', async () => {
@@ -1253,15 +1205,17 @@ describe('publishStreakDefinition — the answers, end to end', () => {
       await rig(memoryStreakWorld()).call(
         publishRequest({}, TOMORROW, { baseVersion: 0, streakId: 'weekly' }),
       ),
-    ).toStrictEqual({ kind: 'refused', code: 'invalid', fields: ['id'] });
+    ).toStrictEqual(
+      refused(StreakPublishErrorCode.Invalid, [StreakRuleField.Id]),
+    );
   });
 
   it('writes nothing twice for a retry, and answers as it did', async () => {
     const { call, store } = rig();
-    const request = publishRequest({ graceDays: 10 }, NEXT_WEEK);
-    const first = await call(request);
+    const asked = publishRequest({ graceDays: 10 }, NEXT_WEEK);
+    const first = await call(asked);
     const written = new Map(store);
-    expect(await call(request)).toEqual(first);
+    expect(await call(asked)).toEqual(first);
     expect(store).toEqual(written);
     expect(auditRows(store)).toHaveLength(1);
   });
@@ -1269,16 +1223,16 @@ describe('publishStreakDefinition — the answers, end to end', () => {
 
 describe('publishStreakDefinition — the directions, and the notice nobody is owed yet', () => {
   it.each([
-    ['looser', { graceDays: 10 }],
-    ['stricter', { graceDays: 3 }],
-    ['switch', { enabled: false }],
-    ['mixed', { graceDays: 10, minGapDays: 10 }],
+    [StreakRuleDirection.Looser, { graceDays: 10 }],
+    [StreakRuleDirection.Stricter, { graceDays: 3 }],
+    [StreakRuleDirection.Switch, { enabled: false }],
+    [StreakRuleDirection.Mixed, { graceDays: 10, minGapDays: 10 }],
   ])(
     'lets a %s rule start tomorrow while no client sees the rhythm',
     async (direction, patch) => {
       expect(await rig().call(publishRequest(patch, TOMORROW))).toMatchObject({
-        kind: 'published',
-        direction,
+        streakPublishOutcome: StreakPublishOutcome.Published,
+        streakRuleDirection: direction,
       });
     },
   );
@@ -1295,12 +1249,6 @@ describe('publishStreakDefinition — the page’s reference story', () => {
     const { call, store } = rig();
     const undo = nextIntent();
     const twice = nextIntent();
-    const withdrawal = (version: number, requestId: string = nextIntent()) => ({
-      op: 'withdraw',
-      requestId,
-      streakId: CADENCE,
-      version,
-    });
     const cue = publishRequest({ riskLeadDays: 3 }, TODAY, {
       baseVersion: 4,
       requestId: twice,
@@ -1311,28 +1259,28 @@ describe('publishStreakDefinition — the page’s reference story', () => {
         publishRequest({ graceDays: 10 }, NEXT_WEEK),
       ],
       [
-        'a draft made before that: stale',
+        'a rule drawn before that: stale',
         publishRequest({ graceDays: 12 }, NEXT_WEEK),
       ],
       [
         'a longer interval from next month: it replaces what waited',
-        publishRequest({ interval: { kind: 'fixed', days: 49 } }, NEXT_MONTH, {
-          baseVersion: 2,
-        }),
+        publishRequest(
+          { streakInterval: StreakInterval.Fixed, intervalDays: 49 },
+          NEXT_MONTH,
+          { baseVersion: 2 },
+        ),
       ],
-      ['the undo: what waits is called off', withdrawal(3, undo)],
-      ['the undo, asked again: answered as it was', withdrawal(3, undo)],
-      ['an undo of what no longer waits: stale', withdrawal(3)],
+      ['the undo: what waits is called off', withdrawRequest(3, undo)],
+      ['the undo, asked again: answered as it was', withdrawRequest(3, undo)],
+      ['an undo of what no longer waits: stale', withdrawRequest(3)],
       [
-        'the next draft proposes 2, which is taken: it is numbered 4',
+        'the next rule proposes 2, which is taken: it is numbered 4',
         publishRequest(
           {
-            protections: {
-              enabled: true,
-              maxBanked: 3,
-              earnEvery: 4,
-              startWith: 1,
-            },
+            protectionsEnabled: true,
+            protectionsMaxBanked: 3,
+            protectionsEarnEvery: 4,
+            protectionsStartWith: 1,
           },
           TOMORROW,
         ),
@@ -1345,7 +1293,7 @@ describe('publishStreakDefinition — the page’s reference story', () => {
         'a recompute: it needs the engine',
         publishRequest({ graceDays: 14 }, NEXT_WEEK, {
           baseVersion: 4,
-          transition: 'recompute',
+          streakTransition: StreakTransition.Recompute,
         }),
       ],
       [
@@ -1364,53 +1312,18 @@ describe('publishStreakDefinition — the page’s reference story', () => {
     for (const [, data] of story) answers.push(await call(data));
 
     expect(answers).toStrictEqual([
-      {
-        kind: 'published',
-        version: 2,
-        effectiveFrom: NEXT_WEEK,
-        direction: 'looser',
-      },
-      { kind: 'refused', code: 'stale', fields: [] },
-      {
-        kind: 'published',
-        version: 3,
-        effectiveFrom: NEXT_MONTH,
-        direction: 'looser',
-      },
-      { kind: 'withdrawn', version: 3 },
-      { kind: 'withdrawn', version: 3 },
-      { kind: 'refused', code: 'stale', fields: [] },
-      {
-        kind: 'published',
-        version: 4,
-        effectiveFrom: TOMORROW,
-        direction: 'looser',
-      },
-      {
-        kind: 'refused',
-        code: 'tooEarly',
-        fields: ['effectiveFrom'],
-        earliest: TOMORROW,
-      },
-      { kind: 'refused', code: 'recomputeNeedsEngine', fields: [] },
-      {
-        kind: 'published',
-        version: 5,
-        effectiveFrom: TODAY,
-        direction: 'neutral',
-      },
-      {
-        kind: 'published',
-        version: 5,
-        effectiveFrom: TODAY,
-        direction: 'neutral',
-      },
-      {
-        kind: 'published',
-        version: 6,
-        effectiveFrom: TOMORROW,
-        direction: 'switch',
-      },
+      published(2, NEXT_WEEK, StreakRuleDirection.Looser),
+      refused(StreakPublishErrorCode.Stale),
+      published(3, NEXT_MONTH, StreakRuleDirection.Looser),
+      withdrawn(3),
+      withdrawn(3),
+      refused(StreakPublishErrorCode.Stale),
+      published(4, TOMORROW, StreakRuleDirection.Looser),
+      refused(StreakPublishErrorCode.TooEarly, [], TOMORROW, TODAY),
+      refused(StreakPublishErrorCode.RecomputeNeedsEngine),
+      published(5, TODAY, StreakRuleDirection.Neutral),
+      published(5, TODAY, StreakRuleDirection.Neutral),
+      published(6, TOMORROW, StreakRuleDirection.Switch),
     ]);
     // One row per act that was written: five publishes, one withdrawal.
     expect(
@@ -1450,12 +1363,7 @@ describe('publishStreakDefinition — the page’s reference story', () => {
     const { call, store } = rig(memoryStreakWorld());
     expect(
       await call(publishRequest({}, NEXT_MONTH, { baseVersion: 0 })),
-    ).toStrictEqual({
-      kind: 'published',
-      version: 1,
-      effectiveFrom: NEXT_MONTH,
-      direction: 'neutral',
-    });
+    ).toStrictEqual(published(1, NEXT_MONTH, StreakRuleDirection.Neutral));
     expect(
       [...store.keys()].filter((key) => key.startsWith(HEAD)).sort(),
     ).toEqual([HEAD, `${HEAD}/versions/000001`]);

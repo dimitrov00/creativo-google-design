@@ -25,6 +25,8 @@ import type {
   BarberListPorts,
   ClockPorts,
   CommitPorts,
+  DefaultLocationPorts,
+  LocationLoadPorts,
   LogPorts,
   PolicyReadPorts,
   QuerySpec,
@@ -38,6 +40,7 @@ import {
   PartyAdmissionSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import { readShopZone } from './shop-zone-read.pipeline';
 
 /**
  * `rebuildCapacity` — keep `capacity/{YYYY-MM}` equal to what the geometry
@@ -45,8 +48,9 @@ import {
  * points, all landing in one barber's rebuild over a span of days:
  *
  * - a `barberBusy` or `scheduleExceptions` write → that one (barber, day),
- *   unless the day is already past in the tenant's zone (TTL purges of dead
- *   days re-fire the triggers; history stays put — returned BEFORE any read);
+ *   unless the day is already past on the default location's clock (TTL
+ *   purges of dead days re-fire the triggers; history stays put — returned
+ *   before any read but the zone's);
  * - a `barberSchedules` write → that barber's horizon;
  * - a `locations` or `settings` write, and the daily sweep → every rostered
  *   barber's horizon, one failure never costing the others theirs.
@@ -58,6 +62,10 @@ import {
  * in its read set, so a booking landing mid-rebuild re-runs it — whose plan
  * is a full sorted `entries[]` `Set` per month (`CapacitySystem.applyPlan`:
  * REPLACE, never merge, never `arrayUnion`).
+ *
+ * "Today" is the default location's (F-4, Law 7.2: a capacity entry spans
+ * every shop a barber works at, so no one location is in scope), read once
+ * per invocation; a zone that cannot be read is the rebuild's store failure.
  */
 
 /** Which write woke the rebuild — the ONLY source of these strings, the field `capacityTrigger`. */
@@ -77,17 +85,13 @@ export type RebuildCapacityCommand =
       readonly capacityTrigger: typeof CapacityTrigger.Day;
       readonly barberId: BarberId;
       readonly localDate: LocalDate;
-      /** The tenant's zone — whose "today" the past-day guard reads. */
-      readonly timeZone: TimeZone;
     }
   | {
       readonly capacityTrigger: typeof CapacityTrigger.Roster;
       readonly barberId: BarberId;
-      readonly timeZone: TimeZone;
     }
   | {
       readonly capacityTrigger: typeof CapacityTrigger.Sweep;
-      readonly timeZone: TimeZone;
     };
 
 /** The barbers whose capacity was rebuilt (none for a past day). */
@@ -99,6 +103,8 @@ export type RebuildCapacityPorts = CommitPorts &
   ClockPorts &
   BarberListPorts &
   PolicyReadPorts &
+  LocationLoadPorts &
+  DefaultLocationPorts &
   LogPorts;
 
 /** What one barber's rebuild reads inside its transaction. */
@@ -244,7 +250,7 @@ export const rebuildCapacity = (ports: RebuildCapacityPorts) => {
     return committed.ok ? Result.ok(undefined) : committed;
   }
 
-  /** Today through the month after the policy's horizon end, on the tenant's clock. */
+  /** Today through the month after the policy's horizon end, on the default location's clock. */
   async function horizonSpan(
     timeZone: TimeZone,
   ): Promise<
@@ -267,11 +273,14 @@ export const rebuildCapacity = (ports: RebuildCapacityPorts) => {
   return async (
     cmd: RebuildCapacityCommand,
   ): Promise<Result<RebuildCapacityAnswer, RepositoryError>> => {
+    const zone = await readShopZone(ports)(null);
+    if (!zone.ok) return zone;
+    const timeZone = zone.value;
     switch (cmd.capacityTrigger) {
       case CapacityTrigger.Day: {
         const today = ZonedTimeSystem.shopNow(
           ports.nowUtcMs(),
-          cmd.timeZone,
+          timeZone,
         ).localDate;
         // A TTL purge of a dead day must not rewrite a retired month.
         if (cmd.localDate < today) return Result.ok({ rebuiltBarberIds: [] });
@@ -285,7 +294,7 @@ export const rebuildCapacity = (ports: RebuildCapacityPorts) => {
           : rebuilt;
       }
       case CapacityTrigger.Roster: {
-        const span = await horizonSpan(cmd.timeZone);
+        const span = await horizonSpan(timeZone);
         if (!span.ok) return span;
         const rebuilt = await rebuildBarber(
           cmd.barberId,
@@ -297,7 +306,7 @@ export const rebuildCapacity = (ports: RebuildCapacityPorts) => {
           : rebuilt;
       }
       case CapacityTrigger.Sweep: {
-        const span = await horizonSpan(cmd.timeZone);
+        const span = await horizonSpan(timeZone);
         if (!span.ok) return span;
         // The ROSTER is the population: a barber with no schedule has no
         // capacity to materialise.

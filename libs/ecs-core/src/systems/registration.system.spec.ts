@@ -275,6 +275,7 @@ describe('RegistrationSystem — complete-registration.use-case.spec.ts', () => 
       id: UserId.of('uid_1'),
       firstName: 'Ada',
       lastName: 'Lovelace',
+      profileEditedAtUtcMs: null,
       ...lifecycle,
       searchName: 'ada lovelace',
       searchPrefixes: [],
@@ -445,6 +446,7 @@ describe('RegistrationSystem.provision (firestore-user-repository.spec.ts)', () 
       accountStatus: AccountStatus.Active,
       email: null,
       birthDate: null,
+      profileEditedAtUtcMs: null,
       searchName: null,
       searchPrefixes: [],
     });

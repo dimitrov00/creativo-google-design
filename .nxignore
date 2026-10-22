@@ -19,6 +19,7 @@ libs/domain/models/src/package.json
 libs/domain/notifications/src/package.json
 libs/domain/scheduling/src/package.json
 libs/ecs-core/src/package.json
+libs/features/client/account-state/src/package.json
 libs/infrastructure/clock/src/package.json
 libs/infrastructure/firebase-app/src/package.json
 libs/infrastructure/firebase-auth/src/package.json

@@ -1,5 +1,6 @@
 <ng-container *transloco="let t">
-  @switch (store.state().kind) { @case ('about') {
+  @switch (store.state().onboardingFlowStep) { @case (OnboardingFlowStep.About)
+  {
   <!-- Journey step 3 of 3 — quiet navigation-stack chrome (owner ruling
        2026-07-25): no back (identity is proven), Sign out rides the
        toolbar's trailing slot as the explicit escape hatch, the toolbar
@@ -213,7 +214,7 @@
       </button>
     </ui-page-action-bar>
   </ui-stack>
-  } @case ('reward') {
+  } @case (OnboardingFlowStep.Reward) {
   <!-- Expressive finale (owner ruling 2026-07-25): CENTERED celebratory
        hero — big accent check badge with springy pop + ring pulse, the
        confetti erupting from its center — and the CTAs ride the page
@@ -282,7 +283,7 @@
       </button>
     </ui-page-action-bar>
   </ui-stack>
-  } @case ('services') {
+  } @case (OnboardingFlowStep.Services) {
   <!-- Personalization phase, step 1 of 3 — the SAME quiet nav-stack
        chrome as the auth journey (owner ruling 2026-07-25): icon-only
        glass-back chevron (returns to the reward screen via the flow's own
@@ -486,7 +487,7 @@
       </button>
     </ui-page-action-bar>
   </ui-stack>
-  } @case ('birthday') {
+  } @case (OnboardingFlowStep.Birthday) {
   <!-- OPTIONAL birthday, its own skippable personalization step (moved off
        the required About form — progressive disclosure; rewards may offer
        birthday presents, admin-configurable later). Personalization step 2
@@ -644,7 +645,7 @@
       </button>
     </ui-page-action-bar>
   </ui-stack>
-  } @case ('avatar') {
+  } @case (OnboardingFlowStep.Avatar) {
   <!-- Personalization step 3 of 3 — same quiet nav-stack chrome. The big
        monogram avatar IS the step: initials until an image is picked (the
        instant local preview swaps in), the pick affordance is the quiet
@@ -817,7 +818,7 @@
       </button>
     </ui-page-action-bar>
   </ui-stack>
-  } @case ('entering') {
+  } @case (OnboardingFlowStep.Entering) {
   <ui-stack
     uiAlignment="center"
     uiSpacing="none"

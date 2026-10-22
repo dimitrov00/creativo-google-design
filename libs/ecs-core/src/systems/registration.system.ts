@@ -209,6 +209,7 @@ export const RegistrationSystem = {
       ...AccountLifecycle.active(),
       email: isPhone ? null : Email.of(parsed.identifier),
       birthDate: null,
+      profileEditedAtUtcMs: null,
       searchName: null,
       searchPrefixes: [],
     };

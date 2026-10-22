@@ -33,12 +33,6 @@
       "path": "../../shared/visits/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/booking/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/shared/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/i18n/tsconfig.lib.json"
     },
     {

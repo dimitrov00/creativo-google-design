@@ -13,13 +13,13 @@ import {
 } from '@jsverse/transloco';
 import { Observable, firstValueFrom, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
-import { type Result, ZonedDateTime, ok } from '@creativo/application/booking';
 import {
   BirthDate,
   BookingLifecycle,
   CustomerOrigin,
+  DiscountMethod,
   E164,
+  FlagName,
   PhotoOrigin,
   Seat,
   SeatOccupant,
@@ -54,16 +54,23 @@ import {
   type LoyaltyClientFixture,
   appointmentFixture,
   customerOf,
+  locationFixture,
   loyaltyAccountFixtures,
   memoryAppointmentPhotoPorts,
   memoryAppointmentReadPorts,
+  memoryAvatarPorts,
   memoryClientJournalPorts,
+  memoryClockPorts,
   memoryCouponVoucherPorts,
   memoryCustomerPorts,
+  memoryDefaultLocationPorts,
+  memoryFlagsPorts,
+  memoryLocationLoadPorts,
   memoryLoyaltyAccountReadPorts,
   memoryLoyaltyCatalogReadPorts,
   memoryLoyaltyWorld,
   memoryProfilePorts,
+  memoryProgramsWorld,
   registeredUserFixture,
   seatFixture,
   termsFixture,
@@ -73,17 +80,22 @@ import {
 import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AVATAR_PORTS,
   CLIENT_JOURNAL_PORTS,
+  CLOCK_PORTS,
   COUPON_VOUCHER_PORTS,
   CUSTOMER_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  FLAGS_PORTS,
+  LOCATION_LOAD_PORTS,
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import {
   AchievementCategoryPage,
   AchievementDetailPage,
+  AchievementScope,
   ClientAchievementsPage,
   ClientCard,
   ClientLedgerPage,
@@ -298,6 +310,8 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
     rowId: 'appointment-1#ivan',
     // The Center's — the seed's first shop; the shop test hands the sheet two.
     locationId: 'loc-center',
+    // …and its zone, every instant on the sheet is read in.
+    timeZone: FIXTURE_TIME_ZONE,
     // An ordinary one-person visit: nobody else is in this booking, so the
     // peer run does not render. The party case has its own test.
     peers: [],
@@ -354,7 +368,7 @@ function visit(partial: Partial<VisitEditorVm> = {}): VisitEditorVm {
     note: 'Закъснявам 5 минути.',
     teamNote: null,
     priceLabel: '28,00 €',
-    priceMinorUnits: 2800,
+    priceCents: 2800,
     // Nothing recorded — NOT zero, which is why the sheet offers an add-row
     // rather than a field reading `0,00 €`.
     tipLabel: null,
@@ -2250,7 +2264,7 @@ describe('StaffVisitEditor', () => {
           appointmentId: 'appointment-2',
           rowId: 'appointment-2#ivan',
           priceLabel: '14,50 €',
-          priceMinorUnits: 1450,
+          priceCents: 1450,
         }),
       );
       if (find(host, 'staff-visit-tip-section')?.hasAttribute('inert'))
@@ -2295,7 +2309,7 @@ describe('StaffVisitEditor', () => {
           appointmentId: 'appointment-3',
           rowId: 'appointment-3#ivan',
           priceLabel: '45,00 €',
-          priceMinorUnits: 4500,
+          priceCents: 4500,
         }),
       );
       if (find(host, 'staff-visit-tip-section')?.hasAttribute('inert'))
@@ -2999,7 +3013,7 @@ describe('StaffVisitEditor', () => {
           status: 'new',
           primaryVerb: null,
           priceLabel: null,
-          priceMinorUnits: null,
+          priceCents: null,
         }),
       );
       const total = find(host, 'staff-visit-total');
@@ -3809,7 +3823,7 @@ describe('StaffVisitEditor', () => {
     /** The sheet's own clock for a photo — the shop's zone, so the host's cannot fail the test. */
     const when = (utcEpochMs: number) =>
       new Intl.DateTimeFormat('bg-BG', {
-        timeZone: 'Europe/Sofia',
+        timeZone: FIXTURE_TIME_ZONE,
         day: 'numeric',
         month: 'short',
         hour: '2-digit',
@@ -4242,14 +4256,14 @@ describe('StaffVisitEditor', () => {
         grantId: 'grant-birthday',
         couponId: 'coupon-birthday',
         label: 'Рожден ден',
-        value: { kind: 'percent_off' as const, percent: 20 },
+        value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
         exclusive: true,
       },
       {
         grantId: 'grant-loyal',
         couponId: 'coupon-loyal',
         label: 'Постоянен клиент',
-        value: { kind: 'percent_off' as const, percent: 5 },
+        value: { discountMethod: DiscountMethod.PercentOff, percent: 5 },
         exclusive: false,
       },
     ];
@@ -4260,21 +4274,21 @@ describe('StaffVisitEditor', () => {
         code: 'FIRST10',
         couponId: 'coupon-first10',
         label: 'Първо посещение',
-        value: { kind: 'percent_off' as const, percent: 10 },
+        value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
         exclusive: false,
       },
       {
         code: 'BEARD5',
         couponId: 'coupon-beard5',
         label: 'Брада −5 €',
-        value: { kind: 'fixed_amount' as const, amountMinorUnits: 500 },
+        value: { discountMethod: DiscountMethod.FixedAmount, amountCents: 500 },
         exclusive: false,
       },
       {
         code: 'ALONE20',
         couponId: 'coupon-alone20',
         label: 'Само за нови',
-        value: { kind: 'percent_off' as const, percent: 20 },
+        value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
         exclusive: true,
       },
     ];
@@ -4422,14 +4436,14 @@ describe('StaffVisitEditor', () => {
             grantId: 'grant-free-cut',
             couponId: 'coupon-free-cut',
             label: 'Безплатно подстригване',
-            value: { kind: 'free_service' as const },
+            value: { discountMethod: DiscountMethod.FreeService },
             exclusive: true,
           },
           {
             grantId: 'grant-fifth',
             couponId: 'coupon-fifth',
             label: 'Пето подстригване',
-            value: { kind: 'free_service' as const },
+            value: { discountMethod: DiscountMethod.FreeService },
             exclusive: true,
           },
         ],
@@ -4686,7 +4700,7 @@ describe('StaffVisitEditor', () => {
             source: 'grant',
             grantId: 'grant-birthday',
             label: 'Рожден ден',
-            value: { kind: 'percent_off', percent: 20 },
+            value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
             code: null,
             exclusive: true,
           },
@@ -4998,7 +5012,7 @@ describe('StaffVisitEditor', () => {
       askCode(host, 'first10');
       answer(
         promo('FIRST10', 'Първо посещение', {
-          kind: 'percent_off',
+          discountMethod: DiscountMethod.PercentOff,
           percent: 10,
         }),
       );
@@ -5040,7 +5054,7 @@ describe('StaffVisitEditor', () => {
       askCode(host, 'first10');
       answer(
         promo('FIRST10', 'Първо посещение', {
-          kind: 'percent_off',
+          discountMethod: DiscountMethod.PercentOff,
           percent: 10,
         }),
       );
@@ -5430,7 +5444,7 @@ describe('StaffVisitEditor', () => {
         discounts: [
           {
             source: 'manual',
-            value: { kind: 'percent_off', percent: 10 },
+            value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
             grantId: null,
             code: null,
           },
@@ -5445,7 +5459,7 @@ describe('StaffVisitEditor', () => {
             {
               source: 'code',
               label: 'Първо посещение',
-              value: { kind: 'percent_off', percent: 10 },
+              value: { discountMethod: DiscountMethod.PercentOff, percent: 10 },
               grantId: null,
               code: 'FIRST10',
               exclusive: false,
@@ -6632,20 +6646,12 @@ class CatalogueLoader implements TranslocoLoader {
   }
 }
 
-const CARD_ZONE = 'Europe/Sofia';
 /** The loyalty fixtures' people: Георги books, Мартин comes along. */
 const GEORGI = 'dev-client-1';
 const MARTIN = 'dev-client-2';
 
-function must<T, E>(result: Result<T, E>): T {
-  if (result.isFailure()) throw new Error('bad fixture');
-  return result.value;
-}
-
 /** Monday 28 September 2026, 12:40 in Sofia — the loyalty fixtures' today. */
-const CARD_NOW_MS = must(
-  ZonedDateTime.fromISO('2026-09-28T12:40:00', CARD_ZONE),
-).toMillis();
+const CARD_NOW_MS = utcMs('2026-09-28T12:40:00+03:00');
 
 /** Георги's client record (D29), as the card resolves it through `CUSTOMER_PORTS`. */
 const GEORGI_RECORD: Customer = {
@@ -6757,7 +6763,7 @@ const GEORGI_GRANT = {
   grantId: 'grant-georgi-punch',
   couponId: 'coupon-punch-free-cut',
   label: 'Безплатно подстригване',
-  value: { kind: 'free_service' as const },
+  value: { discountMethod: DiscountMethod.FreeService },
   exclusive: true,
 };
 
@@ -6769,7 +6775,7 @@ const GEORGI_BIRTHDAY_GRANT = {
   grantId: 'grant-georgi-birthday',
   couponId: 'coupon-birthday',
   label: 'Рожден ден',
-  value: { kind: 'percent_off' as const, percent: 20 },
+  value: { discountMethod: DiscountMethod.PercentOff, percent: 20 },
   exclusive: true,
   occasion: 'birthday' as const,
   expiresOn: '2026-10-28',
@@ -6828,18 +6834,28 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
           },
           loader: CatalogueLoader,
         }),
-        provideFeatureFlags({
-          'client.profile': true,
-          'loyalty.points': true,
-          'loyalty.streaks': true,
-          'loyalty.achievements': true,
-          'loyalty.tiers': true,
-        }),
         {
-          provide: CLOCK,
-          useValue: {
-            now: (zone: string) => ZonedDateTime.fromMillis(CARD_NOW_MS, zone),
-          },
+          provide: FLAGS_PORTS,
+          useValue: memoryFlagsPorts([
+            FlagName.ClientProfile,
+            FlagName.LoyaltyPoints,
+            FlagName.LoyaltyStreaks,
+            FlagName.LoyaltyAchievements,
+            FlagName.LoyaltyTiers,
+          ]),
+        },
+        { provide: CLOCK_PORTS, useValue: memoryClockPorts(CARD_NOW_MS) },
+        {
+          // The card reads "today" in the default location's zone: the
+          // fixture shop's, on `FIXTURE_TIME_ZONE`.
+          provide: LOCATION_LOAD_PORTS,
+          useValue: memoryLocationLoadPorts(
+            memoryProgramsWorld({ locations: [locationFixture()] }),
+          ),
+        },
+        {
+          provide: DEFAULT_LOCATION_PORTS,
+          useValue: memoryDefaultLocationPorts(locationFixture().id),
         },
         {
           provide: LOYALTY_ACCOUNT_READ_PORTS,
@@ -6883,17 +6899,15 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
         {
           // Георги's portrait, found by the card — his seat carries no face,
           // as in the live seed, so the head's is the only one there is.
-          provide: AVATAR_UPLOADER,
-          useValue: {
-            find: async (userId: string) =>
-              ok(
-                userId === GEORGI
-                  ? { url: GEORGI_FACE, path: `avatars/${GEORGI}` }
-                  : null,
-              ),
-            upload: async () => ok({ url: '', path: '' }),
-            remove: async () => ok(undefined),
-          },
+          provide: AVATAR_PORTS,
+          useValue: memoryAvatarPorts(
+            new Map([
+              [
+                CoreUserId.of(GEORGI),
+                { url: GEORGI_FACE, path: `avatars/${GEORGI}` },
+              ],
+            ]),
+          ),
         },
       ],
       errorOnUnknownElements: true,
@@ -7035,20 +7049,24 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     expect(editor().pageTitle()).toBe('Постижения');
     expect(host().querySelector('#staff-visit-page-title')?.tagName).toBe('H2');
 
-    child(ClientAchievementsPage).openScope.emit({ kind: 'archive' });
+    child(ClientAchievementsPage).openScope.emit({
+      achievementScope: AchievementScope.Archive,
+    });
     await settle();
     expect(pageKind()).toBe('achievementCategory');
     expect(editor().depth()).toBe(3);
-    expect(child(AchievementCategoryPage).scope()).toEqual({ kind: 'archive' });
+    expect(child(AchievementCategoryPage).scope()).toEqual({
+      achievementScope: AchievementScope.Archive,
+    });
 
     child(AchievementCategoryPage).openScope.emit({
-      kind: 'season',
+      achievementScope: AchievementScope.Season,
       seasonId: 'season-2026-summer',
     });
     await settle();
     expect(editor().depth()).toBe(4);
     expect(child(AchievementCategoryPage).scope()).toEqual({
-      kind: 'season',
+      achievementScope: AchievementScope.Season,
       seasonId: 'season-2026-summer',
     });
 
@@ -7065,7 +7083,9 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     // …so ‹ lands on the archive the season was opened from.
     await back();
     expect(editor().depth()).toBe(3);
-    expect(child(AchievementCategoryPage).scope()).toEqual({ kind: 'archive' });
+    expect(child(AchievementCategoryPage).scope()).toEqual({
+      achievementScope: AchievementScope.Archive,
+    });
     await back();
     expect(pageKind()).toBe('clientAchievements');
     await back();
@@ -7658,7 +7678,9 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
 
     // From a scope's grid at the cap: the page REPLACES the family's, and ‹
     // lands on the scope it was opened from.
-    child(ClientAchievementsPage).openScope.emit({ kind: 'archive' });
+    child(ClientAchievementsPage).openScope.emit({
+      achievementScope: AchievementScope.Archive,
+    });
     await settle();
     child(AchievementCategoryPage).openMedal.emit('series-svc-fade');
     await settle();
@@ -7674,7 +7696,9 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     await back();
     expect(pageKind()).toBe('achievementCategory');
     expect(editor().depth()).toBe(3);
-    expect(child(AchievementCategoryPage).scope()).toEqual({ kind: 'archive' });
+    expect(child(AchievementCategoryPage).scope()).toEqual({
+      achievementScope: AchievementScope.Archive,
+    });
   });
 
   it('the dock carries a medal page’s one verb: «Добави фейд» seats the service on the person, stays on the page, says so once and gives way to the ✓ (§5.2, DV-C)', async () => {

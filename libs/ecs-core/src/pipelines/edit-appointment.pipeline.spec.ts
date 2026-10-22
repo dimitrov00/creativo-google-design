@@ -25,6 +25,10 @@ import {
   VoucherLifecycle,
   WriteAction,
   type WriteOp,
+  type BookingCall,
+  EditCommand,
+  RequestedSubjectRole,
+  ResizeEdge,
 } from '@core/components';
 import {
   BarberBusyDayId,
@@ -39,6 +43,8 @@ import {
   Result,
   SeatId,
   UserId,
+  StaffEditErrorCode,
+  TimeErrorCode,
 } from '@core/primitives';
 import {
   type AccountContact,
@@ -50,14 +56,7 @@ import {
   type GiftVoucher,
 } from '@core/entities';
 
-import {
-  AppointmentEditSystem,
-  AuditSystem,
-  EditCommand,
-  RequestedSubjectRole,
-  ResizeEdge,
-  StaffEditErrorCode,
-} from '@core/systems';
+import { AppointmentEditSystem, AuditSystem } from '@core/systems';
 import {
   appointmentFixture,
   at,
@@ -79,7 +78,6 @@ import {
 } from '@core/testing';
 import {
   type EditAppointmentCommand,
-  type EditCommandInput,
   editAppointment,
 } from './edit-appointment.pipeline';
 
@@ -142,9 +140,11 @@ function catalogue() {
   ];
 }
 
-const MOVE_TO_ELEVEN: EditCommandInput = {
+/** A move to 11:00 on the visit's own day — the shop's wall clock, never an instant. */
+const MOVE_TO_ELEVEN: BookingCall.EditCommand = {
   editCommand: EditCommand.Move,
-  startUtcMs: utcMs('2026-10-01T11:00:00.000+03:00'),
+  localDate: THURSDAY,
+  startMinutes: at(11),
   seatIds: null,
 };
 
@@ -328,7 +328,8 @@ describe('editAppointment — the shop moving its own book', () => {
           {
             editCommand: EditCommand.Resize,
             resizeEdge: ResizeEdge.End,
-            atUtcMs: utcMs('2026-10-01T11:45:00.000+03:00'),
+            localDate: THURSDAY,
+            atMinutes: until(11, 45),
             seatIds: null,
           },
         ],
@@ -416,17 +417,18 @@ describe('editAppointment — the shop moving its own book', () => {
       stored(visit()),
       { path: [Collections.BarberBusy, THURSDAY_KEY], body: bodyOf(taken) },
     ];
-    const resize: EditCommandInput = {
+    const resize: BookingCall.EditCommand = {
       editCommand: EditCommand.Resize,
       resizeEdge: ResizeEdge.End,
-      atUtcMs: utcMs('2026-10-01T10:45:00.000+03:00'),
+      localDate: THURSDAY,
+      atMinutes: until(10, 45),
       seatIds: null,
     };
     const refused = await rig(docs).run(command({ commands: [resize] }));
     expect(!refused.ok && refused.error).toMatchObject({
       errorCode: StaffEditErrorCode.Overlaps,
       barberId: FIXTURE_IDS.barber,
-      edge: ResizeEdge.End,
+      resizeEdge: ResizeEdge.End,
     });
     const acknowledged = await rig(docs).run(
       command({ commands: [resize], acknowledgedOverlap: true }),
@@ -454,7 +456,8 @@ describe('editAppointment — the shop moving its own book', () => {
         commands: [
           {
             editCommand: EditCommand.Move,
-            startUtcMs: utcMs('2026-10-01T09:00:00.000+03:00'),
+            localDate: THURSDAY,
+            startMinutes: at(9),
             seatIds: null,
           },
         ],
@@ -463,6 +466,26 @@ describe('editAppointment — the shop moving its own book', () => {
     expect(!early.ok && early.error.errorCode).toBe(
       StaffEditErrorCode.BeforeArrival,
     );
+  });
+
+  it('refuses a wall clock inside the spring-forward gap DST_GAP_INVALID_TIME, writing nothing (4A-2 (a))', async () => {
+    const { tx, run } = rig([...catalogue(), stored(visit())]);
+    const answer = await run(
+      command({
+        commands: [
+          {
+            editCommand: EditCommand.Move,
+            localDate: localDate('2027-03-28'),
+            startMinutes: at(3, 30),
+            seatIds: null,
+          },
+        ],
+      }),
+    );
+    expect(!answer.ok && answer.error).toMatchObject({
+      errorCode: TimeErrorCode.DstGap,
+    });
+    expect(tx.plans).toEqual([]);
   });
 
   it('refuses a fresh seat on a chair this shop does not roster (barberId)', async () => {
@@ -476,7 +499,8 @@ describe('editAppointment — the shop moving its own book', () => {
             serviceId: FIXTURE_IDS.service,
             variantId: null,
             barberId: BarberId.of('b-nobody'),
-            startUtcMs: utcMs('2026-10-01T12:00:00.000+03:00'),
+            localDate: THURSDAY,
+            startMinutes: at(12),
             durationMinutes: duration(30),
             addedSubject: {
               requestedSubjectRole: RequestedSubjectRole.Guest,
@@ -699,7 +723,8 @@ describe('editAppointment — the shop moving its own book', () => {
             serviceId: FIXTURE_IDS.service,
             variantId: null,
             barberId: FIXTURE_IDS.barber,
-            startUtcMs: utcMs('2026-10-01T12:00:00.000+03:00'),
+            localDate: THURSDAY,
+            startMinutes: at(12),
             durationMinutes: duration(30),
             addedSubject: { requestedSubjectRole: RequestedSubjectRole.Self },
           },

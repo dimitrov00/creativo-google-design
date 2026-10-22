@@ -11,20 +11,12 @@ import {
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
-  BookingContact,
-  type BookingContactProps,
-  MAX_BOOKING_NOTE_LENGTH,
-} from '@creativo/application/booking';
-import { CLOCK } from '@creativo/application/shared';
-import { type CountryIso2, PhoneNumber } from '@creativo/application/identity';
-import {
   AccountStateService,
-  ageDayOf,
   saveOwnProfile,
 } from '@creativo/features/client/account-state';
-import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
+import { GATEWAY_PORTS } from '@creativo/infrastructure/firebase-app';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
-import type { E164 } from '@core/components';
+import { BookingContact, type CountryIso2, type E164 } from '@core/components';
 import { Profile, type User } from '@core/entities';
 import {
   UiButton,
@@ -62,14 +54,15 @@ import {
  *
  * ### The switch saves the NAME, and says so (FIX 2, 2026-09-25)
  * The 2026-08-05 ruling had the switch save the whole form, so it would not
- * be "a lie with a toggle". The owner may now edit only their names and
- * birth date on the profile (the `users` allowlist); a phone or e-mail
- * changes only through the OTP contact-change callables, which prove the
- * person holds the new one. So the switch is worded for what it can do —
- * save the name — and appears only while saving it would change the
- * profile's. A typed phone or e-mail that differs gets one quiet line: it
- * applies to this booking only. Every profile change is audited server-side
- * by the `auditProfileChanges` trigger, actor and fields included.
+ * be "a lie with a toggle". The owner may edit only their names and birth
+ * date on the profile, and only through the `updateProfile` callable (the
+ * `users` document takes no client write, Phase 4a 4A-3 (2)); a phone or
+ * e-mail is the account's login, not something this sheet can change. So
+ * the switch is worded for what it can do — save the name — and appears
+ * only while saving it would change the profile's. A typed phone or e-mail
+ * that differs gets one quiet line: it applies to this booking only. The
+ * callable writes the profile-change audit row itself, credited to the
+ * person, in the same transaction as the edit.
  *
  * Ownership never moves either way: whatever name and number are entered,
  * the appointment belongs to the signed-in account, which remains the only
@@ -100,23 +93,20 @@ import {
 export class BookingContactSheet {
   private readonly transloco = inject(TranslocoService);
   private readonly accountState = inject(AccountStateService);
-  private readonly profilePorts = inject(PROFILE_PORTS);
-  private readonly clock = inject(CLOCK);
+  private readonly gateway = inject(GATEWAY_PORTS);
 
-  /** What the booking already carries, or `null` before anything is captured. */
-  readonly uiContact = input<BookingContactProps | null>(null);
-  readonly uiDefaultCountry = input<CountryIso2 | undefined>(undefined);
+  /** What the booking already carries — `BookingContact.NONE` before anything is captured. */
+  readonly uiContact = input<BookingContact>(BookingContact.NONE);
+  readonly uiDefaultCountry = input<CountryIso2 | null>(null);
   readonly uiLocale = input('bg');
 
-  readonly saved = output<BookingContactProps>();
+  readonly saved = output<BookingContact.Present>();
   readonly dismissed = output<void>();
-
-  protected readonly noteLimit = MAX_BOOKING_NOTE_LENGTH;
 
   protected readonly name = signal('');
   protected readonly email = signal('');
   protected readonly phone = signal<string | null>(null);
-  protected readonly phoneCountry = signal<CountryIso2 | undefined>(undefined);
+  protected readonly phoneCountry = signal<CountryIso2 | null>(null);
   protected readonly saveToProfile = signal(false);
   protected readonly pending = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -129,12 +119,33 @@ export class BookingContactSheet {
       const carried = this.uiContact();
       const user = this.accountState.account();
       this.name.set(
-        carried?.name ?? (user === null ? '' : Profile.fullName(user)),
+        carried.contactName ?? (user === null ? '' : Profile.fullName(user)),
       );
-      this.email.set(carried?.email ?? user?.email ?? '');
-      this.phone.set(carried?.phone ?? user?.phone ?? null);
-      this.phoneCountry.set(phoneCountryOf(user?.phone ?? null));
+      this.email.set(carried.contactEmail ?? user?.email ?? '');
+      this.phone.set(carried.contactPhone ?? user?.phone ?? null);
+      void this.seedCountry(user?.phone ?? null);
     });
+  }
+
+  /** Which seeding is the latest — an older one landing late is dropped. */
+  private countrySeeding = 0;
+
+  /** A save in flight — a second tap while the phone rules load is dropped. */
+  private saving = false;
+
+  /**
+   * The stored E.164's country, as the phone field names it (`null` when it
+   * cannot be placed) — read with the lazily loaded phone rules.
+   */
+  private async seedCountry(phone: E164 | null): Promise<void> {
+    const seeding = ++this.countrySeeding;
+    if (phone === null) {
+      this.phoneCountry.set(null);
+      return;
+    }
+    const { PhoneSystem } = await loadPhoneRules();
+    if (seeding !== this.countrySeeding) return;
+    this.phoneCountry.set(PhoneSystem.countryOf(phone));
   }
 
   protected readonly canSave = computed(
@@ -172,26 +183,43 @@ export class BookingContactSheet {
 
   /**
    * Validate through the DOMAIN, never through a second copy of its rules:
-   * the same `BookingContact.create` the server runs, so a value this sheet
+   * the same `BookingContact.create` the server runs, with the same phone
+   * rules (`PhoneSystem.parse`, loaded on first use), so a value this sheet
    * accepts is a value the commit accepts.
    */
   protected async save(): Promise<void> {
-    if (this.pending()) return;
+    if (this.pending() || this.saving) return;
+    this.saving = true;
+    try {
+      await this.saveContact();
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  private async saveContact(): Promise<void> {
     this.error.set(null);
 
-    const result = BookingContact.create({
-      name: this.name(),
-      phone: this.phone() ?? '',
-      email: this.email(),
-      // The note is the VISIT's, edited in its own place on the review step
-      // — this sheet neither shows nor loses it.
-      note: this.uiContact()?.note ?? null,
-    });
-    if (result.isFailure()) {
+    const { PhoneSystem } = await loadPhoneRules();
+    const result = BookingContact.create(
+      {
+        name: this.name(),
+        phone: this.phone() ?? '',
+        email: this.email(),
+        // The note is the VISIT's, edited in its own place on the review
+        // step — this sheet neither shows nor loses it.
+        note: this.uiContact().contactNote,
+      },
+      (raw) => {
+        const parsed = PhoneSystem.parse(raw, null);
+        return parsed.ok ? parsed.value.e164 : null;
+      },
+    );
+    if (!result.ok) {
       this.error.set(translateDomainError(this.transloco, result.error));
       return;
     }
-    const contact = result.value.toProps();
+    const contact = result.value;
 
     // Only while the switch is on screen: a name typed back to the profile's
     // own hides it, and a hidden switch must not still write.
@@ -216,36 +244,34 @@ export class BookingContactSheet {
   /**
    * `true` once the profile carries the typed NAME.
    *
-   * The owner write (`PROFILE_PORTS.writeOwnProfile`) judges the edit with
-   * `ProfileEditSystem.decide` against the stored profile inside its
-   * transaction — the one rule the server's `updateProfile` runs too — so a
-   * value the profile would refuse never reaches the document. Phone and
-   * e-mail are the STORED ones, never the typed: the write touches only the
-   * owner's allowlist, and the search keys it derives index the contact
-   * details the document actually holds. No refresh afterwards: `account`
-   * is the live `users/{uid}` listener, so the review row behind the sheet
-   * shows the new name as soon as the write lands.
+   * The edit goes through the `updateProfile` callable (`saveOwnProfile`):
+   * the server judges it with `ProfileEditSystem` against the stored profile
+   * inside its transaction, so a value the profile would refuse never
+   * reaches the document, and it writes the audit row in the same breath.
+   * Only the names travel — the birth date is kept (`null`), and the phone
+   * and e-mail are the account's, never the typed ones. No refresh
+   * afterwards: `account` is the live `users/{uid}` listener, so the review
+   * row behind the sheet shows the new name as soon as the write lands.
    */
-  private async writeProfile(contact: BookingContactProps): Promise<boolean> {
+  private async writeProfile(
+    contact: BookingContact.Present,
+  ): Promise<boolean> {
     const user = this.accountState.account();
     if (!user) return false;
-    const name = profileNameFrom(contact.name, user);
+    const name = profileNameFrom(contact.contactName, user);
     if (name === null) return false;
 
-    // The birth-date age window (the stored date is re-judged) is checked
-    // on the UTC day of the Clock port, never a raw Date (§7.1).
-    const ageDay = ageDayOf(this.clock);
-    if (ageDay === null) return false;
-
-    const code = await saveOwnProfile(
-      this.profilePorts,
-      user.id,
-      { firstName: name.firstName, lastName: name.lastName, birthDate: null },
-      ageDay,
-    );
+    const code = await saveOwnProfile(this.gateway, {
+      firstName: name.firstName,
+      lastName: name.lastName,
+      birthDate: null,
+    });
     return code === null;
   }
 }
+
+/** The phone rules, on first use — see `phone.lazy.ts`. */
+const loadPhoneRules = () => import('./phone.lazy');
 
 /**
  * The profile name a typed name would be saved as — the ONE split both the
@@ -268,11 +294,4 @@ function profileNameFrom(
     firstName: first,
     lastName: rest.length > 0 ? rest.join(' ') : (user.lastName ?? ''),
   };
-}
-
-/** The stored E.164's country, as the phone field names it (`undefined` when it cannot be placed). */
-function phoneCountryOf(phone: E164 | null): CountryIso2 | undefined {
-  if (phone === null) return undefined;
-  const parsed = PhoneNumber.create(phone);
-  return parsed.isSuccess() ? parsed.value.country : undefined;
 }

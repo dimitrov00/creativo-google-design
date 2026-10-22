@@ -7,14 +7,12 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
 import {
+  AUTH_SESSION_PORTS,
   FIREBASE_AUTH,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { memoryProfilePorts } from '@core/testing';
-import { ok } from '@creativo/domain/kernel';
-import { ANONYMOUS_PRINCIPAL } from '@creativo/domain/identity';
+import { memoryAuthSessionPorts, memoryProfilePorts } from '@core/testing';
 import { App } from './app';
 
 @Injectable()
@@ -43,14 +41,8 @@ describe('App', () => {
       providers: [
         provideRouter([]),
         ...provideTestI18n(),
-        {
-          provide: AUTH_GATEWAY,
-          useValue: {
-            observePrincipal: () => of(ANONYMOUS_PRINCIPAL),
-            refreshToken: () => Promise.resolve(ok(undefined)),
-            signOut: () => Promise.resolve(ok(undefined)),
-          },
-        },
+        // Nobody signed in: the session double's anonymous principal.
+        { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
         // No account signed in: an empty profile store.
         { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
         // E2eSignInHookService (only wired in dev mode, which TestBed runs

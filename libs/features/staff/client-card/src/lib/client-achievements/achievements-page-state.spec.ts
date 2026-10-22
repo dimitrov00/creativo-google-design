@@ -9,10 +9,11 @@ import {
   achievementsIdPrefix,
   achievementsPageState,
 } from './achievements-page-state';
+import { CardLoadState } from '../client-pages.vm';
 
 const DATA = achievementsDataOf('georgi', GEORGI_PREVIOUS_MS);
 const CTX = achievementsContextOf(georgiContext(), 'Георги Петров');
-const READY = { status: 'ready', data: DATA } as const;
+const READY = { cardLoadState: CardLoadState.Ready, data: DATA } as const;
 
 describe('achievementsPageState', () => {
   it('is absent where there is no achievements data at all', () => {
@@ -23,7 +24,11 @@ describe('achievementsPageState', () => {
 
   it('waits for the reads, and for the card’s words', () => {
     expect(
-      achievementsPageState({ status: 'loading' }, CTX, () => 'vm'),
+      achievementsPageState(
+        { cardLoadState: CardLoadState.Loading },
+        CTX,
+        () => 'vm',
+      ),
     ).toEqual({ kind: 'loading' });
     expect(achievementsPageState(READY, null, () => 'vm')).toEqual({
       kind: 'loading',
@@ -32,7 +37,11 @@ describe('achievementsPageState', () => {
 
   it('fails with the read', () => {
     expect(
-      achievementsPageState({ status: 'failed' }, CTX, () => 'vm'),
+      achievementsPageState(
+        { cardLoadState: CardLoadState.Failed },
+        CTX,
+        () => 'vm',
+      ),
     ).toEqual({ kind: 'failed' });
   });
 

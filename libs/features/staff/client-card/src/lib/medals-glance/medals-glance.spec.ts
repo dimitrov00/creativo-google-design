@@ -10,6 +10,7 @@ import {
 import { type Observable, of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import { ClientCardStore } from '../client-card.store';
+import { cardRuntimeProviders } from '../../testing/achievements-pages.rig';
 import type { MedalsGlanceVm } from '../client-pages.vm';
 import {
   MEDALS,
@@ -61,6 +62,7 @@ async function mount(vm: MedalsGlanceVm) {
     imports: [Host],
     providers: [
       ClientCardStore,
+      ...cardRuntimeProviders(),
       ...provideTransloco({
         config: {
           availableLangs: ['bg', 'en'],
@@ -101,7 +103,7 @@ describe('lib-medals-glance — Георги: three medals, a cue, two records',
     expect(card.tagName).toBe('UI-CARD');
     expect(card.getAttribute('data-tone')).toBe('elevated');
     expect(card.getAttribute('data-padding')).toBe('comfortable');
-    const grid = must(card.querySelector('ui-grid'));
+    const grid = must(card.querySelector<HTMLElement>('ui-grid'));
     expect(grid.getAttribute('role')).toBe('list');
     expect(grid.getAttribute('aria-label')).toBe('Постижения');
     expect(grid.style.getPropertyValue('--ui-grid-columns')).toBe('3');

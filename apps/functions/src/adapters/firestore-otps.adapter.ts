@@ -12,7 +12,6 @@ import { withPurgeAt } from './firestore-ttl.adapter';
  * - `loadOpenOtps` — every challenge for a destination still unconsumed and
  *   created at or after the window start: `destination ==`,
  *   `consumedAtUtcMs == null`, `createdAtUtcMs >=` (index #10);
- * - `loadOtp` — `otps/{id}`, `null` when absent;
  * - `saveOtp` — a `Set` of the body plus its `purgeAt` TTL stamp
  *   (`purgeAtFor`, the one place: `expiresAtUtcMs` + 24 h, F2-11).
  *
@@ -42,18 +41,6 @@ export const firestoreOtpPorts = (db: Firestore): OtpStorePorts => ({
       return Result.err(
         RepositoryError.readFailed(Collections.Otps, failureOf(error)),
       );
-    }
-  },
-
-  loadOtp: async (id) => {
-    const path = `${Collections.Otps}/${id}`;
-    try {
-      const snap = await db.doc(path).get();
-      return Result.ok(
-        snap.exists ? ({ id: snap.id, ...snap.data() } as Otp) : null,
-      );
-    } catch (error) {
-      return Result.err(RepositoryError.readFailed(path, failureOf(error)));
     }
   },
 

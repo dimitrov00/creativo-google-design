@@ -39,6 +39,10 @@ import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TIME_ZONE,
   localDate,
+  locationFixture,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStore,
   memoryTxPorts,
   minute,
@@ -188,7 +192,11 @@ async function bookAt24(
     ...tx,
     commit,
     ...telemetry,
-    tenantTimeZone: FIXTURE_TIME_ZONE,
+    // The shop's clock: the default location's (F-4), the fixture shop.
+    ...memoryLocationLoadPorts(
+      memoryProgramsWorld({ locations: [locationFixture()] }),
+    ),
+    ...memoryDefaultLocationPorts(),
     loadPolicy: async () =>
       hooks.policy === null
         ? Result.ok(policyAt(live.windowHours))
@@ -215,6 +223,7 @@ async function bookAt24(
     customers.filter((id): id is CustomerId => id !== undefined),
     null,
     1,
+    FIXTURE_TIME_ZONE,
   );
   commits = 0;
   const lateOf = (who: UserId) =>
@@ -548,6 +557,24 @@ describe('continuePolicyRecompute — failures', () => {
       PolicyStepOutcome.Stalled,
     );
     expect(book.store.get(JOB_PATH)).toBe(recorded);
+  });
+
+  it('stalls on a default location that is not stored — the zone’s refusal is a permanent store failure (4A-2 (e))', async () => {
+    const book = await bookAt24();
+    await book.start('evt-a', 1_800_000_000, 24, 48);
+    const started = book.jobOf();
+    const step = continuePolicyRecompute({
+      ...book.ports,
+      ...memoryLocationLoadPorts(memoryProgramsWorld({ locations: [] })),
+    });
+    const report = await step({ fired: started }, unbounded);
+    expect(report.ok && report.value).toMatchObject({
+      policyStepOutcome: PolicyStepOutcome.Stalled,
+      attemptFailure: {
+        failureCode: 'catalog-location-zone-unknown',
+        attemptOutcome: AttemptOutcome.Permanent,
+      },
+    });
   });
 
   it('records a stall when the advance itself fails permanently, and answers a transient one for redelivery', async () => {

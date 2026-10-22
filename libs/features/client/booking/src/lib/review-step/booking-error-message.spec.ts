@@ -2,10 +2,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { TranslocoService } from '@jsverse/transloco';
 import { describe, expect, it } from 'vitest';
+import { ShopReach } from '@core/components';
 import {
-  BookingGatewayError,
-  shopReachKey,
-} from '@creativo/application/booking';
+  BookingErrorCode,
+  BookingFlowError,
+  MoveErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+} from '@core/primitives';
 import {
   bookingErrorMessage,
   callHrefForRefusal,
@@ -51,10 +55,10 @@ const en = catalogue('en');
 const bg = catalogue('bg');
 
 /**
- * Transloco's lookup over one real catalogue: `errors` holds flat dotted keys
- * (`"booking.gateway.failed"`) beside nested groups, so a key resolves to
- * `errors` + the rest, verbatim — and a missing key comes back as itself,
- * which is what the real service answers too.
+ * Transloco's lookup over one real catalogue: `errors` holds flat keys
+ * (`"BOOKING_TOO_SOON"`, `"booking.gateway.failed"`) beside nested groups,
+ * so a key resolves to `errors` + the rest, verbatim — and a missing key
+ * comes back as itself, which is what the real service answers too.
  */
 function translator(source: Catalogue): TranslocoService {
   const errors = new Map<string, unknown>(Object.entries(source.errors));
@@ -85,26 +89,35 @@ function translator(source: Catalogue): TranslocoService {
 /** The shop's number, as the page dials it when the catalogue knows it. */
 const CALL = 'tel:+359888123456';
 
-/** The phrase a sentence sends the client to the shop with — see `shopReachKey`. */
+/** The phrase a sentence sends the client to the shop with — see `ShopReach.forCallHref`. */
 function reach(catalogue: Catalogue, kind: 'call' | 'contact'): string {
   const phrase = translator(catalogue).translate(`booking.reach.${kind}`);
   expect(phrase).not.toBe(`booking.reach.${kind}`);
   return phrase;
 }
 
-const CARRIED = 'booking.reschedule.carried_seat_unplaceable';
+const CARRIED = MoveErrorCode.CarriedSeatUnplaceable;
 
-/** One `errors` entry of a shipped catalogue, by its flat dotted key. */
+/** One `errors` entry of a shipped catalogue, by its flat key. */
 function copy(catalogue: Catalogue, key: string): string | undefined {
   return new Map(Object.entries(catalogue.errors)).get(key);
 }
 
-function carried(refusal: string): BookingGatewayError {
-  return new BookingGatewayError('unknown', 'refused', {
-    serverCode: CARRIED,
+/** A refused move, as the callable answers it and the web classifies it. */
+function carried(refusal: string): PipelineError {
+  return PipelineError.fromWire('failed-precondition', {
+    errorCode: CARRIED,
     refusal,
-    seatIds: 'seat-son',
+    seatIds: ['seat-son'],
   });
+}
+
+/** A refused commit, its server code and context as the wire carries them. */
+function refused(
+  status: string,
+  details: Readonly<Record<string, unknown>>,
+): PipelineError {
+  return PipelineError.fromWire(status, details);
 }
 
 describe('bookingErrorMessage — what the review step says about a refusal', () => {
@@ -208,49 +221,63 @@ describe('bookingErrorMessage — what the review step says about a refusal', ()
 
   it('reads the FIELD an invalid request names as its reason — one person in two chairs, two guests under one name', () => {
     for (const field of ['person_overlap', 'guest_label']) {
-      const error = new BookingGatewayError('invalid_request', 'refused', {
-        serverCode: 'booking.commit.invalid_input',
+      const error = refused('invalid-argument', {
+        errorCode: BookingErrorCode.InvalidInput,
         field,
       });
       for (const catalogue of [en, bg]) {
-        const own = copy(catalogue, `booking.commit.invalid_input.${field}`);
+        const own = copy(
+          catalogue,
+          `${BookingErrorCode.InvalidInput}.${field}`,
+        );
         expect(own).toBeTruthy();
         expect(bookingErrorMessage(translator(catalogue), error)).toBe(own);
-        expect(own).not.toBe(copy(catalogue, 'booking.commit.invalid_input'));
+        expect(own).not.toBe(copy(catalogue, BookingErrorCode.InvalidInput));
       }
     }
     // A field the catalogue has no words for is the code's own copy.
-    const unknown = new BookingGatewayError('invalid_request', 'refused', {
-      serverCode: 'booking.commit.invalid_input',
+    const unknown = refused('invalid-argument', {
+      errorCode: BookingErrorCode.InvalidInput,
       field: 'seats',
     });
     expect(bookingErrorMessage(translator(en), unknown)).toBe(
-      copy(en, 'booking.commit.invalid_input'),
+      copy(en, BookingErrorCode.InvalidInput),
     );
   });
 
   it('speaks the server’s specific copy with its parameters', () => {
-    const error = new BookingGatewayError('invalid_request', 'too soon', {
-      serverCode: 'booking.commit.too_soon',
-      minLeadMinutes: '120',
+    const error = refused('failed-precondition', {
+      errorCode: BookingErrorCode.TooSoon,
+      minLeadMinutes: 120,
     });
     expect(bookingErrorMessage(translator(en), error)).toContain('120');
   });
 
-  it('falls back to the gateway’s own copy for a code the catalogue does not know — never a raw code', () => {
-    const error = new BookingGatewayError('unknown', 'boom', {
-      serverCode: 'booking.something.new',
-    });
+  it('falls back to the review step’s own copy for a code the catalogue does not know — never a raw code', () => {
+    const error = refused('unknown', { errorCode: 'BOOKING_SOMETHING_NEW' });
     expect(bookingErrorMessage(translator(en), error)).toBe(
       en.errors['booking.gateway.failed'],
     );
   });
 
-  it('uses the gateway’s own copy when the server sent no code at all', () => {
-    const error = new BookingGatewayError('unavailable', 'offline');
+  it('uses the review step’s own copy when the server sent no code at all', () => {
+    const error = PipelineError.bare(PipelineErrorCode.Unavailable);
     expect(bookingErrorMessage(translator(en), error)).toBe(
       en.errors['booking.gateway.failed'],
     );
+  });
+
+  it('words a step the machine refused in its own `errors.<errorCode>`', () => {
+    for (const catalogue of [en, bg]) {
+      const own = copy(catalogue, 'BOOKING_FLOW_EMPTY_CART');
+      expect(own).toBeTruthy();
+      expect(
+        bookingErrorMessage(
+          translator(catalogue),
+          BookingFlowError.emptyCart(),
+        ),
+      ).toBe(own);
+    }
   });
 });
 
@@ -264,36 +291,39 @@ describe('carriedRefusalOf — when the review step offers the shop’s number',
   it('is null for every other failure — a taken slot is fixed by the grid, not a call', () => {
     expect(
       carriedRefusalOf(
-        new BookingGatewayError('slot_unavailable', 'gone', {
-          serverCode: 'booking.commit.slot_unavailable',
+        refused('failed-precondition', {
+          errorCode: BookingErrorCode.SlotUnavailable,
         }),
       ),
     ).toBeNull();
     expect(
-      carriedRefusalOf(new BookingGatewayError('unavailable', 'offline')),
+      carriedRefusalOf(PipelineError.bare(PipelineErrorCode.Unavailable)),
     ).toBeNull();
     // A `refusal` riding on some other code is not this one.
     expect(
       carriedRefusalOf(
-        new BookingGatewayError('unknown', 'x', {
-          serverCode: 'booking.commit.invalid_input',
+        refused('invalid-argument', {
+          errorCode: BookingErrorCode.InvalidInput,
           refusal: 'barber_unavailable',
         }),
       ),
     ).toBeNull();
+    // …and a step the machine refused is no call either.
+    expect(carriedRefusalOf(BookingFlowError.emptyCart())).toBeNull();
   });
 });
 
 describe('callHrefForRefusal — the review step’s call button', () => {
   const PHONE = '+359888123456';
 
-  it('dials the shop beside every refusal of a carried companion', () => {
+  it('dials the shop beside every refusal of a carried companion — a reason from a newer server too', () => {
     for (const refusal of [
       'barber_unavailable',
       'service_unavailable',
       'outside_booking_window',
       'party_conflict',
       'shop_only',
+      'a_reason_from_a_newer_server',
     ]) {
       expect(callHrefForRefusal(carried(refusal), PHONE)).toBe(`tel:${PHONE}`);
     }
@@ -302,8 +332,8 @@ describe('callHrefForRefusal — the review step’s call button', () => {
   it('offers no call for anything else, for no error, or with no number to dial', () => {
     expect(
       callHrefForRefusal(
-        new BookingGatewayError('slot_unavailable', 'gone', {
-          serverCode: 'booking.commit.slot_unavailable',
+        refused('failed-precondition', {
+          errorCode: BookingErrorCode.SlotUnavailable,
         }),
         PHONE,
       ),
@@ -337,7 +367,7 @@ describe('the move-refused panel promises only what it can do', () => {
       ...Object.entries(catalogue.errors)
         .filter(
           ([key]) =>
-            key.startsWith(CARRIED) || key === 'booking.cancel.window_closed',
+            key.startsWith(CARRIED) || key === 'BOOKING_CANCEL_WINDOW_CLOSED',
         )
         .map(([, sentence]) => sentence),
       catalogue.appointments.cancel['windowClosed'] ?? '',
@@ -356,10 +386,10 @@ describe('the move-refused panel promises only what it can do', () => {
     }
   });
 
-  it('picks the phrase from the call the page offers — `shopReachKey`', () => {
+  it('picks the phrase from the call the page offers — `ShopReach.forCallHref`', () => {
     for (const catalogue of [en, bg]) {
       const phrase = (href: string | null) =>
-        translator(catalogue).translate(shopReachKey(href));
+        translator(catalogue).translate(ShopReach.forCallHref(href));
       expect(phrase('tel:+359888123456')).toBe(reach(catalogue, 'call'));
       expect(phrase(null)).toBe(reach(catalogue, 'contact'));
     }

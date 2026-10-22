@@ -28,7 +28,7 @@ import {
   recordingTelemetry,
   utcMs,
 } from '@core/testing';
-import { retryingTrigger, WIRE_ZONE } from '../edge';
+import { retryingTrigger } from '../edge';
 import {
   attemptThrowable,
   CapacitySource,
@@ -52,7 +52,7 @@ import {
 
 /*
  * The flip-1 triggers' edge: each event decoded into its pipeline command
- * (the stored body IS the entity minus `id`; the tenant's zone said once),
+ * (the stored body IS the entity minus `id`; the shop's zone is the pipeline's to read),
  * and a retrying pipeline's answer turned into today's attempt line and
  * redelivery (`lib/trigger-attempts.ts`'s `reportAttempt`/`logAttempt`).
  */
@@ -86,13 +86,13 @@ const visit = appointmentFixture();
 const params = { appointmentId: visit.id };
 
 describe('decodeRebuildBusyEvent', () => {
-  it('reads both sides of an appointment write as the stored entities, the tenant’s zone beside them', () => {
+  it('reads both sides of an appointment write as the stored entities — no zone, the pipeline reads the shop’s (4A-11)', () => {
     expect(
       decodeRebuildBusyEvent(writeEvent(params, null, bodyOf(visit))),
-    ).toEqual({ before: null, after: visit, timeZone: WIRE_ZONE });
+    ).toEqual({ before: null, after: visit });
     expect(
       decodeRebuildBusyEvent(writeEvent(params, bodyOf(visit), null)),
-    ).toEqual({ before: visit, after: null, timeZone: WIRE_ZONE });
+    ).toEqual({ before: visit, after: null });
   });
 });
 
@@ -106,7 +106,6 @@ describe('decodeCapacityEvent', () => {
         capacityTrigger: CapacityTrigger.Day,
         barberId: BarberId.of('b-ivan'),
         localDate: FIXTURE_TODAY,
-        timeZone: WIRE_ZONE,
       });
       expect(decodeCapacityEvent(source, { docId: 'not-a-key' })).toBeNull();
     },
@@ -118,7 +117,6 @@ describe('decodeCapacityEvent', () => {
     ).toEqual({
       capacityTrigger: CapacityTrigger.Roster,
       barberId: BarberId.of('b-ivan'),
-      timeZone: WIRE_ZONE,
     });
   });
 
@@ -129,7 +127,6 @@ describe('decodeCapacityEvent', () => {
   ])('reads a %s write as a sweep of every rostered barber', (source) => {
     expect(decodeCapacityEvent(source)).toEqual({
       capacityTrigger: CapacityTrigger.Sweep,
-      timeZone: WIRE_ZONE,
     });
   });
 });
@@ -140,7 +137,7 @@ describe('decodeMatchWaitlistEvent', () => {
       decodeMatchWaitlistEvent(
         writeEvent({ docId: `b-ivan__${FIXTURE_TODAY}` }, { blocks: [] }, null),
       ),
-    ).toEqual({ localDate: FIXTURE_TODAY, timeZone: WIRE_ZONE });
+    ).toEqual({ localDate: FIXTURE_TODAY });
     expect(
       decodeMatchWaitlistEvent(writeEvent({ docId: 'b-ivan' }, null, null)),
     ).toBeNull();
@@ -285,7 +282,29 @@ describe('decodeProfileChangeEvent', () => {
       beforeExists: true,
       afterExists: true,
       fields: ['phone'],
+      beforeProfileEditedAtUtcMs: null,
+      afterProfileEditedAtUtcMs: null,
     });
+  });
+
+  it('carries each side’s raw profileEditedAtUtcMs stamp — an absent side or key reads null (4A-16)', () => {
+    const stamped = decodeProfileChangeEvent({
+      ...writeEvent(
+        { uid: 'u-maria' },
+        { firstName: 'Maria' },
+        { firstName: 'Mila', profileEditedAtUtcMs: 1_790_575_200_000 },
+        { id: 'evt-10', time: '2026-09-28T06:00:00.000Z' },
+      ),
+      authType: 'service_account',
+    });
+    expect(stamped.beforeProfileEditedAtUtcMs).toBeNull();
+    expect(stamped.afterProfileEditedAtUtcMs).toBe(1_790_575_200_000);
+    const created = decodeProfileChangeEvent({
+      ...writeEvent({ uid: 'u-maria' }, null, { firstName: 'Maria' }, {}),
+      authType: 'service_account',
+    });
+    expect(created.beforeProfileEditedAtUtcMs).toBeNull();
+    expect(created.afterProfileEditedAtUtcMs).toBeNull();
   });
 
   it('credits a uid-shaped writer, and leaves an unreadable time to the pipeline’s clock', () => {
@@ -320,7 +339,7 @@ describe('attempts — today’s line and redelivery', () => {
     expect(POLICY_STEP_TIMEOUT_SECONDS).toBe(540);
   });
 
-  it('logs a survived failure as today’s ONE line — ids and codes, and how deep into the retry window', () => {
+  it('logs a survived failure as ONE line — ids, the SCREAMING outcome and the failure’s code as `errorCode`, and how deep into the retry window (4A-2 (c))', () => {
     const telemetry = ports();
     logAttempt(
       'continueClientStatsPolicyRecompute',
@@ -335,8 +354,8 @@ describe('attempts — today’s line and redelivery', () => {
         fields: {
           fn: 'continueClientStatsPolicyRecompute',
           eventId: 'evt-job',
-          outcome: 'permanent',
-          code: 'internal',
+          outcome: 'PERMANENT',
+          errorCode: 'internal',
           ageMs: 1_000,
         },
       },
@@ -368,14 +387,14 @@ describe('attempts — today’s line and redelivery', () => {
     const redelivered = run(transient);
     await expect(redelivered.done).rejects.toBe(transient.error);
     expect(redelivered.telemetry.lines[0]?.fields).toMatchObject({
-      outcome: 'transient',
-      code: 'unavailable',
+      outcome: 'TRANSIENT',
+      errorCode: 'unavailable',
     });
     const dropped = run(permanent);
     await expect(dropped.done).resolves.toBeUndefined();
     expect(dropped.telemetry.lines[0]?.fields).toMatchObject({
-      outcome: 'permanent',
-      code: 'internal',
+      outcome: 'PERMANENT',
+      errorCode: 'internal',
     });
   });
 

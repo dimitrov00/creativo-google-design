@@ -16,8 +16,10 @@ const INITIAL_ENTRY = /^(main|polyfills|styles)-[^/]*\.(js|css)$/;
 /**
  * Packages and sources that must never ship in the initial chunk: the
  * Firestore and Storage SDKs (with the pieces only they pull in) and the
- * adapter code over them. They load on the first data-port call, through
- * the lazy port bindings in apps/web/src/app/app.config.ts.
+ * adapter code over them — they load on the first data-port call, through
+ * the lazy port bindings in apps/web/src/app/app.config.ts — and the phone
+ * metadata, which `PhoneSystem` rides and every phone importer loads through
+ * a component-local `*.lazy.ts` named re-export (owner ruling F6).
  */
 export const FORBIDDEN_IN_INITIAL = [
   {
@@ -40,6 +42,10 @@ export const FORBIDDEN_IN_INITIAL = [
     label:
       'Storage adapters (libs/infrastructure/storage/src/lib/storage.adapters.ts)',
     pattern: /libs\/infrastructure\/storage\/src\/lib\/storage\.adapters\.ts$/,
+  },
+  {
+    label: 'libphonenumber-js (phone metadata, lazy — F6)',
+    pattern: /node_modules\/libphonenumber-js\//,
   },
 ];
 

@@ -28,10 +28,10 @@ import {
   MARTIN_PREVIOUS_MS,
   NOW_MS,
   SHOP_CATALOG,
+  SHOP_TIME_ZONE,
   TODAY,
   achievementsContextOf,
   achievementsDataOf,
-  at,
   georgiContext,
   georgiHistory,
   georgiOpenContext,
@@ -64,6 +64,7 @@ function headOf(overrides: Partial<Parameters<typeof clientHeadVm>[0]> = {}) {
     statsKnown: true,
     avatarSrc: null,
     nowMs: NOW_MS,
+    zone: SHOP_TIME_ZONE,
     words: WORDS,
     ...overrides,
   });
@@ -170,11 +171,13 @@ describe('the head (A)', () => {
 
 describe('pauseOf, isBirthdayToday, isInChairToday', () => {
   it('reads a pause on the shop’s calendar', () => {
-    expect(pauseOf(georgiUser(pausedUntilOctober()), NOW_MS)).toEqual({
+    expect(
+      pauseOf(georgiUser(pausedUntilOctober()), NOW_MS, SHOP_TIME_ZONE),
+    ).toEqual({
       until: '2026-10-12',
     });
-    expect(pauseOf(georgiUser(), NOW_MS)).toBeNull();
-    expect(pauseOf(null, NOW_MS)).toBeNull();
+    expect(pauseOf(georgiUser(), NOW_MS, SHOP_TIME_ZONE)).toBeNull();
+    expect(pauseOf(null, NOW_MS, SHOP_TIME_ZONE)).toBeNull();
   });
 
   it('knows a birthday by month and day, a 29 February one on the 28th in other years', () => {
@@ -193,9 +196,11 @@ describe('pauseOf, isBirthdayToday, isInChairToday', () => {
   });
 
   it('puts the client in the chair only on an open visit today', () => {
-    expect(isInChairToday(martinContext(), NOW_MS)).toBe(true);
-    expect(isInChairToday(georgiContext(), NOW_MS)).toBe(false);
-    expect(isInChairToday(georgiOpenContext(), NOW_MS)).toBe(false);
+    expect(isInChairToday(martinContext(), NOW_MS, SHOP_TIME_ZONE)).toBe(true);
+    expect(isInChairToday(georgiContext(), NOW_MS, SHOP_TIME_ZONE)).toBe(false);
+    expect(isInChairToday(georgiOpenContext(), NOW_MS, SHOP_TIME_ZONE)).toBe(
+      false,
+    );
   });
 });
 
@@ -229,6 +234,7 @@ describe('the quick actions (D)', () => {
       context: martinContext(),
       online: true,
       nowMs: NOW_MS,
+      zone: SHOP_TIME_ZONE,
       words: WORDS,
       ...overrides,
     });
@@ -313,6 +319,7 @@ describe('the quick actions (D)', () => {
         context: martinContext({ isOwner: false }),
         online: true,
         nowMs: NOW_MS,
+        zone: SHOP_TIME_ZONE,
         words: WORDS,
       }).map((a) => [a.id, a.href]),
     ).toEqual([
@@ -329,6 +336,7 @@ describe('the quick actions (D)', () => {
         context: martinContext(),
         online: true,
         nowMs: NOW_MS,
+        zone: SHOP_TIME_ZONE,
         words: WORDS,
       }),
     ).toEqual([]);
@@ -342,6 +350,7 @@ describe('the photo rail (I)', () => {
         georgiPhotos(),
         ['appt-hist-c1-23', 'appt-dev-1'],
         NOW_MS,
+        SHOP_TIME_ZONE,
         WORDS,
       ),
     ).toEqual([
@@ -366,7 +375,9 @@ describe('the photo rail (I)', () => {
       appointmentId: AppointmentId.of(`appt-${i}`),
     }));
     expect(
-      photoRailVm(many, [null], NOW_MS, WORDS).map((p) => p.photoId),
+      photoRailVm(many, [null], NOW_MS, SHOP_TIME_ZONE, WORDS).map(
+        (p) => p.photoId,
+      ),
     ).toEqual(['p-0', 'p-1', 'p-2', 'p-3', 'p-4', 'p-5']);
   });
 
@@ -375,7 +386,7 @@ describe('the photo rail (I)', () => {
       ...must(georgiPhotos()[0]),
       takenAtUtcMs: sofia('2025-12-01T10:00:00'),
     };
-    expect(clientPhotoVm(old, NOW_MS, WORDS)).toMatchObject({
+    expect(clientPhotoVm(old, NOW_MS, SHOP_TIME_ZONE, WORDS)).toMatchObject({
       dateLabel: '1.12.2025 г.',
       accessibleName: 'Снимка от 1 декември 2025 г.',
     });
@@ -388,7 +399,7 @@ describe('the medal strip (G)', () => {
     // A previous visit before 22.09.2025: the fade's II is new too.
     const since = {
       ...LOYALTY,
-      previousVisitAtMs: at('2025-09-01T12:00:00').toMillis(),
+      previousVisitAtMs: sofia('2025-09-01T12:00:00'),
     };
     const strip = medalStripVm(since, ctx);
     expect(strip.medals.map((m) => [m.seriesId, m.isNew])).toEqual([
@@ -437,7 +448,7 @@ describe('the medal strip (G)', () => {
   it('cues the closest level when nothing is new and nothing completes', () => {
     const since = {
       ...LOYALTY,
-      previousVisitAtMs: at('2026-09-28T11:00:00').toMillis(),
+      previousVisitAtMs: sofia('2026-09-28T11:00:00'),
     };
     expect(
       medalStripVm(

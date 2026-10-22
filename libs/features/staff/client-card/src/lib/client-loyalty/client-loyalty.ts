@@ -38,7 +38,7 @@ import {
 import { ActivityList } from '../activity-list/activity-list';
 import type { ClientCardRegion, WalletAnchor } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
-import type { WalletActionVm } from '../client-pages.vm';
+import { CardLoadState, type WalletActionVm } from '../client-pages.vm';
 import { RhythmCard } from '../rhythm-card/rhythm-card';
 import { regularSheetWidth } from '../sheet-width';
 import {
@@ -158,6 +158,8 @@ export class ClientLoyaltyPage {
 
   private readonly store = inject(ClientCardStore);
   protected readonly words = this.store.words;
+  /** Where each section's read stands, for the template's switches. */
+  protected readonly CardLoadState = CardLoadState;
   protected readonly online = this.store.online;
   protected readonly wallet = this.store.wallet;
 
@@ -204,7 +206,7 @@ export class ClientLoyaltyPage {
       }
       if (anchor === this.anchored) return;
       const slice = this.wallet();
-      if (slice?.status !== 'ready') return;
+      if (slice?.cardLoadState !== CardLoadState.Ready) return;
       const vm = slice.data;
       // What lies above a section still grows while its reads land: the
       // holdings before every section under them, the status card before
@@ -212,11 +214,16 @@ export class ClientLoyaltyPage {
       if (
         anchor !== 'wallet' &&
         anchor !== 'stamps' &&
-        vm.holdings.status === 'loading'
+        vm.holdings.cardLoadState === CardLoadState.Loading
       ) {
         return;
       }
-      if (anchor === 'catalog' && vm.tier?.status === 'loading') return;
+      if (
+        anchor === 'catalog' &&
+        vm.tier?.cardLoadState === CardLoadState.Loading
+      ) {
+        return;
+      }
       this.anchored = anchor;
       this.landOn(anchor);
     });

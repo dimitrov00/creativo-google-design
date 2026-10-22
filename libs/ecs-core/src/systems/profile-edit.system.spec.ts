@@ -8,6 +8,7 @@ import {
   ParsedIdentifier,
   RegistrationState,
   Role,
+  type ProfileEdits,
 } from '@core/components';
 import { UserId } from '@core/primitives';
 import type { User } from '@core/entities';
@@ -19,11 +20,7 @@ import {
   utcMs,
 } from '@core/testing';
 import { AuditSystem } from './audit.system';
-import {
-  NameRule,
-  type ProfileEdits,
-  ProfileEditSystem,
-} from './profile-edit.system';
+import { NameRule, ProfileEditSystem } from './profile-edit.system';
 import {
   type RegistrationSettlement,
   RegistrationSystem,
@@ -57,6 +54,7 @@ function owner(overrides: Partial<User> = {}): User {
     ...AccountLifecycle.active(),
     email: Email.of('ip@abv.bg'),
     birthDate: BirthDate.of('1990-05-17'),
+    profileEditedAtUtcMs: null,
     ...SearchFieldsSystem.searchFields(
       'Ivan',
       'Petrov',

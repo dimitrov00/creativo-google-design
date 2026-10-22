@@ -10,6 +10,7 @@ import {
   type ShopNow,
   WaitlistLifecycle,
   WriteOp,
+  type WaitlistCall,
 } from '@core/components';
 import {
   Result,
@@ -51,27 +52,6 @@ const EMPTY_CART: string = SchedulingErrorCode.WaitlistEmptyCart;
 const LOCATION_FIELD = 'locationId';
 /** The ask's field for a day that is no day. */
 const LOCAL_DATE_FIELD = 'localDate';
-
-/**
- * One day a request names, as the door receives it — foreign input (the L3
- * `…Input` escape): its day not yet trusted, its windows as raw wall-clock
- * minutes `[startMinutes, endMinutes)` (an unparseable span arrives as one
- * that fails the window rule below). A trusted `MinuteRange` passes as is.
- */
-export type WaitlistAskDayInput = {
-  readonly localDate: string;
-  readonly windows: readonly {
-    readonly startMinutes: number;
-    readonly endMinutes: number;
-  }[];
-};
-
-/** What a client asks the waitlist to watch: a shop (`null` = any), days, the bag — foreign input. */
-export type WaitlistAskInput = {
-  readonly locationId: string | null;
-  readonly days: readonly WaitlistAskDayInput[];
-  readonly cart: BookingCart;
-};
 
 /**
  * What the door knows besides the ask — every verdict a system cannot reach
@@ -168,7 +148,7 @@ const MAX_SERVICES_PER_PERSON = 8;
  * — or `null` when it is no span at all.
  */
 function windowOf(
-  raw: WaitlistAskDayInput['windows'][number],
+  raw: WaitlistCall.DayInput['windows'][number],
 ): MinuteRange | null {
   const start = MinuteOfDay.of(raw.startMinutes);
   const end = EndMinute.of(raw.endMinutes);
@@ -228,7 +208,7 @@ export const WaitlistSystem = {
    * 8. the commit's own admission of the bag — its refusal code.
    */
   decide(
-    ask: WaitlistAskInput,
+    ask: WaitlistCall.Input,
     door: WaitlistDoor,
   ): Result<WaitlistRequestBody, WaitlistError> {
     if (door.ownerUserId === null || door.ownerUserId.trim().length === 0) {
@@ -241,10 +221,10 @@ export const WaitlistSystem = {
       return Result.err(WaitlistError.invalidRequest(LOCATION_FIELD));
     }
 
-    const usable: WaitlistAskDayInput[] = [];
+    const usable: WaitlistCall.DayInput[] = [];
     const usableDates: LocalDate[] = [];
     for (let i = 0; i < ask.days.length; i++) {
-      const day = ask.days[i] as WaitlistAskDayInput;
+      const day = ask.days[i] as WaitlistCall.DayInput;
       const parsed = LocalDate.parse(day.localDate);
       if (!parsed.ok) {
         return Result.err(WaitlistError.invalidRequest(LOCAL_DATE_FIELD));
@@ -260,11 +240,11 @@ export const WaitlistSystem = {
 
     const days: DayWindows[] = [];
     for (let i = 0; i < usable.length; i++) {
-      const day = usable[i] as WaitlistAskDayInput;
+      const day = usable[i] as WaitlistCall.DayInput;
       const windows: MinuteRange[] = [];
       for (let w = 0; w < day.windows.length; w++) {
         const window = windowOf(
-          day.windows[w] as WaitlistAskDayInput['windows'][number],
+          day.windows[w] as WaitlistCall.DayInput['windows'][number],
         );
         if (window === null) {
           return Result.err(WaitlistError.invalidRequest('windows'));

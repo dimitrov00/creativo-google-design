@@ -46,15 +46,6 @@
       "path": "../shell/tsconfig.lib.json"
     },
     {
-      "path": "../../../application/shared/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/identity/tsconfig.lib.json"
-    },
-    {
-      "path": "../../../application/catalog/tsconfig.lib.json"
-    },
-    {
       "path": "../../../infrastructure/firebase-app/tsconfig.lib.json"
     }
   ]

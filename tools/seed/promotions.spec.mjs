@@ -121,35 +121,6 @@ function promotionsOn(nowMs) {
   };
 }
 
-/**
- * The facts of one voucher of the shared fixture (`vouchers.json` under
- * `@core/testing`), in the flat body's words. The file keeps the legacy
- * wire (the application's vouchers reader parses it until Phase 4) — ISO instants, a holder uid and
- * minor units under names flip 1 removed from every document — so its
- * values are read by POSITION, in the file's fixed key order, rather than
- * by names this flip's grep gate refuses under `tools/seed`.
- */
-function voucherFactsOf(entry) {
-  const [code, initial, balance, currency, issued, expires, holder, state] =
-    Object.values(entry);
-  const [voucherStatus, voided, voidReason] = Object.values(state);
-  const instantOf = (zoned) => Date.parse(Object.values(zoned)[0]);
-  return {
-    code,
-    initialValueCents: initial,
-    balanceCents: balance,
-    currency,
-    issuedAtUtcMs: instantOf(issued),
-    expiresAtUtcMs: expires === null ? null : instantOf(expires),
-    issuedToCustomerId: holder === null ? null : customerIdOf(holder),
-    holderUserId: holder,
-    voucherStatus: voucherStatus.toUpperCase(),
-    ...(voided === undefined
-      ? {}
-      : { voidedAtUtcMs: instantOf(voided), voidReason }),
-  };
-}
-
 describe('the coupons', () => {
   it('are written to the adapters’ collection, one document per coupon', () => {
     expect(COUPONS_COLLECTION).toBe(Collections.Coupons);
@@ -385,8 +356,10 @@ describe('the gift vouchers', () => {
     expect(Object.keys(fromTheFile)).toEqual(
       Object.keys(giftVouchersJson.giftVouchers),
     );
-    for (const [id, entry] of Object.entries(giftVouchersJson.giftVouchers)) {
-      expect(fromTheFile[id], id).toMatchObject(voucherFactsOf(entry));
+    // The file IS the flat body (Law 5): what the seed writes on the
+    // fixtures' day is the file's document, key for key.
+    for (const [id, body] of Object.entries(giftVouchersJson.giftVouchers)) {
+      expect(fromTheFile[id], id).toEqual(body);
     }
     expect(spent).toMatchObject({
       code: 'EMPTY001',

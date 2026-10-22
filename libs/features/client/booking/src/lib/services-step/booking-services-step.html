@@ -91,8 +91,8 @@
             <!-- The caret is what says "there is more here than selecting
                      me" — the second-press menu was a real iOS idiom with no
                      affordance, which makes it a secret. -->
-            @if (seat.seatKey.kind === 'guest' && activeSeat().key === seat.key)
-            {
+            @if (seat.seatKey.seatKeyRole === SeatKeyRole.Guest &&
+            activeSeat().key === seat.key) {
             <ui-icon uiName="field.expand" uiScale="small" />
             }
           </button>
@@ -135,7 +135,7 @@
         role="alert"
         data-testid="booking-seat-shared-label"
       >
-        {{ t('errors.scheduling.booking_party.duplicate_label', { label }) }}
+        {{ t('errors.SCHEDULING_BOOKING_PARTY_DUPLICATE_LABEL', { label }) }}
       </p>
       }
 

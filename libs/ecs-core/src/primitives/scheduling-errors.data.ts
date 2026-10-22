@@ -4,8 +4,8 @@
  * dictionary (blueprint §2.1), SCREAMING_SNAKE and prefixed `SCHEDULING_`
  * after the flatten pass (Law 7.5, flatten-spec §4.2) — `appointment.not_arrivable`
  * included (`SCHEDULING_APPOINTMENT_NOT_ARRIVABLE`). The UI resolves
- * `errors.<errorCode>`; the legacy dotted codes stay on the wire until Phase
- * 4 (the edge's `LEGACY_WIRE_CODE` maps each code back).
+ * `errors.<errorCode>`; since the Phase 4a wire flip the callables answer
+ * these codes themselves (no legacy dotted code survives on the wire).
  *
  * Dropped with their subjects: `scheduling.barber_day.block_collision`
  * (barber-day.ts is deleted), `scheduling.time_slot.invalid_range` (TimeSlot

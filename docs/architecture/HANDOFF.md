@@ -4,8 +4,9 @@ Read this first if you are an agent (Claude Code, Codex, Cursor, Gemini, …) or
 a developer picking up the ECS / data-oriented migration. It says where the
 work stands, what to do next in which order, and how to prove each step.
 Last updated 2026-10-22 (flip 1 complete; Law 9 port-composition pass;
-flips 2, 3 and 4 integrated — the Phase 3b flips are complete; Phase 4
-next).
+flips 2, 3 and 4 integrated — the Phase 3b flips are complete; Phase 4a
+integrated — the full gate green, the "Phase 4a" commit; Phase 4b next,
+§3.3).
 
 ## 1. Read these, in this order
 
@@ -39,13 +40,16 @@ next).
 | **Phase 3b flip 2 — identity and accounts**                                           | **done** — integrated 2026-10-21; the full gate of §4 green (baseline reds only), `verify:p0` (e) both ways, the flip-2 grep gate PASS                                    | the "flip 2 commit"                                          |
 | **Phase 3b flip 3 — loyalty and invitations**                                         | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 grep gate PASS, the §8 dev smoke run                                             | the "flip 3 commit"                                          |
 | **Phase 3b flip 4 — programs**                                                        | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), the §6 and end-of-3b grep gates PASS, the §8 dev smoke run                              | the "flip 4 commit"                                          |
-| Phase 4 — web integration and legacy deletion                                         | not started                                                                                                                                                               |                                                              |
+| **Phase 4a — re-point every legacy consumer, the wire flip, the rules tightenings**   | **done** — integrated 2026-10-22; the full gate of §4 green (baseline reds only), runbook §4.2–§4.5 + §4.7 PASS, the §8 dev smoke 57 checks                               | the "Phase 4a" commit                                        |
+| Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`; the docs rewrite        | not started (a pure deletion once 4a is green)                                                                                                                            |                                                              |
 
-`main` carries the flip-1 to flip-4 reshapes and the Law 9 port pass, and
-the FULL gate of §4 is green on it (baseline reds only). The Phase 3b flips
-are complete; the blueprint's end-of-3b graph/bundle assertion is open
-(Phase 4, flip-4 plan F4-2). The last fully green commit is the "flip 4"
-commit; check `git log` for anything newer.
+`main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass and
+Phase 4a, and the FULL gate of §4 is green on it (baseline reds only). The
+Phase 3b flips are complete and so is the blueprint's end-of-3b graph/bundle
+assertion (no project edge into `libs/application/*` or `libs/domain/*`; the
+functions dist without `@angular/*` and `luxon` — `rxjs` stays, 4A-2 (d)).
+The last fully green commit is the "Phase 4a" commit; check `git log` for
+anything newer. Next: Phase 4b, a pure deletion (§3.3).
 
 ## 3. What to do next, in order
 
@@ -280,6 +284,101 @@ libs/application/*` edge, no `@angular/*` or `rxjs` in
 `dist/apps/functions/package.json`, `functions-deps.baseline.json`
 re-recorded.
 
+Phase 4 runs in two halves. **4a** (plan
+`docs/architecture/flips/phase-4a-repoint.md`, its §0 the decisions 4A-1 …
+4A-16, §4 the nine packages) re-points every consumer of
+`@creativo/application/*` and `@creativo/domain/*` outside those libraries
+onto ecs-core, flips the callable wire (the refusals are the projected
+ecs-core structs, the web reads `errors.<errorCode>` through ONE
+`callableClient`), lands the three rules tightenings with their callables
+(`updateProfile` writes its own audit row, flip-2 §10.15;
+`startImpersonation`/`endImpersonation`; `redeemInvitation`), and closes the
+law leftovers (the systems-tier dictionaries in primitives, the zone only on
+the location — `TENANT_ZONE` gone, `CRON_TIME_ZONE` the one cron option).
+**4b** deletes the legacy libraries, their aliases and Nx projects, `luxon`,
+`@types/luxon`, `dinero.js`, and rewrites the docs.
+
+**Phase 4a — integrated 2026-10-22** (plan
+`docs/architecture/flips/phase-4a-repoint.md`: §8.1 is the integration
+record — the P9 sweep in items 1–7, the integrator's fixes and rulings in
+items 8–9, the gate in item 10; §11 the case ledgers, §11.5 the
+integrator's). Nothing outside `libs/application/**` and `libs/domain/**`
+imports them (specs, fixtures and tools included; `firestore.rules`
+comments and `tsconfig.base.json` aside, which are 4b's); no tsconfig
+references them; the project graph has no edge into the 17 legacy projects.
+The callable wire is flipped (the ecs-core call components in, the
+projected error structs out, the web reading `errors.<errorCode>` through
+ONE `callableClient`); `users` client updates, `impersonationSessions`
+writes and invitation creates/updates/redemptions are closed in the rules,
+with `updateProfile` (now writing its own audit row and the
+`profileEditedAtUtcMs` marker), `startImpersonation`/`endImpersonation` and
+`redeemInvitation`; the zone lives on the location only (`TENANT_ZONE`,
+`WIRE_ZONE`, `TenantZonePorts` gone; `CRON_TIME_ZONE` the cron option); every
+error dictionary is in primitives. Integration decisions worth knowing
+(plan §8.1 item 9): `BookingCall` carries the appointment's own
+`placement` (`SELF` from `/book`, `STAFF` from the staff day) — the flipped
+wire's always-present `onBehalfOfUserId` could no longer tell them apart;
+`ShopZoneService` exposes `defaultZoneFailed()`/`retryDefaultZone()`, so the
+appointments page and the client card show their failed states on an
+unreadable default location (4A-2 (e)); `libs/features/client/account-state`
+is `"sideEffects": false` (its `src/package.json` + `.nxignore`), which took
+`libphonenumber-js` out of `main` (initial 802 kB → 598 kB, `verify:bundle`
+green, F6's premise holds); the dead voucher half of
+`libs/application/engagement` was deleted ahead of 4b (no nested copy of the
+flat fixture may exist). Gate (plan §8.1 item 10): all green but the
+baseline reds — unit 6, typecheck `patterns` only, `e2e:web` 19 failed / 41
+passed; `verify:p0` all proved; `test:emulator` 65 + 255; runbook §4.2 28 ok,
+§4.3 22, §4.4 17, §4.5 PASS, §4.7 PASS (24); the smoke 57 checks.
+**Deploy (runbook §3, the Phase 4a paragraph):** functions and hosting
+together, THEN the rules (the tightenings close write paths the old web
+still uses); no index deploy; the flip-4 precondition (the default
+location's `timeZone`) still stands.
+
+**Phase 4b — what it must do (a pure deletion; nothing may change
+behaviour):**
+
+1. Delete `libs/application/*` and `libs/domain/*` (17 Nx projects —
+   `nx graph` shows no edge into them), their `tsconfig.base.json` aliases
+   (incl. `@creativo/application/engagement/testing`, whose `src/testing.ts`
+   4a already deleted), their `.nxignore` lines, their eslint `files`
+   blocks; keep `.nxignore`'s `ecs-core`, `infrastructure/*` and
+   `features/client/account-state` lines. Their specs die with a §7-style
+   ledger that cites plan §11.3's successors (each legacy spec's rule
+   already has its 4a successor there).
+2. Remove `luxon`, `@types/luxon`, `dinero.js` from `package.json`, the
+   dinero cross-check in `libs/ecs-core/src/components/money.data.spec.ts`
+   and its `no-restricted-imports` override; re-run
+   `check-functions-deps.mjs` and re-record its baseline (`dinero.js`
+   leaves; `rxjs` stays unless the owner rules on plan §10.1).
+3. The dotted i18n keys and their readers: `translateFunctionsError` lost
+   its last 4a reader — delete it with the dotted keys, EXCEPT the keys
+   still read (plan §8.1 item 9 (g): `errors.accounts.upload_avatar.upload_failed`,
+   `errors.accounts.remove_avatar.remove_failed`,
+   `errors.identifier_missing`, `errors.unknown`,
+   `errors.repository_failure`, `errors.identity.phone.<reason>`,
+   `accounts.update_profile.repository_failure`, `booking.gateway.failed`,
+   `errors.booking.transition.seat_resolved`). `translateDomainError`'s
+   `{ code }` branch is NOT readerless: its last readers are exactly the
+   (g) keys' (`admin-rhythm.ts`, `client-account.ts`, `client-onboarding.ts`
+   `phoneError`, and the `translateError(code)` of `client-auth.ts`,
+   `client-profile.ts`, `client-onboarding.ts` — plan 4A-5). To delete the
+   branch, first give each (g) key a SCREAMING successor with today's text
+   verbatim, re-point its constant and pass its reader a flat
+   `{ errorCode }` struct; else keep the keys and the branch.
+4. Lint: the root-widened adapter/port/token guards (blueprint §6 Phase 4
+   "Nx") and the `type:application` depConstraints rows retired; the
+   remaining `libs/domain/kernel` mentions in lint messages.
+5. Docs: rewrite `module-boundaries.md` from the new graph, delete
+   `domain-model.md` (D6), banner `docs/migration-blueprint.md`, drop the
+   "until Phase 4" clauses of `CLAUDE.md`/`AGENTS.md` (both, byte for
+   byte), the provenance comments naming the legacy libs (the 33 of runbook
+   §4.7's closing review) and the `firestore.rules` comments naming
+   `@creativo/domain/accounts`.
+6. Then the gate of §4, unchanged. Later (4A-13, not 4b): the view-model
+   `kind`/`state`/`status` unions of plan §8.1 item 7, the UI-only
+   `Date.now()`/`Math.random()` reads, `visit-ecs.shim.ts`, the owner's
+   confirmation of §11.4 (a)'s time-sheet re-pin.
+
 ## 4. The gate — every step must pass it before landing on `main`
 
 ```bash
@@ -293,6 +392,8 @@ pnpm nx typecheck seed-tools
 pnpm nx build web
 pnpm run verify:bundle
 pnpm nx build functions && node tools/verify/p0/check-functions-deps.mjs
+# the grep gates, under bash: runbook §4.0 (the preamble), then §4.2–§4.5 and,
+# since Phase 4a, §4.7 (no legacy consumer, the wire flipped, no graph edge)
 # the emulator journeys share ports — run ONE AT A TIME:
 pnpm run verify:p0
 pnpm run test:emulator
@@ -304,10 +405,15 @@ pnpm run e2e:web
 green since flip 1);
 unit tests `gauge.spec.ts` (4), `visit-pills.spec.ts` (1),
 `visits-page.presenter.spec.ts` "strikes an hour that did not happen" (1);
-e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:120`
-(MapLibre), 12 `client-card-glance.spec.ts` runs at `:343`/`:686` (`:341`/`:684` before flip 3); and
+e2e: 19 failures — 6 `*-screenshots.spec.ts`, `landing.spec.ts:121`
+(MapLibre; `:120` before Phase 4a), 12 `client-card-glance.spec.ts` runs at `:343`/`:686` (`:341`/`:684` before flip 3); and
 `appointments.spec.ts:152` flakes under load (passes alone with
-`--repeat-each=3`). Anything else red is a regression.
+`--repeat-each=3`). Anything else red is a regression. Since Phase 4a
+`staff-client-card` and `staff-dashboard` typecheck green (only
+`patterns` stays red — a new red in either is a regression), and under
+`run-many -t test --parallel=3` the heavy `staff-dashboard`,
+`staff-client-card` and `marketing-landing` specs can time out — re-run
+the project alone before calling it a regression.
 
 ## 5. Operating rules
 

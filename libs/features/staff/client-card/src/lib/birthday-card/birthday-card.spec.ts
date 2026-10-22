@@ -10,6 +10,7 @@ import {
 import { type Observable, of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import { ClientCardStore } from '../client-card.store';
+import { cardRuntimeProviders } from '../../testing/achievements-pages.rig';
 import type { BirthdayVm } from '../client-pages.vm';
 import { BIRTHDAY } from '../../testing/client-pages.vm-fixtures';
 import { catalogueOf, must } from '../../testing/client-card.fixtures';
@@ -56,6 +57,7 @@ async function mount(vm: BirthdayVm) {
     imports: [Host],
     providers: [
       ClientCardStore,
+      ...cardRuntimeProviders(),
       ...provideTransloco({
         config: {
           availableLangs: ['bg', 'en'],

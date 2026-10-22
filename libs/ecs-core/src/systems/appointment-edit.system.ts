@@ -1,6 +1,8 @@
 import {
   type AccountOccupant,
   AppliedOperation,
+  EditCommand,
+  ResizeEdge,
   type MinuteRange,
   SeatOutcome,
   Seat,
@@ -12,6 +14,10 @@ import {
   BookingStatus,
   BookingError,
   Result,
+  type StaffEditBeforeArrival,
+  StaffEditError,
+  type StaffEditInvalidCommand,
+  type StaffEditStale,
   AttendanceState,
   DurationMinutes,
   MinuteCount,
@@ -35,113 +41,15 @@ import type { Appointment } from '@core/entities';
 /** The digest basis version — the server's fingerprint of one intent's batch. */
 const DIGEST_TAG = 'staff-operation/v1';
 
-/**
- * The staff edit's refusal codes (`staff-edit-appointment.errors.ts`) — the
- * ONLY source of these strings. `INVALID_COMMAND` names the field.
- */
-export const StaffEditErrorCode = {
-  Unauthenticated: 'BOOKING_STAFF_EDIT_UNAUTHENTICATED',
-  Forbidden: 'BOOKING_STAFF_EDIT_FORBIDDEN',
-  InvalidCommand: 'BOOKING_STAFF_EDIT_INVALID_COMMAND',
-  BeforeArrival: 'BOOKING_STAFF_EDIT_BEFORE_ARRIVAL',
-  Overlaps: 'BOOKING_STAFF_EDIT_OVERLAPS',
-  Stale: 'BOOKING_STAFF_EDIT_STALE',
-  InvariantViolated: 'BOOKING_STAFF_EDIT_INVARIANT_VIOLATED',
-} as const;
-export type StaffEditErrorCode =
-  (typeof StaffEditErrorCode)[keyof typeof StaffEditErrorCode];
-
-export type StaffEditInvalidCommand = {
-  readonly errorCode: typeof StaffEditErrorCode.InvalidCommand;
-  /** `kind`, `startIso`, `edge`, `seatId`, `seatIds`, `minutes`, `seats`, `discounts`, `vouchers`, `operationId`… — the wire's field. */
-  readonly field: string;
-};
-export type StaffEditForbidden = {
-  readonly errorCode: typeof StaffEditErrorCode.Forbidden;
-};
-export type StaffEditStale = {
-  readonly errorCode: typeof StaffEditErrorCode.Stale;
-  readonly expected: number;
-  readonly actual: number;
-};
-
-/**
- * The folded visit would END at or before its arrival stamp — a
- * DATA-INTEGRITY refusal, not a scheduling one: the stamp is the fact that
- * cannot move. Both points on the shop's wall clock — the visit's last end
- * on its day, the arrival as the boundary read it (T6); the edge renders the
- * legacy `endIso` / `arrivedAtIso` params from them with the location's zone.
- */
-export type StaffEditBeforeArrival = {
-  readonly errorCode: typeof StaffEditErrorCode.BeforeArrival;
-  readonly localDate: LocalDate;
-  readonly finishMinutes: EndMinute;
-  readonly arrivalLocalDate: LocalDate;
-  readonly arrivalMinutes: MinuteOfDay;
-};
-
-/** The refusals the edit's pure half can return. */
-export type StaffEditError =
-  | StaffEditInvalidCommand
-  | StaffEditForbidden
-  | StaffEditStale
-  | StaffEditBeforeArrival;
-
 /** What {@link AppointmentEditSystem.guard} refuses: a visit that never happened, or one ending before its arrival. */
 export type StaffEditGuardRefusal =
   BookingError.InvalidInput | StaffEditBeforeArrival;
 
-export const StaffEditError = {
-  invalidCommand(field: string): StaffEditInvalidCommand {
-    return { errorCode: StaffEditErrorCode.InvalidCommand, field };
-  },
-  forbidden(): StaffEditForbidden {
-    return { errorCode: StaffEditErrorCode.Forbidden };
-  },
-  stale(expected: number, actual: number): StaffEditStale {
-    return { errorCode: StaffEditErrorCode.Stale, expected, actual };
-  },
-  beforeArrival(
-    localDate: LocalDate,
-    finishMinutes: EndMinute,
-    arrival: WallTime,
-  ): StaffEditBeforeArrival {
-    return {
-      errorCode: StaffEditErrorCode.BeforeArrival,
-      localDate,
-      finishMinutes,
-      arrivalLocalDate: arrival.localDate,
-      arrivalMinutes: arrival.minute,
-    };
-  },
-} as const;
-
-/** The staff edit commands — the field `editCommand`, the ONLY source of these strings. */
-export const EditCommand = {
-  Move: 'MOVE',
-  Resize: 'RESIZE',
-  Reprice: 'REPRICE',
-  Redurate: 'REDURATE',
-  Restaff: 'RESTAFF',
-  AddSeat: 'ADD_SEAT',
-  RemoveSeat: 'REMOVE_SEAT',
-  Relocate: 'RELOCATE',
-  Discounts: 'DISCOUNTS',
-  Vouchers: 'VOUCHERS',
-} as const;
-export type EditCommand = (typeof EditCommand)[keyof typeof EditCommand];
-
-/** Which handle of the block a resize drags — the field `resizeEdge`. */
-export const ResizeEdge = {
-  Start: 'START',
-  End: 'END',
-} as const;
-export type ResizeEdge = (typeof ResizeEdge)[keyof typeof ResizeEdge];
-
 /**
- * One staff edit, as the fold applies it — the port's `StaffEditCommand`
- * with its times on the shop's wall clock (the boundary converted the wire's
- * ISO instants with the location's zone) and every field present
+ * One staff edit, as the fold applies it — the call's `BookingCall.EditCommand`
+ * with its times on the shop's wall clock (the call sends `localDate` +
+ * minutes; the boundary computes the instants it needs once, with the
+ * location's zone) and every field present
  * (`seatIds: null` is the whole party). A `MOVE` names the day it moves to
  * (`localDate`, the same day for a same-day drag); a `RESIZE` names the
  * minute its edge lands on (an exclusive end for `END`). `ADD_SEAT` carries
@@ -361,7 +269,7 @@ function endOf(seats: readonly Seat[]): number {
  * A seat re-placed on its day: a new start and duration that must stay
  * whole minutes on ONE shop day (F-6) — a start outside `[0, 1440)` is
  * refused as `startField`, a duration that is not positive or that would end
- * past midnight as `minutes`.
+ * past midnight as `durationMinutes`.
  */
 function placed(
   seat: Seat,
@@ -372,10 +280,10 @@ function placed(
   const start = MinuteOfDay.of(startMinutes);
   if (!start.ok) return invalid(startField);
   const duration = DurationMinutes.of(durationMinutes);
-  if (!duration.ok) return invalid('minutes');
+  if (!duration.ok) return invalid('durationMinutes');
   if (!EndMinute.after(start.value, duration.value).ok) {
     return invalid(
-      durationMinutes === seat.durationMinutes ? startField : 'minutes',
+      durationMinutes === seat.durationMinutes ? startField : 'durationMinutes',
     );
   }
   return Result.ok({
@@ -507,7 +415,7 @@ export const AppointmentEditSystem = {
           command.localDate !== draft.localDate &&
           scope.length !== seats.length
         ) {
-          return invalid('startIso');
+          return invalid('startMinutes');
         }
         const delta = command.startMinutes - startOf(scope);
         const moved = reshape(seats, (seat) =>
@@ -516,7 +424,7 @@ export const AppointmentEditSystem = {
                 seat,
                 seat.startMinutes + delta,
                 seat.durationMinutes,
-                'startIso',
+                'startMinutes',
               )
             : null,
         );
@@ -536,7 +444,7 @@ export const AppointmentEditSystem = {
                   seat,
                   seat.startMinutes,
                   seat.durationMinutes + delta,
-                  'atIso',
+                  'atMinutes',
                 )
               : null,
           );
@@ -549,7 +457,7 @@ export const AppointmentEditSystem = {
         const delta = at - scopeStart;
         const resized = reshape(seats, (seat) =>
           scope.includes(seat) && seat.startMinutes === scopeStart
-            ? placed(seat, at, seat.durationMinutes - delta, 'atIso')
+            ? placed(seat, at, seat.durationMinutes - delta, 'atMinutes')
             : null,
         );
         return resized.ok
@@ -558,7 +466,12 @@ export const AppointmentEditSystem = {
       }
       case EditCommand.Redurate: {
         const redurated = reshapeSeat(seats, command.seatId, (seat) =>
-          placed(seat, seat.startMinutes, command.durationMinutes, 'minutes'),
+          placed(
+            seat,
+            seat.startMinutes,
+            command.durationMinutes,
+            'durationMinutes',
+          ),
         );
         return redurated.ok
           ? Result.ok({ localDate: draft.localDate, seats: redurated.value })
@@ -593,7 +506,7 @@ export const AppointmentEditSystem = {
           command.startMinutes,
           command.durationMinutes,
         );
-        if (!end.ok) return invalid('minutes');
+        if (!end.ok) return invalid('durationMinutes');
         const added = Seat.compose(
           {
             seatId: command.seatId,
@@ -662,7 +575,7 @@ export const AppointmentEditSystem = {
     commands: readonly EditCommandRequest[],
     customerIds: ReadonlyMap<UserId, CustomerId>,
   ): Result<EditOutcome, StaffEditInvalidCommand> {
-    if (commands.length === 0) return invalid('command');
+    if (commands.length === 0) return invalid('commands');
     if (appointment.seats.length === 0) return invalid('seats');
     const context = AppointmentEditSystem.foldContextOf(
       appointment,
@@ -732,7 +645,12 @@ export const AppointmentEditSystem = {
       localDate < arrival.localDate ||
       (localDate === arrival.localDate && finish <= arrival.minute);
     return endsBefore
-      ? StaffEditError.beforeArrival(localDate, finishMinutes.value, arrival)
+      ? StaffEditError.beforeArrival(
+          localDate,
+          finishMinutes.value,
+          arrival.localDate,
+          arrival.minute,
+        )
       : null;
   },
 

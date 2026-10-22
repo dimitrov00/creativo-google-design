@@ -80,7 +80,8 @@
        and never promised by a skeleton (§2.1.5 lists no placeholder for
        the row: most clients have none, and the verbs stay where they are
        when the profile answers). -->
-  @if (overview().capsules; as capsules) { @if (capsules.status === 'ready') {
+  @if (overview().capsules; as capsules) { @if (capsules.cardLoadState ===
+  CardLoadState.Ready) {
   <ui-flow
     role="list"
     uiSpacing="compact"
@@ -266,14 +267,14 @@
      the bill it STAYS WHERE IT STOOD, the discount page's own applied card
      — the check on its glyph, a real «Премахни» where the pill stood —
      focusable, so ‹ lands on it. -->
-@if (overview().reward; as reward) { @switch (reward.status) { @case ('loading')
-{
+@if (overview().reward; as reward) { @switch (reward.cardLoadState) { @case
+(CardLoadState.Loading) {
 <div aria-busy="true" data-testid="client-reward-skeleton">
   <ng-container
     *ngTemplateOutlet="block; context: { $implicit: placeholder.ticket }"
   />
 </div>
-} @case ('ready') { @if (reward.data.applied) {
+} @case (CardLoadState.Ready) { @if (reward.data.applied) {
 <article
   uiCouponCard
   [uiApplied]="true"
@@ -353,11 +354,11 @@
       {{ action.figure }}
       <ui-icon uiName="nav.disclosure" />
     </button>
-    } @else if (visits.status === 'loading') {
+    } @else if (visits.cardLoadState === CardLoadState.Loading) {
     <ng-container *ngTemplateOutlet="actionPlaceholder" />
     }
   </ui-section-header>
-  @switch (visits.status) { @case ('loading') {
+  @switch (visits.cardLoadState) { @case (CardLoadState.Loading) {
   <div
     class="client-card__cards"
     aria-busy="true"
@@ -367,14 +368,14 @@
       *ngTemplateOutlet="block; context: { $implicit: placeholder.visitCard }"
     />
   </div>
-  } @case ('failed') {
+  } @case (CardLoadState.Failed) {
   <ng-container
     *ngTemplateOutlet="
       moduleFailed;
       context: { $implicit: 'visits', word: w.failed.visits }
     "
   />
-  } @case ('ready') { @if (visits.data.last || visits.data.next ||
+  } @case (CardLoadState.Ready) { @if (visits.data.last || visits.data.next ||
   visits.data.waitlist) {
   <div class="client-card__cards">
     @if (visits.data.last; as last) {
@@ -412,7 +413,7 @@
   <ui-stack uiSpacing="compact" data-testid="client-loyalty">
     <ui-section-header uiHeaderProminence="increased">
       <h3 uiTitle [id]="headingId('loyalty')">{{ w.loyalty.title }}</h3>
-      @if (loyalty.status === 'ready') {
+      @if (loyalty.cardLoadState === CardLoadState.Ready) {
       <button
         uiSectionAction
         type="button"
@@ -427,11 +428,11 @@
         {{ w.loyalty.all }}
         <ui-icon uiName="nav.disclosure" />
       </button>
-      } @else if (loyalty.status === 'loading') {
+      } @else if (loyalty.cardLoadState === CardLoadState.Loading) {
       <ng-container *ngTemplateOutlet="actionPlaceholder" />
       }
     </ui-section-header>
-    @switch (loyalty.status) { @case ('loading') {
+    @switch (loyalty.cardLoadState) { @case (CardLoadState.Loading) {
     <div aria-busy="true" data-testid="client-loyalty-skeleton">
       <ng-container
         *ngTemplateOutlet="
@@ -440,14 +441,14 @@
         "
       />
     </div>
-    } @case ('failed') {
+    } @case (CardLoadState.Failed) {
     <ng-container
       *ngTemplateOutlet="
         moduleFailed;
         context: { $implicit: 'loyalty', word: w.failed.loyalty }
       "
     />
-    } @case ('ready') {
+    } @case (CardLoadState.Ready) {
     <lib-loyalty-glance
       class="client-card__origin"
       [vm]="loyalty.data"
@@ -480,11 +481,11 @@
         {{ action.figure }}
         <ui-icon uiName="nav.disclosure" />
       </button>
-      } @else if (medals.status === 'loading') {
+      } @else if (medals.cardLoadState === CardLoadState.Loading) {
       <ng-container *ngTemplateOutlet="actionPlaceholder" />
       }
     </ui-section-header>
-    @switch (medals.status) { @case ('loading') {
+    @switch (medals.cardLoadState) { @case (CardLoadState.Loading) {
     <div aria-busy="true" data-testid="client-achievements-skeleton">
       <ng-container
         *ngTemplateOutlet="
@@ -493,14 +494,14 @@
         "
       />
     </div>
-    } @case ('failed') {
+    } @case (CardLoadState.Failed) {
     <ng-container
       *ngTemplateOutlet="
         moduleFailed;
         context: { $implicit: 'achievements', word: w.failed.achievements }
       "
     />
-    } @case ('ready') {
+    } @case (CardLoadState.Ready) {
     <lib-medals-glance
       [vm]="medals.data"
       (openMedal)="openMedal.emit($event)"
@@ -520,7 +521,7 @@
   <ui-section-header uiHeaderProminence="increased">
     <h3 uiTitle [id]="headingId('photos')">{{ w.photos.title }}</h3>
   </ui-section-header>
-  @switch (photos.status) { @case ('loading') {
+  @switch (photos.cardLoadState) { @case (CardLoadState.Loading) {
   <ui-grid
     [uiColumns]="photoColumns()"
     uiSpacing="compact"
@@ -531,14 +532,14 @@
     <ui-skeleton uiRadius="regular" class="client-card__photo-placeholder" />
     }
   </ui-grid>
-  } @case ('failed') {
+  } @case (CardLoadState.Failed) {
   <ng-container
     *ngTemplateOutlet="
       moduleFailed;
       context: { $implicit: 'photos', word: w.failed.photos }
     "
   />
-  } @case ('ready') {
+  } @case (CardLoadState.Ready) {
   <ui-grid
     role="group"
     [uiColumns]="photoColumns()"

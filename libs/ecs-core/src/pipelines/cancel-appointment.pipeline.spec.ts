@@ -21,6 +21,7 @@ import {
   RepositoryError,
   Result,
   UserId,
+  CancellationRefusalCode,
 } from '@core/primitives';
 import {
   type Appointment,
@@ -28,7 +29,7 @@ import {
   type GiftVoucher,
   Collections,
 } from '@core/entities';
-import { AuditSystem, CancellationRefusalCode } from '@core/systems';
+import { AuditSystem } from '@core/systems';
 import {
   appointmentFixture,
   cents,

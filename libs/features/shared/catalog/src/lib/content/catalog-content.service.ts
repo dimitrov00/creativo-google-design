@@ -8,14 +8,17 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { distinctUntilChanged, map, skip } from 'rxjs';
-import { MEDIA_READER, MediaRef } from '@creativo/application/catalog';
-import { AUTH_GATEWAY, type Principal } from '@creativo/application/identity';
-import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
+import {
+  AUTH_SESSION_PORTS,
+  CATALOG_PORTS,
+  MEDIA_RESOLVE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { MediaRef, Principal, PrincipalKind } from '@core/components';
 import type { Barber, Service, ShopLocation } from '@core/entities';
 import { BARBER_ART, SERVICE_ART } from './catalog-art';
 import { type BarberVm, type ServiceVm } from './catalog-vm';
 import { barberToVm, serviceToVm } from './catalog-to-vm';
-import { MediaUrlCache } from './media-url-cache';
+import { mediaUrlCache } from './media-url-cache';
 
 /**
  * The live catalog, with its media resolved — the one place a surface says
@@ -37,14 +40,14 @@ export class CatalogContentService {
   /**
    * Resolved cover and avatar URLs, one resolve per media object — a
    * snapshot re-emit never re-fetches; a transient failure is retried with
-   * backoff; a missing or forbidden object is asked about once
-   * (`MediaUnavailableError`), and a forbidden one again after the viewer
+   * backoff; a missing or forbidden object is asked about once (a
+   * permanent `MediaError`), and a forbidden one again after the viewer
    * changes (see the constructor).
    *
    * THE session's one cache: the landing reads its view models from here
    * too, so a cover resolves once whichever surface asks first.
    */
-  private readonly media = new MediaUrlCache(inject(MEDIA_READER));
+  private readonly media = mediaUrlCache(inject(MEDIA_RESOLVE_PORTS));
 
   // `null` = every category / every shop: the whole active catalogue.
   private readonly servicesResult = toSignal(
@@ -148,8 +151,8 @@ export class CatalogContentService {
     // forbidden answers and the catalogue's media are asked for again. The
     // FIRST viewer is not a change: Storage waits for Auth to restore the
     // session before it asks, so the first answers were already its. No
-    // gateway (a test bed without one) means no viewer to change.
-    inject(AUTH_GATEWAY, { optional: true })
+    // session (a test bed without one) means no viewer to change.
+    inject(AUTH_SESSION_PORTS, { optional: true })
       ?.observePrincipal()
       .pipe(
         map(viewerOf),
@@ -204,12 +207,12 @@ export class CatalogContentService {
 }
 
 /**
- * The cover as the media reader resolves it. `MEDIA_READER` is not part of
- * the booking-core flip and still takes the kernel's `MediaRef`; the entity
- * stores the seven `coverMedia*` fields flat, all `null` together (N9). The
- * pointer is built at this one seam, keyed by its path in the cache, until
- * the media port flips. `null` when there is no cover, or one the kernel's
- * guard refuses — a placeholder, exactly as an unreadable ref read before.
+ * The cover as the media resolver reads it — the entity stores the seven
+ * `coverMedia*` fields flat, all `null` together (N9); the `MediaRef` is
+ * built at this one seam through its edge guard (`MediaRef.parse`, R9: a
+ * malformed stored ref never reaches Storage). `null` when there is no
+ * cover, or one the guard refuses — a placeholder, exactly as an unreadable
+ * ref read before.
  */
 function coverRefOf(service: Service): MediaRef | null {
   return mediaRefOf(
@@ -223,7 +226,7 @@ function coverRefOf(service: Service): MediaRef | null {
   );
 }
 
-/** The avatar as the media reader resolves it — {@link coverRefOf}'s seam, for `avatarMedia*`. */
+/** The avatar as the media resolver reads it — {@link coverRefOf}'s seam, for `avatarMedia*`. */
 function avatarRefOf(barber: Barber): MediaRef | null {
   return mediaRefOf(
     barber.avatarMediaId,
@@ -248,30 +251,27 @@ function mediaRefOf(
   if (id === null || path === null || width === null || height === null) {
     return null;
   }
-  const ref = MediaRef.create({
-    id,
-    path,
-    width,
-    height,
-    ...(blurhash === null ? {} : { blurhash }),
-    ...(focalX === null || focalY === null
-      ? {}
-      : { focalPoint: { x: focalX, y: focalY } }),
+  // Half a focal point is none, as the stored ref always read (not a refusal).
+  const focused = focalX !== null && focalY !== null;
+  const ref = MediaRef.parse({
+    mediaId: id,
+    mediaPath: path,
+    mediaWidth: width,
+    mediaHeight: height,
+    mediaBlurhash: blurhash,
+    mediaFocalX: focused ? focalX : null,
+    mediaFocalY: focused ? focalY : null,
   });
-  return ref.isSuccess() ? ref.value : null;
+  return ref.ok ? ref.value : null;
 }
 
 /**
- * Who is asking, as far as Storage's rules can tell: signed out, or a uid
- * with its roles. A token refresh with the same claims is the same viewer.
+ * Who is asking, as far as Storage's rules can tell: signed out, or an
+ * account with its roles. A token refresh with the same claims is the same
+ * viewer.
  */
 function viewerOf(principal: Principal): string {
-  switch (principal.kind) {
-    case 'anonymous':
-      return 'anonymous';
-    case 'onboarding':
-      return `onboarding:${principal.uid.value}`;
-    case 'active':
-      return `active:${principal.uid.value}:${[...principal.roles].sort().join(',')}`;
-  }
+  if (principal.principalKind === PrincipalKind.Anonymous) return 'anonymous';
+  if (!Principal.isActive(principal)) return `onboarding:${principal.userId}`;
+  return `active:${principal.userId}:${[...principal.roles].sort().join(',')}`;
 }

@@ -9,7 +9,6 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ZonedDateTime } from '@creativo/application/booking';
 import {
   CompositionKind,
   StreakExcuse,
@@ -19,7 +18,14 @@ import {
 } from '@core/components';
 import type { Service, ServiceCategory } from '@core/entities';
 import { ServiceCategoryId, ServiceId } from '@core/primitives';
+import { ZonedTimeSystem } from '@core/systems';
 import {
+  FIXTURE_TIME_ZONE,
+  locationFixture,
+  memoryDefaultLocationPorts,
+  memoryIdPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStreakDefinitionPorts,
   memoryStreakPublishGatewayPorts,
   memoryStreakWorld,
@@ -28,11 +34,16 @@ import {
   streakDefinitionVersionFixture,
   termsFixture,
   textFixture,
+  unwrapOk,
 } from '@core/testing';
-import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import {
+  CLOCK_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  ID_PORTS,
+  LOCATION_LOAD_PORTS,
   STREAK_DEFINITION_PORTS,
   STREAK_PUBLISH_PORTS,
+  provideFlags,
 } from '@creativo/infrastructure/firebase-app';
 import { AdminRhythmStore } from '../admin-rhythm.store';
 import { rhythmRecorder } from '../testing/rhythm-recorder';
@@ -142,7 +153,7 @@ async function rig(kind: AdminRhythmSheetKind | null, groups = GROUPS) {
     imports: [AdminRhythmSheet],
     providers: [
       AdminRhythmStore,
-      provideFeatureFlags({ 'loyalty.streaks': true }),
+      provideFlags({ 'loyalty.streaks': true }),
       ...provideTransloco({
         config: {
           availableLangs: ['bg', 'en'],
@@ -153,8 +164,23 @@ async function rig(kind: AdminRhythmSheetKind | null, groups = GROUPS) {
         loader: CatalogueLoader,
       }),
       {
-        provide: CLOCK,
-        useValue: { now: (zone: string) => ZonedDateTime.fromISO(NOW, zone) },
+        provide: CLOCK_PORTS,
+        useValue: {
+          nowUtcMs: () =>
+            unwrapOk(ZonedTimeSystem.parseIsoIn(NOW, FIXTURE_TIME_ZONE)),
+        },
+      },
+      { provide: ID_PORTS, useValue: memoryIdPorts('request') },
+      // The shop's zone: the default location's, the fixture centre shop's.
+      {
+        provide: LOCATION_LOAD_PORTS,
+        useValue: memoryLocationLoadPorts(
+          memoryProgramsWorld({ locations: [locationFixture()] }),
+        ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
       { provide: STREAK_DEFINITION_PORTS, useValue: rules.ports },
       { provide: STREAK_PUBLISH_PORTS, useValue: rules.ports },

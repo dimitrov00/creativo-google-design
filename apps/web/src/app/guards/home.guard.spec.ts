@@ -1,32 +1,22 @@
 import { TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
-import {
-  ANONYMOUS_PRINCIPAL,
-  PrincipalId,
-  Principal,
-  roleFromPrimitive,
-} from '@creativo/domain/identity';
+import { BehaviorSubject } from 'rxjs';
+import type { Principal } from '@core/components';
+import { memoryAuthSessionPorts, principalFixture } from '@core/testing';
+import { AUTH_SESSION_PORTS } from '@creativo/infrastructure/firebase-app';
 import { homeGuard } from './home.guard';
 
-const ACTIVE_PRINCIPAL: Principal = {
-  kind: 'active',
-  uid: PrincipalId.generate(),
-  roles: [roleFromPrimitive('client')],
-};
+const ACTIVE_PRINCIPAL: Principal = principalFixture.client();
 
 function configureGuardTest(principal: Principal): void {
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
       {
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () => of(principal),
-          refreshToken: () => Promise.resolve({ ok: true, value: undefined }),
-          signOut: () => Promise.resolve({ ok: true, value: undefined }),
-        },
+        provide: AUTH_SESSION_PORTS,
+        useValue: memoryAuthSessionPorts({
+          principals$: new BehaviorSubject<Principal>(principal),
+        }),
       },
     ],
   });
@@ -69,7 +59,7 @@ describe('homeGuard', () => {
 
   it('allows a standalone-launch anonymous visitor through', async () => {
     setStandalone(true);
-    configureGuardTest(ANONYMOUS_PRINCIPAL);
+    configureGuardTest(principalFixture.anonymous());
 
     const result = await TestBed.runInInjectionContext(() =>
       homeGuard({} as never, {} as never),

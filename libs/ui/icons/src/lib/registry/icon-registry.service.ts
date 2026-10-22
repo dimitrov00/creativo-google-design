@@ -13,7 +13,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Observable } from 'rxjs';
-import type { Result } from '@creativo/domain/kernel';
+import type { Result } from '@core/primitives';
 import {
   UiIconAsset,
   UiIconEntry,
@@ -114,7 +114,7 @@ export function provideUiIcons(overrides: UiIconOverrides): Provider {
  * - `cached` is read ONCE, synchronously, when the registry is created: the
  *   last manifest that passed validation, so the first paint already wears
  *   it and nothing swaps under the user when the live one lands.
- * - `changes` is the live stream. A `Result.fail` is reported and ignored;
+ * - `changes` is the live stream. A failed `Result` is reported and ignored;
  *   a value is validated and, if it passes, adopted and `remember`ed.
  *   `null` means "the backend has no manifest" and returns to the bundled
  *   defaults (and forgets the cache).
@@ -204,7 +204,7 @@ export class UiIconRegistry {
       }
     }
     source.changes.pipe(takeUntilDestroyed()).subscribe((result) => {
-      if (result.isFailure()) {
+      if (!result.ok) {
         this.report({
           code: 'source-failed',
           origin: 'source',

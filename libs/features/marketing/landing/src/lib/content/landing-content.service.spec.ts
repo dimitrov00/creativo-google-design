@@ -2,22 +2,19 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject } from 'rxjs';
 import {
-  MEDIA_READER,
-  MediaUnavailableError,
-  fail,
-  ok,
-  type MediaReadError,
-  type MediaReader,
-  type MediaRef,
-  type MediaVariant,
-  type Result as KernelResult,
-} from '@creativo/application/catalog';
-import { RepositoryError as KernelRepositoryError } from '@creativo/application/shared';
-import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
-import type { CatalogReadPorts } from '@core/ports';
+  CATALOG_PORTS,
+  MEDIA_RESOLVE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import type { MediaRef } from '@core/components';
+import type {
+  CatalogReadPorts,
+  MediaResolvePorts,
+  MediaVariant,
+} from '@core/ports';
 import type { Barber, Service } from '@core/entities';
 import {
   BarberId,
+  MediaError,
   MediaRefId,
   type RepositoryError,
   Result,
@@ -65,41 +62,46 @@ const urlOf = (ref: { readonly path: string }) =>
 /** What one resolve answers: a URL, a transient failure, or a permanent one. */
 type Step = 'ok' | 'transient' | 'reject' | 'missing' | 'forbidden';
 
-/** Plays a script per path (the last step repeats) and counts every call. */
-class ScriptedReader implements MediaReader {
-  readonly calls: string[] = [];
+/** What one resolve answers, as the media port types it. */
+type MediaAnswer = Result<readonly MediaVariant[], MediaError>;
 
-  constructor(private readonly script: Readonly<Record<string, Step[]>>) {}
+/** The media port playing a script per path (the last step repeats), counting every call. */
+type ScriptedMedia = MediaResolvePorts & {
+  readonly calls: readonly string[];
+  callsFor(ref: { readonly path: string }): number;
+};
 
-  callsFor(ref: { readonly path: string }): number {
-    return this.calls.filter((path) => path === ref.path).length;
-  }
-
-  resolve(
-    ref: MediaRef,
-  ): Promise<KernelResult<readonly MediaVariant[], MediaReadError>> {
-    this.calls.push(ref.path);
-    const steps = this.script[ref.path] ?? ['ok'];
-    const step = steps[Math.min(this.callsFor(ref), steps.length) - 1] ?? 'ok';
-    switch (step) {
-      case 'ok':
-        return Promise.resolve(ok([{ width: ref.width, url: urlOf(ref) }]));
-      case 'transient':
-        return Promise.resolve(
-          fail(new KernelRepositoryError('storage/retry-limit-exceeded')),
-        );
-      case 'reject':
-        return Promise.reject(new Error('network'));
-      case 'missing':
-        return Promise.resolve(
-          fail(new MediaUnavailableError('not_found', ref.path)),
-        );
-      case 'forbidden':
-        return Promise.resolve(
-          fail(new MediaUnavailableError('forbidden', ref.path)),
-        );
-    }
-  }
+function scriptedMedia(
+  script: Readonly<Record<string, Step[]>>,
+): ScriptedMedia {
+  const calls: string[] = [];
+  const callsFor = (ref: { readonly path: string }): number =>
+    calls.filter((path) => path === ref.path).length;
+  return {
+    calls,
+    callsFor,
+    resolveMedia: (ref: MediaRef): Promise<MediaAnswer> => {
+      const path = ref.mediaPath;
+      calls.push(path);
+      const steps = script[path] ?? ['ok'];
+      const step =
+        steps[Math.min(callsFor({ path }), steps.length) - 1] ?? 'ok';
+      switch (step) {
+        case 'ok':
+          return Promise.resolve(
+            Result.ok([{ width: ref.mediaWidth, url: urlOf({ path }) }]),
+          );
+        case 'transient':
+          return Promise.resolve(Result.err(MediaError.transient(path)));
+        case 'reject':
+          return Promise.reject(new Error('network'));
+        case 'missing':
+          return Promise.resolve(Result.err(MediaError.notFound(path)));
+        case 'forbidden':
+          return Promise.resolve(Result.err(MediaError.forbidden(path)));
+      }
+    },
+  };
 }
 
 /** The longest wait the default policy can pick after `failures` failures. */
@@ -124,7 +126,7 @@ describe('LandingContentService — media', () => {
     vi.useRealTimers();
   });
 
-  function setUp(reader: MediaReader): LandingContentService {
+  function setUp(reader: MediaResolvePorts): LandingContentService {
     TestBed.configureTestingModule({
       providers: [
         { provide: LanguageService, useValue: { activeLang: signal('bg') } },
@@ -140,7 +142,7 @@ describe('LandingContentService — media', () => {
             },
           } satisfies CatalogReadPorts,
         },
-        { provide: MEDIA_READER, useValue: reader },
+        { provide: MEDIA_RESOLVE_PORTS, useValue: reader },
       ],
     });
     const content = TestBed.inject(LandingContentService);
@@ -160,7 +162,7 @@ describe('LandingContentService — media', () => {
     content.barbers()[0]?.avatarSrc;
 
   it('resolves each cover and avatar once and maps them into the view models', async () => {
-    const reader = new ScriptedReader({});
+    const reader = scriptedMedia({});
     const content = setUp(reader);
     await vi.advanceTimersByTimeAsync(0);
 
@@ -176,7 +178,7 @@ describe('LandingContentService — media', () => {
   it.each<Step>(['transient', 'reject'])(
     'recovers a cover whose first resolve failed (%s), without a request per re-emit',
     async (firstStep) => {
-      const reader = new ScriptedReader({
+      const reader = scriptedMedia({
         [cover.path]: [firstStep, 'ok'],
         [avatar.path]: [firstStep, 'ok'],
       });
@@ -198,7 +200,7 @@ describe('LandingContentService — media', () => {
   );
 
   it('gives a failure that never clears a bounded number of attempts', async () => {
-    const reader = new ScriptedReader({ [cover.path]: ['transient'] });
+    const reader = scriptedMedia({ [cover.path]: ['transient'] });
     const content = setUp(reader);
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     reEmit();
@@ -211,7 +213,7 @@ describe('LandingContentService — media', () => {
   it.each<Step>(['missing', 'forbidden'])(
     'asks once about a %s object and leaves it on its placeholder',
     async (step) => {
-      const reader = new ScriptedReader({
+      const reader = scriptedMedia({
         [cover.path]: [step],
         [avatar.path]: [step],
       });
@@ -231,7 +233,7 @@ describe('LandingContentService — media', () => {
     // A visitor lands, then books: the landing's grid and the booking
     // flow's (`CatalogContentService`) must not resolve a cover twice, nor
     // ask twice about one that is missing.
-    const reader = new ScriptedReader({ [avatar.path]: ['missing'] });
+    const reader = scriptedMedia({ [avatar.path]: ['missing'] });
     const landing = setUp(reader);
     await vi.advanceTimersByTimeAsync(0);
     const booking = TestBed.inject(CatalogContentService);
@@ -250,7 +252,7 @@ describe('LandingContentService — media', () => {
   });
 
   it('stops retrying when its injector is destroyed', async () => {
-    const reader = new ScriptedReader({ [cover.path]: ['transient'] });
+    const reader = scriptedMedia({ [cover.path]: ['transient'] });
     setUp(reader);
     await vi.advanceTimersByTimeAsync(0);
     TestBed.resetTestingModule();

@@ -71,15 +71,6 @@ export const authClaimsPorts = (
     }
   },
 
-  setClaims: async (uid, claims) => {
-    try {
-      await auth.setCustomUserClaims(uid, AuthClaims.toToken(claims));
-      return Result.ok(undefined);
-    } catch (error) {
-      return Result.err(authFailure(error));
-    }
-  },
-
   setDisplayName: async (uid, displayName) => {
     try {
       await auth.updateUser(uid, { displayName });

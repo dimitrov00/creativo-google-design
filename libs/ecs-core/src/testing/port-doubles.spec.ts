@@ -1,4 +1,4 @@
-import { firstValueFrom, type Observable } from 'rxjs';
+import { BehaviorSubject, firstValueFrom, type Observable } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import {
   BarberStatus,
@@ -31,6 +31,15 @@ import {
   StreakRule,
   TierOp,
   WriteOp,
+  BookingContact,
+  BookingDraft,
+  BookingFlowState,
+  FLAG_NAMES,
+  type FlagName,
+  OtpCode,
+  Party,
+  type Principal,
+  SessionKind,
 } from '@core/components';
 import {
   AppointmentId,
@@ -65,6 +74,11 @@ import {
   UserId,
   UtcEpochMs,
   WaitlistRequestId,
+  InvitationId,
+  MediaRefId,
+  PipelineError,
+  PipelineErrorCode,
+  Result as R,
 } from '@core/primitives';
 import type {
   Appointment,
@@ -81,11 +95,9 @@ import type {
   JournalEntry,
   ScheduleException,
   ServiceCategory,
-  User,
   WaitlistRequest,
 } from '@core/entities';
 import { Collections, Subcollections } from '@core/entities';
-import { ProfileEditSystem } from '@core/systems';
 import { appointmentFixture } from './appointment.fixtures';
 import {
   barberBusyDayFixture,
@@ -107,6 +119,7 @@ import {
   customerOf,
   minute,
   textFixture,
+  unwrapErr,
   unwrapOk,
   utcMs,
 } from './test-support';
@@ -151,6 +164,17 @@ import {
   memoryUserSearchPorts,
   memoryWaitlistReadPorts,
   recordingOtpDeliveryPorts,
+  type GatewayCall,
+  type OtpChallengeCall,
+  immediateTimerPorts,
+  memoryAuthSessionPorts,
+  memoryAvatarPorts,
+  memoryBookingDraftPorts,
+  memoryFlagsPorts,
+  memoryKeyValuePorts,
+  memoryMediaResolvePorts,
+  memoryOtpChallengePorts,
+  scriptedGatewayPorts,
 } from './port-doubles';
 import {
   FIXTURE_OTP_CODE,
@@ -158,9 +182,11 @@ import {
   FIXTURE_TENANT_ID,
   impersonationSessionFixture,
   otpFixture,
+  principalFixture,
   provisionedUserFixture,
   registeredUserFixture,
 } from './identity.fixtures';
+import { Callables } from '@core/ports';
 import { FIXTURE_NOW_UTC_MS, applyWrites } from './test-support';
 import { courseOf, positionOf, shopEventOf } from './programs.fixtures';
 
@@ -797,8 +823,6 @@ describe('memoryCustomerPorts — the signed-in account’s client record', () =
 });
 
 /** An owner edit that keeps every field — override the ones a case changes. */
-const KEEP = { firstName: null, lastName: null, birthDate: null } as const;
-
 describe('memoryProfilePorts — an account’s own profile', () => {
   it('observes and loads the entry AS STORED — a provisioned stub included, null only when absent', async () => {
     const stub = provisionedUserFixture();
@@ -809,42 +833,9 @@ describe('memoryProfilePorts — an account’s own profile', () => {
     expect(await first(ports.observeProfile(BOB))).toBeNull();
   });
 
-  it('writes the five keys the decide answers, IN PLACE; a null answer and a refusal write nothing', async () => {
-    const maria = registeredUserFixture();
-    const users = new Map<UserId, User>([[maria.id, maria]]);
-    const ports = memoryProfilePorts(users);
-    const day = FIXTURE_TODAY;
-
-    expect(
-      await ports.writeOwnProfile(maria.id, (stored) =>
-        ProfileEditSystem.decide(stored, { ...KEEP, firstName: 'Mila' }, day),
-      ),
-    ).toEqual({ ok: true, value: undefined });
-    expect(users.get(maria.id)).toMatchObject({
-      firstName: 'Mila',
-      lastName: 'Petrova',
-      searchName: 'mila petrova',
-      registrationState: 'REGISTERED',
-    });
-
-    const written = users.get(maria.id);
-    expect(
-      await ports.writeOwnProfile(maria.id, (stored) =>
-        ProfileEditSystem.decide(stored, { ...KEEP, firstName: 'Mila' }, day),
-      ),
-    ).toEqual({ ok: true, value: undefined });
-    expect(users.get(maria.id)).toBe(written);
-
-    expect(
-      await ports.writeOwnProfile(BOB, (stored) =>
-        ProfileEditSystem.decide(stored, { ...KEEP, firstName: 'Bob' }, day),
-      ),
-    ).toEqual({
-      ok: false,
-      error: { errorCode: 'ACCOUNTS_UPDATE_PROFILE_NOT_FOUND' },
-    });
-    expect(users.has(BOB)).toBe(false);
-  });
+  // dead: «writes the five keys the decide answers, IN PLACE» — Phase 4a
+  // 4A-3 (2): `ProfilePorts.writeOwnProfile` is gone; every users write is
+  // the `updateProfile` callable's (`update-profile.pipeline.spec.ts`).
 });
 
 describe('memoryUserSearchPorts — the staff client search', () => {
@@ -919,12 +910,13 @@ describe('memoryIdentityWorld — the one state the identity doubles share', () 
         ),
       ),
     ).toEqual([older, recent]);
-    expect(unwrapOk(await ports.loadOtp(OtpId.of('otp-3')))).toEqual(consumed);
-    expect(unwrapOk(await ports.loadOtp(OtpId.of('otp-9')))).toBeNull();
+    // dead: the `loadOtp` reads — Phase 4a 4A-14 (no caller; the member is gone).
+    expect(world.store.get(`otps/${consumed.id}`)).toMatchObject({
+      consumedAtUtcMs: recent.createdAtUtcMs,
+    });
 
     const saved = otpFixture({ id: OtpId.of('otp-9'), attemptCount: 1 });
     expect(await ports.saveOtp(saved)).toEqual({ ok: true, value: undefined });
-    expect(unwrapOk(await ports.loadOtp(saved.id))).toEqual(saved);
     // The SAME table a transaction reads — the body, no id.
     expect(world.store.get(`otps/${saved.id}`)).toMatchObject({
       attemptCount: 1,
@@ -994,17 +986,15 @@ describe('memoryIdentityWorld — the one state the identity doubles share', () 
     ).toBe(orphan);
   });
 
-  it('records minted claims, claims set and display names', async () => {
+  it('records minted claims and display names', async () => {
     const world = memoryIdentityWorld();
     const admin = memoryAuthAdminPorts(world);
     const claims = AuthClaims.onboarding(FIXTURE_TENANT_ID);
     expect(unwrapOk(await admin.mintCustomToken(ANA, claims))).toBe(
       'token:ana:1',
     );
-    await admin.setClaims(ANA, claims);
     await admin.setDisplayName(ANA, 'Ана Петрова');
     expect(world.minted).toEqual([{ uid: ANA, claims, token: 'token:ana:1' }]);
-    expect(world.claims.get(ANA)).toBe(claims);
     expect(world.displayNames.get(ANA)).toBe('Ана Петрова');
   });
 });
@@ -1508,5 +1498,172 @@ describe('memoryProgramsWorld — the one state the programs doubles share', () 
     expect(
       memoryDefaultLocationPorts(LocationId.of('loc-north')).defaultLocationId,
     ).toBe('loc-north');
+  });
+});
+
+// ── The web's wiring (Phase 4a §3.7) ─────────────────────────────────────
+
+describe('memoryAuthSessionPorts — the session over a scripted principal', () => {
+  it('replays the current principal and every later one; an ok sign-out drops to anonymous', async () => {
+    const principals$ = new BehaviorSubject<Principal>(
+      principalFixture.client(),
+    );
+    const ports = memoryAuthSessionPorts({ principals$ });
+    const seen: Principal[] = [];
+    const subscription = ports.observePrincipal().subscribe((principal) => {
+      seen.push(principal);
+    });
+    principals$.next(principalFixture.staff(UserId.of('u-staff')));
+    expect(await ports.signOut()).toEqual({ ok: true, value: undefined });
+    subscription.unsubscribe();
+    expect(seen.map((principal) => principal.principalKind)).toEqual([
+      'CLIENT',
+      'STAFF',
+      'ANONYMOUS',
+    ]);
+    expect(await ports.refreshToken()).toEqual({ ok: true, value: undefined });
+    expect(ports.currentIdentifier()).toBeNull();
+    expect(ports.currentDisplayName()).toBeNull();
+  });
+
+  it('answers the scripted refresh and sign-out failures', async () => {
+    const failed = PipelineError.bare(PipelineErrorCode.Unavailable);
+    const ports = memoryAuthSessionPorts({
+      refresh: () => R.err(failed),
+      signOut: () => R.err(failed),
+    });
+    expect(await ports.refreshToken()).toEqual(R.err(failed));
+    expect(await ports.signOut()).toEqual(R.err(failed));
+    expect(await firstValueFrom(ports.observePrincipal())).toEqual(
+      principalFixture.anonymous(),
+    );
+  });
+});
+
+describe('memoryOtpChallengePorts — the three OTP callables, scripted', () => {
+  it('records every call and answers the script (otp-1, RETURNING, ok by default)', async () => {
+    const calls: OtpChallengeCall[] = [];
+    const ports = memoryOtpChallengePorts({ calls });
+    const phone = ParsedIdentifier.phone(E164.of('+359888123456'));
+    expect(await ports.requestOtpChallenge(phone)).toEqual(
+      R.ok(OtpId.of('otp-1')),
+    );
+    expect(
+      await ports.verifyOtpChallenge(OtpId.of('otp-1'), OtpCode.of('123456')),
+    ).toEqual(R.ok(SessionKind.Returning));
+    expect(calls.map((call) => call.otpCall)).toEqual(['REQUEST', 'VERIFY']);
+  });
+});
+
+describe('memoryBookingDraftPorts and memoryKeyValuePorts — device storage', () => {
+  it('holds one draft: load, save over, clear', () => {
+    const ports = memoryBookingDraftPorts();
+    expect(ports.loadBookingDraft()).toEqual(R.ok(null));
+    const draft = BookingDraft.fresh(
+      BookingFlowState.initial(Party.anonymous()),
+      BookingContact.NONE,
+      null,
+    );
+    ports.saveBookingDraft(draft);
+    expect(ports.loadBookingDraft()).toEqual(R.ok(draft));
+    ports.clearBookingDraft();
+    expect(ports.loadBookingDraft()).toEqual(R.ok(null));
+  });
+
+  it('reads and writes the spec’s map in place', () => {
+    const values = new Map([['ui-lang', 'bg']]);
+    const ports = memoryKeyValuePorts(values);
+    expect(ports.kvGet('ui-lang')).toEqual(R.ok('bg'));
+    ports.kvSet('ui-lang', 'en');
+    expect(values.get('ui-lang')).toBe('en');
+    ports.kvRemove('ui-lang');
+    expect(ports.kvGet('ui-lang')).toEqual(R.ok(null));
+  });
+});
+
+describe('scriptedGatewayPorts — the typed callable client', () => {
+  it('answers the script by name and records every call; an unscripted one is PIPELINE_UNKNOWN', async () => {
+    const calls: GatewayCall[] = [];
+    const ports = scriptedGatewayPorts(
+      {
+        [Callables.CancelWaitlist]: (input) =>
+          R.ok({ requestId: input.requestId }),
+      },
+      calls,
+    );
+    const requestId = WaitlistRequestId.of('wl_1');
+    expect(
+      await ports.callableClient(Callables.CancelWaitlist)({ requestId }),
+    ).toEqual(R.ok({ requestId }));
+    expect(
+      await ports.callableClient(Callables.RedeemInvitation)({
+        invitationId: InvitationId.of('inv-1'),
+      }),
+    ).toEqual(R.err(PipelineError.bare(PipelineErrorCode.Unknown)));
+    expect(calls.map((call) => call.callable)).toEqual([
+      'cancelWaitlist',
+      'redeemInvitation',
+    ]);
+  });
+});
+
+describe('memoryAvatarPorts and memoryMediaResolvePorts — Storage', () => {
+  it('replaces, finds and removes the one avatar of an account', async () => {
+    const ports = memoryAvatarPorts();
+    const uid = UserId.of('u-1');
+    const blob = { type: 'image/jpeg', size: 1 } as unknown as Blob;
+    const stored = unwrapOk(await ports.uploadAvatar(uid, blob));
+    expect(stored.path).toBe('avatars/u-1/original');
+    expect(unwrapOk(await ports.findAvatar(uid))).toEqual(stored);
+    await ports.removeAvatar(uid);
+    expect(unwrapOk(await ports.findAvatar(uid))).toBeNull();
+  });
+
+  it('answers one rendition per ref, or the scripted failure of its path', async () => {
+    const ports = memoryMediaResolvePorts({
+      forbidden: ['f.jpg'],
+      notFound: ['n.jpg'],
+      transient: ['t.jpg'],
+    });
+    const ref = (mediaPath: string) => ({
+      mediaId: MediaRefId.of('m-1'),
+      mediaPath,
+      mediaWidth: 640,
+      mediaHeight: 480,
+      mediaBlurhash: null,
+      mediaFocalX: null,
+      mediaFocalY: null,
+    });
+    expect(unwrapOk(await ports.resolveMedia(ref('ok.jpg')))).toEqual([
+      { width: 640, url: 'https://media.test/ok.jpg' },
+    ]);
+    expect(unwrapErr(await ports.resolveMedia(ref('f.jpg'))).errorCode).toBe(
+      'MEDIA_FORBIDDEN',
+    );
+    expect(unwrapErr(await ports.resolveMedia(ref('n.jpg'))).errorCode).toBe(
+      'MEDIA_NOT_FOUND',
+    );
+    expect(unwrapErr(await ports.resolveMedia(ref('t.jpg'))).errorCode).toBe(
+      'MEDIA_TRANSIENT',
+    );
+  });
+});
+
+describe('memoryFlagsPorts and immediateTimerPorts', () => {
+  it('turns on exactly the named flags', () => {
+    const ports = memoryFlagsPorts([FLAG_NAMES[0] as FlagName]);
+    expect(ports.flagOn(FLAG_NAMES[0] as FlagName)).toBe(true);
+    for (const flag of FLAG_NAMES.slice(1)) {
+      expect(ports.flagOn(flag)).toBe(false);
+    }
+    expect(memoryFlagsPorts().flagOn(FLAG_NAMES[0] as FlagName)).toBe(false);
+  });
+
+  it('waits for nothing and records each delay', async () => {
+    const delays: number[] = [];
+    const ports = immediateTimerPorts(delays);
+    await ports.delay(250);
+    await ports.delay(0);
+    expect(delays).toEqual([250, 0]);
   });
 });

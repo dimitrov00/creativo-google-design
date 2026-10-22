@@ -1,38 +1,32 @@
 import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject, Subject, of } from 'rxjs';
 import {
-  MEDIA_READER,
-  MediaUnavailableError,
-  fail,
-  ok,
-  type MediaReadError,
-  type MediaReader,
-  type MediaRef,
-  type MediaVariant,
-  type Result as KernelResult,
-} from '@creativo/application/catalog';
-import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-  PrincipalId,
-  roleFromPrimitive,
-  type AuthGateway,
-  type Principal,
-} from '@creativo/application/identity';
-import { RepositoryError as KernelRepositoryError } from '@creativo/application/shared';
-import { CATALOG_PORTS } from '@creativo/infrastructure/firebase-app';
-import type { CatalogReadPorts } from '@core/ports';
+  AUTH_SESSION_PORTS,
+  CATALOG_PORTS,
+  MEDIA_RESOLVE_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+import { type MediaRef, type Principal, Role } from '@core/components';
+import type {
+  CatalogReadPorts,
+  MediaResolvePorts,
+  MediaVariant,
+} from '@core/ports';
 import type { Barber, Service, ShopLocation } from '@core/entities';
 import {
   BarberId,
+  MediaError,
   MediaRefId,
   RepositoryError,
   Result,
   ServiceId,
+  UserId,
 } from '@core/primitives';
 import {
   barberFixture,
+  memoryAuthSessionPorts,
   memoryCatalogReadPorts,
+  memoryMediaResolvePorts,
+  principalFixture,
   serviceFixture,
 } from '@core/testing';
 import { CatalogContentService } from './catalog-content.service';
@@ -83,26 +77,36 @@ function catalogPorts(reads: {
   };
 }
 
-/** Fails the first `failures` resolves of every path, then answers. */
-class FlakyReader implements MediaReader {
-  readonly calls: string[] = [];
+/** A resolver that counts its calls per Storage path. */
+type CountingResolver = {
+  readonly ports: MediaResolvePorts;
+  readonly calls: string[];
+  readonly callsFor: (ref: { readonly path: string }) => number;
+};
 
-  constructor(private readonly failures: number) {}
-
-  callsFor(ref: { readonly path: string }): number {
-    return this.calls.filter((path) => path === ref.path).length;
-  }
-
-  resolve(
-    ref: MediaRef,
-  ): Promise<KernelResult<readonly MediaVariant[], KernelRepositoryError>> {
-    this.calls.push(ref.path);
-    return Promise.resolve(
-      this.callsFor(ref) <= this.failures
-        ? fail(new KernelRepositoryError('storage/retry-limit-exceeded'))
-        : ok([{ width: ref.width, url: urlOf(ref) }]),
-    );
-  }
+/** Fails the first `failures` resolves of every path (transiently), then answers. */
+function flakyResolver(failures: number): CountingResolver {
+  const calls: string[] = [];
+  const callsFor = (ref: { readonly path: string }) =>
+    calls.filter((path) => path === ref.path).length;
+  return {
+    calls,
+    callsFor,
+    ports: {
+      resolveMedia: (
+        ref: MediaRef,
+      ): Promise<Result<readonly MediaVariant[], MediaError>> => {
+        calls.push(ref.mediaPath);
+        return Promise.resolve(
+          callsFor({ path: ref.mediaPath }) <= failures
+            ? Result.err(MediaError.transient(ref.mediaPath))
+            : Result.ok([
+                { width: ref.mediaWidth, url: urlOf({ path: ref.mediaPath }) },
+              ]),
+        );
+      },
+    },
+  };
 }
 
 /** The longest wait the default policy can pick after `failures` failures. */
@@ -124,7 +128,7 @@ describe('CatalogContentService — media', () => {
     vi.useRealTimers();
   });
 
-  function setUp(reader: MediaReader): CatalogContentService {
+  function setUp(reader: CountingResolver): CatalogContentService {
     TestBed.configureTestingModule({
       providers: [
         {
@@ -134,7 +138,7 @@ describe('CatalogContentService — media', () => {
             barbers: () => of(Result.ok([ivan])),
           }),
         },
-        { provide: MEDIA_READER, useValue: reader },
+        { provide: MEDIA_RESOLVE_PORTS, useValue: reader.ports },
       ],
     });
     const content = TestBed.inject(CatalogContentService);
@@ -143,7 +147,7 @@ describe('CatalogContentService — media', () => {
   }
 
   it('resolves each cover and avatar once and maps them into the view models', async () => {
-    const reader = new FlakyReader(0);
+    const reader = flakyResolver(0);
     const content = setUp(reader);
     await vi.advanceTimersByTimeAsync(0);
 
@@ -159,7 +163,7 @@ describe('CatalogContentService — media', () => {
   });
 
   it('recovers a cover whose first resolve failed, without a request per re-emit', async () => {
-    const reader = new FlakyReader(1);
+    const reader = flakyResolver(1);
     const content = setUp(reader);
     await vi.advanceTimersByTimeAsync(0);
     expect(content.coverUrl('svc-fade')).toBeUndefined();
@@ -179,7 +183,7 @@ describe('CatalogContentService — media', () => {
   });
 
   it('leaves a cover that never resolves on its placeholder after the last attempt', async () => {
-    const reader = new FlakyReader(Infinity);
+    const reader = flakyResolver(Infinity);
     const content = setUp(reader);
     await vi.advanceTimersByTimeAsync(10 * 60_000);
 
@@ -189,7 +193,7 @@ describe('CatalogContentService — media', () => {
   });
 
   it('reads a service’s cover off the service in hand, without searching the catalogue', async () => {
-    const content = setUp(new FlakyReader(0));
+    const content = setUp(flakyResolver(0));
     await vi.advanceTimersByTimeAsync(0);
     const search = vi.spyOn(content, 'findService');
 
@@ -201,7 +205,7 @@ describe('CatalogContentService — media', () => {
   });
 
   it('stops retrying when its injector is destroyed', async () => {
-    const reader = new FlakyReader(Infinity);
+    const reader = flakyResolver(Infinity);
     setUp(reader);
     await vi.advanceTimersByTimeAsync(0);
     TestBed.resetTestingModule();
@@ -211,46 +215,47 @@ describe('CatalogContentService — media', () => {
 });
 
 /** Answers each path from a script (the last step repeats) and counts every call. */
-class ScriptedReader implements MediaReader {
-  readonly calls: string[] = [];
-
-  constructor(
-    private readonly script: Readonly<
-      Record<string, readonly ('ok' | 'missing' | 'forbidden')[]>
-    >,
-  ) {}
-
-  callsFor(ref: { readonly path: string }): number {
-    return this.calls.filter((path) => path === ref.path).length;
-  }
-
-  resolve(
-    ref: MediaRef,
-  ): Promise<KernelResult<readonly MediaVariant[], MediaReadError>> {
-    this.calls.push(ref.path);
-    const steps = this.script[ref.path] ?? ['ok'];
-    const step = steps[Math.min(this.callsFor(ref), steps.length) - 1];
-    return Promise.resolve(
-      step === 'ok' || step === undefined
-        ? ok([{ width: ref.width, url: urlOf(ref) }])
-        : fail(
-            new MediaUnavailableError(
-              step === 'missing' ? 'not_found' : 'forbidden',
-              ref.path,
-            ),
-          ),
-    );
-  }
+function scriptedResolver(
+  script: Readonly<Record<string, readonly ('ok' | 'missing' | 'forbidden')[]>>,
+): CountingResolver {
+  const calls: string[] = [];
+  const callsFor = (ref: { readonly path: string }) =>
+    calls.filter((path) => path === ref.path).length;
+  return {
+    calls,
+    callsFor,
+    ports: {
+      resolveMedia: (
+        ref: MediaRef,
+      ): Promise<Result<readonly MediaVariant[], MediaError>> => {
+        calls.push(ref.mediaPath);
+        const steps = script[ref.mediaPath] ?? ['ok'];
+        const step =
+          steps[Math.min(callsFor({ path: ref.mediaPath }), steps.length) - 1];
+        return Promise.resolve(
+          step === 'ok' || step === undefined
+            ? Result.ok([
+                { width: ref.mediaWidth, url: urlOf({ path: ref.mediaPath }) },
+              ])
+            : Result.err(
+                step === 'missing'
+                  ? MediaError.notFound(ref.mediaPath)
+                  : MediaError.forbidden(ref.mediaPath),
+              ),
+        );
+      },
+    },
+  };
 }
 
 describe('CatalogContentService — a new viewer', () => {
   let viewers: Subject<Principal>;
 
-  const member = (uid: PrincipalId, ...roles: string[]): Principal => ({
-    kind: 'active',
-    uid,
-    roles: roles.map(roleFromPrimitive),
-  });
+  const member = (uid: UserId, ...roles: Role[]): Principal =>
+    roles.includes(Role.Admin)
+      ? principalFixture.staff(uid, roles)
+      : { ...principalFixture.client(uid), roles };
+  const ANONYMOUS = principalFixture.anonymous();
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -262,7 +267,7 @@ describe('CatalogContentService — a new viewer', () => {
     vi.useRealTimers();
   });
 
-  function setUp(reader: MediaReader): CatalogContentService {
+  function setUp(reader: CountingResolver): CatalogContentService {
     TestBed.configureTestingModule({
       providers: [
         {
@@ -272,12 +277,13 @@ describe('CatalogContentService — a new viewer', () => {
             barbers: () => of(Result.ok([ivan])),
           }),
         },
-        { provide: MEDIA_READER, useValue: reader },
+        { provide: MEDIA_RESOLVE_PORTS, useValue: reader.ports },
         {
-          provide: AUTH_GATEWAY,
+          provide: AUTH_SESSION_PORTS,
           useValue: {
+            ...memoryAuthSessionPorts(),
             observePrincipal: () => viewers.asObservable(),
-          } satisfies Partial<AuthGateway>,
+          },
         },
       ],
     });
@@ -287,17 +293,17 @@ describe('CatalogContentService — a new viewer', () => {
   }
 
   it('asks again about a cover the rules refused once someone signs in, and not about a missing avatar', async () => {
-    const reader = new ScriptedReader({
+    const reader = scriptedResolver({
       [cover.path]: ['forbidden', 'ok'],
       [avatar.path]: ['missing', 'ok'],
     });
     const content = setUp(reader);
-    viewers.next(ANONYMOUS_PRINCIPAL);
+    viewers.next(ANONYMOUS);
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(content.coverUrlOf(fade)).toBeUndefined();
     expect(reader.callsFor(cover)).toBe(1);
 
-    viewers.next(member(PrincipalId.generate(), 'client'));
+    viewers.next(member(UserId.of('u-new'), Role.Client));
     await vi.advanceTimersByTimeAsync(0);
     expect(reader.callsFor(cover)).toBe(2);
     expect(content.serviceVms()[0]?.coverSrc).toBe(urlOf(cover));
@@ -306,23 +312,23 @@ describe('CatalogContentService — a new viewer', () => {
   });
 
   it('takes the first viewer as the one the first answers were for, and a token refresh as the same viewer', async () => {
-    const reader = new ScriptedReader({ [cover.path]: ['forbidden'] });
+    const reader = scriptedResolver({ [cover.path]: ['forbidden'] });
     setUp(reader);
-    const uid = PrincipalId.generate();
+    const uid = UserId.of('u-restored');
     // A restored session: Storage waited for it, so its "no" is this
     // viewer's own.
-    viewers.next(member(uid, 'client'));
+    viewers.next(member(uid, Role.Client));
     await vi.advanceTimersByTimeAsync(0);
     // An hourly token refresh with the same claims.
-    viewers.next(member(uid, 'client'));
+    viewers.next(member(uid, Role.Client));
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(reader.callsFor(cover)).toBe(1);
 
     // New roles are a new viewer to the rules; so is signing out.
-    viewers.next(member(uid, 'client', 'admin'));
+    viewers.next(member(uid, Role.Client, Role.Admin));
     await vi.advanceTimersByTimeAsync(0);
     expect(reader.callsFor(cover)).toBe(2);
-    viewers.next(ANONYMOUS_PRINCIPAL);
+    viewers.next(ANONYMOUS);
     await vi.advanceTimersByTimeAsync(0);
     expect(reader.callsFor(cover)).toBe(3);
   });
@@ -353,10 +359,7 @@ describe('CatalogContentService — has each read answered?', () => {
               reads.locations?.asObservable() ?? of(Result.ok([])),
           }),
         },
-        {
-          provide: MEDIA_READER,
-          useValue: { resolve: () => Promise.resolve(ok([])) },
-        },
+        { provide: MEDIA_RESOLVE_PORTS, useValue: memoryMediaResolvePorts() },
       ],
     });
     return TestBed.inject(CatalogContentService);

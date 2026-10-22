@@ -1,8 +1,13 @@
 import { InjectionToken } from '@angular/core';
+import { AuthDeployment, FeatureFlags } from '@core/components';
 import type {
   AppointmentNotePorts,
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  AuthDeploymentPorts,
+  AuthSessionPorts,
+  AvatarPorts,
+  BookingDraftPorts,
   CatalogReadPorts,
   ClientJournalPorts,
   ClientStatsReadPorts,
@@ -11,12 +16,17 @@ import type {
   CourseReadPorts,
   CustomerPorts,
   DefaultLocationPorts,
+  FlagsPorts,
+  GatewayPorts,
   IdPorts,
   ImpersonationReadPorts,
   InboxPorts,
+  KeyValuePorts,
   LocationLoadPorts,
   LoyaltyAccountReadPorts,
   LoyaltyCatalogReadPorts,
+  MediaResolvePorts,
+  OtpChallengePorts,
   PositionReadPorts,
   ProfilePorts,
   ProgramsPorts,
@@ -25,6 +35,7 @@ import type {
   ShopEventReadPorts,
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
+  TimerPorts,
   UserSearchPorts,
   WaitlistReadPorts,
 } from '@core/ports';
@@ -91,7 +102,7 @@ export const CUSTOMER_PORTS = new InjectionToken<CustomerPorts>(
   'CUSTOMER_PORTS',
 );
 
-/** An account's own profile — live, once, and the owner's edit (`ProfilePorts`). */
+/** An account's own profile — live and once (`ProfilePorts`); every write is `updateProfile`'s. */
 export const PROFILE_PORTS = new InjectionToken<ProfilePorts>('PROFILE_PORTS');
 
 /** The staff client search over `users` (`UserSearchPorts`). */
@@ -159,3 +170,61 @@ export const CLOCK_PORTS = new InjectionToken<ClockPorts>('CLOCK_PORTS');
 
 /** The browser's fresh document ids (`IdPorts`). */
 export const ID_PORTS = new InjectionToken<IdPorts>('ID_PORTS');
+
+// ── The web's wiring (Phase 4a 4A-7) — one token per bundle ──────────────
+
+/** The Firebase Auth session (`AuthSessionPorts`) — eager. */
+export const AUTH_SESSION_PORTS = new InjectionToken<AuthSessionPorts>(
+  'AUTH_SESSION_PORTS',
+);
+
+/** The three OTP callables (`OtpChallengePorts`). */
+export const OTP_CHALLENGE_PORTS = new InjectionToken<OtpChallengePorts>(
+  'OTP_CHALLENGE_PORTS',
+);
+
+/**
+ * The deployment's authentication configuration (`AuthDeploymentPorts`) —
+ * `AuthDeployment.DEFAULT` unless a root binds another, as the legacy
+ * `AUTH_DEPLOYMENT` token defaulted.
+ */
+export const AUTH_DEPLOYMENT_PORTS = new InjectionToken<AuthDeploymentPorts>(
+  'AUTH_DEPLOYMENT_PORTS',
+  { factory: () => ({ authDeployment: AuthDeployment.DEFAULT }) },
+);
+
+/** The one typed callable client (`GatewayPorts`) — eager. */
+export const GATEWAY_PORTS = new InjectionToken<GatewayPorts>('GATEWAY_PORTS');
+
+/** The `/book` flow's draft in `sessionStorage` (`BookingDraftPorts`). */
+export const BOOKING_DRAFT_PORTS = new InjectionToken<BookingDraftPorts>(
+  'BOOKING_DRAFT_PORTS',
+);
+
+/** Per-device preferences in `localStorage` (`KeyValuePorts`). */
+export const KEY_VALUE_PORTS = new InjectionToken<KeyValuePorts>(
+  'KEY_VALUE_PORTS',
+);
+
+/**
+ * The manifest's feature flags (`FlagsPorts`) — bound by `provideFlags`
+ * from the environment's manifest; every flag OFF unless a root binds it
+ * (test beds and secondary roots, as the legacy `FEATURE_FLAGS` defaulted).
+ */
+export const FLAGS_PORTS = new InjectionToken<FlagsPorts>('FLAGS_PORTS', {
+  factory: () => {
+    const flags = FeatureFlags.defaults();
+    return { flagOn: (key) => FeatureFlags.flagOn(flags, key) };
+  },
+});
+
+/** A person's avatar in Storage (`AvatarPorts`) — lazy. */
+export const AVATAR_PORTS = new InjectionToken<AvatarPorts>('AVATAR_PORTS');
+
+/** A catalogue image's renditions in Storage (`MediaResolvePorts`) — lazy. */
+export const MEDIA_RESOLVE_PORTS = new InjectionToken<MediaResolvePorts>(
+  'MEDIA_RESOLVE_PORTS',
+);
+
+/** The browser's timer (`TimerPorts`) — the session's refresh back-off. */
+export const TIMER_PORTS = new InjectionToken<TimerPorts>('TIMER_PORTS');

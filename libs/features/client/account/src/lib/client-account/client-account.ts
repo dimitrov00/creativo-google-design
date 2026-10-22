@@ -5,8 +5,8 @@ import { map, of, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { APPOINTMENT_READ_PORTS } from '@creativo/infrastructure/firebase-app';
 import type { Appointment } from '@core/entities';
-import { UserId } from '@core/primitives';
-import { WallTime } from '@core/components';
+import { Principal, WallTime } from '@core/components';
+import { ProfileCompletionKey } from '@core/systems';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   SessionIdentityService,
@@ -40,6 +40,25 @@ import {
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
+
+/**
+ * The checklist item keys as the copy and the DOM spell them — lowercase,
+ * as today (Phase 4a 4A-10: one table, the SCREAMING dictionary mapped once).
+ */
+const COMPLETION_KEY_WORDS = {
+  [ProfileCompletionKey.Name]: 'name',
+  [ProfileCompletionKey.Phone]: 'phone',
+  [ProfileCompletionKey.Birthday]: 'birthday',
+  [ProfileCompletionKey.Photo]: 'photo',
+} as const satisfies Record<ProfileCompletionKey, string>;
+
+/** The onboarding step slug (`?step=`) an open checklist item resumes at. */
+const PERSONALIZE_STEP_SLUGS = {
+  [ProfileCompletionKey.Name]: 'services',
+  [ProfileCompletionKey.Phone]: 'services',
+  [ProfileCompletionKey.Birthday]: 'birthday',
+  [ProfileCompletionKey.Photo]: 'avatar',
+} as const satisfies Record<ProfileCompletionKey, string>;
 
 type UpcomingState =
   | { readonly kind: 'loading' }
@@ -109,9 +128,9 @@ const NO_CATALOGUE: VisitLookup = {
  * own). Nothing here re-implements auth, profile fetching or the checklist.
  *
  * Still owed (the 6.3 row of `docs/migration/v2-parity-checklist.md`): v2's
- * loyalty summary. `REWARD_PROGRESS_READER.observeForUser` needs a program
- * id and there is no program-catalogue read port to find one — goal 6.6's
- * "Rewards, coupons, invites" job.
+ * loyalty summary — goal 6.6's "Rewards, coupons, invites" job, over the
+ * loyalty read ports (the dormant reward-progress reader it once waited
+ * on is gone, Phase 4a 4A-14).
  */
 @Component({
   selector: 'lib-client-account',
@@ -180,12 +199,11 @@ export class ClientAccount {
 
   private readonly upcomingResult = toSignal(
     toObservable(this.accountState.principal).pipe(
-      switchMap((principal) => {
-        if (principal.kind !== 'active') return of(null);
-        const userIdResult = UserId.parse(principal.uid.value);
-        if (!userIdResult.ok) return of(null);
-        return this.appointments.observeUpcoming(userIdResult.value);
-      }),
+      switchMap((principal) =>
+        Principal.isActive(principal)
+          ? this.appointments.observeUpcoming(principal.userId)
+          : of(null),
+      ),
     ),
     { initialValue: undefined },
   );
@@ -311,11 +329,14 @@ export class ClientAccount {
     });
   }
 
-  /** Which onboarding personalization step an open checklist item deep-links into. Name/phone are registration facts (always done for an active account) — the fallback entry covers any future key honestly. */
-  protected personalizeStep(key: string): string {
-    if (key === 'birthday') return 'birthday';
-    if (key === 'photo') return 'avatar';
-    return 'services';
+  /** A checklist item's word — its `account.completion.items.<word>` key and `account-completion-<word>` test id. */
+  protected keyWord(key: ProfileCompletionKey): string {
+    return COMPLETION_KEY_WORDS[key];
+  }
+
+  /** Which onboarding personalization step an open checklist item deep-links into (`?step=`). Name/phone are registration facts (always done for an active account) — their entry covers any future key honestly. */
+  protected personalizeStep(key: ProfileCompletionKey): string {
+    return PERSONALIZE_STEP_SLUGS[key];
   }
 
   protected translateRepositoryError(): string {

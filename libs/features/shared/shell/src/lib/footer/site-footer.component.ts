@@ -8,7 +8,8 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
-import { AUTH_GATEWAY } from '@creativo/application/identity';
+import { Principal } from '@core/components';
+import { AUTH_SESSION_PORTS } from '@creativo/infrastructure/firebase-app';
 import { UiIcon } from '@creativo/ui/controls';
 import { UiDivider, UiGrid, UiStack } from '@creativo/ui/layout';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
@@ -67,19 +68,20 @@ export interface FooterFlagshipLocation {
   host: { class: 'cr-footer', 'data-testid': 'site-footer' },
 })
 export class SiteFooterComponent {
-  private readonly authGateway = inject(AUTH_GATEWAY);
+  private readonly session = inject(AUTH_SESSION_PORTS);
 
   /** The flagship shop anchors the Visit column's directions/call rows
    *  (v2 `locations[0]`) — `null` on pages with no location data, in
    *  which case those two rows just don't render. */
   readonly flagshipLocation = input<FooterFlagshipLocation | null>(null);
 
-  private readonly principal = toSignal(this.authGateway.observePrincipal(), {
+  private readonly principal = toSignal(this.session.observePrincipal(), {
     initialValue: null,
   });
-  private readonly isAuthed = computed(
-    () => this.principal()?.kind === 'active',
-  );
+  private readonly isAuthed = computed(() => {
+    const principal = this.principal();
+    return principal !== null && Principal.isActive(principal);
+  });
 
   protected readonly columns = computed<readonly FooterColumn[]>(() => {
     const flagship = this.flagshipLocation();

@@ -28,6 +28,12 @@ export const PrimitiveErrorCode = {
   SubsecondNanosOutOfRange: 'PRIMITIVE_SUBSECOND_NANOS_OUT_OF_RANGE',
   SeatKeyTextEmpty: 'PRIMITIVE_SEAT_KEY_TEXT_EMPTY',
   AuditResourceIdInvalid: 'PRIMITIVE_AUDIT_RESOURCE_ID_INVALID',
+  /** Not a client-minted idempotency key (`[A-Za-z0-9_-]{16,64}`). */
+  ClientOperationIdInvalid: 'PRIMITIVE_CLIENT_OPERATION_ID_INVALID',
+  /** Not a guest key (`[A-Za-z0-9_-]{1,64}`). */
+  GuestKeyInvalid: 'PRIMITIVE_GUEST_KEY_INVALID',
+  /** A redirect that is not a same-origin path (`//`, `/\\`, a scheme). */
+  RedirectPathUnsafe: 'PRIMITIVE_REDIRECT_PATH_UNSAFE',
 } as const;
 export type PrimitiveErrorCode =
   (typeof PrimitiveErrorCode)[keyof typeof PrimitiveErrorCode];

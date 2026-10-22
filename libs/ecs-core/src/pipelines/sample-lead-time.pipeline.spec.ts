@@ -14,9 +14,12 @@ import type { BarberLeadTimeSample, CapacityMonth } from '@core/entities';
 import {
   FIXTURE_IDS,
   FIXTURE_NOW_UTC_MS,
-  FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   localDate,
+  locationFixture,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   minuteCount,
   pinnedNowUtcMs,
   recordingTelemetry,
@@ -46,6 +49,17 @@ const entry = (
   minutes: number,
 ) => CapacityEntry.of(day, barberId, locationId, minuteCount(minutes));
 
+/**
+ * Whose "today" the sample is taken on (Law 7.2, F-4): the default
+ * location's — the fixture shop, on `FIXTURE_TIME_ZONE`.
+ */
+const ZONE_PORTS = {
+  ...memoryLocationLoadPorts(
+    memoryProgramsWorld({ locations: [locationFixture()] }),
+  ),
+  ...memoryDefaultLocationPorts(),
+};
+
 function rig(
   entries: readonly CapacityEntry[],
   barbers: readonly BarberId[] = [IVAN],
@@ -55,6 +69,7 @@ function rig(
   const telemetry = recordingTelemetry();
   const run = sampleLeadTime({
     ...telemetry,
+    ...ZONE_PORTS,
     nowUtcMs: pinnedNowUtcMs(),
     loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
     listBarbers: async () => Result.ok(barbers),
@@ -97,12 +112,10 @@ function sampleOf(
   };
 }
 
-const command = { timeZone: FIXTURE_TIME_ZONE };
-
 describe('sampleLeadTime', () => {
   it('reports zero lead time when the barber is free today', async () => {
     const { written, run } = rig([entry(FIXTURE_TODAY, IVAN, CENTRE, 120)]);
-    expect(await run(command)).toEqual({
+    expect(await run()).toEqual({
       ok: true,
       value: { sampledBarberIds: [IVAN] },
     });
@@ -112,13 +125,13 @@ describe('sampleLeadTime', () => {
   it('counts the days to the first opening, across a month boundary', async () => {
     const day = localDate('2026-10-02');
     const { written, run } = rig([entry(day, IVAN, CENTRE, 60)]);
-    await run(command);
+    await run();
     expect(written).toEqual([sampleOf(IVAN, day, 4, 60)]);
   });
 
   it('records null when nothing is free inside the horizon — fully booked is not zero', async () => {
     const { written, run } = rig([]);
-    await run(command);
+    await run();
     expect(written).toEqual([sampleOf(IVAN, null, null, 0)]);
   });
 
@@ -127,7 +140,7 @@ describe('sampleLeadTime', () => {
       entry(FIXTURE_TODAY, IVAN, CENTRE, 10),
       entry(localDate('2026-09-29'), IVAN, CENTRE, 15),
     ]);
-    await run(command);
+    await run();
     expect(written).toEqual([sampleOf(IVAN, localDate('2026-09-29'), 1, 15)]);
   });
 
@@ -136,7 +149,7 @@ describe('sampleLeadTime', () => {
       entry(FIXTURE_TODAY, IVAN, CENTRE, 10),
       entry(FIXTURE_TODAY, IVAN, SOUTH, 10),
     ]);
-    await run(command);
+    await run();
     expect(written).toEqual([sampleOf(IVAN, FIXTURE_TODAY, 0, 20)]);
   });
 
@@ -148,7 +161,7 @@ describe('sampleLeadTime', () => {
       ],
       [IVAN, PETAR],
     );
-    await run(command);
+    await run();
     expect(asked).toEqual([['2026-09', '2026-10', '2026-11']]);
     expect(written).toEqual([
       sampleOf(IVAN, localDate('2026-10-05'), 7, 45),
@@ -158,7 +171,7 @@ describe('sampleLeadTime', () => {
 
   it('stamps each sample with the day it was taken and the pipeline’s clock', async () => {
     const { written, run } = rig([entry(FIXTURE_TODAY, IVAN, CENTRE, 30)]);
-    await run(command);
+    await run();
     expect(written[0]?.localDate).toBe(FIXTURE_TODAY);
     expect(written[0]?.sampledAtUtcMs).toBe(FIXTURE_NOW_UTC_MS);
     expect(written[0]?.id).toBe(`${IVAN}__${FIXTURE_TODAY}`);
@@ -173,6 +186,7 @@ describe('sampleLeadTime', () => {
     const written: BarberLeadTimeSample[] = [];
     const run = sampleLeadTime({
       ...telemetry,
+      ...ZONE_PORTS,
       nowUtcMs: pinnedNowUtcMs(),
       loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
       listBarbers: async () => Result.ok([PETAR, IVAN]),
@@ -183,7 +197,7 @@ describe('sampleLeadTime', () => {
         return Result.ok(undefined);
       },
     });
-    expect(await run(command)).toEqual({
+    expect(await run()).toEqual({
       ok: true,
       value: { sampledBarberIds: [IVAN] },
     });
@@ -205,6 +219,7 @@ describe('sampleLeadTime', () => {
     const written: BarberLeadTimeSample[] = [];
     const run = sampleLeadTime({
       ...recordingTelemetry(),
+      ...ZONE_PORTS,
       nowUtcMs: pinnedNowUtcMs(),
       loadPolicy: async () => Result.err(failure),
       listBarbers: async () => Result.ok([IVAN]),
@@ -214,7 +229,27 @@ describe('sampleLeadTime', () => {
         return Result.ok(undefined);
       },
     });
-    expect(await run(command)).toEqual({ ok: false, error: failure });
+    expect(await run()).toEqual({ ok: false, error: failure });
+    expect(written).toEqual([]);
+  });
+
+  it('answers a zone it cannot read as its store failure, sampling nobody (4A-2 (e))', async () => {
+    const failed = RepositoryError.readFailed('locations/loc-center', 'down');
+    const written: BarberLeadTimeSample[] = [];
+    const run = sampleLeadTime({
+      ...recordingTelemetry(),
+      ...memoryDefaultLocationPorts(),
+      loadLocation: async () => Result.err(failed),
+      nowUtcMs: pinnedNowUtcMs(),
+      loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
+      listBarbers: async () => Result.ok([IVAN]),
+      loadCapacityMonths: async () => Result.ok([]),
+      writeLeadTimeSample: async (sample) => {
+        written.push(sample);
+        return Result.ok(undefined);
+      },
+    });
+    expect(await run()).toEqual({ ok: false, error: failed });
     expect(written).toEqual([]);
   });
 });

@@ -1,7 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { BOOK_ROLES, MONEY_ROLES, STAFF_ROLES, USER_ROLES } from './role.data';
+import {
+  ADMIN_ROLES,
+  BOOK_ROLES,
+  MONEY_ROLES,
+  STAFF_ROLES,
+  USER_ROLES,
+} from './role.data';
 
 /**
  * The role groupings of `role.data.ts` and the helpers in `firestore.rules`
@@ -318,6 +324,10 @@ describe('role.data.ts and firestore.rules agree', () => {
     expect(sorted(helperRoles(RULES, 'worksTheBook'))).toEqual(
       sorted(BOOK_ROLES),
     );
+  });
+
+  it('ADMIN_ROLES is isAdmin() (Phase 4a §3.2: the impersonation callables’ caller gate)', () => {
+    expect(sorted(helperRoles(RULES, 'isAdmin'))).toEqual(sorted(ADMIN_ROLES));
   });
 
   it('MONEY_ROLES is the front desk', () => {

@@ -135,6 +135,7 @@ function registeredUser(
     ...AccountLifecycle.active(),
     email: IVAN_EMAIL,
     birthDate: null,
+    profileEditedAtUtcMs: null,
     ...SearchFieldsSystem.searchFields(
       'Ivan',
       'Petrov',
@@ -334,7 +335,9 @@ describe('firestore.rules', () => {
       );
     });
 
-    it('lets a client update their own first name', async () => {
+    // Phase 4a 4A-3 (3): the owner's direct update closed with the
+    // `updateProfile` callable — every users write is the Admin SDK's.
+    it('refuses a client updating their own first name — `updateProfile` is the one door', async () => {
       const uid = 'user-6';
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         await setDoc(
@@ -343,7 +346,7 @@ describe('firestore.rules', () => {
         );
       });
       const alice = testEnv.authenticatedContext(uid);
-      await assertSucceeds(
+      await assertFails(
         updateDoc(doc(alice.firestore(), 'users', uid), {
           firstName: 'Alicia',
         }),
@@ -391,15 +394,21 @@ describe('firestore.rules', () => {
     });
   });
 
-  describe('users/{uid} — the owner edits an allowlist (FIX 2)', () => {
+  /**
+   * FIX 2's allowlist is gone with the write it guarded (Phase 4a 4A-3 (3)):
+   * the owner's names and birth date move only through `updateProfile`. The
+   * cases the allowlist admitted are DENIED now; the ones it refused stay
+   * refused.
+   */
+  describe('users/{uid} — the owner writes nothing directly (FIX 2 → 4A-3 (3))', () => {
     const uid = 'client-1';
 
     beforeEach(async () => {
       await seed(`users/${uid}`, registeredUser());
     });
 
-    it('lets the owner change their names, birth date and the search keys derived from them in one write', async () => {
-      await assertSucceeds(
+    it('refuses the owner changing their names, birth date and the search keys in one write', async () => {
+      await assertFails(
         updateDoc(doc(signedIn(uid).firestore(), 'users', uid), {
           firstName: 'Ivo',
           lastName: 'Ivanov',
@@ -447,14 +456,14 @@ describe('firestore.rules', () => {
       );
     });
 
-    it("lets the owner's name save through, leaving a server-written status untouched", async () => {
+    it("refuses the owner's name save, and leaves the server-written document as it was", async () => {
       const serverBlock = AccountLifecycle.block(
         BlockReason.Manual,
         utcMs('2026-10-12T00:00:00.000+03:00'),
       );
       await seed(`users/${uid}`, registeredUser(serverBlock));
 
-      await assertSucceeds(
+      await assertFails(
         updateDoc(doc(signedIn(uid).firestore(), 'users', uid), {
           firstName: 'Ivo',
           searchName: 'ivo petrov',
@@ -463,18 +472,12 @@ describe('firestore.rules', () => {
 
       await testEnv.withSecurityRulesDisabled(async (ctx) => {
         const snapshot = await getDoc(doc(ctx.firestore(), 'users', uid));
-        expect(snapshot.data()?.['firstName']).toBe('Ivo');
+        expect(snapshot.data()?.['firstName']).toBe('Ivan');
         expect(snapshot.data()).toMatchObject(serverBlock);
       });
     });
 
-    /**
-     * Why `ProfilePorts.writeOwnProfile` updates the five owner keys and
-     * never sets the document: a full save re-sends every key of the body,
-     * so the moment the server holds a value the client's copy does not (a
-     * block), the client's own name save is refused.
-     */
-    it('refuses a whole-document save that would rewrite a server-written field', async () => {
+    it('refuses a whole-document save of the owner’s own profile', async () => {
       await seed(`users/${uid}`, registeredUser(SERVER_BLOCK));
       await assertFails(
         setDoc(
@@ -591,9 +594,9 @@ describe('firestore.rules', () => {
       });
     });
 
-    it('still lets a registered owner edit their names', async () => {
+    it('refuses a registered owner’s name edit too — the callable is the one door', async () => {
       await seed(`users/${uid}`, registeredUser());
-      await assertSucceeds(
+      await assertFails(
         updateDoc(doc(signedIn(uid).firestore(), 'users', uid), {
           firstName: 'Ivo',
           lastName: 'Ivanov',
@@ -606,8 +609,10 @@ describe('firestore.rules', () => {
 
   /**
    * A blanked first name reads as UNregistered server-side, which would
-   * send the owner back through `completeRegistration`; the values must
-   * stay a profile the accounts domain accepts.
+   * send the owner back through `completeRegistration`. The values the old
+   * allowlist judged are `updateProfile`'s to judge now
+   * (`ProfileEditSystem.decide`); the rules refuse every one of them,
+   * well-formed or not.
    */
   describe('users/{uid} — the owner cannot unregister themselves', () => {
     const uid = 'client-3';
@@ -638,11 +643,14 @@ describe('firestore.rules', () => {
       ['a two-letter first name', { firstName: 'Iv' }],
       ['a cleared birth date', { birthDate: null }],
       ['an ISO birth date', { birthDate: '1990-05-01' }],
-    ])('admits %s', async (_label, patch) => {
-      await assertSucceeds(
-        updateDoc(doc(signedIn(uid).firestore(), 'users', uid), patch),
-      );
-    });
+    ])(
+      'refuses %s as well — a well-formed value is the callable’s',
+      async (_label, patch) => {
+        await assertFails(
+          updateDoc(doc(signedIn(uid).firestore(), 'users', uid), patch),
+        );
+      },
+    );
   });
 
   describe('programs (positions/courses/events) — public read, content-manager write', () => {
@@ -2085,6 +2093,149 @@ describe('firestore.rules', () => {
       ]) {
         await assertFails(statsPage(db, null));
       }
+    });
+  });
+
+  // ── Phase 4a 4A-3 (4), (5): the callables took the client writes ──────
+
+  describe('impersonationSessions — the admin pair reads, only the callables write (4A-3 (4))', () => {
+    const SESSION = 'impersonationSessions/imp-1';
+    const sessionBody = {
+      adminUserId: 'staff-1',
+      targetUserId: 'client-1',
+      impersonationScope: 'READ',
+      reason: 'support ticket 42',
+      impersonationStatus: 'ACTIVE',
+      startedAtUtcMs: SEPT_FIRST,
+      expiresAtUtcMs: SEPT_FIRST + 3_600_000,
+    };
+
+    beforeEach(async () => {
+      await seed(SESSION, sessionBody);
+    });
+
+    it.each(['admin', 'sysadmin'])(
+      'lets %s read a session, by id and by list — the read is unchanged',
+      async (role) => {
+        const db = signedIn('staff-1', role).firestore();
+        await assertSucceeds(getDoc(doc(db, SESSION)));
+        await assertSucceeds(getDocs(collection(db, 'impersonationSessions')));
+      },
+    );
+
+    it('refuses a client, a barber and an anonymous visitor the read', async () => {
+      for (const db of [
+        signedIn('client-1', 'client').firestore(),
+        signedIn('staff-2', 'barber').firestore(),
+        testEnv.unauthenticatedContext().firestore(),
+      ]) {
+        await assertFails(getDoc(doc(db, SESSION)));
+      }
+    });
+
+    it.each(['admin', 'sysadmin'])(
+      'refuses %s opening, ending or deleting a session from the client SDK',
+      async (role) => {
+        const db = signedIn('staff-1', role).firestore();
+        await assertFails(
+          setDoc(doc(db, 'impersonationSessions', 'imp-2'), sessionBody),
+        );
+        await assertFails(
+          updateDoc(doc(db, SESSION), {
+            impersonationStatus: 'ENDED',
+            endedAtUtcMs: SEPT_FIRST + 600_000,
+          }),
+        );
+        await assertFails(deleteDoc(doc(db, SESSION)));
+      },
+    );
+  });
+
+  describe('invitations — a code is looked up, only the callable redeems (4A-3 (5))', () => {
+    const INVITATION = 'invitations/inv-1';
+    const invitationBody = { inviterUserId: 'client-1', redemptionCount: 0 };
+
+    beforeEach(async () => {
+      await seed(INVITATION, invitationBody);
+      await seed(`${INVITATION}/redemptions/client-3`, {
+        redeemedAtUtcMs: SEPT_FIRST,
+      });
+    });
+
+    it('lets a signed-in client get an invitation, and the staff list them — the reads are unchanged', async () => {
+      await assertSucceeds(
+        getDoc(doc(signedIn('client-2', 'client').firestore(), INVITATION)),
+      );
+      await assertSucceeds(
+        getDocs(
+          collection(signedIn('staff-1', 'barber').firestore(), 'invitations'),
+        ),
+      );
+    });
+
+    it('refuses a client listing every invitation', async () => {
+      await assertFails(
+        getDocs(
+          collection(signedIn('client-2', 'client').firestore(), 'invitations'),
+        ),
+      );
+    });
+
+    it('refuses a signed-in create of one’s own invitation, and the redemption’s +1', async () => {
+      const inviter = signedIn('client-1', 'client').firestore();
+      await assertFails(
+        setDoc(doc(inviter, 'invitations', 'inv-2'), {
+          inviterUserId: 'client-1',
+          redemptionCount: 0,
+        }),
+      );
+      await assertFails(
+        updateDoc(doc(signedIn('client-2', 'client').firestore(), INVITATION), {
+          redemptionCount: 1,
+        }),
+      );
+    });
+
+    it('lets a signed-in client get a redemption, and the staff list them — the reads are unchanged', async () => {
+      await assertSucceeds(
+        getDoc(
+          doc(
+            signedIn('client-2', 'client').firestore(),
+            `${INVITATION}/redemptions/client-3`,
+          ),
+        ),
+      );
+      await assertSucceeds(
+        getDocs(
+          collection(
+            signedIn('staff-1', 'barber').firestore(),
+            `${INVITATION}/redemptions`,
+          ),
+        ),
+      );
+    });
+
+    it('refuses a client listing the redemptions — the referral graph', async () => {
+      await assertFails(
+        getDocs(
+          collection(
+            signedIn('client-2', 'client').firestore(),
+            `${INVITATION}/redemptions`,
+          ),
+        ),
+      );
+    });
+
+    it('refuses the referee’s own redemption create — the callable records it', async () => {
+      await assertFails(
+        setDoc(
+          doc(
+            signedIn('client-2', 'client').firestore(),
+            `${INVITATION}/redemptions/client-2`,
+          ),
+          { redeemedAtUtcMs: SEPT_FIRST },
+        ),
+      );
     });
   });
 });

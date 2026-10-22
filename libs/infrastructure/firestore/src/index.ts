@@ -5,8 +5,3 @@
 // bind their ports with `provideLazyPort` (@creativo/infrastructure/firebase-app).
 export * from './lib/firestore.lazy';
 export * from './lib/subscribe-with-retry';
-// The callable adapters only need firebase/functions, which the session
-// loads at boot anyway.
-export * from './lib/booking-gateway.adapter';
-export * from './lib/waitlist-gateway.adapter';
-export * from './lib/contact-change.adapter';

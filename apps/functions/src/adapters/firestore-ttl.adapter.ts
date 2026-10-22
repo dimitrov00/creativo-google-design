@@ -9,7 +9,7 @@ import { Collections, Subcollections } from '@core/entities';
  * the adapter beside the entity body and never part of the entity type.
  * `firestoreCommitPlan` applies it to every `Set`/`Create` of a TTL group;
  * the lead-time sample writer, `saveOtp` and the seed call this same
- * function, so the six formulas live here and nowhere else.
+ * function, so the seven formulas live here and nowhere else.
  *
  * The group is matched by the LAST COLLECTION SEGMENT of the path
  * (`users/u1/notifications/n1` → `notifications`); any other group answers
@@ -23,6 +23,7 @@ import { Collections, Subcollections } from '@core/entities';
  * | `notifications`         | `sentAtUtcMs` + 90 d                          |
  * | `barberLeadTimeSamples` | UTC midnight of `localDate` + 400 d           |
  * | `otps`                  | `expiresAtUtcMs` + 24 h                       |
+ * | `impersonationSessions` | (`endedAtUtcMs` ?? `expiresAtUtcMs`) + 30 d   |
  *
  * A `LocalDate` stamp is that civil date's UTC midnight — never the shop
  * zone's start of day: TTL is eventual and day-granular (runbook §2.4), and
@@ -33,7 +34,11 @@ import { Collections, Subcollections } from '@core/entities';
  * challenge holds a destination and a code hash — PII with no purpose past
  * its own expiry, so a day's grace covers debugging (identity flip (2),
  * F2-11, the pre-flip OTP repository's formula); its `Update`s never
- * re-stamp (the expiry does not move).
+ * re-stamp (the expiry does not move). An impersonation session is kept 30
+ * days past its window — then past its end, when an end is stamped: the
+ * `startImpersonation` / `endImpersonation` callables write each body with
+ * a `Create` / `Set`, so the end re-stamps (Phase 4a 4A-3 (4), runbook
+ * §2.1).
  */
 
 const MS_PER_DAY = 86_400_000;
@@ -45,6 +50,7 @@ const KEEP_DAYS = {
   waitlist: 7,
   notification: 90,
   leadTime: 400,
+  impersonation: 30,
 } as const;
 
 /** Hours an OTP challenge is kept past its expiry. */
@@ -132,6 +138,14 @@ export function purgeAtFor(path: DocPath, body: DocBody): Timestamp | null {
       const expires = fieldOf(body, 'expiresAtUtcMs');
       return typeof expires === 'number' && Number.isFinite(expires)
         ? Timestamp.fromMillis(expires + OTP_KEEP_HOURS * MS_PER_HOUR)
+        : null;
+    }
+    case Collections.ImpersonationSessions: {
+      const ended = fieldOf(body, 'endedAtUtcMs');
+      const anchor =
+        typeof ended === 'number' ? ended : fieldOf(body, 'expiresAtUtcMs');
+      return typeof anchor === 'number' && Number.isFinite(anchor)
+        ? Timestamp.fromMillis(anchor + KEEP_DAYS.impersonation * MS_PER_DAY)
         : null;
     }
     default:

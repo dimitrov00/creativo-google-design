@@ -15,9 +15,10 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { map, switchMap } from 'rxjs';
-import { ZonedDateTime } from '@creativo/application/accounts';
-import { wordError } from '@creativo/application/booking';
-import { SCHEDULING_READ_PORTS } from '@creativo/infrastructure/firebase-app';
+import {
+  CLOCK_PORTS,
+  SCHEDULING_READ_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CatalogContentService,
@@ -39,8 +40,10 @@ import {
   visitSectionLabel,
   visitWordsOf,
   formatCents,
+  formatInstant,
   formatMinute,
   formatWallClock,
+  formatWeekdayLabels,
 } from '@creativo/features/shared/visits';
 import {
   UiAvatar,
@@ -78,15 +81,15 @@ import type { Appointment } from '@core/entities';
 import {
   type AppointmentId,
   BookingStatus,
+  CancellationRefusalCode,
   LocalDate,
-  UserId,
   UtcEpochMs,
-  defect,
 } from '@core/primitives';
 import {
   BookingLifecycle,
   BookingPolicy,
   Money,
+  Principal,
   ServiceTerms,
   ShopReach,
   TimeCoordinate,
@@ -97,9 +100,16 @@ import {
   MoveSystem,
   ShopReachSystem,
 } from '@core/systems';
-import { CLOCK } from '@creativo/application/shared';
-import { translateDomainError } from '@creativo/infrastructure/i18n';
-import { AppointmentsStore, APPOINTMENTS_ZONE } from '../appointments.store';
+import {
+  bookingStatusWords,
+  translateDomainError,
+  wordPipelineError,
+} from '@creativo/infrastructure/i18n';
+import {
+  AppointmentsStore,
+  AppointmentsViewState,
+  appointmentsViewStateWords,
+} from '../appointments.store';
 import type { ClientVisitVm } from '../visit-vm';
 import { buildVisitIcs } from '../visit-ics';
 
@@ -119,15 +129,6 @@ const MONTH_SPAN_STEP = 6;
 /** Two years either side. Past this, a person wants a date field, not a scroll. */
 const MAX_MONTH_SPAN = 24;
 
-/** `2026-07` ± n months, staying a `YYYY-MM` key. */
-function shiftMonthKey(key: string, delta: number): string {
-  const [year, month] = key.split('-').map(Number) as [number, number];
-  const index = year * 12 + (month - 1) + delta;
-  const shiftedYear = Math.floor(index / 12);
-  const shiftedMonth = (index % 12) + 1;
-  return `${shiftedYear}-${String(shiftedMonth).padStart(2, '0')}`;
-}
-
 const STATUS_TONES: Record<BookingStatus, UiBadgeTone> = {
   [BookingStatus.Pending]: 'neutral',
   [BookingStatus.Confirmed]: 'accent',
@@ -136,18 +137,6 @@ const STATUS_TONES: Record<BookingStatus, UiBadgeTone> = {
   [BookingStatus.NoShow]: 'warning',
 };
 
-/**
- * The catalogue's key segment of each stored status
- * (`appointments.status.confirmed`, …): the stored tag is SCREAMING (F1-9),
- * the words keep their keys.
- */
-const STATUS_KEY = {
-  [BookingStatus.Pending]: 'pending',
-  [BookingStatus.Confirmed]: 'confirmed',
-  [BookingStatus.Completed]: 'completed',
-  [BookingStatus.Cancelled]: 'cancelled',
-  [BookingStatus.NoShow]: 'no_show',
-} as const satisfies Record<BookingStatus, string>;
 /**
  * Empty until the client types something. The field is optional, and the
  * callable files any text as the client's own words (`other`), so a
@@ -158,8 +147,8 @@ const DEFAULT_CANCEL_REASON = '';
 
 const MS_PER_MINUTE = 60_000;
 
-/** The server's refusal of a cancel whose free window has closed. */
-const CANCEL_WINDOW_CLOSED = 'booking.cancel.window_closed';
+/** The surface's own words for a cancel the server gave no more words for. */
+const CANCEL_FAILED = 'booking.gateway.failed';
 
 /** One day cell of the calendar view. */
 interface VisitDayVm {
@@ -265,13 +254,13 @@ interface VisitMonthVm {
   styleUrl: './client-appointments.css',
   host: {
     'data-testid': 'appointments-page',
-    '[attr.data-state]': 'store.upcoming().kind',
+    '[attr.data-state]': 'dataState()',
     '[attr.data-view]': 'view()',
   },
 })
 export class ClientAppointments {
   private readonly accountState = inject(AccountStateService);
-  private readonly clock = inject(CLOCK);
+  private readonly clock = inject(CLOCK_PORTS);
   private readonly injector = inject(Injector);
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CatalogContentService);
@@ -279,6 +268,15 @@ export class ClientAppointments {
 
   protected readonly store = inject(AppointmentsStore);
   private readonly scheduling = inject(SCHEDULING_READ_PORTS);
+
+  /** The view states, for the template's `@switch`. */
+  protected readonly ViewState = AppointmentsViewState;
+
+  /** The host's `data-state` — the e2e suite's lowercase word for the view state. */
+  protected readonly dataState = computed(
+    () =>
+      appointmentsViewStateWords[this.store.upcoming().appointmentsViewState],
+  );
 
   /**
    * The tenant's cancellation window — the SAME
@@ -485,9 +483,11 @@ export class ClientAppointments {
 
   /** Where the list stands: the catalogue's words are part of "loaded". */
   protected readonly listState = computed<VisitListState>(() => {
-    const kind = this.store.upcoming().kind;
-    if (kind === 'error') return 'error';
-    return kind === 'loading' || this.words() === null ? 'loading' : 'ready';
+    const state = this.store.upcoming().appointmentsViewState;
+    if (state === AppointmentsViewState.Error) return 'error';
+    return state === AppointmentsViewState.Loading || this.words() === null
+      ? 'loading'
+      : 'ready';
   });
 
   /** Every visit by its id — what a row, or a day, opens. */
@@ -527,9 +527,11 @@ export class ClientAppointments {
    * merely THAT something is booked.
    */
   protected readonly months = computed<readonly VisitMonthVm[]>(() => {
+    const today = this.store.today();
+    if (today === null) return [];
     const visits = this.shownVisits().map(({ visit }) => visit);
 
-    const byDay = new Map<string, ClientVisitVm[]>();
+    const byDay = new Map<LocalDate, ClientVisitVm[]>();
     for (const visit of visits) {
       const key = visit.appointment.localDate;
       const bucket = byDay.get(key);
@@ -540,37 +542,40 @@ export class ClientAppointments {
     // The window is around TODAY and grows with the scroll — a month with
     // nothing in it is still a month a person may want to look at. It is
     // then widened to hold every visit, so a booking outside the current
-    // window is never unreachable.
-    const todayKey = visitSectionKey(this.store.now.localDate, 'month');
-    const keys = [...byDay.keys()].sort();
-    const earliestVisit = (keys.at(0) ?? todayKey).slice(0, 7);
-    const latestVisit = (keys.at(-1) ?? todayKey).slice(0, 7);
-
-    const windowStart = shiftMonthKey(todayKey, -this.monthsBack());
-    const windowEnd = shiftMonthKey(todayKey, this.monthsAhead());
-    const from = earliestVisit < windowStart ? earliestVisit : windowStart;
-    const to = latestVisit > windowEnd ? latestVisit : windowEnd;
+    // window is never unreachable. Months are their first shop day.
+    const thisMonth = LocalDate.startOfMonth(today);
+    const windowStart = LocalDate.addMonths(thisMonth, -this.monthsBack());
+    const windowEnd = LocalDate.addMonths(thisMonth, this.monthsAhead());
+    const days = [...byDay.keys()].sort(LocalDate.compare);
+    const earliestDay = days.at(0);
+    const latestDay = days.at(-1);
+    const earliestVisit =
+      earliestDay === undefined
+        ? thisMonth
+        : LocalDate.startOfMonth(earliestDay);
+    const latestVisit =
+      latestDay === undefined ? thisMonth : LocalDate.startOfMonth(latestDay);
+    const from =
+      LocalDate.compare(earliestVisit, windowStart) < 0
+        ? earliestVisit
+        : windowStart;
+    const to =
+      LocalDate.compare(latestVisit, windowEnd) > 0 ? latestVisit : windowEnd;
 
     const months: VisitMonthVm[] = [];
-    let [year, month] = from.split('-').map(Number) as [number, number];
-    const [endYear, endMonth] = to.split('-').map(Number) as [number, number];
-
     // Bounded by construction (the history read is capped), but the guard
     // keeps a corrupt date from spinning the loop forever.
+    let month = from;
     for (let guard = 0; guard < 240; guard++) {
-      months.push(this.buildMonth(year, month, byDay));
-      if (year === endYear && month === endMonth) break;
-      month += 1;
-      if (month > 12) {
-        month = 1;
-        year += 1;
-      }
+      months.push(this.buildMonth(month, today, byDay));
+      if (month === to) break;
+      month = LocalDate.addMonths(month, 1);
     }
     return months;
   });
 
   protected readonly weekdayLabels = computed(() =>
-    ZonedDateTime.weekdayLabels(APPOINTMENTS_ZONE, this.locale()),
+    formatWeekdayLabels(this.locale()),
   );
 
   // ── The open visit ───────────────────────────────────────────────────
@@ -655,7 +660,8 @@ export class ClientAppointments {
    */
   protected readonly cancelRefusedForGood = computed(
     () =>
-      this.store.cancelError()?.params['serverCode'] === CANCEL_WINDOW_CLOSED,
+      this.store.cancelError()?.serverErrorCode ===
+      CancellationRefusalCode.WindowClosed,
   );
 
   /**
@@ -715,11 +721,8 @@ export class ClientAppointments {
   constructor() {
     effect(() => {
       const principal = this.accountState.principal();
-      if (principal.kind !== 'active') return;
-      const userIdResult = UserId.parse(principal.uid.value);
-      if (userIdResult.ok) {
-        this.store.setUserId(userIdResult.value);
-      }
+      if (!Principal.isActive(principal)) return;
+      this.store.setUserId(principal.userId);
     });
   }
 
@@ -790,7 +793,9 @@ export class ClientAppointments {
    * cheaper than two code paths.
    */
   protected scrollToToday(smooth = false): void {
-    const key = visitSectionKey(this.store.now.localDate, 'month');
+    const today = this.store.today();
+    if (today === null) return;
+    const key = visitSectionKey(today, 'month');
     afterNextRender(
       () => {
         this.calendarScroller()
@@ -824,7 +829,7 @@ export class ClientAppointments {
    * See `visit-ics.ts`.
    */
   protected addToCalendar(visit: ClientVisitVm): void {
-    const now = this.clock.now(APPOINTMENTS_ZONE);
+    const nowUtcMs = this.clock.nowUtcMs();
     const shopName = this.openVisitShopName();
     const address = this.openVisitAddress();
 
@@ -851,7 +856,7 @@ export class ClientAppointments {
           .filter(Boolean)
           .join('\n'),
       },
-      now.isSuccess() ? now.value.toMillis() : startMs,
+      nowUtcMs,
     );
 
     const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
@@ -941,21 +946,31 @@ export class ClientAppointments {
     );
   }
 
-  /** "Free cancellation until …" — the deadline, human-shaped, on the shop's calendar. */
+  /**
+   * "Free cancellation until …" — the deadline, human-shaped, on the shop's
+   * calendar: the visit's own shop's zone, else the default shop's (an
+   * instant is read in a LOCATION's zone, never the device's — 4A-11).
+   */
   protected cancellationDeadline(appointment: Appointment): string {
-    return new Intl.DateTimeFormat(this.locale(), {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone: APPOINTMENTS_ZONE,
-    }).format(
+    const zone =
+      this.lookup().locationTimeZone?.(appointment.locationId) ??
+      this.store.zone();
+    if (zone === null) return '';
+    return formatInstant(
       BookingPolicy.cancellationDeadlineUtcMs(
         this.policy().cancellationWindowHours,
         CancellationPolicySystem.startUtcMsOf(appointment),
       ),
+      zone,
+      this.locale(),
+      {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      },
     );
   }
 
@@ -967,7 +982,7 @@ export class ClientAppointments {
   /** The status's word key segment — `appointments.status.<key>`. */
   protected statusKey(status: BookingStatus): string {
     // eslint-disable-next-line security/detect-object-injection -- closed union.
-    return STATUS_KEY[status];
+    return bookingStatusWords[status];
   }
 
   // ── Formatting ───────────────────────────────────────────────────────
@@ -996,25 +1011,26 @@ export class ClientAppointments {
 
   /**
    * Why a cancel did not go through — in the SERVER's words when the
-   * catalogue has them (`wordError`, the rule the booking flow's review step
-   * follows too). Unreadable cancellation terms say to try again in a
-   * moment, and the sheet stays open on the same button to do exactly that;
-   * a closed window names its hours. The gateway's own "something went
-   * wrong" is only the fallback.
+   * catalogue has them (`wordPipelineError`, the rule the booking flow's
+   * review step follows too). Unreadable cancellation terms say to try
+   * again in a moment, and the sheet stays open on the same button to do
+   * exactly that; a closed window names its hours. The surface's own
+   * "something went wrong" is only the fallback.
    */
   protected translateCancelError(): string | null {
     const error = this.store.cancelError();
     if (!error) return null;
     // A closed window sends the client to the shop, in the words the call
     // beside it earns (`cancelCallHref`).
-    const params = {
-      ...error.params,
-      reach: this.transloco.translate(
-        ShopReach.forCallHref(this.cancelCallHref()),
-      ),
-    };
-    return wordError(error, (code) =>
-      translateDomainError(this.transloco, { code, params }),
+    const reach = this.transloco.translate(
+      ShopReach.forCallHref(this.cancelCallHref()),
+    );
+    return wordPipelineError(
+      error,
+      (code, params) =>
+        translateDomainError(this.transloco, { ...params, errorCode: code }),
+      CANCEL_FAILED,
+      { reach },
     );
   }
 
@@ -1058,49 +1074,44 @@ export class ClientAppointments {
     };
   }
 
+  /** One month of the run — `month` its first shop day. */
   private buildMonth(
-    year: number,
-    month: number,
-    byDay: ReadonlyMap<string, ClientVisitVm[]>,
+    month: LocalDate,
+    today: LocalDate,
+    byDay: ReadonlyMap<LocalDate, ClientVisitVm[]>,
   ): VisitMonthVm {
-    const pad = (value: number) => String(value).padStart(2, '0');
-    const firstOfMonth = Date.UTC(year, month - 1, 1);
-    const todayKey = this.store.now.localDate;
-
     // The grid is `CalendarGridSystem.monthGrid` on the shop's civil days
     // (no zone, no day table — the weekday is the day's own); this list pads
     // with BLANKS, so a neighbour's day reads as one.
-    const monthKey = LocalDate.parse(`${year}-${pad(month)}-01`);
-    if (!monthKey.ok) defect('unreachable: a month of the calendar');
-    const weeks: VisitDayVm[][] = CalendarGridSystem.monthGrid(
-      monthKey.value,
-      [],
-    ).map((week) =>
-      week.map((cell) =>
-        cell.inMonth
-          ? {
-              dayKey: cell.localDate,
-              dayOfMonth: cell.dayOfMonth,
-              isToday: cell.localDate === todayKey,
-              visits: byDay.get(cell.localDate) ?? [],
-            }
-          : {
-              dayKey: '',
-              dayOfMonth: null,
-              isToday: false,
-              visits: [] as readonly ClientVisitVm[],
-            },
-      ),
+    const weeks: VisitDayVm[][] = CalendarGridSystem.monthGrid(month, []).map(
+      (week) =>
+        week.map((cell) =>
+          cell.inMonth
+            ? {
+                dayKey: cell.localDate,
+                dayOfMonth: cell.dayOfMonth,
+                isToday: cell.localDate === today,
+                visits: byDay.get(cell.localDate) ?? [],
+              }
+            : {
+                dayKey: '',
+                dayOfMonth: null,
+                isToday: false,
+                visits: [] as readonly ClientVisitVm[],
+              },
+        ),
     );
 
+    const sameYear =
+      LocalDate.parts(month).year === LocalDate.parts(today).year;
     return {
-      key: `${year}-${pad(month)}`,
+      key: visitSectionKey(month, 'month'),
+      // The month's name as the shop's calendar has it (no zone consulted).
       label: this.capitalize(
-        new Intl.DateTimeFormat(this.locale(), {
+        formatWallClock(month, null, this.locale(), {
           month: 'long',
-          year: year === Number(todayKey.slice(0, 4)) ? undefined : 'numeric',
-          timeZone: 'UTC',
-        }).format(new Date(firstOfMonth)),
+          year: sameYear ? undefined : 'numeric',
+        }),
       ),
       weeks,
     };

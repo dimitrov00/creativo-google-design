@@ -7,7 +7,6 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ZonedDateTime } from '@creativo/application/accounts';
 import { JournalFeed } from '@core/components';
 import type { ClientJournalPorts } from '@core/ports';
 import {
@@ -18,12 +17,11 @@ import {
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
+  provideFlags,
 } from '@creativo/infrastructure/firebase-app';
-import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import {
   GEORGI,
   MARTIN,
-  NOW_MS,
   type PortDouble,
   catalogPortsOf,
   catalogueOf,
@@ -40,6 +38,7 @@ import {
   subjectOf,
   voucherPortsOf,
 } from '../../testing/client-card.fixtures';
+import { cardRuntimeProviders } from '../../testing/achievements-pages.rig';
 import { cssRule } from '../../testing/css-rule';
 import { ClientCardStore } from '../client-card.store';
 import { ClientLedgerPage } from './client-ledger';
@@ -85,7 +84,7 @@ async function mount(options: MountOptions = {}) {
     imports: [Host],
     providers: [
       ClientCardStore,
-      provideFeatureFlags(options.flags ?? ALL_FLAGS),
+      provideFlags(options.flags ?? ALL_FLAGS),
       ...provideTransloco({
         config: {
           availableLangs: ['bg', 'en'],
@@ -95,12 +94,7 @@ async function mount(options: MountOptions = {}) {
         },
         loader: CatalogueLoader,
       }),
-      {
-        provide: CLOCK,
-        useValue: {
-          now: (zone: string) => ZonedDateTime.fromMillis(NOW_MS, zone),
-        },
-      },
+      ...cardRuntimeProviders(),
       { provide: PROFILE_PORTS, useValue: profilePortsOf() },
       { provide: CUSTOMER_PORTS, useValue: customerPortsOf() },
       {

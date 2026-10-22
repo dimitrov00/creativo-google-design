@@ -7,29 +7,18 @@ import {
   provideTransloco,
 } from '@jsverse/transloco';
 import { NEVER, Observable, of } from 'rxjs';
-import { ZonedDateTime } from '@creativo/application/accounts';
-import {
-  PrincipalId,
-  activePrincipal,
-  roleFromPrimitive,
-} from '@creativo/application/identity';
-import { CLOCK } from '@creativo/application/shared';
-import {
-  BOOKING_GATEWAY,
-  BookingGateway,
-  BookingGatewayError,
-  type Result as KernelResult,
-  fail,
-  ok,
-} from '@creativo/application/booking';
-import { MEDIA_READER } from '@creativo/application/catalog';
 import {
   APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
+  CLOCK_PORTS,
+  DEFAULT_LOCATION_PORTS,
+  GATEWAY_PORTS,
   INBOX_PORTS,
+  LOCATION_LOAD_PORTS,
+  MEDIA_RESOLVE_PORTS,
   SCHEDULING_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import type { AppointmentReadPorts } from '@core/ports';
+import { type AppointmentReadPorts, Callables } from '@core/ports';
 import type {
   Appointment,
   Barber,
@@ -37,6 +26,7 @@ import type {
   ShopLocation,
 } from '@core/entities';
 import {
+  type BookingCall,
   BookingLifecycle,
   CancellationReason,
   CancellationReasonSet,
@@ -50,8 +40,10 @@ import {
   AppointmentId,
   BarberId,
   BusyKey,
+  CancellationRefusalCode,
   CustomerId,
   LocationId,
+  PipelineError,
   RepositoryError,
   Result,
   SeatId,
@@ -66,8 +58,15 @@ import {
   locationFixture,
   memoryAppointmentReadPorts,
   memoryCatalogReadPorts,
+  memoryDefaultLocationPorts,
   memoryInboxPorts,
+  memoryLocationLoadPorts,
+  memoryMediaResolvePorts,
+  memoryProgramsWorld,
   memorySchedulingReadPorts,
+  pinnedNowUtcMs,
+  principalFixture,
+  scriptedGatewayPorts,
   seatFixture,
   serviceFixture,
   termsFixture,
@@ -78,15 +77,45 @@ import { AccountStateService } from '@creativo/features/client/account-state';
 import { visitSectionLabel } from '@creativo/features/shared/visits';
 import { ClientAppointments } from './client-appointments';
 
-function unwrap<T, E>(result: KernelResult<T, E>): T {
-  if (result.isFailure()) throw new Error('unexpected failure in test fixture');
-  return result.value;
+/** The signed-in client — an onboarded account. */
+const PRINCIPAL = principalFixture.client(UserId.of('user_1'));
+
+/*
+ * Every clock is pinned (`pinnedNowUtcMs`): 2026-09-28 09:00 at the shop,
+ * the default location's zone being the fixture's. These are the wall
+ * times the specs measure against it.
+ */
+
+/** Two hours after the pinned now — inside the 24 h free window. */
+const SOON = '2026-09-28T11:00:00';
+
+/** The pinned now's month — the calendar's anchor. */
+const THIS_MONTH = '2026-09';
+
+/** Two years (730 days) before the pinned today, at noon. */
+const LONG_AGO = '2024-09-28T12:00:00';
+
+/** The cancel callable's answer to a cancel it took. */
+function cancelled(
+  input: BookingCall.Cancel,
+): Result<BookingCall.Cancelled, PipelineError> {
+  return Result.ok({ appointmentId: input.appointmentId });
 }
 
-const PRINCIPAL_ID = unwrap(PrincipalId.create('user_1'));
-const PRINCIPAL = unwrap(
-  activePrincipal(PRINCIPAL_ID, [roleFromPrimitive('client')]),
-);
+/** The callable's refusal as the wire carries it, classified the one way. */
+function refused(status: string, details?: unknown): PipelineError {
+  return PipelineError.fromWire(status, details);
+}
+
+/** The server's refusal of a cancel whose free window closed meanwhile (24 h). */
+function closedWindow(): Result<BookingCall.Cancelled, PipelineError> {
+  return Result.err(
+    refused('failed-precondition', {
+      errorCode: CancellationRefusalCode.WindowClosed,
+      windowHours: 24,
+    }),
+  );
+}
 
 /** An account seat's occupant: the uid and the client record beside it (D29). */
 function accountSeat(
@@ -108,7 +137,7 @@ const STAMP = utcMs('2020-01-01T00:00:00.000+00:00');
 const CONFIRMED = BookingLifecycle.confirm(STAMP);
 const COMPLETED = BookingLifecycle.complete(STAMP);
 const NO_SHOW = BookingLifecycle.noShow(STAMP);
-function cancelled(
+function cancelledLifecycle(
   reason: CancellationReason = CancellationReason.Unspecified,
 ): BookingLifecycle {
   return BookingLifecycle.cancel(STAMP, CancellationReasonSet.of([reason]));
@@ -116,17 +145,17 @@ function cancelled(
 
 /**
  * A one-seat visit of the fixture service with the fixture barber at the
- * shop's wall time `startIso` — `YYYY-MM-DDTHH:MM:SS` on the shop's clock,
+ * shop's wall time `wallStart` — `YYYY-MM-DDTHH:MM:SS` on the shop's clock,
  * or an instant with its offset — 30 minutes, 15,00 €.
  */
 function appointment(
   id: string,
-  startIso: string,
+  wallStart: string,
   lifecycle: BookingLifecycle = CONFIRMED,
   subject: SeatOccupant = OWN_SEAT,
 ): Appointment {
   const start = ZonedTimeSystem.toLocal(
-    unwrapOk(ZonedTimeSystem.parseIsoIn(startIso, FIXTURE_TIME_ZONE)),
+    unwrapOk(ZonedTimeSystem.parseIsoIn(wallStart, FIXTURE_TIME_ZONE)),
     FIXTURE_TIME_ZONE,
   );
   const seat = seatFixture({
@@ -175,8 +204,8 @@ const COPY: Translation = {
   },
   errors: {
     'booking.gateway.failed': 'COPY:gateway-failed',
-    'booking.cancel.policy_unavailable': 'COPY:policy-unavailable',
-    'booking.cancel.window_closed':
+    BOOKING_CANCEL_POLICY_UNAVAILABLE: 'COPY:policy-unavailable',
+    BOOKING_CANCEL_WINDOW_CLOSED:
       'COPY:window-closed {{windowHours}} {{reach}}',
   },
 };
@@ -203,7 +232,8 @@ function provideTestI18n(): EnvironmentProviders[] {
 function accountStateStub(): AccountStateService {
   return {
     principal: signal(PRINCIPAL),
-    claims: signal(PRINCIPAL.kind === 'active' ? PRINCIPAL.roles : null),
+    roles: signal(PRINCIPAL.roles),
+    userId: signal(PRINCIPAL.userId),
     account: signal(null),
     accountLoading: signal(false),
   } as unknown as AccountStateService;
@@ -273,9 +303,16 @@ interface ConfigureExtras {
   readonly observeUpcoming?: AppointmentReadPorts['observeUpcoming'];
 }
 
+/** How the cancel callable answers one call. */
+type CancelBehavior = (
+  input: BookingCall.Cancel,
+) =>
+  | Result<BookingCall.Cancelled, PipelineError>
+  | Promise<Result<BookingCall.Cancelled, PipelineError>>;
+
 async function configure(
   upcoming: readonly Appointment[],
-  cancelBehavior: BookingGateway['cancel'] = async () => ok(undefined),
+  cancelBehavior: CancelBehavior = cancelled,
   history: readonly Appointment[] = [],
   /** The shops the catalogue lists — none by default, see below. */
   locations: readonly ShopLocation[] = [],
@@ -314,29 +351,32 @@ async function configure(
           locations,
         }),
       },
-      {
-        provide: MEDIA_READER,
-        useValue: { resolve: async () => ok([]) },
-      },
+      { provide: MEDIA_RESOLVE_PORTS, useValue: memoryMediaResolvePorts() },
       {
         // Cancellation is the CALLABLE's job; the web never writes an
         // appointment.
-        provide: BOOKING_GATEWAY,
-        useValue: {
-          commit: async () => {
-            throw new Error('not used in this spec');
-          },
-          cancel: cancelBehavior,
-        },
+        provide: GATEWAY_PORTS,
+        useValue: scriptedGatewayPorts({
+          [Callables.CancelAppointment]: cancelBehavior,
+        }),
       },
       {
         // The page reads the policy only (the default 24 h window).
         provide: SCHEDULING_READ_PORTS,
         useValue: memorySchedulingReadPorts(),
       },
+      { provide: CLOCK_PORTS, useValue: { nowUtcMs: pinnedNowUtcMs() } },
       {
-        provide: CLOCK,
-        useValue: { now: (zone: string) => ZonedDateTime.now(zone) },
+        // "Today" is the default shop's day — the fixture shop, on the
+        // fixture zone.
+        provide: LOCATION_LOAD_PORTS,
+        useValue: memoryLocationLoadPorts(
+          memoryProgramsWorld({ locations: [locationFixture()] }),
+        ),
+      },
+      {
+        provide: DEFAULT_LOCATION_PORTS,
+        useValue: memoryDefaultLocationPorts(),
       },
     ],
   }).compileComponents();
@@ -348,6 +388,8 @@ describe('ClientAppointments', () => {
   /** Settle the two live listeners and the first render. */
   async function render(fixture: ComponentFixture<ClientAppointments>) {
     fixture.detectChanges();
+    // The default shop's zone — what "today" is read on — answers a turn later.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     await fixture.whenStable();
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
@@ -580,7 +622,7 @@ describe('ClientAppointments', () => {
         appointment(
           'appt_called_off',
           '2020-06-02T10:00:00',
-          cancelled(CancellationReason.ClientChangedPlans),
+          cancelledLifecycle(CancellationReason.ClientChangedPlans),
         ),
       ]);
       const host = await render(fixture);
@@ -829,10 +871,7 @@ describe('ClientAppointments', () => {
   });
 
   it('hides the cancel button inside the window and explains why', async () => {
-    const nowResult = ZonedDateTime.now('Europe/Sofia');
-    if (nowResult.isFailure()) throw new Error('unreachable');
-    const inTwoHours = nowResult.value.plusMinutes(120).toISO();
-    const fixture = await configure([appointment('appt_soon', inTwoHours)]);
+    const fixture = await configure([appointment('appt_soon', SOON)]);
     const host = await render(fixture);
     await openFirstVisit(fixture, host);
 
@@ -848,10 +887,8 @@ describe('ClientAppointments', () => {
   });
 
   it('says "call" about the closed window only beside the sheet’s own call verb', async () => {
-    const nowResult = ZonedDateTime.now('Europe/Sofia');
-    if (nowResult.isFailure()) throw new Error('unreachable');
     const fixture = await configure(
-      [appointment('appt_soon', nowResult.value.plusMinutes(120).toISO())],
+      [appointment('appt_soon', SOON)],
       undefined,
       [],
       [centerShop()],
@@ -1082,16 +1119,9 @@ describe('ClientAppointments', () => {
     });
 
     it('says nothing about who moves it once the window has closed — that has its own reason', async () => {
-      const nowResult = ZonedDateTime.now('Europe/Sofia');
-      if (nowResult.isFailure()) throw new Error('unreachable');
       const son = accountSeat('user_son', SubjectRelationship.Companion);
       const fixture = await configure([
-        appointment(
-          'appt_soon',
-          nowResult.value.plusMinutes(120).toISO(),
-          CONFIRMED,
-          son,
-        ),
+        appointment('appt_soon', SOON, CONFIRMED, son),
       ]);
       const host = await render(fixture);
       await openFirstVisit(fixture, host);
@@ -1112,7 +1142,7 @@ describe('ClientAppointments', () => {
           'appt_past_2',
           '2020-06-02T10:00:00', // The variant carries its reason — a cancelled status without one is
           // not representable, which is the whole point of the union.
-          cancelled(CancellationReason.ClientChangedPlans),
+          cancelledLifecycle(CancellationReason.ClientChangedPlans),
         ),
       ],
     );
@@ -1202,23 +1232,16 @@ describe('ClientAppointments', () => {
       month.getAttribute('data-month-key'),
     );
     expect(months.length).toBe(13);
-
-    const now = ZonedDateTime.now('Europe/Sofia');
-    if (now.isFailure()) throw new Error('unreachable');
-    expect(months).toContain(now.value.toISODate().slice(0, 7));
+    // Half a year either side of the pinned today's month, in order.
+    expect(months[0]).toBe('2026-03');
+    expect(months[6]).toBe(THIS_MONTH);
+    expect(months.at(-1)).toBe('2027-03');
   });
 
   it('widens the run to reach a visit outside the default window', async () => {
-    const now = ZonedDateTime.now('Europe/Sofia');
-    if (now.isFailure()) throw new Error('unreachable');
     // Two years back — well outside the six months the calendar opens with,
-    // and therefore unreachable unless the window stretches to hold it. At
-    // noon, not now's time of day: a run after 23:30 put the 30-minute seat
-    // past its shop day's midnight (F-6).
-    const longAgo = `${now.value
-      .plusMinutes(-60 * 24 * 730)
-      .toISO()
-      .slice(0, 10)}T12:00:00`;
+    // and therefore unreachable unless the window stretches to hold it.
+    const longAgo = LONG_AGO;
 
     const fixture = await configure([], undefined, [
       appointment('appt_ancient', longAgo, COMPLETED),
@@ -1295,12 +1318,12 @@ describe('ClientAppointments', () => {
   });
 
   it('cancels an own visit through the sheet', async () => {
-    const cancelCalls: { appointmentId: string; reason: string }[] = [];
+    const cancelCalls: BookingCall.Cancel[] = [];
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
-      async (request) => {
+      (request) => {
         cancelCalls.push(request);
-        return ok(undefined);
+        return cancelled(request);
       },
     );
     const host = await render(fixture);
@@ -1316,17 +1339,19 @@ describe('ClientAppointments', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // Nothing typed, nothing claimed: the server files it as `unspecified`.
-    expect(cancelCalls).toEqual([{ appointmentId: 'appt_1', reason: '' }]);
+    // Nothing typed, nothing claimed: the cancel is filed as UNSPECIFIED.
+    expect(cancelCalls).toEqual([
+      { appointmentId: 'appt_1', reason: CancellationReason.Unspecified },
+    ]);
   });
 
-  it('sends the reason the client typed, and only that', async () => {
-    const cancelCalls: { appointmentId: string; reason: string }[] = [];
+  it('files the reason the client typed as their own words (OTHER), and only that', async () => {
+    const cancelCalls: BookingCall.Cancel[] = [];
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
-      async (request) => {
+      (request) => {
         cancelCalls.push(request);
-        return ok(undefined);
+        return cancelled(request);
       },
     );
     const host = await render(fixture);
@@ -1347,16 +1372,17 @@ describe('ClientAppointments', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
+    // The words are the client's own: the call files them as OTHER (D23).
     expect(cancelCalls).toEqual([
-      { appointmentId: 'appt_1', reason: 'Болен съм' },
+      { appointmentId: 'appt_1', reason: CancellationReason.Other },
     ]);
   });
 
   it('shows a translated error when cancellation fails', async () => {
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
-      async () =>
-        fail(new BookingGatewayError('unavailable', 'network sneezed')),
+      // A transport failure: no server code, so the surface's own words.
+      () => Result.err(refused('unavailable')),
     );
     const host = await render(fixture);
     await openFirstVisit(fixture, host);
@@ -1375,18 +1401,17 @@ describe('ClientAppointments', () => {
   });
 
   it('says to try again in a moment when the terms could not be read — and the same button does', async () => {
-    const answers = [
-      fail(
-        new BookingGatewayError('unavailable', 'terms unread', {
-          serverCode: 'booking.cancel.policy_unavailable',
+    const answers: readonly Result<BookingCall.Cancelled, PipelineError>[] = [
+      Result.err(
+        refused('unavailable', {
+          errorCode: CancellationRefusalCode.PolicyUnavailable,
         }),
       ),
-      ok(undefined),
     ];
     let calls = 0;
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
-      async () => answers[calls++] ?? ok(undefined),
+      (request) => answers[calls++] ?? cancelled(request),
     );
     const host = await render(fixture);
     await openFirstVisit(fixture, host);
@@ -1420,13 +1445,7 @@ describe('ClientAppointments', () => {
   ): Promise<HTMLElement> {
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
-      async () =>
-        fail(
-          new BookingGatewayError('invalid_request', 'closed', {
-            serverCode: 'booking.cancel.window_closed',
-            windowHours: '24',
-          }),
-        ),
+      () => closedWindow(),
       [],
       locations,
     );
@@ -1480,10 +1499,10 @@ describe('ClientAppointments', () => {
   it('offers no call beside a failure a retry fixes', async () => {
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
-      async () =>
-        fail(
-          new BookingGatewayError('unavailable', 'terms unread', {
-            serverCode: 'booking.cancel.policy_unavailable',
+      () =>
+        Result.err(
+          refused('unavailable', {
+            errorCode: CancellationRefusalCode.PolicyUnavailable,
           }),
         ),
       [],
@@ -1512,20 +1531,11 @@ describe('ClientAppointments', () => {
     expect(confirm.getAttribute('data-button-style')).toBe('borderedProminent');
   });
 
-  /** The server's refusal of a cancel whose free window closed meanwhile. */
-  const closedWindow = () =>
-    fail(
-      new BookingGatewayError('invalid_request', 'closed', {
-        serverCode: 'booking.cancel.window_closed',
-        windowHours: '24',
-      }),
-    );
-
   it('leads with the call once the window has closed, and disables the confirm that could only be refused again', async () => {
     let calls = 0;
     const fixture = await configure(
       [appointment('appt_1', '2030-06-01T10:00:00')],
-      async () => {
+      () => {
         calls += 1;
         return closedWindow();
       },
@@ -1575,8 +1585,10 @@ describe('ClientAppointments', () => {
         appointment('appt_1', '2030-06-01T10:00:00'),
         appointment('appt_2', '2030-06-08T10:00:00'),
       ],
-      async (request) =>
-        request.appointmentId === 'appt_1' ? closedWindow() : ok(undefined),
+      (request) =>
+        request.appointmentId === 'appt_1'
+          ? closedWindow()
+          : cancelled(request),
       [],
       [centerShop()],
     );

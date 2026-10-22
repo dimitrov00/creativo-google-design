@@ -9,16 +9,19 @@ import {
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
-  BarberPref,
-  CartLineId,
-  SeatKey,
-  seatKeyValue,
-} from '@creativo/application/booking';
-import {
   BarberId,
+  type CartLineId,
+  type SeatKeyText,
   ServiceId,
   ServiceVariantId,
-} from '@creativo/application/catalog';
+} from '@core/primitives';
+import {
+  BookingCart,
+  type CartLine,
+  Party,
+  SeatKey,
+  SeatKeyRole,
+} from '@core/components';
 import type { Service } from '@core/entities';
 import { Selectability, ServiceConflictSystem } from '@core/systems';
 import {
@@ -141,68 +144,76 @@ export class BookingServicesStep {
   protected readonly content = inject(CatalogPresenter);
   protected readonly store = inject(BookingFlowStore);
 
+  /** The seat role the template asks about — the booker has no second meaning. */
+  protected readonly SeatKeyRole = SeatKeyRole;
+
   /** Whose lines the catalog is currently adding to. */
-  private readonly activeSeatKeyValue = signal<string>('self');
+  private readonly activeSeatKey = signal<SeatKeyText>(SELF_SEAT);
 
   protected readonly seats = computed<readonly SeatScopeVm[]>(() => {
     const cart = this.store.cart();
+    const lineCountFor = (key: SeatKeyText): number =>
+      cart === null ? 0 : BookingCart.linesFor(cart, key).length;
     // A real name when we have one; "You" only as the LABEL. It is
     // deliberately not passed to the avatar — deriving initials from the word
     // "You" produced a "Т" that stands for nothing (owner ruling 2026-07-31).
     const known = this.identity.displayName();
     const self: SeatScopeVm = {
-      key: 'self',
+      key: SELF_SEAT,
       seatKey: SeatKey.self(),
       label: known || this.transloco.translate('booking.party.you'),
       // A real name reads the same in either position; only the pronoun we
       // fall back to has a case to get wrong.
       objectLabel: known || this.transloco.translate('booking.party.youObject'),
       monogramName: known,
-      lineCount: cart?.lineCountFor(SeatKey.self()) ?? 0,
+      lineCount: lineCountFor(SELF_SEAT),
       avatarSrc: this.identity.avatarUrl(),
     };
     return [
       self,
-      ...this.store.guests().map((guest) => {
-        const seatKey = SeatKey.guest(guest.id);
+      ...this.store.guests().map((guest): SeatScopeVm => {
+        const seatKey = SeatKey.guest(guest.guestId);
+        const key = SeatKey.text(seatKey);
         return {
-          key: seatKeyValue(seatKey),
+          key,
           seatKey,
-          label: guest.label.value,
-          objectLabel: guest.label.value,
-          monogramName: guest.label.value,
-          lineCount: cart?.lineCountFor(seatKey) ?? 0,
+          label: guest.guestLabel,
+          objectLabel: guest.guestLabel,
+          monogramName: guest.guestLabel,
+          lineCount: lineCountFor(key),
           avatarSrc: null,
         };
       }),
     ];
   });
 
+  /** The lines a seat holds, in the order they were added. */
+  private linesOf(seat: SeatScopeVm): readonly CartLine[] {
+    const cart = this.store.cart();
+    return cart === null ? [] : BookingCart.linesFor(cart, seat.key);
+  }
+
   protected readonly activeSeat = computed<SeatScopeVm>(() => {
     const seats = this.seats();
     return (
-      seats.find((seat) => seat.key === this.activeSeatKeyValue()) ??
+      seats.find((seat) => seat.key === this.activeSeatKey()) ??
       (seats[0] as SeatScopeVm)
     );
   });
 
   /** The catalogue services the active seat already holds — the conflict input. */
-  private readonly selectedServices = computed<readonly Service[]>(() => {
-    const cart = this.store.cart();
-    if (!cart) return [];
-    return cart.linesFor(this.activeSeat().seatKey).flatMap((line) => {
-      const service = this.catalog.findService(line.serviceId.value);
+  private readonly selectedServices = computed<readonly Service[]>(() =>
+    this.linesOf(this.activeSeat()).flatMap((line) => {
+      const service = this.catalog.findService(line.serviceId);
       return service ? [service] : [];
-    });
-  });
+    }),
+  );
 
   /** How many lines of `serviceId` the active seat holds. */
   protected selectedCountFor(serviceId: string): number {
-    const cart = this.store.cart();
-    if (!cart) return 0;
-    return cart
-      .linesFor(this.activeSeat().seatKey)
-      .filter((line) => line.serviceId.value === serviceId).length;
+    return this.linesOf(this.activeSeat()).filter(
+      (line) => line.serviceId === serviceId,
+    ).length;
   }
 
   /** Localized names of everything blocking `serviceId`, empty when free. */
@@ -274,8 +285,8 @@ export class BookingServicesStep {
     );
   }
 
-  protected setActiveSeat(key: string): void {
-    this.activeSeatKeyValue.set(key);
+  protected setActiveSeat(key: SeatKeyText): void {
+    this.activeSeatKey.set(key);
   }
 
   // ── The party, assembled here instead of on a step of its own ───────
@@ -358,7 +369,7 @@ export class BookingServicesStep {
       this.setActiveSeat(seat.key);
       return;
     }
-    if (seat.seatKey.kind !== 'guest') return;
+    if (seat.seatKey.seatKeyRole !== SeatKeyRole.Guest) return;
     // This press is the one that just dismissed the menu — it closes, it does
     // not reopen.
     if (performance.now() - this.dismissedAt < 250) return;
@@ -423,14 +434,14 @@ export class BookingServicesStep {
     // to find them is a second step wearing the first one's clothes. The row
     // lives at the TOP of a scrolling page, so it is brought into view too:
     // otherwise the press appears to do nothing at all.
-    this.activeSeatKeyValue.set(seatKeyValue(SeatKey.guest(added.id)));
+    this.activeSeatKey.set(SeatKey.text(SeatKey.guest(added.guestId)));
     this.revealSeatRow();
   }
 
   /** One past the highest guest id minted so far — ids encode `guest-<n>`. */
   private nextGuestNumber(): number {
     const highest = this.store.guests().reduce((max, guest) => {
-      const seq = Number.parseInt(guest.id.value.replace('guest-', ''), 10);
+      const seq = Number.parseInt(guest.guestId.replace('guest-', ''), 10);
       return Number.isFinite(seq) ? Math.max(max, seq) : max;
     }, -1);
     return highest + 2;
@@ -459,9 +470,10 @@ export class BookingServicesStep {
    * past here the grid would seat two people the server counts as one.
    * Renaming either guest clears it.
    */
-  protected readonly sharedLabel = computed(
-    () => this.store.party()?.sharedLabel()?.value ?? null,
-  );
+  protected readonly sharedLabel = computed<string | null>(() => {
+    const party = this.store.party();
+    return party === null ? null : Party.sharedLabel(party);
+  });
 
   protected typeRename(value: string): void {
     this.renameDraft.set(value);
@@ -471,7 +483,7 @@ export class BookingServicesStep {
   protected commitRename(seat: SeatScopeVm, label: string): void {
     const trimmed = label.trim();
     if (
-      seat.seatKey.kind !== 'guest' ||
+      seat.seatKey.seatKeyRole !== SeatKeyRole.Guest ||
       trimmed.length === 0 ||
       trimmed === seat.label ||
       this.store.renameGuest(seat.seatKey.guestId, trimmed)
@@ -519,10 +531,10 @@ export class BookingServicesStep {
 
   protected removeSeat(seat: SeatScopeVm): void {
     this.seatMenuKey.set(null);
-    if (seat.seatKey.kind !== 'guest') return;
+    if (seat.seatKey.seatKeyRole !== SeatKeyRole.Guest) return;
     // Whoever is left takes the scope — pointing at a person who is gone
     // would leave the catalog adding to nobody.
-    if (this.activeSeat().key === seat.key) this.activeSeatKeyValue.set('self');
+    if (this.activeSeat().key === seat.key) this.activeSeatKey.set(SELF_SEAT);
     this.store.removeGuest(seat.seatKey.guestId);
   }
 
@@ -863,7 +875,7 @@ export class BookingServicesStep {
   protected removeOpenLine(): void {
     const editing = this.editingLineId();
     if (!editing) return;
-    this.store.removeLine(this.activeSeat().seatKey, editing);
+    this.store.removeLine(this.activeSeat().key, editing);
     this.closeDetails();
   }
 
@@ -873,12 +885,11 @@ export class BookingServicesStep {
     // not a thing the sheet could do — and a press that silently changed
     // nothing (which is what a refused duplicate looked like) is worse than
     // one that opens the choices they made last time.
-    const existing = this.store
-      .cart()
-      ?.linesFor(this.activeSeat().seatKey)
-      .find((line) => line.serviceId.value === serviceId);
+    const existing = this.linesOf(this.activeSeat()).find(
+      (line) => line.serviceId === serviceId,
+    );
     if (existing) {
-      this.editLine(existing.id);
+      this.editLine(existing.lineId);
       return;
     }
 
@@ -897,19 +908,14 @@ export class BookingServicesStep {
 
   /** Reopen the sheet on an existing line, with its choices restored. */
   protected editLine(lineId: CartLineId): void {
-    const cart = this.store.cart();
-    const line = cart
-      ?.linesFor(this.activeSeat().seatKey)
-      .find((candidate) => candidate.id.equals(lineId));
-    if (!line) return;
-    this.detailsId.set(line.serviceId.value);
-    this.editingLineId.set(lineId);
-    this.draftVariantId.set(line.variantId?.value ?? null);
-    this.draftBarberId.set(
-      line.barberPref.kind === 'specific'
-        ? line.barberPref.barberId.value
-        : null,
+    const line = this.linesOf(this.activeSeat()).find(
+      (candidate) => candidate.lineId === lineId,
     );
+    if (!line) return;
+    this.detailsId.set(line.serviceId);
+    this.editingLineId.set(lineId);
+    this.draftVariantId.set(line.variantId);
+    this.draftBarberId.set(line.barberId);
     // A saved line HAS an answer for both, whatever it was — reopening it must
     // not present them as unasked.
     this.barberAnswered.set(true);
@@ -953,18 +959,17 @@ export class BookingServicesStep {
 
   /** Drop every line blocking the open service, then add it. One dispatch each. */
   protected replaceBlockers(): void {
-    const cart = this.store.cart();
     const id = this.detailsId();
-    if (!cart || !id || !this.canAdd()) return;
+    if (!id || !this.canAdd()) return;
     const blockedNames = new Set(this.blockersFor(id));
     if (blockedNames.size === 0) return;
 
-    for (const line of cart.linesFor(this.activeSeat().seatKey)) {
-      const service = this.catalog.findService(line.serviceId.value);
+    for (const line of this.linesOf(this.activeSeat())) {
+      const service = this.catalog.findService(line.serviceId);
       if (!service) continue;
       const name = this.content.text(this.catalog.toServiceVm(service).name);
       if (blockedNames.has(name)) {
-        this.store.removeLine(this.activeSeat().seatKey, line.id);
+        this.store.removeLine(this.activeSeat().key, line.lineId);
       }
     }
     this.addLine();
@@ -974,36 +979,40 @@ export class BookingServicesStep {
     const id = this.detailsId();
     if (!id || !this.canAdd()) return;
 
-    const serviceIdResult = ServiceId.create(id);
-    if (serviceIdResult.isFailure()) return;
+    const serviceId = ServiceId.parse(id);
+    if (!serviceId.ok) return;
 
     const rawVariantId = this.draftVariantId();
     let variantId: ServiceVariantId | null = null;
     if (rawVariantId !== null) {
-      const result = ServiceVariantId.create(rawVariantId);
-      if (result.isFailure()) return;
-      variantId = result.value;
+      const parsed = ServiceVariantId.parse(rawVariantId);
+      if (!parsed.ok) return;
+      variantId = parsed.value;
     }
 
-    let barberPref = BarberPref.any();
+    // `null` is "anyone" — a barber pinned by name is a SPECIFIC preference.
+    let barberId: BarberId | null = null;
     const rawBarberId = this.draftBarberId();
     if (rawBarberId !== null) {
-      const result = BarberId.create(rawBarberId);
-      if (result.isFailure()) return;
-      barberPref = BarberPref.specific(result.value);
+      const parsed = BarberId.parse(rawBarberId);
+      if (!parsed.ok) return;
+      barberId = parsed.value;
     }
 
+    const seatKey = this.activeSeat().key;
     const editing = this.editingLineId();
     if (editing) {
       // Editing keeps the line's identity so the bag does not reorder under
       // the user while they are looking at it.
-      this.store.setLineVariant(this.activeSeat().seatKey, editing, variantId);
-      this.store.setLineBarber(this.activeSeat().seatKey, editing, barberPref);
+      this.store.setLineVariant(seatKey, editing, variantId);
+      this.store.setLineBarber(seatKey, editing, barberId);
     } else {
-      this.store.addLine(this.activeSeat().seatKey, {
-        serviceId: serviceIdResult.value,
+      this.store.addLine(seatKey, {
+        serviceId: serviceId.value,
         variantId,
-        barberPref,
+        barberId,
+        // Searched wherever the flow's own shop says, never pinned per line.
+        locationId: null,
       });
     }
     this.closeDetails();
@@ -1022,7 +1031,7 @@ export class BookingServicesStep {
    * two sheets on top of each other is not an edit, it is a stack.
    */
   protected editFromBag(request: {
-    seatKey: string;
+    seatKey: SeatKeyText;
     lineId: CartLineId;
   }): void {
     this.setActiveSeat(request.seatKey);
@@ -1034,3 +1043,6 @@ export class BookingServicesStep {
     this.bagOpen.set(false);
   }
 }
+
+/** The booker's own cart seat key — the scope a step opens on. */
+const SELF_SEAT: SeatKeyText = SeatKey.text(SeatKey.self());

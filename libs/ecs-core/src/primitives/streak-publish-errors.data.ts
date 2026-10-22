@@ -27,6 +27,10 @@ export const StreakPublishErrorCode = {
   RecomputeNeedsEngine: 'LOYALTY_STREAK_PUBLISH_RECOMPUTE_NEEDS_ENGINE',
   /** The publish names a preview nobody can vouch for. */
   PreviewStale: 'LOYALTY_STREAK_PUBLISH_PREVIEW_STALE',
+  /** The envelope could not be read — `field` names the payload field (was `loyalty.streak_publish.invalid_input`). */
+  InvalidInput: 'LOYALTY_STREAK_PUBLISH_INVALID_INPUT',
+  /** The write fell over — the cause in the log only (was `loyalty.streak_publish.store_failed`). */
+  StoreFailed: 'LOYALTY_STREAK_PUBLISH_STORE_FAILED',
 } as const;
 export type StreakPublishErrorCode =
   (typeof StreakPublishErrorCode)[keyof typeof StreakPublishErrorCode];
@@ -69,6 +73,12 @@ export const StreakPublishError = {
   previewStale(): StreakPublishError.PreviewStale {
     return { errorCode: StreakPublishErrorCode.PreviewStale };
   },
+  invalidInput(field: string): StreakPublishError.InvalidInput {
+    return { errorCode: StreakPublishErrorCode.InvalidInput, field };
+  },
+  storeFailed(): StreakPublishError.StoreFailed {
+    return { errorCode: StreakPublishErrorCode.StoreFailed };
+  },
 } as const;
 
 export namespace StreakPublishError {
@@ -100,5 +110,13 @@ export namespace StreakPublishError {
   };
   export type PreviewStale = {
     readonly errorCode: typeof StreakPublishErrorCode.PreviewStale;
+  };
+  export type InvalidInput = {
+    readonly errorCode: typeof StreakPublishErrorCode.InvalidInput;
+    /** The payload field that was missing or malformed. */
+    readonly field: string;
+  };
+  export type StoreFailed = {
+    readonly errorCode: typeof StreakPublishErrorCode.StoreFailed;
   };
 }

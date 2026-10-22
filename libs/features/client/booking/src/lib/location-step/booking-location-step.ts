@@ -129,10 +129,10 @@ export class BookingLocationStep {
   );
 
   /** Which pin is filled. `null` under "any shop" — nothing is singled out. */
-  protected readonly selectedPinId = computed(() => this.store.shopId());
+  protected readonly selectedPinId = computed(() => this.store.locationId());
 
   protected readonly rows = computed<readonly ShopRowVm[]>(() => {
-    const chosen = this.store.shopId();
+    const chosen = this.store.locationId();
 
     const any: ShopRowVm = {
       key: ANY_SHOP_KEY,
@@ -165,7 +165,7 @@ export class BookingLocationStep {
   );
 
   protected select(row: ShopRowVm): void {
-    this.store.selectShop(row.id);
+    this.store.selectLocation(row.id);
     // Picking a specific shop is a request to SEE it: drop the sheet to the
     // shorter detent so the camera flight is actually visible. Choosing "any
     // shop" has nothing to look at, so the sheet stays where it is.
@@ -178,7 +178,7 @@ export class BookingLocationStep {
       .locations()
       .find((candidate) => candidate.id === pinId);
     if (!shop) return;
-    this.store.selectShop(shop.id);
+    this.store.selectLocation(shop.id);
     this.detent.set('medium');
   }
 }

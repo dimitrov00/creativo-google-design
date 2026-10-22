@@ -1,20 +1,24 @@
 import { Injectable, inject, signal } from '@angular/core';
-import {
-  AVATAR_UPLOADER,
-  MAX_AVATAR_BYTES,
-  RemoveAvatarUseCase,
-  UploadAvatarUseCase,
-} from '@creativo/application/accounts';
-import { CLOCK } from '@creativo/application/shared';
+import { Principal, type ProfileEdits } from '@core/components';
+import { uploadAvatar } from '@core/pipelines';
+import type { UserId } from '@core/primitives';
+import { AvatarSystem } from '@core/systems';
 import {
   AccountStateService,
-  ageDayOf,
   saveOwnProfile,
 } from '@creativo/features/client/account-state';
-import { SessionIdentityService } from '@creativo/features/shared/shell';
-import { PROFILE_PORTS } from '@creativo/infrastructure/firebase-app';
-import { AccountsErrorCode, UserId } from '@core/primitives';
-import type { ProfileEdits } from '@core/systems';
+import {
+  AVATAR_REMOVE_FAILED,
+  SessionIdentityService,
+  avatarUploadRefusal,
+} from '@creativo/features/shared/shell';
+import {
+  AVATAR_PORTS,
+  GATEWAY_PORTS,
+} from '@creativo/infrastructure/firebase-app';
+
+/** The refusal shown when no active session owns the edit — today's `errors.identifier_missing`. */
+const IDENTIFIER_MISSING = 'identifier_missing';
 
 /**
  * The write half of `/account/profile` — one place where an edit becomes a
@@ -25,13 +29,14 @@ import type { ProfileEdits } from '@core/systems';
  * `translateDomainError(code)` and leave the sheet open with the draft
  * intact (same contract as onboarding's steps — a user's typing must never
  * silently vanish). A refused edit answers its ecs-core `errorCode`
- * (`ACCOUNTS_UPDATE_PROFILE_*`); a failed store answers
+ * (`ACCOUNTS_UPDATE_PROFILE_*`); every other failure answers
  * `PROFILE_WRITE_FAILED` — both keys hold today's words.
  *
- * The write is `PROFILE_PORTS.writeOwnProfile` with
- * `ProfileEditSystem.decide` (identity flip (2), F2-6) — the same rule the
- * server's `updateProfile` runs — judged on the UTC civil day taken ONCE
- * from this store's `CLOCK` reading (F2-7).
+ * The write is the `updateProfile` callable (`saveOwnProfile`, Phase 4a
+ * 4A-3 (2)): the server's `ProfileEditSystem.decide` judges the edit
+ * against the stored profile on its own clock and writes the audit row in
+ * the same transaction, credited to this user. The web no longer writes
+ * `users/{uid}` (the rules refuse it).
  *
  * Component-provided, not root: drafts and pending state belong to one
  * visit of the screen.
@@ -40,34 +45,21 @@ import type { ProfileEdits } from '@core/systems';
 export class ProfileStore {
   private readonly accountState = inject(AccountStateService);
   private readonly sessionIdentity = inject(SessionIdentityService);
-  private readonly profilePorts = inject(PROFILE_PORTS);
-  private readonly uploadAvatarUseCase = new UploadAvatarUseCase(
-    inject(AVATAR_UPLOADER),
-  );
-  private readonly removeAvatarUseCase = new RemoveAvatarUseCase(
-    inject(AVATAR_UPLOADER),
-  );
+  private readonly gateway = inject(GATEWAY_PORTS);
+  private readonly avatars = inject(AVATAR_PORTS);
+  private readonly upload = uploadAvatar(this.avatars);
 
   private readonly _pending = signal(false);
   readonly pending = this._pending.asReadonly();
 
   /**
-   * The day the birth-date age window is judged on — the UTC civil date,
-   * resolved once from the CLOCK port rather than `new Date()` (the same
-   * day the onboarding store and the server's own check use).
-   */
-  private readonly ageDay = ageDayOf(inject(CLOCK));
-
-  /**
-   * The signed-in user's id — the profile owner `saveOwnProfile` writes and
-   * the avatar owner `AVATAR_UPLOADER` names — or `null` when there is no
+   * The signed-in user's id — the avatar owner `AVATAR_PORTS` names, and
+   * the proof a profile edit has an owner — or `null` when there is no
    * active session.
    */
   private currentUserId(): UserId | null {
     const principal = this.accountState.principal();
-    if (principal.kind !== 'active') return null;
-    const result = UserId.parse(principal.uid.value);
-    return result.ok ? result.value : null;
+    return Principal.isActive(principal) ? principal.userId : null;
   }
 
   /** The two trimmed names — `ProfileEditSystem` judges them (and trims again, the one rule). */
@@ -75,28 +67,19 @@ export class ProfileStore {
     return this.write({ firstName, lastName, birthDate: null });
   }
 
-  /** `birthDate` is the `'YYYY-MM-DD'` the page's draft resolved to; the edit re-judges it on the age day. */
+  /** `birthDate` is the `'YYYY-MM-DD'` the page's draft resolved to; the server re-judges it on its age day. */
   async saveBirthDate(birthDate: string): Promise<string | null> {
     return this.write({ firstName: null, lastName: null, birthDate });
   }
 
   private async write(edits: ProfileEdits): Promise<string | null> {
-    const userId = this.currentUserId();
-    if (!userId) return 'identifier_missing';
-    // Unreachable in practice ('UTC' always resolves) — an honest code
-    // beats a guessed day.
-    if (!this.ageDay) return AccountsErrorCode.UpdateProfileValidationFailed;
+    if (!this.currentUserId()) return IDENTIFIER_MISSING;
 
     this._pending.set(true);
     try {
       // No refresh: `account` is the live `users/{uid}` listener, so the
       // write reaches every screen that reads it on its own.
-      return await saveOwnProfile(
-        this.profilePorts,
-        userId,
-        edits,
-        this.ageDay,
-      );
+      return await saveOwnProfile(this.gateway, edits);
     } finally {
       this._pending.set(false);
     }
@@ -109,19 +92,18 @@ export class ProfileStore {
    * with a domain error instead of a raw permission-denied.
    */
   async uploadPhoto(file: File): Promise<string | null> {
-    if (!file.type.startsWith('image/')) {
-      return 'accounts.upload_avatar.not_an_image';
-    }
-    if (file.size > MAX_AVATAR_BYTES) {
-      return 'accounts.upload_avatar.too_large';
-    }
+    const checked = AvatarSystem.check({
+      contentType: file.type,
+      sizeBytes: file.size,
+    });
+    if (!checked.ok) return checked.error.errorCode;
     const userId = this.currentUserId();
-    if (!userId) return 'identifier_missing';
+    if (!userId) return IDENTIFIER_MISSING;
 
     this._pending.set(true);
     try {
-      const result = await this.uploadAvatarUseCase.execute(userId, file);
-      if (result.isFailure()) return result.error.code;
+      const result = await this.upload(userId, file);
+      if (!result.ok) return avatarUploadRefusal(result.error);
       // The avatar is a storage object, not a `User` field — refreshing
       // the profile snapshot would prove nothing. This is what makes the
       // header circle and the menu portrait pick up the new face.
@@ -132,15 +114,18 @@ export class ProfileStore {
     }
   }
 
-  /** Drops the photo, returning the user to their monogram. No confirmation — see `RemoveAvatarUseCase`. */
+  /**
+   * Drops the photo, returning the user to their monogram. No confirmation:
+   * re-picking is one tap, and the monogram is the honest state anyway.
+   */
   async removePhoto(): Promise<string | null> {
     const userId = this.currentUserId();
-    if (!userId) return 'identifier_missing';
+    if (!userId) return IDENTIFIER_MISSING;
 
     this._pending.set(true);
     try {
-      const result = await this.removeAvatarUseCase.execute(userId);
-      if (result.isFailure()) return result.error.code;
+      const result = await this.avatars.removeAvatar(userId);
+      if (!result.ok) return AVATAR_REMOVE_FAILED;
       this.sessionIdentity.refreshAvatar();
       return null;
     } finally {

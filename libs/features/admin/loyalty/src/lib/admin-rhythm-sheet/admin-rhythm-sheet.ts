@@ -183,11 +183,16 @@ export class AdminRhythmSheet {
     () => {
       const lang = this.loadedLang();
       const rule = this.store.rule();
-      if (lang === null || rule === null) return null;
+      const days = this.store.days();
+      const zone = this.store.zone();
+      if (lang === null || rule === null || days === null || zone === null) {
+        return null;
+      }
       return {
         translate: (key, params) => this.transloco.translate(key, params, lang),
         lang,
-        today: this.store.days().today,
+        today: days.today,
+        zone,
         rule,
       };
     },

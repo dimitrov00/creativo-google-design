@@ -11,7 +11,6 @@ import type {
   PipelineError,
   RepositoryError,
   Result,
-  TimeZone,
   UserId,
   UtcEpochMs,
   WaitlistRequestId,
@@ -29,7 +28,7 @@ import type {
   ShopLocation,
   WaitlistRequest,
 } from '@core/entities';
-import type { CallableName } from './callables';
+import type { CallableName, CallableWire } from './callables';
 
 /**
  * The scheduling context's ports (blueprint §4.1, §4.2): the raw entity
@@ -253,15 +252,20 @@ export type Callable<In, Out> = (
 ) => Promise<Result<Out, PipelineError>>;
 
 /**
- * `callableClient` (§4.2) — the successor of the four duck-typed gateway
- * copies (`BookingGateway`, the waitlist, OTP and streak gateways): one
- * function that names a server export and returns its typed caller, with
- * ONE error translation (`translateFunctionsError`'s table) into
- * `PipelineError`. The name is read from the `Callables` registry
- * (`ports/callables.ts`), never a free string at the call site. The
- * implementation lives beside the web adapters in `libs/infrastructure/*`.
+ * `callableClient` (§4.2, Phase 4a 4A-4) — the successor of the four
+ * duck-typed gateway copies (`BookingGateway`, the waitlist, OTP and streak
+ * gateways): one function that names a server export and returns its
+ * caller, typed BY NAME through {@link CallableWire} (the request is the
+ * call component, the answer decoded by its call component's decoder —
+ * `CALLABLE_ANSWER_DECODERS`), with ONE error classification
+ * (`PipelineError.fromWire`). The name is read from the `Callables`
+ * registry (`ports/callables.ts`), never a free string at the call site.
+ * The implementation is `callableClientPorts(functions)` in
+ * `libs/infrastructure/firebase-app`.
  */
-export type CallableClient = <In, Out>(name: CallableName) => Callable<In, Out>;
+export type CallableClient = <N extends CallableName>(
+  name: N,
+) => Callable<CallableWire[N]['input'], CallableWire[N]['answer']>;
 
 // ── Server reads (the functions' pipelines) ───────────────────────────────
 
@@ -494,15 +498,6 @@ export type ServerSchedulingReadPorts = PolicyReadPorts &
   OpenWaitlistReadPorts &
   CapacityReadPorts &
   LeadTimeWritePorts;
-
-/**
- * The shop's clock a client recompute judges windows and the next visit on —
- * the tenant zone the composition root says in one place (`TENANT_ZONE`,
- * flatten-spec F-4); a value of configuration, not a read.
- */
-export type TenantZonePorts = {
-  readonly tenantTimeZone: TimeZone;
-};
 
 /** The client records in pages — the recompute and the backfill walk them. */
 export type ClientPagePorts = {

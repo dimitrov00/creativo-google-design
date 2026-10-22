@@ -1,11 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { deepFreeze } from '@core/testing';
-import {
-  GuestLabelSystem,
-  type RequestedSubjectInput,
-  RequestedSubjectRole,
-} from './guest-label.system';
+import { GuestLabelSystem } from './guest-label.system';
+
+import { RequestedSubjectRole, type BookingCall } from '@core/components';
 
 /*
  * The cases of `firstUnusedLabel — the one placeholder rule`
@@ -135,7 +133,7 @@ describe('personKeyOf — one key per person on the cart', () => {
   });
 
   it('is pure: same input → same output, inputs untouched', () => {
-    const subjects: readonly RequestedSubjectInput[] = deepFreeze([
+    const subjects: readonly BookingCall.SubjectInput[] = deepFreeze([
       guest('Гост 1', 'guest-1'),
       { requestedSubjectRole: RequestedSubjectRole.Self },
       guest(' Гост 1', 'guest-2'),

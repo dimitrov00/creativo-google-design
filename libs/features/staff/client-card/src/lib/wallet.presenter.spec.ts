@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   GiftVoucher,
+  GiftVoucherMeta,
   JournalEntry,
   LoyaltyAccount,
   StreakDefinition,
@@ -21,13 +22,14 @@ import {
 import {
   AdjustmentId,
   AppointmentId,
+  GiftVoucherId,
   type LocalDate,
   RewardId,
   ServiceId,
   TierId,
 } from '@core/primitives';
 import { StreakRuleSystem } from '@core/systems';
-import { localDate } from '@core/testing';
+import { cents, localDate } from '@core/testing';
 import type { ClientCardGrant } from './client-card.contracts';
 import type { LoyaltyFlags } from './loyalty.presenter';
 import {
@@ -49,13 +51,13 @@ import {
   GEORGI,
   GEORGI_GRANT,
   MARTIN,
+  SHOP_TIME_ZONE,
   TODAY,
-  type VoucherFixtureFields,
   achievementsDataOf,
   factMs,
+  fixtureVoucher,
   fixtureVouchers,
   georgiHistory,
-  giftVoucherOf,
   loyaltyCatalogWith,
   loyaltyOf,
   martinHistory,
@@ -64,9 +66,10 @@ import {
   rhythmHeadWith,
   statsOf,
   translatorOf,
-  voucherFixtureFields,
+  voucherExpiry,
   wordsOf,
 } from '../testing/client-card.fixtures';
+import { CardLoadState } from './client-pages.vm';
 
 /*
  * «ЛОЯЛНОСТ» AS A WALLET (client-card-revision-3 §2.2). Every model here
@@ -115,13 +118,10 @@ function vouchersOf(uid: string): readonly GiftVoucher[] {
 /** One more voucher of Георги's, from a document of his own with some fields changed. */
 function voucherWith(
   id: string,
-  fields: Partial<VoucherFixtureFields>,
+  fields: Partial<GiftVoucherMeta>,
 ): GiftVoucher {
-  return giftVoucherOf(id, {
-    ...must(
-      voucherFixtureFields().get('voucher-dev-georgi'),
-      'Георги’s voucher',
-    ),
+  return fixtureVoucher('voucher-dev-georgi', {
+    id: GiftVoucherId.of(id),
     ...fields,
   });
 }
@@ -149,7 +149,7 @@ function ruleWith(edit: (rule: StreakRule) => StreakRule): StreakDefinition {
 function walletInput(overrides: Partial<WalletInput> = {}): WalletInput {
   return {
     account: GEORGI_ACCOUNT,
-    catalog: { status: 'ready', data: CATALOG },
+    catalog: { cardLoadState: CardLoadState.Ready, data: CATALOG },
     flags: ALL_FLAGS,
     paused: false,
     usableGrants: [GEORGI_GRANT],
@@ -160,11 +160,12 @@ function walletInput(overrides: Partial<WalletInput> = {}): WalletInput {
     visitBarbers: new Map([['appt-dev-1', 'Иван']]),
     inChairToday: false,
     today: TODAY,
+    zone: SHOP_TIME_ZONE,
     words: WORDS,
     holder: 'Георги Петров',
     sinceDay: GEORGI_STATS.firstVisitLocalDate,
-    vouchers: { status: 'ready', data: vouchersOf(GEORGI) },
-    activity: { status: 'ready', data: journalOf('georgi') },
+    vouchers: { cardLoadState: CardLoadState.Ready, data: vouchersOf(GEORGI) },
+    activity: { cardLoadState: CardLoadState.Ready, data: journalOf('georgi') },
     rhythm: RHYTHM,
     online: true,
     isOwner: true,
@@ -187,8 +188,8 @@ function martinInput(overrides: Partial<WalletInput> = {}): WalletInput {
     inChairToday: true,
     holder: 'Мартин Илиев',
     sinceDay: MARTIN_STATS.firstVisitLocalDate,
-    vouchers: { status: 'ready', data: vouchersOf(MARTIN) },
-    activity: { status: 'ready', data: journalOf('martin') },
+    vouchers: { cardLoadState: CardLoadState.Ready, data: vouchersOf(MARTIN) },
+    activity: { cardLoadState: CardLoadState.Ready, data: journalOf('martin') },
     ...overrides,
   });
 }
@@ -402,7 +403,8 @@ describe('passVm', () => {
         'Карта за лоялност: Георги Петров, 358 точки за размяна, клиент от март 2025 г.',
     });
     expect(
-      passVm(walletInput({ catalog: { status: 'loading' } })).tier,
+      passVm(walletInput({ catalog: { cardLoadState: CardLoadState.Loading } }))
+        .tier,
     ).toBeNull();
     expect(passVm(walletInput({ catalog: null })).tier).toBeNull();
   });
@@ -468,12 +470,12 @@ describe('voucherVms', () => {
         accessibleName: `Ваучер за подарък: ${euro('25,00')} от ${euro('25,00')}`,
       },
     ]);
-    const untouched = voucherWith('voucher-new', { balanceMinorUnits: 5000 });
+    const untouched = voucherWith('voucher-new', { balanceCents: cents(5000) });
     expect(voucherVms([untouched], TODAY, WORDS)[0]).toMatchObject({
       balance: euro('50,00'),
       detail: 'до 31.12',
     });
-    const drawn = voucherWith('voucher-open', { expiresAt: null });
+    const drawn = voucherWith('voucher-open', voucherExpiry(null));
     expect(voucherVms([drawn], TODAY, WORDS)[0]).toMatchObject({
       detail: `от ${euro('50,00')}`,
       accessibleName: `Ваучер за подарък: ${euro('25,00')} от ${euro('50,00')}`,
@@ -486,9 +488,10 @@ describe('voucherVms', () => {
     expect(voucherVms(held, '2026-12-31', WORDS)).toHaveLength(1);
     expect(voucherVms(held, '2027-01-01', WORDS)).toEqual([]);
     // Next year's day names its year.
-    const next = voucherWith('voucher-next', {
-      expiresAt: { iso: '2027-01-31T23:59:59.999+02:00', zone: 'Europe/Sofia' },
-    });
+    const next = voucherWith(
+      'voucher-next',
+      voucherExpiry('2027-01-31T23:59:59.999+02:00'),
+    );
     expect(voucherVms([next], TODAY, WORDS)[0]).toMatchObject({
       detail: `от ${euro('50,00')} · до 31.01.2027 г.`,
       accessibleName: `Ваучер за подарък: ${euro('25,00')} от ${euro('50,00')}, важи до 31 януари 2027 г.`,
@@ -496,10 +499,11 @@ describe('voucherVms', () => {
   });
 
   it('puts the soonest to expire first, one that never expires last', () => {
-    const october = voucherWith('voucher-b', {
-      expiresAt: { iso: '2026-10-31T23:59:59.999+02:00', zone: 'Europe/Sofia' },
-    });
-    const open = voucherWith('voucher-a', { expiresAt: null });
+    const october = voucherWith(
+      'voucher-b',
+      voucherExpiry('2026-10-31T23:59:59.999+02:00'),
+    );
+    const open = voucherWith('voucher-a', voucherExpiry(null));
     expect(
       voucherVms([open, ...vouchersOf(GEORGI), october], TODAY, WORDS).map(
         (voucher) => voucher.voucherId,
@@ -737,18 +741,20 @@ describe('walletActions', () => {
   });
 
   it('draws «Награди» while its section stands: on its way, failed, or holding a reward', () => {
-    expect(ids({ catalog: { status: 'loading' } })).toContain('catalog');
-    expect(ids({ catalog: { status: 'failed' } })).toContain('catalog');
+    expect(
+      ids({ catalog: { cardLoadState: CardLoadState.Loading } }),
+    ).toContain('catalog');
+    expect(ids({ catalog: { cardLoadState: CardLoadState.Failed } })).toContain(
+      'catalog',
+    );
     expect(ids({ catalog: null })).not.toContain('catalog');
     const empty = loyaltyCatalogWith((catalog) => ({
       ...catalog,
       rewards: [],
     }));
-    expect(ids({ catalog: { status: 'ready', data: empty } })).toEqual([
-      'use',
-      'code',
-      'history',
-    ]);
+    expect(
+      ids({ catalog: { cardLoadState: CardLoadState.Ready, data: empty } }),
+    ).toEqual(['use', 'code', 'history']);
   });
 
   it('promotes one disc at most, and «Използвай» names a grant or counts them', () => {
@@ -1399,13 +1405,15 @@ describe('walletTierVm', () => {
       walletTierVm(walletInput({ flags: { ...ALL_FLAGS, tiers: false } })),
     ).toBeNull();
     expect(
-      walletTierVm(walletInput({ catalog: { status: 'loading' } })),
+      walletTierVm(
+        walletInput({ catalog: { cardLoadState: CardLoadState.Loading } }),
+      ),
     ).toBeNull();
     expect(
       walletTierVm(
         walletInput({
           catalog: {
-            status: 'ready',
+            cardLoadState: CardLoadState.Ready,
             data: loyaltyCatalogWith((catalog) => ({
               ...catalog,
               tiers: [],
@@ -1541,7 +1549,11 @@ describe('rewardTiles', () => {
       ),
     }));
     expect(
-      rewardTiles(walletInput({ catalog: { status: 'ready', data: catalog } })),
+      rewardTiles(
+        walletInput({
+          catalog: { cardLoadState: CardLoadState.Ready, data: catalog },
+        }),
+      ),
     ).toEqual([]);
   });
 
@@ -1550,7 +1562,9 @@ describe('rewardTiles', () => {
       rewardTiles(walletInput({ flags: { ...ALL_FLAGS, points: false } })),
     ).toEqual([]);
     expect(
-      rewardTiles(walletInput({ catalog: { status: 'loading' } })),
+      rewardTiles(
+        walletInput({ catalog: { cardLoadState: CardLoadState.Loading } }),
+      ),
     ).toEqual([]);
     expect(rewardTiles(walletInput({ catalog: null }))).toEqual([]);
   });
@@ -1568,7 +1582,7 @@ describe('walletVm', () => {
       'history',
     ]);
     expect(wallet.holdings).toEqual({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: walletHoldings(walletInput()),
     });
     // One voucher: the heading carries no detail — a bare count said
@@ -1576,11 +1590,11 @@ describe('walletVm', () => {
     expect(wallet.holdingsDetail).toBeNull();
     expect(wallet.rhythm).toEqual(walletRhythmVm(walletInput()));
     expect(wallet.tier).toEqual({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: walletTierVm(walletInput()),
     });
     expect(wallet.catalog).toEqual({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: {
         name: 'Награди за точки: 358 точки, стигат за 2 от 3 награди',
         tiles: rewardTiles(walletInput()),
@@ -1593,7 +1607,9 @@ describe('walletVm', () => {
     expect(WALLET_ACTIVITY_ROWS).toBe(5);
     const wallet = walletVm(walletInput());
     const groups =
-      wallet.activity?.status === 'ready' ? wallet.activity.data : [];
+      wallet.activity?.cardLoadState === CardLoadState.Ready
+        ? wallet.activity.data
+        : [];
     expect(
       groups.map((group) => [
         group.key,
@@ -1622,11 +1638,16 @@ describe('walletVm', () => {
   it('prints no net over a month the five rows cut', () => {
     const wallet = walletVm(
       walletInput({
-        activity: { status: 'ready', data: journalOf('georgi').slice(0, 7) },
+        activity: {
+          cardLoadState: CardLoadState.Ready,
+          data: journalOf('georgi').slice(0, 7),
+        },
       }),
     );
     const groups =
-      wallet.activity?.status === 'ready' ? wallet.activity.data : [];
+      wallet.activity?.cardLoadState === CardLoadState.Ready
+        ? wallet.activity.data
+        : [];
     // Seven rows are everything there is: six events, of which five show.
     expect(groups.map((group) => [group.key, group.net])).toEqual([
       ['2026-09', '+34 т.'],
@@ -1637,12 +1658,15 @@ describe('walletVm', () => {
     const cut = walletVm(
       walletInput({
         activity: {
-          status: 'ready',
+          cardLoadState: CardLoadState.Ready,
           data: journalOf('georgi').filter((row) => row.seq !== 34),
         },
       }),
     );
-    const shown = cut.activity?.status === 'ready' ? cut.activity.data : [];
+    const shown =
+      cut.activity?.cardLoadState === CardLoadState.Ready
+        ? cut.activity.data
+        : [];
     expect(shown.flatMap((group) => group.rows)).toHaveLength(5);
     expect(shown.at(-1)).toMatchObject({ key: '2026-05', net: '+17 т.' });
   });
@@ -1650,17 +1674,17 @@ describe('walletVm', () => {
   it('draws a section on its way as loading and a failed one as failed, each under its own heading', () => {
     const loading = walletVm(
       walletInput({
-        catalog: { status: 'loading' },
-        vouchers: { status: 'loading' },
-        activity: { status: 'loading' },
+        catalog: { cardLoadState: CardLoadState.Loading },
+        vouchers: { cardLoadState: CardLoadState.Loading },
+        activity: { cardLoadState: CardLoadState.Loading },
       }),
     );
     expect(loading).toMatchObject({
-      holdings: { status: 'loading' },
+      holdings: { cardLoadState: CardLoadState.Loading },
       holdingsDetail: null,
-      tier: { status: 'loading' },
-      catalog: { status: 'loading' },
-      activity: { status: 'loading' },
+      tier: { cardLoadState: CardLoadState.Loading },
+      catalog: { cardLoadState: CardLoadState.Loading },
+      activity: { cardLoadState: CardLoadState.Loading },
     });
     // The account is read: the pass and the rhythm draw at once.
     expect(loading.pass.figure).toBe('358');
@@ -1668,24 +1692,24 @@ describe('walletVm', () => {
 
     const failed = walletVm(
       walletInput({
-        catalog: { status: 'failed' },
-        vouchers: { status: 'failed' },
-        activity: { status: 'failed' },
+        catalog: { cardLoadState: CardLoadState.Failed },
+        vouchers: { cardLoadState: CardLoadState.Failed },
+        activity: { cardLoadState: CardLoadState.Failed },
       }),
     );
     expect(failed).toMatchObject({
-      holdings: { status: 'failed' },
+      holdings: { cardLoadState: CardLoadState.Failed },
       holdingsDetail: null,
-      tier: { status: 'failed' },
-      catalog: { status: 'failed' },
-      activity: { status: 'failed' },
+      tier: { cardLoadState: CardLoadState.Failed },
+      catalog: { cardLoadState: CardLoadState.Failed },
+      activity: { cardLoadState: CardLoadState.Failed },
     });
   });
 
   it('holds the tickets and the stamp cards alone while no reader answers for the vouchers', () => {
     const wallet = walletVm(walletInput({ vouchers: null, activity: null }));
     expect(wallet.holdings).toMatchObject({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: [{ kind: 'ticket' }, { kind: 'stamps' }],
     });
     expect(wallet.holdingsDetail).toBeNull();
@@ -1694,18 +1718,21 @@ describe('walletVm', () => {
 
   it('sums the vouchers beside the count once several are held: the one detail the heading carries', () => {
     const second = voucherWith('voucher-second', {
-      initialValueMinorUnits: 3000,
-      balanceMinorUnits: 3000,
-      expiresAt: null,
+      initialValueCents: cents(3000),
+      balanceCents: cents(3000),
+      ...voucherExpiry(null),
     });
     const wallet = walletVm(
       walletInput({
-        vouchers: { status: 'ready', data: [...vouchersOf(GEORGI), second] },
+        vouchers: {
+          cardLoadState: CardLoadState.Ready,
+          data: [...vouchersOf(GEORGI), second],
+        },
       }),
     );
     expect(wallet.holdingsDetail).toBe(`4 · ${euro('55,00')}`);
     expect(
-      wallet.holdings.status === 'ready'
+      wallet.holdings.cardLoadState === CardLoadState.Ready
         ? wallet.holdings.data.map((holding) => holding.kind)
         : [],
     ).toEqual(['voucher', 'voucher', 'ticket', 'stamps']);
@@ -1716,11 +1743,14 @@ describe('walletVm', () => {
       walletInput({
         account: account({ balance: 50, punchCards: [] }),
         usableGrants: [],
-        vouchers: { status: 'ready', data: [] },
-        activity: { status: 'ready', data: [] },
+        vouchers: { cardLoadState: CardLoadState.Ready, data: [] },
+        activity: { cardLoadState: CardLoadState.Ready, data: [] },
       }),
     );
-    expect(wallet.holdings).toEqual({ status: 'ready', data: [] });
+    expect(wallet.holdings).toEqual({
+      cardLoadState: CardLoadState.Ready,
+      data: [],
+    });
     expect(wallet.holdingsDetail).toBeNull();
     expect('activity' in wallet).toBe(false);
     expect(wallet.actions.map((action) => action.id)).toEqual([
@@ -1729,7 +1759,7 @@ describe('walletVm', () => {
       'history',
     ]);
     expect(wallet.catalog).toMatchObject({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: { name: 'Награди за точки: 50 точки, стигат за 0 от 3 награди' },
     });
   });
@@ -1759,7 +1789,7 @@ describe('walletVm', () => {
     });
     expect(off.actions.map((action) => action.id)).toEqual(['use', 'code']);
     expect(
-      off.holdings.status === 'ready'
+      off.holdings.cardLoadState === CardLoadState.Ready
         ? off.holdings.data.map((holding) => holding.kind)
         : [],
     ).toEqual(['voucher', 'ticket']);
@@ -1791,10 +1821,12 @@ describe('walletVm', () => {
       rewards: [],
     }));
     const wallet = walletVm(
-      walletInput({ catalog: { status: 'ready', data: empty } }),
+      walletInput({
+        catalog: { cardLoadState: CardLoadState.Ready, data: empty },
+      }),
     );
     expect('catalog' in wallet).toBe(false);
-    expect(wallet.tier?.status).toBe('ready');
+    expect(wallet.tier?.cardLoadState).toBe(CardLoadState.Ready);
   });
 
   it('keeps a paused wallet’s values, and takes its tickets and the verbs that write', () => {
@@ -1807,7 +1839,7 @@ describe('walletVm', () => {
     });
     expect(wallet.rhythm).toMatchObject({ figure: '24', frozen: true });
     expect(
-      wallet.holdings.status === 'ready'
+      wallet.holdings.cardLoadState === CardLoadState.Ready
         ? wallet.holdings.data.map((holding) => holding.kind)
         : [],
     ).toEqual(['voucher', 'stamps']);
@@ -1817,7 +1849,7 @@ describe('walletVm', () => {
       'history',
     ]);
     // History is never frozen.
-    expect(wallet.activity?.status).toBe('ready');
+    expect(wallet.activity?.cardLoadState).toBe(CardLoadState.Ready);
   });
 
   it('draws a companion’s own account without the tickets and the verbs of the visit', () => {
@@ -1833,7 +1865,7 @@ describe('walletVm', () => {
       'history',
     ]);
     expect(
-      wallet.holdings.status === 'ready'
+      wallet.holdings.cardLoadState === CardLoadState.Ready
         ? wallet.holdings.data.map((holding) => holding.kind)
         : [],
     ).toEqual(['voucher', 'stamps']);

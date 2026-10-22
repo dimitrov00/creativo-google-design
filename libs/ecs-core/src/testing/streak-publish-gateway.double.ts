@@ -12,13 +12,14 @@ import {
   publishStreakDefinition,
   withdrawStreakDefinition,
 } from '@core/pipelines';
-import type { StreakWorld } from './port-doubles';
+import { locationFixture } from './booking-core.fixtures';
 import {
-  FIXTURE_TIME_ZONE,
-  fixtureHash,
-  memoryTxPorts,
-  pinnedNowUtcMs,
-} from './test-support';
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
+  type StreakWorld,
+} from './port-doubles';
+import { fixtureHash, memoryTxPorts, pinnedNowUtcMs } from './test-support';
 
 /** The admin who sends every call the double carries — the dev shop's owner. */
 export const GATEWAY_ADMIN: UserId = UserId.of('dev-staff-ivan');
@@ -45,7 +46,8 @@ export type StreakPublishGatewayOptions = {
  * `withdrawStreakDefinition` of `@core/pipelines` (the callable's own
  * decision order: the page's specs exercise what the server decides), on
  * the in-memory commit over the world's store (`memoryTxPorts`, the
- * fixtures' hash), the tenant's zone and the flag the policy names. A THIN
+ * fixtures' hash), the fixture shop as the default location (its zone the
+ * shop day's, F-4) and the flag the policy names. A THIN
  * closure: it translates a `StreakPublishCall` into the command an admin's
  * request decodes to — the rule as the draft, its own day as the day asked
  * — and the pipeline's answer back, then tells the head streams the store
@@ -75,7 +77,10 @@ export function memoryStreakPublishGatewayPorts(
     hash: tx.hash,
     flagOn: (key) =>
       key === FlagName.LoyaltySelfView && policy.clientsSeeRhythm,
-    tenantTimeZone: FIXTURE_TIME_ZONE,
+    ...memoryLocationLoadPorts(
+      memoryProgramsWorld({ locations: [locationFixture()] }),
+    ),
+    ...memoryDefaultLocationPorts(),
   };
   const caller = {
     callerUserId: GATEWAY_ADMIN,

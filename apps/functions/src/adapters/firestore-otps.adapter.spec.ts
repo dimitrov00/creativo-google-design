@@ -30,7 +30,7 @@ const asDb = (fake: { readonly db: unknown }) =>
   fake.db as unknown as Firestore;
 
 describe('firestoreOtpPorts', () => {
-  it('saves and reads back an OTP — the flat body, plus purgeAt = expiresAtUtcMs + 24 h', async () => {
+  it('saves an OTP — the flat body, plus purgeAt = expiresAtUtcMs + 24 h', async () => {
     const fake = createProjectionFirestore();
     const ports = firestoreOtpPorts(asDb(fake));
     const otp = otpFixture({ destination: DESTINATION });
@@ -39,15 +39,8 @@ describe('firestoreOtpPorts', () => {
       ...bodyOf(otp),
       purgeAt: Timestamp.fromMillis(otp.expiresAtUtcMs + 86_400_000),
     });
-    const read = await ports.loadOtp(OtpId.of('otp-1'));
-    expect(read.ok && read.value).toMatchObject(otp);
-  });
-
-  it('returns null for a missing OTP', async () => {
-    const result = await firestoreOtpPorts(
-      asDb(createProjectionFirestore()),
-    ).loadOtp(OtpId.of('nope'));
-    expect(result).toEqual({ ok: true, value: null });
+    // dead: the read-back through `loadOtp` and «returns null for a missing
+    // OTP» — Phase 4a 4A-14: `loadOtp` had no caller; the member is gone.
   });
 
   it('finds a recent unconsumed OTP for rate limiting — by destination, unconsumed, created at or after the window start', async () => {
@@ -107,10 +100,6 @@ describe('firestoreOtpPorts', () => {
     const ports = firestoreOtpPorts(throwing);
     const probe = await ports.loadOpenOtps(DESTINATION, minus(60_000));
     expect(!probe.ok && probe.error.errorCode).toBe(
-      RepositoryErrorCode.ReadFailed,
-    );
-    const read = await ports.loadOtp(OtpId.of('otp-1'));
-    expect(!read.ok && read.error.errorCode).toBe(
       RepositoryErrorCode.ReadFailed,
     );
     const saved = await ports.saveOtp(otpFixture());

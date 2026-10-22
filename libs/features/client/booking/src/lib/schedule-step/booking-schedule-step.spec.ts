@@ -1,34 +1,11 @@
-import { EnvironmentProviders, Injectable } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import {
-  Translation,
-  TranslocoLoader,
-  provideTransloco,
-} from '@jsverse/transloco';
-import { NEVER, Observable, of } from 'rxjs';
+import type { Translation } from '@jsverse/transloco';
+import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  ANONYMOUS_PRINCIPAL,
-  AUTH_GATEWAY,
-} from '@creativo/application/identity';
-import { AVATAR_UPLOADER } from '@creativo/application/accounts';
-import { MEDIA_READER } from '@creativo/application/catalog';
-import {
-  BOOKING_DRAFT_STORE,
-  BOOKING_GATEWAY,
-  WAITLIST_GATEWAY,
-  ZonedDateTime,
-  ok,
-} from '@creativo/application/booking';
-import { CLOCK } from '@creativo/application/shared';
-import { SessionStorageDraftStore } from '@creativo/infrastructure/web-storage';
-import {
-  APPOINTMENT_READ_PORTS,
   CATALOG_PORTS,
-  PROFILE_PORTS,
   SCHEDULING_READ_PORTS,
-  WAITLIST_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import type { CatalogReadPorts } from '@core/ports';
 import type {
@@ -51,17 +28,19 @@ import {
 import {
   at,
   barberFixture,
+  localDate,
   locationFixture,
-  memoryAppointmentReadPorts,
   memoryCatalogReadPorts,
-  memoryProfilePorts,
   memorySchedulingReadPorts,
-  memoryWaitlistReadPorts,
   serviceFixture,
   termsFixture,
   unwrapOk,
   until,
 } from '@core/testing';
+import {
+  bookingPortProviders,
+  provideBookingTestI18n,
+} from '../../testing/booking-shell.rig';
 import { BookingFlowStore } from '../booking-flow.store';
 import { ClientBooking } from '../client-booking/client-booking';
 
@@ -82,25 +61,6 @@ const COPY: Translation = {
     },
   },
 };
-
-@Injectable()
-class TestTranslationLoader implements TranslocoLoader {
-  getTranslation(): Observable<Translation> {
-    return of(COPY);
-  }
-}
-
-function provideTestI18n(): EnvironmentProviders[] {
-  return provideTransloco({
-    config: {
-      availableLangs: ['bg', 'en'],
-      defaultLang: 'bg',
-      fallbackLang: 'bg',
-      missingHandler: { logMissingKey: false },
-    },
-    loader: TestTranslationLoader,
-  });
-}
 
 function service(id: string, locationIds: readonly string[] = []): Service {
   return serviceFixture({
@@ -242,15 +202,8 @@ async function renderShell(
     imports: [ClientBooking],
     providers: [
       provideRouter([]),
-      ...provideTestI18n(),
-      { provide: BOOKING_DRAFT_STORE, useClass: SessionStorageDraftStore },
-      {
-        provide: CLOCK,
-        useValue: {
-          now: (zone: string) =>
-            ZonedDateTime.fromISO('2026-08-03T09:00:00.000+03:00', zone),
-        },
-      },
+      ...provideBookingTestI18n(COPY),
+      ...bookingPortProviders(),
       {
         // No roster, the default policy, and the projection's months.
         provide: SCHEDULING_READ_PORTS,
@@ -260,49 +213,6 @@ async function renderShell(
             options.capacityReads?.push(month);
             return scheduling.observeCapacityMonth(month);
           },
-        },
-      },
-      {
-        provide: BOOKING_GATEWAY,
-        useValue: {
-          commit: () => Promise.reject(new Error('not used in this spec')),
-        },
-      },
-      {
-        // `?repeat=` reads the visit it is repeating; the shell injects the
-        // reads whether or not a spec exercises that path.
-        provide: APPOINTMENT_READ_PORTS,
-        useValue: memoryAppointmentReadPorts([]),
-      },
-      {
-        // The deep-link read — never consulted without a ?waitlist param.
-        provide: WAITLIST_READ_PORTS,
-        useValue: memoryWaitlistReadPorts([]),
-      },
-      {
-        provide: WAITLIST_GATEWAY,
-        useValue: {
-          request: () => Promise.reject(new Error('not used in this spec')),
-          cancel: () => Promise.reject(new Error('not used in this spec')),
-        },
-      },
-      {
-        provide: AUTH_GATEWAY,
-        useValue: {
-          observePrincipal: () => of(ANONYMOUS_PRINCIPAL),
-          refreshToken: () => Promise.resolve(ok(undefined)),
-          signOut: () => Promise.resolve(ok(undefined)),
-          currentDisplayName: () => null,
-          currentIdentifier: () => null,
-        },
-      },
-      { provide: PROFILE_PORTS, useValue: memoryProfilePorts(new Map()) },
-      {
-        provide: AVATAR_UPLOADER,
-        useValue: {
-          upload: () => Promise.resolve(ok({ url: 'x', path: 'x' })),
-          find: () => Promise.resolve(ok(null)),
-          remove: () => Promise.resolve(ok(undefined)),
         },
       },
       {
@@ -320,10 +230,6 @@ async function renderShell(
               ? { observeLocations: () => of(unavailable) }
               : {}),
         } satisfies CatalogReadPorts,
-      },
-      {
-        provide: MEDIA_READER,
-        useValue: { resolve: () => Promise.resolve(ok([])) },
       },
     ],
   }).compileComponents();
@@ -595,7 +501,7 @@ describe('BookingScheduleStep — a shop that cannot serve the visit', () => {
       shopId: 'loc-mladost',
     });
     // A day already chosen (a draft, a deep link) opens nothing either.
-    store(fixture).selectDay('2026-08-04', 'Europe/Sofia');
+    store(fixture).selectDay(localDate('2026-08-04'));
     fixture.detectChanges();
 
     const pick = host(fixture).querySelector<HTMLButtonElement>(
@@ -631,7 +537,7 @@ describe('BookingScheduleStep — a shop that cannot serve the visit', () => {
     button?.click();
     await settle(fixture);
 
-    expect(store(fixture).shopId()).toBe('loc-center');
+    expect(store(fixture).locationId()).toBe('loc-center');
     expect(notice(fixture)).toBeNull();
     expect(
       host(fixture).querySelector<HTMLButtonElement>(

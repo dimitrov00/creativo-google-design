@@ -62,6 +62,7 @@ import {
   customerOf,
   FIXTURE_IDS,
   FIXTURE_TIME_ZONE,
+  locationFixture,
   recordingTelemetry,
   seatFixture,
   sequentialIds,
@@ -70,6 +71,7 @@ import {
 } from '@core/testing';
 import { sha256Hex } from '../adapters/crypto.adapter';
 import { firestoreAuditPorts } from '../adapters/firestore-audit.adapter';
+import { firestoreCatalogPorts } from '../adapters/firestore-catalog.adapter';
 import { firestoreClientStatsPorts } from '../adapters/firestore-client-stats.adapter';
 import { firestoreJobPorts } from '../adapters/firestore-jobs.adapter';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
@@ -299,6 +301,12 @@ describe('client stats projection (emulator)', () => {
       .collection(Collections.Users)
       .doc(SYSADMIN)
       .set({ roles: ['sysadmin'] });
+    // The default location: the shop whose zone the projection's days are
+    // read on (4A-11 — no tenant zone).
+    await db
+      .collection(Collections.Locations)
+      .doc(FIXTURE_IDS.location)
+      .set(bodyOf(locationFixture()));
   });
 
   /** The ports the composition root wires, at a pinned clock and a live window. */
@@ -312,7 +320,8 @@ describe('client stats projection (emulator)', () => {
       nowUtcMs: () => clockUtcMs,
       nextId: sequentialIds('0'),
       hash: sha256Hex,
-      tenantTimeZone: FIXTURE_TIME_ZONE,
+      ...firestoreCatalogPorts(db),
+      defaultLocationId: FIXTURE_IDS.location,
       ...telemetry,
       loadPolicy,
       ...firestoreClientStatsPorts(db),

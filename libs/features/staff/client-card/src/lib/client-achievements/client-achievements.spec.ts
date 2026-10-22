@@ -7,13 +7,13 @@ import { PersonalRecordKind } from '@core/components';
 import type { LoyaltyAccountReadPorts, LoyaltyCatalog } from '@core/ports';
 import { BadgeSeriesId, RepositoryError, Result } from '@core/primitives';
 import { loyaltyCatalogFixture, localDate } from '@core/testing';
-import type { AchievementScope } from '../client-card.contracts';
+import { AchievementScope } from '../client-card.contracts';
 import { ClientCardStore } from '../client-card.store';
 import {
   GEORGI,
   GEORGI_LOYALTY,
   MARTIN,
-  at,
+  sofia,
   catalogPortsOf,
   georgiContext,
   loyaltyPortsOf,
@@ -419,7 +419,10 @@ describe('ClientAchievementsPage — the band (AC) and what it filters', () => {
     await render();
     byId('achievements-season-season-2026-autumn')?.click();
     expect(scopes).toEqual([
-      { kind: 'season', seasonId: 'season-2026-autumn' },
+      {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'season-2026-autumn',
+      },
     ]);
   });
 
@@ -786,9 +789,15 @@ describe('ClientAchievementsPage — the overview (AF–AM, AJ)', () => {
     byId('achievements-event-event-2026-beard-week')?.click();
     byId('achievements-archive')?.click();
     expect(scopes).toEqual([
-      { kind: 'season', seasonId: 'season-2026-autumn' },
-      { kind: 'season', seasonId: 'event-2026-beard-week' },
-      { kind: 'archive' },
+      {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'season-2026-autumn',
+      },
+      {
+        achievementScope: AchievementScope.Season,
+        seasonId: 'event-2026-beard-week',
+      },
+      { achievementScope: AchievementScope.Archive },
     ]);
   });
 
@@ -1093,7 +1102,7 @@ describe('ClientAchievementsPage — states (§2.3.5)', () => {
 
   it('draws no season card and no events once every window has closed; the archive counts them', async () => {
     const { byId, text } = await mount({
-      rig: { nowMs: at('2027-01-15T12:00:00').toMillis() },
+      rig: { nowMs: sofia('2027-01-15T12:00:00') },
     });
     expect(byId('achievements-season')).toBeNull();
     expect(byId('achievements-events')).toBeNull();

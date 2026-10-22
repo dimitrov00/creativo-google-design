@@ -8,8 +8,6 @@ import {
 } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import { profileCompletion } from '@creativo/application/accounts';
-import { CLOCK } from '@creativo/application/shared';
 import {
   AccountStateService,
   ageDayOf,
@@ -17,11 +15,12 @@ import {
 } from '@creativo/features/client/account-state';
 import { BirthDate } from '@core/components';
 import { Profile, type User } from '@core/entities';
-import { AgeSystem, PhoneSystem } from '@core/systems';
+import { AgeSystem, PhoneSystem, ProfileCompletionSystem } from '@core/systems';
 import {
   SessionIdentityService,
   SiteHeaderComponent,
 } from '@creativo/features/shared/shell';
+import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
 import { translateDomainError } from '@creativo/infrastructure/i18n';
 import {
   UiAvatar,
@@ -64,10 +63,10 @@ type ProfileEdit = { readonly kind: 'name' } | { readonly kind: 'birthday' };
  * body switches on what is being edited, with the close chip as cancel and
  * a docked action bar carrying Save — HIG's "self-contained subtask".
  *
- * Phone and email render as inert rows: changing either needs the two-step
- * `CONTACT_CHANGE_PORT` OTP flow, which has a port and a confirm use case
- * but no request use case yet. They carry no chevron and no interactive
- * grammar, so the screen never promises an affordance it can't honor.
+ * Phone and email render as inert rows: changing either is not offered —
+ * contact change is not shipped (D12(b)), so there is no flow behind them.
+ * They carry no chevron and no interactive grammar, so the screen never
+ * promises an affordance it can't honor.
  */
 @Component({
   selector: 'lib-client-profile',
@@ -119,10 +118,10 @@ export class ClientProfile {
 
   /**
    * The day the birth-date window is judged on — the UTC civil date, taken
-   * once from the CLOCK port (the store's write and the server's check
-   * judge the same day).
+   * once from the clock port (the server's `updateProfile` check judges the
+   * same day).
    */
-  private readonly ageDay = ageDayOf(inject(CLOCK));
+  private readonly ageDay = ageDayOf(inject(CLOCK_PORTS));
 
   /* ── Portrait ─────────────────────────────────────────────────────── */
 
@@ -217,7 +216,7 @@ export class ClientProfile {
       return first.trim() !== user.firstName || last.trim() !== user.lastName;
     }
     const parts = this.birthDraft();
-    if (!parts || !this.ageDay) return false;
+    if (!parts) return false;
     const result = AgeSystem.fromParts(parts, this.ageDay);
     if (!result.ok) return false;
     return result.value !== user.birthDate;
@@ -296,7 +295,7 @@ export class ClientProfile {
   }
 
   protected onBirthBlur(event: UiDateFieldBlurEvent): void {
-    if (event.kind !== 'complete' || !this.ageDay) {
+    if (event.kind !== 'complete') {
       // An empty field is the untouched state, not an error; a partial one
       // is mid-typing. Neither deserves a red line.
       this.birthErrorCode.set(null);
@@ -327,7 +326,7 @@ export class ClientProfile {
       );
     } else {
       const parts = this.birthDraft();
-      if (!parts || !this.ageDay) return;
+      if (!parts) return;
       const birthDate = AgeSystem.fromParts(parts, this.ageDay);
       if (!birthDate.ok) {
         this.birthErrorCode.set(birthDate.error.errorCode);
@@ -381,7 +380,8 @@ export class ClientProfile {
   protected readonly isComplete = computed(() => {
     const user = this.account();
     if (!user) return false;
-    return profileCompletion(user, this.portraitUrl() !== null).complete;
+    return ProfileCompletionSystem.completion(user, this.portraitUrl() !== null)
+      .complete;
   });
 }
 

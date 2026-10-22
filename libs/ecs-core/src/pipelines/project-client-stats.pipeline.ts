@@ -27,11 +27,12 @@ import {
 import type {
   ClockPorts,
   CommitPorts,
+  DefaultLocationPorts,
+  LocationLoadPorts,
   LogPorts,
   PolicyReadPorts,
   QuerySpec,
   ReadTx,
-  TenantZonePorts,
 } from '@core/ports';
 import {
   type AttemptFailure,
@@ -47,6 +48,7 @@ import {
   TriggerAttemptSystem,
   ZonedTimeSystem,
 } from '@core/systems';
+import { readShopZone } from './shop-zone-read.pipeline';
 
 /**
  * `projectClientStats` — `clientStats/{customerId}` and its
@@ -87,17 +89,17 @@ export type ClientStatsProjection = {
 };
 
 /**
- * The ports one client's recompute reads. `tenantTimeZone` is the shop's
- * clock the windows and the next visit are judged on — the tenant zone the
- * composition root says in one place (`TENANT_ZONE`, flatten-spec F-4); a
- * value of configuration, not a read.
+ * The ports one client's recompute reads. The shop's clock the windows and
+ * the next visit are judged on is the caller's: each walk resolves the
+ * default location's zone ONCE (Law 7.2, F-4 — no stats record names a
+ * shop) and hands it to every client's recompute.
  */
-export type ClientStatsRecomputePorts = CommitPorts &
-  ClockPorts &
-  TenantZonePorts;
+export type ClientStatsRecomputePorts = CommitPorts & ClockPorts;
 
 export type ProjectClientStatsPorts = ClientStatsRecomputePorts &
   PolicyReadPorts &
+  LocationLoadPorts &
+  DefaultLocationPorts &
   LogPorts;
 
 /** How one client's recompute ended — the ONLY source of these strings, the field `statsOutcome`. */
@@ -272,16 +274,17 @@ export function decideClientStats(
 }
 
 /**
- * ONE client's recompute, in its own transaction — the policy is the
- * caller's (read once per call, never per client), `pass` the policy pass
- * doing it (`null` for every other writer, which carries the stored stamp
- * forward). An infrastructure failure rejects.
+ * ONE client's recompute, in its own transaction — the policy and the shop's
+ * zone are the caller's (read once per call, never per client), `pass` the
+ * policy pass doing it (`null` for every other writer, which carries the
+ * stored stamp forward). An infrastructure failure rejects.
  */
 export async function recomputeClientStats(
   ports: ClientStatsRecomputePorts,
   policy: ClientStatsPolicy,
   customerId: CustomerId,
   pass: PolicyPass | null,
+  timeZone: TimeZone,
 ): Promise<Result<ClientStatsOutcome, RepositoryError>> {
   const clockUtcMs = ports.nowUtcMs();
   const committed = await ports.commit(
@@ -302,7 +305,7 @@ export async function recomputeClientStats(
           policy,
           pass,
           clockUtcMs,
-          ports.tenantTimeZone,
+          timeZone,
         ),
       ),
   );
@@ -357,7 +360,8 @@ export function decisiveAttemptFailure(
 /**
  * Recompute each of `customerIds` ON ITS OWN, `width` at a time (1 for the
  * people of one party, who share the appointment's rows and would only
- * contend), and report what was written and what failed.
+ * contend), on the shop's clock `timeZone`, and report what was written and
+ * what failed.
  */
 export async function recomputeClients(
   ports: ClientStatsRecomputePorts,
@@ -365,6 +369,7 @@ export async function recomputeClients(
   customerIds: readonly CustomerId[],
   pass: PolicyPass | null,
   width: number,
+  timeZone: TimeZone,
 ): Promise<ClientStatsProjection> {
   const failures: unknown[] = [];
   let written = 0;
@@ -378,6 +383,7 @@ export async function recomputeClients(
             policy,
             customerId,
             pass,
+            timeZone,
           );
           if (!outcome.ok) failures.push(outcome.error);
           return outcome.ok ? outcome.value : null;
@@ -406,9 +412,14 @@ export const projectClientStats =
     if (cmd.customerIds.length === 0) {
       return Result.ok({ written: 0, failures: [], attemptFailure: null });
     }
-    // The policy is every client's: read once, outside every transaction.
+    // The policy and the shop's clock are every client's: read once,
+    // outside every transaction — a stats record names no shop, so the clock
+    // is the default location's (F-4); a zone that cannot be read is the
+    // store failure the edge already answers (4A-2 (e)).
     const policy = await ports.loadPolicy();
     if (!policy.ok) return policy;
+    const zone = await readShopZone(ports)(null);
+    if (!zone.ok) return zone;
     return Result.ok(
       await recomputeClients(
         ports,
@@ -416,6 +427,7 @@ export const projectClientStats =
         cmd.customerIds,
         null,
         1,
+        zone.value,
       ),
     );
   };

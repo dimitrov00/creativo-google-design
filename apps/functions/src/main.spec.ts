@@ -18,6 +18,7 @@ const seam = vi.hoisted(() => {
     'completeRegistration',
     'continuePolicyRecompute',
     'editAppointment',
+    'endImpersonation',
     'markArrival',
     'matchWaitlist',
     'projectClientStats',
@@ -25,11 +26,13 @@ const seam = vi.hoisted(() => {
     'rebuildBusy',
     'rebuildCapacity',
     'recordSeatTip',
+    'redeemInvitation',
     'requestOtp',
     'requestWaitlist',
     'rescheduleAppointment',
     'runBackfill',
     'sampleLeadTime',
+    'startImpersonation',
     'startPolicyRecompute',
     'sweepPolicyRecompute',
     'transitionAppointment',
@@ -129,6 +132,7 @@ const written = (document: string, retry: boolean) => ({
   },
 });
 
+/** A schedule on the cron's clock (`CRON_TIME_ZONE`, `onSchedule` only — 4A-11). */
 const daily = (schedule: string) => ({
   ...PLATFORM,
   scheduleTrigger: {
@@ -145,7 +149,9 @@ const daily = (schedule: string) => ({
  * pinned the same, now that flip 2 deleted their handlers, and
  * `updateProfile` (flip 2's new callable) declares no option either; the
  * streak publish's plain `onCall` stays as its Phase 3a row declared it
- * (flip 3). A literal: what `firebase deploy` reads, so a changed path,
+ * (flip 3); Phase 4a's three new callables (`startImpersonation`,
+ * `endImpersonation`, `redeemInvitation`, 4A-3 (4), (5)) declare no option
+ * either. A literal: what `firebase deploy` reads, so a changed path,
  * retry flag, timeout, memory or schedule fails here.
  */
 const ENDPOINTS = {
@@ -203,6 +209,9 @@ const ENDPOINTS = {
   sweepClientStatsPolicyDaily: daily('every day 03:30'),
   runBackfill: { ...callable, availableMemoryMb: 512, timeoutSeconds: 540 },
   publishStreakDefinition: callable,
+  startImpersonation: callable,
+  endImpersonation: callable,
+  redeemInvitation: callable,
 } as const;
 
 type ExportName = keyof typeof ENDPOINTS;
@@ -243,14 +252,13 @@ const STAFF = { uid: 'u-staff', roles: ['barber'] } as const;
 const SYSADMIN = { uid: 'u-admin', roles: ['sysadmin'] } as const;
 const OWNER = { uid: 'u-owner', roles: ['barber', 'admin'] } as const;
 
-/** §4.4's request, as the admin page sends it — the draft's body is the pipeline's to judge. */
+/** The call component, as the admin page sends it — the rule's body is the pipeline's to judge. */
 const STREAK_PUBLISH = {
   requestId: 'intent-000000000001',
   streakId: 'cadence',
   baseVersion: 1,
-  draft: {},
-  effectiveFrom: '2026-10-05',
-  transition: 'grandfather',
+  rule: { effectiveFromLocalDate: '2026-10-05' },
+  streakTransition: 'GRANDFATHER',
   previewHash: null,
 } as const;
 
@@ -297,27 +305,24 @@ const FLIPPED: { readonly [name: string]: Case } = {
   // ── flip 2: identity ──
   requestOtpChallenge: {
     pipeline: 'requestOtp',
-    input: request(
-      { channelKey: 'email:a@b.com', kind: 'email', value: 'a@b.com' },
-      null,
-    ),
+    input: request({ identifierChannel: 'EMAIL', identifier: 'a@b.com' }, null),
     command: { otpDestinationType: 'EMAIL', rawDestination: 'a@b.com' },
     answer: ok({ otpId: 'otp-1', rawCode: '123456' }),
-    expected: { challengeId: 'otp-1' },
+    expected: { challengeId: 'otp-1', devCode: null },
   },
   verifyOtpChallenge: {
     pipeline: 'verifyOtp',
     input: request({ challengeId: 'otp-1', code: '123456' }, null),
     command: { otpId: 'otp-1', code: '123456' },
     answer: ok({ customToken: 'token-1', sessionKind: 'NEW' }),
-    expected: { sessionKind: 'new', customToken: 'token-1' },
+    expected: { sessionKind: 'NEW', customToken: 'token-1' },
   },
   completeRegistration: {
     pipeline: 'completeRegistration',
     input: request(
       {
-        kind: 'phone',
-        value: '+359888123456',
+        identifierChannel: 'PHONE',
+        identifier: '+359888123456',
         fields: { firstName: 'Ada', lastName: 'Lovelace' },
       },
       CLIENT,
@@ -351,10 +356,10 @@ const FLIPPED: { readonly [name: string]: Case } = {
       streakRuleDirection: 'LOOSER',
     }),
     expected: {
-      kind: 'published',
+      streakPublishOutcome: 'PUBLISHED',
       version: 2,
-      effectiveFrom: '2026-10-05',
-      direction: 'looser',
+      effectiveFromLocalDate: '2026-10-05',
+      streakRuleDirection: 'LOOSER',
     },
   },
   updateProfile: {
@@ -370,9 +375,22 @@ const FLIPPED: { readonly [name: string]: Case } = {
   // ── flip 1: booking core ──
   commitBooking: {
     pipeline: 'bookAppointment',
-    input: request({ locationId: 'loc-1', seats: [] }, CLIENT),
+    input: request(
+      {
+        locationId: 'loc-1',
+        localDate: '2026-10-12',
+        seats: [],
+        attemptId: null,
+        contact: null,
+        bookedFromAppointmentId: null,
+        placement: 'SELF',
+        onBehalfOfUserId: null,
+      },
+      CLIENT,
+    ),
     command: {
       locationId: 'loc-1',
+      localDate: '2026-10-12',
       ownerUserId: 'u-client',
       staffPlacement: false,
     },
@@ -381,7 +399,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
   },
   cancelAppointment: {
     pipeline: 'cancelAppointment',
-    input: request({ appointmentId: 'a-1' }, CLIENT),
+    input: request({ appointmentId: 'a-1', reason: 'UNSPECIFIED' }, CLIENT),
     command: {
       appointmentId: 'a-1',
       callerUserId: 'u-client',
@@ -393,23 +411,39 @@ const FLIPPED: { readonly [name: string]: Case } = {
   rescheduleAppointment: {
     pipeline: 'rescheduleAppointment',
     input: request(
-      { appointmentId: 'a-1', locationId: 'loc-1', seats: [] },
+      {
+        appointmentId: 'a-1',
+        locationId: 'loc-1',
+        localDate: '2026-10-12',
+        seats: [],
+        attemptId: null,
+      },
       CLIENT,
     ),
     command: {
       appointmentId: 'a-1',
       callerUserId: 'u-client',
       locationId: 'loc-1',
+      localDate: '2026-10-12',
     },
     answer: ok({ appointmentId: 'a-1', revision: 2, replayed: false }),
     expected: { appointmentId: 'a-1' },
   },
   transitionAppointment: {
     pipeline: 'transitionAppointment',
-    input: request({ appointmentId: 'a-1', to: 'completed' }, STAFF),
+    input: request(
+      {
+        appointmentId: 'a-1',
+        toBookingStatus: 'COMPLETED',
+        cancellationReason: null,
+        note: null,
+        seatId: null,
+      },
+      STAFF,
+    ),
     command: { appointmentId: 'a-1', to: 'COMPLETED', seatId: null },
     answer: ok({ appointmentId: 'a-1', to: 'COMPLETED' }),
-    expected: { appointmentId: 'a-1', to: 'completed' },
+    expected: { appointmentId: 'a-1', toBookingStatus: 'COMPLETED' },
   },
   markArrived: {
     pipeline: 'markArrival',
@@ -428,7 +462,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
   recordSeatTip: {
     pipeline: 'recordSeatTip',
     input: request(
-      { appointmentId: 'a-1', seatId: 's-1', amountMinorUnits: 500 },
+      { appointmentId: 'a-1', seatId: 's-1', amountCents: 500 },
       STAFF,
     ),
     command: { appointmentId: 'a-1', seatId: 's-1', tipCents: 500 },
@@ -440,7 +474,17 @@ const FLIPPED: { readonly [name: string]: Case } = {
     input: request(
       {
         appointmentId: 'a-1',
-        command: { kind: 'move', startIso: '2026-10-12T10:00:00.000+03:00' },
+        commands: [
+          {
+            editCommand: 'MOVE',
+            localDate: '2026-10-12',
+            startMinutes: 600,
+            seatIds: null,
+          },
+        ],
+        acknowledgedOverlap: false,
+        expectedVersion: null,
+        operationId: null,
       },
       STAFF,
     ),
@@ -455,7 +499,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
   rebuildBusyOnAppointmentChange: {
     pipeline: 'rebuildBusy',
     input: writeEvent({ appointmentId: 'a-1' }),
-    command: { before: null, after: null, timeZone: 'Europe/Sofia' },
+    command: { before: null, after: null },
     answer: ok({ written: 0 }),
     expected: undefined,
   },
@@ -491,38 +535,45 @@ const FLIPPED: { readonly [name: string]: Case } = {
   rebuildCapacityOnLocationChange: {
     pipeline: 'rebuildCapacity',
     input: writeEvent({ locationId: 'loc-1' }),
-    command: { capacityTrigger: 'SWEEP', timeZone: 'Europe/Sofia' },
+    command: { capacityTrigger: 'SWEEP' },
     answer: ok({ written: 0 }),
     expected: undefined,
   },
   rebuildCapacityOnSettingsChange: {
     pipeline: 'rebuildCapacity',
     input: writeEvent({ docId: 'bookingPolicy' }),
-    command: { capacityTrigger: 'SWEEP', timeZone: 'Europe/Sofia' },
+    command: { capacityTrigger: 'SWEEP' },
     answer: ok({ written: 0 }),
     expected: undefined,
   },
   sweepCapacityDaily: {
     pipeline: 'rebuildCapacity',
     input: tick,
-    command: { capacityTrigger: 'SWEEP', timeZone: 'Europe/Sofia' },
+    command: { capacityTrigger: 'SWEEP' },
     answer: ok({ written: 0 }),
     expected: undefined,
   },
   sampleBarberLeadTimeDaily: {
     pipeline: 'sampleLeadTime',
     input: tick,
-    command: { timeZone: 'Europe/Sofia' },
+    command: undefined,
     answer: ok({ written: 0 }),
     expected: undefined,
   },
   requestWaitlist: {
     pipeline: 'requestWaitlist',
     input: request(
-      { locationId: 'loc-1', when: { days: [] }, cart: {} },
+      {
+        locationId: 'loc-1',
+        days: [],
+        cart: { cartSeats: [], cartNextSequence: 0 },
+      },
       CLIENT,
     ),
-    command: { ownerUserId: 'u-client', timeZone: 'Europe/Sofia' },
+    command: {
+      ownerUserId: 'u-client',
+      ask: { locationId: 'loc-1', days: [] },
+    },
     answer: ok({ requestId: 'wl-1' }),
     expected: { requestId: 'wl-1' },
   },
@@ -536,7 +587,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
   matchWaitlistOnBusyChange: {
     pipeline: 'matchWaitlist',
     input: writeEvent({ docId: 'b-1__2026-10-12' }),
-    command: { localDate: '2026-10-12', timeZone: 'Europe/Sofia' },
+    command: { localDate: '2026-10-12' },
     answer: ok({ notified: 0 }),
     expected: undefined,
   },
@@ -570,7 +621,10 @@ const FLIPPED: { readonly [name: string]: Case } = {
   },
   runBackfill: {
     pipeline: 'runBackfill',
-    input: request({ job: 'clientStats', cursor: null }, SYSADMIN),
+    input: request(
+      { backfillJobName: 'CLIENT_STATS', backfillResume: false, cursor: null },
+      SYSADMIN,
+    ),
     command: { callerUserId: 'u-admin' },
     answer: ok({
       backfillJobName: 'CLIENT_STATS',
@@ -588,7 +642,7 @@ const FLIPPED: { readonly [name: string]: Case } = {
       budgetSpent: false,
     }),
     expected: {
-      job: 'clientStats',
+      backfillJobName: 'CLIENT_STATS',
       cursor: null,
       done: true,
       processed: 0,
@@ -596,9 +650,10 @@ const FLIPPED: { readonly [name: string]: Case } = {
       stamped: 0,
       recomputed: 0,
       total: 0,
-      runStartedAt: '2026-10-11T07:00:00.000Z',
+      runStartedAtUtcMs: Date.UTC(2026, 9, 11, 7),
       startedFrom: null,
-      sample: null,
+      sampleChecked: null,
+      sampleMismatched: [],
       budgetSpent: false,
     },
   },
@@ -608,6 +663,43 @@ const FLIPPED: { readonly [name: string]: Case } = {
     command: { ownerUserId: 'u-1', beforeExists: false, afterExists: false },
     answer: ok({ rows: 0 }),
     expected: undefined,
+  },
+  // ── Phase 4a: the new callables (4A-3 (4), (5)) ──
+  startImpersonation: {
+    pipeline: 'startImpersonation',
+    input: request(
+      {
+        targetUserId: 'u-client',
+        impersonationScope: 'READ',
+        reason: 'support ticket 42',
+        expiresAtUtcMs: Date.UTC(2026, 9, 11, 8),
+      },
+      OWNER,
+    ),
+    command: {
+      adminUserId: 'u-owner',
+      adminRoles: ['barber', 'admin'],
+      targetUserId: 'u-client',
+      impersonationScope: 'READ',
+      reason: 'support ticket 42',
+      expiresAtUtcMs: Date.UTC(2026, 9, 11, 8),
+    },
+    answer: ok({ sessionId: 'imp-1' }),
+    expected: { sessionId: 'imp-1' },
+  },
+  endImpersonation: {
+    pipeline: 'endImpersonation',
+    input: request({ sessionId: 'imp-1' }, OWNER),
+    command: { sessionId: 'imp-1', adminUserId: 'u-owner' },
+    answer: ok({ sessionId: 'imp-1', impersonationEndReason: 'ADMIN_ENDED' }),
+    expected: { sessionId: 'imp-1', impersonationEndReason: 'ADMIN_ENDED' },
+  },
+  redeemInvitation: {
+    pipeline: 'redeemInvitation',
+    input: request({ invitationId: 'inv-1' }, CLIENT),
+    command: { invitationId: 'inv-1', refereeUserId: 'u-client' },
+    answer: ok({ invitationId: 'inv-1', redemptionCount: 3 }),
+    expected: { invitationId: 'inv-1', redemptionCount: 3 },
   },
 };
 
@@ -657,7 +749,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 30 functions, by today’s names', () => {
+  it('exports exactly the 33 functions — today’s 30 and Phase 4a’s three callables', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -677,12 +769,12 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(30);
+    expect(FLIPPED_EXPORTS).toHaveLength(33);
   });
 
-  describe('flips 1–3 — every export runs exactly its own pipeline', () => {
+  describe('flips 1–3 and Phase 4a — every export runs exactly its own pipeline', () => {
     it.each(FLIPPED_EXPORTS)(
-      '%s decodes its input, runs its own pipeline over the server ports — and no other — and answers today’s JSON',
+      '%s decodes its call component, runs its own pipeline over the server ports — and no other — and answers the call component’s answer',
       async (name) => {
         const own = caseOf(name);
         seam.answers.set(own.pipeline, own.answer);
@@ -690,10 +782,13 @@ describe('main.ts — the composition root', () => {
         expect(answer).toEqual(own.expected);
         expect(seam.calls.map((call) => call.pipeline)).toEqual([own.pipeline]);
         const call = seam.calls[0];
+        // The shop's zone is the location's: the ports carry the default
+        // location a boundary with none in scope reads (4A-11), no zone.
         expect(call?.ports).toMatchObject({
           sentinel: seam.BUNDLE.sentinel,
-          tenantTimeZone: 'Europe/Sofia',
+          defaultLocationId: 'loc-center',
         });
+        expect(call?.ports).not.toHaveProperty('tenantTimeZone');
         if (own.command === undefined) expect(call?.args).toEqual([]);
         else expect(call?.args[0]).toMatchObject(own.command as object);
         for (const other of seam.PIPELINES) {
@@ -747,7 +842,10 @@ describe('main.ts — the composition root', () => {
         run('cancelAppointment', caseOf('cancelAppointment').input),
       );
       expect(notFound.code).toBe('not-found');
-      expect(notFound.details).toEqual({ code: 'booking.cancel.not_found' });
+      expect(notFound.message).toBe('BOOKING_CANCEL_NOT_FOUND');
+      expect(notFound.details).toEqual({
+        errorCode: 'BOOKING_CANCEL_NOT_FOUND',
+      });
 
       vi.spyOn(logger, 'error').mockImplementation(() => undefined);
       const down = () => ({
@@ -760,8 +858,7 @@ describe('main.ts — the composition root', () => {
       );
       expect(coded.code).toBe('internal');
       expect(coded.details).toEqual({
-        code: 'booking.commit.store_failed',
-        params: {},
+        errorCode: 'BOOKING_COMMIT_STORE_FAILED',
       });
       seam.answers.set('cancelAppointment', down);
       const bare = await rejection(
@@ -772,24 +869,47 @@ describe('main.ts — the composition root', () => {
       expect(bare.details).toBeUndefined();
     });
 
-    it('answers today’s refusals before any pipeline runs', async () => {
+    it('answers a decoder’s refusals before any pipeline runs', async () => {
       const cancel = await rejection(
         run('cancelWaitlist', request({ requestId: 'r1' }, null)),
       );
       expect(cancel.code).toBe('unauthenticated');
-      expect(cancel.message).toBe('Sign in to manage the waitlist');
+      expect(cancel.message).toBe('BOOKING_WAITLIST_UNAUTHENTICATED');
       expect(cancel.details).toEqual({
-        code: 'booking.waitlist.unauthenticated',
+        errorCode: 'BOOKING_WAITLIST_UNAUTHENTICATED',
       });
       const tip = await rejection(run('recordSeatTip', request({}, null)));
       expect(tip.code).toBe('unauthenticated');
-      expect(tip.details).toEqual({ code: 'booking.tip.unauthenticated' });
+      expect(tip.details).toEqual({ errorCode: 'BOOKING_TIP_UNAUTHENTICATED' });
       const forbidden = await rejection(
         run('transitionAppointment', request({}, CLIENT)),
       );
       expect(forbidden.code).toBe('permission-denied');
       expect(forbidden.details).toEqual({
-        code: 'booking.transition.forbidden',
+        errorCode: 'BOOKING_TRANSITION_FORBIDDEN',
+      });
+      expect(seam.calls).toEqual([]);
+    });
+
+    it('gates the impersonation callables on the verified caller before the payload is read, and the invitation on a session', async () => {
+      for (const name of ['startImpersonation', 'endImpersonation']) {
+        const nobody = await rejection(run(name, request({}, null)));
+        expect(nobody.code).toBe('unauthenticated');
+        expect(nobody.details).toEqual({
+          errorCode: 'GOVERNANCE_IMPERSONATION_UNAUTHENTICATED',
+        });
+        const staff = await rejection(run(name, request({}, STAFF)));
+        expect(staff.code).toBe('permission-denied');
+        expect(staff.details).toEqual({
+          errorCode: 'GOVERNANCE_IMPERSONATION_FORBIDDEN',
+        });
+      }
+      const anonymous = await rejection(
+        run('redeemInvitation', request({ invitationId: 'inv-1' }, null)),
+      );
+      expect(anonymous.code).toBe('unauthenticated');
+      expect(anonymous.details).toEqual({
+        errorCode: 'ENGAGEMENT_INVITATION_UNAUTHENTICATED',
       });
       expect(seam.calls).toEqual([]);
     });
@@ -861,7 +981,6 @@ describe('main.ts — the composition root', () => {
       for (const member of [
         'provisionAuthUser',
         'mintCustomToken',
-        'setClaims',
         'setDisplayName',
         'findAuthUserByDestination',
         'sendOtp',
@@ -875,7 +994,7 @@ describe('main.ts — the composition root', () => {
       expect(await loadTenant()).toEqual({ ok: true, value: 'creativo' });
     });
 
-    it('answers devCode only under the emulator', async () => {
+    it('answers devCode only under the emulator — `null` everywhere else', async () => {
       const own = caseOf('requestOtpChallenge');
       seam.answers.set(own.pipeline, own.answer);
       vi.stubEnv('FUNCTIONS_EMULATOR', 'true');
@@ -889,25 +1008,25 @@ describe('main.ts — the composition root', () => {
       }
       expect(await run('requestOtpChallenge', own.input)).toEqual({
         challengeId: 'otp-1',
+        devCode: null,
       });
     });
 
-    it('answers today’s refusals: a decoder’s before any pipeline runs, a pipeline’s in today’s words, a store failure as today’s repository_failure', async () => {
+    it('answers the refusals: a decoder’s before any pipeline runs, a pipeline’s as its struct, a store failure as IDENTITY_REPOSITORY_FAILURE', async () => {
       const code = await rejection(
         run('verifyOtpChallenge', request({ challengeId: 'otp-1' }, null)),
       );
       expect(code.code).toBe('invalid-argument');
       expect(code.details).toEqual({
-        code: 'invalid_input',
-        params: { reason: 'code must be a 6-digit string' },
+        errorCode: 'IDENTITY_INVALID_INPUT',
+        reason: 'code must be a 6-digit string',
       });
       const signedOut = await rejection(
         run('completeRegistration', request({}, null)),
       );
       expect(signedOut.code).toBe('unauthenticated');
       expect(signedOut.details).toEqual({
-        code: 'registration_unauthenticated',
-        params: {},
+        errorCode: 'IDENTITY_REGISTRATION_UNAUTHENTICATED',
       });
       expect(seam.calls).toEqual([]);
 
@@ -919,7 +1038,9 @@ describe('main.ts — the composition root', () => {
         run('requestOtpChallenge', caseOf('requestOtpChallenge').input),
       );
       expect(limited.code).toBe('resource-exhausted');
-      expect(limited.details).toEqual({ code: 'otp_rate_limited', params: {} });
+      expect(limited.details).toEqual({
+        errorCode: 'IDENTITY_OTP_RATE_LIMITED',
+      });
 
       vi.spyOn(logger, 'error').mockImplementation(() => undefined);
       seam.answers.set('verifyOtp', () => ({
@@ -930,7 +1051,9 @@ describe('main.ts — the composition root', () => {
         run('verifyOtpChallenge', caseOf('verifyOtpChallenge').input),
       );
       expect(down.code).toBe('internal');
-      expect(down.details).toEqual({ code: 'repository_failure', params: {} });
+      expect(down.details).toEqual({
+        errorCode: 'IDENTITY_REPOSITORY_FAILURE',
+      });
       expect(logger.error).toHaveBeenCalledTimes(1);
     });
   });
@@ -942,7 +1065,6 @@ describe('main.ts — the composition root', () => {
         'publishStreakDefinition',
         request(
           {
-            op: 'withdraw',
             requestId: 'intent-000000000002',
             streakId: 'cadence',
             version: 2,
@@ -950,7 +1072,10 @@ describe('main.ts — the composition root', () => {
           OWNER,
         ),
       );
-      expect(answer).toEqual({ kind: 'withdrawn', version: 2 });
+      expect(answer).toEqual({
+        streakPublishOutcome: 'WITHDRAWN',
+        version: 2,
+      });
       expect(seam.calls.map((call) => call.pipeline)).toEqual([
         'withdrawStreakDefinition',
       ]);
@@ -973,7 +1098,7 @@ describe('main.ts — the composition root', () => {
       const ports = seam.calls[0]?.ports as Record<string, unknown>;
       expect(ports).toMatchObject({
         sentinel: 'firestore ports',
-        tenantTimeZone: 'Europe/Sofia',
+        defaultLocationId: 'loc-center',
       });
       expect(typeof ports['flagOn']).toBe('function');
       expect(ports['commit']).not.toBe(seam.commit);
@@ -981,21 +1106,26 @@ describe('main.ts — the composition root', () => {
       expect(seam.commit).toHaveBeenCalledTimes(1);
     });
 
-    it('answers today’s refusals before any pipeline runs — the caller judged before the request is read', async () => {
+    it('answers the refusals before any pipeline runs — the caller judged before the request is read', async () => {
       const nobody = await rejection(
         run('publishStreakDefinition', request(STREAK_PUBLISH, null)),
       );
       expect(nobody.code).toBe('unauthenticated');
       expect(nobody.details).toEqual({
-        code: 'loyalty.streak_publish.unauthenticated',
-        params: {},
+        errorCode: 'LOYALTY_STREAK_PUBLISH_CALLER_UNAUTHENTICATED',
       });
       expect(
         await run(
           'publishStreakDefinition',
           request({ nonsense: true }, STAFF),
         ),
-      ).toEqual({ kind: 'refused', code: 'notAdmin', fields: [] });
+      ).toEqual({
+        streakPublishOutcome: 'REFUSED',
+        errorCode: 'LOYALTY_STREAK_PUBLISH_CALLER_NOT_ADMIN',
+        fields: [],
+        earliest: null,
+        effectiveFromLocalDate: null,
+      });
       const envelope = await rejection(
         run(
           'publishStreakDefinition',
@@ -1004,8 +1134,8 @@ describe('main.ts — the composition root', () => {
       );
       expect(envelope.code).toBe('invalid-argument');
       expect(envelope.details).toEqual({
-        code: 'loyalty.streak_publish.invalid_input',
-        params: { field: 'baseVersion' },
+        errorCode: 'LOYALTY_STREAK_PUBLISH_INVALID_INPUT',
+        field: 'baseVersion',
       });
       expect(seam.calls).toEqual([]);
     });
@@ -1023,8 +1153,7 @@ describe('main.ts — the composition root', () => {
       );
       expect(refusal.code).toBe('internal');
       expect(refusal.details).toEqual({
-        code: 'loyalty.streak_publish.store_failed',
-        params: {},
+        errorCode: 'LOYALTY_STREAK_PUBLISH_STORE_FAILED',
       });
       // The cause stays on the server.
       expect(JSON.stringify(refusal.details)).not.toContain('deadline');
@@ -1050,8 +1179,7 @@ describe('main.ts — the composition root', () => {
       );
       expect(refusal.code).toBe('internal');
       expect(refusal.details).toEqual({
-        code: 'loyalty.streak_publish.store_failed',
-        params: {},
+        errorCode: 'LOYALTY_STREAK_PUBLISH_STORE_FAILED',
       });
       expect(logged).toHaveBeenCalledWith('rhythm rule write failed', {
         error:

@@ -21,10 +21,12 @@ import {
   barberBusyDayFixture,
   barberScheduleFixture,
   FIXTURE_IDS,
-  FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   localDate,
   locationFixture,
+  memoryDefaultLocationPorts,
+  memoryLocationLoadPorts,
+  memoryProgramsWorld,
   memoryStore,
   memoryTxPorts,
   minuteCount,
@@ -62,6 +64,17 @@ const entry = (
   minutes: number,
 ) => CapacityEntry.of(day, barberId, locationId, minuteCount(minutes));
 
+/**
+ * Whose "today" the rebuild reads (Law 7.2, F-4): the default location's —
+ * the fixture shop, on `FIXTURE_TIME_ZONE`.
+ */
+const ZONE_PORTS = {
+  ...memoryLocationLoadPorts(
+    memoryProgramsWorld({ locations: [locationFixture()] }),
+  ),
+  ...memoryDefaultLocationPorts(),
+};
+
 /** Ivan's roster and the centre shop, and whatever else a case stores. */
 function seeded(
   extra: readonly {
@@ -94,6 +107,7 @@ function rig(
   const run = rebuildCapacity({
     ...tx,
     ...telemetry,
+    ...ZONE_PORTS,
     loadPolicy: async () => Result.ok(options.policy ?? BookingPolicy.DEFAULT),
     listBarbers: async () => Result.ok(options.barbers ?? [IVAN]),
   });
@@ -104,7 +118,6 @@ const today = {
   capacityTrigger: CapacityTrigger.Day,
   barberId: IVAN,
   localDate: FIXTURE_TODAY,
-  timeZone: FIXTURE_TIME_ZONE,
 } as const;
 
 describe('rebuildCapacity — one (barber, day)', () => {
@@ -204,12 +217,48 @@ describe('rebuildCapacity — one (barber, day)', () => {
     ]);
   });
 
-  it('returns a past day before any read — a TTL purge must not rewrite a retired month', async () => {
+  it('returns a past day before any read but the zone’s — a TTL purge must not rewrite a retired month', async () => {
     const { tx, run } = rig();
     const answer = await run({ ...today, localDate: localDate('2026-09-27') });
     expect(answer).toEqual({ ok: true, value: { rebuiltBarberIds: [] } });
     expect(tx.transactions).toEqual([]);
     expect(tx.plans).toEqual([]);
+  });
+
+  it('answers a zone it cannot read as its store failure, rebuilding nothing (4A-2 (e))', async () => {
+    const tx = memoryTxPorts(seeded());
+    const failed = RepositoryError.readFailed('locations/loc-center', 'down');
+    const run = rebuildCapacity({
+      ...tx,
+      ...recordingTelemetry(),
+      ...memoryDefaultLocationPorts(),
+      loadLocation: async () => Result.err(failed),
+      loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
+      listBarbers: async () => Result.ok([IVAN]),
+    });
+    expect(await run(today)).toEqual(Result.err(failed));
+    expect(tx.transactions).toEqual([]);
+  });
+
+  it('answers a default location that is not stored as a read failure naming it', async () => {
+    const tx = memoryTxPorts(seeded());
+    const run = rebuildCapacity({
+      ...tx,
+      ...recordingTelemetry(),
+      ...memoryLocationLoadPorts(memoryProgramsWorld({ locations: [] })),
+      ...memoryDefaultLocationPorts(),
+      loadPolicy: async () => Result.ok(BookingPolicy.DEFAULT),
+      listBarbers: async () => Result.ok([IVAN]),
+    });
+    expect(await run(today)).toEqual(
+      Result.err(
+        RepositoryError.readFailed(
+          'locations/loc-center',
+          'CATALOG_LOCATION_ZONE_UNKNOWN',
+        ),
+      ),
+    );
+    expect(tx.transactions).toEqual([]);
   });
 
   it('lets an infrastructure failure go on to the edge', async () => {
@@ -218,6 +267,7 @@ describe('rebuildCapacity — one (barber, day)', () => {
     const run = rebuildCapacity({
       ...memoryTxPorts(seeded()),
       ...telemetry,
+      ...ZONE_PORTS,
       commit: async () => {
         throw outage;
       },
@@ -242,7 +292,6 @@ describe('rebuildCapacity — a horizon', () => {
     const answer = await run({
       capacityTrigger: CapacityTrigger.Roster,
       barberId: IVAN,
-      timeZone: FIXTURE_TIME_ZONE,
     });
     expect(answer).toEqual({ ok: true, value: { rebuiltBarberIds: [IVAN] } });
     expect(tx.plans).toHaveLength(1);
@@ -271,6 +320,7 @@ describe('rebuildCapacity — a horizon', () => {
     const run = rebuildCapacity({
       ...tx,
       ...telemetry,
+      ...ZONE_PORTS,
       commit: (read, decide) => {
         calls += 1;
         if (calls === 1) return Promise.reject(outage);
@@ -281,7 +331,6 @@ describe('rebuildCapacity — a horizon', () => {
     });
     const answer = await run({
       capacityTrigger: CapacityTrigger.Sweep,
-      timeZone: FIXTURE_TIME_ZONE,
     });
     expect(answer).toEqual({ ok: true, value: { rebuiltBarberIds: [IVAN] } });
     expect(telemetry.lines).toEqual([
@@ -303,12 +352,12 @@ describe('rebuildCapacity — a horizon', () => {
     const run = rebuildCapacity({
       ...tx,
       ...recordingTelemetry(),
+      ...ZONE_PORTS,
       loadPolicy: async () => Result.err(failure),
       listBarbers: async () => Result.ok([IVAN]),
     });
     const answer = await run({
       capacityTrigger: CapacityTrigger.Sweep,
-      timeZone: FIXTURE_TIME_ZONE,
     });
     expect(answer).toEqual({ ok: false, error: failure });
     expect(tx.transactions).toEqual([]);
@@ -320,7 +369,6 @@ describe('rebuildCapacity — a horizon', () => {
     await run({
       capacityTrigger: CapacityTrigger.Roster,
       barberId: IVAN,
-      timeZone: FIXTURE_TIME_ZONE,
     });
     expect(telemetry.lines).toContainEqual({
       level: 'warn',

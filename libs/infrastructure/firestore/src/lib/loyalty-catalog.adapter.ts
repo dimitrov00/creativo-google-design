@@ -26,8 +26,10 @@ import { readQuery } from './observe';
  * reader over this answer unmapped.
  *
  * Memoised for the session AND THE SHOP DAY in `memo` (the root
- * `LOYALTY_CATALOG_MEMO`), keyed by `today()` — `app.config.ts`'s closure
- * over the clock and the shop's zone; no clock or zone code lives here.
+ * `LOYALTY_CATALOG_MEMO`), keyed by `today()` — `shopToday`, the
+ * clock read on the default location's wall clock; no clock or zone code
+ * lives here. A day that cannot be read (the default location's zone
+ * unreadable, 4A-2 (e)) answers its `RepositoryError` and reads nothing.
  * The catalogue changes when the shop publishes, not while a card is open,
  * and every card and page reads the same one. Three things end the memo:
  *
@@ -43,7 +45,7 @@ import { readQuery } from './observe';
 export const loyaltyCatalogReadPorts = (
   db: Firestore,
   memo: LoyaltyCatalogMemo,
-  today: () => LocalDate,
+  today: () => Promise<Result<LocalDate, RepositoryError>>,
 ): LoyaltyCatalogReadPorts => {
   const whole = <E>(name: string) => readQuery<E>(collection(db, name), name);
 
@@ -74,12 +76,13 @@ export const loyaltyCatalogReadPorts = (
   };
 
   return {
-    loadLoyaltyCatalog: () => {
-      const day = today();
-      const kept = memo.readOn(day);
+    loadLoyaltyCatalog: async () => {
+      const day = await today();
+      if (!day.ok) return day;
+      const kept = memo.readOn(day.value);
       if (kept !== null) return kept;
       const fresh = read();
-      memo.keep(fresh, day);
+      memo.keep(fresh, day.value);
       void fresh.then((answer) => {
         if (!answer.ok) memo.drop(fresh);
       });

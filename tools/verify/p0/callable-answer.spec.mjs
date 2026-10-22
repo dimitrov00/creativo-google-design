@@ -19,7 +19,13 @@ describe('readCallableAnswer — a refusal is only ever a well-formed {error}', 
   });
 
   it('reads a well-formed {error} as a refusal, on any status', () => {
-    const error = { status: 'PERMISSION_DENIED', message: 'Sysadmin only' };
+    // The flipped wire (Phase 4a 4A-4): the message is the errorCode, the
+    // details the ecs-core struct projected to its code's allowlist.
+    const error = {
+      status: 'PERMISSION_DENIED',
+      message: 'OPS_BACKFILL_FORBIDDEN',
+      details: { errorCode: 'OPS_BACKFILL_FORBIDDEN' },
+    };
     for (const status of [400, 403, 500, 200]) {
       assert.deepEqual(answer(status, JSON.stringify({ error })), {
         kind: 'refusal',

@@ -14,6 +14,9 @@ import {
   SeatOccupant,
   SubjectRelationship,
   ServiceTerms,
+  RequestedSubjectRole,
+  type MoveRider,
+  BookingCall,
 } from '@core/components';
 import {
   BookingError,
@@ -34,6 +37,9 @@ import {
   LocalDate,
   type MinuteOfDay,
   PriceCents,
+  CarriedSeatRefusal,
+  MoveErrorCode,
+  CartLineId,
 } from '@core/primitives';
 import type { Appointment, Service } from '@core/entities';
 import {
@@ -57,20 +63,8 @@ import {
   AppointmentEditSystem,
   LedgerVerdict,
 } from './appointment-edit.system';
-import {
-  BookingDecisionSystem,
-  type RequestedSeatInput,
-} from './booking-decision.system';
-import { RequestedSubjectRole } from './guest-label.system';
-import {
-  CarriedSeatRefusal,
-  type MoveCartSeatInput,
-  MoveErrorCode,
-  type MovePlan,
-  type MoveRider,
-  MoveSubjectRole,
-  MoveSystem,
-} from './move.system';
+import { BookingDecisionSystem } from './booking-decision.system';
+import { type MovePlan, MoveSystem } from './move.system';
 
 /*
  * The cases of libs/domain/scheduling/src/lib/move-shift.spec.ts,
@@ -220,6 +214,46 @@ describe('MoveSystem.placeRiders — the server’s shift, restated for the revi
         },
       ),
     );
+  });
+});
+
+describe('MoveSystem.cartRiders — the riders as the day query takes them', () => {
+  it('keeps each carried seat on its barber, at its distance, on its SOLD chair time and service', () => {
+    const sold = rider(-30, {
+      barberId: BarberId.of('ivan'),
+      setupMinutes: unwrapOk(MinuteCount.of(5)),
+      cleanupMinutes: unwrapOk(MinuteCount.of(10)),
+    });
+    expect(MoveSystem.cartRiders([sold, rider(45)])).toEqual([
+      {
+        serviceId: ServiceId.of('svc-beard'),
+        barberId: BarberId.of('ivan'),
+        offsetMinutes: delta(-30),
+        terms: {
+          durationMinutes: unwrapOk(DurationMinutes.of(30)),
+          padBeforeMinutes: unwrapOk(MinuteCount.of(5)),
+          padAfterMinutes: unwrapOk(MinuteCount.of(10)),
+        },
+      },
+      {
+        serviceId: ServiceId.of('svc-beard'),
+        barberId: BarberId.of('petar'),
+        offsetMinutes: delta(45),
+        terms: {
+          durationMinutes: unwrapOk(DurationMinutes.of(30)),
+          padBeforeMinutes: MinuteCount.ZERO,
+          padAfterMinutes: MinuteCount.ZERO,
+        },
+      },
+    ]);
+  });
+
+  it('has no rider for a move that carries nobody, and leaves its input as it was', () => {
+    expect(MoveSystem.cartRiders([])).toEqual([]);
+    const riders = [rider(15)];
+    const before = structuredClone(riders);
+    MoveSystem.cartRiders(riders);
+    expect(riders).toEqual(before);
   });
 });
 
@@ -639,11 +673,11 @@ function party(
 
 function cartSeat(
   startMinutes: MinuteOfDay,
-  overrides: Partial<MoveCartSeatInput> = {},
-): MoveCartSeatInput {
+  overrides: Partial<BookingCall.Seat> = {},
+): BookingCall.Seat {
   return {
-    moveSubjectRole: MoveSubjectRole.Self,
-    label: null,
+    lineId: CartLineId.of('line-1'),
+    subject: BookingCall.selfSubject(),
     serviceId: CUT,
     variantId: null,
     barberId: IVAN,
@@ -655,7 +689,7 @@ function cartSeat(
 
 function plan(
   appointment: Appointment,
-  seats: readonly MoveCartSeatInput[],
+  seats: readonly BookingCall.Seat[],
   locationId: LocationId = CENTER,
   localDate: LocalDate = FIXTURE_TODAY,
 ) {
@@ -756,7 +790,9 @@ describe('MoveSystem.plan — a companion the cart cannot express', () => {
     expect(
       unwrapErr(
         plan(party(), [
-          cartSeat(at(14), { moveSubjectRole: MoveSubjectRole.Companion }),
+          cartSeat(at(14), {
+            subject: BookingCall.companionSubject(UserId.of('u-companion')),
+          }),
         ]),
       ),
     ).toEqual(BookingError.invalidInput('subject'));
@@ -805,8 +841,7 @@ describe('MoveSystem.plan — the self and guest seats behave as before', () => 
     const cart = [
       cartSeat(at(10)),
       cartSeat(at(10), {
-        moveSubjectRole: MoveSubjectRole.Guest,
-        label: ' Синът ',
+        subject: BookingCall.guestSubject(' Синът ', null),
         serviceId: BEARD,
         barberId: PETAR,
         barberPreference: null,
@@ -928,7 +963,7 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
    * stored people at their shifted starts, at the terms they were sold at.
    */
   function decide(planned: MovePlan) {
-    const cart: RequestedSeatInput[] = planned.cart.map((line) => ({
+    const cart: BookingCall.SeatInput[] = planned.cart.map((line) => ({
       lineId: line.lineId,
       serviceId: line.seat.serviceId,
       variantId: line.seat.variantId,
@@ -936,15 +971,15 @@ describe('MoveSystem.plan → BookingDecisionSystem.decide', () => {
       barberPreference: line.seat.barberPreference,
       startMinutes: line.seat.startMinutes,
       subject:
-        line.seat.moveSubjectRole === MoveSubjectRole.Guest
+        line.seat.subject.requestedSubjectRole === RequestedSubjectRole.Guest
           ? {
               requestedSubjectRole: RequestedSubjectRole.Guest,
-              label: line.seat.label ?? '',
+              label: line.seat.subject.label,
               guestKey: null,
             }
           : { requestedSubjectRole: RequestedSubjectRole.Self },
     }));
-    const carried: RequestedSeatInput[] = planned.carried.map((line) => ({
+    const carried: BookingCall.SeatInput[] = planned.carried.map((line) => ({
       lineId: line.lineId,
       serviceId: line.seat.serviceId,
       variantId: line.seat.variantId,

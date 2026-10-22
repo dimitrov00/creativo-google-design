@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { AccountsErrorCode } from '@core/primitives';
 import {
+  ADMIN_ROLES,
   BOOK_ROLES,
   MONEY_ROLES,
   Role,
   STAFF_ROLES,
   USER_ROLES,
+  isAdmin,
   isRole,
   isStaff,
   isStaffRole,
@@ -83,17 +85,19 @@ describe('the dictionary and its derived lists', () => {
   });
 
   it('derives every group from the dictionary, all inside it', () => {
-    for (const group of [STAFF_ROLES, BOOK_ROLES, MONEY_ROLES]) {
+    for (const group of [STAFF_ROLES, BOOK_ROLES, MONEY_ROLES, ADMIN_ROLES]) {
       for (const role of group) expect(USER_ROLES).toContain(role);
     }
     expect(STAFF_ROLES).not.toContain(Role.Client);
     // The book is narrower than the staff area, money narrower than the book.
     expect(BOOK_ROLES).not.toContain(Role.ContentManager);
     expect(MONEY_ROLES).not.toContain(Role.Barber);
+    // The admin area is the narrowest: an admin or the sysadmin.
+    expect(ADMIN_ROLES).toEqual([Role.Admin, Role.Sysadmin]);
   });
 });
 
-describe('mayBook / seesMoney (claims-tolerant)', () => {
+describe('mayBook / seesMoney / isAdmin (claims-tolerant)', () => {
   it('mayBook admits the book roles only', () => {
     expect(mayBook(['barber'])).toBe(true);
     expect(mayBook(['client', 'receptionist'])).toBe(true);
@@ -113,6 +117,16 @@ describe('mayBook / seesMoney (claims-tolerant)', () => {
   it('an unrecognised claim grants nothing', () => {
     expect(mayBook(['owner', 'superuser'])).toBe(false);
     expect(seesMoney(['owner'])).toBe(false);
+    expect(isAdmin(['owner', 'superuser'])).toBe(false);
+  });
+
+  it('isAdmin admits exactly the admin pair — the rules’ isAdmin()', () => {
+    expect(isAdmin(['admin'])).toBe(true);
+    expect(isAdmin(['sysadmin'])).toBe(true);
+    expect(isAdmin(['client', 'admin'])).toBe(true);
+    expect(isAdmin(['barber', 'receptionist', 'content_manager'])).toBe(false);
+    expect(isAdmin(['client'])).toBe(false);
+    expect(isAdmin([])).toBe(false);
   });
 });
 

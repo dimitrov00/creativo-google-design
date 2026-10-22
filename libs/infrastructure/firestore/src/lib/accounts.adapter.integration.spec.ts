@@ -4,24 +4,12 @@ import type {
   RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { filter, firstValueFrom, shareReplay } from 'rxjs';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import {
-  AccountLifecycle,
-  BlockReason,
-  E164,
-  Email,
-  Role,
-} from '@core/components';
-import { AccountsErrorCode, Result, UserId } from '@core/primitives';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { AccountLifecycle, BlockReason, E164, Role } from '@core/components';
+import { Result, UserId } from '@core/primitives';
 import type { User } from '@core/entities';
-import { ProfileEditSystem, SearchFieldsSystem } from '@core/systems';
-import type { ProfileEdits } from '@core/systems';
-import {
-  FIXTURE_TODAY,
-  provisionedUserFixture,
-  registeredUserFixture,
-  utcMs,
-} from '@core/testing';
+import { SearchFieldsSystem } from '@core/systems';
+import { provisionedUserFixture, registeredUserFixture } from '@core/testing';
 import {
   createEmulatorTestEnv,
   modularFirestore,
@@ -39,14 +27,6 @@ function bodyOf(user: User): object {
   expect(typeof id).toBe('string');
   return body;
 }
-
-/** `ProfileEditSystem.decide` bound to `edits` on the fixture day — what a store hands the port. */
-const decideWith = (edits: Partial<ProfileEdits>) => (stored: User | null) =>
-  ProfileEditSystem.decide(
-    stored,
-    { firstName: null, lastName: null, birthDate: null, ...edits },
-    FIXTURE_TODAY,
-  );
 
 describe('profilePorts and userSearchPorts (emulator)', () => {
   let testEnv: RulesTestEnvironment;
@@ -74,41 +54,18 @@ describe('profilePorts and userSearchPorts (emulator)', () => {
     });
   }
 
-  async function stored(uid: string): Promise<Record<string, unknown> | null> {
-    let data: Record<string, unknown> | null = null;
-    await testEnv.withSecurityRulesDisabled(async (ctx) => {
-      data =
-        (await getDoc(doc(modularFirestore(ctx), 'users', uid))).data() ?? null;
-    });
-    return data;
-  }
-
   const ownerOf = (uid: string): RulesTestContext =>
     testEnv.authenticatedContext(uid, { roles: [Role.Client] });
   const profileFor = (context: RulesTestContext) =>
     profilePorts(modularFirestore(context));
 
-  it('round-trips an owner name edit through writeOwnProfile/loadProfile', async () => {
+  it('answers the owner their own profile as stored through loadProfile', async () => {
     const maria = registered('user-1');
     await seed(maria);
-    const ports = profileFor(ownerOf('user-1'));
 
-    const written = await ports.writeOwnProfile(
-      maria.id,
-      decideWith({ firstName: 'Georgi', birthDate: '1990-05-17' }),
-    );
-    expect(written).toEqual(Result.ok(undefined));
+    const found = await profileFor(ownerOf('user-1')).loadProfile(maria.id);
 
-    const found = await ports.loadProfile(maria.id);
-    expect(found.ok && found.value).toMatchObject({
-      firstName: 'Georgi',
-      lastName: 'Petrova',
-      birthDate: '1990-05-17',
-      searchName: 'georgi petrova',
-    });
-    expect((await stored('user-1'))?.['searchPrefixes']).toEqual(
-      expect.arrayContaining(['georgi', 'petrova', '359888123456']),
-    );
+    expect(found).toEqual(Result.ok(maria));
   });
 
   it('lets staff read a client profile they do not own', async () => {
@@ -123,80 +80,11 @@ describe('profilePorts and userSearchPorts (emulator)', () => {
     expect(found).toEqual(Result.ok(maria));
   });
 
-  it('leaves roles, phone and email as stored: the write carries the five owner keys only', async () => {
-    const maria = registered('user-3', {
-      email: Email.of('mp@abv.bg'),
-      ...SearchFieldsSystem.searchFields(
-        'Maria',
-        'Petrova',
-        E164.of('+359888123456'),
-        Email.of('mp@abv.bg'),
-      ),
-    });
-    await seed(maria);
-
-    const written = await profileFor(ownerOf('user-3')).writeOwnProfile(
-      maria.id,
-      decideWith({ firstName: 'Georgi' }),
-    );
-
-    // The rules' owner allowlist admits it because nothing else is sent.
-    expect(written).toEqual(Result.ok(undefined));
-    expect(await stored('user-3')).toMatchObject({
-      firstName: 'Georgi',
-      roles: [Role.Client],
-      phone: '+359888123456',
-      email: 'mp@abv.bg',
-      registrationState: 'REGISTERED',
-    });
-  });
-
-  it("leaves a server-written block untouched by the owner's name save", async () => {
-    const block = AccountLifecycle.block(
-      BlockReason.Manual,
-      utcMs('2026-12-01T00:00:00+00:00'),
-    );
-    const maria = registered('user-4', block);
-    await seed(maria);
-
-    const written = await profileFor(ownerOf('user-4')).writeOwnProfile(
-      maria.id,
-      decideWith({ firstName: 'Georgi' }),
-    );
-
-    expect(written).toEqual(Result.ok(undefined));
-    expect(await stored('user-4')).toMatchObject({
-      firstName: 'Georgi',
-      ...block,
-    });
-  });
-
-  it('never creates the document: writing a missing profile is refused, nothing exists', async () => {
-    const written = await profileFor(ownerOf('user-5')).writeOwnProfile(
-      UserId.of('user-5'),
-      decideWith({ firstName: 'Georgi' }),
-    );
-
-    expect(written).toEqual(
-      Result.err({ errorCode: AccountsErrorCode.UpdateProfileNotFound }),
-    );
-    expect(await stored('user-5')).toBeNull();
-  });
-
-  it('a PROVISIONED stub is refused by decide and stays as stored', async () => {
-    const stub = provisionedUserFixture({ id: UserId.of('user-8') });
-    await seed(stub);
-
-    const written = await profileFor(ownerOf('user-8')).writeOwnProfile(
-      stub.id,
-      decideWith({ firstName: 'Maria', lastName: 'Petrova' }),
-    );
-
-    expect(written).toEqual(
-      Result.err({ errorCode: AccountsErrorCode.UpdateProfileNotFound }),
-    );
-    expect(await stored('user-8')).toEqual(bodyOf(stub));
-  });
+  /*
+   * The owner's direct write (`ProfilePorts`' retired member) died with 4A-3 (2): `users/{uid}`
+   * takes no client update; every owner edit is the `updateProfile`
+   * callable's. Its five emulator cases are `dead:` in the §11 ledger.
+   */
 
   it('observeProfile delivers a server-side accountStatus change live', async () => {
     const maria = registered('user-6');

@@ -5,6 +5,6 @@
 // app's initial chunk. tools/verify/bundle/check-initial-bundle.mjs fails a
 // build where it leaks.
 export * from './storage.provider';
-export * from './avatar-uploader.adapter';
-export * from './media-reader.adapter';
+export * from './avatar.adapter';
+export * from './media-resolve.adapter';
 export * from './appointment-photos.adapter';

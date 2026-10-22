@@ -32,45 +32,46 @@ import type {
   VisitSectionVm,
 } from '@creativo/features/shared/visits';
 import type { UiMark, UiStreakPeriod } from '@creativo/ui/controls';
-import type {
-  AchievementChipVm,
-  AchievementTileVm,
-  ActivityGroupVm,
-  ActivityRowVm,
-  BirthdayVm,
-  ClientHeroVm,
-  ClientOverviewVm,
-  ClientPhotoVm,
-  CollectionVm,
-  DetailHowVm,
-  DetailLevelVm,
-  EventCardVm,
-  FeaturedRecordVm,
-  GaugeVm,
-  LedgerPageVm,
-  LoyaltyGlanceVm,
-  MedalDetailVm,
-  MedalSectionVm,
-  MedalVm,
-  MedalsGlanceVm,
-  MedalsPageVm,
-  PassVm,
-  QuickActionVm,
-  RecordCardVm,
-  RecordRowVm,
-  RecordsPageVm,
-  RewardReadyVm,
-  RewardTileVm,
-  SeasonCardVm,
-  StampCardVm,
-  VisitCardsVm,
-  VisitsPageVm,
-  VoucherVm,
-  WalletActionVm,
-  WalletHoldingVm,
-  WalletRhythmVm,
-  WalletTierVm,
-  WalletVm,
+import {
+  type AchievementChipVm,
+  type AchievementTileVm,
+  type ActivityGroupVm,
+  type ActivityRowVm,
+  type BirthdayVm,
+  CardLoadState,
+  type ClientHeroVm,
+  type ClientOverviewVm,
+  type ClientPhotoVm,
+  type CollectionVm,
+  type DetailHowVm,
+  type DetailLevelVm,
+  type EventCardVm,
+  type FeaturedRecordVm,
+  type GaugeVm,
+  type LedgerPageVm,
+  type LoyaltyGlanceVm,
+  type MedalDetailVm,
+  type MedalSectionVm,
+  type MedalsGlanceVm,
+  type MedalsPageVm,
+  type MedalVm,
+  type PassVm,
+  type QuickActionVm,
+  type RecordCardVm,
+  type RecordRowVm,
+  type RecordsPageVm,
+  type RewardReadyVm,
+  type RewardTileVm,
+  type SeasonCardVm,
+  type StampCardVm,
+  type VisitCardsVm,
+  type VisitsPageVm,
+  type VoucherVm,
+  type WalletActionVm,
+  type WalletHoldingVm,
+  type WalletRhythmVm,
+  type WalletTierVm,
+  type WalletVm,
 } from '../lib/client-pages.vm';
 
 // ── Builders for the shapes that repeat ─────────────────────────────────
@@ -746,18 +747,21 @@ export const OVERVIEW = {
   /** Every module present and read. */
   georgi: {
     actions: QUICK_ACTIONS,
-    reward: { status: 'ready', data: REWARD_READY.haircut },
-    visits: { status: 'ready', data: VISIT_CARDS.full },
-    loyalty: { status: 'ready', data: LOYALTY_GLANCE.georgi },
-    medals: { status: 'ready', data: MEDALS_GLANCE.georgi },
-    photos: { status: 'ready', data: PHOTOS },
+    reward: { cardLoadState: CardLoadState.Ready, data: REWARD_READY.haircut },
+    visits: { cardLoadState: CardLoadState.Ready, data: VISIT_CARDS.full },
+    loyalty: {
+      cardLoadState: CardLoadState.Ready,
+      data: LOYALTY_GLANCE.georgi,
+    },
+    medals: { cardLoadState: CardLoadState.Ready, data: MEDALS_GLANCE.georgi },
+    photos: { cardLoadState: CardLoadState.Ready, data: PHOTOS },
     canRemove: true,
     failed: [],
   },
   /** Мартин, in the chair on his birthday; two no-shows in ninety days. */
   birthday: {
     capsules: {
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: {
         shown: [
           {
@@ -772,46 +776,49 @@ export const OVERVIEW = {
     },
     birthday: BIRTHDAY.gift,
     actions: QUICK_ACTIONS,
-    visits: { status: 'ready', data: VISIT_CARDS.lastOnly },
-    loyalty: { status: 'ready', data: LOYALTY_GLANCE.toNext },
-    medals: { status: 'ready', data: MEDALS_GLANCE.first },
+    visits: { cardLoadState: CardLoadState.Ready, data: VISIT_CARDS.lastOnly },
+    loyalty: {
+      cardLoadState: CardLoadState.Ready,
+      data: LOYALTY_GLANCE.toNext,
+    },
+    medals: { cardLoadState: CardLoadState.Ready, data: MEDALS_GLANCE.first },
     canRemove: true,
     failed: [],
   },
   /** Behind the D-9 gate: the discs at once, every module a placeholder. */
   loading: {
     actions: QUICK_ACTIONS.slice(0, 3),
-    reward: { status: 'loading' },
-    visits: { status: 'loading' },
-    loyalty: { status: 'loading' },
-    medals: { status: 'loading' },
-    photos: { status: 'loading' },
+    reward: { cardLoadState: CardLoadState.Loading },
+    visits: { cardLoadState: CardLoadState.Loading },
+    loyalty: { cardLoadState: CardLoadState.Loading },
+    medals: { cardLoadState: CardLoadState.Loading },
+    photos: { cardLoadState: CardLoadState.Loading },
     canRemove: true,
     failed: [],
   },
   /** A new client: three discs, the welcome points, no medals, no photos. */
   newClient: {
     actions: QUICK_ACTIONS.slice(0, 3),
-    visits: { status: 'ready', data: VISIT_CARDS.none },
-    loyalty: { status: 'ready', data: LOYALTY_GLANCE.bare },
+    visits: { cardLoadState: CardLoadState.Ready, data: VISIT_CARDS.none },
+    loyalty: { cardLoadState: CardLoadState.Ready, data: LOYALTY_GLANCE.bare },
     canRemove: true,
     failed: [],
   },
   /** One module failed: its heading over «Опитай пак». */
   oneFailed: {
     actions: QUICK_ACTIONS,
-    visits: { status: 'ready', data: VISIT_CARDS.lastOnly },
-    loyalty: { status: 'failed' },
-    medals: { status: 'ready', data: MEDALS_GLANCE.georgi },
+    visits: { cardLoadState: CardLoadState.Ready, data: VISIT_CARDS.lastOnly },
+    loyalty: { cardLoadState: CardLoadState.Failed },
+    medals: { cardLoadState: CardLoadState.Ready, data: MEDALS_GLANCE.georgi },
     canRemove: true,
     failed: ['loyalty'],
   },
   /** Two failed: one notice under the head, the headings alone. */
   twoFailed: {
     actions: QUICK_ACTIONS,
-    visits: { status: 'failed' },
-    loyalty: { status: 'failed' },
-    medals: { status: 'failed' },
+    visits: { cardLoadState: CardLoadState.Failed },
+    loyalty: { cardLoadState: CardLoadState.Failed },
+    medals: { cardLoadState: CardLoadState.Failed },
     canRemove: true,
     failed: ['visits', 'loyalty', 'achievements'],
   },
@@ -1444,41 +1451,50 @@ export const WALLET = {
     frozen: false,
     pass: PASS.expiring,
     actions: WALLET_ACTIONS.owner,
-    holdings: { status: 'ready', data: WALLET_HOLDINGS.georgi },
+    holdings: {
+      cardLoadState: CardLoadState.Ready,
+      data: WALLET_HOLDINGS.georgi,
+    },
     holdingsDetail: '3',
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { status: 'ready', data: WALLET_TIER.gold },
+    tier: { cardLoadState: CardLoadState.Ready, data: WALLET_TIER.gold },
     catalog: {
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: {
         name: 'Награди за точки: 371 точки, стигат за 2 от 3 награди',
         tiles: REWARD_TILES,
       },
     },
-    activity: { status: 'ready', data: ACTIVITY_GROUPS.newestFive },
+    activity: {
+      cardLoadState: CardLoadState.Ready,
+      data: ACTIVITY_GROUPS.newestFive,
+    },
   },
   /** The account at once, the sections that ride a read of their own still on their way. */
   loading: {
     frozen: false,
     pass: PASS.georgi,
     actions: WALLET_ACTIONS.owner,
-    holdings: { status: 'loading' },
+    holdings: { cardLoadState: CardLoadState.Loading },
     holdingsDetail: null,
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { status: 'loading' },
-    catalog: { status: 'loading' },
-    activity: { status: 'loading' },
+    tier: { cardLoadState: CardLoadState.Loading },
+    catalog: { cardLoadState: CardLoadState.Loading },
+    activity: { cardLoadState: CardLoadState.Loading },
   },
   /** An account with nothing held and no entry yet. */
   empty: {
     frozen: false,
     pass: { ...PASS.georgi, figure: '50', tier: 'Бронз', state: null },
     actions: WALLET_ACTIONS.readOnly,
-    holdings: { status: 'ready', data: WALLET_HOLDINGS.empty },
+    holdings: {
+      cardLoadState: CardLoadState.Ready,
+      data: WALLET_HOLDINGS.empty,
+    },
     holdingsDetail: null,
-    tier: { status: 'ready', data: WALLET_TIER.gold },
+    tier: { cardLoadState: CardLoadState.Ready, data: WALLET_TIER.gold },
     catalog: {
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: {
         name: 'Награди за точки: 50 точки, стигат за 0 от 3 награди',
         tiles: REWARD_TILES,
@@ -1491,32 +1507,38 @@ export const WALLET = {
     pass: PASS.frozen,
     actions: WALLET_ACTIONS.readOnly,
     holdings: {
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: [{ kind: 'voucher', voucher: VOUCHER.partial }],
     },
     holdingsDetail: '1',
     rhythm: WALLET_RHYTHM.frozen,
-    tier: { status: 'ready', data: WALLET_TIER.gold },
-    activity: { status: 'ready', data: ACTIVITY_GROUPS.newestFive },
+    tier: { cardLoadState: CardLoadState.Ready, data: WALLET_TIER.gold },
+    activity: {
+      cardLoadState: CardLoadState.Ready,
+      data: ACTIVITY_GROUPS.newestFive,
+    },
   },
   /** Two sections' own reads failed: each keeps its heading over a notice. */
   sectionsFailed: {
     frozen: false,
     pass: PASS.georgi,
     actions: WALLET_ACTIONS.owner,
-    holdings: { status: 'failed' },
+    holdings: { cardLoadState: CardLoadState.Failed },
     holdingsDetail: null,
     rhythm: WALLET_RHYTHM.healthy,
-    tier: { status: 'ready', data: WALLET_TIER.gold },
-    catalog: { status: 'failed' },
-    activity: { status: 'failed' },
+    tier: { cardLoadState: CardLoadState.Ready, data: WALLET_TIER.gold },
+    catalog: { cardLoadState: CardLoadState.Failed },
+    activity: { cardLoadState: CardLoadState.Failed },
   },
   /** Every loyalty flag but the vouchers' off: the pass, the holdings. */
   flagsOff: {
     frozen: false,
     pass: PASS.pointsOff,
     actions: WALLET_ACTIONS.codeOnly,
-    holdings: { status: 'ready', data: WALLET_HOLDINGS.vouchers },
+    holdings: {
+      cardLoadState: CardLoadState.Ready,
+      data: WALLET_HOLDINGS.vouchers,
+    },
     holdingsDetail: '3 · 55,00 €',
   },
 } satisfies Record<string, WalletVm>;
@@ -1529,7 +1551,7 @@ const LEDGER_SUBLINE = [
 export const LEDGER_PAGE = {
   /** The first page, an older one waiting. */
   first: {
-    status: 'ready',
+    cardLoadState: CardLoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
@@ -1537,7 +1559,7 @@ export const LEDGER_PAGE = {
   },
   /** Every page read: «Това е всичко.» */
   whole: {
-    status: 'ready',
+    cardLoadState: CardLoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: [...ACTIVITY_GROUPS.newestFive, ...ACTIVITY_GROUPS.everyKind],
@@ -1545,14 +1567,14 @@ export const LEDGER_PAGE = {
   },
   /** A page on its way, and one that did not come. */
   loadingMore: {
-    status: 'ready',
+    cardLoadState: CardLoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
     paging: { kind: 'loading' },
   },
   failedMore: {
-    status: 'ready',
+    cardLoadState: CardLoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: ACTIVITY_GROUPS.newestFive,
@@ -1560,7 +1582,7 @@ export const LEDGER_PAGE = {
   },
   /** Narrowed to one kind. */
   status: {
-    status: 'ready',
+    cardLoadState: CardLoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.Status,
     groups: ACTIVITY_GROUPS.statusOnly,
@@ -1568,7 +1590,7 @@ export const LEDGER_PAGE = {
   },
   /** A kind nothing answers: «Няма записи от този вид.» */
   filteredEmpty: {
-    status: 'ready',
+    cardLoadState: CardLoadState.Ready,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.Rewards,
     groups: [],
@@ -1576,7 +1598,7 @@ export const LEDGER_PAGE = {
   },
   /** No entry yet: «Още няма движение.» */
   empty: {
-    status: 'ready',
+    cardLoadState: CardLoadState.Ready,
     subline: [
       { text: 'Калоян Димов · ', fact: false },
       { text: '0 т.', fact: true },
@@ -1586,14 +1608,14 @@ export const LEDGER_PAGE = {
     paging: { kind: 'end' },
   },
   loading: {
-    status: 'loading',
+    cardLoadState: CardLoadState.Loading,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: [],
     paging: null,
   },
   failed: {
-    status: 'failed',
+    cardLoadState: CardLoadState.Failed,
     subline: LEDGER_SUBLINE,
     filter: JournalFeed.All,
     groups: [],

@@ -12,7 +12,7 @@ import {
   visitRowOf,
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
-import { LocalDate, type TimeZone, UtcEpochMs, defect } from '@core/primitives';
+import { LocalDate, UtcEpochMs } from '@core/primitives';
 import {
   type BirthDate,
   CouponOccasion,
@@ -110,13 +110,6 @@ import { medalRingVm } from './medals.presenter';
 /** No-shows in the last 90 days that raise the reliability capsule (old spec R47). */
 const NO_SHOW_CAPSULE_AT = 2;
 
-/** The shop's zone: a voucher's last day is read on its calendar. */
-const SHOP_ZONE: TimeZone = (() => {
-  const zone = ZonedTimeSystem.checkZone('Europe/Sofia');
-  if (!zone.ok) defect('unreachable: the shop zone is a zone');
-  return zone.value;
-})();
-
 /** How far ahead a birthday is said: the week to come, never further. */
 const BIRTHDAY_NOTICE_DAYS = 7;
 
@@ -185,10 +178,15 @@ function heroLine(
   words: ClientCardWords,
 ): readonly LinePart[] | null {
   if (input.subject.userId === null) return plainLine(words.head.guest);
-  if (!input.settled) return null;
+  const zone = input.zone;
+  if (!input.settled || zone === null) return null;
   if (pause !== null) {
     if (pause.until === null) return plainLine(words.head.pausedPermanent);
-    const until = dayShort(pause.until, shopDayOf(input.nowMs), words.lang);
+    const until = dayShort(
+      pause.until,
+      shopDayOf(input.nowMs, zone),
+      words.lang,
+    );
     return lineParts(words.head.pausedUntil(until), [until]);
   }
   if (!input.statsKnown) return null;
@@ -265,7 +263,8 @@ function heroTier(
 export function clientHeroVm(input: HeroInput): ClientHeroVm {
   const { subject, user, words } = input;
   const name = displayNameOf(subject, user);
-  const pause = pauseOf(user, input.nowMs);
+  const pause =
+    input.zone === null ? null : pauseOf(user, input.nowMs, input.zone);
   return {
     name,
     line: words === null ? null : heroLine(input, pause, words),
@@ -299,7 +298,7 @@ export function overviewCapsulesVm(
   if (input.stats !== null && now.ok) {
     const noShows = ClientStatsSystem.statWindows(
       input.stats,
-      ZonedTimeSystem.shopNow(now.value, SHOP_ZONE),
+      ZonedTimeSystem.shopNow(now.value, input.zone),
     ).noShows.last90d;
     if (noShows >= NO_SHOW_CAPSULE_AT) {
       capsules.push({
@@ -317,7 +316,7 @@ export function overviewCapsulesVm(
 
 export interface BirthdayInput {
   readonly user: User | null;
-  /** The shop calendar's today (`YYYY-MM-DD`, Europe/Sofia). */
+  /** The shop calendar's today (`YYYY-MM-DD`, the shop's zone). */
   readonly today: string;
   /**
    * The owner's usable grants and the ones on this visit's bill, as the
@@ -441,7 +440,7 @@ export function grantsBesideBirthday(
  */
 export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
   const { context, words } = input;
-  const today = shopDayOf(input.nowMs);
+  const today = shopDayOf(input.nowMs, input.zone);
   // The rows tell which visit was worked and which is still to come, as
   // the history tells it; the cards are built from the visits they pick.
   const rowOf = (appointment: Appointment) =>

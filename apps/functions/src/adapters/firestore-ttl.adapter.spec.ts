@@ -87,6 +87,33 @@ describe('purgeAtFor — the one purgeAt stamp (F1-7)', () => {
     ).toBeNull();
   });
 
+  it('impersonationSessions: the end (or, while open, the expiry) + 30 days — an ENDED body re-stamps (Phase 4a 4A-3 (4))', () => {
+    const startedAtUtcMs = utcMidnight('2026-10-01') + 9 * 3_600_000;
+    const expiresAtUtcMs = startedAtUtcMs + 3_600_000;
+    const endedAtUtcMs = startedAtUtcMs + 600_000;
+    expect(
+      millisOf(
+        purgeAtFor(['impersonationSessions', 'imp-1'], {
+          impersonationStatus: 'ACTIVE',
+          startedAtUtcMs,
+          expiresAtUtcMs,
+        }),
+      ),
+    ).toBe(expiresAtUtcMs + 30 * DAY);
+    // `endImpersonation` writes ONE `Set` of the ended body: the stamp moves
+    // to the end, which is earlier than the expiry it replaces.
+    expect(
+      millisOf(
+        purgeAtFor(['impersonationSessions', 'imp-1'], {
+          impersonationStatus: 'ENDED',
+          startedAtUtcMs,
+          expiresAtUtcMs,
+          endedAtUtcMs,
+        }),
+      ),
+    ).toBe(endedAtUtcMs + 30 * DAY);
+  });
+
   it('answers null for any other group — an appointment, the users document above a notification, a customer', () => {
     expect(
       purgeAtFor(['appointments', 'a1'], { localDate: '2026-10-07' }),
@@ -96,10 +123,15 @@ describe('purgeAtFor — the one purgeAt stamp (F1-7)', () => {
       purgeAtFor(['users', 'u1'], { expiresAtUtcMs: 1, sentAtUtcMs: 1 }),
     ).toBeNull();
     expect(purgeAtFor(['customers', 'cus_1'], {})).toBeNull();
-    expect(purgeAtFor(['impersonationSessions', 'imp-1'], {})).toBeNull();
   });
 
   it('never invents a day: a TTL body missing the field its formula reads is not stamped', () => {
+    expect(purgeAtFor(['impersonationSessions', 'imp-1'], {})).toBeNull();
+    expect(
+      purgeAtFor(['impersonationSessions', 'imp-1'], {
+        expiresAtUtcMs: 'soon',
+      }),
+    ).toBeNull();
     expect(purgeAtFor(['barberBusy', 'k'], { blocks: [] })).toBeNull();
     expect(purgeAtFor(['capacity', '2026-10'], { entries: [] })).toBeNull();
     expect(

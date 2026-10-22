@@ -8,13 +8,15 @@ import {
 } from '@jsverse/transloco';
 import { type Observable, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AVATAR_UPLOADER, ZonedDateTime } from '@creativo/application/accounts';
 import { BirthDate, JournalEffect, JournalFeed } from '@core/components';
 import type { Appointment, JournalEntry } from '@core/entities';
 import type {
   AppointmentPhotoPorts,
   AppointmentReadPorts,
+  AvatarPorts,
   ClientJournalPorts,
+  DefaultLocationPorts,
+  LocationLoadPorts,
   ClientStatsReadPorts,
   CouponVoucherPorts,
   CustomerPorts,
@@ -36,6 +38,7 @@ import {
 import {
   APPOINTMENT_PHOTO_PORTS,
   APPOINTMENT_READ_PORTS,
+  AVATAR_PORTS,
   CLIENT_JOURNAL_PORTS,
   CLIENT_STATS_READ_PORTS,
   COUPON_VOUCHER_PORTS,
@@ -44,8 +47,8 @@ import {
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
   WAITLIST_READ_PORTS,
+  provideFlags,
 } from '@creativo/infrastructure/firebase-app';
-import { CLOCK, provideFeatureFlags } from '@creativo/application/shared';
 import type {
   ClientCardContext,
   ClientCardSubject,
@@ -65,11 +68,10 @@ import {
   GEORGI_MONEY,
   GEORGI_PREVIOUS_MS,
   GUEST,
-  InMemoryAvatars,
   MARTIN,
   NBSP_EURO,
-  NOW_MS,
   type PortDouble,
+  avatarPortsOf,
   catalogPortsOf,
   catalogueOf,
   customerPortsOf,
@@ -90,6 +92,7 @@ import {
   pausedUntilOctober,
   photoPortsOf,
   profilePortsOf,
+  shopZonePortsOf,
   statsOf,
   statsPortsOf,
   stubOf,
@@ -98,6 +101,8 @@ import {
   waitlistPortsOf,
   wordsOf,
 } from '../testing/client-card.fixtures';
+import { cardRuntimeProviders } from '../testing/achievements-pages.rig';
+import { CardLoadState } from './client-pages.vm';
 
 @Injectable()
 class CatalogueLoader implements TranslocoLoader {
@@ -242,9 +247,11 @@ interface RigOptions {
   readonly loyalty?: PortDouble<LoyaltyAccountReadPorts> | null;
   readonly catalog?: PortDouble<LoyaltyCatalogReadPorts> | null;
   readonly waitlist?: WaitlistReadPorts | null;
-  readonly avatars?: InMemoryAvatars | null;
+  readonly avatars?: AvatarPorts | null;
   readonly vouchers?: PortDouble<CouponVoucherPorts> | null;
   readonly activity?: ClientJournalPorts | null;
+  /** Where the shop's zone is read — the fixture centre shop as the default location unless said. */
+  readonly locations?: LocationLoadPorts & DefaultLocationPorts;
 }
 
 const BOOK: readonly Appointment[] = [...georgiHistory(), ...martinHistory()];
@@ -262,7 +269,7 @@ function defaults() {
     loyalty: loyaltyPortsOf(),
     catalog: catalogPortsOf(),
     waitlist: waitlistPortsOf([martinWaitlist()]) as WaitlistReadPorts,
-    avatars: new InMemoryAvatars(
+    avatars: avatarPortsOf(
       new Map([[GEORGI, 'https://example.test/avatars/georgi.jpg']]),
     ),
     vouchers: voucherPortsOf(),
@@ -277,7 +284,7 @@ function rig(options: RigOptions = {}) {
   TestBed.configureTestingModule({
     providers: [
       ClientCardStore,
-      provideFeatureFlags(options.flags ?? ALL_FLAGS),
+      provideFlags(options.flags ?? ALL_FLAGS),
       ...provideTransloco({
         config: {
           availableLangs: ['bg', 'en'],
@@ -287,12 +294,7 @@ function rig(options: RigOptions = {}) {
         },
         loader: CatalogueLoader,
       }),
-      {
-        provide: CLOCK,
-        useValue: {
-          now: (zone: string) => ZonedDateTime.fromMillis(NOW_MS, zone),
-        },
-      },
+      ...cardRuntimeProviders(undefined, options.locations),
       ...bind(PROFILE_PORTS, ports.profiles),
       ...bind(CUSTOMER_PORTS, ports.customers),
       ...bind(CLIENT_STATS_READ_PORTS, ports.stats),
@@ -301,7 +303,7 @@ function rig(options: RigOptions = {}) {
       ...bind(LOYALTY_ACCOUNT_READ_PORTS, ports.loyalty),
       ...bind(LOYALTY_CATALOG_READ_PORTS, ports.catalog),
       ...bind(WAITLIST_READ_PORTS, ports.waitlist),
-      ...bind(AVATAR_UPLOADER, ports.avatars),
+      ...bind(AVATAR_PORTS, ports.avatars),
       ...bind(COUPON_VOUCHER_PORTS, ports.vouchers),
       ...bind(CLIENT_JOURNAL_PORTS, ports.activity),
     ],
@@ -392,7 +394,9 @@ describe('ClientCardStore — Георги, settled', () => {
     const { store } = rig();
     const sentence = () => {
       const loyalty = store.overview().loyalty;
-      return loyalty?.status === 'ready' ? loyalty.data.sentence : undefined;
+      return loyalty?.cardLoadState === CardLoadState.Ready
+        ? loyalty.data.sentence
+        : undefined;
     };
     // At rest: the ticket offers the haircut; the points say what else.
     open(store, subjectOf(GEORGI), georgiContext());
@@ -427,9 +431,10 @@ describe('ClientCardStore — Георги, settled', () => {
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     const data = store.achievementsData();
-    expect(data?.status === 'ready' && data.data.previousVisitAtMs).toBe(
-      GEORGI_PREVIOUS_MS,
-    );
+    expect(
+      data?.cardLoadState === CardLoadState.Ready &&
+        data.data.previousVisitAtMs,
+    ).toBe(GEORGI_PREVIOUS_MS);
     expect(store.achievementsContext()).toMatchObject({
       subjectName: 'Георги Петров',
       visit: null,
@@ -508,13 +513,15 @@ describe('ClientCardStore — a gone visit', () => {
     // name a reward he holds (DV5, wave D r6) — the sentence does not flip
     // with what the visit can take.
     expect(
-      overview.loyalty?.status === 'ready' && overview.loyalty.data.sentence,
+      overview.loyalty?.cardLoadState === CardLoadState.Ready &&
+        overview.loyalty.data.sentence,
     ).toContain('оформяне на брада');
     expect(overview.canRemove).toBe(false);
     expect(overview.actions.map((a) => a.id)).toEqual(['call', 'sms', 'viber']);
     const wallet = store.wallet();
     expect(
-      wallet?.status === 'ready' && wallet.data.actions.map((a) => a.id),
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.actions.map((a) => a.id),
     ).not.toContain('use');
   });
 
@@ -527,16 +534,17 @@ describe('ClientCardStore — a gone visit', () => {
     );
     await settle();
     const overview = store.overview();
-    expect(overview.reward?.status).toBe('ready');
+    expect(overview.reward?.cardLoadState).toBe(CardLoadState.Ready);
     expect(overview.canRemove).toBe(true);
     expect(overview.actions.map((a) => a.id)).toContain('same');
     const wallet = store.wallet();
     expect(
-      wallet?.status === 'ready' && wallet.data.actions.map((a) => a.id),
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.actions.map((a) => a.id),
     ).toContain('use');
     expect(
-      wallet?.status === 'ready' &&
-        wallet.data.holdings.status === 'ready' &&
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.holdings.cardLoadState === CardLoadState.Ready &&
         wallet.data.holdings.data.map((h) => h.kind),
     ).toContain('ticket');
   });
@@ -559,14 +567,16 @@ describe('ClientCardStore — Мартин, in the chair', () => {
     expect(overview.capsules).toBeUndefined();
     expect(overview.birthday?.kind).toBe('today');
     expect(
-      overview.visits?.status === 'ready' && overview.visits.data.waitlist?.id,
+      overview.visits?.cardLoadState === CardLoadState.Ready &&
+        overview.visits.data.waitlist?.id,
     ).toBe('waitlist-dev-martin');
     expect(store.achievementsContext()?.visit).toMatchObject({
       birthdayToday: true,
       locationId: 'loc-center',
     });
     expect(
-      overview.medals?.status === 'ready' && overview.medals.data.cue,
+      overview.medals?.cardLoadState === CardLoadState.Ready &&
+        overview.medals.data.cue,
     ).toBe('Рожден ден в салона с това посещение');
   });
 
@@ -575,7 +585,7 @@ describe('ClientCardStore — Мартин, in the chair', () => {
     open(store, subjectOf(MARTIN), martinContext({ grants: [GEORGI_GRANT] }));
     await settle();
     expect(store.overview().reward).toEqual({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: expect.objectContaining({
         grantId: 'grant-dev-georgi-punch',
         detail: 'до 28.10',
@@ -583,12 +593,13 @@ describe('ClientCardStore — Мартин, in the chair', () => {
     });
     const wallet = store.wallet();
     expect(
-      wallet?.status === 'ready' &&
-        wallet.data.holdings.status === 'ready' &&
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.holdings.cardLoadState === CardLoadState.Ready &&
         wallet.data.holdings.data.filter((h) => h.kind === 'ticket'),
     ).toMatchObject([{ ticket: { grantId: 'grant-dev-georgi-punch' } }]);
     expect(
-      wallet?.status === 'ready' && wallet.data.actions.map((a) => a.id),
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.actions.map((a) => a.id),
     ).toContain('use');
   });
 
@@ -617,12 +628,12 @@ describe('ClientCardStore — the D-9 gate', () => {
       tier: null,
     });
     const overview = store.overview();
-    expect(overview.capsules).toEqual({ status: 'loading' });
-    expect(overview.reward).toEqual({ status: 'loading' });
-    expect(overview.visits).toEqual({ status: 'loading' });
-    expect(overview.loyalty).toEqual({ status: 'loading' });
-    expect(overview.medals).toEqual({ status: 'loading' });
-    expect(overview.photos).toEqual({ status: 'loading' });
+    expect(overview.capsules).toEqual({ cardLoadState: CardLoadState.Loading });
+    expect(overview.reward).toEqual({ cardLoadState: CardLoadState.Loading });
+    expect(overview.visits).toEqual({ cardLoadState: CardLoadState.Loading });
+    expect(overview.loyalty).toEqual({ cardLoadState: CardLoadState.Loading });
+    expect(overview.medals).toEqual({ cardLoadState: CardLoadState.Loading });
+    expect(overview.photos).toEqual({ cardLoadState: CardLoadState.Loading });
     expect(overview.birthday).toBeUndefined();
     expect(history.calls).toEqual([]);
 
@@ -635,7 +646,9 @@ describe('ClientCardStore — the D-9 gate', () => {
     expect('reward' in store.overview()).toBe(false);
     expect(history.calls.length).toBe(1);
     const wallet = store.wallet();
-    expect(wallet?.status === 'ready' && wallet.data.frozen).toBe(true);
+    expect(
+      wallet?.cardLoadState === CardLoadState.Ready && wallet.data.frozen,
+    ).toBe(true);
   });
 
   it('fails the whole card when the profile fails, reads nothing else, and recovers on retry', async () => {
@@ -654,7 +667,7 @@ describe('ClientCardStore — the D-9 gate', () => {
     expect(store.hero().line).toBeNull();
     expect(history.calls).toEqual([]);
     expect(loyalty.calls).toEqual([]);
-    expect(store.wallet()).toEqual({ status: 'failed' });
+    expect(store.wallet()).toEqual({ cardLoadState: CardLoadState.Failed });
     expect(store.visits().status).toBe('failed');
 
     profiles.recover();
@@ -695,24 +708,101 @@ describe('ClientCardStore — the D-9 gate', () => {
   });
 });
 
+describe('ClientCardStore — the shop’s zone (Phase 4a 4A-11)', () => {
+  /** The default location's read, held until the spec answers it — or failing while `down.failing`. */
+  function heldLocations(failing = false) {
+    const shop = shopZonePortsOf();
+    const down = { failing };
+    let answer: () => void = () => undefined;
+    const locations: LocationLoadPorts & DefaultLocationPorts = {
+      ...shop,
+      loadLocation: (id) =>
+        down.failing
+          ? Promise.resolve(
+              CoreResult.err(CoreRepositoryError.readFailed(null, 'down')),
+            )
+          : failing
+            ? shop.loadLocation(id)
+            : new Promise((resolve) => {
+                answer = () => resolve(shop.loadLocation(id));
+              }),
+    };
+    return { locations, answer: () => answer(), down };
+  }
+
+  it('folds the default location’s zone into the gate: the seat’s snapshot, nothing said under it, until the zone is known', async () => {
+    const zone = heldLocations();
+    const { store } = rig({
+      profiles: profilePortsOf([georgiUser(pausedUntilOctober())]),
+      locations: zone.locations,
+    });
+    open(store, subjectOf(GEORGI), georgiOpenContext());
+    await settle();
+    // The profile has answered; the shop's day has not: no pause, no line.
+    expect(store.hero()).toMatchObject({
+      line: null,
+      tier: null,
+      paused: false,
+    });
+    expect(store.overview()).toEqual({
+      actions: [],
+      canRemove: false,
+      failed: [],
+    });
+    expect(store.visits().status).toBe('loading');
+    expect(store.wallet()).toEqual({ cardLoadState: CardLoadState.Loading });
+
+    zone.answer();
+    await settle();
+    const hero = store.hero();
+    expect(hero.paused).toBe(true);
+    expect(textOf(hero.line ?? [])).toBe(WORDS.head.pausedUntil('12.10'));
+    expect(store.overview().actions.length).toBeGreaterThan(0);
+    expect(store.visits().status).toBe('ready');
+  });
+
+  it('fails the whole card when the zone cannot be read — nothing is judged on a day it cannot name — and its retry reads the zone again (4A-2 (e))', async () => {
+    const zone = heldLocations(true);
+    const { store } = rig({ locations: zone.locations });
+    open(store, subjectOf(GEORGI), georgiContext());
+    await settle();
+    expect(store.hero()).toMatchObject({ line: null, tier: null });
+    expect(store.overview().failed).toEqual(['profile']);
+    expect(store.visits().status).toBe('failed');
+
+    zone.down.failing = false;
+    store.retry('profile');
+    await settle();
+    expect(store.overview().failed).toEqual([]);
+    expect(store.visits().status).toBe('ready');
+    expect(textOf(store.hero().line ?? [])).toMatch(
+      /^Клиент от март\u00a02025\u00a0г\./u,
+    );
+  });
+});
+
 describe('ClientCardStore — module failures', () => {
   it('fails one module under its heading, and retries it alone', async () => {
     const photos = photoPortsOf(georgiPhotos()).failWith();
     const { store, loyalty } = rig({ photos });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
-    expect(store.overview().photos).toEqual({ status: 'failed' });
+    expect(store.overview().photos).toEqual({
+      cardLoadState: CardLoadState.Failed,
+    });
     expect(store.overview().failed).toEqual(['photos']);
     // The featured card still draws — without its thumbs.
     const visits = store.overview().visits;
-    expect(visits?.status === 'ready' && visits.data.last?.photos).toEqual([]);
+    expect(
+      visits?.cardLoadState === CardLoadState.Ready && visits.data.last?.photos,
+    ).toEqual([]);
 
     const loyaltyReads = loyalty?.calls.length;
     photos.recover();
     store.retry('photos');
     await settle();
     expect(store.overview().failed).toEqual([]);
-    expect(store.overview().photos?.status).toBe('ready');
+    expect(store.overview().photos?.cardLoadState).toBe(CardLoadState.Ready);
     expect(loyalty?.calls.length).toBe(loyaltyReads);
   });
 
@@ -737,13 +827,15 @@ describe('ClientCardStore — module failures', () => {
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     expect(store.overview().failed).toEqual(['loyalty', 'achievements']);
-    expect(store.wallet()).toEqual({ status: 'failed' });
-    expect(store.achievementsData()).toEqual({ status: 'failed' });
+    expect(store.wallet()).toEqual({ cardLoadState: CardLoadState.Failed });
+    expect(store.achievementsData()).toEqual({
+      cardLoadState: CardLoadState.Failed,
+    });
     loyalty.recover();
     store.retry('loyalty');
     await settle();
     expect(store.overview().failed).toEqual([]);
-    expect(store.achievementsData()?.status).toBe('ready');
+    expect(store.achievementsData()?.cardLoadState).toBe(CardLoadState.Ready);
   });
 
   it('keeps the visits module when only the waitlist fails — without the card', async () => {
@@ -752,8 +844,10 @@ describe('ClientCardStore — module failures', () => {
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
     const visits = store.overview().visits;
-    expect(visits?.status).toBe('ready');
-    expect(visits?.status === 'ready' && visits.data.waitlist).toBeNull();
+    expect(visits?.cardLoadState).toBe(CardLoadState.Ready);
+    expect(
+      visits?.cardLoadState === CardLoadState.Ready && visits.data.waitlist,
+    ).toBeNull();
     expect(store.overview().failed).toEqual([]);
   });
 
@@ -766,9 +860,13 @@ describe('ClientCardStore — module failures', () => {
     const { store } = rig({ history: silent });
     open(store, subjectOf(GEORGI), georgiContext());
     await vi.advanceTimersByTimeAsync(0);
-    expect(store.overview().visits).toEqual({ status: 'loading' });
+    expect(store.overview().visits).toEqual({
+      cardLoadState: CardLoadState.Loading,
+    });
     await vi.advanceTimersByTimeAsync(CLIENT_CARD_READ_TIMEOUT_MS);
-    expect(store.overview().visits).toEqual({ status: 'failed' });
+    expect(store.overview().visits).toEqual({
+      cardLoadState: CardLoadState.Failed,
+    });
     expect(store.overview().failed).toEqual(['visits']);
   });
 });
@@ -830,8 +928,10 @@ describe('ClientCardStore — the client record (D29, flip-3 F3-1 (a))', () => {
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     expect(store.overview().failed).toEqual(['loyalty', 'achievements']);
-    expect(store.wallet()).toEqual({ status: 'failed' });
-    expect(store.achievementsData()).toEqual({ status: 'failed' });
+    expect(store.wallet()).toEqual({ cardLoadState: CardLoadState.Failed });
+    expect(store.achievementsData()).toEqual({
+      cardLoadState: CardLoadState.Failed,
+    });
     expect(loyalty.calls).toEqual([]);
 
     const recordReads = customers.callsTo('loadCustomerForUser').length;
@@ -843,8 +943,8 @@ describe('ClientCardStore — the client record (D29, flip-3 F3-1 (a))', () => {
       recordReads + 1,
     );
     expect(store.overview().failed).toEqual([]);
-    expect(store.wallet()?.status).toBe('ready');
-    expect(store.achievementsData()?.status).toBe('ready');
+    expect(store.wallet()?.cardLoadState).toBe(CardLoadState.Ready);
+    expect(store.achievementsData()?.cardLoadState).toBe(CardLoadState.Ready);
     expect(loyalty.callsTo('loadLoyaltyAccount')).toEqual([
       [GEORGI_LOYALTY.customerId],
     ]);
@@ -863,14 +963,14 @@ describe('ClientCardStore — the client record (D29, flip-3 F3-1 (a))', () => {
     });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
-    expect(store.wallet()).toEqual({ status: 'failed' });
+    expect(store.wallet()).toEqual({ cardLoadState: CardLoadState.Failed });
     expect(activity.calls).toEqual([]);
 
     customers.recover();
     store.retry('loyalty');
     store.retry('activity');
     await settle();
-    expect(store.wallet()?.status).toBe('ready');
+    expect(store.wallet()?.cardLoadState).toBe(CardLoadState.Ready);
     expect(
       activity
         .callsTo('pageClientJournal')
@@ -894,13 +994,17 @@ describe('ClientCardStore — the catalogue', () => {
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     expect(store.overview().failed).toEqual(['loyalty', 'achievements']);
-    expect(store.achievementsData()).toEqual({ status: 'failed' });
+    expect(store.achievementsData()).toEqual({
+      cardLoadState: CardLoadState.Failed,
+    });
 
     // A refused catalogue is not cached: a retry reads it again.
     store.retry('achievements');
     await settle();
     expect(catalog.callsTo('loadLoyaltyCatalog')).toHaveLength(2);
-    expect(store.achievementsData()).toEqual({ status: 'failed' });
+    expect(store.achievementsData()).toEqual({
+      cardLoadState: CardLoadState.Failed,
+    });
   });
 });
 
@@ -981,7 +1085,7 @@ describe('ClientCardStore — flags, ports and accounts', () => {
       failed: [],
       // The ticket is the host's grant, read through no port.
       reward: {
-        status: 'ready',
+        cardLoadState: CardLoadState.Ready,
         data: expect.objectContaining({ grantId: 'grant-dev-georgi-punch' }),
       },
     });
@@ -995,7 +1099,7 @@ describe('ClientCardStore — flags, ports and accounts', () => {
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
     expect(catalog?.callsTo('loadLoyaltyCatalog')).toHaveLength(1);
-    expect(store.achievementsData()?.status).toBe('ready');
+    expect(store.achievementsData()?.cardLoadState).toBe(CardLoadState.Ready);
   });
 });
 
@@ -1008,16 +1112,16 @@ describe('ClientCardStore — opening again', () => {
     await settle();
     held.release();
     await settle();
-    expect(store.overview().visits?.status).toBe('ready');
+    expect(store.overview().visits?.cardLoadState).toBe(CardLoadState.Ready);
 
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     // The second read is out; what was on screen stays.
     expect(held.calls.length).toBe(2);
-    expect(store.overview().visits?.status).toBe('ready');
+    expect(store.overview().visits?.cardLoadState).toBe(CardLoadState.Ready);
     held.release();
     await settle();
-    expect(store.overview().visits?.status).toBe('ready');
+    expect(store.overview().visits?.cardLoadState).toBe(CardLoadState.Ready);
   });
 
   it('starts over for another person, dropping the first one’s late answers', async () => {
@@ -1029,13 +1133,15 @@ describe('ClientCardStore — opening again', () => {
     open(store, subjectOf(MARTIN), martinContext());
     await settle();
     expect(store.displayName()).toBe('Мартин Илиев');
-    expect(store.overview().visits).toEqual({ status: 'loading' });
+    expect(store.overview().visits).toEqual({
+      cardLoadState: CardLoadState.Loading,
+    });
     held.release();
     await settle();
     const visits = store.overview().visits;
-    expect(visits?.status === 'ready' && visits.data.last?.id).toBe(
-      'appt-hist-c2-14',
-    );
+    expect(
+      visits?.cardLoadState === CardLoadState.Ready && visits.data.last?.id,
+    ).toBe('appt-hist-c2-14');
     expect(
       store
         .visits()
@@ -1221,23 +1327,28 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     // His birthday is in April.
     expect(overview.birthday).toBeUndefined();
     expect(overview.reward).toEqual({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: expect.objectContaining({ grantId: 'grant-dev-georgi-punch' }),
     });
     expect(
-      overview.visits?.status === 'ready' && overview.visits.data,
+      overview.visits?.cardLoadState === CardLoadState.Ready &&
+        overview.visits.data,
     ).toMatchObject({
       count: GEORGI_STATS.lifetimeVisitsCompleted,
       waitlist: null,
     });
     expect(
-      overview.visits?.status === 'ready' && overview.visits.data.last,
+      overview.visits?.cardLoadState === CardLoadState.Ready &&
+        overview.visits.data.last,
     ).not.toBeNull();
     expect(
-      overview.visits?.status === 'ready' && overview.visits.data.next,
+      overview.visits?.cardLoadState === CardLoadState.Ready &&
+        overview.visits.data.next,
     ).not.toBeNull();
     const loyalty =
-      overview.loyalty?.status === 'ready' ? overview.loyalty.data : null;
+      overview.loyalty?.cardLoadState === CardLoadState.Ready
+        ? overview.loyalty.data
+        : null;
     expect(loyalty?.figure).toBe(bgFigure(await georgiBalance()));
     expect(loyalty?.unit).not.toBeNull();
     // The voucher the seed gave him leads the holdings: 25,00 € of 50,00 €.
@@ -1248,12 +1359,14 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     ]);
     expect(loyalty?.holdings[0]?.value).toBe(NBSP_EURO('25,00 €'));
     const medals =
-      overview.medals?.status === 'ready' ? overview.medals.data : null;
+      overview.medals?.cardLoadState === CardLoadState.Ready
+        ? overview.medals.data
+        : null;
     expect(medals?.levelCount).toBeGreaterThan(0);
     expect(medals?.tiles.length).toBeGreaterThan(0);
     expect(medals?.tiles.length).toBeLessThanOrEqual(3);
     expect(
-      overview.photos?.status === 'ready' &&
+      overview.photos?.cardLoadState === CardLoadState.Ready &&
         overview.photos.data.map((p) => p.photoId),
     ).toEqual(['photo-dev-georgi-3']);
   });
@@ -1276,8 +1389,8 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     );
 
     const wallet = store.wallet();
-    expect(wallet?.status).toBe('ready');
-    if (wallet?.status !== 'ready') return;
+    expect(wallet?.cardLoadState).toBe(CardLoadState.Ready);
+    if (wallet?.cardLoadState !== CardLoadState.Ready) return;
     const balance = await georgiBalance();
     expect(wallet.data.frozen).toBe(false);
     expect(wallet.data.pass).toMatchObject({
@@ -1292,8 +1405,8 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     expect(actions).toEqual(
       expect.arrayContaining(['use', 'code', 'catalog', 'history']),
     );
-    expect(wallet.data.holdings.status).toBe('ready');
-    if (wallet.data.holdings.status === 'ready') {
+    expect(wallet.data.holdings.cardLoadState).toBe(CardLoadState.Ready);
+    if (wallet.data.holdings.cardLoadState === CardLoadState.Ready) {
       expect(wallet.data.holdings.data.map((h) => h.kind)).toEqual(
         expect.arrayContaining(['voucher', 'ticket', 'stamps']),
       );
@@ -1303,16 +1416,16 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     }
     expect(wallet.data.rhythm).toMatchObject({ frozen: false });
     expect(wallet.data.rhythm?.ruleLine).not.toBe('');
-    expect(wallet.data.tier?.status).toBe('ready');
-    expect(wallet.data.catalog?.status).toBe('ready');
-    expect(wallet.data.activity?.status).toBe('ready');
+    expect(wallet.data.tier?.cardLoadState).toBe(CardLoadState.Ready);
+    expect(wallet.data.catalog?.cardLoadState).toBe(CardLoadState.Ready);
+    expect(wallet.data.activity?.cardLoadState).toBe(CardLoadState.Ready);
     expect(
-      wallet.data.activity?.status === 'ready' &&
+      wallet.data.activity?.cardLoadState === CardLoadState.Ready &&
         wallet.data.activity.data.length,
     ).toBeGreaterThan(0);
 
     const ledger = store.ledger();
-    expect(ledger.status).toBe('ready');
+    expect(ledger.cardLoadState).toBe(CardLoadState.Ready);
     expect(ledger.filter).toBe(JournalFeed.All);
     expect(textOf(ledger.subline)).toBe(
       WORDS.ledgerPage.subline(
@@ -1335,8 +1448,8 @@ describe('ClientCardStore — revision 3: Георги, settled', () => {
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     const records = store.records();
-    expect(records?.status).toBe('ready');
-    if (records?.status === 'ready') {
+    expect(records?.cardLoadState).toBe(CardLoadState.Ready);
+    if (records?.cardLoadState === CardLoadState.Ready) {
       expect(records.data.subline).toBe('Георги Петров');
       expect(records.data.groups.length).toBeGreaterThan(0);
     }
@@ -1376,7 +1489,7 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
 
     store.setLedgerFilter(JournalFeed.Points);
     expect(store.ledger()).toMatchObject({
-      status: 'loading',
+      cardLoadState: CardLoadState.Loading,
       filter: JournalFeed.Points,
     });
     await settle();
@@ -1389,7 +1502,7 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
       ],
     ]);
     expect(store.ledger()).toMatchObject({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       filter: JournalFeed.Points,
     });
 
@@ -1402,16 +1515,17 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
     await settle();
     const rewards = store.ledger();
     expect(rewards).toMatchObject({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       filter: JournalFeed.Rewards,
     });
     // The sum of what the reward rows moved is nobody's net.
     expect(rewards.groups.every((group) => group.net === null)).toBe(true);
     // The wallet's own feed is untouched by the pills.
     const wallet = store.wallet();
-    expect(wallet?.status === 'ready' && wallet.data.activity?.status).toBe(
-      'ready',
-    );
+    expect(
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.activity?.cardLoadState,
+    ).toBe(CardLoadState.Ready);
   });
 
   it('drops an older pill’s answer when the pills change faster than the reads', async () => {
@@ -1419,7 +1533,7 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
     const { store } = rig({ activity: held });
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
-    expect(store.ledger().status).toBe('loading');
+    expect(store.ledger().cardLoadState).toBe(CardLoadState.Loading);
     store.setLedgerFilter(JournalFeed.Points);
     store.setLedgerFilter(JournalFeed.Status);
     // Every read is on its way; they answer in the order asked.
@@ -1427,7 +1541,7 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
     held.release();
     await settle();
     expect(store.ledger()).toMatchObject({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       filter: JournalFeed.Status,
     });
     expect(held.calls.map((call) => pillOf(call.effects))).toEqual([
@@ -1492,20 +1606,22 @@ describe('ClientCardStore — revision 3: the ledger’s pills and pages', () =>
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     const wallet = store.wallet();
-    expect(wallet?.status === 'ready' && wallet.data.activity?.status).toBe(
-      'failed',
-    );
-    expect(store.ledger().status).toBe('failed');
+    expect(
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.activity?.cardLoadState,
+    ).toBe(CardLoadState.Failed);
+    expect(store.ledger().cardLoadState).toBe(CardLoadState.Failed);
     expect(store.overview().failed).toEqual([]);
 
     activity.recover();
     store.retry('activity');
     await settle();
     const after = store.wallet();
-    expect(after?.status === 'ready' && after.data.activity?.status).toBe(
-      'ready',
-    );
-    expect(store.ledger().status).toBe('ready');
+    expect(
+      after?.cardLoadState === CardLoadState.Ready &&
+        after.data.activity?.cardLoadState,
+    ).toBe(CardLoadState.Ready);
+    expect(store.ledger().cardLoadState).toBe(CardLoadState.Ready);
   });
 });
 
@@ -1516,13 +1632,15 @@ describe('ClientCardStore — revision 3: the vouchers', () => {
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     const wallet = store.wallet();
-    expect(wallet?.status === 'ready' && wallet.data.holdings.status).toBe(
-      'failed',
-    );
-    const loyalty = store.overview().loyalty;
-    expect(loyalty?.status).toBe('ready');
     expect(
-      loyalty?.status === 'ready' && loyalty.data.holdings.map((h) => h.id),
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.holdings.cardLoadState,
+    ).toBe(CardLoadState.Failed);
+    const loyalty = store.overview().loyalty;
+    expect(loyalty?.cardLoadState).toBe(CardLoadState.Ready);
+    expect(
+      loyalty?.cardLoadState === CardLoadState.Ready &&
+        loyalty.data.holdings.map((h) => h.id),
     ).toEqual(['stamps', 'rhythm']);
     expect(store.overview().failed).toEqual([]);
 
@@ -1531,12 +1649,14 @@ describe('ClientCardStore — revision 3: the vouchers', () => {
     await settle();
     expect(vouchers.calls).toHaveLength(2);
     const after = store.wallet();
-    expect(after?.status === 'ready' && after.data.holdings.status).toBe(
-      'ready',
-    );
+    expect(
+      after?.cardLoadState === CardLoadState.Ready &&
+        after.data.holdings.cardLoadState,
+    ).toBe(CardLoadState.Ready);
     const glance = store.overview().loyalty;
     expect(
-      glance?.status === 'ready' && glance.data.holdings.map((h) => h.id),
+      glance?.cardLoadState === CardLoadState.Ready &&
+        glance.data.holdings.map((h) => h.id),
     ).toEqual(['voucher', 'stamps', 'rhythm']);
   });
 
@@ -1545,10 +1665,10 @@ describe('ClientCardStore — revision 3: the vouchers', () => {
     open(store, subjectOf(GEORGI), georgiContext());
     await settle();
     const wallet = store.wallet();
-    expect(wallet?.status).toBe('ready');
-    if (wallet?.status !== 'ready') return;
-    expect(wallet.data.holdings.status).toBe('ready');
-    if (wallet.data.holdings.status === 'ready') {
+    expect(wallet?.cardLoadState).toBe(CardLoadState.Ready);
+    if (wallet?.cardLoadState !== CardLoadState.Ready) return;
+    expect(wallet.data.holdings.cardLoadState).toBe(CardLoadState.Ready);
+    if (wallet.data.holdings.cardLoadState === CardLoadState.Ready) {
       expect(wallet.data.holdings.data.map((h) => h.kind)).not.toContain(
         'voucher',
       );
@@ -1556,7 +1676,7 @@ describe('ClientCardStore — revision 3: the vouchers', () => {
     expect('activity' in wallet.data).toBe(false);
     expect(wallet.data.actions.map((a) => a.id)).toContain('use');
     // Without a feed the ledger page is unreachable: it reads as failed, as a list without its reader does.
-    expect(store.ledger().status).toBe('failed');
+    expect(store.ledger().cardLoadState).toBe(CardLoadState.Failed);
     expect(store.overview().failed).toEqual([]);
   });
 });
@@ -1605,7 +1725,7 @@ describe('ClientCardStore — revision 3: Мартин, in the chair', () => {
     const overview = plain.store.overview();
     expect(overview.birthday?.gift).toBeNull();
     expect(overview.reward).toEqual({
-      status: 'ready',
+      cardLoadState: CardLoadState.Ready,
       data: expect.objectContaining({ grantId: 'grant-dev-georgi-punch' }),
     });
     TestBed.resetTestingModule();
@@ -1650,7 +1770,8 @@ describe('ClientCardStore — revision 3: Мартин, in the chair', () => {
     // Offline and gone, the wallet keeps its tickets on show but takes the verbs.
     const wallet = gone.store.wallet();
     expect(
-      wallet?.status === 'ready' && wallet.data.actions.map((a) => a.id),
+      wallet?.cardLoadState === CardLoadState.Ready &&
+        wallet.data.actions.map((a) => a.id),
     ).not.toContain('code');
   });
 });
@@ -1665,8 +1786,8 @@ describe('ClientCardStore — revision 3: a paused client', () => {
     expect(hero.paused).toBe(true);
     expect(textOf(hero.line ?? [])).toBe(WORDS.head.pausedUntil('12.10'));
     const wallet = store.wallet();
-    expect(wallet?.status).toBe('ready');
-    if (wallet?.status === 'ready') {
+    expect(wallet?.cardLoadState).toBe(CardLoadState.Ready);
+    if (wallet?.cardLoadState === CardLoadState.Ready) {
       expect(wallet.data.frozen).toBe(true);
       expect(wallet.data.pass.state).toBe(WORDS.loyaltyPage.passFrozen);
       expect(wallet.data.actions.map((a) => a.id)).not.toContain('use');
@@ -1706,7 +1827,7 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
     expect(store.records()).toBeNull();
     expect(store.rhythmRule()).toBeNull();
     expect(store.visits().status).toBe('loading');
-    expect(store.ledger().status).toBe('loading');
+    expect(store.ledger().cardLoadState).toBe(CardLoadState.Loading);
     expect(store.loadedVisits()).toEqual([]);
     expect(store.historyComplete()).toBe(false);
     expect(store.visitRowsInput()).toBeNull();
@@ -1723,7 +1844,7 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
     expect(off.store.rhythmRule()).toBeNull();
     expect(off.store.overview().loyalty).toBeUndefined();
     expect(off.store.overview().medals).toBeUndefined();
-    expect(off.store.ledger().status).toBe('failed');
+    expect(off.store.ledger().cardLoadState).toBe(CardLoadState.Failed);
     expect(off.vouchers?.calls).toEqual([]);
     expect(journalCalls(off.activity)).toEqual([]);
     TestBed.resetTestingModule();
@@ -1734,16 +1855,18 @@ describe('ClientCardStore — revision 3: a guest, and the flags', () => {
     expect(noPoints.vouchers?.calls).toHaveLength(1);
     expect(journalCalls(noPoints.activity)).toEqual([]);
     const wallet = noPoints.store.wallet();
-    expect(wallet?.status).toBe('ready');
-    if (wallet?.status === 'ready') {
+    expect(wallet?.cardLoadState).toBe(CardLoadState.Ready);
+    if (wallet?.cardLoadState === CardLoadState.Ready) {
       expect('activity' in wallet.data).toBe(false);
       expect('catalog' in wallet.data).toBe(false);
       expect(wallet.data.actions.map((a) => a.id)).not.toContain('history');
     }
-    expect(noPoints.store.ledger().status).toBe('failed');
+    expect(noPoints.store.ledger().cardLoadState).toBe(CardLoadState.Failed);
     // The glance's card leads with the first holding as its figure.
     const loyalty = noPoints.store.overview().loyalty;
-    expect(loyalty?.status === 'ready' && loyalty.data).toMatchObject({
+    expect(
+      loyalty?.cardLoadState === CardLoadState.Ready && loyalty.data,
+    ).toMatchObject({
       figure: NBSP_EURO('25,00 €'),
       unit: null,
     });

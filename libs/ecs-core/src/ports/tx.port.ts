@@ -164,6 +164,18 @@ export type IdPorts = {
 };
 
 /**
+ * Wait `ms` milliseconds — the browser's timer, a port so specs run
+ * immediately and record the delays asked for (`ensureSessionReady`'s
+ * refresh back-off). Never a clock read.
+ */
+export type Delay = (ms: number) => Promise<void>;
+
+/** The timer — `TIMER_PORTS` / `browserTimerPorts()`. */
+export type TimerPorts = {
+  readonly delay: Delay;
+};
+
+/**
  * The transaction bundle: the commit port plus the three impure
  * primitives every pipeline hands its systems as parameters (a system never
  * reads a clock, draws an id or hashes on its own — Law 3).

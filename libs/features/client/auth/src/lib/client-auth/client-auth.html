@@ -1,5 +1,5 @@
 <ng-container *transloco="let t">
-  @switch (store.state().kind) { @case ('identify') {
+  @switch (store.state().authFlowStep) { @case (AuthFlowStep.Identify) {
   <!-- Quiet navigation-stack chrome (owner ruling 2026-07-25): sticky top
        toolbar reading as plain page surface (no hairline), icon-only back
        chevron (iOS 26 glass-back convention — text labels are the
@@ -86,7 +86,7 @@
           uiRevealTrigger="mount"
           [uiRevealDelay]="150"
         >
-          @if (identifierKind === 'phone') {
+          @if (isPhone) {
           <ui-phone-field
             uiControlSize="large"
             [label]="t('auth.identify.phoneLabel')"
@@ -205,14 +205,14 @@
         uiControlSize="large"
         data-testid="auth-submit-identifier"
         [uiLoading]="store.pending()"
-        [disabled]="!identifierResult() || identifierResult()?.isFailure()"
+        [disabled]="!identifierResult()?.ok"
         (click)="submitIdentifier()"
       >
         {{ t('auth.identify.continue') }}
       </button>
     </ui-page-action-bar>
   </ui-stack>
-  } @case ('otp') {
+  } @case (AuthFlowStep.Otp) {
   <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
     <ui-toolbar uiSticky uiToolbarBackground="hidden">
       <ui-stack
@@ -403,7 +403,8 @@
             uiWeight="regular"
             data-testid="auth-resend-escalation"
           >
-            {{ t('auth.code.escalation.' + identifierKind) }}
+            {{ t(isPhone ? 'auth.code.escalation.phone' :
+            'auth.code.escalation.email') }}
           </p>
           }
         </ui-stack>
@@ -411,7 +412,7 @@
     </ui-stack>
     <ui-spacer />
   </ui-stack>
-  } @case ('blocked') {
+  } @case (AuthFlowStep.Blocked) {
   <ui-stack
     uiAlignment="center"
     uiSpacing="none"

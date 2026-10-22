@@ -1,22 +1,14 @@
 import * as fc from 'fast-check';
-import {
-  MediaRef,
-  MediaUnavailableError,
-  fail,
-  ok,
-  type MediaReadError,
-  type MediaReader,
-  type MediaVariant,
-  type Result,
-} from '@creativo/application/catalog';
-import { RepositoryError } from '@creativo/application/shared';
+import { MediaRef } from '@core/components';
+import type { MediaResolvePorts, MediaVariant } from '@core/ports';
+import { MediaError, Result } from '@core/primitives';
 import {
   DEFAULT_MEDIA_RETRY_POLICY,
-  MediaUrlCache,
   type MediaRetryPolicy,
+  mediaUrlCache,
 } from './media-url-cache';
 
-type Answer = Result<readonly MediaVariant[], MediaReadError>;
+type Answer = Result<readonly MediaVariant[], MediaError>;
 /**
  * What one resolve does: answer, fail transiently (`fail`, `reject`,
  * `throw`), or answer permanently that the object is `missing` or
@@ -32,55 +24,63 @@ const POLICY: MediaRetryPolicy = {
 };
 
 function refAt(path: string, id = `media-${path}`): MediaRef {
-  const result = MediaRef.create({ id, path, width: 1200, height: 1500 });
-  if (result.isFailure()) throw new Error('bad test ref');
+  const result = MediaRef.parse({
+    mediaId: id,
+    mediaPath: path,
+    mediaWidth: 1200,
+    mediaHeight: 1500,
+    mediaBlurhash: null,
+    mediaFocalX: null,
+    mediaFocalY: null,
+  });
+  if (!result.ok) throw new Error('bad test ref');
   return result.value;
 }
 
 const urlOf = (path: string) => `https://cdn.test/${path}`;
 
 /**
- * A reader that plays a script per path (the last step repeats) and
+ * A resolver that plays a script per path (the last step repeats) and
  * counts every call, so a test can say exactly how many requests reached
  * Storage.
  */
-class ScriptedReader implements MediaReader {
-  readonly calls: string[] = [];
-
-  constructor(private readonly script: Readonly<Record<string, Outcome[]>>) {}
-
-  callsFor(path: string): number {
-    return this.calls.filter((called) => called === path).length;
-  }
-
-  resolve(ref: MediaRef): Promise<Answer> {
-    this.calls.push(ref.path);
-    const steps = this.script[ref.path] ?? ['ok'];
-    const step =
-      steps[Math.min(this.callsFor(ref.path) - 1, steps.length - 1)] ?? 'ok';
-    switch (step) {
-      case 'ok':
-        return Promise.resolve(
-          ok([{ width: ref.width, url: urlOf(ref.path) }]),
-        );
-      case 'empty':
-        return Promise.resolve(ok([]));
-      case 'fail':
-        return Promise.resolve(fail(new RepositoryError('storage down')));
-      case 'missing':
-        return Promise.resolve(
-          fail(new MediaUnavailableError('not_found', ref.path)),
-        );
-      case 'forbidden':
-        return Promise.resolve(
-          fail(new MediaUnavailableError('forbidden', ref.path)),
-        );
-      case 'reject':
-        return Promise.reject(new Error('network'));
-      case 'throw':
-        throw new Error('reader bug');
-    }
-  }
+function scriptedResolver(script: Readonly<Record<string, Outcome[]>>) {
+  const calls: string[] = [];
+  const callsFor = (path: string): number =>
+    calls.filter((called) => called === path).length;
+  const ports: MediaResolvePorts = {
+    resolveMedia: (ref): Promise<Answer> => {
+      calls.push(ref.mediaPath);
+      const steps = script[ref.mediaPath] ?? ['ok'];
+      const step =
+        steps[Math.min(callsFor(ref.mediaPath) - 1, steps.length - 1)] ?? 'ok';
+      switch (step) {
+        case 'ok':
+          return Promise.resolve(
+            Result.ok([{ width: ref.mediaWidth, url: urlOf(ref.mediaPath) }]),
+          );
+        case 'empty':
+          return Promise.resolve(Result.ok([]));
+        case 'fail':
+          return Promise.resolve(
+            Result.err(MediaError.transient(ref.mediaPath)),
+          );
+        case 'missing':
+          return Promise.resolve(
+            Result.err(MediaError.notFound(ref.mediaPath)),
+          );
+        case 'forbidden':
+          return Promise.resolve(
+            Result.err(MediaError.forbidden(ref.mediaPath)),
+          );
+        case 'reject':
+          return Promise.reject(new Error('network'));
+        case 'throw':
+          throw new Error('reader bug');
+      }
+    },
+  };
+  return { ports, calls, callsFor };
 }
 
 /** Lets pending answers land, and moves the clock by `ms`. */
@@ -92,8 +92,8 @@ describe('MediaUrlCache', () => {
 
   describe('success', () => {
     it('resolves a media object once and serves its URL', async () => {
-      const reader = new ScriptedReader({});
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({});
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const cover = refAt('covers/fade.jpg');
 
       expect(cache.url(cover)).toBeUndefined();
@@ -109,8 +109,8 @@ describe('MediaUrlCache', () => {
     });
 
     it('never starts a second resolve while one is in flight', async () => {
-      const reader = new ScriptedReader({});
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({});
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const cover = refAt('covers/fade.jpg');
 
       cache.request([cover]);
@@ -122,8 +122,8 @@ describe('MediaUrlCache', () => {
     });
 
     it('keys by the Storage path: one object resolves once, a replaced cover resolves afresh', async () => {
-      const reader = new ScriptedReader({});
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({});
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const shared = refAt('covers/cut.jpg', 'media-a');
       const sameObject = refAt('covers/cut.jpg', 'media-b');
       const replaced = refAt('covers/cut-v2.jpg', 'media-a');
@@ -139,8 +139,8 @@ describe('MediaUrlCache', () => {
     });
 
     it('settles an empty answer without a URL and does not ask again', async () => {
-      const reader = new ScriptedReader({ 'covers/none.jpg': ['empty'] });
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({ 'covers/none.jpg': ['empty'] });
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const cover = refAt('covers/none.jpg');
 
       cache.request([cover]);
@@ -152,7 +152,7 @@ describe('MediaUrlCache', () => {
     });
 
     it('reads nothing for an absent ref', () => {
-      const cache = new MediaUrlCache(new ScriptedReader({}), POLICY);
+      const cache = mediaUrlCache(scriptedResolver({}).ports, POLICY);
       expect(cache.url(null)).toBeUndefined();
       expect(cache.url(undefined)).toBeUndefined();
     });
@@ -160,8 +160,8 @@ describe('MediaUrlCache', () => {
 
   describe('a transient failure, then success', () => {
     it('retries after its backoff and then serves the URL', async () => {
-      const reader = new ScriptedReader({ 'covers/fade.jpg': ['fail', 'ok'] });
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({ 'covers/fade.jpg': ['fail', 'ok'] });
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const cover = refAt('covers/fade.jpg');
 
       cache.request([cover]);
@@ -180,10 +180,10 @@ describe('MediaUrlCache', () => {
     });
 
     it('spaces successive retries by the policy', async () => {
-      const reader = new ScriptedReader({
+      const reader = scriptedResolver({
         'covers/fade.jpg': ['fail', 'fail', 'ok'],
       });
-      const cache = new MediaUrlCache(reader, POLICY);
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const cover = refAt('covers/fade.jpg');
 
       cache.request([cover]);
@@ -200,8 +200,8 @@ describe('MediaUrlCache', () => {
     it.each<Outcome>(['reject', 'throw'])(
       'treats a %s from the reader as a failed resolve',
       async (outcome) => {
-        const reader = new ScriptedReader({ 'a.jpg': [outcome, 'ok'] });
-        const cache = new MediaUrlCache(reader, POLICY);
+        const reader = scriptedResolver({ 'a.jpg': [outcome, 'ok'] });
+        const cache = mediaUrlCache(reader.ports, POLICY);
         const avatar = refAt('a.jpg');
 
         expect(() => cache.request([avatar])).not.toThrow();
@@ -213,8 +213,8 @@ describe('MediaUrlCache', () => {
     );
 
     it('keeps one object’s failure from holding up another', async () => {
-      const reader = new ScriptedReader({ 'bad.jpg': ['fail', 'ok'] });
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({ 'bad.jpg': ['fail', 'ok'] });
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const bad = refAt('bad.jpg');
       const good = refAt('good.jpg');
 
@@ -229,11 +229,11 @@ describe('MediaUrlCache', () => {
     it.each<Outcome>(['missing', 'forbidden'])(
       'asks once about a %s object, never retries, and stays on the placeholder',
       async (outcome) => {
-        const reader = new ScriptedReader({
+        const reader = scriptedResolver({
           'gone.jpg': [outcome],
           'fine.jpg': ['ok'],
         });
-        const cache = new MediaUrlCache(reader, POLICY);
+        const cache = mediaUrlCache(reader.ports, POLICY);
         const gone = refAt('gone.jpg');
         const fine = refAt('fine.jpg');
 
@@ -253,8 +253,8 @@ describe('MediaUrlCache', () => {
 
     describe('when the viewer changes (a sign-in, a sign-out, new roles)', () => {
       it('forgets a forbidden answer, and the next request asks again', async () => {
-        const reader = new ScriptedReader({ 'staff.jpg': ['forbidden', 'ok'] });
-        const cache = new MediaUrlCache(reader, POLICY);
+        const reader = scriptedResolver({ 'staff.jpg': ['forbidden', 'ok'] });
+        const cache = mediaUrlCache(reader.ports, POLICY);
         const cover = refAt('staff.jpg');
 
         cache.request([cover]);
@@ -274,8 +274,8 @@ describe('MediaUrlCache', () => {
       });
 
       it('keeps a missing answer: an absent object is absent for everyone', async () => {
-        const reader = new ScriptedReader({ 'gone.jpg': ['missing', 'ok'] });
-        const cache = new MediaUrlCache(reader, POLICY);
+        const reader = scriptedResolver({ 'gone.jpg': ['missing', 'ok'] });
+        const cache = mediaUrlCache(reader.ports, POLICY);
         const gone = refAt('gone.jpg');
 
         cache.request([gone]);
@@ -288,8 +288,8 @@ describe('MediaUrlCache', () => {
       });
 
       it('keeps serving a resolved URL without asking again', async () => {
-        const reader = new ScriptedReader({});
-        const cache = new MediaUrlCache(reader, POLICY);
+        const reader = scriptedResolver({});
+        const cache = mediaUrlCache(reader.ports, POLICY);
         const cover = refAt('covers/fade.jpg');
 
         cache.request([cover]);
@@ -302,8 +302,8 @@ describe('MediaUrlCache', () => {
       });
 
       it('asks again at once about a forbidden answer that was in flight across the change', async () => {
-        const reader = new ScriptedReader({ 'staff.jpg': ['forbidden', 'ok'] });
-        const cache = new MediaUrlCache(reader, POLICY);
+        const reader = scriptedResolver({ 'staff.jpg': ['forbidden', 'ok'] });
+        const cache = mediaUrlCache(reader.ports, POLICY);
         const cover = refAt('staff.jpg');
 
         cache.request([cover]);
@@ -314,8 +314,8 @@ describe('MediaUrlCache', () => {
       });
 
       it('keeps a forbidden answer to the viewer there is now', async () => {
-        const reader = new ScriptedReader({ 'staff.jpg': ['forbidden'] });
-        const cache = new MediaUrlCache(reader, POLICY);
+        const reader = scriptedResolver({ 'staff.jpg': ['forbidden'] });
+        const cache = mediaUrlCache(reader.ports, POLICY);
         const cover = refAt('staff.jpg');
 
         cache.identityChanged();
@@ -327,8 +327,8 @@ describe('MediaUrlCache', () => {
       });
 
       it('asks nothing once disposed', async () => {
-        const reader = new ScriptedReader({ 'staff.jpg': ['forbidden', 'ok'] });
-        const cache = new MediaUrlCache(reader, POLICY);
+        const reader = scriptedResolver({ 'staff.jpg': ['forbidden', 'ok'] });
+        const cache = mediaUrlCache(reader.ports, POLICY);
         const cover = refAt('staff.jpg');
 
         cache.request([cover]);
@@ -342,8 +342,8 @@ describe('MediaUrlCache', () => {
     });
 
     it('stops at once when a retry meets a permanent answer', async () => {
-      const reader = new ScriptedReader({ 'gone.jpg': ['fail', 'missing'] });
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({ 'gone.jpg': ['fail', 'missing'] });
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const cover = refAt('gone.jpg');
 
       cache.request([cover]);
@@ -355,8 +355,8 @@ describe('MediaUrlCache', () => {
 
   describe('a transient failure that never clears', () => {
     it('stops after maxAttempts and stays on the placeholder', async () => {
-      const reader = new ScriptedReader({ 'gone.jpg': ['fail'] });
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({ 'gone.jpg': ['fail'] });
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const cover = refAt('gone.jpg');
 
       cache.request([cover]);
@@ -379,8 +379,8 @@ describe('MediaUrlCache', () => {
           ),
           fc.array(fc.integer({ min: 0, max: 4_000 }), { maxLength: 12 }),
           async (script, reEmitsAfterMs) => {
-            const reader = new ScriptedReader({ 'x.jpg': script });
-            const cache = new MediaUrlCache(reader, POLICY);
+            const reader = scriptedResolver({ 'x.jpg': script });
+            const cache = mediaUrlCache(reader.ports, POLICY);
             const ref = refAt('x.jpg');
 
             cache.request([ref]);
@@ -411,8 +411,8 @@ describe('MediaUrlCache', () => {
 
   describe('dispose', () => {
     it('cancels a waiting retry and ignores an answer still in flight', async () => {
-      const reader = new ScriptedReader({ 'a.jpg': ['fail', 'ok'] });
-      const cache = new MediaUrlCache(reader, POLICY);
+      const reader = scriptedResolver({ 'a.jpg': ['fail', 'ok'] });
+      const cache = mediaUrlCache(reader.ports, POLICY);
       const waiting = refAt('a.jpg');
       const inFlight = refAt('b.jpg');
 

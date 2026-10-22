@@ -1,12 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { USER_ROLES } from '@creativo/domain/accounts';
+import { ActorRole, ADMIN_ROLES, USER_ROLES } from '@core/components';
 import {
-  ADMIN_ROLES,
   callerActor,
+  callerActorAsClaimed,
   callerIsAdmin,
+  callerKnownRoles,
   callerRoles,
+  callerUserId,
   callerWorksTheBook,
 } from './caller-roles';
 
@@ -114,6 +116,19 @@ describe('callerIsAdmin', () => {
   });
 });
 
+describe('callerWorksTheBook', () => {
+  it('admits the four roles that work the book — never a content manager or a client', () => {
+    expect(
+      USER_ROLES.filter((role) => callerWorksTheBook(caller([role]))),
+    ).toEqual(['barber', 'receptionist', 'admin', 'sysadmin']);
+  });
+
+  it('refuses a claim nobody promised', () => {
+    expect(callerWorksTheBook({})).toBe(false);
+    expect(callerWorksTheBook(caller('barber'))).toBe(false);
+  });
+});
+
 describe('callerRoles', () => {
   it('reads the claim as strings, in the order given', () => {
     expect(callerRoles(caller(['barber', 'admin']))).toEqual([
@@ -127,20 +142,83 @@ describe('callerRoles', () => {
     expect(callerRoles({ auth: { token: {} } })).toEqual([]);
     expect(callerRoles(caller('admin'))).toEqual([]);
   });
+
+  it('String-coerces every entry — a list inside the list reads as its text', () => {
+    expect(callerRoles(caller([['admin'], 7]))).toEqual(['admin', '7']);
+  });
+});
+
+describe('callerKnownRoles', () => {
+  it('keeps the known roles, each once, in order — an unknown string grants nothing', () => {
+    expect(
+      callerKnownRoles(caller(['barber', 'wizard', 'admin', 'barber'])),
+    ).toEqual(['barber', 'admin']);
+  });
+
+  it('reads the entries AS THEY ARE, as callerIsAdmin and the rules do: a list inside the list is no role', () => {
+    expect(callerKnownRoles(caller([['admin']]))).toEqual([]);
+    expect(callerKnownRoles(caller('admin'))).toEqual([]);
+    expect(callerKnownRoles({})).toEqual([]);
+  });
+});
+
+describe('callerUserId', () => {
+  it('reads the verified uid as the brand — an empty or absent uid is nobody', () => {
+    expect(callerUserId(caller([], 'u-1'))).toBe('u-1');
+    expect(callerUserId({ auth: { uid: '', token: {} } })).toBeNull();
+    expect(callerUserId({ auth: null })).toBeNull();
+    expect(callerUserId({})).toBeNull();
+  });
 });
 
 describe('callerActor', () => {
   it('records the owner as admin and the vendor as staff: access is not attribution', () => {
-    expect(callerActor(caller(['barber', 'admin']))?.kind).toBe('admin');
-    const vendor = callerActor(caller(['sysadmin']));
-    expect(vendor?.kind).toBe('staff');
-    expect(vendor?.kind === 'staff' ? vendor.roles : null).toEqual([
-      'sysadmin',
-    ]);
+    expect(callerActor(caller(['barber', 'admin']))).toEqual({
+      actorRole: ActorRole.Admin,
+      actorAdminUserId: 'dev-staff-ivan',
+    });
+    expect(callerActor(caller(['sysadmin']))).toEqual({
+      actorRole: ActorRole.Staff,
+      actorUserId: 'dev-staff-ivan',
+      actorRoles: ['sysadmin'],
+    });
+    expect(callerActor(caller(['client']))).toEqual({
+      actorRole: ActorRole.User,
+      actorUserId: 'dev-staff-ivan',
+    });
   });
 
   it('names nobody when there is no verified caller', () => {
     expect(callerActor({})).toBeNull();
     expect(callerActor({ auth: { uid: '', token: {} } })).toBeNull();
+  });
+});
+
+describe('the two readings of the claim’s entries (§9 R6)', () => {
+  // They agree on every claim anybody mints and part only on one nobody
+  // does: `callerActor` String-coerces (`String(['admin'])` is `'admin'`),
+  // `callerActorAsClaimed` hands the entries over as they are.
+  it('agree on every minted claim', () => {
+    for (const roles of [
+      ['barber', 'admin'],
+      ['sysadmin'],
+      ['receptionist'],
+      ['client'],
+      [],
+    ]) {
+      expect(callerActorAsClaimed(caller(roles))).toEqual(
+        callerActor(caller(roles)),
+      );
+    }
+  });
+
+  it('part on a list inside the list: coerced, it is the owner; as claimed, a plain user', () => {
+    const odd = caller([['admin']]);
+    expect(callerActor(odd)?.actorRole).toBe(ActorRole.Admin);
+    expect(callerActorAsClaimed(odd)?.actorRole).toBe(ActorRole.User);
+  });
+
+  it('name nobody without a verified caller', () => {
+    expect(callerActorAsClaimed({})).toBeNull();
   });
 });

@@ -1,43 +1,26 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import {
+  Injectable,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Observable, from, of, startWith, switchMap } from 'rxjs';
-import { AUTH_GATEWAY, type Role } from '@creativo/application/identity';
 import {
-  AVATAR_UPLOADER,
-  type UserRole,
-  profileCompletion,
-  STAFF_ROLES,
-} from '@creativo/application/accounts';
+  AUTH_SESSION_PORTS,
+  AVATAR_PORTS,
+} from '@creativo/infrastructure/firebase-app';
 import { AccountStateService } from '@creativo/features/client/account-state';
+import { ADMIN_ROLES, E164, Principal, STAFF_ROLES } from '@core/components';
 import { Profile } from '@core/entities';
-import { UserId } from '@core/primitives';
+import { IdentifierChannel, type UserId } from '@core/primitives';
+import { ProfileCompletionSystem } from '@core/systems';
 
 /** An avatar answer that has ARRIVED — `undefined` is reserved for "still looking". */
 function settled(url: string | null): Observable<string | null | undefined> {
   return of(url);
-}
-
-/**
- * The admin pair — the SAME two roles `isAdmin()` in firestore.rules names,
- * `rolesGuard('admin', 'sysadmin')` on every `/admin` route checks, and the
- * `publishStreakDefinition` callable admits (`callerIsAdmin`). Four dialects
- * of one rule; keep them equal. Narrower than `STAFF_ROLES`, which the pair
- * is also part of: an admin is staff, a barber is not an admin.
- */
-const ADMIN_ROLES: readonly UserRole[] = ['admin', 'sysadmin'];
-
-/**
- * Whether the token's claims hold one of `roles`. Claims-tolerant, like
- * `worksTheBook`: an unrecognised claim is simply not in the list and grants
- * nothing, so the claims are never narrowed to the vocabulary first.
- */
-function holdsAnyOf(
-  claims: readonly Role[],
-  roles: readonly UserRole[],
-): boolean {
-  return claims.some((claim) =>
-    (roles as readonly string[]).includes(claim as string),
-  );
 }
 
 /**
@@ -63,13 +46,14 @@ function holdsAnyOf(
  */
 @Injectable({ providedIn: 'root' })
 export class SessionIdentityService {
-  private readonly authGateway = inject(AUTH_GATEWAY);
-  private readonly avatarUploader = inject(AVATAR_UPLOADER);
+  private readonly session = inject(AUTH_SESSION_PORTS);
+  private readonly avatars = inject(AVATAR_PORTS);
   private readonly accountState = inject(AccountStateService);
 
   readonly principal = this.accountState.principal;
 
-  readonly isAuthed = computed(() => this.principal().kind === 'active');
+  /** Onboarded — a client or a staff member (`Principal.isActive`). */
+  readonly isAuthed = computed(() => Principal.isActive(this.principal()));
 
   /**
    * A staff-tier principal — the SAME grouping firestore.rules' `isStaff()`
@@ -77,27 +61,21 @@ export class SessionIdentityService {
    * menu's day-sheet entry and nothing security-bearing: the guard and the
    * rules re-check for themselves.
    */
-  readonly isStaffMember = computed(() => {
-    const principal = this.principal();
-    return (
-      principal.kind === 'active' && holdsAnyOf(principal.roles, STAFF_ROLES)
-    );
-  });
+  readonly isStaffMember = computed(() =>
+    Principal.hasAnyRole(this.principal(), STAFF_ROLES),
+  );
 
   /**
-   * One of the admin pair, `admin | sysadmin` — the SAME grouping
-   * firestore.rules' `isAdmin()` and the `/admin` routes' `rolesGuard` use,
-   * read off the token's claims. Drives the menu's «Лоялност» entry (the one
+   * One of the admin pair, `admin | sysadmin` (`ADMIN_ROLES`, ONE home) —
+   * the SAME grouping firestore.rules' `isAdmin()` and the `/admin` routes'
+   * `rolesGuard` use, read off the token's claims. Drives the menu's «Лоялност» entry (the one
    * way to the admin page `/admin/loyalty/rhythm`; client-card revision 3
    * §3.17) and nothing security-bearing: the route's guard, the rules and
    * the callable re-check for themselves.
    */
-  readonly isAdmin = computed(() => {
-    const principal = this.principal();
-    return (
-      principal.kind === 'active' && holdsAnyOf(principal.roles, ADMIN_ROLES)
-    );
-  });
+  readonly isAdmin = computed(() =>
+    Principal.hasAnyRole(this.principal(), ADMIN_ROLES),
+  );
 
   /**
    * The profile's own name once the snapshot lands, falling back to the
@@ -112,23 +90,64 @@ export class SessionIdentityService {
     const account = this.accountState.account();
     const fullName = account === null ? '' : Profile.fullName(account);
     if (fullName) return fullName;
-    const displayName = this.authGateway.currentDisplayName();
+    const displayName = this.session.currentDisplayName();
     if (displayName) return displayName;
-    const identifier = this.authGateway.currentIdentifier();
-    return identifier?.kind === 'email'
-      ? (identifier.value.toString().split('@')[0] ?? '')
+    const identifier = this.session.currentIdentifier();
+    return identifier?.identifierChannel === IdentifierChannel.Email
+      ? (identifier.identifier.split('@')[0] ?? '')
       : '';
   });
 
-  /** The channel this session authenticated with, formatted for reading — the secondary line under the portrait. */
+  /**
+   * The phone formatter, loaded lazily (F6): `libphonenumber-js` stays out
+   * of the initial chunk, so the shell asks for it the first time a phone
+   * session needs its label — `null` until it lands (or when its chunk
+   * failed to load; the next sign-in asks again).
+   */
+  private readonly formatPhone = signal<((e164: E164) => string) | null>(null);
+  private phoneFormatRequested = false;
+
+  /**
+   * The channel this session authenticated with, formatted for reading — the
+   * secondary line under the portrait (and its primary line when there is no
+   * name). A phone reads in its grouped international form once the
+   * formatter has loaded, and as the raw E.164 the moment before — or for
+   * good when the chunk failed to load — so the line is never blank
+   * (departure 4A-2 (g)).
+   */
   readonly identifierLabel = computed(() => {
     if (!this.isAuthed()) return '';
-    const identifier = this.authGateway.currentIdentifier();
+    const identifier = this.session.currentIdentifier();
     if (!identifier) return '';
-    return identifier.kind === 'phone'
-      ? identifier.value.formatInternational()
-      : identifier.value.toString();
+    if (identifier.identifierChannel === IdentifierChannel.Email) {
+      return identifier.identifier;
+    }
+    const format = this.formatPhone();
+    return format === null
+      ? identifier.identifier
+      : format(E164.of(identifier.identifier));
   });
+
+  constructor() {
+    // A phone session needs the formatter: start loading it as soon as one
+    // is signed in, so the label is ready before the menu opens.
+    effect(() => {
+      if (!this.isAuthed() || this.phoneFormatRequested) return;
+      const identifier = untracked(() => this.session.currentIdentifier());
+      if (identifier?.identifierChannel !== IdentifierChannel.Phone) return;
+      this.phoneFormatRequested = true;
+      void import('./phone-format.lazy').then(
+        ({ PhoneSystem }) => {
+          this.formatPhone.set((e164) => PhoneSystem.formatInternational(e164));
+        },
+        () => {
+          // The chunk did not load (offline, a deploy rotated the hashes):
+          // the label keeps the raw E.164 and the next run may ask again.
+          this.phoneFormatRequested = false;
+        },
+      );
+    });
+  }
 
   /** Bumped by `refreshAvatar()` — the lookup is one-shot per (session,
    *  bump), so a photo uploaded during this same session needs a nudge to
@@ -141,7 +160,7 @@ export class SessionIdentityService {
    * answer on screen while it runs; a new person starts from "still
    * looking".
    */
-  private avatarOwner: string | null = null;
+  private avatarOwner: UserId | null = null;
 
   /**
    * The uploaded photo's URL, `null` when the user has none, `undefined`
@@ -149,7 +168,7 @@ export class SessionIdentityService {
    * completion model below can wait for a real answer instead of counting
    * a not-yet-loaded photo as missing and flashing the wrong fraction.
    * Avatar existence is a storage lookup, not a profile field (see
-   * `AvatarUploader.find`).
+   * `AvatarPorts.findAvatar`).
    *
    * "In flight" is said again every time the PERSON changes (round 6): a
    * cold load starts signed out, and the signed-out answer (`null`) used
@@ -175,23 +194,17 @@ export class SessionIdentityService {
       switchMap(({ principal }) => {
         // The explicit widening is what lets `undefined` (in flight) live
         // alongside `null` (settled: no photo) in this signal's type.
-        const userId =
-          principal.kind === 'active'
-            ? UserId.parse(principal.uid.value)
-            : null;
-        if (userId === null || !userId.ok) {
+        if (!Principal.isActive(principal)) {
           this.avatarOwner = null;
           return settled(null);
         }
-        const owner = userId.value;
-        const samePerson = this.avatarOwner === userId.value;
-        this.avatarOwner = userId.value;
+        const owner = principal.userId;
+        const samePerson = this.avatarOwner === owner;
+        this.avatarOwner = owner;
         const answer = from(
-          this.avatarUploader
-            .find(owner)
-            .then((result) =>
-              result.isSuccess() ? (result.value?.url ?? null) : null,
-            ),
+          this.avatars
+            .findAvatar(owner)
+            .then((result) => (result.ok ? (result.value?.url ?? null) : null)),
         );
         return samePerson
           ? answer
@@ -233,7 +246,7 @@ export class SessionIdentityService {
     // `completion` below folds both into null because the nudge renders
     // nothing in either case.
     if (!user || photo === undefined) return null;
-    return profileCompletion(user, photo !== null);
+    return ProfileCompletionSystem.completion(user, photo !== null);
   });
 
   /**

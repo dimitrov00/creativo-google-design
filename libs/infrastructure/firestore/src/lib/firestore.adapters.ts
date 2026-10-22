@@ -5,11 +5,14 @@
 // webchannel-wrapper) out of the web app's initial chunk.
 // tools/verify/bundle/check-initial-bundle.mjs fails a build where it leaks.
 export * from './firestore-db.provider';
-export * from './firestore-paths';
 // The flip-1 (booking core), flip-2 (identity and accounts), flip-3
 // (loyalty) and flip-4 (programs) bundles: `(db) => bundle` factories, each
-// bound in app.config.ts with `provideLazyPort`'s factory form. The
-// rhythm's publish gateway is the one over the callable (`(functions, memo)`).
+// bound in app.config.ts with `provideLazyPort`'s factory. The rhythm's
+// publish ports are composed over the callable client
+// (`(gateway, memo)`), and the loyalty catalogue's shop day over the clock
+// and the default location — both built in this lazy scope, so the
+// `@core/pipelines` and `@core/systems` they reach stay out of the initial
+// chunk.
 export * from './accounts.adapter';
 export * from './appointment-notes.adapter';
 export * from './appointments.adapter';
@@ -24,8 +27,11 @@ export * from './notifications.adapter';
 export * from './programs.adapter';
 export * from './scheduling.adapter';
 export * from './streak-definitions.adapter';
-export * from './streak-publish-gateway.adapter';
+export * from './streak-publish.adapter';
 export * from './waitlist.adapter';
-// The one class adapter still bound with the class form: the dormant
-// reward progress.
-export * from './reward-progress-reader.adapter';
+// The loyalty catalogue's shop day is a pipeline (`shopToday`,
+// `@core/pipelines`); this lazy module carries it as a NAMED re-export —
+// never the namespace — so app.config.ts binds it inside the firebase-data
+// scope and it, `readShopZone` and `ZonedTimeSystem` stay off the eager
+// graph (phase-4a §9 R10, the phone field's `*.lazy.ts` precedent).
+export { shopToday } from '@core/pipelines';
