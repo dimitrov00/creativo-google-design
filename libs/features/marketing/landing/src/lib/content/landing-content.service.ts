@@ -27,7 +27,7 @@ import {
  * about which services exist and what they cost.
  *
  * Still hand-authored: locations and work shots (no seeded counterpart
- * yet), and the editorial art direction merged in by `catalog-to-vm`.
+ * yet), and the editorial art direction merged in by `catalog.presenter.ts`.
  *
  * Collections are SIGNALS, not plain arrays — Firestore answers
  * asynchronously, and templates re-read them as the catalog arrives.

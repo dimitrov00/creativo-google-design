@@ -18,7 +18,7 @@ import {
 } from '@creativo/ui/modifiers';
 import { UiListRow } from '@creativo/ui/patterns';
 import { CatalogPresenter } from '../content/catalog-presenter.service';
-import type { ServiceVm } from '../content/catalog-vm';
+import type { ServiceVm } from '../content/catalog.vm';
 
 /**
  * One navigable service row — the shape both catalog manifests read in:

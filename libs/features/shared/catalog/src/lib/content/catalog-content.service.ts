@@ -16,8 +16,8 @@ import {
 import { MediaRef, Principal, PrincipalKind } from '@core/components';
 import type { Barber, Service, ShopLocation } from '@core/entities';
 import { BARBER_ART, SERVICE_ART } from './catalog-art';
-import { type BarberVm, type ServiceVm } from './catalog-vm';
-import { barberToVm, serviceToVm } from './catalog-to-vm';
+import { type BarberVm, type ServiceVm } from './catalog.vm';
+import { barberToVm, serviceToVm } from './catalog.presenter';
 import { mediaUrlCache } from './media-url-cache';
 
 /**

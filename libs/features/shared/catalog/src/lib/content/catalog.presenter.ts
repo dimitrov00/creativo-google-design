@@ -6,86 +6,145 @@ import {
   ServiceVariantId,
   defect,
 } from '@core/primitives';
-import { CompositionKind, ServiceTerms } from '@core/components';
+import {
+  BarberOffering,
+  CompositionKind,
+  ServiceTerms,
+  type ServiceVariant,
+} from '@core/components';
 import { type CatalogPriced, CatalogPricingSystem } from '@core/systems';
+import type { Barber, Service } from '@core/entities';
+import type {
+  BarberVm,
+  Localized,
+  ServiceOfferingVm,
+  ServiceTermsVm,
+  ServiceVm,
+  ServiceVariantVm,
+} from './catalog.vm';
 
 /**
- * The catalog view models every surface renders — landing shelf, onboarding
- * grid, and the booking flow next. They live in `features/shared/catalog`
- * rather than any one feature because the service-detail sheet is shared,
- * and a view model owned by the marketing lib would have made onboarding
- * depend on marketing to show a service.
+ * Entity → view model, so the landing renders the REAL catalog while its
+ * components keep binding the `ServiceVm`/`BarberVm` shapes they were
+ * written against. The view models stay: what changed is their source.
  *
- * Presentational by design: localized strings stay `{ en, bg }` pairs
- * resolved at render time, money is EUR major units, durations are minutes.
- * `catalog-to-vm` maps the domain aggregates onto these.
+ * The catalog cannot answer everything a marketing page shows. Art
+ * direction — a barber's selected-work gallery, their one-line craft
+ * summary, the avatar focal point — is editorial copy with no business
+ * meaning, so it stays hand-authored here, keyed by id, and is merged onto
+ * whatever the catalog returns. `rating` is the one field that simply
+ * disappears: `Barber` refuses to model it ("fabricated ratings read as a
+ * scam"), and inventing one at the presentation layer would be the same
+ * lie one layer up.
  */
 
-export interface Localized {
-  readonly en: string;
-  readonly bg: string;
-}
-
-// ─── Barbers ────────────────────────────────────────────────────────────
-
-export interface BarberVm {
-  readonly id: string;
-  readonly name: Localized;
-  readonly title: Localized;
-  readonly bio: Localized;
-  readonly avatarSrc: string;
-  /** v2 seeds every avatar with FocalPoint(0.5, 0.25) → object-position. */
-  readonly objectPosition: string;
-  /** Client rating (★ 0–5, one decimal) — omitted for barbers without
-   *  enough reviews yet. */
-  readonly rating?: number;
-  /** The one-line craft summary the team cards read. */
+/** Editorial extras the catalog has no business carrying, keyed by barber id. */
+export interface BarberArtDirection {
   readonly specialty: Localized;
-  /** Selected work, for the barber destination's gallery. */
+  readonly gallery: readonly string[];
+  readonly objectPosition: string;
+}
+
+/** Editorial extras keyed by service id. */
+export interface ServiceArtDirection {
   readonly gallery: readonly string[];
 }
 
-// ─── Services ───────────────────────────────────────────────────────────
+const DEFAULT_OBJECT_POSITION = '50% 25%';
 
-export interface ServiceTermsVm {
-  /** EUR, major units (may carry .5). */
-  readonly price: number;
-  readonly minutes: number;
+function localized(text: { en: string; bg: string }): Localized {
+  return { en: text.en, bg: text.bg };
 }
 
-export interface ServiceOfferingVm {
-  readonly barberId: string;
-  readonly base: ServiceTermsVm;
-  readonly byVariant?: Readonly<Record<string, ServiceTermsVm>>;
+/**
+ * The flat terms → the VM's major-unit number (`1450` cents → `14.5`). The
+ * VM is EUR major units by contract (`catalog.vm.ts`); EUR's exponent is 2.
+ */
+function termsToVm(terms: ServiceTerms): ServiceTermsVm {
+  return { price: terms.priceCents / 100, minutes: terms.durationMinutes };
 }
 
-export interface ServiceVariantVm {
-  readonly id: string;
-  readonly name: Localized;
-  readonly icon: 'length' | 'skin';
+function offeringToVm(
+  offering: BarberOffering,
+  /** The service's declared variants — `termsFor` takes the variant's id. */
+  variants: readonly ServiceVariant[],
+): ServiceOfferingVm {
+  const byVariant: Record<string, ServiceTermsVm> = {};
+  for (const variant of variants) {
+    // Ask the offering for every declared variant and let its own sparse
+    // fallback decide. Terms equal to base are still written out: the VM's
+    // helpers read this map directly and have no fallback of their own.
+    byVariant[variant.variantId] = termsToVm(
+      BarberOffering.termsFor(offering, variant.variantId),
+    );
+  }
+  return {
+    barberId: offering.barberId,
+    // The offering's own five root fields ARE its base terms (the slice).
+    base: termsToVm(offering),
+    ...(variants.length > 0 ? { byVariant } : {}),
+  };
 }
 
-export interface ServiceVm {
-  readonly id: string;
-  /**
-   * Single or bundle — the catalogue's own `CompositionKind` (reused, never
-   * re-spelled); an unspecified composition draws as a single service, so
-   * the view model never carries `UNSPECIFIED`.
-   */
-  readonly compositionKind: Exclude<
-    CompositionKind,
-    typeof CompositionKind.Unspecified
-  >;
-  readonly name: Localized;
-  readonly description: Localized;
-  readonly coverSrc?: string;
-  readonly variants: readonly ServiceVariantVm[];
-  readonly offerings: readonly ServiceOfferingVm[];
-  /** Bundle members, by service id. */
-  readonly includes?: readonly string[];
-  readonly upsellOnly: boolean;
-  /** Gallery frames for the detail sheet (v2 serviceLinks order). */
-  readonly gallery: readonly string[];
+export function serviceToVm(
+  service: Service,
+  coverSrc: string | undefined,
+  art: ServiceArtDirection | undefined,
+): ServiceVm {
+  const variants: ServiceVariantVm[] = service.variants.map((variant) => ({
+    id: variant.variantId,
+    name: localized(variant.name),
+    // The icon is a rendering choice, not catalog data; length is the only
+    // axis the seed declares, and `skin` was never wired to anything.
+    icon: 'length',
+  }));
+
+  const offerings = service.offerings.map((offering) =>
+    offeringToVm(offering, service.variants),
+  );
+
+  const bundle = service.compositionKind === CompositionKind.Bundle;
+  return {
+    id: service.id,
+    // An unspecified composition (`composition: null` as authored) draws as
+    // a single service, as it always did.
+    compositionKind: bundle ? CompositionKind.Bundle : CompositionKind.Single,
+    name: localized(service.name),
+    description: localized(service.description),
+    ...(coverSrc ? { coverSrc } : {}),
+    variants,
+    // A service nobody is priced for yet still has to show a price, so its
+    // own terms (the five root fields) stand in as a single anonymous
+    // offering. Without this the VM's `servicePriceFrom` would fold an empty
+    // list.
+    offerings:
+      offerings.length > 0
+        ? offerings
+        : [{ barberId: '', base: termsToVm(service) }],
+    ...(service.compositionKind === CompositionKind.Bundle
+      ? { includes: [...service.bundleServiceIds] }
+      : {}),
+    upsellOnly: service.upsellOnly,
+    gallery: art?.gallery ?? [],
+  };
+}
+
+export function barberToVm(
+  barber: Barber,
+  avatarSrc: string | undefined,
+  art: BarberArtDirection | undefined,
+): BarberVm {
+  return {
+    id: barber.id,
+    name: localized(barber.name),
+    title: localized(barber.title),
+    bio: localized(barber.bio),
+    avatarSrc: avatarSrc ?? '',
+    objectPosition: art?.objectPosition ?? DEFAULT_OBJECT_POSITION,
+    // No `rating` — see the note at the top of this file.
+    specialty: art?.specialty ?? localized(barber.title),
+    gallery: art?.gallery ?? [],
+  };
 }
 
 // ─── Formatting (v2 lib/format-money + format-duration semantics) ────────
@@ -222,7 +281,7 @@ function sure<T, E>(
     | { readonly ok: false; readonly error: E },
   what: string,
 ): T {
-  // Unreachable: `catalog-to-vm` maps the catalogue's own terms — a
+  // Unreachable: `catalog.presenter.ts` maps the catalogue's own terms — a
   // non-negative price and a positive duration.
   if (!result.ok) defect(`unreachable: ${what}`);
   return result.value;

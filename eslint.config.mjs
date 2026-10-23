@@ -443,6 +443,15 @@ export default [
     plugins: { creativo },
     rules: { 'creativo/error-dictionary-home': 'error' },
   },
+  // Law 10 — presenters, display models and their wording helpers
+  // (`*.presenter.ts`, `*.vm.ts`, `*.words.ts`, `*.format.ts`) are pure: no
+  // class, Angular, I/O, async, clock or randomness. The rule scopes itself
+  // by the physical filename. Tested in tools/lint-rules/presenter-purity.spec.mjs.
+  {
+    files: ['**/*.ts'],
+    plugins: { creativo },
+    rules: { 'creativo/presenter-purity': 'error' },
+  },
   // …and strict mode on every port file: no `Pick`/`Omit` at all — a port's
   // argument shape is a named type (.claude/rules/ecs-ports.md).
   // libs/ecs-core keeps its own `src/ports/**` strict block, which also

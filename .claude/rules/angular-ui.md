@@ -24,23 +24,28 @@ injectables. That permission ends at the framework boundary.
 
 - Stores (`*.store.ts`) hold `signal<Appointment[]>`,
   `signal<BookingStatus>` — the same types the pipelines read and write. No
-  view-model classes, no `toViewModel()` mappers; a template reads the
-  component fields and a `computed()` calls a system for anything derived:
+  view-model classes and no mapper outside a presenter: a `computed()` calls
+  a system for anything derived, and — when a screen prints finished words —
+  a presenter (`*.presenter.ts`, Law 10, `presenters.md`) inside a
+  `computed()` turns those values into the display struct the template
+  prints:
 
   ```ts
   readonly free = computed(() =>
     AvailabilitySystem.freeWindows(this.working(), this.busy(), this.policy()),
   );
+  readonly pass = computed(() => passVm({ account: this.account(), words: this.words() }));
   ```
 
 - Never construct a `Date` or a date-library object for domain math (Law 7);
   the UI reads `LocalDate`, `MinuteOfDay`, `PriceCents` and `UtcEpochMs`
   straight off the entity. Display "today" and the clock in the LOCATION's
   `timeZone`, never the browser's.
-- Formatting (money, dates, durations) happens in the template layer via
-  existing pipes/helpers (`formatMoney`, native `Intl.DateTimeFormat` /
-  `Intl.NumberFormat` formatting in the i18n lib, formatters cached per
-  locale+zone, never constructed per row) — systems return numbers.
+- Formatting (money, dates, durations) happens in the template layer — a
+  template's pipes, or a presenter (Law 10) — via existing helpers
+  (`formatMoney`, native `Intl.DateTimeFormat` / `Intl.NumberFormat`
+  formatting in the i18n lib, formatters cached per locale+zone, never
+  constructed per row) — systems return numbers, presenters return words.
 - A store may be an `@Injectable` class because Angular DI needs an injectable;
   it carries signals and calls systems and read ports. It never contains
   domain math and never mutates an entity in place — replace the signal value

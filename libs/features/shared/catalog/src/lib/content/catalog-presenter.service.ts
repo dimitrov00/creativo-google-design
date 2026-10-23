@@ -10,13 +10,12 @@ import {
 } from '@core/primitives';
 import { ServiceTerms } from '@core/components';
 import { type CatalogPriced, CatalogPricingSystem } from '@core/systems';
+import { type Localized, type ServiceVm } from './catalog.vm';
 import {
-  type Localized,
-  type ServiceVm,
   formatDurationRange,
   formatPrice,
   formatServiceMeta,
-} from './catalog-vm';
+} from './catalog.presenter';
 
 /**
  * The three locale-bound reads every catalog surface needs: resolve a
@@ -81,7 +80,7 @@ function sure<T, E>(
     | { readonly ok: false; readonly error: E },
   what: string,
 ): T {
-  // Unreachable: `catalog-to-vm` maps the catalogue's own terms — a
+  // Unreachable: `catalog.presenter.ts` maps the catalogue's own terms — a
   // non-negative price and a positive duration.
   if (!result.ok) defect(`unreachable: ${what}`);
   return result.value;

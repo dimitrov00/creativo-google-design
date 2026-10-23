@@ -113,7 +113,7 @@ import {
   AppointmentsStore,
   appointmentsStateWords,
 } from '../appointments.store';
-import type { ClientVisitVm } from '../visit-vm';
+import type { ClientVisitVm } from '../visit.vm';
 import { buildVisitIcs } from '../visit-ics';
 
 type AppointmentsView = 'list' | 'calendar';

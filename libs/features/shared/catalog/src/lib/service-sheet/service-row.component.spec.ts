@@ -7,7 +7,7 @@ import {
 } from '@jsverse/transloco';
 import { Observable, of } from 'rxjs';
 import { CompositionKind } from '@core/components';
-import type { ServiceVm } from '../content/catalog-vm';
+import type { ServiceVm } from '../content/catalog.vm';
 import { ServiceRowComponent } from './service-row.component';
 
 const bg: Translation = {

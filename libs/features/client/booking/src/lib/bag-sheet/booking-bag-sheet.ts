@@ -51,7 +51,7 @@ import {
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { BookingFlowStore } from '../booking-flow.store';
-import type { SeatScopeVm } from '../seat-scope-vm';
+import type { SeatScopeVm } from '../seat-scope.vm';
 
 /**
  * What a line costs and how long it takes — as a SPAN, always.

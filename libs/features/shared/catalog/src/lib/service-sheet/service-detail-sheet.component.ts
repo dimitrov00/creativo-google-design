@@ -36,10 +36,12 @@ import {
   type BarberVm,
   type ServiceOfferingVm,
   type ServiceVm,
+  type ServiceVariantVm,
+} from '../content/catalog.vm';
+import {
   serviceDurationRange,
   servicePriceFrom,
-  type ServiceVariantVm,
-} from '../content/catalog-vm';
+} from '../content/catalog.presenter';
 import { ShowcaseGalleryComponent } from '../gallery/showcase-gallery.component';
 import { type CapsuleVm, CapsuleListComponent } from './capsule-list.component';
 import { ServiceRowComponent } from './service-row.component';

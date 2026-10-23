@@ -53,7 +53,7 @@ function bookableTerms(service: CatalogPriced): readonly ServiceTerms[] {
 
 /**
  * CatalogPricingSystem — the catalogue views' numbers
- * (`features/shared/catalog` `catalog-vm.ts` `servicePriceFrom`/
+ * (`features/shared/catalog` `catalog.vm.ts` `servicePriceFrom`/
  * `serviceDurationRange`/`servicesByBarber`, `catalog-presenter.service.ts`
  * `serviceMeta`): cents and minutes, never strings — `formatMoney` and the
  * duration formatter are the template's.

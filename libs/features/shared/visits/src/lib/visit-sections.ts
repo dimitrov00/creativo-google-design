@@ -6,7 +6,7 @@ import type { VisitRowVm, VisitSectionVm } from './visit-row.vm';
 
 /*
  * THE LIST'S SECTIONS (client-card redesign §5.3.2) — moved out of the
- * client's `visit-vm.ts` (`groupVisitsByMonth`, `monthKeyOf`) so «Моите
+ * client's `visit.vm.ts` (`groupVisitsByMonth`, `monthKeyOf`) so «Моите
  * часове» and the staff card's history file a visit the same way.
  *
  * What changed on the way: the grain. The client reads months, a barber

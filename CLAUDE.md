@@ -28,7 +28,7 @@ edit both together.
   of it. A web `InjectionToken` typed against an `@core/ports` bundle (Law
   9.1, `ports.tokens.ts`) is the lawful Angular wiring and stays.
 
-## 1. The nine laws
+## 1. The ten laws
 
 Laws 6 (flat archetypes, domain-prefixed discriminators) and 7 (branded
 primitives, shop-anchored time, error structs) were added by the owner on
@@ -361,19 +361,55 @@ observeBusyDay: ObserveBusyDay; … };`. Each bundle is cohesive and
 The file suffix stays `*.port.ts` (one family per file, singular like every
 other kind); the owner's example `scheduling.ports.ts` names the same file.
 
+### Law 10 — Presenters word what systems decided (`*.presenter.ts`, `*.vm.ts`)
+
+Added by the owner on 2026-10-23 (the view-model pass, option B). Turning
+ecs-core values into the finished words a screen prints is a sanctioned,
+pure step of its own — not a mapper to remove — on one condition: it decides
+nothing.
+
+1. **A presenter** (`*.presenter.ts`, in `libs/features/**`) is a module of
+   pure functions: ecs-core values in — entities, component slices, system
+   results, branded primitives, SCREAMING tags, `ShopNow` — plus a words
+   table and the locale; a display struct out (`passVm(input): PassVm`):
+   the strings, figures, flags and test ids a template prints. Formatting
+   goes through the shared helpers (`formatMoney`, the cached `Intl`
+   formatters of `@creativo/infrastructure/i18n` and
+   `@creativo/ui/wall-clock`).
+2. **It decides nothing.** Every domain decision — a state, what is owed or
+   earned, what qualifies, which items exist or are hidden, an ordering or
+   grouping rule, a threshold — is computed by an ecs-core system (Law 3)
+   and reaches the presenter as an input value or tag; the presenter only
+   words it. A presenter may call a system; it never re-derives a system's
+   answer.
+3. **A display model** (`*.vm.ts`) holds the display-struct types (readonly
+   records of strings, numbers, booleans and ids) and the tag-to-word tables
+   they print — no function values, no class.
+4. **Pure, and enforced.** A presenter, a display model and their wording
+   helpers (`*.words.ts`, `*.format.ts`) hold no class, no Angular (`inject`,
+   signals, `@angular/*`), no I/O or streams (`@core/ports`,
+   `@core/pipelines`, `@creativo/infrastructure/*` but `i18n`, Firebase,
+   `rxjs`), no `async`, no clock and no randomness — `now` arrives as an
+   input. `creativo/presenter-purity` (`tools/lint-rules/presenter-purity.mjs`,
+   tested beside it) enforces this from the root config; Law 10.2 is a review
+   rule. Stores and components call presenters inside `computed()`; templates
+   print the display struct; each presenter's spec pins its words.
+
 ## 2. File kinds at a glance
 
-| Kind      | Suffix                                                                | Contains                                                                       | Never contains                                       |
-| --------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| Primitive | `*.primitive.ts`                                                      | `Brand<T, B>` alias + JSDoc + companion with a `Result` smart constructor      | `class`, unchecked casts outside its own file        |
-| Error     | `*.error.ts`                                                          | `*ErrorCode`/`*RefusalCode` dictionary + flat struct union + factory companion | `class`, component types, `throw`                    |
-| Component | `*.data.ts`                                                           | root type + `as const` companion + type-only namespace                         | `class`, `new`, I/O, imports of systems or pipelines |
-| Entity    | `*.entity.ts`                                                         | branded id + id companion + flat slice intersection                            | logic, `assemble()`, `Object.freeze`                 |
-| System    | `*.system.ts`                                                         | pure functions over components and entities                                    | I/O, clock, randomness, mutation, SDK imports        |
-| Port      | `*.port.ts`                                                           | plain function types + focused bundle records, aggregates by `&` (Law 9)       | implementations, `Pick`/`Omit` slices                |
-| Pipeline  | `*.pipeline.ts` in `libs/ecs-core/src/pipelines/` (`@core/pipelines`) | a factory taking ports, returning the use-case function                        | business math (call a system), SDK imports           |
-| Adapter   | `*.adapter.ts`                                                        | port implementations over one SDK                                              | business logic                                       |
-| Angular   | `*.component.ts` `*.directive.ts` `*.pipe.ts` `*.store.ts`            | framework classes, signals, templates                                          | domain math (call a system), view-model mappers      |
+| Kind          | Suffix                                                                | Contains                                                                       | Never contains                                          |
+| ------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Primitive     | `*.primitive.ts`                                                      | `Brand<T, B>` alias + JSDoc + companion with a `Result` smart constructor      | `class`, unchecked casts outside its own file           |
+| Error         | `*.error.ts`                                                          | `*ErrorCode`/`*RefusalCode` dictionary + flat struct union + factory companion | `class`, component types, `throw`                       |
+| Component     | `*.data.ts`                                                           | root type + `as const` companion + type-only namespace                         | `class`, `new`, I/O, imports of systems or pipelines    |
+| Entity        | `*.entity.ts`                                                         | branded id + id companion + flat slice intersection                            | logic, `assemble()`, `Object.freeze`                    |
+| System        | `*.system.ts`                                                         | pure functions over components and entities                                    | I/O, clock, randomness, mutation, SDK imports           |
+| Port          | `*.port.ts`                                                           | plain function types + focused bundle records, aggregates by `&` (Law 9)       | implementations, `Pick`/`Omit` slices                   |
+| Pipeline      | `*.pipeline.ts` in `libs/ecs-core/src/pipelines/` (`@core/pipelines`) | a factory taking ports, returning the use-case function                        | business math (call a system), SDK imports              |
+| Adapter       | `*.adapter.ts`                                                        | port implementations over one SDK                                              | business logic                                          |
+| Presenter     | `*.presenter.ts`                                                      | pure functions: ecs-core values + words → a display struct (Law 10)            | decisions (call a system), class, Angular, I/O, clock   |
+| Display model | `*.vm.ts`                                                             | display-struct types + tag-to-word tables                                      | function values, class                                  |
+| Angular       | `*.component.ts` `*.directive.ts` `*.pipe.ts` `*.store.ts`            | framework classes, signals, templates                                          | domain math (call a system), wording (call a presenter) |
 
 `class` is legal **only** in the Angular row. Tests mirror their subject:
 `x.system.spec.ts`, `x.pipeline.spec.ts`.

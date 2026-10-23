@@ -55,6 +55,7 @@ the dev smoke byte-identical to `c77e932`, end of §3.3).
 | **Phase 4b — delete the legacy libraries, `luxon`, `dinero.js`, the dotted keys; widen the lint; the docs rewrite** | **done** — integrated 2026-10-23; the static gate of §4 green (baseline reds only), the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7 and §4.8 PASS, the §8 dev smoke 35 checks; R4 awaits the owner                                                | the "Phase 4b" commit                                        |
 | **UI residue cleanup — the visit shim, the `kind`/`status` unions, the stray classes, the ambient clock**           | **done** — integrated 2026-10-23; the FULL gate of §4 green (baseline reds only), runbook §4.2–§4.5, §4.7, §4.8 and §4.9 PASS, three new lint rules canary-proven under both ESLint base paths, the dev smoke 58 DOM signatures identical to `c77e932`                    | the "UI residue cleanup" commit                              |
 | **Law 8 amendment — the `@core/errors` tier and the Error file kind (`*.error.ts`)**                                | **done** — 2026-10-23 (owner ruling): 19 error files moved to `errors/<domain>.error.ts`, 401 importers re-pointed, the verifier, tier lint, `*.error.ts` suffix block and `creativo/error-dictionary-home` canary-proven; the FULL gate of §4 green (baseline reds only) | the "@core/errors tier" commit                               |
+| **Law 10 — presenters word what systems decided (`*.presenter.ts`, `*.vm.ts`)**                                     | **ruled + enforced** — 2026-10-23 (owner, option B of the view-model pass): the law, `creativo/presenter-purity` canary-proven, `presenters.md`; the outlier files renamed into the kinds; the decision-extraction pass (Law 10.2) next                                   | the "Law 10" commit                                          |
 
 `main` carries the flip-1 to flip-4 reshapes, the Law 9 port pass, Phase 4a
 and Phase 4b, and the FULL gate of §4 is green on it (baseline reds only). All
@@ -589,13 +590,17 @@ rules lives in `tools/lint-rules/path-scope.mjs`.
 
 **Carried forward — follow-up work, not migration (4a plan 4A-13, UI residue
 plan UR-13; none of it blocks anything):** the **view-model pass** (UR-13 f,
-plan OQ-11) — the presenter/view-model mapper layer the cleanup left because
-it is behaviour-frozen: `visitRowOf`/`waitlistRowOf`/`visitCardOf` still
-build `VisitRowVm`/`VisitCardVm` full of preformatted strings (title, lines,
-accessible name, the clock faces), and `catalog-to-vm.ts`,
-`client-pages.vm.ts` and the client-card presenters stay mappers;
-`angular-ui.md` bans that layer, and removing it moves formatting into
-templates and pipes screen by screen, a pass that may change markup; the
+plan OQ-11) — RULED 2026-10-23 (owner, option B; **Law 10**): presenters
+(`*.presenter.ts`) and display models (`*.vm.ts`) are a sanctioned, pure
+file kind that words what systems decided (`creativo/presenter-purity`;
+`.claude/rules/presenters.md`); `catalog-to-vm.ts` / `catalog-vm.ts` /
+`visit-vm.ts` / `seat-scope-vm.ts` were renamed into the kinds
+(`catalog.presenter.ts` + `catalog.vm.ts`, `visit.vm.ts`, `seat-scope.vm.ts`).
+What remains is the **decision-extraction pass** (Law 10.2): the domain
+decisions still inside the presenters — e.g. `catalog.presenter.ts`'s
+`servicePriceFrom` / `servicesByBarber` / `serviceDurationRange`, the client
+card's tier plate, pass state, which wallet discs exist — move into ecs-core
+systems, the presenters keep only the wording; the
 Law 7.4 branding/T1 pass (UR-13 c) — the staff day's instant-based
 agenda/grid fields (`startMs: number` threads in `staff-day.store.ts`,
 `staff-dashboard.ts`, the booking time sheet), the client card's raw
@@ -701,6 +706,12 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
 
 ## 6. Open questions for the owner
 
+- **Ruled 2026-10-23 — Law 10, presenters (the view-model pass, option B).**
+  Presenters (`*.presenter.ts`) and display models (`*.vm.ts`) stay as a
+  sanctioned, pure file kind that words what ecs-core systems decided; the
+  full conversion to template pipes (option A) is declined. Every domain
+  decision moves into a system (Law 10.2); `creativo/presenter-purity`
+  enforces the purity half.
 - **Ruled 2026-10-23 — the `@core/errors` tier.** Error dictionaries and
   their struct unions live in `libs/ecs-core/src/errors/<domain>.error.ts`
   (`@core/errors`), a tier between primitives and components; `Result`,
@@ -766,7 +777,8 @@ dependencies (`firebase-admin`, `firebase-functions`, `libphonenumber-js`,
   classes left (OQ-6), `wall-clock.ts` in `@creativo/ui/wall-clock` (OQ-7 —
   the owner may rename the home and owns `angular-ui.md`'s wording), draft ids
   on the `CLOCK_PORTS` stamp (OQ-8), one-variant tags deleted (OQ-9), the
-  view-model pass carried (OQ-11), ecs-core's tier lint blocks (OQ-12) —
+  view-model pass (OQ-11) — ruled 2026-10-23 as Law 10 (presenters
+  sanctioned; the decision-extraction pass next), ecs-core's tier lint blocks (OQ-12) —
   resolved 2026-10-23: CI enforced them all along (its lint target runs
   `eslint .` from the project), and their globs now also match from the
   workspace root (`fromEitherBase`, pinned by

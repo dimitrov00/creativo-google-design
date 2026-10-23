@@ -10,7 +10,7 @@ import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { ServiceDetailSheetComponent } from './service-detail-sheet.component';
 import { CompositionKind } from '@core/components';
-import type { BarberVm, ServiceVm } from '../content/catalog-vm';
+import type { BarberVm, ServiceVm } from '../content/catalog.vm';
 
 const bg: Translation = {
   landing: {

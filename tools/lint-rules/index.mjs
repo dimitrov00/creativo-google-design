@@ -14,6 +14,7 @@ import { noGenericDiscriminator } from './no-generic-discriminator.mjs';
 import { noHandBuiltLoadSlice } from './no-hand-built-load-slice.mjs';
 import { errorDictionaryHome } from './error-dictionary-home.mjs';
 import { noSlicedPorts } from './no-sliced-ports.mjs';
+import { presenterPurity } from './presenter-purity.mjs';
 import { noUndecoratedClass } from './no-undecorated-class.mjs';
 
 export {
@@ -51,6 +52,7 @@ const plugin = {
     'no-hand-built-load-slice': noHandBuiltLoadSlice,
     'no-sliced-ports': noSlicedPorts,
     'error-dictionary-home': errorDictionaryHome,
+    'presenter-purity': presenterPurity,
     'no-undecorated-class': noUndecoratedClass,
   },
 };

@@ -1,4 +1,4 @@
-import type { Localized } from './catalog-vm';
+import type { Localized } from './catalog.vm';
 
 /** Terse localized-pair literal — these tables are mostly copy. */
 const lt = (en: string, bg: string): Localized => ({ en, bg });

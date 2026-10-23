@@ -57,7 +57,7 @@ import { translateDomainError } from '@creativo/infrastructure/i18n';
 import { BookingBagSheet } from '../bag-sheet/booking-bag-sheet';
 import { BookingFlowStore } from '../booking-flow.store';
 import { BookingStepTitle } from '../chrome/booking-chrome.service';
-import type { SeatScopeVm } from '../seat-scope-vm';
+import type { SeatScopeVm } from '../seat-scope.vm';
 import { BookingStepLayout } from '../step-layout/booking-step-layout';
 
 /**
