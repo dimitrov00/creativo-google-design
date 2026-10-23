@@ -1,10 +1,5 @@
-import {
-  Currency,
-  defect,
-  PriceCents,
-  MoneyError,
-  Result,
-} from '@core/primitives';
+import { Currency, defect, PriceCents, Result } from '@core/primitives';
+import { MoneyError } from '@core/errors';
 
 /**
  * How `Money.scale` resolves a quotient that falls between two minor units;

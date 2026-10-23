@@ -8,10 +8,10 @@ import {
 import {
   CustomerId,
   PolicyRecomputeJobId,
-  RepositoryError,
   Result,
   UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type PolicyRecomputeJob, RecomputeJobName } from '@core/entities';
 import { AttemptOutcome, PolicyRecomputeJobSystem } from '@core/systems';
 import {

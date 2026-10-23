@@ -46,7 +46,6 @@ import {
   LocalDate,
   LocationId,
   MinuteCount,
-  RepositoryError,
   Result,
   SeatId,
   SeatKeyText,
@@ -56,6 +55,7 @@ import {
   WaitlistRequestId,
   Weekday,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,

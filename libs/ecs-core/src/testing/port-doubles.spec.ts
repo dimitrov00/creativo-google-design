@@ -62,7 +62,6 @@ import {
   PriceCents,
   OtpId,
   PositionId,
-  RepositoryError,
   type Result,
   ScheduleExceptionId,
   TenantId,
@@ -76,10 +75,13 @@ import {
   WaitlistRequestId,
   InvitationId,
   MediaRefId,
-  PipelineError,
-  PipelineErrorCode,
   Result as R,
 } from '@core/primitives';
+import {
+  RepositoryError,
+  PipelineError,
+  PipelineErrorCode,
+} from '@core/errors';
 import type {
   Appointment,
   AppointmentPhoto,

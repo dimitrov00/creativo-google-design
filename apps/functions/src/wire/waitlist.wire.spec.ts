@@ -1,19 +1,21 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import {
   BarberId,
-  BookingErrorCode,
-  CancelWaitlistRefusalCode,
   CartLineId,
   LocationId,
-  RepositoryError,
   type Result,
   SeatKeyText,
   ServiceId,
   ServiceVariantId,
   UserId,
-  WaitlistError,
   WaitlistRequestId,
 } from '@core/primitives';
+import {
+  BookingErrorCode,
+  CancelWaitlistRefusalCode,
+  RepositoryError,
+  WaitlistError,
+} from '@core/errors';
 import type { RequestWaitlistCommand } from '@core/pipelines';
 import { type EdgeError, toHttpsError } from '../edge';
 import {

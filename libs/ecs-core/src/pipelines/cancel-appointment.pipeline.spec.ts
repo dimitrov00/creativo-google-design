@@ -15,14 +15,16 @@ import {
 } from '@core/components';
 import {
   AppointmentId,
-  BookingErrorCode,
   Currency,
   GiftVoucherId,
-  RepositoryError,
   Result,
   UserId,
-  CancellationRefusalCode,
 } from '@core/primitives';
+import {
+  BookingErrorCode,
+  RepositoryError,
+  CancellationRefusalCode,
+} from '@core/errors';
 import {
   type Appointment,
   type AuditEntry,

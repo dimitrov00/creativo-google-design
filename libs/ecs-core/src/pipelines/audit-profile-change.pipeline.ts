@@ -1,9 +1,5 @@
-import {
-  AuditEntryId,
-  type GovernanceError,
-  type RepositoryError,
-  Result,
-} from '@core/primitives';
+import { AuditEntryId, Result } from '@core/primitives';
+import { type GovernanceError, type RepositoryError } from '@core/errors';
 import type { AuditEntry } from '@core/entities';
 import type { AuditRowsPorts, ClockPorts, HashPorts } from '@core/ports';
 import { AuditSystem, type ProfileChange } from '@core/systems';

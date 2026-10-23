@@ -10,18 +10,20 @@ import {
 import {
   AppointmentId,
   BarberId,
-  BookingErrorCode,
   CartLineId,
   ClientOperationId,
   IdentifierChannel,
   LocationId,
   MinuteOfDay,
   OtpId,
-  PipelineError,
-  PipelineErrorCode,
   PublishRequestId,
   ServiceId,
 } from '@core/primitives';
+import {
+  BookingErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+} from '@core/errors';
 import { Callables } from '@core/ports';
 import { localDate, unwrapErr, unwrapOk } from '@core/testing';
 

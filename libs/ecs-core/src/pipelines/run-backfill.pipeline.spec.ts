@@ -23,13 +23,12 @@ import {
   AuditResourceId,
   type CustomerId,
   CustomerId as CustomerIds,
-  RepositoryError,
   Result,
-  RunBackfillRefusalCode,
   SeatId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryError, RunBackfillRefusalCode } from '@core/errors';
 import {
   type Appointment,
   type AuditEntry,

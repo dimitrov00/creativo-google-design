@@ -1,4 +1,5 @@
-import { type RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import {
   type BookingPolicy,
   type PreciseInstant,

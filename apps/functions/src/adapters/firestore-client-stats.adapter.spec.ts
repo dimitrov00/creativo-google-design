@@ -1,11 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
 import { BookingPolicy, PreciseInstant } from '@core/components';
-import {
-  CustomerId,
-  PolicyRecomputeJobId,
-  RepositoryError,
-} from '@core/primitives';
+import { CustomerId, PolicyRecomputeJobId } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   BOOKING_POLICY_DOC,
   Collections,

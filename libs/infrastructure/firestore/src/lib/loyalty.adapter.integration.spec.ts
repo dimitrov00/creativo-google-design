@@ -19,7 +19,8 @@ import {
   TierOp,
 } from '@core/components';
 import type { JournalPage } from '@core/ports';
-import { CustomerId, RepositoryErrorCode } from '@core/primitives';
+import { CustomerId } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import {
   type LoyaltyClientJson,
   loyaltyAccountFixtures,

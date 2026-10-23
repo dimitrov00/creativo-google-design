@@ -1,13 +1,12 @@
 import {
   Result,
-  DateTimeInvalidReason,
-  TimeError,
   defect,
   LocalDate,
   MinuteOfDay,
   type TimeZone,
   UtcEpochMs,
 } from '@core/primitives';
+import { DateTimeInvalidReason, TimeError } from '@core/errors';
 import { ShopNow, WallTime } from '@core/components';
 
 /**

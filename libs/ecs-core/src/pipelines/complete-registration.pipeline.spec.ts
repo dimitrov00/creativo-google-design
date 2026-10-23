@@ -18,17 +18,19 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  AccountsErrorCode,
-  CompleteRegistrationRefusalCode,
   IdentifierChannel,
-  IdentityErrorCode,
-  PipelineError,
-  PipelineErrorCode,
-  RepositoryErrorCode,
   Result,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import {
+  AccountsErrorCode,
+  CompleteRegistrationRefusalCode,
+  IdentityErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryErrorCode,
+} from '@core/errors';
 import { Collections, type Customer, type User } from '@core/entities';
 import type { AuthAdminPorts, CommitPlan, UserLookupPorts } from '@core/ports';
 import {

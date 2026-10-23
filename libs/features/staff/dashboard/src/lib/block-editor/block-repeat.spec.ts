@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LocalDate, SchedulingErrorCode, Weekday } from '@core/primitives';
+import { LocalDate, Weekday } from '@core/primitives';
+import { SchedulingErrorCode } from '@core/errors';
 import {
   MonthlyAnchor,
   RecurrenceEnd,

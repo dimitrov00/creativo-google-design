@@ -1,5 +1,5 @@
 import { logger } from 'firebase-functions';
-import { BookingErrorCode } from '@core/primitives';
+import { BookingErrorCode } from '@core/errors';
 import type { TelemetryPorts } from '@core/ports';
 import { type LogSink, consoleTelemetry } from './console-telemetry.adapter';
 

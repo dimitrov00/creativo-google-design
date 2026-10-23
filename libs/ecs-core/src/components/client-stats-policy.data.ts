@@ -1,4 +1,5 @@
-import { type UtcEpochMs, Result, SchedulingError } from '@core/primitives';
+import { type UtcEpochMs, Result } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 import { BookingPolicy } from './booking-policy.data';
 
 /**

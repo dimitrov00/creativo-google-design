@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BookingErrorCode,
-  Result,
-  Weekday,
-  RepositoryErrorCode,
-  LocalDate,
-  UtcEpochMs,
-} from '@core/primitives';
+import { Result, Weekday, LocalDate, UtcEpochMs } from '@core/primitives';
+import { BookingErrorCode, RepositoryErrorCode } from '@core/errors';
 import { WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
 import type { QuerySpec } from '@core/ports';

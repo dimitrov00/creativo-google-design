@@ -1,10 +1,6 @@
 import { Actor, FlagName, StreakRule } from '@core/components';
-import {
-  type RepositoryError,
-  Result,
-  type StreakPublishError,
-  UserId,
-} from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
+import { type RepositoryError, type StreakPublishError } from '@core/errors';
 import type { NowUtcMs, StreakPublishGatewayPorts } from '@core/ports';
 import type { StreakNoticePolicy } from '@core/systems';
 import {

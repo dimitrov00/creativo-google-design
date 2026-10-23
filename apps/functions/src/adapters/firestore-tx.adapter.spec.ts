@@ -4,12 +4,12 @@ import {
   type Firestore,
   Timestamp,
 } from 'firebase-admin/firestore';
+import { Result } from '@core/primitives';
 import {
   CancellationRefusalCode,
   RepositoryError,
   RepositoryErrorCode,
-  Result,
-} from '@core/primitives';
+} from '@core/errors';
 import { type DocPath, WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
 import { type ReadTx } from '@core/ports';

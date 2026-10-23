@@ -22,19 +22,21 @@ import {
 import {
   AppointmentId,
   BarberId,
-  BookingErrorCode,
   BusyKey,
   CustomerId,
   LocalDate,
   LocationId,
-  MoveErrorCode,
-  PipelineError,
-  PipelineErrorCode,
   Result,
   SeatId,
   ServiceId,
   UserId,
 } from '@core/primitives';
+import {
+  BookingErrorCode,
+  MoveErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+} from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,

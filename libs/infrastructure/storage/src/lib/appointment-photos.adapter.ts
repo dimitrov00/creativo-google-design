@@ -23,7 +23,8 @@ import {
 import type { Observable } from 'rxjs';
 import { subscribeWithRetry } from '@creativo/infrastructure/firestore';
 import { PhotoOrigin } from '@core/components';
-import { type AppointmentId, RepositoryError, Result } from '@core/primitives';
+import { type AppointmentId, Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type AppointmentPhoto, Collections } from '@core/entities';
 import type { AppointmentPhotoPorts } from '@core/ports';
 import {

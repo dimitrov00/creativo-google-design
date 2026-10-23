@@ -1,11 +1,11 @@
 import type { Observable } from 'rxjs';
 import type {
-  RepositoryError,
   Result,
   LocationId,
   ServiceCategoryId,
   ServiceId,
 } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type {
   Barber,
   ServiceCategory,

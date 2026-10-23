@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { RepositoryError, Result, WaitlistStatus } from '@core/primitives';
+import { Result, WaitlistStatus } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { Collections, type WaitlistRequest } from '@core/entities';
 import type {
   OpenWaitlistReadPorts,

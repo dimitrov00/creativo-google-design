@@ -11,13 +11,13 @@ import {
   StreakRuleDirection,
   StreakTransition,
 } from '@core/components';
+import { PublishRequestId } from '@core/primitives';
 import {
-  PublishRequestId,
   RepositoryErrorCode,
   StreakPublishError,
   StreakPublishErrorCode,
   StreakRuleField,
-} from '@core/primitives';
+} from '@core/errors';
 import { localDate, unwrapErr, unwrapOk } from '@core/testing';
 
 const { callableMock, httpsCallableMock } = vi.hoisted(() => {

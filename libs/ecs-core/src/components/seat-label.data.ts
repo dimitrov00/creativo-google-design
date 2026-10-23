@@ -1,4 +1,5 @@
-import { type Brand, Result, SchedulingError } from '@core/primitives';
+import { type Brand, Result } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 
 /**
  * A short, NON-PII display label for a seat whose subject has no account —

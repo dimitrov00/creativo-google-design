@@ -33,7 +33,6 @@ import {
 import {
   BarberBusyDayId,
   BarberId,
-  BookingErrorCode,
   BusyKey,
   CouponGrantId,
   CouponId,
@@ -43,9 +42,12 @@ import {
   Result,
   SeatId,
   UserId,
+} from '@core/primitives';
+import {
+  BookingErrorCode,
   StaffEditErrorCode,
   TimeErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   type AccountContact,
   type Appointment,

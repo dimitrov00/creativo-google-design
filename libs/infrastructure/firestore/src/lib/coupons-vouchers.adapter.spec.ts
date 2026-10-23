@@ -1,13 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
 import { VoucherCode } from '@core/components';
-import {
-  CouponGrantId,
-  CouponId,
-  CustomerId,
-  RepositoryErrorCode,
-  Result,
-} from '@core/primitives';
+import { CouponGrantId, CouponId, CustomerId, Result } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { unwrapOk } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
 

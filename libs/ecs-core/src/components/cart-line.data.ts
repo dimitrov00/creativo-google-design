@@ -8,8 +8,8 @@ import {
   type ServiceVariantId,
   UserId,
   Result,
-  SchedulingError,
 } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 
 /**
  * Which member of the party a cart seat belongs to — the ONLY source of

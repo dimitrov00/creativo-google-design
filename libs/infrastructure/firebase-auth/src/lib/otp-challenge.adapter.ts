@@ -1,5 +1,6 @@
 import { type Auth, signInWithCustomToken } from 'firebase/auth';
-import { PipelineError, PipelineErrorCode, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import {
   Callables,
   type GatewayPorts,

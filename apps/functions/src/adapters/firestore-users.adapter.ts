@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { IdentifierChannel, RepositoryError, Result } from '@core/primitives';
+import { IdentifierChannel, Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { Collections, type User } from '@core/entities';
 import type { UserLookupPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';

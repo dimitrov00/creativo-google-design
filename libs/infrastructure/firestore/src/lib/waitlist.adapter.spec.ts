@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
-import { RepositoryErrorCode, Result, UserId } from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { FakeFirestore } from '../testing/fake-firestore';
 
 vi.mock('firebase/firestore', async () =>

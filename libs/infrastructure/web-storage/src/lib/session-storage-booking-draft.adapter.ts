@@ -1,5 +1,6 @@
 import { BookingDraft } from '@core/components';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import type { BookingDraftPorts, BookingDraftStorageKey } from '@core/ports';
 import { storageReason } from './storage-reason';
 

@@ -21,10 +21,10 @@ import {
   LocalDate,
   LocationId,
   MinuteCount,
-  RepositoryError,
   Result,
   ServiceId,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   at,
   barberFixture,

@@ -7,7 +7,8 @@ import {
   WriteOp,
   type ProfileEdits,
 } from '@core/components';
-import { AccountsErrorCode, AuditEntryId, UserId } from '@core/primitives';
+import { AuditEntryId, UserId } from '@core/primitives';
+import { AccountsErrorCode } from '@core/errors';
 import { Collections, type User } from '@core/entities';
 import { AuditSystem, SearchFieldsSystem } from '@core/systems';
 import {

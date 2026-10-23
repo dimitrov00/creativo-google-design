@@ -1,19 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { EnrollmentStatus, PositionStatus } from '@core/components';
 import {
-  CatalogError,
   CourseId,
-  DateTimeInvalidReason,
-  EngagementError,
-  EngagementErrorCode,
   EventId,
   Locale,
   LocationId,
   PositionId,
-  RepositoryError,
   Result,
-  TimeError,
 } from '@core/primitives';
+import {
+  CatalogError,
+  DateTimeInvalidReason,
+  EngagementError,
+  EngagementErrorCode,
+  RepositoryError,
+  TimeError,
+} from '@core/errors';
 import type { LocationLoadPorts } from '@core/ports';
 import { ZonedTimeSystem } from '@core/systems';
 import {

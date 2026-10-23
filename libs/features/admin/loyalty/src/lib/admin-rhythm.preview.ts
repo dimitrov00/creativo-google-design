@@ -3,11 +3,11 @@ import type { ClientStatsPagePorts } from '@core/ports';
 import {
   type CustomerId,
   LocalDate,
-  RepositoryError,
   Result,
   type TimeZone,
   type UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   StreakIntervalRule,
   StreakQualifier,

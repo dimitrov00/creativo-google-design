@@ -1,7 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-  BookingErrorCode,
   CartLineId,
   LocationId,
   SeatKeyText,
@@ -9,6 +8,7 @@ import {
   ServiceVariantId,
   UserId,
 } from '@core/primitives';
+import { BookingErrorCode } from '@core/errors';
 import {
   BookingPolicy,
   type BookingCart,

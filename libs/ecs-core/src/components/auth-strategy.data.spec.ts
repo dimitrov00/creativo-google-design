@@ -7,7 +7,8 @@ import {
   AuthStrategyKind,
   OAuthProvider,
 } from './auth-strategy.data';
-import { IdentifierChannel, IdentityErrorCode } from '@core/primitives';
+import { IdentifierChannel } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import { RegistrationField } from './registration.data';
 
 /*

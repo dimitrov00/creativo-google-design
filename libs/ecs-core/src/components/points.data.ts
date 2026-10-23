@@ -1,4 +1,5 @@
-import { type Brand, EngagementError, Result } from '@core/primitives';
+import { type Brand, Result } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 
 /**
  * Whole reward points, never negative — a brand over the plain number

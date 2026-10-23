@@ -1,6 +1,6 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 /**
  * A WGS-84 latitude in degrees, `[-90, 90]` — a coordinate of a shop on the

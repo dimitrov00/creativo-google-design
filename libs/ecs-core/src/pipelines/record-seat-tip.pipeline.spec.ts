@@ -6,13 +6,8 @@ import {
   SeatLabel,
   WriteOp,
 } from '@core/components';
-import {
-  AppointmentId,
-  BookingErrorCode,
-  SchedulingErrorCode,
-  SeatId,
-  UserId,
-} from '@core/primitives';
+import { AppointmentId, SeatId, UserId } from '@core/primitives';
+import { BookingErrorCode, SchedulingErrorCode } from '@core/errors';
 import { type Appointment, type AuditEntry, Collections } from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {

@@ -1,4 +1,5 @@
-import { CatalogError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { CatalogError } from '@core/errors';
 import type { E164 } from './phone-number.data';
 
 /**

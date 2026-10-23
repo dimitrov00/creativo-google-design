@@ -40,7 +40,6 @@ import {
 } from '@core/components';
 import {
   Result,
-  RepositoryError,
   AppointmentId,
   BarberId,
   CustomerId,
@@ -55,6 +54,7 @@ import {
   type TimeZone,
   UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import type {
   ClockPorts,
   CommitPlan,

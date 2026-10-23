@@ -1,4 +1,5 @@
-import { CustomerId, RepositoryError, Result, UserId } from '@core/primitives';
+import { CustomerId, Result, UserId } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { Collections } from '@core/entities';
 import {
   FIXTURE_IDS,

@@ -12,6 +12,7 @@ import { noRestrictedImportExpressions } from './restricted-import-expressions.m
 import { noAmbientClock } from './no-ambient-clock.mjs';
 import { noGenericDiscriminator } from './no-generic-discriminator.mjs';
 import { noHandBuiltLoadSlice } from './no-hand-built-load-slice.mjs';
+import { errorDictionaryHome } from './error-dictionary-home.mjs';
 import { noSlicedPorts } from './no-sliced-ports.mjs';
 import { noUndecoratedClass } from './no-undecorated-class.mjs';
 
@@ -49,6 +50,7 @@ const plugin = {
     'no-generic-discriminator': noGenericDiscriminator,
     'no-hand-built-load-slice': noHandBuiltLoadSlice,
     'no-sliced-ports': noSlicedPorts,
+    'error-dictionary-home': errorDictionaryHome,
     'no-undecorated-class': noUndecoratedClass,
   },
 };

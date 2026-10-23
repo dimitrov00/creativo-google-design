@@ -2,9 +2,9 @@ import {
   BookingStatus,
   type BusyKey,
   type LocalDate,
-  type RepositoryError,
   Result,
 } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import { type Appointment, Collections, QueryOp } from '@core/entities';
 import type {
   CommitPorts,

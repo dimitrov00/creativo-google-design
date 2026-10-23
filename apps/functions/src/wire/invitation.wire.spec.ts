@@ -1,11 +1,13 @@
 import {
-  EngagementError,
-  EngagementErrorCode,
   InvitationId,
   PrimitiveErrorCode,
-  RepositoryError,
   type Result,
 } from '@core/primitives';
+import {
+  EngagementError,
+  EngagementErrorCode,
+  RepositoryError,
+} from '@core/errors';
 import { type EdgeError, toHttpsError } from '../edge';
 import {
   decodeRedeemInvitation,

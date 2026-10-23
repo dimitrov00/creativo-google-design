@@ -1,13 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { firstValueFrom, of } from 'rxjs';
 import { BlockKind, MinuteBlock, type MinuteRange } from '@core/components';
-import {
-  RepositoryError,
-  Result,
-  MinuteCount,
-  BarberId,
-  type TimeZone,
-} from '@core/primitives';
+import { Result, MinuteCount, BarberId, type TimeZone } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type BarberBusyDay, Collections } from '@core/entities';
 import type { LoadBusyDay, ObserveBusyDay } from '@core/ports';
 import { AvailabilitySystem, IntervalSetSystem } from '@core/systems';

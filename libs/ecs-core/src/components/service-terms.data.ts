@@ -5,10 +5,9 @@ import {
   MinuteCount,
   ServiceVariantId,
   PriceCents,
-  CatalogError,
-  type MoneyError,
   Result,
 } from '@core/primitives';
+import { CatalogError, type MoneyError } from '@core/errors';
 import { LocalizedText } from './localized-text.data';
 import { Money } from './money.data';
 

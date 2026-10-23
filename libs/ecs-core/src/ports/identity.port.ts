@@ -4,14 +4,8 @@ import type {
   Identifier,
   ParsedIdentifier,
 } from '@core/components';
-import type {
-  PipelineError,
-  RepositoryError,
-  Result,
-  TenantId,
-  UserId,
-  UtcEpochMs,
-} from '@core/primitives';
+import type { Result, TenantId, UserId, UtcEpochMs } from '@core/primitives';
+import type { PipelineError, RepositoryError } from '@core/errors';
 import type { AccountContact, Customer, Otp, User } from '@core/entities';
 
 /**

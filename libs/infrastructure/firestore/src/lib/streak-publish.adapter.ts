@@ -2,14 +2,16 @@ import type { LoyaltyCatalogMemo } from '@creativo/infrastructure/firebase-app';
 import { StreakPublishCall, StreakPublishOutcome } from '@core/components';
 import {
   type LocalDate,
+  Result,
+  type StreakDefinitionId,
+} from '@core/primitives';
+import {
   type PipelineError,
   PipelineErrorCode,
   RepositoryError,
-  Result,
-  type StreakDefinitionId,
   StreakPublishError,
   StreakPublishErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import { Collections } from '@core/entities';
 import {
   Callables,

@@ -10,11 +10,10 @@ import {
 } from '@core/components';
 import {
   PublishRequestId,
-  RepositoryError,
   Result,
   StreakDefinitionVersionId,
-  StreakPublishError,
 } from '@core/primitives';
+import { RepositoryError, StreakPublishError } from '@core/errors';
 import { Collections, Subcollections } from '@core/entities';
 import {
   GATEWAY_ADMIN,

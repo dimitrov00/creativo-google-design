@@ -886,13 +886,15 @@ gate '4a · wall clock in rewritten features' -E -e 'new Date\(\)|Date\.now\(\)'
 gate '4a · private zone engines' -wE "shopInstantIso|shopWallClockUtc|shopMinuteOfDay|shopMinuteAfter|shopClock" -- \
   libs/features
 gate '4a · attempt ids' -E "attemptId: crypto\.randomUUID|attempt_\\$\{Date\.now" -- 'libs/features/**/*.ts'
-# 3. Every error dictionary in primitives (Law 7.5). `MoveRefusal`/`MoveRefusalReason`
+# 3. Every error dictionary in its home (Law 7.5): the `@core/errors` tier since the owner's
+# ruling of 2026-10-23 (`libs/ecs-core/src/errors/*.error.ts`), and `PrimitiveErrorCode` in
+# `primitives/primitive.error.ts` below it (4a wrote "in primitives"). `MoveRefusal`/`MoveRefusalReason`
 # (components, the shell's view state, no errorCode) are not dictionaries of this law; the
 # system-tier unions `StaffEditGuardRefusal` and `MoveError` stay by name (4A-6).
-gate '4a · dictionaries outside primitives' -E "export const [A-Za-z]*(ErrorCode|RefusalCode) = \{" -- \
-  'libs/ecs-core/src' ':!libs/ecs-core/src/primitives/**'
-gate '4a · moved error structs outside primitives' -wE "export (const|type) (CarriedSeatRefusal|CancellationRefusal|MoveCarriedSeatUnplaceable|StaffEditError|StaffEditInvalidCommand|StaffEditForbidden|StaffEditStale|StaffEditBeforeArrival|StaffEditOverlaps)" -- \
-  'libs/ecs-core/src' ':!libs/ecs-core/src/primitives/**'
+gate '4a · dictionaries outside their home' -E "export const [A-Za-z]*(ErrorCode|RefusalCode) = \{" -- \
+  'libs/ecs-core/src' ':!libs/ecs-core/src/errors/**' ':!libs/ecs-core/src/primitives/primitive.error.ts'
+gate '4a · moved error structs outside the error tier' -wE "export (const|type) (CarriedSeatRefusal|CancellationRefusal|MoveCarriedSeatUnplaceable|StaffEditError|StaffEditInvalidCommand|StaffEditForbidden|StaffEditStale|StaffEditBeforeArrival|StaffEditOverlaps)" -- \
+  'libs/ecs-core/src' ':!libs/ecs-core/src/errors/**'
 # 4. The retired wire and legacy tokens.
 # `dayKey` is NOT here: it is a stored capacity-entry field and a DOM attribute; the waitlist
 # wire's `dayKey` is covered by the waitlist wire spec. libs/features/shared/visits stays out:
@@ -1030,7 +1032,7 @@ node -e '
   }
   process.exit(bad ? 1 : 0);
 ' && echo 'ok    4b · no dotted errors key' || { echo 'FAIL  4b · no dotted errors key'; FAILED=1; }
-# The leading class keeps file names (`booking-errors.data.ts`, `*.errors.ts`) out. On e2d7a8f it
+# The leading class keeps file names (`booking.error.ts`, `*.errors.ts`) out. On e2d7a8f it
 # listed exactly the 13 sites the 4b packages rewrote (comments included) — the known-bad run.
 gate '4b · dotted errors reads' -E "(^|[^A-Za-z0-9_.-])errors\.[a-z][A-Za-z_]*[.'\"\`]" -- apps libs ':!**/*.md'
 gate '4b · retired dotted constants' -F -e "'accounts.upload_avatar" -e "'accounts.remove_avatar" \
@@ -1038,8 +1040,8 @@ gate '4b · retired dotted constants' -F -e "'accounts.upload_avatar" -e "'accou
   -e "'booking.transition.seat_resolved'" \
   -e 'identity.identifier.invalid' -e 'identity.birth_date.invalid' -e 'identity.otp_code.invalid' \
   -e 'booking.reschedule.carried_seat_unplaceable' -- apps libs \
-  ':!libs/ecs-core/src/primitives/legacy-wire-successors.spec.ts' \
-  ':!libs/ecs-core/src/primitives/pipeline-errors.data.spec.ts'   # wire ledger labels (legacy code → successor), no i18n read
+  ':!libs/ecs-core/src/errors/legacy-wire-successors.spec.ts' \
+  ':!libs/ecs-core/src/errors/pipeline.error.spec.ts'   # wire ledger labels (legacy code → successor), no i18n read
 gate "4b · the generic 'unknown' constant" -E "= 'unknown';" -- libs/features libs/infrastructure
 gate "4b · 'repository_failure' as an i18n code" -F "code: 'repository_failure'" -- apps libs
 # 8. The graph: no project rooted under the legacy trees, so no functions → legacy edge.

@@ -25,13 +25,13 @@ import {
 import {
   AppointmentId,
   BarberId,
-  RepositoryError,
   Result,
   SeatId,
   ServiceId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   type Appointment,
   type BackfillJob,

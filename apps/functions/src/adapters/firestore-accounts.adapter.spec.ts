@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { RepositoryErrorCode, UserId } from '@core/primitives';
+import { UserId } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreAccountPorts } from './firestore-accounts.adapter';
 

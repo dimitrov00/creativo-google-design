@@ -1,8 +1,5 @@
-import {
-  type RepositoryError,
-  RepositoryErrorCode,
-  Result,
-} from '@core/primitives';
+import { Result } from '@core/primitives';
+import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import type { EdgeError } from '../edge';
 import type { VerifiedRequest } from '../lib/booking/caller-roles';
 

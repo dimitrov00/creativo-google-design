@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { ShopLocation } from '@core/entities';
+import { LocationId, Result } from '@core/primitives';
 import {
   CatalogErrorCode,
-  LocationId,
   RepositoryError,
   RepositoryErrorCode,
-  Result,
-} from '@core/primitives';
+} from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   locationFixture,

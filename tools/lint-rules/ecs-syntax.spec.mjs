@@ -698,10 +698,11 @@ describe('ecsSyntaxBlocks', () => {
     ).toHaveLength(1);
   });
 
-  it('the root installs all seven suffix blocks, each with the InjectionToken guard', async () => {
+  it('the root installs all eight suffix blocks, each with the InjectionToken guard', async () => {
     expect(ECS_ALL_SUFFIXES).toEqual([
       'system',
       'data',
+      'error',
       'entity',
       'primitive',
       'pipeline',
@@ -745,6 +746,39 @@ describe('ecsSyntaxBlocks', () => {
       expect(rules['creativo/no-sliced-ports']).toEqual([2]);
     }
   }, 30_000);
+
+  it('an error file is data: the *.data.ts guards on *.error.ts (Law 7.5)', async () => {
+    const [error] = ecsSyntaxBlocks(['error']);
+    const [data] = ecsSyntaxBlocks(['data']);
+    expect(error.files).toEqual(['**/*.error.ts']);
+    expect(error.rules['no-restricted-syntax']).toEqual(
+      data.rules['no-restricted-syntax'],
+    );
+    expect(error.rules['security/detect-object-injection']).toBe('off');
+    expect(error.rules['@typescript-eslint/no-namespace']).toBe('off');
+    const [, ...restrictions] = error.rules['no-restricted-syntax'];
+    expect(
+      await lint('export class BookingFailure extends Error {}', restrictions),
+    ).not.toHaveLength(0);
+    expect(
+      await lint(
+        'export const err = () => { throw new Error("no"); };',
+        restrictions,
+      ),
+    ).not.toHaveLength(0);
+    expect(
+      await lint(
+        "export type BookingError = { readonly errorCode: 'BOOKING_X'; readonly seat?: number };",
+        restrictions,
+      ),
+    ).not.toHaveLength(0);
+    expect(
+      await lint(
+        "export const BookingErrorCode = { SlotUnavailable: 'BOOKING_SLOT_UNAVAILABLE' } as const;",
+        restrictions,
+      ),
+    ).toHaveLength(0);
+  });
 
   it('a primitive is data plus every flatten-pass guard (L6)', async () => {
     const [primitive] = ecsSyntaxBlocks(['primitive']);
@@ -864,7 +898,7 @@ describe('ecsRootEveryFileBlocks (the workspace root)', () => {
 });
 
 describe('ecsProjectBlocks (libs/ecs-core, apps/functions)', () => {
-  it('puts the token guard and L7 on every file, specs keep their cast allowance, then all seven suffixes', () => {
+  it('puts the token guard and L7 on every file, specs keep their cast allowance, then all eight suffixes', () => {
     const [ts, spec, ...suffixes] = ecsProjectBlocks();
     expect(ts.files).toEqual(['**/*.ts']);
     expect(ts.rules['no-restricted-syntax']).toEqual([

@@ -1,11 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
 import { DayWindows, MinuteRange, WaitlistLifecycle } from '@core/components';
-import {
-  RepositoryError,
-  WaitlistRequestId,
-  WaitlistStatus,
-} from '@core/primitives';
+import { WaitlistRequestId, WaitlistStatus } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { Collections, type WaitlistRequest } from '@core/entities';
 import {
   endMinute,

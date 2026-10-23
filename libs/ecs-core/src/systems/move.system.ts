@@ -13,12 +13,7 @@ import {
 } from '@core/components';
 import {
   BookingStatus,
-  BookingError,
-  BookingErrorCode,
-  CarriedSeatRefusal,
-  MoveCarriedSeatUnplaceable,
   Result,
-  SchedulingErrorCode,
   MinuteDelta,
   type BarberId,
   CartLineId,
@@ -30,6 +25,13 @@ import {
   type LocalDate,
   MinuteOfDay,
 } from '@core/primitives';
+import {
+  BookingError,
+  BookingErrorCode,
+  CarriedSeatRefusal,
+  MoveCarriedSeatUnplaceable,
+  SchedulingErrorCode,
+} from '@core/errors';
 import type { Appointment } from '@core/entities';
 import type { CartRider } from './booking-cart.system';
 import { LocationScopeSystem } from './location-scope.system';

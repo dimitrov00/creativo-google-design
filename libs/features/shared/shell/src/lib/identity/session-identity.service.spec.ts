@@ -16,7 +16,8 @@ import {
 } from '@core/components';
 import type { User } from '@core/entities';
 import type { StoredFile } from '@core/ports';
-import { MediaError, Result, UserId } from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
+import { MediaError } from '@core/errors';
 import { registeredUserFixture } from '@core/testing';
 import { ProfileCompletionKey } from '@core/systems';
 import { SessionIdentityService } from './session-identity.service';

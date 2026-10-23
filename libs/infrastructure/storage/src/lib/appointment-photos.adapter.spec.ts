@@ -7,11 +7,10 @@ import {
   AppointmentPhotoId,
   BarberId,
   CustomerId,
-  MediaErrorCode,
-  RepositoryErrorCode,
   Result,
   UserId,
 } from '@core/primitives';
+import { MediaErrorCode, RepositoryErrorCode } from '@core/errors';
 import type { AppointmentPhoto } from '@core/entities';
 import { utcMs } from '@core/testing';
 

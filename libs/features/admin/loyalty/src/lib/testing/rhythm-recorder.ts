@@ -6,12 +6,8 @@ import type {
   StreakDefinitionPorts,
   StreakPublishGatewayPorts,
 } from '@core/ports';
-import {
-  RepositoryError,
-  Result,
-  type StreakDefinitionId,
-  type StreakPublishError,
-} from '@core/primitives';
+import { Result, type StreakDefinitionId } from '@core/primitives';
+import { RepositoryError, type StreakPublishError } from '@core/errors';
 
 /*
  * THE RHYTHM'S TWO BUNDLES, RECORDED AND HELD — test support for the admin

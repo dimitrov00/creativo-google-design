@@ -30,12 +30,12 @@ import type {
 import {
   type AppointmentId,
   CustomerId,
-  RepositoryError,
   Result,
   type TimeZone,
   UtcEpochMs,
   UserId,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   FlagName,
   JournalFeed,

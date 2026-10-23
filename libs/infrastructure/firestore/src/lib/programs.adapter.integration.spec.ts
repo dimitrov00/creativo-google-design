@@ -5,13 +5,8 @@ import { firstValueFrom } from 'rxjs';
 import { EnrollmentStatus, PositionStatus } from '@core/components';
 import type { Course, Position, ShopEvent } from '@core/entities';
 import type { EventsQuery } from '@core/ports';
-import {
-  LocalDate,
-  LocationId,
-  PositionId,
-  RepositoryErrorCode,
-  Result,
-} from '@core/primitives';
+import { LocalDate, LocationId, PositionId, Result } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TODAY,

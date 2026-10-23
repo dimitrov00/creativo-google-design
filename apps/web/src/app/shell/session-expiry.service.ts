@@ -1,7 +1,7 @@
 import { Injectable, effect, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { PrincipalKind } from '@core/components';
-import { PipelineErrorCode } from '@core/primitives';
+import { PipelineErrorCode } from '@core/errors';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import { AUTH_SESSION_PORTS } from '@creativo/infrastructure/firebase-app';
 

@@ -16,14 +16,13 @@ import {
 import {
   AppointmentId,
   BarberId,
-  BookingErrorCode,
   BusyKey,
   Currency,
   GiftVoucherId,
   OperationId,
   SeatId,
-  StaffEditErrorCode,
 } from '@core/primitives';
+import { BookingErrorCode, StaffEditErrorCode } from '@core/errors';
 import {
   type Appointment,
   type GiftVoucher,

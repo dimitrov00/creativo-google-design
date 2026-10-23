@@ -8,13 +8,12 @@ import type {
   CustomerId,
   LocalDate,
   LocationId,
-  PipelineError,
-  RepositoryError,
   Result,
   UserId,
   UtcEpochMs,
   WaitlistRequestId,
 } from '@core/primitives';
+import type { PipelineError, RepositoryError } from '@core/errors';
 import type {
   Appointment,
   BarberBusyDay,

@@ -15,12 +15,8 @@ import {
   ElementRef,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
-import {
-  LocalDate,
-  type Result,
-  type SchedulingError,
-  Weekday,
-} from '@core/primitives';
+import { LocalDate, type Result, Weekday } from '@core/primitives';
+import { type SchedulingError } from '@core/errors';
 import {
   MonthlyAnchor,
   RecurrenceEnd,

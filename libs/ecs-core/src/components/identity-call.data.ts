@@ -1,9 +1,5 @@
-import {
-  type IdentifierChannel,
-  OtpId,
-  type PipelineError,
-  Result,
-} from '@core/primitives';
+import { type IdentifierChannel, OtpId, Result } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import type { OtpCode } from './otp-code.data';
 import type { ProfileEdits } from './profile-edits.data';

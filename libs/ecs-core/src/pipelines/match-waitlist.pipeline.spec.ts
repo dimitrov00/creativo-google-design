@@ -20,7 +20,6 @@ import {
   BusyKey,
   CartLineId,
   LocationId,
-  RepositoryError,
   Result,
   ScheduleExceptionId,
   SeatKeyText,
@@ -30,6 +29,7 @@ import {
   WaitlistStatus,
   Weekday,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   type Barber,
   type BarberBusyDay,

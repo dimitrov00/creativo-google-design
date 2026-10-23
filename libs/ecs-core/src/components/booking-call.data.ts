@@ -10,7 +10,6 @@ import {
   type LocalDate,
   type LocationId,
   type MinuteOfDay,
-  type PipelineError,
   type PriceCents,
   Result,
   SeatId,
@@ -19,6 +18,7 @@ import {
   type UserId,
   type CartLineId,
 } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import type { BarberPreference } from './barber-pref.data';
 import type { BookingContact } from './booking-contact.data';
 import { CallAnswer } from './call-answer.data';

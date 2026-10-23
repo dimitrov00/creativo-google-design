@@ -1,4 +1,5 @@
-import { UtcEpochMs, EngagementError, Result } from '@core/primitives';
+import { UtcEpochMs, Result } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 
 /**
  * When a grant from a coupon stops being usable — the field `couponExpiry`,

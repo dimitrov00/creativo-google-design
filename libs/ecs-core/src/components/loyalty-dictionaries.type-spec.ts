@@ -22,12 +22,12 @@ import {
   MedalState,
   type SeriesStanding,
 } from './badge-level.data';
+import { AwardKind } from '@core/primitives';
 import {
   EngagementErrorCode,
   StreakRuleField,
-  AwardKind,
   StreakPublishErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import { EnrollmentStatus } from './enrollment-status.data';
 import {
   type AwardSummary,
@@ -164,8 +164,8 @@ type PreviewUnavailable = Extract<
 export type LoyaltyDictionariesHold = [
   Expect<Holds<typeof EarnedVia, EarnedVia>>, // badge-level.data.ts
   Expect<Holds<typeof MedalState, MedalState>>, // badge-level.data.ts
-  Expect<Holds<typeof EngagementErrorCode, EngagementErrorCode>>, // engagement-errors.data.ts
-  Expect<Holds<typeof StreakRuleField, StreakRuleField>>, // engagement-errors.data.ts
+  Expect<Holds<typeof EngagementErrorCode, EngagementErrorCode>>, // engagement.error.ts
+  Expect<Holds<typeof StreakRuleField, StreakRuleField>>, // engagement.error.ts
   Expect<Holds<typeof EnrollmentStatus, EnrollmentStatus>>, // enrollment-status.data.ts
   Expect<Holds<typeof BadgeCategoryKind, BadgeCategoryKind>>, // gamification.data.ts
   Expect<Holds<typeof BadgeEmblem, BadgeEmblem>>, // gamification.data.ts
@@ -199,7 +199,7 @@ export type LoyaltyDictionariesHold = [
   Expect<Holds<typeof FamilyScope, FamilyScope>>, // standing.data.ts
   Expect<Holds<typeof StreakInterval, StreakInterval>>, // streak-interval.data.ts
   Expect<Holds<typeof StreakIntervalSource, StreakIntervalSource>>, // streak-interval.data.ts
-  Expect<Holds<typeof StreakPublishErrorCode, StreakPublishErrorCode>>, // streak-publish-errors.data.ts
+  Expect<Holds<typeof StreakPublishErrorCode, StreakPublishErrorCode>>, // streak-publish.error.ts
   Expect<Holds<typeof StreakQualifier, StreakQualifier>>, // streak-qualifier.data.ts
   Expect<Holds<typeof QualifierComparison, QualifierComparison>>, // streak-qualifier.data.ts
   Expect<Holds<typeof StreakExcuse, StreakExcuse>>, // streak-rule.data.ts

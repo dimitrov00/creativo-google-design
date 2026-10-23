@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RedemptionCount, WriteOp } from '@core/components';
-import {
-  EngagementErrorCode,
-  InvitationId,
-  RepositoryError,
-  Result,
-  UserId,
-} from '@core/primitives';
+import { InvitationId, Result, UserId } from '@core/primitives';
+import { EngagementErrorCode, RepositoryError } from '@core/errors';
 import { Collections, type Invitation, Subcollections } from '@core/entities';
 import {
   FIXTURE_NOW_UTC_MS,

@@ -70,8 +70,8 @@ export default [
   },
   // The InjectionToken guard on every file here (the backend composes
   // ports as closure parameters, never through a container; the root
-  // carries the guard on the seven suffix blocks only, because the web's
-  // Angular wiring declares tokens lawfully), and the root's seven ECS
+  // carries the guard on the eight suffix blocks only, because the web's
+  // Angular wiring declares tokens lawfully), and the root's eight ECS
   // suffix blocks restated after it, so its options do not replace theirs.
   // Imported through `#eslint-config`, never tools/lint-rules: a direct
   // import would add a graph edge and grow the functions dist. Last, so

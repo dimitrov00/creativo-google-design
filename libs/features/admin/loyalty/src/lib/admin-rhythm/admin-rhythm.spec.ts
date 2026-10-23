@@ -46,12 +46,11 @@ import {
   LocalDate,
   type MinuteOfDay,
   PublishRequestId,
-  RepositoryError,
   Result,
   ServiceCategoryId,
   ServiceId,
-  StreakPublishError,
 } from '@core/primitives';
+import { RepositoryError, StreakPublishError } from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,

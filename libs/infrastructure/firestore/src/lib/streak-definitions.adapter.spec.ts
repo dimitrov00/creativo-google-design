@@ -11,13 +11,12 @@ import {
 import type { StreakDefinition, StreakDefinitionVersion } from '@core/entities';
 import {
   PublishRequestId,
-  type RepositoryError,
-  RepositoryErrorCode,
   type Result,
   StreakDefinitionId,
   StreakDefinitionVersionId,
   UserId,
 } from '@core/primitives';
+import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import { StreakRuleSystem } from '@core/systems';
 import {
   FIXTURE_TODAY,

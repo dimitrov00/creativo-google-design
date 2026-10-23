@@ -19,9 +19,7 @@ import {
   BookingCall,
 } from '@core/components';
 import {
-  BookingError,
   Weekday,
-  SchedulingError,
   Currency,
   DurationMinutes,
   MinuteCount,
@@ -37,10 +35,14 @@ import {
   LocalDate,
   type MinuteOfDay,
   PriceCents,
-  CarriedSeatRefusal,
-  MoveErrorCode,
   CartLineId,
 } from '@core/primitives';
+import {
+  BookingError,
+  SchedulingError,
+  CarriedSeatRefusal,
+  MoveErrorCode,
+} from '@core/errors';
 import type { Appointment, Service } from '@core/entities';
 import {
   FIXTURE_NOW,

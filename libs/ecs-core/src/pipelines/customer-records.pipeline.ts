@@ -1,9 +1,5 @@
-import {
-  CustomerId,
-  RepositoryErrorCode,
-  type Result,
-  type UserId,
-} from '@core/primitives';
+import { CustomerId, type Result, type UserId } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { Collections, type Customer } from '@core/entities';
 import type { Hash, ReadTx } from '@core/ports';
 import { customerPath } from './booking-read-set.pipeline';

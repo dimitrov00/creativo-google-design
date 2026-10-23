@@ -15,11 +15,8 @@ import {
   registerUser,
   uploadAvatar,
 } from '@core/pipelines';
-import {
-  IdentityErrorCode,
-  type ServiceId,
-  type UserId,
-} from '@core/primitives';
+import { type ServiceId, type UserId } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import {
   AgeSystem,
   GuestGuardSystem,

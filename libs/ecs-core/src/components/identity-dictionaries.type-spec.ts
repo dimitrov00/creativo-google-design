@@ -22,17 +22,17 @@ import {
   AccountStatus,
   BlockReason,
 } from './account-status.data';
+import { IdentifierChannel } from '@core/primitives';
 import {
   AccountsErrorCode,
   GovernanceErrorCode,
-  IdentifierChannel,
   AuthPolicyField,
   type IdentityError,
   IdentityErrorCode,
   MediaErrorCode,
   PhoneErrorCode,
   PhoneInvalidReason,
-} from '@core/primitives';
+} from '@core/errors';
 import { type Actor, ActorRole, SystemSource } from './actor.data';
 import {
   AuditAction,
@@ -125,7 +125,7 @@ type IdentifierRefusal = IdentityError.IdentifierInvalid;
 export type IdentityDictionariesHold = [
   Expect<Holds<typeof AccountStatus, AccountStatus>>, // account-status.data.ts
   Expect<Holds<typeof BlockReason, BlockReason>>, // account-status.data.ts
-  Expect<Holds<typeof AccountsErrorCode, AccountsErrorCode>>, // accounts-errors.data.ts
+  Expect<Holds<typeof AccountsErrorCode, AccountsErrorCode>>, // accounts.error.ts
   Expect<Holds<typeof ActorRole, ActorRole>>, // actor.data.ts
   Expect<Holds<typeof SystemSource, SystemSource>>, // actor.data.ts
   Expect<Holds<typeof AuditAction, AuditAction>>, // audit-context.data.ts
@@ -139,20 +139,20 @@ export type IdentityDictionariesHold = [
   Expect<Holds<typeof OAuthProvider, OAuthProvider>>, // auth-strategy.data.ts
   Expect<Holds<typeof CustomerOrigin, CustomerOrigin>>, // customer-origin.data.ts
   Expect<Holds<typeof FlagName, FlagName>>, // feature-flags.data.ts
-  Expect<Holds<typeof GovernanceErrorCode, GovernanceErrorCode>>, // governance-errors.data.ts
+  Expect<Holds<typeof GovernanceErrorCode, GovernanceErrorCode>>, // governance.error.ts
   Expect<Holds<typeof IdentifierChannel, IdentifierChannel>>, // primitives/identifier-channel.data.ts
-  Expect<Holds<typeof IdentityErrorCode, IdentityErrorCode>>, // identity-errors.data.ts
-  Expect<Holds<typeof AuthPolicyField, AuthPolicyField>>, // identity-errors.data.ts
+  Expect<Holds<typeof IdentityErrorCode, IdentityErrorCode>>, // identity.error.ts
+  Expect<Holds<typeof AuthPolicyField, AuthPolicyField>>, // identity.error.ts
   Expect<Holds<typeof ImpersonationScope, ImpersonationScope>>, // impersonation-scope.data.ts
   Expect<Holds<typeof ImpersonationStatus, ImpersonationStatus>>, // impersonation-status.data.ts
   Expect<Holds<typeof ImpersonationEndReason, ImpersonationEndReason>>, // impersonation-status.data.ts
-  Expect<Holds<typeof MediaErrorCode, MediaErrorCode>>, // media-errors.data.ts
+  Expect<Holds<typeof MediaErrorCode, MediaErrorCode>>, // media.error.ts
   Expect<Holds<typeof OnboardingFlowStep, OnboardingFlowStep>>, // onboarding-flow.data.ts
   Expect<Holds<typeof OnboardingFlowEventKind, OnboardingFlowEventKind>>, // onboarding-flow.data.ts
   Expect<Holds<typeof OtpDestinationType, OtpDestinationType>>, // otp-destination-type.data.ts
   Expect<Holds<typeof OtpPurpose, OtpPurpose>>, // otp-purpose.data.ts
-  Expect<Holds<typeof PhoneErrorCode, PhoneErrorCode>>, // phone-errors.data.ts
-  Expect<Holds<typeof PhoneInvalidReason, PhoneInvalidReason>>, // phone-errors.data.ts
+  Expect<Holds<typeof PhoneErrorCode, PhoneErrorCode>>, // phone.error.ts
+  Expect<Holds<typeof PhoneInvalidReason, PhoneInvalidReason>>, // phone.error.ts
   Expect<Holds<typeof PrincipalKind, PrincipalKind>>, // principal.data.ts
   Expect<Holds<typeof RegistrationState, RegistrationState>>, // registration.data.ts
   Expect<Holds<typeof RegistrationField, RegistrationField>>, // registration.data.ts

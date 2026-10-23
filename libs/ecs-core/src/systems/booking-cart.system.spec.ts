@@ -26,7 +26,6 @@ import {
   type ChairTime,
 } from '@core/components';
 import {
-  SchedulingErrorCode,
   AppointmentId,
   BarberId,
   CartLineId,
@@ -39,6 +38,7 @@ import {
   WaitlistRequestId,
   type MinuteOfDay,
 } from '@core/primitives';
+import { SchedulingErrorCode } from '@core/errors';
 import {
   deepFreeze,
   endMinute,

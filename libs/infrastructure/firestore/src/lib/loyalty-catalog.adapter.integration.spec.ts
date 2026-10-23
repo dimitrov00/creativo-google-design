@@ -5,7 +5,8 @@ import type {
 } from '@firebase/rules-unit-testing';
 import { doc, setDoc } from 'firebase/firestore';
 import { loyaltyCatalogMemo } from '@creativo/infrastructure/firebase-app';
-import { EngagementErrorCode, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { EngagementErrorCode } from '@core/errors';
 import { LoyaltyCatalogSystem } from '@core/systems';
 import {
   FIXTURE_TODAY,

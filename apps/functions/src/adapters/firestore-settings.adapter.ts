@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { BookingPolicy } from '@core/components';
 import { BOOKING_POLICY_DOC, Collections } from '@core/entities';
 import type { PolicyReadPorts } from '@core/ports';

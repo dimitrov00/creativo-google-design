@@ -1,9 +1,5 @@
-import {
-  GuestId,
-  type UserId,
-  Result,
-  SchedulingError,
-} from '@core/primitives';
+import { GuestId, type UserId, Result } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 import { SeatKey } from './cart-line.data';
 import { SeatLabel } from './seat-label.data';
 

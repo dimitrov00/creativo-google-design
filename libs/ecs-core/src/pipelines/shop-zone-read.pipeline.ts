@@ -1,10 +1,5 @@
-import {
-  CatalogErrorCode,
-  type LocationId,
-  RepositoryError,
-  Result,
-  type TimeZone,
-} from '@core/primitives';
+import { type LocationId, Result, type TimeZone } from '@core/primitives';
+import { CatalogErrorCode, RepositoryError } from '@core/errors';
 import { Collections } from '@core/entities';
 import type { DefaultLocationPorts, LocationLoadPorts } from '@core/ports';
 import { resolveShopZone } from './resolve-shop-zone.pipeline';

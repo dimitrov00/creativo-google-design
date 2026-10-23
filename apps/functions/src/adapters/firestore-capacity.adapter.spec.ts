@@ -1,7 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
 import { CapacityEntry } from '@core/components';
-import { CapacityMonthId, RepositoryError } from '@core/primitives';
+import { CapacityMonthId } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type CapacityMonth, Collections } from '@core/entities';
 import { FIXTURE_IDS, FIXTURE_TODAY, minuteCount } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';

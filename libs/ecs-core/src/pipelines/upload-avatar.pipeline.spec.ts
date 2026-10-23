@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredFile } from '@core/ports';
-import { AccountsErrorCode, UserId } from '@core/primitives';
+import { UserId } from '@core/primitives';
+import { AccountsErrorCode } from '@core/errors';
 import { AvatarSystem } from '@core/systems';
 import { memoryAvatarPorts } from '@core/testing';
 import { uploadAvatar } from './upload-avatar.pipeline';

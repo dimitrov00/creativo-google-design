@@ -1,9 +1,5 @@
-import {
-  type Brand,
-  IdentityError,
-  Result,
-  IdentifierChannel,
-} from '@core/primitives';
+import { type Brand, Result, IdentifierChannel } from '@core/primitives';
+import { IdentityError } from '@core/errors';
 import { Email } from './email.data';
 import { OtpDestinationType } from './otp-destination-type.data';
 import type { E164 } from './phone-number.data';

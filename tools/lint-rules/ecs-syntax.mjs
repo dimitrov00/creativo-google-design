@@ -11,11 +11,11 @@
  * ...ECS_<SUFFIX>_RESTRICTIONS]` (see `ecsSyntaxBlocks` below).
  *
  * Where each array is installed:
- *  - root eslint.config.mjs — all seven suffix blocks (`ECS_ALL_SUFFIXES`),
+ *  - root eslint.config.mjs — all eight suffix blocks (`ECS_ALL_SUFFIXES`),
  *    each with the `InjectionToken` guard as its `extra`, so every port,
  *    adapter, system, component, entity, primitive and pipeline file of the
  *    workspace carries its kind's guards wherever it lives;
- *  - libs/ecs-core and apps/functions eslint.config.mjs — the same seven,
+ *  - libs/ecs-core and apps/functions eslint.config.mjs — the same eight,
  *    restated through `ecsProjectBlocks` beside the `InjectionToken` guard on
  *    every file (no Angular lives in either project).
  * Phase 1 kept the port and adapter blocks and the token guard
@@ -353,6 +353,20 @@ export const ECS_DATA_RESTRICTIONS = [
   ...FLAT_DATA_GUARDS,
 ];
 
+/**
+ * Laws 1 and 7.5: `*.error.ts` (the `@core/errors` tier, and
+ * `primitives/primitive.error.ts`) — error dictionaries and their flat
+ * structs are data: the same guards as `*.data.ts` (no class, no `new`, no
+ * freeze, no optional property, no `throw`, every flatten guard). That an
+ * error names no component type is the tier's import rule, not a selector.
+ */
+export const ECS_ERROR_RESTRICTIONS = [
+  ...DATA_OPTIONAL_GUARD,
+  ...DATA_SHAPE_GUARD,
+  ...CLASS_GUARD,
+  ...FLAT_DATA_GUARDS,
+];
+
 /** Laws 2, 6 and 7: `*.entity.ts` — the same shape guard as data. */
 export const ECS_ENTITY_RESTRICTIONS = [
   ...DATA_OPTIONAL_GUARD,
@@ -412,7 +426,7 @@ export const ECS_PRIMITIVE_RESTRICTIONS = [
 
 /**
  * Law 4: no IoC container outside Angular UI wiring. Installed at the root
- * on the seven suffix blocks, and on every file of libs/ecs-core and
+ * on the eight suffix blocks, and on every file of libs/ecs-core and
  * apps/functions through `ecsProjectBlocks`. Never on every root `*.ts`: the
  * web's Angular wiring (`ports.tokens.ts`, the SDK providers, the
  * `libs/ui/*` tokens, `app.config.ts`) declares its tokens lawfully.
@@ -428,6 +442,7 @@ export const ECS_TOKEN_RESTRICTIONS = [
 const ECS_SUFFIX_RESTRICTIONS = {
   system: ECS_SYSTEM_RESTRICTIONS,
   data: ECS_DATA_RESTRICTIONS,
+  error: ECS_ERROR_RESTRICTIONS,
   entity: ECS_ENTITY_RESTRICTIONS,
   primitive: ECS_PRIMITIVE_RESTRICTIONS,
   pipeline: ECS_PIPELINE_RESTRICTIONS,
@@ -436,12 +451,13 @@ const ECS_SUFFIX_RESTRICTIONS = {
 };
 
 /**
- * All seven ECS file kinds — installed by the root config and restated by
+ * All eight ECS file kinds — installed by the root config and restated by
  * the project-scoped configs of libs/ecs-core and apps/functions.
  */
 export const ECS_ALL_SUFFIXES = [
   'system',
   'data',
+  'error',
   'entity',
   'primitive',
   'pipeline',
@@ -500,10 +516,20 @@ export function ecsSyntaxBlocks(suffixes, { extra = [] } = {}) {
     if (suffix === 'system') {
       rules['no-restricted-globals'] = ['error', ...ECS_SYSTEM_GLOBALS];
     }
-    if (suffix === 'system' || suffix === 'data' || suffix === 'primitive') {
+    if (
+      suffix === 'system' ||
+      suffix === 'data' ||
+      suffix === 'error' ||
+      suffix === 'primitive'
+    ) {
       rules['security/detect-object-injection'] = 'off';
     }
-    if (suffix === 'data' || suffix === 'entity' || suffix === 'primitive') {
+    if (
+      suffix === 'data' ||
+      suffix === 'error' ||
+      suffix === 'entity' ||
+      suffix === 'primitive'
+    ) {
       rules['@typescript-eslint/no-namespace'] = 'off';
     }
     if (suffix === 'port') {
@@ -551,7 +577,7 @@ export function ecsRootEveryFileBlocks() {
 /**
  * The project-scoped half for libs/ecs-core and apps/functions, appended
  * after `...baseConfig`: the `InjectionToken` guard and L7 on every file
- * (specs keep their UiIconName-cast allowance), then the root's seven suffix
+ * (specs keep their UiIconName-cast allowance), then the root's eight suffix
  * blocks restated with the same extras. `everyFile` adds a project's own
  * guards to all of them (libs/ecs-core: L4, no `Date` — specs and test
  * support included). Order matters: a later block replaces the rule's

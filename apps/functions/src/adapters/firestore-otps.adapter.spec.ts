@@ -1,6 +1,7 @@
 import { type Firestore, Timestamp } from 'firebase-admin/firestore';
 import { Identifier } from '@core/components';
-import { OtpId, RepositoryErrorCode, UtcEpochMs } from '@core/primitives';
+import { OtpId, UtcEpochMs } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { FIXTURE_NOW_UTC_MS, otpFixture } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreOtpPorts } from './firestore-otps.adapter';

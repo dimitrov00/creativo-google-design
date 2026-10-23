@@ -12,10 +12,10 @@ import {
   CapacityMonthId,
   ExceptionEffect,
   LocationId,
-  RepositoryErrorCode,
   Result,
   ScheduleExceptionId,
 } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import type { ScheduleException } from '@core/entities';
 import { at, localDate, until, utcMs } from '@core/testing';
 import {

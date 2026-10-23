@@ -1,4 +1,5 @@
-import { InvitationId, type PipelineError, Result } from '@core/primitives';
+import { InvitationId, Result } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 
 /** THE INVITATION WIRE (Phase 4a, F3-2) — `redeemInvitation`: which invitation the caller redeems. */

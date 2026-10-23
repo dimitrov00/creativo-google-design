@@ -1,6 +1,7 @@
 import { firstValueFrom } from 'rxjs';
 import type { Principal } from '@core/components';
-import { type PipelineError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import type { AuthSessionPorts, TimerPorts } from '@core/ports';
 import { SessionAccessSystem, SessionReadiness } from '@core/systems';
 

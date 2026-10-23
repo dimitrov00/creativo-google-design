@@ -5,14 +5,13 @@ import type {
   VoucherCode,
 } from '@core/components';
 import type {
-  RepositoryError,
   Result,
   CouponGrantId,
   CouponId,
   CustomerId,
   StreakDefinitionId,
-  StreakPublishError,
 } from '@core/primitives';
+import type { RepositoryError, StreakPublishError } from '@core/errors';
 import type {
   BadgeCategory,
   BadgeProgress,

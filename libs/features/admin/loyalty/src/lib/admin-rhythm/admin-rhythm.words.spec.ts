@@ -22,9 +22,9 @@ import {
   PublishRequestId,
   StreakDefinitionId,
   StreakDefinitionVersionId,
-  StreakRuleField,
   UserId,
 } from '@core/primitives';
+import { StreakRuleField } from '@core/errors';
 import {
   type StreakPreview,
   StreakPreviewOutcome,

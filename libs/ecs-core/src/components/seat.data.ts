@@ -11,9 +11,9 @@ import {
   EndMinute,
   MinuteOfDay,
   type PriceCents,
-  SchedulingError,
   AttendanceState,
 } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 import type { BarberPreference } from './barber-pref.data';
 import { MinuteRange } from './minute-range.data';
 import type { SeatLabel } from './seat-label.data';

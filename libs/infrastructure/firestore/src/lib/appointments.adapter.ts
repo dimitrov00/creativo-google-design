@@ -12,10 +12,10 @@ import { map } from 'rxjs';
 import {
   BookingStatus,
   type CustomerId,
-  type RepositoryError,
   Result,
   type UtcEpochMs,
 } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
 import type { AppointmentReadPorts, ClientHistoryPage } from '@core/ports';
 import { PageStep, PagingSystem } from '@core/systems';

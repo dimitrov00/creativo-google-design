@@ -5,13 +5,8 @@ import {
   type DocBody,
   WriteOp,
 } from '@core/components';
-import {
-  AppointmentId,
-  BookingErrorCode,
-  SchedulingErrorCode,
-  UserId,
-  UtcEpochMs,
-} from '@core/primitives';
+import { AppointmentId, UserId, UtcEpochMs } from '@core/primitives';
+import { BookingErrorCode, SchedulingErrorCode } from '@core/errors';
 import { type Appointment, type AuditEntry, Collections } from '@core/entities';
 import { AuditSystem } from '@core/systems';
 import {

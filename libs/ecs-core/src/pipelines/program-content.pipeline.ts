@@ -4,16 +4,13 @@ import type {
   ShopEventInput,
 } from '@core/components';
 import type { Course, Position, ShopEvent } from '@core/entities';
+import { CourseId, EventId, PositionId, Result } from '@core/primitives';
 import {
-  CourseId,
   EngagementError,
   EngagementErrorCode,
-  EventId,
-  PositionId,
-  Result,
   type ProgramSaveError,
   type RepositoryError,
-} from '@core/primitives';
+} from '@core/errors';
 import type {
   CourseWritePorts,
   DefaultLocationPorts,

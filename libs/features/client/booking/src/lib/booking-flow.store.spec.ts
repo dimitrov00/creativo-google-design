@@ -42,9 +42,6 @@ import {
   CartLineId,
   CustomerId,
   LocationId,
-  PipelineError,
-  PipelineErrorCode,
-  RepositoryError,
   Result,
   SeatId,
   SeatKeyText,
@@ -52,6 +49,11 @@ import {
   UserId,
   WaitlistRequestId,
 } from '@core/primitives';
+import {
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+} from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,

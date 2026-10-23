@@ -16,7 +16,6 @@ import {
   RequestedSubjectRole,
 } from '@core/components';
 import {
-  GovernanceErrorCode,
   DurationMinutes,
   AppointmentId,
   AuditResourceId,
@@ -30,6 +29,7 @@ import {
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { GovernanceErrorCode } from '@core/errors';
 import {
   FIXTURE_NOW_UTC_MS,
   deepFreeze,

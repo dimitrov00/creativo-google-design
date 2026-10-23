@@ -1,10 +1,10 @@
 import {
-  GovernanceError,
   Result,
   type ImpersonationSessionId,
   type UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { GovernanceError } from '@core/errors';
 import {
   type ImpersonationScope,
   EndReasonFields,

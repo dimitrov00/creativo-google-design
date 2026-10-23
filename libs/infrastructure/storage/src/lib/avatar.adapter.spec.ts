@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FirebaseStorage } from 'firebase/storage';
-import { MediaError, UserId } from '@core/primitives';
+import { UserId } from '@core/primitives';
+import { MediaError } from '@core/errors';
 import { unwrapErr, unwrapOk } from '@core/testing';
 
 const { refMock, uploadBytesMock, getDownloadURLMock, deleteObjectMock } =

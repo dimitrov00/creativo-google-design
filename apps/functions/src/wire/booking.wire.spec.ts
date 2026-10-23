@@ -12,20 +12,22 @@ import {
 import {
   AppointmentId,
   BarberId,
-  BookingError,
-  BookingErrorCode,
   BookingStatus,
-  CancellationRefusal,
   CouponGrantId,
   OperationId,
-  RepositoryError,
-  SchedulingError,
   SeatId,
   UserId,
   Result,
+} from '@core/primitives';
+import {
+  BookingError,
+  BookingErrorCode,
+  CancellationRefusal,
+  RepositoryError,
+  SchedulingError,
   StaffEditError,
   StaffEditErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   MarkArrivalAction,
   type MarkArrivalCommand,

@@ -10,14 +10,13 @@ import {
   type RegistrationFields,
 } from '@core/components';
 import { Callables, type OtpChallengePorts } from '@core/ports';
+import { Result, UserId } from '@core/primitives';
 import {
   AccountsErrorCode,
   IdentityErrorCode,
   PipelineError,
   PipelineErrorCode,
-  Result,
-  UserId,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   type GatewayCall,
   type OtpChallengeCall,

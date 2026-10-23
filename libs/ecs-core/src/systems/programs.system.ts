@@ -12,21 +12,23 @@ import type {
   ShopLocation,
 } from '@core/entities';
 import {
-  DateTimeInvalidReason,
-  EngagementError,
-  EngagementErrorCode,
   LocalDate,
   LocationId,
   MinuteOfDay,
   Result,
-  TimeError,
   type CourseId,
   type EventId,
   type PositionId,
-  type ProgramFieldError,
   type TimeZone,
   type UtcEpochMs,
 } from '@core/primitives';
+import {
+  DateTimeInvalidReason,
+  EngagementError,
+  EngagementErrorCode,
+  TimeError,
+  type ProgramFieldError,
+} from '@core/errors';
 import { ShopZoneSystem } from './shop-zone.system';
 
 /**

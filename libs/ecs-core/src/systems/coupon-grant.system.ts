@@ -9,13 +9,8 @@ import {
   type GrantTerms,
   WriteOp,
 } from '@core/components';
-import {
-  EngagementError,
-  GrantStatus,
-  Result,
-  type UserId,
-  UtcEpochMs,
-} from '@core/primitives';
+import { GrantStatus, Result, type UserId, UtcEpochMs } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import { type CouponGrant, Collections } from '@core/entities';
 
 /** The grant with a new lifecycle variant — its meta and value untouched, the old variant's fields gone. */

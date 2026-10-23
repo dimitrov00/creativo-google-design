@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FirebaseStorage } from 'firebase/storage';
 import { MediaRef } from '@core/components';
-import { MediaError } from '@core/primitives';
+import { MediaError } from '@core/errors';
 import { unwrapErr, unwrapOk } from '@core/testing';
 
 const { refMock, getDownloadURLMock } = vi.hoisted(() => ({

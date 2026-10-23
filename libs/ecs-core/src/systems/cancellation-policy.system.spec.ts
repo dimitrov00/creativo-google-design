@@ -13,17 +13,19 @@ import {
 } from '@core/components';
 import {
   BookingStatus,
-  type CancellationRefusal,
-  CancellationRefusalCode,
   type Result,
-  type SchedulingError,
-  SchedulingErrorCode,
   AttendanceState,
   BarberId,
   SeatId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import {
+  type CancellationRefusal,
+  CancellationRefusalCode,
+  type SchedulingError,
+  SchedulingErrorCode,
+} from '@core/errors';
 import type { Appointment } from '@core/entities';
 import {
   FIXTURE_NOW_UTC_MS,

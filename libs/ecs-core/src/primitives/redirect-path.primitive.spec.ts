@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveErrorCode } from './primitive.error';
 import { RedirectPath } from './redirect-path.primitive';
 
 /*

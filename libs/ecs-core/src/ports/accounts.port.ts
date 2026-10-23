@@ -1,5 +1,6 @@
 import type { Observable } from 'rxjs';
-import type { RepositoryError, Result, UserId } from '@core/primitives';
+import type { Result, UserId } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { Role } from '@core/components';
 import type { User } from '@core/entities';
 

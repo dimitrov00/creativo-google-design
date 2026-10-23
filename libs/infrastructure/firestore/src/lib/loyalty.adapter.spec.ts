@@ -17,12 +17,8 @@ import {
 } from '@core/components';
 import type { JournalEntry } from '@core/entities';
 import type { ClientJournalPorts, JournalPage } from '@core/ports';
-import {
-  CustomerId,
-  type RepositoryError,
-  RepositoryErrorCode,
-  type Result,
-} from '@core/primitives';
+import { CustomerId, type Result } from '@core/primitives';
+import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import {
   type LoyaltyClientJson,
   loyaltyAccountFixtures,

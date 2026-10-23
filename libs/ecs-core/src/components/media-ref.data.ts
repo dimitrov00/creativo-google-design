@@ -1,9 +1,5 @@
-import {
-  MediaRefId,
-  CatalogError,
-  MediaDimension,
-  Result,
-} from '@core/primitives';
+import { MediaRefId, Result } from '@core/primitives';
+import { CatalogError, MediaDimension } from '@core/errors';
 
 /**
  * A denormalised image pointer embedded where a cover or avatar renders

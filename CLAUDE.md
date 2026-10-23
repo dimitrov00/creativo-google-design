@@ -57,8 +57,9 @@ in `docs/architecture/flatten-spec.md`.
 - Failures are values (Law 7): `Result<T, E>` is a plain
   `{ ok: true; value } | { ok: false; error }` union; errors are flat
   `{ errorCode: 'BOOKING_SLOT_UNAVAILABLE'; … }` structs whose `errorCode`
-  the UI translates (`errors.<errorCode>`). No `Error` subclasses; `throw`
-  only for programmer defects. (`Result.ok` is a wrapper flag, never
+  the UI translates (`errors.<errorCode>`), declared in a `*.error.ts` file
+  of the `@core/errors` tier — never in a component, system or pipeline
+  file. No `Error` subclasses; `throw` only for programmer defects. (`Result.ok` is a wrapper flag, never
   intersected into an archetype — the one sanctioned non-prefixed
   discriminator.)
 
@@ -233,7 +234,13 @@ string> = T & { readonly [BrandSymbol]: B };` — nominal per tag, zero
    (SCREAMING_SNAKE, domain-prefixed, from an `as const` dictionary:
    `BookingErrorCode.SlotUnavailable` → `'BOOKING_SLOT_UNAVAILABLE'`) with
    flat context fields beside it; the UI looks them up as
-   `errors.<errorCode>` (locked 2026-10-10). No `Error` subclasses, no stack traces on
+   `errors.<errorCode>` (locked 2026-10-10). Every error dictionary and its
+   struct union live in a `*.error.ts` file — the `@core/errors` tier
+   (`libs/ecs-core/src/errors/<domain>.error.ts`), whose context fields are
+   scalars and branded primitives, never component types;
+   `primitives/primitive.error.ts` (`PrimitiveError`, the brands' own refusals)
+   is the one `*.error.ts` below it (owner ruling 2026-10-23). No `Error`
+   subclasses, no stack traces on
    expected paths. `throw` is reserved for unrecoverable programmer defects
    (an exhausted `switch`, a broken structural invariant) and never crosses a
    system boundary as control flow.
@@ -241,13 +248,14 @@ string> = T & { readonly [BrandSymbol]: B };` — nominal per tag, zero
 ### Law 8 — Layered subpath exports and strict dependency tiering
 
 1. **No monolithic root barrel.** `libs/ecs-core` has no `src/index.ts` and
-   no `@creativo/ecs-core` alias. It is exported ONLY through six tier
+   no `@creativo/ecs-core` alias. It is exported ONLY through seven tier
    barrels (`tsconfig.base.json`, paths written relative — `./libs/…` —
    because TypeScript 6 deprecates `baseUrl`):
 
    | Alias              | Barrel                                  |
    | ------------------ | --------------------------------------- |
    | `@core/primitives` | `libs/ecs-core/src/primitives/index.ts` |
+   | `@core/errors`     | `libs/ecs-core/src/errors/index.ts`     |
    | `@core/components` | `libs/ecs-core/src/components/index.ts` |
    | `@core/entities`   | `libs/ecs-core/src/entities/index.ts`   |
    | `@core/ports`      | `libs/ecs-core/src/ports/index.ts`      |
@@ -261,26 +269,31 @@ string> = T & { readonly [BrandSymbol]: B };` — nominal per tag, zero
    its left:
 
    ```
-   @core/primitives ──> @core/components ──> @core/entities ──> @core/systems ──> @core/pipelines
-                                                  ^                                   │
-                                                  └──────────── @core/ports <─────────┘
+   @core/primitives ──> @core/errors ──> @core/components ──> @core/entities ──> @core/systems ──> @core/pipelines
+                                                                     ^                                    │
+                                                                     └─────────── @core/ports <───────────┘
    ```
 
-   - **primitives** — branded types, `Result` and the error structs; imports
-     NOTHING from the library.
+   - **primitives** — brands, `Result`, `PrimitiveError` and the base tag
+     dictionaries (`BookingStatus`, `AttendanceState`, `GrantStatus`, …);
+     imports NOTHING from the library.
+   - **errors** — the error dictionaries and structs (`*.error.ts`); imports
+     only primitives. It sits below components because brands answer
+     `PrimitiveError`, errors carry branded fields, and component companions
+     answer errors (owner ruling 2026-10-23).
    - **components** — atomic flat slices and their companions
      (`TimeCoordinate`, `PaymentRecord`, `BookingLifecycle`); imports only
-     primitives; never entities.
+     errors and primitives; never entities.
    - **entities** — flat archetypes composed by intersection; imports
-     components and primitives.
+     components, errors and primitives.
    - **ports** — pure I/O contracts (plain function types); imports
-     entities, components, primitives.
+     entities, components, errors, primitives.
    - **systems** — pure, stateless math, primarily over component slices;
-     imports components, primitives, entities — never ports, never
+     imports components, errors, primitives, entities — never ports, never
      pipelines (Law 3).
    - **pipelines** — pure coordination: call systems, consume ports, emit
      WriteOp plans or state patches; imports systems, ports, entities,
-     components, primitives. Nothing inside the library imports pipelines;
+     components, errors, primitives. Nothing inside the library imports pipelines;
      composition roots (`apps/functions/src/main.ts`, the web app's
      providers and stores) do.
 
@@ -350,16 +363,17 @@ other kind); the owner's example `scheduling.ports.ts` names the same file.
 
 ## 2. File kinds at a glance
 
-| Kind      | Suffix                                                                | Contains                                                                  | Never contains                                       |
-| --------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Primitive | `*.primitive.ts`                                                      | `Brand<T, B>` alias + JSDoc + companion with a `Result` smart constructor | `class`, unchecked casts outside its own file        |
-| Component | `*.data.ts`                                                           | root type + `as const` companion + type-only namespace                    | `class`, `new`, I/O, imports of systems or pipelines |
-| Entity    | `*.entity.ts`                                                         | branded id + id companion + flat slice intersection                       | logic, `assemble()`, `Object.freeze`                 |
-| System    | `*.system.ts`                                                         | pure functions over components and entities                               | I/O, clock, randomness, mutation, SDK imports        |
-| Port      | `*.port.ts`                                                           | plain function types + focused bundle records, aggregates by `&` (Law 9)  | implementations, `Pick`/`Omit` slices                |
-| Pipeline  | `*.pipeline.ts` in `libs/ecs-core/src/pipelines/` (`@core/pipelines`) | a factory taking ports, returning the use-case function                   | business math (call a system), SDK imports           |
-| Adapter   | `*.adapter.ts`                                                        | port implementations over one SDK                                         | business logic                                       |
-| Angular   | `*.component.ts` `*.directive.ts` `*.pipe.ts` `*.store.ts`            | framework classes, signals, templates                                     | domain math (call a system), view-model mappers      |
+| Kind      | Suffix                                                                | Contains                                                                       | Never contains                                       |
+| --------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Primitive | `*.primitive.ts`                                                      | `Brand<T, B>` alias + JSDoc + companion with a `Result` smart constructor      | `class`, unchecked casts outside its own file        |
+| Error     | `*.error.ts`                                                          | `*ErrorCode`/`*RefusalCode` dictionary + flat struct union + factory companion | `class`, component types, `throw`                    |
+| Component | `*.data.ts`                                                           | root type + `as const` companion + type-only namespace                         | `class`, `new`, I/O, imports of systems or pipelines |
+| Entity    | `*.entity.ts`                                                         | branded id + id companion + flat slice intersection                            | logic, `assemble()`, `Object.freeze`                 |
+| System    | `*.system.ts`                                                         | pure functions over components and entities                                    | I/O, clock, randomness, mutation, SDK imports        |
+| Port      | `*.port.ts`                                                           | plain function types + focused bundle records, aggregates by `&` (Law 9)       | implementations, `Pick`/`Omit` slices                |
+| Pipeline  | `*.pipeline.ts` in `libs/ecs-core/src/pipelines/` (`@core/pipelines`) | a factory taking ports, returning the use-case function                        | business math (call a system), SDK imports           |
+| Adapter   | `*.adapter.ts`                                                        | port implementations over one SDK                                              | business logic                                       |
+| Angular   | `*.component.ts` `*.directive.ts` `*.pipe.ts` `*.store.ts`            | framework classes, signals, templates                                          | domain math (call a system), view-model mappers      |
 
 `class` is legal **only** in the Angular row. Tests mirror their subject:
 `x.system.spec.ts`, `x.pipeline.spec.ts`.
@@ -369,9 +383,10 @@ other kind); the owner's example `scheduling.ports.ts` names the same file.
 - **Apps:** `apps/web` (Angular 22 SPA, Firebase Hosting), `apps/functions`
   (Firebase Cloud Functions gen 2, Node 22 — the backend composition root
   today), `apps/showcase` (design-system workbench). No `apps/api` exists yet.
-- **ECS core:** `libs/ecs-core` (tags `scope:shared`, `type:domain`), six
-  tiers exported only through `@core/primitives`, `@core/components`,
-  `@core/entities`, `@core/ports`, `@core/systems`, `@core/pipelines` (+
+- **ECS core:** `libs/ecs-core` (tags `scope:shared`, `type:domain`), seven
+  tiers exported only through `@core/primitives`, `@core/errors`,
+  `@core/components`, `@core/entities`, `@core/ports`, `@core/systems`,
+  `@core/pipelines` (+
   `@core/testing` for specs) — Law 8; no root barrel. It replaced
   `libs/domain/*` and the port halves of `libs/application/*` (both deleted
   in Phase 4b); every pipeline, server or browser, lives in

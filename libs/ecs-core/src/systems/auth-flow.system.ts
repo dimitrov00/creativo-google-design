@@ -5,7 +5,8 @@ import {
   AuthFlowStep,
   SessionKind,
 } from '@core/components';
-import { IdentityError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { IdentityError } from '@core/errors';
 
 /**
  * AuthFlowSystem — the identity flow's transition function (blueprint

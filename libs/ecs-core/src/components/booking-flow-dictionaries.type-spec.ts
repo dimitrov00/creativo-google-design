@@ -20,13 +20,12 @@ import {
   BookingFlowEventKind,
   PrefillCompanions,
 } from '@core/systems';
+import { ExceptionEffect, WaitlistStatus } from '@core/primitives';
 import {
   BookingFlowErrorCode,
-  ExceptionEffect,
   SchedulingErrorCode,
   WaitlistErrorCode,
-  WaitlistStatus,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   type BookingFlowState,
   BookingFlowStep,
@@ -97,9 +96,9 @@ dictionary(PrefillCompanions satisfies Dictionary<PrefillCompanions>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type BookingFlowDictionariesHold = [
-  Expect<Holds<typeof BookingFlowErrorCode, BookingFlowErrorCode>>, // primitives/booking-flow-errors.data.ts
-  Expect<Holds<typeof SchedulingErrorCode, SchedulingErrorCode>>, // primitives/scheduling-errors.data.ts
-  Expect<Holds<typeof WaitlistErrorCode, WaitlistErrorCode>>, // primitives/waitlist-errors.data.ts
+  Expect<Holds<typeof BookingFlowErrorCode, BookingFlowErrorCode>>, // errors/booking-flow.error.ts
+  Expect<Holds<typeof SchedulingErrorCode, SchedulingErrorCode>>, // errors/scheduling.error.ts
+  Expect<Holds<typeof WaitlistErrorCode, WaitlistErrorCode>>, // errors/waitlist.error.ts
   Expect<Holds<typeof BookingFlowStep, BookingFlowStep>>, // components/booking-flow.data.ts
   Expect<Holds<typeof MoveRefusalReason, MoveRefusalReason>>, // components/booking-flow.data.ts
   Expect<Holds<Pick<typeof ShopReach, 'Call' | 'Contact'>, ShopReach>>, // components/booking-flow.data.ts

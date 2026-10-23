@@ -12,12 +12,7 @@ import {
 } from '@core/components';
 import {
   BookingStatus,
-  BookingError,
   Result,
-  type StaffEditBeforeArrival,
-  StaffEditError,
-  type StaffEditInvalidCommand,
-  type StaffEditStale,
   AttendanceState,
   DurationMinutes,
   MinuteCount,
@@ -36,6 +31,13 @@ import {
   PriceCents,
   type UtcEpochMs,
 } from '@core/primitives';
+import {
+  BookingError,
+  type StaffEditBeforeArrival,
+  StaffEditError,
+  type StaffEditInvalidCommand,
+  type StaffEditStale,
+} from '@core/errors';
 import type { Appointment } from '@core/entities';
 
 /** The digest basis version — the server's fingerprint of one intent's batch. */

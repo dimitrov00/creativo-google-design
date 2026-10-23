@@ -3,39 +3,43 @@ import { join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
 import {
-  AccountsError,
   AppointmentId,
   BarberId,
-  BookingError,
-  BookingErrorCode,
   BookingStatus,
-  CancellationRefusal,
-  CarriedSeatRefusal,
-  CatalogError,
-  CompleteRegistrationRefusalCode,
   CourseId,
   EndMinute,
-  EngagementError,
-  EngagementErrorCode,
   EventId,
-  GovernanceError,
-  IdentityError,
-  IdentityErrorCode,
   InvitationId,
   LocalDate,
   LocationId,
   MinuteCount,
   MinuteOfDay,
+  PositionId,
+  PrimitiveErrorCode,
+  Result,
+  SeatId,
+  UserId,
+  UtcEpochMs,
+} from '@core/primitives';
+import {
+  AccountsError,
+  BookingError,
+  BookingErrorCode,
+  CancellationRefusal,
+  CarriedSeatRefusal,
+  CatalogError,
+  CompleteRegistrationRefusalCode,
+  EngagementError,
+  EngagementErrorCode,
+  GovernanceError,
+  IdentityError,
+  IdentityErrorCode,
   type MoveCarriedSeatUnplaceable,
   MoveErrorCode,
   PhoneError,
   PhoneInvalidReason,
-  PositionId,
-  PrimitiveErrorCode,
   RepositoryError,
-  Result,
   SchedulingErrorCode,
-  SeatId,
   ShopUnavailableReason,
   StaffEditError,
   StaffEditErrorCode,
@@ -43,11 +47,9 @@ import {
   StreakPublishErrorCode,
   TimeError,
   TimeErrorCode,
-  UserId,
-  UtcEpochMs,
   WaitlistError,
   WIRE_PARAM_ALLOWLIST,
-} from '@core/primitives';
+} from '@core/errors';
 import { ResizeEdge } from '@core/components';
 import { Callables, type TelemetryPorts } from '@core/ports';
 import {
@@ -271,13 +273,17 @@ function todaysErrorClassCodes(): readonly {
   return codes;
 }
 
-/** The error dictionaries ecs-core declares (`…ErrorCode` / `…RefusalCode`). */
+/**
+ * The error dictionaries ecs-core declares (`…ErrorCode` / `…RefusalCode`),
+ * read from their two homes: the `@core/errors` tier (`src/errors`) and the
+ * one dictionary below it, `src/primitives/primitive.error.ts`.
+ * `creativo/error-dictionary-home` keeps a dictionary out of every other file.
+ */
 function ecsErrorDictionaryNames(): readonly string[] {
   const names = new Set<string>();
   for (const file of [
-    ...tsFiles(join(ECS_CORE, 'components')),
+    ...tsFiles(join(ECS_CORE, 'errors')),
     ...tsFiles(join(ECS_CORE, 'primitives')),
-    ...tsFiles(join(ECS_CORE, 'systems')),
   ]) {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- ecs-core's own sources, found by listing them.
     for (const match of readFileSync(file, 'utf8').matchAll(

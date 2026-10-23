@@ -1,4 +1,5 @@
-import { type PipelineError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import { OtpDestinationType, ParsedIdentifier } from '@core/components';
 import type { Log, OtpDeliveryPorts } from '@core/ports';
 

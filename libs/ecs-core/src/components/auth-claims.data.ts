@@ -1,4 +1,5 @@
-import { IdentityError, Result, TenantId } from '@core/primitives';
+import { Result, TenantId } from '@core/primitives';
+import { IdentityError } from '@core/errors';
 import { type Role, knownRoles } from './role.data';
 
 /**

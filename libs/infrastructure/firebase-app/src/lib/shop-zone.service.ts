@@ -5,13 +5,8 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import type {
-  CatalogError,
-  LocationId,
-  RepositoryError,
-  Result,
-  TimeZone,
-} from '@core/primitives';
+import type { LocationId, Result, TimeZone } from '@core/primitives';
+import type { CatalogError, RepositoryError } from '@core/errors';
 import { resolveShopZone } from '@core/pipelines';
 import { DEFAULT_LOCATION_PORTS, LOCATION_LOAD_PORTS } from './ports.tokens';
 

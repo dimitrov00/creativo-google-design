@@ -1,5 +1,6 @@
 import { FieldPath, type Firestore } from 'firebase-admin/firestore';
-import { CustomerId, RepositoryError, Result } from '@core/primitives';
+import { CustomerId, Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { BookingPolicy, PreciseInstant } from '@core/components';
 import {
   BOOKING_POLICY_DOC,

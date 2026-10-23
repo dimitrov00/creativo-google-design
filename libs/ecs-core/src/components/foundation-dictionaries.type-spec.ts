@@ -14,6 +14,7 @@
  *    `errorCode` is the law's own field name for every error dictionary
  *    (Law 7.5), so those lines are N15-exempt.
  */
+import { PrimitiveErrorCode, type PrimitiveError } from '@core/primitives';
 import {
   MoneyErrorCode,
   type MoneyError,
@@ -24,9 +25,7 @@ import {
   DateTimeInvalidReason,
   TimeErrorCode,
   type TimeError,
-  PrimitiveErrorCode,
-  type PrimitiveError,
-} from '@core/primitives';
+} from '@core/errors';
 import { RoundingMode } from './money.data';
 import { WriteAction, type WriteOp } from './write-op.data';
 
@@ -65,12 +64,12 @@ dictionary(PrimitiveErrorCode satisfies Dictionary<PrimitiveErrorCode>);
 export type FoundationDictionariesHold = [
   Expect<Holds<typeof WriteAction, WriteAction>>, // write-op.data.ts
   Expect<Holds<typeof RoundingMode, RoundingMode>>, // money.data.ts
-  Expect<Holds<typeof MoneyErrorCode, MoneyErrorCode>>, // money-errors.data.ts
-  Expect<Holds<typeof PipelineErrorCode, PipelineErrorCode>>, // pipeline-errors.data.ts
-  Expect<Holds<typeof RepositoryErrorCode, RepositoryErrorCode>>, // repository-errors.data.ts
-  Expect<Holds<typeof TimeErrorCode, TimeErrorCode>>, // time-errors.data.ts
-  Expect<Holds<typeof DateTimeInvalidReason, DateTimeInvalidReason>>, // time-errors.data.ts
-  Expect<Holds<typeof PrimitiveErrorCode, PrimitiveErrorCode>>, // primitive-errors.data.ts
+  Expect<Holds<typeof MoneyErrorCode, MoneyErrorCode>>, // money.error.ts
+  Expect<Holds<typeof PipelineErrorCode, PipelineErrorCode>>, // pipeline.error.ts
+  Expect<Holds<typeof RepositoryErrorCode, RepositoryErrorCode>>, // repository.error.ts
+  Expect<Holds<typeof TimeErrorCode, TimeErrorCode>>, // time.error.ts
+  Expect<Holds<typeof DateTimeInvalidReason, DateTimeInvalidReason>>, // time.error.ts
+  Expect<Holds<typeof PrimitiveErrorCode, PrimitiveErrorCode>>, // primitive.error.ts
 ];
 
 // (3) SCREAMING values.
@@ -93,7 +92,7 @@ export type FoundationDictionaryFields = [
       TimeError.InvalidDateTime['dateTimeInvalidReason'],
       DateTimeInvalidReason
     >
-  >, // time-errors.data.ts
+  >, // time.error.ts
   Expect<Equals<TimeError['errorCode'], TimeErrorCode>>, // N15-exempt: `errorCode` is the law's error field (Law 7.5)
   Expect<Equals<MoneyError['errorCode'], MoneyErrorCode>>, // N15-exempt: `errorCode` is the law's error field (Law 7.5)
   Expect<Equals<PipelineError['errorCode'], PipelineErrorCode>>, // N15-exempt: `errorCode` is the law's error field (Law 7.5)

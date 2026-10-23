@@ -10,9 +10,9 @@ import {
   LocalDate,
   LocationId,
   PositionId,
-  RepositoryError,
   Result,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   FIXTURE_NOW_UTC_MS,
   FIXTURE_TODAY,

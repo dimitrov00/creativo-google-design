@@ -5,7 +5,7 @@ import type {
   DurationMinutes,
   MinuteCount,
 } from './duration-minutes.primitive';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 /** Minutes in a shop day on the wall clock — the exclusive end of the last minute. */
 const MINUTES_PER_DAY = 1440;

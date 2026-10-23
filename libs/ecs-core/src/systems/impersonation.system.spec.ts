@@ -1,11 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-  GovernanceErrorCode,
-  ImpersonationSessionId,
-  UserId,
-  UtcEpochMs,
-} from '@core/primitives';
+import { ImpersonationSessionId, UserId, UtcEpochMs } from '@core/primitives';
+import { GovernanceErrorCode } from '@core/errors';
 import {
   ImpersonationScope,
   parseImpersonationScope,

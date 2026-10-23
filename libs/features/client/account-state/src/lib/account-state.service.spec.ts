@@ -7,7 +7,8 @@ import {
 import { AccountStatus, type Principal, Role } from '@core/components';
 import { Profile, type User } from '@core/entities';
 import type { ProfilePorts } from '@core/ports';
-import { RepositoryError, Result, UserId } from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   blockedUserFixture,
   memoryAuthSessionPorts,

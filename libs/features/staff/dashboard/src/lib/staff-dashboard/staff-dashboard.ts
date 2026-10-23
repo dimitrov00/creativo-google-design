@@ -35,7 +35,6 @@ import {
   AppointmentId,
   AttendanceState,
   BarberId,
-  BookingErrorCode,
   CartLineId,
   BookingStatus,
   CouponGrantId,
@@ -44,18 +43,21 @@ import {
   LocalDate,
   LocationId,
   MinuteOfDay,
-  PipelineError,
-  PipelineErrorCode,
   PriceCents,
   Result,
   SeatId,
   ServiceId,
   ServiceVariantId,
-  StaffEditErrorCode,
   UserId,
   UtcEpochMs,
   defect,
 } from '@core/primitives';
+import {
+  BookingErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+  StaffEditErrorCode,
+} from '@core/errors';
 import {
   AppliedDiscount,
   BookingCall,

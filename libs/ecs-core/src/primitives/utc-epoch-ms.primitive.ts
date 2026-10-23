@@ -1,7 +1,7 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
 import type { MinuteDelta } from './duration-minutes.primitive';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 const MS_PER_MINUTE = 60_000;
 const MS_PER_HOUR = 3_600_000;

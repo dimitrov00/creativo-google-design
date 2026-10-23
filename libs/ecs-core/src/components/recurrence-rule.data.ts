@@ -1,4 +1,5 @@
-import { LocalDate, Result, SchedulingError, Weekday } from '@core/primitives';
+import { LocalDate, Result, Weekday } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 
 /**
  * How often a rule repeats — the ONLY source of these strings, named after

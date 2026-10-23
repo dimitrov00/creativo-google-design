@@ -1,4 +1,4 @@
-import { MediaError } from '@core/primitives';
+import { MediaError } from '@core/errors';
 
 /** Storage's answer for an object that is not there. */
 export const OBJECT_NOT_FOUND = 'storage/object-not-found';

@@ -1,5 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { RepositoryErrorCode } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { BookingPolicy } from '@core/components';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreSettingsPorts } from './firestore-settings.adapter';

@@ -21,9 +21,9 @@ import {
   type CapacityMonthId,
   LocalDate,
   type LocationId,
-  type RepositoryError,
   Result,
 } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import {
   AvailabilitySystem,
   BookingCartSystem,

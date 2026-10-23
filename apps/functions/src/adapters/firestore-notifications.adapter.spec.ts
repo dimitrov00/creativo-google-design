@@ -1,12 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
 import { NotificationPayload, NotificationTopic } from '@core/components';
-import {
-  RepositoryError,
-  UserId,
-  UtcEpochMs,
-  WaitlistRequestId,
-} from '@core/primitives';
+import { UserId, UtcEpochMs, WaitlistRequestId } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { Collections, Subcollections } from '@core/entities';
 import {
   FIXTURE_IDS,

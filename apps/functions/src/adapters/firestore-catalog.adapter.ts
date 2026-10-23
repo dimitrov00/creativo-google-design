@@ -1,5 +1,6 @@
 import type { DocumentSnapshot, Firestore } from 'firebase-admin/firestore';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { BarberStatus, LocationStatus, ServiceStatus } from '@core/components';
 import {
   type Barber,

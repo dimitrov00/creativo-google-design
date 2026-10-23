@@ -1,5 +1,5 @@
 import type { Brand } from './brand';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 import { Result } from './result.data';
 
 /**

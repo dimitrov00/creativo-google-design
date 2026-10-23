@@ -4,15 +4,13 @@ import {
   SessionKind,
   WriteOp,
 } from '@core/components';
+import { type OtpId, Result, type UserId } from '@core/primitives';
 import {
   IdentityError,
-  type OtpId,
   PipelineError,
   PipelineErrorCode,
   type RepositoryError,
-  Result,
-  type UserId,
-} from '@core/primitives';
+} from '@core/errors';
 import { Collections, type Otp, type User } from '@core/entities';
 import type {
   AuthAdminPorts,

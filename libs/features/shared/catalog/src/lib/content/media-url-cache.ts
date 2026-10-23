@@ -1,7 +1,7 @@
 import { signal } from '@angular/core';
 import type { MediaRef } from '@core/components';
 import type { MediaResolvePorts, MediaVariant } from '@core/ports';
-import { MediaError, MediaErrorCode } from '@core/primitives';
+import { MediaError, MediaErrorCode } from '@core/errors';
 
 /**
  * How a TRANSIENT failed resolve is tried again: a bounded number of

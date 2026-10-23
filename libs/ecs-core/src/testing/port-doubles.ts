@@ -23,11 +23,7 @@ import {
   BusyKey,
   GrantStatus,
   IdentifierChannel,
-  MediaError,
   OtpId,
-  PipelineError,
-  PipelineErrorCode,
-  RepositoryError,
   Result,
   type AppointmentId,
   type CourseId,
@@ -40,6 +36,12 @@ import {
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import {
+  MediaError,
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+} from '@core/errors';
 import {
   Collections,
   Subcollections,

@@ -1,11 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-  ExceptionEffect,
-  SchedulingErrorCode,
-  BarberId,
-  LocationId,
-} from '@core/primitives';
+import { ExceptionEffect, BarberId, LocationId } from '@core/primitives';
+import { SchedulingErrorCode } from '@core/errors';
 import {
   ExceptionEffectRule,
   MinuteRange,

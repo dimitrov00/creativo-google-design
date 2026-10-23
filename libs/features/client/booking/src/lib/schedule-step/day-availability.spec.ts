@@ -22,11 +22,11 @@ import {
   CartLineId,
   LocationId,
   MinuteCount,
-  RepositoryError,
   Result,
   SeatKeyText,
   ServiceId,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_NOW,

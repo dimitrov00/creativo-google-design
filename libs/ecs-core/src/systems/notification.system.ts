@@ -1,4 +1,5 @@
-import { EngagementError, UtcEpochMs } from '@core/primitives';
+import { UtcEpochMs } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import type { InboxNotification } from '@core/entities';
 
 /*

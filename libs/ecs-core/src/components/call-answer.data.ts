@@ -1,4 +1,5 @@
-import { PipelineError, PipelineErrorCode, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 
 /**
  * A callable's answer as the web received it — a plain object, its own

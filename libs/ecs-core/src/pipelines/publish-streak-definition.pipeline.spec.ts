@@ -18,16 +18,18 @@ import {
 import {
   AuditResourceId,
   PublishRequestId,
-  RepositoryError,
   Result,
   ServiceId,
   StreakDefinitionId,
   StreakDefinitionVersionId,
-  StreakPublishError,
-  StreakRuleField,
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import {
+  RepositoryError,
+  StreakPublishError,
+  StreakRuleField,
+} from '@core/errors';
 import {
   Collections,
   QueryOp,

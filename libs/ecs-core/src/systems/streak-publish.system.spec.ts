@@ -15,11 +15,10 @@ import {
   PublishRequestId,
   StreakDefinitionId,
   StreakDefinitionVersionId,
-  StreakPublishError,
-  StreakRuleField,
   UserId,
   type LocalDate,
 } from '@core/primitives';
+import { StreakPublishError, StreakRuleField } from '@core/errors';
 import {
   deepFreeze,
   localDate,

@@ -1,10 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import {
-  BarberId,
-  type BusyKey,
-  RepositoryError,
-  Result,
-} from '@core/primitives';
+import { BarberId, type BusyKey, Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   type BarberBusyDay,
   type BarberSchedule,

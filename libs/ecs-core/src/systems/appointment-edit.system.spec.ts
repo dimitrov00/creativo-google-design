@@ -30,8 +30,8 @@ import {
   type MinuteOfDay,
   PriceCents,
   type UtcEpochMs,
-  StaffEditErrorCode,
 } from '@core/primitives';
+import { StaffEditErrorCode } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import {
   FIXTURE_IDS,

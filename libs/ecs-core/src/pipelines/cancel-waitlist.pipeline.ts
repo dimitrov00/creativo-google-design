@@ -1,12 +1,14 @@
 import {
-  type CancelWaitlistRefusal,
-  CancelWaitlistRefusalCode,
-  type RepositoryError,
   Result,
   type UserId,
   type WaitlistRequestId,
   WaitlistStatus,
 } from '@core/primitives';
+import {
+  type CancelWaitlistRefusal,
+  CancelWaitlistRefusalCode,
+  type RepositoryError,
+} from '@core/errors';
 import { WaitlistLifecycle, WriteOp } from '@core/components';
 import { Collections, type WaitlistRequest } from '@core/entities';
 import type { ClockPorts, CommitPorts } from '@core/ports';

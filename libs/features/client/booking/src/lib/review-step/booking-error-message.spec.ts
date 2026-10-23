@@ -9,7 +9,7 @@ import {
   MoveErrorCode,
   PipelineError,
   PipelineErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   bookingErrorMessage,
   callHrefForRefusal,

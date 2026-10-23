@@ -5,20 +5,18 @@ import {
   RegistrationField,
   type RegistrationFields,
 } from '@core/components';
+import { IdentifierChannel, OtpId, Result } from '@core/primitives';
 import {
   AccountsError,
   CompleteRegistrationRefusalCode,
-  IdentifierChannel,
   IdentityError,
   IdentityErrorCode,
-  OtpId,
   PhoneError,
   PhoneErrorCode,
   PhoneInvalidReason,
   PipelineError,
   type RegistrationProfileError,
-  Result,
-} from '@core/primitives';
+} from '@core/errors';
 import type {
   CompleteRegistrationAnswer,
   CompleteRegistrationCommand,

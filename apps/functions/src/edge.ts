@@ -4,6 +4,12 @@ import {
   HttpsError,
 } from 'firebase-functions/v2/https';
 import {
+  PrimitiveErrorCode,
+  type Result,
+  TriggerEventId,
+  UtcEpochMs,
+} from '@core/primitives';
+import {
   AccountsErrorCode,
   BookingErrorCode,
   BookingFlowErrorCode,
@@ -19,19 +25,15 @@ import {
   MoveErrorCode,
   PhoneErrorCode,
   PipelineErrorCode,
-  PrimitiveErrorCode,
   RepositoryErrorCode,
-  type Result,
   RunBackfillRefusalCode,
   SchedulingErrorCode,
   StaffEditErrorCode,
   StreakPublishErrorCode,
   TimeErrorCode,
-  TriggerEventId,
-  UtcEpochMs,
   WaitlistErrorCode,
   WIRE_PARAM_ALLOWLIST,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   type CallableName,
   type ClockPorts,
@@ -55,7 +57,7 @@ import {
  * struct: `HttpsError(status, errorCode, details)`, `details` the struct
  * PROJECTED to its code's allowlist — `errorCode`, then `refusal`/`field`
  * where its row names them, then the scalar context
- * `WIRE_PARAM_ALLOWLIST` (`@core/primitives` — the ONE table the web reads
+ * `WIRE_PARAM_ALLOWLIST` (`@core/errors` — the ONE table the web reads
  * through too) lists for the code, under the struct's own field names, as
  * the struct holds them (a wall clock as `localDate` + minutes, a list as a
  * list). A struct field that is not listed NEVER leaves: a person key

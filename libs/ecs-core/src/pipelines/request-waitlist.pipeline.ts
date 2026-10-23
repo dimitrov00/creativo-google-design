@@ -1,13 +1,15 @@
 import {
   LocationId,
-  type RepositoryError,
-  RepositoryErrorCode,
   Result,
   ServiceId,
   type UserId,
-  WaitlistError,
   WaitlistRequestId,
 } from '@core/primitives';
+import {
+  type RepositoryError,
+  RepositoryErrorCode,
+  WaitlistError,
+} from '@core/errors';
 import {
   BookingPolicy,
   type BookingCart,

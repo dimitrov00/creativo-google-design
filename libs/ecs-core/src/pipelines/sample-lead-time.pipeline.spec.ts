@@ -7,9 +7,9 @@ import {
   type LocalDate,
   LocationId,
   MinuteCount,
-  RepositoryError,
   Result,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import type { BarberLeadTimeSample, CapacityMonth } from '@core/entities';
 import {
   FIXTURE_IDS,

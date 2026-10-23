@@ -35,7 +35,6 @@ import {
   LocalDate,
   LocationId,
   MinuteOfDay,
-  RepositoryError as CoreRepositoryError,
   Result as CoreResult,
   SeatId,
   SeatKeyText,
@@ -47,6 +46,7 @@ import {
   WaitlistRequestId,
   WaitlistStatus,
 } from '@core/primitives';
+import { RepositoryError as CoreRepositoryError } from '@core/errors';
 import {
   AccountLifecycle,
   BirthDate,

@@ -1,9 +1,5 @@
-import {
-  type LocationId,
-  type PipelineError,
-  Result,
-  WaitlistRequestId,
-} from '@core/primitives';
+import { type LocationId, Result, WaitlistRequestId } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import type { BookingCart } from './cart-line.data';
 import type { DayWindows } from './day-windows.data';

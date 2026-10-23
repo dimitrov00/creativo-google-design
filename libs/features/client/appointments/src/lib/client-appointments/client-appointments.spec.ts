@@ -41,16 +41,18 @@ import {
   AppointmentId,
   BarberId,
   BusyKey,
-  CancellationRefusalCode,
   CustomerId,
   LocationId,
-  PipelineError,
-  RepositoryError,
   Result,
   SeatId,
   ServiceId,
   UserId,
 } from '@core/primitives';
+import {
+  CancellationRefusalCode,
+  PipelineError,
+  RepositoryError,
+} from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import { LoadState } from '@creativo/shared/view-state';
 import {

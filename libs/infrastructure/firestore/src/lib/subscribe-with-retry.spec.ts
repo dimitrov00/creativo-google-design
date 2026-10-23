@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { retryDelayMs } from '@creativo/infrastructure/firebase-app';
-import { RepositoryError, type Result } from '@core/primitives';
+import { type Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { subscribeWithRetry } from './subscribe-with-retry';
 
 /** A controllable fake for the raw `onSnapshot` subscribe shape. */

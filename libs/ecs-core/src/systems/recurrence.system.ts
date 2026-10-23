@@ -6,12 +6,8 @@ import {
   RecurrenceRule,
   WeekOfMonth,
 } from '@core/components';
-import {
-  Result,
-  SchedulingError,
-  type Weekday,
-  LocalDate,
-} from '@core/primitives';
+import { Result, type Weekday, LocalDate } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 
 /**
  * A SERIES — a rule bound to the shop day it starts on, and so to its days

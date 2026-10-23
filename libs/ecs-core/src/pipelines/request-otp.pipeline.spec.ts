@@ -11,15 +11,13 @@ import {
   ParsedIdentifier,
   RegistrationField,
 } from '@core/components';
+import { IdentifierChannel, Result, UtcEpochMs } from '@core/primitives';
 import {
-  IdentifierChannel,
   IdentityErrorCode,
   PipelineErrorCode,
   RepositoryError,
   RepositoryErrorCode,
-  Result,
-  UtcEpochMs,
-} from '@core/primitives';
+} from '@core/errors';
 import { Collections, type Otp } from '@core/entities';
 import type { NowUtcMs, OtpStorePorts } from '@core/ports';
 import {

@@ -4,8 +4,8 @@ import {
   BarberLeadTimeSampleId,
   LocalDate,
   MinuteCount,
-  RepositoryError,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type BarberLeadTimeSample, Collections } from '@core/entities';
 import {
   FIXTURE_IDS,

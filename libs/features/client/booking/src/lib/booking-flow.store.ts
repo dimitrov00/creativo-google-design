@@ -32,21 +32,23 @@ import {
 import {
   type AppointmentId,
   type BarberId,
-  type BookingFlowError,
   type CartLineId,
   ClientOperationId,
   type GuestId,
   LocalDate,
   type LocationId,
   type MinuteOfDay,
-  PipelineError,
-  PipelineErrorCode,
   Result,
   type SeatKeyText,
   type ServiceVariantId,
   type UserId,
   defect,
 } from '@core/primitives';
+import {
+  type BookingFlowError,
+  PipelineError,
+  PipelineErrorCode,
+} from '@core/errors';
 import {
   BookingCartSystem,
   type BookingFlowEvent,

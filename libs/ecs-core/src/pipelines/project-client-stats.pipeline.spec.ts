@@ -17,12 +17,12 @@ import {
 import {
   AppointmentId,
   type CustomerId,
-  RepositoryError,
   Result,
   SeatId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
 import type { CommitPlan } from '@core/ports';
 import { AttemptOutcome } from '@core/systems';

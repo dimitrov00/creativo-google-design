@@ -3,12 +3,8 @@ import type {
   DocumentReference,
   Firestore,
 } from 'firebase-admin/firestore';
-import {
-  RepositoryError,
-  Result,
-  type AuditEntryId,
-  AuditResourceId,
-} from '@core/primitives';
+import { Result, type AuditEntryId, AuditResourceId } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type AuditEntry, Collections, QueryOp } from '@core/entities';
 import type { AuditPorts, TelemetryPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';

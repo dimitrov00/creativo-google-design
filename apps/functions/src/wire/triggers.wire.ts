@@ -2,13 +2,12 @@ import {
   BarberId,
   BusyKey,
   type CustomerId,
-  type GovernanceError,
-  type RepositoryError,
   type Result,
   TriggerEventId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { type GovernanceError, type RepositoryError } from '@core/errors';
 import { BookingPolicy, PreciseInstant } from '@core/components';
 import {
   type Appointment,

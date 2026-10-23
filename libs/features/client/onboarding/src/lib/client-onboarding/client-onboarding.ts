@@ -22,14 +22,16 @@ import {
 } from '@core/components';
 import type { Service } from '@core/entities';
 import {
-  type IdentityError,
-  IdentityErrorCode,
   IdentifierChannel,
-  PhoneErrorCode,
-  PhoneInvalidReason,
   RedirectPath,
   type ServiceId,
 } from '@core/primitives';
+import {
+  type IdentityError,
+  IdentityErrorCode,
+  PhoneErrorCode,
+  PhoneInvalidReason,
+} from '@core/errors';
 import {
   AgeSystem,
   AvatarSystem,

@@ -2,6 +2,7 @@
 paths:
   - '**/*.data.ts'
   - '**/*.entity.ts'
+  - '**/*.error.ts'
 ---
 
 # Components and entities — the exact shape
@@ -195,7 +196,7 @@ if (apt.bookingStatus === BookingStatus.Cancelled) apt.cancellationReason; // ok
 if (apt.bookingStatus === BookingStatus.Confirmed) apt.cancellationReason;
 ```
 
-## Result and errors (`result.data.ts`, `*-errors.data.ts`)
+## Result and errors (`primitives/result.data.ts`, `errors/*.error.ts`)
 
 ```ts
 export type Result<T, E> = Result.Ok<T> | Result.Err<E>;
@@ -208,7 +209,7 @@ export namespace Result {
   export type Err<E> = { readonly ok: false; readonly error: E };
 }
 
-/** Error codes — the ONLY source of these strings (`booking-errors.data.ts`). */
+/** Error codes — the ONLY source of these strings (`booking.error.ts`). */
 export const BookingErrorCode = {
   SlotUnavailable: 'BOOKING_SLOT_UNAVAILABLE',
   OutsideWindow: 'BOOKING_OUTSIDE_WINDOW',
@@ -231,7 +232,20 @@ and language-neutral — the UI resolves `errors.<errorCode>` through i18n.
 Never a class, never a stack trace, never thrown for an expected outcome;
 `throw` is only for a programmer defect.
 
-## Checklist before you save a `*.data.ts` / `*.entity.ts`
+**Where errors live (the Error file kind, owner ruling 2026-10-23).** The
+dictionary, its struct union and the factory companion of one domain sit in
+ONE `*.error.ts` file of the `@core/errors` tier —
+`libs/ecs-core/src/errors/booking.error.ts`, exported through
+`@core/errors` — never in a `*.data.ts`, a system or a pipeline
+(`creativo/error-dictionary-home`). The tier imports only primitives, so an
+error's context fields are scalars, branded primitives and the base tag
+dictionaries of primitives (`readonly bookingStatus: BookingStatus`), never
+a component type. `Result` stays in `primitives/result.data.ts`;
+`PrimitiveError`, the brands' own refusals, stays in
+`primitives/primitive.error.ts`. A component companion that refuses
+answers an error from `@core/errors` (components sit above it).
+
+## Checklist before you save a `*.data.ts` / `*.entity.ts` / `*.error.ts`
 
 - [ ] No `class`, `new`, `this`, getters, methods on data, `Object.freeze`.
 - [ ] Every discriminator is domain-prefixed (never `type`, `kind`, `status`)
@@ -247,6 +261,13 @@ Never a class, never a stack trace, never thrown for an expected outcome;
 - [ ] The name does not end in `Component`; the suffix is `.data.ts`/`.entity.ts`.
 - [ ] No optional property (`?:`) and no `| undefined` — absent is `null`,
       so every value of a type shares one hidden class.
-- [ ] Imports are other components' types, companions and tag dictionaries
-      only; no system, port, adapter, Firebase or Angular import.
+- [ ] Imports: a `*.data.ts` / `*.entity.ts` imports other components'
+      types and companions, `@core/errors` and `@core/primitives` (brands,
+      `Result`, base tag dictionaries); a `*.error.ts` imports only
+      `@core/primitives`, never a component type. None imports a system,
+      port, adapter, Firebase or Angular.
+- [ ] A `*.error.ts` sits in `libs/ecs-core/src/errors/` (the one exception:
+      `primitives/primitive.error.ts`) and holds one domain's
+      `*ErrorCode`/`*RefusalCode` dictionary, its flat struct union and a
+      factory companion — no `throw`.
 - [ ] Values are what systems compute on (local minutes, cents, epoch ms), never formatted strings.

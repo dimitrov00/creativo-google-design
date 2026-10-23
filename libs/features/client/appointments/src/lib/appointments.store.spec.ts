@@ -24,15 +24,17 @@ import {
 import {
   AppointmentId,
   BusyKey,
-  CancellationRefusalCode,
   LocalDate,
-  PipelineError,
-  PipelineErrorCode,
-  RepositoryError,
   Result,
   type TimeZone,
   UserId,
 } from '@core/primitives';
+import {
+  CancellationRefusalCode,
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+} from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_NOW_UTC_MS,

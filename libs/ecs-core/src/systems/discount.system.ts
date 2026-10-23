@@ -6,7 +6,6 @@ import {
   type Money,
 } from '@core/components';
 import {
-  EngagementError,
   Result,
   type Currency,
   type AppliedDiscountId,
@@ -14,6 +13,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import type { CouponGrant } from '@core/entities';
 import { CouponGrantSystem } from './coupon-grant.system';
 

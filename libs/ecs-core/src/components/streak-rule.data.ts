@@ -1,12 +1,14 @@
 import {
   StreakDefinitionId,
   LocalDate,
-  EngagementError,
-  EngagementErrorCode,
-  StreakRuleField,
   Locale,
   Result,
 } from '@core/primitives';
+import {
+  EngagementError,
+  EngagementErrorCode,
+  StreakRuleField,
+} from '@core/errors';
 import type { LocalizedText } from './localized-text.data';
 import { StreakInterval, StreakIntervalRule } from './streak-interval.data';
 import { StreakQualifier, StreakQualifierRule } from './streak-qualifier.data';

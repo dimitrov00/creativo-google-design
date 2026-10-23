@@ -1,7 +1,7 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
 import type { EndMinute, MinuteOfDay } from './minute-of-day.primitive';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 /**
  * A positive whole number of minutes — the length of a service, a slot step

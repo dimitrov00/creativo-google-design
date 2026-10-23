@@ -12,29 +12,31 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  BookingError,
-  type RepositoryError,
   Result,
-  ShopUnavailableReason,
   type AppointmentId,
   AuditResourceId,
   BarberId,
-  CancellationRefusalCode,
-  CarriedSeatRefusal,
   CartLineId,
   type ClientOperationId,
   type LocalDate,
   LocationId,
-  MoveErrorCode,
   OperationId,
   SeatKeyText,
   ServiceId,
   ServiceVariantId,
-  type TimeError,
   type TimeZone,
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import {
+  BookingError,
+  type RepositoryError,
+  ShopUnavailableReason,
+  CancellationRefusalCode,
+  CarriedSeatRefusal,
+  MoveErrorCode,
+  type TimeError,
+} from '@core/errors';
 import type { Appointment } from '@core/entities';
 import type {
   AuditAppendPorts,

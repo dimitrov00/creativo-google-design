@@ -118,6 +118,7 @@
       "@creativo/config/feature-flags": ["./config/feature-flags.json"],
       "@showcase/shared/*": ["./apps/showcase/src/app/shared/*"],
       "@core/primitives": ["./libs/ecs-core/src/primitives/index.ts"],
+      "@core/errors": ["./libs/ecs-core/src/errors/index.ts"],
       "@core/components": ["./libs/ecs-core/src/components/index.ts"],
       "@core/entities": ["./libs/ecs-core/src/entities/index.ts"],
       "@core/ports": ["./libs/ecs-core/src/ports/index.ts"],

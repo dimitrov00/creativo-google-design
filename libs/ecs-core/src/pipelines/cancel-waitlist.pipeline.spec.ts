@@ -6,12 +6,12 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  CancelWaitlistRefusalCode,
   UserId,
   UtcEpochMs,
   WaitlistRequestId,
   WaitlistStatus,
 } from '@core/primitives';
+import { CancelWaitlistRefusalCode } from '@core/errors';
 import { Collections, type WaitlistRequest } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
 import {

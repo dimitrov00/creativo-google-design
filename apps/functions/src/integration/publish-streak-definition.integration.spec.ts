@@ -15,9 +15,9 @@ import {
   PublishRequestId,
   Result,
   StreakDefinitionVersionId,
-  StreakPublishError,
   UserId,
 } from '@core/primitives';
+import { StreakPublishError } from '@core/errors';
 import { Collections, Subcollections } from '@core/entities';
 import {
   type PublishStreakDefinitionCommand,

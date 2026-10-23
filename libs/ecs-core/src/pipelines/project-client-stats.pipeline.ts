@@ -1,10 +1,10 @@
 import {
   type CustomerId,
-  type RepositoryError,
   Result,
   type TimeZone,
   type UtcEpochMs,
 } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import {
   type ClientMoneyStats,
   type ClientStats,

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  PublishRequestId,
-  StreakDefinitionId,
-  StreakPublishError,
-} from '@core/primitives';
+import { PublishRequestId, StreakDefinitionId } from '@core/primitives';
+import { StreakPublishError } from '@core/errors';
 import { localDate } from '@core/testing';
 import { StreakPublishCall } from './streak-publish-call.data';
 import {

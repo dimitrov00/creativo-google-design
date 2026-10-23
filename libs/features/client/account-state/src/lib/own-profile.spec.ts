@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ProfileEdits } from '@core/components';
 import { Callables } from '@core/ports';
+import { Result } from '@core/primitives';
 import {
   AccountsErrorCode,
   PipelineError,
   PipelineErrorCode,
-  Result,
-} from '@core/primitives';
+} from '@core/errors';
 import { type GatewayCall, scriptedGatewayPorts } from '@core/testing';
 import { nameRefusalCodes, saveOwnProfile } from './own-profile';
 

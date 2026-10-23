@@ -1,4 +1,5 @@
-import { ServiceId, CatalogError, Result } from '@core/primitives';
+import { ServiceId, Result } from '@core/primitives';
+import { CatalogError } from '@core/errors';
 
 /**
  * The composition tags — the ONLY source of these strings, named after the

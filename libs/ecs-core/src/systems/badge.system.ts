@@ -6,7 +6,8 @@ import {
   type EarnedLevel,
   type SeriesStanding,
 } from '@core/components';
-import { EngagementError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import type { BadgeProgress, BadgeSeries } from '@core/entities';
 
 /*

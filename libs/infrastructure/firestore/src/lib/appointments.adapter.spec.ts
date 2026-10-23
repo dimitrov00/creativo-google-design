@@ -6,11 +6,11 @@ import {
   BookingStatus,
   BusyKey,
   CustomerId,
-  RepositoryErrorCode,
   Result,
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { localDate, utcMs } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
 

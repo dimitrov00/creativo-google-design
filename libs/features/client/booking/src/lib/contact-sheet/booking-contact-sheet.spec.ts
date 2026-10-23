@@ -23,7 +23,8 @@ import {
 } from '@core/components';
 import type { User } from '@core/entities';
 import { Callables } from '@core/ports';
-import { PipelineError, Result, UserId } from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
+import { PipelineError } from '@core/errors';
 import { registeredUserFixture, scriptedGatewayPorts } from '@core/testing';
 import { BookingContactSheet } from './booking-contact-sheet';
 

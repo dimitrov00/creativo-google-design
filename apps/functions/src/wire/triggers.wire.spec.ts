@@ -7,12 +7,11 @@ import {
 import {
   BarberId,
   CustomerId,
-  GovernanceError,
-  RepositoryError,
   Result,
   TriggerEventId,
   UserId,
 } from '@core/primitives';
+import { GovernanceError, RepositoryError } from '@core/errors';
 import {
   type Appointment,
   POLICY_RECOMPUTE_DOC,

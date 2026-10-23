@@ -1,4 +1,5 @@
-import { type LocalDate, Result, SchedulingError } from '@core/primitives';
+import { type LocalDate, Result } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 import { DayWindows } from './day-windows.data';
 
 function byLocalDate(a: DayWindows, b: DayWindows): number {

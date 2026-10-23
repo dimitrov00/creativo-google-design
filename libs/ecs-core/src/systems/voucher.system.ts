@@ -1,5 +1,4 @@
 import {
-  EngagementError,
   Result,
   VoucherRefusal,
   type Currency,
@@ -10,6 +9,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import {
   type Money,
   VoucherCode,

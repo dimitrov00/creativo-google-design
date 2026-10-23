@@ -6,12 +6,8 @@ import type {
 import { firstValueFrom } from 'rxjs';
 import { collection, doc, getDocs, setDoc } from 'firebase/firestore';
 import { EndReasonFields, ImpersonationStatus, Role } from '@core/components';
-import {
-  ImpersonationSessionId,
-  RepositoryErrorCode,
-  Result,
-  UserId,
-} from '@core/primitives';
+import { ImpersonationSessionId, Result, UserId } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import type { ImpersonationSession } from '@core/entities';
 import { impersonationSessionFixture, utcMs } from '@core/testing';
 import {

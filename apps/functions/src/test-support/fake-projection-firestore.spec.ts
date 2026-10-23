@@ -1,5 +1,6 @@
 import { FieldPath, FieldValue } from 'firebase-admin/firestore';
-import { BookingErrorCode, RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { BookingErrorCode, RepositoryError } from '@core/errors';
 import { WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
 import { createProjectionFirestore } from './fake-projection-firestore';

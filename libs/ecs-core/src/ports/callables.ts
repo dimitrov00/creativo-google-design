@@ -7,7 +7,8 @@ import {
   StreakPublishCall,
   WaitlistCall,
 } from '@core/components';
-import type { PipelineError, Result } from '@core/primitives';
+import type { Result } from '@core/primitives';
+import type { PipelineError } from '@core/errors';
 
 /**
  * The callable registry (blueprint §4.1, §4.2) — the ONE spelling of every

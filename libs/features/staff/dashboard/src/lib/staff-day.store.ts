@@ -26,19 +26,21 @@ import {
   LocationId,
   MinuteOfDay,
   OperationId,
-  PipelineError,
-  PipelineErrorCode,
-  type RepositoryError,
   Result,
   ScheduleExceptionId,
-  SchedulingError,
-  StaffEditErrorCode,
   type TimeZone,
   type UserId,
   UtcEpochMs,
   VoucherRefusal,
   defect,
 } from '@core/primitives';
+import {
+  PipelineError,
+  PipelineErrorCode,
+  type RepositoryError,
+  SchedulingError,
+  StaffEditErrorCode,
+} from '@core/errors';
 import {
   type BookingCall,
   Combinability,

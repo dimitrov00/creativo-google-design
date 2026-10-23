@@ -4,19 +4,18 @@ import {
   RegistrationField,
   SessionKind,
 } from '@core/components';
+import { IdentifierChannel, OtpId } from '@core/primitives';
 import {
   AccountsError,
   CompleteRegistrationRefusalCode,
-  IdentifierChannel,
   IdentityError,
   IdentityErrorCode,
-  OtpId,
   PhoneError,
   PhoneInvalidReason,
   PipelineError,
   PipelineErrorCode,
   RepositoryError,
-} from '@core/primitives';
+} from '@core/errors';
 import { type EdgeError, toHttpsError } from '../edge';
 import type { WireRequest } from './wire-read';
 import {

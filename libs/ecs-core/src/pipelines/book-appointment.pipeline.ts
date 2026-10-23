@@ -11,10 +11,7 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  BookingError,
-  type RepositoryError,
   Result,
-  ShopUnavailableReason,
   type AppointmentId,
   AuditResourceId,
   BarberId,
@@ -23,11 +20,16 @@ import {
   LocationId,
   MinuteOfDay,
   ServiceId,
-  type TimeError,
   type TimeZone,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import {
+  BookingError,
+  type RepositoryError,
+  ShopUnavailableReason,
+  type TimeError,
+} from '@core/errors';
 import type { AccountContact, Appointment } from '@core/entities';
 import type {
   AccountContactPorts,

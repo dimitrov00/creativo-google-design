@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CountryIso2, E164 } from '@core/components';
-import {
-  PhoneErrorCode,
-  PhoneInvalidReason,
-  type Result,
-} from '@core/primitives';
+import { type Result } from '@core/primitives';
+import { PhoneErrorCode, PhoneInvalidReason } from '@core/errors';
 import { PhoneSystem, type CountryNaming } from './phone.system';
 import { deepFreeze } from '@core/testing';
 

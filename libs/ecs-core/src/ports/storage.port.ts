@@ -1,5 +1,6 @@
 import type { BookingDraft } from '@core/components';
-import type { RepositoryError, Result } from '@core/primitives';
+import type { Result } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 
 /**
  * The browser's device storage (blueprint §4.2) — web-only, synchronous

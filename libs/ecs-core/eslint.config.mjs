@@ -19,8 +19,8 @@ import baseConfig, {
  * through its own `@core/<tier>` barrel, and a PRODUCTION file of a tier may
  * import only the tiers listed here — the one-way hierarchy
  *
- *   primitives ──> components ──> entities ──> systems ──> pipelines
- *                                    └──> ports ──────────────┘
+ *   primitives ──> errors ──> components ──> entities ──> systems ──> pipelines
+ *                                                └──> ports ──────────────┘
  *
  * `testing` is the test-support tier (`@core/testing`): it sits above every
  * production tier, and specs and type-specs sit above it — a spec may import
@@ -30,14 +30,26 @@ import baseConfig, {
  */
 const CORE_TIER_IMPORTS = new Map([
   ['primitives', []],
-  ['components', ['primitives']],
-  ['entities', ['components', 'primitives']],
-  ['ports', ['entities', 'components', 'primitives']],
-  ['systems', ['entities', 'components', 'primitives']],
-  ['pipelines', ['systems', 'ports', 'entities', 'components', 'primitives']],
+  ['errors', ['primitives']],
+  ['components', ['errors', 'primitives']],
+  ['entities', ['components', 'errors', 'primitives']],
+  ['ports', ['entities', 'components', 'errors', 'primitives']],
+  ['systems', ['entities', 'components', 'errors', 'primitives']],
+  [
+    'pipelines',
+    ['systems', 'ports', 'entities', 'components', 'errors', 'primitives'],
+  ],
   [
     'testing',
-    ['primitives', 'components', 'entities', 'ports', 'systems', 'pipelines'],
+    [
+      'primitives',
+      'errors',
+      'components',
+      'entities',
+      'ports',
+      'systems',
+      'pipelines',
+    ],
   ],
 ]);
 
@@ -101,8 +113,8 @@ function tierRestrictions(tier, { test }) {
           coreAliasRestriction(
             forbidden,
             allowed.length === 0
-              ? `Law 8.2: src/${tier} imports nothing from the library — it is the bottom of the hierarchy (primitives → components → entities → systems → pipelines, ports beside).`
-              : `Law 8.2: src/${tier} may import only ${allowed.map((name) => `@core/${name}`).join(', ')} — the hierarchy runs one way (primitives → components → entities → systems → pipelines, ports beside), and nothing inside the library but specs and test support imports pipelines.`,
+              ? `Law 8.2: src/${tier} imports nothing from the library — it is the bottom of the hierarchy (primitives → errors → components → entities → systems → pipelines, ports beside).`
+              : `Law 8.2: src/${tier} may import only ${allowed.map((name) => `@core/${name}`).join(', ')} — the hierarchy runs one way (primitives → errors → components → entities → systems → pipelines, ports beside), and nothing inside the library but specs and test support imports pipelines.`,
           ),
         ];
   return [own, ...upward, NO_PARENT_TRAVERSAL];
@@ -198,9 +210,9 @@ const tierBlocks = [...CORE_TIER_IMPORTS.keys()].flatMap((tier) => [
 
 export default [
   ...baseConfig,
-  // The InjectionToken guard on every file (the root carries it on the seven
+  // The InjectionToken guard on every file (the root carries it on the eight
   // suffix blocks only — the web's Angular wiring declares tokens lawfully,
-  // no Angular lives here), and the root's seven suffix blocks restated after
+  // no Angular lives here), and the root's eight suffix blocks restated after
   // it so its options do not replace theirs. L4 — no `Date` — reaches every
   // file of the core, specs and test support included (flatten-spec §7).
   ...ecsProjectBlocks({ everyFile: ECS_DATE_RESTRICTIONS }),

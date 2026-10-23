@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { UtcEpochMs, SchedulingErrorCode } from '@core/primitives';
+import { UtcEpochMs } from '@core/primitives';
+import { SchedulingErrorCode } from '@core/errors';
 import { unwrapOk, utcMs } from '@core/testing';
 import { BookingPolicy } from './booking-policy.data';
 import { ClientStatsPolicy } from './client-stats-policy.data';

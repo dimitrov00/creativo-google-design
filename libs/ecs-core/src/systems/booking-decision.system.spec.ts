@@ -21,9 +21,6 @@ import {
   type BookingCall,
 } from '@core/components';
 import {
-  BookingError,
-  BookingErrorField,
-  ShopUnavailableReason,
   BookingStatus,
   type Result,
   Weekday,
@@ -44,6 +41,11 @@ import {
   type PriceCents,
   type UtcEpochMs,
 } from '@core/primitives';
+import {
+  BookingError,
+  BookingErrorField,
+  ShopUnavailableReason,
+} from '@core/errors';
 import type { Service } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,

@@ -7,7 +7,8 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import type { Observable } from 'rxjs';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { subscribeWithRetry } from './subscribe-with-retry';
 
 /**

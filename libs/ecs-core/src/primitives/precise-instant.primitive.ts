@@ -1,6 +1,6 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 const NANOS_PER_SECOND = 1_000_000_000;
 

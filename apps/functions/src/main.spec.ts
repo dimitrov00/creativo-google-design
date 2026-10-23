@@ -1,6 +1,6 @@
 import { logger } from 'firebase-functions';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
-import { BookingError, IdentityError, RepositoryError } from '@core/primitives';
+import { BookingError, IdentityError, RepositoryError } from '@core/errors';
 import { Callables } from '@core/ports';
 
 /**

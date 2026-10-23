@@ -1,9 +1,5 @@
-import {
-  type Currency,
-  type PriceCents,
-  EngagementError,
-  Result,
-} from '@core/primitives';
+import { type Currency, type PriceCents, Result } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 
 /**
  * What a discount does to a price — the field `discountMethod`, the ONLY

@@ -1,5 +1,6 @@
 import { FieldPath, type Firestore } from 'firebase-admin/firestore';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { knownRoles } from '@core/components';
 import {
   type Appointment,

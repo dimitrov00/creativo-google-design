@@ -12,10 +12,10 @@ import { Callables } from '@core/ports';
 import {
   type AppointmentId,
   LocalDate,
-  type PipelineError,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import {
   BookingCall,
   BookingLifecycle,

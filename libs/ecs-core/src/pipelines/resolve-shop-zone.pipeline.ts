@@ -1,10 +1,5 @@
-import {
-  CatalogError,
-  type LocationId,
-  type RepositoryError,
-  Result,
-  type TimeZone,
-} from '@core/primitives';
+import { type LocationId, Result, type TimeZone } from '@core/primitives';
+import { CatalogError, type RepositoryError } from '@core/errors';
 import type { DefaultLocationPorts, LocationLoadPorts } from '@core/ports';
 import { ShopZoneSystem } from '@core/systems';
 

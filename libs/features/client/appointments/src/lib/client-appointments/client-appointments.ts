@@ -80,12 +80,11 @@ import {
 import type { Appointment } from '@core/entities';
 import {
   type AppointmentId,
-  BookingErrorCode,
   BookingStatus,
-  CancellationRefusalCode,
   LocalDate,
   UtcEpochMs,
 } from '@core/primitives';
+import { BookingErrorCode, CancellationRefusalCode } from '@core/errors';
 import {
   BookingLifecycle,
   BookingPolicy,

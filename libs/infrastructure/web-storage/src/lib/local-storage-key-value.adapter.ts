@@ -1,4 +1,5 @@
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import type { KeyValuePorts } from '@core/ports';
 import { storageReason } from './storage-reason';
 

@@ -23,10 +23,7 @@ import {
   type ShopNow,
 } from '@core/components';
 import {
-  BookingError,
-  ShopUnavailableReason,
   Result,
-  SchedulingError,
   BusyKey,
   Currency,
   type DurationMinutes,
@@ -45,6 +42,11 @@ import {
   PriceCents,
   type UtcEpochMs,
 } from '@core/primitives';
+import {
+  BookingError,
+  ShopUnavailableReason,
+  SchedulingError,
+} from '@core/errors';
 import type { Appointment, ScheduleException, Service } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import { AvailabilitySystem } from './availability.system';

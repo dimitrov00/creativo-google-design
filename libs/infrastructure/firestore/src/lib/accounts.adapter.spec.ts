@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
 import { E164, Email } from '@core/components';
-import { RepositoryErrorCode, Result, UserId } from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import type { User } from '@core/entities';
 import { SearchFieldsSystem } from '@core/systems';
 import {

@@ -2,7 +2,7 @@ import {
   type AccountsError,
   AccountsErrorCode,
   type MediaError,
-} from '@core/primitives';
+} from '@core/errors';
 
 /**
  * The error code a person reads for a refused avatar upload

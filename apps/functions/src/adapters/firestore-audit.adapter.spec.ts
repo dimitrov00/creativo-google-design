@@ -5,10 +5,10 @@ import {
   AuditResourceId,
   CustomerId,
   LocationId,
-  RepositoryErrorCode,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import {
   Actor,
   AuditAction,

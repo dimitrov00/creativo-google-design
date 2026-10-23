@@ -14,11 +14,11 @@ import {
 } from '@core/components';
 import {
   IdentifierChannel,
-  IdentityError,
   Result,
   type TenantId,
   type UserId,
 } from '@core/primitives';
+import { IdentityError } from '@core/errors';
 import type { User } from '@core/entities';
 import { SearchFieldsSystem } from './search-fields.system';
 

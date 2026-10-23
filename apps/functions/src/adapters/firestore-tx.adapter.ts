@@ -7,7 +7,8 @@ import {
   type Query,
   type Transaction,
 } from 'firebase-admin/firestore';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   type DocBody,
   type DocPath,

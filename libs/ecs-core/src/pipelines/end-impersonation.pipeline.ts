@@ -4,13 +4,8 @@ import {
   type Role,
   WriteOp,
 } from '@core/components';
-import {
-  defect,
-  GovernanceError,
-  type RepositoryError,
-  Result,
-  type UserId,
-} from '@core/primitives';
+import { defect, Result, type UserId } from '@core/primitives';
+import { GovernanceError, type RepositoryError } from '@core/errors';
 import type { ImpersonationSession } from '@core/entities';
 import type { ClockPorts, CommitPorts, TelemetryPorts } from '@core/ports';
 import { ImpersonationSystem } from '@core/systems';

@@ -1,9 +1,5 @@
-import {
-  BookingError,
-  Result,
-  type LocationId,
-  ServiceVariantId,
-} from '@core/primitives';
+import { Result, type LocationId, ServiceVariantId } from '@core/primitives';
+import { BookingError } from '@core/errors';
 import {
   type BookingPolicy,
   type BookingCart,

@@ -12,9 +12,9 @@ import {
   CapacityMonthId,
   type LocalDate,
   LocationId,
-  RepositoryError,
   Result,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { Collections, QueryOp } from '@core/entities';
 import { CapacitySystem, LeadTimeSystem } from '@core/systems';
 import {

@@ -7,7 +7,7 @@ import {
   RegistrationField,
   type RegistrationFields,
 } from '@core/components';
-import { IdentityErrorCode } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import { type OtpChallengeCall, memoryOtpChallengePorts } from '@core/testing';
 import { registerUser } from './register-user.pipeline';
 

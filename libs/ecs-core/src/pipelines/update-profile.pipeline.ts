@@ -1,13 +1,12 @@
 import { type ProfileEdits, WriteOp } from '@core/components';
 import {
-  type AccountsError,
   AuditEntryId,
   defect,
-  type RepositoryError,
   Result,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import { type AccountsError, type RepositoryError } from '@core/errors';
 import { Collections, type User } from '@core/entities';
 import type {
   ClockPorts,

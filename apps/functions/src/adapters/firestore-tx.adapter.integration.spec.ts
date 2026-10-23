@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import admin from 'firebase-admin';
 import { type Firestore, Timestamp } from 'firebase-admin/firestore';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { WriteOp } from '@core/components';
 import { QueryOp } from '@core/entities';
 import { firestoreCommitPlan } from './firestore-tx.adapter';

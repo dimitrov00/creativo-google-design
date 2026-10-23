@@ -15,9 +15,9 @@ import {
   LocalDate,
   LocationId,
   MinuteOfDay,
-  RepositoryErrorCode,
   UserId,
 } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { unwrapErr, unwrapOk } from '@core/testing';
 import { sessionStorageBookingDraftPorts } from './session-storage-booking-draft.adapter';
 

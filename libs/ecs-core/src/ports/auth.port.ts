@@ -6,7 +6,8 @@ import type {
   RegistrationFields,
   SessionKind,
 } from '@core/components';
-import type { PipelineError, Result, OtpId } from '@core/primitives';
+import type { Result, OtpId } from '@core/primitives';
+import type { PipelineError } from '@core/errors';
 
 /**
  * The web's authentication ports (blueprint §4.2) — the Firebase Auth

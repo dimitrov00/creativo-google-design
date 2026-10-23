@@ -1,6 +1,6 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 /*
  * The id family (Law 7.4, flatten-spec §1.5) — every entity id, key and

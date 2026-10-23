@@ -1,11 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { localDate, utcMs, duration, minuteCount } from '@core/testing';
-import {
-  UtcEpochMs,
-  type SchedulingError,
-  SchedulingErrorCode,
-} from '@core/primitives';
+import { UtcEpochMs } from '@core/primitives';
+import { type SchedulingError, SchedulingErrorCode } from '@core/errors';
 import { BookingPolicy, type BookingPolicyInput } from './booking-policy.data';
 
 const VALID_INPUT: BookingPolicyInput = {

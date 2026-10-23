@@ -1,6 +1,6 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 /**
  * Money in minor units (cents, stotinki) — a safe integer, always read beside

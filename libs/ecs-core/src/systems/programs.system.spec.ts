@@ -1,20 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { EnrollmentStatus, PositionStatus } from '@core/components';
 import {
-  CatalogError,
   CourseId,
-  DateTimeInvalidReason,
-  EngagementError,
-  EngagementErrorCode,
   EventId,
   Locale,
   LocationId,
   PositionId,
   PrimitiveError,
   PrimitiveErrorCode,
-  TimeError,
   type TimeZone,
 } from '@core/primitives';
+import {
+  CatalogError,
+  DateTimeInvalidReason,
+  EngagementError,
+  EngagementErrorCode,
+  TimeError,
+} from '@core/errors';
 import {
   FIXTURE_TIME_ZONE,
   courseInputOf,

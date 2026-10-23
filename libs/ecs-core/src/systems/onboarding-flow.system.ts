@@ -1,4 +1,5 @@
-import { IdentityError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { IdentityError } from '@core/errors';
 import {
   OnboardingFlowEvent,
   OnboardingFlowEventKind,

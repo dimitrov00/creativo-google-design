@@ -10,7 +10,7 @@ import {
   ParsedIdentifier as Parsed,
   SessionKind,
 } from '@core/components';
-import { IdentityErrorCode } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import { AuthFlowSystem } from './auth-flow.system';
 

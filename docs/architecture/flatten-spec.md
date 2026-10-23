@@ -25,6 +25,15 @@ open question (§10), never an improvisation.
 > `entities/collections.ts`. The work-package file lists of §8 keep the
 > names they were assigned under.
 
+> **Note 2026-10-23 — Law 8 amendment (`@core/errors`).** Error dictionaries
+> and their struct unions left `primitives/` for the tier `@core/errors`
+> (`errors/<domain>.error.ts`, barrel `errors/index.ts`), between primitives
+> and components. `Result`, `PrimitiveError` (`primitives/primitive.error.ts`,
+> formerly `primitive-errors.data.ts`) and the base tag dictionaries stay in
+> primitives. Every `<domain>-errors.data.ts` named below is now
+> `errors/<domain>.error.ts`, and the library has seven tier aliases plus
+> `@core/testing`.
+
 The blueprint `docs/architecture/ecs-migration.md` §2.5–§2.7 and §3 describe
 the **pre-Law-6/7** shapes; this file translates them. Where the two
 disagree, this file wins for the flatten pass and the reviser folds it back

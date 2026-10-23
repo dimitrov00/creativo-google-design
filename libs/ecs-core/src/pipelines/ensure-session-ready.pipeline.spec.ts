@@ -1,7 +1,8 @@
 import { BehaviorSubject } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import type { Principal } from '@core/components';
-import { PipelineError, PipelineErrorCode, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { REFRESH_BACKOFF_MS } from '@core/systems';
 import {
   immediateTimerPorts,

@@ -7,11 +7,11 @@ import {
 } from '@core/components';
 import {
   ImpersonationSessionId,
-  RepositoryErrorCode,
   Result,
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import type { ImpersonationSession } from '@core/entities';
 import { impersonationSessionFixture, utcMs } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';

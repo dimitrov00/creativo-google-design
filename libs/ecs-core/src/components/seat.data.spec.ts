@@ -10,8 +10,8 @@ import {
   UserId,
   PriceCents,
   UtcEpochMs,
-  SchedulingError,
 } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 import { minute, unwrapOk, customerOf } from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
 import { SeatLabel } from './seat-label.data';

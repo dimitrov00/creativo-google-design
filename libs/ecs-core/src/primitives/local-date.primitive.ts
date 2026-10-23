@@ -2,7 +2,7 @@ import { Result } from './result.data';
 import type { Weekday } from './weekday.data';
 import type { Brand } from './brand';
 import { CapacityMonthId } from './ids.primitive';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 /**
  * The shop's wall-clock day, `YYYY-MM-DD` on the proleptic Gregorian

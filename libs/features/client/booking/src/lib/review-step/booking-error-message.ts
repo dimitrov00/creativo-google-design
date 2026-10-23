@@ -1,10 +1,6 @@
 import type { TranslocoService } from '@jsverse/transloco';
 import { ShopReach } from '@core/components';
-import {
-  BookingErrorCode,
-  MoveErrorCode,
-  PipelineError,
-} from '@core/primitives';
+import { BookingErrorCode, MoveErrorCode, PipelineError } from '@core/errors';
 import {
   translateDomainError,
   wordPipelineError,

@@ -1,16 +1,18 @@
 import {
   BarberId,
-  type CancelWaitlistRefusal,
   CartLineId,
   LocationId,
-  type RepositoryError,
   Result,
   SeatKeyText,
   ServiceId,
   ServiceVariantId,
-  WaitlistError,
   WaitlistRequestId,
 } from '@core/primitives';
+import {
+  type CancelWaitlistRefusal,
+  type RepositoryError,
+  WaitlistError,
+} from '@core/errors';
 import type {
   BookingCart,
   CartLine,

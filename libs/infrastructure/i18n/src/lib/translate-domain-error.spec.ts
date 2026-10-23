@@ -14,7 +14,7 @@ import {
   PhoneErrorCode,
   PhoneInvalidReason,
   SchedulingErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import { Observable, of } from 'rxjs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import en from '../assets/i18n/en.json';

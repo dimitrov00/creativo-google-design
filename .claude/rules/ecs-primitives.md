@@ -25,11 +25,8 @@ export type Brand<T, B extends string> = T & { readonly [BrandSymbol]: B };
 ```ts
 import type { Brand } from './brand';
 import type { MinuteCount } from './duration-minutes.primitive';
-import { Result } from './result.data'; // Result and the error structs live in primitives (Law 8)
-import {
-  PrimitiveErrorCode,
-  type PrimitiveError,
-} from './primitive-errors.data';
+import { Result } from './result.data'; // Result and PrimitiveError live in primitives; every other error is @core/errors (Law 8)
+import { PrimitiveErrorCode, type PrimitiveError } from './primitive.error';
 
 /**
  * Minutes from the shop's local midnight on its wall clock — an integer in

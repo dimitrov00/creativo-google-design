@@ -1,9 +1,5 @@
-import {
-  CustomerId,
-  type PipelineError,
-  Result,
-  UtcEpochMs,
-} from '@core/primitives';
+import { CustomerId, Result, UtcEpochMs } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import { BackfillJobName } from './backfill-job-name.data';
 

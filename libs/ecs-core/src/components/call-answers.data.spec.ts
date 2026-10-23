@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PipelineErrorCode } from '@core/primitives';
+import { PipelineErrorCode } from '@core/errors';
 import { BackfillCall } from './backfill-call.data';
 import { CallAnswer } from './call-answer.data';
 import { GovernanceCall } from './governance-call.data';

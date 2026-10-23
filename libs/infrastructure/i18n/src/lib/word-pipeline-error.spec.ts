@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { BookingStatus } from '@core/primitives';
 import {
   BookingErrorCode,
-  BookingStatus,
   CancellationRefusalCode,
   IdentityErrorCode,
   MoveErrorCode,
   PipelineError,
   PipelineErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import bg from '../assets/i18n/bg.json';
 import en from '../assets/i18n/en.json';
 import { bookingStatusWords } from './booking-status-words';

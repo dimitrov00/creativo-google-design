@@ -1,9 +1,5 @@
-import type {
-  LocalDate,
-  Result,
-  SchedulingError,
-  Weekday,
-} from '@core/primitives';
+import type { LocalDate, Result, Weekday } from '@core/primitives';
+import type { SchedulingError } from '@core/errors';
 import {
   RecurrenceEnd,
   RecurrenceEndRule,

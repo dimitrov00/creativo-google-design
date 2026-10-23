@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Firestore } from 'firebase/firestore';
-import {
-  NotificationId,
-  RepositoryErrorCode,
-  Result,
-  UserId,
-} from '@core/primitives';
+import { NotificationId, Result, UserId } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { utcMs } from '@core/testing';
 import { FakeFirestore } from '../testing/fake-firestore';
 

@@ -1,7 +1,8 @@
 import { Observable } from 'rxjs';
 import type { Unsubscribe } from 'firebase/firestore';
 import { retryDelayMs } from '@creativo/infrastructure/firebase-app';
-import { type RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 
 /**
  * The only error codes a re-listen can actually heal.

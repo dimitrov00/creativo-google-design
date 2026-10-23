@@ -1,5 +1,6 @@
 import type { Auth } from 'firebase-admin/auth';
-import { PipelineErrorCode, TenantId, UserId } from '@core/primitives';
+import { TenantId, UserId } from '@core/primitives';
+import { PipelineErrorCode } from '@core/errors';
 import {
   AuthClaims,
   E164,

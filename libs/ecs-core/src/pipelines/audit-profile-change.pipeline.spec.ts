@@ -9,12 +9,11 @@ import {
 import {
   AuditEntryId,
   AuditResourceId,
-  GovernanceError,
-  RepositoryError,
   Result,
   TriggerEventId,
   UserId,
 } from '@core/primitives';
+import { GovernanceError, RepositoryError } from '@core/errors';
 import type { AuditEntry } from '@core/entities';
 import { AuditSystem, type ProfileChange } from '@core/systems';
 import {

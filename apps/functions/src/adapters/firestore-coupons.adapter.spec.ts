@@ -1,5 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { RepositoryErrorCode } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { VoucherCode } from '@core/components';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreCouponPorts } from './firestore-coupons.adapter';

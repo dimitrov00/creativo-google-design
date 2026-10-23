@@ -1,5 +1,6 @@
 import type { AppointmentReadPorts } from '@core/ports';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { VisitRowOutcome } from '@core/systems';
 import { memoryAppointmentReadPorts } from '@core/testing';
 import { afterEach, describe, expect, it } from 'vitest';

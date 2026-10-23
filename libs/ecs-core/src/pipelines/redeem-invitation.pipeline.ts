@@ -1,12 +1,10 @@
 import { type InvitationCall, WriteOp } from '@core/components';
+import { type InvitationId, Result, type UserId } from '@core/primitives';
 import {
   EngagementError,
-  type InvitationId,
   type RepositoryError,
   RepositoryErrorCode,
-  Result,
-  type UserId,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   Collections,
   type Invitation,

@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ServiceCategoryId,
-  ServiceId,
-  type LocalDate,
-  type EngagementError,
-} from '@core/primitives';
+import { ServiceCategoryId, ServiceId, type LocalDate } from '@core/primitives';
+import { type EngagementError } from '@core/errors';
 import { localDate } from '@core/testing';
 import {
   StreakInterval,

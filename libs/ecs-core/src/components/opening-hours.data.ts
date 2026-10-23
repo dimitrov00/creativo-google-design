@@ -1,10 +1,5 @@
-import {
-  EndMinute,
-  MinuteOfDay,
-  CatalogError,
-  Result,
-  type Weekday,
-} from '@core/primitives';
+import { EndMinute, MinuteOfDay, Result, type Weekday } from '@core/primitives';
+import { CatalogError } from '@core/errors';
 
 /**
  * The day tags — the ONLY source of these strings, named after the field they

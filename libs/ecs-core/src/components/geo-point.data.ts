@@ -1,10 +1,5 @@
-import {
-  Latitude,
-  Longitude,
-  CatalogError,
-  GeoAxis,
-  Result,
-} from '@core/primitives';
+import { Latitude, Longitude, Result } from '@core/primitives';
+import { CatalogError, GeoAxis } from '@core/errors';
 
 /**
  * A WGS 84 position — a flat SLICE (Law 6): `ShopLocation` intersects it, so

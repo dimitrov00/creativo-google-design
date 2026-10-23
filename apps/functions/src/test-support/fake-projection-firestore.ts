@@ -3,7 +3,8 @@ import {
   FieldValue,
   type Firestore,
 } from 'firebase-admin/firestore';
-import type { RepositoryError, Result } from '@core/primitives';
+import type { Result } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { DocPath, WriteOp } from '@core/components';
 import type { CommitPlan, QuerySpec, ReadTx } from '@core/ports';
 import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';

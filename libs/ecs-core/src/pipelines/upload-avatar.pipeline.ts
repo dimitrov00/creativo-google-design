@@ -1,9 +1,5 @@
-import {
-  type AccountsError,
-  type MediaError,
-  Result,
-  type UserId,
-} from '@core/primitives';
+import { Result, type UserId } from '@core/primitives';
+import { type AccountsError, type MediaError } from '@core/errors';
 import type { AvatarPorts, StoredFile } from '@core/ports';
 import { AvatarSystem } from '@core/systems';
 

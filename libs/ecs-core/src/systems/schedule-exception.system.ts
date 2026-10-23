@@ -1,9 +1,5 @@
-import {
-  ExceptionEffect,
-  Result,
-  type SchedulingError,
-  type BarberId,
-} from '@core/primitives';
+import { ExceptionEffect, Result, type BarberId } from '@core/primitives';
+import { type SchedulingError } from '@core/errors';
 import {
   ExceptionEffectRule,
   type ExceptionDetail,

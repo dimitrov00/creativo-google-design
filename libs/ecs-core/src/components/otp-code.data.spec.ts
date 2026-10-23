@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IdentityErrorCode } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import { OtpCode } from './otp-code.data';
 
 // The cases of the legacy identity `otp-code.spec.ts` (deleted in Phase 4b;

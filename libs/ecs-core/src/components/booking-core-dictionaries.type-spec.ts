@@ -19,6 +19,7 @@ import type { Barber, Service, ShopLocation } from '@core/entities';
 import { Selectability, type ServiceSelectability } from '@core/systems';
 import { type BookingCall, RequestedSubjectRole } from './booking-call.data';
 import { type BarberPref, BarberPreference } from './barber-pref.data';
+import { Locale } from '@core/primitives';
 import {
   BookingErrorCode,
   BookingErrorField,
@@ -27,8 +28,7 @@ import {
   CatalogErrorCode,
   GeoAxis,
   MediaDimension,
-  Locale,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   BarberStatus,
   LocationStatus,
@@ -89,12 +89,12 @@ dictionary(Selectability satisfies Dictionary<Selectability>);
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type BookingCoreDictionariesHold = [
   Expect<Holds<typeof BarberPreference, BarberPreference>>, // components/barber-pref.data.ts
-  Expect<Holds<typeof BookingErrorCode, BookingErrorCode>>, // primitives/booking-errors.data.ts
-  Expect<Holds<typeof BookingErrorField, BookingErrorField>>, // primitives/booking-errors.data.ts
-  Expect<Holds<typeof ShopUnavailableReason, ShopUnavailableReason>>, // primitives/booking-errors.data.ts
-  Expect<Holds<typeof CatalogErrorCode, CatalogErrorCode>>, // primitives/catalog-errors.data.ts
-  Expect<Holds<typeof MediaDimension, MediaDimension>>, // primitives/catalog-errors.data.ts
-  Expect<Holds<typeof GeoAxis, GeoAxis>>, // primitives/catalog-errors.data.ts
+  Expect<Holds<typeof BookingErrorCode, BookingErrorCode>>, // errors/booking.error.ts
+  Expect<Holds<typeof BookingErrorField, BookingErrorField>>, // errors/booking.error.ts
+  Expect<Holds<typeof ShopUnavailableReason, ShopUnavailableReason>>, // errors/booking.error.ts
+  Expect<Holds<typeof CatalogErrorCode, CatalogErrorCode>>, // errors/catalog.error.ts
+  Expect<Holds<typeof MediaDimension, MediaDimension>>, // errors/catalog.error.ts
+  Expect<Holds<typeof GeoAxis, GeoAxis>>, // errors/catalog.error.ts
   Expect<Holds<typeof ServiceStatus, ServiceStatus>>, // components/catalog-status.data.ts
   Expect<Holds<typeof BarberStatus, BarberStatus>>, // components/catalog-status.data.ts
   Expect<Holds<typeof LocationStatus, LocationStatus>>, // components/catalog-status.data.ts
@@ -154,13 +154,13 @@ export type BookingCoreDictionaryFields = [
     >
   >, // systems/guest-label.system.ts
   Expect<Equals<ServiceSelectability['selectability'], Selectability>>, // systems/service-conflict.system.ts
-  Expect<Equals<CatalogError.LocationInvalidGeoCoordinate['geoAxis'], GeoAxis>>, // primitives/catalog-errors.data.ts
+  Expect<Equals<CatalogError.LocationInvalidGeoCoordinate['geoAxis'], GeoAxis>>, // errors/catalog.error.ts
   Expect<
     Equals<
       CatalogError.MediaRefInvalidDimension['mediaDimension'],
       MediaDimension
     >
-  >, // primitives/catalog-errors.data.ts
+  >, // errors/catalog.error.ts
 ];
 
 // The checks are not vacuous.

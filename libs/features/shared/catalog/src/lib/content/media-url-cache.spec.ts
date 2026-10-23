@@ -1,7 +1,8 @@
 import * as fc from 'fast-check';
 import { MediaRef } from '@core/components';
 import type { MediaResolvePorts, MediaVariant } from '@core/ports';
-import { MediaError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { MediaError } from '@core/errors';
 import {
   DEFAULT_MEDIA_RETRY_POLICY,
   type MediaRetryPolicy,

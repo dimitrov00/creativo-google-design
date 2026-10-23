@@ -30,10 +30,10 @@ import {
   AppointmentId,
   BusyKey,
   LocalDate,
-  RepositoryError,
   Result as EcsResult,
   UserId,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   appointmentFixture,

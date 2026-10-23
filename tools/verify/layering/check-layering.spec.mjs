@@ -56,6 +56,11 @@ function cleanFiles() {
     [core('package.json'), '{ "sideEffects": false }\n'],
     [core('primitives/index.ts'), "export * from './minute.primitive';\n"],
     [core('primitives/minute.primitive.ts'), 'export type Minute = number;\n'],
+    [core('errors/index.ts'), "export * from './slot.error';\n"],
+    [
+      core('errors/slot.error.ts'),
+      "import type { Minute } from '@core/primitives';\nexport type SlotError = { readonly errorCode: 'SLOT_TAKEN'; readonly start: Minute };\n",
+    ],
     [core('components/index.ts'), "export * from './slot.data';\n"],
     [
       core('components/slot.data.ts'),
@@ -236,7 +241,7 @@ describe('the library layout', () => {
 });
 
 describe('(a) entry points', () => {
-  it('passes a library with tier barrels only and the seven aliases', () => {
+  it('passes a library with tier barrels only and the eight aliases', () => {
     assert.deepEqual(checkEntryPoints(snapshotOf()), []);
   });
 
@@ -271,7 +276,7 @@ describe('(a) entry points', () => {
     ]);
   });
 
-  it('requires exactly the seven tier aliases in tsconfig.base.json', () => {
+  it('requires exactly the eight tier aliases in tsconfig.base.json', () => {
     const paths = {
       '@creativo/ui/icons': ['./libs/ui/icons/src/index.ts'],
       [LEGACY_ALIAS]: ['./libs/ecs-core/src/index.ts'],
@@ -298,7 +303,7 @@ describe('(a) entry points', () => {
       found[1].message,
       /"@core\/systems" must map to \["\.\/libs\/ecs-core\/src\/systems\/index\.ts"\]/,
     );
-    assert.match(found[2].message, /is not one of the seven tier aliases/);
+    assert.match(found[2].message, /is not one of the eight tier aliases/);
     assert.match(found[3].message, /"@core\/pipelines" is missing/);
   });
 
@@ -315,6 +320,7 @@ describe('(a) entry points', () => {
 describe('(b) hierarchy — the tier each folder may import', () => {
   const production = {
     primitives: core('primitives/a.primitive.ts'),
+    errors: core('errors/a.error.ts'),
     components: core('components/a.data.ts'),
     entities: core('entities/a.entity.ts'),
     ports: core('ports/a.port.ts'),
@@ -324,13 +330,22 @@ describe('(b) hierarchy — the tier each folder may import', () => {
   };
   const allowed = {
     primitives: [],
-    components: ['primitives'],
-    entities: ['components', 'primitives'],
-    ports: ['entities', 'components', 'primitives'],
-    systems: ['entities', 'components', 'primitives'],
-    pipelines: ['systems', 'ports', 'entities', 'components', 'primitives'],
+    errors: ['primitives'],
+    components: ['errors', 'primitives'],
+    entities: ['components', 'errors', 'primitives'],
+    ports: ['entities', 'components', 'errors', 'primitives'],
+    systems: ['entities', 'components', 'errors', 'primitives'],
+    pipelines: [
+      'systems',
+      'ports',
+      'entities',
+      'components',
+      'errors',
+      'primitives',
+    ],
     testing: [
       'primitives',
+      'errors',
       'components',
       'entities',
       'ports',
@@ -364,7 +379,7 @@ describe('(b) hierarchy — the tier each folder may import', () => {
     );
     assert.match(
       hierarchyBreach(production.systems, '@core/ports'),
-      /may import only @core\/entities, @core\/components, @core\/primitives/,
+      /may import only @core\/entities, @core\/components, @core\/errors, @core\/primitives/,
     );
     assert.match(
       hierarchyBreach(production.components, '@core/testing'),
@@ -730,7 +745,7 @@ describe('checkLayering — all five, sorted', () => {
   it('passes the clean fixture and counts what it read', () => {
     const report = checkLayering(snapshotOf());
     assert.deepEqual(report.violations, []);
-    assert.equal(report.coreFiles, 15);
+    assert.equal(report.coreFiles, 17); // the clean fixture's library files, the errors tier included
     assert.equal(report.scannedFiles, cleanFiles().size);
   });
 

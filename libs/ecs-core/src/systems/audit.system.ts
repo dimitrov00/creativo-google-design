@@ -12,7 +12,6 @@ import {
   RequestedSubjectRole,
 } from '@core/components';
 import {
-  GovernanceError,
   Result,
   type AppointmentId,
   AuditResourceId,
@@ -24,6 +23,7 @@ import {
   UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import { GovernanceError } from '@core/errors';
 import type { Appointment, AuditEntryMeta } from '@core/entities';
 import { type EditCommandRequest } from './appointment-edit.system';
 

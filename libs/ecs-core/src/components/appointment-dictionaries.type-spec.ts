@@ -68,7 +68,7 @@ import {
   CarriedSeatRefusal,
   MoveErrorCode,
   StaffEditErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import { EditCommand, ResizeEdge } from './edit-command.data';
 
 /** A tag dictionary whose every value is a `T`. */
@@ -154,16 +154,16 @@ export type AppointmentDictionariesHold = [
   Expect<Holds<Pick<typeof PhotoOrigin, 'Shot' | 'Library'>, PhotoOrigin>>, // components/photo-origin.data.ts (PHOTO_ORIGIN)
   Expect<Holds<typeof VoucherStatus, VoucherStatus>>, // components/voucher-state.data.ts
   Expect<Holds<typeof VoucherRefusal, VoucherRefusal>>, // primitives/voucher-refusal.data.ts
-  Expect<Holds<typeof StaffEditErrorCode, StaffEditErrorCode>>, // primitives/staff-edit-errors.data.ts
+  Expect<Holds<typeof StaffEditErrorCode, StaffEditErrorCode>>, // errors/staff-edit.error.ts
   Expect<Holds<typeof EditCommand, EditCommand>>, // components/edit-command.data.ts
   Expect<Holds<typeof ResizeEdge, ResizeEdge>>, // components/edit-command.data.ts
   Expect<Holds<typeof LedgerVerdict, LedgerVerdict>>, // systems/appointment-edit.system.ts
   Expect<Holds<typeof ProfileAuthType, ProfileAuthType>>, // systems/audit.system.ts
   Expect<Holds<typeof BillPending, BillPending>>, // systems/billing.system.ts
   Expect<Holds<typeof TipPreset, TipPreset>>, // systems/billing.system.ts
-  Expect<Holds<typeof CancellationRefusalCode, CancellationRefusalCode>>, // primitives/cancellation-errors.data.ts
-  Expect<Holds<typeof CarriedSeatRefusal, CarriedSeatRefusal>>, // primitives/move-errors.data.ts
-  Expect<Holds<typeof MoveErrorCode, MoveErrorCode>>, // primitives/move-errors.data.ts
+  Expect<Holds<typeof CancellationRefusalCode, CancellationRefusalCode>>, // errors/cancellation.error.ts
+  Expect<Holds<typeof CarriedSeatRefusal, CarriedSeatRefusal>>, // errors/move.error.ts
+  Expect<Holds<typeof MoveErrorCode, MoveErrorCode>>, // errors/move.error.ts
 ];
 
 // (3) SCREAMING — every non-exempt value is upper-case (§0.4).

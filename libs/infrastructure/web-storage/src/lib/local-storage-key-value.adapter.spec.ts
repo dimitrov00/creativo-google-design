@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RepositoryErrorCode } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { unwrapErr, unwrapOk } from '@core/testing';
 import { localStorageKeyValuePorts } from './local-storage-key-value.adapter';
 

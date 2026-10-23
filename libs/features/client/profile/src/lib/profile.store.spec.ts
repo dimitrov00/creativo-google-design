@@ -3,14 +3,13 @@ import { BehaviorSubject } from 'rxjs';
 import type { IdentityCall, Principal } from '@core/components';
 import type { User } from '@core/entities';
 import { Callables } from '@core/ports';
+import { Result, UserId } from '@core/primitives';
 import {
   AccountsErrorCode,
   IdentityErrorCode,
   MediaError,
   PipelineError,
-  Result,
-  UserId,
-} from '@core/primitives';
+} from '@core/errors';
 import { AvatarSystem } from '@core/systems';
 import {
   type GatewayCall,

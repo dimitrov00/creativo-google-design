@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AccountsErrorCode } from '@core/primitives';
+import { AccountsErrorCode } from '@core/errors';
 import { deepFreeze } from '@core/testing';
 import { AvatarSystem } from './avatar.system';
 

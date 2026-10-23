@@ -18,8 +18,6 @@ import {
 } from '@core/components';
 import {
   BookingStatus,
-  SchedulingError,
-  SchedulingErrorCode,
   AttendanceState,
   Currency,
   DurationMinutes,
@@ -32,6 +30,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
+import { SchedulingError, SchedulingErrorCode } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,

@@ -3,7 +3,8 @@ import {
   FunctionsError,
   httpsCallable,
 } from 'firebase/functions';
-import { PipelineError, PipelineErrorCode, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { CALLABLE_ANSWER_DECODERS, type GatewayPorts } from '@core/ports';
 
 /**

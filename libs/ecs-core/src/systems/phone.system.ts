@@ -12,7 +12,8 @@ import {
 } from 'libphonenumber-js';
 import examples from 'libphonenumber-js/examples.mobile.json';
 import { CountryIso2, E164, type PhoneNumber } from '@core/components';
-import { PhoneError, PhoneInvalidReason, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { PhoneError, PhoneInvalidReason } from '@core/errors';
 
 /** One selectable entry in a phone-country picker. */
 export type PhoneCountry = {

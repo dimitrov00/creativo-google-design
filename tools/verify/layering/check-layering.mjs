@@ -9,7 +9,7 @@
 //
 //   (a) entry points — libs/ecs-core/src has no root barrel (no module sits
 //       directly in src/), the retired root alias appears nowhere in
-//       libs/apps/tools, and tsconfig.base.json maps exactly the seven
+//       libs/apps/tools, and tsconfig.base.json maps exactly the eight
 //       `@core/*` aliases to their tier barrels and nothing to the old alias;
 //   (b) hierarchy — every import edge inside libs/ecs-core points to a tier
 //       its folder may import, never to its own barrel, never through a
@@ -64,14 +64,26 @@ export const CORE_SRC = 'libs/ecs-core/src';
  */
 export const TIER_IMPORTS = new Map([
   ['primitives', []],
-  ['components', ['primitives']],
-  ['entities', ['components', 'primitives']],
-  ['ports', ['entities', 'components', 'primitives']],
-  ['systems', ['entities', 'components', 'primitives']],
-  ['pipelines', ['systems', 'ports', 'entities', 'components', 'primitives']],
+  ['errors', ['primitives']],
+  ['components', ['errors', 'primitives']],
+  ['entities', ['components', 'errors', 'primitives']],
+  ['ports', ['entities', 'components', 'errors', 'primitives']],
+  ['systems', ['entities', 'components', 'errors', 'primitives']],
+  [
+    'pipelines',
+    ['systems', 'ports', 'entities', 'components', 'errors', 'primitives'],
+  ],
   [
     'testing',
-    ['primitives', 'components', 'entities', 'ports', 'systems', 'pipelines'],
+    [
+      'primitives',
+      'errors',
+      'components',
+      'entities',
+      'ports',
+      'systems',
+      'pipelines',
+    ],
   ],
 ]);
 
@@ -403,7 +415,7 @@ export function checkEntryPoints(snapshot) {
   return found;
 }
 
-/** tsconfig.base.json: exactly the seven tier aliases, nothing legacy. */
+/** tsconfig.base.json: exactly the eight tier aliases, nothing legacy. */
 export function checkTsconfigPaths(tsconfigBase) {
   if (!tsconfigBase) return [];
   const { path, text } = tsconfigBase;
@@ -439,7 +451,7 @@ export function checkTsconfigPaths(tsconfigBase) {
             CHECKS.entryPoints,
             path,
             line,
-            `"${key}" is not one of the seven tier aliases (Law 8.1: ${[...TIER_ALIASES.keys()].join(', ')}).`,
+            `"${key}" is not one of the eight tier aliases (Law 8.1: ${[...TIER_ALIASES.keys()].join(', ')}).`,
           ),
         );
       } else if (
@@ -501,7 +513,7 @@ export function hierarchyBreach(path, specifier) {
   if (!allowed.includes(alias.tier)) {
     return allowed.length === 0
       ? `src/${tier} imports nothing from the library (Law 8.2) — it is the bottom of the hierarchy.`
-      : `src/${tier} may import only ${allowed.map((name) => `@core/${name}`).join(', ')} (Law 8.2) — \`${specifier}\` is not below it in primitives → components → entities → systems → pipelines (ports beside).`;
+      : `src/${tier} may import only ${allowed.map((name) => `@core/${name}`).join(', ')} (Law 8.2) — \`${specifier}\` is not below it in primitives → errors → components → entities → systems → pipelines (ports beside).`;
   }
   return null;
 }

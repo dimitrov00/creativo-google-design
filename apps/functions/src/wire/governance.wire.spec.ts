@@ -1,13 +1,15 @@
 import { ImpersonationEndReason, ImpersonationScope } from '@core/components';
 import {
-  GovernanceError,
-  GovernanceErrorCode,
   ImpersonationSessionId,
   PrimitiveErrorCode,
-  RepositoryError,
   type Result,
   UserId,
 } from '@core/primitives';
+import {
+  GovernanceError,
+  GovernanceErrorCode,
+  RepositoryError,
+} from '@core/errors';
 import { type EdgeError, toHttpsError } from '../edge';
 import {
   decodeEndImpersonation,

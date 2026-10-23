@@ -1,10 +1,5 @@
-import {
-  EngagementError,
-  StreakRuleField,
-  Result,
-  defect,
-  LocalDate,
-} from '@core/primitives';
+import { Result, defect, LocalDate } from '@core/primitives';
+import { EngagementError, StreakRuleField } from '@core/errors';
 import {
   StreakInterval,
   StreakIntervalRule,

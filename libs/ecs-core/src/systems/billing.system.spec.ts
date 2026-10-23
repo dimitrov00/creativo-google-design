@@ -14,7 +14,6 @@ import {
   VoucherLifecycle,
 } from '@core/components';
 import {
-  SchedulingErrorCode,
   Currency,
   DurationMinutes,
   AppliedDiscountId,
@@ -25,8 +24,8 @@ import {
   UserId,
   PriceCents,
   UtcEpochMs,
-  StaffEditErrorCode,
 } from '@core/primitives';
+import { SchedulingErrorCode, StaffEditErrorCode } from '@core/errors';
 import type { Appointment, GiftVoucher } from '@core/entities';
 import {
   FIXTURE_NOW_UTC_MS,

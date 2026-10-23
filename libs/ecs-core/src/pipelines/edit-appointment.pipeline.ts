@@ -26,11 +26,7 @@ import {
   type BookingCall,
 } from '@core/components';
 import {
-  BookingError,
-  BookingErrorCode,
-  type RepositoryError,
   Result,
-  ShopUnavailableReason,
   type AppointmentId,
   AuditResourceId,
   type BarberId,
@@ -42,20 +38,26 @@ import {
   type SeatId,
   SeatKeyText,
   type ServiceId,
-  type TimeError,
   type TimeZone,
   type UserId,
   EndMinute,
   LocalDate,
   MinuteOfDay,
   UtcEpochMs,
+} from '@core/primitives';
+import {
+  BookingError,
+  BookingErrorCode,
+  type RepositoryError,
+  ShopUnavailableReason,
+  type TimeError,
   StaffEditError,
   type StaffEditBeforeArrival,
   type StaffEditForbidden,
   type StaffEditInvalidCommand,
   type StaffEditStale,
   type StaffEditOverlaps,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   type AccountContact,
   type Appointment,

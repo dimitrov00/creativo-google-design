@@ -6,13 +6,12 @@ import {
   ParsedIdentifier,
   SessionKind,
 } from '@core/components';
+import { OtpId, Result } from '@core/primitives';
 import {
   IdentityErrorCode,
-  OtpId,
   PipelineError,
   PipelineErrorCode,
-  Result,
-} from '@core/primitives';
+} from '@core/errors';
 import { memoryOtpChallengePorts } from '@core/testing';
 import { OTP_CHALLENGE_PORTS } from '@creativo/infrastructure/firebase-app';
 import { AuthFlowStore, RESEND_COOLDOWN_SECONDS } from './auth-flow.store';

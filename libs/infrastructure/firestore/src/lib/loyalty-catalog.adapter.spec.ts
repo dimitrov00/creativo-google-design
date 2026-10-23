@@ -11,17 +11,19 @@ import {
 import type { StreakDefinition, StreakDefinitionVersion } from '@core/entities';
 import { Callables, type LoyaltyCatalog } from '@core/ports';
 import {
-  EngagementErrorCode,
   type LocalDate,
-  PipelineError,
-  PipelineErrorCode,
   PublishRequestId,
-  RepositoryError,
-  RepositoryErrorCode,
   Result,
   StreakDefinitionVersionId,
-  StreakPublishError,
 } from '@core/primitives';
+import {
+  EngagementErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+  RepositoryErrorCode,
+  StreakPublishError,
+} from '@core/errors';
 import { LoyaltyCatalogSystem } from '@core/systems';
 import {
   FIXTURE_TODAY,

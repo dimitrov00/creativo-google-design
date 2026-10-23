@@ -28,13 +28,8 @@ import {
 } from '@core/components';
 import type { User } from '@core/entities';
 import { Callables, type StoredFile } from '@core/ports';
-import {
-  AccountsErrorCode,
-  MediaError,
-  PipelineError,
-  Result,
-  UserId,
-} from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
+import { AccountsErrorCode, MediaError, PipelineError } from '@core/errors';
 import {
   locationFixture,
   memoryAppointmentReadPorts,

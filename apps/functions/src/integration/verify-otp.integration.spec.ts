@@ -11,7 +11,8 @@ import {
   RegistrationState,
   SessionKind,
 } from '@core/components';
-import { IdentityErrorCode, OtpId, UserId } from '@core/primitives';
+import { OtpId, UserId } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import { Collections, type Otp } from '@core/entities';
 import { type VerifyOtpCommand, verifyOtp } from '@core/pipelines';
 import { RegistrationSystem } from '@core/systems';

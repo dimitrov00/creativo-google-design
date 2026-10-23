@@ -1,11 +1,6 @@
 import type { Auth } from 'firebase-admin/auth';
-import {
-  IdentifierChannel,
-  PipelineError,
-  PipelineErrorCode,
-  Result,
-  UserId,
-} from '@core/primitives';
+import { IdentifierChannel, Result, UserId } from '@core/primitives';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { AuthClaims } from '@core/components';
 import type { AuthAdminPorts, AuthUserLookupPorts } from '@core/ports';
 import { AttemptOutcome, TriggerAttemptSystem } from '@core/systems';

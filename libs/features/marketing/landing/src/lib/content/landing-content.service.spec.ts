@@ -12,14 +12,8 @@ import type {
   MediaVariant,
 } from '@core/ports';
 import type { Barber, Service } from '@core/entities';
-import {
-  BarberId,
-  MediaError,
-  MediaRefId,
-  type RepositoryError,
-  Result,
-  ServiceId,
-} from '@core/primitives';
+import { BarberId, MediaRefId, Result, ServiceId } from '@core/primitives';
+import { MediaError, type RepositoryError } from '@core/errors';
 import {
   barberFixture,
   memoryCatalogReadPorts,

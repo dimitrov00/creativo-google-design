@@ -1,14 +1,12 @@
 import type { Actor, CancellationReason, WriteOp } from '@core/components';
+import { Result, type AppointmentId, type UserId } from '@core/primitives';
 import {
   BookingError,
   type RepositoryError,
-  Result,
   type SchedulingError,
-  type AppointmentId,
-  type UserId,
   type CancellationRefusal,
   CancellationRefusalCode,
-} from '@core/primitives';
+} from '@core/errors';
 import type { Appointment, GiftVoucher } from '@core/entities';
 import type {
   AuditAppendPorts,

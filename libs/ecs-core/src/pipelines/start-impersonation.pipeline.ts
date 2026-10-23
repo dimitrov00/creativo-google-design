@@ -6,12 +6,11 @@ import {
 } from '@core/components';
 import {
   defect,
-  GovernanceError,
   ImpersonationSessionId,
-  type RepositoryError,
   Result,
   type UserId,
 } from '@core/primitives';
+import { GovernanceError, type RepositoryError } from '@core/errors';
 import { Collections, type ImpersonationSession } from '@core/entities';
 import type {
   ClockPorts,

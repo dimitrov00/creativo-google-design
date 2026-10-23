@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { RepositoryError, Result, type UserId } from '@core/primitives';
+import { Result, type UserId } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type AccountContact, Collections } from '@core/entities';
 import type { AccountContactPorts } from '@core/ports';
 

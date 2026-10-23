@@ -52,14 +52,16 @@ import {
   LocalDate,
   type MinuteOfDay,
   PublishRequestId,
-  RepositoryError,
-  RepositoryErrorCode,
   Result,
   ServiceId,
+} from '@core/primitives';
+import {
+  RepositoryError,
+  RepositoryErrorCode,
   StreakPublishError,
   StreakPublishErrorCode,
   StreakRuleField,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   type StreakNoticePolicy,
   StreakPreviewOutcome,

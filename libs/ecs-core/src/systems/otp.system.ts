@@ -7,14 +7,13 @@ import {
   ParsedIdentifier,
 } from '@core/components';
 import {
-  IdentityError,
-  IdentityErrorCode,
   Result,
   type DurationMinutes,
   OtpId,
   type TenantId,
   UtcEpochMs,
 } from '@core/primitives';
+import { IdentityError, IdentityErrorCode } from '@core/errors';
 import type { Otp } from '@core/entities';
 
 /**

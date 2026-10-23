@@ -5,13 +5,12 @@ import {
   OtpPurpose,
   ParsedIdentifier,
 } from '@core/components';
+import { type OtpId, Result } from '@core/primitives';
 import {
   IdentityError,
-  type OtpId,
   type PipelineError,
   type RepositoryError,
-  Result,
-} from '@core/primitives';
+} from '@core/errors';
 import type {
   AuthDeploymentPorts,
   ClockPorts,

@@ -1,13 +1,13 @@
 import type { Observable } from 'rxjs';
 import type { EnrollmentStatus, PositionStatus } from '@core/components';
 import type {
-  RepositoryError,
   Result,
   CourseId,
   EventId,
   PositionId,
   UtcEpochMs,
 } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { Course, ShopEvent, Position } from '@core/entities';
 
 /**

@@ -1,4 +1,5 @@
-import type { RepositoryError, Result, UtcEpochMs } from '@core/primitives';
+import type { Result, UtcEpochMs } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { DocPath, WriteOp } from '@core/components';
 import type { QueryOp } from '@core/entities';
 

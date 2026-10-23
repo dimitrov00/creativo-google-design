@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { CouponStatus } from '@core/components';
 import { type Coupon, Collections, QueryOp } from '@core/entities';
 import type { CouponLookupPorts } from '@core/ports';

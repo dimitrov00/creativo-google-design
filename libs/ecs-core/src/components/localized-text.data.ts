@@ -1,4 +1,5 @@
-import { CatalogError, Locale, Result } from '@core/primitives';
+import { Locale, Result } from '@core/primitives';
+import { CatalogError } from '@core/errors';
 
 /**
  * Display text in both shop locales — two required, non-blank strings keyed

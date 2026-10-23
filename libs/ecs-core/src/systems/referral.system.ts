@@ -1,9 +1,5 @@
-import {
-  EngagementError,
-  Result,
-  type UserId,
-  type UtcEpochMs,
-} from '@core/primitives';
+import { Result, type UserId, type UtcEpochMs } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import { RedemptionCount } from '@core/components';
 import type { InvitationRedemption, Invitation } from '@core/entities';
 

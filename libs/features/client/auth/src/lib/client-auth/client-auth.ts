@@ -12,13 +12,8 @@ import {
   PrincipalKind,
   SessionKind,
 } from '@core/components';
-import {
-  type IdentityError,
-  IdentityErrorCode,
-  IdentifierChannel,
-  RedirectPath,
-  type Result,
-} from '@core/primitives';
+import { IdentifierChannel, RedirectPath, type Result } from '@core/primitives';
+import { type IdentityError, IdentityErrorCode } from '@core/errors';
 import {
   GuestGuardSystem,
   type LatchedVerdict,

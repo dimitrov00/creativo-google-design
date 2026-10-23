@@ -1,5 +1,6 @@
 import { MinuteRange } from './minute-range.data';
-import { Result, SchedulingError, ExceptionEffect } from '@core/primitives';
+import { Result, ExceptionEffect } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 
 /**
  * The PUBLIC face of a schedule exception — its EFFECT, never its reason

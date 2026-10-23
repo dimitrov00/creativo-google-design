@@ -6,15 +6,17 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  BookingError,
-  type RepositoryError,
   Result,
-  SchedulingError,
   type AppointmentId,
   AuditResourceId,
   type PriceCents,
   type SeatId,
 } from '@core/primitives';
+import {
+  BookingError,
+  type RepositoryError,
+  SchedulingError,
+} from '@core/errors';
 import type { AuditAppendPorts, TelemetryPorts, TxPorts } from '@core/ports';
 import { type AuditFact, AuditSystem } from '@core/systems';
 import {

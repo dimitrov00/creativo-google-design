@@ -26,12 +26,8 @@ import type {
 } from '@core/ports';
 import { BirthDate, Principal } from '@core/components';
 import type { Appointment, InboxNotification, User } from '@core/entities';
-import {
-  Result as EcsResult,
-  RepositoryError,
-  UserId,
-  type UtcEpochMs,
-} from '@core/primitives';
+import { Result as EcsResult, UserId, type UtcEpochMs } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   locationFixture,
   memoryAppointmentReadPorts,

@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { IdentityErrorCode, ServiceId } from '@core/primitives';
+import { ServiceId } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import {
   OnboardingFlowEvent,
   OnboardingFlowEventKind,

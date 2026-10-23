@@ -1,11 +1,11 @@
 import { type GovernanceCall, parseImpersonationScope } from '@core/components';
 import {
-  GovernanceError,
   ImpersonationSessionId,
   Result,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { GovernanceError } from '@core/errors';
 import {
   admitImpersonationCaller,
   type EndImpersonationCommand,

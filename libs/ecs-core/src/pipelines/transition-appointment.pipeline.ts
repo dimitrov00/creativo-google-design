@@ -7,13 +7,15 @@ import {
 } from '@core/components';
 import {
   BookingStatus,
-  BookingError,
-  type RepositoryError,
   Result,
-  SchedulingError,
   type AppointmentId,
   type SeatId,
 } from '@core/primitives';
+import {
+  BookingError,
+  type RepositoryError,
+  SchedulingError,
+} from '@core/errors';
 import {
   type Appointment,
   type GiftVoucher,

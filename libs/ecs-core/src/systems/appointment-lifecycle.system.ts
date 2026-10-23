@@ -17,13 +17,13 @@ import {
 import {
   BookingStatus,
   Result,
-  SchedulingError,
   AttendanceState,
   AuditResourceId,
   type SeatId,
   type LocalDate,
   UtcEpochMs,
 } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
 import { type AuditFact, AuditSystem } from './audit.system';

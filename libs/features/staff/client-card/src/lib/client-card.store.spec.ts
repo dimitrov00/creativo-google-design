@@ -32,11 +32,8 @@ import type {
   ProfilePorts,
   WaitlistReadPorts,
 } from '@core/ports';
-import {
-  type CustomerId,
-  RepositoryError as CoreRepositoryError,
-  Result as CoreResult,
-} from '@core/primitives';
+import { type CustomerId, Result as CoreResult } from '@core/primitives';
+import { RepositoryError as CoreRepositoryError } from '@core/errors';
 import {
   loyaltyCatalogFixture,
   memoryAppointmentReadPorts,

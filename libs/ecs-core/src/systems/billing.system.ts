@@ -13,7 +13,6 @@ import {
 } from '@core/components';
 import {
   Result,
-  SchedulingError,
   type Currency,
   AppliedDiscountId,
   type CouponGrantId,
@@ -21,10 +20,13 @@ import {
   type CustomerId,
   PriceCents,
   type UtcEpochMs,
+} from '@core/primitives';
+import {
+  SchedulingError,
   StaffEditError,
   type StaffEditForbidden,
   type StaffEditInvalidCommand,
-} from '@core/primitives';
+} from '@core/errors';
 import type { Appointment, GiftVoucher } from '@core/entities';
 import { type DiscountBreakdown, DiscountSystem } from './discount.system';
 import { VoucherSystem } from './voucher.system';

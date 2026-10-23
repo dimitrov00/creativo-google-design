@@ -17,11 +17,10 @@ import {
   CustomerId,
   LocalDate,
   type MinuteOfDay,
-  RepositoryError,
-  RepositoryErrorCode,
   Result,
   ServiceId,
 } from '@core/primitives';
+import { RepositoryError, RepositoryErrorCode } from '@core/errors';
 import {
   StreakPreviewOutcome,
   StreakPreviewUnavailable,

@@ -1,14 +1,13 @@
 import {
   AuditResourceId,
   defect,
-  type EngagementError,
   Result,
-  StreakPublishError,
   type StreakDefinitionId,
   type LocalDate,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import { type EngagementError, StreakPublishError } from '@core/errors';
 import {
   type Actor,
   AuditContext,

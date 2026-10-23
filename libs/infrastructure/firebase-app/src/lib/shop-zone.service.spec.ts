@@ -1,12 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import type { ShopLocation } from '@core/entities';
-import {
-  CatalogErrorCode,
-  LocationId,
-  RepositoryError,
-  Result,
-} from '@core/primitives';
+import { LocationId, Result } from '@core/primitives';
+import { CatalogErrorCode, RepositoryError } from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   FIXTURE_TIME_ZONE,

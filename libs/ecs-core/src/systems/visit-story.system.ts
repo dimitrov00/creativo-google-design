@@ -1,7 +1,6 @@
 import {
   BookingStatus,
   Result,
-  type SchedulingError,
   AttendanceState,
   type Currency,
   type BarberId,
@@ -14,6 +13,7 @@ import {
   type PriceCents,
   type UtcEpochMs,
 } from '@core/primitives';
+import { type SchedulingError } from '@core/errors';
 import {
   type SeatOutcome,
   Seat,

@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { endMinute, localDate, minute, minuteCount } from '@core/testing';
-import {
-  LocationId,
-  type LocalDate,
-  SchedulingErrorCode,
-  Weekday,
-} from '@core/primitives';
+import { LocationId, type LocalDate, Weekday } from '@core/primitives';
+import { SchedulingErrorCode } from '@core/errors';
 import { ScheduleVersion, ShiftSegment } from './schedule-version.data';
 
 const CENTER = LocationId.of('loc-center');

@@ -1,6 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { BirthDate, E164, Email, ParsedIdentifier } from '@core/components';
-import { RepositoryErrorCode, UserId } from '@core/primitives';
+import { UserId } from '@core/primitives';
+import { RepositoryErrorCode } from '@core/errors';
 import { provisionedUserFixture, registeredUserFixture } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';
 import { firestoreUserPorts } from './firestore-users.adapter';

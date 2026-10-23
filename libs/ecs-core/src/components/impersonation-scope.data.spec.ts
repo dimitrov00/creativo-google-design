@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GovernanceErrorCode } from '@core/primitives';
+import { GovernanceErrorCode } from '@core/errors';
 import {
   IMPERSONATION_SCOPES,
   ImpersonationScope,

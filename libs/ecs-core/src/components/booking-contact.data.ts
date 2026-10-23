@@ -1,6 +1,7 @@
 import { Email } from './email.data';
 import type { E164 } from './phone-number.data';
-import { Result, SchedulingError } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 
 /**
  * Who the shop calls about THIS booking, and anything they should know

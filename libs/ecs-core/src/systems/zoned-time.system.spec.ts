@@ -2,14 +2,13 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   type Result,
-  DateTimeInvalidReason,
-  TimeErrorCode,
   Weekday,
   LocalDate,
   type MinuteOfDay,
   type TimeZone,
   UtcEpochMs,
 } from '@core/primitives';
+import { DateTimeInvalidReason, TimeErrorCode } from '@core/errors';
 import { ZonedTimeSystem } from './zoned-time.system';
 import { deepFreeze, localDate, minute, unwrapOk, utcMs } from '@core/testing';
 

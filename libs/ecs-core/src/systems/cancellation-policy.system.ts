@@ -4,13 +4,8 @@ import {
   BookingLifecycle,
   BookingPolicy,
 } from '@core/components';
-import {
-  BookingStatus,
-  CancellationRefusal,
-  Result,
-  SchedulingError,
-  UtcEpochMs,
-} from '@core/primitives';
+import { BookingStatus, Result, UtcEpochMs } from '@core/primitives';
+import { CancellationRefusal, SchedulingError } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import { AppointmentIndexSystem } from './appointment-index.system';
 

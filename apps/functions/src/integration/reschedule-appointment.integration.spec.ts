@@ -19,9 +19,8 @@ import {
   SeatId,
   ServiceId,
   UserId,
-  CarriedSeatRefusal,
-  MoveErrorCode,
 } from '@core/primitives';
+import { CarriedSeatRefusal, MoveErrorCode } from '@core/errors';
 import { type Appointment, Collections } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
 import {

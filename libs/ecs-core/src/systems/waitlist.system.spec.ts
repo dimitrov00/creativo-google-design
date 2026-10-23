@@ -17,7 +17,6 @@ import {
   type WaitlistCall,
 } from '@core/components';
 import {
-  SchedulingErrorCode,
   WaitlistStatus,
   BarberId,
   CartLineId,
@@ -27,8 +26,8 @@ import {
   ServiceVariantId,
   UserId,
   WaitlistRequestId,
-  WaitlistErrorCode,
 } from '@core/primitives';
+import { SchedulingErrorCode, WaitlistErrorCode } from '@core/errors';
 import type { WaitlistRequest } from '@core/entities';
 import {
   deepFreeze,

@@ -1,5 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { Collections, Subcollections } from '@core/entities';
 import type { RecentNotificationPorts } from '@core/ports';
 import { TriggerAttemptSystem } from '@core/systems';

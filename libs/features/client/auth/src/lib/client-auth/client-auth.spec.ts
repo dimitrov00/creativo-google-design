@@ -16,7 +16,8 @@ import {
   RegistrationField,
   SessionKind,
 } from '@core/components';
-import { OtpId, PipelineError, Result } from '@core/primitives';
+import { OtpId, Result } from '@core/primitives';
+import { PipelineError } from '@core/errors';
 import { memoryAuthSessionPorts, memoryOtpChallengePorts } from '@core/testing';
 import {
   AUTH_DEPLOYMENT_PORTS,

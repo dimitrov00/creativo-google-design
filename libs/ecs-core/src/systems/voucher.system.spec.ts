@@ -1,7 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-  EngagementErrorCode,
   VoucherRefusal,
   Currency,
   GiftVoucherId,
@@ -9,6 +8,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
+import { EngagementErrorCode } from '@core/errors';
 import {
   type Money,
   VoucherCode,

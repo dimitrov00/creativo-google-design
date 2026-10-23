@@ -12,17 +12,15 @@ import {
   type WaitlistCall,
 } from '@core/components';
 import {
-  BookingErrorCode,
   CartLineId,
   LocationId,
-  RepositoryError,
   Result,
   SeatKeyText,
   ServiceId,
   ServiceVariantId,
-  WaitlistError,
   WaitlistRequestId,
 } from '@core/primitives';
+import { BookingErrorCode, RepositoryError, WaitlistError } from '@core/errors';
 import {
   Collections,
   type Service,

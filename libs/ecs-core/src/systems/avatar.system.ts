@@ -1,4 +1,5 @@
-import { AccountsError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { AccountsError } from '@core/errors';
 
 /** 5 MiB — `storage.rules`' own avatar limit. */
 const MAX_BYTES = 5 * 1024 * 1024;

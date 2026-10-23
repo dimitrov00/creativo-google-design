@@ -1,4 +1,5 @@
-import { UtcEpochMs, AccountsError, Result } from '@core/primitives';
+import { UtcEpochMs, Result } from '@core/primitives';
+import { AccountsError } from '@core/errors';
 
 /**
  * Account status tags — the ONLY source of these strings, the discriminator

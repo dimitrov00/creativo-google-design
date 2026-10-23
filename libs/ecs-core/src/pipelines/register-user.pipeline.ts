@@ -1,5 +1,6 @@
 import type { ParsedIdentifier, RegistrationFields } from '@core/components';
-import { IdentityError, type PipelineError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { IdentityError, type PipelineError } from '@core/errors';
 import type { AuthDeploymentPorts, OtpChallengePorts } from '@core/ports';
 import { RegistrationSystem } from '@core/systems';
 

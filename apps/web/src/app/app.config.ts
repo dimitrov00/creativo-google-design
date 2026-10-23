@@ -68,7 +68,8 @@ import {
   provideLazyPort,
 } from '@creativo/infrastructure/firebase-app';
 import { provideI18n } from '@creativo/infrastructure/i18n';
-import { MediaError, RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { MediaError, RepositoryError } from '@core/errors';
 import { AuthDeployment, TenantConfig } from '@core/components';
 import type {
   AppointmentPhotoPorts,

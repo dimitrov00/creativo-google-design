@@ -1,10 +1,10 @@
 import {
   ImpersonationSessionId,
-  type PipelineError,
   Result,
   type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
+import { type PipelineError } from '@core/errors';
 import { CallAnswer } from './call-answer.data';
 import type { ImpersonationScope } from './impersonation-scope.data';
 import { ImpersonationEndReason } from './impersonation-status.data';

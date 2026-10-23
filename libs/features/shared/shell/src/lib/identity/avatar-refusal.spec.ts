@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AccountsError, AccountsErrorCode, MediaError } from '@core/primitives';
+import { AccountsError, AccountsErrorCode, MediaError } from '@core/errors';
 import { AvatarSystem } from '@core/systems';
 import { avatarUploadRefusal } from './avatar-refusal';
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Weekday } from './weekday.data';
 import { deepFreeze, unwrapErr, unwrapOk } from '@core/testing';
 import { LocalDate } from './local-date.primitive';
-import { PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveErrorCode } from './primitive.error';
 
 /*
  * The successor of `components/day-key.data.spec.ts` and of the civil cases

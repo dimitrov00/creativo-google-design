@@ -19,7 +19,6 @@ import {
 import {
   BarberBusyDayId,
   BarberId,
-  BookingErrorCode,
   BusyKey,
   ClientOperationId,
   CustomerId,
@@ -29,10 +28,13 @@ import {
   SeatId,
   ServiceId,
   UserId,
+} from '@core/primitives';
+import {
+  BookingErrorCode,
   CarriedSeatRefusal,
   MoveErrorCode,
   TimeErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import { type Appointment, type AuditEntry, Collections } from '@core/entities';
 import { AuditSystem, MoveSystem } from '@core/systems';
 import {

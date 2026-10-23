@@ -1,10 +1,6 @@
 import type { StreakDefinitionVersion } from '@core/entities';
-import {
-  LocalDate,
-  StreakRuleField,
-  type TimeZone,
-  defect,
-} from '@core/primitives';
+import { LocalDate, type TimeZone, defect } from '@core/primitives';
+import { StreakRuleField } from '@core/errors';
 import {
   FreezeReason,
   STREAK_EXCUSES,

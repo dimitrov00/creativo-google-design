@@ -1,13 +1,13 @@
 import type { Observable } from 'rxjs';
 import type { NotificationTopic } from '@core/components';
 import type {
-  RepositoryError,
   Result,
   NotificationId,
   UserId,
   WaitlistRequestId,
   UtcEpochMs,
 } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { InboxNotification } from '@core/entities';
 
 /**

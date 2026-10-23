@@ -12,15 +12,16 @@ paths:
 `libs/ecs-core` is exported ONLY through its tier barrels. There is no root
 `src/index.ts` and no `@creativo/ecs-core` alias.
 
-| Import from        | Barrel                                  | May import (inside the library)                          |
-| ------------------ | --------------------------------------- | -------------------------------------------------------- |
-| `@core/primitives` | `libs/ecs-core/src/primitives/index.ts` | nothing                                                  |
-| `@core/components` | `libs/ecs-core/src/components/index.ts` | primitives                                               |
-| `@core/entities`   | `libs/ecs-core/src/entities/index.ts`   | components, primitives                                   |
-| `@core/ports`      | `libs/ecs-core/src/ports/index.ts`      | entities, components, primitives                         |
-| `@core/systems`    | `libs/ecs-core/src/systems/index.ts`    | entities, components, primitives — never ports/pipelines |
-| `@core/pipelines`  | `libs/ecs-core/src/pipelines/index.ts`  | systems, ports, entities, components, primitives         |
-| `@core/testing`    | `libs/ecs-core/src/testing/index.ts`    | specs and test support only                              |
+| Import from        | Barrel                                  | May import (inside the library)                                  |
+| ------------------ | --------------------------------------- | ---------------------------------------------------------------- |
+| `@core/primitives` | `libs/ecs-core/src/primitives/index.ts` | nothing                                                          |
+| `@core/errors`     | `libs/ecs-core/src/errors/index.ts`     | primitives                                                       |
+| `@core/components` | `libs/ecs-core/src/components/index.ts` | errors, primitives                                               |
+| `@core/entities`   | `libs/ecs-core/src/entities/index.ts`   | components, errors, primitives                                   |
+| `@core/ports`      | `libs/ecs-core/src/ports/index.ts`      | entities, components, errors, primitives                         |
+| `@core/systems`    | `libs/ecs-core/src/systems/index.ts`    | entities, components, errors, primitives — never ports/pipelines |
+| `@core/pipelines`  | `libs/ecs-core/src/pipelines/index.ts`  | systems, ports, entities, components, errors, primitives         |
+| `@core/testing`    | `libs/ecs-core/src/testing/index.ts`    | specs and test support only                                      |
 
 ## How to write an import
 
@@ -45,13 +46,19 @@ import { IntervalSetSystem } from './interval-set.system';
   `apps/web/src/styles.css`, `apps/showcase/src/styles.css`: its order
   fixes the cascade-layer order and the stylesheet resolver reads no
   tsconfig alias.)
-- Result and every error struct and dictionary live in primitives
-  (`primitives/*-errors.data.ts`, `result.data.ts`); the collection
-  registry is `entities/collections.ts`; the test support is
-  `src/testing/` (`@core/testing`).
+- Every error dictionary and struct union lives in the `@core/errors` tier
+  (`errors/<domain>.error.ts`, the Error file kind — owner ruling
+  2026-10-23); it imports only primitives, so an error's context is scalars
+  and brands, never a component type. Primitives keep the brands, `Result`
+  (`result.data.ts`), `PrimitiveError` (`primitives/primitive.error.ts`, the
+  one `*.error.ts` below the tier — the brands' smart constructors answer
+  it) and the base tag dictionaries an error may name (`BookingStatus`,
+  `AttendanceState`, `GrantStatus`, `VoucherRefusal`, …). The collection
+  registry is `entities/collections.ts`; the test support is `src/testing/`
+  (`@core/testing`).
 - Pipelines (server and browser) live in `@core/pipelines`, SDK-free; apps
   import them in their composition roots and wire adapters there.
-- The seven aliases are the whole list: no lazy secondary entry
+- The eight aliases are the whole list: no lazy secondary entry
   (`@core/phone` or the like) and no deep `@core/<tier>/…` subpath without
   an owner ruling. Ruled 2026-10-22 (F6): there is no `@core/phone` — the
   phone field keeps parsing out of the initial chunk by lazily importing
@@ -90,7 +97,15 @@ import { IntervalSetSystem } from './interval-set.system';
   patterns for `import()`, `import('…')` type queries and
   `import x = require()`, which the core rule never reads.
 - `tools/lint-rules/ecs-syntax.mjs` — a `*.system.ts` imports nothing from
-  the ports or pipelines tiers (`@core/ports`, `@core/pipelines`, `ports/…`).
+  the ports or pipelines tiers (`@core/ports`, `@core/pipelines`, `ports/…`);
+  a `*.error.ts` carries the data guards (no class, `new`, freeze, optional
+  property, `throw`).
+- `creativo/error-dictionary-home` (`tools/lint-rules/error-dictionary-home.mjs`,
+  spec beside it) — on every `.ts` from the root config: an `*ErrorCode` /
+  `*RefusalCode` dictionary (constant, enum or export alias) may be declared
+  only in `libs/ecs-core/src/errors/*.error.ts` or
+  `primitives/primitive.error.ts`, and a `*.error.ts` anywhere else is itself
+  reported (the home is a path, not a suffix).
 - `pnpm nx run verify-tools:layering` (`tools/verify/layering/check-layering.mjs`,
   never cached, not part of `run-many`) — entry points and aliases,
   hierarchy (specs as leaves), runtime cycles, barrel contents and single

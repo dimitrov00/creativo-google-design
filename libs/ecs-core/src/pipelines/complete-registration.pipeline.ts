@@ -7,17 +7,19 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  type CompleteRegistrationRefusal,
-  CompleteRegistrationRefusalCode,
   CustomerId,
   type IdentifierChannel,
-  IdentityError,
   type LocalDate,
-  type PipelineError,
-  type RepositoryError,
   Result,
   type UserId,
 } from '@core/primitives';
+import {
+  type CompleteRegistrationRefusal,
+  CompleteRegistrationRefusalCode,
+  IdentityError,
+  type PipelineError,
+  type RepositoryError,
+} from '@core/errors';
 import { Collections, type Customer, Profile, type User } from '@core/entities';
 import type {
   AuthAdminPorts,

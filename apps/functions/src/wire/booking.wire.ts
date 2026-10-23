@@ -15,10 +15,7 @@ import {
 import {
   AppointmentId,
   BarberId,
-  BookingError,
-  BookingErrorCode,
   BookingStatus,
-  CancellationRefusal,
   ClientOperationId,
   CouponGrantId,
   DurationMinutes,
@@ -30,14 +27,19 @@ import {
   OperationId,
   PriceCents,
   Result,
-  SchedulingErrorCode,
   SeatId,
   ServiceId,
   ServiceVariantId,
-  StaffEditError,
-  StaffEditErrorCode,
   UserId,
 } from '@core/primitives';
+import {
+  BookingError,
+  BookingErrorCode,
+  CancellationRefusal,
+  SchedulingErrorCode,
+  StaffEditError,
+  StaffEditErrorCode,
+} from '@core/errors';
 import {
   type BookAppointmentAnswer,
   type BookAppointmentCommand,

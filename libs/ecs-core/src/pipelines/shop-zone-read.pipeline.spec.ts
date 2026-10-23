@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LocationId, RepositoryError, Result } from '@core/primitives';
+import { LocationId, Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   FIXTURE_TIME_ZONE,
   locationFixture,

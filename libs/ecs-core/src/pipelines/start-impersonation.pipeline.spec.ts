@@ -6,13 +6,12 @@ import {
   WriteOp,
 } from '@core/components';
 import {
-  GovernanceErrorCode,
   ImpersonationSessionId,
-  RepositoryError,
   Result,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { GovernanceErrorCode, RepositoryError } from '@core/errors';
 import { Collections } from '@core/entities';
 import {
   FIXTURE_NOW_UTC_MS,

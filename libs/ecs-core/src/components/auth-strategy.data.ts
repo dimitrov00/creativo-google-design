@@ -2,10 +2,9 @@ import {
   defect,
   DurationMinutes,
   IdentifierChannel,
-  AuthPolicyField,
-  IdentityError,
   Result,
 } from '@core/primitives';
+import { AuthPolicyField, IdentityError } from '@core/errors';
 import { CountryIso2 } from './country-iso2.data';
 import { RegistrationField, isRegistrationField } from './registration.data';
 

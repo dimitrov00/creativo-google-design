@@ -1,9 +1,5 @@
-import {
-  type UtcEpochMs,
-  Result,
-  SchedulingError,
-  WaitlistStatus,
-} from '@core/primitives';
+import { type UtcEpochMs, Result, WaitlistStatus } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 
 /**
  * The legal moves — one source of truth for the graph. `MATCHED → OPEN` is

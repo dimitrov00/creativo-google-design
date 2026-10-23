@@ -17,9 +17,7 @@ import {
   SeatLabel,
 } from '@core/components';
 import {
-  BookingFlowErrorCode,
   Result,
-  SchedulingErrorCode,
   AppointmentId,
   BarberId,
   GuestId,
@@ -30,6 +28,7 @@ import {
   WaitlistRequestId,
   type LocalDate,
 } from '@core/primitives';
+import { BookingFlowErrorCode, SchedulingErrorCode } from '@core/errors';
 import {
   deepFreeze,
   endMinute,

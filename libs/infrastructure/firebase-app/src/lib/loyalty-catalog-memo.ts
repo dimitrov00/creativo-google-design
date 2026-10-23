@@ -1,5 +1,6 @@
 import { InjectionToken } from '@angular/core';
-import type { LocalDate, RepositoryError, Result } from '@core/primitives';
+import type { LocalDate, Result } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { LoyaltyCatalog } from '@core/ports';
 
 /** One read of the loyalty catalogue, as `LoadLoyaltyCatalog` answers it. */

@@ -7,7 +7,8 @@ import {
   ParsedIdentifier,
   type ReadPhone,
 } from './identifier.data';
-import { IdentifierChannel, IdentityErrorCode } from '@core/primitives';
+import { IdentifierChannel } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import { OtpDestinationType } from './otp-destination-type.data';
 import { E164 } from './phone-number.data';
 

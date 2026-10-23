@@ -11,12 +11,12 @@ import {
 } from '@core/components';
 import {
   IdentifierChannel,
-  IdentityErrorCode,
   DurationMinutes,
   OtpId,
   TenantId,
   UtcEpochMs,
 } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import type { Otp } from '@core/entities';
 import {
   deepFreeze,

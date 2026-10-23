@@ -1,9 +1,5 @@
-import {
-  type LocalDate,
-  type RepositoryError,
-  Result,
-  type TimeZone,
-} from '@core/primitives';
+import { type LocalDate, Result, type TimeZone } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import type {
   ClockPorts,
   DefaultLocationPorts,

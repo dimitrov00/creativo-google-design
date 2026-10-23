@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { EnvironmentInjector, createEnvironmentInjector } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { localDate, loyaltyCatalogFixture } from '@core/testing';
 import {
   LOYALTY_CATALOG_MEMO,

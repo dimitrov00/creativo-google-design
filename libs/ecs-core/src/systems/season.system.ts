@@ -1,9 +1,5 @@
-import {
-  EngagementError,
-  Result,
-  type BadgeSeriesId,
-  LocalDate,
-} from '@core/primitives';
+import { Result, type BadgeSeriesId, LocalDate } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import {
   Gamification,
   SeasonKind,

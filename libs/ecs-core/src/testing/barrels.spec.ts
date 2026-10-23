@@ -1,14 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import * as components from '@core/components';
 import * as entities from '@core/entities';
+import * as errors from '@core/errors';
 import * as pipelines from '@core/pipelines';
 import * as ports from '@core/ports';
 import * as primitives from '@core/primitives';
 import * as systems from '@core/systems';
 
-const tiers = { primitives, components, entities, ports, systems, pipelines };
+const tiers = {
+  primitives,
+  errors,
+  components,
+  entities,
+  ports,
+  systems,
+  pipelines,
+};
 const ecs = {
   ...primitives,
+  ...errors,
   ...components,
   ...entities,
   ...ports,
@@ -17,7 +27,7 @@ const ecs = {
 };
 
 /**
- * The six tier barrels (Law 8) load as ONE module graph at run time — a
+ * The seven tier barrels (Law 8) load as ONE module graph at run time — a
  * value-import cycle between the tiers would surface here as a
  * temporal-dead-zone error — and expose named exports only, each name from
  * exactly one tier.
@@ -69,6 +79,10 @@ describe('@core/* tier barrels', () => {
       Latitude: ecs.Latitude,
       EpochSeconds: ecs.EpochSeconds,
       PrimitiveError: ecs.PrimitiveError,
+      // The error tier (`@core/errors`, the owner's ruling of 2026-10-23).
+      BookingErrorCode: ecs.BookingErrorCode,
+      BookingError: ecs.BookingError,
+      PipelineError: ecs.PipelineError,
       ShopNow: ecs.ShopNow,
       WallTime: ecs.WallTime,
       DateRange: ecs.DateRange,

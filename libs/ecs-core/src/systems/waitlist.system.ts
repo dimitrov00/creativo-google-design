@@ -14,9 +14,6 @@ import {
 } from '@core/components';
 import {
   Result,
-  type SchedulingError,
-  SchedulingErrorCode,
-  WaitlistError,
   WaitlistStatus,
   type BarberId,
   LocationId,
@@ -28,6 +25,11 @@ import {
   MinuteOfDay,
   UtcEpochMs,
 } from '@core/primitives';
+import {
+  type SchedulingError,
+  SchedulingErrorCode,
+  WaitlistError,
+} from '@core/errors';
 import {
   type InboxNotification,
   type WaitlistRequest,

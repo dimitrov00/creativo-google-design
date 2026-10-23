@@ -29,10 +29,10 @@ import {
   type BarberId,
   LocalDate,
   type LocationId,
-  type RepositoryError,
   type Result,
   type TimeZone,
 } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import {
   BookingCart,
   BookingPolicy,

@@ -13,9 +13,9 @@ import {
   EventId,
   LocationId,
   PositionId,
-  RepositoryError,
   Result,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import {
   type ProgramsWorld,
   type ProgramsWorldSeed,

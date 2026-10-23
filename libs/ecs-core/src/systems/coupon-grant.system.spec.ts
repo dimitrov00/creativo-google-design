@@ -10,13 +10,13 @@ import {
   type GrantTerms,
 } from '@core/components';
 import {
-  EngagementErrorCode,
   GrantStatus,
   CouponGrantId,
   CouponId,
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { EngagementErrorCode } from '@core/errors';
 import type { CouponGrant } from '@core/entities';
 import {
   deepFreeze,

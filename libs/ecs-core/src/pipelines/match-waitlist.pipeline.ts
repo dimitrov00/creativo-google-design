@@ -4,12 +4,11 @@ import {
   type LocalDate,
   type LocationId,
   NotificationId,
-  type RepositoryError,
-  RepositoryErrorCode,
   Result,
   type WaitlistRequestId,
   WaitlistStatus,
 } from '@core/primitives';
+import { type RepositoryError, RepositoryErrorCode } from '@core/errors';
 import {
   type BookingPolicy,
   NotificationTopic,

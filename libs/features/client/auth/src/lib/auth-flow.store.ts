@@ -13,7 +13,8 @@ import {
   ParsedIdentifier,
   type SessionKind,
 } from '@core/components';
-import { IdentityErrorCode, type OtpId, PipelineError } from '@core/primitives';
+import { type OtpId } from '@core/primitives';
+import { IdentityErrorCode, PipelineError } from '@core/errors';
 import { AuthFlowSystem } from '@core/systems';
 import { OTP_CHALLENGE_PORTS } from '@creativo/infrastructure/firebase-app';
 

@@ -12,7 +12,6 @@ import {
   VoucherCode,
 } from '@core/components';
 import {
-  EngagementErrorCode,
   Currency,
   AppliedDiscountId,
   CouponGrantId,
@@ -21,6 +20,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
+import { EngagementErrorCode } from '@core/errors';
 import type { CouponGrant } from '@core/entities';
 import { deepFreeze, unwrapOk, utcMs, customerOf } from '@core/testing';
 import { type DiscountInput, DiscountSystem } from './discount.system';

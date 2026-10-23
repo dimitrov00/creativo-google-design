@@ -14,9 +14,9 @@ import {
   BusyKey,
   type LocalDate,
   LocationId,
-  RepositoryError,
   Result,
 } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type Appointment, Collections, QueryOp } from '@core/entities';
 import { ZonedTimeSystem } from '@core/systems';
 import {

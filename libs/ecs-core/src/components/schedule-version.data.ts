@@ -7,9 +7,9 @@ import {
   type EndMinute,
   MinuteOfDay,
   Result,
-  SchedulingError,
   type Weekday,
 } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 
 const MINUTES_PER_DAY = 1440;
 

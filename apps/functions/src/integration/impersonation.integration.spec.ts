@@ -6,12 +6,8 @@ import {
   ImpersonationScope,
   Role,
 } from '@core/components';
-import {
-  GovernanceErrorCode,
-  ImpersonationSessionId,
-  UserId,
-  UtcEpochMs,
-} from '@core/primitives';
+import { ImpersonationSessionId, UserId, UtcEpochMs } from '@core/primitives';
+import { GovernanceErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
 import { endImpersonation, startImpersonation } from '@core/pipelines';
 import {

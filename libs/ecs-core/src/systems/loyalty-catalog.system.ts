@@ -1,5 +1,4 @@
 import {
-  EngagementError,
   Result,
   type BadgeCategoryId,
   type BadgeSeriesId,
@@ -8,6 +7,7 @@ import {
   type TierId,
   type LocalDate,
 } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import { SeasonPhase, type StreakRule } from '@core/components';
 import type {
   BadgeCategory,

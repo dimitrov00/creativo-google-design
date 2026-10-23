@@ -26,7 +26,6 @@ import {
 } from '@core/components';
 import {
   AttendanceState,
-  SchedulingErrorCode,
   Currency,
   AppointmentId,
   BarberId,
@@ -39,6 +38,7 @@ import {
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
+import { SchedulingErrorCode } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import {
   FIXTURE_TIME_ZONE,

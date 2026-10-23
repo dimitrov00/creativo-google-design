@@ -13,12 +13,8 @@ import {
   ParsedIdentifier,
   Principal,
 } from '@core/components';
-import {
-  PipelineError,
-  PipelineErrorCode,
-  Result,
-  UserId,
-} from '@core/primitives';
+import { Result, UserId } from '@core/primitives';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import type { AuthSessionPorts } from '@core/ports';
 
 /** The custom-claims bag AS STORED on a token (`AuthClaims.toToken`'s shape). */

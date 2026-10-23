@@ -14,13 +14,12 @@ import type {
 import type { Barber, Service, ShopLocation } from '@core/entities';
 import {
   BarberId,
-  MediaError,
   MediaRefId,
-  RepositoryError,
   Result,
   ServiceId,
   UserId,
 } from '@core/primitives';
+import { MediaError, RepositoryError } from '@core/errors';
 import {
   barberFixture,
   memoryAuthSessionPorts,

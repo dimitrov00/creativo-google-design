@@ -1,6 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
-import { BarberId, BusyKey, RepositoryError } from '@core/primitives';
+import { BarberId, BusyKey } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { Collections } from '@core/entities';
 import {
   barberBusyDayFixture,

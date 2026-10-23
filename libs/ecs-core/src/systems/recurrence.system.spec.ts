@@ -7,7 +7,8 @@ import {
   RecurrenceRule,
   WeekOfMonth,
 } from '@core/components';
-import { SchedulingErrorCode, Weekday, LocalDate } from '@core/primitives';
+import { Weekday, LocalDate } from '@core/primitives';
+import { SchedulingErrorCode } from '@core/errors';
 import { deepFreeze, localDate, unwrapOk } from '@core/testing';
 import { RecurrenceSystem } from './recurrence.system';
 

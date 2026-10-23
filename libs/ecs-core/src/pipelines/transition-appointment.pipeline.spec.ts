@@ -16,16 +16,18 @@ import {
 } from '@core/components';
 import {
   AppointmentId,
-  BookingErrorCode,
   BookingStatus,
   Currency,
   GiftVoucherId,
-  RepositoryError,
   Result,
-  SchedulingErrorCode,
   SeatId,
   UserId,
 } from '@core/primitives';
+import {
+  BookingErrorCode,
+  RepositoryError,
+  SchedulingErrorCode,
+} from '@core/errors';
 import {
   type Appointment,
   type AuditEntry,

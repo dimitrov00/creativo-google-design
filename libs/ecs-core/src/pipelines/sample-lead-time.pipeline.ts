@@ -1,9 +1,5 @@
-import {
-  type BarberId,
-  MinuteCount,
-  type RepositoryError,
-  Result,
-} from '@core/primitives';
+import { type BarberId, MinuteCount, Result } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import { BookingPolicy, type CapacityEntry } from '@core/components';
 import type {
   BarberListPorts,

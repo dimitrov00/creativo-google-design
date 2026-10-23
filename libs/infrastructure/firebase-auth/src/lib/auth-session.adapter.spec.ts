@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Auth, User } from 'firebase/auth';
-import {
-  IdentifierChannel,
-  PipelineError,
-  PipelineErrorCode,
-} from '@core/primitives';
+import { IdentifierChannel } from '@core/primitives';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { Principal, PrincipalKind, Role } from '@core/components';
 import { FIXTURE_TENANT_ID, unwrapErr } from '@core/testing';
 import { authSessionPorts } from './auth-session.adapter';

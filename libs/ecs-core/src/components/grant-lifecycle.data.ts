@@ -1,10 +1,10 @@
 import {
   type UserId,
   type UtcEpochMs,
-  EngagementError,
   Result,
   GrantStatus,
 } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 
 /** How many redemptions an active grant holds — the field `grantCapacity`. */
 export const GrantCapacity = {

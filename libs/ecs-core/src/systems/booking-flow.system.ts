@@ -10,10 +10,7 @@ import {
   Party,
 } from '@core/components';
 import {
-  BookingFlowError,
   Result,
-  SchedulingError,
-  SchedulingErrorCode,
   type AppointmentId,
   type BarberId,
   type CartLineId,
@@ -24,6 +21,11 @@ import {
   type WaitlistRequestId,
   type LocalDate,
 } from '@core/primitives';
+import {
+  BookingFlowError,
+  SchedulingError,
+  SchedulingErrorCode,
+} from '@core/errors';
 import { BookingCartSystem } from './booking-cart.system';
 
 /**

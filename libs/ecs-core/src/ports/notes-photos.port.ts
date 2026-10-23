@@ -1,10 +1,6 @@
 import type { Observable } from 'rxjs';
-import type {
-  RepositoryError,
-  Result,
-  AppointmentId,
-  CustomerId,
-} from '@core/primitives';
+import type { Result, AppointmentId, CustomerId } from '@core/primitives';
+import type { RepositoryError } from '@core/errors';
 import type { AppointmentNote, AppointmentPhoto } from '@core/entities';
 import type { PhotoUploadPorts } from './media.port';
 

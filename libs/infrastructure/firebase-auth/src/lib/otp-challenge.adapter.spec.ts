@@ -8,13 +8,8 @@ import {
   type RegistrationFields,
   SessionKind,
 } from '@core/components';
-import {
-  IdentifierChannel,
-  OtpId,
-  PipelineError,
-  PipelineErrorCode,
-  Result,
-} from '@core/primitives';
+import { IdentifierChannel, OtpId, Result } from '@core/primitives';
+import { PipelineError, PipelineErrorCode } from '@core/errors';
 import { Callables } from '@core/ports';
 import {
   type GatewayCall,

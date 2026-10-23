@@ -1,6 +1,7 @@
 import { type Firestore, collection } from 'firebase/firestore';
 import type { LoyaltyCatalogMemo } from '@creativo/infrastructure/firebase-app';
-import { type LocalDate, type RepositoryError, Result } from '@core/primitives';
+import { type LocalDate, Result } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import {
   type BadgeCategory,
   type BadgeSeries,

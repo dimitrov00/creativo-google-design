@@ -65,7 +65,7 @@ through `src/edge.ts` and `src/wire/*`. It gets a scope of its own rather than
   row's absence from every other scope's list makes an import of it a lint
   error.
 - **It may depend only on `scope:shared`** — in practice `libs/ecs-core`
-  through the seven `@core/*` aliases. A `scope:backend` → `scope:app` edge
+  through the eight `@core/*` aliases. A `scope:backend` → `scope:app` edge
   (an Angular feature slice) is a lint error, which keeps `@angular/*` out of
   the functions bundle; the build-time half of that guarantee is the
   forbidden-key check of `tools/verify/p0/functions-deps.mjs` (no
@@ -76,7 +76,7 @@ through `src/edge.ts` and `src/wire/*`. It gets a scope of its own rather than
   zones for `firebase-admin` (below), and its own `eslint.config.mjs` installs
   `ecsProjectBlocks()` — the `InjectionToken` guard on every file (the backend
   composes ports as closure parameters, never through a container) and the
-  seven ECS suffix blocks.
+  eight ECS suffix blocks.
 
 ## `type:*` — architectural layer
 
@@ -141,15 +141,22 @@ Why each arrow:
 imported only through its tier barrels (`tsconfig.base.json`, paths written
 relative):
 
-| Alias              | Barrel                                  | May import                                             |
-| ------------------ | --------------------------------------- | ------------------------------------------------------ |
-| `@core/primitives` | `libs/ecs-core/src/primitives/index.ts` | nothing from the library                               |
-| `@core/components` | `libs/ecs-core/src/components/index.ts` | primitives                                             |
-| `@core/entities`   | `libs/ecs-core/src/entities/index.ts`   | components, primitives                                 |
-| `@core/ports`      | `libs/ecs-core/src/ports/index.ts`      | entities, components, primitives                       |
-| `@core/systems`    | `libs/ecs-core/src/systems/index.ts`    | entities, components, primitives                       |
-| `@core/pipelines`  | `libs/ecs-core/src/pipelines/index.ts`  | systems, ports, entities, components, primitives       |
-| `@core/testing`    | `libs/ecs-core/src/testing/index.ts`    | every tier — imported from specs and test support only |
+| Alias              | Barrel                                  | May import                                               |
+| ------------------ | --------------------------------------- | -------------------------------------------------------- |
+| `@core/primitives` | `libs/ecs-core/src/primitives/index.ts` | nothing from the library                                 |
+| `@core/errors`     | `libs/ecs-core/src/errors/index.ts`     | primitives                                               |
+| `@core/components` | `libs/ecs-core/src/components/index.ts` | errors, primitives                                       |
+| `@core/entities`   | `libs/ecs-core/src/entities/index.ts`   | components, errors, primitives                           |
+| `@core/ports`      | `libs/ecs-core/src/ports/index.ts`      | entities, components, errors, primitives                 |
+| `@core/systems`    | `libs/ecs-core/src/systems/index.ts`    | entities, components, errors, primitives                 |
+| `@core/pipelines`  | `libs/ecs-core/src/pipelines/index.ts`  | systems, ports, entities, components, errors, primitives |
+| `@core/testing`    | `libs/ecs-core/src/testing/index.ts`    | every tier — imported from specs and test support only   |
+
+`@core/errors` (owner ruling 2026-10-23) holds every error dictionary and
+struct union as `errors/<domain>.error.ts` — the Error file kind; only
+`PrimitiveError` stays below it, in `primitives/primitive.error.ts`.
+`creativo/error-dictionary-home` keeps an `*ErrorCode` / `*RefusalCode`
+dictionary out of every other file, repo-wide.
 
 Because the library imports its own tier aliases across tiers, the root
 `@nx/enforce-module-boundaries` options set `allowCircularSelfDependency:

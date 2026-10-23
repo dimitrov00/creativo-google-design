@@ -1,12 +1,8 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { vi } from 'vitest';
 import { BackfillJobName, Role } from '@core/components';
-import {
-  AppointmentId,
-  BackfillJobId,
-  RepositoryError,
-  UserId,
-} from '@core/primitives';
+import { AppointmentId, BackfillJobId, UserId } from '@core/primitives';
+import { RepositoryError } from '@core/errors';
 import { type BackfillJob, Collections } from '@core/entities';
 import { appointmentFixture, FIXTURE_NOW_UTC_MS } from '@core/testing';
 import { createProjectionFirestore } from '../test-support/fake-projection-firestore';

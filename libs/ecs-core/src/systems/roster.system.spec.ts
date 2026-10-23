@@ -9,7 +9,8 @@ import {
   ScheduleVersion,
   ShiftSegment,
 } from '@core/components';
-import { TimeErrorCode, Weekday, BarberId, LocationId } from '@core/primitives';
+import { Weekday, BarberId, LocationId } from '@core/primitives';
+import { TimeErrorCode } from '@core/errors';
 import {
   type BuildDayWindowsInput,
   type DayException,

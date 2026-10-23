@@ -8,12 +8,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { CouponStatus } from '@core/components';
-import {
-  type CouponId,
-  GrantStatus,
-  type RepositoryError,
-  Result,
-} from '@core/primitives';
+import { type CouponId, GrantStatus, Result } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import {
   Collections,
   type Coupon,

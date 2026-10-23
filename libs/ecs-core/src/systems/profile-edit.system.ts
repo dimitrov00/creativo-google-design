@@ -6,12 +6,8 @@ import {
   isRole,
   type ProfileEdits,
 } from '@core/components';
-import {
-  AccountsError,
-  type LocalDate,
-  type RegistrationProfileError,
-  Result,
-} from '@core/primitives';
+import { type LocalDate, Result } from '@core/primitives';
+import { AccountsError, type RegistrationProfileError } from '@core/errors';
 import type { OwnerProfileFields, User } from '@core/entities';
 import { AgeSystem } from './age.system';
 import { PhoneSystem } from './phone.system';

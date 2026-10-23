@@ -16,16 +16,18 @@ import {
 import {
   AppointmentId,
   BarberBusyDayId,
-  BookingErrorCode,
   BusyKey,
   CustomerId,
+  Result,
+  UserId,
+} from '@core/primitives';
+import {
+  BookingErrorCode,
   type RepositoryError,
   RepositoryError as RepoError,
   RepositoryErrorCode,
-  Result,
   TimeErrorCode,
-  UserId,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   type AccountContact,
   type AuditEntry,

@@ -3,11 +3,11 @@ import {
   AppointmentId,
   BarberId,
   CartLineId,
-  PipelineErrorCode,
   SeatId,
   ServiceId,
   UserId,
 } from '@core/primitives';
+import { PipelineErrorCode } from '@core/errors';
 import { endMinute, localDate, minute } from '@core/testing';
 import { BarberPreference } from './barber-pref.data';
 import { BookingCall, RequestedSubjectRole } from './booking-call.data';

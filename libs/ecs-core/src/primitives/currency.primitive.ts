@@ -1,6 +1,6 @@
 import { Result } from './result.data';
 import type { Brand } from './brand';
-import { PrimitiveError, PrimitiveErrorCode } from './primitive-errors.data';
+import { PrimitiveError, PrimitiveErrorCode } from './primitive.error';
 
 /**
  * An ISO-4217 currency code, upper-case — `'EUR'` for every new amount;

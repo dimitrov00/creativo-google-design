@@ -1,11 +1,8 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Principal, type ProfileEdits } from '@core/components';
 import { uploadAvatar } from '@core/pipelines';
-import {
-  AccountsErrorCode,
-  IdentityErrorCode,
-  type UserId,
-} from '@core/primitives';
+import { type UserId } from '@core/primitives';
+import { AccountsErrorCode, IdentityErrorCode } from '@core/errors';
 import { AvatarSystem } from '@core/systems';
 import {
   AccountStateService,

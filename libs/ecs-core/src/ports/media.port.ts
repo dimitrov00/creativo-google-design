@@ -1,5 +1,6 @@
 import type { MediaRef } from '@core/components';
-import type { MediaError, Result, UserId } from '@core/primitives';
+import type { Result, UserId } from '@core/primitives';
+import type { MediaError } from '@core/errors';
 import type { AppointmentPhotoFacts } from '@core/entities';
 
 /**

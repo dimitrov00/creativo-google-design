@@ -15,10 +15,10 @@ import {
 import {
   CustomerId,
   IdentifierChannel,
-  IdentityErrorCode,
   TenantId,
   UserId,
 } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import { Collections } from '@core/entities';
 import {
   type CompleteRegistrationCommand,

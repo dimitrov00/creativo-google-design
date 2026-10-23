@@ -26,7 +26,6 @@ import {
 } from '@core/components';
 import {
   Result,
-  SchedulingError,
   type BarberId,
   CartLineId,
   GuestId,
@@ -37,6 +36,7 @@ import {
   type LocalDate,
   type MinuteOfDay,
 } from '@core/primitives';
+import { SchedulingError } from '@core/errors';
 import type { Service } from '@core/entities';
 import {
   type AvailabilityLine,

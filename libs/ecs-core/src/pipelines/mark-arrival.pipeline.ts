@@ -1,11 +1,10 @@
 import type { Actor, WriteOp } from '@core/components';
+import { Result, type AppointmentId } from '@core/primitives';
 import {
   BookingError,
   type RepositoryError,
-  Result,
   type SchedulingError,
-  type AppointmentId,
-} from '@core/primitives';
+} from '@core/errors';
 import type { AuditAppendPorts, TelemetryPorts, TxPorts } from '@core/ports';
 import {
   type AuditFact,

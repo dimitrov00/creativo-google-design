@@ -415,7 +415,7 @@ export default [
   // guards (Laws 6 and 7, flatten-spec §7): no `kind`/`type`/`status`, no
   // nested 1-to-1 type (data, entities, primitives), no raw
   // coordinate/money/id, no `Date`, no `throw`, no `UserId`/`CustomerId`
-  // cast. All seven suffixes live here — `*.port.ts` and `*.adapter.ts`
+  // cast. All eight suffixes live here — `*.port.ts` and `*.adapter.ts`
   // included, wherever they sit (libs/ecs-core/src/ports,
   // apps/functions/src/adapters, libs/infrastructure/*) — each with the
   // `InjectionToken` guard (Law 4). The guard rides on the suffix blocks
@@ -433,6 +433,15 @@ export default [
     files: ['**/*.ts'],
     plugins: { creativo },
     rules: { 'creativo/no-sliced-ports': 'error' },
+  },
+  // Law 7.5 — an `*ErrorCode` / `*RefusalCode` dictionary lives only in a
+  // `*.error.ts` (the `@core/errors` tier; `primitives/primitive.error.ts`
+  // below it). The rule reads the physical filename, so it holds from either
+  // base path. Tested in tools/lint-rules/error-dictionary-home.spec.mjs.
+  {
+    files: ['**/*.ts'],
+    plugins: { creativo },
+    rules: { 'creativo/error-dictionary-home': 'error' },
   },
   // …and strict mode on every port file: no `Pick`/`Omit` at all — a port's
   // argument shape is a named type (.claude/rules/ecs-ports.md).

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthClaims, AuthStage } from './auth-claims.data';
-import { IdentityErrorCode, TenantId } from '@core/primitives';
+import { TenantId } from '@core/primitives';
+import { IdentityErrorCode } from '@core/errors';
 import { Role } from './role.data';
 
 /*

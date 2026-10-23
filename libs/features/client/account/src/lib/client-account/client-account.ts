@@ -11,11 +11,8 @@ import {
 } from '@creativo/infrastructure/firebase-app';
 import type { Appointment } from '@core/entities';
 import { Principal, WallTime } from '@core/components';
-import {
-  AccountsErrorCode,
-  type LocationId,
-  type UtcEpochMs,
-} from '@core/primitives';
+import { type LocationId, type UtcEpochMs } from '@core/primitives';
+import { AccountsErrorCode } from '@core/errors';
 import {
   ProfileCompletionKey,
   VisitPerspective,

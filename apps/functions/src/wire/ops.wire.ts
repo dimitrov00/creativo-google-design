@@ -1,9 +1,9 @@
+import { Result } from '@core/primitives';
 import {
   type RepositoryError,
-  Result,
   type RunBackfillRefusal,
   RunBackfillRefusalCode,
-} from '@core/primitives';
+} from '@core/errors';
 import { Actor, type BackfillCall, Role } from '@core/components';
 import { BackfillPlanSystem } from '@core/systems';
 import type { RunBackfillCommand } from '@core/pipelines';

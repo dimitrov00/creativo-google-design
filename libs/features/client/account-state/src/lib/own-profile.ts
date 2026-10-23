@@ -1,5 +1,5 @@
 import { Callables, type GatewayPorts } from '@core/ports';
-import { AccountsErrorCode } from '@core/primitives';
+import { AccountsErrorCode } from '@core/errors';
 import { ProfileEditSystem } from '@core/systems';
 import type { ProfileEdits } from '@core/components';
 

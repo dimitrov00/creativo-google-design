@@ -1,5 +1,6 @@
 import type { InvitationCall } from '@core/components';
-import { EngagementError, InvitationId, Result } from '@core/primitives';
+import { InvitationId, Result } from '@core/primitives';
+import { EngagementError } from '@core/errors';
 import type {
   RedeemInvitationCommand,
   RedeemInvitationError,

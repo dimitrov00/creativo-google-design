@@ -24,7 +24,8 @@ import type {
   ShopEventReadPorts,
   ShopEventWritePorts,
 } from '@core/ports';
-import { type RepositoryError, Result } from '@core/primitives';
+import { Result } from '@core/primitives';
+import { type RepositoryError } from '@core/errors';
 import { attemptWrite, observeQuery, readDoc } from './observe';
 
 /**

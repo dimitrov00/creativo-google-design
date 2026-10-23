@@ -26,7 +26,7 @@ import {
   EngagementErrorCode,
   StaffEditError,
   StreakPublishErrorCode,
-} from '@core/primitives';
+} from '@core/errors';
 import {
   type RhythmServiceGroup,
   rhythmServiceGroupsOf,
