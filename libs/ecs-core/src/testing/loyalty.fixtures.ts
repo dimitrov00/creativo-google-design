@@ -26,6 +26,7 @@ import {
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
+import { StreakPublishSystem } from '@core/systems';
 import georgiJson from './fixtures/loyalty/account-georgi.json';
 import martinJson from './fixtures/loyalty/account-martin.json';
 import catalogJson from './fixtures/loyalty/catalog.json';
@@ -277,8 +278,9 @@ function instant(raw: number): UtcEpochMs {
 export const FIXTURE_STREAK_OPENED_AT_UTC_MS: UtcEpochMs =
   instant(1_740_812_400_000);
 
-/** Who published the first version: nobody by hand — the rule the shop opened with. */
-export const FIXTURE_STREAK_FIRST_PUBLISHER: UserId = UserId.of('system');
+/** Who published the first version: nobody by hand — the rule the shop opened with (`StreakPublishSystem.SYSTEM_PUBLISHER`). */
+export const FIXTURE_STREAK_FIRST_PUBLISHER: UserId =
+  StreakPublishSystem.SYSTEM_PUBLISHER;
 
 /**
  * The rhythm's head as the dev shop opened it: the recommended rule in

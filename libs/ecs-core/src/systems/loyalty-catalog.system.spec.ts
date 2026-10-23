@@ -26,13 +26,21 @@ import {
   AchievementRuleId,
   BadgeCategoryId,
   BadgeSeriesId,
+  BarberId,
   CouponId,
   RewardId,
   SeasonId,
   StreakDefinitionId,
   TierId,
 } from '@core/primitives';
-import { deepFreeze, localDate, utcMs } from '@core/testing';
+import {
+  FIXTURE_TODAY,
+  deepFreeze,
+  localDate,
+  loyaltyCatalogFixture,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
 import {
   LoyaltyCatalogSystem,
   type ValidLoyaltyCatalog,
@@ -504,5 +512,426 @@ describe('LoyaltyCatalogSystem purity', () => {
         localDate('2027-06-01'),
       ),
     );
+  });
+});
+
+// ── The pages' reading of the catalogue (Law 10.2, the decision pass) ──
+
+describe('LoyaltyCatalogSystem.inEndedSeason', () => {
+  const catalog = must(parts());
+  const family = (id: string) => {
+    const found = LoyaltyCatalogSystem.series(catalog, BadgeSeriesId.of(id));
+    if (found === null) throw new Error(`no family ${id}`);
+    return found;
+  };
+
+  it('is a family whose window ended on the day, both ends inclusive', () => {
+    const today = localDate('2026-09-28');
+    expect(
+      LoyaltyCatalogSystem.inEndedSeason(
+        catalog,
+        family('series-summer-track'),
+        today,
+      ),
+    ).toBe(true);
+    expect(
+      LoyaltyCatalogSystem.inEndedSeason(
+        catalog,
+        family('series-autumn-beard'),
+        today,
+      ),
+    ).toBe(false);
+    expect(
+      LoyaltyCatalogSystem.inEndedSeason(
+        catalog,
+        family('series-autumn-beard'),
+        localDate('2026-11-30'),
+      ),
+    ).toBe(false);
+    expect(
+      LoyaltyCatalogSystem.inEndedSeason(
+        catalog,
+        family('series-autumn-beard'),
+        localDate('2026-12-01'),
+      ),
+    ).toBe(true);
+  });
+
+  it('is never a shelf’s family, nor one of a season the catalogue lacks', () => {
+    const today = localDate('2027-06-01');
+    expect(
+      LoyaltyCatalogSystem.inEndedSeason(
+        catalog,
+        family('series-svc-fade'),
+        today,
+      ),
+    ).toBe(false);
+    expect(
+      LoyaltyCatalogSystem.inEndedSeason(
+        catalog,
+        { seasonId: SeasonId.of('season-gone') },
+        today,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('LoyaltyCatalogSystem.windowsOn', () => {
+  const ids = (windows: {
+    readonly season: Season | null;
+    readonly events: readonly Season[];
+  }) => [windows.season?.id ?? null, windows.events.map((e) => e.id)];
+
+  it('is the running season and the events open on the day', () => {
+    expect(
+      ids(
+        LoyaltyCatalogSystem.windowsOn(must(parts()), localDate('2026-09-28')),
+      ),
+    ).toEqual(['season-autumn', ['event-beard-week']]);
+  });
+
+  it('lists the open events before the announced ones, and never an announced season', () => {
+    const catalog = must({
+      ...parts(),
+      series: [
+        ...parts().series,
+        series('series-shave-week', { seasonId: 'event-shave-week' }, 50),
+      ],
+      seasons: [
+        ...parts().seasons,
+        season(
+          'event-shave-week',
+          { from: '2026-10-20', until: '2026-10-25' },
+          { track: null, rest: ['series-shave-week'] },
+        ),
+      ],
+    });
+    expect(
+      ids(LoyaltyCatalogSystem.windowsOn(catalog, localDate('2026-09-28'))),
+    ).toEqual(['season-autumn', ['event-beard-week', 'event-shave-week']]);
+    // Before anything opens: the announced event, no season yet.
+    expect(
+      ids(LoyaltyCatalogSystem.windowsOn(catalog, localDate('2026-05-01'))),
+    ).toEqual([null, ['event-beard-week', 'event-shave-week']]);
+  });
+
+  it('is nothing once every window ended', () => {
+    expect(
+      ids(
+        LoyaltyCatalogSystem.windowsOn(must(parts()), localDate('2027-06-01')),
+      ),
+    ).toEqual([null, []]);
+  });
+});
+
+describe('LoyaltyCatalogSystem.archivedFor', () => {
+  const catalog = must(parts());
+  const archived = (
+    today: string,
+    started: readonly string[],
+    progressed: readonly string[],
+  ) =>
+    LoyaltyCatalogSystem.archivedFor(
+      catalog,
+      localDate(today),
+      new Set(started.map(BadgeSeriesId.of)),
+      new Set(progressed.map(SeasonId.of)),
+    ).map((s) => s.id);
+
+  it('keeps the ended windows the client took part in, newest first', () => {
+    // A track value of the summer's; a family of the beard week started.
+    expect(
+      archived('2026-12-15', ['series-week-beard'], ['season-summer']),
+    ).toEqual(['event-beard-week', 'season-summer']);
+    // The track counts as the window's family too.
+    expect(archived('2026-12-15', ['series-autumn-track'], [])).toEqual([
+      'season-autumn',
+    ]);
+  });
+
+  it('leaves out the windows never joined, and the ones still running', () => {
+    expect(archived('2026-12-15', [], [])).toEqual([]);
+    expect(
+      archived('2026-09-28', ['series-autumn-beard'], ['season-autumn']),
+    ).toEqual([]);
+  });
+});
+
+describe('LoyaltyCatalogSystem.rhythmLive', () => {
+  const off: StreakDefinition = {
+    ...schedule('cadence'),
+    rules: [
+      {
+        ...rule({ enabled: false }),
+        headRole: HeadRole.Current,
+        streakTransition: null,
+      },
+    ],
+  };
+  const today = localDate('2026-09-29');
+
+  it('is a head whose rule in force is switched on', () => {
+    expect(
+      LoyaltyCatalogSystem.rhythmLive(
+        must({ ...parts(), streaks: [schedule('cadence')] }),
+        today,
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      LoyaltyCatalogSystem.rhythmLive(
+        must({ ...parts(), streaks: [off, schedule('comeback')] }),
+        today,
+        true,
+      ),
+    ).toBe(true);
+  });
+
+  it('is off with every rule off, and in a shop without a rhythm', () => {
+    expect(
+      LoyaltyCatalogSystem.rhythmLive(
+        must({ ...parts(), streaks: [off] }),
+        today,
+        true,
+      ),
+    ).toBe(false);
+    expect(LoyaltyCatalogSystem.rhythmLive(must(parts()), today, true)).toBe(
+      false,
+    );
+  });
+
+  it('takes the caller’s flag over a rule that is on, never the other way', () => {
+    expect(
+      LoyaltyCatalogSystem.rhythmLive(
+        must({ ...parts(), streaks: [schedule('cadence')] }),
+        today,
+        false,
+      ),
+    ).toBe(false);
+  });
+
+  it('agrees with StreakRuleSystem.isOnOn on the same catalogue, the flag aside', () => {
+    for (const streaks of [
+      [schedule('cadence')],
+      [off],
+      [off, schedule('comeback')],
+      [],
+    ]) {
+      const catalog = must({ ...parts(), streaks });
+      for (const flag of [true, false]) {
+        expect(LoyaltyCatalogSystem.rhythmLive(catalog, today, flag)).toBe(
+          catalog.streaks.some((head) =>
+            StreakRuleSystem.isOnOn(head, today, flag),
+          ),
+        );
+      }
+    }
+  });
+});
+
+describe('LoyaltyCatalogSystem.barberIds', () => {
+  const fixture = unwrapOk(
+    LoyaltyCatalogSystem.validate(loyaltyCatalogFixture()),
+  );
+
+  it('names the barbers of the families about one, each once, in the catalogue’s order', () => {
+    expect(LoyaltyCatalogSystem.barberIds(fixture)).toEqual([
+      'ivan',
+      'niko',
+      'stefan',
+    ]);
+  });
+
+  it('leaves out a withdrawn family’s barber, and names a barber with two families once', () => {
+    const edited = unwrapOk(
+      LoyaltyCatalogSystem.validate({
+        ...loyaltyCatalogFixture(),
+        series: loyaltyCatalogFixture().series.flatMap((family) =>
+          family.id === 'series-barber-niko'
+            ? [
+                {
+                  ...family,
+                  retiredAtUtcMs: utcMs('2026-01-01T00:00:00.000Z'),
+                  retiredLocalDate: localDate('2026-01-01'),
+                },
+              ]
+            : family.id === 'series-barber-ivan'
+              ? [
+                  family,
+                  {
+                    ...family,
+                    id: BadgeSeriesId.of('series-barber-ivan-beard'),
+                    order: 99,
+                  },
+                ]
+              : [family],
+        ),
+      }),
+    );
+    expect(LoyaltyCatalogSystem.barberIds(edited)).toEqual([
+      BarberId.of('ivan'),
+      BarberId.of('stefan'),
+    ]);
+    expect(LoyaltyCatalogSystem.barberIds(must(parts()))).toEqual([]);
+  });
+});
+
+describe('LoyaltyCatalogSystem.shelfRank — where a family’s shelf stands', () => {
+  const shelves = {
+    categories: [
+      { id: BadgeCategoryId.of('cat-mastery'), order: 2 },
+      { id: BadgeCategoryId.of('cat-milestones'), order: 0 },
+    ],
+  };
+
+  it('ranks a family by its shelf’s order', () => {
+    expect(
+      LoyaltyCatalogSystem.shelfRank(shelves, {
+        categoryId: BadgeCategoryId.of('cat-milestones'),
+      }),
+    ).toBe(0);
+    expect(
+      LoyaltyCatalogSystem.shelfRank(shelves, {
+        categoryId: BadgeCategoryId.of('cat-mastery'),
+      }),
+    ).toBe(2);
+  });
+
+  it('ranks a family of no shelf after every shelf', () => {
+    expect(LoyaltyCatalogSystem.shelfRank(shelves, { categoryId: null })).toBe(
+      Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it('ranks a family of a shelf the catalogue lacks after every shelf too', () => {
+    expect(
+      LoyaltyCatalogSystem.shelfRank(shelves, {
+        categoryId: BadgeCategoryId.of('cat-gone'),
+      }),
+    ).toBe(Number.POSITIVE_INFINITY);
+    expect(
+      LoyaltyCatalogSystem.shelfRank(
+        { categories: [] },
+        { categoryId: BadgeCategoryId.of('cat-mastery') },
+      ),
+    ).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('gives two families of one shelf one rank — the series order breaks the tie', () => {
+    const a = { categoryId: BadgeCategoryId.of('cat-mastery') };
+    const b = { categoryId: BadgeCategoryId.of('cat-mastery') };
+    expect(LoyaltyCatalogSystem.shelfRank(shelves, a)).toBe(
+      LoyaltyCatalogSystem.shelfRank(shelves, b),
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const catalog = deepFreeze(shelves);
+    const series = deepFreeze({
+      categoryId: BadgeCategoryId.of('cat-mastery'),
+    });
+    const once = LoyaltyCatalogSystem.shelfRank(catalog, series);
+    expect(LoyaltyCatalogSystem.shelfRank(catalog, series)).toBe(once);
+    expect(series).toEqual({ categoryId: 'cat-mastery' });
+    expect(catalog.categories.map((c) => c.order)).toEqual([2, 0]);
+  });
+});
+
+describe('LoyaltyCatalogSystem.cueOrdered', () => {
+  const fixture = unwrapOk(
+    LoyaltyCatalogSystem.validate(loyaltyCatalogFixture()),
+  );
+  const family = (id: string) => {
+    const found = LoyaltyCatalogSystem.series(fixture, BadgeSeriesId.of(id));
+    if (found === null) throw new Error(`no family ${id}`);
+    return found;
+  };
+
+  it('names shelves before seasons — by the shelf’s order, then the family’s', () => {
+    // What Георги's next fade with Иван at 10:00 completes, as they come.
+    const completing = [
+      'series-2026-autumn-track',
+      'series-early-bird',
+      'series-shop-center',
+      'series-barber-ivan',
+      'series-svc-fade',
+      'series-visits',
+    ].map(family);
+    expect(
+      LoyaltyCatalogSystem.cueOrdered(fixture, completing).map((s) => s.id),
+    ).toEqual([
+      'series-visits',
+      'series-svc-fade',
+      'series-barber-ivan',
+      'series-shop-center',
+      'series-early-bird',
+      'series-2026-autumn-track',
+    ]);
+  });
+
+  it('breaks a shelf tie by the family’s own order', () => {
+    const first = { ...family('series-svc-fade'), order: 9 };
+    const second = { ...family('series-svc-fade'), order: 1 };
+    expect(
+      LoyaltyCatalogSystem.cueOrdered(fixture, [first, second]).map(
+        (s) => s.order,
+      ),
+    ).toEqual([1, 9]);
+  });
+
+  it('puts a family of a shelf the catalogue lacks with the seasons’, by its order, and keeps a full tie as it came', () => {
+    const lost = {
+      ...family('series-visits'),
+      categoryId: BadgeCategoryId.of('cat-gone'),
+      order: 3,
+    };
+    const twin = { ...family('series-2026-autumn-early'), order: 1 };
+    expect(
+      LoyaltyCatalogSystem.cueOrdered(fixture, [
+        family('series-2026-autumn-beard'),
+        lost,
+        twin,
+        family('series-2026-autumn-track'),
+        family('series-birthday'),
+      ]).map((s) => s.id),
+    ).toEqual([
+      'series-birthday',
+      'series-2026-autumn-early',
+      'series-2026-autumn-track',
+      'series-2026-autumn-beard',
+      'series-visits',
+    ]);
+    expect(LoyaltyCatalogSystem.cueOrdered(fixture, [])).toEqual([]);
+  });
+});
+
+describe('LoyaltyCatalogSystem purity — the pages’ readings', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const catalog = deepFreeze(
+      must({ ...parts(), streaks: [schedule('cadence')] }),
+    );
+    const fixture = deepFreeze(
+      unwrapOk(LoyaltyCatalogSystem.validate(loyaltyCatalogFixture())),
+    );
+    const started = new Set([BadgeSeriesId.of('series-week-beard')]);
+    const run = () => [
+      LoyaltyCatalogSystem.inEndedSeason(
+        catalog,
+        { seasonId: SeasonId.of('season-summer') },
+        FIXTURE_TODAY,
+      ),
+      LoyaltyCatalogSystem.windowsOn(catalog, FIXTURE_TODAY),
+      LoyaltyCatalogSystem.archivedFor(
+        catalog,
+        localDate('2026-12-15'),
+        started,
+        new Set(),
+      ),
+      LoyaltyCatalogSystem.rhythmLive(catalog, FIXTURE_TODAY, true),
+      LoyaltyCatalogSystem.barberIds(fixture),
+      LoyaltyCatalogSystem.cueOrdered(fixture, fixture.families),
+      fixture.families.map((s) => LoyaltyCatalogSystem.shelfRank(fixture, s)),
+    ];
+    expect(run()).toEqual(run());
   });
 });

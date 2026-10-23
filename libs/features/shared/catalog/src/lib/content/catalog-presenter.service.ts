@@ -1,15 +1,5 @@
 import { Injectable, computed, inject } from '@angular/core';
 import { LanguageService } from '@creativo/features/shared/shell';
-import {
-  BarberId,
-  Currency,
-  DurationMinutes,
-  PriceCents,
-  ServiceVariantId,
-  defect,
-} from '@core/primitives';
-import { ServiceTerms } from '@core/components';
-import { type CatalogPriced, CatalogPricingSystem } from '@core/systems';
 import { type Localized, type ServiceVm } from './catalog.vm';
 import {
   formatDurationRange,
@@ -57,67 +47,12 @@ export class CatalogPresenter {
   serviceMeta(service: ServiceVm, fromLabel: string): string {
     // EVERY bookable term, not just the base ones — a card that folded only
     // `offering.base` quoted a cheapest price the sheet it opens could
-    // contradict one tap later (`CatalogPricingSystem.cardPrice`).
-    const priced = pricedOf(service);
-    const tag =
-      priced !== null
-        ? CatalogPricingSystem.cardPrice(priced)
-        : { cheapestCents: 0, spread: false };
+    // contradict one tap later. The tag is `CatalogPricingSystem.cardPrice`'s
+    // answer, carried on the view model (`serviceToVm`).
     return formatServiceMeta({
-      price: this.price(tag.cheapestCents / 100),
+      price: this.price(service.cardPrice.cheapest),
       fromLabel,
-      spread: tag.spread,
+      spread: service.cardPrice.spread,
     });
   }
-}
-
-/* ── Phase 2 shim converter: the view model → the catalogue's terms ─────── */
-
-/** A brand the view model's figure already satisfies (catalogue terms, mapped). */
-function sure<T, E>(
-  result:
-    | { readonly ok: true; readonly value: T }
-    | { readonly ok: false; readonly error: E },
-  what: string,
-): T {
-  // Unreachable: `catalog.presenter.ts` maps the catalogue's own terms — a
-  // non-negative price and a positive duration.
-  if (!result.ok) defect(`unreachable: ${what}`);
-  return result.value;
-}
-
-/**
- * EUR major units → the terms matrix the pricing system reads; `null` for a
- * view model with no offering (no card price to fold).
- */
-function pricedOf(service: ServiceVm): CatalogPriced | null {
-  const terms = (vm: { readonly price: number; readonly minutes: number }) =>
-    ServiceTerms.unpadded(
-      sure(PriceCents.of(Math.round(vm.price * 100)), 'a price'),
-      Currency.EUR,
-      sure(DurationMinutes.of(vm.minutes), 'a duration'),
-    );
-  const first = service.offerings[0];
-  if (first === undefined) return null;
-  const variantIds = new Set(service.variants.map((variant) => variant.id));
-  for (const offering of service.offerings) {
-    for (const id of Object.keys(offering.byVariant ?? {})) variantIds.add(id);
-  }
-  return {
-    ...terms(first.base),
-    variants: [...variantIds].map((id) => ({
-      variantId: ServiceVariantId.of(id),
-      name: { bg: id, en: id },
-    })),
-    offerings: service.offerings.map((offering) => ({
-      barberId: BarberId.of(offering.barberId),
-      ...terms(offering.base),
-      overrides: Object.entries(offering.byVariant ?? {}).map(
-        ([variantId, variantTerms]) => ({
-          variantId: ServiceVariantId.of(variantId),
-          ...terms(variantTerms),
-        }),
-      ),
-    })),
-  };
 }

@@ -1,11 +1,16 @@
-import type { ShopNow } from '@core/components';
+import { HistoryNote, type ShopNow } from '@core/components';
 import type {
   Appointment,
   ClientMoneyRecord,
   ClientStatsRecord,
 } from '@core/entities';
 import type { TimeZone } from '@core/primitives';
-import { VisitGrain, VisitPerspective } from '@core/systems';
+import {
+  ClientStatsSystem,
+  VisitGrain,
+  VisitListSystem,
+  VisitPerspective,
+} from '@core/systems';
 import { type VisitRowVm, visitRowOf } from '@creativo/features/shared/visits';
 import { formatCents } from '@creativo/ui/wall-clock';
 import type { ClientCardCatalog } from './client-card.contracts';
@@ -36,9 +41,9 @@ export const FILTER_REFILL_ROWS = 10;
 /** …up to this many pages at once. */
 export const FILTER_REFILL_PAGES = 3;
 
-/** Weeks, from the stats' mean days between worked visits — at least one. */
+/** Weeks, from the stats' mean days between worked visits — at least one (`ClientStatsSystem.cadenceWeeks`). */
 export function cadenceWeeks(avgCadenceDays: number): number {
-  return Math.max(1, Math.round(avgCadenceDays / 7));
+  return ClientStatsSystem.cadenceWeeks(avgCadenceDays);
 }
 
 /** HC — the open figures: visits, the interval, and no-shows and cancellations only when there are any. */
@@ -95,10 +100,6 @@ export function historyFacts(
   money: ClientMoneyRecord | null,
   words: ClientCardWords,
 ): HistoryFactsVm {
-  const visits = stats?.lifetimeVisitsCompleted ?? 0;
-  const clean =
-    (stats?.lifetimeNoShows ?? 0) === 0 &&
-    (stats?.lifetimeClientCancels ?? 0) === 0;
   let spend: HistorySpendVm | null = null;
   if (money !== null) {
     const value = formatCents(
@@ -109,14 +110,27 @@ export function historyFacts(
     spend = { value, sentence: words.history.spend(value) };
   }
   return {
-    note:
-      visits === 0
-        ? words.head.firstVisit
-        : clean
-          ? words.history.noRisk
-          : null,
+    note: historyNoteWords(ClientStatsSystem.historyNote(stats), words),
     spend,
   };
+}
+
+/**
+ * HD's note as words — which one is `ClientStatsSystem.historyNote`'s:
+ * «Първо посещение», «Без неявявания и откази от клиента», or none.
+ */
+export function historyNoteWords(
+  note: HistoryNote,
+  words: ClientCardWords,
+): string | null {
+  switch (note) {
+    case HistoryNote.FirstVisit:
+      return words.head.firstVisit;
+    case HistoryNote.Clean:
+      return words.history.noRisk;
+    case HistoryNote.None:
+      return null;
+  }
 }
 
 export interface HistoryRowsInput {
@@ -148,29 +162,23 @@ export interface HistoryRowsInput {
 export function historyRows(input: HistoryRowsInput): readonly VisitRowVm[] {
   const { now, timeZone } = input;
   if (now === null || timeZone === null) return [];
-  const seen = new Set<string>();
-  return input.appointments.flatMap((appointment) => {
-    const id: string = appointment.id;
-    if (seen.has(id)) return [];
-    seen.add(id);
-    return [
-      visitRowOf(
-        appointment,
-        {
-          perspective: VisitPerspective.Staff,
-          grain: VisitGrain.Year,
-          subjectUserId: input.subjectUserId,
-          subjectCustomerId: input.subjectCustomerId,
-          currentAppointmentId: input.currentAppointmentId,
-          now,
-          timeZone,
-          locale: input.words.lang,
-          photoCount: input.photoCounts.get(id) ?? 0,
-          words: input.words.visits,
-          clientWords: input.clientWords,
-        },
-        input.catalog,
-      ),
-    ];
-  });
+  return VisitListSystem.distinctById(input.appointments).map((appointment) =>
+    visitRowOf(
+      appointment,
+      {
+        perspective: VisitPerspective.Staff,
+        grain: VisitGrain.Year,
+        subjectUserId: input.subjectUserId,
+        subjectCustomerId: input.subjectCustomerId,
+        currentAppointmentId: input.currentAppointmentId,
+        now,
+        timeZone,
+        locale: input.words.lang,
+        photoCount: input.photoCounts.get(appointment.id) ?? 0,
+        words: input.words.visits,
+        clientWords: input.clientWords,
+      },
+      input.catalog,
+    ),
+  );
 }

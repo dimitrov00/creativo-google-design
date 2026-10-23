@@ -1,11 +1,10 @@
 import {
-  StreakInterval,
   StreakIntervalSource,
   type StreakPeriodTerms,
   StreakQualifier,
   type StreakQualifierRule,
 } from '@core/components';
-import type { StreakRuleSummary } from '@core/systems';
+import { StreakRuleSystem, type StreakRuleSummary } from '@core/systems';
 import { pluralForm } from '@creativo/infrastructure/i18n';
 import type { VisitTranslate } from '../visit-row.presenter';
 
@@ -25,10 +24,13 @@ import type { VisitTranslate } from '../visit-row.presenter';
  * does not, in the rule's own order, so the card and the editor can never
  * word one rule apart.
  *
- * It holds NO rule arithmetic. A person's interval arrives computed (the
- * open period's pinned terms, `StreakState.periodTerms`); nothing here
- * derives a due date from a habit, so there is no second copy of the rule
- * to drift from the projector's.
+ * It holds NO rule arithmetic and decides nothing (Law 10.2). A person's
+ * interval arrives computed (the open period's pinned terms,
+ * `StreakState.periodTerms`), and WHICH interval the sentence states — the
+ * fixed one, the person's own, or the newcomer's — is
+ * `StreakRuleSystem.statedInterval`'s answer; nothing here derives a due
+ * date from a habit, so there is no second copy of the rule to drift from
+ * the projector's.
  */
 
 /** The rule in force, worded once for every place that prints it. */
@@ -115,39 +117,16 @@ function countWords(translate: VisitTranslate, lang: string): CountWords {
   return { days, weeks, span };
 }
 
-/** Which sentence the interval is said in, and the figures it names. */
-type IntervalSaid =
-  | { readonly key: 'fixed' | 'fallback'; readonly days: number }
-  | {
-      readonly key: 'personal';
-      readonly days: number;
-      readonly habitDays: number;
-    };
-
-function intervalSaid(
-  summary: StreakRuleSummary,
-  period: RhythmRuleContext['period'],
-): IntervalSaid {
-  const interval = summary.interval;
-  if (interval.streakInterval === StreakInterval.Fixed) {
-    return { key: 'fixed', days: interval.intervalDays };
-  }
-  // The habit is known only where the period's length CAME from it. A
-  // newcomer, a period an older fixed rule opened and a draft on the admin
-  // page all read the rule's own figure for someone it does not know yet.
-  if (
-    period?.source === StreakIntervalSource.Personal &&
-    period.habitDays !== null &&
-    period.habitDays > 0
-  ) {
-    return {
-      key: 'personal',
-      days: period.intervalDays,
-      habitDays: period.habitDays,
-    };
-  }
-  return { key: 'fallback', days: interval.intervalFallbackDays };
-}
+/**
+ * The interval sentence's key (`rhythmRule.<key>`) for each source the
+ * system states (`StreakRuleSystem.statedInterval`): a words table, one
+ * key per tag.
+ */
+const INTERVAL_KEY = {
+  [StreakIntervalSource.Fixed]: 'fixed',
+  [StreakIntervalSource.Personal]: 'personal',
+  [StreakIntervalSource.Fallback]: 'fallback',
+} as const satisfies Record<StreakIntervalSource, string>;
 
 /** «Фейд и Оформяне на брада» — the chosen list by name, in the admin's order; `null` when nothing can be named. */
 function countedNames(
@@ -196,15 +175,25 @@ export function rhythmRuleWords(
     return { sentence: off, details: [], short: off, days, weeks };
   }
 
-  const said = intervalSaid(summary, context.period);
-  const interval = span(said.days);
+  // Which interval the sentence states is the system's (Law 10.2): the
+  // habit is known only where the period's length CAME from it — a
+  // newcomer, a period an older fixed rule opened and a draft on the admin
+  // page all read the rule's own figure for someone it does not know yet.
+  const said = StreakRuleSystem.statedInterval(
+    summary.interval,
+    context.period ?? null,
+  );
+  const interval = span(said.intervalDays);
   const sentence =
-    said.key === 'personal'
+    said.streakIntervalSource === StreakIntervalSource.Personal &&
+    said.habitDays !== null
       ? translate('rhythmRule.personal', {
           habit: span(said.habitDays),
           interval,
         })
-      : translate(`rhythmRule.${said.key}`, { interval });
+      : translate(`rhythmRule.${INTERVAL_KEY[said.streakIntervalSource]}`, {
+          interval,
+        });
 
   const { graceDays, protections, hold, repair } = summary;
   const services = countedNames(summary.qualifier, context.nameOf, lang);

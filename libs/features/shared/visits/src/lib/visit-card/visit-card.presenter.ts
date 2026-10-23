@@ -1,10 +1,9 @@
 import type { Appointment, WaitlistRequest } from '@core/entities';
-import { BookingStatus } from '@core/primitives';
-import { VisitGrain, VisitPerspective, VisitRowOutcome } from '@core/systems';
+import { VisitStatusMark } from '@core/components';
+import { VisitGrain, VisitPerspective, VisitStorySystem } from '@core/systems';
 import { firstNameOf } from '../first-name';
 import {
-  distinct,
-  storyOf,
+  subjectStoryOf,
   visitClockOf,
   visitRowOf,
   visitZoneOf,
@@ -93,9 +92,9 @@ export function visitCardOf(
   // barber the way the row's does: a first name on the staff card, the
   // name as the client knows it on their own; a party cut by several is
   // «Иван и Петър» to a barber and «2 бръснари» to the client.
-  const barberIds = distinct(
-    storyOf(appointment, options).seats.map((seat) => seat.barberId),
-  );
+  // The story is the row's own (the same subject, the same perspective).
+  const story = subjectStoryOf(appointment, options);
+  const barberIds = VisitStorySystem.subjectBarberIds(appointment, story);
   const nameOf = (barberId: string) =>
     lookup.barberName(barberId) ?? words.barberRole;
   const showBarber = options.barber !== false && barberIds.length > 0;
@@ -120,32 +119,32 @@ export function visitCardOf(
   const single = several ? null : (barberIds[0] ?? null);
 
   // WHERE — a worked visit's shop, by its short name, and only where the
-  // tenant has more than one: the row's rule.
+  // tenant has more than one: the row's rule (`VisitStorySystem.namesShop`),
+  // on the staff's last visit.
   const where =
     staff &&
     last &&
-    row.outcome === VisitRowOutcome.Worked &&
-    lookup.locationCount > 1
+    VisitStorySystem.namesShop(story.outcome, lookup.locationCount)
       ? lookup.locationName(appointment.locationId)
       : null;
 
   // The figure is the staff's, of a worked visit: what the row prints at
-  // the end of its second line (`trailingFact`).
-  const figure =
-    staff && last && row.outcome === VisitRowOutcome.Worked
-      ? amountOf(row)
-      : null;
+  // the end of its second line (`trailingFact`) — charged, never struck,
+  // which the row's figure is on a worked visit alone.
+  const figure = staff && last ? amountOf(row) : null;
 
-  // A status is news on a visit still to come, and only there.
-  const status = appointment.bookingStatus;
+  // A status is news on a visit still to come, and only there: the next
+  // visit's card words the hour the shop has or has not confirmed
+  // (`VisitStorySystem.statusMark`, open hours only).
+  const statusMark = last
+    ? null
+    : VisitStorySystem.statusMark(story.outcome, appointment.bookingStatus);
   const statusWord =
-    last || row.outcome !== VisitRowOutcome.Open
-      ? null
-      : status === BookingStatus.Pending
-        ? words.statusPending
-        : status === BookingStatus.Confirmed
-          ? (words.statusConfirmed ?? null)
-          : null;
+    statusMark === VisitStatusMark.Pending
+      ? words.statusPending
+      : statusMark === VisitStatusMark.Confirmed
+        ? (words.statusConfirmed ?? null)
+        : null;
 
   const tail = [whoShort, where]
     .filter((part): part is string => part !== null && part !== '')

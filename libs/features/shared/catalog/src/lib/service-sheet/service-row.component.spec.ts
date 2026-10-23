@@ -36,6 +36,9 @@ const CUT: ServiceVm = {
   offerings: [{ barberId: 'ivan', base: { price: 14.5, minutes: 35 } }],
   upsellOnly: false,
   gallery: [],
+  priceFrom: 14.5,
+  cardPrice: { cheapest: 14.5, spread: false },
+  minutesRange: { from: 35, to: 35 },
 };
 
 const BUNDLE: ServiceVm = {

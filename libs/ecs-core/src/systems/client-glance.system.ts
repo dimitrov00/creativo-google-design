@@ -1,13 +1,16 @@
 import {
   AccountLifecycle,
   AccountStatus,
+  type ClientStats,
   type PunchCard,
   type ShopNow,
   type StreakState,
+  type VisitLeg,
   type WallTime,
 } from '@core/components';
 import type { GiftVoucher } from '@core/entities';
 import type {
+  AppointmentId,
   Currency,
   ServiceId,
   ServiceVariantId,
@@ -37,6 +40,18 @@ import { VoucherSystem } from './voucher.system';
 export type GlanceLeg = {
   readonly serviceId: ServiceId;
   readonly variantId: ServiceVariantId | null;
+};
+
+/** The visit on screen as «Пак същото» weighs it — UI read-state handed in as values (D-2.6). */
+export type RepeatDraft = {
+  /** The card can write: offline, nothing is offered. */
+  readonly online: boolean;
+  /** The visit on screen is gone (cancelled, no-show) — a finished one is still correctable. */
+  readonly gone: boolean;
+  /** The visit on screen; `null` when the card is open on none. */
+  readonly currentAppointmentId: AppointmentId | null;
+  /** The services the visit on screen already holds. */
+  readonly legs: readonly GlanceLeg[];
 };
 
 /** The glance's inputs beside the account. */
@@ -106,6 +121,40 @@ export const ClientGlanceSystem = {
   /** The same services, each as often, whatever the order: what «Пак същото» would add is already there. */
   sameLegs(a: readonly GlanceLeg[], b: readonly GlanceLeg[]): boolean {
     return keysOf(a) === keysOf(b);
+  },
+
+  /**
+   * «Пак същото» is offered (Law 10.2; old spec D-5): the last worked visit
+   * is known (its id and its day), the card is online, the visit on screen
+   * is not gone and is not that last visit, the last visit had services,
+   * the visit on screen does not already hold them ({@link sameLegs}), and
+   * one of them is still in the catalogue (`knownServiceIds` — the host
+   * catalogue's lookup, made by the caller).
+   */
+  repeatOffer(
+    last: Pick<
+      ClientStats,
+      'lastVisitAppointmentId' | 'lastVisitLocalDate' | 'lastVisitLegs'
+    >,
+    draft: RepeatDraft,
+    knownServiceIds: ReadonlySet<ServiceId>,
+  ): boolean {
+    const legs = last.lastVisitLegs;
+    if (
+      last.lastVisitAppointmentId === null ||
+      last.lastVisitLocalDate === null ||
+      !draft.online ||
+      draft.gone ||
+      last.lastVisitAppointmentId === draft.currentAppointmentId ||
+      legs.length === 0 ||
+      ClientGlanceSystem.sameLegs(legs, draft.legs)
+    ) {
+      return false;
+    }
+    for (let i = 0; i < legs.length; i++) {
+      if (knownServiceIds.has((legs[i] as VisitLeg).serviceId)) return true;
+    }
+    return false;
   },
 
   /**

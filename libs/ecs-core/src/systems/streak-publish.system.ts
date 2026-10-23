@@ -4,7 +4,7 @@ import {
   Result,
   type StreakDefinitionId,
   type LocalDate,
-  type UserId,
+  UserId,
   type UtcEpochMs,
 } from '@core/primitives';
 import { type EngagementError, StreakPublishError } from '@core/errors';
@@ -174,7 +174,24 @@ function unique(values: readonly string[]): readonly string[] {
   return out;
 }
 
+/**
+ * Who a version names as its publisher when nobody published it by hand:
+ * the rule the shop opened with (the seed's first version). A reserved
+ * uid, branded once here.
+ */
+const SYSTEM_PUBLISHER: UserId = UserId.of('system');
+
 export const StreakPublishSystem = {
+  /** The publisher of a version nobody published by hand — the shop's opening rule («системата»). */
+  SYSTEM_PUBLISHER,
+
+  /** Whether nobody published this version by hand: the history says «системата», not a uid. */
+  isSystemPublisher(
+    version: Pick<StreakDefinitionVersion, 'publishedByUserId'>,
+  ): boolean {
+    return version.publishedByUserId === SYSTEM_PUBLISHER;
+  },
+
   /** The newest version a head holds: the one that waits, else the one in force; 0 with no head. */
   newestOf(head: StreakSchedule | null): number {
     if (head === null) return 0;

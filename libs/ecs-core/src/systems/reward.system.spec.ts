@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { Points, RewardGrantRule, RedeemProblem } from '@core/components';
+import {
+  Points,
+  PointsReach,
+  RewardGrantRule,
+  RedeemProblem,
+} from '@core/components';
 import type { RewardCatalogItem } from '@core/entities';
-import { CouponGrantId, CouponId, RewardId } from '@core/primitives';
+import { CouponGrantId, CouponId, Locale, RewardId } from '@core/primitives';
 import { deepFreeze, localDate } from '@core/testing';
 import {
   RewardSystem,
@@ -249,6 +254,270 @@ describe('RewardSystem.affordable (wallet.presenter.spec.ts `rewardTiles`)', () 
   });
 });
 
+describe('RewardSystem.tiles (wallet.presenter.spec.ts `rewardTiles`, `walletVm`)', () => {
+  const beard = reward('reward-beard', 120, 1);
+  const cut = reward('reward-cut', 250, 2);
+  const product = reward('reward-product', 400, 3);
+  const seed = [beard, cut, product];
+  const tiles = (rewards: readonly RewardCatalogItem[], balance: number) =>
+    RewardSystem.tiles(rewards, balance, TODAY);
+  const order = (rewards: readonly RewardCatalogItem[], balance: number) =>
+    tiles(rewards, balance).tiles.map((t) => [t.reward.id, t.reach.affordable]);
+
+  it('puts the rewards the points cover first, meters the ones they do not, and counts the covered', () => {
+    expect(tiles(seed, 358)).toEqual({
+      tiles: [
+        {
+          reward: beard,
+          reach: { affordable: true, short: 0, progress: null },
+        },
+        { reward: cut, reach: { affordable: true, short: 0, progress: null } },
+        {
+          reward: product,
+          reach: { affordable: false, short: 42, progress: 0.895 },
+        },
+      ],
+      withinReach: 2,
+    });
+  });
+
+  it('keeps the catalogue’s order inside each half', () => {
+    expect(order(seed, 300)).toEqual([
+      ['reward-beard', true],
+      ['reward-cut', true],
+      ['reward-product', false],
+    ]);
+    expect(
+      tiles(seed, 130).tiles.map((t) => [t.reward.id, t.reach.short]),
+    ).toEqual([
+      ['reward-beard', 0],
+      ['reward-cut', 120],
+      ['reward-product', 270],
+    ]);
+    // The order given is the catalogue's, whatever the costs say.
+    expect(order([product, cut, beard], 300)).toEqual([
+      ['reward-cut', true],
+      ['reward-beard', true],
+      ['reward-product', false],
+    ]);
+    expect(order([product, cut, beard], 130)).toEqual([
+      ['reward-beard', true],
+      ['reward-product', false],
+      ['reward-cut', false],
+    ]);
+  });
+
+  it('meters from nothing for an account that owes, and covers none', () => {
+    const owing = tiles(seed, -40);
+    expect(owing.withinReach).toBe(0);
+    expect(owing.tiles.map((t) => [t.reach.short, t.reach.progress])).toEqual([
+      [160, 0],
+      [290, 0],
+      [440, 0],
+    ]);
+    expect(tiles(seed, 0).withinReach).toBe(0);
+    expect(tiles(seed, 120).withinReach).toBe(1);
+    expect(tiles(seed, 5000).withinReach).toBe(3);
+  });
+
+  it('judges reach by the points alone: there is no pause to read', () => {
+    // A paused client's tiles are the points' (`rewardTiles` paused case).
+    expect(order(seed, 358).map(([, affordable]) => affordable)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it('draws no tile for a reward nobody can take today, nor for an empty catalogue', () => {
+    const none = tiles(
+      [
+        { ...beard, enabled: false },
+        { ...cut, availableFrom: day('2026-11-01'), availableUntil: null },
+        { ...product, availableFrom: null, availableUntil: day('2026-09-27') },
+        reward('reward-gone', 50, 4, { totalLimit: 3, redeemedCount: 3 }),
+      ],
+      358,
+    );
+    expect(none).toEqual({ tiles: [], withinReach: 0 });
+    expect(tiles([], 358)).toEqual({ tiles: [], withinReach: 0 });
+  });
+});
+
+describe('RewardSystem.pointsReach (glance.presenter.spec.ts «Лоялност» F1)', () => {
+  const seed = [
+    reward('reward-beard', 120, 1),
+    reward('reward-cut', 250, 2),
+    reward('reward-product', 400, 3),
+  ];
+  /** The caller's pre-filter: a reward held on this visit is never named. */
+  const beyond = (...held: string[]) =>
+    seed.filter((item) => !held.includes(item.id));
+  const reach = (rewards: readonly RewardCatalogItem[], balance: number) => {
+    const answer = RewardSystem.pointsReach(rewards, balance, TODAY);
+    return [answer.pointsReach, answer.reward?.id ?? null, answer.short];
+  };
+
+  it('pins the reach tags', () => {
+    expect(PointsReach).toEqual({
+      EnoughFor: 'ENOUGH_FOR',
+      MoreTo: 'MORE_TO',
+      None: 'NONE',
+    });
+  });
+
+  it('is enough for the costliest reward in reach, beyond the one in hand', () => {
+    expect(reach(beyond('reward-cut'), 358)).toEqual([
+      PointsReach.EnoughFor,
+      'reward-beard',
+      0,
+    ]);
+    expect(reach(beyond(), 358)).toEqual([
+      PointsReach.EnoughFor,
+      'reward-cut',
+      0,
+    ]);
+    expect(reach(beyond(), 5000)).toEqual([
+      PointsReach.EnoughFor,
+      'reward-product',
+      0,
+    ]);
+  });
+
+  it('says how far the next reward is when none is in reach, by exactly what is missing', () => {
+    expect(reach(beyond(), 78)).toEqual([
+      PointsReach.MoreTo,
+      'reward-beard',
+      42,
+    ]);
+    // Everything in reach is in hand: the next one out of reach.
+    expect(reach(beyond('reward-cut', 'reward-beard'), 358)).toEqual([
+      PointsReach.MoreTo,
+      'reward-product',
+      42,
+    ]);
+    // An account that owes is short of the cost and of what it owes.
+    expect(reach(beyond(), -40)).toEqual([
+      PointsReach.MoreTo,
+      'reward-beard',
+      160,
+    ]);
+  });
+
+  it('names nothing when no reward is left to name', () => {
+    expect(
+      reach(beyond('reward-cut', 'reward-beard', 'reward-product'), 358),
+    ).toEqual([PointsReach.None, null, 0]);
+    expect(reach([], 0)).toEqual([PointsReach.None, null, 0]);
+  });
+});
+
+describe('RewardSystem.pointsReachBeyondHeld (glance.presenter.spec.ts «Лоялност» F1, the held rule)', () => {
+  const named = (
+    id: string,
+    cost: number,
+    order: number,
+    bg: string,
+    en: string,
+  ) => reward(id, cost, order, { name: { bg, en } });
+  const seed = [
+    named('reward-cut', 250, 1, 'Безплатно подстригване', 'Free haircut'),
+    named(
+      'reward-beard',
+      120,
+      2,
+      'Безплатно оформяне на брада',
+      'Free beard trim',
+    ),
+    named('reward-product', 400, 3, 'Продукт по избор', 'Product of choice'),
+  ];
+  const reach = (
+    held: readonly string[],
+    balance: number,
+    locale: Locale = Locale.Bg,
+    rewards: readonly RewardCatalogItem[] = seed,
+  ) => {
+    const answer = RewardSystem.pointsReachBeyondHeld(
+      rewards,
+      held,
+      locale,
+      balance,
+      TODAY,
+    );
+    return [answer.pointsReach, answer.reward?.id ?? null, answer.short];
+  };
+
+  it('never names the reward in hand: the points add the next best', () => {
+    expect(reach(['Безплатно подстригване'], 358)).toEqual([
+      PointsReach.EnoughFor,
+      'reward-beard',
+      0,
+    ]);
+  });
+
+  it('names the costliest reward in reach when none is in hand', () => {
+    expect(reach([], 358)).toEqual([PointsReach.EnoughFor, 'reward-cut', 0]);
+  });
+
+  it('says how far the next reward is when everything in reach is in hand', () => {
+    expect(
+      reach(['Безплатно подстригване', 'Безплатно оформяне на брада'], 358),
+    ).toEqual([PointsReach.MoreTo, 'reward-product', 42]);
+    expect(reach([], 78)).toEqual([PointsReach.MoreTo, 'reward-beard', 42]);
+  });
+
+  it('counts what is owed into what is missing', () => {
+    expect(reach([], -40)).toEqual([PointsReach.MoreTo, 'reward-beard', 160]);
+  });
+
+  it('names nothing when every reward is in hand, or none is offered', () => {
+    expect(
+      reach(
+        [
+          'Безплатно подстригване',
+          'Безплатно оформяне на брада',
+          'Продукт по избор',
+        ],
+        358,
+      ),
+    ).toEqual([PointsReach.None, null, 0]);
+    expect(reach([], 358, Locale.Bg, [])).toEqual([PointsReach.None, null, 0]);
+  });
+
+  it('knows a held reward by its name in the card’s language only', () => {
+    expect(reach(['Free haircut'], 358, Locale.En)).toEqual([
+      PointsReach.EnoughFor,
+      'reward-beard',
+      0,
+    ]);
+    // The English name held on a Bulgarian card holds nothing.
+    expect(reach(['Free haircut'], 358, Locale.Bg)).toEqual([
+      PointsReach.EnoughFor,
+      'reward-cut',
+      0,
+    ]);
+  });
+
+  it('names only what the catalogue offers today: never a reward switched off or over', () => {
+    const closed = [
+      named('reward-off', 300, 0, 'Изключена', 'Off'),
+      named('reward-over', 350, 0, 'Приключила', 'Over'),
+      ...seed,
+    ].map((item) =>
+      item.id === RewardId.of('reward-off')
+        ? { ...item, enabled: false }
+        : item.id === RewardId.of('reward-over')
+          ? { ...item, availableUntil: day('2026-09-27') }
+          : item,
+    );
+    expect(reach([], 358, Locale.Bg, closed)).toEqual([
+      PointsReach.EnoughFor,
+      'reward-cut',
+      0,
+    ]);
+  });
+});
+
 describe('RewardSystem.groupGrants (loyalty.presenter.ts `groupedGrants`)', () => {
   const grant = (
     grantId: string,
@@ -321,13 +590,24 @@ describe('RewardSystem purity', () => {
         expiresOn: day('2026-11-01'),
       },
     ]);
+    const held = deepFreeze(['reward-product']);
     const run = () => [
       RewardSystem.bestAffordable(rewards, 358, TODAY),
       RewardSystem.nextAffordable(rewards, 358, TODAY),
       RewardSystem.offered(rewards, TODAY),
       RewardSystem.affordable(rewards[0] as RewardCatalogItem, 358, TODAY),
       RewardSystem.groupGrants(grants, []),
+      RewardSystem.tiles(rewards, 358, TODAY),
+      RewardSystem.pointsReach(rewards, 358, TODAY),
+      RewardSystem.pointsReach(rewards, 50, TODAY),
+      RewardSystem.pointsReachBeyondHeld(rewards, held, Locale.Bg, 358, TODAY),
+      RewardSystem.pointsReachBeyondHeld(rewards, held, Locale.En, 50, TODAY),
     ];
     expect(run()).toEqual(run());
+    expect(rewards.map((item) => item.id)).toEqual([
+      'reward-product',
+      'reward-beard',
+    ]);
+    expect(held).toEqual(['reward-product']);
   });
 });

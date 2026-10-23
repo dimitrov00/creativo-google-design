@@ -1,12 +1,18 @@
-import { CatalogContentService } from '@creativo/features/shared/catalog';
+import {
+  CatalogContentService,
+  termsToVm,
+} from '@creativo/features/shared/catalog';
 import { Injectable, type Signal, computed, inject } from '@angular/core';
+import { BarberId } from '@core/primitives';
 import { CompositionKind } from '@core/components';
+import { CatalogPricingSystem } from '@core/systems';
 import { LanguageService } from '@creativo/features/shared/shell';
 import {
   type BarberVm,
   LOCATIONS,
   type Localized,
   type LocationVm,
+  type ServiceTermsVm,
   type ServiceVm,
   WORK_SHOTS,
   type WorkShotVm,
@@ -63,6 +69,32 @@ export class LandingContentService {
       (service) => service.compositionKind === CompositionKind.Bundle,
     ),
   );
+
+  /**
+   * Every shelf service a barber performs, with THEIR terms for it — the
+   * inverse of the offerings, the only direction the catalogue stores
+   * (`CatalogPricingSystem.servicesByBarber`). Asked of the domain services
+   * the shelf holds (same set, same order), so upsell-only add-ons stay out
+   * of it exactly as they do from the shelf itself.
+   */
+  barberPrices(barberId: string): readonly {
+    readonly service: ServiceVm;
+    readonly terms: ServiceTermsVm;
+  }[] {
+    const shelf = new Map(
+      this.shelfServices().map((service) => [service.id, service]),
+    );
+    const services = this.catalog
+      .services()
+      .filter((service) => shelf.has(service.id));
+    return CatalogPricingSystem.servicesByBarber(
+      services,
+      BarberId.of(barberId),
+    ).flatMap((entry) => {
+      const service = shelf.get(entry.service.id);
+      return service ? [{ service, terms: termsToVm(entry.terms) }] : [];
+    });
+  }
 
   /** Resolve a localized pair against the active language. */
   text(localized: Localized): string {

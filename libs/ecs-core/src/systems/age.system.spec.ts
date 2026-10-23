@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { BirthDate } from '@core/components';
+import { BirthDate, BirthdayMoment } from '@core/components';
 import { LocalDate } from '@core/primitives';
 import { IdentityErrorCode } from '@core/errors';
 import { deepFreeze, localDate, unwrapErr, unwrapOk } from '@core/testing';
@@ -452,5 +452,122 @@ describe('AgeSystem purity', () => {
     });
     expect(run()).toEqual(run());
     expect(parts).toEqual({ day: 3, month: 7, year: 1990 });
+  });
+});
+
+describe('AgeSystem.birthdayMoment — which birthday the client card says (glance.presenter.spec.ts BD)', () => {
+  const CARD_TODAY = day('2026-09-28');
+
+  it('dictionary values are the SCREAMING tags the card’s display model words', () => {
+    expect(BirthdayMoment).toEqual({ Today: 'TODAY', Upcoming: 'UPCOMING' });
+    expect(AgeSystem.BIRTHDAY_NOTICE_DAYS).toBe(7);
+  });
+
+  it('is TODAY on the day, with the age it brings', () => {
+    expect(AgeSystem.birthdayMoment(bd('1992-09-28'), CARD_TODAY)).toEqual({
+      birthdayMoment: BirthdayMoment.Today,
+      localDate: '2026-09-28',
+      age: 34,
+      turning: 34,
+    });
+    expect(AgeSystem.birthdayMoment(bd('2025-09-28'), CARD_TODAY)?.age).toBe(1);
+  });
+
+  it('says the day without a figure when no year can be the year of birth', () => {
+    expect(AgeSystem.birthdayMoment(bd('1800-09-28'), CARD_TODAY)).toEqual({
+      birthdayMoment: BirthdayMoment.Today,
+      localDate: '2026-09-28',
+      age: null,
+      turning: null,
+    });
+    expect(
+      AgeSystem.birthdayMoment(bd('2026-09-28'), CARD_TODAY)?.age,
+    ).toBeNull();
+  });
+
+  it('is UPCOMING from tomorrow through the seventh day, with no age of today', () => {
+    expect(AgeSystem.birthdayMoment(bd('1992-10-02'), CARD_TODAY)).toEqual({
+      birthdayMoment: BirthdayMoment.Upcoming,
+      localDate: '2026-10-02',
+      age: null,
+      turning: 34,
+    });
+    expect(AgeSystem.birthdayMoment(bd('1992-09-29'), CARD_TODAY)).toEqual({
+      birthdayMoment: BirthdayMoment.Upcoming,
+      localDate: '2026-09-29',
+      age: null,
+      turning: 34,
+    });
+    expect(
+      AgeSystem.birthdayMoment(bd('1992-10-05'), CARD_TODAY)?.localDate,
+    ).toBe('2026-10-05');
+    expect(
+      AgeSystem.birthdayMoment(bd('1800-10-02'), CARD_TODAY)?.turning,
+    ).toBeNull();
+  });
+
+  it('is nothing from the eighth day on, and yesterday’s is over', () => {
+    expect(AgeSystem.birthdayMoment(bd('1992-10-06'), CARD_TODAY)).toBeNull();
+    expect(AgeSystem.birthdayMoment(bd('1992-09-27'), CARD_TODAY)).toBeNull();
+  });
+
+  it('looks across the year’s end', () => {
+    expect(
+      AgeSystem.birthdayMoment(bd('1990-01-02'), day('2026-12-29')),
+    ).toEqual({
+      birthdayMoment: BirthdayMoment.Upcoming,
+      localDate: '2027-01-02',
+      age: null,
+      turning: 37,
+    });
+  });
+
+  it('keeps a 29 February birthday on the 28th outside a leap year', () => {
+    const leapling = bd('2000-02-29');
+    expect(AgeSystem.birthdayMoment(leapling, day('2027-02-25'))).toEqual({
+      birthdayMoment: BirthdayMoment.Upcoming,
+      localDate: '2027-02-28',
+      age: null,
+      turning: 27,
+    });
+    expect(AgeSystem.birthdayMoment(leapling, day('2027-02-28'))).toEqual({
+      birthdayMoment: BirthdayMoment.Today,
+      localDate: '2027-02-28',
+      age: 27,
+      turning: 27,
+    });
+    expect(
+      AgeSystem.birthdayMoment(leapling, day('2028-02-25'))?.localDate,
+    ).toBe('2028-02-29');
+    // In a leap year the 28th is the day before, not the day.
+    expect(AgeSystem.birthdayMoment(leapling, day('2028-02-28'))).toEqual({
+      birthdayMoment: BirthdayMoment.Upcoming,
+      localDate: '2028-02-29',
+      age: null,
+      turning: 28,
+    });
+  });
+
+  it('agrees with isBirthdayOn and nextBirthday on every day of a year', () => {
+    const birth = bd('1992-10-02');
+    for (let i = 0; i < 366; i++) {
+      const today = LocalDate.addDays(CARD_TODAY, i);
+      const moment = AgeSystem.birthdayMoment(birth, today);
+      const next = AgeSystem.nextBirthday(birth, today);
+      if (AgeSystem.isBirthdayOn(birth, today)) {
+        expect(moment?.birthdayMoment).toBe(BirthdayMoment.Today);
+      } else if (next.inDays <= AgeSystem.BIRTHDAY_NOTICE_DAYS) {
+        expect(moment?.birthdayMoment).toBe(BirthdayMoment.Upcoming);
+      } else {
+        expect(moment).toBeNull();
+      }
+    }
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const birth = deepFreeze(bd('1992-10-02'));
+    const once = AgeSystem.birthdayMoment(birth, CARD_TODAY);
+    expect(AgeSystem.birthdayMoment(birth, CARD_TODAY)).toEqual(once);
+    expect(birth).toBe('1992-10-02');
   });
 });

@@ -23,6 +23,8 @@ import {
   type ShopNow,
   WriteAction,
   WriteOp,
+  HistoryNote,
+  TenureState,
 } from '@core/components';
 import {
   AttendanceState,
@@ -41,8 +43,11 @@ import {
 import { SchedulingErrorCode } from '@core/errors';
 import type { Appointment } from '@core/entities';
 import {
+  FIXTURE_NOW,
   FIXTURE_TIME_ZONE,
+  FIXTURE_TODAY,
   deepFreeze,
+  localDate,
   minute,
   unwrapOk,
   utcMs,
@@ -1897,5 +1902,269 @@ describe('purity', () => {
     expect(ClientStatsSystem.statsInputOf(entity)).toEqual(
       ClientStatsSystem.statsInputOf(entity),
     );
+  });
+});
+
+/*
+ * Law 10.2 — the decisions the client card's presenters made, ported as
+ * values and tags (`history.presenter.ts` `cadenceWeeks`/`historyFacts`,
+ * `visits-page.presenter.ts` `headOf`, `glance.presenter.ts`
+ * `heroLine`/`overviewCapsulesVm`, `client-card.presenter.ts`
+ * `clientHeadVm`, `records.presenter.ts` `endOfDay`). The words stay with
+ * the presenters' specs; each case below re-states one of theirs on the
+ * same numbers. The fixture day is the cards' 2026-09-28 (09:00 in Sofia).
+ */
+
+/** A stored record: nothing on it but what a case names. */
+const recordWith = (fields: Partial<ClientStats>): ClientStats => ({
+  ...ClientStats.empty(),
+  ...fields,
+});
+
+/** A visit fact on the shop's wall clock. */
+const factOn = (id: string, day: string, minuteOfDay: number): VisitFact => ({
+  appointmentId: AppointmentId.of(id),
+  localDate: localDate(day),
+  startMinutes: minute(minuteOfDay),
+});
+
+describe('ClientStatsSystem.cadenceWeeks — the ONE home of max(1, round(days / 7))', () => {
+  it('rounds to whole weeks, one at the least (glance «words the cadence in whole weeks»)', () => {
+    expect(ClientStatsSystem.cadenceWeeks(1)).toBe(1);
+    expect(ClientStatsSystem.cadenceWeeks(3)).toBe(1);
+    expect(ClientStatsSystem.cadenceWeeks(4)).toBe(1);
+    expect(ClientStatsSystem.cadenceWeeks(7)).toBe(1);
+    expect(ClientStatsSystem.cadenceWeeks(10)).toBe(1);
+    expect(ClientStatsSystem.cadenceWeeks(11)).toBe(2);
+    expect(ClientStatsSystem.cadenceWeeks(39.2)).toBe(6);
+  });
+
+  it('never says nought weeks, even for nought days', () => {
+    expect(ClientStatsSystem.cadenceWeeks(0)).toBe(1);
+  });
+});
+
+describe('ClientStatsSystem.historyNote — FIRST_VISIT › CLEAN › NONE', () => {
+  const clean = recordWith({ lifetimeVisitsCompleted: 24 });
+
+  it('dictionary values are the SCREAMING tags', () => {
+    expect(HistoryNote).toEqual({
+      FirstVisit: 'FIRST_VISIT',
+      Clean: 'CLEAN',
+      None: 'NONE',
+    });
+  });
+
+  it('calls a record with neither a no-show nor a client cancellation clean', () => {
+    expect(ClientStatsSystem.historyNote(clean)).toBe(HistoryNote.Clean);
+  });
+
+  it('counts the client’s cancellations only: a shop’s late cancel keeps it clean', () => {
+    expect(
+      ClientStatsSystem.historyNote(
+        recordWith({ ...clean, lifetimeLateCancels: 1 }),
+      ),
+    ).toBe(HistoryNote.Clean);
+    expect(
+      ClientStatsSystem.historyNote({ ...clean, lifetimeClientCancels: 1 }),
+    ).toBe(HistoryNote.None);
+  });
+
+  it('says nothing over a no-show', () => {
+    expect(
+      ClientStatsSystem.historyNote({ ...clean, lifetimeNoShows: 1 }),
+    ).toBe(HistoryNote.None);
+  });
+
+  it('is a first visit before any worked one — no stats count as none, a no-show or not', () => {
+    expect(ClientStatsSystem.historyNote(null)).toBe(HistoryNote.FirstVisit);
+    expect(
+      ClientStatsSystem.historyNote(
+        recordWith({ lifetimeVisitsCompleted: 0, lifetimeNoShows: 1 }),
+      ),
+    ).toBe(HistoryNote.FirstVisit);
+  });
+
+  it('keeps its own first-visit reading: a counted history with no first day is no first visit (R-8)', () => {
+    expect(
+      ClientStatsSystem.historyNote(
+        recordWith({ ...clean, firstVisitLocalDate: null }),
+      ),
+    ).toBe(HistoryNote.Clean);
+  });
+});
+
+describe('ClientStatsSystem.tenureOf — FIRST_VISIT › SINCE › SINCE_CADENCE', () => {
+  const since = localDate('2025-03-06');
+  const georgi = recordWith({
+    lifetimeVisitsCompleted: 24,
+    firstVisitLocalDate: since,
+    avgCadenceDays: 28,
+  });
+
+  it('dictionary values are the SCREAMING tags', () => {
+    expect(TenureState).toEqual({
+      FirstVisit: 'FIRST_VISIT',
+      Since: 'SINCE',
+      SinceCadence: 'SINCE_CADENCE',
+    });
+  });
+
+  it('says the first day and the interval in whole weeks', () => {
+    expect(ClientStatsSystem.tenureOf(georgi)).toEqual({
+      tenureState: TenureState.SinceCadence,
+      since,
+      cadenceWeeks: 4,
+    });
+    expect(
+      ClientStatsSystem.tenureOf({ ...georgi, avgCadenceDays: 39.2 })
+        .cadenceWeeks,
+    ).toBe(6);
+    expect(
+      ClientStatsSystem.tenureOf({ ...georgi, avgCadenceDays: 3 }).cadenceWeeks,
+    ).toBe(1);
+  });
+
+  it('says the first day alone before a cadence is known (R34)', () => {
+    expect(
+      ClientStatsSystem.tenureOf({ ...georgi, avgCadenceDays: null }),
+    ).toEqual({ tenureState: TenureState.Since, since, cadenceWeeks: null });
+  });
+
+  it('is a first visit with no stats, no worked visit, or no first day on record', () => {
+    const first = {
+      tenureState: TenureState.FirstVisit,
+      since: null,
+      cadenceWeeks: null,
+    };
+    expect(ClientStatsSystem.tenureOf(null)).toEqual(first);
+    expect(
+      ClientStatsSystem.tenureOf({ ...georgi, lifetimeVisitsCompleted: 0 }),
+    ).toEqual(first);
+    expect(
+      ClientStatsSystem.tenureOf({ ...georgi, firstVisitLocalDate: null }),
+    ).toEqual(first);
+  });
+});
+
+describe('ClientStatsSystem.statWindowsOnDay — a whole shop day', () => {
+  const today = FIXTURE_TODAY; // 2026-09-28
+
+  it('reads the windows at 23:59: a visit later today is inside, unlike at 09:00', () => {
+    const stats = recordWith({
+      lifetimeVisitsCompleted: 1,
+      last365VisitsCompleted: [factOn('tonight', '2026-09-28', 20 * 60)],
+    });
+    expect(
+      ClientStatsSystem.statWindowsOnDay(stats, today).visitsCompleted,
+    ).toEqual({ lifetime: 1, last12m: 1, last90d: 1 });
+    expect(
+      ClientStatsSystem.statWindows(stats, FIXTURE_NOW).visitsCompleted,
+    ).toEqual({ lifetime: 1, last12m: 0, last90d: 0 });
+  });
+
+  it('opens the twelve months after the same day a year back (records «the twelve months at the shop’s today»)', () => {
+    const stats = recordWith({
+      lifetimeVisitsCompleted: 3,
+      last365VisitsCompleted: [
+        factOn('edge-out', '2025-09-28', 1439),
+        factOn('edge-in', '2025-09-29', 0),
+        factOn('today', '2026-09-28', 540),
+      ],
+    });
+    expect(
+      ClientStatsSystem.statWindowsOnDay(stats, today).visitsCompleted.last12m,
+    ).toBe(2);
+    // Three months on, the same document: the autumn of 2025 has left.
+    expect(
+      ClientStatsSystem.statWindowsOnDay(stats, localDate('2026-12-28'))
+        .visitsCompleted.last12m,
+    ).toBe(1);
+    // A year on, nothing of it is inside.
+    expect(
+      ClientStatsSystem.statWindowsOnDay(stats, localDate('2027-09-29'))
+        .visitsCompleted.last12m,
+    ).toBe(0);
+  });
+
+  it('agrees with statWindows read at the day’s 23:59 in the shop’s zone (DEP-3: no gap at 23:xx)', () => {
+    const stats = recordWith({
+      lifetimeVisitsCompleted: 2,
+      lifetimeNoShows: 1,
+      last365VisitsCompleted: [
+        factOn('a', '2025-12-01', 600),
+        factOn('b', '2026-09-28', 1200),
+      ],
+      last365NoShows: [factOn('n', '2026-07-15', 660)],
+    });
+    const endOfDay = ZonedTimeSystem.shopNow(
+      unwrapOk(ZonedTimeSystem.toUtc(today, minute(1439), FIXTURE_TIME_ZONE)),
+      FIXTURE_TIME_ZONE,
+    );
+    expect(ClientStatsSystem.statWindowsOnDay(stats, today)).toEqual(
+      ClientStatsSystem.statWindows(stats, endOfDay),
+    );
+  });
+});
+
+describe('ClientStatsSystem.noShowWarning — from two in the last 90 days', () => {
+  const noShowsOn = (...days: string[]) =>
+    ClientStatsSystem.statWindows(
+      recordWith({
+        lifetimeNoShows: days.length,
+        last365NoShows: days.map((day, i) => factOn(`ns-${i}`, day, 600)),
+      }),
+      FIXTURE_NOW,
+    );
+
+  it('warns of two no-shows inside the 90 days', () => {
+    expect(ClientStatsSystem.NO_SHOW_WARNING_AT).toBe(2);
+    expect(
+      ClientStatsSystem.noShowWarning(noShowsOn('2026-08-01', '2026-09-10')),
+    ).toBe(2);
+  });
+
+  it('stays silent under two, for no-shows older than 90 days, and for a record with none', () => {
+    expect(ClientStatsSystem.noShowWarning(noShowsOn('2026-09-10'))).toBeNull();
+    expect(
+      ClientStatsSystem.noShowWarning(noShowsOn('2026-03-01', '2026-09-10')),
+    ).toBeNull();
+    expect(
+      ClientStatsSystem.noShowWarning(
+        ClientStatsSystem.statWindows(ClientStats.empty(), FIXTURE_NOW),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('Law 10.2 decisions — purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const stats = deepFreeze(
+      recordWith({
+        lifetimeVisitsCompleted: 3,
+        lifetimeNoShows: 2,
+        firstVisitLocalDate: localDate('2025-03-06'),
+        avgCadenceDays: 28,
+        last365VisitsCompleted: [factOn('a', '2026-09-01', 600)],
+        last365NoShows: [
+          factOn('n1', '2026-08-01', 600),
+          factOn('n2', '2026-09-10', 600),
+        ],
+      }),
+    );
+    const today = deepFreeze(FIXTURE_TODAY);
+    const run = () => ({
+      weeks: ClientStatsSystem.cadenceWeeks(39.2),
+      note: ClientStatsSystem.historyNote(stats),
+      tenure: ClientStatsSystem.tenureOf(stats),
+      windows: ClientStatsSystem.statWindowsOnDay(stats, today),
+      warning: ClientStatsSystem.noShowWarning(
+        deepFreeze(ClientStatsSystem.statWindows(stats, FIXTURE_NOW)),
+      ),
+    });
+    const once = run();
+    expect(run()).toEqual(once);
+    expect(once.warning).toBe(2);
+    expect(stats.last365NoShows).toHaveLength(2);
   });
 });

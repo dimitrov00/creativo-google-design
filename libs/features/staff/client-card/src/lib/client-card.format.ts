@@ -131,11 +131,6 @@ export function daysBetweenDays(from: string, to: string): number {
   return LocalDate.daysBetween(localDateOf(from), localDateOf(to));
 }
 
-/** The shop day `days` whole calendar days after `day` (`YYYY-MM-DD`). */
-export function dayPlus(day: string, days: number): LocalDate {
-  return LocalDate.addDays(localDateOf(day), days);
-}
-
 /** «12 450» — a count or a figure, grouped the locale's way. */
 export function figure(value: number, lang: string): string {
   return new Intl.NumberFormat(lang).format(value);

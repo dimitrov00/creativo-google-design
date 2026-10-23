@@ -319,6 +319,113 @@ describe('CouponGrantSystem.isOccasion', () => {
   });
 });
 
+/*
+ * The birthday card's partition of the grants (Law 10.2; glance.presenter
+ * `birthdayVm`/`grantsBesideBirthday`, glance.presenter.spec.ts «carries
+ * the gift under the band», «never reads a name», «takes the gift out of
+ * the reward ticket’s grants while the card carries it, and only then»).
+ * A card grant may leave its occasion out (`ClientCardGrant.couponOccasion`
+ * is optional): absent reads as none.
+ */
+type CardGrant = {
+  readonly grantId: string;
+  readonly title: string;
+  readonly couponOccasion?: CouponOccasion | null;
+};
+
+const GEORGI_GRANT: CardGrant = {
+  grantId: 'grant-dev-georgi-1',
+  title: 'Безплатна брада',
+};
+const BIRTHDAY_GRANT: CardGrant = {
+  grantId: 'grant-dev-martin-birthday',
+  title: 'Рожден ден',
+  couponOccasion: CouponOccasion.Birthday,
+};
+/** A grant titled «Рожден ден» whose host states no occasion — never a gift. */
+const NAMED_ONLY: CardGrant = {
+  grantId: 'grant-named',
+  title: 'Рожден ден',
+  couponOccasion: null,
+};
+
+describe('CouponGrantSystem.forOccasion — the gift is picked from these', () => {
+  it('keeps only the grants whose coupon was made for the occasion, in order', () => {
+    expect(
+      CouponGrantSystem.forOccasion(
+        [GEORGI_GRANT, BIRTHDAY_GRANT],
+        CouponOccasion.Birthday,
+      ),
+    ).toEqual([BIRTHDAY_GRANT]);
+  });
+
+  it('never reads a name: an absent or null occasion is none', () => {
+    expect(
+      CouponGrantSystem.forOccasion(
+        [NAMED_ONLY, GEORGI_GRANT],
+        CouponOccasion.Birthday,
+      ),
+    ).toEqual([]);
+    expect(CouponGrantSystem.forOccasion([], CouponOccasion.Birthday)).toEqual(
+      [],
+    );
+  });
+});
+
+describe('CouponGrantSystem.besideOccasionGift — the ticket never repeats the gift', () => {
+  const held = [GEORGI_GRANT, BIRTHDAY_GRANT];
+
+  it('takes the occasion’s grants out while the card carries the gift', () => {
+    expect(
+      CouponGrantSystem.besideOccasionGift(held, CouponOccasion.Birthday, true),
+    ).toEqual([GEORGI_GRANT]);
+    // A grant with no occasion stays a ticket.
+    expect(
+      CouponGrantSystem.besideOccasionGift(
+        [NAMED_ONLY, BIRTHDAY_GRANT],
+        CouponOccasion.Birthday,
+        true,
+      ),
+    ).toEqual([NAMED_ONLY]);
+  });
+
+  it('takes nothing out otherwise — the band alone, any other day — and hands the same list back', () => {
+    const kept = CouponGrantSystem.besideOccasionGift(
+      held,
+      CouponOccasion.Birthday,
+      false,
+    );
+    expect(kept).toEqual(held);
+    expect(kept).toBe(held);
+  });
+
+  it('is the exact complement of forOccasion while the gift is carried', () => {
+    const grants = [GEORGI_GRANT, BIRTHDAY_GRANT, NAMED_ONLY, BIRTHDAY_GRANT];
+    const gift = CouponGrantSystem.forOccasion(grants, CouponOccasion.Birthday);
+    const beside = CouponGrantSystem.besideOccasionGift(
+      grants,
+      CouponOccasion.Birthday,
+      true,
+    );
+    expect(gift.length + beside.length).toBe(grants.length);
+    expect(beside).toEqual([GEORGI_GRANT, NAMED_ONLY]);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const grants = deepFreeze([GEORGI_GRANT, BIRTHDAY_GRANT, NAMED_ONLY]);
+    const run = () => ({
+      gift: CouponGrantSystem.forOccasion(grants, CouponOccasion.Birthday),
+      beside: CouponGrantSystem.besideOccasionGift(
+        grants,
+        CouponOccasion.Birthday,
+        true,
+      ),
+    });
+    expect(run()).toEqual(run());
+    expect(grants).toEqual([GEORGI_GRANT, BIRTHDAY_GRANT, NAMED_ONLY]);
+  });
+});
+
 describe('CouponGrantSystem — purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const grant = deepFreeze(makeActiveGrant(multiUse(2)));

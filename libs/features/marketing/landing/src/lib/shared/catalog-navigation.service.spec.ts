@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { CatalogNavigationService } from './catalog-navigation.service';
-import { SERVICES } from '../content/landing-content';
+import { SERVICES, type ServiceVm } from '../content/landing-content';
 
-const service = (id: string) => {
+const service = (id: string): ServiceVm => {
   const found = SERVICES.find((candidate) => candidate.id === id);
   if (!found) throw new Error(`no seed service ${id}`);
-  return found;
+  return found as ServiceVm;
 };
 
 describe('CatalogNavigationService', () => {

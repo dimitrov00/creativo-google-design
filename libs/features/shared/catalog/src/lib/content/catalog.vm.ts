@@ -57,7 +57,14 @@ export interface ServiceVariantVm {
   readonly icon: 'length' | 'skin';
 }
 
-export interface ServiceVm {
+/**
+ * A service as AUTHORED — the hand-written landing list (`landing-content.ts`
+ * `SERVICES`, read only by the test catalogue that turns it into entities).
+ * It carries no figures: the figures are `CatalogPricingSystem`'s answers on
+ * the `Service` entity, and only {@link ServiceVm} — built from that entity —
+ * holds them.
+ */
+export interface ServiceSourceVm {
   readonly id: string;
   /**
    * Single or bundle — the catalogue's own `CompositionKind` (reused, never
@@ -78,4 +85,28 @@ export interface ServiceVm {
   readonly upsellOnly: boolean;
   /** Gallery frames for the detail sheet (v2 serviceLinks order). */
   readonly gallery: readonly string[];
+}
+
+/**
+ * A service ready to render: the authored fields plus the catalogue's own
+ * figures, each `CatalogPricingSystem`'s answer on the `Service` entity
+ * (`catalog.presenter.ts` `serviceToVm` asks it once). EUR major units,
+ * minutes.
+ */
+export interface ServiceVm extends ServiceSourceVm {
+  /** The cheapest BASE offering — the "from" price on a marketing tile. */
+  readonly priceFrom: number;
+  /**
+   * The card's price tag over every bookable terms: the cheapest, and
+   * whether some terms cost more (the tag then reads «от …»).
+   */
+  readonly cardPrice: {
+    readonly cheapest: number;
+    readonly spread: boolean;
+  };
+  /** Shortest and longest bookable duration, across offerings × variants. */
+  readonly minutesRange: {
+    readonly from: number;
+    readonly to: number;
+  };
 }

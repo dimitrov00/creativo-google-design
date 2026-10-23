@@ -2,14 +2,17 @@ import { describe, expect, it } from 'vitest';
 import {
   AchievementOp,
   Actor,
+  FreezeOp,
   GrantRefFields,
   JournalEffect,
   JournalEffectRecord,
+  JournalFeed,
   JournalSourceRecord,
   JournalSystemJob,
   JournalVisibility,
   LabelCode,
   type LabelParam,
+  LedgerLine,
   RedemptionOp,
   RewardOp,
   RewardRefFields,
@@ -26,9 +29,16 @@ import {
   JournalEntryId,
   RedemptionId,
   RewardId,
+  StreakDefinitionId,
   TierId,
 } from '@core/primitives';
-import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '@core/testing';
+import {
+  FIXTURE_TIME_ZONE,
+  deepFreeze,
+  localDate,
+  loyaltyAccountFixtures,
+  utcMs,
+} from '@core/testing';
 import { LedgerSystem } from './ledger.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -532,18 +542,262 @@ describe('LedgerSystem.leading', () => {
   });
 });
 
+/*
+ * The decisions of `activityGroups`' rows and `ledgerPageVm`'s nets in
+ * ledger.presenter.spec.ts, re-stated as tags and booleans: which rows are
+ * struck, what each row is about (the presenter's `draftOf`/`pointsDraft`
+ * branches, one tag each, with the level's `paid`/`revoked`), the welcome
+ * bonus, and the pills under which a month nets. The words, glyphs and
+ * lines stay with the presenter's spec.
+ */
+
+/** A row of the journal with another copy key (this spec's `entry` labels by effect). */
+const labelled = (row: JournalEntry, labelCode: LabelCode): JournalEntry => ({
+  ...row,
+  labelCode,
+});
+
+/** A redemption that lapsed unused, and one taken back. */
+const LAPSED = entry(
+  48,
+  '2026-09-20',
+  'rdm-1-lapsed',
+  redemption(RedemptionOp.Expired, 250, 344),
+);
+const BACK = entry(
+  47,
+  '2026-06-21',
+  'rdm-1-back',
+  redemption(RedemptionOp.Reversed, 250, 344),
+);
+
+/** What the row of the event `id` is about, read off its leading entry. */
+function lineAt(entries: readonly JournalEntry[], id: string) {
+  const event = foldByEvent(entries, true).find((e) => e.id === id);
+  const leading = event === undefined ? null : LedgerSystem.leading(event);
+  return event === undefined || leading === null
+    ? null
+    : LedgerSystem.lineOf(event, leading);
+}
+
+describe('LedgerSystem.voided and isStruck (ledger.presenter.spec.ts the struck rows)', () => {
+  it('holds the ids the loaded rows compensate', () => {
+    expect([...LedgerSystem.voided(JOURNAL)]).toEqual(['e-41']);
+    expect([...LedgerSystem.voided([VISIT_FADE, TIER])]).toEqual([]);
+    // A reversal whose row is not loaded still names it.
+    expect([...LedgerSystem.voided([REVERSAL])]).toEqual(['e-41']);
+  });
+
+  it('strikes the row a reversal takes back, never the reversal itself', () => {
+    const voided = LedgerSystem.voided(JOURNAL);
+    const struck = foldByEvent(JOURNAL, true)
+      .filter((event) => LedgerSystem.isStruck(event, voided))
+      .map((event) => event.id);
+    expect(struck).toEqual(['e-41']);
+  });
+
+  it('strikes an event when ANY of its entries was taken back', () => {
+    const voided = LedgerSystem.voided([REVERSAL]);
+    expect(
+      LedgerSystem.isStruck({ entries: [VISIT_BEARD, REVERSED] }, voided),
+    ).toBe(true);
+    expect(
+      LedgerSystem.isStruck({ entries: [VISIT_BEARD, VISIT_FADE] }, voided),
+    ).toBe(false);
+    expect(LedgerSystem.isStruck({ entries: [] }, voided)).toBe(false);
+  });
+});
+
+describe('LedgerLine', () => {
+  it('pins the row tags', () => {
+    expect(Object.values(LedgerLine)).toEqual([
+      'REVERSAL',
+      'REDEMPTION_SPENT',
+      'REDEMPTION_EXPIRED',
+      'REWARD_GRANTED',
+      'REWARD_REVOKED',
+      'TIER',
+      'LEVEL',
+      'VISIT_EARNED',
+      'POINTS_REDEEMED',
+      'GOODWILL',
+      'SERVICE_ISSUE',
+      'POINTS_EXPIRED',
+      'DEBT_CLEARED',
+      'CORRECTION',
+    ]);
+  });
+});
+
+describe('LedgerSystem.lineOf (ledger.presenter.spec.ts `activityGroups`: a row by its kind)', () => {
+  const plain = (ledgerLine: LedgerLine) => ({
+    ledgerLine,
+    paid: false,
+    revoked: false,
+  });
+
+  it('reads a visit’s points as what the visit earned', () => {
+    expect(lineAt(JOURNAL, 'e-51')).toEqual(plain(LedgerLine.VisitEarned));
+    // The row a reversal struck is still the visit's: struck is `isStruck`.
+    expect(lineAt(JOURNAL, 'e-41')).toEqual(plain(LedgerLine.VisitEarned));
+  });
+
+  it('reads a level by its family, paid when the event moved points', () => {
+    expect(lineAt(JOURNAL, 'e-40')).toEqual({
+      ledgerLine: LedgerLine.Level,
+      paid: true,
+      revoked: false,
+    });
+    expect(lineAt(JOURNAL, 'e-30')).toEqual(plain(LedgerLine.Level));
+    const revoked: JournalEntry = {
+      ...LEVEL_BARE,
+      achievementOp: AchievementOp.Revoked,
+    } as JournalEntry;
+    expect(lineAt([revoked], 'e-30')).toEqual({
+      ledgerLine: LedgerLine.Level,
+      paid: false,
+      revoked: true,
+    });
+    // A level's payout read without its achievement row (the pill «Точки»).
+    expect(lineAt([LEVEL_POINTS], 'e-40')).toEqual({
+      ledgerLine: LedgerLine.Level,
+      paid: true,
+      revoked: false,
+    });
+  });
+
+  it('reads a redemption by what became of it: spent, lapsed, or taken back', () => {
+    expect(lineAt(JOURNAL, 'e-46')).toEqual(plain(LedgerLine.RedemptionSpent));
+    expect(lineAt([LAPSED], 'e-48')).toEqual(
+      plain(LedgerLine.RedemptionExpired),
+    );
+    expect(lineAt([BACK], 'e-47')).toEqual(plain(LedgerLine.Reversal));
+    // Its points read without the redemption row (the pill «Точки»).
+    expect(
+      lineAt([labelled(REDEEMED_POINTS, LabelCode.PointsRedeemed)], 'e-45'),
+    ).toEqual(plain(LedgerLine.PointsRedeemed));
+  });
+
+  it('reads a reward received, and one taken back', () => {
+    expect(lineAt(JOURNAL, 'e-44')).toEqual(plain(LedgerLine.RewardGranted));
+    const revoked: JournalEntry = {
+      ...GRANTED,
+      rewardOp: RewardOp.Revoked,
+    } as JournalEntry;
+    expect(lineAt([revoked], 'e-44')).toEqual({
+      ledgerLine: LedgerLine.RewardRevoked,
+      paid: false,
+      revoked: true,
+    });
+  });
+
+  it('reads a tier change as the status', () => {
+    expect(lineAt(JOURNAL, 'e-49')).toEqual(plain(LedgerLine.Tier));
+  });
+
+  it('reads the shop’s points by their source, anything unnamed as a correction', () => {
+    const goodwill = labelled(GOODWILL, LabelCode.PointsGoodwill);
+    expect(lineAt([goodwill], 'e-43')).toEqual(plain(LedgerLine.Goodwill));
+    expect(
+      lineAt([labelled(GOODWILL, LabelCode.PointsServiceIssue)], 'e-43'),
+    ).toEqual(plain(LedgerLine.ServiceIssue));
+    expect(
+      lineAt([labelled(GOODWILL, LabelCode.PointsCorrection)], 'e-43'),
+    ).toEqual(plain(LedgerLine.Correction));
+    expect(
+      lineAt([labelled(GOODWILL, LabelCode.PointsDebtCleared)], 'e-43'),
+    ).toEqual(plain(LedgerLine.DebtCleared));
+    expect(
+      lineAt([labelled(EXPIRED, LabelCode.PointsExpired)], 'e-35'),
+    ).toEqual(plain(LedgerLine.PointsExpired));
+    // The rule's own points with no family are a visit's.
+    expect(lineAt([GOODWILL], 'e-43')).toEqual(plain(LedgerLine.VisitEarned));
+  });
+
+  it('reads a reversal first, whatever its effect', () => {
+    expect(lineAt(JOURNAL, 'e-42')).toEqual(plain(LedgerLine.Reversal));
+    const taken: JournalEntry = { ...REDEEMED, reverses: REVERSED.id };
+    expect(LedgerSystem.lineOf({ delta: -250 }, taken)).toEqual(
+      plain(LedgerLine.Reversal),
+    );
+  });
+
+  it('reads a row of an effect the feed does not show by its label', () => {
+    const freeze = labelled(
+      entry(60, '2026-09-10', 'freeze-1', {
+        record: {
+          journalEffect: JournalEffect.Freeze,
+          streakId: StreakDefinitionId.of('cadence'),
+          freezeOp: FreezeOp.Applied,
+          freezeCount: 1,
+          freezesBankedAfter: 0,
+        },
+        balanceAfter: 358,
+      }),
+      LabelCode.FreezeChanged,
+    );
+    expect(LedgerSystem.lineOf({ delta: null }, freeze)).toEqual(
+      plain(LedgerLine.Correction),
+    );
+    expect(
+      LedgerSystem.lineOf(
+        { delta: null },
+        labelled(freeze, LabelCode.PointsGoodwill),
+      ),
+    ).toEqual(plain(LedgerLine.Goodwill));
+  });
+});
+
+describe('LedgerSystem.isWelcome (ledger.presenter.spec.ts the welcome bonus)', () => {
+  it('names the welcome family once, as a brand', () => {
+    expect(LedgerSystem.WELCOME_SERIES_ID).toBe('series-welcome');
+  });
+
+  it('knows the welcome bonus in Георги’s own journal, and no other level', () => {
+    const journal = loyaltyAccountFixtures.georgi.clientJournal;
+    const welcome = journal.filter((row) =>
+      LedgerSystem.isWelcome(LedgerSystem.levelOf(row)),
+    );
+    expect(welcome.map((row) => row.seq)).toEqual([2]);
+    expect(LedgerSystem.isWelcome(LedgerSystem.levelOf(LEVEL_POINTS))).toBe(
+      false,
+    );
+    expect(LedgerSystem.isWelcome(LedgerSystem.levelOf(VISIT_FADE))).toBe(
+      false,
+    );
+  });
+});
+
+describe('LedgerSystem.netsUnder (ledger.presenter.spec.ts the pills’ nets)', () => {
+  it('nets a month under «Всички» and «Точки», and under no pill that reads other rows', () => {
+    expect(LedgerSystem.netsUnder(JournalFeed.All)).toBe(true);
+    expect(LedgerSystem.netsUnder(JournalFeed.Points)).toBe(true);
+    expect(LedgerSystem.netsUnder(JournalFeed.Rewards)).toBe(false);
+    expect(LedgerSystem.netsUnder(JournalFeed.Status)).toBe(false);
+  });
+});
+
 describe('LedgerSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const journal = deepFreeze([...JOURNAL]);
     const run = () => {
       const events = LedgerSystem.fold(journal, true);
+      const voided = LedgerSystem.voided(journal);
       return [
         events,
         LedgerSystem.wholeMonths(journal, true),
         LedgerSystem.months(events, 5, ['2026-09']),
         journal.map((row) => LedgerSystem.levelOf(row)),
+        [...voided],
+        events.map((event) => LedgerSystem.isStruck(event, voided)),
+        events.map((event) =>
+          LedgerSystem.lineOf(event, LedgerSystem.leading(event) ?? VISIT_FADE),
+        ),
+        journal.map((row) => LedgerSystem.isWelcome(LedgerSystem.levelOf(row))),
+        LedgerSystem.netsUnder(JournalFeed.Points),
       ];
     };
     expect(run()).toEqual(run());
+    expect(journal.map((row) => row.id)).toEqual(JOURNAL.map((row) => row.id));
   });
 });

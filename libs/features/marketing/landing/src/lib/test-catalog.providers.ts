@@ -25,7 +25,11 @@ import {
   ServiceCategoryId,
   ServiceId,
 } from '@core/primitives';
-import { BARBERS, SERVICES, type ServiceVm } from './content/landing-content';
+import {
+  BARBERS,
+  SERVICES,
+  type ServiceSourceVm,
+} from './content/landing-content';
 
 /**
  * Serves the SAME bundled demo fixture the landing used to render
@@ -62,7 +66,7 @@ function termsInput(price: number, minutes: number): ServiceTermsInput {
 
 /** The flat cover fields of a fixture path — all seven `null` together when there is none (N9). */
 function coverOf(
-  service: ServiceVm,
+  service: ServiceSourceVm,
 ): Pick<
   Service,
   | 'coverMediaId'
@@ -86,7 +90,7 @@ function coverOf(
   };
 }
 
-function serviceFromVm(vm: ServiceVm): Service {
+function serviceFromVm(vm: ServiceSourceVm): Service {
   // The shelf fixture prices everything through `offerings`; the cheapest
   // one doubles as the service's own terms so a service is never priceless.
   const [first, ...rest] = vm.offerings;

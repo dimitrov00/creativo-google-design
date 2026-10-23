@@ -1,6 +1,11 @@
-import { RedeemProblem, type RedemptionRecord } from '@core/components';
+import {
+  type LocalizedText,
+  PointsReach,
+  RedeemProblem,
+  type RedemptionRecord,
+} from '@core/components';
 import type { RewardCatalogItem } from '@core/entities';
-import { type CouponGrantId, LocalDate } from '@core/primitives';
+import { type CouponGrantId, LocalDate, type Locale } from '@core/primitives';
 
 /*
  * WHAT POINTS BUY (client-card-redesign §4.2, `standing.ts:319-391`; the
@@ -46,6 +51,30 @@ export type RewardReach = {
   readonly short: number;
   /** The meter, `0 … 0.999` — never full; `null` when covered. */
   readonly progress: number | null;
+};
+
+/** One reward's tile: the reward as given, and how far the balance is from it. */
+export type RewardTile<R extends RedeemableRewardRef = RedeemableRewardRef> = {
+  readonly reward: R;
+  readonly reach: RewardReach;
+};
+
+/** The catalogue as tiles, within reach first, and how many the points cover. */
+export type RewardTiles<R extends RedeemableRewardRef = RedeemableRewardRef> = {
+  readonly tiles: readonly RewardTile<R>[];
+  /** The tiles the points cover — the first `withinReach` of `tiles`. */
+  readonly withinReach: number;
+};
+
+/** What the balance reaches in the catalogue, and how far it is from it. */
+export type PointsReachAnswer<
+  R extends RedeemableRewardRef = RedeemableRewardRef,
+> = {
+  readonly pointsReach: PointsReach;
+  /** The reward the sentence names: the costliest covered (ENOUGH_FOR), the cheapest out of reach (MORE_TO); `null` for NONE. */
+  readonly reward: R | null;
+  /** The points still missing — `reward.cost − balance` for MORE_TO, 0 otherwise. */
+  readonly short: number;
 };
 
 /** What a ticket reads of a held grant: its id, what makes two grants one ticket, and when it expires. */
@@ -203,6 +232,89 @@ export const RewardSystem = {
         ? null
         : Math.min(Math.max(balance, 0) / item.cost, 0.999),
     };
+  },
+
+  /**
+   * The catalogue as the wallet's tiles (`wallet.presenter.ts` `tilesOf`):
+   * the rewards {@link RewardSystem.offered} today, each judged by
+   * {@link RewardSystem.affordable} — the balance against the cost and
+   * nothing else, so a paused client's reach is the points' — and a reward
+   * nobody can take today (not yet open, sold out) is no tile. The ones the
+   * points cover first; inside each half the catalogue's own order.
+   */
+  tiles<R extends RedeemableRewardRef>(
+    rewards: readonly R[],
+    balance: number,
+    today: LocalDate,
+  ): RewardTiles<R> {
+    const offered = RewardSystem.offered(rewards, today);
+    const within: RewardTile<R>[] = [];
+    const beyond: RewardTile<R>[] = [];
+    for (let i = 0; i < offered.length; i++) {
+      const reward = offered[i] as R;
+      const reach = RewardSystem.affordable(reward, balance, today);
+      if (reach === null) continue;
+      (reach.affordable ? within : beyond).push({ reward, reach });
+    }
+    return { tiles: [...within, ...beyond], withinReach: within.length };
+  },
+
+  /**
+   * What the points buy, as the glance's sentence says it (`glance.presenter.ts`
+   * `pointsSentence`): the costliest reward the balance covers
+   * ({@link RewardSystem.bestAffordable}) → ENOUGH_FOR; else the cheapest
+   * one it does not reach yet ({@link RewardSystem.nextAffordable}) →
+   * MORE_TO, `short` = its cost less the balance; else NONE — over the
+   * rewards as given. The glance's sentence asks
+   * {@link RewardSystem.pointsReachBeyondHeld}, which first keeps only the
+   * rewards it may name.
+   */
+  pointsReach<R extends RedeemableRewardRef>(
+    rewards: readonly R[],
+    balance: number,
+    today: LocalDate,
+  ): PointsReachAnswer<R> {
+    const best = RewardSystem.bestAffordable(rewards, balance, today);
+    if (best !== null) {
+      return { pointsReach: PointsReach.EnoughFor, reward: best, short: 0 };
+    }
+    const next = RewardSystem.nextAffordable(rewards, balance, today);
+    return next === null
+      ? { pointsReach: PointsReach.None, reward: null, short: 0 }
+      : {
+          pointsReach: PointsReach.MoreTo,
+          reward: next,
+          short: next.cost - balance,
+        };
+  },
+
+  /**
+   * What the points buy beyond the rewards already in hand (DV5's held
+   * rule, `glance.presenter.ts` `pointsSentence`): of the rewards
+   * {@link RewardSystem.offered} today, none held on this visit — offered
+   * by the ticket or already on the bill — then
+   * {@link RewardSystem.pointsReach}. A held reward is known by the name
+   * its coupon was stored under, in the card's `locale` (a grant carries no
+   * reward id yet), so the answer does not flip with «Използвай» and
+   * «Премахни».
+   */
+  pointsReachBeyondHeld<
+    R extends RedeemableRewardRef & { readonly name: LocalizedText },
+  >(
+    rewards: readonly R[],
+    heldNames: readonly string[],
+    locale: Locale,
+    balance: number,
+    today: LocalDate,
+  ): PointsReachAnswer<R> {
+    const offered = RewardSystem.offered(rewards, today);
+    const held = new Set(heldNames);
+    const beyond: R[] = [];
+    for (let i = 0; i < offered.length; i++) {
+      const reward = offered[i] as R;
+      if (!held.has(reward.name[locale])) beyond.push(reward);
+    }
+    return RewardSystem.pointsReach(beyond, balance, today);
   },
 
   /**

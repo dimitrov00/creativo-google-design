@@ -1,13 +1,10 @@
 import type { JournalEntry } from '@core/entities';
-import { TierId } from '@core/primitives';
+import { type JournalEntryId, type TierId, defect } from '@core/primitives';
 import {
-  AchievementOp,
-  JournalEffect,
-  JournalFeed,
-  LabelCode,
+  JournalEffectRecord,
+  type JournalFeed,
+  LedgerLine,
   PublicLabel,
-  RedemptionOp,
-  RewardOp,
 } from '@core/components';
 import {
   type LedgerEvent,
@@ -74,15 +71,6 @@ export type ActivityEvent = LedgerEvent<JournalEntry>;
 function textOf(entry: JournalEntry, name: string): string | null {
   const value = PublicLabel.param(entry, name);
   return typeof value === 'string' && value.trim() !== '' ? value : null;
-}
-
-/** The ids a loaded row compensates: the rows that are struck. */
-function voidedIds(entries: readonly JournalEntry[]): ReadonlySet<string> {
-  return new Set(
-    entries.flatMap((entry) =>
-      entry.reverses === null ? [] : [entry.reverses],
-    ),
-  );
 }
 
 /**
@@ -213,7 +201,8 @@ function levelDraft(
 ): RowDraft {
   const { words } = input;
   const ledger = words.ledger;
-  const { badgeSeriesId: seriesId, level } = LedgerSystem.levelOf(entry);
+  const earned = LedgerSystem.levelOf(entry);
+  const { badgeSeriesId: seriesId, level } = earned;
   const numeral = level === null ? '' : levelNumeral(level);
   const family =
     seriesId === null || input.catalog === null
@@ -221,7 +210,7 @@ function levelDraft(
       : (LoyaltyCatalogSystem.series(input.catalog, seriesId)?.title[
           cardLocaleOf(words.lang)
         ] ?? null);
-  const welcome = seriesId === 'series-welcome';
+  const welcome = LedgerSystem.isWelcome(earned);
   const named = welcome
     ? ledger.welcome
     : family === null
@@ -284,178 +273,182 @@ function reversalDraft(
   };
 }
 
-/** A point row with no other effect beside it, by what its label says moved the points. */
-function pointsDraft(
+/** The points a visit earned: named by what the history calls the visit, and who did it. */
+function visitDraft(
   event: ActivityEvent,
   entry: JournalEntry,
   input: ActivityInput,
 ): RowDraft {
-  const { words } = input;
-  const ledger = words.ledger;
-  const adjusted = (source: string): RowDraft => ({
+  const ledger = input.words.ledger;
+  // The visit is the entry's own (`appointmentId`), then its event's day.
+  const keys = [entry.appointmentId, event.localDate].filter(
+    (key): key is NonNullable<typeof key> => key !== null,
+  );
+  const found = (names: ReadonlyMap<string, string> | undefined) =>
+    keys
+      .map((key) => names?.get(key)?.trim() ?? '')
+      .find((name) => name !== '') ?? null;
+  const services = found(input.visitTitles);
+  const barbers = found(input.visitBarbers);
+  return {
+    ...DRAFT,
+    icon: 'loyalty.activity.visit',
+    tone: 'accent',
+    verb: ledger.verb('earned'),
+    named: services ?? ledger.visit,
+    spoken: services === null ? ledger.visit : ledger.visitOf(services),
+    after: barbers,
+    held: barbers !== null,
+  };
+}
+
+/** A shop's own adjustment of the points, by its source. */
+function adjustedDraft(source: string, input: ActivityInput): RowDraft {
+  return {
     ...DRAFT,
     icon: 'loyalty.activity.adjusted',
     tone: 'neutral',
-    verb: ledger.verb('adjusted'),
+    verb: input.words.ledger.verb('adjusted'),
     named: source,
     spoken: source,
-  });
-  switch (entry.labelCode) {
-    case LabelCode.PointsRule: {
-      if (LedgerSystem.levelOf(entry).badgeSeriesId !== null) {
-        return levelDraft(entry, true, false, input);
-      }
-      // The visit is the entry's own (`appointmentId`), then its event's day.
-      const keys = [entry.appointmentId, event.localDate].filter(
-        (key): key is NonNullable<typeof key> => key !== null,
-      );
-      const found = (names: ReadonlyMap<string, string> | undefined) =>
-        keys
-          .map((key) => names?.get(key)?.trim() ?? '')
-          .find((name) => name !== '') ?? null;
-      const services = found(input.visitTitles);
-      const barbers = found(input.visitBarbers);
-      return {
-        ...DRAFT,
-        icon: 'loyalty.activity.visit',
-        tone: 'accent',
-        verb: ledger.verb('earned'),
-        named: services ?? ledger.visit,
-        spoken: services === null ? ledger.visit : ledger.visitOf(services),
-        after: barbers,
-        held: barbers !== null,
-      };
-    }
-    case LabelCode.PointsRedeemed: {
-      const reward = rewardNameOf(entry, input);
-      return {
-        ...DRAFT,
-        icon: 'loyalty.activity.redeemed',
-        tone: 'neutral',
-        verb: ledger.verb('spent'),
-        named: reward,
-        spoken: reward === null ? null : ledger.redemption(reward),
-        after: ledger.redeemed,
-      };
-    }
-    case LabelCode.PointsGoodwill:
-      return adjusted(ledger.goodwill);
-    case LabelCode.PointsServiceIssue:
-      return adjusted(ledger.serviceIssue);
-    case LabelCode.PointsExpired:
-      return {
-        ...DRAFT,
-        icon: 'loyalty.activity.expired',
-        tone: 'neutral',
-        verb: ledger.verb('expired'),
-      };
-    case LabelCode.PointsDebtCleared:
-      return {
-        ...DRAFT,
-        icon: 'loyalty.activity.adjusted',
-        tone: 'neutral',
-        verb: ledger.verb('debtCleared'),
-      };
-    default:
-      return adjusted(ledger.correction);
-  }
+  };
 }
 
-/** What a row is about, by its event's leading effect (§2.2.5). */
+/** A reward taken for points, named by its reward. */
+function spentDraft(entry: JournalEntry, input: ActivityInput): RowDraft {
+  const ledger = input.words.ledger;
+  const reward = rewardNameOf(entry, input);
+  return {
+    ...DRAFT,
+    icon: 'loyalty.activity.redeemed',
+    tone: 'neutral',
+    verb: ledger.verb('spent'),
+    named: reward,
+    spoken: reward === null ? null : ledger.redemption(reward),
+    after: ledger.redeemed,
+  };
+}
+
+/** A reward that lapsed unused: named by its reward, the row says what became of it on its line. */
+function lapsedDraft(entry: JournalEntry, input: ActivityInput): RowDraft {
+  const { words } = input;
+  const ledger = words.ledger;
+  const reward = rewardNameOf(entry, input);
+  return {
+    ...DRAFT,
+    icon: 'loyalty.activity.expired',
+    tone: 'neutral',
+    verb: ledger.verb('expired'),
+    named: reward,
+    spoken: reward,
+    after:
+      reward === null ? null : runningCase(ledger.verb('expired'), words.lang),
+  };
+}
+
+/** A reward given, or taken back. */
+function rewardDraft(
+  entry: JournalEntry,
+  revoked: boolean,
+  input: ActivityInput,
+): RowDraft {
+  const { words } = input;
+  const ledger = words.ledger;
+  const reward = rewardNameOf(entry, input);
+  const happened = revoked ? ledger.rewardRevoked : ledger.rewardGranted;
+  return {
+    ...DRAFT,
+    icon: 'loyalty.activity.granted',
+    tone: 'accent',
+    verb: revoked ? capitalised(happened, words.lang) : ledger.verb('received'),
+    named: reward,
+    spoken: reward,
+    // The verb titles a reward nobody can name: its line is the date.
+    after: reward === null ? null : happened,
+  };
+}
+
+/** A new status, and the one it was reached from. */
+function tierDraft(
+  entry: JournalEntry & JournalEffectRecord.Tier,
+  input: ActivityInput,
+): RowDraft {
+  const ledger = input.words.ledger;
+  const to = tierNameOf(entry.tierTo, input);
+  const from = tierNameOf(entry.tierFrom, input);
+  const title = to === null ? null : ledger.tier(to);
+  const origin = from === null ? null : ledger.tierFrom(from);
+  return {
+    ...DRAFT,
+    icon: 'loyalty.activity.tier',
+    tone: 'accent',
+    verb: ledger.verb('status'),
+    named: title,
+    spoken: title,
+    after: origin,
+    said: origin,
+  };
+}
+
+/**
+ * What a row is about (§2.2.5): `LedgerSystem.lineOf` reads its event's
+ * leading entry; each of its tags is worded here.
+ */
 function draftOf(
   event: ActivityEvent,
   leading: JournalEntry,
   originals: ReadonlyMap<string, JournalEntry>,
   input: ActivityInput,
 ): RowDraft {
-  const { words } = input;
-  const ledger = words.ledger;
-  if (leading.reverses !== null)
-    return reversalDraft(leading, originals, input);
-  switch (leading.journalEffect) {
-    case JournalEffect.Redemption: {
-      if (leading.redemptionOp === RedemptionOp.Reversed) {
-        return reversalDraft(leading, originals, input);
-      }
-      const reward = rewardNameOf(leading, input);
-      if (leading.redemptionOp === RedemptionOp.Expired) {
-        return {
-          ...DRAFT,
-          icon: 'loyalty.activity.expired',
-          tone: 'neutral',
-          verb: ledger.verb('expired'),
-          named: reward,
-          spoken: reward,
-          // Named by its reward, the row says what became of it on its line.
-          after:
-            reward === null
-              ? null
-              : runningCase(ledger.verb('expired'), words.lang),
-        };
-      }
+  const ledger = input.words.ledger;
+  const line = LedgerSystem.lineOf(event, leading);
+  switch (line.ledgerLine) {
+    case LedgerLine.Reversal:
+      return reversalDraft(leading, originals, input);
+    case LedgerLine.RedemptionSpent:
+    case LedgerLine.PointsRedeemed:
+      return spentDraft(leading, input);
+    case LedgerLine.RedemptionExpired:
+      return lapsedDraft(leading, input);
+    case LedgerLine.RewardGranted:
+    case LedgerLine.RewardRevoked:
+      return rewardDraft(leading, line.revoked, input);
+    case LedgerLine.Tier:
+      // `lineOf` answers TIER for a tier entry alone; the guard narrows its type.
+      return JournalEffectRecord.isTier(leading)
+        ? tierDraft(leading, input)
+        : defect(`${line.ledgerLine} reads a tier entry`);
+    case LedgerLine.Level:
+      return levelDraft(leading, line.paid, line.revoked, input);
+    case LedgerLine.VisitEarned:
+      return visitDraft(event, leading, input);
+    case LedgerLine.Goodwill:
+      return adjustedDraft(ledger.goodwill, input);
+    case LedgerLine.ServiceIssue:
+      return adjustedDraft(ledger.serviceIssue, input);
+    case LedgerLine.PointsExpired:
       return {
         ...DRAFT,
-        icon: 'loyalty.activity.redeemed',
+        icon: 'loyalty.activity.expired',
         tone: 'neutral',
-        verb: ledger.verb('spent'),
-        named: reward,
-        spoken: reward === null ? null : ledger.redemption(reward),
-        after: ledger.redeemed,
+        verb: ledger.verb('expired'),
       };
-    }
-    case JournalEffect.Reward: {
-      const reward = rewardNameOf(leading, input);
-      const revoked = leading.rewardOp === RewardOp.Revoked;
-      const happened = revoked ? ledger.rewardRevoked : ledger.rewardGranted;
+    case LedgerLine.DebtCleared:
       return {
         ...DRAFT,
-        icon: 'loyalty.activity.granted',
-        tone: 'accent',
-        verb: revoked
-          ? capitalised(happened, words.lang)
-          : ledger.verb('received'),
-        named: reward,
-        spoken: reward,
-        // The verb titles a reward nobody can name: its line is the date.
-        after: reward === null ? null : happened,
+        icon: 'loyalty.activity.adjusted',
+        tone: 'neutral',
+        verb: ledger.verb('debtCleared'),
       };
-    }
-    case JournalEffect.Tier: {
-      const to = tierNameOf(leading.tierTo, input);
-      const from = tierNameOf(leading.tierFrom, input);
-      const title = to === null ? null : ledger.tier(to);
-      const origin = from === null ? null : ledger.tierFrom(from);
-      return {
-        ...DRAFT,
-        icon: 'loyalty.activity.tier',
-        tone: 'accent',
-        verb: ledger.verb('status'),
-        named: title,
-        spoken: title,
-        after: origin,
-        said: origin,
-      };
-    }
-    case JournalEffect.Achievement:
-      return levelDraft(
-        leading,
-        event.delta !== null,
-        leading.achievementOp === AchievementOp.Revoked,
-        input,
-      );
-    case JournalEffect.Points:
-      return pointsDraft(event, leading, input);
-    default:
-      // The feed reads the five effects above (`JournalFeed.effectsOf`); a
-      // row of another, answered as stored, is worded by its label.
-      return pointsDraft(event, leading, input);
+    case LedgerLine.Correction:
+      return adjustedDraft(ledger.correction, input);
   }
 }
 
 function rowOf(
   event: ActivityEvent,
   originals: ReadonlyMap<string, JournalEntry>,
-  voided: ReadonlySet<string>,
+  voided: ReadonlySet<JournalEntryId>,
   input: ActivityInput,
 ): ActivityRowVm | null {
   const leading = LedgerSystem.leading(event);
@@ -465,7 +458,7 @@ function rowOf(
   const draft = draftOf(event, leading, originals, input);
   // The event's own shop day, as stored (T5).
   const day = event.localDate;
-  const struck = event.entries.some((entry) => voided.has(entry.id));
+  const struck = LedgerSystem.isStruck(event, voided);
   const cancelled = struck
     ? runningCase(words.ledger.verb('voided'), lang)
     : null;
@@ -522,7 +515,7 @@ export function activityGroups(
   const originals = new Map<string, JournalEntry>(
     loaded.map((entry) => [entry.id, entry]),
   );
-  const voided = voidedIds(loaded);
+  const voided = LedgerSystem.voided(loaded);
   // The months, the limit's cut and each month's net are
   // `LedgerSystem.months` (by each event's stored shop day, T5); the rows
   // and the words are this file's.
@@ -564,15 +557,6 @@ export interface LedgerPageInput extends ActivityInput {
   readonly online: boolean;
 }
 
-/**
- * The pills whose rows are the journal's POINT rows: only under them is a
- * month's net the month's. «Награди» and «Статус» read other rows, and the
- * sum of what THOSE moved is nobody's net.
- */
-function netsUnder(filter: JournalFeed): boolean {
-  return filter === JournalFeed.All || filter === JournalFeed.Points;
-}
-
 function pagingOf(input: LedgerPageInput): LedgerPagingVm | null {
   if (input.loadState !== LoadState.Ready) return null;
   if (input.loadingMore) return { pagingState: PagingState.Loading };
@@ -600,7 +584,9 @@ export function ledgerPageVm(input: LedgerPageInput): LedgerPageVm {
     groups: ready
       ? activityGroups(foldByEvent(input.entries, input.next === null), {
           ...input,
-          wholeMonths: netsUnder(input.filter)
+          // Only under the pills of POINT rows is a month's net the month's
+          // (`LedgerSystem.netsUnder`).
+          wholeMonths: LedgerSystem.netsUnder(input.filter)
             ? input.wholeMonths
             : new Set<string>(),
         })

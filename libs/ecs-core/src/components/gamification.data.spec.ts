@@ -15,6 +15,8 @@ import {
   SeasonKind,
   SeasonPhase,
   PerkId,
+  VISIT_COUNTING_METRICS,
+  VISIT_KIND_METRICS,
 } from './gamification.data';
 
 describe('the loyalty catalogue vocabularies', () => {
@@ -105,6 +107,74 @@ describe('Gamification guards', () => {
       metricScopeBarberId: null,
       metricScopeLocationId: null,
     });
+  });
+
+  /*
+   * The two metric sets of a medal's detail page (`medal-detail.presenter.ts`
+   * `countsVisits` — «Как се печели» ends on the exclusion — and
+   * `countedInVisits` — a level's threshold is «25 посещения»), each case
+   * of the presenter's spec as a metric: «says the exclusion once, and only
+   * where visits are counted» and «says a threshold in the fewest words
+   * where visits are counted».
+   */
+  it('knows the counts made of visits: a kind of visit, or the distinct things visits brought', () => {
+    expect(VISIT_COUNTING_METRICS).toEqual([
+      'client.visits.completed',
+      'client.visits.earlyBird',
+      'client.visits.weekend',
+      'client.visits.onTime',
+      'client.visits.party',
+      'client.services.distinct',
+      'client.barbers.distinct',
+      'client.locations.distinct',
+      'client.months.distinct',
+    ]);
+    for (const metric of VISIT_COUNTING_METRICS) {
+      expect([metric, Gamification.countsVisits(metric)]).toEqual([
+        metric,
+        true,
+      ]);
+    }
+    for (const metric of [
+      Metric.BookingsSelfService,
+      Metric.SpendMajor,
+      Metric.ReferralsCompleted,
+      Metric.WaitlistBooked,
+      Metric.PointsLifetime,
+      Metric.ShopBookingsCreated,
+      Metric.TenureDays,
+    ]) {
+      expect([metric, Gamification.countsVisits(metric)]).toEqual([
+        metric,
+        false,
+      ]);
+    }
+    // A single act and the rhythm count nothing: no exclusion to say.
+    expect(Gamification.countsVisits(null)).toBe(false);
+  });
+
+  it('knows the counts of a kind of visit, whose thresholds are a number of visits', () => {
+    expect(VISIT_KIND_METRICS).toEqual([
+      'client.visits.completed',
+      'client.visits.earlyBird',
+      'client.visits.weekend',
+      'client.visits.onTime',
+      'client.visits.party',
+    ]);
+    for (const metric of METRICS) {
+      expect([metric, Gamification.isVisitKind(metric)]).toEqual([
+        metric,
+        VISIT_KIND_METRICS.includes(metric),
+      ]);
+    }
+    // The distinct counts are made of visits, yet their threshold is not.
+    expect(Gamification.isVisitKind(Metric.ServicesDistinct)).toBe(false);
+    expect(Gamification.countsVisits(Metric.ServicesDistinct)).toBe(true);
+    expect(Gamification.isVisitKind(null)).toBe(false);
+    // Every kind of visit is a count made of visits.
+    for (const metric of VISIT_KIND_METRICS) {
+      expect(VISIT_COUNTING_METRICS).toContain(metric);
+    }
   });
 
   it('announces a season thirty days ahead', () => {

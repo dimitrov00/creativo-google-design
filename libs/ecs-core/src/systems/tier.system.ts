@@ -1,4 +1,8 @@
-import type { LocalizedText, TierState } from '@core/components';
+import {
+  type LocalizedText,
+  TierPlateState,
+  type TierState,
+} from '@core/components';
 import type { TierDefinition } from '@core/entities';
 import type { TierId } from '@core/primitives';
 
@@ -59,15 +63,43 @@ export type TierProgress = {
   readonly nextAtLeast: number | null;
 };
 
+/**
+ * The hero's plate (`glance.presenter.ts` `heroTier`): the tier the account
+ * stands on, and the ring round the face where one is under way. `null`
+ * when the track does not hold the tier.
+ */
+export type TierPlate = {
+  readonly tierPlateState: TierPlateState;
+  /** The tier the plate names: the override's while one stands, else the computed one. */
+  readonly currentTierId: TierId;
+  /** The tier the ring climbs to; `null` unless CLIMBING. */
+  readonly nextTierId: TierId | null;
+  /** The ring, `0 … 1`: 1 at the TOP, `null` HELD_ABOVE (no ring), the share of the way from this tier's threshold to the next CLIMBING. */
+  readonly progress: number | null;
+  /** The visits the next tier still asks, never below 0; `null` unless CLIMBING. */
+  readonly remaining: number | null;
+};
+
+function indexOf(steps: readonly TierStep[], tierId: TierId | null): number {
+  for (let i = 0; i < steps.length; i++) {
+    if ((steps[i] as TierStep).tierId === tierId) return i;
+  }
+  return -1;
+}
+
 function stepOf(
   steps: readonly TierStep[],
   tierId: TierId | null,
 ): TierStep | null {
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i] as TierStep;
-    if (step.tierId === tierId) return step;
-  }
-  return null;
+  const at = indexOf(steps, tierId);
+  return at < 0 ? null : (steps[at] as TierStep);
+}
+
+/** The tier the account stands on: an override's while one stands, else the computed one. */
+function currentTierOf(state: TierState): TierId {
+  return state.tierOverrideSource === null
+    ? state.tierId
+    : state.tierOverrideTierId;
 }
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -89,12 +121,74 @@ export const TierSystem = {
     return {
       steps,
       value: state.tierQualifying,
-      currentTierId:
-        state.tierOverrideSource === null
-          ? state.tierId
-          : state.tierOverrideTierId,
+      currentTierId: currentTierOf(state),
       nextTierId: state.nextTierId,
       remaining: state.tierRemaining,
+    };
+  },
+
+  /**
+   * The tier a plate or a ring stands on (`wallet.presenter.ts` `tierPlateOf`
+   * / `tierOf`): none while the catalogue holds no tiers; else the one the
+   * account stands on, an override honoured (as {@link TierSystem.steps}).
+   */
+  standingTier(state: TierState, tiers: readonly TierStepRef[]): TierId | null {
+    return tiers.length === 0 ? null : currentTierOf(state);
+  },
+
+  /**
+   * The visits a status at the top is kept with (the wallet's «запазва се с
+   * N посещения»): the threshold of the tier the account stands on, or —
+   * when the track does not hold it — the visits themselves.
+   */
+  keptAt(progress: Pick<TierProgress, 'currentAtLeast' | 'value'>): number {
+    return progress.currentAtLeast ?? progress.value;
+  },
+
+  /**
+   * The hero's plate and ring (`glance.presenter.ts:226-247` `heroTier`) —
+   * its own rule, NOT {@link TierSystem.progress}: the TOP is the account
+   * standing on the LAST step of the track (an override that grants it
+   * included), not a next tier that is missing; a tier no next step climbs
+   * ABOVE (the next one missing from the track, or not above this one —
+   * an override held above what the visits reached) is HELD_ABOVE, the
+   * plate alone with no ring; otherwise CLIMBING, the ring the share of
+   * the way from this tier's own threshold to the next one's, clamped to
+   * `0 … 1`, and what remains the account's own figure (else the next
+   * threshold less the visits), never below 0. `null` when the track does
+   * not hold the tier the account stands on.
+   */
+  plate(state: TierState, tiers: readonly TierStepRef[]): TierPlate | null {
+    const track = TierSystem.steps(state, tiers);
+    const at = indexOf(track.steps, track.currentTierId);
+    if (at < 0) return null;
+    const current = track.steps[at] as TierStep;
+    if (at === track.steps.length - 1) {
+      return {
+        tierPlateState: TierPlateState.Top,
+        currentTierId: current.tierId,
+        nextTierId: null,
+        progress: 1,
+        remaining: null,
+      };
+    }
+    const next = stepOf(track.steps, track.nextTierId);
+    if (next === null || next.atLeast <= current.atLeast) {
+      return {
+        tierPlateState: TierPlateState.HeldAbove,
+        currentTierId: current.tierId,
+        nextTierId: null,
+        progress: null,
+        remaining: null,
+      };
+    }
+    const span = next.atLeast - current.atLeast;
+    return {
+      tierPlateState: TierPlateState.Climbing,
+      currentTierId: current.tierId,
+      nextTierId: next.tierId,
+      progress: clamp((track.value - current.atLeast) / span, 0, 1),
+      remaining: Math.max(0, track.remaining ?? next.atLeast - track.value),
     };
   },
 

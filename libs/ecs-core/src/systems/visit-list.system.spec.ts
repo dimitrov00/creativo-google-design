@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { LocalDate, MinuteOfDay } from '@core/primitives';
+import {
+  AppointmentId,
+  type LocalDate,
+  type MinuteOfDay,
+} from '@core/primitives';
 import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
@@ -511,6 +515,211 @@ describe('VisitListSystem — purity', () => {
     expect(ids(rows)).toEqual(['b', 'next', 'a', 'c']);
     expect(S.offered('STAFF', rows, true)).toEqual(
       S.offered('STAFF', rows, true),
+    );
+  });
+});
+
+/*
+ * Law 10.2 decision extraction (W0-A): the list rules the presenters held —
+ * `visit-row.presenter.ts` (the section a row files under),
+ * `history.presenter.ts` / `visits-page.presenter.ts` (each visit once; the
+ * choice in force always offered) and `glance.presenter.ts` (the next card:
+ * soonest first among the visits to come). Each case re-states the pinning
+ * presenter case as a key/row/tag assertion.
+ */
+
+describe('VisitListSystem.rowSectionKey — where a visit row files', () => {
+  it('files an hour still to come under the upcoming run, whatever its date (row 412, visit-sections 81)', () => {
+    expect(S.rowSectionKey(true, localDate('2026-10-02'), 'MONTH')).toBe(
+      UPCOMING_SECTION_KEY,
+    );
+    expect(S.rowSectionKey(true, localDate('2026-10-02'), 'YEAR')).toBe(
+      'upcoming',
+    );
+  });
+
+  it('files every other row under its dated section, by the grain (row 235, 447)', () => {
+    expect(S.rowSectionKey(false, localDate('2026-09-04'), 'YEAR')).toBe(
+      '2026',
+    );
+    expect(S.rowSectionKey(false, localDate('2026-09-04'), 'MONTH')).toBe(
+      '2026-09',
+    );
+    // The same answer as the dated key itself.
+    expect(S.rowSectionKey(false, localDate('2025-12-31'), 'MONTH')).toBe(
+      S.sectionKeyOf(localDate('2025-12-31'), 'MONTH'),
+    );
+  });
+});
+
+describe('VisitListSystem.distinctById — each visit once', () => {
+  const visit = (id: string, page: number) => ({
+    id: AppointmentId.of(id),
+    page,
+  });
+
+  it('keeps the first copy of an id and the input order (history 73, visits-page 242)', () => {
+    const appointments = [
+      visit('appt-b', 1),
+      visit('appt-a', 1),
+      visit('appt-b', 2),
+      visit('appt-c', 2),
+      visit('appt-a', 3),
+    ];
+    expect(S.distinctById(appointments)).toEqual([
+      visit('appt-b', 1),
+      visit('appt-a', 1),
+      visit('appt-c', 2),
+    ]);
+  });
+
+  it('answers nothing for nothing, and every visit when none repeats', () => {
+    expect(S.distinctById([])).toEqual([]);
+    const once = [visit('appt-a', 1), visit('appt-b', 1)];
+    expect(S.distinctById(once)).toEqual(once);
+  });
+});
+
+describe('VisitListSystem.offeredWith — the choice in force is always offered', () => {
+  it('lists the choice in force in the menu’s order, so the list can be widened again (visits-page 707)', () => {
+    // Picked while older pages remained; the last page held no no-show.
+    expect(
+      S.offeredWith('STAFF', ['ALL', 'UPCOMING', 'COMPLETED'], 'NO_SHOW'),
+    ).toEqual(['ALL', 'UPCOMING', 'COMPLETED', 'NO_SHOW']);
+    expect(
+      S.offeredWith('STAFF', ['ALL', 'UPCOMING', 'COMPLETED'], 'CANCELLED'),
+    ).toEqual(['ALL', 'UPCOMING', 'COMPLETED', 'CANCELLED']);
+    // The staff menu puts no-shows before cancellations; the client's after.
+    expect(S.offeredWith('STAFF', ['ALL', 'CANCELLED'], 'NO_SHOW')).toEqual([
+      'ALL',
+      'NO_SHOW',
+      'CANCELLED',
+    ]);
+    expect(S.offeredWith('CLIENT', ['ALL', 'CANCELLED'], 'NO_SHOW')).toEqual([
+      'ALL',
+      'CANCELLED',
+      'NO_SHOW',
+    ]);
+  });
+
+  it('adds only the way back while the first page is on its way (visits-page 723, 750)', () => {
+    expect(S.offeredWith('STAFF', ['ALL'], 'COMPLETED')).toEqual([
+      'ALL',
+      'COMPLETED',
+    ]);
+    expect(S.offeredWith('STAFF', ['ALL'], 'NO_SHOW')).toEqual([
+      'ALL',
+      'NO_SHOW',
+    ]);
+    expect(S.offeredWith('STAFF', ['ALL'], 'ALL')).toEqual(['ALL']);
+  });
+
+  it('answers the offered list itself when it already holds the choice (visits-page 695)', () => {
+    const offered: readonly VisitFilter[] = ['ALL', 'COMPLETED', 'NO_SHOW'];
+    expect(S.offeredWith('STAFF', offered, 'NO_SHOW')).toBe(offered);
+    expect(S.offeredWith('STAFF', offered, 'ALL')).toBe(offered);
+  });
+});
+
+describe('VisitListSystem.upcomingSoonestFirst — the next card', () => {
+  type Item = { readonly key: string; readonly row: Row };
+  const item = (
+    key: string,
+    iso: string,
+    upcoming: boolean,
+    id: string = key,
+  ): Item => ({ key, row: row(id, iso, { upcoming }) });
+  const rowOf = (entry: Item): SectionRow => entry.row;
+  const keys = (items: readonly Item[]) => items.map((entry) => entry.key);
+
+  it('keeps the visits to come, SOONEST first whatever order the page holds them in (glance 909)', () => {
+    const items = [
+      item('later', '2026-10-20T10:00:00', true),
+      item('worked', '2026-09-04T10:00:00', false),
+      item('soonest', '2026-10-02T09:30:00', true),
+      item('same-day-later', '2026-10-02T14:00:00', true),
+    ];
+    expect(keys(S.upcomingSoonestFirst(items, rowOf))).toEqual([
+      'soonest',
+      'same-day-later',
+      'later',
+    ]);
+  });
+
+  it('drops every row that is not upcoming (glance 814, 871)', () => {
+    const items = [
+      item('worked', '2026-09-04T10:00:00', false),
+      item('missed', '2026-09-10T10:00:00', false),
+    ];
+    expect(S.upcomingSoonestFirst(items, rowOf)).toEqual([]);
+    expect(S.upcomingSoonestFirst([], rowOf)).toEqual([]);
+  });
+
+  it('keeps the INPUT order on an equal day and minute — no id breaks the tie (DEP-2 withdrawn)', () => {
+    // The ids would sort «a» first; the input says «z» first, and it stays.
+    const items = [
+      item('first-in', '2026-10-02T10:00:00', true, 'z'),
+      item('second-in', '2026-10-02T10:00:00', true, 'a'),
+    ];
+    expect(keys(S.upcomingSoonestFirst(items, rowOf))).toEqual([
+      'first-in',
+      'second-in',
+    ]);
+    // Reversed input, reversed tie: the order is the caller's.
+    expect(keys(S.upcomingSoonestFirst([...items].reverse(), rowOf))).toEqual([
+      'second-in',
+      'first-in',
+    ]);
+    // The list's own upcoming run breaks the same tie by id.
+    const [run] = S.sections(
+      items.map((entry) => entry.row),
+      'MONTH',
+    );
+    expect(run?.rows.map((entry) => entry.id)).toEqual(['a', 'z']);
+  });
+
+  it('reads each row once', () => {
+    const items = [
+      item('a', '2026-10-03T10:00:00', true),
+      item('b', '2026-10-02T10:00:00', true),
+      item('c', '2026-09-02T10:00:00', false),
+    ];
+    const read: string[] = [];
+    S.upcomingSoonestFirst(items, (entry) => {
+      read.push(entry.key);
+      return entry.row;
+    });
+    expect(read).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('VisitListSystem — the extraction, purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const rows = deepFreeze([
+      row('b', '2026-10-04T10:00:00', { upcoming: true }),
+      row('a', '2026-09-04T10:00:00'),
+      row('c', '2026-10-02T10:00:00', { upcoming: true }),
+    ]);
+    const identity = (entry: Row): SectionRow => entry;
+    const once = S.upcomingSoonestFirst(rows, identity);
+    expect(S.upcomingSoonestFirst(rows, identity)).toEqual(once);
+    expect(ids(once)).toEqual(['c', 'b']);
+    expect(ids(rows)).toEqual(['b', 'a', 'c']);
+
+    const appointments = deepFreeze([
+      { id: AppointmentId.of('x') },
+      { id: AppointmentId.of('x') },
+    ]);
+    expect(S.distinctById(appointments)).toEqual(S.distinctById(appointments));
+    expect(appointments).toHaveLength(2);
+
+    const offered = deepFreeze<readonly VisitFilter[]>(['ALL', 'COMPLETED']);
+    expect(S.offeredWith('STAFF', offered, 'NO_SHOW')).toEqual(
+      S.offeredWith('STAFF', offered, 'NO_SHOW'),
+    );
+    expect(offered).toEqual(['ALL', 'COMPLETED']);
+    expect(S.rowSectionKey(false, localDate('2026-09-04'), 'YEAR')).toBe(
+      S.rowSectionKey(false, localDate('2026-09-04'), 'YEAR'),
     );
   });
 });

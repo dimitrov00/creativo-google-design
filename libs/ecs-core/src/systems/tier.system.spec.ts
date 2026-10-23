@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { Metric, TierOverride, type TierState } from '@core/components';
+import {
+  Metric,
+  TierOverride,
+  TierPlateState,
+  type TierState,
+} from '@core/components';
 import type { TierDefinition } from '@core/entities';
 import { AdjustmentId, TierId } from '@core/primitives';
 import { deepFreeze, localDate, utcMs } from '@core/testing';
@@ -193,6 +198,192 @@ describe('TierSystem.progress (wallet.presenter.spec.ts `walletTierVm`)', () => 
   });
 });
 
+const adjusted = (tierId: string) =>
+  TierOverride.adjustment(TierId.of(tierId), null, AdjustmentId.of('adj-1'));
+
+describe('TierSystem.standingTier (wallet.presenter.spec.ts `passVm` plate, `walletTierVm`)', () => {
+  it('stands on the computed tier, or the one an override grants', () => {
+    expect(TierSystem.standingTier(state, TIERS)).toBe('gold');
+    expect(
+      TierSystem.standingTier({ ...state, ...adjusted('platinum') }, TIERS),
+    ).toBe('platinum');
+  });
+
+  it('stands on nothing while the catalogue holds no tiers', () => {
+    expect(TierSystem.standingTier(state, [])).toBeNull();
+    expect(
+      TierSystem.standingTier({ ...state, ...adjusted('platinum') }, []),
+    ).toBeNull();
+  });
+});
+
+describe('TierSystem.keptAt (wallet.presenter.spec.ts `walletTierVm` at the top)', () => {
+  it('keeps the status with the threshold of the tier the account stands on', () => {
+    const top = TierSystem.progress(
+      {
+        ...state,
+        tierId: TierId.of('platinum'),
+        tierQualifying: 24,
+        nextTierId: null,
+        tierRemaining: null,
+      },
+      TIERS,
+    );
+    expect(top.atTop).toBe(true);
+    expect(TierSystem.keptAt(top)).toBe(20);
+  });
+
+  it('falls back to the visits when the track does not hold the tier', () => {
+    const lost = TierSystem.progress(
+      { ...state, tierId: TierId.of('diamond'), nextTierId: null },
+      TIERS,
+    );
+    expect(lost.currentAtLeast).toBeNull();
+    expect(TierSystem.keptAt(lost)).toBe(14);
+  });
+});
+
+describe('TierSystem.plate (glance.presenter.spec.ts the hero’s tier)', () => {
+  const plate = (
+    edit: Partial<TierState>,
+    override: TierOverride = TierOverride.none(),
+  ) => TierSystem.plate({ ...state, ...edit, ...override } as TierState, TIERS);
+
+  it('pins the plate tags', () => {
+    expect(TierPlateState).toEqual({
+      Top: 'TOP',
+      HeldAbove: 'HELD_ABOVE',
+      Climbing: 'CLIMBING',
+    });
+  });
+
+  it('climbs from the tier’s own threshold to the next one’s', () => {
+    // Gold (12) to platinum (20) on 14 visits: a quarter of the way.
+    expect(TierSystem.plate(state, TIERS)).toEqual({
+      tierPlateState: TierPlateState.Climbing,
+      currentTierId: 'gold',
+      nextTierId: 'platinum',
+      progress: 0.25,
+      remaining: 6,
+    });
+    expect(plate({ tierQualifying: 19, tierRemaining: 1 })).toMatchObject({
+      tierPlateState: TierPlateState.Climbing,
+      progress: 0.875,
+      remaining: 1,
+    });
+  });
+
+  it('starts the ring empty at a tier’s own threshold', () => {
+    expect(
+      plate({
+        tierId: TierId.of('bronze'),
+        tierQualifying: 0,
+        nextTierId: TierId.of('silver'),
+        tierRemaining: 6,
+      }),
+    ).toEqual({
+      tierPlateState: TierPlateState.Climbing,
+      currentTierId: 'bronze',
+      nextTierId: 'silver',
+      progress: 0,
+      remaining: 6,
+    });
+  });
+
+  it('works out what remains where the account does not say, clamping the ring and the rest', () => {
+    expect(plate({ tierRemaining: null })).toMatchObject({
+      progress: 0.25,
+      remaining: 6,
+    });
+    expect(plate({ tierQualifying: 25, tierRemaining: null })).toMatchObject({
+      tierPlateState: TierPlateState.Climbing,
+      progress: 1,
+      remaining: 0,
+    });
+    // An override stands the account on Gold above its 7 visits: the ring
+    // starts at Gold's own threshold, never below it.
+    expect(
+      plate(
+        {
+          tierId: TierId.of('silver'),
+          tierQualifying: 7,
+          nextTierId: TierId.of('platinum'),
+          tierRemaining: 13,
+        },
+        adjusted('gold'),
+      ),
+    ).toEqual({
+      tierPlateState: TierPlateState.Climbing,
+      currentTierId: 'gold',
+      nextTierId: 'platinum',
+      progress: 0,
+      remaining: 13,
+    });
+  });
+
+  it('is at the top on the last step of the track, an override that grants it included', () => {
+    const top = {
+      tierPlateState: TierPlateState.Top,
+      currentTierId: 'platinum',
+      nextTierId: null,
+      progress: 1,
+      remaining: null,
+    };
+    expect(
+      plate({
+        tierId: TierId.of('platinum'),
+        tierQualifying: 23,
+        nextTierId: null,
+        tierRemaining: null,
+      }),
+    ).toEqual(top);
+    // Granted the top tier: the top, whatever the visits say of the next.
+    expect(plate({}, adjusted('platinum'))).toEqual(top);
+  });
+
+  it('stands alone for a tier no next step climbs above: nothing is promised', () => {
+    const held = {
+      tierPlateState: TierPlateState.HeldAbove,
+      currentTierId: 'gold',
+      nextTierId: null,
+      progress: null,
+      remaining: null,
+    };
+    // Granted Gold on Silver's visits: the account's next IS Gold.
+    expect(
+      plate(
+        {
+          tierId: TierId.of('silver'),
+          tierQualifying: 9,
+          nextTierId: TierId.of('gold'),
+          tierRemaining: 3,
+        },
+        adjusted('gold'),
+      ),
+    ).toEqual(held);
+    // Granted Gold on Bronze's visits: the account's next (Silver) stands below it.
+    expect(
+      plate(
+        {
+          tierId: TierId.of('bronze'),
+          tierQualifying: 3,
+          nextTierId: TierId.of('silver'),
+          tierRemaining: 3,
+        },
+        adjusted('gold'),
+      ),
+    ).toEqual(held);
+    // A next tier the track does not hold, or none at all, below the top.
+    expect(plate({ nextTierId: TierId.of('diamond') })).toEqual(held);
+    expect(plate({ nextTierId: null, tierRemaining: null })).toEqual(held);
+  });
+
+  it('draws no plate for a tier the track does not hold, nor with no tiers', () => {
+    expect(plate({ tierId: TierId.of('diamond') })).toBeNull();
+    expect(TierSystem.plate(state, [])).toBeNull();
+  });
+});
+
 describe('TierSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const tiers = deepFreeze([...TIERS].reverse());
@@ -203,5 +394,19 @@ describe('TierSystem purity', () => {
     expect(TierSystem.steps(held, tiers)).toEqual(
       TierSystem.steps(held, tiers),
     );
+    expect(TierSystem.plate(held, tiers)).toEqual(
+      TierSystem.plate(held, tiers),
+    );
+    expect(TierSystem.standingTier(held, tiers)).toBe(
+      TierSystem.standingTier(held, tiers),
+    );
+    const progress = deepFreeze(TierSystem.progress(held, tiers));
+    expect(TierSystem.keptAt(progress)).toBe(TierSystem.keptAt(progress));
+    expect(tiers.map((tier) => tier.id)).toEqual([
+      'platinum',
+      'gold',
+      'silver',
+      'bronze',
+    ]);
   });
 });

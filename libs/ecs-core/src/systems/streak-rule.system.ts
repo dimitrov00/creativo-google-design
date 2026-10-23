@@ -3,9 +3,12 @@ import { EngagementError, StreakRuleField } from '@core/errors';
 import {
   StreakInterval,
   StreakIntervalRule,
+  StreakIntervalSource,
   QualifierComparison,
   StreakQualifierRule,
   HeadRole,
+  STREAK_EXCUSES,
+  STREAK_RULE_PARAMETER_ORDER,
   STREAK_SHOP_EXCUSES,
   StreakOnBreak,
   StreakRule,
@@ -15,6 +18,7 @@ import {
   type ScheduledStreakRule,
   type StreakExcuse,
   type StreakHeadRule,
+  type StreakPeriodTerms,
 } from '@core/components';
 import type { StreakDefinition } from '@core/entities';
 
@@ -77,6 +81,25 @@ export type StreakRuleSummary = {
   /** A miss does not reset the count. */
   readonly holdsCount: boolean;
   readonly qualifier: StreakQualifierRule;
+};
+
+/**
+ * Which interval the rule's sentence states, and its figures: the rule's
+ * one number (`FIXED`), the person's own (`PERSONAL`, with the habit it
+ * came from), or the rule's figure for someone it does not know yet
+ * (`FALLBACK`).
+ */
+export type StreakStatedInterval = {
+  readonly streakIntervalSource: StreakIntervalSource;
+  readonly intervalDays: number;
+  /** The person's habit, in days; `null` unless `PERSONAL`. */
+  readonly habitDays: number | null;
+};
+
+/** How many excuses a rule names, of every excuse there is. */
+export type StreakExcuseCount = {
+  readonly on: number;
+  readonly all: number;
 };
 
 /** What a schedule refuses: a waiting version that does not follow, or a transition nobody knows. */
@@ -389,6 +412,25 @@ export const StreakRuleSystem = {
   },
 
   /**
+   * Whether the rhythm counts on a shop day: the caller's flag allows it,
+   * there is a head, and the rule in force that day ({@link inForceOn}) is
+   * switched on. The flag can only switch the rhythm off — `true` never
+   * turns on a rule that is off. A reader whose store already folded the
+   * `loyalty.streaks` flag into a `null` head passes `true`. Which account
+   * state belongs to the head is not asked here: that is the component
+   * lookup `StreakState.find`.
+   */
+  isOnOn(
+    head: StreakSchedule | null,
+    today: LocalDate,
+    flag: boolean,
+  ): boolean {
+    return (
+      flag && head !== null && StreakRuleSystem.inForceOn(head, today).enabled
+    );
+  },
+
+  /**
    * The earliest day a change may take effect. What only moves the staff's
    * cue may start today. What favours the client, and the rule going on or
    * off, starts tomorrow: a day is judged by ONE rule. What takes something
@@ -572,5 +614,87 @@ export const StreakRuleSystem = {
       a.effectiveFromLocalDate === b.effectiveFromLocalDate &&
       StreakRuleSystem.changeFrom(a, b, false).changed.length === 0
     );
+  },
+
+  /**
+   * Which interval the rule's sentence states (`rhythm-rule.words.ts`): a
+   * fixed interval states its one number, whatever a person's period still
+   * holds. A personal interval states the person's own period only where
+   * its length CAME from a measured habit (`period.source` `PERSONAL` with
+   * a habit above zero); a newcomer, a period an older fixed rule opened,
+   * no open period and the admin's draft (`period` `null`) all state the
+   * rule's own figure for someone it does not know yet (`FALLBACK`).
+   */
+  statedInterval(
+    interval: StreakIntervalRule,
+    period: StreakPeriodTerms | null,
+  ): StreakStatedInterval {
+    if (interval.streakInterval === StreakInterval.Fixed) {
+      return {
+        streakIntervalSource: StreakIntervalSource.Fixed,
+        intervalDays: interval.intervalDays,
+        habitDays: null,
+      };
+    }
+    if (
+      period !== null &&
+      period.source === StreakIntervalSource.Personal &&
+      period.habitDays !== null &&
+      period.habitDays > 0
+    ) {
+      return {
+        streakIntervalSource: StreakIntervalSource.Personal,
+        intervalDays: period.intervalDays,
+        habitDays: period.habitDays,
+      };
+    }
+    return {
+      streakIntervalSource: StreakIntervalSource.Fallback,
+      intervalDays: interval.intervalFallbackDays,
+      habitDays: null,
+    };
+  },
+
+  /**
+   * The parameters a stored version lists as changed, in the order its
+   * history names them (`STREAK_RULE_PARAMETER_ORDER`: the rule's parts,
+   * the name last), each once. What is no parameter — a version's identity
+   * (`version`, `effectiveFromLocalDate`), a word nobody knows — is no
+   * change and is left out.
+   */
+  changesInRuleOrder(
+    changed: readonly string[],
+  ): readonly StreakRuleParameter[] {
+    const out: StreakRuleParameter[] = [];
+    for (let i = 0; i < STREAK_RULE_PARAMETER_ORDER.length; i++) {
+      const parameter = STREAK_RULE_PARAMETER_ORDER[i] as StreakRuleParameter;
+      for (let j = 0; j < changed.length; j++) {
+        if (changed[j] === parameter) {
+          out.push(parameter);
+          break;
+        }
+      }
+    }
+    return out;
+  },
+
+  /** The excuses a rule names, of every excuse the vocabulary holds («3 от 4»). */
+  excuseCount(rule: {
+    readonly excuses: readonly StreakExcuse[];
+  }): StreakExcuseCount {
+    return { on: rule.excuses.length, all: STREAK_EXCUSES.length };
+  },
+
+  /**
+   * The period a personal interval opens for a client of `habitDays` — the
+   * admin's tolerance example («Клиент, който идва на 4 седмици, има срок 6
+   * седмици»). The rule's ONE period computation, `StreakIntervalRule.daysFor`
+   * — never a copy of it.
+   */
+  exampleDue(
+    interval: StreakIntervalRule.Personal,
+    habitDays: number,
+  ): StreakIntervalRule.Period {
+    return StreakIntervalRule.daysFor(interval, habitDays);
   },
 } as const;

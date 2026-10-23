@@ -1,5 +1,12 @@
+import { HistoryNote } from '@core/components';
 import type { ClientStatsRecord } from '@core/entities';
-import { VisitFilter, VisitGrain, VisitPerspective } from '@core/systems';
+import {
+  ClientStatsSystem,
+  VisitFilter,
+  VisitGrain,
+  VisitListSystem,
+  VisitPerspective,
+} from '@core/systems';
 import { LoadState, PagingState } from '@creativo/shared/view-state';
 import {
   type VisitRowVm,
@@ -7,7 +14,6 @@ import {
   matchesVisitFilter,
   offeredVisitFilters,
   sectionVisits,
-  visitFiltersFor,
   visitRowOf,
   visitSectionLabel,
   workedVisitsDetail,
@@ -35,6 +41,7 @@ import {
   type HistoryRowsInput,
   cadenceWeeks,
   historyCells,
+  historyNoteWords,
 } from './history.presenter';
 
 /*
@@ -66,31 +73,25 @@ const TEST_ID_PREFIX = 'history';
 export function visitsRows(input: HistoryRowsInput): readonly VisitRowVm[] {
   const { now, timeZone } = input;
   if (now === null || timeZone === null) return [];
-  const seen = new Set<string>();
-  return input.appointments.flatMap((appointment) => {
-    const id: string = appointment.id;
-    if (seen.has(id)) return [];
-    seen.add(id);
-    return [
-      visitRowOf(
-        appointment,
-        {
-          perspective: VisitPerspective.Staff,
-          grain: VisitGrain.Month,
-          subjectUserId: input.subjectUserId,
-          subjectCustomerId: input.subjectCustomerId,
-          currentAppointmentId: input.currentAppointmentId,
-          now,
-          timeZone,
-          locale: input.words.lang,
-          photoCount: input.photoCounts.get(id) ?? 0,
-          words: input.words.visits,
-          clientWords: input.clientWords,
-        },
-        input.catalog,
-      ),
-    ];
-  });
+  return VisitListSystem.distinctById(input.appointments).map((appointment) =>
+    visitRowOf(
+      appointment,
+      {
+        perspective: VisitPerspective.Staff,
+        grain: VisitGrain.Month,
+        subjectUserId: input.subjectUserId,
+        subjectCustomerId: input.subjectCustomerId,
+        currentAppointmentId: input.currentAppointmentId,
+        now,
+        timeZone,
+        locale: input.words.lang,
+        photoCount: input.photoCounts.get(appointment.id) ?? 0,
+        words: input.words.visits,
+        clientWords: input.clientWords,
+      },
+      input.catalog,
+    ),
+  );
 }
 
 /**
@@ -164,6 +165,8 @@ function headOf(
 ): VisitsHead {
   const lang = words.lang;
   const visits = stats?.lifetimeVisitsCompleted ?? 0;
+  // FIRST_VISIT before the first worked visit, CLEAN over a clean record.
+  const note = ClientStatsSystem.historyNote(stats);
   const weeks =
     stats?.avgCadenceDays == null ? null : cadenceWeeks(stats.avgCadenceDays);
   const cells = historyCells(stats, words).filter(
@@ -181,7 +184,7 @@ function headOf(
     quietRun(` ${cell.caption}`),
   ]);
 
-  if (visits === 0) {
+  if (note === HistoryNote.FirstVisit) {
     return {
       line: joined(unbroken([quietRun(words.head.firstVisit), ...drawn])),
       lineName: `${words.head.firstVisit}${spoken}`,
@@ -209,11 +212,7 @@ function headOf(
       weeks === null ? '' : words.history.statsInterval(weeks),
       spoken,
     ),
-    facts: factsOf(
-      risks.length === 0 ? words.history.noRisk : null,
-      spend,
-      words,
-    ),
+    facts: factsOf(historyNoteWords(note, words), spend, words),
     cells,
   };
 }
@@ -256,20 +255,17 @@ export interface VisitsPageInput {
 }
 
 /**
- * The options of the funnel, the choice in force always among them: a
- * narrowed list can always be widened again, and the menu never opens on
- * a choice it does not list (a filter picked while older pages remained,
- * which the last page then left without a row).
+ * The options of the funnel, the choice in force always among them
+ * (`VisitListSystem.offeredWith`): a narrowed list can always be widened
+ * again, and the menu never opens on a choice it does not list (a filter
+ * picked while older pages remained, which the last page then left
+ * without a row).
  */
 function offeredOf(
   offered: readonly VisitFilter[],
   inForce: VisitFilter,
 ): readonly VisitFilter[] {
-  return offered.includes(inForce)
-    ? offered
-    : visitFiltersFor(VisitPerspective.Staff).filter(
-        (filter) => filter === inForce || offered.includes(filter),
-      );
+  return VisitListSystem.offeredWith(VisitPerspective.Staff, offered, inForce);
 }
 
 /**

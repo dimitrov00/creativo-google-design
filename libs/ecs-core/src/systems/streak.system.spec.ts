@@ -1,10 +1,14 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  FreezeReason,
+  StreakCapsule,
   StreakIntervalRule,
+  StreakOutlook,
   STREAK_EXCUSES,
   STREAK_SHOP_EXCUSES,
   StreakExcuse,
+  StreakPhase,
   StreakRule,
   StreakPhaseState,
   StreakState,
@@ -15,13 +19,17 @@ import {
   FIXTURE_TIME_ZONE,
   deepFreeze,
   localDate,
+  loyaltyAccountFixtures,
   unwrapOk,
   utcMs,
 } from '@core/testing';
+import { ClientStatsSystem } from './client-stats.system';
+import { StreakRuleSystem } from './streak-rule.system';
 import {
   StreakSystem,
   StreakTrackMarkKind,
   type StreakFacts as SystemFacts,
+  type StreakOutlookView,
   type StreakTrace,
 } from './streak.system';
 import { ZonedTimeSystem } from './zoned-time.system';
@@ -2645,11 +2653,695 @@ describe('StreakSystem.track', () => {
     expect(StreakSystem.track(state, view({ limit: 0 })).marks).toEqual([]);
   });
 
+  it('draws the closed periods alone with nobody in the chair, not paused and no due date', () => {
+    // The admin sample's view (law-10-decision-extraction.md R-3): every
+    // closed period, uncut, and no open mark without a due date.
+    const periods = [
+      closed('KEPT', '2026-07-01'),
+      closed('PROTECTED', '2026-08-12', 'FREEZE'),
+      closed('REPAIRED', '2026-08-20'),
+    ];
+    const track = StreakSystem.track(cardState({ dueBy: null, periods }), {
+      today: CARD_TODAY,
+      inChairToday: false,
+      paused: false,
+      limit: periods.length + 1,
+    });
+    expect(track.marks).toEqual([
+      {
+        streakTrackMarkKind: 'KEPT',
+        on: '2026-07-01',
+        reason: null,
+        open: false,
+        visitDay: '2026-07-01',
+      },
+      {
+        streakTrackMarkKind: 'PROTECTED',
+        on: '2026-08-12',
+        reason: 'FREEZE',
+        open: false,
+        visitDay: null,
+      },
+      {
+        streakTrackMarkKind: 'REPAIRED',
+        on: '2026-08-20',
+        reason: null,
+        open: false,
+        visitDay: '2026-08-20',
+      },
+    ]);
+  });
+
   it('is pure: same input → same output, inputs untouched', () => {
     const state = deepFreeze(stateOf(DEFAULT, georgi));
     const seen = deepFreeze(view({ inChairToday: true }));
     expect(StreakSystem.track(state, seen)).toEqual(
       StreakSystem.track(state, seen),
     );
+  });
+});
+
+/*
+ * THE ADMIN SAMPLE'S TRACK IS `track`'s (law-10-decision-extraction.md §7
+ * R-12, for R-3). `admin-rhythm.words.ts` `samplePeriods` draws the
+ * projection's closed periods, then — only with a `dueBy` — one open mark,
+ * PROTECTED while FROZEN, else CURRENT, dated by `dueBy`. `track` dates a
+ * FROZEN open mark by `phaseFrozenUntil` and draws it even without a
+ * `dueBy`. The two agree exactly when every FROZEN state the sample can
+ * meet has `dueBy === phaseFrozenUntil` (and no FROZEN state lacks a
+ * `dueBy`). The projector sets `dueBy = due + the days a running pause has
+ * left`: a carried period (a protection, an excuse) is frozen until `due`
+ * itself, while a PAUSE freezes until its own last day. The sample's facts
+ * (`admin-rhythm.preview.ts` `sampleRhythmFacts`) are visits alone — no
+ * pause, ever — so on them the two are one: proven below over the sample's
+ * own facts under several rules, on its day and on every day after it, as
+ * the run ages through risk, grace, protections and the break.
+ */
+describe('StreakSystem.track ≡ the admin sample’s track (§7 R-12)', () => {
+  /** `sampleRhythmFacts`, as the admin page builds them: six visits on time, then one a whole period late, the newest yesterday — visits alone. */
+  function sampleFacts(definition: StreakRule, today: string): StreakFacts {
+    const onTime = StreakIntervalRule.daysFor(definition, null).days;
+    const late = 2 * StreakIntervalRule.daysFor(definition, onTime).days;
+    const gaps = [...Array.from({ length: 5 }, () => onTime), late];
+    let ago = 1;
+    const agos = [ago];
+    for (const gap of [...gaps].reverse()) {
+      ago += gap;
+      agos.push(ago);
+    }
+    return facts({
+      visits: agos
+        .reverse()
+        .map((back) => ({ day: addDays(today, -back), counted: true })),
+    });
+  }
+
+  type Drawn = { readonly kind: string; readonly on: string };
+
+  /** `samplePeriods`'s marks, as tags and days (its ids and words are the page's). */
+  function sampleMarks(state: StreakState): readonly Drawn[] {
+    const closedMarks: Drawn[] = state.periods.map((fact) => ({
+      kind: fact.streakPeriodMark,
+      on: fact.on,
+    }));
+    if (state.dueBy === null) return closedMarks;
+    return [
+      ...closedMarks,
+      {
+        kind:
+          state.streakPhase === StreakPhase.Frozen
+            ? StreakTrackMarkKind.Protected
+            : StreakTrackMarkKind.Current,
+        on: state.dueBy,
+      },
+    ];
+  }
+
+  /** `track` as R-3 would call it for the sample: nobody in the chair, not paused, nothing cut. */
+  function trackMarks(state: StreakState, today: string): readonly Drawn[] {
+    return StreakSystem.track(state, {
+      today: localDate(today),
+      inChairToday: false,
+      paused: false,
+      limit: state.periods.length + 1,
+    }).marks.map((mark) => ({ kind: mark.streakTrackMarkKind, on: mark.on }));
+  }
+
+  const RULES: readonly [string, StreakRule][] = [
+    ['the recommended rule', DEFAULT],
+    ['no protections', rule(NO_PROTECTIONS)],
+    ['no earn-back', rule(NO_EARN_BACK)],
+    ['a miss holds the count', rule({ onBreak: 'HOLD' })],
+    ['five weeks', rule({ ...StreakIntervalRule.fixed(35) })],
+    [
+      'a personal interval',
+      rule({ ...StreakIntervalRule.personal(50, 21, 70, 42) }),
+    ],
+    // A reserve to start with: the one way a visit-only history is ever
+    // covered (protections are otherwise granted by facts the sample lacks).
+    ['a reserve to start with', rule({ protectionsStartWith: 2 })],
+    [
+      'a personal interval and a reserve',
+      rule({
+        ...StreakIntervalRule.personal(50, 21, 70, 42),
+        protectionsStartWith: 1,
+      }),
+    ],
+  ];
+
+  it.each(RULES)('agrees on the sample’s own day under %s', (_, definition) => {
+    const state = projectStreak(
+      definition,
+      sampleFacts(definition, TODAY),
+      TODAY,
+    );
+    if (state === null) throw new Error('the sample has no run');
+    expect(trackMarks(state, TODAY)).toEqual(sampleMarks(state));
+    expect(trackMarks(state, TODAY).at(-1)?.kind).toBe(
+      StreakTrackMarkKind.Current,
+    );
+  });
+
+  it('agrees on every later day as the sample’s run ages, FROZEN states dated by their due date', () => {
+    const phases = new Set<string>();
+    let frozen = 0;
+    for (const [, definition] of RULES) {
+      const sample = sampleFacts(definition, TODAY);
+      for (let offset = 0; offset <= 240; offset++) {
+        const on = day(offset);
+        const state = projectStreak(definition, sample, on);
+        if (state === null) continue;
+        phases.add(state.streakPhase);
+        if (state.streakPhase === StreakPhase.Frozen) {
+          frozen += 1;
+          expect(state.dueBy).toBe(state.phaseFrozenUntil);
+        }
+        expect(trackMarks(state, on)).toEqual(sampleMarks(state));
+      }
+    }
+    // Not vacuous: the run went through every phase a visit-only history can reach.
+    expect(frozen).toBeGreaterThan(0);
+    expect([...phases].sort()).toEqual(
+      [
+        StreakPhase.Active,
+        StreakPhase.AtRisk,
+        StreakPhase.Broken,
+        StreakPhase.Frozen,
+        StreakPhase.InGrace,
+      ].sort(),
+    );
+  });
+
+  it('agrees on the admin words’ own frozen sample (dueBy = phaseFrozenUntil)', () => {
+    const state = cardState({
+      ...StreakPhaseState.frozen(localDate('2026-10-10'), 'FREEZE'),
+      current: 3,
+      best: 5,
+      lastQualifiedAtUtcMs: null,
+      dueBy: localDate('2026-10-10'),
+      periods: [
+        {
+          streakPeriodMark: 'KEPT',
+          on: localDate('2026-07-04'),
+          periodReason: null,
+        },
+        {
+          streakPeriodMark: 'PROTECTED',
+          on: localDate('2026-08-15'),
+          periodReason: 'STAFF_CANCELLED',
+        },
+      ],
+    });
+    expect(trackMarks(state, '2026-09-28')).toEqual(sampleMarks(state));
+  });
+
+  it('is NOT the rule under a pause: a paused period is frozen until the pause’s last day, not its due date', () => {
+    // Why the equivalence rests on the sample's facts holding no pause.
+    const state = stateOf(DEFAULT, {
+      visits: visitsAt([-20]),
+      pauses: [{ from: day(-5), until: day(5), reason: 'PAUSE' }],
+    });
+    expect(state.streakPhase).toBe(StreakPhase.Frozen);
+    if (state.streakPhase !== StreakPhase.Frozen) return;
+    expect(state.phaseFrozenUntil).toBe(day(5));
+    expect(state.dueBy).not.toBe(state.phaseFrozenUntil);
+    expect(trackMarks(state, TODAY)).not.toEqual(sampleMarks(state));
+  });
+});
+
+// ── Where the rhythm stands (Law 10.2 — wallet.presenter.ts `standingOf`) ──
+
+/*
+ * `walletRhythmVm`'s cases (wallet.presenter.spec.ts), ported as outlook
+ * assertions on the same book: Георги and Мартин as the loyalty fixtures
+ * hold them, on Monday 28 September 2026 — Георги's fade done, Мартин in
+ * the chair. The line's words, the capsule's text and the track's sentence
+ * stay the wallet's; the state, the day each names, the due date the
+ * sentence names, the capsule and its urgency are the system's.
+ */
+describe('StreakSystem.outlook — where the rhythm stands', () => {
+  const stateFound = (holder: {
+    readonly account: { readonly streaks: readonly StreakState[] };
+  }): StreakState => {
+    const state = StreakState.find(holder.account.streaks, STREAK_ID);
+    if (state === null) throw new Error('the holder has no rhythm');
+    return state;
+  };
+  const GEORGI_STATE = stateFound(loyaltyAccountFixtures.georgi);
+  const MARTIN_STATE = stateFound(loyaltyAccountFixtures.martin);
+  /** The last counted visit's shop day — the presenter's zone edge (D-11). */
+  const lastOn = (state: StreakState): LocalDate | null =>
+    state.lastQualifiedAtUtcMs === null
+      ? null
+      : ZonedTimeSystem.toLocal(state.lastQualifiedAtUtcMs, FIXTURE_TIME_ZONE)
+          .localDate;
+  const seen = (
+    state: StreakState,
+    patch: Partial<StreakOutlookView> = {},
+  ): StreakOutlookView => ({
+    today: CARD_TODAY,
+    inChairDue: null,
+    paused: false,
+    lastQualifiedOn: lastOn(state),
+    ...patch,
+  });
+  /** Георги's rhythm in another state: any field, the phase a slice of its own. */
+  const georgiIn = (
+    phase: StreakPhaseState,
+    patch: Partial<StreakState> = {},
+  ): StreakState => ({ ...GEORGI_STATE, ...patch, ...phase }) as StreakState;
+  const outlookOf = (
+    state: StreakState,
+    patch: Partial<StreakOutlookView> = {},
+  ) => StreakSystem.outlook(state, seen(state, patch));
+  const NOT_HELD = { heldByAppointmentId: null, heldOn: null } as const;
+  const NO_PERIOD = {
+    periodIntervalDays: null,
+    periodGraceDays: null,
+    periodSource: null,
+    periodHabitDays: null,
+  } as const;
+
+  it('holds the outlooks and capsules as SCREAMING tags', () => {
+    expect(Object.values(StreakOutlook)).toEqual([
+      'PAUSED',
+      'IN_CHAIR',
+      'NOT_STARTED',
+      'FROZEN',
+      'BROKEN_REPAIRABLE',
+      'BROKEN_FINAL',
+      'HELD',
+      'DUE',
+      'DUE_NONE',
+      'AT_RISK',
+      'IN_GRACE',
+    ]);
+    expect(Object.values(StreakCapsule)).toEqual([
+      'FROZEN',
+      'BROKEN',
+      'HELD',
+      'AT_RISK',
+      'IN_GRACE',
+    ]);
+  });
+
+  it('names a healthy run’s due date, with no capsule (Георги)', () => {
+    expect(outlookOf(GEORGI_STATE)).toEqual({
+      streakOutlook: StreakOutlook.Due,
+      day: '2026-11-09',
+      nextDue: '2026-11-09',
+      dueNamed: true,
+      streakCapsule: null,
+      urgent: false,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    });
+  });
+
+  it('coaches towards the visit after the one in the chair, whatever the phase (Мартин)', () => {
+    const inChairDue = StreakSystem.inChairDue(MARTIN_STATE, CARD_TODAY, {
+      inChairToday: true,
+      paused: false,
+    });
+    expect(inChairDue).toBe('2026-11-09');
+    expect(outlookOf(MARTIN_STATE, { inChairDue })).toEqual({
+      streakOutlook: StreakOutlook.InChair,
+      day: '2026-11-09',
+      nextDue: '2026-11-09',
+      dueNamed: true,
+      streakCapsule: null,
+      urgent: false,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    });
+  });
+
+  it('names the visit on the book that holds the due date, where a warning would have stood', () => {
+    // Мартин off the chair: at risk, his booking for today holds the period.
+    expect(outlookOf(MARTIN_STATE)).toEqual({
+      streakOutlook: StreakOutlook.Held,
+      day: '2026-09-28',
+      // The line names the booking: the track's sentence names no due date.
+      nextDue: null,
+      dueNamed: false,
+      streakCapsule: StreakCapsule.Held,
+      urgent: false,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    });
+    // Beside a healthy figure nothing stands.
+    expect(
+      outlookOf(
+        georgiIn(StreakPhaseState.active(), {
+          heldByAppointmentId: AppointmentId.of('appt-next'),
+          heldOn: localDate('2026-10-29'),
+        }),
+      ),
+    ).toMatchObject({
+      streakOutlook: StreakOutlook.Held,
+      day: '2026-10-29',
+      streakCapsule: null,
+      dueNamed: false,
+      nextDue: null,
+    });
+  });
+
+  it('warns when the due date is near, with the weeks since the last visit, and in grace', () => {
+    const atRisk = { ...MARTIN_STATE, ...NOT_HELD } as StreakState;
+    expect(outlookOf(atRisk)).toEqual({
+      streakOutlook: StreakOutlook.AtRisk,
+      day: '2026-09-30',
+      nextDue: '2026-09-30',
+      dueNamed: true,
+      streakCapsule: StreakCapsule.AtRisk,
+      urgent: true,
+      // «Последно преди 6 седмици»: 19 August to 28 September is 40 days.
+      weeksSinceLast: 6,
+      phaseFreezeReason: null,
+    });
+    expect(lastOn(MARTIN_STATE)).toBe('2026-08-19');
+
+    expect(
+      outlookOf(
+        georgiIn(StreakPhaseState.inGrace(localDate('2026-10-05')), {
+          dueBy: localDate('2026-09-28'),
+          ...NOT_HELD,
+        }),
+      ),
+    ).toEqual({
+      streakOutlook: StreakOutlook.InGrace,
+      day: '2026-10-05',
+      nextDue: '2026-09-28',
+      dueNamed: true,
+      streakCapsule: StreakCapsule.InGrace,
+      urgent: true,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    });
+  });
+
+  it.each([
+    [3, 1],
+    [10, 1],
+    [11, 2],
+    [40, 6],
+    [0, 1],
+  ])(
+    'rounds %i days since the last counted visit to %i whole weeks, at least one',
+    (days, weeks) => {
+      const atRisk = { ...MARTIN_STATE, ...NOT_HELD } as StreakState;
+      expect(
+        outlookOf(atRisk, {
+          lastQualifiedOn: LocalDate.addDays(CARD_TODAY, -days),
+        }).weeksSinceLast,
+      ).toBe(weeks);
+    },
+  );
+
+  it('reads the weeks through ClientStatsSystem.cadenceWeeks, and 0 with no counted visit', () => {
+    const atRisk = { ...MARTIN_STATE, ...NOT_HELD } as StreakState;
+    for (let days = 0; days <= 120; days++) {
+      expect(
+        outlookOf(atRisk, {
+          lastQualifiedOn: LocalDate.addDays(CARD_TODAY, -days),
+        }).weeksSinceLast,
+      ).toBe(ClientStatsSystem.cadenceWeeks(days));
+    }
+    expect(outlookOf(atRisk, { lastQualifiedOn: null }).weeksSinceLast).toBe(0);
+    // Outside AT_RISK no weeks are counted.
+    expect(outlookOf(GEORGI_STATE).weeksSinceLast).toBe(0);
+  });
+
+  it('says a covered period is FROZEN, by what covers it, naming no day', () => {
+    for (const reason of Object.values(FreezeReason)) {
+      expect(
+        outlookOf(
+          georgiIn(StreakPhaseState.frozen(localDate('2026-11-16'), reason), {
+            dueBy: localDate('2026-11-16'),
+          }),
+        ),
+      ).toEqual({
+        streakOutlook: StreakOutlook.Frozen,
+        day: null,
+        nextDue: null,
+        dueNamed: false,
+        streakCapsule: StreakCapsule.Frozen,
+        urgent: false,
+        weeksSinceLast: 0,
+        phaseFreezeReason: reason,
+      });
+    }
+  });
+
+  it('coaches a broken run back while a visit can still restore it, and never after', () => {
+    const broken = (repairableUntil: string) =>
+      outlookOf(
+        georgiIn(
+          StreakPhaseState.broken(
+            localDate('2026-09-20'),
+            localDate(repairableUntil),
+          ),
+          { current: 0, dueBy: null, ...NO_PERIOD },
+        ),
+      );
+    expect(broken('2026-10-04')).toEqual({
+      streakOutlook: StreakOutlook.BrokenRepairable,
+      day: '2026-10-04',
+      nextDue: null,
+      dueNamed: false,
+      streakCapsule: StreakCapsule.Broken,
+      urgent: true,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    });
+    // The last day to restore it is today: still restorable.
+    expect(broken('2026-09-28')).toMatchObject({
+      streakOutlook: StreakOutlook.BrokenRepairable,
+      day: '2026-09-28',
+      urgent: true,
+    });
+    // Past it — or the day before the break, where nothing can be restored —
+    // no day is named (never a repair day already gone, §7 R-6).
+    for (const until of ['2026-09-27', '2026-09-19']) {
+      expect(broken(until)).toEqual({
+        streakOutlook: StreakOutlook.BrokenFinal,
+        day: null,
+        nextDue: null,
+        dueNamed: false,
+        streakCapsule: StreakCapsule.Broken,
+        urgent: false,
+        weeksSinceLast: 0,
+        phaseFreezeReason: null,
+      });
+    }
+  });
+
+  it('starts a rhythm nobody has begun — no count AND no counted visit, exactly', () => {
+    const fresh = georgiIn(StreakPhaseState.active(), {
+      current: 0,
+      best: 0,
+      lastQualifiedAtUtcMs: null,
+      dueBy: null,
+      periods: [],
+      ...NO_PERIOD,
+    });
+    expect(outlookOf(fresh)).toEqual({
+      streakOutlook: StreakOutlook.NotStarted,
+      day: null,
+      nextDue: null,
+      dueNamed: false,
+      streakCapsule: null,
+      urgent: false,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    });
+    // A count with no stamp, or a stamp with no count, has begun.
+    expect(
+      outlookOf(
+        georgiIn(StreakPhaseState.active(), {
+          current: 1,
+          lastQualifiedAtUtcMs: null,
+        }),
+      ).streakOutlook,
+    ).toBe(StreakOutlook.Due);
+    expect(
+      outlookOf(georgiIn(StreakPhaseState.active(), { current: 0 }))
+        .streakOutlook,
+    ).toBe(StreakOutlook.Due);
+    // A run of one names its due date.
+    expect(
+      outlookOf(georgiIn(StreakPhaseState.active(), { current: 1, best: 1 })),
+    ).toMatchObject({
+      streakOutlook: StreakOutlook.Due,
+      nextDue: '2026-11-09',
+    });
+  });
+
+  it('says a healthy run with no due date names none', () => {
+    expect(
+      outlookOf(georgiIn(StreakPhaseState.active(), { dueBy: null })),
+    ).toEqual({
+      streakOutlook: StreakOutlook.DueNone,
+      day: null,
+      nextDue: null,
+      dueNamed: true,
+      streakCapsule: null,
+      urgent: false,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    });
+  });
+
+  it('keeps a paused client’s run frozen where it stands, before anything else', () => {
+    const paused = {
+      streakOutlook: StreakOutlook.Paused,
+      day: null,
+      nextDue: null,
+      dueNamed: false,
+      streakCapsule: null,
+      urgent: false,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    };
+    expect(outlookOf(GEORGI_STATE, { paused: true })).toEqual(paused);
+    expect(
+      outlookOf(MARTIN_STATE, {
+        paused: true,
+        inChairDue: localDate('2026-11-09'),
+      }),
+    ).toEqual(paused);
+    expect(
+      outlookOf({ ...MARTIN_STATE, ...NOT_HELD } as StreakState, {
+        paused: true,
+      }),
+    ).toEqual(paused);
+  });
+
+  it('names the in-chair line before the unbegun one, in `standingOf`’s order', () => {
+    expect(
+      outlookOf(
+        georgiIn(StreakPhaseState.active(), {
+          current: 0,
+          lastQualifiedAtUtcMs: null,
+        }),
+        { inChairDue: localDate('2026-11-09') },
+      ).streakOutlook,
+    ).toBe(StreakOutlook.InChair);
+  });
+
+  it('never names a due date for a FROZEN, HELD, BROKEN or paused line, whatever dueBy holds', () => {
+    const states: readonly [StreakState, Partial<StreakOutlookView>][] = [
+      [
+        georgiIn(
+          StreakPhaseState.frozen(localDate('2026-11-16'), FreezeReason.Freeze),
+        ),
+        {},
+      ],
+      [MARTIN_STATE, {}],
+      [
+        georgiIn(
+          StreakPhaseState.broken(
+            localDate('2026-09-20'),
+            localDate('2026-10-04'),
+          ),
+        ),
+        {},
+      ],
+      [GEORGI_STATE, { paused: true }],
+    ];
+    for (const [state, patch] of states) {
+      expect(state.dueBy).not.toBeNull();
+      const answer = outlookOf(state, patch);
+      expect(answer.dueNamed).toBe(false);
+      expect(answer.nextDue).toBeNull();
+    }
+  });
+});
+
+describe('StreakSystem.record — the best run, said while the run is shorter', () => {
+  it('says the best only while the run in progress is shorter', () => {
+    expect(StreakSystem.record({ current: 9, best: 23 })).toBe(23);
+    expect(StreakSystem.record({ current: 0, best: 24 })).toBe(24);
+    expect(StreakSystem.record({ current: 24, best: 24 })).toBeNull();
+    expect(StreakSystem.record({ current: 0, best: 0 })).toBeNull();
+  });
+});
+
+describe('StreakSystem.dueAfter — the day the next visit keeps the rhythm by', () => {
+  const inChair = shopDay('2026-11-09');
+  const dueBy = shopDay('2026-10-30');
+
+  it('names the in-chair due date first, whatever the state is due by', () => {
+    expect(StreakSystem.dueAfter({ dueBy }, inChair)).toBe('2026-11-09');
+    expect(StreakSystem.dueAfter({ dueBy: null }, inChair)).toBe('2026-11-09');
+  });
+
+  it('falls back on the state’s own due date with nobody in the chair', () => {
+    expect(StreakSystem.dueAfter({ dueBy }, null)).toBe('2026-10-30');
+  });
+
+  it('names no day when neither does', () => {
+    expect(StreakSystem.dueAfter({ dueBy: null }, null)).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const state = deepFreeze({ dueBy });
+    const once = StreakSystem.dueAfter(state, inChair);
+    expect(StreakSystem.dueAfter(state, inChair)).toBe(once);
+    expect(state).toEqual({ dueBy: '2026-10-30' });
+  });
+});
+
+describe('StreakSystem.protectionsHeld — the reserve, where the rule grants it', () => {
+  const granted = StreakRuleSystem.summary(DEFAULT);
+
+  it('counts the protections in reserve', () => {
+    expect(StreakSystem.protectionsHeld({ freezesBanked: 2 }, granted)).toBe(2);
+    expect(StreakSystem.protectionsHeld({ freezesBanked: 1 }, granted)).toBe(1);
+  });
+
+  it('says nothing with an empty reserve', () => {
+    expect(
+      StreakSystem.protectionsHeld({ freezesBanked: 0 }, granted),
+    ).toBeNull();
+  });
+
+  it('says nothing where the rule grants none, whatever was banked', () => {
+    for (const definition of [
+      rule(NO_PROTECTIONS),
+      rule({
+        ...NO_PROTECTIONS,
+        protectionsEnabled: true,
+        protectionsMaxBanked: 0,
+      }),
+    ]) {
+      expect(
+        StreakSystem.protectionsHeld(
+          { freezesBanked: 2 },
+          StreakRuleSystem.summary(definition),
+        ),
+      ).toBeNull();
+    }
+  });
+});
+
+describe('StreakSystem outlook purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const state = deepFreeze(
+      loyaltyAccountFixtures.martin.account.streaks[0] as StreakState,
+    );
+    const seenBy = deepFreeze({
+      today: CARD_TODAY,
+      inChairDue: null,
+      paused: false,
+      lastQualifiedOn: localDate('2026-08-19'),
+    });
+    const summary = deepFreeze(StreakRuleSystem.summary(DEFAULT));
+    const run = () => [
+      StreakSystem.outlook(state, seenBy),
+      StreakSystem.record(state),
+      StreakSystem.protectionsHeld(state, summary),
+    ];
+    expect(run()).toEqual(run());
   });
 });

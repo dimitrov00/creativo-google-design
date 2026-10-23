@@ -15,6 +15,8 @@ import {
   type Placement,
   CancellationReason,
   CancelledBy,
+  HistoryNote,
+  TenureState,
   type SeatOutcome,
   type AccountSeat,
   type Seat,
@@ -37,7 +39,7 @@ import {
   type UserId,
   LocalDate,
   type EndMinute,
-  type MinuteOfDay,
+  MinuteOfDay,
   PriceCents,
   UtcEpochMs,
 } from '@core/primitives';
@@ -74,6 +76,36 @@ const BGN_PER_EUR = 1.95583;
 /** The counter windows a reader shows, in days (R35). */
 const LAST_12M_DAYS = 365;
 const LAST_90D_DAYS = 90;
+
+/** No-shows in the last 90 days that raise the card's reliability warning (old spec R47). */
+const NO_SHOW_WARNING_AT = 2;
+
+/**
+ * The shop wall clock a rolling window is read at — `ShopNow`'s local half
+ * (T8): the windows compare `(localDate, minutes)` pairs and never read the
+ * instant, so a whole `ShopNow` passes as is.
+ */
+type ShopClock = Pick<ShopNow, 'localDate' | 'currentMinute'>;
+
+/** The stored counts and facts the windows are computed from (R33, T8). */
+type WindowedStats = Pick<
+  ClientStats,
+  | 'lifetimeVisitsCompleted'
+  | 'lifetimeNoShows'
+  | 'lifetimeLateCancels'
+  | 'last365VisitsCompleted'
+  | 'last365NoShows'
+  | 'last365LateCancels'
+>;
+
+/** How long the client has come — {@link ClientStatsSystem.tenureOf}'s answer, figures only. */
+export type ClientTenure = {
+  readonly tenureState: TenureState;
+  /** The first worked visit's shop day; `null` on `FIRST_VISIT`. */
+  readonly since: LocalDate | null;
+  /** The usual interval in whole weeks; `null` but on `SINCE_CADENCE`. */
+  readonly cadenceWeeks: number | null;
+};
 
 /**
  * One appointment as the statistics read it — the slice of the entity they
@@ -626,7 +658,7 @@ function usualServicesOf(worked: readonly SubjectVisit[]): ServiceId[] {
  * `fact > (cutoff, now.currentMinute)` — `cutoff` is `now.localDate − days`,
  * computed ONCE by the caller, outside its loop ({@link cutoffOf}).
  */
-function isWithin(fact: VisitFact, now: ShopNow, cutoff: LocalDate): boolean {
+function isWithin(fact: VisitFact, now: ShopClock, cutoff: LocalDate): boolean {
   if (
     compareWall(
       fact.localDate,
@@ -644,13 +676,13 @@ function isWithin(fact: VisitFact, now: ShopNow, cutoff: LocalDate): boolean {
 }
 
 /** The day a rolling window of `days` ending at `now` opens after. */
-function cutoffOf(now: ShopNow, days: number): LocalDate {
+function cutoffOf(now: ShopClock, days: number): LocalDate {
   return LocalDate.addDays(now.localDate, -days);
 }
 
 function countWithin(
   facts: readonly VisitFact[],
-  now: ShopNow,
+  now: ShopClock,
   days: number,
 ): number {
   const cutoff = cutoffOf(now, days);
@@ -659,6 +691,26 @@ function countWithin(
     if (isWithin(facts[i] as VisitFact, now, cutoff)) n++;
   }
   return n;
+}
+
+/** The windows of {@link ClientStatsSystem.statWindows} at a wall-clock point — its one core (D-5). */
+function windowsAt(stats: WindowedStats, now: ShopClock): StatWindows {
+  const windowed = (
+    lifetime: number,
+    facts: readonly VisitFact[],
+  ): WindowedCount => ({
+    lifetime,
+    last12m: countWithin(facts, now, LAST_12M_DAYS),
+    last90d: countWithin(facts, now, LAST_90D_DAYS),
+  });
+  return {
+    visitsCompleted: windowed(
+      stats.lifetimeVisitsCompleted,
+      stats.last365VisitsCompleted,
+    ),
+    noShows: windowed(stats.lifetimeNoShows, stats.last365NoShows),
+    lateCancels: windowed(stats.lifetimeLateCancels, stats.last365LateCancels),
+  };
 }
 
 /** The facts of `visits` that start after the horizon point, oldest first. */
@@ -1149,38 +1201,106 @@ export const ClientStatsSystem = {
     };
   },
 
-  /** The windows every counter reads, computed at read from the stored facts (R33, T8). */
-  statWindows(
+  /**
+   * A span of days as whole weeks — `round(days / 7)`, at least one (Law
+   * 10.2: the card's «на N седмици» and the rhythm's «N седмици от
+   * последното»). The ONE home of `max(1, round(days / 7))`:
+   * `StreakSystem.outlook`'s AT_RISK weeks and the history cell both read
+   * it, never a copy.
+   */
+  cadenceWeeks(days: number): number {
+    return Math.max(1, Math.round(days / 7));
+  },
+
+  /**
+   * What the card's history says beside its figures (Law 10.2): before the
+   * first worked visit `FIRST_VISIT` (no stats count as no visits); else
+   * `CLEAN` when neither a no-show nor a cancellation of the client's own
+   * stands on the record; else `NONE`. NOT {@link tenureOf}'s first-visit
+   * reading (§7 R-8): a first day missing on a counted history is no first
+   * visit here.
+   */
+  historyNote(
     stats: Pick<
       ClientStats,
-      | 'lifetimeVisitsCompleted'
-      | 'lifetimeNoShows'
-      | 'lifetimeLateCancels'
-      | 'last365VisitsCompleted'
-      | 'last365NoShows'
-      | 'last365LateCancels'
-    >,
-    now: ShopNow,
-  ): StatWindows {
-    const windowed = (
-      lifetime: number,
-      facts: readonly VisitFact[],
-    ): WindowedCount => ({
-      lifetime,
-      last12m: countWithin(facts, now, LAST_12M_DAYS),
-      last90d: countWithin(facts, now, LAST_90D_DAYS),
-    });
+      'lifetimeVisitsCompleted' | 'lifetimeNoShows' | 'lifetimeClientCancels'
+    > | null,
+  ): HistoryNote {
+    if (stats === null || stats.lifetimeVisitsCompleted === 0) {
+      return HistoryNote.FirstVisit;
+    }
+    return stats.lifetimeNoShows === 0 && stats.lifetimeClientCancels === 0
+      ? HistoryNote.Clean
+      : HistoryNote.None;
+  },
+
+  /**
+   * How long the client has come, as the card's hero says it (Law 10.2):
+   * `FIRST_VISIT` with no stats, no worked visit or no first day on record;
+   * `SINCE` the first day alone until a cadence exists (three worked
+   * visits, R34); else `SINCE_CADENCE` with the interval in whole weeks
+   * ({@link cadenceWeeks}). NOT {@link historyNote}'s first-visit reading
+   * (§7 R-8).
+   */
+  tenureOf(
+    stats: Pick<
+      ClientStats,
+      'lifetimeVisitsCompleted' | 'firstVisitLocalDate' | 'avgCadenceDays'
+    > | null,
+  ): ClientTenure {
+    if (
+      stats === null ||
+      stats.lifetimeVisitsCompleted === 0 ||
+      stats.firstVisitLocalDate === null
+    ) {
+      return {
+        tenureState: TenureState.FirstVisit,
+        since: null,
+        cadenceWeeks: null,
+      };
+    }
+    if (stats.avgCadenceDays === null) {
+      return {
+        tenureState: TenureState.Since,
+        since: stats.firstVisitLocalDate,
+        cadenceWeeks: null,
+      };
+    }
     return {
-      visitsCompleted: windowed(
-        stats.lifetimeVisitsCompleted,
-        stats.last365VisitsCompleted,
-      ),
-      noShows: windowed(stats.lifetimeNoShows, stats.last365NoShows),
-      lateCancels: windowed(
-        stats.lifetimeLateCancels,
-        stats.last365LateCancels,
-      ),
+      tenureState: TenureState.SinceCadence,
+      since: stats.firstVisitLocalDate,
+      cadenceWeeks: ClientStatsSystem.cadenceWeeks(stats.avgCadenceDays),
     };
+  },
+
+  /** The windows every counter reads, computed at read from the stored facts (R33, T8). */
+  statWindows(stats: WindowedStats, now: ShopNow): StatWindows {
+    return windowsAt(stats, now);
+  },
+
+  /**
+   * {@link statWindows} over a WHOLE shop day — read at its last minute,
+   * 23:59 on `today`'s wall clock (the records page's «last 12 months»).
+   * Zone-blind: the windows compare local `(day, minute)` pairs only, so
+   * no instant is built; it shares {@link statWindows}' core.
+   */
+  statWindowsOnDay(stats: WindowedStats, today: LocalDate): StatWindows {
+    return windowsAt(stats, {
+      localDate: today,
+      currentMinute: MinuteOfDay.LAST,
+    });
+  },
+
+  /** No-shows in the last 90 days that raise the card's reliability warning (old spec R47). */
+  NO_SHOW_WARNING_AT,
+
+  /**
+   * The no-shows the card warns of — the last 90 days' count once it
+   * reaches {@link NO_SHOW_WARNING_AT}, else `null` (no warning).
+   */
+  noShowWarning(windows: Pick<StatWindows, 'noShows'>): number | null {
+    const noShows = windows.noShows.last90d;
+    return noShows >= NO_SHOW_WARNING_AT ? noShows : null;
   },
 
   /** JSON with object keys sorted, so two equal values always print the same. */

@@ -11,6 +11,8 @@ import {
   StreakPhase,
   StreakPhaseState,
   StreakState,
+  StreakCapsule,
+  StreakOutlook,
   type StreakPeriodFact,
   type StreakPeriodReason,
   type StreakPeriodTerms,
@@ -21,6 +23,8 @@ import {
   LocalDate,
   type UtcEpochMs,
 } from '@core/primitives';
+import { ClientStatsSystem } from './client-stats.system';
+import type { StreakRuleSummary } from './streak-rule.system';
 
 /*
  * THE RHYTHM'S PROJECTOR (client-card revision 3 §4.2), ported from
@@ -189,6 +193,53 @@ export type StreakTrackView = {
   readonly paused: boolean;
   /** The most marks drawn, the open one among them. */
   readonly limit: number;
+};
+
+/**
+ * What the card knows beside the projection when it says where the rhythm
+ * stands (`StreakSystem.outlook`). Zone-blind (D-11): the last counted
+ * visit's shop day is converted by the caller from `lastQualifiedAtUtcMs`
+ * in the location's zone.
+ */
+export type StreakOutlookView = {
+  readonly today: LocalDate;
+  /** The next due date once the visit in the chair counts (`StreakSystem.inChairDue`); `null` with nobody in the chair. */
+  readonly inChairDue: LocalDate | null;
+  /** Booking paused: the run is frozen where it stands. */
+  readonly paused: boolean;
+  /** The shop day of the last counted visit (`lastQualifiedAtUtcMs` in the location's zone); `null` with none. */
+  readonly lastQualifiedOn: LocalDate | null;
+};
+
+/**
+ * Where the rhythm stands, as the card's line, capsule and track sentence
+ * say it — days, counts and tags; the words are the wallet's.
+ */
+export type StreakOutlookAnswer = {
+  readonly streakOutlook: StreakOutlook;
+  /**
+   * The day the line names — the in-chair due date, the due date, the last
+   * day to restore a broken run, the booked visit, the at-risk due date or
+   * the end of grace; the capsule beside the figure names the same day.
+   * `null` when the line names none.
+   */
+  readonly day: LocalDate | null;
+  /**
+   * The due date the track's sentence names («следващото до …»): the
+   * in-chair due date, else the state's `dueBy` — only while the line
+   * itself names a due date (`dueNamed`), else `null`.
+   */
+  readonly nextDue: LocalDate | null;
+  /** The line names a due date (in the chair, healthy, at risk, in grace); a paused, frozen, broken, held or unstarted line names none. */
+  readonly dueNamed: boolean;
+  /** The capsule beside the figure; `null` while the run is healthy. */
+  readonly streakCapsule: StreakCapsule | null;
+  /** The capsule warns (a run that a visit can still keep or restore). */
+  readonly urgent: boolean;
+  /** `AT_RISK`: whole weeks since the last counted visit (`ClientStatsSystem.cadenceWeeks`), 0 with no such visit; 0 in every other outlook. */
+  readonly weeksSinceLast: number;
+  /** `FROZEN`: what carries the open period (the line's reason); `null` in every other outlook. */
+  readonly phaseFreezeReason: FreezeReason | null;
 };
 
 /** The habit is the mean of this many of the newest counted gaps, known from the third counted visit on. */
@@ -1083,5 +1134,163 @@ export const StreakSystem = {
       months.add(LocalDate.monthKey(day));
     }
     return { marks, byMonth: months.size === visits };
+  },
+
+  /**
+   * Where the rhythm stands, in the order the card's line is chosen
+   * (`wallet.presenter.ts` `standingOf`, its live path):
+   *
+   * 1. paused → `PAUSED`;
+   * 2. the visit in the chair keeps the run → `IN_CHAIR` (names the
+   *    in-chair due date); else nobody has begun — no count and no counted
+   *    visit (`current > 0 ∨ lastQualifiedAtUtcMs ≠ null` is begun) →
+   *    `NOT_STARTED`;
+   * 3. by phase: `FROZEN` (its reason); `BROKEN` — restorable while
+   *    `phaseRepairableUntil` is today or later (`BROKEN_REPAIRABLE`, names
+   *    that day, warns), else `BROKEN_FINAL` (names nothing: the day before
+   *    the break is no day); a visit on the book holding the open period →
+   *    `HELD` (names it; a capsule only where a warning would have stood,
+   *    never beside a healthy figure); `ACTIVE` → `DUE` / `DUE_NONE`;
+   *    `AT_RISK` (names the due date, warns, and the whole weeks since the
+   *    last counted visit — `ClientStatsSystem.cadenceWeeks`, the one home
+   *    of that rule); `IN_GRACE` (names the end of grace, warns).
+   *
+   * `nextDue` is `StreakSystem.dueAfter` — the in-chair due date, else
+   * `dueBy` — only while the line names a due date (`dueNamed`). A broken
+   * run never names a repair day already past.
+   */
+  outlook(state: StreakState, view: StreakOutlookView): StreakOutlookAnswer {
+    const answer = (
+      streakOutlook: StreakOutlook,
+      day: LocalDate | null,
+      dueNamed: boolean,
+      streakCapsule: StreakCapsule | null,
+      urgent: boolean,
+    ): StreakOutlookAnswer => ({
+      streakOutlook,
+      day,
+      nextDue: dueNamed ? StreakSystem.dueAfter(state, view.inChairDue) : null,
+      dueNamed,
+      streakCapsule,
+      urgent,
+      weeksSinceLast: 0,
+      phaseFreezeReason: null,
+    });
+    if (view.paused) {
+      return answer(StreakOutlook.Paused, null, false, null, false);
+    }
+    if (view.inChairDue !== null) {
+      return answer(StreakOutlook.InChair, view.inChairDue, true, null, false);
+    }
+    if (state.current === 0 && state.lastQualifiedAtUtcMs === null) {
+      return answer(StreakOutlook.NotStarted, null, false, null, false);
+    }
+    switch (state.streakPhase) {
+      case StreakPhase.Frozen:
+        return {
+          ...answer(
+            StreakOutlook.Frozen,
+            null,
+            false,
+            StreakCapsule.Frozen,
+            false,
+          ),
+          phaseFreezeReason: state.phaseFreezeReason,
+        };
+      case StreakPhase.Broken:
+        return LocalDate.compare(state.phaseRepairableUntil, view.today) >= 0
+          ? answer(
+              StreakOutlook.BrokenRepairable,
+              state.phaseRepairableUntil,
+              false,
+              StreakCapsule.Broken,
+              true,
+            )
+          : answer(
+              StreakOutlook.BrokenFinal,
+              null,
+              false,
+              StreakCapsule.Broken,
+              false,
+            );
+      case StreakPhase.Active:
+      case StreakPhase.AtRisk:
+      case StreakPhase.InGrace: {
+        // `heldByAppointmentId` and `heldOn` are set together.
+        const heldOn = state.heldByAppointmentId === null ? null : state.heldOn;
+        if (heldOn !== null) {
+          return answer(
+            StreakOutlook.Held,
+            heldOn,
+            false,
+            state.streakPhase === StreakPhase.Active
+              ? null
+              : StreakCapsule.Held,
+            false,
+          );
+        }
+        if (state.streakPhase === StreakPhase.AtRisk) {
+          return {
+            ...answer(
+              StreakOutlook.AtRisk,
+              state.phaseDueBy,
+              true,
+              StreakCapsule.AtRisk,
+              true,
+            ),
+            weeksSinceLast:
+              view.lastQualifiedOn === null
+                ? 0
+                : ClientStatsSystem.cadenceWeeks(
+                    LocalDate.daysBetween(view.lastQualifiedOn, view.today),
+                  ),
+          };
+        }
+        if (state.streakPhase === StreakPhase.InGrace) {
+          return answer(
+            StreakOutlook.InGrace,
+            state.phaseGraceUntil,
+            true,
+            StreakCapsule.InGrace,
+            true,
+          );
+        }
+        return state.dueBy === null
+          ? answer(StreakOutlook.DueNone, null, true, null, false)
+          : answer(StreakOutlook.Due, state.dueBy, true, null, false);
+      }
+    }
+  },
+
+  /**
+   * The day the next visit keeps the rhythm by: the due date once the
+   * visit in the chair counts (`StreakSystem.inChairDue`) wins, else the
+   * state's own `dueBy`; `null` when neither names a day. Ungated — the
+   * outlook says it only while its line names a due date (`nextDue`).
+   */
+  dueAfter(
+    state: Pick<StreakState, 'dueBy'>,
+    inChairDue: LocalDate | null,
+  ): LocalDate | null {
+    return inChairDue ?? state.dueBy;
+  },
+
+  /** The best run, said only while the run in progress is shorter; `null` otherwise. */
+  record(state: Pick<StreakState, 'best' | 'current'>): number | null {
+    return state.best > state.current ? state.best : null;
+  },
+
+  /**
+   * The protections in reserve, said only where the rule grants them
+   * (`StreakRuleSystem.summary`'s `protections`) and the reserve holds one;
+   * `null` otherwise.
+   */
+  protectionsHeld(
+    state: Pick<StreakState, 'freezesBanked'>,
+    summary: Pick<StreakRuleSummary, 'protections'>,
+  ): number | null {
+    return summary.protections !== null && state.freezesBanked > 0
+      ? state.freezesBanked
+      : null;
   },
 } as const;

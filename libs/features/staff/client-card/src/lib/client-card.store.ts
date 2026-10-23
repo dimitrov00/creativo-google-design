@@ -51,6 +51,7 @@ import {
   type ValidLoyaltyCatalog,
   VisitFilter,
   VisitRowOutcome,
+  WalletSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -861,12 +862,15 @@ export class ClientCardStore {
    */
   private readonly rewardsUsable = computed(() => {
     const context = this._context();
+    // The wallet's own write gate (`WalletSystem.writable`), named once.
     return (
       context !== null &&
-      context.isOwner &&
-      this._online() &&
-      !context.gone &&
-      !this.paused()
+      WalletSystem.writable({
+        isOwner: context.isOwner,
+        visitGone: context.gone,
+        online: this._online(),
+        paused: this.paused(),
+      })
     );
   });
 

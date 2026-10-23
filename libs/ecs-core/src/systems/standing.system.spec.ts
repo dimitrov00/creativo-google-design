@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   EarnedVia,
+  HeadRole,
+  MedalCue,
+  MedalState,
+  ScopeSection,
   BadgeCategoryKind,
   BadgeEmblem,
   BadgeSubjectSlot,
@@ -24,13 +28,27 @@ import {
   BarberId,
   LocationId,
   SeasonId,
+  ServiceCategoryId,
   ServiceId,
   TierId,
   type UtcEpochMs,
 } from '@core/primitives';
-import { FIXTURE_TIME_ZONE, deepFreeze, localDate, utcMs } from '@core/testing';
+import {
+  FIXTURE_TIME_ZONE,
+  FIXTURE_TODAY,
+  deepFreeze,
+  localDate,
+  loyaltyAccountFixtures,
+  loyaltyCatalogFixture,
+  unwrapOk,
+  utcMs,
+} from '@core/testing';
+import { BadgeSystem } from './badge.system';
 import { ZonedTimeSystem } from './zoned-time.system';
-import { LoyaltyCatalogSystem } from './loyalty-catalog.system';
+import {
+  LoyaltyCatalogSystem,
+  type LoyaltyCatalogParts,
+} from './loyalty-catalog.system';
 import { StandingSystem } from './standing.system';
 
 /*
@@ -636,3 +654,1145 @@ describe('StandingSystem purity', () => {
     expect(run()).toEqual(run());
   });
 });
+
+// ── The medals page and the glance strip (Law 10.2, the decision pass) ──
+//
+// The cases the presenters pinned (achievements, medals, medal-detail,
+// client-card and glance specs), re-stated as values and tags over the same
+// data: the published catalogue and Георги's and Мартин's books of
+// `@core/testing`, on FIXTURE_TODAY (28.09.2026 — the autumn season and the
+// beard week run, the summer has ended).
+
+const FIXTURE_CATALOG = unwrapOk(
+  LoyaltyCatalogSystem.validate(loyaltyCatalogFixture()),
+);
+const GEORGI = loyaltyAccountFixtures.georgi.badgeProgress;
+const MARTIN = loyaltyAccountFixtures.martin.badgeProgress;
+/** Георги's previous worked visit: Thursday 3 September, 10:00 in Sofia. */
+const GEORGI_PREVIOUS = utcMs('2026-09-03T07:00:00.000Z');
+
+const seriesId = (id: string) => BadgeSeriesId.of(id);
+const ids = (...raw: readonly string[]) => new Set(raw.map(seriesId));
+const NOTHING = ids();
+/** What Георги's next fade (Иван, Център, 10:00) completes: every family one short on a count it moves. */
+const GEORGI_OPEN = ids(
+  'series-visits',
+  'series-svc-fade',
+  'series-barber-ivan',
+  'series-shop-center',
+  'series-early-bird',
+  'series-2026-autumn-track',
+);
+/** What Мартин's birthday cut completes: the yearly act, and the autumn track's first level. */
+const MARTIN_BIRTHDAY = ids('series-birthday', 'series-2026-autumn-track');
+const AUTUMN_TRACK = seriesId('series-2026-autumn-track');
+
+function fixtureCatalogWith(
+  edit: (parts: LoyaltyCatalogParts) => LoyaltyCatalogParts,
+) {
+  return unwrapOk(LoyaltyCatalogSystem.validate(edit(loyaltyCatalogFixture())));
+}
+
+function fixtureFamily(id: string): BadgeSeries {
+  const found = LoyaltyCatalogSystem.series(FIXTURE_CATALOG, seriesId(id));
+  if (found === null) throw new Error(`no family ${id}`);
+  return found;
+}
+
+function shelf(id: string): readonly BadgeSeries[] {
+  return LoyaltyCatalogSystem.seriesIn(FIXTURE_CATALOG, BadgeCategoryId.of(id));
+}
+
+const without = (
+  progress: readonly BadgeProgress[],
+  ...dropped: readonly string[]
+) => progress.filter((p) => !dropped.includes(p.id));
+
+const only = (progress: readonly BadgeProgress[], ...kept: readonly string[]) =>
+  progress.filter((p) => kept.includes(p.id));
+
+/** The catalogue with its rhythm's rule in force switched off. */
+const RHYTHM_OFF = fixtureCatalogWith((parts) => ({
+  ...parts,
+  streaks: parts.streaks.map((head) => ({
+    ...head,
+    rules: head.rules.map((rule) =>
+      rule.headRole === HeadRole.Current ? { ...rule, enabled: false } : rule,
+    ),
+  })),
+}));
+
+describe('isFamilyNew («ново» on a family)', () => {
+  const standingOf = (id: string, progress = GEORGI) =>
+    BadgeSystem.standing(
+      fixtureFamily(id),
+      progress.find((p) => p.id === id) ?? null,
+    );
+  const latestOf = (id: string, progress = GEORGI) =>
+    BadgeSystem.latestEarned(progress.find((p) => p.id === id) ?? null);
+
+  it('is an earned family whose latest level came since the previous visit', () => {
+    // «В ритъм» V on 28.09, after the visit of 3.09.
+    expect(
+      StandingSystem.isFamilyNew(
+        standingOf('series-rhythm'),
+        latestOf('series-rhythm'),
+        GEORGI_PREVIOUS,
+      ),
+    ).toBe(true);
+    // «Фейд» II on 22.09.2025: long before it.
+    expect(
+      StandingSystem.isFamilyNew(
+        standingOf('series-svc-fade'),
+        latestOf('series-svc-fade'),
+        GEORGI_PREVIOUS,
+      ),
+    ).toBe(false);
+  });
+
+  it('is every earned family before a first visit', () => {
+    expect(
+      StandingSystem.isFamilyNew(
+        standingOf('series-svc-fade'),
+        latestOf('series-svc-fade'),
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it('is never a family without a level, however recent its progress', () => {
+    // «Съботен» is under way at 2/3, with no level won.
+    expect(
+      StandingSystem.isFamilyNew(
+        standingOf('series-weekend'),
+        latestOf('series-weekend'),
+        null,
+      ),
+    ).toBe(false);
+    expect(
+      StandingSystem.isFamilyNew(
+        { medalState: MedalState.Earned },
+        null,
+        GEORGI_PREVIOUS,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('shelfOrdered', () => {
+  it('puts earned families first (highest level first), then the closest in progress, then the rest in catalogue order', () => {
+    expect(
+      StandingSystem.shelfOrdered(shelf('cat-barbers'), GEORGI).map(
+        (s) => s.id,
+      ),
+    ).toEqual([
+      // Earned at III, a tie kept in the shelf's order.
+      'series-barber-ivan',
+      'series-shop-center',
+      // In progress at 1/2 each: a tie kept in the shelf's order.
+      'series-all-barbers',
+      'series-both-shops',
+      // Not started: the shelf's order.
+      'series-barber-niko',
+      'series-barber-stefan',
+      'series-shop-mladost',
+    ]);
+  });
+
+  it('orders a shelf earned, then in progress, then not started — a complete single act among the earned', () => {
+    expect(
+      StandingSystem.shelfOrdered(shelf('cat-special'), GEORGI).map(
+        (s) => s.id,
+      ),
+    ).toEqual([
+      'series-early-bird',
+      'series-on-time',
+      'series-welcome',
+      'series-weekend',
+      'series-birthday',
+      'series-profile',
+      'series-party',
+    ]);
+  });
+
+  it('keeps the order it was handed where nothing is started', () => {
+    const families = [...shelf('cat-milestones')].reverse();
+    expect(StandingSystem.shelfOrdered(families, [])).toEqual(families);
+    expect(StandingSystem.shelfOrdered([], GEORGI)).toEqual([]);
+  });
+});
+
+describe('soonIds («Скоро») and almostEarned («Почти спечелени»)', () => {
+  const almost = (
+    progress: readonly BadgeProgress[],
+    completing: ReadonlySet<BadgeSeriesId>,
+    options: { rhythmLive?: boolean; catalog?: typeof FIXTURE_CATALOG } = {},
+  ) =>
+    StandingSystem.almostEarned(
+      options.catalog ?? FIXTURE_CATALOG,
+      progress,
+      FIXTURE_TODAY,
+      {
+        completing,
+        excludeSeriesId: AUTUMN_TRACK,
+        rhythmLive: options.rhythmLive ?? true,
+        limit: 3,
+      },
+    );
+
+  it('«Скоро» is the closest under the diversity rule where the visit completes nothing', () => {
+    expect(
+      StandingSystem.soonIds(
+        FIXTURE_CATALOG,
+        GEORGI,
+        FIXTURE_TODAY,
+        NOTHING,
+        3,
+      ),
+    ).toEqual(['series-svc-fade', 'series-self-service', 'series-weekend']);
+  });
+
+  it('«Скоро» leads with the single act the visit completes, the closest after it, at most the limit', () => {
+    expect(
+      StandingSystem.soonIds(
+        FIXTURE_CATALOG,
+        MARTIN,
+        FIXTURE_TODAY,
+        MARTIN_BIRTHDAY,
+        3,
+      ),
+    ).toEqual([
+      'series-birthday',
+      'series-twelve-months',
+      'series-barber-ivan',
+    ]);
+    // A counted family the visit completes is no act: it keeps its rank.
+    expect(
+      StandingSystem.soonIds(
+        FIXTURE_CATALOG,
+        GEORGI,
+        FIXTURE_TODAY,
+        GEORGI_OPEN,
+        3,
+      ),
+    ).toEqual(['series-svc-fade', 'series-self-service', 'series-weekend']);
+    expect(
+      StandingSystem.soonIds(
+        FIXTURE_CATALOG,
+        MARTIN,
+        FIXTURE_TODAY,
+        MARTIN_BIRTHDAY,
+        0,
+      ),
+    ).toEqual([]);
+  });
+
+  it('«Почти» is one row of three, the nearest of each shelf, the running season’s track left to its card', () => {
+    expect(almost(GEORGI, NOTHING)).toEqual([
+      'series-svc-fade',
+      'series-self-service',
+      'series-weekend',
+    ]);
+    // The track is the nearest of all, one visit from III: still not here.
+    expect(almost(GEORGI, GEORGI_OPEN)).not.toContain(AUTUMN_TRACK);
+  });
+
+  it('«Почти» leads with what this visit completes', () => {
+    expect(almost(GEORGI, GEORGI_OPEN)[0]).toBe('series-svc-fade');
+    // A single act the domain never ranks: a birthday visit.
+    expect(almost(MARTIN, MARTIN_BIRTHDAY)).toEqual([
+      'series-birthday',
+      'series-twelve-months',
+      'series-barber-ivan',
+    ]);
+  });
+
+  it('«Почти» puts a level this visit completes before a nearer one it does not move', () => {
+    const near = [
+      ...without(GEORGI, 'series-self-service'),
+      { ...must(GEORGI, 'series-self-service'), value: 9 },
+    ];
+    expect(almost(near, GEORGI_OPEN).slice(0, 2)).toEqual([
+      'series-svc-fade',
+      'series-self-service',
+    ]);
+  });
+
+  it('«Почти» is empty when nothing is under way, but offers what the visit completes, begun or not', () => {
+    expect(almost([], NOTHING)).toEqual([]);
+    // A first fade with Иван at 10:00 lands three first levels, one per shelf.
+    expect(almost([], GEORGI_OPEN)).toEqual([
+      'series-visits',
+      'series-barber-ivan',
+      'series-early-bird',
+    ]);
+    // Every ladder climbed: nothing is left to be near.
+    const done = fixtureCatalogWith((parts) => ({
+      ...parts,
+      series: parts.series.filter(
+        (family) =>
+          family.id === 'series-rhythm' || family.id === 'series-welcome',
+      ),
+      seasons: [],
+    }));
+    expect(almost(GEORGI, NOTHING, { catalog: done })).toEqual([]);
+  });
+
+  it('«Почти» offers fewer than three where fewer are under way', () => {
+    expect(
+      almost(only(GEORGI, 'series-weekend', 'series-svc-beard'), NOTHING),
+    ).toEqual(['series-weekend', 'series-svc-beard']);
+  });
+
+  it('«Почти» never offers an earned family at value nought: under way is a count that moved', () => {
+    // «Цяла година» alone on its shelf, I won and its windowed count back
+    // at 0: the domain still ranks it (0/8 to II), «almost» does not.
+    const alone = fixtureCatalogWith((parts) => ({
+      ...parts,
+      series: parts.series.filter(
+        (family) => family.id === 'series-twelve-months',
+      ),
+      seasons: [],
+    }));
+    const progress = (value: number): BadgeProgress[] => [
+      { ...must(MARTIN, 'series-twelve-months'), value },
+    ];
+    expect(
+      BadgeSystem.standing(
+        fixtureFamily('series-twelve-months'),
+        must(progress(0), 'series-twelve-months'),
+      ).medalState,
+    ).toBe(MedalState.Earned);
+    expect(
+      StandingSystem.closestLevels(alone, progress(0), FIXTURE_TODAY, 3).map(
+        (c) => c.badgeSeriesId,
+      ),
+    ).toEqual(['series-twelve-months']);
+    expect(almost(progress(0), NOTHING, { catalog: alone })).toEqual([]);
+    expect(almost(progress(1), NOTHING, { catalog: alone })).toEqual([
+      'series-twelve-months',
+    ]);
+  });
+
+  it('«Почти» offers no family of the rhythm’s shelf while the shop runs no rhythm', () => {
+    expect(almost(MARTIN, NOTHING)).toContain('series-twelve-months');
+    expect(almost(MARTIN, NOTHING, { rhythmLive: false })).not.toContain(
+      'series-twelve-months',
+    );
+  });
+});
+
+describe('recentFreshLevelsByDay («Последни»)', () => {
+  it('keeps a day’s every level for its stack, and only the fresh ones for its face', () => {
+    // Two families on 4.09; «Фейд» moved again on 10.09 — a newer day.
+    const progress = progressOf({
+      'series-svc-fade': {
+        value: 24,
+        earned: {
+          2: '2026-09-04T08:00:00.000Z',
+          3: '2026-09-10T08:00:00.000Z',
+        },
+      },
+      'series-visits': { value: 24, earned: { 3: '2026-09-04T07:00:00.000Z' } },
+    });
+    const days = StandingSystem.recentFreshLevelsByDay(progress);
+    expect(
+      days.map((day) => [
+        day.localDate,
+        day.levels.map((l) => `${l.badgeSeriesId} ${l.level}`),
+        day.fresh.map((l) => `${l.badgeSeriesId} ${l.level}`),
+      ]),
+    ).toEqual([
+      ['2026-09-10', ['series-svc-fade 3'], ['series-svc-fade 3']],
+      [
+        '2026-09-04',
+        // A stack of two, «+1»…
+        ['series-svc-fade 2', 'series-visits 3'],
+        // …whose face can only be the family no newer day shows.
+        ['series-visits 3'],
+      ],
+    ]);
+  });
+
+  it('drops a day whose every family a newer day already shows, and sets no day limit', () => {
+    const days = StandingSystem.recentFreshLevelsByDay(GEORGI);
+    // 3.09 held only the autumn track's I: its II on 28.09 shows it.
+    expect(days.map((d) => d.localDate)).not.toContain('2026-09-03');
+    expect(days[0]).toEqual({
+      localDate: '2026-09-28',
+      levels: StandingSystem.recentLevelsByDay(GEORGI, 1)[0]?.levels,
+      fresh: StandingSystem.recentLevelsByDay(GEORGI, 1)[0]?.levels,
+    });
+    for (const day of days) expect(day.fresh.length).toBeGreaterThan(0);
+    // Every family, once, on the newest day it moved.
+    const faces = days.flatMap((d) => d.fresh.map((l) => l.badgeSeriesId));
+    expect(new Set(faces).size).toBe(faces.length);
+    expect(new Set(faces)).toEqual(
+      new Set(GEORGI.filter((p) => p.earned.length > 0).map((p) => p.id)),
+    );
+    expect(StandingSystem.recentFreshLevelsByDay([])).toEqual([]);
+  });
+});
+
+describe('earnedAmong, earnedOnly and scopeMedalState', () => {
+  it('counts a group by its earned families, never by the started ones', () => {
+    // Мартин's «Общи» on the mastery page: «Изследовател» under way.
+    expect(
+      StandingSystem.earnedAmong([fixtureFamily('series-explorer')], MARTIN),
+    ).toBe(0);
+    expect(StandingSystem.earnedAmong(shelf('cat-mastery'), GEORGI)).toBe(3);
+    // A complete family is earned: the figure is the filled discs.
+    expect(StandingSystem.earnedAmong(shelf('cat-rhythm'), GEORGI)).toBe(2);
+    expect(StandingSystem.earnedAmong([], GEORGI)).toBe(0);
+  });
+
+  it('cuts a list to its earned families, in order — what an ended season keeps', () => {
+    const summer = StandingSystem.familiesIn(
+      FIXTURE_CATALOG,
+      GEORGI,
+      FamilyScopeFilter.season(SeasonId.of('season-2026-summer')),
+      FIXTURE_TODAY,
+    );
+    expect(summer.map((s) => s.id)).toEqual([
+      'series-2026-summer-each-month',
+      'series-2026-summer-saturday',
+      'series-2026-summer-before-leave',
+    ]);
+    expect(StandingSystem.earnedOnly(summer, GEORGI).map((s) => s.id)).toEqual([
+      'series-2026-summer-each-month',
+    ]);
+    // familiesIn and familyCounts stay whole: «N от M» counts the window.
+    expect(
+      StandingSystem.familyCounts(
+        FIXTURE_CATALOG,
+        GEORGI,
+        FamilyScopeFilter.season(SeasonId.of('season-2026-summer')),
+        FIXTURE_TODAY,
+      ).total,
+    ).toBe(3);
+  });
+
+  it('lists a season’s families whole until its window ends, then only the earned (seasonListed)', () => {
+    const summerId = SeasonId.of('season-2026-summer');
+    const summer = StandingSystem.familiesIn(
+      FIXTURE_CATALOG,
+      GEORGI,
+      FamilyScopeFilter.season(summerId),
+      FIXTURE_TODAY,
+    );
+    const ids = (families: readonly { readonly id: string }[]) =>
+      families.map((s) => s.id);
+    const window = (from: string, until: string) => ({
+      windowFrom: localDate(from),
+      windowUntil: localDate(until),
+    });
+    // Ended (the summer, on the fixture's day): what was earned, in order.
+    const ended = LoyaltyCatalogSystem.season(FIXTURE_CATALOG, summerId);
+    expect(ended).not.toBeNull();
+    expect(
+      ids(
+        StandingSystem.seasonListed(
+          must2(ended),
+          summer,
+          GEORGI,
+          FIXTURE_TODAY,
+        ),
+      ),
+    ).toEqual(ids(StandingSystem.earnedOnly(summer, GEORGI)));
+    expect(
+      ids(
+        StandingSystem.seasonListed(
+          window('2026-09-01', '2026-09-27'),
+          summer,
+          GEORGI,
+          FIXTURE_TODAY,
+        ),
+      ),
+    ).toEqual(['series-2026-summer-each-month']);
+    // Open — its last day included — and announced: the whole list, as is.
+    for (const open of [
+      window('2026-09-01', '2026-11-30'),
+      window('2026-09-01', '2026-09-28'),
+      window('2026-09-28', '2026-09-28'),
+      window('2026-10-01', '2026-10-31'),
+    ]) {
+      expect(
+        StandingSystem.seasonListed(open, summer, GEORGI, FIXTURE_TODAY),
+      ).toBe(summer);
+    }
+    expect(
+      StandingSystem.seasonListed(
+        window('2026-06-01', '2026-08-31'),
+        [],
+        GEORGI,
+        FIXTURE_TODAY,
+      ),
+    ).toEqual([]);
+  });
+
+  it('draws an archived window as one medal: earned, in progress, or not started', () => {
+    // The beard week, one of its two families won.
+    expect(
+      StandingSystem.scopeMedalState({ started: 1, earned: 1, total: 2 }),
+    ).toBe(MedalState.Earned);
+    expect(
+      StandingSystem.scopeMedalState({ started: 2, earned: 0, total: 2 }),
+    ).toBe(MedalState.InProgress);
+    expect(
+      StandingSystem.scopeMedalState({ started: 0, earned: 0, total: 2 }),
+    ).toBe(MedalState.NotStarted);
+  });
+});
+
+describe('sectionsOf', () => {
+  const CATEGORY = new Map([
+    [ServiceId.of('svc-classic-cut'), ServiceCategoryId.of('hair')],
+    [ServiceId.of('svc-fade'), ServiceCategoryId.of('hair')],
+    [ServiceId.of('svc-beard'), ServiceCategoryId.of('beard')],
+    [ServiceId.of('svc-scissor-trim'), ServiceCategoryId.of('hair')],
+    [ServiceId.of('svc-modern-cut'), ServiceCategoryId.of('hair')],
+    [ServiceId.of('svc-finish'), ServiceCategoryId.of('beard')],
+    [ServiceId.of('svc-full-care'), ServiceCategoryId.of('care')],
+    [ServiceId.of('svc-father-son'), ServiceCategoryId.of('hair')],
+  ]);
+  const sections = (
+    kind: BadgeCategoryKind,
+    families: readonly BadgeSeries[],
+    categories = CATEGORY,
+  ) =>
+    StandingSystem.sectionsOf(kind, families, categories).map((section) => [
+      section.scopeSection,
+      section.key,
+      section.families.map((s) => s.id),
+    ]);
+
+  it('sections mastery by the service’s own category, in the order they first appear, then «Общи»', () => {
+    expect(sections(BadgeCategoryKind.Mastery, shelf('cat-mastery'))).toEqual([
+      [
+        ScopeSection.ServiceCategory,
+        'hair',
+        [
+          'series-svc-classic-cut',
+          'series-svc-fade',
+          'series-svc-scissor-trim',
+          'series-svc-modern-cut',
+          'series-svc-father-son',
+        ],
+      ],
+      [
+        ScopeSection.ServiceCategory,
+        'beard',
+        ['series-svc-beard', 'series-svc-finish'],
+      ],
+      [ScopeSection.ServiceCategory, 'care', ['series-svc-full-care']],
+      [ScopeSection.General, null, ['series-explorer']],
+    ]);
+  });
+
+  it('files a service the host files under no category with «Общи»', () => {
+    const fewer = new Map(
+      [...CATEGORY].filter(([id]) => id !== 'svc-full-care'),
+    );
+    expect(
+      sections(BadgeCategoryKind.Mastery, shelf('cat-mastery'), fewer).at(-1),
+    ).toEqual([
+      ScopeSection.General,
+      null,
+      ['series-svc-full-care', 'series-explorer'],
+    ]);
+    expect(sections(BadgeCategoryKind.Mastery, [])).toEqual([]);
+  });
+
+  it('sections barbers and shops apart, the rest «Общи»', () => {
+    expect(sections(BadgeCategoryKind.Barbers, shelf('cat-barbers'))).toEqual([
+      [
+        ScopeSection.Barbers,
+        null,
+        ['series-barber-ivan', 'series-barber-niko', 'series-barber-stefan'],
+      ],
+      [ScopeSection.Shops, null, ['series-shop-center', 'series-shop-mladost']],
+      [ScopeSection.General, null, ['series-all-barbers', 'series-both-shops']],
+    ]);
+    // A section with nothing in it is left out.
+    expect(
+      sections(BadgeCategoryKind.Barbers, [
+        fixtureFamily('series-shop-center'),
+      ]),
+    ).toEqual([[ScopeSection.Shops, null, ['series-shop-center']]]);
+  });
+
+  it('draws any other shelf as one grid of all its families', () => {
+    expect(sections(BadgeCategoryKind.Special, shelf('cat-special'))).toEqual([
+      [ScopeSection.Whole, null, shelf('cat-special').map((s) => s.id)],
+    ]);
+    expect(sections(BadgeCategoryKind.Records, [])).toEqual([
+      [ScopeSection.Whole, null, []],
+    ]);
+  });
+});
+
+describe('neighboursOf', () => {
+  const neighbours = (id: string, catalog = FIXTURE_CATALOG) =>
+    StandingSystem.neighboursOf(
+      catalog,
+      GEORGI,
+      fixtureFamily(id),
+      FIXTURE_TODAY,
+    ).map((s) => s.id);
+
+  it('is the family’s shelf in shelf order, itself left out, unlimited', () => {
+    expect(neighbours('series-svc-fade')).toEqual([
+      'series-svc-beard',
+      'series-explorer',
+      'series-svc-classic-cut',
+      'series-svc-scissor-trim',
+      'series-svc-modern-cut',
+      'series-svc-finish',
+      'series-svc-full-care',
+      'series-svc-father-son',
+    ]);
+  });
+
+  it('is a season’s family’s window WITH its track', () => {
+    expect(neighbours('series-2026-autumn-early')).toEqual([
+      'series-2026-autumn-track',
+      'series-2026-autumn-each-month',
+      'series-2026-autumn-beard',
+      'series-2026-autumn-referral',
+    ]);
+  });
+
+  it('is only what was earned in a window that ended', () => {
+    expect(neighbours('series-2026-summer-each-month')).toEqual([
+      'series-2026-summer-track',
+    ]);
+  });
+
+  it('leaves a withdrawn family out unless the client started it', () => {
+    const retired = fixtureCatalogWith((parts) => ({
+      ...parts,
+      series: parts.series.map((family) =>
+        family.id === 'series-2026-autumn-referral' ||
+        family.id === 'series-2026-autumn-each-month'
+          ? {
+              ...family,
+              retiredAtUtcMs: utcMs('2026-09-20T07:00:00.000Z'),
+              retiredLocalDate: localDate('2026-09-20'),
+            }
+          : family,
+      ),
+    }));
+    expect(neighbours('series-2026-autumn-early', retired)).toEqual([
+      'series-2026-autumn-track',
+      // Started at 1/3: kept.
+      'series-2026-autumn-each-month',
+      'series-2026-autumn-beard',
+    ]);
+  });
+
+  it('is nothing where the family stands alone', () => {
+    expect(
+      StandingSystem.neighboursOf(
+        FIXTURE_CATALOG,
+        GEORGI,
+        { ...fixtureFamily('series-svc-fade'), categoryId: null },
+        FIXTURE_TODAY,
+      ),
+    ).toEqual([]);
+    expect(
+      StandingSystem.neighboursOf(
+        FIXTURE_CATALOG,
+        GEORGI,
+        {
+          ...fixtureFamily('series-svc-fade'),
+          categoryId: BadgeCategoryId.of('cat-gone'),
+        },
+        FIXTURE_TODAY,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe('shelves, windowFamilies and anyUnderWay (the medals page)', () => {
+  const shelvesOf = (
+    catalog: typeof FIXTURE_CATALOG,
+    progress: readonly BadgeProgress[],
+    rhythmLive: boolean,
+  ) =>
+    StandingSystem.shelves(catalog, progress, FIXTURE_TODAY, rhythmLive).map(
+      ({ category, families }) => [category.id, families.length],
+    );
+
+  it('draws every shelf but the records’ in the catalogue’s order, with all its families', () => {
+    expect(shelvesOf(FIXTURE_CATALOG, GEORGI, true)).toEqual([
+      ['cat-milestones', 5],
+      ['cat-mastery', 9],
+      ['cat-barbers', 7],
+      ['cat-rhythm', 3],
+      ['cat-special', 7],
+    ]);
+    // Even with nothing started: the requirement is never hidden.
+    expect(shelvesOf(FIXTURE_CATALOG, [], true)).toEqual(
+      shelvesOf(FIXTURE_CATALOG, GEORGI, true),
+    );
+  });
+
+  it('never draws the records’ shelf, whatever it holds', () => {
+    const filed = fixtureCatalogWith((parts) => ({
+      ...parts,
+      series: parts.series.map((family) =>
+        family.id === 'series-profile'
+          ? { ...family, categoryId: BadgeCategoryId.of('cat-records') }
+          : family,
+      ),
+    }));
+    expect(shelvesOf(filed, GEORGI, true).map(([id]) => id)).not.toContain(
+      'cat-records',
+    );
+  });
+
+  it('cuts the rhythm’s shelf to what was earned while the shop runs no rhythm, and drops it where nothing was', () => {
+    // The rule in force switched off: the page reads it through rhythmLive.
+    const live = LoyaltyCatalogSystem.rhythmLive(
+      RHYTHM_OFF,
+      FIXTURE_TODAY,
+      true,
+    );
+    expect(live).toBe(false);
+    const off = StandingSystem.shelves(
+      RHYTHM_OFF,
+      GEORGI,
+      FIXTURE_TODAY,
+      live,
+    ).find(({ category }) => category.id === 'cat-rhythm');
+    expect(off?.families.map((s) => s.id)).toEqual([
+      'series-rhythm',
+      'series-twelve-months',
+    ]);
+    expect(
+      shelvesOf(
+        FIXTURE_CATALOG,
+        without(GEORGI, 'series-rhythm', 'series-twelve-months'),
+        false,
+      ).map(([id]) => id),
+    ).not.toContain('cat-rhythm');
+  });
+
+  it('draws a window’s track, then its own families', () => {
+    const autumn = must2(
+      LoyaltyCatalogSystem.season(
+        FIXTURE_CATALOG,
+        SeasonId.of('season-2026-autumn'),
+      ),
+    );
+    expect(
+      StandingSystem.windowFamilies(
+        FIXTURE_CATALOG,
+        GEORGI,
+        autumn,
+        FIXTURE_TODAY,
+      ).map((s) => s.id),
+    ).toEqual([
+      'series-2026-autumn-track',
+      'series-2026-autumn-each-month',
+      'series-2026-autumn-beard',
+      'series-2026-autumn-referral',
+      'series-2026-autumn-early',
+    ]);
+    const week = must2(
+      LoyaltyCatalogSystem.season(
+        FIXTURE_CATALOG,
+        SeasonId.of('event-2026-beard-week'),
+      ),
+    );
+    expect(
+      StandingSystem.windowFamilies(
+        FIXTURE_CATALOG,
+        GEORGI,
+        week,
+        FIXTURE_TODAY,
+      ).map((s) => s.id),
+    ).toEqual(['series-2026-beard-week-beard', 'series-2026-beard-week-full']);
+  });
+
+  it('keeps a withdrawn track, started or not: the window draws it', () => {
+    const retired = fixtureCatalogWith((parts) => ({
+      ...parts,
+      series: parts.series.map((family) =>
+        family.id === 'series-2026-autumn-track'
+          ? {
+              ...family,
+              retiredAtUtcMs: utcMs('2026-09-20T07:00:00.000Z'),
+              retiredLocalDate: localDate('2026-09-20'),
+            }
+          : family,
+      ),
+    }));
+    const autumn = must2(
+      LoyaltyCatalogSystem.season(retired, SeasonId.of('season-2026-autumn')),
+    );
+    expect(
+      StandingSystem.windowFamilies(retired, [], autumn, FIXTURE_TODAY)[0]?.id,
+    ).toBe('series-2026-autumn-track');
+  });
+
+  it('counts the collection over the shelves and the open windows, an ended season left out', () => {
+    const windows = LoyaltyCatalogSystem.windowsOn(
+      FIXTURE_CATALOG,
+      FIXTURE_TODAY,
+    );
+    const published = (catalog: typeof FIXTURE_CATALOG, live: boolean) => [
+      ...StandingSystem.shelves(catalog, GEORGI, FIXTURE_TODAY, live).flatMap(
+        (s) => s.families,
+      ),
+      ...[
+        ...(windows.season === null ? [] : [windows.season]),
+        ...windows.events,
+      ].flatMap((window) =>
+        StandingSystem.windowFamilies(catalog, GEORGI, window, FIXTURE_TODAY),
+      ),
+    ];
+    const on = published(FIXTURE_CATALOG, true);
+    expect([StandingSystem.earnedAmong(on, GEORGI), on.length]).toEqual([
+      15, 38,
+    ]);
+    const off = published(FIXTURE_CATALOG, false);
+    expect([StandingSystem.earnedAmong(off, GEORGI), off.length]).toEqual([
+      15, 37,
+    ]);
+  });
+
+  it('is under way once a family moved or a level was earned', () => {
+    expect(StandingSystem.anyUnderWay(GEORGI)).toBe(true);
+    expect(StandingSystem.anyUnderWay([])).toBe(false);
+    expect(StandingSystem.anyUnderWay(only(GEORGI, 'series-weekend'))).toBe(
+      true,
+    );
+    const idle = { ...must(GEORGI, 'series-weekend'), value: 0 };
+    expect(StandingSystem.anyUnderWay([idle])).toBe(false);
+    expect(
+      StandingSystem.anyUnderWay([
+        { ...must(GEORGI, 'series-welcome'), value: 0 },
+      ]),
+    ).toBe(true);
+  });
+});
+
+describe('strip and stripCue (the glance’s medals)', () => {
+  const rhythm = seriesId('series-rhythm');
+  const newestOf = (progress: readonly BadgeProgress[]) =>
+    StandingSystem.recentLevelsByDay(progress, 1)[0]?.levels[0] ?? null;
+  const standingOf = (id: string, progress = GEORGI) =>
+    BadgeSystem.standing(
+      fixtureFamily(id),
+      progress.find((p) => p.id === id) ?? null,
+    );
+  const completingFirst = (completing: ReadonlySet<BadgeSeriesId>) =>
+    LoyaltyCatalogSystem.cueOrdered(
+      FIXTURE_CATALOG,
+      FIXTURE_CATALOG.families.filter((s) => completing.has(s.id)),
+    )[0]?.id ?? null;
+  const soon = (
+    progress: readonly BadgeProgress[],
+    completing: ReadonlySet<BadgeSeriesId>,
+  ) =>
+    StandingSystem.soonIds(
+      FIXTURE_CATALOG,
+      progress,
+      FIXTURE_TODAY,
+      completing,
+      3,
+    );
+
+  it('names three medals on a settled visit: the newest level, then the two closest — only slot 1 «ново»', () => {
+    expect(
+      StandingSystem.strip({
+        completingFirst: completingFirst(NOTHING),
+        newestSeriesId: rhythm,
+        soonIds: soon(GEORGI, NOTHING),
+        limit: 3,
+      }),
+    ).toEqual({
+      slots: ['series-rhythm', 'series-svc-fade', 'series-self-service'],
+      markNewIndex: 0,
+      closestId: 'series-svc-fade',
+    });
+  });
+
+  it('leads with the family this very visit completes, the newest level after it, nothing marked', () => {
+    expect(
+      StandingSystem.strip({
+        completingFirst: completingFirst(GEORGI_OPEN),
+        newestSeriesId: rhythm,
+        soonIds: soon(GEORGI, GEORGI_OPEN),
+        limit: 3,
+      }),
+    ).toEqual({
+      slots: ['series-visits', 'series-rhythm', 'series-svc-fade'],
+      markNewIndex: null,
+      closestId: 'series-svc-fade',
+    });
+  });
+
+  it('puts Мартин’s birthday visit on the strip, then his newest level, then the closest', () => {
+    expect(
+      StandingSystem.strip({
+        completingFirst: completingFirst(MARTIN_BIRTHDAY),
+        newestSeriesId: seriesId('series-2026-summer-track'),
+        soonIds: soon(MARTIN, MARTIN_BIRTHDAY),
+        limit: 3,
+      }),
+    ).toEqual({
+      slots: [
+        'series-birthday',
+        'series-2026-summer-track',
+        'series-twelve-months',
+      ],
+      markNewIndex: null,
+      // «Скоро» leads with the single act the visit completes.
+      closestId: 'series-birthday',
+    });
+  });
+
+  it('draws each family once, at most the limit, and marks nothing without a newest level', () => {
+    expect(
+      StandingSystem.strip({
+        completingFirst: seriesId('series-svc-fade'),
+        newestSeriesId: seriesId('series-svc-fade'),
+        soonIds: [seriesId('series-svc-fade'), seriesId('series-visits')],
+        limit: 3,
+      }),
+    ).toEqual({
+      slots: ['series-svc-fade', 'series-visits'],
+      markNewIndex: null,
+      closestId: 'series-visits',
+    });
+    expect(
+      StandingSystem.strip({
+        completingFirst: null,
+        newestSeriesId: null,
+        soonIds: soon(GEORGI, NOTHING),
+        limit: 2,
+      }),
+    ).toEqual({
+      slots: ['series-svc-fade', 'series-self-service'],
+      markNewIndex: null,
+      closestId: 'series-svc-fade',
+    });
+    expect(
+      StandingSystem.strip({
+        completingFirst: null,
+        newestSeriesId: rhythm,
+        soonIds: [],
+        limit: 0,
+      }),
+    ).toEqual({ slots: [], markNewIndex: null, closestId: null });
+  });
+
+  it('names «Скоро»’s first family beside the newest one’s as the closest, whatever the limit', () => {
+    // The newest family keeps its own slot: «Скоро» is read beside it.
+    expect(
+      StandingSystem.strip({
+        completingFirst: null,
+        newestSeriesId: rhythm,
+        soonIds: [rhythm, seriesId('series-svc-fade')],
+        limit: 3,
+      }).closestId,
+    ).toBe('series-svc-fade');
+    // A full strip still names it — the CLOSE cue measures it, drawn or not.
+    expect(
+      StandingSystem.strip({
+        completingFirst: seriesId('series-visits'),
+        newestSeriesId: rhythm,
+        soonIds: [seriesId('series-self-service')],
+        limit: 2,
+      }),
+    ).toEqual({
+      slots: ['series-visits', 'series-rhythm'],
+      markNewIndex: null,
+      closestId: 'series-self-service',
+    });
+    // Only the newest family in «Скоро»: none.
+    expect(
+      StandingSystem.strip({
+        completingFirst: null,
+        newestSeriesId: rhythm,
+        soonIds: [rhythm],
+        limit: 3,
+      }).closestId,
+    ).toBeNull();
+  });
+
+  it('cues what this very visit completes first, naming the level it reaches', () => {
+    expect(
+      StandingSystem.stripCue({
+        completing: {
+          series: fixtureFamily('series-visits'),
+          standing: standingOf('series-visits'),
+        },
+        newest: newestOf(GEORGI),
+        previousVisitAtUtcMs: GEORGI_PREVIOUS,
+        closest: standingOf('series-svc-fade'),
+      }),
+    ).toEqual({ medalCue: MedalCue.WithThisVisit, level: 4 });
+  });
+
+  it('cues Мартин’s birthday act with no level: a single act has none', () => {
+    expect(
+      StandingSystem.stripCue({
+        completing: {
+          series: fixtureFamily('series-birthday'),
+          standing: standingOf('series-birthday', MARTIN),
+        },
+        newest: newestOf(MARTIN),
+        previousVisitAtUtcMs: null,
+        closest: null,
+      }),
+    ).toEqual({ medalCue: MedalCue.WithThisVisit, level: null });
+  });
+
+  it('cues the newest level when it came since the previous visit, naming the level it is handed', () => {
+    const newest = must2(newestOf(GEORGI));
+    expect(
+      StandingSystem.stripCue({
+        completing: null,
+        newest,
+        previousVisitAtUtcMs: GEORGI_PREVIOUS,
+        closest: standingOf('series-svc-fade'),
+      }),
+    ).toEqual({ medalCue: MedalCue.New, level: 5 });
+    // Three levels share 28.09's stamp: the cue reads the face's level,
+    // never the latest stamp's.
+    const autumn = must2(
+      StandingSystem.recentLevelsByDay(GEORGI, 1)[0]?.levels.find(
+        (l) => l.badgeSeriesId === AUTUMN_TRACK,
+      ),
+    );
+    expect(autumn.earnedAtUtcMs).toBe(newest.earnedAtUtcMs);
+    expect(
+      StandingSystem.stripCue({
+        completing: null,
+        newest: autumn,
+        previousVisitAtUtcMs: GEORGI_PREVIOUS,
+        closest: null,
+      }),
+    ).toEqual({ medalCue: MedalCue.New, level: 2 });
+  });
+
+  it('cues the closest level when nothing is new and nothing completes, and none past that', () => {
+    const after = utcMs('2026-09-28T08:00:00.000Z');
+    expect(
+      StandingSystem.stripCue({
+        completing: null,
+        newest: newestOf(GEORGI),
+        previousVisitAtUtcMs: after,
+        closest: standingOf('series-svc-fade'),
+      }),
+    ).toEqual({ medalCue: MedalCue.Close, level: 3 });
+    // «Добре дошъл» is done: no next level to be close to.
+    expect(
+      StandingSystem.stripCue({
+        completing: null,
+        newest: newestOf(GEORGI),
+        previousVisitAtUtcMs: after,
+        closest: standingOf('series-welcome'),
+      }),
+    ).toEqual({ medalCue: null, level: null });
+    expect(
+      StandingSystem.stripCue({
+        completing: null,
+        newest: null,
+        previousVisitAtUtcMs: null,
+        closest: null,
+      }),
+    ).toEqual({ medalCue: null, level: null });
+  });
+});
+
+describe('StandingSystem purity — the medals page and the strip', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const catalog = deepFreeze(FIXTURE_CATALOG);
+    const progress = deepFreeze([...GEORGI]);
+    const completing = GEORGI_OPEN;
+    const run = () => [
+      StandingSystem.isFamilyNew(
+        { medalState: MedalState.Earned },
+        progress[0]?.earned[0] ?? null,
+        GEORGI_PREVIOUS,
+      ),
+      StandingSystem.shelfOrdered(catalog.families, progress),
+      StandingSystem.soonIds(catalog, progress, FIXTURE_TODAY, completing, 3),
+      StandingSystem.almostEarned(catalog, progress, FIXTURE_TODAY, {
+        completing,
+        excludeSeriesId: AUTUMN_TRACK,
+        rhythmLive: false,
+        limit: 3,
+      }),
+      StandingSystem.recentFreshLevelsByDay(progress),
+      StandingSystem.earnedAmong(catalog.families, progress),
+      StandingSystem.earnedOnly(catalog.families, progress),
+      StandingSystem.seasonListed(
+        {
+          windowFrom: localDate('2026-06-01'),
+          windowUntil: localDate('2026-08-31'),
+        },
+        catalog.families,
+        progress,
+        FIXTURE_TODAY,
+      ),
+      StandingSystem.seasonListed(
+        {
+          windowFrom: localDate('2026-09-01'),
+          windowUntil: localDate('2026-11-30'),
+        },
+        catalog.families,
+        progress,
+        FIXTURE_TODAY,
+      ),
+      StandingSystem.scopeMedalState({ started: 1, earned: 0, total: 3 }),
+      StandingSystem.sectionsOf(
+        BadgeCategoryKind.Barbers,
+        catalog.families,
+        new Map(),
+      ),
+      StandingSystem.neighboursOf(
+        catalog,
+        progress,
+        fixtureFamily('series-svc-fade'),
+        FIXTURE_TODAY,
+      ),
+      StandingSystem.shelves(catalog, progress, FIXTURE_TODAY, false),
+      StandingSystem.windowFamilies(
+        catalog,
+        progress,
+        { id: SeasonId.of('season-2026-autumn'), trackSeriesId: AUTUMN_TRACK },
+        FIXTURE_TODAY,
+      ),
+      StandingSystem.anyUnderWay(progress),
+      StandingSystem.strip({
+        completingFirst: null,
+        newestSeriesId: seriesId('series-rhythm'),
+        soonIds: [seriesId('series-svc-fade')],
+        limit: 3,
+      }),
+      StandingSystem.stripCue({
+        completing: null,
+        newest: null,
+        previousVisitAtUtcMs: null,
+        closest: BadgeSystem.standing(fixtureFamily('series-svc-fade'), null),
+      }),
+    ];
+    expect(run()).toEqual(run());
+  });
+});
+
+function must(progress: readonly BadgeProgress[], id: string): BadgeProgress {
+  const found = progress.find((p) => p.id === id);
+  if (found === undefined) throw new Error(`no progress for ${id}`);
+  return found;
+}
+
+function must2<T>(value: T | null | undefined): T {
+  if (value === null || value === undefined) throw new Error('missing');
+  return value;
+}

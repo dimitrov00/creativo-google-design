@@ -1,36 +1,37 @@
 import type { Appointment, WaitlistRequest } from '@core/entities';
 import {
-  Daypart,
-  DayWindows,
+  type DayWindows,
   type Seat,
-  SeatSubject,
   type ShopNow,
-  VoucherRedemption,
+  VisitMark,
+  VisitStatusMark,
+  VisitTone,
 } from '@core/components';
 import {
-  BookingStatus,
   CustomerId,
   LocalDate,
   type LocationId,
-  MinuteOfDay,
+  type MinuteOfDay,
   type TimeZone,
+  UserId,
   type UtcEpochMs,
 } from '@core/primitives';
 import {
-  BillingSystem,
   CancelledSide,
-  type PersonSubject,
+  type SubjectStory,
   VisitGrain,
+  VisitListSystem,
   VisitPerspective,
   VisitRowOutcome,
   VisitStorySystem,
+  WaitlistSystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import { daypartWords, pluralForm } from '@creativo/infrastructure/i18n';
 import { dayRange } from './day-range';
 import type { StaffEventLine } from './event-head/staff-event-line';
 import { firstNameOf } from './first-name';
-import { UPCOMING_SECTION_KEY, visitSectionKey } from './visit-sections';
+import { UPCOMING_SECTION_KEY } from './visit-sections';
 import {
   formatCents,
   formatMinute,
@@ -69,26 +70,23 @@ import {
  * system's (`VisitRowOutcome`, `CancelledSide`), compared against their
  * dictionaries.
  *
- * The story's math — whose seats, the root outcome, the decisive
- * cancellation and its side, the people counted, the upcoming rule, the
- * runs of watched days — is `VisitStorySystem` in `@core/systems`; the
- * bill is `BillingSystem`'s. The words, the clock's formatting and the
- * money's stay here.
+ * The row DECIDES NOTHING (Law 10.2). The story's math — whose seats, the
+ * root outcome, the decisive cancellation and its side, the tile's tone,
+ * the status a row names, the figure (the whole bill or a share), the
+ * marks, whose words are quoted, the shop named, the people counted, the
+ * upcoming rule, the runs of watched days — is `VisitStorySystem` in
+ * `@core/systems`; the section a row files under is `VisitListSystem`'s;
+ * the days a request still watches, their parts and where its row files
+ * are `WaitlistSystem`'s. The words, the clock's formatting and the
+ * money's stay here, each tag worded through one table.
  */
 
-/** The first minute of a shop day — where a waiting request's row starts. */
-const DAY_START: MinuteOfDay = MinuteOfDay.ofProven(0);
-
-/**
- * Where a waiting request that watches no day files (§9 R-4): the first
- * day of the civil axis at its first minute, so it orders before every real
- * row, as the legacy instant 0 did — built from the constructors, never a
- * throw.
- */
-const WAITLIST_UNDATED = {
-  localDate: LocalDate.fromEpochDay(0),
-  startMinutes: DAY_START,
-} as const;
+/** The tile's tone, per the system's tag (`VisitStorySystem.toneOf`). */
+const VISIT_TONE_WORDS = {
+  [VisitTone.Hollow]: 'hollow',
+  [VisitTone.Upcoming]: 'upcoming',
+  [VisitTone.Past]: 'past',
+} as const satisfies Record<VisitTone, NonNullable<VisitRowVm['tile']>['tone']>;
 
 /**
  * The row's words as the builders read them: `VisitWords`, and the one word
@@ -249,9 +247,9 @@ export function visitWaitlistWordsOf(
 
 /**
  * A person's own story of one appointment, as the row tells it. Exported
- * with `storyOf`, `visitClockOf` and `distinct` for the card's builders
- * (`visit-card.presenter.ts`, contract delta V1-1): a card is a row told at
- * length, and it reads the same story off the same clock.
+ * with `storyOf`, `subjectStoryOf`, `visitClockOf` and `distinct` for the
+ * card's builders (`visit-card.presenter.ts`, contract delta V1-1): a card
+ * is a row told at length, and it reads the same story off the same clock.
  */
 export interface VisitStory {
   /** The seats the row is about — the subject's, or the whole party's. */
@@ -292,36 +290,38 @@ export function visitRowOf(
     options.locale,
     visitZoneOf(appointment.locationId, lookup) ?? options.timeZone,
   );
-  const story = storyOf(appointment, options);
+  const story = subjectStoryOf(appointment, options);
   const id: string = appointment.id;
   const current = id === options.currentAppointmentId;
-  const upcoming = VisitStorySystem.isUpcoming(
-    story.outcome,
-    { localDate: appointment.localDate, minute: appointment.startMinutes },
-    now,
-  );
-  const hollow =
-    story.outcome === VisitRowOutcome.Cancelled ||
-    story.outcome === VisitRowOutcome.NoShow;
+  const start = {
+    localDate: appointment.localDate,
+    minute: appointment.startMinutes,
+  };
+  const upcoming = VisitStorySystem.isUpcoming(story.outcome, start, now);
+  const struck = VisitStorySystem.isVoid(story.outcome);
 
   const title =
     distinct(
-      story.seats.map((seat) => lookup.serviceName(seat.serviceId)),
+      seatsOf(appointment, story).map((seat) =>
+        lookup.serviceName(seat.serviceId),
+      ),
     ).join(' · ') || words.unknownService;
 
-  const barberIds = distinct(story.seats.map((seat) => seat.barberId));
+  const barberIds = VisitStorySystem.subjectBarberIds(appointment, story);
   const barberNames = barberIds.map(
     (barberId) => lookup.barberName(barberId) ?? words.barberRole,
   );
 
   const status = appointment.bookingStatus;
+  const statusMark = VisitStorySystem.statusMark(story.outcome, status);
   const cancelledWord =
     story.cancelledBy === null ? null : words.cancelledBy(story.cancelledBy);
+  // The row words a no-show and an hour the shop has not confirmed; any
+  // other row says how it was called off, or nothing.
   const statusWord =
-    story.outcome === VisitRowOutcome.NoShow
+    statusMark === VisitStatusMark.NoShow
       ? words.noShow
-      : story.outcome === VisitRowOutcome.Open &&
-          status === BookingStatus.Pending
+      : statusMark === VisitStatusMark.Pending
         ? words.statusPending
         : cancelledWord;
   const outcomeSlot = [current ? words.thisVisit : null, statusWord]
@@ -339,11 +339,7 @@ export function visitRowOf(
         ? at.weekday()
         : words.tileMonth(day.month),
     day: day.day,
-    tone: hollow
-      ? ('hollow' as const)
-      : upcoming
-        ? ('upcoming' as const)
-        : ('past' as const),
+    tone: VISIT_TONE_WORDS[VisitStorySystem.toneOf(story.outcome, start, now)],
   };
 
   const base = {
@@ -352,14 +348,16 @@ export function visitRowOf(
     // The shop's wall clock, as stored — the order within a section.
     localDate: appointment.localDate,
     startMinutes: appointment.startMinutes,
-    sectionKey: upcoming
-      ? UPCOMING_SECTION_KEY
-      : visitSectionKey(appointment.localDate, options.grain),
+    sectionKey: VisitListSystem.rowSectionKey(
+      upcoming,
+      appointment.localDate,
+      options.grain,
+    ),
     upcoming,
     tile,
     leadingIcon: null,
     title,
-    struck: hollow,
+    struck,
     outcome: story.outcome,
     // The STORED tag (F1-9): the client row's `data-status` reads it.
     bookingStatus: status,
@@ -407,15 +405,16 @@ export function visitRowOf(
       return name === null ? words.barberRole : firstNameOf(name);
     }),
   );
-  const alone = story.seats.length === appointment.seats.length;
-  const peers = alone ? 0 : peersOf(appointment, story.seats);
+  const peers = VisitStorySystem.peerCountOf(appointment, story);
   const peersText = peers > 0 ? words.withPeers(peers) : null;
   // The shop as a line names it: its short name, without the tenant's brand
   // that every shop shares (`VisitLookup.locationName`).
-  const locationText =
-    story.outcome === VisitRowOutcome.Worked && lookup.locationCount > 1
-      ? lookup.locationName(appointment.locationId)
-      : null;
+  const locationText = VisitStorySystem.namesShop(
+    story.outcome,
+    lookup.locationCount,
+  )
+    ? lookup.locationName(appointment.locationId)
+    : null;
 
   // The fact line never carries the date, because the tile and the section
   // own it. Its facts run from the one that varies most down a history to
@@ -457,11 +456,13 @@ export function visitRowOf(
   const lines: readonly StaffEventLine[] =
     statusLine === null ? [factLine] : [{ text: statusLine }, factLine];
 
+  // The figure is the system's (the whole bill, or the subject's share); the
+  // row only prints it.
+  const figure = VisitStorySystem.subjectFigure(appointment, story);
   const price =
-    story.outcome === VisitRowOutcome.Worked ||
-    story.outcome === VisitRowOutcome.Cancelled
-      ? priceOf(appointment, story.seats, options.locale)
-      : null;
+    figure === null
+      ? null
+      : formatCents(figure.amountCents, figure.currency, options.locale);
 
   // THE FACE keeps the trailing edge, as on the client's own list (revision
   // 3 §2.5: that is the sameness). Who cut, by the name the shop knows them
@@ -482,76 +483,51 @@ export function visitRowOf(
         };
 
   // THE STAFF'S FACT ends the second line: money, a state in words, or
-  // «Този час». At most one.
+  // «Този час». At most one. The figure is charged and primary on a worked
+  // visit, booked, secondary and struck on one that did not happen (the
+  // system gives a figure to a worked or a cancelled visit only).
   const trailingFact: VisitTrailingFact = current
     ? { trailingFactFace: TrailingFactFace.Badge, text: words.thisVisit }
-    : story.outcome === VisitRowOutcome.Worked && price !== null
+    : price !== null
       ? {
           trailingFactFace: TrailingFactFace.Amount,
           text: price,
-          emphasis: 'primary',
-          struck: false,
+          emphasis: struck ? 'secondary' : 'primary',
+          struck,
         }
-      : story.outcome === VisitRowOutcome.Cancelled && price !== null
+      : statusMark === VisitStatusMark.NoShow
         ? {
-            trailingFactFace: TrailingFactFace.Amount,
-            text: price,
-            emphasis: 'secondary',
-            struck: true,
+            trailingFactFace: TrailingFactFace.Status,
+            icon: 'visit.noShow',
+            text: words.noShow,
+            tone: 'warning',
           }
-        : story.outcome === VisitRowOutcome.NoShow
+        : statusMark === VisitStatusMark.Pending
           ? {
               trailingFactFace: TrailingFactFace.Status,
-              icon: 'visit.noShow',
-              text: words.noShow,
-              tone: 'warning',
+              icon: 'visit.pending',
+              text: words.statusPending,
+              tone: 'neutral',
             }
-          : story.outcome === VisitRowOutcome.Open &&
-              status === BookingStatus.Pending
-            ? {
-                trailingFactFace: TrailingFactFace.Status,
-                icon: 'visit.pending',
-                text: words.statusPending,
-                tone: 'neutral',
-              }
-            : null;
+          : null;
 
+  // Which marks a row carries, and in what order, is the system's
+  // (`VisitStorySystem.marksOf`): the row gives each its glyph and word.
+  const photoCount = options.photoCount ?? 0;
   const marks: VisitRowMark[] = [];
-  if (story.outcome === VisitRowOutcome.Worked) {
-    const photoCount = options.photoCount ?? 0;
-    if (photoCount > 0) {
-      marks.push({
-        icon: 'client.photos',
-        label: words.photos(photoCount),
-        count: photoCount,
-      });
-    }
-    // Only where the figure beside it is the discounted one: a companion's
-    // share is their seats' own prices, and the bill's discount is not in it.
-    if (alone && appointment.discounts.length > 0) {
-      marks.push({ icon: 'promo.coupon', label: words.discount, count: null });
-    }
-    // How the visit was settled (Fresha adopt-now N5): a voucher paid some
-    // of this bill. The same rule as the discount, since the bill is the
-    // whole party's; a draw that was taken back settled nothing.
-    if (
-      alone &&
-      words.voucher !== undefined &&
-      appointment.voucherRedemptions.some(VoucherRedemption.isLive)
-    ) {
-      marks.push({ icon: 'promo.voucher', label: words.voucher, count: null });
-    }
+  for (const mark of VisitStorySystem.marksOf(appointment, story, photoCount)) {
+    const drawn = rowMarkOf(mark, words, photoCount);
+    if (drawn !== null) marks.push(drawn);
   }
 
-  // The client's own words belong to whoever booked: on a party someone
-  // else booked they are the booker's, and the row does not carry them.
-  const note = appointment.contactNote;
+  // The client's own words belong to whoever booked
+  // (`VisitStorySystem.quotesBooker`): on a party someone else booked they
+  // are the booker's, and the row does not carry them — nor to a viewer who
+  // may not read them.
   const quoted =
-    note !== null &&
     options.clientWords !== false &&
-    options.subjectUserId !== null &&
-    appointment.ownerUserId === options.subjectUserId
-      ? note
+    VisitStorySystem.quotesBooker(appointment, userIdOf(options.subjectUserId))
+      ? appointment.contactNote
       : null;
 
   return {
@@ -593,12 +569,10 @@ export function waitlistRowOf(
   const words = options.words;
   const parsedToday = LocalDate.parse(options.today);
   const today = parsedToday.ok ? parsedToday.value : null;
-  const all = request.flexibleDays;
-  const ahead =
-    today === null ? all : all.filter((day) => day.localDate >= today);
-  // A request whose every day has passed is the host's to leave out; drawn
+  // The days it still watches come FIRST (every fact below reads them): a
+  // request whose every day has passed is the host's to leave out; drawn
   // anyway, it names what it asked for rather than nothing.
-  const days = ahead.length > 0 ? ahead : all;
+  const days = WaitlistSystem.daysAhead(request.flexibleDays, today);
 
   const services =
     distinct(
@@ -607,7 +581,7 @@ export function waitlistRowOf(
       ),
     ).join(' · ') || words.unknownService;
 
-  const parts = daypartsOf(days);
+  const parts = WaitlistSystem.daypartsWatched(days);
   const partWords =
     parts.length === 0
       ? null
@@ -649,17 +623,15 @@ export function waitlistRowOf(
 
   const others = options.otherRequests ?? 0;
   const more = others > 0 ? ` ${words.moreRequests(others)}` : '';
-  const first = days[0];
+  // The first watched day, from its first minute — the order within the
+  // upcoming run; a request that watches no day files first (§9 R-4).
+  const point = WaitlistSystem.sortPoint(days);
 
   return {
     id: request.id,
     visitRowEntry: VisitRowEntry.Waitlist,
-    // The first watched day, from its first minute — the order within the
-    // upcoming run; a request that watches no day files first (§9 R-4).
-    localDate:
-      first === undefined ? WAITLIST_UNDATED.localDate : first.localDate,
-    startMinutes:
-      first === undefined ? WAITLIST_UNDATED.startMinutes : DAY_START,
+    localDate: point.localDate,
+    startMinutes: point.minute,
     sectionKey: UPCOMING_SECTION_KEY,
     upcoming: true,
     tile: null,
@@ -696,79 +668,87 @@ export function storyOf(
     'perspective' | 'subjectUserId' | 'subjectCustomerId'
   >,
 ): VisitStory {
-  const story = VisitStorySystem.subjectStory(
-    appointment,
-    subjectRecordOf(appointment, options),
-    options.perspective === VisitPerspective.Staff,
-  );
+  const story = subjectStoryOf(appointment, options);
   return {
-    seats: story.seatIndexes.map((index) => appointment.seats[index] as Seat),
+    seats: seatsOf(appointment, story),
     outcome: story.outcome,
     cancelledBy: story.cancelledBy,
   };
 }
 
 /**
- * The client record a row's story is about: the one the host named, else
- * the record the seat of `subjectUserId` links to — `null` for a guest, and
- * for an account with no seat on the visit (the appointment's story then).
+ * The system's story of one appointment (`VisitStorySystem.subjectStory`),
+ * keyed by the client record `VisitStorySystem.subjectRecordOf` reads off
+ * the host's options — the one the host named, else the one the ACCOUNT
+ * seat of `subjectUserId` links to. The row and the card ask the system
+ * every question of the story with it.
  */
-function subjectRecordOf(
+export function subjectStoryOf(
   appointment: Appointment,
-  options: Pick<VisitRowOptions, 'subjectUserId' | 'subjectCustomerId'>,
-): CustomerId | null {
-  const named = options.subjectCustomerId;
-  if (named !== undefined) return named === null ? null : CustomerId.of(named);
-  const account = options.subjectUserId;
-  if (account === null) return null;
-  for (const seat of appointment.seats) {
-    if (
-      seat.seatSubject === SeatSubject.Account &&
-      seat.subjectUserId === account
-    ) {
-      return seat.subjectCustomerId;
-    }
-  }
-  return null;
-}
-
-/**
- * What the row's figure says: the bill (`BillingSystem`, discounts taken
- * off) when the seats are the whole party; otherwise the subject's own
- * seats' prices — a root discount is not pro-rated onto a share (owner
- * question Q2). `null` for a visit no bill can be read from (no seat, two
- * currencies — refused at every write).
- */
-function priceOf(
-  appointment: Appointment,
-  seats: readonly Seat[],
-  locale: string,
-): string | null {
-  if (seats.length === appointment.seats.length) {
-    const bill = BillingSystem.evaluate(appointment);
-    return bill.ok
-      ? formatCents(bill.value.totalCents, bill.value.currency, locale)
-      : null;
-  }
-  const share = BillingSystem.subtotalOf(seats);
-  return share.ok
-    ? formatCents(share.value.amountCents, share.value.currency, locale)
-    : null;
-}
-
-/** The OTHER people on the visit — an account by its id, a guest by the seat's name. */
-function peersOf(appointment: Appointment, own: readonly Seat[]): number {
-  return VisitStorySystem.peerCount(
-    appointment.seats.map(personSubjectOf),
-    appointment.seats.map((seat) => own.includes(seat)),
+  options: Pick<
+    VisitRowOptions,
+    'perspective' | 'subjectUserId' | 'subjectCustomerId'
+  >,
+): SubjectStory {
+  return VisitStorySystem.subjectStory(
+    appointment,
+    VisitStorySystem.subjectRecordOf(
+      appointment,
+      namedRecordOf(options.subjectCustomerId),
+      userIdOf(options.subjectUserId),
+    ),
+    options.perspective === VisitPerspective.Staff,
   );
 }
 
-/** Who a seat is for, as people are counted. */
-function personSubjectOf(seat: Seat): PersonSubject {
-  return seat.seatSubject === SeatSubject.Account
-    ? { seatSubject: SeatSubject.Account, userId: seat.subjectUserId }
-    : { seatSubject: SeatSubject.Anonymous, label: seat.guestLabel };
+/** The seats a story is about, in the appointment's order — for the catalogue's names. */
+function seatsOf(
+  appointment: Appointment,
+  story: SubjectStory,
+): readonly Seat[] {
+  return story.seatIndexes.map((index) => appointment.seats[index] as Seat);
+}
+
+/**
+ * The record the host named, branded at the edge (a document id the host
+ * read): `undefined` names none, `null` names a guest.
+ */
+function namedRecordOf(
+  named: string | null | undefined,
+): CustomerId | null | undefined {
+  return named === undefined || named === null ? named : CustomerId.of(named);
+}
+
+/** The subject's account, branded at the edge (a uid the host read); `null` is a guest. */
+function userIdOf(subjectUserId: string | null): UserId | null {
+  return subjectUserId === null ? null : UserId.of(subjectUserId);
+}
+
+/**
+ * A mark as the row draws it, per the system's tag
+ * (`VisitStorySystem.marksOf`) — its glyph and its hidden word. A table
+ * without the voucher's word (`VisitBuilderWords.voucher`) draws no
+ * voucher mark.
+ */
+function rowMarkOf(
+  mark: VisitMark,
+  words: VisitBuilderWords,
+  photoCount: number,
+): VisitRowMark | null {
+  switch (mark) {
+    case VisitMark.Photos:
+      return {
+        icon: 'client.photos',
+        label: words.photos(photoCount),
+        count: photoCount,
+      };
+    case VisitMark.Discount:
+      return { icon: 'promo.coupon', label: words.discount, count: null };
+    case VisitMark.Voucher:
+      return words.voucher === undefined
+        ? null
+        : { icon: 'promo.voucher', label: words.voucher, count: null };
+  }
 }
 
 /** Present names, each once, in first-seen order. */
@@ -923,19 +903,6 @@ export function visitClockOf(
 }
 
 // ── The waiting request's days ─────────────────────────────────────────
-
-/**
- * The parts of the day the windows touch, in the day's order — the
- * domain's one rule (`Daypart.touchedBy`), the same boundaries the booking
- * time sheet heads its times with, so the line names a window the way the
- * client's picker headed the times they chose from. A day offered whole
- * names none: «чт–пт, следобед» would be untrue of a Thursday that works at
- * any hour.
- */
-function daypartsOf(days: readonly DayWindows[]): readonly Daypart[] {
-  if (days.length === 0 || days.some(DayWindows.isWholeDay)) return [];
-  return Daypart.touchedBy(days.flatMap((day) => day.windows));
-}
 
 /** A run of consecutive calendar days: one day when `first` is `last`. */
 interface DayRun {

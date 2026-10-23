@@ -28,6 +28,12 @@ describe('MinuteOfDay — a point in [0, 1440)', () => {
     }
   });
 
+  it('LAST is the day’s last minute: a MinuteOfDay, and the next one is off the clock', () => {
+    expect(MinuteOfDay.LAST).toBe(1439);
+    expect(MinuteOfDay.of(MinuteOfDay.LAST)).toEqual({ ok: true, value: 1439 });
+    expect(MinuteOfDay.of(MinuteOfDay.LAST + 1).ok).toBe(false);
+  });
+
   it('addClamped and minusClamped keep the brand inside the day', () => {
     expect(MinuteOfDay.addClamped(m(600), count(45))).toBe(645);
     expect(MinuteOfDay.addClamped(m(1430), count(45))).toBe(1439);

@@ -1,20 +1,32 @@
 import {
+  AppointmentId,
+  type BadgeSeriesId,
   LocalDate,
   ServiceId,
   ServiceVariantId,
   type TimeZone,
   UtcEpochMs,
+  defect,
 } from '@core/primitives';
-import type { ShopNow, VisitLeg, WallTime } from '@core/components';
+import {
+  DialSource,
+  MedalCue,
+  type ShopNow,
+  TenureState,
+  type VisitLeg,
+  type WallTime,
+} from '@core/components';
 import {
   AgeSystem,
   BadgeSystem,
   ClientGlanceSystem,
+  ClientStatsSystem,
+  type GlanceLeg,
   LoyaltyCatalogSystem,
   PhoneSystem,
   StandingSystem,
   type ValidLoyaltyCatalog,
-  VisitRowOutcome,
+  VisitStorySystem,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -31,7 +43,6 @@ import { type VisitRowVm } from '@creativo/features/shared/visits';
 import {
   type AchievementsContext,
   completesWithThisVisit,
-  isOneOff,
   medalVm,
   newestFaceLevel,
   previousVisitOf,
@@ -79,6 +90,9 @@ const CAPSULE_LIMIT = 4;
 
 /** The past cuts the rail shows. */
 const PHOTO_RAIL_LIMIT = 6;
+
+/** The medals the glance's strip draws. */
+const STRIP_LIMIT = 3;
 
 // ── The person ──────────────────────────────────────────────────────────
 
@@ -168,16 +182,15 @@ export function clientHeadVm(input: HeadInput): ClientHeadVm {
             );
     } else if (!input.statsKnown) {
       stateLine = null;
-    } else if (
-      stats === null ||
-      stats.lifetimeVisitsCompleted === 0 ||
-      stats.firstVisitLocalDate === null
-    ) {
-      stateLine = words.head.firstVisit;
     } else {
-      stateLine = words.head.since(
-        monthYearLong(stats.firstVisitLocalDate, words.lang),
-      );
+      // How long the client has come is `ClientStatsSystem.tenureOf`'s; the
+      // head words SINCE and SINCE_CADENCE alike — the cadence is the
+      // history's to say.
+      const tenure = ClientStatsSystem.tenureOf(stats);
+      stateLine =
+        tenure.tenureState === TenureState.FirstVisit || tenure.since === null
+          ? words.head.firstVisit
+          : words.head.since(monthYearLong(tenure.since, words.lang));
     }
   }
   return {
@@ -223,37 +236,44 @@ export function capsulesRun(
 
 // ── Contact ─────────────────────────────────────────────────────────────
 
-/** The dialable number: the account's own, else the seat's (never the booker's for a companion). */
+/**
+ * The dialable number: the account's own, else the seat's (never the
+ * booker's for a companion) — which one, and whether there is one, is
+ * `PhoneSystem.dialable`'s. The seat's `tel:` and everything but digits
+ * and «+» are stripped here, at the edge.
+ */
 export function phoneOf(
   subject: ClientCardSubject,
   user: User | null,
 ): { readonly e164: string; readonly display: string } | null {
-  // A registered account always holds a phone; a stub never reaches here.
-  if (user !== null && user.phone !== null) {
-    return {
-      e164: user.phone,
-      display: PhoneSystem.formatInternational(user.phone),
-    };
-  }
-  const raw = (subject.phoneHref ?? subject.phone ?? '')
+  const seatDigits = (subject.phoneHref ?? subject.phone ?? '')
     .replace(/^tel:/i, '')
     .replace(/[^\d+]/g, '');
-  if (raw.replace('+', '').length === 0) return null;
-  return { e164: raw, display: subject.phone ?? raw };
+  // A registered account always holds a phone; a stub never reaches here.
+  const number = PhoneSystem.dialable(user?.phone ?? null, seatDigits);
+  if (number === null) return null;
+  return number.dialSource === DialSource.Account
+    ? {
+        e164: number.e164,
+        display: PhoneSystem.formatInternational(number.e164),
+      }
+    : { e164: number.digits, display: subject.phone ?? number.digits };
+}
+
+/** The visit on screen's services as the glance's legs, branded at the edge. */
+function draftLegsOf(draft: ClientCardContext['legs']): readonly GlanceLeg[] {
+  return draft.map((leg) => ({
+    serviceId: ServiceId.of(leg.serviceId),
+    variantId:
+      leg.variantId === null ? null : ServiceVariantId.of(leg.variantId),
+  }));
 }
 
 export function sameLegs(
   last: readonly VisitLeg[],
   draft: ClientCardContext['legs'],
 ): boolean {
-  return ClientGlanceSystem.sameLegs(
-    last,
-    draft.map((leg) => ({
-      serviceId: ServiceId.of(leg.serviceId),
-      variantId:
-        leg.variantId === null ? null : ServiceVariantId.of(leg.variantId),
-    })),
-  );
+  return ClientGlanceSystem.sameLegs(last, draftLegsOf(draft));
 }
 
 export interface ActionsInput {
@@ -307,24 +327,32 @@ export function quickActionsVm(input: ActionsInput): readonly QuickActionVm[] {
     );
   }
   const stats = input.stats;
-  const lastId = stats?.lastVisitAppointmentId ?? null;
-  const lastDay = stats?.lastVisitLocalDate ?? null;
-  const lastLegs = stats?.lastVisitLegs ?? [];
-  if (
-    lastId !== null &&
-    lastDay !== null &&
-    input.online &&
-    !input.context.gone &&
-    lastId !== input.context.appointmentId &&
-    lastLegs.length > 0 &&
-    !sameLegs(lastLegs, input.context.legs)
-  ) {
-    const services = [
-      ...new Set(
-        lastLegs.map((leg) => input.context.catalog.serviceName(leg.serviceId)),
-      ),
-    ].filter((service): service is string => service !== null);
-    if (services.length > 0) {
+  const context = input.context;
+  if (stats !== null) {
+    const lastLegs = stats.lastVisitLegs;
+    // The services of the last visit the catalogue still names (the
+    // host's lookup); whether «Пак същото» is offered is
+    // `ClientGlanceSystem.repeatOffer`'s.
+    const named = lastLegs.flatMap((leg) => {
+      const name = context.catalog.serviceName(leg.serviceId);
+      return name === null ? [] : [{ serviceId: leg.serviceId, name }];
+    });
+    const offered = ClientGlanceSystem.repeatOffer(
+      stats,
+      {
+        online: input.online,
+        gone: context.gone,
+        currentAppointmentId:
+          context.appointmentId === null
+            ? null
+            : AppointmentId.of(context.appointmentId),
+        legs: draftLegsOf(context.legs),
+      },
+      new Set<ServiceId>(named.map((leg) => leg.serviceId)),
+    );
+    const lastDay = stats.lastVisitLocalDate;
+    if (offered && lastDay !== null) {
+      const services = [...new Set(named.map((leg) => leg.name))];
       const today = shopDayOf(input.nowMs, input.zone);
       actions.push({
         id: 'same',
@@ -375,15 +403,16 @@ export function lastWorkedVisit(
   rowOf: (appointment: Appointment) => VisitRowVm,
   currentAppointmentId: string | null,
 ): { readonly appointment: Appointment; readonly row: VisitRowVm } | null {
-  const newestFirst = [...appointments].sort(
-    (a, b) => b.utcEpochMs - a.utcEpochMs,
+  // The visit on screen is UI read-state: dropped here, before the system
+  // picks the newest WORKED one (`VisitStorySystem.lastWorked`).
+  const rest = appointments.filter(
+    (appointment) => appointment.id !== currentAppointmentId,
   );
-  for (const appointment of newestFirst) {
-    if (appointment.id === currentAppointmentId) continue;
-    const row = rowOf(appointment);
-    if (row.outcome === VisitRowOutcome.Worked) return { appointment, row };
-  }
-  return null;
+  const appointment = VisitStorySystem.lastWorked(
+    rest,
+    (candidate) => rowOf(candidate).outcome,
+  );
+  return appointment === null ? null : { appointment, row: rowOf(appointment) };
 }
 
 // ── The photo rail ─────────────────────────────────────────────────────
@@ -454,15 +483,23 @@ export interface LoyaltyTilesInput {
   readonly heldRewards?: readonly string[];
 }
 
-/** Shelves before seasons, then the catalogue's order — which family a cue names first. */
+/**
+ * Shelves before seasons, then the catalogue's order — which family a cue
+ * names first, as a comparator over two families. The order is
+ * `LoyaltyCatalogSystem.cueOrdered`'s (a stable sort): `a` before `b` when
+ * the system puts it first either way round, a tie (0) when each keeps its
+ * place.
+ */
 export function cueOrder(data: AchievementsData) {
-  const shelf = (series: BadgeSeries) =>
-    series.categoryId === null
-      ? Number.POSITIVE_INFINITY
-      : (LoyaltyCatalogSystem.category(data.catalog, series.categoryId)
-          ?.order ?? Number.POSITIVE_INFINITY);
-  return (a: BadgeSeries, b: BadgeSeries) =>
-    shelf(a) - shelf(b) || a.order - b.order;
+  return (a: BadgeSeries, b: BadgeSeries): number => {
+    if (a === b) return 0;
+    if (LoyaltyCatalogSystem.cueOrdered(data.catalog, [b, a])[0] === a) {
+      return -1;
+    }
+    return LoyaltyCatalogSystem.cueOrdered(data.catalog, [a, b])[0] === b
+      ? 1
+      : 0;
+  };
 }
 
 /**
@@ -492,72 +529,110 @@ export function medalStripVm(
     newest === null
       ? null
       : LoyaltyCatalogSystem.series(data.catalog, newest.badgeSeriesId);
-  const soon = soonSeriesIds(data, ctx, 3)
-    .filter((id) => id !== newestSeries?.id)
-    .map((id) => seriesById(data, id))
-    .filter((series): series is BadgeSeries => series !== null);
-  const completing = data.catalog.families
-    .filter((series) => completesWithThisVisit(series, data, ctx))
-    .sort(cueOrder(data))[0];
-  const seen = new Set<string>();
-  const slots = [
-    ...(completing === undefined ? [] : [completing]),
-    ...(newestSeries === null ? [] : [newestSeries]),
-    ...soon,
-  ]
-    .filter((series) => {
-      if (seen.has(series.id)) return false;
-      seen.add(series.id);
-      return true;
-    })
-    .slice(0, 3);
+  // «Скоро»'s families as the catalogue names them (`StandingSystem.strip`
+  // reads them beside the newest one's own slot, and names the closest).
+  const soon = soonSeriesIds(data, ctx, STRIP_LIMIT).flatMap((id) => {
+    const series = seriesById(data, id);
+    return series === null ? [] : [series];
+  });
+  // The first family this visit completes, in the cue's order.
+  const completing =
+    LoyaltyCatalogSystem.cueOrdered(
+      data.catalog,
+      data.catalog.families.filter((series) =>
+        completesWithThisVisit(series, data, ctx),
+      ),
+    )[0] ?? null;
+  // Which families fill the slots, which slot says «ново» and which family
+  // is the closest are `StandingSystem.strip`'s.
+  const strip = StandingSystem.strip({
+    completingFirst: completing?.id ?? null,
+    newestSeriesId: newestSeries?.id ?? null,
+    soonIds: soon.map((series) => series.id),
+    limit: STRIP_LIMIT,
+  });
+  // Each slot's family as the candidates named it, the first naming kept.
+  const byId = new Map<BadgeSeriesId, BadgeSeries>();
+  for (const series of [completing, newestSeries, ...soon]) {
+    if (series !== null && !byId.has(series.id)) byId.set(series.id, series);
+  }
+  const slots = strip.slots.flatMap((id) => {
+    const series = byId.get(id);
+    return series === undefined ? [] : [series];
+  });
+
+  // The ONE cue, first match wins, and the level it names, are
+  // `StandingSystem.stripCue`'s.
+  const closest =
+    strip.closestId === null ? null : (byId.get(strip.closestId) ?? null);
+  const closestStanding =
+    closest === null
+      ? null
+      : BadgeSystem.standing(closest, progressOf(data, closest));
+  const stripCue = StandingSystem.stripCue({
+    completing:
+      completing === null
+        ? null
+        : {
+            series: completing,
+            standing: BadgeSystem.standing(
+              completing,
+              progressOf(data, completing),
+            ),
+          },
+    newest:
+      newest === null || newestSeries === null
+        ? null
+        : { level: newest.level, earnedAtUtcMs: newest.earnedAtUtcMs },
+    previousVisitAtUtcMs: previousVisitOf(data),
+    closest: closestStanding,
+  });
 
   let cue: string | null = null;
-  if (completing !== undefined) {
-    const title = completing.title[locale];
-    // A single act has no levels (its tile wears no numeral, no «ниво I»
-    // is heard, medals.presenter): «Рожден ден в салона с това посещение»,
-    // the suffix the pending tile's caption already says (review 3, F9).
-    // A levelled family names the level the visit reaches.
-    if (isOneOff(completing)) {
-      cue = `${title} ${words.achievements.withThisVisit}`;
-    } else {
-      const standing = BadgeSystem.standing(
-        completing,
-        progressOf(data, completing),
-      );
-      cue = words.achievements.cueWithThisVisit(
-        title,
-        levelNumeral(standing.next?.level ?? standing.highestLevel + 1),
-      );
+  switch (stripCue.medalCue) {
+    case MedalCue.WithThisVisit: {
+      const series = completing ?? defect('a WITH_THIS_VISIT cue, no family');
+      const title = series.title[locale];
+      // A single act has no levels (its tile wears no numeral, no «ниво I»
+      // is heard, medals.presenter): «Рожден ден в салона с това
+      // посещение», the suffix the pending tile's caption already says
+      // (review 3, F9). A levelled family names the level the visit
+      // reaches.
+      cue =
+        stripCue.level === null
+          ? `${title} ${words.achievements.withThisVisit}`
+          : words.achievements.cueWithThisVisit(
+              title,
+              levelNumeral(stripCue.level),
+            );
+      break;
     }
-  } else if (
-    newest !== null &&
-    newestSeries !== null &&
-    StandingSystem.isNewSince(newest.earnedAtUtcMs, previousVisitOf(data))
-  ) {
-    cue = words.achievements.cueNew(
-      newestSeries.title[locale],
-      levelNumeral(newest.level),
-    );
-  } else {
-    const closest = soon[0];
-    const standing =
-      closest === undefined
-        ? undefined
-        : BadgeSystem.standing(closest, progressOf(data, closest));
-    if (
-      closest !== undefined &&
-      standing?.next != null &&
-      standing.target !== null
-    ) {
+    case MedalCue.New: {
+      // The newest level's family, and that level (the face's).
+      const series = newestSeries ?? defect('a NEW cue with no family');
+      const level = stripCue.level ?? defect('a NEW cue with no level');
+      cue = words.achievements.cueNew(
+        series.title[locale],
+        levelNumeral(level),
+      );
+      break;
+    }
+    case MedalCue.Close: {
+      // «Скоро»'s first family, how far it has come and the level ahead.
+      const series = closest ?? defect('a CLOSE cue with no family');
+      const standing = closestStanding ?? defect('a CLOSE cue unplaced');
+      const target = standing.target ?? defect('a CLOSE cue with no target');
+      const level = stripCue.level ?? defect('a CLOSE cue with no level');
       cue = words.achievements.cueClose(
-        closest.title[locale],
+        series.title[locale],
         standing.value,
-        standing.target,
-        levelNumeral(standing.next.level),
+        target,
+        levelNumeral(level),
       );
+      break;
     }
+    case null:
+      break;
   }
   return {
     // «ново» in slot 1's name only, the newest level's, and only while the
@@ -566,8 +641,7 @@ export function medalStripVm(
     medals: slots.map((series, index) =>
       medalVm(series, data, ctx, {
         ...options,
-        markNew:
-          index === 0 && completing === undefined && series === newestSeries,
+        markNew: index === strip.markNewIndex,
       }),
     ),
     cue,

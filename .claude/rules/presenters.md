@@ -26,24 +26,29 @@ export type PassVm = {
 };
 
 // wallet.presenter.ts — ecs-core values + words in, the display struct out.
-import type { LoyaltyAccount } from '@core/entities';
+import { PassFigure, PassState } from '@core/components';
 import { LoyaltyPassSystem } from '@core/systems'; // the DECISION
-import { formatFigure } from './client-card.format';
+import { figure } from './client-card.format';
 import type { PassVm } from './client-pages.vm';
 
-export function passVm(input: {
-  readonly account: LoyaltyAccount;
-  readonly words: WalletWords;
-  readonly lang: SupportedLang;
-}): PassVm {
-  // The system decides the state (a SCREAMING tag); the presenter words it.
-  const pass = LoyaltyPassSystem.passOf(input.account);
+export function passVm(input: WalletInput): PassVm {
+  const { words } = input;
+  // The system decides the state and what the figure counts (SCREAMING
+  // tags plus the numbers each line words); the presenter only words them.
+  const pass = LoyaltyPassSystem.passOf(input.account, {
+    pointsOn: input.flags.points,
+    paused: input.paused,
+    today: dayOf(input.today), // the raw edge value parsed once (D-2.8)
+  });
+  const visits = pass.passFigure === PassFigure.Visits;
   return {
-    figure: formatFigure(pass.points, input.lang),
-    unit: input.words.unit(pass.points),
-    state: input.words.state[pass.passState] ?? null,
+    figure: figure(pass.figure, words.lang),
+    unit: visits
+      ? words.loyalty.rhythmUnit(pass.figure)
+      : words.loyalty.pointsWord(Math.abs(pass.figure)),
+    state: passStateOf(pass, input), // a switch over pass.passState → words
     frozen: pass.passState === PassState.Frozen,
-    accessibleName: input.words.accessibleName(pass),
+    accessibleName: accessibleNameOf(pass, input),
   };
 }
 ```

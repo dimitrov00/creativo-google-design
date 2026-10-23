@@ -76,6 +76,37 @@ export type VoucherRestorePlan = {
   readonly voucherRedemptions: readonly VoucherRedemption[];
 };
 
+/** How two vouchers whose last day is the same are told apart: a comparator over their ids. */
+export type VoucherIdOrder = (a: GiftVoucherId, b: GiftVoucherId) => number;
+
+/** The day a never-expiring voucher sorts as: after every real one. */
+const NEVER_EXPIRES = '9999-12-31';
+
+/** Ids by their UTF-16 code units — `soonestFirst`'s tie-break. */
+function codeUnitOrder(a: GiftVoucherId, b: GiftVoucherId): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * The one by-last-day order of {@link VoucherSystem.soonestFirst} and
+ * {@link VoucherSystem.held}: by the voucher's last DAY on the shop's
+ * calendar (`expiresLocalDate`), the never-expiring ones last, equal days
+ * by `idOrder`. A new array; the input is untouched.
+ */
+function byLastDay(
+  vouchers: readonly GiftVoucher[],
+  idOrder: VoucherIdOrder,
+): readonly GiftVoucher[] {
+  const sorted = [...vouchers];
+  sorted.sort((a, b) => {
+    const dayA = a.expiresLocalDate ?? NEVER_EXPIRES;
+    const dayB = b.expiresLocalDate ?? NEVER_EXPIRES;
+    if (dayA !== dayB) return dayA < dayB ? -1 : 1;
+    return idOrder(a.id, b.id);
+  });
+  return sorted;
+}
+
 /** A non-negative amount of cents (a sum or difference of safe integer cents). */
 function cents(amount: number): PriceCents {
   const clamped = PriceCents.of(Math.max(0, amount) + 0);
@@ -392,14 +423,59 @@ export const VoucherSystem = {
    * by id. A new array; the input is untouched.
    */
   soonestFirst(vouchers: readonly GiftVoucher[]): readonly GiftVoucher[] {
-    const sorted = [...vouchers];
-    sorted.sort((a, b) => {
-      const dayA = a.expiresLocalDate ?? '9999-12-31';
-      const dayB = b.expiresLocalDate ?? '9999-12-31';
-      if (dayA !== dayB) return dayA < dayB ? -1 : 1;
-      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-    });
-    return sorted;
+    return byLastDay(vouchers, codeUnitOrder);
+  },
+
+  /**
+   * What the wallet holds (`wallet.presenter.ts` `voucherVms`): the
+   * {@link VoucherSystem.spendable} vouchers, the soonest to run out first —
+   * the by-last-day order {@link VoucherSystem.soonestFirst} shares, the
+   * never-expiring ones last — and two that end on one day in the CALLER's
+   * `idOrder` (the wallet passes its locale collation, which a system
+   * cannot hold; `soonestFirst` passes the code-unit order). A new array.
+   */
+  held(
+    vouchers: readonly GiftVoucher[],
+    today: LocalDate,
+    idOrder: VoucherIdOrder,
+  ): readonly GiftVoucher[] {
+    const spendable: GiftVoucher[] = [];
+    for (let i = 0; i < vouchers.length; i++) {
+      const voucher = vouchers[i] as GiftVoucher;
+      if (VoucherSystem.spendable(voucher, today)) spendable.push(voucher);
+    }
+    return byLastDay(spendable, idOrder);
+  },
+
+  /** Nothing has been drawn from it yet: the balance is the whole value it was issued with. */
+  untouched(
+    voucher: Pick<GiftVoucher, 'balanceCents' | 'initialValueCents'>,
+  ): boolean {
+    return voucher.balanceCents === voucher.initialValueCents;
+  },
+
+  /**
+   * The wallet's holdings total (`wallet.presenter.ts` `holdingsDetailOf`):
+   * what the {@link VoucherSystem.spendable} vouchers hold together — said
+   * only from two of them on (one voucher's figure is already over it), and
+   * never across two currencies (they have no sum): `null` then. Composes
+   * {@link VoucherSystem.spendableSum} in the first spendable voucher's
+   * currency. NOT the glance's voucher sum (`ClientGlanceSystem.holdings`,
+   * which adds the first currency's and ignores the rest). It decides only
+   * WHETHER a total exists and its money — never a count.
+   */
+  heldTotal(vouchers: readonly GiftVoucher[], today: LocalDate): Money | null {
+    let currency: Currency | null = null;
+    let count = 0;
+    for (let i = 0; i < vouchers.length; i++) {
+      const voucher = vouchers[i] as GiftVoucher;
+      if (!VoucherSystem.spendable(voucher, today)) continue;
+      if (currency === null) currency = voucher.currency;
+      else if (voucher.currency !== currency) return null;
+      count++;
+    }
+    if (currency === null || count < 2) return null;
+    return VoucherSystem.spendableSum(vouchers, today, currency);
   },
 
   /**

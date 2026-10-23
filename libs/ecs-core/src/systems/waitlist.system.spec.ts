@@ -5,6 +5,7 @@ import {
   BookingCart,
   type CartLine,
   type CartSeatLines,
+  Daypart,
   DayWindows,
   FlexibleWhen,
   MinuteRange,
@@ -25,6 +26,7 @@ import {
   ServiceId,
   ServiceVariantId,
   UserId,
+  UtcEpochMs,
   WaitlistRequestId,
 } from '@core/primitives';
 import { SchedulingErrorCode, WaitlistErrorCode } from '@core/errors';
@@ -1208,5 +1210,263 @@ describe('WaitlistSystem — purity', () => {
       WaitlistSystem.decide(asked, door()),
     );
     expect(JSON.stringify([request, day])).toBe(before);
+  });
+});
+
+/*
+ * Law 10.2 decision extraction (W0-A): the waiting request's rules the
+ * presenters held — `visit-row.presenter.ts` `waitlistRowOf` (the days still
+ * watched, the parts of the day they touch, where the row files) and
+ * `glance.presenter.ts` `visitCardsVm` (which request the glance shows).
+ * Each case re-states the pinning presenter case as a value/tag assertion.
+ */
+
+describe('WaitlistSystem.daysAhead — the days a request still watches', () => {
+  const ROW_TODAY = localDate('2026-09-28');
+  const days = (raw: readonly string[]) =>
+    raw.map((key) => DayWindows.wholeDay(localDate(key)));
+  const keys = (watched: readonly DayWindows[]) =>
+    watched.map((day) => day.localDate);
+
+  it('keeps every day ahead (row 1115)', () => {
+    expect(
+      keys(
+        WaitlistSystem.daysAhead(days(['2026-10-01', '2026-10-02']), ROW_TODAY),
+      ),
+    ).toEqual(['2026-10-01', '2026-10-02']);
+  });
+
+  it('drops the days that have passed, keeping today itself (row 1149)', () => {
+    const watched = days([
+      '2026-09-20',
+      '2026-10-01',
+      '2026-10-12',
+      '2026-10-14',
+      '2026-10-20',
+      '2026-10-22',
+    ]);
+    expect(keys(WaitlistSystem.daysAhead(watched, ROW_TODAY))).toEqual([
+      '2026-10-01',
+      '2026-10-12',
+      '2026-10-14',
+      '2026-10-20',
+      '2026-10-22',
+    ]);
+    expect(
+      keys(
+        WaitlistSystem.daysAhead(days(['2026-09-27', '2026-09-28']), ROW_TODAY),
+      ),
+    ).toEqual(['2026-09-28']);
+  });
+
+  it('keeps every day it named when none is ahead, and when there is no today to read (card 576)', () => {
+    const passed = days(['2026-09-20', '2026-09-21']);
+    expect(WaitlistSystem.daysAhead(passed, ROW_TODAY)).toBe(passed);
+    const mixed = days(['2026-09-20', '2026-10-01']);
+    // An unparsable today reaches the system as `null`: every day stays.
+    expect(WaitlistSystem.daysAhead(mixed, null)).toBe(mixed);
+    expect(WaitlistSystem.daysAhead([], ROW_TODAY)).toEqual([]);
+  });
+});
+
+describe('WaitlistSystem.daypartsWatched — the parts of the day the windows touch', () => {
+  const AFTERNOON = [window('13:00', '17:00')];
+
+  it('names the one part a run of afternoons touches (row 1115)', () => {
+    expect(
+      WaitlistSystem.daypartsWatched([
+        DayWindows.of(localDate('2026-10-01'), AFTERNOON),
+        DayWindows.of(localDate('2026-10-02'), AFTERNOON),
+      ]),
+    ).toEqual([Daypart.Afternoon]);
+  });
+
+  it('names every part a window touches, in the day’s order (row 1211)', () => {
+    expect(
+      WaitlistSystem.daypartsWatched([
+        DayWindows.of(localDate('2026-10-01'), [window('11:00', '13:00')]),
+      ]),
+    ).toEqual(['MORNING', 'AFTERNOON']);
+    expect(
+      WaitlistSystem.daypartsWatched([
+        DayWindows.of(localDate('2026-10-02'), [window('18:00', '20:00')]),
+        DayWindows.of(localDate('2026-10-01'), [window('09:00', '10:00')]),
+      ]),
+    ).toEqual(['MORNING', 'EVENING']);
+  });
+
+  it('names none when ANY day is offered whole, every day whole, or no day at all (row 1149, 1211)', () => {
+    expect(
+      WaitlistSystem.daypartsWatched([
+        DayWindows.of(localDate('2026-10-01'), AFTERNOON),
+        DayWindows.wholeDay(localDate('2026-10-02')),
+      ]),
+    ).toEqual([]);
+    expect(
+      WaitlistSystem.daypartsWatched([
+        DayWindows.wholeDay(localDate('2026-10-01')),
+        DayWindows.wholeDay(localDate('2026-10-12')),
+      ]),
+    ).toEqual([]);
+    expect(WaitlistSystem.daypartsWatched([])).toEqual([]);
+  });
+});
+
+describe('WaitlistSystem.sortPoint — where a waiting request files', () => {
+  it('files at its first watched day, from the day’s first minute (row 1115, 1149)', () => {
+    expect(
+      WaitlistSystem.sortPoint([
+        DayWindows.of(localDate('2026-10-01'), [window('13:00', '17:00')]),
+        DayWindows.wholeDay(localDate('2026-10-02')),
+      ]),
+    ).toEqual({ localDate: '2026-10-01', minute: 0 });
+  });
+
+  it('files a request that watches no day at the first day of the civil axis, minute 0 (row 1255)', () => {
+    expect(WaitlistSystem.sortPoint([])).toEqual({
+      localDate: '1970-01-01',
+      minute: 0,
+    });
+  });
+});
+
+describe('WaitlistSystem.glancePick — the glance’s waiting request', () => {
+  const base = requestFor({
+    locationId: null,
+    seats: [{ seatKey: 'self', serviceId: 'svc-cut' }],
+    windows: [{ from: '13:00', to: '17:00' }],
+  });
+  const hour = (hours: number): UtcEpochMs =>
+    UtcEpochMs.plusHours(NOW_UTC_MS, hours);
+  const made = (id: string, createdAtUtcMs: UtcEpochMs): WaitlistRequest => ({
+    ...base,
+    id: WaitlistRequestId.of(id),
+    createdAtUtcMs,
+  });
+  const ids = (pick: { readonly newest: WaitlistRequest | null }) =>
+    pick.newest === null ? null : pick.newest.id;
+
+  it('shows the request still waiting, and no others (glance 960)', () => {
+    expect(WaitlistSystem.glancePick([base], [], TODAY, false)).toEqual({
+      newest: base,
+      others: 0,
+    });
+  });
+
+  it('shows the NEWEST request and counts the others (glance 989)', () => {
+    const older = made('wl-older', hour(-24 * 8));
+    const pick = WaitlistSystem.glancePick([older, base], [], TODAY, false);
+    expect(ids(pick)).toBe('wl-1');
+    expect(pick.others).toBe(1);
+    // Equal stamps keep the input's order: the first one in is the newest.
+    const twin = made('wl-twin', NOW_UTC_MS);
+    expect(ids(WaitlistSystem.glancePick([twin, base], [], TODAY, false))).toBe(
+      'wl-twin',
+    );
+    expect(ids(WaitlistSystem.glancePick([base, twin], [], TODAY, false))).toBe(
+      'wl-1',
+    );
+  });
+
+  it('shows none while the client is paused (glance 1001)', () => {
+    expect(WaitlistSystem.glancePick([base], [], TODAY, true)).toEqual({
+      newest: null,
+      others: 0,
+    });
+  });
+
+  it('shows none once the request stopped watching, but still a matched one (glance 1001)', () => {
+    const booked: WaitlistRequest = {
+      ...base,
+      waitlistStatus: WaitlistStatus.Booked,
+      waitlistStatusAtUtcMs: NOW_UTC_MS,
+    };
+    expect(WaitlistSystem.glancePick([booked], [], TODAY, false).newest).toBe(
+      null,
+    );
+    const matched: WaitlistRequest = {
+      ...base,
+      waitlistStatus: WaitlistStatus.Matched,
+      waitlistStatusAtUtcMs: NOW_UTC_MS,
+    };
+    expect(ids(WaitlistSystem.glancePick([matched], [], TODAY, false))).toBe(
+      'wl-1',
+    );
+  });
+
+  it('shows none once every day it named has passed, but still on the last day itself (glance 1001)', () => {
+    expect(
+      WaitlistSystem.glancePick([base], [], localDate('2030-01-16'), false)
+        .newest,
+    ).toBe(null);
+    expect(ids(WaitlistSystem.glancePick([base], [], DAY, false))).toBe('wl-1');
+  });
+
+  it('shows none once a visit to come was booked at or after it — a stamp-order rule (glance 1001)', () => {
+    const at = (bookedAtUtcMs: UtcEpochMs | null) => [{ bookedAtUtcMs }];
+    expect(
+      WaitlistSystem.glancePick([base], at(hour(1)), TODAY, false).newest,
+    ).toBe(null);
+    // The same instant answers it too (≥).
+    expect(
+      WaitlistSystem.glancePick([base], at(NOW_UTC_MS), TODAY, false).newest,
+    ).toBe(null);
+    // Booked before the request was made: the request still waits.
+    expect(
+      ids(WaitlistSystem.glancePick([base], at(hour(-1)), TODAY, false)),
+    ).toBe('wl-1');
+    // A visit written before the stamp existed answers nothing.
+    expect(ids(WaitlistSystem.glancePick([base], at(null), TODAY, false))).toBe(
+      'wl-1',
+    );
+    // Only the requests it answers drop out: one made after the visit was
+    // booked still waits, and is the only one left.
+    const newer = made('wl-newer', hour(2));
+    const pick = WaitlistSystem.glancePick(
+      [base, newer],
+      at(hour(1)),
+      TODAY,
+      false,
+    );
+    expect(ids(pick)).toBe('wl-newer');
+    expect(pick.others).toBe(0);
+  });
+
+  it('shows none for no request', () => {
+    expect(WaitlistSystem.glancePick([], [], TODAY, false)).toEqual({
+      newest: null,
+      others: 0,
+    });
+  });
+});
+
+describe('WaitlistSystem — the extraction, purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const days = deepFreeze([
+      DayWindows.of(localDate('2030-01-12'), [window('09:00', '10:00')]),
+      DayWindows.of(localDate('2030-01-15'), [window('13:00', '17:00')]),
+    ]);
+    expect(WaitlistSystem.daysAhead(days, TODAY)).toEqual(
+      WaitlistSystem.daysAhead(days, TODAY),
+    );
+    expect(WaitlistSystem.daypartsWatched(days)).toEqual(
+      WaitlistSystem.daypartsWatched(days),
+    );
+    expect(WaitlistSystem.sortPoint(days)).toEqual(
+      WaitlistSystem.sortPoint(days),
+    );
+    const requests = deepFreeze([
+      requestFor({
+        locationId: null,
+        seats: [{ seatKey: 'self', serviceId: 'svc-cut' }],
+        windows: [{ from: '13:00', to: '17:00' }],
+      }),
+    ]);
+    const upcoming = deepFreeze([{ bookedAtUtcMs: null }]);
+    const before = JSON.stringify([days, requests, upcoming]);
+    expect(WaitlistSystem.glancePick(requests, upcoming, TODAY, false)).toEqual(
+      WaitlistSystem.glancePick(requests, upcoming, TODAY, false),
+    );
+    expect(JSON.stringify([days, requests, upcoming])).toBe(before);
   });
 });

@@ -18,10 +18,11 @@ import type {
   UiStreakPeriod,
 } from '@creativo/ui/controls';
 import type { ClientCardRegion } from './client-card.contracts';
-import type {
-  JournalFeed,
-  PersonalRecordKind,
-  VisitLeg,
+import {
+  BirthdayMoment,
+  type JournalFeed,
+  type PersonalRecordKind,
+  type VisitLeg,
 } from '@core/components';
 import type {
   BadgeProgress,
@@ -489,16 +490,11 @@ export interface ClientHeroVm {
 /**
  * BD — which birthday the card says, the field `birthdayMoment` (Law 6):
  * `TODAY` the solid band, `UPCOMING` the quiet notice of a birthday within
- * the week.
+ * the week. The dictionary is ecs-core's (`AgeSystem.birthdayMoment`
+ * decides it, Law 10.2); the card binds it and re-exports it under the
+ * name its readers always imported from here.
  */
-export const BirthdayMoment = {
-  /** Today is the birthday: the band, and the gift under it when one is held. */
-  Today: 'TODAY',
-  /** The birthday falls within the week to come: one quiet line. */
-  Upcoming: 'UPCOMING',
-} as const;
-export type BirthdayMoment =
-  (typeof BirthdayMoment)[keyof typeof BirthdayMoment];
+export { BirthdayMoment };
 
 /** Each moment as the birthday card's host `data-kind` prints it. */
 export const birthdayMomentWords = {

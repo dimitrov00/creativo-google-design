@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   AccountLifecycle,
   BlockReason,
+  ClientStats,
   type PunchCard,
+  type VisitLeg,
   VoucherCode,
   VoucherLifecycle,
   VoucherStatus,
@@ -12,7 +14,11 @@ import type { GiftVoucher } from '@core/entities';
 import {
   Currency,
   AchievementRuleId,
+  AppointmentId,
+  BarberId,
+  DurationMinutes,
   GiftVoucherId,
+  SeatId,
   ServiceId,
   ServiceVariantId,
   PriceCents,
@@ -31,6 +37,7 @@ import {
   ClientGlanceSystem,
   type GlanceHoldingsInput,
   type GlanceLeg,
+  type RepeatDraft,
 } from './client-glance.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
@@ -287,6 +294,131 @@ describe('ClientGlanceSystem.holdings (glance.presenter.spec.ts)', () => {
       stamps: STAMPS,
       rhythm: null,
     });
+  });
+});
+
+/*
+ * «Пак същото» (Law 10.2; client-card.presenter.ts `quickActionsVm`, its
+ * spec's «offers the last visit again», «drops «Повтори», which writes»,
+ * «on a gone visit, on the last visit itself, and when the draft already
+ * holds it», «when every one of its services left the catalogue»):
+ * Мартин's last visit, a classic cut on 19 August, with today's visit on
+ * screen holding a fade.
+ */
+describe('ClientGlanceSystem.repeatOffer', () => {
+  const CUT = ServiceId.of('svc-classic');
+  const BEARD = ServiceId.of('svc-beard');
+  const visitLeg = (serviceId: ServiceId): VisitLeg => ({
+    seatId: SeatId.of('appt-hist-c2-14-s1'),
+    serviceId,
+    variantId: null,
+    barberId: BarberId.of('niko'),
+    durationMinutes: unwrapOk(DurationMinutes.of(30)),
+  });
+  const LAST = {
+    ...ClientStats.empty(),
+    lastVisitAppointmentId: AppointmentId.of('appt-hist-c2-14'),
+    lastVisitLocalDate: localDate('2026-08-19'),
+    lastVisitLegs: [visitLeg(CUT)],
+  };
+  const DRAFT: RepeatDraft = {
+    online: true,
+    gone: false,
+    currentAppointmentId: AppointmentId.of('appt-today'),
+    legs: [{ serviceId: ServiceId.of('svc-fade'), variantId: null }],
+  };
+  const KNOWN: ReadonlySet<ServiceId> = new Set([CUT, BEARD]);
+
+  it('offers the last visit again', () => {
+    expect(ClientGlanceSystem.repeatOffer(LAST, DRAFT, KNOWN)).toBe(true);
+    // No visit on screen at all.
+    expect(
+      ClientGlanceSystem.repeatOffer(
+        LAST,
+        { ...DRAFT, currentAppointmentId: null },
+        KNOWN,
+      ),
+    ).toBe(true);
+  });
+
+  it('refuses without a known last visit — its id or its day', () => {
+    expect(
+      ClientGlanceSystem.repeatOffer(
+        { ...LAST, lastVisitAppointmentId: null },
+        DRAFT,
+        KNOWN,
+      ),
+    ).toBe(false);
+    expect(
+      ClientGlanceSystem.repeatOffer(
+        { ...LAST, lastVisitLocalDate: null },
+        DRAFT,
+        KNOWN,
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses offline, which writes', () => {
+    expect(
+      ClientGlanceSystem.repeatOffer(LAST, { ...DRAFT, online: false }, KNOWN),
+    ).toBe(false);
+  });
+
+  it('refuses on a gone visit', () => {
+    expect(
+      ClientGlanceSystem.repeatOffer(LAST, { ...DRAFT, gone: true }, KNOWN),
+    ).toBe(false);
+  });
+
+  it('refuses on the last visit itself', () => {
+    expect(
+      ClientGlanceSystem.repeatOffer(
+        LAST,
+        { ...DRAFT, currentAppointmentId: LAST.lastVisitAppointmentId },
+        KNOWN,
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses a last visit with no services', () => {
+    expect(
+      ClientGlanceSystem.repeatOffer(
+        { ...LAST, lastVisitLegs: [] },
+        DRAFT,
+        KNOWN,
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses when the draft already holds them (sameLegs)', () => {
+    expect(
+      ClientGlanceSystem.repeatOffer(
+        LAST,
+        { ...DRAFT, legs: [{ serviceId: CUT, variantId: null }] },
+        KNOWN,
+      ),
+    ).toBe(false);
+  });
+
+  it('refuses when every one of its services left the catalogue, and offers while one is left', () => {
+    expect(ClientGlanceSystem.repeatOffer(LAST, DRAFT, new Set())).toBe(false);
+    const two = {
+      ...LAST,
+      lastVisitLegs: [visitLeg(ServiceId.of('svc-retired')), visitLeg(BEARD)],
+    };
+    expect(ClientGlanceSystem.repeatOffer(two, DRAFT, KNOWN)).toBe(true);
+    expect(
+      ClientGlanceSystem.repeatOffer(two, DRAFT, new Set([ServiceId.of('x')])),
+    ).toBe(false);
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const last = deepFreeze({ ...LAST });
+    const draft = deepFreeze({ ...DRAFT });
+    const once = ClientGlanceSystem.repeatOffer(last, draft, KNOWN);
+    expect(ClientGlanceSystem.repeatOffer(last, draft, KNOWN)).toBe(once);
+    expect(last.lastVisitLegs).toEqual([visitLeg(CUT)]);
+    expect(draft.legs).toHaveLength(1);
   });
 });
 

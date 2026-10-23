@@ -130,6 +130,37 @@ export const PER_VISIT_METRICS: readonly Metric[] = [
   Metric.VisitsOnTime,
 ];
 
+/**
+ * The counts made of VISITS — a kind of visit, or the distinct services,
+ * barbers, shops and months the visits brought: a medal's «Как се печели»
+ * ends on the exclusion (what never counts as a visit) for these only
+ * (`medal-detail.presenter.ts` `countsVisits`).
+ */
+export const VISIT_COUNTING_METRICS: readonly Metric[] = [
+  Metric.VisitsCompleted,
+  Metric.VisitsEarlyBird,
+  Metric.VisitsWeekend,
+  Metric.VisitsOnTime,
+  Metric.VisitsParty,
+  Metric.ServicesDistinct,
+  Metric.BarbersDistinct,
+  Metric.LocationsDistinct,
+  Metric.MonthsDistinct,
+];
+
+/**
+ * The counts of a KIND of visit — each worked visit of the kind is one:
+ * a level's threshold is a number of visits («25 посещения»,
+ * `medal-detail.presenter.ts` `countedInVisits`).
+ */
+export const VISIT_KIND_METRICS: readonly Metric[] = [
+  Metric.VisitsCompleted,
+  Metric.VisitsEarlyBird,
+  Metric.VisitsWeekend,
+  Metric.VisitsOnTime,
+  Metric.VisitsParty,
+];
+
 export const PerkId = {
   PriorityWaitlist: 'perk.priorityWaitlist',
   BookFurtherAhead: 'perk.bookFurtherAhead',
@@ -316,6 +347,14 @@ export const Gamification = {
   /** One worked visit moves this count by exactly one. */
   isPerVisitMetric(metric: Metric): boolean {
     return oneOf(PER_VISIT_METRICS, metric);
+  },
+  /** A count made of visits ({@link VISIT_COUNTING_METRICS}); counting nothing (`null`) is none. */
+  countsVisits(metric: Metric | null): boolean {
+    return metric !== null && oneOf(VISIT_COUNTING_METRICS, metric);
+  },
+  /** A count of a kind of visit ({@link VISIT_KIND_METRICS}); counting nothing (`null`) is none. */
+  isVisitKind(metric: Metric | null): boolean {
+    return metric !== null && oneOf(VISIT_KIND_METRICS, metric);
   },
   /** Tenure: nothing a visit does moves it, so it never sits in «Скоро». */
   isCalendarDriven(ref: Pick<MetricRef, 'metric'>): boolean {

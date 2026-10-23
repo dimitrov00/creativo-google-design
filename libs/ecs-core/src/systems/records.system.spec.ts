@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { PersonalRecordKind, type PersonalRecord } from '@core/components';
-import { AppointmentId, ServiceId } from '@core/primitives';
-import { deepFreeze, localDate } from '@core/testing';
+import {
+  PersonalRecordKind,
+  type PersonalRecord,
+  SeatOccupant,
+  SeatOutcome,
+  SubjectRelationship,
+} from '@core/components';
+import type { Appointment } from '@core/entities';
+import { AppointmentId, SeatId, ServiceId, UserId } from '@core/primitives';
+import {
+  FIXTURE_IDS,
+  appointmentFixture,
+  customerOf,
+  deepFreeze,
+  localDate,
+  seatFixture,
+  utcMs,
+} from '@core/testing';
 import { RecordsSystem, type RecordVisit } from './records.system';
 
 /*
@@ -300,6 +315,289 @@ describe('RecordsSystem purity', () => {
       RecordsSystem.ordered(records, true),
       RecordsSystem.newest(records, TODAY),
       RecordsSystem.years(visits, 2024),
+    ];
+    expect(run()).toEqual(run());
+  });
+});
+
+/*
+ * The records' decisions the presenters leaned on (Law 10.2, §2.4: M-25,
+ * G-6, G-7, G-17) — `medals.presenter.ts` `recordCardVm`'s «holds nothing
+ * to print», `records.presenter.ts`' «Обичайни услуги» and «По години»
+ * (`yearsOf`), and the glance's quiet records line — each case of those
+ * presenters' specs re-stated as the record, the flag or the bars they
+ * now word. The catalogue's names (a favourite's service, the usual
+ * services) stay the edge's lookups.
+ */
+
+describe('RecordsSystem.isHeld — a record that holds something (M-25)', () => {
+  it('holds every one of Георги’s records', () => {
+    for (const held of Object.values(GEORGI)) {
+      expect([held.personalRecordKind, RecordsSystem.isHeld(held)]).toEqual([
+        held.personalRecordKind,
+        true,
+      ]);
+    }
+  });
+
+  it('holds a run of more than nought, its day known or not', () => {
+    expect(RecordsSystem.isHeld(record('longestRhythm', { on: null }))).toBe(
+      true,
+    );
+    expect(RecordsSystem.isHeld(record('longestRhythm', { value: 0 }))).toBe(
+      false,
+    );
+  });
+
+  it('holds a best year of more than nought that names its year', () => {
+    expect(RecordsSystem.isHeld(record('mostVisitsInYear', { value: 0 }))).toBe(
+      false,
+    );
+    expect(
+      RecordsSystem.isHeld(record('mostVisitsInYear', { year: null })),
+    ).toBe(false);
+  });
+
+  it('holds a favourite of more than nought that names its service', () => {
+    expect(RecordsSystem.isHeld(record('favouriteService', { value: 0 }))).toBe(
+      false,
+    );
+    expect(
+      RecordsSystem.isHeld(record('favouriteService', { serviceId: null })),
+    ).toBe(false);
+  });
+
+  it('holds a first visit that names its day, whatever its value', () => {
+    expect(RecordsSystem.isHeld(record('firstVisit', { on: null }))).toBe(
+      false,
+    );
+    expect(RecordsSystem.isHeld(record('firstVisit', { value: 0 }))).toBe(true);
+  });
+});
+
+describe('RecordsSystem.usualBeyondFavourite — «Обичайни услуги» (G-6)', () => {
+  const fade = ServiceId.of('svc-fade');
+  const beard = ServiceId.of('svc-beard');
+
+  it('says something only when a usual service is not the favourite', () => {
+    expect(RecordsSystem.usualBeyondFavourite([fade], fade)).toBe(false);
+    expect(RecordsSystem.usualBeyondFavourite([fade, beard], fade)).toBe(true);
+    expect(RecordsSystem.usualBeyondFavourite([beard, fade], fade)).toBe(true);
+  });
+
+  it('says nothing without a usual service, and something for any without a favourite', () => {
+    expect(RecordsSystem.usualBeyondFavourite([], fade)).toBe(false);
+    expect(RecordsSystem.usualBeyondFavourite([], null)).toBe(false);
+    expect(RecordsSystem.usualBeyondFavourite([fade], null)).toBe(true);
+  });
+});
+
+describe('RecordsSystem.yearsOfHistory — «По години» over the loaded book (G-7)', () => {
+  const me = FIXTURE_IDS.customer;
+  const friendUser = UserId.of('u-friend');
+  const friend = customerOf(friendUser);
+  const done = utcMs('2026-01-01T12:00:00.000Z');
+
+  /** One appointment on `day`: the record's own seat, worked unless `outcome` says otherwise. */
+  const visit = (
+    id: string,
+    day: string,
+    options: {
+      readonly outcome?: SeatOutcome;
+      readonly whose?: 'me' | 'friend' | 'both';
+    } = {},
+  ): Appointment => {
+    const mine = seatFixture({
+      outcome: options.outcome ?? SeatOutcome.worked(done),
+    });
+    const theirs = seatFixture({
+      seatId: SeatId.of('seat-2'),
+      occupant: SeatOccupant.account(
+        friendUser,
+        friend,
+        SubjectRelationship.Companion,
+      ),
+      outcome: SeatOutcome.worked(done),
+    });
+    const whose = options.whose ?? 'me';
+    return appointmentFixture({
+      id: AppointmentId.of(id),
+      localDate: localDate(day),
+      seats:
+        whose === 'me'
+          ? [mine]
+          : whose === 'friend'
+            ? [theirs]
+            : [mine, theirs],
+    });
+  };
+  const bars = (years: ReturnType<typeof RecordsSystem.yearsOfHistory>) =>
+    years?.map((y) => [y.year, y.count, y.record]) ?? null;
+  const records = [record('mostVisitsInYear', { year: 2025 })];
+
+  it('counts nothing unless the loaded pages are the whole history', () => {
+    const book = [visit('a', '2024-05-10'), visit('b', '2025-05-10')];
+    expect(RecordsSystem.yearsOfHistory(me, book, records, false)).toBeNull();
+    expect(bars(RecordsSystem.yearsOfHistory(me, book, records, true))).toEqual(
+      [
+        [2025, 1, true],
+        [2024, 1, false],
+      ],
+    );
+  });
+
+  it('counts only this client’s worked visits — never a no-show, a cancelled or an open one, nor another person’s', () => {
+    const book = [
+      visit('a', '2024-05-10'),
+      visit('b', '2025-05-10'),
+      visit('c', '2025-06-10', { whose: 'both' }),
+      visit('d', '2025-07-10', { outcome: SeatOutcome.noShow(done) }),
+      visit('e', '2025-08-10', { outcome: SeatOutcome.scheduled() }),
+      visit('f', '2026-05-10', { whose: 'friend' }),
+    ];
+    expect(bars(RecordsSystem.yearsOfHistory(me, book, records, true))).toEqual(
+      [
+        [2025, 2, true],
+        [2024, 1, false],
+      ],
+    );
+    // His friend's book is another story.
+    expect(bars(RecordsSystem.yearsOfHistory(friend, book, [], true))).toEqual([
+      [2026, 1, false],
+      [2025, 1, true],
+    ]);
+  });
+
+  it('gives the emblem to the stamped record year among equals', () => {
+    const book = [visit('a', '2024-05-10'), visit('b', '2025-05-10')];
+    expect(
+      bars(
+        RecordsSystem.yearsOfHistory(
+          me,
+          book,
+          [record('mostVisitsInYear', { year: 2025 })],
+          true,
+        ),
+      ),
+    ).toEqual([
+      [2025, 1, true],
+      [2024, 1, false],
+    ]);
+    // No stamped year: the year that got there first.
+    expect(bars(RecordsSystem.yearsOfHistory(me, book, [], true))).toEqual([
+      [2025, 1, false],
+      [2024, 1, true],
+    ]);
+  });
+
+  it('says nothing for one year of visits, or none', () => {
+    expect(
+      RecordsSystem.yearsOfHistory(
+        me,
+        [visit('a', '2025-05-10')],
+        records,
+        true,
+      ),
+    ).toBeNull();
+    expect(RecordsSystem.yearsOfHistory(me, [], records, true)).toBeNull();
+  });
+});
+
+describe('RecordsSystem.glanceLine — the glance’s records line (G-17)', () => {
+  const all = Object.values(GEORGI);
+  const known = new Set([ServiceId.of('svc-fade')]);
+  const kinds = (line: readonly PersonalRecord[]) =>
+    line.map((r) => r.personalRecordKind);
+
+  it('reads the favourite, the best year, the first visit — never the longest run — at most `limit`', () => {
+    expect(RecordsSystem.GLANCE_LINE_ORDER).toEqual([
+      PersonalRecordKind.FavouriteService,
+      PersonalRecordKind.MostVisitsInYear,
+      PersonalRecordKind.FirstVisit,
+    ]);
+    expect(kinds(RecordsSystem.glanceLine(all, known, 2))).toEqual([
+      PersonalRecordKind.FavouriteService,
+      PersonalRecordKind.MostVisitsInYear,
+    ]);
+    expect(kinds(RecordsSystem.glanceLine(all, known, 4))).toEqual([
+      PersonalRecordKind.FavouriteService,
+      PersonalRecordKind.MostVisitsInYear,
+      PersonalRecordKind.FirstVisit,
+    ]);
+    expect(RecordsSystem.glanceLine([GEORGI.longestRhythm], known, 2)).toEqual(
+      [],
+    );
+  });
+
+  it('drops a favourite the catalogue no longer names and a first visit without its day', () => {
+    expect(kinds(RecordsSystem.glanceLine(all, new Set(), 2))).toEqual([
+      PersonalRecordKind.MostVisitsInYear,
+      PersonalRecordKind.FirstVisit,
+    ]);
+    expect(
+      kinds(
+        RecordsSystem.glanceLine(
+          [record('favouriteService', { serviceId: null }), GEORGI.firstVisit],
+          known,
+          2,
+        ),
+      ),
+    ).toEqual([PersonalRecordKind.FirstVisit]);
+    expect(
+      kinds(
+        RecordsSystem.glanceLine(
+          [GEORGI.mostVisitsInYear, record('firstVisit', { on: null })],
+          known,
+          2,
+        ),
+      ),
+    ).toEqual([PersonalRecordKind.MostVisitsInYear]);
+  });
+
+  it('keeps a best year of nought: the line reads its figure as stamped', () => {
+    expect(
+      kinds(
+        RecordsSystem.glanceLine(
+          [record('mostVisitsInYear', { value: 0, year: null })],
+          known,
+          2,
+        ),
+      ),
+    ).toEqual([PersonalRecordKind.MostVisitsInYear]);
+    expect(RecordsSystem.glanceLine([], known, 2)).toEqual([]);
+  });
+});
+
+describe('RecordsSystem purity — the presenters’ decisions', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const records = deepFreeze(Object.values(GEORGI));
+    const book = deepFreeze([
+      appointmentFixture({
+        id: AppointmentId.of('a'),
+        localDate: localDate('2024-05-10'),
+        seats: [
+          seatFixture({
+            outcome: SeatOutcome.worked(utcMs('2024-05-10T08:00:00.000Z')),
+          }),
+        ],
+      }),
+      appointmentFixture({
+        id: AppointmentId.of('b'),
+        localDate: localDate('2026-05-10'),
+        seats: [
+          seatFixture({
+            outcome: SeatOutcome.worked(utcMs('2026-05-10T08:00:00.000Z')),
+          }),
+        ],
+      }),
+    ]);
+    const known = new Set([ServiceId.of('svc-fade')]);
+    const usual = deepFreeze([ServiceId.of('svc-fade')]);
+    const run = () => [
+      records.map((r) => RecordsSystem.isHeld(r)),
+      RecordsSystem.usualBeyondFavourite(usual, null),
+      RecordsSystem.yearsOfHistory(FIXTURE_IDS.customer, book, records, true),
+      RecordsSystem.glanceLine(records, known, 2),
     ];
     expect(run()).toEqual(run());
   });

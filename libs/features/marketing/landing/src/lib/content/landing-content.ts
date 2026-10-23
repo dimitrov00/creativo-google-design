@@ -15,9 +15,9 @@ import { CompositionKind } from '@core/components';
 import type {
   BarberVm,
   Localized,
+  ServiceSourceVm,
   ServiceTermsVm,
   ServiceVariantVm,
-  ServiceVm,
 } from '@creativo/features/shared/catalog';
 
 /** Re-exported so existing landing imports keep one door. */
@@ -25,6 +25,7 @@ export type {
   BarberVm,
   Localized,
   ServiceOfferingVm,
+  ServiceSourceVm,
   ServiceTermsVm,
   ServiceVariantVm,
   ServiceVm,
@@ -34,7 +35,6 @@ export {
   formatPrice,
   serviceDurationRange,
   servicePriceFrom,
-  servicesByBarber,
 } from '@creativo/features/shared/catalog';
 
 const lt = (en: string, bg: string): Localized => ({ en, bg });
@@ -199,7 +199,12 @@ const t = (price: number, minutes: number): ServiceTermsVm => ({
   minutes,
 });
 
-export const SERVICES: readonly ServiceVm[] = [
+/**
+ * The demo shelf as AUTHORED — no figures: the test catalogue
+ * (`test-catalog.providers.ts`) turns each into a `Service` entity, and the
+ * figures a surface prints are `CatalogPricingSystem`'s answers on it.
+ */
+export const SERVICES: readonly ServiceSourceVm[] = [
   {
     id: 'haircut',
     compositionKind: CompositionKind.Single,

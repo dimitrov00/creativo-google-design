@@ -1,4 +1,4 @@
-import { BirthDate } from '@core/components';
+import { BirthDate, BirthdayMoment } from '@core/components';
 import { Result, LocalDate } from '@core/primitives';
 import { IdentityError } from '@core/errors';
 
@@ -37,6 +37,20 @@ export type NextBirthday = {
   /** Whole days from the asked day; `0` when it is that very day. */
   readonly inDays: number;
   /** The age reached on it; `null` where no plausible figure exists ({@link AgeSystem.ageReachedOn}). */
+  readonly turning: number | null;
+};
+
+/** How far ahead a birthday is said: the week to come, never further. */
+const BIRTHDAY_NOTICE_DAYS = 7;
+
+/** The birthday the client card says — {@link AgeSystem.birthdayMoment}'s answer. */
+export type BirthdayNotice = {
+  readonly birthdayMoment: BirthdayMoment;
+  /** The day the birthday is kept on — today, or a day of the week to come. */
+  readonly localDate: LocalDate;
+  /** `TODAY`: the age reached today; `null` on `UPCOMING` or where no plausible figure exists. */
+  readonly age: number | null;
+  /** The age the kept birthday brings; `null` where no plausible figure exists ({@link AgeSystem.ageReachedOn}). */
   readonly turning: number | null;
 };
 
@@ -188,6 +202,38 @@ export const AgeSystem = {
       localDate: next,
       inDays: LocalDate.daysBetween(day, next),
       turning: AgeSystem.ageReachedOn(birthDate, next),
+    };
+  },
+
+  /** How far ahead the card says a birthday: the week to come, never further. */
+  BIRTHDAY_NOTICE_DAYS,
+
+  /**
+   * Which birthday the client card says (Law 10.2), on {@link nextBirthday}:
+   * `TODAY` when it is kept today (a 29 February one on the 28th in a
+   * common year), `UPCOMING` when it falls 1…{@link BIRTHDAY_NOTICE_DAYS}
+   * days ahead, else `null`. `age` is the figure today's band says,
+   * `turning` the one the kept birthday brings — equal on `TODAY`.
+   */
+  birthdayMoment(
+    birthDate: BirthDate,
+    today: LocalDate,
+  ): BirthdayNotice | null {
+    const next = AgeSystem.nextBirthday(birthDate, today);
+    if (next.inDays === 0) {
+      return {
+        birthdayMoment: BirthdayMoment.Today,
+        localDate: next.localDate,
+        age: next.turning,
+        turning: next.turning,
+      };
+    }
+    if (next.inDays > BIRTHDAY_NOTICE_DAYS) return null;
+    return {
+      birthdayMoment: BirthdayMoment.Upcoming,
+      localDate: next.localDate,
+      age: null,
+      turning: next.turning,
     };
   },
 } as const;

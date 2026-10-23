@@ -343,6 +343,11 @@ export const JournalEffectRecord = {
     return effect.journalEffect === JournalEffect.Points;
   },
 
+  /** A `TIER` effect — the guard a reader narrows by once a system has said the line is a tier change (`LedgerSystem.lineOf`). */
+  isTier(effect: JournalEffectRecord): effect is JournalEffectRecord.Tier {
+    return effect.journalEffect === JournalEffect.Tier;
+  },
+
   /** What the effect adds to the balance: its signed `pointsDelta`, `0` for every other effect. */
   pointsDelta(effect: JournalEffectRecord): number {
     return effect.journalEffect === JournalEffect.Points

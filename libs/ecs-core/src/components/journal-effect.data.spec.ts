@@ -121,6 +121,24 @@ describe('JournalEffectRecord', () => {
       120, -80, 0,
     ]);
   });
+
+  it('tells a tier effect from every other one', () => {
+    const tier: JournalEffectRecord = {
+      journalEffect: JournalEffect.Tier,
+      tierOp: TierOp.Changed,
+      tierFrom: TierId.of('silver'),
+      tierTo: TierId.of('gold'),
+      tierUntil: localDate('2026-12-31'),
+    };
+    expect(JournalEffectRecord.isTier(tier)).toBe(true);
+    expect(JournalEffectRecord.isTier(JournalEffectRecord.points(120))).toBe(
+      false,
+    );
+    if (JournalEffectRecord.isTier(tier)) {
+      // The guard narrows: the tier's own fields are readable.
+      expect(tier.tierTo).toBe('gold');
+    }
+  });
 });
 
 describe('PublicLabel', () => {

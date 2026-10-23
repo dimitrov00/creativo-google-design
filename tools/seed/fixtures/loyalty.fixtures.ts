@@ -92,7 +92,7 @@ import {
   UserId,
   UtcEpochMs,
 } from '@core/primitives';
-import { ZonedTimeSystem } from '@core/systems';
+import { StreakPublishSystem, ZonedTimeSystem } from '@core/systems';
 import { type Body, SHOP_TIME_ZONE, day, sure } from './catalog.fixtures';
 import { customerIdOf } from './customers.fixtures';
 
@@ -253,11 +253,12 @@ export function streakDefinitionBody(
 
 /**
  * Who published the seed's first version of a rule: no person did — the
- * rule the shop opened with (`FIXTURE_STREAK_FIRST_PUBLISHER` of
- * `@core/testing` says the same word, so a spec and the emulator list one
+ * rule the shop opened with (`StreakPublishSystem.SYSTEM_PUBLISHER`, the
+ * reserved uid's one home; `FIXTURE_STREAK_FIRST_PUBLISHER` of
+ * `@core/testing` names it too, so a spec and the emulator list one
  * history). The one `publishedByUserId` that names no account.
  */
-export const SEED_RULE_PUBLISHER: UserId = UserId.of('system');
+export const SEED_RULE_PUBLISHER: UserId = StreakPublishSystem.SYSTEM_PUBLISHER;
 
 /** `000001` — a version's document id; the history sorts by it. */
 export const ruleVersionIdOf = (version: number): StreakDefinitionVersionId =>

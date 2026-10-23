@@ -3,9 +3,11 @@ import {
   LocalizedText,
   StreakInterval,
   StreakIntervalRule,
+  StreakIntervalSource,
   StreakQualifierRule,
   HeadRole,
   STREAK_EXCUSES,
+  STREAK_RULE_PARAMETER_ORDER,
   StreakExcuse,
   StreakOnBreak,
   StreakRule,
@@ -13,6 +15,7 @@ import {
   StreakRuleParameter,
   StreakTransition,
   type ScheduledStreakRule,
+  type StreakPeriodTerms,
 } from '@core/components';
 import { ServiceCategoryId, ServiceId, LocalDate } from '@core/primitives';
 import { deepFreeze, localDate } from '@core/testing';
@@ -398,6 +401,318 @@ describe('StreakRuleSystem, by date', () => {
     expect(
       StreakRuleSystem.inForceOn(head, localDate('2026-10-01')).enabled,
     ).toBe(false);
+  });
+});
+
+describe('StreakRuleSystem.isOnOn — the rhythm counts on a day', () => {
+  const ON = localDate('2026-09-29');
+
+  it('counts under a rule in force that is on, with the flag on', () => {
+    expect(StreakRuleSystem.isOnOn(schedule(), ON, true)).toBe(true);
+    expect(StreakRuleSystem.isOnOn(schedule(null), ON, true)).toBe(true);
+  });
+
+  it('never counts with the flag off: the flag can only switch it off', () => {
+    expect(StreakRuleSystem.isOnOn(schedule(), ON, false)).toBe(false);
+    const off = schedule(null, rule({ enabled: false }));
+    expect(StreakRuleSystem.isOnOn(off, ON, false)).toBe(false);
+  });
+
+  it('never counts under a rule in force that is off, whatever the flag', () => {
+    const off = schedule(null, rule({ enabled: false }));
+    expect(StreakRuleSystem.isOnOn(off, ON, true)).toBe(false);
+  });
+
+  it('never counts for an unknown rhythm (no head)', () => {
+    expect(StreakRuleSystem.isOnOn(null, ON, true)).toBe(false);
+    expect(StreakRuleSystem.isOnOn(null, ON, false)).toBe(false);
+  });
+
+  it('follows the rule in force BY DATE: a waiting rule decides from its own day', () => {
+    const goesOff = schedule(
+      waiting(
+        rule({ version: 4, effectiveFrom: '2026-10-01', enabled: false }),
+        StreakTransition.Grandfather,
+      ),
+    );
+    expect(
+      StreakRuleSystem.isOnOn(goesOff, localDate('2026-09-30'), true),
+    ).toBe(true);
+    expect(
+      StreakRuleSystem.isOnOn(goesOff, localDate('2026-10-01'), true),
+    ).toBe(false);
+    const goesOn = schedule(
+      waiting(
+        rule({ version: 4, effectiveFrom: '2026-10-01', enabled: true }),
+        StreakTransition.Grandfather,
+      ),
+      rule({ enabled: false }),
+    );
+    expect(StreakRuleSystem.isOnOn(goesOn, localDate('2026-09-30'), true)).toBe(
+      false,
+    );
+    expect(StreakRuleSystem.isOnOn(goesOn, localDate('2026-10-01'), true)).toBe(
+      true,
+    );
+  });
+
+  it('reads the head alone: another rhythm’s head answers by its own rule (the state is StreakState.find’s)', () => {
+    const another = { ...schedule(null), id: 'seasonal' };
+    expect(StreakRuleSystem.isOnOn(another, ON, true)).toBe(true);
+  });
+
+  it('agrees with the rule in force for every day and flag', () => {
+    const head = schedule(
+      waiting(
+        rule({ version: 4, effectiveFrom: '2026-10-01', enabled: false }),
+        StreakTransition.Grandfather,
+      ),
+    );
+    for (const day of [
+      '2026-08-01',
+      '2026-09-30',
+      '2026-10-01',
+      '2027-01-01',
+    ]) {
+      for (const flag of [true, false]) {
+        expect(StreakRuleSystem.isOnOn(head, localDate(day), flag)).toBe(
+          flag && StreakRuleSystem.inForceOn(head, localDate(day)).enabled,
+        );
+      }
+    }
+  });
+});
+
+/*
+ * The rhythm words' decisions, ported (Law 10.2 — docs/architecture/flips/
+ * law-10-decision-extraction.md R-1, R-2, R-4, R-7): each case re-states a
+ * case of `rhythm-rule.words.spec.ts` or `admin-rhythm.words.spec.ts` as a
+ * value/tag assertion.
+ */
+
+/** The open period as the projection pinned it (`StreakState.periodTerms`). */
+const terms = (
+  intervalDays: number,
+  source: StreakIntervalSource,
+  habitDays: number | null,
+): StreakPeriodTerms => ({ intervalDays, graceDays: 7, source, habitDays });
+
+describe('StreakRuleSystem.statedInterval — which interval the sentence states', () => {
+  it('states the person’s own period once the habit is known', () => {
+    expect(
+      StreakRuleSystem.statedInterval(
+        PERSONAL,
+        terms(39, StreakIntervalSource.Personal, 28),
+      ),
+    ).toEqual({
+      streakIntervalSource: StreakIntervalSource.Personal,
+      intervalDays: 39,
+      habitDays: 28,
+    });
+    expect(
+      StreakRuleSystem.statedInterval(
+        PERSONAL,
+        terms(57, StreakIntervalSource.Personal, 38),
+      ),
+    ).toEqual({
+      streakIntervalSource: StreakIntervalSource.Personal,
+      intervalDays: 57,
+      habitDays: 38,
+    });
+    // A habit under two weeks, to one decimal, is still a habit.
+    expect(
+      StreakRuleSystem.statedInterval(
+        PERSONAL,
+        terms(21, StreakIntervalSource.Personal, 10.4),
+      ).habitDays,
+    ).toBe(10.4);
+  });
+
+  it.each<[string, StreakPeriodTerms | null]>([
+    ['nobody yet (the editor’s draft)', null],
+    ['no open period', null],
+    ['a newcomer', terms(42, StreakIntervalSource.Fallback, null)],
+    [
+      'a period an older fixed rule opened',
+      terms(35, StreakIntervalSource.Fixed, null),
+    ],
+    ['a habit nobody measured', terms(39, StreakIntervalSource.Personal, null)],
+    ['a habit of no days', terms(39, StreakIntervalSource.Personal, 0)],
+  ])('states the rule’s own figure for %s', (_, period) => {
+    expect(StreakRuleSystem.statedInterval(PERSONAL, period)).toEqual({
+      streakIntervalSource: StreakIntervalSource.Fallback,
+      intervalDays: 42,
+      habitDays: null,
+    });
+  });
+
+  it('reads the newcomer’s figure from the rule in force, not from an older period', () => {
+    expect(
+      StreakRuleSystem.statedInterval(
+        StreakIntervalRule.personal(50, 21, 70, 35),
+        terms(42, StreakIntervalSource.Fallback, null),
+      ),
+    ).toEqual({
+      streakIntervalSource: StreakIntervalSource.Fallback,
+      intervalDays: 35,
+      habitDays: null,
+    });
+  });
+
+  it('states a fixed interval’s one number, whatever a person’s period still holds', () => {
+    for (const period of [
+      null,
+      terms(39, StreakIntervalSource.Personal, 26),
+      terms(42, StreakIntervalSource.Fallback, null),
+    ]) {
+      expect(StreakRuleSystem.statedInterval(fixed(42), period)).toEqual({
+        streakIntervalSource: StreakIntervalSource.Fixed,
+        intervalDays: 42,
+        habitDays: null,
+      });
+    }
+  });
+});
+
+describe('StreakRuleSystem.changesInRuleOrder — what the history names', () => {
+  const P = StreakRuleParameter;
+
+  it('holds every parameter once, in the rule’s order, the name last', () => {
+    expect(STREAK_RULE_PARAMETER_ORDER).toEqual([
+      'ENABLED',
+      'QUALIFIER',
+      'MIN_GAP_DAYS',
+      'BOOKING_HOLD',
+      'INTERVAL',
+      'GRACE_DAYS',
+      'RISK_LEAD_DAYS',
+      'PROTECTIONS',
+      'EXCUSES',
+      'CLIENT_PAUSE',
+      'REPAIR',
+      'ON_BREAK',
+      'NAME',
+    ]);
+    expect(new Set(STREAK_RULE_PARAMETER_ORDER)).toEqual(
+      new Set(Object.values(StreakRuleParameter)),
+    );
+  });
+
+  it('names nothing for the first rule', () => {
+    expect(StreakRuleSystem.changesInRuleOrder([])).toEqual([]);
+  });
+
+  it('names one change, and several in the rule’s order', () => {
+    expect(StreakRuleSystem.changesInRuleOrder([P.Interval])).toEqual([
+      P.Interval,
+    ]);
+    expect(
+      StreakRuleSystem.changesInRuleOrder([P.GraceDays, P.Interval]),
+    ).toEqual([P.Interval, P.GraceDays]);
+  });
+
+  it('names the name last — not `changeFrom`’s order, which leads with it', () => {
+    const { changed } = StreakRuleSystem.changeFrom(
+      rule({ interval: fixed(35) }),
+      rule(),
+      true,
+    );
+    expect(changed).toEqual([P.Name, P.Interval]);
+    expect(StreakRuleSystem.changesInRuleOrder(changed)).toEqual([
+      P.Interval,
+      P.Name,
+    ]);
+  });
+
+  it('leaves out what is no parameter, and names a duplicate once', () => {
+    expect(
+      StreakRuleSystem.changesInRuleOrder([
+        'id',
+        'version',
+        'effectiveFromLocalDate',
+        P.GraceDays,
+        'grace_days',
+      ]),
+    ).toEqual([P.GraceDays]);
+    expect(
+      StreakRuleSystem.changesInRuleOrder([P.Interval, P.Interval, P.Name]),
+    ).toEqual([P.Interval, P.Name]);
+  });
+
+  it('orders every parameter, listed in any order', () => {
+    expect(
+      StreakRuleSystem.changesInRuleOrder(
+        [...Object.values(StreakRuleParameter)].reverse(),
+      ),
+    ).toEqual(STREAK_RULE_PARAMETER_ORDER);
+  });
+});
+
+describe('StreakRuleSystem.excuseCount — «3 от 4»', () => {
+  it('counts the excuses a rule names, of every excuse there is', () => {
+    expect(StreakRuleSystem.excuseCount(rule())).toEqual({ on: 3, all: 4 });
+    expect(StreakRuleSystem.excuseCount(rule({ excuses: [] }))).toEqual({
+      on: 0,
+      all: 4,
+    });
+    expect(
+      StreakRuleSystem.excuseCount(rule({ excuses: STREAK_EXCUSES })),
+    ).toEqual({ on: 4, all: 4 });
+    expect(STREAK_EXCUSES).toHaveLength(4);
+  });
+});
+
+describe('StreakRuleSystem.exampleDue — the tolerance explained on one habit', () => {
+  const HABIT = 28;
+  const personal = StreakIntervalRule.personal(50, 21, 70, 42);
+
+  it('stretches the habit by the tolerance', () => {
+    expect(StreakRuleSystem.exampleDue(personal, HABIT)).toEqual({
+      days: 42,
+      source: StreakIntervalSource.Personal,
+    });
+  });
+
+  it('holds the example inside the clamp', () => {
+    expect(
+      StreakRuleSystem.exampleDue({ ...personal, intervalMaxDays: 35 }, HABIT)
+        .days,
+    ).toBe(35);
+    expect(
+      StreakRuleSystem.exampleDue(
+        StreakIntervalRule.personal(0, 35, 70, 42),
+        HABIT,
+      ).days,
+    ).toBe(35);
+  });
+
+  it('is the period the projector opens (`daysFor`)', () => {
+    expect(StreakRuleSystem.exampleDue(personal, HABIT)).toEqual(
+      StreakIntervalRule.daysFor(personal, HABIT),
+    );
+  });
+
+  it('equals the words’ old round(28·(1 + p/100)) for every whole percent (§7 R-13)', () => {
+    const clamps: readonly (readonly [number, number])[] = [
+      [14, 182],
+      [21, 70],
+      [30, 35],
+      [42, 56],
+    ];
+    for (const [min, max] of clamps) {
+      for (let pct = 0; pct <= 100; pct++) {
+        const old = Math.min(
+          max,
+          Math.max(min, Math.round(HABIT * (1 + pct / 100))),
+        );
+        expect(
+          StreakRuleSystem.exampleDue(
+            StreakIntervalRule.personal(pct, min, max, min),
+            HABIT,
+          ).days,
+        ).toBe(old);
+      }
+    }
   });
 });
 
@@ -1144,10 +1459,23 @@ describe('StreakRuleSystem purity', () => {
     );
     const head = deepFreeze(schedule(next, current));
     const today = localDate('2026-09-29');
+    const changed = deepFreeze([
+      StreakRuleParameter.Name,
+      'version',
+      StreakRuleParameter.Interval,
+    ]);
     const once = [
       StreakRuleSystem.schedule(current, next),
       StreakRuleSystem.inForceOn(head, today),
       StreakRuleSystem.upcomingOn(head, today),
+      StreakRuleSystem.isOnOn(head, today, true),
+      StreakRuleSystem.statedInterval(
+        PERSONAL,
+        terms(39, StreakIntervalSource.Personal, 28),
+      ),
+      StreakRuleSystem.changesInRuleOrder(changed),
+      StreakRuleSystem.excuseCount(next),
+      StreakRuleSystem.exampleDue(PERSONAL, 28),
       StreakRuleSystem.changeFrom(next, current, true),
       StreakRuleSystem.summary(next),
       StreakRuleSystem.earliestEffectiveDay('STRICTER', today, {
@@ -1159,6 +1487,14 @@ describe('StreakRuleSystem purity', () => {
       StreakRuleSystem.schedule(current, next),
       StreakRuleSystem.inForceOn(head, today),
       StreakRuleSystem.upcomingOn(head, today),
+      StreakRuleSystem.isOnOn(head, today, true),
+      StreakRuleSystem.statedInterval(
+        PERSONAL,
+        terms(39, StreakIntervalSource.Personal, 28),
+      ),
+      StreakRuleSystem.changesInRuleOrder(changed),
+      StreakRuleSystem.excuseCount(next),
+      StreakRuleSystem.exampleDue(PERSONAL, 28),
       StreakRuleSystem.changeFrom(next, current, true),
       StreakRuleSystem.summary(next),
       StreakRuleSystem.earliestEffectiveDay('STRICTER', today, {

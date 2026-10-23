@@ -5,28 +5,40 @@ import {
   type EarnedDay,
   type EarnedLevel,
   FamilyScopeFilter,
+  MedalCaption,
+  MedalMeter,
   MedalState,
-  Metric,
   PersonalRecord,
   PersonalRecordKind,
+  ScopeSection,
   SeasonKind,
   SeasonPhase,
+  SeasonTrackState,
   type SeriesStanding,
 } from '@core/components';
 import type { BadgeProgress, BadgeSeries, Season } from '@core/entities';
 import {
   BadgeCategoryId,
   BadgeSeriesId,
+  BarberId,
   LocalDate,
+  LocationId,
+  type MinuteOfDay,
   SeasonId,
+  ServiceCategoryId,
+  ServiceId,
   type TimeZone,
   UtcEpochMs,
   defect,
 } from '@core/primitives';
 import {
+  AchievementsSystem,
   BadgeSystem,
+  type DraftVisit,
   LoyaltyCatalogSystem,
+  type MedalMeterReading,
   SeasonSystem,
+  type SeasonTrackOutlook,
   StandingSystem,
   ZonedTimeSystem,
 } from '@core/systems';
@@ -39,7 +51,6 @@ import {
 import {
   cardLocaleOf,
   dayLong,
-  dayPlus,
   dayRange,
   dayShort,
   figure,
@@ -135,9 +146,6 @@ export const MEDAL_STATES = {
 
 /** How many tiles a rail or a shelf shows; past that, the shelf's action is the way on. */
 const RAIL_LIMIT = 8;
-
-/** The last minute a visit may start and still count as an early bird (10:00, §4.6). */
-const EARLY_BIRD_LAST_MINUTE = 10 * 60;
 
 // ── The page's context ──────────────────────────────────────────────────
 
@@ -261,29 +269,19 @@ export function previousVisitOf(data: AchievementsData): UtcEpochMs | null {
   return utc.ok ? utc.value : defect(`${at} is not an instant`);
 }
 
-/** The shop day a level was earned on (a yearly one keeps its latest) — the stored day (T5), never re-bucketed. */
+/** The shop day a level was earned on (a yearly one keeps its latest) — the stored day (T5), never re-bucketed (`BadgeSystem.earnedOn`). */
 export function earnedOnOf(
   progress: BadgeProgress | null,
   level: number,
 ): LocalDate | null {
-  return (
-    progress?.earned.find((e) => e.level === level)?.earnedLocalDate ?? null
-  );
+  return BadgeSystem.earnedOn(progress, level);
 }
 
+/** The level earned most recently (`BadgeSystem.latestEarned`). */
 export function latestEarned(
   progress: BadgeProgress | null,
 ): EarnedLevel | null {
-  let latest: EarnedLevel | null = null;
-  for (const earned of progress?.earned ?? []) {
-    if (
-      latest === null ||
-      UtcEpochMs.compare(earned.earnedAtUtcMs, latest.earnedAtUtcMs) > 0
-    ) {
-      latest = earned;
-    }
-  }
-  return latest;
+  return BadgeSystem.latestEarned(progress);
 }
 
 /** The season or event a family belongs to, or `null`. */
@@ -302,6 +300,15 @@ export function seasonPhaseOf(
   data: AchievementsData,
 ): SeasonPhase {
   return SeasonSystem.phaseOn(season, cardDayOf(data.today));
+}
+
+/** Where a family's season or event stands today; `null` for a family of no season, or of one the catalogue lacks. */
+export function seasonPhaseOfSeries(
+  series: Pick<BadgeSeries, 'seasonId'>,
+  data: AchievementsData,
+): SeasonPhase | null {
+  const season = seasonOfSeries(series, data);
+  return season === null ? null : seasonPhaseOf(season, data);
 }
 
 /** A family by its id (a VM's `seriesId`, a route's), or `null`. */
@@ -373,32 +380,36 @@ export function familyCountsOf(
  */
 export const PENDING_RING = 0.92;
 
-/** A single act: one level with no target («Добре дошъл», «Рожден ден в салона»). */
+/** A single act: one level with no target («Добре дошъл», «Рожден ден в салона») — `BadgeSystem.isOneOff`. */
 export function isOneOff(series: BadgeSeries): boolean {
-  return series.levels.length === 1 && series.levels[0]?.target === null;
+  return BadgeSystem.isOneOff(series);
 }
 
 /**
  * A family of ONE level, counted or not («Есенно утро», «Всеки летен
  * месец», «Добре дошъл»): earning it is the whole family, so once earned
  * it is worded as a single act — by its day — never «Всички нива», the
- * words for a ladder climbed to its top.
+ * words for a ladder climbed to its top (`BadgeSystem.isSingleLevel`).
  */
 export function isSingleLevel(series: BadgeSeries): boolean {
-  return series.levels.length === 1;
+  return BadgeSystem.isSingleLevel(series);
 }
 
 /**
  * The family's season or event has ended on `data.today` (CF): it keeps
  * the levels it reached and can reach no more, so nothing about it reads
- * as progress — no meter, no «3/4 до IV», no «Още …».
+ * as progress — no meter, no «3/4 до IV», no «Още …»
+ * (`LoyaltyCatalogSystem.inEndedSeason`).
  */
 export function inEndedSeason(
   series: BadgeSeries,
   data: AchievementsData,
 ): boolean {
-  const season = seasonOfSeries(series, data);
-  return season !== null && seasonPhaseOf(season, data) === SeasonPhase.Ended;
+  return LoyaltyCatalogSystem.inEndedSeason(
+    data.catalog,
+    series,
+    cardDayOf(data.today),
+  );
 }
 
 /**
@@ -408,39 +419,88 @@ export function inEndedSeason(
  * never «576/730 до II»: a count of days is not a unit a barber reads at a
  * glance (wave D r4). The meter keeps the day fraction. Never before
  * today: a level due and not yet stamped lands today. `null` for every
- * other family, and for a complete one.
+ * other family, and for a complete one (`BadgeSystem.landsOn`).
  */
 export function landsOn(
   series: BadgeSeries,
   standing: SeriesStanding,
   data: AchievementsData,
 ): string | null {
-  if (!BadgeSystem.isCalendarDriven(series) || standing.target === null) {
-    return null;
-  }
-  const first =
-    PersonalRecord.find(data.account.records, PersonalRecordKind.FirstVisit)
-      ?.on ?? null;
-  const day =
-    first === null
-      ? dayPlus(data.today, Math.max(0, standing.target - standing.value))
-      : dayPlus(first, standing.target);
-  return day < data.today ? data.today : day;
+  return landsOnDay(series, standing, data);
 }
 
-/** The start of the visit's first leg, in minutes from the shop's midnight on `zone`. */
-function earliestStartMinute(
-  legs: readonly ClientCardLeg[],
+/** {@link landsOn} as the shop day it is — what the medal systems read. */
+export function landsOnDay(
+  series: BadgeSeries,
+  standing: SeriesStanding,
+  data: AchievementsData,
+): LocalDate | null {
+  return BadgeSystem.landsOn(
+    series,
+    standing,
+    PersonalRecord.find(data.account.records, PersonalRecordKind.FirstVisit)
+      ?.on ?? null,
+    cardDayOf(data.today),
+  );
+}
+
+/**
+ * The visit on screen, as its draft holds it: when its first service
+ * starts — the shop day and the minute of the shop's wall clock on `zone`,
+ * and the instant. The legs' starts are read at the edge (Law 7); which one
+ * is first is `AchievementsSystem.firstStart`'s. `null` with no start yet.
+ */
+export function draftStart(
+  visit: NonNullable<AchievementsContext['visit']>,
   zone: TimeZone,
-): number | null {
-  let earliest: number | null = null;
-  for (const leg of legs) {
+): {
+  readonly localDate: LocalDate;
+  readonly minute: MinuteOfDay;
+  readonly utcMs: UtcEpochMs;
+} | null {
+  const starts: UtcEpochMs[] = [];
+  for (const leg of visit.legs) {
     const start = ZonedTimeSystem.parseIsoIn(leg.startsAtIso, zone);
-    if (!start.ok) continue;
-    const minute: number = ZonedTimeSystem.toLocal(start.value, zone).minute;
-    if (earliest === null || minute < earliest) earliest = minute;
+    if (start.ok) starts.push(start.value);
   }
-  return earliest;
+  const first = AchievementsSystem.firstStart(starts);
+  if (first === null) return null;
+  const wall = ZonedTimeSystem.toLocal(first, zone);
+  return { localDate: wall.localDate, minute: wall.minute, utcMs: first };
+}
+
+/** The drafts already read, per visit on screen and the zone they were read on (`draftVisitOf`). */
+const DRAFTS = new WeakMap<
+  NonNullable<AchievementsContext['visit']>,
+  { readonly zone: TimeZone; readonly draft: DraftVisit }
+>();
+
+/**
+ * The visit on screen as the medal systems read it (`DraftVisit`): its
+ * legs' services and barbers and its shop as the ids they are, the minute
+ * its first leg starts on the shop's clock, and whether it is the
+ * client's birthday visit — built once per visit at the edge (D-2.8).
+ * `null` with no visit on screen.
+ */
+export function draftVisitOf(ctx: AchievementsContext): DraftVisit | null {
+  const visit = ctx.visit;
+  if (visit === null) return null;
+  const known = DRAFTS.get(visit);
+  if (known !== undefined && known.zone === ctx.zone) return known.draft;
+  const draft: DraftVisit = {
+    serviceIds: visit.legs.flatMap((leg) =>
+      leg.serviceId === null ? [] : [ServiceId.of(leg.serviceId)],
+    ),
+    barberIds: visit.legs.flatMap((leg) =>
+      leg.barberId === null ? [] : [BarberId.of(leg.barberId)],
+    ),
+    locationId:
+      visit.locationId === null ? null : LocationId.of(visit.locationId),
+    startMinutes: draftStart(visit, ctx.zone)?.minute ?? null,
+    birthdayToday: visit.birthdayToday,
+  };
+  DRAFTS.set(visit, { zone: ctx.zone, draft });
+  return draft;
 }
 
 /**
@@ -449,62 +509,37 @@ function earliestStartMinute(
  * (visits; visits with one of its services, its barber or its shop; an
  * early-bird start by 10:00), a season's families only while the season
  * runs — or it is the client's birthday visit and the yearly act is not
- * yet this year's. Presenter-only: nothing is written.
+ * yet this year's (`AchievementsSystem.completesWithVisit`). Presenter-only:
+ * nothing is written.
  */
 export function completesWithThisVisit(
   series: BadgeSeries,
   data: AchievementsData,
   ctx: AchievementsContext,
 ): boolean {
-  const visit = ctx.visit;
-  if (
-    visit === null ||
-    BadgeSystem.isRetired(series) ||
-    BadgeSystem.isCalendarDriven(series)
-  ) {
-    return false;
-  }
-  if (series.seasonId !== null) {
-    const season = seasonOfSeries(series, data);
-    if (season === null || seasonPhaseOf(season, data) !== SeasonPhase.Open) {
-      return false;
-    }
-  }
+  const draft = draftVisitOf(ctx);
+  if (draft === null) return false;
   const progress = progressOf(data, series);
-  if (series.repeatable && series.emblem === BadgeEmblem.Birthday) {
-    const last = latestEarned(progress);
-    // The year it was last earned is its stored shop day's (T5).
-    return (
-      visit.birthdayToday &&
-      (last === null ||
-        last.earnedLocalDate.slice(0, 4) < data.today.slice(0, 4))
-    );
+  return AchievementsSystem.completesWithVisit(
+    series,
+    BadgeSystem.standing(series, progress),
+    BadgeSystem.latestEarned(progress),
+    draft,
+    seasonPhaseOfSeries(series, data),
+    cardDayOf(data.today),
+  );
+}
+
+/** The families of the catalogue the visit on screen completes ({@link completesWithThisVisit}). */
+export function completingOf(
+  data: AchievementsData,
+  ctx: AchievementsContext,
+): ReadonlySet<BadgeSeriesId> {
+  const ids = new Set<BadgeSeriesId>();
+  for (const series of data.catalog.families) {
+    if (completesWithThisVisit(series, data, ctx)) ids.add(series.id);
   }
-  const standing = BadgeSystem.standing(series, progress);
-  if (standing.next === null || standing.target === null) return false;
-  if (standing.target - standing.value > 1) return false;
-  switch (series.metric) {
-    case Metric.VisitsCompleted: {
-      const serviceId = series.metricScopeServiceId;
-      if (serviceId !== null) {
-        return visit.legs.some((leg) => leg.serviceId === serviceId);
-      }
-      const barberId = series.metricScopeBarberId;
-      if (barberId !== null) {
-        return visit.legs.some((leg) => leg.barberId === barberId);
-      }
-      if (series.metricScopeLocationId !== null) {
-        return visit.locationId === series.metricScopeLocationId;
-      }
-      return true;
-    }
-    case Metric.VisitsEarlyBird: {
-      const minute = earliestStartMinute(visit.legs, ctx.zone);
-      return minute !== null && minute <= EARLY_BIRD_LAST_MINUTE;
-    }
-    default:
-      return false;
-  }
+  return ids;
 }
 
 /**
@@ -641,37 +676,97 @@ function captionOf(
   ctx: AchievementsContext,
 ): string | null {
   const words = ctx.words.achievements;
-  if (withThisVisit) return words.withThisVisit;
   const last = latestEarned(progress);
-  // An ended season's family stopped where it stopped (CF): its rim says
-  // where, and no target is left to word — never «3/4 до IV». Nor its
-  // day: a season's last visit completes several of its families at once,
-  // so the day repeated the state line of the detail beside it («7.08»).
-  if (standing.next !== null && last !== null && inEndedSeason(series, data)) {
-    return null;
-  }
-  if (standing.next !== null) {
-    const on = landsOn(series, standing, data);
-    if (on !== null) {
+  // The caption reads the UNGATED day a calendar-driven level lands (the
+  // meter alone reads it only towards a next level it draws).
+  const on = landsOnDay(series, standing, data);
+  switch (
+    BadgeSystem.captionOf(
+      series,
+      standing,
+      last,
+      inEndedSeason(series, data),
+      withThisVisit,
+      on,
+    )
+  ) {
+    case MedalCaption.WithThisVisit:
+      return words.withThisVisit;
+    case MedalCaption.None:
+      // An ended season's family stopped where it stopped (CF): its rim
+      // says where, and no target is left to word — never «3/4 до IV». Nor
+      // its day: a season's last visit completes several of its families
+      // at once, so the day repeated the state line of the detail beside
+      // it («7.08»).
+      return null;
+    case MedalCaption.LandsOn:
+      if (on === null) return defect('a LANDS_ON caption without its day');
       // The date is one unit: a narrow tile wraps before it («II на» ·
       // «1.03.2027 г.»), never inside it (an orphaned «г.»).
       return words.toLevelOn(
-        levelNumeral(standing.next.level),
+        levelNumeral(BadgeSystem.nextLevelNumber(standing)),
         dayShort(on, data.today, ctx.words.lang).replace(/ /gu, ' '),
       );
+    case MedalCaption.NotYet:
+      return ctx.words.achievement.oneOffNotYet;
+    case MedalCaption.ToLevel:
+      return words.toLevel(
+        standing.value,
+        standing.target ?? defect('a TO_LEVEL caption without a target'),
+        levelNumeral(BadgeSystem.nextLevelNumber(standing)),
+      );
+    case MedalCaption.OnDay:
+      if (last === null) return defect('an ON_DAY caption without a level');
+      return dayShort(last.earnedLocalDate, data.today, ctx.words.lang);
+    case MedalCaption.Complete:
+      return words.complete;
+  }
+}
+
+/**
+ * The thin meter as `BadgeSystem.meterOf` reads it, worded: all but closed
+ * with «с това посещение» (`PENDING_RING`), the fraction with the way to
+ * the next level — by the day it lands for a calendar-driven family — or
+ * none.
+ */
+function meterWords(
+  reading: MedalMeterReading,
+  toNext: {
+    readonly value: number;
+    readonly target: number;
+    readonly level: string;
+  } | null,
+  nextLevel: string,
+  on: LocalDate | null,
+  data: AchievementsData,
+  ctx: AchievementsContext,
+): { readonly value: number; readonly text: string } | null {
+  switch (reading.medalMeter) {
+    case MedalMeter.Pending:
+      return {
+        value: PENDING_RING,
+        text: ctx.words.achievements.nextWithThisVisit(nextLevel),
+      };
+    case MedalMeter.Fraction: {
+      if (toNext === null) return defect('a FRACTION meter without a level');
+      return {
+        value: reading.fraction,
+        text:
+          on === null
+            ? ctx.words.achievement.stateToNext(
+                toNext.value,
+                toNext.target,
+                toNext.level,
+              )
+            : ctx.words.achievement.stateToNextOn(
+                toNext.level,
+                dayShort(on, data.today, ctx.words.lang),
+              ),
+      };
     }
-    return standing.target === null
-      ? ctx.words.achievement.oneOffNotYet
-      : words.toLevel(
-          standing.value,
-          standing.target,
-          levelNumeral(standing.next.level),
-        );
+    case MedalMeter.None:
+      return null;
   }
-  if ((isSingleLevel(series) || series.repeatable) && last !== null) {
-    return dayShort(last.earnedLocalDate, data.today, ctx.words.lang);
-  }
-  return words.complete;
 }
 
 /**
@@ -694,23 +789,23 @@ export function medalVm(
   const title = options.title ?? series.title[locale];
   const src = artOf(series, data, ctx);
   const monogram = src === null ? monogramFor(series, ctx) : null;
-  const latest = latestEarned(progress);
   const isNew =
     (options.markNew ?? false) &&
-    standing.medalState === MedalState.Earned &&
-    latest !== null &&
-    StandingSystem.isNewSince(latest.earnedAtUtcMs, previousVisitOf(data));
+    StandingSystem.isFamilyNew(
+      standing,
+      latestEarned(progress),
+      previousVisitOf(data),
+    );
   // An ended season's family has no next level to be drawn towards (CF).
+  const reach = BadgeSystem.toNext(standing, inEndedSeason(series, data));
   const toNext =
-    standing.next !== null &&
-    standing.target !== null &&
-    !inEndedSeason(series, data)
-      ? {
-          value: standing.value,
-          target: standing.target,
-          level: levelNumeral(standing.next.level),
-        }
-      : null;
+    reach === null
+      ? null
+      : {
+          value: reach.value,
+          target: reach.target,
+          level: levelNumeral(reach.level),
+        };
   // THE PENDING FACE (wave D r4, Critique 3): a level the visit on screen
   // completes is the one thing to say now, so it never looks like the
   // dullest medal on the card. Short of earned it is drawn in progress —
@@ -719,36 +814,21 @@ export function medalVm(
   // closed (`PENDING_RING`). An earned family's rim keeps its highest
   // EARNED level (the numeral rule); its meter stands the same. The
   // sentence still says where it truly stands.
-  const nextLevel = levelNumeral(
-    standing.next?.level ?? standing.highestLevel + 1,
-  );
+  const nextLevel = levelNumeral(BadgeSystem.nextLevelNumber(standing));
   // A calendar-driven family (tenure) is worded by the day its next level
   // lands, not by days counted (`landsOn`); its meter keeps the fraction.
-  const on = toNext === null ? null : landsOn(series, standing, data);
+  const on = toNext === null ? null : landsOnDay(series, standing, data);
   const meter =
-    (options.meter ?? true) && withThisVisit
-      ? {
-          value: PENDING_RING,
-          text: ctx.words.achievements.nextWithThisVisit(nextLevel),
-        }
-      : (options.meter ?? true) &&
-          standing.medalState !== MedalState.NotStarted &&
-          toNext !== null
-        ? {
-            value: Math.min(1, Math.max(0, toNext.value / toNext.target)),
-            text:
-              on === null
-                ? ctx.words.achievement.stateToNext(
-                    toNext.value,
-                    toNext.target,
-                    toNext.level,
-                  )
-                : ctx.words.achievement.stateToNextOn(
-                    toNext.level,
-                    dayShort(on, data.today, lang),
-                  ),
-          }
-        : null;
+    (options.meter ?? true)
+      ? meterWords(
+          BadgeSystem.meterOf(standing, reach, withThisVisit),
+          toNext,
+          nextLevel,
+          on,
+          data,
+          ctx,
+        )
+      : null;
   const caption =
     options.caption ??
     ((options.captioned ?? true)
@@ -802,10 +882,7 @@ export function medalVm(
 
   return {
     seriesId: series.id,
-    state:
-      withThisVisit && standing.medalState === MedalState.NotStarted
-        ? MEDAL_STATES[MedalState.InProgress]
-        : MEDAL_STATES[standing.medalState],
+    state: MEDAL_STATES[BadgeSystem.faceState(standing, withThisVisit)],
     icon: BADGE_EMBLEM_ICONS[series.emblem],
     src,
     monogram,
@@ -878,33 +955,14 @@ function familyFace(
 /**
  * A shelf's order: earned (highest level first) → in progress (closest
  * first) → not started (series order). The catalogue's own order breaks
- * every tie, so the families keep their places as they progress.
+ * every tie, so the families keep their places as they progress
+ * (`StandingSystem.shelfOrdered`).
  */
 export function shelfOrdered(
   families: readonly BadgeSeries[],
   data: AchievementsData,
 ): readonly BadgeSeries[] {
-  const rank = (series: BadgeSeries) => {
-    const standing = standingOf(series, data);
-    const band =
-      standing.medalState === MedalState.Earned
-        ? 0
-        : standing.medalState === MedalState.InProgress
-          ? 1
-          : 2;
-    const within =
-      standing.medalState === MedalState.Earned
-        ? -standing.highestLevel
-        : standing.medalState === MedalState.InProgress &&
-            standing.target !== null
-          ? -(standing.value / standing.target)
-          : 0;
-    return { band, within };
-  };
-  return families
-    .map((series, index) => ({ series, index, ...rank(series) }))
-    .sort((a, b) => a.band - b.band || a.within - b.within || a.index - b.index)
-    .map((entry) => entry.series);
+  return StandingSystem.shelfOrdered(families, progressList(data));
 }
 
 // ── «Скоро» and «Последни» ─────────────────────────────────────────────
@@ -916,26 +974,20 @@ export function shelfOrdered(
  * same list, so the strip and the rail never disagree; the rail only
  * leaves out what its own page already draws — the season track its
  * season card words, the families «Последни» shows (`soonTiles`).
+ * `StandingSystem.soonIds`.
  */
 export function soonSeriesIds(
   data: AchievementsData,
   ctx: AchievementsContext,
   limit: number,
 ): readonly string[] {
-  const acts = data.catalog.families
-    .filter(
-      (series) =>
-        series.levels.every((level) => level.target === null) &&
-        completesWithThisVisit(series, data, ctx),
-    )
-    .map((series): string => series.id);
-  const closest = StandingSystem.closestLevels(
+  return StandingSystem.soonIds(
     data.catalog,
     progressList(data),
     cardDayOf(data.today),
+    completingOf(data, ctx),
     limit,
-  ).map((level): string => level.badgeSeriesId);
-  return [...new Set([...acts, ...closest])].slice(0, Math.max(0, limit));
+  );
 }
 
 /**
@@ -977,21 +1029,17 @@ export function latestTiles(
   beside: FacesBeside = NOTHING_BESIDE,
 ): readonly AchievementTileVm[] {
   const words = ctx.words;
-  const shown = new Set<string>();
   const faces = new Set<string>();
   const tiles: AchievementTileVm[] = [];
   const push = (tile: AchievementTileVm) => {
     tiles.push(tile);
     faces.add(faceOf(tile.medal));
   };
-  for (const day of StandingSystem.recentLevelsByDay(
-    progressList(data),
-    Number.MAX_SAFE_INTEGER,
-  )) {
+  // A family once, on the newest day it moved; a day with nothing fresh is
+  // left out (`StandingSystem.recentFreshLevelsByDay`).
+  for (const day of StandingSystem.recentFreshLevelsByDay(progressList(data))) {
     if (tiles.length >= RAIL_LIMIT) break;
-    const fresh = day.levels.filter((level) => !shown.has(level.badgeSeriesId));
-    for (const level of day.levels) shown.add(level.badgeSeriesId);
-    const newest = fresh[0];
+    const newest = day.fresh[0];
     if (newest === undefined) continue;
     const short = dayShort(day.localDate, data.today, words.lang);
     if (day.levels.length === 1) {
@@ -1009,7 +1057,7 @@ export function latestTiles(
       );
       continue;
     }
-    const series = fresh
+    const series = day.fresh
       .flatMap((level, index) => {
         const family = LoyaltyCatalogSystem.series(
           data.catalog,
@@ -1086,12 +1134,11 @@ export function newestFaceLevel(
 ): EarnedDay.Level | null {
   const day = StandingSystem.recentLevelsByDay(progressList(data), 1)[0];
   if (day === undefined) return null;
-  const season = LoyaltyCatalogSystem.seasonsIn(
+  const season = LoyaltyCatalogSystem.windowsOn(
     data.catalog,
-    SeasonPhase.Open,
     cardDayOf(data.today),
-  ).find((s) => s.seasonKind === SeasonKind.Season);
-  const card = season === undefined ? null : seasonCardVm(season, data, ctx);
+  ).season;
+  const card = season === null ? null : seasonCardVm(season, data, ctx);
   const lead = latestTiles(data, ctx, facesBesideCard(card))[0];
   return (
     day.levels.find((level) => level.badgeSeriesId === lead?.medal.seriesId) ??
@@ -1101,6 +1148,29 @@ export function newestFaceLevel(
 }
 
 // ── Seasons and events ─────────────────────────────────────────────────
+
+/**
+ * How a season's track reads today (`SeasonSystem.trackOutlook`): the
+ * season's own count where its progress holds one, its phase, and — the
+ * visit in the chair counts, as the glance's cue says it does — whether
+ * the visit on screen completes the track's next level. Nothing is written.
+ */
+export function trackOutlookOf(
+  season: Season,
+  track: BadgeSeries,
+  data: AchievementsData,
+  ctx: AchievementsContext,
+): SeasonTrackOutlook {
+  const progress = data.seasonProgress.get(season.id) ?? null;
+  return SeasonSystem.trackOutlook(
+    track,
+    standingOf(track, data),
+    progress?.trackValue ?? null,
+    progress?.trackLevel ?? null,
+    seasonPhaseOf(season, data),
+    completesWithThisVisit(track, data, ctx),
+  );
+}
 
 function seasonTrack(
   season: Season,
@@ -1114,44 +1184,25 @@ function seasonTrack(
   if (track === null) return null;
   const words = ctx.words.achievements;
   const standing = standingOf(track, data);
-  const value =
-    data.seasonProgress.get(season.id)?.trackValue ?? standing.value;
   // An ended season can reach nothing more: its track is the levels it
-  // reached, the last one current and none ringed next.
-  const ended = seasonPhaseOf(season, data) === SeasonPhase.Ended;
-  const levels = ended
-    ? track.levels.filter((level) => level.level <= standing.highestLevel)
-    : track.levels;
-  if (levels.length === 0) return null;
-  const marks: readonly UiMark[] = levels.map((level) => ({
+  // reached, the last one current and none ringed next. The visit in the
+  // chair counts in the steps too (wave D r5): the medal beside them wears
+  // the pending face with its level «с това посещение», so the steps stand
+  // where the visit takes them, the level it lands the current node — what
+  // the track shows once the visit is saved.
+  const outlook = trackOutlookOf(season, track, data, ctx);
+  if (outlook.levels.length === 0) return null;
+  const marks: readonly UiMark[] = outlook.levels.map((level) => ({
     value: level.target ?? level.level,
     label: null,
     short: levelNumeral(level.level),
   }));
-  const max = marks.at(-1)?.value ?? 1;
-  const next =
-    standing.next !== null && standing.target !== null
-      ? { level: levelNumeral(standing.next.level), target: standing.target }
-      : null;
-  // The visit in the chair counts, as the glance's cue says it does — in
-  // the steps too (wave D r5): the medal beside them wears the pending face
-  // with its level «с това посещение», so the steps stand where the visit
-  // takes them, the level it lands the current node — what the track
-  // shows once the visit is saved. Nothing is written.
-  const pending =
-    !ended && next !== null && completesWithThisVisit(track, data, ctx);
-  const sentence = ended
-    ? null
-    : next === null
-      ? words.complete
-      : pending
-        ? words.nextWithThisVisit(next.level)
-        : words.seasonNext(Math.max(1, next.target - value), next.level);
-  const drawn = Math.min(pending && next !== null ? next.target : value, max);
+  const nextLevel = levelNumeral(BadgeSystem.nextLevelNumber(standing));
+  const sentence = trackSentence(outlook, nextLevel, ctx);
   const gauge: GaugeVm = {
-    value: drawn,
+    value: outlook.drawn,
     min: 0,
-    max,
+    max: outlook.max,
     marks,
     label: season.title[localeOf(ctx)],
     valueText:
@@ -1167,13 +1218,31 @@ function seasonTrack(
   // wave D r5). A finished track of earned levels prints no numeral (its
   // last node is checked, an ended season's always): there the rim is the
   // one place the level is drawn. The medal's sentence keeps the level.
-  const finished = !pending && drawn >= max;
   return {
     seasonId: season.id,
-    medal: finished ? medal : { ...medal, level: null },
+    medal: outlook.finished ? medal : { ...medal, level: null },
     gauge,
     sentence,
   };
+}
+
+/** A track's one sentence by its state; an ended window's is none (its gauge says where it closed). */
+function trackSentence(
+  outlook: SeasonTrackOutlook,
+  nextLevel: string,
+  ctx: AchievementsContext,
+): string | null {
+  const words = ctx.words.achievements;
+  switch (outlook.seasonTrackState) {
+    case SeasonTrackState.Ended:
+      return null;
+    case SeasonTrackState.Complete:
+      return words.complete;
+    case SeasonTrackState.Pending:
+      return words.nextWithThisVisit(nextLevel);
+    case SeasonTrackState.ToNext:
+      return words.seasonNext(outlook.remaining, nextLevel);
+  }
 }
 
 /** AF — the season running today: its medal over its steps, its families under them. */
@@ -1269,16 +1338,13 @@ export function eventCardVm(
   };
 }
 
-/** The ended seasons and events the client took part in, newest first. */
+/** The ended seasons and events the client took part in, newest first (`LoyaltyCatalogSystem.archivedFor`). */
 function archivedSeasons(data: AchievementsData): readonly Season[] {
-  return LoyaltyCatalogSystem.seasonsIn(
+  return LoyaltyCatalogSystem.archivedFor(
     data.catalog,
-    SeasonPhase.Ended,
     cardDayOf(data.today),
-  ).filter(
-    (season) =>
-      data.seasonProgress.has(season.id) ||
-      SeasonSystem.familyIds(season).some((id) => data.progress.has(id)),
+    new Set([...data.progress.keys()].map((id) => BadgeSeriesId.of(id))),
+    new Set([...data.seasonProgress.keys()].map((id) => SeasonId.of(id))),
   );
 }
 
@@ -1336,9 +1402,7 @@ function sectionOf(
 ): ScopeSectionVm {
   // Earned, the filled discs under it: «Общи · 1 от 1» over a hollow ring
   // read as earned (wave D r6).
-  const earned = families.filter(
-    (s) => standingOf(s, data).medalState === MedalState.Earned,
-  ).length;
+  const earned = StandingSystem.earnedAmong(families, progressList(data));
   return {
     key,
     title,
@@ -1354,7 +1418,9 @@ function sectionOf(
 /**
  * A category's sections, by what its families are about: mastery by the
  * service's category («Коса», «Брада»), then «Общи»; barbers and shops as
- * «Бръснари», «Салони», «Общи»; any other shelf one unlabelled grid.
+ * «Бръснари», «Салони», «Общи»; any other shelf one unlabelled grid
+ * (`StandingSystem.sectionsOf`). The shop's service categories are the
+ * host's: branded at the edge, named by the host (D-2.5, D-2.8).
  */
 function categorySections(
   kind: BadgeCategoryKind,
@@ -1364,46 +1430,68 @@ function categorySections(
   ctx: AchievementsContext,
 ): readonly ScopeSectionVm[] {
   const words = ctx.words.achievements;
-  const groups = new Map<string, { title: string; families: BadgeSeries[] }>();
-  const add = (key: string, title: string, series: BadgeSeries) => {
-    const group = groups.get(key);
-    if (group) group.families.push(series);
-    else groups.set(key, { title, families: [series] });
-  };
-  if (kind === BadgeCategoryKind.Mastery) {
-    const general: BadgeSeries[] = [];
-    for (const series of families) {
-      const category =
-        series.badgeSubject === BadgeSubject.Service
-          ? ctx.catalog.serviceCategory(series.subjectServiceId)
-          : null;
-      if (category === null) general.push(series);
-      else add(category.id, category.name, series);
-    }
-    for (const series of general) add('general', words.sectionGeneral, series);
-  } else if (kind === BadgeCategoryKind.Barbers) {
-    const ordered = [
-      ...families.filter((s) => s.badgeSubject === BadgeSubject.Barber),
-      ...families.filter((s) => s.badgeSubject === BadgeSubject.Location),
-      ...families.filter(
-        (s) =>
-          s.badgeSubject === null || s.badgeSubject === BadgeSubject.Service,
-      ),
-    ];
-    for (const series of ordered) {
-      if (series.badgeSubject === BadgeSubject.Barber) {
-        add('barbers', words.sectionBarbers, series);
-      } else if (series.badgeSubject === BadgeSubject.Location) {
-        add('shops', words.sectionShops, series);
-      } else {
-        add('general', words.sectionGeneral, series);
-      }
-    }
-  } else {
-    return [sectionOf(categoryId, null, families, data, ctx, false)];
+  const categoryOf = new Map<ServiceId, ServiceCategoryId>();
+  const names = new Map<string, string>();
+  for (const series of families) {
+    if (series.badgeSubject !== BadgeSubject.Service) continue;
+    const category = ctx.catalog.serviceCategory(series.subjectServiceId);
+    if (category === null) continue;
+    categoryOf.set(series.subjectServiceId, ServiceCategoryId.of(category.id));
+    if (!names.has(category.id)) names.set(category.id, category.name);
   }
-  return [...groups.entries()].map(([key, group]) =>
-    sectionOf(key, group.title, group.families, data, ctx, true),
+  return StandingSystem.sectionsOf(kind, families, categoryOf).map(
+    (section) => {
+      switch (section.scopeSection) {
+        case ScopeSection.ServiceCategory: {
+          const key =
+            section.key ?? defect('a service category section without its id');
+          return sectionOf(
+            key,
+            names.get(key) ?? null,
+            section.families,
+            data,
+            ctx,
+            true,
+          );
+        }
+        case ScopeSection.Barbers:
+          return sectionOf(
+            'barbers',
+            words.sectionBarbers,
+            section.families,
+            data,
+            ctx,
+            true,
+          );
+        case ScopeSection.Shops:
+          return sectionOf(
+            'shops',
+            words.sectionShops,
+            section.families,
+            data,
+            ctx,
+            true,
+          );
+        case ScopeSection.General:
+          return sectionOf(
+            'general',
+            words.sectionGeneral,
+            section.families,
+            data,
+            ctx,
+            true,
+          );
+        case ScopeSection.Whole:
+          return sectionOf(
+            categoryId,
+            null,
+            section.families,
+            data,
+            ctx,
+            false,
+          );
+      }
+    },
   );
 }
 
@@ -1450,12 +1538,7 @@ function archivedSeasonTile(
     key: season.id,
     medal: {
       seriesId: season.id,
-      state:
-        counts.earned > 0
-          ? 'earned'
-          : counts.started > 0
-            ? 'inProgress'
-            : 'notStarted',
+      state: MEDAL_STATES[StandingSystem.scopeMedalState(counts)],
       icon: BADGE_EMBLEM_ICONS[season.emblem],
       src: null,
       monogram: null,
@@ -1514,10 +1597,14 @@ export function scopePageVm(
         SeasonId.of(scope.seasonId),
       );
       if (season === null) return null;
-      const ended = seasonPhaseOf(season, data) === SeasonPhase.Ended;
-      const families = familiesOf(data, familyScopeOf(scope)).filter(
-        (s) => !ended || standingOf(s, data).medalState === MedalState.Earned,
+      // An ended season lists only what was earned (CF) — StandingSystem's.
+      const families = StandingSystem.seasonListed(
+        season,
+        familiesOf(data, familyScopeOf(scope)),
+        progressList(data),
+        cardDayOf(data.today),
       );
+      const ended = seasonPhaseOf(season, data) === SeasonPhase.Ended;
       return {
         title,
         subline: dayRange(
@@ -1538,26 +1625,21 @@ export function scopePageVm(
       };
     }
     case AchievementScope.Archive: {
-      const byYear = new Map<string, Season[]>();
-      for (const season of archivedSeasons(data)) {
-        const year = season.windowUntil.slice(0, 4);
-        byYear.set(year, [...(byYear.get(year) ?? []), season]);
-      }
       return {
         title,
         subline: ctx.subjectName,
         track: null,
         ended: null,
-        sections: [...byYear.entries()]
-          .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
-          .map(([year, seasons]) => ({
-            key: year,
-            title: year,
+        sections: SeasonSystem.byClosingYear(archivedSeasons(data)).map(
+          ({ year, seasons }) => ({
+            key: String(year),
+            title: String(year),
             detail: null,
             tiles: seasons.map((season) =>
               archivedSeasonTile(season, data, ctx),
             ),
-          })),
+          }),
+        ),
       };
     }
     case AchievementScope.Day: {
@@ -1585,7 +1667,6 @@ export function relatedOf(
   const locale = localeOf(ctx);
   let scopeTitle: string | null = null;
   let icon: UiIconName | null = null;
-  let neighbours: readonly BadgeSeries[] = [];
   if (series.categoryId !== null) {
     const category = LoyaltyCatalogSystem.category(
       data.catalog,
@@ -1594,7 +1675,6 @@ export function relatedOf(
     if (category !== null) {
       scopeTitle = category.title[locale];
       icon = BADGE_CATEGORY_ICONS[category.badgeCategoryKind];
-      neighbours = familiesOf(data, FamilyScopeFilter.category(category.id));
     }
   } else if (series.seasonId !== null) {
     const season = LoyaltyCatalogSystem.season(data.catalog, series.seasonId);
@@ -1604,22 +1684,16 @@ export function relatedOf(
         season.seasonKind === SeasonKind.Event
           ? 'loyalty.event'
           : 'loyalty.season';
-      // An ended season lists only what was earned (CF), as its scope page
-      // does; the tiles then carry no meter and no target (`medalVm`).
-      const ended = seasonPhaseOf(season, data) === SeasonPhase.Ended;
-      neighbours = SeasonSystem.familyIds(season)
-        .map((id) => LoyaltyCatalogSystem.series(data.catalog, id))
-        .filter(
-          (s): s is BadgeSeries =>
-            s !== null &&
-            (!BadgeSystem.isRetired(s) || data.progress.has(s.id)) &&
-            (!ended || standingOf(s, data).medalState === MedalState.Earned),
-        );
     }
   }
-  const tiles = shelfOrdered(
-    neighbours.filter((s) => s.id !== series.id),
-    data,
+  // Its shelf's or its season's families, in shelf order — an ended
+  // season's only what was earned (CF), as its scope page lists them; the
+  // tiles then carry no meter and no target (`medalVm`).
+  const tiles = StandingSystem.neighboursOf(
+    data.catalog,
+    progressList(data),
+    series,
+    cardDayOf(data.today),
   )
     .slice(0, RAIL_LIMIT)
     .map((s) => familyTile(s, data, ctx));

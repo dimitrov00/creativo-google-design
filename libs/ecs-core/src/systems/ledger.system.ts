@@ -1,4 +1,13 @@
-import { JournalEffect, PublicLabel, RedemptionOp } from '@core/components';
+import {
+  AchievementOp,
+  JournalEffect,
+  JournalFeed,
+  LabelCode,
+  LedgerLine,
+  PublicLabel,
+  RedemptionOp,
+  RewardOp,
+} from '@core/components';
 import type { JournalEntry } from '@core/entities';
 import {
   BadgeSeriesId,
@@ -79,9 +88,56 @@ const EFFECT_RANK: Readonly<Record<JournalEffect, number>> = {
   [JournalEffect.VisitOutcome]: 8,
 };
 
+/** What one row of the feed is about, and the two facts its words turn on. */
+export type LedgerLineAnswer = {
+  readonly ledgerLine: LedgerLine;
+  /** A LEVEL that paid points (the event moved some, or its label is a level's payout). */
+  readonly paid: boolean;
+  /** What was given is taken back: a revoked level, or REWARD_REVOKED. */
+  readonly revoked: boolean;
+};
+
+/** The welcome bonus's family — the one level the ledger names by the catalogue's own word, never by its family. */
+const WELCOME_SERIES_ID: BadgeSeriesId = BadgeSeriesId.of('series-welcome');
+
+function line(
+  ledgerLine: LedgerLine,
+  paid = false,
+  revoked = false,
+): LedgerLineAnswer {
+  return { ledgerLine, paid, revoked };
+}
+
+/**
+ * A row by what its label says moved the points (`ledger.presenter.ts`
+ * `pointsDraft`): the rule's points are a level's payout when the label
+ * names a family, else a visit's; the shop's own adjustments by their
+ * source; anything else a correction.
+ */
+function pointsLineOf(entry: JournalEntry): LedgerLineAnswer {
+  switch (entry.labelCode) {
+    case LabelCode.PointsRule:
+      return LedgerSystem.levelOf(entry).badgeSeriesId !== null
+        ? line(LedgerLine.Level, true)
+        : line(LedgerLine.VisitEarned);
+    case LabelCode.PointsRedeemed:
+      return line(LedgerLine.PointsRedeemed);
+    case LabelCode.PointsGoodwill:
+      return line(LedgerLine.Goodwill);
+    case LabelCode.PointsServiceIssue:
+      return line(LedgerLine.ServiceIssue);
+    case LabelCode.PointsExpired:
+      return line(LedgerLine.PointsExpired);
+    case LabelCode.PointsDebtCleared:
+      return line(LedgerLine.DebtCleared);
+    default:
+      return line(LedgerLine.Correction);
+  }
+}
+
 /** The ids a loaded row compensates: the rows that are struck. */
-function voidedIds(entries: readonly JournalEntry[]): Set<string> {
-  const voided = new Set<string>();
+function voidedIds(entries: readonly JournalEntry[]): Set<JournalEntryId> {
+  const voided = new Set<JournalEntryId>();
   for (let i = 0; i < entries.length; i++) {
     const reverses = (entries[i] as JournalEntry).reverses;
     if (reverses !== null) voided.add(reverses);
@@ -96,7 +152,10 @@ function voidedIds(entries: readonly JournalEntry[]): Set<string> {
  * it paid. A row that compensates another, and a row that was compensated,
  * never fold with the event they belong to: each keeps a row of its own.
  */
-function eventKeyOf(entry: JournalEntry, voided: ReadonlySet<string>): string {
+function eventKeyOf(
+  entry: JournalEntry,
+  voided: ReadonlySet<JournalEntryId>,
+): string {
   let event =
     entry.appointmentId === null
       ? entry.correlationId
@@ -138,6 +197,9 @@ function movementOf(entries: readonly JournalEntry[]): {
 }
 
 export const LedgerSystem = {
+  /** The welcome bonus's family (`series-welcome`): its level is named by the catalogue's own word. */
+  WELCOME_SERIES_ID,
+
   /**
    * A level's family and number, read off the entry's label
    * (`PublicLabel.param`): the family is a `BadgeSeriesId` only when the
@@ -285,5 +347,84 @@ export const LedgerSystem = {
       }
     }
     return leading;
+  },
+
+  /**
+   * The ids the loaded rows compensate — the rows that are struck (each
+   * row's `reverses`); the set {@link LedgerSystem.fold} keeps a struck row
+   * apart by, and {@link LedgerSystem.isStruck} reads.
+   */
+  voided(entries: readonly JournalEntry[]): ReadonlySet<JournalEntryId> {
+    return voidedIds(entries);
+  },
+
+  /** A row is struck when any entry of its event was compensated (`voided`). */
+  isStruck(
+    event: Pick<LedgerEvent, 'entries'>,
+    voided: ReadonlySet<JournalEntryId>,
+  ): boolean {
+    for (let i = 0; i < event.entries.length; i++) {
+      if (voided.has((event.entries[i] as JournalEntry).id)) return true;
+    }
+    return false;
+  },
+
+  /**
+   * What a row is about (`ledger.presenter.ts` `draftOf`), from its event's
+   * leading entry ({@link LedgerSystem.leading}), first match wins: a row
+   * that compensates another is a REVERSAL; a redemption taken back is a
+   * REVERSAL too, one that lapsed REDEMPTION_EXPIRED, else
+   * REDEMPTION_SPENT; a reward REWARD_REVOKED or REWARD_GRANTED; a tier
+   * TIER; an achievement a LEVEL — `paid` when the event moved points,
+   * `revoked` when the level was taken back; a point row, and a row of any
+   * other effect, by what its label says moved the points (a level's
+   * payout is a paid LEVEL, the rule's own points VISIT_EARNED, then
+   * POINTS_REDEEMED, GOODWILL, SERVICE_ISSUE, POINTS_EXPIRED,
+   * DEBT_CLEARED), any other label a CORRECTION.
+   */
+  lineOf(
+    event: Pick<LedgerEvent, 'delta'>,
+    leading: JournalEntry,
+  ): LedgerLineAnswer {
+    if (leading.reverses !== null) return line(LedgerLine.Reversal);
+    switch (leading.journalEffect) {
+      case JournalEffect.Redemption:
+        if (leading.redemptionOp === RedemptionOp.Reversed) {
+          return line(LedgerLine.Reversal);
+        }
+        return leading.redemptionOp === RedemptionOp.Expired
+          ? line(LedgerLine.RedemptionExpired)
+          : line(LedgerLine.RedemptionSpent);
+      case JournalEffect.Reward:
+        return leading.rewardOp === RewardOp.Revoked
+          ? line(LedgerLine.RewardRevoked, false, true)
+          : line(LedgerLine.RewardGranted);
+      case JournalEffect.Tier:
+        return line(LedgerLine.Tier);
+      case JournalEffect.Achievement:
+        return line(
+          LedgerLine.Level,
+          event.delta !== null,
+          leading.achievementOp === AchievementOp.Revoked,
+        );
+      default:
+        // The feed reads five effects (`JournalFeed.effectsOf`); a row of
+        // another, answered as stored, is read by its label like a point row.
+        return pointsLineOf(leading);
+    }
+  },
+
+  /** The level is the welcome bonus's ({@link LedgerSystem.WELCOME_SERIES_ID}). */
+  isWelcome(level: Pick<LedgerLevel, 'badgeSeriesId'>): boolean {
+    return level.badgeSeriesId === WELCOME_SERIES_ID;
+  },
+
+  /**
+   * The pills whose rows are the journal's POINT rows («Всички», «Точки»):
+   * only under them is a month's net the month's. «Награди» and «Статус»
+   * read other rows, and the sum of what THOSE moved is nobody's net.
+   */
+  netsUnder(feed: JournalFeed): boolean {
+    return feed === JournalFeed.All || feed === JournalFeed.Points;
   },
 } as const;

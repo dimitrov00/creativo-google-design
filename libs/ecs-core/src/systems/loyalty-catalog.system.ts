@@ -2,13 +2,20 @@ import {
   Result,
   type BadgeCategoryId,
   type BadgeSeriesId,
+  type BarberId,
   type SeasonId,
   type StreakDefinitionId,
   type TierId,
   type LocalDate,
 } from '@core/primitives';
 import { EngagementError } from '@core/errors';
-import { SeasonPhase, type StreakRule } from '@core/components';
+import {
+  BadgeSubject,
+  type BadgeSubjectSlot,
+  SeasonKind,
+  SeasonPhase,
+  type StreakRule,
+} from '@core/components';
 import type {
   BadgeCategory,
   BadgeSeries,
@@ -17,8 +24,9 @@ import type {
   StreakDefinition,
   TierDefinition,
 } from '@core/entities';
+import { BadgeSystem } from './badge.system';
 import { SeasonSystem } from './season.system';
-import { StreakRuleSystem } from './streak-rule.system';
+import { StreakRuleSystem, type StreakSchedule } from './streak-rule.system';
 
 /*
  * THE PUBLISHED LOYALTY CATALOGUE (client-card-redesign §4.1,
@@ -55,6 +63,11 @@ export type CatalogTierRef = Pick<
 export type CatalogRewardRef = Pick<RewardCatalogItem, 'id' | 'cost' | 'order'>;
 /** What a catalogue reads of a rhythm's head. */
 export type CatalogStreakRef = Pick<StreakDefinition, 'id'>;
+/** What the windows a page shows read of a season: its catalogue ref, and whether it is a season or an event. */
+export type CatalogWindowRef = CatalogSeasonRef & Pick<Season, 'seasonKind'>;
+/** What the barbers' faces read of a family: its subject, and whether it was withdrawn. */
+export type CatalogSubjectRef = BadgeSubjectSlot &
+  Pick<BadgeSeries, 'retiredAtUtcMs'>;
 
 /** The lists a catalogue is built of, in any order. */
 export type LoyaltyCatalogParts<
@@ -353,5 +366,181 @@ export const LoyaltyCatalogSystem = {
   ): StreakRule | null {
     const head = find(catalog.streaks, id);
     return head === null ? null : StreakRuleSystem.inForceOn(head, today);
+  },
+
+  /**
+   * The family's season or event has ended on `today`: it keeps the levels
+   * it reached and can reach no more. `false` for a family of a shelf, and
+   * for one whose season the catalogue does not hold.
+   */
+  inEndedSeason(
+    catalog: { readonly seasons: readonly CatalogSeasonRef[] },
+    series: { readonly seasonId: SeasonId | null },
+    today: LocalDate,
+  ): boolean {
+    if (series.seasonId === null) return false;
+    const season = find(catalog.seasons, series.seasonId);
+    return (
+      season !== null &&
+      SeasonSystem.phaseOn(season, today) === SeasonPhase.Ended
+    );
+  },
+
+  /**
+   * The windows a page shows on `today`: the running SEASON (the first open
+   * one, in the order they opened; `null` when none runs), and the events —
+   * the open ones, then the announced ones, each in the order they open. An
+   * announced season is not a window yet; an ended one is the archive's.
+   */
+  windowsOn<N extends CatalogWindowRef>(
+    catalog: { readonly seasons: readonly N[] },
+    today: LocalDate,
+  ): { readonly season: N | null; readonly events: readonly N[] } {
+    const open = LoyaltyCatalogSystem.seasonsIn(
+      catalog,
+      SeasonPhase.Open,
+      today,
+    );
+    const announced = LoyaltyCatalogSystem.seasonsIn(
+      catalog,
+      SeasonPhase.Announced,
+      today,
+    );
+    let season: N | null = null;
+    const events: N[] = [];
+    for (let i = 0; i < open.length; i++) {
+      const window = open[i] as N;
+      if (window.seasonKind === SeasonKind.Season) {
+        if (season === null) season = window;
+      } else if (window.seasonKind === SeasonKind.Event) {
+        events.push(window);
+      }
+    }
+    for (let i = 0; i < announced.length; i++) {
+      const window = announced[i] as N;
+      if (window.seasonKind === SeasonKind.Event) events.push(window);
+    }
+    return { season, events };
+  },
+
+  /**
+   * The ended seasons and events the client took part in, newest first (as
+   * {@link seasonsIn} orders the ended): those with a track value of theirs,
+   * or holding a family the client started — the track or another.
+   */
+  archivedFor<N extends CatalogSeasonRef>(
+    catalog: { readonly seasons: readonly N[] },
+    today: LocalDate,
+    startedSeriesIds: ReadonlySet<BadgeSeriesId>,
+    seasonProgressIds: ReadonlySet<SeasonId>,
+  ): readonly N[] {
+    const ended = LoyaltyCatalogSystem.seasonsIn(
+      catalog,
+      SeasonPhase.Ended,
+      today,
+    );
+    const out: N[] = [];
+    for (let i = 0; i < ended.length; i++) {
+      const season = ended[i] as N;
+      if (seasonProgressIds.has(season.id)) {
+        out.push(season);
+        continue;
+      }
+      const familyIds = SeasonSystem.familyIds(season);
+      for (let k = 0; k < familyIds.length; k++) {
+        if (startedSeriesIds.has(familyIds[k] as BadgeSeriesId)) {
+          out.push(season);
+          break;
+        }
+      }
+    }
+    return out;
+  },
+
+  /**
+   * Whether the shop runs a rhythm on `today`: a head of the catalogue whose
+   * rule in force is switched on — `flag ∧ some head isOnOn(head, today,
+   * true)`, built on {@link StreakRuleSystem.isOnOn}, never a second reading
+   * of the rule. The caller's flag (the `loyalty.streaks` switch) can only
+   * turn it off; `true` never turns on a rule that is off.
+   */
+  rhythmLive(
+    catalog: { readonly streaks: readonly StreakSchedule[] },
+    today: LocalDate,
+    flag: boolean,
+  ): boolean {
+    if (!flag) return false;
+    for (let i = 0; i < catalog.streaks.length; i++) {
+      if (
+        StreakRuleSystem.isOnOn(
+          catalog.streaks[i] as StreakSchedule,
+          today,
+          true,
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  /**
+   * The barbers the catalogue names: the subject of every family about a
+   * barber that is not withdrawn, each barber once, in the catalogue's
+   * order — the fallback when the shop's own list is not at hand.
+   */
+  barberIds(catalog: {
+    readonly families: readonly CatalogSubjectRef[];
+  }): readonly BarberId[] {
+    const seen = new Set<BarberId>();
+    const out: BarberId[] = [];
+    for (let i = 0; i < catalog.families.length; i++) {
+      const family = catalog.families[i] as CatalogSubjectRef;
+      if (
+        family.badgeSubject !== BadgeSubject.Barber ||
+        BadgeSystem.isRetired(family)
+      ) {
+        continue;
+      }
+      if (seen.has(family.subjectBarberId)) continue;
+      seen.add(family.subjectBarberId);
+      out.push(family.subjectBarberId);
+    }
+    return out;
+  },
+
+  /**
+   * Where a family's shelf stands among the shelves: its shelf's `order`;
+   * a family of no shelf (a season's) or of one the catalogue lacks ranks
+   * after every shelf (`+Infinity`). The one home of the rule — the cue's
+   * order ({@link LoyaltyCatalogSystem.cueOrdered}) and the closest levels'
+   * ties (`StandingSystem.closestLevels`) both rank by it.
+   */
+  shelfRank(
+    catalog: { readonly categories: readonly CatalogCategoryRef[] },
+    series: { readonly categoryId: BadgeCategoryId | null },
+  ): number {
+    if (series.categoryId === null) return Number.POSITIVE_INFINITY;
+    return (
+      find(catalog.categories, series.categoryId)?.order ??
+      Number.POSITIVE_INFINITY
+    );
+  },
+
+  /**
+   * Which family a cue names first: shelves before seasons — a family's
+   * shelf by {@link LoyaltyCatalogSystem.shelfRank} — then the catalogue's
+   * own `order`. A stable sort: families equal on both keep the order they
+   * came in.
+   */
+  cueOrdered<S extends CatalogSeriesRef>(
+    catalog: { readonly categories: readonly CatalogCategoryRef[] },
+    series: readonly S[],
+  ): readonly S[] {
+    return [...series].sort(
+      (a, b) =>
+        LoyaltyCatalogSystem.shelfRank(catalog, a) -
+          LoyaltyCatalogSystem.shelfRank(catalog, b) || a.order - b.order,
+    );
   },
 } as const;

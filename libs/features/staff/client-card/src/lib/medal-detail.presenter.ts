@@ -1,34 +1,30 @@
 import type { Appointment, BadgeProgress, BadgeSeries } from '@core/entities';
 import {
-  AttendanceState,
+  AppointmentId,
   AwardKind,
-  BarberId as BarberRefId,
   CustomerId,
-  LocalDate,
-  LocationId as LocationRefId,
-  MinuteOfDay,
-  ServiceId as ServiceRefId,
+  type LocalDate,
   type TimeZone,
-  UtcEpochMs,
-  type Weekday,
   defect,
 } from '@core/primitives';
 import {
   type BadgeLevel,
   BadgeSubject,
   type EarnedLevel,
-  MedalState,
+  Gamification,
+  LadderRung,
+  MedalDetailState,
+  MedalProgressCard,
   Metric,
-  type Seat,
-  SeasonPhase,
   type SeriesStanding,
-  type WallTime,
 } from '@core/components';
 import {
   AchievementsSystem,
   BadgeSystem,
-  ClientStatsSystem,
+  type CountedDraft,
+  type CountedVisit,
   LoyaltyCatalogSystem,
+  type MedalDetailReading,
   ZonedTimeSystem,
 } from '@core/systems';
 import {
@@ -38,17 +34,20 @@ import {
 } from '@creativo/features/shared/visits';
 import {
   type AchievementsContext,
+  cardDayOf,
   completesWithThisVisit,
+  draftStart,
+  draftVisitOf,
   inEndedSeason,
   isOneOff,
   isSingleLevel,
-  landsOn,
+  landsOnDay,
   latestEarned,
   localeOf,
   progressOf,
   relatedOf,
   seasonOfSeries,
-  seasonPhaseOf,
+  seasonPhaseOfSeries,
   seriesById,
   standingOf,
 } from './achievements.presenter';
@@ -101,9 +100,6 @@ import { visitsRows } from './visits-page.presenter';
  * (DV-C): `detailActionOf` answers it for the store, and the view model
  * only carries what it was handed.
  */
-
-/** A draft with no start yet: a weekday that is no weekend. */
-const WEEKDAY_MONDAY: Weekday = 1;
 
 /** DI — the visits that counted, newest first: never more than these. */
 const COUNTED_VISITS_LIMIT = 5;
@@ -167,76 +163,60 @@ function lineAround(
   ];
 }
 
-/** The level a family's medal wears: the highest one earned, with its day. */
-function topEarned(progress: BadgeProgress | null): EarnedLevel | null {
-  let top: EarnedLevel | null = null;
-  for (const earned of progress?.earned ?? []) {
-    if (top === null || earned.level > top.level) top = earned;
-  }
-  return top;
+/** A medal's day — a stored shop day a level was earned on (T5) — always names its year: a ladder spans years («24.09.2025 г.»). */
+function dayWord(day: LocalDate, lang: string): string {
+  return asOneUnit(dayWithYear(day, lang));
 }
 
-/** A medal's day — the stored shop day it was earned on (T5) — always names its year: a ladder spans years («24.09.2025 г.»). */
+/** {@link dayWord} of an earned level. */
 function medalDay(earned: EarnedLevel, lang: string): string {
-  return asOneUnit(dayWithYear(earned.earnedLocalDate, lang));
+  return dayWord(earned.earnedLocalDate, lang);
 }
 
 /**
  * The family can still move: it is awarded, its season (if it has one) has
  * not ended, and a level is left to earn. What cannot move offers no verb
- * and counts no visit.
+ * and counts no visit (`BadgeSystem.canStillMove`).
  */
 function canStillMove(
   series: BadgeSeries,
   standing: SeriesStanding,
   data: AchievementsData,
 ): boolean {
-  return (
-    !BadgeSystem.isRetired(series) &&
-    standing.next !== null &&
-    !inEndedSeason(series, data)
+  return BadgeSystem.canStillMove(
+    series,
+    standing,
+    inEndedSeason(series, data),
   );
 }
 
 // ── What counts ─────────────────────────────────────────────────────────
 
 /**
- * One appointment as the person's WORKED visit: their worked seats, the
- * minute of its shop day the first of them began, who else came.
+ * One loaded visit as the client RECORD's counted visit (D29: whom the
+ * shop served) — `AchievementsSystem.workedVisitOf`'s zone-free facts, and
+ * the instant its worked start falls on, read on the shop's zone HERE, at
+ * the edge (Law 7): the punctuality rule compares it with the arrival
+ * stamp (T2); the visit's own instant when the minute names none. `null`
+ * when the record holds no worked seat on it.
  */
-interface WorkedVisit {
-  readonly seats: readonly Seat[];
-  readonly startMinutes: MinuteOfDay;
-  readonly withCompany: boolean;
-}
-
-/** The client RECORD's worked seats of a visit (D29: whom the shop served). */
-function workedVisitOf(
+function countedVisitOf(
   visit: Appointment,
   subjectCustomerId: string | null,
-): WorkedVisit | null {
+  zone: TimeZone,
+): CountedVisit | null {
   if (subjectCustomerId === null) return null;
-  const own = ClientStatsSystem.subjectVisitOf(
-    CustomerId.of(subjectCustomerId),
+  const facts = AchievementsSystem.workedVisitOf(
     visit,
+    CustomerId.of(subjectCustomerId),
   );
-  if (own === null) return null;
-  const seats = visit.seats.filter(
-    (seat) =>
-      own.seats.includes(seat) &&
-      seat.attendanceState === AttendanceState.Worked,
+  if (facts === null) return null;
+  const start = ZonedTimeSystem.toUtc(
+    facts.localDate,
+    facts.startMinutes,
+    zone,
   );
-  const first = seats[0];
-  if (first === undefined) return null;
-  return {
-    seats,
-    startMinutes: seats.reduce(
-      (earliest, seat) =>
-        seat.startMinutes < earliest ? seat.startMinutes : earliest,
-      first.startMinutes,
-    ),
-    withCompany: own.seats.length < visit.seats.length,
-  };
+  return { ...facts, startUtcMs: start.ok ? start.value : visit.utcEpochMs };
 }
 
 /**
@@ -263,7 +243,8 @@ function workedVisitOf(
  *
  * Two things are NOT read here, because a visit and a family do not hold
  * them: a season's window and a metric's own window (`lastDays`).
- * `medalDetailVm` applies both.
+ * `medalDetailVm` applies both (`AchievementsSystem.countsToward` over
+ * the visit as counted, `countedVisitOf`).
  */
 export function countsToward(
   series: BadgeSeries,
@@ -271,70 +252,26 @@ export function countsToward(
   subjectCustomerId: string | null,
   zone: TimeZone,
 ): boolean {
-  if (series.metric === null) return false;
-  const worked = workedVisitOf(visit, subjectCustomerId);
-  if (worked === null) return false;
-  // The worked start's instant — the punctuality rule compares it with the
-  // arrival stamp (T2); the visit's own instant when the minute names none.
-  const start = ZonedTimeSystem.toUtc(
-    visit.localDate,
-    worked.startMinutes,
-    zone,
-  );
-  return AchievementsSystem.countsToward(series, {
-    serviceIds: worked.seats.map((seat) => seat.serviceId),
-    barberIds: worked.seats.map((seat) => seat.barberId),
-    locationId: visit.locationId,
-    // The start on the shop's wall clock, as stored (T1).
-    localDate: visit.localDate,
-    startMinutes: worked.startMinutes,
-    weekday: LocalDate.weekday(visit.localDate),
-    startUtcMs: start.ok ? start.value : visit.utcEpochMs,
-    arrivedAtUtcMs: visit.arrivedAtUtcMs,
-    withCompany: worked.withCompany,
+  const counted = countedVisitOf(visit, subjectCustomerId, zone);
+  return counted !== null && AchievementsSystem.countsToward(series, counted);
+}
+
+/**
+ * The visit on screen as a visit the counting rule can judge
+ * (`AchievementsSystem.countedDraft`: a start or a shop the draft does
+ * not hold yet is `null`, which never counts); `null` with no visit on
+ * screen.
+ */
+function countedDraftOf(ctx: AchievementsContext): CountedDraft | null {
+  const visit = ctx.visit;
+  const draft = draftVisitOf(ctx);
+  if (visit === null || draft === null) return null;
+  return AchievementsSystem.countedDraft({
+    start: draftStart(visit, ctx.zone),
+    serviceIds: draft.serviceIds,
+    barberIds: draft.barberIds,
+    locationId: draft.locationId,
   });
-}
-
-/**
- * A counted visit falls inside the family's windows: its season's (a
- * season's families count inside the season only) and its metric's own
- * («Цяла година» counts the last 365 days).
- */
-function insideWindows(
-  series: BadgeSeries,
-  visit: Appointment,
-  data: AchievementsData,
-): boolean {
-  const day = visit.localDate;
-  const season = seasonOfSeries(series, data);
-  return AchievementsSystem.insideWindows(
-    season,
-    series.seasonId !== null,
-    series.metricWindowDays,
-    day,
-    dayOf(data.today),
-  );
-}
-
-/**
- * The visit on screen, as its draft holds it: when its first service
- * starts — the instant, and the shop's wall clock on `zone` it reads.
- */
-function draftStart(
-  visit: NonNullable<AchievementsContext['visit']>,
-  zone: TimeZone,
-): { readonly utcMs: UtcEpochMs; readonly wall: WallTime } | null {
-  let earliest: UtcEpochMs | null = null;
-  for (const leg of visit.legs) {
-    const start = ZonedTimeSystem.parseIsoIn(leg.startsAtIso, zone);
-    if (!start.ok) continue;
-    if (earliest === null || UtcEpochMs.compare(start.value, earliest) < 0) {
-      earliest = start.value;
-    }
-  }
-  return earliest === null
-    ? null
-    : { utcMs: earliest, wall: ZonedTimeSystem.toLocal(earliest, zone) };
 }
 
 /**
@@ -343,54 +280,36 @@ function draftStart(
  * service, the barber, the shop, an early start, a weekend day). The same
  * measure as «с това посещение» (`completesWithThisVisit`), without asking
  * how far the next level is. What only the day itself decides is not
- * promised: whether the client arrives on time, whether company comes.
+ * promised: whether the client arrives on time, whether company comes
+ * (`AchievementsSystem.draftCountsToward`). The counted draft when it
+ * counts, else `null`.
  */
+function countingDraftOf(
+  series: BadgeSeries,
+  standing: SeriesStanding,
+  data: AchievementsData,
+  ctx: AchievementsContext,
+): CountedDraft | null {
+  const draft = countedDraftOf(ctx);
+  return AchievementsSystem.draftCountsToward(
+    series,
+    standing,
+    draft,
+    seasonPhaseOfSeries(series, data),
+    inEndedSeason(series, data),
+  )
+    ? draft
+    : null;
+}
+
+/** {@link countingDraftOf}: whether the visit on screen counts towards the family. */
 function thisVisitCounts(
   series: BadgeSeries,
   standing: SeriesStanding,
   data: AchievementsData,
   ctx: AchievementsContext,
 ): boolean {
-  const visit = ctx.visit;
-  if (
-    visit === null ||
-    series.metric === null ||
-    standing.target === null ||
-    !canStillMove(series, standing, data)
-  ) {
-    return false;
-  }
-  if (series.seasonId !== null) {
-    const season = seasonOfSeries(series, data);
-    if (season === null || seasonPhaseOf(season, data) !== SeasonPhase.Open) {
-      return false;
-    }
-  }
-  // The draft as a visit the system can judge: what the day itself
-  // decides (an arrival, company) is not promised, and a draft with no
-  // start yet is neither early nor on a weekend.
-  const start = draftStart(visit, ctx.zone);
-  return AchievementsSystem.countsToward(series, {
-    serviceIds: visit.legs.flatMap((leg) =>
-      leg.serviceId === null ? [] : [ServiceRefId.of(leg.serviceId)],
-    ),
-    barberIds: visit.legs.flatMap((leg) =>
-      leg.barberId === null ? [] : [BarberRefId.of(leg.barberId)],
-    ),
-    // A draft with no shop yet is in none: no shop's family counts it.
-    locationId: LocationRefId.of(visit.locationId ?? ''),
-    // No start yet: today, the day's last minute (never early) and a
-    // Monday (never a weekend) — what the old `NaN`/`∞` start answered.
-    localDate: start === null ? dayOf(data.today) : start.wall.localDate,
-    startMinutes:
-      start === null ? minuteOf(LAST_MINUTE_OF_DAY) : start.wall.minute,
-    weekday:
-      start === null ? WEEKDAY_MONDAY : LocalDate.weekday(start.wall.localDate),
-    // Never compared: a draft has no arrival.
-    startUtcMs: start === null ? utcOf(0) : start.utcMs,
-    arrivedAtUtcMs: null,
-    withCompany: false,
-  });
+  return countingDraftOf(series, standing, data, ctx) !== null;
 }
 
 // ── DK · the dock's verb ────────────────────────────────────────────────
@@ -417,14 +336,18 @@ export function detailActionOf(
   },
   data: AchievementsData | null = null,
 ): DetailActionVm | null {
-  if (!gate.online || gate.visitGone || gate.paused) return null;
-  if (BadgeSystem.isRetired(series) || ctx.visit === null) return null;
-  if (series.badgeSubject !== BadgeSubject.Service) return null;
-  if (data !== null && !canStillMove(series, standingOf(series, data), data)) {
-    return null;
-  }
-  const serviceId: string = series.subjectServiceId;
-  if (ctx.visit.legs.some((leg) => leg.serviceId === serviceId)) return null;
+  const draft = draftVisitOf(ctx);
+  if (draft === null) return null;
+  // Without the data only what the family and the visit say is read.
+  const canMove =
+    data === null || canStillMove(series, standingOf(series, data), data);
+  const serviceId = AchievementsSystem.serviceToAdd(
+    series,
+    draft.serviceIds,
+    canMove,
+    gate,
+  );
+  if (serviceId === null) return null;
   const service = ctx.catalog.serviceName(serviceId);
   if (service === null) return null;
   return {
@@ -444,54 +367,48 @@ interface StateSaid {
   readonly fact: string | null;
 }
 
+/**
+ * Where the family stands as `BadgeSystem.detailState` reads it, worded: a
+ * yearly act — how many times, and when last; an ended season's family —
+ * that it closed, never how far a level it can no longer reach is; one
+ * level earned — a single act, its day, never «Всички нива»; under way
+ * with no level yet — how far is the progress card's to say; complete;
+ * at a level since its day.
+ */
 function stateOf(
-  series: BadgeSeries,
-  standing: SeriesStanding,
-  progress: BadgeProgress | null,
-  data: AchievementsData,
+  reading: MedalDetailReading,
   ctx: AchievementsContext,
 ): StateSaid {
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
-  const last = latestEarned(progress);
-  const lastDay = last === null ? null : medalDay(last, lang);
-  // A yearly act: how many times, and when last.
-  if (series.repeatable && last !== null && lastDay !== null) {
-    return {
-      text:
-        last.count > 1
-          ? words.repeated(last.count, lastDay)
-          : words.oneOffEarned(lastDay),
-      fact: lastDay,
-    };
-  }
-  // An ended season's family stopped where it stopped: that it closed,
-  // never how far a level it can no longer reach is.
-  if (standing.next !== null && inEndedSeason(series, data)) {
-    return { text: ctx.words.achievements.seasonEnded, fact: null };
-  }
-  // One level earned is a single act: its day, never «Всички нива».
-  if (isOneOff(series) || (isSingleLevel(series) && standing.next === null)) {
-    return lastDay === null
-      ? { text: words.oneOffNotYet, fact: null }
-      : { text: words.oneOffEarned(lastDay), fact: lastDay };
-  }
-  if (standing.medalState === MedalState.NotStarted) {
-    return { text: words.stateNotStarted, fact: null };
-  }
-  const top = topEarned(progress);
-  // Under way, no level yet. How far is the progress card's to say.
-  if (top === null) return { text: words.oneOffNotYet, fact: null };
-  if (standing.next === null) {
-    return lastDay === null
-      ? { text: ctx.words.achievements.complete, fact: null }
-      : { text: words.completeSince(lastDay), fact: lastDay };
-  }
-  const since = medalDay(top, lang);
-  return {
-    text: words.levelSince(levelNumeral(top.level), since),
-    fact: since,
+  const dated = (text: (day: string) => string): StateSaid => {
+    const day = dayWord(
+      reading.day ?? defect(`${reading.medalDetailState} without its day`),
+      lang,
+    );
+    return { text: text(day), fact: day };
   };
+  switch (reading.medalDetailState) {
+    case MedalDetailState.Retired:
+      return { text: words.retired, fact: null };
+    case MedalDetailState.Repeated:
+      return dated((day) => words.repeated(reading.count, day));
+    case MedalDetailState.SeasonEnded:
+      return { text: ctx.words.achievements.seasonEnded, fact: null };
+    case MedalDetailState.OneOffEarned:
+      return dated((day) => words.oneOffEarned(day));
+    case MedalDetailState.OneOffNotYet:
+    case MedalDetailState.UnderWay:
+      return { text: words.oneOffNotYet, fact: null };
+    case MedalDetailState.NotStarted:
+      return { text: words.stateNotStarted, fact: null };
+    case MedalDetailState.Complete:
+      return { text: ctx.words.achievements.complete, fact: null };
+    case MedalDetailState.CompleteSince:
+      return dated((day) => words.completeSince(day));
+    case MedalDetailState.LevelSince:
+      return dated((day) => words.levelSince(levelNumeral(reading.level), day));
+  }
 }
 
 /** The shelf or the season the family lives in, by name. */
@@ -527,10 +444,17 @@ function stateLineOf(
   data: AchievementsData,
   ctx: AchievementsContext,
 ): readonly LinePart[] {
-  if (BadgeSystem.isRetired(series)) {
+  const reading = BadgeSystem.detailState(
+    series,
+    standing,
+    progress,
+    inEndedSeason(series, data),
+    BadgeSystem.isRetired(series),
+  );
+  if (reading.medalDetailState === MedalDetailState.Retired) {
     return lineAround(ctx.words.achievement.retired, null);
   }
-  const state = stateOf(series, standing, progress, data, ctx);
+  const state = stateOf(reading, ctx);
   const scope = scopeNameOf(series, data, ctx);
   return lineAround(
     scope === null
@@ -605,83 +529,72 @@ function progressCardOf(
 ): MedalProgressVm {
   const words = ctx.words.achievement;
   const lang = ctx.words.lang;
+  const on = landsOnDay(series, standing, data);
+  const card = BadgeSystem.progressCard(
+    series,
+    standing,
+    progress,
+    canStillMove(series, standing, data),
+    on,
+    thisVisitCounts(series, standing, data, ctx),
+  );
 
-  if (isOneOff(series)) {
-    const last = latestEarned(progress);
-    return {
-      value: last === null ? figure(0, lang) : medalDay(last, lang),
-      unit:
-        last === null && canStillMove(series, standing, data)
-          ? words.progressOf(1)
+  switch (card.medalProgressCard) {
+    case MedalProgressCard.OneOff: {
+      // A single act is one: «0 от 1» until done, its day once done.
+      const last = latestEarned(progress);
+      return {
+        value: last === null ? figure(card.value, lang) : medalDay(last, lang),
+        unit: card.unitShown ? words.progressOf(1) : null,
+        what: whatOf(series, ctx, 1),
+        remaining: null,
+        thisVisit: completesWithThisVisit(series, data, ctx)
+          ? standingAlone(ctx.words.achievements.withThisVisit, lang)
           : null,
-      what: whatOf(series, ctx, 1),
-      remaining: null,
-      thisVisit: completesWithThisVisit(series, data, ctx)
-        ? standingAlone(ctx.words.achievements.withThisVisit, lang)
-        : null,
-    };
+      };
+    }
+    case MedalProgressCard.Complete:
+      return {
+        value: figure(card.value, lang),
+        unit: null,
+        what: whatOf(series, ctx, card.value),
+        remaining: isSingleLevel(series)
+          ? null
+          : ctx.words.achievements.complete,
+        thisVisit: null,
+      };
+    case MedalProgressCard.Stopped:
+      return {
+        value: figure(card.value, lang),
+        unit: null,
+        what: whatOf(series, ctx, card.value),
+        remaining: null,
+        thisVisit: null,
+      };
+    case MedalProgressCard.ToNext: {
+      const target = card.target ?? defect('TO_NEXT without a threshold');
+      const level = levelNumeral(BadgeSystem.nextLevelNumber(standing));
+      return {
+        value: figure(card.value, lang),
+        unit: words.progressOf(target),
+        what: whatOf(series, ctx, target),
+        // Tenure is worded by the day its next level lands.
+        remaining:
+          on !== null
+            ? words.stateToNextOn(level, asOneUnit(dayWithYear(on, lang)))
+            : card.remaining === null
+              ? null
+              : words.remaining(card.remaining, level),
+        thisVisit:
+          card.projected === null
+            ? null
+            : words.thisVisitCounts(card.projected, target),
+      };
+    }
   }
-
-  const lastTarget = series.levels.at(-1)?.target ?? standing.value;
-  if (standing.next === null) {
-    return {
-      value: figure(lastTarget, lang),
-      unit: null,
-      what: whatOf(series, ctx, lastTarget),
-      remaining: isSingleLevel(series) ? null : ctx.words.achievements.complete,
-      thisVisit: null,
-    };
-  }
-
-  const target = standing.target;
-  if (target === null || !canStillMove(series, standing, data)) {
-    return {
-      value: figure(standing.value, lang),
-      unit: null,
-      what: whatOf(series, ctx, standing.value),
-      remaining: null,
-      thisVisit: null,
-    };
-  }
-
-  const level = levelNumeral(standing.next.level);
-  const on = landsOn(series, standing, data);
-  const left = target - standing.value;
-  return {
-    value: figure(standing.value, lang),
-    unit: words.progressOf(target),
-    what: whatOf(series, ctx, target),
-    remaining:
-      on !== null
-        ? words.stateToNextOn(level, asOneUnit(dayWithYear(on, lang)))
-        : left > 0
-          ? words.remaining(left, level)
-          : null,
-    thisVisit: thisVisitCounts(series, standing, data, ctx)
-      ? words.thisVisitCounts(Math.min(standing.value + 1, target), target)
-      : null,
-  };
 }
 
 // ── DF · «Как се печели» ────────────────────────────────────────────────
-
-/** The metrics that count VISITS: their block ends on the exclusion, once. */
-function countsVisits(series: BadgeSeries): boolean {
-  switch (series.metric) {
-    case Metric.VisitsCompleted:
-    case Metric.VisitsEarlyBird:
-    case Metric.VisitsWeekend:
-    case Metric.VisitsOnTime:
-    case Metric.VisitsParty:
-    case Metric.ServicesDistinct:
-    case Metric.BarbersDistinct:
-    case Metric.LocationsDistinct:
-    case Metric.MonthsDistinct:
-      return true;
-    default:
-      return false;
-  }
-}
 
 /**
  * The ONE sentence, chosen by the family's METRIC and worded around its
@@ -755,14 +668,8 @@ function barberFacesOf(
   ctx: AchievementsContext,
 ): readonly DetailFaceVm[] {
   const catalog: ClientCardCatalog = ctx.catalog;
-  const ids =
-    catalog.barberIds?.() ??
-    data.catalog.families.flatMap((family): string[] =>
-      family.badgeSubject === BadgeSubject.Barber &&
-      !BadgeSystem.isRetired(family)
-        ? [family.subjectBarberId]
-        : [],
-    );
+  const ids: readonly string[] =
+    catalog.barberIds?.() ?? LoyaltyCatalogSystem.barberIds(data.catalog);
   return [...new Set(ids)].flatMap((id) => {
     const name = catalog.barberName(id);
     return name === null ? [] : [{ name, src: catalog.barberAvatarSrc(id) }];
@@ -857,7 +764,10 @@ function howOf(
     ...detailCovers(shown.covers, shown.ratio),
     faces: shown.faces ? barberFacesOf(data, ctx) : [],
     who: ctx.words.achievement.who(shown.who),
-    excluded: countsVisits(series) ? ctx.words.achievement.excluded : null,
+    // A count made of visits ends on the exclusion, once.
+    excluded: Gamification.countsVisits(series.metric)
+      ? ctx.words.achievement.excluded
+      : null,
     steps: [],
   };
 }
@@ -888,34 +798,19 @@ function rewardOf(level: BadgeLevel, ctx: AchievementsContext): string {
     : given.join(' · ');
 }
 
-/** The family's count is a count of VISITS: a kind of visit, or the rhythm's run (`metric: null`, with targets). */
-function countedInVisits(series: BadgeSeries): boolean {
-  switch (series.metric) {
-    case null:
-      return !isOneOff(series);
-    case Metric.VisitsCompleted:
-    case Metric.VisitsEarlyBird:
-    case Metric.VisitsWeekend:
-    case Metric.VisitsOnTime:
-    case Metric.VisitsParty:
-      return true;
-    default:
-      return false;
-  }
-}
-
 /**
  * A level's threshold in the fewest words: a family that counts visits
- * says «25 посещения» (what kind of visit is the progress card's and the
- * sentence's to say, once); every other family says the level's own
- * requirement as the catalogue words it («2 години с нас»).
+ * (`BadgeSystem.countsInVisits`) says «25 посещения» (what kind of visit
+ * is the progress card's and the sentence's to say, once); every other
+ * family says the level's own requirement as the catalogue words it («2
+ * години с нас»).
  */
 function thresholdOf(
   series: BadgeSeries,
   level: BadgeLevel,
   ctx: AchievementsContext,
 ): string {
-  return level.target !== null && countedInVisits(series)
+  return level.target !== null && BadgeSystem.countsInVisits(series)
     ? asOneUnit(ctx.words.visitsModule.sectionVisits(level.target))
     : level.requirement[localeOf(ctx)];
 }
@@ -938,14 +833,15 @@ function ladderOf(
   const lang = ctx.words.lang;
   const locale = localeOf(ctx);
   const oneOff = isOneOff(series);
-  const open = canStillMove(series, standing, data);
-  const levels = inEndedSeason(series, data)
-    ? series.levels.filter((level) => level.level <= standing.highestLevel)
-    : series.levels;
-  return levels.map((level) => {
-    const earned =
-      progress?.earned.find((entry) => entry.level === level.level) ?? null;
-    const passed = earned !== null;
+  return BadgeSystem.ladder(
+    series,
+    standing,
+    progress,
+    canStillMove(series, standing, data),
+    inEndedSeason(series, data),
+  ).map((rung) => {
+    const { level, earned } = rung;
+    const passed = rung.ladderRung === LadderRung.Passed;
     const numeral = levelNumeral(level.level);
     const reward = rewardOf(level, ctx);
     const accessibleName = words.levelRowName(
@@ -978,15 +874,18 @@ function ladderOf(
         : words.levelRow(numeral, thresholdOf(series, level, ctx)),
       reward,
       earnedOn: earned === null ? null : medalDay(earned, lang),
-      tone: passed
-        ? 'passed'
-        : open && standing.next?.level === level.level
-          ? 'next'
-          : 'later',
+      tone: LADDER_TONES[rung.ladderRung],
       accessibleName,
     };
   });
 }
+
+/** Where a rung stands, as the ladder's row draws it: the next level's words in primary ink, the later ones quiet. */
+const LADDER_TONES = {
+  [LadderRung.Passed]: 'passed',
+  [LadderRung.Next]: 'next',
+  [LadderRung.Later]: 'later',
+} as const satisfies Record<LadderRung, DetailLevelVm['tone']>;
 
 // ── DI · the visits that counted ────────────────────────────────────────
 
@@ -1007,17 +906,22 @@ function countedVisitsOf(
 ): readonly VisitRowVm[] {
   const rows = extra.rows;
   if (rows === null) return [];
-  const current = thisVisitCounts(series, standing, data, ctx)
-    ? rows.currentAppointmentId
-    : null;
-  const counted = extra.visits
-    .filter(
-      (visit) =>
-        (current !== null && visit.id === current) ||
-        (countsToward(series, visit, extra.subjectCustomerId, ctx.zone) &&
-          insideWindows(series, visit, data)),
-    )
-    .sort((a, b) => UtcEpochMs.compare(b.utcEpochMs, a.utcEpochMs));
+  // Each loaded visit as counted, read on the shop's zone here (the edge);
+  // which of them counted, inside the family's windows, newest first, is
+  // `AchievementsSystem.countedVisits`.
+  const counted = AchievementsSystem.countedVisits(
+    series,
+    seasonOfSeries(series, data),
+    extra.visits.map((appointment) => ({
+      appointment,
+      counted: countedVisitOf(appointment, extra.subjectCustomerId, ctx.zone),
+    })),
+    cardDayOf(data.today),
+    countingDraftOf(series, standing, data, ctx),
+    rows.currentAppointmentId === null
+      ? null
+      : AppointmentId.of(rows.currentAppointmentId),
+  );
   return visitsRows({ ...rows, appointments: counted }).slice(
     0,
     COUNTED_VISITS_LIMIT,
@@ -1092,27 +996,4 @@ export function medalDetailVm(
     // A family that cannot move offers no verb, whatever it was handed.
     action: canStillMove(series, standing, data) ? extra.action : null,
   };
-}
-
-// ── The card's own values → ecs-core structs ──────────────────────────────
-
-/** The last minute of a shop day: what a visit with no start yet is held to. */
-const LAST_MINUTE_OF_DAY = 1439;
-
-/** A shop day the card holds: a guarded document day, a clock's «today», a start's own day. */
-function dayOf(raw: string): LocalDate {
-  const day = LocalDate.parse(raw);
-  return day.ok ? day.value : defect(`${raw} is no calendar day`);
-}
-
-/** A wall-clock minute the card names (the day's last): always inside the day. */
-function minuteOf(raw: number): MinuteOfDay {
-  const minute = MinuteOfDay.of(raw);
-  return minute.ok ? minute.value : defect(`${raw} is no minute of a day`);
-}
-
-/** An instant the card names (a draft's never-compared start): always inside the brand's window. */
-function utcOf(epochMs: number): UtcEpochMs {
-  const utc = UtcEpochMs.of(epochMs);
-  return utc.ok ? utc.value : defect(`${epochMs} is not an instant`);
 }

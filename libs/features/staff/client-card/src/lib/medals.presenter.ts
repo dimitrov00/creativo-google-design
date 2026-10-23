@@ -1,12 +1,16 @@
-import { BadgeCategoryId, type LocalDate } from '@core/primitives';
+import {
+  BadgeCategoryId,
+  BadgeSeriesId,
+  type LocalDate,
+  defect,
+} from '@core/primitives';
 import {
   BadgeCategoryKind,
   FamilyScopeFilter,
+  MedalRingState,
   MedalState,
   type PersonalRecord,
   PersonalRecordKind,
-  SeasonKind,
-  SeasonPhase,
   type SeriesStanding,
 } from '@core/components';
 import type { BadgeCategory, BadgeSeries, Season } from '@core/entities';
@@ -15,15 +19,19 @@ import {
   LoyaltyCatalogSystem,
   RecordsSystem,
   StandingSystem,
-  StreakRuleSystem,
 } from '@core/systems';
-import type { UiIconName, UiMedalControlSize } from '@creativo/ui/controls';
+import type {
+  UiIconName,
+  UiMedalControlSize,
+  UiMedalState,
+} from '@creativo/ui/controls';
 import {
   type AchievementsContext,
   PENDING_RING,
   archiveRowOf,
   cardDayOf,
   completesWithThisVisit,
+  completingOf,
   earnedOnOf,
   eventCardVm,
   familiesOf,
@@ -38,6 +46,7 @@ import {
   seriesById,
   shelfOrdered,
   standingOf,
+  trackOutlookOf,
 } from './achievements.presenter';
 import { AchievementScope } from './client-card.contracts';
 import {
@@ -90,12 +99,13 @@ import type {
  * Whether the shop runs a rhythm today: a rule of the catalogue is in
  * force and switched on. Off, the rhythm's families that were never
  * earned and the record of the longest run leave the page (§2.3.5): what
- * nobody can earn is not offered.
+ * nobody can earn is not offered (`LoyaltyCatalogSystem.rhythmLive`).
  */
 export function rhythmLiveOf(data: AchievementsData): boolean {
-  const today = cardDayOf(data.today);
-  return data.catalog.streaks.some(
-    (head) => StreakRuleSystem.inForceOn(head, today).enabled,
+  return LoyaltyCatalogSystem.rhythmLive(
+    data.catalog,
+    cardDayOf(data.today),
+    true,
   );
 }
 
@@ -111,28 +121,35 @@ export interface MedalsOptions {
 }
 
 function rhythmShown(data: AchievementsData, options: MedalsOptions): boolean {
-  return (options.rhythm ?? true) && rhythmLiveOf(data);
+  return LoyaltyCatalogSystem.rhythmLive(
+    data.catalog,
+    cardDayOf(data.today),
+    options.rhythm ?? true,
+  );
 }
 
 // ── One medal in its ring ───────────────────────────────────────────────
 
-const clamp01 = (value: number): number =>
-  Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+/** A family's medal in its ring as `ui-medal` draws it: the three standings and the fourth form, `complete` (§3.8). */
+export const MEDAL_RING_STATES = {
+  [MedalRingState.NotStarted]: 'notStarted',
+  [MedalRingState.InProgress]: 'inProgress',
+  [MedalRingState.Earned]: 'earned',
+  [MedalRingState.Complete]: 'complete',
+} as const satisfies Record<MedalRingState, UiMedalState>;
 
 /**
  * The ring's arc, 0 … 1 from the last threshold won to the next (§3.8).
  * `null` where there is no next threshold to draw towards: a single act,
  * a family with every level won. A windowed count that fell under the
- * level it once reached draws an empty arc, never a negative one.
+ * level it once reached draws an empty arc, never a negative one
+ * (`BadgeSystem.ringFraction`).
  */
 export function ringValueOf(
   series: BadgeSeries,
   standing: SeriesStanding,
 ): number | null {
-  if (standing.next === null || standing.target === null) return null;
-  const from = BadgeSystem.levelAt(series, standing.highestLevel)?.target ?? 0;
-  const span = standing.target - from;
-  return span > 0 ? clamp01((standing.value - from) / span) : null;
+  return BadgeSystem.ringFraction(series, standing);
 }
 
 /** «23/25»: a target without its level, where a tile has no room for «до III». */
@@ -165,8 +182,7 @@ function ringOf(
   const progress = progressOf(data, series);
   const standing = BadgeSystem.standing(series, progress);
   const pending = completesWithThisVisit(series, data, ctx);
-  const complete =
-    standing.medalState === MedalState.Earned && standing.next === null;
+  const ring = BadgeSystem.ringState(standing, pending);
   // A family of ONE level — a single act, or one counted threshold («Есенно
   // утро», «И двата салона») — has no ladder for a rim to count: earning it
   // is the whole family, so it wears no numeral and no «ниво I» is heard;
@@ -202,10 +218,10 @@ function ringOf(
         }`
       : built.accessibleName;
 
-  if (complete) {
+  if (ring === MedalRingState.Complete) {
     return {
       ...built,
-      state: 'complete',
+      state: MEDAL_RING_STATES[MedalRingState.Complete],
       level: single ? null : built.level,
       caption,
       value: 1,
@@ -220,6 +236,8 @@ function ringOf(
       accessibleName,
     };
   }
+  // Short of complete, a ring's state is its face's (`BadgeSystem.ringState`),
+  // which the built medal already wears.
   return {
     ...built,
     level: single ? null : built.level,
@@ -280,16 +298,12 @@ export const RECORD_ICONS: Readonly<Record<RecordKindWord, UiIconName>> = {
   firstVisit: 'loyalty.record.firstVisit',
 };
 
-/** The cards' order, the account's own (`PERSONAL_RECORD_KINDS`). */
-export const RECORD_ORDER: readonly PersonalRecordKind[] = [
-  PersonalRecordKind.LongestRhythm,
-  PersonalRecordKind.MostVisitsInYear,
-  PersonalRecordKind.FavouriteService,
-  PersonalRecordKind.FirstVisit,
-];
+/** The cards' order, the account's own (`RecordsSystem.RECORD_ORDER`). */
+export const RECORD_ORDER: readonly PersonalRecordKind[] =
+  RecordsSystem.RECORD_ORDER;
 
-/** How long a record is «Нов рекорд»: set within this many days of the shop's today. */
-export const NEW_RECORD_DAYS = 30;
+/** How long a record is «Нов рекорд»: set within this many days of the shop's today (`RecordsSystem.NEW_RECORD_DAYS`). */
+export const NEW_RECORD_DAYS: number = RecordsSystem.NEW_RECORD_DAYS;
 
 /**
  * The day a record was set, for «Нов рекорд» and for the newest one: the
@@ -331,45 +345,46 @@ export function recordCardVm(
 ): RecordCardVm | null {
   const words = ctx.words;
   const lang = words.lang;
+  // What a record holds to print is the system's (`RecordsSystem.isHeld`);
+  // whether the catalogue still names a favourite service is the host's.
+  if (!RecordsSystem.isHeld(record)) return null;
   let value: string;
   let detail: string | null;
   let spoken: string;
   let src: string | null = null;
   switch (record.personalRecordKind) {
     case PersonalRecordKind.LongestRhythm:
-      if (record.value <= 0) return null;
       value = figure(record.value, lang);
       detail = record.on === null ? null : monthYearLong(record.on, lang);
       spoken = words.visitsModule.sectionVisits(record.value);
       break;
     case PersonalRecordKind.MostVisitsInYear:
-      if (record.value <= 0 || record.year === null) return null;
       value = figure(record.value, lang);
-      detail = words.records.yearValue(String(record.year));
+      detail = words.records.yearValue(
+        String(record.year ?? defect('a best year held without its year')),
+      );
       spoken = words.visitsModule.sectionVisits(record.value);
       break;
     case PersonalRecordKind.FavouriteService: {
-      const name =
-        record.serviceId === null
-          ? null
-          : ctx.catalog.serviceName(record.serviceId);
-      if (record.value <= 0 || record.serviceId === null || name === null) {
-        return null;
-      }
+      const serviceId =
+        record.serviceId ?? defect('a favourite held without its service');
+      const name = ctx.catalog.serviceName(serviceId);
+      if (name === null) return null;
       value = name;
       detail = words.records.times(record.value);
       spoken = name;
-      src = ctx.catalog.serviceCoverSrc(record.serviceId);
+      src = ctx.catalog.serviceCoverSrc(serviceId);
       break;
     }
-    case PersonalRecordKind.FirstVisit:
-      if (record.on === null) return null;
+    case PersonalRecordKind.FirstVisit: {
+      const on = record.on ?? defect('a first visit held without its day');
       // The day and its month as the figure, the year as the detail: the
       // day is read against itself, so no year rides on the figure.
-      value = dayLong(record.on, record.on, lang);
-      detail = yearAlone(record.on, lang);
+      value = dayLong(on, on, lang);
+      detail = yearAlone(on, lang);
       spoken = value;
       break;
+    }
   }
   const kind = RECORD_KIND_WORDS[record.personalRecordKind];
   const label = words.records.label(kind);
@@ -397,36 +412,22 @@ export function recordsOf(
 
 // ── The families the page draws ─────────────────────────────────────────
 
-/**
- * A category's families as the page draws them: the domain's list (a
- * retired family only where the client started it), and, while the shop
- * runs no rhythm, the rhythm's shelf cut to what was already earned
- * (§2.3.5): a level won is never taken back, a level nobody can win is
- * not offered.
- */
-function categoryFamilies(
-  category: BadgeCategory,
-  data: AchievementsData,
-  rhythm: boolean,
-): readonly BadgeSeries[] {
-  const families = familiesOf(data, FamilyScopeFilter.category(category.id));
-  return category.badgeCategoryKind === BadgeCategoryKind.Rhythm && !rhythm
-    ? families.filter(
-        (series) => standingOf(series, data).medalState === MedalState.Earned,
-      )
-    : families;
-}
-
+/** How many of `families` are earned — the filled discs a section, a chip and the collection count (`StandingSystem.earnedAmong`). */
 function earnedAmong(
   families: readonly BadgeSeries[],
   data: AchievementsData,
 ): number {
-  return families.filter(
-    (series) => standingOf(series, data).medalState === MedalState.Earned,
-  ).length;
+  return StandingSystem.earnedAmong(families, progressList(data));
 }
 
-/** The categories that draw a section, in the catalogue's order, each with its families. */
+/**
+ * The categories that draw a section, in the catalogue's order, each with
+ * its families (`StandingSystem.shelves`): the domain's list (a retired
+ * family only where the client started it), never the records' shelf,
+ * and, while the shop runs no rhythm, the rhythm's shelf cut to what was
+ * already earned (§2.3.5): a level won is never taken back, a level nobody
+ * can win is not offered. A shelf with nothing to draw is left out.
+ */
 function shelvesOf(
   data: AchievementsData,
   rhythm: boolean,
@@ -434,50 +435,33 @@ function shelvesOf(
   readonly category: BadgeCategory;
   readonly families: readonly BadgeSeries[];
 }[] {
-  return data.catalog.categories.flatMap((category) => {
-    if (category.badgeCategoryKind === BadgeCategoryKind.Records) return [];
-    const families = categoryFamilies(category, data, rhythm);
-    return families.length === 0 ? [] : [{ category, families }];
-  });
+  return StandingSystem.shelves(
+    data.catalog,
+    progressList(data),
+    cardDayOf(data.today),
+    rhythm,
+  );
 }
 
-/** The seasons and events the page shows today: the running ones, then the announced. */
+/** The seasons and events the page shows today: the running ones, then the announced (`LoyaltyCatalogSystem.windowsOn`). */
 function windowsOf(data: AchievementsData): {
   readonly season: Season | null;
   readonly events: readonly Season[];
 } {
-  const today = cardDayOf(data.today);
-  const open = LoyaltyCatalogSystem.seasonsIn(
-    data.catalog,
-    SeasonPhase.Open,
-    today,
-  );
-  return {
-    season: open.find((s) => s.seasonKind === SeasonKind.Season) ?? null,
-    events: [
-      ...open.filter((s) => s.seasonKind === SeasonKind.Event),
-      ...LoyaltyCatalogSystem.seasonsIn(
-        data.catalog,
-        SeasonPhase.Announced,
-        today,
-      ).filter((s) => s.seasonKind === SeasonKind.Event),
-    ],
-  };
+  return LoyaltyCatalogSystem.windowsOn(data.catalog, cardDayOf(data.today));
 }
 
-/** A window's medals: its track, then its own families (a retired one only where started). */
+/** A window's medals: its track, then its own families (a retired one only where started) — `StandingSystem.windowFamilies`. */
 function windowFamilies(
   season: Season,
   data: AchievementsData,
 ): readonly BadgeSeries[] {
-  const track =
-    season.trackSeriesId === null
-      ? null
-      : LoyaltyCatalogSystem.series(data.catalog, season.trackSeriesId);
-  return [
-    ...(track === null ? [] : [track]),
-    ...familiesOf(data, FamilyScopeFilter.season(season.id)),
-  ];
+  return StandingSystem.windowFamilies(
+    data.catalog,
+    progressList(data),
+    season,
+    cardDayOf(data.today),
+  );
 }
 
 // ── Sections, chips, the collection ─────────────────────────────────────
@@ -597,15 +581,13 @@ function seasonOf(
   if (built === null || track === null) return null;
   const words = ctx.words;
   const standing = standingOf(track, data);
-  const pending = completesWithThisVisit(track, data, ctx);
   // «Ниво II · още 2 посещения до III»: the level won, then the way on.
   // The words that already open on the level («Ниво III с това
-  // посещение») and a finished track («Всички нива») stand as they are.
+  // посещение») and a finished track («Всички нива») stand as they are
+  // (`SeasonSystem.trackOutlook`'s `fromLevel`).
   const sentence =
     built.sentence !== null &&
-    standing.highestLevel > 0 &&
-    standing.next !== null &&
-    !pending
+    trackOutlookOf(season, track, data, ctx).fromLevel
       ? words.achievement.levelRow(
           levelNumeral(standing.highestLevel),
           runningCase(built.sentence, words.lang),
@@ -665,49 +647,21 @@ function closeTiles(
   seasonTrackId: string | null,
   rhythm: boolean,
 ): readonly AchievementTileVm[] {
-  const offered = (series: BadgeSeries): boolean => {
-    if (series.id === seasonTrackId) return false;
-    if (rhythm || series.categoryId === null) return true;
-    return (
-      LoyaltyCatalogSystem.category(data.catalog, series.categoryId)
-        ?.badgeCategoryKind !== BadgeCategoryKind.Rhythm
-    );
-  };
-  const acts = data.catalog.families.filter(
-    (series) =>
-      series.levels.every((level) => level.target === null) &&
-      completesWithThisVisit(series, data, ctx),
-  );
-  // Every shelf's and every season's nearest, in the domain's rank.
-  const ranked = StandingSystem.closestLevels(
+  return StandingSystem.almostEarned(
     data.catalog,
     progressList(data),
     cardDayOf(data.today),
-    Number.MAX_SAFE_INTEGER,
-  ).flatMap((level) => {
-    const series = LoyaltyCatalogSystem.series(
-      data.catalog,
-      level.badgeSeriesId,
-    );
-    return series === null ? [] : [series];
+    {
+      completing: completingOf(data, ctx),
+      excludeSeriesId:
+        seasonTrackId === null ? null : BadgeSeriesId.of(seasonTrackId),
+      rhythmLive: rhythm,
+      limit: CLOSE_LIMIT,
+    },
+  ).flatMap((id) => {
+    const series = seriesById(data, id);
+    return series === null ? [] : [ringTile(series, data, ctx)];
   });
-  const seen = new Set<string>();
-  const candidates = [...acts, ...ranked].filter((series) => {
-    if (seen.has(series.id) || !offered(series)) return false;
-    seen.add(series.id);
-    return true;
-  });
-  const pending = candidates.filter((series) =>
-    completesWithThisVisit(series, data, ctx),
-  );
-  const underWay = candidates.filter(
-    (series) =>
-      !completesWithThisVisit(series, data, ctx) &&
-      (progressOf(data, series)?.value ?? 0) > 0,
-  );
-  return [...pending, ...underWay]
-    .slice(0, CLOSE_LIMIT)
-    .map((series) => ringTile(series, data, ctx));
 }
 
 // ── The page ────────────────────────────────────────────────────────────
@@ -793,9 +747,7 @@ export function medalsPageVm(
   const overview = chosen === CHIP_ALL;
   const windowsShown = overview || chosen === CHIP_SEASONS;
 
-  const underWay = [...data.progress.values()].some(
-    (progress) => progress.value > 0 || progress.earned.length > 0,
-  );
+  const underWay = StandingSystem.anyUnderWay(progressList(data));
 
   return {
     records: recordsOf(data, rhythm).flatMap((record) => {
@@ -871,8 +823,14 @@ export function medalScopeVm(
           BadgeCategoryId.of(scope.categoryId),
         )
       : null;
+  // The category's families as the page's shelves draw them; a category
+  // the page draws no shelf of has none.
   const drawn =
-    category === null ? null : categoryFamilies(category, data, rhythm);
+    category === null
+      ? null
+      : (shelvesOf(data, rhythm).find(
+          (shelf) => shelf.category.id === category.id,
+        )?.families ?? []);
   if (drawn !== null && drawn.length === 0) return null;
   const kept = drawn === null ? null : new Set<string>(drawn.map((s) => s.id));
 
@@ -907,11 +865,13 @@ export function medalScopeVm(
           section.detail === null
             ? null
             : ctx.words.achievements.familyCount(
-                tiles.filter(
-                  (tile) =>
-                    tile.medal.state === 'earned' ||
-                    tile.medal.state === 'complete',
-                ).length,
+                earnedAmong(
+                  tiles.flatMap((tile) => {
+                    const series = seriesById(data, tile.medal.seriesId);
+                    return series === null ? [] : [series];
+                  }),
+                  data,
+                ),
                 tiles.length,
               ),
         tiles: tiles.map(tileInRing),

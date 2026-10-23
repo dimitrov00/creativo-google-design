@@ -23,7 +23,10 @@ import * as loyalty from './loyalty.presenter';
  * where a change breaks first. In W4 (Z1) the lists narrowed to what the
  * new files DO import: a published helper nobody took up went with the
  * built pages (`readyRewards`, `pointsText`, `redemptionsOf`,
- * `stateLineOf`, `awardShortOf`, `awardSentenceOf`).
+ * `stateLineOf`, `awardShortOf`, `awardSentenceOf`). In the Law 10.2
+ * pass the rhythm's two uncalled delegates went too (`rhythmLabel`,
+ * `rhythmStateLine`): the wallet words `StreakSystem.outlook` through
+ * `rhythmLineOf` and `rhythmTrackName`.
  */
 
 describe('client card contracts, revision 3', () => {
@@ -104,15 +107,7 @@ describe('the built helpers the new presenters import (§7.3)', () => {
     [
       'loyalty.presenter',
       loyalty,
-      [
-        'groupedGrants',
-        'ticketOf',
-        'rhythmLabel',
-        'rhythmStateLine',
-        'offered',
-        'sliceMap',
-        'glanceReward',
-      ],
+      ['groupedGrants', 'ticketOf', 'offered', 'sliceMap', 'glanceReward'],
     ],
     [
       'client-card.presenter',

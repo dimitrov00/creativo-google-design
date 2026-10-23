@@ -1,5 +1,12 @@
-import { PersonalRecordKind, type PersonalRecord } from '@core/components';
-import { type AppointmentId, LocalDate } from '@core/primitives';
+import { PersonalRecord, PersonalRecordKind } from '@core/components';
+import type { Appointment } from '@core/entities';
+import {
+  type AppointmentId,
+  type CustomerId,
+  LocalDate,
+  type ServiceId,
+} from '@core/primitives';
+import { ClientStatsSystem, SubjectVisitOutcome } from './client-stats.system';
 
 /*
  * «РЕКОРДИ» (client-card-revision-3 §2.3.4, §4.8; `records.presenter.ts`
@@ -41,10 +48,129 @@ const NEW_RECORD_DAYS = 30;
 /** «По години» says something from the second year on: one bar is «Общо посещения» again. */
 const YEARS_MIN = 2;
 
+/**
+ * The glance's quiet records line, in its order (`glance.presenter.ts`
+ * `RECORD_LINE_ORDER`): the favourite, the best year, the first visit —
+ * never the longest run, which is the wallet's and the records page's.
+ */
+const GLANCE_LINE_ORDER: readonly PersonalRecordKind[] = [
+  PersonalRecordKind.FavouriteService,
+  PersonalRecordKind.MostVisitsInYear,
+  PersonalRecordKind.FirstVisit,
+];
+
 export const RecordsSystem = {
   RECORD_ORDER,
   NEW_RECORD_DAYS,
   YEARS_MIN,
+  GLANCE_LINE_ORDER,
+
+  /**
+   * A record that holds something to show (`medals.presenter.ts`
+   * `recordCardVm`), per kind: a run of more than nought (its day may be
+   * unknown — held, shown without one); a best year of more than nought
+   * that names its year; a favourite of more than nought that names its
+   * service (whether the catalogue still names it is the edge's); a first
+   * visit that names its day.
+   */
+  isHeld(record: PersonalRecord): boolean {
+    switch (record.personalRecordKind) {
+      case PersonalRecordKind.LongestRhythm:
+        return record.value > 0;
+      case PersonalRecordKind.MostVisitsInYear:
+        return record.value > 0 && record.year !== null;
+      case PersonalRecordKind.FavouriteService:
+        return record.value > 0 && record.serviceId !== null;
+      case PersonalRecordKind.FirstVisit:
+        return record.on !== null;
+    }
+  },
+
+  /**
+   * «Обичайни услуги» says something beyond the favourite: one of the
+   * usual services (`usual` — those the catalogue still names, the edge's
+   * cut) is not the favourite (`favourite`, `null` = none).
+   */
+  usualBeyondFavourite(
+    usual: readonly ServiceId[],
+    favourite: ServiceId | null,
+  ): boolean {
+    for (let i = 0; i < usual.length; i++) {
+      if (usual[i] !== favourite) return true;
+    }
+    return false;
+  },
+
+  /**
+   * «По години» over the loaded history: `null` unless the loaded pages
+   * are the client's WHOLE history (`complete`) — a year is never
+   * under-counted. Composes {@link RecordsSystem.years} over this client
+   * RECORD's own WORKED visits (`ClientStatsSystem.subjectVisitOf`, D29) by
+   * the shop day, the record year being the account's stamped «Най-много
+   * за година».
+   */
+  yearsOfHistory(
+    customerId: CustomerId,
+    appointments: readonly Appointment[],
+    records: readonly PersonalRecord[],
+    complete: boolean,
+  ): readonly RecordYear[] | null {
+    if (!complete) return null;
+    const worked: RecordVisit[] = [];
+    for (let i = 0; i < appointments.length; i++) {
+      const appointment = appointments[i] as Appointment;
+      const visit = ClientStatsSystem.subjectVisitOf(customerId, appointment);
+      if (
+        visit === null ||
+        visit.outcome.subjectVisitOutcome !== SubjectVisitOutcome.Worked
+      ) {
+        continue;
+      }
+      worked.push({
+        appointmentId: appointment.id,
+        localDate: visit.localDate,
+      });
+    }
+    const stamped =
+      PersonalRecord.find(records, PersonalRecordKind.MostVisitsInYear)?.year ??
+      null;
+    return RecordsSystem.years(worked, stamped);
+  },
+
+  /**
+   * The glance's records line: at most `limit` records in
+   * {@link GLANCE_LINE_ORDER}, each the account's one of its kind, a
+   * favourite only where it names a service the catalogue still knows
+   * (`knownServiceIds`) and a first visit only where it names its day.
+   */
+  glanceLine(
+    records: readonly PersonalRecord[],
+    knownServiceIds: ReadonlySet<ServiceId>,
+    limit: number,
+  ): readonly PersonalRecord[] {
+    const out: PersonalRecord[] = [];
+    for (let i = 0; i < GLANCE_LINE_ORDER.length && out.length < limit; i++) {
+      const record = PersonalRecord.find(
+        records,
+        GLANCE_LINE_ORDER[i] as PersonalRecordKind,
+      );
+      if (record === null) continue;
+      if (
+        record.personalRecordKind === PersonalRecordKind.FavouriteService &&
+        (record.serviceId === null || !knownServiceIds.has(record.serviceId))
+      ) {
+        continue;
+      }
+      if (
+        record.personalRecordKind === PersonalRecordKind.FirstVisit &&
+        record.on === null
+      ) {
+        continue;
+      }
+      out.push(record);
+    }
+    return out;
+  },
 
   /** The account's records in the cards' order; the longest run only while the shop runs a rhythm. */
   ordered<R extends PersonalRecord>(

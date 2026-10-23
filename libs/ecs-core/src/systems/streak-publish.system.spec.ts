@@ -651,6 +651,7 @@ describe('StreakPublishSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const head = deepFreeze(WAITING);
     const draft = deepFreeze(rule({ graceDays: 14, version: 3 }));
+    const seeded = deepFreeze(streakDefinitionVersionFixture());
     const run = () => [
       StreakPublishSystem.assess(head, true, draft, NEXT_MONTH, TODAY, SEEN),
       StreakPublishSystem.admit(request({ baseVersion: 2 }), {
@@ -665,8 +666,41 @@ describe('StreakPublishSystem purity', () => {
         QUIET,
       ),
       StreakPublishSystem.withdraw(2, head, TODAY),
+      StreakPublishSystem.isSystemPublisher(seeded),
     ];
     expect(run()).toEqual(run());
+  });
+});
+
+/*
+ * `admin-rhythm.words.spec.ts` `historyRow`, ported (Law 10.2 —
+ * law-10-decision-extraction.md R-8): whether a version was published by
+ * nobody by hand is the system's answer; the history words it «системата».
+ */
+describe('StreakPublishSystem.isSystemPublisher — the shop’s opening rule', () => {
+  it('reserves the uid `system`', () => {
+    expect(StreakPublishSystem.SYSTEM_PUBLISHER).toBe('system');
+  });
+
+  it('names the seed’s first version, published by nobody by hand', () => {
+    expect(
+      StreakPublishSystem.isSystemPublisher(streakDefinitionVersionFixture()),
+    ).toBe(true);
+    expect(
+      StreakPublishSystem.isSystemPublisher({
+        publishedByUserId: UserId.of('system'),
+      }),
+    ).toBe(true);
+  });
+
+  it('never names a version a person published', () => {
+    for (const uid of ['dev-staff-ivan', 'System', 'system ', 'systems']) {
+      expect(
+        StreakPublishSystem.isSystemPublisher({
+          publishedByUserId: UserId.of(uid),
+        }),
+      ).toBe(false);
+    }
   });
 });
 

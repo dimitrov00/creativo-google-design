@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CountryIso2, E164 } from '@core/components';
+import { CountryIso2, DialSource, E164 } from '@core/components';
 import { type Result } from '@core/primitives';
 import { PhoneErrorCode, PhoneInvalidReason } from '@core/errors';
 import { PhoneSystem, type CountryNaming } from './phone.system';
@@ -333,6 +333,54 @@ describe('PhoneSystem.example', () => {
 
   it('is null for a code the metadata does not support', () => {
     expect(PhoneSystem.example(CountryIso2.of('XX'))).toBeNull();
+  });
+});
+
+/*
+ * The client card's dialable number (Law 10.2; client-card.presenter.ts
+ * `phoneOf`, its spec's «calls, texts and Vibers the account’s own number»
+ * and «dials a guest from the seat, and offers nothing without a number»).
+ * The seat's `tel:` and non-digits are stripped at the edge (D-2.8); the
+ * system takes what is left.
+ */
+describe('PhoneSystem.dialable', () => {
+  const ACCOUNT = E164.of('+359887654321');
+
+  it('dials the account’s own number first — never the seat’s', () => {
+    expect(PhoneSystem.dialable(ACCOUNT, '+359890001111')).toEqual({
+      dialSource: DialSource.Account,
+      e164: '+359887654321',
+    });
+    expect(PhoneSystem.dialable(ACCOUNT, null)).toEqual({
+      dialSource: DialSource.Account,
+      e164: '+359887654321',
+    });
+  });
+
+  it('dials a guest from the seat’s digits', () => {
+    expect(PhoneSystem.dialable(null, '+359890001111')).toEqual({
+      dialSource: DialSource.Seat,
+      digits: '+359890001111',
+    });
+    expect(PhoneSystem.dialable(null, '0890001111')).toEqual({
+      dialSource: DialSource.Seat,
+      digits: '0890001111',
+    });
+  });
+
+  it('offers nothing without a digit', () => {
+    expect(PhoneSystem.dialable(null, null)).toBeNull();
+    expect(PhoneSystem.dialable(null, '')).toBeNull();
+    expect(PhoneSystem.dialable(null, '+')).toBeNull();
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const run = () => [
+      PhoneSystem.dialable(ACCOUNT, '+359890001111'),
+      PhoneSystem.dialable(null, '+359890001111'),
+      PhoneSystem.dialable(null, ''),
+    ];
+    expect(run()).toEqual(run());
   });
 });
 

@@ -11,14 +11,19 @@ import {
   type EndMinute,
   type MinuteOfDay,
   type PriceCents,
-  type UtcEpochMs,
+  UtcEpochMs,
 } from '@core/primitives';
 import { type SchedulingError } from '@core/errors';
 import {
+  type Money,
   type SeatOutcome,
   Seat,
   SeatSubject,
   ShopNow,
+  VisitMark,
+  VisitStatusMark,
+  VisitTone,
+  VoucherRedemption,
   WallTime,
 } from '@core/components';
 import type { Appointment } from '@core/entities';
@@ -95,6 +100,25 @@ function allIndexes(count: number): readonly number[] {
   const out: number[] = [];
   for (let i = 0; i < count; i++) out.push(i);
   return out;
+}
+
+/** The seats a story is about, in its own order. */
+function ownSeats(
+  appointment: Appointment,
+  story: SubjectStory,
+): readonly Seat[] {
+  const out: Seat[] = [];
+  for (let i = 0; i < story.seatIndexes.length; i++) {
+    out.push(appointment.seats[story.seatIndexes[i] as number] as Seat);
+  }
+  return out;
+}
+
+/** Who a seat is for, as people are told apart — the person read off the seat itself. */
+function personSubjectOf(seat: Seat): PersonSubject {
+  return seat.seatSubject === SeatSubject.Account
+    ? { seatSubject: SeatSubject.Account, userId: seat.subjectUserId }
+    : { seatSubject: SeatSubject.Anonymous, label: seat.guestLabel };
 }
 
 /**
@@ -336,6 +360,210 @@ export const VisitStorySystem = {
     if (today === null) return false;
     const offset = LocalDate.daysBetween(today, localDate);
     return offset >= 0 && offset < DAYS_PER_WEEK;
+  },
+
+  /** A visit that did not happen — called off, or nobody came: its row struck, its tile hollow. */
+  isVoid(outcome: VisitRowOutcome): boolean {
+    return (
+      outcome === VisitRowOutcome.Cancelled ||
+      outcome === VisitRowOutcome.NoShow
+    );
+  },
+
+  /**
+   * How the row's day tile is drawn: a visit that did not happen is
+   * `HOLLOW` whatever its day ({@link isVoid} wins), an hour still to come
+   * `UPCOMING` ({@link isUpcoming}, on the shop's wall clock), anything else
+   * `PAST`.
+   */
+  toneOf(outcome: VisitRowOutcome, start: WallTime, now: ShopNow): VisitTone {
+    if (VisitStorySystem.isVoid(outcome)) return VisitTone.Hollow;
+    return VisitStorySystem.isUpcoming(outcome, start, now)
+      ? VisitTone.Upcoming
+      : VisitTone.Past;
+  },
+
+  /**
+   * The status a row or card names beside the visit: `NO_SHOW` on the row's
+   * own no-show; on an hour still open, `PENDING` while the shop has not
+   * confirmed it and `CONFIRMED` once it has (the stored `bookingStatus`);
+   * `null` for anything else. Which surface words which mark is the
+   * presenter's (the row words NO_SHOW and PENDING, else its cancellation
+   * word; the card words PENDING and CONFIRMED on a visit to come).
+   */
+  statusMark(
+    outcome: VisitRowOutcome,
+    bookingStatus: BookingStatus,
+  ): VisitStatusMark | null {
+    if (outcome === VisitRowOutcome.NoShow) return VisitStatusMark.NoShow;
+    if (outcome !== VisitRowOutcome.Open) return null;
+    if (bookingStatus === BookingStatus.Pending) return VisitStatusMark.Pending;
+    if (bookingStatus === BookingStatus.Confirmed) {
+      return VisitStatusMark.Confirmed;
+    }
+    return null;
+  },
+
+  /** The story covers every seat — the person's seats ARE the party. */
+  isWholeParty(appointment: Appointment, story: SubjectStory): boolean {
+    return story.seatIndexes.length === appointment.seats.length;
+  },
+
+  /**
+   * What the row's figure says, in cents of the bill's one currency — only
+   * for a visit WORKED or CANCELLED (an open hour and a no-show carry none).
+   * The bill (`BillingSystem.evaluate`, discounts taken off) when the story
+   * is the whole party's; otherwise the subject's own seats' prices
+   * (`BillingSystem.subtotalOf`) — a root discount is not pro-rated onto a
+   * share (owner question Q2). `null` for a visit no bill can be read from
+   * (no seat, two currencies — refused at every write).
+   */
+  subjectFigure(appointment: Appointment, story: SubjectStory): Money | null {
+    if (
+      story.outcome !== VisitRowOutcome.Worked &&
+      story.outcome !== VisitRowOutcome.Cancelled
+    ) {
+      return null;
+    }
+    if (VisitStorySystem.isWholeParty(appointment, story)) {
+      const bill = BillingSystem.evaluate(appointment);
+      return bill.ok
+        ? { amountCents: bill.value.totalCents, currency: bill.value.currency }
+        : null;
+    }
+    const share = BillingSystem.subtotalOf(ownSeats(appointment, story));
+    return share.ok ? share.value : null;
+  },
+
+  /**
+   * The marks a row carries, in drawing order — only on a WORKED visit:
+   * `PHOTOS` when it has any; `DISCOUNT` and `VOUCHER` only where the
+   * figure beside them is the whole party's bill (a companion's share is
+   * their seats' own prices, and the bill's discount is not in it) — the
+   * discount when the bill holds one, the voucher when a draw on it still
+   * stands (`VoucherRedemption.isLive`: a draw taken back settled nothing).
+   */
+  marksOf(
+    appointment: Appointment,
+    story: SubjectStory,
+    photoCount: number,
+  ): readonly VisitMark[] {
+    const marks: VisitMark[] = [];
+    if (story.outcome !== VisitRowOutcome.Worked) return marks;
+    if (photoCount > 0) marks.push(VisitMark.Photos);
+    if (!VisitStorySystem.isWholeParty(appointment, story)) return marks;
+    if (appointment.discounts.length > 0) marks.push(VisitMark.Discount);
+    if (appointment.voucherRedemptions.some(VoucherRedemption.isLive)) {
+      marks.push(VisitMark.Voucher);
+    }
+    return marks;
+  },
+
+  /**
+   * Are the visit's own words (its `contactNote`) the subject's to be
+   * quoted? Only the booker's: a note, a subject account, and the visit
+   * booked by that account. A guest (`null`) is never quoted — not even on
+   * an unclaimed party whose owner is `null` too.
+   */
+  quotesBooker(
+    appointment: Appointment,
+    subjectUserId: UserId | null,
+  ): boolean {
+    return (
+      appointment.contactNote !== null &&
+      subjectUserId !== null &&
+      appointment.ownerUserId === subjectUserId
+    );
+  },
+
+  /** The shop is named only for a WORKED visit, and only where the tenant has more than one. */
+  namesShop(outcome: VisitRowOutcome, locationCount: number): boolean {
+    return outcome === VisitRowOutcome.Worked && locationCount > 1;
+  },
+
+  /** The barbers of the story's seats, each once, in first-seat order. */
+  subjectBarberIds(
+    appointment: Appointment,
+    story: SubjectStory,
+  ): readonly BarberId[] {
+    const barbers: BarberId[] = [];
+    for (let i = 0; i < story.seatIndexes.length; i++) {
+      barbers.push(
+        (appointment.seats[story.seatIndexes[i] as number] as Seat).barberId,
+      );
+    }
+    return VisitStorySystem.distinct(barbers);
+  },
+
+  /**
+   * The client record a row's story is about: the one the host named
+   * (`null` names a guest), else — when the host named none (`undefined`)
+   * — the record the ACCOUNT seat of `userId` links to
+   * (`subjectCustomerId`, never a uid taken for a record); `null` for a
+   * guest, and for an account with no seat on the visit (the
+   * appointment's story then).
+   */
+  subjectRecordOf(
+    appointment: Appointment,
+    named: CustomerId | null | undefined,
+    userId: UserId | null,
+  ): CustomerId | null {
+    if (named !== undefined) return named;
+    if (userId === null) return null;
+    for (let i = 0; i < appointment.seats.length; i++) {
+      const seat = appointment.seats[i] as Seat;
+      if (
+        seat.seatSubject === SeatSubject.Account &&
+        seat.subjectUserId === userId
+      ) {
+        return seat.subjectCustomerId;
+      }
+    }
+    return null;
+  },
+
+  /**
+   * The OTHER people on the visit — every seat the story is not about,
+   * counted once per person (an account by its id, a guest by the seat's
+   * name). Composes {@link peerCount} and {@link personKeyOf}: the person is
+   * read off the seat itself. None when the story is the whole party's.
+   */
+  peerCountOf(appointment: Appointment, story: SubjectStory): number {
+    if (VisitStorySystem.isWholeParty(appointment, story)) return 0;
+    const seats = appointment.seats;
+    const subjects: PersonSubject[] = [];
+    const own: boolean[] = [];
+    for (let i = 0; i < seats.length; i++) {
+      subjects.push(personSubjectOf(seats[i] as Seat));
+      own.push(false);
+    }
+    for (let i = 0; i < story.seatIndexes.length; i++) {
+      own[story.seatIndexes[i] as number] = true;
+    }
+    return VisitStorySystem.peerCount(subjects, own);
+  },
+
+  /**
+   * The newest visit that was WORKED: newest first by its instant
+   * (`UtcEpochMs.compare` — a STABLE order, so equal instants keep the
+   * input's order), the first whose `outcomeOf` is WORKED; `outcomeOf` is
+   * called lazily in that order, never past the first WORKED. No subject
+   * record, no staff flag and no exclusion here: the caller's row is the
+   * outcome's source, and the caller drops the visit on screen first.
+   * `null` when none was worked.
+   */
+  lastWorked<A extends { readonly utcEpochMs: UtcEpochMs }>(
+    appointments: readonly A[],
+    outcomeOf: (appointment: A) => VisitRowOutcome | null,
+  ): A | null {
+    const newestFirst = [...appointments].sort((a, b) =>
+      UtcEpochMs.compare(b.utcEpochMs, a.utcEpochMs),
+    );
+    for (let i = 0; i < newestFirst.length; i++) {
+      const appointment = newestFirst[i] as A;
+      if (outcomeOf(appointment) === VisitRowOutcome.Worked) return appointment;
+    }
+    return null;
   },
 } as const;
 

@@ -1,10 +1,14 @@
-import { LocalDate, defect } from '@core/primitives';
+import { CouponGrantId, LocalDate, defect } from '@core/primitives';
 import {
   FreezeReason,
+  PassFigure,
+  PassState,
+  PunchCard,
   RewardGrant,
+  StreakCapsule,
   StreakPeriodMark,
-  StreakPhase,
   StreakState,
+  WalletAction,
 } from '@core/components';
 import type {
   GiftVoucher,
@@ -12,15 +16,21 @@ import type {
   StreakDefinition,
 } from '@core/entities';
 import {
+  type LoyaltyPass,
+  LoyaltyPassSystem,
   LoyaltyCatalogSystem,
   RewardSystem,
+  type RewardTiles,
+  type StreakOutlookAnswer,
   StreakRuleSystem,
   StreakSystem,
   type StreakTrackMark,
   StreakTrackMarkKind,
   TierSystem,
   type ValidLoyaltyCatalog,
+  type VoucherIdOrder,
   VoucherSystem,
+  WalletSystem,
 } from '@core/systems';
 import { rhythmRuleWords } from '@creativo/features/shared/visits';
 import { formatCents } from '@creativo/ui/wall-clock';
@@ -68,10 +78,10 @@ import { activityGroups, foldByEvent, wholeMonthsOf } from './ledger.presenter';
 import {
   type LoyaltyPageInput,
   groupedGrants,
-  offered,
-  rhythmLabel,
-  rhythmStateLine,
+  rhythmLineOf,
+  rhythmOutlookOf,
   rhythmStateOf,
+  rhythmTrackName,
   ruleInForceOf,
   ruleUpcomingOf,
   sliceMap,
@@ -168,10 +178,6 @@ function signedFigureOf(value: number, lang: string): string {
   return `${value < 0 ? MINUS : ''}${figure(Math.abs(value), lang)}`;
 }
 
-function capitalised(text: string, lang: string): string {
-  return text.charAt(0).toLocaleUpperCase(lang) + text.slice(1);
-}
-
 // ── WA · The pass ───────────────────────────────────────────────────────
 
 /** The tier the account stands on, as the plate words it; `null` when the catalogue cannot name it. */
@@ -179,41 +185,48 @@ function tierPlateOf(
   input: WalletInput,
   catalog: ValidLoyaltyCatalog | null,
 ): string | null {
-  if (!input.flags.tiers || catalog === null || catalog.tiers.length === 0) {
-    return null;
-  }
-  const { currentTierId } = TierSystem.steps(input.account, catalog.tiers);
-  return (
-    LoyaltyCatalogSystem.tier(catalog, currentTierId)?.name[
-      cardLocaleOf(input.words.lang)
-    ] ?? null
-  );
+  if (!input.flags.tiers || catalog === null) return null;
+  const tierId = TierSystem.standingTier(input.account, catalog.tiers);
+  return tierId === null
+    ? null
+    : (LoyaltyCatalogSystem.tier(catalog, tierId)?.name[
+        cardLocaleOf(input.words.lang)
+      ] ?? null);
+}
+
+/** The pass as `LoyaltyPassSystem` decides it on the card's today. */
+function passOf(input: WalletInput): LoyaltyPass {
+  return LoyaltyPassSystem.passOf(input.account, {
+    pointsOn: input.flags.points,
+    paused: input.paused,
+    today: dayOf(input.today),
+  });
+}
+
+/** A figure the pass's state carries; the system gives it with its state. */
+function carried<T>(value: T | null, state: PassState): T {
+  return value === null ? defect(`${state} carries its figure`) : value;
 }
 
 /** The pass's state line: only when it says something, and one thing. */
-function passStateOf(input: WalletInput): string | null {
-  const { account, flags, words, today } = input;
+function passStateOf(pass: LoyaltyPass, input: WalletInput): string | null {
+  const { words, today } = input;
   const page = words.loyaltyPage;
-  if (input.paused) return page.passFrozen;
-  if (!flags.points) return null;
-  if (account.balance < 0) return page.owes(Math.abs(account.balance));
-  const expiresOn = account.pointsExpireOn;
-  const noticeFrom = account.pointsExpiryNoticeFrom;
-  if (
-    expiresOn !== null &&
-    noticeFrom !== null &&
-    account.balance > 0 &&
-    today >= noticeFrom &&
-    today <= expiresOn
-  ) {
-    // The projection says WHEN points lapse, not how many: what can lapse
-    // is what the account holds.
-    return page.expiring(
-      account.balance,
-      dayShort(expiresOn, today, words.lang),
-    );
+  switch (pass.passState) {
+    case PassState.Frozen:
+      return page.passFrozen;
+    case PassState.Owes:
+      return page.owes(carried(pass.owed, pass.passState));
+    case PassState.Expiring:
+      // The projection says WHEN points lapse, not how many: what can lapse
+      // is what the account holds.
+      return page.expiring(
+        carried(pass.lapsing, pass.passState),
+        dayShort(carried(pass.lapsesOn, pass.passState), today, words.lang),
+      );
+    case PassState.Clear:
+      return null;
   }
-  return null;
 }
 
 /**
@@ -222,16 +235,17 @@ function passStateOf(input: WalletInput): string | null {
  * reader hears holds no state: the state line under it is read after it.
  */
 export function passVm(input: WalletInput): PassVm {
-  const { account, flags, words } = input;
+  const { words } = input;
   const lang = words.lang;
+  const pass = passOf(input);
   const holder = input.holder?.trim() ? input.holder.trim() : null;
   const tier = tierPlateOf(input, catalogOf(input));
   const since =
     input.sinceDay === null ? null : monthYearLong(input.sinceDay, lang);
-  const state = passStateOf(input);
+  const state = passStateOf(pass, input);
   const tenure = since === null ? null : words.head.since(since);
-  if (!flags.points) {
-    const visits = account.tierQualifying;
+  if (pass.passFigure === PassFigure.Visits) {
+    const visits = pass.figure;
     return {
       figure: figure(visits, lang),
       unit: words.loyalty.rhythmUnit(visits),
@@ -254,8 +268,8 @@ export function passVm(input: WalletInput): PassVm {
     };
   }
   return {
-    figure: signedFigureOf(account.balance, lang),
-    unit: words.loyalty.pointsWord(Math.abs(account.balance)),
+    figure: signedFigureOf(pass.figure, lang),
+    unit: words.loyalty.pointsWord(Math.abs(pass.figure)),
     holder,
     tier,
     since: tenure,
@@ -266,7 +280,7 @@ export function passVm(input: WalletInput): PassVm {
     accessibleName: words.loyaltyPage.passName(
       holder,
       tier,
-      Math.max(0, account.balance),
+      pass.spendable,
       since,
     ),
   };
@@ -274,48 +288,48 @@ export function passVm(input: WalletInput): PassVm {
 
 // ── WC · What is held ───────────────────────────────────────────────────
 
-/** A voucher's last day on the shop's calendar; `null` when it never expires. */
-function lastDayOf(voucher: GiftVoucher): string | null {
-  return voucher.expiresLocalDate;
+/**
+ * Two vouchers that end on one day keep the wallet's locale collation of
+ * their ids — a locale's order, which no system can hold
+ * (`VoucherSystem.held` takes it as its tie-break).
+ */
+const BY_ID_COLLATION: VoucherIdOrder = (a, b) => a.localeCompare(b);
+
+/** The card's today as a shop day; a day the table cannot place is none. */
+function heldDayOf(today: string): LocalDate | null {
+  const day = LocalDate.parse(today);
+  return day.ok ? day.value : null;
 }
 
 /**
- * The vouchers that can be spent today (`VoucherSystem.spendable`): issued,
- * not voided, not past its day, with a balance. "Its day" is the shop's:
- * a voucher is spendable while it expires no earlier than today's shop
- * midnight. A day the table cannot place spends nothing rather than
+ * The vouchers held (`VoucherSystem.held`): the spendable ones — issued,
+ * not voided, not past their day, with a balance — the soonest to run out
+ * first. A day the table cannot place spends nothing rather than
  * everything.
  */
-function spendableOf(
+function heldOf(
   vouchers: readonly GiftVoucher[],
   today: string,
 ): readonly GiftVoucher[] {
-  // "Expires no earlier than today's shop midnight" is "expires on today
-  // or later" (T5); a day that is no day spends nothing.
-  const day = LocalDate.parse(today);
-  if (!day.ok) return [];
-  return vouchers.filter((voucher) =>
-    VoucherSystem.spendable(voucher, day.value),
-  );
+  const day = heldDayOf(today);
+  return day === null ? [] : VoucherSystem.held(vouchers, day, BY_ID_COLLATION);
 }
-
-/** The day a never-expiring voucher sorts as: after every real one. */
-const NEVER = '9999-12-31';
 
 function voucherVm(
   voucher: GiftVoucher,
-  lastDay: string | null,
   today: string,
   words: Words,
 ): VoucherVm {
   const page = words.loyaltyPage;
   const lang = words.lang;
+  // The voucher's last day on the shop's calendar; `null` when it never expires.
+  const lastDay = voucher.expiresLocalDate;
   const balance = formatCents(voucher.balanceCents, voucher.currency, lang);
   const value = formatCents(voucher.initialValueCents, voucher.currency, lang);
   const until = lastDay === null ? null : dayShort(lastDay, today, lang);
   // One fact, once: an untouched voucher's chip does not repeat the figure
   // over it, so it says its validity alone, or nothing.
-  const untouched = voucher.balanceCents === voucher.initialValueCents;
+  const untouched = VoucherSystem.untouched(voucher);
   return {
     voucherId: voucher.id,
     title: page.voucher,
@@ -343,27 +357,16 @@ export function voucherVms(
   today: string,
   words: Words,
 ): readonly VoucherVm[] {
-  // Each voucher's last day worked out ONCE (the shop's calendar is a zone
-  // reading), then sorted on it: day keys are ASCII, so `<` is their order.
-  const held = spendableOf(vouchers, today).map((voucher) => ({
-    voucher,
-    lastDay: lastDayOf(voucher),
-  }));
-  held.sort((a, b) => {
-    const x = a.lastDay ?? NEVER;
-    const y = b.lastDay ?? NEVER;
-    return x < y ? -1 : x > y ? 1 : a.voucher.id.localeCompare(b.voucher.id);
-  });
-  return held.map(({ voucher, lastDay }) =>
-    voucherVm(voucher, lastDay, today, words),
+  return heldOf(vouchers, today).map((voucher) =>
+    voucherVm(voucher, today, words),
   );
 }
 
 /** The grants as the wallet's tickets: ready ones and the ones on this visit's bill. */
 function ticketGroups(input: WalletInput) {
   // A companion's rewards cannot be spent on this visit, and a paused
-  // client's are out of reach: neither is drawn.
-  return input.isOwner && !input.paused
+  // client's are out of reach: neither is drawn (`WalletSystem.ticketsShown`).
+  return WalletSystem.ticketsShown(input)
     ? groupedGrants(input.usableGrants, input.usableGrantsOnBill ?? [])
     : [];
 }
@@ -399,8 +402,7 @@ function stampCards(input: WalletInput): readonly WalletHoldingVm[] {
   return account.punchCards.map((punch): WalletHoldingVm => {
     const reward = punch.title[locale];
     const spoken = runningCase(reward, words.lang);
-    const filled = Math.min(Math.max(punch.filled, 0), punch.size);
-    const left = Math.max(0, punch.size - filled);
+    const { filled, left, toNext } = PunchCard.progress(punch);
     const card: StampCardVm = {
       ruleId: punch.ruleId,
       title: reward,
@@ -413,7 +415,7 @@ function stampCards(input: WalletInput): readonly WalletHoldingVm[] {
         label: page.stampCard,
         valueText: page.stampsName(filled, punch.size, left, spoken),
       },
-      sentence: page.stampsToNext(Math.max(1, left)),
+      sentence: page.stampsToNext(toNext),
     };
     return {
       walletHolding: WalletHolding.Stamps,
@@ -462,102 +464,119 @@ function holdingsDetailOf(
   holdings: readonly WalletHoldingVm[],
 ): string | null {
   const { words, today } = input;
-  const [first, ...rest] = spendableOf(vouchersOf(input), today);
-  if (first === undefined || rest.length === 0) return null;
-  let sum: number = first.balanceCents;
-  for (const voucher of rest) {
-    // Two currencies have no sum: nothing to say.
-    if (voucher.currency !== first.currency) return null;
-    sum += voucher.balanceCents;
-  }
-  return words.loyaltyPage.walletSum(
-    holdings.length,
-    formatCents(sum, first.currency, words.lang),
-  );
+  const day = heldDayOf(today);
+  // From two vouchers on, in one currency (`VoucherSystem.heldTotal`); the
+  // count is every holding the section draws.
+  const total =
+    day === null ? null : VoucherSystem.heldTotal(vouchersOf(input), day);
+  return total === null
+    ? null
+    : words.loyaltyPage.walletSum(
+        holdings.length,
+        formatCents(total.amountCents, total.currency, words.lang),
+      );
 }
 
 // ── WB · The discs ──────────────────────────────────────────────────────
 
-/** Something can be written to the visit now, for this person. */
-function canWrite(input: WalletInput): boolean {
-  return input.isOwner && !input.visitGone && input.online && !input.paused;
+/** Each disc as drawn: its id, glyph and prominence — «Използвай» the one promoted verb. */
+const WALLET_ACTION_DISCS = {
+  [WalletAction.Use]: {
+    id: 'use',
+    icon: 'promo.coupon',
+    prominence: 'accent',
+  },
+  [WalletAction.Code]: {
+    id: 'code',
+    icon: 'loyalty.enterCode',
+    prominence: 'standard',
+  },
+  [WalletAction.Catalog]: {
+    id: 'catalog',
+    icon: 'loyalty.reward',
+    prominence: 'standard',
+  },
+  [WalletAction.History]: {
+    id: 'history',
+    icon: 'loyalty.ledger',
+    prominence: 'standard',
+  },
+} as const satisfies Record<
+  WalletAction,
+  {
+    readonly id: WalletActionVm['id'];
+    readonly icon: WalletActionVm['icon'];
+    readonly prominence: WalletActionVm['prominence'];
+  }
+>;
+
+/** A disc's word and the name a reader hears. */
+function discWordsOf(
+  action: WalletAction,
+  actions: Words['loyaltyPage']['actions'],
+): { readonly label: string; readonly accessibleName: string } {
+  switch (action) {
+    case WalletAction.Use:
+      return { label: actions.use, accessibleName: actions.useName };
+    case WalletAction.Code:
+      return { label: actions.code, accessibleName: actions.codeName };
+    case WalletAction.Catalog:
+      return { label: actions.catalog, accessibleName: actions.catalogName };
+    case WalletAction.History:
+      return { label: actions.history, accessibleName: actions.historyName };
+  }
+}
+
+/** The first grant of each held ticket not on the bill yet, in the tickets' order. */
+function readyGrantIdsOf(input: WalletInput): readonly CouponGrantId[] {
+  return ticketGroups(input).flatMap((group) => {
+    const first = group.grants[0];
+    return group.applied || first === undefined
+      ? []
+      : [CouponGrantId.of(first.grantId)];
+  });
 }
 
 /**
- * WB — the discs that work today, in their order; one that cannot be used
- * is absent and the run closes up (§2.2.3).
+ * WB — the discs that work today, in their order (`WalletSystem.actions`);
+ * one that cannot be used is absent and the run closes up (§2.2.3).
  */
 export function walletActions(input: WalletInput): readonly WalletActionVm[] {
-  const { flags, words } = input;
-  const actions = words.loyaltyPage.actions;
-  const writable = canWrite(input);
-  const ready = writable
-    ? ticketGroups(input).filter((group) => !group.applied)
-    : [];
-  const out: WalletActionVm[] = [];
-  const [only] = ready;
-  if (only !== undefined) {
-    const several = ready.length > 1;
-    out.push({
-      id: 'use',
-      icon: 'promo.coupon',
-      label: actions.use,
-      prominence: 'accent',
-      accessibleName: several
-        ? `${actions.useName}, ${actions.useCount(ready.length)}`
-        : actions.useName,
-      grantId: several ? null : (only.grants[0]?.grantId ?? null),
-      count: several ? ready.length : null,
-    });
-  }
-  if (writable) {
-    out.push({
-      id: 'code',
-      icon: 'loyalty.enterCode',
-      label: actions.code,
-      prominence: 'standard',
-      accessibleName: actions.codeName,
-      grantId: null,
-      count: null,
-    });
-  }
-  if (flags.points && catalogSectionStands(input)) {
-    out.push({
-      id: 'catalog',
-      icon: 'loyalty.reward',
-      label: actions.catalog,
-      prominence: 'standard',
-      accessibleName: actions.catalogName,
-      grantId: null,
-      count: null,
-    });
-  }
-  if (flags.points) {
-    out.push({
-      id: 'history',
-      icon: 'loyalty.ledger',
-      label: actions.history,
-      prominence: 'standard',
-      accessibleName: actions.historyName,
-      grantId: null,
-      count: null,
-    });
-  }
-  return out;
+  const actions = input.words.loyaltyPage.actions;
+  const discs = WalletSystem.actions({
+    writable: WalletSystem.writable(input),
+    pointsOn: input.flags.points,
+    catalogStands: catalogSectionStands(input),
+    readyGrantIds: readyGrantIdsOf(input),
+  });
+  return discs.actions.map((action): WalletActionVm => {
+    const named = discWordsOf(action, actions);
+    const use = action === WalletAction.Use;
+    return {
+      ...WALLET_ACTION_DISCS[action],
+      label: named.label,
+      accessibleName:
+        use && discs.useCount !== null
+          ? `${named.accessibleName}, ${actions.useCount(discs.useCount)}`
+          : named.accessibleName,
+      grantId: use ? discs.useGrantId : null,
+      count: use ? discs.useCount : null,
+    };
+  });
 }
 
 /**
  * «Награди за точки» has somewhere to land: the section is drawn while its
  * read is on its way and when it failed (the heading stands over a
  * skeleton or a notice), and is absent only once the catalogue is known to
- * offer nothing.
+ * offer nothing (`RewardSystem.tiles`).
  */
 function catalogSectionStands(input: WalletInput): boolean {
   const catalog = input.catalog;
   if (catalog === null) return false;
   return (
     catalog.loadState !== LoadState.Ready ||
-    tilesOf(input, catalog.data).length > 0
+    rewardTilesOf(input, catalog.data).tiles.length > 0
   );
 }
 
@@ -570,8 +589,8 @@ interface RhythmStanding {
   readonly day: string | null;
   /** `null` while healthy. */
   readonly phase: RhythmPhaseVm | null;
-  /** The line names no due date, so the track's sentence names none either. */
-  readonly dueNamed: boolean;
+  /** The due date the track's sentence names (`StreakOutlookAnswer.nextDue`); `null` where the line names none. */
+  readonly nextDue: string | null;
 }
 
 /**
@@ -580,107 +599,68 @@ interface RhythmStanding {
  * is in the chair, for a paused client, under a used protection and while
  * no period is open.
  */
-function inChairDueOf(state: StreakState, input: WalletInput): string | null {
+function inChairDueOf(
+  state: StreakState,
+  input: WalletInput,
+): LocalDate | null {
   return StreakSystem.inChairDue(state, dayOf(input.today), {
     inChairToday: input.inChairToday,
     paused: input.paused,
   });
 }
 
+/**
+ * The capsule beside the figure, as the outlook gives it: a warning where
+ * a visit can still keep or restore the run (`urgent`), else neutral. A
+ * visit on the book answers the cue — its capsule stands where a warning
+ * would have, and nothing stands beside a healthy figure.
+ */
+function capsuleOf(
+  outlook: StreakOutlookAnswer,
+  input: WalletInput,
+): RhythmPhaseVm | null {
+  const { words, today } = input;
+  const rhythm = words.rhythm;
+  const capsule = outlook.streakCapsule;
+  if (capsule === null) return null;
+  const day = outlook.day;
+  const short = () =>
+    day === null
+      ? defect(`${capsule} names a day`)
+      : dayShort(day, today, words.lang);
+  const tone = outlook.urgent ? 'warning' : 'neutral';
+  switch (capsule) {
+    case StreakCapsule.Frozen:
+      return { text: rhythm.phaseFrozen, tone };
+    case StreakCapsule.Broken:
+      return { text: rhythm.phaseBroken, tone };
+    case StreakCapsule.Held:
+      return { text: rhythm.phaseHeld(short()), tone };
+    case StreakCapsule.AtRisk:
+      return { text: rhythm.phaseAtRisk(short()), tone };
+    case StreakCapsule.InGrace:
+      return { text: rhythm.phaseInGrace(short()), tone };
+  }
+}
+
+/** Where the rhythm stands (`StreakSystem.outlook`), worded. */
 function standingOf(
   state: StreakState,
-  inChairDue: string | null,
+  inChairDue: LocalDate | null,
   input: WalletInput,
 ): RhythmStanding {
   const { words, today, zone } = input;
-  const rhythm = words.rhythm;
-  const lang = words.lang;
-  const short = (day: string) => dayShort(day, today, lang);
-  const built = () =>
-    rhythmStateLine(state, false, inChairDue, today, zone, words);
-  if (input.paused) {
-    return { line: rhythm.frozen, day: null, phase: null, dueNamed: false };
-  }
-  const started = state.current > 0 || state.lastQualifiedAtUtcMs !== null;
-  if (inChairDue !== null || !started) {
-    return { ...built(), phase: null, dueNamed: inChairDue !== null };
-  }
-  switch (state.streakPhase) {
-    case StreakPhase.Frozen: {
-      const line =
-        state.phaseFreezeReason === FreezeReason.Freeze
-          ? rhythm.stateFrozenFreeze
-          : state.phaseFreezeReason === FreezeReason.Excuse
-            ? rhythm.stateFrozenExcuse
-            : state.phaseFreezeReason === FreezeReason.ClientPause
-              ? capitalised(
-                  rhythm.reason(
-                    streakPeriodReasonWords[FreezeReason.ClientPause],
-                  ),
-                  lang,
-                )
-              : rhythm.frozen;
-      return {
-        line,
-        day: null,
-        phase: { text: rhythm.phaseFrozen, tone: 'neutral' },
-        dueNamed: false,
-      };
-    }
-    case StreakPhase.Broken: {
-      // Where nothing can be restored the day before the break is kept,
-      // so no day reads as one: the next visit simply starts the count.
-      const repairable = state.phaseRepairableUntil >= today;
-      return {
-        line: repairable
-          ? rhythm.stateBroken(short(state.phaseRepairableUntil))
-          : rhythm.stateNone,
-        day: repairable ? state.phaseRepairableUntil : null,
-        phase: {
-          text: rhythm.phaseBroken,
-          tone: repairable ? 'warning' : 'neutral',
-        },
-        dueNamed: false,
-      };
-    }
-    case StreakPhase.Active:
-    case StreakPhase.AtRisk:
-    case StreakPhase.InGrace: {
-      // The visit on the book that holds the period open (`heldByAppointmentId`
-      // and `heldOn` are set together).
-      const heldOn = state.heldByAppointmentId === null ? null : state.heldOn;
-      if (heldOn !== null) {
-        return {
-          line: rhythm.stateHeld(short(heldOn)),
-          day: heldOn,
-          // A visit on the book answers the cue: the capsule says so where
-          // a warning would have stood, and nothing stands beside a
-          // healthy figure.
-          phase:
-            state.streakPhase === StreakPhase.Active
-              ? null
-              : { text: rhythm.phaseHeld(short(heldOn)), tone: 'neutral' },
-          dueNamed: false,
-        };
-      }
-      return {
-        ...built(),
-        phase:
-          state.streakPhase === StreakPhase.AtRisk
-            ? {
-                text: rhythm.phaseAtRisk(short(state.phaseDueBy)),
-                tone: 'warning',
-              }
-            : state.streakPhase === StreakPhase.InGrace
-              ? {
-                  text: rhythm.phaseInGrace(short(state.phaseGraceUntil)),
-                  tone: 'warning',
-                }
-              : null,
-        dueNamed: true,
-      };
-    }
-  }
+  const outlook = rhythmOutlookOf(state, {
+    paused: input.paused,
+    inChairDue,
+    today,
+    zone,
+  });
+  return {
+    ...rhythmLineOf(outlook, today, words),
+    phase: capsuleOf(outlook, input),
+    nextDue: outlook.nextDue,
+  };
 }
 
 /** A closed period as the track draws it; a visit's caption is chosen with its neighbours' (`rhythmMarks`). */
@@ -840,10 +820,13 @@ function rhythmMarks(
  */
 export function walletRhythmVm(input: WalletInput): WalletRhythmVm | null {
   const { account, flags, words, today } = input;
+  // The rhythm counts: its flag, and the rule in force switched on.
+  if (!StreakRuleSystem.isOnOn(input.rhythm, dayOf(today), flags.streaks)) {
+    return null;
+  }
   const rule = ruleInForceOf(input.rhythm, today);
-  if (!flags.streaks || rule === null || !rule.enabled) return null;
   const state = rhythmStateOf(account, input.rhythm);
-  if (state === null) return null;
+  if (rule === null || state === null) return null;
 
   const lang = words.lang;
   const inChairDue = inChairDueOf(state, input);
@@ -854,31 +837,24 @@ export function walletRhythmVm(input: WalletInput): WalletRhythmVm | null {
     period: StreakState.periodTerms(state),
     nameOf,
   });
+  // `StreakRuleSystem.upcomingOn` answers only a rule whose day is still ahead.
   const upcoming = ruleUpcomingOf(input.rhythm, today);
+  const best = StreakSystem.record(state);
+  const protections = StreakSystem.protectionsHeld(state, summary);
   return {
     figure: figure(state.current, lang),
     unit: words.loyaltyPage.inRhythm(state.current),
     phase: standing.phase,
     periods: rhythmMarks(state, standing, input),
-    trackName: rhythmLabel(
-      standing.dueNamed ? state : { ...state, dueBy: null },
-      standing.dueNamed ? inChairDue : null,
-      today,
-      words,
-    ),
+    trackName: rhythmTrackName(state, standing.nextDue, today, words),
     stateLine: standing.line,
-    best:
-      state.best > state.current
-        ? words.loyaltyPage.rhythmBest(state.best)
-        : null,
+    best: best === null ? null : words.loyaltyPage.rhythmBest(best),
     protections:
-      summary.protections !== null && state.freezesBanked > 0
-        ? words.rhythm.protections(state.freezesBanked)
-        : null,
+      protections === null ? null : words.rhythm.protections(protections),
     ruleLine: ruleWords.short,
     ruleFull: [ruleWords.sentence, ...ruleWords.details],
     ruleUpcoming:
-      upcoming !== null && upcoming.effectiveFromLocalDate > today
+      upcoming !== null
         ? words.rhythm.ruleUpcoming(
             dayShort(upcoming.effectiveFromLocalDate, today, lang),
             runningCase(
@@ -903,14 +879,14 @@ function tierOf(
   catalog: ValidLoyaltyCatalog,
 ): WalletTierVm | null {
   const { account, words } = input;
-  if (catalog.tiers.length === 0) return null;
+  // A ring only with tiers in the catalogue (`TierSystem.standingTier`).
+  if (TierSystem.standingTier(account, catalog.tiers) === null) return null;
   const locale = cardLocaleOf(words.lang);
   const page = words.loyaltyPage;
   const track = TierSystem.steps(account, catalog.tiers);
   const stepOf = (tierId: string | null) =>
     track.steps.find((step) => step.tierId === tierId) ?? null;
   const current = stepOf(track.currentTierId);
-  const next = stepOf(track.nextTierId);
   // The nodes are the tiers, named; what remains is the ring's, so no node
   // says it a second time.
   const marks: readonly UiMark[] = track.steps.map((step) => ({
@@ -927,10 +903,9 @@ function tierOf(
     label: page.tier,
     valueText,
   });
-  const remaining = progress.remaining;
 
-  if (next === null || remaining === null || progress.atTop) {
-    const sentence = page.tierTop(progress.currentAtLeast ?? progress.value);
+  if (progress.atTop) {
+    const sentence = page.tierTop(TierSystem.keptAt(progress));
     return {
       ring: {
         value: 1,
@@ -948,6 +923,12 @@ function tierOf(
     };
   }
 
+  // Under way, the track holds the next tier and what it still asks
+  // (`TierProgress.atTop` is their absence).
+  const next =
+    stepOf(progress.nextTierId) ?? defect('a tier under way has a next one');
+  const remaining =
+    progress.remaining ?? defect('a tier under way has what remains');
   const sentence = page.tierName(
     current?.name[locale] ?? '',
     track.value,
@@ -985,75 +966,75 @@ export function walletTierVm(input: WalletInput): WalletTierVm | null {
 // ── WF · What the points buy ────────────────────────────────────────────
 
 /**
- * The catalogue as tiles, within reach first. A tile is INFORMATION in
- * this round (ES-2): it says whether the points cover the reward, so
- * «within reach» is the balance against the cost and nothing else. A
- * reward nobody can take today (not yet offered, sold out) is no tile.
+ * The catalogue as tiles (`RewardSystem.tiles`): offered today, within
+ * reach first, inside each half the catalogue's own order. A tile is
+ * INFORMATION in this round (ES-2): it says whether the points cover the
+ * reward, so «within reach» is the balance against the cost and nothing
+ * else. A reward nobody can take today (not yet offered, sold out) is no
+ * tile.
  */
+function rewardTilesOf(input: WalletInput, catalog: ValidLoyaltyCatalog) {
+  return RewardSystem.tiles(
+    catalog.rewards,
+    input.account.balance,
+    dayOf(input.today),
+  );
+}
+
 function tilesOf(
   input: WalletInput,
-  catalog: ValidLoyaltyCatalog,
+  answer: RewardTiles<ValidLoyaltyCatalog['rewards'][number]>,
 ): readonly RewardTileVm[] {
-  const { account, words, today } = input;
+  const { words } = input;
   const page = words.loyaltyPage;
   const locale = cardLocaleOf(words.lang);
-  const balance = account.balance;
-  const tiles = offered(catalog, today).flatMap(
-    (reward): readonly RewardTileVm[] => {
-      // Within reach is the balance against the cost and nothing else:
-      // `RewardSystem.affordable`; `null` is a reward nobody can take today.
-      const reach = RewardSystem.affordable(reward, balance, dayOf(today));
-      if (reach === null) return [];
-      const title = reward.name[locale];
-      const missing = reach.affordable ? null : figure(reach.short, words.lang);
-      return [
-        {
-          rewardId: reward.id,
-          title,
-          cost: words.ledgerPage.points(reward.cost),
-          affordable: missing === null,
-          missing: missing === null ? null : page.moreToGo(missing),
-          progress: reach.progress,
-          src:
-            input.covers.get(reward.id) ??
-            (reward.rewardGrant === RewardGrant.Coupon
-              ? input.covers.get(reward.grantCouponId)
-              : undefined) ??
-            null,
-          accessibleName: page.rewardName(
-            reward.cost,
-            title,
-            missing === null ? '' : page.rewardMoreSuffix(missing),
-          ),
-        },
-      ];
-    },
-  );
-  // Within reach first; inside each half the catalogue's own order.
-  return [
-    ...tiles.filter((tile) => tile.affordable),
-    ...tiles.filter((tile) => !tile.affordable),
-  ];
+  return answer.tiles.map(({ reward, reach }): RewardTileVm => {
+    const title = reward.name[locale];
+    const missing = reach.affordable ? null : figure(reach.short, words.lang);
+    return {
+      rewardId: reward.id,
+      title,
+      cost: words.ledgerPage.points(reward.cost),
+      affordable: reach.affordable,
+      missing: missing === null ? null : page.moreToGo(missing),
+      progress: reach.progress,
+      // The cover the host knows: the reward's own, else its coupon's.
+      src:
+        input.covers.get(reward.id) ??
+        (reward.rewardGrant === RewardGrant.Coupon
+          ? input.covers.get(reward.grantCouponId)
+          : undefined) ??
+        null,
+      accessibleName: page.rewardName(
+        reward.cost,
+        title,
+        missing === null ? '' : page.rewardMoreSuffix(missing),
+      ),
+    };
+  });
 }
 
 /** WF — the reward tiles; empty with `loyalty.points` off and until the catalogue is read. */
 export function rewardTiles(input: WalletInput): readonly RewardTileVm[] {
   const catalog = catalogOf(input);
-  return !input.flags.points || catalog === null ? [] : tilesOf(input, catalog);
+  return !input.flags.points || catalog === null
+    ? []
+    : tilesOf(input, rewardTilesOf(input, catalog));
 }
 
 function rewardGrid(
   input: WalletInput,
   catalog: ValidLoyaltyCatalog,
 ): RewardGridVm | null {
-  const { account, words } = input;
-  const tiles = tilesOf(input, catalog);
+  const { words } = input;
+  const answer = rewardTilesOf(input, catalog);
+  const tiles = tilesOf(input, answer);
   return tiles.length === 0
     ? null
     : {
         name: words.loyaltyPage.catalogListName(
-          words.loyalty.points(Math.max(0, account.balance)),
-          tiles.filter((tile) => tile.affordable).length,
+          words.loyalty.points(passOf(input).spendable),
+          answer.withinReach,
           tiles.length,
         ),
         tiles,

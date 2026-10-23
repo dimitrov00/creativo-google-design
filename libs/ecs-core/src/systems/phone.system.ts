@@ -11,7 +11,12 @@ import {
   type CountryCode,
 } from 'libphonenumber-js';
 import examples from 'libphonenumber-js/examples.mobile.json';
-import { CountryIso2, E164, type PhoneNumber } from '@core/components';
+import {
+  CountryIso2,
+  DialSource,
+  E164,
+  type PhoneNumber,
+} from '@core/components';
 import { Result } from '@core/primitives';
 import { PhoneError, PhoneInvalidReason } from '@core/errors';
 
@@ -76,6 +81,20 @@ function reasonOf(diagnosis: string | undefined): PhoneInvalidReason {
 }
 
 const NON_DIGITS = /\D/g;
+
+/**
+ * The number the client card dials — {@link PhoneSystem.dialable}'s answer:
+ * the account's own E.164, or the seat's digits as the edge stripped them.
+ */
+export type DialableNumber =
+  | {
+      readonly dialSource: typeof DialSource.Account;
+      readonly e164: E164;
+    }
+  | {
+      readonly dialSource: typeof DialSource.Seat;
+      readonly digits: string;
+    };
 
 /**
  * Phone numbers — the one module in ecs-core that imports
@@ -282,5 +301,25 @@ export const PhoneSystem = {
       isValid: intlNumber === undefined ? draft.isValid : intlNumber.isValid(),
       template: null,
     };
+  },
+
+  /**
+   * The number the client card dials (Law 10.2): the account's own E.164
+   * first — a registered account always holds one, never the booker's for
+   * a companion; else the seat's number, as the edge stripped it of its
+   * `tel:` and of everything but digits and «+» (D-2.8); `null` when that
+   * holds no digit (empty, or a lone «+») or there is none.
+   */
+  dialable(
+    accountPhone: E164 | null,
+    seatDigits: string | null,
+  ): DialableNumber | null {
+    if (accountPhone !== null) {
+      return { dialSource: DialSource.Account, e164: accountPhone };
+    }
+    if (seatDigits === null || seatDigits.replace('+', '').length === 0) {
+      return null;
+    }
+    return { dialSource: DialSource.Seat, digits: seatDigits };
   },
 } as const;

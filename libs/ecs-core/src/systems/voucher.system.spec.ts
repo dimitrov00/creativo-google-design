@@ -20,6 +20,8 @@ import {
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
   deepFreeze,
+  giftVoucherFixtures,
+  localDate,
   unwrapErr,
   unwrapOk,
   utcMs,
@@ -391,6 +393,164 @@ describe('VoucherSystem — spendable today, the soonest first', () => {
       'b',
       'a-never',
     ]);
+  });
+});
+
+/*
+ * The decisions of `voucherVms` (what is held, in which order) and of the
+ * holdings total of `walletVm` in
+ * libs/features/staff/client-card/src/lib/wallet.presenter.spec.ts, over
+ * the loyalty fixtures' vouchers: Георги holds three (GIFT50, 25,00 € of
+ * 50,00 € to 31.12.2026; one spent; one the shop voided), Мартин one,
+ * whole. The words — the balance, the chip, the day — stay with the
+ * presenter's spec.
+ */
+describe('VoucherSystem.held, untouched, heldTotal (the wallet’s vouchers)', () => {
+  const ALL = giftVoucherFixtures();
+  const holding = (uid: string) =>
+    ALL.filter((voucher) => voucher.holderUserId === uid);
+  const GEORGI = holding('dev-client-1');
+  const MARTIN = holding('dev-client-2');
+  const [GIFT50] = GEORGI;
+  const gift50 = GIFT50 as GiftVoucher;
+  /** The wallet's tie-break — any comparator over ids; this one is A→Z. */
+  const ascending = (a: GiftVoucherId, b: GiftVoucherId) =>
+    a < b ? -1 : a > b ? 1 : 0;
+  const descending = (a: GiftVoucherId, b: GiftVoucherId) => ascending(b, a);
+  /** One more voucher of Георги's, GIFT50's document with some fields changed. */
+  const voucherWith = (id: string, fields: Partial<GiftVoucher>) =>
+    ({ ...gift50, id: GiftVoucherId.of(id), ...fields }) as GiftVoucher;
+  const lastDay = (raw: string | null) => ({
+    expiresAtUtcMs: raw === null ? null : utcMs(`${raw}T23:59:59.999+02:00`),
+    expiresLocalDate: raw === null ? null : localDate(raw),
+  });
+  const ids = (vouchers: readonly GiftVoucher[]) => vouchers.map((v) => v.id);
+
+  it('holds what can be spent: a voided voucher and an empty one are absent', () => {
+    expect(GEORGI).toHaveLength(3);
+    expect(ids(VoucherSystem.held(GEORGI, FIXTURE_TODAY, ascending))).toEqual([
+      'voucher-dev-georgi',
+    ]);
+    expect(ids(VoucherSystem.held(MARTIN, FIXTURE_TODAY, ascending))).toEqual([
+      'voucher-dev-martin',
+    ]);
+    expect(VoucherSystem.held([], FIXTURE_TODAY, ascending)).toEqual([]);
+  });
+
+  it('keeps a voucher to its last day and drops it after', () => {
+    expect(
+      ids(VoucherSystem.held([gift50], localDate('2026-12-31'), ascending)),
+    ).toEqual(['voucher-dev-georgi']);
+    expect(
+      VoucherSystem.held([gift50], localDate('2027-01-01'), ascending),
+    ).toEqual([]);
+  });
+
+  it('puts the soonest to expire first, one that never expires last', () => {
+    const october = voucherWith('voucher-b', lastDay('2026-10-31'));
+    const open = voucherWith('voucher-a', lastDay(null));
+    expect(
+      ids(
+        VoucherSystem.held(
+          [open, ...GEORGI, october],
+          FIXTURE_TODAY,
+          ascending,
+        ),
+      ),
+    ).toEqual(['voucher-b', 'voucher-dev-georgi', 'voucher-a']);
+    // The never-expiring one stays last whatever the id order says.
+    expect(
+      ids(VoucherSystem.held([open, october], FIXTURE_TODAY, descending)),
+    ).toEqual(['voucher-b', 'voucher-a']);
+  });
+
+  it('breaks a tie of last days by the order the caller passes, both ways', () => {
+    const b = voucherWith('voucher-b', lastDay('2026-10-31'));
+    const a = voucherWith('voucher-a', lastDay('2026-10-31'));
+    expect(ids(VoucherSystem.held([b, a], FIXTURE_TODAY, ascending))).toEqual([
+      'voucher-a',
+      'voucher-b',
+    ]);
+    expect(ids(VoucherSystem.held([a, b], FIXTURE_TODAY, descending))).toEqual([
+      'voucher-b',
+      'voucher-a',
+    ]);
+    // Two that never expire tie too.
+    const never = [
+      voucherWith('voucher-y', lastDay(null)),
+      voucherWith('voucher-x', lastDay(null)),
+    ];
+    expect(ids(VoucherSystem.held(never, FIXTURE_TODAY, ascending))).toEqual([
+      'voucher-x',
+      'voucher-y',
+    ]);
+    // `soonestFirst` keeps its own code-unit tie-break through the shared order.
+    expect(ids(VoucherSystem.soonestFirst([b, a]))).toEqual([
+      'voucher-a',
+      'voucher-b',
+    ]);
+  });
+
+  it('is untouched while its balance is the whole value it was issued with', () => {
+    expect(VoucherSystem.untouched(MARTIN[0] as GiftVoucher)).toBe(true);
+    expect(VoucherSystem.untouched(gift50)).toBe(false);
+    expect(
+      VoucherSystem.untouched(
+        voucherWith('voucher-new', { balanceCents: cents(5000) }),
+      ),
+    ).toBe(true);
+  });
+
+  it('totals what several spendable vouchers hold, from two of them on', () => {
+    const second = voucherWith('voucher-second', {
+      initialValueCents: cents(3000),
+      balanceCents: cents(3000),
+      ...lastDay(null),
+    });
+    expect(VoucherSystem.heldTotal([...GEORGI, second], FIXTURE_TODAY)).toEqual(
+      eur(5500),
+    );
+    // One spendable voucher (the spent and the voided one never count): no total.
+    expect(VoucherSystem.heldTotal(GEORGI, FIXTURE_TODAY)).toBeNull();
+    expect(VoucherSystem.heldTotal(MARTIN, FIXTURE_TODAY)).toBeNull();
+    expect(VoucherSystem.heldTotal([], FIXTURE_TODAY)).toBeNull();
+    // A voucher past its day no longer counts toward the two.
+    expect(
+      VoucherSystem.heldTotal([...GEORGI, second], localDate('2027-01-01')),
+    ).toBeNull();
+  });
+
+  it('has no total across two currencies, unless the other one cannot be spent', () => {
+    const second = voucherWith('voucher-second', {
+      balanceCents: cents(3000),
+      initialValueCents: cents(3000),
+    });
+    const lev = voucherWith('voucher-lev', { currency: Currency.BGN });
+    expect(
+      VoucherSystem.heldTotal([gift50, second, lev], FIXTURE_TODAY),
+    ).toBeNull();
+    expect(VoucherSystem.heldTotal([lev, gift50], FIXTURE_TODAY)).toBeNull();
+    const spentLev = voucherWith('voucher-lev', {
+      currency: Currency.BGN,
+      balanceCents: cents(0),
+    });
+    expect(
+      VoucherSystem.heldTotal([spentLev, gift50, second], FIXTURE_TODAY),
+    ).toEqual(eur(5500));
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const vouchers = deepFreeze([
+      ...ALL,
+      voucherWith('voucher-a', lastDay('2026-10-31')),
+    ]);
+    const run = () => [
+      VoucherSystem.held(vouchers, FIXTURE_TODAY, descending),
+      VoucherSystem.heldTotal(vouchers, FIXTURE_TODAY),
+      VoucherSystem.untouched(vouchers[0] as GiftVoucher),
+    ];
+    expect(run()).toEqual(run());
+    expect(ids(vouchers)).toEqual([...ids(ALL), 'voucher-a']);
   });
 });
 

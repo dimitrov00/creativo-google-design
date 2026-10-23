@@ -1,18 +1,12 @@
-import {
-  BarberId,
-  Currency,
-  DurationMinutes,
-  PriceCents,
-  ServiceVariantId,
-  defect,
-} from '@core/primitives';
+import type { PriceCents } from '@core/primitives';
 import {
   BarberOffering,
   CompositionKind,
-  ServiceTerms,
+  ServiceComposition,
+  type ServiceTerms,
   type ServiceVariant,
 } from '@core/components';
-import { type CatalogPriced, CatalogPricingSystem } from '@core/systems';
+import { CatalogPricingSystem } from '@core/systems';
 import type { Barber, Service } from '@core/entities';
 import type {
   BarberVm,
@@ -57,11 +51,20 @@ function localized(text: { en: string; bg: string }): Localized {
 }
 
 /**
- * The flat terms → the VM's major-unit number (`1450` cents → `14.5`). The
- * VM is EUR major units by contract (`catalog.vm.ts`); EUR's exponent is 2.
+ * Cents → the VM's major-unit number (`1450` → `14.5`). The VM is EUR major
+ * units by contract (`catalog.vm.ts`); EUR's exponent is 2.
  */
-function termsToVm(terms: ServiceTerms): ServiceTermsVm {
-  return { price: terms.priceCents / 100, minutes: terms.durationMinutes };
+function toMajor(cents: PriceCents): number {
+  return cents / 100;
+}
+
+/**
+ * The flat terms → the VM's terms, in major units — an offering's base, a
+ * variant's terms, or a barber's terms for a service (the landing's
+ * `LandingContentService.barberPrices`).
+ */
+export function termsToVm(terms: ServiceTerms): ServiceTermsVm {
+  return { price: toMajor(terms.priceCents), minutes: terms.durationMinutes };
 }
 
 function offeringToVm(
@@ -103,29 +106,34 @@ export function serviceToVm(
     offeringToVm(offering, service.variants),
   );
 
-  const bundle = service.compositionKind === CompositionKind.Bundle;
+  // An unspecified composition (`composition: null` as authored) draws as a
+  // single service — the companion's rule, never re-spelled here.
+  const compositionKind = ServiceComposition.drawnKind(service.compositionKind);
+  // The catalogue's figures, asked ONCE of the system, on the entity itself.
+  const card = CatalogPricingSystem.cardPrice(service);
+  const minutes = CatalogPricingSystem.durationRange(service);
   return {
     id: service.id,
-    // An unspecified composition (`composition: null` as authored) draws as
-    // a single service, as it always did.
-    compositionKind: bundle ? CompositionKind.Bundle : CompositionKind.Single,
+    compositionKind,
     name: localized(service.name),
     description: localized(service.description),
     ...(coverSrc ? { coverSrc } : {}),
     variants,
-    // A service nobody is priced for yet still has to show a price, so its
-    // own terms (the five root fields) stand in as a single anonymous
-    // offering. Without this the VM's `servicePriceFrom` would fold an empty
-    // list.
+    // A service nobody is priced for yet stands in as a single anonymous
+    // offering at its own terms (the five root fields): the service detail
+    // sheet's bundle saving reads it.
     offerings:
       offerings.length > 0
         ? offerings
         : [{ barberId: '', base: termsToVm(service) }],
-    ...(service.compositionKind === CompositionKind.Bundle
-      ? { includes: [...service.bundleServiceIds] }
+    ...(compositionKind === CompositionKind.Bundle
+      ? { includes: [...ServiceComposition.parts(service)] }
       : {}),
     upsellOnly: service.upsellOnly,
     gallery: art?.gallery ?? [],
+    priceFrom: toMajor(CatalogPricingSystem.priceFrom(service)),
+    cardPrice: { cheapest: toMajor(card.cheapestCents), spread: card.spread },
+    minutesRange: { from: minutes.min, to: minutes.max },
   };
 }
 
@@ -190,13 +198,12 @@ export function formatDurationRange(
   return `${new Intl.NumberFormat(locale, { useGrouping: false }).format(min)}–${formatter.format(max)}`;
 }
 
-/** Cheapest base offering — the "from" price on a marketing tile. */
+/**
+ * Cheapest base offering — the "from" price on a marketing tile: the
+ * `CatalogPricingSystem.priceFrom` answer the view model carries.
+ */
 export function servicePriceFrom(service: ServiceVm): number {
-  const priced = pricedOf(service);
-  // A view model nobody performs carries no price: never the cheapest.
-  return priced === null
-    ? Number.POSITIVE_INFINITY
-    : toMajor(CatalogPricingSystem.priceFrom(priced));
+  return service.priceFrom;
 }
 
 /**
@@ -229,108 +236,12 @@ export function formatServiceMeta(parts: {
 }
 
 /**
- * Every service a barber performs, with THEIR terms for it — the inverse
- * of `ServiceVm.offerings`, which is the only direction the seed stores.
- *
- * The caller passes the service set, so the marketing surface can hand in
- * the shelf (upsell-only add-ons stay out of it, exactly as they do from
- * the shelf itself) while a booking surface could pass everything.
+ * Global duration range across offerings × variants: the
+ * `CatalogPricingSystem.durationRange` answer the view model carries.
  */
-export function servicesByBarber(
-  services: readonly ServiceVm[],
-  barberId: string,
-): readonly { readonly service: ServiceVm; readonly terms: ServiceTermsVm }[] {
-  // A service nobody performs is nobody's: it cannot be in the answer.
-  const performed = services.filter((service) => service.offerings.length > 0);
-  const priced = performed.map((service) => pricedOf(service) as CatalogPriced);
-  return CatalogPricingSystem.servicesByBarber(
-    priced,
-    BarberId.of(barberId),
-  ).map((entry) => ({
-    service: performed.at(priced.indexOf(entry.service)) as ServiceVm,
-    terms: termsVmOf(entry.terms),
-  }));
-}
-
-/** Global duration range across offerings × variants (v2 Service.durationRange). */
 export function serviceDurationRange(service: ServiceVm): {
   from: number;
   to: number;
 } {
-  const priced = pricedOf(service);
-  if (priced === null) return { from: 0, to: 0 };
-  const range = CatalogPricingSystem.durationRange(priced);
-  return { from: range.min, to: range.max };
-}
-
-/* ── Phase 2 shim converters: the view model ↔ the catalogue's terms ────── */
-
-/** EUR major units (may carry .5) → minor units. */
-function toMinor(major: number): number {
-  return Math.round(major * 100);
-}
-
-function toMajor(minor: number): number {
-  return minor / 100;
-}
-
-/** A brand the view model's figure already satisfies (catalogue terms, mapped). */
-function sure<T, E>(
-  result:
-    | { readonly ok: true; readonly value: T }
-    | { readonly ok: false; readonly error: E },
-  what: string,
-): T {
-  // Unreachable: `catalog.presenter.ts` maps the catalogue's own terms — a
-  // non-negative price and a positive duration.
-  if (!result.ok) defect(`unreachable: ${what}`);
-  return result.value;
-}
-
-function termsOf(terms: ServiceTermsVm): ServiceTerms {
-  return ServiceTerms.unpadded(
-    sure(PriceCents.of(toMinor(terms.price)), 'a price'),
-    Currency.EUR,
-    sure(DurationMinutes.of(terms.minutes), 'a duration'),
-  );
-}
-
-function termsVmOf(terms: ServiceTerms): ServiceTermsVm {
-  return {
-    price: toMajor(terms.priceCents),
-    minutes: terms.durationMinutes,
-  };
-}
-
-/**
- * The view model's offerings → the terms matrix the pricing system reads:
- * each `byVariant` entry an override, every variant it names declared. The
- * view model always carries an offering (a service nobody performs stands
- * in as one anonymous offering), whose base doubles as the service's own
- * terms; `null` for one that carries none — it has no terms to read.
- */
-function pricedOf(service: ServiceVm): CatalogPriced | null {
-  const first = service.offerings[0];
-  if (first === undefined) return null;
-  const variantIds = new Set(service.variants.map((variant) => variant.id));
-  for (const offering of service.offerings) {
-    for (const id of Object.keys(offering.byVariant ?? {})) variantIds.add(id);
-  }
-  return {
-    ...termsOf(first.base),
-    variants: [...variantIds].map((id) => ({
-      variantId: ServiceVariantId.of(id),
-      name: { bg: id, en: id },
-    })),
-    offerings: service.offerings.map((offering) => ({
-      barberId: BarberId.of(offering.barberId),
-      ...termsOf(offering.base),
-      overrides: Object.entries(offering.byVariant ?? {}).map(
-        ([variantId, terms]) => ({
-          variantId: ServiceVariantId.of(variantId),
-          ...termsOf(terms),
-        }),
-      ),
-    })),
-  };
+  return { from: service.minutesRange.from, to: service.minutesRange.to };
 }

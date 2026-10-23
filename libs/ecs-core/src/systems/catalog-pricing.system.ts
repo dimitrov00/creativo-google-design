@@ -53,10 +53,10 @@ function bookableTerms(service: CatalogPriced): readonly ServiceTerms[] {
 
 /**
  * CatalogPricingSystem — the catalogue views' numbers
- * (`features/shared/catalog` `catalog.vm.ts` `servicePriceFrom`/
- * `serviceDurationRange`/`servicesByBarber`, `catalog-presenter.service.ts`
- * `serviceMeta`): cents and minutes, never strings — `formatMoney` and the
- * duration formatter are the template's.
+ * (`features/shared/catalog` `catalog.presenter.ts` `serviceToVm` — the view
+ * model's `priceFrom`/`cardPrice`/`minutesRange` — and the landing's
+ * `LandingContentService.barberPrices`): cents and minutes, never strings —
+ * `formatMoney` and the duration formatter are the presenter's.
  */
 export const CatalogPricingSystem = {
   /** Cheapest BASE offering — the "from" price on a marketing tile. */

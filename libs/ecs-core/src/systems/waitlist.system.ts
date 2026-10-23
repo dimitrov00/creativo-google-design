@@ -3,12 +3,14 @@ import {
   BookingCart,
   type CartLine,
   type CartSeatLines,
+  Daypart,
   DayWindows,
   FlexibleWhen,
   MinuteRange,
   NotificationPayload,
   type ShopNow,
   WaitlistLifecycle,
+  WallTime,
   WriteOp,
   type WaitlistCall,
 } from '@core/components';
@@ -31,6 +33,7 @@ import {
   WaitlistError,
 } from '@core/errors';
 import {
+  type Appointment,
   type InboxNotification,
   type WaitlistRequest,
   Collections,
@@ -144,6 +147,28 @@ const NOTIFY_COOLDOWN_HOURS = 6;
  * UNREAD — a read bound, not a booking rule (`request-waitlist.ts:184`).
  */
 const MAX_SERVICES_PER_PERSON = 8;
+
+/** The first minute of a shop day — where a waiting request's row starts. */
+const DAY_START: MinuteOfDay = MinuteOfDay.ofProven(0);
+
+/**
+ * Where a request that watches no day files: the first day of the civil
+ * axis at its first minute, so it orders before every real row, as the
+ * legacy instant 0 did — built from the constructors, never a throw.
+ */
+const UNDATED: WallTime = WallTime.of(LocalDate.fromEpochDay(0), DAY_START);
+
+/**
+ * The staff glance's waiting request (`WaitlistSystem.glancePick`): the
+ * newest one still worth showing, and how many others are — `null` and `0`
+ * when there is none.
+ */
+export type WaitlistGlancePick = {
+  readonly newest: WaitlistRequest | null;
+  readonly others: number;
+};
+
+const NO_PICK: WaitlistGlancePick = { newest: null, others: 0 };
 
 /**
  * A raw span as a span of the shop day — integers, `0 ≤ start < end ≤ 1440`
@@ -553,4 +578,108 @@ export const WaitlistSystem = {
       ],
     });
   },
+
+  /**
+   * The days a request still watches, as its row tells them: those on or
+   * after the shop's `today` (`LocalDate.compare`). A request whose every
+   * day has passed is the host's to leave out; drawn anyway, it keeps every
+   * day it named rather than none — and so does a row with no `today` to
+   * read (`null`: an unparsable one).
+   */
+  daysAhead(
+    days: readonly DayWindows[],
+    today: LocalDate | null,
+  ): readonly DayWindows[] {
+    if (today === null) return days;
+    const ahead: DayWindows[] = [];
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i] as DayWindows;
+      if (LocalDate.compare(day.localDate, today) >= 0) ahead.push(day);
+    }
+    return ahead.length > 0 ? ahead : days;
+  },
+
+  /**
+   * The parts of the day the days' windows touch, in the day's order
+   * (`Daypart.touchedBy`, the booking time sheet's own boundaries). None
+   * without a day, and none when ANY day is offered whole: «чт–пт,
+   * следобед» would be untrue of a Thursday that works at any hour.
+   */
+  daypartsWatched(days: readonly DayWindows[]): readonly Daypart[] {
+    if (days.length === 0) return [];
+    const windows: MinuteRange[] = [];
+    for (let i = 0; i < days.length; i++) {
+      const day = days[i] as DayWindows;
+      if (DayWindows.isWholeDay(day)) return [];
+      for (let w = 0; w < day.windows.length; w++) {
+        windows.push(day.windows[w] as MinuteRange);
+      }
+    }
+    return Daypart.touchedBy(windows);
+  },
+
+  /**
+   * Where a waiting request's row files in the upcoming run: its first
+   * watched day at the day's first minute; a request that watches no day
+   * at the first day of the civil axis (`1970-01-01`, minute 0), before
+   * every real row.
+   */
+  sortPoint(days: readonly DayWindows[]): WallTime {
+    const first = days[0];
+    return first === undefined
+      ? UNDATED
+      : WallTime.of(first.localDate, DAY_START);
+  },
+
+  /**
+   * The staff glance's waiting request: none while the client is paused;
+   * else the requests still watching (`WaitlistLifecycle.isWatching`), not
+   * lapsed at the shop's `today` ({@link hasLapsed}), and not answered by a
+   * visit to come booked at or after the request was made (a stamp-order
+   * rule, T2 — the two instants compared as stamped; a visit with no stamp
+   * answers nothing) — the newest by `createdAtUtcMs` (a STABLE order:
+   * equal stamps keep the input's), with how many others there are.
+   * `upcoming` is the glance's visits to come (`VisitListSystem.upcomingSoonestFirst`).
+   */
+  glancePick(
+    requests: readonly WaitlistRequest[],
+    upcoming: readonly Pick<Appointment, 'bookedAtUtcMs'>[],
+    today: LocalDate,
+    paused: boolean,
+  ): WaitlistGlancePick {
+    if (paused) return NO_PICK;
+    const watching: WaitlistRequest[] = [];
+    for (let i = 0; i < requests.length; i++) {
+      const request = requests[i] as WaitlistRequest;
+      if (!WaitlistLifecycle.isWatching(request)) continue;
+      if (WaitlistSystem.hasLapsed(request, today)) continue;
+      if (bookedAtOrAfter(upcoming, request.createdAtUtcMs)) continue;
+      watching.push(request);
+    }
+    watching.sort((a, b) =>
+      UtcEpochMs.compare(b.createdAtUtcMs, a.createdAtUtcMs),
+    );
+    const newest = watching[0];
+    return newest === undefined
+      ? NO_PICK
+      : { newest, others: watching.length - 1 };
+  },
 } as const;
+
+/** Some visit to come was booked at or after `createdAtUtcMs` — the request is answered. */
+function bookedAtOrAfter(
+  upcoming: readonly Pick<Appointment, 'bookedAtUtcMs'>[],
+  createdAtUtcMs: UtcEpochMs,
+): boolean {
+  for (let i = 0; i < upcoming.length; i++) {
+    const bookedAtUtcMs = (upcoming[i] as Pick<Appointment, 'bookedAtUtcMs'>)
+      .bookedAtUtcMs;
+    if (
+      bookedAtUtcMs !== null &&
+      UtcEpochMs.compare(bookedAtUtcMs, createdAtUtcMs) >= 0
+    ) {
+      return true;
+    }
+  }
+  return false;
+}

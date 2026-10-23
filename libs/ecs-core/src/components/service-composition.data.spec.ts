@@ -32,6 +32,21 @@ describe('ServiceComposition', () => {
     expect(ServiceComposition.isBundle(bundle)).toBe(true);
   });
 
+  // catalog.presenter.ts `serviceToVm` — the composition a card draws as.
+  it('drawnKind(): a bundle draws as a bundle, anything else as a single service', () => {
+    expect(ServiceComposition.drawnKind(CompositionKind.Bundle)).toBe('BUNDLE');
+    expect(ServiceComposition.drawnKind(CompositionKind.Single)).toBe('SINGLE');
+    // The author never said (`composition: null` as authored): a single
+    // service, as it always drew.
+    expect(ServiceComposition.drawnKind(CompositionKind.Unspecified)).toBe(
+      'SINGLE',
+    );
+    // Pure: same input, same output.
+    expect(ServiceComposition.drawnKind(CompositionKind.Unspecified)).toBe(
+      ServiceComposition.drawnKind(CompositionKind.Unspecified),
+    );
+  });
+
   it('parts(): the included services in order, none for anything else', () => {
     expect(
       ServiceComposition.parts(ServiceComposition.bundle([CUT, BEARD])),

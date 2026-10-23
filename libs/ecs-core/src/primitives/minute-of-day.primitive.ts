@@ -33,6 +33,9 @@ function outOfRange(raw: number, brand: string): Result.Err<PrimitiveError> {
 }
 
 export const MinuteOfDay = {
+  /** The day's last minute (1439, `MINUTES_PER_DAY − 1`): where a clamp stops, and a day read at its close. */
+  LAST: (MINUTES_PER_DAY - 1) as MinuteOfDay,
+
   /** The smart constructor — the ONLY way foreign input becomes a MinuteOfDay. */
   of(raw: number): Result<MinuteOfDay, PrimitiveError> {
     return Number.isInteger(raw) && raw >= 0 && raw < MINUTES_PER_DAY
@@ -52,9 +55,9 @@ export const MinuteOfDay = {
       : defect(`minute ${raw} is off the clock`);
   },
 
-  /** `m + d`, clamped to the day's last minute (1439); never re-validates. */
+  /** `m + d`, clamped to the day's last minute ({@link MinuteOfDay.LAST}); never re-validates. */
   addClamped(m: MinuteOfDay, d: MinuteCount): MinuteOfDay {
-    return Math.min(m + d, MINUTES_PER_DAY - 1) as MinuteOfDay;
+    return Math.min(m + d, MinuteOfDay.LAST) as MinuteOfDay;
   },
 
   /** `m − d`, clamped to the day's first minute (0); never re-validates. */

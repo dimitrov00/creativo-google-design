@@ -1,10 +1,14 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  type AppliedDiscount,
   BookingLifecycle,
   CancellationReason,
   CancellationReasonSet,
   CancelledBy,
+  Combinability,
+  CouponValue,
+  DiscountProvenance,
   SeatOutcome,
   SeatLabel,
   Seat,
@@ -12,11 +16,19 @@ import {
   SeatSubject,
   SubjectRelationship,
   ShopNow,
+  VisitMark,
+  VisitStatusMark,
+  VisitTone,
+  VoucherCode,
+  type VoucherRedemption,
   WallTime,
 } from '@core/components';
 import {
-  type BookingStatus,
+  AppliedDiscountId,
+  BookingStatus,
   BarberId,
+  Currency,
+  GiftVoucherId,
   SeatId,
   ServiceId,
   UserId,
@@ -26,8 +38,10 @@ import {
 } from '@core/primitives';
 import type { Appointment } from '@core/entities';
 import {
+  EUR,
   FIXTURE_TIME_ZONE,
   FIXTURE_TODAY,
+  cents,
   deepFreeze,
   localDate,
   minute,
@@ -37,7 +51,12 @@ import {
   termsFixture,
   customerOf,
 } from '@core/testing';
-import { type PersonSubject, VisitStorySystem } from './visit-story.system';
+import { VisitRowOutcome } from './visit-list.system';
+import {
+  type PersonSubject,
+  type SubjectStory,
+  VisitStorySystem,
+} from './visit-story.system';
 import { ZonedTimeSystem } from './zoned-time.system';
 
 /*
@@ -529,7 +548,7 @@ describe('VisitStorySystem — the facts and the rules', () => {
       S.decisiveCancellationIndex([null, stamp(5), stamp(9), stamp(9), null]),
     ).toBe(2);
     expect(S.decisiveCancellationIndex([null, null])).toBe(-1);
-    const CANCELLED: BookingStatus = 'CANCELLED';
+    const CANCELLED: BookingStatus = BookingStatus.Cancelled;
     expect(
       S.rootStory(CANCELLED, [
         SeatOutcome.cancelled(
@@ -620,5 +639,642 @@ describe('VisitStorySystem — the facts and the rules', () => {
       S.isUpcoming('OPEN', start, now),
     );
     expect(party.seats).toHaveLength(2);
+  });
+});
+
+/*
+ * Law 10.2 decision extraction (W0-A): the decisions `visit-row.presenter.ts`
+ * and `visit-card/visit-card.presenter.ts` (and the staff glance's
+ * `lastWorkedVisit`) held over the story — the tile's tone, the status
+ * mark, the whole party, the figure, the marks, whose words are quoted, the
+ * shop named, the barbers, the subject record, the people counted, the last
+ * worked visit. Each case re-states the pinning presenter case (row/card
+ * spec line in the title) as a value/tag assertion on the same fixture
+ * story; the words stay the presenters'.
+ */
+
+/** «FIRST10», −10 %, applied by code — the bill's one snapshot (visit-fixtures `firstTenDiscount`). */
+const FIRST10: AppliedDiscount = {
+  discountId: AppliedDiscountId.of('code:FIRST10'),
+  label: 'FIRST10',
+  appliedAtUtcMs: WORKED_AT,
+  combinability: Combinability.Stackable,
+  ...DiscountProvenance.code(VoucherCode.of('FIRST10')),
+  ...unwrapOk(CouponValue.percentOff(10)),
+};
+
+/** A voucher draw on the bill — taken back when `reversed`. */
+const draw = (reversed: boolean): VoucherRedemption => ({
+  voucherId: GiftVoucherId.of('voucher-1'),
+  code: VoucherCode.of('GIFT-50'),
+  amountCents: cents(2750),
+  balanceAfterCents: cents(2250),
+  currency: EUR,
+  appliedAtUtcMs: WORKED_AT,
+  reversedAtUtcMs: reversed ? UtcEpochMs.plusMs(WORKED_AT, 300_000) : null,
+});
+
+/** Георги's last visit: a fade with Иван, worked, booked by Георги with his own words. */
+const LAST = (): Appointment => ({
+  ...visit(
+    [seat('2026-09-04T10:00:00', { outcome: SeatOutcome.worked(WORKED_AT) })],
+    BookingLifecycle.complete(WORKED_AT),
+  ),
+  ownerUserId: GEORGI,
+  contactNote: 'Къса отстрани, по-дълго отгоре',
+});
+
+/** Георги booked for himself and Иво: Иво's beard with Петър, and Иво did not come. */
+const PARTY = (): Appointment => ({
+  ...visit(
+    [
+      seat('2026-09-04T10:00:00', {
+        id: 'seat-georgi',
+        outcome: SeatOutcome.worked(WORKED_AT),
+      }),
+      seat('2026-09-04T10:00:00', {
+        id: 'seat-ivo',
+        who: IVO,
+        relationship: SubjectRelationship.Companion,
+        service: BEARD,
+        barber: PETAR,
+        priceCents: 1200,
+        outcome: SeatOutcome.noShow(WORKED_AT),
+      }),
+    ],
+    BookingLifecycle.complete(WORKED_AT),
+  ),
+  ownerUserId: GEORGI,
+  contactNote: 'Ще дойдем двамата',
+  discounts: [FIRST10],
+});
+
+const OUTCOMES: readonly VisitRowOutcome[] = [
+  VisitRowOutcome.Open,
+  VisitRowOutcome.Worked,
+  VisitRowOutcome.NoShow,
+  VisitRowOutcome.Cancelled,
+];
+const STATUSES: readonly BookingStatus[] = [
+  BookingStatus.Pending,
+  BookingStatus.Confirmed,
+  BookingStatus.Completed,
+  BookingStatus.Cancelled,
+  BookingStatus.NoShow,
+];
+
+describe('the visit tags (components)', () => {
+  it('pins each new dictionary’s SCREAMING values', () => {
+    expect(VisitTone).toEqual({
+      Hollow: 'HOLLOW',
+      Upcoming: 'UPCOMING',
+      Past: 'PAST',
+    });
+    expect(VisitStatusMark).toEqual({
+      NoShow: 'NO_SHOW',
+      Pending: 'PENDING',
+      Confirmed: 'CONFIRMED',
+    });
+    expect(VisitMark).toEqual({
+      Photos: 'PHOTOS',
+      Discount: 'DISCOUNT',
+      Voucher: 'VOUCHER',
+    });
+  });
+});
+
+describe('VisitStorySystem.isVoid / toneOf — the struck row and its tile', () => {
+  it('strikes a visit that did not happen, and only that (row 293, 388, 412; client 895)', () => {
+    expect(OUTCOMES.filter((outcome) => S.isVoid(outcome))).toEqual([
+      'NO_SHOW',
+      'CANCELLED',
+    ]);
+  });
+
+  it('draws a cancellation and a no-show hollow — even on a day still to come (row 293, 388)', () => {
+    const ahead = wall('2026-10-02T10:00:00');
+    expect(S.toneOf('CANCELLED', ahead, NOW)).toBe('HOLLOW');
+    expect(S.toneOf('NO_SHOW', ahead, NOW)).toBe('HOLLOW');
+    expect(S.toneOf('CANCELLED', wall('2026-07-16T10:00:00'), NOW)).toBe(
+      'HOLLOW',
+    );
+  });
+
+  it('draws an hour still to come upcoming, from the shop’s own minute on (row 412)', () => {
+    expect(S.toneOf('OPEN', wall('2026-10-02T10:00:00'), NOW)).toBe('UPCOMING');
+    expect(S.toneOf('OPEN', ShopNow.wallTime(NOW), NOW)).toBe('UPCOMING');
+  });
+
+  it('draws everything else past — a worked visit, an open hour already started (row 235)', () => {
+    expect(S.toneOf('WORKED', wall('2026-09-04T10:00:00'), NOW)).toBe('PAST');
+    expect(S.toneOf('WORKED', wall('2026-10-02T10:00:00'), NOW)).toBe('PAST');
+    expect(S.toneOf('OPEN', wall('2026-09-28T10:00:00'), NOW)).toBe('PAST');
+  });
+});
+
+describe('VisitStorySystem.statusMark — the status named beside a visit', () => {
+  it('marks every outcome × stored status as the row and the card read them (row 388, 433; card 343, 354, 384)', () => {
+    const table = Object.fromEntries(
+      OUTCOMES.map((outcome) => [
+        outcome,
+        STATUSES.map((status) => S.statusMark(outcome, status)),
+      ]),
+    );
+    // Columns: PENDING, CONFIRMED, COMPLETED, CANCELLED, NO_SHOW.
+    expect(table).toEqual({
+      OPEN: ['PENDING', 'CONFIRMED', null, null, null],
+      WORKED: [null, null, null, null, null],
+      NO_SHOW: ['NO_SHOW', 'NO_SHOW', 'NO_SHOW', 'NO_SHOW', 'NO_SHOW'],
+      CANCELLED: [null, null, null, null, null],
+    });
+  });
+
+  it('marks a companion’s no-show on their own row, whatever the party’s root (row 515)', () => {
+    const party = PARTY();
+    const ivo = staffStory(party, IVO);
+    expect(S.statusMark(ivo.outcome, party.bookingStatus)).toBe('NO_SHOW');
+    const georgi = staffStory(party, GEORGI);
+    expect(S.statusMark(georgi.outcome, party.bookingStatus)).toBeNull();
+  });
+});
+
+describe('VisitStorySystem.isWholeParty — the story covers every seat', () => {
+  it('is the whole party for a visit of one, and for a guest’s story (row 235, 838)', () => {
+    const last = LAST();
+    expect(S.isWholeParty(last, staffStory(last))).toBe(true);
+    expect(S.isWholeParty(last, staffStory(last, null))).toBe(true);
+  });
+
+  it('is a share for each person of a party, and the whole on the client’s own list (row 515, 767)', () => {
+    const party = PARTY();
+    expect(S.isWholeParty(party, staffStory(party, GEORGI))).toBe(false);
+    expect(S.isWholeParty(party, staffStory(party, IVO))).toBe(false);
+    expect(
+      S.isWholeParty(party, S.subjectStory(party, customerOf(GEORGI), false)),
+    ).toBe(true);
+  });
+});
+
+describe('VisitStorySystem.subjectFigure — what the row’s figure says', () => {
+  it('prints the bill of a worked visit of one (row 235)', () => {
+    const last = LAST();
+    expect(S.subjectFigure(last, staffStory(last))).toEqual({
+      amountCents: 2750,
+      currency: 'EUR',
+    });
+  });
+
+  it('prints the discounted bill where the story is the whole party (row 597; card 173)', () => {
+    const discounted: Appointment = { ...LAST(), discounts: [FIRST10] };
+    expect(S.subjectFigure(discounted, staffStory(discounted))).toEqual({
+      amountCents: 2475,
+      currency: 'EUR',
+    });
+  });
+
+  it('prints a share as the subject’s own seats, the root discount not pro-rated (row 515)', () => {
+    const party = PARTY();
+    expect(S.subjectFigure(party, staffStory(party, GEORGI))).toEqual({
+      amountCents: 2750,
+      currency: 'EUR',
+    });
+    // Иво did not come: a no-show carries no figure.
+    expect(S.subjectFigure(party, staffStory(party, IVO))).toBeNull();
+  });
+
+  it('prints what was booked for a cancellation (row 293)', () => {
+    const called = visit(
+      [
+        seat('2026-07-16T10:00:00', {
+          priceCents: 1750,
+          outcome: cancelled(
+            '2026-07-15T18:00:00',
+            CancelledBy.Client,
+            CancellationReason.ClientChangedPlans,
+          ),
+        }),
+      ],
+      cancelledRoot(
+        '2026-07-15T18:00:00',
+        CancellationReason.ClientChangedPlans,
+      ),
+    );
+    expect(S.subjectFigure(called, staffStory(called))).toEqual({
+      amountCents: 1750,
+      currency: 'EUR',
+    });
+  });
+
+  it('prints nothing for a no-show or an hour still open (row 388, 412)', () => {
+    const noShow = visit(
+      [
+        seat('2026-07-07T10:00:00', {
+          outcome: SeatOutcome.noShow(at('2026-07-07T10:20:00')),
+        }),
+      ],
+      BookingLifecycle.noShow(at('2026-07-07T10:20:00')),
+    );
+    expect(S.subjectFigure(noShow, staffStory(noShow))).toBeNull();
+    const ahead = visit(
+      [seat('2026-10-02T10:00:00')],
+      BookingLifecycle.confirm(at('2026-09-20T10:00:00')),
+    );
+    expect(S.subjectFigure(ahead, staffStory(ahead))).toBeNull();
+  });
+
+  it('prints nothing for a visit no bill can be read from — no seat, two currencies', () => {
+    const worked: SubjectStory = {
+      seatIndexes: [],
+      outcome: 'WORKED',
+      cancelledBy: null,
+    };
+    const empty = visit([], BookingLifecycle.complete(WORKED_AT));
+    expect(S.subjectFigure(empty, worked)).toBeNull();
+
+    const cut = seat('2026-09-04T10:00:00', {
+      id: 'seat-eur',
+      outcome: SeatOutcome.worked(WORKED_AT),
+    });
+    const legacy: Seat = {
+      ...cut,
+      seatId: SeatId.of('seat-bgn'),
+      currency: Currency.BGN,
+    };
+    const mixed = visit([cut, legacy], BookingLifecycle.complete(WORKED_AT));
+    // The whole party's bill refuses two currencies…
+    expect(
+      S.subjectFigure(mixed, { ...worked, seatIndexes: [0, 1] }),
+    ).toBeNull();
+    // …and so does a share that holds both.
+    const three = visit(
+      [cut, legacy, seat('2026-09-04T11:00:00', { id: 'seat-third' })],
+      BookingLifecycle.complete(WORKED_AT),
+    );
+    expect(
+      S.subjectFigure(three, { ...worked, seatIndexes: [0, 1] }),
+    ).toBeNull();
+    expect(S.subjectFigure(three, { ...worked, seatIndexes: [1] })).toEqual({
+      amountCents: 2750,
+      currency: 'BGN',
+    });
+  });
+});
+
+describe('VisitStorySystem.marksOf — the marks a row carries', () => {
+  it('marks a worked visit’s photos, and none without any (row 235)', () => {
+    const last = LAST();
+    expect(S.marksOf(last, staffStory(last), 1)).toEqual(['PHOTOS']);
+    expect(S.marksOf(last, staffStory(last), 0)).toEqual([]);
+  });
+
+  it('marks a discount where the figure is the discounted bill (row 597)', () => {
+    const discounted: Appointment = { ...LAST(), discounts: [FIRST10] };
+    expect(S.marksOf(discounted, staffStory(discounted), 0)).toEqual([
+      'DISCOUNT',
+    ]);
+  });
+
+  it('marks a voucher after the photos and the discount, in drawing order (row 723)', () => {
+    const paid: Appointment = {
+      ...LAST(),
+      discounts: [FIRST10],
+      voucherRedemptions: [draw(false)],
+    };
+    expect(S.marksOf(paid, staffStory(paid), 2)).toEqual([
+      'PHOTOS',
+      'DISCOUNT',
+      'VOUCHER',
+    ]);
+  });
+
+  it('marks nothing for a draw that was taken back, or on a visit that did not happen (row 745)', () => {
+    const reversed: Appointment = {
+      ...LAST(),
+      voucherRedemptions: [draw(true)],
+    };
+    expect(S.marksOf(reversed, staffStory(reversed), 0)).toEqual([]);
+    // A live draw beside one taken back still marks the bill.
+    const again: Appointment = {
+      ...LAST(),
+      voucherRedemptions: [draw(true), draw(false)],
+    };
+    expect(S.marksOf(again, staffStory(again), 0)).toEqual(['VOUCHER']);
+
+    const missed: Appointment = {
+      ...visit(
+        [
+          seat('2026-09-04T10:00:00', {
+            outcome: SeatOutcome.noShow(at('2026-09-04T10:20:00')),
+          }),
+        ],
+        BookingLifecycle.noShow(at('2026-09-04T10:20:00')),
+      ),
+      discounts: [FIRST10],
+      voucherRedemptions: [draw(false)],
+    };
+    expect(S.marksOf(missed, staffStory(missed), 3)).toEqual([]);
+  });
+
+  it('marks the bill, never a companion’s share of it — the photos still count (row 515, 767)', () => {
+    const party: Appointment = {
+      ...visit(
+        [
+          seat('2026-09-04T10:00:00', {
+            id: 'seat-georgi',
+            outcome: SeatOutcome.worked(WORKED_AT),
+          }),
+          seat('2026-09-04T10:00:00', {
+            id: 'seat-ivo',
+            who: IVO,
+            relationship: SubjectRelationship.Companion,
+            barber: PETAR,
+            outcome: SeatOutcome.worked(WORKED_AT),
+          }),
+        ],
+        BookingLifecycle.complete(WORKED_AT),
+      ),
+      discounts: [FIRST10],
+      voucherRedemptions: [draw(false)],
+    };
+    expect(S.marksOf(party, staffStory(party, IVO), 0)).toEqual([]);
+    expect(S.marksOf(party, staffStory(party, IVO), 1)).toEqual(['PHOTOS']);
+    // The discounted party, his own share: no discount beside an undiscounted figure.
+    const discounted = PARTY();
+    expect(S.marksOf(discounted, staffStory(discounted, GEORGI), 0)).toEqual(
+      [],
+    );
+  });
+});
+
+describe('VisitStorySystem.quotesBooker — whose own words a row quotes', () => {
+  it('quotes the booker’s own words (row 235; card 203)', () => {
+    expect(S.quotesBooker(LAST(), GEORGI)).toBe(true);
+    expect(S.quotesBooker(PARTY(), GEORGI)).toBe(true);
+  });
+
+  it('quotes nobody else on a party someone else booked (row 515)', () => {
+    expect(S.quotesBooker(PARTY(), IVO)).toBe(false);
+  });
+
+  it('quotes nobody for a guest, nor without a note (row 838)', () => {
+    expect(S.quotesBooker(LAST(), null)).toBe(false);
+    expect(S.quotesBooker({ ...LAST(), contactNote: null }, GEORGI)).toBe(
+      false,
+    );
+  });
+
+  it('quotes nobody on an unclaimed party (owner null) for a null subject', () => {
+    const unclaimed: Appointment = { ...LAST(), ownerUserId: null };
+    expect(S.quotesBooker(unclaimed, null)).toBe(false);
+    expect(S.quotesBooker(unclaimed, GEORGI)).toBe(false);
+  });
+});
+
+describe('VisitStorySystem.namesShop — the shop named on a worked visit', () => {
+  it('names the shop of a worked visit only when there is more than one (row 280; card 282)', () => {
+    expect(S.namesShop('WORKED', 2)).toBe(true);
+    expect(S.namesShop('WORKED', 1)).toBe(false);
+    expect(S.namesShop('WORKED', 0)).toBe(false);
+  });
+
+  it('never names it for an open hour, a cancellation or a no-show (row 293, 412)', () => {
+    for (const outcome of ['OPEN', 'CANCELLED', 'NO_SHOW'] as const) {
+      expect(S.namesShop(outcome, 3)).toBe(false);
+    }
+  });
+});
+
+describe('VisitStorySystem.subjectBarberIds — who cut the story’s seats', () => {
+  it('lists every barber of the subject’s seats, in first-seat order (row 647; card 390)', () => {
+    const two = visit(
+      [
+        seat('2026-09-04T10:00:00', {
+          id: 'seat-cut',
+          outcome: SeatOutcome.worked(WORKED_AT),
+        }),
+        seat('2026-09-04T10:30:00', {
+          id: 'seat-beard',
+          service: BEARD,
+          barber: PETAR,
+          outcome: SeatOutcome.worked(WORKED_AT),
+        }),
+        seat('2026-09-04T11:00:00', {
+          id: 'seat-again',
+          outcome: SeatOutcome.worked(WORKED_AT),
+        }),
+      ],
+      BookingLifecycle.complete(WORKED_AT),
+    );
+    expect(S.subjectBarberIds(two, staffStory(two))).toEqual([IVAN, PETAR]);
+  });
+
+  it('names who cut HIS seat on a party, not the companion’s (row 515, 681)', () => {
+    const party = PARTY();
+    expect(S.subjectBarberIds(party, staffStory(party, GEORGI))).toEqual([
+      IVAN,
+    ]);
+    expect(S.subjectBarberIds(party, staffStory(party, IVO))).toEqual([PETAR]);
+  });
+});
+
+describe('VisitStorySystem.subjectRecordOf — the record a row’s story is about', () => {
+  it('takes the record the host named, a guest’s `null` included (row 515; card 289)', () => {
+    const party = PARTY();
+    expect(S.subjectRecordOf(party, customerOf(IVO), GEORGI)).toBe(
+      customerOf(IVO),
+    );
+    expect(S.subjectRecordOf(party, null, GEORGI)).toBeNull();
+  });
+
+  it('reads the record off the ACCOUNT seat of the subject when the host named none (row 515, 565)', () => {
+    const party = PARTY();
+    expect(S.subjectRecordOf(party, undefined, GEORGI)).toBe(
+      customerOf(GEORGI),
+    );
+    expect(S.subjectRecordOf(party, undefined, IVO)).toBe(customerOf(IVO));
+  });
+
+  it('answers null for a guest, and for an account with no seat on the visit (row 838)', () => {
+    expect(S.subjectRecordOf(LAST(), undefined, null)).toBeNull();
+    expect(S.subjectRecordOf(LAST(), undefined, IVO)).toBeNull();
+    // A guest seat is never read as an account's, whatever its name says.
+    const guest = visit(
+      [
+        seat('2026-09-04T10:00:00', {
+          guest: 'ivo',
+          outcome: SeatOutcome.worked(WORKED_AT),
+        }),
+      ],
+      BookingLifecycle.complete(WORKED_AT),
+    );
+    expect(S.subjectRecordOf(guest, undefined, IVO)).toBeNull();
+  });
+});
+
+describe('VisitStorySystem.peerCountOf — the others on the visit', () => {
+  it('counts the others of a party for each person (row 515)', () => {
+    const party = PARTY();
+    expect(S.peerCountOf(party, staffStory(party, GEORGI))).toBe(1);
+    expect(S.peerCountOf(party, staffStory(party, IVO))).toBe(1);
+    // The same answer as the row's composition of the two rules.
+    expect(S.peerCountOf(party, staffStory(party, GEORGI))).toBe(
+      peersOf(party, GEORGI),
+    );
+  });
+
+  it('counts a guest by the seat’s name, once however many services they had (row 565)', () => {
+    const withGuest = visit(
+      [
+        seat('2026-09-04T10:00:00', {
+          id: 'seat-georgi',
+          outcome: SeatOutcome.worked(WORKED_AT),
+        }),
+        seat('2026-09-04T10:00:00', {
+          id: 'seat-guest-cut',
+          guest: 'Син',
+          barber: PETAR,
+          outcome: SeatOutcome.worked(WORKED_AT),
+        }),
+        seat('2026-09-04T10:30:00', {
+          id: 'seat-guest-beard',
+          guest: 'Син',
+          service: BEARD,
+          barber: PETAR,
+          outcome: SeatOutcome.worked(WORKED_AT),
+        }),
+      ],
+      BookingLifecycle.complete(WORKED_AT),
+    );
+    expect(S.peerCountOf(withGuest, staffStory(withGuest))).toBe(1);
+  });
+
+  it('counts nobody when the story is the whole party’s (row 235)', () => {
+    const last = LAST();
+    expect(S.peerCountOf(last, staffStory(last))).toBe(0);
+    const party = PARTY();
+    expect(
+      S.peerCountOf(party, S.subjectStory(party, customerOf(GEORGI), false)),
+    ).toBe(0);
+  });
+});
+
+describe('VisitStorySystem.lastWorked — the featured visit', () => {
+  type Row = {
+    readonly id: string;
+    readonly utcEpochMs: UtcEpochMs;
+    readonly outcome: VisitRowOutcome | null;
+  };
+  const row = (
+    id: string,
+    ms: number,
+    outcome: VisitRowOutcome | null,
+  ): Row => ({ id, utcEpochMs: stamp(ms), outcome });
+  const outcomeOf = (entry: Row) => entry.outcome;
+
+  it('features the NEWEST worked visit, whatever order the page holds them in (glance 814)', () => {
+    const rows = [
+      row('older', 1_000, 'WORKED'),
+      row('newest', 3_000, 'WORKED'),
+      row('middle', 2_000, 'WORKED'),
+    ];
+    expect(S.lastWorked(rows, outcomeOf)?.id).toBe('newest');
+  });
+
+  it('skips a newer visit that was not worked (glance 871, 932)', () => {
+    const rows = [
+      row('worked', 1_000, 'WORKED'),
+      row('cancelled', 4_000, 'CANCELLED'),
+      row('missed', 3_000, 'NO_SHOW'),
+      row('ahead', 5_000, 'OPEN'),
+    ];
+    expect(S.lastWorked(rows, outcomeOf)?.id).toBe('worked');
+  });
+
+  it('features nothing for a new client, or a book with nothing worked (glance 932)', () => {
+    expect(S.lastWorked([], outcomeOf)).toBeNull();
+    expect(
+      S.lastWorked(
+        [row('ahead', 5_000, 'OPEN'), row('waiting', 6_000, null)],
+        outcomeOf,
+      ),
+    ).toBeNull();
+  });
+
+  it('keeps the input’s order on equal instants — a stable newest-first', () => {
+    const rows = [
+      row('first-in', 2_000, 'WORKED'),
+      row('second-in', 2_000, 'WORKED'),
+    ];
+    expect(S.lastWorked(rows, outcomeOf)?.id).toBe('first-in');
+    expect(S.lastWorked([...rows].reverse(), outcomeOf)?.id).toBe('second-in');
+  });
+
+  it('reads the outcomes newest first, never past the first worked one', () => {
+    const rows = [
+      row('a', 1_000, 'WORKED'),
+      row('b', 4_000, 'CANCELLED'),
+      row('c', 3_000, 'WORKED'),
+      row('d', 2_000, 'WORKED'),
+    ];
+    const read: string[] = [];
+    const found = S.lastWorked(rows, (entry) => {
+      read.push(entry.id);
+      return entry.outcome;
+    });
+    expect(found?.id).toBe('c');
+    expect(read).toEqual(['b', 'c']);
+  });
+
+  it('reads the story the row tells — a companion’s visit worked for him, missed for Иво', () => {
+    const party = PARTY();
+    const earlier: Appointment = {
+      ...LAST(),
+      utcEpochMs: UtcEpochMs.plusMs(party.utcEpochMs, -86_400_000),
+    };
+    const book = [earlier, party];
+    expect(
+      S.lastWorked(
+        book,
+        (appointment) => staffStory(appointment, GEORGI).outcome,
+      ),
+    ).toBe(party);
+    expect(
+      S.lastWorked(book, (appointment) => staffStory(appointment, IVO).outcome),
+    ).toBe(earlier);
+  });
+});
+
+describe('VisitStorySystem — the extraction, purity', () => {
+  it('is pure: same input → same output, inputs untouched', () => {
+    const party = deepFreeze({ ...PARTY(), voucherRedemptions: [draw(false)] });
+    const story = deepFreeze(staffStory(party, GEORGI));
+    const before = JSON.stringify([party, story]);
+    expect(S.subjectFigure(party, story)).toEqual(
+      S.subjectFigure(party, story),
+    );
+    expect(S.marksOf(party, story, 2)).toEqual(S.marksOf(party, story, 2));
+    expect(S.subjectBarberIds(party, story)).toEqual(
+      S.subjectBarberIds(party, story),
+    );
+    expect(S.peerCountOf(party, story)).toBe(S.peerCountOf(party, story));
+    expect(S.isWholeParty(party, story)).toBe(S.isWholeParty(party, story));
+    expect(S.quotesBooker(party, GEORGI)).toBe(S.quotesBooker(party, GEORGI));
+    expect(S.subjectRecordOf(party, undefined, IVO)).toBe(
+      S.subjectRecordOf(party, undefined, IVO),
+    );
+    const now = deepFreeze(NOW);
+    const start = deepFreeze(wall('2026-10-02T10:00:00'));
+    expect(S.toneOf('OPEN', start, now)).toBe(S.toneOf('OPEN', start, now));
+    expect(S.statusMark('OPEN', BookingStatus.Pending)).toBe(
+      S.statusMark('OPEN', BookingStatus.Pending),
+    );
+    expect(S.namesShop('WORKED', 2)).toBe(S.namesShop('WORKED', 2));
+    expect(S.isVoid('NO_SHOW')).toBe(S.isVoid('NO_SHOW'));
+    const book = deepFreeze([LAST(), party]);
+    const pick = (appointment: Appointment) =>
+      staffStory(appointment, GEORGI).outcome;
+    expect(S.lastWorked(book, pick)).toBe(S.lastWorked(book, pick));
+    expect(book.map((appointment) => appointment.id)).toHaveLength(2);
+    expect(JSON.stringify([party, story])).toBe(before);
   });
 });

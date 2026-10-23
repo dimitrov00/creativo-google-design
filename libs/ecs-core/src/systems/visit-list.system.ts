@@ -1,4 +1,8 @@
-import { LocalDate, type MinuteOfDay } from '@core/primitives';
+import {
+  type AppointmentId,
+  LocalDate,
+  type MinuteOfDay,
+} from '@core/primitives';
 
 /** The grain a visit list is sectioned by — the ONLY source of these strings. */
 export const VisitGrain = {
@@ -257,6 +261,88 @@ export const VisitListSystem = {
         if (answered && misses) break;
       }
       if (answered && (!complete || misses)) out.push(filter);
+    }
+    return out;
+  },
+
+  /**
+   * The options with the choice in force always among them, in the menu's
+   * order: a narrowed list can always be widened again, and the menu never
+   * opens on a choice it does not list (a filter picked while older pages
+   * remained, which the last page then left without a row). `offered`
+   * itself when it already holds the choice.
+   */
+  offeredWith(
+    perspective: VisitPerspective,
+    offered: readonly VisitFilter[],
+    inForce: VisitFilter,
+  ): readonly VisitFilter[] {
+    if (offered.includes(inForce)) return offered;
+    const options = VisitListSystem.filtersFor(perspective);
+    const out: VisitFilter[] = [];
+    for (let f = 0; f < options.length; f++) {
+      const filter = options[f] as VisitFilter;
+      if (filter === inForce || offered.includes(filter)) out.push(filter);
+    }
+    return out;
+  },
+
+  /**
+   * The section a visit's row files under: the upcoming run while the hour
+   * is still to come, else its dated section ({@link sectionKeyOf}).
+   */
+  rowSectionKey(
+    upcoming: boolean,
+    localDate: LocalDate,
+    grain: VisitGrain,
+  ): string {
+    return upcoming
+      ? UPCOMING_SECTION_KEY
+      : VisitListSystem.sectionKeyOf(localDate, grain);
+  },
+
+  /**
+   * Each appointment once, by its id — the first copy wins and the input's
+   * order is kept (pages never overlap, but a refresh may).
+   */
+  distinctById<A extends { readonly id: AppointmentId }>(
+    appointments: readonly A[],
+  ): readonly A[] {
+    const seen = new Set<AppointmentId>();
+    const out: A[] = [];
+    for (let i = 0; i < appointments.length; i++) {
+      const appointment = appointments[i] as A;
+      if (seen.has(appointment.id)) continue;
+      seen.add(appointment.id);
+      out.push(appointment);
+    }
+    return out;
+  },
+
+  /**
+   * The items whose row is upcoming, soonest first on the shop's wall clock
+   * — the day, then the minute — each row read once (`rowOf`). A STABLE
+   * sort on the start alone (the private `byStart`): two items at the same
+   * day and minute keep the input's order. Unlike `soonestFirst` — the
+   * order of {@link sections}' upcoming run, which adds the `byId`
+   * tie-break — no id is read, so a caller's own order survives a tie. No
+   * inbound mapping: the caller hands its items and its row reading as they
+   * are.
+   */
+  upcomingSoonestFirst<T>(
+    items: readonly T[],
+    rowOf: (item: T) => SectionRow,
+  ): readonly T[] {
+    const kept: { readonly item: T; readonly row: SectionRow }[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i] as T;
+      const row = rowOf(item);
+      if (row.upcoming) kept.push({ item, row });
+    }
+    kept.sort((a, b) => byStart(a.row, b.row));
+    const out: T[] = [];
+    for (let i = 0; i < kept.length; i++) {
+      out.push((kept[i] as { readonly item: T }).item);
     }
     return out;
   },

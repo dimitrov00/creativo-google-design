@@ -69,6 +69,20 @@ export const ServiceComposition = {
     return composition.compositionKind === CompositionKind.Bundle;
   },
 
+  /**
+   * The composition a service DRAWS as — a bundle, or a single service. An
+   * unspecified composition (the author never said: `composition: null` as
+   * authored) draws as a single service, as it always did
+   * (`catalog.presenter.ts`'s `serviceToVm`).
+   */
+  drawnKind(
+    kind: CompositionKind,
+  ): typeof CompositionKind.Single | typeof CompositionKind.Bundle {
+    return kind === CompositionKind.Bundle
+      ? CompositionKind.Bundle
+      : CompositionKind.Single;
+  },
+
   /** The component services, in order — `[]` for anything but a bundle. */
   parts(composition: ServiceComposition): readonly ServiceId[] {
     return composition.compositionKind === CompositionKind.Bundle

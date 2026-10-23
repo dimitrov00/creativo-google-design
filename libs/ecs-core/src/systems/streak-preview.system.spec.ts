@@ -545,6 +545,53 @@ describe('StreakPreviewSystem.estimate — the admin preview', () => {
   });
 });
 
+/*
+ * `admin-rhythm.words.spec.ts` `signedDelta` / `previewWords`, ported (Law
+ * 10.2 — law-10-decision-extraction.md R-6): each standing's movement is the
+ * system's figure; the page signs and words it.
+ */
+describe('StreakPreviewSystem.movement — how far each standing moves', () => {
+  const before = { inRhythm: 131, inGrace: 12, broken: 71 };
+  const after = { inRhythm: 148, inGrace: 9, broken: 57 };
+
+  it('moves each standing by after − before: gains up, losses down', () => {
+    expect(StreakPreviewSystem.movement(before, after)).toEqual({
+      inRhythm: 17,
+      inGrace: -3,
+      broken: -14,
+    });
+    expect(StreakPreviewSystem.movement(after, before)).toEqual({
+      inRhythm: -17,
+      inGrace: 3,
+      broken: 14,
+    });
+  });
+
+  it('moves nothing between equal counts', () => {
+    expect(StreakPreviewSystem.movement(before, before)).toEqual({
+      inRhythm: 0,
+      inGrace: 0,
+      broken: 0,
+    });
+  });
+
+  it('states no movement while either rule is off', () => {
+    expect(StreakPreviewSystem.movement(before, null)).toBeNull();
+    expect(StreakPreviewSystem.movement(null, after)).toBeNull();
+    expect(StreakPreviewSystem.movement(null, null)).toBeNull();
+  });
+
+  it('agrees with the estimate: the in-rhythm movement is back − out', () => {
+    const preview = estimate(EIGHT_WEEKS);
+    if (preview.before === null || preview.after === null) {
+      throw new Error('both rules are on');
+    }
+    expect(
+      StreakPreviewSystem.movement(preview.before, preview.after)?.inRhythm,
+    ).toBe(preview.back - preview.out);
+  });
+});
+
 describe('StreakPreviewSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const clients = deepFreeze(SHOP.map(strict));
@@ -554,5 +601,10 @@ describe('StreakPreviewSystem purity', () => {
     expect(
       StreakPreviewSystem.estimate(inForce, draft, clients, today),
     ).toEqual(StreakPreviewSystem.estimate(inForce, draft, clients, today));
+    const before = deepFreeze({ inRhythm: 131, inGrace: 12, broken: 71 });
+    const after = deepFreeze({ inRhythm: 148, inGrace: 9, broken: 57 });
+    expect(StreakPreviewSystem.movement(before, after)).toEqual(
+      StreakPreviewSystem.movement(before, after),
+    );
   });
 });

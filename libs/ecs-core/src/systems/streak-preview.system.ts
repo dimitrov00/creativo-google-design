@@ -187,4 +187,23 @@ export const StreakPreviewSystem = {
       out,
     };
   },
+
+  /**
+   * How far each standing's count moves from `before` to `after` (`after −
+   * before`, per standing: positive gains, negative losses, zero none) —
+   * the preview's deltas («+17», «−3»). `null` while either rule is off:
+   * an off rule judges nobody, so there is no movement to state, only the
+   * rule coming or going.
+   */
+  movement(
+    before: StreakStandingCounts | null,
+    after: StreakStandingCounts | null,
+  ): StreakStandingCounts | null {
+    if (before === null || after === null) return null;
+    return {
+      inRhythm: after.inRhythm - before.inRhythm,
+      inGrace: after.inGrace - before.inGrace,
+      broken: after.broken - before.broken,
+    };
+  },
 } as const;

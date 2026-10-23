@@ -3,13 +3,12 @@ import { LocalDate, type TimeZone, defect } from '@core/primitives';
 import { StreakRuleField } from '@core/errors';
 import {
   FreezeReason,
-  STREAK_EXCUSES,
+  RhythmEffectiveChoice,
   type StreakExcuse,
   StreakInterval,
   type StreakIntervalRule,
   StreakOnBreak,
   StreakPeriodMark,
-  StreakPhase,
   StreakQualifier,
   StreakRuleParameter,
   type StreakRuleInput,
@@ -19,7 +18,13 @@ import {
   RhythmDraftSystem,
   type StreakPreview,
   StreakPreviewOutcome,
+  StreakPreviewSystem,
+  StreakPublishSystem,
+  StreakRuleSystem,
   type StreakStandingCounts,
+  StreakSystem,
+  type StreakTrackMark,
+  StreakTrackMarkKind,
   ZonedTimeSystem,
 } from '@core/systems';
 import type {
@@ -185,17 +190,27 @@ function figure(context: AdminRhythmContext, value: number): string {
   return new Intl.NumberFormat(context.lang).format(value);
 }
 
+/**
+ * «+17» · «−3» — a movement the system measured, signed; `null` for none
+ * (the zero form and the sign glyph are the words', D-2.2/D-2.3).
+ */
+function signedMovement(
+  context: AdminRhythmContext,
+  delta: number,
+): string | null {
+  if (delta === 0) return null;
+  return delta > 0
+    ? `+${figure(context, delta)}`
+    : `${MINUS}${figure(context, -delta)}`;
+}
+
 /** «+17» · «−3»; `null` for no change. */
 export function signedDelta(
   context: AdminRhythmContext,
   from: number,
   to: number,
 ): string | null {
-  const delta = to - from;
-  if (delta === 0) return null;
-  return delta > 0
-    ? `+${figure(context, delta)}`
-    : `${MINUS}${figure(context, -delta)}`;
+  return signedMovement(context, to - from);
 }
 
 /** Days ↔ weeks, as the interval is edited in weeks and held in days: `RhythmDraftSystem`'s unit arithmetic. */
@@ -334,8 +349,9 @@ export function effectiveOptions(
 }
 
 /**
- * Which of P13's three the day in hand is, and the trigger's reading:
- * «От утре», «От 1-во число», or the day itself («от 12.10»).
+ * Which of P13's three the day in hand is — `RhythmDraftSystem.effectiveChoiceOf`'s
+ * answer (tomorrow wins a tie) — and the trigger's reading: «От утре»,
+ * «От 1-во число», or the day itself («от 12.10»).
  */
 export function effectiveReading(
   context: AdminRhythmContext,
@@ -343,21 +359,29 @@ export function effectiveReading(
   days: { readonly tomorrow: string; readonly firstOfMonth: string },
 ): { readonly choice: EffectiveChoice; readonly label: string } {
   const t = context.translate;
-  if (day === days.tomorrow) {
-    return { choice: 'tomorrow', label: t('admin.rhythm.effective.tomorrow') };
+  const choice = RhythmDraftSystem.effectiveChoiceOf(localDateOf(day), {
+    tomorrow: localDateOf(days.tomorrow),
+    firstOfMonth: localDateOf(days.firstOfMonth),
+  });
+  switch (choice) {
+    case RhythmEffectiveChoice.Tomorrow:
+      return {
+        choice: 'tomorrow',
+        label: t('admin.rhythm.effective.tomorrow'),
+      };
+    case RhythmEffectiveChoice.FirstOfMonth:
+      return {
+        choice: 'firstOfMonth',
+        label: t('admin.rhythm.effective.firstOfMonth'),
+      };
+    case RhythmEffectiveChoice.Picked:
+      return {
+        choice: 'pick',
+        label: t('admin.rhythm.effective.picked', {
+          date: shortDay(day, context.today, context.lang),
+        }),
+      };
   }
-  if (day === days.firstOfMonth) {
-    return {
-      choice: 'firstOfMonth',
-      label: t('admin.rhythm.effective.firstOfMonth'),
-    };
-  }
-  return {
-    choice: 'pick',
-    label: t('admin.rhythm.effective.picked', {
-      date: shortDay(day, context.today, context.lang),
-    }),
-  };
 }
 
 // ── The sliders' marks ───────────────────────────────────────────────────
@@ -420,8 +444,7 @@ export function excusesRow(
   draft: StreakRuleInput,
 ): string {
   const t = context.translate;
-  const on = draft.excuses.length;
-  const all = STREAK_EXCUSES.length;
+  const { on, all } = StreakRuleSystem.excuseCount(draft);
   return draft.clientPauseEnabled
     ? t('admin.rhythm.row.excusesPause', {
         on,
@@ -487,20 +510,23 @@ export function toleranceReadout(
   return context.translate('admin.rhythm.interval.tolerance', { percent });
 }
 
-/** «Клиент, който идва на 4 седмици, има срок 6 седмици.» — the tolerance explained on one habit. */
+/** The habit the tolerance is explained on: a client who comes every four weeks. */
+const EXAMPLE_HABIT_DAYS = 28;
+
+/**
+ * «Клиент, който идва на 4 седмици, има срок 6 седмици.» — the tolerance
+ * explained on one habit. The period is the rule's own
+ * (`StreakRuleSystem.exampleDue`, through `StreakIntervalRule.daysFor`),
+ * never a copy of it.
+ */
 export function toleranceExample(
   context: AdminRhythmContext,
   interval: StreakIntervalRule.Personal,
 ): string {
-  const habitDays = 28;
-  const raw = Math.round(habitDays * (1 + interval.intervalTolerancePct / 100));
-  const due = Math.min(
-    interval.intervalMaxDays,
-    Math.max(interval.intervalMinDays, raw),
-  );
+  const due = StreakRuleSystem.exampleDue(interval, EXAMPLE_HABIT_DAYS);
   return context.translate('admin.rhythm.interval.example', {
-    habit: context.rule.weeks(weeksOf(habitDays)),
-    interval: context.rule.weeks(weeksOf(due)),
+    habit: context.rule.weeks(weeksOf(EXAMPLE_HABIT_DAYS)),
+    interval: context.rule.weeks(weeksOf(due.days)),
   });
 }
 
@@ -529,23 +555,6 @@ export function upcomingLine(
 }
 
 // ── The history ──────────────────────────────────────────────────────────
-
-/** The rule's own order, in which a version's changes are named; the name, the head's, last. */
-const CHANGE_ORDER: readonly StreakRuleParameter[] = [
-  StreakRuleParameter.Enabled,
-  StreakRuleParameter.Qualifier,
-  StreakRuleParameter.MinGapDays,
-  StreakRuleParameter.BookingHold,
-  StreakRuleParameter.Interval,
-  StreakRuleParameter.GraceDays,
-  StreakRuleParameter.RiskLeadDays,
-  StreakRuleParameter.Protections,
-  StreakRuleParameter.Excuses,
-  StreakRuleParameter.ClientPause,
-  StreakRuleParameter.Repair,
-  StreakRuleParameter.OnBreak,
-  StreakRuleParameter.Name,
-];
 
 /**
  * One parameter's change, lower case, no stop (`admin.rhythm.history.change.*`).
@@ -594,11 +603,10 @@ export function changeWord(
       return rule.protectionsEnabled
         ? t(`${key}.protections.on`, { count: rule.protectionsMaxBanked })
         : t(`${key}.protections.off`);
-    case StreakRuleParameter.Excuses:
-      return t(`${key}.excuses`, {
-        on: rule.excuses.length,
-        all: STREAK_EXCUSES.length,
-      });
+    case StreakRuleParameter.Excuses: {
+      const { on, all } = StreakRuleSystem.excuseCount(rule);
+      return t(`${key}.excuses`, { on, all });
+    }
     case StreakRuleParameter.ClientPause:
       return rule.clientPauseEnabled
         ? t(`${key}.clientPause.on`, {
@@ -616,13 +624,17 @@ export function changeWord(
   }
 }
 
-/** The changes a version made, in the rule's order, each worded; what is no parameter left out. */
+/**
+ * The changes a version made, each worded, in the order and the selection
+ * `StreakRuleSystem.changesInRuleOrder` gives (the rule's parts, the name
+ * last; what is no parameter left out).
+ */
 function changeWords(
   context: AdminRhythmContext,
   changed: readonly string[],
   rule: StreakRuleInput,
 ): readonly string[] {
-  return CHANGE_ORDER.filter((parameter) => changed.includes(parameter))
+  return StreakRuleSystem.changesInRuleOrder(changed)
     .map((parameter) => changeWord(context, parameter, rule))
     .filter((word): word is string => word !== null);
 }
@@ -666,10 +678,9 @@ export function historyRow(
             count: words.length - 1,
           })
         : first;
-  const name: string =
-    version.publishedByUserId === 'system'
-      ? t('admin.rhythm.history.system')
-      : version.publishedByUserId;
+  const name: string = StreakPublishSystem.isSystemPublisher(version)
+    ? t('admin.rhythm.history.system')
+    : version.publishedByUserId;
   const publishedOn = ZonedTimeSystem.toLocal(
     version.publishedAtUtcMs,
     context.zone,
@@ -774,8 +785,11 @@ export function previewWords(
     };
   }
   const { before, after } = preview;
+  // How far each standing moves is the system's (`movement`): `null` while
+  // either rule is off, and then there are no figures to say.
+  const moved = StreakPreviewSystem.movement(before, after);
   const metrics: AdminRhythmPreviewMetric[] =
-    before === null || after === null
+    before === null || after === null || moved === null
       ? []
       : STANDINGS.map(([id, key]) => {
           const caption = t(key);
@@ -785,7 +799,7 @@ export function previewWords(
             id,
             caption,
             value: figure(context, to),
-            delta: signedDelta(context, from, to),
+            delta: signedMovement(context, standingOf(moved, id)),
             label: `${caption}: ${t('admin.rhythm.preview.delta', {
               from: figure(context, from),
               to: figure(context, to),
@@ -813,76 +827,121 @@ export function previewWords(
 
 // ── The sample track ─────────────────────────────────────────────────────
 
+/** A track mark that closes a period: every mark but the open one's `CURRENT`. */
+type ClosedMark = StreakTrackMark & {
+  readonly streakTrackMarkKind: StreakPeriodMark;
+};
+
+function isClosed(mark: StreakTrackMark): mark is ClosedMark {
+  return mark.streakTrackMarkKind !== StreakTrackMarkKind.Current;
+}
+
 /**
- * The sample client's periods as the track draws them: the projection's
- * closed periods (a visit that kept the run, a due date covered or
- * missed, the visit that restored it), then the open one. Captions are
- * empty: the small track draws none, and the rule card says the rule.
+ * A covering reason as its `clientCard.rhythm.reason.*` word: one the
+ * projection did not name — and the open phase's `EXCUSE`, which a closed
+ * period never holds — is a protection's.
+ */
+function reasonWord(mark: StreakTrackMark): string {
+  return mark.reason === null || mark.reason === FreezeReason.Excuse
+    ? streakPeriodReasonWords[FreezeReason.Freeze]
+    : streakPeriodReasonWords[mark.reason];
+}
+
+/** A closed period of the sample, worded; its id is its mark, its day and its place in the run. */
+function sampleClosed(
+  context: AdminRhythmContext,
+  mark: ClosedMark,
+  index: number,
+): UiStreakPeriod {
+  const t = context.translate;
+  const { today, lang } = context;
+  const period = monthWord(mark.on, lang);
+  // The track's mark (`@creativo/infrastructure/i18n`'s one table), typed
+  // against the DS's own words so a drifted word fails here.
+  const drawn: UiStreakPeriod['mark'] =
+    streakPeriodMarkWords[mark.streakTrackMarkKind];
+  const id = `${drawn}-${mark.on}-${index}`;
+  switch (mark.streakTrackMarkKind) {
+    case StreakPeriodMark.Kept:
+      return {
+        id,
+        mark: 'kept',
+        caption: '',
+        description: t('clientCard.rhythm.mark.kept', {
+          period,
+          date: shortDay(mark.on, today, lang),
+        }),
+      };
+    case StreakPeriodMark.Repaired:
+      return {
+        id,
+        mark: 'repaired',
+        caption: '',
+        description: t('clientCard.rhythm.mark.repaired', { period }),
+      };
+    case StreakPeriodMark.Protected:
+      return {
+        id,
+        mark: 'protected',
+        caption: '',
+        description: t('clientCard.rhythm.mark.protected', {
+          period,
+          reason: t(`clientCard.rhythm.reason.${reasonWord(mark)}`),
+        }),
+      };
+    case StreakPeriodMark.Missed:
+      return {
+        id,
+        mark: 'missed',
+        caption: '',
+        description: t('clientCard.rhythm.mark.missed', { period }),
+      };
+  }
+}
+
+/** The sample's open period: covered while a protection carries it, else the due date. */
+function sampleOpen(
+  context: AdminRhythmContext,
+  mark: StreakTrackMark,
+): UiStreakPeriod {
+  return {
+    id: 'current',
+    mark:
+      mark.streakTrackMarkKind === StreakTrackMarkKind.Protected
+        ? 'protected'
+        : 'current',
+    caption: '',
+    description: context.translate('clientCard.rhythm.mark.current', {
+      date: longDay(mark.on, context.today, context.lang),
+    }),
+  };
+}
+
+/**
+ * The sample client's periods as the track draws them
+ * (`StreakSystem.track`, which picks and dates the marks): the
+ * projection's closed periods (a visit that kept the run, a due date
+ * covered or missed, the visit that restored it), then the open one —
+ * nobody in the chair, not paused, nothing cut. The sample's facts are
+ * visits alone, so a FROZEN open mark's day is its due date (§7 R-12,
+ * proven in `streak.system.spec.ts`). Captions are empty: the small track
+ * draws none, and the rule card says the rule.
  */
 export function samplePeriods(
   context: AdminRhythmContext,
   state: StreakState,
 ): readonly UiStreakPeriod[] {
-  const t = context.translate;
-  const { today, lang } = context;
-  const closed = state.periods.map((fact, index): UiStreakPeriod => {
-    const period = monthWord(fact.on, lang);
-    // The track's mark (`@creativo/infrastructure/i18n`'s one table), typed
-    // against the DS's own words so a drifted word fails here.
-    const mark: UiStreakPeriod['mark'] =
-      streakPeriodMarkWords[fact.streakPeriodMark];
-    const id = `${mark}-${fact.on}-${index}`;
-    switch (fact.streakPeriodMark) {
-      case StreakPeriodMark.Kept:
-        return {
-          id,
-          mark: 'kept',
-          caption: '',
-          description: t('clientCard.rhythm.mark.kept', {
-            period,
-            date: shortDay(fact.on, today, lang),
-          }),
-        };
-      case StreakPeriodMark.Repaired:
-        return {
-          id,
-          mark: 'repaired',
-          caption: '',
-          description: t('clientCard.rhythm.mark.repaired', { period }),
-        };
-      case StreakPeriodMark.Protected:
-        return {
-          id,
-          mark: 'protected',
-          caption: '',
-          description: t('clientCard.rhythm.mark.protected', {
-            period,
-            reason: t(
-              `clientCard.rhythm.reason.${streakPeriodReasonWords[fact.periodReason ?? FreezeReason.Freeze]}`,
-            ),
-          }),
-        };
-      case StreakPeriodMark.Missed:
-        return {
-          id,
-          mark: 'missed',
-          caption: '',
-          description: t('clientCard.rhythm.mark.missed', { period }),
-        };
-    }
+  const track = StreakSystem.track(state, {
+    today: localDateOf(context.today),
+    inChairToday: false,
+    paused: false,
+    limit: state.periods.length + 1,
   });
-  if (state.dueBy === null) return closed;
-  return [
-    ...closed,
-    {
-      id: 'current',
-      mark: state.streakPhase === StreakPhase.Frozen ? 'protected' : 'current',
-      caption: '',
-      description: t('clientCard.rhythm.mark.current', {
-        date: longDay(state.dueBy, today, lang),
-      }),
-    },
-  ];
+  return track.marks.map((mark, index) =>
+    mark.open || !isClosed(mark)
+      ? sampleOpen(context, mark)
+      : sampleClosed(context, mark, index),
+  );
 }
 
 /** «6 посещения в ритъм» — the sample track's name. */

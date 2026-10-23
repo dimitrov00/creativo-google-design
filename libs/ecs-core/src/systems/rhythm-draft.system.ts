@@ -1,4 +1,5 @@
 import {
+  RhythmEffectiveChoice,
   StreakInterval,
   StreakIntervalRule,
   StreakQualifier,
@@ -9,6 +10,7 @@ import {
   type StreakOnBreak,
   type StreakRuleInput,
 } from '@core/components';
+import type { LocalDate } from '@core/primitives';
 
 /*
  * THE ADMIN'S DRAFT OF THE RHYTHM'S RULE, CLAMPED (client-card revision 3
@@ -472,5 +474,25 @@ export const RhythmDraftSystem = {
   /** Weeks as days — what the rule holds an interval in. */
   daysOf(weeks: number): number {
     return weeks * DAYS_IN_WEEK;
+  },
+
+  /**
+   * Which of the page's three «От» choices (P13) the effective day in hand
+   * is: tomorrow, the first of the coming month, or a day the admin picked.
+   * Tomorrow wins a tie — on a month's last day it IS the first of the next
+   * (`admin-rhythm.words.ts` `effectiveReading`).
+   */
+  effectiveChoiceOf(
+    day: LocalDate,
+    presets: {
+      readonly tomorrow: LocalDate;
+      readonly firstOfMonth: LocalDate;
+    },
+  ): RhythmEffectiveChoice {
+    if (day === presets.tomorrow) return RhythmEffectiveChoice.Tomorrow;
+    if (day === presets.firstOfMonth) {
+      return RhythmEffectiveChoice.FirstOfMonth;
+    }
+    return RhythmEffectiveChoice.Picked;
   },
 } as const;

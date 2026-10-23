@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RhythmEffectiveChoice,
   StreakInterval,
   StreakIntervalRule,
   StreakQualifier,
@@ -9,7 +10,7 @@ import {
   StreakRule,
 } from '@core/components';
 import { ServiceCategoryId, ServiceId } from '@core/primitives';
-import { deepFreeze } from '@core/testing';
+import { deepFreeze, localDate } from '@core/testing';
 import {
   RhythmDraftSystem,
   type RememberedIntervals,
@@ -633,6 +634,55 @@ describe('RhythmDraftSystem.weeksOf and daysOf (admin-rhythm.words.ts)', () => {
   });
 });
 
+/*
+ * `admin-rhythm.words.spec.ts` `effectiveReading`, ported (Law 10.2 —
+ * law-10-decision-extraction.md R-5): which of the three «От» choices a day
+ * is, as a tag; the page words it.
+ */
+describe('RhythmDraftSystem.effectiveChoiceOf — «От утре», «От 1-во число» or a picked day', () => {
+  const presets = {
+    tomorrow: localDate('2026-09-29'),
+    firstOfMonth: localDate('2026-10-01'),
+  };
+
+  it('holds the three choices, in the menu’s order', () => {
+    expect(Object.values(RhythmEffectiveChoice)).toEqual([
+      'TOMORROW',
+      'FIRST_OF_MONTH',
+      'PICKED',
+    ]);
+  });
+
+  it('reads tomorrow, the first of the month, or the day itself', () => {
+    expect(
+      RhythmDraftSystem.effectiveChoiceOf(localDate('2026-09-29'), presets),
+    ).toBe(RhythmEffectiveChoice.Tomorrow);
+    expect(
+      RhythmDraftSystem.effectiveChoiceOf(localDate('2026-10-01'), presets),
+    ).toBe(RhythmEffectiveChoice.FirstOfMonth);
+    expect(
+      RhythmDraftSystem.effectiveChoiceOf(localDate('2026-10-12'), presets),
+    ).toBe(RhythmEffectiveChoice.Picked);
+    // Today itself, or a day between the two presets, is a picked day.
+    expect(
+      RhythmDraftSystem.effectiveChoiceOf(localDate('2026-09-28'), presets),
+    ).toBe(RhythmEffectiveChoice.Picked);
+    expect(
+      RhythmDraftSystem.effectiveChoiceOf(localDate('2026-09-30'), presets),
+    ).toBe(RhythmEffectiveChoice.Picked);
+  });
+
+  it('gives a tie to tomorrow: on a month’s last day tomorrow IS the first', () => {
+    const last = {
+      tomorrow: localDate('2026-10-01'),
+      firstOfMonth: localDate('2026-10-01'),
+    };
+    expect(
+      RhythmDraftSystem.effectiveChoiceOf(localDate('2026-10-01'), last),
+    ).toBe(RhythmEffectiveChoice.Tomorrow);
+  });
+});
+
 describe('RhythmDraftSystem purity', () => {
   it('is pure: same input → same output, inputs untouched', () => {
     const draft = deepFreeze(
@@ -643,10 +693,16 @@ describe('RhythmDraftSystem purity', () => {
       fixed: StreakIntervalRule.fixed(35),
       personal: null,
     });
+    const day = localDate('2026-10-01');
+    const presets = deepFreeze({
+      tomorrow: localDate('2026-09-29'),
+      firstOfMonth: localDate('2026-10-01'),
+    });
     const run = () => [
       RhythmDraftSystem.clamp(draft, patch, remembered, RISK_LEAD_CHOICES),
       RhythmDraftSystem.bounds(draft),
       RhythmDraftSystem.diff(draft, RECOMMENDED),
+      RhythmDraftSystem.effectiveChoiceOf(day, presets),
     ];
     expect(run()).toEqual(run());
   });

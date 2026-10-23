@@ -102,6 +102,29 @@ export const StreakRuleParameter = {
 export type StreakRuleParameter =
   (typeof StreakRuleParameter)[keyof typeof StreakRuleParameter];
 
+/**
+ * The order a version's history names what it changed
+ * (`StreakRuleSystem.changesInRuleOrder`): the rule's own parts, then the
+ * name — the head's, not the rule's — LAST. Every parameter once. Not the
+ * dictionary's order, and not the order `StreakRuleSystem.changeFrom`
+ * lists them in (which leads with the name).
+ */
+export const STREAK_RULE_PARAMETER_ORDER: readonly StreakRuleParameter[] = [
+  StreakRuleParameter.Enabled,
+  StreakRuleParameter.Qualifier,
+  StreakRuleParameter.MinGapDays,
+  StreakRuleParameter.BookingHold,
+  StreakRuleParameter.Interval,
+  StreakRuleParameter.GraceDays,
+  StreakRuleParameter.RiskLeadDays,
+  StreakRuleParameter.Protections,
+  StreakRuleParameter.Excuses,
+  StreakRuleParameter.ClientPause,
+  StreakRuleParameter.Repair,
+  StreakRuleParameter.OnBreak,
+  StreakRuleParameter.Name,
+];
+
 /** Where a rule stands in its head's `rules` list — the field `headRole`. */
 export const HeadRole = {
   /** In force since its day — exactly one per head. */

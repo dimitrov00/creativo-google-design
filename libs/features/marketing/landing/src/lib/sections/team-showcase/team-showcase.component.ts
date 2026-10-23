@@ -23,10 +23,7 @@ import {
 import { UiModalSheet } from '@creativo/ui/controls';
 import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import { LandingContentService } from '../../content/landing-content.service';
-import {
-  type ServiceVm,
-  servicesByBarber,
-} from '../../content/landing-content';
+import { type ServiceVm } from '../../content/landing-content';
 import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
 import { ServiceRowComponent } from '@creativo/features/shared/catalog';
 
@@ -138,15 +135,15 @@ export class TeamShowcaseComponent {
   protected readonly sheetClosing = signal(false);
 
   /**
-   * What this barber charges, per service — derived by inverting
-   * `ServiceVm.offerings`, the only direction the catalog stores. Fed the
-   * marketing shelf, so upsell-only add-ons stay out of it exactly as they
-   * do everywhere else on this page.
+   * What this barber charges, per shelf service — the content service asks
+   * `CatalogPricingSystem.servicesByBarber` over the marketing shelf, so
+   * upsell-only add-ons stay out of it exactly as they do everywhere else on
+   * this page.
    */
   protected readonly activeBarberPrices = computed(() => {
     const barber = this.activeBarber();
     if (!barber) return [];
-    return servicesByBarber(this.content.shelfServices(), barber.id);
+    return this.content.barberPrices(barber.id);
   });
 
   protected openBarber(barber: BarberItem): void {

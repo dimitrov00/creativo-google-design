@@ -13,6 +13,21 @@ import { GrantStatus, Result, type UserId, UtcEpochMs } from '@core/primitives';
 import { EngagementError } from '@core/errors';
 import { type CouponGrant, Collections } from '@core/entities';
 
+/**
+ * A grant as the card holds it, carrying its coupon's occasion tag. The
+ * host's card grant may leave the tag out (`ClientCardGrant.couponOccasion`
+ * is optional), so the constraint takes it as it is held — absent reads as
+ * `null`, no occasion — and the grants pass in unmapped (Law 3).
+ */
+export type OccasionTagged = Partial<{
+  readonly couponOccasion: CouponOccasion | null;
+}>;
+
+/** The ONE predicate both occasion cuts share: the grant's coupon was made for `occasion`. */
+function madeFor(grant: OccasionTagged, occasion: CouponOccasion): boolean {
+  return CouponGrantSystem.isOccasion(grant.couponOccasion ?? null, occasion);
+}
+
 /** The grant with a new lifecycle variant — its meta and value untouched, the old variant's fields gone. */
 function withLifecycle(
   grant: CouponGrant,
@@ -291,5 +306,44 @@ export const CouponGrantSystem = {
     occasion: CouponOccasion,
   ): boolean {
     return couponOccasion === occasion;
+  },
+
+  /**
+   * The grants whose coupon was made for `occasion`, in their order — the
+   * birthday card's gift is picked from these (G-22). A grant with no
+   * occasion is not one. The complement of {@link besideOccasionGift}'s
+   * cut; both read one predicate over {@link isOccasion}.
+   */
+  forOccasion<G extends OccasionTagged>(
+    grants: readonly G[],
+    occasion: CouponOccasion,
+  ): readonly G[] {
+    const kept: G[] = [];
+    for (let i = 0; i < grants.length; i++) {
+      const grant = grants[i] as G;
+      if (madeFor(grant, occasion)) kept.push(grant);
+    }
+    return kept;
+  },
+
+  /**
+   * The grants the reward ticket keeps beside the occasion's card (G-12):
+   * while today's card carries the gift (`giftCarried`), every grant but
+   * the occasion's, so the ticket never repeats it; otherwise every grant —
+   * an occasion grant still held is then an ordinary ticket. The same
+   * array comes back when nothing is taken out.
+   */
+  besideOccasionGift<G extends OccasionTagged>(
+    grants: readonly G[],
+    occasion: CouponOccasion,
+    giftCarried: boolean,
+  ): readonly G[] {
+    if (!giftCarried) return grants;
+    const kept: G[] = [];
+    for (let i = 0; i < grants.length; i++) {
+      const grant = grants[i] as G;
+      if (!madeFor(grant, occasion)) kept.push(grant);
+    }
+    return kept;
   },
 } as const;

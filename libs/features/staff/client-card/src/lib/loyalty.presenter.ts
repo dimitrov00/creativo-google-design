@@ -12,22 +12,20 @@ import {
 import {
   FreezeReason,
   type StreakHeadRule,
-  StreakPhase,
+  StreakOutlook,
   StreakState,
 } from '@core/components';
 import {
   type GrantTicketRef,
   RewardSystem,
+  type StreakOutlookAnswer,
   StreakRuleSystem,
+  StreakSystem,
   type ValidLoyaltyCatalog,
 } from '@core/systems';
+import { streakPeriodReasonWords } from '@creativo/infrastructure/i18n';
 import type { ClientCardGrant } from './client-card.contracts';
-import {
-  dayLong,
-  dayShort,
-  daysBetweenDays,
-  shopDayOf,
-} from './client-card.format';
+import { dayLong, dayShort, shopDayOf } from './client-card.format';
 import { type RewardReadyVm } from './client-pages.vm';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import type { ClientCardWords } from './client-card.words';
@@ -160,17 +158,21 @@ export function rhythmStateOf(
   return rhythm === null ? null : StreakState.find(account.streaks, rhythm.id);
 }
 
-/** The track's one sentence: «24 посещения в ритъм, най-много 26, следващото до 9 ноември». */
-export function rhythmLabel(
-  state: StreakState,
-  inChairDue: string | null,
+/**
+ * The track's sentence naming `due` — the day the next visit keeps the
+ * rhythm by (`StreakSystem.outlook`'s `nextDue`), `null` to name none; the
+ * best run is said only where `StreakSystem.record` gives one.
+ */
+export function rhythmTrackName(
+  state: Pick<StreakState, 'current' | 'best'>,
+  due: string | null,
   today: string,
   words: ClientCardWords,
 ): string {
-  const due = inChairDue ?? state.dueBy;
+  const best = StreakSystem.record(state);
   return words.rhythm.label(
     state.current,
-    state.best > state.current ? words.rhythm.bestSuffix(state.best) : '',
+    best === null ? '' : words.rhythm.bestSuffix(best),
     due === null
       ? ''
       : words.rhythm.nextSuffix(dayLong(due, today, words.lang)),
@@ -183,59 +185,98 @@ interface RhythmStateLine {
   readonly day: string | null;
 }
 
-/** Where the rhythm stands, as coaching for staff (old spec §5A.3.4): never loss language. */
-export function rhythmStateLine(
+/** What the card reads around the rhythm's state when it asks where the rhythm stands. */
+export interface RhythmOutlookView {
+  readonly paused: boolean;
+  /** The next due date once the visit in the chair counts (`StreakSystem.inChairDue`). */
+  readonly inChairDue: LocalDate | null;
+  readonly today: string;
+  /** The shop's zone (Law 7.2): where the last counted visit's stamp becomes its shop day. */
+  readonly zone: TimeZone;
+}
+
+/**
+ * Where the rhythm stands (`StreakSystem.outlook`), on the card's today.
+ * The system is zone-blind (D-11): the last counted visit's stamp is read
+ * here, on the shop's calendar, and handed over as its shop day.
+ */
+export function rhythmOutlookOf(
   state: StreakState,
-  paused: boolean,
-  inChairDue: string | null,
+  view: RhythmOutlookView,
+): StreakOutlookAnswer {
+  return StreakSystem.outlook(state, {
+    today: dayOf(view.today),
+    inChairDue: view.inChairDue,
+    paused: view.paused,
+    lastQualifiedOn:
+      state.lastQualifiedAtUtcMs === null
+        ? null
+        : shopDayOf(state.lastQualifiedAtUtcMs, view.zone),
+  });
+}
+
+/** A fragment as a sentence's opening: its first letter raised. */
+function capitalised(text: string, lang: string): string {
+  return text.charAt(0).toLocaleUpperCase(lang) + text.slice(1);
+}
+
+/** What carries a frozen period, as the line says it. */
+function frozenLine(
+  reason: FreezeReason | null,
+  words: ClientCardWords,
+): string {
+  const rhythm = words.rhythm;
+  switch (reason) {
+    case FreezeReason.Freeze:
+      return rhythm.stateFrozenFreeze;
+    case FreezeReason.Excuse:
+      return rhythm.stateFrozenExcuse;
+    case FreezeReason.ClientPause:
+      return capitalised(
+        rhythm.reason(streakPeriodReasonWords[FreezeReason.ClientPause]),
+        words.lang,
+      );
+    default:
+      return rhythm.frozen;
+  }
+}
+
+/**
+ * The outlook's line, and the day it names (`StreakOutlookAnswer.day`), as
+ * coaching for staff (old spec §5A.3.4): never loss language.
+ */
+export function rhythmLineOf(
+  outlook: StreakOutlookAnswer,
   today: string,
-  zone: TimeZone,
   words: ClientCardWords,
 ): RhythmStateLine {
   const rhythm = words.rhythm;
-  const lang = words.lang;
+  const day = outlook.day;
   const none = (line: string): RhythmStateLine => ({ line, day: null });
-  const naming = (
-    worded: (date: string) => string,
-    day: string,
-  ): RhythmStateLine => ({ line: worded(dayShort(day, today, lang)), day });
-  if (paused) return none(rhythm.frozen);
-  // The visit in the chair keeps the rhythm: say when the next one is due.
-  if (inChairDue !== null) return naming(rhythm.stateActive, inChairDue);
-  if (state.current === 0 && state.lastQualifiedAtUtcMs === null) {
-    return none(rhythm.stateNone);
-  }
-  switch (state.streakPhase) {
-    case StreakPhase.Active:
-      return state.dueBy === null
-        ? none(rhythm.stateNone)
-        : naming(rhythm.stateActive, state.dueBy);
-    case StreakPhase.AtRisk: {
-      // The last counted visit's day, read on the shop's calendar (UI
-      // formatting of the stamp; the state stores no day beside it).
-      const last =
-        state.lastQualifiedAtUtcMs === null
-          ? null
-          : shopDayOf(state.lastQualifiedAtUtcMs, zone);
-      const weeks =
-        last === null
-          ? 0
-          : Math.max(1, Math.round(daysBetweenDays(last, today) / 7));
-      return naming(
-        (date) => rhythm.stateAtRisk(weeks, date),
-        state.phaseDueBy,
-      );
-    }
-    case StreakPhase.InGrace:
-      return naming(rhythm.stateInGrace, state.phaseGraceUntil);
-    case StreakPhase.Frozen:
-      return none(
-        state.phaseFreezeReason === FreezeReason.Freeze
-          ? rhythm.stateFrozenFreeze
-          : rhythm.frozen,
-      );
-    case StreakPhase.Broken:
-      return naming(rhythm.stateBroken, state.phaseRepairableUntil);
+  const naming = (worded: (date: string) => string): RhythmStateLine =>
+    day === null
+      ? defect(`${outlook.streakOutlook} names a day`)
+      : { line: worded(dayShort(day, today, words.lang)), day };
+  switch (outlook.streakOutlook) {
+    case StreakOutlook.Paused:
+      return none(rhythm.frozen);
+    case StreakOutlook.InChair:
+    case StreakOutlook.Due:
+      return naming(rhythm.stateActive);
+    case StreakOutlook.NotStarted:
+    case StreakOutlook.BrokenFinal:
+    case StreakOutlook.DueNone:
+      return none(rhythm.stateNone);
+    case StreakOutlook.Frozen:
+      return none(frozenLine(outlook.phaseFreezeReason, words));
+    case StreakOutlook.BrokenRepairable:
+      return naming(rhythm.stateBroken);
+    case StreakOutlook.Held:
+      return naming(rhythm.stateHeld);
+    case StreakOutlook.AtRisk:
+      return naming((date) => rhythm.stateAtRisk(outlook.weeksSinceLast, date));
+    case StreakOutlook.InGrace:
+      return naming(rhythm.stateInGrace);
   }
 }
 

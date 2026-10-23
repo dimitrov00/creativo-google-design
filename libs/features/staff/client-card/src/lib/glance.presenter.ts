@@ -4,7 +4,6 @@ import type {
   LoyaltyAccount,
   StreakDefinition,
   User,
-  WaitlistRequest,
 } from '@core/entities';
 import {
   VisitCardSlot,
@@ -13,13 +12,20 @@ import {
   waitlistCardOf,
 } from '@creativo/features/shared/visits';
 import { formatCents, formatWallClock } from '@creativo/ui/wall-clock';
-import { LocalDate, UtcEpochMs } from '@core/primitives';
 import {
-  type BirthDate,
+  LocalDate,
+  type ServiceId,
+  UtcEpochMs,
+  defect,
+} from '@core/primitives';
+import {
+  BirthdayMoment,
   CouponOccasion,
-  PersonalRecord,
+  type PersonalRecord,
   PersonalRecordKind,
-  WaitlistLifecycle,
+  PointsReach,
+  TenureState,
+  TierPlateState,
 } from '@core/components';
 import {
   AgeSystem,
@@ -27,11 +33,15 @@ import {
   ClientStatsSystem,
   CouponGrantSystem,
   type GlanceHoldings,
+  LoyaltyCatalogSystem,
+  RecordsSystem,
   RewardSystem,
   StandingSystem,
+  StreakRuleSystem,
   TierSystem,
   type ValidLoyaltyCatalog,
   VisitGrain,
+  VisitListSystem,
   VisitPerspective,
   WaitlistSystem,
   ZonedTimeSystem,
@@ -64,7 +74,6 @@ import {
   type VisitsModuleInput,
   capsulesRun,
   displayNameOf,
-  isBirthdayToday,
   lastWorkedVisit,
   medalStripVm,
   pauseOf,
@@ -72,7 +81,6 @@ import {
 import {
   type AchievementTileVm,
   type AchievementsData,
-  BirthdayMoment,
   type BirthdayVm,
   type ClientCapsulesVm,
   type ClientHeroVm,
@@ -85,13 +93,7 @@ import {
   type VisitCardsVm,
 } from './client-pages.vm';
 import { type ClientCardWords, RECORD_KIND_WORDS } from './client-card.words';
-import { cadenceWeeks } from './history.presenter';
-import {
-  glanceReward,
-  offered,
-  rhythmStateOf,
-  ruleInForceOf,
-} from './loyalty.presenter';
+import { glanceReward, rhythmStateOf } from './loyalty.presenter';
 import { medalRingVm } from './medals.presenter';
 
 /*
@@ -111,18 +113,7 @@ import { medalRingVm } from './medals.presenter';
  * decide what it says. Nothing here reads a clock, a flag or a port.
  */
 
-/** No-shows in the last 90 days that raise the reliability capsule (old spec R47). */
-const NO_SHOW_CAPSULE_AT = 2;
-
-/** How far ahead a birthday is said: the week to come, never further. */
-const BIRTHDAY_NOTICE_DAYS = 7;
-
-/** The records the medals card's line may name, in its order; two at most print. */
-const RECORD_LINE_ORDER: readonly PersonalRecordKind[] = [
-  PersonalRecordKind.FavouriteService,
-  PersonalRecordKind.MostVisitsInYear,
-  PersonalRecordKind.FirstVisit,
-];
+/** How many records the medals card's line prints (`RecordsSystem.glanceLine` picks them). */
 const RECORD_LINE_LIMIT = 2;
 
 /** The typographic minus (U+2212): a balance owed prints as the pass prints it. */
@@ -191,20 +182,20 @@ function heroLine(
     return lineParts(words.head.pausedUntil(until), [until]);
   }
   if (!input.statsKnown) return null;
-  const stats = input.stats;
-  if (
-    stats === null ||
-    stats.lifetimeVisitsCompleted === 0 ||
-    stats.firstVisitLocalDate === null
-  ) {
+  // How long the client has come is `ClientStatsSystem.tenureOf`'s: a
+  // cadence needs three worked visits (R34), until then the tenure alone.
+  const tenure = ClientStatsSystem.tenureOf(input.stats);
+  if (tenure.tenureState === TenureState.FirstVisit || tenure.since === null) {
     return plainLine(words.head.firstVisit);
   }
-  const since = monthYearLong(stats.firstVisitLocalDate, words.lang);
-  // A cadence needs three worked visits (R34): until then the tenure alone.
-  if (stats.avgCadenceDays === null) {
+  const since = monthYearLong(tenure.since, words.lang);
+  if (
+    tenure.tenureState === TenureState.Since ||
+    tenure.cadenceWeeks === null
+  ) {
     return lineParts(words.head.since(since), [since]);
   }
-  const cadence = words.head.cadence(cadenceWeeks(stats.avgCadenceDays));
+  const cadence = words.head.cadence(tenure.cadenceWeeks);
   return lineParts(words.head.sinceCadence(since, cadence), [since, cadence]);
 }
 
@@ -223,34 +214,44 @@ function heroTier(
   words: ClientCardWords,
 ): HeroTierVm | null {
   const locale = cardLocaleOf(words.lang);
-  const track = TierSystem.steps(tier.account, tier.catalog.tiers);
-  const current = track.steps.find(
-    (step) => step.tierId === track.currentTierId,
-  );
-  if (current === undefined) return null;
+  // Which plate, its ring and what remains are `TierSystem.plate`'s; the
+  // tiers' names are the catalogue's.
+  const plate = TierSystem.plate(tier.account, tier.catalog.tiers);
+  if (plate === null) return null;
+  const current = LoyaltyCatalogSystem.tier(tier.catalog, plate.currentTierId);
+  if (current === null) return null;
   const name = current.name[locale];
-  if (current === track.steps.at(-1)) {
-    return {
-      name,
-      progress: 1,
-      accessibleName: words.head.tierTopName(name),
-    };
+  switch (plate.tierPlateState) {
+    case TierPlateState.Top:
+      return {
+        name,
+        progress: plate.progress,
+        accessibleName: words.head.tierTopName(name),
+      };
+    case TierPlateState.HeldAbove:
+      return { name, progress: null, accessibleName: name };
+    case TierPlateState.Climbing: {
+      const next =
+        plate.nextTierId === null
+          ? null
+          : LoyaltyCatalogSystem.tier(tier.catalog, plate.nextTierId);
+      // A CLIMBING plate always names the next tier and what remains.
+      if (next === null || plate.remaining === null) {
+        return defect(
+          `${plate.currentTierId} climbs to no tier of the catalogue`,
+        );
+      }
+      return {
+        name,
+        progress: plate.progress,
+        accessibleName: words.head.tierName(
+          name,
+          words.visitsModule.sectionVisits(plate.remaining),
+          next.name[locale],
+        ),
+      };
+    }
   }
-  const next = track.steps.find((step) => step.tierId === track.nextTierId);
-  if (next === undefined || next.atLeast <= current.atLeast) {
-    return { name, progress: null, accessibleName: name };
-  }
-  const span = next.atLeast - current.atLeast;
-  const remaining = Math.max(0, track.remaining ?? next.atLeast - track.value);
-  return {
-    name,
-    progress: Math.min(1, Math.max(0, (track.value - current.atLeast) / span)),
-    accessibleName: words.head.tierName(
-      name,
-      words.visitsModule.sectionVisits(remaining),
-      next.name[locale],
-    ),
-  };
 }
 
 /**
@@ -297,11 +298,14 @@ export function overviewCapsulesVm(
   const capsules: ClientCapsulesVm['shown'][number][] = [];
   const now = UtcEpochMs.of(input.nowMs);
   if (input.stats !== null && now.ok) {
-    const noShows = ClientStatsSystem.statWindows(
-      input.stats,
-      ZonedTimeSystem.shopNow(now.value, input.zone),
-    ).noShows.last90d;
-    if (noShows >= NO_SHOW_CAPSULE_AT) {
+    // Whether the no-shows warn is `ClientStatsSystem.noShowWarning`'s.
+    const noShows = ClientStatsSystem.noShowWarning(
+      ClientStatsSystem.statWindows(
+        input.stats,
+        ZonedTimeSystem.shopNow(now.value, input.zone),
+      ),
+    );
+    if (noShows !== null) {
       capsules.push({
         id: 'noShows',
         text: input.words.capsules.noShows(noShows),
@@ -330,24 +334,6 @@ export interface BirthdayInput {
   readonly words: ClientCardWords;
 }
 
-/** The grant's coupon was made for the birthday; a name is never parsed (§4.6). */
-function isBirthdayGrant(grant: ClientCardGrant): boolean {
-  return CouponGrantSystem.isOccasion(
-    grant.couponOccasion ?? null,
-    CouponOccasion.Birthday,
-  );
-}
-
-/**
- * The age reached on a birthday (`AgeSystem.ageReachedOn`): that day's year
- * less the year of birth. `null` where the record holds no year a person
- * can have been born in — the band then says the day without a figure.
- */
-function ageOn(day: string, birth: BirthDate): number | null {
-  const shopDay = LocalDate.parse(day);
-  return shopDay.ok ? AgeSystem.ageReachedOn(birth, shopDay.value) : null;
-}
-
 /**
  * BD — the birthday as a card of its own (R2-D), in one of two kinds:
  *
@@ -366,14 +352,27 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
   const { today, words } = input;
   const birth = input.user?.birthDate ?? null;
   if (birth === null) return null;
+  // Which birthday, if any, is `AgeSystem.birthdayMoment`'s: today's, or
+  // one within the week to come; a today that is no shop day says none.
+  const shopToday = LocalDate.parse(today);
+  if (!shopToday.ok) return null;
+  const moment = AgeSystem.birthdayMoment(birth, shopToday.value);
+  if (moment === null) return null;
 
-  if (isBirthdayToday(input.user, today)) {
-    const age = ageOn(today, birth);
+  if (moment.birthdayMoment === BirthdayMoment.Today) {
+    // The age reached today; `null` where the record holds no year a
+    // person can have been born in — the band then says the day without a
+    // figure. The gift is the grant whose coupon was made for the birthday
+    // (`CouponGrantSystem.forOccasion`; a name is never parsed, §4.6).
+    const age = moment.age;
     const gift = glanceReward(
-      input.grants.filter(isBirthdayGrant),
+      CouponGrantSystem.forOccasion(input.grants, CouponOccasion.Birthday),
       today,
       words,
-      input.grantsOnBill.filter(isBirthdayGrant),
+      CouponGrantSystem.forOccasion(
+        input.grantsOnBill,
+        CouponOccasion.Birthday,
+      ),
     );
     // The figure is what the gift is worth; a gift whose name says it all
     // («Безплатно подстригване») is said by its name.
@@ -392,16 +391,11 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
     };
   }
 
-  // The next birthday on or after today (`AgeSystem.nextBirthday`; today's
-  // own is the band above, so the card's window starts at tomorrow).
-  const shopToday = LocalDate.parse(today);
-  if (!shopToday.ok) return null;
-  const next = AgeSystem.nextBirthday(birth, shopToday.value);
-  if (next.inDays < 1 || next.inDays > BIRTHDAY_NOTICE_DAYS) return null;
+  // A birthday of the week to come: the day it is kept on, and the age it brings.
   const title = words.birthday.upcoming(
-    weekdayLong(next.localDate, words.lang),
-    dayShort(next.localDate, today, words.lang),
-    next.turning,
+    weekdayLong(moment.localDate, words.lang),
+    dayShort(moment.localDate, today, words.lang),
+    moment.turning,
   );
   return {
     birthdayMoment: BirthdayMoment.Upcoming,
@@ -423,10 +417,11 @@ export function grantsBesideBirthday(
   grants: readonly ClientCardGrant[],
   birthday: BirthdayVm | null,
 ): readonly ClientCardGrant[] {
-  return birthday?.birthdayMoment === BirthdayMoment.Today &&
-    birthday.gift !== null
-    ? grants.filter((grant) => !isBirthdayGrant(grant))
-    : grants;
+  return CouponGrantSystem.besideOccasionGift(
+    grants,
+    CouponOccasion.Birthday,
+    birthday?.birthdayMoment === BirthdayMoment.Today && birthday.gift !== null,
+  );
 }
 
 // ── H · «Посещения» ─────────────────────────────────────────────────────
@@ -497,48 +492,33 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
     context.appointmentId,
   );
 
-  const upcoming = input.appointments
-    .filter((appointment) => appointment.id !== context.appointmentId)
-    .map((appointment) => ({ appointment, row: rowOf(appointment) }))
-    .filter(({ row }) => row.upcoming)
-    // Soonest first, on the shop's wall clock: the day, then the minute.
-    .sort(
-      (a, b) =>
-        LocalDate.compare(a.row.localDate, b.row.localDate) ||
-        a.row.startMinutes - b.row.startMinutes,
-    );
+  // The visits to come but the one on screen (UI read-state), soonest
+  // first on the shop's wall clock (`VisitListSystem.upcomingSoonestFirst`).
+  const upcoming = VisitListSystem.upcomingSoonestFirst(
+    input.appointments.filter(
+      (appointment) => appointment.id !== context.appointmentId,
+    ),
+    rowOf,
+  );
   const soonest = upcoming[0];
 
   let waitlist: VisitCardsVm['waitlist'] = null;
-  if (!input.paused && input.waitlist !== null) {
-    // Booked at or after the request was made: the visit answers it (a
-    // stamp-order rule, T2 — the two instants compared as stamped).
-    const bookedAfter = (request: WaitlistRequest) =>
-      upcoming.some(
-        ({ appointment }) =>
-          appointment.bookedAtUtcMs !== null &&
-          UtcEpochMs.compare(
-            appointment.bookedAtUtcMs,
-            request.createdAtUtcMs,
-          ) >= 0,
-      );
-    const watching = input.waitlist
-      .filter(
-        (request) =>
-          WaitlistLifecycle.isWatching(request) &&
-          !WaitlistSystem.hasLapsed(request, today) &&
-          !bookedAfter(request),
-      )
-      .sort((a, b) => UtcEpochMs.compare(b.createdAtUtcMs, a.createdAtUtcMs));
-    const newest = watching[0];
-    if (newest !== undefined) {
+  if (input.waitlist !== null) {
+    // Which request, and how many others, is `WaitlistSystem.glancePick`'s.
+    const pick = WaitlistSystem.glancePick(
+      input.waitlist,
+      upcoming,
+      today,
+      input.paused,
+    );
+    if (pick.newest !== null) {
       waitlist = waitlistCardOf(
-        newest,
+        pick.newest,
         {
           words: words.waitlist,
           today,
           locale: words.lang,
-          otherRequests: watching.length - 1,
+          otherRequests: pick.others,
           testId: 'client-visit-waitlist',
         },
         context.catalog,
@@ -554,7 +534,7 @@ export function visitCardsVm(input: VisitsModuleInput): VisitCardsVm {
     next:
       soonest === undefined
         ? null
-        : cardOf(soonest.appointment, VisitCardSlot.Next, 'client-visit-next'),
+        : cardOf(soonest, VisitCardSlot.Next, 'client-visit-next'),
     waitlist,
     count: input.count,
   };
@@ -616,15 +596,23 @@ function voucherHolding(
  */
 function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
   const { account, flags, words } = input;
-  const rule = ruleInForceOf(input.rhythm, input.today);
   const state = rhythmStateOf(account, input.rhythm);
   const today = LocalDate.parse(input.today);
+  // The rhythm counts under `loyalty.streaks` and its rule in force, on
+  // (`StreakRuleSystem.isOnOn`); a rhythm is read on a shop day, ever.
+  const rhythmOn =
+    input.rhythm !== null &&
+    StreakRuleSystem.isOnOn(
+      input.rhythm,
+      cardDayOf(input.today),
+      flags.streaks,
+    );
   const held = ClientGlanceSystem.holdings({
     // A today that is no shop day reads no voucher's last day: no voucher fact.
     vouchers: input.vouchers === null || !today.ok ? null : input.vouchers,
     punchCards: account.punchCards,
     achievements: flags.achievements,
-    rhythmOn: flags.streaks && rule !== null && rule.enabled,
+    rhythmOn,
     rhythm: state,
     paused: input.paused,
     today: today.ok ? today.value : LocalDate.fromEpochDay(0),
@@ -690,24 +678,26 @@ function pointsSentence(
 ): string | null {
   const { account, today, words } = input;
   const locale = cardLocaleOf(words.lang);
-  const day = cardDayOf(today);
-  const inHand = new Set(input.heldRewards ?? []);
-  const beyond = offered(catalog, today).filter(
-    (reward) => !inHand.has(reward.name[locale]),
+  // Which rewards the sentence may name, what the balance reaches and how
+  // far it falls short are `RewardSystem.pointsReachBeyondHeld`'s.
+  const reach = RewardSystem.pointsReachBeyondHeld(
+    catalog.rewards,
+    input.heldRewards ?? [],
+    locale,
+    account.balance,
+    cardDayOf(today),
   );
-  const best = RewardSystem.bestAffordable(beyond, account.balance, day);
-  if (best !== null) {
-    return words.loyalty.enoughForPoints(
-      inSentence(best.name[locale], words.lang),
-    );
+  const reward = reach.reward;
+  if (reward === null) return null;
+  const name = inSentence(reward.name[locale], words.lang);
+  switch (reach.pointsReach) {
+    case PointsReach.EnoughFor:
+      return words.loyalty.enoughForPoints(name);
+    case PointsReach.MoreTo:
+      return words.loyalty.moreTo(reach.short, name);
+    case PointsReach.None:
+      return null;
   }
-  const next = RewardSystem.nextAffordable(beyond, account.balance, day);
-  return next === null
-    ? null
-    : words.loyalty.moreTo(
-        next.cost - account.balance,
-        inSentence(next.name[locale], words.lang),
-      );
 }
 
 /** «371» · «1 200» · «−40»: the balance as the card's figure; what is owed wears the true minus. */
@@ -837,11 +827,26 @@ export function medalsGlanceVm(
         ];
   });
 
-  const facts = RECORD_LINE_ORDER.flatMap((kind) => {
-    const record = PersonalRecord.find(data.account.records, kind);
-    const fact = record === null ? null : recordFact(record, ctx);
+  // Which records the line names, in its order, is
+  // `RecordsSystem.glanceLine`'s; a favourite needs a service the
+  // catalogue still names (the host's lookup).
+  const records = data.account.records;
+  const knownServiceIds = new Set<ServiceId>(
+    records.flatMap((record) =>
+      record.serviceId !== null &&
+      ctx.catalog.serviceName(record.serviceId) !== null
+        ? [record.serviceId]
+        : [],
+    ),
+  );
+  const facts = RecordsSystem.glanceLine(
+    records,
+    knownServiceIds,
+    RECORD_LINE_LIMIT,
+  ).flatMap((record) => {
+    const fact = recordFact(record, ctx);
     return fact === null ? [] : [fact];
-  }).slice(0, RECORD_LINE_LIMIT);
+  });
 
   return {
     levelCount,

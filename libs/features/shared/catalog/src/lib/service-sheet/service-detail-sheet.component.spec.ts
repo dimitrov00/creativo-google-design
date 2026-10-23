@@ -57,6 +57,9 @@ const SERVICE: ServiceVm = {
   offerings: [{ barberId: 'ivan', base: { price: 14.5, minutes: 35 } }],
   upsellOnly: false,
   gallery: [],
+  priceFrom: 14.5,
+  cardPrice: { cheapest: 14.5, spread: false },
+  minutesRange: { from: 35, to: 35 },
 };
 
 const BARBERS: readonly BarberVm[] = [
@@ -168,6 +171,9 @@ const SHAVE: ServiceVm = {
   id: 'svc-shave',
   name: { en: 'Shave', bg: 'Бръснене' },
   offerings: [{ barberId: 'ivan', base: { price: 12, minutes: 25 } }],
+  priceFrom: 12,
+  cardPrice: { cheapest: 12, spread: false },
+  minutesRange: { from: 25, to: 25 },
 };
 
 const BUNDLE: ServiceVm = {
@@ -177,6 +183,9 @@ const BUNDLE: ServiceVm = {
   name: { en: 'Full care', bg: 'Пълна грижа' },
   includes: ['svc-classic-cut', 'svc-shave'],
   offerings: [{ barberId: 'ivan', base: { price: 21.5, minutes: 55 } }],
+  priceFrom: 21.5,
+  cardPrice: { cheapest: 21.5, spread: false },
+  minutesRange: { from: 55, to: 55 },
 };
 
 @Component({

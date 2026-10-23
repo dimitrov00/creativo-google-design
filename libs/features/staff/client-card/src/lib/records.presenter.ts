@@ -1,24 +1,16 @@
 import { firstNameOf } from '@creativo/features/shared/visits';
 import type { Appointment, ClientStatsRecord } from '@core/entities';
+import { LocalDate, defect } from '@core/primitives';
 import {
-  LocalDate,
-  MinuteOfDay,
-  type TimeZone,
-  defect,
-} from '@core/primitives';
-import {
-  type PersonalRecord,
+  PersonalRecord,
   PersonalRecordKind,
-  type ShopNow,
   type StreakState,
 } from '@core/components';
 import type { StreakDefinition } from '@core/entities';
 import {
   ClientStatsSystem,
-  type RecordVisit,
   RecordsSystem,
-  SubjectVisitOutcome,
-  ZonedTimeSystem,
+  StreakRuleSystem,
 } from '@core/systems';
 import type { UiIconName } from '@creativo/ui/controls';
 import type { AchievementsContext } from './achievements.presenter';
@@ -39,7 +31,7 @@ import type {
   RecordsPageVm,
 } from './client-pages.vm';
 import { RECORD_KIND_WORDS, type RecordRowWord } from './client-card.words';
-import { ruleInForceOf, rhythmStateOf } from './loyalty.presenter';
+import { rhythmStateOf } from './loyalty.presenter';
 import { RECORD_ICONS, recordCardVm, recordsOf } from './medals.presenter';
 
 /*
@@ -111,9 +103,16 @@ function themeOf(id: string): RecordTheme {
   return THEMES.find((group) => group.rows.includes(id))?.theme ?? 'visits';
 }
 
-/** Whether the page draws the rhythm: the rule in force is there, and on. */
+/**
+ * Whether the page draws the rhythm: the rule in force is there, and on
+ * (`StreakRuleSystem.isOnOn`). No flag is read here: the store folded
+ * `loyalty.streaks` into a `null` rhythm already.
+ */
 function rhythmOn(input: RecordsPageInput): boolean {
-  return ruleInForceOf(input.rhythm, input.data.today)?.enabled ?? false;
+  return (
+    input.rhythm !== null &&
+    StreakRuleSystem.isOnOn(input.rhythm, dayOf(input.data.today), true)
+  );
 }
 
 /** The rhythm the rule in force projects, as the account holds it. */
@@ -298,21 +297,6 @@ function countRow(
   };
 }
 
-/** The end of the shop's today on its `zone`, as the shop's "now" the windows are read at. */
-function endOfDay(today: string, zone: TimeZone): ShopNow | null {
-  const day = LocalDate.parse(today);
-  if (!day.ok) return null;
-  const end = ZonedTimeSystem.toUtc(
-    day.value,
-    MinuteOfDay.ofProven(LAST_MINUTE),
-    zone,
-  );
-  return end.ok ? ZonedTimeSystem.shopNow(end.value, zone) : null;
-}
-
-/** The day's last minute — 23:59. */
-const LAST_MINUTE = 1439;
-
 /** Every row the page can draw, by id; a row whose datum is absent is not in it. */
 function rowsOf(
   records: readonly PersonalRecord[],
@@ -356,16 +340,18 @@ function rowsOf(
         input,
       ),
     );
-    // The window is read at the shop's today, as every counter's is
-    // (`ClientStatsSystem.statWindows`): a visit of thirteen months ago has
-    // left it without anything being rewritten.
-    const now = endOfDay(data.today, ctx.zone);
-    if (now !== null) {
+    // The window is read over the shop's whole today, as every counter's
+    // is (`ClientStatsSystem.statWindowsOnDay`): a visit of thirteen months
+    // ago has left it without anything being rewritten. A today that is no
+    // shop day reads no window: no row.
+    const today = LocalDate.parse(data.today);
+    if (today.ok) {
       add(
         countRow(
           'last12Months',
           ROW_ICONS.last12Months,
-          ClientStatsSystem.statWindows(stats, now).visitsCompleted.last12m,
+          ClientStatsSystem.statWindowsOnDay(stats, today.value).visitsCompleted
+            .last12m,
           null,
           input,
         ),
@@ -403,17 +389,22 @@ function rowsOf(
     });
   }
 
-  // «Обичайни услуги», when it holds more than the favourite alone.
+  // «Обичайни услуги», when it holds more than the favourite alone
+  // (`RecordsSystem.usualBeyondFavourite`, over the services the catalogue
+  // still names).
   const favourite =
-    records.find(
-      (record) =>
-        record.personalRecordKind === PersonalRecordKind.FavouriteService,
-    )?.serviceId ?? null;
+    PersonalRecord.find(records, PersonalRecordKind.FavouriteService)
+      ?.serviceId ?? null;
   const usual = (stats?.usualServiceIds ?? []).flatMap((id) => {
     const name = ctx.catalog.serviceName(id);
-    return name === null ? [] : [{ id: id as string, name }];
+    return name === null ? [] : [{ id, name }];
   });
-  if (usual.some((service) => service.id !== favourite)) {
+  if (
+    RecordsSystem.usualBeyondFavourite(
+      usual.map((service) => service.id),
+      favourite,
+    )
+  ) {
     const title = words.records.row('usualServices');
     add({
       id: 'usualServices',
@@ -452,36 +443,18 @@ function yearsOf(
   records: readonly PersonalRecord[],
   input: RecordsPageInput,
 ): readonly RecordYearVm[] | null {
-  if (!input.historyComplete) return null;
   const { data, ctx } = input;
   const words = ctx.words;
 
   // The worked visits of this person — the client RECORD's own seats, the
-  // loyalty account being the record's (D29) — by the shop's day; the
-  // counting is `RecordsSystem.years`.
-  const worked: RecordVisit[] = [];
-  for (const appointment of input.visits) {
-    const visit = ClientStatsSystem.subjectVisitOf(
-      data.account.customerId,
-      appointment,
-    );
-    if (
-      visit === null ||
-      visit.outcome.subjectVisitOutcome !== SubjectVisitOutcome.Worked
-    ) {
-      continue;
-    }
-    worked.push({
-      appointmentId: appointment.id,
-      localDate: visit.localDate,
-    });
-  }
-  const stamped =
-    records.find(
-      (record) =>
-        record.personalRecordKind === PersonalRecordKind.MostVisitsInYear,
-    )?.year ?? null;
-  const counted = RecordsSystem.years(worked, stamped);
+  // loyalty account being the record's (D29) — by the shop's day, only
+  // over a WHOLE history; the counting is `RecordsSystem.yearsOfHistory`.
+  const counted = RecordsSystem.yearsOfHistory(
+    data.account.customerId,
+    input.visits,
+    records,
+    input.historyComplete,
+  );
   if (counted === null) return null;
 
   const years: RecordYearVm[] = [];
