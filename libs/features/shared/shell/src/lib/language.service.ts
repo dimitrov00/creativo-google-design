@@ -1,13 +1,6 @@
-import { DOCUMENT, isPlatformBrowser } from '@angular/common';
-import {
-  Injectable,
-  PLATFORM_ID,
-  afterNextRender,
-  inject,
-  signal,
-} from '@angular/core';
+import { Injectable, computed, inject } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
-import { SupportedLang } from '@creativo/infrastructure/i18n';
+import { SupportedLang, isSupportedLang } from '@creativo/infrastructure/i18n';
 
 export interface LanguageOption {
   readonly code: SupportedLang;
@@ -15,24 +8,28 @@ export interface LanguageOption {
   readonly label: string;
 }
 
-// The pre-paint boot script reads this exact key before Angular runs
-// (`@creativo/ui/tokens` LANG_STORAGE_KEY — module boundaries keep
-// `type:tokens` TS out of feature libs, so the stable contract string is
-// spelled here). The old 'creativo-language' key drifted from boot.
-const STORAGE_KEY = 'ui-lang';
-
 /**
- * Owns the active locale so both the shell header and the hero's in-film
- * language pill drive the same source of truth (extracted from App when the
- * toggle moved into the hero). Applies transloco + `<html lang>` + storage.
+ * The active locale for every language control (the header, the footer and
+ * the hero's in-film pill drive this one source of truth): a read of
+ * Transloco's active language and a setter over it.
+ *
+ * It decides nothing when constructed. The app's bootstrap picks the
+ * language before any view renders (apps/web `AppChromeService` restores
+ * the stored `ui-lang` choice) and mirrors every change into `<html lang>`
+ * and storage. The first thing to inject this service is usually
+ * mid-render — the footer's locale toggle, inside a `*transloco` view — and
+ * a language set there re-entered that directive's view creation (dev-mode
+ * "Reached the max number of directives", an empty footer) and overwrote
+ * the restored choice.
  */
 @Injectable({ providedIn: 'root' })
 export class LanguageService {
-  private readonly document = inject(DOCUMENT);
-  private readonly platformId = inject(PLATFORM_ID);
   private readonly transloco = inject(TranslocoService);
 
-  readonly activeLang = signal<SupportedLang>('bg');
+  readonly activeLang = computed<SupportedLang>(() => {
+    const lang = this.transloco.activeLang();
+    return isSupportedLang(lang) ? lang : 'bg';
+  });
 
   /** One entry per locale — adding a language is a single line here. */
   readonly languages: readonly LanguageOption[] = [
@@ -40,37 +37,7 @@ export class LanguageService {
     { code: 'en', label: 'English' },
   ];
 
-  constructor() {
-    this.apply('bg', false);
-
-    // Restore the stored language only after first render: hydrating against
-    // the server-rendered (bg) DOM first avoids NG0500 text mismatches for
-    // returning EN visitors, which would force a destructive re-render.
-    afterNextRender(() => {
-      try {
-        const stored =
-          this.document.defaultView?.localStorage.getItem(STORAGE_KEY);
-        if (stored === 'en') this.apply(stored, false);
-      } catch {
-        // Storage can be unavailable in privacy-restricted browsers.
-      }
-    });
-  }
-
   set(lang: SupportedLang): void {
-    this.apply(lang, true);
-  }
-
-  private apply(lang: SupportedLang, persist: boolean): void {
-    this.activeLang.set(lang);
     this.transloco.setActiveLang(lang);
-    this.document.documentElement.lang = lang;
-
-    if (!persist || !isPlatformBrowser(this.platformId)) return;
-    try {
-      this.document.defaultView?.localStorage.setItem(STORAGE_KEY, lang);
-    } catch {
-      // The language still changes when storage is unavailable.
-    }
   }
 }

@@ -5,6 +5,10 @@ import { TranslationHttpLoader } from './translation-loader';
 export const SUPPORTED_LANGS = ['bg', 'en'] as const;
 export type SupportedLang = (typeof SUPPORTED_LANGS)[number];
 
+export function isSupportedLang(lang: string): lang is SupportedLang {
+  return (SUPPORTED_LANGS as readonly string[]).includes(lang);
+}
+
 /**
  * `assets/i18n/{lang}.json` must be reachable at runtime — each consuming
  * app's build config needs an assets glob copying this lib's
