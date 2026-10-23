@@ -217,12 +217,17 @@ class TestTranslationLoader implements TranslocoLoader {
   }
 }
 
+/**
+ * The app's own default language (`provideI18n`: `bg`) — the dates below
+ * read in Bulgarian. The language is the bootstrap's choice; nothing forces
+ * it once a view renders (`LanguageService` decides nothing when built).
+ */
 function provideTestI18n(): EnvironmentProviders[] {
   return provideTransloco({
     config: {
       availableLangs: ['bg', 'en'],
-      defaultLang: 'en',
-      fallbackLang: 'en',
+      defaultLang: 'bg',
+      fallbackLang: 'bg',
       missingHandler: { logMissingKey: false },
     },
     loader: TestTranslationLoader,
